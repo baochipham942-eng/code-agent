@@ -4,17 +4,7 @@
 
 import { create } from 'zustand';
 import ipcService from '../services/ipcService';
-import type {
-  TelemetrySession,
-  TelemetryTurn,
-  TelemetryModelCall,
-  TelemetryToolCall,
-  TelemetryTimelineEvent,
-  TelemetrySessionListItem,
-  TelemetryToolStat,
-  TelemetryIntentStat,
-  TelemetryPushEvent,
-} from '@shared/contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryPushEvent } from '@shared/contract/telemetry';
 
 interface TurnDetailData {
   turn: TelemetryTurn;
@@ -30,13 +20,14 @@ interface TelemetryStore {
   turns: TelemetryTurn[];
   events: TelemetryTimelineEvent[];
   selectedTurnDetail: TurnDetailData | null;
+  sessionListOptions: TelemetrySessionListOptions;
   toolStats: TelemetryToolStat[];
   intentDistribution: TelemetryIntentStat[];
   isLive: boolean;
   isLoading: boolean;
 
   // Actions
-  loadSessions: () => Promise<void>;
+  loadSessions: (options?: TelemetrySessionListOptions) => Promise<void>;
   loadSession: (sessionId: string) => Promise<void>;
   loadTurns: (sessionId: string) => Promise<void>;
   loadEvents: (sessionId: string) => Promise<void>;
@@ -55,20 +46,24 @@ const initialState = {
   turns: [] as TelemetryTurn[],
   events: [] as TelemetryTimelineEvent[],
   selectedTurnDetail: null as TurnDetailData | null,
+  sessionListOptions: {} as TelemetrySessionListOptions,
   toolStats: [] as TelemetryToolStat[],
   intentDistribution: [] as TelemetryIntentStat[],
   isLive: true,
-  isLoading: false,
+  isLoading: false
 };
 
 export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
   ...initialState,
 
-  loadSessions: async () => {
+  loadSessions: async (options = get().sessionListOptions) => {
     set({ isLoading: true });
     try {
-      const sessions = await ipcService.invoke('telemetry:list-sessions', { limit: 100 });
-      if (sessions) set({ sessions });
+      const sessions = await ipcService.invoke('telemetry:list-sessions', {
+        limit: 100,
+        ...options
+      });
+      if (sessions) set({ sessions, sessionListOptions: options });
     } catch (error) {
       console.error('Failed to load telemetry sessions:', error);
     } finally {
@@ -137,8 +132,8 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
     try {
       await ipcService.invoke('telemetry:delete-session', sessionId);
       set((state) => ({
-        sessions: state.sessions.filter(s => s.id !== sessionId),
-        currentSession: state.currentSession?.id === sessionId ? null : state.currentSession,
+        sessions: state.sessions.filter((s) => s.id !== sessionId),
+        currentSession: state.currentSession?.id === sessionId ? null : state.currentSession
       }));
     } catch (error) {
       console.error('Failed to delete telemetry session:', error);
@@ -176,5 +171,5 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
 
   setLive: (live: boolean) => set({ isLive: live }),
 
-  reset: () => set(initialState),
+  reset: () => set(initialState)
 }));

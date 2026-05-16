@@ -4,15 +4,13 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { getDatabase } from '../../../src/main/services/core/databaseService';
 import { TelemetryStorage } from '../../../src/main/telemetry/telemetryStorage';
-import type { TelemetryToolCall } from '../../../src/shared/contract/telemetry';
+import type { TelemetrySession, TelemetryToolCall } from '../../../src/shared/contract/telemetry';
 
 const dbState = vi.hoisted(() => ({
-  sqlite: null as import('better-sqlite3').Database | null,
+  sqlite: null as import('better-sqlite3').Database | null
 }));
 
-const makeToolCall = (
-  overrides: Partial<TelemetryToolCall & { turnId: string; sessionId: string }>,
-): TelemetryToolCall & { turnId: string; sessionId: string } => ({
+const makeToolCall = (overrides: Partial<TelemetryToolCall & { turnId: string; sessionId: string }>): TelemetryToolCall & { turnId: string; sessionId: string } => ({
   id: overrides.id ?? `record-${overrides.toolCallId ?? 'tool'}`,
   turnId: overrides.turnId ?? 'turn-1',
   sessionId: overrides.sessionId ?? 'session-1',
@@ -33,8 +31,30 @@ const makeToolCall = (
   computerSurfaceTargetApp: overrides.computerSurfaceTargetApp,
   computerSurfaceAction: overrides.computerSurfaceAction,
   computerSurfaceAxQualityScore: overrides.computerSurfaceAxQualityScore,
-  computerSurfaceAxQualityGrade: overrides.computerSurfaceAxQualityGrade,
+  computerSurfaceAxQualityGrade: overrides.computerSurfaceAxQualityGrade
 });
+
+function createTelemetrySession(sessionId: string, userId: string | null, startTime: number): TelemetrySession {
+  return {
+    id: sessionId,
+    userId,
+    title: sessionId,
+    generationId: 'gen-test',
+    modelProvider: 'openai',
+    modelName: 'gpt-test',
+    workingDirectory: '/tmp',
+    startTime,
+    turnCount: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalTokens: 0,
+    estimatedCost: 0,
+    totalToolCalls: 0,
+    toolSuccessRate: 0,
+    totalErrors: 0,
+    status: 'completed'
+  };
+}
 
 describe('TelemetryStorage computer surface fields', () => {
   let database: ReturnType<typeof getDatabase>;
@@ -81,33 +101,77 @@ describe('TelemetryStorage computer surface fields', () => {
     dbState.sqlite = null;
   });
 
+  it('filters telemetry sessions by explicit or inherited user owner', () => {
+    dbState.sqlite!.exec(`
+        CREATE TABLE sessions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT
+        );
+        CREATE TABLE telemetry_sessions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT,
+          title TEXT NOT NULL,
+          generation_id TEXT NOT NULL,
+          model_provider TEXT NOT NULL,
+          model_name TEXT NOT NULL,
+          working_directory TEXT NOT NULL,
+          start_time INTEGER NOT NULL,
+          end_time INTEGER,
+          duration_ms INTEGER,
+          turn_count INTEGER DEFAULT 0,
+          total_input_tokens INTEGER DEFAULT 0,
+          total_output_tokens INTEGER DEFAULT 0,
+          total_tokens INTEGER DEFAULT 0,
+          estimated_cost REAL DEFAULT 0,
+          total_tool_calls INTEGER DEFAULT 0,
+          tool_success_rate REAL DEFAULT 0,
+          total_errors INTEGER DEFAULT 0,
+          session_type TEXT,
+          status TEXT DEFAULT 'recording'
+        );
+      `);
+    dbState.sqlite!.prepare('INSERT INTO sessions (id, user_id) VALUES (?, ?)').run('session-inherited', 'user-1');
+
+    const storage = new TelemetryStorage();
+    storage.insertSession(createTelemetrySession('session-owned', 'user-1', 100));
+    storage.insertSession(createTelemetrySession('session-other', 'user-2', 200));
+    storage.insertSession(createTelemetrySession('session-inherited', null, 300));
+    storage.insertSession(createTelemetrySession('session-unassigned', null, 400));
+
+    expect(storage.getSession('session-inherited')?.userId).toBe('user-1');
+    expect(storage.listSessions({ userId: 'user-1' }).map((session) => session.id)).toEqual(['session-inherited', 'session-owned']);
+    expect(storage.listSessions({ unassignedOnly: true }).map((session) => session.id)).toEqual(['session-unassigned']);
+  });
+
   it('persists and reads Computer Surface reliability fields', () => {
     const storage = new TelemetryStorage();
 
     storage.batchInsert({
-      toolCalls: [{
-        id: 'record-1',
-        turnId: 'turn-1',
-        sessionId: 'session-1',
-        toolCallId: 'tool-1',
-        name: 'computer_use',
-        arguments: '{"action":"click","targetApp":"Finder"}',
-        actualArguments: '{"action":"click","targetApp":"Finder"}',
-        resultSummary: 'Background action failed',
-        success: false,
-        error: 'Background action failed',
-        errorCategory: 'unknown',
-        durationMs: 42,
-        timestamp: 100,
-        index: 0,
-        parallel: false,
-        computerSurfaceFailureKind: 'locator_missing',
-        computerSurfaceMode: 'background_ax',
-        computerSurfaceTargetApp: 'Finder',
-        computerSurfaceAction: 'click',
-        computerSurfaceAxQualityScore: 0.3,
-        computerSurfaceAxQualityGrade: 'poor',
-      }],
+      toolCalls: [
+        {
+          id: 'record-1',
+          turnId: 'turn-1',
+          sessionId: 'session-1',
+          toolCallId: 'tool-1',
+          name: 'computer_use',
+          arguments: '{"action":"click","targetApp":"Finder"}',
+          actualArguments: '{"action":"click","targetApp":"Finder"}',
+          resultSummary: 'Background action failed',
+          success: false,
+          error: 'Background action failed',
+          errorCategory: 'unknown',
+          durationMs: 42,
+          timestamp: 100,
+          index: 0,
+          parallel: false,
+          computerSurfaceFailureKind: 'locator_missing',
+          computerSurfaceMode: 'background_ax',
+          computerSurfaceTargetApp: 'Finder',
+          computerSurfaceAction: 'click',
+          computerSurfaceAxQualityScore: 0.3,
+          computerSurfaceAxQualityGrade: 'poor'
+        }
+      ]
     });
 
     expect(storage.getToolCallsBySession('session-1')[0]).toMatchObject({
@@ -117,7 +181,7 @@ describe('TelemetryStorage computer surface fields', () => {
       computerSurfaceTargetApp: 'Finder',
       computerSurfaceAction: 'click',
       computerSurfaceAxQualityScore: 0.3,
-      computerSurfaceAxQualityGrade: 'poor',
+      computerSurfaceAxQualityGrade: 'poor'
     });
   });
 
@@ -125,20 +189,22 @@ describe('TelemetryStorage computer surface fields', () => {
     const storage = new TelemetryStorage();
 
     storage.batchInsert({
-      toolCalls: [makeToolCall({
-        id: 'record-sensitive',
-        toolCallId: 'tool-sensitive',
-        name: 'shell',
-        arguments: JSON.stringify({
-          command: 'curl https://example.com/path?token=secret-token',
-          password: 'plain-secret',
-        }),
-        actualArguments: JSON.stringify({
-          email: 'alice@example.com',
-          file: '/Users/linchen/private.txt',
-        }),
-        resultSummary: 'sent alice@example.com with token=secret-token from /Users/linchen/private.txt',
-      })],
+      toolCalls: [
+        makeToolCall({
+          id: 'record-sensitive',
+          toolCallId: 'tool-sensitive',
+          name: 'shell',
+          arguments: JSON.stringify({
+            command: 'curl https://example.com/path?token=secret-token',
+            password: 'plain-secret'
+          }),
+          actualArguments: JSON.stringify({
+            email: 'alice@example.com',
+            file: '/Users/linchen/private.txt'
+          }),
+          resultSummary: 'sent alice@example.com with token=secret-token from /Users/linchen/private.txt'
+        })
+      ]
     });
 
     const call = storage.getToolCallsBySession('session-1')[0];
@@ -163,7 +229,7 @@ describe('TelemetryStorage computer surface fields', () => {
           index: 0,
           computerSurfaceMode: 'foreground_fallback',
           computerSurfaceTargetApp: 'Finder',
-          computerSurfaceAction: 'click',
+          computerSurfaceAction: 'click'
         }),
         makeToolCall({
           id: 'record-fail-ax-1',
@@ -175,7 +241,7 @@ describe('TelemetryStorage computer surface fields', () => {
           computerSurfaceFailureKind: 'locator_missing',
           computerSurfaceMode: 'background_ax',
           computerSurfaceTargetApp: 'Safari',
-          computerSurfaceAction: 'click',
+          computerSurfaceAction: 'click'
         }),
         makeToolCall({
           id: 'record-fail-ax-2',
@@ -187,7 +253,7 @@ describe('TelemetryStorage computer surface fields', () => {
           computerSurfaceFailureKind: 'locator_missing',
           computerSurfaceMode: 'background_ax',
           computerSurfaceTargetApp: 'Safari',
-          computerSurfaceAction: 'type',
+          computerSurfaceAction: 'type'
         }),
         makeToolCall({
           id: 'record-fail-cgevent',
@@ -199,14 +265,14 @@ describe('TelemetryStorage computer surface fields', () => {
           computerSurfaceFailureKind: 'target_window_not_found',
           computerSurfaceMode: 'background_cgevent',
           computerSurfaceTargetApp: 'Notes',
-          computerSurfaceAction: 'click',
+          computerSurfaceAction: 'click'
         }),
         makeToolCall({
           id: 'record-success-unknown-mode',
           toolCallId: 'tool-success-unknown-mode',
           success: true,
           timestamp: 500,
-          index: 4,
+          index: 4
         }),
         makeToolCall({
           id: 'record-non-computer',
@@ -215,9 +281,9 @@ describe('TelemetryStorage computer surface fields', () => {
           success: false,
           timestamp: 600,
           computerSurfaceFailureKind: 'permission_denied',
-          computerSurfaceMode: 'background_ax',
-        }),
-      ],
+          computerSurfaceMode: 'background_ax'
+        })
+      ]
     });
 
     expect(storage.getComputerSurfaceReliabilitySummary('session-1')).toEqual({
@@ -230,12 +296,12 @@ describe('TelemetryStorage computer surface fields', () => {
       backgroundCgEventActions: 1,
       byFailureKind: [
         { failureKind: 'locator_missing', count: 2 },
-        { failureKind: 'target_window_not_found', count: 1 },
+        { failureKind: 'target_window_not_found', count: 1 }
       ],
       byMode: [
         { mode: 'background_ax', count: 2, failed: 2 },
         { mode: 'background_cgevent', count: 1, failed: 1 },
-        { mode: 'foreground_fallback', count: 1, failed: 0 },
+        { mode: 'foreground_fallback', count: 1, failed: 0 }
       ],
       recentFailures: [
         {
@@ -246,7 +312,7 @@ describe('TelemetryStorage computer surface fields', () => {
           mode: 'background_cgevent',
           targetApp: 'Notes',
           action: 'click',
-          error: 'Window missing',
+          error: 'Window missing'
         },
         {
           toolCallId: 'tool-fail-ax-2',
@@ -256,7 +322,7 @@ describe('TelemetryStorage computer surface fields', () => {
           mode: 'background_ax',
           targetApp: 'Safari',
           action: 'type',
-          error: 'Still no locator',
+          error: 'Still no locator'
         },
         {
           toolCallId: 'tool-fail-ax-1',
@@ -266,9 +332,9 @@ describe('TelemetryStorage computer surface fields', () => {
           mode: 'background_ax',
           targetApp: 'Safari',
           action: 'click',
-          error: 'No locator',
-        },
-      ],
+          error: 'No locator'
+        }
+      ]
     });
   });
 
@@ -285,7 +351,7 @@ describe('TelemetryStorage computer surface fields', () => {
       backgroundCgEventActions: 0,
       byFailureKind: [],
       byMode: [],
-      recentFailures: [],
+      recentFailures: []
     });
   });
 });

@@ -2,12 +2,7 @@
 // Evaluation Types - 会话评测类型定义
 // ============================================================================
 
-import type {
-  ReviewQueueItem,
-  ReviewQueueSource,
-  UnifiedTraceIdentity,
-  UnifiedTraceSource,
-} from './reviewQueue';
+import type { ReviewQueueItem, ReviewQueueSource, UnifiedTraceIdentity, UnifiedTraceSource } from './reviewQueue';
 
 /**
  * 评测维度 (v3: 7 计分 + 3 信息)
@@ -40,55 +35,43 @@ export enum EvaluationDimension {
   // v2 兼容 (旧数据)
   TASK_COMPLETION = 'task_completion',
   DIALOG_QUALITY = 'dialog_quality',
-  PERFORMANCE = 'performance',
+  PERFORMANCE = 'performance'
 }
 
 /**
  * v3 计分维度列表
  */
-export const V3_SCORING_DIMENSIONS: EvaluationDimension[] = [
-  EvaluationDimension.OUTCOME_VERIFICATION,
-  EvaluationDimension.CODE_QUALITY,
-  EvaluationDimension.SECURITY,
-  EvaluationDimension.TOOL_EFFICIENCY,
-  EvaluationDimension.SELF_REPAIR,
-  EvaluationDimension.VERIFICATION_QUALITY,
-  EvaluationDimension.FORBIDDEN_PATTERNS,
-];
+export const V3_SCORING_DIMENSIONS: EvaluationDimension[] = [EvaluationDimension.OUTCOME_VERIFICATION, EvaluationDimension.CODE_QUALITY, EvaluationDimension.SECURITY, EvaluationDimension.TOOL_EFFICIENCY, EvaluationDimension.SELF_REPAIR, EvaluationDimension.VERIFICATION_QUALITY, EvaluationDimension.FORBIDDEN_PATTERNS];
 
 /**
  * v3 信息维度列表
  */
-export const V3_INFO_DIMENSIONS: EvaluationDimension[] = [
-  EvaluationDimension.EFFICIENCY_METRICS,
-  EvaluationDimension.ERROR_TAXONOMY,
-  EvaluationDimension.PLAN_QUALITY,
-];
+export const V3_INFO_DIMENSIONS: EvaluationDimension[] = [EvaluationDimension.EFFICIENCY_METRICS, EvaluationDimension.ERROR_TAXONOMY, EvaluationDimension.PLAN_QUALITY];
 
 /**
  * 维度权重配置 (v3)
  */
 export const DIMENSION_WEIGHTS: Partial<Record<EvaluationDimension, number>> = {
   [EvaluationDimension.OUTCOME_VERIFICATION]: 0.35,
-  [EvaluationDimension.CODE_QUALITY]: 0.20,
+  [EvaluationDimension.CODE_QUALITY]: 0.2,
   [EvaluationDimension.SECURITY]: 0.15,
   [EvaluationDimension.TOOL_EFFICIENCY]: 0.08,
   [EvaluationDimension.SELF_REPAIR]: 0.05,
   [EvaluationDimension.VERIFICATION_QUALITY]: 0.04,
   [EvaluationDimension.FORBIDDEN_PATTERNS]: 0.03,
   // QA 权重
-  [EvaluationDimension.ANSWER_CORRECTNESS]: 0.60,
+  [EvaluationDimension.ANSWER_CORRECTNESS]: 0.6,
   [EvaluationDimension.REASONING_QUALITY]: 0.25,
   [EvaluationDimension.COMMUNICATION_QUALITY]: 0.15,
   // Research 权重
   [EvaluationDimension.INFORMATION_QUALITY]: 0.35,
   // Creation 权重
   [EvaluationDimension.OUTPUT_QUALITY]: 0.35,
-  [EvaluationDimension.REQUIREMENT_COMPLIANCE]: 0.20,
+  [EvaluationDimension.REQUIREMENT_COMPLIANCE]: 0.2,
   // v2 兼容权重
-  [EvaluationDimension.TASK_COMPLETION]: 0.30,
+  [EvaluationDimension.TASK_COMPLETION]: 0.3,
   [EvaluationDimension.DIALOG_QUALITY]: 0.15,
-  [EvaluationDimension.PERFORMANCE]: 0.10,
+  [EvaluationDimension.PERFORMANCE]: 0.1
 };
 
 /**
@@ -114,7 +97,7 @@ export const DIMENSION_NAMES: Record<EvaluationDimension, string> = {
   // v2 兼容
   [EvaluationDimension.TASK_COMPLETION]: '任务完成度',
   [EvaluationDimension.DIALOG_QUALITY]: '对话质量',
-  [EvaluationDimension.PERFORMANCE]: '性能指标',
+  [EvaluationDimension.PERFORMANCE]: '性能指标'
 };
 
 /**
@@ -140,7 +123,7 @@ export const DIMENSION_ICONS: Record<EvaluationDimension, string> = {
   // v2 兼容
   [EvaluationDimension.TASK_COMPLETION]: '✅',
   [EvaluationDimension.DIALOG_QUALITY]: '💬',
-  [EvaluationDimension.PERFORMANCE]: '⚡',
+  [EvaluationDimension.PERFORMANCE]: '⚡'
 };
 
 /**
@@ -179,7 +162,7 @@ export const GRADE_COLORS: Record<EvaluationGrade, string> = {
   B: 'text-blue-400',
   C: 'text-yellow-400',
   D: 'text-orange-400',
-  F: 'text-red-400',
+  F: 'text-red-400'
 };
 
 export const GRADE_BG_COLORS: Record<EvaluationGrade, string> = {
@@ -188,7 +171,7 @@ export const GRADE_BG_COLORS: Record<EvaluationGrade, string> = {
   B: 'bg-blue-500/20',
   C: 'bg-yellow-500/20',
   D: 'bg-orange-500/20',
-  F: 'bg-red-500/20',
+  F: 'bg-red-500/20'
 };
 
 /**
@@ -221,7 +204,12 @@ export interface TranscriptMetrics {
     attempts: number;
     successes: number;
     rate: number;
-    chains: Array<{ toolName: string; failIndex: number; retryIndex: number; succeeded: boolean }>;
+    chains: Array<{
+      toolName: string;
+      failIndex: number;
+      retryIndex: number;
+      succeeded: boolean;
+    }>;
   };
   verificationQuality: {
     editCount: number;
@@ -241,6 +229,7 @@ export interface TranscriptMetrics {
 export interface EvaluationResult {
   id: string;
   sessionId: string;
+  userId?: string | null;
   replayKey?: string;
   timestamp: number;
   overallScore: number; // 加权平均 0-100
@@ -254,7 +243,7 @@ export interface EvaluationResult {
   baselineComparison?: BaselineComparison;
   // 版本化追溯 (Phase 2)
   snapshotId?: string;
-  evalVersion?: string;       // 'v1' | 'legacy'
+  evalVersion?: string; // 'v1' | 'legacy'
   rubricVersion?: string;
   judgeModel?: string;
   judgePromptHash?: string;
@@ -284,14 +273,7 @@ export interface EvaluationResult {
     failureAttribution?: {
       rootCause?: {
         stepIndex: number;
-        category:
-          | 'tool_error'
-          | 'bad_decision'
-          | 'missing_context'
-          | 'loop'
-          | 'hallucination'
-          | 'env_failure'
-          | 'unknown';
+        category: 'tool_error' | 'bad_decision' | 'missing_context' | 'loop' | 'hallucination' | 'env_failure' | 'unknown';
         summary: string;
         evidence: number[];
         confidence: number;
@@ -306,6 +288,13 @@ export interface EvaluationResult {
       durationMs: number;
     };
   };
+}
+
+export interface EvaluationHistoryListOptions {
+  sessionId?: string;
+  limit?: number;
+  userId?: string | null;
+  unassignedOnly?: boolean;
 }
 
 // ============================================================================
@@ -331,12 +320,7 @@ export type EvalRunAggregation =
   | 'legacy_e2e_retry'
   | 'unknown';
 
-export type EvalCaseStatus =
-  | 'passed'
-  | 'failed'
-  | 'partial'
-  | 'skipped'
-  | 'error';
+export type EvalCaseStatus = 'passed' | 'failed' | 'partial' | 'skipped' | 'error';
 
 export interface CanonicalEvalTrial {
   trialIndex: number;
@@ -400,16 +384,7 @@ export interface CanonicalEvalRun {
 // Structured Replay - shared contract for telemetry/replay consumers
 // ============================================================================
 
-export type ReplayToolCategory =
-  | 'Read'
-  | 'Edit'
-  | 'Write'
-  | 'Bash'
-  | 'Search'
-  | 'Web'
-  | 'Agent'
-  | 'Skill'
-  | 'Other';
+export type ReplayToolCategory = 'Read' | 'Edit' | 'Write' | 'Bash' | 'Search' | 'Web' | 'Agent' | 'Skill' | 'Other';
 
 export type ReplayDataSource = 'telemetry' | 'transcript_fallback';
 export type ReplayMetricSource = 'telemetry' | 'transcript' | 'partial' | 'unavailable';
@@ -423,21 +398,7 @@ export type ReplayMetricAvailability = {
   actualArgs: ReplayMetricSource;
 };
 
-export type RealAgentRunGateFailure =
-  | 'missing_session_id'
-  | 'missing_replay_key'
-  | 'missing_telemetry_completeness'
-  | 'missing_telemetry_data_source'
-  | 'transcript_fallback_replay'
-  | 'missing_real_agent_trace'
-  | 'missing_turns'
-  | 'missing_model_decisions'
-  | 'missing_tool_calls'
-  | 'missing_event_trace'
-  | 'missing_tool_schemas'
-  | 'missing_replay_explanation'
-  | 'missing_tool_args'
-  | 'missing_tool_result';
+export type RealAgentRunGateFailure = 'missing_session_id' | 'missing_replay_key' | 'missing_telemetry_completeness' | 'missing_telemetry_data_source' | 'transcript_fallback_replay' | 'missing_real_agent_trace' | 'missing_turns' | 'missing_model_decisions' | 'missing_tool_calls' | 'missing_event_trace' | 'missing_tool_schemas' | 'missing_replay_explanation' | 'missing_tool_args' | 'missing_tool_result';
 
 export interface ReplayCompletenessGateInput {
   sessionId?: string | null;
@@ -454,9 +415,7 @@ export interface ReplayCompletenessGateInput {
   hasToolResult?: boolean | null;
 }
 
-export function getReplayCompletenessReasons(
-  input: ReplayCompletenessGateInput
-): RealAgentRunGateFailure[] {
+export function getReplayCompletenessReasons(input: ReplayCompletenessGateInput): RealAgentRunGateFailure[] {
   const failures: RealAgentRunGateFailure[] = [];
 
   if (!input.sessionId) failures.push('missing_session_id');
@@ -465,9 +424,7 @@ export function getReplayCompletenessReasons(
   if (!input.dataSource) {
     failures.push('missing_telemetry_data_source');
   } else if (input.dataSource !== 'telemetry') {
-    failures.push(input.dataSource === 'transcript_fallback'
-      ? 'transcript_fallback_replay'
-      : 'missing_telemetry_data_source');
+    failures.push(input.dataSource === 'transcript_fallback' ? 'transcript_fallback_replay' : 'missing_telemetry_data_source');
   }
 
   if ((input.turnCount ?? 0) <= 0) failures.push('missing_turns');
@@ -486,13 +443,13 @@ export function getReplayCompletenessReasons(
 
 const REPLAY_DATA_SOURCE_LABELS: Record<ReplayDataSource, string> = {
   telemetry: 'Telemetry',
-  transcript_fallback: 'Transcript fallback',
+  transcript_fallback: 'Transcript fallback'
 };
 
 const REPLAY_ARGS_SOURCE_LABELS: Record<ReplayToolCall['argsSource'] & string, string> = {
   telemetry_actual: 'actual telemetry',
   telemetry_sanitized: 'sanitized telemetry',
-  transcript: 'transcript',
+  transcript: 'transcript'
 };
 
 export function getReplayDataSourceLabel(source: ReplayDataSource): string {
@@ -679,7 +636,7 @@ function buildFallbackSessionTraceIdentity(sessionId: string): UnifiedTraceIdent
     traceSource: 'session_replay',
     source: 'session_replay',
     sessionId,
-    replayKey: sessionId,
+    replayKey: sessionId
   };
 }
 
@@ -703,9 +660,9 @@ export function buildEvalCenterReadFacade(input: BuildEvalCenterReadFacadeInput)
       items: reviewQueueItems,
       queuedItem,
       isQueued: Boolean(queuedItem),
-      enqueueSource,
+      enqueueSource
     },
-    structuredReplay,
+    structuredReplay
   };
 }
 
@@ -800,9 +757,4 @@ export function scoreToGrade(score: number): EvaluationGrade {
 // ============================================================================
 // Re-export from evaluationFramework.ts for backward compatibility
 // ============================================================================
-export {
-  type FailureStage,
-  type FailureFunnelResult,
-  type VerifierType,
-  type VerifierResult,
-} from './evaluationFramework';
+export { type FailureStage, type FailureFunnelResult, type VerifierType, type VerifierResult } from './evaluationFramework';

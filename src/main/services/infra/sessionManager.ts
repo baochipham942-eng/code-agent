@@ -9,17 +9,9 @@ import { getToolCache } from './toolCache';
 import { getAuthService } from '../auth/authService';
 import { getSupabase, isSupabaseInitialized } from './supabaseService';
 import { IPC_CHANNELS } from '../../../shared/ipc';
-import type {
-  Session,
-  Message,
-  ModelConfig,
-  TodoItem,
-} from '../../../shared/contract';
+import type { Session, Message, ModelConfig, TodoItem } from '../../../shared/contract';
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
-import {
-  deriveSessionWorkbenchSnapshot,
-  toSessionWorkbenchProvenance,
-} from '../../../shared/contract/sessionWorkspace';
+import { deriveSessionWorkbenchSnapshot, toSessionWorkbenchProvenance } from '../../../shared/contract/sessionWorkspace';
 import { createLogger } from './logger';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
@@ -47,6 +39,7 @@ export interface SessionCreateOptions {
   engine?: Session['engine'];
   readOnly?: boolean;
   retryOfSessionId?: string;
+  userId?: string | null;
 }
 
 export interface SessionListOptions {
@@ -92,7 +85,7 @@ export class SessionManager implements Disposable {
   private buildWorkbenchSnapshot(session: Pick<Session, 'workingDirectory' | 'workbenchProvenance'>, messages: Message[]) {
     return deriveSessionWorkbenchSnapshot(messages, {
       workingDirectory: session.workingDirectory ?? null,
-      provenance: session.workbenchProvenance,
+      provenance: session.workbenchProvenance
     });
   }
 
@@ -106,7 +99,9 @@ export class SessionManager implements Disposable {
     if (!rawDb) return 0;
 
     try {
-      const telemetryRows = rawDb.prepare(`
+      const telemetryRows = rawDb
+        .prepare(
+          `
         SELECT id, user_prompt, start_time
         FROM telemetry_turns
         WHERE session_id = ?
@@ -114,16 +109,22 @@ export class SessionManager implements Disposable {
           AND user_prompt IS NOT NULL
           AND TRIM(user_prompt) != ''
         ORDER BY start_time ASC, turn_number ASC, id ASC
-      `).all(sessionId) as TelemetryUserPromptRow[];
+      `
+        )
+        .all(sessionId) as TelemetryUserPromptRow[];
 
       if (telemetryRows.length === 0) return 0;
 
-      const existingRows = rawDb.prepare(`
+      const existingRows = rawDb
+        .prepare(
+          `
         SELECT content
         FROM messages
         WHERE session_id = ?
           AND role = 'user'
-      `).all(sessionId) as ExistingUserMessageRow[];
+      `
+        )
+        .all(sessionId) as ExistingUserMessageRow[];
 
       const remainingExistingCounts = new Map<string, number>();
       for (const row of existingRows) {
@@ -142,24 +143,31 @@ export class SessionManager implements Disposable {
         }
 
         const timestamp = Number(row.start_time);
-        db.addMessage(sessionId, {
-          id: `telemetry-user-${row.id}`,
-          role: 'user',
-          content,
-          timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
-        }, { skipTimestampUpdate: true });
+        db.addMessage(
+          sessionId,
+          {
+            id: `telemetry-user-${row.id}`,
+            role: 'user',
+            content,
+            timestamp: Number.isFinite(timestamp) ? timestamp : Date.now()
+          },
+          { skipTimestampUpdate: true }
+        );
         inserted++;
       }
 
       if (inserted > 0) {
-        logger.info('Backfilled missing user prompts from telemetry', { sessionId, inserted });
+        logger.info('Backfilled missing user prompts from telemetry', {
+          sessionId,
+          inserted
+        });
       }
 
       return inserted;
     } catch (error) {
       logger.warn('Failed to backfill user prompts from telemetry', {
         sessionId,
-        error: error instanceof Error ? error.message : String(error),
+        error: error instanceof Error ? error.message : String(error)
       });
       return 0;
     }
@@ -184,17 +192,14 @@ export class SessionManager implements Disposable {
     const db = getDatabase();
     db.updateSession(sessionId, {
       workbenchProvenance: provenance,
-      updatedAt: message.timestamp || Date.now(),
+      updatedAt: message.timestamp || Date.now()
     });
     return provenance;
   }
 
   private extractWorkbenchProvenance(messages: Message[]): Session['workbenchProvenance'] | undefined {
     for (let i = messages.length - 1; i >= 0; i--) {
-      const provenance = toSessionWorkbenchProvenance(
-        messages[i].metadata?.workbench,
-        messages[i].timestamp,
-      );
+      const provenance = toSessionWorkbenchProvenance(messages[i].metadata?.workbench, messages[i].timestamp);
       if (provenance) return provenance;
     }
     return undefined;
@@ -216,16 +221,20 @@ export class SessionManager implements Disposable {
     if (options.workingDirectory) {
       try {
         const { execSync } = await import('child_process');
-        gitBranch = execSync('git rev-parse --abbrev-ref HEAD', {
-          cwd: options.workingDirectory,
-          timeout: 3000,
-          encoding: 'utf-8',
-        }).trim() || undefined;
-      } catch { /* not a git repo or git not available */ }
+        gitBranch =
+          execSync('git rev-parse --abbrev-ref HEAD', {
+            cwd: options.workingDirectory,
+            timeout: 3000,
+            encoding: 'utf-8'
+          }).trim() || undefined;
+      } catch {
+        /* not a git repo or git not available */
+      }
     }
 
     const session: Session = {
       id: `session_${now}_${crypto.randomUUID().split('-')[0]}`,
+      userId: options.userId ?? getAuthService().getCurrentUser()?.id ?? null,
       title: options.title || this.generateSessionTitle(),
       modelConfig: sanitizeModelConfigForSession(options.modelConfig),
       workingDirectory: options.workingDirectory,
@@ -238,7 +247,7 @@ export class SessionManager implements Disposable {
       retryOfSessionId: options.retryOfSessionId,
       createdAt: now,
       updatedAt: now,
-      gitBranch,
+      gitBranch
     };
 
     db.createSession(session);
@@ -250,7 +259,7 @@ export class SessionManager implements Disposable {
       todos: [],
       messageCount: 0,
       turnCount: 0,
-      workbenchSnapshot: this.buildWorkbenchSnapshot(session, []),
+      workbenchSnapshot: this.buildWorkbenchSnapshot(session, [])
     } as SessionWithMessages);
 
     // 记录审计日志
@@ -300,7 +309,7 @@ export class SessionManager implements Disposable {
         for (const msg of cloudMessages) {
           db.addMessage(sessionId, msg, {
             skipTimestampUpdate: true,
-            syncOrigin: 'remote',
+            syncOrigin: 'remote'
           });
         }
         // 云端拉取后从本地按 active 口径读取，避免 rewound 尝试重新进入上下文
@@ -314,7 +323,7 @@ export class SessionManager implements Disposable {
       ...storedSession,
       messages,
       todos,
-      workbenchSnapshot: this.buildWorkbenchSnapshot(storedSession, messages),
+      workbenchSnapshot: this.buildWorkbenchSnapshot(storedSession, messages)
     };
 
     // 缓存（LRU: 超过上限时淘汰最早的条目）
@@ -337,11 +346,7 @@ export class SessionManager implements Disposable {
 
     try {
       const supabase = getSupabase();
-      const { data: cloudMessages, error } = await supabase.from('messages')
-        .select('*')
-        .eq('session_id', sessionId)
-        .eq('is_deleted', false)
-        .order('timestamp', { ascending: true });
+      const { data: cloudMessages, error } = await supabase.from('messages').select('*').eq('session_id', sessionId).eq('is_deleted', false).order('timestamp', { ascending: true });
 
       if (error) {
         logger.error('Pull messages error', { error });
@@ -365,17 +370,19 @@ export class SessionManager implements Disposable {
 
       // 转换为本地格式
       // role 从云端来是 string，需要断言为 MessageRole
-      return (cloudMessages as CloudMessage[]).map((m): Message => ({
-        id: m.id,
-        role: m.role as Message['role'],
-        content: m.content,
-        timestamp: m.timestamp,
-        visibility: (m.visibility as Message['visibility']) || 'active',
-        hiddenByRewindId: m.hidden_by_rewind_id || undefined,
-        hiddenAt: m.hidden_at || undefined,
-        toolCalls: m.tool_calls ? JSON.parse(m.tool_calls) : undefined,
-        toolResults: m.tool_results ? JSON.parse(m.tool_results) : undefined,
-      }));
+      return (cloudMessages as CloudMessage[]).map(
+        (m): Message => ({
+          id: m.id,
+          role: m.role as Message['role'],
+          content: m.content,
+          timestamp: m.timestamp,
+          visibility: (m.visibility as Message['visibility']) || 'active',
+          hiddenByRewindId: m.hidden_by_rewind_id || undefined,
+          hiddenAt: m.hidden_at || undefined,
+          toolCalls: m.tool_calls ? JSON.parse(m.tool_calls) : undefined,
+          toolResults: m.tool_results ? JSON.parse(m.tool_results) : undefined
+        })
+      );
     } catch (err) {
       logger.error('pullMessagesFromCloud error', err as Error);
       return [];
@@ -395,11 +402,7 @@ export class SessionManager implements Disposable {
     // 搜索过滤
     if (options.searchQuery) {
       const query = options.searchQuery.toLowerCase();
-      sessions = sessions.filter(
-        (s) =>
-          s.title.toLowerCase().includes(query) ||
-          s.workingDirectory?.toLowerCase().includes(query)
-      );
+      sessions = sessions.filter((s) => s.title.toLowerCase().includes(query) || s.workingDirectory?.toLowerCase().includes(query));
     }
 
     // 后台同步云端会话列表（不阻塞返回）
@@ -409,16 +412,11 @@ export class SessionManager implements Disposable {
 
     return sessions.map((session) => {
       const cached = this.sessionCache.get(session.id);
-      const recentMessages = cached?.messages.length
-        ? cached.messages.slice(-12)
-        : db.getRecentMessages(session.id, 12);
+      const recentMessages = cached?.messages.length ? cached.messages.slice(-12) : db.getRecentMessages(session.id, 12);
 
       return {
         ...session,
-        workbenchSnapshot: this.buildWorkbenchSnapshot(
-          cached || session,
-          recentMessages,
-        ),
+        workbenchSnapshot: this.buildWorkbenchSnapshot(cached || session, recentMessages)
       };
     });
   }
@@ -441,11 +439,7 @@ export class SessionManager implements Disposable {
 
     try {
       const supabase = getSupabase();
-      const { data: cloudSessions, error } = await supabase.from('sessions')
-        .select('id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at, is_deleted')
-        .eq('user_id', user.id)
-        .order('updated_at', { ascending: false })
-        .limit(100);
+      const { data: cloudSessions, error } = await supabase.from('sessions').select('id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at, is_deleted').eq('user_id', user.id).order('updated_at', { ascending: false }).limit(100);
 
       if (error) {
         logger.error('Cloud session list error', { error });
@@ -472,13 +466,15 @@ export class SessionManager implements Disposable {
 
       // 更新本地缓存（只更新元数据，不拉取消息）
       for (const cloudSession of cloudSessions as CloudSession[]) {
-        const localSession = db.getSession(cloudSession.id, { includeDeleted: true });
+        const localSession = db.getSession(cloudSession.id, {
+          includeDeleted: true
+        });
 
         if (cloudSession.is_deleted) {
           if (localSession && cloudSession.updated_at > localSession.updatedAt) {
             db.deleteSession(cloudSession.id, {
               deletedAt: cloudSession.updated_at,
-              syncOrigin: 'remote',
+              syncOrigin: 'remote'
             });
             this.sessionCache.delete(cloudSession.id);
           }
@@ -488,33 +484,43 @@ export class SessionManager implements Disposable {
         if (!localSession) {
           // 本地不存在，创建会话元数据（消息稍后按需拉取）
           // model_provider 从云端来是 string，需要断言为 ModelProvider
-          db.createSessionWithId(cloudSession.id, {
-            title: cloudSession.title,
-            modelConfig: {
-              provider: cloudSession.model_provider as ModelConfig['provider'],
-              model: cloudSession.model_name,
+          db.createSessionWithId(
+            cloudSession.id,
+            {
+              title: cloudSession.title,
+              userId: user.id,
+              modelConfig: {
+                provider: cloudSession.model_provider as ModelConfig['provider'],
+                model: cloudSession.model_name
+              },
+              workingDirectory: cloudSession.working_directory,
+              createdAt: cloudSession.created_at,
+              updatedAt: cloudSession.updated_at
             },
-            workingDirectory: cloudSession.working_directory,
-            createdAt: cloudSession.created_at,
-            updatedAt: cloudSession.updated_at,
-          }, {
-            syncOrigin: 'remote',
-          });
+            {
+              syncOrigin: 'remote'
+            }
+          );
           didMutate = true;
         } else if (cloudSession.updated_at > localSession.updatedAt) {
           // 云端更新，更新本地元数据（保留云端原始时间戳）
-          db.updateSession(cloudSession.id, {
-            title: cloudSession.title,
-            modelConfig: {
-              provider: cloudSession.model_provider as ModelConfig['provider'],
-              model: cloudSession.model_name,
+          db.updateSession(
+            cloudSession.id,
+            {
+              title: cloudSession.title,
+              userId: localSession.userId ?? user.id,
+              modelConfig: {
+                provider: cloudSession.model_provider as ModelConfig['provider'],
+                model: cloudSession.model_name
+              },
+              workingDirectory: cloudSession.working_directory,
+              updatedAt: cloudSession.updated_at
             },
-            workingDirectory: cloudSession.working_directory,
-            updatedAt: cloudSession.updated_at,
-          }, {
-            syncOrigin: 'remote',
-            isDeleted: false,
-          });
+            {
+              syncOrigin: 'remote',
+              isDeleted: false
+            }
+          );
           // 清除缓存，避免返回过期数据
           this.sessionCache.delete(cloudSession.id);
           didMutate = true;
@@ -545,11 +551,7 @@ export class SessionManager implements Disposable {
   /**
    * 更新会话
    */
-  async updateSession(
-    sessionId: string,
-    updates: Partial<Session>,
-    options?: { allowEngineUpdate?: boolean },
-  ): Promise<void> {
+  async updateSession(sessionId: string, updates: Partial<Session>, options?: { allowEngineUpdate?: boolean }): Promise<void> {
     if (updates.engine !== undefined && !options?.allowEngineUpdate) {
       throw new Error('Agent Engine metadata must be changed through the Agent Engine selector.');
     }
@@ -560,7 +562,9 @@ export class SessionManager implements Disposable {
     // 更新缓存
     if (this.sessionCache.has(sessionId)) {
       const cached = this.sessionCache.get(sessionId)!;
-      Object.assign(cached, updates, { updatedAt: updates.updatedAt ?? Date.now() });
+      Object.assign(cached, updates, {
+        updatedAt: updates.updatedAt ?? Date.now()
+      });
     }
 
     // 通知前端
@@ -576,7 +580,10 @@ export class SessionManager implements Disposable {
   private notifySessionUpdated(sessionId: string, updates: Partial<Session>): void {
     const windows = BrowserWindow.getAllWindows();
     for (const win of windows) {
-      win.webContents.send(IPC_CHANNELS.SESSION_UPDATED, { sessionId, updates });
+      win.webContents.send(IPC_CHANNELS.SESSION_UPDATED, {
+        sessionId,
+        updates
+      });
     }
   }
 
@@ -702,7 +709,9 @@ export class SessionManager implements Disposable {
     // 自动更新会话标题（如果是第一条用户消息）
     // fire-and-forget：标题生成调用 quick model，不阻塞主推理链路
     if (message.role === 'user') {
-      void this.maybeUpdateTitle(message.content).catch(() => { /* 静默降级 */ });
+      void this.maybeUpdateTitle(message.content).catch(() => {
+        /* 静默降级 */
+      });
     }
   }
 
@@ -722,7 +731,7 @@ export class SessionManager implements Disposable {
 
       logger.debug('Message already exists; treating addMessageToSession as idempotent', {
         sessionId,
-        messageId: message.id,
+        messageId: message.id
       });
       db.updateMessage(message.id, message);
     }
@@ -734,7 +743,10 @@ export class SessionManager implements Disposable {
       const cached = this.sessionCache.get(sessionId)!;
       const existingIndex = cached.messages.findIndex((cachedMessage) => cachedMessage.id === message.id);
       if (existingIndex >= 0) {
-        cached.messages[existingIndex] = { ...cached.messages[existingIndex], ...message };
+        cached.messages[existingIndex] = {
+          ...cached.messages[existingIndex],
+          ...message
+        };
       } else {
         cached.messages.push(message);
         if (inserted) {
@@ -750,7 +762,9 @@ export class SessionManager implements Disposable {
 
     // 第一条用户消息时自动生成会话标题（webServer 多会话路径走这里）
     if (inserted && message.role === 'user' && typeof message.content === 'string' && message.content.trim()) {
-      void this.maybeUpdateTitleForSession(sessionId, message.content).catch(() => { /* 静默降级 */ });
+      void this.maybeUpdateTitleForSession(sessionId, message.content).catch(() => {
+        /* 静默降级 */
+      });
     }
   }
 
@@ -765,7 +779,10 @@ export class SessionManager implements Disposable {
     for (const [cachedSessionId, cached] of this.sessionCache.entries()) {
       const msgIndex = cached.messages.findIndex((m) => m.id === messageId);
       if (msgIndex !== -1) {
-        cached.messages[msgIndex] = { ...cached.messages[msgIndex], ...updates };
+        cached.messages[msgIndex] = {
+          ...cached.messages[msgIndex],
+          ...updates
+        };
         const provenance = this.maybePersistWorkbenchProvenance(cachedSessionId, cached.messages[msgIndex]);
         if (provenance) {
           cached.workbenchProvenance = provenance;
@@ -797,7 +814,10 @@ export class SessionManager implements Disposable {
     }
   }
 
-  getSessionRuntimeState(sessionId: string): { compressionStateJson: string | null; persistentSystemContext: string[] } | null {
+  getSessionRuntimeState(sessionId: string): {
+    compressionStateJson: string | null;
+    persistentSystemContext: string[];
+  } | null {
     const db = getDatabase();
     return db.getSessionRuntimeState(sessionId);
   }
@@ -818,15 +838,11 @@ export class SessionManager implements Disposable {
     const messages = db.getMessagesBefore(sessionId, beforeTimestamp, limit);
     return {
       messages,
-      hasMore: messages.length === limit,
+      hasMore: messages.length === limit
     };
   }
 
-  async applyPromptRewind(
-    sessionId: string,
-    userMessageId: string,
-    record?: Parameters<ReturnType<typeof getDatabase>['applyPromptRewind']>[2],
-  ): Promise<ReturnType<ReturnType<typeof getDatabase>['applyPromptRewind']>> {
+  async applyPromptRewind(sessionId: string, userMessageId: string, record?: Parameters<ReturnType<typeof getDatabase>['applyPromptRewind']>[2]): Promise<ReturnType<ReturnType<typeof getDatabase>['applyPromptRewind']>> {
     const db = getDatabase();
     const result = db.applyPromptRewind(sessionId, userMessageId, record);
 
@@ -842,14 +858,18 @@ export class SessionManager implements Disposable {
     }
 
     this.notifySessionUpdated(sessionId, {
-      updatedAt: Date.now(),
+      updatedAt: Date.now()
     });
-    db.logAuditEvent('prompt_rewound', {
-      sessionId,
-      rewindId: result.rewindId,
-      anchorMessageId: userMessageId,
-      hiddenMessageCount: result.hiddenMessageCount,
-    }, sessionId);
+    db.logAuditEvent(
+      'prompt_rewound',
+      {
+        sessionId,
+        rewindId: result.rewindId,
+        anchorMessageId: userMessageId,
+        hiddenMessageCount: result.hiddenMessageCount
+      },
+      sessionId
+    );
 
     return result;
   }
@@ -921,7 +941,9 @@ export class SessionManager implements Disposable {
     const targetSessionId = sessionId || this.currentSessionId;
     if (!targetSessionId) return;
 
-    logger.info('Ending session, generating summary', { sessionId: targetSessionId });
+    logger.info('Ending session, generating summary', {
+      sessionId: targetSessionId
+    });
 
     // Legacy summary generation and preference learning removed (memory module deleted)
 
@@ -969,11 +991,7 @@ export class SessionManager implements Disposable {
     const session = await this.getSession(sessionId);
     if (!session) return;
 
-    const isDefaultTitle =
-      session.title === 'New Chat' ||
-      session.title === 'New Session' ||
-      session.title.startsWith('Session ') ||
-      session.title === '新对话';
+    const isDefaultTitle = session.title === 'New Chat' || session.title === 'New Session' || session.title.startsWith('Session ') || session.title === '新对话';
 
     if (!(isDefaultTitle && session.messageCount <= 1)) return;
 
@@ -1000,13 +1018,12 @@ export class SessionManager implements Disposable {
       // 截取前 500 字符避免 prompt 太长
       const truncated = message.length > 500 ? message.slice(0, 500) + '...' : message;
 
-      const result = await quickTask(
-        `为以下用户消息生成一个简短的会话标题（10-25字，中文优先，不加引号不加标点）：\n\n${truncated}`
-      );
+      const result = await quickTask(`为以下用户消息生成一个简短的会话标题（10-25字，中文优先，不加引号不加标点）：\n\n${truncated}`);
 
       if (result.success && result.content) {
         // 清理：去引号、去标点、限长
-        let title = result.content.trim()
+        let title = result.content
+          .trim()
           .replace(/^["'「『]|["'」』]$/g, '')
           .replace(/[。！？.!?]$/g, '');
         if (title.length > 50) title = title.slice(0, 50) + '...';
@@ -1044,6 +1061,7 @@ export class SessionManager implements Disposable {
 
     const session: Session = {
       id: newId,
+      userId: getAuthService().getCurrentUser()?.id ?? data.userId ?? null,
       title: data.title,
       modelConfig: sanitizeModelConfigForSession(data.modelConfig),
       workingDirectory: data.workingDirectory,
@@ -1054,7 +1072,7 @@ export class SessionManager implements Disposable {
       readOnly: data.readOnly,
       retryOfSessionId: data.retryOfSessionId,
       createdAt: now,
-      updatedAt: now,
+      updatedAt: now
     };
 
     db.createSession(session);
@@ -1063,7 +1081,7 @@ export class SessionManager implements Disposable {
     for (const message of data.messages) {
       const newMessage: Message = {
         ...message,
-        id: `msg_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
+        id: `msg_${Date.now()}_${crypto.randomUUID().split('-')[0]}`
       };
       db.addMessage(newId, newMessage);
     }
@@ -1089,7 +1107,7 @@ export class SessionManager implements Disposable {
     for (const message of sourceMessages) {
       const newMessage: Message = {
         ...message,
-        id: `msg_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
+        id: `msg_${Date.now()}_${crypto.randomUUID().split('-')[0]}`
       };
       db.addMessage(targetId, newMessage);
     }
@@ -1098,11 +1116,7 @@ export class SessionManager implements Disposable {
     this.sessionCache.delete(targetId);
 
     // 记录审计日志
-    db.logAuditEvent(
-      'sessions_merged',
-      { targetId, sourceId, messagesMerged: sourceMessages.length },
-      targetId
-    );
+    db.logAuditEvent('sessions_merged', { targetId, sourceId, messagesMerged: sourceMessages.length }, targetId);
   }
 }
 

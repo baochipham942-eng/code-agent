@@ -6,32 +6,17 @@ import { createLogger } from '../services/infra/logger';
 import { getServiceRegistry } from '../services/serviceRegistry';
 import { generateMessageId } from '../../shared/utils/id';
 import { getTelemetryStorage } from './telemetryStorage';
+import { getAuthService } from '../services/auth/authService';
 import { getSystemPromptCache } from './systemPromptCache';
 import { classifyIntent, evaluateOutcome } from './intentClassifier';
-import type {
-  TelemetrySession,
-  TelemetryTurn,
-  TelemetryModelCall,
-  TelemetryToolCall,
-  TelemetryTimelineEvent,
-  TelemetryAdapter,
-  QualitySignals,
-  TelemetryPushEvent,
-  ErrorCategory,
-} from '../../shared/contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetryAdapter, QualitySignals, TelemetryPushEvent, ErrorCategory } from '../../shared/contract/telemetry';
 import type { AgentEvent } from '../../shared/contract';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
-import {
-  sanitizeBrowserComputerToolArguments,
-  sanitizeBrowserComputerToolResult,
-} from '../../shared/utils/browserComputerRedaction';
-
+import { sanitizeBrowserComputerToolArguments, sanitizeBrowserComputerToolResult } from '../../shared/utils/browserComputerRedaction';
 
 // ----------------------------------------------------------------------------
 // Error Classification
 // ----------------------------------------------------------------------------
-
-
 
 /**
  * 剥离 error 字符串中混入的工具/系统日志，只对"主 error message"做分类。
@@ -45,13 +30,7 @@ import {
  */
 function stripLogNoise(errorMessage: string): string {
   // 常见日志分隔符
-  const markers = [
-    '\n--- Recent Logs ---',
-    '\n--- Logs ---',
-    '\nRecent logs:',
-    '\n[STDOUT]',
-    '\n[STDERR]',
-  ];
+  const markers = ['\n--- Recent Logs ---', '\n--- Logs ---', '\nRecent logs:', '\n[STDOUT]', '\n[STDERR]'];
   let cleaned = errorMessage;
   for (const m of markers) {
     const idx = cleaned.indexOf(m);
@@ -66,8 +45,7 @@ export function classifyError(errorMessage: string): ErrorCategory {
   const msg = cleaned.toLowerCase();
 
   // 1. 结构化信号：缺包（最常见的"系统配置"问题）
-  if (msg.includes('cannot find package') || msg.includes('cannot find module') ||
-      msg.includes('module not found') || msg.includes('command not found')) {
+  if (msg.includes('cannot find package') || msg.includes('cannot find module') || msg.includes('module not found') || msg.includes('command not found')) {
     return 'dependency_missing';
   }
 
@@ -76,38 +54,30 @@ export function classifyError(errorMessage: string): ErrorCategory {
   if (msg.includes('eacces') || msg.includes('permission denied')) return 'permission_denied';
 
   // 3. 沙箱
-  if (msg.includes('denied by sandbox') || msg.includes('sandbox denied') ||
-      msg.includes('sandbox: denied')) {
+  if (msg.includes('denied by sandbox') || msg.includes('sandbox denied') || msg.includes('sandbox: denied')) {
     return 'sandbox_denied';
   }
 
   // 4. 网络/HTTP — 优先匹配明确状态码（429 单独走 rate_limit）
-  if (/\bhttp\s*429\b/i.test(cleaned) || /\b429\s+too many requests\b/i.test(cleaned) ||
-      msg.includes('rate limit') || (msg.includes('quota') && msg.includes('exceeded'))) {
+  if (/\bhttp\s*429\b/i.test(cleaned) || /\b429\s+too many requests\b/i.test(cleaned) || msg.includes('rate limit') || (msg.includes('quota') && msg.includes('exceeded'))) {
     return 'rate_limit';
   }
-  if (/\bhttp\s*40[13]\b/i.test(cleaned) || msg.includes('unauthorized') ||
-      msg.includes('forbidden') || msg.includes('authentication failed')) {
+  if (/\bhttp\s*40[13]\b/i.test(cleaned) || msg.includes('unauthorized') || msg.includes('forbidden') || msg.includes('authentication failed')) {
     return 'auth_failed';
   }
   if (/\bhttp\s*4\d\d\b/i.test(cleaned)) return 'http_4xx';
   if (/\bhttp\s*5\d\d\b/i.test(cleaned)) return 'http_5xx';
 
-  if (msg.includes('econnrefused') || msg.includes('econnreset') ||
-      msg.includes('enotfound') || msg.includes('fetch failed') ||
-      msg.includes('network is unreachable')) {
+  if (msg.includes('econnrefused') || msg.includes('econnreset') || msg.includes('enotfound') || msg.includes('fetch failed') || msg.includes('network is unreachable')) {
     return 'network_error';
   }
 
   // 5. 上下文/解析
-  if (msg.includes('context length') || msg.includes('token limit') ||
-      msg.includes('maximum context')) return 'context_overflow';
-  if (msg.includes('syntaxerror') || msg.includes('parse error') ||
-      msg.includes('unexpected token')) return 'syntax_error';
+  if (msg.includes('context length') || msg.includes('token limit') || msg.includes('maximum context')) return 'context_overflow';
+  if (msg.includes('syntaxerror') || msg.includes('parse error') || msg.includes('unexpected token')) return 'syntax_error';
 
   // 6. 时间/编辑/Shell
-  if (msg.includes('timeout') || msg.includes('etimedout') ||
-      msg.includes('timed out')) return 'timeout';
+  if (msg.includes('timeout') || msg.includes('etimedout') || msg.includes('timed out')) return 'timeout';
   if (msg.includes('not unique') || msg.includes('multiple matches')) return 'edit_not_unique';
   if (msg.includes('exit code') || msg.includes('command failed')) return 'command_failure';
 
@@ -121,6 +91,7 @@ const logger = createLogger('TelemetryCollector');
 
 interface SessionConfig {
   title: string;
+  userId?: string | null;
   modelProvider: string;
   modelName: string;
   workingDirectory: string;
@@ -188,21 +159,13 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-function extractComputerSurfaceFields(
-  name: string,
-  argsJson: string,
-  metadata?: Record<string, unknown>,
-): Partial<TelemetryToolCall> {
+function extractComputerSurfaceFields(name: string, argsJson: string, metadata?: Record<string, unknown>): Partial<TelemetryToolCall> {
   if (name !== 'computer_use') {
     return {};
   }
   const safeMetadata = metadata || {};
   const trace = isRecord(safeMetadata.workbenchTrace) ? safeMetadata.workbenchTrace : {};
-  const axQuality = isRecord(safeMetadata.axQuality)
-    ? safeMetadata.axQuality
-    : isRecord(trace.axQuality)
-      ? trace.axQuality
-      : {};
+  const axQuality = isRecord(safeMetadata.axQuality) ? safeMetadata.axQuality : isRecord(trace.axQuality) ? trace.axQuality : {};
   let parsedArgs: Record<string, unknown> = {};
   try {
     const parsed = JSON.parse(argsJson);
@@ -218,11 +181,14 @@ function extractComputerSurfaceFields(
     computerSurfaceTargetApp: asString(safeMetadata.targetApp) || asString(trace.targetApp) || asString(parsedArgs.targetApp),
     computerSurfaceAction: asString(trace.action) || asString(parsedArgs.action),
     computerSurfaceAxQualityScore: asNumber(axQuality.score),
-    computerSurfaceAxQualityGrade: asString(axQuality.grade),
+    computerSurfaceAxQualityGrade: asString(axQuality.grade)
   };
 }
 
-function sanitizeToolArgsForTelemetry(name: string, args: unknown): {
+function sanitizeToolArgsForTelemetry(
+  name: string,
+  args: unknown
+): {
   serialized: string;
   actualArguments?: string;
   rawArguments?: Record<string, unknown>;
@@ -236,7 +202,7 @@ function sanitizeToolArgsForTelemetry(name: string, args: unknown): {
   return {
     serialized,
     actualArguments: serialized,
-    rawArguments: args,
+    rawArguments: args
   };
 }
 
@@ -279,13 +245,17 @@ export class TelemetryCollector {
   addEventListener(listener: (event: TelemetryPushEvent) => void): () => void {
     this.eventListeners.push(listener);
     return () => {
-      this.eventListeners = this.eventListeners.filter(l => l !== listener);
+      this.eventListeners = this.eventListeners.filter((l) => l !== listener);
     };
   }
 
   private pushEvent(event: TelemetryPushEvent): void {
     for (const listener of this.eventListeners) {
-      try { listener(event); } catch { /* ignore */ }
+      try {
+        listener(event);
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -298,6 +268,7 @@ export class TelemetryCollector {
 
     const session: TelemetrySession = {
       id: sessionId,
+      userId: config.userId ?? getAuthService().getCurrentUser()?.id ?? null,
       title: config.title || 'Untitled',
       generationId: 'gen8',
       modelProvider: config.modelProvider,
@@ -312,14 +283,18 @@ export class TelemetryCollector {
       totalToolCalls: 0,
       toolSuccessRate: 0,
       totalErrors: 0,
-      status: 'recording',
+      status: 'recording'
     };
 
     this.activeSession = session;
     getTelemetryStorage().insertSession(session);
 
     // Ensure system prompt cache table exists
-    try { getSystemPromptCache().ensureTable(); } catch { /* non-critical */ }
+    try {
+      getSystemPromptCache().ensureTable();
+    } catch {
+      /* non-critical */
+    }
 
     this.pushEvent({ type: 'session_start', sessionId, data: session });
     logger.info(`Telemetry session started: ${sessionId}`);
@@ -346,10 +321,14 @@ export class TelemetryCollector {
       totalTokens: this.activeSession.totalTokens,
       totalToolCalls: this.activeSession.totalToolCalls,
       toolSuccessRate: this.activeSession.toolSuccessRate,
-      totalErrors: this.activeSession.totalErrors,
+      totalErrors: this.activeSession.totalErrors
     });
 
-    this.pushEvent({ type: 'session_end', sessionId, data: this.activeSession });
+    this.pushEvent({
+      type: 'session_end',
+      sessionId,
+      data: this.activeSession
+    });
     logger.info(`Telemetry session ended: ${sessionId}`);
     this.activeSession = null;
   }
@@ -385,7 +364,7 @@ export class TelemetryCollector {
       logger.warn('[TelemetryCollector] startTurn: previous turn not ended, auto-finalizing', {
         previousTurnId: this.activeTurn.id,
         previousTurnNumber: this.activeTurn.turnNumber,
-        newTurnNumber: turnNumber,
+        newTurnNumber: turnNumber
       });
       // 用空 assistantResponse 走正常 endTurn，分类为 unknown outcome（continue 路径
       // 通常没生成最终回复，留 telemetry 痕迹比丢数据好）
@@ -413,7 +392,7 @@ export class TelemetryCollector {
       totalOutputTokens: 0,
       iterationCount: 1,
       turnType: parentTurnId ? 'iteration' : 'user',
-      parentTurnId: parentTurnId ?? undefined,
+      parentTurnId: parentTurnId ?? undefined
     };
 
     // Reset per-turn counters
@@ -428,14 +407,18 @@ export class TelemetryCollector {
     this.compactionOccurred = false;
     this.circuitBreakerTripped = false;
 
-    this.pushEvent({ type: 'turn_start', sessionId, data: { turnId, turnNumber } });
+    this.pushEvent({
+      type: 'turn_start',
+      sessionId,
+      data: { turnId, turnNumber }
+    });
   }
 
   endTurn(sessionId: string, turnId: string, assistantResponse: string, thinking?: string, systemPromptHash?: string): void {
     if (this.activeTurn?.id !== turnId) {
       logger.warn('[TelemetryCollector] endTurn: turnId mismatch', {
         expected: this.activeTurn?.id,
-        received: turnId,
+        received: turnId
       });
       return;
     }
@@ -444,11 +427,11 @@ export class TelemetryCollector {
     const startTime = this.activeTurn.startTime!;
 
     // Classify intent
-    const toolNames = this.turnToolCalls.map(tc => tc.name);
+    const toolNames = this.turnToolCalls.map((tc) => tc.name);
     const intent = classifyIntent(this.activeTurn.userPrompt!, toolNames);
 
     // Build quality signals
-    const successCount = this.turnToolCalls.filter(tc => tc.success).length;
+    const successCount = this.turnToolCalls.filter((tc) => tc.success).length;
     const totalToolCalls = this.turnToolCalls.length;
     const signals: QualitySignals = {
       toolSuccessRate: totalToolCalls > 0 ? successCount / totalToolCalls : 0,
@@ -458,7 +441,7 @@ export class TelemetryCollector {
       errorRecovered: this.turnErrorRecovered,
       compactionTriggered: this.compactionOccurred,
       circuitBreakerTripped: this.circuitBreakerTripped,
-      nudgesInjected: this.turnNudgesInjected,
+      nudgesInjected: this.turnNudgesInjected
     };
 
     // Evaluate outcome
@@ -484,7 +467,7 @@ export class TelemetryCollector {
       intent,
       outcome,
       compactionOccurred: this.compactionOccurred,
-      iterationCount: this.activeTurn.iterationCount ?? 1,
+      iterationCount: this.activeTurn.iterationCount ?? 1
     };
 
     // Persist turn
@@ -494,7 +477,7 @@ export class TelemetryCollector {
     getTelemetryStorage().batchInsert({
       modelCalls: this.turnModelCalls,
       toolCalls: this.turnToolCalls,
-      events: this.turnEvents,
+      events: this.turnEvents
     });
 
     // Update session aggregates
@@ -509,9 +492,7 @@ export class TelemetryCollector {
       // Recalculate session tool success rate
       const allToolCalls = this.activeSession.totalToolCalls;
       const prevSuccessful = this.activeSession.toolSuccessRate * (allToolCalls - totalToolCalls);
-      this.activeSession.toolSuccessRate = allToolCalls > 0
-        ? (prevSuccessful + successCount) / allToolCalls
-        : 0;
+      this.activeSession.toolSuccessRate = allToolCalls > 0 ? (prevSuccessful + successCount) / allToolCalls : 0;
 
       // Update session in DB periodically
       getTelemetryStorage().updateSession(this.activeSession.id, {
@@ -521,11 +502,15 @@ export class TelemetryCollector {
         totalTokens: this.activeSession.totalTokens,
         totalToolCalls: this.activeSession.totalToolCalls,
         toolSuccessRate: this.activeSession.toolSuccessRate,
-        totalErrors: this.activeSession.totalErrors,
+        totalErrors: this.activeSession.totalErrors
       });
     }
 
-    this.pushEvent({ type: 'turn_end', sessionId, data: { turnId, intent, outcome } });
+    this.pushEvent({
+      type: 'turn_end',
+      sessionId,
+      data: { turnId, intent, outcome }
+    });
 
     this.activeTurn = null;
   }
@@ -543,7 +528,7 @@ export class TelemetryCollector {
     const modelCalls = (input.modelCalls || []).map((call) => ({
       ...call,
       turnId: input.turnId,
-      sessionId: input.sessionId,
+      sessionId: input.sessionId
     }));
 
     const toolCalls = (input.toolCalls || []).map((call) => {
@@ -551,14 +536,10 @@ export class TelemetryCollector {
       const safeResult = sanitizeBrowserComputerToolResult(call.name, safeArgs.rawArguments, {
         output: call.resultSummary,
         error: call.error,
-        metadata: call.metadata,
+        metadata: call.metadata
       });
       const errorCategory = call.error ? classifyError(call.error) : undefined;
-      const computerSurfaceFields = extractComputerSurfaceFields(
-        call.name,
-        safeArgs.serialized,
-        call.metadata,
-      );
+      const computerSurfaceFields = extractComputerSurfaceFields(call.name, safeArgs.serialized, call.metadata);
       return {
         id: generateMessageId(),
         turnId: input.turnId,
@@ -575,22 +556,28 @@ export class TelemetryCollector {
         timestamp: call.timestamp,
         index: call.index,
         parallel: !!call.parallel,
-        ...computerSurfaceFields,
+        ...computerSurfaceFields
       } satisfies TelemetryToolCall & { turnId: string; sessionId: string };
     });
 
-    const events = (input.events || []).map((event) => ({
-      id: generateMessageId(),
-      turnId: input.turnId,
-      sessionId: input.sessionId,
-      timestamp: event.timestamp ?? Date.now(),
-      eventType: event.eventType,
-      summary: event.summary,
-      data: typeof event.data === 'string' ? event.data : event.data ? JSON.stringify(event.data) : undefined,
-      durationMs: event.durationMs,
-    } satisfies TelemetryTimelineEvent & { turnId: string; sessionId: string }));
+    const events = (input.events || []).map(
+      (event) =>
+        ({
+          id: generateMessageId(),
+          turnId: input.turnId,
+          sessionId: input.sessionId,
+          timestamp: event.timestamp ?? Date.now(),
+          eventType: event.eventType,
+          summary: event.summary,
+          data: typeof event.data === 'string' ? event.data : event.data ? JSON.stringify(event.data) : undefined,
+          durationMs: event.durationMs
+        }) satisfies TelemetryTimelineEvent & {
+          turnId: string;
+          sessionId: string;
+        }
+    );
 
-    const successCount = toolCalls.filter(tc => tc.success).length;
+    const successCount = toolCalls.filter((tc) => tc.success).length;
     const totalToolCalls = toolCalls.length;
     const signals: QualitySignals = {
       toolSuccessRate: totalToolCalls > 0 ? successCount / totalToolCalls : 0,
@@ -598,9 +585,9 @@ export class TelemetryCollector {
       retryCount: 0,
       errorCount: toolCalls.length - successCount,
       errorRecovered: 0,
-      compactionTriggered: events.some(event => event.eventType === 'context_compressed'),
+      compactionTriggered: events.some((event) => event.eventType === 'context_compressed'),
       circuitBreakerTripped: false,
-      nudgesInjected: 0,
+      nudgesInjected: 0
     };
     const totalInput = modelCalls.reduce((sum, call) => sum + call.inputTokens, 0);
     const totalOutput = modelCalls.reduce((sum, call) => sum + call.outputTokens, 0);
@@ -625,13 +612,16 @@ export class TelemetryCollector {
       thinkingContent: input.thinking,
       totalInputTokens: totalInput,
       totalOutputTokens: totalOutput,
-      intent: classifyIntent(input.userPrompt, toolCalls.map(tc => tc.name)),
+      intent: classifyIntent(
+        input.userPrompt,
+        toolCalls.map((tc) => tc.name)
+      ),
       outcome: evaluateOutcome(signals),
       compactionOccurred: signals.compactionTriggered,
       iterationCount: input.turnNumber,
       agentId: input.agentId || 'subagent',
       turnType: 'iteration',
-      parentTurnId: input.parentTurnId,
+      parentTurnId: input.parentTurnId
     };
 
     getTelemetryStorage().insertTurn(turn);
@@ -646,9 +636,7 @@ export class TelemetryCollector {
       this.activeSession.totalErrors += signals.errorCount;
       const allToolCalls = this.activeSession.totalToolCalls;
       const previousSuccessful = this.activeSession.toolSuccessRate * (allToolCalls - totalToolCalls);
-      this.activeSession.toolSuccessRate = allToolCalls > 0
-        ? (previousSuccessful + successCount) / allToolCalls
-        : 0;
+      this.activeSession.toolSuccessRate = allToolCalls > 0 ? (previousSuccessful + successCount) / allToolCalls : 0;
       getTelemetryStorage().updateSession(this.activeSession.id, {
         turnCount: this.activeSession.turnCount,
         totalInputTokens: this.activeSession.totalInputTokens,
@@ -656,11 +644,15 @@ export class TelemetryCollector {
         totalTokens: this.activeSession.totalTokens,
         totalToolCalls: this.activeSession.totalToolCalls,
         toolSuccessRate: this.activeSession.toolSuccessRate,
-        totalErrors: this.activeSession.totalErrors,
+        totalErrors: this.activeSession.totalErrors
       });
     }
 
-    this.pushEvent({ type: 'turn_end', sessionId: input.sessionId, data: { turnId: input.turnId, detached: true } });
+    this.pushEvent({
+      type: 'turn_end',
+      sessionId: input.sessionId,
+      data: { turnId: input.turnId, detached: true }
+    });
     return true;
   }
 
@@ -673,7 +665,7 @@ export class TelemetryCollector {
       logger.warn('[TelemetryCollector] recordModelCall: turnId mismatch', {
         expected: this.activeTurn?.id,
         received: turnId,
-        hasActiveTurn: !!this.activeTurn,
+        hasActiveTurn: !!this.activeTurn
       });
       return;
     }
@@ -681,20 +673,17 @@ export class TelemetryCollector {
     const record = {
       ...call,
       turnId,
-      sessionId: this.activeTurn.sessionId!,
+      sessionId: this.activeTurn.sessionId!
     };
     this.turnModelCalls.push(record);
-    this.pushEvent({ type: 'model_call', sessionId: this.activeTurn.sessionId!, data: call });
+    this.pushEvent({
+      type: 'model_call',
+      sessionId: this.activeTurn.sessionId!,
+      data: call
+    });
   }
 
-  recordToolCallStart(
-    turnId: string,
-    toolCallId: string,
-    name: string,
-    args: unknown,
-    index: number,
-    parallel: boolean
-  ): void {
+  recordToolCallStart(turnId: string, toolCallId: string, name: string, args: unknown, index: number, parallel: boolean): void {
     if (this.activeTurn?.id !== turnId) return;
 
     const safeArgs = sanitizeToolArgsForTelemetry(name, args);
@@ -707,20 +696,12 @@ export class TelemetryCollector {
       rawArguments: safeArgs.rawArguments,
       timestamp: Date.now(),
       index,
-      parallel,
+      parallel
     };
     this.pendingToolCalls.set(toolCallId, pending);
   }
 
-  recordToolCallEnd(
-    turnId: string,
-    toolCallId: string,
-    success: boolean,
-    error: string | undefined,
-    durationMs: number,
-    output: string | undefined,
-    metadata?: Record<string, unknown>,
-  ): void {
+  recordToolCallEnd(turnId: string, toolCallId: string, success: boolean, error: string | undefined, durationMs: number, output: string | undefined, metadata?: Record<string, unknown>): void {
     if (this.activeTurn?.id !== turnId) return;
 
     const pending = this.pendingToolCalls.get(toolCallId);
@@ -730,7 +711,7 @@ export class TelemetryCollector {
     const safeResult = sanitizeBrowserComputerToolResult(pending.name, pending.rawArguments, {
       output,
       error,
-      metadata,
+      metadata
     });
     const safeError = safeResult.error;
     const safeOutput = safeResult.output;
@@ -752,7 +733,7 @@ export class TelemetryCollector {
       timestamp: pending.timestamp,
       index: pending.index,
       parallel: pending.parallel,
-      ...computerSurfaceFields,
+      ...computerSurfaceFields
     };
     this.turnToolCalls.push(record);
 
@@ -760,7 +741,11 @@ export class TelemetryCollector {
       this.turnErrorCount++;
     }
 
-    this.pushEvent({ type: 'tool_call', sessionId: this.activeTurn.sessionId!, data: record });
+    this.pushEvent({
+      type: 'tool_call',
+      sessionId: this.activeTurn.sessionId!,
+      data: record
+    });
   }
 
   // --------------------------------------------------------------------------
@@ -784,22 +769,24 @@ export class TelemetryCollector {
         }
         break;
       case 'notification':
-        if ((event.data as { message?: string })?.message?.includes('nudge') ||
-            (event.data as { message?: string })?.message?.includes('提示')) {
+        if ((event.data as { message?: string })?.message?.includes('nudge') || (event.data as { message?: string })?.message?.includes('提示')) {
           this.turnNudgesInjected++;
         }
         break;
     }
 
     // Record as timeline event
-    const timelineEvent: TelemetryTimelineEvent & { turnId: string; sessionId: string } = {
+    const timelineEvent: TelemetryTimelineEvent & {
+      turnId: string;
+      sessionId: string;
+    } = {
       id: generateMessageId(),
       turnId,
       sessionId,
       timestamp: Date.now(),
       eventType: event.type,
       summary: this.summarizeEvent(event),
-      data: this.extractEventData(event),
+      data: this.extractEventData(event)
     };
     this.turnEvents.push(timelineEvent);
   }
@@ -826,7 +813,7 @@ export class TelemetryCollector {
       },
       onTurnEnd(turnId: string, assistantResponse: string, thinking?: string, systemPromptHash?: string) {
         collector.endTurn(sessionId, turnId, assistantResponse, thinking, systemPromptHash);
-      },
+      }
     };
   }
 
@@ -852,7 +839,7 @@ export class TelemetryCollector {
         total: s.callCount,
         success: s.successCount,
         avgDurationMs: s.avgDurationMs,
-        successRate: s.successRate,
+        successRate: s.successRate
       }));
     } catch {
       return [];
@@ -870,7 +857,7 @@ export class TelemetryCollector {
     const result = {
       totalErrors: 0,
       errorsByTool: {} as Record<string, number>,
-      topErrors: [] as Array<{ error: string; count: number }>,
+      topErrors: [] as Array<{ error: string; count: number }>
     };
 
     try {

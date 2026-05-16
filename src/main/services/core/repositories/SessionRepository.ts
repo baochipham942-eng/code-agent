@@ -4,21 +4,9 @@
 
 import type BetterSqlite3 from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
-import type {
-  Session,
-  SessionStatus,
-  TokenUsage,
-  Message,
-  ModelProvider,
-  TodoItem,
-  SessionTask,
-  ToolCall,
-} from '../../../../shared/contract';
+import type { Session, SessionStatus, TokenUsage, Message, ModelProvider, TodoItem, SessionTask, ToolCall } from '../../../../shared/contract';
 import { normalizeAgentEngineSession } from '../../../../shared/contract/agentEngine';
-import type {
-  ContextInterventionAction,
-  ContextInterventionSnapshot,
-} from '../../../../shared/contract/contextView';
+import type { ContextInterventionAction, ContextInterventionSnapshot } from '../../../../shared/contract/contextView';
 import { createLogger } from '../../infra/logger';
 import { generateFallbackShortDescription } from '../../../model/providers/shared';
 import type { StoredSession, StoredMessage } from '../../../protocol/types';
@@ -63,14 +51,12 @@ function ensureToolCallShortDescription(toolCalls: ToolCall[] | undefined): Tool
   if (!toolCalls) return toolCalls;
   return toolCalls.map((tc) => ({
     ...tc,
-    shortDescription:
-      tc.shortDescription
-      ?? generateFallbackShortDescription(tc.name, tc.arguments ?? {}),
+    shortDescription: tc.shortDescription ?? generateFallbackShortDescription(tc.name, tc.arguments ?? {})
   }));
 }
 
 function buildAttachmentMetadata(attachments: Message['attachments']): Message['attachments'] | undefined {
-  return attachments?.map(a => ({
+  return attachments?.map((a) => ({
     id: a.id,
     type: a.type,
     category: a.category,
@@ -79,7 +65,7 @@ function buildAttachmentMetadata(attachments: Message['attachments']): Message['
     mimeType: a.mimeType,
     path: a.path,
     pageCount: a.pageCount,
-    language: a.language,
+    language: a.language
   }));
 }
 
@@ -105,9 +91,7 @@ function parseJsonObject(value: unknown): Record<string, unknown> {
   if (typeof value !== 'string') return {};
   try {
     const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
   } catch {
     return {};
   }
@@ -155,42 +139,23 @@ export class SessionRepository {
 
   createSession(session: Session): void {
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (
-        id, title, model_provider, model_name, working_directory,
-        session_type, origin, parent_session_id, source_run_id, agent_engine, read_only, retry_of_session_id,
-        created_at, updated_at, workspace, workbench_provenance, status, last_token_usage,
-        is_deleted, synced_at, git_branch
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
+        INSERT INTO sessions (
+          id, user_id, title, model_provider, model_name, working_directory,
+          session_type, origin, parent_session_id, source_run_id, agent_engine, read_only, retry_of_session_id,
+          created_at, updated_at, workspace, workbench_provenance, status, last_token_usage,
+          is_deleted, synced_at, git_branch
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
     `);
 
-    stmt.run(
-      session.id,
-      session.title,
-      session.modelConfig.provider,
-      session.modelConfig.model,
-      session.workingDirectory || null,
-      session.type || 'chat',
-      session.origin ? JSON.stringify(session.origin) : null,
-      session.parentSessionId || null,
-      session.sourceRunId || null,
-      session.engine ? JSON.stringify(normalizeAgentEngineSession(session.engine)) : null,
-      session.readOnly ? 1 : 0,
-      session.retryOfSessionId || null,
-      session.createdAt,
-      session.updatedAt,
-      session.workspace || null,
-      session.workbenchProvenance ? JSON.stringify(session.workbenchProvenance) : null,
-      session.status || 'idle',
-      session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null,
-      session.gitBranch || null
-    );
+    stmt.run(session.id, session.userId ?? null, session.title, session.modelConfig.provider, session.modelConfig.model, session.workingDirectory || null, session.type || 'chat', session.origin ? JSON.stringify(session.origin) : null, session.parentSessionId || null, session.sourceRunId || null, session.engine ? JSON.stringify(normalizeAgentEngineSession(session.engine)) : null, session.readOnly ? 1 : 0, session.retryOfSessionId || null, session.createdAt, session.updatedAt, session.workspace || null, session.workbenchProvenance ? JSON.stringify(session.workbenchProvenance) : null, session.status || 'idle', session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null, session.gitBranch || null);
   }
 
   createSessionWithId(
     id: string,
     data: {
       title: string;
+      userId?: string | null;
       modelConfig: { provider: ModelProvider; model: string };
       workingDirectory?: string;
       type?: Session['type'];
@@ -210,32 +175,15 @@ export class SessionRepository {
     const createdAt = this.normalizeTimestamp(data.createdAt, now);
     const updatedAt = this.normalizeTimestamp(data.updatedAt, createdAt);
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (
-        id, title, model_provider, model_name, working_directory,
-        session_type, origin, parent_session_id, source_run_id, agent_engine, read_only, retry_of_session_id,
-        created_at, updated_at, is_deleted, synced_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sessions (
+          id, user_id, title, model_provider, model_name, working_directory,
+          session_type, origin, parent_session_id, source_run_id, agent_engine, read_only, retry_of_session_id,
+          created_at, updated_at, is_deleted, synced_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    stmt.run(
-      id,
-      data.title,
-      data.modelConfig.provider,
-      data.modelConfig.model,
-      data.workingDirectory || null,
-      data.type || 'chat',
-      data.origin ? JSON.stringify(data.origin) : null,
-      data.parentSessionId || null,
-      data.sourceRunId || null,
-      data.engine ? JSON.stringify(normalizeAgentEngineSession(data.engine)) : null,
-      data.readOnly ? 1 : 0,
-      data.retryOfSessionId || null,
-      createdAt,
-      updatedAt,
-      data.isDeleted ? 1 : 0,
-      this.resolveSyncedAt(options)
-    );
+    stmt.run(id, data.userId ?? null, data.title, data.modelConfig.provider, data.modelConfig.model, data.workingDirectory || null, data.type || 'chat', data.origin ? JSON.stringify(data.origin) : null, data.parentSessionId || null, data.sourceRunId || null, data.engine ? JSON.stringify(normalizeAgentEngineSession(data.engine)) : null, data.readOnly ? 1 : 0, data.retryOfSessionId || null, createdAt, updatedAt, data.isDeleted ? 1 : 0, this.resolveSyncedAt(options));
   }
 
   getSession(sessionId: string, options?: { includeDeleted?: boolean }): StoredSession | null {
@@ -280,9 +228,10 @@ export class SessionRepository {
   updateSession(sessionId: string, updates: Partial<Session>, options?: SessionWriteOptions & { isDeleted?: boolean }): void {
     // Use COALESCE to avoid read-before-write: only update fields that are provided
     const stmt = this.db.prepare(`
-      UPDATE sessions
-      SET title = COALESCE(?, title),
-          model_provider = COALESCE(?, model_provider),
+        UPDATE sessions
+        SET title = COALESCE(?, title),
+            user_id = COALESCE(?, user_id),
+            model_provider = COALESCE(?, model_provider),
           model_name = COALESCE(?, model_name),
           working_directory = COALESCE(?, working_directory),
           agent_engine = COALESCE(?, agent_engine),
@@ -296,50 +245,37 @@ export class SessionRepository {
       WHERE id = ?
     `);
 
-    const lastTokenUsage = updates.lastTokenUsage !== undefined
-      ? JSON.stringify(updates.lastTokenUsage)
-      : null; // null means keep existing via COALESCE
-    const workbenchProvenance = updates.workbenchProvenance !== undefined
-      ? JSON.stringify(updates.workbenchProvenance)
-      : null;
-    const agentEngine = updates.engine !== undefined
-      ? JSON.stringify(normalizeAgentEngineSession(updates.engine))
-      : null;
+    const lastTokenUsage = updates.lastTokenUsage !== undefined ? JSON.stringify(updates.lastTokenUsage) : null; // null means keep existing via COALESCE
+    const workbenchProvenance = updates.workbenchProvenance !== undefined ? JSON.stringify(updates.workbenchProvenance) : null;
+    const agentEngine = updates.engine !== undefined ? JSON.stringify(normalizeAgentEngineSession(updates.engine)) : null;
 
-    const result = stmt.run(
-      updates.title ?? null,
-      updates.modelConfig?.provider ?? null,
-      updates.modelConfig?.model ?? null,
-      updates.workingDirectory ?? null,
-      agentEngine,
-      updates.updatedAt ?? Date.now(),
-      updates.workspace !== undefined ? updates.workspace : null,
-      workbenchProvenance,
-      updates.status ?? null,
-      lastTokenUsage,
-      options?.isDeleted !== undefined ? (options.isDeleted ? 1 : 0) : null,
-      this.resolveSyncedAt(options) ?? null,
-      sessionId
-    );
+    const result = stmt.run(updates.title ?? null, updates.userId !== undefined ? updates.userId : null, updates.modelConfig?.provider ?? null, updates.modelConfig?.model ?? null, updates.workingDirectory ?? null, agentEngine, updates.updatedAt ?? Date.now(), updates.workspace !== undefined ? updates.workspace : null, workbenchProvenance, updates.status ?? null, lastTokenUsage, options?.isDeleted !== undefined ? (options.isDeleted ? 1 : 0) : null, this.resolveSyncedAt(options) ?? null, sessionId);
 
     if (result.changes === 0) throw new Error(`Session not found: ${sessionId}`);
   }
 
   deleteSession(sessionId: string, options?: SessionWriteOptions & { deletedAt?: number }): void {
     const deletedAt = options?.deletedAt ?? Date.now();
-    this.db.prepare(`
+    this.db
+      .prepare(
+        `
       UPDATE sessions
       SET is_deleted = 1, updated_at = ?, synced_at = ?
       WHERE id = ?
-    `).run(deletedAt, this.resolveSyncedAt(options), sessionId);
+    `
+      )
+      .run(deletedAt, this.resolveSyncedAt(options), sessionId);
   }
 
-  markCrashedActiveSessions(now: number = Date.now()): { interrupted: number; orphaned: number } {
+  markCrashedActiveSessions(now: number = Date.now()): {
+    interrupted: number;
+    orphaned: number;
+  } {
     const interrupted = this.db
       .prepare(
         `UPDATE sessions
            SET status = 'interrupted', updated_at = ?, synced_at = NULL
-         WHERE status IN ('running', 'paused', 'cancelling') AND is_deleted = 0`,
+         WHERE status IN ('running', 'paused', 'cancelling') AND is_deleted = 0`
       )
       .run(now).changes;
 
@@ -347,7 +283,7 @@ export class SessionRepository {
       .prepare(
         `UPDATE sessions
            SET status = 'orphaned', updated_at = ?, synced_at = NULL
-         WHERE status = 'queued' AND is_deleted = 0`,
+         WHERE status = 'queued' AND is_deleted = 0`
       )
       .run(now).changes;
 
@@ -376,7 +312,10 @@ export class SessionRepository {
     const sessionRow = this.db.prepare('SELECT COUNT(*) as c FROM sessions').get() as SQLiteRow;
     const messageRow = this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as SQLiteRow;
 
-    return { sessionCount: sessionRow.c as number, messageCount: messageRow.c as number };
+    return {
+      sessionCount: sessionRow.c as number,
+      messageCount: messageRow.c as number
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -397,25 +336,7 @@ export class SessionRepository {
     const thinkingContent = message.thinking || message.reasoning || null;
 
     const toolCallsForStorage = ensureToolCallShortDescription(message.toolCalls);
-    stmt.run(
-      message.id,
-      sessionId,
-      message.role,
-      message.content,
-      message.timestamp,
-      toolCallsForStorage ? JSON.stringify(toolCallsForStorage) : null,
-      message.toolResults ? JSON.stringify(message.toolResults) : null,
-      attachmentsMeta ? JSON.stringify(attachmentsMeta) : null,
-      thinkingContent,
-      message.effortLevel || null,
-      this.resolveSyncedAt(options),
-      message.contentParts ? JSON.stringify(message.contentParts) : null,
-      message.metadata ? JSON.stringify(message.metadata) : null,
-      message.compaction ? JSON.stringify(message.compaction) : null,
-      message.visibility ?? 'active',
-      message.hiddenByRewindId ?? null,
-      message.hiddenAt ?? null,
-    );
+    stmt.run(message.id, sessionId, message.role, message.content, message.timestamp, toolCallsForStorage ? JSON.stringify(toolCallsForStorage) : null, message.toolResults ? JSON.stringify(message.toolResults) : null, attachmentsMeta ? JSON.stringify(attachmentsMeta) : null, thinkingContent, message.effortLevel || null, this.resolveSyncedAt(options), message.contentParts ? JSON.stringify(message.contentParts) : null, message.metadata ? JSON.stringify(message.metadata) : null, message.compaction ? JSON.stringify(message.compaction) : null, message.visibility ?? 'active', message.hiddenByRewindId ?? null, message.hiddenAt ?? null);
 
     if (!options?.skipTimestampUpdate) {
       this.db.prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?').run(options?.updatedAt ?? Date.now(), sessionId);
@@ -426,7 +347,10 @@ export class SessionRepository {
     const replaceFn = this.db.transaction(() => {
       this.db.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId);
       for (const message of messages) {
-        this.addMessage(sessionId, message, { skipTimestampUpdate: true, updatedAt });
+        this.addMessage(sessionId, message, {
+          skipTimestampUpdate: true,
+          updatedAt
+        });
       }
       this.db.prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?').run(updatedAt, sessionId);
     });
@@ -587,7 +511,7 @@ export class SessionRepository {
       limit?: number;
       sessionId?: string;
       includeRewound?: boolean;
-    } = {},
+    } = {}
   ): Array<{
     messageId: string;
     sessionId: string;
@@ -628,19 +552,20 @@ export class SessionRepository {
           ORDER BY rank, f.timestamp DESC
           LIMIT ?
           `;
-      const rows = this.db
-        .prepare(sql)
-        .all(...params) as SQLiteRow[];
+      const rows = this.db.prepare(sql).all(...params) as SQLiteRow[];
 
       return rows.map((row) => ({
         messageId: String(row.message_id ?? ''),
         sessionId: String(row.session_id ?? ''),
         role: String(row.role ?? ''),
         content: String(row.content ?? ''),
-        timestamp: Number(row.timestamp ?? 0),
+        timestamp: Number(row.timestamp ?? 0)
       }));
     } catch (err) {
-      logger.warn('[EpisodicFts] search failed', { query: trimmed, error: err });
+      logger.warn('[EpisodicFts] search failed', {
+        query: trimmed,
+        error: err
+      });
       return [];
     }
   }
@@ -652,12 +577,8 @@ export class SessionRepository {
    */
   backfillSessionMessagesFts(): number {
     try {
-      const ftsRow = this.db.prepare('SELECT COUNT(*) as c FROM session_messages_fts').get() as
-        | { c: number }
-        | undefined;
-      const msgRow = this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as
-        | { c: number }
-        | undefined;
+      const ftsRow = this.db.prepare('SELECT COUNT(*) as c FROM session_messages_fts').get() as { c: number } | undefined;
+      const msgRow = this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number } | undefined;
       const ftsCount = Number(ftsRow?.c ?? 0);
       const msgCount = Number(msgRow?.c ?? 0);
 
@@ -672,14 +593,16 @@ export class SessionRepository {
           INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
           SELECT id, session_id, role, COALESCE(content, ''), timestamp
           FROM messages
-          `,
+          `
         )
         .run();
       const inserted = Number(result.changes ?? 0);
       logger.info(`[EpisodicFts] Backfill complete: ${inserted} rows`);
       return inserted;
     } catch (err) {
-      logger.warn('[EpisodicFts] Backfill failed (non-blocking)', { error: err });
+      logger.warn('[EpisodicFts] Backfill failed (non-blocking)', {
+        error: err
+      });
       return 0;
     }
   }
@@ -721,7 +644,7 @@ export class SessionRepository {
     const rows = stmt.all(limit) as SQLiteRow[];
     return rows.map((row) => ({
       ...this.rowToMessage(row),
-      sessionId: row.session_id as string,
+      sessionId: row.session_id as string
     }));
   }
 
@@ -744,16 +667,14 @@ export class SessionRepository {
     return row ? this.rowToMessage(row) : null;
   }
 
-  applyPromptRewind(
-    sessionId: string,
-    userMessageId: string,
-    record: PromptRewindRecordInput = {},
-  ): PromptRewindResult {
+  applyPromptRewind(sessionId: string, userMessageId: string, record: PromptRewindRecordInput = {}): PromptRewindResult {
     const now = record.createdAt ?? Date.now();
     const rewindId = `rewind_${now}_${uuidv4().slice(0, 8)}`;
 
     const applyFn = this.db.transaction(() => {
-      const anchorRow = this.db.prepare(`
+      const anchorRow = this.db
+        .prepare(
+          `
         SELECT rowid as __rowid, *
         FROM messages
         WHERE session_id = ?
@@ -761,7 +682,9 @@ export class SessionRepository {
           AND role = 'user'
           AND ${activeMessageWhere('messages')}
         LIMIT 1
-      `).get(sessionId, userMessageId) as SQLiteRow | undefined;
+      `
+        )
+        .get(sessionId, userMessageId) as SQLiteRow | undefined;
 
       if (!anchorRow) {
         throw new Error(`Active user message not found: ${userMessageId}`);
@@ -769,19 +692,25 @@ export class SessionRepository {
 
       const anchorMessage = this.rowToMessage(anchorRow);
       const anchorRowId = Number(anchorRow.__rowid || 0);
-      const rowsToHide = this.db.prepare(`
+      const rowsToHide = this.db
+        .prepare(
+          `
         SELECT id
         FROM messages
         WHERE session_id = ?
           AND rowid >= ?
           AND ${activeMessageWhere('messages')}
         ORDER BY timestamp ASC, rowid ASC
-      `).all(sessionId, anchorRowId) as Array<{ id: string }>;
+      `
+        )
+        .all(sessionId, anchorRowId) as Array<{ id: string }>;
 
       const hiddenMessageIds = rowsToHide.map((row) => String(row.id));
       if (hiddenMessageIds.length > 0) {
         const placeholders = hiddenMessageIds.map(() => '?').join(',');
-        this.db.prepare(`
+        this.db
+          .prepare(
+            `
           UPDATE messages
           SET visibility = 'rewound',
               hidden_by_rewind_id = ?,
@@ -789,30 +718,23 @@ export class SessionRepository {
               synced_at = NULL
           WHERE session_id = ?
             AND id IN (${placeholders})
-        `).run(rewindId, now, sessionId, ...hiddenMessageIds);
+        `
+          )
+          .run(rewindId, now, sessionId, ...hiddenMessageIds);
       }
 
-      this.db.prepare(`
+      this.db
+        .prepare(
+          `
         INSERT INTO session_rewinds (
           id, session_id, anchor_message_id, anchor_prompt, anchor_timestamp,
           checkpoint_message_id, hidden_message_count, hidden_message_ids,
           files_restored, files_deleted, errors_json, created_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        rewindId,
-        sessionId,
-        userMessageId,
-        anchorMessage.content,
-        anchorMessage.timestamp,
-        record.checkpointMessageId ?? null,
-        hiddenMessageIds.length,
-        JSON.stringify(hiddenMessageIds),
-        record.filesRestored ?? 0,
-        record.filesDeleted ?? 0,
-        JSON.stringify(record.errors ?? []),
-        now,
-      );
+      `
+        )
+        .run(rewindId, sessionId, userMessageId, anchorMessage.content, anchorMessage.timestamp, record.checkpointMessageId ?? null, hiddenMessageIds.length, JSON.stringify(hiddenMessageIds), record.filesRestored ?? 0, record.filesDeleted ?? 0, JSON.stringify(record.errors ?? []), now);
 
       this.db.prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?').run(now, sessionId);
 
@@ -821,7 +743,7 @@ export class SessionRepository {
         anchorMessage,
         hiddenMessageIds,
         hiddenMessageCount: hiddenMessageIds.length,
-        activeMessages: this.getMessages(sessionId),
+        activeMessages: this.getMessages(sessionId)
       };
     });
 
@@ -834,7 +756,7 @@ export class SessionRepository {
       role: row.role as Message['role'],
       content: row.content as string,
       timestamp: row.timestamp as number,
-      visibility: ((row.visibility as Message['visibility']) || 'active'),
+      visibility: (row.visibility as Message['visibility']) || 'active',
       hiddenByRewindId: (row.hidden_by_rewind_id as string) || undefined,
       hiddenAt: (row.hidden_at as number) || undefined,
       toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : undefined,
@@ -844,7 +766,7 @@ export class SessionRepository {
       effortLevel: (row.effort_level as Message['effortLevel']) || undefined,
       contentParts: row.content_parts ? JSON.parse(row.content_parts as string) : undefined,
       metadata: row.metadata ? JSON.parse(row.metadata as string) : undefined,
-      compaction: row.compaction ? JSON.parse(row.compaction as string) : undefined,
+      compaction: row.compaction ? JSON.parse(row.compaction as string) : undefined
     };
   }
 
@@ -857,15 +779,11 @@ export class SessionRepository {
    * Used by checkpoint:fork to truncate conversation history.
    */
   truncateMessagesAfter(sessionId: string, messageId: string): number {
-    const msg = this.db.prepare(
-      'SELECT timestamp FROM messages WHERE id = ? AND session_id = ?'
-    ).get(messageId, sessionId) as { timestamp: number } | undefined;
+    const msg = this.db.prepare('SELECT timestamp FROM messages WHERE id = ? AND session_id = ?').get(messageId, sessionId) as { timestamp: number } | undefined;
 
     if (!msg) return 0;
 
-    const result = this.db.prepare(
-      'DELETE FROM messages WHERE session_id = ? AND timestamp > ?'
-    ).run(sessionId, msg.timestamp);
+    const result = this.db.prepare('DELETE FROM messages WHERE session_id = ? AND timestamp > ?').run(sessionId, msg.timestamp);
 
     return result.changes;
   }
@@ -902,11 +820,13 @@ export class SessionRepository {
 
     const rows = stmt.all(sessionId) as SQLiteRow[];
 
-    return rows.map((row): TodoItem => ({
-      content: row.content as string,
-      status: row.status as TodoItem['status'],
-      activeForm: row.active_form as string,
-    }));
+    return rows.map(
+      (row): TodoItem => ({
+        content: row.content as string,
+        status: row.status as TodoItem['status'],
+        activeForm: row.active_form as string
+      })
+    );
   }
 
   // --------------------------------------------------------------------------
@@ -927,21 +847,7 @@ export class SessionRepository {
       `);
 
       for (const task of tasks) {
-        stmt.run(
-          sessionId,
-          task.id,
-          task.subject,
-          task.description,
-          task.activeForm,
-          task.status,
-          task.priority,
-          task.owner ?? null,
-          safeJsonStringify(task.blocks ?? []),
-          safeJsonStringify(task.blockedBy ?? []),
-          safeJsonStringify(task.metadata ?? {}),
-          task.createdAt,
-          task.updatedAt || now,
-        );
+        stmt.run(sessionId, task.id, task.subject, task.description, task.activeForm, task.status, task.priority, task.owner ?? null, safeJsonStringify(task.blocks ?? []), safeJsonStringify(task.blockedBy ?? []), safeJsonStringify(task.metadata ?? {}), task.createdAt, task.updatedAt || now);
       }
     });
 
@@ -959,39 +865,35 @@ export class SessionRepository {
 
     const rows = stmt.all(sessionId) as SQLiteRow[];
 
-    return rows.map((row): SessionTask => ({
-      id: String(row.task_id),
-      subject: String(row.subject ?? ''),
-      description: String(row.description ?? ''),
-      activeForm: String(row.active_form ?? ''),
-      status: row.status as SessionTask['status'],
-      priority: row.priority as SessionTask['priority'],
-      owner: row.owner == null ? undefined : String(row.owner),
-      blocks: parseJsonArray(row.blocks_json),
-      blockedBy: parseJsonArray(row.blocked_by_json),
-      metadata: parseJsonObject(row.metadata_json),
-      createdAt: Number(row.created_at) || 0,
-      updatedAt: Number(row.updated_at) || 0,
-    }));
+    return rows.map(
+      (row): SessionTask => ({
+        id: String(row.task_id),
+        subject: String(row.subject ?? ''),
+        description: String(row.description ?? ''),
+        activeForm: String(row.active_form ?? ''),
+        status: row.status as SessionTask['status'],
+        priority: row.priority as SessionTask['priority'],
+        owner: row.owner == null ? undefined : String(row.owner),
+        blocks: parseJsonArray(row.blocks_json),
+        blockedBy: parseJsonArray(row.blocked_by_json),
+        metadata: parseJsonObject(row.metadata_json),
+        createdAt: Number(row.created_at) || 0,
+        updatedAt: Number(row.updated_at) || 0
+      })
+    );
   }
 
   // --------------------------------------------------------------------------
   // Context Interventions
   // --------------------------------------------------------------------------
 
-  saveContextIntervention(
-    sessionId: string,
-    agentId: string | null | undefined,
-    messageId: string,
-    action: ContextInterventionAction | null,
-    updatedAt?: number,
-  ): void {
+  saveContextIntervention(sessionId: string, agentId: string | null | undefined, messageId: string, action: ContextInterventionAction | null, updatedAt?: number): void {
     const scopedAgentId = agentId?.trim() || 'global';
     if (!action) {
       this.db
         .prepare(
           `DELETE FROM context_interventions
-            WHERE session_id = ? AND agent_id = ? AND message_id = ?`,
+            WHERE session_id = ? AND agent_id = ? AND message_id = ?`
         )
         .run(sessionId, scopedAgentId, messageId);
       return;
@@ -1001,7 +903,7 @@ export class SessionRepository {
       .prepare(
         `INSERT OR REPLACE INTO context_interventions (
           session_id, agent_id, message_id, action, updated_at
-        ) VALUES (?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?)`
       )
       .run(sessionId, scopedAgentId, messageId, action, updatedAt ?? Date.now());
   }
@@ -1012,14 +914,14 @@ export class SessionRepository {
       .prepare(
         `SELECT message_id, action FROM context_interventions
           WHERE session_id = ? AND agent_id = ?
-          ORDER BY updated_at ASC`,
+          ORDER BY updated_at ASC`
       )
       .all(sessionId, scopedAgentId) as SQLiteRow[];
 
     const snapshot: ContextInterventionSnapshot = {
       pinned: [],
       excluded: [],
-      retained: [],
+      retained: []
     };
 
     for (const row of rows) {
@@ -1038,48 +940,42 @@ export class SessionRepository {
 
   saveSessionRuntimeState(
     sessionId: string,
-    state: { compressionStateJson?: string | null; persistentSystemContext?: string[] },
-    updatedAt?: number,
+    state: {
+      compressionStateJson?: string | null;
+      persistentSystemContext?: string[];
+    },
+    updatedAt?: number
   ): void {
     const existing = this.getSessionRuntimeState(sessionId);
-    const compressionStateJson =
-      state.compressionStateJson !== undefined
-        ? state.compressionStateJson
-        : existing?.compressionStateJson ?? null;
-    const persistentSystemContext =
-      state.persistentSystemContext !== undefined
-        ? state.persistentSystemContext
-        : existing?.persistentSystemContext ?? [];
+    const compressionStateJson = state.compressionStateJson !== undefined ? state.compressionStateJson : (existing?.compressionStateJson ?? null);
+    const persistentSystemContext = state.persistentSystemContext !== undefined ? state.persistentSystemContext : (existing?.persistentSystemContext ?? []);
 
     this.db
       .prepare(
         `INSERT OR REPLACE INTO session_runtime_state (
           session_id, compression_state_json, persistent_system_context_json, updated_at
-        ) VALUES (?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?)`
       )
-      .run(
-        sessionId,
-        compressionStateJson,
-        safeJsonStringify(persistentSystemContext),
-        updatedAt ?? Date.now(),
-      );
+      .run(sessionId, compressionStateJson, safeJsonStringify(persistentSystemContext), updatedAt ?? Date.now());
   }
 
-  getSessionRuntimeState(sessionId: string): { compressionStateJson: string | null; persistentSystemContext: string[] } | null {
+  getSessionRuntimeState(sessionId: string): {
+    compressionStateJson: string | null;
+    persistentSystemContext: string[];
+  } | null {
     const row = this.db
       .prepare(
         `SELECT compression_state_json, persistent_system_context_json
           FROM session_runtime_state
-          WHERE session_id = ?`,
+          WHERE session_id = ?`
       )
       .get(sessionId) as SQLiteRow | undefined;
 
     if (!row) return null;
 
     return {
-      compressionStateJson:
-        row.compression_state_json == null ? null : String(row.compression_state_json),
-      persistentSystemContext: parseJsonArray(row.persistent_system_context_json),
+      compressionStateJson: row.compression_state_json == null ? null : String(row.compression_state_json),
+      persistentSystemContext: parseJsonArray(row.persistent_system_context_json)
     };
   }
 
@@ -1088,7 +984,9 @@ export class SessionRepository {
   // --------------------------------------------------------------------------
 
   listArchivedSessions(limit: number = 50, offset: number = 0): StoredSession[] {
-    const rows = this.db.prepare(`
+    const rows = this.db
+      .prepare(
+        `
       SELECT s.*,
              (SELECT COUNT(*) FROM messages WHERE session_id = s.id AND ${activeMessageWhere('messages')}) as message_count,
              (SELECT COUNT(*) FROM messages WHERE session_id = s.id AND role = 'user' AND ${activeMessageWhere('messages')}) as turn_count
@@ -1096,9 +994,11 @@ export class SessionRepository {
       WHERE s.status = 'archived' AND s.is_deleted = 0
       ORDER BY s.updated_at DESC
       LIMIT ? OFFSET ?
-    `).all(limit, offset) as SQLiteRow[];
+    `
+      )
+      .all(limit, offset) as SQLiteRow[];
 
-    return rows.map(row => this.rowToSession(row));
+    return rows.map((row) => this.rowToSession(row));
   }
 
   archiveSession(sessionId: string, updatedAt?: number): StoredSession | null {
@@ -1144,33 +1044,28 @@ export class SessionRepository {
     if (row.origin) {
       const parsedOrigin = parseJsonObject(row.origin);
       if (typeof parsedOrigin.kind === 'string') {
-        const metadata = parsedOrigin.metadata &&
-          typeof parsedOrigin.metadata === 'object' &&
-          !Array.isArray(parsedOrigin.metadata)
-          ? parsedOrigin.metadata as Record<string, unknown>
-          : undefined;
+        const metadata = parsedOrigin.metadata && typeof parsedOrigin.metadata === 'object' && !Array.isArray(parsedOrigin.metadata) ? (parsedOrigin.metadata as Record<string, unknown>) : undefined;
         origin = {
           kind: parsedOrigin.kind as NonNullable<Session['origin']>['kind'],
           id: typeof parsedOrigin.id === 'string' ? parsedOrigin.id : undefined,
           name: typeof parsedOrigin.name === 'string' ? parsedOrigin.name : undefined,
-          metadata,
+          metadata
         };
       }
     }
 
-    const engine = row.agent_engine
-      ? normalizeAgentEngineSession(parseJsonObject(row.agent_engine))
-      : normalizeAgentEngineSession(null);
+    const engine = row.agent_engine ? normalizeAgentEngineSession(parseJsonObject(row.agent_engine)) : normalizeAgentEngineSession(null);
 
     const isArchived = row.status === 'archived';
     const isDeleted = Boolean(row.is_deleted);
 
     return {
       id: row.id as string,
+      userId: row.user_id == null ? null : String(row.user_id),
       title: row.title as string,
       modelConfig: {
         provider: row.model_provider as ModelProvider,
-        model: row.model_name as string,
+        model: row.model_name as string
       },
       workingDirectory: row.working_directory as string | undefined,
       type: (row.session_type as Session['type']) || 'chat',
@@ -1191,7 +1086,7 @@ export class SessionRepository {
       isArchived,
       archivedAt: isArchived ? (row.updated_at as number) : undefined,
       isDeleted,
-      gitBranch: row.git_branch as string | undefined,
+      gitBranch: row.git_branch as string | undefined
     };
   }
 }

@@ -3,154 +3,37 @@
 // ============================================================================
 
 import type { AgentsChangedEvent } from '../contract/agentRegistry';
-import type {
-  Message,
-  PermissionResponse,
-  Session,
-  FileInfo,
-  AppSettings,
-  AgentEventEnvelope,
-  TaskPlan,
-  Finding,
-  ErrorRecord,
-  PlanningState,
-  UserQuestionRequest,
-  UserQuestionResponse,
-  MCPElicitationRequest,
-  MCPElicitationResponse,
-  AuthUser,
-  AuthStatus,
-  SyncStatus,
-  DeviceInfo,
-  UpdateInfo,
-  DownloadProgress,
-} from '../contract';
+import type { Message, PermissionResponse, Session, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, MCPElicitationRequest, MCPElicitationResponse, AuthUser, AuthStatus, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
 
-import type {
-  InAppValidationRequest,
-  InAppValidationResultPayload,
-} from '../contract/browserInteraction';
+import type { InAppValidationRequest, InAppValidationResultPayload } from '../contract/browserInteraction';
 
-import type {
-  MemoryItem,
-  MemoryCategory,
-  MemoryStats as MemoryStatsNew,
-  MemoryExport,
-  MemoryLearnedEvent,
-  MemoryConfirmRequest,
-  MemoryExportV2Bundle,
-  MemoryEntryDeleteResult,
-  MemoryEntryListResult,
-  MemoryEntryUpdateResult,
-  MemoryImportV2ApplyResult,
-  MemoryImportV2DryRunResult,
-  MemoryMirrorRebuildResult,
-  MemoryPackRequest,
-  MemoryPackResult,
-} from '../contract/memory';
+import type { MemoryItem, MemoryCategory, MemoryStats as MemoryStatsNew, MemoryExport, MemoryLearnedEvent, MemoryConfirmRequest, MemoryExportV2Bundle, MemoryEntryDeleteResult, MemoryEntryListResult, MemoryEntryUpdateResult, MemoryImportV2ApplyResult, MemoryImportV2DryRunResult, MemoryMirrorRebuildResult, MemoryPackRequest, MemoryPackResult } from '../contract/memory';
 
-import type {
-  ContextCompressionChannelState,
-  ContextCompressionConfigPatch,
-  ContextHealthState,
-  ContextHealthUpdateEvent,
-} from '../contract/contextHealth';
+import type { ContextCompressionChannelState, ContextCompressionConfigPatch, ContextHealthState, ContextHealthUpdateEvent } from '../contract/contextHealth';
 
-import type {
-  ContextInterventionRequest,
-  ContextInterventionSetRequest,
-  ContextInterventionSnapshot,
-  ContextViewRequest,
-  ContextViewResponse,
-} from '../contract/contextView';
+import type { ContextInterventionRequest, ContextInterventionSetRequest, ContextInterventionSnapshot, ContextViewRequest, ContextViewResponse } from '../contract/contextView';
 import type { ManagedBrowserSessionState } from '../contract/desktop';
 
 import type { DAGVisualizationEvent } from '../contract/dagVisualization';
 import { DAG_CHANNELS, EVALUATION_CHANNELS } from './channels';
 
-import type {
-  TelemetrySession,
-  TelemetryTurn,
-  TelemetryModelCall,
-  TelemetryToolCall,
-  TelemetryTimelineEvent,
-  TelemetrySessionListItem,
-  TelemetryToolStat,
-  TelemetryIntentStat,
-  TelemetryPushEvent,
-  TelemetryHealth,
-  ComputerSurfaceReliabilitySummary,
-} from '../contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryPushEvent, TelemetryHealth, ComputerSurfaceReliabilitySummary } from '../contract/telemetry';
 
-import type {
-  ObjectiveMetrics,
-  SubjectiveAssessment,
-} from '../contract/sessionAnalytics';
+import type { ObjectiveMetrics, SubjectiveAssessment } from '../contract/sessionAnalytics';
 
-import type {
-  ChannelAccount,
-  ChannelInboxItem,
-  ChannelType,
-  AddChannelAccountRequest,
-  UpdateChannelAccountRequest,
-} from '../contract/channel';
+import type { ChannelAccount, ChannelInboxItem, ChannelType, AddChannelAccountRequest, UpdateChannelAccountRequest } from '../contract/channel';
 
-import type {
-  LabProjectType,
-  LabProjectStatus,
-  PythonEnvStatus,
-  TrainingProgressEvent,
-  DownloadProjectRequest,
-  DownloadProjectResponse,
-  UploadDataRequest,
-  UploadDataResponse,
-  StartTrainingRequest,
-  StartTrainingResponse,
-  InferenceRequest,
-  InferenceResult,
-} from '../contract/lab';
+import type { LabProjectType, LabProjectStatus, PythonEnvStatus, TrainingProgressEvent, DownloadProjectRequest, DownloadProjectResponse, UploadDataRequest, UploadDataResponse, StartTrainingRequest, StartTrainingResponse, InferenceRequest, InferenceResult } from '../contract/lab';
 
-import type {
-  MarketplaceInfo,
-  MarketplacePluginEntry,
-  InstalledPlugin,
-  MarketplaceResult,
-  PluginInstallResult,
-} from '../contract/marketplace';
+import type { MarketplaceInfo, MarketplacePluginEntry, InstalledPlugin, MarketplaceResult, PluginInstallResult } from '../contract/marketplace';
 
-import type {
-  EvaluationResult,
-} from '../contract/evaluation';
-import type {
-  EnqueueReviewItemInput,
-  ReviewQueueItem,
-  UpdateReviewQueueFailureCapabilityAssetInput,
-} from '../contract/reviewQueue';
-import type {
-  HandoffProposal,
-  ListHandoffProposalsInput,
-  UpdateHandoffProposalStatusInput,
-} from '../contract/handoff';
-import type {
-  DeliveryReviewRunResult,
-  RunDeliveryReviewInput,
-  ScenarioAcceptanceSkill,
-} from '../contract/scenarioAcceptance';
-import type {
-  CreatePreviewFeedbackInput,
-  ListPreviewFeedbackInput,
-  PreviewFeedbackChatContext,
-  PreviewFeedbackItem,
-  UpdatePreviewFeedbackStatusInput,
-  SendPreviewFeedbackToChatInput,
-} from '../contract/previewFeedback';
+import type { EvaluationResult, EvaluationHistoryListOptions } from '../contract/evaluation';
+import type { EnqueueReviewItemInput, ReviewQueueItem, ReviewQueueListOptions, UpdateReviewQueueFailureCapabilityAssetInput } from '../contract/reviewQueue';
+import type { HandoffProposal, ListHandoffProposalsInput, UpdateHandoffProposalStatusInput } from '../contract/handoff';
+import type { DeliveryReviewRunResult, RunDeliveryReviewInput, ScenarioAcceptanceSkill } from '../contract/scenarioAcceptance';
+import type { CreatePreviewFeedbackInput, ListPreviewFeedbackInput, PreviewFeedbackChatContext, PreviewFeedbackItem, UpdatePreviewFeedbackStatusInput, SendPreviewFeedbackToChatInput } from '../contract/previewFeedback';
 
-import type {
-  SessionRuntimeSummary,
-  SessionStatusUpdateEvent,
-  BackgroundTaskInfo,
-  BackgroundTaskUpdateEvent,
-} from '../contract/sessionState';
+import type { SessionRuntimeSummary, SessionStatusUpdateEvent, BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '../contract/sessionState';
 
 import type { SwarmEvent } from '../contract/swarm';
 import type { SwarmRunListItem, SwarmRunDetail } from '../contract/swarmTrace';
@@ -158,30 +41,7 @@ import type { CompletedAgentRun } from '../contract/agentHistory';
 
 import { IPC_CHANNELS } from './legacy-channels';
 
-import type {
-  AgentMessageRequest,
-  AgentCancelRequest,
-  SessionExport,
-  SearchResult,
-  MemoryContextResult,
-  MemoryStats,
-  MCPStatus,
-  MCPTool,
-  MCPResource,
-  ConnectorStatusSummary,
-  CacheStats,
-  DataStats,
-  SessionAnalysisResult,
-  TestReportListItem,
-  TestRunReport,
-  EvalAnnotationPayload,
-  AxialCodingEntryIpc,
-  TaskItemIpc,
-  TaskListStateIpc,
-  TaskListEventIpc,
-  CrossSessionSearchOptions,
-  CrossSessionSearchResults,
-} from './types';
+import type { AgentMessageRequest, AgentCancelRequest, SessionExport, SearchResult, MemoryContextResult, MemoryStats, MCPStatus, MCPTool, MCPResource, ConnectorStatusSummary, CacheStats, DataStats, SessionAnalysisResult, TestReportListItem, TestRunReport, EvalAnnotationPayload, AxialCodingEntryIpc, TaskItemIpc, TaskListStateIpc, TaskListEventIpc, CrossSessionSearchOptions, CrossSessionSearchResults } from './types';
 
 // ----------------------------------------------------------------------------
 // Renderer -> Main: Invoke handlers (request/response)
@@ -194,12 +54,7 @@ export interface IpcInvokeHandlers {
   // Agent - 支持纯文本或带附件的消息
   [IPC_CHANNELS.AGENT_SEND_MESSAGE]: (message: string | AgentMessageRequest) => Promise<void>;
   [IPC_CHANNELS.AGENT_CANCEL]: (payload?: AgentCancelRequest) => Promise<void>;
-  [IPC_CHANNELS.AGENT_PERMISSION_RESPONSE]: (
-    requestId: string,
-    response: PermissionResponse,
-    sessionId?: string
-  ) => Promise<void>;
-
+  [IPC_CHANNELS.AGENT_PERMISSION_RESPONSE]: (requestId: string, response: PermissionResponse, sessionId?: string) => Promise<void>;
 
   // Session
   [IPC_CHANNELS.SESSION_LIST]: (options?: { includeArchived?: boolean }) => Promise<Session[]>;
@@ -234,10 +89,7 @@ export interface IpcInvokeHandlers {
   // Settings
   [IPC_CHANNELS.SETTINGS_GET]: () => Promise<AppSettings>;
   [IPC_CHANNELS.SETTINGS_SET]: (settings: Partial<AppSettings>) => Promise<void>;
-  [IPC_CHANNELS.SETTINGS_TEST_API_KEY]: (
-    provider: string,
-    apiKey: string
-  ) => Promise<boolean>;
+  [IPC_CHANNELS.SETTINGS_TEST_API_KEY]: (provider: string, apiKey: string) => Promise<boolean>;
   [IPC_CHANNELS.SETTINGS_GET_SERVICE_KEYS]: () => Promise<{
     brave?: string;
     github?: string;
@@ -247,15 +99,9 @@ export interface IpcInvokeHandlers {
     exa?: string;
     perplexity?: string;
   }>;
-  [IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY]: (payload: {
-    service: 'brave' | 'github' | 'openrouter' | 'langfuse_public' | 'langfuse_secret' | 'exa' | 'perplexity';
-    apiKey: string;
-  }) => Promise<void>;
+  [IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY]: (payload: { service: 'brave' | 'github' | 'openrouter' | 'langfuse_public' | 'langfuse_secret' | 'exa' | 'perplexity'; apiKey: string }) => Promise<void>;
   [IPC_CHANNELS.SETTINGS_GET_INTEGRATION]: (integration: string) => Promise<Record<string, string> | null>;
-  [IPC_CHANNELS.SETTINGS_SET_INTEGRATION]: (payload: {
-    integration: string;
-    config: Record<string, string>;
-  }) => Promise<void>;
+  [IPC_CHANNELS.SETTINGS_SET_INTEGRATION]: (payload: { integration: string; config: Record<string, string> }) => Promise<void>;
 
   // Window
   [IPC_CHANNELS.WINDOW_MINIMIZE]: () => Promise<void>;
@@ -282,41 +128,26 @@ export interface IpcInvokeHandlers {
 
   // Auth
   [IPC_CHANNELS.AUTH_GET_STATUS]: () => Promise<AuthStatus>;
-  [IPC_CHANNELS.AUTH_SIGN_IN_EMAIL]: (
-    email: string,
-    password: string
-  ) => Promise<{ success: boolean; user?: AuthUser; error?: string }>;
-  [IPC_CHANNELS.AUTH_SIGN_UP_EMAIL]: (
-    email: string,
-    password: string,
-    inviteCode?: string
-  ) => Promise<{ success: boolean; user?: AuthUser; error?: string }>;
+  [IPC_CHANNELS.AUTH_SIGN_IN_EMAIL]: (email: string, password: string) => Promise<{ success: boolean; user?: AuthUser; error?: string }>;
+  [IPC_CHANNELS.AUTH_SIGN_UP_EMAIL]: (email: string, password: string, inviteCode?: string) => Promise<{ success: boolean; user?: AuthUser; error?: string }>;
   [IPC_CHANNELS.AUTH_SIGN_IN_OAUTH]: (provider: 'github' | 'google') => Promise<void>;
-  [IPC_CHANNELS.AUTH_SIGN_IN_TOKEN]: (
-    token: string
-  ) => Promise<{ success: boolean; user?: AuthUser; error?: string }>;
+  [IPC_CHANNELS.AUTH_SIGN_IN_TOKEN]: (token: string) => Promise<{ success: boolean; user?: AuthUser; error?: string }>;
   [IPC_CHANNELS.AUTH_SIGN_OUT]: () => Promise<void>;
   [IPC_CHANNELS.AUTH_GET_USER]: () => Promise<AuthUser | null>;
-  [IPC_CHANNELS.AUTH_UPDATE_PROFILE]: (
-    updates: Partial<AuthUser>
-  ) => Promise<{ success: boolean; user?: AuthUser; error?: string }>;
+  [IPC_CHANNELS.AUTH_UPDATE_PROFILE]: (updates: Partial<AuthUser>) => Promise<{ success: boolean; user?: AuthUser; error?: string }>;
   [IPC_CHANNELS.AUTH_GENERATE_QUICK_TOKEN]: () => Promise<string | null>;
-  [IPC_CHANNELS.AUTH_RESET_PASSWORD]: (
-    email: string
-  ) => Promise<{ success: boolean; error?: string }>;
-  [IPC_CHANNELS.AUTH_UPDATE_PASSWORD]: (
-    newPassword: string
-  ) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.AUTH_RESET_PASSWORD]: (email: string) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.AUTH_UPDATE_PASSWORD]: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
 
   // Sync
   [IPC_CHANNELS.SYNC_GET_STATUS]: () => Promise<SyncStatus>;
   [IPC_CHANNELS.SYNC_START]: () => Promise<void>;
   [IPC_CHANNELS.SYNC_STOP]: () => Promise<void>;
-  [IPC_CHANNELS.SYNC_FORCE_FULL]: () => Promise<{ success: boolean; error?: string }>;
-  [IPC_CHANNELS.SYNC_RESOLVE_CONFLICT]: (
-    conflictId: string,
-    resolution: 'local' | 'remote' | 'merge'
-  ) => Promise<void>;
+  [IPC_CHANNELS.SYNC_FORCE_FULL]: () => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+  [IPC_CHANNELS.SYNC_RESOLVE_CONFLICT]: (conflictId: string, resolution: 'local' | 'remote' | 'merge') => Promise<void>;
 
   // Device
   [IPC_CHANNELS.DEVICE_REGISTER]: () => Promise<DeviceInfo>;
@@ -354,33 +185,21 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SECURITY_TOOL_CREATE_RESPONSE]: (requestId: string, allowed: boolean) => Promise<void>;
 
   // Cloud config
-  [IPC_CHANNELS.CLOUD_CONFIG_REFRESH]: () => Promise<{ success: boolean; version: string; error?: string }>;
-  [IPC_CHANNELS.CLOUD_CONFIG_GET_INFO]: () => Promise<{ version: string; lastFetch: number; isStale: boolean; fromCloud: boolean; lastError: string | null }>;
+  [IPC_CHANNELS.CLOUD_CONFIG_REFRESH]: () => Promise<{
+    success: boolean;
+    version: string;
+    error?: string;
+  }>;
+  [IPC_CHANNELS.CLOUD_CONFIG_GET_INFO]: () => Promise<{
+    version: string;
+    lastFetch: number;
+    isStale: boolean;
+    fromCloud: boolean;
+    lastError: string | null;
+  }>;
 
   // Memory (Phase 2/3)
-  [IPC_CHANNELS.MEMORY]: (payload: {
-    action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add' | 'getLearningInsights' | 'lightList' | 'lightRead' | 'lightDelete' | 'lightStats' | 'lightHealth' | 'lightRebuildIndex' | 'memoryAudit' | 'memoryInboxResolve' | 'memoryEntries' | 'memoryRebuildMirror' | 'memoryEntryUpdate' | 'memoryEntryDelete' | 'memoryPack' | 'memoryExportV2' | 'memoryImportV2DryRun' | 'memoryImportV2Apply';
-    category?: MemoryCategory;
-    id?: string;
-    content?: string;
-    data?: MemoryExport;
-    bundle?: MemoryExportV2Bundle;
-    allowConflicts?: boolean;
-    query?: string;
-    request?: MemoryPackRequest;
-    item?: Partial<MemoryItem>;
-    filename?: string;
-    candidateId?: string;
-    decision?: 'approve' | 'reject';
-    title?: string;
-    source?: string;
-    reason?: string;
-    kind?: string;
-    projectPath?: string | null;
-    sessionId?: string | null;
-    limit?: number;
-    entryId?: string;
-  }) => Promise<{
+  [IPC_CHANNELS.MEMORY]: (payload: { action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add' | 'getLearningInsights' | 'lightList' | 'lightRead' | 'lightDelete' | 'lightStats' | 'lightHealth' | 'lightRebuildIndex' | 'memoryAudit' | 'memoryInboxResolve' | 'memoryEntries' | 'memoryRebuildMirror' | 'memoryEntryUpdate' | 'memoryEntryDelete' | 'memoryPack' | 'memoryExportV2' | 'memoryImportV2DryRun' | 'memoryImportV2Apply'; category?: MemoryCategory; id?: string; content?: string; data?: MemoryExport; bundle?: MemoryExportV2Bundle; allowConflicts?: boolean; query?: string; request?: MemoryPackRequest; item?: Partial<MemoryItem>; filename?: string; candidateId?: string; decision?: 'approve' | 'reject'; title?: string; source?: string; reason?: string; kind?: string; projectPath?: string | null; sessionId?: string | null; limit?: number; entryId?: string }) => Promise<{
     success: boolean;
     data?: MemoryItem[] | MemoryStatsNew | MemoryExport | MemoryExportV2Bundle | MemoryEntryListResult | MemoryMirrorRebuildResult | MemoryEntryUpdateResult | MemoryEntryDeleteResult | MemoryImportV2DryRunResult | MemoryImportV2ApplyResult | MemoryPackResult | { deleted: number } | { imported: number; skipped: number } | MemoryItem | unknown;
     error?: string;
@@ -433,7 +252,7 @@ export interface IpcInvokeHandlers {
   // Evaluation (会话评测)
   [IPC_CHANNELS.EVALUATION_RUN]: (payload: { sessionId: string; save?: boolean }) => Promise<EvaluationResult>;
   [IPC_CHANNELS.EVALUATION_GET_RESULT]: (evaluationId: string) => Promise<EvaluationResult | null>;
-  [IPC_CHANNELS.EVALUATION_LIST_HISTORY]: (payload?: { sessionId?: string; limit?: number }) => Promise<EvaluationResult[]>;
+  [IPC_CHANNELS.EVALUATION_LIST_HISTORY]: (payload?: EvaluationHistoryListOptions) => Promise<EvaluationResult[]>;
   [IPC_CHANNELS.EVALUATION_EXPORT]: (payload: { result: EvaluationResult; format: 'json' | 'markdown' }) => Promise<string>;
   [IPC_CHANNELS.EVALUATION_DELETE]: (evaluationId: string) => Promise<boolean>;
   // Session Analytics (v2 - 分离客观指标和主观评测)
@@ -452,11 +271,14 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.EVALUATION_GET_FAILURE_FUNNEL]: (experimentId: string) => Promise<unknown>;
   [IPC_CHANNELS.EVALUATION_GET_CROSS_EXPERIMENT]: (experimentIds: string[]) => Promise<unknown[]>;
   [IPC_CHANNELS.EVALUATION_CREATE_EXPERIMENT]: (config: { name: string; model: string; testSetId: string; trialsPerCase: number; gitCommit: string }) => Promise<{ experimentId: string; status: string }>;
-  [IPC_CHANNELS.EVALUATION_GET_GIT_COMMIT]: () => Promise<{ hash: string; short: string }>;
+  [IPC_CHANNELS.EVALUATION_GET_GIT_COMMIT]: () => Promise<{
+    hash: string;
+    short: string;
+  }>;
   [IPC_CHANNELS.EVALUATION_GET_SNAPSHOT]: (sessionId: string) => Promise<unknown>;
   [IPC_CHANNELS.EVALUATION_BUILD_SNAPSHOT]: (sessionId: string) => Promise<unknown>;
   [IPC_CHANNELS.EVALUATION_GET_CASE_DETAIL]: (experimentId: string, caseId: string) => Promise<unknown>;
-  [IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_LIST]: () => Promise<ReviewQueueItem[]>;
+  [IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_LIST]: (payload?: ReviewQueueListOptions) => Promise<ReviewQueueItem[]>;
   [IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_ENQUEUE]: (payload: EnqueueReviewItemInput) => Promise<ReviewQueueItem>;
   [IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_UPDATE_FAILURE_ASSET]: (payload: UpdateReviewQueueFailureCapabilityAssetInput) => Promise<ReviewQueueItem | null>;
   [IPC_CHANNELS.EVALUATION_SCENARIO_SKILLS_LIST]: () => Promise<ScenarioAcceptanceSkill[]>;
@@ -472,8 +294,21 @@ export interface IpcInvokeHandlers {
 
   // Test Subset (数据集子集管理)
   [IPC_CHANNELS.SUBSET_SAVE]: (subset: { name: string; description?: string; caseIds: string[] }) => Promise<{ success: boolean; path: string }>;
-  [IPC_CHANNELS.SUBSET_LIST]: () => Promise<Array<{ name: string; description?: string; caseIds: string[]; createdAt: number; fileName: string }>>;
-  [IPC_CHANNELS.SUBSET_LOAD]: (fileName: string) => Promise<{ name: string; description?: string; caseIds: string[]; createdAt: number } | null>;
+  [IPC_CHANNELS.SUBSET_LIST]: () => Promise<
+    Array<{
+      name: string;
+      description?: string;
+      caseIds: string[];
+      createdAt: number;
+      fileName: string;
+    }>
+  >;
+  [IPC_CHANNELS.SUBSET_LOAD]: (fileName: string) => Promise<{
+    name: string;
+    description?: string;
+    caseIds: string[];
+    createdAt: number;
+  } | null>;
   [IPC_CHANNELS.SUBSET_DELETE]: (fileName: string) => Promise<boolean>;
 
   // Background (后台任务)
@@ -483,14 +318,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.BACKGROUND_GET_COUNT]: () => Promise<number>;
 
   // Swarm (Agent Teams)
-  [IPC_CHANNELS.SWARM_SEND_USER_MESSAGE]: (payload: {
-    agentId: string;
-    message: string;
-    sessionId?: string;
-    messageId?: string;
-    timestamp?: number;
-    metadata?: Message['metadata'];
-  }) => Promise<{ delivered: boolean; persisted: boolean }>;
+  [IPC_CHANNELS.SWARM_SEND_USER_MESSAGE]: (payload: { agentId: string; message: string; sessionId?: string; messageId?: string; timestamp?: number; metadata?: Message['metadata'] }) => Promise<{ delivered: boolean; persisted: boolean }>;
   [IPC_CHANNELS.SWARM_GET_AGENT_MESSAGES]: (agentId: string) => Promise<Array<{ from: string; to: string; content: string; timestamp: number }>>;
   [IPC_CHANNELS.SWARM_SET_DELEGATE_MODE]: (enabled: boolean) => Promise<void>;
   [IPC_CHANNELS.SWARM_GET_DELEGATE_MODE]: () => Promise<boolean>;
@@ -518,23 +346,36 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.TASKLIST_SET_REQUIRE_APPROVAL]: (enabled: boolean) => Promise<void>;
 
   // Checkpoint (Rewind UI)
-  [IPC_CHANNELS.CHECKPOINT_LIST]: (sessionId: string) => Promise<Array<{
-    id: string;
-    timestamp: number;
-    messageId: string;
-    description?: string;
-    fileCount: number;
-  }>>;
-  [IPC_CHANNELS.CHECKPOINT_REWIND]: (sessionId: string, messageId: string) => Promise<{
+  [IPC_CHANNELS.CHECKPOINT_LIST]: (sessionId: string) => Promise<
+    Array<{
+      id: string;
+      timestamp: number;
+      messageId: string;
+      description?: string;
+      fileCount: number;
+    }>
+  >;
+  [IPC_CHANNELS.CHECKPOINT_REWIND]: (
+    sessionId: string,
+    messageId: string
+  ) => Promise<{
     success: boolean;
     filesRestored: number;
     error?: string;
   }>;
-  [IPC_CHANNELS.CHECKPOINT_PREVIEW]: (sessionId: string, messageId: string) => Promise<Array<{
-    filePath: string;
-    status: 'added' | 'modified' | 'deleted';
-  }>>;
-  [IPC_CHANNELS.CHECKPOINT_FORK]: (sessionId: string, messageId: string) => Promise<{
+  [IPC_CHANNELS.CHECKPOINT_PREVIEW]: (
+    sessionId: string,
+    messageId: string
+  ) => Promise<
+    Array<{
+      filePath: string;
+      status: 'added' | 'modified' | 'deleted';
+    }>
+  >;
+  [IPC_CHANNELS.CHECKPOINT_FORK]: (
+    sessionId: string,
+    messageId: string
+  ) => Promise<{
     success: boolean;
     filesRestored: number;
     messagesTruncated: number;
@@ -542,11 +383,13 @@ export interface IpcInvokeHandlers {
   }>;
 
   // Suggestions (智能提示)
-  [IPC_CHANNELS.SUGGESTIONS_GET]: () => Promise<Array<{
-    id: string;
-    text: string;
-    source: string;
-  }>>;
+  [IPC_CHANNELS.SUGGESTIONS_GET]: () => Promise<
+    Array<{
+      id: string;
+      text: string;
+      source: string;
+    }>
+  >;
 
   // Context compact (部分压缩)
   [IPC_CHANNELS.CONTEXT_COMPACT_FROM]: (messageId: string) => Promise<import('../../shared/contract/contextHealth').CompactResult>;
@@ -561,34 +404,30 @@ export interface IpcInvokeHandlers {
 
   // Telemetry (遥测系统)
   [IPC_CHANNELS.TELEMETRY_GET_SESSION]: (sessionId: string) => Promise<TelemetrySession | null>;
-  [IPC_CHANNELS.TELEMETRY_LIST_SESSIONS]: (options: { limit?: number; offset?: number }) => Promise<TelemetrySessionListItem[]>;
+  [IPC_CHANNELS.TELEMETRY_LIST_SESSIONS]: (options: TelemetrySessionListOptions) => Promise<TelemetrySessionListItem[]>;
   [IPC_CHANNELS.TELEMETRY_GET_TURNS]: (sessionId: string) => Promise<TelemetryTurn[]>;
-  [IPC_CHANNELS.TELEMETRY_GET_TURN_DETAIL]: (turnId: string) => Promise<{ turn: TelemetryTurn; modelCalls: TelemetryModelCall[]; toolCalls: TelemetryToolCall[]; events: TelemetryTimelineEvent[] } | null>;
+  [IPC_CHANNELS.TELEMETRY_GET_TURN_DETAIL]: (turnId: string) => Promise<{
+    turn: TelemetryTurn;
+    modelCalls: TelemetryModelCall[];
+    toolCalls: TelemetryToolCall[];
+    events: TelemetryTimelineEvent[];
+  } | null>;
   [IPC_CHANNELS.TELEMETRY_GET_TOOL_STATS]: (sessionId: string) => Promise<TelemetryToolStat[]>;
   [IPC_CHANNELS.TELEMETRY_GET_COMPUTER_SURFACE_SUMMARY]: (sessionId: string) => Promise<ComputerSurfaceReliabilitySummary>;
   [IPC_CHANNELS.TELEMETRY_GET_INTENT_DIST]: (sessionId: string) => Promise<TelemetryIntentStat[]>;
   [IPC_CHANNELS.TELEMETRY_GET_EVENTS]: (sessionId: string) => Promise<TelemetryTimelineEvent[]>;
-  [IPC_CHANNELS.TELEMETRY_GET_SYSTEM_PROMPT]: (hash: string) => Promise<{ content: string; tokens: number | null; generationId: string | null } | null>;
+  [IPC_CHANNELS.TELEMETRY_GET_SYSTEM_PROMPT]: (hash: string) => Promise<{
+    content: string;
+    tokens: number | null;
+    generationId: string | null;
+  } | null>;
   [IPC_CHANNELS.TELEMETRY_DELETE_SESSION]: (sessionId: string) => Promise<boolean>;
   [IPC_CHANNELS.REPLAY_GET_STRUCTURED_DATA]: (sessionId: string) => Promise<unknown>;
   [IPC_CHANNELS.TELEMETRY_HEALTH]: () => Promise<TelemetryHealth>;
-
 }
 
 export interface ManagedBrowserSessionChangedEvent {
-  reason:
-    | 'launch'
-    | 'close'
-    | 'new_tab'
-    | 'close_tab'
-    | 'switch_tab'
-    | 'navigate'
-    | 'page_load'
-    | 'history'
-    | 'reload'
-    | 'set_viewport'
-    | 'crashed'
-    | 'external_bridge';
+  reason: 'launch' | 'close' | 'new_tab' | 'close_tab' | 'switch_tab' | 'navigate' | 'page_load' | 'history' | 'reload' | 'set_viewport' | 'crashed' | 'external_bridge';
   session?: ManagedBrowserSessionState;
 }
 
@@ -626,11 +465,7 @@ export interface NotificationClickedEvent {
   sessionId: string;
 }
 
-export type MCPEventType =
-  | 'connection_errors'
-  | 'server_connected'
-  | 'server_disconnected'
-  | 'capabilities_changed';
+export type MCPEventType = 'connection_errors' | 'server_connected' | 'server_disconnected' | 'capabilities_changed';
 
 export interface MCPEvent {
   type: MCPEventType;
@@ -679,10 +514,7 @@ export interface TaskRuntimeStats {
   maxConcurrent: number;
 }
 
-export type TaskRuntimeEvent =
-  | { type: 'state_change'; sessionId: string; data: TaskRuntimeSessionState }
-  | { type: 'stats_updated'; data: TaskRuntimeStats }
-  | { type: 'queue_update'; sessionId: string; queue: string[] };
+export type TaskRuntimeEvent = { type: 'state_change'; sessionId: string; data: TaskRuntimeSessionState } | { type: 'stats_updated'; data: TaskRuntimeStats } | { type: 'queue_update'; sessionId: string; queue: string[] };
 
 export interface IpcEventHandlers {
   [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEventEnvelope) => void;
@@ -746,6 +578,27 @@ export interface ProviderFallbackEvent {
 
 export type ExperimentProgressEvent =
   | { experimentId: string; type: 'run_start'; totalCases: number }
-  | { experimentId: string; type: 'case_start'; testId: string; description: string }
-  | { experimentId: string; type: 'case_end'; testId: string; status: string; score: number; duration: number }
-  | { experimentId: string; type: 'run_end'; status: 'completed' | 'failed'; total?: number; passed?: number; failed?: number; avgScore?: number; error?: string };
+  | {
+      experimentId: string;
+      type: 'case_start';
+      testId: string;
+      description: string;
+    }
+  | {
+      experimentId: string;
+      type: 'case_end';
+      testId: string;
+      status: string;
+      score: number;
+      duration: number;
+    }
+  | {
+      experimentId: string;
+      type: 'run_end';
+      status: 'completed' | 'failed';
+      total?: number;
+      passed?: number;
+      failed?: number;
+      avgScore?: number;
+      error?: string;
+    };

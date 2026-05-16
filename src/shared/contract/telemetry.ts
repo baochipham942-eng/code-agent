@@ -6,22 +6,7 @@
 // Intent Classification
 // ----------------------------------------------------------------------------
 
-export type UserIntentCategory =
-  | 'code_generation'
-  | 'bug_fix'
-  | 'code_review'
-  | 'explanation'
-  | 'refactoring'
-  | 'file_operation'
-  | 'search'
-  | 'conversation'
-  | 'planning'
-  | 'multi_step_task'
-  | 'testing'
-  | 'documentation'
-  | 'configuration'
-  | 'research'
-  | 'unknown';
+export type UserIntentCategory = 'code_generation' | 'bug_fix' | 'code_review' | 'explanation' | 'refactoring' | 'file_operation' | 'search' | 'conversation' | 'planning' | 'multi_step_task' | 'testing' | 'documentation' | 'configuration' | 'research' | 'unknown';
 
 export interface IntentClassification {
   primary: UserIntentCategory;
@@ -95,11 +80,11 @@ export type ErrorCategory =
   | 'network_error'
   | 'command_failure'
   | 'context_overflow'
-  | 'dependency_missing'   // 缺包/缺二进制（Cannot find package/module，was rate_limit 误标）
-  | 'http_4xx'             // HTTP 4xx (除 429 → rate_limit)
-  | 'http_5xx'             // HTTP 5xx
-  | 'sandbox_denied'       // 沙箱拒绝
-  | 'auth_failed'          // 401/403/认证失败
+  | 'dependency_missing' // 缺包/缺二进制（Cannot find package/module，was rate_limit 误标）
+  | 'http_4xx' // HTTP 4xx (除 429 → rate_limit)
+  | 'http_5xx' // HTTP 5xx
+  | 'sandbox_denied' // 沙箱拒绝
+  | 'auth_failed' // 401/403/认证失败
   | 'unknown';
 
 export interface TelemetryToolCall {
@@ -215,8 +200,8 @@ export interface TelemetryTurn {
   iterationCount: number;
 
   // Turn granularity: distinguish user-initiated turns from agentic loop iterations
-  turnType: 'user' | 'iteration';   // 'user' = triggered by user message; 'iteration' = agentic loop step
-  parentTurnId?: string;             // set on 'iteration' turns, points to the parent 'user' turn id
+  turnType: 'user' | 'iteration'; // 'user' = triggered by user message; 'iteration' = agentic loop step
+  parentTurnId?: string; // set on 'iteration' turns, points to the parent 'user' turn id
 }
 
 // ----------------------------------------------------------------------------
@@ -225,6 +210,7 @@ export interface TelemetryTurn {
 
 export interface TelemetrySession {
   id: string;
+  userId?: string | null;
   title: string;
   generationId: string;
   modelProvider: string;
@@ -265,6 +251,7 @@ export interface TelemetryAdapter {
 
 export interface TelemetrySessionListItem {
   id: string;
+  userId?: string | null;
   title: string;
   modelProvider: string;
   modelName: string;
@@ -274,6 +261,13 @@ export interface TelemetrySessionListItem {
   totalTokens: number;
   estimatedCost: number;
   status: string;
+}
+
+export interface TelemetrySessionListOptions {
+  limit?: number;
+  offset?: number;
+  userId?: string | null;
+  unassignedOnly?: boolean;
 }
 
 export interface TelemetryToolStat {

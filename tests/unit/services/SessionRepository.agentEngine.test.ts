@@ -13,15 +13,16 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
     debug: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
-    error: vi.fn(),
-  }),
+    error: vi.fn()
+  })
 }));
 
 function createSchema(db: BetterSqlite3.Database): void {
   db.exec(`
-    CREATE TABLE sessions (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        title TEXT NOT NULL,
       model_provider TEXT NOT NULL,
       model_name TEXT NOT NULL,
       working_directory TEXT,
@@ -58,12 +59,12 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     title: 'Session',
     modelConfig: {
       provider: 'xiaomi',
-      model: 'mimo-v2.5-pro',
+      model: 'mimo-v2.5-pro'
     } as Session['modelConfig'],
     workingDirectory: '/repo/code-agent',
     createdAt: 1,
     updatedAt: 1,
-    ...overrides,
+    ...overrides
   };
 }
 
@@ -73,7 +74,7 @@ function makeEngine(kind: Extract<AgentEngineKind, 'codex_cli' | 'claude_code'>)
     cwd: `/repo/code-agent/${kind}`,
     permissionProfile: 'read_only',
     origin: 'manual',
-    updatedAt: kind === 'codex_cli' ? 101 : 202,
+    updatedAt: kind === 'codex_cli' ? 101 : 202
   };
 }
 
@@ -92,49 +93,63 @@ describe('SessionRepository Agent Engine metadata', () => {
   });
 
   it('loads old sessions without agent metadata as native', () => {
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO sessions (id, title, model_provider, model_name, created_at, updated_at)
       VALUES ('old-session', 'Old session', 'openai', 'gpt-5', 1, 1)
-    `).run();
+    `
+    ).run();
 
     expect(repo.getSession('old-session')?.engine).toEqual({
       kind: 'native',
       permissionProfile: 'default',
-      origin: 'manual',
+      origin: 'manual'
     });
   });
 
-  it.each([
-    ['codex_cli'],
-    ['claude_code'],
-  ] as const)('saves and reloads %s cwd, permission profile, and origin', (kind) => {
+  it.each([['codex_cli'], ['claude_code']] as const)('saves and reloads %s cwd, permission profile, and origin', (kind) => {
     const engine = makeEngine(kind);
-    repo.createSession(makeSession({
-      id: `${kind}-session`,
-      engine,
-    }));
+    repo.createSession(
+      makeSession({
+        id: `${kind}-session`,
+        engine
+      })
+    );
 
     expect(repo.getSession(`${kind}-session`)?.engine).toEqual(engine);
   });
 
+  it('saves and reloads the session owner user id', () => {
+    repo.createSession(
+      makeSession({
+        id: 'owned-session',
+        userId: 'user-1'
+      })
+    );
+
+    expect(repo.getSession('owned-session')?.userId).toBe('user-1');
+  });
+
   it('updates engine metadata without changing the session model provider', () => {
-    repo.createSession(makeSession({
-      id: 'engine-switch-session',
-      modelConfig: {
-        provider: 'xiaomi',
-        model: 'mimo-v2.5-pro',
-      } as Session['modelConfig'],
-    }));
+    repo.createSession(
+      makeSession({
+        id: 'engine-switch-session',
+        modelConfig: {
+          provider: 'xiaomi',
+          model: 'mimo-v2.5-pro'
+        } as Session['modelConfig']
+      })
+    );
 
     repo.updateSession('engine-switch-session', {
-      engine: makeEngine('codex_cli'),
+      engine: makeEngine('codex_cli')
     });
 
     const loaded = repo.getSession('engine-switch-session');
     expect(loaded?.engine).toEqual(makeEngine('codex_cli'));
     expect(loaded?.modelConfig).toEqual({
       provider: 'xiaomi',
-      model: 'mimo-v2.5-pro',
+      model: 'mimo-v2.5-pro'
     });
   });
 });

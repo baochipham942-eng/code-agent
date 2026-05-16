@@ -15,33 +15,13 @@ export interface UnifiedTraceIdentity {
   replayKey: string;
 }
 
-export type ReviewQueueReason =
-  | 'manual_review'
-  | 'delivery_review'
-  | 'failure_followup'
-  | 'interesting_case'
-  | 'regression_candidate';
+export type ReviewQueueReason = 'manual_review' | 'delivery_review' | 'failure_followup' | 'interesting_case' | 'regression_candidate';
 
-export type ReviewQueueSource =
-  | 'current_session_bar'
-  | 'session_list'
-  | 'replay_failure';
+export type ReviewQueueSource = 'current_session_bar' | 'session_list' | 'replay_failure';
 
-export type ReviewQueueFailureRootCategory =
-  | 'tool_error'
-  | 'bad_decision'
-  | 'missing_context'
-  | 'loop'
-  | 'hallucination'
-  | 'env_failure'
-  | 'deviation'
-  | 'unknown';
+export type ReviewQueueFailureRootCategory = 'tool_error' | 'bad_decision' | 'missing_context' | 'loop' | 'hallucination' | 'env_failure' | 'deviation' | 'unknown';
 
-export type ReviewQueueFailureCapabilitySink =
-  | 'skill'
-  | 'dataset'
-  | 'prompt_policy'
-  | 'capability_health';
+export type ReviewQueueFailureCapabilitySink = 'skill' | 'dataset' | 'prompt_policy' | 'capability_health';
 
 export interface ReviewQueueFailureAttributionInput {
   rootCause?: {
@@ -62,11 +42,7 @@ export interface ReviewQueueFailureCapabilityMetadata {
   evidence?: number[];
 }
 
-export type ReviewQueueFailureCapabilityAssetStatus =
-  | 'draft'
-  | 'ready'
-  | 'applied'
-  | 'dismissed';
+export type ReviewQueueFailureCapabilityAssetStatus = 'draft' | 'ready' | 'applied' | 'dismissed';
 
 export interface ReviewQueueFailureCapabilityAsset {
   id: string;
@@ -104,6 +80,7 @@ export interface ReviewQueueItem {
   id: string;
   trace: UnifiedTraceIdentity;
   sessionId: string;
+  userId?: string | null;
   sessionTitle: string;
   reason: ReviewQueueReason;
   enqueueSource: ReviewQueueSource;
@@ -114,6 +91,11 @@ export interface ReviewQueueItem {
   deliveryReview?: DeliveryReviewMetadata;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface ReviewQueueListOptions {
+  userId?: string | null;
+  unassignedOnly?: boolean;
 }
 
 export interface EnqueueReviewItemInput {
@@ -133,7 +115,7 @@ export function buildSessionTraceIdentity(sessionId: string): UnifiedTraceIdenti
     traceSource: 'session_replay',
     source: 'session_replay',
     sessionId,
-    replayKey: sessionId,
+    replayKey: sessionId
   };
 }
 
@@ -165,7 +147,7 @@ const FAILURE_ROOT_CATEGORY_TO_SINK: Record<ReviewQueueFailureRootCategory, Revi
   hallucination: 'prompt_policy',
   loop: 'prompt_policy',
   deviation: 'dataset',
-  unknown: 'dataset',
+  unknown: 'dataset'
 };
 
 const FAILURE_ROOT_CATEGORY_LABELS: Record<ReviewQueueFailureRootCategory, string> = {
@@ -176,31 +158,31 @@ const FAILURE_ROOT_CATEGORY_LABELS: Record<ReviewQueueFailureRootCategory, strin
   hallucination: '幻觉',
   env_failure: '环境失败',
   deviation: '偏差样本',
-  unknown: '待归因',
+  unknown: '待归因'
 };
 
 const FAILURE_CAPABILITY_SINK_LABELS: Record<ReviewQueueFailureCapabilitySink, string> = {
   skill: 'Skill',
   dataset: 'Dataset',
   prompt_policy: 'Prompt Policy',
-  capability_health: 'Capability Health',
+  capability_health: 'Capability Health'
 };
 
 const FAILURE_CAPABILITY_ASSET_STATUS_LABELS: Record<ReviewQueueFailureCapabilityAssetStatus, string> = {
   draft: '草稿',
   ready: '待应用',
   applied: '已应用',
-  dismissed: '已忽略',
+  dismissed: '已忽略'
 };
 
 const REVIEW_QUEUE_SOURCE_LABELS: Record<ReviewQueueSource, string> = {
   current_session_bar: '当前会话',
   session_list: '会话列表',
-  replay_failure: '失败回看',
+  replay_failure: '失败回看'
 };
 
 const TRACE_SOURCE_LABELS: Record<UnifiedTraceSource, string> = {
-  session_replay: 'Session Replay',
+  session_replay: 'Session Replay'
 };
 
 export function getReviewQueueSourceLabel(source: ReviewQueueSource): string {
@@ -219,30 +201,19 @@ export function getReviewQueueFailureRootCategoryLabel(category: ReviewQueueFail
   return FAILURE_ROOT_CATEGORY_LABELS[category];
 }
 
-export function getReviewQueueFailureCapabilityLabel(
-  metadata: ReviewQueueFailureCapabilityMetadata,
-): string {
+export function getReviewQueueFailureCapabilityLabel(metadata: ReviewQueueFailureCapabilityMetadata): string {
   return `${getReviewQueueFailureCapabilitySinkLabel(metadata.sink)} · ${getReviewQueueFailureRootCategoryLabel(metadata.category)}`;
 }
 
-export function getReviewQueueFailureAssetStatusLabel(
-  status: ReviewQueueFailureCapabilityAssetStatus,
-): string {
+export function getReviewQueueFailureAssetStatusLabel(status: ReviewQueueFailureCapabilityAssetStatus): string {
   return FAILURE_CAPABILITY_ASSET_STATUS_LABELS[status];
 }
 
-export function isReviewQueueFailureCapabilityAssetStatus(
-  status: unknown,
-): status is ReviewQueueFailureCapabilityAssetStatus {
-  return status === 'draft'
-    || status === 'ready'
-    || status === 'applied'
-    || status === 'dismissed';
+export function isReviewQueueFailureCapabilityAssetStatus(status: unknown): status is ReviewQueueFailureCapabilityAssetStatus {
+  return status === 'draft' || status === 'ready' || status === 'applied' || status === 'dismissed';
 }
 
-export function buildReviewQueueFailureCapabilityMetadata(
-  attribution?: ReviewQueueFailureAttributionInput | null,
-): ReviewQueueFailureCapabilityMetadata | undefined {
+export function buildReviewQueueFailureCapabilityMetadata(attribution?: ReviewQueueFailureAttributionInput | null): ReviewQueueFailureCapabilityMetadata | undefined {
   const rootCause = attribution?.rootCause;
   if (!rootCause) {
     return undefined;
@@ -256,21 +227,15 @@ export function buildReviewQueueFailureCapabilityMetadata(
     summary: rootCause.summary,
     stepIndex: rootCause.stepIndex,
     confidence: rootCause.confidence,
-    evidence: rootCause.evidence,
+    evidence: rootCause.evidence
   };
 }
 
-export function buildReviewQueueFailureCapabilityAssetDraft(
-  input: BuildReviewQueueFailureCapabilityAssetDraftInput,
-): ReviewQueueFailureCapabilityAsset {
+export function buildReviewQueueFailureCapabilityAssetDraft(input: BuildReviewQueueFailureCapabilityAssetDraftInput): ReviewQueueFailureCapabilityAsset {
   const { metadata } = input;
   const updatedAt = input.updatedAt ?? input.createdAt;
   const title = `${getReviewQueueFailureCapabilityLabel(metadata)} draft`;
-  const bodyLines: string[] = [
-    metadata.summary?.trim() || 'Failure follow-up needs capability work.',
-    `Target: ${getReviewQueueFailureCapabilitySinkLabel(metadata.sink)}`,
-    `Category: ${getReviewQueueFailureRootCategoryLabel(metadata.category)}`,
-  ];
+  const bodyLines: string[] = [metadata.summary?.trim() || 'Failure follow-up needs capability work.', `Target: ${getReviewQueueFailureCapabilitySinkLabel(metadata.sink)}`, `Category: ${getReviewQueueFailureRootCategoryLabel(metadata.category)}`];
 
   if (typeof metadata.stepIndex === 'number') {
     bodyLines.push(`Root step: ${metadata.stepIndex}`);
@@ -296,7 +261,7 @@ export function buildReviewQueueFailureCapabilityAssetDraft(
     confidence: metadata.confidence,
     evidence: metadata.evidence,
     createdAt: input.createdAt,
-    updatedAt,
+    updatedAt
   };
 }
 

@@ -4,16 +4,10 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Eye, MessageSquarePlus, Search, X } from 'lucide-react';
-import {
-  getReviewQueueFailureAssetStatusLabel,
-  getReviewQueueFailureCapabilityLabel,
-  getReviewQueueReasonLabel,
-  getReviewQueueSourceLabel,
-  type ReviewQueueItem,
-  type ReviewQueueFailureCapabilityAssetStatus,
-} from '@shared/contract/reviewQueue';
+import { getReviewQueueFailureAssetStatusLabel, getReviewQueueFailureCapabilityLabel, getReviewQueueReasonLabel, getReviewQueueSourceLabel, type ReviewQueueItem, type ReviewQueueFailureCapabilityAssetStatus } from '@shared/contract/reviewQueue';
 import { useEvalCenterStore } from '../../../stores/evalCenterStore';
 import { SessionListItem } from './SessionListItem';
+import { AdminUserScopeSelect, type AdminUserScopeValue } from '../admin/AdminUserScopeSelect';
 
 interface SessionListViewProps {
   onSelectSession: (sessionId: string) => void;
@@ -21,6 +15,7 @@ interface SessionListViewProps {
 
 interface SessionListAsset {
   id: string;
+  userId?: string | null;
   title: string;
   modelProvider: string;
   modelName: string;
@@ -34,128 +29,73 @@ function normalizeAssetSearchQuery(query: string): string {
 function textMatchesQuery(parts: Array<string | number | boolean | null | undefined>, query: string): boolean {
   const normalizedQuery = normalizeAssetSearchQuery(query);
   if (!normalizedQuery) return true;
-  return parts
-    .filter((part): part is string | number | boolean => part !== null && part !== undefined)
-    .some((part) => String(part).toLowerCase().includes(normalizedQuery));
+  return parts.filter((part): part is string | number | boolean => part !== null && part !== undefined).some((part) => String(part).toLowerCase().includes(normalizedQuery));
 }
 
 export function matchesSessionAssetQuery(session: SessionListAsset, query: string): boolean {
-  return textMatchesQuery([
-    session.title,
-    session.id,
-    session.modelProvider,
-    session.modelName,
-    session.status,
-  ], query);
+  return textMatchesQuery([session.title, session.id, session.userId, session.modelProvider, session.modelName, session.status], query);
 }
 
 export function matchesReviewQueueAssetQuery(item: ReviewQueueItem, query: string): boolean {
-  return textMatchesQuery([
-    item.id,
-    item.sessionTitle,
-    item.sessionId,
-    item.trace.traceId,
-    item.trace.replayKey,
-    getReviewQueueReasonLabel(item.reason),
-    getReviewQueueSourceLabel(item.enqueueSource ?? item.source),
-    item.failureCapability ? getReviewQueueFailureCapabilityLabel(item.failureCapability) : null,
-    item.failureCapability?.summary,
-    item.failureAsset?.title,
-    item.failureAsset?.body,
-    item.failureAsset ? getReviewQueueFailureAssetStatusLabel(item.failureAsset.status) : null,
-    item.deliveryReview?.summary,
-    item.deliveryReview?.status,
-    item.deliveryReview?.score,
-    item.deliveryReview?.issueCodes.join(' '),
-  ], query);
+  return textMatchesQuery([item.id, item.sessionTitle, item.sessionId, item.userId, item.trace.traceId, item.trace.replayKey, getReviewQueueReasonLabel(item.reason), getReviewQueueSourceLabel(item.enqueueSource ?? item.source), item.failureCapability ? getReviewQueueFailureCapabilityLabel(item.failureCapability) : null, item.failureCapability?.summary, item.failureAsset?.title, item.failureAsset?.body, item.failureAsset ? getReviewQueueFailureAssetStatusLabel(item.failureAsset.status) : null, item.deliveryReview?.summary, item.deliveryReview?.status, item.deliveryReview?.score, item.deliveryReview?.issueCodes.join(' ')], query);
 }
 
 export function buildReviewQueueFollowupPrompt(item: ReviewQueueItem): string {
-  const capabilityLabel = item.failureCapability
-    ? getReviewQueueFailureCapabilityLabel(item.failureCapability)
-    : null;
+  const capabilityLabel = item.failureCapability ? getReviewQueueFailureCapabilityLabel(item.failureCapability) : null;
   const reviewComment = item.failureAsset?.body || item.failureCapability?.summary || '';
-  const deliveryReview = item.deliveryReview
-    ? [
-        `- 交付评审：${item.deliveryReview.status} · ${item.deliveryReview.score}`,
-        `- 评审摘要：${item.deliveryReview.summary}`,
-        item.deliveryReview.issueCodes.length > 0
-          ? `- 问题码：${item.deliveryReview.issueCodes.join(', ')}`
-          : null,
-      ].filter(Boolean).join('\n')
-    : '';
-  const lines = [
-    '继续处理 Review Queue 里的这一条：',
-    `- 会话：${item.sessionTitle}`,
-    `- Replay sessionId：${item.sessionId}`,
-    `- 原因：${getReviewQueueReasonLabel(item.reason)}`,
-    `- 来源：${getReviewQueueSourceLabel(item.enqueueSource ?? item.source)}`,
-    capabilityLabel ? `- 归因：${capabilityLabel}` : null,
-    deliveryReview,
-    reviewComment ? `- 评论：${reviewComment}` : null,
-    '请先打开对应 replay 或会话核对证据，再做下一轮最小处理；能直接修就改必要文件并验证，不能修就写清阻塞点。',
-  ];
+  const deliveryReview = item.deliveryReview ? [`- 交付评审：${item.deliveryReview.status} · ${item.deliveryReview.score}`, `- 评审摘要：${item.deliveryReview.summary}`, item.deliveryReview.issueCodes.length > 0 ? `- 问题码：${item.deliveryReview.issueCodes.join(', ')}` : null].filter(Boolean).join('\n') : '';
+  const lines = ['继续处理 Review Queue 里的这一条：', `- 会话：${item.sessionTitle}`, `- Replay sessionId：${item.sessionId}`, `- 原因：${getReviewQueueReasonLabel(item.reason)}`, `- 来源：${getReviewQueueSourceLabel(item.enqueueSource ?? item.source)}`, capabilityLabel ? `- 归因：${capabilityLabel}` : null, deliveryReview, reviewComment ? `- 评论：${reviewComment}` : null, '请先打开对应 replay 或会话核对证据，再做下一轮最小处理；能直接修就改必要文件并验证，不能修就写清阻塞点。'];
 
   return lines.filter(Boolean).join('\n');
 }
 
 export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSession }) => {
-  const {
-    sessionList,
-    sessionListLoading,
-    filterStatus,
-    sortBy,
-    loadSessionList,
-    reviewQueue,
-    reviewQueueLoading,
-    loadReviewQueue,
-    enqueueReviewItem,
-    updateFailureAssetStatus,
-    setFilterStatus,
-    setSortBy,
-  } = useEvalCenterStore();
+  const { sessionList, sessionListLoading, filterStatus, sortBy, loadSessionList, reviewQueue, reviewQueueLoading, loadReviewQueue, enqueueReviewItem, updateFailureAssetStatus, setFilterStatus, setSortBy } = useEvalCenterStore();
 
   const [expanded, setExpanded] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [userScope, setUserScope] = useState<AdminUserScopeValue>({});
 
   useEffect(() => {
-    loadSessionList();
-    loadReviewQueue();
-  }, [loadSessionList, loadReviewQueue]);
+    loadSessionList(userScope);
+    loadReviewQueue(userScope);
+  }, [loadSessionList, loadReviewQueue, userScope]);
 
-  const queuedSessionIds = useMemo(
-    () => new Set(reviewQueue.map((item) => item.sessionId)),
-    [reviewQueue],
-  );
+  const queuedSessionIds = useMemo(() => new Set(reviewQueue.map((item) => item.sessionId)), [reviewQueue]);
 
   const handleQueueReview = async (sessionId: string, sessionTitle: string) => {
     await enqueueReviewItem({
       sessionId,
       sessionTitle,
       reason: 'manual_review',
-      enqueueSource: 'session_list',
+      enqueueSource: 'session_list'
     });
   };
 
   const handleContinueFromReview = (item: ReviewQueueItem) => {
-    window.dispatchEvent(new CustomEvent('iact:add', {
-      detail: buildReviewQueueFollowupPrompt(item),
-    }));
+    window.dispatchEvent(
+      new CustomEvent('iact:add', {
+        detail: buildReviewQueueFollowupPrompt(item)
+      })
+    );
   };
 
   const getFailureAssetActions = (
-    status: ReviewQueueFailureCapabilityAssetStatus,
-  ): Array<{ status: ReviewQueueFailureCapabilityAssetStatus; label: string }> => {
+    status: ReviewQueueFailureCapabilityAssetStatus
+  ): Array<{
+    status: ReviewQueueFailureCapabilityAssetStatus;
+    label: string;
+  }> => {
     switch (status) {
       case 'draft':
         return [
           { status: 'ready', label: '标记待应用' },
-          { status: 'dismissed', label: '忽略' },
+          { status: 'dismissed', label: '忽略' }
         ];
       case 'ready':
         return [
           { status: 'applied', label: '标记已应用' },
-          { status: 'dismissed', label: '忽略' },
+          { status: 'dismissed', label: '忽略' }
         ];
       case 'applied':
       case 'dismissed':
@@ -170,7 +110,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
 
     // Filter
     if (filterStatus !== 'all') {
-      list = list.filter(s => s.status === filterStatus);
+      list = list.filter((s) => s.status === filterStatus);
     }
     if (normalizedQuery) {
       list = list.filter((session) => matchesSessionAssetQuery(session, normalizedQuery));
@@ -202,9 +142,9 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
   // Stats
   const stats = useMemo(() => {
     const total = sessionList.length;
-    const completed = sessionList.filter(s => s.status === 'completed').length;
-    const recording = sessionList.filter(s => s.status === 'recording').length;
-    const errors = sessionList.filter(s => s.status === 'error').length;
+    const completed = sessionList.filter((s) => s.status === 'completed').length;
+    const recording = sessionList.filter((s) => s.status === 'recording').length;
+    const errors = sessionList.filter((s) => s.status === 'error').length;
     return { total, completed, recording, errors };
   }, [sessionList]);
 
@@ -213,23 +153,13 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
       {/* Header card - AgentsView style */}
       <div className="p-3 border-b border-zinc-700">
         <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl p-3 border border-white/[0.04]">
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="flex items-center w-full"
-          >
+          <button onClick={() => setExpanded(!expanded)} className="flex items-center w-full">
             <div className="flex items-center gap-2 flex-1 min-w-0">
               <span className="text-sm">{'\u{1F4AC}'}</span>
-              <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-                会话列表
-              </span>
-              {stats.total > 0 && (
-                <span className="text-xs text-zinc-500">({stats.total})</span>
-              )}
+              <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">会话列表</span>
+              {stats.total > 0 && <span className="text-xs text-zinc-500">({stats.total})</span>}
             </div>
-            <svg
-              className={`w-3.5 h-3.5 text-zinc-500 flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
-              fill="none" stroke="currentColor" viewBox="0 0 24 24"
-            >
+            <svg className={`w-3.5 h-3.5 text-zinc-500 flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
@@ -255,25 +185,15 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
 
               <div className="relative">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
-                <input
-                  type="search"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="搜索会话 / Review / Replay"
-                  className="h-8 w-full rounded-lg border border-zinc-800 bg-zinc-950/70 pl-8 pr-8 text-xs text-zinc-300 outline-none transition placeholder:text-zinc-600 focus:border-zinc-600"
-                />
+                <input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="搜索会话 / Review / Replay" className="h-8 w-full rounded-lg border border-zinc-800 bg-zinc-950/70 pl-8 pr-8 text-xs text-zinc-300 outline-none transition placeholder:text-zinc-600 focus:border-zinc-600" />
                 {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-300"
-                    aria-label="清空搜索"
-                    title="清空搜索"
-                  >
+                  <button type="button" onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-300" aria-label="清空搜索" title="清空搜索">
                     <X className="h-3 w-3" />
                   </button>
                 )}
               </div>
+
+              <AdminUserScopeSelect value={userScope} onChange={setUserScope} />
 
               {/* Filter & Sort */}
               <div className="flex items-center gap-3 pt-2 border-t border-white/[0.04]">
@@ -283,17 +203,16 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                       all: '全部',
                       recording: '录制中',
                       completed: '已完成',
-                      error: '错误',
+                      error: '错误'
                     };
                     return (
                       <button
                         key={status}
-                        onClick={(e) => { e.stopPropagation(); setFilterStatus(status); }}
-                        className={`text-[10px] px-2 py-1 rounded-lg transition-colors ${
-                          filterStatus === status
-                            ? 'bg-blue-500/20 text-blue-400'
-                            : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-800'
-                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFilterStatus(status);
+                        }}
+                        className={`text-[10px] px-2 py-1 rounded-lg transition-colors ${filterStatus === status ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-800'}`}
                       >
                         {labels[status]}
                       </button>
@@ -307,17 +226,16 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                     const labels: Record<string, string> = {
                       time: '时间',
                       turns: '轮次',
-                      cost: '成本',
+                      cost: '成本'
                     };
                     return (
                       <button
                         key={sort}
-                        onClick={(e) => { e.stopPropagation(); setSortBy(sort); }}
-                        className={`text-[10px] px-2 py-1 rounded-lg transition-colors ${
-                          sortBy === sort
-                            ? 'bg-amber-500/20 text-amber-400'
-                            : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-800'
-                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSortBy(sort);
+                        }}
+                        className={`text-[10px] px-2 py-1 rounded-lg transition-colors ${sortBy === sort ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-800'}`}
                       >
                         {labels[sort]}
                       </button>
@@ -328,36 +246,21 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
 
               <div className="pt-2 border-t border-white/[0.04]">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                    Review Queue
-                  </span>
-                  <span className="text-[10px] text-zinc-600">
-                    {searchQuery ? `${filteredReviewQueue.length}/${reviewQueue.length}` : reviewQueue.length}
-                  </span>
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">Review Queue</span>
+                  <span className="text-[10px] text-zinc-600">{searchQuery ? `${filteredReviewQueue.length}/${reviewQueue.length}` : reviewQueue.length}</span>
                 </div>
-                <div className="mt-1 text-[10px] text-zinc-600">
-                  当前支持手动加入、Replay Failure Follow-up 和 Delivery Review。
-                </div>
+                <div className="mt-1 text-[10px] text-zinc-600">当前支持手动加入、Replay Failure Follow-up 和 Delivery Review。</div>
 
                 {reviewQueueLoading ? (
-                  <div className="mt-2 text-[11px] text-zinc-600">
-                    加载 review queue...
-                  </div>
+                  <div className="mt-2 text-[11px] text-zinc-600">加载 review queue...</div>
                 ) : reviewQueue.length === 0 ? (
-                  <div className="mt-2 text-[11px] text-zinc-600">
-                    还没有待 review 的会话
-                  </div>
+                  <div className="mt-2 text-[11px] text-zinc-600">还没有待 review 的会话</div>
                 ) : filteredReviewQueue.length === 0 ? (
-                  <div className="mt-2 text-[11px] text-zinc-600">
-                    没有匹配的 Review
-                  </div>
+                  <div className="mt-2 text-[11px] text-zinc-600">没有匹配的 Review</div>
                 ) : (
                   <div className="mt-2 space-y-1.5">
                     {filteredReviewQueue.slice(0, 5).map((item) => (
-                      <div
-                        key={item.id}
-                        className="w-full rounded-lg border border-zinc-800 bg-zinc-900/70 px-2 py-2 text-left transition hover:border-zinc-700 hover:bg-zinc-800"
-                      >
+                      <div key={item.id} className="w-full rounded-lg border border-zinc-800 bg-zinc-900/70 px-2 py-2 text-left transition hover:border-zinc-700 hover:bg-zinc-800">
                         <button
                           type="button"
                           onClick={(event) => {
@@ -367,9 +270,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                           className="w-full text-left"
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="truncate text-[11px] font-medium text-zinc-300">
-                              {item.sessionTitle}
-                            </span>
+                            <span className="truncate text-[11px] font-medium text-zinc-300">{item.sessionTitle}</span>
                             <span className="inline-flex items-center gap-1 text-[10px] text-zinc-500">
                               <Eye className="h-3 w-3" />
                               Replay
@@ -382,9 +283,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                             {item.failureCapability && (
                               <>
                                 <span>·</span>
-                                <span className="text-amber-500">
-                                  {getReviewQueueFailureCapabilityLabel(item.failureCapability)}
-                                </span>
+                                <span className="text-amber-500">{getReviewQueueFailureCapabilityLabel(item.failureCapability)}</span>
                               </>
                             )}
                             {item.deliveryReview && (
@@ -416,9 +315,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                         {item.failureAsset && (
                           <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-zinc-800 pt-2 text-[10px]">
                             <span className="text-zinc-600">Asset</span>
-                            <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-400">
-                              {getReviewQueueFailureAssetStatusLabel(item.failureAsset.status)}
-                            </span>
+                            <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-400">{getReviewQueueFailureAssetStatusLabel(item.failureAsset.status)}</span>
                             {getFailureAssetActions(item.failureAsset.status).map((action) => (
                               <button
                                 key={action.status}
@@ -448,11 +345,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {sessionListLoading && (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
-            <svg
-              className="animate-spin w-6 h-6 text-blue-400"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
+            <svg className="animate-spin w-6 h-6 text-blue-400" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
@@ -462,29 +355,17 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
 
         {!sessionListLoading && filtered.length === 0 && (
           <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] flex flex-col items-center justify-center py-16 gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-zinc-700/60 border border-white/[0.04] flex items-center justify-center text-xl">
-              {'\u{1F4AD}'}
-            </div>
+            <div className="w-12 h-12 rounded-2xl bg-zinc-700/60 border border-white/[0.04] flex items-center justify-center text-xl">{'\u{1F4AD}'}</div>
             <p className="text-sm text-zinc-500">{searchQuery ? '没有匹配的会话资产' : '暂无会话数据'}</p>
             <p className="text-xs text-zinc-600">{searchQuery ? '换个关键词再搜' : '开始一次对话后，会话将显示在这里'}</p>
           </div>
         )}
 
-        {!sessionListLoading && filtered.map((session) => (
-          <SessionListItem
-            key={session.id}
-            session={session}
-            onClick={onSelectSession}
-            isQueued={queuedSessionIds.has(session.id)}
-            onQueueReview={handleQueueReview}
-          />
-        ))}
+        {!sessionListLoading && filtered.map((session) => <SessionListItem key={session.id} session={session} onClick={onSelectSession} isQueued={queuedSessionIds.has(session.id)} onQueueReview={handleQueueReview} />)}
 
         {!sessionListLoading && filtered.length > 0 && (
           <div className="text-center py-3">
-            <span className="text-[10px] text-zinc-600 px-3 py-1 rounded-full bg-zinc-800">
-              {searchQuery ? `匹配 ${filtered.length} / ${sessionList.length} 个会话` : `共 ${filtered.length} 个会话`}
-            </span>
+            <span className="text-[10px] text-zinc-600 px-3 py-1 rounded-full bg-zinc-800">{searchQuery ? `匹配 ${filtered.length} / ${sessionList.length} 个会话` : `共 ${filtered.length} 个会话`}</span>
           </div>
         )}
       </div>

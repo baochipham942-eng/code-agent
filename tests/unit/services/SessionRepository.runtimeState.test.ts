@@ -13,15 +13,16 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
     debug: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
-    error: vi.fn(),
-  }),
+    error: vi.fn()
+  })
 }));
 
 function createSchema(db: BetterSqlite3.Database): void {
   db.exec(`
-    CREATE TABLE sessions (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        title TEXT NOT NULL,
       model_provider TEXT NOT NULL,
       model_name TEXT NOT NULL,
       working_directory TEXT,
@@ -46,29 +47,29 @@ function createSchema(db: BetterSqlite3.Database): void {
       attachments TEXT,
       thinking TEXT,
       effort_level TEXT,
-	      synced_at INTEGER,
-	      content_parts TEXT,
-	      metadata TEXT,
-	      compaction TEXT,
-	      visibility TEXT NOT NULL DEFAULT 'active',
-	      hidden_by_rewind_id TEXT,
-	      hidden_at INTEGER
-	    );
+        synced_at INTEGER,
+        content_parts TEXT,
+        metadata TEXT,
+        compaction TEXT,
+        visibility TEXT NOT NULL DEFAULT 'active',
+        hidden_by_rewind_id TEXT,
+        hidden_at INTEGER
+      );
 
-	    CREATE TABLE session_rewinds (
-	      id TEXT PRIMARY KEY,
-	      session_id TEXT NOT NULL,
-	      anchor_message_id TEXT NOT NULL,
-	      anchor_prompt TEXT NOT NULL,
-	      anchor_timestamp INTEGER NOT NULL,
-	      checkpoint_message_id TEXT,
-	      hidden_message_count INTEGER NOT NULL DEFAULT 0,
-	      hidden_message_ids TEXT,
-	      files_restored INTEGER NOT NULL DEFAULT 0,
-	      files_deleted INTEGER NOT NULL DEFAULT 0,
-	      errors_json TEXT,
-	      created_at INTEGER NOT NULL
-	    );
+      CREATE TABLE session_rewinds (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        anchor_message_id TEXT NOT NULL,
+        anchor_prompt TEXT NOT NULL,
+        anchor_timestamp INTEGER NOT NULL,
+        checkpoint_message_id TEXT,
+        hidden_message_count INTEGER NOT NULL DEFAULT 0,
+        hidden_message_ids TEXT,
+        files_restored INTEGER NOT NULL DEFAULT 0,
+        files_deleted INTEGER NOT NULL DEFAULT 0,
+        errors_json TEXT,
+        created_at INTEGER NOT NULL
+      );
 
     CREATE TABLE session_tasks (
       session_id TEXT NOT NULL,
@@ -104,10 +105,12 @@ function createSchema(db: BetterSqlite3.Database): void {
     );
   `);
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO sessions (id, title, model_provider, model_name, created_at, updated_at)
     VALUES ('session-1', 'Session', 'openai', 'gpt-5', 1, 1)
-  `).run();
+  `
+  ).run();
 }
 
 describe('SessionRepository runtime recovery state', () => {
@@ -138,8 +141,8 @@ describe('SessionRepository runtime recovery state', () => {
         blockedBy: [],
         metadata: { source: 'unit' },
         createdAt: 10,
-        updatedAt: 20,
-      },
+        updatedAt: 20
+      }
     ];
 
     repo.saveSessionTasks('session-1', tasks);
@@ -156,34 +159,42 @@ describe('SessionRepository runtime recovery state', () => {
     expect(repo.getContextInterventions('session-1')).toEqual({
       pinned: [],
       excluded: [],
-      retained: ['msg-global'],
+      retained: ['msg-global']
     });
     expect(repo.getContextInterventions('session-1', 'agent-a')).toEqual({
       pinned: ['msg-pin'],
       excluded: [],
-      retained: [],
+      retained: []
     });
   });
 
   it('persists compression state and persistent system context together', () => {
-    repo.saveSessionRuntimeState('session-1', {
-      compressionStateJson: '{"commitLog":[]}',
-      persistentSystemContext: ['remember this'],
-    }, 100);
-    repo.saveSessionRuntimeState('session-1', {
-      compressionStateJson: '{"commitLog":[{"layer":"snip","operation":"snip","targetMessageIds":["m1"],"timestamp":1}]}',
-    }, 200);
+    repo.saveSessionRuntimeState(
+      'session-1',
+      {
+        compressionStateJson: '{"commitLog":[]}',
+        persistentSystemContext: ['remember this']
+      },
+      100
+    );
+    repo.saveSessionRuntimeState(
+      'session-1',
+      {
+        compressionStateJson: '{"commitLog":[{"layer":"snip","operation":"snip","targetMessageIds":["m1"],"timestamp":1}]}'
+      },
+      200
+    );
 
     expect(repo.getSessionRuntimeState('session-1')).toEqual({
       compressionStateJson: '{"commitLog":[{"layer":"snip","operation":"snip","targetMessageIds":["m1"],"timestamp":1}]}',
-      persistentSystemContext: ['remember this'],
+      persistentSystemContext: ['remember this']
     });
   });
 
   it('replaces persisted messages and preserves compaction blocks', () => {
     const original: Message[] = [
       { id: 'u1', role: 'user', content: 'old', timestamp: 1 },
-      { id: 'a1', role: 'assistant', content: 'old answer', timestamp: 2 },
+      { id: 'a1', role: 'assistant', content: 'old answer', timestamp: 2 }
     ];
     for (const message of original) {
       repo.addMessage('session-1', message);
@@ -200,31 +211,31 @@ describe('SessionRepository runtime recovery state', () => {
           content: 'summary',
           timestamp: 3,
           compactedMessageCount: 2,
-          compactedTokenCount: 40,
-        },
-      },
+          compactedTokenCount: 40
+        }
+      }
     ];
 
-	    repo.replaceMessages('session-1', compacted, 4);
+    repo.replaceMessages('session-1', compacted, 4);
 
-	    expect(repo.getMessages('session-1')).toMatchObject([
-	      {
-	        id: 'compact-1',
-	        role: 'system',
-	        content: 'summary',
-	        timestamp: 3,
-	        visibility: 'active',
-	        compaction: compacted[0].compaction,
-	      },
-	    ]);
-	  });
+    expect(repo.getMessages('session-1')).toMatchObject([
+      {
+        id: 'compact-1',
+        role: 'system',
+        content: 'summary',
+        timestamp: 3,
+        visibility: 'active',
+        compaction: compacted[0].compaction
+      }
+    ]);
+  });
 
   it('soft-hides the anchor user message and later active messages on prompt rewind', () => {
     const messages: Message[] = [
       { id: 'u1', role: 'user', content: 'first prompt', timestamp: 10 },
       { id: 'a1', role: 'assistant', content: 'first answer', timestamp: 20 },
       { id: 'u2', role: 'user', content: 'prompt to edit', timestamp: 30 },
-      { id: 'a2', role: 'assistant', content: 'answer to hide', timestamp: 40 },
+      { id: 'a2', role: 'assistant', content: 'answer to hide', timestamp: 40 }
     ];
     for (const message of messages) {
       repo.addMessage('session-1', message);
@@ -234,26 +245,29 @@ describe('SessionRepository runtime recovery state', () => {
       checkpointMessageId: 'checkpoint-message',
       filesRestored: 2,
       filesDeleted: 1,
-      createdAt: 100,
+      createdAt: 100
     });
 
     expect(result.hiddenMessageIds).toEqual(['u2', 'a2']);
     expect(result.activeMessages.map((message) => message.id)).toEqual(['u1', 'a1']);
     expect(repo.getMessages('session-1').map((message) => message.id)).toEqual(['u1', 'a1']);
-    expect(repo.getMessages('session-1', undefined, undefined, { includeRewound: true }).map((message) => message.id)).toEqual([
-      'u1',
-      'a1',
-      'u2',
-      'a2',
-    ]);
+    expect(
+      repo
+        .getMessages('session-1', undefined, undefined, {
+          includeRewound: true
+        })
+        .map((message) => message.id)
+    ).toEqual(['u1', 'a1', 'u2', 'a2']);
     expect(repo.getMessageCount('session-1')).toBe(2);
     expect(repo.getMessageCount('session-1', { includeRewound: true })).toBe(4);
 
-    const hidden = repo.getMessageById('session-1', 'u2', { includeRewound: true });
+    const hidden = repo.getMessageById('session-1', 'u2', {
+      includeRewound: true
+    });
     expect(hidden).toMatchObject({
       id: 'u2',
       visibility: 'rewound',
-      hiddenAt: 100,
+      hiddenAt: 100
     });
     expect(repo.getMessageById('session-1', 'u2')).toBeNull();
 
@@ -277,7 +291,7 @@ describe('SessionRepository runtime recovery state', () => {
       { id: 'a1', role: 'assistant', content: 'one answer', timestamp: 20 },
       { id: 'u2', role: 'user', content: 'two', timestamp: 30 },
       { id: 'a2', role: 'assistant', content: 'two answer', timestamp: 40 },
-      { id: 'u3', role: 'user', content: 'three', timestamp: 50 },
+      { id: 'u3', role: 'user', content: 'three', timestamp: 50 }
     ] as Message[]) {
       repo.addMessage('session-1', message);
     }
@@ -286,22 +300,48 @@ describe('SessionRepository runtime recovery state', () => {
     repo.applyPromptRewind('session-1', 'u2', { createdAt: 200 });
 
     expect(repo.getMessages('session-1').map((message) => message.id)).toEqual(['u1', 'a1']);
-    expect(repo.getMessages('session-1', undefined, undefined, { includeRewound: true }).map((message) => message.id)).toEqual([
-      'u1',
-      'a1',
-      'u2',
-      'a2',
-      'u3',
-    ]);
-    expect((db.prepare('SELECT COUNT(*) as c FROM session_rewinds').get() as { c: number }).c).toBe(2);
+    expect(
+      repo
+        .getMessages('session-1', undefined, undefined, {
+          includeRewound: true
+        })
+        .map((message) => message.id)
+    ).toEqual(['u1', 'a1', 'u2', 'a2', 'u3']);
+    expect(
+      (
+        db.prepare('SELECT COUNT(*) as c FROM session_rewinds').get() as {
+          c: number;
+        }
+      ).c
+    ).toBe(2);
   });
 
   it('uses message insertion order instead of timestamp ties as the rewind boundary', () => {
     for (const message of [
-      { id: 'u1', role: 'user', content: 'same millisecond one', timestamp: 10 },
-      { id: 'a1', role: 'assistant', content: 'same millisecond one answer', timestamp: 10 },
-      { id: 'u2', role: 'user', content: 'same millisecond two', timestamp: 10 },
-      { id: 'a2', role: 'assistant', content: 'same millisecond two answer', timestamp: 10 },
+      {
+        id: 'u1',
+        role: 'user',
+        content: 'same millisecond one',
+        timestamp: 10
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: 'same millisecond one answer',
+        timestamp: 10
+      },
+      {
+        id: 'u2',
+        role: 'user',
+        content: 'same millisecond two',
+        timestamp: 10
+      },
+      {
+        id: 'a2',
+        role: 'assistant',
+        content: 'same millisecond two answer',
+        timestamp: 10
+      }
     ] as Message[]) {
       repo.addMessage('session-1', message);
     }
@@ -309,28 +349,39 @@ describe('SessionRepository runtime recovery state', () => {
     repo.applyPromptRewind('session-1', 'u2', { createdAt: 100 });
 
     expect(repo.getMessages('session-1').map((message) => message.id)).toEqual(['u1', 'a1']);
-    expect(repo.getMessages('session-1', undefined, undefined, { includeRewound: true }).map((message) => ({
-      id: message.id,
-      visibility: message.visibility,
-    }))).toEqual([
+    expect(
+      repo
+        .getMessages('session-1', undefined, undefined, {
+          includeRewound: true
+        })
+        .map((message) => ({
+          id: message.id,
+          visibility: message.visibility
+        }))
+    ).toEqual([
       { id: 'u1', visibility: 'active' },
       { id: 'a1', visibility: 'active' },
       { id: 'u2', visibility: 'rewound' },
-      { id: 'a2', visibility: 'rewound' },
+      { id: 'a2', visibility: 'rewound' }
     ]);
   });
 
   it('marks crashed active sessions as interrupted or orphaned', () => {
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO sessions (id, title, model_provider, model_name, created_at, updated_at, status)
       VALUES
         ('session-running', 'Running', 'openai', 'gpt-5', 1, 1, 'running'),
         ('session-paused', 'Paused', 'openai', 'gpt-5', 1, 1, 'paused'),
         ('session-queued', 'Queued', 'openai', 'gpt-5', 1, 1, 'queued'),
         ('session-idle', 'Idle', 'openai', 'gpt-5', 1, 1, 'idle')
-    `).run();
+    `
+    ).run();
 
-    expect(repo.markCrashedActiveSessions(999)).toEqual({ interrupted: 2, orphaned: 1 });
+    expect(repo.markCrashedActiveSessions(999)).toEqual({
+      interrupted: 2,
+      orphaned: 1
+    });
 
     expect(repo.getSession('session-running')?.status).toBe('interrupted');
     expect(repo.getSession('session-paused')?.status).toBe('interrupted');

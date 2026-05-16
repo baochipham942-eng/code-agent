@@ -108,6 +108,19 @@ export interface MasterTaskPlanEvent {
   createdAt: number;
 }
 
+/**
+ * Subtask 摘要行 — 跨 session 合并的 session_tasks 视图（P5 IA：master 详情面板
+ * Subtasks Section 用）。只保留 UI 渲染必需列，不带 description / blocks / metadata
+ * 等大字段，避免 IPC payload 膨胀。
+ */
+export interface SessionTaskSummaryRow {
+  sessionId: string;
+  taskId: string;
+  subject: string;
+  status: string;
+  createdAt: number;
+}
+
 // ----------------------------------------------------------------------------
 // JSON 序列化辅助 — 空 array/object 写 '[]' / '{}'，禁止写 'null'
 // ----------------------------------------------------------------------------
@@ -354,6 +367,37 @@ export class MasterTaskRepository {
     return rows.map((row) => ({
       id: Number(row.id) || 0,
       chunk: String(row.chunk ?? ''),
+      createdAt: Number(row.created_at) || 0,
+    }));
+  }
+
+  // --------------------------------------------------------------------------
+  // Subtasks 派生视图（跨 session 合并 session_tasks，P5 IA）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 跨 session 合并 session_tasks（P5 IA：master 详情面板 Subtasks Section）。
+   *
+   * 通过 sessions.master_task_id 关联 session_tasks 表，order by created_at ASC
+   * 保留 plan step 顺序。session_tasks 表的写入仍由 SessionRepository 负责，本方法
+   * 仅做派生查询。
+   */
+  listSubtasksByMasterTaskId(masterTaskId: string): SessionTaskSummaryRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT st.session_id, st.task_id, st.subject, st.status, st.created_at
+           FROM session_tasks st
+           JOIN sessions s ON s.id = st.session_id
+          WHERE s.master_task_id = ?
+          ORDER BY st.created_at ASC, st.task_id ASC`,
+      )
+      .all(masterTaskId) as SQLiteRow[];
+
+    return rows.map((row) => ({
+      sessionId: String(row.session_id),
+      taskId: String(row.task_id),
+      subject: String(row.subject ?? ''),
+      status: String(row.status ?? 'pending'),
       createdAt: Number(row.created_at) || 0,
     }));
   }

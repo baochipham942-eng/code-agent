@@ -101,7 +101,7 @@ const nextSettingsMemoryFocusNonce = () => ++_settingsMemoryFocusTick;
 // Unified right-workbench tab identity.
 // Preview tabs embed their file path after the 'preview:' prefix.
 // 'context' tab — ContextPanel 容器，挂 ContextHealthPanel 并展示 bySource 二级拆分
-export type WorkbenchTabId = 'task' | 'skills' | 'files' | 'workspace-preview' | 'context' | `preview:${string}`;
+export type WorkbenchTabId = 'task' | 'skills' | 'files' | 'workspace-preview' | 'context' | 'master-tasks' | `preview:${string}`;
 
 // 跨 panel 跳转目标
 // kind 决定跳到哪个 tab 并 highlight；name 是被高亮的项标识

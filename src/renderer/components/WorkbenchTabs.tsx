@@ -5,7 +5,7 @@
 // activate, X or middle-click to close. Dirty indicator shown on preview tabs.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Plus, ListTodo, Sparkles, FolderTree, Eye, Activity } from 'lucide-react';
+import { X, Plus, ListTodo, Sparkles, FolderTree, Eye, Activity, ListChecks } from 'lucide-react';
 import { useAppStore, type WorkbenchTabId } from '../stores/appStore';
 import { useI18n } from '../hooks/useI18n';
 import { useDisclosure } from '../hooks/useDisclosure';
@@ -62,12 +62,14 @@ export const WorkbenchTabs: React.FC = () => {
   const hasFiles = workbenchTabs.includes('files');
   const hasWorkspacePreview = workbenchTabs.includes('workspace-preview');
   const hasContext = workbenchTabs.includes('context');
+  const hasMasterTasks = workbenchTabs.includes('master-tasks');
   const canAddAny =
     !hasTask ||
     (!hasSkills && isStandard) ||
     !hasFiles ||
     !hasWorkspacePreview ||
-    !hasContext;
+    !hasContext ||
+    !hasMasterTasks;
 
   const metas: TabMeta[] = workbenchTabs.map((id) => {
     if (id === 'task') {
@@ -90,6 +92,9 @@ export const WorkbenchTabs: React.FC = () => {
     }
     if (id === 'context') {
       return { id, label: '上下文', title: '上下文占用与来源拆分', isDirty: false };
+    }
+    if (id === 'master-tasks') {
+      return { id, label: '任务', title: '跨 workspace 任务看板', isDirty: false };
     }
     const path = id.slice(PREVIEW_PREFIX.length);
     const previewTab = previewTabs.find((p) => p.path === path);
@@ -205,6 +210,16 @@ export const WorkbenchTabs: React.FC = () => {
                 >
                   <Activity className="w-3.5 h-3.5 text-emerald-400/80" />
                   上下文
+                </button>
+              )}
+              {!hasMasterTasks && (
+                <button
+                  type="button"
+                  onClick={() => { openWorkbenchTab('master-tasks'); setAddOpen(false); }}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                >
+                  <ListChecks className="w-3.5 h-3.5 text-sky-400/80" />
+                  任务
                 </button>
               )}
             </div>

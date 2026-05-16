@@ -58,13 +58,14 @@ describe('getSessionStatusPresentation', () => {
       ).toBe('live');
     });
 
-    it('DB status completed → done', () => {
-      expect(
-        getSessionStatusPresentation({
-          sessionStatus: 'completed',
-          messageCount: 12,
-        }).kind,
-      ).toBe('done');
+    it('DB status completed → done without a sidebar badge', () => {
+      const status = getSessionStatusPresentation({
+        sessionStatus: 'completed',
+        messageCount: 12,
+      });
+
+      expect(status.kind).toBe('done');
+      expect(status.showBadge).toBe(false);
     });
 
     it('DB status error → error', () => {
@@ -78,38 +79,66 @@ describe('getSessionStatusPresentation', () => {
   });
 
   describe('P3: messageCount fallback for sessions lacking explicit status', () => {
-    it('idle DB status + has messages → done (history implies prior completion)', () => {
-      expect(
-        getSessionStatusPresentation({
-          sessionStatus: 'idle',
-          messageCount: 4,
-        }).kind,
-      ).toBe('done');
+    it('idle DB status + has messages → done without an action badge', () => {
+      const status = getSessionStatusPresentation({
+        sessionStatus: 'idle',
+        messageCount: 4,
+      });
+
+      expect(status.kind).toBe('done');
+      expect(status.showBadge).toBe(false);
     });
 
-    it('no sessionStatus + has messages → done', () => {
-      expect(
-        getSessionStatusPresentation({
-          messageCount: 2,
-        }).kind,
-      ).toBe('done');
+    it('no sessionStatus + has messages → done without an action badge', () => {
+      const status = getSessionStatusPresentation({
+        messageCount: 2,
+      });
+
+      expect(status.kind).toBe('done');
+      expect(status.showBadge).toBe(false);
     });
 
-    it('no messages + no in-memory runtime → idle (truly fresh session)', () => {
-      expect(
-        getSessionStatusPresentation({
-          messageCount: 0,
-        }).kind,
-      ).toBe('idle');
+    it('no messages + no in-memory runtime → idle without an action badge', () => {
+      const status = getSessionStatusPresentation({
+        messageCount: 0,
+      });
+
+      expect(status.kind).toBe('idle');
+      expect(status.showBadge).toBe(false);
     });
 
-    it('idle DB status + zero messages → idle', () => {
-      expect(
-        getSessionStatusPresentation({
-          sessionStatus: 'idle',
-          messageCount: 0,
-        }).kind,
-      ).toBe('idle');
+    it('idle DB status + zero messages → idle without an action badge', () => {
+      const status = getSessionStatusPresentation({
+        sessionStatus: 'idle',
+        messageCount: 0,
+      });
+
+      expect(status.kind).toBe('idle');
+      expect(status.showBadge).toBe(false);
+    });
+
+    it('prompt-only session → incomplete attention badge', () => {
+      const status = getSessionStatusPresentation({
+        sessionStatus: 'idle',
+        messageCount: 1,
+        turnCount: 1,
+      });
+
+      expect(status.kind).toBe('incomplete');
+      expect(status.label).toBe('待处理');
+      expect(status.showBadge).toBe(true);
+    });
+
+    it('pending approval → approval attention badge', () => {
+      const status = getSessionStatusPresentation({
+        hasPendingApproval: true,
+        sessionStatus: 'running',
+        messageCount: 3,
+      });
+
+      expect(status.kind).toBe('approval');
+      expect(status.label).toBe('待确认');
+      expect(status.showBadge).toBe(true);
     });
   });
 

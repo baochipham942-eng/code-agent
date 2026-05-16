@@ -5,35 +5,37 @@ import type { BackgroundTaskInfo } from '@shared/contract/sessionState';
 import type { SessionWithMeta } from '../stores/sessionStore';
 import type { SessionState as TaskSessionState } from '../stores/taskStore';
 
-export type SessionStatusKind = 'background' | 'live' | 'paused' | 'error' | 'done' | 'incomplete' | 'idle';
+export type SessionStatusKind = 'background' | 'live' | 'approval' | 'paused' | 'error' | 'done' | 'incomplete' | 'idle';
 
 export interface SessionStatusPresentation {
   kind: SessionStatusKind;
   label: string;
   toneClassName: string;
+  showBadge: boolean;
 }
 
 const PRESENTATION: Record<SessionStatusKind, SessionStatusPresentation> = {
-  error:      { kind: 'error',      label: '出错',   toneClassName: 'text-red-300 bg-red-500/10 border-red-500/20' },
-  background: { kind: 'background', label: '后台',   toneClassName: 'text-sky-300 bg-sky-500/10 border-sky-500/20' },
-  paused:     { kind: 'paused',     label: '暂停',   toneClassName: 'text-amber-300 bg-amber-500/10 border-amber-500/20' },
-  live:       { kind: 'live',       label: '进行中', toneClassName: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20' },
-  done:       { kind: 'done',       label: '已完成', toneClassName: 'text-zinc-300 bg-zinc-700/40 border-zinc-600/50' },
-  incomplete: { kind: 'incomplete', label: '未完成', toneClassName: 'text-amber-300 bg-amber-500/10 border-amber-500/20' },
-  idle:       { kind: 'idle',       label: '就绪',   toneClassName: 'text-zinc-400 bg-zinc-700/30 border-zinc-600/40' },
+  error:      { kind: 'error',      label: '待处理', toneClassName: 'text-red-300 bg-red-500/10 border-red-500/20', showBadge: true },
+  background: { kind: 'background', label: '执行中', toneClassName: 'text-sky-300 bg-sky-500/10 border-sky-500/20', showBadge: true },
+  paused:     { kind: 'paused',     label: '待处理', toneClassName: 'text-amber-300 bg-amber-500/10 border-amber-500/20', showBadge: true },
+  live:       { kind: 'live',       label: '执行中', toneClassName: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20', showBadge: true },
+  approval:   { kind: 'approval',   label: '待确认', toneClassName: 'text-violet-300 bg-violet-500/10 border-violet-500/20', showBadge: true },
+  done:       { kind: 'done',       label: '已完成', toneClassName: 'text-zinc-300 bg-zinc-700/40 border-zinc-600/50', showBadge: false },
+  incomplete: { kind: 'incomplete', label: '待处理', toneClassName: 'text-amber-300 bg-amber-500/10 border-amber-500/20', showBadge: true },
+  idle:       { kind: 'idle',       label: '就绪',   toneClassName: 'text-zinc-400 bg-zinc-700/30 border-zinc-600/40', showBadge: false },
 };
 
 /**
  * Classify a session's status for sidebar display.
  *
  * Three priority tiers:
- * - P1 live in-memory signals (backgroundTask / runtime / taskState): win first,
- *   these reflect the running process and update in real time.
+ * - P1 action signals (pending approval / backgroundTask / runtime / taskState):
+ *   win first, these reflect whether the user needs to look at the session now.
  * - P2 DB-persisted sessionStatus: survives restart; when the process is gone
  *   but the database remembers 'running'/'completed'/'error', trust it.
  * - P3 messageCount fallback: for sessions with no status but a history,
- *   prefer 'done' only when there is output after the user turn. A prompt-only
- *   session is incomplete, not completed.
+ *   hide completed/idle badges and only surface prompt-only sessions as
+ *   needing attention.
  */
 export function getSessionStatusPresentation(args: {
   backgroundTask?: BackgroundTaskInfo;
@@ -42,12 +44,16 @@ export function getSessionStatusPresentation(args: {
   messageCount?: number;
   turnCount?: number;
   sessionStatus?: SessionStatus;
+  hasPendingApproval?: boolean;
 }): SessionStatusPresentation {
-  const { backgroundTask, runtime, taskState, messageCount, turnCount, sessionStatus } = args;
+  const { backgroundTask, runtime, taskState, messageCount, turnCount, sessionStatus, hasPendingApproval } = args;
 
-  // P1: Live in-memory signals
+  // P1: Actionable live signals
   if (backgroundTask?.status === 'failed' || taskState?.status === 'error') {
     return PRESENTATION.error;
+  }
+  if (hasPendingApproval) {
+    return PRESENTATION.approval;
   }
   if (backgroundTask?.status === 'running') {
     return PRESENTATION.background;
@@ -107,7 +113,7 @@ export function buildSessionSearchText(args: {
     session.origin?.name,
     session.workingDirectory,
     session.gitBranch,
-    status.label,
+    status.showBadge ? status.label : undefined,
     snapshot?.summary,
     snapshot?.labels.join(' '),
     snapshot?.recentToolNames.join(' '),

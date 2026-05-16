@@ -156,6 +156,9 @@ export const Sidebar: React.FC = () => {
     setShowKnowledgeMemoryPanel,
     showDAGPanel,
     setShowDAGPanel,
+    pendingPermissionRequest,
+    pendingPermissionSessionId,
+    queuedPermissionRequests,
   } = useAppStore();
   const { dagPanelEnabled } = useDisclosure();
   const applySessionWorkbenchPreset = useComposerStore((state) => state.applySessionWorkbenchPreset);
@@ -255,6 +258,14 @@ export const Sidebar: React.FC = () => {
     [backgroundTasks],
   );
 
+  const hasPendingApprovalForSession = useCallback(
+    (sessionId: string) => Boolean(
+      (pendingPermissionRequest && pendingPermissionSessionId === sessionId) ||
+      (queuedPermissionRequests?.[sessionId]?.length ?? 0) > 0
+    ),
+    [pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests],
+  );
+
   // Apply local search + minimal session-native status filter
   const filteredSessions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -266,6 +277,7 @@ export const Sidebar: React.FC = () => {
         messageCount: session.messageCount,
         turnCount: session.turnCount,
         sessionStatus: session.status,
+        hasPendingApproval: hasPendingApprovalForSession(session.id),
       });
       if (sessionStatusFilter === 'background' && status.kind !== 'background') {
         return false;
@@ -281,7 +293,7 @@ export const Sidebar: React.FC = () => {
         status,
       }).includes(q);
     });
-  }, [backgroundTaskMap, searchQuery, sessionRuntimes, sessionStatusFilter, sessions, sessionStates]);
+  }, [backgroundTaskMap, hasPendingApprovalForSession, searchQuery, sessionRuntimes, sessionStatusFilter, sessions, sessionStates]);
 
   // Pure workspace grouping (Codex-style): one bucket per workingDirectory,
   // sorted by latest activity; sessions without a workingDirectory go into a
@@ -597,6 +609,7 @@ export const Sidebar: React.FC = () => {
       messageCount: session.messageCount,
       turnCount: session.turnCount,
       sessionStatus: session.status,
+      hasPendingApproval: hasPendingApprovalForSession(session.id),
     });
     const latestActivityAt = Math.max(
       session.updatedAt || 0,
@@ -681,9 +694,11 @@ export const Sidebar: React.FC = () => {
                   {typeLabel}
                 </span>
               )}
-              <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-opacity duration-150 group-hover:opacity-0 ${status.toneClassName}`}>
-                {status.label}
-              </span>
+              {status.showBadge && (
+                <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-opacity duration-150 group-hover:opacity-0 ${status.toneClassName}`}>
+                  {status.label}
+                </span>
+              )}
             </>
           )}
         </div>

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -87,6 +86,9 @@ const appState = {
   clearPlanningState: vi.fn(),
   setShowSettings: vi.fn(),
   setShowEvalCenter: vi.fn(),
+  pendingPermissionRequest: null as unknown,
+  pendingPermissionSessionId: null as string | null,
+  queuedPermissionRequests: {} as Record<string, any[]>,
 };
 
 const authState = {
@@ -135,13 +137,17 @@ describe('Sidebar session metadata', () => {
   beforeEach(() => {
     sessionUiState.searchQuery = '';
     sessionUiState.sessionStatusFilter = 'all';
+    appState.pendingPermissionRequest = null;
+    appState.pendingPermissionSessionId = null;
+    appState.queuedPermissionRequests = {};
   });
 
   it('renders session-native status, turn count, and workbench snapshot', () => {
     const html = renderToStaticMarkup(React.createElement(Sidebar));
 
     expect(html).toContain('Session Native Workspace');
-    expect(html).toContain('后台');
+    expect(html).toContain('执行中');
+    expect(html).not.toContain('已完成');
     // commit bce470a2 把 turnCount 显示从 Sidebar 二级信息行移除，改用
     // workbenchSnapshot.summary 占据该位置（"工作区 · Browser"）。turnCount 仍保留
     // 在 store 用于排序/统计，但不再直接渲染。下面对 snapshot summary 的断言已覆盖。
@@ -154,8 +160,19 @@ describe('Sidebar session metadata', () => {
 
     const html = renderToStaticMarkup(React.createElement(Sidebar));
 
-    expect(html).toContain('后台');
+    expect(html).toContain('执行中');
     expect(html).toContain('Session Native Workspace');
     expect(html).not.toContain('Finished Session');
+  });
+
+  it('surfaces session-specific permission queues as pending confirmation', () => {
+    appState.queuedPermissionRequests = {
+      'session-2': [{ id: 'perm-1', tool: 'bash' }],
+    };
+
+    const html = renderToStaticMarkup(React.createElement(Sidebar));
+
+    expect(html).toContain('Finished Session');
+    expect(html).toContain('待确认');
   });
 });

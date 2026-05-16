@@ -28,6 +28,9 @@ export const SessionActionsMenu: React.FC = () => {
   const setAppWorkingDirectory = useAppStore((s) => s.setWorkingDirectory);
   const setShowEvalCenter = useAppStore((s) => s.setShowEvalCenter);
   const openDevServerLauncher = useAppStore((s) => s.openDevServerLauncher);
+  const pendingPermissionRequest = useAppStore((s) => s.pendingPermissionRequest);
+  const pendingPermissionSessionId = useAppStore((s) => s.pendingPermissionSessionId);
+  const queuedPermissionRequests = useAppStore((s) => s.queuedPermissionRequests);
 
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const sessions = useSessionStore((s) => s.sessions);
@@ -68,6 +71,15 @@ export const SessionActionsMenu: React.FC = () => {
     runtime: currentSessionRuntime,
     taskState: currentSessionState,
     messageCount: currentSession?.messageCount,
+    turnCount: currentSession?.turnCount,
+    sessionStatus: currentSession?.status,
+    hasPendingApproval: Boolean(
+      currentSessionId &&
+      (
+        (pendingPermissionRequest && pendingPermissionSessionId === currentSessionId) ||
+        (queuedPermissionRequests?.[currentSessionId]?.length ?? 0) > 0
+      )
+    ),
   });
 
   const canResume = currentSessionStatus.kind === 'paused';

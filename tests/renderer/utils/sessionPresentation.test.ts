@@ -23,10 +23,11 @@ describe('sessionPresentation', () => {
     });
 
     expect(status.kind).toBe('background');
-    expect(status.label).toBe('后台');
+    expect(status.label).toBe('执行中');
+    expect(status.showBadge).toBe(true);
   });
 
-  it('does not label prompt-only sessions as completed', () => {
+  it('labels prompt-only sessions as needing attention', () => {
     const status = getSessionStatusPresentation({
       messageCount: 1,
       turnCount: 1,
@@ -34,10 +35,11 @@ describe('sessionPresentation', () => {
     });
 
     expect(status.kind).toBe('incomplete');
-    expect(status.label).toBe('未完成');
+    expect(status.label).toBe('待处理');
+    expect(status.showBadge).toBe(true);
   });
 
-  it('keeps sessions with assistant output in the completed bucket', () => {
+  it('keeps sessions with assistant output in the completed bucket without a sidebar badge', () => {
     const status = getSessionStatusPresentation({
       messageCount: 2,
       turnCount: 1,
@@ -46,6 +48,24 @@ describe('sessionPresentation', () => {
 
     expect(status.kind).toBe('done');
     expect(status.label).toBe('已完成');
+    expect(status.showBadge).toBe(false);
+  });
+
+  it('prioritizes pending approvals over generic running state', () => {
+    const status = getSessionStatusPresentation({
+      hasPendingApproval: true,
+      runtime: {
+        sessionId: 'session-1',
+        status: 'running',
+        activeAgentCount: 1,
+        contextHealth: null,
+        lastActivityAt: Date.now(),
+      },
+    });
+
+    expect(status.kind).toBe('approval');
+    expect(status.label).toBe('待确认');
+    expect(status.showBadge).toBe(true);
   });
 
   it('indexes snapshot and working directory into session search text', () => {
@@ -70,14 +90,15 @@ describe('sessionPresentation', () => {
       snapshot: session.workbenchSnapshot,
       status: {
         kind: 'live',
-        label: '进行中',
+        label: '执行中',
         toneClassName: '',
+        showBadge: true,
       },
     });
 
     expect(text).toContain('修复浏览器上下文');
     expect(text).toContain('/repo/code-agent');
     expect(text).toContain('browser');
-    expect(text).toContain('进行中');
+    expect(text).toContain('执行中');
   });
 });

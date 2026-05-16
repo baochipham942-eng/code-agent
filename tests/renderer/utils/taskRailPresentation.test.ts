@@ -58,6 +58,30 @@ describe('deriveTaskRailView', () => {
     expect(view.total).toBe(10);
   });
 
+  it('shows completed checklist steps directly when the whole task is done', () => {
+    const view = deriveTaskRailView(makeTask({
+      title: '任务目标：验证任务面板复杂任务展示',
+      status: 'done',
+      steps: [
+        { title: '任务目标：验证任务面板复杂任务展示', status: 'done' },
+        { title: '检查多个子任务', status: 'done' },
+        { title: '验证完成态', status: 'done' },
+      ],
+    }));
+
+    expect(view.mode).toBe('checklist');
+    expect(view.status).toBe('done');
+    expect(view.title).toBe('任务目标：验证任务面板复杂任务展示');
+    expect(view.visibleSteps.map((step) => step.title)).toEqual([
+      '任务目标：验证任务面板复杂任务展示',
+      '检查多个子任务',
+      '验证完成态',
+    ]);
+    expect(view.hiddenCompletedCount).toBe(0);
+    expect(view.completed).toBe(3);
+    expect(view.total).toBe(3);
+  });
+
   it('orders blocked work before the running step and hides distant pending steps', () => {
     const view = deriveTaskRailView(makeTask({
       title: '修复任务状态',

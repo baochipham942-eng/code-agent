@@ -250,7 +250,7 @@ export const TaskMonitor: React.FC = () => {
             )}
 
             <SourceSubsection
-              title={t.taskPanel.sectionReferences}
+              title="本轮调用"
               count={referencedWorkbenchItems.length > 0 ? String(referencedWorkbenchItems.length) : '0'}
             >
               {referencedWorkbenchItems.length > 0 ? (

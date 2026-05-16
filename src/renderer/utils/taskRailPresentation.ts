@@ -133,16 +133,18 @@ export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null): T
     };
   }
 
-  const visibleSteps = activeSteps.slice(0, MAX_VISIBLE_STEPS);
-  const hiddenPendingCount = Math.max(0, activeSteps.length - visibleSteps.length);
+  const isAllDone = activeSteps.length === 0 && completedSteps.length > 0;
+  const visibleSteps = (isAllDone ? completedSteps : activeSteps).slice(0, MAX_VISIBLE_STEPS);
+  const foldedCompletedSteps = isAllDone ? completedSteps.slice(MAX_VISIBLE_STEPS) : completedSteps;
+  const hiddenPendingCount = isAllDone ? 0 : Math.max(0, activeSteps.length - visibleSteps.length);
 
   return {
     mode: 'checklist',
     title: task.title || runStatusLabel(run) || statusLabel(task.status),
     status: task.status,
     visibleSteps,
-    completedSteps,
-    hiddenCompletedCount: completedSteps.length,
+    completedSteps: foldedCompletedSteps,
+    hiddenCompletedCount: foldedCompletedSteps.length,
     hiddenPendingCount,
     completed,
     total,

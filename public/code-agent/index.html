@@ -390,20 +390,34 @@
       .card-label.rose   { color: var(--label-rose); }
       .card-label.accent { color: #0e8c66; }
 
-      /* ============================================================ Flow (scenario cards) */
+      /* ============================================================ Flow (scenario cards: emphasis + 2 sub) */
       .flow-grid {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: 1.3fr 1fr;
+        grid-auto-rows: 1fr;
         gap: 14px;
       }
 
       .flow-card {
-        display: grid;
-        gap: 16px;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
         border: 1px solid var(--line);
         border-radius: var(--radius);
-        padding: 24px;
+        padding: 26px;
         background: #ffffff;
+      }
+
+      .flow-card.is-emphasis {
+        grid-row: span 2;
+        color: #ffffff;
+        border-color: rgba(26, 43, 217, 0.32);
+        padding: 34px;
+        background:
+          radial-gradient(circle at 88% 8%, rgba(41, 214, 163, 0.16), transparent 38%),
+          radial-gradient(circle at 12% 92%, rgba(26, 43, 217, 0.18), transparent 42%),
+          linear-gradient(135deg, #111735, #070a18);
       }
 
       .flow-tag {
@@ -412,25 +426,31 @@
         align-items: center;
         gap: 6px;
         border-radius: 999px;
-        padding: 5px 10px;
+        padding: 6px 12px;
         font-size: 12px;
         font-weight: 900;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.06em;
         text-transform: uppercase;
       }
-      .flow-card.t-data    .flow-tag { color: var(--primary);     background: var(--primary-soft); }
-      .flow-card.t-browse  .flow-tag { color: var(--label-blue);  background: var(--label-blue-soft); }
-      .flow-card.t-doc     .flow-tag { color: var(--label-amber); background: var(--label-amber-soft); }
-      .flow-card.t-code    .flow-tag { color: var(--label-rose);  background: var(--label-rose-soft); }
+      .flow-card.t-product  .flow-tag { color: var(--accent);     background: rgba(41, 214, 163, 0.18); }
+      .flow-card.t-office   .flow-tag { color: var(--label-amber);background: var(--label-amber-soft); }
+      .flow-card.t-browse   .flow-tag { color: var(--label-blue); background: var(--label-blue-soft); }
 
       .flow-user {
         position: relative;
-        padding: 14px 16px;
+        padding: 16px 18px;
         border-radius: var(--radius-sm);
         background: var(--paper-deep);
         color: var(--ink);
-        font-size: 15px;
-        line-height: 1.6;
+        font-size: 15.5px;
+        line-height: 1.62;
+      }
+
+      .flow-card.is-emphasis .flow-user {
+        background: rgba(255, 255, 255, 0.06);
+        color: #ffffff;
+        font-size: 18px;
+        line-height: 1.58;
       }
 
       .flow-user::before {
@@ -444,73 +464,195 @@
         text-transform: uppercase;
       }
 
-      .flow-steps {
-        display: grid;
+      .flow-card.is-emphasis .flow-user::before {
+        color: rgba(255, 255, 255, 0.48);
+      }
+
+      .flow-chain {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
         gap: 8px;
         margin: 0;
         padding: 0;
-        list-style: none;
-        counter-reset: step;
       }
 
-      .flow-steps li {
-        position: relative;
-        padding: 10px 14px 10px 38px;
+      .flow-chain span:not(.sep) {
+        padding: 7px 12px;
         border: 1px solid var(--line);
-        border-radius: var(--radius-sm);
+        border-radius: 999px;
+        background: var(--paper);
         color: var(--ink-soft);
-        background: #fbfcfe;
-        font-size: 14px;
-        line-height: 1.5;
-        counter-increment: step;
+        font-size: 13px;
+        font-weight: 700;
       }
 
-      .flow-steps li::before {
-        content: counter(step);
-        position: absolute;
-        left: 10px;
-        top: 50%;
-        transform: translateY(-50%);
-        display: grid;
-        place-items: center;
-        width: 20px; height: 20px;
+      .flow-chain .sep {
+        color: var(--subtle);
+        font-weight: 900;
+        font-size: 13px;
+      }
+
+      .flow-card.is-emphasis .flow-chain span:not(.sep) {
+        border-color: rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(255, 255, 255, 0.88);
+      }
+      .flow-card.is-emphasis .flow-chain .sep { color: rgba(255, 255, 255, 0.42); }
+
+      .flow-artifact {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: auto;
+        padding-top: 16px;
+        border-top: 1px dashed var(--line);
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .flow-artifact::before {
+        content: "产物";
+        display: inline-block;
+        padding: 4px 9px;
         border-radius: 999px;
-        background: var(--primary);
-        color: #fff;
+        background: var(--primary-soft);
+        color: var(--primary);
         font-size: 11px;
         font-weight: 900;
+        letter-spacing: 0.06em;
       }
 
-      /* ============================================================ Privacy (asymmetric list) */
-      .privacy-stack {
+      .flow-card.is-emphasis .flow-artifact {
+        border-top-color: rgba(255, 255, 255, 0.14);
+        color: rgba(255, 255, 255, 0.78);
+      }
+      .flow-card.is-emphasis .flow-artifact::before {
+        background: rgba(41, 214, 163, 0.18);
+        color: var(--accent);
+      }
+
+      /* Mini browser preview inside emphasis card */
+      .flow-preview {
+        position: relative;
+        margin-top: 10px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: var(--radius-sm);
+        background: linear-gradient(180deg, rgba(8, 10, 28, 0.7), rgba(8, 10, 28, 0.32));
+        box-shadow: 0 16px 38px rgba(0, 0, 0, 0.42);
+      }
+      .flow-preview-bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 14px;
+        background: rgba(255, 255, 255, 0.04);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .flow-preview-bar i {
+        display: block;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.22);
+      }
+      .flow-preview-bar em {
+        margin-left: 14px;
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 11px;
+        font-weight: 700;
+        font-style: normal;
+        letter-spacing: 0.04em;
+      }
+      .flow-preview-body {
         display: grid;
         gap: 12px;
+        padding: 22px 22px 24px;
+      }
+      .lp-title {
+        height: 18px;
+        width: 56%;
+        border-radius: 5px;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.06));
+      }
+      .lp-row {
+        display: grid;
+        gap: 7px;
+      }
+      .lp-row span {
+        display: block;
+        height: 8px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .lp-row span:nth-child(1) { width: 92%; }
+      .lp-row span:nth-child(2) { width: 74%; }
+      .lp-row span:nth-child(3) { width: 60%; }
+      .lp-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-top: 4px;
+      }
+      .lp-grid div {
+        height: 44px;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .lp-grid div:nth-child(2) {
+        background: linear-gradient(135deg, rgba(41, 214, 163, 0.32), rgba(41, 214, 163, 0.06));
+        border-color: rgba(41, 214, 163, 0.32);
+      }
+      .lp-cta {
+        width: 110px;
+        height: 32px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--accent), #1a9d76);
+        box-shadow: 0 8px 24px rgba(41, 214, 163, 0.32);
       }
 
-      .privacy-row {
+      /* ============================================================ Privacy (3-card with accent bar) */
+      .privacy-grid {
         display: grid;
-        grid-template-columns: 220px 1fr;
-        align-items: start;
-        gap: 28px;
-        padding: 24px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .privacy-card {
+        position: relative;
+        padding: 28px 24px 24px;
         border: 1px solid var(--line);
         border-radius: var(--radius);
         background: #ffffff;
       }
 
-      .privacy-row h3 {
-        margin: 0;
-        font-size: 22px;
+      .privacy-card::before {
+        content: "";
+        display: block;
+        width: 36px;
+        height: 4px;
+        margin-bottom: 20px;
+        border-radius: 2px;
+        background: var(--accent);
+      }
+
+      .privacy-card h3 {
+        margin: 0 0 10px;
+        font-size: 19px;
         font-weight: 800;
-        line-height: 1.26;
+        line-height: 1.32;
         letter-spacing: -0.005em;
         color: var(--ink);
       }
 
-      .privacy-row p {
+      .privacy-card p {
         margin: 0;
         color: var(--muted);
-        font-size: 16px;
+        font-size: 14.5px;
         line-height: 1.66;
       }
 
@@ -772,8 +914,11 @@
         .section-head .lead { max-width: none; justify-self: start; }
         .value-grid,
         .flow-grid,
-        .eco-grid { grid-template-columns: 1fr; }
-        .privacy-row { grid-template-columns: 1fr; gap: 10px; }
+        .eco-grid,
+        .privacy-grid { grid-template-columns: 1fr; }
+        .flow-grid { grid-auto-rows: auto; }
+        .flow-card.is-emphasis { grid-row: auto; padding: 26px; }
+        .flow-card.is-emphasis .flow-user { font-size: 16px; }
       }
 
       @media (max-width: 720px) {
@@ -793,7 +938,7 @@
         h2 { font-size: 28px; }
         .value-card,
         .flow-card,
-        .privacy-row,
+        .privacy-card,
         .eco-col { padding: 20px; min-height: auto; }
         .memory-panel { padding: 22px; }
         .memory-list { grid-template-columns: 1fr; }
@@ -803,15 +948,19 @@
       }
     </style>
   </head>
-  <body id="top">
+  <body>
+    <script>
+      // 关闭浏览器刷新时的滚动位置恢复，避免刷新跳到中下部
+      if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    </script>
     <header class="topbar" aria-label="Agent Neo 导航">
       <a class="brand" href="#top" aria-label="Agent Neo 首页">
         <img class="brand-mark" src="./agent-neo-mark.svg" alt="" aria-hidden="true" />
         <span>Agent Neo</span>
       </a>
       <nav class="nav" aria-label="页面导航">
-        <a href="#value">价值</a>
-        <a href="#flow">用法</a>
+        <a href="#value">产品</a>
+        <a href="#flow">场景</a>
         <a href="#privacy">隐私</a>
         <a href="#memory">记忆</a>
         <a href="#ecosystem">扩展</a>
@@ -819,7 +968,7 @@
       </nav>
     </header>
 
-    <section class="hero" aria-labelledby="hero-title">
+    <section class="hero" id="top" aria-labelledby="hero-title">
       <div class="hero-inner">
         <div>
           <div class="eyebrow"><span class="dot" aria-hidden="true"></span> 本地安装的 AI 工作助手</div>
@@ -829,7 +978,7 @@
             文件不上云，断网也能跑。
           </p>
           <div class="hero-actions" aria-label="主要操作">
-            <a class="button primary" href="#download">⬇ 下载 macOS 版</a>
+            <a class="button primary" href="#download">⬇ 下载 mac 版</a>
             <a class="button ghost" href="#flow">看它能干什么 →</a>
           </div>
         </div>
@@ -847,7 +996,7 @@
       <section class="section" id="value" aria-labelledby="value-title">
         <div class="section-head">
           <div>
-            <span class="section-label">价值</span>
+            <span class="section-label">产品</span>
             <h2 id="value-title">它不是聊天框，是能替你做完事的同事</h2>
           </div>
           <p class="lead">
@@ -898,57 +1047,65 @@
         <div class="section">
           <div class="section-head">
             <div>
-              <span class="section-label">用法</span>
+              <span class="section-label">场景</span>
               <h2 id="flow-title">它真能做完这些事</h2>
             </div>
             <p class="lead">
-              不是给你提示词，是真的把活做完——下面四个是装上当天就能跑的常见场景。
+              不是给你提示词，是真的把活做完——三个装上当天就能跑的常见场景。
             </p>
           </div>
 
           <div class="flow-grid">
-            <article class="flow-card t-data">
-              <span class="flow-tag">数据</span>
-              <div class="flow-user">把这 5 个 Excel 合并，按月汇总，挑出异常值。</div>
-              <ol class="flow-steps">
-                <li>读 5 个 .xlsx 文件，对齐列结构</li>
-                <li>清洗去重、补缺、统一单位</li>
-                <li>按月聚合 + 异常值标红</li>
-                <li>输出新的 .xlsx 和一张趋势图</li>
-              </ol>
+            <article class="flow-card t-product is-emphasis">
+              <span class="flow-tag">产品生成</span>
+              <div class="flow-user">做一个网页：选时区、显示各地当前时间、能保存常用城市。</div>
+              <div class="flow-chain">
+                <span>拆 UI</span><span class="sep">→</span>
+                <span>写 HTML / JS</span><span class="sep">→</span>
+                <span>起本地预览</span><span class="sep">→</span>
+                <span>交付 .html</span>
+              </div>
+              <div class="flow-preview" aria-hidden="true">
+                <div class="flow-preview-bar">
+                  <i></i><i></i><i></i>
+                  <em>世界时钟 · index.html</em>
+                </div>
+                <div class="flow-preview-body">
+                  <div class="lp-title"></div>
+                  <div class="lp-row"><span></span><span></span><span></span></div>
+                  <div class="lp-grid"><div></div><div></div><div></div></div>
+                  <div class="lp-cta"></div>
+                </div>
+              </div>
+              <div class="flow-artifact">
+                <span>可直接打开的网页</span>·<span>源码可二次编辑</span>
+              </div>
+            </article>
+
+            <article class="flow-card t-office">
+              <span class="flow-tag">办公自动化</span>
+              <div class="flow-user">这份 50 页 PDF 帮我做个 12 页 PPT 摘要，配一张要点 Excel。</div>
+              <div class="flow-chain">
+                <span>读 PDF</span><span class="sep">→</span>
+                <span>拆主题</span><span class="sep">→</span>
+                <span>出 .pptx + .xlsx</span>
+              </div>
+              <div class="flow-artifact">
+                <span>12 页 PPT</span>·<span>要点 .xlsx</span>
+              </div>
             </article>
 
             <article class="flow-card t-browse">
-              <span class="flow-tag">浏览</span>
-              <div class="flow-user">去淘宝把这 3 款耳机的价格和评分抓回来。</div>
-              <ol class="flow-steps">
-                <li>打开淘宝，依次搜 3 款型号</li>
-                <li>翻页采集价格、评分、销量</li>
-                <li>截图保留每一步</li>
-                <li>回写一张对比表给你</li>
-              </ol>
-            </article>
-
-            <article class="flow-card t-doc">
-              <span class="flow-tag">文档</span>
-              <div class="flow-user">用这份会议纪要做个 12 页 PPT。</div>
-              <ol class="flow-steps">
-                <li>读会议纪要，拆主题</li>
-                <li>排 12 页大纲，写每页要点</li>
-                <li>生成 .pptx，配版式和配色</li>
-                <li>预览给你看，按反馈再改</li>
-              </ol>
-            </article>
-
-            <article class="flow-card t-code">
-              <span class="flow-tag">代码</span>
-              <div class="flow-user">review 一下我刚改的这个分支。</div>
-              <ol class="flow-steps">
-                <li>跑 git diff 拉变更</li>
-                <li>逐文件读上下文</li>
-                <li>挑出潜在 bug 和风格问题</li>
-                <li>给修复建议或直接出补丁</li>
-              </ol>
+              <span class="flow-tag">内容采集</span>
+              <div class="flow-user">去淘宝把这 3 款耳机的价格、评分、销量都抓回来。</div>
+              <div class="flow-chain">
+                <span>开浏览器</span><span class="sep">→</span>
+                <span>翻页采集</span><span class="sep">→</span>
+                <span>回写对比表</span>
+              </div>
+              <div class="flow-artifact">
+                <span>结构化对比表</span>·<span>全程截图</span>
+              </div>
             </article>
           </div>
         </div>
@@ -966,19 +1123,19 @@
           </p>
         </div>
 
-        <div class="privacy-stack">
-          <div class="privacy-row">
+        <div class="privacy-grid">
+          <article class="privacy-card">
             <h3>你的文件不离开这台电脑</h3>
             <p>没有云端镜像，没有"训练你的数据"，断网也能用本地模型。</p>
-          </div>
-          <div class="privacy-row">
+          </article>
+          <article class="privacy-card">
             <h3>密码、token 自动打码</h3>
             <p>真的需要发给大模型之前，敏感片段先在本地擦掉。</p>
-          </div>
-          <div class="privacy-row">
+          </article>
+          <article class="privacy-card">
             <h3>会动你东西之前会问你</h3>
             <p>写文件、跑命令、控桌面前弹确认，全程留记录可回看。</p>
-          </div>
+          </article>
         </div>
       </section>
 
@@ -1030,10 +1187,10 @@
         <div class="section-head">
           <div>
             <span class="section-label">扩展</span>
-            <h2 id="eco-title">工具会越用越多</h2>
+            <h2 id="eco-title">你常用什么，它就能用什么</h2>
           </div>
           <p class="lead">
-            它自带一套常用工具，也能装上社区扩展接你自己的服务。
+            自带一套常用工具，也能装上社区扩展接你自己的服务。
           </p>
         </div>
 
@@ -1098,19 +1255,16 @@
                 装到本机，把浏览器、桌面、本地文件和长任务放进同一个工作环境。
               </p>
               <p class="download-footnote">
-                Windows / Linux / Intel Mac 版本计划中。
+                Windows / Linux / Intel mac 版本计划中。
               </p>
             </div>
 
             <div class="download-card-shell">
               <article class="download-card">
                 <div>
-                  <div class="card-label">macOS</div>
-                  <h3>Agent Neo for macOS</h3>
-                  <p class="meta">
-                    v0.16.65 · 约 141 MB<br />
-                    仅 Apple Silicon（M 系列）· macOS 12+
-                  </p>
+                  <div class="card-label">mac</div>
+                  <h3>Agent Neo for mac</h3>
+                  <p class="meta">仅 Apple Silicon（M 系列）</p>
                 </div>
                 <a class="button primary" href="https://github.com/baochipham942-eng/code-agent/releases/latest">⬇ 下载 .dmg</a>
               </article>

@@ -10,7 +10,17 @@ import { Modal } from './primitives/Modal';
 
 type AuthMode = 'signin' | 'signup' | 'reset';
 
-export const AuthModal: React.FC = () => {
+interface AuthModalProps {
+  initialMode?: AuthMode;
+  onAuthSuccess?: (mode: Exclude<AuthMode, 'reset'>) => void;
+  onCloseComplete?: () => void;
+}
+
+export const AuthModal: React.FC<AuthModalProps> = ({
+  initialMode = 'signin',
+  onAuthSuccess,
+  onCloseComplete,
+}) => {
   const {
     signInWithEmail,
     signUpWithEmail,
@@ -29,6 +39,12 @@ export const AuthModal: React.FC = () => {
   const [rememberPassword, setRememberPassword] = useState(true);
   const [credentialsLoaded, setCredentialsLoaded] = useState(false);
   const [resetEmailSent, setResetEmailSent] = useState(false);
+
+  useEffect(() => {
+    if (showAuthModal) {
+      setMode(initialMode);
+    }
+  }, [initialMode, showAuthModal]);
 
   // Load saved credentials when modal opens
   useEffect(() => {
@@ -83,6 +99,7 @@ export const AuthModal: React.FC = () => {
     setShowAuthModal(false);
     // Reset credentials loaded flag so next time we reload
     setCredentialsLoaded(false);
+    onCloseComplete?.();
   };
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
@@ -118,6 +135,7 @@ export const AuthModal: React.FC = () => {
       setEmail('');
       setPassword('');
       setInviteCode('');
+      onAuthSuccess?.(mode);
       onClose();
     }
   };

@@ -3,7 +3,7 @@
 // Linear-style UI refactor: Clean layout with task panel
 // ============================================================================
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useAppStore } from './stores/appStore';
 import { useAuthStore, initializeAuthStore } from './stores/authStore';
 import { initializeAgentRegistryStore } from './stores/agentRegistryStore';
@@ -42,7 +42,8 @@ import { BrowserSurfacePanel } from './components/features/browser/BrowserSurfac
 import { ComputerUsePanel } from './components/features/computerUse/ComputerUsePanel';
 import { InAppValidationPanel } from './components/features/inAppValidation/InAppValidationPanel';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
-import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
+import { ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
+import { ModelOnboardingModal } from './components/onboarding/ModelOnboardingModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
 import { useMemoryEvents } from './hooks/useMemoryEvents';
@@ -58,7 +59,7 @@ import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-res
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
-import type { AppSettings, ModelProvider, UserQuestionRequest, MCPElicitationRequest, UpdateInfo } from '@shared/contract';
+import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, UpdateInfo } from '@shared/contract';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getProviderInfo } from '@shared/constants';
 import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
@@ -132,8 +133,10 @@ export const App: React.FC = () => {
   // 强制更新状态
   const [forceUpdateInfo, setForceUpdateInfo] = useState<UpdateInfo | null>(null);
 
-  // API Key 配置引导弹窗
-  const [showApiKeySetup, setShowApiKeySetup] = useState(false);
+  // 新手模型配置引导
+  const [showModelOnboarding, setShowModelOnboarding] = useState(false);
+  const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>('signin');
+  const modelOnboardingCompletedRef = useRef(false);
 
   // 工具创建确认弹窗
   const [toolCreateRequest, setToolCreateRequest] = useState<ToolCreateRequest | null>(null);
@@ -142,7 +145,7 @@ export const App: React.FC = () => {
   const [confirmActionRequest, setConfirmActionRequest] = useState<ConfirmActionRequest | null>(null);
 
   // Auth store
-  const { showAuthModal, showPasswordResetModal } = useAuthStore();
+  const { showAuthModal, showPasswordResetModal, isLoading: isAuthLoading } = useAuthStore();
 
   // 渐进披露 Hook（权限层：*Enabled 表示功能是否可用）
   const { isStandard, dagPanelEnabled } = useDisclosure();
@@ -217,6 +220,28 @@ export const App: React.FC = () => {
 
   // Load settings from backend on mount
   const { setModelConfig, setDisclosureLevel, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
+
+  const openModelOnboardingIfNeeded = useCallback(async (preferSignup = false) => {
+    if (modelOnboardingCompletedRef.current) return;
+    try {
+      const configured = await invokeDomain<boolean>(IPC_DOMAINS.SETTINGS, 'checkApiKeyConfigured');
+      if (configured) {
+        modelOnboardingCompletedRef.current = true;
+        return;
+      }
+
+      const authState = useAuthStore.getState();
+      if (!authState.isAuthenticated) {
+        setAuthInitialMode(preferSignup ? 'signup' : 'signin');
+        authState.setShowAuthModal(true);
+        return;
+      }
+
+      setShowModelOnboarding(true);
+    } catch (error) {
+      logger.error('Failed to check model onboarding state', error);
+    }
+  }, []);
 
   useEffect(() => {
     if (!isNarrowViewport) {
@@ -307,24 +332,16 @@ export const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [setOptionalUpdateInfo]);
 
-  // 首次启动检测 API Key 是否配置
+  // 首次启动检测账号和模型是否已就绪
   useEffect(() => {
-    const checkApiKeyConfigured = async () => {
-      try {
-        const configured = await invokeDomain<boolean>(IPC_DOMAINS.SETTINGS, 'checkApiKeyConfigured');
-        if (!configured) {
-          logger.info('No API Key configured, showing setup modal');
-          setShowApiKeySetup(true);
-        }
-      } catch (error) {
-        logger.error('Failed to check API Key configuration', error);
-      }
-    };
+    if (isAuthLoading) return;
 
     // 延迟检查，等待应用完全加载
-    const timer = setTimeout(checkApiKeyConfigured, UI.STARTUP_API_KEY_CHECK_DELAY);
+    const timer = setTimeout(() => {
+      void openModelOnboardingIfNeeded(true);
+    }, UI.STARTUP_API_KEY_CHECK_DELAY);
     return () => clearTimeout(timer);
-  }, []);
+  }, [isAuthLoading, openModelOnboardingIfNeeded]);
 
   // 监听工具创建确认请求
   useEffect(() => {
@@ -545,7 +562,15 @@ export const App: React.FC = () => {
       {/* Permission Card - 已移至 ChatView 内联显示 */}
 
       {/* Auth Modal */}
-      {showAuthModal && <AuthModal />}
+      {showAuthModal && (
+        <AuthModal
+          initialMode={authInitialMode}
+          onAuthSuccess={() => {
+            void openModelOnboardingIfNeeded(false);
+          }}
+          onCloseComplete={() => setAuthInitialMode('signin')}
+        />
+      )}
 
       {/* Password Reset Modal - 设置新密码弹窗 */}
       {showPasswordResetModal && <PasswordResetModal />}
@@ -553,14 +578,15 @@ export const App: React.FC = () => {
       {/* Force Update Modal - 强制更新，不可关闭 */}
       {isDesktopShellMode() && !isTauriMode() && forceUpdateInfo && <ForceUpdateModal updateInfo={forceUpdateInfo} />}
 
-      {/* API Key Setup Modal - 首次启动引导 */}
-      {showApiKeySetup && (
-        <ApiKeySetupModal
-          onSetup={() => {
-            setShowApiKeySetup(false);
-            setShowSettings(true);
+      {/* Model Onboarding Modal - 首次启动引导 */}
+      {showModelOnboarding && (
+        <ModelOnboardingModal
+          onComplete={(config: ModelConfig) => {
+            modelOnboardingCompletedRef.current = true;
+            setModelConfig(config);
+            setShowModelOnboarding(false);
+            setShowSettings(false);
           }}
-          onSkip={() => setShowApiKeySetup(false)}
         />
       )}
 

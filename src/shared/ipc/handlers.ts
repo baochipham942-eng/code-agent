@@ -161,6 +161,7 @@ import type {
   MasterTaskListFilterShared,
   MasterTaskCreatePayload,
   MasterTaskManagerEvent,
+  SessionTaskSummaryDTO,
 } from '../contract/task';
 
 import { IPC_CHANNELS } from './legacy-channels';
@@ -542,6 +543,9 @@ export interface IpcInvokeHandlers {
     masterTaskId: string,
     sessionId: string,
   ) => Promise<void>;
+  [IPC_CHANNELS.MASTER_TASK_LIST_SUBTASKS]: (
+    masterTaskId: string,
+  ) => Promise<SessionTaskSummaryDTO[]>;
 
   // Checkpoint (Rewind UI)
   [IPC_CHANNELS.CHECKPOINT_LIST]: (sessionId: string) => Promise<Array<{

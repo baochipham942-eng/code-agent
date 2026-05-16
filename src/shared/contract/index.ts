@@ -97,6 +97,7 @@ export * from './turnTimeline';
 export * from './sessionWorkspace';
 export * from './workbenchPreset';
 export * from './reviewQueue';
+export * from './handoff';
 export * from './scenarioAcceptance';
 export * from './previewFeedback';
 

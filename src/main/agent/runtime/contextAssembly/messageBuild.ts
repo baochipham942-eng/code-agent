@@ -22,6 +22,7 @@ import {
   ARTIFACT_TASK_BRIEF_PROMPT,
   needsArtifactTaskBrief,
 } from '../../../prompts/builder';
+import { HANDOFF_PROPOSAL_PROMPT } from '../../../prompts/handoff';
 import {
   GAME_ARTIFACT_CONTRACT_PROMPT,
   GAME_ARTIFACT_REPAIR_CONTRACT_PROMPT,
@@ -659,6 +660,7 @@ const REQUIRED_REPAIR_TRIM_CANDIDATES = [
   'deferred tools',
   'generative UI',
   'question form',
+  'handoff proposal',
   'active agent context',
   'completion notifications',
 ];
@@ -744,6 +746,19 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
 
   systemPrompt = injectWorkingDirectoryContext(systemPrompt, ctx.runtime.workingDirectory, ctx.runtime.isDefaultWorkingDirectory);
   systemPrompt += buildRuntimeModeBlock();
+
+  if (!artifactRepairMode && !shouldInjectArtifactBrief) {
+    const beforeHandoff = systemPrompt;
+    systemPrompt = appendPromptBlockWithinBudget(
+      systemPrompt,
+      HANDOFF_PROPOSAL_PROMPT,
+      'handoff proposal',
+      ctx,
+    );
+    if (systemPrompt !== beforeHandoff) {
+      appendedBlocks.set('handoff proposal', HANDOFF_PROPOSAL_PROMPT);
+    }
+  }
 
   // 注入 Session Metadata（使用频率/行为模式，借鉴 ChatGPT Layer 2）
   if (!artifactRepairMode && !shouldInjectArtifactBrief) {

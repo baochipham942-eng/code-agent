@@ -13,7 +13,7 @@ import ipcService from '../services/ipcService';
 import { useSessionStore } from './sessionStore';
 import { toast } from '../hooks/useToast';
 
-type SendFn = (content: string) => void;
+type SendFn = (content: string) => void | Promise<void>;
 
 interface MessageActionState {
   /** Registered send function (set by ChatView) */
@@ -25,6 +25,8 @@ interface MessageActionState {
   register: (send: SendFn, getMessages: () => Message[]) => void;
   /** Unregister on unmount */
   unregister: () => void;
+  /** Send a plain prompt through the registered chat sender. */
+  sendPrompt: (content: string) => Promise<void>;
 
   /** Edit a user message: re-send with new content */
   editMessage: (messageId: string, newContent: string) => void;
@@ -40,6 +42,12 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
 
   register: (send, getMessages) => set({ _send: send, _getMessages: getMessages }),
   unregister: () => set({ _send: null, _getMessages: null }),
+
+  sendPrompt: async (content: string) => {
+    const { _send } = get();
+    if (!_send) return;
+    await _send(content);
+  },
 
   editMessage: (_messageId: string, newContent: string) => {
     const { _send } = get();

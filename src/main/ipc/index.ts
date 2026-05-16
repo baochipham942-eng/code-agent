@@ -58,6 +58,7 @@ import { registerPromptHandlers } from './prompt.ipc';
 import { registerHookHandlers } from './hook.ipc';
 import { registerAgentRegistryHandlers } from './agentRegistry.ipc';
 import { registerCapabilityHandlers } from './capability.ipc';
+import { registerHandoffHandlers } from './handoff.ipc';
 
 export * from './types';
 
@@ -199,6 +200,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Activity context handlers (统一活动上下文)
   registerActivityHandlers(ipcMain);
+
+  // Handoff proposals (assistant tail -> pending continuation object)
+  registerHandoffHandlers(ipcMain);
 
   // In-App HTML validation result handler
   registerInAppValidationHandlers(ipcMain);

@@ -258,6 +258,19 @@ export const EVALUATION_CHANNELS = {
 export type EvaluationChannel = (typeof EVALUATION_CHANNELS)[keyof typeof EVALUATION_CHANNELS];
 
 // ============================================================================
+// Handoff 提案 IPC 通道
+// ============================================================================
+
+export const HANDOFF_CHANNELS = {
+  /** 获取 handoff 提案 */
+  LIST: 'handoff:list',
+  /** 更新 handoff 提案状态 */
+  UPDATE_STATUS: 'handoff:update-status',
+} as const;
+
+export type HandoffChannel = (typeof HANDOFF_CHANNELS)[keyof typeof HANDOFF_CHANNELS];
+
+// ============================================================================
 // LSP 语言服务器 IPC 通道
 // ============================================================================
 

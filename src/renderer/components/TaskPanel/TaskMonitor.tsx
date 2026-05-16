@@ -31,6 +31,7 @@ import { formatElapsed } from './taskPanelUtils';
 import { useToolProgress } from './useToolProgress';
 import { ApprovalSyncCard } from './ApprovalSyncCard';
 import { Card, CardEmptyState as EmptyState } from './Card';
+import { HandoffCard } from './HandoffCard';
 import {
   CurrentTurnArtifactOwnershipCard,
   OutputFileRows,
@@ -171,6 +172,8 @@ export const TaskMonitor: React.FC = () => {
           <ApprovalSyncCard />
         </Card>
       )}
+
+      <HandoffCard />
 
       {(currentTurnArtifactOwnership || outputs.count > 0) && (
         <Card

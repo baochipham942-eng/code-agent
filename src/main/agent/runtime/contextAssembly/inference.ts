@@ -29,6 +29,7 @@ import {
   seedArtifactRepairGuardFromContext,
 } from '../artifactRepairGuard';
 import { preloadDeferredToolsForTurn } from './deferredToolPreload';
+import { createHandoffTailStreamFilter } from '../../../handoff/handoffStream';
 
 const ARTIFACT_REPAIR_RECOVERY_MAX_TOKENS = 16_384;
 const ARTIFACT_REPAIR_TARGETED_EDIT_MAX_TOKENS = 32_768;
@@ -488,14 +489,17 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
 
     // Reset partial content accumulator for this inference call
     ctx.runtime.lastStreamedContent = '';
+    const contentStreamFilter = createHandoffTailStreamFilter((text) =>
+      emitAssistantMessageDelta(ctx, 'content', text)
+    );
 
     const streamCallback: StreamCallback = (chunk) => {
       if (typeof chunk === 'string') {
         ctx.runtime.lastStreamedContent += chunk;
-        emitAssistantMessageDelta(ctx, 'content', chunk);
+        contentStreamFilter.push(chunk);
       } else if (chunk.type === 'text') {
         ctx.runtime.lastStreamedContent += chunk.content;
-        emitAssistantMessageDelta(ctx, 'content', chunk.content);
+        contentStreamFilter.push(chunk.content);
       } else if (chunk.type === 'reasoning') {
         // 推理模型的思考过程 (glm-4.7 等)
         emitAssistantMessageDelta(ctx, 'reasoning', chunk.content);
@@ -571,6 +575,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     } finally {
       stopArtifactProgress();
     }
+    contentStreamFilter.flush();
     response.runtimeDiagnostics = {
       ...response.runtimeDiagnostics,
       visibleToolNames: effectiveTools.map((tool) => tool.name),

@@ -57,6 +57,8 @@ import { applyGroundTruthGate } from './groundTruthGate';
 import { applyDesktopActionClaimGate } from './desktopActionClaimGate';
 import { isLikelyIncompleteStopText } from './incompleteStopDetector';
 import { extractArtifactFilePathFromMessages } from './artifactPathExtractor';
+import { getHandoffProposalService } from '../../handoff/handoffProposalService';
+import { extractHandoffProposalTail } from '../../handoff/handoffTail';
 
 const logger = createLogger('MessageProcessor');
 
@@ -406,7 +408,9 @@ export class MessageProcessor {
       }
     }
 
-    const strippedContent = this.contextAssembly.stripInternalFormatMimicry(response.content || '');
+    const strippedRawContent = this.contextAssembly.stripInternalFormatMimicry(response.content || '');
+    const handoffTail = extractHandoffProposalTail(strippedRawContent);
+    const strippedContent = handoffTail.cleanedContent;
     const latestUserContent = [...this.ctx.messages].reverse()
       .find((message) => message.role === 'user' && message.visibility !== 'rewound')?.content;
     const desktopClaimGate = applyDesktopActionClaimGate({
@@ -450,6 +454,9 @@ export class MessageProcessor {
       });
     }
     const assistantMessage = this.buildAssistantMessageFromResponse(response, finalContent);
+    if (handoffTail.found && assistantMessage.contentParts?.length) {
+      assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
+    }
 
     // Artifact extraction
     const artifacts = extractArtifacts(finalContent);
@@ -466,6 +473,22 @@ export class MessageProcessor {
     }
 
     await this.contextAssembly.addAndPersistMessage(assistantMessage);
+
+    if (handoffTail.draft) {
+      try {
+        getHandoffProposalService().create({
+          sessionId: this.ctx.sessionId,
+          sourceMessageId: assistantMessage.id,
+          ...handoffTail.draft,
+        });
+      } catch (error) {
+        logger.warn('[Handoff] Failed to create proposal from assistant tail', {
+          error,
+          sessionId: this.ctx.sessionId,
+          sourceMessageId: assistantMessage.id,
+        });
+      }
+    }
 
     this.ctx.onEvent({ type: 'message', data: assistantMessage });
     if (isForcedFinalTextPass) {

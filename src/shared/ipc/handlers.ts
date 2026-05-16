@@ -127,6 +127,11 @@ import type {
   UpdateReviewQueueFailureCapabilityAssetInput,
 } from '../contract/reviewQueue';
 import type {
+  HandoffProposal,
+  ListHandoffProposalsInput,
+  UpdateHandoffProposalStatusInput,
+} from '../contract/handoff';
+import type {
   DeliveryReviewRunResult,
   RunDeliveryReviewInput,
   ScenarioAcceptanceSkill,
@@ -460,6 +465,10 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.EVALUATION_PREVIEW_FEEDBACK_CREATE]: (payload: CreatePreviewFeedbackInput) => Promise<PreviewFeedbackItem>;
   [IPC_CHANNELS.EVALUATION_PREVIEW_FEEDBACK_UPDATE_STATUS]: (payload: UpdatePreviewFeedbackStatusInput) => Promise<PreviewFeedbackItem | null>;
   [IPC_CHANNELS.EVALUATION_PREVIEW_FEEDBACK_SEND_TO_CHAT]: (payload: SendPreviewFeedbackToChatInput) => Promise<PreviewFeedbackChatContext>;
+
+  // Handoff proposals
+  [IPC_CHANNELS.HANDOFF_LIST]: (payload?: ListHandoffProposalsInput) => Promise<HandoffProposal[]>;
+  [IPC_CHANNELS.HANDOFF_UPDATE_STATUS]: (payload: UpdateHandoffProposalStatusInput) => Promise<HandoffProposal | null>;
 
   // Test Subset (数据集子集管理)
   [IPC_CHANNELS.SUBSET_SAVE]: (subset: { name: string; description?: string; caseIds: string[] }) => Promise<{ success: boolean; path: string }>;

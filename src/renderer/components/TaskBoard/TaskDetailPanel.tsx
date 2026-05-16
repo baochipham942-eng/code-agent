@@ -13,12 +13,10 @@
 //   - planProgress 用 `react-markdown`，prose-invert 主题
 // ============================================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { X as XIcon, AlertCircle, Eye as EyeIcon } from 'lucide-react';
-import type { MasterTaskStatus, SessionTaskSummaryDTO } from '@shared/contract/task';
-import { IPC_CHANNELS } from '@shared/ipc';
-import { invoke } from '../../services/ipcService';
+import type { MasterTaskStatus } from '@shared/contract/task';
 import { useMasterTaskStore } from '../../stores/masterTaskStore';
 
 // ----------------------------------------------------------------------------
@@ -80,20 +78,6 @@ const EmptyHint: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <span className="text-zinc-600 italic">{children}</span>
 );
 
-// SessionTaskStatus 是 plan-step 级状态（'pending' | 'in_progress' | 'completed'），
-// 不复用 MasterTaskStatus 的 11 值集合，故单独定义配色 helper。
-function subtaskStatusBadgeClass(status: string): string {
-  switch (status) {
-    case 'in_progress':
-      return 'bg-blue-500/15 text-blue-300 border-blue-500/30';
-    case 'completed':
-      return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
-    case 'pending':
-    default:
-      return 'bg-zinc-700/40 text-zinc-300 border-zinc-600/40';
-  }
-}
-
 // ----------------------------------------------------------------------------
 // Panel
 // ----------------------------------------------------------------------------
@@ -111,41 +95,11 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ taskId, onClos
   const loadTaskDetail = useMasterTaskStore((s) => s.loadTaskDetail);
   const updateStatus = useMasterTaskStore((s) => s.updateStatus);
 
-  // Subtasks 跨 session 合并视图（P5 IA）。inline state 不污染 store——
-  // 数据是 master 详情面板的派生视图，store 只负责 master 列表 + plan stream。
-  const [subtasks, setSubtasks] = useState<SessionTaskSummaryDTO[]>([]);
-  const [subtasksError, setSubtasksError] = useState<string | null>(null);
-
   // 进入或切换 taskId 时拉一次 detail —— planProgress / childAgentTaskIds /
   // attachedSessionIds 的 DB baseline 可能比 list 时旧，需要 fresh fetch
   useEffect(() => {
     void loadTaskDetail(taskId);
   }, [taskId, loadTaskDetail]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!taskId) {
-      setSubtasks([]);
-      setSubtasksError(null);
-      return;
-    }
-    void (async () => {
-      try {
-        const rows = await invoke(IPC_CHANNELS.MASTER_TASK_LIST_SUBTASKS, taskId);
-        if (!cancelled) {
-          setSubtasks(rows);
-          setSubtasksError(null);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setSubtasksError(err instanceof Error ? err.message : String(err));
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [taskId]);
 
   // DB baseline + 实时 streaming buffer 拼接
   const fullPlanMarkdown = (task?.planProgress ?? '') + planBuffer;
@@ -272,44 +226,6 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ taskId, onClos
             </ul>
           ) : (
             <EmptyHint>暂无子 agent task</EmptyHint>
-          )}
-        </Section>
-
-        {/* subtasks - P5 IA：跨 session 合并 session_tasks 视图 */}
-        <Section title="Subtasks (Plan Steps)">
-          {subtasksError ? (
-            <div className="flex items-start gap-1.5 text-rose-300">
-              <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-              <span className="truncate" title={subtasksError}>
-                加载失败：{subtasksError}
-              </span>
-            </div>
-          ) : subtasks.length === 0 ? (
-            <EmptyHint>该任务下暂无子步骤</EmptyHint>
-          ) : (
-            <ul className="space-y-1" data-testid="task-detail-subtasks">
-              {subtasks.map((st) => (
-                <li
-                  key={`${st.sessionId}:${st.taskId}`}
-                  className="flex items-center gap-2 min-w-0"
-                  title={`${st.subject} · session ${st.sessionId}`}
-                >
-                  <span
-                    className={`inline-flex items-center px-1 py-0 rounded text-[9px] uppercase tracking-wide border flex-shrink-0 ${subtaskStatusBadgeClass(
-                      st.status,
-                    )}`}
-                  >
-                    {st.status}
-                  </span>
-                  <span className="flex-1 truncate text-[11px] text-zinc-200">
-                    {st.subject}
-                  </span>
-                  <code className="text-[10px] text-zinc-500 font-mono flex-shrink-0">
-                    {st.sessionId.slice(0, 8)}
-                  </code>
-                </li>
-              ))}
-            </ul>
           )}
         </Section>
 

@@ -49,6 +49,15 @@ export class CLIDatabaseService {
   }
 
   /**
+   * 暴露底层 better-sqlite3 Database 引用，供 Repository 通过 duck-typed
+   * RawDbProvider 接口注入使用（参见 masterTaskRepository.ts: getMasterTaskDb）。
+   * 未初始化时返回 null —— 调用方应先用 isInitialized gate 守卫。
+   */
+  getDb(): import('better-sqlite3').Database | null {
+    return this.db;
+  }
+
+  /**
    * 等待数据库初始化完成（供 SessionManager 等在需要时等待）
    */
   async waitForInit(): Promise<boolean> {

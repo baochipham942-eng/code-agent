@@ -71,7 +71,6 @@ function extractSettingsUpdate(
 
 function settingsUpdateRequiresAdmin(updates: Partial<AppSettings>): boolean {
   const adminOnlyKeys: Array<keyof AppSettings> = [
-    'models',
     'permissions',
     'cloud',
     'mcp',

@@ -169,4 +169,46 @@ describe('settings.ipc access control', () => {
     expect(response.success).toBe(true);
     expect(updateSettings).toHaveBeenCalledWith({ ui: { theme: 'light' } });
   });
+
+  it('allows non-admin model provider setup for onboarding', async () => {
+    const updateSettings = vi.fn().mockResolvedValue(undefined);
+    const ipc = makeFakeIpc();
+    registerSettingsHandlers(ipc as never, () => ({ updateSettings }) as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'set',
+      payload: {
+        settings: {
+          models: {
+            default: 'deepseek',
+            defaultProvider: 'deepseek',
+            providers: {
+              deepseek: {
+                enabled: true,
+                apiKey: 'sk-user-model-key',
+                baseUrl: 'https://api.deepseek.com/v1',
+                model: 'deepseek-v4-flash',
+              },
+            },
+          },
+        },
+      },
+    });
+
+    expect(response.success).toBe(true);
+    expect(updateSettings).toHaveBeenCalledWith({
+      models: {
+        default: 'deepseek',
+        defaultProvider: 'deepseek',
+        providers: {
+          deepseek: {
+            enabled: true,
+            apiKey: 'sk-user-model-key',
+            baseUrl: 'https://api.deepseek.com/v1',
+            model: 'deepseek-v4-flash',
+          },
+        },
+      },
+    });
+  });
 });

@@ -194,6 +194,50 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
 
+  // Master Tasks 表 (用户级工作单元，跨 session 持久化；P0-c2)
+  // status 列保留 TEXT 不加 CHECK，枚举校验由应用层 (src/shared/contract/task.ts) 负责
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS master_tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL,
+      workspace_uri TEXT NOT NULL,
+      plan_progress TEXT NOT NULL DEFAULT '',
+      sandbox_id TEXT,
+      parent_task_id TEXT,
+      owner_user_id TEXT NOT NULL DEFAULT 'local',
+      blocks_json TEXT NOT NULL DEFAULT '[]',
+      blocked_by_json TEXT NOT NULL DEFAULT '[]',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      finished_at INTEGER,
+      is_deleted INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (parent_task_id) REFERENCES master_tasks(id) ON DELETE SET NULL
+    )
+  `);
+
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_master_tasks_status ON master_tasks(status)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_master_tasks_workspace ON master_tasks(workspace_uri)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_master_tasks_owner_status ON master_tasks(owner_user_id, status)`);
+
+  // Master Task Plan Events 表 (P0-c2; MasterTask 计划流的 append-only 事件流)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS master_task_plan_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      master_task_id TEXT NOT NULL,
+      chunk TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (master_task_id) REFERENCES master_tasks(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_mtpe_master_task ON master_task_plan_events(master_task_id, created_at)`);
+
+  // Sessions 表加 master_task_id 关联列 (P0-c2; 后续 P0-c3 用)
+  safeAlter(db, `ALTER TABLE sessions ADD COLUMN master_task_id TEXT`, logger);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_master_task ON sessions(master_task_id)`);
+
   // Context Interventions 表 (pin/exclude/retain 手动上下文选择)
   db.exec(`
     CREATE TABLE IF NOT EXISTS context_interventions (

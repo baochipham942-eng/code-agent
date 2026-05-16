@@ -118,6 +118,7 @@ export class CLIDatabaseService {
       { column: 'status', sql: "ALTER TABLE sessions ADD COLUMN status TEXT DEFAULT 'idle'" },
       { column: 'workspace', sql: 'ALTER TABLE sessions ADD COLUMN workspace TEXT' },
       { column: 'last_token_usage', sql: 'ALTER TABLE sessions ADD COLUMN last_token_usage TEXT' },
+      { column: 'master_task_id', sql: 'ALTER TABLE sessions ADD COLUMN master_task_id TEXT' },
     ];
 
     for (const migration of migrations) {
@@ -317,6 +318,47 @@ export class CLIDatabaseService {
     } catch {
       // backfill 失败不阻塞 CLI 启动
     }
+
+    // Master Tasks 表 (P0-c2; 用户级工作单元，跨 session 持久化)
+    // status 列保留 TEXT 不加 CHECK，枚举校验由应用层 (src/shared/contract/task.ts) 负责
+    // CLI 与 Electron 共享同一张表（都指向 ~/.code-agent/code-agent.db）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS master_tasks (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL,
+        workspace_uri TEXT NOT NULL,
+        plan_progress TEXT NOT NULL DEFAULT '',
+        sandbox_id TEXT,
+        parent_task_id TEXT,
+        owner_user_id TEXT NOT NULL DEFAULT 'local',
+        blocks_json TEXT NOT NULL DEFAULT '[]',
+        blocked_by_json TEXT NOT NULL DEFAULT '[]',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        finished_at INTEGER,
+        is_deleted INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (parent_task_id) REFERENCES master_tasks(id) ON DELETE SET NULL
+      )
+    `);
+
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_master_tasks_status ON master_tasks(status)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_master_tasks_workspace ON master_tasks(workspace_uri)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_master_tasks_owner_status ON master_tasks(owner_user_id, status)`);
+
+    // Master Task Plan Events 表 (P0-c2; MasterTask 计划流的 append-only 事件流)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS master_task_plan_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        master_task_id TEXT NOT NULL,
+        chunk TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (master_task_id) REFERENCES master_tasks(id) ON DELETE CASCADE
+      )
+    `);
+
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_mtpe_master_task ON master_task_plan_events(master_task_id, created_at)`);
   }
 
   private createIndexes(): void {
@@ -335,6 +377,7 @@ export class CLIDatabaseService {
       CREATE INDEX IF NOT EXISTS idx_turn_snapshots_created ON turn_snapshots(created_at);
       CREATE INDEX IF NOT EXISTS idx_compaction_snapshots_session ON compaction_snapshots(session_id);
       CREATE INDEX IF NOT EXISTS idx_compaction_snapshots_created ON compaction_snapshots(created_at);
+      CREATE INDEX IF NOT EXISTS idx_sessions_master_task ON sessions(master_task_id);
     `);
   }
 

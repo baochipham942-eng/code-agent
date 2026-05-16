@@ -49,6 +49,22 @@ export type ValidationSummary = {
   browserChecks?: string[];
 };
 
+export type ProductStatusKind =
+  | 'passed'
+  | 'blocked'
+  | 'quality-gap'
+  | 'evidence-gap'
+  | 'acceptance-gap';
+
+export type ProductStatusSummary = {
+  kind: ProductStatusKind;
+  status: string;
+  headline: string;
+  visibleState: string;
+  focus: string[];
+  diagnosticsCount: number;
+};
+
 export type GenerationOutcome = {
   responses: string[];
   toolCount: number;
@@ -179,6 +195,8 @@ export function buildGenerationPrompt(artifactPath: string): string {
     '- gameplayMechanics must include enemies, blocks, abilities, gates, and comboChallenge as arrays. Do not write enemies/blocks/abilities/gates/comboChallenge as object maps.',
     '- Use this metadata shape: gameplayMechanics: { enemies: [{ id, type, stompable, patrol, defeatReward }], blocks: [{ id, type, bumpableFromBelow, reward, usedState }], abilities: [{ id, type, acquiredFrom, effect, unlocksRoute }], gates: [{ id, requiresAbility, blocksAccessTo }], comboChallenge: [{ id, requires, target }] }.',
     '- Implement a stompable enemy, a bumpable/question block, a route-changing ability such as doubleJump, an ability-gated route, and one combo challenge combining jump plus at least two of enemy/block/ability/gate play.',
+    '- First screen must look like a real game: a readable actor, HUD/controls, visible reward, visible risk/hazard, and visible goal. Do not produce an empty field with only a tiny line actor.',
+    '- If using a stickman / 火柴人 actor, draw head, torso, arms, legs, pose/animation, strong contrast, and a meaningful on-screen size.',
     '- Include window.__GAME_TEST__ with start(), reset(levelOrScenario?), snapshot(), step(inputState, frames?), and runSmokeTest().',
     '- Keep executable validation steps in progressPlan or reachability. Do not use acceptance: ["..."] as the reachability plan.',
     '- step() and the playable loop must share the same live game state and collision logic.',
@@ -205,6 +223,9 @@ export function buildRepairPrompt(artifactPath: string, failures: string[]): str
   return [
     `The platformer artifact at this exact path was generated previously but failed acceptance validation:`,
     `  ${artifactPath}`,
+    '',
+    'Treat this as an acceptance gap, not a blank failure, unless the artifact is missing, cannot build, or crashes before rendering.',
+    'Preserve any working visuals, controls, and playable loop. Fix the smallest gameplay-quality or validation-evidence gaps first.',
     '',
     'Read it first to understand the current state, then fix ONLY the failures listed below by issuing minimal Edits.',
     '',
@@ -675,6 +696,127 @@ function formatList(items: string[] | undefined, empty = 'none'): string {
   return items.map((item) => `- ${item}`).join('\n');
 }
 
+function validationDiagnostics(summary: ValidationSummary): string[] {
+  return [
+    ...(summary.failures ?? []),
+    ...(summary.runtimeFailures ?? []),
+    ...(summary.browserFailures ?? []),
+  ].filter(Boolean);
+}
+
+function diagnosticsMatch(diagnostics: string[], pattern: RegExp): boolean {
+  return diagnostics.some((item) => pattern.test(item));
+}
+
+export function summarizeValidationStatus(summary: ValidationSummary): ProductStatusSummary {
+  const diagnostics = validationDiagnostics(summary);
+  const hasBlocking = diagnosticsMatch(
+    diagnostics,
+    /Artifact does not exist|Artifact was not written|generation failed|build failed|cannot find module|tsc|unparsable|incomplete html|文档结构不完整|页面崩溃|runtime page errors|pageerror|TypeError|ReferenceError|Cannot read properties/i,
+  );
+  const hasVisualGap = summary.browserPassed === false || diagnosticsMatch(
+    diagnostics,
+    /visual smoke|canvas|viewport|nonblank|crop|overlap|actor|HUD|reward|risk|goal|首屏|画面|视口|空白/i,
+  );
+  const hasQualityGap = diagnosticsMatch(
+    diagnostics,
+    /runSmokeTest|gameplayMechanics|stomp|bump|ability|doubleJump|gate|route|combo|enemy|block|goal|通关|玩法|玩不通|不能玩|无法通关|触发不了|player\.x|player\.y|score|status/i,
+  );
+  const hasEvidenceGap = diagnosticsMatch(
+    diagnostics,
+    /__GAME_META__|__GAME_TEST__|__INTERACTIVE_TEST__|metadata|contract|progressPlan|reachability|smokePlan|qualityPlan|snapshot|coverage|metric|验收|证据|缺少|无法验证|不能证明/i,
+  );
+
+  const focus: string[] = [];
+  if (hasBlocking) {
+    focus.push('先修生成或运行阻塞：确保文件存在、能打开、主循环不抛异常。');
+  }
+  if (hasQualityGap) {
+    focus.push('补玩法闭环：让移动、敌人、方块、能力、路线或通关路径由真实输入触发。');
+  }
+  if (hasEvidenceGap) {
+    focus.push('补验收证据：让 metadata、snapshot、progressPlan 和 runSmokeTest 对齐真实状态。');
+  }
+  if (hasVisualGap) {
+    focus.push('补首屏质量：让角色、HUD、奖励、风险和目标在桌面与移动视口都可见。');
+  }
+
+  if (summary.passed) {
+    return {
+      kind: 'passed',
+      status: 'PASS',
+      headline: '游戏已生成，并通过玩法验收。',
+      visibleState: '可打开、可操作，并且 runtime 与浏览器视觉 smoke 都通过。',
+      focus: ['保持当前玩法闭环和验收契约，避免后续改动退化。'],
+      diagnosticsCount: diagnostics.length,
+    };
+  }
+
+  if (hasBlocking) {
+    return {
+      kind: 'blocked',
+      status: 'BLOCKED',
+      headline: '游戏产物还没稳定跑起来，先按阻塞问题处理。',
+      visibleState: summary.browserPassed === true
+        ? '浏览器画面能打开，但生成或运行链路仍报告阻塞异常。'
+        : '当前还没有稳定的可验证游戏运行态。',
+      focus: focus.slice(0, 3),
+      diagnosticsCount: diagnostics.length,
+    };
+  }
+
+  if (hasQualityGap) {
+    return {
+      kind: 'quality-gap',
+      status: 'PLAYABLE_QUALITY_GAP',
+      headline: '游戏已生成，但玩法验收未达标。',
+      visibleState: summary.browserPassed === true
+        ? '浏览器画面已通过 smoke，说明游戏已经能展示；当前主要是玩法、通关或机制闭环没跑通。'
+        : '文件已生成，但首屏呈现和玩法闭环还需要一起补。',
+      focus: focus.slice(0, 3),
+      diagnosticsCount: diagnostics.length,
+    };
+  }
+
+  if (hasEvidenceGap) {
+    return {
+      kind: 'evidence-gap',
+      status: 'EVIDENCE_GAP',
+      headline: '游戏已生成，但验收证据不足。',
+      visibleState: summary.browserPassed === true
+        ? '游戏画面能展示；当前问题更像 metadata/test contract 没把真实玩法证明出来。'
+        : '游戏文件存在，但验证契约还不足以判断可玩性。',
+      focus: focus.slice(0, 3),
+      diagnosticsCount: diagnostics.length,
+    };
+  }
+
+  return {
+    kind: 'acceptance-gap',
+    status: 'ACCEPTANCE_GAP',
+    headline: '游戏已生成，但还没有通过完整验收。',
+    visibleState: '当前失败更像综合验收缺口，需要查看诊断明细确认下一步。',
+    focus: focus.length > 0 ? focus.slice(0, 3) : ['先复查 runtime smoke 和浏览器视觉 smoke，找到最小修复点。'],
+    diagnosticsCount: diagnostics.length,
+  };
+}
+
+export function formatProductStatusMarkdown(summary: ValidationSummary): string {
+  const productStatus = summarizeValidationStatus(summary);
+  return [
+    '## Product Status',
+    '',
+    `- status: ${productStatus.status}`,
+    `- summary: ${productStatus.headline}`,
+    `- visibleState: ${productStatus.visibleState}`,
+    `- diagnosticsCount: ${productStatus.diagnosticsCount}`,
+    '',
+    'Repair focus:',
+    '',
+    formatList(productStatus.focus),
+  ].join('\n');
+}
+
 function formatGenerationResult(
   result: GenerationOutcome | null,
   error: string | undefined,
@@ -737,16 +879,23 @@ async function writeMarkdownReport(reportPath: string, output: AcceptanceCliOutp
     `- runtimePassed: ${validation.runtimePassed ?? 'N/A'}`,
     `- browserPassed: ${validation.browserPassed ?? 'N/A'}`,
     '',
+    formatProductStatusMarkdown(validation),
+    '',
     ...loopRows,
     '## Generation (selected candidate)',
     '',
     formatGenerationResult(generationSummary, generationError),
     '',
-    '## Validation Failures',
+    '## Diagnostic Details',
+    '',
+    '<details>',
+    '<summary>Raw validator details</summary>',
+    '',
+    '### Validation Detail',
     '',
     formatList(validation.failures),
     '',
-    '## Runtime Smoke',
+    '### Runtime Smoke',
     '',
     `- passed: ${validation.runtimePassed ?? 'N/A'}`,
     '',
@@ -758,7 +907,7 @@ async function writeMarkdownReport(reportPath: string, output: AcceptanceCliOutp
     '',
     formatList(validation.runtimeChecks),
     '',
-    '## Browser Visual Smoke',
+    '### Browser Visual Smoke',
     '',
     `- passed: ${validation.browserPassed ?? 'N/A'}`,
     '',
@@ -769,6 +918,8 @@ async function writeMarkdownReport(reportPath: string, output: AcceptanceCliOutp
     'Browser failures:',
     '',
     formatList(validation.browserFailures),
+    '',
+    '</details>',
     '',
   ].join('\n');
   await fs.writeFile(reportPath, body, 'utf-8');
@@ -920,6 +1071,19 @@ async function main(): Promise<void> {
       ['runtimePassed', validationSummary.runtimePassed],
       ['browserPassed', validationSummary.browserPassed],
     ]);
+    const productStatus = summarizeValidationStatus(validationSummary);
+    console.log('\n=== Product Status ===');
+    console.log(productStatus.headline);
+    console.log(productStatus.visibleState);
+    if (productStatus.focus.length > 0) {
+      console.log('Repair focus:');
+      for (const item of productStatus.focus) console.log(`- ${item}`);
+    }
+    if (!validationSummary.passed && reportPath) {
+      console.log(`Full diagnostics: ${reportPath}`);
+    } else if (!validationSummary.passed) {
+      console.log('Full diagnostics: rerun with --report <path> to write raw validator details.');
+    }
     if (loop) {
       console.log('\n=== Acceptance Summary ===');
       console.log(`bon_n: ${bonN}, repair_cap: ${repairCap}, monotonic: ${monotonicMode}`);
@@ -938,10 +1102,6 @@ async function main(): Promise<void> {
       } else {
         console.log('Result: FAIL');
       }
-    }
-    if (!validationSummary.passed) {
-      console.error('\nFailures:');
-      for (const failure of validationSummary.failures) console.error(`- ${failure}`);
     }
   }
 

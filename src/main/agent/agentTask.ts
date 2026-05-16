@@ -2,6 +2,11 @@ import { writeFile, readFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 
+import { TaskKernel, type TranscriptEntry, type TaskHookCallback } from './taskKernel';
+
+// 透传 kernel 公共类型，保持原 './agentTask' 模块对外 API 不变。
+export type { TranscriptEntry, TaskHookCallback };
+
 export type AgentTaskStatus = 'pending' | 'registered' | 'running' | 'stopped' | 'resumed' | 'failed' | 'cancelled';
 
 export class InvalidStateTransitionError extends Error {
@@ -20,41 +25,14 @@ export interface SidecarMetadata {
   toolPool: string[];
 }
 
-export interface TranscriptEntry {
-  role: string;
-  content: string;
-  timestamp: number;
-  toolCallId?: string;
-}
-
-/** Hook 回调类型：调用方可选注入，用于触发 TaskCreated/TaskCompleted 等事件 */
-export type TaskHookCallback = (event: 'TaskCreated' | 'TaskCompleted', payload: {
-  taskId: string;
-  agentType: string;
-  success?: boolean;
-}) => void;
-
-export class AgentTask {
-  readonly id: string;
-  private _status: AgentTaskStatus = 'pending';
+export class AgentTask extends TaskKernel<AgentTaskStatus> {
   readonly agentType: string;
-  abortController: AbortController | null = null;
-  private _pendingMessages: Array<{ role: string; content: string }> = [];
-  private _transcript: TranscriptEntry[] = [];
   readonly sidecarMetadata: SidecarMetadata;
-  private _error?: string;
-
-  // --- 任务依赖 ---
-  readonly blocks: Set<string> = new Set();
-  readonly blockedBy: Set<string> = new Set();
-
-  // --- Hook 回调（可选，由调用方注入） ---
-  onHook?: TaskHookCallback;
-
-  get status(): AgentTaskStatus { return this._status; }
+  /** 预留字段：后续派生 MasterTask 时挂接到上层任务的引用，旧 metadata 缺失时为 undefined */
+  parentMasterTaskId?: string;
 
   constructor(id: string, metadata: SidecarMetadata) {
-    this.id = id;
+    super(id, 'pending');
     this.agentType = metadata.agentType;
     this.sidecarMetadata = metadata;
   }
@@ -109,52 +87,11 @@ export class AgentTask {
     this.onHook?.('TaskCompleted', { taskId: this.id, agentType: this.agentType, success: false });
   }
 
-  get error(): string | undefined { return this._error; }
-
-  // --- 依赖管理 ---
-
-  addDependency(blockerId: string): void {
-    this.blockedBy.add(blockerId);
-  }
-
-  removeDependency(blockerId: string): void {
-    this.blockedBy.delete(blockerId);
-  }
-
-  isReady(): boolean {
-    return this.blockedBy.size === 0;
-  }
-
-  private assertTransition(target: AgentTaskStatus, validFrom: AgentTaskStatus[]): void {
+  /** 覆盖基类默认实现，抛出携带具体 AgentTaskStatus 的专用错误 */
+  protected assertTransition(target: AgentTaskStatus, validFrom: AgentTaskStatus[]): void {
     if (!validFrom.includes(this._status)) {
       throw new InvalidStateTransitionError(this._status, target);
     }
-  }
-
-  // --- Transcript ---
-
-  appendTranscript(entry: TranscriptEntry): void {
-    this._transcript.push(entry);
-  }
-
-  getTranscript(): readonly TranscriptEntry[] {
-    return [...this._transcript];
-  }
-
-  // --- Pending messages ---
-
-  enqueuePendingMessage(message: { role: string; content: string }): void {
-    this._pendingMessages.push(message);
-  }
-
-  drainPendingMessages(): Array<{ role: string; content: string }> {
-    const messages = [...this._pendingMessages];
-    this._pendingMessages = [];
-    return messages;
-  }
-
-  getPendingMessageCount(): number {
-    return this._pendingMessages.length;
   }
 
   // --- Persistence ---
@@ -178,9 +115,10 @@ export class AgentTask {
       agentType: this.agentType,
       sidecarMetadata: this.sidecarMetadata,
       error: this._error,
-      pendingMessages: this._pendingMessages,
+      pendingMessages: this.getPendingMessagesSnapshot(),
       blocks: Array.from(this.blocks),
       blockedBy: Array.from(this.blockedBy),
+      parentMasterTaskId: this.parentMasterTaskId,
     };
     await writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8');
   }
@@ -197,7 +135,7 @@ export class AgentTask {
 
     const task = new AgentTask(meta.id, meta.sidecarMetadata);
     // Restore internal state directly (bypass state machine for loading)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): _status 是 AgentTask 的 private 字段，反序列化时需要绕过；应该提供 AgentTask.fromPersisted(meta) 静态构造器代替私有字段直写
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): _status 是 TaskKernel 的 protected 字段，反序列化时需要绕过；应该提供 AgentTask.fromPersisted(meta) 静态构造器代替私有字段直写
     (task as any)._status = meta.status;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 _error 私有字段直写，应通过 fromPersisted 构造器
     (task as any)._error = meta.error;
@@ -210,6 +148,11 @@ export class AgentTask {
     }
     if (Array.isArray(meta.blockedBy)) {
       for (const id of meta.blockedBy) task.blockedBy.add(id);
+    }
+
+    // Restore parent MasterTask reference (旧 metadata 无此字段时保持 undefined)
+    if (typeof meta.parentMasterTaskId === 'string') {
+      task.parentMasterTaskId = meta.parentMasterTaskId;
     }
 
     // Load transcript

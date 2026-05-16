@@ -48,6 +48,115 @@ type DomainIpcRequest = {
   requestId?: string;
 };
 
+type WorkspaceSettingsForBootstrap = {
+  defaultOpenTarget?: string;
+  pinnedDirectory?: string;
+  recentDirectories?: string[];
+  defaultDirectory?: string;
+};
+
+type ConfigServiceForBootstrap = {
+  getSettings: () => {
+    workspace?: WorkspaceSettingsForBootstrap;
+  };
+};
+
+function resolveDirIfUsable(dir: string | undefined): string | null {
+  if (!dir) return null;
+  const trimmed = dir.trim();
+  if (!trimmed) return null;
+  try {
+    return fs.statSync(trimmed).isDirectory() ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
+function getWebBootstrapWorkingDirectory(configService?: ConfigServiceForBootstrap): string {
+  const configured = process.env.CODE_AGENT_WORKING_DIR?.trim();
+  if (configured) return configured;
+
+  const workspacePref = configService?.getSettings().workspace;
+  if (workspacePref) {
+    const target = workspacePref.defaultOpenTarget ?? 'lastDirectory';
+    if (target === 'fixedDirectory') {
+      const pinned = resolveDirIfUsable(workspacePref.pinnedDirectory);
+      if (pinned) return pinned;
+    } else if (target === 'lastDirectory') {
+      for (const dir of workspacePref.recentDirectories || []) {
+        const recent = resolveDirIfUsable(dir);
+        if (recent) return recent;
+      }
+      const fallback = resolveDirIfUsable(workspacePref.defaultDirectory);
+      if (fallback) return fallback;
+    }
+  }
+
+  const cwd = process.cwd();
+  const cwdRoot = cwd ? path.parse(cwd).root : '';
+  if (!cwd || cwd === cwdRoot || cwd.includes('/Contents/Resources/')) {
+    return os.homedir();
+  }
+  return cwd;
+}
+
+async function initializeWebSkillServices(configService: ConfigServiceForBootstrap): Promise<void> {
+  try {
+    const { initCloudConfigService, getCloudConfigService } = await import('../main/services/cloud');
+    await initCloudConfigService();
+    const info = getCloudConfigService().getInfo();
+    logger.info('CloudConfig initialized', {
+      source: info.fromCloud ? 'cloud' : 'builtin',
+      version: info.version,
+    });
+  } catch (error) {
+    logger.warn('CloudConfig initialization failed (non-blocking):', (error as Error).message);
+  }
+
+  const workingDir = getWebBootstrapWorkingDirectory(configService);
+
+  try {
+    const { getSkillRepositoryService, getSkillDiscoveryService, initSkillWatcher } = await import('../main/services/skills');
+    const skillRepoService = getSkillRepositoryService();
+    await skillRepoService.initialize();
+    logger.info('SkillRepositoryService initialized', {
+      libraryCount: skillRepoService.getLocalLibraries().length,
+    });
+
+    const skillDiscovery = getSkillDiscoveryService();
+    await skillDiscovery.initialize(workingDir);
+    const stats = skillDiscovery.getStats();
+    logger.info('SkillDiscovery initialized', {
+      workingDir,
+      total: stats.total,
+      builtin: stats.bySource.builtin,
+      user: stats.bySource.user,
+      project: stats.bySource.project,
+      library: stats.bySource.library,
+    });
+
+    initSkillWatcher(workingDir)
+      .then((watcher) => {
+        watcher.on('reloaded', (reloadStats) => {
+          logger.info('Skills hot-reloaded', { total: reloadStats.total });
+        });
+        logger.info('SkillWatcher initialized', { watchCount: watcher.getWatchCount() });
+      })
+      .catch((watchError) => {
+        logger.warn('SkillWatcher initialization failed (non-blocking):', (watchError as Error).message);
+      });
+
+    skillRepoService.preloadRecommendedRepositories()
+      .then(async () => {
+        await skillDiscovery.refreshLibraries();
+        logger.info('Recommended skill repositories preloaded');
+      })
+      .catch((preloadError) => logger.warn('Failed to preload recommended repositories', { error: String(preloadError) }));
+  } catch (error) {
+    logger.warn('Skill services initialization failed (non-blocking):', (error as Error).message);
+  }
+}
+
 export function shouldUseLocalWebAuthStatus(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.CODE_AGENT_E2E === '1' || env.CODE_AGENT_ENABLE_DEV_API === 'true';
 }
@@ -244,6 +353,8 @@ async function initializeServices(): Promise<void> {
   }
 
   // Memory service removed — Light Memory (file-based) is used instead
+
+  await initializeWebSkillServices(configService);
 
   // 启动时探测本地 CLI 能力（fire-and-forget，不阻塞初始化）
   // 探到的清单后续会注入 system prompt 的 <env-capabilities> 块

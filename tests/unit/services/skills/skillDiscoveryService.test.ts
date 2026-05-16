@@ -49,7 +49,7 @@ async function writeSkill(baseDir: string, name: string): Promise<void> {
   );
 }
 
-describe('SkillDiscoveryService Claude legacy isolation', () => {
+describe('SkillDiscoveryService Claude legacy discovery', () => {
   let tmpRoot: string;
   let homeDir: string;
   let projectDir: string;
@@ -68,26 +68,13 @@ describe('SkillDiscoveryService Claude legacy isolation', () => {
     await fs.rm(tmpRoot, { recursive: true, force: true });
   });
 
-  it('does not scan user or project Claude legacy skill directories by default', async () => {
+  it('scans user and project Claude legacy skill directories by default', async () => {
     await writeSkill(path.join(homeDir, '.claude', 'skills'), 'user-claude');
     await writeSkill(path.join(projectDir, '.claude', 'skills'), 'project-claude');
     await writeSkill(path.join(homeDir, '.code-agent', 'skills'), 'user-code-agent');
     await writeSkill(path.join(projectDir, '.code-agent', 'skills'), 'project-code-agent');
 
     const service = new SkillDiscoveryService();
-    await service.initialize(projectDir);
-
-    const skillNames = service.getAllSkills().map((skill) => skill.name).sort();
-    expect(skillNames).toEqual(['project-code-agent', 'user-code-agent']);
-  });
-
-  it('scans Claude legacy skill directories when explicitly configured', async () => {
-    await writeSkill(path.join(homeDir, '.claude', 'skills'), 'user-claude');
-    await writeSkill(path.join(projectDir, '.claude', 'skills'), 'project-claude');
-    await writeSkill(path.join(homeDir, '.code-agent', 'skills'), 'user-code-agent');
-    await writeSkill(path.join(projectDir, '.code-agent', 'skills'), 'project-code-agent');
-
-    const service = new SkillDiscoveryService({ includeClaudeLegacySkills: true });
     await service.initialize(projectDir);
 
     const skillNames = service.getAllSkills().map((skill) => skill.name).sort();
@@ -99,7 +86,20 @@ describe('SkillDiscoveryService Claude legacy isolation', () => {
     ]);
   });
 
-  it('treats CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS as an explicit opt-in', async () => {
+  it('can skip Claude legacy skill directories when explicitly configured', async () => {
+    await writeSkill(path.join(homeDir, '.claude', 'skills'), 'user-claude');
+    await writeSkill(path.join(projectDir, '.claude', 'skills'), 'project-claude');
+    await writeSkill(path.join(homeDir, '.code-agent', 'skills'), 'user-code-agent');
+    await writeSkill(path.join(projectDir, '.code-agent', 'skills'), 'project-code-agent');
+
+    const service = new SkillDiscoveryService({ includeClaudeLegacySkills: false });
+    await service.initialize(projectDir);
+
+    const skillNames = service.getAllSkills().map((skill) => skill.name).sort();
+    expect(skillNames).toEqual(['project-code-agent', 'user-code-agent']);
+  });
+
+  it('keeps CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS=true compatible', async () => {
     vi.stubEnv('CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS', 'true');
     await writeSkill(path.join(homeDir, '.claude', 'skills'), 'user-claude');
 
@@ -107,6 +107,17 @@ describe('SkillDiscoveryService Claude legacy isolation', () => {
     await service.initialize(projectDir);
 
     expect(service.getSkill('user-claude')?.source).toBe('user');
+  });
+
+  it('treats CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS=false as an explicit opt-out', async () => {
+    vi.stubEnv('CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS', 'false');
+    await writeSkill(path.join(homeDir, '.claude', 'skills'), 'user-claude');
+    await writeSkill(path.join(homeDir, '.code-agent', 'skills'), 'user-code-agent');
+
+    const service = new SkillDiscoveryService();
+    await service.initialize(projectDir);
+
+    expect(service.getAllSkills().map((skill) => skill.name).sort()).toEqual(['user-code-agent']);
   });
 
   it('reuses cached metadata on the next initialize without rereading unchanged SKILL.md files', async () => {

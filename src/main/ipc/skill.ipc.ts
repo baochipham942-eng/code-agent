@@ -20,6 +20,18 @@ const logger = createLogger('SkillIPC');
 // Internal Handlers
 // ============================================================================
 
+function getSkillIpcWorkingDirectory(): string {
+  const discovery = getSkillDiscoveryService();
+  return discovery.getWorkingDirectory()
+    || process.env.CODE_AGENT_WORKING_DIR
+    || process.cwd();
+}
+
+async function ensureSkillDiscoveryForIpc(): Promise<void> {
+  const discovery = getSkillDiscoveryService();
+  await discovery.ensureInitialized(getSkillIpcWorkingDirectory());
+}
+
 // ----------------------------------------------------------------------------
 // Repository Management
 // ----------------------------------------------------------------------------
@@ -29,6 +41,7 @@ const logger = createLogger('SkillIPC');
  */
 async function handleRepoList() {
   const service = getSkillRepositoryService();
+  await service.initialize();
   return service.getLocalLibraries();
 }
 
@@ -99,7 +112,8 @@ async function handleRepoAddCustom(url: string, name?: string) {
 /**
  * 获取所有可用 skills
  */
-function handleSkillList() {
+async function handleSkillList() {
+  await ensureSkillDiscoveryForIpc();
   const discoveryService = getSkillDiscoveryService();
   return discoveryService.getAllSkills();
 }
@@ -107,16 +121,18 @@ function handleSkillList() {
 /**
  * 全局启用 skill
  */
-function handleSkillEnable(skillName: string) {
+async function handleSkillEnable(skillName: string) {
   const service = getSkillRepositoryService();
+  await service.initialize();
   service.enableSkill(skillName);
 }
 
 /**
  * 全局禁用 skill
  */
-function handleSkillDisable(skillName: string) {
+async function handleSkillDisable(skillName: string) {
   const service = getSkillRepositoryService();
+  await service.initialize();
   service.disableSkill(skillName);
 }
 
@@ -127,11 +143,12 @@ function handleSkillDisable(skillName: string) {
 /**
  * 挂载到会话
  */
-function handleSessionMount(
+async function handleSessionMount(
   sessionId: string,
   skillName: string,
   libraryId: string
-) {
+): Promise<boolean> {
+  await ensureSkillDiscoveryForIpc();
   const service = getSessionSkillService();
   return service.mountSkill(sessionId, skillName, libraryId, 'manual');
 }
@@ -155,7 +172,8 @@ function handleSessionList(sessionId: string) {
 /**
  * 获取推荐 skills
  */
-function handleSessionRecommend(sessionId: string, userInput?: string) {
+async function handleSessionRecommend(sessionId: string, userInput?: string) {
+  await ensureSkillDiscoveryForIpc();
   const service = getSessionSkillService();
   return service.recommendSkills(sessionId, userInput || '');
 }
@@ -394,27 +412,27 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
   // Skill Management
   // ------------------------------------------------------------------------
 
-  ipcMain.handle(SKILL_CHANNELS.SKILL_LIST, () => {
+  ipcMain.handle(SKILL_CHANNELS.SKILL_LIST, async () => {
     try {
-      return handleSkillList();
+      return await handleSkillList();
     } catch (error) {
       logger.error('Failed to list skills', { error });
       throw error;
     }
   });
 
-  ipcMain.handle(SKILL_CHANNELS.SKILL_ENABLE, (_, skillName: string) => {
+  ipcMain.handle(SKILL_CHANNELS.SKILL_ENABLE, async (_, skillName: string) => {
     try {
-      handleSkillEnable(skillName);
+      await handleSkillEnable(skillName);
     } catch (error) {
       logger.error('Failed to enable skill', { skillName, error });
       throw error;
     }
   });
 
-  ipcMain.handle(SKILL_CHANNELS.SKILL_DISABLE, (_, skillName: string) => {
+  ipcMain.handle(SKILL_CHANNELS.SKILL_DISABLE, async (_, skillName: string) => {
     try {
-      handleSkillDisable(skillName);
+      await handleSkillDisable(skillName);
     } catch (error) {
       logger.error('Failed to disable skill', { skillName, error });
       throw error;
@@ -427,9 +445,9 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle(
     SKILL_CHANNELS.SESSION_MOUNT,
-    (_, sessionId: string, skillName: string, libraryId: string) => {
+    async (_, sessionId: string, skillName: string, libraryId: string) => {
       try {
-        return handleSessionMount(sessionId, skillName, libraryId);
+        return await handleSessionMount(sessionId, skillName, libraryId);
       } catch (error) {
         logger.error('Failed to mount skill', { sessionId, skillName, error });
         throw error;
@@ -460,9 +478,9 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle(
     SKILL_CHANNELS.SESSION_RECOMMEND,
-    (_, sessionId: string, userInput?: string) => {
+    async (_, sessionId: string, userInput?: string) => {
       try {
-        return handleSessionRecommend(sessionId, userInput);
+        return await handleSessionRecommend(sessionId, userInput);
       } catch (error) {
         logger.error('Failed to get recommendations', { sessionId, error });
         throw error;

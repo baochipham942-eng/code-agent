@@ -55,7 +55,7 @@ interface SkillActions {
   /** 设置当前会话 */
   setCurrentSession: (sessionId: string) => void;
   /** 获取当前会话的挂载列表 */
-  fetchMountedSkills: () => Promise<void>;
+  fetchMountedSkills: (options?: { force?: boolean }) => Promise<void>;
   /** 获取所有可用 skills */
   fetchAvailableSkills: () => Promise<void>;
   /** 获取推荐 skills */
@@ -82,6 +82,7 @@ type SkillStore = SkillState & SkillActions;
 // N 个并行请求。这里把进行中的 Promise 暂存，让并发调用共享同一次请求。
 let availableSkillsInFlight: Promise<void> | null = null;
 let mountedSkillsInFlight: { sessionId: string; promise: Promise<void> } | null = null;
+let mountedSkillsRequestSeq = 0;
 
 export const useSkillStore = create<SkillStore>()((set, get) => ({
   // 初始状态
@@ -104,16 +105,17 @@ export const useSkillStore = create<SkillStore>()((set, get) => ({
   },
 
   // 获取当前会话的挂载列表
-  fetchMountedSkills: async () => {
+  fetchMountedSkills: async (options?: { force?: boolean }) => {
     const { currentSessionId } = get();
     if (!currentSessionId) {
       logger.debug('No current session, skipping fetchMountedSkills');
       return;
     }
-    if (mountedSkillsInFlight?.sessionId === currentSessionId) {
+    if (!options?.force && mountedSkillsInFlight?.sessionId === currentSessionId) {
       return mountedSkillsInFlight.promise;
     }
 
+    const requestSeq = ++mountedSkillsRequestSeq;
     const promise = (async () => {
       try {
         set({ loading: true, error: null });
@@ -121,15 +123,21 @@ export const useSkillStore = create<SkillStore>()((set, get) => ({
           SKILL_CHANNELS.SESSION_LIST,
           currentSessionId
         );
-        set({ mountedSkills: mounted || [] });
+        if (requestSeq === mountedSkillsRequestSeq) {
+          set({ mountedSkills: mounted || [] });
+        }
         logger.debug('Fetched mounted skills', { count: (mounted || []).length });
       } catch (err) {
         const message = err instanceof Error ? err.message : '加载挂载列表失败';
         logger.error('Failed to fetch mounted skills', { error: err });
-        set({ error: message });
+        if (requestSeq === mountedSkillsRequestSeq) {
+          set({ error: message });
+        }
       } finally {
-        set({ loading: false });
-        mountedSkillsInFlight = null;
+        if (requestSeq === mountedSkillsRequestSeq) {
+          set({ loading: false });
+          mountedSkillsInFlight = null;
+        }
       }
     })();
     mountedSkillsInFlight = { sessionId: currentSessionId, promise };
@@ -185,14 +193,18 @@ export const useSkillStore = create<SkillStore>()((set, get) => ({
 
     try {
       set({ loading: true, error: null });
-      await invokeSkillChannel<void>(
+      const mounted = await invokeSkillChannel<boolean>(
         SKILL_CHANNELS.SESSION_MOUNT,
         currentSessionId,
         skillName,
         libraryId
       );
+      if (!mounted) {
+        set({ error: `未找到 Skill：${skillName}`, loading: false });
+        return false;
+      }
       // 重新加载挂载列表
-      await get().fetchMountedSkills();
+      await get().fetchMountedSkills({ force: true });
       logger.info('Skill mounted', { skillName, libraryId });
       return true;
     } catch (err) {
@@ -219,7 +231,7 @@ export const useSkillStore = create<SkillStore>()((set, get) => ({
         skillName
       );
       // 重新加载挂载列表
-      await get().fetchMountedSkills();
+      await get().fetchMountedSkills({ force: true });
       logger.info('Skill unmounted', { skillName });
       return true;
     } catch (err) {

@@ -27,8 +27,20 @@ function isTruthyEnv(value: string | undefined): boolean {
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }
 
+function isFalsyEnv(value: string | undefined): boolean {
+  if (!value) return false;
+  return ['0', 'false', 'no', 'off'].includes(value.trim().toLowerCase());
+}
+
 function shouldIncludeClaudeLegacySkills(options: SkillDiscoveryServiceOptions): boolean {
-  return options.includeClaudeLegacySkills ?? isTruthyEnv(process.env[INCLUDE_CLAUDE_LEGACY_SKILLS_ENV]);
+  if (options.includeClaudeLegacySkills !== undefined) {
+    return options.includeClaudeLegacySkills;
+  }
+
+  const envValue = process.env[INCLUDE_CLAUDE_LEGACY_SKILLS_ENV];
+  if (isTruthyEnv(envValue)) return true;
+  if (isFalsyEnv(envValue)) return false;
+  return true;
 }
 
 /**
@@ -61,7 +73,7 @@ interface SkillMetadataCachePayload {
  * 负责从多个来源发现和加载 Skills：
  * 1. 用户级目录: ~/.code-agent/skills/
  * 2. 项目级目录: .code-agent/skills/
- * 3. Claude legacy 目录: 显式开启后才扫描
+ * 3. Claude legacy 目录: 默认纳入发现，实际内容仍按需加载
  * 4. 内置 Skills (从 cloudConfigService 转换)
  *
  * 优先级：项目 > 用户 > 内置（后加载的覆盖先加载的）
@@ -119,12 +131,12 @@ class SkillDiscoveryService {
     // 1. 加载内置 Skills（最低优先级）
     await this.loadBuiltinSkills();
 
-    // 2. 加载用户级 Skills。Claude legacy 目录默认隔离，显式开启后再参与兼容扫描。
+    // 2. 加载用户级 Skills。Claude legacy 参与发现，内容仍保持懒加载。
     const skillsDirs = getSkillsDir(this.workingDirectory);
     if (this.includeClaudeLegacySkills) {
       await this.scanDirectory(skillsDirs.user.legacy, 'user');
     } else {
-      logger.debug('Skipping Claude legacy user skills directory', {
+      logger.debug('Skipping Claude legacy user skills directory by configuration', {
         dir: skillsDirs.user.legacy,
         optInEnv: INCLUDE_CLAUDE_LEGACY_SKILLS_ENV,
       });
@@ -134,12 +146,12 @@ class SkillDiscoveryService {
     // 3. 加载远程库 Skills
     await this.loadFromLibraries();
 
-    // 4. 加载项目级 Skills（最高优先级）。同样默认只扫 .code-agent/skills。
+    // 4. 加载项目级 Skills（最高优先级）
     if (skillsDirs.project) {
       if (this.includeClaudeLegacySkills) {
         await this.scanDirectory(skillsDirs.project.legacy, 'project');
       } else {
-        logger.debug('Skipping Claude legacy project skills directory', {
+        logger.debug('Skipping Claude legacy project skills directory by configuration', {
           dir: skillsDirs.project.legacy,
           optInEnv: INCLUDE_CLAUDE_LEGACY_SKILLS_ENV,
         });

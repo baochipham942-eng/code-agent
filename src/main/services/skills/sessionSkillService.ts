@@ -64,7 +64,7 @@ class SessionSkillService {
     // 检查是否已挂载
     if (mounts.some((m) => m.skillName === skillName)) {
       logger.debug('Skill already mounted', { sessionId, skillName });
-      return false;
+      return true;
     }
 
     // 检查 skill 是否存在

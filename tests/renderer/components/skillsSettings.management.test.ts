@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ParsedSkill } from '../../../src/shared/contract/agentSkill';
 import type { LocalSkillLibrary } from '../../../src/shared/contract/skillRepository';
 import {
+  buildDiscoveredSkillSummary,
   buildSkillLibraryManagementRows,
   buildSkillLibraryManagementSummary,
   resolveSelectedSkillLibraryId,
@@ -57,6 +59,42 @@ const communityLibrary = {
   ],
 } satisfies LocalSkillLibrary;
 
+const discoveredSkills = [
+  {
+    name: 'claude-skill',
+    description: 'Claude user skill',
+    basePath: '/Users/me/.claude/skills/claude-skill',
+    promptContent: '',
+    allowedTools: [],
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'user',
+  },
+  {
+    name: 'project-skill',
+    description: 'Project skill',
+    basePath: '/repo/.code-agent/skills/project-skill',
+    promptContent: '',
+    allowedTools: [],
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'project',
+  },
+  {
+    name: 'library-skill',
+    description: 'Library skill',
+    basePath: '/Users/me/.code-agent/skills/library/skill',
+    promptContent: '',
+    allowedTools: [],
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'library',
+  },
+] satisfies ParsedSkill[];
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -105,6 +143,20 @@ describe('SkillsSettings management helpers', () => {
       disabledSkills: 0,
       missingDependencySkills: 0,
       lastUpdatedLabel: '5 分钟前',
+    });
+  });
+
+  it('builds discovered skill source summary', () => {
+    expect(buildDiscoveredSkillSummary(discoveredSkills)).toEqual({
+      totalSkills: 3,
+      bySource: {
+        builtin: 0,
+        cloud: 0,
+        library: 1,
+        plugin: 0,
+        project: 1,
+        user: 1,
+      },
     });
   });
 });

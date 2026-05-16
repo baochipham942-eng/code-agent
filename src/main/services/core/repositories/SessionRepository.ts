@@ -365,6 +365,29 @@ export class SessionRepository {
     return row?.master_task_id ?? null;
   }
 
+  /**
+   * 写 session.plan_title — agent 调 TodoWrite 时显式传 plan_title 用。
+   * 单独窄接口，跟 updateMasterTaskId 同 pattern，不动 Session 类型 / updateSession
+   * COALESCE 路径。NULL 时调用方传 null 显式清空。
+   */
+  updateSessionPlanTitle(sessionId: string, planTitle: string | null, updatedAt?: number): void {
+    const result = this.db
+      .prepare(`UPDATE sessions SET plan_title = ?, updated_at = ? WHERE id = ?`)
+      .run(planTitle, updatedAt ?? Date.now(), sessionId);
+    if (result.changes === 0) throw new Error(`Session not found: ${sessionId}`);
+  }
+
+  /**
+   * 读 session.plan_title。NULL 代表 agent 还没主动制定 plan，UI 隐藏 plan 标题行
+   * 只显示 checklist。
+   */
+  getSessionPlanTitle(sessionId: string): string | null {
+    const row = this.db
+      .prepare(`SELECT plan_title FROM sessions WHERE id = ?`)
+      .get(sessionId) as { plan_title: string | null } | undefined;
+    return row?.plan_title ?? null;
+  }
+
   markCrashedActiveSessions(now: number = Date.now()): { interrupted: number; orphaned: number } {
     const interrupted = this.db
       .prepare(

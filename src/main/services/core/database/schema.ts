@@ -238,6 +238,11 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN master_task_id TEXT`, logger);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_master_task ON sessions(master_task_id)`);
 
+  // Sessions 表加 plan_title 列：agent 调 TodoWrite 时可显式传 plan_title，
+  // 作为单会话任务拆解视图的标题。NULL 时 UI 隐藏 plan title 行只显示
+  // checklist。NULL/缺省的 legacy session 不回填——意图就是 "agent 没 plan"。
+  safeAlter(db, `ALTER TABLE sessions ADD COLUMN plan_title TEXT`, logger);
+
   // Context Interventions 表 (pin/exclude/retain 手动上下文选择)
   db.exec(`
     CREATE TABLE IF NOT EXISTS context_interventions (

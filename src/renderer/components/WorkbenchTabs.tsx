@@ -94,7 +94,7 @@ export const WorkbenchTabs: React.FC = () => {
       return { id, label: '上下文', title: '上下文占用与来源拆分', isDirty: false };
     }
     if (id === 'master-tasks') {
-      return { id, label: '任务', title: '跨 workspace 任务看板', isDirty: false };
+      return { id, label: '任务看板', title: '跨 workspace 工作单元（一个任务可包含多个 session）', isDirty: false };
     }
     const path = id.slice(PREVIEW_PREFIX.length);
     const previewTab = previewTabs.find((p) => p.path === path);
@@ -217,9 +217,10 @@ export const WorkbenchTabs: React.FC = () => {
                   type="button"
                   onClick={() => { openWorkbenchTab('master-tasks'); setAddOpen(false); }}
                   className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                  title="跨 workspace 工作单元，session 之上的层级"
                 >
                   <ListChecks className="w-3.5 h-3.5 text-sky-400/80" />
-                  任务
+                  任务看板
                 </button>
               )}
             </div>

@@ -467,6 +467,8 @@ export class DatabaseService {
   listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.listSessions(limit, offset, includeArchived); }
   updateSession(sessionId: string, updates: Partial<Session>, options?: { syncOrigin?: 'local' | 'remote'; isDeleted?: boolean }): void { this.ensureDb(); this.sessionRepo.updateSession(sessionId, updates, options); }
   deleteSession(sessionId: string, options?: { syncOrigin?: 'local' | 'remote'; deletedAt?: number }): void { this.ensureDb(); this.sessionRepo.deleteSession(sessionId, options); }
+  updateMasterTaskId(sessionId: string, masterTaskId: string, updatedAt?: number): void { this.ensureDb(); this.sessionRepo.updateMasterTaskId(sessionId, masterTaskId, updatedAt); }
+  getMasterTaskId(sessionId: string): string | null { this.ensureDb(); return this.sessionRepo.getMasterTaskId(sessionId); }
   clearAllSessions(): number { this.ensureDb(); return this.sessionRepo.clearAllSessions(); }
   markCrashedActiveSessions(now?: number): { interrupted: number; orphaned: number } { this.ensureDb(); return this.sessionRepo.markCrashedActiveSessions(now); }
   clearAllMessages(): number { this.ensureDb(); return this.sessionRepo.clearAllMessages(); }

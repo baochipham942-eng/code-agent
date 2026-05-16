@@ -1,6 +1,10 @@
 // ============================================================================
 // SessionRepository - 会话 CRUD（sessions 表 + messages 表 + todos 表）
 // ============================================================================
+/* eslint-disable max-lines -- 历史遗留大类（1200+ 行，含 sessions/messages/todos/
+   session_tasks 多张表的 CRUD）。重构拆分属于独立工作（非 P3-c1 scope），先
+   disable 让 master_task_id 关联 method 能加入。TODO: 后续拆出 MessageRepository
+   + TodoRepository + SessionTaskRepository。 */
 
 import type BetterSqlite3 from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
@@ -332,6 +336,33 @@ export class SessionRepository {
       SET is_deleted = 1, updated_at = ?, synced_at = ?
       WHERE id = ?
     `).run(deletedAt, this.resolveSyncedAt(options), sessionId);
+  }
+
+  /**
+   * 关联 session 到 MasterTask（P3-c1：session 启动时若未绑 master 则建一个新的 master，
+   * 再把 master_task_id 写回 sessions 表，便于跨进程重启时识别"这个 session 在哪个 master 下"）。
+   *
+   * 仅更新 master_task_id + updated_at；不动其他字段，避免与 updateSession 的
+   * COALESCE 写入路径互相干扰。
+   */
+  updateMasterTaskId(sessionId: string, masterTaskId: string, updatedAt?: number): void {
+    const result = this.db
+      .prepare(`UPDATE sessions SET master_task_id = ?, updated_at = ? WHERE id = ?`)
+      .run(masterTaskId, updatedAt ?? Date.now(), sessionId);
+    if (result.changes === 0) throw new Error(`Session not found: ${sessionId}`);
+  }
+
+  /**
+   * 读取 session 当前关联的 master_task_id。
+   * 用于 ensureMasterTaskForSession 判断"是否已绑"分支。
+   * StoredSession 当前未暴露此列（schema 列在 P0-c2 加进去，但 rowToSession 未读），
+   * 因此提供独立的窄读接口，避免大面积修改 Session 类型。
+   */
+  getMasterTaskId(sessionId: string): string | null {
+    const row = this.db
+      .prepare(`SELECT master_task_id FROM sessions WHERE id = ?`)
+      .get(sessionId) as { master_task_id: string | null } | undefined;
+    return row?.master_task_id ?? null;
   }
 
   markCrashedActiveSessions(now: number = Date.now()): { interrupted: number; orphaned: number } {

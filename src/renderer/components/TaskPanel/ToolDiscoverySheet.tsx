@@ -75,7 +75,9 @@ export const ToolDiscoverySheet: React.FC<ToolDiscoverySheetProps> = ({
                       <div className="flex items-center gap-2">
                         <WorkbenchPill tone={sourceTone(tool.source)}>{tool.source}</WorkbenchPill>
                         <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{tool.label}</span>
-                        <span className="text-[10px] text-zinc-600">{tool.permissionLevel || 'unknown'}</span>
+                        {tool.permissionLevel && tool.permissionLevel !== 'unknown' && (
+                          <span className="text-[10px] text-zinc-600">{tool.permissionLevel}</span>
+                        )}
                       </div>
                       {tool.blockedReason && (
                         <div className="mt-1 truncate text-[11px] text-amber-300">{tool.blockedReason}</div>

@@ -39,7 +39,7 @@ function makeToolCall(overrides: Partial<ToolCall>): ToolCall {
 }
 
 describe('browser/computer action preview rendering', () => {
-  it('renders browser action preview with trace metadata', () => {
+  it('renders browser action preview without exposing trace metadata in the main row', () => {
     const html = renderToStaticMarkup(
       React.createElement(ToolCallDisplay, {
         toolCall: makeToolCall({
@@ -68,8 +68,8 @@ describe('browser/computer action preview rendering', () => {
     expect(html).toContain('点击页面元素');
     expect(html).toContain('#submit');
     expect(html).toContain('托管浏览器动作');
-    expect(html).toContain('headless');
-    expect(html).toContain('trace-browser-click');
+    expect(html).not.toContain('headless');
+    expect(html).not.toContain('trace-browser-click');
   });
 
   it('renders desktop input preview without exposing typed text', () => {
@@ -102,8 +102,8 @@ describe('browser/computer action preview rendering', () => {
     expect(html).toContain('桌面输入 18 chars');
     expect(html).toContain('Google Chrome');
     expect(html).toContain('桌面输入');
-    expect(html).toContain('foreground_fallback');
-    expect(html).toContain('trace-computer-type');
+    expect(html).not.toContain('foreground_fallback');
+    expect(html).not.toContain('trace-computer-type');
     expect(html).not.toContain('secret@example.com');
   });
 
@@ -137,7 +137,7 @@ describe('browser/computer action preview rendering', () => {
     expect(html).toContain('智能输入 18 chars');
     expect(html).toContain('#email');
     expect(html).toContain('托管浏览器动作');
-    expect(html).toContain('trace-browser-scoped-smart-type');
+    expect(html).not.toContain('trace-browser-scoped-smart-type');
     expect(html).not.toContain('前台需确认');
     expect(html).not.toContain('secret@example.com');
   });
@@ -171,7 +171,7 @@ describe('browser/computer action preview rendering', () => {
 
     expect(html).toContain('输入 18 chars');
     expect(html).toContain('#email');
-    expect(html).toContain('trace-browser-type');
+    expect(html).not.toContain('trace-browser-type');
     expect(html).not.toContain('secret@example.com');
   });
 
@@ -205,7 +205,7 @@ describe('browser/computer action preview rendering', () => {
     expect(html).toContain('[redacted 18 chars]');
     expect(html).toContain('输入 18 chars');
     expect(html).toContain('failed');
-    expect(html).toContain('trace-browser-type-error');
+    expect(html).not.toContain('trace-browser-type-error');
     expect(html).not.toContain('secret@example.com');
   });
 
@@ -232,6 +232,28 @@ describe('browser/computer action preview rendering', () => {
     expect(html).toContain('Write');
     expect(html).toContain('source-ai-agent-evolution.md');
     expect(html).not.toContain('ml-auto');
+  });
+
+  it('hides source and raw status jargon from tool meta rows', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ToolCallDisplay, {
+        toolCall: makeToolCall({
+          name: 'Write',
+          arguments: {
+            path: 'index.html',
+            content: '<!doctype html>',
+          },
+          result: undefined,
+        }),
+        index: 0,
+        total: 1,
+      }),
+    );
+
+    expect(html).toContain('会改文件');
+    expect(html).not.toContain('builtin');
+    expect(html).not.toContain('running');
+    expect(html).not.toContain('等待结果');
   });
 
   it('preserves metadata when grouped trace nodes are rebuilt into ToolCallDisplay props', () => {

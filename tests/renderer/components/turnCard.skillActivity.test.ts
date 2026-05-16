@@ -54,7 +54,7 @@ describe('TurnCard skill activity', () => {
                   label: 'lark-doc',
                   action: 'triggered',
                   detail: 'inline skill tool',
-                  source: 'user',
+                  source: 'debug-skill-source',
                 },
                 {
                   timestamp: 121,
@@ -62,7 +62,7 @@ describe('TurnCard skill activity', () => {
                   label: 'lark-doc',
                   action: 'written',
                   detail: 'Skill 指令已写入模型上下文',
-                  source: 'user',
+                  source: 'debug-skill-source',
                 },
               ],
             },
@@ -90,6 +90,7 @@ describe('TurnCard skill activity', () => {
     expect(html).toContain('lark-doc');
     expect(html).toContain('已触发');
     expect(html).toContain('已写入');
+    expect(html).not.toContain('debug-skill-source');
     expect(html).not.toContain('command-message');
   });
 });

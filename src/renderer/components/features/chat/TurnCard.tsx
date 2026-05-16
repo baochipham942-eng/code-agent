@@ -427,7 +427,6 @@ const SkillActivityBanner: React.FC<{ activity: TurnSkillActivity }> = ({ activi
             >
               <span className="min-w-0 truncate text-zinc-400">{item.label}</span>
               <span className="shrink-0">{getSkillActionLabel(item.action)}</span>
-              {item.source && <span className="shrink-0 text-zinc-600">{item.source}</span>}
             </div>
           ))}
         </div>

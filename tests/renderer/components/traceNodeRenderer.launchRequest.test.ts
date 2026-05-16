@@ -446,4 +446,43 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).not.toContain('prompt hook passed');
     expect(html).not.toContain('Bash');
   });
+
+  it('renders skill activity timeline nodes without source labels', () => {
+    const skillTimeline: TurnTimelineNode = {
+      id: 'timeline-skill',
+      kind: 'skill_activity',
+      timestamp: 520,
+      tone: 'success',
+      skillActivity: {
+        summary: 'Skill 触发 1',
+        items: [
+          {
+            timestamp: 521,
+            skillId: 'lark-doc',
+            label: 'lark-doc',
+            action: 'triggered',
+            detail: 'inline skill tool',
+            source: 'debug-skill-source',
+          },
+        ],
+      },
+    };
+
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'timeline-skill-node',
+          type: 'turn_timeline',
+          content: '',
+          timestamp: 520,
+          turnTimeline: skillTimeline,
+        } satisfies TraceNode,
+      }),
+    );
+
+    expect(html).toContain('Skills');
+    expect(html).toContain('lark-doc');
+    expect(html).toContain('已触发');
+    expect(html).not.toContain('debug-skill-source');
+  });
 });

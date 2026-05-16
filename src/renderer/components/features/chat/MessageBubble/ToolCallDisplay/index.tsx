@@ -16,13 +16,10 @@ import {
   type BrowserComputerActionPreview,
 } from '../../../../../utils/browserComputerActionPreview';
 import {
-  formatToolDuration,
-  getToolCapabilitySource,
   getToolPermissionView,
   getToolRecoveryHint,
   type ToolPermissionView,
 } from '../../../../../utils/toolExecutionPresentation';
-import type { ToolCapabilitySource } from '../../../../../types/runWorkbench';
 
 // ============================================================================
 // StatusIndicator - Braille spinner for pending, symbols for final states
@@ -184,23 +181,6 @@ export function ToolCallDisplay({
   );
 }
 
-function getSourceToneClass(source: ToolCapabilitySource): string {
-  switch (source) {
-    case 'mcp':
-      return 'border-cyan-500/20 bg-cyan-500/10 text-cyan-300';
-    case 'skill':
-      return 'border-violet-500/20 bg-violet-500/10 text-violet-300';
-    case 'connector':
-      return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
-    case 'computer':
-      return 'border-amber-500/20 bg-amber-500/10 text-amber-300';
-    case 'memory':
-      return 'border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-300';
-    default:
-      return 'border-white/[0.08] bg-white/[0.03] text-zinc-400';
-  }
-}
-
 function getPermissionToneClass(permission: ToolPermissionView): string {
   switch (permission) {
     case 'read':
@@ -219,32 +199,46 @@ function getPermissionToneClass(permission: ToolPermissionView): string {
   }
 }
 
-function getStatusLabel(status: ToolStatus): string {
-  switch (status) {
-    case 'pending':
-      return 'running';
-    case 'success':
-      return 'completed';
-    case 'error':
-      return 'failed';
-    case 'interrupted':
-      return 'interrupted';
+function getPermissionRiskLabel(permission: ToolPermissionView): string | null {
+  switch (permission) {
+    case 'write':
+      return '会改文件';
+    case 'shell':
+      return '会执行命令';
+    case 'network':
+      return '会访问网络';
+    case 'desktop':
+      return '会操作桌面';
+    case 'memory':
+      return '会读写记忆';
+    default:
+      return null;
   }
 }
 
+function getVisibleRecoveryHint(toolCall: ToolCall, status: ToolStatus): string | null {
+  if (status === 'pending') return null;
+  if (status === 'success' && !toolCall.result?.outputPath) return null;
+  return getToolRecoveryHint(toolCall, status);
+}
+
 const ToolExecutionMetaRow: React.FC<{ toolCall: ToolCall; status: ToolStatus }> = ({ toolCall, status }) => {
-  const source = getToolCapabilitySource(toolCall.name);
   const permission = getToolPermissionView(toolCall.name);
-  const duration = formatToolDuration(toolCall.result?.duration);
-  const recoveryHint = getToolRecoveryHint(toolCall, status);
+  const permissionLabel = getPermissionRiskLabel(permission);
+  const recoveryHint = getVisibleRecoveryHint(toolCall, status);
+
+  if (!permissionLabel && !recoveryHint) {
+    return null;
+  }
 
   return (
     <div className="ml-6 mt-0.5 mb-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-zinc-500">
-      <span className={`rounded border px-1.5 py-0.5 ${getSourceToneClass(source)}`}>{source}</span>
-      <span className={getPermissionToneClass(permission)}>{permission}</span>
-      <span>{getStatusLabel(status)}</span>
-      {duration && <span>{duration}</span>}
-      <span className={status === 'error' ? 'text-red-300' : 'text-zinc-600'}>{recoveryHint}</span>
+      {permissionLabel && (
+        <span className={getPermissionToneClass(permission)}>{permissionLabel}</span>
+      )}
+      {recoveryHint && (
+        <span className={status === 'error' ? 'text-red-300' : 'text-zinc-600'}>{recoveryHint}</span>
+      )}
     </div>
   );
 };
@@ -274,8 +268,6 @@ function BrowserComputerActionPreviewLine({ preview }: { preview: BrowserCompute
         </>
       )}
       <span className={getActionPreviewRiskClass(preview.risk)}>{preview.riskLabel}</span>
-      {preview.mode && <span title={preview.mode}>{preview.mode}</span>}
-      {preview.traceId && <span className="font-mono" title={preview.traceId}>{preview.traceId}</span>}
     </div>
   );
 }

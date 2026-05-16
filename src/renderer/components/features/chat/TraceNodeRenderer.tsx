@@ -692,7 +692,6 @@ const SkillActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeli
               <div className="flex flex-wrap items-center gap-1.5">
                 <WorkbenchPill tone="skill">{item.label}</WorkbenchPill>
                 <span className="text-zinc-300">{getSkillActionLabel(item.action)}</span>
-                {item.source && <span className="text-zinc-600">{item.source}</span>}
               </div>
               {item.detail && (
                 <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">{item.detail}</div>

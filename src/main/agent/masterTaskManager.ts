@@ -44,8 +44,39 @@ import {
 } from '../../shared/contract/task';
 import { generateMessageId } from '../../shared/utils/id';
 import { createLogger } from '../services/infra/logger';
+import { planningStateEmitter } from '../planning/planningStateEmitter';
+import type { PlanningState, TaskPlan } from '../../shared/contract';
 
 const logger = createLogger('MasterTaskManager');
+
+// ----------------------------------------------------------------------------
+// Plan markdown formatter（module-level：纯函数 + 可被测试 import）
+// ----------------------------------------------------------------------------
+
+/**
+ * 把 TaskPlan 序列化成 markdown，作为 planProgress 字符串。
+ * 格式：每 phase 一段 `## ${index}. [${status}] ${title}`，下面跟它的 steps
+ *      `  - [${status}] ${content}`。空 plan 返回 ''。
+ *
+ * 未来要扩展（findings / errors）时只动这一处，subscribeToPlanning 拿到的还是字符串。
+ */
+export function formatPlanAsMarkdown(plan: TaskPlan | null | undefined): string {
+  if (!plan?.phases || plan.phases.length === 0) return '';
+  const lines: string[] = [];
+  plan.phases.forEach((phase, i) => {
+    const phaseStatus = phase.status ?? 'pending';
+    const phaseTitle = phase.title ?? '';
+    lines.push(`${i + 1}. [${phaseStatus}] ${phaseTitle}`);
+    if (Array.isArray(phase.steps)) {
+      for (const step of phase.steps) {
+        const stepStatus = step.status ?? 'pending';
+        const stepContent = step.content ?? '';
+        lines.push(`  - [${stepStatus}] ${stepContent}`);
+      }
+    }
+  });
+  return lines.join('\n');
+}
 
 // ----------------------------------------------------------------------------
 // 事件类型
@@ -76,6 +107,15 @@ export interface RegisterOptions {
 export class MasterTaskManager extends EventEmitter {
   /** 内存索引：id → MasterTask 实例 */
   private byId: Map<string, MasterTask> = new Map();
+
+  /** Planning subscription registry：masterTaskId → previousPlanString + listener */
+  private planSubscriptions: Map<
+    string,
+    {
+      previousPlanString: string;
+      listener: (state: PlanningState) => void;
+    }
+  > = new Map();
 
   // --------------------------------------------------------------------------
   // Repository lazy 取源
@@ -140,6 +180,7 @@ export class MasterTaskManager extends EventEmitter {
 
   /** 仅从内存移除；DB row 仍存在（终态保留，由调用方决定 softDelete 时机） */
   unregister(id: string): void {
+    this.unsubscribePlanning(id); // 避免 listener leak
     this.byId.delete(id);
   }
 
@@ -325,6 +366,76 @@ export class MasterTaskManager extends EventEmitter {
       chunk,
       appendedAt,
     } satisfies MasterTaskManagerEvent);
+  }
+
+  // --------------------------------------------------------------------------
+  // Planning subscription
+  // --------------------------------------------------------------------------
+
+  /**
+   * 订阅 planningStateEmitter 'plan_updated' 事件，把 plan 变更 diff 流式写到
+   * 指定 MasterTask 的 planProgress（通过 appendPlanProgress 一并 emit Delta +
+   * 持久化）。
+   *
+   * - append-only 优化：next.startsWith(prev) 时只 push 新增尾部
+   * - plan 改写场景（非 append-only）：插入 marker `\n---\n[plan revised]\n`
+   *   + 新内容，避免误把旧文本当 chunk
+   * - 同一 masterTaskId 重复订阅幂等，返回同一 unsubscribe handle
+   *
+   * 注意：返回的 unsubscribe 必须显式调用；unregister(id) 也会自动清理。
+   */
+  subscribeToPlanning(masterTaskId: string): { unsubscribe(): void } {
+    if (this.planSubscriptions.has(masterTaskId)) {
+      return {
+        unsubscribe: () => this.unsubscribePlanning(masterTaskId),
+      };
+    }
+
+    const sub: {
+      previousPlanString: string;
+      listener: (state: PlanningState) => void;
+    } = {
+      previousPlanString: '',
+      listener: (state: PlanningState) => {
+        try {
+          const next = formatPlanAsMarkdown(state.plan);
+
+          if (next === sub.previousPlanString) return; // 未变化跳过
+
+          let chunk: string;
+          if (sub.previousPlanString === '') {
+            chunk = next; // 首次：整段写入
+          } else if (next.startsWith(sub.previousPlanString)) {
+            chunk = next.slice(sub.previousPlanString.length); // append-only
+          } else {
+            // 非 append-only（plan 修改/重写）— marker 重置
+            chunk = '\n---\n[plan revised]\n' + next;
+          }
+
+          sub.previousPlanString = next;
+
+          if (chunk.length > 0) {
+            this.appendPlanProgress(masterTaskId, chunk);
+          }
+        } catch (err) {
+          logger.warn(`subscribeToPlanning listener failed for ${masterTaskId}`, err);
+        }
+      },
+    };
+
+    planningStateEmitter.on('plan_updated', sub.listener);
+    this.planSubscriptions.set(masterTaskId, sub);
+
+    return {
+      unsubscribe: () => this.unsubscribePlanning(masterTaskId),
+    };
+  }
+
+  private unsubscribePlanning(masterTaskId: string): void {
+    const sub = this.planSubscriptions.get(masterTaskId);
+    if (!sub) return;
+    planningStateEmitter.removeListener('plan_updated', sub.listener);
+    this.planSubscriptions.delete(masterTaskId);
   }
 
   // --------------------------------------------------------------------------

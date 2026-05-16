@@ -8,6 +8,8 @@ import { createPortal } from 'react-dom';
 import { useSessionStore } from '../../stores/sessionStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelProvider } from '@shared/contract';
+import type { AgentEngineDescriptor, AgentEngineKind } from '@shared/contract/agentEngine';
+import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { getProviderDisplayName } from '@shared/constants';
 import {
   buildRuntimeModelOptions,
@@ -15,7 +17,7 @@ import {
   type RuntimeModelOption,
 } from '@shared/modelRuntime';
 import { toast } from '../../hooks/useToast';
-import { Eye, Wrench, Brain, Sparkles, Zap } from 'lucide-react';
+import { Eye, Wrench, Brain, Sparkles, Zap, Cpu, Terminal } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
 import type { EffortLevel } from '../../../shared/contract/agent';
@@ -23,6 +25,19 @@ import type { EffortLevel } from '../../../shared/contract/agent';
 const QUICK_SWITCH_PROVIDERS = [
   'moonshot', 'deepseek', 'zhipu', 'openai', 'claude', 'volcengine', 'local', 'xiaomi', 'custom',
 ] as const satisfies readonly ModelProvider[];
+
+// Engine 短标签（与 AgentEngineSelector 保持一致）
+const ENGINE_SHORT_LABEL: Record<AgentEngineKind, string> = {
+  native: 'Native',
+  codex_cli: 'Codex',
+  claude_code: 'Claude',
+};
+
+const ENGINE_ICON: Record<AgentEngineKind, React.ReactNode> = {
+  native: <Cpu className="w-3 h-3" />,
+  codex_cli: <Terminal className="w-3 h-3" />,
+  claude_code: <Terminal className="w-3 h-3" />,
+};
 
 // MODEL_FEATURES 单一真理源已迁至 src/shared/constants/models.ts (2026-04-28 audit B3)
 
@@ -66,10 +81,22 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [menuPos, setMenuPos] = useState<{ left: number; bottom: number } | null>(null);
   const sessionId = useSessionStore((s) => s.currentSessionId);
+  const session = useSessionStore((s) =>
+    s.currentSessionId
+      ? s.sessions.find((item) => item.id === s.currentSessionId) ?? null
+      : null
+  );
+  const updateSessionEngine = useSessionStore((s) => s.updateSessionEngine);
+  const appWorkingDirectory = useAppStore((s) => s.workingDirectory);
   const defaultProvider = useAppStore((s) => s.modelConfig.provider);
   // effort 切换内嵌到模型菜单顶部，对照 Codex 的"模型 + Intelligence"两层选择
   const effortLevel = useModeStore((s) => s.effortLevel);
   const setEffortLevel = useModeStore((s) => s.setEffortLevel);
+  // Engine adapter（Native/Codex/Claude）— 从 AgentEngineSelector 合并进来，
+  // 让"Engine · Model · Effort"在一个 trigger 里统一展示和切换。
+  const engine = normalizeAgentEngineSession(session?.engine);
+  const effectiveWorkingDirectory = session?.workingDirectory || appWorkingDirectory || null;
+  const [engineDescriptors, setEngineDescriptors] = useState<AgentEngineDescriptor[]>([]);
 
   const modelOptions = useMemo(
     () => buildRuntimeModelOptions(modelSettings, QUICK_SWITCH_PROVIDERS),
@@ -125,6 +152,42 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         .catch(() => { /* 静默失败，健康点不显示即可 */ });
     }
   }, [open]);
+
+  // 打开时拉取 agent engine 描述符（Native/Codex/Claude 可用性）
+  useEffect(() => {
+    if (!open) return;
+    window.domainAPI?.invoke<AgentEngineDescriptor[]>(IPC_DOMAINS.AGENT_ENGINE, 'list', {})
+      .then((res) => { if (res?.success && res.data) setEngineDescriptors(res.data); })
+      .catch(() => { /* engine 检测失败时只显示当前 engine 标签 */ });
+  }, [open]);
+
+  const selectEngine = useCallback(
+    async (descriptor: AgentEngineDescriptor) => {
+      if (!sessionId) return;
+      if (descriptor.kind !== 'native' && !effectiveWorkingDirectory) {
+        toast.error(`${descriptor.label} 需要先选择 workspace`);
+        return;
+      }
+      if (!descriptor.executable) {
+        toast.info(`${descriptor.label} 当前只开放检测和历史导入`);
+        return;
+      }
+      if (
+        descriptor.installState === 'missing'
+        || descriptor.runtimeState === 'error'
+        || descriptor.runtimeState === 'blocked'
+      ) {
+        toast.error(`${descriptor.label} 不可用`);
+        return;
+      }
+      await updateSessionEngine(sessionId, {
+        kind: descriptor.kind,
+        permissionProfile: descriptor.defaultPermissionProfile,
+        origin: 'manual',
+      });
+    },
+    [effectiveWorkingDirectory, sessionId, updateSessionEngine]
+  );
 
   // 点击外部关闭（portal 让菜单脱离 ref，需要同时检查 triggerRef + menuRef）
   useEffect(() => {
@@ -281,6 +344,56 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         zIndex: 9999,
       }}
     >
+          {/* Engine adapter 行 — 合并自原 AgentEngineSelector，与 Reasoning effort
+              一起组成"Engine · Model · Effort"三层选择 */}
+          {engineDescriptors.length > 0 && (
+            <div className="px-2 pt-1.5 pb-1 border-b border-zinc-700/50">
+              <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
+                <Cpu className="w-3 h-3" />
+                <span>Engine</span>
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                {engineDescriptors.map((descriptor) => {
+                  const selected = descriptor.kind === engine.kind;
+                  const needsWorkspace = descriptor.kind !== 'native' && !effectiveWorkingDirectory;
+                  const disabled =
+                    needsWorkspace
+                    || !descriptor.executable
+                    || descriptor.installState === 'missing'
+                    || descriptor.runtimeState === 'error'
+                    || descriptor.runtimeState === 'blocked';
+                  const shortLabel = ENGINE_SHORT_LABEL[descriptor.kind] ?? descriptor.label;
+                  return (
+                    <button
+                      key={descriptor.kind}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => void selectEngine(descriptor)}
+                      title={
+                        needsWorkspace
+                          ? `${descriptor.label}：需要先选择 workspace`
+                          : descriptor.installState === 'missing'
+                            ? `${descriptor.label}：未安装`
+                            : descriptor.label
+                      }
+                      className={`
+                        inline-flex items-center justify-center gap-1 px-1.5 py-1 text-[10px] rounded transition-colors
+                        ${selected
+                          ? 'text-emerald-300 bg-zinc-700 font-medium'
+                          : disabled
+                            ? 'text-zinc-600 cursor-not-allowed'
+                            : 'text-zinc-400 hover:bg-zinc-700/50'}
+                      `}
+                    >
+                      {ENGINE_ICON[descriptor.kind]}
+                      <span>{shortLabel}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Reasoning effort 行（Codex 风格 Intelligence 子菜单的扁平化） */}
           <div className="px-2 pt-1.5 pb-1 border-b border-zinc-700/50">
             <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
@@ -417,10 +530,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           overrideAdaptive
             ? `自动路由（按任务复杂度切换，当前默认 ${currentModel}）`
             : isOverridden
-              ? `已覆盖: ${displayProvider}/${overrideModel} (原: ${currentModel})`
-              : `当前: ${currentModel}`
+              ? `已覆盖: ${displayProvider}/${overrideModel} (原: ${currentModel}) · Engine: ${ENGINE_SHORT_LABEL[engine.kind]}`
+              : `当前: ${currentModel} · Engine: ${ENGINE_SHORT_LABEL[engine.kind]}`
         }
       >
+        <span className="text-zinc-400">{ENGINE_SHORT_LABEL[engine.kind] ?? 'Native'}</span>
+        <span className="text-zinc-500 mx-1">·</span>
         {displayLabel}
         <span className="text-zinc-500 ml-1">·</span>
         <span className="text-zinc-400 ml-0.5">{effortShort}</span>

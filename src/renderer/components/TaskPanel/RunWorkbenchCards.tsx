@@ -10,6 +10,7 @@ import type {
   RunUiState,
   RunUiStatus,
   TaskRecord,
+  TaskRecordOutputRef,
   ToolCapabilityView,
 } from '../../types/runWorkbench';
 import {
@@ -169,6 +170,11 @@ export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?
 const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?: RunUiState | null; primary?: boolean }) => {
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const rail = deriveTaskRailView(task, run);
+  const detailLabel = task.status === 'blocked'
+    ? '原因'
+    : task.status === 'done'
+      ? '结果'
+      : '当前动作';
 
   return (
     <div className={`min-w-0 rounded-md bg-black/10 px-2 py-1.5 ${primary ? 'border border-sky-500/10' : ''}`}>
@@ -209,11 +215,52 @@ const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?:
       )}
 
       {rail.currentAction && (
-        <div className="mt-1 truncate text-[11px] text-zinc-500">当前动作：{rail.currentAction}</div>
+        <div className="mt-1 truncate text-[11px] text-zinc-500">{detailLabel}：{rail.currentAction}</div>
+      )}
+
+      {task.outputRefs && task.outputRefs.length > 0 && (
+        <TaskOutputRefRows refs={task.outputRefs} />
       )}
     </div>
   );
 };
+
+function outputRefTone(type: TaskRecordOutputRef['type']): string {
+  if (type === 'log') return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
+  if (type === 'text' || type === 'report') return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
+  if (type === 'trace' || type === 'replay') return 'border-violet-500/20 bg-violet-500/10 text-violet-300';
+  return 'border-white/[0.08] bg-white/[0.03] text-zinc-400';
+}
+
+function outputRefBadgeLabel(type: TaskRecordOutputRef['type']): string {
+  if (type === 'log') return '日志';
+  if (type === 'text') return '输出';
+  if (type === 'report') return '报告';
+  if (type === 'trace') return 'Trace';
+  if (type === 'replay') return 'Replay';
+  if (type === 'url') return '链接';
+  return '产物';
+}
+
+const TaskOutputRefRows = ({ refs }: { refs: TaskRecordOutputRef[] }) => (
+  <div className="mt-1.5 space-y-1" data-testid="task-output-refs">
+    {refs.map((ref) => (
+      <div
+        key={ref.id}
+        className="flex min-w-0 items-center gap-2 rounded border border-white/[0.04] bg-white/[0.015] px-2 py-1"
+        title={ref.pathOrUrl || ref.label}
+      >
+        <span className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-[9px] ${outputRefTone(ref.type)}`}>
+          {outputRefBadgeLabel(ref.type)}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[10px] text-zinc-300">{ref.label}</span>
+        {ref.pathOrUrl && (
+          <span className="min-w-0 flex-[1.5] truncate text-[10px] text-zinc-600">{ref.pathOrUrl}</span>
+        )}
+      </div>
+    ))}
+  </div>
+);
 
 const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; muted?: boolean }) => (
   <div className={`flex min-w-0 items-center gap-2 ${muted ? 'opacity-60' : ''}`}>

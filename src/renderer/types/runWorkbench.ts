@@ -67,6 +67,14 @@ export interface TaskRecord {
   ownerRunId?: string | null;
   sourceThreadId?: string | null;
   resumeHint?: string;
+  outputRefs?: TaskRecordOutputRef[];
+}
+
+export interface TaskRecordOutputRef {
+  id: string;
+  type: string;
+  label: string;
+  pathOrUrl?: string;
 }
 
 export interface SubagentRunView {

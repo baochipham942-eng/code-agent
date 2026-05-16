@@ -39,6 +39,65 @@ const ENGINE_ICON: Record<AgentEngineKind, React.ReactNode> = {
   claude_code: <Terminal className="w-3 h-3" />,
 };
 
+const ENGINE_INSTALL_LABEL: Record<AgentEngineDescriptor['installState'], string> = {
+  builtin: '内置',
+  installed: '已安装',
+  missing: '未安装',
+};
+
+const ENGINE_RUNTIME_LABEL: Record<AgentEngineDescriptor['runtimeState'], string> = {
+  ready: 'Ready',
+  not_configured: 'Needs config',
+  blocked: 'Blocked',
+  error: 'Error',
+  unknown: 'Unknown',
+};
+
+const ENGINE_PERMISSION_LABEL: Record<AgentEngineDescriptor['defaultPermissionProfile'], string> = {
+  default: '默认权限',
+  read_only: '只读默认',
+  workspace_write: 'workspace write',
+};
+
+const ENGINE_RISK_LABEL: Record<AgentEngineDescriptor['riskTier'], string> = {
+  low: '低风险',
+  medium: '中风险',
+  high: '高风险',
+};
+
+function formatEngineCwdPolicy(descriptor: AgentEngineDescriptor): string {
+  return descriptor.cwdPolicy === 'workspace_only' ? '当前 workspace cwd' : descriptor.cwdPolicy;
+}
+
+function getEngineRuntimeClass(descriptor: AgentEngineDescriptor): string {
+  switch (descriptor.runtimeState) {
+    case 'ready':
+      return 'text-emerald-300';
+    case 'blocked':
+    case 'error':
+      return 'text-red-300';
+    case 'not_configured':
+      return 'text-amber-300';
+    default:
+      return 'text-zinc-400';
+  }
+}
+
+function formatEngineTooltip(descriptor: AgentEngineDescriptor, needsWorkspace: boolean): string {
+  return [
+    descriptor.label,
+    descriptor.kind === 'native' ? '内置 runtime' : '外部 CLI',
+    `${ENGINE_INSTALL_LABEL[descriptor.installState]} / ${ENGINE_RUNTIME_LABEL[descriptor.runtimeState]}`,
+    descriptor.version,
+    ENGINE_PERMISSION_LABEL[descriptor.defaultPermissionProfile],
+    formatEngineCwdPolicy(descriptor),
+    ENGINE_RISK_LABEL[descriptor.riskTier],
+    descriptor.command,
+    needsWorkspace ? '需要先选择 workspace' : undefined,
+    descriptor.lastError,
+  ].filter(Boolean).join(' · ');
+}
+
 // MODEL_FEATURES 单一真理源已迁至 src/shared/constants/models.ts (2026-04-28 audit B3)
 
 const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: string }> = {
@@ -97,6 +156,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const engine = normalizeAgentEngineSession(session?.engine);
   const effectiveWorkingDirectory = session?.workingDirectory || appWorkingDirectory || null;
   const [engineDescriptors, setEngineDescriptors] = useState<AgentEngineDescriptor[]>([]);
+  const selectedEngineDescriptor = useMemo(
+    () => engineDescriptors.find((descriptor) => descriptor.kind === engine.kind) ?? null,
+    [engine.kind, engineDescriptors],
+  );
 
   const modelOptions = useMemo(
     () => buildRuntimeModelOptions(modelSettings, QUICK_SWITCH_PROVIDERS),
@@ -369,13 +432,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                       type="button"
                       disabled={disabled}
                       onClick={() => void selectEngine(descriptor)}
-                      title={
-                        needsWorkspace
-                          ? `${descriptor.label}：需要先选择 workspace`
-                          : descriptor.installState === 'missing'
-                            ? `${descriptor.label}：未安装`
-                            : descriptor.label
-                      }
+                      title={formatEngineTooltip(descriptor, needsWorkspace)}
                       className={`
                         inline-flex items-center justify-center gap-1 px-1.5 py-1 text-[10px] rounded transition-colors
                         ${selected
@@ -391,6 +448,31 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                   );
                 })}
               </div>
+              {selectedEngineDescriptor ? (
+                <div className="mt-2 rounded border border-zinc-700/60 bg-zinc-900/50 px-2 py-1.5 text-[10px] leading-relaxed text-zinc-400">
+                  <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                    <span className={getEngineRuntimeClass(selectedEngineDescriptor)}>
+                      {ENGINE_RUNTIME_LABEL[selectedEngineDescriptor.runtimeState]}
+                    </span>
+                    <span>{selectedEngineDescriptor.kind === 'native' ? '内置 runtime' : '外部 CLI'}</span>
+                    <span>{ENGINE_INSTALL_LABEL[selectedEngineDescriptor.installState]}</span>
+                    <span>{ENGINE_PERMISSION_LABEL[selectedEngineDescriptor.defaultPermissionProfile]}</span>
+                    <span>{formatEngineCwdPolicy(selectedEngineDescriptor)}</span>
+                    <span>{ENGINE_RISK_LABEL[selectedEngineDescriptor.riskTier]}</span>
+                    {selectedEngineDescriptor.version ? <span>{selectedEngineDescriptor.version}</span> : null}
+                  </div>
+                  {selectedEngineDescriptor.binaryPath ? (
+                    <div className="mt-1 truncate" title={selectedEngineDescriptor.binaryPath}>
+                      {selectedEngineDescriptor.binaryPath}
+                    </div>
+                  ) : null}
+                  {selectedEngineDescriptor.lastError ? (
+                    <div className="mt-1 truncate text-red-300" title={selectedEngineDescriptor.lastError}>
+                      {selectedEngineDescriptor.lastError}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           )}
 

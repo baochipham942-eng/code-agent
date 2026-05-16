@@ -82,6 +82,12 @@ const githubMcpState = {
 let mcpStates: Array<typeof githubMcpState>;
 
 vi.mock('../../../../src/main/services/infra/logger', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
   createLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -252,6 +258,30 @@ describe('CapabilityCenterService', () => {
       kind: 'channel_adapter',
       state: { install: 'available', runtime: 'not_configured' },
     });
+    const codexEngine = inventory.items.find((item) => item.id === 'agent-engine:codex_cli');
+    expect(codexEngine).toMatchObject({
+      kind: 'agent_engine',
+      state: {
+        enable: 'not_applicable',
+      },
+      actions: {
+        canEnable: false,
+        canDisable: false,
+      },
+    });
+    expect(codexEngine?.config).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Launch mode', value: 'external CLI' }),
+      expect.objectContaining({ label: 'Permission profile', value: 'read_only' }),
+      expect.objectContaining({ label: 'Workspace policy', value: 'current workspace only' }),
+    ]));
+    expect(codexEngine?.permissions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Read-only default' }),
+      expect.objectContaining({ label: 'Workspace cwd guard' }),
+    ]));
+    expect(codexEngine?.audit.notes).toEqual(expect.arrayContaining([
+      expect.stringContaining('cwd policy: workspace_only'),
+      expect.stringMatching(/^detected at: /),
+    ]));
     expect(inventory.items.find((item) => item.id === 'curated:mcp_template%3Amcp-filesystem-readonly')).toMatchObject({
       kind: 'mcp_template',
       source: { kind: 'curated' },

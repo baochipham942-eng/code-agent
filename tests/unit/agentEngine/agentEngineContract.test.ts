@@ -146,6 +146,64 @@ describe('Agent Engine launch policy', () => {
       { kind: 'codex_cli', cwd: workspaceRoot, permissionProfile: 'read_only', origin: 'manual' },
     )).toThrow(/read-only/);
   });
+
+  it('blocks external launches from automation-style sessions', () => {
+    expect(() => resolveExternalEngineLaunch(
+      makeSession({ workingDirectory: workspaceRoot, type: 'schedule', origin: { kind: 'cron' } }),
+      { kind: 'codex_cli', cwd: workspaceRoot, permissionProfile: 'read_only', origin: 'manual' },
+    )).toThrow(/only allowed for chat sessions/);
+
+    expect(() => resolveExternalEngineLaunch(
+      makeSession({ workingDirectory: workspaceRoot, type: 'heartbeat', origin: { kind: 'heartbeat' } }),
+      { kind: 'claude_code', cwd: workspaceRoot, permissionProfile: 'read_only', origin: 'manual' },
+    )).toThrow(/only allowed for chat sessions/);
+  });
+
+  it('requires manual external engine selection at launch time', () => {
+    expect(() => resolveExternalEngineLaunch(
+      makeSession({ workingDirectory: workspaceRoot }),
+      { kind: 'codex_cli', cwd: workspaceRoot, permissionProfile: 'read_only', origin: 'import' },
+    )).toThrow(/manual engine selection/);
+
+    expect(() => resolveExternalEngineLaunch(
+      makeSession({ workingDirectory: workspaceRoot }),
+      { kind: 'claude_code', cwd: workspaceRoot, permissionProfile: 'read_only', origin: 'external' },
+    )).toThrow(/manual engine selection/);
+  });
+
+  it('requires read-only permission profile at launch time', () => {
+    expect(() => resolveExternalEngineLaunch(
+      makeSession({ workingDirectory: workspaceRoot }),
+      { kind: 'codex_cli', cwd: workspaceRoot, permissionProfile: 'workspace_write', origin: 'manual' },
+    )).toThrow(/read-only/);
+
+    expect(() => resolveExternalEngineLaunch(
+      makeSession({ workingDirectory: workspaceRoot }),
+      { kind: 'claude_code', cwd: workspaceRoot, permissionProfile: 'default', origin: 'manual' },
+    )).toThrow(/read-only/);
+  });
+
+  it('uses the session workspace as the launch boundary even when engine metadata is polluted', async () => {
+    const outside = path.join(tempDir, 'outside');
+    await fs.mkdir(outside, { recursive: true });
+
+    expect(() => resolveExternalEngineLaunch(
+      makeSession({ workingDirectory: workspaceRoot }),
+      { kind: 'codex_cli', cwd: outside, permissionProfile: 'read_only', origin: 'manual' },
+      outside,
+    )).toThrow(/inside workspace/);
+  });
+
+  it('rejects requested launch cwd outside the session workspace', async () => {
+    const outside = path.join(tempDir, 'outside-requested');
+    await fs.mkdir(outside, { recursive: true });
+
+    expect(() => resolveExternalEngineLaunch(
+      makeSession({ workingDirectory: workspaceRoot }),
+      { kind: 'claude_code', cwd: workspaceRoot, permissionProfile: 'read_only', origin: 'manual' },
+      outside,
+    )).toThrow(/inside workspace/);
+  });
 });
 
 describe('Codex CLI run timing', () => {

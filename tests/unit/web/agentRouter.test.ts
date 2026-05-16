@@ -12,6 +12,11 @@ const mockRun = vi.fn();
 const mockCancel = vi.fn();
 const mockSteer = vi.fn();
 const mockCreateAgentLoop = vi.fn();
+const agentEngineMocks = vi.hoisted(() => ({
+  codexRun: vi.fn(),
+  claudeRun: vi.fn(),
+  resolveExternalEngineLaunch: vi.fn(),
+}));
 const mockDb = vi.hoisted(() => ({
   getSession: vi.fn(() => ({
     id: 'session-existing',
@@ -46,6 +51,20 @@ vi.mock('../../../src/main/session/modelSessionState', () => ({
   getModelSessionState: () => ({
     getOverride: vi.fn(() => null),
   }),
+}));
+
+vi.mock('../../../src/main/services/agentEngine', () => ({
+  CodexCliAdapter: vi.fn(function CodexCliAdapterMock() {
+    return {
+      run: agentEngineMocks.codexRun,
+    };
+  }),
+  ClaudeCodeAdapter: vi.fn(function ClaudeCodeAdapterMock() {
+    return {
+      run: agentEngineMocks.claudeRun,
+    };
+  }),
+  resolveExternalEngineLaunch: (...args: unknown[]) => agentEngineMocks.resolveExternalEngineLaunch(...args),
 }));
 
 vi.mock('../../../src/main/services/core/databaseService', () => ({
@@ -125,6 +144,13 @@ describe('createAgentRouter', () => {
     sessionMessages.clear();
     setDbAvailable(false);
     Object.values(mockDb).forEach((mock) => mock.mockClear());
+    agentEngineMocks.resolveExternalEngineLaunch.mockImplementation((session, engine, requestedCwd) => ({
+      cwd: requestedCwd || session?.workingDirectory || engine?.cwd,
+      workspaceRoot: engine?.cwd || session?.workingDirectory,
+      permissionProfile: 'read_only',
+    }));
+    agentEngineMocks.codexRun.mockReset();
+    agentEngineMocks.claudeRun.mockReset();
     mockDb.getSession.mockReturnValue({
       id: 'session-existing',
       title: 'Existing',
@@ -452,6 +478,224 @@ describe('createAgentRouter', () => {
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
       project: '/tmp/context-project',
     }));
+  });
+
+  it('routes Codex engine sessions through the Codex adapter instead of the native web agent', async () => {
+    await closeServer();
+
+    const updateSession = vi.fn(async () => undefined);
+    const getSession = vi.fn(async () => ({
+      id: 'session-codex-engine',
+      title: 'Codex engine',
+      type: 'chat',
+      workingDirectory: '/tmp/codex-workspace',
+      engine: {
+        kind: 'codex_cli',
+        cwd: '/tmp/codex-workspace',
+        permissionProfile: 'read_only',
+        origin: 'manual',
+      },
+    }));
+
+    agentEngineMocks.codexRun.mockImplementationOnce(async (request) => {
+      request.emitEvent?.({
+        type: 'turn_start',
+        data: { turnId: 'turn-codex', iteration: 1 },
+      });
+      request.emitEvent?.({
+        type: 'message_delta',
+        data: {
+          role: 'assistant',
+          path: 'content',
+          op: 'append',
+          text: 'CODEX_ROUTED_OK',
+          turnId: 'turn-codex',
+        },
+      });
+      request.emitEvent?.({
+        type: 'agent_complete',
+        data: null,
+      });
+      return {
+        runId: 'codex-run-1',
+        sessionId: request.sessionId,
+        engine: 'codex_cli',
+        status: 'completed',
+        outputText: 'CODEX_ROUTED_OK',
+        exitCode: 0,
+      };
+    });
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getSession,
+        updateSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '只回复 CODEX_ROUTED_OK',
+        sessionId: 'session-codex-engine',
+        context: {
+          workingDirectory: '/tmp/codex-workspace',
+        },
+      }),
+    });
+    const body = await response.text();
+
+    expect(response.ok).toBe(true);
+    expect(body).toContain('CODEX_ROUTED_OK');
+    expect(agentEngineMocks.codexRun).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-codex-engine',
+      prompt: '只回复 CODEX_ROUTED_OK',
+      cwd: '/tmp/codex-workspace',
+      workspaceRoot: '/tmp/codex-workspace',
+      permissionProfile: 'read_only',
+    }));
+    expect(createCLIAgent).not.toHaveBeenCalled();
+    expect(updateSession).toHaveBeenCalledWith(
+      'session-codex-engine',
+      expect.objectContaining({ status: 'completed' }),
+    );
+  });
+
+  it('routes Claude Code engine sessions through the Claude adapter instead of the native web agent', async () => {
+    await closeServer();
+
+    const updateSession = vi.fn(async () => undefined);
+    const getSession = vi.fn(async () => ({
+      id: 'session-claude-engine',
+      title: 'Claude engine',
+      type: 'chat',
+      workingDirectory: '/tmp/claude-workspace',
+      engine: {
+        kind: 'claude_code',
+        cwd: '/tmp/claude-workspace',
+        permissionProfile: 'read_only',
+        origin: 'manual',
+      },
+    }));
+
+    agentEngineMocks.claudeRun.mockImplementationOnce(async (request) => {
+      request.emitEvent?.({
+        type: 'turn_start',
+        data: { turnId: 'turn-claude', iteration: 1 },
+      });
+      request.emitEvent?.({
+        type: 'message_delta',
+        data: {
+          role: 'assistant',
+          path: 'content',
+          op: 'append',
+          text: 'CLAUDE_ROUTED_OK',
+          turnId: 'turn-claude',
+        },
+      });
+      request.emitEvent?.({
+        type: 'agent_complete',
+        data: null,
+      });
+      return {
+        runId: 'claude-run-1',
+        sessionId: request.sessionId,
+        engine: 'claude_code',
+        status: 'completed',
+        outputText: 'CLAUDE_ROUTED_OK',
+        exitCode: 0,
+      };
+    });
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getSession,
+        updateSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '只回复 CLAUDE_ROUTED_OK',
+        sessionId: 'session-claude-engine',
+        context: {
+          workingDirectory: '/tmp/claude-workspace',
+        },
+      }),
+    });
+    const body = await response.text();
+
+    expect(response.ok).toBe(true);
+    expect(body).toContain('CLAUDE_ROUTED_OK');
+    expect(agentEngineMocks.claudeRun).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-claude-engine',
+      prompt: '只回复 CLAUDE_ROUTED_OK',
+      cwd: '/tmp/claude-workspace',
+      workspaceRoot: '/tmp/claude-workspace',
+      permissionProfile: 'read_only',
+    }));
+    expect(agentEngineMocks.codexRun).not.toHaveBeenCalled();
+    expect(createCLIAgent).not.toHaveBeenCalled();
+    expect(updateSession).toHaveBeenCalledWith(
+      'session-claude-engine',
+      expect.objectContaining({ status: 'completed' }),
+    );
+  });
+
+  it('does not fall back to native launch when an external engine session is blocked by launch policy', async () => {
+    await closeServer();
+
+    const updateSession = vi.fn(async () => undefined);
+    const getSession = vi.fn(async () => ({
+      id: 'session-channel-engine',
+      title: 'Channel engine',
+      type: 'chat',
+      origin: { kind: 'channel' },
+      workingDirectory: '/tmp/channel-workspace',
+      engine: {
+        kind: 'codex_cli',
+        cwd: '/tmp/channel-workspace',
+        permissionProfile: 'read_only',
+        origin: 'manual',
+      },
+    }));
+    agentEngineMocks.resolveExternalEngineLaunch.mockImplementationOnce(() => {
+      throw new Error('External Agent Engine execution is not allowed for channel sessions.');
+    });
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getSession,
+        updateSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'channel should not auto-launch external engines',
+        sessionId: 'session-channel-engine',
+        context: {
+          workingDirectory: '/tmp/channel-workspace',
+        },
+      }),
+    });
+    const body = await response.text();
+
+    expect(response.ok).toBe(true);
+    expect(body).toContain('not allowed for channel sessions');
+    expect(agentEngineMocks.resolveExternalEngineLaunch).toHaveBeenCalled();
+    expect(agentEngineMocks.codexRun).not.toHaveBeenCalled();
+    expect(agentEngineMocks.claudeRun).not.toHaveBeenCalled();
+    expect(createCLIAgent).not.toHaveBeenCalled();
+    expect(updateSession).toHaveBeenLastCalledWith(
+      'session-channel-engine',
+      expect.objectContaining({ status: 'error' }),
+    );
   });
 
   it('falls back to the app work directory instead of HOME when no working directory is known', async () => {

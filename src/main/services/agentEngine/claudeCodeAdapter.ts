@@ -31,12 +31,14 @@ export interface ClaudeCodeRunRequest extends AgentEngineRunRequest {
   workspaceRoot: string;
   attachmentsCount?: number;
   messageMetadata?: MessageMetadata;
+  emitEvent?: (event: AgentEventEnvelope) => void;
   timeoutMs?: number;
   stallWarningMs?: number;
 }
 
 interface ClaudeParsedEvent {
   textDelta?: string;
+  textDeltaSource?: 'stream' | 'snapshot';
   finalText?: string;
   toolName?: string;
   status?: string;
@@ -57,6 +59,8 @@ export class ClaudeCodeAdapter {
       throw new Error(descriptor.lastError || 'Claude Code is not installed or not ready.');
     }
 
+    const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);
+    const permissionMode = toClaudePermissionMode(permissionProfile);
     const startedAt = Date.now();
     const runId = `claude_${startedAt}_${randomUUID().slice(0, 8)}`;
     const taskId = `agent-engine:${runId}`;
@@ -69,12 +73,14 @@ export class ClaudeCodeAdapter {
     const lastMessagePath = path.join(logDir, `${runId}.last.md`);
     const logStream = createWriteStream(logPath, { flags: 'a' });
 
-    const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);
-    const permissionMode = toClaudePermissionMode(permissionProfile);
     const commandSummary = [
       'claude -p',
+      '--verbose',
       '--output-format stream-json',
       `--permission-mode ${permissionMode}`,
+      '--setting-sources local',
+      '--disable-slash-commands',
+      '--tools Read,Glob,Grep,LS',
       '--allowedTools Read,Glob,Grep,LS',
       '<prompt:redacted>',
     ].join(' ');
@@ -137,7 +143,9 @@ export class ClaudeCodeAdapter {
       data: { runId, cwd, permissionProfile, permissionMode },
     });
 
-    emitAgentEvent(request.sessionId, {
+    const emit = (event: AgentEventEnvelope) => emitAgentEvent(request.sessionId, event, request.emitEvent);
+
+    emit({
       type: 'turn_start',
       data: { turnId, iteration: 1 },
     });
@@ -211,9 +219,9 @@ export class ClaudeCodeAdapter {
       if (parsed.externalSessionId) {
         externalSessionId = parsed.externalSessionId;
       }
-      if (parsed.textDelta) {
+      if (parsed.textDelta && (parsed.textDeltaSource !== 'snapshot' || streamedText.length === 0)) {
         streamedText += parsed.textDelta;
-        emitAgentEvent(request.sessionId, {
+        emit({
           type: 'message_delta',
           data: { role: 'assistant', path: 'content', text: parsed.textDelta, op: 'append', turnId },
         });
@@ -347,7 +355,7 @@ export class ClaudeCodeAdapter {
         payload: { runId, logPath },
       });
       enqueueFailureReview(request.sessionId, message);
-      emitAgentEvent(request.sessionId, {
+      emit({
         type: 'error',
         data: { message, code: 'CLAUDE_CODE_FAILED', details: { runId, logPath, exitCode } },
       });
@@ -356,7 +364,7 @@ export class ClaudeCodeAdapter {
         engine: sessionEngine,
         updatedAt: completedAt,
       }, { allowEngineUpdate: true });
-      emitAgentEvent(request.sessionId, { type: 'agent_complete', data: null });
+      emit({ type: 'agent_complete', data: null });
       return {
         runId,
         sessionId: request.sessionId,
@@ -382,15 +390,15 @@ export class ClaudeCodeAdapter {
     };
     await sessionManager.addMessageToSession(request.sessionId, assistantMessage);
 
-    emitAgentEvent(request.sessionId, {
+    emit({
       type: 'message',
       data: assistantMessage,
     });
-    emitAgentEvent(request.sessionId, {
+    emit({
       type: 'turn_end',
       data: { turnId },
     });
-    emitAgentEvent(request.sessionId, {
+    emit({
       type: 'agent_complete',
       data: null,
     });
@@ -439,12 +447,18 @@ export function buildClaudeCodeArgs(profile: AgentEnginePermissionProfile = 'rea
   const permissionMode = toClaudePermissionMode(profile);
   return [
     '-p',
+    '--verbose',
+    '--setting-sources',
+    'local',
+    '--disable-slash-commands',
     '--output-format',
     'stream-json',
     '--input-format',
     'text',
     '--permission-mode',
     permissionMode,
+    '--tools',
+    'Read,Glob,Grep,LS',
     '--allowedTools',
     'Read,Glob,Grep,LS',
     '--no-chrome',
@@ -505,27 +519,48 @@ function summarizeEnv(env: NodeJS.ProcessEnv): { keys: string[]; redacted: strin
 }
 
 function extractClaudeEvent(event: Record<string, unknown>): ClaudeParsedEvent {
-  const type = firstString(event.type);
-  const subtype = firstString(event.subtype);
-  const message = isRecord(event.message) ? event.message : undefined;
-  const delta = isRecord(event.delta) ? event.delta : undefined;
-  const content = Array.isArray(message?.content) ? message.content : Array.isArray(event.content) ? event.content : undefined;
+  const outerType = firstString(event.type);
+  const inner = isRecord(event.event) ? event.event : undefined;
+  const payload = inner ?? event;
+  const type = firstString(payload.type, outerType);
+  const subtype = firstString(payload.subtype, event.subtype);
+  const message = isRecord(payload.message) ? payload.message : isRecord(event.message) ? event.message : undefined;
+  const delta = isRecord(payload.delta) ? payload.delta : isRecord(event.delta) ? event.delta : undefined;
+  const contentBlock = isRecord(payload.content_block) ? payload.content_block : undefined;
+  const content = Array.isArray(message?.content)
+    ? message.content
+    : Array.isArray(payload.content)
+      ? payload.content
+      : Array.isArray(event.content)
+        ? event.content
+        : undefined;
   const textDelta = firstString(
+    payload.text,
     event.text,
     delta?.text,
+    contentBlock?.type === 'text' ? contentBlock.text : undefined,
     extractContentText(content),
     typeof message?.content === 'string' ? message.content : undefined,
   );
-  const finalText = type === 'result'
-    ? firstString(event.result, event.text, extractContentText(content))
+  const textDeltaSource = outerType === 'stream_event' ? 'stream' : type === 'assistant' ? 'snapshot' : undefined;
+  const finalText = type === 'result' || outerType === 'result'
+    ? firstString(payload.result, event.result, payload.text, event.text, extractContentText(content))
     : undefined;
-  const toolName = firstString(event.name, extractToolName(content));
-  const status = statusFromClaudeEvent(type, subtype, event);
-  const error = firstString(event.error, isRecord(event.error) ? event.error.message : undefined);
-  const externalSessionId = firstString(event.session_id, event.sessionId, message?.session_id, message?.sessionId);
+  const toolName = firstString(payload.name, contentBlock?.name, extractToolName(content));
+  const status = statusFromClaudeEvent(type, subtype, payload);
+  const error = firstString(payload.error, isRecord(payload.error) ? payload.error.message : undefined);
+  const externalSessionId = firstString(
+    event.session_id,
+    event.sessionId,
+    payload.session_id,
+    payload.sessionId,
+    message?.session_id,
+    message?.sessionId,
+  );
 
   return {
-    ...(textDelta && type !== 'result' ? { textDelta } : {}),
+    ...(textDelta && type !== 'result' && outerType !== 'result' ? { textDelta } : {}),
+    ...(textDeltaSource ? { textDeltaSource } : {}),
     ...(finalText ? { finalText } : {}),
     ...(toolName ? { toolName } : {}),
     ...(status ? { status } : {}),
@@ -579,7 +614,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-function emitAgentEvent(sessionId: string, event: AgentEventEnvelope): void {
+function emitAgentEvent(
+  sessionId: string,
+  event: AgentEventEnvelope,
+  localSink?: (event: AgentEventEnvelope) => void,
+): void {
+  localSink?.(event);
   const payload = {
     ...event,
     sessionId,

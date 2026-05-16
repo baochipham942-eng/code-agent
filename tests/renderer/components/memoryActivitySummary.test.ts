@@ -1,7 +1,11 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { MemoryActivitySummary, RunOverview } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
+import {
+  MemoryActivitySummary,
+  RunOverview,
+  TaskDashboardSummary,
+} from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
 import type { RunWorkbenchModel } from '../../../src/renderer/types/runWorkbench';
 
 describe('MemoryActivitySummary', () => {
@@ -75,5 +79,51 @@ describe('RunOverview memory link', () => {
     expect(html).not.toContain('Tasks');
     expect(html).not.toContain('Outputs');
     expect(html).not.toContain('border-emerald-500');
+  });
+});
+
+describe('TaskDashboardSummary background outputs', () => {
+  it('renders ledger output refs next to background agent tasks', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TaskDashboardSummary, {
+        run: null,
+        tasks: [
+          {
+            id: 'background:agent:claude:run-1',
+            scope: 'global',
+            title: 'Claude Code',
+            status: 'done',
+            steps: [
+              { title: '已完成', status: 'done' },
+              { title: 'Claude Code log：run-1.log', status: 'done' },
+              { title: 'Claude Code final message：run-1.last.md', status: 'done' },
+            ],
+            resumeHint: '最终输出：run-1.last.md',
+            outputRefs: [
+              {
+                id: 'run-1:log',
+                type: 'log',
+                label: 'Claude Code log',
+                pathOrUrl: '/tmp/code-agent/run-1.log',
+              },
+              {
+                id: 'run-1:final',
+                type: 'text',
+                label: 'Claude Code final message',
+                pathOrUrl: '/tmp/code-agent/run-1.last.md',
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('data-testid="task-output-refs"');
+    expect(html).toContain('Claude Code');
+    expect(html).toContain('结果：最终输出：run-1.last.md');
+    expect(html).toContain('Claude Code log');
+    expect(html).toContain('/tmp/code-agent/run-1.log');
+    expect(html).toContain('Claude Code final message');
+    expect(html).toContain('/tmp/code-agent/run-1.last.md');
   });
 });

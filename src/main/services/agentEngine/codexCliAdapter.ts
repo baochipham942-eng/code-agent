@@ -31,6 +31,7 @@ export interface CodexCliRunRequest extends AgentEngineRunRequest {
   workspaceRoot: string;
   attachmentsCount?: number;
   messageMetadata?: MessageMetadata;
+  emitEvent?: (event: AgentEventEnvelope) => void;
   timeoutMs?: number;
   stallWarningMs?: number;
 }
@@ -54,6 +55,8 @@ export class CodexCliAdapter {
       throw new Error(descriptor.lastError || 'Codex CLI is not installed or not ready.');
     }
 
+    const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);
+    const sandbox = toCodexSandbox(permissionProfile);
     const startedAt = Date.now();
     const runId = `codex_${startedAt}_${randomUUID().slice(0, 8)}`;
     const taskId = `agent-engine:${runId}`;
@@ -66,8 +69,6 @@ export class CodexCliAdapter {
     const lastMessagePath = path.join(logDir, `${runId}.last.md`);
     const logStream = createWriteStream(logPath, { flags: 'a' });
 
-    const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);
-    const sandbox = toCodexSandbox(permissionProfile);
     const commandSummary = `codex exec --json --sandbox ${sandbox} -C ${cwd} <prompt:redacted>`;
     const timing = normalizeCodexCliRunTiming({
       timeoutMs: request.timeoutMs,
@@ -126,7 +127,9 @@ export class CodexCliAdapter {
       data: { runId, cwd, permissionProfile },
     });
 
-    emitAgentEvent(request.sessionId, {
+    const emit = (event: AgentEventEnvelope) => emitAgentEvent(request.sessionId, event, request.emitEvent);
+
+    emit({
       type: 'turn_start',
       data: { turnId, iteration: 1 },
     });
@@ -216,7 +219,7 @@ export class CodexCliAdapter {
         const parsed = parseCodexJsonLine(line);
         if (parsed?.textDelta) {
           streamedText += parsed.textDelta;
-          emitAgentEvent(request.sessionId, {
+          emit({
             type: 'message_delta',
             data: { role: 'assistant', path: 'content', text: parsed.textDelta, op: 'append', turnId },
           });
@@ -261,7 +264,7 @@ export class CodexCliAdapter {
       const parsed = parseCodexJsonLine(stdoutBuffer);
       if (parsed?.textDelta) {
         streamedText += parsed.textDelta;
-        emitAgentEvent(request.sessionId, {
+        emit({
           type: 'message_delta',
           data: { role: 'assistant', path: 'content', text: parsed.textDelta, op: 'append', turnId },
         });
@@ -320,7 +323,7 @@ export class CodexCliAdapter {
         payload: { runId, logPath },
       });
       enqueueFailureReview(request.sessionId, message);
-      emitAgentEvent(request.sessionId, {
+      emit({
         type: 'error',
         data: { message, code: 'CODEX_CLI_FAILED', details: { runId, logPath, exitCode } },
       });
@@ -337,7 +340,7 @@ export class CodexCliAdapter {
         }),
         updatedAt: completedAt,
       }, { allowEngineUpdate: true });
-      emitAgentEvent(request.sessionId, { type: 'agent_complete', data: null });
+      emit({ type: 'agent_complete', data: null });
       return {
         runId,
         sessionId: request.sessionId,
@@ -363,15 +366,15 @@ export class CodexCliAdapter {
     };
     await sessionManager.addMessageToSession(request.sessionId, assistantMessage);
 
-    emitAgentEvent(request.sessionId, {
+    emit({
       type: 'message',
       data: assistantMessage,
     });
-    emitAgentEvent(request.sessionId, {
+    emit({
       type: 'turn_end',
       data: { turnId },
     });
-    emitAgentEvent(request.sessionId, {
+    emit({
       type: 'agent_complete',
       data: null,
     });
@@ -546,7 +549,12 @@ async function readFileIfExists(filePath: string): Promise<string | undefined> {
   }
 }
 
-function emitAgentEvent(sessionId: string, event: AgentEventEnvelope): void {
+function emitAgentEvent(
+  sessionId: string,
+  event: AgentEventEnvelope,
+  localSink?: (event: AgentEventEnvelope) => void,
+): void {
+  localSink?.(event);
   const payload = {
     ...event,
     sessionId,

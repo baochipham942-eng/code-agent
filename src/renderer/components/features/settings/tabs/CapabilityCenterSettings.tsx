@@ -15,6 +15,7 @@ import {
   Search,
   ShieldAlert,
   Sparkles,
+  Terminal,
   ToggleLeft,
   ToggleRight,
   Trash2,
@@ -75,6 +76,7 @@ const SOURCE_LABELS: Partial<Record<CapabilitySourceKind, string>> = {
 
 const KIND_FILTERS: Array<'all' | CapabilityKind> = [
   'all',
+  'agent_engine',
   'skill',
   'mcp_template',
   'tool_bundle',
@@ -106,6 +108,8 @@ const HEALTH_FILTERS: HealthFilter[] = ['all', 'ready', 'needs_config', 'disable
 
 function kindIcon(kind: CapabilityKind): React.ReactNode {
   switch (kind) {
+    case 'agent_engine':
+      return <Terminal className="h-4 w-4 text-emerald-300" />;
     case 'skill':
       return <Sparkles className="h-4 w-4 text-amber-300" />;
     case 'mcp_template':
@@ -363,6 +367,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, on
   const actionTitle = action.installDraft && missingDraftParameters.length > 0
     ? `缺少 ${missingDraftParameters.map((parameter) => parameter.label).join(', ')}`
     : action.title;
+  const agentEngineBadges = formatAgentEngineBadges(item);
 
   return (
     <article className="rounded-lg border border-zinc-700 bg-zinc-800/80 p-3">
@@ -387,10 +392,23 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, on
                 {RUNTIME_LABELS[item.state.runtime]}
               </span>
               <span className="text-zinc-500">{item.source.label}</span>
+              {item.source.version ? <span className="text-zinc-500">{item.source.version}</span> : null}
               {item.state.statusLabel ? <span className="text-zinc-500">{item.state.statusLabel}</span> : null}
               {item.metrics?.tools !== undefined ? <span className="text-zinc-500">{item.metrics.tools} tools</span> : null}
               {item.metrics?.accounts !== undefined ? <span className="text-zinc-500">{item.metrics.accounts} account</span> : null}
             </div>
+            {agentEngineBadges.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {agentEngineBadges.map((badge) => (
+                  <span
+                    key={badge}
+                    className="rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-[11px] text-zinc-300"
+                  >
+                    {badge}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -479,6 +497,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, on
         </summary>
         <div className="space-y-3 border-t border-zinc-700/60 px-3 py-3 text-xs">
           {item.installPlan ? <InfoBlock title="安装预览" values={formatInstallPlan(item)} /> : null}
+          {item.kind === 'agent_engine' ? <InfoBlock title="检测状态" values={formatAgentEngineInspection(item)} /> : null}
           <InfoBlock title="权限" values={item.permissions.map((entry) => `${entry.label}${entry.detail ? ` · ${entry.detail}` : ''}`)} />
           <InfoBlock title="风险" values={item.risk.reasons} />
           <InfoBlock title="配置" values={item.config.map(formatRequirement)} empty="无配置项" />
@@ -512,6 +531,39 @@ function formatRequirement(requirement: CapabilityRequirement): string {
   const prefix = requirement.sensitive ? '[secret]' : `[${requirement.kind}]`;
   const value = requirement.value ? ` · ${requirement.value}` : '';
   return `${prefix} ${requirement.label}: ${requirement.status}${value}`;
+}
+
+function findRequirementValue(item: CapabilityCenterItem, label: string): string | undefined {
+  return [...item.config, ...item.dependencies].find((requirement) => requirement.label === label)?.value;
+}
+
+function formatAgentEngineBadges(item: CapabilityCenterItem): string[] {
+  if (item.kind !== 'agent_engine') return [];
+  const launchMode = findRequirementValue(item, 'Launch mode');
+  const permissionProfile = findRequirementValue(item, 'Permission profile');
+  const workspacePolicy = findRequirementValue(item, 'Workspace policy');
+  const launchBadge = launchMode
+    ? launchMode === 'external CLI' ? '外部 CLI' : '内置 runtime'
+    : undefined;
+  return [
+    launchBadge,
+    permissionProfile === 'read_only' ? '只读默认' : permissionProfile,
+    workspacePolicy === 'current workspace only' ? '当前 workspace' : workspacePolicy,
+  ].filter((value): value is string => Boolean(value));
+}
+
+function formatAgentEngineInspection(item: CapabilityCenterItem): string[] {
+  return [
+    `install: ${item.state.install}`,
+    `runtime: ${item.state.runtime}`,
+    item.state.statusLabel ? `status: ${item.state.statusLabel}` : undefined,
+    item.source.version ? `version ${item.source.version}` : undefined,
+    item.source.path ? `binary ${item.source.path}` : undefined,
+    findRequirementValue(item, 'Launch mode') ? `launch ${findRequirementValue(item, 'Launch mode')}` : undefined,
+    findRequirementValue(item, 'Permission profile') ? `permission ${findRequirementValue(item, 'Permission profile')}` : undefined,
+    findRequirementValue(item, 'Workspace policy') ? `cwd ${findRequirementValue(item, 'Workspace policy')}` : undefined,
+    item.state.error ? `error ${item.state.error}` : undefined,
+  ].filter((value): value is string => Boolean(value));
 }
 
 function formatSource(item: CapabilityCenterItem): string[] {

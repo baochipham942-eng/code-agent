@@ -3,12 +3,13 @@ import type { Request, Response } from 'express';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import type { AgentEvent, Message, MessageAttachment, MessageMetadata, SessionStatus } from '../../shared/contract';
+import type { AgentEvent, Message, MessageAttachment, MessageMetadata, Session, SessionStatus } from '../../shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
 import type {
   ConversationEnvelopeContext,
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
+import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import type { ExecuteOptions } from '../../main/tools/toolExecutor';
 import { isLocalTool, mapToolName } from '../../shared/localTools';
 import { broadcastSSE, sendSSE } from '../helpers/sse';
@@ -25,6 +26,11 @@ import {
   seedSessionMessagesFromPersisted,
 } from '../helpers/sessionCache';
 import { MessageDeltaAccumulator } from '../../main/protocol/messageDeltaAccumulator';
+import {
+  ClaudeCodeAdapter,
+  CodexCliAdapter,
+  resolveExternalEngineLaunch,
+} from '../../main/services/agentEngine';
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
 // key = toolCallId, value = { resolve, reject, timer }
@@ -416,6 +422,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 2. body.context.workingDirectory（renderer 的 ConversationEnvelope）
       // 3. session 持久化的 workingDirectory（同会话恢复，避免每次都要重选）
       // 4. app 私有 work 目录。不能 fallback 到 HOME，否则普通聊天会扫描整台机器的 AGENTS/CLAUDE 文件。
+      let persistedSession: Session | null = null;
+      try {
+        const sm = await tryGetSessionManager();
+        if (sm?.getSession) {
+          persistedSession = await sm.getSession(sessionId, 1);
+        }
+      } catch (err) {
+        logger.warn(`[AgentRouter] Failed to restore session ${sessionId}:`, err);
+      }
+
       let resolvedProject: string | undefined =
         typeof project === 'string' && project.trim().length > 0
           ? project.trim()
@@ -423,20 +439,34 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             ? sessionDir.trim()
             : extractWorkingDirectory(req.body.context);
       if (!resolvedProject) {
-        try {
-          const sm = await tryGetSessionManager();
-          if (sm) {
-            const persisted = await sm.getSession(sessionId, 1);
-            const fromSession = persisted?.workingDirectory?.trim();
-            if (fromSession) resolvedProject = fromSession;
-          }
-        } catch (err) {
-          logger.warn(`[AgentRouter] Failed to restore workingDirectory from session ${sessionId}:`, err);
-        }
+        const fromSession = persistedSession?.workingDirectory?.trim();
+        if (fromSession) resolvedProject = fromSession;
       }
       if (!resolvedProject) {
         resolvedProject = await ensureDefaultWebWorkingDirectory();
         logger.warn(`[AgentRouter] No project/sessionDir/context workingDirectory, falling back to app work dir ${resolvedProject}`);
+      }
+
+      const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
+      if (selectedEngine.kind === 'codex_cli' || selectedEngine.kind === 'claude_code') {
+        const launch = resolveExternalEngineLaunch(persistedSession, selectedEngine, resolvedProject);
+        const adapter = selectedEngine.kind === 'codex_cli'
+          ? new CodexCliAdapter()
+          : new ClaudeCodeAdapter();
+        const result = await adapter.run({
+          sessionId,
+          prompt,
+          cwd: launch.cwd,
+          workspaceRoot: launch.workspaceRoot,
+          permissionProfile: launch.permissionProfile,
+          clientMessageId,
+          attachmentsCount: Array.isArray(req.body.attachments) ? req.body.attachments.length : 0,
+          messageMetadata: toWorkbenchMetadata(req.body.context),
+          emitEvent: (event) => emitAgentEvent(event),
+        });
+        agentSSEBatcher.flush();
+        await updateRunSessionStatus(result.status === 'failed' ? 'error' : 'completed');
+        return;
       }
 
       const agent = await createCLIAgent({

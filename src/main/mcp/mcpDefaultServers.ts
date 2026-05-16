@@ -17,6 +17,8 @@ import { loadMcpConfigFiles } from './mcpConfigFile';
 import type { MCPClient } from './mcpClient';
 
 const logger = createLogger('MCPDefaultServers');
+const DEEPWIKI_LEGACY_SSE_URL = 'https://mcp.deepwiki.com/sse';
+const DEEPWIKI_STREAMABLE_HTTP_URL = 'https://mcp.deepwiki.com/mcp';
 
 // ----------------------------------------------------------------------------
 // Default MCP Server Configurations
@@ -150,6 +152,10 @@ export const DEFAULT_MCP_SERVERS: MCPServerConfig[] = [];
  */
 export function convertCloudConfigToInternal(cloudConfig: MCPServerCloudConfig): MCPServerConfig {
   const { id, name, type, enabled, config, requiredEnvVars } = cloudConfig;
+  const serverUrl = normalizeCloudMcpServerUrl(id, name, config.url);
+  const serverType = serverUrl === DEEPWIKI_STREAMABLE_HTTP_URL && config.url === DEEPWIKI_LEGACY_SSE_URL
+    ? 'http-streamable'
+    : type;
 
   // 检查必需的环境变量
   let shouldEnable = enabled;
@@ -172,20 +178,20 @@ export function convertCloudConfigToInternal(cloudConfig: MCPServerCloudConfig):
     return result;
   };
 
-  if (type === 'http-streamable') {
+  if (serverType === 'http-streamable') {
     return {
       name: id,
       type: 'http-streamable',
-      serverUrl: config.url!,
+      serverUrl: serverUrl!,
       headers: resolveEnvVars(config.headers),
       enabled: shouldEnable,
       requiredEnvVars,
     } as MCPHttpStreamableServerConfig;
-  } else if (type === 'sse') {
+  } else if (serverType === 'sse') {
     return {
       name: id,
       type: 'sse',
-      serverUrl: config.url!,
+      serverUrl: serverUrl!,
       headers: resolveEnvVars(config.headers),
       enabled: shouldEnable,
     } as MCPSSEServerConfig;
@@ -200,6 +206,19 @@ export function convertCloudConfigToInternal(cloudConfig: MCPServerCloudConfig):
       enabled: shouldEnable,
     } as MCPStdioServerConfig;
   }
+}
+
+function normalizeCloudMcpServerUrl(id: string, name: string, url: string | undefined): string | undefined {
+  const normalizedId = id.trim().toLowerCase();
+  const normalizedName = name.trim().toLowerCase();
+  if (
+    url === DEEPWIKI_LEGACY_SSE_URL
+    && (normalizedId === 'deepwiki' || normalizedName.includes('deepwiki'))
+  ) {
+    logger.warn('Rewriting deprecated DeepWiki MCP SSE endpoint to streamable HTTP');
+    return DEEPWIKI_STREAMABLE_HTTP_URL;
+  }
+  return url;
 }
 
 // ----------------------------------------------------------------------------

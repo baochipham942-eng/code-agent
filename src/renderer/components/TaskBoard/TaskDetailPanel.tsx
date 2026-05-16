@@ -15,7 +15,7 @@
 
 import React, { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { X as XIcon, AlertCircle } from 'lucide-react';
+import { X as XIcon, AlertCircle, Eye as EyeIcon } from 'lucide-react';
 import type { MasterTaskStatus } from '@shared/contract/task';
 import { useMasterTaskStore } from '../../stores/masterTaskStore';
 
@@ -93,6 +93,7 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ taskId, onClos
   const detailLoading = useMasterTaskStore((s) => s.detailLoading);
   const detailError = useMasterTaskStore((s) => s.detailError);
   const loadTaskDetail = useMasterTaskStore((s) => s.loadTaskDetail);
+  const updateStatus = useMasterTaskStore((s) => s.updateStatus);
 
   // 进入或切换 taskId 时拉一次 detail —— planProgress / childAgentTaskIds /
   // attachedSessionIds 的 DB baseline 可能比 list 时旧，需要 fresh fetch
@@ -124,6 +125,21 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ taskId, onClos
             {task?.title || 'Untitled task'}
           </h3>
         </div>
+        {/* P4-c1: 手动标记审查（status='running' 时显示）。
+            点击 → master.requestReview()，状态转 running→review，agent 暂停等待人工检视。
+            NudgeManager P5/P7 自动 trigger 留 backlog（涉及大改 nudgeManager.ts，scope 外）。*/}
+        {task?.status === 'running' && (
+          <button
+            type="button"
+            onClick={() => void updateStatus(taskId, 'review')}
+            className="flex items-center gap-1 px-2 py-0.5 mr-2 text-[10px] text-amber-300 hover:bg-amber-500/10 border border-amber-500/30 rounded transition-colors flex-shrink-0"
+            title="标记为审查中（暂停执行，等待人工检视）"
+            aria-label="mark-review"
+          >
+            <EyeIcon className="w-3 h-3" />
+            <span>标记审查</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={onClose}

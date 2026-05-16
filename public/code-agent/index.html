@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Agent Neo | 本地 AI Cowork 工作台</title>
+    <title>Agent Neo · 装在你电脑上的 AI 同事</title>
     <meta
       name="description"
-      content="Agent Neo 是本地安装的 AI Cowork 工作台，帮你处理资料、协作推进任务、编排多模型 Agent、自动验证结果，并保留本地数据边界和操作记录。"
+      content="本地安装的 AI 助手：帮你写代码、整 Excel、做 PPT、读网页、操作浏览器和桌面。文件不上云，断网也能跑。"
     />
-    <meta property="og:title" content="Agent Neo | 本地 AI Cowork 工作台" />
+    <meta property="og:title" content="Agent Neo · 装在你电脑上的 AI 同事" />
     <meta
       property="og:description"
-      content="把真实工作交给一个可协作的 AI coworker：规划、执行、验证、跟踪、脱敏和交付都回到同一个本地工作台。"
+      content="帮你写代码、整 Excel、做 PPT、读网页、操作浏览器和桌面。文件不上云，断网也能跑。"
     />
     <link rel="icon" href="./agent-neo-mark.svg" type="image/svg+xml" />
     <style>
@@ -27,53 +27,51 @@
         --panel: #ffffff;
         --night: #060817;
         --night-soft: #10162f;
-        --primary: #2f48ff;
-        --primary-2: #17206d;
-        --primary-soft: #e8edff;
-        --cyan: #72e1ff;
-        --cyan-soft: #e4f8ff;
-        --teal: #2f48ff;
-        --teal-soft: #e8edff;
-        --amber: #5d6eff;
-        --amber-soft: #ede9ff;
-        --blue: #243ee8;
-        --blue-soft: #e7edff;
-        --slate-soft: #edf0f7;
-        --rose: #9f5cff;
-        --rose-soft: #f0e8ff;
-        --radius: 8px;
-        --shadow: 0 28px 90px rgba(6, 8, 23, 0.38);
+        --primary: #1a2bd9;
+        --primary-2: #0f1a8a;
+        --primary-soft: #e6e9ff;
+        --accent: #29d6a3;
+        --accent-soft: #d6f6ec;
+        --label-blue: #0b7cc4;
+        --label-blue-soft: #e1f0fb;
+        --label-amber: #c47009;
+        --label-amber-soft: #fbeed8;
+        --label-rose: #b91c5c;
+        --label-rose-soft: #fbe1ed;
+        --radius: 10px;
+        --radius-sm: 8px;
+        --shadow: 0 28px 90px rgba(6, 8, 23, 0.34);
       }
 
-      * {
-        box-sizing: border-box;
-      }
+      * { box-sizing: border-box; }
 
-      html {
-        scroll-behavior: smooth;
-      }
+      html { scroll-behavior: smooth; }
 
       body {
         margin: 0;
         background: var(--paper);
         color: var(--ink);
         font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
           "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
         letter-spacing: 0;
+        -webkit-font-smoothing: antialiased;
       }
 
-      a {
-        color: inherit;
-        text-decoration: none;
+      a { color: inherit; text-decoration: none; }
+
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+        border-radius: 4px;
       }
+
+      section[id] { scroll-margin-top: 80px; }
 
       .topbar {
         position: fixed;
         z-index: 40;
-        top: 0;
-        left: 0;
-        right: 0;
+        top: 0; left: 0; right: 0;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -93,10 +91,9 @@
 
       .brand-mark {
         display: block;
-        width: 30px;
-        height: 30px;
+        width: 30px; height: 30px;
         border-radius: 999px;
-        box-shadow: 0 14px 34px rgba(53, 93, 255, 0.4);
+        box-shadow: 0 14px 34px rgba(26, 43, 217, 0.4);
       }
 
       .nav {
@@ -108,18 +105,17 @@
         font-weight: 700;
       }
 
-      .nav a:hover {
-        color: #ffffff;
-      }
+      .nav a:hover { color: #ffffff; }
 
+      /* ============================================================ Hero */
       .hero {
         position: relative;
-        min-height: 82svh;
+        min-height: clamp(620px, 78svh, 880px);
         overflow: hidden;
         color: #ffffff;
         background:
           linear-gradient(90deg, rgba(6, 8, 23, 0.99) 0%, rgba(6, 8, 23, 0.88) 45%, rgba(6, 8, 23, 0.48) 100%),
-          linear-gradient(120deg, rgba(47, 72, 255, 0.28), rgba(114, 225, 255, 0.04) 58%),
+          linear-gradient(120deg, rgba(26, 43, 217, 0.28), rgba(41, 214, 163, 0.04) 58%),
           var(--night);
       }
 
@@ -155,11 +151,6 @@
         padding: 116px 0 68px;
       }
 
-      .hero-copy-block {
-        position: relative;
-        z-index: 4;
-      }
-
       .eyebrow {
         display: inline-flex;
         align-items: center;
@@ -171,27 +162,29 @@
       }
 
       .dot {
-        width: 9px;
-        height: 9px;
+        width: 9px; height: 9px;
         border-radius: 999px;
-        background: var(--cyan);
-        box-shadow: 0 0 0 7px rgba(114, 225, 255, 0.15);
+        background: var(--accent);
+        box-shadow: 0 0 0 7px rgba(41, 214, 163, 0.18);
       }
 
       h1 {
         max-width: 720px;
         margin: 0;
-        font-size: 70px;
-        line-height: 0.98;
-        letter-spacing: 0;
+        font-size: clamp(38px, 4.6vw, 58px);
+        font-weight: 800;
+        line-height: 1.08;
+        letter-spacing: -0.01em;
+        text-wrap: balance;
+        word-break: keep-all;
       }
 
       .hero-copy {
-        max-width: 680px;
-        margin: 26px 0 0;
+        max-width: 560px;
+        margin: 24px 0 0;
         color: rgba(255, 255, 255, 0.82);
-        font-size: 20px;
-        line-height: 1.72;
+        font-size: 19px;
+        line-height: 1.66;
       }
 
       .hero-actions {
@@ -208,16 +201,15 @@
         justify-content: center;
         gap: 10px;
         border: 1px solid rgba(255, 255, 255, 0.28);
-        border-radius: var(--radius);
+        border-radius: var(--radius-sm);
         padding: 0 18px;
         font-size: 15px;
         font-weight: 800;
         transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+        cursor: pointer;
       }
 
-      .button:hover {
-        transform: translateY(-1px);
-      }
+      .button:hover { transform: translateY(-1px); }
 
       .button.primary {
         border-color: #ffffff;
@@ -225,8 +217,8 @@
         color: var(--ink);
       }
 
-      .button.secondary {
-        background: rgba(255, 255, 255, 0.1);
+      .button.ghost {
+        background: rgba(255, 255, 255, 0.08);
         color: #ffffff;
       }
 
@@ -235,7 +227,7 @@
         min-height: 470px;
       }
 
-      .cowork-board {
+      .hero-stage-frame {
         position: absolute;
         inset: 0;
         overflow: hidden;
@@ -245,25 +237,6 @@
         box-shadow: var(--shadow);
       }
 
-      .cowork-board::before {
-        content: "";
-        position: absolute;
-        inset: 0;
-        z-index: 2;
-        border-radius: inherit;
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-        pointer-events: none;
-      }
-
-      .cowork-board::after {
-        content: "";
-        position: absolute;
-        inset: 0;
-        z-index: 2;
-        background: linear-gradient(180deg, rgba(6, 8, 23, 0), rgba(6, 8, 23, 0.1));
-        pointer-events: none;
-      }
-
       .hero-art {
         display: block;
         width: 100%;
@@ -271,496 +244,13 @@
         object-fit: cover;
       }
 
-      .neo-mini {
-        position: absolute;
-        top: 24px;
-        left: 24px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        color: rgba(255, 255, 255, 0.72);
-        font-size: 12px;
-        font-weight: 850;
-        text-transform: uppercase;
-      }
-
-      .neo-mini img {
-        width: 34px;
-        height: 34px;
-        border-radius: 10px;
-      }
-
-      .neo-core {
-        position: absolute;
-        top: 132px;
-        left: 50%;
-        display: grid;
-        width: 174px;
-        height: 174px;
-        place-items: center;
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        border-radius: 999px;
-        background:
-          radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.02) 62%),
-          rgba(255, 255, 255, 0.06);
-        transform: translateX(-50%);
-        backdrop-filter: blur(16px);
-      }
-
-      .neo-core img {
-        width: 76px;
-        height: 76px;
-        border-radius: 20px;
-        box-shadow: 0 22px 52px rgba(53, 93, 255, 0.36);
-      }
-
-      .input-pill,
-      .output-pill {
-        position: absolute;
-        top: 182px;
-        display: grid;
-        gap: 8px;
-        min-width: 142px;
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        border-radius: var(--radius);
-        padding: 16px;
-        background: rgba(255, 255, 255, 0.07);
-        backdrop-filter: blur(12px);
-      }
-
-      .input-pill {
-        left: 42px;
-      }
-
-      .output-pill {
-        right: 42px;
-      }
-
-      .input-pill span,
-      .output-pill span,
-      .proof-line span {
-        color: rgba(255, 255, 255, 0.5);
-        font-size: 11px;
-        font-weight: 900;
-        text-transform: uppercase;
-      }
-
-      .input-pill strong,
-      .output-pill strong {
-        color: #ffffff;
-        font-size: 16px;
-      }
-
-      .connect-line {
-        position: absolute;
-        top: 270px;
-        left: 186px;
-        right: 186px;
-        height: 1px;
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
-      }
-
-      .proof-line {
-        position: absolute;
-        left: 44px;
-        right: 44px;
-        bottom: 72px;
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .proof-line div {
-        border: 1px solid rgba(255, 255, 255, 0.13);
-        border-radius: var(--radius);
-        padding: 13px;
-        background: rgba(255, 255, 255, 0.06);
-      }
-
-      .proof-line strong {
-        display: block;
-        margin-top: 6px;
-        color: #ffffff;
-        font-size: 15px;
-      }
-
-      .local-line {
-        position: absolute;
-        left: 44px;
-        right: 44px;
-        bottom: 30px;
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        color: rgba(255, 255, 255, 0.58);
-        font-size: 12px;
-        font-weight: 800;
-      }
-
-      .local-line strong {
-        color: var(--cyan);
-      }
-
-      .signal-map {
-        position: absolute;
-        inset: 0;
-        display: grid;
-        place-items: center;
-      }
-
-      .signal-ring {
-        position: absolute;
-        width: min(58%, 300px);
-        aspect-ratio: 1;
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: 999px;
-      }
-
-      .signal-ring::before,
-      .signal-ring::after {
-        content: "";
-        position: absolute;
-        inset: 16%;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: inherit;
-      }
-
-      .signal-ring::after {
-        inset: 32%;
-      }
-
-      .signal-core {
-        position: relative;
-        z-index: 2;
-        display: grid;
-        width: 132px;
-        height: 132px;
-        place-items: center;
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        border-radius: 999px;
-        background:
-          radial-gradient(circle at 42% 28%, rgba(255, 255, 255, 0.22), transparent 34%),
-          rgba(255, 255, 255, 0.06);
-        backdrop-filter: blur(16px);
-      }
-
-      .signal-core img {
-        width: 78px;
-        height: 78px;
-        border-radius: 22px;
-        box-shadow: 0 22px 52px rgba(47, 72, 255, 0.42);
-      }
-
-      .signal-node {
-        position: absolute;
-        z-index: 3;
-        min-width: 112px;
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: 999px;
-        padding: 9px 13px;
-        color: rgba(255, 255, 255, 0.78);
-        background: rgba(255, 255, 255, 0.07);
-        font-size: 12px;
-        font-weight: 850;
-        text-align: center;
-        backdrop-filter: blur(14px);
-      }
-
-      .signal-node:nth-child(3) {
-        top: 92px;
-        left: 50%;
-        transform: translateX(-50%);
-      }
-
-      .signal-node:nth-child(4) {
-        left: 58px;
-        top: 50%;
-        transform: translateY(-50%);
-      }
-
-      .signal-node:nth-child(5) {
-        right: 58px;
-        top: 50%;
-        transform: translateY(-50%);
-      }
-
-      .signal-caption {
-        position: absolute;
-        left: 48px;
-        right: 48px;
-        bottom: 36px;
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        color: rgba(255, 255, 255, 0.5);
-        font-size: 12px;
-        font-weight: 800;
-      }
-
-      .signal-caption strong {
-        color: var(--cyan);
-      }
-
-      .board-header,
-      .session-card,
-      .agent-card,
-      .workstep,
-      .artifact-card,
-      .privacy-bar {
-        position: absolute;
-        border: 1px solid rgba(255, 255, 255, 0.13);
-        border-radius: var(--radius);
-        background: rgba(255, 255, 255, 0.07);
-        color: rgba(255, 255, 255, 0.88);
-        backdrop-filter: blur(12px);
-      }
-
-      .board-header {
-        top: 22px;
-        left: 22px;
-        right: 22px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 18px;
-        padding: 14px 16px;
-      }
-
-      .board-header span,
-      .section-kicker,
-      .artifact-card span,
-      .workstep span {
-        display: block;
-        color: rgba(255, 255, 255, 0.5);
-        font-size: 11px;
-        font-weight: 900;
-        text-transform: uppercase;
-      }
-
-      .board-header strong {
-        display: block;
-        margin-top: 4px;
-        color: #ffffff;
-        font-size: 17px;
-      }
-
-      .board-status {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        border: 1px solid rgba(255, 255, 255, 0.13);
-        border-radius: 999px;
-        padding: 8px 10px;
-        color: rgba(255, 255, 255, 0.72);
-        font-size: 12px;
-        font-weight: 850;
-        white-space: nowrap;
-      }
-
-      .board-status::before {
-        content: "";
-        width: 7px;
-        height: 7px;
-        border-radius: 999px;
-        background: #69d0b8;
-      }
-
-      .session-card {
-        top: 112px;
-        left: 30px;
-        width: 234px;
-        padding: 18px;
-        background:
-          linear-gradient(135deg, rgba(201, 151, 33, 0.16), rgba(255, 255, 255, 0.055)),
-          rgba(255, 255, 255, 0.05);
-      }
-
-      .session-card h3 {
-        margin: 8px 0 10px;
-        color: #ffffff;
-        font-size: 20px;
-        line-height: 1.2;
-      }
-
-      .session-card p {
-        margin: 0;
-        color: rgba(255, 255, 255, 0.58);
-        font-size: 12px;
-        line-height: 1.58;
-      }
-
-      .session-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 7px;
-        margin-top: 18px;
-      }
-
-      .session-meta span {
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: 999px;
-        padding: 6px 8px;
-        color: rgba(255, 255, 255, 0.72);
-        font-size: 11px;
-        font-weight: 800;
-      }
-
-      .workstream {
-        position: absolute;
-        top: 224px;
-        left: 310px;
-        right: 30px;
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .workstep {
-        position: relative;
-        min-height: 76px;
-        padding: 12px;
-      }
-
-      .workstep::before {
-        content: "";
-        position: absolute;
-        right: 12px;
-        bottom: 13px;
-        width: 8px;
-        height: 8px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.24);
-      }
-
-      .workstep.is-active::before {
-        background: var(--teal);
-        box-shadow: 0 0 0 7px rgba(16, 120, 102, 0.16);
-      }
-
-      .workstep strong {
-        display: block;
-        margin-top: 3px;
-        color: #ffffff;
-        font-size: 13px;
-        line-height: 1.32;
-      }
-
-      .agent-stack {
-        position: absolute;
-        top: 112px;
-        left: 310px;
-        right: 30px;
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .agent-card {
-        position: relative;
-        min-height: 78px;
-        padding: 12px;
-      }
-
-      .agent-card strong {
-        display: block;
-        color: #ffffff;
-        font-size: 13px;
-      }
-
-      .agent-card span {
-        display: block;
-        margin-top: 4px;
-        color: rgba(255, 255, 255, 0.52);
-        font-size: 11px;
-      }
-
-      .agent-card:nth-child(1) {
-        border-left: 3px solid var(--blue);
-      }
-
-      .agent-card:nth-child(2) {
-        border-left: 3px solid var(--teal);
-      }
-
-      .agent-card:nth-child(3) {
-        border-left: 3px solid var(--amber);
-      }
-
-      .artifact-dock {
-        position: absolute;
-        left: 30px;
-        right: 30px;
-        bottom: 84px;
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .artifact-card {
-        position: relative;
-        min-height: 82px;
-        padding: 13px;
-      }
-
-      .artifact-card strong {
-        display: block;
-        margin-top: 7px;
-        color: #ffffff;
-        font-size: 14px;
-      }
-
-      .artifact-card::after {
-        content: "";
-        position: absolute;
-        left: 13px;
-        right: 13px;
-        bottom: 12px;
-        height: 2px;
-        background: rgba(255, 255, 255, 0.12);
-      }
-
-      .artifact-card.is-live::after {
-        background: linear-gradient(90deg, var(--teal), var(--amber));
-        animation: verifyPulse 2.4s ease-in-out infinite;
-      }
-
-      .privacy-bar {
-        left: 30px;
-        right: 30px;
-        bottom: 28px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        padding: 12px 14px;
-        color: rgba(255, 255, 255, 0.68);
-        font-size: 12px;
-        font-weight: 800;
-      }
-
-      .privacy-bar span:last-child {
-        color: #69d0b8;
-      }
-
-      @keyframes verifyPulse {
-        0%,
-        100% {
-          opacity: 0.42;
-        }
-        50% {
-          opacity: 1;
-        }
-      }
-
-      main {
-        position: relative;
-        z-index: 2;
-      }
+      /* ============================================================ Section primitives */
+      main { position: relative; z-index: 2; }
 
       .section {
         width: min(1240px, calc(100% - 48px));
         margin: 0 auto;
-        padding: 78px 0;
+        padding: 86px 0;
       }
 
       .section-head {
@@ -768,7 +258,7 @@
         grid-template-columns: max-content minmax(0, 1fr);
         gap: clamp(36px, 5vw, 64px);
         align-items: end;
-        margin-bottom: 28px;
+        margin-bottom: 32px;
       }
 
       .section-label {
@@ -776,19 +266,22 @@
         margin-bottom: 14px;
         border: 1px solid var(--line);
         border-radius: 999px;
-        padding: 7px 10px;
+        padding: 7px 12px;
         color: var(--muted);
         background: rgba(255, 255, 255, 0.56);
         font-size: 13px;
         font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
       }
 
       h2 {
         margin: 0;
         color: var(--ink);
         font-size: 38px;
-        line-height: 1.12;
-        letter-spacing: 0;
+        font-weight: 800;
+        line-height: 1.14;
+        letter-spacing: -0.005em;
       }
 
       .lead {
@@ -799,128 +292,8 @@
       }
 
       .section-head .lead {
-        max-width: 720px;
+        max-width: 640px;
         justify-self: end;
-      }
-
-      .feature-grid,
-      .trust-grid,
-      .download-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 14px;
-      }
-
-      .feature-card,
-      .trust-card,
-      .download-card {
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        background: var(--panel);
-      }
-
-      .feature-card {
-        position: relative;
-        overflow: hidden;
-        min-height: 206px;
-        padding: 24px;
-      }
-
-      .feature-card.is-emphasis {
-        background:
-          radial-gradient(circle at 88% 12%, rgba(114, 225, 255, 0.18), transparent 32%),
-          linear-gradient(135deg, #111735, #070a18);
-        border-color: rgba(47, 72, 255, 0.34);
-      }
-
-      .feature-card.is-emphasis h3,
-      .feature-card.is-emphasis p {
-        color: #ffffff;
-      }
-
-      .feature-card.is-emphasis p {
-        color: rgba(255, 255, 255, 0.72);
-      }
-
-      .mini-flow {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 22px;
-      }
-
-      .mini-flow span {
-        border: 1px solid rgba(47, 72, 255, 0.18);
-        border-radius: 999px;
-        padding: 7px 9px;
-        color: var(--muted);
-        background: rgba(47, 72, 255, 0.06);
-        font-size: 12px;
-        font-weight: 850;
-      }
-
-      .feature-card.is-emphasis .mini-flow span {
-        border-color: rgba(255, 255, 255, 0.16);
-        color: rgba(255, 255, 255, 0.74);
-        background: rgba(255, 255, 255, 0.08);
-      }
-
-      .card-label {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        color: var(--teal);
-        font-size: 14px;
-        font-weight: 900;
-      }
-
-      .card-label::before {
-        content: "";
-        width: 8px;
-        height: 8px;
-        border-radius: 999px;
-        background: currentColor;
-      }
-
-      .card-label.amber {
-        color: var(--amber);
-      }
-
-      .card-label.blue {
-        color: var(--blue);
-      }
-
-      .card-label.rose {
-        color: var(--rose);
-      }
-
-      .feature-card h3,
-      .trust-card h3,
-      .download-card h3 {
-        margin: 16px 0 10px;
-        color: var(--ink);
-        font-size: 20px;
-        line-height: 1.24;
-        letter-spacing: 0;
-      }
-
-      .feature-card p,
-      .trust-card p,
-      .download-card p {
-        margin: 0;
-        color: var(--muted);
-        font-size: 15px;
-        line-height: 1.6;
-      }
-
-      .card-example {
-        display: none;
-        margin-top: 22px;
-        border-top: 1px solid var(--line);
-        padding-top: 14px;
-        color: var(--subtle);
-        font-size: 13px;
-        line-height: 1.58;
       }
 
       .band {
@@ -929,77 +302,230 @@
         background: var(--paper-deep);
       }
 
-      .workflow {
+      /* ============================================================ Value */
+      .value-grid {
         display: grid;
-        grid-template-columns: minmax(0, 0.72fr) minmax(420px, 1fr);
-        gap: 36px;
-        align-items: center;
-      }
-
-      .workflow-rail {
-        display: grid;
-        gap: 10px;
-      }
-
-      .rail-row {
-        display: grid;
-        grid-template-columns: 96px 1fr;
-        align-items: center;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 14px;
+      }
+
+      .value-card {
+        position: relative;
+        overflow: hidden;
+        min-height: 218px;
+        padding: 26px;
         border: 1px solid var(--line);
         border-radius: var(--radius);
-        padding: 14px;
+        background: var(--panel);
+      }
+
+      .value-card.is-emphasis {
+        border-color: rgba(26, 43, 217, 0.28);
+        color: #ffffff;
+        background:
+          radial-gradient(circle at 88% 12%, rgba(41, 214, 163, 0.16), transparent 32%),
+          linear-gradient(135deg, #111735, #070a18);
+      }
+
+      .value-card h3 {
+        margin: 14px 0 10px;
+        font-size: 21px;
+        font-weight: 800;
+        line-height: 1.26;
+        letter-spacing: -0.005em;
+      }
+
+      .value-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.66;
+      }
+
+      .value-card.is-emphasis p { color: rgba(255, 255, 255, 0.74); }
+
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 22px;
+      }
+
+      .chip-row span {
+        border: 1px solid rgba(26, 43, 217, 0.18);
+        border-radius: 999px;
+        padding: 7px 10px;
+        color: var(--muted);
+        background: rgba(26, 43, 217, 0.06);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .value-card.is-emphasis .chip-row span {
+        border-color: rgba(255, 255, 255, 0.16);
+        color: rgba(255, 255, 255, 0.78);
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .card-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--primary);
+        font-size: 13px;
+        font-weight: 900;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .card-label::before {
+        content: "";
+        width: 8px; height: 8px;
+        border-radius: 999px;
+        background: currentColor;
+      }
+
+      .card-label.blue   { color: var(--label-blue); }
+      .card-label.amber  { color: var(--label-amber); }
+      .card-label.rose   { color: var(--label-rose); }
+      .card-label.accent { color: #0e8c66; }
+
+      /* ============================================================ Flow (scenario cards) */
+      .flow-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .flow-card {
+        display: grid;
+        gap: 16px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 24px;
         background: #ffffff;
       }
 
-      .rail-row strong {
-        color: var(--ink);
-        font-size: 15px;
-      }
-
-      .rail-row span {
-        color: var(--muted);
-        font-size: 14px;
-        line-height: 1.58;
-      }
-
-      .rail-pill {
+      .flow-tag {
         display: inline-flex;
         width: fit-content;
+        align-items: center;
+        gap: 6px;
         border-radius: 999px;
-        padding: 7px 9px;
-        color: var(--teal);
-        background: var(--teal-soft);
+        padding: 5px 10px;
         font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .flow-card.t-data    .flow-tag { color: var(--primary);     background: var(--primary-soft); }
+      .flow-card.t-browse  .flow-tag { color: var(--label-blue);  background: var(--label-blue-soft); }
+      .flow-card.t-doc     .flow-tag { color: var(--label-amber); background: var(--label-amber-soft); }
+      .flow-card.t-code    .flow-tag { color: var(--label-rose);  background: var(--label-rose-soft); }
+
+      .flow-user {
+        position: relative;
+        padding: 14px 16px;
+        border-radius: var(--radius-sm);
+        background: var(--paper-deep);
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.6;
+      }
+
+      .flow-user::before {
+        content: "你说";
+        display: block;
+        margin-bottom: 4px;
+        color: var(--subtle);
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .flow-steps {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        counter-reset: step;
+      }
+
+      .flow-steps li {
+        position: relative;
+        padding: 10px 14px 10px 38px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        color: var(--ink-soft);
+        background: #fbfcfe;
+        font-size: 14px;
+        line-height: 1.5;
+        counter-increment: step;
+      }
+
+      .flow-steps li::before {
+        content: counter(step);
+        position: absolute;
+        left: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: grid;
+        place-items: center;
+        width: 20px; height: 20px;
+        border-radius: 999px;
+        background: var(--primary);
+        color: #fff;
+        font-size: 11px;
         font-weight: 900;
       }
 
-      .rail-row:nth-child(2) .rail-pill {
-        color: var(--blue);
-        background: var(--blue-soft);
+      /* ============================================================ Privacy (asymmetric list) */
+      .privacy-stack {
+        display: grid;
+        gap: 12px;
       }
 
-      .rail-row:nth-child(3) .rail-pill {
-        color: var(--amber);
-        background: var(--amber-soft);
+      .privacy-row {
+        display: grid;
+        grid-template-columns: 220px 1fr;
+        align-items: start;
+        gap: 28px;
+        padding: 24px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #ffffff;
       }
 
-      .rail-row:nth-child(4) .rail-pill {
-        color: var(--rose);
-        background: var(--rose-soft);
+      .privacy-row h3 {
+        margin: 0;
+        font-size: 22px;
+        font-weight: 800;
+        line-height: 1.26;
+        letter-spacing: -0.005em;
+        color: var(--ink);
       }
 
+      .privacy-row p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 16px;
+        line-height: 1.66;
+      }
+
+      /* ============================================================ Memory */
       .memory-panel {
         position: relative;
         display: grid;
         grid-template-columns: minmax(300px, 0.62fr) minmax(560px, 1fr);
         gap: 32px;
         overflow: hidden;
-        border: 1px solid rgba(47, 72, 255, 0.2);
+        border: 1px solid rgba(26, 43, 217, 0.2);
         border-radius: var(--radius);
-        padding: 34px;
+        padding: 36px;
         background:
-          radial-gradient(circle at 88% 12%, rgba(114, 225, 255, 0.18), transparent 28%),
+          radial-gradient(circle at 88% 12%, rgba(41, 214, 163, 0.16), transparent 28%),
           linear-gradient(135deg, #111735, #070a18);
         box-shadow: 0 30px 90px rgba(17, 20, 34, 0.14);
       }
@@ -1008,8 +534,7 @@
         content: "";
         position: absolute;
         inset: 22px 28px auto auto;
-        width: 150px;
-        height: 150px;
+        width: 150px; height: 150px;
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 50%;
       }
@@ -1022,13 +547,11 @@
 
       .memory-copy .section-label {
         border-color: rgba(255, 255, 255, 0.16);
-        color: rgba(255, 255, 255, 0.74);
+        color: rgba(255, 255, 255, 0.78);
         background: rgba(255, 255, 255, 0.08);
       }
 
-      .memory-copy h2 {
-        color: #ffffff;
-      }
+      .memory-copy h2 { color: #ffffff; }
 
       .memory-copy .lead {
         max-width: 520px;
@@ -1047,14 +570,14 @@
       .memory-item {
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: var(--radius);
-        padding: 18px;
+        padding: 20px;
         background: rgba(255, 255, 255, 0.06);
       }
 
       .memory-index {
         display: inline-flex;
         margin-bottom: 12px;
-        color: #72e1ff;
+        color: var(--accent);
         font-size: 12px;
         font-weight: 900;
       }
@@ -1063,41 +586,83 @@
         margin: 0 0 8px;
         color: #ffffff;
         font-size: 18px;
+        font-weight: 800;
         line-height: 1.28;
       }
 
       .memory-item p {
         margin: 0;
-        color: rgba(255, 255, 255, 0.68);
+        color: rgba(255, 255, 255, 0.7);
         font-size: 14px;
-        line-height: 1.58;
+        line-height: 1.62;
       }
 
-      .memory-chipset {
+      .memory-note {
+        margin-top: 22px;
+        padding: 16px 20px;
+        border: 1px solid rgba(41, 214, 163, 0.32);
+        border-radius: var(--radius-sm);
+        background: rgba(41, 214, 163, 0.08);
+        color: #d6f7e8;
+        font-size: 14px;
+        line-height: 1.62;
+        grid-column: 1 / -1;
+      }
+
+      .memory-note strong { color: var(--accent); font-weight: 900; }
+
+      /* ============================================================ Ecosystem (3 columns of pills) */
+      .eco-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .eco-col {
+        display: grid;
+        gap: 14px;
+        padding: 26px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+      }
+
+      .eco-col h3 {
+        margin: 8px 0 0;
+        font-size: 19px;
+        font-weight: 800;
+        line-height: 1.28;
+        color: var(--ink);
+      }
+
+      .eco-col p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.62;
+      }
+
+      .eco-pills {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 14px;
+        gap: 6px;
       }
 
-      .memory-chipset span {
-        border: 1px solid rgba(255, 255, 255, 0.12);
+      .eco-pills span {
+        border: 1px solid var(--line);
         border-radius: 999px;
-        padding: 6px 8px;
-        color: rgba(255, 255, 255, 0.72);
-        background: rgba(255, 255, 255, 0.07);
+        padding: 6px 10px;
+        background: var(--paper);
+        color: var(--ink-soft);
         font-size: 12px;
-        font-weight: 850;
+        font-weight: 800;
       }
 
-      .trust-card {
-        padding: 24px;
-      }
-
+      /* ============================================================ Download */
       .download-band {
         background:
-          radial-gradient(circle at 86% 18%, rgba(47, 72, 255, 0.1), transparent 34%),
-          linear-gradient(90deg, rgba(47, 72, 255, 0.08), rgba(114, 225, 255, 0.04)),
+          radial-gradient(circle at 86% 18%, rgba(26, 43, 217, 0.1), transparent 34%),
+          linear-gradient(90deg, rgba(26, 43, 217, 0.06), rgba(41, 214, 163, 0.04)),
           #f7f8fc;
         border-top: 1px solid var(--line);
       }
@@ -1114,14 +679,8 @@
         overflow: hidden;
       }
 
-      .download-copy {
-        padding: 38px;
-      }
-
-      .download-copy .lead {
-        max-width: 720px;
-        margin-top: 18px;
-      }
+      .download-copy { padding: 38px; }
+      .download-copy .lead { max-width: 720px; margin-top: 18px; }
 
       .download-card-shell {
         display: flex;
@@ -1135,32 +694,43 @@
         min-height: 248px;
         flex-direction: column;
         justify-content: space-between;
-        border-color: rgba(255, 255, 255, 0.12);
-        padding: 26px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: var(--radius);
+        padding: 28px;
         background:
-          radial-gradient(circle at 84% 16%, rgba(114, 225, 255, 0.16), transparent 30%),
+          radial-gradient(circle at 84% 16%, rgba(41, 214, 163, 0.16), transparent 30%),
           linear-gradient(135deg, #111735, #070a18);
       }
 
       .download-card .card-label,
+      .download-card h3 { color: #ffffff; }
+
       .download-card h3 {
-        color: #ffffff;
+        margin: 12px 0 8px;
+        font-size: 22px;
+        font-weight: 800;
       }
 
-      .download-card p {
-        color: rgba(255, 255, 255, 0.66);
+      .download-card .meta {
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 14px;
+        line-height: 1.7;
       }
 
       .download-card .button {
         width: fit-content;
-        border-color: #ffffff;
-        color: #ffffff;
-        background: transparent;
+        margin-top: 18px;
       }
 
       .download-card .button.primary {
         background: #ffffff;
         color: var(--ink);
+      }
+
+      .download-footnote {
+        margin-top: 14px;
+        color: var(--subtle);
+        font-size: 13px;
       }
 
       footer {
@@ -1170,125 +740,70 @@
         font-size: 14px;
       }
 
-      @media (prefers-reduced-motion: reduce) {
-        html {
-          scroll-behavior: auto;
-        }
+      /* ============================================================ Mobile back-to-top */
+      .to-top {
+        display: none;
+        position: fixed;
+        right: 18px;
+        bottom: calc(18px + env(safe-area-inset-bottom));
+        z-index: 50;
+        width: 44px; height: 44px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.92);
+        color: var(--ink);
+        font-size: 18px;
+        font-weight: 800;
+        box-shadow: 0 10px 30px rgba(6, 8, 23, 0.12);
+        backdrop-filter: blur(10px);
+      }
 
-        .artifact-card.is-live::after {
-          animation: none;
-        }
+      @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
       }
 
       @media (max-width: 1020px) {
-        .hero-inner {
-          grid-template-columns: 1fr;
-          gap: 28px;
-        }
-
-        .hero-stage {
-          min-height: 390px;
-          opacity: 0.86;
-        }
-
+        .hero-inner { grid-template-columns: 1fr; gap: 28px; }
+        .hero-stage { min-height: 360px; opacity: 0.88; }
         .section-head,
-        .workflow,
         .memory-panel,
-        .download-panel {
-          grid-template-columns: 1fr;
-        }
-
-        .section-head .lead {
-          max-width: none;
-          justify-self: start;
-        }
-
-        .feature-grid,
-        .trust-grid,
-        .download-grid {
-          grid-template-columns: 1fr;
-        }
+        .download-panel { grid-template-columns: 1fr; }
+        .section-head .lead { max-width: none; justify-self: start; }
+        .value-grid,
+        .flow-grid,
+        .eco-grid { grid-template-columns: 1fr; }
+        .privacy-row { grid-template-columns: 1fr; gap: 10px; }
       }
 
       @media (max-width: 720px) {
-        .topbar {
-          padding: 14px 20px;
-        }
-
-        .nav {
-          display: none;
-        }
-
-        .hero {
-          min-height: auto;
-        }
-
+        .topbar { padding: 14px 20px; }
+        .nav { display: none; }
+        .hero { min-height: auto; }
         .hero-inner {
           width: min(100% - 32px, 720px);
           padding: 104px 0 58px;
         }
-
-        h1 {
-          font-size: 46px;
-          line-height: 1.04;
-        }
-
-        .hero-copy {
-          font-size: 17px;
-        }
-
-        .hero-actions .button {
-          width: 100%;
-        }
-
-        .hero-stage {
-          display: none;
-        }
-
-        .section {
-          width: min(100% - 32px, 720px);
-          padding: 56px 0;
-        }
-
-        .section-head {
-          gap: 14px;
-        }
-
-        h2 {
-          font-size: 30px;
-        }
-
-        .feature-card,
-        .trust-card,
-        .download-card {
-          min-height: auto;
-          padding: 18px;
-        }
-
-        .memory-panel {
-          padding: 22px;
-        }
-
-        .memory-list {
-          grid-template-columns: 1fr;
-        }
-
-        .download-copy {
-          padding: 22px 18px 6px;
-        }
-
-        .download-card-shell {
-          padding: 12px 18px 18px;
-        }
-
-        .rail-row {
-          grid-template-columns: 1fr;
-          gap: 8px;
-        }
+        h1 { font-size: 36px; line-height: 1.12; }
+        .hero-copy { font-size: 17px; }
+        .hero-actions .button { width: 100%; }
+        .hero-stage { display: none; }
+        .section { width: min(100% - 32px, 720px); padding: 56px 0; }
+        .section-head { gap: 14px; }
+        h2 { font-size: 28px; }
+        .value-card,
+        .flow-card,
+        .privacy-row,
+        .eco-col { padding: 20px; min-height: auto; }
+        .memory-panel { padding: 22px; }
+        .memory-list { grid-template-columns: 1fr; }
+        .download-copy { padding: 22px 18px 6px; }
+        .download-card-shell { padding: 12px 18px 18px; }
+        .to-top { display: grid; }
       }
     </style>
   </head>
-  <body>
+  <body id="top">
     <header class="topbar" aria-label="Agent Neo 导航">
       <a class="brand" href="#top" aria-label="Agent Neo 首页">
         <img class="brand-mark" src="./agent-neo-mark.svg" alt="" aria-hidden="true" />
@@ -1296,30 +811,31 @@
       </a>
       <nav class="nav" aria-label="页面导航">
         <a href="#value">价值</a>
-        <a href="#flow">体验</a>
+        <a href="#flow">用法</a>
+        <a href="#privacy">隐私</a>
         <a href="#memory">记忆</a>
-        <a href="#ecosystem">生态</a>
-        <a href="#trust">信任</a>
-        <a href="#download">获取</a>
+        <a href="#ecosystem">扩展</a>
+        <a href="#download">下载</a>
       </nav>
     </header>
 
-    <section class="hero" id="top">
+    <section class="hero" aria-labelledby="hero-title">
       <div class="hero-inner">
-        <div class="hero-copy-block">
-          <div class="eyebrow"><span class="dot" aria-hidden="true"></span> 本地安装的 AI Cowork 工作台</div>
-          <h1>Agent Neo</h1>
+        <div>
+          <div class="eyebrow"><span class="dot" aria-hidden="true"></span> 本地安装的 AI 工作助手</div>
+          <h1 id="hero-title">装在你电脑上的 AI 同事</h1>
           <p class="hero-copy">
-            一个能和你一起推进工作的本地 AI coworker。把资料、网页和任务交给 Neo，
-            它会编排 Agent 执行、验证并整理交付。
+            帮你写代码、整 Excel、做 PPT、读网页、操作浏览器和桌面——
+            文件不上云，断网也能跑。
           </p>
           <div class="hero-actions" aria-label="主要操作">
-            <a class="button primary" href="https://github.com/baochipham942-eng/code-agent/releases/latest">下载 Agent Neo</a>
+            <a class="button primary" href="#download">⬇ 下载 macOS 版</a>
+            <a class="button ghost" href="#flow">看它能干什么 →</a>
           </div>
         </div>
 
         <div class="hero-stage" aria-hidden="true">
-          <div class="cowork-board">
+          <div class="hero-stage-frame">
             <img class="hero-art" src="./agent-neo-hero.png" alt="" />
           </div>
         </div>
@@ -1327,230 +843,276 @@
     </section>
 
     <main>
+      <!-- ====================================================== Value -->
       <section class="section" id="value" aria-labelledby="value-title">
         <div class="section-head">
           <div>
-            <span class="section-label">Value</span>
-            <h2 id="value-title">把资料和任务推进到结果</h2>
+            <span class="section-label">价值</span>
+            <h2 id="value-title">它不是聊天框，是能替你做完事的同事</h2>
           </div>
           <p class="lead">
-            理解输入、编排 Agent harness、验证结果，构成 Neo 推进复杂任务的主链路。
+            装上之后，可以把活直接甩给它——文件、网页、想法都行。
           </p>
         </div>
 
-        <div class="feature-grid">
-          <article class="feature-card is-emphasis">
-            <div class="card-label">工作理解</div>
-            <h3>把上下文整理成行动</h3>
-            <p>网页、文档、表格和项目目录进入同一工作上下文，Neo 给出结论、选项和待办。</p>
-            <div class="mini-flow" aria-hidden="true">
-              <span>Context</span>
-              <span>Files</span>
-              <span>Web</span>
-              <span>Next steps</span>
+        <div class="value-grid">
+          <article class="value-card is-emphasis">
+            <div class="card-label accent">做事</div>
+            <h3>把活甩给它，它做完给你看</h3>
+            <p>文件、网页、想法一起拖进来，它整理、写、做、改，做完贴回给你。</p>
+            <div class="chip-row" aria-hidden="true">
+              <span>Excel</span>
+              <span>PPT</span>
+              <span>Markdown</span>
+              <span>网页</span>
             </div>
           </article>
 
-          <article class="feature-card">
-            <div class="card-label blue">多模型编排</div>
-            <h3>把工作交给合适角色</h3>
-            <p>研究、执行、验证由不同 Agent 和模型承担，结果仍沉淀在同一条任务上下文。</p>
-            <div class="mini-flow" aria-hidden="true">
-              <span>Planner</span>
-              <span>Worker</span>
-              <span>Reviewer</span>
-              <span>Multi-model</span>
+          <article class="value-card">
+            <div class="card-label blue">动手</div>
+            <h3>自己开浏览器、操作桌面</h3>
+            <p>比价、查资料、截图、点按钮、填表单——一步步做完，全过程能回放。</p>
+            <div class="chip-row" aria-hidden="true">
+              <span>浏览器</span>
+              <span>桌面</span>
+              <span>截图</span>
+              <span>回放</span>
             </div>
           </article>
 
-          <article class="feature-card">
-            <div class="card-label amber">自动化验证</div>
-            <h3>Browser & Computer Use 验证闭环</h3>
-            <p>让 Agent 打开页面、操作桌面、预览结果并回收日志，把反复检查变成可追踪证据。</p>
-            <div class="mini-flow" aria-hidden="true">
-              <span>Browser use</span>
-              <span>Computer use</span>
-              <span>Trace</span>
-              <span>Evidence</span>
+          <article class="value-card">
+            <div class="card-label amber">记得</div>
+            <h3>记得你怎么干活</h3>
+            <p>偏好、项目结构、上周说过的话，下一次不用重新交代。</p>
+            <div class="chip-row" aria-hidden="true">
+              <span>偏好</span>
+              <span>项目</span>
+              <span>时间线</span>
             </div>
           </article>
         </div>
       </section>
 
+      <!-- ====================================================== Flow -->
       <section class="band" id="flow" aria-labelledby="flow-title">
         <div class="section">
-          <div class="workflow">
+          <div class="section-head">
             <div>
-              <span class="section-label">Experience</span>
-              <h2 id="flow-title">上下文、行动和交付保持在同一处</h2>
-              <p class="lead">
-                从交代目标到交付产物，不再拆成多段手工拼接。
-              </p>
+              <span class="section-label">用法</span>
+              <h2 id="flow-title">它真能做完这些事</h2>
             </div>
+            <p class="lead">
+              不是给你提示词，是真的把活做完——下面四个是装上当天就能跑的常见场景。
+            </p>
+          </div>
 
-            <div class="workflow-rail" aria-label="Agent Neo 工作流">
-              <div class="rail-row">
-                <strong><span class="rail-pill">1. 交代</span></strong>
-                <span>目标、资料、网页、项目，放进同一条会话。</span>
-              </div>
-              <div class="rail-row">
-                <strong><span class="rail-pill">2. 共创</span></strong>
-                <span>Neo 选择模型和工具，把任务跑下去。</span>
-              </div>
-              <div class="rail-row">
-                <strong><span class="rail-pill">3. 验证</span></strong>
-                <span>Browser use、Computer use、预览、日志和失败原因一起带回。</span>
-              </div>
-              <div class="rail-row">
-                <strong><span class="rail-pill">4. 交付</span></strong>
-                <span>文档、页面、表格和交付记录统一归档。</span>
-              </div>
-            </div>
+          <div class="flow-grid">
+            <article class="flow-card t-data">
+              <span class="flow-tag">数据</span>
+              <div class="flow-user">把这 5 个 Excel 合并，按月汇总，挑出异常值。</div>
+              <ol class="flow-steps">
+                <li>读 5 个 .xlsx 文件，对齐列结构</li>
+                <li>清洗去重、补缺、统一单位</li>
+                <li>按月聚合 + 异常值标红</li>
+                <li>输出新的 .xlsx 和一张趋势图</li>
+              </ol>
+            </article>
+
+            <article class="flow-card t-browse">
+              <span class="flow-tag">浏览</span>
+              <div class="flow-user">去淘宝把这 3 款耳机的价格和评分抓回来。</div>
+              <ol class="flow-steps">
+                <li>打开淘宝，依次搜 3 款型号</li>
+                <li>翻页采集价格、评分、销量</li>
+                <li>截图保留每一步</li>
+                <li>回写一张对比表给你</li>
+              </ol>
+            </article>
+
+            <article class="flow-card t-doc">
+              <span class="flow-tag">文档</span>
+              <div class="flow-user">用这份会议纪要做个 12 页 PPT。</div>
+              <ol class="flow-steps">
+                <li>读会议纪要，拆主题</li>
+                <li>排 12 页大纲，写每页要点</li>
+                <li>生成 .pptx，配版式和配色</li>
+                <li>预览给你看，按反馈再改</li>
+              </ol>
+            </article>
+
+            <article class="flow-card t-code">
+              <span class="flow-tag">代码</span>
+              <div class="flow-user">review 一下我刚改的这个分支。</div>
+              <ol class="flow-steps">
+                <li>跑 git diff 拉变更</li>
+                <li>逐文件读上下文</li>
+                <li>挑出潜在 bug 和风格问题</li>
+                <li>给修复建议或直接出补丁</li>
+              </ol>
+            </article>
           </div>
         </div>
       </section>
 
+      <!-- ====================================================== Privacy -->
+      <section class="section" id="privacy" aria-labelledby="privacy-title">
+        <div class="section-head">
+          <div>
+            <span class="section-label">隐私</span>
+            <h2 id="privacy-title">你的电脑、你的文件、你说了算</h2>
+          </div>
+          <p class="lead">
+            它能动你东西，但每一步你都能看见、能拦下、能回看。
+          </p>
+        </div>
+
+        <div class="privacy-stack">
+          <div class="privacy-row">
+            <h3>你的文件不离开这台电脑</h3>
+            <p>没有云端镜像，没有"训练你的数据"，断网也能用本地模型。</p>
+          </div>
+          <div class="privacy-row">
+            <h3>密码、token 自动打码</h3>
+            <p>真的需要发给大模型之前，敏感片段先在本地擦掉。</p>
+          </div>
+          <div class="privacy-row">
+            <h3>会动你东西之前会问你</h3>
+            <p>写文件、跑命令、控桌面前弹确认，全程留记录可回看。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================== Memory -->
       <section class="section" id="memory" aria-labelledby="memory-title">
         <div class="memory-panel">
           <div class="memory-copy">
-            <span class="section-label">Memory</span>
-            <h2 id="memory-title">让工作带着背景继续</h2>
+            <span class="section-label">记忆</span>
+            <h2 id="memory-title">让它一次比一次更懂你</h2>
             <p class="lead">
-              个人偏好、项目知识、Chronicle 时间线和任务证据沉淀为可查看、可修正的工作记忆。
+              用得越久越顺手——它把和你的工作方式沉淀成可看可改的本地档案。
             </p>
           </div>
 
           <div class="memory-list" aria-label="Agent Neo 记忆能力">
             <article class="memory-item">
               <span class="memory-index">01</span>
-              <h3>个人协作记忆</h3>
-              <p>记住表达偏好、工作习惯和反复纠正过的边界，减少重复交代。</p>
-              <div class="memory-chipset" aria-hidden="true">
-                <span>Preference</span>
-                <span>Feedback</span>
-                <span>Style</span>
-              </div>
+              <h3>它记得你的口味</h3>
+              <p>你纠正过的、偏好的、习惯的，下次自动套上。</p>
             </article>
 
             <article class="memory-item">
               <span class="memory-index">02</span>
-              <h3>项目知识记忆</h3>
-              <p>把项目结构、常用文件、业务背景和已有结论留在当前工作域。</p>
-              <div class="memory-chipset" aria-hidden="true">
-                <span>Project</span>
-                <span>Docs</span>
-                <span>Decisions</span>
-              </div>
+              <h3>它认得你的项目</h3>
+              <p>文件结构、之前的决定，不用每次重新讲。</p>
             </article>
 
             <article class="memory-item">
               <span class="memory-index">03</span>
-              <h3>Chronicle 工作时间线</h3>
-              <p>在本地记录屏幕、浏览器和桌面线索，形成可检索的工作轨迹。</p>
-              <div class="memory-chipset" aria-hidden="true">
-                <span>OpenChronicle</span>
-                <span>Screen memory</span>
-                <span>Timeline</span>
-              </div>
+              <h3>它记得你做过什么</h3>
+              <p>屏幕上的活动归档在本地，可以问"我昨天那个文档放哪了"。</p>
             </article>
 
             <article class="memory-item">
               <span class="memory-index">04</span>
-              <h3>任务过程记忆</h3>
-              <p>重要步骤、失败原因、验证证据和交付记录可以回看和复用。</p>
-              <div class="memory-chipset" aria-hidden="true">
-                <span>Trace</span>
-                <span>Evidence</span>
-                <span>Handoff</span>
-              </div>
+              <h3>它记得每件事怎么做完的</h3>
+              <p>中间步骤、失败原因、产物，能回看也能复用。</p>
             </article>
+
+            <p class="memory-note">
+              <strong>所有记忆都是你电脑里的 Markdown 文件</strong>——能打开、能改、能删，不是黑盒。
+            </p>
           </div>
         </div>
       </section>
 
-      <section class="section" id="ecosystem" aria-labelledby="ecosystem-title">
+      <!-- ====================================================== Ecosystem -->
+      <section class="section" id="ecosystem" aria-labelledby="eco-title">
         <div class="section-head">
           <div>
-            <span class="section-label">Ecosystem</span>
-            <h2 id="ecosystem-title">能力随工作场景自然扩展</h2>
+            <span class="section-label">扩展</span>
+            <h2 id="eco-title">工具会越用越多</h2>
           </div>
           <p class="lead">
-            Skills、MCP、Channel 和自定义工具按需接入，保持可见、可控、可关闭。
+            它自带一套常用工具，也能装上社区扩展接你自己的服务。
           </p>
         </div>
 
-        <div class="feature-grid">
-          <article class="feature-card">
-            <div class="card-label">Skills</div>
-            <h3>把经验变成可调用能力</h3>
-            <p>文档、表格、网页和会议等场景可以沉淀为可复用 Skill。</p>
+        <div class="eco-grid">
+          <article class="eco-col">
+            <div class="card-label">它会用的工具</div>
+            <h3>开箱即用的能力</h3>
+            <p>需要哪个自己挑哪个，过程你都看得见。</p>
+            <div class="eco-pills">
+              <span>浏览器</span>
+              <span>桌面</span>
+              <span>终端</span>
+              <span>Git</span>
+              <span>文件读写</span>
+              <span>网页搜索</span>
+              <span>Excel 公式</span>
+              <span>PPT</span>
+              <span>截图</span>
+              <span>Mermaid</span>
+            </div>
           </article>
 
-          <article class="feature-card">
-            <div class="card-label blue">MCP</div>
-            <h3>接入外部工具和数据源</h3>
-            <p>MCP server 和本地工具按需启用，来源、用途和权限保持可见。</p>
+          <article class="eco-col">
+            <div class="card-label blue">它自带的本事</div>
+            <h3>常用任务一句话调起</h3>
+            <p>不用每次写长 prompt——把常用工作流封成命令。</p>
+            <div class="eco-pills">
+              <span>写 commit</span>
+              <span>代码 review</span>
+              <span>跑测试</span>
+              <span>解释代码</span>
+              <span>重构</span>
+              <span>Docker</span>
+              <span>数据清洗</span>
+              <span>Excel 建模</span>
+            </div>
           </article>
 
-          <article class="feature-card">
-            <div class="card-label amber">Channels</div>
-            <h3>把结果送回工作流</h3>
-            <p>消息、文档、表格、下载和通知从同一处管理，交付不散落。</p>
-          </article>
-        </div>
-      </section>
-
-      <section class="section" id="trust" aria-labelledby="trust-title">
-        <div class="section-head">
-          <div>
-            <span class="section-label">Trust</span>
-            <h2 id="trust-title">本地安装带来的确定边界</h2>
-          </div>
-          <p class="lead">
-            私有数据、敏感信息和高风险动作都有明确处理边界。
-          </p>
-        </div>
-
-        <div class="trust-grid">
-          <article class="trust-card">
-            <div class="card-label">本地边界</div>
-            <h3>私有资料优先留在本机</h3>
-            <p>文件、日志和产物优先落在你的工作环境里。</p>
-          </article>
-
-          <article class="trust-card">
-            <div class="card-label rose">数据脱敏</div>
-            <h3>敏感内容先过滤</h3>
-            <p>账号、token、联系人和原始 payload 先在本地处理。</p>
-          </article>
-
-          <article class="trust-card">
-            <div class="card-label amber">审批与审计</div>
-            <h3>高风险动作需要确认</h3>
-            <p>写文件、跑命令、控制桌面，都留下可追溯记录。</p>
+          <article class="eco-col">
+            <div class="card-label amber">你还能装更多</div>
+            <h3>接你自己的工具</h3>
+            <p>装上社区扩展，让它接邮件、日历、Notion、飞书——你常用什么它就能用什么。</p>
+            <div class="eco-pills">
+              <span>邮件</span>
+              <span>日历</span>
+              <span>Notion</span>
+              <span>飞书</span>
+              <span>……</span>
+            </div>
           </article>
         </div>
       </section>
 
+      <!-- ====================================================== Download -->
       <section class="download-band" id="download" aria-labelledby="download-title">
         <div class="section">
           <div class="download-panel">
             <div class="download-copy">
-              <span class="section-label">Access</span>
-              <h2 id="download-title">进入 Agent Neo 工作台</h2>
+              <span class="section-label">下载</span>
+              <h2 id="download-title">进入 Agent Neo</h2>
               <p class="lead">
-                安装到本机，把浏览器、桌面、本地文件和长任务放进同一个协作环境。
+                装到本机，把浏览器、桌面、本地文件和长任务放进同一个工作环境。
+              </p>
+              <p class="download-footnote">
+                Windows / Linux / Intel Mac 版本计划中。
               </p>
             </div>
 
             <div class="download-card-shell">
               <article class="download-card">
                 <div>
-                  <div class="card-label">Desktop</div>
+                  <div class="card-label">macOS</div>
                   <h3>Agent Neo for macOS</h3>
-                  <p>让长程任务更稳定，工作上下文可延续，结果可追踪。</p>
+                  <p class="meta">
+                    v0.16.65 · 约 141 MB<br />
+                    仅 Apple Silicon（M 系列）· macOS 12+
+                  </p>
                 </div>
-                <a class="button primary" href="https://github.com/baochipham942-eng/code-agent/releases/latest">下载最新版本</a>
+                <a class="button primary" href="https://github.com/baochipham942-eng/code-agent/releases/latest">⬇ 下载 .dmg</a>
               </article>
             </div>
           </div>
@@ -1558,6 +1120,8 @@
       </section>
     </main>
 
-    <footer>Agent Neo · 本地 AI Cowork 工作台</footer>
+    <a href="#top" class="to-top" aria-label="回到顶部">↑</a>
+
+    <footer>Agent Neo · 装在你电脑上的 AI 同事</footer>
   </body>
 </html>

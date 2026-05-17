@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 
 const mocks = vi.hoisted(() => ({
@@ -45,9 +45,14 @@ function makeFakeIpc(): { handle: Mock; getHandler: () => DomainHandler } {
 describe('admin.ipc access control', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
     mocks.currentUser = null;
     mocks.sessionVerified = false;
     mocks.adminService.listUsers.mockResolvedValue({ users: [] });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('rejects unauthenticated users before calling admin services', async () => {
@@ -96,6 +101,24 @@ describe('admin.ipc access control', () => {
   it('allows admin users to call the admin service', async () => {
     mocks.currentUser = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
     mocks.sessionVerified = true;
+    mocks.adminService.listUsers.mockResolvedValue({
+      users: [{ id: 'user-1', email: 'user@example.com', isAdmin: false }],
+    });
+    const ipc = makeFakeIpc();
+    registerAdminHandlers(ipc as never);
+
+    const response = await ipc.getHandler()({}, { action: 'listUsers' });
+
+    expect(response).toMatchObject({
+      success: true,
+      data: { users: [{ id: 'user-1', email: 'user@example.com', isAdmin: false }] },
+    });
+    expect(mocks.adminService.listUsers).toHaveBeenCalledOnce();
+  });
+
+  it('treats explicit local web test mode as an admin environment', async () => {
+    vi.stubEnv('CODE_AGENT_WEB_MODE', 'true');
+    vi.stubEnv('CODE_AGENT_E2E', '1');
     mocks.adminService.listUsers.mockResolvedValue({
       users: [{ id: 'user-1', email: 'user@example.com', isAdmin: false }],
     });

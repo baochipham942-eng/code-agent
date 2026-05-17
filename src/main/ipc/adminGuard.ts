@@ -14,7 +14,14 @@ export class AdminAccessError extends Error {
   }
 }
 
+function isLocalWebAdminTestMode(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.CODE_AGENT_WEB_MODE === 'true'
+    && (env.CODE_AGENT_E2E === '1' || env.CODE_AGENT_ENABLE_DEV_API === 'true');
+}
+
 export function isCurrentUserAdmin(): boolean {
+  if (isLocalWebAdminTestMode()) return true;
+
   const authService = getAuthService();
   return authService.getCurrentUser()?.isAdmin === true
     && authService.hasVerifiedSession?.() === true;

@@ -3,6 +3,7 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/sha
 
 const mocks = vi.hoisted(() => ({
   currentUser: null as null | { id: string; email: string; isAdmin?: boolean },
+  sessionVerified: false,
   db: {
     getSnapshotStats: vi.fn(),
     getCompactionStats: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../src/main/services/auth', () => ({
   getAuthService: () => ({
     getCurrentUser: () => mocks.currentUser,
+    hasVerifiedSession: () => mocks.sessionVerified,
   }),
 }));
 
@@ -59,6 +61,7 @@ describe('data.ipc admin-only debug snapshots', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.currentUser = null;
+    mocks.sessionVerified = false;
     mocks.getDatabase.mockReturnValue(mocks.db);
     mocks.db.getSnapshotStats.mockReturnValue({
       snapshotCount: 2,
@@ -101,6 +104,7 @@ describe('data.ipc admin-only debug snapshots', () => {
 
   it('allows admins to read snapshot stats', async () => {
     mocks.currentUser = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
+    mocks.sessionVerified = true;
     const ipc = makeFakeIpc();
     registerDataHandlers(ipc as never);
 

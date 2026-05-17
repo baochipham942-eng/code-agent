@@ -15,7 +15,9 @@ export class AdminAccessError extends Error {
 }
 
 export function isCurrentUserAdmin(): boolean {
-  return getAuthService().getCurrentUser()?.isAdmin === true;
+  const authService = getAuthService();
+  return authService.getCurrentUser()?.isAdmin === true
+    && authService.hasVerifiedSession?.() === true;
 }
 
 export function assertAdminAccess(surface?: string): void {

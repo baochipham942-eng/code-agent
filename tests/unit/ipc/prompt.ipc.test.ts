@@ -3,6 +3,7 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/sha
 
 const mocks = vi.hoisted(() => ({
   currentUser: null as null | { id: string; email: string; isAdmin?: boolean },
+  sessionVerified: false,
   registry: {
     listPrompts: vi.fn(),
     getPromptDetail: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../src/main/services/auth', () => ({
   getAuthService: () => ({
     getCurrentUser: () => mocks.currentUser,
+    hasVerifiedSession: () => mocks.sessionVerified,
   }),
 }));
 
@@ -53,6 +55,7 @@ describe('prompt.ipc access control', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.currentUser = null;
+    mocks.sessionVerified = false;
     delete process.env.CODE_AGENT_ALLOW_SYSTEM_PROMPT_DEBUG;
     mocks.registry.listPrompts.mockReturnValue([
       { id: 'core.identity', category: 'core', name: 'Identity', overridden: false },
@@ -82,6 +85,7 @@ describe('prompt.ipc access control', () => {
 
   it('rejects non-admin prompt overrides before mutating local prompt state', async () => {
     mocks.currentUser = { id: 'user-1', email: 'user@example.com', isAdmin: false };
+    mocks.sessionVerified = true;
     const ipc = makeFakeIpc();
     registerPromptHandlers(ipc as never);
 
@@ -99,6 +103,7 @@ describe('prompt.ipc access control', () => {
 
   it('allows admin prompt overrides', async () => {
     mocks.currentUser = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
+    mocks.sessionVerified = true;
     const ipc = makeFakeIpc();
     registerPromptHandlers(ipc as never);
 
@@ -119,6 +124,7 @@ describe('prompt.ipc access control', () => {
 
   it('requires an explicit debug env before returning full system prompt text', async () => {
     mocks.currentUser = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
+    mocks.sessionVerified = true;
     const ipc = makeFakeIpc();
     registerPromptHandlers(ipc as never);
 
@@ -133,6 +139,7 @@ describe('prompt.ipc access control', () => {
   it('allows admin system prompt debug when the local debug env is enabled', async () => {
     process.env.CODE_AGENT_ALLOW_SYSTEM_PROMPT_DEBUG = '1';
     mocks.currentUser = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
+    mocks.sessionVerified = true;
     const ipc = makeFakeIpc();
     registerPromptHandlers(ipc as never);
 

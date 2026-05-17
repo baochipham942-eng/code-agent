@@ -26,9 +26,11 @@ export interface AuthResult {
 }
 
 type AuthChangeCallback = (user: AuthUser | null) => void;
+type SessionTrustState = 'none' | 'cached' | 'verified';
 
 class AuthService {
   private currentUser: AuthUser | null = null;
+  private sessionTrustState: SessionTrustState = 'none';
   private onAuthChangeCallbacks: AuthChangeCallback[] = [];
   private initialized: boolean = false;
 
@@ -66,6 +68,7 @@ class AuthService {
     if (cachedUser) {
       logger.info(' Loaded cached user:', cachedUser.email);
       this.currentUser = cachedUser;
+      this.sessionTrustState = 'cached';
       this.notifyAuthChange(cachedUser);
     }
 
@@ -85,11 +88,13 @@ class AuthService {
       if (session?.user) {
         logger.info(' Fetching user profile in callback...');
         this.currentUser = await this.fetchUserProfile(session.user);
+        this.sessionTrustState = 'verified';
         this.cacheUser(this.currentUser); // 缓存用户信息
         logger.info(' Profile fetched in callback');
         this.notifyAuthChange(this.currentUser);
       } else {
         this.currentUser = null;
+        this.sessionTrustState = 'none';
         this.clearCachedUser();
         this.notifyAuthChange(null);
       }
@@ -123,12 +128,14 @@ class AuthService {
         // Session 有效，更新用户信息
         const freshUser = await this.fetchUserProfile(session.user);
         this.currentUser = freshUser;
+        this.sessionTrustState = 'verified';
         this.cacheUser(freshUser);
         this.notifyAuthChange(freshUser);
       } else if (this.currentUser) {
         // Session 无效但有缓存用户，清除
         logger.info(' Session invalid, clearing cached user');
         this.currentUser = null;
+        this.sessionTrustState = 'none';
         this.clearCachedUser();
         this.notifyAuthChange(null);
       }
@@ -222,6 +229,7 @@ class AuthService {
     if (data.user) {
       await this.touchUserLastActive(data.user.id);
       this.currentUser = await this.fetchUserProfile(data.user);
+      this.sessionTrustState = 'verified';
       this.cacheUser(this.currentUser); // 缓存用户信息
       return { success: true, user: this.currentUser };
     }
@@ -297,6 +305,7 @@ class AuthService {
       }, { onConflict: 'id' });
 
       this.currentUser = await this.fetchUserProfile(data.user);
+      this.sessionTrustState = 'verified';
       this.cacheUser(this.currentUser); // 缓存用户信息
       return { success: true, user: this.currentUser };
     }
@@ -365,6 +374,7 @@ class AuthService {
       }
 
       this.currentUser = await this.fetchUserProfile(data.user);
+      this.sessionTrustState = 'verified';
       this.cacheUser(this.currentUser); // 缓存用户信息
       return { success: true, user: this.currentUser };
     }
@@ -400,21 +410,30 @@ class AuthService {
   }
 
   async signOut(): Promise<void> {
-    if (!isSupabaseInitialized()) {
-      return;
+    try {
+      if (isSupabaseInitialized()) {
+        await getSupabase().auth.signOut();
+      }
+    } finally {
+      const storage = getSecureStorage();
+      await storage.clearSessionFromKeychain(); // Also clear from Keychain
+      storage.clearAuthData();
+      this.currentUser = null;
+      this.sessionTrustState = 'none';
+      this.notifyAuthChange(null);
     }
-
-    const supabase = getSupabase();
-    await supabase.auth.signOut();
-    const storage = getSecureStorage();
-    await storage.clearSessionFromKeychain(); // Also clear from Keychain
-    storage.clearAuthData();
-    this.currentUser = null;
-    this.notifyAuthChange(null);
   }
 
   getCurrentUser(): AuthUser | null {
     return this.currentUser;
+  }
+
+  hasVerifiedSession(): boolean {
+    return this.currentUser !== null && this.sessionTrustState === 'verified';
+  }
+
+  getSessionTrustState(): SessionTrustState {
+    return this.sessionTrustState;
   }
 
   private async touchUserLastActive(userId: string): Promise<void> {
@@ -432,6 +451,7 @@ class AuthService {
   // Clear current user without calling Supabase signOut (used when clearing cache)
   clearCurrentUser(): void {
     this.currentUser = null;
+    this.sessionTrustState = 'none';
     this.notifyAuthChange(null);
   }
 
@@ -555,6 +575,7 @@ class AuthService {
 
     if (data.user) {
       this.currentUser = await this.fetchUserProfile(data.user);
+      this.sessionTrustState = 'verified';
       this.cacheUser(this.currentUser);
       logger.info('Session set from password reset callback');
       return { success: true, user: this.currentUser };

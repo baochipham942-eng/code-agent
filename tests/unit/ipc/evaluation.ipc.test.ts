@@ -18,6 +18,7 @@ vi.mock('../../../src/main/platform/windowBridge', () => ({
 vi.mock('../../../src/main/services/auth', () => ({
   getAuthService: () => ({
     getCurrentUser: () => ({ id: 'admin-1', email: 'admin@example.com', isAdmin: true }),
+    hasVerifiedSession: () => true,
   }),
 }));
 

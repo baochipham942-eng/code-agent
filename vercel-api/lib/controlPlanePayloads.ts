@@ -1,7 +1,7 @@
-import type { ControlPlaneArtifactKind } from './controlPlaneEnvelope';
-import type { ControlPlaneRequestLike } from './controlPlaneEnvelope';
-import { applyServerEntitlementGate, applyServerEntitlementGateAsync } from './controlPlaneEntitlements';
-import { readJsonPayloadFromEnv } from './controlPlaneEnvelope';
+import type { ControlPlaneArtifactKind } from './controlPlaneEnvelope.js';
+import type { ControlPlaneRequestLike } from './controlPlaneEnvelope.js';
+import { applyServerEntitlementGate, applyServerEntitlementGateAsync } from './controlPlaneEntitlements.js';
+import { readJsonPayloadFromEnv } from './controlPlaneEnvelope.js';
 
 export interface CloudConfigPayload {
   version: string;

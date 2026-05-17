@@ -4,8 +4,8 @@ import {
   type ControlPlaneArtifactKind,
   type ControlPlaneRequestLike,
   type ControlPlaneResponseLike,
-} from '../../lib/controlPlaneEnvelope';
-import { readCloudConfigPayloadForRequestAsync, readPayloadForKind } from '../../lib/controlPlanePayloads';
+} from '../../lib/controlPlaneEnvelope.js';
+import { readCloudConfigPayloadForRequestAsync, readPayloadForKind } from '../../lib/controlPlanePayloads.js';
 
 function firstQueryValue(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) {

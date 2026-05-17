@@ -1,5 +1,5 @@
-import type { CloudConfigPayload } from './controlPlanePayloads';
-import type { ControlPlaneRequestLike } from './controlPlaneEnvelope';
+import type { CloudConfigPayload } from './controlPlanePayloads.js';
+import type { ControlPlaneRequestLike } from './controlPlaneEnvelope.js';
 
 type EntitlementPolicy = NonNullable<CloudConfigPayload['entitlement']>;
 type EntitlementStatus = EntitlementPolicy['status'];

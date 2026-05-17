@@ -1,7 +1,7 @@
 import type {
   ControlPlaneRequestLike,
   ControlPlaneResponseLike,
-} from './controlPlaneEnvelope';
+} from './controlPlaneEnvelope.js';
 
 export interface UpdateCheckResponse {
   success: boolean;

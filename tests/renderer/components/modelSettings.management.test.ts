@@ -6,6 +6,7 @@ import {
   buildProviderManagementRows,
   createCustomProviderId,
   getModelLabel,
+  hasCustomEndpointOverride,
   orderProviderManagementRows,
   resolveModelForProvider,
 } from '../../../src/renderer/components/features/settings/tabs/ModelSettings';
@@ -152,5 +153,12 @@ describe('ModelSettings management helpers', () => {
   it('creates stable unique ids for custom providers', () => {
     expect(createCustomProviderId('LongCat API', [])).toBe('custom-longcat-api');
     expect(createCustomProviderId('LongCat API', ['custom-longcat-api'])).toBe('custom-longcat-api-2');
+  });
+
+  it('detects when a built-in provider endpoint was changed to a relay', () => {
+    expect(hasCustomEndpointOverride('openai', 'https://relay.example.com/v1')).toBe(true);
+    expect(hasCustomEndpointOverride('openai', 'https://api.openai.com/v1/')).toBe(false);
+    expect(hasCustomEndpointOverride('custom', 'https://relay.example.com/v1')).toBe(false);
+    expect(hasCustomEndpointOverride('custom-relay', 'https://relay.example.com/v1')).toBe(false);
   });
 });

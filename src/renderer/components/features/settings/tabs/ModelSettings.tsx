@@ -40,13 +40,13 @@ import {
   createCustomProviderId,
   getModelLabel,
   getProtocolLabel,
+  hasCustomEndpointOverride,
   orderProviderManagementRows,
   renderModelOptions,
   resolveModelForProvider,
   type DiscoverModelsResult,
   type ProviderConfigMap,
   type ProviderDisplayInfo,
-  type ProviderManagementRow,
 } from './ModelSettings.helpers';
 export type { ModelConfig };
 export {
@@ -55,6 +55,7 @@ export {
   createCustomProviderId,
   getModelLabel,
   getProtocolLabel,
+  hasCustomEndpointOverride,
   orderProviderManagementRows,
   resolveModelForProvider,
 } from './ModelSettings.helpers';
@@ -134,7 +135,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const registryEndpoint = getProviderInfo(config.provider)?.endpoint || '';
   const configuredBaseUrl = config.baseUrl ?? currentProviderConfig?.baseUrl ?? registryEndpoint;
   const effectiveBaseUrl = configuredBaseUrl || registryEndpoint;
-  const effectiveDisplayName = currentProviderConfig?.displayName || currentProviderInfo?.name || config.provider;
+  const showOfficialEndpointReset = hasCustomEndpointOverride(config.provider, configuredBaseUrl);
   const effectiveProtocol = resolveProviderProtocol(config.provider, currentProviderConfig);
   const isCustomProviderProtocolEditable = isDynamicCustomProviderId(config.provider);
 
@@ -237,6 +238,15 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     patchCurrentProviderConfig({ baseUrl: value });
     onChange({ ...config, baseUrl: value });
   }, [config, onChange, patchCurrentProviderConfig]);
+
+  const handleResetOfficialEndpoint = useCallback(() => {
+    if (!registryEndpoint) {
+      return;
+    }
+    patchCurrentProviderConfig({ baseUrl: registryEndpoint });
+    onChange({ ...config, baseUrl: registryEndpoint });
+    toast.success('已恢复官方地址');
+  }, [config, onChange, patchCurrentProviderConfig, registryEndpoint]);
 
   const handleDisplayNameChange = useCallback((value: string) => {
     patchCurrentProviderConfig({ displayName: value });
@@ -759,9 +769,22 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-zinc-200">
-                Provider 地址
-              </label>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <label className="block text-sm font-medium text-zinc-200">
+                  Provider 地址
+                </label>
+                {showOfficialEndpointReset && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleResetOfficialEndpoint}
+                    disabled={isWebMode()}
+                  >
+                    恢复官方
+                  </Button>
+                )}
+              </div>
               <Input
                 value={configuredBaseUrl}
                 onChange={(e) => handleBaseUrlChange(e.target.value)}

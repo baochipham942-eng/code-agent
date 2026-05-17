@@ -14,6 +14,7 @@ import {
   getProviderRuntimeModels,
   inferModelCapabilities,
   inferSupportsTool,
+  isDynamicCustomProviderId,
 } from '@shared/modelRuntime';
 
 export interface ProviderDisplayInfo {
@@ -137,6 +138,18 @@ export function buildProviderManagementRows({
 
 export function getProtocolLabel(protocol: ModelProviderProtocol | undefined): string {
   return protocol === 'claude' ? 'Claude 协议' : 'OpenAI 兼容';
+}
+
+export function hasCustomEndpointOverride(providerId: ModelProvider, configuredBaseUrl?: string): boolean {
+  if (providerId === 'custom' || isDynamicCustomProviderId(providerId)) {
+    return false;
+  }
+  const officialEndpoint = getProviderInfo(providerId)?.endpoint;
+  if (!officialEndpoint) {
+    return false;
+  }
+  const normalizeEndpoint = (value: string) => value.trim().replace(/\/+$/, '');
+  return normalizeEndpoint(configuredBaseUrl ?? '') !== normalizeEndpoint(officialEndpoint);
 }
 
 export function orderProviderManagementRows(rows: ProviderManagementRow[]): ProviderManagementRow[] {

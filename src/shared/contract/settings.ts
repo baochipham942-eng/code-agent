@@ -33,7 +33,7 @@ export interface AppSettings {
   models: {
     default: string;
     defaultProvider?: ModelProvider;
-    providers: Record<ModelProvider, ModelProviderSettings>;
+    providers: Record<string, ModelProviderSettings>;
     // 按用途选择模型
     routing: {
       code: { provider: ModelProvider; model: string };

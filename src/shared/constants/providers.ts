@@ -1,4 +1,4 @@
-import type { ModelProvider, ModelProviderAlias } from '../contract';
+import type { BuiltInModelProvider, ModelProviderAlias } from '../contract';
 import { DEFAULT_MODEL } from './defaults';
 import { DEFAULT_MODELS } from './models';
 
@@ -58,7 +58,7 @@ export interface CanonicalProviderInfo {
  * Canonical provider registry.
  * 所有 provider 级别元数据统一从这里读取，避免 renderer / main / cloud 漂移。
  */
-export const PROVIDER_REGISTRY: Record<ModelProvider, CanonicalProviderInfo> = {
+export const PROVIDER_REGISTRY: Record<BuiltInModelProvider, CanonicalProviderInfo> = {
   deepseek: {
     aliases: ['deepseek'],
     defaultModel: 'deepseek-v4-flash',
@@ -157,16 +157,16 @@ export const PROVIDER_REGISTRY: Record<ModelProvider, CanonicalProviderInfo> = {
   },
 };
 
-export const PROVIDER_ALIAS_MAP: Record<ModelProviderAlias, ModelProvider> = Object.freeze(
+export const PROVIDER_ALIAS_MAP: Record<ModelProviderAlias, BuiltInModelProvider> = Object.freeze(
   Object.entries(PROVIDER_REGISTRY).reduce((acc, [provider, config]) => {
     for (const alias of config.aliases) {
-      acc[alias] = provider as ModelProvider;
+      acc[alias] = provider as BuiltInModelProvider;
     }
     return acc;
-  }, {} as Record<ModelProviderAlias, ModelProvider>)
+  }, {} as Record<ModelProviderAlias, BuiltInModelProvider>)
 );
 
-export function normalizeProviderId(provider: string | null | undefined): ModelProvider | undefined {
+export function normalizeProviderId(provider: string | null | undefined): BuiltInModelProvider | undefined {
   if (!provider) {
     return undefined;
   }

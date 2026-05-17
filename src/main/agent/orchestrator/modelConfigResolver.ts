@@ -25,10 +25,10 @@ export function resolveModelConfig(
 ): ModelConfig {
   // 从用户配置获取选择的 provider 和 model
   const userProviderStr = settings.models?.defaultProvider || settings.models?.default || DEFAULT_PROVIDER;
-  const normalizedProvider = normalizeProviderId(userProviderStr) ?? DEFAULT_PROVIDER;
+  const normalizedProvider = (normalizeProviderId(userProviderStr) ?? userProviderStr ?? DEFAULT_PROVIDER) as ModelProvider;
   const providerConfig =
-    settings.models?.providers?.[normalizedProvider as keyof typeof settings.models.providers]
-    ?? settings.models?.providers?.[userProviderStr as keyof typeof settings.models.providers];
+    settings.models?.providers?.[normalizedProvider]
+    ?? settings.models?.providers?.[userProviderStr];
   const userModel = providerConfig?.model || getDefaultModelByProvider(normalizedProvider);
   const maxTokens = providerConfig?.maxTokens ?? getModelMaxOutputTokens(userModel);
 

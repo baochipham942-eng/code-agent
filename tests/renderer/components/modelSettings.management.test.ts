@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { ModelConfig, ModelProviderSettings } from '../../../src/shared/contract';
 import type { ProviderInfo } from '../../../src/shared/constants';
 import {
+  buildManualModelSettings,
   buildProviderManagementRows,
+  createCustomProviderId,
   getModelLabel,
+  orderProviderManagementRows,
   resolveModelForProvider,
 } from '../../../src/renderer/components/features/settings/tabs/ModelSettings';
 
@@ -74,6 +77,16 @@ describe('ModelSettings management helpers', () => {
     });
   });
 
+  it('keeps the selected provider at the top of the management list', () => {
+    const rows = buildProviderManagementRows({
+      providers: [moonshotProvider, openaiProvider],
+      config,
+      providerConfigs: {},
+    });
+
+    expect(orderProviderManagementRows(rows).map((row) => row.id)).toEqual(['openai', 'moonshot']);
+  });
+
   it('falls back to raw model id when a label is unavailable', () => {
     expect(getModelLabel(openaiProvider.models, 'gpt-5.5')).toBe('GPT-5.5');
     expect(getModelLabel(openaiProvider.models, 'unknown-model')).toBe('unknown-model');
@@ -122,5 +135,22 @@ describe('ModelSettings management helpers', () => {
       endpoint: 'https://token-plan-sgp.xiaomimimo.com/v1',
       selectedModelLabel: 'mimo-v2.5-pro',
     });
+  });
+
+  it('builds enabled manual model settings from a raw model id', () => {
+    expect(buildManualModelSettings(' glm-5-thinking-vision ', '', 12345)).toMatchObject({
+      label: 'glm-5-thinking-vision',
+      enabled: true,
+      capabilities: expect.arrayContaining(['general', 'reasoning', 'vision']),
+      supportsTool: true,
+      supportsVision: true,
+      supportsStreaming: true,
+      discoveredAt: 12345,
+    });
+  });
+
+  it('creates stable unique ids for custom providers', () => {
+    expect(createCustomProviderId('LongCat API', [])).toBe('custom-longcat-api');
+    expect(createCustomProviderId('LongCat API', ['custom-longcat-api'])).toBe('custom-longcat-api-2');
   });
 });

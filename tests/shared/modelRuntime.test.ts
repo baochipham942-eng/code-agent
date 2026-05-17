@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AppSettings } from '../../src/shared/contract';
 import {
+  buildProviderInfoFromSettings,
   buildRuntimeModelOptions,
   getProviderRuntimeModels,
   inferModelCapabilities,
@@ -52,6 +53,46 @@ describe('modelRuntime', () => {
         label: 'mimo-v2.5-pro',
         providerLabel: 'mimo',
         features: expect.arrayContaining(['tool', 'reasoning']),
+      }),
+    ]);
+  });
+
+  it('builds switcher options for dynamic custom provider ids', () => {
+    const settings = {
+      models: {
+        default: 'custom-longcat',
+        defaultProvider: 'custom-longcat',
+        providers: {
+          'custom-longcat': {
+            enabled: true,
+            displayName: 'LongCat',
+            baseUrl: 'https://api.longcat.example/v1',
+            model: 'longcat-2.0-preview',
+            models: {
+              'longcat-2.0-preview': {
+                enabled: true,
+                label: 'LongCat 2.0 Preview',
+                capabilities: ['general', 'code', 'longContext'],
+                supportsTool: true,
+              },
+            },
+          },
+        },
+      },
+    } as AppSettings;
+
+    const provider = buildProviderInfoFromSettings('custom-longcat', settings.models.providers['custom-longcat']);
+    expect(provider).toMatchObject({
+      id: 'custom-longcat',
+      name: 'LongCat',
+      models: [{ id: 'longcat-2.0-preview', label: 'LongCat 2.0 Preview' }],
+    });
+
+    expect(buildRuntimeModelOptions(settings, [])).toEqual([
+      expect.objectContaining({
+        provider: 'custom-longcat',
+        model: 'longcat-2.0-preview',
+        providerLabel: 'LongCat',
       }),
     ]);
   });

@@ -6,11 +6,12 @@ import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import {
   API_VERSIONS,
-  PROVIDER_REGISTRY,
+  getProviderInfo,
+  normalizeProviderId,
   MCP,
   getModelMaxOutputTokens,
 } from '../../shared/constants';
-import type { ModelCapability, ModelProvider } from '../../shared/contract';
+import type { ModelCapability } from '../../shared/contract';
 import { inferModelCapabilities, inferSupportsTool } from '../../shared/modelRuntime';
 import { runDiagnostics } from './doctor.ipc';
 import { runDoctor } from '../diagnostics/doctorRunner';
@@ -74,12 +75,13 @@ function buildTestConfig(
   apiKey: string,
   baseUrl?: string,
 ): { url: string; method: string; headers: Record<string, string>; body?: string } | null {
-  const registry = PROVIDER_REGISTRY[provider as ModelProvider];
+  const normalizedProvider = normalizeProviderId(provider) ?? provider;
+  const registry = getProviderInfo(provider);
   const endpoint = baseUrl || registry?.endpoint;
   if (!endpoint) return null;
 
   // Anthropic Claude — 不兼容 OpenAI，用 /messages 最小请求
-  if (provider === 'claude') {
+  if (normalizedProvider === 'claude') {
     return {
       url: `${endpoint}/messages`,
       method: 'POST',
@@ -97,7 +99,7 @@ function buildTestConfig(
   }
 
   // Google Gemini — REST API 格式不同
-  if (provider === 'gemini') {
+  if (normalizedProvider === 'gemini') {
     return {
       url: `${endpoint}/models?key=${apiKey}`,
       method: 'GET',
@@ -120,11 +122,12 @@ function trimTrailingSlash(value: string): string {
 }
 
 function getDiscoveryUrl(provider: string, baseUrl?: string, apiKey?: string): { url: string; headers: Record<string, string> } | null {
-  const registry = PROVIDER_REGISTRY[provider as ModelProvider];
+  const normalizedProvider = normalizeProviderId(provider) ?? provider;
+  const registry = getProviderInfo(provider);
   const endpoint = baseUrl || registry?.endpoint;
   if (!endpoint) return null;
 
-  if (provider === 'gemini') {
+  if (normalizedProvider === 'gemini') {
     return {
       url: `${trimTrailingSlash(endpoint)}/models${apiKey ? `?key=${encodeURIComponent(apiKey)}` : ''}`,
       headers: {},

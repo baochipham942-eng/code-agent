@@ -3,18 +3,18 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { Brain, CheckCircle, Code2, Eye, Gauge, Key, RefreshCw, Search, Stethoscope, Wrench, Zap } from 'lucide-react';
+import { Brain, CheckCircle, Code2, Eye, Gauge, Key, Plus, RefreshCw, Search, Stethoscope, Wrench, Zap } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelCapability, ModelEntrySettings, ModelProvider, ModelProviderSettings } from '@shared/contract';
-import { UI, MODEL, PROVIDER_MODELS, PROVIDER_MODELS_MAP, getProviderInfo } from '@shared/constants';
-import type { ProviderInfo, ProviderModelEntry } from '@shared/constants';
+import { UI, MODEL, PROVIDER_MODELS, getProviderInfo } from '@shared/constants';
 import {
   MODEL_CAPABILITY_OPTIONS,
+  buildProviderInfoFromSettings,
   featuresFromModelMetadata,
-  getEnabledProviderModels,
   getProviderRuntimeModels,
+  isDynamicCustomProviderId,
   type RuntimeProviderModel,
 } from '@shared/modelRuntime';
 import { createLogger } from '../../../../utils/logger';
@@ -33,48 +33,32 @@ import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { ProviderDoctorDialog } from '../ProviderDoctorDialog';
+import {
+  buildManualModelSettings,
+  buildProviderManagementRows,
+  createCustomProviderId,
+  getModelLabel,
+  orderProviderManagementRows,
+  renderModelOptions,
+  resolveModelForProvider,
+  type DiscoverModelsResult,
+  type ProviderConfigMap,
+  type ProviderDisplayInfo,
+  type ProviderManagementRow,
+} from './ModelSettings.helpers';
 export type { ModelConfig };
+export {
+  buildManualModelSettings,
+  buildProviderManagementRows,
+  createCustomProviderId,
+  getModelLabel,
+  orderProviderManagementRows,
+  resolveModelForProvider,
+} from './ModelSettings.helpers';
 
 export interface ModelSettingsProps {
   config: ModelConfig;
   onChange: (config: ModelConfig) => void;
-}
-
-interface ProviderDisplayInfo {
-  id: ModelProvider;
-  name: string;
-  description: string;
-  models: ProviderModelEntry[];
-}
-
-export interface ProviderManagementRow {
-  id: ModelProvider;
-  name: string;
-  description: string;
-  modelCount: number;
-  evalEligibleCount: number;
-  defaultModel: string;
-  endpoint: string;
-  selected: boolean;
-  selectedModelLabel: string;
-  enabledModelCount: number;
-}
-
-type ProviderConfigMap = Partial<Record<ModelProvider, ModelProviderSettings>>;
-
-interface DiscoverModelsResult {
-  success: boolean;
-  models: Array<{
-    id: string;
-    label: string;
-    capabilities: ModelCapability[];
-    maxTokens?: number;
-    supportsTool: boolean;
-    supportsVision: boolean;
-    supportsStreaming: boolean;
-  }>;
-  latencyMs: number;
-  error?: { code: string; message: string; suggestion?: string };
 }
 
 const CAPABILITY_ICONS: Record<string, React.ReactNode> = {
@@ -90,93 +74,6 @@ const MODEL_CAPABILITY_PICKER = MODEL_CAPABILITY_OPTIONS.filter((capability) =>
 );
 
 // ============================================================================
-// Helper: render model options with optional optgroup
-// ============================================================================
-
-function renderModelOptions(models: Array<Pick<ProviderModelEntry, 'id' | 'label' | 'group'>>): React.ReactNode {
-  // Check if any models have groups
-  const hasGroups = models.some((m) => m.group);
-  if (!hasGroups) {
-    return models.map((m) => (
-      <option key={m.id} value={m.id}>{m.label}</option>
-    ));
-  }
-  // Group by group label, preserving order
-  const groups: { label: string; items: ProviderModelEntry[] }[] = [];
-  const seen = new Set<string>();
-  for (const m of models) {
-    const g = m.group || '';
-    if (!seen.has(g)) {
-      seen.add(g);
-      groups.push({ label: g, items: [] });
-    }
-    const group = groups.find((x) => x.label === g);
-    group?.items.push(m);
-  }
-  return groups.map((g) => (
-    <optgroup key={g.label} label={g.label}>
-      {g.items.map((m) => (
-        <option key={m.id} value={m.id}>{m.label}</option>
-      ))}
-    </optgroup>
-  ));
-}
-
-export function getModelLabel(models: ProviderModelEntry[], modelId: string): string {
-  return models.find((model) => model.id === modelId)?.label || modelId;
-}
-
-export function resolveModelForProvider(
-  provider: ProviderInfo | undefined,
-  currentModel: string,
-  providerConfig?: Partial<ModelProviderSettings>,
-): string {
-  if (!provider) {
-    return currentModel;
-  }
-  const models = getEnabledProviderModels(provider, providerConfig);
-  const selectableModels = models.length > 0 ? models : getProviderRuntimeModels(provider, providerConfig);
-  if (selectableModels.some((model) => model.id === currentModel)) {
-    return currentModel;
-  }
-  const registryDefault = getProviderInfo(provider.id)?.defaultModel;
-  if (registryDefault && selectableModels.some((model) => model.id === registryDefault)) {
-    return registryDefault;
-  }
-  return selectableModels[0]?.id || currentModel;
-}
-
-export function buildProviderManagementRows({
-  providers,
-  config,
-  providerConfigs,
-}: {
-  providers: ProviderDisplayInfo[];
-  config: ModelConfig;
-  providerConfigs?: ProviderConfigMap;
-}): ProviderManagementRow[] {
-  return providers.map((provider) => {
-    const registryInfo = getProviderInfo(provider.id);
-    const runtimeModels = getProviderRuntimeModels(provider, providerConfigs?.[provider.id]);
-    const enabledModels = runtimeModels.filter((model) => model.enabled);
-    return {
-      id: provider.id,
-      name: providerConfigs?.[provider.id]?.displayName || provider.name,
-      description: provider.description,
-      modelCount: runtimeModels.length,
-      evalEligibleCount: provider.models.filter((model) => model.evalEligible !== false).length,
-      enabledModelCount: enabledModels.length,
-      defaultModel: registryInfo?.defaultModel || runtimeModels[0]?.id || '-',
-      endpoint: providerConfigs?.[provider.id]?.baseUrl || registryInfo?.endpoint || '-',
-      selected: config.provider === provider.id,
-      selectedModelLabel: config.provider === provider.id
-        ? getModelLabel(runtimeModels, config.model)
-        : getModelLabel(runtimeModels, registryInfo?.defaultModel || runtimeModels[0]?.id || '-'),
-    };
-  });
-}
-
-// ============================================================================
 // Component
 // ============================================================================
 
@@ -189,16 +86,27 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [providerConfigs, setProviderConfigs] = useState<ProviderConfigMap>({});
   const [modelSearch, setModelSearch] = useState('');
+  const [manualModelId, setManualModelId] = useState('');
+  const [manualModelLabel, setManualModelLabel] = useState('');
+  const [newProviderName, setNewProviderName] = useState('');
+  const [newProviderBaseUrl, setNewProviderBaseUrl] = useState('');
+  const [newProviderApiKey, setNewProviderApiKey] = useState('');
 
   // Build provider display list with i18n names where available
-  const providers = useMemo(() =>
-    PROVIDER_MODELS.map((p) => ({
+  const providers = useMemo(() => {
+    const builtInProviders = PROVIDER_MODELS.map((p) => ({
       id: p.id,
       name: (t.model.providers as Record<string, { name?: string }>)?.[p.id === 'claude' ? 'anthropic' : p.id]?.name || p.name,
       description: (t.model.providers as Record<string, { description?: string }>)?.[p.id === 'claude' ? 'anthropic' : p.id]?.description || p.description,
       models: p.models,
-    })),
-  [t]);
+    }));
+    const seen = new Set(builtInProviders.map((provider) => provider.id));
+    const customProviders = Object.entries(providerConfigs)
+      .filter(([providerId]) => !seen.has(providerId as ModelProvider) && isDynamicCustomProviderId(providerId))
+      .map(([providerId, providerConfig]) => buildProviderInfoFromSettings(providerId as ModelProvider, providerConfig))
+      .filter((provider): provider is ProviderDisplayInfo => Boolean(provider));
+    return [...builtInProviders, ...customProviders];
+  }, [providerConfigs, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -217,16 +125,16 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   }, []);
 
   // Get models for current provider
-  const currentProviderInfo = PROVIDER_MODELS_MAP[config.provider];
   const currentProviderConfig = providerConfigs[config.provider];
+  const currentProviderInfo = buildProviderInfoFromSettings(config.provider, currentProviderConfig);
   const registryEndpoint = getProviderInfo(config.provider)?.endpoint || '';
   const configuredBaseUrl = config.baseUrl ?? currentProviderConfig?.baseUrl ?? registryEndpoint;
   const effectiveBaseUrl = configuredBaseUrl || registryEndpoint;
   const effectiveDisplayName = currentProviderConfig?.displayName || currentProviderInfo?.name || config.provider;
 
   const currentModels = useMemo(
-    () => getProviderRuntimeModels(PROVIDER_MODELS_MAP[config.provider], currentProviderConfig),
-    [config.provider, currentProviderConfig],
+    () => getProviderRuntimeModels(currentProviderInfo, currentProviderConfig),
+    [currentProviderInfo, currentProviderConfig],
   );
   const currentEnabledModels = useMemo(
     () => currentModels.filter((model) => model.enabled),
@@ -246,6 +154,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     () => buildProviderManagementRows({ providers, config, providerConfigs }),
     [providers, config, providerConfigs],
   );
+  const orderedProviderRows = useMemo(() => orderProviderManagementRows(providerRows), [providerRows]);
   const selectedProviderRow = providerRows.find((provider) => provider.selected);
   const selectedModelLabel = getModelLabel(currentModels, config.model);
   const hasApiKey = Boolean(config.apiKey?.trim());
@@ -296,8 +205,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   }, [config.provider]);
 
   const handleSelectProvider = useCallback((providerId: ModelProvider) => {
-    const provider = PROVIDER_MODELS_MAP[providerId];
     const providerConfig = providerConfigs[providerId];
+    const provider = buildProviderInfoFromSettings(providerId, providerConfig);
     const nextModel = resolveModelForProvider(provider, config.model, providerConfig);
     const nextRuntimeModel = getProviderRuntimeModels(provider, providerConfig).find((model) => model.id === nextModel);
     onChange({
@@ -526,6 +435,99 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     }
   };
 
+  const handleAddProvider = useCallback(() => {
+    const displayName = newProviderName.trim();
+    const baseUrl = newProviderBaseUrl.trim().replace(/\/+$/, '');
+    const apiKey = newProviderApiKey.trim();
+    if (!displayName) {
+      toast.warning('请先填写 Provider 名称');
+      return;
+    }
+    if (!baseUrl) {
+      toast.warning('请先填写 Provider 地址');
+      return;
+    }
+
+    const providerId = createCustomProviderId(displayName, [
+      ...PROVIDER_MODELS.map((provider) => provider.id),
+      ...Object.keys(providerConfigs),
+    ]);
+    const modelId = 'custom-model';
+    const modelSettings = buildManualModelSettings(modelId, 'Custom Model');
+    const nextProviderConfig: ModelProviderSettings = {
+      enabled: true,
+      displayName,
+      baseUrl,
+      apiKey,
+      model: modelId,
+      models: {
+        [modelId]: modelSettings,
+      },
+    };
+
+    setProviderConfigs((prev) => ({
+      ...prev,
+      [providerId]: nextProviderConfig,
+    }));
+    onChange({
+      ...config,
+      provider: providerId,
+      model: modelId,
+      apiKey,
+      baseUrl,
+      capabilities: modelSettings.capabilities,
+      maxTokens: modelSettings.maxTokens ?? config.maxTokens,
+    });
+    setNewProviderName('');
+    setNewProviderBaseUrl('');
+    setNewProviderApiKey('');
+    setModelSearch('');
+    toast.success('Provider 已添加，补充模型后保存即可使用');
+  }, [config, newProviderApiKey, newProviderBaseUrl, newProviderName, onChange, providerConfigs]);
+
+  const handleAddManualModel = useCallback(() => {
+    const modelId = manualModelId.trim();
+    if (!modelId) {
+      toast.warning('请先填写模型 ID');
+      return;
+    }
+
+    const manualModel = buildManualModelSettings(modelId, manualModelLabel);
+    setProviderConfigs((prev) => {
+      const providerConfig = prev[config.provider] ?? { enabled: true };
+      const existing = providerConfig.models?.[modelId];
+      return {
+        ...prev,
+        [config.provider]: {
+          ...providerConfig,
+          enabled: true,
+          apiKey: config.apiKey,
+          baseUrl: effectiveBaseUrl,
+          model: modelId,
+          models: {
+            ...providerConfig.models,
+            [modelId]: {
+              ...manualModel,
+              ...existing,
+              enabled: true,
+              label: manualModel.label,
+            },
+          },
+        },
+      };
+    });
+    onChange({
+      ...config,
+      model: modelId,
+      capabilities: manualModel.capabilities,
+      maxTokens: manualModel.maxTokens ?? config.maxTokens,
+    });
+    setManualModelId('');
+    setManualModelLabel('');
+    setModelSearch('');
+    toast.success('模型已加入当前 Provider');
+  }, [config, effectiveBaseUrl, manualModelId, manualModelLabel, onChange]);
+
   return (
     <SettingsPage
       title={t.model.title}
@@ -564,87 +566,125 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
             ))}
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[940px] text-left text-xs">
-              <thead className="border-b border-zinc-700/60 bg-zinc-900/80 text-[11px] uppercase tracking-[0.08em] text-zinc-500">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Provider</th>
-                  <th className="px-3 py-2 font-medium">状态</th>
-                  <th className="px-3 py-2 font-medium">默认模型</th>
-                  <th className="px-3 py-2 font-medium">模型</th>
-                  <th className="px-3 py-2 font-medium">Endpoint</th>
-                  <th className="px-3 py-2 text-right font-medium">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/80">
-                {providerRows.map((provider) => (
-                  <tr
-                    key={provider.id}
-                    className={provider.selected ? 'bg-blue-500/10' : 'bg-zinc-900/40 hover:bg-zinc-800/60'}
-                  >
-                    <td className="px-3 py-3 align-middle">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate text-sm font-medium text-zinc-200">{provider.name}</span>
-                          <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">
-                            {provider.id}
-                          </span>
-                        </div>
-                        <div className="mt-1 max-w-[260px] truncate text-xs text-zinc-500">
-                          {provider.description}
-                        </div>
+          <div className="grid gap-3 border-b border-zinc-800 p-3 lg:grid-cols-[minmax(140px,0.8fr)_minmax(220px,1.2fr)_minmax(180px,1fr)_auto] lg:items-end">
+            <div>
+              <label className="mb-2 block text-xs font-medium text-zinc-400">
+                新 Provider
+              </label>
+              <Input
+                value={newProviderName}
+                onChange={(event) => setNewProviderName(event.target.value)}
+                placeholder="LongCat"
+                inputSize="sm"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-xs font-medium text-zinc-400">
+                Provider 地址
+              </label>
+              <Input
+                value={newProviderBaseUrl}
+                onChange={(event) => setNewProviderBaseUrl(event.target.value)}
+                placeholder="https://api.example.com/v1"
+                inputSize="sm"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-xs font-medium text-zinc-400">
+                API Key
+              </label>
+              <Input
+                type="password"
+                value={newProviderApiKey}
+                onChange={(event) => setNewProviderApiKey(event.target.value)}
+                placeholder="sk-..."
+                inputSize="sm"
+                leftIcon={<Key className="h-3.5 w-3.5" />}
+              />
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleAddProvider}
+              disabled={isWebMode() || !newProviderName.trim() || !newProviderBaseUrl.trim()}
+              leftIcon={<Plus className="h-3 w-3" />}
+              className="lg:mb-px"
+            >
+              添加 Provider
+            </Button>
+          </div>
+
+          <div className="divide-y divide-zinc-800/80">
+            {orderedProviderRows.map((provider) => (
+              <div
+                key={provider.id}
+                className={`grid gap-3 px-3 py-3 transition-colors lg:grid-cols-[minmax(180px,1.15fr)_minmax(120px,0.65fr)_minmax(150px,0.75fr)_minmax(180px,1fr)_auto] lg:items-center ${
+                  provider.selected ? 'bg-blue-500/10' : 'bg-zinc-900/40 hover:bg-zinc-800/60'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleSelectProvider(provider.id)}
+                  disabled={provider.selected}
+                  className="min-w-0 text-left disabled:cursor-default"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium text-zinc-200">{provider.name}</span>
+                    <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">
+                      {provider.id}
+                    </span>
+                  </div>
+                  <div className="mt-1 max-w-[280px] truncate text-xs text-zinc-500">
+                    {provider.description}
+                  </div>
+                </button>
+
+                <div>
+                  {provider.selected ? (
+                    <div className="space-y-1">
+                      <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-300">
+                        <CheckCircle className="h-3 w-3" />
+                        当前
+                      </span>
+                      <div className={hasApiKey ? 'text-[11px] text-zinc-400' : 'text-[11px] text-amber-300'}>
+                        {hasApiKey ? 'API Key 已填' : '等待 API Key'}
                       </div>
-                    </td>
-                    <td className="px-3 py-3 align-middle">
-                      {provider.selected ? (
-                        <div className="space-y-1">
-                          <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-emerald-300">
-                            <CheckCircle className="h-3 w-3" />
-                            当前
-                          </span>
-                          <div className={hasApiKey ? 'text-[11px] text-zinc-400' : 'text-[11px] text-amber-300'}>
-                            {hasApiKey ? 'API Key 已填' : '等待 API Key'}
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="inline-flex rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-zinc-400">
-                          可选择
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 align-middle text-zinc-300">
-                      <div className="max-w-[170px] truncate" title={provider.defaultModel}>
-                        {provider.defaultModel}
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 align-middle text-zinc-300">
-                      <div>{provider.modelCount} 个模型</div>
-                      <div className="mt-0.5 text-[11px] text-zinc-500">
-                        {provider.enabledModelCount} 个已启用
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 align-middle">
-                      <div className="max-w-[240px] truncate font-mono text-[11px] text-zinc-500" title={provider.endpoint}>
-                        {provider.endpoint}
-                      </div>
-                      <div className="mt-0.5 text-[11px] text-zinc-600">本地直连</div>
-                    </td>
-                    <td className="px-3 py-3 align-middle">
-                      <div className="flex justify-end">
-                        <Button
-                          size="sm"
-                          variant={provider.selected ? 'ghost' : 'secondary'}
-                          onClick={() => handleSelectProvider(provider.id)}
-                          disabled={provider.selected}
-                        >
-                          {provider.selected ? '已选择' : '使用'}
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  ) : (
+                    <span className="inline-flex rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-400">
+                      可选择
+                    </span>
+                  )}
+                </div>
+
+                <div className="min-w-0 text-xs text-zinc-300">
+                  <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">默认模型</div>
+                  <div className="mt-1 truncate" title={provider.defaultModel}>
+                    {provider.defaultModel}
+                  </div>
+                </div>
+
+                <div className="min-w-0 text-xs text-zinc-300">
+                  <div>{provider.modelCount} 个模型</div>
+                  <div className="mt-0.5 text-[11px] text-zinc-500">
+                    {provider.enabledModelCount} 个已启用
+                  </div>
+                  <div className="mt-1 truncate font-mono text-[11px] text-zinc-500" title={provider.endpoint}>
+                    {provider.endpoint}
+                  </div>
+                </div>
+
+                <Button
+                  size="sm"
+                  variant={provider.selected ? 'ghost' : 'secondary'}
+                  onClick={() => handleSelectProvider(provider.id)}
+                  disabled={provider.selected}
+                  className="justify-self-start lg:justify-self-end"
+                >
+                  {provider.selected ? '已选择' : '使用'}
+                </Button>
+              </div>
+            ))}
           </div>
         </div>
       </SettingsSection>
@@ -800,6 +840,41 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                 className="pl-8"
               />
             </div>
+          </div>
+
+          <div className="grid gap-3 border-b border-zinc-800 p-3 lg:grid-cols-[minmax(180px,1fr)_minmax(160px,0.75fr)_auto] lg:items-end">
+            <div>
+              <label className="mb-2 block text-xs font-medium text-zinc-400">
+                模型 ID
+              </label>
+              <Input
+                value={manualModelId}
+                onChange={(event) => setManualModelId(event.target.value)}
+                placeholder="longcat-2.0-preview"
+                inputSize="sm"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-xs font-medium text-zinc-400">
+                显示名称
+              </label>
+              <Input
+                value={manualModelLabel}
+                onChange={(event) => setManualModelLabel(event.target.value)}
+                placeholder={manualModelId || 'LongCat 2.0 Preview'}
+                inputSize="sm"
+              />
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleAddManualModel}
+              disabled={isWebMode() || !manualModelId.trim()}
+              leftIcon={<Plus className="h-3 w-3" />}
+              className="lg:mb-px"
+            >
+              添加模型
+            </Button>
           </div>
 
           <div className="max-h-[420px] overflow-y-auto">

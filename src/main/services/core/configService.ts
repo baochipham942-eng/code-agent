@@ -516,7 +516,7 @@ export class ConfigService implements IReadConfigService {
     }
 
     // Fallback to environment variable
-    const envKeyMap: Record<ModelProvider, string> = {
+    const envKeyMap: Record<string, string> = {
       deepseek: 'DEEPSEEK_API_KEY',
       claude: 'ANTHROPIC_API_KEY',
       openai: 'OPENAI_API_KEY',

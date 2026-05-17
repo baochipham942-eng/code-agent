@@ -13,7 +13,13 @@ import { version } from '../../../package.json';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { DEFAULT_PROVIDER, DEFAULT_MODELS, PROVIDER_REGISTRY } from '../../shared/constants';
+import {
+  DEFAULT_PROVIDER,
+  DEFAULT_MODELS,
+  PROVIDER_REGISTRY,
+  getProviderInfo,
+  normalizeProviderId,
+} from '../../shared/constants';
 import type { ModelProvider } from '../../shared/contract';
 import { getPRLinkService } from '../../main/services/github/prLinkService';
 import { initializeCommands, getCommandRegistry } from '../../shared/commands';
@@ -455,12 +461,13 @@ async function handleCommand(
       } else {
         // Configure specific provider
         const providerId = args[0].toLowerCase();
-        const info = PROVIDER_REGISTRY[providerId as ModelProvider];
-        if (!info) {
+        const canonicalProvider = normalizeProviderId(providerId);
+        const info = getProviderInfo(providerId);
+        if (!canonicalProvider || !info) {
           terminalOutput.error(`Unknown provider: ${providerId}`);
           return false;
         }
-        const envKey = PROVIDER_ENV_KEYS[providerId];
+        const envKey = PROVIDER_ENV_KEYS[providerId] ?? PROVIDER_ENV_KEYS[canonicalProvider];
         if (!envKey) {
           terminalOutput.error(`No API key mapping for: ${providerId}`);
           return false;
@@ -499,12 +506,13 @@ async function handleCommand(
           terminalOutput.info('Usage: /model key <provider>');
           return false;
         }
-        const info = PROVIDER_REGISTRY[providerId as ModelProvider];
-        if (!info) {
+        const canonicalProvider = normalizeProviderId(providerId);
+        const info = getProviderInfo(providerId);
+        if (!canonicalProvider || !info) {
           terminalOutput.error(`Unknown provider: ${providerId}`);
           return false;
         }
-        const envKey = PROVIDER_ENV_KEYS[providerId];
+        const envKey = PROVIDER_ENV_KEYS[providerId] ?? PROVIDER_ENV_KEYS[canonicalProvider];
         if (!envKey) {
           terminalOutput.error(`No API key mapping for: ${providerId}`);
           return false;
@@ -549,16 +557,18 @@ async function handleCommand(
         let model: string;
         if (modelInput.includes('/')) {
           [provider, model] = modelInput.split('/', 2);
+          provider = provider.toLowerCase();
         } else {
-          provider = modelInput;
-          const provInfo = PROVIDER_REGISTRY[provider as ModelProvider];
+          provider = modelInput.toLowerCase();
+          const provInfo = getProviderInfo(provider);
           model = provInfo?.defaultModel || modelInput;
         }
-        const provInfo = PROVIDER_REGISTRY[provider as ModelProvider];
-        if (!provInfo) {
+        const canonicalProvider = normalizeProviderId(provider);
+        const provInfo = getProviderInfo(provider);
+        if (!canonicalProvider || !provInfo) {
           terminalOutput.error(`Unknown provider: ${provider}`);
         } else {
-          agent.setModel(provider, model);
+          agent.setModel(canonicalProvider, model);
           terminalOutput.success(`Model switched to ${provInfo.displayName}/${model}`);
         }
       }

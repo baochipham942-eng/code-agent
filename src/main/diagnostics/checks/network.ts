@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { PROVIDER_REGISTRY } from '../../../shared/constants';
-import type { ModelProvider } from '../../../shared/contract';
+import type { BuiltInModelProvider } from '../../../shared/contract';
 import { handleTestConnection } from '../../ipc/provider.ipc';
 import { getConfigService } from '../../services/core/configService';
 import type { DoctorItem } from '../types';
@@ -22,7 +22,7 @@ import type { DoctorItem } from '../types';
 export async function checkProviderConnectivity(): Promise<DoctorItem[]> {
   const config = getConfigService();
   const providerEntries = Object.entries(PROVIDER_REGISTRY) as Array<
-    [ModelProvider, (typeof PROVIDER_REGISTRY)[ModelProvider]]
+    [BuiltInModelProvider, (typeof PROVIDER_REGISTRY)[BuiltInModelProvider]]
   >;
 
   const results = await Promise.allSettled(

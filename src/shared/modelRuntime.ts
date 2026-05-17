@@ -52,6 +52,10 @@ const DEFAULT_SWITCHER_PROVIDERS: ModelProvider[] = [
   'custom',
 ];
 
+export function isDynamicCustomProviderId(providerId: string): boolean {
+  return /^custom-[a-z0-9][a-z0-9-]*$/i.test(providerId);
+}
+
 function uniqueCapabilities(values: Array<ModelCapability | undefined>): ModelCapability[] {
   return Array.from(new Set(values.filter(Boolean) as ModelCapability[]));
 }
@@ -95,6 +99,42 @@ export function featuresFromModelMetadata(args: {
   if (staticFeatures.includes('reasoning') || capabilities.includes('reasoning')) features.push('reasoning');
 
   return Array.from(new Set(features));
+}
+
+export function buildProviderInfoFromSettings(
+  providerId: ModelProvider,
+  providerConfig?: Partial<ModelProviderSettings>,
+  catalogProvider: ProviderInfo | undefined = PROVIDER_MODELS_MAP[providerId],
+): ProviderInfo | undefined {
+  if (catalogProvider) {
+    return {
+      ...catalogProvider,
+      name: providerConfig?.displayName || catalogProvider.name,
+    };
+  }
+
+  if (!providerConfig) return undefined;
+
+  const models: ProviderModelEntry[] = Object.entries(providerConfig.models ?? {}).map(([modelId, settings]) => ({
+    id: modelId,
+    label: settings.label || modelId,
+  }));
+
+  if (providerConfig.model && !models.some((model) => model.id === providerConfig.model)) {
+    models.unshift({
+      id: providerConfig.model,
+      label: providerConfig.models?.[providerConfig.model]?.label || providerConfig.model,
+    });
+  }
+
+  return {
+    id: providerId,
+    name: providerConfig.displayName || providerId,
+    description: providerConfig.baseUrl
+      ? `OpenAI-compatible · ${providerConfig.baseUrl}`
+      : 'OpenAI-compatible custom provider',
+    models: models.length > 0 ? models : [{ id: 'custom-model', label: 'Custom Model' }],
+  };
 }
 
 export function getProviderRuntimeModels(
@@ -164,12 +204,21 @@ export function buildRuntimeModelOptions(
   providerIds: readonly ModelProvider[] = DEFAULT_SWITCHER_PROVIDERS,
 ): RuntimeModelOption[] {
   const options: RuntimeModelOption[] = [];
+  const dynamicProviderIds = settings
+    ? (Object.keys(settings.models?.providers ?? {}) as ModelProvider[]).filter(isDynamicCustomProviderId)
+    : [];
+  const sourceProviderIds = settings
+    ? Array.from(new Set<ModelProvider>([
+      ...providerIds,
+      ...dynamicProviderIds,
+    ]))
+    : [...providerIds];
 
-  for (const providerId of providerIds) {
-    const provider = PROVIDER_MODELS_MAP[providerId];
+  for (const providerId of sourceProviderIds) {
+    const providerConfig = settings?.models?.providers?.[providerId];
+    const provider = buildProviderInfoFromSettings(providerId, providerConfig);
     if (!provider) continue;
 
-    const providerConfig = settings?.models?.providers?.[providerId];
     if (settings && providerConfig?.enabled === false) continue;
 
     const providerLabel = providerConfig?.displayName || getProviderDisplayName(providerId) || provider.name;

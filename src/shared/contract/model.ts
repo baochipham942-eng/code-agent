@@ -2,7 +2,7 @@
 // Model Types
 // ============================================================================
 
-export type ModelProvider =
+export type BuiltInModelProvider =
   | 'deepseek'
   | 'claude'
   | 'openai'
@@ -20,11 +20,13 @@ export type ModelProvider =
   | 'xiaomi'     // 小米 MiMo (Token Plan 包月套餐)
   | 'custom';    // 自定义 OpenAI-compatible Provider
 
+export type ModelProvider = BuiltInModelProvider | (string & {});
+
 /**
  * Provider 输入别名。
  * `anthropic` 会被规范化为内部 canonical provider `claude`。
  */
-export type ModelProviderAlias = ModelProvider | 'anthropic';
+export type ModelProviderAlias = BuiltInModelProvider | 'anthropic';
 
 // 模型能力标签
 // - compact: 上下文压缩、摘要生成（便宜快速的模型）

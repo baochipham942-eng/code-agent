@@ -1027,6 +1027,34 @@ describe('ModelRouter', () => {
         router.inference([{ role: 'user', content: 'test' }], [], config)
       ).rejects.toThrow('Unsupported provider');
     });
+
+    it('routes dynamic custom providers through the OpenAI-compatible custom provider', async () => {
+      const customProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'custom provider response', finishReason: 'stop' }),
+      };
+      (router as any).providers.set('custom', customProvider);
+
+      const config: ModelConfig = {
+        provider: 'custom-smoke' as ModelProvider,
+        model: 'smoke-model',
+        apiKey: 'test-key',
+        baseUrl: 'https://api.smoke-provider.test/v1',
+        maxTokens: 1000,
+      };
+
+      await expect(
+        router.inference([{ role: 'user', content: 'test' }], [], config)
+      ).resolves.toMatchObject({ content: 'custom provider response' });
+
+      expect(customProvider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        [],
+        config,
+        undefined,
+        undefined,
+        undefined,
+      );
+    });
   });
 
   // --------------------------------------------------------------------------

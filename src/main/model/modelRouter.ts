@@ -666,7 +666,8 @@ export class ModelRouter {
     signal?: AbortSignal,
     options?: InferenceOptions,
   ): Promise<ModelResponse> {
-    const provider = this.providers.get(config.provider);
+    const provider = this.providers.get(config.provider)
+      ?? (this.isCustomOpenAICompatibleProvider(config) ? this.providers.get('custom') : undefined);
     if (!provider) {
       throw new Error(`Unsupported provider: ${config.provider}`);
     }
@@ -692,6 +693,16 @@ export class ModelRouter {
       throw error;
     } finally {
       timedAbort?.cleanup();
+    }
+  }
+
+  private isCustomOpenAICompatibleProvider(config: ModelConfig): boolean {
+    if (this.providers.has(config.provider)) return false;
+    if (config.baseUrl) return true;
+    try {
+      return Boolean(getConfigService().getSettings().models?.providers?.[config.provider]?.baseUrl);
+    } catch {
+      return false;
     }
   }
 

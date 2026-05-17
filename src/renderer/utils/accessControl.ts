@@ -24,6 +24,10 @@ export const ACCESS_CONTROL_REGISTRY = {
     label: 'Hook 原始配置',
     adminOnly: true,
   },
+  'prompt.manager': {
+    label: '提示词',
+    adminOnly: true,
+  },
   'eval.center': {
     label: '评测中心',
     adminOnly: true,

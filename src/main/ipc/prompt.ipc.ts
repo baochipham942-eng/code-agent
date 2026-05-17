@@ -10,8 +10,28 @@ import {
   setPromptOverride,
   resetPromptOverride,
 } from '../prompts/registry';
+import { getAdminAccessIpcError } from './adminGuard';
 // 副作用 import：强制加载所有接入 registry 的 prompt 模块（包括没被 builder 直接引用的）
 import '../prompts/promptIndex';
+
+const PROMPT_DEBUG_ENV = 'CODE_AGENT_ALLOW_SYSTEM_PROMPT_DEBUG';
+
+function getPromptIpcAccessError(action: string): IPCResponse | null {
+  const adminError = getAdminAccessIpcError('Prompt Manager');
+  if (adminError) return adminError;
+
+  if (action === 'debugSystemPrompt' && process.env[PROMPT_DEBUG_ENV] !== '1') {
+    return {
+      success: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: `Prompt Manager: full system prompt debug requires ${PROMPT_DEBUG_ENV}=1`,
+      },
+    };
+  }
+
+  return null;
+}
 
 /**
  * 注册 prompt 域 IPC handlers
@@ -21,6 +41,9 @@ export function registerPromptHandlers(ipcMain: IpcMain): void {
     const { action, payload } = request;
 
     try {
+      const accessError = getPromptIpcAccessError(action);
+      if (accessError) return accessError;
+
       let data: unknown;
 
       switch (action) {

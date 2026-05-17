@@ -233,6 +233,7 @@ export const Sidebar: React.FC = () => {
 
   const { user, isAuthenticated, setShowAuthModal, signOut } = useAuthStore();
   const canOpenEvalCenter = canAccessFeature('eval.center', user);
+  const canOpenPromptManager = canAccessFeature('prompt.manager', user);
   const sessionStates = useTaskStore((state) => state.sessionStates);
 
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
@@ -994,11 +995,13 @@ export const Sidebar: React.FC = () => {
                   icon={<Clock3 className={`w-4 h-4 ${showCronCenter ? 'text-amber-400' : 'text-amber-400/80'}`} />}
                   label="自动化"
                 />
-                <AccountMenuItem
-                  onClick={() => { setShowPromptManager(true); setShowUserMenu(false); }}
-                  icon={<ScrollText className="w-4 h-4 text-violet-400/80" />}
-                  label="提示词"
-                />
+                {canOpenPromptManager && (
+                  <AccountMenuItem
+                    onClick={() => { setShowPromptManager(true); setShowUserMenu(false); }}
+                    icon={<ScrollText className="w-4 h-4 text-violet-400/80" />}
+                    label="提示词"
+                  />
+                )}
 
                 <div className="my-1 border-t border-zinc-800" />
                 <button

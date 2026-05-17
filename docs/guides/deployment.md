@@ -194,6 +194,14 @@ CODE_AGENT_CONTROL_PLANE_KEY_ID="production-2026-05"
 CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
 ```
 
+可以先在本地生成一组待审的 Vercel env 文件和写入命令；这个脚本只写本地文件，不会改 Vercel：
+
+```bash
+node scripts/generate-control-plane-env.mjs --out /tmp/code-agent-control-plane-env --key-id production-2026-05
+```
+
+生成后先检查 `/tmp/code-agent-control-plane-env/vercel-env-commands.txt`，确认 payload 仍是 locked default，再由有权限的人执行里面的 `vercel env add ...` 命令。
+
 也可以用 JSON 一次配置多把公钥：
 
 ```bash

@@ -11,6 +11,7 @@ import { createHash } from 'crypto';
 import { createLogger } from '../infra/logger';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
+import { getCloudConfigService, type ReleasePolicy } from './cloudConfigService';
 const logger = createLogger('UpdateService');
 
 // ----------------------------------------------------------------------------
@@ -94,6 +95,62 @@ export function resolveExpectedUpdateSha256(
   );
 }
 
+export function compareUpdateVersions(v1: string, v2: string): number {
+  const parts1 = v1.replace(/^v/, '').split('.').map((part) => Number(part) || 0);
+  const parts2 = v2.replace(/^v/, '').split('.').map((part) => Number(part) || 0);
+
+  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+    const p1 = parts1[i] || 0;
+    const p2 = parts2[i] || 0;
+    if (p1 > p2) return 1;
+    if (p1 < p2) return -1;
+  }
+  return 0;
+}
+
+export function applyReleasePolicyToUpdateInfo(
+  updateInfo: UpdateInfo,
+  releasePolicy: ReleasePolicy | undefined,
+): UpdateInfo {
+  if (!releasePolicy) return updateInfo;
+
+  const currentVersion = updateInfo.currentVersion;
+  const policyMinVersion = releasePolicy.minVersion?.replace(/^v/, '');
+  const policyLatestVersion = releasePolicy.latestVersion?.replace(/^v/, '');
+  const minVersionRequired = policyMinVersion
+    ? compareUpdateVersions(policyMinVersion, currentVersion) > 0
+    : false;
+  const policyHasNewerLatest = policyLatestVersion
+    ? compareUpdateVersions(policyLatestVersion, currentVersion) > 0
+    : false;
+  const policyRequiresUpdate = minVersionRequired || policyHasNewerLatest;
+  const hasUpdate = updateInfo.hasUpdate || policyRequiresUpdate;
+  const forceUpdate = Boolean(
+    updateInfo.forceUpdate
+      || minVersionRequired
+      || (releasePolicy.forceUpdate === true && hasUpdate),
+  );
+  const latestVersionCandidates = [
+    updateInfo.latestVersion,
+    policyLatestVersion,
+    minVersionRequired ? policyMinVersion : undefined,
+  ].filter((value): value is string => Boolean(value));
+  const latestVersion = latestVersionCandidates.reduce<string | undefined>((winner, candidate) => {
+    if (!winner) return candidate;
+    return compareUpdateVersions(candidate, winner) > 0 ? candidate : winner;
+  }, undefined);
+  const policySha256 = normalizeUpdateSha256(releasePolicy.sha256);
+
+  return {
+    ...updateInfo,
+    hasUpdate,
+    forceUpdate,
+    ...(latestVersion ? { latestVersion } : {}),
+    ...(releasePolicy.downloadUrl && policyRequiresUpdate ? { downloadUrl: releasePolicy.downloadUrl } : {}),
+    ...(policySha256 ? { sha256: policySha256 } : {}),
+  };
+}
+
 // ----------------------------------------------------------------------------
 // UpdateService Class
 // ----------------------------------------------------------------------------
@@ -172,12 +229,14 @@ export class UpdateService implements Disposable {
   async checkForUpdates(): Promise<UpdateInfo> {
     const currentVersion = this.getCurrentVersion();
     const platform = this.getPlatform();
+    const releasePolicy = this.getReleasePolicy();
+    const releaseChannel = releasePolicy?.channel ?? 'stable';
 
     logger.info(` Checking for updates... Current: ${currentVersion}, Platform: ${platform}`);
 
     try {
       // Try our Vercel API first (primary source)
-      const serverUrl = `${this.config.updateServerUrl}/api/update?action=check&version=${currentVersion}&platform=${platform}`;
+      const serverUrl = `${this.config.updateServerUrl}/api/update?action=check&version=${currentVersion}&platform=${platform}&channel=${encodeURIComponent(releaseChannel)}`;
       logger.info(` Checking Vercel API: ${serverUrl}`);
 
       try {
@@ -186,7 +245,7 @@ export class UpdateService implements Disposable {
 
         // Check if response is valid (has success field)
         if (data.success) {
-          const updateInfo: UpdateInfo = {
+          const updateInfo = this.applyReleasePolicy({
             hasUpdate: data.hasUpdate || false,
             forceUpdate: data.forceUpdate || false,
             currentVersion,
@@ -196,7 +255,7 @@ export class UpdateService implements Disposable {
             releaseNotes: data.releaseNotes,
             fileSize: data.fileSize,
             publishedAt: data.publishedAt,
-          };
+          }, releasePolicy);
 
           this.lastCheck = new Date();
           this.cachedUpdateInfo = updateInfo;
@@ -258,7 +317,7 @@ export class UpdateService implements Disposable {
           }
         }
 
-        const updateInfo: UpdateInfo = {
+        const updateInfo = this.applyReleasePolicy({
           hasUpdate,
           currentVersion,
           latestVersion: latestVersion || undefined,
@@ -266,7 +325,7 @@ export class UpdateService implements Disposable {
           releaseNotes: data.body,
           fileSize,
           publishedAt: data.published_at,
-        };
+        }, releasePolicy);
 
         this.lastCheck = new Date();
         this.cachedUpdateInfo = updateInfo;
@@ -285,10 +344,10 @@ export class UpdateService implements Disposable {
 
       // Both failed, return no update available
       logger.info('Both APIs failed, assuming up to date');
-      const updateInfo: UpdateInfo = {
+      const updateInfo = this.applyReleasePolicy({
         hasUpdate: false,
         currentVersion,
-      };
+      }, releasePolicy);
       this.lastCheck = new Date();
       this.cachedUpdateInfo = updateInfo;
       return updateInfo;
@@ -302,16 +361,20 @@ export class UpdateService implements Disposable {
    * Compare two version strings (returns 1 if v1 > v2, -1 if v1 < v2, 0 if equal)
    */
   private compareVersions(v1: string, v2: string): number {
-    const parts1 = v1.split('.').map(Number);
-    const parts2 = v2.split('.').map(Number);
+    return compareUpdateVersions(v1, v2);
+  }
 
-    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-      const p1 = parts1[i] || 0;
-      const p2 = parts2[i] || 0;
-      if (p1 > p2) return 1;
-      if (p1 < p2) return -1;
+  private getReleasePolicy(): ReleasePolicy | undefined {
+    try {
+      return getCloudConfigService().getReleasePolicy();
+    } catch (error) {
+      logger.warn('Failed to read release policy from cloud config', { error: String(error) });
+      return undefined;
     }
-    return 0;
+  }
+
+  private applyReleasePolicy(updateInfo: UpdateInfo, releasePolicy: ReleasePolicy | undefined): UpdateInfo {
+    return applyReleasePolicyToUpdateInfo(updateInfo, releasePolicy);
   }
 
   /**

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyReleasePolicyToUpdateInfo,
+  compareUpdateVersions,
   normalizeUpdateSha256,
   resolveExpectedUpdateSha256,
   verifyDigestMatch,
@@ -75,6 +77,73 @@ describe('update sha256 requirement', () => {
     expect(resolveExpectedUpdateSha256('A'.repeat(64), false)).toEqual({
       required: true,
       sha256: 'a'.repeat(64),
+    });
+  });
+});
+
+describe('signed release policy application', () => {
+  it('compares versions numerically and ignores a leading v', () => {
+    expect(compareUpdateVersions('v0.16.76', '0.16.75')).toBe(1);
+    expect(compareUpdateVersions('0.16.9', '0.16.10')).toBe(-1);
+    expect(compareUpdateVersions('0.16.75', 'v0.16.75')).toBe(0);
+  });
+
+  it('forces an update when signed minVersion is above the current version', () => {
+    const updateInfo = applyReleasePolicyToUpdateInfo({
+      hasUpdate: false,
+      currentVersion: '0.16.75',
+    }, {
+      channel: 'stable',
+      minVersion: '0.16.76',
+      forceUpdate: true,
+      downloadUrl: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
+      sha256: 'A'.repeat(64),
+    });
+
+    expect(updateInfo).toMatchObject({
+      hasUpdate: true,
+      forceUpdate: true,
+      currentVersion: '0.16.75',
+      latestVersion: '0.16.76',
+      downloadUrl: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
+      sha256: 'a'.repeat(64),
+    });
+  });
+
+  it('does not force update from policy.forceUpdate alone without an update candidate', () => {
+    const updateInfo = applyReleasePolicyToUpdateInfo({
+      hasUpdate: false,
+      currentVersion: '0.16.75',
+    }, {
+      channel: 'stable',
+      forceUpdate: true,
+    });
+
+    expect(updateInfo).toMatchObject({
+      hasUpdate: false,
+      forceUpdate: false,
+      currentVersion: '0.16.75',
+    });
+  });
+
+  it('keeps a server update while applying policy forceUpdate and normalized sha256', () => {
+    const updateInfo = applyReleasePolicyToUpdateInfo({
+      hasUpdate: true,
+      forceUpdate: false,
+      currentVersion: '0.16.75',
+      latestVersion: '0.16.76',
+      downloadUrl: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
+    }, {
+      channel: 'beta',
+      forceUpdate: true,
+      sha256: 'B'.repeat(64),
+    });
+
+    expect(updateInfo).toMatchObject({
+      hasUpdate: true,
+      forceUpdate: true,
+      latestVersion: '0.16.76',
+      sha256: 'b'.repeat(64),
     });
   });
 });

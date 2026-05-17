@@ -40,6 +40,13 @@ export interface PromptRegistryPayload {
   prompts: Record<string, string>;
 }
 
+export interface CapabilityRegistryPayload {
+  version: string;
+  items: unknown[];
+  revokedIds?: string[];
+  source?: Record<string, unknown>;
+}
+
 export function readCloudConfigPayload(env: NodeJS.ProcessEnv = process.env): CloudConfigPayload {
   return readJsonPayloadFromEnv<CloudConfigPayload>([
     'CONTROL_PLANE_CLOUD_CONFIG_JSON',
@@ -54,12 +61,22 @@ export function readPromptRegistryPayload(env: NodeJS.ProcessEnv = process.env):
   ], env);
 }
 
+export function readCapabilityRegistryPayload(env: NodeJS.ProcessEnv = process.env): CapabilityRegistryPayload {
+  return readJsonPayloadFromEnv<CapabilityRegistryPayload>([
+    'CONTROL_PLANE_CAPABILITY_REGISTRY_JSON',
+    'CODE_AGENT_CONTROL_PLANE_CAPABILITY_REGISTRY_JSON',
+  ], env);
+}
+
 export function readPayloadForKind(
   kind: ControlPlaneArtifactKind,
   env: NodeJS.ProcessEnv = process.env,
-): CloudConfigPayload | PromptRegistryPayload {
+): CloudConfigPayload | CapabilityRegistryPayload | PromptRegistryPayload {
   if (kind === 'cloud_config') {
     return readCloudConfigPayload(env);
+  }
+  if (kind === 'capability_registry') {
+    return readCapabilityRegistryPayload(env);
   }
   if (kind === 'prompt_registry') {
     return readPromptRegistryPayload(env);

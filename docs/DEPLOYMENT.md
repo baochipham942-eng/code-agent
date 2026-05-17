@@ -158,6 +158,12 @@ git push origin v0.2.0
 - `POST /api/agent/chat` - 云端 Agent 聊天
 - `POST /api/agent/plan` - 生成执行计划
 
+### 配置
+- `GET /api/v1/config` - 签名 cloud config envelope
+- `GET /api/v1/capabilities` - 签名 capability registry envelope
+- `GET /api/prompts` - 签名 prompt registry envelope
+- `GET /api/v1/control-plane?artifact=<cloud_config|capability_registry|prompt_registry>` - 统一签名 control plane 路由
+
 ### 更新
 - `GET /api/update?action=health` - 更新服务健康检查
 - `GET /api/update?action=check&version=<version>&platform=<platform>&channel=<channel>` - 从 GitHub Releases 派生更新 metadata，并叠加可选 release policy env

@@ -115,6 +115,8 @@ P1-L 把同一组 release policy 字段补到 Vercel update metadata 和 Tauri c
 
 P1-M 收紧远程 skill 仓库启动面：推荐仓库不再默认随启动预下载，除非显式设置 `CODE_AGENT_ALLOW_RECOMMENDED_SKILL_AUTO_DOWNLOAD=1`；远程仓库中的 skills 也不再默认启用。内置 skills 仍可默认挂载，第三方/推荐 repo 需要用户主动下载并启用后才进入默认挂载和调用路径。
 
+P1-N 补上 capability registry 的 control-plane artifact：Vercel `/api/v1/control-plane?artifact=capabilities` 和 `/api/v1/capabilities` 会返回 `kind:"capability_registry"` 的签名 envelope，payload 来自 `CONTROL_PLANE_CAPABILITY_REGISTRY_JSON` 或兼容的 `CODE_AGENT_CONTROL_PLANE_CAPABILITY_REGISTRY_JSON`。这先补服务端出口，客户端 Capability Center 后续再切到验签消费。
+
 ## P2 逆向成本提升
 
 这些可以做，但优先级低于服务端边界：

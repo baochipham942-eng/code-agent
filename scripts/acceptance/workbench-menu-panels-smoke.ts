@@ -49,6 +49,20 @@ const PANEL_CHECKS: PanelCheck[] = [
     testId: 'eval-center-panel',
   },
   {
+    key: 'telemetryDebug',
+    menuLabel: 'Telemetry 调试',
+    closeLabel: '关闭 评测中心',
+    expectedText: ['评测中心', '会话遥测'],
+    testId: 'eval-center-panel',
+  },
+  {
+    key: 'internalEvaluation',
+    menuLabel: '内部评测',
+    closeLabel: '关闭 评测中心',
+    expectedText: ['评测中心', '会话评测'],
+    testId: 'eval-center-panel',
+  },
+  {
     key: 'cronCenter',
     menuLabel: '自动化',
     closeLabel: '关闭 Cron Center',

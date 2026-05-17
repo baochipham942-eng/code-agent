@@ -508,7 +508,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowEvalCenter: (show, tab, sessionId) => set({
     showEvalCenter: show,
     ...(show ? { showKnowledgeMemoryPanel: false, showComputerUsePanel: false } : {}),
-    ...(tab ? { evalCenterTab: tab } : {}),
+    ...(show ? { evalCenterTab: tab ?? 'analysis' } : {}),
     ...(sessionId !== undefined ? { evalCenterSessionId: sessionId } : {}),
     ...(!show ? { evalCenterSessionId: null } : {}),
   }),

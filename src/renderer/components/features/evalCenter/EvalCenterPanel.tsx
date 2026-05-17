@@ -16,11 +16,13 @@ import { FailureAnalysisPage } from './pages/FailureAnalysisPage';
 import { CrossExperimentPage } from './pages/CrossExperimentPage';
 import { SessionListView } from './SessionListView';
 import { SessionEvalView } from './pages/SessionEvalView';
+import { TelemetryPanel } from '../telemetry/TelemetryPanel';
 
-type NavItem = 'sessions' | 'overview' | 'test-cases' | 'scoring' | 'detail' | 'failure' | 'compare';
+type NavItem = 'sessions' | 'telemetry' | 'overview' | 'test-cases' | 'scoring' | 'detail' | 'failure' | 'compare';
 
 const NAV_ITEMS: Array<{ key: NavItem; icon: string; label: string }> = [
   { key: 'sessions', icon: '💬', label: '会话评测' },
+  { key: 'telemetry', icon: '📡', label: 'Telemetry' },
   { key: 'overview', icon: '📊', label: '实验总览' },
   { key: 'test-cases', icon: '📋', label: '测试集' },
   { key: 'scoring', icon: '⚙️', label: '评分配置' },
@@ -33,6 +35,7 @@ export const EvalCenterPanel: React.FC = () => {
   const {
     showEvalCenter,
     setShowEvalCenter,
+    evalCenterTab,
     evalCenterSessionId,
   } = useAppStore();
   const isAuthLoading = useAuthStore((s) => s.isLoading);
@@ -73,7 +76,16 @@ export const EvalCenterPanel: React.FC = () => {
     }
 
     setSelectedSessionId(null);
-  }, [showEvalCenter, evalCenterSessionId, isAuthLoading, canOpenEvalCenter, setShowEvalCenter]);
+    if (evalCenterTab === 'telemetry') {
+      setActiveNav('telemetry');
+      return;
+    }
+    if (evalCenterTab === 'testResults') {
+      setActiveNav('overview');
+      return;
+    }
+    setActiveNav('sessions');
+  }, [showEvalCenter, evalCenterTab, evalCenterSessionId, isAuthLoading, canOpenEvalCenter, setShowEvalCenter]);
 
   if (!showEvalCenter) return null;
   if (!canOpenEvalCenter) return null;
@@ -125,6 +137,7 @@ export const EvalCenterPanel: React.FC = () => {
                 <SessionListView onSelectSession={handleSelectSession} />
               )
             )}
+            {activeNav === 'telemetry' && <TelemetryPanel />}
             {activeNav === 'overview' && <TestResultsDashboard onSelectExperiment={handleSelectExperiment} />}
             {activeNav === 'test-cases' && <TestCaseManager />}
             {activeNav === 'scoring' && <ScoringConfigPage />}

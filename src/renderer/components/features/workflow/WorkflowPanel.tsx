@@ -4,12 +4,13 @@
 // ============================================================================
 
 import React, { memo, useCallback, useEffect } from 'react';
-import { X, Workflow } from 'lucide-react';
+import { Workflow } from 'lucide-react';
 import { DAGViewer } from './DAGViewer';
 import { useDAGStore, useCurrentDAG, useDAGList } from '../../../stores/dagStore';
 import { DAG_CHANNELS } from '@shared/ipc/channels';
 import type { DAGVisualizationEvent } from '@shared/contract/dagVisualization';
 import ipcService from '../../../services/ipcService';
+import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 
 interface WorkflowPanelProps {
   /** 关闭回调 */
@@ -67,25 +68,19 @@ export const WorkflowPanel = memo(({ onClose }: WorkflowPanelProps) => {
   }, [handleClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-zinc-950">
-      {/* macOS 标题栏区域 */}
-      <div
-        className="h-12 flex items-center justify-between px-4 border-b border-gray-800 bg-zinc-900"
-        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
-      >
-        {/* 左侧：macOS 红绿灯占位 + 标题 */}
-        <div className="flex items-center gap-4">
-          <div className="w-[68px]" /> {/* macOS traffic lights space */}
-          <div className="flex items-center gap-2">
-            <Workflow className="w-5 h-5 text-blue-400" />
-            <h1 className="text-lg font-semibold text-gray-200">Workflow</h1>
-          </div>
-
+    <FullScreenPage testId="workflow-panel">
+      <FullScreenPageHeader
+        icon={<Workflow className="h-4 w-4 text-blue-400" />}
+        title="Workflow"
+        description="Agent 执行流程、DAG 状态和节点关系"
+        onClose={handleClose}
+        closeLabel="关闭 Workflow"
+        actions={(
+          <>
           {/* DAG 选择器（多个 DAG 时显示） */}
           {dagList.length > 1 && (
             <div
-              className="flex items-center gap-1 ml-4"
-              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+              className="flex items-center gap-1"
             >
               {dagList.map((dag) => (
                 <button
@@ -105,28 +100,13 @@ export const WorkflowPanel = memo(({ onClose }: WorkflowPanelProps) => {
               ))}
             </div>
           )}
-        </div>
-
-        {/* 右侧：状态 + 关闭按钮 */}
-        <div
-          className="flex items-center gap-3"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        >
           {/* 状态指示器 */}
           {currentDAG && (
             <DAGStatusBadge status={currentDAG.status} />
           )}
-
-          {/* 关闭按钮 */}
-          <button
-            onClick={handleClose}
-            className="p-2 rounded-lg hover:bg-gray-800 transition-colors"
-            title="关闭 (ESC)"
-          >
-            <X className="w-5 h-5 text-gray-400" />
-          </button>
-        </div>
-      </div>
+          </>
+        )}
+      />
 
       {/* DAG 视图 - 占据剩余空间 */}
       <div className="flex-1 min-h-0">
@@ -138,7 +118,7 @@ export const WorkflowPanel = memo(({ onClose }: WorkflowPanelProps) => {
           emptyMessage="暂无工作流。发送消息或执行任务后，这里会显示执行流程图。"
         />
       </div>
-    </div>
+    </FullScreenPage>
   );
 });
 

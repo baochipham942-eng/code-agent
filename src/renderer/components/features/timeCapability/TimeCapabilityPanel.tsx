@@ -11,7 +11,6 @@ import {
   ShieldAlert,
   TimerReset,
   Wrench,
-  X,
 } from 'lucide-react';
 import type { CronJobDefinition } from '@shared/contract';
 import {
@@ -40,6 +39,7 @@ import {
   getLatestExecutionStatus,
 } from '../cron/types';
 import { CronJobEditor } from '../cron/CronJobEditor';
+import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 
 interface TimeCapabilityPanelProps {
   onClose: () => void;
@@ -399,28 +399,14 @@ const TimeCapabilityPanel: React.FC<TimeCapabilityPanelProps> = ({ onClose }) =>
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-zinc-950 text-zinc-100">
-      <div
-        className="flex h-14 items-center justify-between border-b border-zinc-800 bg-zinc-950/95 px-5"
-        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
-      >
-        <div className="flex items-center gap-3">
-          <CalendarDays className="h-5 w-5 text-sky-300" />
-          <div>
-            <h2 className="text-base font-semibold text-zinc-100">Time & Capability</h2>
-            <p className="text-xs text-zinc-500">任务时间、Cron 运行、Calendar 状态和现场修复</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-md p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          aria-label="关闭 Time & Capability"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
+    <FullScreenPage testId="time-capability-panel">
+      <FullScreenPageHeader
+        icon={<CalendarDays className="h-4 w-4 text-sky-300" />}
+        title="Time & Capability"
+        description="任务时间、Cron 运行、Calendar 状态和现场修复"
+        onClose={onClose}
+        closeLabel="关闭 Time & Capability"
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
         <div className="mx-auto grid max-w-7xl gap-4 xl:grid-cols-[minmax(0,1.18fr)_minmax(360px,0.82fr)]">
@@ -634,7 +620,7 @@ const TimeCapabilityPanel: React.FC<TimeCapabilityPanelProps> = ({ onClose }) =>
         job={editingJob}
         onClose={closeEditor}
       />
-    </div>
+    </FullScreenPage>
   );
 };
 

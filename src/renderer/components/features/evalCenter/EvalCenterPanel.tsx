@@ -3,9 +3,11 @@
 // ============================================================================
 
 import React, { useState } from 'react';
+import { ClipboardCheck } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
 import { canAccessFeature } from '../../../utils/accessControl';
+import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { TestResultsDashboard } from './testResults/TestResultsDashboard';
 import { TestCaseManager } from './pages/TestCaseManager';
 import { ScoringConfigPage } from './pages/ScoringConfigPage';
@@ -77,19 +79,14 @@ export const EvalCenterPanel: React.FC = () => {
   if (!canOpenEvalCenter) return null;
 
   return (
-    <div className="w-full h-full flex flex-col bg-zinc-900">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700 shrink-0">
-          <h2 className="text-sm font-medium text-zinc-200">评测中心</h2>
-          <button
-            onClick={handleClose}
-            className="p-1 text-zinc-500 hover:text-zinc-400 hover:bg-zinc-700 rounded transition"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+    <FullScreenPage testId="eval-center-panel">
+        <FullScreenPageHeader
+          icon={<ClipboardCheck className="h-4 w-4 text-amber-300" />}
+          title="评测中心"
+          description="会话评测、实验结果、评分配置和 Review Queue"
+          onClose={handleClose}
+          closeLabel="关闭 评测中心"
+        />
 
         {/* Body: sidebar + main */}
         <div className="flex flex-1 min-h-0">
@@ -136,6 +133,6 @@ export const EvalCenterPanel: React.FC = () => {
             {activeNav === 'compare' && <CrossExperimentPage />}
           </div>
         </div>
-    </div>
+    </FullScreenPage>
   );
 };

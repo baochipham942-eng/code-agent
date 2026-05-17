@@ -2,21 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   AlertCircle,
-  Ban,
   Brain,
-  ChevronDown,
-  ChevronUp,
-  Check,
   Clock3,
   Database,
   FileText,
   Inbox,
-  MessageSquareText,
-  PencilLine,
   RefreshCw,
   Search,
   ShieldCheck,
-  X,
   Zap,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
@@ -24,6 +17,13 @@ import ipcService from '../../../services/ipcService';
 import { isWebMode } from '../../../utils/platform';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
+import {
+  AuditRow,
+  EmptyState,
+  KnowledgeInboxList,
+  LoadingRows,
+} from './KnowledgeMemoryPanel.parts';
 
 interface LightMemoryFile {
   filename: string;
@@ -46,7 +46,7 @@ interface LightMemoryStats {
   recentConversations: string[];
 }
 
-interface LightMemoryHealthReport {
+export interface LightMemoryHealthReport {
   totalFiles: number;
   indexExists: boolean;
   indexLineCount: number;
@@ -59,7 +59,7 @@ interface LightMemoryHealthReport {
   duplicateDescriptions: Array<{ value: string; filenames: string[] }>;
 }
 
-interface LightMemoryRebuildResult {
+export interface LightMemoryRebuildResult {
   indexPath: string;
   totalFiles: number;
   indexedFiles: number;
@@ -112,7 +112,7 @@ interface MemoryAuditPayload {
   injectionTraces?: MemoryInjectionTrace[];
 }
 
-interface MemoryInjectionTrace {
+export interface MemoryInjectionTrace {
   id: string;
   blockType: 'seed-memory' | 'memory_index' | 'memory_hint' | 'recent_conversations';
   trigger: string;
@@ -143,7 +143,7 @@ interface CategoryMeta {
   Icon: LucideIcon;
 }
 
-interface AuditItem {
+export interface AuditItem {
   id: string;
   title: string;
   summary: string;
@@ -158,7 +158,7 @@ interface AuditItem {
   injection: 'seed-candidate' | 'memory-index' | 'recent-conversations' | 'available' | 'stored';
 }
 
-interface InboxItem {
+export interface InboxItem {
   id: string;
   contentHash: string;
   kind: '候选项目知识' | '会话结论' | '失败复盘' | '可沉淀经验';
@@ -184,7 +184,7 @@ interface MemoryInboxResolvePayload {
   sessionId?: string | null;
 }
 
-type InboxStatus = 'approving' | 'rejecting' | 'approved' | 'rejected';
+export type InboxStatus = 'approving' | 'rejecting' | 'approved' | 'rejected';
 
 const CATEGORY_META: Record<MemoryCategory, CategoryMeta> = {
   user_preferences: { label: '用户偏好', tone: 'text-sky-300 border-sky-500/30 bg-sky-500/10', Icon: Brain },
@@ -326,18 +326,6 @@ export function hashInboxContent(content: string): string {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16).padStart(8, '0');
-}
-
-function formatTime(value: number | null): string {
-  if (!value) return '未知时间';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '未知时间';
-  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
-}
-
-function formatConfidence(value: number | undefined): string | null {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-  return `${Math.round(value * 100)}%`;
 }
 
 function classifyLightFile(file: LightMemoryFile): MemoryCategory {
@@ -673,23 +661,18 @@ export const KnowledgeMemoryPanel: React.FC = () => {
     }
     return groups;
   }, [filteredAuditItems]);
+  const contextLabel = data?.projectPath || workingDirectory || '全局上下文';
+  const sessionLabel = data?.sessionId || currentSessionId;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-zinc-950 text-zinc-100" data-testid="knowledge-memory-panel">
-      <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-500/30 bg-emerald-500/10">
-            <Brain className="h-5 w-5 text-emerald-300" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold text-zinc-100">Knowledge / Memory</h2>
-            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-              <span>{data?.projectPath || workingDirectory || '全局上下文'}</span>
-              {data?.sessionId || currentSessionId ? <span>session {data?.sessionId || currentSessionId}</span> : null}
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+    <FullScreenPage testId="knowledge-memory-panel">
+      <FullScreenPageHeader
+        icon={<Brain className="h-4 w-4 text-emerald-300" />}
+        title="Knowledge / Memory"
+        description={`${contextLabel}${sessionLabel ? ` · session ${sessionLabel}` : ''}`}
+        onClose={() => setShowKnowledgeMemoryPanel(false)}
+        closeLabel="关闭 Knowledge / Memory"
+        actions={(
           <button
             type="button"
             onClick={() => void loadAudit()}
@@ -699,16 +682,8 @@ export const KnowledgeMemoryPanel: React.FC = () => {
             <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             刷新
           </button>
-          <button
-            type="button"
-            onClick={() => setShowKnowledgeMemoryPanel(false)}
-            aria-label="关闭 Knowledge / Memory"
-            className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
+        )}
+      />
 
       {error && (
         <div className="mx-5 mt-4 flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
@@ -834,7 +809,7 @@ export const KnowledgeMemoryPanel: React.FC = () => {
           </div>
         </section>
       </div>
-    </div>
+    </FullScreenPage>
   );
 };
 
@@ -940,6 +915,10 @@ export function LightMemoryHealthPanel({
   );
 }
 
+export {
+  KnowledgeInboxList,
+} from './KnowledgeMemoryPanel.parts';
+
 function HealthMetric({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-md border border-zinc-800 bg-zinc-950/60 px-2.5 py-2">
@@ -984,242 +963,4 @@ function formatTraceTime(timestamp: number): string {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return '未知';
   return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-}
-
-export function KnowledgeInboxList({
-  items,
-  editingId,
-  draftById,
-  statusById,
-  errorById,
-  onApprove,
-  onReject,
-  onEdit,
-  onDraftChange,
-  onCancelEdit,
-  onApproveEdit,
-}: {
-  items: InboxItem[];
-  editingId: string | null;
-  draftById: Record<string, string>;
-  statusById: Record<string, InboxStatus>;
-  errorById: Record<string, string>;
-  onApprove: (item: InboxItem) => void;
-  onReject: (item: InboxItem) => void;
-  onEdit: (item: InboxItem) => void;
-  onDraftChange: (id: string, value: string) => void;
-  onCancelEdit: () => void;
-  onApproveEdit: (item: InboxItem, value: string) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      {items.map((item) => {
-        const status = statusById[item.id];
-        const isBusy = status === 'approving' || status === 'rejecting';
-        const isEditing = editingId === item.id;
-        const draft = draftById[item.id] ?? item.content;
-        return (
-          <article key={item.id} className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] font-medium text-amber-300">{item.kind}</span>
-                  {status ? <InboxStatusBadge status={status} /> : null}
-                </div>
-                <h4 className="mt-1 line-clamp-2 text-sm font-medium text-zinc-100">{item.title}</h4>
-              </div>
-              <span className="shrink-0 text-[11px] text-zinc-600">{formatTime(item.updatedAt)}</span>
-            </div>
-            <p className="mt-2 line-clamp-3 text-xs leading-5 text-zinc-400">{item.summary}</p>
-            <dl className="mt-3 space-y-1 text-[11px] leading-4 text-zinc-500">
-              <div>
-                <dt className="inline text-zinc-400">来源: </dt>
-                <dd className="inline">{item.source}</dd>
-              </div>
-              <div>
-                <dt className="inline text-zinc-400">用途: </dt>
-                <dd className="inline">{item.reason}</dd>
-              </div>
-            </dl>
-
-            {isEditing ? (
-              <div className="mt-3 space-y-2">
-                <textarea
-                  value={draft}
-                  onChange={(event) => onDraftChange(item.id, event.target.value)}
-                  className="min-h-24 w-full resize-y rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs leading-5 text-zinc-200 outline-none focus:border-emerald-500/70"
-                  aria-label={`编辑 ${item.title}`}
-                />
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onApproveEdit(item, draft)}
-                    disabled={isBusy || !draft.trim()}
-                    className="inline-flex h-7 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    保存采纳
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onCancelEdit}
-                    disabled={isBusy}
-                    className="inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 text-[11px] text-zinc-300 hover:bg-zinc-900 disabled:opacity-50"
-                  >
-                    取消
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onApprove(item)}
-                  disabled={isBusy}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                  采纳
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onEdit(item)}
-                  disabled={isBusy}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 text-[11px] font-medium text-sky-200 hover:bg-sky-500/20 disabled:opacity-50"
-                >
-                  <PencilLine className="h-3.5 w-3.5" />
-                  编辑采纳
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onReject(item)}
-                  disabled={isBusy}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 text-[11px] text-zinc-300 hover:bg-zinc-900 disabled:opacity-50"
-                >
-                  <Ban className="h-3.5 w-3.5" />
-                  忽略
-                </button>
-              </div>
-            )}
-
-            {errorById[item.id] ? (
-              <div className="mt-3 flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-2 text-[11px] leading-4 text-red-200">
-                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>{errorById[item.id]}</span>
-              </div>
-            ) : null}
-          </article>
-        );
-      })}
-    </div>
-  );
-}
-
-function InboxStatusBadge({ status }: { status: InboxStatus }) {
-  const label: Record<InboxStatus, string> = {
-    approving: '采纳中',
-    rejecting: '忽略中',
-    approved: '已采纳',
-    rejected: '已忽略',
-  };
-  const tone = status === 'approved'
-    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-    : status === 'rejected'
-      ? 'border-zinc-700 bg-zinc-900 text-zinc-400'
-      : 'border-amber-500/30 bg-amber-500/10 text-amber-200';
-  return (
-    <span className={`rounded border px-1.5 py-0.5 text-[11px] ${tone}`}>
-      {label[status]}
-    </span>
-  );
-}
-
-function AuditRow({ item }: { item: AuditItem }) {
-  const confidence = formatConfidence(item.confidence);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const hasBody = Boolean(item.body?.trim());
-  return (
-    <article className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <InjectionBadge value={item.injection} />
-            <span className="rounded border border-zinc-700 px-1.5 py-0.5 text-[11px] text-zinc-400">{item.scope}</span>
-            {confidence ? <span className="text-[11px] text-zinc-600">confidence {confidence}</span> : null}
-          </div>
-          <h4 className="mt-2 line-clamp-2 text-sm font-medium text-zinc-100">{item.title}</h4>
-        </div>
-        <span className="shrink-0 text-[11px] text-zinc-600">{formatTime(item.updatedAt)}</span>
-      </div>
-      <p className="mt-2 line-clamp-3 text-xs leading-5 text-zinc-400">{item.summary}</p>
-      <dl className="mt-3 grid grid-cols-1 gap-1 text-[11px] leading-4 text-zinc-500 lg:grid-cols-2">
-        <div>
-          <dt className="inline text-zinc-400">来源: </dt>
-          <dd className="inline break-all">{item.source}</dd>
-        </div>
-        <div>
-          <dt className="inline text-zinc-400">用途: </dt>
-          <dd className="inline">{item.purpose}</dd>
-        </div>
-        <div>
-          <dt className="inline text-zinc-400">类型: </dt>
-          <dd className="inline">{item.origin}</dd>
-        </div>
-      </dl>
-      {hasBody ? (
-        <div className="mt-3 border-t border-zinc-800 pt-2">
-          <button
-            type="button"
-            onClick={() => setIsExpanded((value) => !value)}
-            className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
-          >
-            {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            {isExpanded ? '收起原文证据' : '查看原文证据'}
-          </button>
-          {isExpanded ? (
-            <pre className="mt-2 max-h-56 overflow-y-auto whitespace-pre-wrap rounded-md border border-zinc-800 bg-zinc-950 p-3 text-[11px] leading-5 text-zinc-300">
-              {item.body}
-            </pre>
-          ) : null}
-        </div>
-      ) : null}
-    </article>
-  );
-}
-
-function InjectionBadge({ value }: { value: AuditItem['injection'] }) {
-  const labels: Record<AuditItem['injection'], { text: string; className: string; Icon: LucideIcon }> = {
-    'seed-candidate': { text: 'seed 候选', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300', Icon: Zap },
-    'memory-index': { text: 'index 候选', className: 'border-sky-500/30 bg-sky-500/10 text-sky-300', Icon: FileText },
-    'recent-conversations': { text: 'recent 候选', className: 'border-amber-500/30 bg-amber-500/10 text-amber-300', Icon: MessageSquareText },
-    available: { text: '按需读取', className: 'border-zinc-700 bg-zinc-800/70 text-zinc-300', Icon: FileText },
-    stored: { text: '已存储', className: 'border-zinc-700 bg-zinc-800/70 text-zinc-400', Icon: Database },
-  };
-  const config = labels[value];
-  return (
-    <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] ${config.className}`}>
-      <config.Icon className="h-3 w-3" />
-      {config.text}
-    </span>
-  );
-}
-
-function LoadingRows() {
-  return (
-    <div className="space-y-2">
-      {Array.from({ length: 4 }).map((_, index) => (
-        <div key={index} className="h-24 animate-pulse rounded-lg border border-zinc-800 bg-zinc-950/60" />
-      ))}
-    </div>
-  );
-}
-
-function EmptyState({ icon: Icon, title, text }: { icon: LucideIcon; title: string; text: string }) {
-  return (
-    <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 px-6 text-center">
-      <Icon className="h-8 w-8 text-zinc-600" />
-      <h4 className="mt-3 text-sm font-medium text-zinc-300">{title}</h4>
-      <p className="mt-1 max-w-sm text-xs leading-5 text-zinc-500">{text}</p>
-    </div>
-  );
 }

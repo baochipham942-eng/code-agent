@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo } from 'react';
-import { Clock3, X } from 'lucide-react';
+import { Clock3 } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { CronJobList } from './CronJobList';
 import { CronJobDetail } from './CronJobDetail';
 import { CronJobEditor } from './CronJobEditor';
+import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 
 interface CronCenterPanelProps {
   onClose: () => void;
@@ -47,36 +48,23 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-zinc-950">
-      <div
-        className="flex h-14 items-center justify-between border-b border-zinc-800 bg-zinc-950/95 px-5"
-        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
-      >
-        <div className="flex items-center gap-3">
-          <Clock3 className="h-5 w-5 text-amber-300" />
-          <div>
-            <h2 className="text-base font-semibold text-zinc-100">Cron Center</h2>
-            <p className="text-xs text-zinc-500">定时任务调度、执行历史与运行状态</p>
-          </div>
-          {stats && (
-            <div className="ml-6 hidden items-center gap-2 text-xs text-zinc-400 md:flex">
+    <FullScreenPage testId="cron-center-panel">
+      <FullScreenPageHeader
+        icon={<Clock3 className="h-4 w-4 text-amber-300" />}
+        title="Cron Center"
+        description="定时任务调度、执行历史与运行状态"
+        onClose={onClose}
+        closeLabel="关闭 Cron Center"
+        actions={stats ? (
+            <div className="hidden items-center gap-2 text-xs text-zinc-400 md:flex">
               <span className="rounded-full bg-zinc-900 px-2.5 py-1">总任务 {stats.totalJobs}</span>
               <span className="rounded-full bg-zinc-900 px-2.5 py-1">启用 {stats.activeJobs}</span>
               <span className="rounded-full bg-zinc-900 px-2.5 py-1">
                 成功率 {stats.successRate.toFixed(0)}%
               </span>
             </div>
-          )}
-        </div>
-
-        <button
-          onClick={onClose}
-          className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
+          ) : null}
+      />
 
       {error && (
         <div className="border-b border-red-500/20 bg-red-500/10 px-5 py-2 text-sm text-red-300">
@@ -102,7 +90,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
         job={editingJob}
         onClose={closeEditor}
       />
-    </div>
+    </FullScreenPage>
   );
 };
 

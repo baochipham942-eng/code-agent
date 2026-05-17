@@ -286,7 +286,7 @@ function getCapabilityActionPresentation(
       label: '安装预览',
       variant: 'secondary',
       disabled: true,
-      title: item.installPlan.summary,
+      title: item.actions.reason || item.installPlan.summary,
       leftIcon: <PackageCheck className="h-3.5 w-3.5" />,
       nextEnabled: null,
       settingsTab: null,
@@ -397,6 +397,12 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, on
               {item.metrics?.tools !== undefined ? <span className="text-zinc-500">{item.metrics.tools} tools</span> : null}
               {item.metrics?.accounts !== undefined ? <span className="text-zinc-500">{item.metrics.accounts} account</span> : null}
             </div>
+            {item.state.runtime === 'blocked' && item.actions.reason ? (
+              <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-200">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span className="break-words">{item.actions.reason}</span>
+              </div>
+            ) : null}
             {agentEngineBadges.length > 0 ? (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {agentEngineBadges.map((badge) => (
@@ -574,6 +580,8 @@ function formatSource(item: CapabilityCenterItem): string[] {
     item.source.version ? `version ${item.source.version}` : undefined,
     item.source.author ? `author ${item.source.author}` : undefined,
     item.source.reviewedAt ? `reviewed ${item.source.reviewedAt}` : undefined,
+    item.source.expiresAt ? `expires ${item.source.expiresAt}` : undefined,
+    item.source.keyId ? `key ${item.source.keyId}` : undefined,
     item.source.contentHash ? `hash ${item.source.contentHash}` : undefined,
     item.source.registryFileHash ? `registry hash ${item.source.registryFileHash}` : undefined,
   ].filter((value): value is string => Boolean(value));
@@ -606,7 +614,8 @@ function formatDiagnostic(diagnostic: CapabilityCenterDiagnostic): string {
     diagnostic.expectedHash ? `expected ${diagnostic.expectedHash}` : undefined,
     diagnostic.actualHash ? `actual ${diagnostic.actualHash}` : undefined,
   ].filter(Boolean).join(' · ');
-  return `${diagnostic.severity} · ${diagnostic.code} · ${target}: ${diagnostic.message}${hashes ? ` · ${hashes}` : ''}`;
+  const blocking = diagnostic.blocking ? ' · blocking' : '';
+  return `${diagnostic.severity}${blocking} · ${diagnostic.code} · ${target}: ${diagnostic.message}${hashes ? ` · ${hashes}` : ''}`;
 }
 
 interface CapabilityCenterSettingsProps {
@@ -686,7 +695,7 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
       {registryDiagnostics.length > 0 ? (
         <SettingsDetails
           title="Registry warnings"
-          description={`${registryDiagnostics.length} 条本地 registry 诊断。坏文件或坏项会被跳过，不会进入安装或启用链路。`}
+          description={`${registryDiagnostics.length} 条本地 registry 诊断。坏文件会被跳过，信任元数据不通过的安装项只保留预览。`}
         >
           <div className="space-y-2 text-xs leading-relaxed text-amber-200">
             {registryDiagnostics.slice(0, 6).map((diagnostic) => (

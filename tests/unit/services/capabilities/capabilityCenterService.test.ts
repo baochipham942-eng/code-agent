@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import type { ParsedSkill } from '../../../../src/shared/contract/agentSkill';
 import type { ChannelAccount } from '../../../../src/shared/contract/channel';
 
@@ -80,6 +81,43 @@ const githubMcpState = {
   resourceCount: 1,
 };
 let mcpStates: Array<typeof githubMcpState>;
+
+function stripContentHashForTest(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => stripContentHashForTest(entry));
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => key !== 'contentHash')
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, stripContentHashForTest(entry)]),
+  );
+}
+
+function withRegistryTrust<T extends Record<string, unknown>>(registry: T, expiresAt = '2099-12-31T23:59:59.000Z'): T {
+  const trusted = JSON.parse(JSON.stringify({
+    ...registry,
+    source: {
+      ...(registry.source && typeof registry.source === 'object' ? registry.source as Record<string, unknown> : {}),
+      expiresAt,
+    },
+  })) as T;
+  const contentHash = `sha256:${crypto
+    .createHash('sha256')
+    .update(JSON.stringify(stripContentHashForTest(trusted)))
+    .digest('hex')}`;
+  return {
+    ...trusted,
+    source: {
+      ...(trusted.source as Record<string, unknown>),
+      contentHash,
+    },
+  };
+}
 
 vi.mock('../../../../src/main/services/infra/logger', () => ({
   logger: {
@@ -320,11 +358,10 @@ describe('CapabilityCenterService', () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'code-agent-capability-registry-'));
     const registryDir = path.join(workspace, '.code-agent', 'capabilities');
     await fs.mkdir(registryDir, { recursive: true });
-    await fs.writeFile(path.join(registryDir, 'unsafe-template.json'), JSON.stringify({
+    await fs.writeFile(path.join(registryDir, 'unsafe-template.json'), JSON.stringify(withRegistryTrust({
       source: {
         label: 'Unsafe fixture',
         reviewedAt: '2026-05-15',
-        contentHash: `sha256:${'0'.repeat(64)}`,
       },
       items: [
         {
@@ -394,7 +431,7 @@ describe('CapabilityCenterService', () => {
           summary: 'This duplicates the repository curated registry id and must be skipped.',
         },
       ],
-    }));
+    })));
     await fs.writeFile(path.join(registryDir, 'bad-json.json'), '{bad json');
     await fs.writeFile(path.join(registryDir, 'invalid-items.json'), JSON.stringify({
       source: { label: 'Invalid fixture' },
@@ -411,6 +448,20 @@ describe('CapabilityCenterService', () => {
           kind: 'workflow_recipe',
           name: 'Invalid Hash Template',
           summary: 'Valid template with an invalid source hash declaration.',
+        },
+      ],
+    }));
+    await fs.writeFile(path.join(registryDir, 'mismatch-hash.json'), JSON.stringify({
+      source: {
+        label: 'Mismatched hash fixture',
+        contentHash: `sha256:${'0'.repeat(64)}`,
+      },
+      items: [
+        {
+          id: 'mismatched-hash-template',
+          kind: 'workflow_recipe',
+          name: 'Mismatched Hash Template',
+          summary: 'Valid template with a mismatched source hash declaration.',
         },
       ],
     }));
@@ -439,7 +490,7 @@ describe('CapabilityCenterService', () => {
     });
     const unsafeItem = inventory.items.find((item) => item.id === 'curated:mcp_template%3Aunsafe-enabled-mcp');
     expect(unsafeItem).toMatchObject({
-      source: { contentHash: `sha256:${'0'.repeat(64)}` },
+      source: { contentHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/) },
       config: [{ label: 'TOKEN', sensitive: true }],
       installPlan: {
         mode: 'preview_only',
@@ -491,6 +542,102 @@ describe('CapabilityCenterService', () => {
     await fs.rm(workspace, { recursive: true, force: true });
   });
 
+  it('blocks MCP draft generation when registry trust metadata is missing, mismatched, or expired', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'code-agent-capability-trust-'));
+    const registryDir = path.join(workspace, '.code-agent', 'capabilities');
+    await fs.mkdir(registryDir, { recursive: true });
+    const buildMcpRegistry = (id: string, label: string, source: Record<string, unknown>) => ({
+      source,
+      items: [
+        {
+          id,
+          kind: 'mcp_template',
+          name: label,
+          summary: 'A fixture with a complete local stdio draft spec.',
+          install: {
+            mcpServer: {
+              name: id.replace(/-/g, '_'),
+              type: 'stdio',
+              command: 'node',
+              args: ['server.js'],
+            },
+          },
+        },
+      ],
+    });
+    await fs.writeFile(path.join(registryDir, 'missing-trust.json'), JSON.stringify(buildMcpRegistry(
+      'missing-trust-mcp',
+      'Missing Trust MCP',
+      { label: 'Missing trust fixture' },
+    )));
+    await fs.writeFile(path.join(registryDir, 'mismatched-trust.json'), JSON.stringify(buildMcpRegistry(
+      'mismatched-trust-mcp',
+      'Mismatched Trust MCP',
+      {
+        label: 'Mismatched trust fixture',
+        expiresAt: '2099-12-31T23:59:59.000Z',
+        contentHash: `sha256:${'0'.repeat(64)}`,
+      },
+    )));
+    await fs.writeFile(path.join(registryDir, 'expired-trust.json'), JSON.stringify(withRegistryTrust(buildMcpRegistry(
+      'expired-trust-mcp',
+      'Expired Trust MCP',
+      { label: 'Expired trust fixture' },
+    ), '2000-01-01T00:00:00.000Z')));
+
+    const service = new CapabilityCenterService();
+    const configService = {
+      getSettings: () => ({ connectors: { enabledNative: [] } }),
+      updateSettings: configUpdateSettings,
+    } as never;
+
+    const inventory = await service.listCapabilities({ workingDirectory: workspace, configService });
+    const blockingCodes = inventory.diagnostics
+      ?.filter((entry) => entry.blocking)
+      .map((entry) => entry.code);
+    expect(blockingCodes).toEqual(expect.arrayContaining([
+      'missing_content_hash',
+      'missing_expires_at',
+      'content_hash_mismatch',
+      'expired_registry',
+    ]));
+    expect(inventory.items.find((item) => item.id === 'curated:mcp_template%3Amissing-trust-mcp')).toMatchObject({
+      state: {
+        runtime: 'blocked',
+        statusLabel: 'trust blocked',
+      },
+      actions: {
+        canInstallDraft: false,
+        reason: expect.stringContaining('missing_content_hash'),
+      },
+    });
+    expect(inventory.items.find((item) => item.id === 'curated:mcp_template%3Amismatched-trust-mcp')).toMatchObject({
+      state: { runtime: 'blocked' },
+      actions: {
+        canInstallDraft: false,
+        reason: expect.stringContaining('content_hash_mismatch'),
+      },
+    });
+    expect(inventory.items.find((item) => item.id === 'curated:mcp_template%3Aexpired-trust-mcp')).toMatchObject({
+      state: { runtime: 'blocked' },
+      actions: {
+        canInstallDraft: false,
+        reason: expect.stringContaining('expired_registry'),
+      },
+    });
+
+    await expect(service.installDraft(
+      { id: 'curated:mcp_template%3Amissing-trust-mcp', kind: 'mcp_template' },
+      { workingDirectory: workspace, configService },
+    )).rejects.toThrow('missing_content_hash');
+    await expect(service.installDraft(
+      { id: 'curated:mcp_template%3Amismatched-trust-mcp', kind: 'mcp_template' },
+      { workingDirectory: workspace, configService },
+    )).rejects.toThrow('content_hash_mismatch');
+    expect(mcpAddServer).not.toHaveBeenCalled();
+    await fs.rm(workspace, { recursive: true, force: true });
+  });
+
   it('delegates enablement to existing services instead of installing remote templates', async () => {
     const service = new CapabilityCenterService();
     const configService = {
@@ -520,7 +667,7 @@ describe('CapabilityCenterService', () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'code-agent-capability-install-'));
     const registryDir = path.join(workspace, '.code-agent', 'capabilities');
     await fs.mkdir(registryDir, { recursive: true });
-    await fs.writeFile(path.join(registryDir, 'installable.json'), JSON.stringify({
+    await fs.writeFile(path.join(registryDir, 'installable.json'), JSON.stringify(withRegistryTrust({
       source: {
         label: 'Install fixture',
         reviewedAt: '2026-05-15',
@@ -548,7 +695,7 @@ describe('CapabilityCenterService', () => {
           },
         },
       ],
-    }));
+    })));
 
     const service = new CapabilityCenterService();
     const configService = {

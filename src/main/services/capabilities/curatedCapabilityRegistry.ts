@@ -107,6 +107,7 @@ function diagnostic(args: Omit<CapabilityCenterDiagnostic, 'source' | 'severity'
     message: args.message,
     ...(args.path ? { path: args.path } : {}),
     ...(args.itemId ? { itemId: args.itemId } : {}),
+    ...(args.blocking ? { blocking: args.blocking } : {}),
     ...(args.expectedHash ? { expectedHash: args.expectedHash } : {}),
     ...(args.actualHash ? { actualHash: args.actualHash } : {}),
   };
@@ -139,16 +140,35 @@ function isSha256ContentHash(value: string): boolean {
   return /^sha256:[a-f0-9]{64}$/i.test(value);
 }
 
-function buildContentHashDiagnostics(filePath: string, expectedHash: string | undefined, actualHash: string): CapabilityCenterDiagnostic[] {
+function buildContentHashDiagnostics(
+  filePath: string,
+  expectedHash: string | undefined,
+  actualHash: string,
+  required: boolean,
+): CapabilityCenterDiagnostic[] {
   if (!expectedHash) {
-    return [];
+    if (!required) {
+      return [];
+    }
+    return [diagnostic({
+      code: 'missing_content_hash',
+      message: 'Registry source.contentHash is required before installable MCP templates can generate drafts.',
+      path: filePath,
+      severity: 'error',
+      blocking: true,
+      actualHash,
+    })];
   }
 
+  const blocksDraft = required;
+  const severity: CapabilityCenterDiagnostic['severity'] = blocksDraft ? 'error' : 'warning';
   if (!isSha256ContentHash(expectedHash)) {
     return [diagnostic({
       code: 'invalid_content_hash',
       message: 'Registry source.contentHash must use sha256:<64 hex chars>.',
       path: filePath,
+      severity,
+      blocking: blocksDraft,
       expectedHash,
       actualHash,
     })];
@@ -159,12 +179,75 @@ function buildContentHashDiagnostics(filePath: string, expectedHash: string | un
       code: 'content_hash_mismatch',
       message: 'Registry source.contentHash does not match the canonical local registry content hash.',
       path: filePath,
+      severity,
+      blocking: blocksDraft,
       expectedHash,
       actualHash,
     })];
   }
 
   return [];
+}
+
+function buildExpiresAtDiagnostics(
+  filePath: string,
+  expiresAt: string | undefined,
+  required: boolean,
+): CapabilityCenterDiagnostic[] {
+  if (!required) {
+    return [];
+  }
+
+  if (!expiresAt) {
+    return [diagnostic({
+      code: 'missing_expires_at',
+      message: 'Registry source.expiresAt is required before installable MCP templates can generate drafts.',
+      path: filePath,
+      severity: 'error',
+      blocking: true,
+    })];
+  }
+
+  const expiresAtMs = Date.parse(expiresAt);
+  if (!Number.isFinite(expiresAtMs)) {
+    return [diagnostic({
+      code: 'invalid_expires_at',
+      message: 'Registry source.expiresAt must be a valid date string.',
+      path: filePath,
+      severity: 'error',
+      blocking: true,
+    })];
+  }
+
+  if (expiresAtMs <= Date.now()) {
+    return [diagnostic({
+      code: 'expired_registry',
+      message: 'Registry source.expiresAt is in the past.',
+      path: filePath,
+      severity: 'error',
+      blocking: true,
+    })];
+  }
+
+  return [];
+}
+
+function hasMcpDraftCandidate(raw: CuratedRegistryItem): boolean {
+  if (raw.kind !== 'mcp_template') {
+    return false;
+  }
+  const install = asRecord(raw.install);
+  return Object.keys(asRecord(install.mcpServer)).length > 0;
+}
+
+function buildTrustBlockReason(diagnostics: CapabilityCenterDiagnostic[]): string | undefined {
+  const blockingCodes = unique(diagnostics
+    .filter((entry) => entry.blocking)
+    .map((entry) => entry.code));
+  if (blockingCodes.length === 0) {
+    return undefined;
+  }
+  return `Registry trust metadata blocked draft generation: ${blockingCodes.join(', ')}`;
 }
 
 function isRequirementKind(value: unknown): value is CapabilityRequirement['kind'] {
@@ -499,6 +582,7 @@ function parseCuratedRegistryItem(
   filePath: string,
   fileSource: Record<string, unknown>,
   registryFileHash: string,
+  registryTrustBlockReason?: string,
 ): { item: CapabilityCenterItem | null; diagnostic?: CapabilityCenterDiagnostic } {
   const id = asString(raw.id);
   const kind = raw.kind;
@@ -556,6 +640,17 @@ function parseCuratedRegistryItem(
   const draft = kind === 'mcp_template'
     ? parseMcpDraftSpec(raw.install, id, [...config, ...dependencies])
     : null;
+  const trustBlockedDraft = Boolean(draft && registryTrustBlockReason);
+  const runtime = trustBlockedDraft ? 'blocked' : 'not_configured';
+  const installActionReason = trustBlockedDraft
+    ? registryTrustBlockReason
+    : draft
+      ? '可生成 disabled MCP server 草稿'
+      : kind === 'channel_adapter'
+      ? '请在 Channels 设置中添加账号'
+      : kind === 'mcp_template'
+        ? '请在 MCP 设置中添加 server'
+        : 'Workflow recipe 模板只读展示';
 
   return {
     item: {
@@ -573,15 +668,19 @@ function parseCuratedRegistryItem(
         version: asString(source.version) || asString(fileSource.version),
         author: asString(source.author) || asString(fileSource.author),
         reviewedAt: asString(source.reviewedAt) || asString(fileSource.reviewedAt),
+        expiresAt: asString(source.expiresAt) || asString(fileSource.expiresAt),
+        signedAt: asString(source.signedAt) || asString(fileSource.signedAt),
+        keyId: asString(source.keyId) || asString(fileSource.keyId),
+        signature: asString(source.signature) || asString(fileSource.signature),
         contentHash: asString(source.contentHash) || asString(fileSource.contentHash),
         registryFileHash,
       },
       state: {
         install: 'available',
         enable: 'not_applicable',
-        runtime: 'not_configured',
+        runtime,
         mount: 'not_applicable',
-        statusLabel,
+        statusLabel: trustBlockedDraft ? 'trust blocked' : statusLabel,
       },
       risk: parseCuratedRisk(asRecord(raw.risk), kind),
       permissions: permissions.length > 0
@@ -593,6 +692,7 @@ function parseCuratedRegistryItem(
         configFiles: [filePath],
         notes: [
           ...asStringArray(audit.notes),
+          ...(trustBlockedDraft && registryTrustBlockReason ? [registryTrustBlockReason] : []),
           draft
             ? '本地 curated registry 模板只能生成禁用草稿，不启用、不连接。'
             : '本地 curated registry 模板只读展示，不安装、不写配置、不连接。',
@@ -601,14 +701,8 @@ function parseCuratedRegistryItem(
       actions: {
         canEnable: false,
         canDisable: false,
-        canInstallDraft: Boolean(draft),
-        reason: draft
-          ? '可生成 disabled MCP server 草稿'
-          : kind === 'channel_adapter'
-          ? '请在 Channels 设置中添加账号'
-          : kind === 'mcp_template'
-            ? '请在 MCP 设置中添加 server'
-            : 'Workflow recipe 模板只读展示',
+        canInstallDraft: Boolean(draft && !trustBlockedDraft),
+        reason: installActionReason,
       },
       installPlan: buildInstallPlan(kind, name, draft),
     },
@@ -643,7 +737,6 @@ async function readCuratedRegistryDir(dir: string): Promise<CuratedRegistryReadR
       const parsed = JSON.parse(await fs.readFile(fullPath, 'utf8')) as CuratedRegistryFile;
       const source = asRecord(parsed.source);
       const registryFileHash = buildRegistryFileHash(parsed);
-      diagnostics.push(...buildContentHashDiagnostics(fullPath, asString(source.contentHash), registryFileHash));
       if (!Array.isArray(parsed.items)) {
         diagnostics.push(diagnostic({
           code: 'invalid_registry_items',
@@ -654,8 +747,21 @@ async function readCuratedRegistryDir(dir: string): Promise<CuratedRegistryReadR
         continue;
       }
       const rawItems = parsed.items;
+      const requiresRegistryTrust = rawItems.some((rawItem) => hasMcpDraftCandidate(asRecord(rawItem)));
+      const trustDiagnostics = [
+        ...buildContentHashDiagnostics(fullPath, asString(source.contentHash), registryFileHash, requiresRegistryTrust),
+        ...buildExpiresAtDiagnostics(fullPath, asString(source.expiresAt), requiresRegistryTrust),
+      ];
+      diagnostics.push(...trustDiagnostics);
+      const registryTrustBlockReason = buildTrustBlockReason(trustDiagnostics);
       for (const rawItem of rawItems) {
-        const { item, diagnostic: itemDiagnostic } = parseCuratedRegistryItem(asRecord(rawItem), fullPath, source, registryFileHash);
+        const { item, diagnostic: itemDiagnostic } = parseCuratedRegistryItem(
+          asRecord(rawItem),
+          fullPath,
+          source,
+          registryFileHash,
+          registryTrustBlockReason,
+        );
         if (itemDiagnostic) {
           diagnostics.push(itemDiagnostic);
         }

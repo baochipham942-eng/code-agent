@@ -74,6 +74,10 @@ export interface CapabilitySourceInfo {
   scope?: string;
   author?: string;
   reviewedAt?: string;
+  expiresAt?: string;
+  signedAt?: string;
+  keyId?: string;
+  signature?: string;
   contentHash?: string;
   registryFileHash?: string;
 }
@@ -206,6 +210,7 @@ export interface CapabilityCenterDiagnostic {
   message: string;
   path?: string;
   itemId?: string;
+  blocking?: boolean;
   expectedHash?: string;
   actualHash?: string;
 }

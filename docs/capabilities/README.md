@@ -27,7 +27,9 @@ Registry files follow `registry.schema.json`:
   "source": {
     "label": "Code Agent local curated registry",
     "author": "Code Agent",
-    "reviewedAt": "2026-05-15"
+    "reviewedAt": "2026-05-15",
+    "expiresAt": "2026-12-31T23:59:59.000Z",
+    "contentHash": "sha256:<canonical registry hash>"
   },
   "items": [
     {
@@ -53,9 +55,9 @@ Every accepted template is normalized before it reaches the UI:
 
 - `state.install` is always `available`
 - `state.enable` is always `not_applicable`
-- `state.runtime` is always `not_configured`
+- `state.runtime` is `not_configured` for accepted templates, or `blocked` when an installable MCP draft fails registry trust checks
 - `actions.canEnable` and `actions.canDisable` are always `false`
-- `actions.canInstallDraft` is only `true` for MCP templates with a safe draft spec; unresolved placeholders become required UI parameters
+- `actions.canInstallDraft` is only `true` for MCP templates with a safe draft spec and passing registry trust metadata; unresolved placeholders become required UI parameters
 - `source.kind` is always `curated`
 - sensitive requirement values are discarded even if a registry file includes them
 - `source.registryFileHash` is computed locally from the registry file
@@ -66,7 +68,7 @@ The card should explain:
 - purpose: `name`, `summary`, `description`, `tags`
 - permissions: `permissions[]`
 - config: `config[]`
-- source: `source.label`, `source.url`, `source.author`, `source.reviewedAt`, `source.contentHash`, `source.registryFileHash`
+- source: `source.label`, `source.url`, `source.author`, `source.reviewedAt`, `source.expiresAt`, `source.contentHash`, `source.registryFileHash`
 - risk: `risk.tier`, `risk.reasons`, `risk.dataTouched`
 - state: normalized install/enable/runtime state
 - dependencies: `dependencies[]`
@@ -86,6 +88,7 @@ For P0:
 - registry-supplied runtime state and actions are ignored
 - secret values are never surfaced from registry metadata
 - registry files get a local canonical `sha256` hash; if file-level `source.contentHash` is declared, it must match the canonical hash
+- registry files with installable MCP drafts must declare file-level `source.contentHash` and a future `source.expiresAt`; missing, malformed, stale, mismatched, or expired trust metadata blocks draft generation
 - install previews do not write files or configs; `draft_config` writes only a disabled MCP server draft after required parameters are filled
 - MCP draft install rejects registry env values, unsupported transports, missing stdio command metadata, and unresolved placeholders
 - no remote registry is fetched
@@ -109,6 +112,8 @@ P0.10 tracks Capability Center generated MCP drafts with local metadata on the M
 
 If a registry file declares file-level `source.contentHash`, it must use `sha256:<64 hex chars>`. The reader compares it with the canonical hash and reports `invalid_content_hash` or `content_hash_mismatch` diagnostics when the declaration is malformed or stale.
 
+Installable MCP draft specs raise the trust requirement from advisory to blocking. A file containing `mcp_template.install.mcpServer` must have a valid matching `source.contentHash` and a future `source.expiresAt`. The item still renders as a preview card, but `actions.canInstallDraft` stays `false`, `state.runtime` becomes `blocked`, and `installDraft` rejects before writing `.code-agent/mcp.json` or registering a runtime server.
+
 ## Install preview and draft install
 
 P0 install preview is generated from accepted template kind:
@@ -122,6 +127,7 @@ Preview mode does not write config, start commands, open ingress, inject workflo
 P0.9 draft install is stricter:
 
 - Only `mcp_template` supports draft install.
+- The registry file must pass the blocking trust checks: matching `source.contentHash` and non-expired `source.expiresAt`.
 - The registry item must include `install.mcpServer` with `type:"stdio"`, a safe server `name`, a `command`, and optional string `args`.
 - `{{placeholder}}` values are allowed only in `args`; they are surfaced as required parameters and substituted only from user input.
 - Registry `env` values are rejected, so secrets stay outside the install path.

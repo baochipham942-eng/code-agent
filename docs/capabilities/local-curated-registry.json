@@ -3,7 +3,9 @@
   "source": {
     "label": "Code Agent local curated registry",
     "author": "Code Agent",
-    "reviewedAt": "2026-05-15"
+    "reviewedAt": "2026-05-15",
+    "expiresAt": "2026-12-31T23:59:59.000Z",
+    "contentHash": "sha256:e05851e91afe7d8318376135f6f1be1d9c159aea9d24229b7017edc46086f663"
   },
   "items": [
     {

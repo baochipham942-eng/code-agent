@@ -341,6 +341,72 @@ describe('CapabilityCenterSettings', () => {
     expect(html).not.toContain('<span>启用</span></button>');
   });
 
+  it('shows trust-blocked draft previews without exposing the draft action', () => {
+    mockInventory([
+      makeItem({
+        id: 'curated:mcp_template%3Ablocked-mcp',
+        kind: 'mcp_template',
+        name: 'Blocked MCP template',
+        source: {
+          kind: 'curated',
+          label: '本地 curated registry',
+          expiresAt: '2000-01-01T00:00:00.000Z',
+        },
+        state: {
+          install: 'available',
+          enable: 'not_applicable',
+          runtime: 'blocked',
+          mount: 'not_applicable',
+          statusLabel: 'trust blocked',
+        },
+        actions: {
+          canEnable: false,
+          canDisable: false,
+          canInstallDraft: false,
+          reason: 'Registry trust metadata blocked draft generation: expired_registry',
+        },
+        installPlan: {
+          mode: 'draft_config',
+          title: '生成草稿: Blocked MCP template',
+          summary: '写入 disabled MCP server 草稿；不会启动进程、不会连接 server、不会启用工具。',
+          writes: [
+            {
+              kind: 'config',
+              target: 'project .code-agent/mcp.json',
+              action: 'create',
+            },
+          ],
+          steps: ['写入 disabled MCP server draft，并在 MCP 设置中展示。'],
+          safety: ['No package install or command execution during draft install.'],
+          rollback: ['Remove the generated disabled MCP server draft from .code-agent/mcp.json.'],
+          draft: {
+            kind: 'mcp_server',
+            target: 'project_mcp_json',
+            name: 'blocked_mcp',
+            config: {
+              name: 'blocked_mcp',
+              type: 'stdio',
+              command: 'node',
+              args: ['server.js'],
+            },
+          },
+        },
+      }),
+    ]);
+
+    const html = renderToStaticMarkup(
+      React.createElement(CapabilityCenterSettings, { onNavigateSettings: vi.fn() }),
+    );
+
+    expect(html).toContain('Blocked MCP template');
+    expect(html).toContain('trust blocked');
+    expect(html).toContain('Registry trust metadata blocked draft generation: expired_registry');
+    expect(html).toContain('安装预览');
+    expect(html).toContain('draft_config');
+    expect(html).toContain('expires 2000-01-01T00:00:00.000Z');
+    expect(html).not.toContain('生成草稿</span></button>');
+  });
+
   it('shows draft install action only for templates with a safe draft spec', () => {
     mockInventory([
       makeItem({
@@ -515,10 +581,11 @@ describe('CapabilityCenterSettings', () => {
       [
         {
           source: 'registry',
-          severity: 'warning',
+          severity: 'error',
           code: 'content_hash_mismatch',
           message: 'Registry source.contentHash does not match the canonical local registry content hash.',
           path: '/repo/.code-agent/capabilities/bad.json',
+          blocking: true,
           expectedHash: `sha256:${'0'.repeat(64)}`,
           actualHash: `sha256:${'b'.repeat(64)}`,
         },
@@ -531,9 +598,10 @@ describe('CapabilityCenterSettings', () => {
 
     expect(html).toContain('Registry warnings');
     expect(html).toContain('content_hash_mismatch');
+    expect(html).toContain('error · blocking');
     expect(html).toContain(`expected sha256:${'0'.repeat(64)}`);
     expect(html).toContain(`actual sha256:${'b'.repeat(64)}`);
-    expect(html).toContain('坏文件或坏项会被跳过');
+    expect(html).toContain('信任元数据不通过的安装项只保留预览');
     expect(html).not.toContain('去配置');
   });
 });

@@ -63,3 +63,42 @@ export interface AdminUpdateInviteCodeInput {
   expiresAt?: string | null;
   isActive?: boolean;
 }
+
+export interface AdminControlPlaneAuditEventItem {
+  id: string;
+  createdAt: string;
+  artifactKind: 'cloud_config' | 'capability_registry' | 'prompt_registry' | 'update_manifest';
+  payloadVersion?: string;
+  releaseChannel?: 'stable' | 'beta' | 'canary';
+  keyId?: string;
+  contentHash?: string;
+  outcome: 'served' | 'not_modified' | 'head' | 'error';
+  statusCode: number;
+  errorCode?: string;
+  subjectId?: string;
+  subjectSource?: string;
+  entitlementStatus?: string;
+  entitlementPlan?: string;
+  entitlementReason?: string;
+}
+
+export interface AdminControlPlaneAuditEventListResult {
+  events: AdminControlPlaneAuditEventItem[];
+  unavailableReason?: string;
+}
+
+export interface AdminControlPlaneRolloutSummaryItem {
+  artifactKind: AdminControlPlaneAuditEventItem['artifactKind'];
+  payloadVersion?: string;
+  releaseChannel?: AdminControlPlaneAuditEventItem['releaseChannel'];
+  keyId?: string;
+  contentHash?: string;
+  lastSeenAt?: string;
+  servedCount: number;
+  errorCount: number;
+}
+
+export interface AdminControlPlaneRolloutSummaryResult {
+  items: AdminControlPlaneRolloutSummaryItem[];
+  unavailableReason?: string;
+}

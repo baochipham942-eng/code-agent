@@ -545,6 +545,39 @@ export interface Database {
         };
         Returns: void;
       };
+      admin_list_control_plane_audit_events: {
+        Args: { p_limit?: number };
+        Returns: {
+          id: string;
+          created_at: string;
+          artifact_kind: 'cloud_config' | 'capability_registry' | 'prompt_registry' | 'update_manifest';
+          payload_version: string | null;
+          release_channel: 'stable' | 'beta' | 'canary' | null;
+          key_id: string | null;
+          content_hash: string | null;
+          outcome: 'served' | 'not_modified' | 'head' | 'error';
+          status_code: number;
+          error_code: string | null;
+          subject_id: string | null;
+          subject_source: string | null;
+          entitlement_status: string | null;
+          entitlement_plan: string | null;
+          entitlement_reason: string | null;
+        }[];
+      };
+      admin_control_plane_rollout_summary: {
+        Args: Record<string, never>;
+        Returns: {
+          artifact_kind: 'cloud_config' | 'capability_registry' | 'prompt_registry' | 'update_manifest';
+          payload_version: string | null;
+          release_channel: 'stable' | 'beta' | 'canary' | null;
+          key_id: string | null;
+          content_hash: string | null;
+          last_seen_at: string | null;
+          served_count: number;
+          error_count: number;
+        }[];
+      };
       match_vectors: {
         Args: {
           query_embedding: number[];

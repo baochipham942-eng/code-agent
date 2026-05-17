@@ -16,6 +16,10 @@ export const ACCESS_CONTROL_REGISTRY = {
     label: '邀请码',
     adminOnly: true,
   },
+  'settings.controlPlane': {
+    label: 'Control Plane',
+    adminOnly: true,
+  },
   'settings.capabilities': {
     label: '能力治理',
     adminOnly: true,

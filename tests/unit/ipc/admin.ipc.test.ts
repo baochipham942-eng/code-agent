@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
     listInviteCodes: vi.fn(),
     createInviteCode: vi.fn(),
     updateInviteCode: vi.fn(),
+    listControlPlaneAuditEvents: vi.fn(),
+    listControlPlaneRolloutSummary: vi.fn(),
   },
 }));
 
@@ -49,6 +51,8 @@ describe('admin.ipc access control', () => {
     mocks.currentUser = null;
     mocks.sessionVerified = false;
     mocks.adminService.listUsers.mockResolvedValue({ users: [] });
+    mocks.adminService.listControlPlaneAuditEvents.mockResolvedValue({ events: [] });
+    mocks.adminService.listControlPlaneRolloutSummary.mockResolvedValue({ items: [] });
   });
 
   afterEach(() => {
@@ -114,6 +118,27 @@ describe('admin.ipc access control', () => {
       data: { users: [{ id: 'user-1', email: 'user@example.com', isAdmin: false }] },
     });
     expect(mocks.adminService.listUsers).toHaveBeenCalledOnce();
+  });
+
+  it('allows admin users to read control-plane audit surfaces', async () => {
+    mocks.currentUser = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
+    mocks.sessionVerified = true;
+    mocks.adminService.listControlPlaneAuditEvents.mockResolvedValue({
+      events: [{ id: 'audit-1', artifactKind: 'cloud_config', outcome: 'served', statusCode: 200 }],
+    });
+    const ipc = makeFakeIpc();
+    registerAdminHandlers(ipc as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'listControlPlaneAuditEvents',
+      payload: { limit: 25 },
+    });
+
+    expect(response).toMatchObject({
+      success: true,
+      data: { events: [{ id: 'audit-1', artifactKind: 'cloud_config' }] },
+    });
+    expect(mocks.adminService.listControlPlaneAuditEvents).toHaveBeenCalledWith(25);
   });
 
   it('treats explicit local web test mode as an admin environment', async () => {

@@ -9,6 +9,10 @@ import {
   type Database,
 } from '../infra/supabaseService';
 import type {
+  AdminControlPlaneAuditEventItem,
+  AdminControlPlaneAuditEventListResult,
+  AdminControlPlaneRolloutSummaryItem,
+  AdminControlPlaneRolloutSummaryResult,
   AdminCreateInviteCodeInput,
   AdminInviteCodeItem,
   AdminInviteCodeListResult,
@@ -19,6 +23,10 @@ import type {
 
 type AdminUserRow = Database['public']['Functions']['admin_list_users']['Returns'][number];
 type InviteCodeRow = Database['public']['Functions']['admin_list_invite_codes']['Returns'][number];
+type ControlPlaneAuditEventRow =
+  Database['public']['Functions']['admin_list_control_plane_audit_events']['Returns'][number];
+type ControlPlaneRolloutSummaryRow =
+  Database['public']['Functions']['admin_control_plane_rollout_summary']['Returns'][number];
 
 function normalizeInviteCode(code: string): string {
   return code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
@@ -71,6 +79,39 @@ function toInviteCodeItem(row: InviteCodeRow): AdminInviteCodeItem {
     lastUsedAt: normalizeDate(row.last_used_at),
     createdBy: row.created_by || undefined,
     createdByEmail: row.created_by_email || undefined,
+  };
+}
+
+function toControlPlaneAuditEventItem(row: ControlPlaneAuditEventRow): AdminControlPlaneAuditEventItem {
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    artifactKind: row.artifact_kind,
+    payloadVersion: normalizeDate(row.payload_version),
+    releaseChannel: row.release_channel || undefined,
+    keyId: normalizeDate(row.key_id),
+    contentHash: normalizeDate(row.content_hash),
+    outcome: row.outcome,
+    statusCode: Number(row.status_code || 0),
+    errorCode: normalizeDate(row.error_code),
+    subjectId: normalizeDate(row.subject_id),
+    subjectSource: normalizeDate(row.subject_source),
+    entitlementStatus: normalizeDate(row.entitlement_status),
+    entitlementPlan: normalizeDate(row.entitlement_plan),
+    entitlementReason: normalizeDate(row.entitlement_reason),
+  };
+}
+
+function toControlPlaneRolloutSummaryItem(row: ControlPlaneRolloutSummaryRow): AdminControlPlaneRolloutSummaryItem {
+  return {
+    artifactKind: row.artifact_kind,
+    payloadVersion: normalizeDate(row.payload_version),
+    releaseChannel: row.release_channel || undefined,
+    keyId: normalizeDate(row.key_id),
+    contentHash: normalizeDate(row.content_hash),
+    lastSeenAt: normalizeDate(row.last_seen_at),
+    servedCount: Number(row.served_count || 0),
+    errorCount: Number(row.error_count || 0),
   };
 }
 
@@ -140,6 +181,35 @@ class AdminService {
     }
 
     return this.listInviteCodes();
+  }
+
+  async listControlPlaneAuditEvents(limit = 50): Promise<AdminControlPlaneAuditEventListResult> {
+    if (!isSupabaseInitialized()) {
+      return { events: [], unavailableReason: 'Supabase not initialized' };
+    }
+
+    const normalizedLimit = Math.max(Math.min(Math.floor(limit || 50), 200), 1);
+    const { data, error } = await getSupabase().rpc('admin_list_control_plane_audit_events', {
+      p_limit: normalizedLimit,
+    });
+    if (error) {
+      return { events: [], unavailableReason: error.message };
+    }
+
+    return { events: (data || []).map(toControlPlaneAuditEventItem) };
+  }
+
+  async listControlPlaneRolloutSummary(): Promise<AdminControlPlaneRolloutSummaryResult> {
+    if (!isSupabaseInitialized()) {
+      return { items: [], unavailableReason: 'Supabase not initialized' };
+    }
+
+    const { data, error } = await getSupabase().rpc('admin_control_plane_rollout_summary', {});
+    if (error) {
+      return { items: [], unavailableReason: error.message };
+    }
+
+    return { items: (data || []).map(toControlPlaneRolloutSummaryItem) };
   }
 }
 

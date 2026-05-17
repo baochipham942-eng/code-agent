@@ -1,4 +1,8 @@
 import * as crypto from 'node:crypto';
+import {
+  recordControlPlaneAuditErrorBackground,
+  recordControlPlaneAuditEventBackground,
+} from './controlPlaneAudit.js';
 
 export type ControlPlaneArtifactKind =
   | 'cloud_config'
@@ -244,15 +248,30 @@ function sendCreatedControlPlaneEnvelope<TPayload>(
 
   if (matchesIfNoneMatch(req, envelope.contentHash)) {
     res.status(304).end();
+    recordControlPlaneAuditEventBackground(req, {
+      envelope,
+      statusCode: 304,
+      outcome: 'not_modified',
+    });
     return;
   }
 
   if (req.method?.toUpperCase() === 'HEAD') {
     res.status(200).end();
+    recordControlPlaneAuditEventBackground(req, {
+      envelope,
+      statusCode: 200,
+      outcome: 'head',
+    });
     return;
   }
 
   res.status(200).json(envelope);
+  recordControlPlaneAuditEventBackground(req, {
+    envelope,
+    statusCode: 200,
+    outcome: 'served',
+  });
 }
 
 export function sendControlPlaneEnvelope<TPayload>(
@@ -264,6 +283,11 @@ export function sendControlPlaneEnvelope<TPayload>(
   if (req.method && !['GET', 'HEAD'].includes(req.method.toUpperCase())) {
     res.setHeader('Allow', 'GET, HEAD');
     sendError(res, 405, 'method_not_allowed', 'Only GET and HEAD are supported.');
+    recordControlPlaneAuditErrorBackground(req, {
+      kind,
+      statusCode: 405,
+      errorCode: 'method_not_allowed',
+    });
     return;
   }
 
@@ -272,9 +296,19 @@ export function sendControlPlaneEnvelope<TPayload>(
   } catch (error) {
     if (error instanceof ControlPlaneConfigError) {
       sendError(res, error.statusCode, 'control_plane_unconfigured', error.message);
+      recordControlPlaneAuditErrorBackground(req, {
+        kind,
+        statusCode: error.statusCode,
+        errorCode: 'control_plane_unconfigured',
+      });
       return;
     }
     sendError(res, 500, 'control_plane_signing_failed', 'Failed to sign control-plane artifact.');
+    recordControlPlaneAuditErrorBackground(req, {
+      kind,
+      statusCode: 500,
+      errorCode: 'control_plane_signing_failed',
+    });
   }
 }
 
@@ -287,6 +321,11 @@ export async function sendControlPlaneEnvelopeAsync<TPayload>(
   if (req.method && !['GET', 'HEAD'].includes(req.method.toUpperCase())) {
     res.setHeader('Allow', 'GET, HEAD');
     sendError(res, 405, 'method_not_allowed', 'Only GET and HEAD are supported.');
+    recordControlPlaneAuditErrorBackground(req, {
+      kind,
+      statusCode: 405,
+      errorCode: 'method_not_allowed',
+    });
     return;
   }
 
@@ -295,8 +334,18 @@ export async function sendControlPlaneEnvelopeAsync<TPayload>(
   } catch (error) {
     if (error instanceof ControlPlaneConfigError) {
       sendError(res, error.statusCode, 'control_plane_unconfigured', error.message);
+      recordControlPlaneAuditErrorBackground(req, {
+        kind,
+        statusCode: error.statusCode,
+        errorCode: 'control_plane_unconfigured',
+      });
       return;
     }
     sendError(res, 500, 'control_plane_signing_failed', 'Failed to sign control-plane artifact.');
+    recordControlPlaneAuditErrorBackground(req, {
+      kind,
+      statusCode: 500,
+      errorCode: 'control_plane_signing_failed',
+    });
   }
 }

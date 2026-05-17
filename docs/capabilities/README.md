@@ -110,6 +110,8 @@ P2 can turn the local registry shape into a remote control-plane artifact, but t
 
 Remote publication should be handled as a reviewed bundle: prepare payloads locally, validate schema/trust rules, generate the Vercel env commands, run control-plane smoke after deployment, and keep the previous bundle available for rollback. The publication bundle must not contain or rotate the production private key by default.
 
+The first production P2 bundle is `production-2026-05-17.2`. It publishes the reviewed local curated registry shape as signed remote metadata: one MCP template that can only become a disabled draft after required user config, one channel adapter preview, and one workflow recipe preview. The cloud config stays locked for unauthenticated users, and remote prompt payloads are limited to `policyAddon` and `publicSystemAddon`.
+
 ## Draft lifecycle
 
 P0.10 tracks Capability Center generated MCP drafts with local metadata on the MCP server config:

@@ -25,6 +25,7 @@ import {
   Clock,
   Ticket,
   Users,
+  Cloud,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -65,6 +66,7 @@ const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
   'automation',
   'users',
   'invites',
+  'controlPlane',
 ]);
 
 // Tab Components
@@ -86,6 +88,7 @@ import { AboutSettings } from './tabs/AboutSettings';
 import { ScreenMemorySettings } from './tabs/ScreenMemorySettings';
 import { UserDashboardSettings } from './tabs/UserDashboardSettings';
 import { InviteCodesSettings } from './tabs/InviteCodesSettings';
+import { ControlPlaneSettings } from './tabs/ControlPlaneSettings';
 import ipcService from '../../../services/ipcService';
 
 interface SettingsTabConfig {
@@ -126,6 +129,7 @@ export function buildSettingsTabGroups({
     { id: 'automation', label: '自动化', icon: <Clock className="w-4 h-4" /> },
     { id: 'users', label: '用户看板', icon: <Users className="w-4 h-4" /> },
     { id: 'invites', label: '邀请码', icon: <Ticket className="w-4 h-4" /> },
+    { id: 'controlPlane', label: 'Control Plane', icon: <Cloud className="w-4 h-4" /> },
     { id: 'cache', label: '数据与存储', icon: <Database className="w-4 h-4" /> },
     { id: 'capabilities', label: '能力中心', icon: <Boxes className="w-4 h-4" /> },
     { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
@@ -196,6 +200,7 @@ export const SettingsModal: React.FC = () => {
   const accessSubject = useMemo(() => createAccessSubject(currentUser), [currentUser]);
   const canViewUsers = canAccessSettingsTab('users', accessSubject);
   const canViewInvites = canAccessSettingsTab('invites', accessSubject);
+  const canViewControlPlane = canAccessSettingsTab('controlPlane', accessSubject);
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     settingsInitialTab ?? DEFAULT_SETTINGS_TAB
@@ -360,6 +365,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'automation' && <AutomationSettings />}
             {canViewUsers && activeTab === 'users' && <UserDashboardSettings />}
             {canViewInvites && activeTab === 'invites' && <InviteCodesSettings />}
+            {canViewControlPlane && activeTab === 'controlPlane' && <ControlPlaneSettings />}
             {activeTab === 'model' && (
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}

@@ -36,6 +36,18 @@ export function registerAdminHandlers(ipcMain: IpcMain): void {
             request.payload as AdminUpdateInviteCodeInput,
           );
           break;
+        case 'listControlPlaneAuditEvents':
+          data = await getAdminService().listControlPlaneAuditEvents(
+            typeof request.payload === 'object'
+              && request.payload !== null
+              && typeof (request.payload as { limit?: unknown }).limit === 'number'
+              ? (request.payload as { limit: number }).limit
+              : undefined,
+          );
+          break;
+        case 'listControlPlaneRolloutSummary':
+          data = await getAdminService().listControlPlaneRolloutSummary();
+          break;
         default:
           return {
             success: false,

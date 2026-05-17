@@ -18,6 +18,7 @@ export const SETTINGS_TAB_IDS = [
   'automation',
   'users',
   'invites',
+  'controlPlane',
   'cache',
   'capabilities',
   'mcp',
@@ -74,6 +75,7 @@ export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> 
   automation: 'workspace',
   users: 'management',
   invites: 'management',
+  controlPlane: 'management',
   memory: 'memory',
   openchronicle: 'memory',
   cache: 'system',
@@ -87,13 +89,14 @@ export function isSettingsTab(value: unknown): value is SettingsTab {
   return typeof value === 'string' && SETTINGS_TAB_ID_SET.has(value);
 }
 
-export const ADMIN_ONLY_SETTINGS_TABS = ['users', 'invites', 'capabilities', 'hooks'] as const satisfies readonly SettingsTab[];
+export const ADMIN_ONLY_SETTINGS_TABS = ['users', 'invites', 'controlPlane', 'capabilities', 'hooks'] as const satisfies readonly SettingsTab[];
 
 const ADMIN_ONLY_SETTINGS_TAB_SET = new Set<SettingsTab>(ADMIN_ONLY_SETTINGS_TABS);
 
 const SETTINGS_TAB_ACCESS_FEATURES: Partial<Record<SettingsTab, AccessControlledFeature>> = {
   users: 'settings.users',
   invites: 'settings.invites',
+  controlPlane: 'settings.controlPlane',
   capabilities: 'settings.capabilities',
   hooks: 'settings.hooks',
 };

@@ -131,7 +131,7 @@ P1 已在 Vercel production 验收到最小闭环：
 - Vercel production 已写入 control-plane env：`CONTROL_PLANE_PRIVATE_KEY`、`CONTROL_PLANE_KEY_ID`、`CONTROL_PLANE_TTL_SECONDS`、`CONTROL_PLANE_CLOUD_CONFIG_JSON`、`CONTROL_PLANE_PROMPT_REGISTRY_JSON`、`CONTROL_PLANE_CAPABILITY_REGISTRY_JSON`、`CODE_AGENT_CONTROL_PLANE_KEY_ID`、`CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY`、`CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS`。
 - 当前 production deployment 是 `dpl_3siddi5sAjia68yGi8tAigZBzUoN`，`code-agent-beta.vercel.app` 已 alias 到该 deployment。
 - 线上 smoke 已通过：`/api/v1/config`、`/api/prompts?gen=all`、`/api/v1/control-plane?artifact=capabilities` 均返回 HTTP 200 signed envelope，`keyId=production-2026-05-17`。
-- 生产默认 payload 是锁定态：`entitlement.status=revoked`，`prompts={}`，`capability_registry.items=[]`，`mcpServers=[]`。这表示分发通道、签名、TTL、hash 和 fail-closed 路径已跑通，但还没有发布可运营能力。
+- P1 closing 时生产默认 payload 是锁定态：`entitlement.status=revoked`，`prompts={}`，`capability_registry.items=[]`，`mcpServers=[]`。这表示分发通道、签名、TTL、hash 和 fail-closed 路径已跑通，但还没有发布可运营能力。
 - 线上首次部署暴露过一个 Vercel ESM 运行时问题：TypeScript 函数编译成 `.js` 后不解析 extensionless import。已把 `vercel-api` 内部相对导入改成 `.js`，并把 `vercel-api/tsconfig.json` 切到 `module/moduleResolution: NodeNext`，避免同类问题只在线上暴露。
 
 P1 closing 验证命令：
@@ -231,6 +231,23 @@ P2 的后台/运营面最少要能回答：
 - 回滚目标是哪一个 previous bundle。
 
 短期可以先用 manifest 和 release bundle 作为审计资产；后台 UI 可以后置，但发布材料必须先具备这些字段。
+
+### P2 Production 状态
+
+P2 第一版 production 已从空 payload 推进到可运营的最小内容闭环：
+
+- `72e39cf2 feat(control-plane): add release bundle governance` 已推到 `origin/main`。
+- `production-2026-05-17.2` bundle 已生成，包含 `manifest.json`、三类 payload、Vercel env commands 和 rollback commands。
+- Vercel production 已写入非空 capability registry 与两个受限 prompt addon，并部署到 `dpl_BiNvdAxvKDe6uYCDsQP9hESUnbkm`，`code-agent-beta.vercel.app` 已 alias 到该 deployment。
+- 线上 smoke 已通过：cloud config、prompt registry、capability registry 均返回 HTTP 200 signed envelope，`keyId=production-2026-05-17`。
+- 当前 production capability registry 发布 3 个 reviewed metadata 条目：Filesystem MCP template、HTTP API channel template、Meeting summary workflow template。MCP 条目仍只允许 disabled draft；channel/workflow 条目只做 metadata preview。
+- 当前 production cloud config 仍保持 `entitlement.status=revoked`、`mcpServers=[]`，未向未认证用户打开 cloud MCP 或高风险 feature。
+
+P2 后续治理补充：
+
+- `supabase/migrations/20260517000000_control_plane_governance.sql` 新增 `control_plane_entitlements` 和 `control_plane_audit_events`，并提供 admin-only RPC 读取 audit ledger 与 rollout summary。
+- Vercel control-plane 增加 optional audit writer，只有显式配置 `CONTROL_PLANE_AUDIT_ENABLED=true` 且存在 Supabase audit URL/service role key 时才写入 ledger；记录 artifact、version、channel、hash、keyId、subject 和 entitlement 结果，不记录 bearer token、signature 或 payload 全文。
+- Settings 管理组新增只读 `Control Plane` 页，复用 Admin IPC 和 Supabase admin RPC 展示最近 audit events 与版本/hash 摘要；migration 尚未应用时页面显示 unavailable reason。
 
 ### P2 Non-goals
 

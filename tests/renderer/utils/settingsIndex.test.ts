@@ -24,11 +24,14 @@ describe('settings search index', () => {
   it('covers user and invite management settings', () => {
     expect(searchSettings('上次登录', { isAdmin: true }).map((entry) => entry.tab)).toContain('users');
     expect(searchSettings('邀请码', { isAdmin: true }).map((entry) => entry.tab)).toContain('invites');
+    expect(searchSettings('control plane', { isAdmin: true }).map((entry) => entry.tab)).toContain('controlPlane');
+    expect(searchSettings('发布审计', { isAdmin: true }).map((entry) => entry.tab)).toContain('controlPlane');
   });
 
   it('hides admin-only settings from non-admin search results', () => {
     expect(searchSettings('上次登录').map((entry) => entry.tab)).not.toContain('users');
     expect(searchSettings('邀请码').map((entry) => entry.tab)).not.toContain('invites');
+    expect(searchSettings('control plane').map((entry) => entry.tab)).not.toContain('controlPlane');
     expect(searchSettings('capability').map((entry) => entry.tab)).not.toContain('capabilities');
     expect(searchSettings('Hook').map((entry) => entry.tab)).not.toContain('hooks');
   });

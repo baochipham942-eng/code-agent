@@ -223,6 +223,7 @@ export async function installPlugin(
     scope?: PluginScope;
     projectPath?: string;
     force?: boolean;
+    enableAfterInstall?: boolean;
   } = {}
 ): Promise<InstallResult> {
   const scope = options.scope || 'user';
@@ -319,7 +320,7 @@ export async function installPlugin(
     plugin,
     marketplace,
     scope,
-    isEnabled: true,
+    isEnabled: options.enableAfterInstall === true,
     projectPath,
     installedAt: new Date().toISOString(),
     skills: installedSkills,
@@ -331,6 +332,7 @@ export async function installPlugin(
 
   logger.info('Plugin installed', {
     pluginSpec,
+    isEnabled: state[pluginSpec].isEnabled,
     skills: installedSkills.length,
     commands: installedCommands.length,
   });

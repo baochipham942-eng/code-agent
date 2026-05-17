@@ -107,6 +107,8 @@ P1-H 补上 Vercel `/api/update` 实现：`GET action=health|check` 从 GitHub R
 
 P1-I 把最小 control-plane policy 纳入签名 cloud config：payload 可携带 `entitlement`、`killSwitches`、`release`。客户端保留内置本地默认，但远端签名配置一旦下发，`FeatureFlagService` 会按 entitlement 和 kill switch 对高风险 boolean flag fail closed；release channel/minVersion 作为 signed policy 暴露给主进程读取，后续 update/channel 逻辑可继续收口到同一份 policy。
 
+P1-J 收紧 marketplace plugin 安装默认态：`installPlugin()` 仍会复制 marketplace skill/command 文件，但安装记录默认 `isEnabled:false`，`getEnabledSkillDirs()` 不会把新装插件加入 skill discovery；只有显式 `enablePlugin()` 后才 reload 并进入可调用路径。
+
 ## P2 逆向成本提升
 
 这些可以做，但优先级低于服务端边界：

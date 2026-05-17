@@ -58,6 +58,13 @@ describe('authService session trust', () => {
       id: 'admin-1',
       isAdmin: true,
     });
+    await expect(authService.getStatus()).resolves.toMatchObject({
+      isAuthenticated: true,
+      user: {
+        id: 'admin-1',
+        isAdmin: false,
+      },
+    });
     expect(authService.getSessionTrustState()).toBe('cached');
     expect(authService.hasVerifiedSession()).toBe(false);
 

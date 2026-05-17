@@ -47,13 +47,24 @@ class AuthService {
   }
 
   private notifyAuthChange(user: AuthUser | null): void {
+    const publicUser = this.getPublicUserForCurrentTrust(user);
     this.onAuthChangeCallbacks.forEach((callback) => {
       try {
-        callback(user);
+        callback(publicUser);
       } catch (err) {
         logger.error('Auth change callback error:', err);
       }
     });
+  }
+
+  private getPublicUserForCurrentTrust(user: AuthUser | null): AuthUser | null {
+    if (!user) return null;
+    if (this.hasVerifiedSession()) return user;
+    if (user.isAdmin !== true) return user;
+    return {
+      ...user,
+      isAdmin: false,
+    };
   }
 
   async initialize(): Promise<void> {
@@ -188,7 +199,7 @@ class AuthService {
   async getStatus(): Promise<AuthStatus> {
     return {
       isAuthenticated: this.currentUser !== null,
-      user: this.currentUser,
+      user: this.getPublicUserForCurrentTrust(this.currentUser),
       isLoading: false,
     };
   }

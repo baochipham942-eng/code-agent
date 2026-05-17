@@ -96,6 +96,20 @@ For P0:
 
 Future team or remote registries should add signed source metadata, stronger provenance, explicit permission prompts, enable/disable lifecycle records, and rollback metadata before any install path exists.
 
+## P2 remote registry release boundary
+
+P2 can turn the local registry shape into a remote control-plane artifact, but the runtime boundary stays the same:
+
+- remote registry payloads must arrive as `kind:"capability_registry"` signed control-plane envelopes
+- unsigned, expired, hash-mismatched, or unknown-key responses are ignored
+- `revokedIds` is the remote downrank/removal mechanism and must be reviewed with every release
+- remote items remain metadata and install previews until the user creates a local disabled draft
+- installable MCP templates still require matching `source.contentHash` and future `source.expiresAt`
+- registry-provided secrets, env values, headers, or executable install steps are rejected
+- release bundles must include a manifest with version, channel, keyId, artifact hashes, previous version, and rollback availability
+
+Remote publication should be handled as a reviewed bundle: prepare payloads locally, validate schema/trust rules, generate the Vercel env commands, run control-plane smoke after deployment, and keep the previous bundle available for rollback. The publication bundle must not contain or rotate the production private key by default.
+
 ## Draft lifecycle
 
 P0.10 tracks Capability Center generated MCP drafts with local metadata on the MCP server config:

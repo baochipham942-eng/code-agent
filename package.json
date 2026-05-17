@@ -86,6 +86,7 @@
     "release:security-scan:bundle": "node scripts/release-security-scan.mjs src-tauri/target/release/bundle/macos",
     "release:verify-macos": "bash scripts/verify-macos-release.sh",
     "release:notarize-macos": "bash scripts/tauri-notarize.sh",
+    "control-plane:release-bundle": "node scripts/control-plane-release-bundle.mjs",
     "tauri:package": "npm run rebuild-native:system && npm run build && npm run tauri:prebuild-cleanup && npm run release:security-scan && cargo tauri build",
     "tauri:bundle": "npm run tauri:package && npm run release:verify-macos && bash scripts/tauri-clean-bundle-apps.sh",
     "tauri:build": "npm run tauri:package && npm run release:verify-macos && bash scripts/tauri-install.sh",

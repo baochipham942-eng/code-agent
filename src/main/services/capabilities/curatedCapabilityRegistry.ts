@@ -64,6 +64,7 @@ interface CuratedRegistryFile {
   version?: unknown;
   source?: unknown;
   items?: unknown;
+  revokedIds?: unknown;
 }
 
 interface CuratedRegistryReadResult {
@@ -277,6 +278,55 @@ function buildTrustBlockReason(diagnostics: CapabilityCenterDiagnostic[]): strin
     return undefined;
   }
   return `Registry trust metadata blocked draft generation: ${blockingCodes.join(', ')}`;
+}
+
+function parseRevokedIds(value: unknown, filePath: string): {
+  revokedIds: Set<string>;
+  diagnostics: CapabilityCenterDiagnostic[];
+} {
+  if (value === undefined) {
+    return { revokedIds: new Set(), diagnostics: [] };
+  }
+  if (!Array.isArray(value)) {
+    return {
+      revokedIds: new Set(),
+      diagnostics: [diagnostic({
+        code: 'invalid_revoked_ids',
+        message: 'Registry revokedIds must be an array of strings.',
+        path: filePath,
+        severity: 'error',
+      })],
+    };
+  }
+
+  const revokedIds = new Set<string>();
+  const diagnostics: CapabilityCenterDiagnostic[] = [];
+  value.forEach((entry, index) => {
+    const id = asString(entry);
+    if (!id) {
+      diagnostics.push(diagnostic({
+        code: 'invalid_revoked_id',
+        message: 'Skipped revokedIds entry because it is not a non-empty string.',
+        path: `${filePath}#revokedIds[${index}]`,
+        severity: 'warning',
+      }));
+      return;
+    }
+    revokedIds.add(id);
+  });
+  return { revokedIds, diagnostics };
+}
+
+function isRevokedRegistryItem(raw: CuratedRegistryItem, revokedIds: Set<string>): string | null {
+  const id = asString(raw.id);
+  if (!id) {
+    return null;
+  }
+  const kind = asString(raw.kind);
+  if (revokedIds.has(id) || (kind && revokedIds.has(`${kind}:${id}`))) {
+    return id;
+  }
+  return null;
 }
 
 function isRequirementKind(value: unknown): value is CapabilityRequirement['kind'] {
@@ -769,6 +819,8 @@ export function parseCapabilityRegistryPayload(
   }
 
   const rawItems = parsed.items;
+  const revoked = parseRevokedIds(parsed.revokedIds, options.sourcePath);
+  diagnostics.push(...revoked.diagnostics);
   const requiresRegistryTrust = options.trustMode === 'source_metadata'
     && rawItems.some((rawItem) => hasMcpDraftCandidate(asRecord(rawItem)));
   const trustDiagnostics = options.trustMode === 'source_metadata'
@@ -781,8 +833,22 @@ export function parseCapabilityRegistryPayload(
 
   const registryTrustBlockReason = buildTrustBlockReason(trustDiagnostics);
   for (const rawItem of rawItems) {
+    const rawRecord = asRecord(rawItem);
+    const revokedId = isRevokedRegistryItem(rawRecord, revoked.revokedIds);
+    if (revokedId) {
+      diagnostics.push(diagnostic({
+        code: 'revoked_registry_item',
+        message: `Skipped registry item ${revokedId} because it is listed in revokedIds.`,
+        path: options.sourcePath,
+        itemId: revokedId,
+        severity: 'warning',
+        blocking: true,
+      }));
+      continue;
+    }
+
     const { item, diagnostic: itemDiagnostic } = parseCuratedRegistryItem(
-      asRecord(rawItem),
+      rawRecord,
       options.sourcePath,
       source,
       options.registryFileHash,

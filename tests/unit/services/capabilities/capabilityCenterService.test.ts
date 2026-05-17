@@ -767,6 +767,65 @@ describe('CapabilityCenterService', () => {
     );
   });
 
+  it('filters revoked signed remote capability registry items before inventory and draft install', async () => {
+    const payload = buildRemoteMcpRegistryPayload('remote-revoked-mcp');
+    payload.revokedIds = ['remote-revoked-mcp'];
+    payload.items.push({
+      ...payload.items[0],
+      id: 'remote-active-mcp',
+      install: {
+        mcpServer: {
+          name: 'remote_active_mcp',
+          type: 'stdio',
+          command: 'node',
+          args: ['server.js', '{{allowedRoot}}'],
+        },
+      },
+    });
+    const { envelope, publicKeys } = buildSignedCapabilityRegistryEnvelope(payload);
+    const remoteRegistry = new RemoteCapabilityRegistryService({
+      endpoint: 'https://control-plane.test/api/v1/capabilities',
+      controlPlanePublicKeys: publicKeys,
+      fetchImpl: vi.fn().mockResolvedValue(mockCapabilityRegistryResponse(envelope)),
+      now: Date.parse('2026-05-17T00:00:00.000Z'),
+    });
+    const service = new CapabilityCenterService();
+    const configService = {
+      getSettings: () => ({ connectors: { enabledNative: [] } }),
+      updateSettings: configUpdateSettings,
+    } as never;
+    const inventory = await service.listCapabilities({
+      configService,
+      remoteCapabilityRegistryService: remoteRegistry,
+    });
+
+    expect(inventory.items.find((item) => item.id === 'remote:mcp_template%3Aremote-revoked-mcp')).toBeUndefined();
+    expect(inventory.items.find((item) => item.id === 'remote:mcp_template%3Aremote-active-mcp')).toMatchObject({
+      actions: {
+        canInstallDraft: true,
+      },
+    });
+    expect(inventory.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'revoked_registry_item',
+        itemId: 'remote-revoked-mcp',
+        blocking: true,
+      }),
+    ]));
+    await expect(service.installDraft(
+      {
+        id: 'remote:mcp_template%3Aremote-revoked-mcp',
+        kind: 'mcp_template',
+        inputs: { allowedRoot: '/tmp/revoked' },
+      },
+      {
+        workingDirectory: '/tmp',
+        configService,
+        remoteCapabilityRegistryService: remoteRegistry,
+      },
+    )).rejects.toThrow('Capability not found');
+  });
+
   it('ignores unsigned, expired, and bad-signature remote capability registries', async () => {
     const payload = buildRemoteMcpRegistryPayload('untrusted-remote-mcp');
     const expired = buildSignedCapabilityRegistryEnvelope(payload, '2000-01-01T00:00:00.000Z');

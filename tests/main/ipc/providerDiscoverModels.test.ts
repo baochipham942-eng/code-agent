@@ -40,4 +40,19 @@ describe('provider model discovery parsing', () => {
       }),
     ]);
   });
+
+  it('parses Claude style display names', () => {
+    const models = parseDiscoveredModelsResponse({
+      data: [
+        { id: 'claude-sonnet-4-6', display_name: 'Claude Sonnet 4.6' },
+      ],
+    });
+
+    expect(models).toEqual([
+      expect.objectContaining({
+        id: 'claude-sonnet-4-6',
+        label: 'Claude Sonnet 4.6',
+      }),
+    ]);
+  });
 });

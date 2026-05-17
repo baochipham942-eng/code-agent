@@ -11,7 +11,7 @@ import {
   MCP,
   getModelMaxOutputTokens,
 } from '../../shared/constants';
-import type { ModelCapability } from '../../shared/contract';
+import type { ModelCapability, ModelProviderProtocol } from '../../shared/contract';
 import { inferModelCapabilities, inferSupportsTool } from '../../shared/modelRuntime';
 import { runDiagnostics } from './doctor.ipc';
 import { runDoctor } from '../diagnostics/doctorRunner';
@@ -27,6 +27,7 @@ export interface TestConnectionPayload {
   apiKey: string;
   baseUrl?: string;
   model?: string;
+  protocol?: ModelProviderProtocol;
 }
 
 export interface TestConnectionResult {
@@ -43,6 +44,7 @@ export interface DiscoverModelsPayload {
   provider: string;
   baseUrl?: string;
   apiKey?: string;
+  protocol?: ModelProviderProtocol;
 }
 
 export interface DiscoveredProviderModel {
@@ -74,16 +76,19 @@ function buildTestConfig(
   provider: string,
   apiKey: string,
   baseUrl?: string,
+  protocol?: ModelProviderProtocol,
+  model?: string,
 ): { url: string; method: string; headers: Record<string, string>; body?: string } | null {
   const normalizedProvider = normalizeProviderId(provider) ?? provider;
+  const providerProtocol = protocol ?? (normalizedProvider === 'claude' ? 'claude' : 'openai');
   const registry = getProviderInfo(provider);
   const endpoint = baseUrl || registry?.endpoint;
   if (!endpoint) return null;
 
   // Anthropic Claude — 不兼容 OpenAI，用 /messages 最小请求
-  if (normalizedProvider === 'claude') {
+  if (providerProtocol === 'claude') {
     return {
-      url: `${endpoint}/messages`,
+      url: `${trimTrailingSlash(endpoint)}/messages`,
       method: 'POST',
       headers: {
         'x-api-key': apiKey,
@@ -91,7 +96,7 @@ function buildTestConfig(
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-3-haiku-20240307',
+        model: model || 'claude-3-haiku-20240307',
         max_tokens: 1,
         messages: [{ role: 'user', content: 'Hi' }],
       }),
@@ -121,11 +126,27 @@ function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
 }
 
-function getDiscoveryUrl(provider: string, baseUrl?: string, apiKey?: string): { url: string; headers: Record<string, string> } | null {
+function getDiscoveryUrl(
+  provider: string,
+  baseUrl?: string,
+  apiKey?: string,
+  protocol?: ModelProviderProtocol,
+): { url: string; headers: Record<string, string> } | null {
   const normalizedProvider = normalizeProviderId(provider) ?? provider;
+  const providerProtocol = protocol ?? (normalizedProvider === 'claude' ? 'claude' : 'openai');
   const registry = getProviderInfo(provider);
   const endpoint = baseUrl || registry?.endpoint;
   if (!endpoint) return null;
+
+  if (providerProtocol === 'claude') {
+    return {
+      url: `${trimTrailingSlash(endpoint)}/models`,
+      headers: {
+        ...(apiKey ? { 'x-api-key': apiKey } : {}),
+        'anthropic-version': API_VERSIONS.ANTHROPIC,
+      },
+    };
+  }
 
   if (normalizedProvider === 'gemini') {
     return {
@@ -180,7 +201,7 @@ export function parseDiscoveredModelsResponse(payload: unknown): DiscoveredProvi
     if (!id || seen.has(id)) continue;
     seen.add(id);
 
-    const label = getStringField(item, 'displayName') || getStringField(item, 'label') || id;
+    const label = getStringField(item, 'displayName') || getStringField(item, 'display_name') || getStringField(item, 'label') || id;
     const capabilities = inferModelCapabilities(id);
     const maxTokens = getNumberField(item, ['max_context_length', 'context_length', 'contextWindow', 'maxTokens'])
       ?? getModelMaxOutputTokens(id);
@@ -232,7 +253,7 @@ function mapHttpError(status: number, body: string): TestConnectionResult['error
 }
 
 export async function handleTestConnection(payload: TestConnectionPayload): Promise<TestConnectionResult> {
-  const config = buildTestConfig(payload.provider, payload.apiKey, payload.baseUrl);
+  const config = buildTestConfig(payload.provider, payload.apiKey, payload.baseUrl, payload.protocol, payload.model);
 
   if (!config) {
     return {
@@ -315,7 +336,7 @@ export async function handleTestConnection(payload: TestConnectionPayload): Prom
 }
 
 export async function handleDiscoverModels(payload: DiscoverModelsPayload): Promise<DiscoverModelsResult> {
-  const discovery = getDiscoveryUrl(payload.provider, payload.baseUrl, payload.apiKey);
+  const discovery = getDiscoveryUrl(payload.provider, payload.baseUrl, payload.apiKey, payload.protocol);
   if (!discovery) {
     return {
       success: false,
@@ -380,7 +401,7 @@ export async function handleDiscoverModels(payload: DiscoverModelsPayload): Prom
       error: {
         code: 'NETWORK_ERROR',
         message: `发现模型失败: ${message.substring(0, 150)}`,
-        suggestion: '请检查 Base URL 是否指向 OpenAI-compatible /v1 端点',
+        suggestion: '请检查 Base URL 是否指向所选协议的模型 API 端点',
       },
     };
   }

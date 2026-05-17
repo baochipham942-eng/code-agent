@@ -288,6 +288,7 @@ export const App: React.FC = () => {
               model,
               apiKey: providerConfig.apiKey || '',
               baseUrl: providerConfig.baseUrl || getProviderInfo(defaultProvider)?.endpoint || '',
+              protocol: providerConfig.protocol,
               temperature: providerConfig.temperature ?? 0.7,
               maxTokens: modelSettings?.maxTokens ?? providerConfig.maxTokens ?? 4096,
               capabilities: modelSettings?.capabilities,

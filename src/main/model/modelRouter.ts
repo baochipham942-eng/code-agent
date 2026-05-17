@@ -667,7 +667,7 @@ export class ModelRouter {
     options?: InferenceOptions,
   ): Promise<ModelResponse> {
     const provider = this.providers.get(config.provider)
-      ?? (this.isCustomOpenAICompatibleProvider(config) ? this.providers.get('custom') : undefined);
+      ?? this.getDynamicCustomProvider(config);
     if (!provider) {
       throw new Error(`Unsupported provider: ${config.provider}`);
     }
@@ -696,13 +696,18 @@ export class ModelRouter {
     }
   }
 
-  private isCustomOpenAICompatibleProvider(config: ModelConfig): boolean {
-    if (this.providers.has(config.provider)) return false;
-    if (config.baseUrl) return true;
+  private getDynamicCustomProvider(config: ModelConfig): Provider | undefined {
+    if (this.providers.has(config.provider)) return undefined;
+    if (config.protocol === 'claude') return this.providers.get('claude');
+    if (config.protocol === 'openai') return this.providers.get('custom');
     try {
-      return Boolean(getConfigService().getSettings().models?.providers?.[config.provider]?.baseUrl);
+      const providerConfig = getConfigService().getSettings().models?.providers?.[config.provider];
+      if (!providerConfig?.baseUrl) return undefined;
+      return providerConfig.protocol === 'claude'
+        ? this.providers.get('claude')
+        : this.providers.get('custom');
     } catch {
-      return false;
+      return config.baseUrl ? this.providers.get('custom') : undefined;
     }
   }
 

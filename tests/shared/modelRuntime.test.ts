@@ -65,6 +65,7 @@ describe('modelRuntime', () => {
         providers: {
           'custom-longcat': {
             enabled: true,
+            protocol: 'claude',
             displayName: 'LongCat',
             baseUrl: 'https://api.longcat.example/v1',
             model: 'longcat-2.0-preview',
@@ -85,6 +86,7 @@ describe('modelRuntime', () => {
     expect(provider).toMatchObject({
       id: 'custom-longcat',
       name: 'LongCat',
+      description: 'Claude-compatible · https://api.longcat.example/v1',
       models: [{ id: 'longcat-2.0-preview', label: 'LongCat 2.0 Preview' }],
     });
 

@@ -1055,6 +1055,35 @@ describe('ModelRouter', () => {
         undefined,
       );
     });
+
+    it('routes Claude-protocol dynamic custom providers through the Claude provider', async () => {
+      const claudeProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'claude relay response', finishReason: 'stop' }),
+      };
+      (router as any).providers.set('claude', claudeProvider);
+
+      const config: ModelConfig = {
+        provider: 'custom-claude-relay' as ModelProvider,
+        model: 'claude-sonnet-4-6',
+        apiKey: 'test-key',
+        baseUrl: 'https://claude-relay.test/v1',
+        protocol: 'claude',
+        maxTokens: 1000,
+      };
+
+      await expect(
+        router.inference([{ role: 'user', content: 'test' }], [], config)
+      ).resolves.toMatchObject({ content: 'claude relay response' });
+
+      expect(claudeProvider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        [],
+        config,
+        undefined,
+        undefined,
+        undefined,
+      );
+    });
   });
 
   // --------------------------------------------------------------------------

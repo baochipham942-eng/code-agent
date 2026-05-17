@@ -49,6 +49,7 @@ export function resolveModelConfig(
     model: selectedModel,
     apiKey: selectedApiKey,
     baseUrl: providerConfig?.baseUrl,
+    protocol: providerConfig?.protocol,
     temperature: 0.7,
     maxTokens,
   };

@@ -54,6 +54,7 @@ export {
   buildProviderManagementRows,
   createCustomProviderId,
   getModelLabel,
+  getProtocolLabel,
   orderProviderManagementRows,
   resolveModelForProvider,
 } from './ModelSettings.helpers';
@@ -464,8 +465,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       ...PROVIDER_MODELS.map((provider) => provider.id),
       ...Object.keys(providerConfigs),
     ]);
-    const modelId = 'custom-model';
-    const modelSettings = buildManualModelSettings(modelId, 'Custom Model');
+    const modelId = newProviderProtocol === 'claude' ? 'claude-sonnet-4-6' : 'custom-model';
+    const modelSettings = buildManualModelSettings(
+      modelId,
+      newProviderProtocol === 'claude' ? 'Claude Sonnet 4.6' : 'Custom Model',
+    );
     const nextProviderConfig: ModelProviderSettings = {
       enabled: true,
       displayName,

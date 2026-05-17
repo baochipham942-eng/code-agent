@@ -22,6 +22,8 @@ export type BuiltInModelProvider =
 
 export type ModelProvider = BuiltInModelProvider | (string & {});
 
+export type ModelProviderProtocol = 'openai' | 'claude';
+
 /**
  * Provider 输入别名。
  * `anthropic` 会被规范化为内部 canonical provider `claude`。
@@ -53,6 +55,7 @@ export interface ModelConfig {
   model: string;
   apiKey?: string;
   baseUrl?: string;
+  protocol?: ModelProviderProtocol;
   temperature?: number;
   maxTokens?: number;
   // 扩展配置

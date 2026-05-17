@@ -4,7 +4,16 @@
 // 负责从云端拉取配置、缓存管理、离线降级
 
 import type { SkillDefinition } from '../../../shared/contract';
-import { getBuiltinConfig, type CloudConfig, type ToolMetadata, type FeatureFlags, type MCPServerCloudConfig } from './builtinConfig';
+import {
+  getBuiltinConfig,
+  type CloudConfig,
+  type ToolMetadata,
+  type FeatureFlags,
+  type MCPServerCloudConfig,
+  type EntitlementPolicy,
+  type KillSwitchPolicy,
+  type ReleasePolicy,
+} from './builtinConfig';
 import { createLogger } from '../infra/logger';
 import { CACHE, CLOUD, CLOUD_ENDPOINTS } from '../../../shared/constants';
 import {
@@ -16,6 +25,13 @@ import {
 import type { ControlPlaneDiagnostic } from '../../../shared/contract/controlPlane';
 
 const logger = createLogger('CloudConfigService');
+
+const FEATURE_ENTITLEMENT_CAPABILITY: Partial<Record<keyof FeatureFlags, string>> = {
+  enableCloudAgent: 'cloud_agent',
+  enableMemory: 'memory',
+  enableComputerUse: 'computer_use',
+  enableExperimentalTools: 'experimental_tools',
+};
 
 export interface CloudConfigServiceOptions {
   getAccessToken?: () => Promise<string | null>;
@@ -190,6 +206,37 @@ export class CloudConfigService {
   getFeatureFlag<K extends keyof FeatureFlags>(key: K): FeatureFlags[K] {
     const flags = this.getFeatureFlags();
     return flags[key];
+  }
+
+  getEntitlement(): EntitlementPolicy {
+    return this.getConfig().entitlement ?? getBuiltinConfig().entitlement!;
+  }
+
+  getKillSwitches(): KillSwitchPolicy {
+    return this.getConfig().killSwitches ?? getBuiltinConfig().killSwitches!;
+  }
+
+  getReleasePolicy(): ReleasePolicy {
+    return this.getConfig().release ?? getBuiltinConfig().release!;
+  }
+
+  isGlobalKillSwitchActive(): boolean {
+    return this.getKillSwitches().global?.disabled === true;
+  }
+
+  isFeatureDisabledByPolicy(feature: keyof FeatureFlags | string): boolean {
+    if (this.isGlobalKillSwitchActive()) return true;
+
+    const featureSwitch = this.getKillSwitches().features?.[feature];
+    if (featureSwitch?.disabled === true) return true;
+
+    const capability = FEATURE_ENTITLEMENT_CAPABILITY[feature as keyof FeatureFlags];
+    if (!capability) return false;
+
+    const entitlement = this.getEntitlement();
+    if (entitlement.status === 'expired' || entitlement.status === 'revoked') return true;
+    if (entitlement.capabilities.includes('*')) return false;
+    return !entitlement.capabilities.includes(capability);
   }
 
   /**
@@ -415,4 +462,12 @@ export async function refreshCloudConfig(): Promise<{ success: boolean; version:
 }
 
 // 导出类型
-export type { CloudConfig, ToolMetadata, FeatureFlags, MCPServerCloudConfig };
+export type {
+  CloudConfig,
+  ToolMetadata,
+  FeatureFlags,
+  MCPServerCloudConfig,
+  EntitlementPolicy,
+  KillSwitchPolicy,
+  ReleasePolicy,
+};

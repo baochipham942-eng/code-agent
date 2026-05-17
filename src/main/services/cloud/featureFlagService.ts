@@ -3,7 +3,7 @@
 // ============================================================================
 // 从 CloudConfigService 读取 Feature Flags，提供便捷的检查接口
 
-import { getCloudConfigService, type FeatureFlags } from './cloudConfigService';
+import { CloudConfigService, getCloudConfigService, type FeatureFlags } from './cloudConfigService';
 
 // ----------------------------------------------------------------------------
 // FeatureFlagService
@@ -30,18 +30,34 @@ import { getCloudConfigService, type FeatureFlags } from './cloudConfigService';
  * @see CloudConfigService - 配置数据源
  */
 export class FeatureFlagService {
+  constructor(private readonly cloudConfigService: CloudConfigService = getCloudConfigService()) {}
+
+  private applyPolicy<K extends keyof FeatureFlags>(key: K, value: FeatureFlags[K]): FeatureFlags[K] {
+    if (typeof value === 'boolean' && this.cloudConfigService.isFeatureDisabledByPolicy(key)) {
+      return false as FeatureFlags[K];
+    }
+    return value;
+  }
+
   /**
    * 获取所有 Feature Flags
    */
   getAll(): FeatureFlags {
-    return getCloudConfigService().getFeatureFlags();
+    return {
+      enableCloudAgent: this.get('enableCloudAgent'),
+      enableMemory: this.get('enableMemory'),
+      enableComputerUse: this.get('enableComputerUse'),
+      maxIterations: this.get('maxIterations'),
+      maxMessageLength: this.get('maxMessageLength'),
+      enableExperimentalTools: this.get('enableExperimentalTools'),
+    };
   }
 
   /**
    * 获取特定 Flag 的值
    */
   get<K extends keyof FeatureFlags>(key: K): FeatureFlags[K] {
-    return getCloudConfigService().getFeatureFlag(key);
+    return this.applyPolicy(key, this.cloudConfigService.getFeatureFlag(key));
   }
 
   /**

@@ -22,6 +22,7 @@ global.fetch = mockFetch;
 
 // Import after mocks
 import { CloudConfigService, getCloudConfigService } from '../../src/main/services/cloud/cloudConfigService';
+import { FeatureFlagService } from '../../src/main/services/cloud/featureFlagService';
 import { getBuiltinConfig } from '../../src/main/services/cloud/builtinConfig';
 import {
   buildControlPlaneContentHash,
@@ -223,6 +224,78 @@ describe('CloudConfigService', () => {
           diagnostics: [],
         },
       });
+    });
+
+    it('applies signed entitlement and kill switch policy to feature flags', async () => {
+      const signedConfig = {
+        ...getBuiltinConfig(),
+        version: 'signed-policy-remote',
+        featureFlags: {
+          ...getBuiltinConfig().featureFlags,
+          enableCloudAgent: true,
+          enableComputerUse: true,
+        },
+        entitlement: {
+          status: 'active' as const,
+          plan: 'pro',
+          capabilities: ['cloud_agent'],
+        },
+        killSwitches: {
+          global: { disabled: false },
+          features: {
+            enableComputerUse: {
+              disabled: true,
+              reason: 'controlled rollout paused',
+            },
+          },
+        },
+        release: {
+          channel: 'beta' as const,
+          minVersion: '0.16.75',
+          forceUpdate: false,
+        },
+      };
+      const { envelope, publicKeys } = buildSignedCloudConfig(signedConfig);
+      mockFetch.mockResolvedValueOnce(mockJsonResponse(envelope));
+      const service = new CloudConfigService({
+        controlPlanePublicKeys: publicKeys,
+      });
+
+      await service.initialize();
+
+      const flags = new FeatureFlagService(service).getAll();
+      expect(flags.enableCloudAgent).toBe(true);
+      expect(flags.enableComputerUse).toBe(false);
+      expect(service.isFeatureDisabledByPolicy('enableComputerUse')).toBe(true);
+      expect(service.getReleasePolicy()).toMatchObject({
+        channel: 'beta',
+        minVersion: '0.16.75',
+      });
+    });
+
+    it('fails closed for entitlement-gated features when entitlement is revoked', async () => {
+      const signedConfig = {
+        ...getBuiltinConfig(),
+        version: 'signed-revoked-policy',
+        entitlement: {
+          status: 'revoked' as const,
+          plan: 'pro',
+          capabilities: ['*'],
+          reason: 'revoked by control plane',
+        },
+      };
+      const { envelope, publicKeys } = buildSignedCloudConfig(signedConfig);
+      mockFetch.mockResolvedValueOnce(mockJsonResponse(envelope));
+      const service = new CloudConfigService({
+        controlPlanePublicKeys: publicKeys,
+      });
+
+      await service.initialize();
+
+      const flags = new FeatureFlagService(service).getAll();
+      expect(flags.enableCloudAgent).toBe(false);
+      expect(flags.enableComputerUse).toBe(false);
+      expect(flags.enableMemory).toBe(false);
     });
   });
 });

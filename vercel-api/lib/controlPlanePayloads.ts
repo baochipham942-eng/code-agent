@@ -13,6 +13,26 @@ export interface CloudConfigPayload {
   };
   rules: Record<string, string>;
   mcpServers: unknown[];
+  entitlement?: {
+    status: 'active' | 'trial' | 'expired' | 'revoked';
+    plan: string;
+    capabilities: string[];
+    expiresAt?: string;
+    reason?: string;
+  };
+  killSwitches?: {
+    global?: { disabled: boolean; reason?: string };
+    features?: Record<string, { disabled: boolean; reason?: string }>;
+  };
+  release?: {
+    channel: 'stable' | 'beta' | 'canary';
+    minVersion?: string;
+    latestVersion?: string;
+    forceUpdate?: boolean;
+    updateManifestUrl?: string;
+    downloadUrl?: string;
+    sha256?: string;
+  };
 }
 
 export interface PromptRegistryPayload {

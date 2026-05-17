@@ -23,6 +23,37 @@ export interface FeatureFlags {
   enableExperimentalTools: boolean;
 }
 
+export type EntitlementStatus = 'active' | 'trial' | 'expired' | 'revoked';
+export type ReleaseChannel = 'stable' | 'beta' | 'canary';
+
+export interface EntitlementPolicy {
+  status: EntitlementStatus;
+  plan: string;
+  capabilities: string[];
+  expiresAt?: string;
+  reason?: string;
+}
+
+export interface KillSwitchState {
+  disabled: boolean;
+  reason?: string;
+}
+
+export interface KillSwitchPolicy {
+  global?: KillSwitchState;
+  features?: Record<string, KillSwitchState>;
+}
+
+export interface ReleasePolicy {
+  channel: ReleaseChannel;
+  minVersion?: string;
+  latestVersion?: string;
+  forceUpdate?: boolean;
+  updateManifestUrl?: string;
+  downloadUrl?: string;
+  sha256?: string;
+}
+
 // MCP Server 配置
 export interface MCPServerCloudConfig {
   id: string;
@@ -52,6 +83,9 @@ export interface CloudConfig {
   };
   rules: Record<string, string>;
   mcpServers: MCPServerCloudConfig[];
+  entitlement?: EntitlementPolicy;
+  killSwitches?: KillSwitchPolicy;
+  release?: ReleasePolicy;
 }
 
 // ----------------------------------------------------------------------------
@@ -249,6 +283,21 @@ const BUILTIN_FEATURE_FLAGS: FeatureFlags = {
   maxIterations: 50,
   maxMessageLength: 100000,
   enableExperimentalTools: false,
+};
+
+const BUILTIN_ENTITLEMENT: EntitlementPolicy = {
+  status: 'active',
+  plan: 'local',
+  capabilities: ['*'],
+};
+
+const BUILTIN_KILL_SWITCHES: KillSwitchPolicy = {
+  global: { disabled: false },
+  features: {},
+};
+
+const BUILTIN_RELEASE_POLICY: ReleasePolicy = {
+  channel: 'stable',
 };
 
 // ----------------------------------------------------------------------------
@@ -526,6 +575,9 @@ export function getBuiltinConfig(): CloudConfig {
     uiStrings: BUILTIN_UI_STRINGS,
     rules: BUILTIN_RULES,
     mcpServers: BUILTIN_MCP_SERVERS,
+    entitlement: BUILTIN_ENTITLEMENT,
+    killSwitches: BUILTIN_KILL_SWITCHES,
+    release: BUILTIN_RELEASE_POLICY,
   };
 }
 

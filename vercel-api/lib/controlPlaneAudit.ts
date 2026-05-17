@@ -10,9 +10,20 @@ export interface ControlPlaneAuditResult {
   error?: string;
 }
 
-interface ControlPlaneAuditConfig {
+type ControlPlaneAuditConfig =
+  | ControlPlaneSupabaseAuditConfig
+  | ControlPlanePostgresAuditConfig;
+
+interface ControlPlaneSupabaseAuditConfig {
+  mode: 'supabase';
   url: string;
   key: string;
+  table: string;
+}
+
+interface ControlPlanePostgresAuditConfig {
+  mode: 'postgres';
+  databaseUrl: string;
   table: string;
 }
 
@@ -55,6 +66,32 @@ const AUDIT_KEY_ENV_NAMES = [
   'SUPABASE_SERVICE_ROLE_KEY',
 ];
 
+const AUDIT_DATABASE_URL_ENV_NAMES = [
+  'CONTROL_PLANE_AUDIT_DATABASE_URL',
+  'CODE_AGENT_CONTROL_PLANE_AUDIT_DATABASE_URL',
+  'DATABASE_URL',
+];
+
+const AUDIT_COLUMNS = [
+  'artifact_kind',
+  'content_hash',
+  'created_at',
+  'entitlement_plan',
+  'entitlement_reason',
+  'entitlement_status',
+  'error_code',
+  'key_id',
+  'outcome',
+  'payload_version',
+  'release_channel',
+  'request_id',
+  'request_method',
+  'status_code',
+  'subject_id',
+  'subject_source',
+  'user_agent',
+] as const;
+
 function readEnv(env: NodeJS.ProcessEnv, names: string[]): string | null {
   for (const name of names) {
     const value = env[name];
@@ -70,23 +107,40 @@ function readBooleanEnv(env: NodeJS.ProcessEnv, names: string[]): boolean {
   return value ? /^(1|true|yes|enabled)$/i.test(value) : false;
 }
 
+function resolveAuditTable(env: NodeJS.ProcessEnv): string {
+  const table = readEnv(env, [
+    'CONTROL_PLANE_AUDIT_TABLE',
+    'CODE_AGENT_CONTROL_PLANE_AUDIT_TABLE',
+  ]) ?? 'control_plane_audit_events';
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table)) {
+    throw new Error('CONTROL_PLANE_AUDIT_TABLE must be a simple table name.');
+  }
+  return table;
+}
+
 function resolveAuditConfig(env: NodeJS.ProcessEnv): ControlPlaneAuditConfig | null {
   if (!readBooleanEnv(env, AUDIT_ENABLED_ENV_NAMES)) {
     return null;
   }
   const url = readEnv(env, AUDIT_URL_ENV_NAMES);
   const key = readEnv(env, AUDIT_KEY_ENV_NAMES);
-  if (!url || !key) {
-    return null;
+  const table = resolveAuditTable(env);
+  if (url && key) {
+    return {
+      mode: 'supabase',
+      url: url.replace(/\/+$/, ''),
+      key,
+      table,
+    };
   }
-  return {
-    url: url.replace(/\/+$/, ''),
-    key,
-    table: readEnv(env, [
-      'CONTROL_PLANE_AUDIT_TABLE',
-      'CODE_AGENT_CONTROL_PLANE_AUDIT_TABLE',
-    ]) ?? 'control_plane_audit_events',
-  };
+  const databaseUrl = readEnv(env, AUDIT_DATABASE_URL_ENV_NAMES);
+  return databaseUrl
+    ? {
+      mode: 'postgres',
+      databaseUrl,
+      table,
+    }
+    : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -159,8 +213,8 @@ function buildEnvelopeRow<TPayload>(
   };
 }
 
-async function postAuditRow(
-  config: ControlPlaneAuditConfig,
+async function postAuditRowToSupabase(
+  config: ControlPlaneSupabaseAuditConfig,
   row: Record<string, unknown>,
   fetchImpl: typeof fetch,
 ): Promise<ControlPlaneAuditResult> {
@@ -184,6 +238,41 @@ async function postAuditRow(
     };
   }
   return { ok: true };
+}
+
+async function postAuditRowToPostgres(
+  config: ControlPlanePostgresAuditConfig,
+  row: Record<string, unknown>,
+): Promise<ControlPlaneAuditResult> {
+  const { default: postgres } = await import('postgres');
+  const sql = postgres(config.databaseUrl, {
+    max: 1,
+    idle_timeout: 1,
+    connect_timeout: 3,
+    prepare: false,
+  });
+  try {
+    const placeholders = AUDIT_COLUMNS.map((_, index) => `$${index + 1}`).join(', ');
+    const values = AUDIT_COLUMNS.map((column) => row[column] ?? null) as never[];
+    await sql.unsafe(
+      `insert into ${config.table} (${AUDIT_COLUMNS.join(', ')}) values (${placeholders})`,
+      values,
+    );
+    return { ok: true };
+  } finally {
+    await sql.end({ timeout: 1 });
+  }
+}
+
+async function postAuditRow(
+  config: ControlPlaneAuditConfig,
+  row: Record<string, unknown>,
+  fetchImpl: typeof fetch,
+): Promise<ControlPlaneAuditResult> {
+  if (config.mode === 'supabase') {
+    return postAuditRowToSupabase(config, row, fetchImpl);
+  }
+  return postAuditRowToPostgres(config, row);
 }
 
 export async function recordControlPlaneAuditEvent<TPayload>(

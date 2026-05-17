@@ -1,9 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   recordControlPlaneAuditError,
   recordControlPlaneAuditEvent,
 } from '../../../vercel-api/lib/controlPlaneAudit';
 import type { ControlPlaneEnvelope } from '../../../vercel-api/lib/controlPlaneEnvelope';
+
+const postgresMocks = vi.hoisted(() => ({
+  unsafe: vi.fn(),
+  end: vi.fn(),
+  connect: vi.fn(),
+}));
+
+vi.mock('postgres', () => ({
+  default: postgresMocks.connect,
+}));
 
 function makeEnvelope(): ControlPlaneEnvelope {
   return {
@@ -34,6 +44,18 @@ function makeEnvelope(): ControlPlaneEnvelope {
 }
 
 describe('control-plane audit ledger', () => {
+  beforeEach(() => {
+    postgresMocks.unsafe.mockReset();
+    postgresMocks.end.mockReset();
+    postgresMocks.connect.mockReset();
+    postgresMocks.unsafe.mockResolvedValue([]);
+    postgresMocks.end.mockResolvedValue(undefined);
+    postgresMocks.connect.mockReturnValue({
+      unsafe: postgresMocks.unsafe,
+      end: postgresMocks.end,
+    });
+  });
+
   it('skips writes unless audit is explicitly enabled', async () => {
     const fetchImpl = vi.fn<typeof fetch>();
 
@@ -50,6 +72,42 @@ describe('control-plane audit ledger', () => {
 
     expect(result).toEqual({ ok: true, skippedReason: 'audit_not_configured' });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('can write through DATABASE_URL when no Supabase service role is configured', async () => {
+    const result = await recordControlPlaneAuditEvent(
+      { method: 'GET', headers: {} },
+      {
+        envelope: makeEnvelope(),
+        statusCode: 200,
+        outcome: 'served',
+        now: new Date('2026-05-17T00:00:00.000Z'),
+        env: {
+          CONTROL_PLANE_AUDIT_ENABLED: 'true',
+          DATABASE_URL: 'postgresql://user:pass@db.example.com/postgres',
+        },
+      },
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(postgresMocks.connect).toHaveBeenCalledWith(
+      'postgresql://user:pass@db.example.com/postgres',
+      expect.objectContaining({ max: 1, prepare: false }),
+    );
+    expect(postgresMocks.unsafe).toHaveBeenCalledWith(
+      expect.stringContaining('insert into control_plane_audit_events'),
+      expect.arrayContaining([
+        'cloud_config',
+        'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        '2026-05-17T00:00:00.000Z',
+        'unauthenticated',
+        'production_default_locked',
+        'revoked',
+        null,
+        'production-2026-05-17',
+      ]),
+    );
+    expect(postgresMocks.end).toHaveBeenCalledWith({ timeout: 1 });
   });
 
   it('writes envelope metadata without tokens or full payloads', async () => {

@@ -66,14 +66,15 @@ DMG 中禁止存在：
 - 生产 esbuild web server 关闭 sourcemap 并启用 minify。
 - Tauri resources 移除 `dist/web/webServer.cjs.map`。
 - 新增 `npm run release:security-scan`，扫描第一方 sourcemap、源码、docs/tests/src、`.env`、私钥和 sourceMappingURL。
-- `tauri:bundle`、`tauri:release:bundle`、`tauri-install.sh` 接入 release scan；最终 app bundle 可用 `npm run release:security-scan:bundle` 复查。
+- `tauri:bundle`、`tauri:release:bundle`、`tauri-install.sh` 接入 release scan；最终 app bundle 可用 `npm run release:verify-macos` 复查。
+- `tauri:release:bundle` 在 `REQUIRE_NOTARIZATION=1` 时要求 Apple notarization 凭据，并串起 DMG notarization、staple、Developer ID/TeamIdentifier/Gatekeeper 验证。
 
 验收标准：
 
 ```bash
 npm run build
 npm run release:security-scan
-npm run release:security-scan:bundle
+npm run release:verify-macos
 find dist -type f -name '*.map'
 ```
 

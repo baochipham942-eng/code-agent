@@ -20,6 +20,28 @@ if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" && -z "${TAURI_SIGNING_PRIVATE_KEY_PAT
   exit 1
 fi
 
+if [[ -z "${APPLE_PASSWORD:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
+  export APPLE_PASSWORD="${APPLE_APP_SPECIFIC_PASSWORD}"
+fi
+
+if [[ "${REQUIRE_NOTARIZATION:-0}" == "1" || "${REQUIRE_NOTARIZATION:-0}" == "true" ]]; then
+  HAS_APPLE_ID_AUTH=0
+  if [[ -n "${APPLE_ID:-}" && -n "${APPLE_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
+    HAS_APPLE_ID_AUTH=1
+  fi
+
+  HAS_APPLE_API_AUTH=0
+  if [[ -n "${APPLE_API_KEY:-}" && -n "${APPLE_API_ISSUER:-}" && -n "${APPLE_API_KEY_PATH:-}" ]]; then
+    HAS_APPLE_API_AUTH=1
+  fi
+
+  if [[ "${HAS_APPLE_ID_AUTH}" == "0" && "${HAS_APPLE_API_AUTH}" == "0" ]]; then
+    echo "Notarization is required, but Apple notarization credentials are incomplete" >&2
+    echo "Set APPLE_ID + APPLE_PASSWORD + APPLE_TEAM_ID, or APPLE_API_KEY + APPLE_API_ISSUER + APPLE_API_KEY_PATH" >&2
+    exit 1
+  fi
+fi
+
 REPOSITORY="${GITHUB_REPOSITORY:-baochipham942-eng/code-agent}"
 UPDATER_ENDPOINT="${TAURI_UPDATER_ENDPOINT:-https://github.com/${REPOSITORY}/releases/latest/download/latest.json}"
 SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:-${TAURI_MACOS_SIGNING_IDENTITY:-}}"

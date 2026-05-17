@@ -84,9 +84,11 @@
     "tauri:prebuild-cleanup": "bash scripts/tauri-prebuild-cleanup.sh",
     "release:security-scan": "node scripts/release-security-scan.mjs",
     "release:security-scan:bundle": "node scripts/release-security-scan.mjs src-tauri/target/release/bundle/macos",
-    "tauri:bundle": "npm run rebuild-native:system && npm run build && npm run tauri:prebuild-cleanup && npm run release:security-scan && cargo tauri build && npm run release:security-scan:bundle",
+    "release:verify-macos": "bash scripts/verify-macos-release.sh",
+    "release:notarize-macos": "bash scripts/tauri-notarize.sh",
+    "tauri:bundle": "npm run rebuild-native:system && npm run build && npm run tauri:prebuild-cleanup && npm run release:security-scan && cargo tauri build && npm run release:verify-macos",
     "tauri:build": "npm run tauri:bundle && bash scripts/tauri-install.sh",
-    "tauri:release:bundle": "npm run rebuild-native:system && npm run build && npm run tauri:prebuild-cleanup && npm run release:security-scan && bash scripts/tauri-release-bundle.sh",
+    "tauri:release:bundle": "npm run rebuild-native:system && npm run build && npm run tauri:prebuild-cleanup && npm run release:security-scan && bash scripts/tauri-release-bundle.sh && npm run release:notarize-macos && npm run release:verify-macos",
     "tauri:update-manifest": "node scripts/tauri-update-manifest.mjs",
     "prepare": "husky"
   },

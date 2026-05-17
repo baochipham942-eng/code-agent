@@ -113,6 +113,8 @@ P1-K 把 signed release policy 接入 JS update path：`UpdateService.checkForUp
 
 P1-L 把同一组 release policy 字段补到 Vercel update metadata 和 Tauri cloud fallback：`/api/update?action=check` 支持 `channel` query，并可从 `UPDATE_MIN_VERSION[_CHANNEL]`、`UPDATE_LATEST_VERSION[_CHANNEL]`、`UPDATE_FORCE_UPDATE[_CHANNEL]`、`UPDATE_DOWNLOAD_URL[_CHANNEL]`、`UPDATE_SHA256[_CHANNEL]` 输出策略字段。Tauri native updater 仍优先走签名 updater manifest；只有 native updater 无更新或失败时才读 cloud fallback，并按 `minVersion` 推导 `hasUpdate/forceUpdate/latestVersion`，手动更新 URL 仍只允许 HTTPS release page 或可转换成 GitHub release page 的 asset URL。
 
+P1-M 收紧远程 skill 仓库启动面：推荐仓库不再默认随启动预下载，除非显式设置 `CODE_AGENT_ALLOW_RECOMMENDED_SKILL_AUTO_DOWNLOAD=1`；远程仓库中的 skills 也不再默认启用。内置 skills 仍可默认挂载，第三方/推荐 repo 需要用户主动下载并启用后才进入默认挂载和调用路径。
+
 ## P2 逆向成本提升
 
 这些可以做，但优先级低于服务端边界：

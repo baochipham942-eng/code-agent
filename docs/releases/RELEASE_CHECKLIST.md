@@ -81,6 +81,7 @@ npm version 0.9.0 --no-git-tag-version
 - [ ] GitHub Release tag and notes are the source of update metadata
 - [ ] Release policy env is set only when needed: `UPDATE_MIN_VERSION[_CHANNEL]`, `UPDATE_FORCE_UPDATE[_CHANNEL]`, `UPDATE_SHA256[_CHANNEL]`
 - [ ] No manual version constant edit is needed in `vercel-api/api/update.ts`
+- [ ] Recommended remote skill repositories are not auto-downloaded unless `CODE_AGENT_ALLOW_RECOMMENDED_SKILL_AUTO_DOWNLOAD=1` is intentionally set
 
 ---
 

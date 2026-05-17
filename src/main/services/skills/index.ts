@@ -50,11 +50,15 @@ export {
 
 export {
   RECOMMENDED_REPOSITORIES,
+  RECOMMENDED_AUTO_DOWNLOAD_REPOS,
+  RECOMMENDED_SKILL_AUTO_DOWNLOAD_ENV,
   AUTO_DOWNLOAD_REPOS,
   DEFAULT_ENABLED_SKILLS,
   SKILL_KEYWORDS,
   findSkillsByKeyword,
+  getDefaultAutoDownloadRepos,
   getDefaultEnabledSkills,
+  isRecommendedSkillAutoDownloadAllowed,
   findRecommendedRepository,
 } from './skillRepositories';
 

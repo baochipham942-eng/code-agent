@@ -24,9 +24,9 @@ import {
 import { parseSkillMd, hasSkillMd } from './skillParser';
 import {
   RECOMMENDED_REPOSITORIES,
-  AUTO_DOWNLOAD_REPOS,
-  DEFAULT_ENABLED_SKILLS,
+  getDefaultAutoDownloadRepos,
   getDefaultEnabledSkills,
+  isRecommendedSkillAutoDownloadAllowed,
 } from './skillRepositories';
 import { createLogger } from '../infra/logger';
 
@@ -60,7 +60,7 @@ class SkillRepositoryService implements Disposable {
     this.config = {
       repositories: [],
       enabledSkills: [],
-      autoDownload: AUTO_DOWNLOAD_REPOS,
+      autoDownload: getDefaultAutoDownloadRepos(),
     };
   }
 
@@ -94,6 +94,11 @@ class SkillRepositoryService implements Disposable {
    * 预下载推荐仓库
    */
   async preloadRecommendedRepositories(): Promise<void> {
+    if (!isRecommendedSkillAutoDownloadAllowed()) {
+      logger.info('Recommended skill repository preload skipped; explicit opt-in is required');
+      return;
+    }
+
     for (const repoId of this.config.autoDownload) {
       if (this.libraries.has(repoId)) {
         logger.debug('Repository already downloaded', { repoId });
@@ -489,7 +494,7 @@ class SkillRepositoryService implements Disposable {
       this.config = {
         repositories: loaded.repositories || [],
         enabledSkills: loaded.enabledSkills || [],
-        autoDownload: loaded.autoDownload || AUTO_DOWNLOAD_REPOS,
+        autoDownload: loaded.autoDownload || getDefaultAutoDownloadRepos(),
       };
 
       logger.debug('Config loaded', {

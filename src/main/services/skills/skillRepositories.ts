@@ -52,19 +52,36 @@ export const RECOMMENDED_REPOSITORIES: SkillRepository[] = [
 // ============================================================================
 
 /**
- * 应用启动时自动预下载的仓库 ID
+ * Recommended repositories that may be auto-downloaded only when the operator
+ * explicitly opts in. Distributed builds should not fetch third-party skill
+ * code on first launch.
  */
-export const AUTO_DOWNLOAD_REPOS: string[] = ['anthropic-skills', 'superpowers'];
+export const RECOMMENDED_AUTO_DOWNLOAD_REPOS: string[] = ['anthropic-skills', 'superpowers'];
+
+export const RECOMMENDED_SKILL_AUTO_DOWNLOAD_ENV = 'CODE_AGENT_ALLOW_RECOMMENDED_SKILL_AUTO_DOWNLOAD';
+
+export const AUTO_DOWNLOAD_REPOS: string[] = [];
+
+export function isRecommendedSkillAutoDownloadAllowed(
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+): boolean {
+  return env[RECOMMENDED_SKILL_AUTO_DOWNLOAD_ENV] === '1';
+}
+
+export function getDefaultAutoDownloadRepos(
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+): string[] {
+  return isRecommendedSkillAutoDownloadAllowed(env)
+    ? [...RECOMMENDED_AUTO_DOWNLOAD_REPOS]
+    : [];
+}
 
 /**
  * 各仓库默认启用的 Skills
  */
 export const DEFAULT_ENABLED_SKILLS: Record<string, string[]> = {
   'anthropic-skills': [
-    'xlsx', // Excel 表格
-    'docx', // Word 文档
-    'pdf', // PDF 处理
-    'mcp-builder', // MCP 服务器构建
+    // Remote repository skills are opt-in after the user downloads and enables them.
   ],
   superpowers: [
     // superpowers skill 名称与实际仓库不一致，暂不自动挂载

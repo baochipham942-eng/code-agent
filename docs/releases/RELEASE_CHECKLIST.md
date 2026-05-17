@@ -104,17 +104,40 @@ requires Apple credentials and must not be marked complete from a dry run.
 - [ ] Control-plane public key env: `CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS` or `CODE_AGENT_CONTROL_PLANE_KEY_ID` + `CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY`
 - [ ] Vercel/control-plane signing private key is configured outside the client bundle
 
+### Offline Env Verification
+
+Run this before any real release packaging. It fails before `cargo tauri build`
+when a required production secret is missing, and the error lists the exact
+missing variable or variable group.
+
+```bash
+node scripts/verify-production-env.mjs --mode notarized
+```
+
+For local release-chain checks that must not require Apple credentials:
+
+```bash
+node scripts/verify-production-env.mjs --mode local
+```
+
+- [ ] Production env verifier passes in notarized mode before packaging
+- [ ] Local mode is used only for dry runs and is not marked as release completion
+
 ### Static and Script Checks
 
 ```bash
+node scripts/verify-production-env.mjs --mode notarized
 bash -n scripts/tauri-release-bundle.sh scripts/tauri-notarize.sh scripts/verify-macos-release.sh
 node -e "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8'))"
+npx vitest run tests/scripts/verifyProductionEnv.test.ts
 npx vitest run tests/scripts/releaseMacosGates.test.ts
 npm run release:security-scan
 ```
 
+- [ ] Production env verifier passes
 - [ ] Shell scripts parse
 - [ ] `package.json` parses
+- [ ] Production env verifier tests pass
 - [ ] Release gate tests pass
 - [ ] Release security scan passes
 

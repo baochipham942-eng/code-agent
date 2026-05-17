@@ -115,7 +115,7 @@ jobs:
           fs.writeFileSync('/tmp/code-agent-update-payload.json', JSON.stringify(payload));
           NODE
 
-          curl -X POST "${CLOUD_API_URL%/}/api/update/publish" \
+          curl --fail-with-body -X POST "${CLOUD_API_URL%/}/api/update/publish" \
             -H "Authorization: Bearer ${CI_PUBLISH_TOKEN}" \
             -H "Content-Type: application/json" \
             --data-binary @/tmp/code-agent-update-payload.json

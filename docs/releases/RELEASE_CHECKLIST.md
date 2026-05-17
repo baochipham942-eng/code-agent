@@ -77,12 +77,9 @@ npm version 0.9.0 --no-git-tag-version
 ```
 - [ ] Version updated to 0.9.0
 
-### Vercel API
-Update `vercel-api/api/update.ts`:
-```typescript
-const LATEST_VERSION = '0.9.0';
-```
-- [ ] API version updated
+### Update Metadata
+- [ ] GitHub Release tag and notes are the source of update metadata
+- [ ] No manual version constant edit is needed in `vercel-api/api/update.ts`
 
 ---
 
@@ -124,7 +121,7 @@ open release/mac-arm64/Code\ Agent.app
 
 ### Commit Version Update
 ```bash
-git add package.json package-lock.json vercel-api/api/update.ts CHANGELOG.md
+git add package.json package-lock.json CHANGELOG.md
 git commit -m "chore: release v0.9.0"
 ```
 
@@ -186,7 +183,4 @@ git reset --hard v0.8.x
 
 # Force push (requires admin)
 git push --force origin main
-
-# Update API version back
-# Edit vercel-api/api/update.ts
 ```

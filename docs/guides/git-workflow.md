@@ -77,10 +77,10 @@ npm run build
 
 # ========== 4. 更新版本号（如果需要发布）==========
 # 编辑 package.json 递增版本号
-# 编辑 vercel-api/api/update.ts 更新版本号
+# 更新 metadata 由 GitHub Release 派生，不再手改 vercel-api/api/update.ts
 
 # ========== 5. 提交版本更新 ==========
-git add package.json vercel-api/api/update.ts
+git add package.json package-lock.json
 git commit -m "chore: bump version to x.x.x"
 git push
 
@@ -143,7 +143,7 @@ Claude Code 使用 git worktree 机制：
 □ npm run typecheck 通过
 □ npm run build 通过
 □ package.json 版本号已递增
-□ vercel-api/api/update.ts 已更新
+□ GitHub Release tag/notes 已准备
 □ git push 推送到远程
 □ npm run dist:mac 打包
 □ 同步 .env 文件: cp .env "/Applications/Code Agent.app/Contents/Resources/.env"

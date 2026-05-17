@@ -159,10 +159,9 @@ git push origin v0.2.0
 - `POST /api/agent/plan` - 生成执行计划
 
 ### 更新
-- `GET /api/update/check` - 检查更新
-- `GET /api/update/latest-mac.yml` - macOS 更新清单
-- `GET /api/update/latest-win.yml` - Windows 更新清单
-- `POST /api/update/publish` - 发布新版本（CI 专用）
+- `GET /api/update?action=health` - 更新服务健康检查
+- `GET /api/update?action=check&version=<version>&platform=<platform>` - 从 GitHub Releases 派生更新 metadata
+- `POST /api/update/publish` - CI 兼容入口，校验 `CI_PUBLISH_TOKEN` 后返回接受状态；发布真相仍来自 GitHub Releases
 
 ### 管理
 - `POST /api/init-db` - 初始化数据库

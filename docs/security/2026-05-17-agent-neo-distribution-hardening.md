@@ -103,6 +103,8 @@ P1-F 把客户端公钥供给接进 release 链：`build:web` 生成 `dist/web/c
 
 P1-G 收紧旧 cloud update direct-download：`UpdateService.downloadUpdate()` 默认要求缓存的云端 update metadata 带合法 64 位 hex `sha256`，缺失或格式错误会拒绝下载。只有显式设置 `CODE_AGENT_ALLOW_UNSIGNED_UPDATE_DOWNLOAD=1` 才走兼容模式；常规 release 应优先走 Tauri updater 的签名 manifest。
 
+P1-H 补上 Vercel `/api/update` 实现：`GET action=health|check` 从 GitHub Releases 派生更新 metadata，手工下载 URL 只返回 release page，不返回二进制直链；`POST /api/update/publish` 只做 `CI_PUBLISH_TOKEN` 校验和兼容响应。release workflow 对 Cloud API publish 改用 `curl --fail-with-body`，避免配置了 Cloud API 但服务端失败时静默绿灯。
+
 ## P2 逆向成本提升
 
 这些可以做，但优先级低于服务端边界：

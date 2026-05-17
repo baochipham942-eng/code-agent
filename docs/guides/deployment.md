@@ -171,6 +171,9 @@ curl "https://code-agent-beta.vercel.app/api/prompts?gen=all"
 
 # 统一路由
 curl "https://code-agent-beta.vercel.app/api/v1/control-plane?artifact=prompt_registry"
+
+# 版本更新检查，Vercel 端从 GitHub Releases 派生 metadata
+curl "https://code-agent-beta.vercel.app/api/update?action=check&version=0.16.75&platform=darwin"
 ```
 
 ---

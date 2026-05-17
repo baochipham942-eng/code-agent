@@ -71,7 +71,7 @@ curl --max-time 10 --proxy http://127.0.0.1:7897 https://token-plan-sgp.xiaomimi
 
 ### 部署目录混淆
 **问题**: 修改了错误的 API 目录
-**正确做法**: 只修改 `vercel-api/api/update.ts`
+**正确做法**: API 仍从 `vercel-api/` 部署；版本更新 metadata 从 GitHub Releases 派生，不再手改 API 里的版本常量
 
 ### 部署到错误项目
 **问题**: 在 `vercel-api/` 目录执行 `vercel --prod`，Vercel CLI 自动创建了新项目

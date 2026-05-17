@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
 import type { ControlPlaneEnvelope } from '../../../../src/shared/contract/controlPlane';
 import {
   buildControlPlaneContentHash,
   buildControlPlaneSigningPayload,
+  getControlPlanePublicKeysFromEnv,
   verifyControlPlaneEnvelope,
 } from '../../../../src/main/services/cloud/controlPlaneTrust';
 
@@ -95,5 +97,54 @@ describe('controlPlaneTrust', () => {
 
     expect(result.trusted).toBe(false);
     expect(result.diagnostics.map((entry) => entry.code)).toContain('invalid_envelope');
+  });
+
+  it('loads bundled public keys from file when env keys are not set', () => {
+    const previousFile = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE;
+    const previousJson = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS;
+    const previousKeyId = process.env.CODE_AGENT_CONTROL_PLANE_KEY_ID;
+    const previousPublicKey = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY;
+    const file = `${process.cwd()}/.test-data/control-plane-public-keys.json`;
+    const publicKey = '-----BEGIN PUBLIC KEY-----\\ntest\\n-----END PUBLIC KEY-----';
+
+    try {
+      delete process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS;
+      delete process.env.CODE_AGENT_CONTROL_PLANE_KEY_ID;
+      delete process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY;
+      process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE = file;
+      fs.mkdirSync(`${process.cwd()}/.test-data`, { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({
+        schemaVersion: 1,
+        keys: {
+          file_key: publicKey,
+        },
+      }));
+
+      expect(getControlPlanePublicKeysFromEnv()).toEqual({
+        file_key: '-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----',
+      });
+    } finally {
+      if (previousFile === undefined) {
+        delete process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE;
+      } else {
+        process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE = previousFile;
+      }
+      if (previousJson === undefined) {
+        delete process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS;
+      } else {
+        process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS = previousJson;
+      }
+      if (previousKeyId === undefined) {
+        delete process.env.CODE_AGENT_CONTROL_PLANE_KEY_ID;
+      } else {
+        process.env.CODE_AGENT_CONTROL_PLANE_KEY_ID = previousKeyId;
+      }
+      if (previousPublicKey === undefined) {
+        delete process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY;
+      } else {
+        process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY = previousPublicKey;
+      }
+      fs.rmSync(file, { force: true });
+    }
   });
 });

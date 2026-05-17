@@ -42,6 +42,68 @@ const NATIVE_EXTERNALS = [
 // TODO: 验证无第三方库需要后删除此 alias 和 electronMock.ts
 const ELECTRON_ALIAS = { electron: './src/web/electronMock.ts' };
 
+function normalizePemLiteral(value: string): string {
+  return value.trim().replace(/\\n/g, '\n');
+}
+
+function readControlPlanePublicKeysFromEnv(): Record<string, string> {
+  const rawJson = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS;
+  if (rawJson) {
+    try {
+      const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+      return Object.fromEntries(
+        Object.entries(parsed)
+          .filter((entry): entry is [string, string] => (
+            typeof entry[0] === 'string'
+            && typeof entry[1] === 'string'
+            && entry[1].trim().length > 0
+          ))
+          .map(([keyId, publicKey]) => [keyId, normalizePemLiteral(publicKey)]),
+      );
+    } catch {
+      throw new Error('CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS must be valid JSON when set');
+    }
+  }
+
+  const keyId = process.env.CODE_AGENT_CONTROL_PLANE_KEY_ID;
+  const publicKey = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY;
+  if (keyId && publicKey) {
+    return { [keyId]: normalizePemLiteral(publicKey) };
+  }
+
+  const filePath = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE;
+  if (filePath) {
+    const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+    const keysSource = parsed.keys && typeof parsed.keys === 'object' && !Array.isArray(parsed.keys)
+      ? parsed.keys as Record<string, unknown>
+      : parsed;
+    return Object.fromEntries(
+      Object.entries(keysSource)
+        .filter((entry): entry is [string, string] => (
+          typeof entry[0] === 'string'
+          && typeof entry[1] === 'string'
+          && entry[1].trim().length > 0
+        ))
+        .map(([fileKeyId, filePublicKey]) => [fileKeyId, normalizePemLiteral(filePublicKey)]),
+    );
+  }
+
+  return {};
+}
+
+function writeControlPlanePublicKeysFile(): void {
+  mkdirSync('dist/web', { recursive: true });
+  const keys = readControlPlanePublicKeysFromEnv();
+  writeFileSync(
+    'dist/web/control-plane-public-keys.json',
+    JSON.stringify({
+      schemaVersion: 1,
+      keys,
+    }, null, 2) + '\n',
+  );
+  console.log(`  ✓ Control plane public keys → dist/web/control-plane-public-keys.json (${Object.keys(keys).length} key(s))`);
+}
+
 // ---------------------------------------------------------------------------
 // Build targets
 // ---------------------------------------------------------------------------
@@ -92,6 +154,7 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
       alias: ELECTRON_ALIAS,
       minify: !isDev,
       sourcemap: isDev,
+      postBuild: writeControlPlanePublicKeysFile,
     },
     mcp: {
       name: 'MCP Server',

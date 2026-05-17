@@ -99,6 +99,8 @@ P1-D 同步收紧 prompt registry：`PromptService` 只接受 `kind:"prompt_regi
 
 P1-E 补上最小 Vercel control-plane 产物：`vercel-api/api/v1/config.ts` 返回 `kind:"cloud_config"` envelope，`vercel-api/api/prompts.ts` 返回 `kind:"prompt_registry"` envelope，二者共用 Ed25519 签名、payload canonical hash、`expiresAt`、ETag 和 `503 control_plane_unconfigured` fail-closed 行为。服务端私钥来自 `CONTROL_PLANE_PRIVATE_KEY`，客户端只配置 `CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY(S)`。
 
+P1-F 把客户端公钥供给接进 release 链：`build:web` 生成 `dist/web/control-plane-public-keys.json`，Tauri resources 打包该文件，运行时 env 缺失时从 bundled file 读取公钥。`tauri:release:bundle` 默认要求配置 control-plane 公钥，`verify-macos-release` 在 notarization gate 下会验证 app bundle 内公钥文件存在且非空。
+
 ## P2 逆向成本提升
 
 这些可以做，但优先级低于服务端边界：

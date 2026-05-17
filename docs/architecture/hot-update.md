@@ -220,6 +220,8 @@ GET https://code-agent-beta.vercel.app/api/prompts?gen=all
 
 `/api/v1/control-plane?artifact=cloud_config|prompt_registry` 复用同一签名逻辑，便于后续把 capability registry 和 update manifest 也纳入同一控制面。
 
+打包链会从 `CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS` 或 `CODE_AGENT_CONTROL_PLANE_KEY_ID + CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY` 生成 `dist/web/control-plane-public-keys.json`，并通过 Tauri resources 带进客户端。运行时优先使用 env 公钥；env 缺失时读取该 bundled public key file。
+
 ---
 
 ## 更新流程
@@ -262,6 +264,8 @@ vercel-api/api/
 vercel-api/lib/
 ├── controlPlaneEnvelope.ts
 └── controlPlanePayloads.ts
+dist/web/
+└── control-plane-public-keys.json
 ```
 
 ---

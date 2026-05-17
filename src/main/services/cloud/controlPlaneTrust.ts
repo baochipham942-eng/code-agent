@@ -3,6 +3,8 @@
 // ============================================================================
 
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import type {
   ControlPlaneArtifactKind,
   ControlPlaneDiagnostic,
@@ -28,6 +30,10 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function isString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function normalizePemLiteral(value: string): string {
+  return value.trim().replace(/\\n/g, '\n');
 }
 
 function diagnostic(
@@ -193,7 +199,8 @@ export function getControlPlanePublicKeysFromEnv(): ControlPlanePublicKeys {
       const parsed = JSON.parse(rawJson) as Record<string, unknown>;
       return Object.fromEntries(
         Object.entries(parsed)
-          .filter((entry): entry is [string, string] => isString(entry[0]) && isString(entry[1])),
+          .filter((entry): entry is [string, string] => isString(entry[0]) && isString(entry[1]))
+          .map(([keyId, publicKey]) => [keyId, normalizePemLiteral(publicKey)]),
       );
     } catch {
       return {};
@@ -203,7 +210,53 @@ export function getControlPlanePublicKeysFromEnv(): ControlPlanePublicKeys {
   const keyId = process.env.CODE_AGENT_CONTROL_PLANE_KEY_ID;
   const publicKey = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY;
   if (keyId && publicKey) {
-    return { [keyId]: publicKey };
+    return { [keyId]: normalizePemLiteral(publicKey) };
+  }
+  return getControlPlanePublicKeysFromFile();
+}
+
+function parsePublicKeysFile(content: string): ControlPlanePublicKeys {
+  const parsed = JSON.parse(content) as Record<string, unknown>;
+  const keysSource = parsed.keys && typeof parsed.keys === 'object' && !Array.isArray(parsed.keys)
+    ? parsed.keys as Record<string, unknown>
+    : parsed;
+  return Object.fromEntries(
+    Object.entries(keysSource)
+      .filter((entry): entry is [string, string] => isString(entry[0]) && isString(entry[1]))
+      .map(([keyId, publicKey]) => [keyId, normalizePemLiteral(publicKey)]),
+  );
+}
+
+function getControlPlanePublicKeyFileCandidates(): string[] {
+  const candidates = [
+    process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE,
+  ];
+
+  const scriptPath = process.argv[1];
+  if (scriptPath) {
+    candidates.push(path.join(path.dirname(scriptPath), 'control-plane-public-keys.json'));
+  }
+  candidates.push(
+    path.join(process.cwd(), 'dist/web/control-plane-public-keys.json'),
+    path.join(process.cwd(), 'control-plane-public-keys.json'),
+  );
+
+  return [...new Set(candidates.filter((candidate): candidate is string => Boolean(candidate)))];
+}
+
+export function getControlPlanePublicKeysFromFile(): ControlPlanePublicKeys {
+  for (const candidate of getControlPlanePublicKeyFileCandidates()) {
+    try {
+      if (!fs.existsSync(candidate)) {
+        continue;
+      }
+      const keys = parsePublicKeysFile(fs.readFileSync(candidate, 'utf8'));
+      if (Object.keys(keys).length > 0) {
+        return keys;
+      }
+    } catch {
+      continue;
+    }
   }
   return {};
 }

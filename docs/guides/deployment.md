@@ -156,6 +156,10 @@ CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END P
 CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS='{"production-2026-05":"-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"}'
 ```
 
+`npm run build:web` 会把这些公钥写入 `dist/web/control-plane-public-keys.json`。Tauri release bundle 会把该文件放进 app resources；Finder 启动时即使没有 shell env，客户端也能用随包公钥验证 Vercel 返回的签名 envelope。`tauri:release:bundle` 默认要求 release 环境提供 control-plane 公钥，可用 `REQUIRE_CONTROL_PLANE_PUBLIC_KEYS=0` 关闭这个 gate。
+
+如果 CI 不方便直接放 JSON，也可以设置 `CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE` 指向一个只含公钥的 JSON 文件；build 会读取它并写入随包公钥文件。
+
 ### API 验证
 
 ```bash

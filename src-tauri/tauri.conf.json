@@ -43,6 +43,7 @@
     ],
     "resources": [
       "../dist/web/webServer.cjs",
+      "../dist/web/control-plane-public-keys.json",
       "../dist/native/**/*",
       "../dist/renderer/**/*",
       "../resources/browser-relay-extension/**/*",

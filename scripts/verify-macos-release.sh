@@ -7,6 +7,7 @@ APP_PATH="${APP_PATH:-${ROOT_DIR}/src-tauri/target/release/bundle/macos/${APP_NA
 DMG_DIR="${DMG_DIR:-${ROOT_DIR}/src-tauri/target/release/bundle/dmg}"
 REQUIRE_NOTARIZATION="${REQUIRE_NOTARIZATION:-0}"
 REQUIRE_DEVELOPER_ID="${REQUIRE_DEVELOPER_ID:-${REQUIRE_NOTARIZATION}}"
+REQUIRE_CONTROL_PLANE_PUBLIC_KEYS="${REQUIRE_CONTROL_PLANE_PUBLIC_KEYS:-${REQUIRE_NOTARIZATION}}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "[verify-macos-release] skipped: macOS release verification requires Darwin"
@@ -26,6 +27,26 @@ fi
 
 echo "[verify-macos-release] scanning bundled resources"
 node "${ROOT_DIR}/scripts/release-security-scan.mjs" "${RESOURCES_ROOT}"
+
+CONTROL_PLANE_PUBLIC_KEYS_FILE="${RESOURCES_ROOT}/dist/web/control-plane-public-keys.json"
+if [[ "${REQUIRE_CONTROL_PLANE_PUBLIC_KEYS}" == "1" || "${REQUIRE_CONTROL_PLANE_PUBLIC_KEYS}" == "true" ]]; then
+  if [[ ! -f "${CONTROL_PLANE_PUBLIC_KEYS_FILE}" ]]; then
+    echo "[verify-macos-release] missing control-plane public keys file: ${CONTROL_PLANE_PUBLIC_KEYS_FILE}" >&2
+    exit 1
+  fi
+  node -e '
+const fs = require("node:fs");
+const file = process.argv[1];
+const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+const keys = parsed && typeof parsed === "object" && parsed.keys && typeof parsed.keys === "object"
+  ? parsed.keys
+  : {};
+if (Object.keys(keys).length === 0) {
+  console.error(`[verify-macos-release] control-plane public keys file has no keys: ${file}`);
+  process.exit(1);
+}
+' "${CONTROL_PLANE_PUBLIC_KEYS_FILE}"
+fi
 
 echo "[verify-macos-release] verifying app signature"
 codesign --verify --deep --strict --verbose=2 "${APP_PATH}"

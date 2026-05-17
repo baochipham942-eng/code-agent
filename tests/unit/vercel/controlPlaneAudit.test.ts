@@ -5,15 +5,11 @@ import {
 } from '../../../vercel-api/lib/controlPlaneAudit';
 import type { ControlPlaneEnvelope } from '../../../vercel-api/lib/controlPlaneEnvelope';
 
-const postgresMocks = vi.hoisted(() => ({
+const postgresMocks = {
   unsafe: vi.fn(),
   end: vi.fn(),
   connect: vi.fn(),
-}));
-
-vi.mock('postgres', () => ({
-  default: postgresMocks.connect,
-}));
+};
 
 function makeEnvelope(): ControlPlaneEnvelope {
   return {
@@ -86,6 +82,7 @@ describe('control-plane audit ledger', () => {
           CONTROL_PLANE_AUDIT_ENABLED: 'true',
           DATABASE_URL: 'postgresql://user:pass@db.example.com/postgres',
         },
+        postgresFactory: postgresMocks.connect,
       },
     );
 

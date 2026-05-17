@@ -10,6 +10,21 @@ export interface ControlPlaneAuditResult {
   error?: string;
 }
 
+interface PostgresAuditClient {
+  unsafe: (query: string, parameters: never[]) => Promise<unknown>;
+  end: (options?: { timeout?: number }) => Promise<void>;
+}
+
+type PostgresAuditFactory = (
+  databaseUrl: string,
+  options: {
+    max: number;
+    idle_timeout: number;
+    connect_timeout: number;
+    prepare: boolean;
+  },
+) => PostgresAuditClient;
+
 type ControlPlaneAuditConfig =
   | ControlPlaneSupabaseAuditConfig
   | ControlPlanePostgresAuditConfig;
@@ -33,6 +48,7 @@ interface ControlPlaneAuditEventOptions<TPayload> {
   outcome: 'served' | 'not_modified' | 'head';
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
+  postgresFactory?: PostgresAuditFactory;
   now?: Date;
 }
 
@@ -42,6 +58,7 @@ interface ControlPlaneAuditErrorOptions {
   errorCode: string;
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
+  postgresFactory?: PostgresAuditFactory;
   now?: Date;
 }
 
@@ -243,8 +260,9 @@ async function postAuditRowToSupabase(
 async function postAuditRowToPostgres(
   config: ControlPlanePostgresAuditConfig,
   row: Record<string, unknown>,
+  postgresFactory?: PostgresAuditFactory,
 ): Promise<ControlPlaneAuditResult> {
-  const { default: postgres } = await import('postgres');
+  const postgres = postgresFactory ?? (await import('postgres')).default;
   const sql = postgres(config.databaseUrl, {
     max: 1,
     idle_timeout: 1,
@@ -268,11 +286,12 @@ async function postAuditRow(
   config: ControlPlaneAuditConfig,
   row: Record<string, unknown>,
   fetchImpl: typeof fetch,
+  postgresFactory?: PostgresAuditFactory,
 ): Promise<ControlPlaneAuditResult> {
   if (config.mode === 'supabase') {
     return postAuditRowToSupabase(config, row, fetchImpl);
   }
-  return postAuditRowToPostgres(config, row);
+  return postAuditRowToPostgres(config, row, postgresFactory);
 }
 
 export async function recordControlPlaneAuditEvent<TPayload>(
@@ -300,6 +319,7 @@ export async function recordControlPlaneAuditEvent<TPayload>(
         options.now ?? new Date(),
       ),
       fetchImpl,
+      options.postgresFactory,
     );
   } catch (error) {
     return {
@@ -334,6 +354,7 @@ export async function recordControlPlaneAuditError(
         now: options.now ?? new Date(),
       }),
       fetchImpl,
+      options.postgresFactory,
     );
   } catch (error) {
     return {

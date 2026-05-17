@@ -40,6 +40,7 @@ import { ZhipuProvider } from './providers/zhipuProvider';
 import { ClaudeProvider } from './providers/claudeProvider';
 import { GeminiProvider } from './providers/geminiProvider';
 import { VolcengineProvider } from './providers/volcengineProvider';
+import { LongCatProvider } from './providers/longcatProvider';
 import { XiaomiProvider } from './providers/xiaomiProvider';
 
 // Re-export PROVIDER_REGISTRY for external use
@@ -115,6 +116,7 @@ export class ModelRouter {
     ['anthropic', new ClaudeProvider()],
     ['gemini', new GeminiProvider()],
     ['volcengine', new VolcengineProvider()],
+    ['longcat', new LongCatProvider()],
     ['xiaomi', new XiaomiProvider()],
     ['custom', new OpenAIProvider()],
   ]);

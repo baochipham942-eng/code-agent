@@ -16,6 +16,7 @@ import {
   DEFAULT_PROVIDER,
   DEFAULT_MODEL,
   DEFAULT_MODELS,
+  MODEL_API_ENDPOINTS,
 } from '../../../shared/constants';
 
 const logger = createLogger('ConfigService');
@@ -139,6 +140,7 @@ const DEFAULT_SETTINGS: AppSettings = {
       grok: { enabled: false },
       openrouter: { enabled: false },
       volcengine: { enabled: false },
+      longcat: { enabled: false },
       xiaomi: { enabled: true },     // 小米 MiMo Token Plan Max 包月套餐
       custom: { enabled: false, baseUrl: undefined, displayName: 'Custom Provider' },
     },
@@ -234,6 +236,7 @@ export class ConfigService implements IReadConfigService {
 
     // Try to restore settings from Keychain (survives app reinstall)
     await this.restoreFromKeychain();
+    this.migrateLegacyLongCatProvider();
 
     // Save merged settings
     await this.save();
@@ -279,6 +282,80 @@ export class ConfigService implements IReadConfigService {
    */
   reloadUserPermissionRules(): void {
     this.applyUserPermissionRules();
+  }
+
+  private migrateLegacyLongCatProvider(): void {
+    const providers = this.settings.models.providers;
+    const legacy = providers.custom;
+    if (!legacy) return;
+
+    const baseUrl = legacy.baseUrl?.toLowerCase() || '';
+    const displayName = legacy.displayName?.trim().toLowerCase() || '';
+    const looksLikeLongCat = baseUrl.includes('api.longcat.chat') || displayName === 'longcat';
+    if (!looksLikeLongCat) return;
+
+    const legacyModel = legacy.model || 'LongCat-2.0-Preview';
+    const canonicalModel = legacyModel.toLowerCase() === 'longcat-2.0-preview'
+      ? 'LongCat-2.0-Preview'
+      : legacyModel;
+    const legacyModelSettings = legacy.models?.[legacyModel] ?? legacy.models?.[canonicalModel];
+
+    providers.longcat = {
+      ...providers.longcat,
+      ...legacy,
+      enabled: legacy.enabled ?? true,
+      displayName: 'LongCat',
+      baseUrl: legacy.baseUrl || MODEL_API_ENDPOINTS.longcat,
+      model: canonicalModel,
+      models: {
+        ...legacy.models,
+        [canonicalModel]: {
+          enabled: true,
+          label: 'LongCat 2.0 Preview',
+          capabilities: ['general', 'code', 'reasoning', 'longContext'],
+          supportsTool: true,
+          supportsVision: false,
+          supportsStreaming: true,
+          ...legacyModelSettings,
+        },
+      },
+    };
+
+    providers.custom = {
+      ...legacy,
+      enabled: false,
+      displayName: 'Custom Provider',
+      baseUrl: undefined,
+      model: 'custom-model',
+      models: undefined,
+    };
+
+    if (this.settings.models.default === 'custom') {
+      this.settings.models.default = 'longcat';
+    }
+    if (this.settings.models.defaultProvider === 'custom') {
+      this.settings.models.defaultProvider = 'longcat';
+    }
+    for (const route of Object.values(this.settings.models.routing)) {
+      if (route.provider === 'custom') {
+        route.provider = 'longcat';
+        if (route.model.toLowerCase() === 'longcat-2.0-preview') {
+          route.model = 'LongCat-2.0-Preview';
+        }
+      }
+    }
+
+    try {
+      const storage = getSecureStorage();
+      const legacyKey = storage.getApiKey('custom');
+      if (legacyKey && !storage.getApiKey('longcat')) {
+        storage.setApiKey('longcat', legacyKey);
+      }
+    } catch (error) {
+      logger.warn('Failed to migrate LongCat API key from custom provider', error);
+    }
+
+    logger.info('Migrated legacy custom LongCat provider to official longcat provider');
   }
 
   // Restore user settings from Keychain (for app reinstall scenarios)
@@ -531,6 +608,7 @@ export class ConfigService implements IReadConfigService {
       grok: 'GROK_API_KEY',
       openrouter: 'OPENROUTER_API_KEY',
       volcengine: 'VOLCENGINE_API_KEY',
+      longcat: 'LONGCAT_API_KEY',
       xiaomi: 'XIAOMI_API_KEY',
       custom: 'CUSTOM_PROVIDER_API_KEY',
     };

@@ -11,6 +11,7 @@ describe('model onboarding helpers', () => {
     expect(ONBOARDING_OFFICIAL_PROVIDERS).toContain('deepseek');
     expect(ONBOARDING_OFFICIAL_PROVIDERS).toContain('moonshot');
     expect(ONBOARDING_OFFICIAL_PROVIDERS).toContain('openai');
+    expect(ONBOARDING_OFFICIAL_PROVIDERS).toContain('longcat');
     expect(ONBOARDING_OFFICIAL_PROVIDERS).not.toContain('openrouter');
     expect(ONBOARDING_OFFICIAL_PROVIDERS).not.toContain('local');
     expect(ONBOARDING_OFFICIAL_PROVIDERS).not.toContain('custom');

@@ -6,7 +6,7 @@ import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import {
   API_VERSIONS,
-  getProviderInfo,
+  getProviderEndpointForProtocol,
   normalizeProviderId,
   MCP,
   getModelMaxOutputTokens,
@@ -81,8 +81,7 @@ function buildTestConfig(
 ): { url: string; method: string; headers: Record<string, string>; body?: string } | null {
   const normalizedProvider = normalizeProviderId(provider) ?? provider;
   const providerProtocol = protocol ?? (normalizedProvider === 'claude' ? 'claude' : 'openai');
-  const registry = getProviderInfo(provider);
-  const endpoint = baseUrl || registry?.endpoint;
+  const endpoint = baseUrl || getProviderEndpointForProtocol(provider, providerProtocol);
   if (!endpoint) return null;
 
   // Anthropic Claude — 不兼容 OpenAI，用 /messages 最小请求
@@ -134,8 +133,7 @@ function getDiscoveryUrl(
 ): { url: string; headers: Record<string, string> } | null {
   const normalizedProvider = normalizeProviderId(provider) ?? provider;
   const providerProtocol = protocol ?? (normalizedProvider === 'claude' ? 'claude' : 'openai');
-  const registry = getProviderInfo(provider);
-  const endpoint = baseUrl || registry?.endpoint;
+  const endpoint = baseUrl || getProviderEndpointForProtocol(provider, providerProtocol);
   if (!endpoint) return null;
 
   if (providerProtocol === 'claude') {

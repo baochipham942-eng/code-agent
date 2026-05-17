@@ -1069,6 +1069,24 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
       },
     ],
   },
+  longcat: {
+    id: 'longcat',
+    name: 'LongCat',
+    requiresApiKey: true,
+    baseUrl: MODEL_API_ENDPOINTS.longcat,
+    models: [
+      {
+        id: 'LongCat-2.0-Preview',
+        name: 'LongCat 2.0 Preview',
+        capabilities: ['general', 'code', 'reasoning', 'longContext'],
+        maxTokens: 32768,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        costType: 'quota',
+      },
+    ],
+  },
   openrouter: {
     id: 'openrouter',
     name: 'OpenRouter (中转)',

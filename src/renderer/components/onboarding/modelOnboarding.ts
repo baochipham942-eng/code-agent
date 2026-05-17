@@ -38,6 +38,7 @@ export const ONBOARDING_OFFICIAL_PROVIDERS: readonly ModelProvider[] = [
   'groq',
   'perplexity',
   'volcengine',
+  'longcat',
   'xiaomi',
 ];
 
@@ -100,6 +101,10 @@ const PROVIDER_COPY: Partial<Record<ModelProvider, Pick<OnboardingProviderCopy, 
   volcengine: {
     name: '火山 / 豆包',
     description: '火山引擎 Ark 官方 API',
+  },
+  longcat: {
+    name: 'LongCat',
+    description: 'LongCat API 开放平台',
   },
   xiaomi: {
     name: '小米 MiMo',

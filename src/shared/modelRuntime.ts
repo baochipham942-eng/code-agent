@@ -47,6 +47,7 @@ const DEFAULT_SWITCHER_PROVIDERS: ModelProvider[] = [
   'openai',
   'claude',
   'volcengine',
+  'longcat',
   'local',
   'xiaomi',
   'custom',

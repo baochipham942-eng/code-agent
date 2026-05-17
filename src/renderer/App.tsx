@@ -62,7 +62,7 @@ import { FileExplorerPanel } from './components/features/explorer/FileExplorerPa
 import { MemoFloater } from './components/features/memo/MemoFloater';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, UpdateInfo } from '@shared/contract';
-import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getProviderInfo } from '@shared/constants';
+import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getProviderEndpointForProtocol } from '@shared/constants';
 import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
 import { useSwarmStore } from './stores/swarmStore';
@@ -287,7 +287,7 @@ export const App: React.FC = () => {
               provider: defaultProvider,
               model,
               apiKey: providerConfig.apiKey || '',
-              baseUrl: providerConfig.baseUrl || getProviderInfo(defaultProvider)?.endpoint || '',
+              baseUrl: providerConfig.baseUrl || getProviderEndpointForProtocol(defaultProvider, providerConfig.protocol) || '',
               protocol: providerConfig.protocol,
               temperature: providerConfig.temperature ?? 0.7,
               maxTokens: modelSettings?.maxTokens ?? providerConfig.maxTokens ?? 4096,

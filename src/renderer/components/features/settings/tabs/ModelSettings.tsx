@@ -8,7 +8,7 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelCapability, ModelEntrySettings, ModelProvider, ModelProviderProtocol, ModelProviderSettings } from '@shared/contract';
-import { UI, MODEL, PROVIDER_MODELS, getProviderInfo } from '@shared/constants';
+import { UI, MODEL, PROVIDER_MODELS, getProviderEndpointForProtocol } from '@shared/constants';
 import {
   MODEL_CAPABILITY_OPTIONS,
   buildProviderInfoFromSettings,
@@ -65,17 +65,8 @@ export interface ModelSettingsProps {
   onChange: (config: ModelConfig) => void;
 }
 
-const CAPABILITY_ICONS: Record<string, React.ReactNode> = {
-  tool: <Wrench className="h-3 w-3" />,
-  vision: <Eye className="h-3 w-3" />,
-  reasoning: <Brain className="h-3 w-3" />,
-  code: <Code2 className="h-3 w-3" />,
-  fast: <Gauge className="h-3 w-3" />,
-};
-
-const MODEL_CAPABILITY_PICKER = MODEL_CAPABILITY_OPTIONS.filter((capability) =>
-  ['code', 'vision', 'reasoning', 'fast', 'longContext', 'search'].includes(capability.id)
-);
+const CAPABILITY_ICONS: Record<string, React.ReactNode> = { tool: <Wrench className="h-3 w-3" />, vision: <Eye className="h-3 w-3" />, reasoning: <Brain className="h-3 w-3" />, code: <Code2 className="h-3 w-3" />, fast: <Gauge className="h-3 w-3" /> };
+const MODEL_CAPABILITY_PICKER = MODEL_CAPABILITY_OPTIONS.filter((capability) => ['code', 'vision', 'reasoning', 'fast', 'longContext', 'search'].includes(capability.id));
 
 // ============================================================================
 // Component
@@ -132,12 +123,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   // Get models for current provider
   const currentProviderConfig = providerConfigs[config.provider];
   const currentProviderInfo = buildProviderInfoFromSettings(config.provider, currentProviderConfig);
-  const registryEndpoint = getProviderInfo(config.provider)?.endpoint || '';
+  const effectiveProtocol = resolveProviderProtocol(config.provider, currentProviderConfig);
+  const registryEndpoint = getProviderEndpointForProtocol(config.provider, effectiveProtocol) || '';
   const configuredBaseUrl = config.baseUrl ?? currentProviderConfig?.baseUrl ?? registryEndpoint;
   const effectiveBaseUrl = configuredBaseUrl || registryEndpoint;
-  const showOfficialEndpointReset = hasCustomEndpointOverride(config.provider, configuredBaseUrl);
-  const effectiveProtocol = resolveProviderProtocol(config.provider, currentProviderConfig);
-  const isCustomProviderProtocolEditable = isDynamicCustomProviderId(config.provider);
+  const showOfficialEndpointReset = hasCustomEndpointOverride(config.provider, configuredBaseUrl, effectiveProtocol);
+  const isCustomProviderProtocolEditable = isDynamicCustomProviderId(config.provider) || config.provider === 'longcat';
 
   const currentModels = useMemo(
     () => getProviderRuntimeModels(currentProviderInfo, currentProviderConfig),
@@ -221,7 +212,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       provider: providerId,
       model: nextModel,
       apiKey: providerConfig?.apiKey || '',
-      baseUrl: providerConfig?.baseUrl || getProviderInfo(providerId)?.endpoint || '',
+      baseUrl: providerConfig?.baseUrl || getProviderEndpointForProtocol(providerId, resolveProviderProtocol(providerId, providerConfig)) || '',
       protocol: resolveProviderProtocol(providerId, providerConfig),
       capabilities: nextRuntimeModel?.capabilities,
       maxTokens: nextRuntimeModel?.maxTokens ?? config.maxTokens,
@@ -254,6 +245,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
 
   const handleProviderProtocolChange = useCallback((protocol: ModelProviderProtocol) => {
     patchCurrentProviderConfig({ protocol });
+    if (config.provider === 'longcat') {
+      const baseUrl = getProviderEndpointForProtocol(config.provider, protocol) || config.baseUrl;
+      patchCurrentProviderConfig({ protocol, baseUrl });
+      onChange({ ...config, protocol, baseUrl });
+      return;
+    }
     onChange({ ...config, protocol });
   }, [config, onChange, patchCurrentProviderConfig]);
 

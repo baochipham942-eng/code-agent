@@ -7,7 +7,7 @@ import type {
   ModelProviderProtocol,
   ModelProviderSettings,
 } from '@shared/contract';
-import { getProviderInfo } from '@shared/constants';
+import { getProviderEndpointForProtocol, getProviderInfo } from '@shared/constants';
 import type { ProviderInfo, ProviderModelEntry } from '@shared/constants';
 import {
   getEnabledProviderModels,
@@ -140,11 +140,15 @@ export function getProtocolLabel(protocol: ModelProviderProtocol | undefined): s
   return protocol === 'claude' ? 'Claude 协议' : 'OpenAI 兼容';
 }
 
-export function hasCustomEndpointOverride(providerId: ModelProvider, configuredBaseUrl?: string): boolean {
+export function hasCustomEndpointOverride(
+  providerId: ModelProvider,
+  configuredBaseUrl?: string,
+  protocol?: ModelProviderProtocol,
+): boolean {
   if (providerId === 'custom' || isDynamicCustomProviderId(providerId)) {
     return false;
   }
-  const officialEndpoint = getProviderInfo(providerId)?.endpoint;
+  const officialEndpoint = getProviderEndpointForProtocol(providerId, protocol);
   if (!officialEndpoint) {
     return false;
   }

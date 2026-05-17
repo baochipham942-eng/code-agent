@@ -22,7 +22,7 @@ describe('ProviderRegistry', () => {
       const expectedProviders: ModelProvider[] = [
         'deepseek', 'claude', 'openai', 'groq', 'local',
         'zhipu', 'qwen', 'moonshot', 'minimax', 'gemini',
-        'perplexity', 'openrouter',
+        'perplexity', 'openrouter', 'longcat',
       ];
       for (const provider of expectedProviders) {
         expect(PROVIDER_REGISTRY[provider]).toBeDefined();
@@ -63,6 +63,7 @@ describe('ProviderRegistry', () => {
       expect(PROVIDER_REGISTRY.perplexity.baseUrl).toBe(MODEL_API_ENDPOINTS.perplexity);
       expect(PROVIDER_REGISTRY.gemini.baseUrl).toBe(MODEL_API_ENDPOINTS.gemini);
       expect(PROVIDER_REGISTRY.openrouter.baseUrl).toBe(MODEL_API_ENDPOINTS.openrouter);
+      expect(PROVIDER_REGISTRY.longcat.baseUrl).toBe(MODEL_API_ENDPOINTS.longcat);
     });
   });
 

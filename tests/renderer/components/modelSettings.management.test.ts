@@ -158,6 +158,8 @@ describe('ModelSettings management helpers', () => {
   it('detects when a built-in provider endpoint was changed to a relay', () => {
     expect(hasCustomEndpointOverride('openai', 'https://relay.example.com/v1')).toBe(true);
     expect(hasCustomEndpointOverride('openai', 'https://api.openai.com/v1/')).toBe(false);
+    expect(hasCustomEndpointOverride('longcat', 'https://api.longcat.chat/anthropic/v1/', 'claude')).toBe(false);
+    expect(hasCustomEndpointOverride('longcat', 'https://relay.example.com/v1', 'claude')).toBe(true);
     expect(hasCustomEndpointOverride('custom', 'https://relay.example.com/v1')).toBe(false);
     expect(hasCustomEndpointOverride('custom-relay', 'https://relay.example.com/v1')).toBe(false);
   });

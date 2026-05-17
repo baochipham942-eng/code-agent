@@ -1,9 +1,8 @@
 import React from 'react';
 import { X } from 'lucide-react';
 
-interface FullScreenPageProps {
+interface FullScreenPageProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
-  className?: string;
   testId?: string;
 }
 
@@ -21,8 +20,10 @@ export const FullScreenPage: React.FC<FullScreenPageProps> = ({
   children,
   className = '',
   testId,
+  ...divProps
 }) => (
   <div
+    {...divProps}
     data-testid={testId}
     className={`fixed inset-0 z-50 flex min-h-0 flex-col bg-zinc-950 text-zinc-100 ${className}`}
   >

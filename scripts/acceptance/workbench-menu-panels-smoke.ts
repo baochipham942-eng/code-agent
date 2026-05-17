@@ -21,7 +21,9 @@ type PanelCheck = {
   menuLabel: string;
   closeLabel: string;
   expectedText: string[];
+  testId?: string;
   advanced?: boolean;
+  optional?: boolean;
 };
 
 const PANEL_CHECKS: PanelCheck[] = [
@@ -30,18 +32,57 @@ const PANEL_CHECKS: PanelCheck[] = [
     menuLabel: 'Activity',
     closeLabel: '关闭 Activity',
     expectedText: ['Activity', 'ActivityContext 当前预览', 'Provider 状态'],
+    testId: 'activity-panel',
   },
   {
     key: 'knowledgeMemory',
     menuLabel: '知识与记忆',
     closeLabel: '关闭 Knowledge / Memory',
     expectedText: ['Knowledge / Memory', 'Knowledge Inbox', 'Memory Audit', 'Light Memory'],
+    testId: 'knowledge-memory-panel',
+  },
+  {
+    key: 'evalCenter',
+    menuLabel: '评测中心',
+    closeLabel: '关闭 评测中心',
+    expectedText: ['评测中心', '会话评测', 'Review Queue'],
+    testId: 'eval-center-panel',
+  },
+  {
+    key: 'cronCenter',
+    menuLabel: '自动化',
+    closeLabel: '关闭 Cron Center',
+    expectedText: ['Cron Center', '定时任务调度'],
+    testId: 'cron-center-panel',
+  },
+  {
+    key: 'promptManager',
+    menuLabel: '提示词',
+    closeLabel: '关闭 提示词',
+    expectedText: ['提示词', '默认提示词'],
+    testId: 'prompt-manager-panel',
+  },
+  {
+    key: 'settings',
+    menuLabel: '设置',
+    closeLabel: 'Close settings',
+    expectedText: ['权限与安全', '工作区'],
+    testId: 'settings-panel',
+  },
+  {
+    key: 'lab',
+    menuLabel: '实验室',
+    closeLabel: '关闭 实验室',
+    expectedText: ['实验室', 'AI 学习实验室'],
+    testId: 'lab-page',
+    advanced: true,
   },
   {
     key: 'computerUse',
     menuLabel: 'Computer Use',
     closeLabel: '关闭 Computer Use',
     expectedText: ['Computer Use', 'Activity Collector', 'AX Tree', '能力边界'],
+    testId: 'computer-use-panel',
     advanced: true,
   },
   {
@@ -49,6 +90,40 @@ const PANEL_CHECKS: PanelCheck[] = [
     menuLabel: 'Time & Capability',
     closeLabel: '关闭 Time & Capability',
     expectedText: ['Time & Capability', 'Time Workbench', 'Calendar connector', 'Capability Fix'],
+    testId: 'time-capability-panel',
+    advanced: true,
+  },
+  {
+    key: 'workflow',
+    menuLabel: 'Agent 流程',
+    closeLabel: '关闭 Workflow',
+    expectedText: ['Workflow'],
+    testId: 'workflow-panel',
+    advanced: true,
+    optional: true,
+  },
+  {
+    key: 'browserSurface',
+    menuLabel: '浏览器',
+    closeLabel: '关闭 Browser Surface',
+    expectedText: ['Browser Surface', '托管浏览器'],
+    testId: 'browser-surface-panel',
+    advanced: true,
+  },
+  {
+    key: 'desktopCollector',
+    menuLabel: '桌面采集',
+    closeLabel: '关闭 桌面采集',
+    expectedText: ['桌面活动', '采集'],
+    testId: 'desktop-status-panel',
+    advanced: true,
+  },
+  {
+    key: 'inAppValidation',
+    menuLabel: 'In-App 验证',
+    closeLabel: '关闭 In-App 验证',
+    expectedText: ['In-App 验证', '载入 Demo'],
+    testId: 'in-app-validation-panel',
     advanced: true,
   },
 ];
@@ -70,8 +145,8 @@ Options:
 
 What it validates:
   - the local app-host serves the current renderer build
-  - the lower-left user menu exposes Activity, Knowledge/Memory, and the advanced tools group
-  - each menu entry opens its panel, renders key content, and can close back to chat`);
+  - the lower-left user menu exposes common and advanced secondary pages
+  - each menu entry opens its panel, renders key content, uses a fullscreen shell, and can close back to chat`);
 }
 
 function npmCommand(): string {
@@ -238,7 +313,9 @@ async function validateMenuEntries(page: Page, failures: string[]): Promise<Reco
     const visible = await exactButton(page, panel.menuLabel).isVisible().catch(() => false);
     result[panel.key] = visible;
     if (!visible) {
-      failures.push(`lower-left menu missing "${panel.menuLabel}"`);
+      if (!panel.optional) {
+        failures.push(`lower-left menu missing "${panel.menuLabel}"`);
+      }
     }
   }
 
@@ -279,18 +356,44 @@ async function validatePanel(page: Page, panel: PanelCheck): Promise<{
   menuLabel: string;
   ok: boolean;
   missingText: string[];
+  layoutOk: boolean;
+  layoutFailure?: string;
 }> {
   await openPanel(page, panel);
 
   const bodyText = await waitForPanelBodyText(page, panel);
   const missingText = panel.expectedText.filter((expected) => !bodyText.includes(expected));
+  let layoutOk = true;
+  let layoutFailure: string | undefined;
+
+  if (panel.testId) {
+    const target = page.getByTestId(panel.testId);
+    const box = await target.boundingBox().catch(() => null);
+    const viewport = page.viewportSize();
+    if (!box || !viewport) {
+      layoutOk = false;
+      layoutFailure = `${panel.testId} did not expose a measurable fullscreen container`;
+    } else {
+      const xOk = Math.abs(box.x) <= 1;
+      const yOk = Math.abs(box.y) <= 1;
+      const widthOk = box.width >= viewport.width - 2;
+      const heightOk = box.height >= viewport.height - 2;
+      layoutOk = xOk && yOk && widthOk && heightOk;
+      if (!layoutOk) {
+        layoutFailure = `${panel.testId} bbox ${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.width)}x${Math.round(box.height)} did not cover viewport ${viewport.width}x${viewport.height}`;
+      }
+    }
+  }
+
   await closePanel(page, panel);
 
   return {
     key: panel.key,
     menuLabel: panel.menuLabel,
-    ok: missingText.length === 0,
+    ok: missingText.length === 0 && layoutOk,
     missingText,
+    layoutOk,
+    layoutFailure,
   };
 }
 
@@ -344,10 +447,24 @@ async function main(): Promise<void> {
     const menu = await validateMenuEntries(page, failures);
     const panels = [];
     for (const panel of PANEL_CHECKS) {
+      if (panel.optional && menu[panel.key] === false) {
+        panels.push({
+          key: panel.key,
+          menuLabel: panel.menuLabel,
+          ok: true,
+          skipped: true,
+          missingText: [],
+          layoutOk: true,
+        });
+        continue;
+      }
       const result = await validatePanel(page, panel);
       panels.push(result);
-      if (!result.ok) {
+      if (result.missingText.length > 0) {
         failures.push(`${panel.menuLabel} panel missing text: ${result.missingText.join(', ')}`);
+      }
+      if (!result.layoutOk && result.layoutFailure) {
+        failures.push(`${panel.menuLabel} panel layout: ${result.layoutFailure}`);
       }
     }
 
@@ -394,6 +511,11 @@ async function main(): Promise<void> {
         ['chromeMode', result.chrome?.mode],
         ['menuActivity', result.menu.activity],
         ['menuKnowledgeMemory', result.menu.knowledgeMemory],
+        ['menuEvalCenter', result.menu.evalCenter],
+        ['menuCronCenter', result.menu.cronCenter],
+        ['menuPromptManager', result.menu.promptManager],
+        ['menuSettings', result.menu.settings],
+        ['menuLab', result.menu.lab],
         ['menuComputerUse', result.menu.computerUse],
         ['menuTimeCapability', result.menu.timeCapability],
         ['panelsPassed', panels.filter((panel) => panel.ok).length],

@@ -4,12 +4,13 @@
 // ============================================================================
 
 import React, { useState } from 'react';
-import { X, FlaskConical, Sparkles, Lock, ChevronRight } from 'lucide-react';
+import { FlaskConical, Sparkles, Lock, ChevronRight } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { GPT1Lab } from './gpt1/GPT1Lab';
 import { NanoGPTLab } from './nanogpt/NanoGPTLab';
 import { AlignmentLab } from './alignment/AlignmentLab';
 import { LLaMAFactoryLab } from './llamafactory/LLaMAFactoryLab';
+import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 
 // 实验类型
 type LabType = 'home' | 'gpt1' | 'nanogpt' | 'alignment' | 'llamafactory';
@@ -82,6 +83,11 @@ const labCards: LabCard[] = [
 export const LabPage: React.FC = () => {
   const { setShowLab } = useAppStore();
   const [currentLab, setCurrentLab] = useState<LabType>('home');
+  const currentLabCard = labCards.find((card) => card.id === currentLab);
+  const currentLabTitle = currentLab === 'home' ? '实验室' : currentLabCard?.title ?? '实验室';
+  const currentLabDescription = currentLab === 'home'
+    ? '模型训练学习平台入口'
+    : currentLabCard?.subtitle;
 
   // 渲染主页卡片选择
   const renderHome = () => (
@@ -140,31 +146,14 @@ export const LabPage: React.FC = () => {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-zinc-950">
-      {/* Header - pl-20 为 macOS 窗口控制按钮留出空间 */}
-      <div className="flex items-center justify-between pl-20 pr-4 py-4 border-b border-zinc-700">
-        <div className="flex items-center gap-2">
-          <FlaskConical className="w-5 h-5 text-emerald-400" />
-          <h1 className="text-lg font-semibold text-zinc-200">
-            {currentLab === 'home'
-              ? '实验室'
-              : currentLab === 'gpt1'
-                ? '教 AI 学说话'
-                : currentLab === 'nanogpt'
-                  ? '让 AI 读更多书'
-                  : currentLab === 'alignment'
-                    ? '让 AI 学会听话'
-                    : '让 AI 更专业'}
-          </h1>
-        </div>
-        {/* 关闭按钮 - 增大热区 */}
-        <button
-          onClick={() => setShowLab(false)}
-          className="w-10 h-10 flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      </div>
+    <FullScreenPage testId="lab-page">
+      <FullScreenPageHeader
+        icon={<FlaskConical className="h-4 w-4 text-emerald-300" />}
+        title={currentLabTitle}
+        description={currentLabDescription}
+        onClose={() => setShowLab(false)}
+        closeLabel="关闭 实验室"
+      />
 
       {/* Content */}
       {currentLab === 'home' && renderHome()}
@@ -172,7 +161,7 @@ export const LabPage: React.FC = () => {
       {currentLab === 'nanogpt' && <NanoGPTLab />}
       {currentLab === 'alignment' && <AlignmentLab />}
       {currentLab === 'llamafactory' && <LLaMAFactoryLab />}
-    </div>
+    </FullScreenPage>
   );
 };
 

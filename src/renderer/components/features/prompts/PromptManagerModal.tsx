@@ -6,11 +6,11 @@
 // ============================================================================
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { X, RotateCcw, Save, Copy, Check } from 'lucide-react';
+import { ScrollText, RotateCcw, Save, Copy, Check } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { IPC_DOMAINS } from '@shared/ipc';
-import { IconButton } from '../../primitives';
 import { createLogger } from '../../../utils/logger';
+import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 
 const logger = createLogger('PromptManagerModal');
 
@@ -131,29 +131,19 @@ export const PromptManagerModal: React.FC = () => {
   if (!showPromptManager) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={() => setShowPromptManager(false)}
+    <FullScreenPage
+      role="dialog"
+      aria-modal="true"
+      aria-label="提示词"
+      testId="prompt-manager-panel"
+    >
+      <FullScreenPageHeader
+        icon={<ScrollText className="h-4 w-4 text-violet-300" />}
+        title="提示词"
+        description="默认提示词、自定义覆盖和远端片段"
+        onClose={() => setShowPromptManager(false)}
+        closeLabel="关闭 提示词"
       />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="prompt-manager-title"
-        className="relative w-full max-w-5xl h-[88vh] bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn flex flex-col"
-      >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-700 flex-shrink-0">
-          <h2 id="prompt-manager-title" className="text-lg font-semibold text-zinc-200">
-            提示词
-          </h2>
-          <IconButton
-            icon={<X className="w-5 h-5" />}
-            aria-label="关闭"
-            onClick={() => setShowPromptManager(false)}
-            variant="default"
-            size="md"
-          />
-        </div>
 
         <div className="flex flex-1 min-h-0">
           {/* 左侧分类列表 */}
@@ -293,7 +283,6 @@ export const PromptManagerModal: React.FC = () => {
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </FullScreenPage>
   );
 };

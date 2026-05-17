@@ -41,6 +41,7 @@ import { createLogger } from '../../../utils/logger';
 import { isDesktopShellMode, isTauriMode } from '../../../utils/platform';
 import { canAccessFeature, createAccessSubject, type AccessSubject } from '../../../utils/accessControl';
 import { SettingsSearch } from './SettingsSearch';
+import { FullScreenPage } from '../shared/FullScreenPage';
 import {
   DEFAULT_SETTINGS_TAB,
   SETTINGS_TAB_GROUP_BY_TAB,
@@ -285,11 +286,12 @@ export const SettingsModal: React.FC = () => {
   }, [activeTab, tabs]);
 
   return (
-    <div
+    <FullScreenPage
       role="dialog"
       aria-modal="true"
       aria-label={t.settings.title}
-      className="fixed inset-0 z-50 h-screen overflow-hidden bg-zinc-950 text-zinc-100 animate-fadeIn"
+      testId="settings-panel"
+      className="h-screen overflow-hidden animate-fadeIn"
     >
       <div className="flex h-full min-h-0">
         <aside className="flex w-[280px] shrink-0 flex-col border-r border-zinc-800 bg-zinc-900/95">
@@ -458,6 +460,6 @@ export const SettingsModal: React.FC = () => {
           onClose={() => setShowUpdateModal(false)}
         />
       )}
-    </div>
+    </FullScreenPage>
   );
 };

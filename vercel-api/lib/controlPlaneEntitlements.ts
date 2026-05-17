@@ -7,7 +7,7 @@ type EntitlementStatus = EntitlementPolicy['status'];
 interface ControlPlaneSubject {
   id: string;
   email?: string;
-  source: 'server_token_map';
+  source: 'server_token_map' | 'supabase_auth';
 }
 
 interface SubjectEntitlementMapping {
@@ -19,6 +19,53 @@ interface SubjectEntitlementMapping {
 }
 
 type SubjectEntitlementMap = Record<string, SubjectEntitlementMapping>;
+
+interface SupabaseAuthConfig {
+  url: string;
+  key: string;
+  entitlementTable: string;
+  entitlementUserIdColumn: string;
+}
+
+interface SupabaseAuthMode {
+  shouldUse: boolean;
+  config: SupabaseAuthConfig | null;
+}
+
+const SUPABASE_URL_ENV_NAMES = [
+  'CONTROL_PLANE_SUPABASE_URL',
+  'CODE_AGENT_CONTROL_PLANE_SUPABASE_URL',
+  'SUPABASE_URL',
+];
+
+const SUPABASE_KEY_ENV_NAMES = [
+  'CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY',
+  'CODE_AGENT_CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY',
+  'CONTROL_PLANE_SUPABASE_KEY',
+  'CODE_AGENT_CONTROL_PLANE_SUPABASE_KEY',
+  'CONTROL_PLANE_SUPABASE_ANON_KEY',
+  'CODE_AGENT_CONTROL_PLANE_SUPABASE_ANON_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'SUPABASE_KEY',
+  'SUPABASE_ANON_KEY',
+];
+
+const SUPABASE_ENTITLEMENT_REQUIRED_ENV_NAMES = [
+  'CONTROL_PLANE_SUPABASE_ENTITLEMENT_REQUIRED',
+  'CODE_AGENT_CONTROL_PLANE_SUPABASE_ENTITLEMENT_REQUIRED',
+  'CONTROL_PLANE_ENTITLEMENT_SUPABASE_REQUIRED',
+  'CODE_AGENT_CONTROL_PLANE_ENTITLEMENT_SUPABASE_REQUIRED',
+];
+
+const SUPABASE_ENTITLEMENT_TABLE_ENV_NAMES = [
+  'CONTROL_PLANE_SUPABASE_ENTITLEMENT_TABLE',
+  'CODE_AGENT_CONTROL_PLANE_SUPABASE_ENTITLEMENT_TABLE',
+];
+
+const SUPABASE_ENTITLEMENT_USER_ID_COLUMN_ENV_NAMES = [
+  'CONTROL_PLANE_SUPABASE_ENTITLEMENT_USER_ID_COLUMN',
+  'CODE_AGENT_CONTROL_PLANE_SUPABASE_ENTITLEMENT_USER_ID_COLUMN',
+];
 
 function readEnv(env: NodeJS.ProcessEnv, names: string[]): string | null {
   for (const name of names) {
@@ -36,6 +83,26 @@ function readBooleanEnv(env: NodeJS.ProcessEnv, names: string[]): boolean {
     return false;
   }
   return /^(1|true|yes|required)$/i.test(value.trim());
+}
+
+function hasEnv(env: NodeJS.ProcessEnv, names: string[]): boolean {
+  return readEnv(env, names) !== null;
+}
+
+function resolveSupabaseAuthMode(env: NodeJS.ProcessEnv): SupabaseAuthMode {
+  const url = readEnv(env, SUPABASE_URL_ENV_NAMES);
+  const key = readEnv(env, SUPABASE_KEY_ENV_NAMES);
+  const explicitlyRequired = readBooleanEnv(env, SUPABASE_ENTITLEMENT_REQUIRED_ENV_NAMES);
+  const hasSupabaseConfig = hasEnv(env, SUPABASE_URL_ENV_NAMES) && hasEnv(env, SUPABASE_KEY_ENV_NAMES);
+  const entitlementTable = readEnv(env, SUPABASE_ENTITLEMENT_TABLE_ENV_NAMES)
+    ?? 'control_plane_entitlements';
+  const entitlementUserIdColumn = readEnv(env, SUPABASE_ENTITLEMENT_USER_ID_COLUMN_ENV_NAMES)
+    ?? 'user_id';
+
+  return {
+    shouldUse: explicitlyRequired || hasSupabaseConfig,
+    config: url && key ? { url, key, entitlementTable, entitlementUserIdColumn } : null,
+  };
 }
 
 function getHeader(req: ControlPlaneRequestLike, name: string): string | null {
@@ -74,6 +141,20 @@ function isValidStatus(value: string): value is EntitlementStatus {
   return value === 'active' || value === 'trial' || value === 'expired' || value === 'revoked';
 }
 
+function isValidEntitlement(value: unknown): value is EntitlementPolicy {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const entitlement = value as Partial<EntitlementPolicy>;
+  return Boolean(
+    typeof entitlement.plan === 'string'
+      && Array.isArray(entitlement.capabilities)
+      && entitlement.capabilities.every((capability) => typeof capability === 'string')
+      && typeof entitlement.status === 'string'
+      && isValidStatus(entitlement.status),
+  );
+}
+
 function isValidMapping(value: SubjectEntitlementMapping | undefined): value is SubjectEntitlementMapping {
   if (!value || typeof value !== 'object') {
     return false;
@@ -81,13 +162,7 @@ function isValidMapping(value: SubjectEntitlementMapping | undefined): value is 
   if (!value.subject || typeof value.subject.id !== 'string' || value.subject.id.trim().length === 0) {
     return false;
   }
-  const entitlement = value.entitlement;
-  return Boolean(
-    entitlement
-      && typeof entitlement.plan === 'string'
-      && Array.isArray(entitlement.capabilities)
-      && isValidStatus(entitlement.status),
-  );
+  return isValidEntitlement(value.entitlement);
 }
 
 function revokedEntitlement(reason: string): EntitlementPolicy {
@@ -119,26 +194,126 @@ function applyFailClosedEntitlement(payload: CloudConfigPayload, reason: string)
   };
 }
 
-export function applyServerEntitlementGate(
-  req: ControlPlaneRequestLike,
+function readSupabaseSubject(value: unknown): ControlPlaneSubject | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const user = value as { id?: unknown; email?: unknown };
+  if (typeof user.id !== 'string' || user.id.trim().length === 0) {
+    return null;
+  }
+  const email = typeof user.email === 'string' && user.email.trim().length > 0
+    ? user.email.trim()
+    : undefined;
+  return {
+    id: user.id.trim(),
+    ...(email ? { email } : {}),
+    source: 'supabase_auth',
+  };
+}
+
+function readSupabaseEntitlement(value: unknown): EntitlementPolicy | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const row = value as {
+    status?: unknown;
+    plan?: unknown;
+    capabilities?: unknown;
+    expiresAt?: unknown;
+    expires_at?: unknown;
+    reason?: unknown;
+  };
+  const entitlement = {
+    status: row.status,
+    plan: row.plan,
+    capabilities: row.capabilities,
+    expiresAt: typeof row.expiresAt === 'string' ? row.expiresAt : row.expires_at,
+    reason: row.reason,
+  };
+  if (!isValidEntitlement(entitlement)) {
+    return null;
+  }
+  return {
+    status: entitlement.status,
+    plan: entitlement.plan,
+    capabilities: [...entitlement.capabilities],
+    ...(typeof entitlement.expiresAt === 'string' && entitlement.expiresAt.trim().length > 0
+      ? { expiresAt: entitlement.expiresAt }
+      : {}),
+    ...(typeof entitlement.reason === 'string' && entitlement.reason.trim().length > 0
+      ? { reason: entitlement.reason }
+      : {}),
+  };
+}
+
+async function verifySupabaseAccessToken(
+  token: string,
+  config: SupabaseAuthConfig,
+): Promise<ControlPlaneSubject | null> {
+  if (typeof fetch !== 'function') {
+    return null;
+  }
+
+  try {
+    const response = await fetch(`${config.url.replace(/\/+$/, '')}/auth/v1/user`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: config.key,
+      },
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return readSupabaseSubject(await response.json().catch(() => null));
+  } catch {
+    return null;
+  }
+}
+
+async function readSupabaseSubjectEntitlement(
+  subject: ControlPlaneSubject,
+  config: SupabaseAuthConfig,
+): Promise<EntitlementPolicy | null> {
+  if (typeof fetch !== 'function') {
+    return null;
+  }
+
+  try {
+    const url = new URL(
+      `${config.url.replace(/\/+$/, '')}/rest/v1/${encodeURIComponent(config.entitlementTable)}`,
+    );
+    url.searchParams.set(config.entitlementUserIdColumn, `eq.${subject.id}`);
+    url.searchParams.set('select', 'status,plan,capabilities,expires_at,reason');
+    url.searchParams.set('limit', '1');
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${config.key}`,
+        apikey: config.key,
+        Accept: 'application/json',
+      },
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const rows = await response.json().catch(() => null);
+    if (!Array.isArray(rows)) {
+      return null;
+    }
+    return readSupabaseEntitlement(rows[0]);
+  } catch {
+    return null;
+  }
+}
+
+function applyTokenMapEntitlementGate(
   payload: CloudConfigPayload,
-  env: NodeJS.ProcessEnv = process.env,
+  token: string,
+  tokenMap: SubjectEntitlementMap | null,
 ): CloudConfigPayload {
-  const tokenMap = readSubjectEntitlementMap(env);
-  const authRequired = readBooleanEnv(env, [
-    'CONTROL_PLANE_ENTITLEMENT_REQUIRED',
-    'CODE_AGENT_CONTROL_PLANE_ENTITLEMENT_REQUIRED',
-  ]);
-
-  if (!authRequired && !tokenMap) {
-    return payload;
-  }
-
-  const token = getBearerToken(req);
-  if (!token) {
-    return applyFailClosedEntitlement(payload, 'missing_verified_subject');
-  }
-
   const mapping = tokenMap?.[token];
   if (!isValidMapping(mapping)) {
     return applyFailClosedEntitlement(payload, 'invalid_verified_subject');
@@ -152,5 +327,81 @@ export function applyServerEntitlementGate(
       source: 'server_token_map',
     },
     mapping.entitlement,
+  );
+}
+
+export function applyServerEntitlementGate(
+  req: ControlPlaneRequestLike,
+  payload: CloudConfigPayload,
+  env: NodeJS.ProcessEnv = process.env,
+): CloudConfigPayload {
+  const tokenMap = readSubjectEntitlementMap(env);
+  const authRequired = readBooleanEnv(env, [
+    'CONTROL_PLANE_ENTITLEMENT_REQUIRED',
+    'CODE_AGENT_CONTROL_PLANE_ENTITLEMENT_REQUIRED',
+  ]);
+  const supabaseAuth = resolveSupabaseAuthMode(env);
+
+  if (!authRequired && !tokenMap && !supabaseAuth.shouldUse) {
+    return payload;
+  }
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return applyFailClosedEntitlement(payload, 'missing_verified_subject');
+  }
+
+  if (supabaseAuth.shouldUse) {
+    return applyFailClosedEntitlement(
+      payload,
+      supabaseAuth.config ? 'supabase_auth_requires_async_gate' : 'supabase_auth_unconfigured',
+    );
+  }
+
+  return applyTokenMapEntitlementGate(payload, token, tokenMap);
+}
+
+export async function applyServerEntitlementGateAsync(
+  req: ControlPlaneRequestLike,
+  payload: CloudConfigPayload,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<CloudConfigPayload> {
+  const tokenMap = readSubjectEntitlementMap(env);
+  const authRequired = readBooleanEnv(env, [
+    'CONTROL_PLANE_ENTITLEMENT_REQUIRED',
+    'CODE_AGENT_CONTROL_PLANE_ENTITLEMENT_REQUIRED',
+  ]);
+  const supabaseAuth = resolveSupabaseAuthMode(env);
+
+  if (!authRequired && !tokenMap && !supabaseAuth.shouldUse) {
+    return payload;
+  }
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return applyFailClosedEntitlement(payload, 'missing_verified_subject');
+  }
+
+  if (!supabaseAuth.shouldUse) {
+    return applyTokenMapEntitlementGate(payload, token, tokenMap);
+  }
+
+  if (!supabaseAuth.config) {
+    return applyFailClosedEntitlement(payload, 'supabase_auth_unconfigured');
+  }
+
+  const subject = await verifySupabaseAccessToken(token, supabaseAuth.config);
+  if (!subject) {
+    return applyFailClosedEntitlement(payload, 'invalid_verified_subject');
+  }
+  const entitlement = await readSupabaseSubjectEntitlement(subject, supabaseAuth.config);
+  if (!entitlement) {
+    return applyFailClosedEntitlement(payload, 'missing_supabase_entitlement');
+  }
+
+  return applySubjectEntitlement(
+    payload,
+    subject,
+    entitlement,
   );
 }

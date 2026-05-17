@@ -1,10 +1,11 @@
 import {
   sendControlPlaneEnvelope,
+  sendControlPlaneEnvelopeAsync,
   type ControlPlaneArtifactKind,
   type ControlPlaneRequestLike,
   type ControlPlaneResponseLike,
 } from '../../lib/controlPlaneEnvelope';
-import { readPayloadForKind } from '../../lib/controlPlanePayloads';
+import { readCloudConfigPayloadForRequestAsync, readPayloadForKind } from '../../lib/controlPlanePayloads';
 
 function firstQueryValue(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) {
@@ -27,13 +28,18 @@ function resolveKind(req: ControlPlaneRequestLike): ControlPlaneArtifactKind | n
   return null;
 }
 
-export default function handler(req: ControlPlaneRequestLike, res: ControlPlaneResponseLike): void {
+export default async function handler(req: ControlPlaneRequestLike, res: ControlPlaneResponseLike): Promise<void> {
   const kind = resolveKind(req);
   if (!kind) {
     res.status(400).json({
       error: 'unsupported_artifact',
       message: 'Supported artifacts are cloud_config, capability_registry, and prompt_registry.',
     });
+    return;
+  }
+
+  if (kind === 'cloud_config') {
+    await sendControlPlaneEnvelopeAsync(req, res, kind, () => readCloudConfigPayloadForRequestAsync(req));
     return;
   }
 

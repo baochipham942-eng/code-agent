@@ -1,6 +1,6 @@
 import type { ControlPlaneArtifactKind } from './controlPlaneEnvelope';
 import type { ControlPlaneRequestLike } from './controlPlaneEnvelope';
-import { applyServerEntitlementGate } from './controlPlaneEntitlements';
+import { applyServerEntitlementGate, applyServerEntitlementGateAsync } from './controlPlaneEntitlements';
 import { readJsonPayloadFromEnv } from './controlPlaneEnvelope';
 
 export interface CloudConfigPayload {
@@ -25,7 +25,7 @@ export interface CloudConfigPayload {
   subject?: {
     id: string;
     email?: string;
-    source: 'server_token_map';
+    source: 'server_token_map' | 'supabase_auth';
   };
   killSwitches?: {
     global?: { disabled: boolean; reason?: string };
@@ -66,6 +66,13 @@ export function readCloudConfigPayloadForRequest(
   env: NodeJS.ProcessEnv = process.env,
 ): CloudConfigPayload {
   return applyServerEntitlementGate(req, readCloudConfigPayload(env), env);
+}
+
+export function readCloudConfigPayloadForRequestAsync(
+  req: ControlPlaneRequestLike,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<CloudConfigPayload> {
+  return applyServerEntitlementGateAsync(req, readCloudConfigPayload(env), env);
 }
 
 export function readPromptRegistryPayload(env: NodeJS.ProcessEnv = process.env): PromptRegistryPayload {

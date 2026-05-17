@@ -227,6 +227,34 @@ function sendError(res: ControlPlaneResponseLike, statusCode: number, code: stri
   });
 }
 
+function sendCreatedControlPlaneEnvelope<TPayload>(
+  req: ControlPlaneRequestLike,
+  res: ControlPlaneResponseLike,
+  kind: ControlPlaneArtifactKind,
+  payload: TPayload,
+): void {
+  const envelope = createControlPlaneEnvelopeFromEnv(kind, payload);
+  res.setHeader('Cache-Control', 'private, max-age=60');
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('ETag', `"${envelope.contentHash}"`);
+  if (envelope.keyId) {
+    res.setHeader('X-Control-Plane-Key-Id', envelope.keyId);
+  }
+  res.setHeader('X-Control-Plane-Expires-At', envelope.expiresAt);
+
+  if (matchesIfNoneMatch(req, envelope.contentHash)) {
+    res.status(304).end();
+    return;
+  }
+
+  if (req.method?.toUpperCase() === 'HEAD') {
+    res.status(200).end();
+    return;
+  }
+
+  res.status(200).json(envelope);
+}
+
 export function sendControlPlaneEnvelope<TPayload>(
   req: ControlPlaneRequestLike,
   res: ControlPlaneResponseLike,
@@ -240,26 +268,30 @@ export function sendControlPlaneEnvelope<TPayload>(
   }
 
   try {
-    const envelope = createControlPlaneEnvelopeFromEnv(kind, payloadFactory());
-    res.setHeader('Cache-Control', 'private, max-age=60');
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.setHeader('ETag', `"${envelope.contentHash}"`);
-    if (envelope.keyId) {
-      res.setHeader('X-Control-Plane-Key-Id', envelope.keyId);
-    }
-    res.setHeader('X-Control-Plane-Expires-At', envelope.expiresAt);
-
-    if (matchesIfNoneMatch(req, envelope.contentHash)) {
-      res.status(304).end();
+    sendCreatedControlPlaneEnvelope(req, res, kind, payloadFactory());
+  } catch (error) {
+    if (error instanceof ControlPlaneConfigError) {
+      sendError(res, error.statusCode, 'control_plane_unconfigured', error.message);
       return;
     }
+    sendError(res, 500, 'control_plane_signing_failed', 'Failed to sign control-plane artifact.');
+  }
+}
 
-    if (req.method?.toUpperCase() === 'HEAD') {
-      res.status(200).end();
-      return;
-    }
+export async function sendControlPlaneEnvelopeAsync<TPayload>(
+  req: ControlPlaneRequestLike,
+  res: ControlPlaneResponseLike,
+  kind: ControlPlaneArtifactKind,
+  payloadFactory: () => TPayload | Promise<TPayload>,
+): Promise<void> {
+  if (req.method && !['GET', 'HEAD'].includes(req.method.toUpperCase())) {
+    res.setHeader('Allow', 'GET, HEAD');
+    sendError(res, 405, 'method_not_allowed', 'Only GET and HEAD are supported.');
+    return;
+  }
 
-    res.status(200).json(envelope);
+  try {
+    sendCreatedControlPlaneEnvelope(req, res, kind, await payloadFactory());
   } catch (error) {
     if (error instanceof ControlPlaneConfigError) {
       sendError(res, error.statusCode, 'control_plane_unconfigured', error.message);

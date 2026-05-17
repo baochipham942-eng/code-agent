@@ -40,8 +40,7 @@ export type SettingsTabGroupId =
   | 'workspace'
   | 'management'
   | 'memory'
-  | 'system'
-  | 'advanced';
+  | 'system';
 
 export const SETTINGS_TAB_GROUP_LABELS: Record<SettingsTabGroupId, string> = {
   basics: '基础偏好',
@@ -50,7 +49,6 @@ export const SETTINGS_TAB_GROUP_LABELS: Record<SettingsTabGroupId, string> = {
   management: '用户管理',
   memory: '记忆与隐私',
   system: '系统',
-  advanced: '高级',
 };
 
 export const SETTINGS_TAB_GROUP_ORDER: SettingsTabGroupId[] = [
@@ -60,7 +58,6 @@ export const SETTINGS_TAB_GROUP_ORDER: SettingsTabGroupId[] = [
   'management',
   'memory',
   'system',
-  'advanced',
 ];
 
 export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> = {
@@ -72,7 +69,7 @@ export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> 
   capabilities: 'connections',
   skills: 'connections',
   channels: 'connections',
-  hooks: 'advanced',
+  hooks: 'connections',
   workspace: 'workspace',
   automation: 'workspace',
   users: 'management',

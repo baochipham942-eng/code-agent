@@ -65,6 +65,7 @@ export interface ProviderInfo {
 const SUPPORTED_PROVIDERS = new Set<string>([
   'openai', 'claude', 'gemini', 'deepseek', 'zhipu',
   'qwen', 'moonshot', 'minimax', 'openrouter', 'perplexity',
+  'longcat',    // LongCat API 开放平台
   'xiaomi',     // 小米 MiMo（Token Plan 包月）
   'custom',     // 自定义 OpenAI-compatible provider
   'local',      // Ollama 本地模型（toy provider + 评测 baseline）
@@ -171,6 +172,8 @@ export const MODEL_FEATURES: Record<string, ('tool' | 'vision' | 'reasoning')[]>
   'mimo-v2.5': ['tool', 'reasoning'],
   'mimo-v2-pro': ['tool', 'reasoning'],
   'mimo-v2-omni': ['tool', 'vision', 'reasoning'],
+  // LongCat
+  'LongCat-2.0-Preview': ['tool', 'reasoning'],
   // local
   'qwen2.5-coder:7b': ['tool'],
   'qwen3:8b': ['tool'],

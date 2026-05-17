@@ -275,6 +275,21 @@
       ]
     },
     {
+      "id": "longcat",
+      "name": "LongCat",
+      "description": "LongCat API 开放平台（OpenAI / Claude 兼容）",
+      "apiUrl": "https://api.longcat.chat/openai/v1",
+      "apiKeyHint": "sk-...",
+      "default": "LongCat-2.0-Preview",
+      "models": [
+        {
+          "id": "LongCat-2.0-Preview",
+          "label": "LongCat 2.0 Preview",
+          "desc": "官方开放平台模型 · 支持 OpenAI / Claude 兼容协议"
+        }
+      ]
+    },
+    {
       "id": "xiaomi",
       "name": "小米 MiMo",
       "description": "小米 Token Plan 包月套餐（OpenAI 兼容）",

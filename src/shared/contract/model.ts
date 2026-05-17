@@ -17,6 +17,7 @@ export type BuiltInModelProvider =
   | 'grok'       // xAI Grok
   | 'openrouter' // OpenRouter 中转（Gemini、Claude、GPT 等）
   | 'volcengine' // 火山引擎 (豆包)
+  | 'longcat'    // LongCat API 开放平台
   | 'xiaomi'     // 小米 MiMo (Token Plan 包月套餐)
   | 'custom';    // 自定义 OpenAI-compatible Provider
 

@@ -39,6 +39,10 @@ export const MODEL_API_ENDPOINTS = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
   /** 火山引擎 Ark (豆包 GUI 自动化) */
   volcengine: 'https://ark.cn-beijing.volces.com/api/v3',
+  /** LongCat API 开放平台 (OpenAI 兼容) */
+  longcat: 'https://api.longcat.chat/openai/v1',
+  /** LongCat API 开放平台 (Anthropic/Claude 兼容) */
+  longcatClaude: 'https://api.longcat.chat/anthropic/v1',
   /** 小米 MiMo Token Plan (新加坡节点，OpenAI 兼容) */
   xiaomi: 'https://token-plan-sgp.xiaomimimo.com/v1',
   /** Custom OpenAI-compatible provider */
@@ -143,6 +147,12 @@ export const PROVIDER_REGISTRY: Record<BuiltInModelProvider, CanonicalProviderIn
     endpoint: MODEL_API_ENDPOINTS.volcengine,
     displayName: '火山引擎 (豆包)',
   },
+  longcat: {
+    aliases: ['longcat'],
+    defaultModel: 'LongCat-2.0-Preview',
+    endpoint: MODEL_API_ENDPOINTS.longcat,
+    displayName: 'LongCat',
+  },
   xiaomi: {
     aliases: ['xiaomi'],
     defaultModel: 'mimo-v2.5-pro',
@@ -184,6 +194,17 @@ export function getDefaultModelForProvider(provider: string | null | undefined):
 
 export function getProviderEndpoint(provider: string | null | undefined): string | undefined {
   return getProviderInfo(provider)?.endpoint;
+}
+
+export function getProviderEndpointForProtocol(
+  provider: string | null | undefined,
+  protocol?: 'openai' | 'claude',
+): string | undefined {
+  const normalizedProvider = normalizeProviderId(provider);
+  if (normalizedProvider === 'longcat' && protocol === 'claude') {
+    return MODEL_API_ENDPOINTS.longcatClaude;
+  }
+  return getProviderEndpoint(provider);
 }
 
 export function getProviderDisplayName(provider: string | null | undefined): string | undefined {

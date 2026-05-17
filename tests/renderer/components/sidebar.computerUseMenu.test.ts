@@ -151,6 +151,9 @@ describe('Sidebar account menu entry planning', () => {
     expect(html).toContain('评测中心');
     expect(html).toContain('自动化');
     expect(html).toContain('提示词');
+    expect(html).toContain('管理与诊断');
+    expect(html).toContain('Telemetry 调试');
+    expect(html).toContain('内部评测');
     expect(html).toContain('高级工具');
     expect(html).not.toContain('桌面采集');
     expect(html).not.toContain('Computer Use');

@@ -73,7 +73,6 @@ describe('SettingsModal screen memory tab visibility', () => {
       '用户管理',
       '记忆与隐私',
       '系统',
-      '高级',
     ]);
     expect(groups[0].tabs.map((tab) => tab.id)).toEqual([
       'general',
@@ -85,6 +84,13 @@ describe('SettingsModal screen memory tab visibility', () => {
     expect(groups[3].tabs.map((tab) => tab.id)).toEqual([
       'users',
       'invites',
+    ]);
+    expect(groups[1].tabs.map((tab) => tab.id)).toEqual([
+      'capabilities',
+      'mcp',
+      'skills',
+      'channels',
+      'hooks',
     ]);
     expect(groups[5].tabs.map((tab) => tab.id)).toEqual([
       'cache',

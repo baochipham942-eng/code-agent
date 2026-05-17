@@ -41,6 +41,7 @@ import {
   ScrollText,
   Activity,
   Brain,
+  ClipboardCheck,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { useDisclosure } from '../hooks/useDisclosure';
@@ -247,6 +248,7 @@ export const Sidebar: React.FC = () => {
 
   const { user, isAuthenticated, setShowAuthModal, signOut } = useAuthStore();
   const canOpenEvalCenter = canAccessFeature('eval.center', user);
+  const canOpenTelemetry = canAccessFeature('eval.telemetry', user);
   const canOpenPromptManager = canAccessFeature('prompt.manager', user);
   const canOpenInternalValidationTools = canAccessFeature('tools.internalValidation', user);
   const sessionStates = useTaskStore((state) => state.sessionStates);
@@ -1052,6 +1054,27 @@ export const Sidebar: React.FC = () => {
                     icon={<ScrollText className="w-4 h-4 text-violet-400/80" />}
                     label="提示词"
                   />
+                )}
+
+                {(canOpenTelemetry || canOpenEvalCenter) && (
+                  <>
+                    <div className="my-1 border-t border-zinc-800" />
+                    <AccountMenuLabel>管理与诊断</AccountMenuLabel>
+                    {canOpenTelemetry && (
+                      <AccountMenuItem
+                        onClick={() => { setShowEvalCenter(true, 'telemetry'); setShowUserMenu(false); }}
+                        icon={<Activity className="w-4 h-4 text-cyan-400/80" />}
+                        label="Telemetry 调试"
+                      />
+                    )}
+                    {canOpenEvalCenter && (
+                      <AccountMenuItem
+                        onClick={() => { setShowEvalCenter(true, 'analysis'); setShowUserMenu(false); }}
+                        icon={<ClipboardCheck className="w-4 h-4 text-amber-400/80" />}
+                        label="内部评测"
+                      />
+                    )}
+                  </>
                 )}
 
                 <div className="my-1 border-t border-zinc-800" />

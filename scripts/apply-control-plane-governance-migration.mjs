@@ -76,6 +76,32 @@ async function verify(sql) {
   return rows[0] ?? {};
 }
 
+async function preflight(sql) {
+  const rows = await sql`
+    select
+      to_regclass('public.profiles')::text as profiles_table,
+      to_regclass('public.invite_codes')::text as invite_codes_table,
+      to_regprocedure('public.require_code_agent_admin()')::text as require_admin_rpc
+  `;
+  return rows[0] ?? {};
+}
+
+function assertCodeAgentDatabase(check) {
+  const missing = [
+    ['profiles_table', 'public.profiles'],
+    ['invite_codes_table', 'public.invite_codes'],
+    ['require_admin_rpc', 'public.require_code_agent_admin()'],
+  ]
+    .filter(([key]) => !check[key])
+    .map(([, label]) => label);
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Refusing to apply migration because this does not look like the code-agent Supabase database. Missing: ${missing.join(', ')}`,
+    );
+  }
+}
+
 async function main() {
   let args;
   try {
@@ -116,12 +142,14 @@ async function main() {
     prepare: false,
   });
   try {
+    const preflightResult = await preflight(sql);
+    assertCodeAgentDatabase(preflightResult);
     await sql.begin(async (trx) => {
       await trx.unsafe(migrationSql);
     });
     const verification = await verify(sql);
     console.log('[control-plane-governance-migration] applied');
-    console.log(JSON.stringify({ ...metadata, verification }, null, 2));
+    console.log(JSON.stringify({ ...metadata, preflight: preflightResult, verification }, null, 2));
   } finally {
     await sql.end({ timeout: 1 });
   }

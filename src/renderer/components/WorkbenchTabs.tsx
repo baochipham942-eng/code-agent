@@ -56,7 +56,9 @@ export const WorkbenchTabs: React.FC = () => {
     };
   }, [addOpen]);
 
-  // 已开 tab 永远要显示；空 workbench 时也要保留 "+" 让用户能开第一个
+  // 已开 tab 永远要显示；空 workbench 时也要保留 "+" 让用户能开第一个。
+  // 'master-tasks' (任务看板) 跨 session 概念产品方向已弃，popover 不再暴露入口；
+  // 后端 master_task IPC/Repository 保留作死代码，不动 schema。
   const hasTask = workbenchTabs.includes('task');
   const hasSkills = workbenchTabs.includes('skills');
   const hasFiles = workbenchTabs.includes('files');
@@ -90,6 +92,9 @@ export const WorkbenchTabs: React.FC = () => {
     }
     if (id === 'context') {
       return { id, label: '上下文', title: '上下文占用与来源拆分', isDirty: false };
+    }
+    if (id === 'master-tasks') {
+      return { id, label: '任务看板', title: '跨 workspace 工作单元（一个任务可包含多个 session）', isDirty: false };
     }
     const path = id.slice(PREVIEW_PREFIX.length);
     const previewTab = previewTabs.find((p) => p.path === path);

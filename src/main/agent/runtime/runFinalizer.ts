@@ -65,6 +65,7 @@ import { getSessionRecoveryService } from '../../agent/sessionRecovery';
 import { getIncompleteTasks } from '../../services/planning/taskStore';
 import {
   parseTodos,
+  extractPlanTitle,
   mergeTodos,
   advanceTodoStatus,
   completeCurrentAndAdvance,
@@ -72,6 +73,7 @@ import {
   setSessionTodos,
   clearSessionTodos,
 } from '../../agent/todoParser';
+import { getDatabase } from '../../services/core/databaseService';
 import { fileReadTracker } from '../../tools/fileReadTracker';
 import { dataFingerprintStore } from '../../tools/dataFingerprint';
 import { MAX_PARALLEL_TOOLS } from '../../agent/loopTypes';
@@ -345,9 +347,11 @@ export class RunFinalizer {
   tryParseTodosFromResponse(response: { content?: string; thinking?: string }): void {
     // 优先从 thinking content 中解析（计划通常出现在思考过程中）
     let parsed: import('../../../shared/contract').TodoItem[] | null = null;
+    let parsedFrom: string | null = null;
 
     if (response.thinking) {
       parsed = parseTodos(response.thinking);
+      if (parsed) parsedFrom = response.thinking;
       if (!parsed && hasCheckboxChecklist(response.thinking)) {
         pushRuntimeDiagnostic(this.ctx, 'thinking 中的 checklist 没有显式任务标记，未提升为右侧待办');
       }
@@ -356,12 +360,28 @@ export class RunFinalizer {
     // 如果 thinking 中没有，从 text content 中解析
     if (!parsed && response.content) {
       parsed = parseTodos(response.content);
+      if (parsed) parsedFrom = response.content;
       if (!parsed && hasCheckboxChecklist(response.content)) {
         pushRuntimeDiagnostic(this.ctx, '正文 checklist 仅作为回复内容展示，未自动写入待办面板');
       }
     }
 
     if (!parsed || parsed.length === 0) return;
+
+    // 解析成功后顺带提取 plan 标题（识别 `## Plan: ...` / `**计划**: ...` 等显式
+    // 标记）。失败返回 null，写入 plan_title=NULL，UI 隐藏 plan title 行只显示
+    // checklist。
+    if (parsedFrom) {
+      const planTitle = extractPlanTitle(parsedFrom);
+      try {
+        const db = getDatabase();
+        if (db.isReady) {
+          db.updateSessionPlanTitle(this.ctx.sessionId, planTitle);
+        }
+      } catch (err) {
+        logger.warn('[TodoParser] Failed to persist plan_title', err);
+      }
+    }
 
     // 合并到会话级任务存储
     const existing = getSessionTodos(this.ctx.sessionId);

@@ -99,6 +99,29 @@ function hasExplicitTodoIntent(content: string): boolean {
     .test(content);
 }
 
+/**
+ * 从模型输出中提取 plan 标题。识别显式 "Plan / 计划" 前缀的 markdown 标题或加粗：
+ *   `# Plan: 重构 Auth 模块`
+ *   `## 计划：重构 Auth 模块`
+ *   `**Plan**: 重构 Auth 模块`
+ *   `**计划**：重构 Auth 模块`
+ *
+ * 不识别裸标题（如 `# 重构 Auth`），避免把无关章节当 plan title。
+ * 返回 null 时 UI 隐藏 plan title 行，只显示 checklist。
+ */
+export function extractPlanTitle(content: string): string | null {
+  if (!content) return null;
+  const cleaned = stripCodeBlocks(content);
+  // group: heading marker (# / **) — title text
+  const match = cleaned.match(
+    /(?:^|\n)\s*(?:#{1,6}\s*|\*\*\s*)(?:plan|计划)\s*\*{0,2}\s*[:：]\s*([^\n*#]+?)\s*\*{0,2}\s*(?:\n|$)/i,
+  );
+  if (!match) return null;
+  const title = match[1].trim();
+  if (title.length === 0 || title.length > 200) return null;
+  return title;
+}
+
 // ============================================================================
 // 解析器：Markdown Checkbox 格式
 // ============================================================================

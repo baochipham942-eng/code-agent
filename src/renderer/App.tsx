@@ -25,6 +25,7 @@ import { SkillsPanel } from './components/SkillsPanel';
 import { PreviewPanel } from './components/PreviewPanel';
 import { WorkspacePreviewPanel } from './components/WorkspacePreviewPanel';
 import { ContextPanel } from './components/ContextPanel';
+import { TaskBoardPanel } from './components/TaskBoard/TaskBoardPanel';
 import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
@@ -467,6 +468,7 @@ export const App: React.FC = () => {
         )}
         {activeWorkbenchTab === 'workspace-preview' && <WorkspacePreviewPanel />}
         {activeWorkbenchTab === 'context' && <ContextPanel />}
+        {activeWorkbenchTab === 'master-tasks' && <TaskBoardPanel />}
         {isPreviewActive && <PreviewPanel />}
       </div>
     </div>

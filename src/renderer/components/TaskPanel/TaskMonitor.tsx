@@ -5,7 +5,9 @@
 // 数据统一来自 useStatusRailModel
 // ============================================================================
 
-import React, { useMemo, useCallback, useState } from 'react';
+import React, { useMemo, useCallback, useState, useEffect } from 'react';
+import { IPC_CHANNELS } from '@shared/ipc';
+import { invoke } from '../../services/ipcService';
 import type {
   BlockedCapabilityReason,
   TurnCapabilityInvocationItem,
@@ -25,6 +27,7 @@ import { useWorkbenchInsights } from '../../hooks/useWorkbenchInsights';
 import {
   Loader2, AlertTriangle,
   Wrench, GitBranch,
+  ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { formatElapsed } from './taskPanelUtils';
@@ -141,6 +144,57 @@ export const TaskMonitor: React.FC = () => {
   const mcpDefaultExpanded = mcpNeedsAttention || sourceHasActionFeedback;
   const loopFilesDefaultExpanded = loopFileItems.length > 0 || runWorkbench.run.status !== 'completed';
 
+  // Plan title — agent 在 markdown 用 `## Plan: XXX` 显式声明的会话总标题。
+  // 依赖 runWorkbench.tasks 引用变化触发 refetch：todoParser 写 plan_title 与
+  // 写 todos 是同一动作，tasks 变化时 plan_title 已落 DB。
+  // NULL 时 UI 隐藏 plan title 行只显示 checklist (产品决策 2c)。
+  const [planTitle, setPlanTitle] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentSessionId) {
+      setPlanTitle(null);
+      return;
+    }
+    void (async () => {
+      try {
+        const t = await invoke(IPC_CHANNELS.SESSION_GET_PLAN_TITLE, currentSessionId);
+        if (!cancelled) setPlanTitle(t);
+      } catch {
+        if (!cancelled) setPlanTitle(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSessionId, runWorkbench.tasks]);
+
+  // 进度条 — 基于当前 session 主任务的 steps 完成度
+  const sessionTaskSteps = useMemo(() => {
+    const sessionTask = runWorkbench.tasks.find((tk) => tk.scope === 'session');
+    return sessionTask?.steps ?? [];
+  }, [runWorkbench.tasks]);
+  const stepsTotal = sessionTaskSteps.length;
+  const stepsCompleted = sessionTaskSteps.filter((s) => s.status === 'done').length;
+  const stepsPercent = stepsTotal === 0 ? 0 : Math.round((stepsCompleted / stepsTotal) * 100);
+
+  // Session Runtime 折叠状态（待审/Handoff/Outputs/上下文/MCP 包进来）。
+  // 默认折叠避免抢占任务视野；有 active 状态（pending approval / mcp 异常）时自动展开。
+  const runtimeAttention = visiblePendingApproval || mcpNeedsAttention || approvalCount > 0;
+  const [runtimeOpen, setRuntimeOpen] = useState(runtimeAttention);
+  useEffect(() => {
+    if (runtimeAttention) setRuntimeOpen(true);
+  }, [runtimeAttention]);
+  const runtimeBadges: Array<{ label: string; tone?: 'warn' | 'info' }> = [];
+  if (approvalCount > 0) runtimeBadges.push({ label: `待审 ${approvalCount}`, tone: 'warn' });
+  if (outputs.count > 0 || currentTurnArtifactOwnership) {
+    const outCount = currentTurnArtifactOwnership?.artifactOwnership.length ?? outputs.count;
+    runtimeBadges.push({ label: `产物 ${outCount}` });
+  }
+  if (loopFileItems.length > 0) runtimeBadges.push({ label: `上下文 ${loopFileItems.length}` });
+  if (shouldShowMcpCard) {
+    runtimeBadges.push({ label: mcpCount > 0 ? `MCP ${mcpCount}` : 'MCP', tone: mcpNeedsAttention ? 'warn' : undefined });
+  }
+
   // ── 渲染 ──
 
   return (
@@ -153,6 +207,29 @@ export const TaskMonitor: React.FC = () => {
         </div>
       )}
 
+      {/* Plan title + 进度条 — agent 在 markdown 用 `## Plan: XXX` 声明时显示。
+          plan_title 为 NULL 时隐藏整条（产品决策 2c），不 fallback session.title。 */}
+      {planTitle && (
+        <div className="rounded-md border border-sky-500/15 bg-sky-500/[0.04] px-3 py-2.5">
+          <div className="text-[13px] font-medium text-zinc-100 leading-snug" title={planTitle}>
+            {planTitle}
+          </div>
+          {stepsTotal > 0 && (
+            <div className="mt-2 flex items-center gap-2">
+              <div className="flex-1 h-1.5 rounded-full bg-zinc-800/80 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-sky-500/60 transition-all"
+                  style={{ width: `${stepsPercent}%` }}
+                />
+              </div>
+              <span className="text-[10px] tabular-nums text-zinc-500 flex-shrink-0">
+                {stepsCompleted}/{stepsTotal} · {stepsPercent}%
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       <Card
         title="任务"
         storageKey="task"
@@ -162,18 +239,54 @@ export const TaskMonitor: React.FC = () => {
         <TaskDashboardSummary tasks={runWorkbench.tasks} run={runWorkbench.run} />
       </Card>
 
-      {approvalCount > 0 && (
-        <Card
-          title="待审"
-          storageKey="approvals"
-          count={String(approvalCount)}
-          highlight={visiblePendingApproval}
+      {/* Session Runtime 折叠容器：待审 / Handoff / Outputs / 上下文 / MCP
+          5 个子区域包进来，默认收起避免抢占任务视野。 */}
+      <div className="rounded-md border border-zinc-800/80 bg-zinc-900/40">
+        <button
+          type="button"
+          onClick={() => setRuntimeOpen((v) => !v)}
+          className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-left hover:bg-zinc-800/40 transition-colors"
         >
-          <ApprovalSyncCard />
-        </Card>
-      )}
+          {runtimeOpen ? (
+            <ChevronDown className="w-3 h-3 text-zinc-500 flex-shrink-0" />
+          ) : (
+            <ChevronRight className="w-3 h-3 text-zinc-500 flex-shrink-0" />
+          )}
+          <span className="text-[11px] text-zinc-400 flex-shrink-0">Session Runtime</span>
+          <div className="flex-1 min-w-0 flex items-center gap-1 overflow-hidden">
+            {runtimeBadges.length === 0 ? (
+              <span className="text-[10px] text-zinc-600 italic ml-1">空闲</span>
+            ) : (
+              runtimeBadges.map((b, i) => (
+                <span
+                  key={`${b.label}-${i}`}
+                  className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${
+                    b.tone === 'warn'
+                      ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                      : 'bg-zinc-800/60 text-zinc-400 border-zinc-700/40'
+                  }`}
+                >
+                  {b.label}
+                </span>
+              ))
+            )}
+          </div>
+        </button>
 
-      <HandoffCard />
+        {runtimeOpen && (
+          <div className="px-2 pb-2 space-y-2 border-t border-zinc-800/60">
+            {approvalCount > 0 && (
+              <Card
+                title="待审"
+                storageKey="approvals"
+                count={String(approvalCount)}
+                highlight={visiblePendingApproval}
+              >
+                <ApprovalSyncCard />
+              </Card>
+            )}
+
+            <HandoffCard />
 
       {(currentTurnArtifactOwnership || outputs.count > 0) && (
         <Card
@@ -274,6 +387,9 @@ export const TaskMonitor: React.FC = () => {
           </div>
         </Card>
       )}
+          </div>
+        )}
+      </div>
 
       <WorkbenchCapabilitySheetLite
         isOpen={Boolean(activeSheetCapability)}

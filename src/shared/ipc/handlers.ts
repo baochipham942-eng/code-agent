@@ -38,6 +38,13 @@ import type { SessionRuntimeSummary, SessionStatusUpdateEvent, BackgroundTaskInf
 import type { SwarmEvent } from '../contract/swarm';
 import type { SwarmRunListItem, SwarmRunDetail } from '../contract/swarmTrace';
 import type { CompletedAgentRun } from '../contract/agentHistory';
+import type {
+  MasterTaskDTO,
+  MasterTaskStatus,
+  MasterTaskListFilterShared,
+  MasterTaskCreatePayload,
+  MasterTaskManagerEvent,
+} from '../contract/task';
 
 import { IPC_CHANNELS } from './legacy-channels';
 
@@ -68,6 +75,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SESSION_UNARCHIVE]: (sessionId: string) => Promise<Session>;
   [IPC_CHANNELS.SESSION_LOAD_OLDER_MESSAGES]: (payload: { sessionId: string; beforeTimestamp: number; limit?: number }) => Promise<{ messages: Message[]; hasMore: boolean }>;
   [IPC_CHANNELS.SESSION_SEARCH]: (payload: { query: string; options?: CrossSessionSearchOptions }) => Promise<CrossSessionSearchResults>;
+  [IPC_CHANNELS.SESSION_GET_PLAN_TITLE]: (sessionId: string) => Promise<string | null>;
 
   // Memory (legacy - kept for compatibility)
   [IPC_CHANNELS.MEMORY_GET_CONTEXT]: (query: string) => Promise<MemoryContextResult>;
@@ -345,6 +353,25 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.TASKLIST_SET_AUTO_ASSIGN]: (enabled: boolean) => Promise<void>;
   [IPC_CHANNELS.TASKLIST_SET_REQUIRE_APPROVAL]: (enabled: boolean) => Promise<void>;
 
+  // MasterTask (用户级工作单元，对应 Qoder Quest 状态机)
+  [IPC_CHANNELS.MASTER_TASK_CREATE]: (payload: MasterTaskCreatePayload) => Promise<MasterTaskDTO>;
+  [IPC_CHANNELS.MASTER_TASK_LIST]: (filter?: MasterTaskListFilterShared) => Promise<MasterTaskDTO[]>;
+  [IPC_CHANNELS.MASTER_TASK_LIST_IN_PROGRESS]: (ownerUserId?: string) => Promise<MasterTaskDTO[]>;
+  [IPC_CHANNELS.MASTER_TASK_GET_BY_ID]: (id: string) => Promise<MasterTaskDTO | null>;
+  [IPC_CHANNELS.MASTER_TASK_UPDATE_STATUS]: (
+    id: string,
+    targetStatus: MasterTaskStatus,
+  ) => Promise<void>;
+  [IPC_CHANNELS.MASTER_TASK_PAUSE]: (id: string) => Promise<void>;
+  [IPC_CHANNELS.MASTER_TASK_RESUME]: (id: string) => Promise<void>;
+  [IPC_CHANNELS.MASTER_TASK_CANCEL]: (id: string) => Promise<void>;
+  [IPC_CHANNELS.MASTER_TASK_APPROVE_REVIEW]: (id: string) => Promise<void>;
+  [IPC_CHANNELS.MASTER_TASK_REJECT_REVIEW]: (id: string) => Promise<void>;
+  [IPC_CHANNELS.MASTER_TASK_BIND_SESSION]: (
+    masterTaskId: string,
+    sessionId: string,
+  ) => Promise<void>;
+
   // Checkpoint (Rewind UI)
   [IPC_CHANNELS.CHECKPOINT_LIST]: (sessionId: string) => Promise<
     Array<{
@@ -560,6 +587,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.SWARM_EVENT]: (event: SwarmEvent) => void;
   // TaskList events
   [IPC_CHANNELS.TASKLIST_EVENT]: (event: TaskListEventIpc) => void;
+  // MasterTask events (用户级工作单元状态变更广播)
+  [IPC_CHANNELS.MASTER_TASK_EVENT]: (event: MasterTaskManagerEvent) => void;
   // Telemetry events
   [IPC_CHANNELS.TELEMETRY_EVENT]: (event: TelemetryPushEvent) => void;
   // Provider fallback events

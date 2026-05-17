@@ -79,6 +79,7 @@ npm version 0.9.0 --no-git-tag-version
 
 ### Update Metadata
 - [ ] GitHub Release tag and notes are the source of update metadata
+- [ ] Release policy env is set only when needed: `UPDATE_MIN_VERSION[_CHANNEL]`, `UPDATE_FORCE_UPDATE[_CHANNEL]`, `UPDATE_SHA256[_CHANNEL]`
 - [ ] No manual version constant edit is needed in `vercel-api/api/update.ts`
 
 ---

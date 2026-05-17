@@ -172,9 +172,11 @@ curl "https://code-agent-beta.vercel.app/api/prompts?gen=all"
 # 统一路由
 curl "https://code-agent-beta.vercel.app/api/v1/control-plane?artifact=prompt_registry"
 
-# 版本更新检查，Vercel 端从 GitHub Releases 派生 metadata
-curl "https://code-agent-beta.vercel.app/api/update?action=check&version=0.16.75&platform=darwin"
+# 版本更新检查，Vercel 端从 GitHub Releases 派生 metadata，可按 channel 叠加 release policy
+curl "https://code-agent-beta.vercel.app/api/update?action=check&version=0.16.75&platform=darwin&channel=stable"
 ```
+
+Update policy 可通过 Vercel env 下发：`UPDATE_MIN_VERSION`、`UPDATE_LATEST_VERSION`、`UPDATE_FORCE_UPDATE`、`UPDATE_DOWNLOAD_URL`、`UPDATE_SHA256`。按 channel 覆盖时追加大写后缀，例如 `UPDATE_MIN_VERSION_BETA`。
 
 ---
 

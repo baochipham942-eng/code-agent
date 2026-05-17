@@ -160,7 +160,7 @@ git push origin v0.2.0
 
 ### 更新
 - `GET /api/update?action=health` - 更新服务健康检查
-- `GET /api/update?action=check&version=<version>&platform=<platform>` - 从 GitHub Releases 派生更新 metadata
+- `GET /api/update?action=check&version=<version>&platform=<platform>&channel=<channel>` - 从 GitHub Releases 派生更新 metadata，并叠加可选 release policy env
 - `POST /api/update/publish` - CI 兼容入口，校验 `CI_PUBLISH_TOKEN` 后返回接受状态；发布真相仍来自 GitHub Releases
 
 ### 管理

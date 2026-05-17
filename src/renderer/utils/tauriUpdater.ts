@@ -20,6 +20,7 @@ interface TauriUpdateResult {
   force_update: boolean | null;
   download_url: string | null;
   file_size: number | null;
+  sha256: string | null;
 }
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -52,6 +53,7 @@ export async function tauriCheckForUpdate(): Promise<UpdateInfo> {
     forceUpdate: result.force_update ?? undefined,
     downloadUrl: result.download_url ?? undefined,
     fileSize: result.file_size ?? undefined,
+    sha256: result.sha256 ?? undefined,
   };
 }
 

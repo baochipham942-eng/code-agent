@@ -1,6 +1,7 @@
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::{
+    cmp::Ordering,
     collections::HashSet,
     env,
     path::{Path, PathBuf},
@@ -298,6 +299,7 @@ struct TauriUpdateInfo {
     force_update: Option<bool>,
     download_url: Option<String>,
     file_size: Option<u64>,
+    sha256: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -308,7 +310,9 @@ struct CloudUpdateResponse {
     force_update: Option<bool>,
     current_version: Option<String>,
     latest_version: Option<String>,
+    min_version: Option<String>,
     download_url: Option<String>,
+    sha256: Option<String>,
     release_notes: Option<String>,
     file_size: Option<u64>,
     published_at: Option<String>,
@@ -321,6 +325,10 @@ fn get_app_version(app: tauri::AppHandle) -> String {
 
 fn update_api_url(current_version: &str) -> String {
     let base_url = env::var("CLOUD_API_URL").unwrap_or_else(|_| DEFAULT_CLOUD_API_URL.to_string());
+    let channel = env::var("CODE_AGENT_RELEASE_CHANNEL")
+        .or_else(|_| env::var("UPDATE_RELEASE_CHANNEL"))
+        .unwrap_or_else(|_| "stable".to_string());
+    let channel = sanitize_release_channel(&channel);
     let platform = match env::consts::OS {
         "macos" => "darwin",
         "windows" => "win32",
@@ -328,11 +336,137 @@ fn update_api_url(current_version: &str) -> String {
         other => other,
     };
     format!(
-        "{}/api/update?action=check&version={}&platform={}",
+        "{}/api/update?action=check&version={}&platform={}&channel={}",
         base_url.trim_end_matches('/'),
         current_version,
-        platform
+        platform,
+        channel
     )
+}
+
+fn sanitize_release_channel(channel: &str) -> String {
+    let sanitized: String = channel
+        .trim()
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '-' || *ch == '_')
+        .collect();
+    if sanitized.is_empty() {
+        "stable".to_string()
+    } else {
+        sanitized.to_lowercase()
+    }
+}
+
+fn normalize_update_version(version: &str) -> String {
+    version.trim().trim_start_matches('v').to_string()
+}
+
+fn compare_update_versions(left: &str, right: &str) -> Ordering {
+    let left_parts: Vec<u64> = normalize_update_version(left)
+        .split('.')
+        .map(|part| part.parse::<u64>().unwrap_or(0))
+        .collect();
+    let right_parts: Vec<u64> = normalize_update_version(right)
+        .split('.')
+        .map(|part| part.parse::<u64>().unwrap_or(0))
+        .collect();
+
+    for index in 0..left_parts.len().max(right_parts.len()) {
+        let left_part = *left_parts.get(index).unwrap_or(&0);
+        let right_part = *right_parts.get(index).unwrap_or(&0);
+        match left_part.cmp(&right_part) {
+            Ordering::Equal => {}
+            ordering => return ordering,
+        }
+    }
+
+    Ordering::Equal
+}
+
+fn normalize_sha256(value: &str) -> Option<String> {
+    let normalized = value.trim().to_lowercase();
+    if normalized.len() == 64 && normalized.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        Some(normalized)
+    } else {
+        None
+    }
+}
+
+fn latest_update_version(
+    server_latest: Option<&str>,
+    policy_min: Option<&str>,
+    current_version: &str,
+) -> Option<String> {
+    let mut latest = server_latest
+        .map(normalize_update_version)
+        .filter(|version| !version.is_empty());
+
+    if let Some(policy_min) = policy_min {
+        let normalized_min = normalize_update_version(policy_min);
+        if !normalized_min.is_empty()
+            && compare_update_versions(&normalized_min, current_version) == Ordering::Greater
+        {
+            latest = match latest {
+                Some(current_latest)
+                    if compare_update_versions(&normalized_min, &current_latest)
+                        != Ordering::Greater =>
+                {
+                    Some(current_latest)
+                }
+                _ => Some(normalized_min),
+            };
+        }
+    }
+
+    latest
+}
+
+fn cloud_update_info_from_response(
+    payload: CloudUpdateResponse,
+    fallback_current_version: String,
+) -> TauriUpdateInfo {
+    let current_version = payload
+        .current_version
+        .clone()
+        .unwrap_or(fallback_current_version);
+    let policy_min_required = payload
+        .min_version
+        .as_deref()
+        .map(|version| compare_update_versions(version, &current_version) == Ordering::Greater)
+        .unwrap_or(false);
+    let latest_version = latest_update_version(
+        payload.latest_version.as_deref(),
+        payload.min_version.as_deref(),
+        &current_version,
+    );
+    let version_has_update = latest_version
+        .as_deref()
+        .map(|version| compare_update_versions(version, &current_version) == Ordering::Greater)
+        .unwrap_or(false);
+    let has_update =
+        payload.has_update.unwrap_or(false) || version_has_update || policy_min_required;
+    let force_update = if payload.force_update.is_some() || policy_min_required {
+        Some((payload.force_update.unwrap_or(false) && has_update) || policy_min_required)
+    } else {
+        None
+    };
+    let download_url = payload
+        .download_url
+        .as_deref()
+        .and_then(normalize_manual_update_url);
+    let sha256 = payload.sha256.as_deref().and_then(normalize_sha256);
+
+    TauriUpdateInfo {
+        has_update,
+        current_version,
+        latest_version,
+        release_notes: payload.release_notes,
+        date: payload.published_at,
+        force_update,
+        download_url,
+        file_size: payload.file_size,
+        sha256,
+    }
 }
 
 fn check_cloud_update(current_version: String) -> Result<TauriUpdateInfo, String> {
@@ -364,21 +498,7 @@ fn check_cloud_update(current_version: String) -> Result<TauriUpdateInfo, String
         return Err("Cloud update API returned success=false".to_string());
     }
 
-    let download_url = payload
-        .download_url
-        .as_deref()
-        .and_then(normalize_manual_update_url);
-
-    Ok(TauriUpdateInfo {
-        has_update: payload.has_update.unwrap_or(false),
-        current_version: payload.current_version.unwrap_or(current_version),
-        latest_version: payload.latest_version,
-        release_notes: payload.release_notes,
-        date: payload.published_at,
-        force_update: payload.force_update,
-        download_url,
-        file_size: payload.file_size,
-    })
+    Ok(cloud_update_info_from_response(payload, current_version))
 }
 
 async fn check_native_update(
@@ -404,6 +524,7 @@ async fn check_native_update(
             force_update: None,
             download_url: None,
             file_size: None,
+            sha256: None,
         }),
         None => Ok(TauriUpdateInfo {
             has_update: false,
@@ -414,6 +535,7 @@ async fn check_native_update(
             force_update: None,
             download_url: None,
             file_size: None,
+            sha256: None,
         }),
     }
 }
@@ -553,8 +675,11 @@ fn open_update_url(url: String) -> Result<(), String> {
 #[cfg(test)]
 mod update_url_tests {
     use super::{
-        github_release_page_from_download_url, normalize_manual_update_url, validate_update_url,
+        cloud_update_info_from_response, compare_update_versions,
+        github_release_page_from_download_url, normalize_manual_update_url,
+        sanitize_release_channel, validate_update_url, CloudUpdateResponse,
     };
+    use std::cmp::Ordering;
 
     #[test]
     fn allows_https_release_page() {
@@ -629,6 +754,58 @@ mod update_url_tests {
             normalize_manual_update_url("https://example.com/releases/Code.Agent.dmg"),
             None
         );
+    }
+
+    #[test]
+    fn compares_update_versions_numerically() {
+        assert_eq!(
+            compare_update_versions("v0.16.76", "0.16.75"),
+            Ordering::Greater
+        );
+        assert_eq!(compare_update_versions("0.16.9", "0.16.10"), Ordering::Less);
+        assert_eq!(
+            compare_update_versions("0.16.75", "v0.16.75"),
+            Ordering::Equal
+        );
+    }
+
+    #[test]
+    fn sanitizes_release_channel_for_update_query() {
+        assert_eq!(sanitize_release_channel(" Beta "), "beta");
+        assert_eq!(sanitize_release_channel("canary/../../x"), "canaryx");
+        assert_eq!(sanitize_release_channel("  "), "stable");
+    }
+
+    #[test]
+    fn applies_cloud_min_version_policy_to_manual_update_info() {
+        let info = cloud_update_info_from_response(
+            CloudUpdateResponse {
+                success: Some(true),
+                has_update: Some(false),
+                force_update: Some(true),
+                current_version: Some("0.16.75".to_string()),
+                latest_version: Some("0.16.75".to_string()),
+                min_version: Some("v0.16.76".to_string()),
+                download_url: Some(
+                    "https://github.com/owner/repo/releases/download/v0.16.76/Code.Agent.dmg"
+                        .to_string(),
+                ),
+                sha256: Some("A".repeat(64)),
+                release_notes: Some("policy gate".to_string()),
+                file_size: Some(123),
+                published_at: Some("2026-05-17T00:00:00Z".to_string()),
+            },
+            "0.16.75".to_string(),
+        );
+
+        assert!(info.has_update);
+        assert_eq!(info.force_update, Some(true));
+        assert_eq!(info.latest_version, Some("0.16.76".to_string()));
+        assert_eq!(
+            info.download_url,
+            Some("https://github.com/owner/repo/releases/tag/v0.16.76".to_string())
+        );
+        assert_eq!(info.sha256, Some("a".repeat(64)));
     }
 }
 

@@ -9,10 +9,13 @@ export interface UpdateCheckResponse {
   forceUpdate: boolean;
   currentVersion: string;
   latestVersion?: string;
+  minVersion?: string;
   downloadUrl?: string;
+  sha256?: string;
   releaseNotes?: string;
   fileSize?: number;
   publishedAt?: string;
+  channel?: string;
   source: 'github_releases';
 }
 
@@ -56,6 +59,26 @@ export function compareVersions(left: string, right: string): number {
   return 0;
 }
 
+function normalizeVersion(value: string | undefined): string | undefined {
+  const normalized = value?.trim().replace(/^v/, '');
+  return normalized || undefined;
+}
+
+function normalizeSha256(value: string | undefined): string | undefined {
+  const normalized = value?.trim().toLowerCase();
+  return normalized && /^[a-f0-9]{64}$/.test(normalized) ? normalized : undefined;
+}
+
+function latestVersionOf(...versions: Array<string | undefined>): string | undefined {
+  return versions.filter((value): value is string => Boolean(value)).reduce<string | undefined>(
+    (winner, candidate) => {
+      if (!winner) return candidate;
+      return compareVersions(candidate, winner) > 0 ? candidate : winner;
+    },
+    undefined,
+  );
+}
+
 function releasePageUrl(repo: string, tagName: string, htmlUrl?: string): string {
   return htmlUrl || `https://github.com/${repo}/releases/tag/${tagName}`;
 }
@@ -83,25 +106,103 @@ export function buildUpdateResponseFromRelease(
     repo: string;
     currentVersion: string;
     platform: string;
+    channel?: string;
+    minVersion?: string;
+    latestVersion?: string;
+    forceUpdate?: boolean;
+    downloadUrl?: string;
+    sha256?: string;
   },
 ): UpdateCheckResponse {
-  const latestVersion = (release.tag_name ?? '').replace(/^v/, '');
-  const hasUpdate = latestVersion
-    ? compareVersions(latestVersion, options.currentVersion) > 0
+  const releaseVersion = normalizeVersion(release.tag_name);
+  const policyMinVersion = normalizeVersion(options.minVersion);
+  const policyLatestVersion = normalizeVersion(options.latestVersion);
+  const minVersionRequired = policyMinVersion
+    ? compareVersions(policyMinVersion, options.currentVersion) > 0
     : false;
+  const policyHasNewerLatest = policyLatestVersion
+    ? compareVersions(policyLatestVersion, options.currentVersion) > 0
+    : false;
+  const releaseHasUpdate = releaseVersion
+    ? compareVersions(releaseVersion, options.currentVersion) > 0
+    : false;
+  const latestVersion = latestVersionOf(
+    releaseVersion,
+    policyLatestVersion,
+    minVersionRequired ? policyMinVersion : undefined,
+  );
+  const hasUpdate = releaseHasUpdate || minVersionRequired || policyHasNewerLatest;
+  const forceUpdate = Boolean(hasUpdate && (options.forceUpdate === true || minVersionRequired));
   const asset = selectAsset(release.assets, options.platform);
+  const sha256 = normalizeSha256(options.sha256);
+  const fallbackDownloadUrl = latestVersion
+    ? releasePageUrl(
+      options.repo,
+      releaseVersion === latestVersion ? (release.tag_name ?? `v${latestVersion}`) : `v${latestVersion}`,
+      releaseVersion === latestVersion ? release.html_url : undefined,
+    )
+    : undefined;
 
   return {
     success: true,
     hasUpdate,
-    forceUpdate: false,
+    forceUpdate,
     currentVersion: options.currentVersion,
     ...(latestVersion ? { latestVersion } : {}),
-    ...(hasUpdate ? { downloadUrl: releasePageUrl(options.repo, release.tag_name ?? `v${latestVersion}`, release.html_url) } : {}),
+    ...(policyMinVersion ? { minVersion: policyMinVersion } : {}),
+    ...(hasUpdate && (options.downloadUrl || fallbackDownloadUrl)
+      ? { downloadUrl: options.downloadUrl || fallbackDownloadUrl }
+      : {}),
+    ...(sha256 ? { sha256 } : {}),
     ...(release.body ? { releaseNotes: release.body } : {}),
     ...(asset?.size ? { fileSize: asset.size } : {}),
     ...(release.published_at ? { publishedAt: release.published_at } : {}),
+    ...(options.channel ? { channel: options.channel } : {}),
     source: 'github_releases',
+  };
+}
+
+function normalizeChannel(value: string | null | undefined): string {
+  return value?.trim().toLowerCase() || 'stable';
+}
+
+function channelEnvSuffix(channel: string): string {
+  return channel.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+}
+
+function readChannelEnv(
+  env: NodeJS.ProcessEnv,
+  key: string,
+  channel: string,
+): string | undefined {
+  return env[`${key}_${channelEnvSuffix(channel)}`] || env[key];
+}
+
+function parseBooleanEnv(value: string | undefined): boolean | undefined {
+  if (!value) return undefined;
+  if (/^(1|true|yes)$/i.test(value)) return true;
+  if (/^(0|false|no)$/i.test(value)) return false;
+  return undefined;
+}
+
+export function releasePolicyFromEnv(
+  channel: string,
+  env: NodeJS.ProcessEnv = process.env,
+): {
+  channel: string;
+  minVersion?: string;
+  latestVersion?: string;
+  forceUpdate?: boolean;
+  downloadUrl?: string;
+  sha256?: string;
+} {
+  return {
+    channel,
+    minVersion: readChannelEnv(env, 'UPDATE_MIN_VERSION', channel),
+    latestVersion: readChannelEnv(env, 'UPDATE_LATEST_VERSION', channel),
+    forceUpdate: parseBooleanEnv(readChannelEnv(env, 'UPDATE_FORCE_UPDATE', channel)),
+    downloadUrl: readChannelEnv(env, 'UPDATE_DOWNLOAD_URL', channel),
+    sha256: readChannelEnv(env, 'UPDATE_SHA256', channel),
   };
 }
 
@@ -126,12 +227,14 @@ function sendJson(res: ControlPlaneResponseLike, statusCode: number, value: unkn
 async function handleCheck(req: ControlPlaneRequestLike, res: ControlPlaneResponseLike): Promise<void> {
   const currentVersion = firstQueryValue(req.query?.version) ?? '0.0.0';
   const platform = firstQueryValue(req.query?.platform) ?? 'darwin';
+  const channel = normalizeChannel(firstQueryValue(req.query?.channel) ?? process.env.UPDATE_RELEASE_CHANNEL);
   const repo = process.env.UPDATE_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || 'baochipham942-eng/code-agent';
   const release = await fetchLatestRelease(repo);
   sendJson(res, 200, buildUpdateResponseFromRelease(release, {
     repo,
     currentVersion,
     platform,
+    ...releasePolicyFromEnv(channel),
   }));
 }
 

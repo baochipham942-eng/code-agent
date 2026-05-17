@@ -35,6 +35,17 @@ describe('vercel update metadata', () => {
     delete process.env.CI_PUBLISH_TOKEN;
     delete process.env.UPDATE_GITHUB_REPOSITORY;
     delete process.env.GITHUB_REPOSITORY;
+    delete process.env.UPDATE_RELEASE_CHANNEL;
+    delete process.env.UPDATE_MIN_VERSION;
+    delete process.env.UPDATE_MIN_VERSION_BETA;
+    delete process.env.UPDATE_LATEST_VERSION;
+    delete process.env.UPDATE_LATEST_VERSION_BETA;
+    delete process.env.UPDATE_FORCE_UPDATE;
+    delete process.env.UPDATE_FORCE_UPDATE_BETA;
+    delete process.env.UPDATE_DOWNLOAD_URL;
+    delete process.env.UPDATE_DOWNLOAD_URL_BETA;
+    delete process.env.UPDATE_SHA256;
+    delete process.env.UPDATE_SHA256_BETA;
   });
 
   it('compares dotted versions numerically', () => {
@@ -68,6 +79,36 @@ describe('vercel update metadata', () => {
       releaseNotes: 'notes',
       fileSize: 123,
       publishedAt: '2026-05-17T00:00:00Z',
+      source: 'github_releases',
+    });
+  });
+
+  it('applies release policy fields to GitHub-derived metadata', () => {
+    const response = buildUpdateResponseFromRelease({
+      tag_name: 'v0.16.75',
+      html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.75',
+      assets: [],
+    }, {
+      repo: 'acme/code-agent',
+      currentVersion: '0.16.75',
+      platform: 'darwin',
+      channel: 'stable',
+      minVersion: 'v0.16.76',
+      forceUpdate: true,
+      downloadUrl: 'https://github.com/acme/code-agent/releases/download/v0.16.76/Code.Agent.dmg',
+      sha256: 'A'.repeat(64),
+    });
+
+    expect(response).toMatchObject({
+      success: true,
+      hasUpdate: true,
+      forceUpdate: true,
+      currentVersion: '0.16.75',
+      latestVersion: '0.16.76',
+      minVersion: '0.16.76',
+      downloadUrl: 'https://github.com/acme/code-agent/releases/download/v0.16.76/Code.Agent.dmg',
+      sha256: 'a'.repeat(64),
+      channel: 'stable',
       source: 'github_releases',
     });
   });
@@ -117,6 +158,44 @@ describe('vercel update metadata', () => {
       hasUpdate: true,
       latestVersion: '0.16.76',
       downloadUrl: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
+    });
+  });
+
+  it('applies channel-specific env policy during update checks', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        tag_name: 'v0.16.75',
+        html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.75',
+        assets: [],
+      }),
+    } as Response);
+    process.env.UPDATE_GITHUB_REPOSITORY = 'acme/code-agent';
+    process.env.UPDATE_MIN_VERSION_BETA = '0.16.77';
+    process.env.UPDATE_FORCE_UPDATE_BETA = 'true';
+    process.env.UPDATE_SHA256_BETA = 'B'.repeat(64);
+    const response = makeResponse();
+
+    await handleUpdateRequest({
+      method: 'GET',
+      query: {
+        action: 'check',
+        version: '0.16.75',
+        platform: 'darwin',
+        channel: 'beta',
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      hasUpdate: true,
+      forceUpdate: true,
+      latestVersion: '0.16.77',
+      minVersion: '0.16.77',
+      sha256: 'b'.repeat(64),
+      channel: 'beta',
     });
   });
 

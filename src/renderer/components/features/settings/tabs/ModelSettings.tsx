@@ -36,6 +36,7 @@ import ipcService from '../../../../services/ipcService';
 import { ProviderDoctorDialog } from '../ProviderDoctorDialog';
 import {
   buildManualModelSettings,
+  buildLegacyLongCatProviderMigration,
   buildProviderManagementRows,
   createCustomProviderId,
   getModelLabel,
@@ -49,16 +50,6 @@ import {
   type ProviderDisplayInfo,
 } from './ModelSettings.helpers';
 export type { ModelConfig };
-export {
-  buildManualModelSettings,
-  buildProviderManagementRows,
-  createCustomProviderId,
-  getModelLabel,
-  getProtocolLabel,
-  hasCustomEndpointOverride,
-  orderProviderManagementRows,
-  resolveModelForProvider,
-} from './ModelSettings.helpers';
 
 export interface ModelSettingsProps {
   config: ModelConfig;
@@ -119,6 +110,13 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const migration = buildLegacyLongCatProviderMigration(config, providerConfigs);
+    if (!migration) return;
+    setProviderConfigs((prev) => ({ ...prev, ...migration.providerConfigs }));
+    onChange(migration.config);
+  }, [config, onChange, providerConfigs]);
 
   // Get models for current provider
   const currentProviderConfig = providerConfigs[config.provider];

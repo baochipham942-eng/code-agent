@@ -140,6 +140,82 @@ export function getProtocolLabel(protocol: ModelProviderProtocol | undefined): s
   return protocol === 'claude' ? 'Claude 协议' : 'OpenAI 兼容';
 }
 
+export function normalizeLongCatModelId(modelId?: string): string {
+  return modelId?.toLowerCase() === 'longcat-2.0-preview'
+    ? 'LongCat-2.0-Preview'
+    : modelId || 'LongCat-2.0-Preview';
+}
+
+export function isLegacyLongCatProviderConfig(
+  providerId: ModelProvider,
+  providerConfig?: Partial<ModelProviderSettings>,
+): boolean {
+  if (providerId !== 'custom' || !providerConfig) {
+    return false;
+  }
+  const baseUrl = providerConfig.baseUrl?.toLowerCase() || '';
+  const displayName = providerConfig.displayName?.trim().toLowerCase() || '';
+  return baseUrl.includes('api.longcat.chat') || displayName === 'longcat';
+}
+
+export function buildLegacyLongCatProviderMigration(
+  config: ModelConfig,
+  providerConfigs: ProviderConfigMap,
+): { providerConfigs: ProviderConfigMap; config: ModelConfig } | null {
+  const legacy = providerConfigs.custom;
+  if (config.provider !== 'custom' || !isLegacyLongCatProviderConfig('custom', legacy)) return null;
+
+  const model = normalizeLongCatModelId(legacy?.model || config.model);
+  const protocol = legacy?.protocol ?? 'openai';
+  const baseUrl = legacy?.baseUrl || getProviderEndpointForProtocol('longcat', protocol) || '';
+  const legacyModelSettings = legacy?.models?.[legacy.model || ''] ?? legacy?.models?.[model];
+  const capabilities: ModelCapability[] = ['general', 'code', 'reasoning', 'longContext'];
+  const longcat: ModelProviderSettings = {
+    ...(providerConfigs.longcat ?? { enabled: true }),
+    ...(legacy ?? { enabled: true }),
+    enabled: true,
+    displayName: 'LongCat',
+    protocol,
+    baseUrl,
+    model,
+    models: {
+      ...legacy?.models,
+      [model]: {
+        enabled: true,
+        label: 'LongCat 2.0 Preview',
+        capabilities,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        ...legacyModelSettings,
+      },
+    },
+  };
+  return {
+    providerConfigs: {
+      longcat,
+      custom: {
+        ...(providerConfigs.custom ?? { enabled: false }),
+        enabled: false,
+        displayName: 'Custom Provider',
+        baseUrl: undefined,
+        model: 'custom-model',
+        models: undefined,
+      },
+    },
+    config: {
+      ...config,
+      provider: 'longcat',
+      model,
+      baseUrl,
+      protocol,
+      apiKey: legacy?.apiKey || config.apiKey,
+      capabilities: longcat.models?.[model]?.capabilities,
+      maxTokens: longcat.models?.[model]?.maxTokens ?? config.maxTokens,
+    },
+  };
+}
+
 export function hasCustomEndpointOverride(
   providerId: ModelProvider,
   configuredBaseUrl?: string,

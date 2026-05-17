@@ -3,13 +3,16 @@ import type { ModelConfig, ModelProviderSettings } from '../../../src/shared/con
 import type { ProviderInfo } from '../../../src/shared/constants';
 import {
   buildManualModelSettings,
+  buildLegacyLongCatProviderMigration,
   buildProviderManagementRows,
   createCustomProviderId,
   getModelLabel,
   hasCustomEndpointOverride,
+  isLegacyLongCatProviderConfig,
+  normalizeLongCatModelId,
   orderProviderManagementRows,
   resolveModelForProvider,
-} from '../../../src/renderer/components/features/settings/tabs/ModelSettings';
+} from '../../../src/renderer/components/features/settings/tabs/ModelSettings.helpers';
 
 const openaiProvider = {
   id: 'openai',
@@ -162,5 +165,24 @@ describe('ModelSettings management helpers', () => {
     expect(hasCustomEndpointOverride('longcat', 'https://relay.example.com/v1', 'claude')).toBe(true);
     expect(hasCustomEndpointOverride('custom', 'https://relay.example.com/v1')).toBe(false);
     expect(hasCustomEndpointOverride('custom-relay', 'https://relay.example.com/v1')).toBe(false);
+  });
+
+  it('identifies legacy custom LongCat configs for official migration', () => {
+    expect(normalizeLongCatModelId('longcat-2.0-preview')).toBe('LongCat-2.0-Preview');
+    expect(isLegacyLongCatProviderConfig('custom', {
+      enabled: true,
+      displayName: 'LongCat',
+      baseUrl: 'https://api.longcat.chat/openai/v1',
+    })).toBe(true);
+    expect(isLegacyLongCatProviderConfig('custom-relay', {
+      enabled: true,
+      displayName: 'LongCat',
+      baseUrl: 'https://api.longcat.chat/openai/v1',
+    })).toBe(false);
+    const migration = buildLegacyLongCatProviderMigration(
+      { provider: 'custom', model: 'longcat-2.0-preview' },
+      { custom: { enabled: true, displayName: 'LongCat', baseUrl: 'https://api.longcat.chat/openai/v1' } },
+    );
+    expect(migration?.config).toMatchObject({ provider: 'longcat', model: 'LongCat-2.0-Preview' });
   });
 });

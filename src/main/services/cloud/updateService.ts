@@ -66,6 +66,34 @@ export function verifyDigestMatch(
   return { ok: false, reason: `expected ${e}, got ${a}` };
 }
 
+export function normalizeUpdateSha256(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  return /^[a-f0-9]{64}$/.test(normalized) ? normalized : undefined;
+}
+
+export function resolveExpectedUpdateSha256(
+  expectedSha256: string | undefined,
+  allowUnsignedDownload = process.env.CODE_AGENT_ALLOW_UNSIGNED_UPDATE_DOWNLOAD === '1',
+): { required: true; sha256: string } | { required: false; reason: string } {
+  const normalized = normalizeUpdateSha256(expectedSha256);
+  if (normalized) {
+    return { required: true, sha256: normalized };
+  }
+  if (allowUnsignedDownload) {
+    return {
+      required: false,
+      reason: 'CODE_AGENT_ALLOW_UNSIGNED_UPDATE_DOWNLOAD is enabled.',
+    };
+  }
+  throw new Error(
+    'Cloud update artifact is missing a valid sha256; refusing direct download. ' +
+      'Use the native Tauri updater path or publish update metadata with sha256.',
+  );
+}
+
 // ----------------------------------------------------------------------------
 // UpdateService Class
 // ----------------------------------------------------------------------------
@@ -164,7 +192,7 @@ export class UpdateService implements Disposable {
             currentVersion,
             latestVersion: data.latestVersion,
             downloadUrl: data.downloadUrl,
-            sha256: typeof data.sha256 === 'string' ? data.sha256.toLowerCase() : undefined,
+            sha256: normalizeUpdateSha256(data.sha256),
             releaseNotes: data.releaseNotes,
             fileSize: data.fileSize,
             publishedAt: data.publishedAt,
@@ -296,8 +324,8 @@ export class UpdateService implements Disposable {
   /**
    * Download the update file. If the cached UpdateInfo carries a sha256, the
    * downloaded artifact's hash must match — mismatched files are deleted and
-   * the call rejects. Missing sha256 emits a warning but still resolves
-   * (backwards-compat with cloud APIs that haven't started serving the field).
+   * the call rejects. Missing sha256 rejects by default so renderer-triggered
+   * direct downloads cannot bypass the native updater's signed manifest path.
    *
    * Note: sha256 is read from this.cachedUpdateInfo, NOT from the caller. This
    * prevents a compromised renderer/IPC path from supplying its own expected
@@ -311,9 +339,8 @@ export class UpdateService implements Disposable {
     this.isDownloading = true;
     logger.info(` Starting download: ${downloadUrl}`);
 
-    const expectedSha256 = this.cachedUpdateInfo?.sha256;
-
     try {
+      const expectedSha256 = resolveExpectedUpdateSha256(this.cachedUpdateInfo?.sha256);
       const downloadsPath = app.getPath('downloads');
       // 解码 URL 编码的文件名（如 %20 -> 空格）
       const fileName = decodeURIComponent(path.basename(new URL(downloadUrl).pathname));
@@ -321,8 +348,8 @@ export class UpdateService implements Disposable {
 
       const actualSha256 = await this.downloadFile(downloadUrl, filePath);
 
-      if (expectedSha256) {
-        const verdict = verifyDigestMatch(actualSha256, expectedSha256);
+      if (expectedSha256.required) {
+        const verdict = verifyDigestMatch(actualSha256, expectedSha256.sha256);
         if (!verdict.ok) {
           try { fs.unlinkSync(filePath); } catch {}
           throw new Error(
@@ -333,8 +360,7 @@ export class UpdateService implements Disposable {
         logger.info(` sha256 verified: ${actualSha256.toLowerCase()}`);
       } else {
         logger.warn(
-          'Update artifact has no expected sha256 from cloud API; proceeding without integrity check. ' +
-            'This is backwards-compat — cloud should start serving sha256 ASAP.',
+          `Proceeding with unsigned update download override: ${expectedSha256.reason}`,
         );
       }
 

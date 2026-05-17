@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { verifyDigestMatch } from '../../../../src/main/services/cloud/updateService';
+import {
+  normalizeUpdateSha256,
+  resolveExpectedUpdateSha256,
+  verifyDigestMatch,
+} from '../../../../src/main/services/cloud/updateService';
 
 // ============================================================================
 // M6.a — sha256 verification logic for cloud update artifacts
@@ -44,5 +48,33 @@ describe('verifyDigestMatch', () => {
     const a = 'a'.repeat(64);
     const b = 'a'.repeat(63) + 'b';
     expect(verifyDigestMatch(a, b).ok).toBe(false);
+  });
+});
+
+describe('update sha256 requirement', () => {
+  it('normalizes valid sha256 and rejects malformed values', () => {
+    expect(normalizeUpdateSha256(` ${'A'.repeat(64)} `)).toBe('a'.repeat(64));
+    expect(normalizeUpdateSha256('sha256:' + 'a'.repeat(64))).toBeUndefined();
+    expect(normalizeUpdateSha256('a'.repeat(63))).toBeUndefined();
+    expect(normalizeUpdateSha256(null)).toBeUndefined();
+  });
+
+  it('requires sha256 for direct downloads by default', () => {
+    expect(() => resolveExpectedUpdateSha256(undefined, false)).toThrow(/missing a valid sha256/);
+    expect(() => resolveExpectedUpdateSha256('not-a-hash', false)).toThrow(/missing a valid sha256/);
+  });
+
+  it('allows unsigned direct downloads only with the explicit override', () => {
+    expect(resolveExpectedUpdateSha256(undefined, true)).toEqual({
+      required: false,
+      reason: 'CODE_AGENT_ALLOW_UNSIGNED_UPDATE_DOWNLOAD is enabled.',
+    });
+  });
+
+  it('returns normalized sha256 when present', () => {
+    expect(resolveExpectedUpdateSha256('A'.repeat(64), false)).toEqual({
+      required: true,
+      sha256: 'a'.repeat(64),
+    });
   });
 });

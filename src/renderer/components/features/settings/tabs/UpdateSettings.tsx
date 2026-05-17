@@ -32,6 +32,21 @@ export interface UpdateSettingsProps {
   onShowUpdateModal: () => void;
 }
 
+export function shouldClearUpdateInfoBeforeCheck(updateInfo: UpdateInfo | null): boolean {
+  return !updateInfo?.hasUpdate;
+}
+
+export function getVisibleUpdateInfo(
+  updateInfo: UpdateInfo | null,
+  isChecking: boolean,
+  error: string | null,
+): UpdateInfo | null {
+  if (isChecking || error) {
+    return null;
+  }
+  return updateInfo;
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -73,10 +88,14 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
 
   // Get current version: prefer updateInfo, then local version, then placeholder
   const currentVersion = updateInfo?.currentVersion || localVersion || '...';
+  const visibleUpdateInfo = getVisibleUpdateInfo(updateInfo, isChecking, error);
 
   const checkForUpdates = async () => {
     setIsChecking(true);
     setError(null);
+    if (shouldClearUpdateInfoBeforeCheck(updateInfo)) {
+      onUpdateInfoChange(null);
+    }
     try {
       if (runningInTauri) {
         const info = await tauriCheckForUpdate();
@@ -166,26 +185,26 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
       </div>
 
       {/* Update Status */}
-      {updateInfo && (
+      {visibleUpdateInfo && (
         <div className={`rounded-lg p-4 ${
-          updateInfo.hasUpdate ? 'bg-indigo-500/10 border border-indigo-500/30' : 'bg-green-500/10 border border-green-500/30'
+          visibleUpdateInfo.hasUpdate ? 'bg-indigo-500/10 border border-indigo-500/30' : 'bg-green-500/10 border border-green-500/30'
         }`}>
-          {updateInfo.hasUpdate ? (
+          {visibleUpdateInfo.hasUpdate ? (
             <div className="space-y-4">
               <div className="flex items-start gap-3">
                 <Download className="w-5 h-5 text-indigo-400 mt-0.5" />
                 <div className="flex-1">
                   <div className="text-sm font-medium text-zinc-200">
-                    {t.update?.newVersion || '发现新版本'}: v{updateInfo.latestVersion}
+                    {t.update?.newVersion || '发现新版本'}: v{visibleUpdateInfo.latestVersion}
                   </div>
-                  {updateInfo.fileSize && (
+                  {visibleUpdateInfo.fileSize && (
                     <p className="text-xs text-zinc-500 mt-0.5">
-                      文件大小: {formatSize(updateInfo.fileSize)}
+                      文件大小: {formatSize(visibleUpdateInfo.fileSize)}
                     </p>
                   )}
-                  {updateInfo.releaseNotes && (
+                  {visibleUpdateInfo.releaseNotes && (
                     <div className="mt-2 p-2 bg-zinc-800 rounded text-xs text-zinc-400 max-h-24 overflow-y-auto whitespace-pre-line">
-                      {updateInfo.releaseNotes}
+                      {visibleUpdateInfo.releaseNotes}
                     </div>
                   )}
                 </div>

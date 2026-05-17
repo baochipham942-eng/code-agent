@@ -7,7 +7,7 @@ import { Brain, CheckCircle, Code2, Eye, Gauge, Key, Plus, RefreshCw, Search, St
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { AppSettings, ModelCapability, ModelEntrySettings, ModelProvider, ModelProviderSettings } from '@shared/contract';
+import type { AppSettings, ModelCapability, ModelEntrySettings, ModelProvider, ModelProviderProtocol, ModelProviderSettings } from '@shared/contract';
 import { UI, MODEL, PROVIDER_MODELS, getProviderInfo } from '@shared/constants';
 import {
   MODEL_CAPABILITY_OPTIONS,
@@ -15,6 +15,7 @@ import {
   featuresFromModelMetadata,
   getProviderRuntimeModels,
   isDynamicCustomProviderId,
+  resolveProviderProtocol,
   type RuntimeProviderModel,
 } from '@shared/modelRuntime';
 import { createLogger } from '../../../../utils/logger';
@@ -38,6 +39,7 @@ import {
   buildProviderManagementRows,
   createCustomProviderId,
   getModelLabel,
+  getProtocolLabel,
   orderProviderManagementRows,
   renderModelOptions,
   resolveModelForProvider,
@@ -91,6 +93,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const [newProviderName, setNewProviderName] = useState('');
   const [newProviderBaseUrl, setNewProviderBaseUrl] = useState('');
   const [newProviderApiKey, setNewProviderApiKey] = useState('');
+  const [newProviderProtocol, setNewProviderProtocol] = useState<ModelProviderProtocol>('openai');
 
   // Build provider display list with i18n names where available
   const providers = useMemo(() => {
@@ -131,6 +134,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const configuredBaseUrl = config.baseUrl ?? currentProviderConfig?.baseUrl ?? registryEndpoint;
   const effectiveBaseUrl = configuredBaseUrl || registryEndpoint;
   const effectiveDisplayName = currentProviderConfig?.displayName || currentProviderInfo?.name || config.provider;
+  const effectiveProtocol = resolveProviderProtocol(config.provider, currentProviderConfig);
+  const isCustomProviderProtocolEditable = isDynamicCustomProviderId(config.provider);
 
   const currentModels = useMemo(
     () => getProviderRuntimeModels(currentProviderInfo, currentProviderConfig),
@@ -215,6 +220,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       model: nextModel,
       apiKey: providerConfig?.apiKey || '',
       baseUrl: providerConfig?.baseUrl || getProviderInfo(providerId)?.endpoint || '',
+      protocol: resolveProviderProtocol(providerId, providerConfig),
       capabilities: nextRuntimeModel?.capabilities,
       maxTokens: nextRuntimeModel?.maxTokens ?? config.maxTokens,
     });
@@ -234,6 +240,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const handleDisplayNameChange = useCallback((value: string) => {
     patchCurrentProviderConfig({ displayName: value });
   }, [patchCurrentProviderConfig]);
+
+  const handleProviderProtocolChange = useCallback((protocol: ModelProviderProtocol) => {
+    patchCurrentProviderConfig({ protocol });
+    onChange({ ...config, protocol });
+  }, [config, onChange, patchCurrentProviderConfig]);
 
   const handleModelChange = useCallback((modelId: string) => {
     const selectedModel = currentModels.find((model) => model.id === modelId);
@@ -299,6 +310,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         enabled: true,
         apiKey: config.apiKey,
         baseUrl: effectiveBaseUrl,
+        protocol: effectiveProtocol,
         displayName: currentProviderConfig?.displayName,
         model: config.model,
         temperature: config.temperature,
@@ -343,7 +355,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       }>(
         IPC_DOMAINS.PROVIDER,
         'test_connection',
-        { provider: config.provider, apiKey: config.apiKey, baseUrl: effectiveBaseUrl }
+        { provider: config.provider, apiKey: config.apiKey, baseUrl: effectiveBaseUrl, model: config.model, protocol: effectiveProtocol }
       );
       if (result?.success) {
         toast.success(`连接成功，延迟 ${result.latencyMs}ms`);
@@ -369,7 +381,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       const result = await ipcService.invokeDomain<DiscoverModelsResult>(
         IPC_DOMAINS.PROVIDER,
         'discover_models',
-        { provider: config.provider, apiKey: config.apiKey, baseUrl: effectiveBaseUrl }
+        { provider: config.provider, apiKey: config.apiKey, baseUrl: effectiveBaseUrl, protocol: effectiveProtocol }
       );
 
       if (!result?.success) {
@@ -459,6 +471,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       displayName,
       baseUrl,
       apiKey,
+      protocol: newProviderProtocol,
       model: modelId,
       models: {
         [modelId]: modelSettings,
@@ -475,15 +488,17 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       model: modelId,
       apiKey,
       baseUrl,
+      protocol: newProviderProtocol,
       capabilities: modelSettings.capabilities,
       maxTokens: modelSettings.maxTokens ?? config.maxTokens,
     });
     setNewProviderName('');
     setNewProviderBaseUrl('');
     setNewProviderApiKey('');
+    setNewProviderProtocol('openai');
     setModelSearch('');
     toast.success('Provider 已添加，补充模型后保存即可使用');
-  }, [config, newProviderApiKey, newProviderBaseUrl, newProviderName, onChange, providerConfigs]);
+  }, [config, newProviderApiKey, newProviderBaseUrl, newProviderName, newProviderProtocol, onChange, providerConfigs]);
 
   const handleAddManualModel = useCallback(() => {
     const modelId = manualModelId.trim();
@@ -503,6 +518,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           enabled: true,
           apiKey: config.apiKey,
           baseUrl: effectiveBaseUrl,
+          protocol: effectiveProtocol,
           model: modelId,
           models: {
             ...providerConfig.models,
@@ -526,7 +542,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     setManualModelLabel('');
     setModelSearch('');
     toast.success('模型已加入当前 Provider');
-  }, [config, effectiveBaseUrl, manualModelId, manualModelLabel, onChange]);
+  }, [config, effectiveBaseUrl, effectiveProtocol, manualModelId, manualModelLabel, onChange]);
 
   return (
     <SettingsPage
@@ -566,7 +582,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
             ))}
           </div>
 
-          <div className="grid gap-3 border-b border-zinc-800 p-3 lg:grid-cols-[minmax(140px,0.8fr)_minmax(220px,1.2fr)_minmax(180px,1fr)_auto] lg:items-end">
+          <div className="grid gap-3 border-b border-zinc-800 p-3 lg:grid-cols-[minmax(140px,0.75fr)_minmax(140px,0.65fr)_minmax(220px,1.15fr)_minmax(180px,0.9fr)_auto] lg:items-end">
             <div>
               <label className="mb-2 block text-xs font-medium text-zinc-400">
                 新 Provider
@@ -577,6 +593,19 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                 placeholder="LongCat"
                 inputSize="sm"
               />
+            </div>
+            <div>
+              <label className="mb-2 block text-xs font-medium text-zinc-400">
+                协议
+              </label>
+              <Select
+                value={newProviderProtocol}
+                onChange={(event) => setNewProviderProtocol(event.target.value as ModelProviderProtocol)}
+                selectSize="sm"
+              >
+                <option value="openai">OpenAI 兼容</option>
+                <option value="claude">Claude 协议</option>
+              </Select>
             </div>
             <div>
               <label className="mb-2 block text-xs font-medium text-zinc-400">
@@ -634,9 +663,9 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                       {provider.id}
                     </span>
                   </div>
-                  <div className="mt-1 max-w-[280px] truncate text-xs text-zinc-500">
-                    {provider.description}
-                  </div>
+                <div className="mt-1 max-w-[280px] truncate text-xs text-zinc-500">
+                  {provider.description}
+                </div>
                 </button>
 
                 <div>
@@ -708,6 +737,25 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
 
             <div>
               <label className="mb-2 block text-sm font-medium text-zinc-200">
+                Provider 协议
+              </label>
+              {isCustomProviderProtocolEditable ? (
+                <Select
+                  value={effectiveProtocol}
+                  onChange={(event) => handleProviderProtocolChange(event.target.value as ModelProviderProtocol)}
+                >
+                  <option value="openai">OpenAI 兼容</option>
+                  <option value="claude">Claude 协议</option>
+                </Select>
+              ) : (
+                <div className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300">
+                  {getProtocolLabel(effectiveProtocol)}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-zinc-200">
                 Provider 地址
               </label>
               <Input
@@ -716,7 +764,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                 placeholder={registryEndpoint || 'https://api.example.com/v1'}
               />
               <p className="mt-2 text-xs text-zinc-500">
-                OpenAI-compatible 服务通常填写到 /v1，模型发现会请求该地址下的 /models。
+                OpenAI 兼容通常填到 /v1；Claude 协议通常填 Anthropic-compatible base URL。
               </p>
             </div>
 

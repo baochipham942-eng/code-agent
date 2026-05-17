@@ -4,6 +4,7 @@ import type {
   ModelCapability,
   ModelEntrySettings,
   ModelProvider,
+  ModelProviderProtocol,
   ModelProviderSettings,
 } from '@shared/contract';
 import { getProviderInfo } from '@shared/constants';
@@ -120,7 +121,7 @@ export function buildProviderManagementRows({
     return {
       id: provider.id,
       name: providerConfigs?.[provider.id]?.displayName || provider.name,
-      description: provider.description,
+      description: `${provider.description}${providerConfigs?.[provider.id]?.protocol === 'claude' ? ' · Claude 协议' : ''}`,
       modelCount: runtimeModels.length,
       evalEligibleCount: provider.models.filter((model) => model.evalEligible !== false).length,
       enabledModelCount: enabledModels.length,
@@ -132,6 +133,10 @@ export function buildProviderManagementRows({
         : getModelLabel(runtimeModels, registryInfo?.defaultModel || runtimeModels[0]?.id || '-'),
     };
   });
+}
+
+export function getProtocolLabel(protocol: ModelProviderProtocol | undefined): string {
+  return protocol === 'claude' ? 'Claude 协议' : 'OpenAI 兼容';
 }
 
 export function orderProviderManagementRows(rows: ProviderManagementRow[]): ProviderManagementRow[] {

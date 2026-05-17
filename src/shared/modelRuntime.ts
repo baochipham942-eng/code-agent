@@ -1,4 +1,4 @@
-import type { AppSettings, ModelCapability, ModelProvider, ModelProviderSettings } from './contract';
+import type { AppSettings, ModelCapability, ModelProvider, ModelProviderProtocol, ModelProviderSettings } from './contract';
 import {
   MODEL_FEATURES,
   PROVIDER_MODELS,
@@ -54,6 +54,15 @@ const DEFAULT_SWITCHER_PROVIDERS: ModelProvider[] = [
 
 export function isDynamicCustomProviderId(providerId: string): boolean {
   return /^custom-[a-z0-9][a-z0-9-]*$/i.test(providerId);
+}
+
+export function resolveProviderProtocol(
+  providerId: string,
+  providerConfig?: Partial<ModelProviderSettings>,
+): ModelProviderProtocol {
+  if (providerConfig?.protocol) return providerConfig.protocol;
+  if (providerId === 'claude' || providerId === 'anthropic') return 'claude';
+  return 'openai';
 }
 
 function uniqueCapabilities(values: Array<ModelCapability | undefined>): ModelCapability[] {
@@ -127,12 +136,14 @@ export function buildProviderInfoFromSettings(
     });
   }
 
+  const protocol = resolveProviderProtocol(providerId, providerConfig);
+
   return {
     id: providerId,
     name: providerConfig.displayName || providerId,
     description: providerConfig.baseUrl
-      ? `OpenAI-compatible · ${providerConfig.baseUrl}`
-      : 'OpenAI-compatible custom provider',
+      ? `${protocol === 'claude' ? 'Claude-compatible' : 'OpenAI-compatible'} · ${providerConfig.baseUrl}`
+      : `${protocol === 'claude' ? 'Claude-compatible' : 'OpenAI-compatible'} custom provider`,
     models: models.length > 0 ? models : [{ id: 'custom-model', label: 'Custom Model' }],
   };
 }

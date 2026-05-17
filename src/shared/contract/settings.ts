@@ -2,7 +2,7 @@
 // Settings Types
 // ============================================================================
 
-import type { ModelProvider } from './model';
+import type { ModelProvider, ModelProviderProtocol } from './model';
 import type { ModelCapability } from './model';
 import type { PermissionLevel } from './tool';
 import type { ContextCompressionConfig } from './contextHealth';
@@ -21,6 +21,7 @@ export interface ModelEntrySettings {
 export interface ModelProviderSettings {
   apiKey?: string;
   enabled: boolean;
+  protocol?: ModelProviderProtocol;
   model?: string;
   baseUrl?: string;
   displayName?: string;

@@ -116,6 +116,7 @@ export * from './extension';
 
 // Capability Center types
 export * from './capability';
+export * from './controlPlane';
 
 // Agent History types (completed agent run records)
 export * from './agentHistory';

@@ -9,6 +9,7 @@ export {
   type CloudConfig,
   type ToolMetadata,
   type FeatureFlags,
+  type CloudConfigServiceOptions,
 } from './cloudConfigService';
 
 export {

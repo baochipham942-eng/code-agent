@@ -93,7 +93,9 @@ function getDesktopBootstrapWorkingDirectory(configService?: ConfigService): str
  * These are chained because skills and MCP depend on CloudConfig.
  */
 async function initializeCloudAndMCP(configService: ConfigService, mainWindow: BrowserWindow | null): Promise<void> {
-  await initCloudConfigService();
+  await initCloudConfigService({
+    getAccessToken: () => getAuthService().getAccessToken(),
+  });
 
   const info = getCloudConfigService().getInfo();
   logger.info('CloudConfig initialized', { source: info.fromCloud ? 'cloud' : 'builtin', version: info.version });

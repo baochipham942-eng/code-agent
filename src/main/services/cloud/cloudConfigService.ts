@@ -7,8 +7,21 @@ import type { SkillDefinition } from '../../../shared/contract';
 import { getBuiltinConfig, type CloudConfig, type ToolMetadata, type FeatureFlags, type MCPServerCloudConfig } from './builtinConfig';
 import { createLogger } from '../infra/logger';
 import { CACHE, CLOUD, CLOUD_ENDPOINTS } from '../../../shared/constants';
+import {
+  getControlPlanePublicKeysFromEnv,
+  isControlPlaneEnvelope,
+  verifyControlPlaneEnvelope,
+  type ControlPlanePublicKeys,
+} from './controlPlaneTrust';
+import type { ControlPlaneDiagnostic } from '../../../shared/contract/controlPlane';
 
 const logger = createLogger('CloudConfigService');
+
+export interface CloudConfigServiceOptions {
+  getAccessToken?: () => Promise<string | null>;
+  controlPlanePublicKeys?: ControlPlanePublicKeys;
+  allowUnsignedCloudConfig?: boolean;
+}
 
 // ----------------------------------------------------------------------------
 // CloudConfigService
@@ -46,6 +59,20 @@ export class CloudConfigService {
   private isInitialized: boolean = false;
   private initPromise: Promise<void> | null = null;
   private lastError: string | null = null;
+  private lastTrustDiagnostics: ControlPlaneDiagnostic[] = [];
+  private lastTrust: { trusted: boolean; keyId?: string; expiresAt?: string } = { trusted: false };
+  private options: CloudConfigServiceOptions = {};
+
+  constructor(options: CloudConfigServiceOptions = {}) {
+    this.options = options;
+  }
+
+  setOptions(options: CloudConfigServiceOptions): void {
+    this.options = {
+      ...this.options,
+      ...options,
+    };
+  }
 
   /**
    * 初始化服务 - 异步拉取云端配置
@@ -214,6 +241,12 @@ export class CloudConfigService {
     isStale: boolean;
     fromCloud: boolean;
     lastError: string | null;
+    trust: {
+      trusted: boolean;
+      keyId?: string;
+      expiresAt?: string;
+      diagnostics: ControlPlaneDiagnostic[];
+    };
   } {
     const config = this.getConfig();
     const builtinVersion = getBuiltinConfig().version;
@@ -226,7 +259,62 @@ export class CloudConfigService {
       isStale,
       fromCloud,
       lastError: this.lastError,
+      trust: {
+        trusted: this.lastTrust.trusted,
+        ...(this.lastTrust.keyId ? { keyId: this.lastTrust.keyId } : {}),
+        ...(this.lastTrust.expiresAt ? { expiresAt: this.lastTrust.expiresAt } : {}),
+        diagnostics: this.lastTrustDiagnostics,
+      },
     };
+  }
+
+  private getPublicKeys(): ControlPlanePublicKeys {
+    return this.options.controlPlanePublicKeys || getControlPlanePublicKeysFromEnv();
+  }
+
+  private allowUnsignedCloudConfig(): boolean {
+    return this.options.allowUnsignedCloudConfig === true
+      || process.env.CODE_AGENT_ALLOW_UNSIGNED_CLOUD_CONFIG === '1';
+  }
+
+  private acceptFetchedConfig(value: unknown): CloudConfig {
+    if (isControlPlaneEnvelope(value)) {
+      const trust = verifyControlPlaneEnvelope<CloudConfig>(value, {
+        kind: 'cloud_config',
+        publicKeys: this.getPublicKeys(),
+        requireSignature: !this.allowUnsignedCloudConfig(),
+        allowUnsigned: this.allowUnsignedCloudConfig(),
+      });
+      this.lastTrustDiagnostics = trust.diagnostics;
+      this.lastTrust = {
+        trusted: trust.trusted,
+        ...(trust.keyId ? { keyId: trust.keyId } : {}),
+        ...(trust.expiresAt ? { expiresAt: trust.expiresAt } : {}),
+      };
+      if (!trust.trusted || !trust.payload) {
+        throw new Error(`Rejected untrusted cloud config: ${trust.diagnostics.map((entry) => entry.code).join(', ')}`);
+      }
+      return trust.payload;
+    }
+
+    if (this.allowUnsignedCloudConfig()) {
+      this.lastTrustDiagnostics = [{
+        severity: 'warning',
+        code: 'unsigned_cloud_config_allowed',
+        message: 'Unsigned cloud config was accepted because CODE_AGENT_ALLOW_UNSIGNED_CLOUD_CONFIG is enabled.',
+      }];
+      this.lastTrust = { trusted: false };
+      logger.warn('Accepting unsigned cloud config because unsigned override is enabled');
+      return value as CloudConfig;
+    }
+
+    this.lastTrustDiagnostics = [{
+      severity: 'error',
+      code: 'missing_control_plane_envelope',
+      message: 'Cloud config responses must be signed control-plane envelopes.',
+    }];
+    this.lastTrust = { trusted: false };
+    throw new Error('Rejected unsigned cloud config response');
   }
 
   /**
@@ -246,6 +334,14 @@ export class CloudConfigService {
         headers['If-None-Match'] = this.etag;
       }
 
+      const accessToken = await this.options.getAccessToken?.().catch((error) => {
+        logger.warn('Failed to read cloud config access token', { error: String(error) });
+        return null;
+      });
+      if (accessToken) {
+        headers.Authorization = `Bearer ${accessToken}`;
+      }
+
       const response = await fetch(CLOUD_ENDPOINTS.config, {
         method: 'GET',
         headers,
@@ -263,7 +359,7 @@ export class CloudConfigService {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const config = await response.json() as CloudConfig;
+      const config = this.acceptFetchedConfig(await response.json());
 
       // 验证配置结构
       if (!config.version || !config.prompts) {
@@ -275,7 +371,10 @@ export class CloudConfigService {
       this.cacheExpiry = Date.now() + CACHE.CONFIG_TTL;
       this.etag = response.headers.get('ETag');
 
-      logger.info(`Fetched config v${config.version}`);
+      logger.info(`Fetched trusted config v${config.version}`, {
+        expiresAt: this.lastTrust.expiresAt || 'not set',
+        keyId: this.lastTrust.keyId || 'not set',
+      });
     } finally {
       clearTimeout(timeout);
     }
@@ -299,8 +398,11 @@ export function getCloudConfigService(): CloudConfigService {
  * 初始化云端配置服务
  * 应在应用启动时调用，但不阻塞窗口创建
  */
-export async function initCloudConfigService(): Promise<void> {
+export async function initCloudConfigService(options?: CloudConfigServiceOptions): Promise<void> {
   const service = getCloudConfigService();
+  if (options) {
+    service.setOptions(options);
+  }
   return service.initialize();
 }
 

@@ -248,6 +248,7 @@ P2 后续治理补充：
 - `supabase/migrations/20260517000000_control_plane_governance.sql` 新增 `control_plane_entitlements` 和 `control_plane_audit_events`，并提供 admin-only RPC 读取 audit ledger 与 rollout summary。
 - Vercel control-plane 增加 optional audit writer，只有显式配置 `CONTROL_PLANE_AUDIT_ENABLED=true` 时才写入 ledger；写入路径优先使用 Supabase REST URL/service role key，缺少 service role 时可退到 `DATABASE_URL` 直连 Postgres。记录 artifact、version、channel、hash、keyId、subject 和 entitlement 结果，不记录 bearer token、signature 或 payload 全文。
 - Settings 管理组新增只读 `Control Plane` 页，复用 Admin IPC 和 Supabase admin RPC 展示最近 audit events 与版本/hash 摘要；migration 尚未应用时页面显示 unavailable reason。
+- `npm run control-plane:apply-governance-migration` 默认只 dry-run；真正执行必须显式传 `-- --apply --confirm 20260517000000_control_plane_governance`，避免误用 `supabase db push` 把旧 migration 一起推到生产库。
 
 ### P2 Non-goals
 

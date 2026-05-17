@@ -214,6 +214,8 @@ export const MODEL_ABBREV: Record<string, string> = {
   // moonshot
   'kimi-k2.5': 'kimi-2.5',
   'kimi-k2.6': 'kimi-2.6',
+  // LongCat
+  'LongCat-2.0-Preview': 'LongCat',
   // zhipu
   'glm-5.1': 'glm-5.1',
   'glm-4.7': 'glm-4.7',

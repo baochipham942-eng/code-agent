@@ -138,11 +138,19 @@ async function initializeWebSkillServices(configService: ConfigServiceForBootstr
       project: stats.bySource.project,
       library: stats.bySource.library,
     });
+    broadcastSSE('mcp:event', {
+      type: 'server_connected',
+      data: [{ server: 'skills', error: undefined }],
+    });
 
     initSkillWatcher(workingDir)
       .then((watcher) => {
         watcher.on('reloaded', (reloadStats) => {
           logger.info('Skills hot-reloaded', { total: reloadStats.total });
+          broadcastSSE('mcp:event', {
+            type: 'server_connected',
+            data: [{ server: 'skills', error: undefined }],
+          });
         });
         logger.info('SkillWatcher initialized', { watchCount: watcher.getWatchCount() });
       })
@@ -187,6 +195,10 @@ async function initializeWebMcpServices(configService: ConfigServiceForBootstrap
       toolCount: status.toolCount,
       errors: errorServers.map((server) => `${server.config.name}: ${server.error}`).join('; ') || 'none',
     });
+    broadcastSSE('mcp:event', {
+      type: 'capabilities_changed',
+      data: [{ server: 'mcp' }],
+    });
 
     if (errorServers.length > 0) {
       broadcastSSE('mcp:event', {
@@ -206,6 +218,28 @@ async function initializeWebMcpServices(configService: ConfigServiceForBootstrap
   } catch (error) {
     logger.warn('MCP initialization failed (non-blocking):', (error as Error).message);
   }
+}
+
+export type WebCapabilityBootstrapOptions = {
+  initializeSkills?: (configService: ConfigServiceForBootstrap) => Promise<void>;
+  initializeMcp?: (configService: ConfigServiceForBootstrap) => Promise<void>;
+};
+
+export function startWebCapabilityBootstrap(
+  configService: ConfigServiceForBootstrap,
+  options: WebCapabilityBootstrapOptions = {},
+): void {
+  const initializeSkills = options.initializeSkills ?? initializeWebSkillServices;
+  const initializeMcp = options.initializeMcp ?? initializeWebMcpServices;
+
+  void (async () => {
+    logger.info('Starting web capability bootstrap in background');
+    await initializeSkills(configService);
+    await initializeMcp(configService);
+    logger.info('Web capability bootstrap complete');
+  })().catch((error) => {
+    logger.warn('Web capability bootstrap failed (non-blocking):', (error as Error).message);
+  });
 }
 
 export function shouldUseLocalWebAuthStatus(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -405,8 +439,9 @@ async function initializeServices(): Promise<void> {
 
   // Memory service removed — Light Memory (file-based) is used instead
 
-  await initializeWebSkillServices(configService);
-  await initializeWebMcpServices(configService);
+  // Skills and MCP are useful immediately after launch, but remote connections
+  // must not sit in front of /api/health or Tauri's first window navigation.
+  startWebCapabilityBootstrap(configService);
 
   // 启动时探测本地 CLI 能力（fire-and-forget，不阻塞初始化）
   // 探到的清单后续会注入 system prompt 的 <env-capabilities> 块

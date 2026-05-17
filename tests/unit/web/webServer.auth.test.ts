@@ -36,7 +36,7 @@ type WebServerAuthModule = typeof import('../../../src/web/webServer');
 
 let webServerAuth: Pick<
   WebServerAuthModule,
-  'getLocalWebAuthStatus' | 'installLocalWebAuthStatusHandler' | 'shouldUseLocalWebAuthStatus'
+  'getLocalWebAuthStatus' | 'installLocalWebAuthStatusHandler' | 'shouldUseLocalWebAuthStatus' | 'startWebCapabilityBootstrap'
 >;
 
 beforeAll(async () => {
@@ -107,5 +107,41 @@ describe('webServer local auth status', () => {
       data: { delegatedAction: 'signOut' },
     });
     expect(originalAuthHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('webServer capability bootstrap', () => {
+  it('starts skill and MCP services without blocking the caller', async () => {
+    const events: string[] = [];
+    let releaseSkills: () => void = () => undefined;
+    const configService = { getSettings: () => ({}) };
+    const initializeSkills = vi.fn(() => {
+      events.push('skills-started');
+      return new Promise<void>((resolve) => {
+        releaseSkills = () => {
+          events.push('skills-finished');
+          resolve();
+        };
+      });
+    });
+    const initializeMcp = vi.fn(async () => {
+      events.push('mcp-started');
+    });
+
+    webServerAuth.startWebCapabilityBootstrap(configService, {
+      initializeSkills,
+      initializeMcp,
+    });
+    events.push('caller-returned');
+
+    expect(initializeSkills).toHaveBeenCalledTimes(1);
+    expect(initializeMcp).not.toHaveBeenCalled();
+    expect(events).toEqual(['skills-started', 'caller-returned']);
+
+    releaseSkills();
+    await Promise.resolve();
+
+    expect(initializeMcp).toHaveBeenCalledTimes(1);
+    expect(events).toEqual(['skills-started', 'caller-returned', 'skills-finished', 'mcp-started']);
   });
 });

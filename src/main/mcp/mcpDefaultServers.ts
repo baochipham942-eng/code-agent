@@ -242,7 +242,9 @@ export async function initMCPClient(
 
   // 从云端配置服务获取 MCP 配置
   const cloudConfigService = getCloudConfigService();
-  const cloudMCPServers = cloudConfigService.getMCPServers();
+  const configuredCloudMCPServers = cloudConfigService.getMCPServers();
+  const cloudMCPServersAllowed = cloudConfigService.isCloudMCPServersEnabledByPolicy();
+  const cloudMCPServers = cloudMCPServersAllowed ? configuredCloudMCPServers : [];
 
   if (cloudMCPServers.length > 0) {
     logger.info(`Loading ${cloudMCPServers.length} MCP servers from cloud config`);
@@ -251,6 +253,11 @@ export async function initMCPClient(
       internalConfig.scope = 'cloud';
       client.addServer(internalConfig);
     }
+  } else if (configuredCloudMCPServers.length > 0) {
+    logger.warn('Cloud MCP servers blocked by control-plane policy', {
+      reason: cloudConfigService.getCloudMCPServerPolicyBlockReason(),
+      count: configuredCloudMCPServers.length,
+    });
   } else {
     logger.warn('No MCP servers in cloud config, using default servers');
     const defaultServers = getDefaultMCPServers();
@@ -316,12 +323,26 @@ export async function refreshMCPServersFromCloud(
 
   // 刷新云端配置
   await cloudConfigService.refresh();
-  const cloudMCPServers = cloudConfigService.getMCPServers();
+  const configuredCloudMCPServers = cloudConfigService.getMCPServers();
+  const cloudMCPServersAllowed = cloudConfigService.isCloudMCPServersEnabledByPolicy();
+  const cloudMCPServers = cloudMCPServersAllowed ? configuredCloudMCPServers : [];
+
+  if (!cloudMCPServersAllowed && configuredCloudMCPServers.length > 0) {
+    logger.warn('Cloud MCP servers blocked during refresh by control-plane policy', {
+      reason: cloudConfigService.getCloudMCPServerPolicyBlockReason(),
+      count: configuredCloudMCPServers.length,
+    });
+  }
 
   logger.info(`Refreshing MCP servers from cloud config: ${cloudMCPServers.length} servers`);
 
   // 获取当前配置的服务器名称
-  const currentServerNames = new Set(client.getServerStates().map(s => s.config.name));
+  const currentStates = client.getServerStates();
+  const currentServerNames = new Set(
+    currentStates
+      .filter(s => s.config.scope === 'cloud')
+      .map(s => s.config.name),
+  );
   const newServerNames = new Set(cloudMCPServers.map(s => s.id));
 
   // 移除云端已删除的服务器
@@ -334,6 +355,15 @@ export async function refreshMCPServersFromCloud(
   // 添加或更新服务器
   for (const cloudConfig of cloudMCPServers) {
     const internalConfig = convertCloudConfigToInternal(cloudConfig);
+    internalConfig.scope = 'cloud';
+    const existingState = client.getServerState(cloudConfig.id);
+    if (existingState && existingState.config.scope !== 'cloud') {
+      logger.warn(`Skipping cloud MCP server ${cloudConfig.id}: non-cloud config with same name exists`, {
+        existingScope: existingState.config.scope,
+      });
+      continue;
+    }
+
     if (currentServerNames.has(cloudConfig.id)) {
       // 更新现有配置
       await client.updateServerConfig(cloudConfig.id, internalConfig);

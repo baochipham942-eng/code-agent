@@ -1,4 +1,6 @@
 import type { ControlPlaneArtifactKind } from './controlPlaneEnvelope';
+import type { ControlPlaneRequestLike } from './controlPlaneEnvelope';
+import { applyServerEntitlementGate } from './controlPlaneEntitlements';
 import { readJsonPayloadFromEnv } from './controlPlaneEnvelope';
 
 export interface CloudConfigPayload {
@@ -19,6 +21,11 @@ export interface CloudConfigPayload {
     capabilities: string[];
     expiresAt?: string;
     reason?: string;
+  };
+  subject?: {
+    id: string;
+    email?: string;
+    source: 'server_token_map';
   };
   killSwitches?: {
     global?: { disabled: boolean; reason?: string };
@@ -54,6 +61,13 @@ export function readCloudConfigPayload(env: NodeJS.ProcessEnv = process.env): Cl
   ], env);
 }
 
+export function readCloudConfigPayloadForRequest(
+  req: ControlPlaneRequestLike,
+  env: NodeJS.ProcessEnv = process.env,
+): CloudConfigPayload {
+  return applyServerEntitlementGate(req, readCloudConfigPayload(env), env);
+}
+
 export function readPromptRegistryPayload(env: NodeJS.ProcessEnv = process.env): PromptRegistryPayload {
   return readJsonPayloadFromEnv<PromptRegistryPayload>([
     'CONTROL_PLANE_PROMPT_REGISTRY_JSON',
@@ -70,10 +84,11 @@ export function readCapabilityRegistryPayload(env: NodeJS.ProcessEnv = process.e
 
 export function readPayloadForKind(
   kind: ControlPlaneArtifactKind,
+  req?: ControlPlaneRequestLike,
   env: NodeJS.ProcessEnv = process.env,
 ): CloudConfigPayload | CapabilityRegistryPayload | PromptRegistryPayload {
   if (kind === 'cloud_config') {
-    return readCloudConfigPayload(env);
+    return req ? readCloudConfigPayloadForRequest(req, env) : readCloudConfigPayload(env);
   }
   if (kind === 'capability_registry') {
     return readCapabilityRegistryPayload(env);

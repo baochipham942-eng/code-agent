@@ -297,5 +297,144 @@ describe('CloudConfigService', () => {
       expect(flags.enableComputerUse).toBe(false);
       expect(flags.enableMemory).toBe(false);
     });
+
+    it('allows cloud MCP servers from signed config only when MCP entitlement is present', async () => {
+      const signedConfig = {
+        ...getBuiltinConfig(),
+        version: 'signed-mcp-policy',
+        mcpServers: [{
+          id: 'cloud-search',
+          name: 'Cloud Search',
+          type: 'http-streamable' as const,
+          enabled: true,
+          config: {
+            url: 'https://cloud.example.com/mcp',
+          },
+        }],
+        entitlement: {
+          status: 'active' as const,
+          plan: 'pro',
+          capabilities: ['mcp_cloud'],
+        },
+        killSwitches: {
+          global: { disabled: false },
+          features: {},
+        },
+      };
+      const { envelope, publicKeys } = buildSignedCloudConfig(signedConfig);
+      mockFetch.mockResolvedValueOnce(mockJsonResponse(envelope));
+      const service = new CloudConfigService({
+        controlPlanePublicKeys: publicKeys,
+      });
+
+      await service.initialize();
+
+      expect(service.getMCPServers()).toHaveLength(1);
+      expect(service.isCloudMCPServersEnabledByPolicy()).toBe(true);
+      expect(service.getCloudMCPServerPolicyBlockReason()).toBeNull();
+    });
+
+    it('fails closed for cloud MCP servers when signed entitlement omits MCP capability', async () => {
+      const signedConfig = {
+        ...getBuiltinConfig(),
+        version: 'signed-mcp-missing-capability-policy',
+        mcpServers: [{
+          id: 'cloud-search',
+          name: 'Cloud Search',
+          type: 'http-streamable' as const,
+          enabled: true,
+          config: {
+            url: 'https://cloud.example.com/mcp',
+          },
+        }],
+        entitlement: {
+          status: 'active' as const,
+          plan: 'pro',
+          capabilities: ['cloud_agent'],
+        },
+      };
+      const { envelope, publicKeys } = buildSignedCloudConfig(signedConfig);
+      mockFetch.mockResolvedValueOnce(mockJsonResponse(envelope));
+      const service = new CloudConfigService({
+        controlPlanePublicKeys: publicKeys,
+      });
+
+      await service.initialize();
+
+      expect(service.getMCPServers()).toHaveLength(1);
+      expect(service.isCloudMCPServersEnabledByPolicy()).toBe(false);
+      expect(service.getCloudMCPServerPolicyBlockReason()).toBe('missing_entitlement:mcp_cloud');
+    });
+
+    it('blocks cloud MCP servers when signed entitlement is revoked', async () => {
+      const signedConfig = {
+        ...getBuiltinConfig(),
+        version: 'signed-mcp-revoked-policy',
+        mcpServers: [{
+          id: 'cloud-search',
+          name: 'Cloud Search',
+          type: 'http-streamable' as const,
+          enabled: true,
+          config: {
+            url: 'https://cloud.example.com/mcp',
+          },
+        }],
+        entitlement: {
+          status: 'revoked' as const,
+          plan: 'pro',
+          capabilities: ['mcp_cloud'],
+          reason: 'revoked by control plane',
+        },
+      };
+      const { envelope, publicKeys } = buildSignedCloudConfig(signedConfig);
+      mockFetch.mockResolvedValueOnce(mockJsonResponse(envelope));
+      const service = new CloudConfigService({
+        controlPlanePublicKeys: publicKeys,
+      });
+
+      await service.initialize();
+
+      expect(service.getMCPServers()).toHaveLength(1);
+      expect(service.isCloudMCPServersEnabledByPolicy()).toBe(false);
+      expect(service.getCloudMCPServerPolicyBlockReason()).toBe('entitlement_revoked');
+    });
+
+    it('blocks cloud MCP servers when signed global kill switch is active', async () => {
+      const signedConfig = {
+        ...getBuiltinConfig(),
+        version: 'signed-mcp-global-kill-policy',
+        mcpServers: [{
+          id: 'cloud-search',
+          name: 'Cloud Search',
+          type: 'http-streamable' as const,
+          enabled: true,
+          config: {
+            url: 'https://cloud.example.com/mcp',
+          },
+        }],
+        entitlement: {
+          status: 'active' as const,
+          plan: 'pro',
+          capabilities: ['mcp_cloud'],
+        },
+        killSwitches: {
+          global: {
+            disabled: true,
+            reason: 'incident response',
+          },
+          features: {},
+        },
+      };
+      const { envelope, publicKeys } = buildSignedCloudConfig(signedConfig);
+      mockFetch.mockResolvedValueOnce(mockJsonResponse(envelope));
+      const service = new CloudConfigService({
+        controlPlanePublicKeys: publicKeys,
+      });
+
+      await service.initialize();
+
+      expect(service.isCloudMCPServersEnabledByPolicy()).toBe(false);
+      expect(service.getCloudMCPServerPolicyBlockReason()).toBe('global_kill_switch');
+    });
   });
 });

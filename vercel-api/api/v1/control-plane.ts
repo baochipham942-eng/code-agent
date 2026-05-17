@@ -37,5 +37,5 @@ export default function handler(req: ControlPlaneRequestLike, res: ControlPlaneR
     return;
   }
 
-  sendControlPlaneEnvelope(req, res, kind, () => readPayloadForKind(kind));
+  sendControlPlaneEnvelope(req, res, kind, () => readPayloadForKind(kind, req));
 }

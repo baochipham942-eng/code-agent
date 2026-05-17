@@ -22,6 +22,7 @@ import {
   ARTIFACT_TASK_BRIEF_PROMPT,
   needsArtifactTaskBrief,
 } from '../../../prompts/builder';
+import { getTrustedRemotePromptFragmentsRevision } from '../../../prompts/remoteFragments';
 import { HANDOFF_PROPOSAL_PROMPT } from '../../../prompts/handoff';
 import {
   GAME_ARTIFACT_CONTRACT_PROMPT,
@@ -522,6 +523,7 @@ function buildDynamicPromptCacheKey(ctx: ContextAssemblyCtx, userQuery: string, 
     ctx.runtime.activeSkillInvocation?.skillName || '',
     ctx.runtime.activeSkillContextBlock ? 'active-skill' : '',
     artifactRepairMode ? 'artifact-repair' : 'normal',
+    String(getTrustedRemotePromptFragmentsRevision()),
     userQuery,
   ].join('\u0000');
 }

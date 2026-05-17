@@ -4,6 +4,7 @@
 // 优先从云端拉取 prompts，本地缓存 + 降级到内置 prompts
 
 import { SYSTEM_PROMPT } from '../../prompts/builder';
+import { setTrustedRemotePromptFragments } from '../../prompts/remoteFragments';
 import { createLogger } from '../infra/logger';
 import { CACHE, CLOUD, CLOUD_ENDPOINTS } from '../../../shared/constants';
 import {
@@ -178,8 +179,10 @@ export async function initPromptService(options?: PromptServiceOptions): Promise
         prompts: cloudData.prompts,
         fetchedAt: Date.now(),
       };
+      setTrustedRemotePromptFragments(trustInfo.trusted ? cloudData.prompts : null);
       logger.info('Cached cloud prompts');
     } else {
+      setTrustedRemotePromptFragments(null);
       logger.info('Using built-in prompts');
     }
   })();
@@ -201,6 +204,7 @@ export function getSystemPrompt(): string {
 export async function refreshPrompts(): Promise<boolean> {
   fetchPromise = null;
   cachedPrompts = null;
+  setTrustedRemotePromptFragments(null);
   await initPromptService();
   return cachedPrompts !== null;
 }

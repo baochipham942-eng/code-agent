@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import type { ParsedSkill } from '../../../../src/shared/contract/agentSkill';
 import type { ChannelAccount } from '../../../../src/shared/contract/channel';
+import type { ControlPlaneEnvelope } from '../../../../src/shared/contract/controlPlane';
 
 const skillEnable = vi.fn();
 const skillDisable = vi.fn();
@@ -236,6 +237,80 @@ vi.mock('../../../../src/main/lightMemory/indexLoader', () => ({
 }));
 
 import { CapabilityCenterService } from '../../../../src/main/services/capabilities/capabilityCenterService';
+import { RemoteCapabilityRegistryService } from '../../../../src/main/services/capabilities/remoteCapabilityRegistryService';
+import {
+  buildControlPlaneContentHash,
+  buildControlPlaneSigningPayload,
+} from '../../../../src/main/services/cloud/controlPlaneTrust';
+
+function buildSignedCapabilityRegistryEnvelope(
+  payload: Record<string, unknown>,
+  expiresAt = '2099-12-31T23:59:59.000Z',
+) {
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+  const envelope: ControlPlaneEnvelope<Record<string, unknown>> = {
+    schemaVersion: 1,
+    kind: 'capability_registry',
+    issuedAt: '2026-05-17T00:00:00.000Z',
+    expiresAt,
+    contentHash: buildControlPlaneContentHash(payload),
+    keyId: 'capability-registry-test-key',
+    payload,
+  };
+  envelope.signature = crypto.sign(
+    null,
+    Buffer.from(buildControlPlaneSigningPayload(envelope)),
+    privateKey,
+  ).toString('base64');
+  return {
+    envelope,
+    publicKeys: {
+      'capability-registry-test-key': publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+    },
+  };
+}
+
+function mockCapabilityRegistryResponse(body: unknown, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+  } as Response;
+}
+
+function buildRemoteMcpRegistryPayload(id = 'remote-filesystem-readonly') {
+  return {
+    version: 'remote-test',
+    source: {
+      label: 'Remote capability registry',
+      reviewedAt: '2026-05-17',
+    },
+    items: [
+      {
+        id,
+        kind: 'mcp_template',
+        name: 'Remote Filesystem MCP',
+        summary: 'Signed remote template that can only generate a disabled MCP draft.',
+        tags: ['remote', 'filesystem'],
+        config: [
+          {
+            kind: 'path',
+            label: 'allowedRoot',
+            status: 'missing',
+          },
+        ],
+        install: {
+          mcpServer: {
+            name: 'remote_filesystem_readonly',
+            type: 'stdio',
+            command: 'node',
+            args: ['server.js', '{{allowedRoot}}'],
+          },
+        },
+      },
+    ],
+  };
+}
 
 describe('CapabilityCenterService', () => {
   beforeEach(() => {
@@ -638,6 +713,108 @@ describe('CapabilityCenterService', () => {
     await fs.rm(workspace, { recursive: true, force: true });
   });
 
+  it('includes trusted remote capability registry items in inventory', async () => {
+    const payload = buildRemoteMcpRegistryPayload();
+    const { envelope, publicKeys } = buildSignedCapabilityRegistryEnvelope(payload);
+    const fetchImpl = vi.fn().mockResolvedValue(mockCapabilityRegistryResponse(envelope));
+    const remoteRegistry = new RemoteCapabilityRegistryService({
+      endpoint: 'https://control-plane.test/api/v1/capabilities',
+      controlPlanePublicKeys: publicKeys,
+      fetchImpl,
+      now: Date.parse('2026-05-17T00:00:00.000Z'),
+    });
+    const service = new CapabilityCenterService();
+    const inventory = await service.listCapabilities({
+      configService: {
+        getSettings: () => ({ connectors: { enabledNative: [] } }),
+        updateSettings: configUpdateSettings,
+      } as never,
+      remoteCapabilityRegistryService: remoteRegistry,
+    });
+
+    const remoteItem = inventory.items.find((item) => item.id === 'remote:mcp_template%3Aremote-filesystem-readonly');
+    expect(remoteItem).toMatchObject({
+      kind: 'mcp_template',
+      source: {
+        kind: 'remote',
+        label: 'Remote capability registry',
+        keyId: 'capability-registry-test-key',
+        contentHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      },
+      state: {
+        install: 'available',
+        enable: 'not_applicable',
+        runtime: 'not_configured',
+        statusLabel: 'reviewed',
+      },
+      actions: {
+        canEnable: false,
+        canDisable: false,
+        canInstallDraft: true,
+      },
+      installPlan: {
+        mode: 'draft_config',
+        safety: expect.arrayContaining([
+          'Signed control-plane registry envelope verified before draft generation.',
+        ]),
+      },
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://control-plane.test/api/v1/capabilities',
+      expect.objectContaining({
+        headers: {},
+      }),
+    );
+  });
+
+  it('ignores unsigned, expired, and bad-signature remote capability registries', async () => {
+    const payload = buildRemoteMcpRegistryPayload('untrusted-remote-mcp');
+    const expired = buildSignedCapabilityRegistryEnvelope(payload, '2000-01-01T00:00:00.000Z');
+    const badSignature = buildSignedCapabilityRegistryEnvelope(payload);
+    const cases = [
+      {
+        body: payload,
+        keys: expired.publicKeys,
+        expectedCode: 'remote_invalid_envelope',
+      },
+      {
+        body: expired.envelope,
+        keys: expired.publicKeys,
+        expectedCode: 'remote_expired_envelope',
+      },
+      {
+        body: {
+          ...badSignature.envelope,
+          signature: Buffer.from('bad signature').toString('base64'),
+        },
+        keys: badSignature.publicKeys,
+        expectedCode: 'remote_invalid_signature',
+      },
+    ];
+    const service = new CapabilityCenterService();
+    const configService = {
+      getSettings: () => ({ connectors: { enabledNative: [] } }),
+      updateSettings: configUpdateSettings,
+    } as never;
+
+    for (const testCase of cases) {
+      const remoteRegistry = new RemoteCapabilityRegistryService({
+        endpoint: 'https://control-plane.test/api/v1/capabilities',
+        controlPlanePublicKeys: testCase.keys,
+        fetchImpl: vi.fn().mockResolvedValue(mockCapabilityRegistryResponse(testCase.body)),
+        now: Date.parse('2026-05-17T00:00:00.000Z'),
+      });
+      const inventory = await service.listCapabilities({
+        configService,
+        remoteCapabilityRegistryService: remoteRegistry,
+      });
+
+      expect(inventory.items.find((item) => item.id === 'remote:mcp_template%3Auntrusted-remote-mcp')).toBeUndefined();
+      expect(inventory.items.find((item) => item.id === 'curated:mcp_template%3Amcp-filesystem-readonly')).toBeDefined();
+      expect(inventory.diagnostics?.map((entry) => entry.code)).toContain(testCase.expectedCode);
+    }
+  });
+
   it('delegates enablement to existing services instead of installing remote templates', async () => {
     const service = new CapabilityCenterService();
     const configService = {
@@ -767,6 +944,72 @@ describe('CapabilityCenterService', () => {
     expect(rolledBack.servers).toEqual([]);
     expect(mcpRemoveServer).toHaveBeenCalledWith('parameterized_mcp');
     expect(clearMcpContext).toHaveBeenCalledWith('parameterized_mcp');
+
+    await fs.rm(workspace, { recursive: true, force: true });
+  });
+
+  it('generates remote MCP capability drafts as disabled local drafts only', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'code-agent-remote-capability-install-'));
+    const payload = buildRemoteMcpRegistryPayload('remote-installable-mcp');
+    const { envelope, publicKeys } = buildSignedCapabilityRegistryEnvelope(payload);
+    const remoteRegistry = new RemoteCapabilityRegistryService({
+      endpoint: 'https://control-plane.test/api/v1/capabilities',
+      controlPlanePublicKeys: publicKeys,
+      fetchImpl: vi.fn().mockResolvedValue(mockCapabilityRegistryResponse(envelope)),
+      now: Date.parse('2026-05-17T00:00:00.000Z'),
+    });
+    const service = new CapabilityCenterService();
+    const configService = {
+      getSettings: () => ({ connectors: { enabledNative: [] } }),
+      updateSettings: configUpdateSettings,
+    } as never;
+
+    const afterInstall = await service.installDraft(
+      {
+        id: 'remote:mcp_template%3Aremote-installable-mcp',
+        kind: 'mcp_template',
+        inputs: { allowedRoot: '/tmp/remote-capability-root' },
+      },
+      {
+        workingDirectory: workspace,
+        configService,
+        remoteCapabilityRegistryService: remoteRegistry,
+      },
+    );
+
+    const persisted = JSON.parse(
+      await fs.readFile(path.join(workspace, '.code-agent', 'mcp.json'), 'utf8'),
+    ) as { servers: Array<Record<string, unknown>> };
+    expect(persisted.servers).toEqual([
+      expect.objectContaining({
+        name: 'remote_filesystem_readonly',
+        enabled: false,
+        lazyLoad: true,
+        capabilityDraft: expect.objectContaining({
+          origin: 'capability_center',
+          capabilityId: 'remote:mcp_template%3Aremote-installable-mcp',
+          capabilityKind: 'mcp_template',
+        }),
+      }),
+    ]);
+    expect(mcpAddServer).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'remote_filesystem_readonly',
+      enabled: false,
+      lazyLoad: true,
+      scope: 'project',
+    }));
+    expect(mcpSetEnabled).not.toHaveBeenCalled();
+    expect(afterInstall.items.find((item) => item.id === 'remote:mcp_template%3Aremote-installable-mcp')).toMatchObject({
+      state: {
+        install: 'draft',
+        enable: 'disabled',
+        runtime: 'not_configured',
+      },
+      actions: {
+        canInstallDraft: false,
+        canRemoveDraft: true,
+      },
+    });
 
     await fs.rm(workspace, { recursive: true, force: true });
   });

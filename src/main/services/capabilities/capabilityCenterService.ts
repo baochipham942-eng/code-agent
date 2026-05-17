@@ -19,6 +19,7 @@ import type {
   CapabilityInstallDraftRequest,
   CapabilityRemoveDraftRequest,
   CapabilityToggleRequest,
+  CapabilityCenterDiagnostic,
 } from '../../../shared/contract/capability';
 import type { ParsedSkill, SkillSource } from '../../../shared/contract/agentSkill';
 import type {
@@ -57,6 +58,7 @@ import {
 import { resolveInstallDraftConfig } from './capabilityDraftResolver';
 import { getAgentEngineRegistry } from '../agentEngine';
 import { buildAgentEngineCapabilityItem } from './agentEngineCapabilityItems';
+import { getRemoteCapabilityRegistryService } from './remoteCapabilityRegistryService';
 
 const logger = createLogger('CapabilityCenterService');
 
@@ -139,6 +141,7 @@ const TOOL_BUNDLES = [
 export interface CapabilityListOptions {
   workingDirectory?: string;
   configService?: ConfigService | null;
+  remoteCapabilityRegistryService?: CapabilityRegistryReader | null;
 }
 
 export interface CapabilityToggleOptions {
@@ -147,6 +150,13 @@ export interface CapabilityToggleOptions {
 }
 
 export type CapabilityInstallDraftOptions = CapabilityListOptions;
+
+export interface CapabilityRegistryReader {
+  readRegistry: () => Promise<{
+    items: CapabilityCenterItem[];
+    diagnostics: CapabilityCenterDiagnostic[];
+  }>;
+}
 
 function encodeCapabilityId(prefix: string, rawId: string): string {
   return `${prefix}:${encodeURIComponent(rawId)}`;
@@ -478,8 +488,14 @@ function summarize(items: CapabilityCenterItem[]): CapabilityCenterSummary {
 
 class CapabilityCenterService {
   async listCapabilities(options: CapabilityListOptions = {}): Promise<CapabilityCenterInventory> {
-    const curatedRegistry = await readCuratedRegistry(options.workingDirectory);
-    const curatedItems = this.applyCuratedDraftState(curatedRegistry.items);
+    const [curatedRegistry, remoteRegistry] = await Promise.all([
+      readCuratedRegistry(options.workingDirectory),
+      this.readRemoteCapabilityRegistry(options),
+    ]);
+    const registryItems = this.applyDraftState([
+      ...curatedRegistry.items,
+      ...remoteRegistry.items,
+    ]);
     const items = [
       ...await this.listAgentEngines(),
       ...await this.listSkills(options.workingDirectory),
@@ -488,7 +504,7 @@ class CapabilityCenterService {
       ...await this.listConnectors(options.configService),
       ...this.listChannels(),
       ...await readWorkflowRecipes(),
-      ...curatedItems,
+      ...registryItems,
     ].sort((left, right) => {
       const byKind = CAPABILITY_KIND_ORDER[left.kind] - CAPABILITY_KIND_ORDER[right.kind];
       if (byKind !== 0) return byKind;
@@ -499,8 +515,25 @@ class CapabilityCenterService {
       generatedAt: Date.now(),
       summary: summarize(items),
       items,
-      diagnostics: curatedRegistry.diagnostics,
+      diagnostics: [
+        ...curatedRegistry.diagnostics,
+        ...remoteRegistry.diagnostics,
+      ],
     };
+  }
+
+  private async readRemoteCapabilityRegistry(
+    options: CapabilityListOptions,
+  ): Promise<{ items: CapabilityCenterItem[]; diagnostics: CapabilityCenterDiagnostic[] }> {
+    if (options.remoteCapabilityRegistryService === null) {
+      return { items: [], diagnostics: [] };
+    }
+    try {
+      return await (options.remoteCapabilityRegistryService || getRemoteCapabilityRegistryService()).readRegistry();
+    } catch (error) {
+      logger.warn('Failed to read remote capability registry', { error: String(error) });
+      return { items: [], diagnostics: [] };
+    }
   }
 
   private async listAgentEngines(): Promise<CapabilityCenterItem[]> {
@@ -635,9 +668,9 @@ class CapabilityCenterService {
     });
   }
 
-  private applyCuratedDraftState(items: CapabilityCenterItem[]): CapabilityCenterItem[] {
+  private applyDraftState(items: CapabilityCenterItem[]): CapabilityCenterItem[] {
     return items.map((item) => {
-      if (item.source.kind !== 'curated' || item.kind !== 'mcp_template') {
+      if (!['curated', 'remote', 'marketplace', 'team'].includes(item.source.kind) || item.kind !== 'mcp_template') {
         return item;
       }
       const draftState = this.findMcpDraftStateForCapability(item.id);

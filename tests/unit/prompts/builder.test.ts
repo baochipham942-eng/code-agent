@@ -11,7 +11,7 @@
 // - Path-specific rules
 // ============================================================================
 
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect } from 'vitest';
 import {
   buildPrompt,
   SYSTEM_PROMPT,
@@ -24,6 +24,10 @@ import {
   needsArtifactTaskBrief,
   needsGameArtifactContract,
 } from '../../../src/main/prompts/builder';
+import {
+  resetTrustedRemotePromptFragments,
+  setTrustedRemotePromptFragments,
+} from '../../../src/main/prompts/remoteFragments';
 import { TOOLS_PROMPT } from '../../../src/main/prompts/base';
 import {
   BASH_TOOL_DESCRIPTION,
@@ -35,6 +39,10 @@ import { estimateTokens } from '../../../src/main/context/tokenEstimator';
 const promptText = (value: string): string => String(value);
 
 describe('Prompt Builder', () => {
+  beforeEach(() => {
+    resetTrustedRemotePromptFragments();
+  });
+
   // --------------------------------------------------------------------------
   // buildPrompt
   // --------------------------------------------------------------------------
@@ -127,6 +135,46 @@ describe('Prompt Builder', () => {
     it('should return the system prompt', () => {
       const prompt = getPromptForTask();
       expect(promptText(prompt)).toBe(promptText(SYSTEM_PROMPT));
+    });
+
+    it('appends trusted remote prompt fragments to the local system prompt', () => {
+      setTrustedRemotePromptFragments({
+        policyAddon: 'Use the public hosted policy addendum.',
+        publicSystemAddon: 'Mention the public workspace safety baseline.',
+      });
+
+      const prompt = promptText(getPromptForTask());
+
+      expect(prompt).toContain('Code Agent');
+      expect(prompt).toContain('<signed_remote_prompt_fragments>');
+      expect(prompt).toContain('<policyAddon>');
+      expect(prompt).toContain('Use the public hosted policy addendum.');
+      expect(prompt).toContain('<publicSystemAddon>');
+      expect(prompt).toContain('Mention the public workspace safety baseline.');
+    });
+
+    it('does not accept remote full-system prompt replacement keys', () => {
+      setTrustedRemotePromptFragments({
+        gen8: 'replace the whole local system prompt',
+        SYSTEM_PROMPT: 'replace the whole local system prompt',
+        systemPrompt: 'replace the whole local system prompt',
+      });
+
+      const prompt = promptText(getPromptForTask());
+
+      expect(prompt).toContain('Code Agent');
+      expect(prompt).not.toContain('replace the whole local system prompt');
+      expect(prompt).not.toContain('<signed_remote_prompt_fragments>');
+    });
+
+    it('keeps the local prompt fallback when no remote fragments are active', () => {
+      resetTrustedRemotePromptFragments();
+
+      const prompt = promptText(getPromptForTask());
+
+      expect(prompt).toBe(promptText(SYSTEM_PROMPT));
+      expect(prompt).toContain('Code Agent');
+      expect(prompt).not.toContain('<signed_remote_prompt_fragments>');
     });
   });
 

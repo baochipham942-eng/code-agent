@@ -1,4 +1,4 @@
-# Release Checklist for v0.9.0
+# Release Checklist for Agent Neo
 
 Use this checklist when all sessions have completed and the release is ready.
 
@@ -86,19 +86,64 @@ npm version 0.9.0 --no-git-tag-version
 
 ---
 
-## Package Testing (D13)
+## macOS Release Gate
 
-### Build Package
+These checks are mandatory for external macOS distribution. Real notarization
+requires Apple credentials and must not be marked complete from a dry run.
+
+### Required Secrets
+
+- [ ] `APPLE_CERTIFICATE_P12_BASE64`
+- [ ] `APPLE_CERTIFICATE_PASSWORD`
+- [ ] `APPLE_KEYCHAIN_PASSWORD`
+- [ ] `APPLE_SIGNING_IDENTITY` with a `Developer ID Application:` identity
+- [ ] Apple notarization credentials: `APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` or `APPLE_PASSWORD` + `APPLE_TEAM_ID`, or API key credentials
+- [ ] `TAURI_UPDATER_PUBKEY`
+- [ ] `TAURI_SIGNING_PRIVATE_KEY`
+- [ ] `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if the private key is encrypted
+- [ ] Control-plane public key env: `CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS` or `CODE_AGENT_CONTROL_PLANE_KEY_ID` + `CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY`
+- [ ] Vercel/control-plane signing private key is configured outside the client bundle
+
+### Static and Script Checks
+
 ```bash
-# Must be in main repo, not worktree!
-npm run dist:mac
+bash -n scripts/tauri-release-bundle.sh scripts/tauri-notarize.sh scripts/verify-macos-release.sh
+node -e "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8'))"
+npx vitest run tests/scripts/releaseMacosGates.test.ts
+npm run release:security-scan
 ```
-- [ ] Package builds successfully
+
+- [ ] Shell scripts parse
+- [ ] `package.json` parses
+- [ ] Release gate tests pass
+- [ ] Release security scan passes
+
+### Signed Build, Notarization, and Verification
+
+```bash
+REQUIRE_NOTARIZATION=1 npm run tauri:release:bundle
+```
+
+- [ ] Build fails if updater public key is missing
+- [ ] Build fails if updater private key is missing
+- [ ] Build fails if control-plane public keys are missing
+- [ ] Build fails if Apple notarization credentials are incomplete
+- [ ] Build fails if Developer ID signing identity is missing or not `Developer ID Application:`
+- [ ] DMG notarization uses `xcrun notarytool submit --wait`
+- [ ] DMG staple succeeds and `xcrun stapler validate` passes
+- [ ] App staple validate passes when the app bundle is present
+- [ ] `verify-macos-release.sh` passes `codesign --verify --deep --strict`
+- [ ] App and DMG signatures contain `Authority=Developer ID Application:`
+- [ ] App and DMG signatures contain a non-empty `TeamIdentifier`
+- [ ] App passes `spctl --assess --type execute`
+- [ ] DMG passes `spctl --assess --type open --context context:primary-signature`
+- [ ] Bundled `dist/web/control-plane-public-keys.json` exists and contains at least one key
+- [ ] Updater artifacts are present: `.app.tar.gz`, `.app.tar.gz.sig`, `latest.json`
 
 ### Test Package
 ```bash
 # Open the packaged app
-open release/mac-arm64/Code\ Agent.app
+open src-tauri/target/release/bundle/macos/Agent\ Neo.app
 ```
 - [ ] App launches without errors
 - [ ] Basic functionality works (new session, send message)

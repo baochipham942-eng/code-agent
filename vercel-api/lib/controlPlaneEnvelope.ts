@@ -21,6 +21,7 @@ export interface ControlPlaneRequestLike {
   method?: string;
   query?: Record<string, string | string[] | undefined>;
   headers?: Record<string, string | string[] | undefined>;
+  body?: unknown;
 }
 
 export interface ControlPlaneResponseLike {

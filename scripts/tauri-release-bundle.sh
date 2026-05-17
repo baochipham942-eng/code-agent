@@ -21,6 +21,21 @@ if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" && -z "${TAURI_SIGNING_PRIVATE_KEY_PAT
 fi
 
 REQUIRE_CONTROL_PLANE_PUBLIC_KEYS="${REQUIRE_CONTROL_PLANE_PUBLIC_KEYS:-1}"
+REQUIRE_DEVELOPER_ID="${REQUIRE_DEVELOPER_ID:-${REQUIRE_NOTARIZATION:-0}}"
+SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:-${TAURI_MACOS_SIGNING_IDENTITY:-}}"
+
+if [[ "${REQUIRE_DEVELOPER_ID}" == "1" || "${REQUIRE_DEVELOPER_ID}" == "true" ]]; then
+  if [[ -z "${SIGNING_IDENTITY}" ]]; then
+    echo "APPLE_SIGNING_IDENTITY or TAURI_MACOS_SIGNING_IDENTITY is required for Developer ID release builds" >&2
+    exit 1
+  fi
+  if [[ "${SIGNING_IDENTITY}" != Developer\ ID\ Application:* ]]; then
+    echo "macOS release signing identity must be a Developer ID Application identity" >&2
+    echo "Current identity: ${SIGNING_IDENTITY}" >&2
+    exit 1
+  fi
+fi
+
 if [[ "${REQUIRE_CONTROL_PLANE_PUBLIC_KEYS}" == "1" || "${REQUIRE_CONTROL_PLANE_PUBLIC_KEYS}" == "true" ]]; then
   HAS_CONTROL_PLANE_PUBLIC_KEYS=0
   if [[ -n "${CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS:-}" || -n "${CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE:-}" ]]; then
@@ -59,7 +74,6 @@ fi
 
 REPOSITORY="${GITHUB_REPOSITORY:-baochipham942-eng/code-agent}"
 UPDATER_ENDPOINT="${TAURI_UPDATER_ENDPOINT:-https://github.com/${REPOSITORY}/releases/latest/download/latest.json}"
-SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:-${TAURI_MACOS_SIGNING_IDENTITY:-}}"
 
 mkdir -p "${CONFIG_DIR}"
 

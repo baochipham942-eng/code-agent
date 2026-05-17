@@ -19,6 +19,7 @@ import {
 import { DYNAMIC_BOUNDARY_MARKER } from './cacheBreakDetection';
 import { applyOverlays, type OverlayConfig } from './overlayEngine';
 import { type PromptProfile, type PromptContext, getProfileOverlays } from './profiles';
+import { buildTrustedRemotePromptFragmentsBlock } from './remoteFragments';
 // 规则已内联到 identity.ts，无需静态导入
 // 动态提醒系统可按需加载特定规则
 import { getToolDescriptions } from './tools';
@@ -155,7 +156,10 @@ export function buildPrompt(): string {
     ...getToolDescriptions(),
   ].join('\n\n');
   // Dynamic section (rules 等；GENERATIVE_UI_PROMPT 改为按意图注入)
-  const dynamicSection = getRulesForPrompt().join('\n\n');
+  const dynamicSection = [
+    buildTrustedRemotePromptFragmentsBlock(),
+    ...getRulesForPrompt(),
+  ].filter(Boolean).join('\n\n');
 
   return dynamicSection
     ? `${stablePrefix}${DYNAMIC_BOUNDARY_MARKER}${dynamicSection}`

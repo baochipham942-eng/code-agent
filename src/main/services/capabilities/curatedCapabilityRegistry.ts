@@ -15,12 +15,14 @@ import type {
   CapabilityPermission,
   CapabilityRequirement,
   CapabilityRiskInfo,
+  CapabilitySourceKind,
 } from '../../../shared/contract/capability';
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('CuratedCapabilityRegistry');
 
 type CuratedCapabilityKind = Extract<CapabilityKind, 'mcp_template' | 'channel_adapter' | 'workflow_recipe'>;
+type RegistryCapabilitySourceKind = Extract<CapabilitySourceKind, 'curated' | 'marketplace' | 'remote' | 'team'>;
 
 interface CuratedRegistryRequirement {
   kind?: unknown;
@@ -59,6 +61,7 @@ interface CuratedRegistryItem {
 }
 
 interface CuratedRegistryFile {
+  version?: unknown;
   source?: unknown;
   items?: unknown;
 }
@@ -68,12 +71,38 @@ interface CuratedRegistryReadResult {
   diagnostics: CapabilityCenterDiagnostic[];
 }
 
+export interface ParsedCapabilityRegistrySourceTrust {
+  contentHash?: string;
+  expiresAt?: string;
+  signedAt?: string;
+  keyId?: string;
+  signature?: string;
+}
+
+export interface ParseCapabilityRegistryPayloadOptions {
+  sourcePath: string;
+  sourceKind: RegistryCapabilitySourceKind;
+  idPrefix: string;
+  registryFileHash: string;
+  trustMode: 'source_metadata' | 'trusted_envelope';
+  sourceTrust?: ParsedCapabilityRegistrySourceTrust;
+}
+
 function encodeCapabilityId(prefix: string, rawId: string): string {
   return `${prefix}:${encodeURIComponent(rawId)}`;
 }
 
-function sourceLabel(kind: 'curated'): string {
-  return kind === 'curated' ? '本地 curated registry' : '本地';
+function sourceLabel(kind: RegistryCapabilitySourceKind): string {
+  switch (kind) {
+    case 'curated':
+      return '本地 curated registry';
+    case 'marketplace':
+      return 'Marketplace';
+    case 'team':
+      return '团队 registry';
+    case 'remote':
+      return '远程 registry';
+  }
 }
 
 function unique(values: Array<string | undefined | null>): string[] {
@@ -462,7 +491,11 @@ function buildInstallPlan(
   kind: CuratedCapabilityKind,
   name: string,
   draft?: CapabilityInstallDraftSpec | null,
+  sourceKind: RegistryCapabilitySourceKind = 'curated',
 ): CapabilityInstallPlan {
+  const registrySafety = sourceKind === 'curated'
+    ? 'No remote registry fetch.'
+    : 'Signed control-plane registry envelope verified before draft generation.';
   switch (kind) {
     case 'mcp_template':
       if (draft) {
@@ -484,7 +517,7 @@ function buildInstallPlan(
             '用户显式启用前不连接、不启动 stdio command。',
           ],
           safety: [
-            'No remote registry fetch.',
+            registrySafety,
             'No package install or command execution during draft install.',
             'Existing MCP permission and approval model remains authoritative.',
           ],
@@ -512,7 +545,7 @@ function buildInstallPlan(
           '用户显式启用前不连接、不启动 stdio command。',
         ],
         safety: [
-          'No remote registry fetch.',
+          registrySafety,
           'No command execution during preview.',
           'Existing MCP permission and approval model remains authoritative.',
         ],
@@ -582,6 +615,8 @@ function parseCuratedRegistryItem(
   filePath: string,
   fileSource: Record<string, unknown>,
   registryFileHash: string,
+  sourceKind: RegistryCapabilitySourceKind,
+  idPrefix: string,
   registryTrustBlockReason?: string,
 ): { item: CapabilityCenterItem | null; diagnostic?: CapabilityCenterDiagnostic } {
   const id = asString(raw.id);
@@ -627,7 +662,7 @@ function parseCuratedRegistryItem(
   const audit = asRecord(raw.audit);
   const statusLabel = asString(source.reviewedAt) || asString(fileSource.reviewedAt)
     ? 'reviewed'
-    : 'curated';
+    : sourceKind === 'curated' ? 'curated' : 'trusted remote';
   const config = Array.isArray(raw.config)
     ? raw.config.map((entry) => parseCuratedRequirement(asRecord(entry))).filter((entry): entry is CapabilityRequirement => Boolean(entry))
     : [];
@@ -654,15 +689,15 @@ function parseCuratedRegistryItem(
 
   return {
     item: {
-      id: encodeCapabilityId('curated', `${kind}:${id}`),
+      id: encodeCapabilityId(idPrefix, `${kind}:${id}`),
       kind,
       name,
       summary,
       description: asString(raw.description),
-      tags: unique(['curated', kind, ...asStringArray(raw.tags)]),
+      tags: unique([sourceKind, kind, ...asStringArray(raw.tags)]),
       source: {
-        kind: 'curated',
-        label: asString(source.label) || asString(fileSource.label) || sourceLabel('curated'),
+        kind: sourceKind,
+        label: asString(source.label) || asString(fileSource.label) || sourceLabel(sourceKind),
         path: filePath,
         url: asString(source.url),
         version: asString(source.version) || asString(fileSource.version),
@@ -694,8 +729,8 @@ function parseCuratedRegistryItem(
           ...asStringArray(audit.notes),
           ...(trustBlockedDraft && registryTrustBlockReason ? [registryTrustBlockReason] : []),
           draft
-            ? '本地 curated registry 模板只能生成禁用草稿，不启用、不连接。'
-            : '本地 curated registry 模板只读展示，不安装、不写配置、不连接。',
+            ? 'Capability registry 模板只能生成禁用草稿，不启用、不连接。'
+            : 'Capability registry 模板只读展示，不安装、不写配置、不连接。',
         ],
       },
       actions: {
@@ -704,9 +739,66 @@ function parseCuratedRegistryItem(
         canInstallDraft: Boolean(draft && !trustBlockedDraft),
         reason: installActionReason,
       },
-      installPlan: buildInstallPlan(kind, name, draft),
+      installPlan: buildInstallPlan(kind, name, draft, sourceKind),
     },
   };
+}
+
+export function parseCapabilityRegistryPayload(
+  parsed: CuratedRegistryFile,
+  options: ParseCapabilityRegistryPayloadOptions,
+): CuratedRegistryReadResult {
+  const source = {
+    ...asRecord(parsed.source),
+    ...(asString(parsed.version) ? { version: asString(parsed.version) } : {}),
+    ...options.sourceTrust,
+  };
+  const diagnostics: CapabilityCenterDiagnostic[] = [];
+  const items: CapabilityCenterItem[] = [];
+
+  if (!Array.isArray(parsed.items)) {
+    return {
+      items,
+      diagnostics: [diagnostic({
+        code: 'invalid_registry_items',
+        message: 'Skipped capability registry file because items is missing or is not an array.',
+        path: options.sourcePath,
+        severity: 'error',
+      })],
+    };
+  }
+
+  const rawItems = parsed.items;
+  const requiresRegistryTrust = options.trustMode === 'source_metadata'
+    && rawItems.some((rawItem) => hasMcpDraftCandidate(asRecord(rawItem)));
+  const trustDiagnostics = options.trustMode === 'source_metadata'
+    ? [
+      ...buildContentHashDiagnostics(options.sourcePath, asString(source.contentHash), options.registryFileHash, requiresRegistryTrust),
+      ...buildExpiresAtDiagnostics(options.sourcePath, asString(source.expiresAt), requiresRegistryTrust),
+    ]
+    : [];
+  diagnostics.push(...trustDiagnostics);
+
+  const registryTrustBlockReason = buildTrustBlockReason(trustDiagnostics);
+  for (const rawItem of rawItems) {
+    const { item, diagnostic: itemDiagnostic } = parseCuratedRegistryItem(
+      asRecord(rawItem),
+      options.sourcePath,
+      source,
+      options.registryFileHash,
+      options.sourceKind,
+      options.idPrefix,
+      registryTrustBlockReason,
+    );
+    if (itemDiagnostic) {
+      diagnostics.push(itemDiagnostic);
+    }
+    if (item) {
+      items.push(item);
+    }
+  }
+
+  return { items, diagnostics };
 }
 
 async function readCuratedRegistryDir(dir: string): Promise<CuratedRegistryReadResult> {
@@ -735,40 +827,16 @@ async function readCuratedRegistryDir(dir: string): Promise<CuratedRegistryReadR
     const fullPath = path.join(dir, filename);
     try {
       const parsed = JSON.parse(await fs.readFile(fullPath, 'utf8')) as CuratedRegistryFile;
-      const source = asRecord(parsed.source);
       const registryFileHash = buildRegistryFileHash(parsed);
-      if (!Array.isArray(parsed.items)) {
-        diagnostics.push(diagnostic({
-          code: 'invalid_registry_items',
-          message: 'Skipped capability registry file because items is missing or is not an array.',
-          path: fullPath,
-          severity: 'error',
-        }));
-        continue;
-      }
-      const rawItems = parsed.items;
-      const requiresRegistryTrust = rawItems.some((rawItem) => hasMcpDraftCandidate(asRecord(rawItem)));
-      const trustDiagnostics = [
-        ...buildContentHashDiagnostics(fullPath, asString(source.contentHash), registryFileHash, requiresRegistryTrust),
-        ...buildExpiresAtDiagnostics(fullPath, asString(source.expiresAt), requiresRegistryTrust),
-      ];
-      diagnostics.push(...trustDiagnostics);
-      const registryTrustBlockReason = buildTrustBlockReason(trustDiagnostics);
-      for (const rawItem of rawItems) {
-        const { item, diagnostic: itemDiagnostic } = parseCuratedRegistryItem(
-          asRecord(rawItem),
-          fullPath,
-          source,
-          registryFileHash,
-          registryTrustBlockReason,
-        );
-        if (itemDiagnostic) {
-          diagnostics.push(itemDiagnostic);
-        }
-        if (item) {
-          items.push(item);
-        }
-      }
+      const result = parseCapabilityRegistryPayload(parsed, {
+        sourcePath: fullPath,
+        sourceKind: 'curated',
+        idPrefix: 'curated',
+        registryFileHash,
+        trustMode: 'source_metadata',
+      });
+      items.push(...result.items);
+      diagnostics.push(...result.diagnostics);
     } catch (error) {
       logger.debug('Skipping invalid capability registry file', { filePath: fullPath, error });
       diagnostics.push(diagnostic({

@@ -58,7 +58,7 @@ if [[ "${REQUIRE_DEVELOPER_ID}" == "1" || "${REQUIRE_DEVELOPER_ID}" == "true" ]]
     echo "${app_signature}" >&2
     exit 1
   fi
-  if grep -q '^TeamIdentifier=not set$' <<<"${app_signature}"; then
+  if ! grep -q '^TeamIdentifier=[A-Za-z0-9]' <<<"${app_signature}" || grep -q '^TeamIdentifier=not set$' <<<"${app_signature}"; then
     echo "[verify-macos-release] app signature is missing TeamIdentifier" >&2
     echo "${app_signature}" >&2
     exit 1
@@ -82,7 +82,7 @@ for dmg_path in "${dmg_files[@]}"; do
       echo "${dmg_signature}" >&2
       exit 1
     fi
-    if grep -q '^TeamIdentifier=not set$' <<<"${dmg_signature}"; then
+    if ! grep -q '^TeamIdentifier=[A-Za-z0-9]' <<<"${dmg_signature}" || grep -q '^TeamIdentifier=not set$' <<<"${dmg_signature}"; then
       echo "[verify-macos-release] dmg signature is missing TeamIdentifier: ${dmg_path}" >&2
       echo "${dmg_signature}" >&2
       exit 1

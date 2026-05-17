@@ -33,6 +33,16 @@ const FEATURE_ENTITLEMENT_CAPABILITY: Partial<Record<keyof FeatureFlags, string>
   enableExperimentalTools: 'experimental_tools',
 };
 
+const CLOUD_MCP_ENTITLEMENT_CAPABILITIES = ['mcp_cloud', 'mcp_server'] as const;
+const CLOUD_MCP_KILL_SWITCH_FEATURES = [
+  'mcp_cloud',
+  'mcp_server',
+  'cloud_mcp',
+  'cloud_mcp_servers',
+  'mcpServers',
+  'enableCloudAgent',
+] as const;
+
 export interface CloudConfigServiceOptions {
   getAccessToken?: () => Promise<string | null>;
   controlPlanePublicKeys?: ControlPlanePublicKeys;
@@ -237,6 +247,41 @@ export class CloudConfigService {
     if (entitlement.status === 'expired' || entitlement.status === 'revoked') return true;
     if (entitlement.capabilities.includes('*')) return false;
     return !entitlement.capabilities.includes(capability);
+  }
+
+  getCloudMCPServerPolicyBlockReason(): string | null {
+    if (this.isGlobalKillSwitchActive()) {
+      return 'global_kill_switch';
+    }
+
+    const featureSwitches = this.getKillSwitches().features ?? {};
+    for (const feature of CLOUD_MCP_KILL_SWITCH_FEATURES) {
+      if (featureSwitches[feature]?.disabled === true) {
+        return `feature_kill_switch:${feature}`;
+      }
+    }
+
+    const entitlement = this.getConfig().entitlement;
+    if (!entitlement) {
+      return 'missing_entitlement:mcp_cloud';
+    }
+
+    if (entitlement.status === 'expired' || entitlement.status === 'revoked') {
+      return `entitlement_${entitlement.status}`;
+    }
+
+    if (entitlement.capabilities.includes('*')) {
+      return null;
+    }
+
+    const hasCloudMcpCapability = CLOUD_MCP_ENTITLEMENT_CAPABILITIES.some((capability) =>
+      entitlement.capabilities.includes(capability),
+    );
+    return hasCloudMcpCapability ? null : 'missing_entitlement:mcp_cloud';
+  }
+
+  isCloudMCPServersEnabledByPolicy(): boolean {
+    return this.getCloudMCPServerPolicyBlockReason() === null;
   }
 
   /**

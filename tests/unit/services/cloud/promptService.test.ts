@@ -33,13 +33,16 @@ function mockJsonResponse(body: unknown) {
   };
 }
 
-function buildSignedPromptRegistry(payload: { version: string; prompts: Record<string, string> }) {
+function buildSignedPromptRegistry(
+  payload: { version: string; prompts: Record<string, string> },
+  options: { expiresAt?: string } = {},
+) {
   const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
   const envelope: ControlPlaneEnvelope<typeof payload> = {
     schemaVersion: 1,
     kind: 'prompt_registry',
     issuedAt: '2026-05-17T00:00:00.000Z',
-    expiresAt: '2099-12-31T23:59:59.000Z',
+    expiresAt: options.expiresAt ?? '2099-12-31T23:59:59.000Z',
     contentHash: buildControlPlaneContentHash(payload),
     keyId: 'prompt-test-key',
     payload,
@@ -73,9 +76,10 @@ describe('promptService control-plane trust', () => {
   it('rejects unsigned prompt registries and keeps builtin source', async () => {
     mockFetch.mockResolvedValueOnce(mockJsonResponse({
       version: 'unsigned-prompts',
-      prompts: { gen8: 'remote prompt' },
+      prompts: { policyAddon: 'unsigned addon', gen8: 'remote prompt' },
     }));
     const { initPromptService, getPromptsInfo } = await loadPromptService();
+    const { listTrustedRemotePromptFragments } = await import('../../../../src/main/prompts/remoteFragments');
 
     await initPromptService();
 
@@ -89,16 +93,22 @@ describe('promptService control-plane trust', () => {
         ],
       },
     });
+    expect(listTrustedRemotePromptFragments()).toEqual([]);
   });
 
   it('accepts signed prompt registry envelopes with a configured public key', async () => {
     const payload = {
       version: 'signed-prompts',
-      prompts: { gen8: 'remote prompt' },
+      prompts: {
+        policyAddon: 'signed policy addon',
+        publicSystemAddon: 'signed public addon',
+        gen8: 'remote full replacement must be ignored by prompt builder',
+      },
     };
     const { envelope, publicKeys } = buildSignedPromptRegistry(payload);
     mockFetch.mockResolvedValueOnce(mockJsonResponse(envelope));
     const { initPromptService, getPromptsInfo } = await loadPromptService();
+    const { listTrustedRemotePromptFragments } = await import('../../../../src/main/prompts/remoteFragments');
 
     await initPromptService({ controlPlanePublicKeys: publicKeys });
 
@@ -112,6 +122,35 @@ describe('promptService control-plane trust', () => {
         diagnostics: [],
       },
     });
+    expect(listTrustedRemotePromptFragments()).toEqual([
+      { id: 'policyAddon', text: 'signed policy addon' },
+      { id: 'publicSystemAddon', text: 'signed public addon' },
+    ]);
+  });
+
+  it('ignores expired signed registries and keeps local prompt fallback', async () => {
+    const payload = {
+      version: 'expired-prompts',
+      prompts: { policyAddon: 'expired addon' },
+    };
+    const { envelope, publicKeys } = buildSignedPromptRegistry(payload, {
+      expiresAt: '2020-01-01T00:00:00.000Z',
+    });
+    mockFetch.mockResolvedValueOnce(mockJsonResponse(envelope));
+    const { initPromptService, getPromptsInfo, getSystemPrompt } = await loadPromptService();
+    const { listTrustedRemotePromptFragments } = await import('../../../../src/main/prompts/remoteFragments');
+
+    await initPromptService({ controlPlanePublicKeys: publicKeys });
+
+    expect(getPromptsInfo()).toMatchObject({
+      source: 'builtin',
+      version: null,
+      trust: {
+        trusted: false,
+      },
+    });
+    expect(listTrustedRemotePromptFragments()).toEqual([]);
+    expect(getSystemPrompt()).toBe('builtin prompt');
   });
 
   it('sends a bearer token when fetching prompt registry', async () => {

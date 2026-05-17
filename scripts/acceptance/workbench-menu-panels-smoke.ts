@@ -92,14 +92,6 @@ const PANEL_CHECKS: PanelCheck[] = [
     advanced: true,
   },
   {
-    key: 'computerUse',
-    menuLabel: 'Computer Use',
-    closeLabel: '关闭 Computer Use',
-    expectedText: ['Computer Use', 'Activity Collector', 'AX Tree', '能力边界'],
-    testId: 'computer-use-panel',
-    advanced: true,
-  },
-  {
     key: 'timeCapability',
     menuLabel: 'Time & Capability',
     closeLabel: '关闭 Time & Capability',
@@ -132,15 +124,9 @@ const PANEL_CHECKS: PanelCheck[] = [
     testId: 'desktop-status-panel',
     advanced: true,
   },
-  {
-    key: 'inAppValidation',
-    menuLabel: 'In-App 验证',
-    closeLabel: '关闭 In-App 验证',
-    expectedText: ['In-App 验证', '载入 Demo'],
-    testId: 'in-app-validation-panel',
-    advanced: true,
-  },
 ];
+
+const RETIRED_MENU_LABELS = ['Computer Use', 'In-App 验证'];
 
 function usage(): void {
   console.log(`Workbench menu panels smoke
@@ -310,10 +296,10 @@ async function ensureUserMenuOpen(page: Page): Promise<void> {
 
 async function ensureAdvancedToolsOpen(page: Page): Promise<void> {
   await ensureUserMenuOpen(page);
-  if (await exactButton(page, 'Computer Use').isVisible().catch(() => false)) return;
+  if (await exactButton(page, '实验室').isVisible().catch(() => false)) return;
 
   await exactButton(page, '高级工具').click({ timeout: 5_000 });
-  await exactButton(page, 'Computer Use').waitFor({ state: 'visible', timeout: 5_000 });
+  await exactButton(page, '实验室').waitFor({ state: 'visible', timeout: 5_000 });
 }
 
 async function validateMenuEntries(page: Page, failures: string[]): Promise<Record<string, boolean>> {
@@ -330,6 +316,15 @@ async function validateMenuEntries(page: Page, failures: string[]): Promise<Reco
       if (!panel.optional) {
         failures.push(`lower-left menu missing "${panel.menuLabel}"`);
       }
+    }
+  }
+
+  await ensureAdvancedToolsOpen(page);
+  for (const label of RETIRED_MENU_LABELS) {
+    const visible = await exactButton(page, label).isVisible().catch(() => false);
+    result[`retired:${label}`] = visible;
+    if (visible) {
+      failures.push(`lower-left menu should not expose retired internal tool "${label}"`);
     }
   }
 
@@ -526,11 +521,12 @@ async function main(): Promise<void> {
         ['menuActivity', result.menu.activity],
         ['menuKnowledgeMemory', result.menu.knowledgeMemory],
         ['menuEvalCenter', result.menu.evalCenter],
+        ['menuTelemetryDebug', result.menu.telemetryDebug],
+        ['menuInternalEvaluation', result.menu.internalEvaluation],
         ['menuCronCenter', result.menu.cronCenter],
         ['menuPromptManager', result.menu.promptManager],
         ['menuSettings', result.menu.settings],
         ['menuLab', result.menu.lab],
-        ['menuComputerUse', result.menu.computerUse],
         ['menuTimeCapability', result.menu.timeCapability],
         ['panelsPassed', panels.filter((panel) => panel.ok).length],
         ['panelCount', panels.length],

@@ -36,7 +36,6 @@ import {
   CalendarDays,
   Globe,
   Monitor,
-  MousePointerClick,
   GitBranch,
   ScrollText,
   Activity,
@@ -189,10 +188,6 @@ export const Sidebar: React.FC = () => {
     setShowBrowserSurfacePanel,
     showDesktopPanel,
     setShowDesktopPanel,
-    showComputerUsePanel,
-    setShowComputerUsePanel,
-    showInAppValidationPanel,
-    setShowInAppValidationPanel,
     showActivityPanel,
     setShowActivityPanel,
     showKnowledgeMemoryPanel,
@@ -250,7 +245,6 @@ export const Sidebar: React.FC = () => {
   const canOpenEvalCenter = canAccessFeature('eval.center', user);
   const canOpenTelemetry = canAccessFeature('eval.telemetry', user);
   const canOpenPromptManager = canAccessFeature('prompt.manager', user);
-  const canOpenInternalValidationTools = canAccessFeature('tools.internalValidation', user);
   const sessionStates = useTaskStore((state) => state.sessionStates);
 
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
@@ -265,8 +259,6 @@ export const Sidebar: React.FC = () => {
       showTimeCapabilityCenter ||
       showBrowserSurfacePanel ||
       showDesktopPanel ||
-      showComputerUsePanel ||
-      showInAppValidationPanel ||
       (dagPanelEnabled && showDAGPanel)
   );
   const advancedToolsOpen = showAccountAdvancedTools || hasActiveAdvancedTool;
@@ -1120,22 +1112,6 @@ export const Sidebar: React.FC = () => {
                       icon={<Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
                       label="桌面采集"
                     />
-                    {canOpenInternalValidationTools && (
-                      <>
-                        <AccountMenuItem
-                          onClick={() => { setShowComputerUsePanel(!showComputerUsePanel); setShowUserMenu(false); }}
-                          icon={<MousePointerClick className={`w-4 h-4 ${showComputerUsePanel ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
-                          label="Computer Use"
-                          badge="诊断"
-                        />
-                        <AccountMenuItem
-                          onClick={() => { setShowInAppValidationPanel(!showInAppValidationPanel); setShowUserMenu(false); }}
-                          icon={<MousePointerClick className={`w-4 h-4 ${showInAppValidationPanel ? 'text-lime-400' : 'text-lime-400/80'}`} />}
-                          label="In-App 验证"
-                          badge="验证"
-                        />
-                      </>
-                    )}
                   </div>
                 )}
 

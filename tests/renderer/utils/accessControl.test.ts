@@ -11,8 +11,6 @@ describe('renderer access control registry', () => {
     expect(canAccessFeature('eval.telemetry', { isAdmin: false })).toBe(false);
     expect(canAccessFeature('eval.replay', { isAdmin: true })).toBe(true);
     expect(canAccessFeature('eval.reviewQueue', { isAdmin: true })).toBe(true);
-    expect(canAccessFeature('tools.internalValidation', { isAdmin: false })).toBe(false);
-    expect(canAccessFeature('tools.internalValidation', { isAdmin: true })).toBe(true);
   });
 
   it('keeps user and invite management admin-only', () => {

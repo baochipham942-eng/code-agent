@@ -44,10 +44,6 @@ export const ACCESS_CONTROL_REGISTRY = {
     label: 'Review Queue',
     adminOnly: true,
   },
-  'tools.internalValidation': {
-    label: '内部验证工具',
-    adminOnly: true,
-  },
 } as const;
 
 export type AccessControlledFeature = keyof typeof ACCESS_CONTROL_REGISTRY;

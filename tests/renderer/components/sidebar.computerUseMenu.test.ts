@@ -74,8 +74,6 @@ const appState = {
   setShowTimeCapabilityCenter: vi.fn(),
   showDesktopPanel: false,
   setShowDesktopPanel: vi.fn(),
-  showComputerUsePanel: false,
-  setShowComputerUsePanel: vi.fn(),
   showActivityPanel: false,
   setShowActivityPanel: vi.fn(),
   showKnowledgeMemoryPanel: false,
@@ -135,8 +133,6 @@ import { Sidebar, isAccountMenuEventOutside } from '../../../src/renderer/compon
 describe('Sidebar account menu entry planning', () => {
   beforeEach(() => {
     reactState.useStateCalls = 0;
-    appState.showComputerUsePanel = false;
-    appState.showInAppValidationPanel = false;
     authState.user.isAdmin = true;
   });
 
@@ -157,16 +153,14 @@ describe('Sidebar account menu entry planning', () => {
     expect(html).toContain('高级工具');
     expect(html).not.toContain('桌面采集');
     expect(html).not.toContain('Computer Use');
+    expect(html).not.toContain('In-App 验证');
   });
 
-  it('shows internal validation tools only for admin users', () => {
-    appState.showComputerUsePanel = true;
+  it('keeps internal validation tools out of the account menu for admins and members', () => {
     const adminHtml = renderToStaticMarkup(React.createElement(Sidebar));
 
-    expect(adminHtml).toContain('Computer Use');
-    expect(adminHtml).toContain('In-App 验证');
-    expect(adminHtml).toContain('诊断');
-    expect(adminHtml).toContain('验证');
+    expect(adminHtml).not.toContain('Computer Use');
+    expect(adminHtml).not.toContain('In-App 验证');
 
     reactState.useStateCalls = 0;
     authState.user.isAdmin = false;

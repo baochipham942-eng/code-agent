@@ -492,11 +492,14 @@ export function buildSessionTaskRecord(args: {
   todos?: TodoItem[];
   taskProgress?: TaskProgressData | null;
 }): TaskRecord | null {
+  const todos = args.todos || [];
+  const completed = todos.filter((todo) => todo.status === 'completed').length;
+  const allTodosCompleted = todos.length > 0 && completed === todos.length;
   const runIsQuietFinished = args.runStatus === 'completed' || args.runStatus === 'cancelled';
   const hasLiveTaskProgress = Boolean(args.taskProgress && args.taskProgress.phase !== 'completed');
-  if (runIsQuietFinished && !hasLiveTaskProgress) return null;
+  const shouldPreserveCompletedTodos = args.runStatus === 'completed' && allTodosCompleted;
+  if (runIsQuietFinished && !hasLiveTaskProgress && !shouldPreserveCompletedTodos) return null;
 
-  const todos = args.todos || [];
   if (todos.length === 0 && args.taskProgress) {
     const title = taskProgressTitle(args.taskProgress);
     const status = taskProgressStepStatus(args.taskProgress);
@@ -513,12 +516,12 @@ export function buildSessionTaskRecord(args: {
   }
   if (todos.length === 0) return null;
   const active = todos.find((todo) => todo.status === 'in_progress') || todos.find((todo) => todo.status !== 'completed');
-  const completed = todos.filter((todo) => todo.status === 'completed').length;
+  const objective = todos.find((todo) => /^(?:明确)?任务目标[:：]/.test(todo.content.trim()));
 
   return {
     id: `${args.sessionId || 'session'}:todos`,
     scope: 'session',
-    title: active?.activeForm || active?.content || `${completed}/${todos.length} tasks`,
+    title: objective?.content || active?.activeForm || active?.content || `${completed}/${todos.length} tasks`,
     status: completed === todos.length ? 'done' : active?.status === 'in_progress' ? 'in_progress' : 'pending',
     steps: todos.map((todo) => ({
       title: todo.activeForm || todo.content,

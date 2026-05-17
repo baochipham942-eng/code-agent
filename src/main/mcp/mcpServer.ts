@@ -203,7 +203,7 @@ export class CodeAgentMCPServer {
         tools: [
           {
             name: 'get_logs',
-            description: 'Get logs from Code Agent by source type',
+            description: 'Get logs from Agent Neo by source type',
             inputSchema: {
               type: 'object',
               properties: {
@@ -242,7 +242,7 @@ export class CodeAgentMCPServer {
           },
           {
             name: 'get_status',
-            description: 'Get current Code Agent status and statistics',
+            description: 'Get current Agent Neo status and statistics',
             inputSchema: {
               type: 'object',
               properties: {},
@@ -250,7 +250,7 @@ export class CodeAgentMCPServer {
           },
           {
             name: 'execute_command',
-            description: 'Execute a command on the running Code Agent. Commands: browser_action, run_test, ping',
+            description: 'Execute a command on the running Agent Neo. Commands: browser_action, run_test, ping',
             inputSchema: {
               type: 'object',
               properties: {
@@ -269,7 +269,7 @@ export class CodeAgentMCPServer {
           },
           {
             name: 'computer',
-            description: 'Drive macOS UI (mouse, keyboard, Accessibility, browser smart actions). Forwards to the running Code Agent main process. Requires Code Agent to be running. Action enum and full param reference: see Code Agent vision/ComputerTool.',
+            description: 'Drive macOS UI (mouse, keyboard, Accessibility, browser smart actions). Forwards to the running Agent Neo main process. Requires Agent Neo to be running. Action enum and full param reference: see Agent Neo vision/ComputerTool.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -299,7 +299,7 @@ export class CodeAgentMCPServer {
           },
           {
             name: 'screenshot',
-            description: 'Capture screen or specific window via the running Code Agent. Returns saved PNG path. Set analyze=true to get AI description of contents.',
+            description: 'Capture screen or specific window via the running Agent Neo. Returns saved PNG path. Set analyze=true to get AI description of contents.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -428,7 +428,7 @@ export class CodeAgentMCPServer {
             content: [
               {
                 type: 'text',
-                text: `Failed to connect to Code Agent. Make sure it's running. Error: ${error}`,
+                text: `Failed to connect to Agent Neo. Make sure it's running. Error: ${error}`,
               },
             ],
             isError: true,
@@ -505,13 +505,13 @@ export class CodeAgentMCPServer {
       return;
     }
 
-    console.error('[MCPServer] Starting Code Agent MCP Server...');
+    console.error('[MCPServer] Starting Agent Neo MCP Server...');
 
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
 
     this.isRunning = true;
-    console.error('[MCPServer] Code Agent MCP Server started');
+    console.error('[MCPServer] Agent Neo MCP Server started');
   }
 
   async stop(): Promise<void> {
@@ -519,10 +519,10 @@ export class CodeAgentMCPServer {
       return;
     }
 
-    console.error('[MCPServer] Stopping Code Agent MCP Server...');
+    console.error('[MCPServer] Stopping Agent Neo MCP Server...');
     await this.server.close();
     this.isRunning = false;
-    console.error('[MCPServer] Code Agent MCP Server stopped');
+    console.error('[MCPServer] Agent Neo MCP Server stopped');
   }
 }
 

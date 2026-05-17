@@ -179,6 +179,27 @@ class AgentLoop {
 
 ---
 
+## 2026-05-15~17 Agent Engine 与接力运行
+
+Agent Neo 现在把"谁来跑这一轮"拆成 engine 层。Native engine 继续走现有 `ConversationRuntime`；Codex CLI 和 Claude Code 通过受控 adapter 运行，并把输出归一回 session、TaskPanel 和 review 链路。
+
+| 层 | 职责 | 文件 |
+|----|------|------|
+| Contract | 定义 `AgentEngineKind = native / codex_cli / claude_code`、安装状态、runtime 状态、capabilities、permission profile 和 session metadata | `src/shared/contract/agentEngine.ts` |
+| Registry | 探测 `codex --version` / `claude --version`，生成 descriptor；Native engine label 是 Agent Neo | `src/main/services/agentEngine/agentEngineRegistry.ts` |
+| Guard | 外部 engine 只允许 manual chat session、read-only profile、cwd 落在 workspace 内；read-only session、import session 和无 workspace 的 session 会被拒绝 | `src/main/services/agentEngine/agentEngineGuards.ts` |
+| Adapters | Codex 走 `codex exec --json`，Claude 走 `claude -p --output-format stream-json --permission-mode plan`，事件流归一为文本、tool call、permission、task status、artifact ref、done/error | `codexCliAdapter.ts`、`claudeCodeAdapter.ts` |
+| Persistence | `sessions.agent_engine` 记录当前 session 的 engine metadata；外部原始日志走 log path / output ref，不直接写进普通 messages | `SessionRepository`、`schema.ts` |
+| Task 回带 | 外部 engine 的 cwd、命令摘要、日志路径、完成/失败状态写入 `BackgroundTaskLedger`，TaskPanel 与 Run Status Rail 展示 | `src/main/tasks/backgroundTaskLedger.ts`、`useRunWorkbenchModel.ts` |
+| 历史导入 | Codex / Claude 历史 jsonl 可扫描、预览、标准化，供 review 或接力 | `agentEngineHistoryImport.ts` |
+
+运行边界：
+- Native Agent Neo 是唯一拥有完整工具/权限/trace/review 队列的默认 engine。
+- 外部 engine 这一版作为受控接力能力，只给 read-only profile；需要写操作时回到 Native engine 或走显式后续设计。
+- engine 选择属于 session state，前端通过 ModelSwitcher 操作，主进程通过 `agentEngine.ipc.ts` 校验后写回。
+
+---
+
 ## 2026-04-27 运行时加固状态
 
 这轮加固把 agent loop 从“能跑通”推进到“关键终态可解释、可中断、可恢复”。它仍不等于全量真实 app smoke 已覆盖，但 P1/P2 中的 active path blocker 已经有代码和定向测试闭环。

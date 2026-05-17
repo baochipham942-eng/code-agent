@@ -14,7 +14,7 @@
  */
 
 import * as esbuild from 'esbuild';
-import { writeFileSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { mkdirSync } from 'fs';
 
 // ---------------------------------------------------------------------------
@@ -90,7 +90,8 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
       format: 'cjs',
       external: NATIVE_EXTERNALS,
       alias: ELECTRON_ALIAS,
-      sourcemap: true,
+      minify: !isDev,
+      sourcemap: isDev,
     },
     mcp: {
       name: 'MCP Server',
@@ -144,6 +145,13 @@ async function build(target: BuildTarget): Promise<void> {
     banner: target.banner ? { js: target.banner } : undefined,
     logLevel: 'error',
   });
+
+  if (!target.sourcemap) {
+    const mapPath = `${target.outfile}.map`;
+    if (existsSync(mapPath)) {
+      unlinkSync(mapPath);
+    }
+  }
 
   target.postBuild?.();
 

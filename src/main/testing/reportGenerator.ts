@@ -14,7 +14,7 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
   const lines: string[] = [];
 
   // Header
-  lines.push('# Code Agent 自动化测试报告');
+  lines.push('# Agent Neo 自动化测试报告');
   lines.push('');
   lines.push(`**生成时间**: ${formatDate(summary.endTime)}`);
   lines.push(`**运行 ID**: \`${summary.runId}\``);
@@ -273,7 +273,7 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
   // Footer
   lines.push('---');
   lines.push('');
-  lines.push('*此报告由 Code Agent 自动化测试框架生成*');
+  lines.push('*此报告由 Agent Neo 自动化测试框架生成*');
 
   return lines.join('\n');
 }
@@ -293,7 +293,7 @@ export function generateConsoleReport(summary: TestRunSummary): string {
 
   lines.push('');
   lines.push('═══════════════════════════════════════════════════════');
-  lines.push('              Code Agent Test Results                  ');
+  lines.push('              Agent Neo Test Results                   ');
   lines.push('═══════════════════════════════════════════════════════');
   lines.push('');
 

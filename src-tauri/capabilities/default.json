@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for Code Agent",
+  "description": "Default capabilities for Agent Neo",
   "windows": ["main"],
   "remote": {
     "urls": ["http://localhost:8180/*"]

@@ -79,8 +79,13 @@ describe('Claude Code adapter helpers', () => {
     const args = buildClaudeCodeArgs('workspace_write');
 
     expect(args).toContain('-p');
+    expect(args).toContain('--verbose');
+    expect(args).toContain('--setting-sources');
+    expect(args).toContain('local');
+    expect(args).toContain('--disable-slash-commands');
     expect(args).toContain('stream-json');
     expect(args).toContain('plan');
+    expect(args).toContain('--tools');
     expect(args).toContain('Read,Glob,Grep,LS');
     expect(args).toContain('--no-chrome');
     expect(args).toContain('--strict-mcp-config');
@@ -105,6 +110,19 @@ describe('Claude Code adapter helpers', () => {
     });
 
     expect(parseClaudeCodeJsonLine(JSON.stringify({
+      type: 'stream_event',
+      event: {
+        type: 'content_block_delta',
+        delta: { type: 'text_delta', text: 'streaming' },
+      },
+      session_id: 'claude-session',
+    }))).toMatchObject({
+      textDelta: 'streaming',
+      textDeltaSource: 'stream',
+      externalSessionId: 'claude-session',
+    });
+
+    expect(parseClaudeCodeJsonLine(JSON.stringify({
       type: 'result',
       subtype: 'success',
       result: 'final answer',
@@ -121,6 +139,8 @@ describe('ClaudeCodeAdapter.run', () => {
   let tempDir: string;
   let workspaceRoot: string;
   const oldAnthropicKey = process.env.ANTHROPIC_API_KEY;
+  const oldOpenAiKey = process.env.OPENAI_API_KEY;
+  const oldGithubToken = process.env.GITHUB_TOKEN;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -145,15 +165,37 @@ describe('ClaudeCodeAdapter.run', () => {
     } else {
       process.env.ANTHROPIC_API_KEY = oldAnthropicKey;
     }
+    if (oldOpenAiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = oldOpenAiKey;
+    }
+    if (oldGithubToken === undefined) {
+      delete process.env.GITHUB_TOKEN;
+    } else {
+      process.env.GITHUB_TOKEN = oldGithubToken;
+    }
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
   it('runs Claude Code through stdin, writes logs, and keeps sensitive env values out of child env and ledger', async () => {
     process.env.ANTHROPIC_API_KEY = 'super-secret-value';
+    process.env.OPENAI_API_KEY = 'openai-super-secret-value';
+    process.env.GITHUB_TOKEN = 'github-super-secret-value';
     let child: ReturnType<typeof createMockChild>;
     mocks.spawn.mockImplementation(() => {
       child = createMockChild([
         JSON.stringify({ type: 'system', subtype: 'init', session_id: 'claude-session' }),
+        JSON.stringify({
+          type: 'stream_event',
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'streamed ' } },
+          session_id: 'claude-session',
+        }),
+        JSON.stringify({
+          type: 'stream_event',
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'text' } },
+          session_id: 'claude-session',
+        }),
         JSON.stringify({
           type: 'assistant',
           message: {
@@ -183,7 +225,19 @@ describe('ClaudeCodeAdapter.run', () => {
     });
     expect(mocks.spawn).toHaveBeenCalledWith(
       '/Users/linchen/.local/bin/claude',
-      expect.arrayContaining(['-p', '--output-format', 'stream-json', '--permission-mode', 'plan']),
+      expect.arrayContaining([
+        '-p',
+        '--verbose',
+        '--setting-sources',
+        'local',
+        '--disable-slash-commands',
+        '--output-format',
+        'stream-json',
+        '--permission-mode',
+        'plan',
+        '--tools',
+        'Read,Glob,Grep,LS',
+      ]),
       expect.objectContaining({ cwd: await fs.realpath(workspaceRoot), stdio: ['pipe', 'pipe', 'pipe'] }),
     );
     expect(mocks.spawn.mock.calls[0][0]).not.toBe('/usr/bin/cc');
@@ -191,12 +245,28 @@ describe('ClaudeCodeAdapter.run', () => {
 
     const spawnOptions = mocks.spawn.mock.calls[0][2] as { env: NodeJS.ProcessEnv };
     expect(spawnOptions.env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(spawnOptions.env.OPENAI_API_KEY).toBeUndefined();
+    expect(spawnOptions.env.GITHUB_TOKEN).toBeUndefined();
     expect(JSON.stringify(spawnOptions.env)).not.toContain('super-secret-value');
 
     const firstTask = mocks.upsertTask.mock.calls[0][0];
     expect(firstTask.command).toContain('<prompt:redacted>');
-    expect(firstTask.metadata.env.redacted).toContain('ANTHROPIC_API_KEY');
+    expect(firstTask.command).toContain('--verbose');
+    expect(firstTask.command).toContain('--setting-sources local');
+    expect(firstTask.command).toContain('--disable-slash-commands');
+    expect(firstTask.command).toContain('--tools Read,Glob,Grep,LS');
+    expect(firstTask.metadata.env.redacted).toEqual(expect.arrayContaining([
+      'ANTHROPIC_API_KEY',
+      'GITHUB_TOKEN',
+      'OPENAI_API_KEY',
+    ]));
     expect(JSON.stringify(firstTask)).not.toContain('super-secret-value');
+
+    const textDeltas = mocks.webContentsSend.mock.calls
+      .map((call) => call[1])
+      .filter((event) => event?.type === 'message_delta')
+      .map((event) => event.data.text);
+    expect(textDeltas).toEqual(['streamed ', 'text']);
 
     const logPath = result.logPath || '';
     expect(logPath).toContain(path.join('agent-engines', 'claude-code'));
@@ -247,6 +317,18 @@ describe('ClaudeCodeAdapter.run', () => {
       cwd: outsideCwd,
       workspaceRoot,
     })).rejects.toThrow(/inside workspace/);
+
+    expect(mocks.spawn).not.toHaveBeenCalled();
+  });
+
+  it('rejects workspace-write permission profile before spawning Claude Code', async () => {
+    await expect(new ClaudeCodeAdapter().run({
+      sessionId: 'session-1',
+      prompt: 'inspect only',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      permissionProfile: 'workspace_write',
+    })).rejects.toThrow(/read-only/);
 
     expect(mocks.spawn).not.toHaveBeenCalled();
   });

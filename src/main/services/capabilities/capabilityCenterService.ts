@@ -29,7 +29,6 @@ import type {
   HttpApiChannelConfig,
   TelegramChannelConfig,
 } from '../../../shared/contract/channel';
-import type { AgentEngineDescriptor, AgentEngineRuntimeState } from '../../../shared/contract/agentEngine';
 import { NATIVE_CONNECTOR_IDS, type NativeConnectorId } from '../../../shared/constants';
 import { getChannelManager } from '../../channels';
 import { getConnectorRegistry } from '../../connectors';
@@ -57,6 +56,7 @@ import {
 } from '../../ipc/mcp.ipc';
 import { resolveInstallDraftConfig } from './capabilityDraftResolver';
 import { getAgentEngineRegistry } from '../agentEngine';
+import { buildAgentEngineCapabilityItem } from './agentEngineCapabilityItems';
 
 const logger = createLogger('CapabilityCenterService');
 
@@ -258,19 +258,6 @@ function requirement(
     ...(value ? { value } : {}),
     ...(sensitive ? { sensitive } : {}),
   };
-}
-
-function runtimeFromEngineState(state: AgentEngineRuntimeState): CapabilityRuntimeState {
-  switch (state) {
-    case 'ready':
-    case 'not_configured':
-    case 'blocked':
-    case 'error':
-    case 'unknown':
-      return state;
-    default:
-      return 'unknown';
-  }
 }
 
 function riskFromAllowedTools(allowedTools: string[]): CapabilityRiskInfo {
@@ -518,68 +505,7 @@ class CapabilityCenterService {
 
   private async listAgentEngines(): Promise<CapabilityCenterItem[]> {
     const descriptors = await getAgentEngineRegistry().list();
-    return descriptors.map((descriptor) => this.buildAgentEngineItem(descriptor));
-  }
-
-  private buildAgentEngineItem(descriptor: AgentEngineDescriptor): CapabilityCenterItem {
-    const isNative = descriptor.kind === 'native';
-    const executable = descriptor.capabilities.includes('execute') && descriptor.executable;
-    const binaryStatus = descriptor.installState === 'missing'
-      ? 'missing'
-      : isNative
-        ? 'not_applicable'
-        : 'met';
-
-    return {
-      id: encodeCapabilityId('agent-engine', descriptor.kind),
-      kind: 'agent_engine',
-      name: descriptor.label,
-      summary: descriptor.summary,
-      tags: ['agent-engine', descriptor.kind, descriptor.defaultPermissionProfile],
-      source: {
-        kind: isNative ? 'builtin' : 'runtime',
-        label: sourceLabel(isNative ? 'builtin' : 'runtime'),
-        path: descriptor.binaryPath,
-        version: descriptor.version,
-      },
-      state: buildState({
-        install: isNative
-          ? 'not_applicable'
-          : descriptor.installState === 'installed'
-            ? 'installed'
-            : 'missing',
-        enable: 'not_applicable',
-        runtime: runtimeFromEngineState(descriptor.runtimeState),
-        statusLabel: executable ? '可执行' : descriptor.installState === 'missing' ? '未安装' : '检测可用',
-        error: descriptor.lastError,
-      }),
-      risk: buildRisk(descriptor.riskTier, [
-        '外部 engine 只允许在当前 workspace cwd 内运行',
-        ...(descriptor.auditNotes ?? []),
-      ]),
-      permissions: [
-        permission('Workspace cwd guard', 'medium', '外部 engine 运行前会校验 cwd 必须落在当前 workspace 内'),
-        permission('No implicit channel launch', 'medium', 'Channel 和 Automation 不能隐式触发外部 engine'),
-      ],
-      config: [
-        requirement('binary', `${descriptor.label} binary`, binaryStatus, descriptor.binaryPath),
-        requirement('account', `${descriptor.label} login`, isNative ? 'not_applicable' : 'unknown'),
-        requirement('config', 'Permission profile', 'met', descriptor.defaultPermissionProfile),
-      ],
-      dependencies: [],
-      audit: {
-        installedFiles: descriptor.binaryPath ? [descriptor.binaryPath] : [],
-        notes: [
-          `command: ${descriptor.command ?? 'builtin'}`,
-          `cwd policy: ${descriptor.cwdPolicy}`,
-          ...(descriptor.auditNotes ?? []),
-        ],
-      },
-      actions: buildAction(false, 'Agent Engine 的检测、启用和执行入口分开管理'),
-      metrics: {
-        tools: descriptor.capabilities.length,
-      },
-    };
+    return descriptors.map(buildAgentEngineCapabilityItem);
   }
 
   async setEnabled(request: CapabilityToggleRequest, options: CapabilityToggleOptions = {}): Promise<CapabilityCenterInventory> {

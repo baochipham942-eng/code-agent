@@ -171,6 +171,89 @@ describe('CapabilityCenterSettings', () => {
     expect(html).toContain(`registry hash sha256:${'a'.repeat(64)}`);
   });
 
+  it('shows external engine status, version, cwd, and read-only guard on the card', () => {
+    mockInventory([
+      makeItem({
+        id: 'agent-engine:codex_cli',
+        kind: 'agent_engine',
+        name: 'Codex CLI',
+        summary: 'Runs Codex CLI through a controlled workspace cwd.',
+        source: {
+          kind: 'runtime',
+          label: '运行时',
+          path: '/usr/local/bin/codex',
+          version: 'codex-cli 0.130.0',
+        },
+        state: {
+          install: 'installed',
+          enable: 'not_applicable',
+          runtime: 'ready',
+          mount: 'not_applicable',
+          statusLabel: '版本检测通过',
+        },
+        risk: {
+          tier: 'medium',
+          reasons: ['外部 engine 只允许在当前 workspace cwd 内运行'],
+        },
+        permissions: [
+          {
+            label: 'Read-only default',
+            level: 'low',
+            detail: '当前版本外部 engine 手动选择后默认使用 read_only profile',
+          },
+        ],
+        config: [
+          {
+            kind: 'config',
+            label: 'Launch mode',
+            status: 'met',
+            value: 'external CLI',
+          },
+          {
+            kind: 'config',
+            label: 'Permission profile',
+            status: 'met',
+            value: 'read_only',
+          },
+          {
+            kind: 'config',
+            label: 'Workspace policy',
+            status: 'met',
+            value: 'current workspace only',
+          },
+        ],
+        audit: {
+          installedFiles: ['/usr/local/bin/codex'],
+          notes: [
+            'command: codex exec --json',
+            'cwd policy: workspace_only',
+            'detected at: 2026-05-16T00:00:00.000Z',
+          ],
+        },
+        actions: {
+          canEnable: false,
+          canDisable: false,
+          reason: 'Agent Engine 的检测、启用和执行入口分开管理',
+        },
+      }),
+    ]);
+
+    const html = renderToStaticMarkup(
+      React.createElement(CapabilityCenterSettings, { onNavigateSettings: vi.fn() }),
+    );
+
+    expect(html).toContain('Engine');
+    expect(html).toContain('Codex CLI');
+    expect(html).toContain('外部 CLI');
+    expect(html).toContain('只读默认');
+    expect(html).toContain('当前 workspace');
+    expect(html).toContain('codex-cli 0.130.0');
+    expect(html).toContain('/usr/local/bin/codex');
+    expect(html).toContain('检测状态');
+    expect(html).toContain('permission read_only');
+    expect(html).toContain('cwd current workspace only');
+  });
+
   it('keeps toggle labels for capabilities that can be enabled or disabled', () => {
     mockInventory([
       makeItem({

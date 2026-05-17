@@ -74,6 +74,7 @@ export const ComboSkillCard: React.FC<ComboSkillCardProps> = ({
           />
         ) : (
           <button
+            type="button"
             onClick={() => setIsEditing(true)}
             className="mt-0.5 text-xs text-amber-200/70 hover:text-amber-200 truncate block"
             title="点击修改名称"
@@ -84,6 +85,7 @@ export const ComboSkillCard: React.FC<ComboSkillCardProps> = ({
       </div>
 
       <button
+        type="button"
         onClick={handleSave}
         disabled={isSaving || !name.trim()}
         className="flex items-center gap-1 px-2 py-1 text-xs bg-amber-500/20 text-amber-300 rounded hover:bg-amber-500/30 transition-colors disabled:opacity-50"
@@ -97,6 +99,7 @@ export const ComboSkillCard: React.FC<ComboSkillCardProps> = ({
       </button>
 
       <button
+        type="button"
         onClick={onDismiss}
         className="p-0.5 text-zinc-500 hover:text-zinc-300 transition-colors"
         title="忽略"

@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { AlertTriangle, Check, Loader2, Plug, Sparkles, Wrench } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Loader2, Sparkles, Wrench } from 'lucide-react';
 import { useComposerStore } from '../../../stores/composerStore';
 import { useWorkbenchCapabilityRegistry } from '../../../hooks/useWorkbenchCapabilityRegistry';
 import { useWorkbenchCapabilityQuickActionRunner } from '../../../hooks/useWorkbenchCapabilityQuickActionRunner';
@@ -69,28 +69,28 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
   onDirectTargetIdsChange: _onDirectTargetIdsChange,
 }) => {
   const selectedSkillIds = useComposerStore((state) => state.selectedSkillIds);
-  const selectedMcpServerIds = useComposerStore((state) => state.selectedMcpServerIds);
   const setSelectedSkillIds = useComposerStore((state) => state.setSelectedSkillIds);
-  const setSelectedMcpServerIds = useComposerStore((state) => state.setSelectedMcpServerIds);
   const { skills, connectors, mcpServers } = useWorkbenchCapabilityRegistry();
   const { history } = useWorkbenchInsights();
   const { runningActionKey, actionErrors, completedActions, runQuickAction } = useWorkbenchCapabilityQuickActionRunner();
   const [activeSheetTarget, setActiveSheetTarget] = useState<WorkbenchCapabilityTarget | null>(null);
+  // 聊天区默认折叠 Skills 网格，避免占用输入视野。点击 header 切换展开。
+  const [gridExpanded, setGridExpanded] = useState(false);
   const activeSkills = skills.filter((skill) => skill.visibleInWorkbench);
-  const activeMcpServers = mcpServers.filter((server) => server.visibleInWorkbench);
+  const selectedSkillCount = activeSkills.filter((skill) => skill.selected).length;
   // connectors 保留在 registry 查询里，仅供 sheet 通过 capability key 反查（历史面板引用等）；
   // UI 不再展示 connector 选择器（#2），也不把 blocked connector 塞进 Quick Actions。
   const registryItems = useMemo(
     () => [...skills, ...connectors, ...mcpServers],
     [connectors, mcpServers, skills],
   );
-  const blockedCapabilities = [...activeSkills, ...activeMcpServers]
+  const blockedCapabilities = activeSkills
     .map((capability) => ({
       capability,
       actions: getWorkbenchCapabilityQuickActions(capability),
     }))
     .filter(({ capability, actions }) => capability.selected && capability.blocked && actions.length > 0);
-  const resolvedCapabilities = [...activeSkills, ...activeMcpServers]
+  const resolvedCapabilities = activeSkills
     .filter((capability) => capability.selected && !capability.blocked && Boolean(completedActions[capability.key]))
     .map((capability) => ({
       capability,
@@ -98,7 +98,6 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
     }))
     .filter(({ feedback }) => Boolean(feedback));
   const shouldShowSkills = activeSkills.length > 0;
-  const shouldShowMcp = activeMcpServers.length > 0;
   const activeSheetCapability = useMemo(
     () => resolveWorkbenchCapabilityFromSources({
       target: activeSheetTarget,
@@ -118,13 +117,6 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
     setSelectedSkillIds(nextIds);
   }, [selectedSkillIds, setSelectedSkillIds]);
 
-  const toggleMcpServer = useCallback((serverId: string) => {
-    const nextIds = selectedMcpServerIds.includes(serverId)
-      ? selectedMcpServerIds.filter((id) => id !== serverId)
-      : [...selectedMcpServerIds, serverId];
-    setSelectedMcpServerIds(nextIds);
-  }, [selectedMcpServerIds, setSelectedMcpServerIds]);
-
   const openCapabilitySheet = useCallback((capability: WorkbenchCapabilityRegistryItem) => {
     setActiveSheetTarget({
       kind: capability.kind,
@@ -134,9 +126,9 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
 
   // 首行的 workspace / Routing / Browser 已分别迁到 TitleBar 和 ChatInput AbilityMenu；
   // Browser preview 面板（URL/Title/Frontmost/Readiness/Repair）已整体移除，避免多处
-  // workbench 源同时展示且互相漂移。InlineWorkbenchBar 现在只保留 skills / MCP /
-  // blocked capabilities 的只读投影。
-  const shouldRenderBar = shouldShowSkills || shouldShowMcp || blockedCapabilities.length > 0 || resolvedCapabilities.length > 0;
+  // workbench 源同时展示且互相漂移。InlineWorkbenchBar 现在只保留 Skills；
+  // MCP 状态留给 TaskPanel / Settings，避免在聊天区出现计数条。
+  const shouldRenderBar = shouldShowSkills || blockedCapabilities.length > 0 || resolvedCapabilities.length > 0;
   if (!shouldRenderBar) {
     return (
       <WorkbenchCapabilitySheetLite
@@ -152,82 +144,65 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
     );
   }
 
-  return (
-    <div className="mb-2 rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-2">
-      {(shouldShowSkills || shouldShowMcp) && (
-        <div className="mt-2 space-y-2">
-          {shouldShowSkills && (
-            <div>
-              <WorkbenchSectionHeader
-                icon={<Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />}
-                label="Skills"
-                className="mb-1 px-0"
-                labelClassName="text-[11px] text-zinc-500"
-              />
-              <div className="flex flex-wrap items-center gap-1.5">
-                {activeSkills.length > 0 ? (
-                  activeSkills.map((skill) => {
-                    return (
-                      <div key={skill.id} className="flex items-center gap-1">
-                        <WorkbenchSelectablePill
-                          onClick={() => toggleSkill(skill.id)}
-                          tone="skill"
-                          selected={skill.selected}
-                          dimmed={!skill.available}
-                          title={getWorkbenchCapabilityTitle(skill, { locale: 'zh' })}
-                        >
-                          {skill.label}
-                        </WorkbenchSelectablePill>
-                        <WorkbenchCapabilityDetailButton
-                          label={skill.label}
-                          onClick={() => openCapabilitySheet(skill)}
-                        />
-                      </div>
-                    );
-                  })
-                ) : (
-                  <span className="text-[11px] text-zinc-500">当前会话还没有 mounted skills。</span>
-                )}
-              </div>
-            </div>
-          )}
+  const summaryParts: string[] = [];
+  if (shouldShowSkills) summaryParts.push(`Skills ${selectedSkillCount}/${activeSkills.length}`);
+  const summaryText = summaryParts.join(' · ');
 
-          {shouldShowMcp && (
-            <div>
-              <WorkbenchSectionHeader
-                icon={<Plug className="h-3.5 w-3.5 text-emerald-400" />}
-                label="MCP"
-                className="mb-1 px-0"
-                labelClassName="text-[11px] text-zinc-500"
-              />
-              <div className="flex flex-wrap items-center gap-1.5">
-                {activeMcpServers.length > 0 ? (
-                  activeMcpServers.map((server) => {
-                    return (
-                      <div key={server.id} className="flex items-center gap-1">
-                        <WorkbenchSelectablePill
-                          onClick={() => toggleMcpServer(server.id)}
-                          tone="mcp"
-                          selected={server.selected}
-                          dimmed={!server.available}
-                          title={getWorkbenchCapabilityTitle(server, { locale: 'zh' })}
-                        >
-                          {server.label}
-                        </WorkbenchSelectablePill>
-                        <WorkbenchCapabilityDetailButton
-                          label={server.label}
-                          onClick={() => openCapabilitySheet(server)}
-                        />
-                      </div>
-                    );
-                  })
-                ) : (
-                  <span className="text-[11px] text-zinc-500">当前没有可选 MCP server。</span>
-                )}
-              </div>
+  return (
+    <div className="mb-2 rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-1.5">
+      {shouldShowSkills && (
+        <>
+          <button
+            type="button"
+            onClick={() => setGridExpanded((v) => !v)}
+            className="flex w-full items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+            aria-expanded={gridExpanded}
+          >
+            {gridExpanded
+              ? <ChevronDown className="h-3 w-3" />
+              : <ChevronRight className="h-3 w-3" />}
+            <span>{summaryText || 'Capabilities'}</span>
+          </button>
+
+          {gridExpanded && (
+            <div className="mt-2 space-y-2">
+              {shouldShowSkills && (
+                <div>
+                  <WorkbenchSectionHeader
+                    icon={<Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />}
+                    label="Skills"
+                    className="mb-1 px-0"
+                    labelClassName="text-[11px] text-zinc-500"
+                  />
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {activeSkills.length > 0 ? (
+                      activeSkills.map((skill) => (
+                        <div key={skill.id} className="flex items-center gap-1">
+                          <WorkbenchSelectablePill
+                            onClick={() => toggleSkill(skill.id)}
+                            tone="skill"
+                            selected={skill.selected}
+                            dimmed={!skill.available}
+                            title={getWorkbenchCapabilityTitle(skill, { locale: 'zh' })}
+                          >
+                            {skill.label}
+                          </WorkbenchSelectablePill>
+                          <WorkbenchCapabilityDetailButton
+                            label={skill.label}
+                            onClick={() => openCapabilitySheet(skill)}
+                          />
+                        </div>
+                      ))
+                    ) : (
+                      <span className="text-[11px] text-zinc-500">当前会话还没有 mounted skills。</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
-        </div>
+        </>
       )}
 
       {blockedCapabilities.length > 0 && (

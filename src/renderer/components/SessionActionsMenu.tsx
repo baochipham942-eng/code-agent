@@ -13,10 +13,12 @@ import {
   MoreHorizontal, RotateCcw, TimerReset, Eye, ClipboardList, Download, FolderOpen, Play,
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
+import { useAuthStore } from '../stores/authStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useEvalCenterStore } from '../stores/evalCenterStore';
 import { getSessionStatusPresentation } from '../utils/sessionPresentation';
+import { canAccessFeature } from '../utils/accessControl';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { IconButton } from './primitives';
 
@@ -41,6 +43,8 @@ export const SessionActionsMenu: React.FC = () => {
   const sessionStates = useTaskStore((s) => s.sessionStates);
   const reviewQueue = useEvalCenterStore((s) => s.reviewQueue);
   const enqueueReviewItem = useEvalCenterStore((s) => s.enqueueReviewItem);
+  const canOpenReplay = useAuthStore((s) => canAccessFeature('eval.replay', s.user));
+  const canUseReviewQueue = useAuthStore((s) => canAccessFeature('eval.reviewQueue', s.user));
 
   const currentSession = sessions.find((s) => s.id === currentSessionId) || null;
 
@@ -188,20 +192,24 @@ export const SessionActionsMenu: React.FC = () => {
     icon: <Play className="h-3.5 w-3.5" />,
     onClick: () => { close(); openDevServerLauncher(); },
   });
-  items.push({
-    key: 'replay',
-    label: '打开 Replay',
-    icon: <Eye className="h-3.5 w-3.5" />,
-    onClick: handleOpenReplay,
-  });
-  items.push({
-    key: 'review',
-    label: isInReviewQueue ? '已在 Review' : '加入 Review',
-    icon: <ClipboardList className="h-3.5 w-3.5" />,
-    onClick: handleAddToReviewQueue,
-    disabled: isInReviewQueue,
-    tone: isInReviewQueue ? 'active' : 'default',
-  });
+  if (canOpenReplay) {
+    items.push({
+      key: 'replay',
+      label: '打开 Replay',
+      icon: <Eye className="h-3.5 w-3.5" />,
+      onClick: handleOpenReplay,
+    });
+  }
+  if (canUseReviewQueue) {
+    items.push({
+      key: 'review',
+      label: isInReviewQueue ? '已在 Review' : '加入 Review',
+      icon: <ClipboardList className="h-3.5 w-3.5" />,
+      onClick: handleAddToReviewQueue,
+      disabled: isInReviewQueue,
+      tone: isInReviewQueue ? 'active' : 'default',
+    });
+  }
   items.push({
     key: 'export',
     label: '导出 Markdown',

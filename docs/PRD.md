@@ -1,7 +1,7 @@
-# Code Agent - 产品需求文档 (PRD)
+# Agent Neo / Code Agent - 产品需求文档 (PRD)
 
-> 版本: 2.8
-> 日期: 2026-05-11
+> 版本: 2.9
+> 日期: 2026-05-17
 > 作者: Lin Chen
 
 ---
@@ -10,19 +10,21 @@
 
 ### 1.1 一句话描述
 
-**Code Agent** = 评测驱动的多模型生活 / 工作 AI 助手，保留强编程和本地执行能力
+**Agent Neo** = 评测驱动的多模型生活 / 工作 AI 助手，保留强编程、本地执行、外部 agent 接力和可验收交付能力。
+
+`Code Agent` 是代码仓库、历史包名和旧文档名；`Agent Neo` 是 2026-05-16 起的产品品牌。
 
 ### 1.2 核心差异化
 
-| 维度 | Code Agent | 竞品（Claude Code / Cursor / Windsurf） |
+| 维度 | Agent Neo | 竞品（Claude Code / Cursor / Windsurf） |
 |------|-----------|----------------------------------------|
-| 模型绑定 | 14+ Provider 智能路由，模型目录已同步 GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 小米 MiMo v2.5 Pro | 锁定 1-2 家 Provider |
+| 模型与 agent 选择 | 14+ Provider 智能路由 + Native / Codex CLI / Claude Code 三类 Agent Engine；模型目录已同步 GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 小米 MiMo v2.5 Pro | 多数锁定 1-2 家 Provider 或单一 agent runtime |
 | 成本控制 | 自适应路由降本 60%（简单任务→免费模型） | 固定模型，无成本优化 |
 | 质量闭环 | 内置 Swiss Cheese 评测框架，132→164/200 可量化 | 无内置评测 |
-| 记忆系统 | Light Memory 文件即记忆，跨会话持续学习 | 无跨会话学习 |
+| 记忆系统 | Light Memory 文件即记忆 + 记忆导入、候选收件箱、注入追踪和设置页管理 | 无跨会话学习 |
 | 协作模式 | DAG 多 Agent 并行编排 | 单 Agent |
-| 浏览器/桌面执行 | in-app managed browser + Computer Surface，带会话、profile、artifact、TargetRef 和安全恢复路径 | 多数停留在单步浏览器或前台桌面点击 |
-| 部署形态 | Tauri 桌面 + Web 双模式 | 仅桌面或仅 IDE 插件 |
+| 浏览器/桌面执行 | in-app managed browser + Browser Surface + In-App HTML Validation + Computer Surface，带会话、profile、artifact、TargetRef 和安全恢复路径 | 多数停留在单步浏览器或前台桌面点击 |
+| 管理与部署 | Tauri 桌面 + Web 双模式 + 本地 API Key 配置 + 可选自动更新 + 管理员用户/邀请码页面 | 仅桌面或仅 IDE 插件 |
 
 ### 1.3 目标用户
 
@@ -464,6 +466,39 @@ artifact 不再只看"有没有生成文件"，而是进入按类型验证、失
 | Vision 模型切换 | ✅ | 视觉模型切到免费档 `glm-4.1v-thinking-flash`（带推理链），8 个视觉模块统一从 `ZHIPU_VISION_MODEL` 常量读取 |
 | Channel / 本地活动隐私防火墙 | ✅ | 渠道入站消息与本地桌面活动落地前统一脱敏：`ChannelPrivacyMode` 三档（local-redact/allow-raw/off）+ 飞书接入 + 设置 UI；本地活动事件脱敏 + 截图区域级 blur；`sensitiveDataGuard` 补 SSN / 信用卡 Luhn 脱敏；Rust 采集器侧对称脱敏。是 Sensitive Data Guard 派生数据脱敏层的延伸，raw session 消息仍全保真 |
 
+#### 3.1.23 Agent Neo 0.16.75 近两天产品增量（2026-05-15~05-17）
+
+这一轮把产品从"能跑的 agent workbench"推进到"能让用户配置、接力、验收和运营的 Agent Neo"。重点是把高频入口留给聊天，把低频能力收到设置与管理面，把生成物验证从外部脚本带回 app 内。
+
+| 能力 | 状态 | 说明 |
+|------|------|------|
+| Agent Neo 品牌与站点 | ✅ | App 名称、Tauri bundle、icon、About/Update/terminal 文案、MCP server 标识和公开 landing page 已切到 Agent Neo；代码仓库和 npm 包仍沿用 `code-agent` |
+| 新用户模型配置 onboarding | ✅ | 登录/注册后引导用户设置本地 API Key；`ModelSettings` 负责 Provider 配置、连通性测试和模型目录发现，避免首次运行卡在无模型状态 |
+| 本地 API Key 模型策略 | ✅ | 服务器侧 cloud proxy 已退场；模型请求默认使用本机配置的 provider key，图像/PDF/PPT 等网络模型工具也走相同配置边界 |
+| Agent Engine 选择器 | ✅ | Native Agent Neo、Codex CLI、Claude Code 进入同一模型胶囊；外部 engine 默认 read-only、cwd 必须在 workspace 内，运行日志和输出引用进入 TaskPanel |
+| 外部会话导入 | ✅ | Codex / Claude 历史 jsonl 可被扫描、预览和标准化为 session 片段，用于接力、复盘和 review |
+| 管理设置面 | ✅ | Settings 分成基础偏好、能力与连接、记忆与隐私、系统、管理五组；Workspace、Automation、Data、Model、MCP、Skills、Channels、Capability Center 都有可搜索入口 |
+| 统一记忆管理 | ✅ | 记忆导入、候选决策、条目管理、注入 trace、Knowledge Memory Audit 和 seed injection 串成一条可操作链路 |
+| Capability Center 本地货架 | ✅ | Skill / MCP template / tool bundle / channel adapter / workflow recipe / connector / agent engine 可发现；MCP 安装先生成 disabled draft，可删除、可回滚、可去 MCP 设置管理 |
+| In-App HTML Validation | ✅ | 新增 `validate_html_in_app` 工具和右侧验证面板，HTML artifact 可在 app 内 iframe 里执行 click/hover/type/press/wait + expect 脚本，用户能看见验证过程 |
+| Managed Browser Surface | ✅ | Sidebar 露出 Browser Surface 面板，Browser relay service 与 managed browser session 接入右侧工作区，浏览器状态从底层工具变成可查看工作面 |
+| Artifact repair Route A | ✅ | artifact repair 改成 full-rewrite-first；repair round 会继承 baseline 和 failures，并通过 monotonic gate 避免越修越差 |
+| Assistant handoff proposals | ✅ | 长任务尾部可生成 handoff proposal，TaskPanel 用 `HandoffCard` 展示，帮助用户把未完成上下文带到下一轮或外部 agent |
+| Background task ledger | ✅ | Shell/background task 与 PTY session 进入统一 task ledger；完成/失败通知、output refs 和当前 session 回带在 TaskPanel/Run Status Rail 可见 |
+| TaskPanel 完成态可读性 | ✅ | 任务完成后仍保留 details，不再因为终态折叠掉验收、输出和失败原因 |
+| Hook source metadata | ✅ | Hook trigger source 进入 hook history 和 turn timeline，聊天 turn 展示来源、事件、allow/block、耗时和错误数 |
+| 管理员用户/邀请码 | ✅ | 管理员可查看用户 dashboard、管理 invite code；admin-only surfaces 走统一 guard，普通用户入口和 IPC 都会被拦截 |
+| 可选 Tauri 更新 | ✅ | release workflow、update manifest、Settings Update 页面和启动提示打通；up-to-date 状态不再弹无意义 toast |
+| 分发安全扫描 | ✅ | release 包关闭第一方 sourcemap，Tauri resources 移除 webServer map；`release:security-scan` 扫描 sourcemap、sourceMappingURL、docs/tests/src、`.env`、私钥等高风险内容，并接入 bundle/install/release |
+| 游戏生成 A/B 资产 | ✅ | 平台游戏生成的 A/B 测试产物、原始推理、截图和 report 已落盘，作为 artifact acceptance 与 prompt 对照的实证材料 |
+
+当前边界：
+- 外部 Agent Engine 这一版只放行 read-only profile，不允许外部 CLI 在 app 内直接获得写权限。
+- Capability Center 的远程 marketplace 仍是后续方向；当前已完成的是本地 curated registry 与 disabled draft 安装安全层。
+- In-App HTML Validation 适合验证自己生成的 HTML artifact；真实网站、反 bot、原生菜单、drag-and-drop 仍走 Playwright/CDP 或人工接管路径。
+- 管理员页面依赖 Supabase RPC 和 profile admin 标记；没有 admin 权限时页面可见性和 IPC 都不能绕过 guard。
+- 分发安全的 P0 目标是 release 包不带内部源码、sourcemap、docs、测试和密钥；license、entitlement、远程 marketplace、付费策略和高价值 prompt 仍应放服务端。
+
 ---
 
 ### 3.2 智能层（差异化）
@@ -488,6 +523,9 @@ artifact 不再只看"有没有生成文件"，而是进入按类型验证、失
 | 测试连接 | ModelSettings 一键验证 API Key |
 | Provider 健康监控 | 四状态机（healthy/degraded/unavailable/recovering），ModelSwitcher 健康色点 |
 | 搜索 + 能力标签 | ModelSwitcher 内搜索模型名，显示 vision/tool/reasoning 标签 |
+| 本地 Key 优先 | 2026-05-15 起不再依赖服务器侧 cloud proxy；用户在本机配置 Provider API Key，onboarding 会引导首次配置 |
+| 跨 provider reasoning 对齐 | `reasoning_effort` 与 thinking-mode sampling 对齐到 OpenAI、Claude、DeepSeek、Moonshot、小米等 provider wrapper |
+| Agent Engine 切换 | ModelSwitcher 同时承载 Native Agent Neo / Codex CLI / Claude Code，外部 engine 运行走 read-only、workspace-only 和 task ledger |
 
 #### 3.2.2 评测框架（Swiss Cheese）
 

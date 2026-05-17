@@ -9,17 +9,7 @@ import type { SessionWorkbenchProvenance, SessionWorkbenchSnapshot } from './ses
 /**
  * 会话运行状态
  */
-export type SessionStatus =
-  | 'idle'
-  | 'running'
-  | 'queued'
-  | 'paused'
-  | 'cancelling'
-  | 'completed'
-  | 'error'
-  | 'interrupted'
-  | 'orphaned'
-  | 'archived';
+export type SessionStatus = 'idle' | 'running' | 'queued' | 'paused' | 'cancelling' | 'completed' | 'error' | 'interrupted' | 'orphaned' | 'archived';
 
 /**
  * 会话代表的工作单元类型。
@@ -29,14 +19,7 @@ export type SessionStatus =
  */
 export type SessionType = 'chat' | 'schedule' | 'heartbeat' | 'subagent';
 
-export type SessionOriginKind =
-  | 'manual'
-  | 'cron'
-  | 'heartbeat'
-  | 'subagent'
-  | 'channel'
-  | 'import'
-  | 'retry';
+export type SessionOriginKind = 'manual' | 'cron' | 'heartbeat' | 'subagent' | 'channel' | 'import' | 'retry';
 
 export interface SessionOrigin {
   kind: SessionOriginKind;
@@ -89,31 +72,32 @@ export interface PRLink {
 
 export interface Session {
   id: string;
+  userId?: string | null; // Auth user owner for admin-scoped diagnostics
   title: string;
   modelConfig: ModelConfig;
   workingDirectory?: string;
-  type?: SessionType;              // 工作单元类型，旧数据默认 chat
-  origin?: SessionOrigin;          // 触发来源，如 cron job / heartbeat task / parent agent
-  parentSessionId?: string;        // 子 session 或派生 session 的父级
-  sourceRunId?: string;            // 外部执行记录 ID，如 CronJobExecution.id
+  type?: SessionType; // 工作单元类型，旧数据默认 chat
+  origin?: SessionOrigin; // 触发来源，如 cron job / heartbeat task / parent agent
+  parentSessionId?: string; // 子 session 或派生 session 的父级
+  sourceRunId?: string; // 外部执行记录 ID，如 CronJobExecution.id
   engine?: AgentEngineSessionMetadata; // Agent Engine metadata; old sessions default to native
-  readOnly?: boolean;              // 生成型 session 默认只读，由 UI 决定是否允许继续输入
-  retryOfSessionId?: string;       // 重试链路
+  readOnly?: boolean; // 生成型 session 默认只读，由 UI 决定是否允许继续输入
+  retryOfSessionId?: string; // 重试链路
   createdAt: number;
   updatedAt: number;
-  turnCount?: number;             // 轮次数（user turns）
+  turnCount?: number; // 轮次数（user turns）
   // Wave 3 新增字段
-  workspace?: string;              // 工作空间标识
-  status?: SessionStatus;          // 会话状态
-  lastTokenUsage?: TokenUsage;     // 最近一次 Token 使用统计
+  workspace?: string; // 工作空间标识
+  status?: SessionStatus; // 会话状态
+  lastTokenUsage?: TokenUsage; // 最近一次 Token 使用统计
   workbenchSnapshot?: SessionWorkbenchSnapshot; // 最小 workbench 解释快照
   workbenchProvenance?: SessionWorkbenchProvenance; // 本地持久化的最后一次明确 workbench 上下文
   streamSnapshot?: StreamRecoverySnapshot; // 上次中断的流式输出恢复快照
   // 归档状态
-  isArchived?: boolean;            // 是否已归档
-  archivedAt?: number;             // 归档时间
+  isArchived?: boolean; // 是否已归档
+  archivedAt?: number; // 归档时间
   // PR 关联
-  prLink?: PRLink;                 // GitHub PR 关联信息
+  prLink?: PRLink; // GitHub PR 关联信息
   // Git 分支
-  gitBranch?: string;              // 创建会话时的 git 分支
+  gitBranch?: string; // 创建会话时的 git 分支
 }

@@ -100,6 +100,42 @@ export function sanitizeThinkingForDisplay(text: string | undefined): string | u
   const compactedLines: string[] = [];
   let previousWasBlank = false;
 
+  const normalizeSentence = (sentence: string): string => (
+    sentence
+      .toLowerCase()
+      .replace(/[.,;:!?，。；：！？、"'“”‘’`()[\]{}（）\s]+/g, '')
+      .trim()
+  );
+
+  const compactRepeatedSentences = (line: string): string => {
+    if (line.length < 160) return line;
+
+    const sentences = line.match(/[^。！？!?]+[。！？!?]?/g);
+    if (!sentences || sentences.length < 6) return line;
+
+    const counts = new Map<string, number>();
+    for (const sentence of sentences) {
+      const key = normalizeSentence(sentence);
+      if (key.length >= 6) counts.set(key, (counts.get(key) || 0) + 1);
+    }
+
+    const hasRepeatedSentence = Array.from(counts.values()).some((count) => count >= 3);
+    if (!hasRepeatedSentence) return line;
+
+    const seen = new Set<string>();
+    const kept: string[] = [];
+    for (const sentence of sentences) {
+      const key = normalizeSentence(sentence);
+      if (key.length >= 6) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      kept.push(sentence);
+    }
+
+    return kept.join('').trim();
+  };
+
   const normalizeLine = (line: string): string => (
     line
       .toLowerCase()
@@ -109,7 +145,7 @@ export function sanitizeThinkingForDisplay(text: string | undefined): string | u
   );
 
   for (const rawLine of text.split('\n')) {
-    const line = rawLine.trim();
+    const line = compactRepeatedSentences(rawLine.trim());
     if (line.startsWith('[runtime]')) continue;
 
     if (!line) {

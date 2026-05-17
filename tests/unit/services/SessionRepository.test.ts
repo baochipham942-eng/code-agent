@@ -25,11 +25,13 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 
 import { SessionRepository } from '../../../src/main/services/core/repositories/SessionRepository';
 
+type TransactionFn = (...args: unknown[]) => unknown;
+
 // Helper: create a minimal mock DB that supports the operations we test
 function createMockDb() {
   const preparedStatements: Map<string, { sql: string }> = new Map();
   const runResults: Array<{ sql: string; params: unknown[] }> = [];
-  let transactionFn: Function | null = null;
+  let transactionFn: TransactionFn | null = null;
 
   const mockStmt = (sql: string) => ({
     run: vi.fn((...params: unknown[]) => {
@@ -67,7 +69,7 @@ function createMockDb() {
       return stmt;
     }),
     exec: vi.fn(),
-    transaction: vi.fn((fn: Function) => {
+    transaction: vi.fn((fn: TransactionFn) => {
       transactionFn = fn;
       // Return a callable wrapper that executes the transaction fn
       return (...args: unknown[]) => fn(...args);
@@ -162,7 +164,7 @@ describe('SessionRepository', () => {
       expect(updateResult).toBeDefined();
 
       // lastTokenUsage param should be JSON string
-      const lastTokenParam = updateResult!.params[8];
+      const lastTokenParam = updateResult!.params[9];
       expect(typeof lastTokenParam).toBe('string');
       expect(JSON.parse(lastTokenParam as string)).toEqual(tokenUsage);
     });
@@ -175,7 +177,7 @@ describe('SessionRepository', () => {
       expect(updateResult).toBeDefined();
 
       // lastTokenUsage not provided → null (COALESCE keeps existing value)
-      expect(updateResult!.params[8]).toBeNull();
+      expect(updateResult!.params[9]).toBeNull();
     });
 
     it('should throw when session not found (changes === 0)', () => {

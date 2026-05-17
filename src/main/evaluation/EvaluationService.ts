@@ -9,30 +9,15 @@ import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 import { getServiceRegistry } from '../services/serviceRegistry';
 import { getTestDirs, resolvePathWithFallback } from '../config';
-import type {
-  EvaluationResult,
-  EvaluationMetric,
-  EvaluationExportFormat,
-  BaselineComparison,
-} from '../../shared/contract/evaluation';
-import {
-  EvaluationDimension,
-  DIMENSION_NAMES,
-  scoreToGrade,
-} from '../../shared/contract/evaluation';
+import type { EvaluationResult, EvaluationMetric, EvaluationExportFormat, BaselineComparison, EvaluationHistoryListOptions } from '../../shared/contract/evaluation';
+import { EvaluationDimension, DIMENSION_NAMES, scoreToGrade } from '../../shared/contract/evaluation';
 import type { TestReportListItem, TestRunReport } from '../../shared/ipc';
 import type { SessionSnapshot, DimensionEvaluator } from './types';
-import {
-  TaskCompletionEvaluator,
-  ToolEfficiencyEvaluator,
-  DialogQualityEvaluator,
-  CodeQualityEvaluator,
-  PerformanceEvaluator,
-  SecurityEvaluator,
-} from './metrics';
+import { TaskCompletionEvaluator, ToolEfficiencyEvaluator, DialogQualityEvaluator, CodeQualityEvaluator, PerformanceEvaluator, SecurityEvaluator } from './metrics';
 import { getSwissCheeseEvaluator } from './swissCheeseEvaluator';
 import { getTelemetryQueryService } from './telemetryQueryService';
 import { getOrBuildSnapshot } from './snapshotBuilder';
+import { getAuthService } from '../services/auth/authService';
 
 const logger = createLogger('EvaluationService');
 
@@ -45,30 +30,12 @@ export class EvaluationService {
 
   private constructor() {
     this.evaluators = new Map();
-    this.evaluators.set(
-      EvaluationDimension.TASK_COMPLETION,
-      new TaskCompletionEvaluator()
-    );
-    this.evaluators.set(
-      EvaluationDimension.TOOL_EFFICIENCY,
-      new ToolEfficiencyEvaluator()
-    );
-    this.evaluators.set(
-      EvaluationDimension.DIALOG_QUALITY,
-      new DialogQualityEvaluator()
-    );
-    this.evaluators.set(
-      EvaluationDimension.CODE_QUALITY,
-      new CodeQualityEvaluator()
-    );
-    this.evaluators.set(
-      EvaluationDimension.PERFORMANCE,
-      new PerformanceEvaluator()
-    );
-    this.evaluators.set(
-      EvaluationDimension.SECURITY,
-      new SecurityEvaluator()
-    );
+    this.evaluators.set(EvaluationDimension.TASK_COMPLETION, new TaskCompletionEvaluator());
+    this.evaluators.set(EvaluationDimension.TOOL_EFFICIENCY, new ToolEfficiencyEvaluator());
+    this.evaluators.set(EvaluationDimension.DIALOG_QUALITY, new DialogQualityEvaluator());
+    this.evaluators.set(EvaluationDimension.CODE_QUALITY, new CodeQualityEvaluator());
+    this.evaluators.set(EvaluationDimension.PERFORMANCE, new PerformanceEvaluator());
+    this.evaluators.set(EvaluationDimension.SECURITY, new SecurityEvaluator());
   }
 
   async dispose(): Promise<void> {
@@ -94,14 +61,23 @@ export class EvaluationService {
     return db.getDb()!;
   }
 
+  private resolveSessionUserId(sessionId: string): string | null {
+    try {
+      const session = getDatabase().getSession(sessionId, {
+        includeDeleted: true
+      });
+      if (session?.userId) return session.userId;
+    } catch {
+      // Ignore missing session rows; legacy evaluation records may not have an owner.
+    }
+    return getAuthService().getCurrentUser()?.id ?? null;
+  }
+
   /**
    * 评测会话
    * 优先使用瑞士奶酪多层评测，失败时回退到简单 AI 评测，再失败回退到规则评测
    */
-  async evaluateSession(
-    sessionId: string,
-    options: { save?: boolean; useAI?: boolean } = {}
-  ): Promise<EvaluationResult> {
+  async evaluateSession(sessionId: string, options: { save?: boolean; useAI?: boolean } = {}): Promise<EvaluationResult> {
     logger.info(`Evaluating session: ${sessionId}`);
 
     // Phase 1: 先构建/获取 EvalSnapshot
@@ -109,7 +85,7 @@ export class EvaluationService {
     if (evalSnapshot) {
       logger.info('EvalSnapshot ready', {
         snapshotId: evalSnapshot.snapshot_id,
-        toolCalls: evalSnapshot.total_tool_calls,
+        toolCalls: evalSnapshot.total_tool_calls
       });
     }
 
@@ -160,11 +136,14 @@ export class EvaluationService {
       allSuggestions = ruleResult.suggestions;
     }
 
-    const replay = await getTelemetryQueryService().getStructuredReplay(sessionId).catch(() => null);
+    const replay = await getTelemetryQueryService()
+      .getStructuredReplay(sessionId)
+      .catch(() => null);
 
     const result: EvaluationResult = {
       id: uuidv4(),
       sessionId,
+      userId: this.resolveSessionUserId(sessionId),
       replayKey: replay?.traceIdentity.replayKey || sessionId,
       timestamp: Date.now(),
       overallScore,
@@ -176,14 +155,14 @@ export class EvaluationService {
         toolCallCount: snapshot.toolCalls.length,
         inputTokens: snapshot.inputTokens,
         outputTokens: snapshot.outputTokens,
-        totalCost: snapshot.totalCost,
+        totalCost: snapshot.totalCost
       },
       topSuggestions: allSuggestions.slice(0, 5),
       aiSummary,
       telemetryCompleteness: replay?.summary.telemetryCompleteness,
       // 版本化字段
       snapshotId: evalSnapshot?.snapshot_id,
-      evalVersion: evalSnapshot ? 'v1' : 'legacy',
+      evalVersion: evalSnapshot ? 'v1' : 'legacy'
     };
 
     // 基线对比
@@ -194,7 +173,7 @@ export class EvaluationService {
         logger.info('Baseline comparison', {
           delta: comparison.delta,
           regressions: comparison.regressions.length,
-          improvements: comparison.improvements.length,
+          improvements: comparison.improvements.length
         });
       }
     } catch (err) {
@@ -213,10 +192,10 @@ export class EvaluationService {
       if (events.length > 0) {
         const builder = new TrajectoryBuilder();
         const trajectory = builder.buildFromEvents(
-          events.map(e => ({
+          events.map((e) => ({
             event_type: e.eventType,
             event_data: (e.eventData as Record<string, unknown>) || {},
-            timestamp: String(e.timestamp),
+            timestamp: String(e.timestamp)
           }))
         );
         trajectory.sessionId = sessionId;
@@ -226,27 +205,27 @@ export class EvaluationService {
         trajectory.deviations = deviations;
 
         result.trajectoryAnalysis = {
-          deviations: deviations.map(d => ({
+          deviations: deviations.map((d) => ({
             stepIndex: d.stepIndex,
             type: d.type,
             description: d.description,
             severity: d.severity,
-            suggestedFix: d.suggestedFix,
+            suggestedFix: d.suggestedFix
           })),
           efficiency: {
             totalSteps: trajectory.efficiency.totalSteps,
             effectiveSteps: trajectory.efficiency.effectiveSteps,
             redundantSteps: trajectory.efficiency.redundantSteps,
-            efficiency: trajectory.efficiency.efficiency,
+            efficiency: trajectory.efficiency.efficiency
           },
-          recoveryPatterns: trajectory.recoveryPatterns.map(rp => ({
+          recoveryPatterns: trajectory.recoveryPatterns.map((rp) => ({
             errorStepIndex: rp.errorStepIndex,
             recoveryStepIndex: rp.recoveryStepIndex,
             attempts: rp.attempts,
             strategy: rp.strategy,
-            successful: rp.successful,
+            successful: rp.successful
           })),
-          outcome: trajectory.summary.outcome,
+          outcome: trajectory.summary.outcome
         };
 
         // v2.5 Phase 2: rule-based failure attribution.
@@ -258,7 +237,7 @@ export class EvaluationService {
           const llmFn = await buildAttributionChatFnFromEnv();
           const attribution = await new FailureAttributor().attribute(trajectory, {
             enableLLM: llmFn !== null,
-            llmFn: llmFn ?? undefined,
+            llmFn: llmFn ?? undefined
           });
           if (result.trajectoryAnalysis) {
             result.trajectoryAnalysis.failureAttribution = {
@@ -266,7 +245,7 @@ export class EvaluationService {
               causalChain: attribution.causalChain,
               relatedRegressionCases: attribution.relatedRegressionCases,
               llmUsed: attribution.llmUsed,
-              durationMs: attribution.durationMs,
+              durationMs: attribution.durationMs
             };
           }
         } catch (attrError) {
@@ -276,7 +255,7 @@ export class EvaluationService {
         logger.info('Trajectory analysis complete', {
           deviations: deviations.length,
           efficiency: trajectory.efficiency.efficiency,
-          outcome: trajectory.summary.outcome,
+          outcome: trajectory.summary.outcome
         });
       }
     } catch (trajError) {
@@ -306,13 +285,9 @@ export class EvaluationService {
       metrics.push(metric);
     }
 
-    const overallScore = Math.round(
-      metrics.reduce((acc, m) => acc + m.score * m.weight, 0)
-    );
+    const overallScore = Math.round(metrics.reduce((acc, m) => acc + m.score * m.weight, 0));
 
-    const suggestions = metrics
-      .flatMap((m) => m.suggestions || [])
-      .slice(0, 5);
+    const suggestions = metrics.flatMap((m) => m.suggestions || []).slice(0, 5);
 
     return { metrics, overallScore, suggestions };
   }
@@ -322,30 +297,41 @@ export class EvaluationService {
    */
   async getResult(evaluationId: string): Promise<EvaluationResult | null> {
     const dbInstance = this.getDbInstance();
-    const row = dbInstance
-      .prepare('SELECT data FROM evaluations WHERE id = ?')
-      .get(evaluationId) as { data: string } | undefined;
+    const row = dbInstance.prepare('SELECT data FROM evaluations WHERE id = ?').get(evaluationId) as { data: string } | undefined;
     return row ? JSON.parse(row.data) : null;
   }
 
   /**
    * 获取评测历史
    */
-  async listHistory(
-    sessionId?: string,
-    limit = 20
-  ): Promise<EvaluationResult[]> {
+  async listHistory(sessionId?: string, limit = 20, options: Pick<EvaluationHistoryListOptions, 'userId' | 'unassignedOnly'> = {}): Promise<EvaluationResult[]> {
     const dbInstance = this.getDbInstance();
 
-    let query = 'SELECT data FROM evaluations';
+    let query = `
+      SELECT evaluations.data
+      FROM evaluations
+      LEFT JOIN sessions ON sessions.id = evaluations.session_id
+    `;
     const params: unknown[] = [];
+    const where: string[] = [];
+    const ownerExpr = 'COALESCE(evaluations.user_id, sessions.user_id)';
 
     if (sessionId) {
-      query += ' WHERE session_id = ?';
+      where.push('evaluations.session_id = ?');
       params.push(sessionId);
     }
+    if (options.unassignedOnly) {
+      where.push(`${ownerExpr} IS NULL`);
+    } else if (options.userId) {
+      where.push(`${ownerExpr} = ?`);
+      params.push(options.userId);
+    }
 
-    query += ' ORDER BY timestamp DESC LIMIT ?';
+    if (where.length > 0) {
+      query += ` WHERE ${where.join(' AND ')}`;
+    }
+
+    query += ' ORDER BY evaluations.timestamp DESC LIMIT ?';
     params.push(limit);
 
     const rows = dbInstance.prepare(query).all(...params) as { data: string }[];
@@ -360,9 +346,7 @@ export class EvaluationService {
 
     try {
       const entries = await fs.readdir(resultsDir, { withFileTypes: true });
-      const reportFiles = entries
-        .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
-        .filter((entry) => entry.name === 'latest-report.json' || /^report-[\w]+\.json$/.test(entry.name));
+      const reportFiles = entries.filter((entry) => entry.isFile() && entry.name.endsWith('.json')).filter((entry) => entry.name === 'latest-report.json' || /^report-[\w]+\.json$/.test(entry.name));
 
       const reports = await Promise.all(
         reportFiles.map(async (entry) => {
@@ -381,18 +365,19 @@ export class EvaluationService {
               passed: Number(report.passed) || 0,
               failed: Number(report.failed) || 0,
               partial: Number(report.partial) || 0,
-              averageScore: Number(report.averageScore) || 0,
+              averageScore: Number(report.averageScore) || 0
             } satisfies TestReportListItem;
           } catch (error) {
-            logger.warn('Failed to parse test report file', { filePath, error });
+            logger.warn('Failed to parse test report file', {
+              filePath,
+              error
+            });
             return null;
           }
         })
       );
 
-      return reports
-        .filter((item): item is TestReportListItem => item !== null)
-        .sort((a, b) => b.timestamp - a.timestamp);
+      return reports.filter((item): item is TestReportListItem => item !== null).sort((a, b) => b.timestamp - a.timestamp);
     } catch {
       return [];
     }
@@ -426,9 +411,7 @@ export class EvaluationService {
    */
   async deleteResult(evaluationId: string): Promise<boolean> {
     const dbInstance = this.getDbInstance();
-    const result = dbInstance
-      .prepare('DELETE FROM evaluations WHERE id = ?')
-      .run(evaluationId);
+    const result = dbInstance.prepare('DELETE FROM evaluations WHERE id = ?').run(evaluationId);
     return result.changes > 0;
   }
 
@@ -489,7 +472,7 @@ export class EvaluationService {
       logger.info('Collected session data from telemetry tables', {
         sessionId,
         turns: telemetryData.turns.length,
-        inputTokens: telemetryData.inputTokens,
+        inputTokens: telemetryData.inputTokens
       });
       return telemetryData;
     }
@@ -502,20 +485,14 @@ export class EvaluationService {
   /**
    * 从 telemetry 表收集结构化数据
    */
-  private collectFromTelemetry(
-    _db: ReturnType<typeof this.getDbInstance>,
-    sessionId: string
-  ): SessionSnapshot | null {
+  private collectFromTelemetry(_db: ReturnType<typeof this.getDbInstance>, sessionId: string): SessionSnapshot | null {
     return getTelemetryQueryService().getSessionSnapshot(sessionId);
   }
 
   /**
    * Fallback: 从旧的 messages/tool_uses 表获取扁平数据
    */
-  private collectFromLegacyTables(
-    db: ReturnType<typeof this.getDbInstance>,
-    sessionId: string
-  ): SessionSnapshot {
+  private collectFromLegacyTables(db: ReturnType<typeof this.getDbInstance>, sessionId: string): SessionSnapshot {
     // 获取消息
     const messageRows = db
       .prepare(
@@ -536,15 +513,13 @@ export class EvaluationService {
       id: row.id,
       role: row.role as 'user' | 'assistant',
       content: row.content,
-      timestamp: row.timestamp,
+      timestamp: row.timestamp
     }));
 
     // 获取工具调用
     let toolCalls: SessionSnapshot['toolCalls'] = [];
     try {
-      const tableExists = db
-        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='tool_uses'`)
-        .get();
+      const tableExists = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='tool_uses'`).get();
 
       if (tableExists) {
         const toolUseRows = db
@@ -572,7 +547,7 @@ export class EvaluationService {
           result: row.result || undefined,
           success: row.success === 1,
           duration: row.duration || 0,
-          timestamp: row.timestamp,
+          timestamp: row.timestamp
         }));
       }
     } catch {
@@ -580,9 +555,7 @@ export class EvaluationService {
     }
 
     // 获取会话统计
-    const sessionRow = db
-      .prepare(`SELECT created_at, updated_at FROM sessions WHERE id = ?`)
-      .get(sessionId) as { created_at: number; updated_at: number } | undefined;
+    const sessionRow = db.prepare(`SELECT created_at, updated_at FROM sessions WHERE id = ?`).get(sessionId) as { created_at: number; updated_at: number } | undefined;
 
     const startTime = messages[0]?.timestamp || sessionRow?.created_at || Date.now();
     const endTime = messages[messages.length - 1]?.timestamp || sessionRow?.updated_at || Date.now();
@@ -604,8 +577,8 @@ export class EvaluationService {
         circuitBreakerTrips: 0,
         selfRepairAttempts: 0,
         selfRepairSuccesses: 0,
-        verificationActions: 0,
-      },
+        verificationActions: 0
+      }
     };
   }
 
@@ -617,9 +590,7 @@ export class EvaluationService {
     if (history.length < 3) return null; // 数据不够
 
     const recentHistory = history.slice(0, 5);
-    const baselineScore = Math.round(
-      recentHistory.reduce((sum, r) => sum + r.overallScore, 0) / recentHistory.length
-    );
+    const baselineScore = Math.round(recentHistory.reduce((sum, r) => sum + r.overallScore, 0) / recentHistory.length);
     const delta = current.overallScore - baselineScore;
 
     const regressions: string[] = [];
@@ -651,6 +622,8 @@ export class EvaluationService {
    */
   async saveResult(result: EvaluationResult): Promise<void> {
     const dbInstance = this.getDbInstance();
+    const userId = result.userId ?? this.resolveSessionUserId(result.sessionId);
+    result.userId = userId;
 
     // 自动填充版本化字段
     if (!result.evalVersion) {
@@ -659,21 +632,9 @@ export class EvaluationService {
 
     dbInstance
       .prepare(
-        `INSERT INTO evaluations (id, session_id, timestamp, score, grade, data, snapshot_id, eval_version, rubric_version, judge_model, judge_prompt_hash)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO evaluations (id, session_id, user_id, timestamp, score, grade, data, snapshot_id, eval_version, rubric_version, judge_model, judge_prompt_hash)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(
-        result.id,
-        result.sessionId,
-        result.timestamp,
-        result.overallScore,
-        result.grade,
-        JSON.stringify(result),
-        result.snapshotId || null,
-        result.evalVersion,
-        result.rubricVersion || null,
-        result.judgeModel || null,
-        result.judgePromptHash || null,
-      );
+      .run(result.id, result.sessionId, userId, result.timestamp, result.overallScore, result.grade, JSON.stringify(result), result.snapshotId || null, result.evalVersion, result.rubricVersion || null, result.judgeModel || null, result.judgePromptHash || null);
   }
 }

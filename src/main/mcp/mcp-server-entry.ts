@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ============================================================================
-// Code Agent MCP Server - Standalone entry point
+// Agent Neo MCP Server - Standalone entry point
 // Run this as: npx ts-node src/main/mcp/mcp-server-entry.ts
 // Or after build: node dist/main/mcp/mcp-server-entry.js
 // ============================================================================
@@ -8,7 +8,7 @@
 import { CodeAgentMCPServer } from './mcpServer.js';
 
 async function main() {
-  console.error('[MCP Server Entry] Starting Code Agent MCP Server...');
+  console.error('[MCP Server Entry] Starting Agent Neo MCP Server...');
 
   const server = new CodeAgentMCPServer();
 

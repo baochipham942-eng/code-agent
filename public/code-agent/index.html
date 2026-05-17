@@ -1,0 +1,1281 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Neo · 装在你电脑上的 AI 同事</title>
+    <meta
+      name="description"
+      content="本地安装的 AI 助手：帮你写代码、整 Excel、做 PPT、读网页、操作浏览器和桌面。文件不上云，断网也能跑。"
+    />
+    <meta property="og:title" content="Agent Neo · 装在你电脑上的 AI 同事" />
+    <meta
+      property="og:description"
+      content="帮你写代码、整 Excel、做 PPT、读网页、操作浏览器和桌面。文件不上云，断网也能跑。"
+    />
+    <link rel="icon" href="./agent-neo-mark.svg" type="image/svg+xml" />
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #111422;
+        --ink-soft: #252a3d;
+        --muted: #5f6678;
+        --subtle: #9098aa;
+        --line: #dde3f1;
+        --paper: #f7f8fc;
+        --paper-deep: #eef2fb;
+        --panel: #ffffff;
+        --night: #060817;
+        --night-soft: #10162f;
+        --primary: #1a2bd9;
+        --primary-2: #0f1a8a;
+        --primary-soft: #e6e9ff;
+        --accent: #29d6a3;
+        --accent-soft: #d6f6ec;
+        --label-blue: #0b7cc4;
+        --label-blue-soft: #e1f0fb;
+        --label-amber: #c47009;
+        --label-amber-soft: #fbeed8;
+        --label-rose: #b91c5c;
+        --label-rose-soft: #fbe1ed;
+        --radius: 10px;
+        --radius-sm: 8px;
+        --shadow: 0 28px 90px rgba(6, 8, 23, 0.34);
+      }
+
+      * { box-sizing: border-box; }
+
+      html { scroll-behavior: smooth; }
+
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family:
+          ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        letter-spacing: 0;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a { color: inherit; text-decoration: none; }
+
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+        border-radius: 4px;
+      }
+
+      section[id] { scroll-margin-top: 80px; }
+
+      .topbar {
+        position: fixed;
+        z-index: 40;
+        top: 0; left: 0; right: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 16px 32px;
+        color: #f8f8f5;
+        background: linear-gradient(180deg, rgba(7, 8, 11, 0.78), rgba(7, 8, 11, 0));
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 18px;
+        font-weight: 800;
+      }
+
+      .brand-mark {
+        display: block;
+        width: 30px; height: 30px;
+        border-radius: 999px;
+        box-shadow: 0 14px 34px rgba(26, 43, 217, 0.4);
+      }
+
+      .nav {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        color: rgba(248, 248, 245, 0.82);
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .nav a:hover { color: #ffffff; }
+
+      /* ============================================================ Hero */
+      .hero {
+        position: relative;
+        min-height: clamp(620px, 78svh, 880px);
+        overflow: hidden;
+        color: #ffffff;
+        background:
+          linear-gradient(90deg, rgba(6, 8, 23, 0.99) 0%, rgba(6, 8, 23, 0.88) 45%, rgba(6, 8, 23, 0.48) 100%),
+          linear-gradient(120deg, rgba(26, 43, 217, 0.28), rgba(41, 214, 163, 0.04) 58%),
+          var(--night);
+      }
+
+      .hero::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+        background-size: 56px 56px;
+        mask-image: linear-gradient(90deg, transparent 0%, black 36%, black 100%);
+        opacity: 0.32;
+      }
+
+      .hero::after {
+        content: "";
+        position: absolute;
+        inset: auto 0 0 0;
+        height: 22%;
+        background: linear-gradient(180deg, rgba(245, 246, 241, 0), var(--paper));
+      }
+
+      .hero-inner {
+        position: relative;
+        z-index: 3;
+        display: grid;
+        grid-template-columns: minmax(0, 0.92fr) minmax(480px, 1fr);
+        align-items: center;
+        gap: 46px;
+        width: min(1180px, calc(100% - 48px));
+        margin: 0 auto;
+        padding: 116px 0 68px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 22px;
+        color: rgba(255, 255, 255, 0.76);
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .dot {
+        width: 9px; height: 9px;
+        border-radius: 999px;
+        background: var(--accent);
+        box-shadow: 0 0 0 7px rgba(41, 214, 163, 0.18);
+      }
+
+      h1 {
+        max-width: 720px;
+        margin: 0;
+        font-size: clamp(38px, 4.6vw, 58px);
+        font-weight: 800;
+        line-height: 1.08;
+        letter-spacing: -0.01em;
+        text-wrap: balance;
+        word-break: keep-all;
+      }
+
+      .hero-copy {
+        max-width: 560px;
+        margin: 24px 0 0;
+        color: rgba(255, 255, 255, 0.82);
+        font-size: 19px;
+        line-height: 1.66;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 34px;
+      }
+
+      .button {
+        display: inline-flex;
+        min-height: 46px;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        border-radius: var(--radius-sm);
+        padding: 0 18px;
+        font-size: 15px;
+        font-weight: 800;
+        transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+        cursor: pointer;
+      }
+
+      .button:hover { transform: translateY(-1px); }
+
+      .button.primary {
+        border-color: #ffffff;
+        background: #ffffff;
+        color: var(--ink);
+      }
+
+      .button.ghost {
+        background: rgba(255, 255, 255, 0.08);
+        color: #ffffff;
+      }
+
+      .hero-stage {
+        position: relative;
+        min-height: 470px;
+      }
+
+      .hero-stage-frame {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: var(--radius);
+        background: rgba(6, 8, 23, 0.78);
+        box-shadow: var(--shadow);
+      }
+
+      .hero-art {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      /* ============================================================ Section primitives */
+      main { position: relative; z-index: 2; }
+
+      .section {
+        width: min(1240px, calc(100% - 48px));
+        margin: 0 auto;
+        padding: 86px 0;
+      }
+
+      .section-head {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: clamp(36px, 5vw, 64px);
+        align-items: end;
+        margin-bottom: 32px;
+      }
+
+      .section-label {
+        display: inline-flex;
+        margin-bottom: 14px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 7px 12px;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.56);
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      h2 {
+        margin: 0;
+        color: var(--ink);
+        font-size: 38px;
+        font-weight: 800;
+        line-height: 1.14;
+        letter-spacing: -0.005em;
+      }
+
+      .lead {
+        margin: 0;
+        color: var(--muted);
+        font-size: 17px;
+        line-height: 1.72;
+      }
+
+      .section-head .lead {
+        max-width: 640px;
+        justify-self: end;
+      }
+
+      .band {
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        background: var(--paper-deep);
+      }
+
+      /* ============================================================ Value */
+      .value-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .value-card {
+        position: relative;
+        overflow: hidden;
+        min-height: 218px;
+        padding: 26px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+      }
+
+      .value-card.is-emphasis {
+        border-color: rgba(26, 43, 217, 0.28);
+        color: #ffffff;
+        background:
+          radial-gradient(circle at 88% 12%, rgba(41, 214, 163, 0.16), transparent 32%),
+          linear-gradient(135deg, #111735, #070a18);
+      }
+
+      .value-card h3 {
+        margin: 14px 0 10px;
+        font-size: 21px;
+        font-weight: 800;
+        line-height: 1.26;
+        letter-spacing: -0.005em;
+      }
+
+      .value-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.66;
+      }
+
+      .value-card.is-emphasis p { color: rgba(255, 255, 255, 0.74); }
+
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 22px;
+      }
+
+      .chip-row span {
+        border: 1px solid rgba(26, 43, 217, 0.18);
+        border-radius: 999px;
+        padding: 7px 10px;
+        color: var(--muted);
+        background: rgba(26, 43, 217, 0.06);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .value-card.is-emphasis .chip-row span {
+        border-color: rgba(255, 255, 255, 0.16);
+        color: rgba(255, 255, 255, 0.78);
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .card-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--primary);
+        font-size: 13px;
+        font-weight: 900;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .card-label::before {
+        content: "";
+        width: 8px; height: 8px;
+        border-radius: 999px;
+        background: currentColor;
+      }
+
+      .card-label.blue   { color: var(--label-blue); }
+      .card-label.amber  { color: var(--label-amber); }
+      .card-label.rose   { color: var(--label-rose); }
+      .card-label.accent { color: #0e8c66; }
+
+      /* ============================================================ Flow (scenario cards: emphasis + 2 sub) */
+      .flow-grid {
+        display: grid;
+        grid-template-columns: 1.3fr 1fr;
+        grid-auto-rows: 1fr;
+        gap: 14px;
+      }
+
+      .flow-card {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 26px;
+        background: #ffffff;
+      }
+
+      .flow-card.is-emphasis {
+        grid-row: span 2;
+        color: #ffffff;
+        border-color: rgba(26, 43, 217, 0.32);
+        padding: 34px;
+        background:
+          radial-gradient(circle at 88% 8%, rgba(41, 214, 163, 0.16), transparent 38%),
+          radial-gradient(circle at 12% 92%, rgba(26, 43, 217, 0.18), transparent 42%),
+          linear-gradient(135deg, #111735, #070a18);
+      }
+
+      .flow-tag {
+        display: inline-flex;
+        width: fit-content;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .flow-card.t-product  .flow-tag { color: var(--accent);     background: rgba(41, 214, 163, 0.18); }
+      .flow-card.t-office   .flow-tag { color: var(--label-amber);background: var(--label-amber-soft); }
+      .flow-card.t-browse   .flow-tag { color: var(--label-blue); background: var(--label-blue-soft); }
+
+      .flow-user {
+        position: relative;
+        padding: 16px 18px;
+        border-radius: var(--radius-sm);
+        background: var(--paper-deep);
+        color: var(--ink);
+        font-size: 15.5px;
+        line-height: 1.62;
+      }
+
+      .flow-card.is-emphasis .flow-user {
+        background: rgba(255, 255, 255, 0.06);
+        color: #ffffff;
+        font-size: 18px;
+        line-height: 1.58;
+      }
+
+      .flow-user::before {
+        content: "你说";
+        display: block;
+        margin-bottom: 4px;
+        color: var(--subtle);
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .flow-card.is-emphasis .flow-user::before {
+        color: rgba(255, 255, 255, 0.48);
+      }
+
+      .flow-chain {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+      }
+
+      .flow-chain span:not(.sep) {
+        padding: 7px 12px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--paper);
+        color: var(--ink-soft);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .flow-chain .sep {
+        color: var(--subtle);
+        font-weight: 900;
+        font-size: 13px;
+      }
+
+      .flow-card.is-emphasis .flow-chain span:not(.sep) {
+        border-color: rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(255, 255, 255, 0.88);
+      }
+      .flow-card.is-emphasis .flow-chain .sep { color: rgba(255, 255, 255, 0.42); }
+
+      .flow-artifact {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: auto;
+        padding-top: 16px;
+        border-top: 1px dashed var(--line);
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .flow-artifact::before {
+        content: "产物";
+        display: inline-block;
+        padding: 4px 9px;
+        border-radius: 999px;
+        background: var(--primary-soft);
+        color: var(--primary);
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.06em;
+      }
+
+      .flow-card.is-emphasis .flow-artifact {
+        border-top-color: rgba(255, 255, 255, 0.14);
+        color: rgba(255, 255, 255, 0.78);
+      }
+      .flow-card.is-emphasis .flow-artifact::before {
+        background: rgba(41, 214, 163, 0.18);
+        color: var(--accent);
+      }
+
+      /* Mini browser preview inside emphasis card */
+      .flow-preview {
+        position: relative;
+        margin-top: 10px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: var(--radius-sm);
+        background: linear-gradient(180deg, rgba(8, 10, 28, 0.7), rgba(8, 10, 28, 0.32));
+        box-shadow: 0 16px 38px rgba(0, 0, 0, 0.42);
+      }
+      .flow-preview-bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 14px;
+        background: rgba(255, 255, 255, 0.04);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .flow-preview-bar i {
+        display: block;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.22);
+      }
+      .flow-preview-bar em {
+        margin-left: 14px;
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 11px;
+        font-weight: 700;
+        font-style: normal;
+        letter-spacing: 0.04em;
+      }
+      .flow-preview-body {
+        display: grid;
+        gap: 12px;
+        padding: 22px 22px 24px;
+      }
+      .lp-title {
+        height: 18px;
+        width: 56%;
+        border-radius: 5px;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.06));
+      }
+      .lp-row {
+        display: grid;
+        gap: 7px;
+      }
+      .lp-row span {
+        display: block;
+        height: 8px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .lp-row span:nth-child(1) { width: 92%; }
+      .lp-row span:nth-child(2) { width: 74%; }
+      .lp-row span:nth-child(3) { width: 60%; }
+      .lp-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-top: 4px;
+      }
+      .lp-grid div {
+        height: 44px;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .lp-grid div:nth-child(2) {
+        background: linear-gradient(135deg, rgba(41, 214, 163, 0.32), rgba(41, 214, 163, 0.06));
+        border-color: rgba(41, 214, 163, 0.32);
+      }
+      .lp-cta {
+        width: 110px;
+        height: 32px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--accent), #1a9d76);
+        box-shadow: 0 8px 24px rgba(41, 214, 163, 0.32);
+      }
+
+      /* ============================================================ Privacy (3-card with accent bar) */
+      .privacy-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .privacy-card {
+        position: relative;
+        padding: 28px 24px 24px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #ffffff;
+      }
+
+      .privacy-card::before {
+        content: "";
+        display: block;
+        width: 36px;
+        height: 4px;
+        margin-bottom: 20px;
+        border-radius: 2px;
+        background: var(--accent);
+      }
+
+      .privacy-card h3 {
+        margin: 0 0 10px;
+        font-size: 19px;
+        font-weight: 800;
+        line-height: 1.32;
+        letter-spacing: -0.005em;
+        color: var(--ink);
+      }
+
+      .privacy-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14.5px;
+        line-height: 1.66;
+      }
+
+      /* ============================================================ Memory */
+      .memory-panel {
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(300px, 0.62fr) minmax(560px, 1fr);
+        gap: 32px;
+        overflow: hidden;
+        border: 1px solid rgba(26, 43, 217, 0.2);
+        border-radius: var(--radius);
+        padding: 36px;
+        background:
+          radial-gradient(circle at 88% 12%, rgba(41, 214, 163, 0.16), transparent 28%),
+          linear-gradient(135deg, #111735, #070a18);
+        box-shadow: 0 30px 90px rgba(17, 20, 34, 0.14);
+      }
+
+      .memory-panel::after {
+        content: "";
+        position: absolute;
+        inset: 22px 28px auto auto;
+        width: 150px; height: 150px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 50%;
+      }
+
+      .memory-copy {
+        position: relative;
+        z-index: 1;
+        align-self: center;
+      }
+
+      .memory-copy .section-label {
+        border-color: rgba(255, 255, 255, 0.16);
+        color: rgba(255, 255, 255, 0.78);
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .memory-copy h2 { color: #ffffff; }
+
+      .memory-copy .lead {
+        max-width: 520px;
+        margin-top: 16px;
+        color: rgba(255, 255, 255, 0.68);
+      }
+
+      .memory-list {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .memory-item {
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: var(--radius);
+        padding: 20px;
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      .memory-index {
+        display: inline-flex;
+        margin-bottom: 12px;
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .memory-item h3 {
+        margin: 0 0 8px;
+        color: #ffffff;
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.28;
+      }
+
+      .memory-item p {
+        margin: 0;
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 14px;
+        line-height: 1.62;
+      }
+
+      .memory-note {
+        margin-top: 22px;
+        padding: 16px 20px;
+        border: 1px solid rgba(41, 214, 163, 0.32);
+        border-radius: var(--radius-sm);
+        background: rgba(41, 214, 163, 0.08);
+        color: #d6f7e8;
+        font-size: 14px;
+        line-height: 1.62;
+        grid-column: 1 / -1;
+      }
+
+      .memory-note strong { color: var(--accent); font-weight: 900; }
+
+      /* ============================================================ Ecosystem (3 columns of pills) */
+      .eco-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .eco-col {
+        display: grid;
+        gap: 14px;
+        padding: 26px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+      }
+
+      .eco-col h3 {
+        margin: 8px 0 0;
+        font-size: 19px;
+        font-weight: 800;
+        line-height: 1.28;
+        color: var(--ink);
+      }
+
+      .eco-col p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.62;
+      }
+
+      .eco-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .eco-pills span {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 6px 10px;
+        background: var(--paper);
+        color: var(--ink-soft);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      /* ============================================================ Download */
+      .download-band {
+        background:
+          radial-gradient(circle at 86% 18%, rgba(26, 43, 217, 0.1), transparent 34%),
+          linear-gradient(90deg, rgba(26, 43, 217, 0.06), rgba(41, 214, 163, 0.04)),
+          #f7f8fc;
+        border-top: 1px solid var(--line);
+      }
+
+      .download-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(360px, 0.56fr);
+        gap: 36px;
+        align-items: stretch;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.72);
+        box-shadow: 0 24px 70px rgba(17, 20, 34, 0.08);
+        overflow: hidden;
+      }
+
+      .download-copy { padding: 38px; }
+      .download-copy .lead { max-width: 720px; margin-top: 18px; }
+
+      .download-card-shell {
+        display: flex;
+        align-items: stretch;
+        padding: 18px;
+      }
+
+      .download-card {
+        display: flex;
+        width: 100%;
+        min-height: 248px;
+        flex-direction: column;
+        justify-content: space-between;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: var(--radius);
+        padding: 28px;
+        background:
+          radial-gradient(circle at 84% 16%, rgba(41, 214, 163, 0.16), transparent 30%),
+          linear-gradient(135deg, #111735, #070a18);
+      }
+
+      .download-card .card-label,
+      .download-card h3 { color: #ffffff; }
+
+      .download-card h3 {
+        margin: 12px 0 8px;
+        font-size: 22px;
+        font-weight: 800;
+      }
+
+      .download-card .meta {
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .download-card .button {
+        width: fit-content;
+        margin-top: 18px;
+      }
+
+      .download-card .button.primary {
+        background: #ffffff;
+        color: var(--ink);
+      }
+
+      .download-footnote {
+        margin-top: 14px;
+        color: var(--subtle);
+        font-size: 13px;
+      }
+
+      footer {
+        padding: 34px 24px 46px;
+        color: var(--muted);
+        text-align: center;
+        font-size: 14px;
+      }
+
+      /* ============================================================ Mobile back-to-top */
+      .to-top {
+        display: none;
+        position: fixed;
+        right: 18px;
+        bottom: calc(18px + env(safe-area-inset-bottom));
+        z-index: 50;
+        width: 44px; height: 44px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.92);
+        color: var(--ink);
+        font-size: 18px;
+        font-weight: 800;
+        box-shadow: 0 10px 30px rgba(6, 8, 23, 0.12);
+        backdrop-filter: blur(10px);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
+      }
+
+      @media (max-width: 1020px) {
+        .hero-inner { grid-template-columns: 1fr; gap: 28px; }
+        .hero-stage { min-height: 360px; opacity: 0.88; }
+        .section-head,
+        .memory-panel,
+        .download-panel { grid-template-columns: 1fr; }
+        .section-head .lead { max-width: none; justify-self: start; }
+        .value-grid,
+        .flow-grid,
+        .eco-grid,
+        .privacy-grid { grid-template-columns: 1fr; }
+        .flow-grid { grid-auto-rows: auto; }
+        .flow-card.is-emphasis { grid-row: auto; padding: 26px; }
+        .flow-card.is-emphasis .flow-user { font-size: 16px; }
+      }
+
+      @media (max-width: 720px) {
+        .topbar { padding: 14px 20px; }
+        .nav { display: none; }
+        .hero { min-height: auto; }
+        .hero-inner {
+          width: min(100% - 32px, 720px);
+          padding: 104px 0 58px;
+        }
+        h1 { font-size: 36px; line-height: 1.12; }
+        .hero-copy { font-size: 17px; }
+        .hero-actions .button { width: 100%; }
+        .hero-stage { display: none; }
+        .section { width: min(100% - 32px, 720px); padding: 56px 0; }
+        .section-head { gap: 14px; }
+        h2 { font-size: 28px; }
+        .value-card,
+        .flow-card,
+        .privacy-card,
+        .eco-col { padding: 20px; min-height: auto; }
+        .memory-panel { padding: 22px; }
+        .memory-list { grid-template-columns: 1fr; }
+        .download-copy { padding: 22px 18px 6px; }
+        .download-card-shell { padding: 12px 18px 18px; }
+        .to-top { display: grid; }
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      // 关闭浏览器刷新时的滚动位置恢复，避免刷新跳到中下部
+      if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    </script>
+    <header class="topbar" aria-label="Agent Neo 导航">
+      <a class="brand" href="#top" aria-label="Agent Neo 首页">
+        <img class="brand-mark" src="./agent-neo-mark.svg" alt="" aria-hidden="true" />
+        <span>Agent Neo</span>
+      </a>
+      <nav class="nav" aria-label="页面导航">
+        <a href="#value">产品</a>
+        <a href="#flow">场景</a>
+        <a href="#privacy">隐私</a>
+        <a href="#memory">记忆</a>
+        <a href="#ecosystem">扩展</a>
+        <a href="#download">下载</a>
+      </nav>
+    </header>
+
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <div class="hero-inner">
+        <div>
+          <div class="eyebrow"><span class="dot" aria-hidden="true"></span> 本地安装的 AI 工作助手</div>
+          <h1 id="hero-title">装在你电脑上的 AI 同事</h1>
+          <p class="hero-copy">
+            帮你写代码、整 Excel、做 PPT、读网页、操作浏览器和桌面——
+            文件不上云，断网也能跑。
+          </p>
+          <div class="hero-actions" aria-label="主要操作">
+            <a class="button primary" href="#download">⬇ 下载 mac 版</a>
+            <a class="button ghost" href="#flow">看它能干什么 →</a>
+          </div>
+        </div>
+
+        <div class="hero-stage" aria-hidden="true">
+          <div class="hero-stage-frame">
+            <img class="hero-art" src="./agent-neo-hero.webp" alt="" width="1280" height="800" loading="eager" decoding="async" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <main>
+      <!-- ====================================================== Value -->
+      <section class="section" id="value" aria-labelledby="value-title">
+        <div class="section-head">
+          <div>
+            <span class="section-label">产品</span>
+            <h2 id="value-title">它不是聊天框，是能替你做完事的同事</h2>
+          </div>
+          <p class="lead">
+            装上之后，可以把活直接甩给它——文件、网页、想法都行。
+          </p>
+        </div>
+
+        <div class="value-grid">
+          <article class="value-card is-emphasis">
+            <div class="card-label accent">做事</div>
+            <h3>把活甩给它，它做完给你看</h3>
+            <p>文件、网页、想法一起拖进来，它整理、写、做、改，做完贴回给你。</p>
+            <div class="chip-row" aria-hidden="true">
+              <span>Excel</span>
+              <span>PPT</span>
+              <span>Markdown</span>
+              <span>网页</span>
+            </div>
+          </article>
+
+          <article class="value-card">
+            <div class="card-label blue">动手</div>
+            <h3>自己开浏览器、操作桌面</h3>
+            <p>比价、查资料、截图、点按钮、填表单——一步步做完，全过程能回放。</p>
+            <div class="chip-row" aria-hidden="true">
+              <span>浏览器</span>
+              <span>桌面</span>
+              <span>截图</span>
+              <span>回放</span>
+            </div>
+          </article>
+
+          <article class="value-card">
+            <div class="card-label amber">记得</div>
+            <h3>记得你怎么干活</h3>
+            <p>偏好、项目结构、上周说过的话，下一次不用重新交代。</p>
+            <div class="chip-row" aria-hidden="true">
+              <span>偏好</span>
+              <span>项目</span>
+              <span>时间线</span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ====================================================== Flow -->
+      <section class="band" id="flow" aria-labelledby="flow-title">
+        <div class="section">
+          <div class="section-head">
+            <div>
+              <span class="section-label">场景</span>
+              <h2 id="flow-title">它真能做完这些事</h2>
+            </div>
+            <p class="lead">
+              不是给你提示词，是真的把活做完——三个装上当天就能跑的常见场景。
+            </p>
+          </div>
+
+          <div class="flow-grid">
+            <article class="flow-card t-product is-emphasis">
+              <span class="flow-tag">产品生成</span>
+              <div class="flow-user">做一个网页：选时区、显示各地当前时间、能保存常用城市。</div>
+              <div class="flow-chain">
+                <span>拆 UI</span><span class="sep">→</span>
+                <span>写 HTML / JS</span><span class="sep">→</span>
+                <span>起本地预览</span><span class="sep">→</span>
+                <span>交付 .html</span>
+              </div>
+              <div class="flow-preview" aria-hidden="true">
+                <div class="flow-preview-bar">
+                  <i></i><i></i><i></i>
+                  <em>世界时钟 · index.html</em>
+                </div>
+                <div class="flow-preview-body">
+                  <div class="lp-title"></div>
+                  <div class="lp-row"><span></span><span></span><span></span></div>
+                  <div class="lp-grid"><div></div><div></div><div></div></div>
+                  <div class="lp-cta"></div>
+                </div>
+              </div>
+              <div class="flow-artifact">
+                <span>可直接打开的网页</span>·<span>源码可二次编辑</span>
+              </div>
+            </article>
+
+            <article class="flow-card t-office">
+              <span class="flow-tag">办公自动化</span>
+              <div class="flow-user">这份 50 页 PDF 帮我做个 12 页 PPT 摘要，配一张要点 Excel。</div>
+              <div class="flow-chain">
+                <span>读 PDF</span><span class="sep">→</span>
+                <span>拆主题</span><span class="sep">→</span>
+                <span>出 .pptx + .xlsx</span>
+              </div>
+              <div class="flow-artifact">
+                <span>12 页 PPT</span>·<span>要点 .xlsx</span>
+              </div>
+            </article>
+
+            <article class="flow-card t-browse">
+              <span class="flow-tag">内容采集</span>
+              <div class="flow-user">去淘宝把这 3 款耳机的价格、评分、销量都抓回来。</div>
+              <div class="flow-chain">
+                <span>开浏览器</span><span class="sep">→</span>
+                <span>翻页采集</span><span class="sep">→</span>
+                <span>回写对比表</span>
+              </div>
+              <div class="flow-artifact">
+                <span>结构化对比表</span>·<span>全程截图</span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================== Privacy -->
+      <section class="section" id="privacy" aria-labelledby="privacy-title">
+        <div class="section-head">
+          <div>
+            <span class="section-label">隐私</span>
+            <h2 id="privacy-title">你的电脑、你的文件、你说了算</h2>
+          </div>
+          <p class="lead">
+            它能动你东西，但每一步你都能看见、能拦下、能回看。
+          </p>
+        </div>
+
+        <div class="privacy-grid">
+          <article class="privacy-card">
+            <h3>你的文件不离开这台电脑</h3>
+            <p>没有云端镜像，没有"训练你的数据"，断网也能用本地模型。</p>
+          </article>
+          <article class="privacy-card">
+            <h3>密码、token 自动打码</h3>
+            <p>真的需要发给大模型之前，敏感片段先在本地擦掉。</p>
+          </article>
+          <article class="privacy-card">
+            <h3>会动你东西之前会问你</h3>
+            <p>写文件、跑命令、控桌面前弹确认，全程留记录可回看。</p>
+          </article>
+        </div>
+      </section>
+
+      <!-- ====================================================== Memory -->
+      <section class="section" id="memory" aria-labelledby="memory-title">
+        <div class="memory-panel">
+          <div class="memory-copy">
+            <span class="section-label">记忆</span>
+            <h2 id="memory-title">让它一次比一次更懂你</h2>
+            <p class="lead">
+              用得越久越顺手——它把和你的工作方式沉淀成可看可改的本地档案。
+            </p>
+          </div>
+
+          <div class="memory-list" aria-label="Agent Neo 记忆能力">
+            <article class="memory-item">
+              <span class="memory-index">01</span>
+              <h3>它记得你的口味</h3>
+              <p>你纠正过的、偏好的、习惯的，下次自动套上。</p>
+            </article>
+
+            <article class="memory-item">
+              <span class="memory-index">02</span>
+              <h3>它认得你的项目</h3>
+              <p>文件结构、之前的决定，不用每次重新讲。</p>
+            </article>
+
+            <article class="memory-item">
+              <span class="memory-index">03</span>
+              <h3>它记得你做过什么</h3>
+              <p>屏幕上的活动归档在本地，可以问"我昨天那个文档放哪了"。</p>
+            </article>
+
+            <article class="memory-item">
+              <span class="memory-index">04</span>
+              <h3>它记得每件事怎么做完的</h3>
+              <p>中间步骤、失败原因、产物，能回看也能复用。</p>
+            </article>
+
+            <p class="memory-note">
+              <strong>所有记忆都是你电脑里的 Markdown 文件</strong>——能打开、能改、能删，不是黑盒。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================== Ecosystem -->
+      <section class="section" id="ecosystem" aria-labelledby="eco-title">
+        <div class="section-head">
+          <div>
+            <span class="section-label">扩展</span>
+            <h2 id="eco-title">你常用什么，它就能用什么</h2>
+          </div>
+          <p class="lead">
+            自带一套常用工具，也能装上社区扩展接你自己的服务。
+          </p>
+        </div>
+
+        <div class="eco-grid">
+          <article class="eco-col">
+            <div class="card-label">它会用的工具</div>
+            <h3>开箱即用的能力</h3>
+            <p>需要哪个自己挑哪个，过程你都看得见。</p>
+            <div class="eco-pills">
+              <span>浏览器</span>
+              <span>桌面</span>
+              <span>终端</span>
+              <span>Git</span>
+              <span>文件读写</span>
+              <span>网页搜索</span>
+              <span>Excel 公式</span>
+              <span>PPT</span>
+              <span>截图</span>
+              <span>Mermaid</span>
+            </div>
+          </article>
+
+          <article class="eco-col">
+            <div class="card-label blue">它自带的本事</div>
+            <h3>常用任务一句话调起</h3>
+            <p>不用每次写长 prompt——把常用工作流封成命令。</p>
+            <div class="eco-pills">
+              <span>写 commit</span>
+              <span>代码 review</span>
+              <span>跑测试</span>
+              <span>解释代码</span>
+              <span>重构</span>
+              <span>Docker</span>
+              <span>数据清洗</span>
+              <span>Excel 建模</span>
+            </div>
+          </article>
+
+          <article class="eco-col">
+            <div class="card-label amber">你还能装更多</div>
+            <h3>接你自己的工具</h3>
+            <p>装上社区扩展，让它接邮件、日历、Notion、飞书——你常用什么它就能用什么。</p>
+            <div class="eco-pills">
+              <span>邮件</span>
+              <span>日历</span>
+              <span>Notion</span>
+              <span>飞书</span>
+              <span>……</span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ====================================================== Download -->
+      <section class="download-band" id="download" aria-labelledby="download-title">
+        <div class="section">
+          <div class="download-panel">
+            <div class="download-copy">
+              <span class="section-label">下载</span>
+              <h2 id="download-title">进入 Agent Neo</h2>
+              <p class="lead">
+                装到本机，把浏览器、桌面、本地文件和长任务放进同一个工作环境。
+              </p>
+              <p class="download-footnote">
+                Windows / Linux / Intel mac 版本计划中。
+              </p>
+            </div>
+
+            <div class="download-card-shell">
+              <article class="download-card">
+                <div>
+                  <div class="card-label">mac</div>
+                  <h3>Agent Neo for mac</h3>
+                  <p class="meta">仅 Apple Silicon（M 系列）</p>
+                </div>
+                <a class="button primary" href="https://github.com/baochipham942-eng/code-agent/releases/latest">⬇ 下载 .dmg</a>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <a href="#top" class="to-top" aria-label="回到顶部">↑</a>
+
+    <footer>Agent Neo · 装在你电脑上的 AI 同事</footer>
+  </body>
+</html>

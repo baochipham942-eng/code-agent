@@ -3,7 +3,6 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { Cpu } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
@@ -37,10 +36,14 @@ export const AboutSettings: React.FC = () => {
       <WebModeBanner />
       {/* App Icon & Version */}
       <div className="text-center">
-        <div className="w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mb-4">
-          <Cpu className="w-10 h-10 text-white" />
+        <div className="w-20 h-20 mx-auto rounded-2xl bg-zinc-950 p-[1px] shadow-xl shadow-black/40 mb-4">
+          <div className="relative h-full w-full overflow-hidden rounded-2xl bg-[#050506]">
+            <div className="absolute inset-0 bg-gradient-to-br from-[#030304] to-[#17191f]" />
+            <div className="absolute inset-[18px] bg-zinc-100 [clip-path:polygon(0_100%,0_0,22%_0,78%_65%,78%_0,100%_0,100%_100%,78%_100%,22%_35%,22%_100%)]" />
+            <div className="absolute bottom-4 right-4 h-2.5 w-2.5 rounded-full bg-white shadow-[0_0_0_7px_rgba(255,255,255,0.16)]" />
+          </div>
         </div>
-        <h3 className="text-xl font-semibold text-zinc-200">Code Agent</h3>
+        <h3 className="text-xl font-semibold text-zinc-200">Agent Neo</h3>
         <p className="text-sm text-zinc-400 mt-1">{t.about.version} {version}</p>
       </div>
 

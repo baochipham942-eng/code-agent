@@ -5,8 +5,17 @@ import path from 'path';
 
 const dbState = vi.hoisted(() => ({
   sqlite: null as import('better-sqlite3').Database | null,
-  getSession: vi.fn(),
+  getSession: vi.fn()
 }));
+
+function ensureSessionsTable(db: import('better-sqlite3').Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT
+    );
+  `);
+}
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
@@ -21,6 +30,7 @@ describe('ReviewQueueService', () => {
 
   beforeEach(() => {
     dbState.sqlite = new Database(':memory:');
+    ensureSessionsTable(dbState.sqlite);
     dbState.getSession.mockReset();
     database = getDatabase();
     originalGetDb = database.getDb.bind(database);
@@ -40,14 +50,14 @@ describe('ReviewQueueService', () => {
   it('creates a stable review item identity from session trace and resolves title from repository', () => {
     dbState.getSession.mockReturnValue({
       id: 'session-1',
-      title: 'Resolved Session Title',
+      title: 'Resolved Session Title'
     });
 
     const item = service.enqueueSession({
       sessionId: 'session-1',
       sessionTitle: 'Fallback Title',
       reason: 'manual_review',
-      enqueueSource: 'current_session_bar',
+      enqueueSource: 'current_session_bar'
     });
 
     expect(item.id).toBe('review:session:session-1');
@@ -56,11 +66,41 @@ describe('ReviewQueueService', () => {
       traceSource: 'session_replay',
       source: 'session_replay',
       sessionId: 'session-1',
-      replayKey: 'session-1',
+      replayKey: 'session-1'
     });
     expect(item.enqueueSource).toBe('current_session_bar');
     expect(item.sessionTitle).toBe('Resolved Session Title');
     expect(service.listItems()).toHaveLength(1);
+  });
+
+  it('filters review queue items by session owner for admin views', () => {
+    dbState.sqlite!.prepare('INSERT INTO sessions (id, user_id) VALUES (?, ?)').run('session-user-1', 'user-1');
+    dbState.sqlite!.prepare('INSERT INTO sessions (id, user_id) VALUES (?, ?)').run('session-user-2', 'user-2');
+
+    dbState.getSession.mockImplementation((sessionId: string) => ({
+      id: sessionId,
+      title: `Title ${sessionId}`
+    }));
+
+    service.enqueueSession({
+      sessionId: 'session-user-1',
+      reason: 'manual_review',
+      enqueueSource: 'session_list'
+    });
+    service.enqueueSession({
+      sessionId: 'session-user-2',
+      reason: 'manual_review',
+      enqueueSource: 'session_list'
+    });
+    service.enqueueSession({
+      sessionId: 'session-unassigned',
+      reason: 'manual_review',
+      enqueueSource: 'session_list'
+    });
+
+    expect(service.listItems({ userId: 'user-1' }).map((item) => item.sessionId)).toEqual(['session-user-1']);
+    expect(service.listItems({ userId: 'user-2' }).map((item) => item.sessionId)).toEqual(['session-user-2']);
+    expect(service.listItems({ unassignedOnly: true }).map((item) => item.sessionId)).toEqual(['session-unassigned']);
   });
 
   it('upserts the same session review item instead of creating duplicates', () => {
@@ -73,7 +113,7 @@ describe('ReviewQueueService', () => {
       sessionId: 'session-2',
       sessionTitle: 'First Title',
       reason: 'manual_review',
-      enqueueSource: 'current_session_bar',
+      enqueueSource: 'current_session_bar'
     });
 
     const second = service.enqueueSession({
@@ -87,8 +127,8 @@ describe('ReviewQueueService', () => {
         summary: 'Repeated the same recovery action.',
         stepIndex: 4,
         confidence: 0.74,
-        evidence: [4, 5],
-      },
+        evidence: [4, 5]
+      }
     });
 
     const items = service.listItems();
@@ -107,7 +147,7 @@ describe('ReviewQueueService', () => {
       summary: 'Repeated the same recovery action.',
       stepIndex: 4,
       confidence: 0.74,
-      evidence: [4, 5],
+      evidence: [4, 5]
     });
     expect(second.failureAsset).toMatchObject({
       id: 'failure-asset:review:session:session-2',
@@ -118,17 +158,10 @@ describe('ReviewQueueService', () => {
       sink: 'prompt_policy',
       category: 'loop',
       title: 'Prompt Policy · 循环卡住 draft',
-      body: [
-        'Repeated the same recovery action.',
-        'Target: Prompt Policy',
-        'Category: 循环卡住',
-        'Root step: 4',
-        'Confidence: 74%',
-        'Evidence steps: 4, 5',
-      ].join('\n'),
+      body: ['Repeated the same recovery action.', 'Target: Prompt Policy', 'Category: 循环卡住', 'Root step: 4', 'Confidence: 74%', 'Evidence steps: 4, 5'].join('\n'),
       stepIndex: 4,
       confidence: 0.74,
-      evidence: [4, 5],
+      evidence: [4, 5]
     });
 
     nowSpy.mockRestore();
@@ -138,7 +171,7 @@ describe('ReviewQueueService', () => {
     dbState.getSession.mockReturnValue(null);
 
     const item = service.enqueueSession({
-      sessionId: 'abcdef123456',
+      sessionId: 'abcdef123456'
     });
 
     expect(item.sessionTitle).toBe('Session abcdef12');
@@ -150,6 +183,7 @@ describe('ReviewQueueService', () => {
 
     dbState.sqlite?.close();
     dbState.sqlite = new Database(dbPath);
+    ensureSessionsTable(dbState.sqlite);
     dbState.getSession.mockReturnValue(null);
 
     const firstService = new ReviewQueueService();
@@ -157,11 +191,12 @@ describe('ReviewQueueService', () => {
       sessionId: 'persisted-session',
       sessionTitle: 'Persisted Review Session',
       reason: 'manual_review',
-      enqueueSource: 'session_list',
+      enqueueSource: 'session_list'
     });
 
     dbState.sqlite.close();
     dbState.sqlite = new Database(dbPath);
+    ensureSessionsTable(dbState.sqlite);
 
     const reopenedService = new ReviewQueueService();
     const items = reopenedService.listItems();
@@ -179,8 +214,8 @@ describe('ReviewQueueService', () => {
         traceSource: 'session_replay',
         source: 'session_replay',
         sessionId: 'persisted-session',
-        replayKey: 'persisted-session',
-      },
+        replayKey: 'persisted-session'
+      }
     });
 
     dbState.sqlite.close();
@@ -202,8 +237,8 @@ describe('ReviewQueueService', () => {
         summary: 'Important context was missing from the replay.',
         stepIndex: 2,
         confidence: 0.91,
-        evidence: [2, 3],
-      },
+        evidence: [2, 3]
+      }
     });
 
     const items = service.listItems();
@@ -219,7 +254,7 @@ describe('ReviewQueueService', () => {
         summary: 'Important context was missing from the replay.',
         stepIndex: 2,
         confidence: 0.91,
-        evidence: [2, 3],
+        evidence: [2, 3]
       },
       failureAsset: {
         id: 'failure-asset:review:session:session-with-routing',
@@ -230,18 +265,11 @@ describe('ReviewQueueService', () => {
         sink: 'dataset',
         category: 'missing_context',
         title: 'Dataset · 缺少上下文 draft',
-        body: [
-          'Important context was missing from the replay.',
-          'Target: Dataset',
-          'Category: 缺少上下文',
-          'Root step: 2',
-          'Confidence: 91%',
-          'Evidence steps: 2, 3',
-        ].join('\n'),
+        body: ['Important context was missing from the replay.', 'Target: Dataset', 'Category: 缺少上下文', 'Root step: 2', 'Confidence: 91%', 'Evidence steps: 2, 3'].join('\n'),
         stepIndex: 2,
         confidence: 0.91,
-        evidence: [2, 3],
-      },
+        evidence: [2, 3]
+      }
     });
   });
 
@@ -251,6 +279,7 @@ describe('ReviewQueueService', () => {
 
     dbState.sqlite?.close();
     dbState.sqlite = new Database(dbPath);
+    ensureSessionsTable(dbState.sqlite);
     dbState.getSession.mockReturnValue(null);
 
     const firstService = new ReviewQueueService();
@@ -266,12 +295,13 @@ describe('ReviewQueueService', () => {
         summary: 'Tool call failed during replay.',
         stepIndex: 6,
         confidence: 0.67,
-        evidence: [6],
-      },
+        evidence: [6]
+      }
     });
 
     dbState.sqlite.close();
     dbState.sqlite = new Database(dbPath);
+    ensureSessionsTable(dbState.sqlite);
 
     const reopenedService = new ReviewQueueService();
     const items = reopenedService.listItems();
@@ -289,7 +319,7 @@ describe('ReviewQueueService', () => {
         summary: 'Tool call failed during replay.',
         stepIndex: 6,
         confidence: 0.67,
-        evidence: [6],
+        evidence: [6]
       },
       failureAsset: {
         id: 'failure-asset:review:session:persisted-failure-session',
@@ -300,18 +330,11 @@ describe('ReviewQueueService', () => {
         sink: 'capability_health',
         category: 'tool_error',
         title: 'Capability Health · 工具失败 draft',
-        body: [
-          'Tool call failed during replay.',
-          'Target: Capability Health',
-          'Category: 工具失败',
-          'Root step: 6',
-          'Confidence: 67%',
-          'Evidence steps: 6',
-        ].join('\n'),
+        body: ['Tool call failed during replay.', 'Target: Capability Health', 'Category: 工具失败', 'Root step: 6', 'Confidence: 67%', 'Evidence steps: 6'].join('\n'),
         stepIndex: 6,
         confidence: 0.67,
-        evidence: [6],
-      },
+        evidence: [6]
+      }
     });
 
     dbState.sqlite.close();
@@ -333,14 +356,14 @@ describe('ReviewQueueService', () => {
         summary: 'Wrong plan selected.',
         stepIndex: 1,
         confidence: 0.8,
-        evidence: [1],
-      },
+        evidence: [1]
+      }
     });
 
     const updated = service.updateFailureAssetStatus({
       reviewItemId: 'review:session:status-session',
       status: 'ready',
-      updatedAt: 9_999,
+      updatedAt: 9_999
     });
 
     expect(updated).toMatchObject({
@@ -348,25 +371,27 @@ describe('ReviewQueueService', () => {
       updatedAt: 9_999,
       failureAsset: {
         status: 'ready',
-        updatedAt: 9_999,
-      },
+        updatedAt: 9_999
+      }
     });
     expect(service.listItems()[0]).toMatchObject({
       id: 'review:session:status-session',
       updatedAt: 9_999,
       failureAsset: {
         status: 'ready',
-        updatedAt: 9_999,
-      },
+        updatedAt: 9_999
+      }
     });
   });
 
   it('returns null when updating a missing failure asset', () => {
-    expect(service.updateFailureAssetStatus({
-      reviewItemId: 'review:session:missing',
-      status: 'dismissed',
-      updatedAt: 123,
-    })).toBeNull();
+    expect(
+      service.updateFailureAssetStatus({
+        reviewItemId: 'review:session:missing',
+        status: 'dismissed',
+        updatedAt: 123
+      })
+    ).toBeNull();
   });
 
   it('persists delivery review metadata for delivery_review items', () => {
@@ -384,8 +409,8 @@ describe('ReviewQueueService', () => {
         summary: 'Delivery review found 1 error and 1 warning.',
         skillIds: ['frontend_ui'],
         issueCount: 2,
-        issueCodes: ['layout_overflow', 'missing_viewport'],
-      },
+        issueCodes: ['layout_overflow', 'missing_viewport']
+      }
     });
 
     expect(item).toMatchObject({
@@ -393,8 +418,8 @@ describe('ReviewQueueService', () => {
       deliveryReview: {
         status: 'needs_work',
         score: 65,
-        issueCodes: ['layout_overflow', 'missing_viewport'],
-      },
+        issueCodes: ['layout_overflow', 'missing_viewport']
+      }
     });
     expect(item.failureAsset).toBeUndefined();
     expect(service.listItems()[0].deliveryReview?.reviewId).toBe('delivery-review:delivery-session:1000');

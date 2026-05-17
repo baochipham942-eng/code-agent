@@ -108,10 +108,13 @@ function buildHookActivity(
       action: event.action,
       hookCount: event.hookCount,
       durationMs: event.durationMs,
+      sources: event.sources,
+      hookType: event.hookType,
       ...(event.modified ? { modified: true } : {}),
       ...(event.errorCount ? { errorCount: event.errorCount } : {}),
       ...(truncateHookMessage(event.message) ? { message: truncateHookMessage(event.message) } : {}),
       ...(event.toolName ? { toolName: event.toolName } : {}),
+      ...(event.matcher ? { matcher: event.matcher } : {}),
     })),
   };
 }

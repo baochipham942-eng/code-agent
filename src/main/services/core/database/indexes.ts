@@ -38,6 +38,7 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
 
   // 性能优化：复合索引（首轮响应加速）
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_status_updated ON sessions(status, updated_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_user_updated ON sessions(user_id, updated_at DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_type_updated ON sessions(session_type, updated_at DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_session_timestamp ON messages(session_id, timestamp DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_session_visibility_timestamp ON messages(session_id, visibility, timestamp DESC)`);
@@ -73,6 +74,7 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
 
   // Telemetry indexes
   db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_sessions_start ON telemetry_sessions(start_time DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_sessions_user_start ON telemetry_sessions(user_id, start_time DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_turns_session ON telemetry_turns(session_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_turns_session_num ON telemetry_turns(session_id, turn_number)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_model_calls_turn ON telemetry_model_calls(turn_id)`);
@@ -88,6 +90,7 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
 
   // Evaluations indexes
   db.exec(`CREATE INDEX IF NOT EXISTS idx_evaluations_session ON evaluations(session_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_evaluations_user_timestamp ON evaluations(user_id, timestamp DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_evaluations_timestamp ON evaluations(timestamp DESC)`);
 
   // Captures indexes

@@ -97,12 +97,16 @@ export function resolveExternalEngineLaunch(
   }
 
   const permissionProfile = assertReadOnlyExternalProfile(engine.permissionProfile);
-  const workspaceRoot = engine.cwd || session.workingDirectory;
+  const workspaceRoot = session.workingDirectory?.trim();
   if (!workspaceRoot) {
     throw new Error('External Agent Engine requires a selected workspace root.');
   }
 
-  const cwd = assertWorkspaceCwd(requestedCwd?.trim() || session.workingDirectory || workspaceRoot, workspaceRoot);
+  if (engine.cwd) {
+    assertWorkspaceCwd(engine.cwd, workspaceRoot);
+  }
+
+  const cwd = assertWorkspaceCwd(requestedCwd?.trim() || engine.cwd || workspaceRoot, workspaceRoot);
   return {
     cwd,
     workspaceRoot: assertWorkspaceCwd(workspaceRoot, workspaceRoot),

@@ -8,6 +8,8 @@ import { createPortal } from 'react-dom';
 import { useSessionStore } from '../../stores/sessionStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelProvider } from '@shared/contract';
+import type { AgentEngineDescriptor, AgentEngineKind, AgentEngineSessionMetadata } from '@shared/contract/agentEngine';
+import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { getProviderDisplayName } from '@shared/constants';
 import {
   buildRuntimeModelOptions,
@@ -15,7 +17,7 @@ import {
   type RuntimeModelOption,
 } from '@shared/modelRuntime';
 import { toast } from '../../hooks/useToast';
-import { Eye, Wrench, Brain, Sparkles, Zap } from 'lucide-react';
+import { Eye, Wrench, Brain, Sparkles, Zap, Cpu, Terminal } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
 import type { EffortLevel } from '../../../shared/contract/agent';
@@ -23,6 +25,88 @@ import type { EffortLevel } from '../../../shared/contract/agent';
 const QUICK_SWITCH_PROVIDERS = [
   'moonshot', 'deepseek', 'zhipu', 'openai', 'claude', 'volcengine', 'local', 'xiaomi', 'custom',
 ] as const satisfies readonly ModelProvider[];
+
+// Engine 短标签（与 AgentEngineSelector 保持一致）
+const ENGINE_SHORT_LABEL: Record<AgentEngineKind, string> = {
+  native: 'Agent Neo',
+  codex_cli: 'Codex',
+  claude_code: 'Claude',
+};
+
+const ENGINE_ICON: Record<AgentEngineKind, React.ReactNode> = {
+  native: <Cpu className="w-3 h-3" />,
+  codex_cli: <Terminal className="w-3 h-3" />,
+  claude_code: <Terminal className="w-3 h-3" />,
+};
+
+const ENGINE_INSTALL_LABEL: Record<AgentEngineDescriptor['installState'], string> = {
+  builtin: '内置',
+  installed: '已安装',
+  missing: '未安装',
+};
+
+const ENGINE_RUNTIME_LABEL: Record<AgentEngineDescriptor['runtimeState'], string> = {
+  ready: 'Ready',
+  not_configured: 'Needs config',
+  blocked: 'Blocked',
+  error: 'Error',
+  unknown: 'Unknown',
+};
+
+const ENGINE_PERMISSION_LABEL: Record<AgentEngineDescriptor['defaultPermissionProfile'], string> = {
+  default: '默认权限',
+  read_only: '只读默认',
+  workspace_write: 'workspace write',
+};
+
+const ENGINE_RISK_LABEL: Record<AgentEngineDescriptor['riskTier'], string> = {
+  low: '低风险',
+  medium: '中风险',
+  high: '高风险',
+};
+
+function formatEngineCwdPolicy(descriptor: AgentEngineDescriptor): string {
+  return descriptor.cwdPolicy === 'workspace_only' ? '当前 workspace cwd' : descriptor.cwdPolicy;
+}
+
+function getEngineRuntimeClass(descriptor: AgentEngineDescriptor): string {
+  switch (descriptor.runtimeState) {
+    case 'ready':
+      return 'text-emerald-300';
+    case 'blocked':
+    case 'error':
+      return 'text-red-300';
+    case 'not_configured':
+      return 'text-amber-300';
+    default:
+      return 'text-zinc-400';
+  }
+}
+
+function formatEngineTooltip(descriptor: AgentEngineDescriptor, needsWorkspace: boolean): string {
+  return [
+    descriptor.label,
+    descriptor.kind === 'native' ? '内置 runtime' : '外部 CLI',
+    `${ENGINE_INSTALL_LABEL[descriptor.installState]} / ${ENGINE_RUNTIME_LABEL[descriptor.runtimeState]}`,
+    descriptor.version,
+    ENGINE_PERMISSION_LABEL[descriptor.defaultPermissionProfile],
+    formatEngineCwdPolicy(descriptor),
+    ENGINE_RISK_LABEL[descriptor.riskTier],
+    descriptor.command,
+    needsWorkspace ? '需要先选择 workspace' : undefined,
+    descriptor.lastError,
+  ].filter(Boolean).join(' · ');
+}
+
+export function buildModelSwitcherEngineSelection(
+  descriptor: AgentEngineDescriptor,
+): Partial<AgentEngineSessionMetadata> {
+  return {
+    kind: descriptor.kind,
+    permissionProfile: descriptor.defaultPermissionProfile,
+    origin: 'manual',
+  };
+}
 
 // MODEL_FEATURES 单一真理源已迁至 src/shared/constants/models.ts (2026-04-28 audit B3)
 
@@ -53,6 +137,21 @@ interface ModelSwitcherProps {
   currentModel: string;
 }
 
+export const MODEL_OVERRIDE_CHANGE_EVENT = 'code-agent:model-override-change';
+
+export interface ModelOverrideChangeDetail {
+  sessionId: string;
+  override: {
+    provider: ModelProvider;
+    model: string;
+    adaptive?: boolean;
+  } | null;
+}
+
+function emitModelOverrideChange(detail: ModelOverrideChangeDetail): void {
+  window.dispatchEvent(new CustomEvent<ModelOverrideChangeDetail>(MODEL_OVERRIDE_CHANGE_EVENT, { detail }));
+}
+
 export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [open, setOpen] = useState(false);
   const [overrideModel, setOverrideModel] = useState<string | null>(null);
@@ -66,10 +165,26 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [menuPos, setMenuPos] = useState<{ left: number; bottom: number } | null>(null);
   const sessionId = useSessionStore((s) => s.currentSessionId);
+  const session = useSessionStore((s) =>
+    s.currentSessionId
+      ? s.sessions.find((item) => item.id === s.currentSessionId) ?? null
+      : null
+  );
+  const updateSessionEngine = useSessionStore((s) => s.updateSessionEngine);
+  const appWorkingDirectory = useAppStore((s) => s.workingDirectory);
   const defaultProvider = useAppStore((s) => s.modelConfig.provider);
   // effort 切换内嵌到模型菜单顶部，对照 Codex 的"模型 + Intelligence"两层选择
   const effortLevel = useModeStore((s) => s.effortLevel);
   const setEffortLevel = useModeStore((s) => s.setEffortLevel);
+  // Engine adapter（Native/Codex/Claude）— 从 AgentEngineSelector 合并进来，
+  // 让"Engine · Model · Effort"在一个 trigger 里统一展示和切换。
+  const engine = normalizeAgentEngineSession(session?.engine);
+  const effectiveWorkingDirectory = session?.workingDirectory || appWorkingDirectory || null;
+  const [engineDescriptors, setEngineDescriptors] = useState<AgentEngineDescriptor[]>([]);
+  const selectedEngineDescriptor = useMemo(
+    () => engineDescriptors.find((descriptor) => descriptor.kind === engine.kind) ?? null,
+    [engine.kind, engineDescriptors],
+  );
 
   const modelOptions = useMemo(
     () => buildRuntimeModelOptions(modelSettings, QUICK_SWITCH_PROVIDERS),
@@ -125,6 +240,38 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         .catch(() => { /* 静默失败，健康点不显示即可 */ });
     }
   }, [open]);
+
+  // 打开时拉取 agent engine 描述符（Native/Codex/Claude 可用性）
+  useEffect(() => {
+    if (!open) return;
+    window.domainAPI?.invoke<AgentEngineDescriptor[]>(IPC_DOMAINS.AGENT_ENGINE, 'list', {})
+      .then((res) => { if (res?.success && res.data) setEngineDescriptors(res.data); })
+      .catch(() => { /* engine 检测失败时只显示当前 engine 标签 */ });
+  }, [open]);
+
+  const selectEngine = useCallback(
+    async (descriptor: AgentEngineDescriptor) => {
+      if (!sessionId) return;
+      if (descriptor.kind !== 'native' && !effectiveWorkingDirectory) {
+        toast.error(`${descriptor.label} 需要先选择 workspace`);
+        return;
+      }
+      if (!descriptor.executable) {
+        toast.info(`${descriptor.label} 当前只开放检测和历史导入`);
+        return;
+      }
+      if (
+        descriptor.installState === 'missing'
+        || descriptor.runtimeState === 'error'
+        || descriptor.runtimeState === 'blocked'
+      ) {
+        toast.error(`${descriptor.label} 不可用`);
+        return;
+      }
+      await updateSessionEngine(sessionId, buildModelSwitcherEngineSelection(descriptor));
+    },
+    [effectiveWorkingDirectory, sessionId, updateSessionEngine]
+  );
 
   // 点击外部关闭（portal 让菜单脱离 ref，需要同时检查 triggerRef + menuRef）
   useEffect(() => {
@@ -201,6 +348,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         setOverrideModel(option.model);
         setOverrideProvider(option.provider);
         setOverrideAdaptive(false);
+        emitModelOverrideChange({
+          sessionId,
+          override: { provider: option.provider, model: option.model, adaptive: false },
+        });
         setOpen(false);
       } catch (err) {
         toast.error('模型切换失败: ' + (err instanceof Error ? err.message : '未知错误') + '。请检查 API Key 或网络连接');
@@ -226,6 +377,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       setOverrideModel(currentModel);
       setOverrideProvider(defaultProvider);
       setOverrideAdaptive(true);
+      emitModelOverrideChange({
+        sessionId,
+        override: { provider: defaultProvider, model: currentModel, adaptive: true },
+      });
       setOpen(false);
     } catch (err) {
       toast.error('切换到自动模式失败: ' + (err instanceof Error ? err.message : '未知错误'));
@@ -247,6 +402,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       setOverrideModel(null);
       setOverrideProvider(null);
       setOverrideAdaptive(false);
+      emitModelOverrideChange({ sessionId, override: null });
       setOpen(false);
     } catch (err) {
       toast.error('清除模型覆盖失败: ' + (err instanceof Error ? err.message : '未知错误'));
@@ -281,6 +437,75 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         zIndex: 9999,
       }}
     >
+          {/* Engine adapter 行 — 合并自原 AgentEngineSelector，与 Reasoning effort
+              一起组成"Engine · Model · Effort"三层选择 */}
+          {engineDescriptors.length > 0 && (
+            <div className="px-2 pt-1.5 pb-1 border-b border-zinc-700/50">
+              <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
+                <Cpu className="w-3 h-3" />
+                <span>Engine</span>
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                {engineDescriptors.map((descriptor) => {
+                  const selected = descriptor.kind === engine.kind;
+                  const needsWorkspace = descriptor.kind !== 'native' && !effectiveWorkingDirectory;
+                  const disabled =
+                    needsWorkspace
+                    || !descriptor.executable
+                    || descriptor.installState === 'missing'
+                    || descriptor.runtimeState === 'error'
+                    || descriptor.runtimeState === 'blocked';
+                  const shortLabel = ENGINE_SHORT_LABEL[descriptor.kind] ?? descriptor.label;
+                  return (
+                    <button
+                      key={descriptor.kind}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => void selectEngine(descriptor)}
+                      title={formatEngineTooltip(descriptor, needsWorkspace)}
+                      className={`
+                        inline-flex items-center justify-center gap-1 px-1.5 py-1 text-[10px] rounded transition-colors
+                        ${selected
+                          ? 'text-emerald-300 bg-zinc-700 font-medium'
+                          : disabled
+                            ? 'text-zinc-600 cursor-not-allowed'
+                            : 'text-zinc-400 hover:bg-zinc-700/50'}
+                      `}
+                    >
+                      {ENGINE_ICON[descriptor.kind]}
+                      <span>{shortLabel}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedEngineDescriptor ? (
+                <div className="mt-2 rounded border border-zinc-700/60 bg-zinc-900/50 px-2 py-1.5 text-[10px] leading-relaxed text-zinc-400">
+                  <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                    <span className={getEngineRuntimeClass(selectedEngineDescriptor)}>
+                      {ENGINE_RUNTIME_LABEL[selectedEngineDescriptor.runtimeState]}
+                    </span>
+                    <span>{selectedEngineDescriptor.kind === 'native' ? '内置 runtime' : '外部 CLI'}</span>
+                    <span>{ENGINE_INSTALL_LABEL[selectedEngineDescriptor.installState]}</span>
+                    <span>{ENGINE_PERMISSION_LABEL[selectedEngineDescriptor.defaultPermissionProfile]}</span>
+                    <span>{formatEngineCwdPolicy(selectedEngineDescriptor)}</span>
+                    <span>{ENGINE_RISK_LABEL[selectedEngineDescriptor.riskTier]}</span>
+                    {selectedEngineDescriptor.version ? <span>{selectedEngineDescriptor.version}</span> : null}
+                  </div>
+                  {selectedEngineDescriptor.binaryPath ? (
+                    <div className="mt-1 truncate" title={selectedEngineDescriptor.binaryPath}>
+                      {selectedEngineDescriptor.binaryPath}
+                    </div>
+                  ) : null}
+                  {selectedEngineDescriptor.lastError ? (
+                    <div className="mt-1 truncate text-red-300" title={selectedEngineDescriptor.lastError}>
+                      {selectedEngineDescriptor.lastError}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          )}
+
           {/* Reasoning effort 行（Codex 风格 Intelligence 子菜单的扁平化） */}
           <div className="px-2 pt-1.5 pb-1 border-b border-zinc-700/50">
             <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
@@ -327,6 +552,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             {/* 自动路由选项（固定顶部，不参与搜索过滤） */}
             {!searchQuery.trim() && (
               <button
+                type="button"
                 onClick={handleSelectAuto}
                 className={`
                   w-full text-left px-3 py-1.5 text-xs
@@ -350,6 +576,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               filteredOptions.map((opt) => (
                 <button
                   key={`${opt.provider}/${opt.model}`}
+                  type="button"
                   onClick={() => handleSelect(opt)}
                   className={`
                     w-full text-left px-3 py-1.5 text-xs
@@ -391,6 +618,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         <>
           <div className="border-t border-zinc-700 my-1" />
           <button
+            type="button"
             onClick={handleClear}
             className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 hover:bg-zinc-700"
           >
@@ -405,6 +633,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     <>
       <button
         ref={triggerRef}
+        type="button"
         onClick={() => setOpen(!open)}
         aria-label="切换模型"
         aria-expanded={open}
@@ -417,10 +646,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           overrideAdaptive
             ? `自动路由（按任务复杂度切换，当前默认 ${currentModel}）`
             : isOverridden
-              ? `已覆盖: ${displayProvider}/${overrideModel} (原: ${currentModel})`
-              : `当前: ${currentModel}`
+              ? `已覆盖: ${displayProvider}/${overrideModel} (原: ${currentModel}) · Engine: ${ENGINE_SHORT_LABEL[engine.kind]}`
+              : `当前: ${currentModel} · Engine: ${ENGINE_SHORT_LABEL[engine.kind]}`
         }
       >
+        <span className="text-zinc-400">{ENGINE_SHORT_LABEL[engine.kind] ?? 'Agent Neo'}</span>
+        <span className="text-zinc-500 mx-1">·</span>
         {displayLabel}
         <span className="text-zinc-500 ml-1">·</span>
         <span className="text-zinc-400 ml-0.5">{effortShort}</span>

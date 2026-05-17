@@ -76,7 +76,7 @@ export class TerminalOutput {
     console.log(line);
 
     // Line 1: logo + product name + version
-    const nameVersion = `${chalk.bold('Code Agent')} ${chalk.dim(`v${version}`)}`;
+    const nameVersion = `${chalk.bold('Agent Neo')} ${chalk.dim(`v${version}`)}`;
     console.log(`${chalk.cyan(logo[0])}${nameVersion}`);
 
     // Line 2: logo + model info

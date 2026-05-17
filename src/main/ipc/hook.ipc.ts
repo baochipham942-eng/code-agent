@@ -15,6 +15,7 @@ import {
   HOOK_EVENT_DESCRIPTIONS,
   type HookEvent,
 } from '../protocol/events';
+import { getAdminAccessIpcError } from './adminGuard';
 
 // 所有支持的 event 类型 — 来自 HOOK_EVENT_DESCRIPTIONS 的 keys
 const ALL_HOOK_EVENTS: HookEvent[] = Object.keys(HOOK_EVENT_DESCRIPTIONS) as HookEvent[];
@@ -104,6 +105,9 @@ export function registerHookHandlers(
     const { action, payload } = request;
 
     try {
+      const accessError = getAdminAccessIpcError('Hooks');
+      if (accessError) return accessError;
+
       let data: unknown;
 
       switch (action) {

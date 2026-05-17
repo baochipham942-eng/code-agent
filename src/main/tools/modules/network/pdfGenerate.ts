@@ -199,8 +199,8 @@ export async function executePdfGenerate(
       margins: { top: 72, bottom: 72, left: 72, right: 72 },
       info: {
         Title: title,
-        Author: author || 'Code Agent',
-        Creator: 'Code Agent PDF Generator',
+        Author: author || 'Agent Neo',
+        Creator: 'Agent Neo PDF Generator',
       },
     });
 

@@ -48,7 +48,7 @@ docx_generate { "title": "会议纪要", "content": "## 参会人员\\n- 张三\
       },
       author: {
         type: 'string',
-        description: '文档作者（默认: Code Agent）',
+        description: '文档作者（默认: Agent Neo）',
       },
     },
     required: ['title', 'content'],

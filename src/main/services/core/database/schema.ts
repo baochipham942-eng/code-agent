@@ -4,9 +4,7 @@ import type { createLogger } from '../../infra/logger';
 type Logger = ReturnType<typeof createLogger>;
 
 function tableExists(db: BetterSqlite3.Database, tableName: string): boolean {
-  const row = db
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?")
-    .get(tableName) as { name?: string } | undefined;
+  const row = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(tableName) as { name?: string } | undefined;
   return row?.name === tableName;
 }
 
@@ -28,6 +26,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
+      user_id TEXT,
       title TEXT NOT NULL,
       model_provider TEXT NOT NULL,
       model_name TEXT NOT NULL,
@@ -46,6 +45,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       synced_at INTEGER
     )
   `);
+  safeAlter(db, `ALTER TABLE sessions ADD COLUMN user_id TEXT`, logger);
 
   // Messages 表
   db.exec(`
@@ -98,18 +98,12 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   `);
 
   // Experiments 表迁移
-  safeAlter(db, "ALTER TABLE experiments ADD COLUMN git_commit TEXT", logger);
+  safeAlter(db, 'ALTER TABLE experiments ADD COLUMN git_commit TEXT', logger);
   safeAlter(db, 'ALTER TABLE experiment_cases ADD COLUMN session_id TEXT', logger);
 
   // Evaluations 表版本化扩展
   if (tableExists(db, 'evaluations')) {
-    const evalMigrations = [
-      'ALTER TABLE evaluations ADD COLUMN snapshot_id TEXT',
-      "ALTER TABLE evaluations ADD COLUMN eval_version TEXT DEFAULT 'legacy'",
-      'ALTER TABLE evaluations ADD COLUMN rubric_version TEXT',
-      'ALTER TABLE evaluations ADD COLUMN judge_model TEXT',
-      'ALTER TABLE evaluations ADD COLUMN judge_prompt_hash TEXT',
-    ];
+    const evalMigrations = ['ALTER TABLE evaluations ADD COLUMN snapshot_id TEXT', "ALTER TABLE evaluations ADD COLUMN eval_version TEXT DEFAULT 'legacy'", 'ALTER TABLE evaluations ADD COLUMN rubric_version TEXT', 'ALTER TABLE evaluations ADD COLUMN judge_model TEXT', 'ALTER TABLE evaluations ADD COLUMN judge_prompt_hash TEXT'];
     for (const sql of evalMigrations) {
       safeAlter(db, sql, logger);
     }
@@ -390,6 +384,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS telemetry_sessions (
       id TEXT PRIMARY KEY,
+      user_id TEXT,
       title TEXT NOT NULL,
       generation_id TEXT NOT NULL,
       model_provider TEXT NOT NULL,
@@ -410,6 +405,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       status TEXT DEFAULT 'recording'
     )
   `);
+  safeAlter(db, `ALTER TABLE telemetry_sessions ADD COLUMN user_id TEXT`, logger);
 
   // Telemetry Turns - 一行/轮次
   db.exec(`
@@ -480,11 +476,11 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       id TEXT PRIMARY KEY,
       turn_id TEXT NOT NULL,
       session_id TEXT NOT NULL,
-	        tool_call_id TEXT NOT NULL,
-	        name TEXT NOT NULL,
-	        arguments TEXT,
-	        actual_arguments TEXT,
-	        result_summary TEXT,
+          tool_call_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          arguments TEXT,
+          actual_arguments TEXT,
+          result_summary TEXT,
       success INTEGER DEFAULT 0,
       error TEXT,
       error_category TEXT,
@@ -531,7 +527,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
 
-// Entity relations table (for proactive context)
+  // Entity relations table (for proactive context)
   db.exec(`
     CREATE TABLE IF NOT EXISTS entity_relations (
       id TEXT PRIMARY KEY,
@@ -561,12 +557,14 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     CREATE TABLE IF NOT EXISTS evaluations (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
+      user_id TEXT,
       timestamp INTEGER NOT NULL,
       score INTEGER NOT NULL,
       grade TEXT NOT NULL,
       data TEXT NOT NULL
     )
   `);
+  safeAlter(db, `ALTER TABLE evaluations ADD COLUMN user_id TEXT`, logger);
 
   // Experiments 表 (统一评测数据)
   db.exec(`

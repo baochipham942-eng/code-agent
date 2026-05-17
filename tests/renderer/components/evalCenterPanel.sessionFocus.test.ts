@@ -12,6 +12,11 @@ const reactState = vi.hoisted(() => ({
   stateCallCount: 0,
 }));
 
+const authState = vi.hoisted(() => ({
+  isLoading: false,
+  user: { isAdmin: true } as { isAdmin: boolean } | null,
+}));
+
 vi.mock('react', async () => {
   const actual = await vi.importActual<typeof import('react')>('react');
   return {
@@ -32,6 +37,11 @@ vi.mock('react', async () => {
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: (selector?: (state: typeof appState) => unknown) => selector ? selector(appState) : appState,
+}));
+
+vi.mock('../../../src/renderer/stores/authStore', () => ({
+  useAuthStore: (selector?: (state: typeof authState) => unknown) =>
+    selector ? selector(authState) : authState,
 }));
 
 vi.mock('../../../src/renderer/components/features/evalCenter/pages/SessionEvalView', () => ({
@@ -71,11 +81,22 @@ import { EvalCenterPanel } from '../../../src/renderer/components/features/evalC
 describe('EvalCenterPanel session focus', () => {
   it('renders the selected session view when eval center already carries a focused session id', () => {
     reactState.stateCallCount = 0;
+    authState.user = { isAdmin: true };
 
     const html = renderToStaticMarkup(React.createElement(EvalCenterPanel));
 
     expect(html).toContain('评测中心');
     expect(html).toContain('session:session-focus-1');
     expect(html).not.toContain('session-list');
+  });
+
+  it('does not render the eval center for non-admin users', () => {
+    reactState.stateCallCount = 0;
+    authState.user = { isAdmin: false };
+
+    const html = renderToStaticMarkup(React.createElement(EvalCenterPanel));
+
+    expect(html).not.toContain('评测中心');
+    expect(html).not.toContain('session:session-focus-1');
   });
 });

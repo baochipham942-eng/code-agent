@@ -137,7 +137,7 @@ export const ApiKeySetupModal: React.FC<ApiKeySetupModalProps> = ({
     >
       <div className="space-y-4">
         <p className="text-sm text-zinc-400 leading-relaxed">
-          欢迎使用 Code Agent！为了开始使用 AI 助手功能，您需要先配置 API Key。
+          欢迎使用 Agent Neo！为了开始使用 AI cowork 功能，您需要先配置 API Key。
         </p>
 
         <div className="bg-zinc-800 rounded-lg p-4 space-y-2">

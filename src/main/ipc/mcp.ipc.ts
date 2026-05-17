@@ -12,6 +12,7 @@ import {
 } from '../mcp/mcpClient';
 import { ensureConfigDir, getMcpConfigPath, pathExists } from '../config';
 import { getContextHealthService } from '../context/contextHealthService';
+import { getAdminAccessIpcError } from './adminGuard';
 
 const BLOCKED_STDIO_COMMANDS = new Set([
   'rm',
@@ -293,6 +294,13 @@ async function handleRefreshFromCloud(): Promise<void> {
   await refreshMCPServersFromCloud();
 }
 
+function requiresAdmin(action: string): boolean {
+  return action === 'addServer'
+    || action === 'setServerEnabled'
+    || action === 'reconnectServer'
+    || action === 'refreshFromCloud';
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -306,6 +314,11 @@ export function registerMcpHandlers(ipcMain: IpcMain, options: RegisterMcpHandle
     const { action } = request;
 
     try {
+      if (requiresAdmin(action)) {
+        const accessError = getAdminAccessIpcError('MCP');
+        if (accessError) return accessError;
+      }
+
       let data: unknown;
 
       switch (action) {

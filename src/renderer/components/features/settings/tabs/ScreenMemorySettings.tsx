@@ -328,7 +328,7 @@ export const ScreenMemorySettings: React.FC = () => {
         <ProviderHeading
           icon={<Server className="w-4 h-4" />}
           title="自动屏幕记忆 / OpenChronicle 外部 provider"
-          description={openchronicleProvider?.summary || '通过 Code Agent 桥设置 OpenChronicle daemon，不改变采集内核和后台生命周期。'}
+          description={openchronicleProvider?.summary || '通过 Agent Neo 桥设置 OpenChronicle daemon，不改变采集内核和后台生命周期。'}
           provider={openchronicleProvider}
           fallbackKind="daemon"
         />

@@ -147,6 +147,7 @@ export default tseslint.config(
       'src/main/session/claudeSessionParser.ts',
       'src/main/tools/media/ppt/layouts.ts',
       'src/main/tools/vision/computerUse.ts',
+      'src/renderer/components/Sidebar.tsx',
       'src/renderer/components/TaskPanel/Orchestration.tsx',
       'src/renderer/components/features/settings/sections/NativeDesktopSection.tsx',
     ],

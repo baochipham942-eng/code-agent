@@ -17,38 +17,14 @@ const logger = createLogger('DatabaseService');
 const moduleDir = typeof __dirname === 'string' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 import type BetterSqlite3 from 'better-sqlite3';
 const Database = loadBetterSqlite3(moduleDir, logger);
-import type {
-  Session,
-  Message,
-  ToolResult,
-  ModelProvider,
-  TodoItem,
-  SessionTask,
-} from '../../../shared/contract';
+import type { Session, Message, ToolResult, ModelProvider, TodoItem, SessionTask } from '../../../shared/contract';
 import type { ContextInterventionAction, ContextInterventionSnapshot } from '../../../shared/contract/contextView';
 import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/contract/capture';
 
 // Re-export types from repositories（保持外部调用方零修改）
-export type {
-  StoredSession,
-  StoredMessage,
-  MemoryRecord,
-  RelationQueryOptions,
-  EntityRelation,
-  UserPreference,
-  ProjectKnowledge,
-  ToolExecution,
-} from './repositories';
+export type { StoredSession, StoredMessage, MemoryRecord, RelationQueryOptions, EntityRelation, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import {
-  SessionRepository,
-  MemoryRepository,
-  ConfigRepository,
-  CaptureRepository,
-  ExperimentRepository,
-  SwarmTraceRepository,
-  PendingApprovalRepository,
-} from './repositories';
+import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, SwarmTraceRepository, PendingApprovalRepository } from './repositories';
 
 // ----------------------------------------------------------------------------
 // Database Service
@@ -180,9 +156,7 @@ export class DatabaseService {
 
       const crashedSessions = this.sessionRepo.markCrashedActiveSessions(Date.now());
       if (crashedSessions.interrupted > 0 || crashedSessions.orphaned > 0) {
-        logger.warn(
-          `[DatabaseService] Marked crashed active sessions: ${crashedSessions.interrupted} interrupted, ${crashedSessions.orphaned} orphaned`,
-        );
+        logger.warn(`[DatabaseService] Marked crashed active sessions: ${crashedSessions.interrupted} interrupted, ${crashedSessions.orphaned} orphaned`);
       }
 
       // 首次升级后：从已有 messages 表 backfill episodic FTS 索引（幂等）
@@ -191,7 +165,11 @@ export class DatabaseService {
       // 初始化失败时回退状态，避免 this.db 已赋值但 Repository 未初始化
       logger.error('Database initialization failed, resetting state:', err);
       if (this.db) {
-        try { this.db.close(); } catch (closeErr) { logger.warn('[DatabaseService] Failed to close database during cleanup:', closeErr); }
+        try {
+          this.db.close();
+        } catch (closeErr) {
+          logger.warn('[DatabaseService] Failed to close database during cleanup:', closeErr);
+        }
       }
       this.db = null;
       throw err;
@@ -249,7 +227,7 @@ export class DatabaseService {
       sessionCount: sessionRow.c as number,
       messageCount: messageRow.c as number,
       toolExecutionCount: toolRow.c as number,
-      knowledgeCount: knowledgeRow.c as number,
+      knowledgeCount: knowledgeRow.c as number
     };
   }
 
@@ -257,42 +235,31 @@ export class DatabaseService {
   // Turn Snapshots — 调试快照（CLI ↔ Electron 共享同一张表）
   // ==========================================================================
 
-  insertTurnSnapshot(input: {
-    sessionId: string;
-    turnId?: string | null;
-    turnIndex: number;
-    contextChunks?: unknown;
-    tokenBreakdown?: unknown;
-    createdAt?: number;
-  }): { id: string; createdAt: number; byteSize: number } {
+  insertTurnSnapshot(input: { sessionId: string; turnId?: string | null; turnIndex: number; contextChunks?: unknown; tokenBreakdown?: unknown; createdAt?: number }): { id: string; createdAt: number; byteSize: number } {
     this.ensureDb();
     const id = `snap_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
     const createdAt = input.createdAt ?? Date.now();
     const contextJson = input.contextChunks ? JSON.stringify(input.contextChunks) : null;
     const tokenJson = input.tokenBreakdown ? JSON.stringify(input.tokenBreakdown) : null;
-    const byteSize =
-      (contextJson ? Buffer.byteLength(contextJson, 'utf8') : 0) +
-      (tokenJson ? Buffer.byteLength(tokenJson, 'utf8') : 0);
-    this.db!
-      .prepare(
-        `INSERT INTO turn_snapshots (id, session_id, turn_id, turn_index, context_chunks, token_breakdown, byte_size, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(id, input.sessionId, input.turnId ?? null, input.turnIndex, contextJson, tokenJson, byteSize, createdAt);
+    const byteSize = (contextJson ? Buffer.byteLength(contextJson, 'utf8') : 0) + (tokenJson ? Buffer.byteLength(tokenJson, 'utf8') : 0);
+    this.db!.prepare(
+      `INSERT INTO turn_snapshots (id, session_id, turn_id, turn_index, context_chunks, token_breakdown, byte_size, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, input.sessionId, input.turnId ?? null, input.turnIndex, contextJson, tokenJson, byteSize, createdAt);
     return { id, createdAt, byteSize };
   }
 
-  getSnapshotStats(): { snapshotCount: number; sessionCount: number; totalBytes: number } {
+  getSnapshotStats(): {
+    snapshotCount: number;
+    sessionCount: number;
+    totalBytes: number;
+  } {
     this.ensureDb();
-    const row = this.db!
-      .prepare(
-        `SELECT COUNT(*) AS c, COUNT(DISTINCT session_id) AS sc, COALESCE(SUM(byte_size), 0) AS bytes FROM turn_snapshots`,
-      )
-      .get() as { c: number; sc: number; bytes: number } | undefined;
+    const row = this.db!.prepare(`SELECT COUNT(*) AS c, COUNT(DISTINCT session_id) AS sc, COALESCE(SUM(byte_size), 0) AS bytes FROM turn_snapshots`).get() as { c: number; sc: number; bytes: number } | undefined;
     return {
       snapshotCount: row?.c ?? 0,
       sessionCount: row?.sc ?? 0,
-      totalBytes: row?.bytes ?? 0,
+      totalBytes: row?.bytes ?? 0
     };
   }
 
@@ -314,61 +281,31 @@ export class DatabaseService {
   }
 
   // -- Compaction Snapshots --
-  insertCompactionSnapshot(input: {
-    sessionId: string;
-    strategy?: string | null;
-    preMessageCount: number;
-    postMessageCount: number;
-    preTokens: number;
-    postTokens: number;
-    savedTokens: number;
-    usagePercent?: number | null;
-    preMessagesSummary?: unknown;
-    postMessagesSummary?: unknown;
-    createdAt?: number;
-  }): { id: string; createdAt: number; byteSize: number } {
+  insertCompactionSnapshot(input: { sessionId: string; strategy?: string | null; preMessageCount: number; postMessageCount: number; preTokens: number; postTokens: number; savedTokens: number; usagePercent?: number | null; preMessagesSummary?: unknown; postMessagesSummary?: unknown; createdAt?: number }): { id: string; createdAt: number; byteSize: number } {
     this.ensureDb();
     const id = `compact_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
     const createdAt = input.createdAt ?? Date.now();
     const preJson = input.preMessagesSummary ? JSON.stringify(input.preMessagesSummary) : null;
     const postJson = input.postMessagesSummary ? JSON.stringify(input.postMessagesSummary) : null;
-    const byteSize =
-      (preJson ? Buffer.byteLength(preJson, 'utf8') : 0) +
-      (postJson ? Buffer.byteLength(postJson, 'utf8') : 0);
-    this.db!
-      .prepare(
-        `INSERT INTO compaction_snapshots (id, session_id, strategy, pre_message_count, post_message_count, pre_tokens, post_tokens, saved_tokens, usage_percent, pre_messages_summary, post_messages_summary, byte_size, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        id,
-        input.sessionId,
-        input.strategy ?? null,
-        input.preMessageCount,
-        input.postMessageCount,
-        input.preTokens,
-        input.postTokens,
-        input.savedTokens,
-        input.usagePercent ?? null,
-        preJson,
-        postJson,
-        byteSize,
-        createdAt,
-      );
+    const byteSize = (preJson ? Buffer.byteLength(preJson, 'utf8') : 0) + (postJson ? Buffer.byteLength(postJson, 'utf8') : 0);
+    this.db!.prepare(
+      `INSERT INTO compaction_snapshots (id, session_id, strategy, pre_message_count, post_message_count, pre_tokens, post_tokens, saved_tokens, usage_percent, pre_messages_summary, post_messages_summary, byte_size, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, input.sessionId, input.strategy ?? null, input.preMessageCount, input.postMessageCount, input.preTokens, input.postTokens, input.savedTokens, input.usagePercent ?? null, preJson, postJson, byteSize, createdAt);
     return { id, createdAt, byteSize };
   }
 
-  getCompactionStats(): { snapshotCount: number; sessionCount: number; totalBytes: number } {
+  getCompactionStats(): {
+    snapshotCount: number;
+    sessionCount: number;
+    totalBytes: number;
+  } {
     this.ensureDb();
-    const row = this.db!
-      .prepare(
-        `SELECT COUNT(*) AS c, COUNT(DISTINCT session_id) AS sc, COALESCE(SUM(byte_size), 0) AS bytes FROM compaction_snapshots`,
-      )
-      .get() as { c: number; sc: number; bytes: number } | undefined;
+    const row = this.db!.prepare(`SELECT COUNT(*) AS c, COUNT(DISTINCT session_id) AS sc, COALESCE(SUM(byte_size), 0) AS bytes FROM compaction_snapshots`).get() as { c: number; sc: number; bytes: number } | undefined;
     return {
       snapshotCount: row?.c ?? 0,
       sessionCount: row?.sc ?? 0,
-      totalBytes: row?.bytes ?? 0,
+      totalBytes: row?.bytes ?? 0
     };
   }
 
@@ -389,7 +326,10 @@ export class DatabaseService {
     return result.changes;
   }
 
-  listTurnSnapshots(sessionId: string, limit: number = 100): Array<{
+  listTurnSnapshots(
+    sessionId: string,
+    limit: number = 100
+  ): Array<{
     id: string;
     sessionId: string;
     turnId: string | null;
@@ -400,11 +340,7 @@ export class DatabaseService {
     createdAt: number;
   }> {
     this.ensureDb();
-    const rows = this.db!
-      .prepare(
-        `SELECT * FROM turn_snapshots WHERE session_id = ? ORDER BY turn_index ASC, created_at ASC LIMIT ?`,
-      )
-      .all(sessionId, limit) as Array<Record<string, unknown>>;
+    const rows = this.db!.prepare(`SELECT * FROM turn_snapshots WHERE session_id = ? ORDER BY turn_index ASC, created_at ASC LIMIT ?`).all(sessionId, limit) as Array<Record<string, unknown>>;
     return rows.map((row) => ({
       id: String(row.id),
       sessionId: String(row.session_id),
@@ -413,7 +349,7 @@ export class DatabaseService {
       contextChunks: row.context_chunks ? JSON.parse(String(row.context_chunks)) : null,
       tokenBreakdown: row.token_breakdown ? JSON.parse(String(row.token_breakdown)) : null,
       byteSize: Number(row.byte_size ?? 0),
-      createdAt: Number(row.created_at ?? 0),
+      createdAt: Number(row.created_at ?? 0)
     }));
   }
 
@@ -426,12 +362,7 @@ export class DatabaseService {
     if (!this.db) {
       if (!this._ensureDbWarned) {
         this._ensureDbWarned = true;
-        logger.warn(
-          'Database not initialized — DB operations will be skipped. ' +
-          (this._retryCount < this.MAX_RETRIES
-            ? `Auto-retry in progress (${this._retryCount}/${this.MAX_RETRIES}).`
-            : 'All retries exhausted. Restart the app to recover.')
-        );
+        logger.warn('Database not initialized — DB operations will be skipped. ' + (this._retryCount < this.MAX_RETRIES ? `Auto-retry in progress (${this._retryCount}/${this.MAX_RETRIES}).` : 'All retries exhausted. Restart the app to recover.'));
       }
       throw new Error('Database not initialized');
     }
@@ -443,11 +374,15 @@ export class DatabaseService {
   }
 
   // --- SessionRepository ---
-  createSession(session: Session): void { this.ensureDb(); this.sessionRepo.createSession(session); }
+  createSession(session: Session): void {
+    this.ensureDb();
+    this.sessionRepo.createSession(session);
+  }
   createSessionWithId(
     id: string,
     data: {
       title: string;
+      userId?: string | null;
       modelConfig: { provider: ModelProvider; model: string };
       workingDirectory?: string;
       type?: Session['type'];
@@ -461,39 +396,146 @@ export class DatabaseService {
       updatedAt?: number | string;
       isDeleted?: boolean;
     },
-    options?: { syncOrigin?: 'local' | 'remote' },
-  ): void { this.ensureDb(); this.sessionRepo.createSessionWithId(id, data, options); }
-  getSession(sessionId: string, options?: { includeDeleted?: boolean }): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.getSession(sessionId, options); }
-  listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.listSessions(limit, offset, includeArchived); }
-  updateSession(sessionId: string, updates: Partial<Session>, options?: { syncOrigin?: 'local' | 'remote'; isDeleted?: boolean }): void { this.ensureDb(); this.sessionRepo.updateSession(sessionId, updates, options); }
-  deleteSession(sessionId: string, options?: { syncOrigin?: 'local' | 'remote'; deletedAt?: number }): void { this.ensureDb(); this.sessionRepo.deleteSession(sessionId, options); }
-  updateMasterTaskId(sessionId: string, masterTaskId: string, updatedAt?: number): void { this.ensureDb(); this.sessionRepo.updateMasterTaskId(sessionId, masterTaskId, updatedAt); }
-  getMasterTaskId(sessionId: string): string | null { this.ensureDb(); return this.sessionRepo.getMasterTaskId(sessionId); }
-  updateSessionPlanTitle(sessionId: string, planTitle: string | null, updatedAt?: number): void { this.ensureDb(); this.sessionRepo.updateSessionPlanTitle(sessionId, planTitle, updatedAt); }
-  getSessionPlanTitle(sessionId: string): string | null { this.ensureDb(); return this.sessionRepo.getSessionPlanTitle(sessionId); }
-  clearAllSessions(): number { this.ensureDb(); return this.sessionRepo.clearAllSessions(); }
-  markCrashedActiveSessions(now?: number): { interrupted: number; orphaned: number } { this.ensureDb(); return this.sessionRepo.markCrashedActiveSessions(now); }
-  clearAllMessages(): number { this.ensureDb(); return this.sessionRepo.clearAllMessages(); }
-  hasMessages(sessionId: string): boolean { this.ensureDb(); return this.sessionRepo.hasMessages(sessionId); }
-  getLocalCacheStats(): { sessionCount: number; messageCount: number } { this.ensureDb(); return this.sessionRepo.getLocalCacheStats(); }
-  addMessage(sessionId: string, message: Message, options?: { skipTimestampUpdate?: boolean; syncOrigin?: 'local' | 'remote'; syncedAt?: number | null }): void { this.ensureDb(); this.sessionRepo.addMessage(sessionId, message, options); }
-  replaceMessages(sessionId: string, messages: Message[], updatedAt?: number): void { this.ensureDb(); this.sessionRepo.replaceMessages(sessionId, messages, updatedAt); }
-  updateMessage(messageId: string, updates: Partial<Message>): void { this.ensureDb(); this.sessionRepo.updateMessage(messageId, updates); }
-  getMessages(sessionId: string, limit?: number, offset?: number, options?: { includeRewound?: boolean }): Message[] { this.ensureDb(); return this.sessionRepo.getMessages(sessionId, limit, offset, options); }
-  getMessageCount(sessionId: string, options?: { includeRewound?: boolean }): number { this.ensureDb(); return this.sessionRepo.getMessageCount(sessionId, options); }
-  getRecentMessages(sessionId: string, count: number, options?: { includeRewound?: boolean }): Message[] { this.ensureDb(); return this.sessionRepo.getRecentMessages(sessionId, count, options); }
-  getMessagesBefore(sessionId: string, beforeTimestamp: number, limit: number = 30, options?: { includeRewound?: boolean }): Message[] { this.ensureDb(); return this.sessionRepo.getMessagesBefore(sessionId, beforeTimestamp, limit, options); }
-  getMessageById(sessionId: string, messageId: string, options?: { includeRewound?: boolean }): Message | null { this.ensureDb(); return this.sessionRepo.getMessageById(sessionId, messageId, options); }
-  applyPromptRewind(sessionId: string, userMessageId: string, record?: import('./repositories/SessionRepository').PromptRewindRecordInput): import('./repositories/SessionRepository').PromptRewindResult { this.ensureDb(); return this.sessionRepo.applyPromptRewind(sessionId, userMessageId, record); }
-  getUnsyncedSessions(limit: number = 1000): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.getUnsyncedSessions(limit); }
-  markSessionsSynced(sessionIds: string[]): void { this.ensureDb(); this.sessionRepo.markSessionsSynced(sessionIds); }
-  getUnsyncedMessages(limit: number = 1000): Array<Message & { sessionId: string }> { this.ensureDb(); return this.sessionRepo.getUnsyncedMessages(limit); }
-  markMessagesSynced(messageIds: string[]): void { this.ensureDb(); this.sessionRepo.markMessagesSynced(messageIds); }
-  truncateMessagesAfter(sessionId: string, messageId: string): number { this.ensureDb(); return this.sessionRepo.truncateMessagesAfter(sessionId, messageId); }
-  saveTodos(sessionId: string, todos: TodoItem[], updatedAt?: number): void { this.ensureDb(); this.sessionRepo.saveTodos(sessionId, todos, updatedAt); }
-  getTodos(sessionId: string): TodoItem[] { this.ensureDb(); return this.sessionRepo.getTodos(sessionId); }
-  saveSessionTasks(sessionId: string, tasks: SessionTask[], updatedAt?: number): void { this.ensureDb(); this.sessionRepo.saveSessionTasks(sessionId, tasks, updatedAt); }
-  getSessionTasks(sessionId: string): SessionTask[] { this.ensureDb(); return this.sessionRepo.getSessionTasks(sessionId); }
+    options?: { syncOrigin?: 'local' | 'remote' }
+  ): void {
+    this.ensureDb();
+    this.sessionRepo.createSessionWithId(id, data, options);
+  }
+  getSession(sessionId: string, options?: { includeDeleted?: boolean }): import('./repositories').StoredSession | null {
+    this.ensureDb();
+    return this.sessionRepo.getSession(sessionId, options);
+  }
+  listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false): import('./repositories').StoredSession[] {
+    this.ensureDb();
+    return this.sessionRepo.listSessions(limit, offset, includeArchived);
+  }
+  updateSession(sessionId: string, updates: Partial<Session>, options?: { syncOrigin?: 'local' | 'remote'; isDeleted?: boolean }): void {
+    this.ensureDb();
+    this.sessionRepo.updateSession(sessionId, updates, options);
+  }
+  deleteSession(sessionId: string, options?: { syncOrigin?: 'local' | 'remote'; deletedAt?: number }): void {
+    this.ensureDb();
+    this.sessionRepo.deleteSession(sessionId, options);
+  }
+  updateMasterTaskId(sessionId: string, masterTaskId: string, updatedAt?: number): void {
+    this.ensureDb();
+    this.sessionRepo.updateMasterTaskId(sessionId, masterTaskId, updatedAt);
+  }
+  getMasterTaskId(sessionId: string): string | null {
+    this.ensureDb();
+    return this.sessionRepo.getMasterTaskId(sessionId);
+  }
+  updateSessionPlanTitle(sessionId: string, planTitle: string | null, updatedAt?: number): void {
+    this.ensureDb();
+    this.sessionRepo.updateSessionPlanTitle(sessionId, planTitle, updatedAt);
+  }
+  getSessionPlanTitle(sessionId: string): string | null {
+    this.ensureDb();
+    return this.sessionRepo.getSessionPlanTitle(sessionId);
+  }
+  clearAllSessions(): number {
+    this.ensureDb();
+    return this.sessionRepo.clearAllSessions();
+  }
+  markCrashedActiveSessions(now?: number): {
+    interrupted: number;
+    orphaned: number;
+  } {
+    this.ensureDb();
+    return this.sessionRepo.markCrashedActiveSessions(now);
+  }
+  clearAllMessages(): number {
+    this.ensureDb();
+    return this.sessionRepo.clearAllMessages();
+  }
+  hasMessages(sessionId: string): boolean {
+    this.ensureDb();
+    return this.sessionRepo.hasMessages(sessionId);
+  }
+  getLocalCacheStats(): { sessionCount: number; messageCount: number } {
+    this.ensureDb();
+    return this.sessionRepo.getLocalCacheStats();
+  }
+  addMessage(
+    sessionId: string,
+    message: Message,
+    options?: {
+      skipTimestampUpdate?: boolean;
+      syncOrigin?: 'local' | 'remote';
+      syncedAt?: number | null;
+    }
+  ): void {
+    this.ensureDb();
+    this.sessionRepo.addMessage(sessionId, message, options);
+  }
+  replaceMessages(sessionId: string, messages: Message[], updatedAt?: number): void {
+    this.ensureDb();
+    this.sessionRepo.replaceMessages(sessionId, messages, updatedAt);
+  }
+  updateMessage(messageId: string, updates: Partial<Message>): void {
+    this.ensureDb();
+    this.sessionRepo.updateMessage(messageId, updates);
+  }
+  getMessages(sessionId: string, limit?: number, offset?: number, options?: { includeRewound?: boolean }): Message[] {
+    this.ensureDb();
+    return this.sessionRepo.getMessages(sessionId, limit, offset, options);
+  }
+  getMessageCount(sessionId: string, options?: { includeRewound?: boolean }): number {
+    this.ensureDb();
+    return this.sessionRepo.getMessageCount(sessionId, options);
+  }
+  getRecentMessages(sessionId: string, count: number, options?: { includeRewound?: boolean }): Message[] {
+    this.ensureDb();
+    return this.sessionRepo.getRecentMessages(sessionId, count, options);
+  }
+  getMessagesBefore(sessionId: string, beforeTimestamp: number, limit: number = 30, options?: { includeRewound?: boolean }): Message[] {
+    this.ensureDb();
+    return this.sessionRepo.getMessagesBefore(sessionId, beforeTimestamp, limit, options);
+  }
+  getMessageById(sessionId: string, messageId: string, options?: { includeRewound?: boolean }): Message | null {
+    this.ensureDb();
+    return this.sessionRepo.getMessageById(sessionId, messageId, options);
+  }
+  applyPromptRewind(sessionId: string, userMessageId: string, record?: import('./repositories/SessionRepository').PromptRewindRecordInput): import('./repositories/SessionRepository').PromptRewindResult {
+    this.ensureDb();
+    return this.sessionRepo.applyPromptRewind(sessionId, userMessageId, record);
+  }
+  getUnsyncedSessions(limit: number = 1000): import('./repositories').StoredSession[] {
+    this.ensureDb();
+    return this.sessionRepo.getUnsyncedSessions(limit);
+  }
+  markSessionsSynced(sessionIds: string[]): void {
+    this.ensureDb();
+    this.sessionRepo.markSessionsSynced(sessionIds);
+  }
+  getUnsyncedMessages(limit: number = 1000): Array<Message & { sessionId: string }> {
+    this.ensureDb();
+    return this.sessionRepo.getUnsyncedMessages(limit);
+  }
+  markMessagesSynced(messageIds: string[]): void {
+    this.ensureDb();
+    this.sessionRepo.markMessagesSynced(messageIds);
+  }
+  truncateMessagesAfter(sessionId: string, messageId: string): number {
+    this.ensureDb();
+    return this.sessionRepo.truncateMessagesAfter(sessionId, messageId);
+  }
+  saveTodos(sessionId: string, todos: TodoItem[], updatedAt?: number): void {
+    this.ensureDb();
+    this.sessionRepo.saveTodos(sessionId, todos, updatedAt);
+  }
+  getTodos(sessionId: string): TodoItem[] {
+    this.ensureDb();
+    return this.sessionRepo.getTodos(sessionId);
+  }
+  saveSessionTasks(sessionId: string, tasks: SessionTask[], updatedAt?: number): void {
+    this.ensureDb();
+    this.sessionRepo.saveSessionTasks(sessionId, tasks, updatedAt);
+  }
+  getSessionTasks(sessionId: string): SessionTask[] {
+    this.ensureDb();
+    return this.sessionRepo.getSessionTasks(sessionId);
+  }
   saveContextIntervention(sessionId: string, agentId: string | null | undefined, messageId: string, action: ContextInterventionAction | null, updatedAt?: number): void {
     this.ensureDb();
     this.sessionRepo.saveContextIntervention(sessionId, agentId, messageId, action, updatedAt);
@@ -504,69 +546,285 @@ export class DatabaseService {
   }
   saveSessionRuntimeState(
     sessionId: string,
-    state: { compressionStateJson?: string | null; persistentSystemContext?: string[] },
-    updatedAt?: number,
+    state: {
+      compressionStateJson?: string | null;
+      persistentSystemContext?: string[];
+    },
+    updatedAt?: number
   ): void {
     this.ensureDb();
     this.sessionRepo.saveSessionRuntimeState(sessionId, state, updatedAt);
   }
-  getSessionRuntimeState(sessionId: string): { compressionStateJson: string | null; persistentSystemContext: string[] } | null {
+  getSessionRuntimeState(sessionId: string): {
+    compressionStateJson: string | null;
+    persistentSystemContext: string[];
+  } | null {
     this.ensureDb();
     return this.sessionRepo.getSessionRuntimeState(sessionId);
   }
-  listArchivedSessions(limit: number = 50, offset: number = 0): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.listArchivedSessions(limit, offset); }
-  archiveSession(sessionId: string): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.archiveSession(sessionId); }
-  unarchiveSession(sessionId: string): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.unarchiveSession(sessionId); }
-  searchSessionMessagesFts(query: string, options?: { limit?: number; sessionId?: string; includeRewound?: boolean }): Array<{ messageId: string; sessionId: string; role: string; content: string; timestamp: number }> { this.ensureDb(); return this.sessionRepo.searchSessionMessagesFts(query, options); }
+  listArchivedSessions(limit: number = 50, offset: number = 0): import('./repositories').StoredSession[] {
+    this.ensureDb();
+    return this.sessionRepo.listArchivedSessions(limit, offset);
+  }
+  archiveSession(sessionId: string): import('./repositories').StoredSession | null {
+    this.ensureDb();
+    return this.sessionRepo.archiveSession(sessionId);
+  }
+  unarchiveSession(sessionId: string): import('./repositories').StoredSession | null {
+    this.ensureDb();
+    return this.sessionRepo.unarchiveSession(sessionId);
+  }
+  searchSessionMessagesFts(
+    query: string,
+    options?: { limit?: number; sessionId?: string; includeRewound?: boolean }
+  ): Array<{
+    messageId: string;
+    sessionId: string;
+    role: string;
+    content: string;
+    timestamp: number;
+  }> {
+    this.ensureDb();
+    return this.sessionRepo.searchSessionMessagesFts(query, options);
+  }
 
   // --- MemoryRepository ---
-  createMemory(data: Omit<import('./repositories').MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): import('./repositories').MemoryRecord { this.ensureDb(); return this.memoryRepo.createMemory(data); }
-  getMemory(id: string): import('./repositories').MemoryRecord | null { this.ensureDb(); return this.memoryRepo.getMemory(id); }
-  listMemories(options?: { type?: string; category?: string; source?: string; projectPath?: string; sessionId?: string; limit?: number; offset?: number; orderBy?: string; orderDir?: 'ASC' | 'DESC' }): import('./repositories').MemoryRecord[] { this.ensureDb(); return this.memoryRepo.listMemories(options); }
-  updateMemory(id: string, updates: Partial<import('./repositories').MemoryRecord>): import('./repositories').MemoryRecord | null { this.ensureDb(); return this.memoryRepo.updateMemory(id, updates); }
-  deleteMemory(id: string): boolean { this.ensureDb(); return this.memoryRepo.deleteMemory(id); }
-  deleteMemories(filter: { type?: string; category?: string; source?: string; projectPath?: string; sessionId?: string }): number { this.ensureDb(); return this.memoryRepo.deleteMemories(filter); }
-  searchMemories(query: string, options?: { type?: string; category?: string; limit?: number; applyDecay?: boolean }): import('./repositories').MemoryRecord[] { this.ensureDb(); return this.memoryRepo.searchMemories(query, options); }
-  getMemoryStats(): { total: number; byType: Record<string, number>; bySource: Record<string, number>; byCategory: Record<string, number> } { this.ensureDb(); return this.memoryRepo.getMemoryStats(); }
-  recordMemoryAccess(id: string): void { this.ensureDb(); this.memoryRepo.recordMemoryAccess(id); }
-  addRelation(params: { sourceId: string; targetId: string; relationType: 'calls' | 'imports' | 'similar_to' | 'solves' | 'depends_on' | 'modifies' | 'references'; confidence: number; evidence: string; sessionId: string }): void { if (!this.db) return; this.memoryRepo.addRelation(params); }
-  getRelationsFor(entityId: string, direction?: 'source' | 'target' | 'both', options?: import('./repositories').RelationQueryOptions): import('./repositories').EntityRelation[] { if (!this.db) return []; return this.memoryRepo.getRelationsFor(entityId, direction, options); }
-  updateRelationConfidence(id: string, confidence: number, evidence?: string): void { if (!this.db) return; this.memoryRepo.updateRelationConfidence(id, confidence, evidence); }
+  createMemory(data: Omit<import('./repositories').MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): import('./repositories').MemoryRecord {
+    this.ensureDb();
+    return this.memoryRepo.createMemory(data);
+  }
+  getMemory(id: string): import('./repositories').MemoryRecord | null {
+    this.ensureDb();
+    return this.memoryRepo.getMemory(id);
+  }
+  listMemories(options?: { type?: string; category?: string; source?: string; projectPath?: string; sessionId?: string; limit?: number; offset?: number; orderBy?: string; orderDir?: 'ASC' | 'DESC' }): import('./repositories').MemoryRecord[] {
+    this.ensureDb();
+    return this.memoryRepo.listMemories(options);
+  }
+  updateMemory(id: string, updates: Partial<import('./repositories').MemoryRecord>): import('./repositories').MemoryRecord | null {
+    this.ensureDb();
+    return this.memoryRepo.updateMemory(id, updates);
+  }
+  deleteMemory(id: string): boolean {
+    this.ensureDb();
+    return this.memoryRepo.deleteMemory(id);
+  }
+  deleteMemories(filter: { type?: string; category?: string; source?: string; projectPath?: string; sessionId?: string }): number {
+    this.ensureDb();
+    return this.memoryRepo.deleteMemories(filter);
+  }
+  searchMemories(
+    query: string,
+    options?: {
+      type?: string;
+      category?: string;
+      limit?: number;
+      applyDecay?: boolean;
+    }
+  ): import('./repositories').MemoryRecord[] {
+    this.ensureDb();
+    return this.memoryRepo.searchMemories(query, options);
+  }
+  getMemoryStats(): {
+    total: number;
+    byType: Record<string, number>;
+    bySource: Record<string, number>;
+    byCategory: Record<string, number>;
+  } {
+    this.ensureDb();
+    return this.memoryRepo.getMemoryStats();
+  }
+  recordMemoryAccess(id: string): void {
+    this.ensureDb();
+    this.memoryRepo.recordMemoryAccess(id);
+  }
+  addRelation(params: { sourceId: string; targetId: string; relationType: 'calls' | 'imports' | 'similar_to' | 'solves' | 'depends_on' | 'modifies' | 'references'; confidence: number; evidence: string; sessionId: string }): void {
+    if (!this.db) return;
+    this.memoryRepo.addRelation(params);
+  }
+  getRelationsFor(entityId: string, direction?: 'source' | 'target' | 'both', options?: import('./repositories').RelationQueryOptions): import('./repositories').EntityRelation[] {
+    if (!this.db) return [];
+    return this.memoryRepo.getRelationsFor(entityId, direction, options);
+  }
+  updateRelationConfidence(id: string, confidence: number, evidence?: string): void {
+    if (!this.db) return;
+    this.memoryRepo.updateRelationConfidence(id, confidence, evidence);
+  }
 
   // --- ConfigRepository ---
-  setPreference(key: string, value: unknown): void { this.ensureDb(); this.configRepo.setPreference(key, value); }
-  getPreference<T>(key: string, defaultValue?: T): T | undefined { this.ensureDb(); return this.configRepo.getPreference(key, defaultValue); }
-  getAllPreferences(): Record<string, unknown> { this.ensureDb(); return this.configRepo.getAllPreferences(); }
-  deletePreference(key: string): boolean { this.ensureDb(); return this.configRepo.deletePreference(key); }
-  saveProjectKnowledge(projectPath: string, key: string, value: unknown, source?: 'learned' | 'explicit' | 'inferred', confidence?: number): void { this.ensureDb(); this.configRepo.saveProjectKnowledge(projectPath, key, value, source, confidence); }
-  getProjectKnowledge(projectPath: string, key?: string): import('./repositories').ProjectKnowledge[] { this.ensureDb(); return this.configRepo.getProjectKnowledge(projectPath, key); }
-  getAllProjectKnowledge(): import('./repositories').ProjectKnowledge[] { this.ensureDb(); return this.configRepo.getAllProjectKnowledge(); }
-  updateProjectKnowledge(id: string, content: string): boolean { this.ensureDb(); return this.configRepo.updateProjectKnowledge(id, content); }
-  deleteProjectKnowledge(id: string): boolean { this.ensureDb(); return this.configRepo.deleteProjectKnowledge(id); }
-  deleteProjectKnowledgeBySource(source: string): number { this.ensureDb(); return this.configRepo.deleteProjectKnowledgeBySource(source); }
-  logAuditEvent(eventType: string, eventData: Record<string, unknown>, sessionId?: string): void { this.ensureDb(); this.configRepo.logAuditEvent(eventType, eventData, sessionId); }
-  getAuditLog(options?: { sessionId?: string; eventType?: string; limit?: number; since?: number }): Array<{ id: number; sessionId: string | null; eventType: string; eventData: Record<string, unknown>; createdAt: number }> { this.ensureDb(); return this.configRepo.getAuditLog(options); }
-  saveToolExecution(sessionId: string, messageId: string | null, toolName: string, args: Record<string, unknown>, result: ToolResult, ttlMs?: number): void { this.ensureDb(); this.configRepo.saveToolExecution(sessionId, messageId, toolName, args, result, ttlMs); }
-  getCachedToolResult(toolName: string, args: Record<string, unknown>): ToolResult | null { this.ensureDb(); return this.configRepo.getCachedToolResult(toolName, args); }
-  cleanExpiredCache(): number { this.ensureDb(); return this.configRepo.cleanExpiredCache(); }
-  clearToolCache(): number { this.ensureDb(); return this.configRepo.clearToolCache(); }
-  getToolCacheCount(): number { this.ensureDb(); return this.configRepo.getToolCacheCount(); }
+  setPreference(key: string, value: unknown): void {
+    this.ensureDb();
+    this.configRepo.setPreference(key, value);
+  }
+  getPreference<T>(key: string, defaultValue?: T): T | undefined {
+    this.ensureDb();
+    return this.configRepo.getPreference(key, defaultValue);
+  }
+  getAllPreferences(): Record<string, unknown> {
+    this.ensureDb();
+    return this.configRepo.getAllPreferences();
+  }
+  deletePreference(key: string): boolean {
+    this.ensureDb();
+    return this.configRepo.deletePreference(key);
+  }
+  saveProjectKnowledge(projectPath: string, key: string, value: unknown, source?: 'learned' | 'explicit' | 'inferred', confidence?: number): void {
+    this.ensureDb();
+    this.configRepo.saveProjectKnowledge(projectPath, key, value, source, confidence);
+  }
+  getProjectKnowledge(projectPath: string, key?: string): import('./repositories').ProjectKnowledge[] {
+    this.ensureDb();
+    return this.configRepo.getProjectKnowledge(projectPath, key);
+  }
+  getAllProjectKnowledge(): import('./repositories').ProjectKnowledge[] {
+    this.ensureDb();
+    return this.configRepo.getAllProjectKnowledge();
+  }
+  updateProjectKnowledge(id: string, content: string): boolean {
+    this.ensureDb();
+    return this.configRepo.updateProjectKnowledge(id, content);
+  }
+  deleteProjectKnowledge(id: string): boolean {
+    this.ensureDb();
+    return this.configRepo.deleteProjectKnowledge(id);
+  }
+  deleteProjectKnowledgeBySource(source: string): number {
+    this.ensureDb();
+    return this.configRepo.deleteProjectKnowledgeBySource(source);
+  }
+  logAuditEvent(eventType: string, eventData: Record<string, unknown>, sessionId?: string): void {
+    this.ensureDb();
+    this.configRepo.logAuditEvent(eventType, eventData, sessionId);
+  }
+  getAuditLog(options?: { sessionId?: string; eventType?: string; limit?: number; since?: number }): Array<{
+    id: number;
+    sessionId: string | null;
+    eventType: string;
+    eventData: Record<string, unknown>;
+    createdAt: number;
+  }> {
+    this.ensureDb();
+    return this.configRepo.getAuditLog(options);
+  }
+  saveToolExecution(sessionId: string, messageId: string | null, toolName: string, args: Record<string, unknown>, result: ToolResult, ttlMs?: number): void {
+    this.ensureDb();
+    this.configRepo.saveToolExecution(sessionId, messageId, toolName, args, result, ttlMs);
+  }
+  getCachedToolResult(toolName: string, args: Record<string, unknown>): ToolResult | null {
+    this.ensureDb();
+    return this.configRepo.getCachedToolResult(toolName, args);
+  }
+  cleanExpiredCache(): number {
+    this.ensureDb();
+    return this.configRepo.cleanExpiredCache();
+  }
+  clearToolCache(): number {
+    this.ensureDb();
+    return this.configRepo.clearToolCache();
+  }
+  getToolCacheCount(): number {
+    this.ensureDb();
+    return this.configRepo.getToolCacheCount();
+  }
 
   // --- CaptureRepository ---
-  createCapture(item: CaptureItem): void { this.ensureDb(); this.captureRepo.createCapture(item); }
-  listCaptures(opts?: { source?: CaptureSource; limit?: number; offset?: number }): CaptureItem[] { this.ensureDb(); return this.captureRepo.listCaptures(opts); }
-  getCapture(id: string): CaptureItem | undefined { this.ensureDb(); return this.captureRepo.getCapture(id); }
-  deleteCapture(id: string): boolean { this.ensureDb(); return this.captureRepo.deleteCapture(id); }
-  getCaptureStats(): CaptureStats { this.ensureDb(); return this.captureRepo.getCaptureStats(); }
-  searchCaptures(query: string, limit?: number): CaptureItem[] { this.ensureDb(); return this.captureRepo.searchCaptures(query, limit); }
+  createCapture(item: CaptureItem): void {
+    this.ensureDb();
+    this.captureRepo.createCapture(item);
+  }
+  listCaptures(opts?: { source?: CaptureSource; limit?: number; offset?: number }): CaptureItem[] {
+    this.ensureDb();
+    return this.captureRepo.listCaptures(opts);
+  }
+  getCapture(id: string): CaptureItem | undefined {
+    this.ensureDb();
+    return this.captureRepo.getCapture(id);
+  }
+  deleteCapture(id: string): boolean {
+    this.ensureDb();
+    return this.captureRepo.deleteCapture(id);
+  }
+  getCaptureStats(): CaptureStats {
+    this.ensureDb();
+    return this.captureRepo.getCaptureStats();
+  }
+  searchCaptures(query: string, limit?: number): CaptureItem[] {
+    this.ensureDb();
+    return this.captureRepo.searchCaptures(query, limit);
+  }
 
   // --- ExperimentRepository ---
-  insertExperiment(experiment: { id: string; name: string; timestamp: number; model?: string; provider?: string; scope?: string; config_json?: string; summary_json: string; source?: string; git_commit?: string }): void { this.ensureDb(); this.experimentRepo.insertExperiment(experiment); }
-  insertExperimentCases(experimentId: string, cases: Array<{ id: string; case_id: string; session_id?: string; status: string; score: number; duration_ms?: number; data_json?: string }>): void { this.ensureDb(); this.experimentRepo.insertExperimentCases(experimentId, cases); }
-  listExperiments(limit?: number): Array<{ id: string; name: string; timestamp: number; model: string | null; provider: string | null; scope: string; config_json: string | null; summary_json: string; source: string; git_commit: string | null }> { this.ensureDb(); return this.experimentRepo.listExperiments(limit); }
-  loadExperiment(id: string): { experiment: { id: string; name: string; timestamp: number; model: string | null; provider: string | null; scope: string; config_json: string | null; summary_json: string; source: string; git_commit: string | null }; cases: Array<{ id: string; experiment_id: string; case_id: string; session_id: string | null; status: string; score: number; duration_ms: number | null; data_json: string | null }> } | undefined { this.ensureDb(); return this.experimentRepo.loadExperiment(id); }
-  updateExperimentSummary(id: string, summaryJson: string): void { this.ensureDb(); this.experimentRepo.updateExperimentSummary(id, summaryJson); }
-  deleteExperiment(id: string): boolean { this.ensureDb(); return this.experimentRepo.deleteExperiment(id); }
+  insertExperiment(experiment: { id: string; name: string; timestamp: number; model?: string; provider?: string; scope?: string; config_json?: string; summary_json: string; source?: string; git_commit?: string }): void {
+    this.ensureDb();
+    this.experimentRepo.insertExperiment(experiment);
+  }
+  insertExperimentCases(
+    experimentId: string,
+    cases: Array<{
+      id: string;
+      case_id: string;
+      session_id?: string;
+      status: string;
+      score: number;
+      duration_ms?: number;
+      data_json?: string;
+    }>
+  ): void {
+    this.ensureDb();
+    this.experimentRepo.insertExperimentCases(experimentId, cases);
+  }
+  listExperiments(limit?: number): Array<{
+    id: string;
+    name: string;
+    timestamp: number;
+    model: string | null;
+    provider: string | null;
+    scope: string;
+    config_json: string | null;
+    summary_json: string;
+    source: string;
+    git_commit: string | null;
+  }> {
+    this.ensureDb();
+    return this.experimentRepo.listExperiments(limit);
+  }
+  loadExperiment(id: string):
+    | {
+        experiment: {
+          id: string;
+          name: string;
+          timestamp: number;
+          model: string | null;
+          provider: string | null;
+          scope: string;
+          config_json: string | null;
+          summary_json: string;
+          source: string;
+          git_commit: string | null;
+        };
+        cases: Array<{
+          id: string;
+          experiment_id: string;
+          case_id: string;
+          session_id: string | null;
+          status: string;
+          score: number;
+          duration_ms: number | null;
+          data_json: string | null;
+        }>;
+      }
+    | undefined {
+    this.ensureDb();
+    return this.experimentRepo.loadExperiment(id);
+  }
+  updateExperimentSummary(id: string, summaryJson: string): void {
+    this.ensureDb();
+    this.experimentRepo.updateExperimentSummary(id, summaryJson);
+  }
+  deleteExperiment(id: string): boolean {
+    this.ensureDb();
+    return this.experimentRepo.deleteExperiment(id);
+  }
 
   // --- SwarmTraceRepository ---
   /**

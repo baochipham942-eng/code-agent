@@ -25,6 +25,10 @@ export interface Database {
           quick_login_token: string | null;
           last_sync_at: string | null;
           is_admin: boolean;
+          status: 'active' | 'suspended' | 'deleted';
+          signup_source: string | null;
+          invite_code: string | null;
+          last_active_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -35,6 +39,10 @@ export interface Database {
           avatar_url?: string | null;
           quick_login_token?: string | null;
           is_admin?: boolean;
+          status?: 'active' | 'suspended' | 'deleted';
+          signup_source?: string | null;
+          invite_code?: string | null;
+          last_active_at?: string | null;
         };
         Update: {
           username?: string | null;
@@ -43,6 +51,10 @@ export interface Database {
           quick_login_token?: string | null;
           last_sync_at?: string | null;
           is_admin?: boolean;
+          status?: 'active' | 'suspended' | 'deleted';
+          signup_source?: string | null;
+          invite_code?: string | null;
+          last_active_at?: string | null;
         };
         Relationships: [];
       };
@@ -251,16 +263,27 @@ export interface Database {
           use_count: number;
           expires_at: string | null;
           is_active: boolean;
+          label: string | null;
+          created_by: string | null;
+          updated_at: string | null;
+          last_used_at: string | null;
           created_at: string;
         };
         Insert: {
           code: string;
           max_uses?: number;
           expires_at?: string | null;
+          label?: string | null;
+          created_by?: string | null;
         };
         Update: {
           use_count?: number;
           is_active?: boolean;
+          max_uses?: number;
+          expires_at?: string | null;
+          label?: string | null;
+          updated_at?: string | null;
+          last_used_at?: string | null;
         };
         Relationships: [];
       };
@@ -461,6 +484,65 @@ export interface Database {
       };
       increment_invite_code_usage: {
         Args: { code_value: string };
+        Returns: void;
+      };
+      admin_list_users: {
+        Args: Record<string, never>;
+        Returns: {
+          id: string;
+          email: string;
+          username: string | null;
+          nickname: string | null;
+          avatar_url: string | null;
+          is_admin: boolean;
+          status: 'active' | 'suspended' | 'deleted';
+          signup_source: string | null;
+          invite_code: string | null;
+          provider: string | null;
+          created_at: string;
+          last_sign_in_at: string | null;
+          last_active_at: string | null;
+          last_sync_at: string | null;
+          last_session_updated_at: number | null;
+          device_count: number;
+          session_count: number;
+          message_count: number;
+        }[];
+      };
+      admin_list_invite_codes: {
+        Args: Record<string, never>;
+        Returns: {
+          id: string;
+          code: string;
+          label: string | null;
+          max_uses: number;
+          use_count: number;
+          expires_at: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string | null;
+          last_used_at: string | null;
+          created_by: string | null;
+          created_by_email: string | null;
+        }[];
+      };
+      admin_create_invite_code: {
+        Args: {
+          p_code: string;
+          p_max_uses?: number;
+          p_expires_at?: string | null;
+          p_label?: string | null;
+        };
+        Returns: string;
+      };
+      admin_update_invite_code: {
+        Args: {
+          p_id: string;
+          p_label?: string | null;
+          p_max_uses?: number | null;
+          p_expires_at?: string | null;
+          p_is_active?: boolean | null;
+        };
         Returns: void;
       };
       match_vectors: {

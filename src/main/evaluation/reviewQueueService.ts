@@ -3,19 +3,8 @@
 // ============================================================================
 
 import type Database from 'better-sqlite3';
-import type {
-  EnqueueReviewItemInput,
-  ReviewQueueFailureCapabilityAsset,
-  ReviewQueueFailureCapabilityMetadata,
-  ReviewQueueItem,
-  UpdateReviewQueueFailureCapabilityAssetInput,
-} from '../../shared/contract/reviewQueue';
-import {
-  buildReviewQueueFailureCapabilityAssetDraft,
-  buildReviewQueueItemId,
-  buildSessionTraceIdentity,
-  isReviewQueueFailureCapabilityAssetStatus,
-} from '../../shared/contract/reviewQueue';
+import type { EnqueueReviewItemInput, ReviewQueueFailureCapabilityAsset, ReviewQueueFailureCapabilityMetadata, ReviewQueueItem, ReviewQueueListOptions, UpdateReviewQueueFailureCapabilityAssetInput } from '../../shared/contract/reviewQueue';
+import { buildReviewQueueFailureCapabilityAssetDraft, buildReviewQueueItemId, buildSessionTraceIdentity, isReviewQueueFailureCapabilityAssetStatus } from '../../shared/contract/reviewQueue';
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 
@@ -101,12 +90,27 @@ export class ReviewQueueService {
     this.schemaReady = true;
   }
 
-  listItems(): ReviewQueueItem[] {
+  listItems(options: ReviewQueueListOptions = {}): ReviewQueueItem[] {
     try {
-      const rows = this.getDb().prepare(`
-        ${this.getReviewQueueSelectSql()}
-        ORDER BY items.updated_at DESC
-      `).all() as SQLiteRow[];
+      const where: string[] = [];
+      const params: unknown[] = [];
+      const ownerExpr = 'sessions.user_id';
+      if (options.unassignedOnly) {
+        where.push(`${ownerExpr} IS NULL`);
+      } else if (options.userId) {
+        where.push(`${ownerExpr} = ?`);
+        params.push(options.userId);
+      }
+
+      const rows = this.getDb()
+        .prepare(
+          `
+          ${this.getReviewQueueSelectSql()}
+          ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
+          ORDER BY items.updated_at DESC
+        `
+        )
+        .all(...params) as SQLiteRow[];
 
       return rows.map((row) => this.rowToItem(row));
     } catch (error) {
@@ -122,15 +126,12 @@ export class ReviewQueueService {
     const sessionTitle = this.resolveSessionTitle(input);
     const reason = input.reason || 'manual_review';
     const enqueueSource = input.enqueueSource || input.source || 'current_session_bar';
-    const failureCapability = reason === 'failure_followup'
-      ? this.serializeFailureCapability(input.failureCapability)
-      : null;
-    const deliveryReview = reason === 'delivery_review'
-      ? serializeJson(input.deliveryReview)
-      : null;
+    const failureCapability = reason === 'failure_followup' ? this.serializeFailureCapability(input.failureCapability) : null;
+    const deliveryReview = reason === 'delivery_review' ? serializeJson(input.deliveryReview) : null;
 
     const db = this.getDb();
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO review_queue_items (
         id,
         trace_id,
@@ -152,20 +153,8 @@ export class ReviewQueueService {
         failure_capability = excluded.failure_capability,
         delivery_review = excluded.delivery_review,
         updated_at = excluded.updated_at
-    `).run(
-      id,
-      trace.traceId,
-      trace.traceSource,
-      trace.sessionId,
-      trace.replayKey,
-      sessionTitle,
-      reason,
-      enqueueSource,
-      failureCapability,
-      deliveryReview,
-      now,
-      now,
-    );
+    `
+    ).run(id, trace.traceId, trace.traceSource, trace.sessionId, trace.replayKey, sessionTitle, reason, enqueueSource, failureCapability, deliveryReview, now, now);
 
     if (reason === 'failure_followup' && input.failureCapability) {
       const failureAsset = buildReviewQueueFailureCapabilityAssetDraft({
@@ -173,18 +162,22 @@ export class ReviewQueueService {
         sessionId: trace.sessionId,
         traceId: trace.traceId,
         metadata: input.failureCapability,
-        createdAt: now,
+        createdAt: now
       });
       this.upsertFailureAsset(db, failureAsset);
     } else {
       this.deleteFailureAsset(db, id);
     }
 
-    const row = db.prepare(`
+    const row = db
+      .prepare(
+        `
       ${this.getReviewQueueSelectSql()}
       WHERE items.id = ?
       LIMIT 1
-    `).get(id) as SQLiteRow | undefined;
+    `
+      )
+      .get(id) as SQLiteRow | undefined;
 
     if (!row) {
       throw new Error(`Failed to load review queue item after enqueue: ${id}`);
@@ -193,9 +186,7 @@ export class ReviewQueueService {
     return this.rowToItem(row);
   }
 
-  updateFailureAssetStatus(
-    input: UpdateReviewQueueFailureCapabilityAssetInput,
-  ): ReviewQueueItem | null {
+  updateFailureAssetStatus(input: UpdateReviewQueueFailureCapabilityAssetInput): ReviewQueueItem | null {
     if (!input.reviewItemId?.trim()) {
       throw new Error('reviewItemId is required');
     }
@@ -205,27 +196,37 @@ export class ReviewQueueService {
 
     const db = this.getDb();
     const now = input.updatedAt ?? Date.now();
-    const result = db.prepare(`
+    const result = db
+      .prepare(
+        `
       UPDATE review_queue_failure_assets
       SET status = ?, updated_at = ?
       WHERE review_item_id = ?
-    `).run(input.status, now, input.reviewItemId);
+    `
+      )
+      .run(input.status, now, input.reviewItemId);
 
     if (result.changes === 0) {
       return null;
     }
 
-    db.prepare(`
+    db.prepare(
+      `
       UPDATE review_queue_items
       SET updated_at = ?
       WHERE id = ?
-    `).run(now, input.reviewItemId);
+    `
+    ).run(now, input.reviewItemId);
 
-    const row = db.prepare(`
+    const row = db
+      .prepare(
+        `
       ${this.getReviewQueueSelectSql()}
       WHERE items.id = ?
       LIMIT 1
-    `).get(input.reviewItemId) as SQLiteRow | undefined;
+    `
+      )
+      .get(input.reviewItemId) as SQLiteRow | undefined;
 
     return row ? this.rowToItem(row) : null;
   }
@@ -238,7 +239,10 @@ export class ReviewQueueService {
         return session.title;
       }
     } catch (error) {
-      logger.warn('Failed to resolve session title for review queue', { error, sessionId: input.sessionId });
+      logger.warn('Failed to resolve session title for review queue', {
+        error,
+        sessionId: input.sessionId
+      });
     }
 
     if (input.sessionTitle?.trim()) {
@@ -256,9 +260,10 @@ export class ReviewQueueService {
         traceSource: row.trace_source as ReviewQueueItem['trace']['traceSource'],
         source: row.trace_source as ReviewQueueItem['trace']['source'],
         sessionId: row.session_id as string,
-        replayKey: row.replay_key as string,
+        replayKey: row.replay_key as string
       },
       sessionId: row.session_id as string,
+      userId: row.user_id == null ? null : String(row.user_id),
       sessionTitle: row.session_title as string,
       reason: row.reason as ReviewQueueItem['reason'],
       enqueueSource: row.source as ReviewQueueItem['enqueueSource'],
@@ -267,7 +272,7 @@ export class ReviewQueueService {
       failureAsset: this.parseFailureAsset(row),
       deliveryReview: this.parseDeliveryReview(row.delivery_review),
       createdAt: Number(row.created_at ?? 0),
-      updatedAt: Number(row.updated_at ?? 0),
+      updatedAt: Number(row.updated_at ?? 0)
     };
   }
 
@@ -277,8 +282,9 @@ export class ReviewQueueService {
         items.id,
         items.trace_id,
         items.trace_source,
-        items.session_id,
-        items.replay_key,
+          items.session_id,
+          sessions.user_id,
+          items.replay_key,
         items.session_title,
         items.reason,
         items.source,
@@ -300,10 +306,12 @@ export class ReviewQueueService {
         assets.evidence AS failure_asset_evidence,
         assets.created_at AS failure_asset_created_at,
         assets.updated_at AS failure_asset_updated_at
-      FROM review_queue_items items
-      LEFT JOIN review_queue_failure_assets assets
-        ON assets.review_item_id = items.id
-    `;
+        FROM review_queue_items items
+        LEFT JOIN review_queue_failure_assets assets
+          ON assets.review_item_id = items.id
+        LEFT JOIN sessions
+          ON sessions.id = items.session_id
+      `;
   }
 
   private ensureColumn(db: Database.Database, tableName: string, columnName: string, definition: string): void {
@@ -315,14 +323,13 @@ export class ReviewQueueService {
     db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
   }
 
-  private serializeFailureCapability(
-    metadata: ReviewQueueFailureCapabilityMetadata | undefined,
-  ): string | null {
+  private serializeFailureCapability(metadata: ReviewQueueFailureCapabilityMetadata | undefined): string | null {
     return serializeJson(metadata);
   }
 
   private upsertFailureAsset(db: Database.Database, asset: ReviewQueueFailureCapabilityAsset): void {
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO review_queue_failure_assets (
         id,
         review_item_id,
@@ -351,29 +358,17 @@ export class ReviewQueueService {
         confidence = excluded.confidence,
         evidence = excluded.evidence,
         updated_at = excluded.updated_at
-    `).run(
-      asset.id,
-      asset.reviewItemId,
-      asset.sessionId,
-      asset.traceId,
-      asset.status,
-      asset.sink,
-      asset.category,
-      asset.title,
-      asset.body,
-      asset.stepIndex ?? null,
-      asset.confidence ?? null,
-      this.serializeNumberArray(asset.evidence),
-      asset.createdAt,
-      asset.updatedAt,
-    );
+    `
+    ).run(asset.id, asset.reviewItemId, asset.sessionId, asset.traceId, asset.status, asset.sink, asset.category, asset.title, asset.body, asset.stepIndex ?? null, asset.confidence ?? null, this.serializeNumberArray(asset.evidence), asset.createdAt, asset.updatedAt);
   }
 
   private deleteFailureAsset(db: Database.Database, reviewItemId: string): void {
-    db.prepare(`
+    db.prepare(
+      `
       DELETE FROM review_queue_failure_assets
       WHERE review_item_id = ?
-    `).run(reviewItemId);
+    `
+    ).run(reviewItemId);
   }
 
   private serializeNumberArray(values: number[] | undefined): string | null {
@@ -394,24 +389,10 @@ export class ReviewQueueService {
       if (!parsed || typeof parsed !== 'object') {
         return undefined;
       }
-      if (
-        parsed.sink !== 'skill'
-        && parsed.sink !== 'dataset'
-        && parsed.sink !== 'prompt_policy'
-        && parsed.sink !== 'capability_health'
-      ) {
+      if (parsed.sink !== 'skill' && parsed.sink !== 'dataset' && parsed.sink !== 'prompt_policy' && parsed.sink !== 'capability_health') {
         return undefined;
       }
-      if (
-        parsed.category !== 'tool_error'
-        && parsed.category !== 'bad_decision'
-        && parsed.category !== 'missing_context'
-        && parsed.category !== 'loop'
-        && parsed.category !== 'hallucination'
-        && parsed.category !== 'env_failure'
-        && parsed.category !== 'deviation'
-        && parsed.category !== 'unknown'
-      ) {
+      if (parsed.category !== 'tool_error' && parsed.category !== 'bad_decision' && parsed.category !== 'missing_context' && parsed.category !== 'loop' && parsed.category !== 'hallucination' && parsed.category !== 'env_failure' && parsed.category !== 'deviation' && parsed.category !== 'unknown') {
         return undefined;
       }
 
@@ -421,9 +402,7 @@ export class ReviewQueueService {
         summary: typeof parsed.summary === 'string' ? parsed.summary : undefined,
         stepIndex: typeof parsed.stepIndex === 'number' ? parsed.stepIndex : undefined,
         confidence: typeof parsed.confidence === 'number' ? parsed.confidence : undefined,
-        evidence: Array.isArray(parsed.evidence)
-          ? parsed.evidence.filter((item): item is number => typeof item === 'number')
-          : undefined,
+        evidence: Array.isArray(parsed.evidence) ? parsed.evidence.filter((item): item is number => typeof item === 'number') : undefined
       };
     } catch {
       return undefined;
@@ -447,32 +426,13 @@ export class ReviewQueueService {
     if (typeof row.failure_asset_id !== 'string') {
       return undefined;
     }
-    if (
-      row.failure_asset_status !== 'draft'
-      && row.failure_asset_status !== 'ready'
-      && row.failure_asset_status !== 'applied'
-      && row.failure_asset_status !== 'dismissed'
-    ) {
+    if (row.failure_asset_status !== 'draft' && row.failure_asset_status !== 'ready' && row.failure_asset_status !== 'applied' && row.failure_asset_status !== 'dismissed') {
       return undefined;
     }
-    if (
-      row.failure_asset_sink !== 'skill'
-      && row.failure_asset_sink !== 'dataset'
-      && row.failure_asset_sink !== 'prompt_policy'
-      && row.failure_asset_sink !== 'capability_health'
-    ) {
+    if (row.failure_asset_sink !== 'skill' && row.failure_asset_sink !== 'dataset' && row.failure_asset_sink !== 'prompt_policy' && row.failure_asset_sink !== 'capability_health') {
       return undefined;
     }
-    if (
-      row.failure_asset_category !== 'tool_error'
-      && row.failure_asset_category !== 'bad_decision'
-      && row.failure_asset_category !== 'missing_context'
-      && row.failure_asset_category !== 'loop'
-      && row.failure_asset_category !== 'hallucination'
-      && row.failure_asset_category !== 'env_failure'
-      && row.failure_asset_category !== 'deviation'
-      && row.failure_asset_category !== 'unknown'
-    ) {
+    if (row.failure_asset_category !== 'tool_error' && row.failure_asset_category !== 'bad_decision' && row.failure_asset_category !== 'missing_context' && row.failure_asset_category !== 'loop' && row.failure_asset_category !== 'hallucination' && row.failure_asset_category !== 'env_failure' && row.failure_asset_category !== 'deviation' && row.failure_asset_category !== 'unknown') {
       return undefined;
     }
 
@@ -490,7 +450,7 @@ export class ReviewQueueService {
       confidence: typeof row.failure_asset_confidence === 'number' ? row.failure_asset_confidence : undefined,
       evidence: this.parseNumberArray(row.failure_asset_evidence),
       createdAt: Number(row.failure_asset_created_at ?? 0),
-      updatedAt: Number(row.failure_asset_updated_at ?? 0),
+      updatedAt: Number(row.failure_asset_updated_at ?? 0)
     };
   }
 

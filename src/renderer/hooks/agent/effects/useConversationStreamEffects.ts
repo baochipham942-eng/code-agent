@@ -19,6 +19,12 @@ function normalizeHookTriggerData(data: unknown): HookTriggerEventData | null {
   }
 
   const raw = data as Partial<HookTriggerEventData>;
+  const sources = Array.isArray(raw.sources)
+    ? raw.sources.filter((source): source is 'global' | 'project' => source === 'global' || source === 'project')
+    : [];
+  const hookType = raw.hookType === 'decision' || raw.hookType === 'observer'
+    ? raw.hookType
+    : 'observer';
   if (
     typeof raw.timestamp !== 'number'
     || typeof raw.event !== 'string'
@@ -36,11 +42,14 @@ function normalizeHookTriggerData(data: unknown): HookTriggerEventData | null {
     durationMs: raw.durationMs,
     hookCount: raw.hookCount,
     modified: Boolean(raw.modified),
+    sources,
+    hookType,
     ...(typeof raw.errorCount === 'number' ? { errorCount: raw.errorCount } : {}),
     ...(typeof raw.message === 'string' ? { message: raw.message } : {}),
     ...(typeof raw.sessionId === 'string' ? { sessionId: raw.sessionId } : {}),
     ...(typeof raw.turnId === 'string' ? { turnId: raw.turnId } : {}),
     ...(typeof raw.toolName === 'string' ? { toolName: raw.toolName } : {}),
+    ...(typeof raw.matcher === 'string' ? { matcher: raw.matcher } : {}),
   };
 }
 

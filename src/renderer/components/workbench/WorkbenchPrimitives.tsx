@@ -1,7 +1,11 @@
 import React from 'react';
 import { Info, Plug, Sparkles } from 'lucide-react';
 import type { WorkbenchHistoryItem, WorkbenchReference } from '../../hooks/useWorkbenchCapabilities';
-import { getWorkbenchReferenceBadge, getWorkbenchReferenceTitle } from '../../utils/workbenchPresentation';
+import {
+  getWorkbenchReferenceBadge,
+  getWorkbenchReferenceTitle,
+  getWorkbenchStatusPresentation,
+} from '../../utils/workbenchPresentation';
 
 function joinClasses(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ');
@@ -205,12 +209,42 @@ interface WorkbenchReferenceRowProps {
   onOpenDetails?: (() => void) | null;
 }
 
+function getWorkbenchReferenceInlineDetail(
+  reference: WorkbenchReference,
+  locale: 'zh' | 'en',
+): string | null {
+  if (!reference.invoked) return null;
+  const invokedLabel = locale === 'zh' ? '本轮调用' : 'used this turn';
+
+  if (reference.kind === 'mcp') {
+    const status = getWorkbenchStatusPresentation(reference.status, { locale }).label;
+    return locale === 'zh'
+      ? `${invokedLabel} · 当前状态：${status} · ${reference.transport}`
+      : `${invokedLabel} · currently ${status} · ${reference.transport}`;
+  }
+
+  if (reference.kind === 'connector') {
+    return locale === 'zh'
+      ? `${invokedLabel} · 当前状态：${reference.connected ? '已连接' : '未连接'}`
+      : `${invokedLabel} · currently ${reference.connected ? 'connected' : 'disconnected'}`;
+  }
+
+  if (reference.kind === 'skill' && !reference.mounted) {
+    return locale === 'zh'
+      ? `${invokedLabel} · 当前状态：未挂载`
+      : `${invokedLabel} · currently not mounted`;
+  }
+
+  return invokedLabel;
+}
+
 export function WorkbenchReferenceRow({
   reference,
   locale = 'zh',
   onOpenDetails,
 }: WorkbenchReferenceRowProps) {
   const badge = getWorkbenchReferenceBadge(reference, { locale });
+  const inlineDetail = getWorkbenchReferenceInlineDetail(reference, locale);
   return (
     <div
       className="flex items-center gap-2 py-0.5"
@@ -225,7 +259,12 @@ export function WorkbenchReferenceRow({
           reference.kind === 'connector' ? 'text-sky-400/70' : 'text-blue-400/70'
         }`} />
       )}
-      <span className="text-xs text-zinc-400 truncate">{reference.label}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-xs text-zinc-400">{reference.label}</span>
+        {inlineDetail && (
+          <span className="block truncate text-[10px] text-zinc-600">{inlineDetail}</span>
+        )}
+      </span>
       {badge && (
         <span className="text-[10px] text-zinc-600 shrink-0">
           {badge}

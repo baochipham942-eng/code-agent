@@ -24,9 +24,11 @@ export * from './skillRepository';
 
 // Infrastructure types
 export * from './auth';
+export * from './admin';
 export * from './sync';
 export * from './device';
 export * from './settings';
+export * from './configScope';
 // IReadConfigService / ServiceApiKey 直接从 './configService' 子路径导入
 // （barrel + isolatedModules 下 type-only re-export 偶尔解析失败）
 export * from './update';

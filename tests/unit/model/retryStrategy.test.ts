@@ -143,6 +143,10 @@ describe('Retry Strategy', () => {
       it('should handle no code', () => {
         expect(isTransientError('some error')).toBe(false);
       });
+
+      it('should not retry model reasoning degeneration locally', () => {
+        expect(isTransientError('[Xiaomi] reasoning loop detected: repeated "x" 6 times')).toBe(false);
+      });
     });
   });
 
@@ -161,6 +165,10 @@ describe('Retry Strategy', () => {
       expect(isFallbackEligible('{"code":"INSUFFICIENT_BALANCE","message":"Insufficient account balance"}')).toBe(true);
       expect(isFallbackEligible('Your subscription plan does not include access to model: glm-4.7-flash')).toBe(true);
       expect(isFallbackEligible('model_not_allowed')).toBe(true);
+    });
+
+    it('should fall back on model reasoning degeneration', () => {
+      expect(isFallbackEligible('[Xiaomi] reasoning loop detected: repeated "x" 6 times')).toBe(true);
     });
 
     it('should not fall back on ordinary bad requests', () => {

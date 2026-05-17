@@ -3,14 +3,7 @@
 // Handles data synchronization between local SQLite and Supabase
 // ============================================================================
 
-import {
-  getSupabase,
-  isSupabaseInitialized,
-  type DeviceRow,
-  type SessionRow,
-  type MessageRow,
-  type UserPreferenceRow,
-} from '../infra';
+import { getSupabase, isSupabaseInitialized, type DeviceRow, type SessionRow, type MessageRow, type UserPreferenceRow } from '../infra';
 import { getDatabase } from '../core';
 import { getAuthService } from '../auth';
 import { getSecureStorage } from '../core';
@@ -78,7 +71,7 @@ class SyncService implements Disposable {
       isSyncing: this.isSyncing,
       lastSyncAt: this.lastSyncAt,
       pendingChanges: this.pendingChanges,
-      error: this.lastError,
+      error: this.lastError
     };
   }
 
@@ -114,10 +107,10 @@ class SyncService implements Disposable {
           device_id: this.deviceId,
           device_name: this.deviceName,
           platform,
-          last_active_at: new Date().toISOString(),
+          last_active_at: new Date().toISOString()
         },
         {
-          onConflict: 'user_id,device_id',
+          onConflict: 'user_id,device_id'
         }
       )
       .select()
@@ -137,7 +130,7 @@ class SyncService implements Disposable {
       deviceName: data.device_name || '',
       platform: data.platform || '',
       lastActiveAt: new Date(data.last_active_at).getTime(),
-      isCurrent: true,
+      isCurrent: true
     };
   }
 
@@ -153,11 +146,7 @@ class SyncService implements Disposable {
     }
 
     const supabase = getSupabase();
-    const { data: dataRaw, error } = await supabase
-      .from('devices')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('last_active_at', { ascending: false });
+    const { data: dataRaw, error } = await supabase.from('devices').select('*').eq('user_id', user.id).order('last_active_at', { ascending: false });
 
     if (error) {
       logger.error('Failed to list devices', { error });
@@ -171,7 +160,7 @@ class SyncService implements Disposable {
       deviceName: d.device_name || '',
       platform: d.platform || '',
       lastActiveAt: new Date(d.last_active_at).getTime(),
-      isCurrent: d.device_id === this.deviceId,
+      isCurrent: d.device_id === this.deviceId
     }));
   }
 
@@ -187,11 +176,7 @@ class SyncService implements Disposable {
     }
 
     const supabase = getSupabase();
-    await supabase
-      .from('devices')
-      .delete()
-      .eq('user_id', user.id)
-      .eq('device_id', deviceId);
+    await supabase.from('devices').delete().eq('user_id', user.id).eq('device_id', deviceId);
   }
 
   async startAutoSync(intervalMs: number = 5 * 60 * 1000): Promise<void> {
@@ -227,7 +212,7 @@ class SyncService implements Disposable {
         pushed: 0,
         pulled: 0,
         conflicts: [],
-        error: 'Sync already in progress',
+        error: 'Sync already in progress'
       };
     }
 
@@ -239,7 +224,7 @@ class SyncService implements Disposable {
         pushed: 0,
         pulled: 0,
         conflicts: [],
-        error: 'Not authenticated',
+        error: 'Not authenticated'
       };
     }
 
@@ -249,7 +234,7 @@ class SyncService implements Disposable {
         pushed: 0,
         pulled: 0,
         conflicts: [],
-        error: 'Supabase not initialized',
+        error: 'Supabase not initialized'
       };
     }
 
@@ -277,7 +262,7 @@ class SyncService implements Disposable {
         success: true,
         pushed: pushResult.count,
         pulled: pullResult.count,
-        conflicts: pullResult.conflicts,
+        conflicts: pullResult.conflicts
       };
     } catch (error) {
       this.lastError = (error as Error).message;
@@ -286,7 +271,7 @@ class SyncService implements Disposable {
         pushed: 0,
         pulled: 0,
         conflicts: [],
-        error: this.lastError,
+        error: this.lastError
       };
     } finally {
       this.isSyncing = false;
@@ -299,21 +284,14 @@ class SyncService implements Disposable {
     return this.sync();
   }
 
-  private async pullFromCloud(
-    userId: string
-  ): Promise<{ count: number; conflicts: SyncConflict[] }> {
+  private async pullFromCloud(userId: string): Promise<{ count: number; conflicts: SyncConflict[] }> {
     const supabase = getSupabase();
     const db = getDatabase();
     const conflicts: SyncConflict[] = [];
     let count = 0;
 
     // Pull sessions
-    const { data: remoteSessionsRaw } = await supabase
-      .from('sessions')
-      .select('*')
-      .eq('user_id', userId)
-      .gt('updated_at', this.syncCursor)
-      .order('updated_at', { ascending: true });
+    const { data: remoteSessionsRaw } = await supabase.from('sessions').select('*').eq('user_id', userId).gt('updated_at', this.syncCursor).order('updated_at', { ascending: true });
 
     const remoteSessions = (remoteSessionsRaw || []) as SessionRow[];
 
@@ -325,7 +303,7 @@ class SyncService implements Disposable {
           if (local && remote.updated_at > local.updatedAt) {
             db.deleteSession(remote.id, {
               deletedAt: remote.updated_at,
-              syncOrigin: 'remote',
+              syncOrigin: 'remote'
             });
             count++;
           }
@@ -335,19 +313,24 @@ class SyncService implements Disposable {
         if (!local) {
           // New record from cloud
           // 云端数据类型与本地类型不完全匹配，需要类型断言
-          db.createSessionWithId(remote.id, {
-            title: remote.title,
-            modelConfig: {
-              provider: (remote.model_provider as ModelProvider) || DEFAULT_PROVIDER,
-              model: remote.model_name || DEFAULT_MODEL,
+          db.createSessionWithId(
+            remote.id,
+            {
+              title: remote.title,
+              userId,
+              modelConfig: {
+                provider: (remote.model_provider as ModelProvider) || DEFAULT_PROVIDER,
+                model: remote.model_name || DEFAULT_MODEL
+              },
+              workingDirectory: remote.working_directory || undefined,
+              createdAt: remote.created_at,
+              updatedAt: remote.updated_at,
+              isDeleted: false
             },
-            workingDirectory: remote.working_directory || undefined,
-            createdAt: remote.created_at,
-            updatedAt: remote.updated_at,
-            isDeleted: false,
-          }, {
-            syncOrigin: 'remote',
-          });
+            {
+              syncOrigin: 'remote'
+            }
+          );
           count++;
         } else if (remote.updated_at > local.updatedAt) {
           // Remote is newer
@@ -360,41 +343,41 @@ class SyncService implements Disposable {
                 table: 'sessions',
                 localRecord: local,
                 remoteRecord: remote,
-                conflictType: 'update',
+                conflictType: 'update'
               });
             } else {
               // No conflict, update local (preserve remote timestamp)
-              db.updateSession(remote.id, {
-                title: remote.title,
-                modelConfig: {
-                  provider: (remote.model_provider as ModelProvider) || DEFAULT_PROVIDER,
-                  model: remote.model_name || DEFAULT_MODEL,
+              db.updateSession(
+                remote.id,
+                {
+                  title: remote.title,
+                  modelConfig: {
+                    provider: (remote.model_provider as ModelProvider) || DEFAULT_PROVIDER,
+                    model: remote.model_name || DEFAULT_MODEL
+                  },
+                  workingDirectory: remote.working_directory || undefined,
+                  createdAt: remote.created_at as number,
+                  updatedAt: remote.updated_at as number
                 },
-                workingDirectory: remote.working_directory || undefined,
-                createdAt: remote.created_at as number,
-                updatedAt: remote.updated_at as number,
-              }, {
-                syncOrigin: 'remote',
-                isDeleted: false,
-              });
+                {
+                  syncOrigin: 'remote',
+                  isDeleted: false
+                }
+              );
               count++;
             }
           }
         }
       } catch (err) {
-        logger.error('Error pulling session', { sessionId: remote.id, error: err });
+        logger.error('Error pulling session', {
+          sessionId: remote.id,
+          error: err
+        });
       }
     }
 
     // Pull messages
-    const { data: remoteMessagesRaw } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('is_deleted', false)
-      .gt('updated_at', this.syncCursor)
-      .order('updated_at', { ascending: true })
-      .limit(1000);
+    const { data: remoteMessagesRaw } = await supabase.from('messages').select('*').eq('user_id', userId).eq('is_deleted', false).gt('updated_at', this.syncCursor).order('updated_at', { ascending: true }).limit(1000);
 
     const remoteMessages = (remoteMessagesRaw || []) as MessageRow[];
 
@@ -410,20 +393,24 @@ class SyncService implements Disposable {
         if (!localMsg) {
           // New message from cloud
           // 云端消息类型需要断言为本地类型
-          db.addMessage(remote.session_id, {
-            id: remote.id,
-            role: remote.role as Message['role'],
-            content: remote.content,
-            timestamp: remote.timestamp,
-            visibility: (remote.visibility as Message['visibility']) || 'active',
-            hiddenByRewindId: remote.hidden_by_rewind_id || undefined,
-            hiddenAt: remote.hidden_at || undefined,
-            toolCalls: remote.tool_calls as Message['toolCalls'],
-            toolResults: remote.tool_results as Message['toolResults'],
-          }, {
-            skipTimestampUpdate: true,
-            syncOrigin: 'remote',
-          });
+          db.addMessage(
+            remote.session_id,
+            {
+              id: remote.id,
+              role: remote.role as Message['role'],
+              content: remote.content,
+              timestamp: remote.timestamp,
+              visibility: (remote.visibility as Message['visibility']) || 'active',
+              hiddenByRewindId: remote.hidden_by_rewind_id || undefined,
+              hiddenAt: remote.hidden_at || undefined,
+              toolCalls: remote.tool_calls as Message['toolCalls'],
+              toolResults: remote.tool_results as Message['toolResults']
+            },
+            {
+              skipTimestampUpdate: true,
+              syncOrigin: 'remote'
+            }
+          );
           count++;
         } else if (remote.updated_at > this.syncCursor) {
           db.updateMessage(remote.id, {
@@ -432,22 +419,21 @@ class SyncService implements Disposable {
             hiddenByRewindId: remote.hidden_by_rewind_id || undefined,
             hiddenAt: remote.hidden_at || undefined,
             toolCalls: remote.tool_calls as Message['toolCalls'],
-            toolResults: remote.tool_results as Message['toolResults'],
+            toolResults: remote.tool_results as Message['toolResults']
           });
           db.markMessagesSynced([remote.id]);
           count++;
         }
       } catch (err) {
-        logger.error('Error pulling message', { messageId: remote.id, error: err });
+        logger.error('Error pulling message', {
+          messageId: remote.id,
+          error: err
+        });
       }
     }
 
     // Pull user preferences
-    const { data: remotePrefsRaw } = await supabase
-      .from('user_preferences')
-      .select('*')
-      .eq('user_id', userId)
-      .gt('updated_at', this.syncCursor);
+    const { data: remotePrefsRaw } = await supabase.from('user_preferences').select('*').eq('user_id', userId).gt('updated_at', this.syncCursor);
 
     const remotePrefs = (remotePrefsRaw || []) as UserPreferenceRow[];
 
@@ -456,7 +442,10 @@ class SyncService implements Disposable {
         db.setPreference(remote.key, remote.value);
         count++;
       } catch (err) {
-        logger.error('Error pulling preference', { key: remote.key, error: err });
+        logger.error('Error pulling preference', {
+          key: remote.key,
+          error: err
+        });
       }
     }
 
@@ -469,7 +458,7 @@ class SyncService implements Disposable {
     let count = 0;
     let sessionPushFailed = false;
 
-    const pendingSessions = db.getUnsyncedSessions(1000);
+    const pendingSessions = db.getUnsyncedSessions(1000).filter((session) => !session.userId || session.userId === userId);
 
     if (pendingSessions.length > 0) {
       const { error } = await supabase.from('sessions').upsert(
@@ -484,7 +473,7 @@ class SyncService implements Disposable {
           created_at: s.createdAt,
           updated_at: s.updatedAt,
           is_deleted: s.isDeleted ?? false,
-          source_device_id: this.deviceId,
+          source_device_id: this.deviceId
         })),
         { onConflict: 'id' }
       );
@@ -521,7 +510,7 @@ class SyncService implements Disposable {
             hidden_by_rewind_id: m.hiddenByRewindId || null,
             hidden_at: m.hiddenAt || null,
             updated_at: Date.now(),
-            source_device_id: this.deviceId,
+            source_device_id: this.deviceId
           })),
           { onConflict: 'id' }
         );
@@ -548,7 +537,7 @@ class SyncService implements Disposable {
       .from('devices')
       .update({
         sync_cursor: newCursor,
-        last_active_at: new Date().toISOString(),
+        last_active_at: new Date().toISOString()
       })
       .eq('user_id', userId)
       .eq('device_id', this.deviceId);
@@ -556,10 +545,7 @@ class SyncService implements Disposable {
     this.syncCursor = newCursor;
   }
 
-  async resolveConflict(
-    conflictId: string,
-    resolution: 'local' | 'remote' | 'merge'
-  ): Promise<void> {
+  async resolveConflict(conflictId: string, resolution: 'local' | 'remote' | 'merge'): Promise<void> {
     const conflict = this.conflicts.find((c) => c.id === conflictId);
     if (!conflict) return;
 
@@ -574,24 +560,31 @@ class SyncService implements Disposable {
       if (conflict.table === 'sessions') {
         // 冲突记录类型断言为本地会话类型
         const local = conflict.localRecord as StoredSession;
-        await supabase.from('sessions').update({
-          title: local.title,
-          updated_at: Date.now(),
-          source_device_id: this.deviceId,
-        }).eq('id', conflict.id);
+        await supabase
+          .from('sessions')
+          .update({
+            title: local.title,
+            updated_at: Date.now(),
+            source_device_id: this.deviceId
+          })
+          .eq('id', conflict.id);
       }
     } else if (resolution === 'remote') {
       // Apply remote version locally
       if (conflict.table === 'sessions') {
         // 冲突记录类型断言为云端会话类型
         const remote = conflict.remoteRecord as SessionRow;
-        db.updateSession(conflict.id, {
-          title: remote.title,
-          updatedAt: remote.updated_at as number,
-        }, {
-          syncOrigin: 'remote',
-          isDeleted: remote.is_deleted,
-        });
+        db.updateSession(
+          conflict.id,
+          {
+            title: remote.title,
+            updatedAt: remote.updated_at as number
+          },
+          {
+            syncOrigin: 'remote',
+            isDeleted: remote.is_deleted
+          }
+        );
       }
     }
 

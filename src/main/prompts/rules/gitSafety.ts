@@ -36,7 +36,7 @@ export const GIT_SAFETY_RULES = applyOverride(
 git commit -m "$(cat <<'EOF'
 简洁的提交信息，说明"为什么"而非"做了什么"
 
-Co-Authored-By: Code Agent <noreply@example.com>
+Co-Authored-By: Agent Neo <noreply@example.com>
 EOF
 )"
 \`\`\`

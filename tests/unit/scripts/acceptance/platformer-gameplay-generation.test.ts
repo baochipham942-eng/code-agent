@@ -22,7 +22,9 @@ import {
   diffRegressedChecks,
   buildGenerationPrompt,
   buildRepairPrompt,
+  formatProductStatusMarkdown,
   prioritizeFailures,
+  summarizeValidationStatus,
   type ValidationSummary,
   type GenerateCandidateFn,
   type RoundResult,
@@ -458,6 +460,8 @@ describe('P3 monotonic repair — buildRepairPrompt + prioritizeFailures', () =>
     ]);
     expect(prompt).toContain('/tmp/x.html');
     expect(prompt).toContain('failed acceptance validation');
+    expect(prompt).toContain('acceptance gap, not a blank failure');
+    expect(prompt).toContain('Preserve any working visuals');
     expect(prompt).toContain('minimal Edits');
     expect(prompt).toContain('Do NOT replace the whole file');
     // Both failures should land in the body.
@@ -495,6 +499,58 @@ describe('P3 monotonic repair — buildRepairPrompt + prioritizeFailures', () =>
     // Browser/visual failures land last.
     const lastTwo = sorted.slice(-2).join(' ');
     expect(lastTwo).toMatch(/canvas|visual/);
+  });
+});
+
+describe('product status summary', () => {
+  it('describes runtime mechanics failures as a playable quality gap, not a hard error wall', () => {
+    const summary = makeSummary({
+      artifactPath: '/tmp/game.html',
+      passed: false,
+      runtimePassed: false,
+      browserPassed: true,
+      runtimeChecks: ['interactive contract exposes step(inputState, frames)'],
+      runtimeFailures: [
+        'stomp_enemy: enemiesDefeated did not increase',
+        'unlock_gate: gatesUnlocked did not increase',
+      ],
+      failures: ['runSmokeTest 未通过。'],
+    });
+
+    const status = summarizeValidationStatus(summary);
+    expect(status.kind).toBe('quality-gap');
+    expect(status.headline).toContain('游戏已生成');
+    expect(status.headline).toContain('玩法验收未达标');
+    expect(status.focus.join('\n')).toContain('玩法闭环');
+  });
+
+  it('classifies missing generated artifacts as blocking', () => {
+    const status = summarizeValidationStatus(
+      makeSummary({
+        artifactPath: '/tmp/game.html',
+        passed: false,
+        failures: ['Artifact was not written; generation failed: provider timeout'],
+      }),
+    );
+
+    expect(status.kind).toBe('blocked');
+    expect(status.status).toBe('BLOCKED');
+  });
+
+  it('puts raw validator details behind a diagnostics disclosure in markdown reports', () => {
+    const markdown = formatProductStatusMarkdown(
+      makeSummary({
+        artifactPath: '/tmp/game.html',
+        passed: false,
+        runtimePassed: false,
+        browserPassed: true,
+        failures: ['runSmokeTest 未通过。'],
+      }),
+    );
+
+    expect(markdown).toContain('## Product Status');
+    expect(markdown).toContain('status: PLAYABLE_QUALITY_GAP');
+    expect(markdown).not.toContain('## Validation Failures');
   });
 });
 

@@ -4,17 +4,7 @@
 
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
-import type {
-  TelemetrySession,
-  TelemetryTurn,
-  TelemetryModelCall,
-  TelemetryToolCall,
-  TelemetryTimelineEvent,
-  TelemetrySessionListItem,
-  TelemetryToolStat,
-  TelemetryIntentStat,
-  ComputerSurfaceReliabilitySummary,
-} from '../../shared/contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions } from '../../shared/contract/telemetry';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 import type Database from 'better-sqlite3';
 import { guardSensitiveJsonText, guardSensitiveText, guardSensitiveValue } from '../security/sensitiveDataGuard';
@@ -27,11 +17,14 @@ const truncate = (value: string | undefined | null, limit: number): string | nul
 
 const guardTelemetryText = (value: string | undefined | null, limit: number): string | null => {
   if (typeof value !== 'string') return null;
-  return truncate(guardSensitiveText(value, {
-    surface: 'telemetry',
-    mode: 'diagnostic',
-    maxLength: limit * 2,
-  }), limit);
+  return truncate(
+    guardSensitiveText(value, {
+      surface: 'telemetry',
+      mode: 'diagnostic',
+      maxLength: limit * 2
+    }),
+    limit
+  );
 };
 
 const guardTelemetryJsonText = (value: string | undefined | null, limit: number): string | null => {
@@ -39,16 +32,19 @@ const guardTelemetryJsonText = (value: string | undefined | null, limit: number)
   const guarded = guardSensitiveJsonText(value, {
     surface: 'telemetry',
     mode: 'diagnostic',
-    maxLength: limit * 2,
+    maxLength: limit * 2
   });
   return truncate(guarded, limit);
 };
 
-const stringifyGuardedTelemetry = (value: unknown): string => JSON.stringify(guardSensitiveValue(value, {
-  surface: 'telemetry',
-  mode: 'diagnostic',
-  maxLength: 20_000,
-}));
+const stringifyGuardedTelemetry = (value: unknown): string =>
+  JSON.stringify(
+    guardSensitiveValue(value, {
+      surface: 'telemetry',
+      mode: 'diagnostic',
+      maxLength: 20_000
+    })
+  );
 
 const emptyComputerSurfaceReliabilitySummary = (sessionId: string): ComputerSurfaceReliabilitySummary => ({
   sessionId,
@@ -60,7 +56,7 @@ const emptyComputerSurfaceReliabilitySummary = (sessionId: string): ComputerSurf
   backgroundCgEventActions: 0,
   byFailureKind: [],
   byMode: [],
-  recentFailures: [],
+  recentFailures: []
 });
 
 export class TelemetryStorage {
@@ -120,24 +116,19 @@ export class TelemetryStorage {
   insertSession(session: TelemetrySession): void {
     if (!this.isDbAvailable()) return;
     try {
-      const stmt = this.getStmt('insert_session', `
-        INSERT OR REPLACE INTO telemetry_sessions (
-          id, title, generation_id, model_provider, model_name,
-          working_directory, start_time, end_time, duration_ms,
-          turn_count, total_input_tokens, total_output_tokens, total_tokens,
-          estimated_cost, total_tool_calls, tool_success_rate,
-          total_errors, session_type, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      stmt.run(
-        session.id, guardTelemetryText(session.title, 2_000), session.generationId,
-        session.modelProvider, session.modelName, guardTelemetryText(session.workingDirectory, 4_000),
-        session.startTime, session.endTime ?? null, session.durationMs ?? null,
-        session.turnCount, session.totalInputTokens, session.totalOutputTokens,
-        session.totalTokens, session.estimatedCost, session.totalToolCalls,
-        session.toolSuccessRate, session.totalErrors,
-        session.sessionType ?? null, session.status
+      const stmt = this.getStmt(
+        'insert_session',
+        `
+          INSERT OR REPLACE INTO telemetry_sessions (
+            id, user_id, title, generation_id, model_provider, model_name,
+            working_directory, start_time, end_time, duration_ms,
+            turn_count, total_input_tokens, total_output_tokens, total_tokens,
+            estimated_cost, total_tool_calls, tool_success_rate,
+            total_errors, session_type, status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `
       );
+      stmt.run(session.id, session.userId ?? null, guardTelemetryText(session.title, 2_000), session.generationId, session.modelProvider, session.modelName, guardTelemetryText(session.workingDirectory, 4_000), session.startTime, session.endTime ?? null, session.durationMs ?? null, session.turnCount, session.totalInputTokens, session.totalOutputTokens, session.totalTokens, session.estimatedCost, session.totalToolCalls, session.toolSuccessRate, session.totalErrors, session.sessionType ?? null, session.status);
     } catch (error) {
       logger.error('Failed to insert telemetry session:', error);
     }
@@ -150,21 +141,27 @@ export class TelemetryStorage {
       const values: unknown[] = [];
 
       const fieldMap: Record<string, string> = {
-        title: 'title', endTime: 'end_time', durationMs: 'duration_ms',
-        turnCount: 'turn_count', totalInputTokens: 'total_input_tokens',
-        totalOutputTokens: 'total_output_tokens', totalTokens: 'total_tokens',
-        estimatedCost: 'estimated_cost', totalToolCalls: 'total_tool_calls',
-        toolSuccessRate: 'tool_success_rate', totalErrors: 'total_errors',
-        sessionType: 'session_type', status: 'status',
+        title: 'title',
+        endTime: 'end_time',
+        durationMs: 'duration_ms',
+        userId: 'user_id',
+        turnCount: 'turn_count',
+        totalInputTokens: 'total_input_tokens',
+        totalOutputTokens: 'total_output_tokens',
+        totalTokens: 'total_tokens',
+        estimatedCost: 'estimated_cost',
+        totalToolCalls: 'total_tool_calls',
+        toolSuccessRate: 'tool_success_rate',
+        totalErrors: 'total_errors',
+        sessionType: 'session_type',
+        status: 'status'
       };
 
       for (const [key, col] of Object.entries(fieldMap)) {
         if (key in updates) {
           fields.push(`${col} = ?`);
           const value = (updates as Record<string, unknown>)[key];
-          values.push(key === 'title' && typeof value === 'string'
-            ? guardTelemetryText(value, 2_000)
-            : value);
+          values.push(key === 'title' && typeof value === 'string' ? guardTelemetryText(value, 2_000) : value);
         }
       }
 
@@ -172,7 +169,9 @@ export class TelemetryStorage {
       values.push(sessionId);
 
       const sql = `UPDATE telemetry_sessions SET ${fields.join(', ')} WHERE id = ?`;
-      this.getDb().prepare(sql).run(...values);
+      this.getDb()
+        .prepare(sql)
+        .run(...values);
     } catch (error) {
       logger.error('Failed to update telemetry session:', error);
     }
@@ -181,9 +180,16 @@ export class TelemetryStorage {
   getSession(sessionId: string): TelemetrySession | null {
     if (!this.isDbAvailable()) return null;
     try {
-      const row = this.getStmt('get_session', `
-        SELECT * FROM telemetry_sessions WHERE id = ?
-      `).get(sessionId) as Record<string, unknown> | undefined;
+      const row = this.getStmt(
+        'get_session',
+        `
+          SELECT telemetry_sessions.*,
+                 COALESCE(telemetry_sessions.user_id, sessions.user_id) AS user_id
+          FROM telemetry_sessions
+          LEFT JOIN sessions ON sessions.id = telemetry_sessions.id
+          WHERE telemetry_sessions.id = ?
+        `
+      ).get(sessionId) as Record<string, unknown> | undefined;
 
       if (!row) return null;
       return this.rowToSession(row);
@@ -193,19 +199,48 @@ export class TelemetryStorage {
     }
   }
 
-  listSessions(limit = 50, offset = 0): TelemetrySessionListItem[] {
+  listSessions(options: TelemetrySessionListOptions = {}): TelemetrySessionListItem[] {
     if (!this.isDbAvailable()) return [];
     try {
-      const rows = this.getStmt('list_sessions', `
-        SELECT id, title, model_provider, model_name, start_time, end_time,
-               turn_count, total_tokens, estimated_cost, status
-        FROM telemetry_sessions
-        ORDER BY start_time DESC
-        LIMIT ? OFFSET ?
-      `).all(limit, offset) as Record<string, unknown>[];
+      const limit = options.limit ?? 50;
+      const offset = options.offset ?? 0;
+      const where: string[] = [];
+      const params: unknown[] = [];
+      const ownerExpr = 'COALESCE(telemetry_sessions.user_id, sessions.user_id)';
 
-      return rows.map(row => ({
+      if (options.unassignedOnly) {
+        where.push(`${ownerExpr} IS NULL`);
+      } else if (options.userId) {
+        where.push(`${ownerExpr} = ?`);
+        params.push(options.userId);
+      }
+
+      const rows = this.getDb()
+        .prepare(
+          `
+          SELECT telemetry_sessions.id,
+                 ${ownerExpr} AS user_id,
+                 telemetry_sessions.title,
+                 telemetry_sessions.model_provider,
+                 telemetry_sessions.model_name,
+                 telemetry_sessions.start_time,
+                 telemetry_sessions.end_time,
+                 telemetry_sessions.turn_count,
+                 telemetry_sessions.total_tokens,
+                 telemetry_sessions.estimated_cost,
+                 telemetry_sessions.status
+          FROM telemetry_sessions
+          LEFT JOIN sessions ON sessions.id = telemetry_sessions.id
+          ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
+          ORDER BY telemetry_sessions.start_time DESC
+          LIMIT ? OFFSET ?
+        `
+        )
+        .all(...params, limit, offset) as Record<string, unknown>[];
+
+      return rows.map((row) => ({
         id: row.id as string,
+        userId: row.user_id == null ? null : String(row.user_id),
         title: row.title as string,
         modelProvider: row.model_provider as string,
         modelName: row.model_name as string,
@@ -214,7 +249,7 @@ export class TelemetryStorage {
         turnCount: row.turn_count as number,
         totalTokens: row.total_tokens as number,
         estimatedCost: row.estimated_cost as number,
-        status: row.status as string,
+        status: row.status as string
       }));
     } catch (error) {
       logger.error('Failed to list telemetry sessions:', error);
@@ -253,20 +288,12 @@ export class TelemetryStorage {
   getStorageBytes(): number {
     if (!this.isDbAvailable()) return 0;
     const db = this.getDb();
-    const tables = [
-      'telemetry_sessions',
-      'telemetry_turns',
-      'telemetry_model_calls',
-      'telemetry_tool_calls',
-      'telemetry_events',
-    ];
+    const tables = ['telemetry_sessions', 'telemetry_turns', 'telemetry_model_calls', 'telemetry_tool_calls', 'telemetry_events'];
 
     // dbstat 是 SQLite 编译选项，better-sqlite3 默认未开启；先尝试
     try {
       const placeholders = tables.map(() => '?').join(',');
-      const row = db.prepare(
-        `SELECT COALESCE(SUM(pgsize), 0) AS bytes FROM dbstat WHERE name IN (${placeholders})`
-      ).get(...tables) as { bytes?: number } | undefined;
+      const row = db.prepare(`SELECT COALESCE(SUM(pgsize), 0) AS bytes FROM dbstat WHERE name IN (${placeholders})`).get(...tables) as { bytes?: number } | undefined;
       const bytes = row?.bytes;
       if (typeof bytes === 'number' && bytes > 0) {
         return bytes;
@@ -315,7 +342,9 @@ export class TelemetryStorage {
   getLastEventAt(): number | null {
     if (!this.isDbAvailable()) return null;
     try {
-      const row = this.getDb().prepare(`
+      const row = this.getDb()
+        .prepare(
+          `
         SELECT MAX(ts) AS last_at FROM (
           SELECT MAX(timestamp) AS ts FROM telemetry_events
           UNION ALL
@@ -323,7 +352,9 @@ export class TelemetryStorage {
           UNION ALL
           SELECT MAX(start_time) AS ts FROM telemetry_sessions
         )
-      `).get() as { last_at?: number | null } | undefined;
+      `
+        )
+        .get() as { last_at?: number | null } | undefined;
       const lastAt = row?.last_at;
       return typeof lastAt === 'number' && lastAt > 0 ? lastAt : null;
     } catch {
@@ -338,7 +369,9 @@ export class TelemetryStorage {
   insertTurn(turn: TelemetryTurn): void {
     if (!this.isDbAvailable()) return;
     try {
-      const stmt = this.getStmt('insert_turn', `
+      const stmt = this.getStmt(
+        'insert_turn',
+        `
         INSERT OR REPLACE INTO telemetry_turns (
           id, session_id, turn_number, start_time, end_time, duration_ms,
           user_prompt, user_prompt_tokens, has_attachments, attachment_count,
@@ -350,27 +383,44 @@ export class TelemetryStorage {
           compaction_occurred, compaction_saved_tokens, iteration_count, agent_id,
           turn_type, parent_turn_id
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
+      `
+      );
       stmt.run(
-        turn.id, turn.sessionId, turn.turnNumber,
-        turn.startTime, turn.endTime, turn.durationMs,
+        turn.id,
+        turn.sessionId,
+        turn.turnNumber,
+        turn.startTime,
+        turn.endTime,
+        turn.durationMs,
         guardTelemetryText(turn.userPrompt, TELEMETRY_TRUNCATION.USER_PROMPT),
-        turn.userPromptTokens, turn.hasAttachments ? 1 : 0, turn.attachmentCount,
-        turn.systemPromptHash ?? null, turn.agentMode,
+        turn.userPromptTokens,
+        turn.hasAttachments ? 1 : 0,
+        turn.attachmentCount,
+        turn.systemPromptHash ?? null,
+        turn.agentMode,
         stringifyGuardedTelemetry(turn.activeSkills ?? []),
         stringifyGuardedTelemetry(turn.activeMcpServers ?? []),
         turn.effortLevel,
         guardTelemetryText(turn.assistantResponse, TELEMETRY_TRUNCATION.ASSISTANT_RESPONSE),
-        turn.assistantResponseTokens, guardTelemetryText(turn.thinkingContent, TELEMETRY_TRUNCATION.THINKING_CONTENT),
-        turn.totalInputTokens, turn.totalOutputTokens,
-        turn.intent.primary, turn.intent.secondary ?? null,
-        turn.intent.confidence, turn.intent.method,
+        turn.assistantResponseTokens,
+        guardTelemetryText(turn.thinkingContent, TELEMETRY_TRUNCATION.THINKING_CONTENT),
+        turn.totalInputTokens,
+        turn.totalOutputTokens,
+        turn.intent.primary,
+        turn.intent.secondary ?? null,
+        turn.intent.confidence,
+        turn.intent.method,
         stringifyGuardedTelemetry(turn.intent.keywords),
-        turn.outcome.status, turn.outcome.confidence, turn.outcome.method,
+        turn.outcome.status,
+        turn.outcome.confidence,
+        turn.outcome.method,
         stringifyGuardedTelemetry(turn.outcome.signals),
-        turn.compactionOccurred ? 1 : 0, turn.compactionSavedTokens ?? null,
-        turn.iterationCount, turn.agentId || 'main',
-        turn.turnType || 'user', turn.parentTurnId ?? null
+        turn.compactionOccurred ? 1 : 0,
+        turn.compactionSavedTokens ?? null,
+        turn.iterationCount,
+        turn.agentId || 'main',
+        turn.turnType || 'user',
+        turn.parentTurnId ?? null
       );
     } catch (error) {
       logger.error('Failed to insert telemetry turn:', error);
@@ -381,16 +431,17 @@ export class TelemetryStorage {
     if (!this.isDbAvailable()) return [];
     try {
       if (agentId) {
-        const rows = this.getDb().prepare(
-          'SELECT * FROM telemetry_turns WHERE session_id = ? AND agent_id = ? ORDER BY start_time ASC'
-        ).all(sessionId, agentId) as Record<string, unknown>[];
-        return rows.map(row => this.rowToTurn(row));
+        const rows = this.getDb().prepare('SELECT * FROM telemetry_turns WHERE session_id = ? AND agent_id = ? ORDER BY start_time ASC').all(sessionId, agentId) as Record<string, unknown>[];
+        return rows.map((row) => this.rowToTurn(row));
       }
-      const rows = this.getStmt('get_turns', `
+      const rows = this.getStmt(
+        'get_turns',
+        `
         SELECT * FROM telemetry_turns WHERE session_id = ? ORDER BY start_time ASC
-      `).all(sessionId) as Record<string, unknown>[];
+      `
+      ).all(sessionId) as Record<string, unknown>[];
 
-      return rows.map(row => this.rowToTurn(row));
+      return rows.map((row) => this.rowToTurn(row));
     } catch (error) {
       logger.error('Failed to get telemetry turns:', error);
       return [];
@@ -405,23 +456,41 @@ export class TelemetryStorage {
   } | null {
     if (!this.isDbAvailable()) return null;
     try {
-      const turnRow = this.getStmt('get_turn', `
+      const turnRow = this.getStmt(
+        'get_turn',
+        `
         SELECT * FROM telemetry_turns WHERE id = ?
-      `).get(turnId) as Record<string, unknown> | undefined;
+      `
+      ).get(turnId) as Record<string, unknown> | undefined;
 
       if (!turnRow) return null;
 
-      const modelCalls = (this.getStmt('get_model_calls', `
+      const modelCalls = (
+        this.getStmt(
+          'get_model_calls',
+          `
         SELECT * FROM telemetry_model_calls WHERE turn_id = ? ORDER BY timestamp ASC
-      `).all(turnId) as Record<string, unknown>[]).map(r => this.rowToModelCall(r));
+      `
+        ).all(turnId) as Record<string, unknown>[]
+      ).map((r) => this.rowToModelCall(r));
 
-      const toolCalls = (this.getStmt('get_tool_calls', `
+      const toolCalls = (
+        this.getStmt(
+          'get_tool_calls',
+          `
         SELECT * FROM telemetry_tool_calls WHERE turn_id = ? ORDER BY idx ASC
-      `).all(turnId) as Record<string, unknown>[]).map(r => this.rowToToolCall(r));
+      `
+        ).all(turnId) as Record<string, unknown>[]
+      ).map((r) => this.rowToToolCall(r));
 
-      const events = (this.getStmt('get_events', `
+      const events = (
+        this.getStmt(
+          'get_events',
+          `
         SELECT * FROM telemetry_events WHERE turn_id = ? ORDER BY timestamp ASC
-      `).all(turnId) as Record<string, unknown>[]).map(r => this.rowToEvent(r));
+      `
+        ).all(turnId) as Record<string, unknown>[]
+      ).map((r) => this.rowToEvent(r));
 
       const turn = this.rowToTurn(turnRow);
       turn.modelCalls = modelCalls;
@@ -439,11 +508,7 @@ export class TelemetryStorage {
   // Batch Insert (for collector flush)
   // --------------------------------------------------------------------------
 
-  batchInsert(data: {
-    modelCalls?: Array<TelemetryModelCall & { turnId: string; sessionId: string }>;
-    toolCalls?: Array<TelemetryToolCall & { turnId: string; sessionId: string }>;
-    events?: Array<TelemetryTimelineEvent & { turnId: string; sessionId: string }>;
-  }): void {
+  batchInsert(data: { modelCalls?: Array<TelemetryModelCall & { turnId: string; sessionId: string }>; toolCalls?: Array<TelemetryToolCall & { turnId: string; sessionId: string }>; events?: Array<TelemetryTimelineEvent & { turnId: string; sessionId: string }> }): void {
     if (!this.isDbAvailable()) return;
     try {
       const db = this.getDb();
@@ -458,16 +523,7 @@ export class TelemetryStorage {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
           for (const mc of data.modelCalls) {
-            stmt.run(
-              mc.id, mc.turnId, mc.sessionId, mc.timestamp,
-              mc.provider, mc.model, mc.temperature ?? null, mc.maxTokens ?? null,
-              mc.inputTokens, mc.outputTokens, mc.latencyMs,
-              mc.responseType, mc.toolCallCount, mc.truncated ? 1 : 0,
-              guardTelemetryText(mc.error, TELEMETRY_TRUNCATION.EVENT_SUMMARY),
-              mc.fallbackUsed ? stringifyGuardedTelemetry(mc.fallbackUsed) : null,
-              guardTelemetryText(mc.prompt, TELEMETRY_TRUNCATION.USER_PROMPT),
-              guardTelemetryText(mc.completion, TELEMETRY_TRUNCATION.ASSISTANT_RESPONSE)
-            );
+            stmt.run(mc.id, mc.turnId, mc.sessionId, mc.timestamp, mc.provider, mc.model, mc.temperature ?? null, mc.maxTokens ?? null, mc.inputTokens, mc.outputTokens, mc.latencyMs, mc.responseType, mc.toolCallCount, mc.truncated ? 1 : 0, guardTelemetryText(mc.error, TELEMETRY_TRUNCATION.EVENT_SUMMARY), mc.fallbackUsed ? stringifyGuardedTelemetry(mc.fallbackUsed) : null, guardTelemetryText(mc.prompt, TELEMETRY_TRUNCATION.USER_PROMPT), guardTelemetryText(mc.completion, TELEMETRY_TRUNCATION.ASSISTANT_RESPONSE));
           }
         }
 
@@ -483,22 +539,7 @@ export class TelemetryStorage {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
           for (const tc of data.toolCalls) {
-            stmt.run(
-              tc.id, tc.turnId, tc.sessionId, tc.toolCallId,
-              tc.name, guardTelemetryJsonText(tc.arguments, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS),
-              guardTelemetryJsonText(tc.actualArguments, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS),
-              guardTelemetryText(tc.resultSummary, TELEMETRY_TRUNCATION.TOOL_RESULT_SUMMARY),
-              tc.success ? 1 : 0, guardTelemetryText(tc.error, TELEMETRY_TRUNCATION.EVENT_SUMMARY),
-              tc.errorCategory ?? null,
-              tc.computerSurfaceFailureKind ?? null,
-              tc.computerSurfaceMode ?? null,
-              tc.computerSurfaceTargetApp ?? null,
-              tc.computerSurfaceAction ?? null,
-              tc.computerSurfaceAxQualityScore ?? null,
-              tc.computerSurfaceAxQualityGrade ?? null,
-              tc.durationMs,
-              tc.timestamp, tc.index, tc.parallel ? 1 : 0
-            );
+            stmt.run(tc.id, tc.turnId, tc.sessionId, tc.toolCallId, tc.name, guardTelemetryJsonText(tc.arguments, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS), guardTelemetryJsonText(tc.actualArguments, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS), guardTelemetryText(tc.resultSummary, TELEMETRY_TRUNCATION.TOOL_RESULT_SUMMARY), tc.success ? 1 : 0, guardTelemetryText(tc.error, TELEMETRY_TRUNCATION.EVENT_SUMMARY), tc.errorCategory ?? null, tc.computerSurfaceFailureKind ?? null, tc.computerSurfaceMode ?? null, tc.computerSurfaceTargetApp ?? null, tc.computerSurfaceAction ?? null, tc.computerSurfaceAxQualityScore ?? null, tc.computerSurfaceAxQualityGrade ?? null, tc.durationMs, tc.timestamp, tc.index, tc.parallel ? 1 : 0);
           }
         }
 
@@ -510,11 +551,7 @@ export class TelemetryStorage {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           `);
           for (const ev of data.events) {
-            stmt.run(
-              ev.id, ev.turnId, ev.sessionId, ev.timestamp,
-              ev.eventType, guardTelemetryText(ev.summary, TELEMETRY_TRUNCATION.EVENT_SUMMARY),
-              guardTelemetryJsonText(ev.data, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS), ev.durationMs ?? null
-            );
+            stmt.run(ev.id, ev.turnId, ev.sessionId, ev.timestamp, ev.eventType, guardTelemetryText(ev.summary, TELEMETRY_TRUNCATION.EVENT_SUMMARY), guardTelemetryJsonText(ev.data, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS), ev.durationMs ?? null);
           }
         }
       })();
@@ -530,7 +567,9 @@ export class TelemetryStorage {
   getToolUsageStats(sessionId: string): TelemetryToolStat[] {
     if (!this.isDbAvailable()) return [];
     try {
-      const rows = this.getStmt('tool_stats', `
+      const rows = this.getStmt(
+        'tool_stats',
+        `
         SELECT
           name,
           COUNT(*) as call_count,
@@ -542,18 +581,17 @@ export class TelemetryStorage {
         WHERE session_id = ?
         GROUP BY name
         ORDER BY call_count DESC
-      `).all(sessionId) as Record<string, unknown>[];
+      `
+      ).all(sessionId) as Record<string, unknown>[];
 
-      return rows.map(row => ({
+      return rows.map((row) => ({
         name: row.name as string,
         callCount: row.call_count as number,
         successCount: row.success_count as number,
         failCount: row.fail_count as number,
-        successRate: (row.call_count as number) > 0
-          ? (row.success_count as number) / (row.call_count as number)
-          : 0,
+        successRate: (row.call_count as number) > 0 ? (row.success_count as number) / (row.call_count as number) : 0,
         avgDurationMs: Math.round(row.avg_duration_ms as number),
-        totalDurationMs: row.total_duration_ms as number,
+        totalDurationMs: row.total_duration_ms as number
       }));
     } catch (error) {
       logger.error('Failed to get tool usage stats:', error);
@@ -567,13 +605,16 @@ export class TelemetryStorage {
   getToolCallsBySession(sessionId: string): TelemetryToolCall[] {
     if (!this.isDbAvailable()) return [];
     try {
-      const rows = this.getStmt('get_tool_calls_by_session', `
+      const rows = this.getStmt(
+        'get_tool_calls_by_session',
+        `
         SELECT * FROM telemetry_tool_calls
         WHERE session_id = ?
         ORDER BY timestamp ASC
-      `).all(sessionId) as Record<string, unknown>[];
+      `
+      ).all(sessionId) as Record<string, unknown>[];
 
-      return rows.map(row => this.rowToToolCall(row));
+      return rows.map((row) => this.rowToToolCall(row));
     } catch (error) {
       logger.error('Failed to get tool calls by session:', error);
       return [];
@@ -585,7 +626,9 @@ export class TelemetryStorage {
     if (!this.isDbAvailable()) return emptySummary;
 
     try {
-      const totals = this.getStmt('computer_surface_reliability_totals', `
+      const totals = this.getStmt(
+        'computer_surface_reliability_totals',
+        `
         SELECT
           COUNT(*) AS total_actions,
           SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS successful_actions,
@@ -595,9 +638,12 @@ export class TelemetryStorage {
           SUM(CASE WHEN computer_surface_mode IN ('background_cgevent', 'background_cg_event') THEN 1 ELSE 0 END) AS background_cg_event_actions
         FROM telemetry_tool_calls
         WHERE session_id = ? AND name = 'computer_use'
-      `).get(sessionId) as Record<string, unknown> | undefined;
+      `
+      ).get(sessionId) as Record<string, unknown> | undefined;
 
-      const byFailureKindRows = this.getStmt('computer_surface_reliability_failure_kinds', `
+      const byFailureKindRows = this.getStmt(
+        'computer_surface_reliability_failure_kinds',
+        `
         SELECT computer_surface_failure_kind AS failure_kind, COUNT(*) AS count
         FROM telemetry_tool_calls
         WHERE session_id = ?
@@ -607,9 +653,12 @@ export class TelemetryStorage {
           AND computer_surface_failure_kind != ''
         GROUP BY computer_surface_failure_kind
         ORDER BY count DESC, failure_kind ASC
-      `).all(sessionId) as Record<string, unknown>[];
+      `
+      ).all(sessionId) as Record<string, unknown>[];
 
-      const byModeRows = this.getStmt('computer_surface_reliability_modes', `
+      const byModeRows = this.getStmt(
+        'computer_surface_reliability_modes',
+        `
         SELECT
           computer_surface_mode AS mode,
           COUNT(*) AS count,
@@ -621,9 +670,12 @@ export class TelemetryStorage {
           AND computer_surface_mode != ''
         GROUP BY computer_surface_mode
         ORDER BY count DESC, mode ASC
-      `).all(sessionId) as Record<string, unknown>[];
+      `
+      ).all(sessionId) as Record<string, unknown>[];
 
-      const recentFailureRows = this.getStmt('computer_surface_reliability_recent_failures', `
+      const recentFailureRows = this.getStmt(
+        'computer_surface_reliability_recent_failures',
+        `
         SELECT
           tool_call_id,
           timestamp,
@@ -637,7 +689,8 @@ export class TelemetryStorage {
         WHERE session_id = ? AND name = 'computer_use' AND success = 0
         ORDER BY timestamp DESC, idx DESC
         LIMIT 10
-      `).all(sessionId) as Record<string, unknown>[];
+      `
+      ).all(sessionId) as Record<string, unknown>[];
 
       return {
         sessionId,
@@ -647,16 +700,16 @@ export class TelemetryStorage {
         foregroundFallbackActions: Number(totals?.foreground_fallback_actions ?? 0),
         backgroundAxActions: Number(totals?.background_ax_actions ?? 0),
         backgroundCgEventActions: Number(totals?.background_cg_event_actions ?? 0),
-        byFailureKind: byFailureKindRows.map(row => ({
+        byFailureKind: byFailureKindRows.map((row) => ({
           failureKind: row.failure_kind as string,
-          count: Number(row.count ?? 0),
+          count: Number(row.count ?? 0)
         })),
-        byMode: byModeRows.map(row => ({
+        byMode: byModeRows.map((row) => ({
           mode: row.mode as string,
           count: Number(row.count ?? 0),
-          failed: Number(row.failed ?? 0),
+          failed: Number(row.failed ?? 0)
         })),
-        recentFailures: recentFailureRows.map(row => ({
+        recentFailures: recentFailureRows.map((row) => ({
           toolCallId: row.tool_call_id as string,
           timestamp: Number(row.timestamp ?? 0),
           name: row.name as string,
@@ -664,8 +717,8 @@ export class TelemetryStorage {
           mode: (row.computer_surface_mode as string | null) ?? null,
           targetApp: (row.computer_surface_target_app as string | null) ?? null,
           action: (row.computer_surface_action as string | null) ?? null,
-          error: (row.error as string | null) ?? null,
-        })),
+          error: (row.error as string | null) ?? null
+        }))
       };
     } catch (error) {
       logger.error('Failed to get computer surface reliability summary:', error);
@@ -676,20 +729,23 @@ export class TelemetryStorage {
   getIntentDistribution(sessionId: string): TelemetryIntentStat[] {
     if (!this.isDbAvailable()) return [];
     try {
-      const rows = this.getStmt('intent_dist', `
+      const rows = this.getStmt(
+        'intent_dist',
+        `
         SELECT intent_primary, COUNT(*) as count
         FROM telemetry_turns
         WHERE session_id = ?
         GROUP BY intent_primary
         ORDER BY count DESC
-      `).all(sessionId) as Record<string, unknown>[];
+      `
+      ).all(sessionId) as Record<string, unknown>[];
 
       const total = rows.reduce((sum, r) => sum + (r.count as number), 0);
 
-      return rows.map(row => ({
+      return rows.map((row) => ({
         intent: row.intent_primary as TelemetryIntentStat['intent'],
         count: row.count as number,
-        percentage: total > 0 ? (row.count as number) / total : 0,
+        percentage: total > 0 ? (row.count as number) / total : 0
       }));
     } catch (error) {
       logger.error('Failed to get intent distribution:', error);
@@ -703,13 +759,16 @@ export class TelemetryStorage {
   getEventsBySession(sessionId: string): TelemetryTimelineEvent[] {
     if (!this.isDbAvailable()) return [];
     try {
-      const rows = this.getStmt('get_events_by_session', `
+      const rows = this.getStmt(
+        'get_events_by_session',
+        `
         SELECT * FROM telemetry_events
         WHERE session_id = ?
         ORDER BY timestamp ASC
-      `).all(sessionId) as Record<string, unknown>[];
+      `
+      ).all(sessionId) as Record<string, unknown>[];
 
-      return rows.map(row => this.rowToEvent(row));
+      return rows.map((row) => this.rowToEvent(row));
     } catch (error) {
       logger.error('Failed to get events by session:', error);
       return [];
@@ -723,6 +782,7 @@ export class TelemetryStorage {
   private rowToSession(row: Record<string, unknown>): TelemetrySession {
     return {
       id: row.id as string,
+      userId: row.user_id == null ? null : String(row.user_id),
       title: row.title as string,
       generationId: row.generation_id as string,
       modelProvider: row.model_provider as string,
@@ -740,7 +800,7 @@ export class TelemetryStorage {
       toolSuccessRate: row.tool_success_rate as number,
       totalErrors: row.total_errors as number,
       sessionType: (row.session_type as TelemetrySession['sessionType']) ?? undefined,
-      status: row.status as TelemetrySession['status'],
+      status: row.status as TelemetrySession['status']
     };
   }
 
@@ -775,19 +835,19 @@ export class TelemetryStorage {
         secondary: row.intent_secondary as TelemetryTurn['intent']['secondary'],
         confidence: row.intent_confidence as number,
         method: row.intent_method as 'rule' | 'llm',
-        keywords: JSON.parse((row.intent_keywords as string) || '[]'),
+        keywords: JSON.parse((row.intent_keywords as string) || '[]')
       },
       outcome: {
         status: row.outcome_status as TelemetryTurn['outcome']['status'],
         confidence: row.outcome_confidence as number,
         method: row.outcome_method as 'rule' | 'llm',
-        signals: JSON.parse((row.quality_signals as string) || '{}'),
+        signals: JSON.parse((row.quality_signals as string) || '{}')
       },
       compactionOccurred: !!(row.compaction_occurred as number),
       compactionSavedTokens: row.compaction_saved_tokens as number | undefined,
       iterationCount: row.iteration_count as number,
       turnType: (row.turn_type as 'user' | 'iteration') ?? 'user',
-      parentTurnId: row.parent_turn_id as string | undefined,
+      parentTurnId: row.parent_turn_id as string | undefined
     };
   }
 
@@ -808,7 +868,7 @@ export class TelemetryStorage {
       error: row.error as string | undefined,
       fallbackUsed: row.fallback_info ? JSON.parse(row.fallback_info as string) : undefined,
       prompt: row.prompt as string | undefined,
-      completion: row.completion as string | undefined,
+      completion: row.completion as string | undefined
     };
   }
 
@@ -832,7 +892,7 @@ export class TelemetryStorage {
       durationMs: row.duration_ms as number,
       timestamp: row.timestamp as number,
       index: row.idx as number,
-      parallel: !!(row.parallel as number),
+      parallel: !!(row.parallel as number)
     };
   }
 
@@ -843,7 +903,7 @@ export class TelemetryStorage {
       eventType: row.event_type as string,
       summary: row.summary as string,
       data: row.data as string | undefined,
-      durationMs: row.duration_ms as number | undefined,
+      durationMs: row.duration_ms as number | undefined
     };
   }
 }

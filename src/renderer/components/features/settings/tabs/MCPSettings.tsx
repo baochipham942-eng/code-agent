@@ -19,6 +19,7 @@ import { useMcpStatus } from '../../../../hooks/useMcpStatus';
 import { useWorkbenchInsights } from '../../../../hooks/useWorkbenchInsights';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import { useWorkbenchCapabilityQuickActionRunner } from '../../../../hooks/useWorkbenchCapabilityQuickActionRunner';
+import { useAuthStore } from '../../../../stores/authStore';
 import { Button } from '../../../primitives';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { createLogger } from '../../../../utils/logger';
@@ -43,6 +44,7 @@ import {
 const logger = createLogger('MCPSettings');
 
 export const MCPSettings: React.FC = () => {
+  const isAdmin = useAuthStore((s) => s.user?.isAdmin === true);
   const {
     status: mcpStatus,
     isLoading,
@@ -104,6 +106,7 @@ export const MCPSettings: React.FC = () => {
   }, [message]);
 
   const handleRefreshFromCloud = async () => {
+    if (!isAdmin) return;
     setIsRefreshing(true);
     setMessage(null);
     try {
@@ -122,6 +125,7 @@ export const MCPSettings: React.FC = () => {
   };
 
   const handleToggleServer = async (serverName: string, enabled: boolean) => {
+    if (!isAdmin) return;
     try {
       const result = await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'setServerEnabled', {
         serverName,
@@ -136,6 +140,7 @@ export const MCPSettings: React.FC = () => {
   };
 
   const handleReconnect = async (serverName: string) => {
+    if (!isAdmin) return;
     setReconnectingServer(serverName);
     try {
       const result = await window.domainAPI?.invoke<{ success: boolean; error?: string }>(
@@ -158,6 +163,7 @@ export const MCPSettings: React.FC = () => {
   };
 
   const handleAddServer = useCallback(async (config: McpServerConfig) => {
+    if (!isAdmin) return;
     try {
       const result = await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'addServer', { config });
       if (result?.success) {
@@ -170,7 +176,7 @@ export const MCPSettings: React.FC = () => {
       logger.error('Failed to add MCP server', error);
       setMessage({ type: 'error', text: '添加服务器失败' });
     }
-  }, []);
+  }, [isAdmin, reloadMcpStatus]);
 
   const openCapabilitySheet = useCallback((server: WorkbenchMcpRegistryItem) => {
     setActiveSheetTarget({
@@ -238,25 +244,27 @@ export const MCPSettings: React.FC = () => {
                   : '还没有配置任何 MCP 服务器'}
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={handleRefreshFromCloud}
-                loading={isRefreshing}
-                leftIcon={!isRefreshing ? <Cloud className="w-3 h-3" /> : undefined}
-              >
-                {isRefreshing ? '刷新中...' : '从云端刷新 MCP 配置'}
-              </Button>
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={() => setIsEditorOpen(true)}
-                leftIcon={<Plus className="w-3 h-3" />}
-              >
-                添加服务器
-              </Button>
-            </div>
+            {isAdmin && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={handleRefreshFromCloud}
+                  loading={isRefreshing}
+                  leftIcon={!isRefreshing ? <Cloud className="w-3 h-3" /> : undefined}
+                >
+                  {isRefreshing ? '刷新中...' : '从云端刷新 MCP 配置'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => setIsEditorOpen(true)}
+                  leftIcon={<Plus className="w-3 h-3" />}
+                >
+                  添加服务器
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 sm:grid-cols-5">
@@ -316,17 +324,21 @@ export const MCPSettings: React.FC = () => {
                         <div>
                           <div className="text-sm font-medium text-zinc-200">没有配置任何 MCP 服务器</div>
                           <div className="mt-1 text-xs text-zinc-500">
-                            添加 server 后会在这里显示连接状态、工具数量和可用操作。
+                            {isAdmin
+                              ? '添加 server 后会在这里显示连接状态、工具数量和可用操作。'
+                              : '管理员配置 MCP 后，这里会显示可用状态。'}
                           </div>
                         </div>
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          onClick={() => setIsEditorOpen(true)}
-                          leftIcon={<Plus className="w-3 h-3" />}
-                        >
-                          添加服务器
-                        </Button>
+                        {isAdmin && (
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={() => setIsEditorOpen(true)}
+                            leftIcon={<Plus className="w-3 h-3" />}
+                          >
+                            添加服务器
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -366,14 +378,16 @@ export const MCPSettings: React.FC = () => {
                           <span>{server.resourceCount} 资源</span>
                         </td>
                         <td className="max-w-[220px] px-3 py-3 align-middle">
-                          {server.error ? (
+                          {server.error && isAdmin ? (
                             <span className="block truncate text-red-400" title={server.error}>
                               {server.error}
                             </span>
-                          ) : server.blockedReason ? (
+                          ) : server.blockedReason && isAdmin ? (
                             <span className="block truncate text-yellow-300" title={server.blockedReason.detail}>
                               {server.blockedReason.detail}
                             </span>
+                          ) : (server.error || server.blockedReason) ? (
+                            <span className="text-zinc-500">管理员可查看</span>
                           ) : (
                             <span className="text-zinc-600">-</span>
                           )}
@@ -384,7 +398,7 @@ export const MCPSettings: React.FC = () => {
                               label={server.label}
                               onClick={() => openCapabilitySheet(server)}
                             />
-                            {server.enabled && !server.available && (
+                            {isAdmin && server.enabled && !server.available && (
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -395,20 +409,22 @@ export const MCPSettings: React.FC = () => {
                                 重连
                               </Button>
                             )}
-                            <Button
-                              size="sm"
-                              variant={server.enabled ? 'ghost' : 'primary'}
-                              onClick={() => handleToggleServer(server.id, !server.enabled)}
-                              leftIcon={
-                                server.enabled ? (
-                                  <PowerOff className="w-3 h-3" />
-                                ) : (
-                                  <Power className="w-3 h-3" />
-                                )
-                              }
-                            >
-                              {server.enabled ? '禁用' : '启用'}
-                            </Button>
+                            {isAdmin && (
+                              <Button
+                                size="sm"
+                                variant={server.enabled ? 'ghost' : 'primary'}
+                                onClick={() => handleToggleServer(server.id, !server.enabled)}
+                                leftIcon={
+                                  server.enabled ? (
+                                    <PowerOff className="w-3 h-3" />
+                                  ) : (
+                                    <Power className="w-3 h-3" />
+                                  )
+                                }
+                              >
+                                {server.enabled ? '禁用' : '启用'}
+                              </Button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -463,11 +479,13 @@ export const MCPSettings: React.FC = () => {
       </SettingsDetails>
 
       {/* Add Server Editor Modal */}
-      <McpServerEditor
-        isOpen={isEditorOpen}
-        onClose={() => setIsEditorOpen(false)}
-        onSave={handleAddServer}
-      />
+      {isAdmin && (
+        <McpServerEditor
+          isOpen={isEditorOpen}
+          onClose={() => setIsEditorOpen(false)}
+          onSave={handleAddServer}
+        />
+      )}
 
       <WorkbenchCapabilitySheetLite
         isOpen={Boolean(activeSheetCapability)}

@@ -26,6 +26,7 @@ Writing rules:
 - If an Append closes or completes the deliverable, that same call is final.
 - Keep chunks coherent: metadata/bootstrap, markup, styles, data, logic, validation helpers, closing tags.
 - After the final chunk, verify with Read, Bash, browser, or computer tools as appropriate.
+- When reporting generated game validation, do not dump a long wall of raw failures by default. First say whether the game was generated and visible, then classify the result as a blocking error, gameplay-quality gap, or validation-evidence gap. Keep raw validator details behind a short diagnostics section.
 
 For generated games, also follow the compact Game Artifact Contract block exactly.
 `.trim(),
@@ -40,7 +41,8 @@ For generated or repaired browser games, produce a playable file plus a machine-
 
 Build rules:
 - Translate genre/reference into mechanics, not only visual skin.
-- First screen shows actor, controls, feedback, reward/risk; score, health, objectives, win/fail, and progression update runtime state.
+- First screen shows a game, not an empty test harness: actor, controls, score/health/objective, at least one reward target, at least one risk/hazard/obstacle, and a clear goal must be visible before any key is pressed.
+- If the requested subject is a stickman / 火柴人, draw a deliberate stick figure with readable proportions: visible head, torso, arms, legs, joint/limb motion or pose, enough stroke weight/contrast, and an on-screen size that is visually inspectable. Do not ship a tiny thin line figure in an empty rectangle.
 - Canvas layout scales to viewport on both axes with max-width/max-height, aspect-ratio, height:auto; narrow windows must not crop playfield or HUD. A portrait canvas cannot rely on max-height:100vh + width:auto alone, because a 390px mobile viewport can still crop horizontally.
 - Platformers must include acceleration/friction, gravity, jump buffering or coyote time, recovery, and input-driven collision with platforms, hazards, rewards, and goals.
 - Gameplay Mechanics Contract for platformers: implement a stompable enemy, a bumpable/question block, a movement/interaction-changing ability, an ability-gated route, and one comboChallenge that combines jump with at least two of enemy/block/ability/gate play.
@@ -73,7 +75,7 @@ Runtime required:
 - For platformers, \`runSmokeTest()\` proves gameplayMechanics with before/after snapshots: stomp enemy defeated plus player bounce/vy, bump block used/spawnedReward, ability changes, gate/route reachability after ability, and comboChallenge sequence.
 - For Breakout/Arkanoid, \`runSmokeTest()\` must prove: ArrowRight changes \`paddleX\`; launch changes \`ball.x\` or \`ball.y\`; \`wallBounceCount\` increases; \`paddleBounceCount\` increases; \`brickCount\` decreases or \`score\` increases; each of wide/multi/slow/through/life triggers an observable snapshot delta; win reaches won/complete; lose reaches lost/gameOver/lives=0.
 - If authored levels/scenarios/segments exist, smoke coverage must reset and exercise every authored unit before claiming completion.
-- Include browserVisualSmoke expectations when visual: desktop/mobile viewport, canvasNonblank, actor/HUD visible, no crop/overlap.
+- Include browserVisualSmoke expectations when visual: desktop/mobile viewport, canvasNonblank, actor/HUD visible, reward/risk/goal visible on first screen, no crop/overlap.
 `.trim(),
 );
 
@@ -84,6 +86,8 @@ export const GAME_ARTIFACT_REPAIR_CONTRACT_PROMPT = applyOverride(
 
 Patch only the generated HTML and the validator-relevant metadata/test contract.
 - Keep the playfield visible in narrow browser windows: add responsive canvas/wrapper CSS with max-width/max-height/aspect-ratio/height:auto instead of shipping a fixed 800px/900px canvas or max-height-only scaling that can be cropped. The full canvas and HUD must fit inside a 390px mobile viewport.
+- Repair the visible product quality, not only the contract: first screen must show the playable scene with actor, controls/HUD, reward, risk, and goal. A canvas with only a tiny actor on an empty field is not acceptable.
+- For stickman / 火柴人 games, make the actor visually readable: head, torso, arms, legs, pose/animation, strong contrast, and a meaningful size relative to the playfield.
 - Metadata must expose \`window.__GAME_META__\` / \`window.__INTERACTIVE_META__\` with controls, validator-readable authored units (\`levels\`, \`segments\`, \`scenarios\`, \`stages\`, \`missions\`, or \`objectives\`), \`progressPlan\` or \`reachability\` steps, and \`qualityPlan\` or object-shaped \`acceptance\`.
 - Use the exact field name \`progressPlan\` or \`reachability\`; do not rename it to \`progress\`, \`coverage\`, or \`qualityPlan\`.
 - If authored units use string ids such as \`level1\`, \`mechanics-route\`, or \`stomp\`, repair \`reset(levelOrScenario)\` so it accepts those exact values and numeric indexes. Do not leave reset numeric-only while metadata exposes string ids.

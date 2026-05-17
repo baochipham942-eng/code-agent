@@ -76,7 +76,7 @@ export default defineConfig({
   build: {
     outDir: '../../dist/renderer',
     emptyOutDir: true,
-    sourcemap: true,
+    sourcemap: false,
     // application bundle (~2.6MB) 是当前 main chunk 的真实下限。继续用
     // 函数式 manualChunks 拆分 node_modules 会触发 minify TDZ
     // (Cannot access 'X' before initialization) 阻塞 React mount —

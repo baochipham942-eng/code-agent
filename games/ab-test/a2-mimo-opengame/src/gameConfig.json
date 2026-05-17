@@ -1,0 +1,6 @@
+{
+  "walkSpeed": 200,
+  "jumpPower": -500,
+  "doubleJumpPower": -450,
+  "gravity": 800
+}

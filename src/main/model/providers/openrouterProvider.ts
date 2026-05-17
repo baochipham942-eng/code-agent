@@ -25,7 +25,7 @@ export class OpenRouterProvider extends BaseOpenAIProvider {
   protected getExtraHeaders(): Record<string, string> {
     return {
       'HTTP-Referer': 'https://code-agent.app',
-      'X-Title': 'Code Agent',
+      'X-Title': 'Agent Neo',
     };
   }
 

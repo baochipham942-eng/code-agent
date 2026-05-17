@@ -134,7 +134,7 @@ Task(subagent_type="reviewer", prompt="维度3: ...")
 \`\`\`
 skill({
   command: "frontend-slides",
-  args: "Code Agent 产品介绍，10 页，商务汇报风格"
+  args: "Agent Neo 产品介绍，10 页，商务汇报风格"
 })
 \`\`\`
 

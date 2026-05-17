@@ -679,6 +679,8 @@ describe('buildTurnExecutionClarityProjection', () => {
           durationMs: 4,
           hookCount: 1,
           modified: false,
+          sources: ['global'],
+          hookType: 'observer',
           message: 'prompt hook passed',
         },
         {
@@ -688,6 +690,9 @@ describe('buildTurnExecutionClarityProjection', () => {
           durationMs: 7,
           hookCount: 2,
           modified: true,
+          sources: ['project'],
+          hookType: 'decision',
+          matcher: 'Bash',
           toolName: 'Bash',
         },
       ],
@@ -705,6 +710,12 @@ describe('buildTurnExecutionClarityProjection', () => {
       'UserPromptSubmit',
       'PreToolUse',
     ]);
+    expect(hookNode?.turnTimeline?.hookActivity?.items.map((item) => item.sources)).toEqual([
+      ['global'],
+      ['project'],
+    ]);
+    expect(hookNode?.turnTimeline?.hookActivity?.items[1]?.hookType).toBe('decision');
+    expect(hookNode?.turnTimeline?.hookActivity?.items[1]?.matcher).toBe('Bash');
   });
 
   it('uses runtime turn ids before timestamp windows when projecting hook activity', () => {
@@ -772,6 +783,8 @@ describe('buildTurnExecutionClarityProjection', () => {
           durationMs: 5,
           hookCount: 1,
           modified: false,
+          sources: ['project'],
+          hookType: 'observer',
           turnId: 'runtime-turn-2',
           toolName: 'Read',
         },

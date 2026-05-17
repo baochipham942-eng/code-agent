@@ -26,6 +26,7 @@ import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { useAppStore } from '../../../../stores/appStore';
+import { useAuthStore } from '../../../../stores/authStore';
 import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('DataSettings');
@@ -118,7 +119,7 @@ export function buildDataManagementSummary(
   };
 }
 
-export function buildDataManagementRows(stats: DataStats | null): DataManagementRow[] {
+export function buildDataManagementRows(stats: DataStats | null, canClearCache = true): DataManagementRow[] {
   const safeStats = stats ?? EMPTY_DATA_STATS;
 
   return [
@@ -179,8 +180,8 @@ export function buildDataManagementRows(stats: DataStats | null): DataManagement
       valueLabel: `${safeStats.cacheEntries.toLocaleString()} 条`,
       statusLabel: safeStats.cacheEntries > 0 ? '可清理' : '干净',
       statusTone: safeStats.cacheEntries > 0 ? 'warning' : 'stable',
-      cleanupLabel: '清空缓存',
-      action: 'clear-cache',
+      cleanupLabel: canClearCache ? '清空缓存' : '管理员操作',
+      action: canClearCache ? 'clear-cache' : 'none',
     },
   ];
 }
@@ -225,6 +226,7 @@ function formatLastEventAt(ts: number | null): string {
 export const DataSettings: React.FC = () => {
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const setShowEvalCenter = useAppStore((s) => s.setShowEvalCenter);
+  const isAdmin = useAuthStore((s) => s.user?.isAdmin === true);
   const [stats, setStats] = useState<DataStats | null>(null);
   const [snapshotStats, setSnapshotStats] = useState<SnapshotStats | null>(null);
   const [telemetrySummary, setTelemetrySummary] = useState<TelemetryHealthSummary>({
@@ -243,14 +245,27 @@ export const DataSettings: React.FC = () => {
     try {
       const [dataStats, snapStats] = await Promise.all([
         ipcService.invokeDomain<DataStats>(IPC_DOMAINS.DATA, 'getStats'),
-        ipcService.invokeDomain<SnapshotStats>(IPC_DOMAINS.DATA, 'getSnapshotStats'),
+        isAdmin
+          ? ipcService.invokeDomain<SnapshotStats>(IPC_DOMAINS.DATA, 'getSnapshotStats')
+          : Promise.resolve(null),
       ]);
       if (dataStats) setStats(dataStats);
-      if (snapStats) setSnapshotStats(snapStats);
+      setSnapshotStats(snapStats ?? null);
     } catch (error) {
       logger.error('Failed to load data stats', error);
     } finally {
       setIsLoading(false);
+    }
+
+    if (!isAdmin) {
+      setTelemetrySummary({
+        available: false,
+        enabled: false,
+        sessionCount: null,
+        storageBytes: null,
+        lastEventAt: null,
+      });
+      return;
     }
 
     // Telemetry 健康摘要：直接调用 telemetry:health 拿 enabled / sessionCount /
@@ -274,19 +289,35 @@ export const DataSettings: React.FC = () => {
         error: error instanceof Error ? error.message : '未知错误',
       });
     }
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     loadStats();
   }, [loadStats]);
 
-  const dataRows = useMemo(() => buildDataManagementRows(stats), [stats]);
+  const dataRows = useMemo(() => buildDataManagementRows(stats, isAdmin), [isAdmin, stats]);
   const summary = useMemo(
     () => buildDataManagementSummary(stats, snapshotStats),
     [snapshotStats, stats],
   );
+  const summaryCards = useMemo(() => {
+    const cards = [
+      ['会话', summary.sessionCount.toLocaleString(), `${summary.messageCount.toLocaleString()} 条消息`],
+      ['数据库', summary.databaseSizeLabel, '本机应用数据'],
+      ['运行缓存', summary.cacheEntries.toLocaleString(), '可按需清理'],
+    ];
+    if (isAdmin) {
+      cards.push([
+        '调试快照',
+        summary.snapshotCount.toLocaleString(),
+        `${summary.snapshotSizeLabel} / ${summary.retentionLabel}`,
+      ]);
+    }
+    return cards;
+  }, [isAdmin, summary]);
 
   const handleClearSnapshots = async () => {
+    if (!isAdmin) return;
     setIsClearingSnapshots(true);
     setMessage(null);
     try {
@@ -304,6 +335,7 @@ export const DataSettings: React.FC = () => {
   };
 
   const handleRetentionChange = async (days: number) => {
+    if (!isAdmin) return;
     try {
       await ipcService.invokeDomain(IPC_DOMAINS.DATA, 'setSnapshotRetention', { days });
       await loadStats();
@@ -313,6 +345,7 @@ export const DataSettings: React.FC = () => {
   };
 
   const handleClearToolCache = async () => {
+    if (!isAdmin) return;
     setIsClearing(true);
     setMessage(null);
     try {
@@ -362,13 +395,8 @@ export const DataSettings: React.FC = () => {
         )}
       >
         <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
-          <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
-            {[
-              ['会话', summary.sessionCount.toLocaleString(), `${summary.messageCount.toLocaleString()} 条消息`],
-              ['数据库', summary.databaseSizeLabel, '本机应用数据'],
-              ['运行缓存', summary.cacheEntries.toLocaleString(), '可按需清理'],
-              ['调试快照', summary.snapshotCount.toLocaleString(), `${summary.snapshotSizeLabel} / ${summary.retentionLabel}`],
-            ].map(([label, value, caption]) => (
+          <div className={`grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 ${isAdmin ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
+            {summaryCards.map(([label, value, caption]) => (
               <div key={label} className="bg-zinc-900/80 px-3 py-3">
                 <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500">{label}</div>
                 <div className="mt-1 truncate text-lg font-semibold text-zinc-100">{value}</div>
@@ -446,10 +474,12 @@ export const DataSettings: React.FC = () => {
         </div>
       </SettingsSection>
 
-      <SettingsSection
-        title="Telemetry 健康"
-        description="Agent 内部遥测的采集状态摘要。详细分析请进入「内部评测」面板。"
-      >
+      {isAdmin && (
+        <>
+          <SettingsSection
+            title="Telemetry 健康"
+            description="Agent 内部遥测的采集状态摘要。详细分析请进入「内部评测」面板。"
+          >
         <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60 px-3 py-3">
           {telemetrySummary.available ? (
             <div className="flex flex-wrap items-center gap-3 text-xs">
@@ -500,18 +530,18 @@ export const DataSettings: React.FC = () => {
             </div>
           )}
         </div>
-      </SettingsSection>
+          </SettingsSection>
 
-      <SettingsDetails
-        title="调试快照"
-        description="用于 debug session 和上下文排查，默认折叠在高级区。清空不会影响会话消息。"
-        actions={(
-          <span className="inline-flex items-center gap-1 rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300">
-            <Bug className="h-3 w-3" />
-            {summary.snapshotCount.toLocaleString()} 条
-          </span>
-        )}
-      >
+          <SettingsDetails
+            title="调试快照"
+            description="用于 debug session 和上下文排查，默认折叠在高级区。清空不会影响会话消息。"
+            actions={(
+              <span className="inline-flex items-center gap-1 rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300">
+                <Bug className="h-3 w-3" />
+                {summary.snapshotCount.toLocaleString()} 条
+              </span>
+            )}
+          >
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
             {[
@@ -564,7 +594,9 @@ export const DataSettings: React.FC = () => {
             清空调试快照 {(snapshotStats?.snapshotCount || 0) > 0 && `(${snapshotStats?.snapshotCount} 条)`}
           </Button>
         </div>
-      </SettingsDetails>
+          </SettingsDetails>
+        </>
+      )}
     </SettingsPage>
   );
 };

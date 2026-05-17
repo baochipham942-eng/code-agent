@@ -1,10 +1,10 @@
-# Code Agent - 架构设计文档
+# Agent Neo / Code Agent - 架构设计文档
 
-> 版本: 9.8 (对应 v0.16.74)
-> 日期: 2026-05-11
+> 版本: 9.9 (对应 v0.16.75)
+> 日期: 2026-05-17
 > 作者: Lin Chen
 
-本文档是 Code Agent 项目的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
+本文档是 Agent Neo（代码仓库仍名为 Code Agent）的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
 
 ---
 
@@ -63,7 +63,8 @@
 | 构建 | esbuild (main) + Vite (renderer) |
 | 本地存储 | SQLite (better-sqlite3) |
 | 云端存储 | Supabase + pgvector |
-| AI 模型 | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / 火山引擎 / Local-Ollama 多 provider 目录（14+ provider） |
+| AI 模型 | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / 火山引擎 / Local-Ollama 多 provider 目录（14+ provider），本地 API Key 优先 |
+| Agent Engine | Native Agent Neo / Codex CLI / Claude Code，统一 engine session metadata、read-only 外部执行和 task ledger 回带 |
 | 本地桥接 | packages/bridge (localhost:9527) |
 | 代码编辑 | CodeMirror 6 (Preview 代码/Markdown 编辑模式) |
 
@@ -101,7 +102,7 @@ code-agent/
 │   │   ├── prompts/            # Prompt 矩阵（4 Profile × 5 层 Overlay + Prompt Registry/override + 缓存稳定性）
 │   │   ├── routing/            # Agent 路由系统（意图分类 + 路由决策）
 │   │   ├── security/           # 运行时安全（命令监控、敏感信息检测、审计日志）
-│   │   ├── services/           # 核心服务（Auth, Sync, Database, SecureStorage, 引用溯源、cloud config/update/feature flag）
+│   │   ├── services/           # 核心服务（Auth, Admin, AgentEngine, CapabilityCenter, Sync, Database, SecureStorage, cloud config/update/feature flag）
 │   │   ├── session/            # 会话管理（Worker Epoch 生成代围栏、快照重物化、导出、分叉、恢复）
 │   │   ├── tools/              # gen1-gen8 工具实现 + DocEdit
 │   │   │                         # 注：tool dispatch 已从 protocol/ 拆出，归位到 tools/dispatch/（M1.2）
@@ -156,7 +157,7 @@ code-agent/
 
 ### 工具体系（108 个 native ToolModule）
 
-按功能分为 9 类，其中 15 个核心工具始终发送给模型，其余通过 ToolSearch 按需加载。2026-05 native migration 后，`src/main/tools/registry.ts` 当前注册 108 个 ToolModule，`src/main/tools/modules/` 下有 107 个 schema 文件；下表按能力域说明，不把每类数量写成长期不变量。
+按功能分为 9 类，其中 15 个核心工具始终发送给模型，其余通过 ToolSearch 按需加载。2026-05 native migration 后，`src/main/tools/registry.ts` 当前注册 108 个 ToolModule，`src/main/tools/modules/` 下有 108 个 schema 文件；下表按能力域说明，不把每类数量写成长期不变量。
 
 | 分类 | 代表工具 |
 |------|----------|
@@ -173,6 +174,36 @@ code-agent/
 > **工具合并**: 31 个独立延迟工具合并为统一工具（Process, MCPUnified, TaskManager 等），使用 action 参数分发。详见 [ADR-006](./decisions/006-deferred-tools-consolidation.md)。
 >
 > **文档编辑统一**: DocEdit 统一入口，富文档为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
+
+### v0.16.75 Agent Neo 管理面、外部 Agent Engine 与 In-App 验证（2026-05-15 ~ 2026-05-17）
+
+这一轮把运行时、设置、验证和运营入口补成一条产品链路。架构重点是：品牌切到 Agent Neo，本地 Provider Key 成为默认模型边界，外部 agent 作为受控 engine 接入，生成物验证进入 app 内可见面板，管理类入口统一走 settings/admin guard。
+
+| 模块 | 当前闭环 | 关键文件 / 入口 |
+|------|---------|----------------|
+| Agent Neo 品牌层 | Tauri bundle、icon、Info.plist、MCP server、terminal、About/Update 和 landing page 文案切到 Agent Neo；仓库名与历史文档名继续保留 Code Agent | `src-tauri/tauri.conf.json`、`src-tauri/icons/*`、`public/code-agent/index.html`、`src/main/prompts/identity.ts` |
+| 本地模型配置 | 删除 server-side `cloud-proxy` provider；`ModelSettings` / onboarding 引导用户配置本地 API Key；模型请求由 `modelConfigResolver` 和 provider wrappers 读取本机配置 | `src/main/agent/orchestrator/modelConfigResolver.ts`、`src/main/model/modelRouter.ts`、`src/renderer/components/onboarding/ModelOnboardingModal.tsx`、`src/renderer/components/features/settings/tabs/ModelSettings.tsx` |
+| Agent Engine 抽象 | `AgentEngineKind = native / codex_cli / claude_code`；外部 engine 检测版本、生成 descriptor、通过 `codex exec --json` 或 `claude -p --output-format stream-json --permission-mode plan` 运行，并把事件归一为 session engine metadata | `src/shared/contract/agentEngine.ts`、`src/main/services/agentEngine/*`、`src/main/ipc/agentEngine.ipc.ts`、`src/web/routes/agent.ts` |
+| 外部 engine 安全边界 | 外部 engine 只允许 manual chat session、workspace cwd 内、read-only permission profile；启动命令、cwd、log path 和 output refs 写入 task ledger | `src/main/services/agentEngine/agentEngineGuards.ts`、`codexCliAdapter.ts`、`claudeCodeAdapter.ts`、`src/main/tasks/backgroundTaskLedger.ts` |
+| Agent Engine UI | ModelSwitcher 合并模型、reasoning effort 和 engine 选择；Capability Center 把 agent engine 当成能力卡，展示安装/运行/权限/风险状态 | `src/renderer/components/StatusBar/ModelSwitcher.tsx`、`src/main/services/capabilities/agentEngineCapabilityItems.ts`、`CapabilityCenterSettings.tsx` |
+| 会话历史导入 | Codex / Claude jsonl 历史可扫描、预览、标准化，供接力、复盘和 review 使用 | `src/main/services/agentEngine/agentEngineHistoryImport.ts` |
+| Capability Center 本地 registry | `CapabilityKind` 扩到 `agent_engine / skill / mcp_template / tool_bundle / channel_adapter / workflow_recipe / connector`；本地 curated registry 生成 disabled MCP draft，支持删除和回滚 | `src/shared/contract/capability.ts`、`docs/capabilities/*`、`src/main/services/capabilities/*`、`src/renderer/hooks/useCapabilityInventory.ts` |
+| 统一记忆管理 | memory import、knowledge inbox decision、memory entry runtime、injection trace、seed injector 与 Settings Memory UI/Knowledge Memory Panel 打通 | `src/main/memory/*`、`src/main/ipc/memory.ipc.ts`、`src/renderer/components/features/settings/tabs/MemoryTab.tsx`、`KnowledgeMemoryPanel.tsx` |
+| In-App HTML Validation | `validate_html_in_app` 作为 vision tool 调起 renderer 右侧 iframe 面板，复用 `BrowserInteractionStep` DSL 执行 click/hover/type/press/wait 与 expect 断言 | `src/main/tools/modules/vision/validateHtmlInApp.ts`、`src/shared/contract/browserInteraction.ts`、`src/main/services/inAppValidationService.ts`、`InAppValidationPanel.tsx` |
+| Managed Browser Surface | Browser relay extension、`BrowserRelayService` 和 `BrowserSurfacePanel` 让托管浏览器从底层工具变成可查看 sidecar 面板 | `resources/browser-relay-extension/*`、`src/main/services/infra/browserRelayService.ts`、`src/renderer/components/features/browser/BrowserSurfacePanel.tsx` |
+| Background Task Ledger | shell/background task、PTY 和外部 engine 输出进入统一 `Task / TaskEvent / TaskNotification / TaskOutputRef` 合同，当前 session 可 drain 通知并打开输出引用 | `src/shared/contract/backgroundTask.ts`、`src/main/tasks/backgroundTaskLedger.ts`、`backgroundTaskLedger.ipc.ts`、`useBackgroundTaskSync.ts` |
+| Handoff proposals | runtime 在长任务尾部生成 handoff proposal stream，TaskPanel 通过 `HandoffCard` 展示可接力摘要 | `src/main/handoff/*`、`src/main/prompts/handoff.ts`、`src/renderer/components/TaskPanel/HandoffCard.tsx` |
+| Artifact repair Route A | artifact repair 改为 full-rewrite-first；repair admission/guard/context assembly 继承 baseline 和 failures，P3 monotonic gate 阻止无界修复循环 | `src/main/agent/runtime/artifactRepair*`、`src/shared/constants/repair.ts`、`scripts/acceptance/platformer-gameplay-generation.ts` |
+| Settings / Admin guard | Settings 增加 Workspace、Automation、Data、Model、Capability、管理页；admin IPC 统一走 `adminGuard`，用户 dashboard 与邀请码由 Supabase RPC 支撑 | `src/renderer/components/features/settings/*`、`src/main/ipc/adminGuard.ts`、`src/main/services/admin/adminService.ts`、`supabase/migrations/20260516000000_user_invite_management.sql` |
+| 可选自动更新 | Tauri updater、release bundle、manifest 生成和 Update Settings 页面接入；启动时只在需要用户处理时提示 | `src-tauri/tauri.conf.json`、`scripts/tauri-update-manifest.mjs`、`scripts/tauri-release-bundle.sh`、`UpdateSettings.tsx` |
+| 分发安全 gate | release build 关闭 renderer/web server sourcemap，Tauri resources 移除 `webServer.cjs.map`；`release:security-scan` 扫描一方 map、sourceMappingURL、src/tests/docs、env/私钥，并接入 `tauri:bundle`、`tauri:release:bundle` 和安装脚本 | `docs/security/2026-05-17-agent-neo-distribution-hardening.md`、`scripts/release-security-scan.mjs`、`esbuild.config.ts`、`vite.config.ts`、`vite.web.config.ts` |
+
+**架构边界澄清**：
+- Agent Engine 是受控适配层，不共享外部 CLI 的全量权限；Codex/Claude 默认 read-only，并且 cwd 必须落在当前 workspace 内。
+- Capability Center 当前完成本地 curated registry 与 disabled draft；远程 marketplace、自动启用和远程执行仍保持在后续路线。
+- In-App Validation 只承诺验证本地/生成的 HTML artifact；真实网站、反 bot、native menu、drag-and-drop 仍交给 Playwright/CDP 或人工接管。
+- 管理页的前端隐藏只做体验优化，真正边界在 `adminGuard`、Supabase RLS 和 admin RPC。
+- 分发安全 gate 只保证客户端包少带内部材料；license、entitlement、能力市场、付费策略和高价值 prompt 仍应服务端化。
 
 ### 2026-05-13 ~ 05-14 Context Health 溯源 + 取消级联 + Computer-use MCP 入口归位 + 工作台面板群
 
@@ -222,7 +253,7 @@ code-agent/
 
 ### v0.16.72-73 Native Protocol + Artifact Acceptance + Isolation + Quality Gates（2026-05-01 ~ 2026-05-10）
 
-这一轮不是单点功能，而是把工具协议、artifact 验收、多 agent 浏览器/桌面隔离、类型/异步/清理门禁同时推进。文档口径按能力域记录，避免把它误读成零散 refactor。
+这一轮同时推进工具协议、artifact 验收、多 agent 浏览器/桌面隔离、类型/异步/清理门禁。文档口径按能力域记录，避免把它误读成零散 refactor。
 
 | 能力域 | 当前闭环 | 关键文件 / 文档 |
 |------|---------|----------------|
@@ -818,6 +849,7 @@ agentLoop.executeTool(Read)
 | **v0.16.71** | Hardening + 评测扩面 + Design Brief | Tauri updater 安全 (M6.a/b)、EventBus & dispatch 归位、调试快照体系 (ADR-014)、本地 Ollama 评测 (ADR-013)、SWE-bench docker harness (ADR-015)、小米 MiMo provider + 默认模型切换、Design Brief 生产化 (Phase A→C.3)、Workspace Preview Panel、Channel inbox/outbox |
 | **v0.16.72-73** | Native protocol + acceptance + isolation + quality gates | Level 1 native tool migration wave1-4、Runtime/Web/Context hardening、Artifact repair toolkit、Game/Deck/Dashboard verifier、Browser/Computer multi-agent isolation、typed IPC、provider wrappers/symmetry、async/god-file/cleanup |
 | **v0.16.74** | Prompt / Hook / Rewind | Prompt Manager + 实时 override、Hook Settings tab、Hook Activity turn timeline、CLI hooks 默认启用、Chat workspace defaults、Prompt Rewind + session_rewinds 审计 |
+| **v0.16.75** | Agent Neo 管理面 + 外部 Agent Engine + In-App 验证 | Agent Neo 品牌层、本地 API Key onboarding、Codex/Claude 外部 engine read-only 接入、Capability Center 本地 registry、In-App HTML Validation、Background Task Ledger、管理员用户/邀请码、可选 Tauri 更新、release security scan |
 
 </details>
 

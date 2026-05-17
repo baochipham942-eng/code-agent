@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   tauriCheckForUpdate,
   tauriGetCurrentVersion,
+  tauriInstallUpdate,
   tauriOpenUpdateUrl,
 } from '../../../src/renderer/utils/tauriUpdater';
 
@@ -73,5 +74,14 @@ describe('tauriUpdater', () => {
     expect(invoke).toHaveBeenCalledWith('open_update_url', {
       url: 'https://example.com/Code.Agent.dmg',
     });
+  });
+
+  it('installs updates through the native Tauri updater command', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    installTauriInvoke(invoke);
+
+    await tauriInstallUpdate();
+
+    expect(invoke).toHaveBeenCalledWith('install_update', undefined);
   });
 });

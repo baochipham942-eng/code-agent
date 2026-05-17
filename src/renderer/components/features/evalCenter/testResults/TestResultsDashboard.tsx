@@ -173,7 +173,7 @@ ${currentReport.results.map(r => {
   return '<tr><td><code>' + esc(r.testId) + '</code></td><td class="' + cls + '">' + label + '</td><td>' + Math.round(r.score * 100) + '%</td><td>' + (r.duration/1000).toFixed(1) + 's</td><td>' + esc(r.failureReason || r.description || '-') + '</td></tr>';
 }).join('\n')}
 </tbody></table>
-<div class="footer">由 Code Agent 评测中心生成</div>
+<div class="footer">由 Agent Neo 评测中心生成</div>
 </body></html>`;
 
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });

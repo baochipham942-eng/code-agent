@@ -230,7 +230,10 @@ fn spawn_web_server(app: &tauri::AppHandle) -> Result<(Child, String), String> {
     Ok((child, boot_token))
 }
 
-fn wait_for_healthcheck(child: &mut Child, expected_boot_token: Option<&str>) -> Result<(), String> {
+fn wait_for_healthcheck(
+    child: &mut Child,
+    expected_boot_token: Option<&str>,
+) -> Result<(), String> {
     let client = Client::builder()
         .timeout(Duration::from_secs(2))
         .build()
@@ -335,7 +338,7 @@ fn update_api_url(current_version: &str) -> String {
 fn check_cloud_update(current_version: String) -> Result<TauriUpdateInfo, String> {
     let client = Client::builder()
         .timeout(Duration::from_secs(15))
-        .user_agent(format!("Code Agent Tauri/{}", current_version))
+        .user_agent(format!("Agent Neo Tauri/{}", current_version))
         .build()
         .map_err(|error| format!("Failed to build update HTTP client: {error}"))?;
 
@@ -361,6 +364,11 @@ fn check_cloud_update(current_version: String) -> Result<TauriUpdateInfo, String
         return Err("Cloud update API returned success=false".to_string());
     }
 
+    let download_url = payload
+        .download_url
+        .as_deref()
+        .and_then(normalize_manual_update_url);
+
     Ok(TauriUpdateInfo {
         has_update: payload.has_update.unwrap_or(false),
         current_version: payload.current_version.unwrap_or(current_version),
@@ -368,7 +376,7 @@ fn check_cloud_update(current_version: String) -> Result<TauriUpdateInfo, String
         release_notes: payload.release_notes,
         date: payload.published_at,
         force_update: payload.force_update,
-        download_url: payload.download_url,
+        download_url,
         file_size: payload.file_size,
     })
 }
@@ -413,15 +421,28 @@ async fn check_native_update(
 #[tauri::command]
 async fn check_for_update(app: tauri::AppHandle) -> Result<TauriUpdateInfo, String> {
     let current_version = get_app_version(app.clone());
-    let cloud_version = current_version.clone();
+    let native_no_update = match check_native_update(app, current_version.clone()).await {
+        Ok(info) if info.has_update => return Ok(info),
+        Ok(info) => Some(info),
+        Err(error) => {
+            eprintln!("Native update check failed, trying cloud update: {error}");
+            None
+        }
+    };
 
+    let cloud_version = current_version;
     match tauri::async_runtime::spawn_blocking(move || check_cloud_update(cloud_version)).await {
-        Ok(Ok(info)) => return Ok(info),
-        Ok(Err(error)) => eprintln!("Cloud update check failed, trying native updater: {error}"),
-        Err(error) => eprintln!("Cloud update check task failed, trying native updater: {error}"),
+        Ok(Ok(info)) => Ok(info),
+        Ok(Err(error)) => {
+            eprintln!("Cloud update check failed: {error}");
+            native_no_update.ok_or(error)
+        }
+        Err(error) => {
+            let message = format!("Cloud update check task failed: {error}");
+            eprintln!("{message}");
+            native_no_update.ok_or(message)
+        }
     }
-
-    check_native_update(app, current_version).await
 }
 
 #[tauri::command]
@@ -464,8 +485,17 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
 // the user to a release page (HTML); pulling unsigned binaries must go through
 // the native updater's pubkey-verified path.
 const BLOCKED_UPDATE_URL_SUFFIXES: &[&str] = &[
-    ".dmg", ".pkg", ".msi", ".exe", ".appimage", ".deb", ".rpm", ".zip", ".tar",
-    ".tar.gz", ".tgz",
+    ".dmg",
+    ".pkg",
+    ".msi",
+    ".exe",
+    ".appimage",
+    ".deb",
+    ".rpm",
+    ".zip",
+    ".tar",
+    ".tar.gz",
+    ".tgz",
 ];
 
 fn validate_update_url(url: &str) -> Result<(), String> {
@@ -492,6 +522,27 @@ fn validate_update_url(url: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn github_release_page_from_download_url(url: &str) -> Option<String> {
+    let path = url.strip_prefix("https://github.com/")?;
+    let parts: Vec<&str> = path.split('/').collect();
+    if parts.len() < 5 || parts[2] != "releases" || parts[3] != "download" {
+        return None;
+    }
+    Some(format!(
+        "https://github.com/{}/{}/releases/tag/{}",
+        parts[0], parts[1], parts[4]
+    ))
+}
+
+fn normalize_manual_update_url(url: &str) -> Option<String> {
+    if validate_update_url(url).is_ok() {
+        return Some(url.to_string());
+    }
+
+    github_release_page_from_download_url(url)
+        .filter(|release_page| validate_update_url(release_page).is_ok())
+}
+
 #[tauri::command]
 fn open_update_url(url: String) -> Result<(), String> {
     validate_update_url(&url)?;
@@ -501,7 +552,9 @@ fn open_update_url(url: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod update_url_tests {
-    use super::validate_update_url;
+    use super::{
+        github_release_page_from_download_url, normalize_manual_update_url, validate_update_url,
+    };
 
     #[test]
     fn allows_https_release_page() {
@@ -519,8 +572,18 @@ mod update_url_tests {
     #[test]
     fn rejects_binary_suffixes() {
         for suffix in [
-            ".dmg", ".DMG", ".pkg", ".msi", ".exe", ".AppImage", ".deb", ".rpm",
-            ".zip", ".tar", ".tar.gz", ".tgz",
+            ".dmg",
+            ".DMG",
+            ".pkg",
+            ".msi",
+            ".exe",
+            ".AppImage",
+            ".deb",
+            ".rpm",
+            ".zip",
+            ".tar",
+            ".tar.gz",
+            ".tgz",
         ] {
             let url = format!("https://example.com/foo/bar{}", suffix);
             assert!(
@@ -543,6 +606,30 @@ mod update_url_tests {
         assert!(validate_update_url("https://example.com/release?id=v1").is_ok());
         assert!(validate_update_url("https://example.com/page#section").is_ok());
     }
+
+    #[test]
+    fn converts_github_binary_asset_to_release_page() {
+        assert_eq!(
+            github_release_page_from_download_url(
+                "https://github.com/owner/repo/releases/download/v1.2.3/Code%20Agent.dmg"
+            ),
+            Some("https://github.com/owner/repo/releases/tag/v1.2.3".to_string())
+        );
+        assert_eq!(
+            normalize_manual_update_url(
+                "https://github.com/owner/repo/releases/download/v1.2.3/Code%20Agent.dmg"
+            ),
+            Some("https://github.com/owner/repo/releases/tag/v1.2.3".to_string())
+        );
+    }
+
+    #[test]
+    fn drops_non_github_binary_asset_urls() {
+        assert_eq!(
+            normalize_manual_update_url("https://example.com/releases/Code.Agent.dmg"),
+            None
+        );
+    }
 }
 
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -557,7 +644,7 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let _tray = TrayIconBuilder::new()
         .icon(TRAY_ICON)
         .icon_as_template(true)
-        .tooltip("Code Agent")
+        .tooltip("Agent Neo")
         .menu(&menu)
         .on_menu_event(move |app_handle, event| {
             let activate_window = |handle: &tauri::AppHandle| {

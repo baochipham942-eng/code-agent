@@ -22,9 +22,10 @@ import type { Message } from '../../../src/shared/contract';
 
 function createSchema(db: BetterSqlite3.Database): void {
   db.exec(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        title TEXT NOT NULL,
       model_provider TEXT NOT NULL,
       model_name TEXT NOT NULL,
       working_directory TEXT,
@@ -50,15 +51,15 @@ function createSchema(db: BetterSqlite3.Database): void {
       attachments TEXT,
       thinking TEXT,
       effort_level TEXT,
-	      synced_at INTEGER,
-	      content_parts TEXT,
-	      metadata TEXT,
-	      compaction TEXT,
-	      visibility TEXT NOT NULL DEFAULT 'active',
-	      hidden_by_rewind_id TEXT,
-	      hidden_at INTEGER
-	    );
-	  `);
+        synced_at INTEGER,
+        content_parts TEXT,
+        metadata TEXT,
+        compaction TEXT,
+        visibility TEXT NOT NULL DEFAULT 'active',
+        hidden_by_rewind_id TEXT,
+        hidden_at INTEGER
+      );
+    `);
   db.exec(`
     CREATE TABLE IF NOT EXISTS session_rewinds (
       id TEXT PRIMARY KEY,
@@ -111,7 +112,7 @@ function insertSession(db: BetterSqlite3.Database, id: string): void {
     `
     INSERT INTO sessions (id, title, model_provider, model_name, working_directory, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-    `,
+    `
   ).run(id, `test-${id}`, 'moonshot', 'kimi-k2.5', '/tmp/test', now, now);
 }
 
@@ -120,7 +121,7 @@ function makeMessage(id: string, content: string, role: 'user' | 'assistant' = '
     id,
     role,
     content,
-    timestamp,
+    timestamp
   } as unknown as Message;
 }
 
@@ -150,7 +151,9 @@ describe('SessionRepository — Episodic FTS5', () => {
     repo.addMessage('sess-A', makeMessage('m2', '跑评测要先准备数据'));
 
     const ftsCount = (
-      db.prepare('SELECT COUNT(*) as c FROM session_messages_fts').get() as { c: number }
+      db.prepare('SELECT COUNT(*) as c FROM session_messages_fts').get() as {
+        c: number;
+      }
     ).c;
     expect(ftsCount).toBe(2);
   });
@@ -175,7 +178,9 @@ describe('SessionRepository — Episodic FTS5', () => {
     const allResults = repo.searchSessionMessagesFts('deployment');
     expect(allResults.length).toBe(2);
 
-    const scopedResults = repo.searchSessionMessagesFts('deployment', { sessionId: 'sess-A' });
+    const scopedResults = repo.searchSessionMessagesFts('deployment', {
+      sessionId: 'sess-A'
+    });
     expect(scopedResults.length).toBe(1);
     expect(scopedResults[0].sessionId).toBe('sess-A');
   });
@@ -221,14 +226,20 @@ describe('SessionRepository — Episodic FTS5', () => {
       `
       INSERT INTO messages (id, session_id, role, content, timestamp)
       VALUES (?, ?, ?, ?, ?)
-      `,
+      `
     );
     stmt.run('legacy1', 'sess-A', 'user', 'legacy backfill alpha', Date.now());
     stmt.run('legacy2', 'sess-A', 'user', 'legacy backfill beta', Date.now());
     stmt.run('legacy3', 'sess-B', 'assistant', 'legacy backfill gamma', Date.now());
 
     // FTS should be empty at this point
-    expect((db.prepare('SELECT COUNT(*) as c FROM session_messages_fts').get() as { c: number }).c).toBe(0);
+    expect(
+      (
+        db.prepare('SELECT COUNT(*) as c FROM session_messages_fts').get() as {
+          c: number;
+        }
+      ).c
+    ).toBe(0);
 
     const inserted = repo.backfillSessionMessagesFts();
     expect(inserted).toBe(3);
@@ -270,7 +281,9 @@ describe('SessionRepository — Episodic FTS5', () => {
     repo.applyPromptRewind('sess-A', 'm2', { createdAt: 100 });
 
     expect(repo.searchSessionMessagesFts('secret')).toEqual([]);
-    const allAttempts = repo.searchSessionMessagesFts('secret', { includeRewound: true });
+    const allAttempts = repo.searchSessionMessagesFts('secret', {
+      includeRewound: true
+    });
     expect(allAttempts.map((row) => row.messageId)).toEqual(['m2']);
   });
 });

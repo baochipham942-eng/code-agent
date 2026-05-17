@@ -3,7 +3,8 @@
 // Static index of all settings entries for fuzzy search
 // ============================================================================
 
-import type { SettingsTab } from './settingsTabs';
+import type { AccessSubject } from './accessControl';
+import { canAccessSettingsTab, type SettingsTab } from './settingsTabs';
 export type { SettingsTab } from './settingsTabs';
 
 export interface SettingsEntry {
@@ -12,6 +13,8 @@ export interface SettingsEntry {
   label: string;
   keywords: string[];
 }
+
+export type SearchSettingsOptions = AccessSubject;
 
 /**
  * Static index of all settings items across tabs.
@@ -26,6 +29,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
 
   // Workspace
   { tab: 'workspace', tabLabel: '工作区', label: '当前工作目录', keywords: ['workspace', '工作区', 'cwd', 'working directory', '目录', '当前'] },
+  { tab: 'workspace', tabLabel: '工作区', label: '配置作用域', keywords: ['personalization', 'config scope', 'scope', '配置作用域', '全局配置', '项目配置', '本地配置', '个性化', 'user config', 'project config', 'local config'] },
   { tab: 'workspace', tabLabel: '工作区', label: '最近目录', keywords: ['recent', '最近', 'recent directories', '历史', '切换'] },
   { tab: 'workspace', tabLabel: '工作区', label: '本地桥', keywords: ['bridge', 'local', '桥接', '本地', 'ipc'] },
   { tab: 'workspace', tabLabel: '工作区', label: '浏览器工具模式', keywords: ['browser', '浏览器', 'playwright', 'chrome', 'managed', 'desktop'] },
@@ -34,6 +38,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'automation', tabLabel: '自动化', label: '定时任务', keywords: ['cron', '定时', 'schedule', '任务', '自动化', 'automation'] },
   { tab: 'automation', tabLabel: '自动化', label: '新建任务', keywords: ['new task', 'create', '新建', '任务', 'cron', '自动化向导'] },
   { tab: 'automation', tabLabel: '自动化', label: '执行历史', keywords: ['history', 'execution', '执行', '历史', '运行', '日志'] },
+
+  // User Management
+  { tab: 'users', tabLabel: '用户看板', label: '注册用户', keywords: ['user', 'users', '用户', '注册用户', 'email', '邮箱', 'last login', '上次登录', '活跃'] },
+  { tab: 'users', tabLabel: '用户看板', label: '用户字段', keywords: ['profile', '字段', '注册时间', '注册来源', '设备', '会话', '消息'] },
+  { tab: 'invites', tabLabel: '邀请码', label: '邀请码管理', keywords: ['invite', '邀请码', '注册', 'code', '使用次数', '有效期'] },
+  { tab: 'invites', tabLabel: '邀请码', label: '新建邀请码', keywords: ['create invite', 'new invite', '创建', '新建', '发放', '停用', '启用'] },
 
   // Model
   { tab: 'model', tabLabel: '模型', label: '模型供应商', keywords: ['provider', '供应商', 'API', 'deepseek', 'claude', 'kimi', 'openai', '智谱', 'moonshot'] },
@@ -94,11 +104,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
  * Search settings entries by query string.
  * Matches against label and keywords using simple substring matching.
  */
-export function searchSettings(query: string): SettingsEntry[] {
+export function searchSettings(query: string, options?: SearchSettingsOptions): SettingsEntry[] {
   const q = query.toLowerCase().trim();
   if (!q) return [];
 
   return SETTINGS_INDEX.filter((entry) => {
+    if (!canAccessSettingsTab(entry.tab, options)) return false;
     if (entry.label.toLowerCase().includes(q)) return true;
     if (entry.tabLabel.toLowerCase().includes(q)) return true;
     return entry.keywords.some((kw) => kw.toLowerCase().includes(q));

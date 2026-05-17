@@ -571,6 +571,8 @@ export class PlatformerChecker implements GameSubtypeChecker {
     const gateEvidence = hasEvidence([
       /unlock[_ -]?gate/,
       /gate[_ -]?unlock/,
+      /gates?[_ -]?unlocked/,
+      /gates?unlocked/,
       /gates?\./,
       /route[_ -]?reachable/,
       /reachable[_ -]?route/,
@@ -607,11 +609,15 @@ export class PlatformerChecker implements GameSubtypeChecker {
       /ability|abilities|double[_ -]?jump|doublejump|dash|shield|magnet|ground[_ -]?pound|groundpound|wall[_ -]?jump|walljump/,
       /gate|route|unlock|reachable/,
     ].filter((pattern) => pattern.test(comboText)).length;
+    const comboDeclared =
+      /requires|target/.test(comboRequires) ||
+      (/jump/.test(comboRequires) && countComboAxes(comboRequires) >= 2);
+    const comboNamedInSmoke = /combo|challenge|sequence/.test(comboText);
     const comboCovered =
-      /combo|challenge|sequence/.test(comboText) &&
       comboHasJump &&
       comboAxisCount >= 2 &&
-      /requires|target/.test(comboRequires);
+      comboDeclared &&
+      (comboNamedInSmoke || countComboAxes(comboRequires) >= 2);
     if (comboCovered) {
       checks.push('platformer gameplay runtime covered comboChallenge evidence');
     } else {

@@ -101,6 +101,8 @@ describe('TurnCard hook activity', () => {
                   action: 'allow',
                   hookCount: 1,
                   durationMs: 4,
+                  sources: ['global'],
+                  hookType: 'observer',
                 },
                 {
                   timestamp: 120,
@@ -108,6 +110,9 @@ describe('TurnCard hook activity', () => {
                   action: 'allow',
                   hookCount: 1,
                   durationMs: 8,
+                  sources: ['project'],
+                  hookType: 'decision',
+                  matcher: 'Bash',
                 },
               ],
             },
@@ -125,6 +130,8 @@ describe('TurnCard hook activity', () => {
     const html = renderToStaticMarkup(React.createElement(TurnCard, { turn }));
 
     expect(html).toContain('执行了 2 个钩子');
+    expect(html).toContain('全局+项目');
+    expect(html).toContain('决策');
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain('用户提示提交');
     expect(html).not.toContain('会话开始');

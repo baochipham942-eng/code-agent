@@ -230,7 +230,7 @@ export class CloudStorageService implements Disposable {
             method: 'PATCH',
             headers,
             body: JSON.stringify({
-              description: 'Code Agent - Session Backup',
+              description: 'Agent Neo - Session Backup',
               files: {
                 'code-agent-backup.json': { content },
               },
@@ -247,7 +247,7 @@ export class CloudStorageService implements Disposable {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            description: 'Code Agent - Session Backup',
+            description: 'Agent Neo - Session Backup',
             public: false,
             files: {
               'code-agent-backup.json': { content },

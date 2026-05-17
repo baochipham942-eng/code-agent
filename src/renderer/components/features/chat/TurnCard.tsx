@@ -315,6 +315,18 @@ function getHookStatusText(activity: TurnHookActivity): string {
   return '已放行';
 }
 
+function getHookSourceLabel(sources: Array<'global' | 'project'>): string {
+  const sourceSet = new Set(sources);
+  const labels = (['global', 'project'] as const)
+    .filter((source) => sourceSet.has(source))
+    .map((source) => source === 'global' ? '全局' : '项目');
+  return labels.length > 0 ? Array.from(new Set(labels)).join('+') : '未标注来源';
+}
+
+function getHookTypeLabel(hookType: 'decision' | 'observer'): string {
+  return hookType === 'decision' ? '决策' : '观察';
+}
+
 const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activity }) => {
   const [expanded, setExpanded] = useState(false);
   const totalHooks = activity.items.reduce((sum, item) => sum + item.hookCount, 0);
@@ -322,6 +334,8 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
   const tone = getHookActivityTone(activity);
   const statusText = getHookStatusText(activity);
   const showStatus = tone !== 'success';
+  const sourceLabel = getHookSourceLabel(activity.items.flatMap((item) => item.sources));
+  const hasDecisionHooks = activity.items.some((item) => item.hookType === 'decision');
 
   return (
     <div className="py-0.5 text-sm text-zinc-500">
@@ -334,6 +348,12 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
       >
         <Anchor className="h-4 w-4 shrink-0" />
         <span className="min-w-0 truncate font-medium">执行了 {totalHooks} 个钩子</span>
+        <span className="shrink-0 rounded bg-zinc-800/70 px-1 py-px text-[11px] text-zinc-400">
+          {sourceLabel}
+        </span>
+        <span className="shrink-0 rounded bg-zinc-800/70 px-1 py-px text-[11px] text-zinc-400">
+          {hasDecisionHooks ? '决策' : '观察'}
+        </span>
         {showStatus && (
           <span className={`shrink-0 rounded px-1 py-px text-[11px] ${getHookIssueClass(tone)}`}>
             {statusText}
@@ -349,8 +369,13 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
         <div className="ml-7 mt-1 space-y-1 text-[13px] leading-5 text-zinc-500">
           {activity.items.map((item, index) => {
             const label = HOOK_EVENT_LABELS[item.event] || item.event;
+            const source = getHookSourceLabel(item.sources);
+            const hookType = getHookTypeLabel(item.hookType);
             const title = [
               item.toolName,
+              source,
+              hookType,
+              item.matcher ? `matcher: ${item.matcher}` : undefined,
               `${item.hookCount} 个 hook`,
               `${item.durationMs}ms`,
               item.message,
@@ -364,6 +389,11 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
               >
                 <span className="shrink-0">{label}</span>
                 <span className="shrink-0">钩子</span>
+                <span className="shrink-0 text-zinc-600">{source}</span>
+                <span className="shrink-0 text-zinc-600">{hookType}</span>
+                {item.matcher && (
+                  <span className="min-w-0 truncate text-zinc-600">{item.matcher}</span>
+                )}
                 {itemStatus && (
                   <span className={`shrink-0 rounded px-1 py-px text-[11px] ${getHookIssueClass(itemStatus.tone)}`}>
                     {itemStatus.label}
@@ -503,7 +533,7 @@ function getTurnRunStatus(turn: TraceTurn, streamingState?: StreamingUiState): {
   return { label: 'completed', tone: 'success', icon: <CheckCircle2 className="h-3.5 w-3.5" /> };
 }
 
-function getTurnPhase(turn: TraceTurn): string {
+function getTurnPhase(turn: TraceTurn): string | null {
   if (hasCancelledRunMarker(turn)) return '本轮已取消';
 
   const routing = turn.nodes.find((node) => node.turnTimeline?.kind === 'routing_evidence')?.turnTimeline?.routingEvidence;
@@ -517,6 +547,8 @@ function getTurnPhase(turn: TraceTurn): string {
 
   const lastTool = getLastToolNode(turn)?.toolCall;
   if (lastTool) return lastTool.shortDescription || `工具 ${lastTool.name}`;
+
+  if (turn.status === 'streaming') return null;
 
   const assistantText = [...turn.nodes].reverse().find((node) => node.type === 'assistant_text' && node.content.trim());
   return assistantText ? '回复已生成' : '等待输出';
@@ -602,8 +634,9 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
   const failedTool = turn.nodes.find((node) => node.type === 'tool_call' && node.toolCall?.success === false)?.toolCall;
   const isCompleted = status.tone === 'success';
   const isNormalToolActivity = status.label === 'using_tools' || status.label === 'waiting_tool';
+  const hasPhase = Boolean(phase?.trim());
 
-  if (isCompleted || isNormalToolActivity) {
+  if (isCompleted || isNormalToolActivity || (status.label === 'running' && !hasPhase && !completionSignal && !failedTool)) {
     return null;
   }
 
@@ -613,9 +646,12 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
         {status.icon}
         <span className="font-medium">{status.label}</span>
       </div>
-      <div className="min-w-0 flex-1 truncate text-zinc-400">
-        {phase}
-      </div>
+      {hasPhase && (
+        <div className="min-w-0 flex-1 truncate text-zinc-400">
+          {phase}
+        </div>
+      )}
+      {!hasPhase && <div className="flex-1" />}
       {completionSignal && (
         <div className="inline-flex items-center gap-1 rounded-md bg-white/[0.03] px-1.5 py-0.5 text-[11px] text-zinc-500">
           <FileText className="h-3 w-3" />

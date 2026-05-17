@@ -170,16 +170,16 @@ export const ContextUsagePill: React.FC = () => {
       </button>
 
       {open && (
-        <div className="absolute bottom-full right-0 z-30 mb-2 min-w-[260px] rounded-xl border border-white/[0.12] bg-zinc-900/95 px-5 py-4 text-center shadow-2xl backdrop-blur">
-          <div className="text-sm font-medium text-zinc-400">背景信息窗口：</div>
-          <div className="mt-2 text-[22px] font-semibold leading-tight tracking-normal text-zinc-50 tabular-nums">
+        <div className="absolute bottom-full right-0 z-30 mb-2 min-w-[200px] rounded-xl border border-white/[0.12] bg-zinc-900/95 px-4 py-3 text-center shadow-2xl backdrop-blur">
+          <div className="text-[11px] font-medium text-zinc-400">背景信息窗口</div>
+          <div className="mt-1.5 text-sm font-semibold leading-tight tracking-normal text-zinc-50 tabular-nums">
             {hasData
-              ? `${displayPct}% 已用（剩余 ${displayRemainingPct}%）`
+              ? `${displayPct}% 已用 · 剩余 ${displayRemainingPct}%`
               : '等待首轮对话'}
           </div>
-          <div className="mt-2 text-lg leading-tight text-zinc-100 tabular-nums">
+          <div className="mt-1 text-[11px] leading-tight text-zinc-400 tabular-nums">
             {hasData
-              ? `已用 ${formatTokens(currentTokens)} 标记，共 ${formatTokens(maxTokens)}`
+              ? `${formatTokens(currentTokens)} / ${formatTokens(maxTokens)} 标记`
               : '等待统计上下文容量'}
           </div>
 

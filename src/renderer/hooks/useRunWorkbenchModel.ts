@@ -7,7 +7,12 @@ import { useCronStore } from '../stores/cronStore';
 import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
 import { useCurrentTurnExecutionProjection } from './useCurrentTurnExecutionProjection';
 import { useStatusRailModel } from './useStatusRailModel';
-import type { RunWorkbenchModel, SubagentRunView, TaskRecord } from '../types/runWorkbench';
+import type {
+  RunWorkbenchModel,
+  SubagentRunView,
+  TaskRecord,
+  TaskRecordOutputRef,
+} from '../types/runWorkbench';
 import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
 import type { Task } from '@shared/contract/backgroundTask';
 import {
@@ -105,6 +110,33 @@ function backgroundTaskStatusToTaskStatus(status: Task['status']): TaskRecord['s
   return 'pending';
 }
 
+function backgroundTaskStatusLabel(task: Task): string {
+  switch (task.status) {
+    case 'queued':
+      return '排队中';
+    case 'running':
+      return '执行中';
+    case 'waiting_input':
+      return '等待输入';
+    case 'stalled':
+      return task.progress?.label ? `启动变慢：${task.progress.label}` : '启动变慢';
+    case 'completed':
+      return '已完成';
+    case 'failed':
+      return '执行失败';
+    case 'cancelled':
+      return '已取消';
+    case 'paused':
+      return '已暂停';
+    case 'expired':
+      return '已过期';
+    case 'orphaned':
+      return '运行进程已丢失';
+    default:
+      return task.status;
+  }
+}
+
 function formatBackgroundTaskDuration(durationMs?: number): string | null {
   if (!durationMs || durationMs < 0) return null;
   const seconds = Math.max(1, Math.round(durationMs / 1000));
@@ -116,12 +148,96 @@ function formatBackgroundTaskDuration(durationMs?: number): string | null {
   return `${hours}h ${minutes % 60}m`;
 }
 
-function buildLedgerTaskRecords(tasks: Task[]): TaskRecord[] {
+function stringFromMetadata(metadata: Task['metadata'], key: string): string | null {
+  const value = metadata?.[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function lastPathSegment(value: string | undefined): string | null {
+  if (!value) return null;
+  return value.split(/[\\/]/).filter(Boolean).pop() || value;
+}
+
+function outputRefTypeLabel(type: string): string {
+  switch (type) {
+    case 'log':
+      return '运行日志';
+    case 'text':
+      return '最终输出';
+    case 'report':
+      return '报告';
+    case 'trace':
+      return 'Trace';
+    case 'replay':
+      return 'Replay';
+    case 'url':
+      return '链接';
+    case 'file':
+    case 'artifact':
+      return '产物';
+    default:
+      return '输出';
+  }
+}
+
+function buildTaskOutputRefs(task: Task): TaskRecordOutputRef[] {
+  const refs = task.outputRefs
+    .map((ref): TaskRecordOutputRef => {
+      const pathOrUrl = ref.path || ref.uri || undefined;
+      const fallbackLabel = lastPathSegment(pathOrUrl) || outputRefTypeLabel(ref.type);
+      return {
+        id: ref.id,
+        type: ref.type,
+        label: ref.label || fallbackLabel,
+        pathOrUrl,
+      };
+    })
+    .filter((ref) => ref.label || ref.pathOrUrl);
+
+  const metadataLogPath = stringFromMetadata(task.metadata, 'logPath');
+  if (metadataLogPath && !refs.some((ref) => ref.type === 'log' && ref.pathOrUrl === metadataLogPath)) {
+    refs.unshift({
+      id: `${task.id}:metadata-log`,
+      type: 'log',
+      label: outputRefTypeLabel('log'),
+      pathOrUrl: metadataLogPath,
+    });
+  }
+
+  return refs.slice(0, 4);
+}
+
+function formatOutputRefStep(ref: TaskRecordOutputRef): string {
+  const name = lastPathSegment(ref.pathOrUrl) || ref.label;
+  const label = ref.label || outputRefTypeLabel(ref.type);
+  return name && name !== label ? `${label}：${name}` : label;
+}
+
+function backgroundTaskResumeHint(task: Task, outputRefs: TaskRecordOutputRef[]): string | undefined {
+  if (task.failure?.message) return task.failure.message;
+  if (task.status === 'stalled' && task.progress?.label) return task.progress.label;
+
+  const finalRef = outputRefs.find((ref) => ref.type === 'text' || ref.type === 'report' || ref.type === 'artifact' || ref.type === 'file');
+  if (finalRef) {
+    const name = lastPathSegment(finalRef.pathOrUrl) || finalRef.label;
+    return `最终输出：${name}`;
+  }
+
+  const logRef = outputRefs.find((ref) => ref.type === 'log');
+  if (logRef && (task.status === 'running' || task.status === 'stalled')) {
+    const name = lastPathSegment(logRef.pathOrUrl) || logRef.label;
+    return `日志：${name}`;
+  }
+
+  return task.summary;
+}
+
+export function buildLedgerTaskRecords(tasks: Task[]): TaskRecord[] {
   return tasks
     .slice(0, 8)
     .map((task) => {
       const status = backgroundTaskStatusToTaskStatus(task.status);
-      const logRef = task.outputRefs.find((ref) => ref.type === 'log' || ref.path || ref.uri);
+      const outputRefs = buildTaskOutputRefs(task);
       const duration = formatBackgroundTaskDuration(task.durationMs);
       return {
         id: `background:${task.id}`,
@@ -130,21 +246,22 @@ function buildLedgerTaskRecords(tasks: Task[]): TaskRecord[] {
         status,
         steps: [
           {
-            title: task.status,
+            title: backgroundTaskStatusLabel(task),
             status,
           },
           ...(duration ? [{
             title: duration,
             status,
           }] : []),
-          ...(logRef ? [{
-            title: logRef.path || logRef.uri || logRef.label || '输出日志',
+          ...outputRefs.map((ref) => ({
+            title: formatOutputRefStep(ref),
             status,
-          }] : []),
+          })),
         ],
         ownerRunId: task.runId ?? null,
         sourceThreadId: task.sessionId ?? null,
-        resumeHint: task.failure?.message || task.summary,
+        resumeHint: backgroundTaskResumeHint(task, outputRefs),
+        outputRefs,
       };
     });
 }

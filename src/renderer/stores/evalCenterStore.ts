@@ -6,18 +6,9 @@
 
 import { create } from 'zustand';
 import type { ObjectiveMetrics } from '@shared/contract/sessionAnalytics';
-import {
-  buildEvalCenterReadFacade,
-  type EvalCenterReadFacade,
-  type EvalCenterSessionInfo,
-  type StructuredReplay,
-} from '@shared/contract/evaluation';
-import type {
-  EnqueueReviewItemInput,
-  ReviewQueueFailureCapabilityAssetStatus,
-  ReviewQueueFailureAttributionInput,
-  ReviewQueueItem,
-} from '@shared/contract/reviewQueue';
+import { buildEvalCenterReadFacade, type EvalCenterReadFacade, type EvalCenterSessionInfo, type StructuredReplay } from '@shared/contract/evaluation';
+import type { TelemetrySessionListOptions } from '@shared/contract/telemetry';
+import type { EnqueueReviewItemInput, ReviewQueueFailureCapabilityAssetStatus, ReviewQueueFailureAttributionInput, ReviewQueueItem, ReviewQueueListOptions } from '@shared/contract/reviewQueue';
 import { buildReviewQueueFailureCapabilityMetadata } from '@shared/contract/reviewQueue';
 import { EVALUATION_CHANNELS } from '@shared/ipc/channels';
 import ipcService from '../services/ipcService';
@@ -58,6 +49,7 @@ interface EvalCenterStore {
   // Session list state
   sessionList: Array<{
     id: string;
+    userId?: string | null;
     title: string;
     modelProvider: string;
     modelName: string;
@@ -77,18 +69,11 @@ interface EvalCenterStore {
   // Actions
   loadSession: (sessionId: string) => Promise<void>;
   loadReplay: (sessionId: string) => Promise<void>;
-  loadSessionList: () => Promise<void>;
-  loadReviewQueue: () => Promise<void>;
+  loadSessionList: (options?: TelemetrySessionListOptions) => Promise<void>;
+  loadReviewQueue: (options?: ReviewQueueListOptions) => Promise<void>;
   enqueueReviewItem: (payload: EnqueueReviewItemInput) => Promise<ReviewQueueItem | null>;
-  updateFailureAssetStatus: (
-    reviewItemId: string,
-    status: ReviewQueueFailureCapabilityAssetStatus,
-  ) => Promise<ReviewQueueItem | null>;
-  enqueueFailureFollowup: (
-    sessionId: string,
-    sessionTitle?: string,
-    failureAttribution?: ReviewQueueFailureAttributionInput,
-  ) => Promise<ReviewQueueItem | null>;
+  updateFailureAssetStatus: (reviewItemId: string, status: ReviewQueueFailureCapabilityAssetStatus) => Promise<ReviewQueueItem | null>;
+  enqueueFailureFollowup: (sessionId: string, sessionTitle?: string, failureAttribution?: ReviewQueueFailureAttributionInput) => Promise<ReviewQueueItem | null>;
   setFilterStatus: (status: 'all' | 'recording' | 'completed' | 'error') => void;
   setSortBy: (sort: 'time' | 'turns' | 'cost') => void;
   reset: () => void;
@@ -111,7 +96,7 @@ const initialState = {
   filterStatus: 'all' as const,
   sortBy: 'time' as const,
   reviewQueue: [] as ReviewQueueItem[],
-  reviewQueueLoading: false,
+  reviewQueueLoading: false
 };
 
 export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
@@ -130,15 +115,12 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
           sessionId,
           sessionInfo: currentSessionInfo,
           structuredReplay: currentReplay,
-          reviewQueueItems: state.reviewQueue,
-        }),
+          reviewQueueItems: state.reviewQueue
+        })
       };
     });
     try {
-      const analysis = await ipcService.invoke(
-        EVALUATION_CHANNELS.GET_SESSION_ANALYSIS,
-        sessionId
-      );
+      const analysis = await ipcService.invoke(EVALUATION_CHANNELS.GET_SESSION_ANALYSIS, sessionId);
       if (analysis) {
         const sessionInfo = analysis.sessionInfo || null;
         set((state) => ({
@@ -153,8 +135,8 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
             sessionId,
             sessionInfo,
             structuredReplay: state.replayData?.sessionId === sessionId ? state.replayData : null,
-            reviewQueueItems: state.reviewQueue,
-          }),
+            reviewQueueItems: state.reviewQueue
+          })
         }));
       } else {
         set((state) => ({
@@ -165,14 +147,14 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
             sessionId,
             sessionInfo: null,
             structuredReplay: state.replayData?.sessionId === sessionId ? state.replayData : null,
-            reviewQueueItems: state.reviewQueue,
-          }),
+            reviewQueueItems: state.reviewQueue
+          })
         }));
       }
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : '加载会话数据失败',
-        isLoading: false,
+        isLoading: false
       });
     }
   },
@@ -189,15 +171,12 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
           sessionId,
           sessionInfo: currentSessionInfo,
           structuredReplay: currentReplay,
-          reviewQueueItems: state.reviewQueue,
-        }),
+          reviewQueueItems: state.reviewQueue
+        })
       };
     });
     try {
-      const data = await ipcService.invoke(
-        'replay:get-structured-data' as const,
-        sessionId
-      );
+      const data = await ipcService.invoke('replay:get-structured-data' as const, sessionId);
       const replayData = (data as StructuredReplay) || null;
       set((state) => ({
         replayData,
@@ -206,8 +185,8 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
           sessionId,
           sessionInfo: state.sessionInfo,
           structuredReplay: replayData,
-          reviewQueueItems: state.reviewQueue,
-        }),
+          reviewQueueItems: state.reviewQueue
+        })
       }));
     } catch {
       set((state) => ({
@@ -217,19 +196,16 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
           sessionId,
           sessionInfo: state.sessionInfo,
           structuredReplay: null,
-          reviewQueueItems: state.reviewQueue,
-        }),
+          reviewQueueItems: state.reviewQueue
+        })
       }));
     }
   },
 
-  loadSessionList: async () => {
+  loadSessionList: async (options = {}) => {
     set({ sessionListLoading: true });
     try {
-      const sessions = await ipcService.invoke(
-        'telemetry:list-sessions' as const,
-        { limit: 200 }
-      );
+      const sessions = await ipcService.invoke('telemetry:list-sessions' as const, { limit: 200, ...options });
       if (sessions) {
         set({ sessionList: sessions, sessionListLoading: false });
       } else {
@@ -240,21 +216,21 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
     }
   },
 
-  loadReviewQueue: async () => {
+  loadReviewQueue: async (options = {}) => {
     set({ reviewQueueLoading: true });
     try {
-      const items = await ipcService.invoke(EVALUATION_CHANNELS.REVIEW_QUEUE_LIST);
+      const items = options.userId || options.unassignedOnly ? await ipcService.invoke(EVALUATION_CHANNELS.REVIEW_QUEUE_LIST, options) : await ipcService.invoke(EVALUATION_CHANNELS.REVIEW_QUEUE_LIST);
       set((state) => ({
         reviewQueue: items || [],
         reviewQueueLoading: false,
         readFacade: state.activeSessionId
           ? buildEvalCenterReadFacade({
-            sessionId: state.activeSessionId,
-            sessionInfo: state.sessionInfo,
-            structuredReplay: state.replayData?.sessionId === state.activeSessionId ? state.replayData : null,
-            reviewQueueItems: items || [],
-          })
-          : state.readFacade,
+              sessionId: state.activeSessionId,
+              sessionInfo: state.sessionInfo,
+              structuredReplay: state.replayData?.sessionId === state.activeSessionId ? state.replayData : null,
+              reviewQueueItems: items || []
+            })
+          : state.readFacade
       }));
     } catch {
       set({ reviewQueueLoading: false });
@@ -272,12 +248,12 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
             reviewQueue: next,
             readFacade: state.activeSessionId
               ? buildEvalCenterReadFacade({
-                sessionId: state.activeSessionId,
-                sessionInfo: state.sessionInfo,
-                structuredReplay: state.replayData?.sessionId === state.activeSessionId ? state.replayData : null,
-                reviewQueueItems: next,
-              })
-              : state.readFacade,
+                  sessionId: state.activeSessionId,
+                  sessionInfo: state.sessionInfo,
+                  structuredReplay: state.replayData?.sessionId === state.activeSessionId ? state.replayData : null,
+                  reviewQueueItems: next
+                })
+              : state.readFacade
           };
         });
       }
@@ -289,10 +265,10 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
 
   updateFailureAssetStatus: async (reviewItemId, status) => {
     try {
-      const item = await ipcService.invoke(
-        EVALUATION_CHANNELS.REVIEW_QUEUE_UPDATE_FAILURE_ASSET,
-        { reviewItemId, status },
-      );
+      const item = await ipcService.invoke(EVALUATION_CHANNELS.REVIEW_QUEUE_UPDATE_FAILURE_ASSET, {
+        reviewItemId,
+        status
+      });
       if (item) {
         set((state) => {
           const next = state.reviewQueue.filter((existing) => existing.id !== item.id);
@@ -301,12 +277,12 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
             reviewQueue: next,
             readFacade: state.activeSessionId
               ? buildEvalCenterReadFacade({
-                sessionId: state.activeSessionId,
-                sessionInfo: state.sessionInfo,
-                structuredReplay: state.replayData?.sessionId === state.activeSessionId ? state.replayData : null,
-                reviewQueueItems: next,
-              })
-              : state.readFacade,
+                  sessionId: state.activeSessionId,
+                  sessionInfo: state.sessionInfo,
+                  structuredReplay: state.replayData?.sessionId === state.activeSessionId ? state.replayData : null,
+                  reviewQueueItems: next
+                })
+              : state.readFacade
           };
         });
       }
@@ -323,7 +299,7 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
         sessionId,
         sessionTitle,
         reason: 'failure_followup',
-        enqueueSource: 'replay_failure',
+        enqueueSource: 'replay_failure'
       };
       if (failureCapability) {
         payload.failureCapability = failureCapability;
@@ -337,12 +313,12 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
             reviewQueue: next,
             readFacade: state.activeSessionId
               ? buildEvalCenterReadFacade({
-                sessionId: state.activeSessionId,
-                sessionInfo: state.sessionInfo,
-                structuredReplay: state.replayData?.sessionId === state.activeSessionId ? state.replayData : null,
-                reviewQueueItems: next,
-              })
-              : state.readFacade,
+                  sessionId: state.activeSessionId,
+                  sessionInfo: state.sessionInfo,
+                  structuredReplay: state.replayData?.sessionId === state.activeSessionId ? state.replayData : null,
+                  reviewQueueItems: next
+                })
+              : state.readFacade
           };
         });
       }
@@ -355,5 +331,5 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
   setFilterStatus: (status) => set({ filterStatus: status }),
   setSortBy: (sort) => set({ sortBy: sort }),
 
-  reset: () => set(initialState),
+  reset: () => set(initialState)
 }));

@@ -384,7 +384,45 @@ describe('runWorkbenchProjection', () => {
     expect(task?.steps.map((step) => step.status)).toEqual(['done', 'in_progress']);
   });
 
-  it('suppresses stored session todos after a completed run', () => {
+  it('uses an explicit task objective as the stable title', () => {
+    const task = buildSessionTaskRecord({
+      sessionId: 'session-1',
+      runId: 'turn-1',
+      runStatus: 'running',
+      todos: [
+        { content: '任务目标：验证任务面板复杂任务展示', status: 'completed' },
+        { content: '检查多个子任务', activeForm: '检查多个子任务', status: 'in_progress' },
+        { content: '验证完成态', status: 'pending' },
+      ],
+    });
+
+    expect(task).toMatchObject({
+      title: '任务目标：验证任务面板复杂任务展示',
+      status: 'in_progress',
+    });
+  });
+
+  it('keeps completed session todos visible after a completed run', () => {
+    const task = buildSessionTaskRecord({
+      sessionId: 'session-1',
+      runId: 'turn-1',
+      runStatus: 'completed',
+      todos: [
+        { content: '任务目标：验证任务面板复杂任务展示', status: 'completed' },
+        { content: '检查多个子任务', status: 'completed' },
+        { content: '验证完成态', status: 'completed' },
+      ],
+    });
+
+    expect(task).toMatchObject({
+      scope: 'session',
+      title: '任务目标：验证任务面板复杂任务展示',
+      status: 'done',
+    });
+    expect(task?.steps.map((step) => step.status)).toEqual(['done', 'done', 'done']);
+  });
+
+  it('suppresses incomplete stored session todos after a completed run', () => {
     const task = buildSessionTaskRecord({
       sessionId: 'session-1',
       runId: 'turn-1',

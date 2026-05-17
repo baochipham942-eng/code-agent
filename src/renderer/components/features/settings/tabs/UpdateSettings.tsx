@@ -102,10 +102,16 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     setIsInstalling(true);
     setError(null);
     try {
-      if (updateInfo?.downloadUrl) {
-        await tauriOpenUpdateUrl(updateInfo.downloadUrl);
-      } else {
+      try {
         await tauriInstallUpdate();
+      } catch (installError) {
+        if (!updateInfo?.downloadUrl) {
+          throw installError;
+        }
+        logger.debug('Native updater install failed, opening release page fallback', {
+          error: installError instanceof Error ? installError.message : String(installError),
+        });
+        await tauriOpenUpdateUrl(updateInfo.downloadUrl);
       }
       setIsInstalling(false);
     } catch (err) {
@@ -135,7 +141,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
   return (
     <SettingsPage
       title={t.update?.title || '版本更新'}
-      description={t.update?.description || '检查并下载最新版本的 Code Agent'}
+      description={t.update?.description || '检查并下载最新版本的 Agent Neo'}
     >
       <WebModeBanner />
 

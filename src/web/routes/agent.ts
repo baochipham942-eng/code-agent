@@ -3,12 +3,13 @@ import type { Request, Response } from 'express';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import type { AgentEvent, Message, MessageAttachment, MessageMetadata, SessionStatus } from '../../shared/contract';
+import type { AgentEvent, Message, MessageAttachment, MessageMetadata, Session, SessionStatus } from '../../shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
 import type {
   ConversationEnvelopeContext,
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
+import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import type { ExecuteOptions } from '../../main/tools/toolExecutor';
 import { isLocalTool, mapToolName } from '../../shared/localTools';
 import { broadcastSSE, sendSSE } from '../helpers/sse';
@@ -25,6 +26,15 @@ import {
   seedSessionMessagesFromPersisted,
 } from '../helpers/sessionCache';
 import { MessageDeltaAccumulator } from '../../main/protocol/messageDeltaAccumulator';
+import {
+  ClaudeCodeAdapter,
+  CodexCliAdapter,
+  resolveExternalEngineLaunch,
+} from '../../main/services/agentEngine';
+import {
+  type ExternalAgentEngineFailureContext,
+  recordExternalEngineFailure,
+} from './agentEngineFailureRecorder';
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
 // key = toolCallId, value = { resolve, reject, timer }
@@ -393,6 +403,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     emitSSE('task_start', { taskId, prompt, sessionId });
     await updateRunSessionStatus('running');
 
+    let externalEngineFailureContext: ExternalAgentEngineFailureContext | undefined;
+
     try {
       // 解析有效的 model/provider:body 显式参数 > session override > 默认。
       // 切换 UI 把模型写进 modelSessionState 后,/api/run 必须从这里读,
@@ -416,6 +428,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 2. body.context.workingDirectory（renderer 的 ConversationEnvelope）
       // 3. session 持久化的 workingDirectory（同会话恢复，避免每次都要重选）
       // 4. app 私有 work 目录。不能 fallback 到 HOME，否则普通聊天会扫描整台机器的 AGENTS/CLAUDE 文件。
+      let persistedSession: Session | null = null;
+      try {
+        const sm = await tryGetSessionManager();
+        if (sm?.getSession) {
+          persistedSession = await sm.getSession(sessionId, 1);
+        }
+      } catch (err) {
+        logger.warn(`[AgentRouter] Failed to restore session ${sessionId}:`, err);
+      }
+
       let resolvedProject: string | undefined =
         typeof project === 'string' && project.trim().length > 0
           ? project.trim()
@@ -423,20 +445,44 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             ? sessionDir.trim()
             : extractWorkingDirectory(req.body.context);
       if (!resolvedProject) {
-        try {
-          const sm = await tryGetSessionManager();
-          if (sm) {
-            const persisted = await sm.getSession(sessionId, 1);
-            const fromSession = persisted?.workingDirectory?.trim();
-            if (fromSession) resolvedProject = fromSession;
-          }
-        } catch (err) {
-          logger.warn(`[AgentRouter] Failed to restore workingDirectory from session ${sessionId}:`, err);
-        }
+        const fromSession = persistedSession?.workingDirectory?.trim();
+        if (fromSession) resolvedProject = fromSession;
       }
       if (!resolvedProject) {
         resolvedProject = await ensureDefaultWebWorkingDirectory();
         logger.warn(`[AgentRouter] No project/sessionDir/context workingDirectory, falling back to app work dir ${resolvedProject}`);
+      }
+
+      const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
+      if (selectedEngine.kind === 'codex_cli' || selectedEngine.kind === 'claude_code') {
+        externalEngineFailureContext = {
+          kind: selectedEngine.kind,
+          stage: 'launch_policy',
+          cwd: resolvedProject,
+        };
+        const launch = resolveExternalEngineLaunch(persistedSession, selectedEngine, resolvedProject);
+        externalEngineFailureContext = {
+          kind: selectedEngine.kind,
+          stage: 'adapter_run',
+          cwd: launch.cwd,
+        };
+        const adapter = selectedEngine.kind === 'codex_cli'
+          ? new CodexCliAdapter()
+          : new ClaudeCodeAdapter();
+        const result = await adapter.run({
+          sessionId,
+          prompt,
+          cwd: launch.cwd,
+          workspaceRoot: launch.workspaceRoot,
+          permissionProfile: launch.permissionProfile,
+          clientMessageId,
+          attachmentsCount: Array.isArray(req.body.attachments) ? req.body.attachments.length : 0,
+          messageMetadata: toWorkbenchMetadata(req.body.context),
+          emitEvent: (event) => emitAgentEvent(event),
+        });
+        agentSSEBatcher.flush();
+        await updateRunSessionStatus(result.status === 'failed' ? 'error' : 'completed');
+        return;
       }
 
       const agent = await createCLIAgent({
@@ -480,16 +526,19 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // ── 构建消息历史（多轮上下文）──
       // 将附件文本数据拼接到 prompt 中，使 Agent 能看到附件内容
       let enrichedPrompt = prompt;
-      const userContent: unknown[] = [];
-      if (req.body.attachments?.length) {
+      const requestAttachments = Array.isArray(req.body.attachments)
+        ? req.body.attachments as MessageAttachment[]
+        : [];
+      const imageAttachments = requestAttachments.filter((att) =>
+        att.category === 'image' || att.type === 'image'
+      );
+      if (requestAttachments.length) {
         const textParts: string[] = [];
-        for (const att of req.body.attachments) {
-          if (att.category === 'image' && att.data) {
-            userContent.push({
-              type: 'image',
-              source: { type: 'base64', media_type: att.mimeType || 'image/png', data: att.data },
-            });
-          } else if (att.data && typeof att.data === 'string') {
+        for (const att of requestAttachments) {
+          if ((att.category === 'image' || att.type === 'image')) {
+            continue;
+          }
+          if (att.data && typeof att.data === 'string') {
             // 非图片附件：将文本数据注入到 prompt 中
             const label = att.name || att.category || 'attachment';
             textParts.push(`\n\n<attachment name="${label}" category="${att.category || 'file'}">\n${att.data}\n</attachment>`);
@@ -499,21 +548,19 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           enrichedPrompt = prompt + textParts.join('');
         }
       }
-      userContent.unshift({ type: 'text', text: enrichedPrompt });
-
       const msgId = clientMessageId || `msg-${Date.now()}`;
       const userMsg: CachedMessage = {
         id: msgId,
         role: 'user' as const,
         content: enrichedPrompt,
         timestamp: Date.now(),
+        attachments: imageAttachments.length > 0 ? imageAttachments : undefined,
       };
 
       // 加载历史消息 + 当前用户消息
-      // 只传 role/content/timestamp 给 agentLoop，toolCalls/thinking 仅用于持久化
       const cachedHistory = await loadSessionHistoryForRun(sessionId, tryGetSessionManager, logger);
-      const history = cachedHistory.map(({ id, role, content, timestamp }) => ({
-        id, role: role as 'user' | 'assistant', content, timestamp,
+      const history = cachedHistory.map(({ id, role, content, timestamp, attachments }) => ({
+        id, role: role as 'user' | 'assistant', content, timestamp, attachments,
       }));
       const messages = [...history, userMsg] as import('../../shared/contract').Message[];
 
@@ -715,8 +762,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           await persistMessageToDb(sm, db, sessionId, {
             id: msgId,
             role: 'user',
-            content: prompt,
+            content: enrichedPrompt,
             timestamp: userMsg.timestamp,
+            attachments: userMsg.attachments,
           } as Message);
           userMsgPrePersistedDb = true;
         } catch (err) {
@@ -743,7 +791,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             session_id: sessionId,
             user_id: sb.userId,
             role: 'user',
-            content: prompt,
+            content: enrichedPrompt,
             timestamp: userMsg.timestamp,
             updated_at: Date.now(),
             source_device_id: 'web',
@@ -945,12 +993,20 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
       emitAgentEvent({ type: 'agent_complete', data: null });
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      if (externalEngineFailureContext) {
+        recordExternalEngineFailure({
+          sessionId,
+          message,
+          context: externalEngineFailureContext,
+        }, logger);
+      }
       await updateRunSessionStatus('error');
       if (!clientDisconnected) {
         emitAgentEvent({
           type: 'error',
           data: {
-            message: error instanceof Error ? error.message : 'Unknown error',
+            message,
           },
         });
       }

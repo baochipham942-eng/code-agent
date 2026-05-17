@@ -1,12 +1,12 @@
-# 系统架构概览
+# Agent Neo / Code Agent 系统架构概览
 
-> 本文档提供 Code Agent 的高层架构视图
+> 本文档提供 Agent Neo 的高层架构视图。Code Agent 仍是代码仓库与历史包名。
 
 ## 整体架构图
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                        Code Agent Architecture (Tauri 2.x)                  │
+│                         Agent Neo Architecture (Tauri 2.x)                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
@@ -17,8 +17,8 @@
 │  │  │              │ │Files/Preview │ │              │ │Activity     │  │  │
 │  │  └──────────────┘ └──────────────┘ └──────────────┘ └─────────────┘  │  │
 │  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌─────────────┐  │  │
-│  │  │Sidebar User  │ │Semantic Tool │ │ GenerativeUI │ │Automation   │  │  │
-│  │  │Menu          │ │UI + Citation │ │ + ChartBlock │ │/Cron Center │  │  │
+│  │  │Sidebar User  │ │Semantic Tool │ │ Browser /    │ │Automation   │  │  │
+│  │  │Menu          │ │UI + Citation │ │Validation UI │ │/Cron Center │  │  │
 │  │  └──────────────┘ └──────────────┘ └──────────────┘ └─────────────┘  │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                            │ Platform Abstraction                            │
@@ -34,12 +34,12 @@
 │  │  ┌──────────────────────────────────────────────────────────────────┐ │  │
 │  │  │                      Core Subsystems                             │ │  │
 │  │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌─────────────┐  │ │  │
-│  │  │  │   Light    │ │   Skills   │ │  Platform  │ │  System     │  │ │  │
-│  │  │  │  Memory    │ │   System   │ │ Abstraction│ │   Tray      │  │ │  │
+│  │  │  │   Light    │ │Capability │ │  Platform  │ │ AgentEngine │  │ │  │
+│  │  │  │  Memory    │ │  Center   │ │ Abstraction│ │  Adapters   │  │ │  │
 │  │  │  └────────────┘ └────────────┘ └────────────┘ └─────────────┘  │ │  │
 │  │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌─────────────┐  │ │  │
-│  │  │  │Durable Run │ │Structured  │ │Telemetry / │ │Review Queue │  │ │  │
-│  │  │  │State       │ │Replay      │ │Eval Gate   │ │             │  │ │  │
+│  │  │  │Task Ledger │ │Structured  │ │Telemetry / │ │Admin /     │  │ │  │
+│  │  │  │+ Handoff   │ │Replay      │ │Eval Gate   │ │Updates     │  │ │  │
 │  │  │  └────────────┘ └────────────┘ └────────────┘ └─────────────┘  │ │  │
 │  │  └──────────────────────────────────────────────────────────────────┘ │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
@@ -113,7 +113,26 @@
 | **IPC 通信** | Platform Abstraction Layer (`src/main/platform/`) | 统一替代直接 Electron 导入，跨平台兼容 |
 | **本地存储** | SQLite (better-sqlite3) | 会话/配置持久化 |
 | **云端存储** | Supabase + pgvector | 同步 + 向量存储 |
-| **AI 模型** | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / Claude / Ollama | 多模型路由 |
+| **AI 模型** | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / Claude / Ollama | 多模型路由，本地 API Key 优先 |
+| **Agent Engine** | Native Agent Neo / Codex CLI / Claude Code | read-only 外部 engine、workspace-only cwd、task ledger 输出回带 |
+
+## 2026-05-15~17 架构增量（Agent Neo / 管理面 / 外部 Agent Engine / In-App 验证）
+
+这一轮的主线是把 Agent Neo 的产品壳、配置面、外部 agent 接力和交付验证接到现有 runtime 上。它复用 ConversationRuntime、ToolExecutor、TaskPanel、Settings 和 Capability Center，没有新建第二套 agent loop。
+
+| 能力域 | 当前形态 | 详细文档 |
+|------|----------|----------|
+| Agent Neo 品牌层 | Tauri app、icon、Info.plist、MCP server、About/Update、终端输出和 landing page 切到 Agent Neo；仓库名仍为 code-agent | [ARCHITECTURE.md](../ARCHITECTURE.md) |
+| 本地模型配置 | server-side cloud proxy 已删除；首次使用走模型配置 onboarding，本机 Provider API Key 进入 `ModelSettings` 与 provider wrappers | [cloud-architecture.md](./cloud-architecture.md) |
+| Agent Engine | Native Agent Neo、Codex CLI、Claude Code 共享 `AgentEngineSessionMetadata`；外部 engine 只允许 read-only、workspace-only、manual chat session，输出进 task ledger | [agent-core.md](./agent-core.md) |
+| Capability Center | 本地 registry 汇总 skill、MCP template、tool bundle、channel adapter、workflow recipe、connector、agent engine；MCP 安装先落 disabled draft | [plugin-system.md](./plugin-system.md) |
+| 记忆管理 | Memory import、entry runtime、knowledge inbox、injection trace、seed injector 与 Settings Memory / Knowledge Memory Panel 打通 | [data-storage.md](./data-storage.md) |
+| In-App HTML Validation | `validate_html_in_app` 工具通过 main↔renderer IPC 打开右侧 iframe 面板，复用 BrowserInteraction DSL 执行交互断言 | [tool-system.md](./tool-system.md) |
+| Managed Browser Surface | Browser relay extension 和 `BrowserSurfacePanel` 让托管浏览器状态进入右侧工作面，和 BrowserService 保持同一 session 语义 | [workbench.md](./workbench.md) |
+| Background Task Ledger | shell、PTY、外部 engine 使用统一 Task 合同，TaskStatusBar/TaskPanel 可读完成通知、失败原因和 output refs | [frontend.md](./frontend.md) |
+| Artifact repair Route A | repair 先走 full rewrite，再继承 baseline/failures，monotonic gate 约束修复轮次 | [artifact-verification.md](./artifact-verification.md) |
+| Settings / Admin | Workspace、Automation、Data、Model、Capability、用户 dashboard、邀请码与更新页进入设置；admin-only IPC 走统一 guard | [data-storage.md](./data-storage.md) |
+| Release security gate | renderer/web sourcemap 默认关闭，Tauri resources 不打包 webServer map，出包和安装前跑 inventory/security scan | [../security/2026-05-17-agent-neo-distribution-hardening.md](../security/2026-05-17-agent-neo-distribution-hardening.md) |
 
 ## 2026-05-13~14 架构增量（Context Health 溯源 / 取消级联 / Computer-use MCP 入口归位 / 工作台面板群）
 
@@ -207,6 +226,10 @@
 | **Delivery Review / Artifact Verifiers** | `src/main/agent/runtime/acceptance/` + `runtime/{game,deck,dashboard}/` + `src/main/evaluation/previewFeedbackService.ts` | artifact 验收、交付审查、反馈回灌聊天 |
 | **Context Health 溯源** | `src/main/context/contextHealthService.ts` + `src/shared/contract/contextHealth.ts` + renderer `ContextPanel/ContextHealthPanel` | `TokenBreakdown.bySource` 六维来源溯源（rules/skills/mcp/subagents/fileReads/conversation），workbench context tab 二级展开，✕ 卸载接 `setServerEnabled` IPC |
 | **取消级联 / Shutdown Protocol** | `src/shared/contract/cancellation.ts` + `src/main/agent/shutdownProtocol.ts` + `src/main/agent/subagentExecutor.ts` | `CancellationReason` 区分 CASCADE/NON_CASCADE，四阶段 shutdown，idle watchdog，per-agent Stop UI |
+| **Agent Engine Adapters** | `src/shared/contract/agentEngine.ts` + `src/main/services/agentEngine/` + `src/main/ipc/agentEngine.ipc.ts` | Native / Codex CLI / Claude Code engine 元数据、检测、read-only 执行、历史导入和 task ledger 回带 |
+| **Capability Center** | `src/shared/contract/capability.ts` + `src/main/services/capabilities/` + `docs/capabilities/` | 本地能力货架，覆盖 skill、MCP template、workflow recipe、connector、agent engine，MCP draft 默认 disabled |
+| **In-App HTML Validation** | `src/shared/contract/browserInteraction.ts` + `src/main/tools/modules/vision/validateHtmlInApp.ts` + `InAppValidationPanel.tsx` | HTML artifact 在 app 内 iframe 中运行交互脚本和 expect 断言，形成用户可见的验证轨迹 |
+| **Admin / Invite Management** | `src/main/ipc/adminGuard.ts` + `src/main/services/admin/` + `supabase/migrations/20260516000000_user_invite_management.sql` | 管理员用户 dashboard、邀请码管理、RLS/RPC admin guard |
 
 ## 工具体系（108 个 native ToolModule）
 

@@ -11,6 +11,7 @@ import type {
   PermissionRequest,
   TaskProgressData,
   TaskCompleteData,
+  UpdateInfo,
 } from '@shared/contract';
 import type { ContextHealthState } from '@shared/contract/contextHealth';
 import { defaultLanguage, type Language } from '../i18n';
@@ -146,6 +147,7 @@ interface AppState {
   showFileExplorer: boolean;
   voicePasteStatus: 'idle' | 'recording' | 'transcribing' | 'processing';
   sidebarCollapsed: boolean;
+  optionalUpdateInfo: UpdateInfo | null;
 
   // 语言设置 - Language
   language: Language;
@@ -247,6 +249,7 @@ interface AppState {
   setShowFileExplorer: (show: boolean) => void;
   setVoicePasteStatus: (status: 'idle' | 'recording' | 'transcribing' | 'processing') => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
+  setOptionalUpdateInfo: (info: UpdateInfo | null) => void;
   setLanguage: (language: Language) => void;
   setCloudUIStrings: (strings: CloudUIStrings | null) => void;
   setDisclosureLevel: (level: DisclosureLevel) => void;
@@ -349,6 +352,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showFileExplorer: false,
   voicePasteStatus: 'idle' as const,
   sidebarCollapsed: false,
+  optionalUpdateInfo: null,
 
   // 语言默认为中文
   language: defaultLanguage,
@@ -463,6 +467,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setVoicePasteStatus: (status) => set({ voicePasteStatus: status }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+  setOptionalUpdateInfo: (info) => set({ optionalUpdateInfo: info }),
   setLanguage: (language) => set({ language }),
   setCloudUIStrings: (strings) => set({ cloudUIStrings: strings }),
   setDisclosureLevel: (level) => set({ disclosureLevel: level }),

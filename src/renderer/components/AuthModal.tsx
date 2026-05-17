@@ -10,7 +10,17 @@ import { Modal } from './primitives/Modal';
 
 type AuthMode = 'signin' | 'signup' | 'reset';
 
-export const AuthModal: React.FC = () => {
+interface AuthModalProps {
+  initialMode?: AuthMode;
+  onAuthSuccess?: (mode: Exclude<AuthMode, 'reset'>) => void;
+  onCloseComplete?: () => void;
+}
+
+export const AuthModal: React.FC<AuthModalProps> = ({
+  initialMode = 'signin',
+  onAuthSuccess,
+  onCloseComplete,
+}) => {
   const {
     signInWithEmail,
     signUpWithEmail,
@@ -29,6 +39,12 @@ export const AuthModal: React.FC = () => {
   const [rememberPassword, setRememberPassword] = useState(true);
   const [credentialsLoaded, setCredentialsLoaded] = useState(false);
   const [resetEmailSent, setResetEmailSent] = useState(false);
+
+  useEffect(() => {
+    if (showAuthModal) {
+      setMode(initialMode);
+    }
+  }, [initialMode, showAuthModal]);
 
   // Load saved credentials when modal opens
   useEffect(() => {
@@ -83,6 +99,7 @@ export const AuthModal: React.FC = () => {
     setShowAuthModal(false);
     // Reset credentials loaded flag so next time we reload
     setCredentialsLoaded(false);
+    onCloseComplete?.();
   };
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
@@ -98,7 +115,8 @@ export const AuthModal: React.FC = () => {
         await clearCredentials();
       }
     } else if (mode === 'signup') {
-      success = await signUpWithEmail(email, password, inviteCode || undefined);
+      const normalizedInviteCode = inviteCode.trim().toUpperCase();
+      success = await signUpWithEmail(email, password, normalizedInviteCode || undefined);
       // Also save credentials after successful registration
       if (success && rememberPassword) {
         await saveCredentials(email, password);
@@ -117,6 +135,7 @@ export const AuthModal: React.FC = () => {
       setEmail('');
       setPassword('');
       setInviteCode('');
+      onAuthSuccess?.(mode);
       onClose();
     }
   };
@@ -264,7 +283,9 @@ export const AuthModal: React.FC = () => {
                 <Input
                   type="text"
                   value={inviteCode}
-                  onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                  onChange={(e) => {
+                    setInviteCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''));
+                  }}
                   placeholder="输入邀请码"
                   required
                 />

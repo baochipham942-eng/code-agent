@@ -7,7 +7,7 @@
 
 // ── 类型 ──
 
-import type { Message } from '../../shared/contract';
+import type { Message, MessageAttachment } from '../../shared/contract';
 
 export interface CachedToolCall {
   id: string;
@@ -28,6 +28,7 @@ export interface CachedMessage {
   toolCalls?: CachedToolCall[];
   thinking?: string;
   contentParts?: CachedContentPart[];
+  attachments?: MessageAttachment[];
 }
 
 export interface InMemorySession {
@@ -81,6 +82,7 @@ export function toCachedSessionMessages(messages: Message[]): CachedMessage[] {
         toolCalls: message.toolCalls as CachedToolCall[] | undefined,
         thinking: message.thinking || message.reasoning,
         contentParts: message.contentParts as CachedContentPart[] | undefined,
+        attachments: message.attachments,
       };
     })
     .filter((message): message is CachedMessage => Boolean(message));

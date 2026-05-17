@@ -11,19 +11,34 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   Clock,
+  Database,
   ExternalLink,
   Folder,
+  FolderGit2,
   FolderOpen,
   Globe,
   Info,
+  LockKeyhole,
   Monitor,
   Plug,
   RefreshCw,
+  UserRound,
   X,
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/contract';
+import type {
+  ConfigSafetyScanSummary,
+  ConfigSafetySeverity,
+  ConfigScopeItem,
+  ConfigScopeItemStatus,
+  ConfigScopeLayer,
+  ConfigScopeLayerId,
+  ConfigScopeSummary,
+  ConfigWriteRecommendation,
+} from '@shared/contract/configScope';
 import type { BrowserSessionMode } from '@shared/contract/conversationEnvelope';
 import { Button } from '../../../primitives';
 import { useComposerStore } from '../../../../stores/composerStore';
@@ -73,6 +88,14 @@ interface RecentDirRow {
   active: boolean;
 }
 
+interface ConfigScopeTile {
+  id: ConfigScopeLayerId;
+  label: string;
+  value: string;
+  caption: string;
+  warningCount: number;
+}
+
 function browserStatusToneClass(tone?: BrowserWorkbenchStatusTone): string {
   if (tone === 'ready') return 'text-emerald-300';
   if (tone === 'blocked') return 'text-amber-300';
@@ -99,6 +122,78 @@ function buildRecentRows(currentDir: string | null, recent: string[]): RecentDir
   return Array.from(dedup.values());
 }
 
+export function buildConfigScopeTiles(summary: ConfigScopeSummary | null): ConfigScopeTile[] {
+  if (!summary) return [];
+  return summary.layers.map((layer) => ({
+    id: layer.id,
+    label: layer.label,
+    value: `${layer.activeCount}/${layer.items.length}`,
+    caption: layer.pathLabel,
+    warningCount: layer.warningCount,
+  }));
+}
+
+function scopeStatusClass(status: ConfigScopeItemStatus): string {
+  if (status === 'active') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+  if (status === 'warning') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+  if (status === 'present') return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
+  return 'border-zinc-700 bg-zinc-900 text-zinc-500';
+}
+
+function scopeStatusLabel(item: ConfigScopeItem): string {
+  if (item.status === 'warning') return '需确认';
+  if (item.status === 'active') return '生效';
+  if (item.status === 'present') return item.active ? '生效' : '仅存在';
+  return '未命中';
+}
+
+function scopeIcon(layerId: ConfigScopeLayerId): React.ReactNode {
+  if (layerId === 'user') return <UserRound className="h-4 w-4" />;
+  if (layerId === 'project') return <FolderGit2 className="h-4 w-4" />;
+  if (layerId === 'local') return <LockKeyhole className="h-4 w-4" />;
+  return <Database className="h-4 w-4" />;
+}
+
+function scopeLayerLabel(layerId: ConfigScopeLayerId): string {
+  if (layerId === 'user') return 'User';
+  if (layerId === 'project') return 'Project';
+  if (layerId === 'local') return 'Local';
+  return 'Runtime';
+}
+
+function scopeLayerClass(layerId: ConfigScopeLayerId): string {
+  if (layerId === 'user') return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
+  if (layerId === 'project') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+  if (layerId === 'local') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+  return 'border-zinc-600 bg-zinc-800 text-zinc-300';
+}
+
+function shareabilityLabel(recommendation: ConfigWriteRecommendation): string {
+  if (recommendation.shareability === 'team-shareable') return '适合团队共享';
+  if (recommendation.shareability === 'local-only') return '本机私有';
+  if (recommendation.shareability === 'runtime-private') return '运行态私有';
+  return '个人私有';
+}
+
+function safetySeverityClass(severity: ConfigSafetySeverity): string {
+  if (severity === 'critical') return 'border-red-500/30 bg-red-500/10 text-red-300';
+  if (severity === 'warning') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+  return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
+}
+
+function safetySeverityLabel(severity: ConfigSafetySeverity): string {
+  if (severity === 'critical') return '高风险';
+  if (severity === 'warning') return '需确认';
+  return '提示';
+}
+
+function safetyStatusText(scan: ConfigSafetyScanSummary): string {
+  if (scan.status === 'no_workspace') return '未设置工作区';
+  if (scan.totalFindings === 0) return '共享前未发现明显风险';
+  if (scan.criticalCount > 0) return '共享前需要处理';
+  return '共享前需要确认';
+}
+
 export const WorkspaceSettings: React.FC = () => {
   const browserSessionMode = useComposerStore((s) => s.browserSessionMode);
   const setBrowserSessionMode = useComposerStore((s) => s.setBrowserSessionMode);
@@ -111,6 +206,7 @@ export const WorkspaceSettings: React.FC = () => {
   const [defaultOpenTarget, setDefaultOpenTargetState] = useState<DefaultOpenTarget>('lastDirectory');
   const [pinnedDirectory, setPinnedDirectoryState] = useState<string | null>(null);
   const [savingPreference, setSavingPreference] = useState(false);
+  const [configScope, setConfigScope] = useState<ConfigScopeSummary | null>(null);
 
   const browserStatusRows = useMemo(
     () => buildBrowserWorkbenchStatusRows({ mode: browserSessionMode, browserSession }),
@@ -124,15 +220,17 @@ export const WorkspaceSettings: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [dir, recent, settings] = await Promise.all([
+      const [dir, recent, settings, scope] = await Promise.all([
         ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'getCurrent'),
         ipcService.invokeDomain<string[]>(IPC_DOMAINS.WORKSPACE, 'listRecent'),
         ipcService.invokeDomain<AppSettings | undefined>(IPC_DOMAINS.SETTINGS, 'get'),
+        ipcService.invokeDomain<ConfigScopeSummary>(IPC_DOMAINS.WORKSPACE, 'getConfigScope'),
       ]);
       setCurrentDir(dir ?? null);
       setRecentDirs(Array.isArray(recent) ? recent : []);
       setDefaultOpenTargetState(settings?.workspace?.defaultOpenTarget ?? 'lastDirectory');
       setPinnedDirectoryState(settings?.workspace?.pinnedDirectory ?? null);
+      setConfigScope(scope ?? null);
     } catch (error) {
       logger.error('Failed to load workspace settings', error);
     } finally {
@@ -145,6 +243,7 @@ export const WorkspaceSettings: React.FC = () => {
   }, [load]);
 
   const rows = useMemo(() => buildRecentRows(currentDir, recentDirs), [currentDir, recentDirs]);
+  const configScopeTiles = useMemo(() => buildConfigScopeTiles(configScope), [configScope]);
 
   const handleReveal = useCallback(async (path: string) => {
     try {
@@ -343,6 +442,56 @@ export const WorkspaceSettings: React.FC = () => {
               </div>
             )}
           </div>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="配置作用域"
+        description="当前工作区会叠加 User、Project、Local 和 Runtime 四层配置；这里先只读展示命中关系。"
+      >
+        <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
+          <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
+            {configScopeTiles.length > 0 ? configScopeTiles.map((tile) => (
+              <div key={tile.id} className="bg-zinc-900/80 px-3 py-3">
+                <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500">
+                  {scopeIcon(tile.id)}
+                  {tile.label}
+                </div>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="text-sm font-semibold text-zinc-100">{tile.value}</span>
+                  {tile.warningCount > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
+                      <AlertTriangle className="h-3 w-3" />
+                      {tile.warningCount}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-0.5 truncate text-[11px] text-zinc-500" title={tile.caption}>
+                  {tile.caption}
+                </div>
+              </div>
+            )) : (
+              <div className="col-span-full bg-zinc-900/80 px-3 py-4 text-xs text-zinc-500">
+                {loading ? '读取配置作用域…' : '暂无配置作用域数据'}
+              </div>
+            )}
+          </div>
+
+          {configScope && (
+            <div className="divide-y divide-zinc-800">
+              <ConfigScopeGuidance
+                recommendations={configScope.writeRecommendations}
+                safetyScan={configScope.safetyScan}
+              />
+              {configScope.layers.map((layer) => (
+                <ConfigScopeLayerBlock
+                  key={layer.id}
+                  layer={layer}
+                  onReveal={handleReveal}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </SettingsSection>
 
@@ -635,3 +784,205 @@ export const WorkspaceSettings: React.FC = () => {
     </SettingsPage>
   );
 };
+
+const ConfigScopeGuidance: React.FC<{
+  recommendations: ConfigWriteRecommendation[];
+  safetyScan: ConfigSafetyScanSummary;
+}> = ({ recommendations, safetyScan }) => {
+  const scannedFileCount = safetyScan.targets.reduce((sum, target) => sum + target.scannedFiles, 0);
+
+  return (
+    <div className="px-3 py-3">
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="min-w-0 rounded-md border border-zinc-800 bg-zinc-950/25 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div>
+              <div className="text-sm font-medium text-zinc-200">推荐写入层</div>
+              <div className="text-[11px] text-zinc-500">
+                新配置先按归属层写，团队共享只走可审计的 Project 项。
+              </div>
+            </div>
+            <span className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] text-zinc-400">
+              只读指导
+            </span>
+          </div>
+          <div className="space-y-2">
+            {recommendations.map((item) => (
+              <div key={item.id} className="rounded border border-zinc-800 bg-zinc-900/40 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-medium text-zinc-200">{item.label}</span>
+                  <span className={`rounded border px-1.5 py-0.5 text-[10px] ${scopeLayerClass(item.recommendedLayer)}`}>
+                    {scopeLayerLabel(item.recommendedLayer)}
+                  </span>
+                  <span className={`rounded border px-1.5 py-0.5 text-[10px] ${
+                    item.teamShareable
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                      : 'border-zinc-700 bg-zinc-900 text-zinc-400'
+                  }`}
+                  >
+                    {shareabilityLabel(item)}
+                  </span>
+                </div>
+                <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">{item.description}</div>
+                <div className="mt-1 text-[11px] leading-relaxed text-zinc-300">{item.guidance}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="min-w-0 rounded-md border border-zinc-800 bg-zinc-950/25 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div>
+              <div className="text-sm font-medium text-zinc-200">共享前检查</div>
+              <div className="text-[11px] text-zinc-500">
+                扫描项目配置和 skills，只展示风险摘要，不展示原文。
+              </div>
+            </div>
+            <span className={`rounded border px-2 py-1 text-[10px] ${
+              safetyScan.totalFindings > 0
+                ? safetySeverityClass(safetyScan.criticalCount > 0 ? 'critical' : 'warning')
+                : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+            }`}
+            >
+              {safetyStatusText(safetyScan)}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-4 gap-px overflow-hidden rounded border border-zinc-800 bg-zinc-800 text-center">
+            {[
+              ['扫描文件', String(scannedFileCount)],
+              ['风险项', String(safetyScan.totalFindings)],
+              ['高风险', String(safetyScan.criticalCount)],
+              ['需确认', String(safetyScan.warningCount)],
+            ].map(([label, value]) => (
+              <div key={label} className="bg-zinc-900/80 px-2 py-2">
+                <div className="text-sm font-semibold text-zinc-100">{value}</div>
+                <div className="text-[10px] text-zinc-500">{label}</div>
+              </div>
+            ))}
+          </div>
+
+          {safetyScan.findings.length === 0 ? (
+            <div className="mt-3 rounded border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-[11px] leading-relaxed text-zinc-500">
+              当前项目配置没有命中绝对路径、疑似 secret、私有 endpoint、危险 shell 或 hooks 位置风险。
+            </div>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {safetyScan.findings.slice(0, 6).map((finding) => (
+                <div key={finding.id} className="rounded border border-zinc-800 bg-zinc-900/40 px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded border px-1.5 py-0.5 text-[10px] ${safetySeverityClass(finding.severity)}`}>
+                      {safetySeverityLabel(finding.severity)}
+                    </span>
+                    <span className="text-xs font-medium text-zinc-200">{finding.label}</span>
+                    <span className="truncate font-mono text-[10px] text-zinc-500" title={finding.target}>
+                      {finding.target}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">{finding.detail}</div>
+                  <div className="mt-1 text-[11px] leading-relaxed text-zinc-300">{finding.recommendation}</div>
+                  {finding.locations.length > 0 && (
+                    <div className="mt-1 truncate font-mono text-[10px] text-zinc-600" title={finding.locations.join(', ')}>
+                      {finding.locations.join(', ')}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {safetyScan.findings.length > 6 && (
+                <div className="text-[11px] text-zinc-500">
+                  还有 {safetyScan.findings.length - 6} 项风险未展开。
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ConfigScopeLayerBlock: React.FC<{
+  layer: ConfigScopeLayer;
+  onReveal: (path: string) => void;
+}> = ({ layer, onReveal }) => (
+  <div className="px-3 py-3">
+    <div className="mb-2 flex items-center justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="rounded-md border border-zinc-700 bg-zinc-800 p-1 text-zinc-300">
+          {scopeIcon(layer.id)}
+        </span>
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-zinc-200">{layer.label}</div>
+          <div className="truncate text-[11px] text-zinc-500" title={layer.description}>
+            {layer.description}
+          </div>
+        </div>
+      </div>
+      <div className="shrink-0 text-[11px] text-zinc-500">
+        {layer.presentCount} 命中 / {layer.items.length} 项
+      </div>
+    </div>
+    {layer.items.length === 0 ? (
+      <div className="rounded border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-500">
+        未设置工作区时没有 {layer.label} 级配置。
+      </div>
+    ) : (
+      <div className="overflow-hidden rounded border border-zinc-800">
+        <table className="w-full table-fixed text-left text-xs">
+          <tbody className="divide-y divide-zinc-800">
+            {layer.items.map((item) => {
+              const canReveal = item.exists && item.kind !== 'runtime' && !isWebMode();
+              return (
+                <tr key={item.id} className="bg-zinc-950/25">
+                  <td className="w-[28%] px-3 py-2 align-top">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-zinc-200">{item.label}</span>
+                      {item.private && (
+                        <span className="rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                          私有
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">
+                      {item.description}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <code className="block truncate text-[11px] text-zinc-300" title={item.path}>
+                      {item.path}
+                    </code>
+                    {item.detail && (
+                      <div className="mt-1 text-[11px] text-zinc-500">{item.detail}</div>
+                    )}
+                    {item.warning && (
+                      <div className="mt-1 flex items-start gap-1.5 text-[11px] leading-relaxed text-amber-300">
+                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                        <span>{item.warning}</span>
+                      </div>
+                    )}
+                  </td>
+                  <td className="w-[160px] px-3 py-2 align-top">
+                    <div className="flex items-center justify-end gap-2">
+                      <span className={`rounded border px-1.5 py-0.5 text-[10px] ${scopeStatusClass(item.status)}`}>
+                        {scopeStatusLabel(item)}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={!canReveal}
+                        onClick={() => onReveal(item.path)}
+                        leftIcon={<ExternalLink className="h-3.5 w-3.5" />}
+                      >
+                        定位
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+);

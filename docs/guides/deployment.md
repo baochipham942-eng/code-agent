@@ -255,10 +255,10 @@ HTTPS_PROXY=http://127.0.0.1:7897 cargo tauri dev
 |------|----------|-------|
 | DMG 体积 | ~169MB | ~33MB |
 | 原生模块 | `npm run rebuild-native` 必需 | 不需要 |
-| .env 部署 | 手动 `cp` 到 Resources | tauri.conf.json resources 自动打包 |
-| 构建命令 | `npm run dist:mac` | `cargo tauri build` |
+| .env 部署 | 手动 `cp` 到 Resources | release 包禁止打入 `.env` |
+| 构建命令 | `npm run dist:mac` | `npm run tauri:release:bundle` |
 | 开发命令 | `npm run dev` | `cargo tauri dev` |
-| Auto-update | Electron updater | `tauri signer generate` + pubkey in tauri.conf.json |
+| Auto-update | Electron updater | Tauri updater signature + `latest.json` manifest |
 
 ---
 

@@ -441,7 +441,9 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
     .catch((error) => logger.error('CloudConfig/MCP initialization failed', { error: String(error) }));
 
   // Initialize PromptService ASYNC (non-blocking, independent)
-  initPromptService()
+  initPromptService({
+    getAccessToken: () => getAuthService().getAccessToken(),
+  })
     .then(() => {
       const info = getPromptsInfo();
       logger.info('PromptService initialized', { source: info.source, version: info.version || 'builtin' });

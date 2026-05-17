@@ -6,6 +6,13 @@
 import { SYSTEM_PROMPT } from '../../prompts/builder';
 import { createLogger } from '../infra/logger';
 import { CACHE, CLOUD, CLOUD_ENDPOINTS } from '../../../shared/constants';
+import {
+  getControlPlanePublicKeysFromEnv,
+  isControlPlaneEnvelope,
+  verifyControlPlaneEnvelope,
+  type ControlPlanePublicKeys,
+} from './controlPlaneTrust';
+import type { ControlPlaneDiagnostic } from '../../../shared/contract/controlPlane';
 
 const logger = createLogger('PromptService');
 
@@ -24,12 +31,81 @@ interface CachedPrompts {
   fetchedAt: number;
 }
 
+export interface PromptServiceOptions {
+  getAccessToken?: () => Promise<string | null>;
+  controlPlanePublicKeys?: ControlPlanePublicKeys;
+  allowUnsignedPrompts?: boolean;
+}
+
 // ----------------------------------------------------------------------------
 // State
 // ----------------------------------------------------------------------------
 
 let cachedPrompts: CachedPrompts | null = null;
 let fetchPromise: Promise<void> | null = null;
+let promptOptions: PromptServiceOptions = {};
+let trustDiagnostics: ControlPlaneDiagnostic[] = [];
+let trustInfo: { trusted: boolean; keyId?: string; expiresAt?: string } = { trusted: false };
+
+export function configurePromptService(options: PromptServiceOptions): void {
+  promptOptions = {
+    ...promptOptions,
+    ...options,
+  };
+}
+
+function getPublicKeys(): ControlPlanePublicKeys {
+  return promptOptions.controlPlanePublicKeys || getControlPlanePublicKeysFromEnv();
+}
+
+function allowUnsignedPrompts(): boolean {
+  return promptOptions.allowUnsignedPrompts === true
+    || process.env.CODE_AGENT_ALLOW_UNSIGNED_PROMPTS === '1';
+}
+
+function acceptFetchedPrompts(value: unknown): CloudPromptsResponse | null {
+  if (isControlPlaneEnvelope(value)) {
+    const trust = verifyControlPlaneEnvelope<CloudPromptsResponse>(value, {
+      kind: 'prompt_registry',
+      publicKeys: getPublicKeys(),
+      requireSignature: !allowUnsignedPrompts(),
+      allowUnsigned: allowUnsignedPrompts(),
+    });
+    trustDiagnostics = trust.diagnostics;
+    trustInfo = {
+      trusted: trust.trusted,
+      ...(trust.keyId ? { keyId: trust.keyId } : {}),
+      ...(trust.expiresAt ? { expiresAt: trust.expiresAt } : {}),
+    };
+    if (!trust.trusted || !trust.payload) {
+      logger.warn('Rejected untrusted cloud prompts', {
+        diagnostics: trust.diagnostics.map((entry) => entry.code).join(', '),
+      });
+      return null;
+    }
+    return trust.payload;
+  }
+
+  if (allowUnsignedPrompts()) {
+    trustDiagnostics = [{
+      severity: 'warning',
+      code: 'unsigned_prompts_allowed',
+      message: 'Unsigned prompt registry was accepted because CODE_AGENT_ALLOW_UNSIGNED_PROMPTS is enabled.',
+    }];
+    trustInfo = { trusted: false };
+    logger.warn('Accepting unsigned cloud prompts because unsigned override is enabled');
+    return value as CloudPromptsResponse;
+  }
+
+  trustDiagnostics = [{
+    severity: 'error',
+    code: 'missing_control_plane_envelope',
+    message: 'Cloud prompt responses must be signed control-plane envelopes.',
+  }];
+  trustInfo = { trusted: false };
+  logger.warn('Rejected unsigned cloud prompts response');
+  return null;
+}
 
 // ----------------------------------------------------------------------------
 // Core Functions
@@ -43,7 +119,17 @@ async function fetchCloudPrompts(): Promise<CloudPromptsResponse | null> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), CLOUD.FETCH_TIMEOUT);
 
+    const headers: Record<string, string> = {};
+    const accessToken = await promptOptions.getAccessToken?.().catch((error) => {
+      logger.warn('Failed to read prompt registry access token', { error: String(error) });
+      return null;
+    });
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+    }
+
     const response = await fetch(`${CLOUD_ENDPOINTS.prompts}?gen=all`, {
+      headers,
       signal: controller.signal,
     });
 
@@ -54,8 +140,15 @@ async function fetchCloudPrompts(): Promise<CloudPromptsResponse | null> {
       return null;
     }
 
-    const data = await response.json();
-    logger.info('Fetched cloud prompts', { version: data.version });
+    const data = acceptFetchedPrompts(await response.json());
+    if (!data?.version || !data.prompts) {
+      return null;
+    }
+    logger.info('Fetched trusted cloud prompts', {
+      version: data.version,
+      expiresAt: trustInfo.expiresAt || 'not set',
+      keyId: trustInfo.keyId || 'not set',
+    });
     return data;
   } catch (error) {
     if ((error as Error).name === 'AbortError') {
@@ -70,7 +163,10 @@ async function fetchCloudPrompts(): Promise<CloudPromptsResponse | null> {
 /**
  * 初始化 prompt 服务（后台异步拉取）
  */
-export async function initPromptService(): Promise<void> {
+export async function initPromptService(options?: PromptServiceOptions): Promise<void> {
+  if (options) {
+    configurePromptService(options);
+  }
   // 避免重复拉取
   if (fetchPromise) return fetchPromise;
 
@@ -116,17 +212,35 @@ export function getPromptsInfo(): {
   source: 'cloud' | 'builtin';
   version: string | null;
   fetchedAt: number | null;
+  trust: {
+    trusted: boolean;
+    keyId?: string;
+    expiresAt?: string;
+    diagnostics: ControlPlaneDiagnostic[];
+  };
 } {
   if (cachedPrompts) {
     return {
       source: 'cloud',
       version: cachedPrompts.version,
       fetchedAt: cachedPrompts.fetchedAt,
+      trust: {
+        trusted: trustInfo.trusted,
+        ...(trustInfo.keyId ? { keyId: trustInfo.keyId } : {}),
+        ...(trustInfo.expiresAt ? { expiresAt: trustInfo.expiresAt } : {}),
+        diagnostics: trustDiagnostics,
+      },
     };
   }
   return {
     source: 'builtin',
     version: null,
     fetchedAt: null,
+    trust: {
+      trusted: trustInfo.trusted,
+      ...(trustInfo.keyId ? { keyId: trustInfo.keyId } : {}),
+      ...(trustInfo.expiresAt ? { expiresAt: trustInfo.expiresAt } : {}),
+      diagnostics: trustDiagnostics,
+    },
   };
 }

@@ -23,7 +23,7 @@
 │  │  /api/update    - 版本检查                            │       │
 │  │  /api/auth      - GitHub OAuth                        │       │
 │  │  /api/sync      - 数据同步                            │       │
-│  │  /api/prompts   - System Prompt                       │       │
+│  │  /api/prompts   - 签名 Prompt registry                │       │
 │  │  /api/model-proxy - AI 模型代理                       │       │
 │  │  /api/tools     - 云端工具 (搜索/抓取/PPT)            │       │
 │  └──────────────────────┬───────────────────────────────┘       │
@@ -64,13 +64,14 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 | /api/agent | 云端 Agent |
 | /api/auth | GitHub OAuth 认证 |
 | /api/model-proxy | 模型代理 |
-| /api/prompts | System Prompt |
+| /api/prompts | 签名 Prompt registry envelope |
 | /api/sync | 数据同步 |
 | /api/system | 运维整合（health/init-db/migrate）|
 | /api/tools | 云端工具（api/scrape/search/ppt）|
 | /api/update | 版本更新检查 |
 | /api/user-keys | 用户 API Key 管理 |
 | /api/v1/config | 云端配置中心 |
+| /api/v1/control-plane | control-plane artifact 路由 |
 
 ### system.ts 用法
 
@@ -119,29 +120,53 @@ curl -X POST "https://<your-fc-trigger-url>" \
 
 ---
 
-## 云端 Prompt 管理
+## Control-plane 签名配置
 
-System Prompt 采用前后端分离架构，支持热更新：
+`/api/v1/config` 和 `/api/prompts` 必须返回 control-plane envelope。客户端会验证：
 
-**架构**：
-- 云端 `/api/prompts` 端点提供各代际的 system prompt
-- 客户端 `PromptService` 启动时异步拉取，1 小时缓存
-- 拉取失败自动降级到内置 prompts
+- `schemaVersion: 1`
+- `kind` 分别为 `cloud_config` 或 `prompt_registry`
+- `contentHash` 与 `payload` 匹配
+- `expiresAt` 未过期
+- `keyId` 对应本地配置的 Ed25519 公钥
+- `signature` 验签通过
 
-**优势**：
-- 修改 prompt 只需部署云端，无需重新打包客户端
-- 离线也能正常工作（使用内置版本）
+Vercel 端只保存私钥和待下发 payload。缺少签名密钥或 payload 时，接口返回 `503 control_plane_unconfigured`，客户端会回退内置配置。
 
-**API 端点**：
+### Vercel 环境变量
+
+| 变量 | 说明 |
+|------|------|
+| `CONTROL_PLANE_PRIVATE_KEY` | Ed25519 PKCS8 PEM 私钥，支持原始 PEM、转义换行或 base64 PEM |
+| `CONTROL_PLANE_KEY_ID` | 签名 key id，必须与客户端配置的公钥 key id 对应 |
+| `CONTROL_PLANE_TTL_SECONDS` | envelope 有效期，默认 3600 秒 |
+| `CONTROL_PLANE_CLOUD_CONFIG_JSON` | `/api/v1/config` 的完整 `CloudConfig` payload |
+| `CONTROL_PLANE_PROMPT_REGISTRY_JSON` | `/api/prompts` 的 `{ "version": "...", "prompts": { ... } }` payload |
+
+客户端公钥配置：
+
 ```bash
-# 获取所有代际 prompts
+CODE_AGENT_CONTROL_PLANE_KEY_ID="production-2026-05"
+CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+```
+
+也可以用 JSON 一次配置多把公钥：
+
+```bash
+CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS='{"production-2026-05":"-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"}'
+```
+
+### API 验证
+
+```bash
+# 获取签名 cloud config envelope
+curl "https://code-agent-beta.vercel.app/api/v1/config"
+
+# 获取签名 prompt registry envelope
 curl "https://code-agent-beta.vercel.app/api/prompts?gen=all"
 
-# 获取特定代际
-curl "https://code-agent-beta.vercel.app/api/prompts?gen=gen4"
-
-# 只获取版本号
-curl "https://code-agent-beta.vercel.app/api/prompts?version=true"
+# 统一路由
+curl "https://code-agent-beta.vercel.app/api/v1/control-plane?artifact=prompt_registry"
 ```
 
 ---
@@ -189,13 +214,9 @@ curl "https://code-agent-beta.vercel.app/api/prompts?version=true"
 | 场景 | 路径 |
 |------|------|
 | 开发模式 | `/Users/linchen/Downloads/ai/code-agent/.env` |
-| Tauri 打包 | 通过 tauri.conf.json resources 自动打包 |
-| Tauri 打包 | 通过 tauri.conf.json resources 自动打包，无需手动拷贝 |
+| Tauri 打包 | release 包不得打入 `.env`、私钥或本地 token |
 
-**注意**：修改 `.env` 后，Electron 打包应用需要手动同步（Tauri 不需要）：
-```bash
-cp /Users/linchen/Downloads/ai/code-agent/.env "/Applications/Code Agent.app/Contents/Resources/.env"
-```
+签名私钥只放 Vercel 环境变量。客户端只配置 control-plane 公钥；如果公钥缺失，远程 config/prompts 会被拒绝并降级到内置配置。
 
 ---
 

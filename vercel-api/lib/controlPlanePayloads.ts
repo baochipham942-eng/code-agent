@@ -1,0 +1,48 @@
+import type { ControlPlaneArtifactKind } from './controlPlaneEnvelope';
+import { readJsonPayloadFromEnv } from './controlPlaneEnvelope';
+
+export interface CloudConfigPayload {
+  version: string;
+  prompts: Record<string, string>;
+  skills: unknown[];
+  toolMeta: Record<string, unknown>;
+  featureFlags: Record<string, boolean | number | string>;
+  uiStrings: {
+    zh: Record<string, string>;
+    en: Record<string, string>;
+  };
+  rules: Record<string, string>;
+  mcpServers: unknown[];
+}
+
+export interface PromptRegistryPayload {
+  version: string;
+  prompts: Record<string, string>;
+}
+
+export function readCloudConfigPayload(env: NodeJS.ProcessEnv = process.env): CloudConfigPayload {
+  return readJsonPayloadFromEnv<CloudConfigPayload>([
+    'CONTROL_PLANE_CLOUD_CONFIG_JSON',
+    'CODE_AGENT_CONTROL_PLANE_CLOUD_CONFIG_JSON',
+  ], env);
+}
+
+export function readPromptRegistryPayload(env: NodeJS.ProcessEnv = process.env): PromptRegistryPayload {
+  return readJsonPayloadFromEnv<PromptRegistryPayload>([
+    'CONTROL_PLANE_PROMPT_REGISTRY_JSON',
+    'CODE_AGENT_CONTROL_PLANE_PROMPT_REGISTRY_JSON',
+  ], env);
+}
+
+export function readPayloadForKind(
+  kind: ControlPlaneArtifactKind,
+  env: NodeJS.ProcessEnv = process.env,
+): CloudConfigPayload | PromptRegistryPayload {
+  if (kind === 'cloud_config') {
+    return readCloudConfigPayload(env);
+  }
+  if (kind === 'prompt_registry') {
+    return readPromptRegistryPayload(env);
+  }
+  throw new Error(`Unsupported control-plane artifact: ${kind}`);
+}

@@ -97,6 +97,8 @@ P1-C 继续把远程配置入口改成 control-plane envelope：`CloudConfigServ
 
 P1-D 同步收紧 prompt registry：`PromptService` 只接受 `kind:"prompt_registry"` 的签名 envelope，远程 prompt 未签名或过期时继续使用本地 builder 的公共 prompt。当前主链 `getSystemPrompt()` 仍固定返回本地 prompt，但这个入口先 fail closed，避免后续接线时把未验证 prompt 带进运行时。
 
+P1-E 补上最小 Vercel control-plane 产物：`vercel-api/api/v1/config.ts` 返回 `kind:"cloud_config"` envelope，`vercel-api/api/prompts.ts` 返回 `kind:"prompt_registry"` envelope，二者共用 Ed25519 签名、payload canonical hash、`expiresAt`、ETag 和 `503 control_plane_unconfigured` fail-closed 行为。服务端私钥来自 `CONTROL_PLANE_PRIVATE_KEY`，客户端只配置 `CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY(S)`。
+
 ## P2 逆向成本提升
 
 这些可以做，但优先级低于服务端边界：

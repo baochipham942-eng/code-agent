@@ -23,7 +23,7 @@ Code Agent 采用前后端分离的配置架构，支持多种配置的热更新
 │   Code Agent    │ ─────────────────▶│   Vercel API    │
 │    (Client)     │                   │  /api/v1/config │
 │                 │ ◀───────────────── │                 │
-│  CloudConfig    │     JSON + ETag   │   云端配置       │
+│  CloudConfig    │ signed envelope   │   云端配置       │
 │    Service      │                   │                 │
 └─────────────────┘                   └─────────────────┘
         │
@@ -166,31 +166,59 @@ GET https://code-agent-beta.vercel.app/api/v1/config
 **响应**:
 ```json
 {
-  "version": "1.0.5",
-  "prompts": {
-    "gen1": "You are a code assistant...",
-    "gen4": "You are an advanced AI agent..."
-  },
-  "skills": [...],
-  "featureFlags": {
-    "enableGen8": false,
-    "maxIterations": 50
+  "schemaVersion": 1,
+  "kind": "cloud_config",
+  "issuedAt": "2026-05-17T05:00:00.000Z",
+  "expiresAt": "2026-05-17T06:00:00.000Z",
+  "contentHash": "sha256:...",
+  "keyId": "production-2026-05",
+  "signature": "...",
+  "payload": {
+    "version": "1.0.5",
+    "prompts": {},
+    "skills": [],
+    "toolMeta": {},
+    "featureFlags": {
+      "enableCloudAgent": true,
+      "enableMemory": true,
+      "enableComputerUse": true,
+      "maxIterations": 50,
+      "maxMessageLength": 100000,
+      "enableExperimentalTools": false
+    },
+    "uiStrings": {
+      "zh": {},
+      "en": {}
+    },
+    "rules": {},
+    "mcpServers": []
   }
 }
 ```
 
-### 仅获取版本
+客户端只接受 `kind:"cloud_config"`、hash 匹配、未过期且 Ed25519 签名通过的响应。未签名、过期、hash mismatch 或未知 key 会回退到内置配置。
 
 ```
-GET https://code-agent-beta.vercel.app/api/v1/config?version=true
+GET https://code-agent-beta.vercel.app/api/prompts?gen=all
 ```
 
 **响应**:
 ```json
 {
-  "version": "1.0.5"
+  "schemaVersion": 1,
+  "kind": "prompt_registry",
+  "expiresAt": "2026-05-17T06:00:00.000Z",
+  "contentHash": "sha256:...",
+  "keyId": "production-2026-05",
+  "signature": "...",
+  "payload": {
+    "version": "1.0.5",
+    "prompts": {}
+  }
 }
 ```
+
+`/api/v1/control-plane?artifact=cloud_config|prompt_registry` 复用同一签名逻辑，便于后续把 capability registry 和 update manifest 也纳入同一控制面。
 
 ---
 
@@ -227,7 +255,13 @@ src/main/services/cloud/
 └── builtinConfig.ts       # 内置配置
 
 vercel-api/api/v1/
-└── config.ts              # 云端 API 端点
+├── config.ts              # 签名 cloud_config envelope
+└── control-plane.ts       # control-plane artifact 路由
+vercel-api/api/
+└── prompts.ts             # 签名 prompt_registry envelope
+vercel-api/lib/
+├── controlPlaneEnvelope.ts
+└── controlPlanePayloads.ts
 ```
 
 ---
@@ -259,6 +293,7 @@ const mcpServers = getCloudConfigService().getMCPServers();
 ## 注意事项
 
 1. **启动不阻塞**: 配置拉取在后台进行，不影响窗口创建
-2. **静默降级**: 网络失败不显示错误，使用内置配置
-3. **版本检查**: 客户端记录配置版本，方便调试
-4. **日志记录**: 配置加载状态会记录到日志
+2. **验签失败降级**: 网络失败、未签名、过期或 hash mismatch 都使用内置配置
+3. **私钥不进客户端**: Vercel 只保存 Ed25519 私钥，客户端只配置公钥
+4. **版本检查**: 客户端记录配置版本、key id、expiresAt 和 trust diagnostics，方便调试
+5. **日志记录**: 配置加载状态会记录到日志

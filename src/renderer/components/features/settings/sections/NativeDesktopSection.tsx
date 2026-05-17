@@ -74,6 +74,11 @@ interface HourBlock {
   eventCount: number;
 }
 
+interface NativeDesktopSectionProps {
+  onClose?: () => void;
+  variant?: 'embedded' | 'fullscreen';
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -85,11 +90,19 @@ function groupEventsIntoSegments(events: DesktopActivityEvent[]): ActivitySegmen
   let current: ActivitySegment | null = null;
 
   for (const event of sorted) {
-    if (
-      current &&
-      current.appName === event.appName &&
-      event.capturedAtMs - current.endMs < 10 * 60 * 1000
-    ) {
+    if (current === null) {
+      current = {
+        appName: event.appName,
+        startMs: event.capturedAtMs,
+        endMs: event.capturedAtMs,
+        events: [event],
+        title: '',
+      };
+      segments.push(current);
+      continue;
+    }
+
+    if (current.appName === event.appName && event.capturedAtMs - current.endMs < 10 * 60 * 1000) {
       current.endMs = event.capturedAtMs;
       current.events.push(event);
     } else {
@@ -893,7 +906,10 @@ const HourDetailPanel: React.FC<{ block: HourBlock; date: Date }> = ({ block, da
 // Main Component
 // ============================================================================
 
-export const NativeDesktopSection: React.FC = () => {
+export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
+  onClose,
+  variant = 'embedded',
+}) => {
   const [collectorStatus, setCollectorStatus] = useState<NativeDesktopCollectorStatus | null>(null);
   const [recentEvents, setRecentEvents] = useState<DesktopActivityEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -1004,14 +1020,21 @@ export const NativeDesktopSection: React.FC = () => {
   const appCount = new Set(filteredEvents.map((e) => e.appName)).size;
   const screenshotCount = filteredEvents.filter((e) => e.screenshotPath).length;
   const analyzedCount = filteredEvents.filter((e) => e.analyzeText).length;
+  const fullscreen = variant === 'fullscreen';
 
   return (
-    <div className="flex flex-col h-full">
+    <div className={`flex flex-col h-full ${fullscreen ? 'bg-zinc-950 text-zinc-100' : ''}`}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-700/50 shrink-0">
+      <div className={`flex items-center justify-between border-b shrink-0 ${
+        fullscreen
+          ? 'h-14 border-zinc-800 bg-zinc-950/95 px-5'
+          : 'border-zinc-700/50 px-4 py-2.5'
+      }`}>
         <div className="flex items-center gap-2.5">
           <Monitor className="w-4 h-4 text-cyan-400" />
-          <span className="text-sm font-medium text-zinc-200">桌面活动</span>
+          <span className={fullscreen ? 'text-base font-semibold text-zinc-100' : 'text-sm font-medium text-zinc-200'}>
+            桌面活动
+          </span>
           <div className={`px-1.5 py-0.5 rounded-full text-[10px] ${
             collectorStatus?.running
               ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
@@ -1083,6 +1106,17 @@ export const NativeDesktopSection: React.FC = () => {
               <><Play className="w-3 h-3" /> 采集</>
             )}
           </button>
+
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="关闭 桌面采集"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
       </div>
 

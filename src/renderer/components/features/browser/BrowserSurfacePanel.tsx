@@ -6,7 +6,6 @@ import {
   Loader2,
   PlugZap,
   ShieldCheck,
-  X,
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type {
@@ -18,6 +17,7 @@ import { useComposerStore } from '../../../stores/composerStore';
 import { useWorkbenchBrowserSession } from '../../../hooks/useWorkbenchBrowserSession';
 import { buildBrowserWorkbenchStatusRows } from '../../../utils/workbenchPresentation';
 import ipcService from '../../../services/ipcService';
+import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 
 interface BrowserSurfacePanelProps {
   onClose: () => void;
@@ -160,33 +160,16 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
   const browserReady = browserSession.managedSession.running;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div
-        data-testid="browser-surface-panel"
-        className="relative flex h-[82vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-zinc-700 bg-zinc-950 shadow-2xl"
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Globe className="h-4 w-4 text-sky-300" />
-              <h2 className="text-sm font-semibold text-zinc-100">Browser Surface</h2>
-            </div>
-            <p className="mt-0.5 text-xs text-zinc-500">
-              打开真实网页、保留托管浏览器登录态，并准备接入 Chrome Relay。
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-white/[0.06] hover:text-zinc-200"
-            aria-label="关闭 Browser Surface"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    <FullScreenPage testId="browser-surface-panel">
+      <FullScreenPageHeader
+        icon={<Globe className="h-4 w-4 text-sky-300" />}
+        title="Browser Surface"
+        description="打开真实网页、保留托管浏览器登录态，并准备接入 Chrome Relay"
+        onClose={onClose}
+        closeLabel="关闭 Browser Surface"
+      />
 
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-5">
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
             <section className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
               <div className="mb-3 flex items-center justify-between gap-2">
@@ -335,8 +318,7 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </FullScreenPage>
   );
 };
 

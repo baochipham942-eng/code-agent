@@ -4,6 +4,7 @@ import { runInAppInteractions } from '../../../utils/inAppValidationExecutor';
 import { ipcService } from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { useAppStore } from '../../../stores/appStore';
+import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import type {
   BrowserInteractionStep,
   BrowserInteractionStepResult,
@@ -83,6 +84,7 @@ export function InAppValidationPanel(): React.ReactElement {
 
   const pendingRequest = useAppStore((s) => s.pendingInAppValidationRequest);
   const setPendingRequest = useAppStore((s) => s.setPendingInAppValidationRequest);
+  const setShowInAppValidationPanel = useAppStore((s) => s.setShowInAppValidationPanel);
 
   const reloadIframe = useCallback(() => {
     setIframeReady(false);
@@ -176,38 +178,41 @@ export function InAppValidationPanel(): React.ReactElement {
   const ipcActive = Boolean(pendingRequest);
 
   return (
-    <div className="flex h-full w-full flex-col bg-slate-950 text-slate-100">
-      <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-        <div className="flex items-center gap-2">
-          <Code2 className="h-4 w-4 text-emerald-400" />
-          <span className="text-sm font-medium">In-App HTML Validation</span>
-          {ipcActive && (
-            <span className="ml-2 flex items-center gap-1 rounded bg-sky-900 px-2 py-0.5 text-xs text-sky-200">
-              <Radio className="h-3 w-3 animate-pulse" /> IPC 驱动中
-            </span>
-          )}
-          {totalCount > 0 && (
-            <span
-              className={`ml-2 rounded px-2 py-0.5 text-xs ${
-                allPassed ? 'bg-emerald-900 text-emerald-200' : 'bg-rose-900 text-rose-200'
-              }`}
-            >
-              {passedCount}/{totalCount} passed
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
+    <FullScreenPage testId="in-app-validation-panel">
+      <FullScreenPageHeader
+        icon={<Code2 className="h-4 w-4 text-emerald-300" />}
+        title="In-App 验证"
+        description="在应用内沙箱验证 HTML 预览和交互脚本"
+        badge={ipcActive ? (
+          <span className="flex items-center gap-1 rounded border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-xs text-sky-200">
+            <Radio className="h-3 w-3 animate-pulse" /> IPC 驱动中
+          </span>
+        ) : totalCount > 0 ? (
+          <span
+            className={`rounded border px-2 py-0.5 text-xs ${
+              allPassed
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+            }`}
+          >
+            {passedCount}/{totalCount} passed
+          </span>
+        ) : null}
+        onClose={() => setShowInAppValidationPanel(false)}
+        closeLabel="关闭 In-App 验证"
+        actions={(
+          <>
           <button
             type="button"
             onClick={loadDemo}
-            className="rounded border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800"
+            className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
           >
             载入 Demo
           </button>
           <button
             type="button"
             onClick={reloadIframe}
-            className="flex items-center gap-1 rounded border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800"
+            className="flex items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
           >
             <RotateCw className="h-3 w-3" /> 重载
           </button>
@@ -219,8 +224,9 @@ export function InAppValidationPanel(): React.ReactElement {
           >
             <Play className="h-3 w-3" /> {running ? '运行中...' : '运行脚本'}
           </button>
-        </div>
-      </div>
+          </>
+        )}
+      />
 
       <div className="flex min-h-0 flex-1">
         <div className="flex flex-1 flex-col border-r border-slate-800">
@@ -302,6 +308,6 @@ export function InAppValidationPanel(): React.ReactElement {
           </div>
         </div>
       </div>
-    </div>
+    </FullScreenPage>
   );
 }

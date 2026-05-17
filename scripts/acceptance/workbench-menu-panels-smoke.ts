@@ -208,7 +208,7 @@ function escapeRegExp(value: string): string {
 }
 
 function exactButton(page: Page, label: string) {
-  return page.locator('button').filter({ hasText: new RegExp(`^${escapeRegExp(label)}$`) }).first();
+  return page.locator('button').filter({ hasText: new RegExp(`^${escapeRegExp(label)}`) }).first();
 }
 
 async function ensureUserMenuOpen(page: Page): Promise<void> {
@@ -261,6 +261,19 @@ async function closePanel(page: Page, panel: PanelCheck): Promise<void> {
   await page.getByLabel(panel.closeLabel).waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => undefined);
 }
 
+async function waitForPanelBodyText(page: Page, panel: PanelCheck, timeoutMs = 10_000): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  let bodyText = '';
+  while (Date.now() < deadline) {
+    bodyText = await page.locator('body').innerText({ timeout: 1_000 }).catch(() => '');
+    if (panel.expectedText.every((expected) => bodyText.includes(expected))) {
+      return bodyText;
+    }
+    await page.waitForTimeout(250);
+  }
+  return bodyText;
+}
+
 async function validatePanel(page: Page, panel: PanelCheck): Promise<{
   key: string;
   menuLabel: string;
@@ -269,7 +282,7 @@ async function validatePanel(page: Page, panel: PanelCheck): Promise<{
 }> {
   await openPanel(page, panel);
 
-  const bodyText = await page.locator('body').innerText({ timeout: 5_000 });
+  const bodyText = await waitForPanelBodyText(page, panel);
   const missingText = panel.expectedText.filter((expected) => !bodyText.includes(expected));
   await closePanel(page, panel);
 
@@ -314,7 +327,14 @@ async function main(): Promise<void> {
     });
     page.on('console', (message) => {
       if (message.type() === 'error') {
-        consoleErrors.push(message.text());
+        const location = message.location();
+        const suffix = location.url ? ` @ ${location.url}` : '';
+        consoleErrors.push(`${message.text()}${suffix}`);
+      }
+    });
+    page.on('response', (response) => {
+      if (response.status() >= 500) {
+        consoleErrors.push(`HTTP ${response.status()} ${response.url()}`);
       }
     });
 

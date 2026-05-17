@@ -9,6 +9,33 @@ interface DomainDeps {
   logger: { warn: (msg: string, ...args: any[]) => void; error: (msg: string, ...args: any[]) => void };
 }
 
+function isAdminAccessError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const record = error as { code?: unknown; name?: unknown };
+  return record.code === 'FORBIDDEN' || record.name === 'AdminAccessError';
+}
+
+function sendIpcHandlerError(res: Response, error: unknown): void {
+  if (isAdminAccessError(error)) {
+    res.json({
+      success: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: formatError(error),
+      },
+    });
+    return;
+  }
+
+  res.status(500).json({
+    success: false,
+    error: {
+      code: 'HANDLER_ERROR',
+      message: formatError(error),
+    },
+  });
+}
+
 export function createDomainRouter(deps: DomainDeps): Router {
   const router = Router();
   const { handlers, logger } = deps;
@@ -32,13 +59,7 @@ export function createDomainRouter(deps: DomainDeps): Router {
         res.json(result);
       } catch (error) {
         logger.error(`Domain handler error: ${domain}:${action}`, error);
-        res.status(500).json({
-          success: false,
-          error: {
-            code: 'HANDLER_ERROR',
-            message: formatError(error),
-          },
-        });
+        sendIpcHandlerError(res, error);
       }
       return;
     }
@@ -53,13 +74,7 @@ export function createDomainRouter(deps: DomainDeps): Router {
         res.json(result);
       } catch (error) {
         logger.error(`Direct handler error: ${directChannel}`, error);
-        res.status(500).json({
-          success: false,
-          error: {
-            code: 'HANDLER_ERROR',
-            message: formatError(error),
-          },
-        });
+        sendIpcHandlerError(res, error);
       }
       return;
     }
@@ -94,6 +109,16 @@ export function createDomainRouter(deps: DomainDeps): Router {
           : await handler(null, body);
         res.json(result);
       } catch (error) {
+        if (isAdminAccessError(error)) {
+          res.json({
+            success: false,
+            error: {
+              code: 'FORBIDDEN',
+              message: formatError(error),
+            },
+          });
+          return;
+        }
         res.status(500).json({ error: formatError(error) });
       }
       return;

@@ -86,9 +86,11 @@ const appState = {
 
 const authState = {
   user: {
+    id: 'user-admin',
     nickname: 'Dad',
     email: 'dad@example.com',
     avatarUrl: null,
+    isAdmin: true,
   },
   isAuthenticated: true,
   setShowAuthModal: vi.fn(),
@@ -128,17 +130,21 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
   },
 }));
 
-import { Sidebar } from '../../../src/renderer/components/Sidebar';
+import { Sidebar, isAccountMenuEventOutside } from '../../../src/renderer/components/Sidebar';
 
 describe('Sidebar account menu entry planning', () => {
   beforeEach(() => {
     reactState.useStateCalls = 0;
+    appState.showComputerUsePanel = false;
+    appState.showInAppValidationPanel = false;
+    authState.user.isAdmin = true;
   });
 
   it('keeps common entries visible and groups advanced tools behind one disclosure', () => {
     const html = renderToStaticMarkup(React.createElement(Sidebar));
 
     expect(html).toContain('用户菜单');
+    expect(html).toContain('管理员');
     expect(html).toContain('常用');
     expect(html).toContain('Activity');
     expect(html).toContain('知识与记忆');
@@ -148,5 +154,34 @@ describe('Sidebar account menu entry planning', () => {
     expect(html).toContain('高级工具');
     expect(html).not.toContain('桌面采集');
     expect(html).not.toContain('Computer Use');
+  });
+
+  it('shows internal validation tools only for admin users', () => {
+    appState.showComputerUsePanel = true;
+    const adminHtml = renderToStaticMarkup(React.createElement(Sidebar));
+
+    expect(adminHtml).toContain('Computer Use');
+    expect(adminHtml).toContain('In-App 验证');
+    expect(adminHtml).toContain('诊断');
+    expect(adminHtml).toContain('验证');
+
+    reactState.useStateCalls = 0;
+    authState.user.isAdmin = false;
+    const memberHtml = renderToStaticMarkup(React.createElement(Sidebar));
+
+    expect(memberHtml).not.toContain('Computer Use');
+    expect(memberHtml).not.toContain('In-App 验证');
+  });
+
+  it('detects outside targets for account menu dismissal', () => {
+    const inside = {} as Node;
+    const outside = {} as Node;
+    const menu = {
+      contains: vi.fn((node: Node) => node === inside),
+    };
+
+    expect(isAccountMenuEventOutside(menu, inside)).toBe(false);
+    expect(isAccountMenuEventOutside(menu, outside)).toBe(true);
+    expect(isAccountMenuEventOutside(null, outside)).toBe(false);
   });
 });

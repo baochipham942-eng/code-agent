@@ -138,6 +138,7 @@ interface AccountMenuItemProps {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
+  badge?: string;
 }
 
 const AccountMenuLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -146,7 +147,7 @@ const AccountMenuLabel: React.FC<{ children: React.ReactNode }> = ({ children })
   </div>
 );
 
-const AccountMenuItem: React.FC<AccountMenuItemProps> = ({ icon, label, onClick }) => (
+const AccountMenuItem: React.FC<AccountMenuItemProps> = ({ icon, label, onClick, badge }) => (
   <button
     type="button"
     onClick={onClick}
@@ -154,8 +155,21 @@ const AccountMenuItem: React.FC<AccountMenuItemProps> = ({ icon, label, onClick 
   >
     {icon}
     <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+    {badge ? (
+      <span className="shrink-0 rounded border border-zinc-700 bg-zinc-800/70 px-1.5 py-0.5 text-[10px] text-zinc-500">
+        {badge}
+      </span>
+    ) : null}
   </button>
 );
+
+export function isAccountMenuEventOutside(
+  accountMenuElement: { contains: (node: Node) => boolean } | null,
+  target: EventTarget | null,
+): boolean {
+  if (!accountMenuElement || !target) return false;
+  return !accountMenuElement.contains(target as Node);
+}
 
 export const Sidebar: React.FC = () => {
   const {
@@ -234,6 +248,7 @@ export const Sidebar: React.FC = () => {
   const { user, isAuthenticated, setShowAuthModal, signOut } = useAuthStore();
   const canOpenEvalCenter = canAccessFeature('eval.center', user);
   const canOpenPromptManager = canAccessFeature('prompt.manager', user);
+  const canOpenInternalValidationTools = canAccessFeature('tools.internalValidation', user);
   const sessionStates = useTaskStore((state) => state.sessionStates);
 
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
@@ -253,6 +268,37 @@ export const Sidebar: React.FC = () => {
       (dagPanelEnabled && showDAGPanel)
   );
   const advancedToolsOpen = showAccountAdvancedTools || hasActiveAdvancedTool;
+
+  useEffect(() => {
+    if (!showUserMenu) return undefined;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (isAccountMenuEventOutside(accountMenuRef.current, event.target)) {
+        setShowUserMenu(false);
+      }
+    };
+
+    const handleFocusIn = (event: FocusEvent) => {
+      if (isAccountMenuEventOutside(accountMenuRef.current, event.target)) {
+        setShowUserMenu(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowUserMenu(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('focusin', handleFocusIn, true);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('focusin', handleFocusIn, true);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showUserMenu]);
 
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState<{
@@ -967,6 +1013,11 @@ export const Sidebar: React.FC = () => {
               <span className="flex-1 text-left text-sm font-medium text-zinc-400 truncate">
                 {user.nickname || user.email?.split('@')[0]}
               </span>
+              {user.isAdmin ? (
+                <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+                  管理员
+                </span>
+              ) : null}
               <ChevronDown className={`w-4 h-4 text-zinc-600 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
             </button>
             {/* User Dropdown Menu */}
@@ -1046,16 +1097,22 @@ export const Sidebar: React.FC = () => {
                       icon={<Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
                       label="桌面采集"
                     />
-                    <AccountMenuItem
-                      onClick={() => { setShowComputerUsePanel(!showComputerUsePanel); setShowUserMenu(false); }}
-                      icon={<MousePointerClick className={`w-4 h-4 ${showComputerUsePanel ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
-                      label="Computer Use"
-                    />
-                    <AccountMenuItem
-                      onClick={() => { setShowInAppValidationPanel(!showInAppValidationPanel); setShowUserMenu(false); }}
-                      icon={<MousePointerClick className={`w-4 h-4 ${showInAppValidationPanel ? 'text-lime-400' : 'text-lime-400/80'}`} />}
-                      label="In-App 验证"
-                    />
+                    {canOpenInternalValidationTools && (
+                      <>
+                        <AccountMenuItem
+                          onClick={() => { setShowComputerUsePanel(!showComputerUsePanel); setShowUserMenu(false); }}
+                          icon={<MousePointerClick className={`w-4 h-4 ${showComputerUsePanel ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
+                          label="Computer Use"
+                          badge="诊断"
+                        />
+                        <AccountMenuItem
+                          onClick={() => { setShowInAppValidationPanel(!showInAppValidationPanel); setShowUserMenu(false); }}
+                          icon={<MousePointerClick className={`w-4 h-4 ${showInAppValidationPanel ? 'text-lime-400' : 'text-lime-400/80'}`} />}
+                          label="In-App 验证"
+                          badge="验证"
+                        />
+                      </>
+                    )}
                   </div>
                 )}
 

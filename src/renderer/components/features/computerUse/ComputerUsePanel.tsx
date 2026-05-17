@@ -11,7 +11,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   SquareMousePointer,
-  X,
   ZapOff,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
@@ -43,6 +42,7 @@ import {
   type ComputerUseFailureExplanation,
   type ComputerUseTarget,
 } from '../../../utils/computerUseWorkbench';
+import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 
 type StatusTone = 'ready' | 'blocked' | 'warning' | 'neutral';
 
@@ -180,6 +180,29 @@ const BoundaryCard: React.FC<{
   </div>
 );
 
+function createUnavailableSurfaceState(): ComputerSurfaceState {
+  return {
+    id: 'computer-surface-web-unavailable',
+    mode: 'background_surface_unavailable',
+    platform: 'web',
+    ready: false,
+    background: false,
+    approvalScope: 'blocked',
+    safetyNote: 'Web 模式没有 native desktop bridge；这里仅展示 Computer Use 的能力边界和降级原因。',
+    targetApp: null,
+    blockedReason: 'Tauri runtime not available',
+    approvedApps: [],
+    deniedApps: [],
+    lastAction: null,
+    lastSnapshot: null,
+    failureKind: 'evidence_unavailable',
+    blockingReasons: ['Tauri runtime not available'],
+    recommendedAction: '在桌面壳中打开后再读取窗口、截图和 AX evidence。',
+    evidenceSummary: ['Web mode: native desktop evidence unavailable'],
+    axQuality: null,
+  };
+}
+
 export const ComputerUsePanel: React.FC = () => {
   const setShowComputerUsePanel = useAppStore((state) => state.setShowComputerUsePanel);
   const [nativeAvailable, setNativeAvailable] = useState(false);
@@ -205,6 +228,20 @@ export const ComputerUsePanel: React.FC = () => {
     setObserveError(null);
     const hasNative = isNativeDesktopAvailable();
     setNativeAvailable(hasNative);
+
+    if (!hasNative) {
+      setSurface(createUnavailableSurfaceState());
+      setObservation(null);
+      setCapabilities(null);
+      setPermissionSnapshot(null);
+      setCollectorStatus(null);
+      setFrontmost(null);
+      setRecentEvents([]);
+      setDesktopProviderError('Web 模式没有 native desktop bridge');
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
 
     try {
       const [surfaceResponse, observeResponse] = await Promise.allSettled([
@@ -368,19 +405,15 @@ export const ComputerUsePanel: React.FC = () => {
   const metadataElementCount = extractMetadataNumber(elementsResult, 'elementCount');
 
   return (
-    <div className="w-full h-full flex flex-col bg-zinc-900 text-zinc-200">
-      <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3 shrink-0">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <MousePointerClick className="h-4 w-4 text-cyan-300" />
-            <h2 className="text-sm font-medium text-zinc-100">Computer Use</h2>
-            <StatusPill label="原生 app 操作工作台" tone="neutral" />
-          </div>
-          <p className="mt-1 text-xs text-zinc-500">
-            Activity 负责观察和上下文；Computer Use 负责行动前的权限、窗口、AX 证据和控制边界。
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <FullScreenPage testId="computer-use-panel">
+      <FullScreenPageHeader
+        icon={<MousePointerClick className="h-4 w-4 text-cyan-300" />}
+        title="Computer Use"
+        description="桌面自动化行动前的权限、窗口、AX 证据和控制边界"
+        badge={<StatusPill label="诊断" tone="neutral" />}
+        onClose={() => setShowComputerUsePanel(false)}
+        closeLabel="关闭 Computer Use"
+        actions={(
           <button
             type="button"
             onClick={() => void refresh()}
@@ -390,16 +423,8 @@ export const ComputerUsePanel: React.FC = () => {
             {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             刷新
           </button>
-          <button
-            type="button"
-            onClick={() => setShowComputerUsePanel(false)}
-            aria-label="关闭 Computer Use"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
+        )}
+      />
 
       {loading ? (
         <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
@@ -723,6 +748,6 @@ export const ComputerUsePanel: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+    </FullScreenPage>
   );
 };

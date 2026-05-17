@@ -42,6 +42,7 @@ import { ActivityPanel } from './components/features/activity/ActivityPanel';
 import { BrowserSurfacePanel } from './components/features/browser/BrowserSurfacePanel';
 import { ComputerUsePanel } from './components/features/computerUse/ComputerUsePanel';
 import { InAppValidationPanel } from './components/features/inAppValidation/InAppValidationPanel';
+import { FullScreenPage } from './components/features/shared/FullScreenPage';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
 import { ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ModelOnboardingModal } from './components/onboarding/ModelOnboardingModal';
@@ -666,18 +667,12 @@ export const App: React.FC = () => {
 
       {/* Desktop Collector Panel - 全局记忆时间线面板 */}
       {useAppStore((s) => s.showDesktopPanel) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => useAppStore.getState().setShowDesktopPanel(false)}
+        <FullScreenPage testId="desktop-status-panel">
+          <NativeDesktopSection
+            variant="fullscreen"
+            onClose={() => useAppStore.getState().setShowDesktopPanel(false)}
           />
-          <div
-            data-testid="desktop-status-panel"
-            className="relative w-full max-w-4xl h-[80vh] bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn flex flex-col"
-          >
-            <NativeDesktopSection />
-          </div>
-        </div>
+        </FullScreenPage>
       )}
 
 

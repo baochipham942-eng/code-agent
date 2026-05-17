@@ -8,7 +8,6 @@ import {
   RefreshCw,
   Shield,
   Sparkles,
-  X,
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { ActivityContext, ActivityContextSourceKind } from '@shared/contract/activityContext';
@@ -37,6 +36,7 @@ import {
   type ActivityPanelMode,
   type ActivityTone,
 } from './activityPanelModel';
+import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 
 const EMPTY_PREVIEW: ActivityContextPreview = {
   status: 'empty',
@@ -217,39 +217,26 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
   }, [context]);
 
   return (
-    <div className="fixed inset-0 z-50 flex bg-zinc-950/95 text-zinc-200 backdrop-blur-sm">
-      <div className="flex h-full w-full flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-zinc-800 px-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-500/20 bg-cyan-500/10">
-              <Activity className="h-4 w-4 text-cyan-300" />
-            </div>
-            <div>
-              <div className="text-sm font-medium text-zinc-100">Activity</div>
-              <div className="text-xs text-zinc-500">观察、上下文、prompt 注入边界</div>
-            </div>
-            <Pill tone={model.modeTone}>{model.modeLabel}</Pill>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={refresh}
-              disabled={loading}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-60"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-              刷新
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="关闭 Activity"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </header>
+    <FullScreenPage testId="activity-panel">
+      <FullScreenPageHeader
+        icon={<Activity className="h-4 w-4 text-cyan-300" />}
+        title="Activity"
+        description="观察、上下文、prompt 注入边界"
+        badge={<Pill tone={model.modeTone}>{model.modeLabel}</Pill>}
+        onClose={onClose}
+        closeLabel="关闭 Activity"
+        actions={(
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={loading}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-60"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
+        )}
+      />
 
         <main className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div className="mx-auto flex max-w-6xl flex-col gap-4">
@@ -403,7 +390,6 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
             </Card>
           </div>
         </main>
-      </div>
-    </div>
+    </FullScreenPage>
   );
 };

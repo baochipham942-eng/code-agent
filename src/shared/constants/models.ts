@@ -240,6 +240,47 @@ export function getModelAbbrev(modelId: string): string {
 export const ZHIPU_VISION_MODEL = 'glm-4.1v-thinking-flash' as const;
 
 /**
+ * 已知支持视觉的 model id 列表（文档用，运行时仍以 model-catalog.json 的
+ * `capabilities: ['vision', ...]` 为权威标识，通过 ModelRouter.getModelInfo
+ * 的 supportsVision 标志检测）。
+ *
+ * 用户分发场景：OCR 走 macOS Vision Framework（vision-ocr binary，零配置）。
+ * 复合视觉理解（看图说话/截图分析）则需要用户配置以下任一支持视觉的模型——
+ * 推荐配置 1 个即可，咱们走 getModelForCapability('vision') 路由自动选。
+ */
+export const VISION_CAPABLE_MODELS = [
+  // OpenAI
+  'gpt-4o',
+  'gpt-4o-mini',
+  'gpt-4-turbo',
+  'gpt-5',
+  // Anthropic
+  'claude-sonnet-4-6',
+  'claude-opus-4-7',
+  'claude-3-5-sonnet-20241022',
+  // Google
+  'gemini-2.5-pro',
+  'gemini-2.5-flash',
+  // 智谱
+  'glm-4.1v-thinking-flash',
+  'glm-4.6v',
+  // 小米 MiMo
+  'mimo-vl-7b',
+  'mimo-v2.5-omni',
+  // 阿里通义 Qwen
+  'qwen-vl-max',
+  'qwen-vl-plus',
+  'qwen2.5-vl-72b-instruct',
+  // 字节豆包
+  'doubao-vision-pro-32k',
+  'doubao-vision-lite-32k',
+  // Moonshot Kimi
+  'moonshot-v1-128k-vision-preview',
+  // OpenRouter routes (兜底)
+  'google/gemini-2.0-flash-exp:free',
+] as const;
+
+/**
  * visual_edit 工具专用模型配置 — 可被环境变量 override。
  * TEXT 路径：无截图时纯文本推理（source + intent）
  * VISION 路径：有截图时多模态推理（source + intent + image）

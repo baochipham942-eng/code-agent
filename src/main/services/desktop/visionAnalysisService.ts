@@ -178,12 +178,12 @@ export async function analyzeImageWithVisionDetailed(args: {
   const zhipuApiKey = configService.getZhipuOfficialKey();
 
   if (!zhipuApiKey) {
-    logger.info('Vision analysis skipped: zhipu API key is not configured', { source: args.source });
+    logger.info('Vision analysis skipped: vision provider not configured', { source: args.source });
     return {
       ok: false,
       analysis: null,
       reason: 'missing_api_key',
-      error: 'Zhipu API key is not configured',
+      error: '复合视觉理解需要配置一个支持视觉的模型（如智谱 GLM-4.6V / GPT-4o / Claude / Gemini 2.5 / Qwen-VL / MiMo-VL / Doubao-VL / Kimi 视觉等）。请到设置→模型→视觉中配置后重试。OCR 不受影响，依然可通过 ocr_search 工具调用 macOS Vision Framework。',
       model: ZHIPU_VISION_MODEL,
       retryable: false,
       ...emptyDims(),

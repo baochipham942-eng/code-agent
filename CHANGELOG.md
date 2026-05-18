@@ -7,7 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.75] - 2026-05-18
+
 ### Added
+
+- 🍎 首个经 Apple Developer ID 签名 + Apple Notarization 的 macOS release：下载 dmg 双击即装，Gatekeeper 直接放行，零警告。
+- `scripts/tauri-release-bundle.sh`：自动递归签 14 个 nested Mach-O 二进制（sharp / keytar / better-sqlite3 / onnxruntime / node-pty 等 third-party native modules）。
+- `scripts/tauri-release-bundle.sh`：build 完成后自动用 `hdiutil` 重建 dmg + 重签。
+- `scripts/publish-release.sh`：一键 release 发布流程。
+
+### Changed
+
+- `src-tauri/tauri.conf.json` `bundle.resources`：收紧 `onnxruntime-node` 和 `node-pty` 的 glob，剔除 win32 / linux / darwin-x64 跨平台 prebuilds，dmg 体积从 147 MB → 51 MB（-65%）。
+
+### Fixed
+
+- nested third-party native modules 未签导致 notarytool 拒收。
+- `TAURI_SIGNING_PRIVATE_KEY` 必须是私钥内容（之前误设 `_PATH` 导致 `cargo tauri build` 中断）。
+
+---
+
+### Added (Unreleased — 后续发布)
 
 #### 2026-04-26 Productization Pass
 

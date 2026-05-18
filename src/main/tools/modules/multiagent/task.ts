@@ -364,6 +364,16 @@ Stats:
     });
   } catch (error) {
     taskDeduplication.failTask(taskHash);
+    // 把完整 stack 落到 logger.error，便于定位 minified bundle 中的真实抛错点。
+    // 直接拼到 error 字段会污染 UI；ctx.logger 已收口到结构化日志。
+    if (error instanceof Error) {
+      ctx.logger.error('Task execution exception', {
+        message: error.message,
+        stack: error.stack,
+        subagentType,
+        agentName,
+      });
+    }
     return {
       ok: false,
       error: `Task execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`,

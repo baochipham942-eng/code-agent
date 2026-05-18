@@ -198,8 +198,11 @@ type RuntimeMessage = {
   };
 };
 
-function flattenMessageContent(content: string | MessageContent[]): string {
+function flattenMessageContent(content: string | MessageContent[] | null | undefined): string {
   if (typeof content === 'string') return content;
+  // 某些 provider（如 mimo）返回的 tool_result message 的 content 可能是 object 或 undefined，
+  // 不符合 string | MessageContent[] 的契约。这里防御一下，避免 .map 抛 TypeError。
+  if (!Array.isArray(content)) return '';
   return content
     .map((part) => {
       if (part.type === 'text' && part.text) return part.text;
@@ -348,6 +351,8 @@ function buildInferenceMessages(messages: RuntimeMessage[]): ProviderModelMessag
 
 function stringifyModelContent(content: ProviderModelMessage['content']): string {
   if (typeof content === 'string') return content;
+  // 同 flattenMessageContent: 防御 content 不是 string/array 的边界 case
+  if (!Array.isArray(content)) return '';
   return content
     .map((part) => {
       if (part.type === 'text') return part.text || '';

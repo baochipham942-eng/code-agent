@@ -8,7 +8,7 @@ import type { ModelConfig, ToolDefinition, ModelInfo } from '../../../shared/con
 import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, Provider } from '../types';
 import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
 import { openAISSEStream } from './sseStream';
-import { electronFetch, parseOpenAIResponse } from './shared';
+import { electronFetch, parseOpenAIResponse, safeJsonStringify } from './shared';
 import { withTransientRetry } from './retryStrategy';
 import { MODEL_MAX_TOKENS, DEFAULT_MODEL } from '../../../shared/constants';
 import { PROVIDER_REGISTRY } from '../providerRegistry';
@@ -149,7 +149,7 @@ export abstract class BaseOpenAIProvider implements Provider {
               Authorization: `Bearer ${apiKey}`,
               ...(this.getExtraHeaders() || {}),
             },
-            body: JSON.stringify(requestBody),
+            body: safeJsonStringify(requestBody),
             signal,
             timeoutMs: options?.requestTimeoutMs,
           });

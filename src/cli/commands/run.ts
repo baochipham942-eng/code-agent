@@ -165,7 +165,7 @@ export const runCommand = new Command('run')
       // 结构化输出验证与重试循环
       if (outputSchema && result.success && result.output) {
         while (retryCount < maxRetries) {
-          const extracted = extractJSON(result.output || '');
+          const extracted = extractJSON(result.output || '', globalOpts?.project);
 
           if (extracted === null) {
             retryCount++;
@@ -241,7 +241,7 @@ export const runCommand = new Command('run')
         jsonOutput.result(result);
       } else if (isJson && outputSchema) {
         // schema 模式下 JSON 输出：包含结构化数据和验证状态
-        const extracted = extractJSON(result.output || '');
+        const extracted = extractJSON(result.output || '', globalOpts?.project);
         const validation = extracted ? validateSchema(extracted, outputSchema) : null;
         jsonOutput.result({
           ...result,

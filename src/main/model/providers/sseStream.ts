@@ -7,7 +7,7 @@ import https from 'https';
 import http from 'http';
 import { StringDecoder } from 'string_decoder';
 import { type ModelResponse, type StreamCallback, type ResponseContentPart, ContextLengthExceededError } from '../types';
-import { logger, getHttpsAgent, parseContextLengthError, buildToolCallFromAccumulator } from './shared';
+import { logger, getHttpsAgent, parseContextLengthError, buildToolCallFromAccumulator, safeJsonStringify } from './shared';
 import { parseOpenAIStreamChunk } from './wrappers/openaiWrapper';
 import { PROVIDER_TIMEOUT, SSE_FIRST_BYTE_TIMEOUT, SSE_INACTIVITY_TIMEOUT } from '../../../shared/constants';
 
@@ -111,6 +111,40 @@ function normalizeLoopSentence(sentence: string): string {
     .toLowerCase()
     .replace(/[.,;:!?，。；：！？、"'“”‘’`()[\]{}（）\s]+/g, '')
     .trim();
+}
+
+/**
+ * 剥离 content 中残留的 ChatML / Hermes 风格 tool_call XML。
+ *
+ * Why: 部分 thinking-mode 模型（如 MiMo）在多轮 tool-calling 时偶尔会用
+ * `<tool_call><function=NAME><parameter=KEY>VAL</parameter></function></tool_call>`
+ * 的 ChatML 字面量格式发起 tool 调用，而非 OpenAI 协议的 delta.tool_calls
+ * 结构化字段。这种 XML 文本被 SSE parser 当作普通 content 累积，最终泄露到
+ * stdout 污染输出（实测 Task 9 末尾出现）。
+ *
+ * 处理策略：**只剥离不恢复**——避免误把模型语义不明确的 tool 调用真执行。
+ * 实测场景下模型在下一 turn 通常能自己想明白前面已经完成。
+ *
+ * 如果检测到剥离发生，给一个 warn log 便于追踪频率。
+ */
+function stripChatMLToolCallResidue(content: string, providerName: string): string {
+  if (!content) return content;
+  const hasChatMLBlock = /<tool_call>[\s\S]*?<\/tool_call>/.test(content);
+  const hasBareFunction = /<function=[^>]+>[\s\S]*?<\/function>/.test(content);
+  if (!hasChatMLBlock && !hasBareFunction) return content;
+
+  const originalLength = content.length;
+  const cleaned = content
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
+    .replace(/<function=[^>]+>[\s\S]*?<\/function>/g, '')
+    .replace(/<parameter=[^>]+>[\s\S]*?<\/parameter>/g, '')
+    .replace(/<\/?(tool_call|function|parameter)[^>]*>/g, '')
+    .trim();
+
+  logger.warn(`[${providerName}] Stripped ChatML tool_call XML residue from content`, {
+    bytesRemoved: originalLength - cleaned.length,
+  });
+  return cleaned;
 }
 
 function detectRepeatedReasoningLoop(text: string): { sentence: string; count: number } | null {
@@ -343,6 +377,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
               reasoning += (reasoning ? '\n' : '') + thinkMatch[1].trim();
             }
             content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+            content = stripChatMLToolCallResidue(content, providerName);
 
             const truncated = finishReason === 'length';
             const result: ModelResponse = {
@@ -552,6 +587,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
           reasoning += (reasoning ? '\n' : '') + thinkMatch[1].trim();
         }
         content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+        content = stripChatMLToolCallResidue(content, providerName);
 
         if (content || toolCalls.size > 0) {
           emitSnapshot(false);
@@ -619,7 +655,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
       }, { once: true });
     }
 
-    req.write(JSON.stringify(requestBody));
+    req.write(safeJsonStringify(requestBody));
     req.end();
   });
 }

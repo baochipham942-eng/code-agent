@@ -1141,6 +1141,8 @@ export class ModelRouter {
 
   private extractMessageText(message: ModelMessage): string {
     if (typeof message.content === 'string') return message.content;
+    // 防御非 string 非 array 的 content（mimo 等 provider 偶尔返回 object/undefined）
+    if (!Array.isArray(message.content)) return '';
     return message.content
       .filter((part) => part.type === 'text' && typeof part.text === 'string')
       .map((part) => part.text)

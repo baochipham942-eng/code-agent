@@ -2,6 +2,46 @@
 // Shared Utilities for Model Providers
 // ============================================================================
 
+/**
+ * 安全 JSON 序列化：在 stringify 之前递归 sanitize 所有 string 值，把不成对的
+ * UTF-16 surrogate 替换为 U+FFFD（REPLACEMENT CHARACTER）。
+ *
+ * Why: 部分严格 provider（如 Xiaomi MiMo）的 API gateway 会因为 payload 含
+ * lone high/low surrogate 直接 400 "no low surrogate in string"。坏字符通常
+ * 是上下文压缩/截断按 char index 切割时把 4-byte UTF-8（emoji / surrogate pair）
+ * 切到 pair 中间。OpenAI/Claude 容忍这种 payload，Xiaomi 不容忍。
+ *
+ * 注意必须在 stringify *之前*操作 string 值——JSON.stringify 会把 lone surrogate
+ * 编成 ASCII 转义 `\udXXX`（6 字符），那时再后处理就要 parse 转义序列，更脆弱。
+ */
+export function safeJsonStringify(value: unknown): string {
+  return JSON.stringify(deepSanitizeStrings(value));
+}
+
+function deepSanitizeStrings(value: unknown): unknown {
+  if (typeof value === 'string') return sanitizeSurrogates(value);
+  if (Array.isArray(value)) return value.map(deepSanitizeStrings);
+  if (value && typeof value === 'object') {
+    // 保留原型链上的非可枚举属性（如 toJSON）由 JSON.stringify 自然处理；
+    // 这里只复制可枚举自有属性，已经是 JSON.stringify 默认行为。
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = deepSanitizeStrings(v);
+    }
+    return out;
+  }
+  return value;
+}
+
+function sanitizeSurrogates(s: string): string {
+  // 高半区 (U+D800-U+DBFF) 后面没跟低半区 (U+DC00-U+DFFF) → 单独高半区
+  // 低半区前面没跟高半区 → 单独低半区
+  // 配对完整的 surrogate pair（emoji 等）保留
+  return s
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '�')
+    .replace(/(^|[^\uD800-\uDBFF])([\uDC00-\uDFFF])/g, (_m, prefix) => `${prefix}�`);
+}
+
 import axios, { type AxiosResponse } from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { ToolDefinition, ToolCall, ToolCallTargetContext } from '../../../shared/contract';
@@ -470,6 +510,11 @@ export function convertToOpenAIMessages(
         }
       }
       return [msg];
+    }
+    // m.content 既不是 string 也可能不是 array（mimo 等 provider 偶尔返回 object/undefined）。
+    // 走到这里前已经过滤了 string 路径，需要确认是 array 才能 .map，否则降级为空字符串。
+    if (!Array.isArray(m.content)) {
+      return [{ role: m.role as OpenAIMessage['role'], content: '' }];
     }
     return [{
       role: m.role as OpenAIMessage['role'],

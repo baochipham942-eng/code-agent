@@ -66,6 +66,7 @@ const NATIVE_CONNECTOR_LABELS: Record<NativeConnectorId, string> = {
   calendar: 'Calendar',
   mail: 'Mail',
   reminders: 'Reminders',
+  photos: 'Photos',
 };
 
 const CAPABILITY_KIND_ORDER: Record<CapabilityKind, number> = {

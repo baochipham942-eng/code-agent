@@ -9,6 +9,7 @@ import type { Connector } from './base';
 import { calendarConnector, resetCalendarConnectorReadiness } from './native/calendar';
 import { mailConnector, resetMailConnectorReadiness } from './native/mail';
 import { remindersConnector, resetRemindersConnectorReadiness } from './native/reminders';
+import { photosConnector, resetPhotosConnectorReadiness } from './native/photos';
 import { NATIVE_CONNECTOR_IDS, type NativeConnectorId } from '../../shared/constants';
 
 type ConnectorFactory = () => Connector;
@@ -17,12 +18,14 @@ const NATIVE_FACTORIES: Record<NativeConnectorId, ConnectorFactory> = {
   calendar: () => calendarConnector,
   mail: () => mailConnector,
   reminders: () => remindersConnector,
+  photos: () => photosConnector,
 };
 
 const NATIVE_READINESS_RESETTERS: Record<NativeConnectorId, () => void> = {
   calendar: resetCalendarConnectorReadiness,
   mail: resetMailConnectorReadiness,
   reminders: resetRemindersConnectorReadiness,
+  photos: resetPhotosConnectorReadiness,
 };
 
 function resetNativeConnectorReadiness(id: string): void {

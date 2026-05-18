@@ -30,6 +30,7 @@ const NATIVE_CONNECTOR_LABELS: Record<NativeConnectorId, string> = {
   calendar: 'Calendar',
   mail: 'Mail',
   reminders: 'Reminders',
+  photos: 'Photos',
 };
 
 const CONNECTOR_STATUS_POLL_MS = 15_000;

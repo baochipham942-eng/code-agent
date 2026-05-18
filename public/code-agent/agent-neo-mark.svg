@@ -8,6 +8,6 @@
   <rect x="8" y="8" width="112" height="112" rx="30" fill="url(#bg)"/>
   <rect x="8" y="8" width="112" height="112" rx="30" fill="#000000" fill-opacity="0.3"/>
   <path d="M36 92V34h15l29.5 35.5V34H94v58H79L49.5 56.5V92H36Z" fill="#ffffff"/>
-  <circle cx="93" cy="92" r="7" fill="#ffffff"/>
-  <circle cx="93" cy="92" r="14" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="5"/>
+  <circle cx="93" cy="92" r="8" fill="#29D6A3"/>
+  <circle cx="93" cy="92" r="15" fill="none" stroke="#29D6A3" stroke-opacity="0.3" stroke-width="5"/>
 </svg>

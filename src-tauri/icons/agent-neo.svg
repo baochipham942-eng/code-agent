@@ -14,6 +14,6 @@
     d="M286 744V280h118l238 286V280h116v464H640L402 458v286H286Z"
     fill="#ffffff"
   />
-  <circle cx="747" cy="741" r="46" fill="#ffffff"/>
-  <circle cx="747" cy="741" r="84" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="24"/>
+  <circle cx="747" cy="741" r="52" fill="#29D6A3"/>
+  <circle cx="747" cy="741" r="92" fill="none" stroke="#29D6A3" stroke-opacity="0.3" stroke-width="24"/>
 </svg>

@@ -100,3 +100,6 @@ data/debug/
 # 这些是个人/团队工作流文件，不对外公开。已通过 git filter-repo 从历史中移除。
 docs/knowledge/
 memory/daily/
+
+# Tauri release build 临时配置（由 scripts/tauri-release-bundle.sh 生成）
+.tauri-release/

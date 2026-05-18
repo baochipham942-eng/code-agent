@@ -67,7 +67,8 @@
       "../node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/**/*",
       "../node_modules/avr-vad/dist/*.onnx",
       "../scripts/system-audio-capture",
-      "../scripts/vision-ocr"
+      "../scripts/vision-ocr",
+      "../scripts/vision-tagger"
     ],
     "macOS": {
       "minimumSystemVersion": "11.0",

@@ -5,7 +5,7 @@
     "author": "Code Agent",
     "reviewedAt": "2026-05-19",
     "expiresAt": "2026-12-31T23:59:59.000Z",
-    "contentHash": "sha256:08c78025a8842edb6e11db53133be7f53da0beecbf76b83b7b89de5d5ccfd1fa"
+    "contentHash": "sha256:4d51529589aff2b4fd9b8ad7a8d144eee8274e7e52ed89855ee735a911be6d88"
   },
   "items": [
     {
@@ -410,6 +410,53 @@
         "notes": [
           "对应 builtin skill: meeting-summary",
           "跟旧的 workflow-meeting-summary 共存，前者基于 builtin skill 可执行，后者是 P0 placeholder",
+          "Template only. P0 does not install workflow recipe files."
+        ]
+      }
+    },
+    {
+      "id": "recipe-photo-archive",
+      "kind": "workflow_recipe",
+      "name": "相册归档 / Photo Archive",
+      "summary": "macOS Photos.app 集成：人脸聚类（Vision Framework）+ 主题分类，零额外配置零云端上传。",
+      "tags": ["agent-neo", "macos", "vision", "photos", "privacy"],
+      "risk": {
+        "tier": "medium",
+        "reasons": [
+          "需要从 Photos.app 导出照片到临时目录处理",
+          "人脸特征向量本地存储（隐私敏感）",
+          "首次扫描大相册（>1000 张）耗时较长"
+        ],
+        "dataTouched": ["Photos.app library", "face feature prints", "image classifications"]
+      },
+      "permissions": [
+        {
+          "label": "Photos.app 访问",
+          "level": "medium",
+          "detail": "通过 AppleScript 导出照片，首次需用户授权 Photos.app 自动化权限"
+        },
+        {
+          "label": "Vision Framework",
+          "level": "low",
+          "detail": "调用系统 vision-tagger binary 做人脸检测 + 主题分类，零云端调用"
+        }
+      ],
+      "dependencies": [
+        {
+          "kind": "binary",
+          "label": "vision-tagger (Swift Vision Framework 工具)",
+          "status": "unknown"
+        },
+        {
+          "kind": "permission",
+          "label": "Photos.app 自动化访问权限",
+          "status": "unknown"
+        }
+      ],
+      "audit": {
+        "notes": [
+          "对应 builtin skill: photo-archive",
+          "人脸特征向量 + 分类结果全部本地存储到 memories 表（type='photo_archive'），不走云端",
           "Template only. P0 does not install workflow recipe files."
         ]
       }

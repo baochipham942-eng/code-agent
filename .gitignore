@@ -89,6 +89,7 @@ raw/
 # Swift build artifacts (run scripts/build-*.sh to regenerate)
 scripts/system-audio-capture
 scripts/vision-ocr
+scripts/vision-tagger
 
 # P0-5 shadow compare debug output
 data/debug/

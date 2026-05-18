@@ -3,9 +3,9 @@
   "source": {
     "label": "Code Agent local curated registry",
     "author": "Code Agent",
-    "reviewedAt": "2026-05-15",
+    "reviewedAt": "2026-05-19",
     "expiresAt": "2026-12-31T23:59:59.000Z",
-    "contentHash": "sha256:e05851e91afe7d8318376135f6f1be1d9c159aea9d24229b7017edc46086f663"
+    "contentHash": "sha256:08c78025a8842edb6e11db53133be7f53da0beecbf76b83b7b89de5d5ccfd1fa"
   },
   "items": [
     {
@@ -150,6 +150,266 @@
       ],
       "audit": {
         "notes": [
+          "Template only. P0 does not install workflow recipe files."
+        ]
+      }
+    },
+    {
+      "id": "recipe-computer-housekeeper",
+      "kind": "workflow_recipe",
+      "name": "电脑小管家 / Computer Housekeeper",
+      "summary": "macOS 系统清理、磁盘释放、网络修复、配置查询——一句话搞定常见电脑管家任务。",
+      "tags": ["agent-neo", "macos", "system", "cleanup"],
+      "risk": {
+        "tier": "high",
+        "reasons": [
+          "涉及系统命令执行（清理缓存、修改 DNS、终止进程）",
+          "高风险操作前会要求用户确认"
+        ],
+        "dataTouched": ["filesystem caches", "system settings", "network config"]
+      },
+      "permissions": [
+        {
+          "label": "Local shell",
+          "level": "high",
+          "detail": "通过 bash 执行 du / rm / networksetup / mDNSResponder 等命令"
+        }
+      ],
+      "audit": {
+        "notes": [
+          "对应 builtin skill: computer-housekeeper",
+          "Template only. P0 does not install workflow recipe files."
+        ]
+      }
+    },
+    {
+      "id": "recipe-contract-review",
+      "kind": "workflow_recipe",
+      "name": "合同审查 / Contract Review",
+      "summary": "按 10 维度框架审查合同：主体/标的/价款/期限/违约责任/知识产权/保密/争议解决/不可抗力/其他，标注风险等级并给出修改建议。",
+      "tags": ["agent-neo", "office", "contract", "review"],
+      "risk": {
+        "tier": "low",
+        "reasons": [
+          "纯文本分析，仅读取用户提供的合同文件",
+          "不出具法律意见，仅做结构化审查"
+        ],
+        "dataTouched": ["contract documents"]
+      },
+      "permissions": [
+        {
+          "label": "Local file read",
+          "level": "low",
+          "detail": "读取用户指定的合同文件"
+        }
+      ],
+      "audit": {
+        "notes": [
+          "对应 builtin skill: contract-review",
+          "Template only. P0 does not install workflow recipe files."
+        ]
+      }
+    },
+    {
+      "id": "recipe-literature-review",
+      "kind": "workflow_recipe",
+      "name": "文献综述 / Literature Review",
+      "summary": "多篇文献的横向对比、主题聚类、引用网络、研究空白识别，输出结构化综述大纲。",
+      "tags": ["agent-neo", "research", "literature", "review"],
+      "risk": {
+        "tier": "low",
+        "reasons": [
+          "可能调用 web_search 抓取公开文献摘要",
+          "纯阅读分析，不执行系统命令"
+        ],
+        "dataTouched": ["research papers", "web search results"]
+      },
+      "permissions": [
+        {
+          "label": "Web access",
+          "level": "medium",
+          "detail": "可能调用 web_search / web_fetch 抓取公开文献信息"
+        }
+      ],
+      "audit": {
+        "notes": [
+          "对应 builtin skill: literature-review",
+          "Template only. P0 does not install workflow recipe files."
+        ]
+      }
+    },
+    {
+      "id": "recipe-paper-distillation",
+      "kind": "workflow_recipe",
+      "name": "论文蒸馏 / Paper Distillation",
+      "summary": "单篇论文深度精读：TL;DR、研究问题、核心方法、实验结果、创新点、局限——每条带页码定位。",
+      "tags": ["agent-neo", "research", "paper", "pdf"],
+      "risk": {
+        "tier": "low",
+        "reasons": [
+          "纯阅读分析，调用 read_pdf 处理本地或下载的论文",
+          "不执行系统命令（除 qpdf 切页）"
+        ],
+        "dataTouched": ["PDF documents"]
+      },
+      "permissions": [
+        {
+          "label": "PDF processing",
+          "level": "low",
+          "detail": "调用 read_pdf 工具或 qpdf 切页"
+        }
+      ],
+      "dependencies": [
+        {
+          "kind": "binary",
+          "label": "qpdf (>50 页 PDF 需要)",
+          "status": "unknown"
+        }
+      ],
+      "audit": {
+        "notes": [
+          "对应 builtin skill: paper-distillation",
+          "Template only. P0 does not install workflow recipe files."
+        ]
+      }
+    },
+    {
+      "id": "recipe-research-monitor",
+      "kind": "workflow_recipe",
+      "name": "研究监控器 / Research Monitor",
+      "summary": "定时追踪 arxiv 论文、GitHub release、公众号更新、行业榜单——增量检测后推送变化到飞书或邮件。",
+      "tags": ["agent-neo", "research", "monitor", "cron"],
+      "risk": {
+        "tier": "medium",
+        "reasons": [
+          "需要配置 cron 定时任务",
+          "外部网络抓取可能涉及第三方反爬",
+          "推送渠道（飞书/邮件）需要用户预先配置"
+        ],
+        "dataTouched": ["external web pages", "user notification channels"]
+      },
+      "permissions": [
+        {
+          "label": "Cron scheduling",
+          "level": "medium",
+          "detail": "创建定时任务，需要用户授权"
+        },
+        {
+          "label": "Channel push",
+          "level": "medium",
+          "detail": "通过已配置的推送渠道发送变化通知"
+        }
+      ],
+      "dependencies": [
+        {
+          "kind": "config",
+          "label": "推送渠道（飞书/邮件等）",
+          "status": "unknown"
+        }
+      ],
+      "audit": {
+        "notes": [
+          "对应 builtin skill: research-monitor",
+          "Template only. P0 does not install workflow recipe files."
+        ]
+      }
+    },
+    {
+      "id": "recipe-image-ocr-search",
+      "kind": "workflow_recipe",
+      "name": "图片 OCR 搜索 / Image OCR Search",
+      "summary": "识别图片内文字（macOS Vision Framework，零额外配置），结果入库后支持按文字反向搜历史截图。",
+      "tags": ["agent-neo", "vision", "ocr", "search"],
+      "risk": {
+        "tier": "low",
+        "reasons": [
+          "OCR 走 macOS Vision Framework，完全离线",
+          "结果入 memories 表，受隐私防火墙保护"
+        ],
+        "dataTouched": ["image files", "OCR results in memory"]
+      },
+      "permissions": [
+        {
+          "label": "Vision Framework",
+          "level": "low",
+          "detail": "调用系统 vision-ocr binary 处理图片"
+        }
+      ],
+      "dependencies": [
+        {
+          "kind": "binary",
+          "label": "vision-ocr (任务 2 实现后内置)",
+          "status": "missing"
+        }
+      ],
+      "audit": {
+        "notes": [
+          "对应 builtin skill: image-ocr-search",
+          "Template only. P0 does not install workflow recipe files.",
+          "依赖任务 2 的 ocr_search tool，待实现后状态从 missing 改为 ok"
+        ]
+      }
+    },
+    {
+      "id": "recipe-data-analysis-helper",
+      "kind": "workflow_recipe",
+      "name": "数据分析 / Data Analysis Helper",
+      "summary": "CSV/Excel 数据自动多维统计 + 业务洞察生成 + 图表可视化（趋势/对比/分布）。",
+      "tags": ["agent-neo", "office", "data", "excel", "analysis"],
+      "risk": {
+        "tier": "medium",
+        "reasons": [
+          "执行 Python 脚本处理用户数据",
+          "可能生成临时文件（图表 PNG / Excel）"
+        ],
+        "dataTouched": ["CSV/Excel files", "generated charts"]
+      },
+      "permissions": [
+        {
+          "label": "Python execution",
+          "level": "medium",
+          "detail": "运行 pandas / matplotlib / openpyxl 处理数据"
+        }
+      ],
+      "dependencies": [
+        {
+          "kind": "binary",
+          "label": "python3",
+          "status": "unknown"
+        }
+      ],
+      "audit": {
+        "notes": [
+          "对应 builtin skill: data-analysis-helper",
+          "Template only. P0 does not install workflow recipe files."
+        ]
+      }
+    },
+    {
+      "id": "recipe-meeting-summary",
+      "kind": "workflow_recipe",
+      "name": "会议纪要整理 / Meeting Summary",
+      "summary": "从音频/视频/逐字稿/飞书妙记产出结构化纪要：TL;DR、决策、行动项（含负责人/截止）、未解问题。",
+      "tags": ["agent-neo", "office", "meeting", "summary"],
+      "risk": {
+        "tier": "low",
+        "reasons": [
+          "纯文本整理，读取用户提供的会议素材",
+          "可选调用飞书妙记 API（如已配置）"
+        ],
+        "dataTouched": ["meeting transcripts", "lark minutes content"]
+      },
+      "permissions": [
+        {
+          "label": "Local file read",
+          "level": "low",
+          "detail": "读取逐字稿或妙记内容"
+        }
+      ],
+      "audit": {
+        "notes": [
+          "对应 builtin skill: meeting-summary",
+          "跟旧的 workflow-meeting-summary 共存，前者基于 builtin skill 可执行，后者是 P0 placeholder",
           "Template only. P0 does not install workflow recipe files."
         ]
       }

@@ -12,6 +12,7 @@ LEGACY_APP_NAME="${LEGACY_APP_NAME:-Code Agent}"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-Code Agent Dev}"
 ENTITLEMENTS="$PROJECT_ROOT/src-tauri/Entitlements.plist"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+WEB_PORT="${WEB_PORT:-8180}"
 
 mark_target_unindexed() {
   mkdir -p "$PROJECT_ROOT/src-tauri/target"
@@ -49,10 +50,31 @@ strip_local_secrets() {
 resign_app_if_possible() {
   local app_path="$1"
 
+  # Release 模式自动检测：如果 .app 已经用 "Developer ID Application" 签名（通常还 staple 了
+  # notarization ticket），任何重签都会废掉 Developer ID 链 + ticket，导致 spctl reject、
+  # Gatekeeper 弹窗。这种情况下必须跳过重签，保留官方签名。
+  # Dev 工作流（unsigned / ad-hoc / "Code Agent Dev" 自签）走 else 分支按现行逻辑重签。
+  if codesign -dvv "$app_path" 2>&1 | grep -q "Authority=Developer ID Application:"; then
+    echo "[tauri-install] detected Developer ID signature on $app_path; skipping re-sign to preserve notarization"
+    return 0
+  fi
+
   if security find-identity -v -p codesigning | grep -Fq "\"$SIGNING_IDENTITY\""; then
     codesign --force --deep --options runtime --entitlements "$ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$app_path"
   else
     echo "Warning: signing identity '$SIGNING_IDENTITY' not found; installed app signature not refreshed"
+  fi
+}
+
+kill_zombie_webserver() {
+  # 杀掉可能占用 WEB_PORT 的 zombie webServer.cjs（前次 Tauri main 异常退出残留）。
+  # 不清这些 zombie 会导致新 Tauri main 启动时 webServer spawn 检测失败而 abort(SIGABRT)。
+  pkill -f "webServer.cjs" 2>/dev/null || true
+  local zombies
+  zombies=$(lsof -ti :"${WEB_PORT}" 2>/dev/null || true)
+  if [ -n "$zombies" ]; then
+    echo "[tauri-install] killing zombie processes on port ${WEB_PORT}: $zombies"
+    echo "$zombies" | xargs kill -9 2>/dev/null || true
   fi
 }
 
@@ -102,5 +124,9 @@ done
 
 unregister_duplicate_app_entries
 "$LSREGISTER" -f "/Applications/$APP_NAME.app" >/dev/null 2>&1 || true
+
+# 清掉占着 WEB_PORT 的 zombie webServer（前次 Tauri 异常退出残留），
+# 否则新 Tauri main 启动时 webServer spawn 失败会 abort(SIGABRT)。
+kill_zombie_webserver
 
 echo "Done. Launch from Spotlight or: open '/Applications/$APP_NAME.app'"

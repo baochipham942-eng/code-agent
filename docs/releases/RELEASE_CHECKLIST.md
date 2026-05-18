@@ -99,7 +99,10 @@ requires Apple credentials and must not be marked complete from a dry run.
 - [ ] `APPLE_SIGNING_IDENTITY` with a `Developer ID Application:` identity
 - [ ] Apple notarization credentials: `APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` or `APPLE_PASSWORD` + `APPLE_TEAM_ID`, or API key credentials
 - [ ] `TAURI_UPDATER_PUBKEY`
-- [ ] `TAURI_SIGNING_PRIVATE_KEY`
+- [ ] `TAURI_SIGNING_PRIVATE_KEY` — 🔑 **必须是私钥文件内容，不是文件路径**
+  - release env 里通常存的是 `TAURI_SIGNING_PRIVATE_KEY_PATH`（路径），但 `cargo tauri build` 内部只读 `TAURI_SIGNING_PRIVATE_KEY`（值 = 私钥文本）
+  - 漏设会报 `A public key has been found, but no private key`，`cargo tauri build` exit 1，`set -e` 会让整个 release chain 中断
+  - 正确做法：`export TAURI_SIGNING_PRIVATE_KEY="$(cat $HOME/.code-agent-release/tauri-updater.key)"`
 - [ ] `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if the private key is encrypted
 - [ ] Control-plane public key env: `CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS` or `CODE_AGENT_CONTROL_PLANE_KEY_ID` + `CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY`
 - [ ] Vercel/control-plane signing private key is configured outside the client bundle
@@ -147,6 +150,12 @@ npm run release:security-scan
 REQUIRE_NOTARIZATION=1 npm run tauri:release:bundle
 ```
 
+> 🪟 **首次跑 codesign 会弹 keychain 确认窗 — 30 秒内必须点击**
+> codesign 访问 Developer ID 私钥时会弹 macOS keychain 授权窗。如果点击拖延超过 ~5 分钟（实测 294 秒），
+> codesign 拿到的本地时间会和 Apple timestamp server 时间差超过容忍阈值，报
+> `timestamps differ by N seconds - check your system clock` —— **这不是真的时钟漂移**，是等弹窗等出来的。
+> 解决：弹窗一出立刻点 **"始终允许"**（不是 "允许"，前者一劳永逸，下次 release 不再弹）。
+
 - [ ] Build fails if updater public key is missing
 - [ ] Build fails if updater private key is missing
 - [ ] Build fails if control-plane public keys are missing
@@ -164,10 +173,36 @@ REQUIRE_NOTARIZATION=1 npm run tauri:release:bundle
 - [ ] Updater artifacts are present: `.app.tar.gz`, `.app.tar.gz.sig`, `latest.json`
 
 ### Test Package
+
+> 🚫 **禁止用 `scripts/tauri-install.sh` 安装 release dmg**
+> 该脚本默认 `SIGNING_IDENTITY="Code Agent Dev"`，cp 之后会用 dev 证书重签，
+> **直接毁掉 Developer ID 签名 + notarization ticket**，安装后 `spctl` 会 rejected。
+> tauri-install.sh 只适用于本地 dev 构建，不要用在 release dmg 上。
+>
+> 正确做法（二选一）：
+> - 推荐：`bash scripts/publish-release.sh`（自动化挂载/拷贝/staple/GitHub upload）
+> - 手动：从 dmg 挂载，`cp -R "/Volumes/Agent Neo/Agent Neo.app" /Applications/`
+
 ```bash
-# Open the packaged app
-open src-tauri/target/release/bundle/macos/Agent\ Neo.app
+# 从已 staple 的 dmg 安装
+hdiutil attach "src-tauri/target/release/bundle/dmg/Agent Neo_<version>_aarch64.dmg"
+cp -R "/Volumes/Agent Neo/Agent Neo.app" /Applications/
+hdiutil detach "/Volumes/Agent Neo"
 ```
+
+> 🎟️ **安装到 /Applications 后必须单独 staple .app**
+> dmg 重建发生在 staple 之前，所以 dmg 内的 .app 本身**没有 staple ticket**（只 dmg 有 ticket）。
+> 安装后联网状态下 `spctl` 还能 accepted（会去 Apple ticket DB 查），但
+> **离线 / 首次启动可能弹 "unverified developer" 警告**。必须补这一刀：
+
+```bash
+xcrun stapler staple "/Applications/Agent Neo.app"
+xcrun stapler validate "/Applications/Agent Neo.app"
+spctl --assess --type execute -vv "/Applications/Agent Neo.app"
+```
+
+- [ ] `/Applications/Agent Neo.app` 单独 `xcrun stapler staple` 通过
+- [ ] `xcrun stapler validate` 在装机版 app 上 pass（说明 ticket 写入成功）
 - [ ] App launches without errors
 - [ ] Basic functionality works (new session, send message)
 - [ ] Security features work (audit log created)

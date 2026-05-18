@@ -16,10 +16,10 @@ import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 
 const ARTIFACT_LABELS: Record<AdminControlPlaneAuditEventItem['artifactKind'], string> = {
-  cloud_config: 'Cloud config',
-  capability_registry: 'Capability registry',
-  prompt_registry: 'Prompt registry',
-  update_manifest: 'Update manifest',
+  cloud_config: '云配置',
+  capability_registry: '能力注册表',
+  prompt_registry: '提示词注册表',
+  update_manifest: '更新清单',
 };
 
 const OUTCOME_CLASSES: Record<AdminControlPlaneAuditEventItem['outcome'], string> = {

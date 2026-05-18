@@ -38,40 +38,40 @@ import type {
 } from '@shared/contract/capability';
 
 const KIND_LABELS: Record<CapabilityKind, string> = {
-  agent_engine: 'Engine',
-  skill: 'Skill',
+  agent_engine: '引擎',
+  skill: '技能',
   mcp_template: 'MCP',
-  tool_bundle: 'Tool',
-  channel_adapter: 'Channel',
-  workflow_recipe: 'Workflow',
-  connector: 'Connector',
+  tool_bundle: '工具集',
+  channel_adapter: '通道',
+  workflow_recipe: '工作流',
+  connector: '连接器',
 };
 
 const RUNTIME_LABELS: Record<CapabilityRuntimeState, string> = {
-  ready: 'Ready',
-  connected: 'Connected',
-  lazy: 'Lazy',
-  disconnected: 'Disconnected',
-  not_configured: 'Needs config',
-  blocked: 'Blocked',
-  error: 'Error',
-  unknown: 'Unknown',
+  ready: '就绪',
+  connected: '已连接',
+  lazy: '惰性加载',
+  disconnected: '未连接',
+  not_configured: '待配置',
+  blocked: '已阻止',
+  error: '错误',
+  unknown: '未知',
 };
 
 const SOURCE_LABELS: Partial<Record<CapabilitySourceKind, string>> = {
-  builtin: 'Built-in',
-  curated: 'Curated',
-  project: 'Project',
-  user: 'User',
-  library: 'Library',
-  runtime: 'Runtime',
-  memory: 'Memory',
-  cloud: 'Cloud',
-  team: 'Team',
-  local: 'Local',
-  marketplace: 'Marketplace',
-  remote: 'Remote',
-  plugin: 'Plugin',
+  builtin: '内置',
+  curated: '精选',
+  project: '项目',
+  user: '用户',
+  library: '资源库',
+  runtime: '运行时',
+  memory: '记忆',
+  cloud: '云端',
+  team: '团队',
+  local: '本地',
+  marketplace: '市场',
+  remote: '远程',
+  plugin: '插件',
 };
 
 const KIND_FILTERS: Array<'all' | CapabilityKind> = [
@@ -157,20 +157,20 @@ function getRuntimeClass(runtime: CapabilityRuntimeState): string {
 function getHealthFilterLabel(filter: HealthFilter): string {
   switch (filter) {
     case 'ready':
-      return 'Ready';
+      return '就绪';
     case 'needs_config':
-      return 'Needs config';
+      return '待配置';
     case 'disabled':
-      return 'Disabled';
+      return '已禁用';
     case 'error':
-      return 'Error';
+      return '错误';
     default:
-      return 'All';
+      return '全部';
   }
 }
 
 function getSourceFilterLabel(filter: SourceFilter): string {
-  return filter === 'all' ? 'All sources' : SOURCE_LABELS[filter] || filter;
+  return filter === 'all' ? '全部来源' : SOURCE_LABELS[filter] || filter;
 }
 
 function matchesHealth(item: CapabilityCenterItem, filter: HealthFilter): boolean {
@@ -742,7 +742,7 @@ export const CapabilityCenterSettings: React.FC<CapabilityCenterSettingsProps> =
                   active={kindFilter === filter}
                   onClick={() => setKindFilter(filter)}
                 >
-                  {filter === 'all' ? 'All' : KIND_LABELS[filter]}
+                  {filter === 'all' ? '全部' : KIND_LABELS[filter]}
                 </FilterButton>
               ))}
             </div>

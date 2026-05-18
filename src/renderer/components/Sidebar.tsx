@@ -34,16 +34,12 @@ import {
   FlaskConical,
   Clock3,
   CalendarDays,
-  Globe,
   Monitor,
-  GitBranch,
   ScrollText,
   Activity,
   Brain,
-  ClipboardCheck,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
-import { useDisclosure } from '../hooks/useDisclosure';
 import { CheeseIcon } from './icons/CheeseIcon';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
@@ -184,21 +180,16 @@ export const Sidebar: React.FC = () => {
     setShowCronCenter,
     showTimeCapabilityCenter,
     setShowTimeCapabilityCenter,
-    showBrowserSurfacePanel,
-    setShowBrowserSurfacePanel,
     showDesktopPanel,
     setShowDesktopPanel,
     showActivityPanel,
     setShowActivityPanel,
     showKnowledgeMemoryPanel,
     setShowKnowledgeMemoryPanel,
-    showDAGPanel,
-    setShowDAGPanel,
     pendingPermissionRequest,
     pendingPermissionSessionId,
     queuedPermissionRequests,
   } = useAppStore();
-  const { dagPanelEnabled } = useDisclosure();
   const applySessionWorkbenchPreset = useComposerStore((state) => state.applySessionWorkbenchPreset);
   const applyWorkbenchPreset = useComposerStore((state) => state.applyWorkbenchPreset);
   const applyWorkbenchRecipe = useComposerStore((state) => state.applyWorkbenchRecipe);
@@ -243,7 +234,6 @@ export const Sidebar: React.FC = () => {
 
   const { user, isAuthenticated, setShowAuthModal, signOut } = useAuthStore();
   const canOpenEvalCenter = canAccessFeature('eval.center', user);
-  const canOpenTelemetry = canAccessFeature('eval.telemetry', user);
   const canOpenPromptManager = canAccessFeature('prompt.manager', user);
   const sessionStates = useTaskStore((state) => state.sessionStates);
 
@@ -257,9 +247,7 @@ export const Sidebar: React.FC = () => {
   const hasActiveAdvancedTool = Boolean(
     showLab ||
       showTimeCapabilityCenter ||
-      showBrowserSurfacePanel ||
-      showDesktopPanel ||
-      (dagPanelEnabled && showDAGPanel)
+      showDesktopPanel
   );
   const advancedToolsOpen = showAccountAdvancedTools || hasActiveAdvancedTool;
 
@@ -1021,7 +1009,7 @@ export const Sidebar: React.FC = () => {
                 <AccountMenuItem
                   onClick={() => { setShowActivityPanel(true); setShowUserMenu(false); }}
                   icon={<Activity className={`w-4 h-4 ${showActivityPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
-                  label="Activity"
+                  label="活动"
                 />
                 <AccountMenuItem
                   onClick={() => { setShowKnowledgeMemoryPanel(true); setShowUserMenu(false); }}
@@ -1048,27 +1036,6 @@ export const Sidebar: React.FC = () => {
                   />
                 )}
 
-                {(canOpenTelemetry || canOpenEvalCenter) && (
-                  <>
-                    <div className="my-1 border-t border-zinc-800" />
-                    <AccountMenuLabel>管理与诊断</AccountMenuLabel>
-                    {canOpenTelemetry && (
-                      <AccountMenuItem
-                        onClick={() => { setShowEvalCenter(true, 'telemetry'); setShowUserMenu(false); }}
-                        icon={<Activity className="w-4 h-4 text-cyan-400/80" />}
-                        label="Telemetry 调试"
-                      />
-                    )}
-                    {canOpenEvalCenter && (
-                      <AccountMenuItem
-                        onClick={() => { setShowEvalCenter(true, 'analysis'); setShowUserMenu(false); }}
-                        icon={<ClipboardCheck className="w-4 h-4 text-amber-400/80" />}
-                        label="内部评测"
-                      />
-                    )}
-                  </>
-                )}
-
                 <div className="my-1 border-t border-zinc-800" />
                 <button
                   type="button"
@@ -1088,24 +1055,12 @@ export const Sidebar: React.FC = () => {
                     <AccountMenuItem
                       onClick={() => { setShowLab(true); setShowUserMenu(false); }}
                       icon={<FlaskConical className={`w-4 h-4 ${showLab ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
-                      label="实验室"
+                      label="模型训练"
                     />
                     <AccountMenuItem
                       onClick={() => { setShowTimeCapabilityCenter(!showTimeCapabilityCenter); setShowUserMenu(false); }}
                       icon={<CalendarDays className={`w-4 h-4 ${showTimeCapabilityCenter ? 'text-sky-400' : 'text-sky-400/80'}`} />}
-                      label="Time & Capability"
-                    />
-                    {dagPanelEnabled && (
-                      <AccountMenuItem
-                        onClick={() => { setShowDAGPanel(!showDAGPanel); setShowUserMenu(false); }}
-                        icon={<GitBranch className={`w-4 h-4 ${showDAGPanel ? 'text-blue-400' : 'text-blue-400/80'}`} />}
-                        label="Agent 流程"
-                      />
-                    )}
-                    <AccountMenuItem
-                      onClick={() => { setShowBrowserSurfacePanel(!showBrowserSurfacePanel); setShowUserMenu(false); }}
-                      icon={<Globe className={`w-4 h-4 ${showBrowserSurfacePanel ? 'text-sky-400' : 'text-sky-400/80'}`} />}
-                      label="浏览器"
+                      label="时间与能力"
                     />
                     <AccountMenuItem
                       onClick={() => { setShowDesktopPanel(!showDesktopPanel); setShowUserMenu(false); }}

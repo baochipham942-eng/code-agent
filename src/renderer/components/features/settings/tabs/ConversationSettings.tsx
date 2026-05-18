@@ -26,9 +26,9 @@ import { toast } from '../../../../hooks/useToast';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 
 const ROUTING_OPTIONS: Array<{ value: ConversationRoutingMode; label: string; hint: string }> = [
-  { value: 'auto', label: 'Auto', hint: '路由器按任务复杂度自动选模型（默认）' },
-  { value: 'direct', label: 'Direct', hint: '直接用当前选中的模型，不走路由' },
-  { value: 'parallel', label: 'Parallel', hint: '并行调多个模型，交叉验证产物' },
+  { value: 'auto', label: '自动', hint: '路由器按任务复杂度自动选模型（默认）' },
+  { value: 'direct', label: '直连', hint: '直接用当前选中的模型，不走路由' },
+  { value: 'parallel', label: '并行', hint: '并行调多个模型，交叉验证产物' },
 ];
 
 const DEFAULT_COMPRESSION_STATE: ContextCompressionChannelState = {

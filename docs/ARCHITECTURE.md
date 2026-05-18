@@ -1,7 +1,7 @@
 # Agent Neo / Code Agent - 架构设计文档
 
-> 版本: 9.9 (对应 v0.16.75)
-> 日期: 2026-05-17
+> 版本: 9.10 (对应 v0.16.75 + 2026-05-19 Marvis 能力对照补齐)
+> 日期: 2026-05-19
 > 作者: Lin Chen
 
 本文档是 Agent Neo（代码仓库仍名为 Code Agent）的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -24,6 +24,7 @@
 | [Chat-Native Workbench](./architecture/workbench.md) | 聊天主链路能力工作台（ConversationEnvelope + InlineWorkbenchBar + Turn Timeline + Prompt Rewind），与 TaskPanel(sidecar) 分工 |
 | [Artifact Verification](./architecture/artifact-verification.md) | AcceptanceRunner、Game/Deck/Dashboard verifier、Delivery Review、Preview Feedback |
 | [Activity Providers](./architecture/activity-providers.md) | OpenChronicle / Tauri Native Desktop / audio / screenshot-analysis 统一上下文 provider 边界 |
+| [Native App 集成](./architecture/native-app-integration.md) | Skill / Tool / Service / Connector / MCP 边界与调用链路；为什么 macOS 原生应用走 connector 不走 MCP |
 | [CLI 架构](./architecture/cli.md) | 5 种运行模式、CLIAgent 适配层、输出格式化、命令系统 |
 
 ### 架构决策记录 (ADR)
@@ -174,6 +175,33 @@ code-agent/
 > **工具合并**: 31 个独立延迟工具合并为统一工具（Process, MCPUnified, TaskManager 等），使用 action 参数分发。详见 [ADR-006](./decisions/006-deferred-tools-consolidation.md)。
 >
 > **文档编辑统一**: DocEdit 统一入口，富文档为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
+
+### 2026-05-19 Marvis 能力对照补齐：场景化 skill + Vision Framework 工具栈 + Photos connector
+
+这一轮以"对照 Marvis (marvis.qq.com) 八大场景补齐能力广度"为驱动，分发零额外配置走完整链路。架构重点：把 macOS 原生能力（Vision Framework / Photos.app）当作 Agent Neo 的一等公民通过 connector + native binary 接入，**不走 MCP**；同时让 `visionAnalysisService` 终于摆脱硬编码智谱，自动走用户已配的 vision-capable 主 LLM。
+
+| 模块 | 当前闭环 | 关键文件 / 入口 |
+|------|---------|----------------|
+| 场景化 builtin skill 扩展 | `BUILTIN_SKILLS` 数组追加 9 个 builtin skill（含触发词中文 description）：`computer-housekeeper`（系统清理/网络修复）、`contract-review`（10 维度风险点）、`literature-review`、`paper-distillation`（带页码定位）、`research-monitor`（cron + 飞书推送）、`image-ocr-search`、`data-analysis-helper`、`meeting-summary`、`photo-archive`；编译进 binary 所有用户开箱即用 | `src/main/services/skills/builtinSkills.ts` |
+| Capability Center 对外展示 | `docs/capabilities/local-curated-registry.json` 新增 9 个 `workflow_recipe` 卡片对应上述 builtin skill；每张卡片 `audit.notes` 标注对应的 skill name；`source.contentHash` 重算（sha256:4d515295...） | `docs/capabilities/local-curated-registry.json` |
+| vision-ocr Swift 工具 | macOS Vision Framework `VNRecognizeTextRequest` 中英文 OCR，零配置零云端；CLI `--photo <path> [--languages zh-Hans,zh-Hant,en-US]`，输出 JSON 含 fullText + regions（boundingBox 转左上原点像素坐标）；体积 95KB | `scripts/vision-ocr.swift`、`scripts/build-vision-ocr.sh` |
+| vision-tagger Swift 工具 | `VNDetectFaceRectanglesRequest` + `VNGenerateImageFeaturePrintRequest`（人脸特征向量 base64）+ `VNClassifyImageRequest`（ImageNet 1000 类）；CLI `--mode face\|classify\|all`；体积 116KB | `scripts/vision-tagger.swift`、`scripts/build-vision-tagger.sh` |
+| `ocr_search` native tool | spawn `vision-ocr` binary，OCR 结果入 memories 表（`type='ocr_result'`、`category='screenshot_ocr'`、`source='vision_ocr'`），metadata 存图片路径 + regions + 平均置信度；后续可用 memory_search 按文字反向搜历史截图 | `src/main/tools/modules/vision/ocrSearch.ts`、`ocrSearch.schema.ts` |
+| `photo_archive` native tool | 包装 `photoLibraryTagger.archiveAlbum`，agent 调用一次完成"导出 → vision-tagger 批量 → 人脸聚类 → 入库 → 清理"整条链路，返回 `{ processed, faceCount, clusters[], topThemes[], memoryIds[] }` | `src/main/tools/modules/vision/photoArchive.ts`、`photoArchive.schema.ts` |
+| Photos.app native connector | 新增 `photos` 连接器（跟 mail/calendar/reminders 同形态），暴露 `list_albums` / `list_photos` / `export_photos` / `get_status` / `probe_access` / `repair_permissions` 6 个 action；用 unit/record separator 而非 `|` 避免相册名特殊字符冲突；首次访问触发 macOS 自动化授权弹窗，readiness 状态机管理 unchecked/ready/failed/unavailable | `src/main/connectors/native/photos.ts`、`src/main/connectors/registry.ts`、`src/shared/constants/misc.ts`（NATIVE_CONNECTOR_IDS 扩展） |
+| photoLibraryTagger service | 编排 `photos.export_photos` → 顺序 spawn vision-tagger → cosine similarity 并查集聚类（默认阈值 0.6）→ 主题分类聚合 → 入 memories 表 → 清理临时目录；featurePrint 走 Float32Array view 不拷贝 buffer；失败照片计入 `failed` 不阻塞整体 | `src/main/services/desktop/photoLibraryTagger.ts` |
+| `visionAnalysisService` 走 ModelRouter | 重写 `analyzeImageWithVisionDetailed`：从硬编码智谱 fetch 改为 `getModelForCapability('vision')` + `ModelRouter.getModelInfo(supportsVision)` + `inferenceWithVision`；自动适配 GPT-4o / Claude / Gemini / GLM-4.6V / Qwen-VL / MiMo-VL / Doubao-VL / Kimi 视觉等所有 vision-capable 主 LLM；用 `Promise.race(timeoutController)` 处理 timeoutMs | `src/main/services/desktop/visionAnalysisService.ts` |
+| MemoryRecord type 扩展 | union 加 `ocr_result` + `photo_archive` 两个新类型，双 source-of-truth 同步：`src/main/protocol/types/repositories.ts` + `src/shared/ipc/types.ts` | 两边都改 |
+| VISION_CAPABLE_MODELS 常量 | 文档值，列出所有支持 vision 的主流 model id（运行时仍以 `model-catalog.json` 的 `capabilities: ['vision']` 为权威标识） | `src/shared/constants/models.ts` |
+| Tauri 分发集成 | 两个 Swift binary 加入 `bundle.resources`，DMG 自动打包；`.gitignore` 同步排除两个 binary 产物（跟 `system-audio-capture` 同形态） | `src-tauri/tauri.conf.json`、`.gitignore` |
+
+**架构边界澄清**：
+
+- **MCP vs Connector 是两条独立路径**（详见 [native-app-integration.md](./architecture/native-app-integration.md)）：MCP 走 stdio/SSE 协议跨进程，给跨平台/可移植能力扩展用；connector 在 main process 内调 AppleScript，给绑死 macOS 系统应用的硬集成用。**Photos.app 走 connector 不走 MCP**——AppleScript 仅 macOS、性能更好、就绪状态管理更紧密。
+- **OCR / vision-tagger 走 Swift binary 而不是 MCP server**：macOS Vision Framework 仅本机有效，不需要 MCP 的跨进程/跨平台抽象；binary 跟 `system-audio-capture` 同形态共享 build/分发流程。
+- **`visionAnalysisService` 重构对外部调用方完全透明**：保留 `analyzeImageWithVision` / `analyzeImageWithVisionDetailed` 两个外部函数签名不变，所有上游（imageAnalyze tool、screenshot --analyze、browserAction、image_annotate）自动受益于"用户主 LLM 优先"路由。
+- **photoLibraryTagger 顺序而非并行处理 vision-tagger**：避免 CPU/内存争抢，单张 ~200ms 够用；大相册（N>5000）的 O(N²) 聚类后续可优化为 HNSW 近似最近邻。
+- **人脸聚类不主动起人名（隐私）**：默认 `person-1/2/...` 占位 cluster id，用户后续可重命名；特征向量留在本机 memories 表，零云端上传。
 
 ### v0.16.75 Agent Neo 管理面、外部 Agent Engine 与 In-App 验证（2026-05-15 ~ 2026-05-17）
 

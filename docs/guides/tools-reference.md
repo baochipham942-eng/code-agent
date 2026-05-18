@@ -488,6 +488,58 @@ auto_learn { "source": "session" }
 
 ## Gen6 视觉与浏览器工具
 
+### ocr_search - 图片 OCR + 入库（macOS Vision Framework，零配置）
+
+走 macOS 系统自带 Vision Framework (`VNRecognizeTextRequest`)，分发零额外 API key 配置。支持中英文，离线、免费、精度高。结果可入 memories 表，后续按文字反向搜历史截图。
+
+```bash
+# 基本 OCR
+ocr_search { "imagePath": "/tmp/screenshot.png" }
+
+# 指定识别语言
+ocr_search { "imagePath": "/tmp/doc.png", "languages": ["zh-Hans", "en-US"] }
+
+# 不入库（仅返回 OCR 结果，不持久化）
+ocr_search { "imagePath": "/path/to/img.png", "persist": false }
+```
+
+返回：`{ fullText, regions[(text, confidence, boundingBox)], imageSize, memoryId }`
+
+入库后用 `memory_search` 反向查：
+```bash
+memory_search { "query": "保密", "type": "ocr_result" }
+```
+
+**前置**：macOS 11+（中文需 macOS 13+），自动调用 `vision-ocr` binary（位于 `scripts/vision-ocr` 或 Tauri Resources）。
+
+### photo_archive - 相册按人像/主题归档（macOS Vision Framework + Photos.app）
+
+一站式归档：导出相册照片 → vision-tagger 人脸检测 + 主题分类 → cosine similarity 聚类 → 入 memories 表（`type='photo_archive'`）→ 清理临时目录。零额外配置零云端上传。
+
+```bash
+# 整理整个相册
+photo_archive { "album": "2024 上海", "mode": "all" }
+
+# 仅做人脸聚类
+photo_archive { "album": "家庭", "mode": "face", "faceSimilarityThreshold": 0.65 }
+
+# 仅做主题分类
+photo_archive { "album": "旅行", "mode": "classify" }
+
+# 按 uuid 列表归档（不限定相册）
+photo_archive { "uuids": ["uuid-1", "uuid-2"], "mode": "all" }
+```
+
+返回：`{ processed, failed, faceCount, clusters[(clusterId, size, samplePaths)], topThemes[(identifier, count)], memoryIds }`
+
+**前置**：
+- 仅 macOS（依赖 Vision Framework + Photos.app）
+- 首次需在系统偏好→隐私与安全性→自动化中授权 Photos 访问
+- `photos` connector 已启用（默认）
+- 自动调用 `vision-tagger` binary
+
+聚类后默认 cluster id 为 `person-1/2/...`（不主动起人名，隐私优先），用户可后续在 memories 表中重命名。
+
 ### screenshot - 屏幕截图
 
 ```bash

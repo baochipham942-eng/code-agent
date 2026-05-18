@@ -36,7 +36,9 @@ export interface MemoryRecord {
     | 'conversation'
     | 'tool_usage'
     | 'desktop_activity'
-    | 'workspace_activity';
+    | 'workspace_activity'
+    | 'ocr_result'
+    | 'photo_archive';
   category: string;
   content: string;
   summary?: string;

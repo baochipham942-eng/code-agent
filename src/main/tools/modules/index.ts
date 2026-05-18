@@ -125,6 +125,7 @@ import { computerUseSchema } from './vision/computerUse.schema';
 import { validateHtmlInAppSchema } from './vision/validateHtmlInApp.schema';
 import { screenshotSchema } from './vision/screenshot.schema';
 import { guiAgentSchema } from './vision/guiAgent.schema';
+import { ocrSearchSchema } from './vision/ocrSearch.schema';
 // exploreTool 已迁移到 native (planning/explore.ts)，不再从 multiagentTools 导入
 
 // lightMemory/
@@ -258,6 +259,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   registry.register(
     guiAgentSchema,
     async () => (await import('./vision/guiAgent')).guiAgentModule,
+  );
+  registry.register(
+    ocrSearchSchema,
+    async () => (await import('./vision/ocrSearch')).ocrSearchModule,
   );
 
   // visual_edit — Live Preview 点击元素 → 视觉 LLM 产 diff → 原子落盘

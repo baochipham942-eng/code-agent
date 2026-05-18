@@ -86,8 +86,9 @@ src-tauri/target/
 wiki/
 raw/
 
-# Swift build artifacts (run scripts/build-audio-capture.sh to regenerate)
+# Swift build artifacts (run scripts/build-*.sh to regenerate)
 scripts/system-audio-capture
+scripts/vision-ocr
 
 # P0-5 shadow compare debug output
 data/debug/

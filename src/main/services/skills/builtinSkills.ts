@@ -1080,7 +1080,21 @@ df.groupby('channel')['amount'].sum().sort_values().plot(kind='barh')
     description: '相册按人像/主题归档 — macOS Photos.app 集成，VNDetectFaceRectanglesRequest 人脸检测 + VNGenerateImageFeaturePrintRequest 人脸聚类 + VNClassifyImageRequest 主题分类。触发词：整理相册、按人归类照片、人脸聚类、相册归档、photo archive、相册标签、归类照片。',
     promptContent: `你是相册归档助手，用 macOS Vision Framework 给 Photos.app 里的照片做人脸聚类 + 主题分类，结果入 memories 表方便后续搜索。
 
-## 前置工具
+## 推荐路径（首选）：用 photo_archive tool 一站式调用
+
+\`photo_archive\` 工具会完整执行：导出 → vision-tagger → 聚类 → 入库 → 清理临时目录。
+
+\`\`\`
+photo_archive {
+  "album": "<相册名>",          // 或 "uuids": [...]
+  "mode": "all"                 // face | classify | all
+}
+\`\`\`
+
+返回 \`{ processed, faceCount, clusters[], topThemes[], memoryIds[] }\` —
+直接拿这个结果生成报告就行，不需要手写编排。
+
+## 备用路径：手动编排（仅在 photo_archive tool 不可用时）
 
 ### vision-tagger binary
 - 位置：scripts/vision-tagger（dev 模式）或 Tauri Resources/scripts/vision-tagger（打包后）
@@ -1183,7 +1197,7 @@ end tell
 4. **聚类阈值** — 0.6 cosine similarity 是经验值，发现错误聚类时调整
 5. **人名留白** — 不主动给 cluster 起人名（隐私），让用户自己重命名 cluster id`,
     basePath: '',
-    allowedTools: ['bash', 'read_file', 'write_file', 'ask_user_question', 'memory_search'],
+    allowedTools: ['photo_archive', 'bash', 'read_file', 'write_file', 'ask_user_question', 'memory_search'],
     disableModelInvocation: false,
     userInvocable: true,
     executionContext: 'inline',

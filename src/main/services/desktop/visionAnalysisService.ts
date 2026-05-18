@@ -4,7 +4,9 @@ import * as path from 'path';
 import sharp from 'sharp';
 import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
-import { MODEL_API_ENDPOINTS, ZHIPU_VISION_MODEL, VISION_IMAGE } from '../../../shared/constants';
+import { ZHIPU_VISION_MODEL, VISION_IMAGE } from '../../../shared/constants';
+import { ModelRouter } from '../../model/modelRouter';
+import type { ModelConfig, ModelProvider } from '../../../shared/contract/model';
 
 const logger = createLogger('VisionAnalysisService');
 
@@ -55,34 +57,8 @@ export type VisionAnalysisResult =
     retryable: boolean;
   } & VisionImageDims);
 
-async function fetchWithTimeout(
-  url: string,
-  options: RequestInit,
-  timeoutMs: number,
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
-}
-
-function normalizeHttpError(status: number, body: string): string {
-  const trimmedBody = body.trim();
-  if (!trimmedBody) {
-    return `Vision analysis request failed with HTTP ${status}`;
-  }
-  return `Vision analysis request failed with HTTP ${status}: ${trimmedBody}`;
 }
 
 /**
@@ -166,6 +142,54 @@ export async function prepareImageForVision(
   }
 }
 
+// 单例 ModelRouter，避免每次 analyzeImage 都重建（cache provider 实例化开销）
+let sharedRouter: ModelRouter | null = null;
+function getSharedRouter(): ModelRouter {
+  if (!sharedRouter) sharedRouter = new ModelRouter();
+  return sharedRouter;
+}
+
+/**
+ * 根据用户配置选 vision provider/model：
+ * 1. 优先用 settings.models.routing.vision（用户在设置→模型→视觉显式指定的）
+ * 2. 检查 model 是否 supportsVision（model-catalog.json 标记）
+ * 3. 用 configService.getApiKey 拿对应 provider 的 key
+ * 4. 都拿不到时返回 null，调用方给清晰提示
+ */
+function resolveVisionModelConfig(): ModelConfig | null {
+  const configService = getConfigService();
+  const settings = configService.getSettings();
+  const visionRouting = configService.getModelForCapability('vision');
+  if (!visionRouting?.provider || !visionRouting.model) return null;
+
+  const provider = visionRouting.provider as ModelProvider;
+  const model = visionRouting.model;
+
+  // ModelInfo + supportsVision 检查
+  const router = getSharedRouter();
+  const modelInfo = router.getModelInfo(provider, model);
+  if (!modelInfo?.supportsVision) {
+    logger.warn('vision routing model does not support vision', { provider, model });
+    return null;
+  }
+
+  const apiKey = configService.getApiKey(provider) || '';
+  // 兼容部分 provider 无需 apiKey 的情况（如本地 Ollama），让 ModelRouter 内部决定
+  const baseUrl = settings.models?.providers?.[provider]?.baseUrl;
+
+  return {
+    provider,
+    model,
+    apiKey,
+    baseUrl,
+    temperature: 0.3,
+    maxTokens: 2048,
+  };
+}
+
+const MISSING_VISION_MODEL_MESSAGE =
+  '复合视觉理解需要配置一个支持视觉的模型（如智谱 GLM-4.6V / GPT-4o / Claude 4.6+ / Gemini 2.5 / Qwen-VL / MiMo-VL / Doubao-VL / Kimi 视觉等）。请到设置→模型→视觉中选择后重试。OCR 不受影响，依然可通过 ocr_search 工具调用 macOS Vision Framework。';
+
 export async function analyzeImageWithVisionDetailed(args: {
   imagePath: string;
   prompt: string;
@@ -174,17 +198,17 @@ export async function analyzeImageWithVisionDetailed(args: {
   /** 实测 backingScaleFactor（Phase 2 传入）；缺省用 VISION_IMAGE.FALLBACK_SCALE_FACTOR */
   scaleFactorHint?: number;
 }): Promise<VisionAnalysisResult> {
-  const configService = getConfigService();
-  const zhipuApiKey = configService.getZhipuOfficialKey();
+  const visionConfig = resolveVisionModelConfig();
+  const reportedModel = visionConfig?.model || ZHIPU_VISION_MODEL;
 
-  if (!zhipuApiKey) {
+  if (!visionConfig) {
     logger.info('Vision analysis skipped: vision provider not configured', { source: args.source });
     return {
       ok: false,
       analysis: null,
       reason: 'missing_api_key',
-      error: '复合视觉理解需要配置一个支持视觉的模型（如智谱 GLM-4.6V / GPT-4o / Claude / Gemini 2.5 / Qwen-VL / MiMo-VL / Doubao-VL / Kimi 视觉等）。请到设置→模型→视觉中配置后重试。OCR 不受影响，依然可通过 ocr_search 工具调用 macOS Vision Framework。',
-      model: ZHIPU_VISION_MODEL,
+      error: MISSING_VISION_MODEL_MESSAGE,
+      model: reportedModel,
       retryable: false,
       ...emptyDims(),
     };
@@ -207,112 +231,82 @@ export async function analyzeImageWithVisionDetailed(args: {
       analysis: null,
       reason: 'exception',
       error: `Vision analysis failed: ${error instanceof Error ? error.message : String(error)}`,
-      model: ZHIPU_VISION_MODEL,
+      model: reportedModel,
       retryable: true,
       ...emptyDims(),
     };
   }
 
+  // 用 AbortController 实现 timeout（modelRouter 不直接支持 timeoutMs）
+  const timeoutMs = args.timeoutMs || DEFAULT_TIMEOUT_MS;
+  const timeoutController = new AbortController();
+  const timeoutHandle = setTimeout(() => timeoutController.abort(), timeoutMs);
+
   try {
-    const response = await fetchWithTimeout(
-      `${MODEL_API_ENDPOINTS.zhipuOfficial}/chat/completions`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${zhipuApiKey}`,
-        },
-        body: JSON.stringify({
-          model: ZHIPU_VISION_MODEL,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text: args.prompt },
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: `data:image/png;base64,${prepared.base64}`,
-                  },
-                },
-              ],
-            },
-          ],
-          max_tokens: 2048,
-        }),
-      },
-      args.timeoutMs || DEFAULT_TIMEOUT_MS,
-    );
+    const router = getSharedRouter();
+    const response = await Promise.race([
+      router.inferenceWithVision(
+        [{ role: 'user', content: args.prompt }],
+        [{ data: prepared.base64, mediaType: 'image/png' }],
+        visionConfig,
+      ),
+      new Promise<never>((_, reject) => {
+        timeoutController.signal.addEventListener('abort', () => {
+          reject(new Error('vision_analysis_timeout'));
+        }, { once: true });
+      }),
+    ]);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.warn('Vision analysis request failed', {
-        source: args.source,
-        status: response.status,
-        error: errorText,
-      });
-      return {
-        ok: false,
-        analysis: null,
-        reason: 'http_error',
-        error: normalizeHttpError(response.status, errorText),
-        model: ZHIPU_VISION_MODEL,
-        httpStatus: response.status,
-        retryable: response.status === 408 || response.status === 429 || response.status >= 500,
-        ...prepared.dims,
-      };
-    }
-
-    const result = await response.json();
-    const content = result.choices?.[0]?.message?.content;
-    if (content) {
-      logger.info('Vision analysis completed', {
-        source: args.source,
-        contentLength: content.length,
-        analyzedWidth: prepared.dims.analyzedWidth,
-        analyzedHeight: prepared.dims.analyzedHeight,
-      });
-    }
-
+    const content = response.content?.trim() || '';
     if (!content) {
-      logger.warn('Vision analysis returned empty content', {
-        source: args.source,
-      });
+      logger.warn('Vision analysis returned empty content', { source: args.source });
       return {
         ok: false,
         analysis: null,
         reason: 'empty_response',
         error: 'Vision analysis returned empty content',
-        model: ZHIPU_VISION_MODEL,
+        model: response.actualModel || reportedModel,
         retryable: true,
         ...prepared.dims,
       };
     }
 
+    logger.info('Vision analysis completed', {
+      source: args.source,
+      provider: response.actualProvider || visionConfig.provider,
+      model: response.actualModel || visionConfig.model,
+      contentLength: content.length,
+      analyzedWidth: prepared.dims.analyzedWidth,
+      analyzedHeight: prepared.dims.analyzedHeight,
+    });
     return {
       ok: true,
       analysis: content,
-      model: ZHIPU_VISION_MODEL,
+      model: response.actualModel || visionConfig.model,
       ...prepared.dims,
     };
   } catch (error: unknown) {
-    const aborted = isAbortError(error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const aborted = errMsg === 'vision_analysis_timeout' || isAbortError(error);
     logger.warn(aborted ? 'Vision analysis timed out' : 'Vision analysis failed', {
       source: args.source,
-      error: error instanceof Error ? error.message : String(error),
+      provider: visionConfig.provider,
+      model: visionConfig.model,
+      error: errMsg,
     });
     return {
       ok: false,
       analysis: null,
       reason: aborted ? 'timeout' : 'exception',
       error: aborted
-        ? `Vision analysis timed out after ${args.timeoutMs || DEFAULT_TIMEOUT_MS}ms`
-        : `Vision analysis failed: ${error instanceof Error ? error.message : String(error)}`,
-      model: ZHIPU_VISION_MODEL,
+        ? `Vision analysis timed out after ${timeoutMs}ms`
+        : `Vision analysis failed: ${errMsg}`,
+      model: reportedModel,
       retryable: true,
       ...prepared.dims,
     };
   } finally {
+    clearTimeout(timeoutHandle);
     if (prepared.tempPath) {
       await fs.promises.unlink(prepared.tempPath).catch(() => undefined);
     }

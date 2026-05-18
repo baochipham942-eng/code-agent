@@ -1,7 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getApiKeyMock, readFileSyncMock, loggerMock } = vi.hoisted(() => ({
+const {
+  getApiKeyMock,
+  getModelForCapabilityMock,
+  getSettingsMock,
+  getModelInfoMock,
+  inferenceWithVisionMock,
+  readFileSyncMock,
+  loggerMock,
+} = vi.hoisted(() => ({
   getApiKeyMock: vi.fn(),
+  getModelForCapabilityMock: vi.fn(),
+  getSettingsMock: vi.fn(),
+  getModelInfoMock: vi.fn(),
+  inferenceWithVisionMock: vi.fn(),
   readFileSyncMock: vi.fn().mockReturnValue(Buffer.from('png-data')),
   loggerMock: {
     debug: vi.fn(),
@@ -13,12 +25,25 @@ const { getApiKeyMock, readFileSyncMock, loggerMock } = vi.hoisted(() => ({
 
 vi.mock('../../../../src/main/services/core/configService', () => ({
   getConfigService: () => ({
-    getZhipuOfficialKey: getApiKeyMock,
+    getZhipuOfficialKey: () => getApiKeyMock(),
+    getApiKey: (provider: string) => getApiKeyMock(provider),
+    getModelForCapability: (capability: string) => getModelForCapabilityMock(capability),
+    getSettings: () => getSettingsMock(),
   }),
 }));
 
+vi.mock('../../../../src/main/model/modelRouter', () => ({
+  ModelRouter: class {
+    getModelInfo(provider: string, model: string) {
+      return getModelInfoMock(provider, model);
+    }
+    inferenceWithVision(...args: unknown[]) {
+      return inferenceWithVisionMock(...args);
+    }
+  },
+}));
+
 vi.mock('sharp', () => ({
-  // prepareImageForVision 走降级路径：sharp 抛错 → 回退用 readFileSync 原始字节
   default: () => {
     throw new Error('sharp not available in unit test');
   },
@@ -30,6 +55,9 @@ vi.mock('../../../../src/main/services/infra/logger', () => ({
 
 vi.mock('fs', () => ({
   readFileSync: (...args: unknown[]) => readFileSyncMock(...args),
+  promises: {
+    unlink: vi.fn().mockResolvedValue(undefined),
+  },
 }));
 
 import {
@@ -37,18 +65,22 @@ import {
   analyzeImageWithVisionDetailed,
 } from '../../../../src/main/services/desktop/visionAnalysisService';
 
+const HAPPY_VISION_ROUTING = { provider: 'zhipu' as const, model: 'glm-4.6v' };
+const HAPPY_MODEL_INFO = { supportsVision: true };
+
 describe('visionAnalysisService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllGlobals();
-    getApiKeyMock.mockReturnValue('test-zhipu-key');
+    getApiKeyMock.mockReturnValue('test-vision-key');
+    getModelForCapabilityMock.mockReturnValue(HAPPY_VISION_ROUTING);
+    getSettingsMock.mockReturnValue({ models: { providers: {} } });
+    getModelInfoMock.mockReturnValue(HAPPY_MODEL_INFO);
     readFileSyncMock.mockReturnValue(Buffer.from('png-data'));
   });
 
-  it('returns missing_api_key when zhipu key is unavailable', async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-    getApiKeyMock.mockReturnValue(undefined);
+  it('returns missing_api_key when vision routing model does not support vision', async () => {
+    getModelInfoMock.mockReturnValue({ supportsVision: false });
 
     const result = await analyzeImageWithVisionDetailed({
       imagePath: '/tmp/screen.png',
@@ -62,15 +94,28 @@ describe('visionAnalysisService', () => {
       reason: 'missing_api_key',
       retryable: false,
     });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(inferenceWithVisionMock).not.toHaveBeenCalled();
   });
 
-  it('returns http_error with status and body for model_not_allowed responses', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+  it('returns missing_api_key when vision routing config is undefined', async () => {
+    getModelForCapabilityMock.mockReturnValue(undefined);
+
+    const result = await analyzeImageWithVisionDetailed({
+      imagePath: '/tmp/screen.png',
+      prompt: 'describe',
+      source: 'test',
+    });
+
+    expect(result).toMatchObject({
       ok: false,
-      status: 403,
-      text: async () => '{"error":"model_not_allowed"}',
-    }));
+      reason: 'missing_api_key',
+      retryable: false,
+    });
+    expect(inferenceWithVisionMock).not.toHaveBeenCalled();
+  });
+
+  it('returns exception when ModelRouter throws an HTTP-like error', async () => {
+    inferenceWithVisionMock.mockRejectedValue(new Error('HTTP 403 model_not_allowed'));
 
     const result = await analyzeImageWithVisionDetailed({
       imagePath: '/tmp/screen.png',
@@ -81,18 +126,18 @@ describe('visionAnalysisService', () => {
     expect(result).toMatchObject({
       ok: false,
       analysis: null,
-      reason: 'http_error',
-      httpStatus: 403,
-      retryable: false,
+      reason: 'exception',
+      retryable: true,
     });
     if (!result.ok) {
       expect(result.error).toContain('model_not_allowed');
     }
   });
 
-  it('returns timeout when fetch is aborted', async () => {
-    const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' });
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+  it('returns timeout when ModelRouter call exceeds timeoutMs', async () => {
+    inferenceWithVisionMock.mockImplementation(() =>
+      new Promise((resolve) => setTimeout(() => resolve({ content: 'never' }), 5_000)),
+    );
 
     const result = await analyzeImageWithVisionDetailed({
       imagePath: '/tmp/screen.png',
@@ -112,7 +157,7 @@ describe('visionAnalysisService', () => {
     }
   });
 
-  it('returns exception for unexpected failures', async () => {
+  it('returns exception when image preparation fails (e.g. unreadable file)', async () => {
     readFileSyncMock.mockImplementation(() => {
       throw new Error('disk read failed');
     });
@@ -134,16 +179,51 @@ describe('visionAnalysisService', () => {
     }
   });
 
-  it('keeps the legacy string API as nullable analysis text', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ choices: [{ message: { content: 'screen text' } }] }),
-    }));
+  it('returns empty_response when ModelRouter returns no content', async () => {
+    inferenceWithVisionMock.mockResolvedValue({ content: '   ' });
+
+    const result = await analyzeImageWithVisionDetailed({
+      imagePath: '/tmp/screen.png',
+      prompt: 'describe',
+      source: 'test',
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      analysis: null,
+      reason: 'empty_response',
+      retryable: true,
+    });
+  });
+
+  it('keeps the legacy string API as nullable analysis text on success', async () => {
+    inferenceWithVisionMock.mockResolvedValue({
+      content: 'screen text',
+      actualProvider: 'zhipu',
+      actualModel: 'glm-4.6v',
+    });
 
     await expect(analyzeImageWithVision({
       imagePath: '/tmp/screen.png',
       prompt: 'describe',
       source: 'test',
     })).resolves.toBe('screen text');
+  });
+
+  it('returns ok=true with actualModel echoed back', async () => {
+    inferenceWithVisionMock.mockResolvedValue({
+      content: 'a cat picture',
+      actualProvider: 'openai',
+      actualModel: 'gpt-4o',
+    });
+    getModelForCapabilityMock.mockReturnValue({ provider: 'openai', model: 'gpt-4o' });
+
+    const result = await analyzeImageWithVisionDetailed({
+      imagePath: '/tmp/screen.png',
+      prompt: 'describe',
+      source: 'test',
+    });
+
+    expect(result).toMatchObject({ ok: true, analysis: 'a cat picture', model: 'gpt-4o' });
   });
 });

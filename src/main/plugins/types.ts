@@ -38,7 +38,28 @@ export interface PluginManifest extends PluginMetadata {
   permissions?: PluginPermission[];
   /** Plugin capabilities */
   capabilities?: PluginCapability[];
+  /**
+   * Platforms this plugin supports. Optional.
+   *
+   * Host 不强制阻止加载，仅作为 builtin plugin 跨平台标记 / 上游 marketplace
+   * 过滤的元数据。typical 取值：`['darwin']` 表示仅 macOS（如 computer-use），
+   * `['darwin', 'win32', 'linux']` 表示跨平台（如 browser-control）。
+   */
+  platforms?: PluginPlatform[];
+  /**
+   * 该插件依赖的原生二进制 / runtime（仅用于文档披露，host 不做存在性校验）。
+   *
+   * 例如 `['playwright', 'ffmpeg']` 提示该插件需要外部命令行工具。typical 用
+   * 法：让审核者 / 用户在安装前了解依赖；host 实际执行仍走插件代码自己的
+   * 错误处理路径。
+   */
+  nativeDeps?: string[];
 }
+
+/**
+ * Supported platforms for plugin `platforms` field.
+ */
+export type PluginPlatform = 'darwin' | 'win32' | 'linux';
 
 /**
  * Plugin permissions that must be granted

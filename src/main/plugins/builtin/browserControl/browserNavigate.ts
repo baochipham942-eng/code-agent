@@ -14,10 +14,10 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { browserNavigateTool } from '../../vision/browserNavigate';
-import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
+import { browserNavigateTool } from '../../../tools/vision/browserNavigate';
+import { buildLegacyCtxFromProtocol } from '../../../tools/modules/_helpers/legacyAdapter';
 import { browserNavigateSchema as schema } from './browserNavigate.schema';
-import { adaptVisionLegacyResult } from './resultMeta';
+import { adaptVisionLegacyResult } from '../../../tools/modules/vision/resultMeta';
 
 class BrowserNavigateHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;

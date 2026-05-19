@@ -110,13 +110,11 @@ import { pptGenerateSchema } from './network/pptGenerate.schema';
 import { pptEditSchema } from './network/pptEdit.schema';
 
 // vision/
+// browser / browserAction / browserNavigate / validateHtmlInApp 已剥离到
+// builtin plugin `builtin.browserControl`（PR #155），此处不再注册。
 import { visualEditSchema } from './vision/visualEdit.schema';
-import { browserSchema } from './vision/browser.schema';
 import { computerSchema } from './vision/computer.schema';
-import { browserActionSchema } from './vision/browserAction.schema';
-import { browserNavigateSchema } from './vision/browserNavigate.schema';
 import { computerUseSchema } from './vision/computerUse.schema';
-import { validateHtmlInAppSchema } from './vision/validateHtmlInApp.schema';
 import { screenshotSchema } from './vision/screenshot.schema';
 import { guiAgentSchema } from './vision/guiAgent.schema';
 import { ocrSearchSchema } from './vision/ocrSearch.schema';
@@ -223,29 +221,15 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   );
 
   // ── batch 4: vision/ Level 1 native (schema 抽出 + wrapper-mode 委托 legacy)─
-  registry.register(
-    browserSchema,
-    async () => (await import('./vision/browser')).browserModule,
-  );
+  // browser / browser_action / browser_navigate / validate_html_in_app 已剥离到
+  // builtin plugin `builtin.browserControl`（PR #155），由 pluginRegistry 注册。
   registry.register(
     computerSchema,
     async () => (await import('./vision/computer')).computerModule,
   );
   registry.register(
-    browserActionSchema,
-    async () => (await import('./vision/browserAction')).browserActionModule,
-  );
-  registry.register(
-    browserNavigateSchema,
-    async () => (await import('./vision/browserNavigate')).browserNavigateModule,
-  );
-  registry.register(
     computerUseSchema,
     async () => (await import('./vision/computerUse')).computerUseModule,
-  );
-  registry.register(
-    validateHtmlInAppSchema,
-    async () => (await import('./vision/validateHtmlInApp')).validateHtmlInAppModule,
   );
   registry.register(
     screenshotSchema,

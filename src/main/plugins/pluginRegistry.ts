@@ -27,6 +27,10 @@ import {
   manifest as builtinImageProcessManifest,
   default as builtinImageProcessEntry,
 } from './builtin/imageProcess';
+import {
+  manifest as builtinAudioProcessingManifest,
+  default as builtinAudioProcessingEntry,
+} from './builtin/audioProcessing';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
 import { getAuthService } from '../services/auth/authService';
@@ -218,6 +222,10 @@ export class PluginRegistry {
       {
         manifest: builtinImageProcessManifest,
         entry: builtinImageProcessEntry,
+      },
+      {
+        manifest: builtinAudioProcessingManifest,
+        entry: builtinAudioProcessingEntry,
       },
     ];
 

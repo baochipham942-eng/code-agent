@@ -19,11 +19,12 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConfigService } from '../../../services';
-import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
+import { MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { textToSpeechSchema as schema } from './textToSpeech.schema';
 
 const CONFIG = {
-  API_URL: 'https://open.bigmodel.cn/api/paas/v4/audio/speech',
+  API_URL: `${MODEL_API_ENDPOINTS.zhipuOfficial}/audio/speech`,
   MODEL: 'glm-tts',
   TIMEOUT_MS: 60000,
   MAX_TEXT_LENGTH: 2000,

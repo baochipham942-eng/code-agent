@@ -24,7 +24,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConfigService } from '../../../services';
-import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS } from '../../../../shared/constants';
+import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS, BAIDU_OCR_ENDPOINTS } from '../../../../shared/constants';
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { imageAnnotateSchema as schema } from './imageAnnotate.schema';
 
@@ -32,8 +32,8 @@ const CONFIG = {
   ZHIPU_MODEL: ZHIPU_VISION_MODEL,
   ZHIPU_MODEL_MAX_TOKENS: 2048,
   ZHIPU_API_URL: `${MODEL_API_ENDPOINTS.zhipu}/chat/completions`,
-  BAIDU_OCR_TOKEN_URL: 'https://aip.baidubce.com/oauth/2.0/token',
-  BAIDU_OCR_API_URL: 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate',
+  BAIDU_OCR_TOKEN_URL: BAIDU_OCR_ENDPOINTS.token,
+  BAIDU_OCR_API_URL: BAIDU_OCR_ENDPOINTS.accurate,
   TIMEOUT_MS: 60000,
   SUPPORTED_FORMATS: ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'],
   MAX_IMAGE_SIZE_MB: 10,

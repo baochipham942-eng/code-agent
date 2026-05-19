@@ -16,11 +16,17 @@ import type {
   PluginHookResult,
   PluginApiKeyProvider,
   PluginConstantsNamespace,
+  PluginRegisterToolModuleOptions,
 } from './types';
 import type { HookEvent } from '../protocol/events';
 import type { ModelProvider } from '../../shared/contract';
 import { discoverPlugins, loadPlugin, watchPluginsDir } from './pluginLoader';
 import { createPluginStorage, initPluginStorageTable } from './pluginStorage';
+// Builtin plugins — 与 host 同 bundle，通过静态 import 让 esbuild 打包，不走磁盘 discovery
+import {
+  manifest as builtinImageProcessManifest,
+  default as builtinImageProcessEntry,
+} from './builtin/imageProcess';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
 import { getAuthService } from '../services/auth/authService';
@@ -176,19 +182,57 @@ export class PluginRegistry {
     // Initialize storage table
     initPluginStorageTable();
 
-    // Discover and load plugins
+    // Load builtin plugins first（硬编码列表，与 host 同 bundle，不走磁盘 discovery）
+    this.loadBuiltinPlugins();
+
+    // Discover and load third-party plugins from disk
     const plugins = await discoverPlugins();
     for (const plugin of plugins) {
       this.plugins.set(plugin.manifest.id, plugin);
     }
 
-    // Activate all plugins
+    // Activate all plugins (builtin + third-party)
     await this.activateAll();
 
     // Start watching for changes
     this.startWatching();
 
     logger.info(`Plugin system initialized. ${this.plugins.size} plugins loaded.`);
+  }
+
+  /**
+   * 加载 builtin plugins（与 host 同 bundle，硬编码列表）。
+   *
+   * 与磁盘 discovery 的区别：
+   * - 不读 manifest.json / package.json，manifest 通过静态 import 拿到
+   * - 不走 dynamic import，让 esbuild 能 tree-shake / 打包成 host 同一份代码
+   * - rootPath 用占位符 `builtin:<id>`，watcher 和 reloadPlugin 都不会误命中
+   *
+   * 新增 builtin plugin 时在下方数组追加一条即可。
+   */
+  private loadBuiltinPlugins(): void {
+    const builtinPlugins: Array<{
+      manifest: import('./types').PluginManifest;
+      entry: import('./types').PluginEntry;
+    }> = [
+      {
+        manifest: builtinImageProcessManifest,
+        entry: builtinImageProcessEntry,
+      },
+    ];
+
+    for (const { manifest, entry } of builtinPlugins) {
+      const loadedPlugin: LoadedPlugin = {
+        manifest,
+        rootPath: `builtin:${manifest.id}`,
+        state: 'inactive',
+        entry,
+        registeredTools: [],
+        registeredHooks: [],
+      };
+      this.plugins.set(manifest.id, loadedPlugin);
+      logger.info(`Loaded builtin plugin: ${manifest.id}`);
+    }
   }
 
   /**
@@ -328,23 +372,33 @@ export class PluginRegistry {
         return CONSTANTS_BUCKETS[namespace];
       },
 
-      registerToolModule: (module: ToolModule) => {
-        const prefixedName = `${plugin.manifest.id}:${module.schema.name}`;
-        const prefixedModule: ToolModule = {
+      registerToolModule: (
+        module: ToolModule,
+        options?: PluginRegisterToolModuleOptions,
+      ) => {
+        // 默认 prefixWithPluginId=true，与既有第三方插件安全模型一致。
+        // 传 false 仅供 builtin plugin 使用：保留原工具名，避免破坏 executionPhase
+        // 分类、ToolSearch deferredTools 注册、LLM prompt / cache / eval baseline。
+        const prefixWithPluginId = options?.prefixWithPluginId ?? true;
+        const finalName = prefixWithPluginId
+          ? `${plugin.manifest.id}:${module.schema.name}`
+          : module.schema.name;
+        const finalModule: ToolModule = {
           schema: {
             ...module.schema,
-            name: prefixedName,
+            name: finalName,
           },
           createHandler: module.createHandler.bind(module),
         };
-        // 双通道命名冲突检查（registerTool + registerToolModule 共享 registeredTools）
-        if (plugin.registeredTools.includes(prefixedName)) {
-          throw new Error(`Tool ${prefixedName} already registered`);
+        // 双通道命名冲突检查（registerTool + registerToolModule 共享 registeredTools）。
+        // opt-out 也走这条检查 — builtin plugin 之间或与第三方插件撞名时仍要抛错。
+        if (plugin.registeredTools.includes(finalName)) {
+          throw new Error(`Tool ${finalName} already registered`);
         }
         // ToolLoader 签名要求返回 Promise<ToolModule>，registry 内部首次解析时再调 createHandler
-        getProtocolRegistry().register(prefixedModule.schema, async () => prefixedModule);
-        plugin.registeredTools.push(prefixedName);
-        logger.info(`Plugin ${plugin.manifest.id} registered tool module: ${prefixedName}`);
+        getProtocolRegistry().register(finalModule.schema, async () => finalModule);
+        plugin.registeredTools.push(finalName);
+        logger.info(`Plugin ${plugin.manifest.id} registered tool module: ${finalName}`);
       },
     };
   }
@@ -673,6 +727,10 @@ export class PluginRegistry {
 
   /**
    * Reload a plugin
+   *
+   * Builtin plugin（rootPath 以 `builtin:` 开头）跳过磁盘 reload — 它跟 host
+   * 同 bundle，没有独立磁盘路径可走 dynamic import。这类插件只走 deactivate +
+   * activate（用静态 import 留下的 entry 引用）。
    */
   async reloadPlugin(pluginId: string): Promise<boolean> {
     const plugin = this.plugins.get(pluginId);
@@ -681,6 +739,11 @@ export class PluginRegistry {
     }
 
     await this.deactivatePlugin(pluginId);
+
+    // Builtin plugin: 没有磁盘路径，直接复用现有 entry 重新 activate
+    if (plugin.rootPath.startsWith('builtin:')) {
+      return this.activatePlugin(pluginId);
+    }
 
     const result = await loadPlugin(plugin.rootPath);
     if (result.success && result.plugin) {

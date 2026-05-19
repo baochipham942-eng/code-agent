@@ -29,7 +29,7 @@ vi.mock('../../../../../src/main/services', () => ({
   getConfigService: () => getConfigServiceMock(),
 }));
 
-import { videoGenerateModule, executeVideoGenerate } from '../../../../../src/main/tools/modules/network/videoGenerate';
+import { videoGenerateModule, executeVideoGenerate } from '../../../../../src/main/plugins/builtin/videoGeneration/videoGenerate';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

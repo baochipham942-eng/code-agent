@@ -42,7 +42,8 @@ vi.mock('../../../../../src/main/utils/safeShell', () => ({
   safeExecDetached: (...args: unknown[]) => safeExecDetachedMock(...args),
 }));
 
-import { imageGenerateModule, executeImageGenerate, determineImageEngine } from '../../../../../src/main/tools/modules/network/imageGenerate';
+import { imageGenerateModule, executeImageGenerate } from '../../../../../src/main/plugins/builtin/imageCreation/imageGenerate';
+import { determineImageEngine } from '../../../../../src/main/services/media/imageGenerationService';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

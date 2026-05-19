@@ -46,7 +46,7 @@ vi.mock('../../../../../src/main/services', () => ({
   getConfigService: () => getConfigServiceMock(),
 }));
 
-import { imageAnnotateModule, executeImageAnnotate } from '../../../../../src/main/tools/modules/network/imageAnnotate';
+import { imageAnnotateModule, executeImageAnnotate } from '../../../../../src/main/plugins/builtin/imageCreation/imageAnnotate';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

@@ -10,11 +10,10 @@
 //   - 拦 wiring bug #1 (aebaa4e0 session flush via activeAgentLoops) 的前置
 //   - 拦 wiring bug #2 (e30c90ce auth token 失效路径) 的基础 (SSE 订阅 + token 注入)
 //
-// PoC 期间的真实发现 (见 docs/audits/e2e-strategy.md §5 "PoC 期间发现"):
-//   SessionManager.createSession() 没有调 notifySessionListUpdated(),
-//   导致 REST 路径建的 session 不经 SSE 通知到 renderer。这本身就是一个
-//   wiring bug, 但 PoC 不主动修, 留 follow-up。
-//   因此 PoC 只验证 UI click 路径 (走 reload-on-create 隐式机制), 不用 REST 注入。
+// PoC 期间的真实发现 (见 docs/audits/e2e-strategy.md §7 "PoC 期间发现"):
+//   SessionManager.createSession() 漏调 notifySessionListUpdated() 时,
+//   REST 路径建的 session 不经 SSE 通知到 renderer。这里保留 REST 注入回归,
+//   避免 UI click 的 optimistic state 掩盖写入端通知缺口。
 //
 // 见 docs/audits/e2e-strategy.md §3 Flow A.
 // ============================================================================
@@ -144,4 +143,31 @@ test('PoC: 创建后新 session 出现在侧边栏', async ({ page }) => {
   // 这个 id 在侧边栏 session 列表里能找到 (不只是 aria-current=true 的)
   const sidebarItem = page.locator(`[data-session-id="${sessionId}"]`).first();
   await expect(sidebarItem).toBeVisible({ timeout: 5_000 });
+});
+
+// ----------------------------------------------------------------------------
+// Test 4: REST 创建 session → SessionManager 通知 → SSE → renderer loadSessions
+// 验证: 非 UI 路径创建 session 后, 页面不 reload 也能看到新 session
+// ----------------------------------------------------------------------------
+test('PoC: REST 创建 session 后经 SSE 出现在侧边栏', async ({ page, request }) => {
+  await waitForAppReady(page);
+
+  const token = await getAuthToken(page);
+  const title = `REST SSE Session ${Date.now()}`;
+  const response = await request.post('/api/sessions', {
+    data: { title },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  expect(
+    response.ok(),
+    `POST /api/sessions failed: ${response.status()} ${await response.text()}`,
+  ).toBe(true);
+
+  const body = await response.json() as { success: boolean; data?: { id?: string } };
+  expect(body.success).toBe(true);
+  expect(body.data?.id, 'created session id missing').toBeTruthy();
+
+  const sidebarItem = page.locator(`[data-session-id="${body.data!.id}"]`).first();
+  await expect(sidebarItem).toBeVisible({ timeout: 10_000 });
 });

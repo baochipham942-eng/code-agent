@@ -9,9 +9,11 @@ const dbState = {
 const dbMock = {
   listSessions: vi.fn(() => dbState.sessions),
   getSession: vi.fn((id: string) => dbState.sessions.find((session) => session.id === id) ?? null),
+  createSession: vi.fn(),
   createSessionWithId: vi.fn(),
   updateSession: vi.fn(),
   getRecentMessages: vi.fn(() => [] as any[]),
+  logAuditEvent: vi.fn(),
 };
 
 const supabaseLimitMock = vi.fn();
@@ -55,9 +57,28 @@ describe('SessionManager cloud sync notifications', () => {
     sendMock.mockReset();
     dbMock.listSessions.mockClear();
     dbMock.getSession.mockClear();
+    dbMock.createSession.mockClear();
     dbMock.createSessionWithId.mockClear();
     dbMock.updateSession.mockClear();
+    dbMock.logAuditEvent.mockClear();
     supabaseLimitMock.mockReset();
+  });
+
+  it('broadcasts session:list-updated after creating a local session', async () => {
+    const { SessionManager } = await import('../../../../src/main/services/infra/sessionManager');
+    const manager = new SessionManager();
+
+    const session = await manager.createSession({
+      title: 'REST-created session',
+      modelConfig: { provider: 'openai', model: 'gpt-5' },
+    });
+
+    expect(dbMock.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      id: session.id,
+      title: 'REST-created session',
+    }));
+    expect(dbMock.logAuditEvent).toHaveBeenCalledWith('session_created', { sessionId: session.id }, session.id);
+    expect(sendMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not broadcast session:list-updated when cloud sync finds no metadata changes', async () => {

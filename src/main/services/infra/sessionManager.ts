@@ -265,6 +265,8 @@ export class SessionManager implements Disposable {
     // 记录审计日志
     db.logAuditEvent('session_created', { sessionId: session.id }, session.id);
 
+    this.notifySessionListUpdated();
+
     return session;
   }
 

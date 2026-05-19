@@ -158,6 +158,27 @@ export async function findAvailablePort(host = '127.0.0.1'): Promise<number> {
   });
 }
 
+export async function resolveCdpEndpointUrl(
+  port: number,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const httpEndpoint = `http://127.0.0.1:${port}`;
+  try {
+    const response = await fetchImpl(`${httpEndpoint}/json/version`);
+    if (!response.ok) {
+      return httpEndpoint;
+    }
+    const payload = await response.json() as { webSocketDebuggerUrl?: unknown };
+    if (typeof payload.webSocketDebuggerUrl === 'string' && payload.webSocketDebuggerUrl.startsWith('ws')) {
+      return payload.webSocketDebuggerUrl;
+    }
+  } catch {
+    // Fall back to the traditional HTTP endpoint; Playwright supports it when
+    // the browser accepts /json/version/ with a trailing slash.
+  }
+  return httpEndpoint;
+}
+
 function buildMissingChromeRecommendedAction(executable: string | null): string {
   const installTarget = executable || MACOS_CHROME_EXECUTABLE;
   return `Install Google Chrome at ${installTarget} or set CHROME_PATH to the Chrome executable; set CODE_AGENT_BROWSER_PROVIDER=playwright-bundled to force the bundled fallback.`;

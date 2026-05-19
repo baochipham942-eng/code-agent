@@ -3,6 +3,7 @@ import {
   buildSystemChromeCdpArgs,
   normalizeBrowserProviderPreference,
   resolveBrowserProvider,
+  resolveCdpEndpointUrl,
 } from '../../../../src/main/services/infra/browserProvider';
 
 describe('browser provider resolution', () => {
@@ -98,5 +99,20 @@ describe('browser provider resolution', () => {
 
     expect(args).toContain('--proxy-server=http://127.0.0.1:7890');
     expect(args).toContain('--proxy-bypass-list=localhost;127.0.0.1');
+  });
+
+  it('prefers the websocket CDP endpoint advertised by Chrome', async () => {
+    const fetchImpl = async () => new Response(
+      JSON.stringify({ webSocketDebuggerUrl: 'ws://127.0.0.1:9222/devtools/browser/abc' }),
+      { status: 200 },
+    );
+
+    await expect(resolveCdpEndpointUrl(9222, fetchImpl)).resolves.toBe('ws://127.0.0.1:9222/devtools/browser/abc');
+  });
+
+  it('falls back to the HTTP CDP endpoint when Chrome metadata is unavailable', async () => {
+    const fetchImpl = async () => new Response('bad request', { status: 400 });
+
+    await expect(resolveCdpEndpointUrl(9222, fetchImpl)).resolves.toBe('http://127.0.0.1:9222');
   });
 });

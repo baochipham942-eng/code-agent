@@ -9,8 +9,8 @@ import type {
   CanUseToolFn,
   Logger,
 } from '../../../../../src/main/protocol/tools';
-import { screenshotSchema } from '../../../../../src/main/tools/modules/vision/screenshot.schema';
-import { screenshotModule } from '../../../../../src/main/tools/modules/vision/screenshot';
+import { screenshotSchema } from '../../../../../src/main/plugins/builtin/computerUse/screenshot.schema';
+import { screenshotModule } from '../../../../../src/main/plugins/builtin/computerUse/screenshot';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

@@ -8,6 +8,7 @@ import {
   buildSystemChromeCdpArgs,
   findAvailablePort,
   resolveBrowserProvider,
+  resolveCdpEndpointUrl,
 } from '../../services/infra/browserProvider';
 import { loadPlaywrightChromium } from './browser/playwrightRuntime';
 import { acquireLaunchSlot, type LaunchSlot } from '../../services/infra/playwrightLaunchSemaphore';
@@ -670,7 +671,7 @@ async function runRuntimeSmoke(filePath: string, timeoutMs: number): Promise<Run
           { stdio: ['ignore', 'ignore', 'ignore'] },
         );
         await waitForCdpEndpoint(port, chromeProcess, Math.min(timeoutMs, 8000));
-        browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+        browser = await chromium.connectOverCDP(await resolveCdpEndpointUrl(port));
         const context = browser.contexts()[0] || await browser.newContext({
           viewport: { width: 900, height: 700 },
         });

@@ -81,6 +81,13 @@ Desktop routing contract:
 - {"action": "smart_type", "selector": "#email", "text": "user@example.com"}
 - {"action": "get_elements"} - list all interactive elements
 
+## Desktop operation contract
+1. Observe first: use observe, get_state, get_windows, get_ax_elements, or diagnose_app before choosing a desktop action.
+2. Keep coordinate provenance clear: screen coordinates must come from the current screenshot; axPath must come from the current Accessibility tree; windowLocalPoint must come from get_windows for the same target window.
+3. Do not mix sources across windows, apps, or stale screenshots. If the active app/window changed, observe again.
+4. Treat action success as event delivery only. Re-observe after click/type/batch to verify the UI result before continuing.
+5. Prefer targetApp + axPath or targetApp + role/name for text fields and buttons. Use raw coordinates only when Accessibility cannot identify the target.
+
 ## Standard recipe for filling a desktop text field (avoids "keystrokes-go-to-wrong-app" bugs)
 1. {"action":"observe", "targetApp":"Notes"} - confirm targetApp is reachable
 2. {"action":"get_ax_elements", "targetApp":"Notes"} - list element axPaths

@@ -134,7 +134,7 @@ describe('docxGenerateModule (native)', () => {
   });
 
   describe('happy path', () => {
-    it('writes docx with default theme + Code Agent author', async () => {
+    it('writes docx with default theme + Agent Neo author', async () => {
       const result = await run({ title: '报告', content: '# 标题\n正文' });
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -153,7 +153,7 @@ describe('docxGenerateModule (native)', () => {
           metadata: {
             title: '报告',
             theme: 'professional',
-            author: 'Code Agent',
+            author: 'Agent Neo',
           },
         });
         const att = meta.attachment as Record<string, string | number>;

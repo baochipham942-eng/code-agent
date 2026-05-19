@@ -171,18 +171,18 @@ describe('readPdfModule (native)', () => {
       }
     });
 
-    it('falls back to cloud proxy when no api key', async () => {
+    it('returns a configuration error when no OpenRouter api key is available', async () => {
       getApiKeyMock.mockReturnValue(undefined);
       fetchMock.mockResolvedValue(
         makeJsonResponse({ choices: [{ message: { content: 'cloud summary' } }] }),
       );
       const result = await run({ file_path: '/abs/doc.pdf' });
-      expect(result.ok).toBe(true);
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      if (result.ok) expect(result.output).toContain('cloud summary');
+      expect(result.ok).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+      if (!result.ok) expect(result.error).toContain('OpenRouter API Key');
     });
 
-    it('falls back to cloud proxy when direct call fails', async () => {
+    it('returns the direct OpenRouter failure instead of using a cloud proxy fallback', async () => {
       getApiKeyMock.mockReturnValue('sk-test-key');
       fetchMock
         .mockResolvedValueOnce(makeJsonResponse({ error: 'rate limited' }, false))
@@ -190,9 +190,9 @@ describe('readPdfModule (native)', () => {
           makeJsonResponse({ choices: [{ message: { content: 'fallback summary' } }] }),
         );
       const result = await run({ file_path: '/abs/doc.pdf' });
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      expect(result.ok).toBe(true);
-      if (result.ok) expect(result.output).toContain('fallback summary');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toContain('OpenRouter');
     });
 
     it('passes custom prompt to model request', async () => {

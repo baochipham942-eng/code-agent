@@ -26,6 +26,7 @@ import {
   buildSystemChromeCdpArgs,
   findAvailablePort,
   resolveBrowserProvider,
+  resolveCdpEndpointUrl,
   type BrowserProviderResolution,
 } from './browserProvider';
 import { BrowserLogger } from './browser/logger';
@@ -1063,7 +1064,7 @@ export class BrowserService implements Disposable {
     ]);
 
     const pw = await getPlaywright();
-    this.browser = await pw.chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
+    this.browser = await pw.chromium.connectOverCDP(await resolveCdpEndpointUrl(cdpPort));
     this.context = this.browser.contexts()[0] || await this.browser.newContext({
       viewport: this.viewport,
       acceptDownloads: true,

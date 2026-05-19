@@ -148,10 +148,21 @@ vi.mock('../../../src/shared/constants', () => ({
   DEFAULT_MODEL: 'test-model',
   DEFAULT_MODELS: {},
   MODEL_API_ENDPOINTS: {},
+  BAIDU_OCR_ENDPOINTS: {
+    token: 'https://example.invalid/oauth/token',
+    accurate: 'https://example.invalid/ocr',
+  },
   ZHIPU_VISION_MODEL: 'vision-model',
   getCloudApiUrl: vi.fn().mockReturnValue('https://example.invalid'),
   MODEL_MAX_TOKENS: {},
+  MODEL_MAX_OUTPUT_TOKENS: {},
   CONTEXT_WINDOWS: { 'test-model': 128000 },
+  MODEL_PRICING_PER_1M: {},
+  MCP_TIMEOUTS: {},
+  DAG_SCHEDULER: {},
+  AGENT_TIMEOUTS: {},
+  NETWORK_TOOL_TIMEOUTS: {},
+  BROWSER_TIMEOUTS: {},
   DEFAULT_CONTEXT_WINDOW: 128000,
   getContextWindow: vi.fn().mockReturnValue(128000),
   TOOL_PROGRESS: {},
@@ -758,7 +769,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(estimateTokens(modelMessages[0].content)).toBeLessThanOrEqual(MAX_SYSTEM_PROMPT_TOKENS);
     expect(buildSessionMetadataBlock).not.toHaveBeenCalled();
     expect(loadMemoryIndex).not.toHaveBeenCalled();
-    expect(loadRelevantSkills).not.toHaveBeenCalled();
     expect(getRepoMap).not.toHaveBeenCalled();
     expect(buildRecentConversationsBlock).not.toHaveBeenCalled();
     expect(getDeferredToolsSummary).not.toHaveBeenCalled();

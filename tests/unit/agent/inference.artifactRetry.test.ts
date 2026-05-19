@@ -13,6 +13,12 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
     error: vi.fn(),
     debug: vi.fn(),
   }),
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
 }));
 
 vi.mock('../../../src/main/services', () => ({
@@ -27,6 +33,7 @@ vi.mock('../../../src/main/services', () => ({
 vi.mock('../../../src/main/mcp/logCollector.js', () => ({
   logCollector: {
     agent: vi.fn(),
+    browser: vi.fn(),
   },
 }));
 

@@ -1,8 +1,9 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { ToolSearchService } from '../../../src/main/services/toolSearch/toolSearchService';
 import { DEFERRED_TOOLS_META } from '../../../src/main/services/toolSearch/deferredTools';
-import { isProtocolToolName, resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
+import { getProtocolRegistry, isProtocolToolName, resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
 import { resetToolSearchService } from '../../../src/main/services/toolSearch';
+import type { ToolModule, ToolSchema } from '../../../src/main/protocol/tools';
 
 const mcpClientMocks = vi.hoisted(() => ({
   discoverLazyServersForSearch: vi.fn(),
@@ -27,9 +28,35 @@ vi.mock('../../../src/main/mcp/mcpClient', () => ({
   getMCPClient: () => mcpClientMocks,
 }));
 
+function registerProtocolToolForSearch(name: 'Browser' | 'Computer'): void {
+  const schema: ToolSchema = {
+    name,
+    description: `${name} test schema`,
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+    category: 'vision',
+    permissionLevel: 'execute',
+    readOnly: false,
+  };
+  const module: ToolModule = {
+    schema,
+    createHandler: () => ({
+      schema,
+      async execute() {
+        return { ok: true, output: null };
+      },
+    }),
+  };
+  getProtocolRegistry().register(schema, async () => module);
+}
+
 describe('ToolSearchService loadable results', () => {
   beforeEach(() => {
     resetProtocolRegistry();
+    registerProtocolToolForSearch('Browser');
+    registerProtocolToolForSearch('Computer');
     resetToolSearchService();
     mcpClientMocks.discoverLazyServersForSearch.mockReset();
     mcpClientMocks.discoverLazyServersForSearch.mockResolvedValue([]);

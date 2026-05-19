@@ -47,13 +47,13 @@ vi.mock('../../../../../src/main/tools/vision/guiAgent', () => ({
   guiAgentTool: { execute: legacyExecute.guiAgent },
 }));
 
-import { browserModule } from '../../../../../src/main/tools/modules/vision/browser';
-import { browserActionModule } from '../../../../../src/main/tools/modules/vision/browserAction';
-import { browserNavigateModule } from '../../../../../src/main/tools/modules/vision/browserNavigate';
-import { computerModule } from '../../../../../src/main/tools/modules/vision/computer';
-import { computerUseModule } from '../../../../../src/main/tools/modules/vision/computerUse';
-import { screenshotModule } from '../../../../../src/main/tools/modules/vision/screenshot';
-import { guiAgentModule } from '../../../../../src/main/tools/modules/vision/guiAgent';
+import { browserModule } from '../../../../../src/main/plugins/builtin/browserControl/browser';
+import { browserActionModule } from '../../../../../src/main/plugins/builtin/browserControl/browserAction';
+import { browserNavigateModule } from '../../../../../src/main/plugins/builtin/browserControl/browserNavigate';
+import { computerModule } from '../../../../../src/main/plugins/builtin/computerUse/computer';
+import { computerUseModule } from '../../../../../src/main/plugins/builtin/computerUse/computerUse';
+import { screenshotModule } from '../../../../../src/main/plugins/builtin/computerUse/screenshot';
+import { guiAgentModule } from '../../../../../src/main/plugins/builtin/computerUse/guiAgent';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

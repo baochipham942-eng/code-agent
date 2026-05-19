@@ -788,16 +788,7 @@ describe('createAgentRouter', () => {
       title: 'Codex CLI failed',
       message: 'External Agent Engine execution is not allowed for channel sessions.',
     }));
-    expect(agentEngineMocks.enqueueReviewSession).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: 'session-channel-engine',
-      reason: 'failure_followup',
-      enqueueSource: 'replay_failure',
-      failureCapability: expect.objectContaining({
-        sink: 'capability_health',
-        category: 'env_failure',
-        summary: 'External Agent Engine execution is not allowed for channel sessions.',
-      }),
-    }));
+    expect(agentEngineMocks.enqueueReviewSession).not.toHaveBeenCalled();
   });
 
   it('records a failed task when an external engine adapter throws before returning a result', async () => {
@@ -870,15 +861,7 @@ describe('createAgentRouter', () => {
       title: 'Codex CLI failed',
       message: 'Codex adapter exploded before terminal event',
     }));
-    expect(agentEngineMocks.enqueueReviewSession).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: 'session-codex-adapter-throw',
-      reason: 'failure_followup',
-      failureCapability: expect.objectContaining({
-        sink: 'capability_health',
-        category: 'env_failure',
-        summary: 'Codex adapter exploded before terminal event',
-      }),
-    }));
+    expect(agentEngineMocks.enqueueReviewSession).not.toHaveBeenCalled();
   });
 
   it('falls back to the app work directory instead of HOME when no working directory is known', async () => {

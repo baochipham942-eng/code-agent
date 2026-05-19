@@ -15,8 +15,6 @@ describe('appStore', () => {
       showSettings: false,
       settingsInitialTab: null,
       settingsMemoryFocus: null,
-      showEvalCenter: false,
-      evalCenterSessionId: null,
       showKnowledgeMemoryPanel: false,
       optionalUpdateInfo: null,
     });
@@ -64,14 +62,13 @@ describe('appStore', () => {
     });
   });
 
-  it('opens the knowledge memory panel outside settings and closes eval center', () => {
-    useAppStore.getState().setShowEvalCenter(true, undefined, 'session-1');
+  it('opens the knowledge memory panel outside settings and closes computer use', () => {
+    useAppStore.setState({ showComputerUsePanel: true });
     useAppStore.getState().setShowKnowledgeMemoryPanel(true);
 
     expect(useAppStore.getState()).toMatchObject({
       showKnowledgeMemoryPanel: true,
-      showEvalCenter: false,
-      evalCenterSessionId: null,
+      showComputerUsePanel: false,
     });
   });
 

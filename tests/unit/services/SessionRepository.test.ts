@@ -118,7 +118,7 @@ describe('SessionRepository', () => {
 
       // First param should be the title
       expect(updateResult!.params[0]).toBe('New Title');
-      // generationId not provided → should be null (COALESCE keeps existing)
+      // userId not provided -> should be null (COALESCE keeps existing)
       expect(updateResult!.params[1]).toBeNull();
     });
 
@@ -133,10 +133,12 @@ describe('SessionRepository', () => {
 
       // title not provided → null
       expect(updateResult!.params[0]).toBeNull();
+      // userId not provided -> null
+      expect(updateResult!.params[1]).toBeNull();
       // provider
-      expect(updateResult!.params[1]).toBe('openai');
+      expect(updateResult!.params[2]).toBe('openai');
       // model
-      expect(updateResult!.params[2]).toBe('gpt-4');
+      expect(updateResult!.params[3]).toBe('gpt-4');
     });
 
     it('should handle partial update with only status', () => {
@@ -146,9 +148,9 @@ describe('SessionRepository', () => {
       const updateResult = results.find((r) => r.sql.includes('COALESCE'));
       expect(updateResult).toBeDefined();
 
-      // title, generationId, provider, model should all be null
+      // title, userId, provider, model should all be null
       expect(updateResult!.params[0]).toBeNull(); // title
-      expect(updateResult!.params[1]).toBeNull(); // generationId
+      expect(updateResult!.params[1]).toBeNull(); // userId
       expect(updateResult!.params[2]).toBeNull(); // provider
       expect(updateResult!.params[3]).toBeNull(); // model
     });
@@ -164,7 +166,7 @@ describe('SessionRepository', () => {
       expect(updateResult).toBeDefined();
 
       // lastTokenUsage param should be JSON string
-      const lastTokenParam = updateResult!.params[9];
+      const lastTokenParam = updateResult!.params[10];
       expect(typeof lastTokenParam).toBe('string');
       expect(JSON.parse(lastTokenParam as string)).toEqual(tokenUsage);
     });
@@ -177,7 +179,7 @@ describe('SessionRepository', () => {
       expect(updateResult).toBeDefined();
 
       // lastTokenUsage not provided → null (COALESCE keeps existing value)
-      expect(updateResult!.params[9]).toBeNull();
+      expect(updateResult!.params[10]).toBeNull();
     });
 
     it('should throw when session not found (changes === 0)', () => {

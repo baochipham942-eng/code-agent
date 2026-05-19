@@ -15,6 +15,7 @@ process.env.CODE_AGENT_CLI_MODE = '1';
 vi.mock('electron', () => ({
   app: {
     getPath: (name: string) => `/tmp/mock-electron-${name}`,
+    getAppPath: () => process.cwd(),
     getName: () => 'code-agent-test',
     getVersion: () => '0.0.0-test',
     isPackaged: false,
@@ -95,7 +96,7 @@ vi.mock('better-sqlite3', () => {
     }),
     exec: () => {},
     close: () => {},
-    transaction: (fn: Function) => fn,
+    transaction: <T extends (...args: unknown[]) => unknown>(fn: T): T => fn,
   };
   return { default: () => mockDb };
 });

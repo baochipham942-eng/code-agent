@@ -5,6 +5,7 @@
 
 export const app = {
   getPath: (name: string) => `/tmp/mock-electron-${name}`,
+  getAppPath: () => process.cwd(),
   getName: () => 'code-agent-test',
   getVersion: () => '0.0.0-test',
   isPackaged: false,

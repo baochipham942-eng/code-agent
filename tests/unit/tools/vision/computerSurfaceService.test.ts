@@ -468,12 +468,12 @@ describe('DesktopComputerSurface target boundaries', () => {
     });
   });
 
-  // G26 片1：Code Agent 自身的只读 Computer Surface 操作豁免保护，写操作仍全拦。
-  describe('Code Agent self-app read carve-out (G26)', () => {
-    it('allows observe on Code Agent itself (read is reentrancy-safe)', async () => {
+  // G26 片1：Agent Neo 自身的只读 Computer Surface 操作豁免保护，写操作仍全拦。
+  describe('Agent Neo self-app read carve-out (G26)', () => {
+    it('allows observe on Agent Neo itself (read is reentrancy-safe)', async () => {
       const surface = await loadSurface();
 
-      const snapshot = await surface.observe({ targetApp: 'Code Agent' });
+      const snapshot = await surface.observe({ targetApp: 'Agent Neo' });
 
       // 放行 = 越过门禁、真去查 app context（mock 的 osascript 被调用）
       expect(childProcessMocks.execFile).toHaveBeenCalled();
@@ -483,12 +483,12 @@ describe('DesktopComputerSurface target boundaries', () => {
       );
     });
 
-    it('allows get_ax_elements / get_windows / diagnose_app on Code Agent itself', async () => {
+    it('allows get_ax_elements / get_windows / diagnose_app on Agent Neo itself', async () => {
       const surface = await loadSurface();
 
-      const ax = await surface.listBackgroundElements({ action: 'get_ax_elements', targetApp: 'Code Agent' });
-      const windows = await surface.listBackgroundCgEventWindows({ targetApp: 'Code Agent' });
-      const diagnosis = await surface.diagnoseApp({ action: 'diagnose_app', targetApp: 'Code Agent' });
+      const ax = await surface.listBackgroundElements({ action: 'get_ax_elements', targetApp: 'Agent Neo' });
+      const windows = await surface.listBackgroundCgEventWindows({ targetApp: 'Agent Neo' });
+      const diagnosis = await surface.diagnoseApp({ action: 'diagnose_app', targetApp: 'Agent Neo' });
 
       for (const result of [ax, windows, diagnosis]) {
         expect(result.error ?? '').not.toContain('protected app');
@@ -496,13 +496,13 @@ describe('DesktopComputerSurface target boundaries', () => {
       }
     });
 
-    it('still blocks write authorization on Code Agent itself (reentrancy guard)', async () => {
+    it('still blocks write authorization on Agent Neo itself (reentrancy guard)', async () => {
       const surface = await loadSurface();
       const requestPermission = vi.fn(async () => true);
 
       const authorization = await surface.authorizeAction({
         action: 'click',
-        targetApp: 'Code Agent',
+        targetApp: 'Agent Neo',
         role: 'button',
         name: 'Send',
       }, { requestPermission });
@@ -517,18 +517,18 @@ describe('DesktopComputerSurface target boundaries', () => {
       });
     });
 
-    it('still blocks mutating surface actions on Code Agent itself', async () => {
+    it('still blocks mutating surface actions on Agent Neo itself', async () => {
       const surface = await loadSurface();
 
       const axResult = await surface.executeBackgroundAction({
         action: 'click',
-        targetApp: 'Code Agent',
+        targetApp: 'Agent Neo',
         role: 'button',
         name: 'Send',
       });
       const cgEventResult = await surface.executeBackgroundCgEventAction({
         action: 'click',
-        targetApp: 'Code Agent',
+        targetApp: 'Agent Neo',
         pid: 1234,
         windowId: 42,
         windowLocalPoint: { x: 10, y: 20 },

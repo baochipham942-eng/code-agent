@@ -64,7 +64,7 @@ vi.mock('../../../../src/main/tools/artifacts/artifactMeta', () => ({
 }));
 
 import { screenshotTool } from '../../../../src/main/tools/vision/screenshot';
-import { screenshotModule } from '../../../../src/main/tools/modules/vision/screenshot';
+import { screenshotModule } from '../../../../src/main/plugins/builtin/computerUse/screenshot';
 
 function makeLegacyCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {

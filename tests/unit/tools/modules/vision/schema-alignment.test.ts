@@ -6,13 +6,13 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { browserSchema } from '../../../../../src/main/tools/modules/vision/browser.schema';
-import { computerSchema } from '../../../../../src/main/tools/modules/vision/computer.schema';
-import { browserActionSchema } from '../../../../../src/main/tools/modules/vision/browserAction.schema';
-import { browserNavigateSchema } from '../../../../../src/main/tools/modules/vision/browserNavigate.schema';
-import { computerUseSchema } from '../../../../../src/main/tools/modules/vision/computerUse.schema';
-import { screenshotSchema } from '../../../../../src/main/tools/modules/vision/screenshot.schema';
-import { guiAgentSchema } from '../../../../../src/main/tools/modules/vision/guiAgent.schema';
+import { browserSchema } from '../../../../../src/main/plugins/builtin/browserControl/browser.schema';
+import { computerSchema } from '../../../../../src/main/plugins/builtin/computerUse/computer.schema';
+import { browserActionSchema } from '../../../../../src/main/plugins/builtin/browserControl/browserAction.schema';
+import { browserNavigateSchema } from '../../../../../src/main/plugins/builtin/browserControl/browserNavigate.schema';
+import { computerUseSchema } from '../../../../../src/main/plugins/builtin/computerUse/computerUse.schema';
+import { screenshotSchema } from '../../../../../src/main/plugins/builtin/computerUse/screenshot.schema';
+import { guiAgentSchema } from '../../../../../src/main/plugins/builtin/computerUse/guiAgent.schema';
 
 import { BrowserTool } from '../../../../../src/main/tools/vision/BrowserTool';
 import { ComputerTool } from '../../../../../src/main/tools/vision/ComputerTool';

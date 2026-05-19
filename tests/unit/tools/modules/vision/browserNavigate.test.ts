@@ -9,8 +9,8 @@ import type {
   CanUseToolFn,
   Logger,
 } from '../../../../../src/main/protocol/tools';
-import { browserNavigateSchema } from '../../../../../src/main/tools/modules/vision/browserNavigate.schema';
-import { browserNavigateModule } from '../../../../../src/main/tools/modules/vision/browserNavigate';
+import { browserNavigateSchema } from '../../../../../src/main/plugins/builtin/browserControl/browserNavigate.schema';
+import { browserNavigateModule } from '../../../../../src/main/plugins/builtin/browserControl/browserNavigate';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

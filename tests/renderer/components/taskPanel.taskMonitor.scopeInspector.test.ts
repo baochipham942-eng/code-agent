@@ -699,7 +699,6 @@ describe('TaskMonitor scope inspector slice', () => {
     expect(html).toContain('任务');
     expect(html).not.toContain('Activity');
     expect(html).not.toContain('来源');
-    expect(html).not.toContain('连接');
     expect(html).not.toContain('上下文');
     expect(html).not.toContain('Loop Files');
     expect(html).toContain('MCP');

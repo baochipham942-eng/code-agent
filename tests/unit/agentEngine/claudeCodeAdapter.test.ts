@@ -274,7 +274,7 @@ describe('ClaudeCodeAdapter.run', () => {
     await expect(fs.readFile(logPath.replace(/\.log$/, '.last.md'), 'utf8')).resolves.toBe('final text');
   });
 
-  it('queues failure review when Claude Code exits non-zero', async () => {
+  it('records failure when Claude Code exits non-zero', async () => {
     mocks.spawn.mockImplementation(() => createMockChild([], 1, 'boom from claude'));
 
     const result = await new ClaudeCodeAdapter().run({
@@ -292,14 +292,7 @@ describe('ClaudeCodeAdapter.run', () => {
       error: 'boom from claude',
       exitCode: 1,
     });
-    expect(mocks.enqueueSession).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: 'session-1',
-      reason: 'failure_followup',
-      failureCapability: expect.objectContaining({
-        category: 'env_failure',
-        summary: 'boom from claude',
-      }),
-    }));
+    expect(mocks.enqueueSession).not.toHaveBeenCalled();
     expect(mocks.updateSession).toHaveBeenLastCalledWith(
       'session-1',
       expect.objectContaining({ status: 'error' }),

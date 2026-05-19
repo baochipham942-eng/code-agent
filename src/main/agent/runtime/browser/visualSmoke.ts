@@ -7,6 +7,7 @@ import {
   buildSystemChromeCdpArgs,
   findAvailablePort,
   resolveBrowserProvider,
+  resolveCdpEndpointUrl,
 } from '../../../services/infra/browserProvider';
 import type {
   BrowserVisualSmokeSummary,
@@ -327,7 +328,7 @@ export async function runBrowserVisualSmoke(
       });
 
       await waitForCdpEndpoint(port, spawnedChrome, Math.min(remaining(), 8000));
-      browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+      browser = await chromium.connectOverCDP(await resolveCdpEndpointUrl(port));
       const context = browser.contexts()[0] || await browser.newContext({
         viewport: { width: 1280, height: 720 },
       });

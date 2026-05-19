@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { ToolRegistry } from '../../../src/main/tools/registry';
 import { registerMigratedTools } from '../../../src/main/tools/modules';
+import { browserSchema } from '../../../src/main/plugins/builtin/browserControl/browser.schema';
+import { browserActionSchema } from '../../../src/main/plugins/builtin/browserControl/browserAction.schema';
+import { computerSchema } from '../../../src/main/plugins/builtin/computerUse/computer.schema';
+import { computerUseSchema } from '../../../src/main/plugins/builtin/computerUse/computerUse.schema';
+import type { ToolSchema } from '../../../src/main/protocol/tools';
+
+const pluginSchemas = new Map<string, ToolSchema>([
+  [browserSchema.name, browserSchema],
+  [browserActionSchema.name, browserActionSchema],
+  [computerSchema.name, computerSchema],
+  [computerUseSchema.name, computerUseSchema],
+]);
 
 function propertiesOf(schemaName: string): Record<string, unknown> {
-  const registry = new ToolRegistry();
-  registerMigratedTools(registry);
-  const schema = registry.getSchemas().find((item) => item.name === schemaName);
+  const schema = pluginSchemas.get(schemaName);
   if (!schema) throw new Error(`schema not found: ${schemaName}`);
   return (schema.inputSchema.properties || {}) as Record<string, unknown>;
 }

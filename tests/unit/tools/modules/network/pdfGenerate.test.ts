@@ -155,7 +155,7 @@ describe('pdfGenerateModule (native)', () => {
   });
 
   describe('happy path', () => {
-    it('writes pdf with default theme + A4 + Code Agent author', async () => {
+    it('writes pdf with default theme + A4 + Agent Neo author', async () => {
       const result = await run({ title: '报告', content: '# H1\nbody' });
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -186,7 +186,7 @@ describe('pdfGenerateModule (native)', () => {
       expect(pdfDocCtorMock).toHaveBeenCalledTimes(1);
       const opts = pdfDocCtorMock.mock.calls[0][0] as { info: { Title: string; Author: string } };
       expect(opts.info.Title).toBe('报告');
-      expect(opts.info.Author).toBe('Code Agent');
+      expect(opts.info.Author).toBe('Agent Neo');
     });
 
     it('respects custom output_path', async () => {

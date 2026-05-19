@@ -142,15 +142,13 @@ describe('Sidebar account menu entry planning', () => {
     expect(html).toContain('用户菜单');
     expect(html).toContain('管理员');
     expect(html).toContain('常用');
-    expect(html).toContain('Activity');
+    expect(html).toContain('活动');
     expect(html).toContain('知识与记忆');
-    expect(html).toContain('评测中心');
     expect(html).toContain('自动化');
     expect(html).toContain('提示词');
-    expect(html).toContain('管理与诊断');
-    expect(html).toContain('Telemetry 调试');
-    expect(html).toContain('内部评测');
     expect(html).toContain('高级工具');
+    expect(html).not.toContain('模型训练');
+    expect(html).not.toContain('时间与能力');
     expect(html).not.toContain('桌面采集');
     expect(html).not.toContain('Computer Use');
     expect(html).not.toContain('In-App 验证');

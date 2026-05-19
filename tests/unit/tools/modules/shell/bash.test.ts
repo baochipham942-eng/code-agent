@@ -401,6 +401,7 @@ describe('bashModule (native)', () => {
         'python3 -m http.server 8000',
         expect.any(String),
         expect.any(Number),
+        expect.objectContaining({ sessionId: 'test-session' }),
       );
       expect(result.ok).toBe(true);
       if (result.ok) {

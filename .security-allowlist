@@ -1,0 +1,22 @@
+# =============================================================================
+# .security-allowlist — 安全扫描白名单
+#
+# 用于 scripts/security/scan-secrets.sh 的 R-A1 规则。
+# 格式：相对路径 : 规则ID
+# 注释行以 # 开头。
+#
+# 加入白名单前必须确认：
+#   1. 这不是真实 key（fake / placeholder / 已 revoke）
+#   2. 文件用途明确（test fixture / docs example / 教学）
+#   3. 不在 git history 里有过真实 key
+# =============================================================================
+
+# Sensitive detector 单元测试 fixture（验证 detector 自身能识别这些 pattern）
+tests/unit/security/sensitiveDetector.test.ts : openai-project-key
+tests/unit/security/sensitiveDetector.test.ts : gitlab-pat
+tests/unit/security/sensitiveDetector.test.ts : aws-access-key
+tests/unit/security/sensitiveDataGuard.test.ts : openai-project-key
+
+# 文档示例（说明 troubleshooting / migration 时用的占位符）
+docs/guides/troubleshooting.md : slack-token
+docs/plans/2026-01-22-claude-code-alignment-plan.md : github-pat

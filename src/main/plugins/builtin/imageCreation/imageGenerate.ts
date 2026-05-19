@@ -20,7 +20,7 @@ import { safeExecDetached } from '../../../utils/safeShell';
 import { getConfigService } from '../../../services';
 import { getAuthService } from '../../../services/auth/authService';
 import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../../shared/constants';
-import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { imageGenerateSchema as schema } from './imageGenerate.schema';
 import {
   determineImageEngine,
@@ -29,16 +29,6 @@ import {
   isImageUrl,
   type ImageEngine,
 } from '../../../services/media/imageGenerationService';
-
-// Re-export so existing external imports of these symbols from the tool module
-// keep compiling (e.g. tests or callers that depended on the previous API surface).
-export {
-  determineImageEngine,
-  generateImage,
-  downloadImageAsBase64,
-  isImageUrl,
-};
-export type { ImageEngine };
 
 const PROMPT_EXPAND_TIMEOUT_MS = 15000;
 

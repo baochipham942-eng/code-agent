@@ -1,0 +1,46 @@
+name: Supabase Migrate
+
+# 把 supabase/migrations/ 增量同步到 prod Supabase。
+# 触发条件：push 到 main 且改了 migration 文件。
+# 实现：supabase CLI 维护 schema_migrations 元表自动跟踪已跑过的 version，
+# 只增量执行新文件，不会重复执行已应用的。
+#
+# 必需 secrets:
+#   SUPABASE_ACCESS_TOKEN  — `supabase login` 后从 ~/.supabase 拿的 sbp_... token
+#   SUPABASE_DB_PASSWORD   — Project Settings → Database → Connection string 里那个
+#   SUPABASE_PROJECT_REF   — 例 xepbunahzbmexsmmiqyq
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  db-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+
+      - name: Push migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          supabase db push --linked --include-all

@@ -1,6 +1,9 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { AlertTriangle, Check, ChevronDown, ChevronRight, Loader2, Sparkles, Wrench } from 'lucide-react';
 import { useComposerStore } from '../../../stores/composerStore';
+import { useSessionStore } from '../../../stores/sessionStore';
+import { useCapabilityGapStore } from '../../../stores/capabilityGapStore';
+import { GapCard } from '../capability/GapCard';
 import { useWorkbenchCapabilityRegistry } from '../../../hooks/useWorkbenchCapabilityRegistry';
 import { useWorkbenchCapabilityQuickActionRunner } from '../../../hooks/useWorkbenchCapabilityQuickActionRunner';
 import { useWorkbenchInsights } from '../../../hooks/useWorkbenchInsights';
@@ -70,6 +73,11 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
 }) => {
   const selectedSkillIds = useComposerStore((state) => state.selectedSkillIds);
   const setSelectedSkillIds = useComposerStore((state) => state.setSelectedSkillIds);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const gapNotice = useCapabilityGapStore((state) =>
+    currentSessionId ? state.noticesBySession[currentSessionId] : null,
+  );
+  const dismissGapNotice = useCapabilityGapStore((state) => state.dismiss);
   const { skills, connectors, mcpServers } = useWorkbenchCapabilityRegistry();
   const { history } = useWorkbenchInsights();
   const { runningActionKey, actionErrors, completedActions, runQuickAction } = useWorkbenchCapabilityQuickActionRunner();
@@ -129,18 +137,28 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
   // workbench 源同时展示且互相漂移。InlineWorkbenchBar 现在只保留 Skills；
   // MCP 状态留给 TaskPanel / Settings，避免在聊天区出现计数条。
   const shouldRenderBar = shouldShowSkills || blockedCapabilities.length > 0 || resolvedCapabilities.length > 0;
+  const gapCardNode = gapNotice && currentSessionId ? (
+    <GapCard
+      requiredCapability={gapNotice.requiredCapability}
+      gaps={gapNotice.gaps}
+      onDismiss={() => dismissGapNotice(currentSessionId)}
+    />
+  ) : null;
   if (!shouldRenderBar) {
     return (
-      <WorkbenchCapabilitySheetLite
-        isOpen={Boolean(activeSheetCapability)}
-        capability={activeSheetCapability}
-        historyItem={activeSheetHistory}
-        runningActionKey={runningActionKey}
-        actionError={activeSheetCapability ? actionErrors[activeSheetCapability.key] : null}
-        completedAction={activeSheetCapability ? completedActions[activeSheetCapability.key] : null}
-        onQuickAction={runQuickAction}
-        onClose={() => setActiveSheetTarget(null)}
-      />
+      <>
+        {gapCardNode}
+        <WorkbenchCapabilitySheetLite
+          isOpen={Boolean(activeSheetCapability)}
+          capability={activeSheetCapability}
+          historyItem={activeSheetHistory}
+          runningActionKey={runningActionKey}
+          actionError={activeSheetCapability ? actionErrors[activeSheetCapability.key] : null}
+          completedAction={activeSheetCapability ? completedActions[activeSheetCapability.key] : null}
+          onQuickAction={runQuickAction}
+          onClose={() => setActiveSheetTarget(null)}
+        />
+      </>
     );
   }
 
@@ -313,6 +331,7 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
         </div>
       )}
 
+      {gapCardNode}
       <WorkbenchCapabilitySheetLite
         isOpen={Boolean(activeSheetCapability)}
         capability={activeSheetCapability}

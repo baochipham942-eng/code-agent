@@ -47,6 +47,10 @@ import {
   manifest as builtinComputerUseManifest,
   default as builtinComputerUseEntry,
 } from './builtin/computerUse';
+import {
+  manifest as builtinPhotoArchiveManifest,
+  default as builtinPhotoArchiveEntry,
+} from './builtin/photoArchive';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
 import { getAuthService } from '../services/auth/authService';
@@ -258,6 +262,10 @@ export class PluginRegistry {
       {
         manifest: builtinComputerUseManifest,
         entry: builtinComputerUseEntry,
+      },
+      {
+        manifest: builtinPhotoArchiveManifest,
+        entry: builtinPhotoArchiveEntry,
       },
     ];
 

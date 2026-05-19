@@ -114,8 +114,9 @@ import { pptEditSchema } from './network/pptEdit.schema';
 // builtin plugin `builtin.browserControl`（PR #155），此处不再注册。
 // Computer / computer_use / screenshot / gui_agent / ocr_search 已剥离到
 // builtin plugin `builtin.computerUse`（Step 6 PR #2），此处不再注册。
+// photo_archive 已剥离到 builtin plugin `builtin.photoArchive`
+// （Step 6 PR #3），此处不再注册。
 import { visualEditSchema } from './vision/visualEdit.schema';
-import { photoArchiveSchema } from './vision/photoArchive.schema';
 // exploreTool 已迁移到 native (planning/explore.ts)，不再从 multiagentTools 导入
 
 // lightMemory/
@@ -222,10 +223,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   // builtin plugin `builtin.browserControl`（PR #155），由 pluginRegistry 注册。
   // Computer / computer_use / screenshot / gui_agent / ocr_search 已剥离到
   // builtin plugin `builtin.computerUse`（Step 6 PR #2），由 pluginRegistry 注册。
-  registry.register(
-    photoArchiveSchema,
-    async () => (await import('./vision/photoArchive')).photoArchiveModule,
-  );
+  // photo_archive 已剥离到 builtin plugin `builtin.photoArchive`
+  // （Step 6 PR #3），由 pluginRegistry 注册。
 
   // visual_edit — Live Preview 点击元素 → 视觉 LLM 产 diff → 原子落盘
   registry.register(

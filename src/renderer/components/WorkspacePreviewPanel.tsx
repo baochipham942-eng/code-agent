@@ -1,11 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle,
   Calendar,
   Check,
-  CheckCircle2,
   Clipboard,
-  ClipboardCheck,
   Code2,
   Copy,
   File,
@@ -15,15 +12,10 @@ import {
   Mail,
   MessageSquare,
   Presentation,
-  RefreshCw,
-  Send,
   Table2,
   Terminal,
 } from 'lucide-react';
 import type {
-  DeliveryReviewRunResult,
-  PreviewFeedbackItem,
-  ScenarioAcceptanceArtifact,
   WorkspacePreviewItem,
   WorkspacePreviewKind,
 } from '@shared/contract';
@@ -34,7 +26,7 @@ import {
   type WorkbenchPreset,
   type WorkbenchRecipe,
 } from '@shared/contract/workbenchPreset';
-import { EVALUATION_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { directionTokens, type DirectionTokens } from '@/design/direction-tokens';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
 import { useAppStore } from '../stores/appStore';
@@ -494,45 +486,6 @@ function PreviewBody({ item }: { item: WorkspacePreviewItem }) {
   return <TextPreview item={item} />;
 }
 
-function previewItemToAcceptanceArtifact(item: WorkspacePreviewItem): ScenarioAcceptanceArtifact {
-  return {
-    id: item.id,
-    kind: item.kind,
-    title: item.title,
-    filePath: item.file?.path,
-    currentTurn: item.currentTurn,
-    content: {
-      text: item.content?.text,
-      html: item.content?.html,
-      json: item.content?.json,
-      diff: item.content?.diff,
-      summary: item.content?.summary,
-    },
-  };
-}
-
-function deliveryReviewStatusClass(status?: DeliveryReviewRunResult['status']): string {
-  switch (status) {
-    case 'pass':
-      return 'border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-200';
-    case 'blocked':
-      return 'border-red-500/25 bg-red-500/[0.07] text-red-200';
-    case 'needs_work':
-      return 'border-amber-500/25 bg-amber-500/[0.07] text-amber-200';
-    default:
-      return 'border-white/[0.08] bg-white/[0.03] text-zinc-300';
-  }
-}
-
-function anchorLabel(item: PreviewFeedbackItem): string {
-  const anchor = item.anchor;
-  if (anchor.kind === 'file_line' && anchor.filePath) return `${anchor.filePath}:${anchor.lineStart ?? 1}`;
-  if (anchor.kind === 'html_selector' && anchor.selector) return anchor.selector;
-  if (anchor.kind === 'text_quote' && anchor.quote) return `"${anchor.quote.slice(0, 70)}"`;
-  if (anchor.kind === 'diff_hunk' && anchor.hunk) return anchor.hunk.slice(0, 70);
-  return anchor.filePath || 'Whole item';
-}
-
 export const WorkspacePreviewPanel: React.FC = () => {
   const items = useWorkspacePreviewModel();
   const selectedId = useAppStore((state) => state.selectedWorkspacePreviewId);
@@ -546,12 +499,6 @@ export const WorkspacePreviewPanel: React.FC = () => {
   const applyWorkbenchRecipe = useComposerStore((state) => state.applyWorkbenchRecipe);
   const [activeDrawer, setActiveDrawer] = useState<WorkspaceAssetDrawer | null>(null);
   const [copied, setCopied] = useState(false);
-  const [deliveryReview, setDeliveryReview] = useState<DeliveryReviewRunResult | null>(null);
-  const [reviewRunning, setReviewRunning] = useState(false);
-  const [feedbackItems, setFeedbackItems] = useState<PreviewFeedbackItem[]>([]);
-  const [feedbackNote, setFeedbackNote] = useState('');
-  const [feedbackBusy, setFeedbackBusy] = useState(false);
-  const [sentContext, setSentContext] = useState(false);
   const [assetActionError, setAssetActionError] = useState<string | null>(null);
   const galleryItems = useMemo(() => items.filter(isGalleryItem), [items]);
   const appAssetCount = presets.length + recipes.length;
@@ -577,25 +524,6 @@ export const WorkspacePreviewPanel: React.FC = () => {
     if (!currentSessionId) return undefined;
     return sessions.find((session) => session.id === currentSessionId)?.title;
   }, [currentSessionId, sessions]);
-  const selectedFeedbackItems = useMemo(() => (
-    selected ? feedbackItems.filter((item) => item.previewItemId === selected.id) : []
-  ), [feedbackItems, selected]);
-
-  const reloadFeedback = useCallback(async () => {
-    if (!currentSessionId) {
-      setFeedbackItems([]);
-      return;
-    }
-    const items = await ipcService.invoke(EVALUATION_CHANNELS.PREVIEW_FEEDBACK_LIST, {
-      sessionId: currentSessionId,
-    });
-    setFeedbackItems(items || []);
-  }, [currentSessionId]);
-
-  useEffect(() => {
-    reloadFeedback().catch(() => setFeedbackItems([]));
-  }, [reloadFeedback]);
-
   useEffect(() => {
     if (!selected && selectedId) {
       setSelectedId(null);
@@ -654,72 +582,6 @@ export const WorkspacePreviewPanel: React.FC = () => {
     setTimeout(() => setCopied(false), 1200);
   };
 
-  const runDeliveryReview = async () => {
-    if (!selected || !currentSessionId) return;
-    setReviewRunning(true);
-    try {
-      const result = await ipcService.invoke(EVALUATION_CHANNELS.DELIVERY_REVIEW_RUN, {
-        sessionId: currentSessionId,
-        sessionTitle: currentSessionTitle,
-        artifacts: [previewItemToAcceptanceArtifact(selected)],
-        enqueueOnNeedsWork: true,
-        createPreviewFeedback: true,
-      });
-      setDeliveryReview(result || null);
-      await reloadFeedback();
-      setActiveDrawer('feedback');
-    } finally {
-      setReviewRunning(false);
-    }
-  };
-
-  const addFeedback = async () => {
-    if (!selected || !currentSessionId || !feedbackNote.trim()) return;
-    setFeedbackBusy(true);
-    try {
-      await ipcService.invoke(EVALUATION_CHANNELS.PREVIEW_FEEDBACK_CREATE, {
-        sessionId: currentSessionId,
-        previewItemId: selected.id,
-        source: 'user',
-        note: feedbackNote.trim(),
-        anchor: {
-          kind: 'artifact',
-          filePath: selected.file?.path,
-        },
-      });
-      setFeedbackNote('');
-      await reloadFeedback();
-    } finally {
-      setFeedbackBusy(false);
-    }
-  };
-
-  const updateFeedbackStatus = async (id: string, status: PreviewFeedbackItem['status']) => {
-    await ipcService.invoke(EVALUATION_CHANNELS.PREVIEW_FEEDBACK_UPDATE_STATUS, { id, status });
-    await reloadFeedback();
-  };
-
-  const sendFeedbackToChat = async () => {
-    if (!currentSessionId || !selected) return;
-    const context = await ipcService.invoke(EVALUATION_CHANNELS.PREVIEW_FEEDBACK_SEND_TO_CHAT, {
-      sessionId: currentSessionId,
-      previewItemId: selected.id,
-    });
-    if (!context?.message) return;
-    window.dispatchEvent(new CustomEvent('iact:send', { detail: context.message }));
-    setSentContext(true);
-    setTimeout(() => setSentContext(false), 1200);
-    await Promise.all(
-      context.items
-        .filter((item) => item.status === 'open')
-        .map((item) => ipcService.invoke(EVALUATION_CHANNELS.PREVIEW_FEEDBACK_UPDATE_STATUS, {
-          id: item.id,
-          status: 'sent',
-        })),
-    );
-    await reloadFeedback();
-  };
-
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900">
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.06] px-3 py-2">
@@ -753,20 +615,6 @@ export const WorkspacePreviewPanel: React.FC = () => {
             icon={copied ? <Check className="h-4 w-4 text-emerald-300" /> : <Copy className="h-4 w-4" />}
             disabled={!selected}
             onClick={copySelected}
-          />
-          <AssetToolbarButton
-            label={reviewRunning ? 'Running review' : 'Run delivery review'}
-            icon={reviewRunning ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
-            disabled={!selected || !currentSessionId || reviewRunning}
-            tone="cyan"
-            onClick={runDeliveryReview}
-          />
-          <AssetToolbarButton
-            label={`Preview Feedback (${selectedFeedbackItems.length})`}
-            icon={<MessageSquare className="h-4 w-4" />}
-            count={selectedFeedbackItems.length}
-            active={activeDrawer === 'feedback'}
-            onClick={() => setActiveDrawer((current) => (current === 'feedback' ? null : 'feedback'))}
           />
         </div>
       </div>
@@ -890,117 +738,6 @@ export const WorkspacePreviewPanel: React.FC = () => {
         </AssetDrawerPanel>
       )}
 
-      {activeDrawer === 'feedback' && (
-        <AssetDrawerPanel
-          title="Preview Feedback"
-          subtitle={`${selectedFeedbackItems.length} item${selectedFeedbackItems.length === 1 ? '' : 's'}`}
-          onClose={() => setActiveDrawer(null)}
-        >
-          <div className="p-3">
-            {deliveryReview && (
-              <div className={`mb-3 rounded-lg border px-3 py-2 text-xs ${deliveryReviewStatusClass(deliveryReview.status)}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="inline-flex min-w-0 items-center gap-1.5 font-medium">
-                    {deliveryReview.status === 'pass'
-                      ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                      : <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
-                    <span className="truncate">Delivery Review · {deliveryReview.score}</span>
-                  </div>
-                  <span className="shrink-0 uppercase">{deliveryReview.status}</span>
-                </div>
-                <div className="mt-1 leading-relaxed">{deliveryReview.summary}</div>
-                <div className="mt-1 text-[11px] opacity-80">
-                  {deliveryReview.skills.map((skill) => skill.title).join(' · ')}
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs font-semibold text-zinc-100">{selected?.title || 'No preview selected'}</div>
-              <button
-                type="button"
-                onClick={sendFeedbackToChat}
-                disabled={!selectedFeedbackItems.some((item) => item.status === 'open' || item.status === 'sent')}
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/[0.08] bg-zinc-800 px-2 py-1 text-[11px] text-zinc-300 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Send className="h-3 w-3" />
-                {sentContext ? 'Sent' : 'Send'}
-              </button>
-            </div>
-
-            <div className="mt-3 space-y-2">
-              {selectedFeedbackItems.length === 0 ? (
-                <div className="rounded-lg border border-white/[0.06] bg-white/[0.025] p-3 text-xs leading-relaxed text-zinc-500">
-                  Run review or add a note to turn preview problems into repair context.
-                </div>
-              ) : (
-                selectedFeedbackItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className={`rounded-lg border p-2 text-xs ${
-                      item.status === 'resolved'
-                        ? 'border-emerald-500/15 bg-emerald-500/[0.04]'
-                        : item.source === 'delivery_review'
-                          ? 'border-amber-500/20 bg-amber-500/[0.05]'
-                          : 'border-white/[0.08] bg-white/[0.025]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-[10px] uppercase text-zinc-500">
-                        {item.issueCode || item.source}
-                      </span>
-                      <span className="shrink-0 rounded border border-white/[0.08] px-1.5 py-0.5 text-[10px] text-zinc-400">
-                        {item.status}
-                      </span>
-                    </div>
-                    <div className="mt-1 whitespace-pre-wrap leading-relaxed text-zinc-300">
-                      {item.note}
-                    </div>
-                    <div className="mt-1 truncate font-mono text-[10px] text-zinc-500">
-                      {anchorLabel(item)}
-                    </div>
-                    <div className="mt-2 flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => updateFeedbackStatus(item.id, 'resolved')}
-                        disabled={item.status === 'resolved'}
-                        className="rounded border border-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-300 hover:bg-emerald-500/[0.08] disabled:opacity-40"
-                      >
-                        Resolve
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateFeedbackStatus(item.id, 'dismissed')}
-                        disabled={item.status === 'dismissed'}
-                        className="rounded border border-white/[0.08] px-2 py-0.5 text-[10px] text-zinc-400 hover:bg-white/[0.05] disabled:opacity-40"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="mt-3 space-y-2">
-              <textarea
-                value={feedbackNote}
-                onChange={(event) => setFeedbackNote(event.target.value)}
-                placeholder="Add note"
-                className="min-h-[72px] w-full resize-y rounded-md border border-white/[0.08] bg-black/20 px-2 py-1.5 text-xs text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-cyan-500/40"
-              />
-              <button
-                type="button"
-                onClick={addFeedback}
-                disabled={!feedbackNote.trim() || feedbackBusy || !selected || !currentSessionId}
-                className="w-full rounded-md border border-white/[0.08] bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Add feedback
-              </button>
-            </div>
-          </div>
-        </AssetDrawerPanel>
-      )}
     </div>
   );
 };

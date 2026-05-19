@@ -920,11 +920,9 @@ class TelemetryQueryService {
           // v2.5 Phase 2 + Phase 7: attach failure attribution (rules + opt-in LLM).
           try {
             const { FailureAttributor } = await import('./trajectory/attribution');
-            const { buildAttributionChatFnFromEnv } = await import('./llmChatFactory');
-            const llmFn = await buildAttributionChatFnFromEnv();
+            // LLM attribution path removed with llmChatFactory; rules-based attribution only.
             const attribution = await new FailureAttributor().attribute(trajectory, {
-              enableLLM: llmFn !== null,
-              llmFn: llmFn ?? undefined,
+              enableLLM: false,
             });
             failureAttribution = {
               rootCause: attribution.rootCause,

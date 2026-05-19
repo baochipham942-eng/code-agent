@@ -1,4 +1,3 @@
-import { ReviewQueueService } from '../../main/evaluation/reviewQueueService';
 import type { AgentEngineKind } from '../../shared/contract/agentEngine';
 import { getBackgroundTaskLedger } from '../../main/tasks/backgroundTaskLedger';
 
@@ -80,21 +79,5 @@ export function recordExternalEngineFailure(
     });
   } catch (error) {
     logger.warn('[AgentRouter] Failed to record external engine failed task:', error);
-  }
-
-  try {
-    ReviewQueueService.getInstance().enqueueSession({
-      sessionId: input.sessionId,
-      reason: 'failure_followup',
-      enqueueSource: 'replay_failure',
-      failureCapability: {
-        sink: 'capability_health',
-        category: 'env_failure',
-        summary: input.message,
-        confidence: 0.8,
-      },
-    });
-  } catch (error) {
-    logger.warn('[AgentRouter] Failed to enqueue external engine failure review:', error);
   }
 }

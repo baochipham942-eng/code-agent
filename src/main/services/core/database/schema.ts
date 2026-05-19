@@ -101,16 +101,6 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, 'ALTER TABLE experiments ADD COLUMN git_commit TEXT', logger);
   safeAlter(db, 'ALTER TABLE experiment_cases ADD COLUMN session_id TEXT', logger);
 
-  // Evaluations 表版本化扩展
-  if (tableExists(db, 'evaluations')) {
-    const evalMigrations = ['ALTER TABLE evaluations ADD COLUMN snapshot_id TEXT', "ALTER TABLE evaluations ADD COLUMN eval_version TEXT DEFAULT 'legacy'", 'ALTER TABLE evaluations ADD COLUMN rubric_version TEXT', 'ALTER TABLE evaluations ADD COLUMN judge_model TEXT', 'ALTER TABLE evaluations ADD COLUMN judge_prompt_hash TEXT'];
-    for (const sql of evalMigrations) {
-      safeAlter(db, sql, logger);
-    }
-  } else {
-    logger.debug('[DB] Skipping evaluation migrations because evaluations table does not exist yet');
-  }
-
   // Tool Executions 表 (用于缓存和审计)
   db.exec(`
     CREATE TABLE IF NOT EXISTS tool_executions (
@@ -539,32 +529,6 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       created_at INTEGER NOT NULL
     )
   `);
-
-  // Eval Snapshots 表 (统一评测快照)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS eval_snapshots (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      schema_version INTEGER NOT NULL DEFAULT 1,
-      created_at INTEGER NOT NULL,
-      data_json TEXT NOT NULL,
-      hash TEXT NOT NULL
-    )
-  `);
-
-  // Evaluations 表 (评测结果)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS evaluations (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      user_id TEXT,
-      timestamp INTEGER NOT NULL,
-      score INTEGER NOT NULL,
-      grade TEXT NOT NULL,
-      data TEXT NOT NULL
-    )
-  `);
-  safeAlter(db, `ALTER TABLE evaluations ADD COLUMN user_id TEXT`, logger);
 
   // Experiments 表 (统一评测数据)
   db.exec(`

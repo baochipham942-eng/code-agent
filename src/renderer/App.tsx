@@ -31,7 +31,6 @@ import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
 import { LabPage } from './components/features/lab/LabPage';
 import { PromptManagerModal } from './components/features/prompts/PromptManagerModal';
-import { EvalCenterPanel } from './components/features/evalCenter';
 import { BackgroundTaskPanel } from './components/features/background';
 import { CapturePanel } from './components/features/capture';
 import { KnowledgeMemoryPanel } from './components/features/knowledge/KnowledgeMemoryPanel';
@@ -102,7 +101,6 @@ export const App: React.FC = () => {
     setShowAgentTeamPanel,
     selectedSwarmAgentId,
     showLab,
-    showEvalCenter,
     showComputerUsePanel,
     showInAppValidationPanel,
     showKnowledgeMemoryPanel,
@@ -504,8 +502,6 @@ export const App: React.FC = () => {
                 <ComputerUsePanel />
               ) : showInAppValidationPanel ? (
                 <InAppValidationPanel />
-              ) : showEvalCenter ? (
-                <EvalCenterPanel />
               ) : (
                 <PanelGroup orientation="horizontal" className="flex-1 min-h-0" id="main-layout">
                   <Panel minSize="30" id="chat">

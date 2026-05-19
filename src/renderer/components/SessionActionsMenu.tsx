@@ -16,7 +16,6 @@ import { useAppStore } from '../stores/appStore';
 import { useAuthStore } from '../stores/authStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useTaskStore } from '../stores/taskStore';
-import { useEvalCenterStore } from '../stores/evalCenterStore';
 import { getSessionStatusPresentation } from '../utils/sessionPresentation';
 import { canAccessFeature } from '../utils/accessControl';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -28,7 +27,6 @@ export const SessionActionsMenu: React.FC = () => {
 
   const appWorkingDirectory = useAppStore((s) => s.workingDirectory);
   const setAppWorkingDirectory = useAppStore((s) => s.setWorkingDirectory);
-  const setShowEvalCenter = useAppStore((s) => s.setShowEvalCenter);
   const openDevServerLauncher = useAppStore((s) => s.openDevServerLauncher);
   const pendingPermissionRequest = useAppStore((s) => s.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore((s) => s.pendingPermissionSessionId);
@@ -41,10 +39,6 @@ export const SessionActionsMenu: React.FC = () => {
   const moveToBackground = useSessionStore((s) => s.moveToBackground);
 
   const sessionStates = useTaskStore((s) => s.sessionStates);
-  const reviewQueue = useEvalCenterStore((s) => s.reviewQueue);
-  const enqueueReviewItem = useEvalCenterStore((s) => s.enqueueReviewItem);
-  const canOpenReplay = useAuthStore((s) => canAccessFeature('eval.replay', s.user));
-  const canUseReviewQueue = useAuthStore((s) => canAccessFeature('eval.reviewQueue', s.user));
 
   const currentSession = sessions.find((s) => s.id === currentSessionId) || null;
 
@@ -88,9 +82,6 @@ export const SessionActionsMenu: React.FC = () => {
 
   const canResume = currentSessionStatus.kind === 'paused';
   const canMoveToBackground = currentSessionStatus.kind === 'live';
-  const isInReviewQueue = currentSessionId
-    ? reviewQueue.some((item) => item.sessionId === currentSessionId)
-    : false;
   const sessionWorkingDirectory = currentSession?.workingDirectory?.trim() || null;
   const showReopenWorkspace = Boolean(sessionWorkingDirectory)
     && sessionWorkingDirectory !== appWorkingDirectory;
@@ -106,23 +97,6 @@ export const SessionActionsMenu: React.FC = () => {
     close();
     await moveToBackground(currentSessionId);
   }, [currentSessionId, moveToBackground, close]);
-
-  const handleOpenReplay = useCallback(() => {
-    if (!currentSessionId) return;
-    close();
-    setShowEvalCenter(true, undefined, currentSessionId);
-  }, [currentSessionId, setShowEvalCenter, close]);
-
-  const handleAddToReviewQueue = useCallback(async () => {
-    if (!currentSessionId || !currentSession) return;
-    close();
-    await enqueueReviewItem({
-      sessionId: currentSessionId,
-      sessionTitle: currentSession.title,
-      reason: 'manual_review',
-      enqueueSource: 'current_session_bar',
-    });
-  }, [currentSession, currentSessionId, enqueueReviewItem, close]);
 
   const handleExportMarkdown = useCallback(async () => {
     if (!currentSessionId) return;
@@ -192,24 +166,6 @@ export const SessionActionsMenu: React.FC = () => {
     icon: <Play className="h-3.5 w-3.5" />,
     onClick: () => { close(); openDevServerLauncher(); },
   });
-  if (canOpenReplay) {
-    items.push({
-      key: 'replay',
-      label: '打开 Replay',
-      icon: <Eye className="h-3.5 w-3.5" />,
-      onClick: handleOpenReplay,
-    });
-  }
-  if (canUseReviewQueue) {
-    items.push({
-      key: 'review',
-      label: isInReviewQueue ? '已在 Review' : '加入 Review',
-      icon: <ClipboardList className="h-3.5 w-3.5" />,
-      onClick: handleAddToReviewQueue,
-      disabled: isInReviewQueue,
-      tone: isInReviewQueue ? 'active' : 'default',
-    });
-  }
   items.push({
     key: 'export',
     label: '导出 Markdown',

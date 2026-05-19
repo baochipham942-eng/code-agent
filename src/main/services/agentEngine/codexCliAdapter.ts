@@ -20,7 +20,6 @@ import { generateMessageId } from '../../../shared/utils/id';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { getBackgroundTaskLedger } from '../../tasks/backgroundTaskLedger';
-import { ReviewQueueService } from '../../evaluation/reviewQueueService';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
 import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
@@ -322,7 +321,6 @@ export class CodexCliAdapter {
         message,
         payload: { runId, logPath },
       });
-      enqueueFailureReview(request.sessionId, message);
       emit({
         type: 'error',
         data: { message, code: 'CODEX_CLI_FAILED', details: { runId, logPath, exitCode } },
@@ -561,23 +559,5 @@ function emitAgentEvent(
   };
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send(IPC_CHANNELS.AGENT_EVENT, payload);
-  }
-}
-
-function enqueueFailureReview(sessionId: string, summary: string): void {
-  try {
-    ReviewQueueService.getInstance().enqueueSession({
-      sessionId,
-      reason: 'failure_followup',
-      enqueueSource: 'replay_failure',
-      failureCapability: {
-        sink: 'capability_health',
-        category: 'env_failure',
-        summary,
-        confidence: 0.8,
-      },
-    });
-  } catch (error) {
-    logger.warn('Failed to enqueue Codex CLI failure review', error);
   }
 }

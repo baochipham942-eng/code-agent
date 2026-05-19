@@ -80,3 +80,21 @@ export function applyTelemetryTurnsMigrations(db: BetterSqlite3.Database, logger
     safeExec(db, sql, logger);
   }
 }
+
+export function applyEvaluationCleanupMigration(db: BetterSqlite3.Database, logger: Logger): void {
+  // 2026-05-19: 评测中心子系统下线，drop 不再使用的评测/审阅/反馈表 + 索引。
+  // 保留 experiments / experiment_cases / session_events / telemetry_* 表 (testRunner 和 bug report 复现仍在用)。
+  const sqlStatements = [
+    'DROP TABLE IF EXISTS review_queue_failure_assets',
+    'DROP TABLE IF EXISTS review_queue_items',
+    'DROP TABLE IF EXISTS preview_feedback_items',
+    'DROP TABLE IF EXISTS eval_snapshots',
+    'DROP TABLE IF EXISTS evaluations',
+    'DROP INDEX IF EXISTS idx_evaluations_session',
+    'DROP INDEX IF EXISTS idx_evaluations_user_timestamp',
+    'DROP INDEX IF EXISTS idx_evaluations_timestamp',
+  ];
+  for (const sql of sqlStatements) {
+    safeExec(db, sql, logger);
+  }
+}

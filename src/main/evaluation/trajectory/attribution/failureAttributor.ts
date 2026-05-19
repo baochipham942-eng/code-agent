@@ -3,7 +3,7 @@
 //
 // Combines rule-based attribution, optional LLM fallback, and regression
 // case matching into a single FailureAttribution object. Used by
-// EvaluationService (rules only) and telemetryQueryService (rules + LLM).
+// telemetryQueryService (rules-only after evaluation subsystem cleanup).
 // ============================================================================
 
 import type {

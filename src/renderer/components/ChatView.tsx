@@ -29,7 +29,6 @@ import { InlineStrip } from './features/chat/InlineStrip';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { useMessageActionStore } from '../stores/messageActionStore';
-import { useEvalCenterStore } from '../stores/evalCenterStore';
 import { isWebMode } from '../utils/platform';
 import { toast } from '../hooks/useToast';
 
@@ -57,7 +56,6 @@ import {
 export const ChatView: React.FC = () => {
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
   const setTaskPlan = useAppStore((state) => state.setTaskPlan);
-  const loadReviewQueue = useEvalCenterStore((state) => state.loadReviewQueue);
   const {
     currentSessionId,
     hasOlderMessages,
@@ -85,10 +83,6 @@ export const ChatView: React.FC = () => {
   useEffect(() => {
     hydrateComposer(currentSessionId, appWorkingDirectory);
   }, [appWorkingDirectory, currentSessionId, hydrateComposer]);
-
-  useEffect(() => {
-    void loadReviewQueue();
-  }, [loadReviewQueue]);
 
   const buildEnvelope = useCallback((content: string, attachments?: MessageAttachment[]): ConversationEnvelope => ({
     content,

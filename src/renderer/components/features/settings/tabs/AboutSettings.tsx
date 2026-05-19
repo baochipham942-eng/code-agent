@@ -40,7 +40,7 @@ export const AboutSettings: React.FC = () => {
           <div className="relative h-full w-full overflow-hidden rounded-2xl bg-[#050506]">
             <div className="absolute inset-0 bg-gradient-to-br from-[#030304] to-[#17191f]" />
             <div className="absolute inset-[18px] bg-zinc-100 [clip-path:polygon(0_100%,0_0,22%_0,78%_65%,78%_0,100%_0,100%_100%,78%_100%,22%_35%,22%_100%)]" />
-            <div className="absolute bottom-4 right-4 h-2.5 w-2.5 rounded-full bg-white shadow-[0_0_0_7px_rgba(255,255,255,0.16)]" />
+            <div className="absolute bottom-4 right-4 h-2.5 w-2.5 rounded-full bg-[#29D6A3] shadow-[0_0_0_7px_rgba(41,214,163,0.28)]" />
           </div>
         </div>
         <h3 className="text-xl font-semibold text-zinc-200">Agent Neo</h3>
@@ -55,17 +55,17 @@ export const AboutSettings: React.FC = () => {
         </p>
       </div>
 
-      {/* Technologies */}
+      {/* Capabilities */}
       <div className="bg-zinc-800 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-zinc-200 mb-2">{t.about.technologies}</h4>
+        <h4 className="text-sm font-medium text-zinc-200 mb-2">{t.about.capabilities}</h4>
         <div className="flex flex-wrap gap-2">
-          {['Tauri', 'React', 'TypeScript', 'Tailwind CSS', 'DeepSeek API'].map(
-            (tech) => (
+          {t.about.highlights.map(
+            (highlight) => (
               <span
-                key={tech}
+                key={highlight}
                 className="px-2 py-1 text-xs rounded bg-zinc-900 text-zinc-400"
               >
-                {tech}
+                {highlight}
               </span>
             )
           )}

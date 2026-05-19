@@ -207,9 +207,10 @@ export const en: Translations = {
     title: 'About',
     version: 'Version',
     description:
-      'Agent Neo is a local AI cowork workspace for handling materials, moving tasks forward, orchestrating multiple agents, and keeping execution, validation, and delivery in one shared context.',
-    technologies: 'Technologies',
-    madeWith: 'Made with AI assistance',
+      'Agent Neo is an eval-driven, multi-model AI assistant for life and work tasks. It combines local execution, files and desktop control, external agent handoffs, and acceptance checks in one traceable context.',
+    capabilities: 'Core Capabilities',
+    highlights: ['Local-first', 'Multi-model routing', 'Agent Engine', 'Memory', 'Eval loop', 'Desktop execution'],
+    madeWith: 'Local-first · your API keys stay under your control',
   },
 
   // Task Panel (Right Sidebar)

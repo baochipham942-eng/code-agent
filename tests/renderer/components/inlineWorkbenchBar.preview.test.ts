@@ -157,35 +157,35 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
           connectionState: 'not_applicable',
         },
       },
-      ...(composerState.selectedSkillIds.includes('draft-skill')
-        ? [{
-          kind: 'skill' as const,
-          key: 'skill:draft-skill',
-          id: 'draft-skill',
-          label: 'draft-skill',
-          selected: true,
-          mounted: false,
-          installState: 'available',
-          description: 'Draft release notes',
-          source: 'community',
-          libraryId: 'community',
-          available: false,
-          blocked: true,
-          visibleInWorkbench: true,
-          health: 'inactive',
-          lifecycle: {
-            installState: 'installed',
-            mountState: 'unmounted',
-            connectionState: 'not_applicable' as const,
-          },
-          blockedReason: {
+      {
+        kind: 'skill' as const,
+        key: 'skill:draft-skill',
+        id: 'draft-skill',
+        label: 'draft-skill',
+        selected: composerState.selectedSkillIds.includes('draft-skill'),
+        mounted: false,
+        installState: 'available',
+        description: 'Draft release notes',
+        source: 'community',
+        libraryId: 'community',
+        available: false,
+        blocked: composerState.selectedSkillIds.includes('draft-skill'),
+        visibleInWorkbench: composerState.selectedSkillIds.includes('draft-skill'),
+        health: 'inactive',
+        lifecycle: {
+          installState: 'installed',
+          mountState: 'unmounted',
+          connectionState: 'not_applicable' as const,
+        },
+        blockedReason: composerState.selectedSkillIds.includes('draft-skill')
+          ? {
             code: 'skill_not_mounted',
             detail: 'Skill draft-skill 已安装但未挂载，本轮不会调用。',
             hint: '去 TaskPanel/Skills 把它挂到当前会话。',
             severity: 'warning' as const,
-          },
-        }]
-        : []),
+          }
+          : undefined,
+      },
     ],
     connectors: [
       {
@@ -356,7 +356,9 @@ describe('InlineWorkbenchBar mention preview', () => {
     );
 
     expect(html).toContain('Skills');
-    expect(html).toContain('Skills 1/1');
+    expect(html).toContain('Skills 1/2');
+    expect(html).toContain('Connectors 0/1');
+    expect(html).toContain('MCP 0/1');
   });
 
   // Connectors 选择器已从 InlineWorkbenchBar 移除（#2），测试删除。
@@ -373,19 +375,17 @@ describe('InlineWorkbenchBar mention preview', () => {
     expect(html).toContain('挂载');
   });
 
-  // Connector blocked 提示已改走 WorkbenchCapabilitySheetLite（#2 把 connector UI 移出主栏）。
-
-  it('hides MCP server state from the chat inline bar', () => {
+  it('renders quick actions for a selected MCP server', () => {
     composerState.selectedMcpServerIds = ['slack'];
 
     const html = renderToStaticMarkup(
       React.createElement(InlineWorkbenchBar),
     );
 
-    expect(html).not.toContain('MCP');
-    expect(html).not.toContain('slack');
-    expect(html).not.toContain('重连');
-    expect(html).not.toContain('打开设置');
+    expect(html).toContain('MCP');
+    expect(html).toContain('slack');
+    expect(html).toContain('重连');
+    expect(html).toContain('打开设置');
   });
 
   it('shows a repaired capability in the ready-next-turn section after a completed quick action', () => {

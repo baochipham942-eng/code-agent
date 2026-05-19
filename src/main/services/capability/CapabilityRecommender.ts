@@ -7,7 +7,7 @@
 //
 // 设计原则：
 // - 数据源走单一权威：plugin manifest.capabilities + PR 1 的 getModelCapabilities
-// - 不硬编码 capability → plugin 映射表，从 manifest 反查
+// - 不硬编码 capability → plugin 映射表，从 manifest 反查；未启用 plugin 只作为候选推荐
 // - 不做 fuzzy / 同义词扩展，命中精确就拼；语义匹配交给 LLM 自己判断
 // ============================================================================
 
@@ -15,7 +15,10 @@ import { getPluginRegistry } from '../../plugins/pluginRegistry';
 import { getConfigService } from '../core/configService';
 import { findCapableModels } from '../../model/modelRouter';
 import type { ModelDomainCapability } from '../../../shared/constants';
-import { type CapabilityGap } from '../../../shared/contract/capabilityGap';
+import {
+  type CapabilityGap,
+  type CapabilityGapPluginCandidate,
+} from '../../../shared/contract/capabilityGap';
 import { createLogger } from '../infra/logger';
 
 export type { CapabilityGap } from '../../../shared/contract/capabilityGap';
@@ -53,6 +56,27 @@ const TOOL_ERROR_HINT_RULES: ReadonlyArray<{
   { keywords: ['long_context', 'long-context', '长上下文', '长文本'], capability: 'long-context' },
 ];
 
+function buildPluginCandidateScan(requiredCapability: string): {
+  activeHit: boolean;
+  candidates: CapabilityGapPluginCandidate[];
+} {
+  const matches = getPluginRegistry().getPlugins().filter((plugin) =>
+    plugin.manifest.capabilities?.includes(requiredCapability),
+  );
+
+  return {
+    activeHit: matches.some((plugin) => plugin.state === 'active'),
+    candidates: matches
+      .filter((plugin) => plugin.state !== 'active')
+      .map((plugin) => ({
+        id: plugin.manifest.id,
+        name: plugin.manifest.name || plugin.manifest.id,
+        version: plugin.manifest.version,
+        description: plugin.manifest.description,
+      })),
+  };
+}
+
 /**
  * CapabilityRecommender — 能力缺口诊断器。
  *
@@ -75,18 +99,12 @@ export class CapabilityRecommender {
     const gaps: CapabilityGap[] = [];
 
     // ── Layer 1: plugin 层 ────────────────────────────────────────────────
-    const activePlugins = getPluginRegistry()
-      .getPlugins()
-      .filter((p) => p.state === 'active');
-    const pluginHit = activePlugins.some((p) =>
-      p.manifest.capabilities?.includes(requiredCapability),
-    );
-    if (!pluginHit) {
+    const pluginCandidateScan = buildPluginCandidateScan(requiredCapability);
+    if (!pluginCandidateScan.activeHit) {
       gaps.push({
         type: 'plugin',
         missing: requiredCapability,
-        // marketplace 接入前，本地没有候选 — 返回空数组而非 throw，给 UI 渲染空态。
-        candidates: [],
+        candidates: pluginCandidateScan.candidates,
       });
     }
 

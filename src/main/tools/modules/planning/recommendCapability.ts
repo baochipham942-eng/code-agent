@@ -37,7 +37,11 @@ export function renderGaps(
   const lines: string[] = [`**${requiredCapability}** 能力缺口诊断：`, ''];
   for (const gap of gaps) {
     if (gap.type === 'plugin') {
-      lines.push(`- [plugin] 本地无 plugin 声明该 capability 标签；marketplace 接入前无可推荐候选`);
+      if (gap.candidates.length > 0) {
+        lines.push(`- [plugin] 已有本地候选但未启用：${gap.candidates.map((candidate) => candidate.name).join('、')}`);
+      } else {
+        lines.push(`- [plugin] 本地无 plugin 声明该 capability 标签；marketplace 接入前无可推荐候选`);
+      }
     } else if (gap.type === 'model') {
       lines.push(`- [model] 当前模型注册表中没有具备 \`${gap.missing}\` 能力的候选`);
     } else if (gap.type === 'apikey') {

@@ -9,20 +9,20 @@ import {
   BarChart2, Settings, Keyboard, HelpCircle,
   Terminal, Cpu, Plug, Zap, ClipboardList,
   MessageCircleQuestion, ZapOff, Flame, Rocket,
-  Lock, LockOpen, Bot,
+  Lock, LockOpen, Bot, Sparkles, Server,
 } from 'lucide-react';
 import { useAppStore } from '../../../../stores/appStore';
-import { useAuthStore } from '../../../../stores/authStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { useSkillStore } from '../../../../stores/skillStore';
+import { useComposerStore } from '../../../../stores/composerStore';
 import { useModeStore } from '../../../../stores/modeStore';
 import { usePermissionStore } from '../../../../stores/permissionStore';
-import { canAccessFeature } from '../../../../utils/accessControl';
 import { initializeCommands, getCommandRegistry } from '@shared/commands';
 import type { CommandDefinition } from '@shared/commands';
 import { generateMessageId } from '@shared/utils/id';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { ExtensionValidationResult } from '@shared/contract/extension';
-import { invoke } from '../../../../services/ipcService';
+import { invoke, invokeDomain } from '../../../../services/ipcService';
 
 type ExtensionMutationResult = { success: boolean; error?: string };
 
@@ -88,6 +88,9 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     agents: <Terminal className="w-4 h-4" />,
     status: <BarChart2 className="w-4 h-4" />,
     plugins: <Plug className="w-4 h-4" />,
+    skills: <Sparkles className="w-4 h-4" />,
+    mcp: <Server className="w-4 h-4" />,
+    connectors: <Plug className="w-4 h-4" />,
   }), []);
 
   const extensionOps = useMemo(() => ({
@@ -110,6 +113,35 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     validate: async (id: string): Promise<ExtensionValidationResult> => (
       invoke(IPC_CHANNELS.EXTENSION_VALIDATE, id)
     ),
+  }), []);
+
+  const skillOps = useMemo(() => ({
+    listAvailable: async () => {
+      const store = useSkillStore.getState();
+      if (store.availableSkills.length === 0) {
+        await store.fetchAvailableSkills();
+      }
+      return useSkillStore.getState().availableSkills;
+    },
+    listMounted: async () => {
+      if (currentSessionId) {
+        useSkillStore.getState().setCurrentSession(currentSessionId);
+        await useSkillStore.getState().fetchMountedSkills({ force: true });
+      }
+      return useSkillStore.getState().mountedSkills;
+    },
+    listSelected: () => useComposerStore.getState().selectedSkillIds,
+  }), [currentSessionId]);
+
+  const mcpOps = useMemo(() => ({
+    getStatus: async () => invokeDomain(IPC_DOMAINS.MCP, 'getStatus'),
+    listServerStates: async () => invokeDomain(IPC_DOMAINS.MCP, 'getServerStates'),
+    listTools: async () => invokeDomain(IPC_DOMAINS.MCP, 'listTools'),
+  }), []);
+
+  const connectorOps = useMemo(() => ({
+    listStatuses: async () => invokeDomain(IPC_DOMAINS.CONNECTOR, 'listStatuses'),
+    listSelected: () => useComposerStore.getState().selectedConnectorIds,
   }), []);
 
   // GUI-only commands (operate on store/UI directly, not in registry)
@@ -295,6 +327,9 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
               {
                 surface: 'gui',
                 extensionOps,
+                skillOps,
+                mcpOps,
+                connectorOps,
                 output: {
                   info: writeAssistant(''),
                   success: writeAssistant('✅ '),
@@ -313,7 +348,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
 
     // GUI-only first, then registry commands
     return [...guiOnlyCommands, ...fromRegistry];
-  }, [extensionOps, guiOnlyCommands, registryIconMap]);
+  }, [connectorOps, extensionOps, guiOnlyCommands, mcpOps, registryIconMap, skillOps]);
 
   const filtered = useMemo(() => {
     if (!filter) return allCommands;

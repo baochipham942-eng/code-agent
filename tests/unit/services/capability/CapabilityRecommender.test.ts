@@ -98,6 +98,32 @@ describe('CapabilityRecommender', () => {
       });
     });
 
+    it('未启用 plugin 声明 capability 时作为候选返回', async () => {
+      getPluginsMock.mockReturnValue([
+        mkPlugin('builtin.browser-control', ['browser-control'], 'disabled'),
+      ]);
+      findCapableModelsMock.mockReturnValue([]);
+      hasConfiguredKeyMock.mockReturnValue(true);
+
+      const { getCapabilityRecommender } = await import(
+        '../../../../src/main/services/capability/CapabilityRecommender'
+      );
+      const gaps = getCapabilityRecommender().scanForCapability('browser-control');
+
+      expect(gaps.find((g) => g.type === 'plugin')).toEqual({
+        type: 'plugin',
+        missing: 'browser-control',
+        candidates: [
+          {
+            id: 'builtin.browser-control',
+            name: 'builtin.browser-control',
+            version: '1.0.0',
+            description: undefined,
+          },
+        ],
+      });
+    });
+
     it('plugin 命中但 model 注册表无候选 → ModelGap（vision 标签 case）', async () => {
       getPluginsMock.mockReturnValue([
         // plugin 层命中：声明了 vision

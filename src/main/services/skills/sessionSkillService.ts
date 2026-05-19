@@ -9,6 +9,7 @@ import type {
 } from '../../../shared/contract/skillRepository';
 import type { ParsedSkill } from '../../../shared/contract/agentSkill';
 import { getSkillDiscoveryService } from './skillDiscoveryService';
+import { getSkillInvocationAliases } from './skillInvocationResolver';
 import { SKILL_KEYWORDS, DEFAULT_ENABLED_SKILLS } from './skillRepositories';
 import { createLogger } from '../infra/logger';
 import { getContextHealthService } from '../../context/contextHealthService';
@@ -87,7 +88,10 @@ class SessionSkillService {
 
     // 异步上报 token 贡献到 ContextHealthService（不阻塞 mount）
     this.reportSkillTokens(sessionId, skill).catch((err) => {
-      logger.debug('Failed to report skill token contribution', { skillName, err });
+      logger.debug('Failed to report skill token contribution', {
+        skillName,
+        error: err instanceof Error ? err.message : String(err),
+      });
     });
 
     return true;
@@ -161,13 +165,37 @@ class SessionSkillService {
     const mounted = this.getMountedSkills(sessionId);
     const mountedNames = new Set(mounted.map((m) => m.skillName));
     const discoveryService = getSkillDiscoveryService();
-    const allSkills = discoveryService.getAllSkills();
+    const allSkills = discoveryService.getAllSkills().filter((skill) => skill.userInvocable);
 
-    const recommendations: SkillRecommendation[] = [];
+    if (!input.trim()) {
+      return [];
+    }
+
+    const recommendationMap = new Map<string, SkillRecommendation>();
+
+    for (const skill of allSkills) {
+      // 跳过已挂载的
+      if (mountedNames.has(skill.name)) continue;
+
+      const aliases = getSkillInvocationAliases(skill)
+        .map((alias) => alias.value)
+        .filter((alias) => input.includes(alias.toLowerCase()));
+      if (aliases.length === 0) continue;
+
+      const score = Math.min(0.95, 0.55 + aliases.length * 0.12);
+      recommendationMap.set(skill.name, {
+        skillName: skill.name,
+        libraryId: getSkillLibraryId(skill),
+        reason: `匹配语义: ${aliases.slice(0, 3).join(', ')}`,
+        score,
+      });
+    }
 
     for (const [skillName, keywords] of Object.entries(SKILL_KEYWORDS)) {
       // 跳过已挂载的
       if (mountedNames.has(skillName)) continue;
+      const skill = allSkills.find((s) => s.name === skillName);
+      if (!skill) continue;
 
       // 检查关键词匹配
       const matchedKeywords: string[] = [];
@@ -181,23 +209,21 @@ class SessionSkillService {
       }
 
       if (matchScore > 0) {
-        const skill = allSkills.find((s) => s.name === skillName);
-        if (skill) {
-          // 确定所属库 ID
-          const libraryId = getSkillLibraryId(skill);
-
-          recommendations.push({
+        const previous = recommendationMap.get(skill.name);
+        const score = Math.min(0.98, matchScore / keywords.length + 0.15);
+        if (!previous || score > previous.score) {
+          recommendationMap.set(skill.name, {
             skillName: skill.name,
-            libraryId,
+            libraryId: getSkillLibraryId(skill),
             reason: `匹配关键词: ${matchedKeywords.join(', ')}`,
-            score: matchScore / keywords.length, // 归一化到 0-1
+            score,
           });
         }
       }
     }
 
     // 按匹配分数排序
-    return recommendations.sort((a, b) => b.score - a.score);
+    return Array.from(recommendationMap.values()).sort((a, b) => b.score - a.score);
   }
 
   /**

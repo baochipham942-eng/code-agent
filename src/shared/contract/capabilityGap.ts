@@ -15,9 +15,8 @@ import type { ModelDomainCapability } from '../constants';
 /**
  * Plugin 候选 DTO — `PluginManifest` 的最小投影。
  *
- * marketplace 接入前，`CapabilityGap`(type='plugin') 的 candidates 永远为空数
- * 组；本类型保留是为了 GapCard 在未来 marketplace 上线后能直接渲染候选列表
- * 而不用改 IPC schema。
+ * marketplace 接入前，candidates 主要来自本地已安装但未启用 / 出错的 plugin
+ * manifest；未来远程市场上线后可继续复用同一投影。
  */
 export interface CapabilityGapPluginCandidate {
   /** 插件唯一标识 */
@@ -52,7 +51,7 @@ export type CapabilityGap =
       type: 'plugin';
       /** 缺失的 capability 标签（kebab-case） */
       missing: string;
-      /** marketplace 接入前 candidates 始终为空数组 */
+      /** 本地或远程候选插件 */
       candidates: CapabilityGapPluginCandidate[];
     }
   | {

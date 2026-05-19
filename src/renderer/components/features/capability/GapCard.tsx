@@ -7,7 +7,7 @@
 // 设计原则：
 // - 单一形态：不接 theme / variant / size 等扩展点，本 PR 只做一个样式
 // - CTA 决策抽离纯函数 `getGapCardActions`，方便单测 / 不依赖 React 渲染
-// - 不假装能装 plugin：PluginGap 的主 CTA 禁用 + tooltip "marketplace 接入后开放"
+// - 本地已有候选 plugin 时跳转插件管理；没有候选时仍禁用安装 CTA
 // - 不主动跑诊断：本组件是纯 presentational + dispatch，扫描由 main service 做
 // ============================================================================
 
@@ -56,6 +56,15 @@ export function getGapCardActions(
 ): GapCardAction {
   switch (gap.type) {
     case 'plugin':
+      if (gap.candidates.length > 0) {
+        return {
+          label: '去启用插件',
+          onClick: () => handlers.openSettingsTab('plugins'),
+          disabled: false,
+          hint: `候选: ${gap.candidates.map((candidate) => candidate.name).slice(0, 3).join('、')}`,
+          emphasis: 'primary',
+        };
+      }
       return {
         label: '安装插件',
         onClick: () => {},

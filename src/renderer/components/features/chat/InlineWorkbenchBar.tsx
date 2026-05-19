@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { AlertTriangle, Check, ChevronDown, ChevronRight, Loader2, Sparkles, Wrench } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Loader2, Plug, Server, Sparkles, Wrench } from 'lucide-react';
 import { useComposerStore } from '../../../stores/composerStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useCapabilityGapStore } from '../../../stores/capabilityGapStore';
@@ -67,12 +67,31 @@ function getQuickActionButtonClasses(action: WorkbenchQuickAction): string {
     : 'border-white/[0.08] bg-zinc-900/60 text-zinc-300 hover:border-white/[0.14] hover:text-zinc-100';
 }
 
+function sortCapabilities<T extends WorkbenchCapabilityRegistryItem>(items: T[]): T[] {
+  return [...items].sort((left, right) => {
+    const rank = (item: WorkbenchCapabilityRegistryItem) => (
+      item.selected ? 0 : item.available ? 1 : item.blocked ? 2 : 3
+    );
+    const rankDiff = rank(left) - rank(right);
+    if (rankDiff !== 0) return rankDiff;
+    return left.label.localeCompare(right.label);
+  });
+}
+
+function toggleId(ids: string[], id: string): string[] {
+  return ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id];
+}
+
 export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
   previewTargetAgentIds: _previewTargetAgentIds,
   onDirectTargetIdsChange: _onDirectTargetIdsChange,
 }) => {
   const selectedSkillIds = useComposerStore((state) => state.selectedSkillIds);
   const setSelectedSkillIds = useComposerStore((state) => state.setSelectedSkillIds);
+  const selectedConnectorIds = useComposerStore((state) => state.selectedConnectorIds);
+  const setSelectedConnectorIds = useComposerStore((state) => state.setSelectedConnectorIds);
+  const selectedMcpServerIds = useComposerStore((state) => state.selectedMcpServerIds);
+  const setSelectedMcpServerIds = useComposerStore((state) => state.setSelectedMcpServerIds);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const gapNotice = useCapabilityGapStore((state) =>
     currentSessionId ? state.noticesBySession[currentSessionId] : null,
@@ -82,30 +101,41 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
   const { history } = useWorkbenchInsights();
   const { runningActionKey, actionErrors, completedActions, runQuickAction } = useWorkbenchCapabilityQuickActionRunner();
   const [activeSheetTarget, setActiveSheetTarget] = useState<WorkbenchCapabilityTarget | null>(null);
-  // 聊天区默认折叠 Skills 网格，避免占用输入视野。点击 header 切换展开。
+  // 聊天区默认折叠能力网格，避免占用输入视野。点击 header 切换展开。
   const [gridExpanded, setGridExpanded] = useState(false);
-  const activeSkills = skills.filter((skill) => skill.visibleInWorkbench);
-  const selectedSkillCount = activeSkills.filter((skill) => skill.selected).length;
-  // connectors 保留在 registry 查询里，仅供 sheet 通过 capability key 反查（历史面板引用等）；
-  // UI 不再展示 connector 选择器（#2），也不把 blocked connector 塞进 Quick Actions。
+  const visibleSkills = useMemo(() => sortCapabilities(skills).slice(0, 24), [skills]);
+  const visibleConnectors = useMemo(() => sortCapabilities(connectors).slice(0, 16), [connectors]);
+  const visibleMcpServers = useMemo(() => sortCapabilities(mcpServers).slice(0, 16), [mcpServers]);
+  const selectedSkillCount = skills.filter((skill) => skill.selected).length;
+  const selectedConnectorCount = connectors.filter((connector) => connector.selected).length;
+  const selectedMcpServerCount = mcpServers.filter((server) => server.selected).length;
+  const skillOverflowCount = Math.max(0, skills.length - visibleSkills.length);
+  const connectorOverflowCount = Math.max(0, connectors.length - visibleConnectors.length);
+  const mcpOverflowCount = Math.max(0, mcpServers.length - visibleMcpServers.length);
   const registryItems = useMemo(
     () => [...skills, ...connectors, ...mcpServers],
     [connectors, mcpServers, skills],
   );
-  const blockedCapabilities = activeSkills
+  const selectedCapabilities = useMemo(
+    () => registryItems.filter((capability) => capability.selected),
+    [registryItems],
+  );
+  const blockedCapabilities = selectedCapabilities
     .map((capability) => ({
       capability,
       actions: getWorkbenchCapabilityQuickActions(capability),
     }))
     .filter(({ capability, actions }) => capability.selected && capability.blocked && actions.length > 0);
-  const resolvedCapabilities = activeSkills
+  const resolvedCapabilities = selectedCapabilities
     .filter((capability) => capability.selected && !capability.blocked && Boolean(completedActions[capability.key]))
     .map((capability) => ({
       capability,
       feedback: getWorkbenchCapabilityQuickActionFeedback(capability, completedActions[capability.key]),
     }))
     .filter(({ feedback }) => Boolean(feedback));
-  const shouldShowSkills = activeSkills.length > 0;
+  const shouldShowSkills = visibleSkills.length > 0;
+  const shouldShowConnectors = visibleConnectors.length > 0;
+  const shouldShowMcpServers = visibleMcpServers.length > 0;
   const activeSheetCapability = useMemo(
     () => resolveWorkbenchCapabilityFromSources({
       target: activeSheetTarget,
@@ -119,11 +149,16 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
   );
 
   const toggleSkill = useCallback((skillId: string) => {
-    const nextIds = selectedSkillIds.includes(skillId)
-      ? selectedSkillIds.filter((id) => id !== skillId)
-      : [...selectedSkillIds, skillId];
-    setSelectedSkillIds(nextIds);
+    setSelectedSkillIds(toggleId(selectedSkillIds, skillId));
   }, [selectedSkillIds, setSelectedSkillIds]);
+
+  const toggleConnector = useCallback((connectorId: string) => {
+    setSelectedConnectorIds(toggleId(selectedConnectorIds, connectorId));
+  }, [selectedConnectorIds, setSelectedConnectorIds]);
+
+  const toggleMcpServer = useCallback((serverId: string) => {
+    setSelectedMcpServerIds(toggleId(selectedMcpServerIds, serverId));
+  }, [selectedMcpServerIds, setSelectedMcpServerIds]);
 
   const openCapabilitySheet = useCallback((capability: WorkbenchCapabilityRegistryItem) => {
     setActiveSheetTarget({
@@ -132,11 +167,9 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
     });
   }, []);
 
-  // 首行的 workspace / Routing / Browser 已分别迁到 TitleBar 和 ChatInput AbilityMenu；
-  // Browser preview 面板（URL/Title/Frontmost/Readiness/Repair）已整体移除，避免多处
-  // workbench 源同时展示且互相漂移。InlineWorkbenchBar 现在只保留 Skills；
-  // MCP 状态留给 TaskPanel / Settings，避免在聊天区出现计数条。
-  const shouldRenderBar = shouldShowSkills || blockedCapabilities.length > 0 || resolvedCapabilities.length > 0;
+  // 首行的 workspace / Routing / Browser 已分别迁到 TitleBar 和 ChatInput AbilityMenu。
+  // 这里保留用户本轮可显式选择的 Skills / Connectors / MCP。
+  const shouldRenderBar = shouldShowSkills || shouldShowConnectors || shouldShowMcpServers || blockedCapabilities.length > 0 || resolvedCapabilities.length > 0;
   const gapCardNode = gapNotice && currentSessionId ? (
     <GapCard
       requiredCapability={gapNotice.requiredCapability}
@@ -163,12 +196,14 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
   }
 
   const summaryParts: string[] = [];
-  if (shouldShowSkills) summaryParts.push(`Skills ${selectedSkillCount}/${activeSkills.length}`);
+  if (shouldShowSkills) summaryParts.push(`Skills ${selectedSkillCount}/${skills.length}`);
+  if (shouldShowConnectors) summaryParts.push(`Connectors ${selectedConnectorCount}/${connectors.length}`);
+  if (shouldShowMcpServers) summaryParts.push(`MCP ${selectedMcpServerCount}/${mcpServers.length}`);
   const summaryText = summaryParts.join(' · ');
 
   return (
     <div className="mb-2 rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-1.5">
-      {shouldShowSkills && (
+      {(shouldShowSkills || shouldShowConnectors || shouldShowMcpServers) && (
         <>
           <button
             type="button"
@@ -193,8 +228,8 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
                     labelClassName="text-[11px] text-zinc-500"
                   />
                   <div className="flex flex-wrap items-center gap-1.5">
-                    {activeSkills.length > 0 ? (
-                      activeSkills.map((skill) => (
+                    {visibleSkills.length > 0 ? (
+                      visibleSkills.map((skill) => (
                         <div key={skill.id} className="flex items-center gap-1">
                           <WorkbenchSelectablePill
                             onClick={() => toggleSkill(skill.id)}
@@ -214,10 +249,78 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
                     ) : (
                       <span className="text-[11px] text-zinc-500">当前会话还没有 mounted skills。</span>
                     )}
+                    {skillOverflowCount > 0 && (
+                      <span className="text-[11px] text-zinc-500">+{skillOverflowCount}</span>
+                    )}
                   </div>
                 </div>
               )}
 
+              {shouldShowConnectors && (
+                <div>
+                  <WorkbenchSectionHeader
+                    icon={<Plug className="h-3.5 w-3.5 text-cyan-400" />}
+                    label="Connectors"
+                    className="mb-1 px-0"
+                    labelClassName="text-[11px] text-zinc-500"
+                  />
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {visibleConnectors.map((connector) => (
+                      <div key={connector.id} className="flex items-center gap-1">
+                        <WorkbenchSelectablePill
+                          onClick={() => toggleConnector(connector.id)}
+                          tone="connector"
+                          selected={connector.selected}
+                          dimmed={!connector.available}
+                          title={getWorkbenchCapabilityTitle(connector, { locale: 'zh' })}
+                        >
+                          {connector.label}
+                        </WorkbenchSelectablePill>
+                        <WorkbenchCapabilityDetailButton
+                          label={connector.label}
+                          onClick={() => openCapabilitySheet(connector)}
+                        />
+                      </div>
+                    ))}
+                    {connectorOverflowCount > 0 && (
+                      <span className="text-[11px] text-zinc-500">+{connectorOverflowCount}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {shouldShowMcpServers && (
+                <div>
+                  <WorkbenchSectionHeader
+                    icon={<Server className="h-3.5 w-3.5 text-blue-400" />}
+                    label="MCP"
+                    className="mb-1 px-0"
+                    labelClassName="text-[11px] text-zinc-500"
+                  />
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {visibleMcpServers.map((server) => (
+                      <div key={server.id} className="flex items-center gap-1">
+                        <WorkbenchSelectablePill
+                          onClick={() => toggleMcpServer(server.id)}
+                          tone="mcp"
+                          selected={server.selected}
+                          dimmed={!server.available}
+                          title={getWorkbenchCapabilityTitle(server, { locale: 'zh' })}
+                        >
+                          {server.label}
+                        </WorkbenchSelectablePill>
+                        <WorkbenchCapabilityDetailButton
+                          label={server.label}
+                          onClick={() => openCapabilitySheet(server)}
+                        />
+                      </div>
+                    ))}
+                    {mcpOverflowCount > 0 && (
+                      <span className="text-[11px] text-zinc-500">+{mcpOverflowCount}</span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>

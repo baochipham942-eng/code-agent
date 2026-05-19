@@ -479,6 +479,15 @@ async function initializeServices(): Promise<void> {
 // Web 模式的全局 BrowserWindow 实例（webContents.send → broadcastSSE）
 const webModeWindow = new BrowserWindow();
 
+// 注册到 main/app/window.ts 的 module-level mainWindow，让所有调
+// getMainWindow() 的后台服务（auth、update、mcp 等）能拿到 mock window
+// 走 SSE 推送，否则 callback 里 `if (mainWindow)` 永远 false，事件黑洞。
+import('../main/app/window').then(({ setMainWindow }) => {
+  setMainWindow(webModeWindow as never);
+}).catch((err) => {
+  logger.warn('Failed to register webModeWindow as mainWindow:', err);
+});
+
 function registerHandlers(): void {
   let currentSessionId: string | null = null;
 

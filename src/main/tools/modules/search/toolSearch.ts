@@ -24,6 +24,8 @@ import { getToolSearchService } from '../../../services/toolSearch/toolSearchSer
 import { getMCPClient } from '../../../mcp/mcpClient';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { toolSearchSchema as schema } from './toolSearch.schema';
+import { getCapabilityRecommender } from '../../../services/capability';
+import { renderGaps } from '../planning/recommendCapability';
 
 const MAX_RESULTS_HARD_CAP = 10;
 const DEFAULT_MAX_RESULTS = 5;
@@ -87,7 +89,13 @@ export async function executeToolSearch(
       const discoveryHint = discoveryFailures.length > 0
         ? `\n\nMCP 懒加载发现失败：\n${discoveryFailures.join('\n')}`
         : '';
-      const output = `未找到匹配 "${query}" 的工具。${discoveryHint}\n\n提示：\n- 尝试使用更通用的关键字\n- 使用 "select:工具名" 直接加载已知工具\n- 核心工具（bash, read_file 等）无需搜索`;
+      const capabilityHint = (() => {
+        if (!/^[a-z][a-z0-9-]*$/.test(query)) return '';
+        const gaps = getCapabilityRecommender().scanForCapability(query);
+        if (gaps.length === 0) return '';
+        return `\n\n${renderGaps(query, gaps)}`;
+      })();
+      const output = `未找到匹配 "${query}" 的工具。${discoveryHint}${capabilityHint}\n\n提示：\n- 尝试使用更通用的关键字\n- 使用 "select:工具名" 直接加载已知工具\n- 核心工具（bash, read_file 等）无需搜索`;
       return {
         ok: true,
         output,

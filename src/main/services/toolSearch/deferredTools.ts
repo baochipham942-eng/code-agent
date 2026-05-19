@@ -40,6 +40,9 @@ export const CORE_TOOLS: string[] = [
 
   // Skill 元工具（始终可见，动态描述聚合可用 skills）
   'Skill',
+
+  // Capability discovery 元工具（Step 7 PR 2，让模型自主诊断能力缺口）
+  'recommend_capability',
 ];
 
 /**

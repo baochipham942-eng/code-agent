@@ -36,8 +36,19 @@ export interface PluginManifest extends PluginMetadata {
   generations?: string[];
   /** Required permissions */
   permissions?: PluginPermission[];
-  /** Plugin capabilities */
-  capabilities?: PluginCapability[];
+  /**
+   * Host surfaces the plugin extends (tools / skills / theme / language).
+   *
+   * Step 7 PR 1: 原字段名 `capabilities`，重命名为 `surfaces` 以释放
+   * `capabilities` 给"领域能力标签"。host 内部统一读 `manifest.surfaces`。
+   */
+  surfaces?: PluginSurface[];
+  /**
+   * 领域能力标签（kebab-case），供 CapabilityRecommender / Gap 提示语义匹配
+   * 用，如 `['image-generation', 'image-processing']`。host 不做白名单校验，
+   * 仅作为元数据投影给上层服务。
+   */
+  capabilities?: string[];
   /**
    * Platforms this plugin supports. Optional.
    *
@@ -73,9 +84,13 @@ export type PluginPermission =
   | 'storage';     // Persistent storage
 
 /**
- * Plugin capability types
+ * Plugin surface types — what host surface the plugin extends.
+ *
+ * Step 7 PR 1: 原类型名 `PluginCapability`，重命名为 `PluginSurface` 以
+ * 释放 "capability" 给"领域能力标签"语义（CapabilityRecommender 用）。
+ * 字段值域不变，行为兼容。
  */
-export type PluginCapability =
+export type PluginSurface =
   | 'tools'        // Provides tools
   | 'skills'       // Provides skills
   | 'theme'        // Provides theme

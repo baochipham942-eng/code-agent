@@ -4,7 +4,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import type { PluginPermission, PluginCapability, PluginPlatform } from './types';
+import type { PluginPermission, PluginSurface, PluginPlatform } from './types';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -34,7 +34,7 @@ const VALID_PERMISSIONS: PluginPermission[] = [
   'filesystem', 'network', 'shell', 'clipboard', 'notification', 'storage',
 ];
 
-const VALID_CAPABILITIES: PluginCapability[] = [
+const VALID_SURFACES: PluginSurface[] = [
   'tools', 'skills', 'theme', 'language',
 ];
 
@@ -114,16 +114,32 @@ export function validateManifest(manifest: unknown): ValidationResult {
     }
   }
 
-  // Optional: capabilities
+  // Optional: surfaces (host extension surfaces — tools/skills/theme/language)
+  if (m.surfaces !== undefined) {
+    if (!Array.isArray(m.surfaces)) {
+      errors.push({ field: 'surfaces', message: "'surfaces' must be an array" });
+    } else {
+      for (const surface of m.surfaces) {
+        if (!VALID_SURFACES.includes(surface as PluginSurface)) {
+          warnings.push({
+            field: 'surfaces',
+            message: `Unknown surface '${surface}'. Valid: ${VALID_SURFACES.join(', ')}`,
+          });
+        }
+      }
+    }
+  }
+
+  // Optional: capabilities (领域能力标签, kebab-case 字符串数组 — host 不校验值域)
   if (m.capabilities !== undefined) {
     if (!Array.isArray(m.capabilities)) {
       errors.push({ field: 'capabilities', message: "'capabilities' must be an array" });
     } else {
       for (const cap of m.capabilities) {
-        if (!VALID_CAPABILITIES.includes(cap as PluginCapability)) {
+        if (typeof cap !== 'string') {
           warnings.push({
             field: 'capabilities',
-            message: `Unknown capability '${cap}'. Valid: ${VALID_CAPABILITIES.join(', ')}`,
+            message: `Each capabilities entry should be a string, got: ${typeof cap}`,
           });
         }
       }

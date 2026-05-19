@@ -18,10 +18,11 @@ export const manifest: PluginManifest = {
   id: 'builtin.imageCreation',
   name: 'Image Creation',
   version: '1.0.0',
-  description: 'AI 图片生成 + OCR 标注（CogView-4 / FLUX.2 / 百度 OCR / 智谱视觉）— builtin plugin',
+  description: 'AI 图片生成 + 图片标注（CogView-4 / FLUX.2 / 智谱视觉）',
   author: 'code-agent',
   main: 'index.ts',
-  capabilities: ['tools'],
+  surfaces: ['tools'],
+  capabilities: ['image-generation', 'image-annotation'],
   permissions: ['filesystem', 'network'],
 };
 

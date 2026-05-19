@@ -1,5 +1,6 @@
 import type { ModelProvider } from '../contract';
 import catalog from '../model-catalog.json';
+import { getContextWindow } from './defaults';
 
 /** 模型配置 */
 export const MODEL = {
@@ -327,3 +328,59 @@ export const TOKENIZER_MAP: Record<string, 'cl100k_base' | 'o200k_base'> = {
 
 /** Default tokenizer used when model is not in TOKENIZER_MAP */
 export const DEFAULT_TOKENIZER = 'cl100k_base' as const;
+
+// ============================================================================
+// Step 7 PR 1: Model domain capability — 单一权威源 (constants 路线)
+//
+// 与 UI 维度的 `ModelCapability` (shared/contract/model.ts, camelCase) 分离：
+// 这里的 ModelDomainCapability 是 kebab-case 标签，喂给 CapabilityRecommender
+// 做模型↔plugin 标签匹配用。`'tool'/'vision'/'reasoning'` 取自 MODEL_FEATURES
+// 的字面量值；`'long-context'` 不回填到 MODEL_FEATURES，运行时按
+// CONTEXT_WINDOWS > 100K 派生（避免双源不一致）。
+// ============================================================================
+
+/**
+ * 模型领域能力标签 (kebab-case)，喂给 CapabilityRecommender。
+ *
+ * 与 UI 的 `ModelCapability` (camelCase, 'longContext' / 'fast' / 'search' 等)
+ * 受众不同——后者是给用户看的 chip，前者是给 recommender 做语义匹配的标签。
+ */
+export type ModelDomainCapability = 'tool' | 'vision' | 'reasoning' | 'long-context';
+
+/** `'long-context'` 判定阈值 — context window 超过该值即视为长上下文。 */
+export const LONG_CONTEXT_THRESHOLD = 100_000;
+
+/**
+ * 查询 model 的领域能力标签集合。
+ *
+ * 数据合成：
+ * - `MODEL_FEATURES[modelId]` 的 `'tool'/'vision'/'reasoning'` 字面量直接采用
+ * - `'long-context'` 按 `getContextWindow(modelId) > LONG_CONTEXT_THRESHOLD` 派生
+ *
+ * 未知 model id 返回空数组（不抛错），由调用方决定 fallback。
+ */
+export function getModelCapabilities(modelId: string): ModelDomainCapability[] {
+  const features = MODEL_FEATURES[modelId] ?? [];
+  const caps: ModelDomainCapability[] = [...features];
+  if (getContextWindow(modelId) > LONG_CONTEXT_THRESHOLD) {
+    caps.push('long-context');
+  }
+  return caps;
+}
+
+/**
+ * 判断 model 是否具备指定领域能力。
+ *
+ * 语义等价于 `getModelCapabilities(modelId).includes(cap)`，但是单次查询用
+ * 这个函数避免分配数组。
+ */
+export function modelHasCapability(
+  modelId: string,
+  cap: ModelDomainCapability,
+): boolean {
+  if (cap === 'long-context') {
+    return getContextWindow(modelId) > LONG_CONTEXT_THRESHOLD;
+  }
+  const features = MODEL_FEATURES[modelId];
+  return features !== undefined && features.includes(cap);
+}

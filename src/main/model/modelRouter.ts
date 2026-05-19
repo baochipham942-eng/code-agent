@@ -10,7 +10,7 @@ import type {
   ModelProvider
 } from '../../shared/contract';
 import { PROVIDER_REGISTRY } from './providerRegistry';
-import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS, PROVIDER_FALLBACK_CHAIN } from '../../shared/constants';
+import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS, PROVIDER_FALLBACK_CHAIN, modelHasCapability, type ModelDomainCapability } from '../../shared/constants';
 import { isFallbackEligible } from './providers/retryStrategy';
 import { getModelMaxOutputTokens } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
@@ -1182,4 +1182,36 @@ export class ModelRouter {
 
     return this.inference(messages, [], config, onStream);
   }
+}
+
+// ============================================================================
+// findCapableModels — Step 7 PR 2，按 ModelDomainCapability (kebab-case)
+// 遍历 PROVIDER_REGISTRY 返回全量候选。与 ModelRouter.selectModelByCapability
+// (UI 维度 ModelCapability camelCase) 受众分离，不互通。
+// ============================================================================
+
+export interface ModelCandidate {
+  provider: string;
+  model: string;
+}
+
+export function findCapableModels(capability: ModelDomainCapability): ModelCandidate[] {
+  const cfg = getConfigService();
+  const candidates: ModelCandidate[] = [];
+  for (const [providerId, providerConfig] of Object.entries(PROVIDER_REGISTRY)) {
+    for (const model of providerConfig.models) {
+      if (modelHasCapability(model.id, capability)) {
+        candidates.push({ provider: providerId, model: model.id });
+      }
+    }
+  }
+  candidates.sort((a, b) => {
+    const aHasKey = cfg.getApiKey(a.provider as ModelProvider) !== undefined ? 0 : 1;
+    const bHasKey = cfg.getApiKey(b.provider as ModelProvider) !== undefined ? 0 : 1;
+    if (aHasKey !== bHasKey) return aHasKey - bHasKey;
+    const providerCmp = a.provider.localeCompare(b.provider);
+    if (providerCmp !== 0) return providerCmp;
+    return a.model.localeCompare(b.model);
+  });
+  return candidates;
 }

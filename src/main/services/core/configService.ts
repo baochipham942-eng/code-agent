@@ -624,6 +624,10 @@ export class ConfigService implements IReadConfigService {
     return undefined;
   }
 
+  hasConfiguredKey(provider: string): boolean {
+    return this.getApiKey(provider as ModelProvider) !== undefined;
+  }
+
   /**
    * 智谱官方 API key。视觉模型走官方端点（0ki 代理订阅不含视觉），
    * 优先读 ZHIPU_OFFICIAL_API_KEY，缺失时回落到 ZHIPU_API_KEY。

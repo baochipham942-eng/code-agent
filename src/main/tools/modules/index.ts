@@ -141,6 +141,7 @@ import { taskManagerSchema } from './planning/taskManager.schema';
 import { askUserQuestionSchema } from './planning/askUserQuestion.schema';
 import { confirmActionSchema } from './planning/confirmAction.schema';
 import { exploreSchema } from './planning/explore.schema';
+import { recommendCapabilitySchema } from './planning/recommendCapability.schema';
 
 export function registerMigratedTools(registry: ToolRegistry): void {
   // ── file/ batch 1 ─────────────────────────────────────────────────────
@@ -412,6 +413,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   registry.register(
     exploreSchema,
     async () => (await import('./planning/explore')).exploreModule,
+  );
+  registry.register(
+    recommendCapabilitySchema,
+    async () => (await import('./planning/recommendCapability')).recommendCapabilityModule,
   );
 
   // ── batch 8: network/ — all native modules ────────────────────────────

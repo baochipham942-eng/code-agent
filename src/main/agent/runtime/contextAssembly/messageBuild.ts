@@ -46,6 +46,7 @@ import { isAbsolute, resolve as resolvePath } from 'path';
 import type { ContextAssemblyCtx, ContextTranscriptEntry } from '../contextAssembly';
 import { logger, MAX_SYSTEM_PROMPT_TOKENS } from '../contextAssembly';
 import { persistRuntimeState } from '../runtimeStatePersistence';
+import { getPluginRegistry } from '../../../plugins/pluginRegistry';
 
 const DYNAMIC_PROMPT_CACHE_TTL_MS = 2 * 60 * 1000;
 const COMPRESSION_CACHE_TTL_MS = 30 * 1000;
@@ -831,6 +832,28 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       count: 1,
       sessionId: ctx.runtime.sessionId,
     });
+  }
+
+  // 注入 active plugin 能力清单（Step 7 PR 2，让模型按语义自主识别能力缺口）
+  try {
+    const activePlugins = getPluginRegistry()
+      .getPlugins()
+      .filter((p) => p.state === 'active' && p.manifest.description);
+    if (activePlugins.length > 0) {
+      const lines = activePlugins.map((p) => {
+        const desc = (p.manifest.description ?? '').slice(0, 60);
+        const caps = p.manifest.capabilities?.length
+          ? ` [${p.manifest.capabilities.join(', ')}]`
+          : '';
+        return `- ${p.manifest.id}: ${desc}${caps}`;
+      });
+      const pluginBlock = `<available_plugins>\n${lines.join('\n')}\n</available_plugins>`;
+      systemPrompt = appendPromptBlockWithinBudget(systemPrompt, pluginBlock, 'available plugins', ctx);
+    }
+  } catch (err) {
+    logger.debug(
+      `[ContextAssembly] plugin description injection skipped: ${err instanceof Error ? err.message : 'unknown'}`,
+    );
   }
 
   // 注入相关 Skill（Hermes Procedural layer）— 按用户查询关键词匹配。

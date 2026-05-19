@@ -8,25 +8,35 @@ import type { HandoffProposal } from '@shared/contract/handoff';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useHandoffStore } from '../../stores/handoffStore';
 import { useMessageActionStore } from '../../stores/messageActionStore';
+import { useI18n } from '../../hooks/useI18n';
 import { Card } from './Card';
 
-export function HandoffCard() {
+interface HandoffCardProps {
+  items?: HandoffProposal[];
+  skipLoad?: boolean;
+}
+
+export function HandoffCard({ items: providedItems, skipLoad = false }: HandoffCardProps = {}) {
+  const { t } = useI18n();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const messageCount = useSessionStore((state) => state.messages.length);
-  const items = useHandoffStore((state) => state.items);
+  const storeItems = useHandoffStore((state) => state.items);
   const load = useHandoffStore((state) => state.load);
   const updateStatus = useHandoffStore((state) => state.updateStatus);
   const sendPrompt = useMessageActionStore((state) => state.sendPrompt);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (skipLoad) return;
     if (!currentSessionId) return;
     void load({ sessionId: currentSessionId, status: 'pending', limit: 6 });
-  }, [currentSessionId, messageCount, load]);
+  }, [currentSessionId, messageCount, load, skipLoad]);
 
   const visibleItems = useMemo(
-    () => items.filter((item) => !currentSessionId || item.sessionId === currentSessionId).slice(0, 3),
-    [currentSessionId, items],
+    () => (providedItems ?? storeItems)
+      .filter((item) => !currentSessionId || item.sessionId === currentSessionId)
+      .slice(0, 3),
+    [currentSessionId, providedItems, storeItems],
   );
 
   const continueProposal = useCallback(async (item: HandoffProposal) => {
@@ -56,7 +66,7 @@ export function HandoffCard() {
 
   return (
     <Card
-      title="Handoff"
+      title={t.taskPanel.sectionHandoff}
       storageKey="handoff"
       count={String(visibleItems.length)}
       defaultExpanded

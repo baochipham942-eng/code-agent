@@ -189,9 +189,10 @@ export const zh = {
     title: '关于',
     version: '版本',
     description:
-      'Agent Neo 是一个本地 AI cowork 工作台，帮助你处理资料、推进任务、编排多模型 Agent，并把执行、验证和交付留在同一条协作上下文里。',
-    technologies: '技术栈',
-    madeWith: '由 AI 辅助制作',
+      'Agent Neo 是评测驱动的多模型生活 / 工作 AI 助手，面向资料处理、项目推进、编程交付和本地桌面执行；支持 Native / Codex CLI / Claude Code 等 Agent Engine，并把过程、验证和结果留在同一条可追踪上下文里。',
+    capabilities: '核心能力',
+    highlights: ['本地优先', '多模型路由', 'Agent Engine', '记忆管理', '评测闭环', '桌面执行'],
+    madeWith: '本地优先 · API Key 由你管理',
   },
 
   // Task Panel (Right Sidebar)
@@ -247,6 +248,9 @@ export const zh = {
     toolActivityMcp: '外部工具活动',
     toolActivityOps: '{count} 次工具操作',
     // StatusRail
+    runtimeTitle: '运行信息',
+    runtimeApprovalsBadge: '待审',
+    sectionHandoff: '接力',
     sectionContext: '上下文',
     sectionOutputs: '产物',
     sectionReferences: '引用',

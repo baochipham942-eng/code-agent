@@ -66,6 +66,7 @@ describe('DataSettings management helpers', () => {
       valueLabel: '8 条',
       statusLabel: '可清理',
       statusTone: 'warning',
+      cleanupLabel: '清空缓存',
       action: 'clear-cache',
     });
   });

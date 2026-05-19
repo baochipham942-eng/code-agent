@@ -186,6 +186,50 @@ const quickActionRunnerState = {
   runQuickAction: vi.fn(),
 };
 
+const defaultWorkbenchReference = {
+  kind: 'mcp' as const,
+  id: 'github',
+  label: 'github',
+  selected: false,
+  status: 'connected' as const,
+  enabled: true,
+  transport: 'stdio' as const,
+  toolCount: 2,
+  resourceCount: 1,
+  invoked: true,
+};
+
+const defaultWorkbenchHistory = [
+  {
+    kind: 'connector' as const,
+    id: 'mail',
+    label: 'Mail',
+    count: 1,
+    lastUsed: 200,
+    topActions: [{ label: 'send', count: 1 }],
+  },
+  {
+    kind: 'mcp' as const,
+    id: 'github',
+    label: 'github',
+    count: 1,
+    lastUsed: 210,
+    topActions: [{ label: 'search_code', count: 1 }],
+  },
+];
+
+let workbenchReferencesState = [defaultWorkbenchReference];
+let workbenchHistoryState = [...defaultWorkbenchHistory];
+let currentTurnScopeResult: typeof currentTurnScopeState | null = currentTurnScopeState;
+let currentTurnRoutingResult: typeof currentTurnRoutingState | null = currentTurnRoutingState;
+let currentTurnArtifactResult: typeof currentTurnArtifactState | null = currentTurnArtifactState;
+
+const handoffState = {
+  items: [] as Array<any>,
+  load: vi.fn(),
+  updateStatus: vi.fn(),
+};
+
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({
     t: {
@@ -196,6 +240,9 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
         todosEmpty: '暂无待办',
         sectionContext: '上下文',
         sectionOutputs: '产物',
+        runtimeTitle: '运行信息',
+        runtimeApprovalsBadge: '待审',
+        sectionHandoff: '接力',
         artifactsEmpty: '没有产物',
         sectionReferences: '引用',
         skillsMcpEmpty: '没有技能',
@@ -271,38 +318,8 @@ vi.mock('../../../src/renderer/hooks/useStatusRailModel', () => ({
 
 vi.mock('../../../src/renderer/hooks/useWorkbenchInsights', () => ({
   useWorkbenchInsights: () => ({
-    references: [
-      {
-        kind: 'mcp' as const,
-        id: 'github',
-        label: 'github',
-        selected: false,
-        status: 'connected' as const,
-        enabled: true,
-        transport: 'stdio' as const,
-        toolCount: 2,
-        resourceCount: 1,
-        invoked: true,
-      },
-    ],
-    history: [
-      {
-        kind: 'connector' as const,
-        id: 'mail',
-        label: 'Mail',
-        count: 1,
-        lastUsed: 200,
-        topActions: [{ label: 'send', count: 1 }],
-      },
-      {
-        kind: 'mcp' as const,
-        id: 'github',
-        label: 'github',
-        count: 1,
-        lastUsed: 210,
-        topActions: [{ label: 'search_code', count: 1 }],
-      },
-    ],
+    references: workbenchReferencesState,
+    history: workbenchHistoryState,
   }),
 }));
 
@@ -314,15 +331,15 @@ vi.mock('../../../src/renderer/components/TaskPanel/useToolProgress', () => ({
 }));
 
 vi.mock('../../../src/renderer/hooks/useCurrentTurnCapabilityScope', () => ({
-  useCurrentTurnCapabilityScope: () => currentTurnScopeState,
+  useCurrentTurnCapabilityScope: () => currentTurnScopeResult,
 }));
 
 vi.mock('../../../src/renderer/hooks/useCurrentTurnRoutingEvidence', () => ({
-  useCurrentTurnRoutingEvidence: () => currentTurnRoutingState,
+  useCurrentTurnRoutingEvidence: () => currentTurnRoutingResult,
 }));
 
 vi.mock('../../../src/renderer/hooks/useCurrentTurnArtifactOwnership', () => ({
-  useCurrentTurnArtifactOwnership: () => currentTurnArtifactState,
+  useCurrentTurnArtifactOwnership: () => currentTurnArtifactResult,
 }));
 
 vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityQuickActionRunner', () => ({
@@ -335,6 +352,10 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
   },
 }));
 
+vi.mock('../../../src/renderer/stores/handoffStore', () => ({
+  useHandoffStore: (selector: (state: typeof handoffState) => unknown) => selector(handoffState),
+}));
+
 import { TaskMonitor } from '../../../src/renderer/components/TaskPanel/TaskMonitor';
 
 describe('TaskMonitor scope inspector slice', () => {
@@ -342,6 +363,14 @@ describe('TaskMonitor scope inspector slice', () => {
     appState.sessionTaskProgress = {};
     appState.processingSessionIds = new Set<string>();
     sessionState.messages = [];
+    handoffState.items = [];
+    handoffState.load.mockClear();
+    handoffState.updateStatus.mockClear();
+    workbenchReferencesState = [defaultWorkbenchReference];
+    workbenchHistoryState = [...defaultWorkbenchHistory];
+    currentTurnScopeResult = currentTurnScopeState;
+    currentTurnRoutingResult = currentTurnRoutingState;
+    currentTurnArtifactResult = currentTurnArtifactState;
     statusRailTodosState.items = [];
     statusRailTodosState.completed = 0;
     statusRailTodosState.total = 0;
@@ -442,6 +471,56 @@ describe('TaskMonitor scope inspector slice', () => {
     expect(html).not.toContain('工具活动');
     expect(html).not.toContain('文件读取活动');
     expect(html).not.toContain('2 次工具操作');
+  });
+
+  it('hides runtime rail when there is no runtime content', () => {
+    workbenchReferencesState = [];
+    workbenchHistoryState = [];
+    currentTurnScopeResult = null;
+    currentTurnRoutingResult = null;
+    currentTurnArtifactResult = null;
+    handoffState.items = [];
+
+    const html = renderToStaticMarkup(
+      React.createElement(TaskMonitor),
+    );
+
+    expect(html).toContain('任务');
+    expect(html).not.toContain('运行信息');
+    expect(html).not.toContain('Session Runtime');
+    expect(html).not.toContain('空闲');
+  });
+
+  it('shows runtime rail in Chinese when pending handoff exists', () => {
+    workbenchReferencesState = [];
+    workbenchHistoryState = [];
+    currentTurnScopeResult = null;
+    currentTurnRoutingResult = null;
+    currentTurnArtifactResult = null;
+    handoffState.items = [
+      {
+        id: 'handoff-1',
+        sessionId: 'session-1',
+        sourceMessageId: 'assistant-1',
+        source: 'assistant_tail',
+        status: 'pending',
+        title: '继续验证安装包',
+        prompt: '继续验证刚才生成的安装包。',
+        reason: '安装验证还没有跑。',
+        createdAt: 100,
+        updatedAt: 100,
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      React.createElement(TaskMonitor),
+    );
+
+    expect(html).toContain('运行信息');
+    expect(html).toContain('接力 1');
+    expect(html).toContain('继续验证安装包');
+    expect(html).not.toContain('Session Runtime');
+    expect(html).not.toContain('空闲');
   });
 
   it('does not repeat context budget usage in the right rail', () => {

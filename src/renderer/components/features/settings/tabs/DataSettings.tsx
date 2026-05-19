@@ -119,7 +119,7 @@ export function buildDataManagementSummary(
   };
 }
 
-export function buildDataManagementRows(stats: DataStats | null, canClearCache = true): DataManagementRow[] {
+export function buildDataManagementRows(stats: DataStats | null): DataManagementRow[] {
   const safeStats = stats ?? EMPTY_DATA_STATS;
 
   return [
@@ -145,12 +145,12 @@ export function buildDataManagementRows(stats: DataStats | null, canClearCache =
     },
     {
       id: 'tool-executions',
-      title: '工具执行记录',
-      description: '用于回放、排查和审计的执行记录。',
+      title: '工具执行缓存',
+      description: '工具调用结果的短期缓存，用于复用和排查。',
       valueLabel: `${safeStats.toolExecutionCount.toLocaleString()} 条`,
-      statusLabel: '保留',
+      statusLabel: safeStats.toolExecutionCount > 0 ? '缓存' : '干净',
       statusTone: 'info',
-      cleanupLabel: '不清理',
+      cleanupLabel: '随运行缓存',
       action: 'none',
     },
     {
@@ -176,12 +176,12 @@ export function buildDataManagementRows(stats: DataStats | null, canClearCache =
     {
       id: 'cache',
       title: '运行缓存',
-      description: '工具调用、会话与消息的本地缓存，可在异常时清理后重建。',
+      description: '内存工具缓存与持久化工具结果缓存，可在异常时清理后重建。',
       valueLabel: `${safeStats.cacheEntries.toLocaleString()} 条`,
       statusLabel: safeStats.cacheEntries > 0 ? '可清理' : '干净',
       statusTone: safeStats.cacheEntries > 0 ? 'warning' : 'stable',
-      cleanupLabel: canClearCache ? '清空缓存' : '管理员操作',
-      action: canClearCache ? 'clear-cache' : 'none',
+      cleanupLabel: '清空缓存',
+      action: 'clear-cache',
     },
   ];
 }
@@ -294,7 +294,7 @@ export const DataSettings: React.FC = () => {
     loadStats();
   }, [loadStats]);
 
-  const dataRows = useMemo(() => buildDataManagementRows(stats, isAdmin), [isAdmin, stats]);
+  const dataRows = useMemo(() => buildDataManagementRows(stats), [stats]);
   const summary = useMemo(
     () => buildDataManagementSummary(stats, snapshotStats),
     [snapshotStats, stats],
@@ -344,7 +344,6 @@ export const DataSettings: React.FC = () => {
   };
 
   const handleClearToolCache = async () => {
-    if (!isAdmin) return;
     setIsClearing(true);
     setMessage(null);
     try {

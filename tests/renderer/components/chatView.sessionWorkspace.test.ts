@@ -175,7 +175,7 @@ vi.mock('../../../src/renderer/utils/platform', () => ({
   isWebMode: () => false,
 }));
 
-import { ChatView } from '../../../src/renderer/components/ChatView';
+import { ChatView, defaultSuggestions } from '../../../src/renderer/components/ChatView';
 
 describe('ChatView session shell', () => {
   it('keeps session actions out of the chat body', () => {
@@ -187,11 +187,31 @@ describe('ChatView session shell', () => {
     expect(html).toContain('flex-1 min-h-0 flex flex-col min-w-0');
     expect(html).toContain('flex-1 min-h-0 overflow-hidden');
     expect(html).toContain('新会话');
-    expect(html).toContain('写一封邮件或安排日程');
-    expect(html).toContain('做一份方案 / 文档 / PPT');
-    expect(html).toContain('查一个事 / 对比一组方案');
-    expect(html).toContain('改一段代码');
+    expect(html).toContain('写一封项目跟进邮件');
+    expect(html).toContain('做一页产品方案');
+    expect(html).toContain('对比三种工具选型');
+    expect(html).toContain('看当前改动风险');
     expect(html).not.toContain('继续推进 Phase 5');
     expect(html).not.toContain('/repo/other');
+  });
+
+  it('keeps starter prompts concrete enough for a first-turn deliverable', () => {
+    expect(defaultSuggestions).toHaveLength(4);
+    expect(defaultSuggestions.map((item) => item.title)).toEqual([
+      '写一封项目跟进邮件',
+      '做一页产品方案',
+      '对比三种工具选型',
+      '看当前改动风险',
+    ]);
+
+    for (const suggestion of defaultSuggestions) {
+      expect(suggestion.prompt).not.toMatch(/如果|先问|先确认|和我对齐|补充信息|信息还不全/);
+      expect(suggestion.prompt).toMatch(/输出|给|指出|推荐/);
+    }
+
+    expect(defaultSuggestions[0].prompt).toContain('收件人是项目组');
+    expect(defaultSuggestions[1].prompt).toContain('读者是产品和研发评审');
+    expect(defaultSuggestions[2].prompt).toContain('5 个维度');
+    expect(defaultSuggestions[3].prompt).toContain('只审不改');
   });
 });

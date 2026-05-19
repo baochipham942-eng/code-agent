@@ -203,6 +203,8 @@ export default tseslint.config(
     ignores: [
       // migrated wrappers 合法引用 legacy 实现
       'src/main/tools/modules/**',
+      // builtin plugin 替代 tools/modules/<category>/ 成为新的合法 wrapper 层
+      'src/main/plugins/builtin/**',
       // legacy tool 目录内部（同 category 或跨 category）允许相互引用
       'src/main/tools/file/**',
       'src/main/tools/shell/**',

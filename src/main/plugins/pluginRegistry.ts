@@ -39,6 +39,10 @@ import {
   manifest as builtinImageCreationManifest,
   default as builtinImageCreationEntry,
 } from './builtin/imageCreation';
+import {
+  manifest as builtinBrowserControlManifest,
+  default as builtinBrowserControlEntry,
+} from './builtin/browserControl';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
 import { getAuthService } from '../services/auth/authService';
@@ -242,6 +246,10 @@ export class PluginRegistry {
       {
         manifest: builtinImageCreationManifest,
         entry: builtinImageCreationEntry,
+      },
+      {
+        manifest: builtinBrowserControlManifest,
+        entry: builtinBrowserControlEntry,
       },
     ];
 

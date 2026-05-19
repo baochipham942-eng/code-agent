@@ -4,7 +4,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import type { PluginPermission, PluginCapability } from './types';
+import type { PluginPermission, PluginCapability, PluginPlatform } from './types';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -37,6 +37,8 @@ const VALID_PERMISSIONS: PluginPermission[] = [
 const VALID_CAPABILITIES: PluginCapability[] = [
   'tools', 'skills', 'theme', 'language',
 ];
+
+const VALID_PLATFORMS: PluginPlatform[] = ['darwin', 'win32', 'linux'];
 
 const SEMVER_REGEX = /^\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?$/;
 
@@ -122,6 +124,38 @@ export function validateManifest(manifest: unknown): ValidationResult {
           warnings.push({
             field: 'capabilities',
             message: `Unknown capability '${cap}'. Valid: ${VALID_CAPABILITIES.join(', ')}`,
+          });
+        }
+      }
+    }
+  }
+
+  // Optional: platforms
+  if (m.platforms !== undefined) {
+    if (!Array.isArray(m.platforms)) {
+      errors.push({ field: 'platforms', message: "'platforms' must be an array" });
+    } else {
+      for (const plat of m.platforms) {
+        if (typeof plat !== 'string' || !VALID_PLATFORMS.includes(plat as PluginPlatform)) {
+          warnings.push({
+            field: 'platforms',
+            message: `Unknown platform '${plat}'. Valid: ${VALID_PLATFORMS.join(', ')}`,
+          });
+        }
+      }
+    }
+  }
+
+  // Optional: nativeDeps (documentation only — host 不做存在性校验)
+  if (m.nativeDeps !== undefined) {
+    if (!Array.isArray(m.nativeDeps)) {
+      errors.push({ field: 'nativeDeps', message: "'nativeDeps' must be an array" });
+    } else {
+      for (const dep of m.nativeDeps) {
+        if (typeof dep !== 'string') {
+          warnings.push({
+            field: 'nativeDeps',
+            message: `Each nativeDeps entry should be a string, got: ${typeof dep}`,
           });
         }
       }

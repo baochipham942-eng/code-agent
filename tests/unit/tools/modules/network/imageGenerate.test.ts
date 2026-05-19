@@ -30,6 +30,10 @@ vi.mock('../../../../../src/main/services', () => ({
   getConfigService: () => getConfigServiceMock(),
 }));
 
+vi.mock('../../../../../src/main/services/core/configService', () => ({
+  getConfigService: () => getConfigServiceMock(),
+}));
+
 vi.mock('../../../../../src/main/services/auth/authService', () => ({
   getAuthService: () => getAuthServiceMock(),
 }));

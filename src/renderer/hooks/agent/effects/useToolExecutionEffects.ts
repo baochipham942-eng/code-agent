@@ -6,6 +6,8 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
 import { applyToolOutputDelta } from '../../../utils/toolOutputStreaming';
+import { useCapabilityGapStore } from '../../../stores/capabilityGapStore';
+import type { CapabilityGap } from '../../../../shared/contract/capabilityGap';
 
 const logger = createLogger('useAgent');
 
@@ -180,11 +182,13 @@ export const useToolExecutionEffects = ({
             }
 
             let matched = false;
+            let matchedToolCall: ToolCall | null = null;
             for (const msg of getFreshMessages()) {
               if (msg.role === 'assistant' && msg.toolCalls) {
-                const hasMatch = msg.toolCalls.some((tc: ToolCall) => tc.id === toolResult.toolCallId);
-                if (hasMatch) {
+                const found = msg.toolCalls.find((tc: ToolCall) => tc.id === toolResult.toolCallId);
+                if (found) {
                   matched = true;
+                  matchedToolCall = found;
                   const updatedToolCalls = msg.toolCalls.map((tc: ToolCall) =>
                     tc.id === toolResult.toolCallId
                       ? { ...tc, result: toolResult }
@@ -193,6 +197,25 @@ export const useToolExecutionEffects = ({
                   updateMessage(msg.id, { toolCalls: updatedToolCalls });
                   break;
                 }
+              }
+            }
+
+            if (
+              matchedToolCall?.name === 'recommend_capability'
+              && toolResult.success
+              && toolResult.metadata
+              && eventSessionId
+            ) {
+              const meta = toolResult.metadata as {
+                requiredCapability?: string;
+                gaps?: CapabilityGap[];
+              };
+              if (typeof meta.requiredCapability === 'string' && Array.isArray(meta.gaps)) {
+                useCapabilityGapStore.getState().setNotice(eventSessionId, {
+                  requiredCapability: meta.requiredCapability,
+                  gaps: meta.gaps,
+                  toolCallId: toolResult.toolCallId,
+                });
               }
             }
 

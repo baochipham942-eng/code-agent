@@ -11,15 +11,14 @@
 // - 不做 fuzzy / 同义词扩展，命中精确就拼；语义匹配交给 LLM 自己判断
 // ============================================================================
 
-import type { PluginManifest } from '../../plugins/types';
 import { getPluginRegistry } from '../../plugins/pluginRegistry';
 import { getConfigService } from '../core/configService';
-import {
-  findCapableModels,
-  type ModelCandidate,
-} from '../../model/modelRouter';
+import { findCapableModels } from '../../model/modelRouter';
 import type { ModelDomainCapability } from '../../../shared/constants';
+import { type CapabilityGap } from '../../../shared/contract/capabilityGap';
 import { createLogger } from '../infra/logger';
+
+export type { CapabilityGap } from '../../../shared/contract/capabilityGap';
 
 const logger = createLogger('CapabilityRecommender');
 
@@ -37,34 +36,6 @@ const MODEL_CAPABILITIES: ReadonlySet<ModelDomainCapability> = new Set([
 function isModelCapability(tag: string): tag is ModelDomainCapability {
   return MODEL_CAPABILITIES.has(tag as ModelDomainCapability);
 }
-
-/**
- * 能力缺口分类。Discriminated union — UI / LLM 各自只关心自己关心的字段。
- *
- * - `plugin`：本地 plugin manifest 没有声明该 capability 标签
- * - `model`：当前所有候选 model 都不具备该 capability
- * - `apikey`：候选 model 在册，但所有对应 provider 都没配 key
- */
-export type CapabilityGap =
-  | {
-      type: 'plugin';
-      /** 缺失的 capability 标签（kebab-case） */
-      missing: string;
-      /** marketplace 接入前，candidates 始终为空数组 */
-      candidates: PluginManifest[];
-    }
-  | {
-      type: 'model';
-      missing: ModelDomainCapability;
-      candidates: ModelCandidate[];
-    }
-  | {
-      type: 'apikey';
-      /** 缺失项（kebab-case capability 标签或模型能力名，用于人类可读消息） */
-      missing: string;
-      /** 推荐优先配置的 provider */
-      provider: string;
-    };
 
 /**
  * 简易关键词 → ModelDomainCapability 启发式映射。

@@ -212,6 +212,17 @@ export function getProviderDisplayName(provider: string | null | undefined): str
 }
 
 // ============================================================================
+// 第三方服务 API 端点（非 LLM provider）
+// ============================================================================
+
+export const BAIDU_OCR_ENDPOINTS = {
+  /** OAuth 2.0 token endpoint */
+  token: 'https://aip.baidubce.com/oauth/2.0/token',
+  /** 高精度 OCR */
+  accurate: 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate',
+} as const;
+
+// ============================================================================
 // 搜索 API 端点
 // ============================================================================
 

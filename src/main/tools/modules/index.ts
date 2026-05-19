@@ -321,11 +321,6 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   );
 
   // ── batch 7: mcp/document/excel/planning（21 个）─────────────────────────
-  const minSchema = (props: Record<string, { type: string }> = {}, required: string[] = []) => ({
-    type: 'object' as const,
-    properties: props,
-    required,
-  });
 
   // mcp (3)
   registry.register(

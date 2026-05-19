@@ -102,7 +102,6 @@ export * from './workbenchPreset';
 export * from './reviewQueue';
 export * from './handoff';
 export * from './scenarioAcceptance';
-export * from './previewFeedback';
 
 // Conversation envelope types (chat-native workbench context)
 export * from './conversationEnvelope';

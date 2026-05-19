@@ -36,7 +36,6 @@ import { registerLabHandlers } from './lab.ipc';
 import { registerChannelHandlers } from './channel.ipc';
 import { registerAgentRoutingHandlers } from './agentRouting.ipc';
 import { registerCheckpointHandlers } from './checkpoint.ipc';
-// evaluation.ipc is loaded dynamically — excluded from production bundle via EVAL_DISABLED define
 import { registerLSPHandlers } from './lsp.ipc';
 import { registerBackgroundHandlers } from './background.ipc';
 import { registerBackgroundTaskLedgerHandlers } from './backgroundTaskLedger.ipc';
@@ -167,14 +166,6 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Checkpoint handlers
   registerCheckpointHandlers(ipcMain);
-
-  // Evaluation handlers (会话评测) — dynamic import, excluded from production bundle
-  if (process.env.EVAL_DISABLED !== 'true') {
-    import('./evaluation.ipc').then(({ registerEvaluationHandlers, registerSubsetHandlers }) => {
-      registerEvaluationHandlers();
-      registerSubsetHandlers();
-    }).catch(() => { /* evaluation module not available in production build */ });
-  }
 
   // LSP handlers (语言服务器)
   registerLSPHandlers();

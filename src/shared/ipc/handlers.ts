@@ -15,11 +15,9 @@ import type { ContextInterventionRequest, ContextInterventionSetRequest, Context
 import type { ManagedBrowserSessionState } from '../contract/desktop';
 
 import type { DAGVisualizationEvent } from '../contract/dagVisualization';
-import { DAG_CHANNELS, EVALUATION_CHANNELS } from './channels';
+import { DAG_CHANNELS } from './channels';
 
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryPushEvent, TelemetryHealth, ComputerSurfaceReliabilitySummary } from '../contract/telemetry';
-
-import type { ObjectiveMetrics, SubjectiveAssessment } from '../contract/sessionAnalytics';
 
 import type { ChannelAccount, ChannelInboxItem, ChannelType, AddChannelAccountRequest, UpdateChannelAccountRequest } from '../contract/channel';
 
@@ -27,11 +25,7 @@ import type { LabProjectType, LabProjectStatus, PythonEnvStatus, TrainingProgres
 
 import type { MarketplaceInfo, MarketplacePluginEntry, InstalledPlugin, MarketplaceResult, PluginInstallResult } from '../contract/marketplace';
 
-import type { EvaluationResult, EvaluationHistoryListOptions } from '../contract/evaluation';
-import type { EnqueueReviewItemInput, ReviewQueueItem, ReviewQueueListOptions, UpdateReviewQueueFailureCapabilityAssetInput } from '../contract/reviewQueue';
 import type { HandoffProposal, ListHandoffProposalsInput, UpdateHandoffProposalStatusInput } from '../contract/handoff';
-import type { DeliveryReviewRunResult, RunDeliveryReviewInput, ScenarioAcceptanceSkill } from '../contract/scenarioAcceptance';
-import type { CreatePreviewFeedbackInput, ListPreviewFeedbackInput, PreviewFeedbackChatContext, PreviewFeedbackItem, UpdatePreviewFeedbackStatusInput, SendPreviewFeedbackToChatInput } from '../contract/previewFeedback';
 
 import type { SessionRuntimeSummary, SessionStatusUpdateEvent, BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '../contract/sessionState';
 
@@ -256,45 +250,6 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.CHANNEL_DISCONNECT_ACCOUNT]: (accountId: string) => Promise<{ success: boolean; error?: string }>;
   [IPC_CHANNELS.CHANNEL_LIST_INBOX]: () => Promise<ChannelInboxItem[]>;
   [IPC_CHANNELS.CHANNEL_DISMISS_INBOX_ITEM]: (itemId: string) => Promise<boolean>;
-
-  // Evaluation (会话评测)
-  [IPC_CHANNELS.EVALUATION_RUN]: (payload: { sessionId: string; save?: boolean }) => Promise<EvaluationResult>;
-  [IPC_CHANNELS.EVALUATION_GET_RESULT]: (evaluationId: string) => Promise<EvaluationResult | null>;
-  [IPC_CHANNELS.EVALUATION_LIST_HISTORY]: (payload?: EvaluationHistoryListOptions) => Promise<EvaluationResult[]>;
-  [IPC_CHANNELS.EVALUATION_EXPORT]: (payload: { result: EvaluationResult; format: 'json' | 'markdown' }) => Promise<string>;
-  [IPC_CHANNELS.EVALUATION_DELETE]: (evaluationId: string) => Promise<boolean>;
-  // Session Analytics (v2 - 分离客观指标和主观评测)
-  [IPC_CHANNELS.EVALUATION_GET_OBJECTIVE_METRICS]: (sessionId: string) => Promise<ObjectiveMetrics>;
-  [IPC_CHANNELS.EVALUATION_GET_SESSION_ANALYSIS]: (sessionId: string) => Promise<SessionAnalysisResult>;
-  [IPC_CHANNELS.EVALUATION_RUN_SUBJECTIVE]: (payload: { sessionId: string; save?: boolean }) => Promise<SubjectiveAssessment>;
-  [IPC_CHANNELS.EVALUATION_LIST_TEST_REPORTS]: () => Promise<TestReportListItem[]>;
-  [IPC_CHANNELS.EVALUATION_LOAD_TEST_REPORT]: (filePath: string) => Promise<TestRunReport>;
-  [IPC_CHANNELS.EVALUATION_SAVE_ANNOTATIONS]: (annotation: EvalAnnotationPayload) => Promise<{ success: boolean; error?: string }>;
-  [IPC_CHANNELS.EVALUATION_GET_AXIAL_CODING]: () => Promise<AxialCodingEntryIpc[]>;
-  [IPC_CHANNELS.EVALUATION_LIST_TEST_CASES]: () => Promise<unknown[]>;
-  [IPC_CHANNELS.EVALUATION_GET_SCORING_CONFIG]: () => Promise<unknown[]>;
-  [IPC_CHANNELS.EVALUATION_UPDATE_SCORING_CONFIG]: (config: unknown) => Promise<{ success: boolean }>;
-  [IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS]: (limit?: number) => Promise<unknown[]>;
-  [IPC_CHANNELS.EVALUATION_LOAD_EXPERIMENT]: (id: string) => Promise<unknown>;
-  [IPC_CHANNELS.EVALUATION_GET_FAILURE_FUNNEL]: (experimentId: string) => Promise<unknown>;
-  [IPC_CHANNELS.EVALUATION_GET_CROSS_EXPERIMENT]: (experimentIds: string[]) => Promise<unknown[]>;
-  [IPC_CHANNELS.EVALUATION_CREATE_EXPERIMENT]: (config: { name: string; model: string; testSetId: string; trialsPerCase: number; gitCommit: string }) => Promise<{ experimentId: string; status: string }>;
-  [IPC_CHANNELS.EVALUATION_GET_GIT_COMMIT]: () => Promise<{
-    hash: string;
-    short: string;
-  }>;
-  [IPC_CHANNELS.EVALUATION_GET_SNAPSHOT]: (sessionId: string) => Promise<unknown>;
-  [IPC_CHANNELS.EVALUATION_BUILD_SNAPSHOT]: (sessionId: string) => Promise<unknown>;
-  [IPC_CHANNELS.EVALUATION_GET_CASE_DETAIL]: (experimentId: string, caseId: string) => Promise<unknown>;
-  [IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_LIST]: (payload?: ReviewQueueListOptions) => Promise<ReviewQueueItem[]>;
-  [IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_ENQUEUE]: (payload: EnqueueReviewItemInput) => Promise<ReviewQueueItem>;
-  [IPC_CHANNELS.EVALUATION_REVIEW_QUEUE_UPDATE_FAILURE_ASSET]: (payload: UpdateReviewQueueFailureCapabilityAssetInput) => Promise<ReviewQueueItem | null>;
-  [IPC_CHANNELS.EVALUATION_SCENARIO_SKILLS_LIST]: () => Promise<ScenarioAcceptanceSkill[]>;
-  [IPC_CHANNELS.EVALUATION_DELIVERY_REVIEW_RUN]: (payload: RunDeliveryReviewInput) => Promise<DeliveryReviewRunResult>;
-  [IPC_CHANNELS.EVALUATION_PREVIEW_FEEDBACK_LIST]: (payload: ListPreviewFeedbackInput) => Promise<PreviewFeedbackItem[]>;
-  [IPC_CHANNELS.EVALUATION_PREVIEW_FEEDBACK_CREATE]: (payload: CreatePreviewFeedbackInput) => Promise<PreviewFeedbackItem>;
-  [IPC_CHANNELS.EVALUATION_PREVIEW_FEEDBACK_UPDATE_STATUS]: (payload: UpdatePreviewFeedbackStatusInput) => Promise<PreviewFeedbackItem | null>;
-  [IPC_CHANNELS.EVALUATION_PREVIEW_FEEDBACK_SEND_TO_CHAT]: (payload: SendPreviewFeedbackToChatInput) => Promise<PreviewFeedbackChatContext>;
 
   // Handoff proposals
   [IPC_CHANNELS.HANDOFF_LIST]: (payload?: ListHandoffProposalsInput) => Promise<HandoffProposal[]>;
@@ -593,8 +548,6 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.TELEMETRY_EVENT]: (event: TelemetryPushEvent) => void;
   // Provider fallback events
   [IPC_CHANNELS.PROVIDER_FALLBACK]: (event: ProviderFallbackEvent) => void;
-  // Evaluation experiment progress (UI 实时刷新)
-  [EVALUATION_CHANNELS.EXPERIMENT_PROGRESS]: (event: ExperimentProgressEvent) => void;
   // Agent Registry change broadcast (custom .md agents 热加载推送)
   [IPC_CHANNELS.AGENTS_CHANGED]: (event: AgentsChangedEvent) => void;
 }
@@ -604,30 +557,3 @@ export interface ProviderFallbackEvent {
   to: { provider: string; model: string };
   reason: string;
 }
-
-export type ExperimentProgressEvent =
-  | { experimentId: string; type: 'run_start'; totalCases: number }
-  | {
-      experimentId: string;
-      type: 'case_start';
-      testId: string;
-      description: string;
-    }
-  | {
-      experimentId: string;
-      type: 'case_end';
-      testId: string;
-      status: string;
-      score: number;
-      duration: number;
-    }
-  | {
-      experimentId: string;
-      type: 'run_end';
-      status: 'completed' | 'failed';
-      total?: number;
-      passed?: number;
-      failed?: number;
-      avgScore?: number;
-      error?: string;
-    };

@@ -54,7 +54,6 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     showWorkspace,
     setSidebarCollapsed,
     sidebarCollapsed,
-    setShowEvalCenter,
   } = useAppStore();
 
   const {
@@ -67,8 +66,6 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   const setInteractionMode = useModeStore((s) => s.setInteractionMode);
   const setEffortLevel = useModeStore((s) => s.setEffortLevel);
   const setGlobalMode = usePermissionStore((s) => s.setGlobalMode);
-  const canOpenEvalCenter = useAuthStore((s) => canAccessFeature('eval.center', s.user));
-
   // Icon mapping for registry commands
   const registryIconMap: Record<string, React.ReactNode> = useMemo(() => ({
     clear: <Trash2 className="w-4 h-4" />,
@@ -138,13 +135,6 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       icon: <FolderOpen className="w-4 h-4" />,
       action: () => setShowWorkspace(!showWorkspace),
     },
-    ...(canOpenEvalCenter ? [{
-      id: 'eval',
-      label: '评测中心',
-      description: '评测和遥测分析',
-      icon: <BarChart2 className="w-4 h-4" />,
-      action: () => setShowEvalCenter(true),
-    }] : []),
     {
       id: 'settings',
       label: '设置',
@@ -235,7 +225,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     createSession, clearCurrentSession, archiveSession, currentSessionId,
     setShowSettings, setShowDAGPanel, showDAGPanel,
     setShowWorkspace, showWorkspace, setSidebarCollapsed, sidebarCollapsed,
-    setShowEvalCenter, setInteractionMode, setEffortLevel, setGlobalMode, canOpenEvalCenter,
+    setInteractionMode, setEffortLevel, setGlobalMode,
   ]);
 
   // Merge registry commands (gui surface) with GUI-only commands

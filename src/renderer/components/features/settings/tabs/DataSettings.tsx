@@ -225,7 +225,6 @@ function formatLastEventAt(ts: number | null): string {
 
 export const DataSettings: React.FC = () => {
   const setShowSettings = useAppStore((s) => s.setShowSettings);
-  const setShowEvalCenter = useAppStore((s) => s.setShowEvalCenter);
   const isAdmin = useAuthStore((s) => s.user?.isAdmin === true);
   const [stats, setStats] = useState<DataStats | null>(null);
   const [snapshotStats, setSnapshotStats] = useState<SnapshotStats | null>(null);
@@ -503,20 +502,6 @@ export const DataSettings: React.FC = () => {
               <span className="text-zinc-400">
                 最近事件：{formatLastEventAt(telemetrySummary.lastEventAt)}
               </span>
-              <div className="ml-auto">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={isWebMode()}
-                  onClick={() => {
-                    setShowSettings(false);
-                    setShowEvalCenter(true, 'telemetry');
-                  }}
-                  leftIcon={<ArrowUpRight className="h-3.5 w-3.5" />}
-                >
-                  打开 Telemetry 面板清理
-                </Button>
-              </div>
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2 text-xs">

@@ -85,9 +85,3 @@ export function channelSchema<
 //
 // 不强制把所有 channel 都注册到一个 mega-Map 里——那样会让 schemas 文件
 // 变成上千行的怪物。每个 domain 自己导出一个 namespace，业务代码按需 import。
-//
-// 例：
-//   import { EvaluationSchemas } from '@shared/ipc/schemas';
-//   defineHandler(EvaluationSchemas.SAVE_ANNOTATIONS, async (_, payload) => ...)
-//
-export * as EvaluationSchemas from './evaluation';

@@ -40,7 +40,6 @@ import {
   Brain,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
-import { CheeseIcon } from './icons/CheeseIcon';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
 import { groupSessions } from '../utils/dateGrouping';
@@ -172,7 +171,6 @@ export const Sidebar: React.FC = () => {
     clearPlanningState,
     setShowSettings,
     setShowPromptManager,
-    setShowEvalCenter,
     setWorkingDirectory,
     showLab,
     setShowLab,
@@ -233,7 +231,6 @@ export const Sidebar: React.FC = () => {
   } = useSessionUIStore();
 
   const { user, isAuthenticated, setShowAuthModal, signOut } = useAuthStore();
-  const canOpenEvalCenter = canAccessFeature('eval.center', user);
   const canOpenPromptManager = canAccessFeature('prompt.manager', user);
   const sessionStates = useTaskStore((state) => state.sessionStates);
 
@@ -1016,13 +1013,6 @@ export const Sidebar: React.FC = () => {
                   icon={<Brain className={`w-4 h-4 ${showKnowledgeMemoryPanel ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
                   label="知识与记忆"
                 />
-                {canOpenEvalCenter && (
-                  <AccountMenuItem
-                    onClick={() => { setShowEvalCenter(true); setShowUserMenu(false); }}
-                    icon={<CheeseIcon className="w-4 h-4 text-amber-400/80" />}
-                    label="评测中心"
-                  />
-                )}
                 <AccountMenuItem
                   onClick={() => { setShowCronCenter(!showCronCenter); setShowUserMenu(false); }}
                   icon={<Clock3 className={`w-4 h-4 ${showCronCenter ? 'text-amber-400' : 'text-amber-400/80'}`} />}

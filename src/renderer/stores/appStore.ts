@@ -179,10 +179,6 @@ interface AppState {
   // V2-A: DevServerLauncher 模态可见性。true 时 App 渲染 <DevServerLauncher />
   devServerLauncherOpen: boolean;
 
-  // EvalCenter State (评测中心：合并会话评测 + 遥测)
-  showEvalCenter: boolean;
-  evalCenterTab: 'analysis' | 'telemetry' | 'testResults';
-  evalCenterSessionId: string | null;
   showKnowledgeMemoryPanel: boolean;
 
   // File preview tab registry — one entry per opened file (content, dirty state, LRU).
@@ -265,7 +261,6 @@ interface AppState {
   setShowDAGPanel: (show: boolean) => void;
   toggleDAGPanel: () => void;
   setShowLab: (show: boolean) => void;
-  setShowEvalCenter: (show: boolean, tab?: 'analysis' | 'telemetry' | 'testResults', sessionId?: string) => void;
   setShowKnowledgeMemoryPanel: (show: boolean) => void;
   openPreview: (filePath: string) => void;
   openWorkspacePreview: (itemId?: string | null) => void;
@@ -380,10 +375,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showLab: false,
   devServerLauncherOpen: false,
 
-  // Initial EvalCenter State
-  showEvalCenter: false,
-  evalCenterTab: 'analysis' as const,
-  evalCenterSessionId: null,
   showKnowledgeMemoryPanel: false,
 
   // Initial file preview registry
@@ -449,11 +440,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
   setShowComputerUsePanel: (show) => set({
     showComputerUsePanel: show,
-    ...(show ? { showEvalCenter: false, evalCenterSessionId: null, showKnowledgeMemoryPanel: false, showInAppValidationPanel: false } : {}),
+    ...(show ? { showKnowledgeMemoryPanel: false, showInAppValidationPanel: false } : {}),
   }),
   setShowInAppValidationPanel: (show) => set({
     showInAppValidationPanel: show,
-    ...(show ? { showEvalCenter: false, evalCenterSessionId: null, showKnowledgeMemoryPanel: false, showComputerUsePanel: false } : {}),
+    ...(show ? { showKnowledgeMemoryPanel: false, showComputerUsePanel: false } : {}),
   }),
   setPendingInAppValidationRequest: (request) => set({ pendingInAppValidationRequest: request }),
   setShowActivityPanel: (show) => set({ showActivityPanel: show }),
@@ -505,16 +496,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowLab: (show) => set({ showLab: show }),
   openDevServerLauncher: () => set({ devServerLauncherOpen: true }),
   closeDevServerLauncher: () => set({ devServerLauncherOpen: false }),
-  setShowEvalCenter: (show, tab, sessionId) => set({
-    showEvalCenter: show,
-    ...(show ? { showKnowledgeMemoryPanel: false, showComputerUsePanel: false } : {}),
-    ...(show ? { evalCenterTab: tab ?? 'analysis' } : {}),
-    ...(sessionId !== undefined ? { evalCenterSessionId: sessionId } : {}),
-    ...(!show ? { evalCenterSessionId: null } : {}),
-  }),
   setShowKnowledgeMemoryPanel: (show) => set({
     showKnowledgeMemoryPanel: show,
-    ...(show ? { showEvalCenter: false, showComputerUsePanel: false, evalCenterSessionId: null } : {}),
+    ...(show ? { showComputerUsePanel: false } : {}),
   }),
 
   openPreview: (filePath) => {

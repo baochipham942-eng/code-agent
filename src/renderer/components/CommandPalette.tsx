@@ -48,7 +48,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     showWorkspace,
     setSidebarCollapsed,
     sidebarCollapsed,
-    setShowEvalCenter,
   } = useAppStore();
 
   const {
@@ -57,8 +56,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     archiveSession,
     currentSessionId,
   } = useSessionStore();
-  const canOpenEvalCenter = useAuthStore((s) => canAccessFeature('eval.center', s.user));
-
   // 定义所有可用命令
   const allCommands: Command[] = useMemo(() => [
     // Session commands
@@ -121,15 +118,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       category: 'view',
       action: () => setShowWorkspace(!showWorkspace),
     },
-    ...(canOpenEvalCenter ? [{
-      id: 'show-eval-center',
-      label: '打开评测中心',
-      description: '评测和遥测分析',
-      icon: <BarChart2 className="w-4 h-4" />,
-      category: 'view' as const,
-      action: () => setShowEvalCenter(true),
-    }] : []),
-
     // Settings commands
     {
       id: 'open-settings',
@@ -175,8 +163,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     showWorkspace,
     setSidebarCollapsed,
     sidebarCollapsed,
-    setShowEvalCenter,
-    canOpenEvalCenter,
   ]);
 
   // 过滤命令

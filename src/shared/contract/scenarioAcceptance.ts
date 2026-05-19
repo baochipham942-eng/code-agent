@@ -1,6 +1,4 @@
 import type { WorkspacePreviewKind } from './workspacePreview';
-import type { PreviewFeedbackItem } from './previewFeedback';
-import type { ReviewQueueItem } from './reviewQueue';
 
 export type ScenarioAcceptanceSkillId =
   | 'frontend_ui'
@@ -97,36 +95,3 @@ export interface ScenarioAcceptanceResult {
   createdAt: number;
 }
 
-export interface DeliveryReviewMetadata {
-  reviewId: string;
-  status: ScenarioAcceptanceStatus;
-  score: number;
-  summary: string;
-  skillIds: ScenarioAcceptanceSkillId[];
-  issueCount: number;
-  issueCodes: string[];
-}
-
-export interface RunDeliveryReviewInput extends RunScenarioAcceptanceInput {
-  sessionId: string;
-  sessionTitle?: string;
-}
-
-export interface DeliveryReviewRunResult extends ScenarioAcceptanceResult {
-  reviewQueueItem?: ReviewQueueItem;
-  previewFeedbackItems?: PreviewFeedbackItem[];
-}
-
-export function buildDeliveryReviewMetadata(
-  result: ScenarioAcceptanceResult,
-): DeliveryReviewMetadata {
-  return {
-    reviewId: result.id,
-    status: result.status,
-    score: result.score,
-    summary: result.summary,
-    skillIds: result.skills.map((skill) => skill.id),
-    issueCount: result.issues.length,
-    issueCodes: [...new Set(result.issues.map((issue) => issue.code))],
-  };
-}

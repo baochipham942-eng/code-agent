@@ -1,0 +1,206 @@
+// ============================================================================
+// imageGenerationService — host-accessible image generation primitives
+//
+// 这一层是 host 可直接调用的图像生成原语，剥离自 `tools/modules/network/imageGenerate`，
+// 用于解开 `tools/media/ppt/illustrationAgent` 与 image_generate 工具内部函数的耦合。
+// image_generate 工具与 PPT illustrationAgent 都从这里调用，
+// 不再相互直接 import 内部实现。
+//
+// 注意：本 service 只提供纯函数原语（决定引擎、下载图片、调用智谱/OpenRouter 出图），
+// 不感知 ToolContext / ToolSchema / Permission，调用方各自负责权限和上下文。
+// ============================================================================
+
+import { getConfigService } from '../core/configService';
+import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
+
+export type ImageEngine = 'cogview' | 'flux';
+
+export interface GenerateImageResult {
+  imageData: string;
+  actualModel: string;
+}
+
+const TIMEOUT_MS = {
+  DIRECT_API: 90000,
+  IMAGE_DOWNLOAD: 30000,
+};
+
+const ZHIPU_IMAGE_MODELS = {
+  standard: 'cogview-4-250304',
+  legacy: 'cogview-3-flash',
+} as const;
+
+const NO_TEXT_SUFFIX = '，画面中不要出现任何文字、字母、数字、标题、标签、水印、签名，纯视觉画面';
+
+interface OpenRouterImageMessage {
+  images?: Array<{
+    image_url?: { url?: string };
+    imageUrl?: { url?: string };
+  }>;
+}
+
+async function fetchWithAbort(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number,
+  outerSignal: AbortSignal,
+): Promise<Response> {
+  const controller = new AbortController();
+  const onOuterAbort = () => controller.abort();
+  if (outerSignal.aborted) controller.abort();
+  else outerSignal.addEventListener('abort', onOuterAbort);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+    outerSignal.removeEventListener('abort', onOuterAbort);
+  }
+}
+
+function getZhipuOfficialApiKey(): string | undefined {
+  const officialKey = process.env.ZHIPU_OFFICIAL_API_KEY;
+  if (officialKey) return officialKey;
+  const configService = getConfigService();
+  const zhipuKey = configService.getApiKey('zhipu');
+  if (zhipuKey && !zhipuKey.startsWith('oki-')) return zhipuKey;
+  return undefined;
+}
+
+export function determineImageEngine(): ImageEngine {
+  if (getZhipuOfficialApiKey()) return 'cogview';
+  const configService = getConfigService();
+  if (configService.getApiKey('openrouter')) return 'flux';
+  throw new Error('图片生成需要本地 API Key：请在设置中配置智谱（CogView-4）或 OpenRouter（FLUX）API Key。');
+}
+
+export function isImageUrl(data: string): boolean {
+  return data.startsWith('http://') || data.startsWith('https://');
+}
+
+export async function downloadImageAsBase64(
+  url: string,
+  outerSignal: AbortSignal = new AbortController().signal,
+): Promise<string> {
+  const response = await fetchWithAbort(url, {}, TIMEOUT_MS.IMAGE_DOWNLOAD, outerSignal);
+  if (!response.ok) {
+    throw new Error(`图片下载失败: ${response.status}`);
+  }
+  const buffer = await response.arrayBuffer();
+  const base64 = Buffer.from(buffer).toString('base64');
+  const contentType = response.headers.get('content-type') || 'image/png';
+  return `data:${contentType};base64,${base64}`;
+}
+
+function extractImageFromResponse(result: { choices?: Array<{ message?: OpenRouterImageMessage }> }): string {
+  const message = result.choices?.[0]?.message;
+  if (!message) {
+    throw new Error('响应格式错误: 无 message');
+  }
+  const images = message.images;
+  if (!images || images.length === 0) {
+    throw new Error('未返回图片数据');
+  }
+  const imageUrl = images[0].image_url?.url || images[0].imageUrl?.url;
+  if (!imageUrl) {
+    throw new Error('图片 URL 格式错误');
+  }
+  return imageUrl;
+}
+
+async function callZhipuImageGeneration(
+  apiKey: string,
+  prompt: string,
+  aspectRatio: string,
+  outerSignal: AbortSignal,
+): Promise<{ url: string }> {
+  const sizeMap: Record<string, string> = {
+    '1:1': '1024x1024',
+    '16:9': '1344x768',
+    '9:16': '768x1344',
+    '4:3': '1152x864',
+    '3:4': '864x1152',
+  };
+  const size = sizeMap[aspectRatio] || '1024x1024';
+
+  const requestBody = {
+    model: ZHIPU_IMAGE_MODELS.standard,
+    prompt,
+    size,
+  };
+
+  const response = await fetchWithAbort(
+    `${MODEL_API_ENDPOINTS.zhipuOfficial}/images/generations`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
+    },
+    TIMEOUT_MS.DIRECT_API,
+    outerSignal,
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`智谱图像生成 API 错误: ${response.status} - ${error}`);
+  }
+
+  const result = await response.json();
+  if (!result.data || result.data.length === 0 || !result.data[0].url) {
+    throw new Error('智谱图像生成: 未返回图片 URL');
+  }
+  return { url: result.data[0].url };
+}
+
+export async function generateImage(
+  engine: ImageEngine,
+  fluxModel: string,
+  prompt: string,
+  aspectRatio: string,
+  outerSignal: AbortSignal = new AbortController().signal,
+): Promise<GenerateImageResult> {
+  const configService = getConfigService();
+  const safePrompt = prompt.includes('不要出现任何文字') ? prompt : prompt + NO_TEXT_SUFFIX;
+
+  if (engine === 'cogview') {
+    const zhipuApiKey = getZhipuOfficialApiKey()!;
+    const result = await callZhipuImageGeneration(zhipuApiKey, safePrompt, aspectRatio, outerSignal);
+    return { imageData: result.url, actualModel: ZHIPU_IMAGE_MODELS.standard };
+  }
+
+  // engine === 'flux'
+  const openrouterApiKey = configService.getApiKey('openrouter')!;
+  const requestBody = {
+    model: fluxModel,
+    messages: [{ role: 'user', content: safePrompt }],
+    modalities: ['image'],
+    image_config: { aspect_ratio: aspectRatio },
+  };
+
+  const response = await fetchWithAbort(
+    `${MODEL_API_ENDPOINTS.openrouter}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${openrouterApiKey}`,
+        'HTTP-Referer': 'https://code-agent.app',
+        'X-Title': 'Agent Neo',
+      },
+      body: JSON.stringify(requestBody),
+    },
+    TIMEOUT_MS.DIRECT_API,
+    outerSignal,
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenRouter API 调用失败: ${error}`);
+  }
+  const result = await response.json();
+  const imageData = extractImageFromResponse(result);
+  return { imageData, actualModel: fluxModel };
+}

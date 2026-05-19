@@ -22,14 +22,25 @@ import { getAuthService } from '../../../services/auth/authService';
 import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../../shared/constants';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { imageGenerateSchema as schema } from './imageGenerate.schema';
+import {
+  determineImageEngine,
+  generateImage,
+  downloadImageAsBase64,
+  isImageUrl,
+  type ImageEngine,
+} from '../../../services/media/imageGenerationService';
 
-export type ImageEngine = 'cogview' | 'flux';
-
-const TIMEOUT_MS = {
-  DIRECT_API: 90000,
-  PROMPT_EXPAND: 15000,
-  IMAGE_DOWNLOAD: 30000,
+// Re-export so existing external imports of these symbols from the tool module
+// keep compiling (e.g. tests or callers that depended on the previous API surface).
+export {
+  determineImageEngine,
+  generateImage,
+  downloadImageAsBase64,
+  isImageUrl,
 };
+export type { ImageEngine };
+
+const PROMPT_EXPAND_TIMEOUT_MS = 15000;
 
 const FLUX_MODELS = {
   pro: 'black-forest-labs/flux.2-pro',
@@ -37,13 +48,6 @@ const FLUX_MODELS = {
 } as const;
 
 const PROMPT_EXPAND_MODEL = 'deepseek/deepseek-chat';
-
-const ZHIPU_IMAGE_MODELS = {
-  standard: 'cogview-4-250304',
-  legacy: 'cogview-3-flash',
-} as const;
-
-const NO_TEXT_SUFFIX = '，画面中不要出现任何文字、字母、数字、标题、标签、水印、签名，纯视觉画面';
 
 const STYLE_SUFFIXES: Record<string, string> = {
   photo: ', photorealistic, high resolution, professional photography, sharp focus',
@@ -97,11 +101,16 @@ interface ImageGenerateParams {
   style?: 'photo' | 'illustration' | '3d' | 'anime';
 }
 
-interface GenerateResult {
-  imageData: string;
-  actualModel: string;
+function addStyleSuffix(prompt: string, style: string): string {
+  return prompt + (STYLE_SUFFIXES[style] || '');
 }
 
+function getDataUrlMimeType(data: string): string | undefined {
+  const match = data.match(/^data:([^;,]+)[;,]/);
+  return match?.[1];
+}
+
+// expandPromptWithLLM 还需要一个带超时的 fetch helper，独立于 service。
 async function fetchWithAbort(
   url: string,
   options: RequestInit,
@@ -119,169 +128,6 @@ async function fetchWithAbort(
     clearTimeout(timeoutId);
     outerSignal.removeEventListener('abort', onOuterAbort);
   }
-}
-
-function getZhipuOfficialApiKey(): string | undefined {
-  const officialKey = process.env.ZHIPU_OFFICIAL_API_KEY;
-  if (officialKey) return officialKey;
-  const configService = getConfigService();
-  const zhipuKey = configService.getApiKey('zhipu');
-  if (zhipuKey && !zhipuKey.startsWith('oki-')) return zhipuKey;
-  return undefined;
-}
-
-export function determineImageEngine(): ImageEngine {
-  if (getZhipuOfficialApiKey()) return 'cogview';
-  const configService = getConfigService();
-  if (configService.getApiKey('openrouter')) return 'flux';
-  throw new Error('图片生成需要本地 API Key：请在设置中配置智谱（CogView-4）或 OpenRouter（FLUX）API Key。');
-}
-
-function addStyleSuffix(prompt: string, style: string): string {
-  return prompt + (STYLE_SUFFIXES[style] || '');
-}
-
-export function isImageUrl(data: string): boolean {
-  return data.startsWith('http://') || data.startsWith('https://');
-}
-
-function getDataUrlMimeType(data: string): string | undefined {
-  const match = data.match(/^data:([^;,]+)[;,]/);
-  return match?.[1];
-}
-
-export async function downloadImageAsBase64(
-  url: string,
-  outerSignal: AbortSignal = new AbortController().signal,
-): Promise<string> {
-  const response = await fetchWithAbort(url, {}, TIMEOUT_MS.IMAGE_DOWNLOAD, outerSignal);
-  if (!response.ok) {
-    throw new Error(`图片下载失败: ${response.status}`);
-  }
-  const buffer = await response.arrayBuffer();
-  const base64 = Buffer.from(buffer).toString('base64');
-  const contentType = response.headers.get('content-type') || 'image/png';
-  return `data:${contentType};base64,${base64}`;
-}
-
-interface OpenRouterImageMessage {
-  images?: Array<{
-    image_url?: { url?: string };
-    imageUrl?: { url?: string };
-  }>;
-}
-
-function extractImageFromResponse(result: { choices?: Array<{ message?: OpenRouterImageMessage }> }): string {
-  const message = result.choices?.[0]?.message;
-  if (!message) {
-    throw new Error('响应格式错误: 无 message');
-  }
-  const images = message.images;
-  if (!images || images.length === 0) {
-    throw new Error('未返回图片数据');
-  }
-  const imageUrl = images[0].image_url?.url || images[0].imageUrl?.url;
-  if (!imageUrl) {
-    throw new Error('图片 URL 格式错误');
-  }
-  return imageUrl;
-}
-
-async function callZhipuImageGeneration(
-  apiKey: string,
-  prompt: string,
-  aspectRatio: string,
-  outerSignal: AbortSignal,
-): Promise<{ url: string }> {
-  const sizeMap: Record<string, string> = {
-    '1:1': '1024x1024',
-    '16:9': '1344x768',
-    '9:16': '768x1344',
-    '4:3': '1152x864',
-    '3:4': '864x1152',
-  };
-  const size = sizeMap[aspectRatio] || '1024x1024';
-
-  const requestBody = {
-    model: ZHIPU_IMAGE_MODELS.standard,
-    prompt,
-    size,
-  };
-
-  const response = await fetchWithAbort(
-    `${MODEL_API_ENDPOINTS.zhipuOfficial}/images/generations`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(requestBody),
-    },
-    TIMEOUT_MS.DIRECT_API,
-    outerSignal,
-  );
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`智谱图像生成 API 错误: ${response.status} - ${error}`);
-  }
-
-  const result = await response.json();
-  if (!result.data || result.data.length === 0 || !result.data[0].url) {
-    throw new Error('智谱图像生成: 未返回图片 URL');
-  }
-  return { url: result.data[0].url };
-}
-
-export async function generateImage(
-  engine: ImageEngine,
-  fluxModel: string,
-  prompt: string,
-  aspectRatio: string,
-  outerSignal: AbortSignal = new AbortController().signal,
-): Promise<GenerateResult> {
-  const configService = getConfigService();
-  const safePrompt = prompt.includes('不要出现任何文字') ? prompt : prompt + NO_TEXT_SUFFIX;
-
-  if (engine === 'cogview') {
-    const zhipuApiKey = getZhipuOfficialApiKey()!;
-    const result = await callZhipuImageGeneration(zhipuApiKey, safePrompt, aspectRatio, outerSignal);
-    return { imageData: result.url, actualModel: ZHIPU_IMAGE_MODELS.standard };
-  }
-
-  // engine === 'flux'
-  const openrouterApiKey = configService.getApiKey('openrouter')!;
-  const requestBody = {
-    model: fluxModel,
-    messages: [{ role: 'user', content: safePrompt }],
-    modalities: ['image'],
-    image_config: { aspect_ratio: aspectRatio },
-  };
-
-  const response = await fetchWithAbort(
-    `${MODEL_API_ENDPOINTS.openrouter}/chat/completions`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${openrouterApiKey}`,
-        'HTTP-Referer': 'https://code-agent.app',
-        'X-Title': 'Agent Neo',
-      },
-      body: JSON.stringify(requestBody),
-    },
-    TIMEOUT_MS.DIRECT_API,
-    outerSignal,
-  );
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`OpenRouter API 调用失败: ${error}`);
-  }
-  const result = await response.json();
-  const imageData = extractImageFromResponse(result);
-  return { imageData, actualModel: fluxModel };
 }
 
 async function expandPromptWithLLM(
@@ -314,7 +160,7 @@ async function expandPromptWithLLM(
             max_tokens: 1000,
           }),
         },
-        TIMEOUT_MS.PROMPT_EXPAND,
+        PROMPT_EXPAND_TIMEOUT_MS,
         outerSignal,
       );
 
@@ -359,7 +205,7 @@ async function expandPromptWithLLM(
           },
           body: JSON.stringify(fluxRequestBody),
         },
-        TIMEOUT_MS.PROMPT_EXPAND,
+        PROMPT_EXPAND_TIMEOUT_MS,
         outerSignal,
       );
       if (response.ok) {

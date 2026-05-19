@@ -101,7 +101,6 @@ import { pdfAutomateSchema } from './network/pdfAutomate.schema';
 import { screenshotPageSchema } from './network/screenshotPage.schema';
 import { localSpeechToTextSchema } from './network/localSpeechToText.schema';
 import { imageAnnotateSchema } from './network/imageAnnotate.schema';
-import { videoGenerateSchema } from './network/videoGenerate.schema';
 import { imageAnalyzeSchema } from './network/imageAnalyze.schema';
 import { imageGenerateSchema } from './network/imageGenerate.schema';
 import { jiraSchema } from './network/jira.schema';
@@ -523,8 +522,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./network/xlwingsExecute')).xlwingsExecuteModule,
   );
 
-  // Media (5) — imageProcess + speech_to_text + text_to_speech 已剥离为 builtin plugin
-  // （src/main/plugins/builtin/imageProcess/、src/main/plugins/builtin/audioProcessing/）
+  // Media (4) — imageProcess + speech_to_text + text_to_speech + video_generate 已剥离为 builtin plugin
+  // （src/main/plugins/builtin/imageProcess/、src/main/plugins/builtin/audioProcessing/、src/main/plugins/builtin/videoGeneration/）
   registry.register(
     imageGenerateSchema,
     async () => (await import('./network/imageGenerate')).imageGenerateModule,
@@ -536,10 +535,6 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   registry.register(
     imageAnnotateSchema,
     async () => (await import('./network/imageAnnotate')).imageAnnotateModule,
-  );
-  registry.register(
-    videoGenerateSchema,
-    async () => (await import('./network/videoGenerate')).videoGenerateModule,
   );
   registry.register(
     localSpeechToTextSchema,

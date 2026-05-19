@@ -23,8 +23,8 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConfigService } from '../../../services';
-import { DEFAULT_MODELS } from '../../../../shared/constants';
-import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { DEFAULT_MODELS, MODEL_API_ENDPOINTS } from '../../../../shared/constants';
+import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { videoGenerateSchema as schema } from './videoGenerate.schema';
 
 const TIMEOUT_MS = {
@@ -151,7 +151,7 @@ async function expandVideoPrompt(
 
   try {
     const response = await fetchWithAbort(
-      'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+      `${MODEL_API_ENDPOINTS.zhipuOfficial}/chat/completions`,
       {
         method: 'POST',
         headers: {
@@ -216,7 +216,7 @@ async function submitZhipuVideoTask(
   }
 
   const response = await fetchWithAbort(
-    'https://open.bigmodel.cn/api/paas/v4/videos/generations',
+    `${MODEL_API_ENDPOINTS.zhipuOfficial}/videos/generations`,
     {
       method: 'POST',
       headers: {
@@ -247,7 +247,7 @@ async function queryZhipuVideoTask(
   outerSignal: AbortSignal,
 ): Promise<ZhipuVideoTaskResponse> {
   const response = await fetchWithAbort(
-    `https://open.bigmodel.cn/api/paas/v4/async-result/${taskId}`,
+    `${MODEL_API_ENDPOINTS.zhipuOfficial}/async-result/${taskId}`,
     {
       method: 'GET',
       headers: { Authorization: `Bearer ${apiKey}` },

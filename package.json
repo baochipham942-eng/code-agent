@@ -23,6 +23,7 @@
     "test:swarm:smoke": "vitest run tests/integration/swarm-chain/swarmChain.test.ts tests/renderer/stores/swarmStore.test.ts",
     "test:swarm:e2e": "playwright test --config tests/e2e/playwright.e2e.config.ts tests/e2e/swarm-chain.spec.ts",
     "test:swarm:full": "npm run test:swarm:smoke && npm run test:swarm:e2e",
+    "test:e2e:new-session": "playwright test --config tests/e2e/playwright.e2e.config.ts tests/e2e/new-session.e2e.spec.ts",
     "acceptance:browser-computer": "node node_modules/jiti/bin/jiti.js scripts/acceptance/browser-computer-smoke.ts",
     "acceptance:browser-computer-workflow": "node node_modules/jiti/bin/jiti.js scripts/acceptance/browser-computer-workflow-smoke.ts",
     "acceptance:browser-task-benchmark": "node node_modules/jiti/bin/jiti.js scripts/acceptance/browser-task-benchmark.ts",

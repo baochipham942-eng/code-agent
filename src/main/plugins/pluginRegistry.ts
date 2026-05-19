@@ -5,7 +5,7 @@
 import type { Tool } from '../tools/types';
 import { getProtocolRegistry } from '../tools/protocolRegistry';
 import { wrapLegacyTool } from '../tools/modules/_helpers/legacyAdapter';
-import type { ToolCategory } from '../protocol/tools';
+import type { ToolCategory, ToolModule } from '../protocol/tools';
 import type {
   LoadedPlugin,
   PluginAPI,
@@ -14,13 +14,106 @@ import type {
   RegisteredPluginHook,
   PluginHookContext,
   PluginHookResult,
+  PluginApiKeyProvider,
+  PluginConstantsNamespace,
 } from './types';
 import type { HookEvent } from '../protocol/events';
+import type { ModelProvider } from '../../shared/contract';
 import { discoverPlugins, loadPlugin, watchPluginsDir } from './pluginLoader';
 import { createPluginStorage, initPluginStorageTable } from './pluginStorage';
 import { createLogger } from '../services/infra/logger';
+import { getConfigService } from '../services/core/configService';
+import { getAuthService } from '../services/auth/authService';
+import {
+  // models
+  DEFAULT_MODEL,
+  DEFAULT_MODELS,
+  MODEL_MAX_TOKENS,
+  MODEL_MAX_OUTPUT_TOKENS,
+  CONTEXT_WINDOWS,
+  // providers
+  MODEL_API_ENDPOINTS,
+  // pricing
+  MODEL_PRICING_PER_1M,
+  // timeouts
+  MCP_TIMEOUTS,
+  DAG_SCHEDULER,
+  AGENT_TIMEOUTS,
+  NETWORK_TOOL_TIMEOUTS,
+  BROWSER_TIMEOUTS,
+} from '../../shared/constants';
 
 const logger = createLogger('PluginRegistry');
+
+// ----------------------------------------------------------------------------
+// PluginAPI v2 — 静态白名单与常量投影
+// ----------------------------------------------------------------------------
+
+/**
+ * Provider 白名单的运行时拷贝。TS 类型擦除后插件可能传任意字符串，
+ * 用 Set 做二次校验。新增 provider 时必须同步更新 PluginApiKeyProvider 类型。
+ */
+const ALLOWED_PROVIDERS: ReadonlySet<PluginApiKeyProvider> = new Set<PluginApiKeyProvider>([
+  'deepseek', 'claude', 'openai', 'gemini', 'groq',
+  'zhipu', 'qwen', 'moonshot', 'minimax', 'perplexity',
+  'grok', 'openrouter', 'volcengine', 'longcat', 'xiaomi',
+]);
+
+/**
+ * 面向插件的 provider endpoint 投影。
+ *
+ * 过滤规则：
+ * - 移除 `zhipu`（0ki 代理订阅，内部链路）
+ * - 移除 `zhipuCoding`（0ki Coding 套餐代理，内部链路）
+ * - 移除 `kimiK25`（Kimi K2.5 Coding 套餐订阅特化端点，内部）
+ * - 保留 `zhipuOfficial`（智谱官方公开 API，作为 zhipu 公开入口）
+ * - 其余均为面向第三方的公开端点
+ */
+const PROVIDERS_PUBLIC_ENDPOINTS: Readonly<Record<string, string>> = Object.freeze({
+  deepseek: MODEL_API_ENDPOINTS.deepseek,
+  claude: MODEL_API_ENDPOINTS.claude,
+  openai: MODEL_API_ENDPOINTS.openai,
+  groq: MODEL_API_ENDPOINTS.groq,
+  zhipuOfficial: MODEL_API_ENDPOINTS.zhipuOfficial,
+  qwen: MODEL_API_ENDPOINTS.qwen,
+  moonshot: MODEL_API_ENDPOINTS.moonshot,
+  minimax: MODEL_API_ENDPOINTS.minimax,
+  perplexity: MODEL_API_ENDPOINTS.perplexity,
+  grok: MODEL_API_ENDPOINTS.grok,
+  openrouter: MODEL_API_ENDPOINTS.openrouter,
+  gemini: MODEL_API_ENDPOINTS.gemini,
+  volcengine: MODEL_API_ENDPOINTS.volcengine,
+  longcat: MODEL_API_ENDPOINTS.longcat,
+  longcatClaude: MODEL_API_ENDPOINTS.longcatClaude,
+  xiaomi: MODEL_API_ENDPOINTS.xiaomi,
+  custom: MODEL_API_ENDPOINTS.custom,
+  ollama: MODEL_API_ENDPOINTS.ollama,
+});
+
+/**
+ * 按 namespace 提前 freeze，避免每次 createPluginAPI 都重建。
+ * 插件拿到的是 Readonly 投影，无法回写宿主常量。
+ */
+const CONSTANTS_BUCKETS: Readonly<Record<PluginConstantsNamespace, Readonly<Record<string, unknown>>>> = Object.freeze({
+  models: Object.freeze({
+    DEFAULT_MODEL,
+    DEFAULT_MODELS,
+    MODEL_MAX_TOKENS,
+    MODEL_MAX_OUTPUT_TOKENS,
+    CONTEXT_WINDOWS,
+  }),
+  providers: PROVIDERS_PUBLIC_ENDPOINTS,
+  pricing: Object.freeze({
+    MODEL_PRICING_PER_1M,
+  }),
+  timeouts: Object.freeze({
+    MCP_TIMEOUTS,
+    DAG_SCHEDULER,
+    AGENT_TIMEOUTS,
+    NETWORK_TOOL_TIMEOUTS,
+    BROWSER_TIMEOUTS,
+  }),
+});
 
 // ----------------------------------------------------------------------------
 // Plugin Registry Class
@@ -199,6 +292,59 @@ export class PluginRegistry {
           plugin.registeredHooks.splice(idx, 1);
         }
         logger.debug(`Plugin ${plugin.manifest.id} unregistered hook: ${hookId}`);
+      },
+
+      // ----------------------------------------------------------------------
+      // PluginAPI v2
+      // ----------------------------------------------------------------------
+
+      pluginApiVersion: 2 as const,
+
+      getApiKey: async (provider: PluginApiKeyProvider) => {
+        // 运行时白名单校验：TS 类型擦除后插件仍可能传任意字符串
+        if (!ALLOWED_PROVIDERS.has(provider)) {
+          logger.warn(`Plugin ${plugin.manifest.id} queried disallowed provider: ${provider}`);
+          return undefined;
+        }
+        // configService.getApiKey 是同步签名，这里用 async 函数自动包装成 Promise，
+        // 给将来的远程 vault 实现留空间（届时只需改本函数实现，签名不变）。
+        return getConfigService().getApiKey(provider as ModelProvider);
+      },
+
+      getCurrentUser: () => {
+        const auth = getAuthService();
+        const user = auth.getCurrentUser();
+        if (!user) return null;
+        // admin trust-gate：未经服务端验证的 cached session 强制 isAdmin: false，
+        // 与 authService.getPublicUserForCurrentTrust 的策略保持一致。
+        const hasVerified = auth.hasVerifiedSession();
+        return {
+          id: user.id,
+          isAdmin: hasVerified ? (user.isAdmin ?? false) : false,
+        };
+      },
+
+      getConstants: (namespace: PluginConstantsNamespace) => {
+        return CONSTANTS_BUCKETS[namespace];
+      },
+
+      registerToolModule: (module: ToolModule) => {
+        const prefixedName = `${plugin.manifest.id}:${module.schema.name}`;
+        const prefixedModule: ToolModule = {
+          schema: {
+            ...module.schema,
+            name: prefixedName,
+          },
+          createHandler: module.createHandler.bind(module),
+        };
+        // 双通道命名冲突检查（registerTool + registerToolModule 共享 registeredTools）
+        if (plugin.registeredTools.includes(prefixedName)) {
+          throw new Error(`Tool ${prefixedName} already registered`);
+        }
+        // ToolLoader 签名要求返回 Promise<ToolModule>，registry 内部首次解析时再调 createHandler
+        getProtocolRegistry().register(prefixedModule.schema, async () => prefixedModule);
+        plugin.registeredTools.push(prefixedName);
+        logger.info(`Plugin ${plugin.manifest.id} registered tool module: ${prefixedName}`);
       },
     };
   }

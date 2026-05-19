@@ -4,6 +4,7 @@
 
 import type { Tool } from '../tools/types';
 import type { HookEvent } from '../protocol/events';
+import type { ToolModule } from '../protocol/tools';
 
 /**
  * Plugin metadata from package.json or plugin.json
@@ -91,6 +92,83 @@ export interface PluginAPI {
   registerHook: (registration: PluginHookRegistration) => void;
   /** Unregister an event hook */
   unregisterHook: (hookId: string) => void;
+
+  // --------------------------------------------------------------------------
+  // PluginAPI v2 扩展 — 见文件底部的类型定义和实现说明
+  // --------------------------------------------------------------------------
+
+  /**
+   * PluginAPI 版本号，用于插件运行时能力探测。
+   * v1 = 仅 tools/hooks/storage；v2 = 增加 api-key 取用、用户身份、常量投影、ToolModule 注册。
+   */
+  readonly pluginApiVersion: 2;
+
+  /**
+   * 获取 provider 的 API key（解密后明文）。
+   *
+   * 安全限制：
+   * - provider 必须在 `PluginApiKeyProvider` 白名单内，运行时再做 set 校验防 TS 类型擦除绕过
+   * - 返回值是明文 key，插件不应 log / 持久化 / 通过网络外发
+   * - Registry 不审计 key 用途，由插件 manifest 的 permissions 字段配合 review 流程把关
+   */
+  getApiKey: (provider: PluginApiKeyProvider) => Promise<string | undefined>;
+
+  /**
+   * 获取当前登录用户的精简投影。未登录返回 null。
+   *
+   * 安全限制：
+   * - 仅返回 `{ id, isAdmin }`，不暴露 email / token / profile 全量字段
+   * - 走 admin trust-gate：未经服务端验证的 cached session 强制 `isAdmin = false`
+   *   （与 authService.getPublicUserForCurrentTrust 的策略一致）
+   */
+  getCurrentUser: () => PluginUserSnapshot | null;
+
+  /**
+   * 按命名空间读取项目常量快照。
+   *
+   * 安全限制：
+   * - 返回 Readonly + Object.freeze，插件无法改写宿主常量
+   * - providers namespace 已过滤内部代理 URL（zhipu/zhipuCoding/kimiK25），
+   *   插件拿到的只是面向第三方的公开端点
+   */
+  getConstants: (namespace: PluginConstantsNamespace) => Readonly<Record<string, unknown>>;
+
+  /**
+   * 注册 v2 形态的工具模块（ToolModule，区别于 v1 的 Tool）。
+   *
+   * 命名约定：
+   * - 工具名会自动加 `${pluginId}:` 前缀，与 v1 registerTool 保持一致
+   * - 同名重复注册（包括与 registerTool 双通道冲突）会抛错
+   */
+  registerToolModule: (module: ToolModule) => void;
+}
+
+// ============================================================================
+// PluginAPI v2 扩展
+// ============================================================================
+
+/**
+ * 允许插件读取 API key 的 provider 白名单。
+ * 新增 provider 时必须同步更新 pluginRegistry.ts 里的 ALLOWED_PROVIDERS 运行时 Set。
+ */
+export type PluginApiKeyProvider =
+  | 'deepseek' | 'claude' | 'openai' | 'gemini' | 'groq'
+  | 'zhipu' | 'qwen' | 'moonshot' | 'minimax' | 'perplexity'
+  | 'grok' | 'openrouter' | 'volcengine' | 'longcat' | 'xiaomi';
+
+/**
+ * 允许插件读取的常量命名空间。
+ * 实际投影内容见 pluginRegistry.ts 里的 CONSTANTS_BUCKETS。
+ */
+export type PluginConstantsNamespace = 'models' | 'providers' | 'pricing' | 'timeouts';
+
+/**
+ * 暴露给插件的用户身份精简投影。
+ * 走 admin trust-gate — 未经服务端验证的 session 强制 `isAdmin: false`。
+ */
+export interface PluginUserSnapshot {
+  id?: string;
+  isAdmin: boolean;
 }
 
 /**

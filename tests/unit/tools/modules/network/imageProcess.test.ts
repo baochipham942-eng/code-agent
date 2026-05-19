@@ -48,7 +48,7 @@ vi.mock('sharp', () => {
   return { default: factory };
 });
 
-import { imageProcessModule, executeImageProcess } from '../../../../../src/main/tools/modules/network/imageProcess';
+import { imageProcessModule, executeImageProcess } from '../../../../../src/main/plugins/builtin/imageProcess/imageProcess';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

@@ -29,7 +29,7 @@ vi.mock('../../../../../src/main/services', () => ({
   getConfigService: () => getConfigServiceMock(),
 }));
 
-import { textToSpeechModule, executeTextToSpeech } from '../../../../../src/main/tools/modules/network/textToSpeech';
+import { textToSpeechModule, executeTextToSpeech } from '../../../../../src/main/plugins/builtin/audioProcessing/textToSpeech';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

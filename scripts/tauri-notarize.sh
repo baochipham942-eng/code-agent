@@ -49,7 +49,11 @@ for dmg_path in "${dmg_files[@]}"; do
 done
 
 if [[ -d "${APP_PATH}" ]]; then
-  echo "[tauri-notarize] validating app staple: ${APP_PATH}"
+  # tauri-bundler 在 notarize-dmg 之前就 finalize 了 dmg 里的 .app，
+  # 所以 dmg 外壳有 ticket 但 .app 自身没有。这里单独 staple 一刀，
+  # 让 .app 也能离线启动 / Tauri auto-update 解包后能过 Gatekeeper。
+  echo "[tauri-notarize] stapling app: ${APP_PATH}"
+  xcrun stapler staple "${APP_PATH}"
   xcrun stapler validate "${APP_PATH}"
 fi
 

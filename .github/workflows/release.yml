@@ -72,10 +72,83 @@ jobs:
           REQUIRE_NOTARIZATION: '1'
         run: npm run tauri:release:bundle
 
-      - name: Generate updater manifest
+      # 重打 .app.tar.gz：
+      # 1) tauri-bundler 在 nested 签名前已先打过一份 tar.gz（stale）
+      # 2) BSD tar 默认含 ._AppleDouble metadata，Tauri updater unpack 时
+      #    `iter().skip(1)` 把它当顶层 .app 处理 → Operation not permitted
+      # 用 COPYFILE_DISABLE=1 + 全 nested 签名 + stapled 的 .app 重新打包。
+      - name: Repack updater archive (clean AppleDouble + post-notarize state)
+        working-directory: src-tauri/target/release/bundle/macos
         run: |
-          ARTIFACT_BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          rm -f "Agent Neo.app.tar.gz" "Agent Neo.app.tar.gz.sig"
+          COPYFILE_DISABLE=1 tar -czf "Agent Neo.app.tar.gz" "Agent Neo.app"
+          ls -la "Agent Neo.app.tar.gz"
+          # verify no AppleDouble dotfiles
+          if tar -tzf "Agent Neo.app.tar.gz" | grep -qE '(^|/)\._'; then
+            echo "[FAIL] tar still contains AppleDouble (._) entries" >&2
+            tar -tzf "Agent Neo.app.tar.gz" | grep -E '(^|/)\._' >&2
+            exit 1
+          fi
+
+      - name: Re-sign repacked tar.gz with Tauri updater key
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          # cargo tauri signer sign 跟 env TAURI_SIGNING_PRIVATE_KEY 互斥，必须 unset
+          unset TAURI_SIGNING_PRIVATE_KEY
+          # 把 secret 写到临时文件传 --private-key-path
+          PRIV_KEY_PATH="${RUNNER_TEMP}/tauri-updater.key"
+          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" > "${PRIV_KEY_PATH}"
+          chmod 600 "${PRIV_KEY_PATH}"
+          cargo tauri signer sign \
+            --private-key-path "${PRIV_KEY_PATH}" \
+            "src-tauri/target/release/bundle/macos/Agent Neo.app.tar.gz"
+          rm -f "${PRIV_KEY_PATH}"
+
+      - name: Install ossutil (Aliyun OSS CLI)
+        run: |
+          curl -sL -o /tmp/ossutil.zip "https://gosspublic.alicdn.com/ossutil/v2/2.1.2/ossutil-2.1.2-mac-arm64.zip"
+          unzip -o /tmp/ossutil.zip -d /tmp/ossutil
+          sudo mv /tmp/ossutil/ossutil-*/ossutil /usr/local/bin/ossutil
+          chmod +x /usr/local/bin/ossutil
+          ossutil version
+
+      - name: Upload tar.gz + sig to Aliyun OSS (Shanghai)
+        env:
+          ALIYUN_OSS_ACCESS_KEY_ID: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_ID }}
+          ALIYUN_OSS_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_SECRET }}
+          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+          ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
+        run: |
+          cat > ~/.ossutilconfig <<EOF
+          [default]
+          accessKeyID=${ALIYUN_OSS_ACCESS_KEY_ID}
+          accessKeySecret=${ALIYUN_OSS_ACCESS_KEY_SECRET}
+          region=${ALIYUN_OSS_REGION}
+          endpoint=oss-${ALIYUN_OSS_REGION}.aliyuncs.com
+          EOF
+          chmod 600 ~/.ossutilconfig
+
+          VERSION="${GITHUB_REF_NAME#v}"
+          ossutil cp -f "src-tauri/target/release/bundle/macos/Agent Neo.app.tar.gz" \
+            "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/Agent.Neo.app.tar.gz"
+          ossutil cp -f "src-tauri/target/release/bundle/macos/Agent Neo.app.tar.gz.sig" \
+            "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/Agent.Neo.app.tar.gz.sig"
+
+      - name: Generate updater manifest (points to OSS)
+        env:
+          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+          ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
+        run: |
+          # latest.json url 走 OSS（国内秒下），不走 GitHub release（国内 9 KB/s）
+          ARTIFACT_BASE_URL="https://${ALIYUN_OSS_BUCKET}.oss-${ALIYUN_OSS_REGION}.aliyuncs.com/${GITHUB_REF_NAME}"
           npm run tauri:update-manifest -- --base-url "${ARTIFACT_BASE_URL}"
+          # manifest 默认 url-encode 空格 (Agent%20Neo)，但我们 OSS key 用点号
+          # (Agent.Neo)，所以 fix 一下避免 404
+          sed -i '' 's|/Agent%20Neo.app.tar.gz|/Agent.Neo.app.tar.gz|g' \
+            src-tauri/target/release/bundle/latest.json
+          cat src-tauri/target/release/bundle/latest.json | head -20
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

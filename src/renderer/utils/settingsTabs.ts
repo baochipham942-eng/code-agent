@@ -21,6 +21,7 @@ export const SETTINGS_TAB_IDS = [
   'controlPlane',
   'cache',
   'capabilities',
+  'plugins',
   'mcp',
   'skills',
   'channels',
@@ -68,6 +69,7 @@ export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> 
   appearance: 'basics',
   mcp: 'connections',
   capabilities: 'connections',
+  plugins: 'connections',
   skills: 'connections',
   channels: 'connections',
   hooks: 'connections',
@@ -89,7 +91,7 @@ export function isSettingsTab(value: unknown): value is SettingsTab {
   return typeof value === 'string' && SETTINGS_TAB_ID_SET.has(value);
 }
 
-export const ADMIN_ONLY_SETTINGS_TABS = ['users', 'invites', 'controlPlane', 'capabilities', 'hooks'] as const satisfies readonly SettingsTab[];
+export const ADMIN_ONLY_SETTINGS_TABS = ['users', 'invites', 'controlPlane', 'capabilities', 'plugins', 'hooks'] as const satisfies readonly SettingsTab[];
 
 const ADMIN_ONLY_SETTINGS_TAB_SET = new Set<SettingsTab>(ADMIN_ONLY_SETTINGS_TABS);
 
@@ -98,6 +100,7 @@ const SETTINGS_TAB_ACCESS_FEATURES: Partial<Record<SettingsTab, AccessControlled
   invites: 'settings.invites',
   controlPlane: 'settings.controlPlane',
   capabilities: 'settings.capabilities',
+  plugins: 'settings.plugins',
   hooks: 'settings.hooks',
 };
 

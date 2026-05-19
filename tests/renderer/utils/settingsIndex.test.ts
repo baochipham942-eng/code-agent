@@ -16,13 +16,20 @@ describe('settings search index', () => {
     expect(searchSettings('MCP', { isAdmin: true }).map((entry) => entry.tab)).toContain('capabilities');
   });
 
+  it('covers plugin management settings for admins', () => {
+    expect(searchSettings('插件市场', { isAdmin: true }).map((entry) => entry.tab)).toContain('plugins');
+    expect(searchSettings('仅管理员可见', { isAdmin: true }).map((entry) => entry.tab)).toContain('plugins');
+  });
+
   it('routes config scope searches to workspace settings', () => {
     expect(searchSettings('config scope').map((entry) => entry.tab)).toContain('workspace');
     expect(searchSettings('配置作用域').map((entry) => entry.tab)).toContain('workspace');
   });
 
   it('covers user and invite management settings', () => {
+    expect(searchSettings('用户管理', { isAdmin: true }).map((entry) => entry.tab)).toContain('users');
     expect(searchSettings('上次登录', { isAdmin: true }).map((entry) => entry.tab)).toContain('users');
+    expect(searchSettings('邀请码管理', { isAdmin: true }).map((entry) => entry.tab)).toContain('invites');
     expect(searchSettings('邀请码', { isAdmin: true }).map((entry) => entry.tab)).toContain('invites');
     expect(searchSettings('control plane', { isAdmin: true }).map((entry) => entry.tab)).toContain('controlPlane');
     expect(searchSettings('发布审计', { isAdmin: true }).map((entry) => entry.tab)).toContain('controlPlane');
@@ -33,6 +40,7 @@ describe('settings search index', () => {
     expect(searchSettings('邀请码').map((entry) => entry.tab)).not.toContain('invites');
     expect(searchSettings('control plane').map((entry) => entry.tab)).not.toContain('controlPlane');
     expect(searchSettings('capability').map((entry) => entry.tab)).not.toContain('capabilities');
+    expect(searchSettings('插件市场').map((entry) => entry.tab)).not.toContain('plugins');
     expect(searchSettings('Hook').map((entry) => entry.tab)).not.toContain('hooks');
   });
 

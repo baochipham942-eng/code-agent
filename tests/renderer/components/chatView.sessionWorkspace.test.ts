@@ -35,6 +35,7 @@ const appState = {
   showPreviewPanel: false,
   workingDirectory: '/repo/other',
   setShowSettings: vi.fn(),
+  openSettingsTab: vi.fn(),
 };
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({

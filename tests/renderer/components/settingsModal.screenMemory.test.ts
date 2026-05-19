@@ -86,8 +86,14 @@ describe('SettingsModal screen memory tab visibility', () => {
       'invites',
       'controlPlane',
     ]);
+    expect(groups[3].tabs.map((tab) => tab.label)).toEqual([
+      '用户管理',
+      '邀请码管理',
+      'Control Plane',
+    ]);
     expect(groups[1].tabs.map((tab) => tab.id)).toEqual([
       'capabilities',
+      'plugins',
       'mcp',
       'skills',
       'channels',
@@ -115,6 +121,7 @@ describe('SettingsModal screen memory tab visibility', () => {
     expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('invites');
     expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('controlPlane');
     expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('capabilities');
+    expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('plugins');
     expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('hooks');
   });
 

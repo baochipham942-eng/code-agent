@@ -26,6 +26,7 @@ import {
   Ticket,
   Users,
   Cloud,
+  PackagePlus,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -55,6 +56,7 @@ const logger = createLogger('SettingsModal');
 const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
   'cache',
   'capabilities',
+  'plugins',
   'model',
   'mcp',
   'skills',
@@ -81,6 +83,7 @@ import { UpdateSettings } from './tabs/UpdateSettings';
 import { MCPSettings } from './tabs/MCPSettings';
 import { MemoryTab } from './tabs/MemoryTab';
 import { SkillsSettings } from './tabs/SkillsSettings';
+import { PluginsSettings } from './tabs/PluginsSettings';
 import { CapabilityCenterSettings } from './tabs/CapabilityCenterSettings';
 import { ChannelsSettings } from './tabs/ChannelsSettings';
 import { HooksSettings } from './tabs/HooksSettings';
@@ -127,11 +130,12 @@ export function buildSettingsTabGroups({
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'workspace', label: '工作区', icon: <FolderOpen className="w-4 h-4" /> },
     { id: 'automation', label: '自动化', icon: <Clock className="w-4 h-4" /> },
-    { id: 'users', label: '用户看板', icon: <Users className="w-4 h-4" /> },
-    { id: 'invites', label: '邀请码', icon: <Ticket className="w-4 h-4" /> },
+    { id: 'users', label: '用户管理', icon: <Users className="w-4 h-4" /> },
+    { id: 'invites', label: '邀请码管理', icon: <Ticket className="w-4 h-4" /> },
     { id: 'controlPlane', label: 'Control Plane', icon: <Cloud className="w-4 h-4" /> },
     { id: 'cache', label: '数据与存储', icon: <Database className="w-4 h-4" /> },
     { id: 'capabilities', label: '能力中心', icon: <Boxes className="w-4 h-4" /> },
+    { id: 'plugins', label: '插件管理', icon: <PackagePlus className="w-4 h-4" /> },
     { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
     { id: 'skills', label: 'Skills', icon: <Sparkles className="w-4 h-4" /> },
     { id: 'channels', label: '通道', icon: <MessageSquare className="w-4 h-4" /> },
@@ -201,6 +205,7 @@ export const SettingsModal: React.FC = () => {
   const canViewUsers = canAccessSettingsTab('users', accessSubject);
   const canViewInvites = canAccessSettingsTab('invites', accessSubject);
   const canViewControlPlane = canAccessSettingsTab('controlPlane', accessSubject);
+  const canViewPlugins = canAccessSettingsTab('plugins', accessSubject);
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     settingsInitialTab ?? DEFAULT_SETTINGS_TAB
@@ -374,6 +379,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'capabilities' && (
               <CapabilityCenterSettings onNavigateSettings={handleSearchNavigate} />
             )}
+            {canViewPlugins && activeTab === 'plugins' && <PluginsSettings />}
             {activeTab === 'mcp' && <MCPSettings />}
             {activeTab === 'skills' && <SkillsSettings />}
             {activeTab === 'channels' && <ChannelsSettings />}

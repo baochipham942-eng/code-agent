@@ -24,6 +24,10 @@ export const ACCESS_CONTROL_REGISTRY = {
     label: '能力治理',
     adminOnly: true,
   },
+  'settings.plugins': {
+    label: '插件管理',
+    adminOnly: true,
+  },
   'settings.hooks': {
     label: 'Hook 原始配置',
     adminOnly: true,

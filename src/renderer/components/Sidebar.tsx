@@ -38,6 +38,8 @@ import {
   ScrollText,
   Activity,
   Brain,
+  Users,
+  Ticket,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { IconButton, UndoToast } from './primitives';
@@ -170,6 +172,7 @@ export const Sidebar: React.FC = () => {
   const {
     clearPlanningState,
     setShowSettings,
+    openSettingsTab,
     setShowPromptManager,
     setWorkingDirectory,
     showLab,
@@ -232,6 +235,8 @@ export const Sidebar: React.FC = () => {
 
   const { user, isAuthenticated, setShowAuthModal, signOut } = useAuthStore();
   const canOpenPromptManager = canAccessFeature('prompt.manager', user);
+  const canOpenUserDashboard = canAccessFeature('settings.users', user);
+  const canOpenInviteCodes = canAccessFeature('settings.invites', user);
   const sessionStates = useTaskStore((state) => state.sessionStates);
 
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
@@ -1023,6 +1028,20 @@ export const Sidebar: React.FC = () => {
                     onClick={() => { setShowPromptManager(true); setShowUserMenu(false); }}
                     icon={<ScrollText className="w-4 h-4 text-violet-400/80" />}
                     label="提示词"
+                  />
+                )}
+                {canOpenUserDashboard && (
+                  <AccountMenuItem
+                    onClick={() => { openSettingsTab('users'); setShowUserMenu(false); }}
+                    icon={<Users className="w-4 h-4 text-amber-400/80" />}
+                    label="用户管理"
+                  />
+                )}
+                {canOpenInviteCodes && (
+                  <AccountMenuItem
+                    onClick={() => { openSettingsTab('invites'); setShowUserMenu(false); }}
+                    icon={<Ticket className="w-4 h-4 text-amber-400/80" />}
+                    label="邀请码管理"
                   />
                 )}
 

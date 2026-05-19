@@ -63,6 +63,7 @@ const sessionUiState = {
 const appState = {
   clearPlanningState: vi.fn(),
   setShowSettings: vi.fn(),
+  openSettingsTab: vi.fn(),
   setShowPromptManager: vi.fn(),
   setShowEvalCenter: vi.fn(),
   setWorkingDirectory: vi.fn(),
@@ -146,6 +147,8 @@ describe('Sidebar account menu entry planning', () => {
     expect(html).toContain('知识与记忆');
     expect(html).toContain('自动化');
     expect(html).toContain('提示词');
+    expect(html).toContain('用户管理');
+    expect(html).toContain('邀请码管理');
     expect(html).toContain('高级工具');
     expect(html).not.toContain('模型训练');
     expect(html).not.toContain('时间与能力');
@@ -164,6 +167,8 @@ describe('Sidebar account menu entry planning', () => {
     authState.user.isAdmin = false;
     const memberHtml = renderToStaticMarkup(React.createElement(Sidebar));
 
+    expect(memberHtml).not.toContain('用户管理');
+    expect(memberHtml).not.toContain('邀请码管理');
     expect(memberHtml).not.toContain('Computer Use');
     expect(memberHtml).not.toContain('In-App 验证');
   });

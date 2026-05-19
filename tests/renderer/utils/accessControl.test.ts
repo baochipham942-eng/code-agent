@@ -21,10 +21,11 @@ describe('renderer access control registry', () => {
 
   it('keeps raw governance settings admin-only', () => {
     expect(canAccessFeature('settings.capabilities', { isAdmin: false })).toBe(false);
+    expect(canAccessFeature('settings.plugins', { isAdmin: false })).toBe(false);
     expect(canAccessFeature('settings.controlPlane', { isAdmin: false })).toBe(false);
     expect(canAccessFeature('settings.hooks', { isAdmin: false })).toBe(false);
     expect(canAccessFeature('prompt.manager', { isAdmin: false })).toBe(false);
-    expect(canAccessAnyFeature(['settings.capabilities', 'settings.controlPlane', 'settings.hooks', 'prompt.manager'], { isAdmin: true })).toBe(true);
+    expect(canAccessAnyFeature(['settings.capabilities', 'settings.plugins', 'settings.controlPlane', 'settings.hooks', 'prompt.manager'], { isAdmin: true })).toBe(true);
   });
 
   it('normalizes loose user-like objects to an access subject', () => {

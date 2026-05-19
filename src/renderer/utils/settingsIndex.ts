@@ -40,10 +40,10 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'automation', tabLabel: '自动化', label: '执行历史', keywords: ['history', 'execution', '执行', '历史', '运行', '日志'] },
 
   // User Management
-  { tab: 'users', tabLabel: '用户看板', label: '注册用户', keywords: ['user', 'users', '用户', '注册用户', 'email', '邮箱', 'last login', '上次登录', '活跃'] },
-  { tab: 'users', tabLabel: '用户看板', label: '用户字段', keywords: ['profile', '字段', '注册时间', '注册来源', '设备', '会话', '消息'] },
-  { tab: 'invites', tabLabel: '邀请码', label: '邀请码管理', keywords: ['invite', '邀请码', '注册', 'code', '使用次数', '有效期'] },
-  { tab: 'invites', tabLabel: '邀请码', label: '新建邀请码', keywords: ['create invite', 'new invite', '创建', '新建', '发放', '停用', '启用'] },
+  { tab: 'users', tabLabel: '用户管理', label: '注册用户', keywords: ['user', 'users', '用户', '用户管理', '注册用户', 'email', '邮箱', 'last login', '上次登录', '活跃'] },
+  { tab: 'users', tabLabel: '用户管理', label: '用户字段', keywords: ['profile', '字段', '注册时间', '注册来源', '设备', '会话', '消息'] },
+  { tab: 'invites', tabLabel: '邀请码管理', label: '邀请码管理', keywords: ['invite', '邀请码', '邀请码管理', '注册', 'code', '使用次数', '有效期'] },
+  { tab: 'invites', tabLabel: '邀请码管理', label: '新建邀请码', keywords: ['create invite', 'new invite', '创建', '新建', '发放', '停用', '启用'] },
   { tab: 'controlPlane', tabLabel: 'Control Plane', label: '发布审计', keywords: ['control plane', 'audit', 'release', 'rollout', '发布', '审计', '灰度', '签名', 'payload'] },
   { tab: 'controlPlane', tabLabel: 'Control Plane', label: '线上版本与 hash', keywords: ['hash', 'keyId', 'artifact', 'capability registry', 'prompt registry', 'cloud config', '版本'] },
 
@@ -67,6 +67,11 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   // Capability Center
   { tab: 'capabilities', tabLabel: '能力中心', label: '本地能力库存', keywords: ['capability', 'capabilities', '能力', '能力中心', 'marketplace', 'registry', '审计'] },
   { tab: 'capabilities', tabLabel: '能力中心', label: 'Skill / MCP / Tool / Channel 审计', keywords: ['skill', 'mcp', 'tool', 'channel', 'connector', 'workflow', '权限', '风险', '来源'] },
+
+  // Plugins
+  { tab: 'plugins', tabLabel: '插件管理', label: '插件市场', keywords: ['plugin', 'plugins', '插件', 'marketplace', '市场', '安装', '卸载', '启用', '禁用'] },
+  { tab: 'plugins', tabLabel: '插件管理', label: '插件可见性', keywords: ['visibility', 'admin', 'user', '普通用户', '管理员', '仅管理员可见', '普通用户可见', '权限'] },
+  { tab: 'plugins', tabLabel: '插件管理', label: 'Marketplace 源', keywords: ['marketplace source', 'github', 'npm', 'url', 'dir', '源', '刷新'] },
 
   // MCP
   { tab: 'mcp', tabLabel: 'MCP', label: 'MCP 服务器', keywords: ['mcp', 'server', '服务器', 'protocol', '工具', '资源'] },

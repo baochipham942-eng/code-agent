@@ -136,7 +136,7 @@ export const UserDashboardSettings: React.FC = () => {
 
   return (
     <SettingsPage
-      title="用户看板"
+      title="用户管理"
       description="注册用户、注册时间、登录与活跃信息放在同一张运营表里。"
     >
       <SettingsSection

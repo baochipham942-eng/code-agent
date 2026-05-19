@@ -85,6 +85,7 @@ const sessionUiState = {
 const appState = {
   clearPlanningState: vi.fn(),
   setShowSettings: vi.fn(),
+  openSettingsTab: vi.fn(),
   setShowEvalCenter: vi.fn(),
   pendingPermissionRequest: null as unknown,
   pendingPermissionSessionId: null as string | null,

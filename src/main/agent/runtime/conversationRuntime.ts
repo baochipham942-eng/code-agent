@@ -25,11 +25,10 @@ import { generateFormatCorrectionPrompt } from '../../agent/structuredOutput';
 import type { ToolExecutor } from '../../tools/toolExecutor';
 import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter';
 import type { PlanningService } from '../../planning';
-import { publishPlanningStateToRenderer } from '../../planning';
-import { buildRecoveredWorkOrchestrationHint, isContinuationLikeRequest, recoverRecentWorkIntoPlanning } from '../../planning/recoveredWorkOrchestrator';
-import { syncDesktopTasksToPlanningService } from '../../desktop/desktopActivityPlanningBridge';
-import { getDesktopActivityUnderstandingService } from '../../desktop/desktopActivityUnderstandingService';
-import { buildWorkspaceActivityContextBlock } from '../../desktop/workspaceActivitySearchService';
+import {
+  bootstrapDesktopTurnContext,
+  publishPlanningStateAfterDesktopSync,
+} from '../../desktop/desktopContextBridge';
 import { buildPackedSeedMemoryBlock, buildSeedMemoryBlock } from '../../utils/seedMemoryInjector';
 import { countTraceEntries, recordMemoryInjectionTrace } from '../../memory/memoryInjectionTrace';
 import { recordSessionStart } from '../../lightMemory/sessionMetadata';
@@ -243,171 +242,76 @@ export class ConversationRuntime {
   }
 
   private async bootstrapDesktopDerivedContext(userMessage?: string): Promise<void> {
-    try {
-      const desktopActivity = getDesktopActivityUnderstandingService();
-      await desktopActivity.ensureFreshData(2 * 60 * 1000);
+    const existingTodos = getSessionTodos(this.ctx.sessionId);
+    const persistedTodos = await getSessionManager().getTodos(this.ctx.sessionId);
 
-      const existingTodos = getSessionTodos(this.ctx.sessionId);
-      const persistedTodos = await getSessionManager().getTodos(this.ctx.sessionId);
-      const desktopTodos = desktopActivity.listTodoItems({
-        limit: 3,
-        sinceHours: 6,
+    const existingSystemContextTokens =
+      estimateTokens(this.ctx.systemPrompt)
+      + estimateTokens(this.ctx.persistentSystemContext.join('\n\n'))
+      + this.ctx.messages
+        .filter((message) => message.role === 'system')
+        .reduce((sum, message) => sum + estimateTokens(message.content || ''), 0);
+    const contextWindowSize = getContextWindow(this.ctx.modelConfig.model);
+    const contextPressure = existingSystemContextTokens / contextWindowSize;
+    const workspaceContextMaxTokens =
+      contextPressure >= 0.12 ? 120
+        : contextPressure >= 0.08 ? 160
+          : 220;
+    const workspaceContextMaxItems =
+      contextPressure >= 0.12 ? 1
+        : contextPressure >= 0.08 ? 2
+          : 3;
+
+    const result = await bootstrapDesktopTurnContext({
+      sessionId: this.ctx.sessionId,
+      userMessage,
+      planningService: this.ctx.planningService,
+      existingTodos,
+      persistedTodos,
+      workspaceContextBudget: {
+        maxTokens: workspaceContextMaxTokens,
+        maxItems: workspaceContextMaxItems,
+      },
+    });
+
+    if (result.advancedTodos) {
+      setSessionTodos(this.ctx.sessionId, result.advancedTodos);
+      this.ctx.onEvent({ type: 'todo_update', data: result.advancedTodos });
+    }
+
+    if (result.taskSync.created.length > 0 || result.taskSync.updated.length > 0) {
+      this.ctx.onEvent({
+        type: 'task_update',
+        data: {
+          tasks: result.taskSync.tasks,
+          action: 'sync',
+          taskIds: [
+            ...result.taskSync.created.map((task) => task.id),
+            ...result.taskSync.updated.map((task) => task.id),
+          ],
+          source: 'desktop_activity',
+        },
       });
+    }
 
-      let mergedTodos = desktopTodos;
-      if (persistedTodos.length > 0) {
-        mergedTodos = mergedTodos.length > 0
-          ? mergeTodos(mergedTodos, persistedTodos)
-          : persistedTodos;
-      }
-      if (existingTodos.length > 0) {
-        mergedTodos = mergedTodos.length > 0
-          ? mergeTodos(mergedTodos, existingTodos)
-          : existingTodos;
-      }
+    if (result.planningSyncChanged && this.ctx.planningService) {
+      await publishPlanningStateAfterDesktopSync(this.ctx.planningService);
+    }
 
-      if (mergedTodos.length > 0) {
-        const { todos: advancedTodos } = advanceTodoStatus(mergedTodos);
-        const changed = JSON.stringify(existingTodos) !== JSON.stringify(advancedTodos);
-        if (changed) {
-          setSessionTodos(this.ctx.sessionId, advancedTodos);
-          this.ctx.onEvent({ type: 'todo_update', data: advancedTodos });
-          logger.info('[AgentLoop] Desktop-derived todos merged into session todos', {
-            count: advancedTodos.length,
-          });
-        }
-      }
+    if (result.workspaceContextBlock) {
+      this.contextAssembly.injectSystemMessage(
+        `<workspace-activity-context>\n${result.workspaceContextBlock}\n</workspace-activity-context>`
+      );
+    }
 
-      const taskSync = desktopActivity.syncTodoCandidatesToTasks(this.ctx.sessionId, {
-        limit: 3,
-        sinceHours: 6,
-      });
-      if (taskSync.created.length > 0 || taskSync.updated.length > 0) {
-        this.ctx.onEvent({
-          type: 'task_update',
-          data: {
-            tasks: taskSync.tasks,
-            action: 'sync',
-            taskIds: [
-              ...taskSync.created.map((task) => task.id),
-              ...taskSync.updated.map((task) => task.id),
-            ],
-            source: 'desktop_activity',
-          },
-        });
-        logger.info('[AgentLoop] Desktop-derived tasks synced into task store', {
-          created: taskSync.created.length,
-          updated: taskSync.updated.length,
-          total: taskSync.tasks.length,
-        });
-      }
+    if (result.recoveredWorkHint) {
+      this.contextAssembly.injectSystemMessage(
+        `<recovered-work-orchestration>\n${result.recoveredWorkHint}\n</recovered-work-orchestration>`
+      );
+    }
 
-      if (this.ctx.planningService) {
-        const planningSync = await syncDesktopTasksToPlanningService(
-          this.ctx.planningService,
-          taskSync.tasks,
-        );
-        if (
-          planningSync.createdPlan
-          || planningSync.createdPhase
-          || planningSync.addedSteps.length > 0
-          || planningSync.updatedSteps.length > 0
-        ) {
-          await publishPlanningStateToRenderer(this.ctx.planningService);
-          logger.info('[AgentLoop] Desktop-derived tasks synced into planning service', {
-            createdPlan: planningSync.createdPlan,
-            createdPhase: planningSync.createdPhase,
-            addedSteps: planningSync.addedSteps.length,
-            updatedSteps: planningSync.updatedSteps.length,
-          });
-        }
-      }
-
-      const existingSystemContextTokens =
-        estimateTokens(this.ctx.systemPrompt)
-        + estimateTokens(this.ctx.persistentSystemContext.join('\n\n'))
-        + this.ctx.messages
-          .filter((message) => message.role === 'system')
-          .reduce((sum, message) => sum + estimateTokens(message.content || ''), 0);
-      const contextWindowSize = getContextWindow(this.ctx.modelConfig.model);
-      const contextPressure = existingSystemContextTokens / contextWindowSize;
-      const workspaceContextMaxTokens =
-        contextPressure >= 0.12 ? 120
-          : contextPressure >= 0.08 ? 160
-            : 220;
-      const workspaceContextMaxItems =
-        contextPressure >= 0.12 ? 1
-          : contextPressure >= 0.08 ? 2
-            : 3;
-
-      const workspaceContextBlock = userMessage
-        ? await buildWorkspaceActivityContextBlock(userMessage, {
-          sinceHours: 24,
-          limit: 5,
-          refreshDesktop: false,
-          minScore: 0.52,
-          contextMaxTokens: workspaceContextMaxTokens,
-          contextMaxItems: workspaceContextMaxItems,
-        })
-        : null;
-      if (workspaceContextBlock) {
-        this.contextAssembly.injectSystemMessage(
-          `<workspace-activity-context>\n${workspaceContextBlock}\n</workspace-activity-context>`
-        );
-        logger.info('[AgentLoop] Workspace activity context injected', {
-          maxTokens: workspaceContextMaxTokens,
-          maxItems: workspaceContextMaxItems,
-          contextPressure: Number(contextPressure.toFixed(4)),
-        });
-      }
-
-      const recoveredWorkHint = userMessage
-        ? await buildRecoveredWorkOrchestrationHint({
-          userMessage,
-          planningService: this.ctx.planningService,
-          recoveredTaskCount: taskSync.totalCandidates,
-          hasWorkspaceContext: Boolean(workspaceContextBlock),
-        })
-        : null;
-      if (recoveredWorkHint) {
-        this.contextAssembly.injectSystemMessage(
-          `<recovered-work-orchestration>\n${recoveredWorkHint}\n</recovered-work-orchestration>`
-        );
-        logger.info('[AgentLoop] Recovered work orchestration hint injected');
-      }
-
-      // Auto-trigger recovery for continuation-like requests
-      if (
-        userMessage
-        && isContinuationLikeRequest(userMessage)
-        && this.ctx.planningService
-        && taskSync.totalCandidates > 0
-      ) {
-        try {
-          const recoveryResult = await recoverRecentWorkIntoPlanning({
-            planningService: this.ctx.planningService,
-            sessionId: this.ctx.sessionId,
-            query: userMessage,
-            sinceHours: 24,
-            refreshDesktop: false,
-          });
-          if (recoveryResult.planChanged) {
-            await publishPlanningStateToRenderer(this.ctx.planningService);
-            logger.info('[AgentLoop] Auto-recovery triggered for continuation request', {
-              addedSteps: recoveryResult.planningSync.addedSteps.length,
-              workspaceItems: recoveryResult.workspaceResult?.items.length || 0,
-            });
-          }
-        } catch (autoRecoveryError) {
-          logger.warn('[AgentLoop] Auto-recovery for continuation failed', {
-            error: String(autoRecoveryError),
-          });
-        }
-      }
-    } catch (error) {
-      logger.warn('[AgentLoop] Desktop-derived context bootstrap failed, continuing without it', {
-        error: String(error),
-      });
+    if (result.autoRecovery?.planChanged && this.ctx.planningService) {
+      await publishPlanningStateAfterDesktopSync(this.ctx.planningService);
     }
   }
 

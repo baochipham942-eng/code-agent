@@ -156,7 +156,7 @@ if [[ "$(uname -s)" == "Darwin" && -n "${SIGNING_IDENTITY}" ]]; then
     # Enumerated by basename - these are the helpers known to ship unsigned.
     while IFS= read -r -d '' nested; do
       sign_nested_binary "${nested}" "1"
-    done < <(find "${app_path}" -type f \( -name "system-audio-capture" -o -name "spawn-helper" \) -print0)
+    done < <(find "${app_path}" -type f \( -name "system-audio-capture" -o -name "spawn-helper" -o -name "vision-tagger" -o -name "vision-ocr" \) -print0)
 
     echo "[tauri-release-bundle] re-signing .app shell: ${app_path}"
     codesign --force --options runtime --timestamp \

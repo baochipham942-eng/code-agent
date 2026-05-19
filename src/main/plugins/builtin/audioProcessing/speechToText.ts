@@ -19,11 +19,12 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConfigService } from '../../../services';
-import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
+import { MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { speechToTextSchema as schema } from './speechToText.schema';
 
 const CONFIG = {
-  API_URL: 'https://open.bigmodel.cn/api/paas/v4/audio/transcriptions',
+  API_URL: `${MODEL_API_ENDPOINTS.zhipuOfficial}/audio/transcriptions`,
   MODEL: 'glm-asr-2512',
   TIMEOUT_MS: 60000,
   MAX_FILE_SIZE_MB: 25,

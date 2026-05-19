@@ -98,8 +98,6 @@ import { xlwingsExecuteSchema } from './network/xlwingsExecute.schema';
 import { pdfGenerateSchema } from './network/pdfGenerate.schema';
 import { pdfCompressSchema } from './network/pdfCompress.schema';
 import { pdfAutomateSchema } from './network/pdfAutomate.schema';
-import { speechToTextSchema } from './network/speechToText.schema';
-import { textToSpeechSchema } from './network/textToSpeech.schema';
 import { screenshotPageSchema } from './network/screenshotPage.schema';
 import { localSpeechToTextSchema } from './network/localSpeechToText.schema';
 import { imageAnnotateSchema } from './network/imageAnnotate.schema';
@@ -525,7 +523,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./network/xlwingsExecute')).xlwingsExecuteModule,
   );
 
-  // Media (7) — imageProcess 已剥离为 builtin plugin（src/main/plugins/builtin/imageProcess/）
+  // Media (5) — imageProcess + speech_to_text + text_to_speech 已剥离为 builtin plugin
+  // （src/main/plugins/builtin/imageProcess/、src/main/plugins/builtin/audioProcessing/）
   registry.register(
     imageGenerateSchema,
     async () => (await import('./network/imageGenerate')).imageGenerateModule,
@@ -541,14 +540,6 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   registry.register(
     videoGenerateSchema,
     async () => (await import('./network/videoGenerate')).videoGenerateModule,
-  );
-  registry.register(
-    textToSpeechSchema,
-    async () => (await import('./network/textToSpeech')).textToSpeechModule,
-  );
-  registry.register(
-    speechToTextSchema,
-    async () => (await import('./network/speechToText')).speechToTextModule,
   );
   registry.register(
     localSpeechToTextSchema,

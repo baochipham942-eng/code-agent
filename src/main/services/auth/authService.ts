@@ -630,6 +630,11 @@ class AuthService {
       };
     } catch (error) {
       logger.warn(' Failed to fetch profile, using basic user:', error);
+      const cachedUser = this.currentUser;
+      if (cachedUser?.id === user.id) {
+        logger.warn(' Preserving cached profile for verified session after profile fetch failure');
+        return cachedUser;
+      }
       return {
         id: user.id,
         email: user.email || '',

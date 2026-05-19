@@ -574,37 +574,37 @@ interface SuggestionItem {
   iconColor: string;
 }
 
-// 新会话任务卡：覆盖工作生活四类入口（沟通安排 / 内容创作 / 调研对比 / 代码改动）。
-const defaultSuggestions: SuggestionItem[] = [
+// 新会话任务卡：覆盖工作生活四类入口，并保证点开后第一轮就有可交付输出。
+export const defaultSuggestions: SuggestionItem[] = [
   {
     icon: Mail,
-    title: '写一封邮件或安排日程',
-    description: '邮件、会议、待办都能直接落地',
-    prompt: '帮我起草一封邮件或安排一个会议；如果信息还不全，先问我收件人、目的和关键时间，然后给一份可直接发的版本。',
+    title: '写一封项目跟进邮件',
+    description: '给背景、目标和待办，直接出正文',
+    prompt: '帮我写一封项目跟进邮件：收件人是项目组，背景是 Agent Neo 内测下周一开始，目的请大家在周五 18:00 前反馈关键问题；语气专业、简洁，输出邮件主题、正文和 3 条待办，直接给可发送版本。',
     accent: 'bg-amber-500/10 border-amber-500/20',
     iconColor: 'text-amber-400',
   },
   {
     icon: Sparkles,
-    title: '做一份方案 / 文档 / PPT',
-    description: '从一句话开始，直接出可发的稿',
-    prompt: '帮我做一份方案或文档；先用一两句话和我对齐目的、读者和篇幅，再直接出完整稿，不要只给大纲。',
+    title: '做一页产品方案',
+    description: '目标、范围、里程碑一次成稿',
+    prompt: '帮我写一页产品方案：主题是把团队知识库搜索从关键词升级成语义检索，读者是产品和研发评审；输出目标、用户场景、功能范围、里程碑、验收标准和风险，直接给可评审稿。',
     accent: 'bg-violet-500/10 border-violet-500/20',
     iconColor: 'text-violet-400',
   },
   {
     icon: Search,
-    title: '查一个事 / 对比一组方案',
-    description: '搜索 + 对比 + 给推荐',
-    prompt: '帮我把这件事查清楚或把这几个选项对比一下；先确认我关心的判断维度，再给结论 + 理由，不要堆链接。',
+    title: '对比三种工具选型',
+    description: '按维度打分，给推荐和边界',
+    prompt: '帮我对比 Notion、飞书文档、Obsidian 作为团队知识库的选型；按协作、权限、离线、迁移成本、AI 适配 5 个维度打分，最后给 1 个推荐和适用边界。',
     accent: 'bg-sky-500/10 border-sky-500/20',
     iconColor: 'text-blue-400',
   },
   {
     icon: Code2,
-    title: '改一段代码',
-    description: '小范围修改，跑贴边测试',
-    prompt: '帮我改一段代码：先看清当前代码风格和上下文，只动必要文件，改完跑贴边测试和 typecheck 再交。',
+    title: '看当前改动风险',
+    description: '只审不改，给文件、风险和验证命令',
+    prompt: '帮我检查当前仓库这次未提交改动：先看 git status 和相关 diff，只审不改，指出最可能影响运行的 3 个风险，并建议下一步验证命令。',
     accent: 'bg-emerald-500/10 border-emerald-500/20',
     iconColor: 'text-emerald-400',
   },

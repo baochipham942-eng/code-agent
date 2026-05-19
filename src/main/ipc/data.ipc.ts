@@ -41,7 +41,6 @@ async function handleDataGetStats(): Promise<unknown> {
   const cacheStats = cache.getStats();
 
   const dbCacheCount = db.getToolCacheCount();
-  const localCacheStats = db.getLocalCacheStats();
 
   const userDataPath = app.getPath('userData');
   const dbPath = path.join(userDataPath, 'code-agent.db');
@@ -58,9 +57,7 @@ async function handleDataGetStats(): Promise<unknown> {
     databaseSize,
     cacheEntries:
       cacheStats.totalEntries +
-      dbCacheCount +
-      localCacheStats.sessionCount +
-      localCacheStats.messageCount,
+      dbCacheCount,
   };
 }
 
@@ -117,8 +114,7 @@ async function handleDataSetSnapshotRetention(req: { days: number }): Promise<vo
 function requiresAdmin(action: string): boolean {
   return action === 'getSnapshotStats'
     || action === 'clearSnapshots'
-    || action === 'setSnapshotRetention'
-    || action === 'clearToolCache';
+    || action === 'setSnapshotRetention';
 }
 
 async function handleDataClearToolCache(): Promise<number> {
@@ -138,16 +134,13 @@ async function handleDataClearToolCache(): Promise<number> {
   // Clear SessionManager memory cache
   sessionManager.clearCache();
 
-  // Level 1: Clear database tool execution cache
+  // Level 1: Clear database tool execution cache. Sessions and messages are
+  // retained; this action is user-facing runtime cache cleanup.
   const clearedToolCache = db.clearToolCache();
 
-  // Level 1: Clear local session and message cache
-  const clearedMessages = db.clearAllMessages();
-  const clearedSessions = db.clearAllSessions();
-
   const totalCleared =
-    clearedMemory + clearedToolCache + clearedMessages + clearedSessions;
-  logger.info('Data cleared', { memory: clearedMemory, toolCache: clearedToolCache, messages: clearedMessages, sessions: clearedSessions });
+    clearedMemory + clearedToolCache;
+  logger.info('Runtime cache cleared', { memory: clearedMemory, toolCache: clearedToolCache });
 
   return totalCleared;
 }

@@ -40,13 +40,23 @@ vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
     selector({ sendPrompt: vi.fn(async () => undefined) }),
 }));
 
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({
+  useI18n: () => ({
+    t: {
+      taskPanel: {
+        sectionHandoff: '接力',
+      },
+    },
+  }),
+}));
+
 import { HandoffCard } from '../../../src/renderer/components/TaskPanel/HandoffCard';
 
 describe('HandoffCard', () => {
   it('renders a compact pending handoff proposal', () => {
     const html = renderToStaticMarkup(React.createElement(HandoffCard));
 
-    expect(html).toContain('Handoff');
+    expect(html).toContain('接力');
     expect(html).toContain('继续验证安装包');
     expect(html).toContain('安装验证还没有跑。');
     expect(html).toContain('aria-label="继续 继续验证安装包"');

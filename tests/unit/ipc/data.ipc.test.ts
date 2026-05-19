@@ -5,11 +5,24 @@ const mocks = vi.hoisted(() => ({
   currentUser: null as null | { id: string; email: string; isAdmin?: boolean },
   sessionVerified: false,
   db: {
+    getStats: vi.fn(),
     getSnapshotStats: vi.fn(),
     getCompactionStats: vi.fn(),
     getPreference: vi.fn(),
+    getToolCacheCount: vi.fn(),
+    getLocalCacheStats: vi.fn(),
+    clearToolCache: vi.fn(),
+    clearAllMessages: vi.fn(),
+    clearAllSessions: vi.fn(),
   },
   getDatabase: vi.fn(),
+  toolCache: {
+    getStats: vi.fn(),
+    clear: vi.fn(),
+  },
+  sessionManager: {
+    clearCache: vi.fn(),
+  },
 }));
 
 vi.mock('../../../src/main/services/auth', () => ({
@@ -21,6 +34,14 @@ vi.mock('../../../src/main/services/auth', () => ({
 
 vi.mock('../../../src/main/services/core/databaseService', () => ({
   getDatabase: mocks.getDatabase,
+}));
+
+vi.mock('../../../src/main/services/infra/toolCache', () => ({
+  getToolCache: () => mocks.toolCache,
+}));
+
+vi.mock('../../../src/main/services/infra/sessionManager', () => ({
+  getSessionManager: () => mocks.sessionManager,
 }));
 
 vi.mock('../../../src/main/platform', () => ({
@@ -57,12 +78,18 @@ function makeFakeIpc(): { handle: Mock; getHandler: () => DomainHandler } {
   };
 }
 
-describe('data.ipc admin-only debug snapshots', () => {
+describe('data.ipc data management access', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.currentUser = null;
     mocks.sessionVerified = false;
     mocks.getDatabase.mockReturnValue(mocks.db);
+    mocks.db.getStats.mockReturnValue({
+      sessionCount: 12,
+      messageCount: 140,
+      toolExecutionCount: 31,
+      knowledgeCount: 4,
+    });
     mocks.db.getSnapshotStats.mockReturnValue({
       snapshotCount: 2,
       sessionCount: 1,
@@ -74,6 +101,12 @@ describe('data.ipc admin-only debug snapshots', () => {
       totalBytes: 128,
     });
     mocks.db.getPreference.mockReturnValue(7);
+    mocks.db.getToolCacheCount.mockReturnValue(5);
+    mocks.db.getLocalCacheStats.mockReturnValue({ sessionCount: 12, messageCount: 140 });
+    mocks.db.clearToolCache.mockReturnValue(3);
+    mocks.db.clearAllMessages.mockReturnValue(140);
+    mocks.db.clearAllSessions.mockReturnValue(12);
+    mocks.toolCache.getStats.mockReturnValue({ totalEntries: 4 });
   });
 
   it('rejects non-admin snapshot stats before touching the database', async () => {
@@ -89,17 +122,35 @@ describe('data.ipc admin-only debug snapshots', () => {
     expect(mocks.getDatabase).not.toHaveBeenCalled();
   });
 
-  it('rejects non-admin full cache clearing before touching the database', async () => {
+  it('allows non-admin runtime cache clearing without deleting retained sessions or messages', async () => {
     const ipc = makeFakeIpc();
     registerDataHandlers(ipc as never);
 
     const response = await ipc.getHandler()({}, { action: 'clearToolCache' });
 
+    expect(response).toMatchObject({ success: true, data: 7 });
+    expect(mocks.toolCache.clear).toHaveBeenCalledOnce();
+    expect(mocks.sessionManager.clearCache).toHaveBeenCalledOnce();
+    expect(mocks.db.clearToolCache).toHaveBeenCalledOnce();
+    expect(mocks.db.clearAllMessages).not.toHaveBeenCalled();
+    expect(mocks.db.clearAllSessions).not.toHaveBeenCalled();
+  });
+
+  it('reports runtime cache count without counting retained sessions and messages', async () => {
+    const ipc = makeFakeIpc();
+    registerDataHandlers(ipc as never);
+
+    const response = await ipc.getHandler()({}, { action: 'getStats' });
+
     expect(response).toMatchObject({
-      success: false,
-      error: { code: 'FORBIDDEN' },
+      success: true,
+      data: {
+        cacheEntries: 9,
+        sessionCount: 12,
+        messageCount: 140,
+      },
     });
-    expect(mocks.getDatabase).not.toHaveBeenCalled();
+    expect(mocks.db.getLocalCacheStats).not.toHaveBeenCalled();
   });
 
   it('allows admins to read snapshot stats', async () => {

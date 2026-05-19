@@ -247,6 +247,9 @@ export const zh = {
     toolActivityMcp: '外部工具活动',
     toolActivityOps: '{count} 次工具操作',
     // StatusRail
+    runtimeTitle: '运行信息',
+    runtimeApprovalsBadge: '待审',
+    sectionHandoff: '接力',
     sectionContext: '上下文',
     sectionOutputs: '产物',
     sectionReferences: '引用',

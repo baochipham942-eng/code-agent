@@ -31,6 +31,10 @@ import {
   manifest as builtinAudioProcessingManifest,
   default as builtinAudioProcessingEntry,
 } from './builtin/audioProcessing';
+import {
+  manifest as builtinVideoGenerationManifest,
+  default as builtinVideoGenerationEntry,
+} from './builtin/videoGeneration';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
 import { getAuthService } from '../services/auth/authService';
@@ -226,6 +230,10 @@ export class PluginRegistry {
       {
         manifest: builtinAudioProcessingManifest,
         entry: builtinAudioProcessingEntry,
+      },
+      {
+        manifest: builtinVideoGenerationManifest,
+        entry: builtinVideoGenerationEntry,
       },
     ];
 

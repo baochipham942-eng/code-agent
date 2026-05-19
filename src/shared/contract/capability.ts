@@ -136,6 +136,21 @@ export interface CapabilityMetrics {
   totalSkills?: number;
 }
 
+export type CapabilityAssessmentPriority = 'P0' | 'P1' | 'P2' | 'P3';
+
+export type CapabilityAssessmentPortability =
+  | 'native'
+  | 'portable_model'
+  | 'reference_only'
+  | 'reject';
+
+export interface CapabilityAssessmentInfo {
+  priority: CapabilityAssessmentPriority;
+  portability: CapabilityAssessmentPortability;
+  recommendedUse: string;
+  evidenceRefs: string[];
+}
+
 export type CapabilityInstallPlanWriteKind = 'config' | 'file';
 
 export interface CapabilityInstallPlanWrite {
@@ -189,6 +204,7 @@ export interface CapabilityCenterItem {
   audit: CapabilityAuditInfo;
   actions: CapabilityActionInfo;
   metrics?: CapabilityMetrics;
+  assessment?: CapabilityAssessmentInfo;
   relatedIds?: string[];
   installPlan?: CapabilityInstallPlan;
 }

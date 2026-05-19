@@ -21,6 +21,17 @@ function formatBrowserSnapshotTimestamp(timestamp?: number | null): string | nul
   return value.toISOString();
 }
 
+const BROWSER_ROUTING_CONTRACT_LINES = [
+  'Browser routing contract：纯阅读、单 URL 摘要、内容抽取或链接汇总，优先选择轻量读取/搜索/抓取工具；不要仅因出现 URL 就启动 Browser/Computer。',
+  '只有需要登录态、表单填写、按钮点击、下载/上传、多页跳转、动态页面状态、截图或视觉验证时，才推荐 Browser workbench。',
+];
+
+const DESKTOP_ACTION_CONTRACT_LINES = [
+  'Desktop action contract：任何 macOS 桌面点击/输入/滚动前，必须先确认权限、目标前台窗口或后台 target app、最近快照，以及坐标/locator 来源。',
+  '桌面坐标动作必须来自 observe/screenshot/窗口候选等可解释证据；后台 AX 用 get_ax_elements/locate_role 返回的 axPath，后台 CGEvent 用 get_windows 返回的 pid/windowId/windowRef/windowLocalPoint。',
+  '如果权限、前台窗口、快照或坐标来源不足，返回明确 blocked reason 和下一步读取动作；动作执行后先 re-observe，再声称最终桌面状态。',
+];
+
 export function buildWorkbenchTurnSystemContext(
   context?: ConversationEnvelopeContext,
 ): string[] {
@@ -53,6 +64,10 @@ export function buildWorkbenchTurnSystemContext(
     lines.push(`优先从这些 MCP servers 取工具或资源（仅在相关时使用）：${context.selectedMcpServerIds.join('、')}`);
   }
 
+  if (!context.executionIntent?.browserSessionMode && (context.selectedSkillIds?.length || context.selectedMcpServerIds?.length)) {
+    lines.push(...BROWSER_ROUTING_CONTRACT_LINES);
+  }
+
   if (context.runtimeInput?.mode === 'supplement') {
     lines.push('这条消息是用户在 agent 运行过程中的补充指令：把它纳入当前任务和已有计划，除非内容明确要求改方向，不要把它当成全新任务。');
   }
@@ -62,12 +77,15 @@ export function buildWorkbenchTurnSystemContext(
   }
 
   if (context.executionIntent?.browserSessionMode === 'managed') {
-    lines.push('本轮显式接入 Browser workbench：使用托管浏览器。需要网页自动化时，可优先走 browser_action 或 computer_use 的智能浏览器路径。');
+    lines.push('本轮显式接入 Browser workbench：使用托管浏览器。需要登录态、表单、点击、多页跳转、下载/上传、动态状态或截图验证时，可走 browser_action 或 computer_use 的智能浏览器路径。');
+    lines.push(...BROWSER_ROUTING_CONTRACT_LINES);
   }
 
   if (context.executionIntent?.browserSessionMode === 'desktop') {
     lines.push('本轮显式接入 Browser workbench：绑定当前桌面浏览器上下文。优先参考当前 frontmost app、URL/title 和最近截图。');
     lines.push('如果桌面上下文未就绪，不要假设浏览器自动化可用；先说明缺少的权限或采集状态，再决定是否改走托管浏览器。');
+    lines.push(...BROWSER_ROUTING_CONTRACT_LINES);
+    lines.push(...DESKTOP_ACTION_CONTRACT_LINES);
   }
   if (context.executionIntent?.allowBrowserAutomation === false) {
     lines.push('本轮不要驱动托管浏览器自动化；除非明确改选 Managed，否则不要调用 browser_action 或 computer_use 的智能浏览器路径。');

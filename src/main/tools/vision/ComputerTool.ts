@@ -23,6 +23,12 @@ export const ComputerTool: Tool = {
   name: 'Computer',
   description: `Unified computer control tool combining screenshot capture and mouse/keyboard automation. Also exposed as "computer_use" — both names map to the same capability set. If the user says "computer_use" or you previously planned with that name, use this tool.
 
+Desktop routing contract:
+- Before any desktop click/type/key/scroll/drag, first confirm Computer Surface readiness, permission state, target app/window, and a fresh observation/snapshot.
+- Do not use desktop actions for plain URL reading or static page summaries. Prefer lightweight fetch/read/search tools unless the task needs login, forms, multi-page interaction, dynamic UI state, screenshots, or visual verification.
+- Coordinate actions need an explicit source: observe/screenshot/cursor evidence for screen/image coordinates, get_ax_elements/locate_role for axPath, or get_windows for pid/windowId/windowRef/windowLocalPoint.
+- If permission, foreground window, snapshot, or coordinate/locator evidence is missing, return a blocked reason plus the next read action instead of guessing. After any desktop action, call observe/get_state again before claiming the final UI state.
+
 ## Screenshot action (screenshot tool):
 - screenshot: Capture screen/window. By default the assistant only gets back a file path and does NOT see the pixels — set analyze=true (or chain image_analyze on the saved file) before claiming you observed anything on screen.
 

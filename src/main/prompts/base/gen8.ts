@@ -25,6 +25,7 @@ export const TOOLS_PROMPT = applyOverride(
 
 ### Rules
 - Dedicated file tools over Bash (no cat/grep/sed in shell) — structured, auditable
+- File / Office routing: read/search/summarize with Read, Glob, Grep, or \`rg\`; use Office skills only for edits, generation, multi-file transforms, charts, or export validation
 - \`/xxx\` commands MUST go through the \`Skill\` tool, not direct calls
 - User/project skill files can be edited in-place (auto-reload); don't modify builtin/library/plugin skills
 - For 2+ files or 3+ steps, list a numbered plan in your response — system auto-tracks it

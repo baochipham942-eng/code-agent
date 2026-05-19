@@ -75,6 +75,11 @@ export const BrowserTool: Tool = {
 Use action="navigate" to delegate to the browser_action navigate, or use the simple OS-level
 browser opener actions. For full Playwright-based browser automation, use the browser_action actions.
 
+Routing contract:
+- Prefer lighter web_fetch/http/search/read tools for plain single-URL reading, article summaries, static page extraction, or URL lists.
+- Use Browser/browser_action when the task needs login/session state, form filling, clicking, upload/download, multi-page navigation, dynamic page state, screenshots, or visual verification.
+- Start with get_content/get_dom_snapshot/get_a11y_snapshot when possible; after a mutating browser action, refresh the DOM/a11y evidence before claiming the final page state.
+
 ## Simple OS-level browser control (browser_navigate):
 - open: Open a URL in the system browser
 - nav_back / nav_forward: Navigate browser history via OS-level scripting

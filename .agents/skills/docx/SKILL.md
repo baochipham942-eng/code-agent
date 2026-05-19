@@ -10,6 +10,12 @@ execution-context: inline
 
 你正在执行 Word 文档（DOCX）处理任务。严格按以下流程操作。
 
+## 入口边界
+
+- 只读查找、定位文件、搜索文本、轻量摘要优先用 `Glob` / `Grep` / `Read`，宽泛全文搜索可用 `rg`；不要仅因为出现 `.docx` 或“文档”字样就进入本 skill。
+- 进入本 skill 的条件：编辑 DOCX、生成 DOCX、审阅修订、复杂排版、多文件合并、OOXML 级修改，或用户明确调用 `/docx`。
+- Marvis 的 PC 应用宝 / 小程序链路仅作为产品参考，不进入 Agent Neo Mac runtime，不打开或自动控制 PC-only 应用。
+
 ## 第 1 步：确认文件
 
 根据用户输入决定工作模式：
@@ -61,6 +67,7 @@ execution-context: inline
 1. 重新读取文档确认结构正确
 2. 检查段落数量是否符合预期
 3. 检查关键文本是否完整
+4. 涉及表格、图片、超链接时检查对应结构没有丢失
 
 ## 规则
 
@@ -69,6 +76,7 @@ execution-context: inline
 3. **保留原文件**：编辑结果写入原文件（有自动快照），生成结果写入新文件
 4. **修订审阅场景**：合同审阅、法务修订等协作场景使用 Track Changes 操作
 5. **XML 参考**：编辑 OOXML 时参考 `references/ooxml-patterns.md`
+6. **输出必回读**：不能只报告生成路径，必须回读或做结构校验
 
 ## 示例
 

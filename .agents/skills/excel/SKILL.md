@@ -10,6 +10,13 @@ execution-context: inline
 
 你正在执行 Excel 数据处理任务。严格按以下流程操作。
 
+## 入口边界
+
+- 只读查找、定位文件、搜索文本、轻量摘要优先用 `Glob` / `Grep` / `Read`，宽泛全文搜索可用 `rg`；不要仅因为出现 `.xlsx` 或“表格”字样就进入本 skill。
+- 进入本 skill 的条件：数据清洗、聚合/透视/统计分析、公式处理、多 sheet 输出、生成 workbook、图表、批量合并，或用户明确调用 `/excel`。
+- Excel 先分析再生成：必须先确认 sheet、列名、数据类型、行数、空值/重复，再决定输出结构。
+- Marvis 的 PC 应用宝 / 小程序链路仅作为产品参考，不进入 Agent Neo Mac runtime，不打开或自动控制 PC-only 应用。
+
 ## 第 1 步：确认数据源
 
 根据用户输入决定工作模式：
@@ -56,6 +63,9 @@ df.to_excel('output.xlsx', index=False)
 ### 方式 C：ExcelAutomate automate（操作已打开的 Excel）
 适用于：用户已在 Excel 中打开文件，需要实时操作
 
+### 方式 D：图表输出
+适用于：用户要求趋势图、柱状图、透视图、仪表盘等。必须先完成数据分析，再用 openpyxl / pandas / matplotlib 或 ExcelAutomate 生成图表，并在回读时确认图表所在 sheet 和关键数据区域存在。
+
 ## 第 4 步：验证输出
 
 生成文件后必须验证：
@@ -73,6 +83,7 @@ df.to_excel('output.xlsx', index=False)
 4. **输出必验证**：生成文件后必须重新读取验证结构和数据完整性
 5. **保留原文件**：处理结果写入新文件，不覆盖用户原始数据（除非用户明确要求）
 6. **中文友好**：输出的 sheet 名、列名支持中文，注意编码
+7. **分析优先**：不要先写 workbook 再解释口径；先把计算口径和数据质量讲清楚
 
 ## 示例
 

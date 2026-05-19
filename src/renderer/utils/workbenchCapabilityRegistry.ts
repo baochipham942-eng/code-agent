@@ -1,6 +1,7 @@
 import type { ConnectorStatusSummary } from '@shared/ipc';
 import type { SessionSkillMount } from '@shared/contract/skillRepository';
 import type { ParsedSkill } from '@shared/contract/agentSkill';
+import type { CapabilityAssessmentInfo } from '@shared/contract/capability';
 import type {
   BlockedCapabilityReason,
   TurnWorkbenchSnapshot,
@@ -41,6 +42,7 @@ interface WorkbenchCapabilityRegistryBase {
   visibleInWorkbench: boolean;
   health: WorkbenchCapabilityHealth;
   lifecycle: WorkbenchCapabilityLifecycle;
+  assessment?: CapabilityAssessmentInfo;
   blockedReason?: WorkbenchCapabilityBlockedState;
 }
 
@@ -79,6 +81,61 @@ const MCP_STATUS_LABELS_ZH: Record<WorkbenchMcpCapability['status'], string> = {
   error: '错误',
   lazy: '懒加载',
 };
+
+function buildWorkbenchCapabilityAssessment(args: {
+  kind: 'skill' | 'connector' | 'mcp';
+  id: string;
+  label: string;
+  detail?: string;
+  tags?: string[];
+}): CapabilityAssessmentInfo | undefined {
+  const text = [
+    args.kind,
+    args.id,
+    args.label,
+    args.detail,
+    ...(args.tags || []),
+  ].filter(Boolean).join(' ').toLowerCase();
+  const evidenceRefs = ['marvis-runtime-capability-matrix', `${args.kind}:${args.id}`];
+
+  if (/(yyb|androws|应用宝|小程序|mini[-_ ]?program|wechat mini)/i.test(text)) {
+    return {
+      priority: 'P2',
+      portability: 'reference_only',
+      recommendedUse: '只作为 Windows 应用链路和小程序 adapter 的产品 spec 参考，Mac runtime 暂不启用。',
+      evidenceRefs,
+    };
+  }
+
+  if (/(browser|playwright|patchright|computer|desktop|mac-desktop|vision)/i.test(text)) {
+    return {
+      priority: 'P0',
+      portability: 'native',
+      recommendedUse: '适合登录态、表单、多页网页操作、截图观察和 macOS 桌面自动化；纯阅读任务先用轻量读取。',
+      evidenceRefs,
+    };
+  }
+
+  if (/(excel|xlsx|docx|document|office|ppt|pptx|slide|frontend-slides|pdf)/i.test(text)) {
+    return {
+      priority: 'P1',
+      portability: 'native',
+      recommendedUse: '适合办公文档和数据产物生成；先读取/分析源材料，生成后回读或结构校验。',
+      evidenceRefs,
+    };
+  }
+
+  if (/(file|search|ripgrep|grep|glob|read_file|planning-with-files)/i.test(text)) {
+    return {
+      priority: 'P1',
+      portability: 'native',
+      recommendedUse: '适合文件读取、检索、摘要和代码库定位；读搜先走轻量工具，编辑和生成再升级到 skill。',
+      evidenceRefs,
+    };
+  }
+
+  return undefined;
+}
 
 function buildSkillBlockedReason(skill: WorkbenchSkillCapability): WorkbenchCapabilityBlockedState | undefined {
   if (skill.mounted) {
@@ -190,6 +247,13 @@ export function buildWorkbenchSkillRegistryItem(skill: WorkbenchSkillCapability)
       mountState: skill.mounted ? 'mounted' : 'unmounted',
       connectionState: 'not_applicable',
     },
+    assessment: buildWorkbenchCapabilityAssessment({
+      kind: 'skill',
+      id: skill.id,
+      label: skill.label,
+      detail: skill.description,
+      tags: [skill.source || '', skill.libraryId || ''],
+    }),
     blockedReason,
   };
 }
@@ -226,6 +290,13 @@ export function buildWorkbenchConnectorRegistryItem(
       mountState: 'not_applicable',
       connectionState,
     },
+    assessment: buildWorkbenchCapabilityAssessment({
+      kind: 'connector',
+      id: connector.id,
+      label: connector.label,
+      detail: connector.detail,
+      tags: connector.capabilities,
+    }),
     blockedReason,
   };
 }
@@ -254,6 +325,13 @@ export function buildWorkbenchMcpRegistryItem(server: WorkbenchMcpCapability): W
       mountState: 'not_applicable',
       connectionState: server.status,
     },
+    assessment: buildWorkbenchCapabilityAssessment({
+      kind: 'mcp',
+      id: server.id,
+      label: server.label,
+      detail: server.error,
+      tags: [server.transport || '', `${server.toolCount} tools`, `${server.resourceCount} resources`],
+    }),
     blockedReason,
   };
 }

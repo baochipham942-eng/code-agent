@@ -206,7 +206,11 @@ function matchQuery(item: CapabilityCenterItem, query: string): boolean {
     item.source.reviewedAt,
     item.source.contentHash,
     item.source.registryFileHash,
+    item.assessment?.priority,
+    item.assessment?.portability,
+    item.assessment?.recommendedUse,
     ...item.tags,
+    ...(item.assessment?.evidenceRefs || []),
     ...item.permissions.map((permission) => permission.label),
     ...item.config.map((req) => req.label),
     ...item.dependencies.map((req) => req.label),
@@ -368,6 +372,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, on
     ? `缺少 ${missingDraftParameters.map((parameter) => parameter.label).join(', ')}`
     : action.title;
   const agentEngineBadges = formatAgentEngineBadges(item);
+  const assessment = item.assessment;
 
   return (
     <article className="rounded-lg border border-zinc-700 bg-zinc-800/80 p-3">
@@ -385,8 +390,23 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, on
               <span className={`rounded border px-1.5 py-0.5 text-[11px] ${getRiskClass(item.risk.tier)}`}>
                 {item.risk.tier}
               </span>
+              {assessment ? (
+                <>
+                  <span className={`rounded border px-1.5 py-0.5 text-[11px] ${getAssessmentPriorityClass(assessment.priority)}`}>
+                    {assessment.priority}
+                  </span>
+                  <span className="rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[11px] text-sky-200">
+                    {formatAssessmentPortability(assessment.portability)}
+                  </span>
+                </>
+              ) : null}
             </div>
             <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-400">{item.summary}</p>
+            {assessment ? (
+              <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-zinc-300">
+                {assessment.recommendedUse}
+              </p>
+            ) : null}
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
               <span className={getRuntimeClass(item.state.runtime)}>
                 {RUNTIME_LABELS[item.state.runtime]}
@@ -504,6 +524,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({ item, actionLoading, on
         <div className="space-y-3 border-t border-zinc-700/60 px-3 py-3 text-xs">
           {item.installPlan ? <InfoBlock title="安装预览" values={formatInstallPlan(item)} /> : null}
           {item.kind === 'agent_engine' ? <InfoBlock title="检测状态" values={formatAgentEngineInspection(item)} /> : null}
+          {item.assessment ? <InfoBlock title="借鉴评估" values={formatAssessment(item)} /> : null}
           <InfoBlock title="权限" values={item.permissions.map((entry) => `${entry.label}${entry.detail ? ` · ${entry.detail}` : ''}`)} />
           <InfoBlock title="风险" values={item.risk.reasons} />
           <InfoBlock title="配置" values={item.config.map(formatRequirement)} empty="无配置项" />
@@ -570,6 +591,47 @@ function formatAgentEngineInspection(item: CapabilityCenterItem): string[] {
     findRequirementValue(item, 'Workspace policy') ? `cwd ${findRequirementValue(item, 'Workspace policy')}` : undefined,
     item.state.error ? `error ${item.state.error}` : undefined,
   ].filter((value): value is string => Boolean(value));
+}
+
+type CapabilityAssessmentPortabilityValue = NonNullable<CapabilityCenterItem['assessment']>['portability'];
+type CapabilityAssessmentPriorityValue = NonNullable<CapabilityCenterItem['assessment']>['priority'];
+
+function getAssessmentPriorityClass(priority: CapabilityAssessmentPriorityValue): string {
+  switch (priority) {
+    case 'P0':
+      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200';
+    case 'P1':
+      return 'border-sky-500/30 bg-sky-500/10 text-sky-200';
+    case 'P2':
+      return 'border-amber-500/30 bg-amber-500/10 text-amber-200';
+    default:
+      return 'border-zinc-600 bg-zinc-900 text-zinc-300';
+  }
+}
+
+function formatAssessmentPortability(portability: CapabilityAssessmentPortabilityValue): string {
+  switch (portability) {
+    case 'native':
+      return 'Mac 原生可用';
+    case 'portable_model':
+      return '可迁移模型';
+    case 'reference_only':
+      return '仅作参考';
+    case 'reject':
+      return '不建议借鉴';
+    default:
+      return portability;
+  }
+}
+
+function formatAssessment(item: CapabilityCenterItem): string[] {
+  const assessment = item.assessment;
+  if (!assessment) return [];
+  return [
+    `${assessment.priority} · ${formatAssessmentPortability(assessment.portability)}`,
+    assessment.recommendedUse,
+    ...assessment.evidenceRefs.map((ref) => `evidence · ${ref}`),
+  ];
 }
 
 function formatSource(item: CapabilityCenterItem): string[] {

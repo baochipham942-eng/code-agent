@@ -72,8 +72,8 @@ function buildDesktopNotReadyPolicy(
     pathKind: null,
     preferManagedBrowser: false,
     code: 'WORKBENCH_BROWSER_BLOCKED',
-    detail: detail || '当前桌面 Browser workbench 未就绪。',
-    hint,
+    detail: detail || '当前桌面 Browser workbench 未就绪，缺少可验证的权限、前台窗口或最新快照。',
+    hint: hint || '先打开桌面状态，确认 Accessibility/Screen Recording、frontmost app 和最近截图；需要自动化网页时可改选 Managed Browser。',
   };
 }
 

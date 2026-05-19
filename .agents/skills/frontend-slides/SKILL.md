@@ -21,6 +21,13 @@ user-invocable: true
 
 你是 `frontend-slides` skill。使用**混合方案**：AI 生成纯视觉背景图 + pptxgenjs 渲染真实中文文字，解决 AI 图片中文乱码问题。
 
+## 入口边界
+
+- 只读查找、定位文件、搜索文本、轻量摘要优先用 `Glob` / `Grep` / `Read`，宽泛全文搜索可用 `rg`；不要仅因为出现 `.pptx` 或“slides”字样就进入本 skill。
+- 进入本 skill 的条件：新建 deck、重做/生成 PPTX、导出 PDF、图文排版、图表型页面、逐页视觉生成，或用户明确调用 `/ppt` / `frontend-slides`。
+- 已有 PPTX 的轻量内容摘要先读文件；需要结构改写、重排、补图表或重新导出时再进入本 skill。
+- Marvis 的 PC 应用宝 / 小程序链路仅作为产品参考，不进入 Agent Neo Mac runtime，不打开或自动控制 PC-only 应用。
+
 ## 硬规则
 
 1. **禁止回退到 `ppt_generate`**。除非用户明确要求调试 legacy 实现，否则不要调用它。
@@ -155,6 +162,11 @@ node .Codex/skills/frontend-slides/scripts/merge-to-pdf.mjs <slide-deck-dir>
 - 产出目录
 - 图片数量
 - PPTX / PDF 路径
+
+交付前必须验证：
+- `outline.md` 存在且每页都有目标、布局和视觉方向
+- `slides.json` 是合法 JSON，页数与 outline / 图片数量一致
+- PPTX / PDF 文件存在且非空；能读取 ZIP 结构时检查 PPTX 至少包含 `ppt/presentation.xml` 和对应 slide 文件
 
 ## 质量要求
 

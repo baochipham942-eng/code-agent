@@ -161,7 +161,7 @@ describe('CapabilityCenterSettings', () => {
       React.createElement(CapabilityCenterSettings, { onNavigateSettings: vi.fn() }),
     );
 
-    expect(html).toContain('Curated');
+    expect(html).toContain('精选');
     expect(html).toContain('模板');
     expect(html).toContain('Filesystem MCP template');
     expect(html).toContain('去配置');
@@ -169,6 +169,39 @@ describe('CapabilityCenterSettings', () => {
     expect(html).toContain('reviewed 2026-05-15');
     expect(html).toContain('hash sha256:fixture');
     expect(html).toContain(`registry hash sha256:${'a'.repeat(64)}`);
+  });
+
+  it('shows Marvis assessment profile when a capability carries one', () => {
+    mockInventory([
+      makeItem({
+        id: 'tool-bundle:browser-computer',
+        kind: 'tool_bundle',
+        name: '浏览器与桌面自动化',
+        summary: '浏览器导航、点击、截图、桌面上下文和计算机控制能力。',
+        assessment: {
+          priority: 'P0',
+          portability: 'native',
+          recommendedUse: '用于登录态、表单、多页网页操作、截图观察和 macOS 桌面自动化；纯阅读任务优先走轻量读取。',
+          evidenceRefs: ['marvis:browser-computer-desktop', 'tool-bundle:browser-computer'],
+        },
+      }),
+      makeItem({
+        id: 'connector:calendar',
+        kind: 'connector',
+        name: 'Calendar',
+      }),
+    ]);
+
+    const html = renderToStaticMarkup(
+      React.createElement(CapabilityCenterSettings, { onNavigateSettings: vi.fn() }),
+    );
+
+    expect(html).toContain('P0');
+    expect(html).toContain('Mac 原生可用');
+    expect(html).toContain('借鉴评估');
+    expect(html).toContain('用于登录态、表单、多页网页操作');
+    expect(html).toContain('evidence · marvis:browser-computer-desktop');
+    expect(html).not.toContain('暂无评估');
   });
 
   it('shows external engine status, version, cwd, and read-only guard on the card', () => {

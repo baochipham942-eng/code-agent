@@ -72,6 +72,38 @@ function getCapabilityIcon(capability: WorkbenchCapabilityRegistryItem): React.R
   }
 }
 
+function formatAssessmentPortability(portability: NonNullable<WorkbenchCapabilityRegistryItem['assessment']>['portability']): string {
+  switch (portability) {
+    case 'native':
+      return 'Mac 原生可用';
+    case 'portable_model':
+      return '可迁移模型';
+    case 'reference_only':
+      return '仅作参考';
+    case 'reject':
+      return '不建议借鉴';
+    default:
+      return portability;
+  }
+}
+
+function renderCapabilityAssessment(capability: WorkbenchCapabilityRegistryItem): React.ReactNode {
+  const assessment = capability.assessment;
+  if (!assessment) {
+    return null;
+  }
+
+  return (
+    <div className="mt-2 space-y-1 border-t border-white/[0.06] pt-2 text-[11px] text-zinc-400">
+      <div className="flex flex-wrap gap-1.5">
+        <WorkbenchPill tone="mcp">{assessment.priority}</WorkbenchPill>
+        <WorkbenchPill tone="info">{formatAssessmentPortability(assessment.portability)}</WorkbenchPill>
+      </div>
+      <div className="leading-relaxed text-zinc-300">{assessment.recommendedUse}</div>
+    </div>
+  );
+}
+
 function formatLifecycleValue(value: string): string {
   switch (value) {
     case 'installed':
@@ -135,6 +167,7 @@ function renderCapabilityMeta(capability: WorkbenchCapabilityRegistryItem): Reac
         )}
         {capability.source && <div>来源: {capability.source}</div>}
         {capability.libraryId && <div>Library: {capability.libraryId}</div>}
+        {renderCapabilityAssessment(capability)}
       </div>
     );
   }
@@ -148,6 +181,7 @@ function renderCapabilityMeta(capability: WorkbenchCapabilityRegistryItem): Reac
         {capability.capabilities.length > 0 && (
           <div>能力: {capability.capabilities.slice(0, 4).join(' · ')}</div>
         )}
+        {renderCapabilityAssessment(capability)}
       </div>
     );
   }
@@ -160,6 +194,7 @@ function renderCapabilityMeta(capability: WorkbenchCapabilityRegistryItem): Reac
       {capability.error && (
         <div className="leading-relaxed text-zinc-300">{capability.error}</div>
       )}
+      {renderCapabilityAssessment(capability)}
     </div>
   );
 }
@@ -219,6 +254,11 @@ export const WorkbenchCapabilitySheetLite: React.FC<WorkbenchCapabilitySheetLite
           {capability.selected && (
             <WorkbenchPill tone="info">当前消息已选</WorkbenchPill>
           )}
+          {capability.assessment ? (
+            <WorkbenchPill tone={capability.assessment.priority === 'P0' ? 'mcp' : 'info'}>
+              {capability.assessment.priority}
+            </WorkbenchPill>
+          ) : null}
         </div>
 
         <Section title="概览">

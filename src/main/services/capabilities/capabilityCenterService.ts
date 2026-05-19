@@ -59,6 +59,7 @@ import { resolveInstallDraftConfig } from './capabilityDraftResolver';
 import { getAgentEngineRegistry } from '../agentEngine';
 import { buildAgentEngineCapabilityItem } from './agentEngineCapabilityItems';
 import { getRemoteCapabilityRegistryService } from './remoteCapabilityRegistryService';
+import { withCapabilityAssessment } from './capabilityAssessment';
 
 const logger = createLogger('CapabilityCenterService');
 
@@ -506,7 +507,7 @@ class CapabilityCenterService {
       ...this.listChannels(),
       ...await readWorkflowRecipes(),
       ...registryItems,
-    ].sort((left, right) => {
+    ].map(withCapabilityAssessment).sort((left, right) => {
       const byKind = CAPABILITY_KIND_ORDER[left.kind] - CAPABILITY_KIND_ORDER[right.kind];
       if (byKind !== 0) return byKind;
       return left.name.localeCompare(right.name);

@@ -90,6 +90,11 @@ Use this tool to:
 - Take screenshots for visual verification
 - Read page content and find elements
 
+Routing contract:
+- Prefer lighter web_fetch/http/search/read tools for plain single-URL reading, article summaries, static page extraction, or URL lists.
+- Use browser_action when the task needs login/session state, form filling, clicking, upload/download, multi-page navigation, dynamic page state, screenshots, or visual verification.
+- Start with get_content/get_dom_snapshot/get_a11y_snapshot when possible; after a mutating browser action, refresh the DOM/a11y evidence before claiming the final page state.
+
 Actions:
 - launch: Start isolated managed browser (headless by default; set CODE_AGENT_BROWSER_VISIBLE=1 for visible debugging)
 - close: Close browser

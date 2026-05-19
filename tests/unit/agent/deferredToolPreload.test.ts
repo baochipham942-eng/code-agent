@@ -1,11 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../../src/main/tools/protocolRegistry', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/main/tools/protocolRegistry')>(
+    '../../../src/main/tools/protocolRegistry',
+  );
+  return {
+    ...actual,
+    isProtocolToolName: (name: string) =>
+      name === 'Browser' || name === 'Computer' || actual.isProtocolToolName(name),
+  };
+});
+
 import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
+import type { ToolModule, ToolSchema } from '../../../src/main/protocol/tools';
 import {
   getDeferredToolsToPreloadForTurn,
   preloadDeferredToolsForTurn,
 } from '../../../src/main/agent/runtime/contextAssembly/deferredToolPreload';
 import { getToolSearchService, resetToolSearchService } from '../../../src/main/services/toolSearch';
-import { resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
+import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
 
 vi.mock('../../../src/main/services/infra/logger', () => ({
   createLogger: () => ({
@@ -33,9 +46,35 @@ function runtime(
   };
 }
 
+function registerProtocolToolForPreload(name: 'Browser' | 'Computer'): void {
+  const schema: ToolSchema = {
+    name,
+    description: `${name} test schema`,
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+    category: 'vision',
+    permissionLevel: 'execute',
+    readOnly: false,
+  };
+  const module: ToolModule = {
+    schema,
+    createHandler: () => ({
+      schema,
+      async execute() {
+        return { ok: true, output: null };
+      },
+    }),
+  };
+  getProtocolRegistry().register(schema, async () => module);
+}
+
 describe('deferred tool preload', () => {
   beforeEach(() => {
     resetProtocolRegistry();
+    registerProtocolToolForPreload('Browser');
+    registerProtocolToolForPreload('Computer');
     resetToolSearchService();
   });
 
@@ -107,5 +146,27 @@ describe('deferred tool preload', () => {
         timestamp: 1,
       }],
     }))).toEqual(['Browser', 'Computer']);
+  });
+
+  it('keeps plain URL reading on the lightweight path', () => {
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      messages: [{
+        id: 'm1',
+        role: 'user',
+        content: '帮我总结这个 URL：https://example.com/article，提取主要链接',
+        timestamp: 1,
+      }],
+    }))).toEqual([]);
+  });
+
+  it('preloads Browser for interactive web flows', () => {
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      messages: [{
+        id: 'm1',
+        role: 'user',
+        content: '打开这个网站，登录后填写表单并提交',
+        timestamp: 1,
+      }],
+    }))).toEqual(['Browser']);
   });
 });

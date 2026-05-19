@@ -13,6 +13,8 @@ disable-model-invocation: true
 
 这是兼容入口，不要自行规划，也不要调用 `ppt_generate`。
 
+只读查找、定位、轻量摘要先用文件读取/搜索工具；只有新建 deck、改写 PPTX、导出 PDF、图表型页面或用户明确 `/ppt` 时才转入 `frontend-slides`。Marvis 的 PC 应用宝 / 小程序流程仅作参考，不进入 Agent Neo Mac runtime。
+
 立即调用：
 
 ```json

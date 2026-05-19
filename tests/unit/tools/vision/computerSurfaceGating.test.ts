@@ -639,6 +639,10 @@ describe('computer surface gating', () => {
     );
 
     expect(result.success).toBe(true);
+    expect(result.output).toContain('Post-action contract');
+    expect(result.metadata?.desktopActionContract).toMatchObject({
+      reobserveRequired: true,
+    });
     expect(surfaceMocks.surface.executeBackgroundAction).toHaveBeenCalledWith(expect.objectContaining({
       action: 'click',
       targetApp: 'Finder',

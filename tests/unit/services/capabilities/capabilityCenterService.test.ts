@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import type { ParsedSkill } from '../../../../src/shared/contract/agentSkill';
 import type { ChannelAccount } from '../../../../src/shared/contract/channel';
+import type { CapabilityCenterItem } from '../../../../src/shared/contract/capability';
 import type { ControlPlaneEnvelope } from '../../../../src/shared/contract/controlPlane';
 
 const skillEnable = vi.fn();
@@ -427,6 +428,69 @@ describe('CapabilityCenterService', () => {
     expect(JSON.stringify(inventory.items)).not.toContain('super-secret-api-key');
     expect(JSON.stringify(inventory.items)).not.toContain('raw-token');
     expect(inventory.summary.total).toBe(inventory.items.length);
+  });
+
+  it('derives Marvis assessment profiles after inventory aggregation', async () => {
+    const yybReference: CapabilityCenterItem = {
+      id: 'remote:workflow_recipe%3Ayyb-reference',
+      kind: 'workflow_recipe',
+      name: 'YYB 小程序 reference',
+      summary: 'Reference-only YYB and Androws mini program benchmark notes.',
+      tags: ['yyb', 'androws', '小程序'],
+      source: {
+        kind: 'remote',
+        label: 'Remote capability registry',
+      },
+      state: {
+        install: 'available',
+        enable: 'not_applicable',
+        runtime: 'not_configured',
+        mount: 'not_applicable',
+      },
+      risk: {
+        tier: 'low',
+        reasons: ['reference only'],
+      },
+      permissions: [],
+      config: [],
+      dependencies: [],
+      audit: {},
+      actions: {
+        canEnable: false,
+        canDisable: false,
+      },
+    };
+    const service = new CapabilityCenterService();
+    const inventory = await service.listCapabilities({
+      configService: {
+        getSettings: () => ({ connectors: { enabledNative: ['calendar'] } }),
+        updateSettings: configUpdateSettings,
+      } as never,
+      remoteCapabilityRegistryService: {
+        readRegistry: async () => ({ items: [yybReference], diagnostics: [] }),
+      },
+    });
+
+    expect(inventory.items.find((item) => item.id === 'tool-bundle:browser-computer')?.assessment).toMatchObject({
+      priority: 'P0',
+      portability: 'native',
+      evidenceRefs: expect.arrayContaining(['marvis:browser-computer-desktop']),
+    });
+    expect(inventory.items.find((item) => item.id === 'tool-bundle:document-office')?.assessment).toMatchObject({
+      priority: 'P1',
+      portability: 'native',
+      evidenceRefs: expect.arrayContaining(['marvis:file-search-ripgrep-office']),
+    });
+    expect(inventory.items.find((item) => item.id === 'tool-bundle:core-tools')?.assessment).toMatchObject({
+      priority: 'P1',
+      portability: 'native',
+    });
+    expect(inventory.items.find((item) => item.id === yybReference.id)?.assessment).toMatchObject({
+      priority: 'P2',
+      portability: 'reference_only',
+      evidenceRefs: expect.arrayContaining(['marvis:yyb-androws-miniprogram']),
+    });
+    expect(inventory.items.find((item) => item.id === 'connector:calendar')?.assessment).toBeUndefined();
   });
 
   it('loads project curated registry templates as read-only available cards', async () => {

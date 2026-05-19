@@ -15,8 +15,8 @@ const COMPUTER_INTENT_RE =
 const MEETING_DESKTOP_CONTEXT_RE =
   /腾讯会议|tencent\s*meeting|会议内容|当前会议|正在(?:开的|进行的)?会议|meeting\s+(?:content|notes?|transcript)|current\s+meeting/i;
 
-const BROWSER_AUTOMATION_INTENT_RE =
-  /\bbrowser[\s_-]?action\b|\bbrowser automation\b|\bplaywright\b|托管浏览器|浏览器自动化|打开(?:网页|网站|url)|访问(?:网页|网站|url)/i;
+const BROWSER_INTERACTIVE_INTENT_RE =
+  /\bbrowser[\s_-]?action\b|\bbrowser automation\b|\bplaywright\b|托管浏览器|浏览器自动化|登录|登陆|sign[\s-]?in|log[\s-]?in|表单|填表|填写|输入账号|输入密码|按钮|点击|click|press|提交|submit|多页|翻页|分页|下一页|上传|下载|视觉验证|动态页面|弹窗|dropdown|下拉|选择框|checkout|支付/i;
 
 function getLatestUserText(runtime: RuntimeForDeferredToolPreload): string {
   for (let index = runtime.messages.length - 1; index >= 0; index -= 1) {
@@ -50,7 +50,7 @@ export function getDeferredToolsToPreloadForTurn(
   if (intent?.browserSessionMode === 'managed' && intent.allowBrowserAutomation !== false) {
     tools.add('Browser');
     tools.add('Computer');
-  } else if (intent?.allowBrowserAutomation !== false && BROWSER_AUTOMATION_INTENT_RE.test(userText)) {
+  } else if (intent?.allowBrowserAutomation !== false && BROWSER_INTERACTIVE_INTENT_RE.test(userText)) {
     tools.add('Browser');
   }
 

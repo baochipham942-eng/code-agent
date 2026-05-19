@@ -90,6 +90,10 @@ describe('workbenchTurnContext', () => {
     expect(blocks[0]).toContain('绑定当前桌面浏览器上下文');
     expect(blocks[0]).toContain('frontmost app');
     expect(blocks[0]).toContain('不要假设浏览器自动化可用');
+    expect(blocks[0]).toContain('纯阅读、单 URL 摘要、内容抽取或链接汇总');
+    expect(blocks[0]).toContain('登录态、表单填写、按钮点击、下载/上传、多页跳转');
+    expect(blocks[0]).toContain('必须先确认权限、目标前台窗口或后台 target app、最近快照，以及坐标/locator 来源');
+    expect(blocks[0]).toContain('动作执行后先 re-observe');
     expect(blocks[0]).toContain('发送前 Browser session 预览：ChatGPT · https://chatgpt.com');
     expect(blocks[0]).toContain('发送前 frontmost app：Google Chrome');
     expect(blocks[0]).toContain('发送前最近截图时间：2026-04-17T08:30:00.000Z');

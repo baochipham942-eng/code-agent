@@ -140,6 +140,12 @@ export const computerUseTool: Tool = {
   name: 'computer_use',
   description: `Control the computer with mouse, keyboard, and smart element location. Also exposed as "Computer" (capital C) — both names map to the same capability set; either entry is fine.
 
+Desktop routing contract:
+- Before any desktop click/type/key/scroll/drag, first confirm Computer Surface readiness, permission state, target app/window, and a fresh observation/snapshot.
+- Do not use desktop actions for plain URL reading or static page summaries. Prefer lightweight fetch/read/search tools unless the task needs login, forms, multi-page interaction, dynamic UI state, screenshots, or visual verification.
+- Coordinate actions need an explicit source: observe/screenshot/cursor evidence for screen/image coordinates, get_ax_elements/locate_role for axPath, or get_windows for pid/windowId/windowRef/windowLocalPoint.
+- If permission, foreground window, snapshot, or coordinate/locator evidence is missing, return a blocked reason plus the next read action instead of guessing. After any desktop action, call observe/get_state again before claiming the final UI state.
+
 ## Basic Actions (coordinate-based):
 - get_state: Return Computer Surface readiness, mode, approvals, and last action
 - observe: Return frontmost app/window snapshot before choosing an action
@@ -208,6 +214,13 @@ export const computerUseTool: Tool = {
 - {"action": "locate_role", "targetApp": "Notes", "role": "textbox"} - desktop, returns axPath; chain with {"action": "type", "targetApp": "Notes", "axPath": "...", "text": "hi"} to fill it
 - {"action": "smart_type", "selector": "#email", "text": "user@example.com"}
 - {"action": "get_elements"} - list all interactive elements
+
+## Desktop operation contract
+1. Observe first: use observe, get_state, get_windows, get_ax_elements, or diagnose_app before choosing a desktop action.
+2. Keep coordinate provenance clear: screen coordinates must come from the current screenshot; axPath must come from the current Accessibility tree; windowLocalPoint must come from get_windows for the same target window.
+3. Do not mix sources across windows, apps, or stale screenshots. If the active app/window changed, observe again.
+4. Treat action success as event delivery only. Re-observe after click/type/batch to verify the UI result before continuing.
+5. Prefer targetApp + axPath or targetApp + role/name for text fields and buttons. Use raw coordinates only when Accessibility cannot identify the target.
 
 ## Standard recipe for filling a desktop text field (avoids "keystrokes-go-to-wrong-app" bugs)
 1. {"action":"observe", "targetApp":"Notes"} - confirm targetApp is reachable
@@ -589,7 +602,7 @@ function withComputerSurfaceMetadata(
     sensitive: boolean;
   },
 ): ToolExecutionResult {
-  return {
+  const withMetadata: ToolExecutionResult = {
     ...result,
     metadata: {
       ...(result.metadata || {}),
@@ -612,10 +625,33 @@ function withComputerSurfaceMetadata(
       axQuality: args.trace.axQuality || args.state.axQuality || null,
     },
   };
+
+  return attachDesktopPostActionContract(withMetadata);
 }
 
 function isBackgroundComputerSurfaceMode(mode: ComputerSurfaceState['mode']): boolean {
   return mode === 'background_ax' || mode === 'background_cgevent';
+}
+
+function attachDesktopPostActionContract(result: ToolExecutionResult): ToolExecutionResult {
+  if (!result.success) {
+    return result;
+  }
+
+  const contract = {
+    reobserveRequired: true,
+    reason: 'Run computer_use.observe or get_state before claiming the final desktop UI state.',
+  };
+  const outputLine = `Post-action contract: ${contract.reason}`;
+
+  return {
+    ...result,
+    output: result.output ? `${result.output}\n${outputLine}` : outputLine,
+    metadata: {
+      ...(result.metadata || {}),
+      desktopActionContract: contract,
+    },
+  };
 }
 
 function buildComputerSurfacePreflightBlockedResult(

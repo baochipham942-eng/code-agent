@@ -35,6 +35,10 @@ import {
   manifest as builtinVideoGenerationManifest,
   default as builtinVideoGenerationEntry,
 } from './builtin/videoGeneration';
+import {
+  manifest as builtinImageCreationManifest,
+  default as builtinImageCreationEntry,
+} from './builtin/imageCreation';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
 import { getAuthService } from '../services/auth/authService';
@@ -234,6 +238,10 @@ export class PluginRegistry {
       {
         manifest: builtinVideoGenerationManifest,
         entry: builtinVideoGenerationEntry,
+      },
+      {
+        manifest: builtinImageCreationManifest,
+        entry: builtinImageCreationEntry,
       },
     ];
 

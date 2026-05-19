@@ -100,9 +100,7 @@ import { pdfCompressSchema } from './network/pdfCompress.schema';
 import { pdfAutomateSchema } from './network/pdfAutomate.schema';
 import { screenshotPageSchema } from './network/screenshotPage.schema';
 import { localSpeechToTextSchema } from './network/localSpeechToText.schema';
-import { imageAnnotateSchema } from './network/imageAnnotate.schema';
 import { imageAnalyzeSchema } from './network/imageAnalyze.schema';
-import { imageGenerateSchema } from './network/imageGenerate.schema';
 import { jiraSchema } from './network/jira.schema';
 import { githubPrSchema } from './network/githubPr.schema';
 import { twitterFetchSchema } from './network/twitterFetch.schema';
@@ -522,19 +520,11 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./network/xlwingsExecute')).xlwingsExecuteModule,
   );
 
-  // Media (4) — imageProcess + speech_to_text + text_to_speech + video_generate 已剥离为 builtin plugin
-  // （src/main/plugins/builtin/imageProcess/、src/main/plugins/builtin/audioProcessing/、src/main/plugins/builtin/videoGeneration/）
-  registry.register(
-    imageGenerateSchema,
-    async () => (await import('./network/imageGenerate')).imageGenerateModule,
-  );
+  // Media (2) — imageProcess + speech_to_text + text_to_speech + video_generate + image_generate + image_annotate 已剥离为 builtin plugin
+  // （src/main/plugins/builtin/imageProcess/、audioProcessing/、videoGeneration/、imageCreation/）
   registry.register(
     imageAnalyzeSchema,
     async () => (await import('./network/imageAnalyze')).imageAnalyzeModule,
-  );
-  registry.register(
-    imageAnnotateSchema,
-    async () => (await import('./network/imageAnnotate')).imageAnnotateModule,
   );
   registry.register(
     localSpeechToTextSchema,

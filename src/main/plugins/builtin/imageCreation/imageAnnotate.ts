@@ -25,7 +25,7 @@ import type {
 } from '../../../protocol/tools';
 import { getConfigService } from '../../../services';
 import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS } from '../../../../shared/constants';
-import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { imageAnnotateSchema as schema } from './imageAnnotate.schema';
 
 const CONFIG = {

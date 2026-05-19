@@ -137,10 +137,31 @@ export interface PluginAPI {
    * 注册 v2 形态的工具模块（ToolModule，区别于 v1 的 Tool）。
    *
    * 命名约定：
-   * - 工具名会自动加 `${pluginId}:` 前缀，与 v1 registerTool 保持一致
+   * - 默认工具名会自动加 `${pluginId}:` 前缀，与 v1 registerTool 保持一致
    * - 同名重复注册（包括与 registerTool 双通道冲突）会抛错
+   *
+   * Opt-out 前缀（`options.prefixWithPluginId = false`）：
+   * - **仅供 builtin plugin 使用**。builtin plugin 与 host 同 bundle 编译/分发，
+   *   "防命名冲突"对其没意义；保留原工具名可避免破坏 executionPhase 分类、
+   *   ToolSearch deferredTools 注册、LLM prompt / cache / eval baseline。
+   * - 第三方插件不应使用此选项，安全模型依赖 `${pluginId}:` 前缀防冲突。
+   * - 即使 opt-out，重复注册同名工具仍然抛错（命名冲突检查不跳过）。
    */
-  registerToolModule: (module: ToolModule) => void;
+  registerToolModule: (
+    module: ToolModule,
+    options?: PluginRegisterToolModuleOptions,
+  ) => void;
+}
+
+/**
+ * `registerToolModule` 的可选参数。
+ *
+ * 字段：
+ * - `prefixWithPluginId`：默认 `true`，自动加 `${pluginId}:` 前缀。
+ *   传 `false` 跳过前缀（仅 builtin plugin 应当使用）。
+ */
+export interface PluginRegisterToolModuleOptions {
+  prefixWithPluginId?: boolean;
 }
 
 // ============================================================================

@@ -1,5 +1,9 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
 // image_process — 字段与 legacy inputSchema 1:1 复刻
+//
+// 文件位置说明：P2 剥离首发，由 `src/main/tools/modules/network/` 迁入
+// `src/main/plugins/builtin/imageProcess/`，作为首个 builtin plugin 验证
+// PluginAPI v2 框架。工具名 `image_process` 保持不变（opt-out 前缀）。
 import type { ToolSchema } from '../../../protocol/tools';
 
 export const imageProcessSchema: ToolSchema = {

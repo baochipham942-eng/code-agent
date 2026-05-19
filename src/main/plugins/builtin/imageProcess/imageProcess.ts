@@ -1,14 +1,16 @@
 // ============================================================================
-// image_process (P1 Wave 4 D2c — network/media: native ToolModule)
+// image_process — 首个 builtin plugin（P2 剥离首发流程验证）
 //
-// 把 legacy ImageProcessTool 迁移到 native：sharp 图像处理（convert/compress/
-// resize/upscale）+ 4 输出格式 + 输出路径管理。
+// 由 `src/main/tools/modules/network/imageProcess.ts` 迁入。运行行为 1:1 保留：
+// sharp 图像处理（convert/compress/resize/upscale）+ 4 输出格式 + 输出路径管理 +
+// 中文文案 + emoji（🖼️ 📥 📤 📦 📄）+ metadata.attachment（id 前缀 image-、
+// category=image）。
 //
 // abort signal 走 race-and-abandon：sharp 是 node binding 不是 spawn，但
 // sharp.toFile() 返回 Promise，用 race-and-abandon 与 ctx.abortSignal 联动。
 //
-// 行为保真：legacy 中文文案、emoji（🖼️ 📥 📤 📦 📄）、metadata.attachment
-// （id 前缀 image-、category=image）1:1 复刻。
+// 注册路径：通过 plugins/builtin/imageProcess/index.ts 的 activate() 调用
+// `api.registerToolModule(module, { prefixWithPluginId: false })`，保留原工具名。
 // ============================================================================
 
 import * as fs from 'fs';
@@ -22,8 +24,8 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { formatFileSize } from '../../utils/fileSize';
-import { createFileArtifact } from '../../artifacts/artifactMeta';
+import { formatFileSize } from '../../../tools/utils/fileSize';
+import { createFileArtifact } from '../../../tools/artifacts/artifactMeta';
 import { imageProcessSchema as schema } from './imageProcess.schema';
 
 const SUPPORTED_FORMATS = ['png', 'jpg', 'jpeg', 'webp', 'avif', 'gif', 'tiff'];

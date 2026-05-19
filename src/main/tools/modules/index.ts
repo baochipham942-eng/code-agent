@@ -100,7 +100,6 @@ import { pdfCompressSchema } from './network/pdfCompress.schema';
 import { pdfAutomateSchema } from './network/pdfAutomate.schema';
 import { speechToTextSchema } from './network/speechToText.schema';
 import { textToSpeechSchema } from './network/textToSpeech.schema';
-import { imageProcessSchema } from './network/imageProcess.schema';
 import { screenshotPageSchema } from './network/screenshotPage.schema';
 import { localSpeechToTextSchema } from './network/localSpeechToText.schema';
 import { imageAnnotateSchema } from './network/imageAnnotate.schema';
@@ -526,14 +525,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
     async () => (await import('./network/xlwingsExecute')).xlwingsExecuteModule,
   );
 
-  // Media (8)
+  // Media (7) — imageProcess 已剥离为 builtin plugin（src/main/plugins/builtin/imageProcess/）
   registry.register(
     imageGenerateSchema,
     async () => (await import('./network/imageGenerate')).imageGenerateModule,
-  );
-  registry.register(
-    imageProcessSchema,
-    async () => (await import('./network/imageProcess')).imageProcessModule,
   );
   registry.register(
     imageAnalyzeSchema,

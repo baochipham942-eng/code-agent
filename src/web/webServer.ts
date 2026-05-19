@@ -415,7 +415,18 @@ async function initializeServices(): Promise<void> {
   } else {
     try {
       const { getAuthService } = await import('../main/services/auth/authService');
-      await getAuthService().initialize();
+      const authService = getAuthService();
+      // 注册 auth 变更广播：v0.16.79 修复管理员菜单不显示的根因。
+      // Tauri 桌面那套 webContents.send 走 main/app/initBackgroundServices.ts，
+      // web 模式（实际所有发行版都是 Tauri+webServer）根本没调那个 bootstrap，
+      // 导致 fetchUserProfile 成功后没人推 SSE，renderer authStore isAdmin 永远 stale。
+      authService.addAuthChangeCallback((user) => {
+        broadcastSSE('auth:event', {
+          type: user ? 'signed_in' : 'signed_out',
+          user,
+        });
+      });
+      await authService.initialize();
       logger.info('AuthService initialized');
     } catch (error) {
       logger.warn('AuthService not available:', (error as Error).message);
@@ -482,11 +493,15 @@ const webModeWindow = new BrowserWindow();
 // 注册到 main/app/window.ts 的 module-level mainWindow，让所有调
 // getMainWindow() 的后台服务（auth、update、mcp 等）能拿到 mock window
 // 走 SSE 推送，否则 callback 里 `if (mainWindow)` 永远 false，事件黑洞。
-import('../main/app/window').then(({ setMainWindow }) => {
-  setMainWindow(webModeWindow as never);
-}).catch((err) => {
+// 用同步 require 保证 esbuild 把 window.ts 视为单例（避免 dynamic import 切分到独立 chunk）。
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { setMainWindow } = require('../main/app/window');
+  setMainWindow(webModeWindow);
+  logger.info('webModeWindow registered as mainWindow for SSE bridge');
+} catch (err) {
   logger.warn('Failed to register webModeWindow as mainWindow:', err);
-});
+}
 
 function registerHandlers(): void {
   let currentSessionId: string | null = null;

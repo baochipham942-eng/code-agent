@@ -20,6 +20,17 @@ import { canAccessFeature } from '../../../../utils/accessControl';
 import { initializeCommands, getCommandRegistry } from '@shared/commands';
 import type { CommandDefinition } from '@shared/commands';
 import { generateMessageId } from '@shared/utils/id';
+import { IPC_CHANNELS } from '@shared/ipc';
+import type { ExtensionValidationResult } from '@shared/contract/extension';
+import { invoke } from '../../../../services/ipcService';
+
+type ExtensionMutationResult = { success: boolean; error?: string };
+
+function ensureExtensionMutation(result: ExtensionMutationResult | undefined): void {
+  if (!result?.success) {
+    throw new Error(result?.error || 'Extension operation failed');
+  }
+}
 
 interface SlashCommand {
   id: string;
@@ -77,6 +88,28 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     agents: <Terminal className="w-4 h-4" />,
     status: <BarChart2 className="w-4 h-4" />,
     plugins: <Plug className="w-4 h-4" />,
+  }), []);
+
+  const extensionOps = useMemo(() => ({
+    list: async () => invoke(IPC_CHANNELS.EXTENSION_LIST),
+    install: async (spec: string) => {
+      ensureExtensionMutation(await invoke(IPC_CHANNELS.EXTENSION_INSTALL, spec));
+    },
+    uninstall: async (id: string) => {
+      ensureExtensionMutation(await invoke(IPC_CHANNELS.EXTENSION_UNINSTALL, id));
+    },
+    enable: async (id: string) => {
+      ensureExtensionMutation(await invoke(IPC_CHANNELS.EXTENSION_ENABLE, id));
+    },
+    disable: async (id: string) => {
+      ensureExtensionMutation(await invoke(IPC_CHANNELS.EXTENSION_DISABLE, id));
+    },
+    reload: async (id?: string) => {
+      ensureExtensionMutation(await invoke(IPC_CHANNELS.EXTENSION_RELOAD, id));
+    },
+    validate: async (id: string): Promise<ExtensionValidationResult> => (
+      invoke(IPC_CHANNELS.EXTENSION_VALIDATE, id)
+    ),
   }), []);
 
   // GUI-only commands (operate on store/UI directly, not in registry)
@@ -261,6 +294,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
             .handler(
               {
                 surface: 'gui',
+                extensionOps,
                 output: {
                   info: writeAssistant(''),
                   success: writeAssistant('✅ '),
@@ -279,7 +313,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
 
     // GUI-only first, then registry commands
     return [...guiOnlyCommands, ...fromRegistry];
-  }, [guiOnlyCommands, registryIconMap]);
+  }, [extensionOps, guiOnlyCommands, registryIconMap]);
 
   const filtered = useMemo(() => {
     if (!filter) return allCommands;

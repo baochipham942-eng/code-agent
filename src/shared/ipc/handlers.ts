@@ -25,6 +25,8 @@ import type { LabProjectType, LabProjectStatus, PythonEnvStatus, TrainingProgres
 
 import type { MarketplaceInfo, MarketplacePluginEntry, InstalledPlugin, MarketplaceResult, PluginInstallResult } from '../contract/marketplace';
 
+import type { ExtensionInfo, ExtensionValidationResult } from '../contract/extension';
+
 import type { HandoffProposal, ListHandoffProposalsInput, UpdateHandoffProposalStatusInput } from '../contract/handoff';
 
 import type { SessionRuntimeSummary, SessionStatusUpdateEvent, BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '../contract/sessionState';
@@ -230,6 +232,15 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED]: (scope?: 'user' | 'project' | 'all') => Promise<MarketplaceResult<InstalledPlugin[]>>;
   [IPC_CHANNELS.MARKETPLACE_ENABLE_PLUGIN]: (pluginId: string) => Promise<MarketplaceResult<void>>;
   [IPC_CHANNELS.MARKETPLACE_DISABLE_PLUGIN]: (pluginId: string) => Promise<MarketplaceResult<void>>;
+
+  // Unified extensions
+  [IPC_CHANNELS.EXTENSION_LIST]: () => Promise<ExtensionInfo[]>;
+  [IPC_CHANNELS.EXTENSION_INSTALL]: (spec: string) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.EXTENSION_UNINSTALL]: (id: string) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.EXTENSION_ENABLE]: (id: string) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.EXTENSION_DISABLE]: (id: string) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.EXTENSION_RELOAD]: (id?: string) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.EXTENSION_VALIDATE]: (id: string) => Promise<ExtensionValidationResult>;
 
   // Lab (实验室)
   [IPC_CHANNELS.LAB_DOWNLOAD_PROJECT]: (request: DownloadProjectRequest) => Promise<DownloadProjectResponse>;

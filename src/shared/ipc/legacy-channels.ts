@@ -178,6 +178,15 @@ export const IPC_CHANNELS = {
   MARKETPLACE_ENABLE_PLUGIN: 'marketplace:enable-plugin',
   MARKETPLACE_DISABLE_PLUGIN: 'marketplace:disable-plugin',
 
+  // Unified extension operations (plugin + marketplace skill + MCP summary)
+  EXTENSION_LIST: 'extension:list',
+  EXTENSION_INSTALL: 'extension:install',
+  EXTENSION_UNINSTALL: 'extension:uninstall',
+  EXTENSION_ENABLE: 'extension:enable',
+  EXTENSION_DISABLE: 'extension:disable',
+  EXTENSION_RELOAD: 'extension:reload',
+  EXTENSION_VALIDATE: 'extension:validate',
+
   // Memory Phase 2/3 channels
   MEMORY_LEARNED: 'memory:learned',
   MEMORY_CONFIRM_REQUEST: 'memory:confirm-request',

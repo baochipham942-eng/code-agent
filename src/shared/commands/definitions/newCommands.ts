@@ -4,6 +4,47 @@
 
 import type { CommandDefinition } from '../types';
 import { MODEL_PRICING_PER_1M } from '../../constants';
+import type { ExtensionInfo, ExtensionValidationResult } from '../../contract/extension';
+
+interface ExtensionOpsCommandService {
+  list(): Promise<ExtensionInfo[]>;
+  install(spec: string): Promise<void>;
+  uninstall(id: string): Promise<void>;
+  enable(id: string): Promise<void>;
+  disable(id: string): Promise<void>;
+  reload(id?: string): Promise<void>;
+  validate(id: string): Promise<ExtensionValidationResult>;
+}
+
+function isExtensionOpsCommandService(value: unknown): value is ExtensionOpsCommandService {
+  if (!value || typeof value !== 'object') return false;
+  const maybe = value as Partial<Record<keyof ExtensionOpsCommandService, unknown>>;
+  return (
+    typeof maybe.list === 'function' &&
+    typeof maybe.install === 'function' &&
+    typeof maybe.uninstall === 'function' &&
+    typeof maybe.enable === 'function' &&
+    typeof maybe.disable === 'function' &&
+    typeof maybe.reload === 'function' &&
+    typeof maybe.validate === 'function'
+  );
+}
+
+async function resolveExtensionOpsService(ctx: Record<string, unknown>): Promise<ExtensionOpsCommandService> {
+  if (isExtensionOpsCommandService(ctx.extensionOps)) {
+    return ctx.extensionOps;
+  }
+
+  if (ctx.surface === 'gui') {
+    throw new Error('Extension operations are not wired for GUI commands');
+  }
+
+  const mod = await import('../../../main/services/plugins/extensionOpsService');
+  if (!isExtensionOpsCommandService(mod.getExtensionOpsService?.())) {
+    throw new Error('getExtensionOpsService is not available');
+  }
+  return mod.getExtensionOpsService();
+}
 
 // Formatting helpers
 function fmtTokens(n: number): string {
@@ -165,10 +206,7 @@ export const pluginsCommand: CommandDefinition = {
   ],
   handler: async (ctx, args) => {
     try {
-      const { getExtensionOpsService } = await import(
-        '../../../main/services/plugins/extensionOpsService'
-      );
-      const svc = getExtensionOpsService();
+      const svc = await resolveExtensionOpsService(ctx);
 
       const sub = args[0]?.toLowerCase() ?? 'list';
 

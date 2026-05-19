@@ -17,3 +17,14 @@ export interface ExtensionInfo {
   error?: string;
   marketplace?: string;
 }
+
+export interface ExtensionValidationIssue {
+  field: string;
+  message: string;
+}
+
+export interface ExtensionValidationResult {
+  valid: boolean;
+  errors: ExtensionValidationIssue[];
+  warnings: ExtensionValidationIssue[];
+}

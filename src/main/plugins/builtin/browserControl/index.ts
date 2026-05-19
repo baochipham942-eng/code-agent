@@ -28,10 +28,11 @@ export const manifest: PluginManifest = {
   id: 'builtin.browserControl',
   name: 'Browser Control',
   version: '1.0.0',
-  description: '浏览器与 in-app HTML 验证工具集（Browser / browser_action / browser_navigate / validate_html_in_app）— builtin plugin',
+  description: '浏览器与 in-app HTML 验证工具集（Playwright）',
   author: 'code-agent',
   main: 'index.ts',
-  capabilities: ['tools'],
+  surfaces: ['tools'],
+  capabilities: ['browser-control'],
   permissions: ['filesystem', 'network'],
   platforms: ['darwin', 'win32', 'linux'],
 };

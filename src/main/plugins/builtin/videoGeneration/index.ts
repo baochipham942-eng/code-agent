@@ -17,10 +17,11 @@ export const manifest: PluginManifest = {
   id: 'builtin.videoGeneration',
   name: 'Video Generation',
   version: '1.0.0',
-  description: '视频生成（智谱 CogVideoX-2 异步任务 + GLM 文生/图生 prompt 扩写）— builtin plugin',
+  description: '视频生成（CogVideoX-2 异步任务 + GLM prompt 扩写）',
   author: 'code-agent',
   main: 'index.ts',
-  capabilities: ['tools'],
+  surfaces: ['tools'],
+  capabilities: ['video-generation'],
   permissions: ['filesystem', 'network'],
 };
 

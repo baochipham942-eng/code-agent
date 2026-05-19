@@ -18,10 +18,11 @@ export const manifest: PluginManifest = {
   id: 'builtin.audioProcessing',
   name: 'Audio Processing',
   version: '1.0.0',
-  description: '语音转文字 + 文字转语音（智谱 GLM-ASR / GLM-TTS）— builtin plugin',
+  description: '语音转文字 + 文字转语音（GLM-ASR / GLM-TTS）',
   author: 'code-agent',
   main: 'index.ts',
-  capabilities: ['tools'],
+  surfaces: ['tools'],
+  capabilities: ['audio-processing', 'speech-to-text', 'text-to-speech'],
   permissions: ['filesystem', 'network'],
 };
 

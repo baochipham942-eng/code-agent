@@ -17,10 +17,11 @@ export const manifest: PluginManifest = {
   id: 'builtin.imageProcess',
   name: 'Image Process',
   version: '1.0.0',
-  description: '图片处理工具（格式转换/压缩/缩放/放大）— builtin plugin',
+  description: '图片处理工具（格式转换/压缩/缩放/放大）',
   author: 'code-agent',
   main: 'index.ts',
-  capabilities: ['tools'],
+  surfaces: ['tools'],
+  capabilities: ['image-processing'],
   permissions: ['filesystem'],
 };
 

@@ -112,12 +112,9 @@ import { pptEditSchema } from './network/pptEdit.schema';
 // vision/
 // browser / browserAction / browserNavigate / validateHtmlInApp 已剥离到
 // builtin plugin `builtin.browserControl`（PR #155），此处不再注册。
+// Computer / computer_use / screenshot / gui_agent / ocr_search 已剥离到
+// builtin plugin `builtin.computerUse`（Step 6 PR #2），此处不再注册。
 import { visualEditSchema } from './vision/visualEdit.schema';
-import { computerSchema } from './vision/computer.schema';
-import { computerUseSchema } from './vision/computerUse.schema';
-import { screenshotSchema } from './vision/screenshot.schema';
-import { guiAgentSchema } from './vision/guiAgent.schema';
-import { ocrSearchSchema } from './vision/ocrSearch.schema';
 import { photoArchiveSchema } from './vision/photoArchive.schema';
 // exploreTool 已迁移到 native (planning/explore.ts)，不再从 multiagentTools 导入
 
@@ -223,26 +220,8 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   // ── batch 4: vision/ Level 1 native (schema 抽出 + wrapper-mode 委托 legacy)─
   // browser / browser_action / browser_navigate / validate_html_in_app 已剥离到
   // builtin plugin `builtin.browserControl`（PR #155），由 pluginRegistry 注册。
-  registry.register(
-    computerSchema,
-    async () => (await import('./vision/computer')).computerModule,
-  );
-  registry.register(
-    computerUseSchema,
-    async () => (await import('./vision/computerUse')).computerUseModule,
-  );
-  registry.register(
-    screenshotSchema,
-    async () => (await import('./vision/screenshot')).screenshotModule,
-  );
-  registry.register(
-    guiAgentSchema,
-    async () => (await import('./vision/guiAgent')).guiAgentModule,
-  );
-  registry.register(
-    ocrSearchSchema,
-    async () => (await import('./vision/ocrSearch')).ocrSearchModule,
-  );
+  // Computer / computer_use / screenshot / gui_agent / ocr_search 已剥离到
+  // builtin plugin `builtin.computerUse`（Step 6 PR #2），由 pluginRegistry 注册。
   registry.register(
     photoArchiveSchema,
     async () => (await import('./vision/photoArchive')).photoArchiveModule,

@@ -14,10 +14,10 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { screenshotTool } from '../../vision/screenshot';
-import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
+import { screenshotTool } from '../../../tools/vision/screenshot';
+import { buildLegacyCtxFromProtocol } from '../../../tools/modules/_helpers/legacyAdapter';
 import { screenshotSchema as schema } from './screenshot.schema';
-import { adaptVisionLegacyResult } from './resultMeta';
+import { adaptVisionLegacyResult } from '../../../tools/modules/vision/resultMeta';
 
 class ScreenshotHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;

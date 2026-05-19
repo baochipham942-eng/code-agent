@@ -43,6 +43,10 @@ import {
   manifest as builtinBrowserControlManifest,
   default as builtinBrowserControlEntry,
 } from './builtin/browserControl';
+import {
+  manifest as builtinComputerUseManifest,
+  default as builtinComputerUseEntry,
+} from './builtin/computerUse';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
 import { getAuthService } from '../services/auth/authService';
@@ -250,6 +254,10 @@ export class PluginRegistry {
       {
         manifest: builtinBrowserControlManifest,
         entry: builtinBrowserControlEntry,
+      },
+      {
+        manifest: builtinComputerUseManifest,
+        entry: builtinComputerUseEntry,
       },
     ];
 

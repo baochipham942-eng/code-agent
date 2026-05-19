@@ -14,10 +14,10 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { computerUseTool } from '../../vision/computerUse';
-import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
+import { computerUseTool } from '../../../tools/vision/computerUse';
+import { buildLegacyCtxFromProtocol } from '../../../tools/modules/_helpers/legacyAdapter';
 import { computerUseSchema as schema } from './computerUse.schema';
-import { adaptVisionLegacyResult } from './resultMeta';
+import { adaptVisionLegacyResult } from '../../../tools/modules/vision/resultMeta';
 
 class ComputerUseHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;

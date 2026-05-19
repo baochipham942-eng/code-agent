@@ -14,10 +14,10 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { guiAgentTool } from '../../vision/guiAgent';
-import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
+import { guiAgentTool } from '../../../tools/vision/guiAgent';
+import { buildLegacyCtxFromProtocol } from '../../../tools/modules/_helpers/legacyAdapter';
 import { guiAgentSchema as schema } from './guiAgent.schema';
-import { adaptVisionLegacyResult } from './resultMeta';
+import { adaptVisionLegacyResult } from '../../../tools/modules/vision/resultMeta';
 
 class GuiAgentHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;

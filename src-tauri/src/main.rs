@@ -583,21 +583,31 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     };
 
     let mut started = false;
-    update
+    let install_result = update
         .download_and_install(
             |chunk_length, content_length| {
                 if !started {
                     started = true;
-                    println!("Update download started, total size: {:?}", content_length);
+                    eprintln!("[updater] download started, total size: {:?}", content_length);
                 }
-                println!("Downloaded {} bytes", chunk_length);
             },
             || {
-                println!("Download finished, installing update...");
+                eprintln!("[updater] download finished, installing...");
             },
         )
-        .await
-        .map_err(|e| format!("Failed to install update: {e}"))?;
+        .await;
+
+    if let Err(e) = &install_result {
+        eprintln!("[updater] install failed: {e:?}");
+        let mut source = std::error::Error::source(e);
+        let mut depth = 0;
+        while let Some(s) = source {
+            eprintln!("[updater] cause [{depth}]: {s}");
+            source = std::error::Error::source(s);
+            depth += 1;
+        }
+    }
+    install_result.map_err(|e| format!("Failed to install update: {e}"))?;
 
     // Restart the app after update.
     app.restart()

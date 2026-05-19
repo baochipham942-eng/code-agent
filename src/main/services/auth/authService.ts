@@ -630,10 +630,15 @@ class AuthService {
       };
     } catch (error) {
       logger.warn(' Failed to fetch profile, using basic user:', error);
-      const cachedUser = this.currentUser;
-      if (cachedUser?.id === user.id) {
-        logger.warn(' Preserving cached profile for verified session after profile fetch failure');
-        return cachedUser;
+      const memCached = this.currentUser;
+      if (memCached?.id === user.id) {
+        logger.warn(' Preserving in-memory profile after fetch failure');
+        return memCached;
+      }
+      const diskCached = this.loadCachedUser();
+      if (diskCached?.id === user.id) {
+        logger.warn(' Preserving disk-cached profile after fetch failure');
+        return diskCached;
       }
       return {
         id: user.id,

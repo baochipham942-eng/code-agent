@@ -63,6 +63,9 @@ ai-daily-*.md
 !/cloud-api/
 !/cloud-api/ARCHIVED.md
 
+# Supabase CLI local state
+supabase/.temp/
+
 CLAUDE.local.md
 env.txt
 env_output.txt

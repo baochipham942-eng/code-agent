@@ -11,6 +11,7 @@ import type {
 } from '../../shared/contract/conversationEnvelope';
 import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import type { ExecuteOptions } from '../../main/tools/toolExecutor';
+import type { DatabaseService } from '../../main/services/core/databaseService';
 import { isLocalTool, mapToolName } from '../../shared/localTools';
 import { broadcastSSE, sendSSE } from '../helpers/sse';
 import { createAgentRunSSEBatcher } from '../helpers/agentRunSSEBatcher';
@@ -18,7 +19,6 @@ import { formatError } from '../helpers/utils';
 import {
   type CachedMessage,
   type CachedToolCall,
-  type InMemorySession,
   sessionMessages,
   SESSION_CACHE_MAX,
   inMemorySessions,
@@ -35,6 +35,16 @@ import {
   type ExternalAgentEngineFailureContext,
   recordExternalEngineFailure,
 } from './agentEngineFailureRecorder';
+import {
+  AgentCancelBodySchema,
+  AgentRunBodySchema,
+  AgentToolResultBodySchema,
+} from './agentBodySchemas';
+import type {
+  AgentSessionManagerLike,
+  SupabaseAgentBinding,
+} from './agentRouteTypes';
+import type { WebRouteLogger } from './routeTypes';
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
 // key = toolCallId, value = { resolve, reject, timer }
@@ -47,12 +57,9 @@ export interface PendingLocalToolCall {
 interface AgentRouterDeps {
   activeAgentLoops: Map<string, ActiveAgentLoop>;
   pendingLocalToolCalls: Map<string, PendingLocalToolCall>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 sessions.ts，logger 第二参 unknown[]，应抽 Logger 接口
-  logger: { info: (msg: string, ...args: any[]) => void; warn: (msg: string, ...args: any[]) => void; error: (msg: string, ...args: any[]) => void };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): tryGetSessionManager 返回 SessionManager，应直接 import 类型
-  tryGetSessionManager: () => Promise<any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): supabase 是 SupabaseClient，应 import @supabase/supabase-js
-  getSupabaseForSession: () => Promise<{ supabase: any; userId: string } | null>;
+  logger: WebRouteLogger;
+  tryGetSessionManager: () => Promise<AgentSessionManagerLike | null>;
+  getSupabaseForSession: () => Promise<SupabaseAgentBinding | null>;
 }
 
 const LOCAL_TOOL_TIMEOUT_MS = 120_000; // 2 分钟超时
@@ -134,47 +141,6 @@ function isTerminalErrorEvent(event: AgentEvent): boolean {
     && payload.terminal !== false;
 }
 
-function upsertCachedMessage(messages: CachedMessage[], message: CachedMessage): CachedMessage[] {
-  const existingIndex = messages.findIndex((cached) => cached.id === message.id);
-  if (existingIndex >= 0) {
-    const next = [...messages];
-    next[existingIndex] = { ...next[existingIndex], ...message };
-    return next;
-  }
-  return [...messages, message];
-}
-
-function enforceSessionCacheLimit(): void {
-  if (sessionMessages.size <= SESSION_CACHE_MAX) return;
-  const oldestKey = sessionMessages.keys().next().value;
-  if (oldestKey) sessionMessages.delete(oldestKey);
-}
-
-function cacheMessageForSession(sessionId: string, message: CachedMessage): void {
-  const cached = upsertCachedMessage(sessionMessages.get(sessionId) || [], message);
-  sessionMessages.set(sessionId, cached);
-  enforceSessionCacheLimit();
-}
-
-function updateInMemorySession(sessionId: string, prompt: string, historyWasEmpty: boolean): void {
-  const title = buildSessionTitle(prompt);
-  const existing = inMemorySessions.get(sessionId);
-  if (existing) {
-    existing.updatedAt = Date.now();
-    existing.messageCount = (sessionMessages.get(sessionId) || []).length;
-    if (historyWasEmpty) existing.title = title;
-    return;
-  }
-
-  inMemorySessions.set(sessionId, {
-    id: sessionId,
-    title,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    messageCount: (sessionMessages.get(sessionId) || []).length,
-  });
-}
-
 function isDuplicateMessageError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes('UNIQUE constraint failed') || message.includes('SQLITE_CONSTRAINT');
@@ -184,8 +150,7 @@ async function ensureDbSession(
   sessionId: string,
   title: string,
   modelConfig: { provider: ModelProvider; model: string },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 返回的是 databaseService getDatabase() 实例，应 import { Database } from '../../main/services/core/databaseService'
-): Promise<any> {
+): Promise<DatabaseService> {
   const { getDatabase } = await import('../../main/services/core/databaseService');
   const db = getDatabase();
   const existing = db.getSession(sessionId);
@@ -216,13 +181,12 @@ async function ensureDbSession(
 }
 
 async function persistMessageToDb(
-  sessionManager: Awaited<ReturnType<AgentRouterDeps['tryGetSessionManager']>> | null,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 ensureDbSession，db 是 Database 实例，应 import 类型
-  db: any,
+  sessionManager: AgentSessionManagerLike | null,
+  db: DatabaseService,
   sessionId: string,
   message: Message,
 ): Promise<void> {
-  if (sessionManager) {
+  if (sessionManager?.addMessageToSession) {
     await sessionManager.addMessageToSession(sessionId, message);
     return;
   }
@@ -275,9 +239,8 @@ async function loadSessionHistoryForRun(
 async function hasPersistedLoopAssistantMessage(
   sessionId: string,
   messageIds: Set<string>,
-  sessionManager: Awaited<ReturnType<AgentRouterDeps['tryGetSessionManager']>> | null,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 ensureDbSession，db 是 Database 实例，应 import 类型
-  db: any,
+  sessionManager: AgentSessionManagerLike | null,
+  db: DatabaseService,
   logger: AgentRouterDeps['logger'],
 ): Promise<boolean> {
   if (messageIds.size === 0) {
@@ -310,9 +273,17 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
   // ── Agent Run (SSE streaming) ──────────────────────────────────────
   router.post('/run', async (req: Request, res: Response) => {
-    const { prompt, project, sessionDir, model, provider, generation } = req.body;
-    const clientMessageId = typeof req.body?.clientMessageId === 'string' && req.body.clientMessageId.trim()
-      ? req.body.clientMessageId.trim()
+    const rawBody: unknown = req.body;
+    const parsedBody = AgentRunBodySchema.safeParse(rawBody);
+    if (!parsedBody.success) {
+      res.status(400).json({ error: 'Missing prompt' });
+      return;
+    }
+
+    const body = parsedBody.data;
+    const { prompt, project, sessionDir, model, provider, generation } = body;
+    const clientMessageId = body.clientMessageId?.trim()
+      ? body.clientMessageId.trim()
       : undefined;
 
     if (!prompt) {
@@ -329,7 +300,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
     const taskId = `task-${Date.now()}`;
     // 使用请求中的 sessionId，或生成一个临时的（web 模式兼容）
-    const sessionId = req.body.sessionId || `web-session-${Date.now()}`;
+    const sessionId = body.sessionId || `web-session-${Date.now()}`;
     let runSettled = false;
     let clientDisconnected = false;
     let runHadTerminalError = false;
@@ -443,7 +414,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           ? project.trim()
           : typeof sessionDir === 'string' && sessionDir.trim().length > 0
             ? sessionDir.trim()
-            : extractWorkingDirectory(req.body.context);
+            : extractWorkingDirectory(body.context);
       if (!resolvedProject) {
         const fromSession = persistedSession?.workingDirectory?.trim();
         if (fromSession) resolvedProject = fromSession;
@@ -476,8 +447,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           workspaceRoot: launch.workspaceRoot,
           permissionProfile: launch.permissionProfile,
           clientMessageId,
-          attachmentsCount: Array.isArray(req.body.attachments) ? req.body.attachments.length : 0,
-          messageMetadata: toWorkbenchMetadata(req.body.context),
+          attachmentsCount: body.attachments?.length ?? 0,
+          messageMetadata: toWorkbenchMetadata(body.context),
           emitEvent: (event) => emitAgentEvent(event),
         });
         agentSSEBatcher.flush();
@@ -526,9 +497,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // ── 构建消息历史（多轮上下文）──
       // 将附件文本数据拼接到 prompt 中，使 Agent 能看到附件内容
       let enrichedPrompt = prompt;
-      const requestAttachments = Array.isArray(req.body.attachments)
-        ? req.body.attachments as MessageAttachment[]
-        : [];
+      const requestAttachments = body.attachments ?? [];
       const imageAttachments = requestAttachments.filter((att) =>
         att.category === 'image' || att.type === 'image'
       );
@@ -871,7 +840,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             dbForSession,
             logger,
           );
-          if (sm) {
+          if (sm?.addMessageToSession) {
             // 通过 SM 写入，同时更新 DB 和 sessionCache
             if (!userMsgPrePersistedDb) {
               await sm.addMessageToSession(sessionId, {
@@ -1029,15 +998,23 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
   // ── Cancel ─────────────────────────────────────────────────────────
   router.post('/cancel', async (req: Request, res: Response) => {
-    const sessionId = req.body?.sessionId;
-    if (sessionId && activeAgentLoops.has(sessionId)) {
-      await Promise.resolve(activeAgentLoops.get(sessionId)!.cancel());
+    const rawBody: unknown = req.body;
+    const parsedBody = AgentCancelBodySchema.safeParse(rawBody);
+    const sessionId = parsedBody.success ? parsedBody.data.sessionId : undefined;
+    const requestedLoop = sessionId ? activeAgentLoops.get(sessionId) : undefined;
+    if (sessionId && requestedLoop) {
+      await Promise.resolve(requestedLoop.cancel());
       activeAgentLoops.delete(sessionId);
       res.json({ message: 'Cancelled', sessionId });
     } else if (activeAgentLoops.size > 0) {
       // 没指定 sessionId 时取消最后一个
-      const lastKey = [...activeAgentLoops.keys()].pop()!;
-      await Promise.resolve(activeAgentLoops.get(lastKey)!.cancel());
+      const lastEntry = [...activeAgentLoops.entries()].at(-1);
+      if (!lastEntry) {
+        res.json({ message: 'No active agent to cancel' });
+        return;
+      }
+      const [lastKey, lastLoop] = lastEntry;
+      await Promise.resolve(lastLoop.cancel());
       activeAgentLoops.delete(lastKey);
       res.json({ message: 'Cancelled', sessionId: lastKey });
     } else {
@@ -1046,7 +1023,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
   });
 
   router.post('/interrupt', async (req: Request, res: Response) => {
-    const body = req.body && typeof req.body === 'object' ? req.body as Record<string, unknown> : {};
+    const rawBody: unknown = req.body;
+    const body = rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)
+      ? rawBody as Record<string, unknown>
+      : {};
     const content = typeof body.content === 'string'
       ? body.content
       : typeof body.prompt === 'string'
@@ -1116,11 +1096,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
   // ── Tool Result (Local Bridge 前端回传工具执行结果) ────────────────
   router.post('/tool-result', (req: Request, res: Response) => {
-    const { toolCallId, success, output, error, metadata } = req.body;
-    if (!toolCallId) {
+    const rawBody: unknown = req.body;
+    const parsedBody = AgentToolResultBodySchema.safeParse(rawBody);
+    if (!parsedBody.success) {
       res.status(400).json({ error: 'Missing toolCallId' });
       return;
     }
+    const { toolCallId, success, output, error, metadata } = parsedBody.data;
     const pending = pendingLocalToolCalls.get(toolCallId);
     if (!pending) {
       res.status(404).json({ error: `No pending tool call: ${toolCallId}` });
@@ -1128,7 +1110,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
     clearTimeout(pending.timer);
     pendingLocalToolCalls.delete(toolCallId);
-    pending.resolve({ success: !!success, output, error, metadata });
+    pending.resolve({
+      success: !!success,
+      output: output ?? undefined,
+      error: error ?? undefined,
+      metadata: metadata ?? undefined,
+    });
     res.json({ message: 'Tool result received', toolCallId });
   });
 

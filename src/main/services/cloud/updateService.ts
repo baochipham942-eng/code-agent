@@ -75,6 +75,96 @@ export function normalizeUpdateSha256(value: unknown): string | undefined {
   return /^[a-f0-9]{64}$/.test(normalized) ? normalized : undefined;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function getStringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getNumberField(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === 'number' ? value : undefined;
+}
+
+function getTruthyField(record: Record<string, unknown>, key: string): boolean {
+  return Boolean(record[key]);
+}
+
+interface UpdateServerResponse {
+  success: boolean;
+  hasUpdate: boolean;
+  forceUpdate: boolean;
+  latestVersion?: string;
+  downloadUrl?: string;
+  sha256?: string;
+  releaseNotes?: string;
+  fileSize?: number;
+  publishedAt?: string;
+}
+
+function parseUpdateServerResponse(value: unknown): UpdateServerResponse {
+  if (!isRecord(value)) {
+    return { success: false, hasUpdate: false, forceUpdate: false };
+  }
+
+  return {
+    success: getTruthyField(value, 'success'),
+    hasUpdate: getTruthyField(value, 'hasUpdate'),
+    forceUpdate: getTruthyField(value, 'forceUpdate'),
+    latestVersion: getStringField(value, 'latestVersion'),
+    downloadUrl: getStringField(value, 'downloadUrl'),
+    sha256: normalizeUpdateSha256(value.sha256),
+    releaseNotes: getStringField(value, 'releaseNotes'),
+    fileSize: getNumberField(value, 'fileSize'),
+    publishedAt: getStringField(value, 'publishedAt'),
+  };
+}
+
+interface GitHubReleaseAsset {
+  name: string;
+  browserDownloadUrl?: string;
+  size?: number;
+}
+
+interface GitHubReleaseResponse {
+  tagName?: string;
+  body?: string;
+  publishedAt?: string;
+  assets: GitHubReleaseAsset[];
+}
+
+function parseGitHubReleaseResponse(value: unknown): GitHubReleaseResponse {
+  if (!isRecord(value)) {
+    return { assets: [] };
+  }
+
+  const rawAssets = value.assets;
+  const assets = Array.isArray(rawAssets)
+    ? rawAssets
+      .filter(isRecord)
+      .map((asset): GitHubReleaseAsset | null => {
+        const name = getStringField(asset, 'name');
+        if (!name) return null;
+        return {
+          name,
+          browserDownloadUrl: getStringField(asset, 'browser_download_url'),
+          size: getNumberField(asset, 'size'),
+        };
+      })
+      .filter((asset): asset is GitHubReleaseAsset => asset !== null)
+    : [];
+
+  return {
+    tagName: getStringField(value, 'tag_name'),
+    body: getStringField(value, 'body'),
+    publishedAt: getStringField(value, 'published_at'),
+    assets,
+  };
+}
+
 export function resolveExpectedUpdateSha256(
   expectedSha256: string | undefined,
   allowUnsignedDownload = process.env.CODE_AGENT_ALLOW_UNSIGNED_UPDATE_DOWNLOAD === '1',
@@ -241,7 +331,8 @@ export class UpdateService implements Disposable {
 
       try {
         const response = await this.httpGet(serverUrl);
-        const data = JSON.parse(response);
+        const parsed: unknown = JSON.parse(response);
+        const data = parseUpdateServerResponse(parsed);
 
         // Check if response is valid (has success field)
         if (data.success) {
@@ -251,7 +342,7 @@ export class UpdateService implements Disposable {
             currentVersion,
             latestVersion: data.latestVersion,
             downloadUrl: data.downloadUrl,
-            sha256: normalizeUpdateSha256(data.sha256),
+            sha256: data.sha256,
             releaseNotes: data.releaseNotes,
             fileSize: data.fileSize,
             publishedAt: data.publishedAt,
@@ -284,34 +375,35 @@ export class UpdateService implements Disposable {
 
       try {
         const response = await this.httpGet(githubUrl);
-        const data = JSON.parse(response);
+        const parsed: unknown = JSON.parse(response);
+        const data = parseGitHubReleaseResponse(parsed);
 
         // Check if response has tag_name (valid release)
-        if (!data.tag_name) {
+        if (!data.tagName) {
           throw new Error('No release found on GitHub');
         }
 
         // Parse GitHub Releases API response
-        const latestVersion = (data.tag_name || '').replace(/^v/, '');
+        const latestVersion = data.tagName.replace(/^v/, '');
         const hasUpdate = this.compareVersions(latestVersion, currentVersion) > 0;
 
         // Find the appropriate asset for the platform
         let downloadUrl: string | undefined;
         let fileSize: number | undefined;
-        const assets = data.assets || [];
+        const assets = data.assets;
 
         for (const asset of assets) {
           const name = asset.name.toLowerCase();
           if (platform === 'darwin' && (name.includes('mac') || name.includes('darwin') || name.endsWith('.dmg'))) {
-            downloadUrl = asset.browser_download_url;
+            downloadUrl = asset.browserDownloadUrl;
             fileSize = asset.size;
             break;
           } else if (platform === 'win32' && (name.includes('win') || name.endsWith('.exe') || name.endsWith('.msi'))) {
-            downloadUrl = asset.browser_download_url;
+            downloadUrl = asset.browserDownloadUrl;
             fileSize = asset.size;
             break;
           } else if (platform === 'linux' && (name.includes('linux') || name.endsWith('.AppImage') || name.endsWith('.deb'))) {
-            downloadUrl = asset.browser_download_url;
+            downloadUrl = asset.browserDownloadUrl;
             fileSize = asset.size;
             break;
           }
@@ -324,7 +416,7 @@ export class UpdateService implements Disposable {
           downloadUrl,
           releaseNotes: data.body,
           fileSize,
-          publishedAt: data.published_at,
+          publishedAt: data.publishedAt,
         }, releasePolicy);
 
         this.lastCheck = new Date();
@@ -414,7 +506,7 @@ export class UpdateService implements Disposable {
       if (expectedSha256.required) {
         const verdict = verifyDigestMatch(actualSha256, expectedSha256.sha256);
         if (!verdict.ok) {
-          try { fs.unlinkSync(filePath); } catch {}
+          try { fs.unlinkSync(filePath); } catch { /* best effort cleanup */ }
           throw new Error(
             `Update sha256 mismatch — refusing to install (${verdict.reason}). ` +
               `File at ${filePath} has been deleted. Re-check the cloud update API.`,
@@ -633,7 +725,7 @@ export class UpdateService implements Disposable {
           logger.info(` Redirecting to: ${redirectUrl}`);
           if (redirectUrl) {
             file.close();
-            try { fs.unlinkSync(destPath); } catch {}
+            try { fs.unlinkSync(destPath); } catch { /* best effort cleanup */ }
             this.downloadFile(redirectUrl, destPath).then(resolve).catch(reject);
             return;
           }
@@ -641,7 +733,7 @@ export class UpdateService implements Disposable {
 
         if (res.statusCode !== 200) {
           file.close();
-          try { fs.unlinkSync(destPath); } catch {}
+          try { fs.unlinkSync(destPath); } catch { /* best effort cleanup */ }
           reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
           return;
         }

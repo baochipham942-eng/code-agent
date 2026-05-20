@@ -10,8 +10,18 @@ import type { AgentEffectsProps } from '../useAgentEffects';
 const logger = createLogger('useAgent');
 const GLOBAL_PERMISSION_REQUEST_SESSION_ID = 'global';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同其他 effects hook 文件，应抽 shared AgentEvent 联合按 type narrow
-type AgentEvent = { type: string; data: any; sessionId?: string };
+type AgentEvent = { type: string; data?: unknown; sessionId?: string };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function normalizePermissionRequest(data: unknown): PermissionRequest | null {
+  if (!isRecord(data) || typeof data.id !== 'string') {
+    return null;
+  }
+  return data as unknown as PermissionRequest;
+}
 
 export const usePermissionQueueEffects = ({
   currentSessionId,
@@ -73,7 +83,8 @@ export const usePermissionQueueEffects = ({
           lastEventAtRef.current = Date.now();
           logger.debug('Received event', { type: event.type, sessionId: event.sessionId });
           logger.debug('Permission request received', { data: event.data });
-          if (!event.data?.id) {
+          const permissionRequest = normalizePermissionRequest(event.data);
+          if (!permissionRequest) {
             break;
           }
 
@@ -87,20 +98,20 @@ export const usePermissionQueueEffects = ({
 
           if (isGlobalPermissionRequest) {
             if (!useAppStore.getState().pendingPermissionRequest) {
-              setPendingPermissionRequest(event.data as PermissionRequest, null);
+              setPendingPermissionRequest(permissionRequest, null);
             } else {
               enqueuePermissionRequest(
                 GLOBAL_PERMISSION_REQUEST_SESSION_ID,
-                event.data as PermissionRequest
+                permissionRequest
               );
             }
             break;
           }
 
           if (isCurrentSessionEvent && !useAppStore.getState().pendingPermissionRequest) {
-            setPendingPermissionRequest(event.data as PermissionRequest, rawPermissionSessionId);
+            setPendingPermissionRequest(permissionRequest, rawPermissionSessionId);
           } else {
-            enqueuePermissionRequest(rawPermissionSessionId, event.data as PermissionRequest);
+            enqueuePermissionRequest(rawPermissionSessionId, permissionRequest);
             useSessionStore.getState().markSessionUnread(rawPermissionSessionId);
           }
           break;

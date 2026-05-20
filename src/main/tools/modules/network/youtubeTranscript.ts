@@ -12,6 +12,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { z } from 'zod';
 import { YOUTUBE_TRANSCRIPT_ENDPOINTS } from '../../../../shared/constants';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { youtubeTranscriptSchema as schema } from './youtubeTranscript.schema';
@@ -38,6 +39,43 @@ interface SupadataTranscriptResponse {
   lang?: string;
   availableLangs?: string[];
 }
+
+const NumberishSchema = z.preprocess((value) => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}, z.number());
+
+const OEmbedResponseSchema = z.object({
+  title: z.string().optional(),
+  author_name: z.string().optional(),
+}).passthrough();
+
+const SupadataTranscriptResponseSchema = z.object({
+  content: z.array(z.object({
+    text: z.string().catch(''),
+    offset: NumberishSchema.catch(0),
+    duration: NumberishSchema.catch(0),
+    lang: z.string().optional(),
+  }).passthrough()).optional().default([]),
+  lang: z.string().optional(),
+  availableLangs: z.array(z.string()).optional(),
+}).passthrough();
+
+const FallbackTranscriptResponseSchema = z.object({
+  items: z.array(z.object({
+    transcript: z.object({
+      content: z.array(z.object({
+        text: z.string().optional(),
+        start: z.union([z.string(), z.number()]).optional(),
+        duration: z.union([z.string(), z.number()]).optional(),
+      }).passthrough()).optional().default([]),
+    }).passthrough().optional(),
+  }).passthrough()).optional().default([]),
+}).passthrough();
 
 function extractVideoId(url: string): string | null {
   const patterns = [
@@ -70,10 +108,11 @@ async function getVideoInfo(videoId: string): Promise<{ title: string; author: s
       `${YT_OEMBED_URL}?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
     );
     if (response.ok) {
-      const data = await response.json();
+      const data = OEmbedResponseSchema.safeParse(await response.json() as unknown);
+      if (!data.success) return null;
       return {
-        title: data.title || 'Unknown',
-        author: data.author_name || 'Unknown',
+        title: data.data.title || 'Unknown',
+        author: data.data.author_name || 'Unknown',
       };
     }
   } catch {
@@ -104,7 +143,11 @@ async function fetchTranscriptFromSupadata(
     throw new Error(`Supadata API error: ${response.status} - ${errorText}`);
   }
 
-  const data: SupadataTranscriptResponse = await response.json();
+  const parsed = SupadataTranscriptResponseSchema.safeParse(await response.json() as unknown);
+  if (!parsed.success) {
+    throw new Error('Invalid transcript response returned');
+  }
+  const data: SupadataTranscriptResponse = parsed.data;
 
   if (!data.content || data.content.length === 0) {
     throw new Error('No transcript content returned');
@@ -137,14 +180,13 @@ async function fetchTranscriptFallback(
         },
       });
       if (response.ok) {
-        const data = await response.json();
-        if (data.items?.[0]?.transcript?.content) {
-          const content = data.items[0].transcript.content;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return content.map((item: any) => ({
+        const data = FallbackTranscriptResponseSchema.safeParse(await response.json() as unknown);
+        const content = data.success ? data.data.items[0]?.transcript?.content : undefined;
+        if (content && content.length > 0) {
+          return content.map((item) => ({
             text: item.text || '',
-            start: parseFloat(item.start) || 0,
-            duration: parseFloat(item.duration) || 0,
+            start: Number(item.start) || 0,
+            duration: Number(item.duration) || 0,
           }));
         }
       }

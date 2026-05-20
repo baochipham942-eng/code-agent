@@ -308,6 +308,31 @@ function getAuthHeaders(): Record<string, string> {
   return token ? { 'Authorization': `Bearer ${token}` } : {};
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseIPCResponse<T>(value: unknown): IPCResponse<T> {
+  if (!isRecord(value) || typeof value.success !== 'boolean') {
+    return {
+      success: false,
+      error: { code: 'INVALID_RESPONSE', message: '操作失败' },
+    };
+  }
+  if (!value.success) {
+    const error = isRecord(value.error) ? value.error : {};
+    return {
+      success: false,
+      error: {
+        code: typeof error.code === 'string' ? error.code : 'DOMAIN_ERROR',
+        message: typeof error.message === 'string' ? error.message : '操作失败',
+        details: error.details,
+      },
+    };
+  }
+  return { success: true, data: value.data as T };
+}
+
 async function postDesktopAction<T>(action: string, payload?: Record<string, unknown>): Promise<T> {
   const resp = await fetch('/api/domain/desktop/' + action, {
     method: 'POST',
@@ -315,9 +340,10 @@ async function postDesktopAction<T>(action: string, payload?: Record<string, unk
     body: JSON.stringify({ action, payload }),
   });
   if (!resp.ok) throw new Error(`请求失败: ${resp.status}`);
-  const result = await resp.json();
-  if (!result?.success) {
-    throw new Error(result?.error?.message || '操作失败');
+  const payloadValue: unknown = await resp.json();
+  const result = parseIPCResponse<T>(payloadValue);
+  if (!result.success) {
+    throw new Error(result.error?.message || '操作失败');
   }
   return result.data as T;
 }
@@ -345,7 +371,8 @@ async function invokeDesktopDomain<T>(
       },
     };
   }
-  return await resp.json() as IPCResponse<T>;
+  const payloadValue: unknown = await resp.json();
+  return parseIPCResponse<T>(payloadValue);
 }
 
 export async function startAudioCapture(mode: 'microphone' | 'system-audio' = 'microphone'): Promise<AudioCaptureStatus> {

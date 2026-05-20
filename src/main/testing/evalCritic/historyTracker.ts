@@ -3,11 +3,17 @@
 // Version tracking with regression detection and lineage visualization
 // ============================================================================
 
+import { readFileSync } from 'node:fs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import type { EvalHistory, EvalHistoryEntry } from '../types';
 
 const HISTORY_FILE = 'eval-history.json';
+
+function parseEvalHistory(raw: string): EvalHistory {
+  const parsed: unknown = JSON.parse(raw);
+  return parsed as EvalHistory;
+}
 
 export class EvalHistoryTracker {
   private readonly historyPath: string;
@@ -20,7 +26,7 @@ export class EvalHistoryTracker {
   async load(): Promise<EvalHistory> {
     try {
       const raw = await readFile(this.historyPath, 'utf-8');
-      return JSON.parse(raw) as EvalHistory;
+      return parseEvalHistory(raw);
     } catch {
       return { currentBest: '', entries: [] };
     }
@@ -102,8 +108,8 @@ export class EvalHistoryTracker {
     // we read synchronously using the last known state.
     // For correctness in an async world, callers should ensure load() was called.
     try {
-      const raw = require('node:fs').readFileSync(this.historyPath, 'utf-8');
-      const history = JSON.parse(raw) as EvalHistory;
+      const raw = readFileSync(this.historyPath, 'utf-8');
+      const history = parseEvalHistory(raw);
       return this.buildLineageString(history);
     } catch {
       return '(no history)';

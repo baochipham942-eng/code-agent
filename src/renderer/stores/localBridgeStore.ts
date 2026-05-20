@@ -25,6 +25,28 @@ interface LocalBridgeState {
   stopPolling: () => void;
 }
 
+interface BridgeHealthResponse {
+  version: string | null;
+  latestVersion: string | null;
+}
+
+let bridgePollInterval: ReturnType<typeof setInterval> | null = null;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function parseBridgeHealthResponse(value: unknown): BridgeHealthResponse {
+  if (!isRecord(value)) {
+    return { version: null, latestVersion: null };
+  }
+
+  return {
+    version: typeof value.version === 'string' ? value.version : null,
+    latestVersion: typeof value.latestVersion === 'string' ? value.latestVersion : null,
+  };
+}
+
 // ============================================================================
 // Store
 // ============================================================================
@@ -46,7 +68,7 @@ export const useLocalBridgeStore = create<LocalBridgeState>((set, get) => ({
       if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch('http://localhost:9527/health', { headers });
       if (res.ok) {
-        const data = await res.json();
+        const data = parseBridgeHealthResponse(await res.json() as unknown);
         set({
           status: 'connected',
           version: data.version,
@@ -78,14 +100,12 @@ export const useLocalBridgeStore = create<LocalBridgeState>((set, get) => ({
 
   startPolling: () => {
     get().checkHealth();
-    const interval = setInterval(() => get().checkHealth(), 5000);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 把 __bridgePollInterval 挂到 window 全局做单例 polling，应改为模块级 module-private 变量或扩展 Window 接口
-    (window as any).__bridgePollInterval = interval;
+    if (bridgePollInterval) clearInterval(bridgePollInterval);
+    bridgePollInterval = setInterval(() => get().checkHealth(), 5000);
   },
 
   stopPolling: () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 startPolling，window 上挂的 __bridgePollInterval 应该改为模块级变量或声明合并 Window
-    const interval = (window as any).__bridgePollInterval;
-    if (interval) clearInterval(interval);
+    if (bridgePollInterval) clearInterval(bridgePollInterval);
+    bridgePollInterval = null;
   },
 }));

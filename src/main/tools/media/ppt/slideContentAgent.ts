@@ -330,16 +330,16 @@ function buildStructuredSlidesPrompt(topic: string, slideCount: number): string 
 function extractJsonArray(text: string): StructuredSlide[] | null {
   // 直接解析
   try {
-    const parsed = JSON.parse(text);
-    if (Array.isArray(parsed)) return parsed;
+    const parsed: unknown = JSON.parse(text);
+    if (Array.isArray(parsed)) return parsed as StructuredSlide[];
   } catch { /* continue */ }
 
   // 提取 ```json ... ``` 块
   const jsonMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
   if (jsonMatch) {
     try {
-      const parsed = JSON.parse(jsonMatch[1]);
-      if (Array.isArray(parsed)) return parsed;
+      const parsed: unknown = JSON.parse(jsonMatch[1]);
+      if (Array.isArray(parsed)) return parsed as StructuredSlide[];
     } catch { /* continue */ }
   }
 
@@ -347,8 +347,8 @@ function extractJsonArray(text: string): StructuredSlide[] | null {
   const bracketMatch = text.match(/\[[\s\S]*\]/);
   if (bracketMatch) {
     try {
-      const parsed = JSON.parse(bracketMatch[0]);
-      if (Array.isArray(parsed)) return parsed;
+      const parsed: unknown = JSON.parse(bracketMatch[0]);
+      if (Array.isArray(parsed)) return parsed as StructuredSlide[];
     } catch { /* continue */ }
   }
 

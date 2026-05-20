@@ -14,12 +14,14 @@ import type {
   UpsertTaskInput,
 } from '../../shared/contract/backgroundTask';
 import { isTerminalTaskStatus } from '../../shared/contract/backgroundTask';
+import type { BackgroundTaskStore } from './backgroundTaskStore';
 
 type IdKind = 'task-event' | 'task-output' | 'task-notification';
 
 export interface BackgroundTaskLedgerOptions {
   now?: () => number;
   idFactory?: (kind: IdKind) => string;
+  store?: BackgroundTaskStore | null;
 }
 
 const DEFAULT_TASK_SOURCE = 'manual';
@@ -30,8 +32,15 @@ export class BackgroundTaskLedger {
   private readonly notifications = new Map<string, TaskNotification>();
   private readonly notificationOrder: string[] = [];
   private sequence = 0;
+  private store?: BackgroundTaskStore;
 
-  constructor(private readonly options: BackgroundTaskLedgerOptions = {}) {}
+  constructor(private readonly options: BackgroundTaskLedgerOptions = {}) {
+    this.store = options.store ?? undefined;
+  }
+
+  setStore(store: BackgroundTaskStore | null): void {
+    this.store = store ?? undefined;
+  }
 
   upsertTask(input: UpsertTaskInput): Task {
     this.assertNonEmpty(input.id, 'task id');
@@ -67,6 +76,7 @@ export class BackgroundTaskLedger {
     };
 
     this.tasks.set(next.id, next);
+    this.persistIfTerminal(next);
     return cloneTask(next);
   }
 
@@ -102,6 +112,7 @@ export class BackgroundTaskLedger {
     };
 
     this.tasks.set(task.id, next);
+    this.persistEvent(next, event);
     return cloneTaskEvent(event);
   }
 
@@ -137,6 +148,7 @@ export class BackgroundTaskLedger {
     };
 
     this.tasks.set(task.id, next);
+    this.persistIfTerminal(next);
     return cloneOutputRef(outputRef);
   }
 
@@ -167,6 +179,7 @@ export class BackgroundTaskLedger {
 
     this.notifications.set(notification.id, notification);
     this.notificationOrder.push(notification.id);
+    this.store?.queueNotification(cloneNotification(notification));
     return cloneNotification(notification);
   }
 
@@ -184,6 +197,7 @@ export class BackgroundTaskLedger {
       metadata: cloneMetadata(notification.metadata),
     };
     this.notifications.set(notificationId, delivered);
+    this.store?.queueNotification(cloneNotification(delivered));
     return cloneNotification(delivered);
   }
 
@@ -191,7 +205,15 @@ export class BackgroundTaskLedger {
     const statuses = toSet(filter.status);
     const sources = toSet(filter.source);
 
-    return [...this.tasks.values()]
+    const merged = new Map<string, Task>();
+    for (const task of this.readTerminalTasksFromStore(filter)) {
+      merged.set(task.id, task);
+    }
+    for (const task of this.tasks.values()) {
+      merged.set(task.id, task);
+    }
+
+    return [...merged.values()]
       .filter((task) => !filter.sessionId || task.sessionId === filter.sessionId)
       .filter((task) => !statuses || statuses.has(task.status))
       .filter((task) => !sources || sources.has(task.source))
@@ -220,13 +242,27 @@ export class BackgroundTaskLedger {
       drained.push(cloneNotification(delivered));
     }
 
+    for (const notification of this.store?.drainNotifications(sessionId, deliveredAt) ?? []) {
+      if (drained.some((item) => item.id === notification.id)) {
+        continue;
+      }
+      this.notifications.set(notification.id, cloneNotification(notification));
+      if (!this.notificationOrder.includes(notification.id)) {
+        this.notificationOrder.push(notification.id);
+      }
+      drained.push(cloneNotification(notification));
+    }
+
     return drained;
   }
 
   getTask(taskId: string): Task | null {
     this.assertNonEmpty(taskId, 'task id');
     const task = this.tasks.get(taskId);
-    return task ? cloneTask(task) : null;
+    if (task) {
+      return cloneTask(task);
+    }
+    return this.readTerminalTaskFromStore(taskId);
   }
 
   private requireTask(taskId: string): Task {
@@ -253,6 +289,34 @@ export class BackgroundTaskLedger {
     if (typeof value !== 'string' || value.trim().length === 0) {
       throw new Error(`${label} is required`);
     }
+  }
+
+  private persistIfTerminal(task: Task): void {
+    if (!this.store || !isTerminalTaskStatus(task.status)) {
+      return;
+    }
+    this.store.upsertTask(cloneTask(task));
+  }
+
+  private persistEvent(task: Task, event: TaskEvent): void {
+    if (!this.store || !isTerminalTaskStatus(task.status)) {
+      return;
+    }
+    this.store.appendEvent(cloneTask(task), cloneTaskEvent(event));
+  }
+
+  private readTerminalTaskFromStore(taskId: string): Task | null {
+    if (!this.store) {
+      return null;
+    }
+    return this.store.loadTerminalTask(taskId);
+  }
+
+  private readTerminalTasksFromStore(filter: ListTasksFilter): Task[] {
+    if (!this.store) {
+      return [];
+    }
+    return this.store.loadTerminalTasks(filter);
   }
 }
 

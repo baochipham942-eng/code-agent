@@ -370,7 +370,7 @@ export async function handleDiscoverModels(payload: DiscoverModelsPayload): Prom
       };
     }
 
-    const data = await response.json().catch(() => null);
+    const data: unknown = await response.json().catch(() => null);
     return {
       success: true,
       models: parseDiscoveredModelsResponse(data),

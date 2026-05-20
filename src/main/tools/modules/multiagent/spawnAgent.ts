@@ -52,8 +52,9 @@ function normalizeSpawnArgs(args: Record<string, unknown>): Record<string, unkno
     role: normalizeRole(args.role),
   };
 
-  if (Array.isArray(args.agents)) {
-    normalized.agents = args.agents.map((agent) => {
+  const agents: unknown = args.agents;
+  if (Array.isArray(agents)) {
+    normalized.agents = agents.map((agent: unknown) => {
       if (!agent || typeof agent !== 'object') return agent;
       const item = agent as Record<string, unknown>;
       return {

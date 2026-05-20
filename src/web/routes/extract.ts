@@ -2,11 +2,31 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
-import type { HandlerFn } from '../electronMock';
+import { z } from 'zod';
 import { formatError } from '../helpers/utils';
+import type { WebRouteHandler } from './routeTypes';
 
 interface ExtractDeps {
-  handlers: Map<string, HandlerFn>;
+  handlers: Map<string, WebRouteHandler>;
+}
+
+const FilePathBodySchema = z.object({
+  filePath: z.string().optional(),
+}).passthrough();
+
+const SpeechTranscribeBodySchema = z.object({
+  audioData: z.string().optional(),
+  mimeType: z.string().optional(),
+}).passthrough();
+
+function readFilePathBody(body: unknown): { filePath?: string } {
+  const parsed = FilePathBodySchema.safeParse(body);
+  return parsed.success ? parsed.data : {};
+}
+
+function readSpeechTranscribeBody(body: unknown): { audioData?: string; mimeType?: string } {
+  const parsed = SpeechTranscribeBodySchema.safeParse(body);
+  return parsed.success ? parsed.data : {};
 }
 
 export function createExtractRouter(deps: ExtractDeps): Router {
@@ -15,7 +35,7 @@ export function createExtractRouter(deps: ExtractDeps): Router {
 
   router.post('/extract/pdf', async (req: Request, res: Response) => {
     try {
-      const { filePath } = req.body ?? {};
+      const { filePath } = readFilePathBody(req.body as unknown);
       if (!filePath || typeof filePath !== 'string') {
         res.status(400).json({ error: 'Missing or invalid filePath' });
         return;
@@ -32,7 +52,7 @@ export function createExtractRouter(deps: ExtractDeps): Router {
 
       const handler = handlers.get('extract-pdf-text');
       if (handler) {
-        const result = await handler(null, resolved);
+        const result: unknown = await handler(null, resolved);
         res.json(result);
       } else {
         res.status(501).json({ error: 'extract-pdf-text handler not registered' });
@@ -44,7 +64,7 @@ export function createExtractRouter(deps: ExtractDeps): Router {
 
   router.post('/extract/excel', async (req: Request, res: Response) => {
     try {
-      const { filePath } = req.body ?? {};
+      const { filePath } = readFilePathBody(req.body as unknown);
       if (!filePath || typeof filePath !== 'string') {
         res.status(400).json({ error: 'Missing or invalid filePath' });
         return;
@@ -61,7 +81,7 @@ export function createExtractRouter(deps: ExtractDeps): Router {
 
       const handler = handlers.get('extract-excel-text');
       if (handler) {
-        const result = await handler(null, resolved);
+        const result: unknown = await handler(null, resolved);
         res.json(result);
       } else {
         res.status(501).json({ error: 'extract-excel-text handler not registered' });
@@ -73,7 +93,7 @@ export function createExtractRouter(deps: ExtractDeps): Router {
 
   router.post('/extract/excel-json', async (req: Request, res: Response) => {
     try {
-      const { filePath } = req.body ?? {};
+      const { filePath } = readFilePathBody(req.body as unknown);
       if (!filePath || typeof filePath !== 'string') {
         res.status(400).json({ error: 'Missing or invalid filePath' });
         return;
@@ -90,7 +110,7 @@ export function createExtractRouter(deps: ExtractDeps): Router {
 
       const handler = handlers.get('extract-excel-json');
       if (handler) {
-        const result = await handler(null, resolved);
+        const result: unknown = await handler(null, resolved);
         res.json(result);
       } else {
         res.status(501).json({ error: 'extract-excel-json handler not registered' });
@@ -102,7 +122,7 @@ export function createExtractRouter(deps: ExtractDeps): Router {
 
   router.post('/extract/docx-html', async (req: Request, res: Response) => {
     try {
-      const { filePath } = req.body ?? {};
+      const { filePath } = readFilePathBody(req.body as unknown);
       if (!filePath || typeof filePath !== 'string') {
         res.status(400).json({ error: 'Missing or invalid filePath' });
         return;
@@ -119,7 +139,7 @@ export function createExtractRouter(deps: ExtractDeps): Router {
 
       const handler = handlers.get('extract-docx-html');
       if (handler) {
-        const result = await handler(null, resolved);
+        const result: unknown = await handler(null, resolved);
         res.json(result);
       } else {
         res.status(501).json({ error: 'extract-docx-html handler not registered' });
@@ -131,7 +151,7 @@ export function createExtractRouter(deps: ExtractDeps): Router {
 
   router.post('/speech/transcribe', async (req: Request, res: Response) => {
     try {
-      const { audioData, mimeType } = req.body ?? {};
+      const { audioData, mimeType } = readSpeechTranscribeBody(req.body as unknown);
       if (!audioData || typeof audioData !== 'string') {
         res.status(400).json({ error: 'Missing or invalid audioData (base64 string)' });
         return;
@@ -143,7 +163,7 @@ export function createExtractRouter(deps: ExtractDeps): Router {
 
       const handler = handlers.get('speech:transcribe');
       if (handler) {
-        const result = await handler(null, { audioData, mimeType });
+        const result: unknown = await handler(null, { audioData, mimeType });
         res.json(result);
       } else {
         res.status(501).json({ error: 'speech:transcribe handler not registered' });

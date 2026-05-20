@@ -14,10 +14,19 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { z } from 'zod';
 import { getConfigService } from '../../../services';
 import { MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readPdfSchema as schema } from './readPdf.schema';
+
+const VisionCompletionResponseSchema = z.object({
+  choices: z.array(z.object({
+    message: z.object({
+      content: z.string().optional(),
+    }).passthrough().optional(),
+  }).passthrough()).optional().default([]),
+}).passthrough();
 
 /**
  * 直接调用 OpenRouter API（需要本地 API Key）
@@ -77,8 +86,13 @@ async function processWithVisionModel(
   ctx.logger.info('[PDF解析] 使用 OpenRouter Gemini');
   const directResponse = await callDirectOpenRouter(apiKey, requestBody);
   if (directResponse.ok) {
-    const result = await directResponse.json();
-    return { content: result.choices?.[0]?.message?.content || '无法解析 PDF 内容' };
+    const payload: unknown = await directResponse.json();
+    const result = VisionCompletionResponseSchema.safeParse(payload);
+    return {
+      content: result.success
+        ? result.data.choices[0]?.message?.content || '无法解析 PDF 内容'
+        : '无法解析 PDF 内容',
+    };
   }
   const errorText = await directResponse.text();
   ctx.logger.warn('[PDF解析] OpenRouter 失败', { status: directResponse.status, error: errorText });

@@ -19,11 +19,17 @@ import {
 
 // pptxgenjs accepts text-fit fields on master placeholders at runtime, but its
 // PlaceholderProps type is narrower than TextPropsOptions.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 masterDecorations.ts 的 buildDecorationObjects 返回，应抽 SlideMasterObject 联合后 SlideMasterObjects = SlideMasterObject[]
-type SlideMasterObjects = any[];
+type SlideMasterObjects = Array<Record<string, unknown>>;
 
 function buildMasterObjects(config: MasterDecorationConfig, theme: ThemeConfig): SlideMasterObjects {
-  return buildDecorationObjects(config, theme) as SlideMasterObjects;
+  return buildDecorationObjects(config, theme);
+}
+
+function definePptxSlideMaster(
+  pptx: PptxGenJS,
+  props: Omit<PptxGenJS.SlideMasterProps, 'objects'> & { objects: SlideMasterObjects }
+): void {
+  pptx.defineSlideMaster(props as unknown as PptxGenJS.SlideMasterProps);
 }
 
 // Master 名称常量
@@ -104,7 +110,7 @@ function registerTitleMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: boolean
     },
   });
 
-  pptx.defineSlideMaster({
+  definePptxSlideMaster(pptx, {
     title: MASTER.TITLE,
     background: { color: theme.bgColor },
     objects,
@@ -152,7 +158,7 @@ function registerContentListMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: b
     },
   });
 
-  pptx.defineSlideMaster({
+  definePptxSlideMaster(pptx, {
     title: MASTER.CONTENT_LIST,
     background: { color: theme.bgColor },
     objects,
@@ -200,7 +206,7 @@ function registerContentChartMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: 
     },
   });
 
-  pptx.defineSlideMaster({
+  definePptxSlideMaster(pptx, {
     title: MASTER.CONTENT_CHART,
     background: { color: theme.bgColor },
     objects,
@@ -238,7 +244,7 @@ function registerContentImageMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: 
     },
   });
 
-  pptx.defineSlideMaster({
+  definePptxSlideMaster(pptx, {
     title: MASTER.CONTENT_IMAGE,
     background: { color: theme.bgColor },
     objects,
@@ -291,7 +297,7 @@ function registerEndMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: boolean) 
     },
   });
 
-  pptx.defineSlideMaster({
+  definePptxSlideMaster(pptx, {
     title: MASTER.END,
     background: { color: theme.bgColor },
     objects,
@@ -321,7 +327,7 @@ function registerHeroNumberMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: bo
     },
   });
 
-  pptx.defineSlideMaster({
+  definePptxSlideMaster(pptx, {
     title: MASTER.HERO_NUMBER,
     background: { color: theme.bgColor },
     objects,
@@ -381,7 +387,7 @@ function registerQuoteMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: boolean
     },
   });
 
-  pptx.defineSlideMaster({
+  definePptxSlideMaster(pptx, {
     title: MASTER.QUOTE,
     background: { color: theme.bgColor },
     objects,
@@ -430,7 +436,7 @@ function registerComparisonMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: bo
     },
   });
 
-  pptx.defineSlideMaster({
+  definePptxSlideMaster(pptx, {
     title: MASTER.COMPARISON,
     background: { color: theme.bgColor },
     objects,
@@ -460,7 +466,7 @@ function registerTwoColMaster(pptx: PptxGenJS, theme: ThemeConfig, apple: boolea
     },
   });
 
-  pptx.defineSlideMaster({
+  definePptxSlideMaster(pptx, {
     title: MASTER.TWO_COL,
     background: { color: theme.bgColor },
     objects,

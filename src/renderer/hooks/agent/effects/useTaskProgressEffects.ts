@@ -1,5 +1,6 @@
 // useAgentTaskProgressEffects - task_progress, task_complete, todo_update
 import { useEffect } from 'react';
+import type { AgentEventEnvelope, TodoItem } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
 import ipcService from '../../../services/ipcService';
@@ -7,8 +8,22 @@ import type { AgentEffectsProps } from '../useAgentEffects';
 
 const logger = createLogger('useAgent');
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同其他 effects hook 文件，应抽 shared AgentEvent 联合按 type narrow
-type AgentEvent = { type: string; data: any; sessionId?: string };
+type AgentEvent = AgentEventEnvelope | { type: 'stream_end'; data: null; sessionId?: string };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function getTodoItems(data: unknown): TodoItem[] | null {
+  if (Array.isArray(data)) {
+    return data as TodoItem[];
+  }
+  if (!isRecord(data)) {
+    return null;
+  }
+  const items = data.items;
+  return Array.isArray(items) ? items as TodoItem[] : null;
+}
 
 export const useTaskProgressEffects = ({
   lastEventAtRef,
@@ -40,7 +55,7 @@ export const useTaskProgressEffects = ({
           lastEventAtRef.current = Date.now();
           logHandledEvent();
           if (event.data && isCurrentSessionEvent) {
-            const todos = Array.isArray(event.data) ? event.data : event.data.items;
+            const todos = getTodoItems(event.data);
             if (todos) setTodos(todos);
           }
           break;

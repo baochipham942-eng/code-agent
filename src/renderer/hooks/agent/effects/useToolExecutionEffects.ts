@@ -1,6 +1,13 @@
 // useAgentToolExecutionEffects - stream_tool_call_start, stream_tool_call_delta, tool_call_start, tool_call_end, tool_call_local, tool_progress, tool_timeout
 import { useEffect } from 'react';
-import type { ToolCall, ToolOutputDeltaData, ToolProgressData, ToolResult, ToolTimeoutData } from '@shared/contract';
+import type {
+  AgentEventEnvelope,
+  ToolCall,
+  ToolOutputDeltaData,
+  ToolProgressData,
+  ToolResult,
+  ToolTimeoutData,
+} from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
 import ipcService from '../../../services/ipcService';
@@ -11,8 +18,7 @@ import type { CapabilityGap } from '../../../../shared/contract/capabilityGap';
 
 const logger = createLogger('useAgent');
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同其他 effects hook 文件，应抽 shared AgentEvent 联合按 type narrow
-type AgentEvent = { type: string; data: any; sessionId?: string };
+type AgentEvent = AgentEventEnvelope | { type: 'stream_end'; data: null; sessionId?: string };
 
 export const useToolExecutionEffects = ({
   currentTurnMessageIdRef,
@@ -223,8 +229,7 @@ export const useToolExecutionEffects = ({
               logger.warn('No matching toolCall found', { toolCallId: toolResult.toolCallId });
               logger.debug('Available toolCalls', {
                 ids: getFreshMessages()
-                  .filter(m => m.toolCalls)
-                  .flatMap(m => m.toolCalls!.map(tc => tc.id))
+                  .flatMap(m => m.toolCalls?.map(tc => tc.id) ?? [])
               });
             }
 

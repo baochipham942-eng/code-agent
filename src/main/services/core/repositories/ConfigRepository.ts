@@ -15,6 +15,50 @@ export type { UserPreference, ProjectKnowledge, ToolExecution };
 // SQLite 行类型
 type SQLiteRow = Record<string, unknown>;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJsonValue(value: unknown): unknown {
+  if (typeof value !== 'string' || value.length === 0) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseJsonRecord(value: unknown): Record<string, unknown> {
+  const parsed = parseJsonValue(value);
+  return isRecord(parsed) ? parsed : {};
+}
+
+function parseJsonString(value: unknown): string {
+  const parsed = parseJsonValue(value);
+  if (typeof parsed === 'string') {
+    return parsed;
+  }
+  return parsed === undefined ? '' : JSON.stringify(parsed);
+}
+
+function parseToolResult(value: unknown): ToolResult {
+  const parsed = parseJsonValue(value);
+  return isRecord(parsed)
+    ? {
+        toolCallId: typeof parsed.toolCallId === 'string' ? parsed.toolCallId : '',
+        success: parsed.success === true,
+        output: typeof parsed.output === 'string' ? parsed.output : undefined,
+        error: typeof parsed.error === 'string' ? parsed.error : undefined,
+        outputPath: typeof parsed.outputPath === 'string' ? parsed.outputPath : undefined,
+        duration: typeof parsed.duration === 'number' ? parsed.duration : undefined,
+        metadata: isRecord(parsed.metadata) ? parsed.metadata : undefined,
+      }
+    : { toolCallId: '', success: false };
+}
+
 export class ConfigRepository {
   constructor(private db: BetterSqlite3.Database) {}
 
@@ -36,7 +80,8 @@ export class ConfigRepository {
     const row = stmt.get(key) as SQLiteRow | undefined;
 
     if (!row) return defaultValue;
-    return JSON.parse(row.value as string);
+    const parsed = parseJsonValue(row.value) as T | undefined;
+    return parsed ?? defaultValue;
   }
 
   getAllPreferences(): Record<string, unknown> {
@@ -45,7 +90,7 @@ export class ConfigRepository {
 
     const result: Record<string, unknown> = {};
     for (const row of rows) {
-      result[row.key as string] = JSON.parse(row.value as string);
+      result[row.key as string] = parseJsonValue(row.value);
     }
     return result;
   }
@@ -101,7 +146,7 @@ export class ConfigRepository {
       id: row.id as string,
       projectPath: row.project_path as string,
       key: row.key as string,
-      value: JSON.parse(row.value as string),
+      value: parseJsonString(row.value),
       source: row.source as ProjectKnowledge['source'],
       confidence: row.confidence as number,
       createdAt: row.created_at as number,
@@ -119,7 +164,7 @@ export class ConfigRepository {
       id: row.id as string,
       projectPath: row.project_path as string,
       key: row.key as string,
-      value: JSON.parse(row.value as string),
+      value: parseJsonString(row.value),
       source: row.source as ProjectKnowledge['source'],
       confidence: row.confidence as number,
       createdAt: row.created_at as number,
@@ -206,7 +251,7 @@ export class ConfigRepository {
       id: row.id as number,
       sessionId: row.session_id as string | null,
       eventType: row.event_type as string,
-      eventData: JSON.parse(row.event_data as string),
+      eventData: parseJsonRecord(row.event_data),
       createdAt: row.created_at as number,
     }));
   }
@@ -275,7 +320,7 @@ export class ConfigRepository {
     const row = stmt.get(hash, toolName, now) as SQLiteRow | undefined;
     if (!row) return null;
 
-    return JSON.parse(row.result as string);
+    return parseToolResult(row.result);
   }
 
   cleanExpiredCache(): number {

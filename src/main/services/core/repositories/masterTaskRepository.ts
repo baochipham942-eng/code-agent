@@ -133,7 +133,7 @@ function stringifyObject(value: Record<string, unknown> | undefined): string {
 function parseArray(value: unknown): string[] {
   if (typeof value !== 'string' || value.length === 0) return [];
   try {
-    const parsed = JSON.parse(value);
+    const parsed = JSON.parse(value) as unknown;
     return Array.isArray(parsed) ? parsed.map(String) : [];
   } catch {
     return [];
@@ -143,7 +143,7 @@ function parseArray(value: unknown): string[] {
 function parseObject(value: unknown): Record<string, unknown> {
   if (typeof value !== 'string' || value.length === 0) return {};
   try {
-    const parsed = JSON.parse(value);
+    const parsed = JSON.parse(value) as unknown;
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : {};

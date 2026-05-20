@@ -7,6 +7,93 @@
 
 ---
 
+## 2026-05-20 当前守门入口
+
+`debt:report` 是后续类型债 PR 的固定基线命令：
+
+```bash
+npm run debt:report
+npm run debt:report -- --skip-eslint --limit 15
+npm run debt:report -- --json --skip-eslint
+```
+
+快速扫描基线：
+
+| 指标 | 当前值 | 口径 |
+|---|---:|---|
+| `no-explicit-any` inline disable | 152 | `src/` 非测试文件 |
+| `as any` casts | 21 | `src/` 非测试文件 |
+| `no-unsafe-*` warnings | 77 | `npm run debt:report -- --limit 30`，ESLint JSON |
+| top disable bucket | 116 | `src/web/electronMock.ts` |
+| top regular source bucket | 5 | `src/main/platform/ipcTypes.ts` |
+| top no-unsafe bucket | 4 | `src/renderer/components/ChatView.tsx` / `src/renderer/components/LivePreview` 并列 |
+
+默认执行 `npm run debt:report` 会额外跑 ESLint JSON 输出并统计 `no-unsafe-*` 热点；需要只看大文件和 `any` 快速基线时用 `--skip-eslint`。
+
+本季度目标不变：先收 IPC schema、Provider SDK response、Web route body 这三个入口，不急着把所有 no-unsafe 一次性升 error。
+
+2026-05-20 追加进展：`web/routes/agent.ts`、`web/routes/sessions.ts`、`web/routes/domain.ts` 与 `web/routes/dev.ts` 已把 logger、SessionManager、Supabase fallback、DB facade、create-session body 和 dev/domain request body 入口收成 typed facade / schema parse。`src/web/routes` 的 `no-explicit-any` inline disable 从 13 降到 0，no-unsafe bucket 从 240 降到 13。
+
+2026-05-20 继续进展：`src/web/webServer.ts` 清掉 8 个 `no-explicit-any` disable 和 3 个 `as any`，用 typed bootstrap config、platform window facade、Swarm repo 类型、session domain payload facade 和 Supabase route binding 保持 web bootstrap 外部行为不变。
+
+2026-05-20 network 读侧进展：`twitterFetch.ts`、`youtubeTranscript.ts`、`academicSearch.ts` 的第三方 JSON 响应统一先进 `unknown`，再用 `.passthrough()` zod schema 映射成内部类型。三文件 scoped no-unsafe 从 80 降到 0，`src/main/tools/modules` no-unsafe bucket 从 406 降到 326。
+
+2026-05-20 network 管理侧进展：`githubPr.ts` 与 `jira.ts` 的 `gh` CLI / Jira REST JSON 输出收成 typed facade，Jira create payload 从 `any` 改成结构化 payload。两文件 scoped no-unsafe 从 123 降到 0，`src/main/tools/modules` no-unsafe bucket 从 326 降到 203。
+
+2026-05-20 network 响应侧进展：`screenshotPage.ts`、`imageAnalyze.ts`、`readPdf.ts` 与 `httpRequest.ts` 的 Microlink / OpenAI-compatible vision / raw HTTP JSON 响应统一先落 `unknown`，再通过 zod schema 或 JSON stringify 边界进入内部类型。四文件 scoped no-unsafe 从 20 降到 0，`src/main/tools/modules` no-unsafe bucket 从 203 降到 183。
+
+2026-05-20 PPT 入口进展：`pptGenerate.ts` 给 CJS `pptxgenjs` loader 加最小 typed constructor facade，生成入口不再把 `pptx` 实例作为 `any` 传给 slide master / layout helper。该文件 scoped no-unsafe 从 20 降到 0，并顺手去掉 1 个 `no-explicit-any` inline disable；`src/main/tools/modules` no-unsafe bucket 从 183 降到 163。
+
+2026-05-20 modules 小热点进展：`docxEditCore.ts`、`bash.ts`、`process.ts`、`notebookEdit.ts` 与 `multiagent/spawnAgent.ts` 的 `JSON.parse`、`String.replace` callback、`Array.isArray` element 和 nullable index 边界改成 `unknown` / typed callback / guard。五文件 scoped no-unsafe 从 22 降到 0；`src/main/tools/modules` bucket 从 163 降到 141，且剩余 141 条全部集中在 `lsp/lsp.ts`。
+
+2026-05-20 agent team typed-boundary 进展：`lsp/lsp.ts` 加 LSP response guard / normalizer，scoped no-unsafe 从 141 降到 0；`visualReview.ts`、`dataSourceAdapter.ts`、`styleExtractor.ts` 清掉 media 低风险 JSON/CJS/SDK 边界，`src/main/tools/media` no-unsafe 从 142 降到 79；`useToolExecutionEffects.ts`、`useSessionLifecycleEffects.ts`、`useTaskProgressEffects.ts` 收紧 renderer `agent:event` payload，`src/renderer/hooks/agent` no-unsafe 从 124 降到 77；`updateService.ts` 给 Vercel/GitHub update response 加 typed parser，`src/main/services/cloud` no-unsafe 从 64 降到 0。
+
+2026-05-20 media typed-boundary 进展：`charts.ts`、`masterDecorations.ts`、`slideMasters.ts`、`preview-all-layouts.ts`、`slideContentAgent.ts` 与 `mermaidToNative.ts` 清掉 pptxgenjs chart/master object、preview VLM JSON、模型 JSON array 和 native shape 的 `any` 传染；`src/main/tools/media` no-unsafe 从 79 降到 0，全仓 no-unsafe 从 1072 降到 993，`no-explicit-any` inline disable 从 227 降到 217。
+
+2026-05-20 renderer hooks typed-boundary 进展：`useConversationStreamEffects.ts` 与 `usePermissionQueueEffects.ts` 把 `agent:event` payload 从 `any` 改成 `unknown` + per-event guard，保留原有 streaming/message/routing/permission 行为；`src/renderer/hooks/agent` no-unsafe 从 77 降到 0，全仓 no-unsafe 从 993 降到 916，`no-explicit-any` inline disable 从 217 降到 215。
+
+2026-05-20 renderer features typed-boundary 进展：新增 `localBridgeToolResponse.ts` 统一 Local Bridge `fetch().json()` 返回边界，`DirectoryPickerModal.tsx` / `WorkingDirectoryPicker.tsx` 复用该 parser；同时给 chart/document/spreadsheet/generative-ui/message content/settings 的 JSON、postMessage、catch error 和 settings payload 增加 `unknown` guard。`src/renderer/components/features` no-unsafe 从 47 降到 0，全仓 no-unsafe 从 916 降到 869，`no-explicit-any` inline disable 从 215 降到 213。
+
+2026-05-20 builtin plugin typed-boundary 进展：新增 `typedResponseGuards.ts` 作为内建插件网络响应 facade，`speechToText.ts`、`imageAnnotate.ts`、`imageGenerate.ts` 与 `videoGenerate.ts` 的 ASR/OCR/LLM/video JSON 返回统一先落 `unknown` 再 normalize。`src/main/plugins/builtin` no-unsafe 从 39 降到 0，全仓 no-unsafe 从 869 降到 830。
+
+2026-05-20 renderer auth store typed-boundary 进展：`authStore.ts` 去掉 7 个 `invokeDomain<any>` 和对应 inline disable，用 `AuthActionResult` / `AuthStatus` 固定 renderer 读写 auth action 的返回边界，密码重置回调也复用 domain facade。`src/renderer/stores/authStore.ts` no-unsafe 从 37 降到 0，全仓 no-unsafe 从 830 降到 793，`no-explicit-any` inline disable 从 213 降到 206。
+
+2026-05-20 Feishu channel typed-boundary 进展：`feishuChannel.ts` 的 webhook body、schema 2.0 event、消息 content JSON 和富文本 post 解析改为 `unknown` + record/string guard，并把卡片元素从 `any[]` 收成 `FeishuCardElement` union。`src/main/channels/feishu` no-unsafe 从 36 降到 0，全仓 no-unsafe 从 793 降到 757，`no-explicit-any` inline disable 从 206 降到 205。
+
+2026-05-20 desktop audio typed-boundary 进展：`desktopAudioCapture.ts` 把 onnxruntime-node 动态 require 收成 `OrtRuntimeModule` typed loader，VAD output/state、Qwen3-ASR JSON、SQLite power-state raw_json 都统一走 `unknown` + guard。`src/main/services/desktop` no-unsafe 从 34 降到 0，全仓 no-unsafe 从 757 降到 723，`no-explicit-any` inline disable 从 205 降到 202。
+
+2026-05-20 cron typed-boundary 进展：`cronService.ts` 的 `cron_jobs` / `cron_executions` SQLite row 从 `any[]` 改成 `unknown[]`，再通过 schedule/action/execution guard 映射到内部契约；历史执行结果 JSON 也统一走 `unknown` parse。该文件 scoped no-unsafe 从 33 降到 0，全仓 no-unsafe 从 723 降到 690，`no-explicit-any` inline disable 从 202 降到 201，`as any` 从 46 降到 45。
+
+2026-05-20 renderer HTTP transport typed-boundary 进展：`httpTransport.ts` 的 SSE envelope、agent stream data、HTTP wrapped response、上传/提取/转写/Domain API JSON 返回统一改为 `unknown` parse + typed normalizer。该文件 scoped no-unsafe 从 29 降到 0，全仓 no-unsafe 从 690 降到 661。
+
+2026-05-20 core persistence typed-boundary 进展：`configService.ts`、`databaseService.ts`、`secureStorage.ts` 与 core repositories 的 SQLite/Keychain JSON 读侧统一改成 `unknown` parse + record/string/tool-result normalizer；`better-sqlite3`/`keytar` 动态 require 也先落 `unknown` 再转 typed facade。`src/main/services/core` scoped no-unsafe 从 28 降到 0，全仓 no-unsafe 从 661 降到 633。
+
+2026-05-20 AgentTask persistence typed-boundary 进展：`agentTask.ts` 的 metadata / transcript 反序列化改为 typed loader，`TaskKernel` 增加受控 runtime-state restore 入口，移除 `AgentTask.loadFromDisk` 对 protected/private 字段的 `(task as any)` 直写。该文件 scoped no-unsafe 从 25 降到 0，全仓 no-unsafe 从 633 降到 608，`no-explicit-any` inline disable 从 201 降到 197，`as any` 从 45 降到 41。
+
+2026-05-20 LSP manager typed-boundary 进展：`lsp/manager.ts` 的 JSON-RPC stdout 解析改为 `unknown` + incoming message union，request result/error/notification 分支显式 narrow，`textDocument/publishDiagnostics` 增加 diagnostics payload normalizer。该文件 scoped no-unsafe 从 25 降到 0，全仓 no-unsafe 从 608 降到 583，`no-explicit-any` inline disable 从 197 降到 191。
+
+2026-05-20 runtime / IPC / exporter typed-boundary 进展：`prLinkService.ts`、`notebookEdit.ts`、`channel.ipc.ts` / `cron.ipc.ts` / `provider.ipc.ts` / `soul.ipc.ts` / `speech.ipc.ts` / `voicePaste.ipc.ts`、runtime context/message 相关文件、`exportMarkdown.ts` 与 `pluginLoader.ts` 清掉 GitHub/Notebook/IPC/runtime/export/plugin JSON 与 dynamic import 边界。全仓 no-unsafe 从 583 降到 466，`no-explicit-any` inline disable 从 191 降到 177，`as any` 从 41 降到 35。
+
+2026-05-20 agent team no-unsafe sweep 进展：`agentAdapter.ts`、CLI `bootstrap.ts` / `adapter.ts` / `output/terminal.ts`、`web/routes`、`telegramChannel.ts`、`cloudStorageService.ts`、`researchExecutor.ts`、`restoreSession.ts`、skills `gitDownloader.ts` / `skillRenderer.ts` 与 `codexSessionParser.ts` 改为 `unknown` + typed guard / schema parse / typed dynamic import 边界。全仓 no-unsafe 从 466 降到 309，`no-explicit-any` inline disable 从 177 降到 166，`as any` 从 35 降到 28。
+
+2026-05-20 any 目标收尾进展：`dagScheduler.ts` 去掉 ToolCall arguments 的 `as any` 读取，改成 record/string guard；`localBridgeStore.ts` 去掉 window 全局 interval cast，改为模块级 polling handle，并给 `/health` JSON 返回加 typed parser。全仓 no-unsafe 从 309 降到 295，`no-explicit-any` inline disable 从 166 降到 162，`as any` 从 28 降到 23，`as any < 25` 季度目标已达成。
+
+2026-05-20 no-unsafe 收尾进展：`index.ts` 收紧 Electron 启动事件与 `process.defaultApp` 类型，`httpHookExecutor.ts` / `scriptExecutor.ts` 给 hook JSON response 和 exec error object 加 typed parser，`src/main/tools/shell` 清掉 process output chunk / persisted task JSON / escape callback 边界，`platform/appPaths.ts` 给 package version JSON 加 parser。全仓 no-unsafe 从 295 降到 249，`no-explicit-any` inline disable 从 162 降到 158，`as any` 从 23 降到 22。
+
+2026-05-20 CLI database typed-boundary 进展：`src/cli/database.ts` 把 `better-sqlite3` CJS loader、compaction / turn snapshot / message attachment / memory metadata / cached tool result / tool execution JSON 读侧统一收成 typed parser，fallback tool result 补齐 `toolCallId` 契约。该文件 scoped no-unsafe 从 16 降到 0，全仓 no-unsafe 从 249 降到 233，`no-explicit-any` inline disable 158，`as any` 22。
+
+2026-05-20 sandbox process-boundary 进展：`sandbox/manager.ts`、`sandbox/bubblewrap.ts` 与 `sandbox/seatbelt.ts` 给子进程 stdout/stderr chunk 加明确类型，并把 `SandboxManager.forProject()` 的动态 `require('path')` 改为静态 typed import。三文件 scoped no-unsafe 从 25 降到 0，全仓 no-unsafe 从 233 降到 208，`no-explicit-any` inline disable 158，`as any` 22。
+
+2026-05-20 low-risk boundary sweep 进展：`antiPattern/detector.ts` 的强制工具调用 JSON 解析、`mcpServer.ts` 的 bridge JSON response、`planPersistence.ts` 的 plan/snapshot JSON 读侧，以及 `pythonBridge.ts` 的 Electron resource path / stdout chunk / Python JSON result 都改成 `unknown` + guard。四文件 scoped no-unsafe 从 32 降到 0，全仓 no-unsafe 从 208 降到 176，`no-explicit-any` inline disable 从 158 降到 157，`as any` 从 22 降到 21；`antiPattern/detector.ts` 保持在 999 行，没有新增大文件债。
+
+2026-05-20 tail typed-boundary sweep 进展：`agentMdLoader.ts` 的 YAML frontmatter、`selectionStore.ts` 的 pinned sessions storage、`dataFingerprint.ts` 的 JSON fact extraction、`imageGenerationService.ts` 的 CogView/OpenRouter JSON response、`tokenOptimizer.ts` 的 tool output summary、`mcpToolRegistry.ts` / `logBridge.ts` 的 MCP content / command body，以及 `taskOrchestrator.ts` / `openchronicleSupervisor.ts` 的 model/settings/CLI output 边界都改成 `unknown` + guard。全仓 no-unsafe 从 176 降到 124，`no-explicit-any` inline disable 从 157 降到 155，`as any` 21。
+
+2026-05-20 sub-100 进展：`telemetryStorage.ts` 的 active skill / MCP / keyword / quality signal / fallback JSON 读侧、`ForceUpdateModal.tsx` 与 `UpdateNotification.tsx` 的 update event union、`nativeDesktop.ts` 的 web fallback IPC envelope、`sessionEventService.ts` 的 SQLite statement / event JSON，以及 `multiagentTools/workflowOrchestrate.ts` 的 structured JSON extraction 收成 typed facade。全仓 no-unsafe 从 124 降到 96，`no-explicit-any` inline disable 从 155 降到 152，`as any` 21；当前 top no-unsafe bucket 已降到 4。
+
+2026-05-20 tail no-unsafe 收尾进展：`evalCritic`、`tools/decorators`、CLI direct-run/serve/json extractor、`quickModel.ts` 与 auth service/token manager 的 JSON / metadata / cached user / stream chunk 边界改为 `unknown` + typed facade。全仓 no-unsafe 从 96 降到 77，`no-explicit-any` inline disable 152，`as any` 21；剩余 top no-unsafe bucket 主要落在 `ChatView.tsx` / `LivePreview` 等 UI 尾部热点。
+
+---
+
 ## 0. TL;DR
 
 | 项 | 数 |

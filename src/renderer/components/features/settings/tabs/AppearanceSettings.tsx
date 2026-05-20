@@ -8,7 +8,7 @@ import { Moon, Sun, Monitor, Check } from 'lucide-react';
 import { useI18n, type Language } from '../../../../hooks/useI18n';
 import { useTheme, type Theme } from '../../../../hooks/useTheme';
 import { IPC_DOMAINS } from '@shared/ipc';
-import { Select } from '../../../primitives';
+import type { AppSettings } from '@shared/contract';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
@@ -28,6 +28,19 @@ interface ThemeOption {
   preview: React.ReactNode;
 }
 
+function getFontSizeName(fontSize: number): 'small' | 'medium' | 'large' | null {
+  switch (fontSize) {
+    case 13:
+      return 'small';
+    case 14:
+      return 'medium';
+    case 16:
+      return 'large';
+    default:
+      return null;
+  }
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -41,11 +54,9 @@ export const AppearanceSettings: React.FC = () => {
   useEffect(() => {
     const loadFontSize = async () => {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 App.tsx，SETTINGS 域 'get' 应抽 SettingsIpcMap 让 invokeDomain narrow
-        const settings = await ipcService.invokeDomain<any>(IPC_DOMAINS.SETTINGS, 'get');
+        const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
         if (settings?.ui?.fontSize) {
-          const sizeMap: Record<number, 'small' | 'medium' | 'large'> = { 13: 'small', 14: 'medium', 16: 'large' };
-          const size = sizeMap[settings.ui.fontSize];
+          const size = getFontSizeName(settings.ui.fontSize);
           if (size) setFontSize(size);
         }
       } catch (error) {
@@ -129,7 +140,7 @@ export const AppearanceSettings: React.FC = () => {
     try {
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         ui: { fontSize: sizeMap[size] },
-      } as Partial<import('@shared/contract').AppSettings>);
+      } as Partial<AppSettings>);
       logger.info('Font size saved', { size });
     } catch (error) {
       logger.error('Failed to save font size', error);

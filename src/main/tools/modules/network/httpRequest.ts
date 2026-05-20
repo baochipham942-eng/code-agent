@@ -156,7 +156,7 @@ export async function executeHttpRequest(
     let responseBody: string;
     if (contentType.includes('application/json')) {
       try {
-        const json = await response.json();
+        const json: unknown = await response.json();
         responseBody = JSON.stringify(json, null, 2);
       } catch {
         responseBody = await response.text();

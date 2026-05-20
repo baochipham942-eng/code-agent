@@ -578,7 +578,7 @@ export function renderMermaidNative(
     const isHighlight = isFirst || isLast;
 
     // 节点形状
-    let shapeType: string = 'roundRect';
+    let shapeType: PptxGenJS.SHAPE_NAME = 'roundRect';
     let rectRadius = 0.06;
 
     switch (node.shape) {
@@ -598,8 +598,7 @@ export function renderMermaidNative(
     }
 
     // 绘制形状
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pptxgenjs ShapeProps 类型应 import { AddShapeProps } from 'pptxgenjs'，含 x/y/w/h/fill/line/rectRadius
-    const shapeProps: any = {
+    const shapeProps: PptxGenJS.ShapeProps = {
       x: node.x,
       y: node.y,
       w: node.w,
@@ -612,8 +611,7 @@ export function renderMermaidNative(
       shapeProps.rectRadius = rectRadius;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pptxgenjs ShapeType 字面量限定，但这里 shapeType 是从 mermaid AST 来的动态字符串；应在 mapMermaidShapeToPptx 里返回 pptxgenjs.ShapeType 枚举
-    slide.addShape(shapeType as any, shapeProps);
+    slide.addShape(shapeType, shapeProps);
 
     // 节点文本
     slide.addText(node.text, {

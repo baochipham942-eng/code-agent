@@ -9,7 +9,7 @@ import { getChannelManager } from '../channels';
 import type {
   ChannelType,
   ChannelAccount,
-  ChannelAccountConfig,
+  ChannelAccountStatus,
   ChannelInboxItem,
   AddChannelAccountRequest,
   UpdateChannelAccountRequest,
@@ -32,7 +32,7 @@ export function registerChannelHandlers(
   const channelManager = getChannelManager();
 
   // 监听通道事件并转发到渲染进程
-  channelManager.on('account_status_change', (accountId, status, error) => {
+  channelManager.on('account_status_change', (accountId: string, status: ChannelAccountStatus, error?: string) => {
     const mainWindow = getMainWindow();
     if (mainWindow) {
       mainWindow.webContents.send(CHANNEL_CHANNELS.ACCOUNT_STATUS_CHANGED, {
@@ -43,14 +43,14 @@ export function registerChannelHandlers(
     }
   });
 
-  channelManager.on('accounts_changed', (accounts) => {
+  channelManager.on('accounts_changed', (accounts: ChannelAccount[]) => {
     const mainWindow = getMainWindow();
     if (mainWindow) {
       mainWindow.webContents.send(CHANNEL_CHANNELS.ACCOUNTS_CHANGED, accounts);
     }
   });
 
-  channelManager.on('inbox_changed', (items) => {
+  channelManager.on('inbox_changed', (items: ChannelInboxItem[]) => {
     const mainWindow = getMainWindow();
     if (mainWindow) {
       mainWindow.webContents.send(CHANNEL_CHANNELS.INBOX_CHANGED, items);

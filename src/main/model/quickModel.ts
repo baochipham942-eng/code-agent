@@ -41,6 +41,28 @@ interface QuickModelConfig {
 
 let quickConfig: QuickModelConfig | null = null;
 
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
+function parseChatCompletionContent(payload: unknown): string | null {
+  if (!isUnknownRecord(payload) || !isUnknownArray(payload.choices)) {
+    return null;
+  }
+
+  const firstChoice = payload.choices[0];
+  if (!isUnknownRecord(firstChoice) || !isUnknownRecord(firstChoice.message)) {
+    return null;
+  }
+
+  const content = firstChoice.message.content;
+  return typeof content === 'string' && content.length > 0 ? content : null;
+}
+
 /**
  * 初始化 quick model：直连智谱官方 bigmodel.cn，不经过 ModelRouter。
  * 走官方是因为 0ki 代理不稳定支持 DEFAULT_MODELS.quick 的免费 ID。
@@ -98,9 +120,9 @@ export async function quickTask(prompt: string, maxTokens?: number): Promise<Qui
       return { success: false, error: `${response.status} ${text.slice(0, 200)}` };
     }
 
-    const data = await response.json();
-    const content = data?.choices?.[0]?.message?.content;
-    if (typeof content === 'string' && content.length > 0) {
+    const data: unknown = await response.json();
+    const content = parseChatCompletionContent(data);
+    if (content) {
       return { success: true, content };
     }
     return { success: false, error: 'Empty response from quick model' };

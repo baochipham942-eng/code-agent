@@ -4,12 +4,58 @@
 
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
-import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions } from '../../shared/contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, QualitySignals } from '../../shared/contract/telemetry';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 import type Database from 'better-sqlite3';
 import { guardSensitiveJsonText, guardSensitiveText, guardSensitiveValue } from '../security/sensitiveDataGuard';
 
 const logger = createLogger('TelemetryStorage');
+const DEFAULT_QUALITY_SIGNALS: QualitySignals = {
+  toolSuccessRate: 0,
+  toolCallCount: 0,
+  retryCount: 0,
+  errorCount: 0,
+  errorRecovered: 0,
+  compactionTriggered: false,
+  circuitBreakerTripped: false,
+  nudgesInjected: 0,
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseStringArrayJson(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  const parsed: unknown = JSON.parse(value || '[]');
+  return Array.isArray(parsed) && parsed.every((item) => typeof item === 'string') ? parsed : [];
+}
+
+function parseQualitySignalsJson(value: unknown): QualitySignals {
+  if (typeof value !== 'string') return DEFAULT_QUALITY_SIGNALS;
+  const parsed: unknown = JSON.parse(value || '{}');
+  if (!isRecord(parsed)) return DEFAULT_QUALITY_SIGNALS;
+  return {
+    toolSuccessRate: typeof parsed.toolSuccessRate === 'number' ? parsed.toolSuccessRate : DEFAULT_QUALITY_SIGNALS.toolSuccessRate,
+    toolCallCount: typeof parsed.toolCallCount === 'number' ? parsed.toolCallCount : DEFAULT_QUALITY_SIGNALS.toolCallCount,
+    retryCount: typeof parsed.retryCount === 'number' ? parsed.retryCount : DEFAULT_QUALITY_SIGNALS.retryCount,
+    errorCount: typeof parsed.errorCount === 'number' ? parsed.errorCount : DEFAULT_QUALITY_SIGNALS.errorCount,
+    errorRecovered: typeof parsed.errorRecovered === 'number' ? parsed.errorRecovered : DEFAULT_QUALITY_SIGNALS.errorRecovered,
+    compactionTriggered: typeof parsed.compactionTriggered === 'boolean' ? parsed.compactionTriggered : DEFAULT_QUALITY_SIGNALS.compactionTriggered,
+    circuitBreakerTripped: typeof parsed.circuitBreakerTripped === 'boolean' ? parsed.circuitBreakerTripped : DEFAULT_QUALITY_SIGNALS.circuitBreakerTripped,
+    nudgesInjected: typeof parsed.nudgesInjected === 'number' ? parsed.nudgesInjected : DEFAULT_QUALITY_SIGNALS.nudgesInjected,
+  };
+}
+
+function parseFallbackInfoJson(value: unknown): TelemetryModelCall['fallbackUsed'] {
+  if (typeof value !== 'string' || !value) return undefined;
+  const parsed: unknown = JSON.parse(value);
+  if (!isRecord(parsed)) return undefined;
+  return typeof parsed.from === 'string' && typeof parsed.to === 'string' && typeof parsed.reason === 'string'
+    ? { from: parsed.from, to: parsed.to, reason: parsed.reason }
+    : undefined;
+}
+
 const truncate = (value: string | undefined | null, limit: number): string | null => {
   if (typeof value !== 'string') return null;
   return value.substring(0, limit);
@@ -819,8 +865,8 @@ export class TelemetryStorage {
       attachmentCount: row.attachment_count as number,
       systemPromptHash: row.system_prompt_hash as string | undefined,
       agentMode: row.agent_mode as string,
-      activeSkills: JSON.parse((row.active_skills as string) || '[]'),
-      activeMcpServers: JSON.parse((row.active_mcp_servers as string) || '[]'),
+      activeSkills: parseStringArrayJson(row.active_skills),
+      activeMcpServers: parseStringArrayJson(row.active_mcp_servers),
       effortLevel: row.effort_level as string,
       modelCalls: [],
       toolCalls: [],
@@ -835,13 +881,13 @@ export class TelemetryStorage {
         secondary: row.intent_secondary as TelemetryTurn['intent']['secondary'],
         confidence: row.intent_confidence as number,
         method: row.intent_method as 'rule' | 'llm',
-        keywords: JSON.parse((row.intent_keywords as string) || '[]')
+        keywords: parseStringArrayJson(row.intent_keywords)
       },
       outcome: {
         status: row.outcome_status as TelemetryTurn['outcome']['status'],
         confidence: row.outcome_confidence as number,
         method: row.outcome_method as 'rule' | 'llm',
-        signals: JSON.parse((row.quality_signals as string) || '{}')
+        signals: parseQualitySignalsJson(row.quality_signals)
       },
       compactionOccurred: !!(row.compaction_occurred as number),
       compactionSavedTokens: row.compaction_saved_tokens as number | undefined,
@@ -866,7 +912,7 @@ export class TelemetryStorage {
       toolCallCount: row.tool_call_count as number,
       truncated: !!(row.truncated as number),
       error: row.error as string | undefined,
-      fallbackUsed: row.fallback_info ? JSON.parse(row.fallback_info as string) : undefined,
+      fallbackUsed: parseFallbackInfoJson(row.fallback_info),
       prompt: row.prompt as string | undefined,
       completion: row.completion as string | undefined
     };

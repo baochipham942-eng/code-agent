@@ -39,39 +39,63 @@ interface NotebookContent {
   nbformat_minor: number;
 }
 
-function validateNotebookFormat(notebook: NotebookContent): string | null {
-  if (!notebook.cells || !Array.isArray(notebook.cells)) {
-    return 'Invalid notebook structure: missing or invalid cells array';
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
+}
+
+function validateNotebookFormat(value: unknown): { notebook?: NotebookContent; error?: string } {
+  if (!isRecord(value)) {
+    return { error: 'Invalid notebook structure: root must be an object' };
   }
-  if (typeof notebook.nbformat !== 'number') {
-    return 'Invalid notebook structure: missing or invalid nbformat';
+  const notebook = value;
+  const rawCells: unknown = notebook.cells;
+  if (!Array.isArray(rawCells)) {
+    return { error: 'Invalid notebook structure: missing or invalid cells array' };
   }
-  if (typeof notebook.nbformat_minor !== 'number') {
-    return 'Invalid notebook structure: missing or invalid nbformat_minor';
+  const cells: unknown[] = rawCells;
+  const nbformat = notebook.nbformat;
+  const nbformatMinor = notebook.nbformat_minor;
+  const metadata = notebook.metadata;
+  if (typeof nbformat !== 'number') {
+    return { error: 'Invalid notebook structure: missing or invalid nbformat' };
   }
-  if (notebook.nbformat < 4) {
-    return `Unsupported notebook format version: ${notebook.nbformat}.${notebook.nbformat_minor} (only v4.x is supported)`;
+  if (typeof nbformatMinor !== 'number') {
+    return { error: 'Invalid notebook structure: missing or invalid nbformat_minor' };
   }
-  if (!notebook.metadata || typeof notebook.metadata !== 'object') {
-    return 'Invalid notebook structure: missing or invalid metadata';
+  if (nbformat < 4) {
+    return { error: `Unsupported notebook format version: ${nbformat}.${nbformatMinor} (only v4.x is supported)` };
   }
-  for (let i = 0; i < notebook.cells.length; i++) {
-    const cell = notebook.cells[i];
-    if (!cell.cell_type || typeof cell.cell_type !== 'string') {
-      return `Invalid cell at index ${i}: missing or invalid cell_type`;
+  if (!isRecord(metadata)) {
+    return { error: 'Invalid notebook structure: missing or invalid metadata' };
+  }
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i];
+    if (!isRecord(cell)) {
+      return { error: `Invalid cell at index ${i}: cell must be an object` };
     }
-    if (!['code', 'markdown', 'raw'].includes(cell.cell_type)) {
-      return `Invalid cell at index ${i}: unknown cell_type '${cell.cell_type}'`;
+    const cellType = cell.cell_type;
+    if (typeof cellType !== 'string') {
+      return { error: `Invalid cell at index ${i}: missing or invalid cell_type` };
+    }
+    if (!['code', 'markdown', 'raw'].includes(cellType)) {
+      return { error: `Invalid cell at index ${i}: unknown cell_type '${cellType}'` };
     }
     if (cell.source === undefined) {
-      return `Invalid cell at index ${i}: missing source`;
+      return { error: `Invalid cell at index ${i}: missing source` };
     }
-    if (cell.cell_type === 'code') {
+    if (cellType === 'code') {
       if (!Array.isArray(cell.outputs)) cell.outputs = [];
       if (cell.execution_count === undefined) cell.execution_count = null;
     }
   }
-  return null;
+  return {
+    notebook: {
+      cells: cells as NotebookCell[],
+      metadata,
+      nbformat,
+      nbformat_minor: nbformatMinor,
+    },
+  };
 }
 
 function findCellIndex(cells: NotebookCell[], cellId: string): number {
@@ -154,15 +178,15 @@ class NotebookEditHandler implements ToolHandler<Record<string, unknown>, string
 
     let notebook: NotebookContent;
     try {
-      notebook = JSON.parse(raw);
+      const parsed: unknown = JSON.parse(raw);
+      const validation = validateNotebookFormat(parsed);
+      if (!validation.notebook) {
+        return { ok: false, error: validation.error ?? 'Invalid notebook structure', code: 'INVALID_NOTEBOOK' };
+      }
+      notebook = validation.notebook;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { ok: false, error: `Failed to parse notebook JSON: ${msg}`, code: 'PARSE_ERROR' };
-    }
-
-    const validationError = validateNotebookFormat(notebook);
-    if (validationError) {
-      return { ok: false, error: validationError, code: 'INVALID_NOTEBOOK' };
     }
 
     let cellIndex: number;

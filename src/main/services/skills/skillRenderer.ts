@@ -27,7 +27,7 @@ export function renderSkillContent(content: string, options: SkillRenderOptions 
   }
 
   // Do not execute shell from Skill rendering. Shell work must go through tools.
-  rendered = rendered.replace(/^!(.+)$/gm, (_, cmd) => {
+  rendered = rendered.replace(/^!(.+)$/gm, (_match: string, cmd: string) => {
     return `[Skill shell command blocked: ${cmd.trim()}]`;
   });
 

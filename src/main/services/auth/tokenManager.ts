@@ -399,10 +399,12 @@ export class TokenManager implements Disposable {
 const tokenManagers: Map<string, TokenManager> = new Map();
 
 export function getTokenManager(model: string = 'default'): TokenManager {
-  if (!tokenManagers.has(model)) {
-    tokenManagers.set(model, new TokenManager(model));
+  let manager = tokenManagers.get(model);
+  if (!manager) {
+    manager = new TokenManager(model);
+    tokenManagers.set(model, manager);
   }
-  return tokenManagers.get(model)!;
+  return manager;
 }
 
 // Register a disposable wrapper for all TokenManager instances

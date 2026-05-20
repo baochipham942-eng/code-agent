@@ -306,11 +306,11 @@ export class Bubblewrap {
         }, fullConfig.timeout);
       }
 
-      proc.stdout.on('data', (data) => {
+      proc.stdout.on('data', (data: Buffer | string) => {
         stdout += data.toString();
       });
 
-      proc.stderr.on('data', (data) => {
+      proc.stderr.on('data', (data: Buffer | string) => {
         stderr += data.toString();
       });
 
@@ -372,11 +372,11 @@ export class Bubblewrap {
         }, config.timeout);
       }
 
-      proc.stdout.on('data', (data) => {
+      proc.stdout.on('data', (data: Buffer | string) => {
         stdout += data.toString();
       });
 
-      proc.stderr.on('data', (data) => {
+      proc.stderr.on('data', (data: Buffer | string) => {
         stderr += data.toString();
       });
 

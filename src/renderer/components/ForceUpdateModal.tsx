@@ -20,6 +20,37 @@ async function invokeUpdate<T>(action: string, payload?: unknown): Promise<T> {
   return response.data as T;
 }
 
+type UpdateEvent =
+  | { type: 'download_progress'; data: DownloadProgress }
+  | { type: 'download_complete'; data: { filePath: string } }
+  | { type: 'download_error'; data: { error: string } };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseUpdateEvent(value: unknown): UpdateEvent | null {
+  if (!isRecord(value) || typeof value.type !== 'string') return null;
+  if (value.type === 'download_progress' && isRecord(value.data)) {
+    const { percent, transferred, total, bytesPerSecond } = value.data;
+    if (
+      typeof percent === 'number'
+      && typeof transferred === 'number'
+      && typeof total === 'number'
+      && typeof bytesPerSecond === 'number'
+    ) {
+      return { type: value.type, data: { percent, transferred, total, bytesPerSecond } };
+    }
+  }
+  if (value.type === 'download_complete' && isRecord(value.data) && typeof value.data.filePath === 'string') {
+    return { type: value.type, data: { filePath: value.data.filePath } };
+  }
+  if (value.type === 'download_error' && isRecord(value.data) && typeof value.data.error === 'string') {
+    return { type: value.type, data: { error: value.data.error } };
+  }
+  return null;
+}
+
 interface ForceUpdateModalProps {
   updateInfo: UpdateInfo;
 }
@@ -34,8 +65,9 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
 
   // Listen for download events from main process
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): update 事件 data 形态由 type 决定（download_progress / download_complete / error），应抽 UpdateEvent 联合类型
-    const handleUpdateEvent = (event: { type: string; data?: any }) => {
+    const handleUpdateEvent = (rawEvent: unknown) => {
+      const event = parseUpdateEvent(rawEvent);
+      if (!event) return;
       logger.debug('Received event', { type: event.type, data: event.data });
 
       switch (event.type) {

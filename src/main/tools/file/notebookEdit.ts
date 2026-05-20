@@ -34,6 +34,14 @@ interface NotebookContent {
   nbformat_minor: number;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
+}
+
+function isNotebookCellType(value: unknown): value is NotebookCell['cell_type'] {
+  return value === 'code' || value === 'markdown' || value === 'raw';
+}
+
 // ----------------------------------------------------------------------------
 // Tool Definition
 // ----------------------------------------------------------------------------
@@ -138,8 +146,8 @@ Examples:
       try {
         content = await fs.readFile(resolvedPath, 'utf-8');
       } catch (err: unknown) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        if ((err as Record<string, unknown>).code === 'ENOENT') {
+        const fileError = err as NodeJS.ErrnoException;
+        if (fileError.code === 'ENOENT') {
           return {
             success: false,
             error: `Notebook file not found: ${resolvedPath}`,
@@ -150,18 +158,20 @@ Examples:
 
       let notebook: NotebookContent;
       try {
-        notebook = JSON.parse(content);
+        const parsed: unknown = JSON.parse(content);
+        const validation = validateNotebookFormat(parsed);
+        if (validation.error) {
+          return { success: false, error: validation.error };
+        }
+        if (!validation.notebook) {
+          return { success: false, error: 'Invalid notebook structure' };
+        }
+        notebook = validation.notebook;
       } catch (parseError) {
         return {
           success: false,
           error: `Failed to parse notebook JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
         };
-      }
-
-      // Validate notebook format
-      const validationError = validateNotebookFormat(notebook);
-      if (validationError) {
-        return { success: false, error: validationError };
       }
 
       // Find target cell index
@@ -310,57 +320,90 @@ Examples:
 /**
  * Validate Jupyter notebook format
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): notebook JSON schema (.ipynb v4.5) 应抽 JupyterNotebook 类型（cells/nbformat/metadata）
-function validateNotebookFormat(notebook: any): string | null {
-  if (!notebook.cells || !Array.isArray(notebook.cells)) {
-    return 'Invalid notebook structure: missing or invalid cells array';
+function validateNotebookFormat(
+  value: unknown
+): { notebook: NotebookContent; error?: undefined } | { notebook?: undefined; error: string } {
+  if (!isRecord(value)) {
+    return { error: 'Invalid notebook structure: root must be an object' };
   }
 
-  if (typeof notebook.nbformat !== 'number') {
-    return 'Invalid notebook structure: missing or invalid nbformat';
+  const rawCells: unknown = value.cells;
+  if (!Array.isArray(rawCells)) {
+    return { error: 'Invalid notebook structure: missing or invalid cells array' };
+  }
+  const rawCellsArray: unknown[] = rawCells;
+
+  const nbformat = value.nbformat;
+  if (typeof nbformat !== 'number') {
+    return { error: 'Invalid notebook structure: missing or invalid nbformat' };
   }
 
-  if (typeof notebook.nbformat_minor !== 'number') {
-    return 'Invalid notebook structure: missing or invalid nbformat_minor';
+  const nbformatMinor = value.nbformat_minor;
+  if (typeof nbformatMinor !== 'number') {
+    return { error: 'Invalid notebook structure: missing or invalid nbformat_minor' };
   }
 
   // Validate version (support v4.x)
-  if (notebook.nbformat < 4) {
-    return `Unsupported notebook format version: ${notebook.nbformat}.${notebook.nbformat_minor} (only v4.x is supported)`;
+  if (nbformat < 4) {
+    return {
+      error: `Unsupported notebook format version: ${nbformat}.${nbformatMinor} (only v4.x is supported)`,
+    };
   }
 
-  if (!notebook.metadata || typeof notebook.metadata !== 'object') {
-    return 'Invalid notebook structure: missing or invalid metadata';
+  const metadata = value.metadata;
+  if (!isRecord(metadata)) {
+    return { error: 'Invalid notebook structure: missing or invalid metadata' };
   }
 
   // Validate each cell
-  for (let i = 0; i < notebook.cells.length; i++) {
-    const cell = notebook.cells[i];
+  const cells: NotebookCell[] = [];
+  for (let i = 0; i < rawCellsArray.length; i++) {
+    const cell = rawCellsArray[i];
 
-    if (!cell.cell_type || typeof cell.cell_type !== 'string') {
-      return `Invalid cell at index ${i}: missing or invalid cell_type`;
+    if (!isRecord(cell)) {
+      return { error: `Invalid cell at index ${i}: cell must be an object` };
     }
 
-    if (!['code', 'markdown', 'raw'].includes(cell.cell_type)) {
-      return `Invalid cell at index ${i}: unknown cell_type '${cell.cell_type}'`;
+    const cellType = cell.cell_type;
+    if (typeof cellType !== 'string') {
+      return { error: `Invalid cell at index ${i}: missing or invalid cell_type` };
     }
 
-    if (cell.source === undefined) {
-      return `Invalid cell at index ${i}: missing source`;
+    if (!isNotebookCellType(cellType)) {
+      return { error: `Invalid cell at index ${i}: unknown cell_type '${cellType}'` };
+    }
+
+    const source = cell.source;
+    if (source === undefined) {
+      return { error: `Invalid cell at index ${i}: missing source` };
     }
 
     // Auto-fix code cells without outputs
-    if (cell.cell_type === 'code') {
-      if (!Array.isArray(cell.outputs)) {
-        cell.outputs = [];
+    const normalizedCell: NotebookCell = {
+      ...cell,
+      cell_type: cellType,
+      source: source as string | string[],
+    };
+    if (cellType === 'code') {
+      if (!Array.isArray(normalizedCell.outputs)) {
+        normalizedCell.outputs = [];
       }
-      if (cell.execution_count === undefined) {
-        cell.execution_count = null;
+      if (normalizedCell.execution_count === undefined) {
+        normalizedCell.execution_count = null;
       }
     }
+    cells.push(normalizedCell);
   }
 
-  return null;
+  return {
+    notebook: {
+      ...value,
+      cells,
+      metadata,
+      nbformat,
+      nbformat_minor: nbformatMinor,
+    },
+  };
 }
 
 /**

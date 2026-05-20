@@ -5,16 +5,12 @@
 
 import type {
   Message,
-  AgentEvent,
+  ToolCall,
 } from '../../../shared/contract';
 import type { ModelResponse } from '../../agent/loopTypes';
-import {
-  estimateModelMessageTokens,
-} from '../../context/tokenOptimizer';
 import { generateMessageId } from '../../../shared/utils/id';
 import { getLangfuseService } from '../../services';
 import { createLogger } from '../../services/infra/logger';
-import { logCollector } from '../../mcp/logCollector.js';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
@@ -44,8 +40,7 @@ export class StreamHandler {
         fallback: response.fallback,
         responseType: response.type,
         duration: inferenceDuration,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): response.toolCalls 是 ToolCall[]，可直接用 (tc: ToolCall)，不需要 any
-        toolCalls: response.toolCalls?.map((tc: any) => tc.name) || [],
+        toolCalls: response.toolCalls?.map((tc: ToolCall) => tc.name) || [],
         textLength: (response.content || '').length,
         inputTokens: response.usage?.inputTokens,
         outputTokens: response.usage?.outputTokens,

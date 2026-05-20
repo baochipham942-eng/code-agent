@@ -3,6 +3,7 @@
 // ============================================================================
 
 import * as fs from 'fs';
+import JSZip from 'jszip';
 import { DEFAULT_FALLBACK_COLORS, DEFAULT_FALLBACK_FONTS, DEFAULT_CODE_FONT } from './constants';
 import type { ThemeConfig } from './types';
 
@@ -22,7 +23,6 @@ export async function extractStyleFromPptx(pptxPath: string): Promise<ThemeConfi
   }
 
   try {
-    const JSZip = require('jszip');
     const data = fs.readFileSync(pptxPath);
     const zip = await JSZip.loadAsync(data);
 

@@ -16,6 +16,11 @@ import {
 } from 'lucide-react';
 import { useLocalBridgeStore } from '../../../stores/localBridgeStore';
 import { Button } from '../../primitives';
+import {
+  invokeLocalBridgeTool,
+  readBridgeDirectoryEntries,
+  readBridgeHomeDir,
+} from '../../../utils/localBridgeToolResponse';
 
 // ============================================================================
 // Types
@@ -51,23 +56,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
   const invokeToolOnBridge = useCallback(
-    async (tool: string, params: Record<string, unknown>) => {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      const res = await fetch('http://localhost:9527/tools/invoke', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          tool,
-          params,
-          requestId: crypto.randomUUID(),
-        }),
-      });
-      if (!res.ok) throw new Error('桥接服务调用失败');
-      return res.json();
-    },
+    async (tool: string, params: Record<string, unknown>) => invokeLocalBridgeTool(token, tool, params),
     [token]
   );
 
@@ -75,7 +64,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
     setIsLoadingHome(true);
     try {
       const data = await invokeToolOnBridge('system_info', {});
-      const home = data?.result?.homeDir || data?.homeDir || '/';
+      const home = readBridgeHomeDir(data);
       setHomeDir(home);
       return home;
     } catch {
@@ -90,8 +79,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
     async (path: string): Promise<DirNode[]> => {
       try {
         const data = await invokeToolOnBridge('directory_list', { path });
-        const entries: Array<{ name: string; path: string; isDirectory: boolean }> =
-          data?.result?.entries || data?.entries || [];
+        const entries = readBridgeDirectoryEntries(data);
         return entries
           .filter((e) => e.isDirectory)
           .sort((a, b) => a.name.localeCompare(b.name))

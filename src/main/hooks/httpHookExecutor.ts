@@ -3,9 +3,39 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import type { AnyHookContext, HookExecutionResult } from '../protocol/events';
+import type { AnyHookContext, HookActionResult, HookExecutionResult } from '../protocol/events';
 
 const logger = createLogger('HttpHookExecutor');
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function readString(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function validateAction(action: unknown): HookActionResult {
+  if (action === 'allow' || action === 'block' || action === 'continue' || action === 'error') {
+    return action;
+  }
+  return 'allow';
+}
+
+function parseHookResponse(text: string): Pick<HookExecutionResult, 'action' | 'message' | 'modifiedInput'> | null {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!isRecord(parsed)) return null;
+    return {
+      action: validateAction(parsed.action),
+      message: readString(parsed, 'message'),
+      modifiedInput: readString(parsed, 'modifiedInput'),
+    };
+  } catch {
+    return null;
+  }
+}
 
 export interface HttpHookOptions {
   /** Target URL to POST to */
@@ -63,22 +93,22 @@ export async function executeHttpHook(
 
     // Parse JSON response
     const text = await response.text();
-    try {
-      const result = JSON.parse(text);
+    const result = parseHookResponse(text);
+    if (result) {
       return {
-        action: result.action || 'allow',
+        action: result.action,
         message: result.message,
         modifiedInput: result.modifiedInput,
         duration: Date.now() - startTime,
       };
-    } catch {
-      // Non-JSON response treated as message with allow
-      return {
-        action: 'allow',
-        message: text.slice(0, 500),
-        duration: Date.now() - startTime,
-      };
     }
+
+    // Non-JSON response treated as message with allow
+    return {
+      action: 'allow',
+      message: text.slice(0, 500),
+      duration: Date.now() - startTime,
+    };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     logger.warn(`HTTP hook failed: ${url} — ${msg}`);
@@ -95,7 +125,7 @@ export async function executeHttpHook(
  * Only variables in allowedEnvVars list are resolved (security).
  */
 function interpolateEnvVars(value: string, allowedEnvVars: string[]): string {
-  return value.replace(/\$([A-Z_][A-Z0-9_]*)/g, (match, varName) => {
+  return value.replace(/\$([A-Z_][A-Z0-9_]*)/g, (match: string, varName: string) => {
     if (allowedEnvVars.includes(varName)) {
       return process.env[varName] || match;
     }

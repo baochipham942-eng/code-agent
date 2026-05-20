@@ -103,8 +103,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           setProviderConfigs(settings?.models?.providers ?? {});
         }
       })
-      .catch((error) => {
-        logger.warn('Failed to load provider settings', error);
+      .catch((error: unknown) => {
+        logger.warn('Failed to load provider settings', {
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
     return () => {
       cancelled = true;

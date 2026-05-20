@@ -13,13 +13,11 @@ import type { Disposable } from '../serviceRegistry';
 import { getServiceRegistry } from '../serviceRegistry';
 import type {
   ManagedBrowserAccountStateSummary,
-  ManagedBrowserLeaseState,
   ManagedBrowserMode,
   ManagedBrowserProfileMode,
   ManagedBrowserProxyConfig,
   ManagedBrowserSessionState,
   WorkbenchActionTrace,
-  WorkbenchSnapshotRef,
 } from '../../../shared/contract/desktop';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import {
@@ -32,42 +30,64 @@ import {
 import { BrowserLogger } from './browser/logger';
 import { browserRelayService } from './browserRelayService';
 import {
+  applyStorageStateToPage,
+  getBrowserPageSessionStorageEntryCount,
+  installStorageStateInitScript,
+  summarizeBrowserAccountState,
+} from './browser/accountStateHelpers';
+import {
+  captureBrowserScreenshot,
+  uploadBrowserFile,
+  waitForBrowserDownload,
+} from './browser/browserArtifactActions';
+import {
+  beginBrowserWorkbenchTrace,
+  finishBrowserWorkbenchTrace,
+} from './browser/browserTraceLifecycle';
+import {
+  buildBrowserProviderDiagnostics,
+  createInitialBrowserProviderDiagnostics,
+} from './browser/browserProviderDiagnostics';
+import {
+  buildManagedBrowserSessionState,
+  snapshotBrowserTab,
+} from './browser/browserSessionState';
+import {
+  isBrowserWorkbenchUrlAllowed,
+  validateBrowserWorkbenchUrl,
+} from './browser/browserUrlPolicy';
+import { buildBrowserDomSnapshot } from './browser/domSnapshotBuilder';
+import { ManagedBrowserLeaseController } from './browser/managedBrowserLeaseController';
+import {
+  findBrowserElementByText,
+  findBrowserElements,
+  getBrowserPageContent,
+  getBrowserPageHtml,
+} from './browser/pageInspectionHelpers';
+import { BrowserTargetRefRegistry } from './browser/targetRefRegistry';
+import {
   BROWSER_TARGET_REF_TTL_MS,
   MANAGED_BROWSER_ARTIFACT_DIR,
   MANAGED_BROWSER_ARTIFACT_ROOT_DIR,
   buildBrowserEnvironment,
-  createBrowserArtifactSummary,
-  createManagedBrowserLease,
   getDefaultUserAgent,
   getManagedBrowserProxyFingerprint,
-  inferMimeType,
-  isLocalHost,
-  isManagedBrowserLeaseExpired,
-  matchesHostList,
-  normalizeStorageStateCookies,
-  normalizeStorageStateOrigins,
-  parseBrowserTargetRefInput,
   parseHostList,
   readBrowserStorageState,
-  redactBrowserWorkbenchTraceParams,
   resolveManagedBrowserProfile,
   resolveManagedBrowserProxyConfig,
   resolveManagedBrowserWorkspaceScope,
-  sanitizeArtifactFilename,
   sanitizeManagedBrowserId,
   shouldCleanupManagedBrowserProfile,
   summarizeBrowserUrlForLog,
 } from './browser/managedBrowserHelpers';
 import {
-  BrowserTargetRefError,
   type BrowserArtifactSummary,
   type BrowserDomSnapshot,
   type BrowserProviderDiagnostics,
   type BrowserStorageStateArtifact,
-  type BrowserStorageStateLike,
   type BrowserTab,
   type BrowserTargetRef,
-  type BrowserTargetRefRecord,
   type ElementInfo,
   type ManagedBrowserLaunchOptions,
   type PageContent,
@@ -131,14 +151,12 @@ export class BrowserService implements Disposable {
   private isolatedProfileRootDir: string | null = null;
   private workspaceScope: string;
   private lastAccountState: ManagedBrowserAccountStateSummary | null = null;
-  private lease: ManagedBrowserLeaseState | null = null;
-  private leaseTimer: ReturnType<typeof setTimeout> | null = null;
+  private leaseController: ManagedBrowserLeaseController;
   private proxyConfig: ManagedBrowserProxyConfig;
   private mode: ManagedBrowserMode;
   private viewport = { width: 1280, height: 720 };
   private traces: WorkbenchActionTrace[] = [];
-  private targetRefs: Map<string, BrowserTargetRefRecord> = new Map();
-  private snapshotSequence = 0;
+  private targetRefs = new BrowserTargetRefRegistry();
   private consoleErrors: string[] = [];
   private networkFailures: string[] = [];
   private allowedHosts: string[];
@@ -170,7 +188,13 @@ export class BrowserService implements Disposable {
     this.allowedHosts = parseHostList(process.env.CODE_AGENT_BROWSER_ALLOWED_HOSTS);
     this.blockedHosts = parseHostList(process.env.CODE_AGENT_BROWSER_BLOCKED_HOSTS);
     this.proxyConfig = resolveManagedBrowserProxyConfig({ env: process.env });
-    this.providerDiagnostics = this.createInitialProviderDiagnostics();
+    this.providerDiagnostics = createInitialBrowserProviderDiagnostics(() => resolveBrowserProvider());
+    this.leaseController = new ManagedBrowserLeaseController((lease) => {
+      this.logger.log('WARN', `Managed browser lease expired (${lease.leaseId}); closing session.`);
+      void this.close().catch((error) => {
+        this.logger.log('WARN', `Failed to close expired managed browser lease: ${error}`);
+      });
+    });
     if (!fs.existsSync(this.screenshotDir)) {
       fs.mkdirSync(this.screenshotDir, { recursive: true });
     }
@@ -194,7 +218,7 @@ export class BrowserService implements Disposable {
           throw new Error('Managed browser is already running with a different proxy config; close it before switching proxy.');
         }
       }
-      this.renewLease({
+      this.leaseController.renew({
         owner: options.leaseOwner || 'managed-browser',
         ttlMs: options.leaseTtlMs,
       });
@@ -250,7 +274,7 @@ export class BrowserService implements Disposable {
       'INFO',
       `Browser launched successfully via ${this.providerDiagnostics.provider} (viewport: ${this.viewport.width}x${this.viewport.height}, profile=${this.profileMode})`,
     );
-    this.renewLease({
+    this.leaseController.renew({
       owner: options.leaseOwner || 'managed-browser',
       ttlMs: options.leaseTtlMs,
     });
@@ -268,7 +292,7 @@ export class BrowserService implements Disposable {
       this.tabs.clear();
       this.targetRefs.clear();
       this.activeTabId = null;
-      this.releaseLease();
+      this.leaseController.release();
       await this.cleanupIsolatedProfileDir();
       if (this.profileMode === 'isolated') {
         this.configureManagedBrowserSession('persistent');
@@ -276,7 +300,7 @@ export class BrowserService implements Disposable {
       this.logger.log('INFO', 'Browser closed, all tabs cleared');
       this.emitSessionChanged('close');
     } else {
-      this.releaseLease();
+      this.leaseController.release();
       this.logger.log('WARN', 'No browser to close');
       this.emitSessionChanged('close');
     }
@@ -398,45 +422,32 @@ export class BrowserService implements Disposable {
   }
 
   getSessionState(): ManagedBrowserSessionState {
-    const activeTab = this.getActiveTab();
-    return {
+    return buildManagedBrowserSessionState({
       sessionId: this.sessionId,
       profileId: this.profileId,
       profileMode: this.profileMode,
       workspaceScope: this.workspaceScope,
       artifactDir: this.artifactDir,
-      lease: this.getLeaseState(),
-      proxy: this.getPublicProxyConfig(),
+      lease: this.leaseController.getState(),
+      proxy: this.proxyConfig,
       externalBridge: browserRelayService.getState(),
       accountState: this.lastAccountState,
       running: this.isRunning(),
       tabCount: this.tabs.size,
-      activeTab: activeTab
-        ? {
-          id: activeTab.id,
-          url: activeTab.url,
-          title: activeTab.title,
-        }
-        : null,
+      activeTab: this.getActiveTab(),
       mode: this.mode,
-      provider: this.providerDiagnostics.provider,
-      requestedProvider: this.providerDiagnostics.requestedProvider,
-      executable: this.providerDiagnostics.executable,
-      cdpPort: this.providerDiagnostics.cdpPort,
+      providerDiagnostics: this.providerDiagnostics,
       profileDir: this.profileDir,
-      missingExecutable: this.providerDiagnostics.missingExecutable,
-      recommendedAction: this.providerDiagnostics.recommendedAction,
-      providerFallbackReason: this.providerDiagnostics.providerFallbackReason,
       viewport: this.viewport,
       allowedHosts: this.allowedHosts,
       blockedHosts: this.blockedHosts,
       lastTrace: this.traces.at(-1) || null,
-    };
+    });
   }
 
   async ensureSession(url: string = 'about:blank', options: ManagedBrowserLaunchOptions = {}): Promise<ManagedBrowserSessionState> {
     await this.ensureBrowser(options);
-    this.renewLease({
+    this.leaseController.renew({
       owner: options.leaseOwner || 'managed-browser',
       ttlMs: options.leaseTtlMs,
     });
@@ -510,7 +521,7 @@ export class BrowserService implements Disposable {
   }
 
   async clickTargetRef(targetRefInput: unknown, tabId?: string): Promise<BrowserTargetRef> {
-    const resolved = await this.resolveTargetRef(targetRefInput, tabId);
+    const resolved = await this.targetRefs.resolve(targetRefInput, (id) => this.getTab(id), tabId);
     const tab = this.getTab(resolved.targetRef.tabId);
     await tab.page.click(resolved.targetRef.selector);
     return resolved.targetRef;
@@ -527,7 +538,7 @@ export class BrowserService implements Disposable {
   }
 
   async typeTargetRef(targetRefInput: unknown, text: string, tabId?: string): Promise<BrowserTargetRef> {
-    const resolved = await this.resolveTargetRef(targetRefInput, tabId);
+    const resolved = await this.targetRefs.resolve(targetRefInput, (id) => this.getTab(id), tabId);
     const tab = this.getTab(resolved.targetRef.tabId);
     await tab.page.fill(resolved.targetRef.selector, text);
     return resolved.targetRef;
@@ -570,60 +581,22 @@ export class BrowserService implements Disposable {
 
   async getPageContent(tabId?: string): Promise<PageContent> {
     const tab = this.getTab(tabId);
-    const page = tab.page;
-
-    const [text, links] = await Promise.all([
-      page.innerText('body').catch(() => ''),
-      page.$$eval('a[href]', (anchors) =>
-        anchors.slice(0, 50).map((a) => ({
-          text: a.textContent?.trim() || '',
-          href: (a as HTMLAnchorElement).href,
-        }))
-      ).catch(() => []),
-    ]);
-
-    return {
-      url: page.url(),
-      title: await page.title(),
-      text: text.substring(0, 10000),
-      links,
-    };
+    return await getBrowserPageContent(tab);
   }
 
   async getPageHTML(tabId?: string): Promise<string> {
     const tab = this.getTab(tabId);
-    return await tab.page.content();
+    return await getBrowserPageHtml(tab);
   }
 
   async findElements(selector: string, tabId?: string): Promise<ElementInfo[]> {
     const tab = this.getTab(tabId);
-    return await tab.page.$$eval(selector, (elements) =>
-      elements.slice(0, 20).map((el) => ({
-        selector: '',
-        text: el.textContent?.trim().substring(0, 100) || '',
-        tagName: el.tagName.toLowerCase(),
-        attributes: Object.fromEntries(
-          Array.from(el.attributes).map((attr) => [attr.name, attr.value])
-        ),
-        rect: el.getBoundingClientRect(),
-      }))
-    );
+    return await findBrowserElements(tab, selector);
   }
 
   async findElementByText(text: string, tabId?: string): Promise<ElementInfo | null> {
     const tab = this.getTab(tabId);
-    const element = await tab.page.$(`text=${text}`);
-    if (!element) return null;
-
-    return await element.evaluate((el) => ({
-      selector: '',
-      text: el.textContent?.trim() || '',
-      tagName: el.tagName.toLowerCase(),
-      attributes: Object.fromEntries(
-        Array.from(el.attributes).map((attr) => [attr.name, attr.value])
-      ),
-      rect: el.getBoundingClientRect(),
-    }));
+    return await findBrowserElementByText(tab, text);
   }
 
   async getInteractiveElements(tabId?: string): Promise<ElementInfo[]> {
@@ -634,119 +607,16 @@ export class BrowserService implements Disposable {
 
   async getDomSnapshot(tabId?: string): Promise<BrowserDomSnapshot> {
     const tab = this.getTab(tabId);
-    const page = tab.page;
-    const snapshotId = this.createSnapshotId();
+    const snapshotId = this.targetRefs.createSnapshotId();
     const capturedAtMs = Date.now();
-    const [headings, rawInteractiveElements] = await Promise.all([
-      page.$$eval('h1,h2,h3,h4,h5,h6', (nodes) =>
-        nodes.slice(0, 30).map((node) => ({
-          level: Number(node.tagName.replace(/^H/i, '')) || 0,
-          text: node.textContent?.trim().slice(0, 160) || '',
-        })).filter((item) => item.text)
-      ).catch(() => []),
-      page.$$eval(
-        'button, a[href], input, select, textarea, [role], [onclick], [tabindex]',
-        (nodes) => nodes.slice(0, 80).map((node) => {
-          const el = node as HTMLElement;
-          const rect = el.getBoundingClientRect();
-          const id = el.getAttribute('id');
-          const className = el.getAttribute('class');
-          const tag = el.tagName.toLowerCase();
-          const escapeCss = (value: string) => {
-            const css = (globalThis as typeof globalThis & { CSS?: { escape?: (input: string) => string } }).CSS;
-            if (css?.escape) {
-              return css.escape(value);
-            }
-            return value.replace(/(["\\#.:,[\]=\s>+~*])/g, '\\$1');
-          };
-          const quotedAttr = (name: string, value: string) => `[${name}="${value.replace(/(["\\])/g, '\\$1')}"]`;
-          const selectorHint = (() => {
-            if (id) return `#${escapeCss(id)}`;
-            const testId = el.getAttribute('data-testid') || el.getAttribute('data-test');
-            if (testId) return quotedAttr(el.getAttribute('data-testid') ? 'data-testid' : 'data-test', testId);
-            const name = el.getAttribute('name');
-            if (name && /^(input|select|textarea|button)$/i.test(tag)) {
-              return `${tag}${quotedAttr('name', name)}`;
-            }
-            if (className) {
-              const firstClass = className.split(/\s+/).filter(Boolean)[0];
-              if (firstClass) return `${tag}.${escapeCss(firstClass)}`;
-            }
-            const parts: string[] = [];
-            let current: HTMLElement | null = el;
-            while (current?.nodeType === Node.ELEMENT_NODE) {
-              const currentTag = current.tagName.toLowerCase();
-              const currentTagName = current.tagName;
-              const parent: HTMLElement | null = current.parentElement;
-              if (!parent) {
-                parts.unshift(currentTag);
-                break;
-              }
-              const sameTagSiblings = Array.from(parent.children).filter((child) => child.tagName === currentTagName);
-              const nth = sameTagSiblings.indexOf(current) + 1;
-              parts.unshift(sameTagSiblings.length > 1 ? `${currentTag}:nth-of-type(${nth})` : currentTag);
-              if (parent === document.body || parent === document.documentElement) {
-                break;
-              }
-              current = parent;
-            }
-            return parts.join(' > ') || tag;
-          })();
-          return {
-            tag,
-            role: el.getAttribute('role'),
-            text: el.textContent?.trim().slice(0, 160) || '',
-            ariaLabel: el.getAttribute('aria-label'),
-            placeholder: el.getAttribute('placeholder'),
-            selectorHint,
-            refConfidence: id ? 0.95 : className ? 0.65 : 0.45,
-            rect: {
-              x: Math.round(rect.x),
-              y: Math.round(rect.y),
-              width: Math.round(rect.width),
-              height: Math.round(rect.height),
-            },
-          };
-        }).filter((item) => item.rect.width > 0 && item.rect.height > 0)
-      ).catch(() => []),
-    ]);
-    const currentUrl = page.url();
-    this.pruneTargetRefs(capturedAtMs);
-    const interactiveElements = rawInteractiveElements.map((element, index) => {
-      const targetRef: BrowserTargetRef = {
-        refId: `tref_${snapshotId}_${index + 1}`,
-        source: 'dom',
-        selector: element.selectorHint,
-        role: element.role,
-        name: element.ariaLabel || element.text || element.placeholder || element.selectorHint,
-        textHint: element.text || element.ariaLabel || element.placeholder || null,
-        frameId: null,
-        tabId: tab.id,
-        snapshotId,
-        capturedAtMs,
-        ttlMs: BROWSER_TARGET_REF_TTL_MS,
-        confidence: element.refConfidence,
-      };
-      this.targetRefs.set(targetRef.refId, {
-        targetRef,
-        url: currentUrl,
-      });
-      const { refConfidence: _refConfidence, ...publicElement } = element;
-      return {
-        ...publicElement,
-        targetRef,
-      };
-    });
-
-    return {
+    const { snapshot, targetRefRecords } = await buildBrowserDomSnapshot({
+      tab,
       snapshotId,
-      tabId: tab.id,
       capturedAtMs,
-      url: currentUrl,
-      title: await page.title(),
-      headings,
-      interactiveElements,
-    };
+      targetRefTtlMs: BROWSER_TARGET_REF_TTL_MS,
+    });
+    this.targetRefs.addRecords(targetRefRecords, capturedAtMs);
+    return snapshot;
   }
 
   async getAccessibilitySnapshot(tabId?: string): Promise<unknown> {
@@ -776,36 +646,11 @@ export class BrowserService implements Disposable {
     tabId?: string;
   } = {}): Promise<ScreenshotResult> {
     const tab = this.getTab(options.tabId);
-    const filename = `screenshot_${Date.now()}.${options.format || 'png'}`;
-    const filepath = path.join(this.screenshotDir, filename);
-
-    try {
-      if (options.selector) {
-        const element = await tab.page.$(options.selector);
-        if (!element) {
-          return { success: false, error: `Element not found: ${options.selector}` };
-        }
-        await element.screenshot({ path: filepath });
-      } else {
-        await tab.page.screenshot({
-          path: filepath,
-          fullPage: options.fullPage || false,
-        });
-      }
-
-      const base64 = fs.readFileSync(filepath).toString('base64');
-
-      return {
-        success: true,
-        path: filepath,
-        base64,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Screenshot failed',
-      };
-    }
+    return await captureBrowserScreenshot({
+      tab,
+      screenshotDir: this.screenshotDir,
+      options,
+    });
   }
 
   async waitForDownload(
@@ -813,24 +658,11 @@ export class BrowserService implements Disposable {
     tabId?: string,
   ): Promise<BrowserArtifactSummary> {
     const tab = this.getTab(tabId);
-    const downloadPromise = tab.page.waitForEvent('download', { timeout: 15_000 });
-    if (trigger.targetRef) {
-      await this.clickTargetRef(trigger.targetRef, tabId);
-    } else if (trigger.selector) {
-      await tab.page.click(trigger.selector);
-    } else {
-      throw new Error('selector or targetRef required for wait_for_download');
-    }
-
-    const download = await downloadPromise;
-    const suggestedName = sanitizeArtifactFilename(download.suggestedFilename() || `download_${Date.now()}`);
-    fs.mkdirSync(this.downloadDir, { recursive: true });
-    const artifactPath = path.join(this.downloadDir, suggestedName);
-    await download.saveAs(artifactPath);
-    return createBrowserArtifactSummary({
-      kind: 'download',
-      artifactPath,
-      mimeType: inferMimeType(suggestedName),
+    return await waitForBrowserDownload({
+      tab,
+      trigger,
+      clickTargetRef: async (targetRef) => await this.clickTargetRef(targetRef, tabId),
+      downloadDir: this.downloadDir,
       sessionId: this.sessionId,
     });
   }
@@ -841,47 +673,13 @@ export class BrowserService implements Disposable {
     targetRef?: unknown;
     tabId?: string;
   }): Promise<BrowserArtifactSummary> {
-    const resolvedFilePath = path.resolve(args.filePath);
-    const stat = fs.statSync(resolvedFilePath);
-    if (!stat.isFile()) {
-      throw new Error(`Upload path is not a file: ${path.basename(resolvedFilePath)}`);
-    }
-
-    if (args.targetRef) {
-      const resolved = await this.resolveTargetRef(args.targetRef, args.tabId);
-      const tab = this.getTab(resolved.targetRef.tabId);
-      await this.setUploadFileOnTarget(tab, resolved.targetRef.selector, resolvedFilePath);
-    } else {
-      if (!args.selector) {
-        throw new Error('selector or targetRef required for upload_file');
-      }
-      const tab = this.getTab(args.tabId);
-      await this.setUploadFileOnTarget(tab, args.selector, resolvedFilePath);
-    }
-
-    return createBrowserArtifactSummary({
-      kind: 'upload',
-      artifactPath: resolvedFilePath,
-      mimeType: inferMimeType(resolvedFilePath),
+    return await uploadBrowserFile({
+      ...args,
       sessionId: this.sessionId,
+      getTab: (id) => this.getTab(id),
+      resolveTargetRef: async (targetRef, overrideTabId) =>
+        await this.targetRefs.resolve(targetRef, (id) => this.getTab(id), overrideTabId),
     });
-  }
-
-  private async setUploadFileOnTarget(tab: BrowserTab, selector: string, filePath: string): Promise<void> {
-    const locator = tab.page.locator(selector).first();
-    const isFileInput = await locator.evaluate((element) => {
-      return element.tagName.toLowerCase() === 'input'
-        && (element.getAttribute('type') || '').toLowerCase() === 'file';
-    }).catch(() => false);
-    if (isFileInput) {
-      await locator.setInputFiles(filePath);
-      return;
-    }
-
-    const fileChooserPromise = tab.page.waitForEvent('filechooser', { timeout: 10_000 });
-    await locator.click();
-    const fileChooser = await fileChooserPromise;
-    await fileChooser.setFiles(filePath);
   }
 
   // --------------------------------------------------------------------------
@@ -900,7 +698,11 @@ export class BrowserService implements Disposable {
   async getAccountStateSummary(): Promise<ManagedBrowserAccountStateSummary> {
     await this.ensureBrowser();
     const state = await this.context!.storageState();
-    const summary = await this.summarizeAccountState(state);
+    const activeSessionStorageEntryCount = await getBrowserPageSessionStorageEntryCount(this.getActiveTab());
+    const summary = summarizeBrowserAccountState({
+      state,
+      activeSessionStorageEntryCount,
+    });
     this.lastAccountState = summary;
     return summary;
   }
@@ -912,7 +714,12 @@ export class BrowserService implements Disposable {
       : path.join(this.screenshotDir, `storage_state_${Date.now()}.json`);
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     const state = await this.context!.storageState({ path: outputPath });
-    const accountState = await this.summarizeAccountState(state, outputPath);
+    const activeSessionStorageEntryCount = await getBrowserPageSessionStorageEntryCount(this.getActiveTab());
+    const accountState = summarizeBrowserAccountState({
+      state,
+      storageStatePath: outputPath,
+      activeSessionStorageEntryCount,
+    });
     this.lastAccountState = accountState;
     return { path: outputPath, accountState };
   }
@@ -926,11 +733,16 @@ export class BrowserService implements Disposable {
     if (cookies.length > 0) {
       await this.context!.addCookies(cookies as Parameters<BrowserContext['addCookies']>[0]);
     }
-    await this.installStorageStateInitScript(origins);
-    await this.applyStorageStateToActivePage(origins).catch((error) => {
+    await installStorageStateInitScript(this.context!, origins);
+    await applyStorageStateToPage(this.getActiveTab(), origins).catch((error) => {
       this.logger.log('WARN', `Unable to apply imported localStorage to active page: ${error instanceof Error ? error.message : String(error)}`);
     });
-    const accountState = await this.summarizeAccountState(state, resolvedPath);
+    const activeSessionStorageEntryCount = await getBrowserPageSessionStorageEntryCount(this.getActiveTab());
+    const accountState = summarizeBrowserAccountState({
+      state,
+      storageStatePath: resolvedPath,
+      activeSessionStorageEntryCount,
+    });
     this.lastAccountState = accountState;
     return accountState;
   }
@@ -974,25 +786,14 @@ export class BrowserService implements Disposable {
     action: string;
     params?: Record<string, unknown>;
   }): WorkbenchActionTrace {
-    this.heartbeatLease();
-    return {
-      id: `trace_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      targetKind: 'browser',
-      toolName: args.toolName,
-      action: args.action,
+    this.leaseController.heartbeat();
+    return beginBrowserWorkbenchTrace({
+      ...args,
       mode: this.mode,
-      provider: this.providerDiagnostics.provider,
-      executable: this.providerDiagnostics.executable,
-      cdpPort: this.providerDiagnostics.cdpPort,
+      providerDiagnostics: this.providerDiagnostics,
       profileDir: this.profileDir,
-      missingExecutable: this.providerDiagnostics.missingExecutable,
-      recommendedAction: this.providerDiagnostics.recommendedAction,
-      startedAtMs: Date.now(),
-      before: this.snapshotActiveTab(),
-      params: redactBrowserWorkbenchTraceParams(args.toolName, args.params || {}),
-      consoleErrors: [],
-      networkFailures: [],
-    };
+      before: snapshotBrowserTab(this.getActiveTab()),
+    });
   }
 
   finishTrace(
@@ -1003,16 +804,12 @@ export class BrowserService implements Disposable {
       screenshotPath?: string | null;
     },
   ): WorkbenchActionTrace {
-    const completed: WorkbenchActionTrace = {
-      ...trace,
-      completedAtMs: Date.now(),
-      after: this.snapshotActiveTab(args.screenshotPath || undefined),
-      success: args.success,
-      error: args.error || null,
-      screenshotPath: args.screenshotPath || null,
+    const completed = finishBrowserWorkbenchTrace(trace, {
+      ...args,
+      after: snapshotBrowserTab(this.getActiveTab(), args.screenshotPath || undefined),
       consoleErrors: this.consoleErrors.slice(-10),
       networkFailures: this.networkFailures.slice(-10),
-    };
+    });
     this.traces.push(completed);
     this.traces = this.traces.slice(-100);
     return completed;
@@ -1186,108 +983,6 @@ export class BrowserService implements Disposable {
     });
   }
 
-  private async summarizeAccountState(
-    state: BrowserStorageStateLike,
-    storageStatePath?: string,
-  ): Promise<ManagedBrowserAccountStateSummary> {
-    const cookies = normalizeStorageStateCookies(state.cookies);
-    const origins = normalizeStorageStateOrigins(state.origins);
-    const nowSeconds = Math.floor(Date.now() / 1000);
-    const expiredCookieCount = cookies.filter((cookie) =>
-      typeof cookie.expires === 'number' && cookie.expires > 0 && cookie.expires < nowSeconds
-    ).length;
-    const localStorageEntryCount = origins.reduce((sum, origin) => sum + origin.localStorage.length, 0);
-    const sessionStorageEntryCount = origins.reduce((sum, origin) => sum + origin.sessionStorage.length, 0)
-      + await this.getActivePageSessionStorageEntryCount();
-    const status = expiredCookieCount > 0
-      ? 'account_state_expired'
-      : cookies.length > 0 || localStorageEntryCount > 0 || sessionStorageEntryCount > 0
-        ? 'available'
-        : 'empty';
-
-    return {
-      status,
-      cookieCount: cookies.length,
-      expiredCookieCount,
-      originCount: origins.length,
-      localStorageEntryCount,
-      sessionStorageEntryCount,
-      cookieDomains: Array.from(new Set(cookies.map((cookie) => cookie.domain).filter(Boolean))).sort(),
-      origins: origins.map((origin) => origin.origin).filter(Boolean).sort(),
-      updatedAtMs: Date.now(),
-      storageStatePath: storageStatePath ? path.basename(storageStatePath) : null,
-    };
-  }
-
-  private async getActivePageSessionStorageEntryCount(): Promise<number> {
-    const tab = this.getActiveTab();
-    if (!tab) {
-      return 0;
-    }
-    return await tab.page.evaluate(() => {
-      try {
-        return window.sessionStorage?.length || 0;
-      } catch {
-        return 0;
-      }
-    }).catch(() => 0);
-  }
-
-  private async installStorageStateInitScript(origins: unknown[]): Promise<void> {
-    const safeOrigins = normalizeStorageStateOrigins(origins);
-    if (safeOrigins.length === 0) {
-      return;
-    }
-    await this.context!.addInitScript((originEntries) => {
-      const entries = Array.isArray(originEntries) ? originEntries : [];
-      const match = entries.find((entry) => entry && typeof entry === 'object' && (entry as { origin?: string }).origin === window.location.origin) as {
-        localStorage?: Array<{ name: string; value: string }>;
-        sessionStorage?: Array<{ name: string; value: string }>;
-      } | undefined;
-      if (!match) {
-        return;
-      }
-      try {
-        for (const item of match.localStorage || []) {
-          window.localStorage.setItem(item.name, item.value);
-        }
-      } catch {
-        // Some origins block storage access; leave navigation usable.
-      }
-      try {
-        for (const item of match.sessionStorage || []) {
-          window.sessionStorage.setItem(item.name, item.value);
-        }
-      } catch {
-        // Some origins block storage access; leave navigation usable.
-      }
-    }, safeOrigins);
-  }
-
-  private async applyStorageStateToActivePage(origins: unknown[]): Promise<void> {
-    const safeOrigins = normalizeStorageStateOrigins(origins);
-    const tab = this.getActiveTab();
-    if (!tab || safeOrigins.length === 0) {
-      return;
-    }
-    await tab.page.evaluate((originEntries) => {
-      const entries = Array.isArray(originEntries) ? originEntries : [];
-      const match = entries.find((entry) => entry && typeof entry === 'object' && (entry as { origin?: string }).origin === window.location.origin) as {
-        localStorage?: Array<{ name: string; value: string }>;
-        sessionStorage?: Array<{ name: string; value: string }>;
-      } | undefined;
-      if (!match) {
-        return;
-      }
-      for (const item of match.localStorage || []) {
-        window.localStorage.setItem(item.name, item.value);
-      }
-      for (const item of match.sessionStorage || []) {
-        window.sessionStorage.setItem(item.name, item.value);
-      }
-    }, safeOrigins);
-  }
-
   private configureManagedBrowserSession(profileMode: ManagedBrowserProfileMode): void {
     const resolution = resolveManagedBrowserProfile({
       userDataDir: this.userDataDir,
@@ -1342,40 +1037,7 @@ export class BrowserService implements Disposable {
       recommendedAction?: string | null;
     },
   ): void {
-    this.providerDiagnostics = {
-      provider: resolution.provider,
-      requestedProvider: resolution.requestedProvider,
-      executable: runtime.executable,
-      cdpPort: runtime.cdpPort,
-      missingExecutable: runtime.missingExecutable ?? resolution.missingExecutable,
-      recommendedAction: runtime.recommendedAction ?? resolution.recommendedAction,
-      providerFallbackReason: resolution.providerFallbackReason,
-    };
-  }
-
-  private createInitialProviderDiagnostics(): BrowserProviderDiagnostics {
-    try {
-      const resolution = resolveBrowserProvider();
-      return {
-        provider: resolution.provider,
-        requestedProvider: resolution.requestedProvider,
-        executable: resolution.provider === 'system-chrome-cdp' ? resolution.systemExecutable : null,
-        cdpPort: null,
-        missingExecutable: resolution.missingExecutable,
-        recommendedAction: resolution.recommendedAction,
-        providerFallbackReason: resolution.providerFallbackReason,
-      };
-    } catch (error) {
-      return {
-        provider: null,
-        requestedProvider: null,
-        executable: null,
-        cdpPort: null,
-        missingExecutable: false,
-        recommendedAction: error instanceof Error ? error.message : String(error),
-        providerFallbackReason: null,
-      };
-    }
+    this.providerDiagnostics = buildBrowserProviderDiagnostics(resolution, runtime);
   }
 
   // --------------------------------------------------------------------------
@@ -1403,100 +1065,6 @@ export class BrowserService implements Disposable {
     tab.title = await tab.page.title().catch(() => tab.title);
   }
 
-  private renewLease(args: { owner?: string; ttlMs?: number } = {}): ManagedBrowserLeaseState {
-    const nowMs = Date.now();
-    const lease = createManagedBrowserLease({
-      owner: args.owner || this.lease?.owner || 'managed-browser',
-      ttlMs: args.ttlMs,
-      nowMs,
-      leaseId: this.lease?.status === 'active' ? this.lease.leaseId : undefined,
-      acquiredAtMs: this.lease?.status === 'active' ? this.lease.acquiredAtMs : undefined,
-    });
-    this.lease = lease;
-    this.scheduleLeaseExpiry(lease);
-    return lease;
-  }
-
-  private heartbeatLease(): void {
-    if (this.lease?.status !== 'active') {
-      return;
-    }
-    const nowMs = Date.now();
-    if (isManagedBrowserLeaseExpired(this.lease, nowMs)) {
-      this.markLeaseExpired(nowMs);
-      return;
-    }
-    this.lease = {
-      ...this.lease,
-      lastHeartbeatAtMs: nowMs,
-      expiresAtMs: nowMs + this.lease.ttlMs,
-    };
-    this.scheduleLeaseExpiry(this.lease);
-  }
-
-  private releaseLease(): void {
-    this.clearLeaseTimer();
-    if (!this.lease) {
-      return;
-    }
-    const nowMs = Date.now();
-    this.lease = {
-      ...this.lease,
-      lastHeartbeatAtMs: nowMs,
-      expiresAtMs: nowMs,
-      status: 'released',
-    };
-  }
-
-  private getLeaseState(): ManagedBrowserLeaseState | null {
-    if (!this.lease) {
-      return null;
-    }
-    if (this.lease.status === 'active' && isManagedBrowserLeaseExpired(this.lease)) {
-      this.markLeaseExpired();
-    }
-    return this.lease ? { ...this.lease } : null;
-  }
-
-  private scheduleLeaseExpiry(lease: ManagedBrowserLeaseState): void {
-    this.clearLeaseTimer();
-    if (lease.status !== 'active') {
-      return;
-    }
-    const delayMs = Math.max(0, lease.expiresAtMs - Date.now());
-    this.leaseTimer = setTimeout(() => {
-      if (this.lease?.leaseId !== lease.leaseId || this.lease.status !== 'active') {
-        return;
-      }
-      this.markLeaseExpired();
-      this.logger.log('WARN', `Managed browser lease expired (${lease.leaseId}); closing session.`);
-      void this.close().catch((error) => {
-        this.logger.log('WARN', `Failed to close expired managed browser lease: ${error}`);
-      });
-    }, delayMs);
-    this.leaseTimer.unref?.();
-  }
-
-  private clearLeaseTimer(): void {
-    if (this.leaseTimer) {
-      clearTimeout(this.leaseTimer);
-      this.leaseTimer = null;
-    }
-  }
-
-  private markLeaseExpired(nowMs: number = Date.now()): void {
-    this.clearLeaseTimer();
-    if (!this.lease) {
-      return;
-    }
-    this.lease = {
-      ...this.lease,
-      lastHeartbeatAtMs: nowMs,
-      expiresAtMs: Math.min(this.lease.expiresAtMs, nowMs),
-      status: 'expired',
-    };
-  }
-
   private cleanupCrashedBrowserProcess(): void {
     this.browserProcess = null;
     this.browser = null;
@@ -1504,15 +1072,8 @@ export class BrowserService implements Disposable {
     this.tabs.clear();
     this.targetRefs.clear();
     this.activeTabId = null;
-    this.markLeaseExpired();
+    this.leaseController.markExpired();
     this.emitSessionChanged('crashed');
-  }
-
-  private getPublicProxyConfig(): ManagedBrowserProxyConfig {
-    return {
-      ...this.proxyConfig,
-      bypass: [...this.proxyConfig.bypass],
-    };
   }
 
   private getPlaywrightProxyOptions(): { server: string; bypass?: string } | undefined {
@@ -1554,104 +1115,18 @@ export class BrowserService implements Disposable {
       : 'headless';
   }
 
-  private createSnapshotId(): string {
-    this.snapshotSequence += 1;
-    return `snapshot_${Date.now()}_${this.snapshotSequence}`;
-  }
-
-  private pruneTargetRefs(now = Date.now()): void {
-    for (const [refId, record] of this.targetRefs.entries()) {
-      const ageMs = now - record.targetRef.capturedAtMs;
-      if (ageMs > record.targetRef.ttlMs) {
-        this.targetRefs.delete(refId);
-      }
-    }
-  }
-
-  private async resolveTargetRef(
-    targetRefInput: unknown,
-    overrideTabId?: string,
-  ): Promise<{ targetRef: BrowserTargetRef }> {
-    this.pruneTargetRefs();
-    const { refId, snapshotId } = parseBrowserTargetRefInput(targetRefInput);
-    if (!refId) {
-      throw new BrowserTargetRefError('targetRef.refId is required. Refresh the DOM snapshot and retry with a fresh targetRef.', null, snapshotId);
-    }
-
-    const record = this.targetRefs.get(refId);
-    if (!record) {
-      throw new BrowserTargetRefError(`TargetRef ${refId} is stale or unknown. Refresh the DOM snapshot and retry.`, refId, snapshotId);
-    }
-    if (snapshotId && record.targetRef.snapshotId !== snapshotId) {
-      throw new BrowserTargetRefError(`TargetRef ${refId} does not belong to snapshot ${snapshotId}. Refresh the DOM snapshot and retry.`, refId, snapshotId);
-    }
-
-    const tabId = overrideTabId || record.targetRef.tabId;
-    if (tabId !== record.targetRef.tabId) {
-      throw new BrowserTargetRefError(`TargetRef ${refId} belongs to a different tab. Refresh the DOM snapshot for the active tab and retry.`, refId, record.targetRef.snapshotId);
-    }
-
-    const tab = this.getTab(tabId);
-    if (tab.page.url() !== record.url) {
-      throw new BrowserTargetRefError(`TargetRef ${refId} is stale after navigation. Refresh the DOM snapshot and retry.`, refId, record.targetRef.snapshotId);
-    }
-
-    const element = await tab.page.$(record.targetRef.selector);
-    if (!element) {
-      throw new BrowserTargetRefError(`TargetRef ${refId} no longer resolves to an element. Refresh the DOM snapshot and retry.`, refId, record.targetRef.snapshotId);
-    }
-    await element.dispose().catch(() => undefined);
-
-    return { targetRef: record.targetRef };
-  }
-
-  private snapshotActiveTab(screenshotPath?: string): WorkbenchSnapshotRef | null {
-    const tab = this.getActiveTab();
-    if (!tab) {
-      return null;
-    }
-
-    return {
-      url: tab.url,
-      title: tab.title,
-      screenshotPath: screenshotPath || null,
-      capturedAtMs: Date.now(),
-    };
-  }
-
   private validateUrl(url: string): { allowed: true } | { allowed: false; reason: string } {
-    if (this.isUrlAllowed(url)) {
-      return { allowed: true };
-    }
-    return {
-      allowed: false,
-      reason: `URL is blocked by Browser Workbench policy: ${url}`,
-    };
+    return validateBrowserWorkbenchUrl(url, {
+      allowedHosts: this.allowedHosts,
+      blockedHosts: this.blockedHosts,
+    });
   }
 
   isUrlAllowed(url: string): boolean {
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      return false;
-    }
-
-    if (['about:', 'data:', 'blob:'].includes(parsed.protocol)) {
-      return true;
-    }
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      return false;
-    }
-
-    const host = parsed.hostname.toLowerCase();
-    if (matchesHostList(host, this.blockedHosts)) {
-      return false;
-    }
-    if (this.allowedHosts.length === 0) {
-      return true;
-    }
-    return isLocalHost(host) || matchesHostList(host, this.allowedHosts);
+    return isBrowserWorkbenchUrlAllowed(url, {
+      allowedHosts: this.allowedHosts,
+      blockedHosts: this.blockedHosts,
+    });
   }
 }
 

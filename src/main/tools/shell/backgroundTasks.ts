@@ -87,6 +87,46 @@ const backgroundTasks: Map<string, TaskState> = new Map();
 const backgroundTaskEvents = new EventEmitter();
 backgroundTaskEvents.setMaxListeners(50);
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function readString(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' ? value : null;
+}
+
+function readNumber(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  return typeof value === 'number' ? value : null;
+}
+
+function isTaskStatus(value: unknown): value is TaskState['status'] {
+  return value === 'running' || value === 'completed' || value === 'failed';
+}
+
+function parsePersistedTask(value: unknown): PersistedTask | null {
+  if (!isRecord(value)) return null;
+  const taskId = readString(value, 'taskId');
+  const command = readString(value, 'command');
+  const cwd = readString(value, 'cwd');
+  const startTime = readNumber(value, 'startTime');
+  const outputFile = readString(value, 'outputFile');
+  const status = value.status;
+  if (!taskId || !command || !cwd || startTime === null || !outputFile || !isTaskStatus(status)) {
+    return null;
+  }
+  return { taskId, command, cwd, startTime, outputFile, status };
+}
+
+function parsePersistedTasks(value: unknown): PersistedTask[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const task = parsePersistedTask(entry);
+    return task ? [task] : [];
+  });
+}
+
 // ============================================================================
 // Directory Management
 // ============================================================================
@@ -208,7 +248,7 @@ export function startBackgroundTask(
   taskState.timeout = timeout;
 
   // Handle stdout
-  proc.stdout?.on('data', (data) => {
+  proc.stdout?.on('data', (data: Buffer | string) => {
     const dataStr = data.toString();
     taskState.outputSize += dataStr.length;
 
@@ -224,7 +264,7 @@ export function startBackgroundTask(
   });
 
   // Handle stderr
-  proc.stderr?.on('data', (data) => {
+  proc.stderr?.on('data', (data: Buffer | string) => {
     const dataStr = data.toString();
     const stderrStr = `[stderr] ${dataStr}`;
     taskState.outputSize += stderrStr.length;
@@ -504,7 +544,7 @@ export function loadPersistedTasks(): PersistedTask[] {
   try {
     if (fs.existsSync(PERSISTENCE_FILE)) {
       const data = fs.readFileSync(PERSISTENCE_FILE, 'utf-8');
-      const tasks: PersistedTask[] = JSON.parse(data);
+      const tasks = parsePersistedTasks(JSON.parse(data) as unknown);
 
       // Mark all as failed since the process is gone
       return tasks.map((t) => ({ ...t, status: 'failed' as const }));

@@ -18,6 +18,20 @@ const logger = createLogger('DataFingerprint');
 
 // --- 事实提取工具函数 ---
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJsonRecord(json: string): Record<string, unknown> | null {
+  const parsed: unknown = JSON.parse(json);
+  return isRecord(parsed) ? parsed : null;
+}
+
+function parseJsonRecordArray(json: string): Record<string, unknown>[] | null {
+  const parsed: unknown = JSON.parse(json);
+  return Array.isArray(parsed) && parsed.every(isRecord) ? parsed : null;
+}
+
 /**
  * 从 bash 输出中提取结构化事实（统计摘要、表格数据等）
  * 轻量启发式：只提取包含数值的关键行，不做完整解析
@@ -51,7 +65,8 @@ export function extractBashFacts(command: string, output: string): ToolFact | nu
   const jsonMatch = output.match(/\{[^{}]{10,500}\}/);
   if (jsonMatch) {
     try {
-      const obj = JSON.parse(jsonMatch[0]);
+      const obj = parseJsonRecord(jsonMatch[0]);
+      if (!obj) return null;
       const numericEntries = Object.entries(obj)
         .filter(([, v]) => typeof v === 'number')
         .slice(0, 5);
@@ -120,15 +135,16 @@ function extractJsonFacts(filePath: string, content: string): ToolFact | null {
     .join('\n');
 
   try {
-    const parsed = JSON.parse(jsonStr);
+    const parsed = parseJsonRecordArray(jsonStr);
 
     // 数组：提取长度和 schema
-    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object') {
-      const keys = Object.keys(parsed[0]);
+    if (parsed && parsed.length > 0) {
+      const firstRecord = parsed[0];
+      const keys = Object.keys(firstRecord);
       const facts: string[] = [];
       facts.push(`${path.basename(filePath)}: ${parsed.length}条记录, 字段=[${keys.join(',')}]`);
 
-      const sample = keys.slice(0, 5).map(k => `${k}: ${parsed[0][k]}`).join(', ');
+      const sample = keys.slice(0, 5).map(k => `${k}: ${String(firstRecord[k] ?? '')}`).join(', ');
       facts.push(`首条: {${sample}}`);
 
       return { source: filePath, readTime: Date.now(), facts };

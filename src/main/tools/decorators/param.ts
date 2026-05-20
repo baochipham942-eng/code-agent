@@ -4,6 +4,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-function-type */
 
 import 'reflect-metadata';
+import { getDecoratorMetadata } from './metadata';
 import { PARAMS_METADATA_KEY, type ParamOptions, type ParamMetadataStored } from './types';
 
 // ----------------------------------------------------------------------------
@@ -23,7 +24,7 @@ import { PARAMS_METADATA_KEY, type ParamOptions, type ParamMetadataStored } from
  */
 export function Param(name: string, options: ParamOptions): ClassDecorator {
   return (target: Function) => {
-    const existing: ParamMetadataStored[] = Reflect.getMetadata(PARAMS_METADATA_KEY, target) || [];
+    const existing = getDecoratorMetadata<ParamMetadataStored[]>(PARAMS_METADATA_KEY, target) || [];
 
     const param: ParamMetadataStored = {
       name,
@@ -45,5 +46,5 @@ export function Param(name: string, options: ParamOptions): ClassDecorator {
  * 获取参数元数据
  */
 export function getParamMetadata(target: Function): ParamMetadataStored[] {
-  return Reflect.getMetadata(PARAMS_METADATA_KEY, target) || [];
+  return getDecoratorMetadata<ParamMetadataStored[]>(PARAMS_METADATA_KEY, target) || [];
 }

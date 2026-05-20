@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { ToolCall } from '../../../shared/contract';
-import type { AntiPatternState, FailedToolCallMatch, ToolFailureEntry } from '../loopTypes';
+import type { AntiPatternState, FailedToolCallMatch } from '../loopTypes';
 import { READ_ONLY_TOOLS, WRITE_TOOLS } from '../loopTypes';
 import { cleanXmlResidues } from './cleanXml';
 import { isBashToolName } from '../../tools/toolNames';
@@ -11,6 +11,17 @@ import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector';
 
 const logger = createLogger('AntiPatternDetector');
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+function parseJsonRecord(json: string): Record<string, unknown> | null {
+  const parsed: unknown = JSON.parse(json);
+  return isRecord(parsed) ? parsed : null;
+}
+
+const cleanToolArgs = (value: unknown): Record<string, unknown> | null =>
+  ((cleaned) => (isRecord(cleaned) ? cleaned : null))(cleanXmlResidues(value));
+const hasForceExecuteHints = (args: Record<string, unknown>): boolean => Boolean(args.server || args.tool || args.arguments || args.file_path || args.command);
 
 const SHELL_FILE_READ_PATTERN =
   /\b(cat|less|more|head|tail|sed|awk|nl|bat|grep|rg|find|ls|wc)\b|\bpython3?\b[\s\S]*\b(open|read_text|readlines|Path\()/i;
@@ -670,10 +681,13 @@ export class AntiPatternDetector {
     if (matchedArgs) {
       try {
         // Clean XML residues before parsing
-        const cleanedArgs = cleanXmlResidues(matchedArgs) as string;
-        const parsedArgs = JSON.parse(cleanedArgs);
+        const cleanedArgs = cleanXmlResidues(matchedArgs);
+        if (typeof cleanedArgs !== 'string') throw new Error('Cleaned args are not a string');
+        const parsedArgs = parseJsonRecord(cleanedArgs);
+        if (!parsedArgs) throw new Error('Parsed args are not an object');
         // Clean parsed object recursively
-        const sanitizedArgs = cleanXmlResidues(parsedArgs) as Record<string, unknown>;
+        const sanitizedArgs = cleanToolArgs(parsedArgs);
+        if (!sanitizedArgs) throw new Error('Sanitized args are not an object');
 
         // bash 命令专项清理：防止 markdown/中文解释文字混入
         if (isBashToolName(toolName) && typeof sanitizedArgs.command === 'string') {
@@ -723,9 +737,9 @@ export class AntiPatternDetector {
         return {
           id: `force_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
           name: toolName,
-          arguments: sanitizedArgs as Record<string, unknown>,
+          arguments: sanitizedArgs,
         };
-      } catch (e) {
+      } catch {
         logger.debug(`Failed to parse matched args: ${matchedArgs}`);
       }
     }
@@ -746,18 +760,20 @@ export class AntiPatternDetector {
         jsonStr = jsonStr.replace(/(\w+)(?=\s*:)/g, '"$1"');
         jsonStr = jsonStr.replace(/""(\w+)""/g, '"$1"');
 
-        const parsedArgs = JSON.parse(jsonStr);
-        const sanitizedArgs = cleanXmlResidues(parsedArgs);
+        const parsedArgs = parseJsonRecord(jsonStr);
+        if (!parsedArgs) throw new Error('Parsed args are not an object');
+        const sanitizedArgs = cleanToolArgs(parsedArgs);
+        if (!sanitizedArgs) throw new Error('Sanitized args are not an object');
         logger.debug(`Parsed tool args from content: ${JSON.stringify(sanitizedArgs)}`);
 
-        if (!this._validateForceExecuteArgs(toolName, sanitizedArgs as Record<string, unknown>)) return null;
+        if (!this._validateForceExecuteArgs(toolName, sanitizedArgs)) return null;
 
         return {
           id: `force_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
           name: toolName,
-          arguments: sanitizedArgs as Record<string, unknown>,
+          arguments: sanitizedArgs,
         };
-      } catch (e) {
+      } catch {
         logger.debug(`Failed to parse JSON from content: ${jsonMatch[1]?.slice(0, 200)}`);
       }
     }
@@ -769,20 +785,21 @@ export class AntiPatternDetector {
       try {
         // Clean XML residues first
         const cleanedJson = codeBlockMatch[1].replace(/<\/?\w+(?:_\w+)*\s*\/?>/g, '').replace(/<\w+[^>]*>/g, '');
-        const parsedArgs = JSON.parse(cleanedJson);
-        if (parsedArgs.server || parsedArgs.tool || parsedArgs.arguments || parsedArgs.file_path || parsedArgs.command) {
-          const sanitizedArgs = cleanXmlResidues(parsedArgs);
+        const parsedArgs = parseJsonRecord(cleanedJson);
+        if (parsedArgs && hasForceExecuteHints(parsedArgs)) {
+          const sanitizedArgs = cleanToolArgs(parsedArgs);
+          if (!sanitizedArgs) return null;
           logger.debug(`Parsed tool args from code block: ${JSON.stringify(sanitizedArgs)}`);
 
-          if (!this._validateForceExecuteArgs(toolName, sanitizedArgs as Record<string, unknown>)) return null;
+          if (!this._validateForceExecuteArgs(toolName, sanitizedArgs)) return null;
 
           return {
             id: `force_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
             name: toolName,
-            arguments: sanitizedArgs as Record<string, unknown>,
+            arguments: sanitizedArgs,
           };
         }
-      } catch (e) {
+      } catch {
         logger.debug(`Failed to parse JSON from code block`);
       }
     }

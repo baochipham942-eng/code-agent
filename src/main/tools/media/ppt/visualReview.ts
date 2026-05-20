@@ -428,54 +428,82 @@ function parseReviewResponse(text: string): Omit<ReviewResult, 'slideIndex'> {
   const defaultResult = { score: 3 as number, issues: [] as ReviewResult['issues'], suggestions: [] as string[] };
 
   try {
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(text) as unknown;
     return normalizeReviewResult(parsed);
   } catch { /* continue */ }
 
   const jsonMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
   if (jsonMatch) {
     try {
-      return normalizeReviewResult(JSON.parse(jsonMatch[1]));
+      return normalizeReviewResult(JSON.parse(jsonMatch[1]) as unknown);
     } catch { /* continue */ }
   }
 
   const braceMatch = text.match(/\{[\s\S]*\}/);
   if (braceMatch) {
     try {
-      return normalizeReviewResult(JSON.parse(braceMatch[0]));
+      return normalizeReviewResult(JSON.parse(braceMatch[0]) as unknown);
     } catch { /* continue */ }
   }
 
   return defaultResult;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): VLM 返回 JSON 形态由 prompt 决定，应抽 RawReviewJson 类型（issues[]）后用 zod 校验
-function normalizeReviewResult(raw: any): Omit<ReviewResult, 'slideIndex'> {
-  const validTypes: ReviewDimensionType[] = [
+type ReviewSeverity = 'high' | 'medium' | 'low';
+
+interface RawReviewIssue {
+  type?: unknown;
+  description?: unknown;
+  severity?: unknown;
+  fix?: unknown;
+}
+
+interface RawReviewJson {
+  score?: unknown;
+  issues?: unknown;
+  suggestions?: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isReviewDimensionType(value: unknown): value is ReviewDimensionType {
+  return typeof value === 'string' && [
     'text_readability', 'layout_precision', 'information_density',
     'visual_hierarchy', 'color_contrast', 'consistency',
     'composition', 'professional_polish',
-  ];
-  const validSeverities = ['high', 'medium', 'low'];
+  ].includes(value);
+}
 
-  const issues = Array.isArray(raw.issues) ? raw.issues
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): raw.issues 元素是未校验的 VLM 输出，narrow 后 i 应为 RawReviewIssue
-    .filter((i: any) => i && typeof i === 'object')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 filter，i 应是 RawReviewIssue
-    .map((i: any) => {
-      const type: ReviewDimensionType = validTypes.includes(i.type) ? i.type : 'professional_polish';
-      return {
-        type,
-        description: String(i.description || ''),
-        severity: (validSeverities.includes(i.severity) ? i.severity : 'medium') as 'high' | 'medium' | 'low',
-        ...(i.fix ? { fix: String(i.fix) } : {}),
-        weight: REVIEW_DIMENSION_WEIGHTS[type],
-      };
-    }) : [];
+function isReviewSeverity(value: unknown): value is ReviewSeverity {
+  return typeof value === 'string' && ['high', 'medium', 'low'].includes(value);
+}
+
+function normalizeReviewIssue(issue: RawReviewIssue): ReviewResult['issues'][number] {
+  const type = isReviewDimensionType(issue.type) ? issue.type : 'professional_polish';
+  const severity = isReviewSeverity(issue.severity) ? issue.severity : 'medium';
+  const fix = issue.fix == null ? undefined : String(issue.fix);
 
   return {
-    score: typeof raw.score === 'number' ? Math.round(Math.min(5, Math.max(1, raw.score)) * 10) / 10 : 3,
+    type,
+    description: String(issue.description || ''),
+    severity,
+    ...(fix ? { fix } : {}),
+    weight: REVIEW_DIMENSION_WEIGHTS[type],
+  };
+}
+
+function normalizeReviewResult(raw: unknown): Omit<ReviewResult, 'slideIndex'> {
+  const review = isRecord(raw) ? raw as RawReviewJson : {};
+  const rawIssues = Array.isArray(review.issues) ? review.issues : [];
+  const issues = rawIssues
+    .filter(isRecord)
+    .map(issue => normalizeReviewIssue(issue));
+
+  return {
+    score: typeof review.score === 'number' ? Math.round(Math.min(5, Math.max(1, review.score)) * 10) / 10 : 3,
     issues,
-    suggestions: Array.isArray(raw.suggestions) ? raw.suggestions.map(String) : [],
+    suggestions: Array.isArray(review.suggestions) ? review.suggestions.map(String) : [],
   };
 }

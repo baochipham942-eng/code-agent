@@ -13,11 +13,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
-import { createRequire } from 'module';
+import PptxGenJS from 'pptxgenjs';
 import type { StructuredSlide } from '../slideSchemas';
 import type { PPTTheme } from '../types';
-
-const require = createRequire(import.meta.url);
 
 // ============================================================================
 // 示例数据 — 覆盖全部 12 种布局
@@ -110,8 +108,7 @@ const SAMPLE_SLIDES: StructuredSlide[] = [
     content: {
       leftPoints: ['智能代码补全', '多语言支持', '实时协作编辑'],
       rightPoints: ['自动化测试', '安全漏洞扫描', 'CI/CD 集成'],
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): SlideContent 联合类型里 two-column 应有 { leftPoints, rightPoints } 变体，这里是 fixture 测试数据，应该让 SlideContent 联合明确包含 two-column variant 字段
-    } as any,
+    },
   },
   // 10. list
   {
@@ -150,8 +147,6 @@ async function generatePptx(slides: StructuredSlide[], themeName: string, output
   const { registerSlideMasters } = await import('../slideMasters');
   const { fillStructuredSlide, selectMasterForStructuredSlide, resetLayoutRotation } = await import('../layouts');
 
-   
-  const PptxGenJS = require('pptxgenjs');
   const pptx = new PptxGenJS();
   const themeConfig = getThemeConfig(themeName);
 
@@ -198,6 +193,44 @@ interface VlmResult {
   layout: string;
   score: number;
   issues: string[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function parseJsonRecord(text: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function getVlmMessageContent(response: Record<string, unknown>): string | null {
+  const choices = response.choices;
+  if (!Array.isArray(choices)) return null;
+
+  const firstChoice: unknown = choices[0];
+  if (!isRecord(firstChoice)) return null;
+
+  const message = firstChoice.message;
+  if (!isRecord(message)) return null;
+
+  return typeof message.content === 'string' ? message.content : null;
+}
+
+function parseVlmReview(text: string): Pick<VlmResult, 'score' | 'issues'> | null {
+  const review = parseJsonRecord(text);
+  if (!review) return null;
+
+  const rawScore = review.score;
+  const score = typeof rawScore === 'number' ? Math.min(5, Math.max(1, rawScore)) : 3;
+  const rawIssues = review.issues;
+  const issues = Array.isArray(rawIssues) ? rawIssues.map(String) : [];
+
+  return { score, issues };
 }
 
 async function vlmReview(screenshots: string[], slides: StructuredSlide[]): Promise<VlmResult[]> {
@@ -264,22 +297,23 @@ async function vlmReview(screenshots: string[], slides: StructuredSlide[]): Prom
         req.end();
       });
 
-      const parsed = JSON.parse(response);
-      const text = parsed.choices?.[0]?.message?.content || '{}';
+      const parsed = parseJsonRecord(response);
+      const text = parsed ? (getVlmMessageContent(parsed) ?? '{}') : '{}';
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        const review = JSON.parse(jsonMatch[0]);
+        const review = parseVlmReview(jsonMatch[0]);
+        if (!review) continue;
         results.push({
           slideIndex: i,
           layout: slideLayout,
-          score: typeof review.score === 'number' ? Math.min(5, Math.max(1, review.score)) : 3,
-          issues: Array.isArray(review.issues) ? review.issues.map(String) : [],
+          score: review.score,
+          issues: review.issues,
         });
         process.stdout.write(`  [${i + 1}/${screenshots.length}] ${slideLayout}: ${review.score}/5\n`);
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): catch 形参 ts4.0+ 默认 unknown，访问 .message 应改成 `err instanceof Error ? err.message : String(err)`
-    } catch (err: any) {
-      console.log(`  [${i + 1}] VLM 调用失败: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(`  [${i + 1}] VLM 调用失败: ${message}`);
       results.push({ slideIndex: i, layout: slideLayout, score: 3, issues: ['VLM 调用失败'] });
     }
   }
@@ -369,7 +403,7 @@ async function main() {
       const issues = row.issues || 'none';
       console.log(`| ${String(row.index).padStart(2)} | ${row.layout.padEnd(11)} | ${row.theme.padEnd(10)} | ${score.padEnd(5)} | ${issues}`);
     }
-    const scores = summaryRows.filter(r => r.score !== undefined).map(r => r.score!);
+    const scores = summaryRows.flatMap(r => r.score !== undefined ? [r.score] : []);
     if (scores.length > 0) {
       const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
       const highIssues = summaryRows.filter(r => r.issues && r.issues !== 'none').length;
@@ -393,7 +427,8 @@ async function main() {
   } catch { /* ignore on non-macOS */ }
 }
 
-main().catch(err => {
-  console.error('❌ 预览脚本执行失败:', err.message);
+main().catch((err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error('❌ 预览脚本执行失败:', message);
   process.exit(1);
 });

@@ -5,6 +5,8 @@
 import { createAgentLoop, buildCLIConfig, initializeCLIServices, cleanup, getSessionManager, syncCLIWorkingDirectory, getConfigService } from './bootstrap';
 import { terminalOutput, jsonOutput } from './output';
 import { addSwarmEventListener } from '../main/ipc/swarm.ipc';
+import fs from 'fs';
+import path from 'path';
 import type { CLIConfig, CLIRunResult, CLIGlobalOptions } from './types';
 import type { Message, AgentEvent, PRLink, ModelConfig } from '../shared/contract';
 import { getModelMaxOutputTokens } from '../shared/constants';
@@ -17,6 +19,10 @@ import { getAgentDispatchInfo } from './agentDispatch';
 export { getAgentDispatchInfo, isAgentDispatchToolName } from './agentDispatch';
 
 const logger = createLogger('CLI-Adapter');
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 // Subscribe to retry events for CLI visibility
 retryEvents.on('retry', (info: { provider: string; attempt: number; maxRetries: number; delay: number; error: string }) => {
@@ -204,11 +210,11 @@ export class CLIAgent {
       this.resolveRun = resolve;
 
       // 运行 Agent
-      agentLoop.run(prompt).catch((error) => {
+      agentLoop.run(prompt).catch((error: unknown) => {
         logger.error('Agent run error', error);
         this.finishRun({
           success: false,
-          error: error.message,
+          error: getErrorMessage(error),
         });
       });
     });
@@ -365,8 +371,6 @@ export class CLIAgent {
     // Write metrics JSON if collector is active
     if (this.metricsCollector && this.config.metricsPath) {
       try {
-        const fs = require('fs');
-        const path = require('path');
         const metricsPath = path.resolve(this.config.metricsPath);
         const dir = path.dirname(metricsPath);
         if (!fs.existsSync(dir)) {
@@ -377,7 +381,7 @@ export class CLIAgent {
         result.metricsPath = metricsPath;
         logger.info(`Metrics written to ${metricsPath}`);
       } catch (error) {
-        logger.warn('Failed to write metrics file', { error: (error as Error).message });
+        logger.warn('Failed to write metrics file', { error: getErrorMessage(error) });
       }
       this.metricsCollector = null;
     }
@@ -518,7 +522,7 @@ export class CLIAgent {
     if (this.sessionId) {
       try {
         const sessionManager = getSessionManager();
-        sessionManager.updateSession(this.sessionId, { prLink: link }).catch((error) => {
+        sessionManager.updateSession(this.sessionId, { prLink: link }).catch((error: unknown) => {
           logger.warn('Failed to update session with PR link', { error });
         });
       } catch (error) {

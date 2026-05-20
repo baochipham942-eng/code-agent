@@ -21,6 +21,10 @@ function commandApi() {
   return window.codeAgentAPI || window.electronAPI;
 }
 
+function domainApi() {
+  return window.codeAgentDomainAPI || window.domainAPI;
+}
+
 // Bridge 的 invoke 只接受 keyof IpcInvokeHandlers；ChannelSchema 用普通 string，
 // 需要在边界绕过严格的 keyof 检查。
 type LooseInvoke = (channel: string, ...args: unknown[]) => Promise<unknown>;
@@ -60,6 +64,36 @@ export async function typedInvoke<S extends ChannelSchema>(
       // dev 模式直接抛，让 bug 立刻暴露；prod 不进这条路径
       throw new Error(
         `[typedInvoke] response validation failed for ${schema.channel}: ${parsed.error.message}`,
+      );
+    }
+    return parsed.data as ResponseOf<S>;
+  }
+
+  return raw as ResponseOf<S>;
+}
+
+/**
+ * 类型化 domain invoke。
+ *
+ * Domain bridge 的外部 API 仍是 `(domain, action, payload)`，但调用点用
+ * ChannelSchema 描述完整 request envelope，避免每个 store 自己写宽泛泛型。
+ */
+export async function typedInvokeDomain<S extends ChannelSchema>(
+  schema: S,
+  request: PayloadOf<S> & { action: string; payload?: unknown },
+): Promise<ResponseOf<S>> {
+  const api = domainApi();
+  if (!api) {
+    throw new Error(`[typedInvokeDomain] no domain IPC bridge available for ${schema.channel}`);
+  }
+
+  const raw: unknown = await api.invoke(schema.channel, request.action, request.payload);
+
+  if (schema.response && shouldValidateResponse()) {
+    const parsed = schema.response.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error(
+        `[typedInvokeDomain] response validation failed for ${schema.channel}:${request.action}: ${parsed.error.message}`,
       );
     }
     return parsed.data as ResponseOf<S>;

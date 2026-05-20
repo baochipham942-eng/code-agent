@@ -78,10 +78,21 @@ function safeJsonStringify(value: unknown): string {
   }
 }
 
+function parseStoredJson<T>(value: unknown): T | undefined {
+  if (typeof value !== 'string' || value.length === 0) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(value) as unknown as T;
+  } catch {
+    return undefined;
+  }
+}
+
 function parseJsonArray(value: unknown): string[] {
   if (typeof value !== 'string') return [];
   try {
-    const parsed = JSON.parse(value);
+    const parsed = JSON.parse(value) as unknown;
     return Array.isArray(parsed) ? parsed.map(String) : [];
   } catch {
     return [];
@@ -91,7 +102,7 @@ function parseJsonArray(value: unknown): string[] {
 function parseJsonObject(value: unknown): Record<string, unknown> {
   if (typeof value !== 'string') return {};
   try {
-    const parsed = JSON.parse(value);
+    const parsed = JSON.parse(value) as unknown;
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
   } catch {
     return {};
@@ -810,14 +821,14 @@ export class SessionRepository {
       visibility: (row.visibility as Message['visibility']) || 'active',
       hiddenByRewindId: (row.hidden_by_rewind_id as string) || undefined,
       hiddenAt: (row.hidden_at as number) || undefined,
-      toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : undefined,
-      toolResults: row.tool_results ? JSON.parse(row.tool_results as string) : undefined,
-      attachments: row.attachments ? JSON.parse(row.attachments as string) : undefined,
+      toolCalls: parseStoredJson<Message['toolCalls']>(row.tool_calls),
+      toolResults: parseStoredJson<Message['toolResults']>(row.tool_results),
+      attachments: parseStoredJson<Message['attachments']>(row.attachments),
       thinking: (row.thinking as string) || undefined,
       effortLevel: (row.effort_level as Message['effortLevel']) || undefined,
-      contentParts: row.content_parts ? JSON.parse(row.content_parts as string) : undefined,
-      metadata: row.metadata ? JSON.parse(row.metadata as string) : undefined,
-      compaction: row.compaction ? JSON.parse(row.compaction as string) : undefined
+      contentParts: parseStoredJson<Message['contentParts']>(row.content_parts),
+      metadata: parseStoredJson<Message['metadata']>(row.metadata),
+      compaction: parseStoredJson<Message['compaction']>(row.compaction)
     };
   }
 
@@ -1076,7 +1087,7 @@ export class SessionRepository {
     let lastTokenUsage: TokenUsage | undefined;
     if (row.last_token_usage) {
       try {
-        lastTokenUsage = JSON.parse(row.last_token_usage as string);
+        lastTokenUsage = parseStoredJson<TokenUsage>(row.last_token_usage);
       } catch (err: unknown) {
         logger.warn('[DB] Failed to parse last_token_usage JSON:', err instanceof Error ? err.message : String(err));
       }

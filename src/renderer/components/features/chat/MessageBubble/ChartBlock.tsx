@@ -46,11 +46,24 @@ const darkTooltipStyle = {
 
 const axisStyle = { fontSize: 11, fill: '#a1a1aa' };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isChartSpec(value: unknown): value is ChartSpec {
+  if (!isRecord(value)) return false;
+  const type = value.type;
+  return (
+    (type === 'bar' || type === 'line' || type === 'area' || type === 'pie' || type === 'radar' || type === 'scatter')
+    && Array.isArray(value.data)
+    && value.data.every(isRecord)
+  );
+}
+
 function parseSpec(raw: string): ChartSpec | null {
   try {
-    const spec = JSON.parse(raw);
-    if (!spec?.type || !Array.isArray(spec.data)) return null;
-    return spec as ChartSpec;
+    const spec: unknown = JSON.parse(raw);
+    return isChartSpec(spec) ? spec : null;
   } catch {
     return null;
   }

@@ -19,6 +19,99 @@ const logger = createLogger('PRLinkService');
 import type { PRContext, ParsedPRUrl } from '../../protocol/types/github';
 export type { PRContext, ParsedPRUrl };
 
+type GhPrState = PRContext['state'];
+
+const GH_PR_STATES: ReadonlySet<GhPrState> = new Set(['open', 'closed', 'merged']);
+
+function parseJson(input: string): unknown {
+  return JSON.parse(input) as unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readString(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' ? value : null;
+}
+
+function readNumber(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  return typeof value === 'number' ? value : null;
+}
+
+function normalizeGhPrState(value: unknown): GhPrState | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const state = value.toLowerCase();
+  return GH_PR_STATES.has(state as GhPrState) ? (state as GhPrState) : null;
+}
+
+function normalizeGhLabels(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((label) => {
+    if (!isRecord(label)) {
+      return [];
+    }
+
+    const name = readString(label, 'name');
+    return name ? [name] : [];
+  });
+}
+
+function normalizeGhPrContext(owner: string, repo: string, value: unknown): PRContext | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const prNumber = readNumber(value, 'number');
+  const title = readString(value, 'title');
+  const body = readString(value, 'body') ?? '';
+  const headBranch = readString(value, 'headRefName');
+  const baseBranch = readString(value, 'baseRefName');
+  const state = normalizeGhPrState(value.state);
+  const changedFiles = readNumber(value, 'changedFiles');
+  const additions = readNumber(value, 'additions');
+  const deletions = readNumber(value, 'deletions');
+  const url = readString(value, 'url');
+
+  if (
+    prNumber === null ||
+    title === null ||
+    headBranch === null ||
+    baseBranch === null ||
+    state === null ||
+    changedFiles === null ||
+    additions === null ||
+    deletions === null ||
+    url === null
+  ) {
+    return null;
+  }
+
+  return {
+    owner,
+    repo,
+    number: prNumber,
+    title,
+    body,
+    headBranch,
+    baseBranch,
+    state,
+    changedFiles,
+    additions,
+    deletions,
+    labels: normalizeGhLabels(value.labels),
+    url,
+  };
+}
+
 // ----------------------------------------------------------------------------
 // PR Link Service
 // ----------------------------------------------------------------------------
@@ -34,7 +127,7 @@ export class PRLinkService {
    */
   parsePRUrl(url: string, currentRepo?: { owner: string; repo: string }): ParsedPRUrl | null {
     // 完整 URL 格式
-    const fullUrlMatch = url.match(/(?:https?:\/\/)?github\.com\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
+    const fullUrlMatch = url.match(/(?:https?:\/\/)?github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
     if (fullUrlMatch) {
       return {
         owner: fullUrlMatch[1],
@@ -44,7 +137,7 @@ export class PRLinkService {
     }
 
     // owner/repo#123 格式
-    const shortMatch = url.match(/^([^\/]+)\/([^#]+)#(\d+)$/);
+    const shortMatch = url.match(/^([^/]+)\/([^#]+)#(\d+)$/);
     if (shortMatch) {
       return {
         owner: shortMatch[1],
@@ -75,13 +168,13 @@ export class PRLinkService {
       const url = stdout.trim();
 
       // SSH 格式: git@github.com:owner/repo.git
-      const sshMatch = url.match(/git@github\.com:([^\/]+)\/([^\.]+)(?:\.git)?/);
+      const sshMatch = url.match(/git@github\.com:([^/]+)\/([^.]+)(?:\.git)?/);
       if (sshMatch) {
         return { owner: sshMatch[1], repo: sshMatch[2] };
       }
 
       // HTTPS 格式: https://github.com/owner/repo.git
-      const httpsMatch = url.match(/github\.com\/([^\/]+)\/([^\.]+)(?:\.git)?/);
+      const httpsMatch = url.match(/github\.com\/([^/]+)\/([^.]+)(?:\.git)?/);
       if (httpsMatch) {
         return { owner: httpsMatch[1], repo: httpsMatch[2] };
       }
@@ -101,23 +194,7 @@ export class PRLinkService {
         `gh pr view ${number} --repo ${owner}/${repo} --json number,title,body,headRefName,baseRefName,state,changedFiles,additions,deletions,labels,url`
       );
 
-      const data = JSON.parse(stdout);
-
-      return {
-        owner,
-        repo,
-        number: data.number,
-        title: data.title,
-        body: data.body || '',
-        headBranch: data.headRefName,
-        baseBranch: data.baseRefName,
-        state: data.state.toLowerCase() as 'open' | 'closed' | 'merged',
-        changedFiles: data.changedFiles,
-        additions: data.additions,
-        deletions: data.deletions,
-        labels: data.labels?.map((l: { name: string }) => l.name) || [],
-        url: data.url,
-      };
+      return normalizeGhPrContext(owner, repo, parseJson(stdout));
     } catch (error) {
       logger.error('Failed to fetch PR context', { owner, repo, number, error });
       return null;

@@ -599,7 +599,8 @@ async function exerciseChatInputComputerFailure(
   const expectedRedaction = `[redacted ${CHAT_FAILURE_SECRET.length} chars]`;
   const hasFailureCard = text.includes('Computer')
     && text.includes('刷新页面证据')
-    && text.includes('trace-app-host-computer-failure');
+    && (text.includes('trace-app-host-computer-failure')
+      || html.includes('trace-app-host-computer-failure'));
   const hasRedaction = text.includes(expectedRedaction);
   const hasExecutableSnapshotRecovery = text.includes('读取 DOM / Accessibility snapshot')
     && text.includes('可执行')

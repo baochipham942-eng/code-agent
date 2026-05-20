@@ -4,11 +4,11 @@
 
 // 首先注入 Electron mock（必须在任何其他导入之前）
 import electronMock from './electron-mock';
+import Module from 'module';
 
 // 注入到 require cache
-const Module = require('module');
-const originalRequire = Module.prototype.require;
-Module.prototype.require = function(id: string) {
+const originalRequire = Module.prototype.require as (this: NodeJS.Module, id: string) => unknown;
+Module.prototype.require = function(this: NodeJS.Module, id: string): unknown {
   if (id === 'electron') {
     return electronMock;
   }
@@ -29,9 +29,12 @@ import { getCLISessionManager, type CLISessionManager } from './session';
 import type { CLIConfig, CLIEventHandler } from './types';
 import type { ModelConfig, Message, AgentEvent } from '../shared/contract';
 import type { TelemetryAdapter } from '../shared/contract/telemetry';
+import type { PlanningService } from '../main/planning';
 import { SYSTEM_PROMPT } from '../main/prompts/builder';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER, getModelMaxOutputTokens } from '../shared/constants';
 import { composeTelemetryAdapters } from '../main/agent/metricsCollector';
+
+const cliRequire = Module.createRequire(import.meta.url);
 
 // 延迟导入的模块
 let AgentLoop: typeof import('../main/agent/agentLoop').AgentLoop;
@@ -313,11 +316,11 @@ export function createAgentLoop(
   const effectiveSessionId = explicitSessionId || `cli-${Date.now()}`;
 
   // 创建 PlanningService（如果启用规划模式）
-  let planningService = undefined;
+  let planningService: PlanningService | undefined = undefined;
   if (config.enablePlanning) {
-    const { createPlanningService } = require('../main/planning/planningService');
+    const { createPlanningService } = cliRequire('../main/planning/planningService') as typeof import('../main/planning/planningService');
     planningService = createPlanningService(config.workingDirectory, effectiveSessionId);
-    planningService.initialize().catch((err: Error) => {
+    planningService.initialize().catch((err: unknown) => {
       console.error('Failed to initialize planning service:', err);
     });
     if (config.debug) {
@@ -355,7 +358,7 @@ export function createAgentLoop(
   let eventService: { saveEvent: (sid: string, event: AgentEvent) => void } | null = null;
   if (process.env.EVAL_DISABLED !== 'true') {
     try {
-      const mod = require('../evaluation/sessionEventService');
+      const mod = cliRequire('../evaluation/sessionEventService') as typeof import('../main/evaluation/sessionEventService');
       eventService = mod.getSessionEventService();
     } catch { /* evaluation module not available */ }
   }
@@ -433,9 +436,9 @@ export async function cleanup(): Promise<void> {
             inputTokens: sessionData.totalInputTokens,
             outputTokens: sessionData.totalOutputTokens,
             totalTokens: sessionData.totalTokens,
+            timestamp: Date.now(),
           },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): updateSession 第二个参数类型 SessionUpdate 没有 lastTokenUsage 字段，应该把 lastTokenUsage 加进 SessionUpdate 或 CLI Session schema
-        } as any);
+        });
       }
     } catch (error) {
       console.warn('[Telemetry] Failed to end session:', (error as Error).message);

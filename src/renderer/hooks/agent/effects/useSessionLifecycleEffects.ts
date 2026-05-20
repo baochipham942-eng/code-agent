@@ -1,6 +1,6 @@
 // useAgentSessionLifecycleEffects - agent_complete, error, stream_end, message completion, research_detected, research_mode_started, interrupt_start, interrupt_acknowledged, interrupt_complete, stale processing cleanup
 import { useEffect } from 'react';
-import type { Message, ResearchDetectedData } from '@shared/contract';
+import type { AgentEventEnvelope, Message, ResearchDetectedData } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -10,11 +10,9 @@ import type { AgentEffectsProps } from '../useAgentEffects';
 
 const logger = createLogger('useAgent');
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同其他 effects hook 文件，应抽 shared AgentEvent 联合按 type narrow
-type AgentEvent = { type: string; data: any; sessionId?: string };
+type AgentEvent = AgentEventEnvelope | { type: 'stream_end'; data: null; sessionId?: string };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): error payload 历史 schema 不一（{ message }/{ code, message }/{ stack }），应抽 AgentErrorPayload 联合后用 zod 校验
-type AgentErrorPayload = Record<string, any>;
+type AgentErrorPayload = Record<string, unknown>;
 
 function isRecord(value: unknown): value is AgentErrorPayload {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -24,6 +22,12 @@ export function normalizeAgentErrorPayload(data: unknown): AgentErrorPayload {
   if (!isRecord(data)) return {};
   const nested = isRecord(data.data) ? data.data : {};
   return { ...data, ...nested };
+}
+
+function getNumberPayloadField(data: unknown, field: string): number | undefined {
+  if (!isRecord(data)) return undefined;
+  const value = data[field];
+  return typeof value === 'number' ? value : undefined;
 }
 
 export function getAgentErrorMessage(data: unknown): string | null {
@@ -50,12 +54,17 @@ export function formatAgentErrorContent(data: unknown): string | null {
 
   if (payload.code === 'CONTEXT_LENGTH_EXCEEDED') {
     const details = payload.details;
-    const requestedK = details?.requested ? Math.round(details.requested / 1000) : '?';
-    const maxK = details?.max ? Math.round(details.max / 1000) : '?';
+    const requested = getNumberPayloadField(details, 'requested');
+    const max = getNumberPayloadField(details, 'max');
+    const requestedK = requested ? Math.round(requested / 1000) : '?';
+    const maxK = max ? Math.round(max / 1000) : '?';
+    const suggestion = typeof payload.suggestion === 'string'
+      ? payload.suggestion
+      : '建议新开一个会话继续对话。';
     return (
       `⚠️ **${message}**\n\n` +
       `当前对话长度约 ${requestedK}K tokens，超出模型限制 ${maxK}K tokens。\n\n` +
-      `${payload.suggestion || '建议新开一个会话继续对话。'}`
+      `${suggestion}`
     );
   }
 

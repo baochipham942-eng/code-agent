@@ -15,6 +15,7 @@ import type {
   CronScheduleConfig,
   CronJobAction,
   CronServiceStats,
+  TimeUnit,
 } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
 import type { Disposable } from '../services/serviceRegistry';
@@ -60,12 +61,310 @@ interface CronExecutionRow {
   exit_code?: number | null;
 }
 
+const CRON_JOB_STATUSES: readonly CronJobStatus[] = [
+  'pending',
+  'running',
+  'completed',
+  'failed',
+  'cancelled',
+  'paused',
+];
+
+const TIME_UNITS: readonly TimeUnit[] = ['seconds', 'minutes', 'hours', 'days', 'weeks'];
+
 function isCronAgentActionResult(value: unknown): value is CronAgentActionResult {
-  return Boolean(
-    value &&
-      typeof value === 'object' &&
-      typeof (value as { sessionId?: unknown }).sessionId === 'string'
-  );
+  return isRecord(value) && typeof value.sessionId === 'string';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readStringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function readNumberField(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function readOptionalNumberField(
+  record: Record<string, unknown>,
+  key: string
+): number | undefined {
+  const value = readNumberField(record, key);
+  return value === 0 ? undefined : value;
+}
+
+function readNullableStringField(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' ? value : null;
+}
+
+function readNullableNumberField(record: Record<string, unknown>, key: string): number | null {
+  return readNumberField(record, key) ?? null;
+}
+
+function parseJsonValue(raw: unknown): unknown | undefined {
+  if (typeof raw !== 'string' || raw.length === 0) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function isCronScheduleType(value: unknown): value is CronScheduleType {
+  return value === 'at' || value === 'every' || value === 'cron';
+}
+
+function isCronJobStatus(value: unknown): value is CronJobStatus {
+  return CRON_JOB_STATUSES.includes(value as CronJobStatus);
+}
+
+function isTimeUnit(value: unknown): value is TimeUnit {
+  return TIME_UNITS.includes(value as TimeUnit);
+}
+
+function isFiniteScheduleTimestamp(value: unknown): value is string | number {
+  return typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value));
+}
+
+function normalizeStringRecord(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const normalized: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (typeof item !== 'string') {
+      return undefined;
+    }
+    normalized[key] = item;
+  }
+  return normalized;
+}
+
+function normalizeUnknownRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined;
+}
+
+function normalizeTags(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+    ? value
+    : undefined;
+}
+
+function normalizeSchedule(value: unknown): CronScheduleConfig | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  switch (value.type) {
+    case 'at': {
+      if (!isFiniteScheduleTimestamp(value.datetime)) {
+        return null;
+      }
+      return { type: 'at', datetime: value.datetime };
+    }
+
+    case 'every': {
+      const interval = readNumberField(value, 'interval');
+      if (!interval || !isTimeUnit(value.unit)) {
+        return null;
+      }
+
+      const schedule: CronScheduleConfig = {
+        type: 'every',
+        interval,
+        unit: value.unit,
+      };
+
+      if (isFiniteScheduleTimestamp(value.startAt)) {
+        schedule.startAt = value.startAt;
+      }
+      if (isFiniteScheduleTimestamp(value.endAt)) {
+        schedule.endAt = value.endAt;
+      }
+      return schedule;
+    }
+
+    case 'cron': {
+      if (typeof value.expression !== 'string') {
+        return null;
+      }
+
+      return {
+        type: 'cron',
+        expression: value.expression,
+        timezone: typeof value.timezone === 'string' ? value.timezone : undefined,
+      };
+    }
+
+    default:
+      return null;
+  }
+}
+
+function normalizeAction(value: unknown): CronJobAction | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  switch (value.type) {
+    case 'shell': {
+      if (typeof value.command !== 'string') {
+        return null;
+      }
+      return {
+        type: 'shell',
+        command: value.command,
+        cwd: typeof value.cwd === 'string' ? value.cwd : undefined,
+        env: normalizeStringRecord(value.env),
+        usePty: typeof value.usePty === 'boolean' ? value.usePty : undefined,
+      };
+    }
+
+    case 'tool': {
+      if (typeof value.toolName !== 'string') {
+        return null;
+      }
+      return {
+        type: 'tool',
+        toolName: value.toolName,
+        parameters: normalizeUnknownRecord(value.parameters) ?? {},
+      };
+    }
+
+    case 'agent': {
+      if (typeof value.agentType !== 'string' || typeof value.prompt !== 'string') {
+        return null;
+      }
+      return {
+        type: 'agent',
+        agentType: value.agentType,
+        prompt: value.prompt,
+        context: normalizeUnknownRecord(value.context),
+      };
+    }
+
+    case 'webhook': {
+      if (
+        typeof value.url !== 'string' ||
+        (value.method !== 'GET' &&
+          value.method !== 'POST' &&
+          value.method !== 'PUT' &&
+          value.method !== 'DELETE')
+      ) {
+        return null;
+      }
+      return {
+        type: 'webhook',
+        url: value.url,
+        method: value.method,
+        headers: normalizeStringRecord(value.headers),
+        body: value.body,
+      };
+    }
+
+    case 'ipc': {
+      if (typeof value.channel !== 'string') {
+        return null;
+      }
+      return {
+        type: 'ipc',
+        channel: value.channel,
+        payload: value.payload,
+      };
+    }
+
+    default:
+      return null;
+  }
+}
+
+function normalizeCronJobRow(row: unknown): CronJobDefinition | null {
+  if (!isRecord(row)) {
+    return null;
+  }
+
+  const id = readStringField(row, 'id');
+  const name = readStringField(row, 'name');
+  const scheduleType = row.schedule_type;
+  const createdAt = readNumberField(row, 'created_at');
+  const updatedAt = readNumberField(row, 'updated_at');
+  const schedule = normalizeSchedule(parseJsonValue(row.schedule));
+  const action = normalizeAction(parseJsonValue(row.action));
+
+  if (
+    !id ||
+    !name ||
+    !isCronScheduleType(scheduleType) ||
+    createdAt === undefined ||
+    updatedAt === undefined ||
+    !schedule ||
+    !action
+  ) {
+    return null;
+  }
+
+  return {
+    id,
+    name,
+    description: readStringField(row, 'description') || undefined,
+    scheduleType,
+    schedule,
+    action,
+    enabled: row.enabled === 1 || row.enabled === true,
+    maxRetries: readOptionalNumberField(row, 'max_retries'),
+    retryDelay: readOptionalNumberField(row, 'retry_delay'),
+    timeout: readOptionalNumberField(row, 'timeout'),
+    tags: normalizeTags(parseJsonValue(row.tags)),
+    metadata: normalizeUnknownRecord(parseJsonValue(row.metadata)),
+    createdAt,
+    updatedAt,
+  };
+}
+
+function normalizeCronExecutionRow(row: unknown): CronExecutionRow | null {
+  if (!isRecord(row)) {
+    return null;
+  }
+
+  const id = readStringField(row, 'id');
+  const jobId = readStringField(row, 'job_id');
+  const status = row.status;
+  const scheduledAt = readNumberField(row, 'scheduled_at');
+  const retryAttempt = readNumberField(row, 'retry_attempt');
+
+  if (
+    !id ||
+    !jobId ||
+    !isCronJobStatus(status) ||
+    scheduledAt === undefined ||
+    retryAttempt === undefined
+  ) {
+    return null;
+  }
+
+  return {
+    id,
+    job_id: jobId,
+    session_id: readNullableStringField(row, 'session_id'),
+    status,
+    scheduled_at: scheduledAt,
+    started_at: readNullableNumberField(row, 'started_at'),
+    completed_at: readNullableNumberField(row, 'completed_at'),
+    duration: readNullableNumberField(row, 'duration'),
+    result: readNullableStringField(row, 'result'),
+    error: readNullableStringField(row, 'error'),
+    retry_attempt: retryAttempt,
+    exit_code: readNullableNumberField(row, 'exit_code'),
+  };
 }
 
 // ============================================================================
@@ -719,32 +1018,23 @@ export class CronService implements Disposable {
         console.error('[CronService] Database not available, starting with empty jobs');
         return;
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): better-sqlite3 .all() 默认返回 unknown[]，应该定义 CronJobRow 接口（id/name/description/schedule_type/schedule 等列）作为 prepare 泛型
-      const rows = db.prepare('SELECT * FROM cron_jobs').all() as any[];
+      const rows = db.prepare('SELECT * FROM cron_jobs').all() as unknown[];
+      let loadedCount = 0;
       for (const row of rows) {
-        const job: CronJobDefinition = {
-          id: row.id,
-          name: row.name,
-          description: row.description || undefined,
-          scheduleType: row.schedule_type as CronScheduleType,
-          schedule: JSON.parse(row.schedule),
-          action: JSON.parse(row.action),
-          enabled: row.enabled === 1,
-          maxRetries: row.max_retries || undefined,
-          retryDelay: row.retry_delay || undefined,
-          timeout: row.timeout || undefined,
-          tags: row.tags ? JSON.parse(row.tags) : undefined,
-          metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-        };
+        const job = normalizeCronJobRow(row);
+        if (!job) {
+          console.error('[CronService] Skipping invalid cron job row');
+          continue;
+        }
+
         if (job.enabled) {
           this.registerJob(job);
         } else {
           this.jobs.set(job.id, { definition: job });
         }
+        loadedCount += 1;
       }
-      console.error(`[CronService] Loaded ${rows.length} jobs from database`);
+      console.error(`[CronService] Loaded ${loadedCount} jobs from database`);
     } catch (error) {
       console.error('[CronService] Failed to load jobs from database:', error);
     }
@@ -782,9 +1072,9 @@ export class CronService implements Disposable {
         WHERE job_id = ?
         ORDER BY scheduled_at DESC
         LIMIT ?
-      `).all(jobId, limit) as CronExecutionRow[];
+      `).all(jobId, limit) as unknown[];
 
-      return rows.reverse().map((row) => ({
+      return rows.reverse().map(normalizeCronExecutionRow).filter((row): row is CronExecutionRow => row !== null).map((row) => ({
         id: row.id,
         jobId: row.job_id,
         sessionId: row.session_id || undefined,
@@ -793,7 +1083,7 @@ export class CronService implements Disposable {
         startedAt: row.started_at ?? undefined,
         completedAt: row.completed_at ?? undefined,
         duration: row.duration ?? undefined,
-        result: row.result ? JSON.parse(row.result) : undefined,
+        result: parseJsonValue(row.result),
         error: row.error || undefined,
         retryAttempt: row.retry_attempt,
         exitCode: row.exit_code ?? undefined,

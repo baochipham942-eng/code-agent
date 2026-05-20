@@ -53,6 +53,15 @@ function buildSrcdoc(code: string): string {
   return `<!DOCTYPE html><html><head>${CSP_META}${INJECTED_STYLES}</head><body>${code}${HEIGHT_REPORTER_SCRIPT}</body></html>`;
 }
 
+function isResizeMessage(value: unknown): value is { type: 'generative-ui-resize'; height: number } {
+  return (
+    typeof value === 'object'
+    && value !== null
+    && (value as { type?: unknown }).type === 'generative-ui-resize'
+    && typeof (value as { height?: unknown }).height === 'number'
+  );
+}
+
 // Simple source code viewer (avoids circular dependency with CodeBlock in MessageContent)
 const SourceView = memo(function SourceView({ code }: { code: string }) {
   const lines = code.split('\n');
@@ -102,8 +111,9 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
 
     function handleMessage(event: MessageEvent) {
       if (event.source !== iframeRef.current?.contentWindow) return;
-      if (event.data?.type === 'generative-ui-resize' && typeof event.data.height === 'number') {
-        const h = Math.max(100, Math.min(600, event.data.height));
+      const data: unknown = event.data;
+      if (isResizeMessage(data)) {
+        const h = Math.max(100, Math.min(600, data.height));
         setIframeHeight(h);
         setLoaded(true);
       }

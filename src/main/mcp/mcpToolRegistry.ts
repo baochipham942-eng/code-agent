@@ -85,6 +85,25 @@ function redactLogArgs(value: unknown): unknown {
   return redacted;
 }
 
+function isMcpContent(value: unknown): value is { type?: string; text?: string; mimeType?: string } {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return (
+    (record.type === undefined || typeof record.type === 'string')
+    && (record.text === undefined || typeof record.text === 'string')
+    && (record.mimeType === undefined || typeof record.mimeType === 'string')
+  );
+}
+
+function mcpContentToText(value: unknown, includeNonText: boolean): string {
+  if (!isMcpContent(value)) return '';
+  if (typeof value.text === 'string') return value.text;
+  if (!includeNonText) return '';
+  if (value.type === 'image') return `[Image: ${value.mimeType || 'unknown'}]`;
+  if (value.type === 'resource') return '[Resource]';
+  return '';
+}
+
 /**
  * MCP 工具/资源/提示注册表
  * 负责能力发现、注册和调用操作
@@ -419,13 +438,7 @@ export class MCPToolRegistry {
       let output = '';
       if (result.content && Array.isArray(result.content)) {
         for (const content of result.content) {
-          if ('text' in content && typeof content.text === 'string') {
-            output += content.text;
-          } else if ('type' in content && content.type === 'image') {
-            output += `[Image: ${(content as { mimeType?: string }).mimeType || 'unknown'}]`;
-          } else if ('type' in content && content.type === 'resource') {
-            output += `[Resource]`;
-          }
+          output += mcpContentToText(content, true);
         }
       }
 
@@ -478,9 +491,7 @@ export class MCPToolRegistry {
       let output = '';
       if (retryResult.content && Array.isArray(retryResult.content)) {
         for (const content of retryResult.content) {
-          if ('text' in content && typeof content.text === 'string') {
-            output += content.text;
-          }
+          output += mcpContentToText(content, false);
         }
       }
 

@@ -6,12 +6,13 @@ import { Command } from 'commander';
 import http from 'http';
 import { createCLIAgent, CLIAgent } from '../adapter';
 import { terminalOutput } from '../output';
-import { cleanup, initializeCLIServices, buildCLIConfig } from '../bootstrap';
-import type { CLIGlobalOptions, APIRunRequest, APIStatusResponse, SSEEvent } from '../types';
+import { cleanup, initializeCLIServices } from '../bootstrap';
+import type { CLIGlobalOptions, APIRunRequest, APIStatusResponse } from '../types';
 import type { AgentEvent } from '../../shared/contract';
 import { createLogger } from '../../main/services/infra/logger';
 
 const logger = createLogger('CLI-Serve');
+type RunRequestFacade = Pick<APIRunRequest, 'prompt' | 'project' | 'generation' | 'model' | 'provider'>;
 
 // 全局状态
 let currentTask: {
@@ -130,17 +131,18 @@ async function handleRun(
 
   // 解析请求体
   const body = await readBody(req);
-  let request: APIRunRequest;
+  let parsedBody: unknown;
 
   try {
-    request = JSON.parse(body);
+    parsedBody = JSON.parse(body) as unknown;
   } catch {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Invalid JSON' }));
     return;
   }
 
-  if (!request.prompt) {
+  const request = normalizeRunRequest(parsedBody);
+  if (!request) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Missing prompt' }));
     return;
@@ -263,14 +265,44 @@ function sendSSE(res: http.ServerResponse, event: string, data: unknown): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+function normalizeRunRequest(value: unknown): RunRequestFacade | null {
+  if (!isRecord(value)) return null;
+
+  const prompt = value.prompt;
+  if (typeof prompt !== 'string' || !prompt) return null;
+
+  return {
+    prompt,
+    project: optionalString(value.project),
+    generation: optionalString(value.generation),
+    model: optionalString(value.model),
+    provider: optionalString(value.provider),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function bodyChunkToString(chunk: unknown): string {
+  if (typeof chunk === 'string') return chunk;
+  if (Buffer.isBuffer(chunk)) return chunk.toString();
+  if (chunk instanceof Uint8Array) return Buffer.from(chunk).toString();
+  return String(chunk);
+}
+
 /**
  * 读取请求体
  */
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', (chunk) => {
-      body += chunk.toString();
+    req.on('data', (chunk: unknown) => {
+      body += bodyChunkToString(chunk);
     });
     req.on('end', () => {
       resolve(body);

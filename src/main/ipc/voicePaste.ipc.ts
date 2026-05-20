@@ -12,6 +12,34 @@ const execFileAsync = promisify(execFile);
 
 // --- Inline ASR functions (extracted from removed meeting.ipc.ts) ---
 
+type VoicePasteStatusPayload = {
+  status: 'recording' | 'transcribing' | 'processing' | 'idle';
+  error?: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
+function getTextFromTranscriptionResult(result: unknown): string {
+  if (typeof result === 'string') return result;
+  if (!isRecord(result)) return '';
+  const text = result.text;
+  return typeof text === 'string' ? text : '';
+}
+
+function getModelResponseContent(result: unknown): string | undefined {
+  if (!isRecord(result) || !isUnknownArray(result.choices)) return undefined;
+  const firstChoice = result.choices[0];
+  if (!isRecord(firstChoice) || !isRecord(firstChoice.message)) return undefined;
+  const content = firstChoice.message.content;
+  return typeof content === 'string' ? content.trim() : undefined;
+}
+
 async function findWhisperCpp(): Promise<string | null> {
   const candidates = ['/opt/homebrew/bin/whisper-cpp'];
   for (const p of candidates) {
@@ -54,14 +82,13 @@ async function transcribeWithGroq(filePath: string, language: string): Promise<s
   if (!apiKey) throw new Error('未配置 Groq API Key');
   const groq = new Groq({ apiKey });
   const fileStream = fs.createReadStream(filePath);
-  const transcription = await groq.audio.transcriptions.create({
+  const transcription: unknown = await groq.audio.transcriptions.create({
     file: fileStream,
     model: 'whisper-large-v3-turbo',
     language,
     response_format: 'text',
   });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): groq SDK 的 transcription 返回类型受 response_format 影响（'text' 是 string，'json' 是 { text: string }），SDK 类型定义没区分；应该按 response_format narrow
-  return typeof transcription === 'string' ? transcription : (transcription as any).text || '';
+  return getTextFromTranscriptionResult(transcription);
 }
 
 async function transcribeAudio(wavPath: string, language: string = 'zh'): Promise<string> {
@@ -138,8 +165,8 @@ ${rawText}`;
         }),
       });
       if (resp.ok) {
-        const data = await resp.json();
-        const cleaned = data.choices?.[0]?.message?.content?.trim();
+        const data: unknown = await resp.json();
+        const cleaned = getModelResponseContent(data);
         if (cleaned) {
           console.log('[VoicePaste] Post-processed with GLM-4-Flash');
           return cleaned;
@@ -167,8 +194,8 @@ ${rawText}`;
         }),
       });
       if (resp.ok) {
-        const data = await resp.json();
-        const cleaned = data.choices?.[0]?.message?.content?.trim();
+        const data: unknown = await resp.json();
+        const cleaned = getModelResponseContent(data);
         if (cleaned) {
           console.log('[VoicePaste] Post-processed with Kimi');
           return cleaned;
@@ -235,8 +262,7 @@ async function pasteText(text: string): Promise<void> {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): IPC broadcast 的 data 形态由 event 决定（voice:transcribed / voice:error 等），应抽 VoiceIpcPayload 联合按 event narrow
-function notifyRenderer(event: string, data?: any): void {
+function notifyRenderer(event: 'voice-paste:status', data?: VoicePasteStatusPayload): void {
   const windows = BrowserWindow.getAllWindows();
   windows.forEach(win => {
     if (!win.isDestroyed()) {
@@ -245,7 +271,7 @@ function notifyRenderer(event: string, data?: any): void {
   });
 }
 
-export function registerVoicePasteHandlers(ipcMain_: typeof ipcMain): void {
+export function registerVoicePasteHandlers(voicePasteIpcMain: typeof ipcMain): void {
   const isWebMode = process.env.CODE_AGENT_WEB_MODE === 'true' || !process.versions.electron;
 
   // Register global shortcut Cmd+`
@@ -318,11 +344,11 @@ export function registerVoicePasteHandlers(ipcMain_: typeof ipcMain): void {
   }
 
   // IPC handlers for renderer queries
-  ipcMain_.handle('voice-paste:get-status', () => {
+  voicePasteIpcMain.handle('voice-paste:get-status', () => {
     return { isRecording };
   });
 
-  ipcMain_.handle('voice-paste:toggle', async () => {
+  voicePasteIpcMain.handle('voice-paste:toggle', async () => {
     // Allow renderer to trigger toggle programmatically
     if (globalShortcut.isRegistered('CommandOrControl+`')) {
       // Simulate the shortcut callback

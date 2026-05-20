@@ -27,6 +27,14 @@ import { getConfigService } from '../../../services';
 import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS, BAIDU_OCR_ENDPOINTS } from '../../../../shared/constants';
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { imageAnnotateSchema as schema } from './imageAnnotate.schema';
+import {
+  isJsonRecord,
+  readArrayField,
+  readChatCompletionText,
+  readNumberField,
+  readRecordField,
+  readStringField,
+} from '../typedResponseGuards';
 
 const CONFIG = {
   ZHIPU_MODEL: ZHIPU_VISION_MODEL,
@@ -65,6 +73,12 @@ interface BaiduOCRResponse {
   words_result_num?: number;
   error_code?: number;
   error_msg?: string;
+}
+
+interface BaiduAccessTokenResponse {
+  accessToken?: string;
+  error?: string;
+  errorDescription?: string;
 }
 
 interface ImageAnnotateParams {
@@ -116,6 +130,56 @@ function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+function normalizeBaiduAccessTokenResponse(payload: unknown): BaiduAccessTokenResponse {
+  if (!isJsonRecord(payload)) return {};
+  return {
+    accessToken: readStringField(payload, 'access_token'),
+    error: readStringField(payload, 'error'),
+    errorDescription: readStringField(payload, 'error_description'),
+  };
+}
+
+function normalizeBaiduOCRWord(payload: unknown): BaiduOCRWord | undefined {
+  if (!isJsonRecord(payload)) return undefined;
+  const location = readRecordField(payload, 'location');
+  if (!location) return undefined;
+  const top = readNumberField(location, 'top');
+  const left = readNumberField(location, 'left');
+  const width = readNumberField(location, 'width');
+  const height = readNumberField(location, 'height');
+  const words = readStringField(payload, 'words');
+  if (top === undefined || left === undefined || width === undefined || height === undefined || !words) {
+    return undefined;
+  }
+
+  const word: BaiduOCRWord = {
+    words,
+    location: { top, left, width, height },
+  };
+  const probability = readRecordField(payload, 'probability');
+  const average = probability ? readNumberField(probability, 'average') : undefined;
+  if (average !== undefined) {
+    word.probability = { average };
+  }
+  return word;
+}
+
+function normalizeBaiduOCRResponse(payload: unknown): BaiduOCRResponse {
+  if (!isJsonRecord(payload)) return {};
+  const response: BaiduOCRResponse = {};
+  const wordsResult = readArrayField(payload, 'words_result')
+    ?.map(normalizeBaiduOCRWord)
+    .filter((word): word is BaiduOCRWord => Boolean(word));
+  if (wordsResult) response.words_result = wordsResult;
+  const wordsResultNum = readNumberField(payload, 'words_result_num');
+  if (wordsResultNum !== undefined) response.words_result_num = wordsResultNum;
+  const errorCode = readNumberField(payload, 'error_code');
+  if (errorCode !== undefined) response.error_code = errorCode;
+  const errorMessage = readStringField(payload, 'error_msg');
+  if (errorMessage !== undefined) response.error_msg = errorMessage;
+  return response;
+}
+
 async function getBaiduAccessToken(
   apiKey: string,
   secretKey: string,
@@ -131,11 +195,14 @@ async function getBaiduAccessToken(
   if (!response.ok) {
     throw new Error(`获取百度 Access Token 失败: ${response.status}`);
   }
-  const data = await response.json();
+  const data = normalizeBaiduAccessTokenResponse(await response.json());
   if (data.error) {
-    throw new Error(`百度 API 错误: ${data.error_description || data.error}`);
+    throw new Error(`百度 API 错误: ${data.errorDescription || data.error}`);
   }
-  return data.access_token;
+  if (!data.accessToken) {
+    throw new Error('百度 API 错误: 未返回 Access Token');
+  }
+  return data.accessToken;
 }
 
 async function callBaiduOCR(
@@ -157,7 +224,7 @@ async function callBaiduOCR(
   if (!response.ok) {
     throw new Error(`百度 OCR API 错误: ${response.status}`);
   }
-  const data: BaiduOCRResponse = await response.json();
+  const data = normalizeBaiduOCRResponse(await response.json());
   if (data.error_code) {
     throw new Error(`百度 OCR 错误 ${data.error_code}: ${data.error_msg}`);
   }
@@ -213,8 +280,7 @@ async function analyzeImageContent(
     const errorText = await response.text();
     throw new Error(`智谱视觉 API 错误: ${response.status} - ${errorText}`);
   }
-  const result = await response.json();
-  return result.choices?.[0]?.message?.content || '';
+  return readChatCompletionText(await response.json());
 }
 
 async function drawAnnotations(

@@ -27,11 +27,24 @@ interface DocumentSpec {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isDocumentSpec(value: unknown): value is DocumentSpec {
+  if (!isRecord(value) || !Array.isArray(value.paragraphs)) return false;
+  return value.paragraphs.every((paragraph) => (
+    isRecord(paragraph)
+    && typeof paragraph.index === 'number'
+    && (paragraph.type === 'heading' || paragraph.type === 'paragraph' || paragraph.type === 'list-item')
+    && typeof paragraph.text === 'string'
+  ));
+}
+
 function parseSpec(raw: string): DocumentSpec | null {
   try {
-    const spec = JSON.parse(raw);
-    if (!spec || !Array.isArray(spec.paragraphs)) return null;
-    return spec as DocumentSpec;
+    const spec: unknown = JSON.parse(raw);
+    return isDocumentSpec(spec) ? spec : null;
   } catch {
     return null;
   }

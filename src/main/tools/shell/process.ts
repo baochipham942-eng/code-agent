@@ -2,7 +2,7 @@
 // Process Tool - Unified process management for background tasks and PTY sessions
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../types';
+import type { Tool, ToolExecutionResult } from '../types';
 import {
   getAllBackgroundTasks,
   getTaskOutput,
@@ -338,7 +338,7 @@ For sending complete commands, use process_submit instead which adds a newline.`
 
     // Process escape sequences in the data
     const processedData = data
-      .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/\\x([0-9a-fA-F]{2})/g, (_match: string, hex: string) => String.fromCharCode(parseInt(hex, 16)))
       .replace(/\\n/g, '\n')
       .replace(/\\r/g, '\r')
       .replace(/\\t/g, '\t')

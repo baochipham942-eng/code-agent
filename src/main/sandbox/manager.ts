@@ -3,6 +3,7 @@
 // ============================================================================
 
 import * as os from 'os';
+import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getBubblewrap, type BubblewrapConfig, type BubblewrapStatus } from './bubblewrap';
 import { getSeatbelt, type SeatbeltConfig, type SeatbeltStatus } from './seatbelt';
@@ -322,11 +323,11 @@ export class SandboxManager {
         }, config.timeout);
       }
 
-      proc.stdout.on('data', (data) => {
+      proc.stdout.on('data', (data: Buffer | string) => {
         stdout += data.toString();
       });
 
-      proc.stderr.on('data', (data) => {
+      proc.stderr.on('data', (data: Buffer | string) => {
         stderr += data.toString();
       });
 
@@ -397,7 +398,6 @@ export class SandboxManager {
     projectDir: string,
     options: Partial<SandboxConfig> = {}
   ): Partial<SandboxConfig> {
-    const path = require('path');
     const resolved = path.resolve(projectDir);
 
     return {

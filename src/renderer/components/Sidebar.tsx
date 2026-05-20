@@ -48,6 +48,14 @@ import { groupSessions } from '../utils/dateGrouping';
 import { groupByWorkspace, isWorkspaceExpanded } from '../utils/workspaceGrouping';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
 import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
+import {
+  AccountMenuItem,
+  AccountMenuLabel,
+  canReuseSessionWorkbench,
+  formatPresetMenuLabel,
+  getRelativeTime,
+  getReusableWorkbenchDirectory,
+} from './features/sidebar/sidebarPresentation';
 import ipcService from '../services/ipcService';
 import { buildSessionSearchText, getSessionStatusPresentation } from '../utils/sessionPresentation';
 import { copyPathToClipboard } from '../utils/platform';
@@ -60,105 +68,6 @@ import {
 } from '@shared/contract/workbenchPreset';
 
 const logger = createLogger('Sidebar');
-
-// 获取相对时间
-function getRelativeTime(timestamp: number, compact = false): string {
-  if (!timestamp || !Number.isFinite(timestamp)) return '';
-  const now = Date.now();
-  const diff = now - timestamp;
-  if (!Number.isFinite(diff) || diff < 0) return '';
-  const minutes = Math.floor(diff / (1000 * 60));
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-  if (compact) {
-    if (minutes < 1) return '刚刚';
-    if (minutes < 60) return `${minutes}m`;
-    if (hours < 24) return `${hours}h`;
-    if (days < 7) return `${days}d`;
-    if (days < 30) return `${Math.floor(days / 7)}w`;
-    return `${Math.floor(days / 30)}mo`;
-  }
-
-  if (minutes < 1) return '刚刚';
-  if (minutes < 60) return `${minutes}分钟前`;
-  if (hours < 24) return `${hours}小时前`;
-  if (days < 7) return `${days}天前`;
-  if (days < 30) return `${Math.floor(days / 7)}周前`;
-  return `${Math.floor(days / 30)}月前`;
-}
-
-function getReusableWorkbenchDirectory(session: SessionWithMeta): string | null {
-  const candidates = [
-    session.workbenchProvenance?.workingDirectory,
-    session.workingDirectory,
-  ];
-
-  for (const candidate of candidates) {
-    const trimmed = candidate?.trim();
-    if (trimmed) {
-      return trimmed;
-    }
-  }
-
-  return null;
-}
-
-function canReuseSessionWorkbench(session: SessionWithMeta): boolean {
-  const hasWorkspace = Boolean(getReusableWorkbenchDirectory(session));
-  const hasRouting =
-    (session.workbenchProvenance?.routingMode === 'direct' &&
-      (session.workbenchProvenance?.targetAgentIds?.length ?? 0) > 0) ||
-    Boolean(
-      (session.workbenchProvenance?.routingMode &&
-        session.workbenchProvenance.routingMode !== 'direct') ||
-      (session.workbenchSnapshot?.routingMode && session.workbenchSnapshot.routingMode !== 'direct'),
-    );
-  const hasBrowserSession = Boolean(session.workbenchProvenance?.executionIntent?.browserSessionMode);
-  const hasCapabilities = Boolean(
-    session.workbenchProvenance?.selectedSkillIds?.length ||
-      session.workbenchProvenance?.selectedConnectorIds?.length ||
-      session.workbenchProvenance?.selectedMcpServerIds?.length ||
-      session.workbenchSnapshot?.skillIds?.length ||
-      session.workbenchSnapshot?.connectorIds?.length ||
-      session.workbenchSnapshot?.mcpServerIds?.length,
-  );
-
-  return hasWorkspace || hasRouting || hasBrowserSession || hasCapabilities;
-}
-
-function formatPresetMenuLabel(name: string): string {
-  return name.length > 28 ? `${name.slice(0, 25)}...` : name;
-}
-
-interface AccountMenuItemProps {
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-  badge?: string;
-}
-
-const AccountMenuLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-zinc-600">
-    {children}
-  </div>
-);
-
-const AccountMenuItem: React.FC<AccountMenuItemProps> = ({ icon, label, onClick, badge }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
-  >
-    {icon}
-    <span className="min-w-0 flex-1 truncate text-left">{label}</span>
-    {badge ? (
-      <span className="shrink-0 rounded border border-zinc-700 bg-zinc-800/70 px-1.5 py-0.5 text-[10px] text-zinc-500">
-        {badge}
-      </span>
-    ) : null}
-  </button>
-);
 
 export function isAccountMenuEventOutside(
   accountMenuElement: { contains: (node: Node) => boolean } | null,
@@ -215,7 +124,6 @@ export const Sidebar: React.FC = () => {
     pinnedSessionIds,
     togglePin,
     multiSelectMode,
-    toggleMultiSelect,
     selectedSessionIds,
     toggleSelection,
     clearSelection,
@@ -240,7 +148,7 @@ export const Sidebar: React.FC = () => {
   const sessionStates = useTaskStore((state) => state.sessionStates);
 
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
-  const [appVersion, setAppVersion] = useState<string>('');
+  const [, setAppVersion] = useState<string>('');
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showAccountAdvancedTools, setShowAccountAdvancedTools] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);

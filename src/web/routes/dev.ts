@@ -14,6 +14,7 @@ import { formatError } from '../helpers/utils';
 import { isWorkspaceFileAllowed, getContentType } from '../helpers/upload';
 import { getEventBus } from '../../main/services/eventing/bus';
 import type { SwarmEvent } from '../../shared/contract/swarm';
+import type { WebRouteLogger } from './routeTypes';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -151,6 +152,23 @@ function normalizePermissionRequestSessionId(sessionId?: string): string {
     return sessionId.trim();
   }
   return GLOBAL_PERMISSION_REQUEST_SESSION_ID;
+}
+
+function readObjectBody(body: unknown): Record<string, unknown> {
+  return body && typeof body === 'object' && !Array.isArray(body)
+    ? body as Record<string, unknown>
+    : {};
+}
+
+function readOfficeSmokeBody(body: unknown): { project: string; sessionId: string } {
+  const record = readObjectBody(body);
+  const project = typeof record.project === 'string' && record.project.trim()
+    ? record.project
+    : process.cwd();
+  const sessionId = typeof record.sessionId === 'string' && record.sessionId.trim()
+    ? record.sessionId
+    : `web-office-smoke-${Date.now()}`;
+  return { project, sessionId };
 }
 
 async function requestDevToolPermission(
@@ -372,8 +390,7 @@ function normalizeDevAgentEvents(body: unknown): RendererAgentEvent[] | null {
 
 interface DevRouterDeps {
   pendingDevPermissions: Map<string, PendingDevPermissionRequest>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 sessions.ts，logger 第二参 unknown[]，应抽 Logger 接口
-  logger: { info: (msg: string, ...args: any[]) => void; warn: (msg: string, ...args: any[]) => void; error: (msg: string, ...args: any[]) => void };
+  logger: WebRouteLogger;
 }
 
 export function createDevRouter(deps: DevRouterDeps): Router {
@@ -432,7 +449,7 @@ export function createDevRouter(deps: DevRouterDeps): Router {
     if (!ensureDevApiEnabled(res)) return;
 
     try {
-      const response = await executeDevTool(pendingDevPermissions, req.body as DevToolExecutionRequest);
+      const response = await executeDevTool(pendingDevPermissions, readObjectBody(req.body as unknown));
       res.json(response);
     } catch (error) {
       const status = error instanceof DevApiError ? error.status : 500;
@@ -451,12 +468,7 @@ export function createDevRouter(deps: DevRouterDeps): Router {
     if (!ensureDevApiEnabled(res)) return;
 
     try {
-      const project = typeof req.body?.project === 'string' && req.body.project.trim()
-        ? req.body.project
-        : process.cwd();
-      const sessionId = typeof req.body?.sessionId === 'string' && req.body.sessionId.trim()
-        ? req.body.sessionId
-        : `web-office-smoke-${Date.now()}`;
+      const { project, sessionId } = readOfficeSmokeBody(req.body as unknown);
 
       const results = [];
       for (const step of OFFICE_SMOKE_STEPS) {

@@ -39,6 +39,45 @@ interface OpenRouterImageMessage {
   }>;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
+function parseZhipuImageUrl(value: unknown): string | null {
+  if (!isRecord(value) || !isUnknownArray(value.data)) return null;
+  const [first] = value.data;
+  return isRecord(first) && typeof first.url === 'string' ? first.url : null;
+}
+
+function parseOpenRouterImageResponse(value: unknown): { choices?: Array<{ message?: OpenRouterImageMessage }> } {
+  if (!isRecord(value) || !isUnknownArray(value.choices)) return {};
+  const choices = value.choices
+    .map((choice): { message?: OpenRouterImageMessage } => {
+      if (!isRecord(choice) || !isRecord(choice.message) || !isUnknownArray(choice.message.images)) {
+        return {};
+      }
+      const images: NonNullable<OpenRouterImageMessage['images']> = [];
+      for (const image of choice.message.images) {
+        if (!isRecord(image)) continue;
+        const imageUrl = isRecord(image.image_url) && typeof image.image_url.url === 'string'
+            ? { url: image.image_url.url }
+            : undefined;
+        const camelImageUrl = isRecord(image.imageUrl) && typeof image.imageUrl.url === 'string'
+            ? { url: image.imageUrl.url }
+            : undefined;
+        if (imageUrl || camelImageUrl) {
+          images.push({ image_url: imageUrl, imageUrl: camelImageUrl });
+        }
+      }
+      return { message: { images } };
+    });
+  return { choices };
+}
+
 async function fetchWithAbort(
   url: string,
   options: RequestInit,
@@ -114,14 +153,14 @@ async function callZhipuImageGeneration(
   aspectRatio: string,
   outerSignal: AbortSignal,
 ): Promise<{ url: string }> {
-  const sizeMap: Record<string, string> = {
-    '1:1': '1024x1024',
-    '16:9': '1344x768',
-    '9:16': '768x1344',
-    '4:3': '1152x864',
-    '3:4': '864x1152',
-  };
-  const size = sizeMap[aspectRatio] || '1024x1024';
+  const sizeMap = new Map<string, string>([
+    ['1:1', '1024x1024'],
+    ['16:9', '1344x768'],
+    ['9:16', '768x1344'],
+    ['4:3', '1152x864'],
+    ['3:4', '864x1152'],
+  ]);
+  const size = sizeMap.get(aspectRatio) || '1024x1024';
 
   const requestBody = {
     model: ZHIPU_IMAGE_MODELS.standard,
@@ -148,11 +187,12 @@ async function callZhipuImageGeneration(
     throw new Error(`智谱图像生成 API 错误: ${response.status} - ${error}`);
   }
 
-  const result = await response.json();
-  if (!result.data || result.data.length === 0 || !result.data[0].url) {
+  const payload: unknown = await response.json();
+  const url = parseZhipuImageUrl(payload);
+  if (!url) {
     throw new Error('智谱图像生成: 未返回图片 URL');
   }
-  return { url: result.data[0].url };
+  return { url };
 }
 
 export async function generateImage(
@@ -166,13 +206,19 @@ export async function generateImage(
   const safePrompt = prompt.includes('不要出现任何文字') ? prompt : prompt + NO_TEXT_SUFFIX;
 
   if (engine === 'cogview') {
-    const zhipuApiKey = getZhipuOfficialApiKey()!;
+    const zhipuApiKey = getZhipuOfficialApiKey();
+    if (!zhipuApiKey) {
+      throw new Error('图片生成需要智谱官方 API Key。');
+    }
     const result = await callZhipuImageGeneration(zhipuApiKey, safePrompt, aspectRatio, outerSignal);
     return { imageData: result.url, actualModel: ZHIPU_IMAGE_MODELS.standard };
   }
 
   // engine === 'flux'
-  const openrouterApiKey = configService.getApiKey('openrouter')!;
+  const openrouterApiKey = configService.getApiKey('openrouter');
+  if (!openrouterApiKey) {
+    throw new Error('图片生成需要 OpenRouter API Key。');
+  }
   const requestBody = {
     model: fluxModel,
     messages: [{ role: 'user', content: safePrompt }],
@@ -200,7 +246,8 @@ export async function generateImage(
     const error = await response.text();
     throw new Error(`OpenRouter API 调用失败: ${error}`);
   }
-  const result = await response.json();
+  const payload: unknown = await response.json();
+  const result = parseOpenRouterImageResponse(payload);
   const imageData = extractImageFromResponse(result);
   return { imageData, actualModel: fluxModel };
 }

@@ -1,12 +1,16 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import type { HandlerFn } from '../electronMock';
 import { formatError } from '../helpers/utils';
+import type { WebRouteHandler, WebRouteLogger } from './routeTypes';
 
 interface DomainDeps {
-  handlers: Map<string, HandlerFn>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 sessions.ts，logger 第二参 unknown[]，应抽 Logger 接口
-  logger: { warn: (msg: string, ...args: any[]) => void; error: (msg: string, ...args: any[]) => void };
+  handlers: Map<string, WebRouteHandler>;
+  logger: Pick<WebRouteLogger, 'warn' | 'error'>;
+}
+
+interface DomainRequestBody {
+  payload?: unknown;
+  requestId?: unknown;
 }
 
 function isAdminAccessError(error: unknown): boolean {
@@ -36,6 +40,15 @@ function sendIpcHandlerError(res: Response, error: unknown): void {
   });
 }
 
+function readDomainRequestBody(body: unknown): DomainRequestBody {
+  if (!body || typeof body !== 'object') return {};
+  const record = body as Record<string, unknown>;
+  return {
+    payload: record.payload,
+    requestId: record.requestId,
+  };
+}
+
 export function createDomainRouter(deps: DomainDeps): Router {
   const router = Router();
   const { handlers, logger } = deps;
@@ -46,7 +59,7 @@ export function createDomainRouter(deps: DomainDeps): Router {
   router.post('/domain/:domain/:action', async (req: Request, res: Response) => {
     const domain = String(req.params.domain);
     const action = String(req.params.action);
-    const { payload, requestId } = req.body;
+    const { payload, requestId } = readDomainRequestBody(req.body as unknown);
 
     // 查找 handler — IPC handler 注册时使用的 channel 名
     // 有些用 IPC_DOMAINS.XXX (如 'domain:session', 'domain:agent')
@@ -101,12 +114,11 @@ export function createDomainRouter(deps: DomainDeps): Router {
     const handler = handlers.get(channel);
     if (handler) {
       try {
-        const body = req.method === 'GET' ? req.query : req.body;
+        const body: unknown = req.method === 'GET' ? req.query : req.body;
         // Spread array bodies as positional args to match Electron IPC convention:
         // ipcMain.handle(ch, (event, arg1, arg2, ...)) expects separate arguments
-        const result = Array.isArray(body)
-          ? await handler(null, ...body)
-          : await handler(null, body);
+        const args: unknown[] = Array.isArray(body) ? [...body as unknown[]] : [body];
+        const result = await handler(null, ...args);
         res.json(result);
       } catch (error) {
         if (isAdminAccessError(error)) {

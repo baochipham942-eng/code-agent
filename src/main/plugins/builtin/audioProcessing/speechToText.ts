@@ -22,6 +22,7 @@ import { getConfigService } from '../../../services';
 import { createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { speechToTextSchema as schema } from './speechToText.schema';
+import { isJsonRecord, readRecordField, readStringField } from '../typedResponseGuards';
 
 const CONFIG = {
   API_URL: `${MODEL_API_ENDPOINTS.zhipuOfficial}/audio/transcriptions`,
@@ -42,6 +43,21 @@ interface ZhipuASRResponse {
   id?: string;
   text?: string;
   error?: { code: string; message: string };
+}
+
+function normalizeZhipuASRResponse(payload: unknown): ZhipuASRResponse {
+  if (!isJsonRecord(payload)) return {};
+  const error = readRecordField(payload, 'error');
+  return {
+    id: readStringField(payload, 'id'),
+    text: readStringField(payload, 'text'),
+    error: error
+      ? {
+          code: readStringField(error, 'code') || 'UNKNOWN',
+          message: readStringField(error, 'message') || '未知错误',
+        }
+      : undefined,
+  };
 }
 
 function getMimeType(filePath: string): string {
@@ -190,7 +206,7 @@ export async function executeSpeechToText(
       throw new Error(`智谱 ASR API 错误: ${response.status} - ${errorText}`);
     }
 
-    const result: ZhipuASRResponse = await response.json();
+    const result = normalizeZhipuASRResponse(await response.json());
 
     if (result.error) {
       throw new Error(`ASR 错误: ${result.error.message} (${result.error.code})`);

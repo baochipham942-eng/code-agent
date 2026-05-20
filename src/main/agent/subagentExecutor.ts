@@ -3,12 +3,11 @@
 // Enhanced with unified pipeline (T4)
 // ============================================================================
 
-import type { Message, MessageAttachment, ModelConfig, ToolCall, ToolDefinition } from '../../shared/contract';
+import type { ModelConfig, ToolCall, ToolDefinition } from '../../shared/contract';
 import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
 import type { ToolContext } from '../tools/types';
 import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import { ToolExecutor } from '../tools/toolExecutor';
-import type { ModelMessage as ProviderModelMessage } from '../model/types';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
 import { silence } from '../utils/errorHandling';
@@ -26,14 +25,9 @@ import {
 } from './agentDefinition';
 import type { PermissionPreset } from '@shared/contract';
 import { PROVIDER_REGISTRY } from '../model/modelRouter';
-import {
-  normalizeImageData,
-  type ImageAttachmentInput,
-  type NormalizedImageData,
-} from '../utils/imageUtils';
 import { compactSubagentMessages } from './subagentCompaction';
-import { getContextWindow, SUBAGENT_COMPACTION } from '../../shared/constants';
-import { createTimedAbortController, createChildAbortController, initiateShutdown } from './shutdownProtocol';
+import { SUBAGENT_COMPACTION } from '../../shared/constants';
+import { initiateShutdown } from './shutdownProtocol';
 import type { CancellationReason } from '../../shared/contract/cancellation';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
 import { CANCELLATION_TIMEOUTS } from '../../shared/constants';
@@ -47,16 +41,30 @@ import { AgentTask, type SidecarMetadata } from './agentTask';
 import { getMasterTaskManager } from './masterTaskManager';
 import { getDatabase } from '../services/core';
 import { estimateTokens } from '../context/tokenEstimator';
-import { getWarningLevel } from '../../shared/contract/contextHealth';
 import { generateMessageId } from '../../shared/utils/id';
 import { getSubagentContextStore } from '../context/subagentContextStore';
 import { getConfigService } from '../services/core/configService';
 import { applyInterventionsToMessages } from '../context/contextInterventionHelpers';
 import { getContextInterventionState } from '../context/contextInterventionState';
-import type { ContextProvenanceCategory } from '../../shared/contract/contextView';
 import type { HookManager } from '../hooks/hookManager';
 import { getTelemetryCollector } from '../telemetry/telemetryCollector';
 import type { TelemetryModelCall } from '../../shared/contract/telemetry';
+import {
+  buildContextSnapshot,
+  buildInferenceMessages,
+  buildInitialSubagentMessages,
+  buildModelCompletionSummary,
+  buildModelPromptSummary,
+  buildObservation,
+  createRuntimeMessage,
+  materializeObservedMessages,
+  stringifyModelContent,
+  type RuntimeMessage,
+} from './subagentExecutorProjection';
+import {
+  createSubagentCancellationLifecycle,
+  getSubagentExecutionTimeout,
+} from './subagentExecutorCancellation';
 
 const logger = createLogger('SubagentExecutor');
 
@@ -80,42 +88,6 @@ export interface SubagentConfig {
   /** Coordinator agent ID for plan approval (defaults to 'coordinator') */
   coordinatorId?: string;
 }
-
-// ============================================================================
-// P3: 默认执行超时配置（按 Agent 类型）
-// ============================================================================
-
-const DEFAULT_EXECUTION_TIMEOUT: Record<string, number> = {
-  // 探索类（需要读文件+搜索，API 降级时需要更多时间）
-  'Code Explore Agent': 60_000,       // 60 秒（原 30s，API 不稳定时太短）
-  'Web Search Agent': 60_000,
-  'Document Reader Agent': 45_000,
-
-  // 审查类（需要多轮分析）
-  'Code Reviewer': 90_000,            // 90 秒（原 60s）
-  '视觉理解 Agent': 60_000,
-
-  // 执行类（可能需要更多时间）
-  'Coder': 120_000,                   // 120 秒（原 90s）
-  'Debugger': 120_000,
-  'Test Engineer': 120_000,
-  'Code Refactorer': 90_000,
-  'DevOps Engineer': 90_000,
-  'Technical Writer': 60_000,
-
-  // 规划类
-  'Plan Agent': 90_000,
-  'Software Architect': 90_000,
-
-  // 其他
-  'General Purpose Agent': 120_000,
-  'Bash Executor Agent': 60_000,
-  'MCP Connector Agent': 90_000,
-  '视觉处理 Agent': 90_000,
-
-  // 默认值
-  'default': 90_000,                  // 90 秒（原 60s）
-};
 
 export interface SubagentResult {
   success: boolean;
@@ -170,218 +142,6 @@ interface SubagentContext {
   onContextSnapshot?: (snapshot: SwarmAgentContextSnapshot) => void;
   /** HookManager for firing SubagentStart/Stop and TaskCreated/Completed events */
   hookManager?: HookManager;
-}
-
-type MessageContent = {
-  type: 'text' | 'image';
-  text?: string;
-  source?: {
-    type: 'base64';
-    media_type: string;
-    data: string;
-  };
-};
-
-type RuntimeMessage = {
-  id: string;
-  role: Message['role'];
-  content: string | MessageContent[];
-  timestamp: number;
-  attachments?: MessageAttachment[];
-  toolCalls?: ToolCall[];
-  observation?: {
-    category?: ContextProvenanceCategory;
-    sourceDetail?: string;
-    sourceKind?: 'message' | 'tool_result' | 'dependency_carry_over' | 'attachment' | 'compression_survivor' | 'system_anchor';
-    layer?: string;
-    toolCallId?: string;
-  };
-};
-
-function flattenMessageContent(content: string | MessageContent[] | null | undefined): string {
-  if (typeof content === 'string') return content;
-  // 某些 provider（如 mimo）返回的 tool_result message 的 content 可能是 object 或 undefined，
-  // 不符合 string | MessageContent[] 的契约。这里防御一下，避免 .map 抛 TypeError。
-  if (!Array.isArray(content)) return '';
-  return content
-    .map((part) => {
-      if (part.type === 'text' && part.text) return part.text;
-      if (part.type === 'image') return '[image]';
-      return '';
-    })
-    .filter(Boolean)
-    .join('\n');
-}
-
-function normalizeAttachmentCategory(category?: string, type?: string): MessageAttachment['category'] {
-  if (!category) {
-    return type === 'image' ? 'image' : 'other';
-  }
-  const validCategories = new Set<MessageAttachment['category']>([
-    'image',
-    'pdf',
-    'excel',
-    'code',
-    'text',
-    'data',
-    'document',
-    'html',
-    'folder',
-    'other',
-  ]);
-  return validCategories.has(category as MessageAttachment['category'])
-    ? category as MessageAttachment['category']
-    : (type === 'image' ? 'image' : 'other');
-}
-
-function buildMessageAttachments(
-  attachments?: Array<{
-    type: string;
-    category?: string;
-    name?: string;
-    path?: string;
-    data?: string;
-    mimeType?: string;
-  }>,
-): MessageAttachment[] | undefined {
-  if (!attachments || attachments.length === 0) return undefined;
-  return attachments.map((attachment, index) => ({
-    id: `${Date.now()}-${index}-${attachment.name ?? 'attachment'}`,
-    type: attachment.type === 'image' ? 'image' : 'file',
-    category: normalizeAttachmentCategory(attachment.category, attachment.type),
-    name: attachment.name || `attachment-${index + 1}`,
-    size: attachment.data?.length ?? 0,
-    mimeType: attachment.mimeType || 'application/octet-stream',
-    data: attachment.data,
-    path: attachment.path,
-  }));
-}
-
-function buildContextSnapshot(
-  messages: RuntimeMessage[],
-  model: string,
-  toolsUsed: string[],
-  attachments?: Array<{ name?: string }>,
-): SwarmAgentContextSnapshot {
-  const maxTokens = getContextWindow(model);
-  const normalizedMessages = messages.map((message) => ({
-    role: message.role,
-    content: flattenMessageContent(message.content),
-  }));
-  const currentTokens = normalizedMessages.reduce((sum, message) => (
-    sum + 4 + estimateTokens(message.content)
-  ), 3);
-  const usagePercent = maxTokens > 0 ? Math.round((currentTokens / maxTokens) * 1000) / 10 : 0;
-
-  return {
-    currentTokens,
-    maxTokens,
-    usagePercent,
-    messageCount: normalizedMessages.length,
-    warningLevel: getWarningLevel(usagePercent),
-    lastUpdated: Date.now(),
-    tools: [...new Set(toolsUsed)].slice(-6),
-    attachments: [...new Set((attachments || []).map((attachment) => attachment.name).filter(Boolean) as string[])].slice(0, 6),
-    previews: normalizedMessages.slice(-3).map((message) => ({
-      role: message.role,
-      contentPreview: message.content.length > 120
-        ? `${message.content.slice(0, 120)}...`
-        : message.content,
-      tokens: estimateTokens(message.content),
-    })),
-    truncatedMessages: normalizedMessages.filter((message) => message.content.includes('[truncated]')).length,
-  };
-}
-
-function createRuntimeMessage(
-  message: Omit<RuntimeMessage, 'id' | 'timestamp'> & Partial<Pick<RuntimeMessage, 'id' | 'timestamp'>>,
-): RuntimeMessage {
-  return {
-    id: message.id || generateMessageId(),
-    timestamp: message.timestamp || Date.now(),
-    role: message.role,
-    content: message.content,
-    attachments: message.attachments,
-    toolCalls: message.toolCalls,
-    observation: message.observation,
-  };
-}
-
-function materializeObservedMessages(messages: RuntimeMessage[]): Message[] {
-  return messages.map((message) => ({
-    id: message.id,
-    role: message.role,
-    content: flattenMessageContent(message.content),
-    attachments: message.attachments,
-    toolCalls: message.toolCalls,
-    timestamp: message.timestamp,
-  }));
-}
-
-function buildObservation(
-  category: ContextProvenanceCategory,
-  sourceDetail?: string,
-  extras?: Partial<NonNullable<RuntimeMessage['observation']>>,
-): NonNullable<RuntimeMessage['observation']> {
-  return {
-    category,
-    sourceDetail,
-    ...extras,
-  };
-}
-
-function buildInferenceMessages(messages: RuntimeMessage[]): ProviderModelMessage[] {
-  return messages.map((message) => ({
-    role: message.role,
-    content: message.content,
-    ...(message.toolCalls?.length
-      ? {
-          toolCalls: message.toolCalls.map((toolCall) => ({
-            id: toolCall.id,
-            name: toolCall.name,
-            arguments: JSON.stringify(toolCall.arguments),
-          })),
-          toolCallText: message.toolCalls
-            .map((toolCall) => `Calling ${toolCall.name}(${JSON.stringify(toolCall.arguments)})`)
-            .join('\n'),
-        }
-      : {}),
-  }));
-}
-
-function stringifyModelContent(content: ProviderModelMessage['content']): string {
-  if (typeof content === 'string') return content;
-  // 同 flattenMessageContent: 防御 content 不是 string/array 的边界 case
-  if (!Array.isArray(content)) return '';
-  return content
-    .map((part) => {
-      if (part.type === 'text') return part.text || '';
-      if (part.type === 'image') return '[image]';
-      if (part.type === 'thinking') return part.thinking || part.text || '';
-      if (part.type === 'compaction') return part.compaction || part.text || '';
-      return '';
-    })
-    .filter(Boolean)
-    .join('\n');
-}
-
-function buildModelPromptSummary(messages: ProviderModelMessage[]): string {
-  return messages
-    .slice(-3)
-    .map((message) => `[${message.role}] ${stringifyModelContent(message.content)}`)
-    .join('\n---\n')
-    .slice(0, 8000);
-}
-
-function buildModelCompletionSummary(response: Awaited<ReturnType<ModelRouter['inference']>>): string {
-  let completion = response.content || response.thinking || '';
-  if (response.toolCalls?.length) {
-    const toolsSummary = response.toolCalls
-      .map((toolCall) => `${toolCall.name}(${JSON.stringify(toolCall.arguments).slice(0, 200)})`)
-      .join('; ');
-    completion += `${completion ? '\n' : ''}[tools: ${toolsSummary}]`;
-  }
-  return completion.slice(0, 4000);
 }
 
 // ----------------------------------------------------------------------------
@@ -468,56 +228,25 @@ export class SubagentExecutor {
     let finalOutput = '';
 
     // P3: 计算执行超时时间
-    const timeout = config.maxExecutionTimeMs
-      || DEFAULT_EXECUTION_TIMEOUT[config.name]
-      || DEFAULT_EXECUTION_TIMEOUT['default'];
+    const timeout = getSubagentExecutionTimeout(config.name, config.maxExecutionTimeMs);
     const startTime = Date.now();
 
-    // Create per-execution AbortController with timeout
-    const { controller: timeoutController, cleanup: cleanupTimer } = createTimedAbortController(
-      timeout,
-      { label: config.name }
-    );
-    // Create child controller: parent abort propagates down, child abort doesn't affect parent.
-    // This replaces combineAbortSignals which was bidirectional (child abort → parent affected).
-    const effectiveController = context.abortSignal
-      ? (() => {
-          // Parent = external signal's controller. Child = our timeout controller.
-          // We need a child that aborts on either parent OR timeout.
-          const parentController = new AbortController();
-          // Propagate external signal to our parent proxy
-          context.abortSignal.addEventListener('abort', () => {
-            parentController.abort(context.abortSignal!.reason);
-          }, { once: true });
-          // Propagate timeout to our parent proxy
-          timeoutController.signal.addEventListener('abort', () => {
-            parentController.abort(timeoutController.signal.reason);
-          }, { once: true });
-          // Create child that parent can abort, but child abort doesn't propagate up
-          return createChildAbortController(parentController);
-        })()
-      : timeoutController;
-    const effectiveSignal = effectiveController.signal;
-
-    // Idle-progress watchdog (scenario D — network hangs forever).
-    // Tracks the last time we made forward progress (iteration start, inference
-    // returned a chunk-equivalent response, tool finished). If the gap exceeds
-    // CANCELLATION_TIMEOUTS.IDLE_TIMEOUT we abort with reason='idle-timeout'.
-    let lastProgressAt = Date.now();
-    const markProgress = () => { lastProgressAt = Date.now(); };
-    const idleWatchdog = setInterval(() => {
-      if (effectiveSignal.aborted) return;
-      const idle = Date.now() - lastProgressAt;
-      if (idle > CANCELLATION_TIMEOUTS.IDLE_TIMEOUT) {
+    const {
+      effectiveController,
+      effectiveSignal,
+      cleanupTimer,
+      markProgress,
+      stopIdleWatchdog,
+    } = createSubagentCancellationLifecycle({
+      agentName: config.name,
+      timeoutMs: timeout,
+      parentSignal: context.abortSignal,
+      onIdleTimeout: (idle) => {
         logger.warn(
           `[${config.name}] idle ${idle}ms exceeded ${CANCELLATION_TIMEOUTS.IDLE_TIMEOUT}ms, triggering idle-timeout`,
         );
-        effectiveController.abort('idle-timeout');
-      }
-    }, CANCELLATION_TIMEOUTS.IDLE_CHECK_INTERVAL);
-    // unref the timer so it doesn't keep the event loop alive in node tests.
-    (idleWatchdog as { unref?: () => void }).unref?.();
-    const stopIdleWatchdog = () => clearInterval(idleWatchdog);
+      },
+    });
 
     // Create pipeline context
     const pipeline = getSubagentPipeline();
@@ -664,25 +393,13 @@ export class SubagentExecutor {
     const telemetryCollector = getTelemetryCollector();
     let telemetryTurnNumber = 0;
 
-    // Build messages with multimodal support for images
-    const messages: RuntimeMessage[] = [
-      createRuntimeMessage({
-        role: 'system',
-        content: config.systemPrompt,
-        observation: buildObservation(
-          /fork context|shared discoveries|shared context|dependency|carry-over/i.test(config.systemPrompt)
-            ? 'dependency_carry_over'
-            : 'system_anchor',
-          'system_prompt',
-          {
-            sourceKind: /fork context|shared discoveries|shared context|dependency|carry-over/i.test(config.systemPrompt)
-              ? 'dependency_carry_over'
-              : 'system_anchor',
-            layer: 'system_prompt',
-          },
-        ),
-      }),
-    ];
+    const messages = buildInitialSubagentMessages({
+      agentName: config.name,
+      systemPrompt: config.systemPrompt,
+      prompt,
+      attachments: context.attachments,
+      logger,
+    });
     let latestContextSnapshot = buildContextSnapshot(
       messages,
       context.modelConfig.model,
@@ -720,108 +437,7 @@ export class SubagentExecutor {
         updatedAt: Date.now(),
       });
     };
-    const pushObservabilityMessage = (_message: Message): void => {};
-
-    // Build user message content (potentially multimodal)
-    // 使用 normalizeImageData 统一处理图片数据格式
-    const imageAttachments = context.attachments?.filter(
-      att => att.type === 'image' || att.category === 'image'
-    ) || [];
-
-    if (imageAttachments.length > 0) {
-      // Multimodal message with images
-      const multimodalContent: MessageContent[] = [];
-
-      // Add text first
-      multimodalContent.push({ type: 'text', text: prompt });
-
-      // Add images using normalized data
-      let successCount = 0;
-      for (const img of imageAttachments) {
-        // 使用统一的图片数据规范化函数
-        // 这会正确处理：
-        // 1. data URL (data:image/png;base64,xxx) - 提取纯 base64
-        // 2. 纯 base64 字符串 - 直接使用
-        // 3. 文件路径 - 读取文件并转换为 base64
-        const normalized = normalizeImageData(img.data, img.path, img.mimeType);
-
-        if (normalized) {
-          multimodalContent.push({
-            type: 'image',
-            source: {
-              type: 'base64',
-              media_type: normalized.mimeType,
-              data: normalized.base64,
-            }
-          });
-          successCount++;
-
-          // 如果图片有路径，添加路径信息供工具使用
-          if (normalized.path || img.path) {
-            multimodalContent.push({
-              type: 'text',
-              text: `📍 图片文件路径: ${normalized.path || img.path}`,
-            });
-          }
-
-          logger.debug(`[${config.name}] Added image`, {
-            mimeType: normalized.mimeType,
-            dataLength: normalized.base64.length,
-            path: normalized.path,
-          });
-        } else {
-          logger.warn(`[${config.name}] Failed to normalize image data`, {
-            hasData: !!img.data,
-            dataLength: img.data?.length,
-            path: img.path,
-          });
-        }
-      }
-
-      messages.push(createRuntimeMessage({
-        role: 'user',
-        content: multimodalContent,
-        attachments: buildMessageAttachments(context.attachments),
-        observation: buildObservation(
-          imageAttachments.length > 0 ? 'attachment' : 'recent_turn',
-          imageAttachments[0]?.name || 'user_prompt',
-          {
-            sourceKind: imageAttachments.length > 0 ? 'attachment' : 'message',
-            layer: imageAttachments.length > 0 ? 'attachment_input' : 'user_turn',
-          },
-        ),
-      }));
-      pushObservabilityMessage({
-        id: generateMessageId(),
-        role: 'user',
-        content: prompt,
-        attachments: buildMessageAttachments(context.attachments),
-        timestamp: Date.now(),
-      });
-      logger.info(`[${config.name}] Built multimodal message with ${successCount}/${imageAttachments.length} images`);
-    } else {
-      // Text-only message
-      messages.push(createRuntimeMessage({
-        role: 'user',
-        content: prompt,
-        attachments: buildMessageAttachments(context.attachments),
-        observation: buildObservation(
-          context.attachments?.length ? 'attachment' : 'recent_turn',
-          context.attachments?.[0]?.name || 'user_prompt',
-          {
-            sourceKind: context.attachments?.length ? 'attachment' : 'message',
-            layer: context.attachments?.length ? 'attachment_input' : 'user_turn',
-          },
-        ),
-      }));
-      pushObservabilityMessage({
-        id: generateMessageId(),
-        role: 'user',
-        content: prompt,
-        attachments: buildMessageAttachments(context.attachments),
-        timestamp: Date.now(),
-      });
-    }
+    const pushObservabilityMessage = (_message: unknown): void => {};
     emitContextSnapshot();
 
     logger.info(`[${config.name}] Starting with ${toolDefinitions.length} tools (agentId: ${pipelineContext.agentId}, supportsTool: ${supportsTool})`);
@@ -864,7 +480,7 @@ export class SubagentExecutor {
         // so that partial transcript + metadata get persisted via
         // AgentTask.saveToDisk before we return failure.
         if (effectiveSignal.aborted) {
-          const rawReason = effectiveSignal.reason;
+          const rawReason: unknown = effectiveSignal.reason;
           const cancellationReason: CancellationReason =
             rawReason === 'timeout'
               ? 'timeout'

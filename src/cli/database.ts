@@ -5,6 +5,7 @@
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import Module from 'module';
 import type {
   Session,
   SessionStatus,
@@ -25,6 +26,17 @@ export interface StoredSession extends Session {
 }
 
 type SQLiteRow = Record<string, unknown>;
+const cliRequire = Module.createRequire(import.meta.url);
+
+function parseJson<T>(value: string): T {
+  const parsed: unknown = JSON.parse(value);
+  return parsed as T;
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(value);
+  return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : {};
+}
 
 // ----------------------------------------------------------------------------
 // CLI Database Service
@@ -99,7 +111,7 @@ export class CLIDatabaseService {
     // 延迟加载 better-sqlite3
     if (!Database) {
       try {
-        Database = require('better-sqlite3');
+        Database = cliRequire('better-sqlite3') as typeof import('better-sqlite3');
       } catch (error) {
         throw new Error(`Failed to load better-sqlite3: ${error instanceof Error ? error.message : error}`);
       }
@@ -110,7 +122,9 @@ export class CLIDatabaseService {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    this.db = new Database!(this.dbPath);
+    const DatabaseCtor = Database;
+    if (!DatabaseCtor) throw new Error('better-sqlite3 constructor not loaded');
+    this.db = new DatabaseCtor(this.dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
 
@@ -532,8 +546,8 @@ export class CLIDatabaseService {
       postTokens: Number(row.post_tokens ?? 0),
       savedTokens: Number(row.saved_tokens ?? 0),
       usagePercent: row.usage_percent == null ? null : Number(row.usage_percent),
-      preMessagesSummary: row.pre_messages_summary ? JSON.parse(String(row.pre_messages_summary)) : null,
-      postMessagesSummary: row.post_messages_summary ? JSON.parse(String(row.post_messages_summary)) : null,
+      preMessagesSummary: row.pre_messages_summary ? parseJson<unknown>(String(row.pre_messages_summary)) : null,
+      postMessagesSummary: row.post_messages_summary ? parseJson<unknown>(String(row.post_messages_summary)) : null,
       byteSize: Number(row.byte_size ?? 0),
       createdAt: Number(row.created_at ?? 0),
     }));
@@ -591,8 +605,8 @@ export class CLIDatabaseService {
       sessionId: String(row.session_id),
       turnId: row.turn_id == null ? null : String(row.turn_id),
       turnIndex: Number(row.turn_index ?? 0),
-      contextChunks: row.context_chunks ? JSON.parse(String(row.context_chunks)) : null,
-      tokenBreakdown: row.token_breakdown ? JSON.parse(String(row.token_breakdown)) : null,
+      contextChunks: row.context_chunks ? parseJson<unknown>(String(row.context_chunks)) : null,
+      tokenBreakdown: row.token_breakdown ? parseJson<unknown>(String(row.token_breakdown)) : null,
       byteSize: Number(row.byte_size ?? 0),
       createdAt: Number(row.created_at ?? 0),
     }));
@@ -703,7 +717,7 @@ export class CLIDatabaseService {
     let lastTokenUsage: TokenUsage | undefined;
     if (row.last_token_usage) {
       try {
-        lastTokenUsage = JSON.parse(row.last_token_usage as string);
+        lastTokenUsage = parseJson<TokenUsage>(String(row.last_token_usage));
       } catch {
         // 忽略解析错误
       }
@@ -712,7 +726,7 @@ export class CLIDatabaseService {
     let prLink: PRLink | undefined;
     if (row.pr_link) {
       try {
-        prLink = JSON.parse(row.pr_link as string);
+        prLink = parseJson<PRLink>(String(row.pr_link));
       } catch {
         // 忽略解析错误
       }
@@ -794,9 +808,9 @@ export class CLIDatabaseService {
       role: row.role as Message['role'],
       content: row.content as string,
       timestamp: row.timestamp as number,
-      toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : undefined,
-      toolResults: row.tool_results ? JSON.parse(row.tool_results as string) : undefined,
-      attachments: row.attachments ? JSON.parse(row.attachments as string) : undefined,
+      toolCalls: row.tool_calls ? parseJson<NonNullable<Message['toolCalls']>>(String(row.tool_calls)) : undefined,
+      toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
+      attachments: row.attachments ? parseJson<NonNullable<Message['attachments']>>(String(row.attachments)) : undefined,
     }));
   }
 
@@ -817,8 +831,8 @@ export class CLIDatabaseService {
       role: row.role as Message['role'],
       content: row.content as string,
       timestamp: row.timestamp as number,
-      toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : undefined,
-      toolResults: row.tool_results ? JSON.parse(row.tool_results as string) : undefined,
+      toolCalls: row.tool_calls ? parseJson<NonNullable<Message['toolCalls']>>(String(row.tool_calls)) : undefined,
+      toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
     }));
   }
 
@@ -942,7 +956,7 @@ export class CLIDatabaseService {
       projectPath: row.project_path == null ? null : String(row.project_path),
       sessionId: row.session_id == null ? null : String(row.session_id),
       confidence: Number(row.confidence ?? 1),
-      metadata: row.metadata ? JSON.parse(String(row.metadata)) : {},
+      metadata: row.metadata ? parseJsonRecord(String(row.metadata)) : {},
       accessCount: Number(row.access_count ?? 0),
       createdAt: Number(row.created_at ?? 0),
       updatedAt: Number(row.updated_at ?? 0),
@@ -1071,7 +1085,7 @@ export class CLIDatabaseService {
     const row = stmt.get(hash, toolName, now) as SQLiteRow | undefined;
     if (!row) return null;
 
-    return JSON.parse(row.result as string);
+    return parseJson<ToolResult>(String(row.result));
   }
 
   listToolExecutions(sessionId: string, limit: number = 500): Array<{
@@ -1097,8 +1111,8 @@ export class CLIDatabaseService {
       sessionId: String(row.session_id),
       messageId: row.message_id == null ? null : String(row.message_id),
       toolName: String(row.tool_name),
-      arguments: row.arguments ? JSON.parse(String(row.arguments)) : {},
-      result: row.result ? JSON.parse(String(row.result)) : { success: false },
+      arguments: row.arguments ? parseJsonRecord(String(row.arguments)) : {},
+      result: row.result ? parseJson<ToolResult>(String(row.result)) : { toolCallId: String(row.id), success: false },
       success: Number(row.success ?? 0) === 1,
       duration: Number(row.duration ?? 0),
       createdAt: Number(row.created_at ?? 0),

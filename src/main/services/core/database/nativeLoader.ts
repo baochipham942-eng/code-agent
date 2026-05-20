@@ -25,7 +25,8 @@ export function loadBetterSqlite3(moduleDir: string, logger: Logger): typeof Bet
   for (const nativePath of nativePaths) {
     if (!Database) {
       try {
-        Database = runtimeRequire(nativePath);
+        const loaded: unknown = runtimeRequire(nativePath);
+        Database = loaded as typeof BetterSqlite3;
         logger.info(`[DatabaseService] Loaded better-sqlite3 from ${nativePath}`);
       } catch (error) {
         logger.warn(`[DatabaseService] Failed to load better-sqlite3 from ${nativePath}:`, error);
@@ -35,7 +36,8 @@ export function loadBetterSqlite3(moduleDir: string, logger: Logger): typeof Bet
   // 回退到默认路径（Electron 模式或 node_modules）
   if (!Database) {
     try {
-      Database = runtimeRequire('better-sqlite3');
+      const loaded: unknown = runtimeRequire('better-sqlite3');
+      Database = loaded as typeof BetterSqlite3;
     } catch (error) {
       const err = error as Error;
       console.warn('[DatabaseService] better-sqlite3 not available:', err.message?.split('\n')[0]);

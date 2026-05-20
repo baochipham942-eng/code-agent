@@ -2,8 +2,13 @@
 // Telegram Channel - Telegram Bot 通道实现 (Long Polling + 代理支持)
 // ============================================================================
 
-import { Bot, type Context } from 'grammy';
+import { Bot, type BotConfig, type Context } from 'grammy';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import type {
+  RequestInfo as NodeFetchRequestInfo,
+  RequestInit as NodeFetchRequestInit,
+  Response as NodeFetchResponse,
+} from 'node-fetch';
 import {
   BaseChannelPlugin,
   type ChannelResponseCallback,
@@ -20,6 +25,49 @@ import type {
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('TelegramChannel');
+
+type TelegramBotClientOptions = NonNullable<BotConfig<Context>['client']>;
+type NodeFetch = (
+  url: NodeFetchRequestInfo | URL,
+  init?: NodeFetchRequestInit
+) => Promise<NodeFetchResponse>;
+
+let nodeFetchLoader: Promise<NodeFetch> | null = null;
+
+function isNodeFetch(value: unknown): value is NodeFetch {
+  return typeof value === 'function';
+}
+
+async function loadNodeFetch(): Promise<NodeFetch> {
+  nodeFetchLoader ??= import('node-fetch').then((module) => {
+    const candidate: unknown = module.default;
+    if (!isNodeFetch(candidate)) {
+      throw new Error('node-fetch default export is not a function');
+    }
+    return candidate;
+  });
+  return nodeFetchLoader;
+}
+
+function toNodeFetchInit(
+  init: NodeFetchRequestInit | undefined,
+  agent: HttpsProxyAgent<string>
+): NodeFetchRequestInit {
+  return {
+    ...(init ?? {}),
+    agent,
+    compress: true,
+  };
+}
+
+function createTelegramProxyClient(agent: HttpsProxyAgent<string>): TelegramBotClientOptions {
+  const proxyFetch: NodeFetch = async (input, init) => {
+    const nodeFetch = await loadNodeFetch();
+    return nodeFetch(input, toNodeFetchInit(init, agent));
+  };
+
+  return { fetch: proxyFetch };
+}
 
 /**
  * Telegram 通道能力
@@ -74,18 +122,12 @@ export class TelegramChannel extends BaseChannelPlugin {
       || process.env.HTTPS_PROXY
       || process.env.https_proxy;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const clientOptions: any = {};
+    let clientOptions: TelegramBotClientOptions | undefined;
     if (proxyUrl) {
       const agent = new HttpsProxyAgent(proxyUrl);
       // 提供自定义 fetch 确保代理在 Electron 环境中也能工作
-      // node-fetch v2 支持 agent 选项，但 Electron 内置 fetch 不支持
-       
-      const nf = require('node-fetch');
-      const nodeFetch = (nf.default || nf) as Function; // eslint-disable-line @typescript-eslint/no-unsafe-function-type -- node-fetch vs native fetch type mismatch
-      clientOptions.baseFetchConfig = { agent, compress: true };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): grammy 的 fetch 适配器签名 (url: RequestInfo, init?: RequestInit)，但 node-fetch v2 类型不兼容；应该升级 node-fetch v3 或换 undici
-      clientOptions.fetch = (url: any, init?: any) => nodeFetch(url, { ...init, agent });
+      // node-fetch 支持 agent 选项，但 Electron 内置 fetch 不支持
+      clientOptions = createTelegramProxyClient(agent);
       logger.info('Using proxy for Telegram', { proxyUrl });
     }
 
@@ -172,16 +214,9 @@ export class TelegramChannel extends BaseChannelPlugin {
     if (!this.telegramConfig?.fallbackProxyUrl) return;
 
     const agent = new HttpsProxyAgent(this.telegramConfig.fallbackProxyUrl);
-    const nf = require('node-fetch');
-    const nodeFetch = (nf.default || nf) as Function; // eslint-disable-line @typescript-eslint/no-unsafe-function-type -- node-fetch vs native fetch type mismatch
-     
+
     this.bot = new Bot(this.telegramConfig.botToken, {
-      client: {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): grammy 的 BotConfig.client.baseFetchConfig 是 native fetch RequestInit，不接 node-fetch 的 { agent }；应该升级 grammy 或用 transformer 注入
-        baseFetchConfig: { agent, compress: true } as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 fetch 签名 mismatch（grammy native fetch vs node-fetch v2）
-        fetch: (url: any, init?: any) => nodeFetch(url, { ...init, agent }),
-      },
+      client: createTelegramProxyClient(agent),
     });
 
     await this.connect();
@@ -434,9 +469,10 @@ export class TelegramChannel extends BaseChannelPlugin {
     content: string,
     attachments?: Array<{ id: string; type: 'image' | 'file'; name: string; mimeType?: string; size?: number }>
   ): ChannelMessage {
-    const msg = ctx.message!;
-    const from = ctx.from!;
-    const chat = ctx.chat!;
+    const { message: msg, from, chat } = ctx;
+    if (!msg || !from || !chat) {
+      throw new Error('Telegram message context is incomplete');
+    }
 
     return {
       id: String(msg.message_id),

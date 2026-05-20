@@ -55,20 +55,23 @@ const MAX_LIVE_OUTPUT_DELTA_LENGTH = 2_000;
 function unwrapSelfReference(command: string): string {
   const selfRefMatch = command.match(/^\s*bash\s*\(\s*([\s\S]*)\s*\)\s*$/);
   if (!selfRefMatch) return command;
-  const inner = selfRefMatch[1].trim();
+  const inner = selfRefMatch[1]?.trim() ?? '';
   if (inner.startsWith('{')) {
     try {
-      const parsed = JSON.parse(inner);
-      if (parsed.command && typeof parsed.command === 'string') {
-        return parsed.command;
+      const parsed: unknown = JSON.parse(inner);
+      const parsedCommand = parsed && typeof parsed === 'object' && 'command' in parsed
+        ? (parsed as { command?: unknown }).command
+        : undefined;
+      if (typeof parsedCommand === 'string') {
+        return parsedCommand;
       }
     } catch {
       /* not valid JSON, keep original */
     }
     return command;
   }
-  const kwMatch = inner.match(/^command\s*=\s*["'](.+?)["']/s);
-  if (kwMatch) return kwMatch[1];
+  const kwCommand = inner.match(/^command\s*=\s*["'](.+?)["']/s)?.[1];
+  if (kwCommand !== undefined) return kwCommand;
   return command;
 }
 
@@ -84,7 +87,7 @@ function detectHeredocTruncation(command: string): { ok: true } | { ok: false; r
   if (!heredocMatch) return { ok: true };
   const delimiter = heredocMatch[1];
   const delimiterPattern = new RegExp(`^${delimiter}\\s*$`, 'm');
-  const bodyStartIdx = command.indexOf('\n', heredocMatch.index!);
+  const bodyStartIdx = command.indexOf('\n', heredocMatch.index ?? 0);
   if (bodyStartIdx < 0) {
     return {
       ok: false,
@@ -95,7 +98,7 @@ function detectHeredocTruncation(command: string): { ok: true } | { ok: false; r
   }
   const body = command.substring(bodyStartIdx + 1);
   const delimMatch = body.match(delimiterPattern);
-  const bodyContent = delimMatch ? body.substring(0, delimMatch.index!) : body;
+  const bodyContent = delimMatch ? body.substring(0, delimMatch.index ?? 0) : body;
   if (bodyContent.trim().length < 20) {
     return {
       ok: false,
@@ -412,7 +415,15 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
       }
 
       if (waitForCompletion) {
-        const output = await getPtySessionOutput(result.sessionId!, true, timeout);
+        const sessionId = result.sessionId;
+        if (!sessionId) {
+          return {
+            ok: false,
+            error: 'PTY session started without a session id',
+            code: 'FS_ERROR',
+          };
+        }
+        const output = await getPtySessionOutput(sessionId, true, timeout);
         if (!output) {
           return {
             ok: false,

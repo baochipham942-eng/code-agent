@@ -95,6 +95,18 @@ export abstract class TaskKernel<S extends string> {
     return this._pendingMessages;
   }
 
+  protected restorePersistedRuntimeState(input: {
+    status: S;
+    error?: string;
+    pendingMessages?: Array<{ role: string; content: string }>;
+    transcript?: TranscriptEntry[];
+  }): void {
+    this._status = input.status;
+    this._error = input.error;
+    this._pendingMessages = input.pendingMessages ? [...input.pendingMessages] : [];
+    this._transcript = input.transcript ? [...input.transcript] : [];
+  }
+
   // --- 依赖管理 ---
 
   addDependency(blockerId: string): void {

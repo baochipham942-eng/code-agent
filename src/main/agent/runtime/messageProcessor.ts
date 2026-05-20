@@ -1,10 +1,10 @@
-/* eslint-disable max-lines -- Runtime coordinator split is out of scope for this stabilization change. */
 // ============================================================================
 // MessageProcessor — Message building, parsing, and telemetry recording
 // Extracted from ConversationRuntime
 // ============================================================================
 
 import type {
+  AgentEvent,
   Message,
   MessageAttachment,
   MessageMetadata,
@@ -24,11 +24,6 @@ import { classifyExecutionPhase } from '../../tools/executionPhase';
 import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector.js';
 import { MODEL_MAX_TOKENS, getModelMaxOutputTokens } from '../../../shared/constants';
-import {
-  sanitizeBrowserComputerToolArguments,
-  sanitizeBrowserComputerToolResult,
-  sanitizeLargeTextToolArguments,
-} from '../../../shared/utils/browserComputerRedaction';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
@@ -42,10 +37,7 @@ import {
   buildStagnationHint,
   buildStagnationStopMessage,
 } from './stagnationDetector';
-import {
-  getArtifactRepairToolPolicy,
-  type ArtifactRepairToolPolicy,
-} from './artifactRepairGuard';
+import { getArtifactRepairToolPolicy } from './artifactRepairGuard';
 import {
   maybeClearCompletedArtifactRepairGuardBeforeAdmission,
   activateArtifactRepairAdmissionStop,
@@ -59,74 +51,29 @@ import { isLikelyIncompleteStopText } from './incompleteStopDetector';
 import { extractArtifactFilePathFromMessages } from './artifactPathExtractor';
 import { getHandoffProposalService } from '../../handoff/handoffProposalService';
 import { extractHandoffProposalTail } from '../../handoff/handoffTail';
+import {
+  buildArtifactRepairAdmissionRecoveryPrompt,
+  buildForcedFinalAssistantContent,
+  isArtifactDirectoryBootstrapOnly,
+  isArtifactRepairTargetFileRead,
+  sanitizeToolArgumentsForObservation,
+  sanitizeToolResultForObservation,
+  shouldDeferForcedFinalToInference,
+  shouldPreserveToolObservation,
+} from './messageProcessorHelpers';
 
 const logger = createLogger('MessageProcessor');
-
-function sanitizeToolArgumentsForObservation(toolCall: Pick<ToolCall, 'name' | 'arguments'>): Record<string, unknown> | undefined {
-  const browserSafeArgs = sanitizeBrowserComputerToolArguments(toolCall.name, toolCall.arguments) || toolCall.arguments;
-  return sanitizeLargeTextToolArguments(toolCall.name, browserSafeArgs);
-}
-
-function sanitizeToolResultForObservation(
-  toolCall: Pick<ToolCall, 'name' | 'arguments'> | undefined,
-  result: ToolResult,
-): ToolResult {
-  if (!toolCall) {
-    return result;
-  }
-  return sanitizeBrowserComputerToolResult(toolCall.name, toolCall.arguments, result);
-}
-
-function shouldPreserveToolObservation(result: ToolResult): boolean {
-  return result.metadata?.preserveObservation === true || result.metadata?.observationKind === 'computer_surface_read';
-}
-
-function isArtifactRepairTargetFileRead(result: ToolResult): boolean {
-  return result.success === true
-    && typeof result.output === 'string'
-    && result.metadata?.evidenceKind === 'file_read'
-    && typeof result.metadata?.filePath === 'string';
-}
-
-function buildForcedFinalAssistantContent(reason: string): string {
-  if (reason.includes('artifact repair target already passes validation')) {
-    return '目标产物已通过交互验收，修复流程已结束。';
-  }
-  return '任务已结束，已停止继续调用工具。执行记录和产物已保留。';
-}
-
-function shouldDeferForcedFinalToInference(ctx: RuntimeContext): boolean {
-  const reason = ctx.forceFinalResponseReason ?? '';
-  const prompt = ctx.forceFinalResponsePrompt ?? '';
-  return reason.startsWith('连续只读操作达到硬阈值')
-    || prompt.includes('reason="read-loop-hard-limit"');
-}
-
-function buildArtifactRepairAdmissionRecoveryPrompt(
-  targetFile: string,
-  requestedNames: string,
-  allowedNames: string,
-  policy: ArtifactRepairToolPolicy | null = null,
-): string {
-  const mutationTools = policy?.mutationToolPrompt || 'currently available file mutation tools';
-  return [
-    '<artifact-repair-admission-blocked>',
-    `You are already inside artifact repair mode for ${targetFile}.`,
-    `Your previous tool call requested unavailable tools: ${requestedNames}.`,
-    `Only these tools are currently available: ${allowedNames}.`,
-    'Do not repeat the unavailable tool call.',
-    `Your next action must patch the target artifact with ${mutationTools} — prefer one complete Write of the whole self-contained HTML.`,
-    'Use the target HTML file and validator failure summary already in context. Do not inspect validator/runtime sources.',
-    '</artifact-repair-admission-blocked>',
-  ].join('\n');
-}
-
-function isArtifactDirectoryBootstrapOnly(toolCall: ToolCall, result: ToolResult): boolean {
-  if (!result.success) return false;
-  if (toolCall.name !== 'Bash' && toolCall.name !== 'bash') return false;
-  const command = typeof toolCall.arguments?.command === 'string' ? toolCall.arguments.command.trim() : '';
-  if (!command) return false;
-  return /^mkdir\s+-p\s+/.test(command);
+type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
+function toAgentEventFromNudge(event: { type: string; data: unknown }): AgentEvent | null {
+  const data = event.data as { message?: unknown; parentToolUseId?: unknown } | null;
+  if (event.type !== 'notification' || typeof data?.message !== 'string') return null;
+  return {
+    type: 'notification',
+    data: {
+      message: data.message,
+      parentToolUseId: typeof data.parentToolUseId === 'string' ? data.parentToolUseId : undefined,
+    },
+  };
 }
 
 export class MessageProcessor {
@@ -247,8 +194,7 @@ export class MessageProcessor {
     isSimpleTask: boolean,
     iterations: number,
     shouldRunHooks: boolean,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): langfuse SDK 的 trace span 类型未导入，应 import { LangfuseTraceClient } from 'langfuse' 替换 any
-    langfuse: any,
+    langfuse: LangfuseSpanFacade,
   ): Promise<'break' | 'continue'> {
     if (this.ctx.isCancelled) {
       logger.info('[AgentLoop] Skipping final text persistence after cancellation', {
@@ -390,8 +336,12 @@ export class MessageProcessor {
         workingDirectory: this.ctx.workingDirectory,
         mutationToolPrompt: artifactRepairPolicy?.mutationToolPromptZh,
         injectSystemMessage: (msg: string) => this.contextAssembly.injectSystemMessage(msg),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): NudgeManager 的 onEvent 形参 { type: string; data: unknown } 是宽口，外层 ctx.onEvent 期望 AgentEvent 严格联合；应让 NudgeManager 直接接受 AgentEvent，或在外层定义 AnyEvent 类型
-        onEvent: (event: { type: string; data: unknown }) => this.ctx.onEvent(event as any),
+        onEvent: (event: { type: string; data: unknown }) => {
+          const agentEvent = toAgentEventFromNudge(event);
+          if (agentEvent) {
+            this.ctx.onEvent(agentEvent);
+          }
+        },
         goalTracker: this.ctx.goalTracker,
       });
       if (nudgeTriggered) {
@@ -537,10 +487,9 @@ export class MessageProcessor {
     response: ModelResponse,
     wasForceExecuted: boolean,
     iterations: number,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 handleTextResponse，langfuse SDK trace 类型应统一从 'langfuse' import
-    langfuse: any,
+    langfuse: LangfuseSpanFacade,
   ): Promise<'continue' | 'break'> {
-    const toolCalls = response.toolCalls!;
+    const toolCalls = response.toolCalls ?? [];
     const requestedToolNames = toolCalls.map((toolCall) => toolCall.name).join(', ');
     const activeRepairGuard = this.ctx.artifactRepairGuard;
     if (activeRepairGuard && await maybeClearCompletedArtifactRepairGuardBeforeAdmission(

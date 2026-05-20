@@ -23,6 +23,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { z } from 'zod';
 import { getConfigService } from '../../../services';
 import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { formatFileSize } from '../../utils/fileSize';
@@ -68,6 +69,24 @@ async function fetchWithAbort(
 
 const SHOT_TIMEOUT_MS = 60000;
 
+const MicrolinkScreenshotResponseSchema = z.object({
+  status: z.string().optional(),
+  message: z.string().optional(),
+  data: z.object({
+    screenshot: z.object({
+      url: z.string().optional(),
+    }).passthrough().optional(),
+  }).passthrough().optional(),
+}).passthrough();
+
+const VisionCompletionResponseSchema = z.object({
+  choices: z.array(z.object({
+    message: z.object({
+      content: z.string().optional(),
+    }).passthrough().optional(),
+  }).passthrough()).optional().default([]),
+}).passthrough();
+
 async function screenshotViaThumio(
   url: string,
   width: number,
@@ -96,17 +115,23 @@ async function screenshotViaMicrolink(
   apiUrl.searchParams.set('screenshot.type', options.format === 'jpg' ? 'jpeg' : 'png');
 
   const response = await fetchWithAbort(apiUrl.toString(), {}, SHOT_TIMEOUT_MS, outerSignal);
-  const data = await response.json();
+  const payload: unknown = await response.json();
+  const parsed = MicrolinkScreenshotResponseSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error('Microlink API 失败: 响应格式无效');
+  }
+  const data = parsed.data;
 
   if (!data.status || data.status !== 'success') {
     throw new Error(`Microlink API 失败: ${data.message || '未知错误'}`);
   }
-  if (!data.data?.screenshot?.url) {
+  const screenshotUrl = data.data?.screenshot?.url;
+  if (!screenshotUrl) {
     throw new Error('未获取到截图 URL');
   }
 
   const imageResponse = await fetchWithAbort(
-    data.data.screenshot.url,
+    screenshotUrl,
     {},
     SHOT_TIMEOUT_MS,
     outerSignal,
@@ -167,8 +192,9 @@ async function analyzeWithVision(
       return null;
     }
 
-    const result = await response.json();
-    return result.choices?.[0]?.message?.content || null;
+    const payload: unknown = await response.json();
+    const result = VisionCompletionResponseSchema.safeParse(payload);
+    return result.success ? result.data.choices[0]?.message?.content || null : null;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('screenshot_page vision failed', { error: message });

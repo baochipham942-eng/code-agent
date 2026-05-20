@@ -82,6 +82,33 @@ export function safeLog(message: string, ...args: unknown[]): void {
   logger.info(message, ...args.map(sanitizeForLogging));
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJsonValue(value: string): unknown | undefined {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeStringRecord(value: unknown): Record<string, string> | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const normalized: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (typeof item !== 'string') {
+      return null;
+    }
+    normalized[key] = item;
+  }
+  return normalized;
+}
+
 // Load .env file from project root or app resources
 import { app as electronApp } from '../../platform';
 
@@ -223,8 +250,10 @@ export class ConfigService implements IReadConfigService {
   async initialize(): Promise<void> {
     try {
       const data = await fs.readFile(this.configPath, 'utf-8');
-      const loaded = JSON.parse(data);
-      this.settings = this.mergeSettings(DEFAULT_SETTINGS, loaded);
+      const loaded = parseJsonValue(data);
+      this.settings = isRecord(loaded)
+        ? this.mergeSettings(DEFAULT_SETTINGS, loaded as Partial<AppSettings>)
+        : { ...DEFAULT_SETTINGS };
     } catch (error) {
       const nodeError = error as NodeJS.ErrnoException;
       if (nodeError.code !== 'ENOENT') {
@@ -680,11 +709,7 @@ export class ConfigService implements IReadConfigService {
     const key = `integration.${integration}` as `integration.${string}`;
     const value = storage.get(key);
     if (value) {
-      try {
-        return JSON.parse(value);
-      } catch {
-        return null;
-      }
+      return normalizeStringRecord(parseJsonValue(value));
     }
     return null;
   }

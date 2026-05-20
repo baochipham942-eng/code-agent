@@ -11,13 +11,12 @@
 // ============================================================================
 
 import type { ToolContext, ToolExecutionResult } from '../../tools/types';
-import type { ModelConfig, ModelProvider } from '../../../shared/contract';
+import type { ModelConfig } from '../../../shared/contract';
 import type {
   WorkflowStage,
   WorkflowTemplate,
   StageContext,
   StageResult,
-  GeneratedFile,
 } from '../../../shared/contract/workflow';
 import {
   BUILT_IN_WORKFLOWS,
@@ -81,13 +80,20 @@ function resolveStageModelConfig(
  * 尝试从输出中提取 JSON 数据
  */
 function extractStructuredData(output: string): Record<string, unknown> | undefined {
+  const parseRecord = (candidate: string): Record<string, unknown> | undefined => {
+    const parsed: unknown = JSON.parse(candidate);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : undefined;
+  };
+
   // 1. 尝试提取 ```json ... ``` 代码块
   const jsonCodeBlockMatch = output.match(/```json\s*([\s\S]*?)\s*```/);
   if (jsonCodeBlockMatch) {
     try {
-      return JSON.parse(jsonCodeBlockMatch[1]);
-    } catch (e) {
-      logger.debug('Failed to parse JSON code block', { error: (e as Error).message });
+      return parseRecord(jsonCodeBlockMatch[1]);
+    } catch (error) {
+      logger.debug('Failed to parse JSON code block', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -95,8 +101,8 @@ function extractStructuredData(output: string): Record<string, unknown> | undefi
   const codeBlockMatch = output.match(/```\s*([\s\S]*?)\s*```/);
   if (codeBlockMatch) {
     try {
-      return JSON.parse(codeBlockMatch[1]);
-    } catch (e) {
+      return parseRecord(codeBlockMatch[1]);
+    } catch {
       // Not valid JSON, continue
     }
   }
@@ -105,9 +111,9 @@ function extractStructuredData(output: string): Record<string, unknown> | undefi
   try {
     const trimmed = output.trim();
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      return JSON.parse(trimmed);
+      return parseRecord(trimmed);
     }
-  } catch (e) {
+  } catch {
     // Not valid JSON
   }
 
@@ -115,8 +121,8 @@ function extractStructuredData(output: string): Record<string, unknown> | undefi
   const inlineJsonMatch = output.match(/\{[\s\S]*"(?:type|regions|elements|textRegions)"[\s\S]*\}/);
   if (inlineJsonMatch) {
     try {
-      return JSON.parse(inlineJsonMatch[0]);
-    } catch (e) {
+      return parseRecord(inlineJsonMatch[0]);
+    } catch {
       // Not valid JSON
     }
   }
@@ -243,7 +249,10 @@ export async function executeWorkflowOrchestrate(
           for (let i = 0; i < group.length; i++) {
             results.push(groupResults[i]);
             if (groupResults[i].success && groupResults[i].context) {
-              stageContexts.set(group[i].name, groupResults[i].context!);
+              const contextValue = groupResults[i].context;
+              if (contextValue) {
+                stageContexts.set(group[i].name, contextValue);
+              }
             }
           }
         } else {

@@ -19,6 +19,29 @@ const logger = createLogger('ScriptExecutor');
 const DEFAULT_TIMEOUT = HOOK_TIMEOUTS.SCRIPT_DEFAULT;
 const MAX_OUTPUT_LENGTH = 100000; // 100KB; SessionStart memory injection 等场景需要 >10KB
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function readString(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function readNumber(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === 'number' ? value : undefined;
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Script Executor
 // ----------------------------------------------------------------------------
@@ -79,7 +102,7 @@ export async function executeScript(
     const duration = Date.now() - startTime;
 
     // Log stderr as warning if present
-    if (stderr && stderr.trim()) {
+    if (stderr?.trim()) {
       logger.warn('Hook script stderr', { stderr: stderr.trim() });
     }
 
@@ -90,7 +113,9 @@ export async function executeScript(
     const duration = Date.now() - startTime;
 
     // Check for timeout
-    if ((error as Record<string, unknown>).killed && (error as Record<string, unknown>).signal === 'SIGTERM') {
+    const errorRecord = isRecord(error) ? error : {};
+
+    if (errorRecord.killed === true && errorRecord.signal === 'SIGTERM') {
       logger.warn('Hook script timed out', {
         command: options.command,
         timeout,
@@ -103,19 +128,20 @@ export async function executeScript(
     }
 
     // Check exit code for intentional block
-    if ((error as Record<string, unknown>).code === 1) {
+    if (errorRecord.code === 1) {
       return {
         action: 'block',
-        message: ((error as Record<string, unknown>).stdout as string | undefined)?.trim() || 'Blocked by hook script',
+        message: readString(errorRecord, 'stdout')?.trim() || 'Blocked by hook script',
         duration,
       };
     }
 
-    if ((error as Record<string, unknown>).code === 2) {
+    if (errorRecord.code === 2) {
+      const stdout = readString(errorRecord, 'stdout');
       return {
         action: 'continue',
-        message: ((error as Record<string, unknown>).stdout as string | undefined)?.trim(),
-        modifiedInput: parseModifiedInput((error as Record<string, unknown>).stdout as string | undefined),
+        message: stdout?.trim(),
+        modifiedInput: parseModifiedInput(stdout),
         duration,
       };
     }
@@ -124,7 +150,7 @@ export async function executeScript(
     logger.error('Hook script execution failed', {
       command: options.command,
       error: errMsg,
-      exitCode: (error as Record<string, unknown>).code,
+      exitCode: readNumber(errorRecord, 'code'),
     });
 
     return {
@@ -147,17 +173,15 @@ function parseScriptOutput(stdout: string, duration: number): HookExecutionResul
 
   // Try to parse as JSON
   if (output.startsWith('{')) {
-    try {
-      const json = JSON.parse(output);
+    const json = parseJsonRecord(output);
+    if (json) {
       const action = validateAction(json.action);
       return {
         action,
-        message: json.message,
-        modifiedInput: json.modifiedInput,
+        message: readString(json, 'message'),
+        modifiedInput: readString(json, 'modifiedInput'),
         duration,
       };
-    } catch {
-      // Not valid JSON, treat as plain text
     }
   }
 
@@ -187,12 +211,8 @@ function validateAction(action: unknown): HookActionResult {
 function parseModifiedInput(output: string | undefined): string | undefined {
   if (!output) return undefined;
 
-  try {
-    const json = JSON.parse(output.trim());
-    return json.modifiedInput;
-  } catch {
-    return undefined;
-  }
+  const json = parseJsonRecord(output.trim());
+  return json ? readString(json, 'modifiedInput') : undefined;
 }
 
 /**

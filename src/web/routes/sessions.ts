@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { broadcastSSE } from '../helpers/sse';
+import type { Message, ModelConfig, Session, ToolCall } from '../../shared/contract';
 import { formatError } from '../helpers/utils';
 import {
   type CachedMessage,
@@ -10,15 +10,75 @@ import {
   inMemorySessions,
 } from '../helpers/sessionCache';
 import type { ActiveAgentLoop } from './agent';
+import { SessionCreateBodySchema } from './sessionBodySchemas';
+import type { WebRouteLogger } from './routeTypes';
+
+interface SessionManagerLike {
+  listSessions(options: { includeArchived?: boolean }): Promise<unknown[]>;
+  createSession(options: {
+    title: string;
+    workingDirectory?: string;
+    modelConfig: ModelConfig;
+  }): Promise<Session>;
+  setCurrentSession(sessionId: string): void;
+  restoreSession(sessionId: string): Promise<(Session & { messages: Message[] }) | null>;
+  getMessages(sessionId: string, limit?: number): Promise<Message[]>;
+  deleteSession(sessionId: string): Promise<void>;
+  archiveSession(sessionId: string): Promise<Session | null>;
+  unarchiveSession(sessionId: string): Promise<Session | null>;
+}
+
+interface SupabaseQueryResult<T> {
+  data: T | null;
+  error: unknown;
+}
+
+interface SupabaseTableQuery<T> extends PromiseLike<SupabaseQueryResult<T[]>> {
+  select(columns?: string): SupabaseTableQuery<T>;
+  eq(column: string, value: unknown): SupabaseTableQuery<T>;
+  order(column: string, options: { ascending: boolean }): SupabaseTableQuery<T>;
+  insert(value: Record<string, unknown>): SupabaseTableQuery<T>;
+  update(value: Record<string, unknown>): SupabaseTableQuery<T>;
+  limit(count: number): SupabaseTableQuery<T>;
+  single(): Promise<SupabaseQueryResult<T>>;
+}
+
+type SupabaseSessionRow = Record<string, unknown>;
+
+interface SupabaseMessageRow {
+  id: string;
+  role: Message['role'];
+  content: string;
+  timestamp: number;
+  tool_calls?: ToolCall[] | null;
+}
+
+interface SupabaseRouteClient {
+  from(table: 'sessions'): SupabaseTableQuery<SupabaseSessionRow>;
+  from(table: 'messages'): SupabaseTableQuery<SupabaseMessageRow>;
+  from(table: string): SupabaseTableQuery<Record<string, unknown>>;
+}
+
+export interface SupabaseSessionBinding {
+  supabase: SupabaseRouteClient;
+  userId: string;
+}
 
 interface SessionsRouterDeps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): logger 第二参以后是任意上下文对象（Logger 的标准 idiom），应抽 Logger 接口共享 unknown[] 形参
-  logger: { info: (msg: string, ...args: any[]) => void; warn: (msg: string, ...args: any[]) => void; error: (msg: string, ...args: any[]) => void };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): tryGetSessionManager 返回 SessionManager，应直接 import 类型，不通过 any
-  tryGetSessionManager: () => Promise<any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): supabase 是 SupabaseClient 实例，应 import { SupabaseClient } from '@supabase/supabase-js'
-  getSupabaseForSession: () => Promise<{ supabase: any; userId: string } | null>;
+  logger: WebRouteLogger;
+  tryGetSessionManager: () => Promise<SessionManagerLike | null>;
+  getSupabaseForSession: () => Promise<SupabaseSessionBinding | null>;
   activeAgentLoops: Map<string, ActiveAgentLoop>;
+}
+
+function mapSupabaseMessage(row: SupabaseMessageRow): Pick<Message, 'id' | 'role' | 'content' | 'timestamp' | 'toolCalls'> {
+  return {
+    id: row.id,
+    role: row.role,
+    content: row.content,
+    timestamp: row.timestamp,
+    toolCalls: row.tool_calls || [],
+  };
 }
 
 export function createSessionsRouter(deps: SessionsRouterDeps): Router {
@@ -61,11 +121,19 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
 
   router.post('/sessions', async (req: Request, res: Response) => {
     try {
-      const title = req.body?.title || 'New Session';
-      const workingDirectory =
-        typeof req.body?.workingDirectory === 'string' && req.body.workingDirectory.trim().length > 0
-          ? req.body.workingDirectory.trim()
-          : undefined;
+      const parsedBody = SessionCreateBodySchema.safeParse(req.body as unknown);
+      if (!parsedBody.success) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_BODY',
+            message: parsedBody.error.message,
+          },
+        });
+        return;
+      }
+      const title = parsedBody.data.title?.trim() || 'New Session';
+      const workingDirectory = parsedBody.data.workingDirectory?.trim() || undefined;
       const sm = await tryGetSessionManager();
       if (sm) {
         const { resolveSessionDefaultModelConfig } = await import('../../main/services/core/sessionDefaults');
@@ -162,14 +230,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
           .eq('session_id', sessionId)
           .eq('is_deleted', false)
           .order('timestamp', { ascending: true });
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): supabase 行类型应抽 SupabaseMessageRow（snake_case），narrow 后即可去掉
-        const messages = (msgData || []).map((m: any) => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          timestamp: m.timestamp,
-          toolCalls: m.tool_calls || [],
-        }));
+        const messages = (msgData || []).map(mapSupabaseMessage);
         res.json({ success: true, data: { ...sessionData, messages, todos: [] } });
         return;
       }
@@ -214,14 +275,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
         if (limit) query = query.limit(limit);
         const { data, error } = await query;
         if (error) throw error;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 SupabaseMessageRow narrow
-        const messages = (data || []).map((m: any) => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          timestamp: m.timestamp,
-          toolCalls: m.tool_calls || [],
-        }));
+        const messages = (data || []).map(mapSupabaseMessage);
         res.json({ success: true, data: messages });
         return;
       }

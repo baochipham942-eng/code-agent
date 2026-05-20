@@ -14,6 +14,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { z } from 'zod';
 import { getPRLinkService } from '../../../services/github/prLinkService';
 import { NETWORK_TOOL_TIMEOUTS } from '../../../../shared/constants';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
@@ -37,6 +38,57 @@ interface GitHubPRParams {
   method?: 'merge' | 'squash' | 'rebase';
   delete_branch?: boolean;
 }
+
+const NumberishSchema = z.preprocess((value) => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}, z.number());
+
+const GhUserSchema = z.object({
+  login: z.string().optional(),
+}).passthrough();
+
+const GhLabelSchema = z.object({
+  name: z.string().optional(),
+}).passthrough();
+
+const GhCommentSchema = z.object({
+  author: GhUserSchema.optional(),
+  body: z.string().optional(),
+}).passthrough();
+
+const GhPrViewSchema = z.object({
+  number: NumberishSchema.catch(0),
+  title: z.string().optional().default(''),
+  body: z.string().optional(),
+  headRefName: z.string().optional().default(''),
+  baseRefName: z.string().optional().default(''),
+  state: z.string().optional().default(''),
+  changedFiles: NumberishSchema.catch(0),
+  additions: NumberishSchema.catch(0),
+  deletions: NumberishSchema.catch(0),
+  labels: z.array(GhLabelSchema).optional().default([]),
+  url: z.string().optional().default(''),
+  author: GhUserSchema.optional(),
+  reviewDecision: z.string().optional(),
+  mergeable: z.string().optional(),
+  comments: z.array(GhCommentSchema).optional().default([]),
+}).passthrough();
+
+const GhPrListItemSchema = z.object({
+  number: NumberishSchema.catch(0),
+  title: z.string().optional().default(''),
+  state: z.string().optional().default(''),
+  headRefName: z.string().optional().default(''),
+  author: GhUserSchema.optional(),
+  labels: z.array(GhLabelSchema).optional().default([]),
+  url: z.string().optional(),
+  updatedAt: z.string().optional(),
+}).passthrough();
 
 // ─────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -97,6 +149,15 @@ async function detectBaseBranch(cwd: string): Promise<string> {
 
 function escapeShellArg(arg: string): string {
   return arg.replace(/'/g, "'\\''");
+}
+
+function parseGhJson<T>(stdout: string, schema: z.ZodType<T>, label: string): T {
+  const parsedJson = JSON.parse(stdout) as unknown;
+  const parsed = schema.safeParse(parsedJson);
+  if (!parsed.success) {
+    throw new Error(`Invalid gh ${label} JSON`);
+  }
+  return parsed.data;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -205,7 +266,9 @@ async function handleView(
     cwd,
   );
 
-  const data = JSON.parse(stdout);
+  const data = parseGhJson(stdout, GhPrViewSchema, 'pr view');
+  const labels = data.labels ?? [];
+  const comments = data.comments ?? [];
 
   let output = `## PR #${data.number}: ${data.title}\n\n`;
   output += `**URL**: ${data.url}\n`;
@@ -214,8 +277,8 @@ async function handleView(
   output += `**State**: ${data.state}\n`;
   output += `**Changes**: +${data.additions} / -${data.deletions} in ${data.changedFiles} files\n`;
 
-  if (data.labels?.length > 0) {
-    output += `**Labels**: ${data.labels.map((l: { name: string }) => l.name).join(', ')}\n`;
+  if (labels.length > 0) {
+    output += `**Labels**: ${labels.map((label) => label.name).filter(Boolean).join(', ')}\n`;
   }
 
   if (data.reviewDecision) {
@@ -230,9 +293,9 @@ async function handleView(
     output += `\n### Description\n\n${data.body}\n`;
   }
 
-  if (data.comments?.length > 0) {
-    output += `\n### Comments (${data.comments.length})\n\n`;
-    for (const comment of data.comments.slice(-5)) {
+  if (comments.length > 0) {
+    output += `\n### Comments (${comments.length})\n\n`;
+    for (const comment of comments.slice(-5)) {
       output += `**${comment.author?.login || 'unknown'}**: ${comment.body?.substring(0, 200) || ''}\n\n`;
     }
   }
@@ -274,7 +337,7 @@ async function handleList(
   onProgress?.({ stage: 'running', detail: `列出 PR (${state})...` });
 
   const { stdout } = await execGh(argv.join(' '), cwd);
-  const prs = JSON.parse(stdout);
+  const prs = parseGhJson(stdout, z.array(GhPrListItemSchema), 'pr list');
 
   if (prs.length === 0) {
     const output = '没有找到匹配的 PR';
@@ -301,9 +364,8 @@ async function handleList(
   }
 
   let output = `找到 ${prs.length} 个 PR:\n\n`;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): gh CLI JSON 输出未做类型化，应该按 gh field flag 抽出 GhPrListItem 接口（number/title/labels/state/headRefName/author 等）
-  for (const pr of prs as any[]) {
-    const labels = pr.labels?.map((l: { name: string }) => l.name).join(', ');
+  for (const pr of prs) {
+    const labels = (pr.labels ?? []).map((label) => label.name).filter(Boolean).join(', ');
     output += `**#${pr.number}** ${pr.title}\n`;
     output += `  Branch: ${pr.headRefName} | Author: ${pr.author?.login || 'unknown'} | State: ${pr.state}`;
     if (labels) output += ` | Labels: ${labels}`;
@@ -317,8 +379,7 @@ async function handleList(
       count: prs.length,
       action: 'list',
       state,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      prs: prs.map((p: any) => ({ number: p.number, title: p.title })),
+      prs: prs.map((pr) => ({ number: pr.number, title: pr.title })),
       artifact: createVirtualArtifact({
         sourceTool: schema.name,
         kind: 'search',

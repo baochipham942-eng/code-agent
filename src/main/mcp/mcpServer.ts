@@ -10,17 +10,79 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { logCollector, LogEntry, LogSource, LogStatus } from './logCollector.js';
+import { logCollector, type LogEntry, type LogLevel, type LogSource, type LogStatus } from './logCollector.js';
 
 // Log Bridge URL for fetching logs from running Electron app
 const LOG_BRIDGE_URL = 'http://127.0.0.1:51820';
+
+interface BridgeExecuteResult {
+  success: boolean;
+  output?: string;
+  error?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseLogSource(value: unknown): LogSource | null {
+  return value === 'browser' || value === 'agent' || value === 'tool' ? value : null;
+}
+
+function parseLogLevel(value: unknown): LogLevel | null {
+  return value === 'INFO' || value === 'WARN' || value === 'ERROR' || value === 'DEBUG' ? value : null;
+}
+
+function parseLogEntry(value: unknown): LogEntry | null {
+  if (!isRecord(value)) return null;
+  const source = parseLogSource(value.source);
+  const level = parseLogLevel(value.level);
+  if (!source || !level || typeof value.message !== 'string') return null;
+
+  const timestamp = value.timestamp instanceof Date
+    ? value.timestamp
+    : typeof value.timestamp === 'string' || typeof value.timestamp === 'number'
+      ? new Date(value.timestamp)
+      : null;
+  if (!timestamp || Number.isNaN(timestamp.getTime())) return null;
+
+  return {
+    timestamp,
+    source,
+    level,
+    message: value.message,
+    metadata: isRecord(value.metadata) ? value.metadata : undefined,
+  };
+}
+
+function parseLogEntries(value: unknown): LogEntry[] {
+  return Array.isArray(value)
+    ? value.map(parseLogEntry).filter((entry): entry is LogEntry => entry !== null)
+    : [];
+}
+
+function parseStatus(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
+}
+
+function parseBridgeExecuteResult(value: unknown): BridgeExecuteResult {
+  if (!isRecord(value) || typeof value.success !== 'boolean') {
+    return { success: false, error: 'Invalid bridge response' };
+  }
+  return {
+    success: value.success,
+    output: typeof value.output === 'string' ? value.output : undefined,
+    error: typeof value.error === 'string' ? value.error : undefined,
+  };
+}
 
 // Fetch logs from the HTTP bridge (when running as standalone MCP server)
 async function fetchLogsFromBridge(source: string, count: number = 50): Promise<LogEntry[]> {
   try {
     const response = await fetch(`${LOG_BRIDGE_URL}/logs/${source}?count=${count}`);
     if (response.ok) {
-      return await response.json();
+      const payload: unknown = await response.json();
+      return parseLogEntries(payload);
     }
     return [];
   } catch {
@@ -33,7 +95,8 @@ async function fetchStatusFromBridge(): Promise<Record<string, unknown> | null> 
   try {
     const response = await fetch(`${LOG_BRIDGE_URL}/status`);
     if (response.ok) {
-      return await response.json();
+      const payload: unknown = await response.json();
+      return parseStatus(payload);
     }
     return null;
   } catch {
@@ -411,7 +474,8 @@ export class CodeAgentMCPServer {
             };
           }
 
-          const result = await response.json();
+          const payload: unknown = await response.json();
+          const result = parseBridgeExecuteResult(payload);
           return {
             content: [
               {

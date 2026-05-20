@@ -19,6 +19,7 @@ EXCLUDE_FILES=(
   "src/shared/constants.ts"
   "src/shared/constants/"
   "src/main/model/providerRegistry.ts"
+  "src/main/model/providerRegistryBase.ts"
   "scripts/check-hardcoded-models.sh"
 )
 

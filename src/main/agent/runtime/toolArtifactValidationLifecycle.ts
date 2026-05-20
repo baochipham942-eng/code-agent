@@ -1,0 +1,261 @@
+import { readFileSync, writeFileSync } from 'fs';
+import { isAbsolute, resolve } from 'path';
+import type { ToolCall, ToolResult } from '../../../shared/contract';
+import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
+import { fileReadTracker } from '../../tools/fileReadTracker';
+import { createLogger } from '../../services/infra/logger';
+import type { ArtifactRepairIssueCode } from './artifactRepairSpec';
+import { createArtifactRepairSpec, formatArtifactRepairSpecForPrompt } from './artifactRepairSpec';
+import { activateArtifactRepairAdmissionStop } from './artifactRepairAdmission';
+import { isSameArtifactRepairPath } from './artifactRepairGuard';
+import { validateGameArtifact } from './gameArtifactValidator';
+import type { ContextAssembly } from './contextAssembly';
+import type { RunFinalizer } from './runFinalizer';
+import type { RuntimeContext } from './runtimeContext';
+import {
+  buildArtifactRepairInstruction,
+  buildRepairTargetLostValidationFailure,
+  completedAppendWithoutFinal,
+  getArtifactRepairPatchFingerprint,
+  getArtifactValidationFailureMap,
+  getModifiedFilePath,
+  isAppendTool,
+  refreshArtifactRepairReadStateAfterRollback,
+  restoreArtifactRepairRollbackSnapshot,
+  shouldKeepImprovedFailedArtifactPatch,
+  shouldValidateModifiedArtifact,
+  type ArtifactRepairPhase,
+  type ArtifactRepairRollbackSnapshot,
+} from './toolArtifactRepairPolicy';
+
+const logger = createLogger('AgentLoop');
+
+type HandleModifiedArtifactValidationArgs = {
+  ctx: RuntimeContext;
+  contextAssembly: ContextAssembly;
+  runFinalizer: RunFinalizer;
+  toolCall: ToolCall;
+  normalizedSuccess: boolean;
+  toolResult: ToolResult;
+  artifactRepairRollbackSnapshot: ArtifactRepairRollbackSnapshot | null;
+};
+
+export async function handleModifiedArtifactValidation({
+  ctx,
+  contextAssembly,
+  runFinalizer,
+  toolCall,
+  normalizedSuccess,
+  toolResult,
+  artifactRepairRollbackSnapshot,
+}: HandleModifiedArtifactValidationArgs): Promise<void> {
+  if (!shouldValidateModifiedArtifact(toolCall) || !normalizedSuccess) return;
+
+  const filePath = getModifiedFilePath(toolCall);
+  if (!filePath) return;
+
+  try {
+    const absolutePath = isAbsolute(filePath)
+      ? filePath
+      : resolve(ctx.workingDirectory || process.cwd(), filePath);
+    const probe = await validateGameArtifact(absolutePath);
+    const repairTargetLostValidation =
+      ctx.artifactRepairGuard?.targetFile &&
+      isSameArtifactRepairPath(ctx, absolutePath, ctx.artifactRepairGuard.targetFile) &&
+      !probe.shouldValidate;
+    const effectiveProbe = repairTargetLostValidation
+      ? buildRepairTargetLostValidationFailure(probe)
+      : probe;
+    const artifactCompletedWithoutFinal = completedAppendWithoutFinal(toolCall, probe);
+    const shouldRunValidation =
+      effectiveProbe.shouldValidate &&
+      (!isAppendTool(toolCall.name) || toolCall.arguments?.final === true || effectiveProbe.isComplete);
+
+    if (!shouldRunValidation) {
+      return;
+    }
+
+    runFinalizer.emitTaskProgress(
+      'tool_running',
+      effectiveProbe.passed
+        ? '正在运行 artifact 可玩性验收...'
+        : 'artifact 结构验收失败，正在准备修复上下文...',
+    );
+    const artifactValidationOptions = {
+      runRuntimeSmoke: true,
+      runtimeSmokeTimeoutMs: 7000,
+      runBrowserVisualSmoke: true,
+      browserVisualSmokeTimeoutMs: 10000,
+    } as const;
+    const rawValidation = await validateGameArtifact(absolutePath, artifactValidationOptions);
+    const validation = repairTargetLostValidation && !rawValidation.shouldValidate
+      ? buildRepairTargetLostValidationFailure(rawValidation)
+      : rawValidation;
+    const appendFinalHint = artifactCompletedWithoutFinal
+      ? '检测到文件已经完整闭合，但这次 Append 没有设置 final=true；收尾块必须显式标 final=true，不能绕过最终验收。'
+      : null;
+
+    if (validation.shouldValidate && !validation.passed) {
+      runFinalizer.emitTaskProgress('tool_running', 'artifact 验收失败，正在准备修复指令...');
+      const postPatchContent = artifactRepairRollbackSnapshot?.filePath === absolutePath
+        ? readFileSync(absolutePath, 'utf-8')
+        : null;
+      let rollbackApplied = restoreArtifactRepairRollbackSnapshot(artifactRepairRollbackSnapshot, absolutePath);
+      const rollbackValidation = rollbackApplied
+        ? await validateGameArtifact(absolutePath, artifactValidationOptions)
+        : null;
+      const repairSpec = createArtifactRepairSpec(validation);
+      let rollbackRepairSpec = rollbackValidation && rollbackValidation.shouldValidate && !rollbackValidation.passed
+        ? createArtifactRepairSpec(rollbackValidation)
+        : null;
+      const keepImprovedFailedPatch =
+        rollbackApplied &&
+        postPatchContent !== null &&
+        shouldKeepImprovedFailedArtifactPatch({
+          currentValidation: validation,
+          currentRepairSpec: repairSpec,
+          rollbackValidation,
+          rollbackRepairSpec,
+          repairTargetLostValidation: Boolean(repairTargetLostValidation),
+        });
+      if (keepImprovedFailedPatch) {
+        writeFileSync(absolutePath, postPatchContent, 'utf-8');
+        rollbackApplied = false;
+        rollbackRepairSpec = null;
+        await fileReadTracker.recordReadWithStats(absolutePath);
+      } else if (rollbackApplied) {
+        await refreshArtifactRepairReadStateAfterRollback(artifactRepairRollbackSnapshot, absolutePath);
+      } else {
+        // Repair mode may intentionally spend the target read budget because
+        // the failed write content is already in conversation context. Keep
+        // Edit's fileReadTracker safety state in sync with that decision.
+        await fileReadTracker.recordReadWithStats(absolutePath);
+      }
+      const repairSpecBlock = formatArtifactRepairSpecForPrompt(repairSpec);
+      const failureMap = getArtifactValidationFailureMap(ctx);
+      const previousFailure = failureMap.get(absolutePath);
+      const previousGuard = ctx.artifactRepairGuard?.targetFile === absolutePath
+        ? ctx.artifactRepairGuard
+        : undefined;
+      const attempts = (previousFailure?.attempts || 0) + 1;
+      const phase: ArtifactRepairPhase = attempts >= 3
+        ? 'read_then_patch'
+        : attempts >= 2
+          ? 'targeted_repair'
+          : 'baseline_repair';
+      failureMap.set(absolutePath, { attempts, phase });
+      ctx.artifactRepairGuard = {
+        targetFile: absolutePath,
+        attempts,
+        phase,
+        patched: false,
+        repairTurnsWithoutProgress: previousGuard?.repairTurnsWithoutProgress,
+        lastBlockedTool: previousGuard?.lastBlockedTool,
+        lastFailedPatchFingerprint: getArtifactRepairPatchFingerprint(toolCall) ?? previousGuard?.lastFailedPatchFingerprint,
+        activeIssueCodes: [
+          ...new Set([
+            ...(
+              Array.isArray(rollbackRepairSpec?.issues)
+                ? rollbackRepairSpec.issues
+                    .map((issue) => issue.code)
+                    .filter((code): code is ArtifactRepairIssueCode => typeof code === 'string' && code.length > 0)
+                : []
+            ),
+            ...(
+              Array.isArray(repairSpec.issues)
+                ? repairSpec.issues
+                    .map((issue) => issue.code)
+                    .filter((code): code is ArtifactRepairIssueCode => typeof code === 'string' && code.length > 0)
+                : []
+            ),
+            ...(previousGuard?.activeIssueCodes || []),
+          ]),
+        ],
+      };
+      // Route A hard stop: bound the failing-patch loop. After
+      // ARTIFACT_REPAIR_MAX_ATTEMPTS failed validation passes, force-stop
+      // this turn instead of spending another model request on a patch
+      // loop that is not converging.
+      if (attempts >= ARTIFACT_REPAIR_MAX_ATTEMPTS) {
+        activateArtifactRepairAdmissionStop(
+          ctx,
+          absolutePath,
+          `${attempts}/${ARTIFACT_REPAIR_MAX_ATTEMPTS} attempts`,
+          'attempts-exhausted',
+        );
+      }
+      const validationError = [
+        `Artifact validation failed for ${absolutePath}.`,
+        repairSpec.summary,
+        repairSpecBlock,
+        keepImprovedFailedPatch
+          ? 'The failed artifact repair patch improved validation and was kept as the next repair baseline.'
+          : rollbackApplied
+          ? 'The failed artifact repair patch was rolled back; edit from the last valid pre-patch file state.'
+          : 'The failed artifact repair patch could not be rolled back automatically; inspect the target before continuing.',
+        'The file was written, but it is not accepted as complete. Edit the existing file and run validation again before final response.',
+      ].join('\n');
+      contextAssembly.injectSystemMessage(
+        [
+          ...(appendFinalHint ? [appendFinalHint] : []),
+          keepImprovedFailedPatch
+            ? '本次修复补丁仍未完全通过 artifact validation，但失败项变少，已保留为下一轮修复基线；下一轮继续在当前目标文件上补齐剩余证据。'
+            : rollbackApplied
+            ? '本次修复补丁没有通过 artifact validation，已自动回滚到补丁前的目标文件状态；下一轮不要基于失败补丁继续修改。'
+            : '本次修复补丁没有通过 artifact validation，且自动回滚失败；继续前必须先确认目标文件当前状态。',
+          buildArtifactRepairInstruction(
+            absolutePath,
+            validation.failures,
+            attempts,
+            phase,
+            repairSpecBlock,
+            validation.browserVisualSmoke,
+            repairSpec.issues.map((issue) => issue.code),
+          ),
+        ].join('\n')
+      );
+      toolResult.success = false;
+      toolResult.output = undefined;
+      toolResult.error = validationError;
+      toolResult.metadata = {
+        ...toolResult.metadata,
+        artifactRepairRollback: {
+          attempted: Boolean(artifactRepairRollbackSnapshot),
+          applied: rollbackApplied,
+          keptImprovedPatch: keepImprovedFailedPatch,
+          targetFile: absolutePath,
+        },
+        artifactValidation: {
+          failed: true,
+          attempts,
+          phase,
+          inferredKind: validation.inferredKind,
+          failures: validation.failures,
+          checks: validation.checks,
+          runtimeSmoke: validation.runtimeSmoke,
+          browserVisualSmoke: validation.browserVisualSmoke,
+          repairSpec,
+        },
+      };
+    } else if (validation.shouldValidate && (validation.checks.length > 0 || appendFinalHint)) {
+      runFinalizer.emitTaskProgress('tool_running', 'artifact 验收通过');
+      getArtifactValidationFailureMap(ctx).delete(absolutePath);
+      if (ctx.artifactRepairGuard?.targetFile === absolutePath) {
+        ctx.artifactRepairGuard = undefined;
+      }
+      contextAssembly.injectSystemMessage(
+        [
+          '<artifact-validation-passed kind="interactive_artifact">',
+          ...(appendFinalHint ? [appendFinalHint] : []),
+          ...validation.checks.map((check, index) => `${index + 1}. ${check}`),
+          '</artifact-validation-passed>',
+        ].join('\n')
+      );
+    }
+  } catch (error) {
+    logger.debug('[AgentLoop] game artifact validation skipped', {
+      error: error instanceof Error ? error.message : String(error),
+      filePath,
+    });
+  }
+}

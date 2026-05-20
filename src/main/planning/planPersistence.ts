@@ -34,14 +34,42 @@ const DEFAULT_CONFIG: Partial<PersistenceConfig> = {
   snapshotInterval: 5 * 60 * 1000, // 5 分钟
 };
 
-/**
- * 文件状态
- */
-interface FileState {
-  path: string;
-  hash: string;
-  size: number;
-  lastModified: number;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJsonRecord(json: string): Record<string, unknown> | null {
+  const parsed: unknown = JSON.parse(json);
+  return isRecord(parsed) ? parsed : null;
+}
+
+function isTaskPlan(value: unknown): value is TaskPlan {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value.id !== 'string'
+    || typeof value.title !== 'string'
+    || typeof value.objective !== 'string'
+    || typeof value.createdAt !== 'number'
+    || typeof value.updatedAt !== 'number'
+    || !Array.isArray(value.phases)
+    || !isRecord(value.metadata)
+  ) {
+    return false;
+  }
+
+  return (
+    typeof value.metadata.totalSteps === 'number'
+    && typeof value.metadata.completedSteps === 'number'
+    && typeof value.metadata.blockedSteps === 'number'
+  );
+}
+
+function parseFileStates(value: unknown): Map<string, string> {
+  if (!isRecord(value)) return new Map();
+  const entries = Object.entries(value).filter(
+    (entry): entry is [string, string] => typeof entry[1] === 'string'
+  );
+  return new Map(entries);
 }
 
 /**
@@ -89,7 +117,7 @@ export class PlanPersistence {
         try {
           const hash = await this.hashFile(filePath);
           fileStates.set(filePath, hash);
-        } catch (error) {
+        } catch {
           // 文件可能不存在
           logger.debug(`无法获取文件哈希: ${filePath}`);
         }
@@ -98,7 +126,7 @@ export class PlanPersistence {
 
     const snapshot: PlanSnapshot = {
       id: this.generateId(),
-      planState: JSON.parse(JSON.stringify(plan)), // 深拷贝
+      planState: structuredClone(plan),
       fileStates,
       createdAt: Date.now(),
       description,
@@ -294,7 +322,10 @@ export class PlanPersistence {
    */
   async importPlan(inputPath: string): Promise<TaskPlan> {
     const content = await fs.readFile(inputPath, 'utf-8');
-    const data = JSON.parse(content);
+    const data = parseJsonRecord(content);
+    if (!data || !isTaskPlan(data.plan)) {
+      throw new Error(`Invalid plan export: ${inputPath}`);
+    }
     logger.info('导入计划', { inputPath });
     return data.plan;
   }
@@ -335,12 +366,24 @@ export class PlanPersistence {
             path.join(this.snapshotDir, file),
             'utf-8'
           );
-          const data = JSON.parse(content);
+          const data = parseJsonRecord(content);
+          if (
+            !data
+            || typeof data.id !== 'string'
+            || !isTaskPlan(data.planState)
+            || typeof data.createdAt !== 'number'
+            || typeof data.description !== 'string'
+          ) {
+            throw new Error('Invalid snapshot payload');
+          }
 
           // 反序列化 fileStates
           const snapshot: PlanSnapshot = {
-            ...data,
-            fileStates: new Map(Object.entries(data.fileStates || {})),
+            id: data.id,
+            planState: data.planState,
+            fileStates: parseFileStates(data.fileStates),
+            createdAt: data.createdAt,
+            description: data.description,
           };
 
           this.snapshots.push(snapshot);
@@ -352,7 +395,7 @@ export class PlanPersistence {
       // 按时间排序
       this.snapshots.sort((a, b) => a.createdAt - b.createdAt);
       logger.info(`加载了 ${this.snapshots.length} 个快照`);
-    } catch (error) {
+    } catch {
       // 目录可能不存在
       logger.debug('没有已保存的快照');
     }
@@ -362,7 +405,7 @@ export class PlanPersistence {
     try {
       const snapshotPath = path.join(this.snapshotDir, `${snapshotId}.json`);
       await fs.unlink(snapshotPath);
-    } catch (error) {
+    } catch {
       // 忽略删除失败
     }
   }

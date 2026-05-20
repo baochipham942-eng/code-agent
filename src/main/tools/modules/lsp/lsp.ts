@@ -54,10 +54,75 @@ type LSPOperation =
 
 interface NormalizedLocation {
   uri: string;
-  range: {
-    start: { line: number; character: number };
-    end?: { line: number; character: number };
-  };
+  range: LspRange;
+}
+
+type LspRequestParams = Record<string, unknown> | null;
+
+interface LspRequest {
+  method: string;
+  requestParams: LspRequestParams;
+}
+
+interface LspPosition {
+  line: number;
+  character: number;
+}
+
+interface LspRange {
+  start: LspPosition;
+  end?: LspPosition;
+}
+
+interface LocationShape {
+  uri: string;
+  range: LspRange;
+}
+
+interface LocationLinkShape {
+  targetUri: string;
+  targetRange?: LspRange;
+  targetSelectionRange?: LspRange;
+}
+
+interface LocationContainerShape {
+  location: LocationShape;
+}
+
+type LocationLike = LocationShape | LocationLinkShape | LocationContainerShape;
+
+interface SymbolShape {
+  name: string;
+  kind: number;
+  range?: LspRange;
+  location?: LocationShape;
+  containerName?: string;
+  children?: SymbolShape[];
+}
+
+interface WorkspaceSymbolShape {
+  name: string;
+  kind: number;
+  location: LocationShape;
+  containerName?: string;
+}
+
+interface CallHierarchyItemShape {
+  name: string;
+  kind: number;
+  uri: string;
+  range: LspRange;
+}
+
+type CallHierarchyCallShape =
+  | { from: CallHierarchyItemShape; fromRanges?: LspRange[] }
+  | { to: CallHierarchyItemShape; fromRanges?: LspRange[] };
+
+type MarkedStringShape = string | { language?: string; value: string };
+
+interface HoverShape {
+  contents: MarkedStringShape | MarkedStringShape[] | { kind?: string; value: string };
+  range?: LspRange;
 }
 
 const ALLOWED_OPERATIONS: LSPOperation[] = [
@@ -71,6 +136,10 @@ const ALLOWED_OPERATIONS: LSPOperation[] = [
   'incomingCalls',
   'outgoingCalls',
 ];
+
+function isLspOperation(value: unknown): value is LSPOperation {
+  return typeof value === 'string' && ALLOWED_OPERATIONS.includes(value as LSPOperation);
+}
 
 // ============================================================================
 // Abort utilities
@@ -110,6 +179,15 @@ function isAbortError(err: unknown): boolean {
   return err instanceof Error && err.message === 'aborted';
 }
 
+function sendLspRequest(
+  manager: NonNullable<ReturnType<typeof getLSPManager>>,
+  filePath: string,
+  method: string,
+  params: LspRequestParams,
+): Promise<unknown> {
+  return manager.sendRequest(filePath, method, params) as Promise<unknown>;
+}
+
 // ============================================================================
 // Native execute
 // ============================================================================
@@ -122,7 +200,7 @@ export async function executeLsp(
 ): Promise<ToolResult<string>> {
   // ── 参数校验 ────────────────────────────────────────────
   const operation = args.operation;
-  if (typeof operation !== 'string' || !ALLOWED_OPERATIONS.includes(operation as LSPOperation)) {
+  if (!isLspOperation(operation)) {
     return {
       ok: false,
       error: `Unsupported operation: ${operation}`,
@@ -167,8 +245,8 @@ export async function executeLsp(
 
   const uri = pathToFileURL(resolvedPath).href;
   const position = {
-    line: (lineArg as number) - 1, // 转 0-based
-    character: (charArg as number) - 1,
+    line: lineArg - 1, // 转 0-based
+    character: charArg - 1,
   };
 
   try {
@@ -179,11 +257,8 @@ export async function executeLsp(
     }
 
     // 一阶请求
-    const { method, requestParams } = buildLSPRequest(operation as LSPOperation, uri, position);
-    let result = await withAbort(
-      manager.sendRequest(resolvedPath, method, requestParams),
-      ctx.abortSignal,
-    );
+    const { method, requestParams } = buildLSPRequest(operation, uri, position);
+    let result = await withAbort(sendLspRequest(manager, resolvedPath, method, requestParams), ctx.abortSignal);
 
     if (result === undefined) {
       const ext = path.extname(resolvedPath);
@@ -212,9 +287,9 @@ export async function executeLsp(
 
     // incoming/outgoing calls 需要二阶请求
     if (operation === 'incomingCalls' || operation === 'outgoingCalls') {
-      const items = result;
+      const items = asArray(result).filter(isCallHierarchyItem);
 
-      if (!items || items.length === 0) {
+      if (items.length === 0) {
         ctx.logger.debug('lsp', { operation, result: 'no-call-hierarchy-item' });
         onProgress?.({ stage: 'completing', percent: 100 });
         return {
@@ -230,7 +305,7 @@ export async function executeLsp(
           : 'callHierarchy/outgoingCalls';
 
       result = await withAbort(
-        manager.sendRequest(resolvedPath, secondMethod, { item: items[0] }),
+        sendLspRequest(manager, resolvedPath, secondMethod, { item: items[0] }),
         ctx.abortSignal,
       );
 
@@ -245,7 +320,7 @@ export async function executeLsp(
 
     // 格式化输出
     const { formatted, resultCount, fileCount } = formatResult(
-      operation as LSPOperation,
+      operation,
       result,
       workingDir,
     );
@@ -303,8 +378,7 @@ function buildLSPRequest(
   operation: LSPOperation,
   uri: string,
   position: { line: number; character: number },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): requestParams 的形态由 LSPOperation 决定（goToDefinition / find_references / hover…），应抽 LspRequestParamsMap 字典并按 operation narrow 返回
-): { method: string; requestParams: any } {
+): LspRequest {
   const textDocument = { uri };
 
   switch (operation) {
@@ -359,8 +433,7 @@ function buildLSPRequest(
 
 function formatResult(
   operation: LSPOperation,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): result 形态由 operation 决定（Location[] / Hover / SymbolInformation[]…），应抽 LspResultMap 后用 LspResultMap[op]
-  result: any,
+  result: unknown,
   workingDir: string,
 ): { formatted: string; resultCount: number; fileCount: number } {
   switch (operation) {
@@ -397,8 +470,7 @@ function formatResult(
 }
 
 function formatLocationResult(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP definition/implementation 返回 Location | Location[] | LocationLink[] 联合，应 import { Location, LocationLink } from 'vscode-languageserver-protocol'
-  result: any,
+  result: unknown,
   workingDir: string,
 ): { formatted: string; resultCount: number; fileCount: number } {
   const locations = Array.isArray(result) ? result : result ? [result] : [];
@@ -445,11 +517,12 @@ function formatLocationResult(
 }
 
 function formatReferencesResult(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP findReferences 返回 Location[]，同 formatLocationResult 应用 vscode-languageserver-protocol 类型
-  result: any,
+  result: unknown,
   workingDir: string,
 ): { formatted: string; resultCount: number; fileCount: number } {
-  if (!result || result.length === 0) {
+  const references = asArray(result);
+
+  if (references.length === 0) {
     return {
       formatted:
         'No references found. The symbol may not be used elsewhere, ' +
@@ -459,7 +532,7 @@ function formatReferencesResult(
     };
   }
 
-  const validReferences = result.filter(isValidLocation);
+  const validReferences = references.filter(isValidLocation);
 
   if (validReferences.length === 0) {
     return {
@@ -491,9 +564,8 @@ function formatReferencesResult(
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP Hover 返回 { contents: MarkedString | MarkedString[] | MarkupContent; range?: Range }，应 import { Hover } from 'vscode-languageserver-protocol'
-function formatHoverResult(result: any): { formatted: string; resultCount: number; fileCount: number } {
-  if (!result) {
+function formatHoverResult(result: unknown): { formatted: string; resultCount: number; fileCount: number } {
+  if (!isHover(result)) {
     return {
       formatted:
         'No hover information available. The cursor may not be on a symbol, ' +
@@ -506,13 +578,10 @@ function formatHoverResult(result: any): { formatted: string; resultCount: numbe
   let content = '';
 
   if (Array.isArray(result.contents)) {
-    content = result.contents
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): MarkedString 是 string | { language: string; value: string }，narrow 后 c 应是 MarkedString
-      .map((c: any) => (typeof c === 'string' ? c : c.value))
-      .join('\n\n');
+    content = result.contents.map(markedStringToText).join('\n\n');
   } else if (typeof result.contents === 'string') {
     content = result.contents;
-  } else {
+  } else if (isRecord(result.contents) && typeof result.contents.value === 'string') {
     content = result.contents.value;
   }
 
@@ -529,13 +598,12 @@ function formatHoverResult(result: any): { formatted: string; resultCount: numbe
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP documentSymbol 返回 DocumentSymbol[] | SymbolInformation[]，应 import vscode-languageserver-protocol 类型
-function formatDocumentSymbolResult(result: any): {
+function formatDocumentSymbolResult(result: unknown): {
   formatted: string;
   resultCount: number;
   fileCount: number;
 } {
-  const symbols = result || [];
+  const symbols = asArray(result).filter(isDocumentSymbolLike);
 
   if (symbols.length === 0) {
     return {
@@ -550,10 +618,10 @@ function formatDocumentSymbolResult(result: any): {
 
   for (const symbol of symbols) {
     const kind = symbolKindToString(symbol.kind);
-    const line = symbol.range?.start?.line + 1 || symbol.location?.range?.start?.line + 1 || '?';
+    const line = getSymbolLine(symbol);
     let text = `  ${symbol.name} (${kind}) - Line ${line}`;
 
-    if (symbol.containerName) {
+    if (typeof symbol.containerName === 'string') {
       text += ` in ${symbol.containerName}`;
     }
 
@@ -568,11 +636,12 @@ function formatDocumentSymbolResult(result: any): {
 }
 
 function formatWorkspaceSymbolResult(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP workspaceSymbol 返回 SymbolInformation[] | WorkspaceSymbol[]，应 import vscode-languageserver-protocol 类型
-  result: any,
+  result: unknown,
   workingDir: string,
 ): { formatted: string; resultCount: number; fileCount: number } {
-  if (!result || result.length === 0) {
+  const workspaceSymbols = asArray(result);
+
+  if (workspaceSymbols.length === 0) {
     return {
       formatted: 'No symbols found in workspace.',
       resultCount: 0,
@@ -580,10 +649,7 @@ function formatWorkspaceSymbolResult(
     };
   }
 
-  const symbols = result.filter(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): SymbolInformation 类型已在 vscode-languageserver-protocol，narrow 后 s 应为 SymbolInformation
-    (s: any) => s?.location?.uri && isValidLocation(s.location),
-  );
+  const symbols = workspaceSymbols.filter(isWorkspaceSymbolWithLocation);
 
   if (symbols.length === 0) {
     return {
@@ -593,15 +659,17 @@ function formatWorkspaceSymbolResult(
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): symbols 元素是 SymbolInformation；按上面修一致即可去掉这个 any
-  const grouped = new Map<string, any[]>();
+  const grouped = new Map<string, WorkspaceSymbolShape[]>();
 
   for (const sym of symbols) {
     const filePath = uriToPath(sym.location.uri, workingDir);
     if (!grouped.has(filePath)) {
       grouped.set(filePath, []);
     }
-    grouped.get(filePath)!.push(sym);
+    const fileSymbols = grouped.get(filePath);
+    if (fileSymbols) {
+      fileSymbols.push(sym);
+    }
   }
 
   const lines = [`Found ${symbols.length} symbol${symbols.length === 1 ? '' : 's'} in workspace:`];
@@ -613,7 +681,7 @@ function formatWorkspaceSymbolResult(
       const line = sym.location.range.start.line + 1;
       let text = `  ${sym.name} (${kind}) - Line ${line}`;
 
-      if (sym.containerName) {
+      if (typeof sym.containerName === 'string') {
         text += ` in ${sym.containerName}`;
       }
 
@@ -629,19 +697,18 @@ function formatWorkspaceSymbolResult(
 }
 
 function formatCallHierarchyResult(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP prepareCallHierarchy 返回 CallHierarchyItem[]，应 import 类型
-  result: any,
+  result: unknown,
   workingDir: string,
 ): { formatted: string; resultCount: number; fileCount: number } {
-  if (!result || result.length === 0) {
+  const items = asArray(result).filter(isCallHierarchyItem);
+
+  if (items.length === 0) {
     return {
       formatted: 'No call hierarchy item found at this position',
       resultCount: 0,
       fileCount: 0,
     };
   }
-
-  const items = result;
 
   if (items.length === 1) {
     const item = items[0];
@@ -667,18 +734,18 @@ function formatCallHierarchyResult(
   return {
     formatted: lines.join('\n'),
     resultCount: items.length,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): items 是 CallHierarchyItem[]，narrow 后即可去掉
-    fileCount: new Set(items.map((i: any) => i.uri).filter(Boolean)).size,
+    fileCount: new Set(items.map((i) => i.uri).filter(Boolean)).size,
   };
 }
 
 function formatCallsResult(
   operation: LSPOperation,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP incoming/outgoingCalls 返回 CallHierarchyIncomingCall[] | CallHierarchyOutgoingCall[]，应 import 类型
-  result: any,
+  result: unknown,
   workingDir: string,
 ): { formatted: string; resultCount: number; fileCount: number } {
-  if (!result || result.length === 0) {
+  const calls = asArray(result);
+
+  if (calls.length === 0) {
     const type = operation === 'incomingCalls' ? 'incoming' : 'outgoing';
     return {
       formatted: `No ${type} calls found`,
@@ -690,11 +757,9 @@ function formatCallsResult(
   const isIncoming = operation === 'incomingCalls';
   const callItem = isIncoming ? 'from' : 'to';
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): call 是 CallHierarchyIncomingCall | CallHierarchyOutgoingCall，narrow 后即可去掉
-  const validCalls = result.filter((call: any) => {
-    const item = call[callItem];
-    return item?.uri && item.range;
-  });
+  const validCalls = calls.filter((call): call is CallHierarchyCallShape =>
+    isCallHierarchyCall(call, callItem),
+  );
 
   if (validCalls.length === 0) {
     const type = operation === 'incomingCalls' ? 'incoming' : 'outgoing';
@@ -708,22 +773,24 @@ function formatCallsResult(
   const label = isIncoming ? 'caller' : 'callee';
   const lines = [`Found ${validCalls.length} ${label}${validCalls.length === 1 ? '' : 's'}:`];
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 CallHierarchy*Call 类型 narrow 后去掉
-  const grouped = new Map<string, any[]>();
+  const grouped = new Map<string, CallHierarchyCallShape[]>();
 
   for (const call of validCalls) {
-    const item = call[callItem];
+    const item = getCallItem(call, callItem);
     const filePath = uriToPath(item.uri, workingDir);
     if (!grouped.has(filePath)) {
       grouped.set(filePath, []);
     }
-    grouped.get(filePath)!.push(call);
+    const fileCalls = grouped.get(filePath);
+    if (fileCalls) {
+      fileCalls.push(call);
+    }
   }
 
   for (const [file, fileCalls] of grouped) {
     lines.push(`\n${file}:`);
     for (const call of fileCalls) {
-      const item = call[callItem];
+      const item = getCallItem(call, callItem);
       const kind = symbolKindToString(item.kind);
       const line = item.range.start.line + 1;
       lines.push(`  ${item.name} (${kind}) - Line ${line}`);
@@ -741,23 +808,57 @@ function formatCallsResult(
 // Utility Functions (内联自 legacy)
 // ============================================================================
 
-function isValidLocation(loc: unknown): boolean {
-  if (!loc || typeof loc !== 'object') return false;
-  if (!('uri' in loc) && !('targetUri' in loc) && !('location' in loc)) {
-    return false;
-  }
-  return true;
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): loc 是 Location | LocationLink | { location: Location } 联合，narrow 三种形态后即可去掉
-function normalizeLocation(loc: any): NormalizedLocation {
-  if ('targetUri' in loc) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isPosition(value: unknown): value is LspPosition {
+  return (
+    isRecord(value) &&
+    typeof value.line === 'number' &&
+    typeof value.character === 'number'
+  );
+}
+
+function isRange(value: unknown): value is LspRange {
+  return isRecord(value) && isPosition(value.start);
+}
+
+function isLocation(value: unknown): value is LocationShape {
+  return isRecord(value) && typeof value.uri === 'string' && isRange(value.range);
+}
+
+function isLocationLink(value: unknown): value is LocationLinkShape {
+  if (!isRecord(value) || typeof value.targetUri !== 'string') {
+    return false;
+  }
+  return isRange(value.targetSelectionRange) || isRange(value.targetRange);
+}
+
+function isLocationContainer(value: unknown): value is LocationContainerShape {
+  return isRecord(value) && isLocation(value.location);
+}
+
+function isValidLocation(loc: unknown): loc is LocationLike {
+  return isLocation(loc) || isLocationLink(loc) || isLocationContainer(loc);
+}
+
+function normalizeLocation(loc: LocationLike): NormalizedLocation {
+  if (isLocationLink(loc)) {
+    const range = loc.targetSelectionRange ?? loc.targetRange;
+    if (!range) {
+      throw new Error('LocationLink missing target range');
+    }
     return {
       uri: loc.targetUri,
-      range: loc.targetSelectionRange || loc.targetRange,
+      range,
     };
   }
-  if ('location' in loc) {
+  if (isLocationContainer(loc)) {
     return {
       uri: loc.location.uri,
       range: loc.location.range,
@@ -789,7 +890,10 @@ function groupByFile(
       grouped.set(filePath, []);
     }
 
-    grouped.get(filePath)!.push(loc);
+    const fileLocations = grouped.get(filePath);
+    if (fileLocations) {
+      fileLocations.push(loc);
+    }
   }
 
   return grouped;
@@ -811,13 +915,65 @@ function uriToPath(uri: string, workingDir?: string): string {
   return decoded;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): symbols 是 DocumentSymbol[] | SymbolInformation[]，应 narrow 后用具体类型
-function countSymbols(symbols: any[]): number {
+function hasNamedKind(
+  value: unknown,
+): value is Record<string, unknown> & { name: string; kind: number } {
+  return isRecord(value) && typeof value.name === 'string' && typeof value.kind === 'number';
+}
+
+function isDocumentSymbolLike(value: unknown): value is SymbolShape {
+  if (!isRecord(value) || !hasNamedKind(value)) {
+    return false;
+  }
+  return isRange(value.range) || (isRecord(value.location) && isLocation(value.location));
+}
+
+function isWorkspaceSymbolWithLocation(value: unknown): value is WorkspaceSymbolShape {
+  return (
+    isRecord(value) &&
+    hasNamedKind(value) &&
+    isRecord(value.location) &&
+    isLocation(value.location)
+  );
+}
+
+function isCallHierarchyItem(value: unknown): value is CallHierarchyItemShape {
+  return (
+    isRecord(value) &&
+    hasNamedKind(value) &&
+    typeof value.uri === 'string' &&
+    isRange(value.range)
+  );
+}
+
+function isCallHierarchyCall(value: unknown, itemKey: 'from' | 'to'): value is CallHierarchyCallShape {
+  return isRecord(value) && isCallHierarchyItem(value[itemKey]);
+}
+
+function isHover(value: unknown): value is HoverShape {
+  return isRecord(value) && 'contents' in value;
+}
+
+function markedStringToText(content: MarkedStringShape): string {
+  return typeof content === 'string' ? content : content.value;
+}
+
+function getSymbolLine(symbol: SymbolShape): number | '?' {
+  const line = symbol.range?.start.line ?? symbol.location?.range.start.line;
+  return typeof line === 'number' ? line + 1 : '?';
+}
+
+function getCallItem(call: CallHierarchyCallShape, itemKey: 'from' | 'to'): CallHierarchyItemShape {
+  return itemKey === 'from' && 'from' in call ? call.from : (call as { to: CallHierarchyItemShape }).to;
+}
+
+function countSymbols(symbols: SymbolShape[]): number {
   let count = symbols.length;
 
   for (const sym of symbols) {
-    if (sym.children && sym.children.length > 0) {
-      count += countSymbols(sym.children);
+    const children = 'children' in sym ? sym.children?.filter(isDocumentSymbolLike) : undefined;
+    if (children && children.length > 0) {
+      count += countSymbols(children);
     }
   }
 

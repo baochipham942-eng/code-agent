@@ -75,8 +75,9 @@ export const ipcMain: IpcMain & {
 export function defineHandler<S extends ChannelSchema>(
   schema: S,
   handler: (event: IpcMainInvokeEvent, payload: PayloadOf<S>) => Promise<ResponseOf<S>>,
+  target: Pick<IpcMain, 'handle'> = ipcMain,
 ): void {
-  ipcMain.handle(schema.channel, async (event: IpcMainInvokeEvent, rawPayload: unknown) => {
+  target.handle(schema.channel, async (event: IpcMainInvokeEvent, rawPayload: unknown) => {
     const parsed = schema.payload.safeParse(rawPayload);
     if (!parsed.success) {
       logger.warn(`[IPC] payload validation failed for ${schema.channel}`, {

@@ -1,13 +1,20 @@
 import { create } from 'zustand';
+import { useSessionUIStore } from './sessionUIStore';
 
 const PINNED_STORAGE_KEY = 'pinned-sessions';
+
+function parsePinnedIds(raw: string): Set<string> {
+  const parsed: unknown = JSON.parse(raw);
+  return Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')
+    ? new Set<string>(parsed)
+    : new Set<string>();
+}
 
 function loadPinnedIds(): Set<string> {
   try {
     const raw = localStorage.getItem(PINNED_STORAGE_KEY);
     if (raw) {
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) return new Set<string>(arr);
+      return parsePinnedIds(raw);
     }
   } catch {
     // ignore
@@ -88,7 +95,6 @@ export const useSelectionStore = create<SelectionStore>()((set, get) => ({
   batchDelete: () => {
     const { selectedSessionIds } = get();
     if (selectedSessionIds.size === 0) return;
-    const { useSessionUIStore } = require('./sessionUIStore');
     useSessionUIStore.getState().softDelete([...selectedSessionIds]);
     set({ multiSelectMode: false, selectedSessionIds: new Set<string>() });
   },

@@ -9,10 +9,9 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import { estimateTokens, analyzeContent } from './tokenEstimator';
+import { estimateTokens } from './tokenEstimator';
 import { OBSERVATION_MASKING } from '../../shared/constants';
 import { ContextCompressor } from './compressor';
-import type { CompressionResult } from './compressor';
 
 const logger = createLogger('TokenOptimizer');
 
@@ -50,7 +49,7 @@ export interface ToolResultCompressionOutput {
  * Detect and compress read_xlsx output preserving schema + sample rows + hint.
  * Returns null if content is not xlsx output.
  */
-function compressXlsxResult(content: string, targetTokens: number): string | null {
+function compressXlsxResult(content: string, _targetTokens: number): string | null {
   // Detect xlsx output by its signature header
   if (!content.startsWith('📊 Excel 内容')) return null;
 
@@ -193,6 +192,16 @@ export interface HookMessageEntry {
   category: string;
   timestamp: number;
   count: number;
+}
+
+interface ToolMessageResult {
+  success?: boolean;
+  error?: string;
+  output?: string;
+}
+
+function isToolMessageResult(value: unknown): value is ToolMessageResult {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -635,11 +644,12 @@ export function compressMessageHistory(
 function compressToolMessage(content: string): string {
   try {
     // Try to parse as JSON (tool results are often JSON)
-    const parsed = JSON.parse(content);
+    const parsed: unknown = JSON.parse(content);
 
     if (Array.isArray(parsed)) {
       // Compress array of tool results
-      const summaries = parsed.map((result: { toolCallId?: string; success?: boolean; error?: string; output?: string }) => {
+      const summaries = parsed.map((result) => {
+        if (!isToolMessageResult(result)) return '[Success]';
         if (result.success === false) {
           return `[Error: ${result.error || 'Unknown error'}]`;
         }
@@ -654,7 +664,7 @@ function compressToolMessage(content: string): string {
     }
 
     // Single result
-    if (parsed.output) {
+    if (isToolMessageResult(parsed) && parsed.output) {
       const preview = parsed.output.substring(0, 200);
       return `(tool_output_summary: ${preview}${parsed.output.length > 200 ? '...' : ''})`;
     }

@@ -5,9 +5,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as zlib from 'zlib';
-import { pipeline } from 'stream/promises';
-import { createWriteStream, createReadStream } from 'fs';
-import { Readable } from 'stream';
+import { readFileSync } from 'fs';
 import axios from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { createLogger } from '../infra/logger';
@@ -55,6 +53,37 @@ export interface RepoMeta {
   downloadedAt: number;
   lastUpdated: number;
   skillsPath?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function parseRepoMeta(value: unknown): RepoMeta | null {
+  if (!isRecord(value)) return null;
+
+  const { owner, repo, branch, commitHash, downloadedAt, lastUpdated, skillsPath } = value;
+  if (
+    typeof owner !== 'string' ||
+    typeof repo !== 'string' ||
+    typeof branch !== 'string' ||
+    typeof commitHash !== 'string' ||
+    typeof downloadedAt !== 'number' ||
+    typeof lastUpdated !== 'number' ||
+    (skillsPath !== undefined && typeof skillsPath !== 'string')
+  ) {
+    return null;
+  }
+
+  return {
+    owner,
+    repo,
+    branch,
+    commitHash,
+    downloadedAt,
+    lastUpdated,
+    ...(skillsPath ? { skillsPath } : {}),
+  };
 }
 
 // ============================================================================
@@ -121,7 +150,7 @@ export async function getLatestCommit(
   const url = `https://api.github.com/repos/${owner}/${repo}/commits/${branch}`;
 
   try {
-    const response = await axios.get(url, {
+    const response = await axios.get<unknown>(url, {
       headers: {
         Accept: 'application/vnd.github.v3+json',
         'User-Agent': 'Code-Agent/1.0',
@@ -133,7 +162,13 @@ export async function getLatestCommit(
       timeout: 30000,
     });
 
-    return response.data.sha;
+    const data = response.data;
+    if (isRecord(data) && typeof data.sha === 'string') {
+      return data.sha;
+    }
+
+    logger.warn('GitHub API response missing commit sha', { owner, repo, branch });
+    return null;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response?.status === 404) {
@@ -384,7 +419,7 @@ export async function downloadRepository(
       try {
         logger.debug('Downloading tarball', { url: tarballUrl, attempt });
 
-        const response = await axios.get(tarballUrl, {
+        const response = await axios.get<ArrayBuffer>(tarballUrl, {
           responseType: 'arraybuffer',
           headers: {
             'User-Agent': 'Code-Agent/1.0',
@@ -402,7 +437,7 @@ export async function downloadRepository(
         }
 
         // Write to temp file
-        await fs.writeFile(tarGzPath, response.data);
+        await fs.writeFile(tarGzPath, Buffer.from(response.data));
         lastError = null;
         break;
       } catch (error) {
@@ -585,9 +620,8 @@ export function readRepoMeta(localPath: string): RepoMeta | null {
   try {
     const metaPath = path.join(localPath, META_FILENAME);
     // Use sync read for simplicity - this is called rarely
-    const fs_sync = require('fs');
-    const content = fs_sync.readFileSync(metaPath, 'utf8');
-    return JSON.parse(content) as RepoMeta;
+    const content = readFileSync(metaPath, 'utf8');
+    return parseRepoMeta(JSON.parse(content) as unknown);
   } catch {
     return null;
   }
@@ -613,7 +647,7 @@ export async function readRepoMetaAsync(
   try {
     const metaPath = path.join(localPath, META_FILENAME);
     const content = await fs.readFile(metaPath, 'utf8');
-    return JSON.parse(content) as RepoMeta;
+    return parseRepoMeta(JSON.parse(content) as unknown);
   } catch {
     return null;
   }

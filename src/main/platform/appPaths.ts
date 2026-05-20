@@ -71,22 +71,30 @@ export function getPath(name: string): string {
 
 let _appVersion: string | null = null;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function parsePackageVersion(content: string): string | null {
+  const parsed: unknown = JSON.parse(content);
+  if (!isRecord(parsed)) return null;
+  return typeof parsed.version === 'string' ? parsed.version : null;
+}
+
 export function getAppVersion(): string {
   if (_appVersion) return _appVersion;
   try {
     const pkgPath = path.resolve(__dirname, '../../package.json');
-    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-    _appVersion = pkg.version || '0.0.0';
+    _appVersion = parsePackageVersion(readFileSync(pkgPath, 'utf-8')) ?? '0.0.0';
   } catch {
     // Fallback: try from process.cwd()
     try {
-      const pkg = JSON.parse(readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8'));
-      _appVersion = pkg.version || '0.0.0';
+      _appVersion = parsePackageVersion(readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8')) ?? '0.0.0';
     } catch {
       _appVersion = '0.0.0';
     }
   }
-  return _appVersion!;
+  return _appVersion;
 }
 
 export function getAppName(): string {

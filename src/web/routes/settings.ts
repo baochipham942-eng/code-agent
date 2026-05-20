@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import type { HandlerFn } from '../electronMock';
 import { formatError } from '../helpers/utils';
+import type { WebRouteHandler } from './routeTypes';
 
 interface SettingsDeps {
-  handlers: Map<string, HandlerFn>;
+  handlers: Map<string, WebRouteHandler>;
 }
 
 export function createSettingsRouter(deps: SettingsDeps): Router {
@@ -15,7 +15,7 @@ export function createSettingsRouter(deps: SettingsDeps): Router {
     try {
       const handler = handlers.get('domain:settings');
       if (handler) {
-        const result = await handler(null, { action: 'get', payload: undefined });
+        const result: unknown = await handler(null, { action: 'get', payload: undefined });
         res.json(result);
         return;
       }
@@ -29,7 +29,8 @@ export function createSettingsRouter(deps: SettingsDeps): Router {
     try {
       const handler = handlers.get('domain:settings');
       if (handler) {
-        const result = await handler(null, { action: 'set', payload: { settings: req.body } });
+        const settings: unknown = req.body;
+        const result: unknown = await handler(null, { action: 'set', payload: { settings } });
         res.json(result);
         return;
       }

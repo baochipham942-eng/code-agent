@@ -4,6 +4,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-function-type */
 
 import 'reflect-metadata';
+import { getDecoratorMetadata } from './metadata';
 import { DESCRIPTION_METADATA_KEY } from './types';
 
 // ----------------------------------------------------------------------------
@@ -30,5 +31,5 @@ export function Description(text: string): ClassDecorator {
  * 获取描述元数据
  */
 export function getDescriptionMetadata(target: Function): string | undefined {
-  return Reflect.getMetadata(DESCRIPTION_METADATA_KEY, target);
+  return getDecoratorMetadata<string>(DESCRIPTION_METADATA_KEY, target);
 }

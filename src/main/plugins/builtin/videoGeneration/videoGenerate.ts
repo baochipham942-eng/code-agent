@@ -26,6 +26,13 @@ import { getConfigService } from '../../../services';
 import { DEFAULT_MODELS, MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { videoGenerateSchema as schema } from './videoGenerate.schema';
+import {
+  isJsonRecord,
+  readArrayField,
+  readChatCompletionText,
+  readRecordField,
+  readStringField,
+} from '../typedResponseGuards';
 
 const TIMEOUT_MS = {
   SUBMIT: 30000,
@@ -57,8 +64,8 @@ interface VideoGenerateParams {
 }
 
 interface ZhipuVideoTaskResponse {
-  id: string;
-  model: string;
+  id?: string;
+  model?: string;
   task_status: 'PROCESSING' | 'SUCCESS' | 'FAIL';
   video_result?: Array<{ url: string; cover_image_url: string }>;
   error?: { code: string; message: string };
@@ -109,6 +116,48 @@ function sleepWithAbort(ms: number, signal: AbortSignal): Promise<void> {
     };
     signal.addEventListener('abort', onAbort);
   });
+}
+
+function readVideoTaskStatus(value: unknown): ZhipuVideoTaskResponse['task_status'] | undefined {
+  if (value === 'PROCESSING' || value === 'SUCCESS' || value === 'FAIL') return value;
+  return undefined;
+}
+
+function normalizeVideoResultItem(payload: unknown): { url: string; cover_image_url: string } | undefined {
+  if (!isJsonRecord(payload)) return undefined;
+  const url = readStringField(payload, 'url');
+  if (!url) return undefined;
+  return {
+    url,
+    cover_image_url: readStringField(payload, 'cover_image_url') || '',
+  };
+}
+
+function normalizeZhipuVideoTaskResponse(payload: unknown): ZhipuVideoTaskResponse | undefined {
+  if (!isJsonRecord(payload)) return undefined;
+  const taskStatus = readVideoTaskStatus(payload.task_status);
+  if (!taskStatus) return undefined;
+
+  const response: ZhipuVideoTaskResponse = { task_status: taskStatus };
+  const id = readStringField(payload, 'id');
+  if (id) response.id = id;
+  const model = readStringField(payload, 'model');
+  if (model) response.model = model;
+
+  const videoResult = readArrayField(payload, 'video_result')
+    ?.map(normalizeVideoResultItem)
+    .filter((item): item is { url: string; cover_image_url: string } => Boolean(item));
+  if (videoResult) response.video_result = videoResult;
+
+  const error = readRecordField(payload, 'error');
+  if (error) {
+    response.error = {
+      code: readStringField(error, 'code') || 'UNKNOWN',
+      message: readStringField(error, 'message') || '未知错误',
+    };
+  }
+
+  return response;
 }
 
 const TEXT_TO_VIDEO_PROMPT = `你是专业的 AI 视频提示词工程师。将用户的简短描述扩展为高质量的 CogVideoX 视频生成提示词。
@@ -176,9 +225,7 @@ async function expandVideoPrompt(
       return shortPrompt;
     }
 
-    const result = await response.json();
-    const msg = result.choices?.[0]?.message;
-    const expandedPrompt = (msg?.content || msg?.reasoning_content || '').trim();
+    const expandedPrompt = readChatCompletionText(await response.json());
     if (expandedPrompt) {
       return expandedPrompt;
     }
@@ -234,11 +281,12 @@ async function submitZhipuVideoTask(
     throw new Error(`智谱视频生成 API 错误: ${response.status} - ${error}`);
   }
 
-  const result = await response.json();
-  if (!result.id) {
+  const result: unknown = await response.json();
+  const taskId = isJsonRecord(result) ? readStringField(result, 'id') : undefined;
+  if (!taskId) {
     throw new Error('智谱视频生成: 未返回任务 ID');
   }
-  return result.id;
+  return taskId;
 }
 
 async function queryZhipuVideoTask(
@@ -259,7 +307,11 @@ async function queryZhipuVideoTask(
     const error = await response.text();
     throw new Error(`查询任务状态失败: ${response.status} - ${error}`);
   }
-  return response.json();
+  const result = normalizeZhipuVideoTaskResponse(await response.json());
+  if (!result) {
+    throw new Error('查询任务状态失败: 响应格式异常');
+  }
+  return result;
 }
 
 async function waitForZhipuVideoCompletion(

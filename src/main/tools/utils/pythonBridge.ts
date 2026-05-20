@@ -11,10 +11,32 @@ import { app } from '../../platform';
 
 const PYTHON_SCRIPT_TIMEOUT = 120_000; // 2 分钟默认超时
 
+type ProcessWithResourcesPath = NodeJS.Process & {
+  resourcesPath?: string;
+};
+
 export interface PythonResult {
   success: boolean;
   error?: string;
   [key: string]: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parsePythonResult(raw: string): PythonResult | null {
+  const parsed: unknown = JSON.parse(raw);
+  if (!isRecord(parsed) || typeof parsed.success !== 'boolean') {
+    return null;
+  }
+
+  const result: PythonResult = { success: parsed.success };
+  for (const [key, value] of Object.entries(parsed)) {
+    if (key === 'success') continue;
+    result[key] = value;
+  }
+  return result;
 }
 
 /**
@@ -30,8 +52,7 @@ export function resolveScriptPath(scriptName: string): string {
   if (fs.existsSync(prodPath)) return prodPath;
 
   // 3. 资源目录
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): process.resourcesPath 是 Electron 注入字段（@types/node 没有），应通过 NodeJS.Process & { resourcesPath?: string } 类型扩展
-  const resourcePath = path.join((process as any).resourcesPath || '', 'scripts/', scriptName);
+  const resourcePath = path.join((process as ProcessWithResourcesPath).resourcesPath || '', 'scripts/', scriptName);
   if (fs.existsSync(resourcePath)) return resourcePath;
 
   throw new Error(`找不到 Python 脚本: ${scriptName}`);
@@ -62,11 +83,11 @@ export async function executePythonScript(
       });
     }, timeout);
 
-    python.stdout.on('data', (data) => {
+    python.stdout.on('data', (data: Buffer | string) => {
       stdout += data.toString();
     });
 
-    python.stderr.on('data', (data) => {
+    python.stderr.on('data', (data: Buffer | string) => {
       stderr += data.toString();
     });
 
@@ -83,8 +104,11 @@ export async function executePythonScript(
       }
 
       try {
-        const result = JSON.parse(stdout.trim());
-        resolve(result);
+        const result = parsePythonResult(stdout.trim());
+        resolve(result ?? {
+          success: false,
+          error: `JSON 结果缺少 success 字段: ${stdout}`,
+        });
       } catch {
         resolve({
           success: false,

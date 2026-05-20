@@ -13,6 +13,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { z } from 'zod';
 import {
   ACADEMIC_SEARCH_ENDPOINTS,
   ACADEMIC_SEARCH_MAX_LIMIT as MAX_LIMIT,
@@ -32,6 +33,34 @@ interface PaperResult {
   citations?: number;
   pdf_url?: string;
 }
+
+const OptionalNumberSchema = z.preprocess((value) => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}, z.number().optional());
+
+const SemanticScholarPaperSchema = z.object({
+  paperId: z.string().optional(),
+  title: z.string().optional(),
+  authors: z.array(z.object({
+    name: z.string().optional(),
+  }).passthrough()).optional().default([]),
+  abstract: z.string().optional(),
+  url: z.string().optional(),
+  citationCount: OptionalNumberSchema,
+  publicationDate: z.string().optional(),
+  openAccessPdf: z.object({
+    url: z.string().optional(),
+  }).passthrough().optional(),
+}).passthrough();
+
+const SemanticScholarResponseSchema = z.object({
+  data: z.array(SemanticScholarPaperSchema).optional().default([]),
+}).passthrough();
 
 async function searchArxiv(
   query: string,
@@ -108,14 +137,13 @@ async function searchSemanticScholar(
       throw new Error(`Semantic Scholar API error: ${response.status}`);
     }
 
-    const data = await response.json();
+    const data = SemanticScholarResponseSchema.safeParse(await response.json() as unknown);
+    if (!data.success) return [];
 
-    if (data.data) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return data.data.map((paper: any) => ({
+    if (data.data.data.length > 0) {
+      return data.data.data.map((paper) => ({
         title: paper.title || 'Unknown Title',
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        authors: paper.authors?.map((a: any) => a.name) || [],
+        authors: paper.authors.map((author) => author.name).filter((name): name is string => Boolean(name)),
         abstract: paper.abstract?.slice(0, 500) || '',
         url: paper.url || `https://www.semanticscholar.org/paper/${paper.paperId}`,
         source: 'semantic_scholar',

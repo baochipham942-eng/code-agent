@@ -3,6 +3,8 @@
 // ============================================================================
 
 import chalk from 'chalk';
+import { execSync } from 'child_process';
+import os from 'os';
 import ora, { type Ora } from 'ora';
 import type { AgentEvent, ToolCall, ToolResult } from '../../shared/contract';
 import type { SwarmEvent, SwarmAgentState } from '../../shared/contract/swarm';
@@ -12,6 +14,11 @@ const POKER_SPINNER = {
   interval: 200,
   frames: ['♠', '♥', '♣', '♦'],
 };
+
+function getOptionalNumberField(value: object, key: string): number | undefined {
+  const candidate = (value as Record<string, unknown>)[key];
+  return typeof candidate === 'number' ? candidate : undefined;
+}
 
 /**
  * 终端输出管理器
@@ -87,7 +94,7 @@ export class TerminalOutput {
 
     // Line 3: logo + working directory (abbreviated)
     const cwd = options?.workingDirectory || process.cwd();
-    const home = require('os').homedir();
+    const home = os.homedir();
     const displayPath = cwd.startsWith(home) ? '~' + cwd.slice(home.length) : cwd;
     console.log(`${chalk.cyan(logo[2])}${chalk.dim(displayPath)}`);
 
@@ -249,7 +256,7 @@ export class TerminalOutput {
     // File tools: show path
     if (args.path || args.file_path) {
       const p = String(args.path || args.file_path);
-      const home = require('os').homedir();
+      const home = os.homedir();
       const short = p.startsWith(home) ? '~' + p.slice(home.length) : p;
       return chalk.dim(short);
     }
@@ -512,7 +519,6 @@ export class TerminalOutput {
     // Git branch (best-effort)
     let gitBranch = '';
     try {
-      const { execSync } = require('child_process');
       gitBranch = execSync('git rev-parse --abbrev-ref HEAD 2>/dev/null', { encoding: 'utf-8' }).trim();
     } catch { /* not in a git repo */ }
 
@@ -702,13 +708,13 @@ export class TerminalOutput {
 
       case 'tool_call_start':
         if (event.data) {
-          this.toolCall(event.data as ToolCall);
+          this.toolCall(event.data);
         }
         break;
 
       case 'tool_call_end':
         if (event.data) {
-          this.toolResult(event.data as ToolResult);
+          this.toolResult(event.data);
         }
         break;
 
@@ -732,7 +738,7 @@ export class TerminalOutput {
         break;
 
       case 'model_response': {
-        const d = event.data as { model?: string; provider?: string; inputTokens?: number; outputTokens?: number } | undefined;
+        const d = event.data;
         if (d?.inputTokens || d?.outputTokens) {
           this.addTokenUsage(d.inputTokens || 0, d.outputTokens || 0);
         }
@@ -744,13 +750,13 @@ export class TerminalOutput {
 
       // 上下文压缩 — 完整事件链
       case 'context_compacting': {
-        const cp = event.data as { tokensBefore?: number; messagesCount?: number } | undefined;
+        const cp = event.data;
         const tokensLabel = cp?.tokensBefore ? ` (${(cp.tokensBefore / 1000).toFixed(0)}k tokens)` : '';
         this.startThinking(`Compacting context${tokensLabel}...`, 'compacting');
         break;
       }
       case 'context_compacted': {
-        const cd = event.data as { tokensBefore?: number; tokensAfter?: number; messagesRemoved?: number; duration_ms?: number } | undefined;
+        const cd = event.data;
         this.stopThinking();
         if (cd?.tokensBefore && cd?.tokensAfter) {
           console.log(chalk.dim(`  ⊘ Compacted: ${(cd.tokensBefore / 1000).toFixed(0)}k → ${(cd.tokensAfter / 1000).toFixed(0)}k tokens`));
@@ -762,11 +768,12 @@ export class TerminalOutput {
         break;
       }
       case 'context_compressed': {
-        const cc = event.data as { savedTokens: number; strategy?: string; maxTokens?: number; usagePercent?: number } | undefined;
+        const cc = event.data;
         if (cc) {
           this.contextCompressed(cc.savedTokens, cc.strategy);
-          if (cc.usagePercent) {
-            this.updateContextUsage(cc.usagePercent, undefined, cc.maxTokens);
+          const usagePercent = getOptionalNumberField(cc, 'usagePercent');
+          if (usagePercent) {
+            this.updateContextUsage(usagePercent, undefined, getOptionalNumberField(cc, 'maxTokens'));
           }
         }
         break;
@@ -774,7 +781,7 @@ export class TerminalOutput {
 
       // task_stats — 真实上下文使用率
       case 'task_stats': {
-        const ts = event.data as { contextUsage?: number; contextWindow?: number; tokensUsed?: number; iterations?: number } | undefined;
+        const ts = event.data;
         if (ts) {
           if (ts.contextUsage != null) {
             this.updateContextUsage(ts.contextUsage * 100, ts.tokensUsed, ts.contextWindow);
@@ -785,7 +792,7 @@ export class TerminalOutput {
 
       // stream_usage — 实时 token 用量
       case 'stream_usage': {
-        const su = event.data as { inputTokens?: number; outputTokens?: number } | undefined;
+        const su = event.data;
         if (su?.inputTokens || su?.outputTokens) {
           this.addTokenUsage(su?.inputTokens || 0, su?.outputTokens || 0);
         }
@@ -794,7 +801,7 @@ export class TerminalOutput {
 
       // 记忆学习
       case 'memory_learned': {
-        const ml = event.data as { knowledgeExtracted: number; codeStylesLearned: number; toolPreferencesUpdated: number } | undefined;
+        const ml = event.data;
         if (ml) {
           this.memoryLearned(ml);
         }
@@ -803,7 +810,7 @@ export class TerminalOutput {
 
       // 模型降级
       case 'model_fallback': {
-        const mf = event.data as { from: string; to: string; reason: string } | undefined;
+        const mf = event.data;
         if (mf) {
           this.modelFallback(mf.from, mf.to, mf.reason);
         }
@@ -812,7 +819,7 @@ export class TerminalOutput {
 
       // 预算预警
       case 'budget_warning': {
-        const bw = event.data as { currentCost: number; maxBudget: number; usagePercentage: number } | undefined;
+        const bw = event.data;
         if (bw) {
           this.budgetWarning(bw.currentCost, bw.maxBudget, bw.usagePercentage);
         }
@@ -821,7 +828,7 @@ export class TerminalOutput {
 
       // 预算超限
       case 'budget_exceeded': {
-        const be = event.data as { currentCost: number; maxBudget: number } | undefined;
+        const be = event.data;
         if (be) {
           this.budgetExceeded(be.currentCost, be.maxBudget);
         }
@@ -830,7 +837,7 @@ export class TerminalOutput {
 
       // 深度调研启动
       case 'research_mode_started': {
-        const rs = event.data as { topic: string; triggeredBy?: string } | undefined;
+        const rs = event.data;
         if (rs) {
           this.researchStarted(rs.topic, rs.triggeredBy);
         }
@@ -839,7 +846,7 @@ export class TerminalOutput {
 
       // 深度调研进度
       case 'research_progress': {
-        const rp = event.data as { phase: string; percent: number; message: string } | undefined;
+        const rp = event.data;
         if (rp) {
           this.researchProgress(rp.phase, rp.percent, rp.message);
         }
@@ -848,7 +855,7 @@ export class TerminalOutput {
 
       // Turn 开始 — 显示 turn 计数
       case 'turn_start': {
-        const ti = event.data as { iteration?: number } | undefined;
+        const ti = event.data;
         if (ti?.iteration && ti.iteration > 1) {
           console.log(chalk.dim(`  ── turn ${ti.iteration} ──`));
         }
@@ -857,9 +864,9 @@ export class TerminalOutput {
 
       // 工具执行超时警告
       case 'tool_timeout': {
-        const tt = event.data as { toolName?: string; elapsed?: number; threshold?: number } | undefined;
+        const tt = event.data;
         if (tt) {
-          const elapsed = tt.elapsed ? `${(tt.elapsed / 1000).toFixed(0)}s` : '';
+          const elapsed = tt.elapsedMs ? `${(tt.elapsedMs / 1000).toFixed(0)}s` : '';
           console.log(chalk.yellow(`  ⚠ ${tt.toolName || 'tool'} running for ${elapsed}...`));
         }
         break;

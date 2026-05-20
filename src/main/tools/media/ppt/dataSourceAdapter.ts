@@ -4,6 +4,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import ExcelJS from 'exceljs';
 import { NUMERIC_COLUMN_THRESHOLD, CHART_MAX_ITEMS, CHART_LABEL_MAX_LENGTH } from './constants';
 
 /**
@@ -58,7 +59,6 @@ export async function loadDataSource(
 }
 
 async function loadExcelData(filePath: string, sheetName?: string): Promise<DataSourceResult> {
-  const ExcelJS = require('exceljs');
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(filePath);
 
@@ -75,8 +75,7 @@ async function loadExcelData(filePath: string, sheetName?: string): Promise<Data
 
   // Extract headers from first row
   const headerRow = sheet.getRow(1);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): exceljs Cell 类型应 import { Cell } from 'exceljs'
-  headerRow.eachCell({ includeEmpty: false }, (cell: any, colNumber: number) => {
+  headerRow.eachCell({ includeEmpty: false }, (cell: ExcelJS.Cell, colNumber: number) => {
     columns.push(String(cell.value || `Column ${colNumber}`));
   });
 

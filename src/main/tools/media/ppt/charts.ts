@@ -3,6 +3,7 @@
 // 生成可编辑的原生 PowerPoint 图表
 // ============================================================================
 
+import type PptxGenJS from 'pptxgenjs';
 import type { ChartSlotData, ChartType, ThemeConfig } from './types';
 import {
   DATA_KEYWORDS_PATTERN, NUMBER_WITH_UNIT_PATTERN,
@@ -10,6 +11,11 @@ import {
   CHART_LABEL_MAX_PREFIX, CHART_LABEL_MAX_LENGTH,
   CHART_DOUGHNUT_PATTERN, CHART_LINE_PATTERN, CHART_BAR_PATTERN,
 } from './constants';
+
+type NativeChartOptions = PptxGenJS.IChartOpts & {
+  valueFontSize?: number;
+  valueFontColor?: string;
+};
 
 /**
  * 检测内容中是否包含可提取的图表数据
@@ -113,10 +119,8 @@ function selectChartType(title: string, points: string[]): ChartType {
  * 渲染原生可编辑图表
  */
 export function renderNativeChart(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pptx 是 PptxGenJS 实例，应 import PptxGenJS 替换 any
-  pptx: any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): slide 是 PptxGenJS.Slide，应 import 后替换
-  slide: any,
+  _pptx: PptxGenJS,
+  slide: PptxGenJS.Slide,
   chartData: ChartSlotData,
   theme: ThemeConfig,
   bounds: { x: number; y: number; w: number; h: number }
@@ -124,15 +128,14 @@ export function renderNativeChart(
   const { chartType, labels, values } = chartData;
 
   // pptxgenjs 图表数据格式
-  const data = [{
+  const data: PptxGenJS.OptsChartData[] = [{
     name: chartData.title || 'Data',
     labels,
     values,
   }];
 
   // 通用图表选项
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pptxgenjs IChartOpts 类型应 import { IChartOpts } from 'pptxgenjs'
-  const baseOpts: any = {
+  const baseOpts: NativeChartOptions = {
     x: bounds.x,
     y: bounds.y,
     w: bounds.w,
@@ -157,19 +160,18 @@ export function renderNativeChart(
     baseOpts.valGridLine = { color: theme.cardBorder, style: 'dash', size: 0.5 };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pptxgenjs ChartType 字面量联合，应 import { ChartType } from 'pptxgenjs'
-  let pptxChartType: any;
+  let pptxChartType: PptxGenJS.CHART_NAME;
 
   switch (chartType) {
     case 'bar':
-      pptxChartType = pptx.charts.BAR;
+      pptxChartType = 'bar';
       baseOpts.barDir = 'col';
       baseOpts.barGapWidthPct = 80;
       baseOpts.catAxisOrientation = 'minMax';
       break;
 
     case 'doughnut':
-      pptxChartType = pptx.charts.DOUGHNUT;
+      pptxChartType = 'doughnut';
       baseOpts.showLabel = true;
       baseOpts.showPercent = true;
       baseOpts.showValue = false;
@@ -180,7 +182,7 @@ export function renderNativeChart(
       break;
 
     case 'line':
-      pptxChartType = pptx.charts.LINE;
+      pptxChartType = 'line';
       baseOpts.lineSmooth = true;
       baseOpts.lineSize = 2;
       baseOpts.lineDataSymbol = 'circle';
@@ -188,7 +190,7 @@ export function renderNativeChart(
       break;
 
     case 'pie':
-      pptxChartType = pptx.charts.PIE;
+      pptxChartType = 'pie';
       baseOpts.showLabel = true;
       baseOpts.showPercent = true;
       baseOpts.showValue = false;
@@ -197,7 +199,7 @@ export function renderNativeChart(
       break;
 
     default:
-      pptxChartType = pptx.charts.BAR;
+      pptxChartType = 'bar';
       baseOpts.barDir = 'col';
       break;
   }

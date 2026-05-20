@@ -5,6 +5,7 @@
 // 不同主题/风格只需切换配置。
 // ============================================================================
 
+import type PptxGenJS from 'pptxgenjs';
 import type { ThemeConfig } from './types';
 import {
   APPLE_ACCENT_BAR,
@@ -49,6 +50,10 @@ export interface MasterDecorationConfig {
   /** 面板/卡片装饰 */
   panels: PanelDecoration[];
 }
+
+export type MasterDecorationObject =
+  | { ellipse: PptxGenJS.ShapeProps }
+  | { rect: PptxGenJS.ShapeProps };
 
 // ============================================================================
 // Decoration Budget - 装饰密度控制
@@ -95,10 +100,8 @@ function enforceDecorationBudget(
 export function buildDecorationObjects(
   config: MasterDecorationConfig,
   theme: ThemeConfig
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pptxgenjs SlideMasterProps.objects 元素是 SlideObject 联合（{ ellipse }|{ rect }|{ image } 等），应抽 SlideMasterObject 类型
-): any[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 buildDecorationObjects 返回类型，objects 数组元素是 pptxgenjs SlideObject 联合
-  const objects: any[] = [];
+): MasterDecorationObject[] {
+  const objects: MasterDecorationObject[] = [];
 
   // Glows → ellipse
   for (const glow of config.glows) {
@@ -126,8 +129,7 @@ export function buildDecorationObjects(
   for (const panel of config.panels) {
     const isAccent = panel.colorSource === 'accent';
     const fillColor = isAccent ? theme.accent : theme.bgSecondary;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pptxgenjs SlideObject 中 rect variant 含 line 可选字段，结构对应应抽 RectShapeObject 类型
-    const obj: any = {
+    const obj: MasterDecorationObject = {
       rect: {
         x: panel.x, y: panel.y, w: panel.w, h: panel.h,
         fill: { color: fillColor, transparency: panel.transparency ?? 0 },

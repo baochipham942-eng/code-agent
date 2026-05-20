@@ -236,6 +236,23 @@ describe('createAgentRouter', () => {
     });
   });
 
+  it('rejects invalid /api/run bodies before starting an agent loop', async () => {
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 42,
+        sessionId: 'session-invalid-run-body',
+      }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual({ error: 'Missing prompt' });
+    expect(mockCreateAgentLoop).not.toHaveBeenCalled();
+    expect(createCLIAgent).not.toHaveBeenCalled();
+  });
+
   it('uses clientMessageId as the persisted user message id for /api/run', async () => {
     mockRun.mockResolvedValueOnce(undefined);
 
@@ -372,6 +389,21 @@ describe('createAgentRouter', () => {
       },
     });
     expect(mockSteer).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid /api/tool-result bodies before resolving local tool results', async () => {
+    const response = await fetch(`${baseUrl}/api/tool-result`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        toolCallId: 42,
+        success: true,
+      }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual({ error: 'Missing toolCallId' });
   });
 
   it('preserves structured artifact metadata from tool_call_end in the SSE-backed session cache', async () => {

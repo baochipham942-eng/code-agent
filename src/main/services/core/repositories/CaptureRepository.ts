@@ -9,6 +9,30 @@ import { guardSensitiveText, guardSensitiveValue } from '../../../security/sensi
 // SQLite 行类型
 type SQLiteRow = Record<string, unknown>;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJsonArray(value: unknown): string[] {
+  if (typeof value !== 'string' || value.length === 0) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'string' || value.length === 0) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 export class CaptureRepository {
   constructor(private db: BetterSqlite3.Database) {}
 
@@ -118,8 +142,8 @@ export class CaptureRepository {
       content: row.content as string,
       summary: (row.summary as string) || undefined,
       source: row.source as CaptureSource,
-      tags: JSON.parse((row.tags as string) || '[]'),
-      metadata: JSON.parse((row.metadata as string) || '{}'),
+      tags: parseJsonArray(row.tags),
+      metadata: parseJsonRecord(row.metadata),
       createdAt: row.created_at as number,
       updatedAt: row.updated_at as number,
     };

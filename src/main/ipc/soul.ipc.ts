@@ -12,6 +12,12 @@ import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('SoulIPC');
 
+function getStringField(source: unknown, field: string): string | undefined {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return undefined;
+  const value = (source as Record<string, unknown>)[field];
+  return typeof value === 'string' ? value : undefined;
+}
+
 export function registerSoulHandlers(): void {
   ipcMain.handle(IPC_DOMAINS.SOUL, async (_event, request: IPCRequest) => {
     const { action, payload } = request;
@@ -19,8 +25,7 @@ export function registerSoulHandlers(): void {
       switch (action) {
         case 'getStatus': {
           const soul = getSoul();
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): IPC payload 是 unknown，应改成显式 narrow（'workingDirectory' in payload && typeof payload.workingDirectory === 'string'）
-          const workingDirectory = (payload as any)?.workingDirectory as string | undefined;
+          const workingDirectory = getStringField(payload, 'workingDirectory');
           let source: 'project' | 'user' | 'builtin' = 'builtin';
           if (workingDirectory) {
             const profilePath = path.join(getProjectConfigDir(workingDirectory), 'PROFILE.md');

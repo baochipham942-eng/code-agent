@@ -70,7 +70,7 @@ export function extractJSON(text: string, projectDir?: string): unknown | null {
     if (!resolved) continue;
     try {
       const content = fs.readFileSync(resolved, 'utf8');
-      const parsed = JSON.parse(content);
+      const parsed: unknown = JSON.parse(content);
       return parsed;
     } catch {
       // 读不到或不是合法 JSON，继续下一个候选
@@ -87,7 +87,7 @@ export function extractJSON(text: string, projectDir?: string): unknown | null {
 function extractJsonFilePaths(text: string): string[] {
   const candidates = new Set<string>();
   // 通用 path 匹配：包含 / 或 \\，以 .json 结尾
-  const pathRegex = /[`(\[\s"'](\/?[\w./\\-]+\.json)(?=[`)\]\s"',]|$)/g;
+  const pathRegex = /[`(\s"'[](\/?[\w./\\-]+\.json)(?=[`)\]\s"',]|$)/g;
   let match;
   while ((match = pathRegex.exec(text)) !== null) {
     candidates.add(match[1]);

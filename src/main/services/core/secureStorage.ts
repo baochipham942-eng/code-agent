@@ -17,7 +17,8 @@ import { getUserConfigDir } from '../../config/configPaths';
 let keytar: typeof import('keytar') | null = null;
 if (!process.env.CODE_AGENT_CLI_MODE) {
   try {
-    keytar = require('keytar');
+    const loadedKeytar: unknown = require('keytar');
+    keytar = loadedKeytar as typeof import('keytar');
   } catch (error) {
     console.warn('[SecureStorage] keytar not available:', (error as Error).message?.split('\n')[0]);
   }
@@ -26,6 +27,19 @@ if (!process.env.CODE_AGENT_CLI_MODE) {
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('SecureStorage');
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 // Keychain constants for persistent storage (survives app reinstall)
 const KEYCHAIN_SERVICE = 'code-agent';
@@ -603,7 +617,7 @@ class SecureStorageService {
     try {
       const settingsJson = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SETTINGS);
       if (settingsJson) {
-        return JSON.parse(settingsJson);
+        return parseJsonRecord(settingsJson);
       }
       return null;
     } catch (e) {

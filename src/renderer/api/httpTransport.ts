@@ -28,6 +28,23 @@ type AuthTokenRecovery = {
   willReload: boolean;
 };
 
+type ServerSentEventPayload = {
+  channel: string;
+  args: unknown;
+};
+
+type WrappedHttpResponse = {
+  success: boolean;
+  data?: unknown;
+  error?: unknown;
+};
+
+type ExtractPdfResult = Awaited<ReturnType<CommandBridgeAPI['extractPdfText']>>;
+type ExtractExcelTextResult = Awaited<ReturnType<CommandBridgeAPI['extractExcelText']>>;
+type ExtractExcelJsonResult = Awaited<ReturnType<CommandBridgeAPI['extractExcelJson']>>;
+type ExtractDocxHtmlResult = Awaited<ReturnType<CommandBridgeAPI['extractDocxHtml']>>;
+type TranscribeSpeechResult = Awaited<ReturnType<CommandBridgeAPI['transcribeSpeech']>>;
+
 function dispatchSSEPayload(
   channel: string,
   args: unknown,
@@ -44,12 +61,149 @@ function dispatchSSEPayload(
   callbacks.forEach((cb) => cb(...eventArgs));
 }
 
-function getNumberField(data: unknown, field: string): number | undefined {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+function isRecord(data: unknown): data is Record<string, unknown> {
+  return typeof data === 'object' && data !== null && !Array.isArray(data);
+}
+
+function parseJsonValue(raw: string): unknown | undefined {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
     return undefined;
   }
-  const value = (data as Record<string, unknown>)[field];
+}
+
+function readJsonResponse(response: Response): Promise<unknown> {
+  return response.json() as Promise<unknown>;
+}
+
+function getStringField(data: unknown, field: string): string | undefined {
+  if (!isRecord(data)) {
+    return undefined;
+  }
+  const value = data[field];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getNumberField(data: unknown, field: string): number | undefined {
+  if (!isRecord(data)) {
+    return undefined;
+  }
+  const value = data[field];
   return typeof value === 'number' ? value : undefined;
+}
+
+function parseSSEPayload(raw: string): ServerSentEventPayload | null {
+  const parsed = parseJsonValue(raw);
+  if (!isRecord(parsed) || typeof parsed.channel !== 'string') {
+    return null;
+  }
+  return {
+    channel: parsed.channel,
+    args: parsed.args,
+  };
+}
+
+function isWrappedHttpResponse(value: unknown): value is WrappedHttpResponse {
+  return isRecord(value) && typeof value.success === 'boolean';
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function normalizeUnknownRows(value: unknown): unknown[][] {
+  return Array.isArray(value)
+    ? value.filter((row): row is unknown[] => Array.isArray(row)).map((row) => [...row])
+    : [];
+}
+
+function normalizePdfResult(value: unknown): ExtractPdfResult {
+  return {
+    text: getStringField(value, 'text') ?? '',
+    pageCount: getNumberField(value, 'pageCount') ?? 0,
+  };
+}
+
+function normalizeExcelTextResult(value: unknown): ExtractExcelTextResult {
+  return {
+    text: getStringField(value, 'text') ?? '',
+    sheetCount: getNumberField(value, 'sheetCount') ?? 0,
+    rowCount: getNumberField(value, 'rowCount') ?? 0,
+  };
+}
+
+function normalizeExcelJsonResult(value: unknown): ExtractExcelJsonResult {
+  if (!isRecord(value) || !Array.isArray(value.sheets)) {
+    return null;
+  }
+
+  const sheets = value.sheets
+    .filter((sheet): sheet is Record<string, unknown> => isRecord(sheet))
+    .map((sheet) => {
+      const rows = normalizeUnknownRows(sheet.rows);
+      return {
+        name: getStringField(sheet, 'name') ?? '',
+        headers: normalizeStringArray(sheet.headers),
+        rows,
+        rowCount: getNumberField(sheet, 'rowCount') ?? rows.length,
+      };
+    });
+
+  return {
+    sheets,
+    sheetCount: getNumberField(value, 'sheetCount') ?? sheets.length,
+  };
+}
+
+function normalizeDocxHtmlResult(value: unknown): ExtractDocxHtmlResult {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const paragraphs = Array.isArray(value.paragraphs)
+    ? value.paragraphs
+        .filter((paragraph): paragraph is Record<string, unknown> => isRecord(paragraph))
+        .map((paragraph) => ({
+          index: getNumberField(paragraph, 'index') ?? 0,
+          type: getStringField(paragraph, 'type') ?? 'paragraph',
+          text: getStringField(paragraph, 'text') ?? '',
+          level: getNumberField(paragraph, 'level'),
+        }))
+    : [];
+
+  return {
+    html: getStringField(value, 'html') ?? '',
+    paragraphs,
+    text: getStringField(value, 'text') ?? '',
+    wordCount: getNumberField(value, 'wordCount') ?? 0,
+  };
+}
+
+function normalizeTranscribeResult(value: unknown): TranscribeSpeechResult {
+  if (!isRecord(value)) {
+    return { success: false, error: 'HTTP transport: transcribe not available' };
+  }
+
+  return {
+    success: value.success === true,
+    text: getStringField(value, 'text'),
+    error: getStringField(value, 'error'),
+    hallucination: typeof value.hallucination === 'boolean' ? value.hallucination : undefined,
+  };
+}
+
+function extractUploadedPath(value: unknown): string | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const directPath = getStringField(value, 'path');
+  if (directPath) {
+    return directPath;
+  }
+  return isRecord(value.data) ? getStringField(value.data, 'path') : undefined;
 }
 
 function getInjectedAuthToken(): string | undefined {
@@ -88,20 +242,14 @@ function scheduleAuthTokenReloadOnce(): boolean {
 
 function parseHttpErrorMessage(errorBody: string): string {
   if (!errorBody) return '';
-  try {
-    const parsed = JSON.parse(errorBody) as unknown;
-    if (parsed && typeof parsed === 'object') {
-      const record = parsed as Record<string, unknown>;
-      if (typeof record.error === 'string') return record.error;
-      if (record.error && typeof record.error === 'object') {
-        const error = record.error as Record<string, unknown>;
-        if (typeof error.message === 'string') return error.message;
-        if (typeof error.code === 'string') return error.code;
-      }
-      if (typeof record.message === 'string') return record.message;
+  const parsed = parseJsonValue(errorBody);
+  if (isRecord(parsed)) {
+    if (typeof parsed.error === 'string') return parsed.error;
+    if (isRecord(parsed.error)) {
+      if (typeof parsed.error.message === 'string') return parsed.error.message;
+      if (typeof parsed.error.code === 'string') return parsed.error.code;
     }
-  } catch {
-    // fall through to raw body
+    if (typeof parsed.message === 'string') return parsed.message;
   }
   return errorBody;
 }
@@ -222,12 +370,13 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
       if (Number.isFinite(incomingId) && incomingId > lastSeenEventId) {
         lastSeenEventId = incomingId;
       }
-      try {
-        const parsed = JSON.parse(event.data);
-        const { channel, args } = parsed;
-        dispatchSSEPayload(channel, args, listeners.get(channel));
-      } catch {
-        // 忽略解析失败的事件
+      const eventData: unknown = event.data;
+      if (typeof eventData !== 'string') {
+        return;
+      }
+      const payload = parseSSEPayload(eventData);
+      if (payload) {
+        dispatchSSEPayload(payload.channel, payload.args, listeners.get(payload.channel));
       }
     };
 
@@ -343,9 +492,9 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                       if (line.startsWith('event: ')) {
                         currentEvent = line.slice(7).trim();
                       } else if (line.startsWith('data: ') && currentEvent) {
-                        try {
-                          const data = JSON.parse(line.slice(6));
-                          const currentSessionId = data?.sessionId;
+                        const data = parseJsonValue(line.slice(6));
+                        if (data !== undefined) {
+                          const currentSessionId = getStringField(data, 'sessionId');
                           if (currentSessionId) streamSessionId = currentSessionId;
                           const cbs = listeners.get('agent:event');
                           if (cbs) {
@@ -356,7 +505,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                               seq: getNumberField(data, 'seq'),
                             }));
                           }
-                        } catch { /* ignore */ }
+                        }
                         currentEvent = '';
                       }
                     }
@@ -380,14 +529,18 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                   if (line.startsWith('event: ')) {
                     currentEvent = line.slice(7).trim();
                   } else if (line.startsWith('data: ') && currentEvent) {
-                    try {
-                      const data = JSON.parse(line.slice(6));
-                      const currentSessionId = data?.sessionId;
+                    const data = parseJsonValue(line.slice(6));
+                    if (data !== undefined) {
+                      const currentSessionId = getStringField(data, 'sessionId');
                       if (currentSessionId) streamSessionId = currentSessionId;
 
                       // ── Local Bridge 拦截: tool_call_local 事件 ──
-                      if (currentEvent === 'tool_call_local') {
-                        console.debug('[HttpTransport] Intercepted tool_call_local:', data.tool, data.toolCallId);
+                      if (currentEvent === 'tool_call_local' && isRecord(data)) {
+                        console.debug(
+                          '[HttpTransport] Intercepted tool_call_local:',
+                          data.tool,
+                          data.toolCallId
+                        );
                         handleLocalToolCall(baseUrl, data).catch((err) => {
                           console.error('[HttpTransport] handleLocalToolCall error:', err);
                         });
@@ -407,8 +560,6 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
                           seq: getNumberField(data, 'seq'),
                         }));
                       }
-                    } catch {
-                      // 忽略解析错误
                     }
                     currentEvent = '';
                   }
@@ -477,10 +628,10 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
 
         const contentType = response.headers.get('content-type');
         if (contentType?.includes('application/json')) {
-          const json = await response.json();
+          const json = await readJsonResponse(response);
           // 解包 IPCResponse 格式: webServer 返回 {success, data} 包装体
           // 前端 store 期望的是裸数据（Session[], AppSettings 等）
-          if (json && typeof json === 'object' && 'success' in json) {
+          if (isWrappedHttpResponse(json)) {
             if (json.success === false) {
               // 错误响应（如 NOT_FOUND）不应作为有效数据透传到前端
               console.warn(`[HttpTransport] ${channel} returned error:`, json.error);
@@ -564,8 +715,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         throw new Error(`Upload failed: ${res.status}`);
       }
 
-      const json = await res.json() as { path?: string; data?: { path?: string } };
-      const uploadedPath = json.path ?? json.data?.path;
+      const uploadedPath = extractUploadedPath(await readJsonResponse(res));
       if (!uploadedPath) {
         throw new Error('Upload response missing path');
       }
@@ -582,7 +732,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         });
         if (res.ok) {
           clearAuthTokenReloadAttempt();
-          return await res.json();
+          return normalizePdfResult(await readJsonResponse(res));
         }
         const errorBody = await res.text();
         getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
@@ -599,7 +749,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         });
         if (res.ok) {
           clearAuthTokenReloadAttempt();
-          return await res.json();
+          return normalizeExcelTextResult(await readJsonResponse(res));
         }
         const errorBody = await res.text();
         getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
@@ -616,7 +766,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         });
         if (res.ok) {
           clearAuthTokenReloadAttempt();
-          return await res.json();
+          return normalizeExcelJsonResult(await readJsonResponse(res));
         }
         const errorBody = await res.text();
         getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
@@ -633,7 +783,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         });
         if (res.ok) {
           clearAuthTokenReloadAttempt();
-          return await res.json();
+          return normalizeDocxHtmlResult(await readJsonResponse(res));
         }
         const errorBody = await res.text();
         getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
@@ -650,7 +800,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         });
         if (res.ok) {
           clearAuthTokenReloadAttempt();
-          return await res.json();
+          return normalizeTranscribeResult(await readJsonResponse(res));
         }
         const errorBody = await res.text();
         getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
@@ -700,7 +850,7 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
 
         if (res.ok) {
           clearAuthTokenReloadAttempt();
-          return await res.json() as IPCResponse<T>;
+          return readJsonResponse(res) as Promise<IPCResponse<T>>;
         }
 
         const errorMessage = parseHttpErrorMessage(await res.text());

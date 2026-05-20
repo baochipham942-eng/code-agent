@@ -77,6 +77,14 @@ function buildParagraphXml(text: string, style?: string): string {
   return `<w:p>${pStyle}<w:r><w:t xml:space="preserve">${escaped}</w:t></w:r></w:p>`;
 }
 
+function requireParagraph(paragraphs: string[], index: number): string {
+  const paragraph = paragraphs[index];
+  if (paragraph === undefined) {
+    throw new Error(`Paragraph index ${index} out of range (0-${paragraphs.length - 1})`);
+  }
+  return paragraph;
+}
+
 // ---------------------------------------------------------------------------
 // Operation executors
 // ---------------------------------------------------------------------------
@@ -88,7 +96,12 @@ function execReplaceText(xml: string, op: Extract<DocxEditOperation, { action: '
   // Text in DOCX XML is inside <w:t> tags
   // Simple approach: replace text content within <w:t> tags
   let count = 0;
-  const result = xml.replace(new RegExp(`(<w:t[^>]*>)([^<]*)(</w:t>)`, 'g'), (match, open, content, close) => {
+  const result = xml.replace(new RegExp(`(<w:t[^>]*>)([^<]*)(</w:t>)`, 'g'), (
+    match: string,
+    open: string,
+    content: string,
+    close: string,
+  ) => {
     if (content.includes(searchEscaped)) {
       if (!op.all && count > 0) return match;
       count++;
@@ -113,7 +126,8 @@ function execReplaceParagraph(xml: string, op: Extract<DocxEditOperation, { acti
     throw new Error(`Paragraph index ${op.index} out of range (0-${paragraphs.length - 1})`);
   }
   const newP = buildParagraphXml(op.text);
-  const result = xml.replace(paragraphs[op.index], newP);
+  const target = requireParagraph(paragraphs, op.index);
+  const result = xml.replace(target, newP);
   return { xml: result, desc: `Replaced paragraph ${op.index}` };
 }
 
@@ -128,11 +142,11 @@ function execInsertParagraph(xml: string, op: Extract<DocxEditOperation, { actio
   const newP = buildParagraphXml(op.text, op.style);
   if (op.after === -1) {
     // Insert at beginning - before first paragraph
-    const first = paragraphs[0]!;
+    const first = requireParagraph(paragraphs, 0);
     const result = xml.replace(first, newP + first);
     return { xml: result, desc: `Inserted paragraph at beginning` };
   }
-  const target = paragraphs[op.after]!;
+  const target = requireParagraph(paragraphs, op.after);
   const result = xml.replace(target, target + newP);
   return { xml: result, desc: `Inserted paragraph after ${op.after}` };
 }
@@ -145,7 +159,7 @@ function execDeleteParagraph(xml: string, op: Extract<DocxEditOperation, { actio
   }
   let result = xml;
   for (let i = op.index + count - 1; i >= op.index; i--) {
-    result = result.replace(paragraphs[i], '');
+    result = result.replace(requireParagraph(paragraphs, i), '');
   }
   return { xml: result, desc: `Deleted ${count} paragraph(s) at index ${op.index}` };
 }
@@ -158,7 +172,7 @@ function execReplaceHeading(xml: string, op: Extract<DocxEditOperation, { action
     throw new Error(`Heading index ${op.index} out of range (0-${headings.length - 1})`);
   }
   // Replace text content within the heading, preserve style
-  const heading = headings[op.index];
+  const heading = requireParagraph(headings, op.index);
   const escaped = escapeXml(op.text);
   const updated = heading.replace(/<w:t[^>]*>[^<]*<\/w:t>/g, `<w:t xml:space="preserve">${escaped}</w:t>`);
   const result = xml.replace(heading, updated);
@@ -177,7 +191,7 @@ function execSetTextStyle(xml: string, op: Extract<DocxEditOperation, { action: 
   let count = 0;
 
   // Find <w:r> elements containing the search text and add/modify <w:rPr>
-  const result = xml.replace(/<w:r>([\s\S]*?)<\/w:r>/g, (match, content) => {
+  const result = xml.replace(/<w:r>([\s\S]*?)<\/w:r>/g, (match: string, content: string) => {
     if (!content.includes(searchEscaped)) return match;
     count++;
 
@@ -216,10 +230,10 @@ function execTrackInsert(xml: string, op: Extract<DocxEditOperation, { action: '
 
   let result: string;
   if (op.after === -1) {
-    const first = paragraphs[0]!;
+    const first = requireParagraph(paragraphs, 0);
     result = xml.replace(first, insertionP + first);
   } else {
-    const target = paragraphs[op.after]!;
+    const target = requireParagraph(paragraphs, op.after);
     result = xml.replace(target, target + insertionP);
   }
 
@@ -236,7 +250,7 @@ function execTrackDelete(xml: string, op: Extract<DocxEditOperation, { action: '
   let count = 0;
 
   // Find <w:r> elements containing the search text and wrap with <w:del>
-  const result = xml.replace(/<w:r>([\s\S]*?)<\/w:r>/g, (match, content) => {
+  const result = xml.replace(/<w:r>([\s\S]*?)<\/w:r>/g, (match: string, content: string) => {
     if (!content.includes(searchEscaped)) return match;
     count++;
 
@@ -255,7 +269,7 @@ function execSuggestReplace(xml: string, op: Extract<DocxEditOperation, { action
   const searchEscaped = escapeXml(op.search);
   let count = 0;
 
-  const result = xml.replace(/<w:r>([\s\S]*?)<\/w:r>/g, (match, content) => {
+  const result = xml.replace(/<w:r>([\s\S]*?)<\/w:r>/g, (match: string, content: string) => {
     if (!content.includes(searchEscaped)) return match;
     count++;
 

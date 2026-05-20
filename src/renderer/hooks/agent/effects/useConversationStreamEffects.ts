@@ -10,8 +10,158 @@ import type { AgentEffectsProps } from '../useAgentEffects';
 
 const logger = createLogger('useAgent');
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): AgentEvent 在 5 个 hook 文件里各自重复定义且都用 any，应抽成 shared 类型，data 形态由 type 决定（stream_chunk/tool_call/error 等），按 type narrow
-type AgentEvent = { type: string; data: any; sessionId?: string };
+type AgentEvent = { type: string; data?: unknown; sessionId?: string };
+
+interface TurnIdPayload {
+  turnId?: string;
+}
+
+interface StreamTextPayload extends TurnIdPayload {
+  content: string;
+}
+
+interface MessageDeltaPayload extends TurnIdPayload {
+  role: 'assistant';
+  path: 'content' | 'reasoning';
+  op: 'append' | 'replace';
+  text: string;
+  messageId?: string;
+}
+
+interface MessageSnapshotPayload extends TurnIdPayload {
+  role: 'assistant';
+  messageId?: string;
+  content: string;
+  reasoning?: string;
+}
+
+interface AssistantMessagePayload extends TurnIdPayload {
+  id?: string;
+  content?: string;
+  toolCalls?: ToolCall[];
+}
+
+interface RoutingResolvedPayload {
+  mode: 'auto';
+  timestamp?: number;
+  agentId: string;
+  agentName: string;
+  reason: string;
+  score: number;
+  fallbackToDefault?: boolean;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getStringField(record: Record<string, unknown>, field: string): string | undefined {
+  const value = record[field];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getNumberField(record: Record<string, unknown>, field: string): number | undefined {
+  const value = record[field];
+  return typeof value === 'number' ? value : undefined;
+}
+
+function getBooleanField(record: Record<string, unknown>, field: string): boolean | undefined {
+  const value = record[field];
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function normalizeTurnIdPayload(data: unknown): TurnIdPayload {
+  if (!isRecord(data)) return {};
+  return {
+    ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
+  };
+}
+
+function normalizeStreamTextPayload(data: unknown): StreamTextPayload | null {
+  if (!isRecord(data)) return null;
+  const content = getStringField(data, 'content');
+  if (content === undefined) return null;
+  return {
+    content,
+    ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
+  };
+}
+
+function normalizeMessageDeltaPayload(data: unknown): MessageDeltaPayload | null {
+  if (!isRecord(data) || data.role !== 'assistant') return null;
+  const text = getStringField(data, 'text');
+  if (text === undefined) return null;
+  return {
+    role: 'assistant',
+    path: data.path === 'reasoning' ? 'reasoning' : 'content',
+    op: data.op === 'replace' ? 'replace' : 'append',
+    text,
+    ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
+    ...(getStringField(data, 'messageId') ? { messageId: getStringField(data, 'messageId') } : {}),
+  };
+}
+
+function normalizeMessageSnapshotPayload(data: unknown): MessageSnapshotPayload | null {
+  if (!isRecord(data) || data.role !== 'assistant') return null;
+  const content = getStringField(data, 'content');
+  if (content === undefined) return null;
+  return {
+    role: 'assistant',
+    content,
+    ...(getStringField(data, 'reasoning') ? { reasoning: getStringField(data, 'reasoning') } : {}),
+    ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
+    ...(getStringField(data, 'messageId') ? { messageId: getStringField(data, 'messageId') } : {}),
+  };
+}
+
+function normalizeToolCall(value: unknown): ToolCall | null {
+  if (!isRecord(value)) return null;
+  const id = getStringField(value, 'id');
+  const name = getStringField(value, 'name');
+  if (!id || !name) return null;
+
+  return {
+    ...value,
+    id,
+    name,
+    arguments: isRecord(value.arguments) ? value.arguments : {},
+  } as ToolCall;
+}
+
+function normalizeToolCalls(value: unknown): ToolCall[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.map(normalizeToolCall).filter((toolCall): toolCall is ToolCall => Boolean(toolCall));
+}
+
+function normalizeAssistantMessagePayload(data: unknown): AssistantMessagePayload | null {
+  if (!isRecord(data)) return null;
+  const toolCalls = normalizeToolCalls(data.toolCalls);
+  return {
+    ...(getStringField(data, 'id') ? { id: getStringField(data, 'id') } : {}),
+    ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
+    ...(getStringField(data, 'content') !== undefined ? { content: getStringField(data, 'content') } : {}),
+    ...(toolCalls ? { toolCalls } : {}),
+  };
+}
+
+function normalizeRoutingResolvedPayload(data: unknown): RoutingResolvedPayload | null {
+  if (!isRecord(data) || data.mode !== 'auto') return null;
+  const agentId = getStringField(data, 'agentId');
+  const agentName = getStringField(data, 'agentName');
+  const reason = getStringField(data, 'reason');
+  const score = getNumberField(data, 'score');
+  if (!agentId || !agentName || !reason || score === undefined) return null;
+
+  return {
+    mode: 'auto',
+    agentId,
+    agentName,
+    reason,
+    score,
+    ...(getNumberField(data, 'timestamp') !== undefined ? { timestamp: getNumberField(data, 'timestamp') } : {}),
+    ...(getBooleanField(data, 'fallbackToDefault') !== undefined ? { fallbackToDefault: getBooleanField(data, 'fallbackToDefault') } : {}),
+  };
+}
 
 function normalizeHookTriggerData(data: unknown): HookTriggerEventData | null {
   if (!data || typeof data !== 'object') {
@@ -137,7 +287,8 @@ export function applyConversationStreamEvent(
       }
 
       {
-        const turnId = event.data?.turnId || makeId();
+        const turnData = normalizeTurnIdPayload(event.data);
+        const turnId = turnData.turnId || makeId();
         const newMessage: Message = {
           id: turnId,
           role: 'assistant',
@@ -152,8 +303,10 @@ export function applyConversationStreamEvent(
       break;
 
     case 'stream_chunk':
-      if (event.data?.content) {
-        const targetMessageId = event.data.turnId || state.currentTurnMessageId;
+      {
+        const chunkData = normalizeStreamTextPayload(event.data);
+        if (!chunkData?.content) break;
+        const targetMessageId = chunkData.turnId || state.currentTurnMessageId;
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
           ? freshMsgs.find(m => m.id === targetMessageId)
@@ -161,7 +314,7 @@ export function applyConversationStreamEvent(
 
         if (targetMessage?.role === 'assistant') {
           appendAssistantStreamDelta(actions, targetMessage.id, {
-            content: event.data.content,
+            content: chunkData.content,
           });
         } else {
           const lastMessage = getFreshMessages()[getFreshMessages().length - 1];
@@ -173,7 +326,7 @@ export function applyConversationStreamEvent(
               const newMessage: Message = {
                 id: makeId(),
                 role: 'assistant',
-                content: event.data.content,
+                content: chunkData.content,
                 timestamp: now(),
                 toolCalls: [],
               };
@@ -182,7 +335,7 @@ export function applyConversationStreamEvent(
               state.committedAssistantMessageIds.delete(newMessage.id);
             } else {
               appendAssistantStreamDelta(actions, lastMessage.id, {
-                content: event.data.content,
+                content: chunkData.content,
               });
             }
           }
@@ -191,31 +344,35 @@ export function applyConversationStreamEvent(
       break;
 
     case 'message_delta':
-      if (event.data?.text && event.data.role === 'assistant') {
-        const targetMessageId = event.data.messageId || event.data.turnId || state.currentTurnMessageId;
+      {
+        const deltaData = normalizeMessageDeltaPayload(event.data);
+        if (!deltaData?.text) break;
+        const targetMessageId = deltaData.messageId || deltaData.turnId || state.currentTurnMessageId;
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
           ? freshMsgs.find(m => m.id === targetMessageId)
           : freshMsgs[freshMsgs.length - 1];
 
         if (targetMessage?.role === 'assistant') {
-          const field = event.data.path === 'reasoning' ? 'reasoning' : 'content';
-          if (event.data.op === 'replace') {
+          const field = deltaData.path === 'reasoning' ? 'reasoning' : 'content';
+          if (deltaData.op === 'replace') {
             actions.updateMessage(targetMessage.id, field === 'reasoning'
-              ? { reasoning: event.data.text }
-              : { content: event.data.text });
+              ? { reasoning: deltaData.text }
+              : { content: deltaData.text });
           } else {
             appendAssistantStreamDelta(actions, targetMessage.id, field === 'reasoning'
-              ? { reasoning: event.data.text }
-              : { content: event.data.text });
+              ? { reasoning: deltaData.text }
+              : { content: deltaData.text });
           }
         }
       }
       break;
 
     case 'message_snapshot':
-      if (event.data?.role === 'assistant') {
-        const targetMessageId = event.data.turnId || event.data.messageId || state.currentTurnMessageId;
+      {
+        const snapshotData = normalizeMessageSnapshotPayload(event.data);
+        if (!snapshotData) break;
+        const targetMessageId = snapshotData.turnId || snapshotData.messageId || state.currentTurnMessageId;
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
           ? freshMsgs.find(m => m.id === targetMessageId)
@@ -223,35 +380,37 @@ export function applyConversationStreamEvent(
 
         if (targetMessage?.role === 'assistant') {
           actions.updateMessage(targetMessage.id, {
-            content: event.data.content,
-            reasoning: event.data.reasoning,
+            content: snapshotData.content,
+            reasoning: snapshotData.reasoning,
           });
         }
       }
       break;
 
     case 'message':
-      if (event.data) {
-        const targetMessageId = event.data.turnId || state.currentTurnMessageId;
+      {
+        const messageData = normalizeAssistantMessagePayload(event.data);
+        if (!messageData) break;
+        const targetMessageId = messageData.turnId || state.currentTurnMessageId;
         const targetMessage = targetMessageId
           ? getFreshMessages().find(m => m.id === targetMessageId)
           : getFreshMessages()[getFreshMessages().length - 1];
 
         if (targetMessage?.role === 'assistant') {
           state.committedAssistantMessageIds.add(targetMessage.id);
-          if (event.data.id) {
-            state.committedAssistantMessageIds.add(event.data.id);
+          if (messageData.id) {
+            state.committedAssistantMessageIds.add(messageData.id);
           }
 
           const existingContent = targetMessage.content || '';
-          const newContent = event.data.content || '';
+          const newContent = messageData.content || '';
 
           let mergedToolCalls = targetMessage.toolCalls;
-          if (event.data.toolCalls && event.data.toolCalls.length > 0) {
+          if (messageData.toolCalls && messageData.toolCalls.length > 0) {
             const existingToolCalls = targetMessage.toolCalls || [];
             if (existingToolCalls.length > 0) {
               const fromEvent = new Map<string, ToolCall>(
-                event.data.toolCalls.map((tc: ToolCall) => [tc.id, tc] as [string, ToolCall]),
+                messageData.toolCalls.map((tc: ToolCall) => [tc.id, tc] as [string, ToolCall]),
               );
               mergedToolCalls = existingToolCalls.map((existing: ToolCall) => {
                 const fresh = fromEvent.get(existing.id);
@@ -265,14 +424,14 @@ export function applyConversationStreamEvent(
                 };
               });
               const existingIds = new Set(existingToolCalls.map((tc: ToolCall) => tc.id));
-              const newOnes = event.data.toolCalls.filter(
+              const newOnes = messageData.toolCalls.filter(
                 (tc: ToolCall) => !existingIds.has(tc.id)
               );
               if (newOnes.length > 0) {
                 mergedToolCalls = [...mergedToolCalls, ...newOnes];
               }
             } else {
-              mergedToolCalls = event.data.toolCalls;
+              mergedToolCalls = messageData.toolCalls;
             }
           }
 
@@ -285,15 +444,17 @@ export function applyConversationStreamEvent(
       break;
 
     case 'stream_reasoning':
-      if (event.data?.content) {
-        const targetMessageId = event.data.turnId || state.currentTurnMessageId;
+      {
+        const reasoningData = normalizeStreamTextPayload(event.data);
+        if (!reasoningData?.content) break;
+        const targetMessageId = reasoningData.turnId || state.currentTurnMessageId;
         const targetMessage = targetMessageId
           ? getFreshMessages().find(m => m.id === targetMessageId)
           : getFreshMessages()[getFreshMessages().length - 1];
 
         if (targetMessage?.role === 'assistant') {
           appendAssistantStreamDelta(actions, targetMessage.id, {
-            reasoning: event.data.content,
+            reasoning: reasoningData.content,
           });
         }
       }
@@ -440,22 +601,26 @@ export const useConversationStreamEffects = ({
           }
           flushRef.current();
           flushStreamingMessages();
-          logger.debug('turn_end', { turnId: event.data?.turnId });
+          logger.debug('turn_end', { turnId: normalizeTurnIdPayload(event.data).turnId });
           break;
 
         case 'routing_resolved':
           lastEventAtRef.current = Date.now();
           logHandledEvent();
-          if (eventSessionId && event.data?.mode === 'auto') {
+          {
+            const routingData = normalizeRoutingResolvedPayload(event.data);
+            if (!eventSessionId || !routingData) {
+              break;
+            }
             useTurnExecutionStore.getState().recordRoutingEvidence(eventSessionId, {
               kind: 'auto',
               mode: 'auto',
-              timestamp: event.data.timestamp || Date.now(),
-              agentId: event.data.agentId,
-              agentName: event.data.agentName,
-              reason: event.data.reason,
-              score: event.data.score,
-              fallbackToDefault: event.data.fallbackToDefault,
+              timestamp: routingData.timestamp || Date.now(),
+              agentId: routingData.agentId,
+              agentName: routingData.agentName,
+              reason: routingData.reason,
+              score: routingData.score,
+              fallbackToDefault: routingData.fallbackToDefault,
             });
           }
           break;

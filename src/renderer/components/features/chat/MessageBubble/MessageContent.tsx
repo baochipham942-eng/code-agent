@@ -17,7 +17,6 @@ import type { MessageContentProps } from './types';
 import { UI } from '@shared/constants';
 import 'katex/dist/katex.min.css';
 import type { Components } from 'react-markdown';
-import type { Element } from 'hast';
 import { useAppStore } from '../../../../stores/appStore';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcessor';
 import { isWebMode, copyPathToClipboard } from '../../../../utils/platform';
@@ -130,9 +129,9 @@ const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: string }) 
         }
         setError(null);
       }
-    }).catch((err) => {
+    }).catch((err: unknown) => {
       if (!cancelled) {
-        setError(err?.message || 'Failed to render diagram');
+        setError(err instanceof Error ? err.message : 'Failed to render diagram');
       }
     });
 

@@ -233,20 +233,24 @@ function sanitizeJsonLikeObject(candidate: string): string {
     .replace(/,\s*([}\]])/g, '$1');
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function parseJsonCandidate(candidate: string): Record<string, unknown> {
   const trimmed = candidate.trim();
   try {
-    const parsed = JSON.parse(trimmed);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(trimmed);
+    if (isRecord(parsed)) {
+      return parsed;
     }
     throw new Error('Parsed JSON is not an object');
   } catch (strictError) {
     const sanitized = sanitizeJsonLikeObject(trimmed);
     try {
-      const parsed = JSON.parse(sanitized);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
+      const parsed: unknown = JSON.parse(sanitized);
+      if (isRecord(parsed)) {
+        return parsed;
       }
       throw new Error('Parsed JSON is not an object');
     } catch (looseError) {
@@ -255,6 +259,13 @@ function parseJsonCandidate(candidate: string): Record<string, unknown> {
       throw new Error(`strict parse failed: ${strictMessage}; loose parse failed: ${looseMessage}`);
     }
   }
+}
+
+function parseChatCompletionContent(value: unknown): string {
+  if (!isRecord(value) || !Array.isArray(value.choices)) return '';
+  const firstChoice = value.choices[0] as unknown;
+  if (!isRecord(firstChoice) || !isRecord(firstChoice.message)) return '';
+  return typeof firstChoice.message.content === 'string' ? firstChoice.message.content : '';
 }
 
 function toBoolean(value: unknown): boolean {
@@ -418,8 +429,8 @@ export class TaskOrchestrator {
       throw new Error(`${provider} API error: ${response.status} - ${error}`);
     }
 
-    const data = await response.json();
-    return data.choices[0]?.message?.content || '';
+    const data: unknown = await response.json();
+    return parseChatCompletionContent(data);
   }
 
   /**

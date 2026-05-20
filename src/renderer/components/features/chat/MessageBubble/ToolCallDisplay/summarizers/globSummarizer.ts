@@ -12,7 +12,7 @@ export function summarizeGlob(toolCall: ToolCall): string | null {
   if (Array.isArray(output)) {
     if (output.length === 0) return 'No matches';
     if (output.length === 1) {
-      return `Found 1 file: ${shortenPath(output[0])}`;
+      return `Found 1 file: ${shortenPath(String(output[0]))}`;
     }
     return `Found ${output.length} files`;
   }

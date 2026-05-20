@@ -12,8 +12,17 @@ import type { CLIRunResult } from '../types';
 async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) return '';
   const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) chunks.push(chunk);
+  for await (const chunk of process.stdin as AsyncIterable<unknown>) {
+    chunks.push(toBufferChunk(chunk));
+  }
   return Buffer.concat(chunks).toString('utf-8').trim();
+}
+
+function toBufferChunk(chunk: unknown): Buffer {
+  if (Buffer.isBuffer(chunk)) return chunk;
+  if (typeof chunk === 'string') return Buffer.from(chunk);
+  if (chunk instanceof Uint8Array) return Buffer.from(chunk);
+  return Buffer.from(String(chunk));
 }
 
 function parseParams(raw: string, source: string): Record<string, unknown> {

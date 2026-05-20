@@ -4,12 +4,73 @@
 > 日期: 2026-05-05
 > 基线: origin/main @ 4e6cbbff
 > 上游 audit: 2026-04-28 god-file audit（产出 19 文件白名单 + max-lines=1000 守门）
+> 当前工作树基线: 2026-05-20, `npm run debt:report -- --skip-eslint --limit 15`
 
 ## 背景
 
 `eslint.config.js` 在 2026-04-28 加了 `max-lines=1000` 硬限作为 god-file 守门，并把当时已超线的 19 个历史文件加进白名单 backlog。这份 roadmap 把 19 个文件按拆分难度排序、定义通用拆分 SOP、并通过 3 个 PoC 验证 SOP。
 
 为什么是现在做：3 月刚拆完一批，1 个月内又有文件长回 >900 行；不立即把 backlog 啃下，下一轮重写大概率撞上同样的回归压力。
+
+## 2026-05-20 当前工作树基线
+
+`debt:report` 已成为后续拆分 PR 的统一入口：
+
+```bash
+npm run debt:report
+npm run debt:report -- --skip-eslint --limit 15
+npm run debt:report -- --json --skip-eslint
+```
+
+当前 `src/` 非测试文件基线：
+
+| 指标 | 当前值 | 说明 |
+|------|-------:|------|
+| source files | 1844 | `src/**/*.ts(x)`，排除测试与 fixture |
+| physical lines > 1000 | 26 | 物理行数，用来发现增长压力 |
+| effective lines > 1000 | 0 | 近似 `max-lines` 口径，跳过空行和注释 |
+| effective > 1000 且不在历史白名单 | 0 | 当前无未登记 max-lines blocker |
+| historical whitelist entries | 0 | God File 历史白名单已清空 |
+
+当前 top 15：
+
+| 排名 | 文件 | 物理行 | 有效行 | 白名单 | Owner | 本季度处理 |
+|------|------|-------:|-------:|:------:|-------|------------|
+| 1 | `src/main/model/providers/shared.ts` | 1260 | 907 | no | Model/provider | 物理行观察，不进 max-lines blocker |
+| 2 | `src/main/services/skills/builtinSkills.ts` | 1229 | 974 | no | Skills | 物理行观察，不进 max-lines blocker |
+| 3 | `src/main/model/modelRouter.ts` | 1218 | 971 | no | Model/provider | 物理行观察，不进 max-lines blocker |
+| 4 | `src/cli/database.ts` | 1206 | 981 | no | CLI/database | 物理行观察，不进 max-lines blocker |
+| 5 | `src/main/tools/media/ppt/layouts.ts` | 1173 | 893 | no | Media/PPT | 物理行观察，不进 max-lines blocker |
+| 6 | `src/main/services/desktop/desktopAudioCapture.ts` | 1169 | 921 | no | Desktop/audio | 物理行观察，不进 max-lines blocker |
+| 7 | `src/main/agent/runtime/messageProcessor.ts` | 1166 | 984 | no | Agent runtime | 物理行观察，不进 max-lines blocker |
+| 8 | `src/main/agent/runtime/conversationRuntime.ts` | 1165 | 943 | no | Agent runtime | 物理行观察，不进 max-lines blocker |
+| 9 | `src/main/services/core/repositories/SessionRepository.ts` | 1163 | 916 | no | Persistence | 物理行观察，不进 max-lines blocker |
+| 10 | `src/main/services/infra/browserService.ts` | 1140 | 990 | no | Browser/CDP | 物理行观察，不进 max-lines blocker |
+| 11 | `src/main/services/infra/sessionManager.ts` | 1139 | 749 | no | Session | 物理行观察，不进 max-lines blocker |
+| 12 | `src/main/agent/subagentExecutor.ts` | 1128 | 932 | no | Multi-agent | 已拆 projection / cancellation helper，退出 max-lines blocker |
+| 13 | `src/main/agent/parallelAgentCoordinator.ts` | 1122 | 802 | no | Multi-agent | 物理行观察，不进 max-lines blocker |
+| 14 | `src/web/routes/agent.ts` | 1118 | 965 | no | Web routes | 物理行观察，不进 max-lines blocker |
+| 15 | `src/main/agent/runtime/toolExecutionEngine.ts` | 1112 | 917 | no | Agent runtime | 已拆 tool helper，物理行观察 |
+
+新规则：
+
+- 当前没有有效行超限且未进历史白名单的文件；后续新超线文件必须先进 backlog 并写 owner。
+- `src/main/agent/runtime/toolExecutionEngine.ts` 已拆到 1112 物理行 / 917 有效行，退出 effective > 1000 榜；后续只做物理行继续瘦身。
+- `src/main/services/desktop/computerSurface.ts` 已拆到 997 物理行 / 914 有效行，退出 god-file 状态；后续只做边界稳定和行为回归保护。
+- `src/main/services/desktop/backgroundCgEventSurface.ts` 已拆到 908 物理行，窗口解析 / 候选评分 / diagnosis 投影已迁到 `backgroundCgEventWindowModel.ts`，退出 max-lines 白名单。
+- `src/main/tools/vision/computerUse.ts` 已拆到 592 物理行 / 543 有效行，退出 god-file 状态；Browser smart actions、Computer Surface runtime、platform executors 都有独立 helper。
+- `src/main/services/infra/browserService.ts` 已拆到 1140 物理行 / 990 有效行，退出 effective > 1000 榜和 max-lines 白名单；CDP 启动状态机保留在原文件，DOM snapshot / account state / trace lifecycle / targetRef registry / lease / artifact actions / session state 已分文件。
+- `src/main/agent/runtime/gameArtifactValidator.ts` 已拆到 769 物理行 / 670 有效行，runtime smoke 和 subtype registry 分别迁到 `gameArtifactRuntimeSmoke.ts`、`gameArtifactSubtypeRegistry.ts`，退出 max-lines 白名单。
+- `src/main/agent/subagentExecutor.ts` 已拆到 1128 物理行 / 932 有效行，projection 和 cancellation lifecycle 迁到 `subagentExecutorProjection.ts`、`subagentExecutorCancellation.ts`，退出 max-lines 白名单。
+- `src/main/model/providerRegistry.ts` 已拆成 33 物理行 facade，base/additional/patches provider 注册逻辑分文件，退出 max-lines 白名单。
+- `src/main/desktop/desktopActivityUnderstandingService.ts` 已拆到 650 物理行 / 558 有效行，activity slicing、todo derivation、task sync helper 迁到 `desktopActivityDerivation.ts`，退出 max-lines 白名单。
+- `src/renderer/components/TaskPanel/Orchestration.tsx` 已拆到 765 物理行 / 719 有效行，orchestration model 与 sub-components 迁到 `TaskPanel/orchestration/`，退出 max-lines 白名单。
+- `src/renderer/components/Sidebar.tsx` 已拆到 1039 物理行 / 954 有效行，presentation helper 和账号菜单小组件迁到 `features/sidebar/sidebarPresentation.tsx`，退出 max-lines 白名单。
+- `src/renderer/components/features/settings/sections/NativeDesktopSection.tsx` 已拆到 931 物理行，活动切片、应用聚合、音频话题和格式化 helper 迁到 `nativeDesktopActivityModel.ts`，退出 max-lines 白名单。
+- 额外清掉 7 个已经低于有效行门槛的历史白名单：`src/cli/database.ts`、`src/main/agent/parallelAgentCoordinator.ts`、`src/main/model/providers/shared.ts`、`src/main/services/core/databaseService.ts`、`src/main/services/desktop/desktopAudioCapture.ts`、`src/main/session/claudeSessionParser.ts`、`src/main/tools/media/ppt/layouts.ts`。
+- `eslint.config.js` 的 God File 历史白名单已清空；所有 `src/**/*.ts(x)` 非测试文件重新受 `max-lines=1000` 守门保护。
+- `providers/shared.ts`、`builtinSkills.ts`、`modelRouter.ts` 这类物理行超限但有效行未超限的文件先观察，不扩大白名单。
+- 每个拆分 PR 都要贴 `npm run debt:report -- --skip-eslint --limit 15` 输出，证明没有新增未登记超限文件。
 
 ## 评分模型
 
@@ -148,9 +209,10 @@ PoC 跑通 SOP 后，剩余 16 个按以下批次派活：
 |------|----------|------------|
 | `parallelAgentCoordinator.ts` | deps=8 高 | 切 lifecycle / scheduling 两文件 |
 | `providerRegistry.ts` | 关键路径 | 每个 provider register 抽独立 module |
-| `computerSurface.ts` | 1850 行最长，但 3 个 test 兜底 | 分 2 阶段切：先抽 telemetry storage（已有专测），再切 reliability 部分 |
-| `browserService.ts` | CDP 状态机 | 抽 trace redaction + profile resolver 两块（已有专测） |
-| `computerUse.ts` | vision pipeline | 抽 foreground warning 模块 |
+| `computerSurface.ts` | 已降到 997 物理行 / 914 有效行，退出 god-file 状态和 max-lines 白名单 | Desktop/computer 主压力转到 `backgroundCgEventSurface.ts` |
+| `backgroundCgEventSurface.ts` | 已降到 908 物理行，退出 god-file 状态和 max-lines 白名单 | 后续只在真实 macOS permission/preflight smoke 上补证据 |
+| `browserService.ts` | 已降到 1140 物理行 / 990 有效行，退出 max-lines 白名单；CDP 状态机留在门面内 | 后续只在 provider/profile typed boundary 上小步补强 |
+| `computerUse.ts` | 已降到 592 物理行 / 543 有效行，退出 god-file 状态和 max-lines 白名单 | 后续只做 helper 单测补强，不再按大文件处理 |
 
 ### 批次 B — 难度 2/3 + 需先补测试
 

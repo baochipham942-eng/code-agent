@@ -220,10 +220,8 @@ describe('DesktopComputerSurface target boundaries', () => {
   });
 
   it('blocks background AX actions when targetApp is not running before requesting permission', async () => {
+    installMacOsSurfaceMocks({ missingApps: ['Notes'] });
     const surface = await loadSurface();
-    (surface as unknown as {
-      getTargetAppProcessStatus: (_targetApp: string) => Promise<{ running: boolean }>;
-    }).getTargetAppProcessStatus = async () => ({ running: false });
     const requestPermission = vi.fn(async () => true);
 
     const authorization = await surface.authorizeAction({

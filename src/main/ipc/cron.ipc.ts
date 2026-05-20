@@ -8,8 +8,54 @@ import { getCronService } from '../cron/cronService';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
 import { DEFAULT_MODELS } from '../../shared/constants';
+import type { CronJobDefinition } from '../../shared/contract/cron';
 
 const logger = createLogger('CronIPC');
+
+type CreateCronJobPayload = Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'>;
+type UpdateCronJobPayload = Partial<Omit<CronJobDefinition, 'id' | 'createdAt'>>;
+type CronJobFilterPayload = { enabled?: boolean; tags?: string[] };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function getStringField(source: unknown, field: string): string | undefined {
+  if (!isRecord(source)) return undefined;
+  const value = source[field];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getNumberField(source: unknown, field: string): number | undefined {
+  if (!isRecord(source)) return undefined;
+  const value = source[field];
+  return typeof value === 'number' ? value : undefined;
+}
+
+function getCronJobFilter(source: unknown): CronJobFilterPayload | undefined {
+  if (!isRecord(source)) return undefined;
+  const filter = source.filter;
+  if (!isRecord(filter)) return undefined;
+  const result: CronJobFilterPayload = {};
+  if (typeof filter.enabled === 'boolean') result.enabled = filter.enabled;
+  if (Array.isArray(filter.tags) && filter.tags.every(tag => typeof tag === 'string')) {
+    result.tags = filter.tags;
+  }
+  return result;
+}
+
+function getCreateCronJobPayload(source: unknown): CreateCronJobPayload {
+  if (!isRecord(source)) throw new Error('Invalid cron job payload');
+  return source as unknown as CreateCronJobPayload;
+}
+
+function getUpdateCronJobRequest(source: unknown): { jobId: string; updates: UpdateCronJobPayload } {
+  if (!isRecord(source)) throw new Error('Invalid cron job update payload');
+  const jobId = getStringField(source, 'jobId');
+  const updates = source.updates;
+  if (!jobId || !isRecord(updates)) throw new Error('Invalid cron job update payload');
+  return { jobId, updates: updates as unknown as UpdateCronJobPayload };
+}
 
 const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。根据用户的自然语言描述，生成定时任务的 JSON 配置。
 
@@ -48,38 +94,40 @@ export function registerCronHandlers(): void {
     try {
       switch (action) {
         case 'listJobs': {
-          const { filter } = (payload || {}) as { filter?: { enabled?: boolean; tags?: string[] } };
+          const filter = getCronJobFilter(payload);
           const jobs = cronService.listJobs(filter);
           return { success: true, data: jobs } satisfies IPCResponse;
         }
 
         case 'createJob': {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): IPC payload 是 unknown，cronService.createJob 期望 CreateJobInput；应该在这里走 zod schema 校验后再转入
-          const job = await cronService.createJob(payload as any);
+          const job = await cronService.createJob(getCreateCronJobPayload(payload));
           return { success: true, data: job } satisfies IPCResponse;
         }
 
         case 'updateJob': {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): IPC payload narrow 应该用 zod schema 校验后再用，updates 在 cronService.updateJob 类型上是 Partial<CronJobDefinition>
-          const { jobId, updates } = payload as { jobId: string; updates: any };
+          const { jobId, updates } = getUpdateCronJobRequest(payload);
           const job = await cronService.updateJob(jobId, updates);
           return { success: true, data: job } satisfies IPCResponse;
         }
 
         case 'deleteJob': {
-          const { jobId } = payload as { jobId: string };
+          const jobId = getStringField(payload, 'jobId');
+          if (!jobId) throw new Error('Invalid cron job id');
           const result = await cronService.deleteJob(jobId);
           return { success: true, data: result } satisfies IPCResponse;
         }
 
         case 'triggerJob': {
-          const { jobId } = payload as { jobId: string };
+          const jobId = getStringField(payload, 'jobId');
+          if (!jobId) throw new Error('Invalid cron job id');
           const execution = await cronService.triggerJob(jobId);
           return { success: true, data: execution } satisfies IPCResponse;
         }
 
         case 'getExecutions': {
-          const { jobId, limit } = payload as { jobId: string; limit?: number };
+          const jobId = getStringField(payload, 'jobId');
+          if (!jobId) throw new Error('Invalid cron job id');
+          const limit = getNumberField(payload, 'limit');
           const executions = cronService.getJobExecutions(jobId, limit);
           return { success: true, data: executions } satisfies IPCResponse;
         }
@@ -90,7 +138,7 @@ export function registerCronHandlers(): void {
         }
 
         case 'generateFromPrompt': {
-          const { prompt } = payload as { prompt: string };
+          const prompt = getStringField(payload, 'prompt');
           if (!prompt?.trim()) {
             return { success: false, error: { code: 'INVALID_INPUT', message: '请输入任务描述' } } satisfies IPCResponse;
           }
@@ -110,7 +158,7 @@ export function registerCronHandlers(): void {
             return { success: false, error: { code: 'PARSE_ERROR', message: 'AI 返回格式异常，请重试或换个描述方式' } } satisfies IPCResponse;
           }
           try {
-            const draft = JSON.parse(jsonMatch[0]);
+            const draft: unknown = JSON.parse(jsonMatch[0]);
             return { success: true, data: draft } satisfies IPCResponse;
           } catch {
             return { success: false, error: { code: 'PARSE_ERROR', message: 'AI 返回的 JSON 解析失败，请重试' } } satisfies IPCResponse;

@@ -9,17 +9,24 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { CoreAgentConfig, CoreAgentId, ModelTier } from './types';
 
-interface AgentMdFrontmatter {
-  name: string;
-  description?: string;
-  model?: ModelTier;
-  tools?: string[];
-  'max-iterations'?: number;
-  // Phase 3 extensions
-  readonly?: boolean;
-  'context-level'?: string;
-  timeout?: number;
-  'max-budget'?: number;
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
+}
+
+function booleanValue(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function stringArrayValue(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : undefined;
+}
+
+function modelTierValue(value: unknown): ModelTier | undefined {
+  return value === 'fast' || value === 'balanced' || value === 'powerful' ? value : undefined;
 }
 
 /**
@@ -33,17 +40,18 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
   const frontmatter = parseSimpleYaml(frontmatterMatch[1]);
   const prompt = frontmatterMatch[2].trim();
 
-  const name = frontmatter.name || path.basename(filename, '.md');
+  const name = stringValue(frontmatter.name) || path.basename(filename, '.md');
+  const description = stringValue(frontmatter.description);
 
   return {
     id: name as CoreAgentId,
-    name: frontmatter.description || name,
-    description: frontmatter.description || `Custom agent: ${name}`,
+    name: description || name,
+    description: description || `Custom agent: ${name}`,
     prompt,
-    tools: frontmatter.tools || ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep'],
-    model: (frontmatter.model as ModelTier) || 'balanced',
-    maxIterations: frontmatter['max-iterations'] || 30,
-    readonly: frontmatter.readonly ?? false,
+    tools: stringArrayValue(frontmatter.tools) || ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep'],
+    model: modelTierValue(frontmatter.model) || 'balanced',
+    maxIterations: numberValue(frontmatter['max-iterations']) || 30,
+    readonly: booleanValue(frontmatter.readonly) ?? false,
   };
 }
 
@@ -51,10 +59,8 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
  * Simple YAML parser for frontmatter.
  * Handles key: value pairs and key: [array] / key:\n  - item syntax.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): YAML frontmatter 解析返回任意 schema，应该用 unknown 然后让调用方按 zod 校验
-function parseSimpleYaml(yaml: string): Record<string, any> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 yaml 返回值
-  const result: Record<string, any> = {};
+function parseSimpleYaml(yaml: string): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
   const lines = yaml.split('\n');
   let currentKey: string | null = null;
   let currentArray: string[] | null = null;

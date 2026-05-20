@@ -24,8 +24,9 @@ export async function generateBashDescription(command: string): Promise<string |
   if (process.env.ADAPTIVE_ROUTER_DISABLED === 'true' || process.env.CODE_AGENT_CLI_MODE === 'true') return null;
 
   const cacheKey = command.slice(0, 80);
-  if (descriptionCache.has(cacheKey)) {
-    return descriptionCache.get(cacheKey)!;
+  const cachedDescription = descriptionCache.get(cacheKey);
+  if (cachedDescription) {
+    return cachedDescription;
   }
 
   try {

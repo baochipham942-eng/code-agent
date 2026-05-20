@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
+import { IPC_DOMAINS, type IPCResponse } from '../../../src/shared/ipc';
 
 const mocks = vi.hoisted(() => ({
   currentUser: null as null | { id: string; email: string; isAdmin?: boolean },
@@ -27,7 +27,7 @@ vi.mock('../../../src/main/services/admin', () => ({
 
 import { registerAdminHandlers } from '../../../src/main/ipc/admin.ipc';
 
-type DomainHandler = (_: unknown, request: IPCRequest) => Promise<IPCResponse>;
+type DomainHandler = (_: unknown, request: unknown) => Promise<IPCResponse>;
 
 function makeFakeIpc(): { handle: Mock; getHandler: () => DomainHandler } {
   const registry = new Map<string, DomainHandler>();
@@ -157,5 +157,59 @@ describe('admin.ipc access control', () => {
       data: { users: [{ id: 'user-1', email: 'user@example.com', isAdmin: false }] },
     });
     expect(mocks.adminService.listUsers).toHaveBeenCalledOnce();
+  });
+
+  it('rejects malformed create invite code payloads before calling admin services', async () => {
+    mocks.currentUser = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
+    mocks.sessionVerified = true;
+    const ipc = makeFakeIpc();
+    registerAdminHandlers(ipc as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'createInviteCode',
+      payload: { label: 'Beta', maxUses: '3' },
+    });
+
+    expect(response).toMatchObject({
+      success: false,
+      error: { code: 'INVALID_PAYLOAD' },
+    });
+    expect(mocks.adminService.createInviteCode).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed update invite code payloads before calling admin services', async () => {
+    mocks.currentUser = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
+    mocks.sessionVerified = true;
+    const ipc = makeFakeIpc();
+    registerAdminHandlers(ipc as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'updateInviteCode',
+      payload: { id: 42, isActive: true },
+    });
+
+    expect(response).toMatchObject({
+      success: false,
+      error: { code: 'INVALID_PAYLOAD' },
+    });
+    expect(mocks.adminService.updateInviteCode).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed control-plane audit event limits before calling admin services', async () => {
+    mocks.currentUser = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
+    mocks.sessionVerified = true;
+    const ipc = makeFakeIpc();
+    registerAdminHandlers(ipc as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'listControlPlaneAuditEvents',
+      payload: { limit: '80' },
+    });
+
+    expect(response).toMatchObject({
+      success: false,
+      error: { code: 'INVALID_PAYLOAD' },
+    });
+    expect(mocks.adminService.listControlPlaneAuditEvents).not.toHaveBeenCalled();
   });
 });

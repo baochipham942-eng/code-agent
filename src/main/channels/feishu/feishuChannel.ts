@@ -50,10 +50,50 @@ const FEISHU_CHANNEL_CAPABILITIES: ChannelCapabilities = {
  * 飞书消息类型
  */
 type FeishuMessageType = 'text' | 'post' | 'image' | 'interactive';
+type FeishuCardTextTag = 'lark_md' | 'plain_text';
+type FeishuCardButtonType = 'primary';
+
+interface FeishuCardText {
+  content: string;
+  tag: FeishuCardTextTag;
+}
+
+interface FeishuCardDivElement {
+  tag: 'div';
+  text: FeishuCardText;
+}
+
+interface FeishuCardButtonAction {
+  tag: 'button';
+  text: FeishuCardText;
+  value: { action: string };
+  type: FeishuCardButtonType;
+}
+
+interface FeishuCardActionElement {
+  tag: 'action';
+  actions: FeishuCardButtonAction[];
+}
+
+type FeishuCardElement = FeishuCardDivElement | FeishuCardActionElement;
+
+interface FeishuCardContent {
+  config: { wide_screen_mode: boolean };
+  elements: FeishuCardElement[];
+}
 
 /**
  * 飞书事件回调接口
  */
+interface FeishuMention {
+  key: string;
+  id: {
+    open_id: string;
+    user_id?: string;
+  };
+  name: string;
+}
+
 interface FeishuMessageEvent {
   message: {
     message_id: string;
@@ -64,14 +104,7 @@ interface FeishuMessageEvent {
     chat_type: 'p2p' | 'group';
     message_type: FeishuMessageType;
     content: string;
-    mentions?: Array<{
-      key: string;
-      id: {
-        open_id: string;
-        user_id?: string;
-      };
-      name: string;
-    }>;
+    mentions?: FeishuMention[];
   };
   sender: {
     sender_id: {
@@ -79,6 +112,109 @@ interface FeishuMessageEvent {
       user_id?: string;
     };
     sender_type: string;
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readStringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function readRecordField(record: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
+  const value = record[key];
+  return isRecord(value) ? value : undefined;
+}
+
+function readArrayField(record: Record<string, unknown>, key: string): unknown[] | undefined {
+  const value = record[key];
+  return Array.isArray(value) ? value : undefined;
+}
+
+function parseJsonRecord(raw: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeFeishuMessageType(value: unknown): FeishuMessageType | undefined {
+  if (value === 'text' || value === 'post' || value === 'image' || value === 'interactive') {
+    return value;
+  }
+  return undefined;
+}
+
+function normalizeFeishuChatType(value: unknown): FeishuMessageEvent['message']['chat_type'] | undefined {
+  if (value === 'p2p' || value === 'group') return value;
+  return undefined;
+}
+
+function normalizeFeishuMention(value: unknown): FeishuMention | undefined {
+  if (!isRecord(value)) return undefined;
+  const id = readRecordField(value, 'id');
+  if (!id) return undefined;
+  const key = readStringField(value, 'key');
+  const openId = readStringField(id, 'open_id');
+  const name = readStringField(value, 'name');
+  if (!key || !openId || !name) return undefined;
+  return {
+    key,
+    id: {
+      open_id: openId,
+      user_id: readStringField(id, 'user_id'),
+    },
+    name,
+  };
+}
+
+function normalizeFeishuMessageEvent(payload: unknown): FeishuMessageEvent | undefined {
+  if (!isRecord(payload)) return undefined;
+  const message = readRecordField(payload, 'message');
+  const sender = readRecordField(payload, 'sender');
+  if (!message || !sender) return undefined;
+
+  const senderId = readRecordField(sender, 'sender_id');
+  const openId = senderId ? readStringField(senderId, 'open_id') : undefined;
+  const senderType = readStringField(sender, 'sender_type');
+  const messageId = readStringField(message, 'message_id');
+  const createTime = readStringField(message, 'create_time');
+  const chatId = readStringField(message, 'chat_id');
+  const chatType = normalizeFeishuChatType(message.chat_type);
+  const messageType = normalizeFeishuMessageType(message.message_type);
+  const content = readStringField(message, 'content');
+  if (!openId || !senderType || !messageId || !createTime || !chatId || !chatType || !messageType || content === undefined) {
+    return undefined;
+  }
+
+  const mentions = readArrayField(message, 'mentions')
+    ?.map(normalizeFeishuMention)
+    .filter((mention): mention is FeishuMention => Boolean(mention));
+
+  return {
+    message: {
+      message_id: messageId,
+      root_id: readStringField(message, 'root_id'),
+      parent_id: readStringField(message, 'parent_id'),
+      create_time: createTime,
+      chat_id: chatId,
+      chat_type: chatType,
+      message_type: messageType,
+      content,
+      mentions,
+    },
+    sender: {
+      sender_id: {
+        open_id: openId,
+        user_id: senderId ? readStringField(senderId, 'user_id') : undefined,
+      },
+      sender_type: senderType,
+    },
   };
 }
 
@@ -401,9 +537,8 @@ export class FeishuChannel extends BaseChannelPlugin {
     return { success: true, messageId: initial.messageId };
   }
 
-  private buildCardContent(text: string, buttons?: Array<{ text: string; value: string }>): object {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 飞书卡片 element 协议有多种 tag (div/action/img/...)，应抽出 FeishuCardElement 联合类型
-    const elements: any[] = [
+  private buildCardContent(text: string, buttons?: Array<{ text: string; value: string }>): FeishuCardContent {
+    const elements: FeishuCardElement[] = [
       {
         tag: 'div',
         text: { content: text, tag: 'lark_md' },
@@ -459,37 +594,43 @@ export class FeishuChannel extends BaseChannelPlugin {
     // Webhook 端点
     this.webhookApp.post('/webhook/feishu', async (req: Request, res: Response) => {
       try {
-        const body = req.body;
-        logger.debug('Received Feishu webhook', { type: body?.type, challenge: !!body?.challenge });
+        const body: unknown = req.body;
+        const bodyRecord = isRecord(body) ? body : {};
+        const bodyType = readStringField(bodyRecord, 'type');
+        const challenge = readStringField(bodyRecord, 'challenge');
+        const header = readRecordField(bodyRecord, 'header');
+        const eventPayload = readRecordField(bodyRecord, 'event');
+        const eventType = header ? readStringField(header, 'event_type') : undefined;
+        logger.debug('Received Feishu webhook', { type: bodyType, challenge: !!challenge });
 
         // 处理 URL 验证请求
-        if (body?.type === 'url_verification' || body?.challenge) {
-          logger.info('Feishu URL verification', { challenge: body.challenge });
-          res.json({ challenge: body.challenge });
+        if (bodyType === 'url_verification' || challenge) {
+          logger.info('Feishu URL verification', { challenge });
+          res.json({ challenge });
           return;
         }
 
         // 处理事件 (schema 2.0 格式)
-        if (body?.header?.event_type === 'im.message.receive_v1' && body?.event) {
+        if (eventType === 'im.message.receive_v1' && eventPayload) {
+          const event = normalizeFeishuMessageEvent(eventPayload);
           logger.info('Received Feishu message event', {
-            eventId: body.header.event_id,
-            messageId: body.event.message?.message_id,
-            contentLength: String(body.event.message?.content || '').length,
+            eventId: header ? readStringField(header, 'event_id') : undefined,
+            messageId: event?.message.message_id,
+            contentLength: event?.message.content.length ?? 0,
           });
 
-          // 直接调用消息处理器
-          const event: FeishuMessageEvent = {
-            message: body.event.message,
-            sender: body.event.sender,
-          };
-          logger.info('Calling handleMessageEvent...');
-          await this.handleMessageEvent(event);
-          logger.info('handleMessageEvent completed');
+          if (event) {
+            logger.info('Calling handleMessageEvent...');
+            await this.handleMessageEvent(event);
+            logger.info('handleMessageEvent completed');
+          } else {
+            logger.warn('Malformed Feishu message event payload');
+          }
         } else {
           logger.warn('Unhandled webhook event', {
-            type: body?.type,
-            eventType: body?.header?.event_type,
-            hasEvent: !!body?.event,
+            type: bodyType,
+            eventType,
+            hasEvent: !!eventPayload,
           });
         }
 
@@ -618,21 +759,22 @@ export class FeishuChannel extends BaseChannelPlugin {
       let attachments: ChannelAttachment[] | undefined;
 
       if (msg.message_type === 'text') {
-        const parsed = JSON.parse(msg.content);
-        content = parsed.text || '';
+        const parsed = parseJsonRecord(msg.content);
+        content = readStringField(parsed, 'text') || '';
       } else if (msg.message_type === 'post') {
         // 富文本消息，提取纯文本
-        const parsed = JSON.parse(msg.content);
+        const parsed = parseJsonRecord(msg.content);
         content = this.extractTextFromPost(parsed);
       } else if (msg.message_type === 'image') {
         // 图片消息
-        const parsed = JSON.parse(msg.content);
+        const parsed = parseJsonRecord(msg.content);
+        const imageKey = readStringField(parsed, 'image_key') || '';
         content = '[图片]';
         attachments = [{
-          id: parsed.image_key,
+          id: imageKey,
           type: 'image',
           name: 'image.png',
-          url: parsed.image_key, // 需要通过 API 获取真实 URL
+          url: imageKey, // 需要通过 API 获取真实 URL
         }];
       }
 
@@ -674,17 +816,21 @@ export class FeishuChannel extends BaseChannelPlugin {
 
   private extractTextFromPost(post: Record<string, unknown>): string {
     // 从富文本 post 中提取纯文本
-    const content = (post.content as unknown[]) || [];
+    const content = readArrayField(post, 'content') || [];
     const texts: string[] = [];
 
     for (const paragraph of content) {
       if (Array.isArray(paragraph)) {
         for (const element of paragraph) {
-          const elem = element as Record<string, unknown>;
-          if (elem.tag === 'text') {
-            texts.push(elem.text as string);
-          } else if (elem.tag === 'at') {
-            texts.push(`@${elem.user_name || elem.user_id}`);
+          if (!isRecord(element)) continue;
+          const tag = readStringField(element, 'tag');
+          if (tag === 'text') {
+            const text = readStringField(element, 'text');
+            if (text) texts.push(text);
+          } else if (tag === 'at') {
+            const userName = readStringField(element, 'user_name');
+            const userId = readStringField(element, 'user_id');
+            texts.push(`@${userName || userId || ''}`);
           }
         }
       }

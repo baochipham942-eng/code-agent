@@ -19,6 +19,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import type PptxGenJS from 'pptxgenjs';
 import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS, MODEL_MAX_TOKENS } from '../../../../shared/constants';
 import type { PPTGenerateParams, SlideImage, ChartMode, ResearchContext, VlmCallback, SlideData } from '../../media/ppt/types';
 import { getThemeConfig } from '../../media/ppt/themes';
@@ -131,10 +132,13 @@ async function writeDesignPptArtifact(input: {
   return { artifactPath, artifact };
 }
 
+type PptxGenJSConstructor = new () => PptxGenJS;
+
 // pptxgenjs is CJS — load via require to keep Electron compatibility
-function getPptxGenJS(): unknown {
+function getPptxGenJS(): PptxGenJSConstructor {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require('pptxgenjs');
+  const moduleValue: unknown = require('pptxgenjs');
+  return moduleValue as PptxGenJSConstructor;
 }
 
 export async function executePptGenerate(
@@ -490,9 +494,7 @@ export async function executePptGenerate(
     }
 
     // ===== 生成模式 =====
-    // pptxgenjs 是 CJS 库，运行时构造，类型保持 unknown 以避免拉入 .d.ts
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const Pptx = getPptxGenJS() as new () => any;
+    const Pptx = getPptxGenJS();
     const pptx = new Pptx();
 
     pptx.author = 'Agent Neo';

@@ -119,6 +119,8 @@ npm run acceptance:browser-computer-app-host -- --provider system-chrome-cdp
 npm run acceptance:browser-computer-app-host -- --json
 ```
 
+Agent runtime app-host smoke is tracked separately in [agent-runtime-smoke-matrix.md](./agent-runtime-smoke-matrix.md).
+
 Browser pool / multi-agent isolation smoke:
 
 ```bash

@@ -30,8 +30,10 @@ import { loadShellEnvironment } from '../main/services/infra/shellEnvironment';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../shared/ipc';
 import { resolveSessionDefaultModelConfig } from '../main/services/core/sessionDefaults';
 import { getModelSessionState } from '../main/session/modelSessionState';
-import type { AuthStatus, AuthUser, ModelProvider, PermissionResponse } from '../shared/contract';
+import type { AuthStatus, AuthUser, ModelProvider, PermissionResponse, Session } from '../shared/contract';
 import type { MCPServerConfig } from '../main/mcp/mcpClient';
+import type { SwarmTraceRepository } from '../main/services/core/repositories/SwarmTraceRepository';
+import type { PendingApprovalRepository } from '../main/services/core/repositories/PendingApprovalRepository';
 
 const logger = createLogger('WebServer');
 
@@ -56,14 +58,52 @@ type WorkspaceSettingsForBootstrap = {
   defaultDirectory?: string;
 };
 
+type SupabaseSettingsForBootstrap = {
+  url?: string;
+  anonKey?: string;
+};
+
 type ConfigServiceForBootstrap = {
   getSettings: () => {
     mcp?: {
       servers?: MCPServerConfig[];
     };
     workspace?: WorkspaceSettingsForBootstrap;
+    supabase?: SupabaseSettingsForBootstrap;
   };
 };
+
+type SessionDomainPayload = {
+  sessionId?: string;
+  provider?: ModelProvider;
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+  adaptive?: boolean;
+  includeArchived?: boolean;
+  title?: string;
+  workingDirectory?: string;
+  userMessageId?: string;
+  updates?: Partial<Session>;
+};
+
+type SessionDomainIpcRequest = {
+  action: string;
+  payload?: SessionDomainPayload;
+};
+
+type SkillReloadStats = {
+  total: number;
+};
+
+type DomainAuthHandler = (event: unknown, request?: DomainIpcRequest) => unknown | Promise<unknown>;
+
+type PermissionResponseHandler = (
+  event: unknown,
+  requestId: string,
+  response: PermissionResponse,
+  sessionId?: string,
+) => unknown | Promise<unknown>;
 
 function resolveDirIfUsable(dir: string | undefined): string | null {
   if (!dir) return null;
@@ -145,7 +185,7 @@ async function initializeWebSkillServices(configService: ConfigServiceForBootstr
 
     initSkillWatcher(workingDir)
       .then((watcher) => {
-        watcher.on('reloaded', (reloadStats) => {
+        watcher.on('reloaded', (reloadStats: SkillReloadStats) => {
           logger.info('Skills hot-reloaded', { total: reloadStats.total });
           broadcastSSE('mcp:event', {
             type: 'server_connected',
@@ -262,7 +302,7 @@ export function installLocalWebAuthStatusHandler(
     return false;
   }
 
-  const originalAuthHandler = handlerMap.get(IPC_DOMAINS.AUTH);
+  const originalAuthHandler = handlerMap.get(IPC_DOMAINS.AUTH) as DomainAuthHandler | undefined;
   handlerMap.set(IPC_DOMAINS.AUTH, async (event: unknown, request?: DomainIpcRequest) => {
     if (request?.action === 'getStatus') {
       return {
@@ -316,9 +356,13 @@ import { createDomainRouter } from './routes/domain';
 import { createStaticRouter } from './routes/static';
 import { createAgentRouter } from './routes/agent';
 import type { ActiveAgentLoop, PendingLocalToolCall } from './routes/agent';
+import type { SupabaseAgentBinding } from './routes/agentRouteTypes';
 import { createSessionsRouter } from './routes/sessions';
+import type { SupabaseSessionBinding } from './routes/sessions';
 import { createDevRouter } from './routes/dev';
 import type { PendingDevPermissionRequest } from './routes/dev';
+
+type WebSupabaseBinding = SupabaseAgentBinding & SupabaseSessionBinding;
 
 // Re-export broadcastSSE for backward compatibility
 export { broadcastSSE };
@@ -398,8 +442,7 @@ async function initializeServices(): Promise<void> {
   try {
     const { initSupabase } = await import('../main/services/infra/supabaseService');
     const { DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } = await import('../shared/constants');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): configService.getSettings 应返回 AppSettings 类型，narrow 后即可去掉这处
-    const settings = configService.getSettings() as Record<string, any>;
+    const settings = configService.getSettings();
     const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url || DEFAULT_SUPABASE_URL;
     const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey || DEFAULT_SUPABASE_ANON_KEY;
     initSupabase(supabaseUrl, supabaseAnonKey);
@@ -470,8 +513,7 @@ async function initializeServices(): Promise<void> {
   // 工具调用执行 39 turn 但 UI 占比纹丝不动）。
   try {
     const { getContextHealthService } = await import('../main/context/contextHealthService');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): web 模式的 BrowserWindow 是自定义 mock 不是 Electron.BrowserWindow，contextHealthService.setMainWindow 应该接 MockBrowserWindow|Electron.BrowserWindow 联合或 ducktype 接口
-    getContextHealthService().setMainWindow(webModeWindow as any);
+    getContextHealthService().setMainWindow(webModeWindow);
     logger.info('contextHealthService bound to web-mode window');
   } catch (error) {
     logger.warn('Failed to bind contextHealthService window:', (error as Error).message);
@@ -496,7 +538,7 @@ const webModeWindow = new BrowserWindow();
 // 用同步 require 保证 esbuild 把 window.ts 视为单例（避免 dynamic import 切分到独立 chunk）。
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { setMainWindow } = require('../main/app/window');
+  const { setMainWindow } = require('../main/app/window') as typeof import('../main/app/window');
   setMainWindow(webModeWindow);
   logger.info('webModeWindow registered as mainWindow for SSE bridge');
 } catch (err) {
@@ -511,20 +553,20 @@ function registerHandlers(): void {
   // web/e2e 路径下 swarm.ipc.ts 的 handler 触发时会抛 "SwarmServices not registered"
   // 被 try/catch 兜底返回空数据，导致 SwarmTraceHistory 等功能在 web 模式永远空。
   try {
-    const { registerSwarmServices } = require('../main/agent/swarmServices');
-    const { getPlanApprovalGate } = require('../main/agent/planApproval');
-    const { getSwarmLaunchApprovalGate } = require('../main/agent/swarmLaunchApproval');
-    const { getParallelAgentCoordinator } = require('../main/agent/parallelAgentCoordinator');
-    const { getSpawnGuard } = require('../main/agent/spawnGuard');
-    const { getTeammateService } = require('../main/agent/teammate/teammateService');
-    const { persistAgentRun, getRecentAgentHistory } = require('../main/session/agentHistoryPersistence');
-    const { installSwarmTraceWriter } = require('../main/agent/swarmTraceWriter');
-    const { getDatabase } = require('../main/services/core/databaseService');
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const { registerSwarmServices } = require('../main/agent/swarmServices') as typeof import('../main/agent/swarmServices');
+    const { getPlanApprovalGate } = require('../main/agent/planApproval') as typeof import('../main/agent/planApproval');
+    const { getSwarmLaunchApprovalGate } = require('../main/agent/swarmLaunchApproval') as typeof import('../main/agent/swarmLaunchApproval');
+    const { getParallelAgentCoordinator } = require('../main/agent/parallelAgentCoordinator') as typeof import('../main/agent/parallelAgentCoordinator');
+    const { getSpawnGuard } = require('../main/agent/spawnGuard') as typeof import('../main/agent/spawnGuard');
+    const { getTeammateService } = require('../main/agent/teammate/teammateService') as typeof import('../main/agent/teammate/teammateService');
+    const { persistAgentRun, getRecentAgentHistory } = require('../main/session/agentHistoryPersistence') as typeof import('../main/session/agentHistoryPersistence');
+    const { installSwarmTraceWriter } = require('../main/agent/swarmTraceWriter') as typeof import('../main/agent/swarmTraceWriter');
+    const { getDatabase } = require('../main/services/core/databaseService') as typeof import('../main/services/core/databaseService');
+    /* eslint-enable @typescript-eslint/no-require-imports */
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): swarmTraceRepo 是 SwarmTraceRepo，应 import 类型；用 require() 加载所以推断不出来
-    let swarmTraceRepo: any = null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pendingApprovalRepo 是 PendingApprovalRepo，同 swarmTraceRepo
-    let pendingApprovalRepo: any = null;
+    let swarmTraceRepo: SwarmTraceRepository | null = null;
+    let pendingApprovalRepo: PendingApprovalRepository | null = null;
     try {
       const db = getDatabase();
       if (db.isReady) {
@@ -578,12 +620,12 @@ function registerHandlers(): void {
   }
 
   const deps: IpcDependencies = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 setMainWindow，IpcDependencies.getMainWindow 返回 Electron.BrowserWindow 但 web 模式给的是 mock
-    getMainWindow: () => webModeWindow as any,
+    getMainWindow: () => webModeWindow,
     getAppService: () => null, // Web mode uses HTTP API, not AppService
     getConfigService: () => {
       try {
-        const { getConfigService } = require('../main/services/core/configService');
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { getConfigService } = require('../main/services/core/configService') as typeof import('../main/services/core/configService');
         return getConfigService();
       } catch {
         return null;
@@ -601,14 +643,13 @@ function registerHandlers(): void {
   // 1. 接受 ipcMain 参数的 handler — 注册到我们传入的 mockIpcMain
   // 2. 直接 import { ipcMain } from 'electron' 的 handler — 注册到 electronMock 的 ipcMain
   // 由于 installElectronMock() 已将 'electron' 模块替换为 mock，两种方式最终都注册到同一个 handlers Map
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): mockIpcMain 类型不完整匹配 Electron.IpcMain，应该把 setupAllIpcHandlers 第一个参数改成 IpcMainLike 鸭子类型接口
-  setupAllIpcHandlers(mockIpcMain as any, deps);
+  setupAllIpcHandlers(mockIpcMain, deps);
 
   if (installLocalWebAuthStatusHandler(handlers)) {
     logger.info('Local web auth status enabled for E2E/dev API mode');
   }
 
-  const originalPermissionResponseHandler = handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE);
+  const originalPermissionResponseHandler = handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE) as PermissionResponseHandler | undefined;
   handlers.set(
     IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
     async (_event: unknown, requestId: string, response: PermissionResponse, sessionId?: string) => {
@@ -626,7 +667,7 @@ function registerHandlers(): void {
       }
 
       if (originalPermissionResponseHandler) {
-        return originalPermissionResponseHandler(_event as never, requestId, response, sessionId);
+        return originalPermissionResponseHandler(_event, requestId, response, sessionId);
       }
 
       return {
@@ -641,8 +682,7 @@ function registerHandlers(): void {
 
   // Override domain:session handler — session.ipc.ts requires AppService which is null in web mode.
   // Re-route to SessionManager (same logic as the REST /api/sessions endpoints).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): IPC payload 形态由 action 决定，应抽 SessionDomainPayloadMap 字典按 action narrow（同 cron.ipc.ts）
-  handlers.set('domain:session', async (_event: unknown, request: { action: string; payload?: any }) => {
+  handlers.set('domain:session', async (_event: unknown, request: SessionDomainIpcRequest) => {
     const { action, payload } = request;
     try {
       if (action === 'switchModel') {
@@ -650,7 +690,7 @@ function registerHandlers(): void {
           return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId, provider and model are required' } };
         }
         getModelSessionState().setOverride(payload.sessionId, {
-          provider: payload.provider as ModelProvider,
+          provider: payload.provider,
           model: payload.model,
           temperature: payload.temperature,
           maxTokens: payload.maxTokens,
@@ -708,14 +748,14 @@ function registerHandlers(): void {
           sm.setCurrentSession((data as { id: string }).id);
           break;
         case 'load':
-          data = await sm.restoreSession(payload?.sessionId);
+          data = await sm.restoreSession(payload?.sessionId as string);
           break;
         case 'delete':
-          await sm.deleteSession(payload?.sessionId);
+          await sm.deleteSession(payload?.sessionId as string);
           data = null;
           break;
         case 'getMessages':
-          data = await sm.getMessages(payload?.sessionId);
+          data = await sm.getMessages(payload?.sessionId as string);
           break;
         case 'rewindToPrompt': {
           const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
@@ -786,17 +826,17 @@ function registerHandlers(): void {
           break;
         }
         case 'export':
-          data = await sm.exportSession(payload?.sessionId);
+          data = await sm.exportSession(payload?.sessionId as string);
           break;
         case 'update':
-          await sm.updateSession(payload?.sessionId, payload?.updates || {});
+          await sm.updateSession(payload?.sessionId as string, payload?.updates || {});
           data = null;
           break;
         case 'archive':
-          data = await sm.archiveSession(payload?.sessionId);
+          data = await sm.archiveSession(payload?.sessionId as string);
           break;
         case 'unarchive':
-          data = await sm.unarchiveSession(payload?.sessionId);
+          data = await sm.unarchiveSession(payload?.sessionId as string);
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown session action: ${action}` } };
@@ -870,15 +910,17 @@ function createApp(): express.Express {
   /**
    * 获取 Supabase client + user_id（用于 Web 模式云端持久化）
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): supabase 是 SupabaseClient，应 import { SupabaseClient } from '@supabase/supabase-js'（同 routes/sessions.ts）
-  async function getSupabaseForSession(): Promise<{ supabase: any; userId: string } | null> {
+  async function getSupabaseForSession(): Promise<WebSupabaseBinding | null> {
     try {
       const { getSupabase, isSupabaseInitialized } = await import('../main/services/infra/supabaseService');
       if (!isSupabaseInitialized()) return null;
       const { getAuthService } = await import('../main/services/auth/authService');
       const user = getAuthService().getCurrentUser();
       if (!user?.id) return null;
-      return { supabase: getSupabase(), userId: user.id };
+      return {
+        supabase: getSupabase() as unknown as WebSupabaseBinding['supabase'],
+        userId: user.id,
+      };
     } catch {
       return null;
     }

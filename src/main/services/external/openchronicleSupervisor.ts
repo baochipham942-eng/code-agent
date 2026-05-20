@@ -42,6 +42,26 @@ let cachedShim: string | null = null;
 let currentState: OpenchronicleProcessState = 'stopped';
 let lastError = '';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stringArray(value: unknown, fallback: string[]): string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : fallback;
+}
+
+function parseSettings(value: unknown): OpenchronicleSettings {
+  if (!isRecord(value)) return { ...DEFAULT_OPENCHRONICLE_SETTINGS };
+  return {
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : DEFAULT_OPENCHRONICLE_SETTINGS.enabled,
+    autoInjectContext: typeof value.autoInjectContext === 'boolean'
+      ? value.autoInjectContext
+      : DEFAULT_OPENCHRONICLE_SETTINGS.autoInjectContext,
+    blacklistApps: stringArray(value.blacklistApps, DEFAULT_OPENCHRONICLE_SETTINGS.blacklistApps),
+    blacklistUrlPatterns: stringArray(value.blacklistUrlPatterns, DEFAULT_OPENCHRONICLE_SETTINGS.blacklistUrlPatterns),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // CLI shim resolution
 // ---------------------------------------------------------------------------
@@ -53,7 +73,9 @@ async function resolveShim(): Promise<string | null> {
       await fs.access(candidate, fs.constants.X_OK);
       cachedShim = candidate;
       return candidate;
-    } catch {}
+    } catch {
+      // Try the next known install path.
+    }
   }
   return null;
 }
@@ -65,7 +87,8 @@ async function resolveShim(): Promise<string | null> {
 export async function loadSettings(): Promise<OpenchronicleSettings> {
   try {
     const raw = await fs.readFile(SETTINGS_PATH, 'utf-8');
-    return { ...DEFAULT_OPENCHRONICLE_SETTINGS, ...JSON.parse(raw) };
+    const parsed: unknown = JSON.parse(raw);
+    return parseSettings(parsed);
   } catch {
     return { ...DEFAULT_OPENCHRONICLE_SETTINGS };
   }
@@ -90,8 +113,8 @@ async function runShim(args: string[]): Promise<{ code: number; stdout: string; 
     const proc = spawn(shim, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
-    proc.stdout?.on('data', (d) => (stdout += d.toString()));
-    proc.stderr?.on('data', (d) => (stderr += d.toString()));
+    proc.stdout?.on('data', (d: Buffer | string) => (stdout += d.toString()));
+    proc.stderr?.on('data', (d: Buffer | string) => (stderr += d.toString()));
     proc.on('close', (code) => resolve({ code: code ?? -1, stdout, stderr }));
     proc.on('error', (e) => resolve({ code: -1, stdout, stderr: stderr + e.message }));
   });

@@ -1,5 +1,5 @@
 // ContextAssembly - Inference orchestration and model fallback.
-import type { AgentEvent } from '../../../../shared/contract';
+import type { AgentEvent, ToolCall } from '../../../../shared/contract';
 import type { ModelResponse } from '../../../agent/loopTypes';
 import { getConfigService, getLangfuseService } from '../../../services';
 import { logCollector } from '../../../mcp/logCollector.js';
@@ -19,7 +19,7 @@ import { needsArtifactTaskBrief } from '../../../prompts/builder';
 import {
   estimateModelMessageTokens,
 } from '../../../context/tokenOptimizer';
-import type { ModelMessage } from '../../../agent/loopTypes';
+import type { MessageContent, ModelMessage } from '../../../agent/loopTypes';
 import type { StreamCallback } from '../../../model/types';
 import type { ModelConfig } from '../../../../shared/contract/model';
 import type { ContextAssemblyCtx } from '../contextAssembly';
@@ -119,6 +119,10 @@ function messageHasImageParts(message: ModelMessage | undefined): boolean {
   );
 }
 
+function contentHasImageParts(content: ModelMessage['content']): content is MessageContent[] {
+  return Array.isArray(content) && content.some((part) => part.type === 'image');
+}
+
 function replaceImagesWithVisionSummary(
   messages: ModelMessage[],
   summary: string,
@@ -194,6 +198,7 @@ async function preflightImagesForMainModel(
 ): Promise<ModelMessage[] | null> {
   const lastUserMessage = modelMessages.filter((message) => message.role === 'user').pop();
   if (!messageHasImageParts(lastUserMessage)) return null;
+  if (!lastUserMessage) return null;
 
   const preflightConfig: ModelConfig = {
     ...fallbackConfig,
@@ -201,7 +206,7 @@ async function preflightImagesForMainModel(
   };
 
   const response = await ctx.runtime.modelRouter.inference(
-    buildVisionPreflightMessages(lastUserMessage!, userRequestText),
+    buildVisionPreflightMessages(lastUserMessage, userRequestText),
     [],
     preflightConfig,
     undefined,
@@ -550,10 +555,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
         ctx.runtime.modelConfig.model
       );
       if (!mainModelInfo?.supportsVision) {
-        const hasImages = modelMessages.some(msg =>
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): msg.content 已 narrow 成 array，但元素类型未细化为 ContentBlock 联合（text|image_url|tool_use 等）
-          Array.isArray(msg.content) && msg.content.some((c: any) => c.type === 'image')
-        );
+        const hasImages = modelMessages.some((msg) => contentHasImageParts(msg.content));
         if (hasImages) {
           logger.warn('[AgentLoop] 主模型不支持视觉，但历史消息中包含图片，移除图片避免 API 错误');
           modelMessages = stripImagesFromMessages(modelMessages);
@@ -733,8 +735,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       }))
     );
     const outputContent = (response.content || '') +
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): ModelResponse.toolCalls 类型 ToolCall[] 已存在，但这里访问 .arguments 字段时 narrow 失效；应直接用 ToolCall 类型，不需要 any
-      (response.toolCalls?.map((tc: any) => JSON.stringify(tc.arguments || {})).join('') || '');
+      (response.toolCalls?.map((tc: ToolCall) => JSON.stringify(tc.arguments || {})).join('') || '');
     const estimatedOutputTokens = estimateModelMessageTokens([
       { role: 'assistant', content: outputContent },
     ]);

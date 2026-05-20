@@ -44,6 +44,137 @@ export interface LSPDiagnostic {
   code?: string | number;
 }
 
+type LSPResultMessage = {
+  kind: 'result';
+  id: number;
+  result: unknown;
+};
+
+type LSPErrorMessage = {
+  kind: 'error';
+  id: number;
+  message: string;
+};
+
+type LSPNotificationMessage = {
+  kind: 'notification';
+  method: string;
+  params: unknown;
+};
+
+type LSPIncomingMessage = LSPResultMessage | LSPErrorMessage | LSPNotificationMessage;
+
+type LSPOutgoingMessage = {
+  jsonrpc: '2.0';
+  id?: number;
+  method?: string;
+  params?: unknown;
+};
+
+type DiagnosticsParams = {
+  uri: string;
+  diagnostics: LSPDiagnostic[];
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJsonValue(value: string): unknown | undefined {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function normalizePosition(value: unknown): { line: number; character: number } | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const line = readNumber(value.line);
+  const character = readNumber(value.character);
+  return line === undefined || character === undefined ? null : { line, character };
+}
+
+function normalizeDiagnostic(value: unknown): LSPDiagnostic | null {
+  if (!isRecord(value) || !isRecord(value.range) || typeof value.message !== 'string') {
+    return null;
+  }
+
+  const start = normalizePosition(value.range.start);
+  const end = normalizePosition(value.range.end);
+  if (!start || !end) {
+    return null;
+  }
+
+  const severity = readNumber(value.severity);
+  const code = typeof value.code === 'string' || typeof value.code === 'number'
+    ? value.code
+    : undefined;
+
+  return {
+    range: { start, end },
+    severity,
+    message: value.message,
+    source: typeof value.source === 'string' ? value.source : undefined,
+    code,
+  };
+}
+
+function normalizeDiagnosticsParams(value: unknown): DiagnosticsParams | null {
+  if (!isRecord(value) || typeof value.uri !== 'string' || !Array.isArray(value.diagnostics)) {
+    return null;
+  }
+
+  return {
+    uri: value.uri,
+    diagnostics: value.diagnostics
+      .map(normalizeDiagnostic)
+      .filter((diagnostic): diagnostic is LSPDiagnostic => diagnostic !== null),
+  };
+}
+
+function normalizeLSPMessage(value: unknown): LSPIncomingMessage | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (typeof value.id === 'number' && 'result' in value) {
+    return {
+      kind: 'result',
+      id: value.id,
+      result: value.result,
+    };
+  }
+
+  if (typeof value.id === 'number' && isRecord(value.error)) {
+    const message = typeof value.error.message === 'string'
+      ? value.error.message
+      : 'LSP request failed';
+    return {
+      kind: 'error',
+      id: value.id,
+      message,
+    };
+  }
+
+  if (typeof value.method === 'string' && !('id' in value)) {
+    return {
+      kind: 'notification',
+      method: value.method,
+      params: value.params,
+    };
+  }
+
+  return null;
+}
+
 // ============================================================================
 // LSP Server
 // ============================================================================
@@ -56,8 +187,7 @@ export class LSPServer extends EventEmitter {
   private pendingRequests = new Map<
     number,
     {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP JSON-RPC response.result 形态由 method 决定（textDocument/definition 是 Location[]、textDocument/hover 是 Hover…），应抽 LspResultMap 类型字典
-      resolve: (result: any) => void;
+      resolve: (result: unknown) => void;
       reject: (error: Error) => void;
     }
   >();
@@ -103,11 +233,11 @@ export class LSPServer extends EventEmitter {
         shell: process.platform === 'win32',
       });
 
-      this.process.stdout!.on('data', (data) => {
+      this.process.stdout!.on('data', (data: Buffer) => {
         this.handleData(data);
       });
 
-      this.process.stderr!.on('data', (data) => {
+      this.process.stderr!.on('data', (data: Buffer) => {
         console.error(`[LSP ${this.config.name}] ${data.toString()}`);
       });
 
@@ -225,45 +355,48 @@ export class LSPServer extends EventEmitter {
       this.messageBuffer = this.messageBuffer.substring(bodyEnd);
 
       try {
-        const message = JSON.parse(bodyText);
-        this.handleMessage(message);
+        const message = normalizeLSPMessage(parseJsonValue(bodyText));
+        if (message) {
+          this.handleMessage(message);
+        }
       } catch (err) {
         console.error('[LSP] Failed to parse message:', err);
       }
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP JSON-RPC message 形态由 method 决定（响应/通知/请求三种），应抽 LspMessage 联合或用 vscode-jsonrpc 类型
-  private handleMessage(message: any): void {
-    if ('id' in message && 'result' in message) {
+  private handleMessage(message: LSPIncomingMessage): void {
+    if (message.kind === 'result') {
       const pending = this.pendingRequests.get(message.id);
       if (pending) {
         this.pendingRequests.delete(message.id);
         pending.resolve(message.result);
       }
-    } else if ('id' in message && 'error' in message) {
+    } else if (message.kind === 'error') {
       const pending = this.pendingRequests.get(message.id);
       if (pending) {
         this.pendingRequests.delete(message.id);
-        pending.reject(new Error(message.error.message));
+        pending.reject(new Error(message.message));
       }
-    } else if ('method' in message && !('id' in message)) {
+    } else {
       this.emit('notification', message.method, message.params);
 
       if (message.method === 'textDocument/publishDiagnostics') {
-        this.emit('diagnostics', message.params);
+        const diagnostics = normalizeDiagnosticsParams(message.params);
+        if (diagnostics) {
+          this.emit('diagnostics', diagnostics);
+        }
       }
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): LSP request params/result 形态由 method 决定，应抽 LspRequestMap 字典或用 vscode-languageserver-protocol types
-  sendRequest(method: string, params: any): Promise<any> {
+  sendRequest(method: string, params: unknown): Promise<unknown> {
     if (this.state !== 'ready' && this.state !== 'initializing') {
       return Promise.reject(new Error('Server not ready'));
     }
 
     const id = this.nextRequestId++;
-    const message = { jsonrpc: '2.0', id, method, params };
+    const message: LSPOutgoingMessage = { jsonrpc: '2.0', id, method, params };
 
     return new Promise((resolve, reject) => {
       this.pendingRequests.set(id, { resolve, reject });
@@ -278,14 +411,12 @@ export class LSPServer extends EventEmitter {
     });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 sendRequest，LSP notification params 应按 method narrow
-  sendNotification(method: string, params: any): void {
-    const message = { jsonrpc: '2.0', method, params };
+  sendNotification(method: string, params: unknown): void {
+    const message: LSPOutgoingMessage = { jsonrpc: '2.0', method, params };
     this.sendMessage(message);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 内部方法 sendMessage 接 JSON-RPC 任意消息形态，应统一 LspMessage 类型
-  private sendMessage(message: any): void {
+  private sendMessage(message: LSPOutgoingMessage): void {
     if (!this.process?.stdin) {
       throw new Error('Process not started');
     }
@@ -382,7 +513,7 @@ export class LSPServerManager extends EventEmitter {
       for (const config of this.serverConfigs) {
         const server = new LSPServer(config);
 
-        server.on('diagnostics', (params) => {
+        server.on('diagnostics', (params: DiagnosticsParams) => {
           this.emit('diagnostics', params);
           this.diagnosticsCache.set(params.uri, params.diagnostics);
         });
@@ -493,8 +624,7 @@ export class LSPServerManager extends EventEmitter {
     return server?.isDocumentOpen(filePath) ?? false;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 LSPServer.sendRequest，外层 Manager 也按 method 转发，应共享 LspRequestMap 字典
-  async sendRequest(filePath: string, method: string, params: any): Promise<any> {
+  async sendRequest(filePath: string, method: string, params: unknown): Promise<unknown> {
     const server = this.getServerForFile(filePath);
     if (!server) return undefined;
 

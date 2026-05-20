@@ -18,7 +18,7 @@ import type {
   ModelMessage,
 } from '../../agent/loopTypes';
 import type { ProjectableMessage } from '../../context/projectionEngine';
-import { readdirSync, readFileSync } from 'fs';
+import { readdirSync, readFileSync, statSync } from 'fs';
 import type { RuntimeContext } from './runtimeContext';
 import type { RunFinalizer } from './runFinalizer';
 import type { ContextInterventionSnapshot } from '../../../shared/contract/contextView';
@@ -63,9 +63,9 @@ import {
 const fileCache = new Map<string, { content: string; mtime: number }>();
 export function cachedReadFileSync(path: string): string {
   try {
-    const stat = require('fs').statSync(path);
+    const stat = statSync(path);
     const cached = fileCache.get(path);
-    if (cached && cached.mtime === stat.mtimeMs) return cached.content;
+    if (cached?.mtime === stat.mtimeMs) return cached.content;
     const content = readFileSync(path, 'utf-8');
     fileCache.set(path, { content, mtime: stat.mtimeMs });
     return content;

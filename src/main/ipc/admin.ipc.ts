@@ -3,62 +3,57 @@
 // ============================================================================
 
 import type { IpcMain } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type {
-  AdminCreateInviteCodeInput,
-  AdminUpdateInviteCodeInput,
-} from '../../shared/contract';
+import { AdminSchemas, type ResponseOf } from '../../shared/ipc/schemas';
+import { defineHandler } from '../platform/ipcRegistry';
 import { getAdminService } from '../services/admin';
 import { getAdminAccessIpcError } from './adminGuard';
 
+type AdminResponse = ResponseOf<typeof AdminSchemas.REQUEST>;
+
+function toAdminErrorResponse(error: NonNullable<ReturnType<typeof getAdminAccessIpcError>>): AdminResponse {
+  return {
+    success: false,
+    error: error.error || {
+      code: 'FORBIDDEN',
+      message: 'Admin permission required',
+    },
+  };
+}
+
 export function registerAdminHandlers(ipcMain: IpcMain): void {
-  ipcMain.handle(IPC_DOMAINS.ADMIN, async (_, request: IPCRequest): Promise<IPCResponse> => {
+  defineHandler(AdminSchemas.REQUEST, async (_, request): Promise<AdminResponse> => {
     try {
       const accessError = getAdminAccessIpcError('Admin');
-      if (accessError) return accessError;
+      if (accessError) return toAdminErrorResponse(accessError);
 
-      let data: unknown;
+      const adminService = getAdminService();
 
       switch (request.action) {
         case 'listUsers':
-          data = await getAdminService().listUsers();
-          break;
+          return { success: true, data: await adminService.listUsers() };
         case 'listInviteCodes':
-          data = await getAdminService().listInviteCodes();
-          break;
+          return { success: true, data: await adminService.listInviteCodes() };
         case 'createInviteCode':
-          data = await getAdminService().createInviteCode(
-            request.payload as AdminCreateInviteCodeInput,
-          );
-          break;
+          return { success: true, data: await adminService.createInviteCode(request.payload) };
         case 'updateInviteCode':
-          data = await getAdminService().updateInviteCode(
-            request.payload as AdminUpdateInviteCodeInput,
-          );
-          break;
+          return { success: true, data: await adminService.updateInviteCode(request.payload) };
         case 'listControlPlaneAuditEvents':
-          data = await getAdminService().listControlPlaneAuditEvents(
-            typeof request.payload === 'object'
-              && request.payload !== null
-              && typeof (request.payload as { limit?: unknown }).limit === 'number'
-              ? (request.payload as { limit: number }).limit
-              : undefined,
-          );
-          break;
-        case 'listControlPlaneRolloutSummary':
-          data = await getAdminService().listControlPlaneRolloutSummary();
-          break;
-        default:
           return {
-            success: false,
-            error: {
-              code: 'INVALID_ACTION',
-              message: `Unknown action: ${request.action}`,
-            },
+            success: true,
+            data: await adminService.listControlPlaneAuditEvents(request.payload?.limit),
           };
+        case 'listControlPlaneRolloutSummary':
+          return { success: true, data: await adminService.listControlPlaneRolloutSummary() };
       }
 
-      return { success: true, data };
+      const _exhaustive: never = request;
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_ACTION',
+          message: `Unknown action: ${String(_exhaustive)}`,
+        },
+      };
     } catch (error) {
       return {
         success: false,
@@ -68,5 +63,5 @@ export function registerAdminHandlers(ipcMain: IpcMain): void {
         },
       };
     }
-  });
+  }, ipcMain);
 }

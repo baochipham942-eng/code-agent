@@ -30,6 +30,18 @@ import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepositor
 // Database Service
 // ----------------------------------------------------------------------------
 
+function parseJsonValue(value: unknown): unknown {
+  if (typeof value !== 'string' || value.length === 0) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 export class DatabaseService {
   private db: BetterSqlite3.Database | null = null;
   private dbPath: string;
@@ -347,8 +359,8 @@ export class DatabaseService {
       sessionId: String(row.session_id),
       turnId: row.turn_id == null ? null : String(row.turn_id),
       turnIndex: Number(row.turn_index ?? 0),
-      contextChunks: row.context_chunks ? JSON.parse(String(row.context_chunks)) : null,
-      tokenBreakdown: row.token_breakdown ? JSON.parse(String(row.token_breakdown)) : null,
+      contextChunks: parseJsonValue(row.context_chunks),
+      tokenBreakdown: parseJsonValue(row.token_breakdown),
       byteSize: Number(row.byte_size ?? 0),
       createdAt: Number(row.created_at ?? 0)
     }));

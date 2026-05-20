@@ -23,6 +23,62 @@ import {
 const PLUGIN_MANIFEST_FILES = ['plugin.json', 'package.json'];
 const PLUGINS_DIR_NAME = 'plugins';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJsonValue(value: string): unknown | undefined {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function readStringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function normalizeStringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : undefined;
+}
+
+function normalizeManifest(value: unknown): PluginManifest | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const id = readStringField(value, 'id') ?? readStringField(value, 'name');
+  const version = readStringField(value, 'version');
+  if (!id || !version) {
+    return null;
+  }
+
+  return {
+    ...(value as Partial<PluginManifest>),
+    id,
+    name: readStringField(value, 'name') ?? id,
+    version,
+    main: readStringField(value, 'main') ?? 'index.js',
+    generations: normalizeStringArray(value.generations),
+    capabilities: normalizeStringArray(value.capabilities),
+    nativeDeps: normalizeStringArray(value.nativeDeps),
+  };
+}
+
+function normalizePluginEntry(value: unknown): PluginEntry | null {
+  const candidate = isRecord(value) && 'default' in value
+    ? value.default
+    : value;
+
+  return isRecord(candidate) && typeof candidate.activate === 'function'
+    ? candidate as unknown as PluginEntry
+    : null;
+}
+
 // ----------------------------------------------------------------------------
 // Plugin Loader
 // ----------------------------------------------------------------------------
@@ -55,23 +111,13 @@ async function readManifest(pluginDir: string): Promise<PluginManifest | null> {
     const manifestPath = path.join(pluginDir, filename);
     try {
       const content = await fs.readFile(manifestPath, 'utf-8');
-      const manifest = JSON.parse(content);
-
-      // Validate required fields
-      if (!manifest.id && manifest.name) {
-        manifest.id = manifest.name;
-      }
-      if (!manifest.id || !manifest.version) {
+      const manifest = normalizeManifest(parseJsonValue(content));
+      if (!manifest) {
         console.warn(`Invalid manifest in ${pluginDir}: missing id or version`);
         return null;
       }
 
-      // Default main entry
-      if (!manifest.main) {
-        manifest.main = 'index.js';
-      }
-
-      return manifest as PluginManifest;
+      return manifest;
     } catch {
       // Try next manifest file
       continue;
@@ -126,15 +172,17 @@ export async function loadPlugin(pluginDir: string): Promise<PluginLoadResult> {
       await fs.access(entryPath);
 
       // Dynamic import (supports both CommonJS and ESM)
-      const module = await import(entryPath + '?t=' + Date.now());
-      entry = module.default || module;
+      const module: unknown = await import(entryPath + '?t=' + Date.now());
+      const normalizedEntry = normalizePluginEntry(module);
 
-      if (typeof entry.activate !== 'function') {
+      if (!normalizedEntry) {
         return {
           success: false,
           error: `Plugin ${manifest.id} has no activate function`,
         };
       }
+
+      entry = normalizedEntry;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return {
@@ -208,7 +256,6 @@ export function watchPluginsDir(
   onPluginRemoved: (pluginName: string) => void
 ): () => void {
   const pluginsDir = getPluginsDir();
-  const watcher: fs.FileHandle | null = null;
 
   // Use fs.watch for directory changes
   const abortController = new AbortController();

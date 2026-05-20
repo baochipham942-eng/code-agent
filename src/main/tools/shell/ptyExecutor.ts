@@ -86,6 +86,52 @@ const ptySessions: Map<string, PtySessionState> = new Map();
 const ptySessionEvents = new EventEmitter();
 ptySessionEvents.setMaxListeners(50);
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function readString(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' ? value : null;
+}
+
+function readNumber(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  return typeof value === 'number' ? value : null;
+}
+
+function readStringArray(record: Record<string, unknown>, key: string): string[] | null {
+  const value = record[key];
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string') ? value : null;
+}
+
+function isPtyStatus(value: unknown): value is PtySessionState['status'] {
+  return value === 'running' || value === 'completed' || value === 'failed';
+}
+
+function parsePersistedPtySession(value: unknown): PersistedPtySession | null {
+  if (!isRecord(value)) return null;
+  const sessionId = readString(value, 'sessionId');
+  const command = readString(value, 'command');
+  const args = readStringArray(value, 'args');
+  const cwd = readString(value, 'cwd');
+  const startTime = readNumber(value, 'startTime');
+  const outputFile = readString(value, 'outputFile');
+  const status = value.status;
+  if (!sessionId || !command || !args || !cwd || startTime === null || !outputFile || !isPtyStatus(status)) {
+    return null;
+  }
+  return { sessionId, command, args, cwd, startTime, outputFile, status };
+}
+
+function parsePersistedPtySessions(value: unknown): PersistedPtySession[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const session = parsePersistedPtySession(entry);
+    return session ? [session] : [];
+  });
+}
+
 // ============================================================================
 // Directory Management
 // ============================================================================
@@ -592,7 +638,7 @@ export function loadPersistedPtySessions(): PersistedPtySession[] {
   try {
     if (fs.existsSync(PTY_PERSISTENCE_FILE)) {
       const data = fs.readFileSync(PTY_PERSISTENCE_FILE, 'utf-8');
-      const sessions: PersistedPtySession[] = JSON.parse(data);
+      const sessions = parsePersistedPtySessions(JSON.parse(data) as unknown);
 
       // Mark all as failed since the process is gone
       return sessions.map((s) => ({ ...s, status: 'failed' as const }));

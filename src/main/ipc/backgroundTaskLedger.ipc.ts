@@ -1,57 +1,66 @@
 import type { IpcMain } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { ListTasksFilter } from '../../shared/contract/backgroundTask';
+import type { IPCResponse } from '../../shared/ipc';
+import { BackgroundTaskSchemas } from '../../shared/ipc/schemas';
 import { createLogger } from '../services/infra/logger';
-import { getBackgroundTaskLedger } from '../tasks/backgroundTaskLedger';
+import { getDatabase } from '../services/core/databaseService';
+import { defineHandler } from '../platform/ipcRegistry';
+import { type BackgroundTaskLedger, getBackgroundTaskLedger } from '../tasks/backgroundTaskLedger';
+import { SqliteBackgroundTaskStore } from '../tasks/backgroundTaskStore';
 import {
   installBackgroundTaskEventAdapters,
   syncBackgroundTaskSnapshotsToLedger,
 } from '../tasks/backgroundTaskSnapshotAdapters';
 
 const logger = createLogger('BackgroundTaskLedgerIPC');
+let attachedStoreDb: unknown = null;
+let attachedStore: SqliteBackgroundTaskStore | null = null;
+
+function getLedger(): BackgroundTaskLedger {
+  const ledger = getBackgroundTaskLedger();
+  const db = getDatabase().getDb();
+
+  if (db && db !== attachedStoreDb) {
+    attachedStore = new SqliteBackgroundTaskStore(db);
+    attachedStoreDb = db;
+  }
+
+  if (attachedStore) {
+    ledger.setStore(attachedStore);
+  }
+
+  return ledger;
+}
 
 function syncSnapshots(): void {
-  syncBackgroundTaskSnapshotsToLedger(getBackgroundTaskLedger());
+  syncBackgroundTaskSnapshotsToLedger(getLedger());
 }
 
 export function registerBackgroundTaskLedgerHandlers(ipcMain: IpcMain): void {
-  installBackgroundTaskEventAdapters(getBackgroundTaskLedger());
+  installBackgroundTaskEventAdapters(getLedger());
 
-  ipcMain.handle(IPC_DOMAINS.BACKGROUND_TASKS, async (_event, request: IPCRequest): Promise<IPCResponse> => {
+  defineHandler(BackgroundTaskSchemas.REQUEST, async (_event, request) => {
     const { action, payload } = request;
-    const ledger = getBackgroundTaskLedger();
+    const ledger = getLedger();
 
     try {
       switch (action) {
         case 'listTasks': {
           syncSnapshots();
-          const filter = (payload || {}) as ListTasksFilter;
+          const filter = payload || {};
           return { success: true, data: ledger.listTasks(filter) } satisfies IPCResponse;
         }
 
         case 'getTask': {
           syncSnapshots();
-          const taskId = (payload as { taskId?: string } | null)?.taskId;
-          if (!taskId) {
-            return { success: false, error: { code: 'INVALID_INPUT', message: 'taskId is required' } } satisfies IPCResponse;
-          }
-          return { success: true, data: ledger.getTask(taskId) } satisfies IPCResponse;
+          return { success: true, data: ledger.getTask(payload.taskId) } satisfies IPCResponse;
         }
 
         case 'drainNotifications': {
-          const sessionId = (payload as { sessionId?: string } | null)?.sessionId;
-          if (!sessionId) {
-            return { success: false, error: { code: 'INVALID_INPUT', message: 'sessionId is required' } } satisfies IPCResponse;
-          }
-          return { success: true, data: ledger.drainNotifications(sessionId) } satisfies IPCResponse;
+          return { success: true, data: ledger.drainNotifications(payload.sessionId) } satisfies IPCResponse;
         }
 
         case 'markNotificationDelivered': {
-          const notificationId = (payload as { notificationId?: string } | null)?.notificationId;
-          if (!notificationId) {
-            return { success: false, error: { code: 'INVALID_INPUT', message: 'notificationId is required' } } satisfies IPCResponse;
-          }
-          return { success: true, data: ledger.markNotificationDelivered(notificationId) } satisfies IPCResponse;
+          return { success: true, data: ledger.markNotificationDelivered(payload.notificationId) } satisfies IPCResponse;
         }
 
         default:
@@ -70,5 +79,5 @@ export function registerBackgroundTaskLedgerHandlers(ipcMain: IpcMain): void {
         },
       } satisfies IPCResponse;
     }
-  });
+  }, ipcMain);
 }

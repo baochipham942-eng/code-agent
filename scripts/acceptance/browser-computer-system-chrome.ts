@@ -138,6 +138,14 @@ export async function connectToSystemChrome(
       return await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
     } catch (error) {
       lastError = error;
+      const wsUrl = getDevToolsWebSocketUrl(output());
+      if (wsUrl) {
+        try {
+          return await chromium.connectOverCDP(wsUrl);
+        } catch (wsError) {
+          lastError = wsError;
+        }
+      }
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
   }
@@ -146,6 +154,11 @@ export async function connectToSystemChrome(
   throw new SystemChromeUnavailableError(
     `Timed out connecting to system Chrome over CDP at 127.0.0.1:${port}.\n${message}\n${output()}`,
   );
+}
+
+function getDevToolsWebSocketUrl(output: string): string | null {
+  const match = output.match(/DevTools listening on (ws:\/\/[^\s]+)/);
+  return match?.[1] || null;
 }
 
 export async function launchSystemChromeSession(options: {

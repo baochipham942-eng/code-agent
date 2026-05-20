@@ -66,6 +66,18 @@ async function postSession(body: Record<string, unknown>) {
   return response.json() as Promise<SessionApiBody>;
 }
 
+async function postSessionRaw(body: Record<string, unknown>) {
+  const response = await fetch(`${baseUrl}/api/sessions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return {
+    status: response.status,
+    body: await response.json() as SessionApiBody,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   inMemorySessions.clear();
@@ -127,5 +139,25 @@ describe('createSessionsRouter', () => {
     expect(body.data.title).toBe('Memory fallback');
     expect(body.data.workingDirectory).toBe('/tmp/void-harbor');
     expect(inMemorySessions.get(body.data.id)?.workingDirectory).toBe('/tmp/void-harbor');
+  });
+
+  it('rejects malformed create-session bodies before calling dependencies', async () => {
+    const tryGetSessionManager = vi.fn(async () => null);
+    const getSupabaseForSession = vi.fn(async () => null);
+    await startSessionsApi({
+      tryGetSessionManager,
+      getSupabaseForSession,
+    });
+
+    const result = await postSessionRaw({
+      title: 42,
+      workingDirectory: '/tmp/void-harbor',
+    });
+
+    expect(result.status).toBe(400);
+    expect(result.body.success).toBe(false);
+    expect(result.body.error?.message).toContain('Expected string');
+    expect(tryGetSessionManager).not.toHaveBeenCalled();
+    expect(getSupabaseForSession).not.toHaveBeenCalled();
   });
 });

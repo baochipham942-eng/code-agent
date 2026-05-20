@@ -8,8 +8,18 @@ import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 import { getServiceRegistry } from '../services/serviceRegistry';
 import type { AgentEvent } from '../../shared/contract';
+import type Database from 'better-sqlite3';
 
 const logger = createLogger('SessionEventService');
+
+function parseStoredEventData(value: string | null): unknown {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * 存储的事件记录
@@ -27,8 +37,7 @@ export interface StoredEvent {
  */
 export class SessionEventService {
   private static instance: SessionEventService;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private insertStmt: any = null;
+  private insertStmt: Database.Statement | null = null;
 
   private constructor() {}
 
@@ -43,12 +52,16 @@ export class SessionEventService {
   /**
    * 获取数据库实例
    */
-  private getDb() {
+  private getDb(): Database.Database {
     const db = getDatabase();
     if (!db.isReady) {
       throw new Error('Database not initialized');
     }
-    return db.getDb()!;
+    const sqlite = db.getDb();
+    if (!sqlite) {
+      throw new Error('Database not initialized');
+    }
+    return sqlite;
   }
 
   /**
@@ -69,7 +82,8 @@ export class SessionEventService {
       // 序列化事件数据
       const eventData = event.data ? JSON.stringify(event.data) : null;
 
-      this.insertStmt.run(
+      const insertStmt = this.insertStmt;
+      insertStmt.run(
         sessionId,
         event.type,
         eventData,
@@ -119,7 +133,7 @@ export class SessionEventService {
       id: row.id,
       sessionId: row.session_id,
       eventType: row.event_type,
-      eventData: row.event_data ? JSON.parse(row.event_data) : null,
+      eventData: parseStoredEventData(row.event_data),
       timestamp: row.timestamp,
     }));
   }
@@ -147,7 +161,7 @@ export class SessionEventService {
       id: row.id,
       sessionId: row.session_id,
       eventType: row.event_type,
-      eventData: row.event_data ? JSON.parse(row.event_data) : null,
+      eventData: parseStoredEventData(row.event_data),
       timestamp: row.timestamp,
     }));
   }

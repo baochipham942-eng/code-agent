@@ -12,6 +12,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { z } from 'zod';
 import { getConfigService } from '../../../services';
 import { JIRA_API_VERSION_PATH } from '../../../../shared/constants';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
@@ -21,6 +22,116 @@ interface JiraConfig {
   baseUrl: string;
   email: string;
   apiToken: string;
+}
+
+interface JiraNamedEntity {
+  name?: string;
+}
+
+interface JiraUser {
+  displayName?: string;
+}
+
+interface JiraIssueFields {
+  summary?: string;
+  status?: JiraNamedEntity | null;
+  issuetype?: JiraNamedEntity | null;
+  priority?: JiraNamedEntity | null;
+  assignee?: JiraUser | null;
+  reporter?: JiraUser | null;
+  created?: string;
+  updated?: string;
+  labels?: string[];
+  description?: unknown;
+}
+
+interface JiraIssue {
+  key?: string;
+  id?: string;
+  self?: string;
+  fields: JiraIssueFields;
+}
+
+interface JiraSearchResponse {
+  total: number;
+  issues: JiraIssue[];
+}
+
+interface JiraCreatedIssue {
+  key?: string;
+  id?: string;
+  self?: string;
+}
+
+const NumberishSchema = z.preprocess((value) => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}, z.number());
+
+const JiraNamedEntitySchema: z.ZodType<JiraNamedEntity | null> = z.object({
+  name: z.string().optional(),
+}).passthrough().nullable();
+
+const JiraUserSchema: z.ZodType<JiraUser | null> = z.object({
+  displayName: z.string().optional(),
+}).passthrough().nullable();
+
+const JiraIssueFieldsSchema: z.ZodType<JiraIssueFields, z.ZodTypeDef, unknown> = z.object({
+  summary: z.string().optional(),
+  status: JiraNamedEntitySchema.optional(),
+  issuetype: JiraNamedEntitySchema.optional(),
+  priority: JiraNamedEntitySchema.optional(),
+  assignee: JiraUserSchema.optional(),
+  reporter: JiraUserSchema.optional(),
+  created: z.string().optional(),
+  updated: z.string().optional(),
+  labels: z.array(z.string()).optional().catch([]),
+  description: z.unknown().optional(),
+}).passthrough();
+
+const JiraIssueSchema: z.ZodType<JiraIssue, z.ZodTypeDef, unknown> = z.object({
+  key: z.string().optional(),
+  id: z.string().optional(),
+  self: z.string().optional(),
+  fields: z.preprocess(
+    (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {},
+    JiraIssueFieldsSchema,
+  ),
+}).passthrough();
+
+const JiraSearchResponseSchema: z.ZodType<JiraSearchResponse, z.ZodTypeDef, unknown> = z.object({
+  total: NumberishSchema.catch(0),
+  issues: z.array(JiraIssueSchema).optional().default([]),
+}).passthrough();
+
+const JiraCreatedIssueSchema: z.ZodType<JiraCreatedIssue, z.ZodTypeDef, unknown> = z.object({
+  key: z.string().optional(),
+  id: z.string().optional(),
+  self: z.string().optional(),
+}).passthrough();
+
+interface JiraDescriptionDocument {
+  type: 'doc';
+  version: 1;
+  content: Array<{
+    type: 'paragraph';
+    content: Array<{ type: 'text'; text: string }>;
+  }>;
+}
+
+interface JiraCreatePayload {
+  fields: {
+    project: { key: string };
+    summary: string;
+    issuetype: { name: string };
+    description?: JiraDescriptionDocument;
+    priority?: { name: string };
+    labels?: string[];
+  };
 }
 
 function getJiraConfig(): JiraConfig | null {
@@ -65,10 +176,21 @@ async function callJiraApi(
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function formatIssue(issue: any): string {
-  const fields = issue.fields || {};
-  return `**${issue.key}**: ${fields.summary || '(无标题)'}
+function parseJiraJson<T>(
+  responseBody: unknown,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  label: string,
+): T {
+  const parsed = schema.safeParse(responseBody);
+  if (!parsed.success) {
+    throw new Error(`Invalid Jira ${label} response`);
+  }
+  return parsed.data;
+}
+
+function formatIssue(issue: JiraIssue): string {
+  const fields = issue.fields;
+  return `**${issue.key || 'UNKNOWN'}**: ${fields.summary || '(无标题)'}
   状态: ${fields.status?.name || '未知'}
   类型: ${fields.issuetype?.name || '未知'}
   优先级: ${fields.priority?.name || '未知'}
@@ -151,7 +273,7 @@ export async function executeJira(
         return { ok: false, error: `查询失败 (${response.status}): ${err}`, code: 'NETWORK_ERROR' };
       }
 
-      const data = await response.json();
+      const data = parseJiraJson(await response.json() as unknown, JiraSearchResponseSchema, 'search');
       const issues = data.issues || [];
 
       if (issues.length === 0) {
@@ -186,8 +308,7 @@ export async function executeJira(
       }
 
       let output = `📋 找到 ${issues.length} 个 Issue (共 ${data.total} 个)\n\n`;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      output += issues.map((issue: any) => formatIssue(issue)).join('\n\n');
+      output += issues.map((issue) => formatIssue(issue)).join('\n\n');
 
       onProgress?.({ stage: 'completing', percent: 100 });
       return {
@@ -198,8 +319,7 @@ export async function executeJira(
           total: data.total,
           returned: issues.length,
           query: queryJql,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          issues: issues.map((i: any) => ({ key: i.key, summary: i.fields?.summary })),
+          issues: issues.map((issue) => ({ key: issue.key, summary: issue.fields.summary })),
           artifact: createVirtualArtifact({
             sourceTool: schema.name,
             kind: 'search',
@@ -237,8 +357,9 @@ export async function executeJira(
         return { ok: false, error: `获取失败 (${response.status}): ${err}`, code: 'NETWORK_ERROR' };
       }
 
-      const issue = await response.json();
-      const fields = issue.fields || {};
+      const issue = parseJiraJson(await response.json() as unknown, JiraIssueSchema, 'issue');
+      const fields = issue.fields;
+      const labelsForIssue = fields.labels ?? [];
 
       let output = `📄 ${issue.key}: ${fields.summary}\n\n`;
       output += `**状态**: ${fields.status?.name || '未知'}\n`;
@@ -249,8 +370,8 @@ export async function executeJira(
       output += `**创建时间**: ${fields.created || '未知'}\n`;
       output += `**更新时间**: ${fields.updated || '未知'}\n`;
 
-      if (fields.labels?.length > 0) {
-        output += `**标签**: ${fields.labels.join(', ')}\n`;
+      if (labelsForIssue.length > 0) {
+        output += `**标签**: ${labelsForIssue.join(', ')}\n`;
       }
 
       if (fields.description) {
@@ -293,8 +414,7 @@ export async function executeJira(
 
       onProgress?.({ stage: 'running', detail: `创建: ${summary}` });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const createPayload: any = {
+      const createPayload: JiraCreatePayload = {
         fields: {
           project: { key: project },
           summary,
@@ -334,7 +454,7 @@ export async function executeJira(
         return { ok: false, error: `创建失败 (${response.status}): ${err}`, code: 'NETWORK_ERROR' };
       }
 
-      const created = await response.json();
+      const created = parseJiraJson(await response.json() as unknown, JiraCreatedIssueSchema, 'created issue');
       ctx.logger.info('Jira issue created', { key: created.key });
 
       onProgress?.({ stage: 'completing', percent: 100 });

@@ -12,6 +12,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { z } from 'zod';
 import { TWITTER_API_ENDPOINTS } from '../../../../shared/constants';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { twitterFetchSchema as schema } from './twitterFetch.schema';
@@ -29,6 +30,49 @@ interface TweetData {
   replies?: number;
   media?: string[];
 }
+
+const OptionalNumberSchema = z.preprocess((value) => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}, z.number().optional());
+
+const FxTwitterMediaItemSchema = z.object({
+  url: z.string().optional(),
+}).passthrough();
+
+const FxTwitterTweetSchema = z.object({
+  text: z.string().optional(),
+  created_at: z.string().optional(),
+  likes: OptionalNumberSchema,
+  retweets: OptionalNumberSchema,
+  replies: OptionalNumberSchema,
+  author: z.object({
+    name: z.string().optional(),
+    screen_name: z.string().optional(),
+  }).passthrough().optional(),
+  media: z.object({
+    all: z.array(FxTwitterMediaItemSchema).optional(),
+  }).passthrough().optional(),
+}).passthrough();
+
+const FxTwitterResponseSchema = z.object({
+  tweet: FxTwitterTweetSchema.optional(),
+}).passthrough();
+
+const VxTwitterResponseSchema = z.object({
+  user_name: z.string().optional(),
+  user_screen_name: z.string().optional(),
+  text: z.string().optional(),
+  date: z.string().optional(),
+  likes: OptionalNumberSchema,
+  retweets: OptionalNumberSchema,
+  replies: OptionalNumberSchema,
+  media_urls: z.array(z.string()).optional(),
+}).passthrough();
 
 function extractTweetInfo(url: string): { username: string; tweetId: string } | null {
   const patterns = [
@@ -54,8 +98,10 @@ async function fetchViaFxTwitter(
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CodeAgent/1.0)' },
     });
     if (!response.ok) return null;
-    const data = await response.json();
-    const tweet = data.tweet;
+    const data = FxTwitterResponseSchema.safeParse(await response.json() as unknown);
+    if (!data.success) return null;
+
+    const tweet = data.data.tweet;
     if (!tweet) return null;
 
     return {
@@ -67,8 +113,7 @@ async function fetchViaFxTwitter(
       likes: tweet.likes,
       retweets: tweet.retweets,
       replies: tweet.replies,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      media: tweet.media?.all?.map((m: any) => m.url) || [],
+      media: tweet.media?.all?.map((m) => m.url).filter((url): url is string => Boolean(url)) || [],
     };
   } catch (e) {
     ctx.logger.warn('FxTwitter API failed', { error: (e as Error).message });
@@ -86,18 +131,20 @@ async function fetchViaVxTwitter(
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CodeAgent/1.0)' },
     });
     if (!response.ok) return null;
-    const data = await response.json();
+    const data = VxTwitterResponseSchema.safeParse(await response.json() as unknown);
+    if (!data.success) return null;
+    const tweet = data.data;
 
     return {
       id: tweetId,
-      author: data.user_name || username,
-      handle: `@${data.user_screen_name || username}`,
-      text: data.text || '',
-      date: data.date,
-      likes: data.likes,
-      retweets: data.retweets,
-      replies: data.replies,
-      media: data.media_urls || [],
+      author: tweet.user_name || username,
+      handle: `@${tweet.user_screen_name || username}`,
+      text: tweet.text || '',
+      date: tweet.date,
+      likes: tweet.likes,
+      retweets: tweet.retweets,
+      replies: tweet.replies,
+      media: tweet.media_urls || [],
     };
   } catch (e) {
     ctx.logger.warn('VxTwitter API failed', { error: (e as Error).message });

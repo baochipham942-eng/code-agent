@@ -28,6 +28,43 @@ export interface AuthResult {
 type AuthChangeCallback = (user: AuthUser | null) => void;
 type SessionTrustState = 'none' | 'cached' | 'verified';
 
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function readStringProperty(value: unknown, key: string): string | undefined {
+  if (!isUnknownRecord(value)) return undefined;
+  return optionalString(value[key]);
+}
+
+function parseCachedAuthUser(serializedUser: string): AuthUser | null {
+  const parsed: unknown = JSON.parse(serializedUser);
+  if (!isUnknownRecord(parsed)) {
+    return null;
+  }
+
+  if (typeof parsed.id !== 'string' || typeof parsed.email !== 'string') {
+    return null;
+  }
+
+  return {
+    id: parsed.id,
+    email: parsed.email,
+    username: optionalString(parsed.username),
+    nickname: optionalString(parsed.nickname),
+    avatarUrl: optionalString(parsed.avatarUrl),
+    isAdmin: optionalBoolean(parsed.isAdmin),
+  };
+}
+
 class AuthService {
   private currentUser: AuthUser | null = null;
   private sessionTrustState: SessionTrustState = 'none';
@@ -176,7 +213,7 @@ class AuthService {
       const storage = getSecureStorage();
       const userJson = storage.get('auth.user');
       if (userJson) {
-        return JSON.parse(userJson);
+        return parseCachedAuthUser(userJson);
       }
     } catch (e) {
       logger.error(' Failed to load cached user:', e);
@@ -371,11 +408,13 @@ class AuthService {
         const provider = typeof data.user.app_metadata?.provider === 'string'
           ? data.user.app_metadata.provider
           : 'oauth';
+        const nickname = readStringProperty(data.user.user_metadata, 'full_name');
+        const avatarUrl = readStringProperty(data.user.user_metadata, 'avatar_url');
         await supabase.from('profiles').insert({
           id: data.user.id,
           username: data.user.email?.split('@')[0] || data.user.id,
-          nickname: data.user.user_metadata?.full_name,
-          avatar_url: data.user.user_metadata?.avatar_url,
+          nickname,
+          avatar_url: avatarUrl,
           quick_login_token: crypto.randomBytes(32).toString('hex'),
           signup_source: provider,
           last_active_at: new Date().toISOString(),

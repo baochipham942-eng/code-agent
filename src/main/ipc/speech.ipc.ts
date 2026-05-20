@@ -3,7 +3,7 @@
 // 使用 Groq Whisper API 进行语音转文字
 // ============================================================================
 
-import { ipcMain, IpcMain } from '../platform';
+import type { IpcMain } from '../platform';
 import Groq from 'groq-sdk';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
@@ -50,6 +50,13 @@ const HALLUCINATION_PATTERNS = [
   'amara.org',
 ];
 
+function getTextFromTranscriptionResult(result: unknown): string {
+  if (typeof result === 'string') return result;
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return '';
+  const text = (result as Record<string, unknown>).text;
+  return typeof text === 'string' ? text : '';
+}
+
 /**
  * 检测是否为 Whisper 幻觉输出
  */
@@ -95,7 +102,7 @@ async function transcribeWithGroq(audioBuffer: Buffer, mimeType: string): Promis
     const startTime = Date.now();
     logger.info('Starting Groq Whisper transcription...', { size: audioBuffer.length, mimeType });
 
-    const transcription = await groq.audio.transcriptions.create({
+    const transcription: unknown = await groq.audio.transcriptions.create({
       file: fileStream,
       model: 'whisper-large-v3-turbo',
       language: 'zh',
@@ -104,10 +111,7 @@ async function transcribeWithGroq(audioBuffer: Buffer, mimeType: string): Promis
 
     logger.info(`Groq transcription completed in ${Date.now() - startTime}ms`);
 
-    return typeof transcription === 'string'
-      ? transcription
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 voicePaste.ipc.ts，groq SDK transcription 返回类型未按 response_format 区分
-      : (transcription as any).text || '';
+    return getTextFromTranscriptionResult(transcription);
 
   } finally {
     // 清理临时文件

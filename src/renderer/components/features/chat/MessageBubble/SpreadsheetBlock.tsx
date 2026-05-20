@@ -39,11 +39,30 @@ const COLUMN_COLORS = [
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isSheetData(value: unknown): value is SheetData {
+  return (
+    isRecord(value)
+    && typeof value.name === 'string'
+    && Array.isArray(value.headers)
+    && value.headers.every((header) => typeof header === 'string')
+    && Array.isArray(value.rows)
+    && value.rows.every(Array.isArray)
+    && typeof value.rowCount === 'number'
+  );
+}
+
+function isSpreadsheetSpec(value: unknown): value is SpreadsheetSpec {
+  return isRecord(value) && Array.isArray(value.sheets) && value.sheets.every(isSheetData);
+}
+
 function parseSpec(raw: string): SpreadsheetSpec | null {
   try {
-    const spec = JSON.parse(raw);
-    if (!spec || !Array.isArray(spec.sheets)) return null;
-    return spec as SpreadsheetSpec;
+    const spec: unknown = JSON.parse(raw);
+    return isSpreadsheetSpec(spec) ? spec : null;
   } catch {
     return null;
   }

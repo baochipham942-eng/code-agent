@@ -49,6 +49,55 @@ export interface ExportData {
   knowledge: Record<string, unknown[]>;
 }
 
+type GistCreateResponse = {
+  id: string;
+};
+
+type GistFile = {
+  content: string;
+};
+
+type GistResponse = {
+  files: Record<string, GistFile>;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function requireStringField(value: unknown, field: string): string {
+  if (!isRecord(value) || typeof value[field] !== 'string') {
+    throw new Error(`Invalid gist response: missing ${field}`);
+  }
+
+  return value[field];
+}
+
+function parseGistCreateResponse(value: unknown): GistCreateResponse {
+  return {
+    id: requireStringField(value, 'id'),
+  };
+}
+
+function parseGistResponse(value: unknown): GistResponse {
+  if (!isRecord(value) || !isRecord(value.files)) {
+    throw new Error('Invalid gist response: missing files');
+  }
+
+  const files: Record<string, GistFile> = {};
+  for (const [filename, file] of Object.entries(value.files)) {
+    if (isRecord(file) && typeof file.content === 'string') {
+      files[filename] = { content: file.content };
+    }
+  }
+
+  return { files };
+}
+
+function parseExportData(content: string): ExportData {
+  return JSON.parse(content) as unknown as ExportData;
+}
+
 // ----------------------------------------------------------------------------
 // Cloud Storage Service
 // ----------------------------------------------------------------------------
@@ -259,7 +308,7 @@ export class CloudStorageService implements Disposable {
           throw new Error(`Failed to create gist: ${response.statusText}`);
         }
 
-        const gist = await response.json();
+        const gist = parseGistCreateResponse(await response.json() as unknown);
         this.config.gistId = gist.id;
       }
 
@@ -301,14 +350,14 @@ export class CloudStorageService implements Disposable {
       throw new Error(`Failed to fetch gist: ${response.statusText}`);
     }
 
-    const gist = await response.json();
+    const gist = parseGistResponse(await response.json() as unknown);
     const file = gist.files['code-agent-backup.json'];
 
     if (!file) {
       return null;
     }
 
-    return JSON.parse(file.content);
+    return parseExportData(file.content);
   }
 
   // --------------------------------------------------------------------------
@@ -401,7 +450,7 @@ export class CloudStorageService implements Disposable {
     }
 
     const content = await response.text();
-    return JSON.parse(content);
+    return parseExportData(content);
   }
 
   // --------------------------------------------------------------------------

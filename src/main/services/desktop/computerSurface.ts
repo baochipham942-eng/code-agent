@@ -1,14 +1,6 @@
-import { execFile } from 'child_process';
-import { stat, unlink } from 'fs/promises';
-import { promisify } from 'util';
-import * as os from 'os';
-import * as path from 'path';
 import type {
-  BackgroundCgEventAppDiagnosis,
-  BackgroundCgEventClickResult,
   BackgroundCgEventWindow,
   BackgroundCgEventWindowPoint,
-  BackgroundCgEventWindowBounds,
   ListBackgroundCgEventWindowsOptions,
   DisplayInfo,
 } from './backgroundCgEventSurface';
@@ -22,8 +14,50 @@ import type {
   ComputerSurfaceState,
   WorkbenchActionTrace,
 } from '../../../shared/contract/desktop';
-
-const execFileAsync = promisify(execFile);
+import {
+  DEFAULT_DENIED_APPS,
+  buildDeniedComputerSurfaceBlock,
+  canUseBackgroundAxComputerSurfaceAction,
+  canUseBackgroundCgEventComputerSurfaceAction,
+  canUseComputerSurfaceBackground,
+  computerSurfaceModeRequiresForeground,
+  getComputerSurfaceSafetyNote,
+  getDefaultComputerSurfaceMode,
+  isBackgroundCgEventComputerSurfaceAction,
+  isComputerSurfaceLaunchAction,
+  isComputerSurfaceModeReady,
+  isDeniedComputerSurfaceApp,
+  isReadBlockedComputerSurfaceApp,
+  isSensitiveComputerSurfaceAction,
+  parseComputerSurfaceAppList,
+  redactComputerSurfaceAction,
+  type ComputerSurfacePreflightBlock,
+} from './computerSurfaceSafety';
+import { BackgroundAxBridge } from './backgroundAxBridge';
+import {
+  backgroundCgEventMetadata,
+  formatAppDiagnosis,
+  formatBounds,
+  formatExecError,
+  formatVisibleAppSummary,
+  formatWindowObservationOutput,
+  getWindowResultLimit,
+  getWindowTargetMatches,
+  hasWindowTargetIntent,
+  normalizeBackgroundCgEventRequest,
+  roundPoint,
+  sameAppName,
+} from './backgroundCgEventBridge';
+import {
+  getComputerSurfaceProcessStatus,
+  getFrontmostComputerSurfaceContext,
+  getTargetComputerSurfaceContext,
+} from './computerSurfaceContext';
+import { buildComputerSurfaceActionEvidenceSummary } from './computerSurfaceEvidence';
+import {
+  captureComputerSurfaceAppScreenshot,
+  captureComputerSurfaceScreenshot,
+} from './computerSurfaceScreenshots';
 
 export interface ComputerSurfacePermissionContext {
   sessionId?: string;
@@ -87,67 +121,18 @@ export interface ComputerSurfaceAuthorization {
 
 type ComputerSurfaceApprovalScope = NonNullable<ComputerSurfaceState['approvalScope']>;
 
-interface ComputerSurfacePreflightBlock {
-  failureKind: ComputerSurfaceFailureKind;
-  blockingReasons: string[];
-  recommendedAction: string;
-}
-
-// Agent Neo 自身的 app 名（与 src-tauri/tauri.conf.json 的 productName 一致）。
-const SELF_APP_NAME = 'Agent Neo';
-
-const DEFAULT_DENIED_APPS = [
-  'Terminal',
-  'iTerm',
-  'iTerm2',
-  SELF_APP_NAME,
-  'Codex',
-  'System Settings',
-  'System Preferences',
-  'Keychain Access',
-  '1Password',
-];
-
-const FOREGROUND_FALLBACK_SAFETY_NOTE =
-  'Computer Surface 会作用于当前前台 app/window；没有后台隔离。';
-const BACKGROUND_AX_SAFETY_NOTE =
-  'Computer Surface 会通过 macOS Accessibility 操作指定 app/window；坐标类动作仍需前台窗口兜底。';
-const BACKGROUND_CGEVENT_SAFETY_NOTE =
-  'Computer Surface 会向指定 macOS pid/windowId 投递 CGEvent；必须先选窗口并使用窗口内坐标。';
-const BACKGROUND_UNAVAILABLE_SAFETY_NOTE =
-  '当前平台没有可用的 Computer Surface 后台或前台执行器。';
-const BACKGROUND_AX_ACTIONS = new Set(['click', 'doubleClick', 'type']);
-const BACKGROUND_CGEVENT_ACTIONS = new Set(['click', 'doubleClick', 'rightClick']);
-// Actions whose semantic IS to launch / activate the target app — must bypass
-// the running + frontmost gates because their goal is precisely to make the
-// target app start running and become frontmost.
-const LAUNCH_ACTIONS = new Set(['open_application']);
-
-async function hasNonEmptyFile(filepath: string): Promise<boolean> {
-  try {
-    const fileStat = await stat(filepath);
-    return fileStat.size > 0;
-  } catch {
-    return false;
-  }
-}
-
 class DesktopComputerSurface {
   private readonly id = 'default-computer-surface';
   private approvedAppScopes = new Set<string>();
   private lastAction: WorkbenchActionTrace | null = null;
   private lastSnapshot: ComputerSurfaceSnapshot | null = null;
-  /** 主显示器信息，进程级缓存（显示配置很少会话中途变；forceRefresh 可手动刷新） */
   private displayInfo: DisplayInfo | null = null;
-  /** 最近一次视觉分析截图的尺寸记账，供 executeMacOSAction 把图像坐标换算回逻辑点 */
   private lastAnalyzedImageDims: { width: number; height: number } | null = null;
-  private deniedApps = parseList(process.env.CODE_AGENT_COMPUTER_DENIED_APPS, DEFAULT_DENIED_APPS);
-  private allowedApps = parseList(process.env.CODE_AGENT_COMPUTER_ALLOWED_APPS, []);
+  private deniedApps = parseComputerSurfaceAppList(process.env.CODE_AGENT_COMPUTER_DENIED_APPS, DEFAULT_DENIED_APPS);
+  private allowedApps = parseComputerSurfaceAppList(process.env.CODE_AGENT_COMPUTER_ALLOWED_APPS, []);
   private backgroundEnabled = process.env.CODE_AGENT_COMPUTER_BACKGROUND_SURFACE !== '0';
+  private backgroundAxBridge = new BackgroundAxBridge();
 
-  /**
-   * 主显示器信息，进程级缓存。helper 失败返回 null（调用方降级到 FALLBACK_SCALE_FACTOR）。
-   */
   async getDisplayInfo(forceRefresh = false): Promise<DisplayInfo | null> {
     if (this.displayInfo && !forceRefresh) return this.displayInfo;
     if (process.platform !== 'darwin') return null;
@@ -186,8 +171,8 @@ class DesktopComputerSurface {
     const snapshot: ComputerSurfaceSnapshot = {
       capturedAtMs: Date.now(),
       ...(options.targetApp && this.canUseBackgroundSurface()
-        ? await this.getAppContext(options.targetApp)
-        : await this.getFrontmostContext()),
+        ? await getTargetComputerSurfaceContext(options.targetApp)
+        : await getFrontmostComputerSurfaceContext()),
     };
 
     if (options.includeScreenshot && process.platform === 'darwin') {
@@ -208,44 +193,11 @@ class DesktopComputerSurface {
   }
 
   async screenshot(): Promise<string> {
-    const filepath = path.join(os.tmpdir(), `code-agent-computer-surface-${Date.now()}.png`);
-    await execFileAsync('screencapture', ['-x', filepath]);
-    return filepath;
+    return captureComputerSurfaceScreenshot();
   }
 
   async screenshotApp(targetApp: string): Promise<string | null> {
-    if (process.platform !== 'darwin') return null;
-    try {
-      const windows = await backgroundCgEventSurface.listWindows({ targetApp, limit: 1 });
-      const win = windows[0];
-      if (!win?.bounds) return null;
-      const { x, y, width, height } = win.bounds;
-      if (width <= 0 || height <= 0) return null;
-      const filepath = path.join(os.tmpdir(), `code-agent-computer-surface-app-${Date.now()}.png`);
-      if (Number.isFinite(win.windowId)) {
-        try {
-          await execFileAsync('screencapture', ['-x', '-l', String(win.windowId), filepath]);
-          if (await hasNonEmptyFile(filepath)) {
-            return filepath;
-          }
-        } catch {
-          await unlink(filepath).catch(() => undefined);
-        }
-      }
-
-      await execFileAsync('screencapture', [
-        '-x',
-        `-R${Math.floor(x)},${Math.floor(y)},${Math.floor(width)},${Math.floor(height)}`,
-        filepath,
-      ]);
-      if (await hasNonEmptyFile(filepath)) {
-        return filepath;
-      }
-      await unlink(filepath).catch(() => undefined);
-      return null;
-    } catch {
-      return null;
-    }
+    return captureComputerSurfaceAppScreenshot(targetApp);
   }
 
   async executeBackgroundAction(action: ComputerSurfaceAction): Promise<ComputerSurfaceActionResult> {
@@ -260,47 +212,7 @@ class DesktopComputerSurface {
       };
     }
 
-    const elementName = action.name || action.selector || '';
-    const role = normalizeBackgroundRole(action.role);
-    const axPath = action.axPath || '';
-    const scriptArgs = [
-      action.targetApp,
-      normalizeBackgroundAction(action.action),
-      role,
-      elementName,
-      action.text || '',
-      action.exact ? 'true' : 'false',
-      axPath,
-    ];
-
-    try {
-      const stdout = getExecStdout(await execFileAsync('osascript', [
-        ...toAppleScriptArgs(BACKGROUND_AX_ACTION_SCRIPT),
-        ...scriptArgs,
-      ], {
-        timeout: Math.max(1_000, Math.min(action.timeout || 8_000, 30_000)),
-        maxBuffer: 1024 * 1024,
-      }));
-      const output = stdout.trim() || `Background action completed: ${action.action}`;
-      return {
-        success: true,
-        output: action.action === 'type'
-          ? `${output} text: ${action.text?.length || 0} chars`
-          : output,
-        metadata: {
-          backgroundSurface: true,
-          targetApp: action.targetApp,
-          targetRole: role || null,
-          targetName: elementName || null,
-          targetAxPath: axPath || null,
-        },
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Background action failed: ${formatExecError(error)}`,
-      };
-    }
+    return this.backgroundAxBridge.executeAction(action);
   }
 
   async listBackgroundElements(action: ComputerSurfaceAction): Promise<ComputerSurfaceActionResult> {
@@ -323,63 +235,7 @@ class DesktopComputerSurface {
       return this.deniedAppActionResult('accessibility read');
     }
 
-    const limit = clampInt(action.limit, 1, 80, 40);
-    const maxDepth = clampInt(action.maxDepth, 1, 8, 4);
-
-    try {
-      const stdout = getExecStdout(await execFileAsync('osascript', [
-        ...toAppleScriptArgs(BACKGROUND_AX_ELEMENTS_SCRIPT),
-        targetApp,
-        String(limit),
-        String(maxDepth),
-      ], {
-        timeout: Math.max(1_000, Math.min(action.timeout || 8_000, 30_000)),
-        maxBuffer: 1024 * 1024,
-      }));
-      const elements = parseBackgroundElementLines(stdout);
-      const axQuality = assessAxTreeQuality(elements, elements.length >= limit);
-      const poorAxTree = axQuality.grade === 'poor';
-      const blockingReasons = poorAxTree
-        ? [`AX tree quality is poor for ${targetApp}: ${axQuality.reasons.join('; ')}`]
-        : undefined;
-      const recommendedAction = poorAxTree
-        ? 'Try a narrower target window, increase maxDepth, or use foreground observe before retrying the action.'
-        : null;
-      const output = elements.length > 0
-        ? [
-            `Found ${elements.length} background AX elements for ${targetApp}:`,
-            ...elements.map((element) => [
-              `${element.index}. ${element.role}${element.name ? ` "${element.name}"` : ''}`,
-              element.axPath ? ` [axPath=${element.axPath}]` : '',
-            ].join('')),
-            formatAxQualityLine(axQuality),
-          ].join('\n')
-        : [
-            `No background AX elements found for ${targetApp}.`,
-            formatAxQualityLine(axQuality),
-          ].join('\n');
-      return {
-        success: true,
-        output,
-        metadata: {
-          backgroundSurface: true,
-          targetApp,
-          elements,
-          targetElementCount: elements.length,
-          limit,
-          maxDepth,
-          axQuality,
-          failureKind: poorAxTree ? 'ax_tree_poor' : null,
-          blockingReasons,
-          recommendedAction,
-        },
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Background element listing failed: ${formatExecError(error)}`,
-      };
-    }
+    return this.backgroundAxBridge.listElements(action);
   }
 
   async locateBackgroundElement(action: ComputerSurfaceAction): Promise<ComputerSurfaceActionResult> {
@@ -398,69 +254,7 @@ class DesktopComputerSurface {
     }
 
     const listResult = await this.listBackgroundElements(action);
-    if (!listResult.success) {
-      return listResult;
-    }
-
-    const elements = (listResult.metadata?.elements as BackgroundAxElement[] | undefined) || [];
-    const wantedRole = normalizeBackgroundRole(action.role);
-    const wantedName = action.name?.trim() || '';
-    const exact = action.exact === true;
-
-    const matches = elements.filter((element) => {
-      if (wantedRole && normalizeBackgroundRole(element.role) !== wantedRole) {
-        return false;
-      }
-      if (!wantedName) {
-        return true;
-      }
-      const elementName = element.name || '';
-      if (exact) {
-        return elementName === wantedName;
-      }
-      return elementName.toLowerCase().includes(wantedName.toLowerCase());
-    });
-
-    if (matches.length === 0) {
-      return {
-        success: false,
-        error: `Target element not found for ${targetApp}: role="${action.role}"${wantedName ? ` name="${wantedName}"` : ''}`,
-        metadata: {
-          backgroundSurface: true,
-          targetApp,
-          targetRole: wantedRole || null,
-          targetName: wantedName || null,
-          failureKind: 'locator_missing',
-          recommendedAction: 'Run get_ax_elements for the target app to inspect available roles and names.',
-        },
-      };
-    }
-
-    const chosen = matches[0];
-    const ambiguous = matches.length > 1;
-    const descriptor = `role="${chosen.role}"${chosen.name ? ` name="${chosen.name}"` : ''}`;
-    const output = ambiguous
-      ? `Located ${matches.length} matches for ${targetApp}; using first: ${descriptor} [axPath=${chosen.axPath}]`
-      : `Located ${descriptor} for ${targetApp} [axPath=${chosen.axPath}]`;
-
-    return {
-      success: true,
-      output,
-      metadata: {
-        backgroundSurface: true,
-        targetApp,
-        targetRole: chosen.role,
-        targetName: chosen.name || null,
-        targetAxPath: chosen.axPath,
-        axPath: chosen.axPath,
-        matchCount: matches.length,
-        matches,
-        failureKind: ambiguous ? 'locator_ambiguous' : null,
-        recommendedAction: ambiguous
-          ? 'Multiple elements matched; pass a more specific name or pick an axPath from get_ax_elements.'
-          : null,
-      },
-    };
+    return this.backgroundAxBridge.locateElementFromList(action, listResult);
   }
 
   async listBackgroundCgEventWindows(
@@ -720,7 +514,7 @@ class DesktopComputerSurface {
         screenshotPath: before.screenshotPath || null,
         capturedAtMs: before.capturedAtMs,
       },
-      params: redactAction(action),
+      params: redactComputerSurfaceAction(action),
     };
 
     const preflightBlock = await this.preflightAction(action, {
@@ -782,7 +576,7 @@ class DesktopComputerSurface {
       };
     }
 
-    if (mode === 'foreground_fallback' && action.targetApp && !LAUNCH_ACTIONS.has(action.action)) {
+    if (mode === 'foreground_fallback' && action.targetApp && !isComputerSurfaceLaunchAction(action.action)) {
       const frontmostApp = before.appName || null;
       if (!frontmostApp || !sameAppName(frontmostApp, action.targetApp)) {
         const current = frontmostApp || 'unknown frontmost app';
@@ -850,7 +644,7 @@ class DesktopComputerSurface {
       };
     }
 
-    const sensitive = isSensitiveAction(action);
+    const sensitive = isSensitiveComputerSurfaceAction(action);
     const approvedByPolicy = this.allowedApps.length > 0
       ? this.allowedApps.some((item) => item.toLowerCase() === targetApp.toLowerCase())
       : this.approvedAppScopes.has(this.approvalKey(targetApp, mode, context.sessionId));
@@ -866,9 +660,9 @@ class DesktopComputerSurface {
           action: action.action,
           surfaceMode: mode,
           background: mode === 'background_ax' || mode === 'background_cgevent',
-          requiresForeground: this.requiresForeground(mode),
+          requiresForeground: computerSurfaceModeRequiresForeground(mode),
           approvalScope: sensitive ? 'per_action' : 'session_app',
-          safetyNote: this.getSafetyNote(mode),
+          safetyNote: getComputerSurfaceSafetyNote(mode),
           fallback: mode === 'foreground_fallback',
         },
         reason: sensitive
@@ -944,7 +738,7 @@ class DesktopComputerSurface {
       };
     }
 
-    if (BACKGROUND_CGEVENT_ACTIONS.has(action.action) && hasBackgroundCgEventTargetFragment(action)) {
+    if (isBackgroundCgEventComputerSurfaceAction(action.action) && hasBackgroundCgEventTargetFragment(action)) {
       if (!action.targetApp) {
         return {
           failureKind: 'target_window_not_found',
@@ -977,8 +771,8 @@ class DesktopComputerSurface {
       };
     }
 
-    if (action.targetApp && !LAUNCH_ACTIONS.has(action.action)) {
-      const targetStatus = await this.getTargetAppProcessStatus(action.targetApp);
+    if (action.targetApp && !isComputerSurfaceLaunchAction(action.action)) {
+      const targetStatus = await getComputerSurfaceProcessStatus(action.targetApp);
       if (targetStatus.permissionDenied) {
         return {
           failureKind: 'permission_denied',
@@ -1025,7 +819,7 @@ class DesktopComputerSurface {
         ? targetApp || trace.before?.appName || undefined
         : undefined,
     });
-    const evidenceSummary = args.evidenceSummary || this.buildActionEvidenceSummary(trace, after);
+    const evidenceSummary = args.evidenceSummary || buildComputerSurfaceActionEvidenceSummary(trace, after);
     const failureKind = args.failureKind ?? trace.failureKind ?? (args.success ? null : 'action_execution_failed');
     const blockingReasons = args.blockingReasons
       || trace.blockingReasons
@@ -1054,86 +848,6 @@ class DesktopComputerSurface {
     return completed;
   }
 
-  private async getTargetAppProcessStatus(targetApp: string): Promise<{
-    running: boolean | null;
-    permissionDenied?: boolean;
-    error?: string;
-  }> {
-    if (process.platform !== 'darwin') {
-      return { running: null };
-    }
-
-    try {
-      const stdout = getExecStdout(await execFileAsync('osascript', [
-        '-e',
-        'on run argv',
-        '-e',
-        'set targetApp to item 1 of argv',
-        '-e',
-        'tell application "System Events"',
-        '-e',
-        'if exists application process targetApp then return "running"',
-        '-e',
-        'return "missing"',
-        '-e',
-        'end tell',
-        '-e',
-        'end run',
-        targetApp,
-      ], {
-        timeout: 3_000,
-        maxBuffer: 1024 * 256,
-      }));
-      const text = stdout.trim();
-      const lines = text.split(/\r?\n/).filter(Boolean);
-      if (text === 'running') return { running: true };
-      if (text === 'missing') return { running: false };
-      if (lines.length >= 2) return { running: true };
-      if (lines.length === 1 && sameAppName(lines[0], targetApp)) return { running: false };
-      return { running: false };
-    } catch (error) {
-      const message = formatExecError(error);
-      return {
-        running: null,
-        permissionDenied: isLikelyAccessibilityPermissionError(message),
-        error: message,
-      };
-    }
-  }
-
-  private buildActionEvidenceSummary(
-    trace: WorkbenchActionTrace,
-    after: ComputerSurfaceSnapshot,
-  ): string[] {
-    const beforeApp = trace.before?.appName || 'unknown app';
-    const beforeTitle = trace.before?.title || 'unknown window';
-    const afterApp = after.appName || 'unknown app';
-    const afterTitle = after.windowTitle || 'unknown window';
-    const params = trace.params || {};
-    const targetApp = typeof params.targetApp === 'string' ? params.targetApp : trace.before?.appName || null;
-    const targetRole = typeof params.role === 'string' ? params.role : null;
-    const targetName = typeof params.name === 'string' ? params.name : null;
-    const targetAxPath = typeof params.axPath === 'string' ? params.axPath : null;
-    const targetSelector = typeof params.selector === 'string' ? params.selector : null;
-    const pid = typeof params.pid === 'number' ? params.pid : null;
-    const windowId = typeof params.windowId === 'number' ? params.windowId : null;
-    const windowLocalPoint = parseWindowLocalPointFromParams(params);
-    return [
-      `Before: ${beforeApp} · ${beforeTitle}`,
-      `After: ${afterApp} · ${afterTitle}`,
-      targetApp ? `Target app: ${targetApp}` : null,
-      trace.mode === 'background_ax'
-        ? `AX locator: ${[targetRole, targetName, targetAxPath || targetSelector].filter(Boolean).join(' · ') || 'unknown'}`
-        : null,
-      trace.mode === 'background_cgevent'
-        ? `CGEvent window: ${[pid ? `pid ${pid}` : null, windowId ? `window ${windowId}` : null].filter(Boolean).join(' · ') || 'unknown'}`
-        : null,
-      trace.mode === 'background_cgevent' && windowLocalPoint
-        ? `Window local point: ${roundPoint(windowLocalPoint.x)}, ${roundPoint(windowLocalPoint.y)}`
-        : null,
-    ].filter(Boolean) as string[];
-  }
-
   getState(overrides: {
     targetApp?: string | null;
     blockedReason?: string | null;
@@ -1151,11 +865,11 @@ class DesktopComputerSurface {
       id: this.id,
       mode,
       platform: process.platform,
-      ready: this.isReady(mode),
+      ready: isComputerSurfaceModeReady(mode),
       background: mode === 'background_ax' || mode === 'background_cgevent',
-      requiresForeground: this.requiresForeground(mode),
+      requiresForeground: computerSurfaceModeRequiresForeground(mode),
       approvalScope: this.resolveApprovalScope(mode, blockedReason, overrides.approvalScope),
-      safetyNote: this.getSafetyNote(mode),
+      safetyNote: getComputerSurfaceSafetyNote(mode),
       targetApp: overrides.targetApp ?? this.lastSnapshot?.appName ?? null,
       blockedReason,
       approvedApps: Array.from(this.approvedAppScopes).sort(),
@@ -1171,12 +885,7 @@ class DesktopComputerSurface {
   }
 
   private getDefaultMode(): ComputerSurfaceMode {
-    if (this.canUseBackgroundSurface()) {
-      return 'background_ax';
-    }
-    return process.platform === 'darwin'
-      ? 'foreground_fallback'
-      : 'background_surface_unavailable';
+    return getDefaultComputerSurfaceMode({ backgroundEnabled: this.backgroundEnabled });
   }
 
   private resolveActionMode(action: ComputerSurfaceAction): ComputerSurfaceMode {
@@ -1191,37 +900,12 @@ class DesktopComputerSurface {
       : 'background_surface_unavailable';
   }
 
-  private requiresForeground(mode = this.getDefaultMode()): boolean {
-    return mode === 'foreground_fallback';
-  }
-
-  private isReady(mode: ComputerSurfaceMode): boolean {
-    return process.platform === 'darwin' && mode !== 'background_surface_unavailable';
-  }
-
-  private getSafetyNote(mode = this.getDefaultMode()): string {
-    if (mode === 'background_ax') {
-      return BACKGROUND_AX_SAFETY_NOTE;
-    }
-    if (mode === 'background_cgevent') {
-      return BACKGROUND_CGEVENT_SAFETY_NOTE;
-    }
-    return mode === 'foreground_fallback'
-      ? FOREGROUND_FALLBACK_SAFETY_NOTE
-      : BACKGROUND_UNAVAILABLE_SAFETY_NOTE;
-  }
-
   private canUseBackgroundSurface(): boolean {
-    return process.platform === 'darwin' && this.backgroundEnabled;
+    return canUseComputerSurfaceBackground(this.backgroundEnabled);
   }
 
   private isDeniedApp(targetApp: string): boolean {
-    return this.deniedApps.some((item) => item.toLowerCase() === targetApp.toLowerCase());
-  }
-
-  // 目标是否为 Agent Neo 自身。
-  private isSelfApp(targetApp: string): boolean {
-    return targetApp.trim().toLowerCase() === SELF_APP_NAME.toLowerCase();
+    return isDeniedComputerSurfaceApp(targetApp, this.deniedApps);
   }
 
   /**
@@ -1236,15 +920,11 @@ class DesktopComputerSurface {
    * 它们的 UI/AX 树本身可能泄露敏感信息。
    */
   private isReadBlockedApp(targetApp: string): boolean {
-    return this.isDeniedApp(targetApp) && !this.isSelfApp(targetApp);
+    return isReadBlockedComputerSurfaceApp(targetApp, this.deniedApps);
   }
 
   private buildDeniedAppBlock(actionDescription: string): ComputerSurfacePreflightBlock {
-    return {
-      failureKind: 'permission_denied',
-      blockingReasons: [`Computer Surface blocked ${actionDescription} for a protected app.`],
-      recommendedAction: 'Choose a non-protected target app or remove the app from the denied list intentionally.',
-    };
+    return buildDeniedComputerSurfaceBlock(actionDescription);
   }
 
   private deniedAppActionResult(
@@ -1267,19 +947,17 @@ class DesktopComputerSurface {
   }
 
   private canUseBackgroundAxAction(action: ComputerSurfaceAction): boolean {
-    return this.canUseBackgroundSurface()
-      && Boolean(action.targetApp)
-      && BACKGROUND_AX_ACTIONS.has(action.action)
-      && hasBackgroundElementLocator(action)
-      && action.x === undefined
-      && action.y === undefined;
+    return canUseBackgroundAxComputerSurfaceAction(action, {
+      backgroundAvailable: this.canUseBackgroundSurface(),
+      hasElementLocator: hasBackgroundElementLocator(action),
+    });
   }
 
   private canUseBackgroundCgEventAction(action: ComputerSurfaceAction): boolean {
-    return this.canUseBackgroundSurface()
-      && Boolean(action.targetApp)
-      && BACKGROUND_CGEVENT_ACTIONS.has(action.action)
-      && Boolean(normalizeBackgroundCgEventRequest(action));
+    return canUseBackgroundCgEventComputerSurfaceAction(action, {
+      backgroundAvailable: this.canUseBackgroundSurface(),
+      hasCgEventRequest: Boolean(normalizeBackgroundCgEventRequest(action)),
+    });
   }
 
   private approvalKey(targetApp: string, mode: ComputerSurfaceMode, sessionId?: string): string {
@@ -1297,354 +975,12 @@ class DesktopComputerSurface {
     return 'session_app';
   }
 
-  private async getFrontmostContext(): Promise<Pick<ComputerSurfaceSnapshot, 'appName' | 'windowTitle'>> {
-    if (process.platform !== 'darwin') {
-      return {};
-    }
-
-    try {
-      const stdout = getExecStdout(await execFileAsync('osascript', [
-        '-e',
-        'tell application "System Events" to set frontApp to first application process whose frontmost is true',
-        '-e',
-        'tell application "System Events" to set appName to name of frontApp',
-        '-e',
-        'tell application "System Events" to set winTitle to ""',
-        '-e',
-        'tell application "System Events" to if exists window 1 of frontApp then set winTitle to name of window 1 of frontApp',
-        '-e',
-        'return appName & "\n" & winTitle',
-      ]));
-      const [appName, ...titleParts] = stdout.trim().split('\n');
-      return {
-        appName: appName || null,
-        windowTitle: titleParts.join('\n') || null,
-      };
-    } catch {
-      return {};
-    }
-  }
-
-  private async getAppContext(targetApp: string): Promise<Pick<ComputerSurfaceSnapshot, 'appName' | 'windowTitle'>> {
-    if (process.platform !== 'darwin') {
-      return {};
-    }
-
-    try {
-      const stdout = getExecStdout(await execFileAsync('osascript', [
-        '-e',
-        'on run argv',
-        '-e',
-        'set targetApp to item 1 of argv',
-        '-e',
-        'tell application "System Events"',
-        '-e',
-        'if not (exists application process targetApp) then return targetApp & "\n"',
-        '-e',
-        'tell application process targetApp',
-        '-e',
-        'set winTitle to ""',
-        '-e',
-        'if exists window 1 then set winTitle to name of window 1',
-        '-e',
-        'return name & "\n" & winTitle',
-        '-e',
-        'end tell',
-        '-e',
-        'end tell',
-        '-e',
-        'end run',
-        targetApp,
-      ]));
-      const text = stdout.trim();
-      const [appName, ...titleParts] = text.split('\n');
-      if (sameAppName(appName || '', targetApp) && titleParts.length === 0) {
-        return {
-          appName: null,
-          windowTitle: null,
-        };
-      }
-      return {
-        appName: appName || targetApp,
-        windowTitle: titleParts.join('\n') || null,
-      };
-    } catch {
-      return {
-        appName: targetApp,
-        windowTitle: null,
-      };
-    }
-  }
 }
-
-const BACKGROUND_AX_ACTION_SCRIPT = [
-  'on run argv',
-  'set targetApp to item 1 of argv',
-  'set actionName to item 2 of argv',
-  'set targetRole to item 3 of argv',
-  'set targetName to item 4 of argv',
-  'set inputText to item 5 of argv',
-  'set exactMatch to item 6 of argv',
-  'set targetAxPath to item 7 of argv',
-  'tell application "System Events"',
-  'if not (exists application process targetApp) then error "Target app is not running: " & targetApp',
-  'tell application process targetApp',
-  'if exists window 1 then',
-  'set rootElement to window 1',
-  'else',
-  'set rootElement to it',
-  'end if',
-  'if targetAxPath is not "" then',
-  'set targetElement to my elementAtPath(rootElement, targetAxPath)',
-  'else',
-  'set targetElement to my findElement(rootElement, targetRole, targetName, exactMatch)',
-  'end if',
-  'if targetElement is missing value then error "Target element not found"',
-  'if actionName is "type" then',
-  'my setElementValue(targetElement, inputText)',
-  'return "Background type completed: " & targetApp',
-  'else',
-  'perform action "AXPress" of targetElement',
-  'if actionName is "doubleClick" then perform action "AXPress" of targetElement',
-  'return "Background " & actionName & " completed: " & targetApp',
-  'end if',
-  'end tell',
-  'end tell',
-  'end run',
-  'on findElement(theElement, targetRole, targetName, exactMatch)',
-  'tell application "System Events"',
-  'set elementRole to my safeRole(theElement)',
-  'set elementLabel to my safeLabel(theElement)',
-  'if my roleMatches(elementRole, targetRole) and my labelMatches(elementLabel, targetName, exactMatch) then return theElement',
-  'try',
-  'repeat with childElement in UI elements of theElement',
-  'set foundChild to my findElement(childElement, targetRole, targetName, exactMatch)',
-  'if foundChild is not missing value then return foundChild',
-  'end repeat',
-  'end try',
-  'end tell',
-  'return missing value',
-  'end findElement',
-  'on elementAtPath(rootElement, targetAxPath)',
-  'tell application "System Events"',
-  'set currentElement to rootElement',
-  'set pathItems to my splitText(targetAxPath, ".")',
-  'repeat with pathItem in pathItems',
-  'try',
-  'set pathIndex to (contents of pathItem) as integer',
-  'if pathIndex is less than 1 then return missing value',
-  'set childElements to UI elements of currentElement',
-  'if pathIndex is greater than (count of childElements) then return missing value',
-  'set currentElement to item pathIndex of childElements',
-  'on error',
-  'return missing value',
-  'end try',
-  'end repeat',
-  'return currentElement',
-  'end tell',
-  'end elementAtPath',
-  'on splitText(sourceText, delimiterText)',
-  'set oldDelimiters to AppleScript\'s text item delimiters',
-  'set AppleScript\'s text item delimiters to delimiterText',
-  'set textItems to text items of sourceText',
-  'set AppleScript\'s text item delimiters to oldDelimiters',
-  'return textItems',
-  'end splitText',
-  'on safeRole(theElement)',
-  'tell application "System Events"',
-  'try',
-  'return role of theElement as text',
-  'on error',
-  'return ""',
-  'end try',
-  'end tell',
-  'end safeRole',
-  'on safeLabel(theElement)',
-  'tell application "System Events"',
-  'set labels to ""',
-  'try',
-  'set labelPart to name of theElement',
-  'if labelPart is not missing value then set labels to labels & " " & (labelPart as text)',
-  'end try',
-  'try',
-  'set labelPart to description of theElement',
-  'if labelPart is not missing value then set labels to labels & " " & (labelPart as text)',
-  'end try',
-  'try',
-  'set labelPart to value of attribute "AXTitle" of theElement',
-  'if labelPart is not missing value then set labels to labels & " " & (labelPart as text)',
-  'end try',
-  'try',
-  'set labelPart to value of attribute "AXDescription" of theElement',
-  'if labelPart is not missing value then set labels to labels & " " & (labelPart as text)',
-  'end try',
-  'return labels',
-  'end tell',
-  'end safeLabel',
-  'on roleMatches(elementRole, targetRole)',
-  'if targetRole is "" then return true',
-  'if elementRole is targetRole then return true',
-  'if targetRole is "button" and elementRole contains "Button" then return true',
-  'if targetRole is "textbox" and (elementRole contains "TextField" or elementRole contains "TextArea" or elementRole contains "text") then return true',
-  'if targetRole is "checkbox" and elementRole contains "CheckBox" then return true',
-  'if targetRole is "radio" and elementRole contains "RadioButton" then return true',
-  'if targetRole is "combobox" and elementRole contains "ComboBox" then return true',
-  'if targetRole is "menuitem" and elementRole contains "MenuItem" then return true',
-  'if targetRole is "tab" and elementRole contains "Tab" then return true',
-  'if targetRole is "link" and elementRole contains "Link" then return true',
-  'return elementRole contains targetRole',
-  'end roleMatches',
-  'on labelMatches(elementLabel, targetName, exactMatch)',
-  'if targetName is "" then return true',
-  'if exactMatch is "true" then return elementLabel is targetName',
-  'return elementLabel contains targetName',
-  'end labelMatches',
-  'on setElementValue(theElement, inputText)',
-  'tell application "System Events"',
-  'try',
-  'set value of theElement to inputText',
-  'return',
-  'end try',
-  'try',
-  'set value of attribute "AXValue" of theElement to inputText',
-  'return',
-  'end try',
-  'error "Target element does not accept AXValue"',
-  'end tell',
-  'end setElementValue',
-];
-
-const BACKGROUND_AX_ELEMENTS_SCRIPT = [
-  'property outputLines : {}',
-  'property itemCount : 0',
-  'property maxItems : 40',
-  'property maxDepthLimit : 4',
-  'on run argv',
-  'set outputLines to {}',
-  'set itemCount to 0',
-  'set targetApp to item 1 of argv',
-  'set maxItems to item 2 of argv as integer',
-  'set maxDepthLimit to item 3 of argv as integer',
-  'tell application "System Events"',
-  'if not (exists application process targetApp) then error "Target app is not running: " & targetApp',
-  'tell application process targetApp',
-  'if exists window 1 then',
-  'set rootElement to window 1',
-  'else',
-  'set rootElement to it',
-  'end if',
-  'my collectElements(rootElement, 0, "")',
-  'end tell',
-  'end tell',
-  'set oldDelimiters to AppleScript\'s text item delimiters',
-  'set AppleScript\'s text item delimiters to linefeed',
-  'set resultText to outputLines as text',
-  'set AppleScript\'s text item delimiters to oldDelimiters',
-  'return resultText',
-  'end run',
-  'on collectElements(theElement, currentDepth, currentPath)',
-  'if itemCount is greater than or equal to maxItems then return',
-  'tell application "System Events"',
-  'set elementRole to my safeRole(theElement)',
-  'set elementLabel to my compactLabel(my safeLabel(theElement))',
-  'if my isInterestingRole(elementRole) and elementLabel is not "" then',
-  'set itemCount to itemCount + 1',
-  'set end of outputLines to (itemCount as text) & tab & elementRole & tab & elementLabel & tab & currentPath',
-  'end if',
-  'if currentDepth is greater than or equal to maxDepthLimit then return',
-  'try',
-  'set childIndex to 0',
-  'repeat with childElement in UI elements of theElement',
-  'set childIndex to childIndex + 1',
-  'if currentPath is "" then',
-  'set childPath to childIndex as text',
-  'else',
-  'set childPath to currentPath & "." & (childIndex as text)',
-  'end if',
-  'my collectElements(childElement, currentDepth + 1, childPath)',
-  'if itemCount is greater than or equal to maxItems then exit repeat',
-  'end repeat',
-  'end try',
-  'end tell',
-  'end collectElements',
-  'on isInterestingRole(elementRole)',
-  'if elementRole contains "Button" then return true',
-  'if elementRole contains "CheckBox" then return true',
-  'if elementRole contains "RadioButton" then return true',
-  'if elementRole contains "TextField" then return true',
-  'if elementRole contains "TextArea" then return true',
-  'if elementRole contains "ComboBox" then return true',
-  'if elementRole contains "PopUpButton" then return true',
-  'if elementRole contains "MenuButton" then return true',
-  'if elementRole contains "MenuItem" then return true',
-  'if elementRole contains "Tab" then return true',
-  'if elementRole contains "Link" then return true',
-  'return false',
-  'end isInterestingRole',
-  'on safeRole(theElement)',
-  'tell application "System Events"',
-  'try',
-  'return role of theElement as text',
-  'on error',
-  'return ""',
-  'end try',
-  'end tell',
-  'end safeRole',
-  'on safeLabel(theElement)',
-  'tell application "System Events"',
-  'set labels to ""',
-  'try',
-  'set labelPart to name of theElement',
-  'if labelPart is not missing value then set labels to labels & " " & (labelPart as text)',
-  'end try',
-  'try',
-  'set labelPart to description of theElement',
-  'if labelPart is not missing value then set labels to labels & " " & (labelPart as text)',
-  'end try',
-  'try',
-  'set labelPart to value of attribute "AXTitle" of theElement',
-  'if labelPart is not missing value then set labels to labels & " " & (labelPart as text)',
-  'end try',
-  'try',
-  'set labelPart to value of attribute "AXDescription" of theElement',
-  'if labelPart is not missing value then set labels to labels & " " & (labelPart as text)',
-  'end try',
-  'return labels',
-  'end tell',
-  'end safeLabel',
-  'on compactLabel(rawLabel)',
-  'set cleaned to my replaceText(rawLabel, tab, " ")',
-  'set cleaned to my replaceText(cleaned, linefeed, " ")',
-  'set cleaned to my replaceText(cleaned, return, " ")',
-  'repeat while cleaned contains "  "',
-  'set cleaned to my replaceText(cleaned, "  ", " ")',
-  'end repeat',
-  'if length of cleaned is greater than 80 then set cleaned to text 1 thru 80 of cleaned',
-  'return cleaned',
-  'end compactLabel',
-  'on replaceText(sourceText, searchText, replacementText)',
-  'set oldDelimiters to AppleScript\'s text item delimiters',
-  'set AppleScript\'s text item delimiters to searchText',
-  'set textItems to text items of sourceText',
-  'set AppleScript\'s text item delimiters to replacementText',
-  'set replacedText to textItems as text',
-  'set AppleScript\'s text item delimiters to oldDelimiters',
-  'return replacedText',
-  'end replaceText',
-];
 
 const computerSurface = new DesktopComputerSurface();
 
 export function getComputerSurface(): DesktopComputerSurface {
   return computerSurface;
-}
-
-function parseList(value: string | undefined, fallback: string[]): string[] {
-  const items = (value || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return items.length > 0 ? items : fallback;
 }
 
 function hasBackgroundElementLocator(action: ComputerSurfaceAction): boolean {
@@ -1658,510 +994,4 @@ function hasBackgroundCgEventTargetFragment(action: ComputerSurfaceAction): bool
     || action.windowLocalPoint !== undefined
     || action.windowX !== undefined
     || action.windowY !== undefined;
-}
-
-function sameAppName(left: string, right: string): boolean {
-  return left.trim().toLowerCase() === right.trim().toLowerCase();
-}
-
-function normalizeBackgroundAction(action: string): string {
-  return action === 'doubleClick' ? 'doubleClick' : action;
-}
-
-function normalizeBackgroundRole(role: string | undefined): string {
-  if (!role) return '';
-  if (role === 'textfield') return 'textbox';
-  return role;
-}
-
-function clampInt(value: number | undefined, min: number, max: number, fallback: number): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return fallback;
-  }
-  return Math.max(min, Math.min(max, Math.trunc(value)));
-}
-
-type BackgroundAxElement = { index: number; role: string; name: string; axPath: string };
-
-function parseBackgroundElementLines(stdout: string): BackgroundAxElement[] {
-  return stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [indexText, role = '', name = '', axPath = ''] = line.split('\t');
-      const index = Number.parseInt(indexText, 10);
-      return {
-        index: Number.isFinite(index) ? index : 0,
-        role: role.trim(),
-        name: name.trim(),
-        axPath: axPath.trim(),
-      };
-    })
-    .filter((element) => element.index > 0 && element.role);
-}
-
-function assessAxTreeQuality(elements: BackgroundAxElement[], reachedLimit: boolean): ComputerSurfaceAxQuality {
-  const elementCount = elements.length;
-  const labeledElementCount = elements.filter((element) => element.name.trim().length > 0).length;
-  const withAxPathCount = elements.filter((element) => element.axPath.trim().length > 0).length;
-  const unlabeledRatio = elementCount > 0 ? 1 - labeledElementCount / elementCount : 1;
-  const missingAxPathRatio = elementCount > 0 ? 1 - withAxPathCount / elementCount : 1;
-  const roleCounts: Record<string, number> = {};
-  const labelRoleCounts = new Map<string, number>();
-  for (const element of elements) {
-    const role = element.role || 'unknown';
-    roleCounts[role] = (roleCounts[role] || 0) + 1;
-    const labelKey = `${role}:${element.name.trim().toLowerCase()}`;
-    if (element.name.trim()) {
-      labelRoleCounts.set(labelKey, (labelRoleCounts.get(labelKey) || 0) + 1);
-    }
-  }
-
-  const duplicateLabelRoleCount = [...labelRoleCounts.values()]
-    .filter((count) => count > 1)
-    .reduce((sum, count) => sum + count, 0);
-  const reasons: string[] = [];
-  let score = 1;
-
-  if (elementCount === 0) {
-    reasons.push('no interactive AX elements returned');
-    score = 0;
-  } else {
-    if (elementCount < 3) {
-      reasons.push(`only ${elementCount} interactive AX element${elementCount === 1 ? '' : 's'} returned`);
-      score -= 0.25;
-    }
-    if (unlabeledRatio > 0.35) {
-      reasons.push(`${Math.round(unlabeledRatio * 100)}% of candidates are unlabeled`);
-      score -= 0.3;
-    } else if (unlabeledRatio > 0.1) {
-      reasons.push(`${Math.round(unlabeledRatio * 100)}% of candidates are unlabeled`);
-      score -= 0.1;
-    }
-    if (missingAxPathRatio > 0.2) {
-      reasons.push(`${Math.round(missingAxPathRatio * 100)}% of candidates lack axPath`);
-      score -= 0.2;
-    }
-    if (duplicateLabelRoleCount > 0) {
-      reasons.push(`${duplicateLabelRoleCount} candidates share the same role/name`);
-      score -= Math.min(0.25, duplicateLabelRoleCount / Math.max(1, elementCount));
-    }
-    if (reachedLimit) {
-      reasons.push('candidate listing reached the requested limit');
-      score -= 0.1;
-    }
-  }
-
-  const clampedScore = Math.max(0, Math.min(1, score));
-  const roundedScore = Math.round(clampedScore * 100) / 100;
-  const grade: ComputerSurfaceAxQuality['grade'] = roundedScore >= 0.75
-    ? 'good'
-    : roundedScore >= 0.45
-      ? 'usable'
-      : 'poor';
-
-  return {
-    score: roundedScore,
-    grade,
-    elementCount,
-    labeledElementCount,
-    withAxPathCount,
-    unlabeledRatio: Math.round(unlabeledRatio * 100) / 100,
-    missingAxPathRatio: Math.round(missingAxPathRatio * 100) / 100,
-    duplicateLabelRoleCount,
-    roleCounts,
-    reasons: reasons.length > 0 ? reasons : ['AX tree has enough labeled, addressable candidates'],
-  };
-}
-
-function formatAxQualityLine(quality: ComputerSurfaceAxQuality): string {
-  return `AX quality: ${quality.grade} score=${quality.score} (${quality.reasons.join('; ')})`;
-}
-
-function formatBackgroundCgEventWindowLine(window: BackgroundCgEventWindow): string {
-  const title = window.title ? ` "${window.title}"` : '';
-  const quality = typeof window.qualityScore === 'number'
-    ? `quality=${window.qualityGrade || 'unknown'}:${window.qualityScore}`
-    : null;
-  const ref = window.windowRef ? `windowRef=${window.windowRef}` : null;
-  const recommended = window.recommended ? 'recommended=yes' : null;
-  return [
-    `${window.appName}${title}`,
-    window.bundleId ? `bundleId=${window.bundleId}` : null,
-    `pid=${window.pid}`,
-    `windowId=${window.windowId}`,
-    `bounds=${formatBounds(window.bounds)}`,
-    quality,
-    ref,
-    recommended,
-  ].filter(Boolean).join(' · ');
-}
-
-function formatBounds(bounds: BackgroundCgEventWindowBounds): string {
-  return `${roundPoint(bounds.x)},${roundPoint(bounds.y)} ${roundPoint(bounds.width)}x${roundPoint(bounds.height)}`;
-}
-
-function formatTargetSuffix(options: ListBackgroundCgEventWindowsOptions): string {
-  const parts = [
-    options.targetApp ? `targetApp=${options.targetApp}` : null,
-    options.bundleId ? `bundleId=${options.bundleId}` : null,
-    options.title ? `title="${options.title}"` : null,
-    options.pid ? `pid=${options.pid}` : null,
-    options.windowId ? `windowId=${options.windowId}` : null,
-  ].filter(Boolean);
-  return parts.length > 0 ? ` for ${parts.join(' · ')}` : '';
-}
-
-function formatWindowObservationOutput(args: {
-  windows: BackgroundCgEventWindow[];
-  targetMatches: BackgroundCgEventWindow[];
-  visibleWindows: BackgroundCgEventWindow[];
-  options: ListBackgroundCgEventWindowsOptions;
-  recommendedWindow: BackgroundCgEventWindow | null;
-}): string {
-  const { windows, targetMatches, visibleWindows, options, recommendedWindow } = args;
-  const header = windows.length > 0
-    ? `Found ${windows.length} background CGEvent window candidates${formatTargetSuffix(options)}.`
-    : `No background CGEvent window candidates found${formatTargetSuffix(options)}.`;
-  return [
-    header,
-    formatTargetMatchesLine(targetMatches, options),
-    recommendedWindow
-      ? `Recommended window: ${formatBackgroundCgEventWindowLine(recommendedWindow)}`
-      : 'Recommended window: none',
-    `Visible apps: ${formatVisibleAppSummary(visibleWindows)}`,
-    windows.length > 0 ? 'Window candidates:' : null,
-    ...windows.map(formatBackgroundCgEventWindowLine),
-  ].filter(Boolean).join('\n');
-}
-
-function formatTargetMatchesLine(
-  targetMatches: BackgroundCgEventWindow[],
-  options: ListBackgroundCgEventWindowsOptions,
-): string {
-  if (!hasWindowTargetIntent(options)) {
-    return 'Target matches: no target filter provided';
-  }
-  if (targetMatches.length === 0) {
-    return `Target matches: 0${formatTargetSuffix(options)}`;
-  }
-  const preview = targetMatches
-    .slice(0, 4)
-    .map(formatWindowShortRef)
-    .join('; ');
-  const remainder = targetMatches.length > 4 ? `; +${targetMatches.length - 4} more` : '';
-  return `Target matches: ${targetMatches.length}${formatTargetSuffix(options)} -> ${preview}${remainder}`;
-}
-
-function formatVisibleAppSummary(windows: BackgroundCgEventWindow[]): string {
-  if (windows.length === 0) {
-    return 'none';
-  }
-  const groups = new Map<string, {
-    appName: string;
-    bundleId: string | null;
-    count: number;
-  }>();
-  for (const window of windows) {
-    const appName = window.appName || 'unknown';
-    const bundleId = window.bundleId || null;
-    const key = `${appName}\u0000${bundleId || ''}`;
-    const existing = groups.get(key);
-    if (existing) {
-      existing.count += 1;
-    } else {
-      groups.set(key, { appName, bundleId, count: 1 });
-    }
-  }
-  return Array.from(groups.values())
-    .sort((a, b) => b.count - a.count || a.appName.localeCompare(b.appName))
-    .slice(0, 8)
-    .map((group) => `${group.appName}${group.bundleId ? `/${group.bundleId}` : ''} x${group.count}`)
-    .join('; ');
-}
-
-function formatWindowShortRef(window: BackgroundCgEventWindow): string {
-  return [
-    `${window.appName}${window.bundleId ? `/${window.bundleId}` : ''}`,
-    window.title ? `"${window.title}"` : null,
-    `pid=${window.pid}`,
-    `windowId=${window.windowId}`,
-  ].filter(Boolean).join(' ');
-}
-
-function getWindowResultLimit(options: ListBackgroundCgEventWindowsOptions): number {
-  return typeof options.limit === 'number' && Number.isFinite(options.limit)
-    ? Math.max(1, Math.min(200, Math.trunc(options.limit)))
-    : 80;
-}
-
-function hasWindowTargetIntent(options: ListBackgroundCgEventWindowsOptions): boolean {
-  return Boolean(
-    options.targetApp
-      || options.bundleId
-      || options.title
-      || typeof options.pid === 'number'
-      || typeof options.windowId === 'number',
-  );
-}
-
-function getWindowTargetMatches(
-  windows: BackgroundCgEventWindow[],
-  options: ListBackgroundCgEventWindowsOptions,
-): BackgroundCgEventWindow[] {
-  if (!hasWindowTargetIntent(options)) {
-    return [];
-  }
-  return windows.filter((window) => matchesWindowTargetIntent(window, options));
-}
-
-function matchesWindowTargetIntent(
-  window: BackgroundCgEventWindow,
-  options: ListBackgroundCgEventWindowsOptions,
-): boolean {
-  if (options.targetApp && !matchesWindowTextTarget(
-    [window.appName, window.bundleId, window.title],
-    options.targetApp,
-  )) {
-    return false;
-  }
-  if (options.bundleId && !matchesWindowTextTarget([window.bundleId], options.bundleId)) {
-    return false;
-  }
-  if (options.title && !matchesWindowTextTarget([window.title], options.title)) {
-    return false;
-  }
-  if (typeof options.pid === 'number' && window.pid !== Math.trunc(options.pid)) {
-    return false;
-  }
-  if (typeof options.windowId === 'number' && window.windowId !== Math.trunc(options.windowId)) {
-    return false;
-  }
-  return true;
-}
-
-function matchesWindowTextTarget(candidates: Array<string | null | undefined>, target: string): boolean {
-  const terms = expandWindowTargetTerms(target);
-  if (terms.length === 0) {
-    return false;
-  }
-  return candidates.some((candidate) => {
-    const normalized = normalizeWindowTargetText(candidate);
-    if (!normalized) {
-      return false;
-    }
-    return terms.some((term) =>
-      normalized === term
-        || (term.length >= 4 && normalized.includes(term))
-        || (normalized.length >= 4 && term.includes(normalized)),
-    );
-  });
-}
-
-function expandWindowTargetTerms(target: string): string[] {
-  const normalized = normalizeWindowTargetText(target);
-  const terms = new Set<string>();
-  if (normalized) {
-    terms.add(normalized);
-  }
-  if (
-    normalized.includes('tencentmeeting')
-    || normalized.includes('comtencentmeeting')
-    || target.includes('腾讯会议')
-  ) {
-    terms.add('tencentmeeting');
-    terms.add('comtencentmeeting');
-    terms.add('腾讯会议');
-  }
-  return Array.from(terms);
-}
-
-function normalizeWindowTargetText(value: string | null | undefined): string {
-  return (value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[\s._-]+/g, '');
-}
-
-function formatAppDiagnosis(diagnosis: BackgroundCgEventAppDiagnosis): string {
-  return [
-    `Computer Surface diagnosis${diagnosis.targetApp ? ` for ${diagnosis.targetApp}` : ''}`,
-    `Platform: ${diagnosis.platform}${diagnosis.os.version ? ` · ${diagnosis.os.version}` : ''}`,
-    `Helper: ${diagnosis.helper.available ? 'available' : 'unavailable'}${diagnosis.helper.path ? ` · ${diagnosis.helper.path}` : ''}`,
-    `TCC: Accessibility=${diagnosis.permissions.accessibilityTrusted === true ? 'granted' : diagnosis.permissions.accessibilityTrusted === false ? 'missing' : 'unknown'} · ScreenRecording=${diagnosis.permissions.screenRecordingGranted === true ? 'granted' : diagnosis.permissions.screenRecordingGranted === false ? 'missing' : 'unknown'}`,
-    `CGEventSetWindowLocation: ${diagnosis.symbols.cgEventSetWindowLocationAvailable === true ? 'available' : diagnosis.symbols.cgEventSetWindowLocationAvailable === false ? 'unavailable' : 'unknown'}`,
-    `Processes: ${diagnosis.processes.length ? diagnosis.processes.map((process) => `${process.appName} pid=${process.pid}${process.bundleId ? ` bundleId=${process.bundleId}` : ''}${process.isActive ? ' active=yes' : ''}`).join('; ') : 'none'}`,
-    `AX suitability: ${diagnosis.ax.suitable ? 'yes' : 'no'} · ${diagnosis.ax.reasons.join('; ')}`,
-    `CGEvent suitability: ${diagnosis.cgEvent.suitable ? 'yes' : 'no'} · ${diagnosis.cgEvent.reasons.join('; ')}`,
-    diagnosis.recommendedWindow ? `Recommended window: ${formatBackgroundCgEventWindowLine(diagnosis.recommendedWindow)}` : 'Recommended window: none',
-    diagnosis.windows.length > 0
-      ? [
-          `Window candidates: ${diagnosis.windows.length}`,
-          ...diagnosis.windows.slice(0, 8).map(formatBackgroundCgEventWindowLine),
-        ].join('\n')
-      : 'Window candidates: none',
-  ].join('\n');
-}
-
-function backgroundCgEventMetadata(result: BackgroundCgEventClickResult): Record<string, unknown> {
-  return {
-    backgroundSurface: true,
-    computerSurfaceMode: 'background_cgevent',
-    targetApp: result.appName,
-    targetBundleId: result.bundleId || null,
-    targetPid: result.pid,
-    targetWindowId: result.windowId,
-    targetWindowRef: result.windowRef || null,
-    targetWindowTitle: result.title || null,
-    targetWindowBounds: result.bounds,
-    windowLocalPoint: result.windowLocalPoint,
-    screenPoint: result.screenPoint,
-    button: result.button,
-    clickCount: result.clickCount,
-    isTargetActive: result.isTargetActive,
-    usedWindowLocation: result.usedWindowLocation,
-    eventNumbers: result.eventNumbers || [],
-    targetVerification: result.targetVerification || null,
-    evidenceSummary: [
-      `pid=${result.pid} windowId=${result.windowId}${result.windowRef ? ` windowRef=${result.windowRef}` : ''}`,
-      `bounds=${formatBounds(result.bounds)}`,
-      `windowLocal=${roundPoint(result.windowLocalPoint.x)},${roundPoint(result.windowLocalPoint.y)} screen=${roundPoint(result.screenPoint.x)},${roundPoint(result.screenPoint.y)}`,
-      `active=${result.isTargetActive ? 'yes' : 'no'} usedWindowLocation=${result.usedWindowLocation ? 'yes' : 'no'}`,
-      `button=${result.button} clickCount=${result.clickCount}${result.eventNumbers?.length ? ` eventNumbers=${result.eventNumbers.join(',')}` : ''}`,
-      result.targetVerification?.warnings.length
-        ? `verification warnings=${result.targetVerification.warnings.join('; ')}`
-        : null,
-    ].filter(Boolean),
-  };
-}
-
-function normalizeBackgroundCgEventRequest(action: ComputerSurfaceAction): {
-  pid: number;
-  windowId: number;
-  windowRef?: string;
-  targetApp?: string;
-  bundleId?: string;
-  title?: string;
-  windowLocalPoint: BackgroundCgEventWindowPoint;
-  button: 'left' | 'right';
-  clickCount: number;
-  timeoutMs?: number;
-} | null {
-  const point = getWindowLocalPoint(action);
-  const parsedRef = parseWindowRef(action.windowRef);
-  const pid = action.pid ?? parsedRef?.pid;
-  const windowId = action.windowId ?? parsedRef?.windowId;
-  if (
-    !isPositiveFiniteNumber(pid)
-    || !isPositiveFiniteNumber(windowId)
-    || !point
-  ) {
-    return null;
-  }
-  return {
-    pid: Math.trunc(pid),
-    windowId: Math.trunc(windowId),
-    windowRef: action.windowRef,
-    targetApp: action.targetApp,
-    bundleId: action.bundleId,
-    title: action.title,
-    windowLocalPoint: point,
-    button: action.button === 'right' || action.action === 'rightClick' ? 'right' : 'left',
-    clickCount: action.action === 'doubleClick'
-      ? 2
-      : Math.max(1, Math.min(2, Math.trunc(action.clickCount || 1))),
-    timeoutMs: action.timeout,
-  };
-}
-
-function parseWindowRef(windowRef: string | undefined): { pid: number; windowId: number } | null {
-  if (!windowRef) return null;
-  const match = /^cgwin:(\d+):(\d+):[a-f0-9]{12}$/i.exec(windowRef.trim());
-  if (!match) return null;
-  return {
-    pid: Number.parseInt(match[1], 10),
-    windowId: Number.parseInt(match[2], 10),
-  };
-}
-
-function getWindowLocalPoint(action: ComputerSurfaceAction): BackgroundCgEventWindowPoint | null {
-  if (
-    action.windowLocalPoint
-    && Number.isFinite(action.windowLocalPoint.x)
-    && Number.isFinite(action.windowLocalPoint.y)
-  ) {
-    return action.windowLocalPoint;
-  }
-  if (Number.isFinite(action.windowX) && Number.isFinite(action.windowY)) {
-    return {
-      x: action.windowX as number,
-      y: action.windowY as number,
-    };
-  }
-  return null;
-}
-
-function parseWindowLocalPointFromParams(params: Record<string, unknown>): BackgroundCgEventWindowPoint | null {
-  const action = params as unknown as ComputerSurfaceAction;
-  return getWindowLocalPoint(action);
-}
-
-function isPositiveFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0;
-}
-
-function roundPoint(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2);
-}
-
-function toAppleScriptArgs(lines: string[]): string[] {
-  return lines.flatMap((line) => ['-e', line]);
-}
-
-function getExecStdout(result: unknown): string {
-  if (typeof result === 'string') {
-    return result;
-  }
-  if (Buffer.isBuffer(result)) {
-    return result.toString('utf8');
-  }
-  if (result && typeof result === 'object' && 'stdout' in result) {
-    const stdout = (result as { stdout?: string | Buffer }).stdout;
-    return Buffer.isBuffer(stdout) ? stdout.toString('utf8') : stdout || '';
-  }
-  return '';
-}
-
-function formatExecError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message.replace(/\s+/g, ' ').trim();
-  }
-  return 'Unknown error';
-}
-
-function isLikelyAccessibilityPermissionError(message: string): boolean {
-  return /not authorized|not permitted|operation not permitted|assistive access|accessibility|privacy|tcc/i.test(message);
-}
-
-function isSensitiveAction(action: ComputerSurfaceAction): boolean {
-  const content = [action.text, action.key, action.name, action.selector, action.role]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-  return /password|passcode|token|secret|credit card|cvv|payment|pay now|transfer|wire|delete account|admin|sudo/.test(content);
-}
-
-function redactAction(action: ComputerSurfaceAction): Record<string, unknown> {
-  const redacted: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(action)) {
-    if (/password|token|secret|credential|cookie/i.test(key)) {
-      redacted[key] = '[redacted]';
-    } else if (key === 'text' && typeof value === 'string') {
-      redacted[key] = `[redacted ${value.length} chars]`;
-    } else {
-      redacted[key] = value;
-    }
-  }
-  return redacted;
 }

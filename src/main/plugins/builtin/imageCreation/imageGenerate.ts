@@ -29,6 +29,7 @@ import {
   isImageUrl,
   type ImageEngine,
 } from '../../../services/media/imageGenerationService';
+import { readChatCompletionText } from '../typedResponseGuards';
 
 const PROMPT_EXPAND_TIMEOUT_MS = 15000;
 
@@ -155,9 +156,7 @@ async function expandPromptWithLLM(
       );
 
       if (response.ok) {
-        const result = await response.json();
-        const msg = result.choices?.[0]?.message;
-        const expanded = (msg?.content || msg?.reasoning_content || '').trim();
+        const expanded = readChatCompletionText(await response.json());
         if (expanded) return expanded;
       }
     } catch (e: unknown) {
@@ -199,8 +198,7 @@ async function expandPromptWithLLM(
         outerSignal,
       );
       if (response.ok) {
-        const result = await response.json();
-        const expanded = result.choices?.[0]?.message?.content?.trim();
+        const expanded = readChatCompletionText(await response.json());
         if (expanded) return expanded;
       }
     } catch (e: unknown) {

@@ -25,6 +25,140 @@ export interface SidecarMetadata {
   toolPool: string[];
 }
 
+type PendingMessage = { role: string; content: string };
+
+type PersistedAgentTaskMetadata = {
+  id: string;
+  status: AgentTaskStatus;
+  sidecarMetadata: SidecarMetadata;
+  error?: string;
+  pendingMessages?: PendingMessage[];
+  blocks?: string[];
+  blockedBy?: string[];
+  parentMasterTaskId?: string;
+};
+
+const AGENT_TASK_STATUSES: readonly AgentTaskStatus[] = [
+  'pending',
+  'registered',
+  'running',
+  'stopped',
+  'resumed',
+  'failed',
+  'cancelled',
+];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJsonValue(value: string): unknown | undefined {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function isAgentTaskStatus(value: unknown): value is AgentTaskStatus {
+  return AGENT_TASK_STATUSES.includes(value as AgentTaskStatus);
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function normalizePendingMessages(value: unknown): PendingMessage[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .flatMap((item) => {
+      const role = item.role;
+      const content = item.content;
+      return typeof role === 'string' && typeof content === 'string'
+        ? [{ role, content }]
+        : [];
+    });
+}
+
+function normalizeSidecarMetadata(value: unknown): SidecarMetadata | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (
+    typeof value.agentType !== 'string' ||
+    typeof value.parentSessionId !== 'string' ||
+    typeof value.spawnTime !== 'number' ||
+    typeof value.model !== 'string'
+  ) {
+    return null;
+  }
+
+  return {
+    agentType: value.agentType,
+    worktreePath: typeof value.worktreePath === 'string' ? value.worktreePath : undefined,
+    parentSessionId: value.parentSessionId,
+    spawnTime: value.spawnTime,
+    model: value.model,
+    toolPool: normalizeStringArray(value.toolPool),
+  };
+}
+
+function normalizePersistedMetadata(value: unknown): PersistedAgentTaskMetadata | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const sidecarMetadata = normalizeSidecarMetadata(value.sidecarMetadata);
+  if (
+    typeof value.id !== 'string' ||
+    !isAgentTaskStatus(value.status) ||
+    !sidecarMetadata
+  ) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    status: value.status,
+    sidecarMetadata,
+    error: typeof value.error === 'string' ? value.error : undefined,
+    pendingMessages: normalizePendingMessages(value.pendingMessages),
+    blocks: normalizeStringArray(value.blocks),
+    blockedBy: normalizeStringArray(value.blockedBy),
+    parentMasterTaskId: typeof value.parentMasterTaskId === 'string'
+      ? value.parentMasterTaskId
+      : undefined,
+  };
+}
+
+function normalizeTranscriptEntry(value: unknown): TranscriptEntry | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (
+    typeof value.role !== 'string' ||
+    typeof value.content !== 'string' ||
+    typeof value.timestamp !== 'number'
+  ) {
+    return null;
+  }
+
+  return {
+    role: value.role,
+    content: value.content,
+    timestamp: value.timestamp,
+    toolCallId: typeof value.toolCallId === 'string' ? value.toolCallId : undefined,
+  };
+}
+
 export class AgentTask extends TaskKernel<AgentTaskStatus> {
   readonly agentType: string;
   readonly sidecarMetadata: SidecarMetadata;
@@ -131,27 +265,22 @@ export class AgentTask extends TaskKernel<AgentTaskStatus> {
     if (!existsSync(metadataPath)) return null;
 
     const metaRaw = await readFile(metadataPath, 'utf-8');
-    const meta = JSON.parse(metaRaw);
+    const meta = normalizePersistedMetadata(parseJsonValue(metaRaw));
+    if (!meta) return null;
 
     const task = new AgentTask(meta.id, meta.sidecarMetadata);
-    // Restore internal state directly (bypass state machine for loading)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): _status 是 TaskKernel 的 protected 字段，反序列化时需要绕过；应该提供 AgentTask.fromPersisted(meta) 静态构造器代替私有字段直写
-    (task as any)._status = meta.status;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 _error 私有字段直写，应通过 fromPersisted 构造器
-    (task as any)._error = meta.error;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 _pendingMessages 私有字段直写，应通过 fromPersisted 构造器
-    (task as any)._pendingMessages = meta.pendingMessages || [];
+    task.restorePersistedRuntimeState({
+      status: meta.status,
+      error: meta.error,
+      pendingMessages: meta.pendingMessages,
+    });
 
     // Restore dependency sets
-    if (Array.isArray(meta.blocks)) {
-      for (const id of meta.blocks) task.blocks.add(id);
-    }
-    if (Array.isArray(meta.blockedBy)) {
-      for (const id of meta.blockedBy) task.blockedBy.add(id);
-    }
+    for (const id of meta.blocks ?? []) task.blocks.add(id);
+    for (const id of meta.blockedBy ?? []) task.blockedBy.add(id);
 
     // Restore parent MasterTask reference (旧 metadata 无此字段时保持 undefined)
-    if (typeof meta.parentMasterTaskId === 'string') {
+    if (meta.parentMasterTaskId) {
       task.parentMasterTaskId = meta.parentMasterTaskId;
     }
 
@@ -159,8 +288,15 @@ export class AgentTask extends TaskKernel<AgentTaskStatus> {
     if (existsSync(transcriptPath)) {
       const transcriptRaw = await readFile(transcriptPath, 'utf-8');
       const lines = transcriptRaw.split('\n').filter(l => l.trim());
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): _transcript 私有字段直写，应通过 fromPersisted 构造器
-      (task as any)._transcript = lines.map((l: string) => JSON.parse(l));
+      const transcript = lines
+        .map((line) => normalizeTranscriptEntry(parseJsonValue(line)))
+        .filter((entry): entry is TranscriptEntry => entry !== null);
+      task.restorePersistedRuntimeState({
+        status: task.status,
+        error: task.error,
+        pendingMessages: task.getPendingMessagesSnapshot(),
+        transcript,
+      });
     }
 
     return task;

@@ -8,6 +8,23 @@ import { MAX_PARALLEL_TOOLS } from '../loopTypes';
 
 const logger = createLogger('DAGScheduler');
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function readString(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' ? value : null;
+}
+
+function getOrCreateList(map: Map<string, number[]>, key: string): number[] {
+  const existing = map.get(key);
+  if (existing) return existing;
+  const next: number[] = [];
+  map.set(key, next);
+  return next;
+}
+
 export interface ToolNode {
   index: number;
   toolCall: ToolCall;
@@ -27,9 +44,8 @@ export interface ToolExecutionDAG {
  */
 function extractFilePath(toolCall: ToolCall): string | null {
   const args = toolCall.arguments;
-  if (!args || typeof args !== 'object') return null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): ToolCall.arguments 是 unknown，应改成 unknown + 显式 narrow（'file_path' in args && typeof args.file_path === 'string'）
-  return (args as any).file_path || (args as any).path || null;
+  if (!isRecord(args)) return null;
+  return readString(args, 'file_path') ?? readString(args, 'path');
 }
 
 /**
@@ -37,9 +53,9 @@ function extractFilePath(toolCall: ToolCall): string | null {
  */
 function extractBashWritePaths(toolCall: ToolCall): string[] {
   if (toolCall.name !== 'bash') return [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): ToolCall.arguments 是 unknown，应改成显式 narrow（'command' in args && typeof args.command === 'string'）
-  const command = (toolCall.arguments as any)?.command;
-  if (!command || typeof command !== 'string') return [];
+  const args = toolCall.arguments;
+  const command = isRecord(args) ? readString(args, 'command') : null;
+  if (!command) return [];
 
   const paths: string[] = [];
   // Match >> or > followed by a path
@@ -86,20 +102,17 @@ export function buildToolExecutionDAG(toolCalls: ToolCall[]): ToolExecutionDAG {
 
     if (path) {
       if (isReadTool(tc.name)) {
-        if (!fileReaders.has(path)) fileReaders.set(path, []);
-        fileReaders.get(path)!.push(i);
+        getOrCreateList(fileReaders, path).push(i);
       }
       if (isWriteTool(tc.name)) {
-        if (!fileWriters.has(path)) fileWriters.set(path, []);
-        fileWriters.get(path)!.push(i);
+        getOrCreateList(fileWriters, path).push(i);
       }
     }
 
     // Bash write paths
     const bashPaths = extractBashWritePaths(tc);
     for (const bp of bashPaths) {
-      if (!fileWriters.has(bp)) fileWriters.set(bp, []);
-      fileWriters.get(bp)!.push(i);
+      getOrCreateList(fileWriters, bp).push(i);
     }
   }
 

@@ -8,7 +8,6 @@ import type {
   DeepResearchConfig,
   ResearchPlan,
   ResearchStep,
-  ResearchStepType,
 } from './types';
 import type { ModelRouter } from '../model/modelRouter';
 import type { ToolExecutor } from '../tools/toolExecutor';
@@ -18,6 +17,74 @@ import { createLogger } from '../services/infra/logger';
 import { UrlCompressor } from './urlCompressor';
 
 const logger = createLogger('ResearchExecutor');
+
+const DEFAULT_INFO_BALANCE_SCORES: ReflectionResult['infoBalanceScores'] = {
+  factual: 1,
+  analytical: 1,
+  opinion: 1,
+  practical: 1,
+  comparative: 1,
+  frontier: 1,
+};
+
+const DEFAULT_REFLECTION_RESULT: ReflectionResult = {
+  isSufficient: true,
+  confidence: 0.5,
+  knowledgeGaps: [],
+  followUpQueries: [],
+  infoBalanceScores: DEFAULT_INFO_BALANCE_SCORES,
+  totalBalanceScore: 6,
+  recommendation: 'proceed',
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : '未知错误';
+}
+
+function readBoolean(record: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const value = record[key];
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function readNumber(record: Record<string, unknown>, key: string, fallback: number): number {
+  const value = record[key];
+  return typeof value === 'number' ? value : fallback;
+}
+
+function readStringArray(record: Record<string, unknown>, key: string): string[] {
+  const value = record[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function readRecommendation(
+  record: Record<string, unknown>,
+  fallback: ReflectionResult['recommendation']
+): ReflectionResult['recommendation'] {
+  const value = record.recommendation;
+  return value === 'proceed' || value === 'one_more_round' || value === 'need_deep_dive'
+    ? value
+    : fallback;
+}
+
+function readInfoBalanceScores(record: Record<string, unknown>): ReflectionResult['infoBalanceScores'] {
+  const value = record.info_balance_scores;
+  if (!isRecord(value)) {
+    return DEFAULT_INFO_BALANCE_SCORES;
+  }
+
+  return {
+    factual: readNumber(value, 'factual', DEFAULT_INFO_BALANCE_SCORES.factual),
+    analytical: readNumber(value, 'analytical', DEFAULT_INFO_BALANCE_SCORES.analytical),
+    opinion: readNumber(value, 'opinion', DEFAULT_INFO_BALANCE_SCORES.opinion),
+    practical: readNumber(value, 'practical', DEFAULT_INFO_BALANCE_SCORES.practical),
+    comparative: readNumber(value, 'comparative', DEFAULT_INFO_BALANCE_SCORES.comparative),
+    frontier: readNumber(value, 'frontier', DEFAULT_INFO_BALANCE_SCORES.frontier),
+  };
+}
 
 // ----------------------------------------------------------------------------
 // Types
@@ -458,7 +525,7 @@ export class ResearchExecutor {
         searchResults.push(result.value);
       } else {
         logger.warn(`Search query failed: ${queries[i]}`, result.reason);
-        searchResults.push([`搜索失败 [${queries[i]}]: ${result.reason?.message || '未知错误'}`]);
+        searchResults.push([`搜索失败 [${queries[i]}]: ${getErrorMessage(result.reason)}`]);
       }
     }
 
@@ -544,7 +611,7 @@ export class ResearchExecutor {
         const truncatedContent = content.slice(0, this.config.maxFetchContentLength);
         return `### 来源: ${url}\n${truncatedContent}${content.length > this.config.maxFetchContentLength ? '\n[内容已截断...]' : ''}`;
       }
-    } catch (fetchError) {
+    } catch {
       // 忽略单个页面抓取失败
       logger.debug('Failed to fetch URL:', url);
     }
@@ -623,7 +690,8 @@ ${previousResults}
   private async reflect(plan: ResearchPlan): Promise<ReflectionResult> {
     const allContent = plan.steps
       .filter(s => s.status === 'completed' && s.result)
-      .map(s => s.result!)
+      .map(s => s.result)
+      .filter((result): result is string => Boolean(result))
       .join('\n\n');
 
     const executedList = [...this._executedQueries].slice(0, 20).join('\n- ');
@@ -667,37 +735,33 @@ Evaluate the research completeness and respond in this exact JSON format:
       const text = response.content ?? '';
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
+        const parsed: unknown = JSON.parse(jsonMatch[0]);
+        if (!isRecord(parsed)) {
+          return DEFAULT_REFLECTION_RESULT;
+        }
+
         return {
-          isSufficient: parsed.is_sufficient ?? true,
-          confidence: parsed.confidence ?? 0.5,
-          knowledgeGaps: parsed.knowledge_gaps ?? [],
-          followUpQueries: parsed.follow_up_queries ?? [],
-          infoBalanceScores: parsed.info_balance_scores ?? { factual: 1, analytical: 1, opinion: 1, practical: 1, comparative: 1, frontier: 1 },
-          totalBalanceScore: parsed.total_balance_score ?? 6,
-          recommendation: parsed.recommendation ?? 'proceed',
+          isSufficient: readBoolean(parsed, 'is_sufficient', DEFAULT_REFLECTION_RESULT.isSufficient),
+          confidence: readNumber(parsed, 'confidence', DEFAULT_REFLECTION_RESULT.confidence),
+          knowledgeGaps: readStringArray(parsed, 'knowledge_gaps'),
+          followUpQueries: readStringArray(parsed, 'follow_up_queries'),
+          infoBalanceScores: readInfoBalanceScores(parsed),
+          totalBalanceScore: readNumber(parsed, 'total_balance_score', DEFAULT_REFLECTION_RESULT.totalBalanceScore),
+          recommendation: readRecommendation(parsed, DEFAULT_REFLECTION_RESULT.recommendation),
         };
       }
     } catch (e) {
       logger.warn('Reflection failed, defaulting to proceed:', e);
     }
 
-    return {
-      isSufficient: true,
-      confidence: 0.5,
-      knowledgeGaps: [],
-      followUpQueries: [],
-      infoBalanceScores: { factual: 1, analytical: 1, opinion: 1, practical: 1, comparative: 1, frontier: 1 },
-      totalBalanceScore: 6,
-      recommendation: 'proceed',
-    };
+    return DEFAULT_REFLECTION_RESULT;
   }
 
   /**
    * 从文本中提取 URL
    */
   private extractUrls(text: string): string[] {
-    const urlPattern = /https?:\/\/[^\s\)\]\>\"\']+/g;
+    const urlPattern = /https?:\/\/[^\s)\]>"']+/g;
     const matches = text.match(urlPattern) ?? [];
 
     // 去重并过滤无效 URL

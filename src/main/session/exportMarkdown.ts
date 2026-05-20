@@ -133,7 +133,7 @@ function truncateCodeBlocks(content: string, maxLength: number): string {
 
   const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
 
-  return content.replace(codeBlockRegex, (match, lang, code) => {
+  return content.replace(codeBlockRegex, (match: string, lang: string, code: string) => {
     if (code.length > maxLength) {
       const truncated = code.substring(0, maxLength);
       const lines = code.split('\n').length;

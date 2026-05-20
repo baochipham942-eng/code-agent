@@ -16,6 +16,7 @@ import {
 import { buildRecoveredWorkSuggestions } from '../planning/recoveredWorkOrchestrator';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { getMainWindow } from './window';
+import type { AppSettings } from '../../shared/contract/settings';
 
 const logger = createLogger('Bootstrap:Session');
 
@@ -25,8 +26,7 @@ const logger = createLogger('Bootstrap:Session');
  * Returns the current session ID.
  */
 export async function initializeSession(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): settings 应该是 AppSettings 类型，但目前 SettingsService.getSettings 返回 unknown；先 narrow 该 service 后这里能直接 import AppSettings
-  settings: any,
+  settings: AppSettings,
 ): Promise<string> {
   const sessionManager = getSessionManager();
   const taskManager = getTaskManager();

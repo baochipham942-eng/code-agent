@@ -10,6 +10,7 @@ import { spawn, execFileSync, type ChildProcess } from 'child_process';
 import { createLogger } from '../infra/logger';
 import { getNativeDesktopService } from './nativeDesktopService';
 import { getUserConfigDir } from '../../config/configPaths';
+import type { InferenceSession, Tensor as OrtTensor, TensorConstructor } from 'onnxruntime-node';
 
 const logger = createLogger('DesktopAudioCapture');
 
@@ -37,6 +38,72 @@ const POWER_CHECK_INTERVAL_MS = 60_000;
 
 // Capture mode: microphone (default) or system-audio (ScreenCaptureKit, captures headphone output)
 type CaptureMode = 'microphone' | 'system-audio';
+
+interface OrtRuntimeModule {
+  InferenceSession: {
+    create(modelPath: string): Promise<InferenceSession>;
+  };
+  Tensor: TensorConstructor;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readStringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function readNumberField(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function readBooleanField(record: Record<string, unknown>, key: string): boolean | undefined {
+  const value = record[key];
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function readRecordField(record: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
+  const value = record[key];
+  return isRecord(value) ? value : undefined;
+}
+
+function parseJsonRecord(raw: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseJsonArray(raw: string): unknown[] {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function isOrtRuntimeModule(value: unknown): value is OrtRuntimeModule {
+  if (!isRecord(value)) return false;
+  const inferenceSession = readRecordField(value, 'InferenceSession');
+  return !!inferenceSession
+    && typeof inferenceSession.create === 'function'
+    && typeof value.Tensor === 'function';
+}
+
+function loadOrtRuntimeModule(modulePath?: string): OrtRuntimeModule | null {
+  const loaded: unknown = modulePath ? require(modulePath) : require('onnxruntime-node');
+  return isOrtRuntimeModule(loaded) ? loaded : null;
+}
+
+function isOrtTensor(value: unknown): value is OrtTensor {
+  return isRecord(value) && 'data' in value && 'dims' in value && 'type' in value;
+}
 
 // ffmpeg paths — 使用 AVFoundation 采集（sox CoreAudio 在 Tauri 子进程中无法获取 TCC 权限）
 const FFMPEG_PATHS = ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'];
@@ -288,12 +355,9 @@ class VadStateMachine {
 // ============================================================================
 
 class VadProcessor {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): onnxruntime-node 的 InferenceSession 类型应 import { InferenceSession } from 'onnxruntime-node'，避免运行时 require()
-  private session: any; // ort.InferenceSession
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): onnxruntime-node 整模块类型，应 import * as ort from 'onnxruntime-node'
-  private ort: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): ort.Tensor 类型，同上 import { Tensor } from 'onnxruntime-node'
-  private state: any; // ort.Tensor — hidden state carried across frames
+  private session: InferenceSession | null = null;
+  private ort: OrtRuntimeModule | null = null;
+  private state: OrtTensor | null = null; // hidden state carried across frames
   private stateMachine: VadStateMachine;
   private initialized = false;
 
@@ -308,18 +372,18 @@ class VadProcessor {
       const tauriNodeModules = path.join(__dirname, '..', '..', 'node_modules');
       const cwdNodeModules = path.join(process.cwd(), 'node_modules');
       try {
-        this.ort = require('onnxruntime-node');
+        this.ort = loadOrtRuntimeModule();
       } catch {
         // 回退到 Tauri Resources 路径
         for (const nm of [tauriNodeModules, cwdNodeModules]) {
           const ortPath = path.join(nm, 'onnxruntime-node');
           if (fs.existsSync(ortPath)) {
-            this.ort = require(ortPath);
+            this.ort = loadOrtRuntimeModule(ortPath);
             break;
           }
         }
-        if (!this.ort) throw new Error('onnxruntime-node not found');
       }
+      if (!this.ort) throw new Error('onnxruntime-node not found');
 
       // 查找 silero_vad_v5.onnx 模型
       let modelPath = '';
@@ -358,6 +422,7 @@ class VadProcessor {
 
   async processChunk(pcmInt16: Int16Array): Promise<Int16Array[]> {
     if (!this.initialized) return [];
+    if (!this.ort || !this.session || !this.state) return [];
 
     // Convert Int16 to Float32 [-1.0, 1.0]
     const float32 = new Float32Array(pcmInt16.length);
@@ -370,8 +435,14 @@ class VadProcessor {
     const sr = new this.ort.Tensor('int64', BigInt64Array.from([BigInt(SAMPLE_RATE)]), []);
 
     const result = await this.session.run({ input, state: this.state, sr });
-    const prob = result.output.data[0] as number;
-    this.state = result.stateN; // carry hidden state forward
+    const output = result.output;
+    const stateN = result.stateN;
+    if (!isOrtTensor(output) || !(output.data instanceof Float32Array) || !isOrtTensor(stateN)) {
+      logger.warn('[VAD] ONNX 输出格式异常');
+      return [];
+    }
+    const prob = output.data[0] ?? 0;
+    this.state = stateN; // carry hidden state forward
 
     // 每 500 次（约 16 秒）输出一次 VAD 概率
     this.probLogCount++;
@@ -571,10 +642,11 @@ print(json.dumps({"text": text}))
         resolve(null);
         return;
       }
-      try {
-        const parsed = JSON.parse(stdout.trim());
-        resolve(parsed.text || null);
-      } catch {
+      const parsed = parseJsonRecord(stdout.trim());
+      const text = readStringField(parsed, 'text');
+      if (text) {
+        resolve(text);
+      } else {
         logger.warn('[音频ASR] Qwen3-ASR 输出解析失败', { stdout: stdout.slice(0, 200) });
         resolve(null);
       }
@@ -733,12 +805,16 @@ function checkPowerState(): 'full' | 'reduced' | 'paused' {
     ], { encoding: 'utf-8' }).trim();
     if (!output) return 'full';
 
-    const rows = JSON.parse(output);
+    const rows = parseJsonArray(output);
     if (rows.length === 0) return 'full';
-    const event = JSON.parse(rows[0].raw_json);
+    const row = rows[0];
+    if (!isRecord(row)) return 'full';
+    const rawJson = readStringField(row, 'raw_json');
+    if (!rawJson) return 'full';
+    const event = parseJsonRecord(rawJson);
 
-    if (event.onAcPower) return 'full';
-    const battery = event.batteryPercent;
+    if (readBooleanField(event, 'onAcPower')) return 'full';
+    const battery = readNumberField(event, 'batteryPercent');
     if (battery != null && battery < 20) return 'paused';
     if (battery != null && battery < 50) return 'reduced';
     return 'full';

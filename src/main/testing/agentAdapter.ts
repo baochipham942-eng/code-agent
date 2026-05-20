@@ -12,6 +12,43 @@ import { app } from '../platform';
 
 const logger = createLogger('AgentAdapter');
 
+type AgentLoopStateView = {
+  messages?: unknown;
+  toolExecutions?: unknown;
+  turnCount?: unknown;
+};
+
+type ResettableAgentLoop = {
+  reset?: () => unknown | Promise<unknown>;
+};
+
+type ModuleRequire = (id: string, ...args: unknown[]) => unknown;
+
+type ModuleWithRequirePrototype = {
+  prototype: {
+    require: ModuleRequire;
+  };
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getAgentLoopState(agentLoop: AgentLoop): AgentLoopStateView {
+  const candidate = (agentLoop as unknown as { state?: unknown }).state;
+  return isRecord(candidate) ? candidate : {};
+}
+
+function getAssistantContent(message: unknown): string | undefined {
+  if (!isRecord(message)) {
+    return undefined;
+  }
+
+  return message.role === 'assistant' && typeof message.content === 'string'
+    ? message.content
+    : undefined;
+}
+
 /**
  * Adapter that connects TestRunner to the real AgentLoop
  */
@@ -45,10 +82,6 @@ export class AgentLoopAdapter implements AgentInterface {
     const errors: string[] = [];
     let turnCount = 0;
 
-    // Set up event listeners to capture outputs
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): testing harness 在 AgentLoop 上 hook emit 来抓事件，AgentLoop 没有公开 emit 方法；应该让 AgentLoop 实现 EventEmitter 接口或提供 onAnyEvent 公开 API
-    const originalEmit = (this.agentLoop as any).emit?.bind(this.agentLoop);
-
     try {
       // Hook into agent events if possible
       // This is a simplified version - actual implementation depends on AgentLoop internals
@@ -58,24 +91,26 @@ export class AgentLoopAdapter implements AgentInterface {
 
       // After run completes, extract results from the agent state
       // This needs to be adapted based on actual AgentLoop implementation
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): AgentLoop 内部 state 字段不公开，testing harness 直接读私有 state；应提供 AgentLoop.snapshotState() 公开接口
-      const state = (this.agentLoop as any).state || {};
+      const state = getAgentLoopState(this.agentLoop);
 
       // Extract responses from messages
-      if (state.messages) {
+      if (Array.isArray(state.messages)) {
         for (const msg of state.messages) {
-          if (msg.role === 'assistant' && msg.content) {
-            responses.push(msg.content);
+          const content = getAssistantContent(msg);
+          if (content) {
+            responses.push(content);
           }
         }
       }
 
       // Extract tool executions
-      if (state.toolExecutions) {
-        toolExecutions.push(...state.toolExecutions);
+      if (Array.isArray(state.toolExecutions)) {
+        toolExecutions.push(...(state.toolExecutions as ToolExecutionRecord[]));
       }
 
-      turnCount = state.turnCount || responses.length;
+      turnCount = typeof state.turnCount === 'number' && state.turnCount
+        ? state.turnCount
+        : responses.length;
 
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -96,10 +131,9 @@ export class AgentLoopAdapter implements AgentInterface {
    */
   async reset(): Promise<void> {
     // Reset the agent loop state
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): AgentLoop.reset 是非公开方法，testing harness 通过 duck typing 调用；应在 AgentLoop 公开 reset() 或导出 ITestableAgentLoop 接口
-    if (typeof (this.agentLoop as any).reset === 'function') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 reset 非公开
-      await (this.agentLoop as any).reset();
+    const agentLoop = this.agentLoop as unknown as ResettableAgentLoop;
+    if (typeof agentLoop.reset === 'function') {
+      await agentLoop.reset();
     }
   }
 
@@ -211,8 +245,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
       const _require = createRequire(import.meta.url);
       const electronMock = (await import('../../cli/electron-mock')).default;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): _require('module') 拿到的 NodeJS.Module 没有 prototype.require 字段（动态 monkey-patch CommonJS loader）；应该用 NodeJS.Module & { prototype: { require: (id: string) => unknown } } 类型扩展
-      const Module = _require('module') as any;
+      const Module = _require('module') as ModuleWithRequirePrototype;
       const originalRequire = Module.prototype.require;
       Module.prototype.require = function(id: string, ...args: unknown[]) {
         if (id === 'electron' || id === '../platform') {

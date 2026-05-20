@@ -9,7 +9,6 @@ export { EvalHistoryTracker } from './historyTracker';
 
 import type {
   TestCase,
-  TestResult,
   TestRunSummary,
   EvalFeedback,
   EvalSuggestion,

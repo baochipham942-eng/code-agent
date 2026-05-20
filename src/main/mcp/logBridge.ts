@@ -14,6 +14,19 @@ export type CommandHandler = (command: string, params: Record<string, unknown>) 
   error?: string;
 }>;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseExecuteCommandBody(body: string): { command: string; params: Record<string, unknown> } | null {
+  const parsed: unknown = JSON.parse(body);
+  if (!isRecord(parsed) || typeof parsed.command !== 'string') return null;
+  return {
+    command: parsed.command,
+    params: isRecord(parsed.params) ? parsed.params : {},
+  };
+}
+
 class LogBridge {
   private server: http.Server | null = null;
   private port: number = PORTS.logBridge;
@@ -97,13 +110,14 @@ class LogBridge {
       }
     });
 
+    const server = this.server;
     return new Promise((resolve, reject) => {
-      this.server!.listen(this.port, '127.0.0.1', () => {
+      server.listen(this.port, '127.0.0.1', () => {
         console.error(`[LogBridge] HTTP log server started on http://127.0.0.1:${this.port}`);
         resolve();
       });
 
-      this.server!.on('error', (err) => {
+      server.on('error', (err) => {
         console.error('[LogBridge] Failed to start:', err);
         reject(err);
       });
@@ -114,9 +128,10 @@ class LogBridge {
    * Stop the log bridge server
    */
   async stop(): Promise<void> {
-    if (this.server) {
+    const server = this.server;
+    if (server) {
       return new Promise((resolve) => {
-        this.server!.close(() => {
+        server.close(() => {
           console.error('[LogBridge] Server stopped');
           this.server = null;
           resolve();
@@ -146,15 +161,15 @@ class LogBridge {
   ): Promise<void> {
     // Read request body
     let body = '';
-    req.on('data', (chunk) => {
+    req.on('data', (chunk: Buffer | string) => {
       body += chunk.toString();
     });
 
     req.on('end', async () => {
       try {
-        const { command, params } = JSON.parse(body);
+        const parsed = parseExecuteCommandBody(body);
 
-        if (!command) {
+        if (!parsed) {
           res.writeHead(400);
           res.end(JSON.stringify({ error: 'Missing command' }));
           return;
@@ -166,9 +181,9 @@ class LogBridge {
           return;
         }
 
-        logCollector.agent('INFO', `Received remote command: ${command}`);
+        logCollector.agent('INFO', `Received remote command: ${parsed.command}`);
 
-        const result = await this.commandHandler(command, params || {});
+        const result = await this.commandHandler(parsed.command, parsed.params);
 
         res.writeHead(200);
         res.end(JSON.stringify(result));

@@ -4,6 +4,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-function-type */
 
 import 'reflect-metadata';
+import { getDecoratorMetadata } from './metadata';
 import {
   TOOL_METADATA_KEY,
   type ToolOptions,
@@ -43,5 +44,5 @@ export function Tool(name: string, options: ToolOptions): ClassDecorator {
  * 获取工具元数据
  */
 export function getToolMetadata(target: Function): ToolMetadataStored | undefined {
-  return Reflect.getMetadata(TOOL_METADATA_KEY, target);
+  return getDecoratorMetadata<ToolMetadataStored>(TOOL_METADATA_KEY, target);
 }

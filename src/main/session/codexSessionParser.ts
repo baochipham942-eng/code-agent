@@ -114,6 +114,35 @@ function extractTimestampFromFilename(filename: string): Date | null {
   return new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}Z`);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function parseJsonRecord(line: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(line);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function readString(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function readPayload(record: Record<string, unknown>): Record<string, unknown> | null {
+  const payload = record.payload;
+  return isRecord(payload) ? payload : null;
+}
+
+function readSandboxPolicy(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (isRecord(value)) return readString(value, 'type') ?? '';
+  return '';
+}
+
 // ============================================================================
 // Session Discovery
 // ============================================================================
@@ -225,34 +254,30 @@ async function quickScanCodexMetadata(
       if (!line.trim()) continue;
       if (line.length > CODEX_SESSION.MAX_LINE_LENGTH) continue;
 
-      let obj: Record<string, unknown>;
-      try {
-        obj = JSON.parse(line);
-      } catch { continue; }
+      const obj = parseJsonRecord(line);
+      if (!obj) continue;
 
-      const type = obj.type as string;
+      const type = readString(obj, 'type');
 
       if (type === 'session_meta') {
-        const payload = obj.payload as Record<string, unknown>;
+        const payload = readPayload(obj);
         if (payload) {
-          sessionId = (payload.id as string) ?? '';
-          cwd = (payload.cwd as string) ?? '';
-          cliVersion = payload.cli_version as string | undefined;
-          modelProvider = payload.model_provider as string | undefined;
-          const ts = payload.timestamp as string | undefined;
+          sessionId = readString(payload, 'id') ?? '';
+          cwd = readString(payload, 'cwd') ?? '';
+          cliVersion = readString(payload, 'cli_version');
+          modelProvider = readString(payload, 'model_provider');
+          const ts = readString(payload, 'timestamp');
           if (ts) startTime = new Date(ts);
         }
       }
 
       if (type === 'turn_context') {
-        const payload = obj.payload as Record<string, unknown>;
+        const payload = readPayload(obj);
         if (payload) {
-          if (!model && payload.model) model = payload.model as string;
+          model = model || readString(payload, 'model') || '';
           const sp = payload.sandbox_policy;
-          if (!sandboxPolicy && sp) {
-            sandboxPolicy = typeof sp === 'string' ? sp : (sp as Record<string, unknown>)?.type as string ?? '';
-          }
-          if (!cwd && payload.cwd) cwd = payload.cwd as string;
+          if (!sandboxPolicy && sp) sandboxPolicy = readSandboxPolicy(sp);
+          cwd = cwd || readString(payload, 'cwd') || '';
         }
       }
     }
@@ -323,59 +348,51 @@ export async function parseCodexSession(filePath: string): Promise<ParsedCodexSe
         ? line.slice(0, CODEX_SESSION.MAX_LINE_LENGTH)
         : line;
 
-      let obj: Record<string, unknown>;
-      try {
-        obj = JSON.parse(safeLine);
-      } catch {
-        continue; // skip malformed lines
-      }
+      const obj = parseJsonRecord(safeLine);
+      if (!obj) continue;
 
-      const type = obj.type as string;
-      const payload = obj.payload as Record<string, unknown> | undefined;
-      if (!payload || typeof payload !== 'object') continue;
+      const type = readString(obj, 'type');
+      const payload = readPayload(obj);
+      if (!payload) continue;
 
       switch (type) {
         case 'session_meta': {
-          sessionId = (payload.id as string) ?? sessionId;
-          cwd = (payload.cwd as string) ?? cwd;
-          cliVersion = (payload.cli_version as string) ?? cliVersion;
-          modelProvider = (payload.model_provider as string) ?? modelProvider;
-          const ts = payload.timestamp as string | undefined;
+          sessionId = readString(payload, 'id') ?? sessionId;
+          cwd = readString(payload, 'cwd') ?? cwd;
+          cliVersion = readString(payload, 'cli_version') ?? cliVersion;
+          modelProvider = readString(payload, 'model_provider') ?? modelProvider;
+          const ts = readString(payload, 'timestamp');
           if (ts) startTime = new Date(ts);
           break;
         }
 
         case 'turn_context': {
-          if (!model && payload.model) model = payload.model as string;
+          model = model || readString(payload, 'model') || '';
           const sp = payload.sandbox_policy;
-          if (!sandboxPolicy && sp) {
-            sandboxPolicy = typeof sp === 'string' ? sp : (sp as Record<string, unknown>)?.type as string ?? '';
-          }
-          if (!cwd && payload.cwd) cwd = payload.cwd as string;
+          if (!sandboxPolicy && sp) sandboxPolicy = readSandboxPolicy(sp);
+          cwd = cwd || readString(payload, 'cwd') || '';
           break;
         }
 
         case 'response_item': {
-          const subtype = payload.type as string;
+          const subtype = readString(payload, 'type');
 
           if (subtype === 'function_call') {
-            const callId = payload.call_id as string ?? '';
-            const name = payload.name as string ?? '';
-            const argsStr = payload.arguments as string ?? '';
+            const callId = readString(payload, 'call_id') ?? '';
+            const name = readString(payload, 'name') ?? '';
+            const argsStr = readString(payload, 'arguments') ?? '';
             // Extract command from arguments JSON
             let input = argsStr;
-            try {
-              const args = JSON.parse(argsStr);
-              input = args.cmd ?? args.command ?? argsStr;
-            } catch {
-              // arguments might not be JSON, use as-is
+            const args = parseJsonRecord(argsStr);
+            if (args) {
+              input = readString(args, 'cmd') ?? readString(args, 'command') ?? argsStr;
             }
             pendingCalls.set(callId, { id: callId, name, input });
           }
 
           if (subtype === 'function_call_output') {
-            const callId = payload.call_id as string ?? '';
-            const output = payload.output as string ?? '';
+            const callId = readString(payload, 'call_id') ?? '';
+            const output = readString(payload, 'output') ?? '';
             const pending = pendingCalls.get(callId);
 
             // Parse exit code from output
@@ -403,12 +420,12 @@ export async function parseCodexSession(filePath: string): Promise<ParsedCodexSe
           }
 
           if (subtype === 'message') {
-            const role = payload.role as string;
+            const role = readString(payload, 'role');
             if (role === 'assistant') {
               const content = payload.content;
               if (Array.isArray(content)) {
-                for (const block of content as Array<Record<string, unknown>>) {
-                  if (block.type === 'output_text' && typeof block.text === 'string') {
+                for (const block of content) {
+                  if (isRecord(block) && block.type === 'output_text' && typeof block.text === 'string') {
                     assistantMessages.push(block.text);
                   }
                 }
@@ -419,13 +436,13 @@ export async function parseCodexSession(filePath: string): Promise<ParsedCodexSe
         }
 
         case 'event_msg': {
-          const subtype = payload.type as string;
+          const subtype = readString(payload, 'type');
           if (subtype === 'agent_message') {
-            const msg = payload.message as string;
+            const msg = readString(payload, 'message');
             if (msg) assistantMessages.push(msg);
           }
           if (subtype === 'task_complete') {
-            const lastMsg = payload.last_agent_message as string;
+            const lastMsg = readString(payload, 'last_agent_message');
             if (lastMsg) assistantMessages.push(lastMsg);
           }
           break;

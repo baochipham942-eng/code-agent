@@ -19,6 +19,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { z } from 'zod';
 import { getConfigService } from '../../../services';
 import {
   MODEL_API_ENDPOINTS,
@@ -62,6 +63,14 @@ interface AnalysisResult {
   matched?: boolean;
   error?: string;
 }
+
+const VisionCompletionResponseSchema = z.object({
+  choices: z.array(z.object({
+    message: z.object({
+      content: z.string().optional(),
+    }).passthrough().optional(),
+  }).passthrough()).optional().default([]),
+}).passthrough();
 
 async function fetchWithAbort(
   url: string,
@@ -147,8 +156,9 @@ async function callZhipuVision(
     throw new Error(`智谱视觉 API 错误: ${response.status} - ${error}`);
   }
 
-  const result = await response.json();
-  return result.choices?.[0]?.message?.content || '';
+  const payload: unknown = await response.json();
+  const result = VisionCompletionResponseSchema.safeParse(payload);
+  return result.success ? result.data.choices[0]?.message?.content || '' : '';
 }
 
 async function analyzeImage(
@@ -206,8 +216,9 @@ async function analyzeImage(
         outerSignal,
       );
       if (directResponse.ok) {
-        const result = await directResponse.json();
-        return result.choices?.[0]?.message?.content || '';
+        const payload: unknown = await directResponse.json();
+        const result = VisionCompletionResponseSchema.safeParse(payload);
+        return result.success ? result.data.choices[0]?.message?.content || '' : '';
       }
     } catch (error: unknown) {
       if (outerSignal.aborted) throw error;

@@ -16,6 +16,20 @@ export type { MemoryRecord, RelationQueryOptions, EntityRelation };
 // SQLite 行类型
 type SQLiteRow = Record<string, unknown>;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJsonRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'string' || value.length === 0) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 export class MemoryRepository {
   constructor(private db: BetterSqlite3.Database) {}
 
@@ -363,7 +377,7 @@ export class MemoryRepository {
       projectPath: row.project_path as string | undefined,
       sessionId: row.session_id as string | undefined,
       confidence: row.confidence as number,
-      metadata: JSON.parse((row.metadata as string) || '{}'),
+      metadata: parseJsonRecord(row.metadata),
       accessCount: row.access_count as number,
       createdAt: row.created_at as number,
       updatedAt: row.updated_at as number,

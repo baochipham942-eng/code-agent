@@ -333,7 +333,7 @@ function handleWrite(args: Record<string, unknown>, ctx: ToolContext): ToolResul
 
   // Process escape sequences
   const processedData = data
-    .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/\\x([0-9a-fA-F]{2})/g, (_match: string, hex: string) => String.fromCharCode(parseInt(hex, 16)))
     .replace(/\\n/g, '\n')
     .replace(/\\r/g, '\r')
     .replace(/\\t/g, '\t')

@@ -10,6 +10,7 @@ import {
   getCompressionModelRouter,
   resetCompressionModelRouter,
 } from '../../../src/main/context/compressionModelRouter';
+import { DEFAULT_MODELS } from '../../../src/shared/constants';
 
 describe('CompressionModelRouter', () => {
   // --------------------------------------------------------------------------
@@ -49,10 +50,10 @@ describe('CompressionModelRouter', () => {
       router = new CompressionModelRouter();
     });
 
-    it('L4 (contextCollapse) returns zhipu/glm-4.7-flash', () => {
+    it('L4 (contextCollapse) returns zhipu/quick model', () => {
       expect(router.selectModel('contextCollapse')).toEqual({
         provider: 'zhipu',
-        model: 'glm-4.7-flash',
+        model: DEFAULT_MODELS.quick,
       });
     });
 
@@ -89,7 +90,7 @@ describe('CompressionModelRouter', () => {
       router.clearPreference();
       expect(router.selectModel('contextCollapse')).toEqual({
         provider: 'zhipu',
-        model: 'glm-4.7-flash',
+        model: DEFAULT_MODELS.quick,
       });
       expect(router.selectModel('autocompact')).toEqual({
         provider: 'moonshot',

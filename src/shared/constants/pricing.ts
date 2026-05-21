@@ -18,6 +18,7 @@ export const MODEL_PRICING_PER_1M: Record<string, { input: number; output: numbe
   'glm-4.7': { input: 0.05, output: 0.05 },
   'glm-4.6v': { input: 0.05, output: 0.05 },
   'glm-4.7-flash': { input: 0, output: 0 },
+  'glm-4-flash': { input: 0, output: 0 },
   'glm-4.6v-flash': { input: 0, output: 0 },
   // Moonshot
   'kimi-k2.6': { input: 0.6, output: 2.5 },

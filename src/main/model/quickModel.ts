@@ -9,7 +9,10 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import { DEFAULT_MODELS, MODEL_API_ENDPOINTS } from '../../shared/constants';
+import { DEFAULT_MODELS, MODEL_API_ENDPOINTS, MODEL_FEATURES, getProviderEndpoint } from '../../shared/constants';
+import { getConfigService } from '../services/core/configService';
+import { getProviderLimiter } from './concurrencyLimiter';
+import type { ModelProvider } from '../../shared/contract';
 
 const logger = createLogger('QuickModel');
 
@@ -37,6 +40,9 @@ interface QuickModelConfig {
   apiKey: string;
   baseUrl: string;
   model: string;
+  provider: string;
+  /** thinking 模型（如 mimo）当 quick model 时需关闭思考，否则短输出额度被 reasoning 吃光返回空 */
+  disableThinking: boolean;
 }
 
 let quickConfig: QuickModelConfig | null = null;
@@ -63,25 +69,73 @@ function parseChatCompletionContent(payload: unknown): string | null {
   return typeof content === 'string' && content.length > 0 ? content : null;
 }
 
+function isThinkingModel(model: string): boolean {
+  return (MODEL_FEATURES[model] ?? []).includes('reasoning');
+}
+
 /**
- * 初始化 quick model：直连智谱官方 bigmodel.cn，不经过 ModelRouter。
- * 走官方是因为 0ki 代理不稳定支持 DEFAULT_MODELS.quick 的免费 ID。
+ * 把一个路由角色（provider + model）解析成 quick model config。
+ * 拿不到 API key 或 endpoint 时返回 null（交由上层回落）。
+ * 智谱免费档走官方端点 bigmodel.cn（0ki 代理不稳定支持免费 ID）。
+ */
+function resolveRole(provider: string, model: string): QuickModelConfig | null {
+  const cfg = getConfigService();
+  const apiKey = provider === 'zhipu'
+    ? cfg.getZhipuOfficialKey()
+    : cfg.getApiKey(provider as ModelProvider);
+  if (!apiKey) return null;
+
+  const baseUrl = provider === 'zhipu'
+    ? MODEL_API_ENDPOINTS.zhipuOfficial
+    : getProviderEndpoint(provider);
+  if (!baseUrl) return null;
+
+  return { apiKey, baseUrl, model, provider, disableThinking: isThinkingModel(model) };
+}
+
+/**
+ * 解析 quick model（策略化）：
+ *  1) 优先专用快模型 `routing.fast`（常态 = 智谱 glm-4.x-flash，0.5s，最省成本）
+ *  2) 无专用快模型 key → 回落主模型 `routing.code`（如 mimo）；thinking 模型自动关思考
+ *  3) config 路径完全失败 → 兜底直连智谱官方（历史行为）
+ *  4) 都拿不到 → null（调用方：intent 走关键词兜底，其余 quick 任务 skip）
  */
 function initializeQuickModel(): QuickModelConfig | null {
   if (quickConfig) return quickConfig;
 
-  const apiKey = process.env.ZHIPU_OFFICIAL_API_KEY || process.env.ZHIPU_API_KEY;
-  if (!apiKey) {
-    logger.warn('No ZHIPU_OFFICIAL_API_KEY / ZHIPU_API_KEY; quick model disabled');
+  let resolved: QuickModelConfig | null = null;
+  try {
+    const routing = getConfigService().getSettings().models.routing;
+    resolved = resolveRole(routing.fast.provider, routing.fast.model)
+      ?? resolveRole(routing.code.provider, routing.code.model);
+  } catch (error) {
+    logger.warn('Quick model config resolution failed, falling back to env', { error: String(error) });
+  }
+
+  if (!resolved) {
+    const apiKey = process.env.ZHIPU_OFFICIAL_API_KEY || process.env.ZHIPU_API_KEY;
+    if (apiKey) {
+      resolved = {
+        apiKey,
+        baseUrl: MODEL_API_ENDPOINTS.zhipuOfficial,
+        model: DEFAULT_MODELS.quick,
+        provider: 'zhipu',
+        disableThinking: false,
+      };
+    }
+  }
+
+  if (!resolved) {
+    logger.warn('Quick model unavailable: no fast-model key, no main-model key, no Zhipu key');
     return null;
   }
 
-  quickConfig = {
-    apiKey,
-    baseUrl: MODEL_API_ENDPOINTS.zhipuOfficial,
-    model: DEFAULT_MODELS.quick,
-  };
-  logger.info('Quick model initialized', { model: quickConfig.model });
+  quickConfig = resolved;
+  logger.info('Quick model resolved', {
+    provider: resolved.provider,
+    model: resolved.model,
+    disableThinking: resolved.disableThinking,
+  });
   return quickConfig;
 }
 
@@ -98,28 +152,45 @@ export async function quickTask(prompt: string, maxTokens?: number): Promise<Qui
   }
 
   const effectiveMaxTokens = maxTokens ?? 512;
+  // 对声明了并发上限的 provider（如智谱）走节流；与主模型路径共用同一限流器
+  const limiter = getProviderLimiter(config.provider);
 
   try {
+    await limiter?.acquire();
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+
+  try {
+    const body: Record<string, unknown> = {
+      model: config.model,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: effectiveMaxTokens,
+      temperature: 0.1,
+      stream: false,
+    };
+    if (config.disableThinking) {
+      body.thinking = { type: 'disabled' };
+    }
+
     const response = await fetch(`${config.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${config.apiKey}`,
       },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: effectiveMaxTokens,
-        temperature: 0.1,
-        stream: false,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
       const text = await response.text();
+      if (response.status === 429 || text.includes('1302') || text.includes('速率限制')) {
+        limiter?.onRateLimit();
+      }
       return { success: false, error: `${response.status} ${text.slice(0, 200)}` };
     }
 
+    limiter?.onSuccess();
     const data: unknown = await response.json();
     const content = parseChatCompletionContent(data);
     if (content) {
@@ -132,6 +203,8 @@ export async function quickTask(prompt: string, maxTokens?: number): Promise<Qui
       success: false,
       error: error instanceof Error ? error.message : String(error),
     };
+  } finally {
+    limiter?.release();
   }
 }
 
@@ -239,7 +312,7 @@ export function getQuickModelInfo(): { provider: string; model: string } | null 
   const config = initializeQuickModel();
   if (!config) return null;
   return {
-    provider: 'zhipuOfficial',
+    provider: config.provider,
     model: config.model,
   };
 }

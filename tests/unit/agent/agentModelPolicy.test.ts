@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { selectAgentModel } from '../../../src/main/agent/agentModelPolicy';
 import type { AgentModelSelection } from '../../../src/main/agent/agentModelPolicy';
+import { DEFAULT_MODELS } from '../../../src/shared/constants';
 
 describe('selectAgentModel', () => {
   // --------------------------------------------------------------------------
@@ -31,10 +32,10 @@ describe('selectAgentModel', () => {
       expect(result.model).toBe('sonar-pro');
     });
 
-    it('Document Reader → zhipu / glm-4.7-flash', () => {
+    it('Document Reader → zhipu / quick model', () => {
       const result = selectAgentModel('Document Reader');
       expect(result.provider).toBe('zhipu');
-      expect(result.model).toBe('glm-4.7-flash');
+      expect(result.model).toBe(DEFAULT_MODELS.quick);
     });
 
     it('Technical Writer → moonshot / kimi-k2.5', () => {
@@ -110,7 +111,7 @@ describe('selectAgentModel', () => {
     it('budget < 0.2 → cheapest model', () => {
       const result = selectAgentModel('Code Explorer', { budgetRemaining: 0.1 });
       expect(result.provider).toBe('zhipu');
-      expect(result.model).toBe('glm-4.7-flash');
+      expect(result.model).toBe(DEFAULT_MODELS.quick);
       expect(result.reason).toContain('budget constraint');
     });
 
@@ -123,19 +124,19 @@ describe('selectAgentModel', () => {
     it('budget at 0.19 triggers budget constraint', () => {
       const result = selectAgentModel('Code Explorer', { budgetRemaining: 0.19 });
       expect(result.provider).toBe('zhipu');
-      expect(result.model).toBe('glm-4.7-flash');
+      expect(result.model).toBe(DEFAULT_MODELS.quick);
     });
 
     it('budget = 0 triggers budget constraint', () => {
       const result = selectAgentModel('Web Search', { budgetRemaining: 0 });
       expect(result.provider).toBe('zhipu');
-      expect(result.model).toBe('glm-4.7-flash');
+      expect(result.model).toBe(DEFAULT_MODELS.quick);
     });
 
     it('budget constraint applies to unknown agent types too', () => {
       const result = selectAgentModel('Unknown Agent', { budgetRemaining: 0.05 });
       expect(result.provider).toBe('zhipu');
-      expect(result.model).toBe('glm-4.7-flash');
+      expect(result.model).toBe(DEFAULT_MODELS.quick);
     });
   });
 

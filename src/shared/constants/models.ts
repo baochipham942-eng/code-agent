@@ -28,8 +28,12 @@ export const DEFAULT_MODELS = {
   code: 'mimo-v2.5-pro',
   /** 压缩/摘要模型 - Kimi K2.5 包月无成本 */
   compact: 'kimi-k2.5',
-  /** 快速判断模型 - 智谱 GLM-4.7 Flash 免费（走 bigmodel.cn，非 0ki） */
-  quick: 'glm-4.7-flash',
+  /**
+   * 快速判断模型 - 智谱 GLM-4 Flash 免费（走 bigmodel.cn，非 0ki）。
+   * 必须用非 thinking 的真·快模型：glm-4-flash 实测 ~0.7s，满足 intent 分类 3s timeout；
+   * 不可用 glm-4.7-flash（thinking 档，实测关思考也要 27-40s，短输出额度被 reasoning 吃光返回空）。
+   */
+  quick: 'glm-4-flash',
   /** 超长上下文模型（1M） - 小米 MiMo v2.5 Pro */
   longContext: 'mimo-v2.5-pro',
   /** 包月无限制模型 - 小米 MiMo Token Plan */
@@ -153,6 +157,7 @@ export const MODEL_FEATURES: Record<string, ('tool' | 'vision' | 'reasoning')[]>
   'glm-4.7': ['tool', 'reasoning'],
   'glm-4.7-flash': ['tool'],
   'glm-4.7-flashx': ['tool'],
+  'glm-4-flash': ['tool'],
   'glm-4.6v': ['vision', 'reasoning'],
   'glm-4.6v-flash': ['vision'],
   'codegeex-4': ['tool'],
@@ -221,6 +226,7 @@ export const MODEL_ABBREV: Record<string, string> = {
   'glm-5.1': 'glm-5.1',
   'glm-4.7': 'glm-4.7',
   'glm-4.7-flash': 'glm-flash',
+  'glm-4-flash': 'glm-flash',
   // legacy / EOL — 保留 abbrev 防 historic session UI 退化（slice 截断）。
   // 新代码不应该再生成这些 model id；这些条目仅用于显示老会话状态栏（艾克斯 review LOW3）。
   'claude-3-5-sonnet': 'sonnet',

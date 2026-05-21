@@ -434,6 +434,17 @@ export const BASE_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         costType: 'free',
       },
       {
+        // quick model（intent 分类/标题/摘要等）。非 thinking，实测 ~0.7s，满足 3s timeout。
+        id: 'glm-4-flash',
+        name: 'GLM-4 Flash (免费快速)',
+        capabilities: ['general', 'code', 'fast'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        costType: 'free',
+      },
+      {
         id: 'glm-4.6v-flash',
         name: 'GLM-4.6V Flash (免费视觉)',
         capabilities: ['vision', 'fast', 'gui'],

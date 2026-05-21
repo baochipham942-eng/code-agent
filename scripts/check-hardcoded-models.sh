@@ -21,11 +21,13 @@ EXCLUDE_FILES=(
   "src/main/model/providerRegistry.ts"
   "src/main/model/providerRegistryBase.ts"
   "scripts/check-hardcoded-models.sh"
+  # 废弃名检测的测试本身必须列出废弃模型名，豁免
+  "tests/unit/model/modelValidator.test.ts"
 )
 
 # 废弃模型名（已被替换，不应出现在业务代码中）
+# 注：glm-4-flash 于 2026-05-21 重新启用为 quick model（非 thinking，~0.7s），不再废弃
 DEPRECATED_PATTERNS=(
-  "glm-4-flash"
   "glm-4v-plus"
   "glm-4v-flash"
   "glm-4-plus"

@@ -73,7 +73,8 @@ describe('ModelValidator — constants ↔ providerRegistry 一致性', () => {
   });
 
   it('不应包含已废弃的模型名', () => {
-    const deprecated = ['glm-4-flash', 'glm-4v-plus', 'glm-4v-flash', 'glm-4-plus'];
+    // 注：glm-4-flash 已重新启用为 quick model（非 thinking，~0.7s），不再视为废弃
+    const deprecated = ['glm-4v-plus', 'glm-4v-flash', 'glm-4-plus'];
     const found: string[] = [];
     for (const id of registeredIds) {
       if (deprecated.includes(id)) {

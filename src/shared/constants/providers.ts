@@ -51,6 +51,22 @@ export const MODEL_API_ENDPOINTS = {
   ollama: 'http://localhost:11434/v1',
 } as const;
 
+// ============================================================================
+// Provider 并发限额（明确声明并发上限的 provider 才进此表）
+// ----------------------------------------------------------------------------
+// 用于自适应并发限流器（concurrencyLimiter）。只有在此声明的 provider 才会被节流；
+// 未声明的 provider（如 xiaomi 实测可扛 ≥6 并发）不限流。
+// maxConcurrent 触发限流后会自适应降级，5 分钟无限流后逐步恢复。
+// ============================================================================
+
+export const PROVIDER_CONCURRENCY_LIMITS: Record<string, { maxConcurrent: number; minIntervalMs: number }> = {
+  /** 智谱 GLM 免费档（glm-4.x-flash）实测并发上限约 3-4，超过即 1302 限流 */
+  zhipu: {
+    maxConcurrent: parseInt(process.env.ZHIPU_MAX_CONCURRENT || '3', 10),
+    minIntervalMs: parseInt(process.env.ZHIPU_MIN_INTERVAL_MS || '200', 10),
+  },
+};
+
 export interface CanonicalProviderInfo {
   aliases: readonly ModelProviderAlias[];
   defaultModel: string;

@@ -187,12 +187,12 @@ cases:
         critical: true
         params: {}
       - type: response_contains
-        description: "最终响应应包含 package.json 中的 name 字段"
+        description: "降级到 package.json 后应报出项目名（name 值）"
         weight: 1.0
         critical: true
         params:
           text:
-            - name
+            - "code-agent"
       - type: min_tool_calls
         description: "应至少调用 1 个工具"
         weight: 0.8

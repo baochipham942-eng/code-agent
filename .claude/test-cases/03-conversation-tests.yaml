@@ -56,10 +56,10 @@ cases:
         - Electron
     expectations:
       - type: response_contains
-        description: "响应应包含 'Electron'"
+        description: "响应应点出桌面框架（本项目是 Tauri，非 Electron）"
         weight: 0.8
         params:
-          text: "Electron"
+          text: "Tauri"
       - type: no_crash
         description: "不应崩溃"
         weight: 1

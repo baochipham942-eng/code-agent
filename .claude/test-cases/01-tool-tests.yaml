@@ -109,15 +109,15 @@ cases:
 
     expectations:
       - type: response_contains
-        description: "响应应包含 'name'"
+        description: "响应应报出项目名（package.json 的 name 值）"
         weight: 0.8
         params:
-          text: "name"
+          text: "code-agent"
       - type: response_contains
-        description: "响应应包含 'version'"
+        description: "响应应报出版本（中/英/版本号任一）"
         weight: 0.8
         params:
-          text: "version"
+          text: "版本|version|0.16"
       - type: no_crash
         description: "不应崩溃"
         weight: 1

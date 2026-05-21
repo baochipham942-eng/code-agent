@@ -35,10 +35,10 @@ cases:
         params:
           text: "0."
       - type: response_contains
-        description: "响应应包含 'version'"
+        description: "响应应提到版本（中/英任一）"
         weight: 0.5
         params:
-          text: "version"
+          text: "版本|version"
       - type: min_tool_calls
         description: "至少应调用 1 次工具"
         weight: 0.3

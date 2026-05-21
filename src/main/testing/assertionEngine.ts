@@ -35,6 +35,50 @@ export interface AssertionResult {
   hasCriticalFailure: boolean;
 }
 
+// ── 工具名归一 ───────────────────────────────────────────────────────────
+// 测试用例的 tool 期望沿用早期小写/snake_case 词表（grep / read_file / list_directory），
+// 实际工具注册名是 PascalCase（Grep / Read / ListDirectory）。两套词表对不上会让
+// "调对了工具却判失败"。归一策略：lowercase + 去分隔符后用别名表收敛同义词。
+const TOOL_NAME_ALIASES: Record<string, string> = {
+  readfile: 'read',
+  writefile: 'write',
+  editfile: 'edit',
+  todo: 'todowrite',
+};
+
+function normalizeToolName(name: string): string {
+  const key = name.toLowerCase().replace(/[_\-\s]/g, '');
+  return TOOL_NAME_ALIASES[key] ?? key;
+}
+
+// 工具是否匹配期望：先按原 pattern 做大小写不敏感正则匹配，再退回别名归一比较，
+// 兼顾 `grep|bash` 这类 alternation 写法与 `write_file` ↔ `Write` 这类词表差异。
+function toolMatches(actualTool: string, expectPattern: string): boolean {
+  try {
+    if (new RegExp(expectPattern, 'i').test(actualTool)) return true;
+  } catch {
+    // expectPattern 不是合法正则时忽略，落到下面的别名比较
+  }
+  const actualKey = normalizeToolName(actualTool);
+  return expectPattern.split('|').some((alt) => normalizeToolName(alt) === actualKey);
+}
+
+// ── 文本归一（response_contains / not_contains）────────────────────────────
+// NFKC 把全角标点（？：，）折叠成 ASCII，再 lowercase，解决中文模型用全角问号 / 大小写差异
+// 导致的字面子串漏判。NFKC 不改变 CJK 表意文字，安全类 not_contains（如"已保存"）仍精确命中。
+function normalizeText(s: string): string {
+  return s.normalize('NFKC').toLowerCase();
+}
+
+// response_contains 单条期望支持 `a|b|c` alternation（命中任一即通过），与既有的
+// `PURCHASE|SALES|BALANCE` 写法语义对齐，也便于黄金答案写双语别名（如 `版本|version`）。
+// 先 trim 再过滤空段，避免 markdown 表格 `| x |` 被拆出空串导致恒真误判。
+function matchesAnyAlternative(normalizedHaystack: string, needle: string): boolean {
+  const alts = needle.split('|').map((s) => s.trim()).filter(Boolean);
+  const candidates = alts.length > 0 ? alts : [needle];
+  return candidates.some((alt) => normalizedHaystack.includes(normalizeText(alt)));
+}
+
 /**
  * Assert tool expectations
  */
@@ -613,7 +657,7 @@ async function evaluateExpectation(
 ): Promise<ExpectationResult> {
   const startTime = Date.now();
   let passed = false;
-  let actual: unknown = undefined;
+  let actual: unknown;
   let expected: unknown = undefined;
   let details: string | undefined;
 
@@ -741,17 +785,18 @@ async function evaluateExpectation(
 
       case 'response_contains': {
         const texts = Array.isArray(params.text) ? params.text as string[] : [params.text as string];
-        const allResponses = context.responses.join('\n');
-        passed = texts.every(t => allResponses.includes(t));
-        actual = passed ? 'found in response' : allResponses.substring(0, 200);
+        const rawResponses = context.responses.join('\n');
+        const allResponses = normalizeText(rawResponses);
+        passed = texts.every(t => matchesAnyAlternative(allResponses, t));
+        actual = passed ? 'found in response' : rawResponses.substring(0, 200);
         expected = `response contains ${JSON.stringify(texts)}`;
         break;
       }
 
       case 'response_not_contains': {
         const text = params.text as string;
-        const allResponses = context.responses.join('\n');
-        passed = !allResponses.includes(text);
+        const allResponses = normalizeText(context.responses.join('\n'));
+        passed = !allResponses.includes(normalizeText(text));
         actual = passed ? 'not found (good)' : 'found (bad)';
         expected = `response does NOT contain "${text}"`;
         break;
@@ -759,8 +804,7 @@ async function evaluateExpectation(
 
       case 'tool_called': {
         const toolName = params.tool as string;
-        const toolRegex = new RegExp(toolName);
-        passed = context.toolExecutions.some((te) => toolRegex.test(te.tool));
+        passed = context.toolExecutions.some((te) => toolMatches(te.tool, toolName));
         actual = context.toolExecutions.map((te) => te.tool);
         expected = `tool matching "${toolName}" was called`;
         break;
@@ -827,7 +871,7 @@ async function evaluateExpectation(
         const texts = Array.isArray(params.text) ? params.text as string[] : [params.text as string];
         const toolFilter = params.tool as string | undefined;
         const outputs = context.toolExecutions
-          .filter(te => !toolFilter || new RegExp(toolFilter).test(te.tool))
+          .filter(te => !toolFilter || toolMatches(te.tool, toolFilter))
           .map(te => te.output)
           .join('\n');
         passed = texts.every(t => outputs.includes(t));

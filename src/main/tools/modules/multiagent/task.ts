@@ -337,7 +337,9 @@ Stats:
     taskDeduplication.failTask(taskHash);
     return withMultiagentMeta({
       ok: false,
-      error: `Agent [${agentName}] failed: ${result.error ?? 'unknown error'}`,
+      // 子 agent 的输出折进模型可见的 error（meta.output 不会被 messageProcessor 读到）
+      error: `Agent [${agentName}] failed: ${result.error ?? 'unknown error'}`
+        + (result.output ? `\n${result.output}` : ''),
       code: 'DOMAIN_ERROR',
       meta: result.output ? { output: result.output } : undefined,
     }, ctx, schema.name, {

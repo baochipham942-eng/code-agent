@@ -209,7 +209,9 @@ export async function executeExplore(
     }
     return {
       ok: false,
-      error: `${subagentConfig.name} agent failed: ${result.error}`,
+      // 子 agent 的输出折进模型可见的 error（meta.output 不会被 messageProcessor 读到）
+      error: `${subagentConfig.name} agent failed: ${result.error}`
+        + (result.output ? `\n${result.output}` : ''),
       code: 'DOMAIN_ERROR',
       meta: result.output ? { output: result.output } : undefined,
     };

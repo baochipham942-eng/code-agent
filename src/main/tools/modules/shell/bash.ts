@@ -446,7 +446,10 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         }
         return {
           ok: false,
-          error: `Command exited with code ${output.exitCode}`,
+          // 把命令输出折进模型可见的 error（meta.output 不会被 messageProcessor 读到）
+          error: outputText
+            ? `Command exited with code ${output.exitCode}\n${outputText}`
+            : `Command exited with code ${output.exitCode}`,
           code: 'FS_ERROR',
           meta: { ...meta, output: outputText },
         };

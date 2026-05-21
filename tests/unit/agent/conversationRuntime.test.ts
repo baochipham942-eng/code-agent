@@ -989,6 +989,44 @@ describe('ConversationRuntime', () => {
       );
     });
 
+    it('does not abort the run when desktop-derived context bootstrap fails (DB unavailable)', async () => {
+      // 解析出 skill → isSimpleTask=false → 进入 bootstrapDesktopDerivedContext 分支
+      vi.mocked(resolveSkillInvocation).mockResolvedValueOnce({
+        skill: {
+          name: 'lobster',
+          description: '',
+          promptContent: '',
+          basePath: '/tmp/x',
+          allowedTools: [],
+          disableModelInvocation: true,
+          userInvocable: true,
+          executionContext: 'inline',
+          source: 'user',
+        },
+        matchKind: 'slash',
+        matchedText: '/lobster',
+        args: '',
+        confidence: 1,
+        aliases: ['lobster'],
+        reason: 'explicit',
+      });
+      vi.mocked(buildSkillInvocationContext).mockResolvedValueOnce({
+        block: '<required-skill-invocation/>',
+        contextModifier: {},
+      });
+      // desktop-derived 上下文依赖 DB；模拟 DB 未初始化 / 瞬时不可用导致抛错。
+      // 回归保护：context 增强抛错绝不能让整个 run 在主循环前崩掉。
+      const bootstrapSpy = vi
+        .spyOn(runtime as unknown as { bootstrapDesktopDerivedContext: () => Promise<void> }, 'bootstrapDesktopDerivedContext')
+        .mockRejectedValue(new Error('Database not initialized'));
+
+      const result = await runtime.initializeRun('创建一个名为 test-x.txt 的文件');
+
+      expect(bootstrapSpy).toHaveBeenCalled();
+      expect(result).not.toBeNull();
+      expect(result?.isSimpleTask).toBe(false);
+    });
+
     it('should call initializeRun and finalizeRun on a simple task', async () => {
       // Mock inference returns text response that causes 'break'
       modules.contextAssembly.inference.mockResolvedValue({

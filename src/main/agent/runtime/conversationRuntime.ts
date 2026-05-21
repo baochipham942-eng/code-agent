@@ -1052,7 +1052,15 @@ export class ConversationRuntime {
     await this.injectActivityContext({ includeDesktopActivity: !isSimpleTask });
 
     if (!isSimpleTask) {
-      await this.bootstrapDesktopDerivedContext(userMessage);
+      try {
+        await this.bootstrapDesktopDerivedContext(userMessage);
+      } catch (error) {
+        // Graceful: desktop-derived 上下文（todos/task sync）依赖 DB，DB 未初始化或瞬时不可用时
+        // 绝不能阻断整个 run（与 injectActivityContext / 会话恢复 / seed memory 同款降级）。
+        logger.warn('[AgentLoop] Desktop-derived context bootstrap failed, continuing', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     return { langfuse, isSimpleTask, genNum };

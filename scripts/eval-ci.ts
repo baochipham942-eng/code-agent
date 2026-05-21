@@ -241,10 +241,15 @@ function createEvalSandbox(repoDir: string): { dir: string; cleanup: () => void 
     console.log(chalk.yellow(`  git archive 快照失败，跳过 eval sandbox（在工作树原地跑）: ${err}`));
     return null;
   }
+  // 真仓根 → 沙箱的路径重映射（pathUtils.confineEvalPath 消费）：
+  // eval 全自动批准 permission 时，agent 的 deny-writes-outside-cwd 防线失效，
+  // mimo 可能用真仓绝对路径写文件绕过沙箱。设此 env 让真仓绝对路径落回沙箱。
+  process.env.CODE_AGENT_EVAL_REAL_ROOT = path.resolve(repoDir);
   console.log(chalk.cyan(`  Eval sandbox: ${dir}（git archive HEAD 快照，跑完自动清理）`));
   return {
     dir,
     cleanup: () => {
+      delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
       try {
         fs.rmSync(dir, { recursive: true, force: true });
       } catch {

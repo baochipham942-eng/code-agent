@@ -40,5 +40,29 @@ export function resolvePath(inputPath: string, workingDirectory: string): string
     resolvedPath = path.join(workingDirectory, resolvedPath);
   }
 
-  return resolvedPath;
+  return confineEvalPath(resolvedPath, workingDirectory);
+}
+
+/**
+ * Eval 沙箱硬隔离：设了 CODE_AGENT_EVAL_REAL_ROOT 时，把落在"真仓根"下的绝对路径
+ * 前缀重映射到沙箱 workingDirectory（结构保留）。其它路径原样返回。
+ *
+ * Why: eval 全自动批准 permission，agent 的 deny-writes-outside-cwd 防线失效；
+ * mimo 可能直接用真仓绝对路径（如 /Users/.../code-agent/x.md）写文件，绕过"改
+ * workingDirectory"的沙箱隔离污染主仓。前缀重映射让真仓绝对路径落回沙箱——写不
+ * 污染主仓，读真仓路径仍命中沙箱里的 git archive 快照副本。仅 eval 设此 env，
+ * 生产不开（生产靠 permission 层的 deny-outside-cwd）。
+ */
+export function confineEvalPath(resolvedAbsPath: string, workingDirectory: string): string {
+  const realRoot = process.env.CODE_AGENT_EVAL_REAL_ROOT;
+  if (!realRoot || !workingDirectory) return resolvedAbsPath;
+  const root = path.resolve(realRoot);
+  const sandbox = path.resolve(workingDirectory);
+  if (root === sandbox) return resolvedAbsPath; // 没启用沙箱（原地跑）
+  const normalized = path.resolve(resolvedAbsPath);
+  if (normalized === root) return sandbox;
+  const rel = path.relative(root, normalized);
+  // 不在真仓根下（含已在沙箱里的路径）→ 不动
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return resolvedAbsPath;
+  return path.join(sandbox, rel);
 }

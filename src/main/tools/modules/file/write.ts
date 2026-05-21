@@ -20,6 +20,7 @@
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import { confineEvalPath } from '../../file/pathUtils';
 import type {
   ToolHandler,
   ToolModule,
@@ -241,7 +242,8 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
     }
 
     const filePath = resolveInputPath(rawPath, ctx.workingDir);
-    const resolvedPath = path.resolve(filePath);
+    // Eval 沙箱硬隔离：真仓绝对路径重映射回沙箱，防止 mimo 用真仓绝对路径写文件污染主仓
+    const resolvedPath = confineEvalPath(path.resolve(filePath), ctx.workingDir);
 
     onProgress?.({ stage: 'starting', detail: `write ${path.basename(filePath)}` });
 

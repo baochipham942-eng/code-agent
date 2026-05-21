@@ -80,7 +80,7 @@ const JiraUserSchema: z.ZodType<JiraUser | null> = z.object({
   displayName: z.string().optional(),
 }).passthrough().nullable();
 
-const JiraIssueFieldsSchema: z.ZodType<JiraIssueFields, z.ZodTypeDef, unknown> = z.object({
+const JiraIssueFieldsSchema: z.ZodType<JiraIssueFields, unknown> = z.object({
   summary: z.string().optional(),
   status: JiraNamedEntitySchema.optional(),
   issuetype: JiraNamedEntitySchema.optional(),
@@ -93,7 +93,7 @@ const JiraIssueFieldsSchema: z.ZodType<JiraIssueFields, z.ZodTypeDef, unknown> =
   description: z.unknown().optional(),
 }).passthrough();
 
-const JiraIssueSchema: z.ZodType<JiraIssue, z.ZodTypeDef, unknown> = z.object({
+const JiraIssueSchema: z.ZodType<JiraIssue, unknown> = z.object({
   key: z.string().optional(),
   id: z.string().optional(),
   self: z.string().optional(),
@@ -103,12 +103,12 @@ const JiraIssueSchema: z.ZodType<JiraIssue, z.ZodTypeDef, unknown> = z.object({
   ),
 }).passthrough();
 
-const JiraSearchResponseSchema: z.ZodType<JiraSearchResponse, z.ZodTypeDef, unknown> = z.object({
+const JiraSearchResponseSchema: z.ZodType<JiraSearchResponse, unknown> = z.object({
   total: NumberishSchema.catch(0),
   issues: z.array(JiraIssueSchema).optional().default([]),
 }).passthrough();
 
-const JiraCreatedIssueSchema: z.ZodType<JiraCreatedIssue, z.ZodTypeDef, unknown> = z.object({
+const JiraCreatedIssueSchema: z.ZodType<JiraCreatedIssue, unknown> = z.object({
   key: z.string().optional(),
   id: z.string().optional(),
   self: z.string().optional(),
@@ -178,7 +178,7 @@ async function callJiraApi(
 
 function parseJiraJson<T>(
   responseBody: unknown,
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  schema: z.ZodType<T, unknown>,
   label: string,
 ): T {
   const parsed = schema.safeParse(responseBody);

@@ -166,7 +166,7 @@ export function QuestionFormPreview({ item }: { item: WorkspacePreviewItem }) {
   }
 
   const inputClass =
-    'w-full rounded-md border border-white/[0.08] bg-zinc-900/60 px-2 py-1.5 text-xs text-zinc-100 outline-none focus:border-cyan-500/40';
+    'w-full rounded-md border border-white/[0.08] bg-zinc-900/60 px-2 py-1.5 text-xs text-zinc-100 outline-hidden focus:border-cyan-500/40';
   const labelClass = 'block text-[11px] font-medium uppercase tracking-wide text-zinc-400';
 
   return (

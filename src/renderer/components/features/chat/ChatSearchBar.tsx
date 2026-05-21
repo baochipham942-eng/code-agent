@@ -45,7 +45,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
   // Cross-session search state
   const [crossResults, setCrossResults] = useState<CrossSessionSearchResults | null>(null);
   const [crossLoading, setCrossLoading] = useState(false);
-  const crossDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const crossDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const switchSession = useSessionStore((s) => s.switchSession);
 
@@ -181,7 +181,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={tab === 'current' ? '搜索当前会话...' : '搜索所有会话...'}
-          className="flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-600 outline-none"
+          className="flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-600 outline-hidden"
         />
 
         {/* Tab switcher */}

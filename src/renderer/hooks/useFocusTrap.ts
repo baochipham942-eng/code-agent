@@ -29,7 +29,7 @@ export interface UseFocusTrapOptions {
 
 export interface UseFocusTrapReturn {
   /** 绑定到容器元素的 ref */
-  containerRef: React.RefObject<HTMLDivElement>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
   /** 手动激活焦点陷阱 */
   activate: () => void;
   /** 手动停用焦点陷阱 */

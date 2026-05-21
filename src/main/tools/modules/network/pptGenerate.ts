@@ -375,13 +375,14 @@ export async function executePptGenerate(
     if (mode === 'design' && ctx.modelCallback) {
       const { executeDesignMode } = await import('../../media/ppt/designMode');
 
-      const pptxgenPath = require.resolve('pptxgenjs/package.json');
+      // pptxgenjs v4 的 exports 不再暴露 ./package.json 子路径，从主入口反推包根目录
+      const pptxgenRoot = path.dirname(path.dirname(require.resolve('pptxgenjs')));
       const designResult = await executeDesignMode({
         topic,
         slideCount: slides_count as number,
         theme: themeConfig,
         outputPath: finalPath,
-        projectRoot: path.dirname(pptxgenPath),
+        projectRoot: pptxgenRoot,
         modelCallback: ctx.modelCallback,
         vlmCallback,
         researchContext,

@@ -653,7 +653,7 @@ export const Sidebar: React.FC = () => {
               onBlur={handleRenameSubmit}
               onKeyDown={handleRenameKeyDown}
               onClick={(e) => e.stopPropagation()}
-              className="flex-1 text-sm bg-zinc-600/80 text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-blue-500 focus:outline-none"
+              className="flex-1 text-sm bg-zinc-600/80 text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-blue-500 focus:outline-hidden"
             />
           ) : (
             <span
@@ -747,7 +747,7 @@ export const Sidebar: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="搜索会话..."
-            className="w-full pl-8 pr-7 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-600 transition-colors"
+            className="w-full pl-8 pr-7 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-zinc-600 transition-colors"
           />
           {searchQuery && (
             <button
@@ -825,7 +825,7 @@ export const Sidebar: React.FC = () => {
                         aria-label={`在 ${group.name} 新建会话`}
                         title={`在 ${group.name} 新建会话`}
                         onClick={(e) => handleNewWorkspaceChat(e, group.key, group.path)}
-                        className={`ml-1 inline-flex h-5 w-5 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600 ${
+                        className={`ml-1 inline-flex h-5 w-5 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden focus:ring-1 focus:ring-zinc-600 ${
                           creatingWorkspaceKey === group.key
                             ? 'opacity-100'
                             : 'opacity-0 group-hover:opacity-100 focus:opacity-100'

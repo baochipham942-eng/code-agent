@@ -48,7 +48,7 @@ export const OpenchronicleToggleSwitch: React.FC<OpenchronicleToggleSwitchProps>
     aria-label="启用屏幕记忆"
     onClick={onToggle}
     disabled={busy}
-    className={`relative inline-flex h-6 w-12 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:ring-offset-2 focus:ring-offset-zinc-950 ${
+    className={`relative inline-flex h-6 w-12 shrink-0 items-center rounded-full transition-colors focus:outline-hidden focus:ring-2 focus:ring-emerald-500/30 focus:ring-offset-2 focus:ring-offset-zinc-950 ${
       checked ? 'bg-emerald-500' : 'bg-zinc-600'
     } ${busy ? 'cursor-wait opacity-50' : 'cursor-pointer'}`}
   >

@@ -593,7 +593,7 @@ export const GeneralSettings: React.FC = () => {
                   disabled={isWebMode()}
                   placeholder={'Bash(rm -rf *)\nWrite(/etc/*)\nNetwork(*)'}
                   rows={4}
-                  className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-none focus:border-red-500/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-red-500/50 disabled:cursor-not-allowed disabled:opacity-50"
                 />
               </div>
               <div>
@@ -605,7 +605,7 @@ export const GeneralSettings: React.FC = () => {
                   disabled={isWebMode()}
                   placeholder={'Bash(git push *)\nWrite(*.env)'}
                   rows={3}
-                  className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-none focus:border-amber-500/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-amber-500/50 disabled:cursor-not-allowed disabled:opacity-50"
                 />
               </div>
               <div>
@@ -617,7 +617,7 @@ export const GeneralSettings: React.FC = () => {
                   disabled={isWebMode()}
                   placeholder={'Read(*)\nBash(ls *)\nBash(git status)'}
                   rows={3}
-                  className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-none focus:border-emerald-500/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-emerald-500/50 disabled:cursor-not-allowed disabled:opacity-50"
                 />
               </div>
             </div>

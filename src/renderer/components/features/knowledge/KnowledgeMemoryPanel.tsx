@@ -752,7 +752,7 @@ export const KnowledgeMemoryPanel: React.FC = () => {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="搜索记忆"
-                  className="h-8 w-full rounded-md border border-zinc-700 bg-zinc-950 pl-8 pr-3 text-xs text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-zinc-500"
+                  className="h-8 w-full rounded-md border border-zinc-700 bg-zinc-950 pl-8 pr-3 text-xs text-zinc-200 outline-hidden placeholder:text-zinc-600 focus:border-zinc-500"
                 />
               </div>
             </div>

@@ -260,7 +260,7 @@ function WebPathInput({ onSubmit }: { onSubmit: (path: string) => void }) {
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && onSubmit(value)}
         placeholder="输入工作目录路径"
-        className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-zinc-500"
+        className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-hidden focus:border-zinc-500"
       />
       <button
         onClick={() => onSubmit(value)}

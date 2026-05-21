@@ -226,7 +226,7 @@ export const PromptManagerModal: React.FC = () => {
                     <textarea
                       readOnly
                       value={detail.defaultText}
-                      className="flex-1 min-h-0 w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-xs font-mono text-zinc-400 resize-none focus:outline-none"
+                      className="flex-1 min-h-0 w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-xs font-mono text-zinc-400 resize-none focus:outline-hidden"
                     />
                   </div>
 
@@ -249,7 +249,7 @@ export const PromptManagerModal: React.FC = () => {
                       value={editText}
                       onChange={(e) => setEditText(e.target.value)}
                       spellCheck={false}
-                      className="flex-1 min-h-0 w-full bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-xs font-mono text-zinc-200 resize-none focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      className="flex-1 min-h-0 w-full bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-xs font-mono text-zinc-200 resize-none focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
                     />
                   </div>
                 </div>

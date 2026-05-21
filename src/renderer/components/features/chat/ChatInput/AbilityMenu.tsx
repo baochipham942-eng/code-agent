@@ -207,7 +207,7 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
               }}
               placeholder="http://localhost:5175/"
               data-testid="ability-menu-live-preview-url"
-              className="flex-1 min-w-0 rounded-md bg-white/[0.03] px-2 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 outline-none focus:bg-white/[0.06]"
+              className="flex-1 min-w-0 rounded-md bg-white/[0.03] px-2 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 outline-hidden focus:bg-white/[0.06]"
             />
             <button
               type="button"

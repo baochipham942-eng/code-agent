@@ -28,7 +28,7 @@ const ToolUseBlockSchema = z
     type: z.literal('tool_use'),
     id: z.string(),
     name: z.string(),
-    input: z.record(z.unknown()).optional(),
+    input: z.record(z.string(), z.unknown()).optional(),
   })
   .passthrough();
 
@@ -44,7 +44,7 @@ const ServerToolUseBlockSchema = z
     type: z.literal('server_tool_use'),
     id: z.string().optional(),
     name: z.string().optional(),
-    input: z.record(z.unknown()).optional(),
+    input: z.record(z.string(), z.unknown()).optional(),
   })
   .passthrough();
 

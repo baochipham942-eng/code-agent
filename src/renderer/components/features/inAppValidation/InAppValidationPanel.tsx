@@ -246,7 +246,7 @@ export function InAppValidationPanel(): React.ReactElement {
           <div className="flex flex-col border-b border-slate-800">
             <div className="px-3 py-1 text-xs text-slate-400">HTML 源码</div>
             <textarea
-              className="h-36 resize-none bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 outline-none"
+              className="h-36 resize-none bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 outline-hidden"
               value={htmlSource}
               onChange={(e) => setHtmlSource(e.target.value)}
             />
@@ -254,7 +254,7 @@ export function InAppValidationPanel(): React.ReactElement {
           <div className="flex flex-1 flex-col">
             <div className="px-3 py-1 text-xs text-slate-400">Step 脚本（JSON）</div>
             <textarea
-              className="flex-1 resize-none bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 outline-none"
+              className="flex-1 resize-none bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 outline-hidden"
               value={stepsText}
               onChange={(e) => setStepsText(e.target.value)}
             />

@@ -1,10 +1,10 @@
-/* Import theme files - MUST be before @tailwind directives */
+/* Import theme files - MUST be before tailwind import */
 @import './themes/dark.css';
 @import './themes/light.css';
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind v4：单条 @import 替代三条 @tailwind 指令；@config 复用现有 JS 配置（保留全套自定义 theme） */
+@import 'tailwindcss';
+@config '../../../tailwind.config.js';
 
 /* ============================================================================
    Linear Design System
@@ -402,19 +402,49 @@ pre code {
    Component Classes
    ============================================================================ */
 
+/* Tailwind v4：被 @apply 引用的基础原语必须是 @utility（v4 的 @apply 不能应用
+   @layer components 里的普通类）。下列 5 个原语提为顶层 @utility，派生类
+   （btn-primary / card-hover / badge-* 等）仍照常 @apply 它们。 */
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2
+         px-4 py-2 rounded-md text-sm font-medium
+         transition-colors duration-150
+         focus:outline-hidden focus-visible:ring-2
+         disabled:opacity-50 disabled:cursor-not-allowed;
+  border-radius: var(--radius-md);
+}
+
+@utility input {
+  @apply w-full px-3 py-2 text-sm;
+  background-color: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+@utility card {
+  @apply p-4;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+@utility badge {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium;
+  border-radius: var(--radius-sm);
+}
+
+@utility list-item {
+  @apply flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer;
+  color: var(--text-secondary);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
 @layer components {
   /* ----------------------------------------
      Buttons
      ---------------------------------------- */
-  .btn {
-    @apply inline-flex items-center justify-center gap-2
-           px-4 py-2 rounded-md text-sm font-medium
-           transition-colors duration-150
-           focus:outline-none focus-visible:ring-2
-           disabled:opacity-50 disabled:cursor-not-allowed;
-    border-radius: var(--radius-md);
-  }
-
   .btn-primary {
     @apply btn text-white;
     background-color: var(--brand-primary);
@@ -483,15 +513,6 @@ pre code {
   /* ----------------------------------------
      Inputs
      ---------------------------------------- */
-  .input {
-    @apply w-full px-3 py-2 text-sm;
-    background-color: var(--input-bg);
-    border: 1px solid var(--input-border);
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
-    transition: border-color var(--duration-fast) var(--ease-out);
-  }
-
   .input::placeholder {
     color: var(--input-placeholder);
   }
@@ -552,13 +573,6 @@ pre code {
     border-top: 1px solid var(--border-subtle);
   }
 
-  .card {
-    @apply p-4;
-    background-color: var(--bg-elevated);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
-  }
-
   .card-hover {
     @apply card cursor-pointer;
     transition: all var(--duration-fast) var(--ease-out);
@@ -578,11 +592,6 @@ pre code {
   /* ----------------------------------------
      Badges
      ---------------------------------------- */
-  .badge {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium;
-    border-radius: var(--radius-sm);
-  }
-
   .badge-primary {
     @apply badge;
     background-color: var(--brand-primary-muted);
@@ -644,12 +653,6 @@ pre code {
   /* ----------------------------------------
      List Items
      ---------------------------------------- */
-  .list-item {
-    @apply flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer;
-    color: var(--text-secondary);
-    transition: all var(--duration-fast) var(--ease-out);
-  }
-
   .list-item:hover {
     color: var(--text-primary);
     background-color: var(--bg-hover);

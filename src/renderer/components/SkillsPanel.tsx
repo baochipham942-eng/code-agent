@@ -171,7 +171,7 @@ export const SkillsPanel: React.FC = () => {
     // basePath 格式通常是: /path/to/libraries/{libraryId}/skills/{skillName}
     const pathParts = skill.basePath.split('/');
     const librariesIndex = pathParts.findIndex((p) => p === 'libraries' || p === 'skills');
-    let libraryId = 'unknown';
+    let libraryId: string;
     if (librariesIndex >= 0 && pathParts[librariesIndex + 1]) {
       libraryId = pathParts[librariesIndex + 1];
     } else {
@@ -276,7 +276,7 @@ export const SkillsPanel: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="搜索 skill..."
-              className="w-full pl-8 pr-3 py-1.5 text-sm bg-zinc-700 border border-zinc-700 rounded text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-600"
+              className="w-full pl-8 pr-3 py-1.5 text-sm bg-zinc-700 border border-zinc-700 rounded text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-zinc-600"
             />
           </div>
 

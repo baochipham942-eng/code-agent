@@ -74,6 +74,7 @@ export interface Database {
           device_id: string;
           device_name?: string | null;
           platform?: string | null;
+          last_active_at?: string;
         };
         Update: {
           device_name?: string | null;

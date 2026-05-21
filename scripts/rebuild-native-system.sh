@@ -51,6 +51,19 @@ mkdir -p "$NATIVE_DIR/build/Release"
 cp "$TEMP_DIR/node_modules/better-sqlite3/build/Release/better_sqlite3.node" \
    "$NATIVE_DIR/build/Release/better_sqlite3.node"
 
+# 同步同一份系统 Node ABI 二进制到 node_modules/better-sqlite3：
+# 生产代码经 nativeLoader 优先加载 dist/native/，但测试(vitest)和 node 脚本直接
+# require('better-sqlite3') 命中的是 node_modules 那个二进制。机器上多版本 Node 共存时
+# (如 homebrew node@24 与 /usr/local node@22)，node_modules 二进制 ABI 与运行测试的 Node
+# 不一致会触发 NODE_MODULE_VERSION 报错，导致 sqlite 相关测试整片失败。这里复用上面的编译产物
+# 覆盖它，确保 install 后 node_modules 二进制始终与系统 Node 对齐（零额外编译开销）。
+NM_RELEASE="$PROJECT_ROOT/node_modules/better-sqlite3/build/Release"
+if [ -d "$NM_RELEASE" ]; then
+  cp "$TEMP_DIR/node_modules/better-sqlite3/build/Release/better_sqlite3.node" \
+     "$NM_RELEASE/better_sqlite3.node"
+  echo "Synced node_modules/better-sqlite3 to system Node ABI ($NODE_VERSION)"
+fi
+
 # 复制 JS 入口文件（require 需要）
 cp -r "$TEMP_DIR/node_modules/better-sqlite3/lib" "$NATIVE_DIR/lib"
 cp "$TEMP_DIR/node_modules/better-sqlite3/package.json" "$NATIVE_DIR/package.json"

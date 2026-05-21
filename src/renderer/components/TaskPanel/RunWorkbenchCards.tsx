@@ -382,7 +382,7 @@ export const MemoryActivitySummary = ({ activities, onOpenActivity }: MemoryActi
           </>
         );
         const className = `group flex w-full items-start gap-2 rounded-md bg-black/10 px-2.5 py-2 text-left ${
-          onOpenActivity ? 'hover:bg-violet-500/10 focus:outline-none focus:ring-1 focus:ring-violet-500/30' : ''
+          onOpenActivity ? 'hover:bg-violet-500/10 focus:outline-hidden focus:ring-1 focus:ring-violet-500/30' : ''
         }`;
 
         return onOpenActivity ? (

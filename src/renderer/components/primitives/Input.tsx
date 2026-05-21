@@ -59,7 +59,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       'rounded-lg',
       'text-zinc-200',
       'placeholder:text-zinc-500',
-      'focus:outline-none',
+      'focus:outline-hidden',
       'transition-colors',
       sizeClasses[inputSize],
     ];

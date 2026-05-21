@@ -36,7 +36,7 @@ describe('executeDesignMode', () => {
   it('retries with compact code-only prompt when the first response has no slide code', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'ppt-design-mode-'));
     const outputPath = path.join(dir, 'retry.pptx');
-    const pptxgenPath = require.resolve('pptxgenjs/package.json');
+    const pptxgenRoot = path.dirname(path.dirname(require.resolve('pptxgenjs')));
     let calls = 0;
 
     const result = await executeDesignMode({
@@ -44,7 +44,7 @@ describe('executeDesignMode', () => {
       slideCount: 2,
       theme: getThemeConfig('neon-blue'),
       outputPath,
-      projectRoot: path.dirname(pptxgenPath),
+      projectRoot: pptxgenRoot,
       modelCallback: async () => {
         calls += 1;
         return calls === 1 ? '' : validSlideCode();

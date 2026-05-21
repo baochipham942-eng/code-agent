@@ -273,7 +273,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="输入一个开头..."
-                className="flex-1 px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-none focus:border-blue-500/50"
+                className="flex-1 px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-hidden focus:border-blue-500/50"
               />
               <button
                 onClick={handleGenerate}

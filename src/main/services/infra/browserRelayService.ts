@@ -37,7 +37,7 @@ class BrowserRelaySocket {
     private readonly onMessage: (message: unknown) => void,
     private readonly onClose: () => void,
   ) {
-    socket.on('data', (chunk) => this.handleData(chunk));
+    socket.on('data', (chunk) => this.handleData(typeof chunk === 'string' ? Buffer.from(chunk) : chunk));
     socket.once('close', () => this.handleClose());
     socket.once('error', () => this.handleClose());
   }

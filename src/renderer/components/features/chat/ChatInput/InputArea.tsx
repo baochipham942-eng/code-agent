@@ -283,7 +283,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           placeholder={placeholder ?? (hasAttachments ? '添加描述...' : placeholderText)}
           disabled={disabled}
           rows={1}
-          className={`w-full bg-transparent px-4 pt-4 pb-10 text-sm text-zinc-200 ${placeholderColor} resize-none focus:outline-none disabled:opacity-50 max-h-[200px] leading-relaxed`}
+          className={`w-full bg-transparent px-4 pt-4 pb-10 text-sm text-zinc-200 ${placeholderColor} resize-none focus:outline-hidden disabled:opacity-50 max-h-[200px] leading-relaxed`}
         />
       </div>
     );

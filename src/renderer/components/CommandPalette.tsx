@@ -283,7 +283,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="搜索命令..."
-            className="flex-1 ml-3 bg-transparent text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none"
+            className="flex-1 ml-3 bg-transparent text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden"
           />
           <button
             onClick={onClose}

@@ -34,5 +34,5 @@ export const AgentToolResultBodySchema = z.object({
   success: z.unknown().optional(),
   output: z.string().nullable().optional(),
   error: z.string().nullable().optional(),
-  metadata: z.record(z.unknown()).nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
 }).passthrough();

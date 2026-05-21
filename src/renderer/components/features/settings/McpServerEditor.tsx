@@ -108,14 +108,14 @@ const KeyValueEditor: React.FC<{
             value={key}
             onChange={(e) => handleKeyChange(key, e.target.value)}
             placeholder="Key"
-            className="flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-zinc-500"
+            className="flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-hidden focus:border-zinc-500"
           />
           <input
             type="text"
             value={value}
             onChange={(e) => handleValueChange(key, e.target.value)}
             placeholder="Value"
-            className="flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-zinc-500"
+            className="flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-hidden focus:border-zinc-500"
           />
           <button
             type="button"
@@ -394,7 +394,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
                 setJsonText(e.target.value);
                 setJsonError(null);
               }}
-              className="w-full h-48 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-xs text-zinc-200 font-mono focus:outline-none focus:border-zinc-600 resize-none"
+              className="w-full h-48 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-xs text-zinc-200 font-mono focus:outline-hidden focus:border-zinc-600 resize-none"
               spellCheck={false}
             />
             {jsonError && (

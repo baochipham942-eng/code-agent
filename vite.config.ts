@@ -100,13 +100,16 @@ export default defineConfig({
         // 警告 "Generated an empty chunk: xxx"。已踩过 vendor-prism (项目用
         // react-syntax-highlighter 不直接 import prismjs) 和 vendor-react
         // (linux/darwin 平台 react 被 inline 进主 bundle 行为不一致) 两个坑。
-        manualChunks: {
-          'vendor-katex': ['katex', 'remark-math', 'rehype-katex'],
-          'vendor-charts': ['recharts'],
-          'vendor-zustand': ['zustand'],
-          'vendor-markdown': ['react-markdown', 'remark-gfm'],
-          'vendor-reactflow': ['@xyflow/react'],
-          'vendor-mermaid': ['mermaid'],
+        // vite 8 的 Rolldown 要求 manualChunks 为函数；保持只拆这 6 个 vendor
+        // （不泛拆 node_modules），产出 chunk 与原对象式一致，规避 §80 的 TDZ 坑。
+        manualChunks: (id: string) => {
+          if (/[\\/]node_modules[\\/](katex|remark-math|rehype-katex)[\\/]/.test(id)) return 'vendor-katex';
+          if (/[\\/]node_modules[\\/]recharts[\\/]/.test(id)) return 'vendor-charts';
+          if (/[\\/]node_modules[\\/]zustand[\\/]/.test(id)) return 'vendor-zustand';
+          if (/[\\/]node_modules[\\/](react-markdown|remark-gfm)[\\/]/.test(id)) return 'vendor-markdown';
+          if (/[\\/]node_modules[\\/]@xyflow[\\/]react[\\/]/.test(id)) return 'vendor-reactflow';
+          if (/[\\/]node_modules[\\/]mermaid[\\/]/.test(id)) return 'vendor-mermaid';
+          return undefined;
         },
       },
     },

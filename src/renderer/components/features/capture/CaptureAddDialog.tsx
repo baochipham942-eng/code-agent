@@ -70,7 +70,7 @@ export const CaptureAddDialog: React.FC = () => {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="输入标题"
-              className="w-full px-3 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-cyan-600"
+              className="w-full px-3 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-cyan-600"
               autoFocus
             />
           </div>
@@ -82,7 +82,7 @@ export const CaptureAddDialog: React.FC = () => {
               onChange={(e) => setContent(e.target.value)}
               placeholder="输入内容..."
               rows={6}
-              className="w-full px-3 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-cyan-600 resize-none"
+              className="w-full px-3 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-cyan-600 resize-none"
             />
           </div>
 
@@ -93,7 +93,7 @@ export const CaptureAddDialog: React.FC = () => {
               value={tags}
               onChange={(e) => setTags(e.target.value)}
               placeholder="标签1, 标签2, ..."
-              className="w-full px-3 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-cyan-600"
+              className="w-full px-3 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-cyan-600"
             />
           </div>
 
@@ -104,7 +104,7 @@ export const CaptureAddDialog: React.FC = () => {
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://..."
-              className="w-full px-3 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-cyan-600"
+              className="w-full px-3 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-cyan-600"
             />
           </div>
         </div>

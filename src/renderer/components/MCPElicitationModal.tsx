@@ -123,7 +123,7 @@ function ElicitationField({
               onChange(name, num);
             }
           }}
-          className="w-full px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-200 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+          className="w-full px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-200 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-hidden"
         />
       </div>
     );
@@ -145,7 +145,7 @@ function ElicitationField({
         placeholder={schema.default !== undefined ? String(schema.default) : ''}
         maxLength={schema.maxLength}
         onChange={(e) => onChange(name, e.target.value)}
-        className="w-full px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-200 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+        className="w-full px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-200 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-hidden"
       />
     </div>
   );

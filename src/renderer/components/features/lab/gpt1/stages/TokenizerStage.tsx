@@ -158,7 +158,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 placeholder="输入任意中文文本..."
-                className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-blue-500"
               />
             </div>
 

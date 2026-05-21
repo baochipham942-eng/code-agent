@@ -470,7 +470,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                   <textarea
                     value={draft.content}
                     onChange={(event) => setDraft({ ...draft, content: event.target.value })}
-                    className="mt-1 h-48 w-full resize-y rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs leading-relaxed text-zinc-300 outline-none focus:border-indigo-500/60"
+                    className="mt-1 h-48 w-full resize-y rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs leading-relaxed text-zinc-300 outline-hidden focus:border-indigo-500/60"
                   />
                 </label>
 

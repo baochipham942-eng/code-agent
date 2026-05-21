@@ -156,7 +156,8 @@ describe('createSessionsRouter', () => {
 
     expect(result.status).toBe(400);
     expect(result.body.success).toBe(false);
-    expect(result.body.error?.message).toContain('Expected string');
+    // zod 4 错误信息格式：'Invalid input: expected string, received number'（v3 为 'Expected string'）
+    expect(result.body.error?.message).toContain('expected string');
     expect(tryGetSessionManager).not.toHaveBeenCalled();
     expect(getSupabaseForSession).not.toHaveBeenCalled();
   });

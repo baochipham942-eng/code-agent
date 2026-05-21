@@ -69,7 +69,7 @@ export const ComboSkillCard: React.FC<ComboSkillCardProps> = ({
             onChange={(e) => setName(e.target.value)}
             onBlur={() => setIsEditing(false)}
             onKeyDown={(e) => e.key === 'Enter' && setIsEditing(false)}
-            className="mt-1 w-full bg-zinc-800 border border-amber-500/30 rounded px-2 py-0.5 text-xs text-zinc-200 outline-none focus:border-amber-500/50"
+            className="mt-1 w-full bg-zinc-800 border border-amber-500/30 rounded px-2 py-0.5 text-xs text-zinc-200 outline-hidden focus:border-amber-500/50"
             autoFocus
           />
         ) : (

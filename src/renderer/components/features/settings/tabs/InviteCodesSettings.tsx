@@ -274,14 +274,14 @@ export const InviteCodesSettings: React.FC = () => {
             value={newCode}
             onChange={(event) => setNewCode(normalizeCodeInput(event.target.value))}
             placeholder="自动生成或手填"
-            className="h-9 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm font-mono text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none"
+            className="h-9 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm font-mono text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
           />
           <input
             type="text"
             value={newLabel}
             onChange={(event) => setNewLabel(event.target.value)}
             placeholder="备注"
-            className="h-9 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none"
+            className="h-9 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
           />
           <input
             type="number"
@@ -289,14 +289,14 @@ export const InviteCodesSettings: React.FC = () => {
             value={newMaxUses}
             onChange={(event) => setNewMaxUses(event.target.value)}
             aria-label="最大使用次数"
-            className="h-9 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-200 focus:border-zinc-600 focus:outline-none"
+            className="h-9 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-200 focus:border-zinc-600 focus:outline-hidden"
           />
           <input
             type="datetime-local"
             value={newExpiresAt}
             onChange={(event) => setNewExpiresAt(event.target.value)}
             aria-label="过期时间"
-            className="h-9 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-200 focus:border-zinc-600 focus:outline-none"
+            className="h-9 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-200 focus:border-zinc-600 focus:outline-hidden"
           />
           <Button
             type="button"
@@ -325,7 +325,7 @@ export const InviteCodesSettings: React.FC = () => {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索邀请码、备注、创建人"
-            className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 py-2 pl-9 pr-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none"
+            className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 py-2 pl-9 pr-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
           />
         </div>
 
@@ -363,7 +363,7 @@ export const InviteCodesSettings: React.FC = () => {
                           type="text"
                           value={draft.label}
                           onChange={(event) => updateDraft(invite.id, { label: event.target.value })}
-                          className="h-8 w-44 rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none"
+                          className="h-8 w-44 rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
                           placeholder="备注"
                         />
                       </td>
@@ -380,7 +380,7 @@ export const InviteCodesSettings: React.FC = () => {
                             min={Math.max(invite.useCount, 1)}
                             value={draft.maxUses}
                             onChange={(event) => updateDraft(invite.id, { maxUses: event.target.value })}
-                            className="h-8 w-20 rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-200 focus:border-zinc-600 focus:outline-none"
+                            className="h-8 w-20 rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-200 focus:border-zinc-600 focus:outline-hidden"
                           />
                         </div>
                       </td>
@@ -389,7 +389,7 @@ export const InviteCodesSettings: React.FC = () => {
                           type="datetime-local"
                           value={draft.expiresAt}
                           onChange={(event) => updateDraft(invite.id, { expiresAt: event.target.value })}
-                          className="h-8 w-44 rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-200 focus:border-zinc-600 focus:outline-none"
+                          className="h-8 w-44 rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-200 focus:border-zinc-600 focus:outline-hidden"
                         />
                         <div className="mt-1 text-[11px] text-zinc-500">{formatDate(invite.expiresAt)}</div>
                       </td>

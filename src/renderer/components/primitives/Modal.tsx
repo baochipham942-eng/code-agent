@@ -128,7 +128,7 @@ export const Modal: React.FC<ModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`relative w-full ${sizeClasses[size]} max-h-[90vh] flex flex-col bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn outline-none ${className}`}
+        className={`relative w-full ${sizeClasses[size]} max-h-[90vh] flex flex-col bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn outline-hidden ${className}`}
         onClick={handleModalClick}
       >
         {/* Header */}

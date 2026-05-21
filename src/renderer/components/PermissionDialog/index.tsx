@@ -231,7 +231,7 @@ export function PermissionDialog() {
           w-full max-w-lg mx-4
           bg-zinc-900 rounded-lg shadow-2xl
           border-2
-          outline-none
+          outline-hidden
           ${isDangerous ? 'border-red-500' : config.borderColor}
         `}
       >

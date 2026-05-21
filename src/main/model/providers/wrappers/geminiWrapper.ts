@@ -15,7 +15,7 @@ import { logger } from '../shared';
 const FunctionCallPartSchema = z
   .object({
     name: z.string(),
-    args: z.record(z.unknown()).optional(),
+    args: z.record(z.string(), z.unknown()).optional(),
   })
   .passthrough();
 

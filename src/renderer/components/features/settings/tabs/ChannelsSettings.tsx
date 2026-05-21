@@ -292,7 +292,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
               placeholder="例如: 测试 API"
               required
             />
@@ -305,7 +305,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value as ChannelType)}
-                className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
+                className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
               >
                 {channelTypes.map((ct) => (
                   <option key={ct.type} value={ct.type}>
@@ -321,7 +321,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
             <select
               value={privacyMode}
               onChange={(e) => setPrivacyMode(e.target.value as ChannelPrivacyMode)}
-              className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
             >
               <option value="local-redact">local-redact</option>
               <option value="allow-raw">allow-raw</option>
@@ -338,7 +338,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   type="number"
                   value={apiPort}
                   onChange={(e) => setApiPort(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
                   placeholder="8080"
                   min={1}
                   max={65535}
@@ -359,7 +359,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   type={showSecrets ? 'text' : 'password'}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
                   placeholder="留空自动生成"
                 />
               </div>
@@ -387,7 +387,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   type="text"
                   value={appId}
                   onChange={(e) => setAppId(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
                   placeholder="cli_xxxxxxxxxx"
                   required
                 />
@@ -407,7 +407,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   type={showSecrets ? 'text' : 'password'}
                   value={appSecret}
                   onChange={(e) => setAppSecret(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
                   required
                 />
               </div>
@@ -417,7 +417,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   type={showSecrets ? 'text' : 'password'}
                   value={encryptKey}
                   onChange={(e) => setEncryptKey(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
                 />
               </div>
               <div>
@@ -426,7 +426,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   type={showSecrets ? 'text' : 'password'}
                   value={verificationToken}
                   onChange={(e) => setVerificationToken(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
                 />
               </div>
               <div>
@@ -435,7 +435,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   type="number"
                   value={webhookPort}
                   onChange={(e) => setWebhookPort(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
                   placeholder="3200"
                   min={1}
                   max={65535}
@@ -472,7 +472,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   type={showSecrets ? 'text' : 'password'}
                   value={botToken}
                   onChange={(e) => setBotToken(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
                   placeholder="从 @BotFather 获取"
                   required
                 />
@@ -483,7 +483,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   type="text"
                   value={tgProxyUrl}
                   onChange={(e) => setTgProxyUrl(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
                   placeholder="http://127.0.0.1:7897 (默认读 HTTPS_PROXY)"
                 />
               </div>
@@ -493,7 +493,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   type="text"
                   value={tgFallbackProxy}
                   onChange={(e) => setTgFallbackProxy(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
                   placeholder="主代理不可用时自动切换"
                 />
               </div>
@@ -503,7 +503,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   type="text"
                   value={tgAllowedUserIds}
                   onChange={(e) => setTgAllowedUserIds(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
                   placeholder="逗号分隔，留空允许所有用户"
                 />
               </div>
@@ -753,7 +753,7 @@ export const ChannelsSettings: React.FC = () => {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="搜索账号、类型或状态"
-                  className="h-8 w-full rounded-md border border-zinc-800 bg-zinc-950/70 pl-8 pr-3 text-sm text-zinc-200 outline-none transition-colors placeholder:text-zinc-600 focus:border-zinc-600"
+                  className="h-8 w-full rounded-md border border-zinc-800 bg-zinc-950/70 pl-8 pr-3 text-sm text-zinc-200 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-zinc-600"
                 />
               </div>
               <div className="flex flex-wrap gap-1.5">

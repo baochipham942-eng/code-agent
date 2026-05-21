@@ -208,7 +208,7 @@ export const UserDashboardSettings: React.FC = () => {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="搜索邮箱、昵称、邀请码"
-              className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 py-2 pl-9 pr-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none"
+              className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 py-2 pl-9 pr-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
             />
           </div>
           <div className="flex flex-wrap gap-2">

@@ -209,7 +209,7 @@ export function PermissionCard() {
           w-full
           max-w-3xl mx-auto
           bg-zinc-900 rounded-lg shadow-2xl
-          border-2 outline-none
+          border-2 outline-hidden
           ${isDangerous ? 'border-red-500' : config.borderColor}
         `}
       >

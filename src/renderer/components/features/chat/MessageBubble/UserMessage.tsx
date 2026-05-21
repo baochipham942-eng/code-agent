@@ -82,7 +82,7 @@ export const UserMessage: React.FC<UserMessageProps> = ({ message, onEdit }) => 
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
                 onKeyDown={handleKeyDown}
-                className="w-full bg-zinc-900 border border-zinc-600 rounded-md p-2 text-zinc-200 leading-relaxed resize-y min-h-[60px] focus:outline-none focus:border-zinc-500"
+                className="w-full bg-zinc-900 border border-zinc-600 rounded-md p-2 text-zinc-200 leading-relaxed resize-y min-h-[60px] focus:outline-hidden focus:border-zinc-500"
                 rows={3}
               />
               <div className="flex gap-2 mt-2">

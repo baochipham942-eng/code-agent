@@ -87,7 +87,7 @@ export function KnowledgeInboxList({
                 <textarea
                   value={draft}
                   onChange={(event) => onDraftChange(item.id, event.target.value)}
-                  className="min-h-24 w-full resize-y rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs leading-5 text-zinc-200 outline-none focus:border-emerald-500/70"
+                  className="min-h-24 w-full resize-y rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs leading-5 text-zinc-200 outline-hidden focus:border-emerald-500/70"
                   aria-label={`编辑 ${item.title}`}
                 />
                 <div className="flex flex-wrap items-center gap-2">

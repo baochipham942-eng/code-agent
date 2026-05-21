@@ -197,7 +197,7 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
                   value={customDialogue.user}
                   onChange={(e) => setCustomDialogue({ ...customDialogue, user: e.target.value })}
                   placeholder="输入用户的问题..."
-                  className="w-full px-3 py-2 rounded-lg bg-zinc-700 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2 rounded-lg bg-zinc-700 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-blue-500"
                 />
               </div>
               <div>
@@ -207,7 +207,7 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
                   value={customDialogue.assistant}
                   onChange={(e) => setCustomDialogue({ ...customDialogue, assistant: e.target.value })}
                   placeholder="输入助手的回复..."
-                  className="w-full px-3 py-2 rounded-lg bg-zinc-700 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2 rounded-lg bg-zinc-700 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-blue-500"
                 />
               </div>
               <button

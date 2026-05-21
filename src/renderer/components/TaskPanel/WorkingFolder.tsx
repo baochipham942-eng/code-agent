@@ -196,7 +196,7 @@ function WebDirInput({ onSubmit, placeholder, confirmLabel }: { onSubmit: (path:
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && onSubmit(value)}
         placeholder={placeholder}
-        className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 outline-none"
+        className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 outline-hidden"
       />
       <button
         onClick={() => onSubmit(value)}

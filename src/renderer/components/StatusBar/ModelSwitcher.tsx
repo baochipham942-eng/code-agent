@@ -544,7 +544,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                 w-full px-2 py-1 text-xs
                 bg-zinc-900 border border-zinc-700 rounded
                 text-gray-200 placeholder-gray-500
-                outline-none focus:border-purple-500
+                outline-hidden focus:border-purple-500
               "
             />
           </div>

@@ -423,7 +423,7 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ initialAgentId, 
                 }
               }}
               placeholder={`发消息给 ${selectedAgent?.name || 'Agent'}...`}
-              className="flex-1 bg-zinc-800 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-cyan-500/40"
+              className="flex-1 bg-zinc-800 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-hidden focus:border-cyan-500/40"
             />
             <button
               onClick={handleSend}

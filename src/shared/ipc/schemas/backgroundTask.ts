@@ -46,7 +46,7 @@ const TaskOutputRefTypeSchema = z.enum([
   'other',
 ]);
 
-const TaskMetadataSchema = z.record(z.unknown());
+const TaskMetadataSchema = z.record(z.string(), z.unknown());
 
 export const TaskProgressSchema: z.ZodType<TaskProgress> = z.object({
   current: z.number().optional(),

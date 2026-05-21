@@ -95,7 +95,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
       'text-sm',
       'text-zinc-200',
       'placeholder:text-zinc-500',
-      'focus:outline-none',
+      'focus:outline-hidden',
       'transition-colors',
       'px-4',
       'py-2',

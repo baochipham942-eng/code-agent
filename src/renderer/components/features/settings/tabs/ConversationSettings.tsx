@@ -249,7 +249,7 @@ export const ConversationSettings: React.FC = () => {
                         max={50}
                         value={compressionState.config.preserveRecentCount}
                         onChange={(event) => updateCompression({ preserveRecentCount: Number(event.target.value) })}
-                        className="w-16 rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-none focus:border-primary-500/60"
+                        className="w-16 rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-hidden focus:border-primary-500/60"
                       />
                       <span className="text-xs text-zinc-500">条消息</span>
                     </div>
@@ -298,7 +298,7 @@ export const ConversationSettings: React.FC = () => {
                         max={1000}
                         value={Math.round((compressionState.config.triggerTokens ?? 100000) / 1000)}
                         onChange={(event) => updateCompression({ triggerTokens: Number(event.target.value) * 1000 })}
-                        className="w-20 rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-none focus:border-primary-500/60"
+                        className="w-20 rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-hidden focus:border-primary-500/60"
                       />
                       <span className="text-xs text-zinc-500">K tokens</span>
                     </div>

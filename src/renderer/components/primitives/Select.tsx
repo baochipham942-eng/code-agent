@@ -69,7 +69,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
       'border',
       'rounded-lg',
       'text-zinc-200',
-      'focus:outline-none',
+      'focus:outline-hidden',
       'transition-colors',
       'px-4',
       sizeClasses[selectSize],

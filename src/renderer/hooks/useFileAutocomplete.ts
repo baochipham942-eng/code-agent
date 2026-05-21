@@ -26,7 +26,7 @@ export function useFileAutocomplete() {
   const [matches, setMatches] = useState<FileMatch[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const search = useCallback((text: string, cursorPos: number) => {
     // Find @ symbol before cursor

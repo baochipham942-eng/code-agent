@@ -557,6 +557,20 @@ CLI 入口，支持在 CI/CD 管道中批量运行评测用例。
 - `--max-cases` 默认 50，防止意外全量执行
 - 并发数校验（必须为正整数）
 
+**超时环境变量**（per-case timeout 控制）：
+
+| 变量 | 作用 | 默认 |
+|------|------|------|
+| `CODE_AGENT_TEST_TIMEOUT` | 无 per-case `timeout:` 时的默认值（ms） | 60000 |
+| `CODE_AGENT_TIMEOUT_SCALE` | per-case timeout 倍率，按比例放宽**所有** case，保留 case 间相对预算 | 1 |
+| `CODE_AGENT_FORCE_TIMEOUT` | 把**所有** case 压成同一绝对值（ms），忽略 per-case 与 scale | 不设 |
+
+> **慢模型（如 mimo，单 case 13-300s）**：用 `CODE_AGENT_TIMEOUT_SCALE` 而非 `CODE_AGENT_FORCE_TIMEOUT`。
+> 倍率保留 yaml 里 30s/60s/300s 的相对差异（按校准好的快模型预算等比放大），
+> 让超时反映**真失败**而非端点延迟；FORCE_TIMEOUT 会抹平这些差异。
+> 经验值：mimo 全量跑 `CODE_AGENT_TIMEOUT_SCALE=4`（60s→240s、30s→120s、300s→1200s）。
+> `scale` 与 `FORCE_TIMEOUT` 同时设时，FORCE_TIMEOUT 优先且不叠加 scale。
+
 ---
 
 ## 12. 日志系统

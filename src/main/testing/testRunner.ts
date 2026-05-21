@@ -440,7 +440,14 @@ export class TestRunner {
       const forceTimeout = process.env.CODE_AGENT_FORCE_TIMEOUT
         ? parseInt(process.env.CODE_AGENT_FORCE_TIMEOUT, 10)
         : null;
-      const timeout = forceTimeout || testCase.timeout || this.config.defaultTimeout;
+      const baseTimeout = forceTimeout || testCase.timeout || this.config.defaultTimeout;
+      // CODE_AGENT_TIMEOUT_SCALE: 慢模型(如 mimo，单 case 13-300s)整体放宽 per-case timeout，
+      // 同时保留 case 间相对预算（3s 的中止测试与 300s 的 artifact 仍按比例区分），
+      // 避免 FORCE_TIMEOUT 把所有 case 压成同一绝对值。默认 1，快模型不受影响。
+      // forceTimeout 是显式绝对覆盖，不再叠加 scale。
+      const scaleRaw = parseFloat(process.env.CODE_AGENT_TIMEOUT_SCALE || '1');
+      const scale = Number.isFinite(scaleRaw) && scaleRaw > 0 ? scaleRaw : 1;
+      const timeout = forceTimeout ? baseTimeout : Math.round(baseTimeout * scale);
 
       // Send the test prompt (withTimeout 自动清理 timer)
       const agentResult = await withTimeout(
@@ -621,7 +628,7 @@ export class TestRunner {
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         logger.warn(`${phase} command failed`, { cmd, error: message });
-        throw new Error(`${phase} failed: ${cmd}`);
+        throw new Error(`${phase} failed: ${cmd}`, { cause: error });
       }
     }
   }

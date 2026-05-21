@@ -641,6 +641,12 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       if (errObj.stderr) {
         errorOutput += (errorOutput ? '\n' : '') + `[stderr]: ${String(errObj.stderr)}`;
       }
+      errorOutput = errorOutput ? truncateOutput(errorOutput) : errorOutput;
+
+      // 模型可见通道是 result.error（messageProcessor 取 output||error），meta.output 不会被读到。
+      // 因此把命令输出折进 error，保证非零退出/超时时模型能看到 traceback / stderr，
+      // 而不是只看到 "exit code N" 然后瞎重试。meta.output 保留供 telemetry/artifact 使用。
+      const withOutput = (msg: string) => (errorOutput ? `${msg}\n${errorOutput}` : msg);
 
       // 超时：child_process 超时会 killed + SIGTERM
       if (ctx.abortSignal.aborted || errObj.name === 'AbortError' || errObj.code === 'ABORT_ERR') {
@@ -655,7 +661,7 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       if (errObj.killed && errObj.signal === 'SIGTERM') {
         return {
           ok: false,
-          error: `Command timed out after ${timeout / 1000} seconds. Consider using run_in_background=true for long-running commands.`,
+          error: withOutput(`Command timed out after ${timeout / 1000} seconds. Consider using run_in_background=true for long-running commands.`),
           code: 'TIMEOUT',
           meta: { ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
         };
@@ -663,7 +669,7 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
 
       return {
         ok: false,
-        error: errMsg || 'Command execution failed',
+        error: withOutput(errMsg || 'Command execution failed'),
         code: 'FS_ERROR',
         meta: { ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
       };

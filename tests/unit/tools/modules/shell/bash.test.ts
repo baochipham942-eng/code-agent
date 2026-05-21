@@ -255,6 +255,21 @@ describe('bashModule (native)', () => {
       }
     });
 
+    it('surfaces stderr/stdout in the model-visible error on non-zero exit', async () => {
+      // 回归锁：模型可见通道是 result.error（messageProcessor 取 output||error，不读 meta.output）。
+      // 命令失败时 traceback 必须出现在 error 里，否则模型只看到 exit code 会瞎重试。
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: 'echo "BOOM_STDERR_MARKER" >&2; exit 1' },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain('BOOM_STDERR_MARKER');
+      }
+    });
+
     it('captures stderr as part of output', async () => {
       const handler = await bashModule.createHandler();
       const result = await handler.execute(

@@ -52,6 +52,48 @@ export const MODEL_API_ENDPOINTS = {
 } as const;
 
 // ============================================================================
+// Per-provider 代理分类 — 国内直连 host（即使设了全局代理也绕过）
+// ----------------------------------------------------------------------------
+// Why: mimo（token-plan-sgp，海外）必须走代理，但同一个全局 HTTPS_PROXY 会把
+// 国内 provider（智谱/Kimi/DeepSeek/MiniMax 等直连端点）也打进海外代理，导致
+// `socket disconnected before TLS` —— 这正是 fallback 链一个都救不了的真凶。
+// 用 host 后缀判定：命中下列国内 host 的请求一律直连绕过代理；海外/未知 host
+// 才走代理。新增国内 provider 时把其端点 host 加进来。
+// ============================================================================
+
+export const DIRECT_CONNECT_HOST_SUFFIXES: readonly string[] = [
+  '0ki.cn',        // 智谱 (OKI 代理)
+  'bigmodel.cn',   // 智谱官方
+  'moonshot.cn',   // Moonshot
+  'kimi.com',      // Kimi K2.5 Coding
+  'minimax.chat',  // MiniMax
+  'deepseek.com',  // DeepSeek
+  'volces.com',    // 火山引擎 (豆包)
+  'longcat.chat',  // LongCat (美团)
+  'baidubce.com',  // 百度 OCR
+  'aliyuncs.com',  // 阿里云通义千问
+  'localhost',     // 本地 Ollama
+  '127.0.0.1',
+];
+
+/**
+ * 判断目标 URL/host 是否为国内直连 host（应绕过代理）。
+ * 接受完整 URL 或裸 hostname；解析失败时按裸 hostname 处理。
+ */
+export function isDirectConnectHost(urlOrHost: string): boolean {
+  let host = urlOrHost;
+  try {
+    host = new URL(urlOrHost).hostname;
+  } catch {
+    // 已经是裸 hostname（或非法），原样使用
+  }
+  host = host.toLowerCase();
+  return DIRECT_CONNECT_HOST_SUFFIXES.some(
+    (suffix) => host === suffix || host.endsWith(`.${suffix}`),
+  );
+}
+
+// ============================================================================
 // Provider 并发限额（明确声明并发上限的 provider 才进此表）
 // ----------------------------------------------------------------------------
 // 用于自适应并发限流器（concurrencyLimiter）。只有在此声明的 provider 才会被节流；

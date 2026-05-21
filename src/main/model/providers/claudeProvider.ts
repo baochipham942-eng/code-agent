@@ -10,7 +10,7 @@ import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback, ResponseContentPart, Provider, InferenceOptions } from '../types';
 import {
   logger,
-  httpsAgent,
+  getHttpsAgent,
   safeJsonParse,
   convertToolsToClaude,
   convertToClaudeMessages,
@@ -64,7 +64,7 @@ function claudeSSEStream(options: {
         ...headers,
         Accept: 'text/event-stream',
       },
-      agent: isHttps ? httpsAgent : undefined,
+      agent: isHttps ? getHttpsAgent(url.href) : undefined,
       timeout: PROVIDER_TIMEOUT,
     };
 
@@ -75,7 +75,7 @@ function claudeSSEStream(options: {
         res.on('data', (chunk) => { errorData += chunk; });
         res.on('end', () => {
           logger.warn('[Claude] API error:', res.statusCode, errorData);
-          let errorMessage = `Claude API error: ${res.statusCode}`;
+          let errorMessage: string;
           try {
             // Anthropic 官方格式: {error: {message}}；中转/代理常见: {code, message} 平级。
             // 两种都兜住，保证 error message 携带 "insufficient balance" 等关键词，

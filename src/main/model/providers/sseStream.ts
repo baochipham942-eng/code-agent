@@ -266,7 +266,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
         Accept: 'text/event-stream',
         ...extraHeaders,
       },
-      agent: agent || getHttpsAgent(),
+      agent: agent || getHttpsAgent(url.href),
       timeout,
     };
 

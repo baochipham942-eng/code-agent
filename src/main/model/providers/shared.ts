@@ -48,7 +48,7 @@ import type { ToolDefinition, ToolCall, ToolCallTargetContext } from '../../../s
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { ContextLengthExceededError } from '../types';
 import { createLogger } from '../../services/infra/logger';
-import { PROVIDER_TIMEOUT } from '../../../shared/constants';
+import { PROVIDER_TIMEOUT, isDirectConnectHost } from '../../../shared/constants';
 // Wrapper imports for @deprecated parse* delegation. Cycle is safe in ESM:
 // wrapper modules only access shared.logger / safeJsonParse at parse-time, not module-init.
 import { parseOpenAIResponse as wrapperParseOpenAIResponse } from './wrappers/openaiWrapper';
@@ -141,10 +141,19 @@ let _cachedAgent: HttpsProxyAgent<string> | undefined;
  * 运行时读取代理配置并返回 HttpsProxyAgent。
  * 不同于模块级常量，本函数每次调用都会重新读 env，便于运行时切换代理。
  * 按 URL 缓存复用同一 Agent 实例，避免每次请求新建导致连接池失效。
+ *
+ * Per-provider 代理：传入请求目标 URL 时，命中国内直连 host
+ * （isDirectConnectHost）一律绕过代理直连——避免海外 HTTPS_PROXY 把
+ * 智谱/Kimi/DeepSeek 等国内端点打成 TLS 断连。海外/未知 host（或不传 url）
+ * 才走代理。
  */
-export function getHttpsAgent(): HttpsProxyAgent<string> | undefined {
+export function getHttpsAgent(targetUrl?: string): HttpsProxyAgent<string> | undefined {
   const url = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
   if (!url || process.env.NO_PROXY === 'true' || process.env.DISABLE_PROXY === 'true') {
+    return undefined;
+  }
+  // 国内直连 host：即使设了全局代理也绕过
+  if (targetUrl && isDirectConnectHost(targetUrl)) {
     return undefined;
   }
   if (url !== _cachedProxyUrl) {
@@ -189,7 +198,7 @@ export async function electronFetch(url: string, options: {
       headers: options.headers,
       data: options.body ? (JSON.parse(options.body) as unknown) : undefined,
       timeout: options.timeoutMs ?? PROVIDER_TIMEOUT,
-      httpsAgent: getHttpsAgent(),
+      httpsAgent: getHttpsAgent(url),
       validateStatus: () => true,
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
@@ -205,9 +214,9 @@ export async function electronFetch(url: string, options: {
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
     if (axios.isCancel(error) || (error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError'))) {
-      throw new Error('Request was cancelled');
+      throw new Error('Request was cancelled', { cause: error });
     }
-    throw new Error(`Network request failed: ${errMsg}`);
+    throw new Error(`Network request failed: ${errMsg}`, { cause: error });
   }
 }
 

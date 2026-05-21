@@ -15,6 +15,9 @@
 
 import chalk from 'chalk';
 import { execSync } from 'child_process';
+import os from 'os';
+import fs from 'fs';
+import path from 'path';
 import { ChangeDetector } from '../src/main/testing/ci/changeDetector';
 import { BaselineManager } from '../src/main/testing/ci/baselineManager';
 import { TrendTracker } from '../src/main/testing/ci/trendTracker';
@@ -205,6 +208,53 @@ function getCommitSha(): string {
 }
 
 /**
+ * 隔离沙箱：把仓库 tracked 文件（git archive HEAD，不含 .git/node_modules/未跟踪产物）
+ * 快照到临时目录，作为 agent 执行的 working directory。
+ *
+ * Why: eval 跑在真实工作树上会弄脏 repo —— git 类 case 的 agent 命令可能在仓库根
+ * `git checkout -b` 切走主仓 HEAD，ppt/codegen/excel case 留 test-*.pptx / build_final.py
+ * 等产物，killed run 还来不及 cleanup 就残留。沙箱里没有 .git（archive 排除），根目录
+ * 的 git 操作只会无害报错而非污染主仓；产物全落临时目录，跑完整体删除。
+ *
+ * 注意：仅 agent 的 working directory 走沙箱；test-cases / results / baseline / trend
+ * 仍读写真实仓库（这些是 eval 基础设施，不能随沙箱删除而丢失）。
+ *
+ * 关闭沙箱：CODE_AGENT_EVAL_NO_SANDBOX=true（调试时原地跑）。
+ */
+function createEvalSandbox(repoDir: string): { dir: string; cleanup: () => void } | null {
+  if (process.env.CODE_AGENT_EVAL_NO_SANDBOX === 'true') {
+    console.log(chalk.dim('  Eval sandbox 关闭 (CODE_AGENT_EVAL_NO_SANDBOX=true)，在真实工作树跑'));
+    return null;
+  }
+  try {
+    execSync('git rev-parse --is-inside-work-tree', { cwd: repoDir, stdio: 'ignore' });
+  } catch {
+    console.log(chalk.yellow('  非 git 仓库，跳过 eval sandbox（在工作树原地跑）'));
+    return null;
+  }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'code-agent-eval-'));
+  try {
+    // git archive 输出 tar 到 stdout，解到沙箱目录；shell 管道由 execSync 默认 /bin/sh 执行
+    execSync(`git archive HEAD | tar -x -C "${dir}"`, { cwd: repoDir, stdio: 'ignore' });
+  } catch (err) {
+    fs.rmSync(dir, { recursive: true, force: true });
+    console.log(chalk.yellow(`  git archive 快照失败，跳过 eval sandbox（在工作树原地跑）: ${err}`));
+    return null;
+  }
+  console.log(chalk.cyan(`  Eval sandbox: ${dir}（git archive HEAD 快照，跑完自动清理）`));
+  return {
+    dir,
+    cleanup: () => {
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch {
+        /* 清理失败不影响 eval 结果 */
+      }
+    },
+  };
+}
+
+/**
  * Create the appropriate agent adapter based on --real flag
  */
 function createAgent(opts: {
@@ -261,46 +311,54 @@ async function runEvals(
   _scope: 'smoke' | 'full',
   opts: { real: boolean; model?: string; provider?: string; concurrency?: number }
 ): Promise<TestRunSummary> {
-  const config = createDefaultConfig(workingDir, {
-    verbose: false,
-    ...(opts.concurrency ? { maxParallel: opts.concurrency, parallel: true } : {}),
-  });
+  // \u9694\u79BB\u6C99\u7BB1\uFF1Aagent \u7684 working directory \u8D70\u4E34\u65F6\u5FEB\u7167\uFF1Btest-cases / results \u4ECD\u8BFB\u5199\u771F\u5B9E\u4ED3\u5E93\u3002
+  const sandbox = createEvalSandbox(workingDir);
+  const agentWorkingDir = sandbox?.dir ?? workingDir;
+  try {
+    const config = createDefaultConfig(workingDir, {
+      verbose: false,
+      workingDirectory: agentWorkingDir,
+      ...(opts.concurrency ? { maxParallel: opts.concurrency, parallel: true } : {}),
+    });
 
-  const agent = createAgent({
-    real: opts.real,
-    model: opts.model,
-    provider: opts.provider,
-    workingDir,
-  });
+    const agent = createAgent({
+      real: opts.real,
+      model: opts.model,
+      provider: opts.provider,
+      workingDir: agentWorkingDir,
+    });
 
-  const runner = new TestRunner(config, agent);
+    const runner = new TestRunner(config, agent);
 
-  runner.addEventListener((event) => {
-    switch (event.type) {
-      case 'case_end': {
-        const icon =
-          event.result.status === 'passed'
-            ? '\u2705'
-            : event.result.status === 'failed'
-            ? '\u274C'
-            : '\u23ED\uFE0F';
-        console.log(
-          `  ${icon} ${event.result.testId.padEnd(30)} ${event.result.duration}ms`
-        );
-        break;
+    runner.addEventListener((event) => {
+      switch (event.type) {
+        case 'case_end': {
+          const icon =
+            event.result.status === 'passed'
+              ? '\u2705'
+              : event.result.status === 'failed'
+              ? '\u274C'
+              : '\u23ED\uFE0F';
+          console.log(
+            `  ${icon} ${event.result.testId.padEnd(30)} ${event.result.duration}ms`
+          );
+          break;
+        }
+        case 'suite_end':
+          console.log(generateConsoleReport(event.summary));
+          break;
       }
-      case 'suite_end':
-        console.log(generateConsoleReport(event.summary));
-        break;
-    }
-  });
+    });
 
-  const summary = await runner.runAll();
+    const summary = await runner.runAll();
 
-  const savedFiles = await saveReport(summary, config.resultsDir);
-  console.log(chalk.dim(`  Reports saved to: ${savedFiles[0]}`));
+    const savedFiles = await saveReport(summary, config.resultsDir);
+    console.log(chalk.dim(`  Reports saved to: ${savedFiles[0]}`));
 
-  return summary;
+    return summary;
+  } finally {
+    sandbox?.cleanup();
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -10,8 +10,17 @@ import {
   type UpdateInfo,
 } from '../../../../src/main/services/cloud/updateService';
 import type { RuntimeAssetsManifest } from '../../../../src/main/runtime/runtimeAssetInstaller';
+import { createControlPlaneEnvelope } from '../../../../vercel-api/lib/controlPlaneEnvelope';
 
 const tempRoots: string[] = [];
+
+const TEST_CONTROL_PLANE_KEY_ID = 'runtime-assets-test-key';
+const testControlPlaneKeyPair = crypto.generateKeyPairSync('ed25519');
+const testControlPlanePrivateKeyPem = testControlPlaneKeyPair.privateKey
+  .export({ type: 'pkcs8', format: 'pem' }).toString();
+const testControlPlanePublicKeyPem = testControlPlaneKeyPair.publicKey
+  .export({ type: 'spki', format: 'pem' }).toString();
+const previousControlPlanePublicKeysEnv = process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS;
 
 function makeTempRoot(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-neo-update-runtime-'));
@@ -111,8 +120,18 @@ function createRuntimePackage(root: string): {
       },
     }],
   };
+  const envelope = createControlPlaneEnvelope({
+    kind: 'runtime_assets_manifest',
+    payload: manifest,
+    keyId: TEST_CONTROL_PLANE_KEY_ID,
+    privateKey: testControlPlanePrivateKeyPem,
+    ttlSeconds: 3600,
+  });
+  process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS = JSON.stringify({
+    [TEST_CONTROL_PLANE_KEY_ID]: testControlPlanePublicKeyPem,
+  });
   const manifestPath = path.join(root, 'remote', 'manifest.json');
-  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  fs.writeFileSync(manifestPath, `${JSON.stringify(envelope, null, 2)}\n`);
   return {
     manifest,
     manifestPath,
@@ -123,6 +142,11 @@ function createRuntimePackage(root: string): {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  if (previousControlPlanePublicKeysEnv === undefined) {
+    delete process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS;
+  } else {
+    process.env.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS = previousControlPlanePublicKeysEnv;
+  }
   for (const root of tempRoots.splice(0)) {
     fs.rmSync(root, { recursive: true, force: true });
   }

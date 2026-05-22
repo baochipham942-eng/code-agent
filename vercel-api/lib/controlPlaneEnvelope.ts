@@ -2,14 +2,15 @@ import * as crypto from 'node:crypto';
 import {
   recordControlPlaneAuditErrorBackground,
   recordControlPlaneAuditEventBackground,
-} from './controlPlaneAudit.js';
+} from './controlPlaneAudit.ts';
 
 export type ControlPlaneArtifactKind =
   | 'cloud_config'
   | 'capability_registry'
   | 'agent_engine_model_catalog'
   | 'prompt_registry'
-  | 'update_manifest';
+  | 'update_manifest'
+  | 'runtime_assets_manifest';
 
 export interface ControlPlaneEnvelope<TPayload = unknown> {
   schemaVersion: 1;
@@ -48,9 +49,12 @@ export interface CreateControlPlaneEnvelopeOptions<TPayload> {
 }
 
 export class ControlPlaneConfigError extends Error {
-  constructor(message: string, public readonly statusCode = 503) {
+  public readonly statusCode: number;
+
+  constructor(message: string, statusCode = 503) {
     super(message);
     this.name = 'ControlPlaneConfigError';
+    this.statusCode = statusCode;
   }
 }
 

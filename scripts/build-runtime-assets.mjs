@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { createControlPlaneEnvelopeFromEnv } from '../vercel-api/lib/controlPlaneEnvelope.ts';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
@@ -293,6 +294,19 @@ function writeManifest(manifest, outputDir, manifestName) {
   return manifestPath;
 }
 
+function hasControlPlaneSigningEnv() {
+  const privateKey = process.env.CONTROL_PLANE_PRIVATE_KEY || process.env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY;
+  const keyId = process.env.CONTROL_PLANE_KEY_ID || process.env.CODE_AGENT_CONTROL_PLANE_KEY_ID;
+  return Boolean(privateKey && privateKey.trim() && keyId && keyId.trim());
+}
+
+export function createRuntimeAssetsManifestEnvelope(manifest, { dryRun: isDryRun = false } = {}) {
+  if (isDryRun && !hasControlPlaneSigningEnv()) {
+    return manifest;
+  }
+  return createControlPlaneEnvelopeFromEnv('runtime_assets_manifest', manifest);
+}
+
 const runtimeRoot = path.resolve(readArg('--root') || process.env.TAURI_RUNTIME_ROOT || defaultRuntimeRoot);
 const outputDir = path.resolve(readArg('--output-dir') || process.env.RUNTIME_ASSET_OUTPUT_DIR || defaultOutputDir);
 const appVersion = readArg('--app-version') || process.env.VERSION || readPackageVersion();
@@ -340,7 +354,8 @@ const manifest = {
   assets,
 };
 
-const manifestPath = writeManifest(manifest, outputDir, manifestName);
+const signedManifest = createRuntimeAssetsManifestEnvelope(manifest, { dryRun });
+const manifestPath = writeManifest(signedManifest, outputDir, manifestName);
 
 console.log(`[build-runtime-assets] wrote manifest: ${path.relative(repoRoot, manifestPath)}`);
 for (const asset of assets) {

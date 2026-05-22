@@ -13,10 +13,13 @@ import { createLogger } from '../infra/logger';
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 import { getCloudConfigService, type ReleasePolicy } from './cloudConfigService';
 import {
+  getControlPlanePublicKeysFromEnv,
+  verifyControlPlaneEnvelope,
+} from './controlPlaneTrust';
+import {
   getRuntimeAssetsBaseDir,
   installRuntimeAssetFromManifest,
   readActiveRuntimeAssets,
-  readRuntimeAssetsManifest,
   type RuntimeAssetsManifest,
 } from '../../runtime/runtimeAssetInstaller';
 const logger = createLogger('UpdateService');
@@ -312,6 +315,42 @@ export function getRuntimeAssetUpdateInfoFromManifest(
   };
 }
 
+function validateRuntimeAssetsManifest(value: unknown): RuntimeAssetsManifest {
+  if (
+    !isRecord(value)
+    || value.kind !== 'agent_neo_runtime_assets'
+    || typeof value.schemaVersion !== 'number'
+    || !Array.isArray(value.assets)
+  ) {
+    throw new Error('Invalid runtime assets manifest');
+  }
+  return {
+    schemaVersion: value.schemaVersion,
+    kind: 'agent_neo_runtime_assets',
+    generatedAt: typeof value.generatedAt === 'string' ? value.generatedAt : undefined,
+    appVersion: typeof value.appVersion === 'string' ? value.appVersion : undefined,
+    platform: typeof value.platform === 'string' ? value.platform : undefined,
+    assets: value.assets as RuntimeAssetsManifest['assets'],
+  };
+}
+
+function verifyRuntimeAssetsManifestEnvelope(value: unknown): RuntimeAssetsManifest {
+  const trust = verifyControlPlaneEnvelope<RuntimeAssetsManifest>(value, {
+    kind: 'runtime_assets_manifest',
+    publicKeys: getControlPlanePublicKeysFromEnv(),
+    requireSignature: true,
+  });
+  if (!trust.trusted || !trust.payload) {
+    const codes = trust.diagnostics.map((entry) => entry.code).join(', ') || 'unknown';
+    throw new Error(`Runtime assets manifest envelope is not trusted: ${codes}`);
+  }
+  return validateRuntimeAssetsManifest(trust.payload);
+}
+
+function parseTrustedRuntimeAssetsManifestEnvelope(envelopeText: string): RuntimeAssetsManifest {
+  return verifyRuntimeAssetsManifestEnvelope(JSON.parse(envelopeText) as unknown);
+}
+
 // ----------------------------------------------------------------------------
 // UpdateService Class
 // ----------------------------------------------------------------------------
@@ -562,10 +601,7 @@ export class UpdateService implements Disposable {
         };
       }
 
-      const manifest = JSON.parse(manifestText) as RuntimeAssetsManifest;
-      if (manifest.kind !== 'agent_neo_runtime_assets' || !Array.isArray(manifest.assets)) {
-        throw new Error('Invalid runtime assets manifest');
-      }
+      const manifest = parseTrustedRuntimeAssetsManifestEnvelope(manifestText);
 
       return getRuntimeAssetUpdateInfoFromManifest(
         manifest,
@@ -599,15 +635,17 @@ export class UpdateService implements Disposable {
     const downloadDir = path.join(runtimeBaseDir, 'downloads');
     fs.mkdirSync(downloadDir, { recursive: true });
 
+    const manifestEnvelopePath = path.join(downloadDir, 'manifest.envelope.json');
     const manifestPath = path.join(downloadDir, 'manifest.json');
     await this.downloadVerifiedFile(
       runtimeAssets.manifestUrl,
-      manifestPath,
+      manifestEnvelopePath,
       runtimeAssets.manifestSha256,
-      'Runtime assets manifest',
+      'Runtime assets manifest envelope',
     );
 
-    const manifest = await readRuntimeAssetsManifest(manifestPath);
+    const manifest = parseTrustedRuntimeAssetsManifestEnvelope(fs.readFileSync(manifestEnvelopePath, 'utf8'));
+    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     const installed: PrepareRuntimeAssetsResult['installed'] = [];
     const skipped: PrepareRuntimeAssetsResult['skipped'] = [];
 

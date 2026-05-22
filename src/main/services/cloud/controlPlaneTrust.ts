@@ -13,9 +13,10 @@ import type {
 } from '../../../shared/contract/controlPlane';
 
 export type ControlPlanePublicKeys = Record<string, string>;
+export type SupportedControlPlaneArtifactKind = ControlPlaneArtifactKind | 'runtime_assets_manifest';
 
 export interface VerifyControlPlaneEnvelopeOptions {
-  kind: ControlPlaneArtifactKind;
+  kind: SupportedControlPlaneArtifactKind;
   publicKeys?: ControlPlanePublicKeys;
   requireSignature?: boolean;
   allowUnsigned?: boolean;

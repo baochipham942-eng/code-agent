@@ -21,7 +21,9 @@ export interface UpdateCheckResponse {
 }
 
 export interface RuntimeAssetsUpdateMetadata {
+  /** URL of the signed runtime_assets_manifest control-plane envelope. */
   manifestUrl: string;
+  /** SHA-256 hex digest of the signed envelope bytes, not the unsigned payload. */
   manifestSha256: string;
 }
 
@@ -162,7 +164,7 @@ async function fetchText(url: string): Promise<string> {
     },
   });
   if (!response.ok) {
-    throw new Error(`Runtime assets sha sidecar returned HTTP ${response.status}`);
+    throw new Error(`Runtime assets manifest envelope sha sidecar returned HTTP ${response.status}`);
   }
   return await response.text();
 }

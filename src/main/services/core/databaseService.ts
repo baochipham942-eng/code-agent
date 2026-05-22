@@ -26,6 +26,27 @@ export type { StoredSession, StoredMessage, MemoryRecord, RelationQueryOptions, 
 
 import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, SwarmTraceRepository, PendingApprovalRepository } from './repositories';
 
+type DatabaseRecoveryCallback = () => void;
+
+const databaseRecoveryListeners = new Set<DatabaseRecoveryCallback>();
+
+export function onDatabaseRecovered(callback: DatabaseRecoveryCallback): () => void {
+  databaseRecoveryListeners.add(callback);
+  return () => {
+    databaseRecoveryListeners.delete(callback);
+  };
+}
+
+function notifyDatabaseRecovered(): void {
+  for (const listener of databaseRecoveryListeners) {
+    try {
+      listener();
+    } catch (error) {
+      logger.warn('[DatabaseService] Database recovery listener failed:', error);
+    }
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Database Service
 // ----------------------------------------------------------------------------
@@ -124,6 +145,7 @@ export class DatabaseService {
         this._initPromise = null;
         this._initFailed = false;
         await this.initialize();
+        notifyDatabaseRecovered();
         logger.info(`Database recovered after ${this._retryCount} retries`);
         this._retryCount = 0;
       } catch (error) {

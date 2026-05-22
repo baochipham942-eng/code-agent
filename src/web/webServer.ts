@@ -491,7 +491,10 @@ async function initializeServices(): Promise<void> {
 
   // 4. 初始化 Database（main 模块的单例，SessionManager 等依赖）
   try {
-    const { initDatabase } = await import('../main/services/core/databaseService');
+    const { initDatabase, onDatabaseRecovered } = await import('../main/services/core/databaseService');
+    onDatabaseRecovered(() => {
+      setDbAvailable(true);
+    });
     await initDatabase();
     setDbAvailable(true);
     logger.info('Database initialized');

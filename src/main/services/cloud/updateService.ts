@@ -351,6 +351,14 @@ function parseTrustedRuntimeAssetsManifestEnvelope(envelopeText: string): Runtim
   return verifyRuntimeAssetsManifestEnvelope(JSON.parse(envelopeText) as unknown);
 }
 
+function resolveUpdateRedirectUrl(redirectUrl: string, currentUrl: URL): string {
+  const nextUrl = new URL(redirectUrl, currentUrl);
+  if (currentUrl.protocol === 'https:' && nextUrl.protocol !== 'https:') {
+    throw new Error(`TLS downgrade redirect rejected: ${currentUrl.toString()} -> ${nextUrl.toString()}`);
+  }
+  return nextUrl.toString();
+}
+
 // ----------------------------------------------------------------------------
 // UpdateService Class
 // ----------------------------------------------------------------------------
@@ -861,7 +869,14 @@ export class UpdateService implements Disposable {
         if (res.statusCode === 301 || res.statusCode === 302) {
           const redirectUrl = res.headers.location;
           if (redirectUrl) {
-            this.httpGet(redirectUrl).then(resolve).catch(reject);
+            let nextUrl: string;
+            try {
+              nextUrl = resolveUpdateRedirectUrl(redirectUrl, parsedUrl);
+            } catch (e) {
+              reject(e instanceof Error ? e : new Error(String(e)));
+              return;
+            }
+            this.httpGet(nextUrl).then(resolve).catch(reject);
             return;
           }
         }
@@ -935,7 +950,14 @@ export class UpdateService implements Disposable {
           if (redirectUrl) {
             file.close();
             try { fs.unlinkSync(destPath); } catch { /* best effort cleanup */ }
-            this.downloadFile(redirectUrl, destPath).then(resolve).catch(reject);
+            let nextUrl: string;
+            try {
+              nextUrl = resolveUpdateRedirectUrl(redirectUrl, parsedUrl);
+            } catch (e) {
+              reject(e instanceof Error ? e : new Error(String(e)));
+              return;
+            }
+            this.downloadFile(nextUrl, destPath).then(resolve).catch(reject);
             return;
           }
         }

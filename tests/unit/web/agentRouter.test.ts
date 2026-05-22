@@ -69,6 +69,9 @@ vi.mock('../../../src/main/services/agentEngine', () => ({
     };
   }),
   resolveExternalEngineLaunch: (...args: unknown[]) => agentEngineMocks.resolveExternalEngineLaunch(...args),
+  getRemoteAgentEngineModelCatalogService: () => ({
+    resolveModelId: async (_kind: unknown, requested?: string | null) => requested ?? undefined,
+  }),
 }));
 
 vi.mock('../../../src/main/tasks/backgroundTaskLedger', () => ({

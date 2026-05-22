@@ -41,7 +41,6 @@ import {
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
-import { InlineWorkbenchBar } from '../InlineWorkbenchBar';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import {
@@ -56,7 +55,6 @@ import {
   getPreferredAgentMentionToken,
   isLeadingAgentMentionInput,
   parseLeadingAgentMentions,
-  syncLeadingAgentMentions,
 } from './agentMentionRouting';
 import {
   applyAgentCommandOption,
@@ -159,10 +157,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const setActiveAgentId = useAppStore((state) => state.setActiveAgentId);
   const hasMessages = useSessionStore((state) => state.messages.length > 0);
   const swarmAgents = useSwarmStore((state) => state.agents);
-  const mentionPreview = useMemo(
-    () => parseLeadingAgentMentions(value, swarmAgents),
-    [swarmAgents, value],
-  );
   const agentMentionAutocomplete = useMemo(
     () => getLeadingAgentMentionAutocomplete(value, swarmAgents),
     [swarmAgents, value],
@@ -367,13 +361,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     const agent = swarmAgents.find((item) => item.id === agentId);
     if (!agent) return;
     setValue((prev) => applyAgentMentionSuggestion(prev, agent));
-    setDismissedAgentAutocompleteValue(null);
-    inputAreaRef.current?.focus();
-  }, [swarmAgents]);
-
-  const handleDirectTargetIdsChange = useCallback((nextTargetAgentIds: string[]) => {
-    const nextAgents = swarmAgents.filter((agent) => nextTargetAgentIds.includes(agent.id));
-    setValue((prev) => syncLeadingAgentMentions(prev, nextAgents, swarmAgents));
     setDismissedAgentAutocompleteValue(null);
     inputAreaRef.current?.focus();
   }, [swarmAgents]);
@@ -794,11 +781,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       {/* Command Palette triggered by / */}
       <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
       <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
-        <InlineWorkbenchBar
-          previewTargetAgentIds={mentionPreview?.targetAgentIds}
-          onDirectTargetIdsChange={handleDirectTargetIdsChange}
-        />
-
         {/* Plan 入口按钮 - 仅当有 Plan 时显示 */}
         {hasPlan && onPlanClick && (
           <button

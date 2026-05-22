@@ -120,12 +120,12 @@ describe('runtimeAssetResolver', () => {
   it('prefers active managed runtime asset node modules without changing bundled dist paths', () => {
     const bundledRoot = makeTempRoot();
     const userDataPath = makeTempRoot();
-    const managedAssetRoot = makeTempRoot();
+    const runtimeBaseDir = mkdirp(path.join(userDataPath, 'runtime'));
+    const managedAssetRoot = mkdirp(path.join(runtimeBaseDir, 'onnxruntime-vad', 'a'.repeat(64)));
     const managedModulePath = mkdirp(path.join(managedAssetRoot, 'node_modules', 'onnxruntime-node'));
     mkdirp(path.join(bundledRoot, 'dist', 'web'));
     mkdirp(path.join(bundledRoot, 'node_modules', 'onnxruntime-node'));
-    mkdirp(path.join(userDataPath, 'runtime'));
-    fs.writeFileSync(path.join(userDataPath, 'runtime', 'active.json'), JSON.stringify({
+    fs.writeFileSync(path.join(runtimeBaseDir, 'active.json'), JSON.stringify({
       schemaVersion: 1,
       kind: 'agent_neo_runtime_assets_active',
       updatedAt: '2026-05-22T00:00:00.000Z',
@@ -153,6 +153,79 @@ describe('runtimeAssetResolver', () => {
     expect(resolveNodeModule('onnxruntime-node', options)).toBe(managedModulePath);
     expect(resolveExistingNodeModule('onnxruntime-node', options)).toBe(managedModulePath);
     expect(resolveBundledPath('dist/web', options)).toBe(path.join(bundledRoot, 'dist', 'web'));
+  });
+
+  it('ignores active managed runtime roots outside userData runtime while keeping in-bounds roots loadable', () => {
+    const bundledRoot = makeTempRoot();
+    const userDataPath = makeTempRoot();
+    const escapedAssetRoot = makeTempRoot();
+    const runtimeBaseDir = mkdirp(path.join(userDataPath, 'runtime'));
+    const managedAssetRoot = mkdirp(path.join(runtimeBaseDir, 'onnxruntime-vad', 'a'.repeat(64)));
+    const escapedModulePath = mkdirp(path.join(escapedAssetRoot, 'node_modules', 'onnxruntime-node'));
+    const managedModulePath = mkdirp(path.join(managedAssetRoot, 'node_modules', 'onnxruntime-node'));
+    mkdirp(path.join(bundledRoot, 'dist', 'web'));
+    const activeManifestPath = path.join(runtimeBaseDir, 'active.json');
+
+    const options = {
+      env: { AGENT_NEO_BUNDLED_RUNTIME_ROOT: bundledRoot },
+      cwd: makeTempRoot(),
+      dirname: path.join(makeTempRoot(), 'dist', 'web'),
+      userDataPath,
+    };
+
+    fs.writeFileSync(activeManifestPath, JSON.stringify({
+      schemaVersion: 1,
+      kind: 'agent_neo_runtime_assets_active',
+      updatedAt: '2026-05-22T00:00:00.000Z',
+      assets: {
+        'escaped-onnxruntime-vad': {
+          assetId: 'escaped-onnxruntime-vad',
+          root: escapedAssetRoot,
+          expandedSha256: 'c'.repeat(64),
+          archiveSha256: 'd'.repeat(64),
+          archiveFile: '/tmp/escaped-onnxruntime-vad.tar.gz',
+          groups: ['node_modules/onnxruntime-node'],
+          nodeModules: ['onnxruntime-node'],
+          installedAt: '2026-05-22T00:00:00.000Z',
+        },
+      },
+    }));
+
+    expect(resolveExistingNodeModule('onnxruntime-node', options)).toBeNull();
+
+    fs.writeFileSync(activeManifestPath, JSON.stringify({
+      schemaVersion: 1,
+      kind: 'agent_neo_runtime_assets_active',
+      updatedAt: '2026-05-22T00:00:00.000Z',
+      assets: {
+        'escaped-onnxruntime-vad': {
+          assetId: 'escaped-onnxruntime-vad',
+          root: escapedAssetRoot,
+          expandedSha256: 'c'.repeat(64),
+          archiveSha256: 'd'.repeat(64),
+          archiveFile: '/tmp/escaped-onnxruntime-vad.tar.gz',
+          groups: ['node_modules/onnxruntime-node'],
+          nodeModules: ['onnxruntime-node'],
+          installedAt: '2026-05-22T00:00:00.000Z',
+        },
+        'onnxruntime-vad': {
+          assetId: 'onnxruntime-vad',
+          root: managedAssetRoot,
+          expandedSha256: 'a'.repeat(64),
+          archiveSha256: 'b'.repeat(64),
+          archiveFile: '/tmp/onnxruntime-vad.tar.gz',
+          groups: ['node_modules/onnxruntime-node'],
+          nodeModules: ['onnxruntime-node'],
+          installedAt: '2026-05-22T00:00:00.000Z',
+        },
+      },
+    }));
+
+    expect(resolveExistingNodeModule('onnxruntime-node', options)).toBe(managedModulePath);
+    expect(resolveExistingNodeModule('onnxruntime-node', {
+      ...options,
+      existsSync: (targetPath) => targetPath === escapedModulePath,
+    })).toBeNull();
   });
 
   it('falls back to dist/native node_modules when top-level node_modules is absent', () => {

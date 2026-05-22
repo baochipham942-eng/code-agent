@@ -32,7 +32,7 @@ describe('sharpRuntime', () => {
   it('loads Sharp from an active managed runtime asset', () => {
     const root = makeTempRoot();
     const userDataPath = path.join(root, 'user-data');
-    const managedRoot = path.join(root, 'runtime', 'sharp-image-runtime', 'hash');
+    const managedRoot = path.join(userDataPath, 'runtime', 'sharp-image-runtime', 'hash');
     writeFile(path.join(managedRoot, 'node_modules', 'sharp', 'index.js'), `
       function sharp(input) {
         return { input, metadata: async () => ({ width: 32, height: 16 }) };

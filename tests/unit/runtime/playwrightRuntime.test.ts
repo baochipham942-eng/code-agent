@@ -32,7 +32,7 @@ describe('playwrightRuntime', () => {
   it('loads Playwright from an active managed runtime asset', async () => {
     const root = makeTempRoot();
     const userDataPath = path.join(root, 'user-data');
-    const managedRoot = path.join(root, 'runtime', 'playwright-browser-runtime', 'hash');
+    const managedRoot = path.join(userDataPath, 'runtime', 'playwright-browser-runtime', 'hash');
     writeFile(path.join(managedRoot, 'node_modules', 'playwright', 'index.js'), "module.exports = require('playwright-core');\n");
     writeFile(path.join(managedRoot, 'node_modules', 'playwright', 'package.json'), JSON.stringify({ main: 'index.js' }));
     writeFile(path.join(managedRoot, 'node_modules', 'playwright-core', 'index.js'), 'module.exports = { chromium: { source: "managed" } };\n');

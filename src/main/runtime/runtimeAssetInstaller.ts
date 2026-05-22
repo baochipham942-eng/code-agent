@@ -115,7 +115,7 @@ function sha256File(filePath: string): string {
   return hash.digest('hex');
 }
 
-function ensureInside(baseDir: string, targetPath: string, label: string): string {
+export function ensureInside(baseDir: string, targetPath: string, label: string): string {
   const resolvedBase = path.resolve(baseDir);
   const resolvedTarget = path.resolve(targetPath);
   const relative = path.relative(resolvedBase, resolvedTarget);

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getUserDataPath } from '../platform/appPaths';
+import { ensureInside } from './runtimeAssetInstaller';
 
 export type RuntimeAssetKind = 'dist/web' | 'dist/renderer' | 'dist/native';
 
@@ -112,13 +113,21 @@ function parseActiveRuntimeRoots(
     };
     if (parsed.kind !== RUNTIME_ASSETS_ACTIVE_KIND || !parsed.assets) return [];
 
+    // Containment base = the directory that actually holds active.json (the runtime base dir,
+    // which may be env-overridden or test-injected), NOT a hardcoded userDataPath/runtime.
+    const runtimeBaseDir = path.dirname(manifestPath);
     return Object.values(parsed.assets)
-      .filter((asset) => {
-        if (!asset.root) return false;
-        return !asset.nodeModules || asset.nodeModules.length === 0 || asset.nodeModules.includes(moduleName);
-      })
-      .map((asset) => asset.root!)
-      .map((root) => path.resolve(root));
+      .flatMap((asset) => {
+        if (!asset.root) return [];
+        if (asset.nodeModules && asset.nodeModules.length > 0 && !asset.nodeModules.includes(moduleName)) {
+          return [];
+        }
+        try {
+          return [ensureInside(runtimeBaseDir, asset.root, 'active runtime asset root')];
+        } catch {
+          return [];
+        }
+      });
   } catch {
     return [];
   }

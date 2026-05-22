@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { UpdateInfo } from '../../../src/shared/contract';
 import {
+  getRuntimeAssetsPrepareText,
+  getRuntimeAssetsSummaryText,
   getVisibleUpdateInfo,
+  shouldShowRuntimeAssetsPrepare,
   shouldClearUpdateInfoBeforeCheck,
 } from '../../../src/renderer/components/features/settings/tabs/UpdateSettings';
 
@@ -27,5 +30,43 @@ describe('UpdateSettings status visibility', () => {
     expect(shouldClearUpdateInfoBeforeCheck(null)).toBe(true);
     expect(shouldClearUpdateInfoBeforeCheck(upToDateInfo)).toBe(true);
     expect(shouldClearUpdateInfoBeforeCheck(availableUpdateInfo)).toBe(false);
+  });
+
+  it('summarizes local runtime component status for settings', () => {
+    expect(getRuntimeAssetsSummaryText(null)).toBeNull();
+    expect(getRuntimeAssetsSummaryText({
+      runtimeBaseDir: '/tmp/runtime',
+      activeManifestPath: '/tmp/runtime/active.json',
+      assets: [],
+      summary: { installed: 0, bundledFallback: 1, missing: 0 },
+    })).toBe('使用内置能力组件');
+    expect(getRuntimeAssetsSummaryText({
+      runtimeBaseDir: '/tmp/runtime',
+      activeManifestPath: '/tmp/runtime/active.json',
+      assets: [],
+      summary: { installed: 1, bundledFallback: 0, missing: 0 },
+    })).toBe('已准备 1 个本地能力组件');
+    expect(getRuntimeAssetsSummaryText({
+      runtimeBaseDir: '/tmp/runtime',
+      activeManifestPath: '/tmp/runtime/active.json',
+      assets: [],
+      summary: { installed: 0, bundledFallback: 0, missing: 1 },
+    })).toBe('本地能力组件不可用');
+  });
+
+  it('shows prepare action only when runtime assets need an update', () => {
+    expect(shouldShowRuntimeAssetsPrepare(null)).toBe(false);
+    expect(shouldShowRuntimeAssetsPrepare(upToDateInfo)).toBe(false);
+    expect(shouldShowRuntimeAssetsPrepare({
+      hasUpdate: false,
+      currentVersion: '0.16.75',
+      runtimeAssets: {
+        hasUpdate: true,
+        manifestUrl: 'https://cdn.example.com/runtime-assets/manifest.json',
+        manifestSha256: 'a'.repeat(64),
+      },
+    })).toBe(true);
+    expect(getRuntimeAssetsPrepareText(false)).toBe('准备本地能力组件');
+    expect(getRuntimeAssetsPrepareText(true)).toBe('正在准备本地能力组件...');
   });
 });

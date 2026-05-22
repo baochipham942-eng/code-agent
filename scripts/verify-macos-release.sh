@@ -27,6 +27,7 @@ fi
 
 echo "[verify-macos-release] scanning bundled resources"
 node "${ROOT_DIR}/scripts/release-security-scan.mjs" "${RESOURCES_ROOT}"
+node "${ROOT_DIR}/scripts/tauri-resource-inventory.mjs" --root "${RESOURCES_ROOT}"
 
 CONTROL_PLANE_PUBLIC_KEYS_FILE="${RESOURCES_ROOT}/dist/web/control-plane-public-keys.json"
 if [[ "${REQUIRE_CONTROL_PLANE_PUBLIC_KEYS}" == "1" || "${REQUIRE_CONTROL_PLANE_PUBLIC_KEYS}" == "true" ]]; then

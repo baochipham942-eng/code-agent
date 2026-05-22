@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, type ChildProcess } from 'child_process';
 import { app, broadcastToRenderer } from '../../platform';
+import { loadPlaywright } from '../../runtime/playwrightRuntime';
 import type { Disposable } from '../serviceRegistry';
 import { getServiceRegistry } from '../serviceRegistry';
 import type {
@@ -112,7 +113,11 @@ export {
 let _playwright: typeof import('playwright') | null = null;
 async function getPlaywright() {
   if (!_playwright) {
-    _playwright = await import('playwright');
+    const loaded = await loadPlaywright();
+    if (!loaded.ok || !loaded.module) {
+      throw new Error(loaded.error || 'Playwright package is unavailable in this runtime.');
+    }
+    _playwright = loaded.module;
   }
   return _playwright;
 }

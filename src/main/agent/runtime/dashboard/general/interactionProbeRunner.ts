@@ -12,6 +12,7 @@
 
 import { pathToFileURL } from 'url';
 import { acquireLaunchSlot, type LaunchSlot } from '../../../../services/infra/playwrightLaunchSemaphore';
+import { loadPlaywright } from '../../../../runtime/playwrightRuntime';
 
 const NAVIGATE_TIMEOUT_MS = 10000;
 const MUTATION_WAIT_MS = 100;
@@ -32,7 +33,11 @@ export async function runStateChangeProbe(filePath: string): Promise<StateChange
   let browser: import('playwright').Browser | null = null;
   let launchSlot: LaunchSlot | null = null;
   try {
-    const { chromium } = await import('playwright');
+    const playwright = await loadPlaywright();
+    if (!playwright.ok || !playwright.module) {
+      throw new Error(playwright.error || 'Playwright package unavailable.');
+    }
+    const { chromium } = playwright.module;
     launchSlot = await acquireLaunchSlot();
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext({ viewport: VIEWPORT });

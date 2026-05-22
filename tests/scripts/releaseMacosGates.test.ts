@@ -103,6 +103,18 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).toContain('CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS');
     expect(workflow).toContain('src-tauri/target/release/bundle/macos/*.app.tar.gz');
     expect(workflow).toContain('src-tauri/target/release/bundle/macos/*.app.tar.gz.sig');
+    expect(workflow).toContain('npm run release:runtime-assets');
+    expect(workflow).toContain('runtime-assets-manifest-darwin-arm64.json');
+    expect(workflow).toContain('src-tauri/target/release/runtime-assets/*.sha256');
+    expect(workflow).toContain('src-tauri/target/release/runtime-assets/*.tar.gz');
+  });
+
+  it('keeps runtime asset archives free of unsupported link entries', () => {
+    const builder = readRepoFile('scripts/build-runtime-assets.mjs');
+
+    expect(builder).toContain('entry.isSymbolicLink()');
+    expect(builder).toContain("relativePath === 'node_modules/.bin'");
+    expect(builder).toContain("relativePath.endsWith('/node_modules/.bin')");
   });
 
   it('wires package release scripts through notarize and verify gates', () => {
@@ -115,5 +127,36 @@ describe('macOS release fail-closed gates', () => {
     expect(packageJson.scripts['tauri:release:bundle']).toContain('npm run release:verify-macos');
     expect(packageJson.scripts['release:notarize-macos']).toBe('bash scripts/tauri-notarize.sh');
     expect(packageJson.scripts['release:verify-macos']).toBe('bash scripts/verify-macos-release.sh');
+  });
+
+  it('keeps managed runtime pilot modules out of default Tauri resources', () => {
+    const tauriConfig = JSON.parse(readRepoFile('src-tauri/tauri.conf.json')) as {
+      bundle?: { resources?: string[] };
+    };
+    const resources = tauriConfig.bundle?.resources ?? [];
+
+    expect(resources.some((resource) => resource.includes('node_modules/onnxruntime-node'))).toBe(false);
+    expect(resources.some((resource) => resource.includes('node_modules/avr-vad'))).toBe(false);
+    expect(resources.some((resource) => resource.includes('node_modules/playwright'))).toBe(false);
+    expect(resources.some((resource) => resource.includes('node_modules/playwright-core'))).toBe(false);
+    expect(resources.some((resource) => resource.includes('node_modules/sharp'))).toBe(false);
+    expect(resources.some((resource) => resource.includes('node_modules/@img/colour'))).toBe(false);
+    expect(resources.some((resource) => resource.includes('node_modules/@img/sharp-darwin-arm64'))).toBe(false);
+    expect(resources.some((resource) => resource.includes('node_modules/@img/sharp-libvips-darwin-arm64'))).toBe(false);
+    expect(resources.some((resource) => resource.includes('node_modules/detect-libc'))).toBe(false);
+  });
+
+  it('keeps better-sqlite3 source and build inputs out of default Tauri resources', () => {
+    const tauriConfig = JSON.parse(readRepoFile('src-tauri/tauri.conf.json')) as {
+      bundle?: { resources?: string[] };
+    };
+    const resources = tauriConfig.bundle?.resources ?? [];
+
+    expect(resources).toContain('../node_modules/better-sqlite3/package.json');
+    expect(resources).toContain('../node_modules/better-sqlite3/lib/**/*');
+    expect(resources).toContain('../node_modules/better-sqlite3/build/Release/better_sqlite3.node');
+    expect(resources.some((resource) => resource.includes('node_modules/better-sqlite3/deps'))).toBe(false);
+    expect(resources.some((resource) => resource.includes('node_modules/better-sqlite3/src'))).toBe(false);
+    expect(resources.some((resource) => resource === '../node_modules/better-sqlite3/**/*')).toBe(false);
   });
 });

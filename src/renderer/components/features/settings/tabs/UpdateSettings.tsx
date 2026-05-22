@@ -8,7 +8,12 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
 import { SettingsPage } from '../SettingsLayout';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
-import type { UpdateInfo } from '@shared/contract';
+import type {
+  PrepareRuntimeAssetsResult,
+  RuntimeAssetsStatus,
+  RuntimeAssetStatusEntry,
+  UpdateInfo,
+} from '@shared/contract';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode, isTauriMode } from '../../../../utils/platform';
 import {
@@ -47,6 +52,33 @@ export function getVisibleUpdateInfo(
   return updateInfo;
 }
 
+export function getRuntimeAssetsSummaryText(status: RuntimeAssetsStatus | null): string | null {
+  if (!status) return null;
+  if (status.summary.missing > 0) return '本地能力组件不可用';
+  if (status.summary.installed > 0) return `已准备 ${status.summary.installed} 个本地能力组件`;
+  return '使用内置能力组件';
+}
+
+export function shouldShowRuntimeAssetsPrepare(updateInfo: UpdateInfo | null): boolean {
+  return Boolean(updateInfo?.runtimeAssets?.hasUpdate);
+}
+
+export function getRuntimeAssetsPrepareText(isPreparing: boolean): string {
+  return isPreparing ? '正在准备本地能力组件...' : '准备本地能力组件';
+}
+
+function getRuntimeAssetStatusText(asset: RuntimeAssetStatusEntry): string {
+  if (asset.state === 'installed') return '已准备';
+  if (asset.state === 'bundledFallback') return '使用内置';
+  return '不可用';
+}
+
+function getRuntimeAssetTone(asset: RuntimeAssetStatusEntry): string {
+  if (asset.state === 'installed') return 'text-green-300 bg-green-500/10 border-green-500/30';
+  if (asset.state === 'bundledFallback') return 'text-amber-300 bg-amber-500/10 border-amber-500/30';
+  return 'text-red-300 bg-red-500/10 border-red-500/30';
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -61,6 +93,9 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
   const [isInstalling, setIsInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [localVersion, setLocalVersion] = useState<string | null>(null);
+  const [runtimeAssetsStatus, setRuntimeAssetsStatus] = useState<RuntimeAssetsStatus | null>(null);
+  const [isPreparingRuntimeAssets, setIsPreparingRuntimeAssets] = useState(false);
+  const [runtimeAssetsError, setRuntimeAssetsError] = useState<string | null>(null);
 
   const runningInTauri = isTauriMode();
 
@@ -86,6 +121,31 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     loadLocalVersion();
   }, [runningInTauri]);
 
+  React.useEffect(() => {
+    let cancelled = false;
+    ipcService.invokeDomain<RuntimeAssetsStatus>(IPC_DOMAINS.UPDATE, 'runtimeAssetsStatus')
+      .then((status) => {
+        if (!cancelled) setRuntimeAssetsStatus(status);
+      })
+      .catch((err) => {
+        logger.debug('Runtime assets status unavailable', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const refreshRuntimeAssetsStatus = async () => {
+    try {
+      const status = await ipcService.invokeDomain<RuntimeAssetsStatus>(IPC_DOMAINS.UPDATE, 'runtimeAssetsStatus');
+      setRuntimeAssetsStatus(status);
+      return status;
+    } catch (err) {
+      logger.debug('Runtime assets status unavailable', { error: err instanceof Error ? err.message : String(err) });
+      return null;
+    }
+  };
+
   // Get current version: prefer updateInfo, then local version, then placeholder
   const currentVersion = updateInfo?.currentVersion || localVersion || '...';
   const visibleUpdateInfo = getVisibleUpdateInfo(updateInfo, isChecking, error);
@@ -99,7 +159,16 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     try {
       if (runningInTauri) {
         const info = await tauriCheckForUpdate();
-        onUpdateInfoChange(info);
+        let runtimeAssets = info.runtimeAssets;
+        try {
+          const cloudInfo = await ipcService.invokeDomain<UpdateInfo>(IPC_DOMAINS.UPDATE, 'check');
+          runtimeAssets = cloudInfo?.runtimeAssets;
+        } catch (runtimeError) {
+          logger.debug('Runtime assets update check unavailable', {
+            error: runtimeError instanceof Error ? runtimeError.message : String(runtimeError),
+          });
+        }
+        onUpdateInfoChange({ ...info, runtimeAssets });
         if (!localVersion && info.currentVersion) {
           setLocalVersion(info.currentVersion);
         }
@@ -114,6 +183,27 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
       logger.error('Update check failed', err);
     } finally {
       setIsChecking(false);
+    }
+  };
+
+  const handlePrepareRuntimeAssets = async () => {
+    setIsPreparingRuntimeAssets(true);
+    setRuntimeAssetsError(null);
+    try {
+      await ipcService.invokeDomain<PrepareRuntimeAssetsResult>(IPC_DOMAINS.UPDATE, 'prepareRuntimeAssets');
+      await refreshRuntimeAssetsStatus();
+      const info = await ipcService.invokeDomain<UpdateInfo | null>(IPC_DOMAINS.UPDATE, 'getInfo');
+      if (info) {
+        onUpdateInfoChange({
+          ...(updateInfo ?? info),
+          runtimeAssets: info.runtimeAssets,
+        });
+      }
+    } catch (err) {
+      setRuntimeAssetsError('本地能力组件准备失败，继续使用内置组件');
+      logger.error('Runtime assets prepare failed', err);
+    } finally {
+      setIsPreparingRuntimeAssets(false);
     }
   };
 
@@ -183,6 +273,47 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
           </Button>
         </div>
       </div>
+
+      {runtimeAssetsStatus && (
+        <div className="bg-zinc-800 rounded-lg p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm text-zinc-400">本地能力组件</div>
+              <div className="text-sm font-medium text-zinc-200 mt-1">
+                {getRuntimeAssetsSummaryText(runtimeAssetsStatus)}
+              </div>
+            </div>
+            <div className="space-y-2 text-right">
+              {runtimeAssetsStatus.assets.map((asset) => (
+                <div key={asset.id} className="flex items-center justify-end gap-2">
+                  <span className="text-xs text-zinc-400">{asset.label}</span>
+                  <span className={`text-xs px-2 py-1 rounded border ${getRuntimeAssetTone(asset)}`}>
+                    {getRuntimeAssetStatusText(asset)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {shouldShowRuntimeAssetsPrepare(updateInfo) && (
+            <Button
+              disabled={isDisabled || isPreparingRuntimeAssets}
+              onClick={handlePrepareRuntimeAssets}
+              variant="secondary"
+              size="sm"
+              leftIcon={isPreparingRuntimeAssets ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              className="mt-4"
+            >
+              {getRuntimeAssetsPrepareText(isPreparingRuntimeAssets)}
+            </Button>
+          )}
+          {runtimeAssetsError && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-amber-300">
+              <AlertCircle className="w-4 h-4" />
+              <span>{runtimeAssetsError}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Update Status */}
       {visibleUpdateInfo && (

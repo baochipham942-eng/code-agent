@@ -30,6 +30,8 @@ const HEALTH_URL: &str = "http://localhost:8180/api/health";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(30);
 const HEALTH_INTERVAL: Duration = Duration::from_millis(500);
 const DEFAULT_CLOUD_API_URL: &str = "https://code-agent-beta.vercel.app";
+const BUNDLED_RUNTIME_ROOT_ENV: &str = "AGENT_NEO_BUNDLED_RUNTIME_ROOT";
+const RESOURCE_DIR_ENV: &str = "AGENT_NEO_RESOURCE_DIR";
 
 #[derive(Default)]
 struct AppState {
@@ -134,6 +136,19 @@ fn resolve_server_script(app: &tauri::AppHandle) -> Result<(PathBuf, PathBuf), S
     ))
 }
 
+fn web_server_runtime_env(
+    bundled_runtime_root: &Path,
+    resource_dir: Option<&Path>,
+) -> Vec<(&'static str, PathBuf)> {
+    let mut values = vec![(BUNDLED_RUNTIME_ROOT_ENV, bundled_runtime_root.to_path_buf())];
+
+    if let Some(resource_dir) = resource_dir {
+        values.push((RESOURCE_DIR_ENV, resource_dir.to_path_buf()));
+    }
+
+    values
+}
+
 fn is_server_running() -> bool {
     let client = match Client::builder().timeout(Duration::from_secs(2)).build() {
         Ok(c) => c,
@@ -207,26 +222,32 @@ fn spawn_web_server(app: &tauri::AppHandle) -> Result<(Child, String), String> {
     let (script_path, working_dir) = resolve_server_script(app)?;
     let node_binary = resolve_node_binary();
     let boot_token = make_boot_token();
+    let resource_dir = app.path().resource_dir().ok();
 
     // 显式继承父进程 env，让 launchctl setenv / shell 注入的 HTTPS_PROXY 等变量
     // 流到 webServer 的 Node 进程。Rust Command 默认就继承父 env，但写出来更明确。
-    let child = Command::new(&node_binary)
+    let mut command = Command::new(&node_binary);
+    command
         .arg(&script_path)
         .current_dir(&working_dir)
         .envs(env::vars())
         .env("CODE_AGENT_TAURI_BOOT_TOKEN", &boot_token)
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(|error| {
-            format!(
-                "Failed to start web server at {} (node: {}): {}",
-                script_path.display(),
-                node_binary,
-                error
-            )
-        })?;
+        .stderr(Stdio::inherit());
+
+    for (key, value) in web_server_runtime_env(&working_dir, resource_dir.as_deref()) {
+        command.env(key, value.as_os_str());
+    }
+
+    let child = command.spawn().map_err(|error| {
+        format!(
+            "Failed to start web server at {} (node: {}): {}",
+            script_path.display(),
+            node_binary,
+            error
+        )
+    })?;
 
     Ok((child, boot_token))
 }
@@ -585,7 +606,7 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     let mut started = false;
     let install_result = update
         .download_and_install(
-            |chunk_length, content_length| {
+            |_chunk_length, content_length| {
                 if !started {
                     started = true;
                     eprintln!("[updater] download started, total size: {:?}", content_length);
@@ -680,6 +701,49 @@ fn open_update_url(url: String) -> Result<(), String> {
     validate_update_url(&url)?;
     tauri_plugin_opener::open_url(url, None::<&str>)
         .map_err(|error| format!("Failed to open update URL: {error}"))
+}
+
+#[cfg(test)]
+mod runtime_env_tests {
+    use super::{web_server_runtime_env, BUNDLED_RUNTIME_ROOT_ENV, RESOURCE_DIR_ENV};
+    use std::path::Path;
+
+    #[test]
+    fn includes_bundled_runtime_root_for_web_server() {
+        let env = web_server_runtime_env(
+            Path::new("/tmp/Agent.app/Contents/Resources/_up_"),
+            None,
+        );
+
+        assert_eq!(env.len(), 1);
+        assert_eq!(env[0].0, BUNDLED_RUNTIME_ROOT_ENV);
+        assert_eq!(
+            env[0].1,
+            Path::new("/tmp/Agent.app/Contents/Resources/_up_").to_path_buf()
+        );
+    }
+
+    #[test]
+    fn includes_resource_dir_when_available() {
+        let env = web_server_runtime_env(
+            Path::new("/tmp/Agent.app/Contents/Resources/_up_"),
+            Some(Path::new("/tmp/Agent.app/Contents/Resources")),
+        );
+
+        assert_eq!(
+            env,
+            vec![
+                (
+                    BUNDLED_RUNTIME_ROOT_ENV,
+                    Path::new("/tmp/Agent.app/Contents/Resources/_up_").to_path_buf()
+                ),
+                (
+                    RESOURCE_DIR_ENV,
+                    Path::new("/tmp/Agent.app/Contents/Resources").to_path_buf()
+                ),
+            ]
+        );
+    }
 }
 
 #[cfg(test)]

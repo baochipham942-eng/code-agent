@@ -20,6 +20,7 @@ export interface UpdateInfo {
   releaseNotes?: string;
   fileSize?: number;
   publishedAt?: string;
+  runtimeAssets?: RuntimeAssetsUpdateInfo;
 }
 
 export interface DownloadProgress {
@@ -27,4 +28,60 @@ export interface DownloadProgress {
   transferred: number;
   total: number;
   bytesPerSecond: number;
+}
+
+export interface RuntimeAssetsUpdateAsset {
+  id: string;
+  archiveBytes?: number;
+  expandedSha256?: string;
+  installed?: boolean;
+}
+
+export interface RuntimeAssetsUpdateInfo {
+  hasUpdate: boolean;
+  manifestUrl?: string;
+  manifestSha256?: string;
+  assets?: RuntimeAssetsUpdateAsset[];
+}
+
+export interface PrepareRuntimeAssetsResult {
+  installed: Array<{
+    assetId: string;
+    root: string;
+    reusedExistingInstall: boolean;
+  }>;
+  skipped: Array<{
+    assetId: string;
+    reason: string;
+  }>;
+}
+
+export type RuntimeAssetStatusState = 'installed' | 'bundledFallback' | 'missing';
+
+export interface RuntimeAssetModuleStatus {
+  name: string;
+  path: string;
+  exists: boolean;
+  source: 'managed' | 'bundled';
+}
+
+export interface RuntimeAssetStatusEntry {
+  id: string;
+  label: string;
+  state: RuntimeAssetStatusState;
+  nodeModules: RuntimeAssetModuleStatus[];
+  activeRoot?: string;
+  installedAt?: string;
+  expandedSha256?: string;
+}
+
+export interface RuntimeAssetsStatus {
+  runtimeBaseDir: string;
+  activeManifestPath: string;
+  assets: RuntimeAssetStatusEntry[];
+  summary: {
+    installed: number;
+    bundledFallback: number;
+    missing: number;
+  };
 }

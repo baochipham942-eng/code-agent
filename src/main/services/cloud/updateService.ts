@@ -12,6 +12,13 @@ import { createLogger } from '../infra/logger';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 import { getCloudConfigService, type ReleasePolicy } from './cloudConfigService';
+import {
+  getRuntimeAssetsBaseDir,
+  installRuntimeAssetFromManifest,
+  readActiveRuntimeAssets,
+  readRuntimeAssetsManifest,
+  type RuntimeAssetsManifest,
+} from '../../runtime/runtimeAssetInstaller';
 const logger = createLogger('UpdateService');
 
 // ----------------------------------------------------------------------------
@@ -30,6 +37,33 @@ export interface UpdateInfo {
   releaseNotes?: string;
   fileSize?: number;
   publishedAt?: string;
+  runtimeAssets?: RuntimeAssetsUpdateInfo;
+}
+
+export interface RuntimeAssetsUpdateAsset {
+  id: string;
+  archiveBytes?: number;
+  expandedSha256?: string;
+  installed?: boolean;
+}
+
+export interface RuntimeAssetsUpdateInfo {
+  hasUpdate: boolean;
+  manifestUrl?: string;
+  manifestSha256?: string;
+  assets?: RuntimeAssetsUpdateAsset[];
+}
+
+export interface PrepareRuntimeAssetsResult {
+  installed: Array<{
+    assetId: string;
+    root: string;
+    reusedExistingInstall: boolean;
+  }>;
+  skipped: Array<{
+    assetId: string;
+    reason: string;
+  }>;
 }
 
 export interface DownloadProgress {
@@ -103,6 +137,10 @@ interface UpdateServerResponse {
   releaseNotes?: string;
   fileSize?: number;
   publishedAt?: string;
+  runtimeAssets?: {
+    manifestUrl?: string;
+    manifestSha256?: string;
+  };
 }
 
 function parseUpdateServerResponse(value: unknown): UpdateServerResponse {
@@ -120,7 +158,16 @@ function parseUpdateServerResponse(value: unknown): UpdateServerResponse {
     releaseNotes: getStringField(value, 'releaseNotes'),
     fileSize: getNumberField(value, 'fileSize'),
     publishedAt: getStringField(value, 'publishedAt'),
+    runtimeAssets: parseRuntimeAssetsUpdateMetadata(value.runtimeAssets),
   };
+}
+
+function parseRuntimeAssetsUpdateMetadata(value: unknown): UpdateServerResponse['runtimeAssets'] | undefined {
+  if (!isRecord(value)) return undefined;
+  const manifestUrl = getStringField(value, 'manifestUrl');
+  const manifestSha256 = normalizeUpdateSha256(value.manifestSha256);
+  if (!manifestUrl || !manifestSha256) return undefined;
+  return { manifestUrl, manifestSha256 };
 }
 
 interface GitHubReleaseAsset {
@@ -241,6 +288,30 @@ export function applyReleasePolicyToUpdateInfo(
   };
 }
 
+export function getRuntimeAssetUpdateInfoFromManifest(
+  manifest: RuntimeAssetsManifest,
+  activeAssets: Awaited<ReturnType<typeof readActiveRuntimeAssets>>,
+  metadata: { manifestUrl?: string; manifestSha256?: string },
+): RuntimeAssetsUpdateInfo {
+  const assets = manifest.assets.map((asset): RuntimeAssetsUpdateAsset => {
+    const active = activeAssets?.assets[asset.id];
+    const installed = Boolean(active?.expandedSha256 === asset.expandedSha256);
+    return {
+      id: asset.id,
+      ...(asset.archiveBytes ? { archiveBytes: asset.archiveBytes } : {}),
+      expandedSha256: asset.expandedSha256,
+      installed,
+    };
+  });
+
+  return {
+    hasUpdate: assets.some((asset) => !asset.installed),
+    manifestUrl: metadata.manifestUrl,
+    manifestSha256: metadata.manifestSha256,
+    assets,
+  };
+}
+
 // ----------------------------------------------------------------------------
 // UpdateService Class
 // ----------------------------------------------------------------------------
@@ -346,6 +417,7 @@ export class UpdateService implements Disposable {
             releaseNotes: data.releaseNotes,
             fileSize: data.fileSize,
             publishedAt: data.publishedAt,
+            runtimeAssets: await this.resolveRuntimeAssetsUpdateInfo(data.runtimeAssets),
           }, releasePolicy);
 
           this.lastCheck = new Date();
@@ -469,11 +541,110 @@ export class UpdateService implements Disposable {
     return applyReleasePolicyToUpdateInfo(updateInfo, releasePolicy);
   }
 
+  private async resolveRuntimeAssetsUpdateInfo(
+    metadata: UpdateServerResponse['runtimeAssets'],
+  ): Promise<RuntimeAssetsUpdateInfo | undefined> {
+    if (!metadata?.manifestUrl || !metadata.manifestSha256) {
+      return undefined;
+    }
+
+    try {
+      const manifestText = await this.httpGet(metadata.manifestUrl);
+      const actualSha256 = createHash('sha256').update(manifestText).digest('hex');
+      const verdict = verifyDigestMatch(actualSha256, metadata.manifestSha256);
+      if (!verdict.ok) {
+        logger.warn(`Runtime assets manifest sha256 mismatch during check: ${verdict.reason}`);
+        return {
+          hasUpdate: false,
+          manifestUrl: metadata.manifestUrl,
+          manifestSha256: metadata.manifestSha256,
+          assets: [],
+        };
+      }
+
+      const manifest = JSON.parse(manifestText) as RuntimeAssetsManifest;
+      if (manifest.kind !== 'agent_neo_runtime_assets' || !Array.isArray(manifest.assets)) {
+        throw new Error('Invalid runtime assets manifest');
+      }
+
+      return getRuntimeAssetUpdateInfoFromManifest(
+        manifest,
+        await readActiveRuntimeAssets(),
+        metadata,
+      );
+    } catch (error) {
+      logger.warn('Failed to resolve runtime assets metadata', { error: String(error) });
+      return {
+        hasUpdate: false,
+        manifestUrl: metadata.manifestUrl,
+        manifestSha256: metadata.manifestSha256,
+        assets: [],
+      };
+    }
+  }
+
   /**
    * Get cached update info without making a request
    */
   getCachedUpdateInfo(): UpdateInfo | null {
     return this.cachedUpdateInfo;
+  }
+
+  async prepareRuntimeAssets(runtimeBaseDir = getRuntimeAssetsBaseDir()): Promise<PrepareRuntimeAssetsResult> {
+    const runtimeAssets = this.cachedUpdateInfo?.runtimeAssets;
+    if (!runtimeAssets?.manifestUrl || !runtimeAssets.manifestSha256) {
+      return { installed: [], skipped: [{ assetId: '*', reason: 'runtime assets metadata unavailable' }] };
+    }
+
+    const downloadDir = path.join(runtimeBaseDir, 'downloads');
+    fs.mkdirSync(downloadDir, { recursive: true });
+
+    const manifestPath = path.join(downloadDir, 'manifest.json');
+    await this.downloadVerifiedFile(
+      runtimeAssets.manifestUrl,
+      manifestPath,
+      runtimeAssets.manifestSha256,
+      'Runtime assets manifest',
+    );
+
+    const manifest = await readRuntimeAssetsManifest(manifestPath);
+    const installed: PrepareRuntimeAssetsResult['installed'] = [];
+    const skipped: PrepareRuntimeAssetsResult['skipped'] = [];
+
+    for (const asset of manifest.assets) {
+      const active = await readActiveRuntimeAssets(runtimeBaseDir);
+      if (active?.assets[asset.id]?.expandedSha256 === asset.expandedSha256) {
+        skipped.push({ assetId: asset.id, reason: 'already installed' });
+        continue;
+      }
+
+      if (!asset.archiveSha256) {
+        throw new Error(`Runtime asset ${asset.id} is missing archiveSha256`);
+      }
+
+      const archiveUrl = new URL(asset.archiveFile, runtimeAssets.manifestUrl).toString();
+      const archivePath = path.join(downloadDir, path.basename(asset.archiveFile));
+      await this.downloadVerifiedFile(archiveUrl, archivePath, asset.archiveSha256, `Runtime asset ${asset.id}`);
+      const result = await installRuntimeAssetFromManifest({
+        manifestPath,
+        assetId: asset.id,
+        archivePath,
+        runtimeBaseDir,
+      });
+      installed.push({
+        assetId: result.assetId,
+        root: result.root,
+        reusedExistingInstall: result.reusedExistingInstall,
+      });
+    }
+
+    const refreshedActive = await readActiveRuntimeAssets(runtimeBaseDir);
+    this.cachedUpdateInfo = {
+      ...this.cachedUpdateInfo,
+      runtimeAssets: getRuntimeAssetUpdateInfoFromManifest(manifest, refreshedActive, runtimeAssets),
+    } as UpdateInfo;
+
+    return { installed, skipped };
   }
 
   /**
@@ -791,6 +962,26 @@ export class UpdateService implements Disposable {
 
       req.end();
     });
+  }
+
+  private async downloadVerifiedFile(
+    url: string,
+    destPath: string,
+    expectedSha256: string,
+    label: string,
+  ): Promise<string> {
+    const expected = normalizeUpdateSha256(expectedSha256);
+    if (!expected) {
+      throw new Error(`${label} is missing a valid sha256`);
+    }
+
+    const actual = await this.downloadFile(url, destPath);
+    const verdict = verifyDigestMatch(actual, expected);
+    if (!verdict.ok) {
+      try { fs.unlinkSync(destPath); } catch { /* best effort cleanup */ }
+      throw new Error(`${label} sha256 mismatch (${verdict.reason})`);
+    }
+    return actual.toLowerCase();
   }
 }
 

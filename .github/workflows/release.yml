@@ -150,6 +150,37 @@ jobs:
             src-tauri/target/release/bundle/latest.json
           cat src-tauri/target/release/bundle/latest.json | head -20
 
+      - name: Build and upload runtime assets
+        env:
+          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+          ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARTIFACT_BASE_URL="https://${ALIYUN_OSS_BUCKET}.oss-${ALIYUN_OSS_REGION}.aliyuncs.com/${GITHUB_REF_NAME}"
+          RUNTIME_ASSETS_DIR="src-tauri/target/release/runtime-assets"
+          MANIFEST_NAME="runtime-assets-manifest-darwin-arm64.json"
+          MANIFEST_PATH="${RUNTIME_ASSETS_DIR}/${MANIFEST_NAME}"
+          SHA_PATH="${RUNTIME_ASSETS_DIR}/runtime-assets-manifest-darwin-arm64.sha256"
+
+          rm -rf "${RUNTIME_ASSETS_DIR}"
+          npm run release:runtime-assets -- \
+            --output-dir "${RUNTIME_ASSETS_DIR}" \
+            --flat-output \
+            --manifest-name "${MANIFEST_NAME}" \
+            --archive-base-url "${ARTIFACT_BASE_URL}/runtime-assets/"
+
+          shasum -a 256 "${MANIFEST_PATH}" | awk '{print $1}' > "${SHA_PATH}"
+          cat "${SHA_PATH}"
+
+          ossutil cp -f "${MANIFEST_PATH}" \
+            "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/runtime-assets/${MANIFEST_NAME}"
+          ossutil cp -f "${SHA_PATH}" \
+            "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/runtime-assets/$(basename "${SHA_PATH}")"
+          for archive in "${RUNTIME_ASSETS_DIR}"/*.tar.gz; do
+            ossutil cp -f "${archive}" \
+              "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/runtime-assets/$(basename "${archive}")"
+          done
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -158,6 +189,9 @@ jobs:
             src-tauri/target/release/bundle/macos/*.app.tar.gz
             src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
             src-tauri/target/release/bundle/latest.json
+            src-tauri/target/release/runtime-assets/*.json
+            src-tauri/target/release/runtime-assets/*.sha256
+            src-tauri/target/release/runtime-assets/*.tar.gz
           generate_release_notes: true
           draft: false
         env:

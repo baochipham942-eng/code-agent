@@ -43,10 +43,12 @@ vi.mock('../../../../src/main/model/modelRouter', () => ({
   },
 }));
 
-vi.mock('sharp', () => ({
-  default: () => {
-    throw new Error('sharp not available in unit test');
-  },
+vi.mock('../../../../src/main/runtime/sharpRuntime', () => ({
+  loadSharp: () => ({
+    ok: false,
+    error: 'sharp not available in unit test',
+    missingPackage: true,
+  }),
 }));
 
 vi.mock('../../../../src/main/services/infra/logger', () => ({

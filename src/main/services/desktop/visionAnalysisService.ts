@@ -1,12 +1,12 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import sharp from 'sharp';
 import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
 import { ZHIPU_VISION_MODEL, VISION_IMAGE } from '../../../shared/constants';
 import { ModelRouter } from '../../model/modelRouter';
 import type { ModelConfig, ModelProvider } from '../../../shared/contract/model';
+import { loadSharp } from '../../runtime/sharpRuntime';
 
 const logger = createLogger('VisionAnalysisService');
 
@@ -76,6 +76,12 @@ export async function prepareImageForVision(
   scaleFactor: number,
 ): Promise<{ base64: string; dims: VisionImageDims; tempPath: string | null }> {
   try {
+    const sharpRuntime = loadSharp();
+    if (!sharpRuntime.ok || !sharpRuntime.sharp) {
+      throw new Error(sharpRuntime.error ?? 'Sharp image runtime is unavailable.');
+    }
+    const sharp = sharpRuntime.sharp;
+
     const meta = await sharp(imagePath).metadata();
     const physW = meta.width ?? null;
     const physH = meta.height ?? null;

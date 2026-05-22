@@ -10,7 +10,8 @@ import { spawn, execFileSync, type ChildProcess } from 'child_process';
 import { createLogger } from '../infra/logger';
 import { getNativeDesktopService } from './nativeDesktopService';
 import { getUserConfigDir } from '../../config/configPaths';
-import type { InferenceSession, Tensor as OrtTensor, TensorConstructor } from 'onnxruntime-node';
+import { isOrtTensor, loadVadRuntime, type OrtRuntimeModule } from './audioVadRuntime';
+import type { InferenceSession, Tensor as OrtTensor } from 'onnxruntime-node';
 
 const logger = createLogger('DesktopAudioCapture');
 
@@ -39,13 +40,6 @@ const POWER_CHECK_INTERVAL_MS = 60_000;
 // Capture mode: microphone (default) or system-audio (ScreenCaptureKit, captures headphone output)
 type CaptureMode = 'microphone' | 'system-audio';
 
-interface OrtRuntimeModule {
-  InferenceSession: {
-    create(modelPath: string): Promise<InferenceSession>;
-  };
-  Tensor: TensorConstructor;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -65,11 +59,6 @@ function readBooleanField(record: Record<string, unknown>, key: string): boolean
   return typeof value === 'boolean' ? value : undefined;
 }
 
-function readRecordField(record: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
-  const value = record[key];
-  return isRecord(value) ? value : undefined;
-}
-
 function parseJsonRecord(raw: string): Record<string, unknown> {
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -86,23 +75,6 @@ function parseJsonArray(raw: string): unknown[] {
   } catch {
     return [];
   }
-}
-
-function isOrtRuntimeModule(value: unknown): value is OrtRuntimeModule {
-  if (!isRecord(value)) return false;
-  const inferenceSession = readRecordField(value, 'InferenceSession');
-  return !!inferenceSession
-    && typeof inferenceSession.create === 'function'
-    && typeof value.Tensor === 'function';
-}
-
-function loadOrtRuntimeModule(modulePath?: string): OrtRuntimeModule | null {
-  const loaded: unknown = modulePath ? require(modulePath) : require('onnxruntime-node');
-  return isOrtRuntimeModule(loaded) ? loaded : null;
-}
-
-function isOrtTensor(value: unknown): value is OrtTensor {
-  return isRecord(value) && 'data' in value && 'dims' in value && 'type' in value;
 }
 
 // ffmpeg paths — 使用 AVFoundation 采集（sox CoreAudio 在 Tauri 子进程中无法获取 TCC 权限）
@@ -367,43 +339,22 @@ class VadProcessor {
 
   async init(): Promise<boolean> {
     try {
-      // Tauri 打包后 node_modules 在 Resources/_up_/node_modules/
-      // require() 默认解析不到，需手动指定路径
-      const tauriNodeModules = path.join(__dirname, '..', '..', 'node_modules');
-      const cwdNodeModules = path.join(process.cwd(), 'node_modules');
-      try {
-        this.ort = loadOrtRuntimeModule();
-      } catch {
-        // 回退到 Tauri Resources 路径
-        for (const nm of [tauriNodeModules, cwdNodeModules]) {
-          const ortPath = path.join(nm, 'onnxruntime-node');
-          if (fs.existsSync(ortPath)) {
-            this.ort = loadOrtRuntimeModule(ortPath);
-            break;
-          }
-        }
-      }
-      if (!this.ort) throw new Error('onnxruntime-node not found');
-
-      // 查找 silero_vad_v5.onnx 模型
-      let modelPath = '';
-      try {
-        modelPath = path.join(path.dirname(require.resolve('avr-vad')), 'silero_vad_v5.onnx');
-      } catch {
-        // require.resolve 失败，手动搜索
-        for (const nm of [tauriNodeModules, cwdNodeModules]) {
-          const candidate = path.join(nm, 'avr-vad', 'dist', 'silero_vad_v5.onnx');
-          if (fs.existsSync(candidate)) {
-            modelPath = candidate;
-            break;
-          }
-        }
-      }
-      if (!modelPath || !fs.existsSync(modelPath)) {
-        logger.warn('[音频采集] Silero VAD v5 模型文件不存在', { modelPath, tauriNodeModules });
+      const runtime = loadVadRuntime(__dirname);
+      if (!runtime.ok && runtime.reason === 'missing-runtime') {
+        logger.warn('[音频采集] VAD 运行组件未安装，等待本地能力组件准备完成', {
+          module: 'onnxruntime-node',
+        });
         return false;
       }
-      this.session = await this.ort.InferenceSession.create(modelPath);
+      if (!runtime.ok) {
+        logger.warn('[音频采集] Silero VAD v5 模型文件不存在', {
+          modelPath: runtime.modelPath,
+          tauriNodeModules: runtime.tauriNodeModules,
+        });
+        return false;
+      }
+      this.ort = runtime.ort;
+      this.session = await this.ort.InferenceSession.create(runtime.modelPath);
       // Initialize hidden state: [2, 1, 128] zeros
       this.state = new this.ort.Tensor('float32', new Float32Array(2 * 1 * 128), [2, 1, 128]);
       this.initialized = true;
@@ -1183,14 +1134,12 @@ export async function startDesktopAudioCapture(fifoPath?: string, mode: CaptureM
 
   // Start capture — prefer FIFO (Rust TCC) over direct spawn
   capturing = true;
-  let started = false;
-  if (fifoPath && fs.existsSync(fifoPath)) {
-    started = startFifoCapture(fifoPath);
-    logger.info('[音频采集] 使用 Tauri FIFO 模式', { fifoPath });
-  } else {
-    started = startRecCapture(mode);
-    logger.info('[音频采集] 使用直接 spawn 模式', { mode });
-  }
+  const started = fifoPath && fs.existsSync(fifoPath)
+    ? startFifoCapture(fifoPath)
+    : startRecCapture(mode);
+  logger.info(fifoPath && fs.existsSync(fifoPath)
+    ? '[音频采集] 使用 Tauri FIFO 模式'
+    : '[音频采集] 使用直接 spawn 模式', fifoPath && fs.existsSync(fifoPath) ? { fifoPath } : { mode });
 
   if (!started) {
     capturing = false;

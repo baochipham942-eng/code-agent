@@ -21,7 +21,7 @@ vi.mock('fs', () => ({
   readFileSync: (...args: unknown[]) => readFileSyncMock(...args),
 }));
 
-const { sharpInstanceMock, toFileMock, metadataMock, compositeMock } = vi.hoisted(() => {
+const { sharpFactoryMock, sharpInstanceMock, toFileMock, metadataMock, compositeMock } = vi.hoisted(() => {
   const toFileMock = vi.fn().mockResolvedValue({ size: 2048 });
   const metadataMock = vi.fn().mockResolvedValue({ width: 1024, height: 768 });
   const compositeMock = vi.fn();
@@ -31,11 +31,17 @@ const { sharpInstanceMock, toFileMock, metadataMock, compositeMock } = vi.hoiste
     toFile: toFileMock,
   };
   compositeMock.mockReturnValue(sharpInstance);
-  return { sharpInstanceMock: sharpInstance, toFileMock, metadataMock, compositeMock };
+  return {
+    sharpFactoryMock: vi.fn(() => sharpInstance),
+    sharpInstanceMock: sharpInstance,
+    toFileMock,
+    metadataMock,
+    compositeMock,
+  };
 });
 
-vi.mock('sharp', () => ({
-  default: vi.fn(() => sharpInstanceMock),
+vi.mock('../../../../../src/main/runtime/sharpRuntime', () => ({
+  requireSharp: () => sharpFactoryMock,
 }));
 
 const { getConfigServiceMock } = vi.hoisted(() => ({

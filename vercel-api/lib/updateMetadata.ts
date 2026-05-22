@@ -16,7 +16,13 @@ export interface UpdateCheckResponse {
   fileSize?: number;
   publishedAt?: string;
   channel?: string;
+  runtimeAssets?: RuntimeAssetsUpdateMetadata;
   source: 'github_releases';
+}
+
+export interface RuntimeAssetsUpdateMetadata {
+  manifestUrl: string;
+  manifestSha256: string;
 }
 
 interface GitHubReleaseAsset {
@@ -100,6 +106,67 @@ function selectAsset(assets: GitHubReleaseAsset[] | undefined, platform: string)
   return null;
 }
 
+function runtimeManifestScore(assetName: string, platform: string): number {
+  const name = assetName.toLowerCase();
+  const normalizedPlatform = platform.toLowerCase();
+  const platformAliases = normalizedPlatform === 'darwin'
+    ? ['darwin-arm64', 'darwin']
+    : [normalizedPlatform];
+
+  for (let index = 0; index < platformAliases.length; index += 1) {
+    if (name === `runtime-assets-manifest-${platformAliases[index]}.json`) {
+      return index;
+    }
+  }
+  if (name === 'runtime-assets-manifest.json') return 50;
+  return Number.POSITIVE_INFINITY;
+}
+
+function selectRuntimeManifestAsset(
+  assets: GitHubReleaseAsset[] | undefined,
+  platform: string,
+): GitHubReleaseAsset | null {
+  return [...(assets ?? [])]
+    .filter((asset) => asset.name && asset.browser_download_url)
+    .map((asset) => ({ asset, score: runtimeManifestScore(asset.name!, platform) }))
+    .filter((entry) => Number.isFinite(entry.score))
+    .sort((left, right) => left.score - right.score || left.asset.name!.localeCompare(right.asset.name!))
+    .at(0)?.asset ?? null;
+}
+
+function selectRuntimeManifestShaAsset(
+  assets: GitHubReleaseAsset[] | undefined,
+  manifestName: string,
+): GitHubReleaseAsset | null {
+  const names = [
+    `${manifestName}.sha256`,
+    manifestName.replace(/\.json$/i, '.sha256'),
+    'runtime-assets-manifest.sha256',
+  ].map((name) => name.toLowerCase());
+
+  return (assets ?? []).find((asset) => {
+    const name = asset.name?.toLowerCase();
+    return Boolean(name && asset.browser_download_url && names.includes(name));
+  }) ?? null;
+}
+
+function extractSha256(value: string): string | undefined {
+  return normalizeSha256(value.match(/[a-f0-9]{64}/i)?.[0]);
+}
+
+async function fetchText(url: string): Promise<string> {
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'text/plain, application/octet-stream, */*',
+      'User-Agent': 'Agent-Neo-Update-Control-Plane',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Runtime assets sha sidecar returned HTTP ${response.status}`);
+  }
+  return await response.text();
+}
+
 export function buildUpdateResponseFromRelease(
   release: GitHubReleaseResponse,
   options: {
@@ -112,6 +179,7 @@ export function buildUpdateResponseFromRelease(
     forceUpdate?: boolean;
     downloadUrl?: string;
     sha256?: string;
+    runtimeAssets?: RuntimeAssetsUpdateMetadata;
   },
 ): UpdateCheckResponse {
   const releaseVersion = normalizeVersion(release.tag_name);
@@ -158,6 +226,7 @@ export function buildUpdateResponseFromRelease(
     ...(asset?.size ? { fileSize: asset.size } : {}),
     ...(release.published_at ? { publishedAt: release.published_at } : {}),
     ...(options.channel ? { channel: options.channel } : {}),
+    ...(options.runtimeAssets ? { runtimeAssets: options.runtimeAssets } : {}),
     source: 'github_releases',
   };
 }
@@ -206,6 +275,45 @@ export function releasePolicyFromEnv(
   };
 }
 
+export function runtimeAssetsMetadataFromEnv(
+  channel: string,
+  env: NodeJS.ProcessEnv = process.env,
+): RuntimeAssetsUpdateMetadata | undefined {
+  const manifestUrl = readChannelEnv(env, 'RUNTIME_ASSETS_MANIFEST_URL', channel);
+  const manifestSha256 = normalizeSha256(readChannelEnv(env, 'RUNTIME_ASSETS_MANIFEST_SHA256', channel));
+  if (!manifestUrl || !manifestSha256) {
+    return undefined;
+  }
+  return { manifestUrl, manifestSha256 };
+}
+
+export async function runtimeAssetsMetadataFromRelease(
+  release: GitHubReleaseResponse,
+  platform: string,
+  readText: (url: string) => Promise<string> = fetchText,
+): Promise<RuntimeAssetsUpdateMetadata | undefined> {
+  const manifestAsset = selectRuntimeManifestAsset(release.assets, platform);
+  if (!manifestAsset?.name || !manifestAsset.browser_download_url) {
+    return undefined;
+  }
+
+  const shaAsset = selectRuntimeManifestShaAsset(release.assets, manifestAsset.name);
+  if (!shaAsset?.browser_download_url) {
+    return undefined;
+  }
+
+  const shaText = await readText(shaAsset.browser_download_url);
+  const manifestSha256 = extractSha256(shaText);
+  if (!manifestSha256) {
+    return undefined;
+  }
+
+  return {
+    manifestUrl: manifestAsset.browser_download_url,
+    manifestSha256,
+  };
+}
+
 async function fetchLatestRelease(repo: string): Promise<GitHubReleaseResponse> {
   const response = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
     headers: {
@@ -230,11 +338,20 @@ async function handleCheck(req: ControlPlaneRequestLike, res: ControlPlaneRespon
   const channel = normalizeChannel(firstQueryValue(req.query?.channel) ?? process.env.UPDATE_RELEASE_CHANNEL);
   const repo = process.env.UPDATE_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || 'baochipham942-eng/code-agent';
   const release = await fetchLatestRelease(repo);
+  let runtimeAssets = runtimeAssetsMetadataFromEnv(channel);
+  if (!runtimeAssets) {
+    try {
+      runtimeAssets = await runtimeAssetsMetadataFromRelease(release, platform);
+    } catch (error) {
+      console.warn('Failed to derive runtime assets metadata from release assets', error);
+    }
+  }
   sendJson(res, 200, buildUpdateResponseFromRelease(release, {
     repo,
     currentVersion,
     platform,
     ...releasePolicyFromEnv(channel),
+    runtimeAssets,
   }));
 }
 

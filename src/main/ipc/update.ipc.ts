@@ -5,8 +5,9 @@
 import type { IpcMain } from '../platform';
 import { app } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { UpdateInfo } from '../../shared/contract';
+import type { PrepareRuntimeAssetsResult, RuntimeAssetsStatus, UpdateInfo } from '../../shared/contract';
 import { getUpdateService, isUpdateServiceInitialized } from '../services/cloud/updateService';
+import { getRuntimeAssetsStatus } from '../runtime/runtimeAssetStatus';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -45,6 +46,15 @@ async function handleStartAutoCheck(): Promise<void> {
 
 async function handleStopAutoCheck(): Promise<void> {
   if (isUpdateServiceInitialized()) getUpdateService().stopAutoCheck();
+}
+
+async function handleRuntimeAssetsStatus(): Promise<RuntimeAssetsStatus> {
+  return getRuntimeAssetsStatus();
+}
+
+async function handlePrepareRuntimeAssets(): Promise<PrepareRuntimeAssetsResult> {
+  if (!isUpdateServiceInitialized()) throw new Error('Update service not initialized');
+  return getUpdateService().prepareRuntimeAssets();
 }
 
 // ----------------------------------------------------------------------------
@@ -87,6 +97,12 @@ export function registerUpdateHandlers(ipcMain: IpcMain): void {
         case 'stopAutoCheck':
           await handleStopAutoCheck();
           data = null;
+          break;
+        case 'runtimeAssetsStatus':
+          data = await handleRuntimeAssetsStatus();
+          break;
+        case 'prepareRuntimeAssets':
+          data = await handlePrepareRuntimeAssets();
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

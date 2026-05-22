@@ -14,7 +14,6 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import sharp from 'sharp';
 import type {
   ToolHandler,
   ToolModule,
@@ -35,6 +34,7 @@ import {
   readRecordField,
   readStringField,
 } from '../typedResponseGuards';
+import { requireSharp } from '../../../runtime/sharpRuntime';
 
 const CONFIG = {
   ZHIPU_MODEL: ZHIPU_VISION_MODEL,
@@ -290,6 +290,7 @@ async function drawAnnotations(
   options: { showLabels?: boolean; strokeColor?: string; strokeWidth?: number },
   signal: AbortSignal,
 ): Promise<void> {
+  const sharp = requireSharp();
   const image = sharp(imagePath);
   const metadata = await withAbort(image.metadata(), signal);
   const imgWidth = metadata.width || 800;

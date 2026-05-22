@@ -21,7 +21,7 @@ vi.mock('fs', () => ({
   statSync: (...args: unknown[]) => statSyncMock(...args),
 }));
 
-const { sharpInstanceMock, toFileMock, metadataMock } = vi.hoisted(() => {
+const { sharpFactoryMock, sharpInstanceMock, toFileMock, metadataMock } = vi.hoisted(() => {
   const toFileMock = vi.fn().mockResolvedValue({ size: 1024 });
   const metadataMock = vi.fn().mockResolvedValue({ width: 800, height: 600 });
   const sharpInstance = {
@@ -34,18 +34,20 @@ const { sharpInstanceMock, toFileMock, metadataMock } = vi.hoisted(() => {
     gif: vi.fn().mockReturnThis(),
     toFile: toFileMock,
   };
+  const sharpFactoryMock = vi.fn(() => sharpInstance);
+  Object.assign(sharpFactoryMock, { kernel: { lanczos3: 'lanczos3' } });
   return {
+    sharpFactoryMock,
     sharpInstanceMock: sharpInstance,
     toFileMock,
     metadataMock,
   };
 });
 
-vi.mock('sharp', () => {
-  const factory = vi.fn(() => sharpInstanceMock);
-  // sharp.kernel.lanczos3
-  (factory as unknown as { kernel: { lanczos3: string } }).kernel = { lanczos3: 'lanczos3' };
-  return { default: factory };
+vi.mock('../../../../../src/main/runtime/sharpRuntime', () => {
+  return {
+    requireSharp: () => sharpFactoryMock,
+  };
 });
 
 import { imageProcessModule, executeImageProcess } from '../../../../../src/main/plugins/builtin/imageProcess/imageProcess';

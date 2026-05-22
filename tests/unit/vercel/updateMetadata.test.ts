@@ -3,6 +3,8 @@ import {
   buildUpdateResponseFromRelease,
   compareVersions,
   handleUpdateRequest,
+  runtimeAssetsMetadataFromEnv,
+  runtimeAssetsMetadataFromRelease,
 } from '../../../vercel-api/lib/updateMetadata';
 import type { ControlPlaneResponseLike } from '../../../vercel-api/lib/controlPlaneEnvelope';
 
@@ -46,6 +48,10 @@ describe('vercel update metadata', () => {
     delete process.env.UPDATE_DOWNLOAD_URL_BETA;
     delete process.env.UPDATE_SHA256;
     delete process.env.UPDATE_SHA256_BETA;
+    delete process.env.RUNTIME_ASSETS_MANIFEST_URL;
+    delete process.env.RUNTIME_ASSETS_MANIFEST_URL_BETA;
+    delete process.env.RUNTIME_ASSETS_MANIFEST_SHA256;
+    delete process.env.RUNTIME_ASSETS_MANIFEST_SHA256_BETA;
   });
 
   it('compares dotted versions numerically', () => {
@@ -113,6 +119,161 @@ describe('vercel update metadata', () => {
     });
   });
 
+  it('adds runtime assets metadata when configured', () => {
+    const response = buildUpdateResponseFromRelease({
+      tag_name: 'v0.16.76',
+      html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.76',
+      assets: [],
+    }, {
+      repo: 'acme/code-agent',
+      currentVersion: '0.16.76',
+      platform: 'darwin',
+      runtimeAssets: {
+        manifestUrl: 'https://cdn.example.com/runtime-assets/manifest.json',
+        manifestSha256: 'c'.repeat(64),
+      },
+    });
+
+    expect(response.runtimeAssets).toEqual({
+      manifestUrl: 'https://cdn.example.com/runtime-assets/manifest.json',
+      manifestSha256: 'c'.repeat(64),
+    });
+  });
+
+  it('reads channel-specific runtime assets metadata from env', () => {
+    process.env.RUNTIME_ASSETS_MANIFEST_URL = 'https://cdn.example.com/stable/manifest.json';
+    process.env.RUNTIME_ASSETS_MANIFEST_SHA256 = 'A'.repeat(64);
+    process.env.RUNTIME_ASSETS_MANIFEST_URL_BETA = 'https://cdn.example.com/beta/manifest.json';
+    process.env.RUNTIME_ASSETS_MANIFEST_SHA256_BETA = 'B'.repeat(64);
+
+    expect(runtimeAssetsMetadataFromEnv('stable')).toEqual({
+      manifestUrl: 'https://cdn.example.com/stable/manifest.json',
+      manifestSha256: 'a'.repeat(64),
+    });
+    expect(runtimeAssetsMetadataFromEnv('beta')).toEqual({
+      manifestUrl: 'https://cdn.example.com/beta/manifest.json',
+      manifestSha256: 'b'.repeat(64),
+    });
+  });
+
+  it('derives runtime assets metadata from GitHub release assets and sha sidecar', async () => {
+    const metadata = await runtimeAssetsMetadataFromRelease({
+      tag_name: 'v0.16.79',
+      assets: [
+        {
+          name: 'runtime-assets-manifest-darwin-arm64.json',
+          browser_download_url: 'https://github.com/acme/code-agent/releases/download/v0.16.79/runtime-assets-manifest-darwin-arm64.json',
+        },
+        {
+          name: 'runtime-assets-manifest-darwin-arm64.sha256',
+          browser_download_url: 'https://github.com/acme/code-agent/releases/download/v0.16.79/runtime-assets-manifest-darwin-arm64.sha256',
+        },
+      ],
+    }, 'darwin', async (url) => {
+      expect(url).toBe('https://github.com/acme/code-agent/releases/download/v0.16.79/runtime-assets-manifest-darwin-arm64.sha256');
+      return `${'D'.repeat(64)}  runtime-assets-manifest-darwin-arm64.json\n`;
+    });
+
+    expect(metadata).toEqual({
+      manifestUrl: 'https://github.com/acme/code-agent/releases/download/v0.16.79/runtime-assets-manifest-darwin-arm64.json',
+      manifestSha256: 'd'.repeat(64),
+    });
+  });
+
+  it('adds runtime assets metadata from release assets during update checks', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tag_name: 'v0.16.79',
+          html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.79',
+          assets: [
+            {
+              name: 'runtime-assets-manifest-darwin-arm64.json',
+              browser_download_url: 'https://github.com/acme/code-agent/releases/download/v0.16.79/runtime-assets-manifest-darwin-arm64.json',
+            },
+            {
+              name: 'runtime-assets-manifest-darwin-arm64.sha256',
+              browser_download_url: 'https://github.com/acme/code-agent/releases/download/v0.16.79/runtime-assets-manifest-darwin-arm64.sha256',
+            },
+          ],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => 'e'.repeat(64),
+      } as Response);
+    process.env.UPDATE_GITHUB_REPOSITORY = 'acme/code-agent';
+    const response = makeResponse();
+
+    await handleUpdateRequest({
+      method: 'GET',
+      query: {
+        action: 'check',
+        version: '0.16.79',
+        platform: 'darwin',
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      runtimeAssets: {
+        manifestUrl: 'https://github.com/acme/code-agent/releases/download/v0.16.79/runtime-assets-manifest-darwin-arm64.json',
+        manifestSha256: 'e'.repeat(64),
+      },
+    });
+  });
+
+  it('does not fail update checks when runtime assets sidecar cannot be fetched', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tag_name: 'v0.16.79',
+          html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.79',
+          assets: [
+            {
+              name: 'runtime-assets-manifest-darwin-arm64.json',
+              browser_download_url: 'https://github.com/acme/code-agent/releases/download/v0.16.79/runtime-assets-manifest-darwin-arm64.json',
+            },
+            {
+              name: 'runtime-assets-manifest-darwin-arm64.sha256',
+              browser_download_url: 'https://github.com/acme/code-agent/releases/download/v0.16.79/runtime-assets-manifest-darwin-arm64.sha256',
+            },
+          ],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        text: async () => '',
+      } as Response);
+    process.env.UPDATE_GITHUB_REPOSITORY = 'acme/code-agent';
+    const response = makeResponse();
+
+    await handleUpdateRequest({
+      method: 'GET',
+      query: {
+        action: 'check',
+        version: '0.16.78',
+        platform: 'darwin',
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      hasUpdate: true,
+      latestVersion: '0.16.79',
+    });
+    expect((response.body as { runtimeAssets?: unknown }).runtimeAssets).toBeUndefined();
+  });
+
   it('returns health without calling GitHub', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const response = makeResponse();
@@ -175,6 +336,8 @@ describe('vercel update metadata', () => {
     process.env.UPDATE_MIN_VERSION_BETA = '0.16.77';
     process.env.UPDATE_FORCE_UPDATE_BETA = 'true';
     process.env.UPDATE_SHA256_BETA = 'B'.repeat(64);
+    process.env.RUNTIME_ASSETS_MANIFEST_URL_BETA = 'https://cdn.example.com/runtime-assets/manifest.json';
+    process.env.RUNTIME_ASSETS_MANIFEST_SHA256_BETA = 'C'.repeat(64);
     const response = makeResponse();
 
     await handleUpdateRequest({
@@ -196,6 +359,10 @@ describe('vercel update metadata', () => {
       minVersion: '0.16.77',
       sha256: 'b'.repeat(64),
       channel: 'beta',
+      runtimeAssets: {
+        manifestUrl: 'https://cdn.example.com/runtime-assets/manifest.json',
+        manifestSha256: 'c'.repeat(64),
+      },
     });
   });
 

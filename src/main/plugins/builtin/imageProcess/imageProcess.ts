@@ -15,7 +15,6 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import sharp from 'sharp';
 import type {
   ToolHandler,
   ToolModule,
@@ -27,6 +26,7 @@ import type {
 import { formatFileSize } from '../../../tools/utils/fileSize';
 import { createFileArtifact } from '../../../tools/artifacts/artifactMeta';
 import { imageProcessSchema as schema } from './imageProcess.schema';
+import { requireSharp } from '../../../runtime/sharpRuntime';
 
 const SUPPORTED_FORMATS = ['png', 'jpg', 'jpeg', 'webp', 'avif', 'gif', 'tiff'];
 
@@ -115,6 +115,7 @@ export async function executeImageProcess(
       };
     }
 
+    const sharp = requireSharp();
     const metadata = await withAbort(sharp(absInputPath).metadata(), ctx.abortSignal);
     const originalSize = fs.statSync(absInputPath).size;
 

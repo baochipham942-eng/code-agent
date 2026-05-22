@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import sharp from 'sharp';
 import { sanitizeLocalActivityText } from './localActivityPrivacyFirewall';
+import { requireSharp } from '../../runtime/sharpRuntime';
 
 export interface ScreenshotRedactionRegion {
   x: number;
@@ -76,6 +76,7 @@ export async function redactScreenshotFile(
     throw new Error(`Screenshot not found: ${imagePath}`);
   }
 
+  const sharp = requireSharp();
   const metadata = await sharp(imagePath).metadata();
   const imageWidth = metadata.width;
   const imageHeight = metadata.height;

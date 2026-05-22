@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertCircle,
+  AlertTriangle,
   Archive,
   ArrowUpRight,
   Bug,
@@ -28,6 +29,12 @@ import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayou
 import { useAppStore } from '../../../../stores/appStore';
 import { useAuthStore } from '../../../../stores/authStore';
 import ipcService from '../../../../services/ipcService';
+import type { PersistenceHealth } from '@shared/contract';
+import {
+  fetchWebPersistenceHealth,
+  getPersistenceWarningText,
+  shouldShowPersistenceWarning,
+} from '../../../../services/persistenceHealth';
 
 const logger = createLogger('DataSettings');
 
@@ -235,12 +242,17 @@ export const DataSettings: React.FC = () => {
     storageBytes: null,
     lastEventAt: null,
   });
+  const [persistenceHealth, setPersistenceHealth] = useState<PersistenceHealth | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isClearing, setIsClearing] = useState(false);
   const [isClearingSnapshots, setIsClearingSnapshots] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const loadStats = useCallback(async () => {
+    fetchWebPersistenceHealth()
+      .then(setPersistenceHealth)
+      .catch(() => setPersistenceHealth(null));
+
     try {
       const [dataStats, snapStats] = await Promise.all([
         ipcService.invokeDomain<DataStats>(IPC_DOMAINS.DATA, 'getStats'),
@@ -299,6 +311,7 @@ export const DataSettings: React.FC = () => {
     () => buildDataManagementSummary(stats, snapshotStats),
     [snapshotStats, stats],
   );
+  const persistenceWarningText = getPersistenceWarningText(persistenceHealth);
   const summaryCards = useMemo(() => {
     const cards = [
       ['会话', summary.sessionCount.toLocaleString(), `${summary.messageCount.toLocaleString()} 条消息`],
@@ -366,6 +379,19 @@ export const DataSettings: React.FC = () => {
       description="查看本机数据、运行缓存和调试快照。会话、消息和知识库默认保留。"
     >
       <WebModeBanner />
+
+      {shouldShowPersistenceWarning(persistenceHealth) && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <div className="min-w-0">
+            <div className="font-medium">历史持久化不可用</div>
+            <div className="mt-0.5 text-xs text-amber-200/80">
+              {persistenceWarningText}
+              {persistenceHealth.reason ? ` 原因：${persistenceHealth.reason}` : ''}
+            </div>
+          </div>
+        </div>
+      )}
 
       {message && (
         <div className={`flex items-center gap-2 rounded-lg p-3 ${

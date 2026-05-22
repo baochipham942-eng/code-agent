@@ -116,6 +116,15 @@ function resolveDirIfUsable(dir: string | undefined): string | null {
   }
 }
 
+function resolveCodeAgentDataDir(): string {
+  const configured = process.env.CODE_AGENT_DATA_DIR?.trim();
+  return configured ? path.resolve(configured) : path.join(os.homedir(), '.code-agent');
+}
+
+function uniquePathList(paths: string[]): string[] {
+  return [...new Set(paths)];
+}
+
 function getWebBootstrapWorkingDirectory(configService?: ConfigServiceForBootstrap): string {
   const configured = process.env.CODE_AGENT_WORKING_DIR?.trim();
   if (configured) return configured;
@@ -335,6 +344,7 @@ import { broadcastSSE } from './helpers/sse';
 import { formatError } from './helpers/utils';
 import {
   dbAvailable,
+  getPersistenceHealth,
   setDbAvailable,
 } from './helpers/sessionCache';
 import { handleTempUpload, handleScreenshot, cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
@@ -393,16 +403,19 @@ async function initializeServices(): Promise<void> {
   process.env.CODE_AGENT_WEB_MODE = 'true';
   loadShellEnvironment();
 
+  const initialDataDir = resolveCodeAgentDataDir();
+
   // 加载 .env 文件（确保 API Key、HTTPS_PROXY 等环境变量可用）
-  // 优先级：~/.code-agent/.env（用户态，打包态主路径）→ 脚本所在目录 → 上级目录（开发态）
+  // 优先级：显式数据目录 .env → ~/.code-agent/.env（用户态，打包态主路径）→ 脚本所在目录 → 上级目录（开发态）
   // 不再搜 process.cwd()：launchd 启的 app cwd 是 /，永远 miss，且会让 dev/prod 行为发散
   try {
     const dotenv = await import("dotenv");
-    const candidates = [
+    const candidates = uniquePathList([
+      path.join(initialDataDir, ".env"),
       path.join(os.homedir(), ".code-agent", ".env"),
       path.join(__dirname, ".env"),
       path.join(__dirname, "..", ".env"),
-    ];
+    ]);
     for (const envPath of candidates) {
       if (fs.existsSync(envPath)) {
         dotenv.config({ path: envPath });
@@ -415,7 +428,7 @@ async function initializeServices(): Promise<void> {
   }
 
   // 设置数据目录（electronMock 的 app.getPath('userData') 也读这个变量）
-  const dataDir = path.join(os.homedir(), '.code-agent');
+  const dataDir = resolveCodeAgentDataDir();
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }
@@ -483,6 +496,7 @@ async function initializeServices(): Promise<void> {
     setDbAvailable(true);
     logger.info('Database initialized');
   } catch (error) {
+    setDbAvailable(false, error);
     if (error instanceof Error) {
       logger.warn('Database not available (using in-memory sessions):', error.message);
       logger.warn('Database init stack:', error.stack);
@@ -870,7 +884,7 @@ function createApp(): express.Express {
   app.use(express.json({ limit: '50mb', strict: false }));
 
   // ── Health & SSE (extracted to routes/health.ts) ────────────────────
-  app.use('/api', createHealthRouter({ handlers }));
+  app.use('/api', createHealthRouter({ handlers, getPersistenceHealth }));
 
   // ── File upload ─────────────────────────────────────────────────────
   app.post('/api/upload/temp', async (req: Request, res: Response) => {

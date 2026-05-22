@@ -2,9 +2,11 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { HandlerFn } from '../electronMock';
 import { sseClients, replayFromLastEventId } from '../helpers/sse';
+import type { PersistenceHealth, WebHealthResponse } from '../../shared/contract';
 
 interface HealthDeps {
   handlers: Map<string, HandlerFn>;
+  getPersistenceHealth: () => PersistenceHealth;
 }
 
 export function createHealthRouter(deps: HealthDeps): Router {
@@ -13,7 +15,7 @@ export function createHealthRouter(deps: HealthDeps): Router {
 
   // ── Health ──────────────────────────────────────────────────────────
   router.get('/health', (_req: Request, res: Response) => {
-    res.json({
+    const payload: WebHealthResponse = {
       status: 'ok',
       mode: 'web-standalone',
       timestamp: Date.now(),
@@ -21,7 +23,9 @@ export function createHealthRouter(deps: HealthDeps): Router {
       serverRoot: process.cwd(),
       pid: process.pid,
       tauriBootToken: process.env.CODE_AGENT_TAURI_BOOT_TOKEN || null,
-    });
+      persistence: deps.getPersistenceHealth(),
+    };
+    res.json(payload);
   });
 
   // ── SSE Events ─────────────────────────────────────────────────────

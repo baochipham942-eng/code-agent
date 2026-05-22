@@ -21,6 +21,7 @@ import { SessionDuration } from './SessionDuration';
 import { NetworkStatus } from './NetworkStatus';
 import { GitInfo } from './GitInfo';
 import { SoulIndicator } from './SoulIndicator';
+import { PersistenceStatus } from './PersistenceStatus';
 import { TokenWarning } from '../TokenWarning';
 
 /**
@@ -87,6 +88,7 @@ export function StatusBar() {
 
       {/* 右侧区域：时长、网络、Git */}
       <div className="flex items-center gap-3">
+        <PersistenceStatus />
         <SessionDuration startTime={sessionStartTime} />
         <Separator />
         <NetworkStatus status={networkStatus} />
@@ -119,3 +121,4 @@ export { SessionDuration } from './SessionDuration';
 export { NetworkStatus } from './NetworkStatus';
 export { GitInfo } from './GitInfo';
 export { SoulIndicator } from './SoulIndicator';
+export { PersistenceStatus } from './PersistenceStatus';

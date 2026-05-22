@@ -7,7 +7,7 @@
 
 // ── 类型 ──
 
-import type { Message, MessageAttachment } from '../../shared/contract';
+import type { Message, MessageAttachment, PersistenceHealth } from '../../shared/contract';
 
 export interface CachedToolCall {
   id: string;
@@ -56,9 +56,47 @@ export const inMemorySessions = new Map<string, InMemorySession>();
 /** DB 是否可用 — 在 initializeServices 中设置 */
 export let dbAvailable = false;
 
+const PERSISTENCE_AVAILABLE_MESSAGE = '历史会持久化到本机数据库。';
+const PERSISTENCE_UNAVAILABLE_MESSAGE = '历史持久化不可用，当前只会话内有效。';
+
+let persistenceHealth: PersistenceHealth = {
+  status: 'unavailable',
+  mode: 'memory',
+  durable: false,
+  message: PERSISTENCE_UNAVAILABLE_MESSAGE,
+  checkedAt: Date.now(),
+};
+
+function formatPersistenceFailureReason(error: unknown): string | undefined {
+  if (!error) return undefined;
+  if (error instanceof Error) return error.message;
+  const reason = String(error);
+  return reason.length > 0 ? reason : undefined;
+}
+
 /** 设置 dbAvailable 标志（仅由 webServer 初始化逻辑调用） */
-export function setDbAvailable(value: boolean): void {
+export function setDbAvailable(value: boolean, error?: unknown): void {
   dbAvailable = value;
+  persistenceHealth = value
+    ? {
+        status: 'available',
+        mode: 'database',
+        durable: true,
+        message: PERSISTENCE_AVAILABLE_MESSAGE,
+        checkedAt: Date.now(),
+      }
+    : {
+        status: 'unavailable',
+        mode: 'memory',
+        durable: false,
+        message: PERSISTENCE_UNAVAILABLE_MESSAGE,
+        reason: formatPersistenceFailureReason(error),
+        checkedAt: Date.now(),
+      };
+}
+
+export function getPersistenceHealth(): PersistenceHealth {
+  return { ...persistenceHealth };
 }
 
 function enforceSessionCacheLimit(): void {

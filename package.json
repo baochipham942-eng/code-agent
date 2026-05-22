@@ -35,6 +35,7 @@
     "acceptance:browser-computer-app-host": "npx tsx scripts/acceptance/browser-computer-app-host-smoke.ts",
     "acceptance:agent-runtime-app-host": "npx tsx scripts/acceptance/agent-runtime-app-host-smoke.ts",
     "acceptance:agent-engine-selector": "npx tsx scripts/acceptance/agent-engine-selector-smoke.ts",
+    "acceptance:session-persistence": "npm run build:web && npx tsx scripts/acceptance/session-persistence-smoke.ts",
     "acceptance:workbench-menu-panels": "npx tsx scripts/acceptance/workbench-menu-panels-smoke.ts",
     "acceptance:browser-computer-all": "node node_modules/jiti/bin/jiti.js scripts/acceptance/browser-computer-suite.ts",
     "acceptance:native-desktop": "node node_modules/jiti/bin/jiti.js scripts/acceptance/native-desktop-smoke.ts",

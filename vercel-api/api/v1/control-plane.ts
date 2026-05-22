@@ -25,6 +25,13 @@ function resolveKind(req: ControlPlaneRequestLike): ControlPlaneArtifactKind | n
   if (raw === 'capabilities' || raw === 'capability_registry') {
     return 'capability_registry';
   }
+  if (
+    raw === 'agent_engine_models'
+    || raw === 'agent_engine_model_catalog'
+    || raw === 'engine_models'
+  ) {
+    return 'agent_engine_model_catalog';
+  }
   return null;
 }
 
@@ -33,7 +40,7 @@ export default async function handler(req: ControlPlaneRequestLike, res: Control
   if (!kind) {
     res.status(400).json({
       error: 'unsupported_artifact',
-      message: 'Supported artifacts are cloud_config, capability_registry, and prompt_registry.',
+      message: 'Supported artifacts are cloud_config, capability_registry, agent_engine_model_catalog, and prompt_registry.',
     });
     return;
   }

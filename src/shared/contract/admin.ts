@@ -67,7 +67,7 @@ export interface AdminUpdateInviteCodeInput {
 export interface AdminControlPlaneAuditEventItem {
   id: string;
   createdAt: string;
-  artifactKind: 'cloud_config' | 'capability_registry' | 'prompt_registry' | 'update_manifest';
+  artifactKind: 'cloud_config' | 'capability_registry' | 'agent_engine_model_catalog' | 'prompt_registry' | 'update_manifest';
   payloadVersion?: string;
   releaseChannel?: 'stable' | 'beta' | 'canary';
   keyId?: string;

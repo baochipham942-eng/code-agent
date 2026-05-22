@@ -8,6 +8,7 @@ const REQUIRED_PAYLOADS = [
   'cloud-config.json',
   'prompt-registry.json',
   'capability-registry.json',
+  'agent-engine-model-catalog.json',
 ];
 const ALLOWED_CHANNELS = new Set(['stable', 'beta', 'canary']);
 const ALLOWED_PROMPT_KEYS = new Set(['policyAddon', 'publicSystemAddon']);
@@ -274,6 +275,84 @@ function validateCapabilityRegistry(payload, { now }) {
   return payload;
 }
 
+function validateAgentEngineModelCatalog(payload, { version }) {
+  assertRecord(payload, 'agent-engine-model-catalog.json');
+  if (payload.version !== version) {
+    throw new ControlPlaneReleaseBundleError(
+      `agent-engine-model-catalog.json version must match --version (${version})`,
+      { code: 'agent_engine_catalog_version_mismatch' },
+    );
+  }
+  if (typeof payload.updatedAt !== 'string' || !Number.isFinite(Date.parse(payload.updatedAt))) {
+    throw new ControlPlaneReleaseBundleError('agent-engine-model-catalog.json updatedAt must be a valid date string', {
+      code: 'invalid_agent_engine_catalog_updated_at',
+    });
+  }
+  if (!Array.isArray(payload.engines)) {
+    throw new ControlPlaneReleaseBundleError('agent-engine-model-catalog.json engines must be an array', {
+      code: 'invalid_agent_engine_catalog_engines',
+    });
+  }
+
+  const seenEngines = new Set();
+  for (const [engineIndex, engine] of payload.engines.entries()) {
+    assertRecord(engine, `agent-engine-model-catalog.json engines[${engineIndex}]`);
+    if (engine.kind !== 'codex_cli' && engine.kind !== 'claude_code') {
+      throw new ControlPlaneReleaseBundleError(`Unsupported Agent Engine kind: ${engine.kind}`, {
+        code: 'unsupported_agent_engine_kind',
+      });
+    }
+    if (seenEngines.has(engine.kind)) {
+      throw new ControlPlaneReleaseBundleError(`Duplicate Agent Engine kind: ${engine.kind}`, {
+        code: 'duplicate_agent_engine_kind',
+      });
+    }
+    seenEngines.add(engine.kind);
+    if (typeof engine.defaultModel !== 'string' || !engine.defaultModel.trim()) {
+      throw new ControlPlaneReleaseBundleError(`Agent Engine ${engine.kind} defaultModel is required`, {
+        code: 'missing_agent_engine_default_model',
+      });
+    }
+    if (!Array.isArray(engine.models)) {
+      throw new ControlPlaneReleaseBundleError(`Agent Engine ${engine.kind} models must be an array`, {
+        code: 'invalid_agent_engine_models',
+      });
+    }
+    const seenModels = new Set();
+    for (const [modelIndex, model] of engine.models.entries()) {
+      assertRecord(model, `agent-engine-model-catalog.json engines[${engineIndex}].models[${modelIndex}]`);
+      if (typeof model.id !== 'string' || !model.id.trim()) {
+        throw new ControlPlaneReleaseBundleError(`Agent Engine ${engine.kind} model id is required`, {
+          code: 'missing_agent_engine_model_id',
+        });
+      }
+      if (seenModels.has(model.id)) {
+        throw new ControlPlaneReleaseBundleError(`Duplicate Agent Engine model id: ${engine.kind}/${model.id}`, {
+          code: 'duplicate_agent_engine_model',
+        });
+      }
+      seenModels.add(model.id);
+      if (typeof model.label !== 'string' || !model.label.trim()) {
+        throw new ControlPlaneReleaseBundleError(`Agent Engine ${engine.kind} model ${model.id} label is required`, {
+          code: 'missing_agent_engine_model_label',
+        });
+      }
+      if (!Array.isArray(model.capabilities)) {
+        throw new ControlPlaneReleaseBundleError(`Agent Engine ${engine.kind} model ${model.id} capabilities must be an array`, {
+          code: 'invalid_agent_engine_model_capabilities',
+        });
+      }
+    }
+    if (!seenModels.has(engine.defaultModel)) {
+      throw new ControlPlaneReleaseBundleError(`Agent Engine ${engine.kind} defaultModel is not listed in models`, {
+        code: 'agent_engine_default_model_not_listed',
+      });
+    }
+  }
+
+  return payload;
+}
+
 function validateCapabilityRegistryTrust(payload, now) {
   if (!isRecord(payload.source)) {
     throw new ControlPlaneReleaseBundleError('capability-registry.json source is required for installable MCP templates', {
@@ -337,10 +416,12 @@ function readAndValidatePayloads(sourceDir, options) {
   const cloudConfig = validateCloudConfig(readJsonFile(join(sourceDir, 'cloud-config.json')), options);
   const promptRegistry = validatePromptRegistry(readJsonFile(join(sourceDir, 'prompt-registry.json')));
   const capabilityRegistry = validateCapabilityRegistry(readJsonFile(join(sourceDir, 'capability-registry.json')), options);
+  const agentEngineModelCatalog = validateAgentEngineModelCatalog(readJsonFile(join(sourceDir, 'agent-engine-model-catalog.json')), options);
   return {
     'cloud-config.json': cloudConfig,
     'prompt-registry.json': promptRegistry,
     'capability-registry.json': capabilityRegistry,
+    'agent-engine-model-catalog.json': agentEngineModelCatalog,
   };
 }
 
@@ -382,6 +463,7 @@ function buildEnvCommands({ payloadDir, keyId, publicKeyCommands = [] }) {
     `vercel env add CONTROL_PLANE_CLOUD_CONFIG_JSON production --force --yes < ${join(payloadDir, 'cloud-config.json')}`,
     `vercel env add CONTROL_PLANE_PROMPT_REGISTRY_JSON production --force --yes < ${join(payloadDir, 'prompt-registry.json')}`,
     `vercel env add CONTROL_PLANE_CAPABILITY_REGISTRY_JSON production --force --yes < ${join(payloadDir, 'capability-registry.json')}`,
+    `vercel env add CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON production --force --yes < ${join(payloadDir, 'agent-engine-model-catalog.json')}`,
     `vercel env add CONTROL_PLANE_KEY_ID production --value ${keyId} --force --yes`,
     `vercel env add CODE_AGENT_CONTROL_PLANE_KEY_ID production --value ${keyId} --force --yes`,
     `vercel env add CONTROL_PLANE_TTL_SECONDS production --value ${DEFAULT_TTL_SECONDS} --force --yes`,

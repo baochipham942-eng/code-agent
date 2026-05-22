@@ -19,6 +19,11 @@ export const CONTROL_PLANE_ARTIFACTS = [
     path: '/api/v1/control-plane?artifact=capabilities',
     expectedKind: 'capability_registry',
   },
+  {
+    name: 'agent engine model catalog',
+    path: '/api/v1/control-plane?artifact=agent_engine_models',
+    expectedKind: 'agent_engine_model_catalog',
+  },
 ];
 
 export class ControlPlaneSmokeError extends Error {

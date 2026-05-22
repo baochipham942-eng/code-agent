@@ -90,7 +90,7 @@ verify_dmg_artifact() {
   log "step 1: verify dmg artifact"
   if [[ ! -d "$DMG_DIR" ]]; then
     fail "dmg 目录不存在: $DMG_DIR
-        recover: 跑 'npm run build && npm run build:web && HTTPS_PROXY=http://127.0.0.1:7897 cargo tauri build'"
+        recover: 跑 'HTTPS_PROXY=http://127.0.0.1:7897 npm run tauri:release:bundle'"
   fi
 
   # 优先匹配当前 version 的 dmg；没有再退化到任意 dmg
@@ -105,7 +105,7 @@ verify_dmg_artifact() {
 
   if [[ -z "$candidate" ]]; then
     fail "$DMG_DIR 下没有 .dmg 文件
-        recover: 重新跑 cargo tauri build"
+        recover: 重新跑 npm run tauri:release:bundle"
   fi
 
   DMG_PATH="$candidate"

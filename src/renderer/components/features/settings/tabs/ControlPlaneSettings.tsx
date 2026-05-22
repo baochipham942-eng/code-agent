@@ -18,6 +18,7 @@ import ipcService from '../../../../services/ipcService';
 const ARTIFACT_LABELS: Record<AdminControlPlaneAuditEventItem['artifactKind'], string> = {
   cloud_config: '云配置',
   capability_registry: '能力注册表',
+  agent_engine_model_catalog: 'Agent Engine 模型目录',
   prompt_registry: '提示词注册表',
   update_manifest: '更新清单',
 };

@@ -82,6 +82,7 @@ const AdminUpdateInviteCodeInputSchema: z.ZodType<AdminUpdateInviteCodeInput> = 
 const AdminControlPlaneArtifactKindSchema = z.enum([
   'cloud_config',
   'capability_registry',
+  'agent_engine_model_catalog',
   'prompt_registry',
   'update_manifest',
 ]);

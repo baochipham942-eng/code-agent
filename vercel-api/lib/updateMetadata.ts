@@ -332,6 +332,11 @@ function sendJson(res: ControlPlaneResponseLike, statusCode: number, value: unkn
   res.status(statusCode).json(value);
 }
 
+function sendRedirect(res: ControlPlaneResponseLike, location: string): void {
+  res.setHeader('Location', location);
+  res.status(302).end();
+}
+
 async function handleCheck(req: ControlPlaneRequestLike, res: ControlPlaneResponseLike): Promise<void> {
   const currentVersion = firstQueryValue(req.query?.version) ?? '0.0.0';
   const platform = firstQueryValue(req.query?.platform) ?? 'darwin';
@@ -353,6 +358,34 @@ async function handleCheck(req: ControlPlaneRequestLike, res: ControlPlaneRespon
     ...releasePolicyFromEnv(channel),
     runtimeAssets,
   }));
+}
+
+async function handleDownload(req: ControlPlaneRequestLike, res: ControlPlaneResponseLike): Promise<void> {
+  const platform = firstQueryValue(req.query?.platform) ?? 'darwin';
+  const channel = normalizeChannel(firstQueryValue(req.query?.channel) ?? process.env.UPDATE_RELEASE_CHANNEL);
+  const repo = process.env.UPDATE_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || 'baochipham942-eng/code-agent';
+  const policy = releasePolicyFromEnv(channel);
+
+  if (policy.downloadUrl) {
+    sendRedirect(res, policy.downloadUrl);
+    return;
+  }
+
+  const release = await fetchLatestRelease(repo);
+  const asset = selectAsset(release.assets, platform);
+
+  if (!asset?.browser_download_url) {
+    sendJson(res, 404, {
+      success: false,
+      error: 'download_asset_not_found',
+      message: `No ${platform} download asset was found on the latest GitHub release.`,
+      releaseUrl: releasePageUrl(repo, release.tag_name ?? 'latest', release.html_url),
+      source: 'github_releases',
+    });
+    return;
+  }
+
+  sendRedirect(res, asset.browser_download_url);
 }
 
 function handlePublish(req: ControlPlaneRequestLike, res: ControlPlaneResponseLike): void {
@@ -410,11 +443,15 @@ export async function handleUpdateRequest(
       });
       return;
     }
+    if (action === 'download') {
+      await handleDownload(req, res);
+      return;
+    }
     if (action !== 'check') {
       sendJson(res, 400, {
         success: false,
         error: 'unsupported_action',
-        message: 'Supported actions are health and check.',
+        message: 'Supported actions are health, check, and download.',
       });
       return;
     }

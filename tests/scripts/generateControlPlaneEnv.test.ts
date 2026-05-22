@@ -31,8 +31,21 @@ describe('control-plane env bundle generator', () => {
       capabilities: [],
     });
 
+    const agentEngineCatalog = JSON.parse(readFileSync(join(outDir, 'agent-engine-model-catalog.json'), 'utf8')) as {
+      version: string;
+      engines: Array<{ kind: string; defaultModel: string }>;
+    };
+    expect(agentEngineCatalog).toMatchObject({
+      version: 'test-version',
+      engines: [
+        { kind: 'codex_cli', defaultModel: 'gpt-5' },
+        { kind: 'claude_code', defaultModel: 'sonnet' },
+      ],
+    });
+
     const commands = readFileSync(join(outDir, 'vercel-env-commands.txt'), 'utf8');
     expect(commands).toContain('vercel env add CONTROL_PLANE_PRIVATE_KEY production');
+    expect(commands).toContain('CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON');
     expect(commands).toContain('vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS production');
     expect(commands).not.toContain('BEGIN PRIVATE KEY');
   });

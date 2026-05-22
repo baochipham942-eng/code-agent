@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS public.control_plane_audit_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   artifact_kind TEXT NOT NULL CHECK (
-    artifact_kind IN ('cloud_config', 'capability_registry', 'prompt_registry', 'update_manifest')
+    artifact_kind IN ('cloud_config', 'capability_registry', 'agent_engine_model_catalog', 'prompt_registry', 'update_manifest')
   ),
   payload_version TEXT,
   release_channel TEXT CHECK (release_channel IS NULL OR release_channel IN ('stable', 'beta', 'canary')),

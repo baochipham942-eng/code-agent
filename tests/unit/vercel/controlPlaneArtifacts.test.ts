@@ -42,6 +42,7 @@ async function withControlPlaneEnv(fn: () => void | Promise<void>): Promise<void
   const previousPrivateKey = process.env.CONTROL_PLANE_PRIVATE_KEY;
   const previousKeyId = process.env.CONTROL_PLANE_KEY_ID;
   const previousPayload = process.env.CONTROL_PLANE_CAPABILITY_REGISTRY_JSON;
+  const previousAgentEnginePayload = process.env.CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON;
 
   try {
     process.env.CONTROL_PLANE_PRIVATE_KEY = createKeyPair();
@@ -54,6 +55,22 @@ async function withControlPlaneEnv(fn: () => void | Promise<void>): Promise<void
         name: 'Test MCP template',
       }],
       revokedIds: ['old-template'],
+    });
+    process.env.CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON = JSON.stringify({
+      version: 'agent-engine-models-test',
+      updatedAt: '2026-05-22T00:00:00.000Z',
+      engines: [{
+        kind: 'codex_cli',
+        defaultModel: 'gpt-5',
+        updatedAt: '2026-05-22T00:00:00.000Z',
+        models: [{
+          id: 'gpt-5',
+          label: 'GPT-5',
+          capabilities: ['code', 'reasoning'],
+          recommended: true,
+          updatedAt: '2026-05-22T00:00:00.000Z',
+        }],
+      }],
     });
     await fn();
   } finally {
@@ -71,6 +88,11 @@ async function withControlPlaneEnv(fn: () => void | Promise<void>): Promise<void
       delete process.env.CONTROL_PLANE_CAPABILITY_REGISTRY_JSON;
     } else {
       process.env.CONTROL_PLANE_CAPABILITY_REGISTRY_JSON = previousPayload;
+    }
+    if (previousAgentEnginePayload === undefined) {
+      delete process.env.CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON;
+    } else {
+      process.env.CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON = previousAgentEnginePayload;
     }
   }
 }
@@ -206,6 +228,50 @@ describe('vercel control-plane artifacts', () => {
         payload: {
           version: 'capabilities-test',
         },
+      });
+    });
+  });
+
+  it('serves Agent Engine model catalog through the unified control-plane route', async () => {
+    await withControlPlaneEnv(async () => {
+      const response = makeResponse();
+
+      await controlPlaneHandler({
+        method: 'GET',
+        query: { artifact: 'agent_engine_models' },
+        headers: {},
+      }, response);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toMatchObject({
+        schemaVersion: 1,
+        kind: 'agent_engine_model_catalog',
+        keyId: 'capability-test-key',
+        payload: {
+          version: 'agent-engine-models-test',
+          engines: [{
+            kind: 'codex_cli',
+            defaultModel: 'gpt-5',
+          }],
+        },
+      });
+      expect(response.headers['ETag']).toMatch(/^"sha256:/);
+    });
+  });
+
+  it('rejects unknown control-plane artifacts', async () => {
+    await withControlPlaneEnv(async () => {
+      const response = makeResponse();
+
+      await controlPlaneHandler({
+        method: 'GET',
+        query: { artifact: 'unknown_artifact' },
+        headers: {},
+      }, response);
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body).toMatchObject({
+        error: 'unsupported_artifact',
       });
     });
   });

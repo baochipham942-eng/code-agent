@@ -5,6 +5,7 @@
 export type ControlPlaneArtifactKind =
   | 'cloud_config'
   | 'capability_registry'
+  | 'agent_engine_model_catalog'
   | 'prompt_registry'
   | 'update_manifest';
 

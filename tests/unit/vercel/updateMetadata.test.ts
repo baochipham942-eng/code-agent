@@ -322,6 +322,95 @@ describe('vercel update metadata', () => {
     });
   });
 
+  it('redirects download requests to the latest matching GitHub release asset', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        tag_name: 'v0.16.79',
+        html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.79',
+        assets: [
+          {
+            name: 'Agent.Neo.app.tar.gz',
+            browser_download_url: 'https://github.com/acme/code-agent/releases/download/v0.16.79/Agent.Neo.app.tar.gz',
+          },
+          {
+            name: 'Agent.Neo_0.16.79_aarch64.dmg',
+            browser_download_url: 'https://github.com/acme/code-agent/releases/download/v0.16.79/Agent.Neo_0.16.79_aarch64.dmg',
+          },
+        ],
+      }),
+    } as Response);
+    process.env.UPDATE_GITHUB_REPOSITORY = 'acme/code-agent';
+    const response = makeResponse();
+
+    await handleUpdateRequest({
+      method: 'GET',
+      query: {
+        action: 'download',
+        platform: 'darwin',
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.Location).toBe(
+      'https://github.com/acme/code-agent/releases/download/v0.16.79/Agent.Neo_0.16.79_aarch64.dmg',
+    );
+  });
+
+  it('uses channel-specific download URL overrides for download redirects', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    process.env.UPDATE_DOWNLOAD_URL_BETA = 'https://cdn.example.com/agent-neo-beta.dmg';
+    const response = makeResponse();
+
+    await handleUpdateRequest({
+      method: 'GET',
+      query: {
+        action: 'download',
+        platform: 'darwin',
+        channel: 'beta',
+      },
+    }, response);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.Location).toBe('https://cdn.example.com/agent-neo-beta.dmg');
+  });
+
+  it('returns a clear error when download requests cannot find a matching asset', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        tag_name: 'v0.16.79',
+        html_url: 'https://github.com/acme/code-agent/releases/tag/v0.16.79',
+        assets: [
+          {
+            name: 'Agent.Neo.app.tar.gz',
+            browser_download_url: 'https://github.com/acme/code-agent/releases/download/v0.16.79/Agent.Neo.app.tar.gz',
+          },
+        ],
+      }),
+    } as Response);
+    process.env.UPDATE_GITHUB_REPOSITORY = 'acme/code-agent';
+    const response = makeResponse();
+
+    await handleUpdateRequest({
+      method: 'GET',
+      query: {
+        action: 'download',
+        platform: 'darwin',
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(404);
+    expect(response.body).toMatchObject({
+      success: false,
+      error: 'download_asset_not_found',
+      releaseUrl: 'https://github.com/acme/code-agent/releases/tag/v0.16.79',
+    });
+  });
+
   it('applies channel-specific env policy during update checks', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
       ok: true,

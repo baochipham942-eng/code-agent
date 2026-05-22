@@ -48,6 +48,22 @@ function installableCapability(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function agentEngineCatalog(version = '2026.05.17') {
+  return {
+    version,
+    updatedAt: '2026-05-17T00:00:00.000Z',
+    engines: [{
+      kind: 'codex_cli',
+      defaultModel: 'gpt-5',
+      models: [{
+        id: 'gpt-5',
+        label: 'GPT-5',
+        capabilities: ['code', 'reasoning'],
+      }],
+    }],
+  };
+}
+
 function writeSource(dir: string, options: {
   version?: string;
   channel?: string;
@@ -83,6 +99,7 @@ function writeSource(dir: string, options: {
     items: options.capabilities ?? [installableCapability()],
     revokedIds: options.revokedIds ?? [],
   }));
+  writeJson(join(dir, 'agent-engine-model-catalog.json'), agentEngineCatalog(options.version ?? '2026.05.17'));
   writeFileSync(join(dir, 'public.pem'), '-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n');
 }
 
@@ -130,6 +147,7 @@ describe('control-plane release bundle', () => {
       'cloud-config.json',
       'prompt-registry.json',
       'capability-registry.json',
+      'agent-engine-model-catalog.json',
     ]);
     expect(manifest.artifacts.every((artifact) => /^sha256:[a-f0-9]{64}$/.test(artifact.contentHash))).toBe(true);
 
@@ -137,6 +155,7 @@ describe('control-plane release bundle', () => {
     expect(commands).toContain('CONTROL_PLANE_CLOUD_CONFIG_JSON');
     expect(commands).toContain('CONTROL_PLANE_PROMPT_REGISTRY_JSON');
     expect(commands).toContain('CONTROL_PLANE_CAPABILITY_REGISTRY_JSON');
+    expect(commands).toContain('CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON');
     expect(commands).toContain('CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY');
     expect(commands).not.toContain('CONTROL_PLANE_PRIVATE_KEY');
     expect(commands).not.toContain('CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY');
@@ -209,6 +228,7 @@ describe('control-plane release bundle', () => {
       ],
       revokedIds: [],
     });
+    writeJson(join(missingTrustSource, 'agent-engine-model-catalog.json'), agentEngineCatalog());
     writeFileSync(join(missingTrustSource, 'public.pem'), '-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n');
 
     expect(() => buildControlPlaneReleaseBundle({
@@ -239,6 +259,7 @@ describe('control-plane release bundle', () => {
       ],
       revokedIds: [],
     });
+    writeJson(join(mismatchedTrustSource, 'agent-engine-model-catalog.json'), agentEngineCatalog());
     writeFileSync(join(mismatchedTrustSource, 'public.pem'), '-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n');
 
     expect(() => buildControlPlaneReleaseBundle({

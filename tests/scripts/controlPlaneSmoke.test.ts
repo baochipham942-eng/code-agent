@@ -61,6 +61,11 @@ describe('control-plane smoke script', () => {
         version: 'capabilities-test',
         items: [],
       })),
+      '/api/v1/control-plane?artifact=agent_engine_models': response(200, signedEnvelope('agent_engine_model_catalog', {
+        version: 'agent-engine-models-test',
+        updatedAt: '2026-05-22T00:00:00.000Z',
+        engines: [],
+      })),
     });
 
     const results = await runControlPlaneSmoke({
@@ -73,11 +78,13 @@ describe('control-plane smoke script', () => {
       'cloud_config',
       'prompt_registry',
       'capability_registry',
+      'agent_engine_model_catalog',
     ]);
     expect(calls.map((call) => new URL(call.url).pathname + new URL(call.url).search)).toEqual([
       '/api/v1/config',
       '/api/prompts?gen=all',
       '/api/v1/control-plane?artifact=capabilities',
+      '/api/v1/control-plane?artifact=agent_engine_models',
     ]);
     expect(calls.every((call) => call.init.headers?.Authorization === 'Bearer server-token')).toBe(true);
   });

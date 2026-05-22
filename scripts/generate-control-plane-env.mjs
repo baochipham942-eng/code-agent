@@ -50,7 +50,8 @@ function usage() {
   ].join('\n');
 }
 
-function buildPayloads(version) {
+function buildPayloads(version, now = new Date()) {
+  const updatedAt = now.toISOString();
   return {
     cloudConfig: {
       version,
@@ -77,6 +78,40 @@ function buildPayloads(version) {
       items: [],
       revokedIds: [],
     },
+    agentEngineModelCatalog: {
+      version,
+      updatedAt,
+      engines: [
+        {
+          kind: 'codex_cli',
+          defaultModel: 'gpt-5',
+          updatedAt,
+          models: [
+            {
+              id: 'gpt-5',
+              label: 'GPT-5',
+              capabilities: ['code', 'reasoning', 'longContext'],
+              recommended: true,
+              updatedAt,
+            },
+          ],
+        },
+        {
+          kind: 'claude_code',
+          defaultModel: 'sonnet',
+          updatedAt,
+          models: [
+            {
+              id: 'sonnet',
+              label: 'Claude Sonnet',
+              capabilities: ['code', 'reasoning', 'longContext'],
+              recommended: true,
+              updatedAt,
+            },
+          ],
+        },
+      ],
+    },
   };
 }
 
@@ -99,7 +134,7 @@ export function generateControlPlaneEnvBundle({
   const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
   const privatePem = privateKey.export({ type: 'pkcs8', format: 'pem' });
   const publicPem = publicKey.export({ type: 'spki', format: 'pem' });
-  const payloads = buildPayloads(version);
+  const payloads = buildPayloads(version, now);
 
   writeFileSync(join(targetDir, 'private.pem'), privatePem, { mode: 0o600 });
   writeFileSync(join(targetDir, 'public.pem'), publicPem, { mode: 0o600 });
@@ -107,6 +142,7 @@ export function generateControlPlaneEnvBundle({
   writeJson(join(targetDir, 'cloud-config.json'), payloads.cloudConfig);
   writeJson(join(targetDir, 'prompt-registry.json'), payloads.promptRegistry);
   writeJson(join(targetDir, 'capability-registry.json'), payloads.capabilityRegistry);
+  writeJson(join(targetDir, 'agent-engine-model-catalog.json'), payloads.agentEngineModelCatalog);
   writeFileSync(join(targetDir, 'vercel-env-commands.txt'), [
     `vercel env add CONTROL_PLANE_PRIVATE_KEY production --force --yes < ${targetDir}/private.pem`,
     `vercel env add CONTROL_PLANE_KEY_ID production --value ${keyId} --force --yes`,
@@ -114,6 +150,7 @@ export function generateControlPlaneEnvBundle({
     `vercel env add CONTROL_PLANE_CLOUD_CONFIG_JSON production --force --yes < ${targetDir}/cloud-config.json`,
     `vercel env add CONTROL_PLANE_PROMPT_REGISTRY_JSON production --force --yes < ${targetDir}/prompt-registry.json`,
     `vercel env add CONTROL_PLANE_CAPABILITY_REGISTRY_JSON production --force --yes < ${targetDir}/capability-registry.json`,
+    `vercel env add CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON production --force --yes < ${targetDir}/agent-engine-model-catalog.json`,
     `vercel env add CODE_AGENT_CONTROL_PLANE_KEY_ID production --value ${keyId} --force --yes`,
     `vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY production --force --yes < ${targetDir}/public.pem`,
     `vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS production --force --yes < ${targetDir}/public-keys.json`,
@@ -130,6 +167,7 @@ export function generateControlPlaneEnvBundle({
       'cloud-config.json',
       'prompt-registry.json',
       'capability-registry.json',
+      'agent-engine-model-catalog.json',
       'vercel-env-commands.txt',
     ].map((file) => join(targetDir, file)),
   };

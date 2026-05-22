@@ -87,16 +87,16 @@ describe('runtimeAssetStatus', () => {
     const status = await getRuntimeAssetsStatus({ runtimeBaseDir });
     expect(status.summary).toEqual({ installed: 3, bundledFallback: 0, missing: 0 });
     expect(status.assets.every((asset) => asset.nodeModules.every((moduleStatus) => moduleStatus.source === 'managed'))).toBe(true);
+    expect(status.assets.find((asset) => asset.id === 'sharp-image-runtime')).toMatchObject({
+      delivery: 'bundled',
+      state: 'installed',
+    });
   });
 
-  it('reports bundled fallback when no managed runtime is active', async () => {
+  it('reports Sharp as bundled fallback while optional browser and audio runtimes are absent', async () => {
     const root = makeTempRoot();
     const runtimeBaseDir = path.join(root, 'runtime');
     const bundledRoot = makeTempRoot();
-    mkdirp(path.join(bundledRoot, 'node_modules', 'onnxruntime-node'));
-    mkdirp(path.join(bundledRoot, 'node_modules', 'avr-vad'));
-    mkdirp(path.join(bundledRoot, 'node_modules', 'playwright'));
-    mkdirp(path.join(bundledRoot, 'node_modules', 'playwright-core'));
     mkdirp(path.join(bundledRoot, 'node_modules', 'sharp'));
     mkdirp(path.join(bundledRoot, 'node_modules', '@img', 'colour'));
     mkdirp(path.join(bundledRoot, 'node_modules', '@img', 'sharp-darwin-arm64'));
@@ -112,8 +112,19 @@ describe('runtimeAssetStatus', () => {
       },
     });
 
-    expect(status.summary).toEqual({ installed: 0, bundledFallback: 3, missing: 0 });
-    expect(status.assets.every((asset) => asset.nodeModules.every((moduleStatus) => moduleStatus.source === 'bundled'))).toBe(true);
+    expect(status.summary).toEqual({ installed: 0, bundledFallback: 1, missing: 2 });
+    expect(status.assets.find((asset) => asset.id === 'sharp-image-runtime')).toMatchObject({
+      delivery: 'bundled',
+      state: 'bundledFallback',
+    });
+    expect(status.assets.find((asset) => asset.id === 'onnxruntime-vad')).toMatchObject({
+      delivery: 'optional',
+      state: 'missing',
+    });
+    expect(status.assets.find((asset) => asset.id === 'playwright-browser-runtime')).toMatchObject({
+      delivery: 'optional',
+      state: 'missing',
+    });
   });
 
   it('reports missing when managed and bundled pilot modules are absent', async () => {

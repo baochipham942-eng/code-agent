@@ -25,9 +25,77 @@ if [[ ! -d "${RESOURCES_ROOT}" ]]; then
   exit 1
 fi
 
+find_first_existing_file() {
+  local label="$1"
+  shift
+
+  for candidate in "$@"; do
+    if [[ -f "${candidate}" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+
+  echo "[verify-macos-release] missing ${label}; checked:" >&2
+  for candidate in "$@"; do
+    echo "  - ${candidate}" >&2
+  done
+  return 1
+}
+
 echo "[verify-macos-release] scanning bundled resources"
 node "${ROOT_DIR}/scripts/release-security-scan.mjs" "${RESOURCES_ROOT}"
 node "${ROOT_DIR}/scripts/tauri-resource-inventory.mjs" --root "${RESOURCES_ROOT}"
+
+BUNDLED_NODE_PATH="$(
+  find_first_existing_file "bundled Node binary" \
+    "${RESOURCES_ROOT}/dist/bundled-node/bin/node" \
+    "${RESOURCES_ROOT}/dist/bundled-node/node" \
+    "${APP_PATH}/Contents/Resources/dist/bundled-node/bin/node" \
+    "${APP_PATH}/Contents/Resources/dist/bundled-node/node"
+)"
+if [[ ! -x "${BUNDLED_NODE_PATH}" ]]; then
+  echo "[verify-macos-release] bundled Node is not executable: ${BUNDLED_NODE_PATH}" >&2
+  exit 1
+fi
+
+echo "[verify-macos-release] bundled node: ${BUNDLED_NODE_PATH}"
+"${BUNDLED_NODE_PATH}" -p '"[verify-macos-release] bundled node runtime: " + process.version + " ABI " + process.versions.modules + " " + process.platform + "-" + process.arch'
+
+REQUIRED_BETTER_SQLITE3_NATIVE="${RESOURCES_ROOT}/dist/native/better-sqlite3/build/Release/better_sqlite3.node"
+if [[ ! -f "${REQUIRED_BETTER_SQLITE3_NATIVE}" ]]; then
+  echo "[verify-macos-release] missing bundled better-sqlite3 native file: ${REQUIRED_BETTER_SQLITE3_NATIVE}" >&2
+  exit 1
+fi
+
+better_sqlite3_native_paths=("${REQUIRED_BETTER_SQLITE3_NATIVE}")
+OPTIONAL_BETTER_SQLITE3_NATIVE="${RESOURCES_ROOT}/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+if [[ -f "${OPTIONAL_BETTER_SQLITE3_NATIVE}" ]]; then
+  better_sqlite3_native_paths+=("${OPTIONAL_BETTER_SQLITE3_NATIVE}")
+fi
+
+for native_path in "${better_sqlite3_native_paths[@]}"; do
+  if ! file "${native_path}" | grep -q "Mach-O"; then
+    echo "[verify-macos-release] better-sqlite3 native file is not a macOS Mach-O binary: ${native_path}" >&2
+    file "${native_path}" >&2
+    exit 1
+  fi
+
+  "${BUNDLED_NODE_PATH}" -e '
+const nativePath = process.argv[1];
+try {
+  const binding = require(nativePath);
+  if (!binding || typeof binding.Database !== "function") {
+    throw new Error("native binding did not expose Database");
+  }
+  console.log(`[verify-macos-release] better-sqlite3 native loads with bundled Node ABI ${process.versions.modules}: ${nativePath}`);
+} catch (error) {
+  console.error(`[verify-macos-release] better-sqlite3 native failed under bundled Node: ${nativePath}`);
+  console.error(error && error.stack ? error.stack : error);
+  process.exit(1);
+}
+' "${native_path}"
+done
 
 CONTROL_PLANE_PUBLIC_KEYS_FILE="${RESOURCES_ROOT}/dist/web/control-plane-public-keys.json"
 if [[ "${REQUIRE_CONTROL_PLANE_PUBLIC_KEYS}" == "1" || "${REQUIRE_CONTROL_PLANE_PUBLIC_KEYS}" == "true" ]]; then

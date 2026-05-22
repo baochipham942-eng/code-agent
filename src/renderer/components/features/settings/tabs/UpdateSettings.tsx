@@ -54,7 +54,13 @@ export function getVisibleUpdateInfo(
 
 export function getRuntimeAssetsSummaryText(status: RuntimeAssetsStatus | null): string | null {
   if (!status) return null;
-  if (status.summary.missing > 0) return '本地能力组件不可用';
+  const optionalMissing = status.assets.filter((asset) => asset.delivery === 'optional' && asset.state === 'missing').length;
+  const bundledMissing = status.assets.filter((asset) => asset.delivery === 'bundled' && asset.state === 'missing').length;
+  const bundledReady = status.assets.filter((asset) => asset.delivery === 'bundled' && asset.state === 'bundledFallback').length;
+  if (bundledMissing > 0) return '内置能力组件缺失';
+  if (optionalMissing > 0 && bundledReady > 0) return '内置图片能力可用，可选能力可准备';
+  if (optionalMissing > 0) return '有可选本地能力可准备';
+  if (status.summary.missing > 0) return '有可选本地能力待准备';
   if (status.summary.installed > 0) return `已准备 ${status.summary.installed} 个本地能力组件`;
   return '使用内置能力组件';
 }
@@ -67,16 +73,17 @@ export function getRuntimeAssetsPrepareText(isPreparing: boolean): string {
   return isPreparing ? '正在准备本地能力组件...' : '准备本地能力组件';
 }
 
-function getRuntimeAssetStatusText(asset: RuntimeAssetStatusEntry): string {
+export function getRuntimeAssetStatusText(asset: RuntimeAssetStatusEntry): string {
   if (asset.state === 'installed') return '已准备';
-  if (asset.state === 'bundledFallback') return '使用内置';
-  return '不可用';
+  if (asset.state === 'bundledFallback') return '随包内置';
+  if (asset.delivery === 'optional') return '可选准备';
+  return '缺失';
 }
 
 function getRuntimeAssetTone(asset: RuntimeAssetStatusEntry): string {
   if (asset.state === 'installed') return 'text-green-300 bg-green-500/10 border-green-500/30';
   if (asset.state === 'bundledFallback') return 'text-amber-300 bg-amber-500/10 border-amber-500/30';
-  return 'text-red-300 bg-red-500/10 border-red-500/30';
+  return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
 }
 
 // ============================================================================

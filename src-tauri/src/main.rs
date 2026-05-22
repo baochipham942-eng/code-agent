@@ -10,7 +10,10 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{include_image, menu::MenuBuilder, tray::TrayIconBuilder, Emitter, Manager, RunEvent};
+use tauri::{
+    include_image, menu::MenuBuilder, tray::TrayIconBuilder, Emitter, Manager, RunEvent,
+    WindowEvent,
+};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent};
 
 mod native_app_icon;
@@ -32,6 +35,12 @@ const HEALTH_INTERVAL: Duration = Duration::from_millis(500);
 const DEFAULT_CLOUD_API_URL: &str = "https://code-agent-beta.vercel.app";
 const BUNDLED_RUNTIME_ROOT_ENV: &str = "AGENT_NEO_BUNDLED_RUNTIME_ROOT";
 const RESOURCE_DIR_ENV: &str = "AGENT_NEO_RESOURCE_DIR";
+const BUNDLED_NODE_PATHS: &[&[&str]] = &[
+    &["dist", "bundled-node", "bin", "node"],
+    &["dist", "bundled-node", "node"],
+    &["bundled-node", "bin", "node"],
+    &["bundled-node", "node"],
+];
 
 #[derive(Default)]
 struct AppState {
@@ -181,11 +190,45 @@ fn health_matches_boot_token(body: &str, expected_token: Option<&str>) -> bool {
         .is_some_and(|actual| actual == expected_token)
 }
 
-fn resolve_node_binary() -> String {
-    if let Ok(bin) = env::var("NODE_BINARY") {
-        return bin;
+fn append_segments(root: &Path, segments: &[&str]) -> PathBuf {
+    segments
+        .iter()
+        .fold(root.to_path_buf(), |path, segment| path.join(segment))
+}
+
+fn bundled_node_candidates(
+    bundled_runtime_root: &Path,
+    resource_dir: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut roots = vec![bundled_runtime_root.to_path_buf()];
+
+    if let Some(resource_dir) = resource_dir {
+        roots.push(resource_dir.join("_up_"));
+        roots.push(resource_dir.to_path_buf());
     }
 
+    unique_paths(
+        roots
+            .into_iter()
+            .flat_map(|root| {
+                BUNDLED_NODE_PATHS
+                    .iter()
+                    .map(move |segments| append_segments(&root, segments))
+            })
+            .collect(),
+    )
+}
+
+fn resolve_bundled_node_binary(
+    bundled_runtime_root: &Path,
+    resource_dir: Option<&Path>,
+) -> Option<PathBuf> {
+    bundled_node_candidates(bundled_runtime_root, resource_dir)
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+}
+
+fn resolve_system_node_binary() -> PathBuf {
     // macOS GUI apps launched from Finder have a minimal PATH that excludes
     // common Node.js installation directories. Search them explicitly.
     let candidates = [
@@ -195,7 +238,7 @@ fn resolve_node_binary() -> String {
 
     for candidate in &candidates {
         if Path::new(candidate).exists() {
-            return candidate.to_string();
+            return PathBuf::from(candidate);
         }
     }
 
@@ -209,20 +252,40 @@ fn resolve_node_binary() -> String {
             if let Some(latest) = versions.first() {
                 let bin = latest.path().join("bin/node");
                 if bin.exists() {
-                    return bin.to_string_lossy().to_string();
+                    return bin;
                 }
             }
         }
     }
 
-    "node".to_string()
+    PathBuf::from("node")
+}
+
+fn resolve_node_binary(bundled_runtime_root: &Path, resource_dir: Option<&Path>) -> PathBuf {
+    if !cfg!(debug_assertions) {
+        if let Some(bin) = resolve_bundled_node_binary(bundled_runtime_root, resource_dir) {
+            return bin;
+        }
+    }
+
+    if let Ok(bin) = env::var("NODE_BINARY") {
+        return PathBuf::from(bin);
+    }
+
+    if cfg!(debug_assertions) {
+        if let Some(bin) = resolve_bundled_node_binary(bundled_runtime_root, resource_dir) {
+            return bin;
+        }
+    }
+
+    resolve_system_node_binary()
 }
 
 fn spawn_web_server(app: &tauri::AppHandle) -> Result<(Child, String), String> {
     let (script_path, working_dir) = resolve_server_script(app)?;
-    let node_binary = resolve_node_binary();
     let boot_token = make_boot_token();
     let resource_dir = app.path().resource_dir().ok();
+    let node_binary = resolve_node_binary(&working_dir, resource_dir.as_deref());
 
     // 显式继承父进程 env，让 launchctl setenv / shell 注入的 HTTPS_PROXY 等变量
     // 流到 webServer 的 Node 进程。Rust Command 默认就继承父 env，但写出来更明确。
@@ -244,7 +307,7 @@ fn spawn_web_server(app: &tauri::AppHandle) -> Result<(Child, String), String> {
         format!(
             "Failed to start web server at {} (node: {}): {}",
             script_path.display(),
-            node_binary,
+            node_binary.display(),
             error
         )
     })?;
@@ -705,15 +768,14 @@ fn open_update_url(url: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod runtime_env_tests {
-    use super::{web_server_runtime_env, BUNDLED_RUNTIME_ROOT_ENV, RESOURCE_DIR_ENV};
+    use super::{
+        bundled_node_candidates, web_server_runtime_env, BUNDLED_RUNTIME_ROOT_ENV, RESOURCE_DIR_ENV,
+    };
     use std::path::Path;
 
     #[test]
     fn includes_bundled_runtime_root_for_web_server() {
-        let env = web_server_runtime_env(
-            Path::new("/tmp/Agent.app/Contents/Resources/_up_"),
-            None,
-        );
+        let env = web_server_runtime_env(Path::new("/tmp/Agent.app/Contents/Resources/_up_"), None);
 
         assert_eq!(env.len(), 1);
         assert_eq!(env[0].0, BUNDLED_RUNTIME_ROOT_ENV);
@@ -743,6 +805,24 @@ mod runtime_env_tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn checks_bundled_node_under_packaged_runtime_root_first() {
+        let candidates = bundled_node_candidates(
+            Path::new("/tmp/Agent.app/Contents/Resources/_up_"),
+            Some(Path::new("/tmp/Agent.app/Contents/Resources")),
+        );
+
+        assert_eq!(
+            candidates[0],
+            Path::new("/tmp/Agent.app/Contents/Resources/_up_/dist/bundled-node/bin/node")
+                .to_path_buf()
+        );
+        assert!(candidates.contains(
+            &Path::new("/tmp/Agent.app/Contents/Resources/dist/bundled-node/bin/node")
+                .to_path_buf()
+        ));
     }
 }
 
@@ -1023,6 +1103,16 @@ fn main() {
     install_signal_handler(app.handle());
 
     app.run(|app_handle, event| match event {
+        RunEvent::WindowEvent {
+            label,
+            event: WindowEvent::CloseRequested { api, .. },
+            ..
+        } if label == "main" => {
+            api.prevent_close();
+            if let Some(win) = app_handle.get_webview_window("main") {
+                let _ = win.minimize();
+            }
+        }
         RunEvent::ExitRequested { .. } | RunEvent::Exit => {
             cleanup_server(app_handle);
         }

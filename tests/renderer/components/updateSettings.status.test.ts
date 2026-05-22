@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { UpdateInfo } from '../../../src/shared/contract';
 import {
+  getRuntimeAssetStatusText,
   getRuntimeAssetsPrepareText,
   getRuntimeAssetsSummaryText,
   getVisibleUpdateInfo,
@@ -37,21 +38,74 @@ describe('UpdateSettings status visibility', () => {
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
-      assets: [],
+      assets: [{
+        id: 'sharp-image-runtime',
+        label: 'Image processing components',
+        delivery: 'bundled',
+        state: 'bundledFallback',
+        nodeModules: [],
+      }],
       summary: { installed: 0, bundledFallback: 1, missing: 0 },
     })).toBe('使用内置能力组件');
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
-      assets: [],
+      assets: [{
+        id: 'onnxruntime-vad',
+        label: 'Local audio capability components',
+        delivery: 'optional',
+        state: 'installed',
+        nodeModules: [],
+      }],
       summary: { installed: 1, bundledFallback: 0, missing: 0 },
     })).toBe('已准备 1 个本地能力组件');
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
-      assets: [],
+      assets: [{
+        id: 'sharp-image-runtime',
+        label: 'Image processing components',
+        delivery: 'bundled',
+        state: 'bundledFallback',
+        nodeModules: [],
+      }, {
+        id: 'playwright-browser-runtime',
+        label: 'Browser automation components',
+        delivery: 'optional',
+        state: 'missing',
+        nodeModules: [],
+      }],
+      summary: { installed: 0, bundledFallback: 1, missing: 1 },
+    })).toBe('内置图片能力可用，可选能力可准备');
+    expect(getRuntimeAssetsSummaryText({
+      runtimeBaseDir: '/tmp/runtime',
+      activeManifestPath: '/tmp/runtime/active.json',
+      assets: [{
+        id: 'sharp-image-runtime',
+        label: 'Image processing components',
+        delivery: 'bundled',
+        state: 'missing',
+        nodeModules: [],
+      }],
       summary: { installed: 0, bundledFallback: 0, missing: 1 },
-    })).toBe('本地能力组件不可用');
+    })).toBe('内置能力组件缺失');
+  });
+
+  it('labels bundled Sharp fallback separately from optional runtime preparation', () => {
+    expect(getRuntimeAssetStatusText({
+      id: 'sharp-image-runtime',
+      label: 'Image processing components',
+      delivery: 'bundled',
+      state: 'bundledFallback',
+      nodeModules: [],
+    })).toBe('随包内置');
+    expect(getRuntimeAssetStatusText({
+      id: 'playwright-browser-runtime',
+      label: 'Browser automation components',
+      delivery: 'optional',
+      state: 'missing',
+      nodeModules: [],
+    })).toBe('可选准备');
   });
 
   it('shows prepare action only when runtime assets need an update', () => {

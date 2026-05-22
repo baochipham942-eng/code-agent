@@ -64,6 +64,7 @@ export async function getRuntimeAssetsStatus(
     return {
       id: definition.id,
       label: definition.label,
+      delivery: definition.delivery,
       state: managedReady ? 'installed' : fallbackReady ? 'bundledFallback' : 'missing',
       nodeModules,
       activeRoot: activeRecord?.root,

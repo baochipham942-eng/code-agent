@@ -82,6 +82,9 @@ describe('macOS release fail-closed gates', () => {
   it('keeps notarization, Gatekeeper, TeamIdentifier, and control-plane checks in verify script', () => {
     const verifyScript = readRepoFile('scripts/verify-macos-release.sh');
 
+    expect(verifyScript).toContain('dist/bundled-node/bin/node');
+    expect(verifyScript).toContain('dist/native/better-sqlite3/build/Release/better_sqlite3.node');
+    expect(verifyScript).toContain('better-sqlite3 native loads with bundled Node ABI');
     expect(verifyScript).toContain('codesign --verify --deep --strict');
     expect(verifyScript).toContain('Authority=Developer ID Application:');
     expect(verifyScript).toContain('TeamIdentifier=[A-Za-z0-9]');
@@ -121,29 +124,55 @@ describe('macOS release fail-closed gates', () => {
     const packageJson = JSON.parse(readRepoFile('package.json')) as {
       scripts: Record<string, string>;
     };
+    const prebuildCleanup = readRepoFile('scripts/tauri-prebuild-cleanup.sh');
+    const releaseBundle = readRepoFile('scripts/tauri-release-bundle.sh');
 
     expect(packageJson.scripts['tauri:release:bundle']).toContain('bash scripts/tauri-release-bundle.sh');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('npm run release:notarize-macos');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('npm run release:verify-macos');
     expect(packageJson.scripts['release:notarize-macos']).toBe('bash scripts/tauri-notarize.sh');
     expect(packageJson.scripts['release:verify-macos']).toBe('bash scripts/verify-macos-release.sh');
+    expect(prebuildCleanup).toContain('prepare-bundled-node.mjs');
+    expect(releaseBundle).toContain('prepare-bundled-node.mjs');
+    expect(releaseBundle).toContain('*/dist/bundled-node/bin/node');
   });
 
-  it('keeps managed runtime pilot modules out of default Tauri resources', () => {
+  it('bundles Sharp runtime while keeping optional browser and audio runtimes out of Tauri resources', () => {
     const tauriConfig = JSON.parse(readRepoFile('src-tauri/tauri.conf.json')) as {
       bundle?: { resources?: string[] };
     };
     const resources = tauriConfig.bundle?.resources ?? [];
 
     expect(resources.some((resource) => resource.includes('node_modules/onnxruntime-node'))).toBe(false);
+    expect(resources.some((resource) => resource.includes('node_modules/onnxruntime-common'))).toBe(false);
     expect(resources.some((resource) => resource.includes('node_modules/avr-vad'))).toBe(false);
     expect(resources.some((resource) => resource.includes('node_modules/playwright'))).toBe(false);
     expect(resources.some((resource) => resource.includes('node_modules/playwright-core'))).toBe(false);
-    expect(resources.some((resource) => resource.includes('node_modules/sharp'))).toBe(false);
-    expect(resources.some((resource) => resource.includes('node_modules/@img/colour'))).toBe(false);
-    expect(resources.some((resource) => resource.includes('node_modules/@img/sharp-darwin-arm64'))).toBe(false);
-    expect(resources.some((resource) => resource.includes('node_modules/@img/sharp-libvips-darwin-arm64'))).toBe(false);
-    expect(resources.some((resource) => resource.includes('node_modules/detect-libc'))).toBe(false);
+
+    expect(resources).toContain('../node_modules/sharp/package.json');
+    expect(resources).toContain('../node_modules/sharp/lib/*.js');
+    expect(resources).toContain('../node_modules/sharp/node_modules/semver/**/*');
+    expect(resources).toContain('../node_modules/@img/colour/package.json');
+    expect(resources).toContain('../node_modules/@img/colour/*.cjs');
+    expect(resources).toContain('../node_modules/@img/sharp-darwin-arm64/package.json');
+    expect(resources).toContain('../node_modules/@img/sharp-darwin-arm64/lib/**/*.node');
+    expect(resources).toContain('../node_modules/@img/sharp-libvips-darwin-arm64/package.json');
+    expect(resources).toContain('../node_modules/@img/sharp-libvips-darwin-arm64/versions.json');
+    expect(resources).toContain('../node_modules/@img/sharp-libvips-darwin-arm64/lib/**/*');
+    expect(resources).toContain('../node_modules/detect-libc/package.json');
+    expect(resources).toContain('../node_modules/detect-libc/lib/**/*');
+    expect(resources.some((resource) => resource.includes('node_modules/sharp/src'))).toBe(false);
+    expect(resources.some((resource) => resource.includes('node_modules/sharp/install'))).toBe(false);
+    expect(resources.some((resource) => resource.endsWith('index.d.ts'))).toBe(false);
+  });
+
+  it('keeps default runtime asset downloads limited to optional browser and audio components', () => {
+    const builder = readRepoFile('scripts/build-runtime-assets.mjs');
+    const defaultAssets = builder.match(/const DEFAULT_RUNTIME_ASSET_IDS = \[([\s\S]*?)\];/)?.[1] ?? '';
+
+    expect(defaultAssets).toContain("'onnxruntime-vad'");
+    expect(defaultAssets).toContain("'playwright-browser-runtime'");
+    expect(defaultAssets).not.toContain('sharp-image-runtime');
   });
 
   it('keeps better-sqlite3 source and build inputs out of default Tauri resources', () => {
@@ -158,5 +187,14 @@ describe('macOS release fail-closed gates', () => {
     expect(resources.some((resource) => resource.includes('node_modules/better-sqlite3/deps'))).toBe(false);
     expect(resources.some((resource) => resource.includes('node_modules/better-sqlite3/src'))).toBe(false);
     expect(resources.some((resource) => resource === '../node_modules/better-sqlite3/**/*')).toBe(false);
+  });
+
+  it('bundles the prepared Node runtime in default Tauri resources', () => {
+    const tauriConfig = JSON.parse(readRepoFile('src-tauri/tauri.conf.json')) as {
+      bundle?: { resources?: string[] };
+    };
+    const resources = tauriConfig.bundle?.resources ?? [];
+
+    expect(resources).toContain('../dist/bundled-node/**/*');
   });
 });

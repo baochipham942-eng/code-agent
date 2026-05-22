@@ -57,6 +57,7 @@ export interface PrepareRuntimeAssetsResult {
 }
 
 export type RuntimeAssetStatusState = 'installed' | 'bundledFallback' | 'missing';
+export type RuntimeAssetDelivery = 'optional' | 'bundled';
 
 export interface RuntimeAssetModuleStatus {
   name: string;
@@ -68,6 +69,7 @@ export interface RuntimeAssetModuleStatus {
 export interface RuntimeAssetStatusEntry {
   id: string;
   label: string;
+  delivery: RuntimeAssetDelivery;
   state: RuntimeAssetStatusState;
   nodeModules: RuntimeAssetModuleStatus[];
   activeRoot?: string;

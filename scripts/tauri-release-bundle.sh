@@ -97,6 +97,8 @@ fs.writeFileSync(configFile, JSON.stringify({
 
 cd "${ROOT_DIR}"
 
+node "${ROOT_DIR}/scripts/prepare-bundled-node.mjs"
+
 # Run cargo tauri build in a subshell with Apple notarization env vars unset.
 # Tauri auto-triggers notarytool inside `cargo tauri build` when it sees these
 # variables, but we must sign nested Mach-O binaries (.node/.dylib + helper
@@ -156,7 +158,7 @@ if [[ "$(uname -s)" == "Darwin" && -n "${SIGNING_IDENTITY}" ]]; then
     # Enumerated by basename - these are the helpers known to ship unsigned.
     while IFS= read -r -d '' nested; do
       sign_nested_binary "${nested}" "1"
-    done < <(find "${app_path}" -type f \( -name "system-audio-capture" -o -name "spawn-helper" -o -name "vision-tagger" -o -name "vision-ocr" \) -print0)
+    done < <(find "${app_path}" -type f \( -name "system-audio-capture" -o -name "spawn-helper" -o -name "vision-tagger" -o -name "vision-ocr" -o -path "*/dist/bundled-node/bin/node" \) -print0)
 
     echo "[tauri-release-bundle] re-signing .app shell: ${app_path}"
     codesign --force --options runtime --timestamp \

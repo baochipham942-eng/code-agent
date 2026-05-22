@@ -60,6 +60,11 @@ const ASSET_GROUPS = {
   },
 };
 
+const DEFAULT_RUNTIME_ASSET_IDS = [
+  'onnxruntime-vad',
+  'playwright-browser-runtime',
+];
+
 function readArg(name) {
   const index = process.argv.indexOf(name);
   return index >= 0 ? process.argv[index + 1] : undefined;
@@ -300,7 +305,7 @@ const skipSecurityScan = hasFlag('--skip-security-scan');
 const flatOutput = hasFlag('--flat-output');
 const assetIds = requestedAssetIds.length > 0
   ? requestedAssetIds
-  : ['onnxruntime-vad', 'playwright-browser-runtime', 'sharp-image-runtime'];
+  : DEFAULT_RUNTIME_ASSET_IDS;
 
 for (const assetId of assetIds) {
   if (!ASSET_GROUPS[assetId]) {

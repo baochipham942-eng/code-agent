@@ -35,11 +35,14 @@ jobs:
           TAURI_CLI_VERSION: '2.10.1'
         run: cargo install tauri-cli --version "${TAURI_CLI_VERSION}" --locked
 
-      - name: Build system-audio-capture helper (Tauri bundle resource)
-        # tauri.conf.json bundles scripts/system-audio-capture (Swift Mach-O), which is a
-        # build artifact not committed to the repo. A fresh CI checkout must compile it or
-        # `tauri build` fails with: resource path `../scripts/system-audio-capture` doesn't exist.
-        run: bash scripts/build-audio-capture.sh
+      - name: Build native helper binaries (Tauri bundle resources)
+        # tauri.conf.json bundles three Swift Mach-O helpers (system-audio-capture, vision-ocr,
+        # vision-tagger) that are build artifacts NOT committed to the repo. A fresh CI checkout
+        # must compile all of them or `tauri build` fails with "resource path doesn't exist".
+        run: |
+          bash scripts/build-audio-capture.sh
+          bash scripts/build-vision-ocr.sh
+          bash scripts/build-vision-tagger.sh
 
       - name: Import Developer ID certificate
         env:

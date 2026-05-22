@@ -83,5 +83,29 @@ C1 + C1b together (same fetch/trust path) → H2 → M3 → M4 → M5. **One com
 - Constants from `src/shared/constants.ts` per repo rules; no new hardcoded provider/model/timeout/path literals.
 - Stop and report if a fix needs to grow beyond its named scope.
 
-## Operator follow-up (NOT Ax's job — for 林晨)
-C1 needs the **control-plane private key provisioned as a release-pipeline secret** (`CONTROL_PLANE_SIGNING_KEY`) so the published manifest is actually signed in CI. Ax will write + unit-test the sign/verify code against a generated test keypair; the real key provisioning and "don't enable runtime-asset publishing to users until the signed manifest ships" gate are operator actions.
+## Operator follow-up
+~~C1 needs the control-plane private key provisioned as a release-pipeline secret~~ — **DONE by Claude.** A
+dedicated Ed25519 keypair was generated and provisioned to GitHub Actions secrets:
+`CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY`, `CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY`, `CODE_AGENT_CONTROL_PLANE_KEY_ID`
+(keyId `agent-neo-runtime-202605`). Private key never left local generation → `gh secret set` (stdin).
+
+Remaining (genuinely deferred, not blocking): wiring `build-runtime-assets` into `release.yml` with the
+signing env is only needed WHEN runtime-asset publishing is actually turned on (Stage 7 is not wired into the
+workflow yet). Until then the system is safe by default: the client fail-closes on any unsigned/untrusted
+manifest, so no runtime assets are delivered rather than trusted unsigned.
+
+## Resolution (all findings fixed + verified)
+
+| Finding | Commit | Verification |
+| --- | --- | --- |
+| C1 (CRITICAL) | `dd488076` | sign+verify via control-plane envelope in both verification sites; 200+ tests; monitor caught + fixed an unsigned-fixture regression in `updateServiceRuntimeAssets.test.ts` |
+| C1b (HIGH) | `62a73fad` | https→http redirect rejected in both httpGet/downloadFile; asserts no plaintext request |
+| H2 (HIGH) | `95fb23bb` | resolver containment via active-manifest dir; monitor corrected a hardcoded-base bug + 2 unrealistic fixtures |
+| M3 (MED) | `1296dc58` | name-agnostic idempotent migration; verified on a real PostgreSQL 15 (stale-4-kind → fixed, idempotent, 5-kind clean) |
+| M4 (MED) | `d2f2c6df` | DB recovery observer re-marks persistence; no DB→web layer inversion |
+| M5 (MED) | `618213b6` | `invalid_signature` + `kind_mismatch` verifier reject coverage |
+
+Bonus (pre-existing breakage from today's agent-engine catalog work, found in the final sweep): `42d87916`
+repairs the `agentRouter` test mock missing `getRemoteAgentEngineModelCatalogService`.
+
+Final state: 286/286 tests green across all touched areas, `tsc --noEmit` clean. Not pushed.

@@ -9,11 +9,15 @@ import {
   verifyControlPlaneEnvelope,
 } from '../../../../src/main/services/cloud/controlPlaneTrust';
 
-function buildSignedEnvelope(payload: Record<string, unknown>, expiresAt = '2099-12-31T23:59:59.000Z') {
+function buildSignedEnvelope(
+  payload: Record<string, unknown>,
+  expiresAt = '2099-12-31T23:59:59.000Z',
+  kind: ControlPlaneEnvelope<Record<string, unknown>>['kind'] = 'cloud_config',
+) {
   const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
   const envelope: ControlPlaneEnvelope<Record<string, unknown>> = {
     schemaVersion: 1,
-    kind: 'cloud_config',
+    kind,
     issuedAt: '2026-05-17T00:00:00.000Z',
     expiresAt,
     contentHash: buildControlPlaneContentHash(payload),
@@ -84,6 +88,52 @@ describe('controlPlaneTrust', () => {
       'expired_envelope',
       'unknown_key_id',
     ]));
+  });
+
+  it('rejects a forged signature produced by a different key for a configured keyId', () => {
+    const payload = {
+      version: 'test',
+      prompts: { system: 'safe' },
+    };
+    const { envelope, publicKeys } = buildSignedEnvelope(payload);
+    const { privateKey: forgedPrivateKey } = crypto.generateKeyPairSync('ed25519');
+    envelope.signature = crypto.sign(
+      null,
+      Buffer.from(buildControlPlaneSigningPayload(envelope)),
+      forgedPrivateKey,
+    ).toString('base64');
+
+    const result = verifyControlPlaneEnvelope<typeof payload>(envelope, {
+      kind: 'cloud_config',
+      publicKeys,
+      requireSignature: true,
+      now: Date.parse('2026-05-17T00:00:00.000Z'),
+    });
+
+    expect(result.trusted).toBe(false);
+    expect(result.diagnostics.map((entry) => entry.code)).toContain('invalid_signature');
+    expect(result.diagnostics.map((entry) => entry.code)).not.toEqual(expect.arrayContaining([
+      'content_hash_mismatch',
+      'unknown_key_id',
+    ]));
+  });
+
+  it('rejects an envelope signed for the wrong control-plane artifact kind', () => {
+    const payload = {
+      version: 'test',
+      prompts: { system: 'safe' },
+    };
+    const { envelope, publicKeys } = buildSignedEnvelope(payload, undefined, 'cloud_config');
+
+    const result = verifyControlPlaneEnvelope<typeof payload>(envelope, {
+      kind: 'agent_engine_model_catalog',
+      publicKeys,
+      requireSignature: true,
+      now: Date.parse('2026-05-17T00:00:00.000Z'),
+    });
+
+    expect(result.trusted).toBe(false);
+    expect(result.diagnostics.map((entry) => entry.code)).toContain('kind_mismatch');
   });
 
   it('rejects unsigned raw config shapes by default', () => {

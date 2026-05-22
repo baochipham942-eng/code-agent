@@ -510,7 +510,10 @@ export class ModelRouter {
       }
     }
 
-    const effectiveConfig = this.getArtifactWriteRequiredPreferredConfig(messages, config) ?? config;
+    const allowCrossProviderFallback = config.adaptive === true;
+    const effectiveConfig = (allowCrossProviderFallback
+      ? this.getArtifactWriteRequiredPreferredConfig(messages, config)
+      : null) ?? config;
 
     try {
       const result = await this._callProviderWithArtifactFallback(messages, tools, effectiveConfig, onStream, signal, normalizedOptions);
@@ -577,6 +580,13 @@ export class ModelRouter {
         logger.warn(
           `[ModelRouter] Selected artifact provider retry exhausted; allowing cross-provider fallback for ${fallbackCategory}: ${fallbackReason}`
         );
+      }
+
+      if (!allowCrossProviderFallback) {
+        logger.warn(
+          `[ModelRouter] Provider ${effectiveConfig.provider} failed (${fallbackCategory}); explicit model selected, skipping cross-provider fallback: ${fallbackReason}`
+        );
+        throw primaryErr;
       }
 
       const chain = this.getFallbackChainForRequest(messages, effectiveConfig.provider);
@@ -690,7 +700,7 @@ export class ModelRouter {
       return await provider.inference(messages, tools, config, onStream, effectiveSignal, options);
     } catch (error) {
       if (timedAbort?.controller.signal.aborted && !signal?.aborted) {
-        throw new Error(`${config.provider} request timeout after ${timeoutMs}ms`);
+        throw new Error(`${config.provider} request timeout after ${timeoutMs}ms`, { cause: error });
       }
       throw error;
     } finally {

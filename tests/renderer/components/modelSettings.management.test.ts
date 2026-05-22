@@ -81,6 +81,24 @@ describe('ModelSettings management helpers', () => {
     });
   });
 
+  it('prefers configured provider model for provider management default display', () => {
+    const providerConfigs: Partial<Record<ModelConfig['provider'], ModelProviderSettings>> = {
+      openai: {
+        enabled: false,
+        model: 'gpt-5.4-mini',
+      },
+    };
+
+    const [row] = buildProviderManagementRows({
+      providers: [openaiProvider],
+      config: { ...config, provider: 'moonshot', model: 'kimi-k2.5' },
+      providerConfigs,
+    });
+
+    expect(row.defaultModel).toBe('gpt-5.4-mini');
+    expect(row.selectedModelLabel).toBe('GPT-5.4 Mini');
+  });
+
   it('keeps the selected provider at the top of the management list', () => {
     const rows = buildProviderManagementRows({
       providers: [moonshotProvider, openaiProvider],

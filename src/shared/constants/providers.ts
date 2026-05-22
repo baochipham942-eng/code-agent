@@ -1,5 +1,4 @@
 import type { BuiltInModelProvider, ModelProviderAlias } from '../contract';
-import { DEFAULT_MODEL } from './defaults';
 import { DEFAULT_MODELS } from './models';
 
 // ============================================================================
@@ -129,7 +128,7 @@ export const PROVIDER_REGISTRY: Record<BuiltInModelProvider, CanonicalProviderIn
   },
   claude: {
     aliases: ['claude', 'anthropic'],
-    defaultModel: DEFAULT_MODEL,
+    defaultModel: 'claude-opus-4-7',
     endpoint: MODEL_API_ENDPOINTS.claude,
     displayName: 'Anthropic Claude',
   },

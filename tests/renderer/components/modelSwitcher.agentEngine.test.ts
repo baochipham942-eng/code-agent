@@ -51,4 +51,35 @@ describe('ModelSwitcher Agent Engine selection', () => {
       origin: 'manual',
     });
   });
+
+  it('carries the current workspace as cwd for external engines', () => {
+    expect(buildModelSwitcherEngineSelection(descriptor({
+      kind: 'codex_cli',
+      label: 'Codex CLI',
+      installState: 'installed',
+      defaultPermissionProfile: 'read_only',
+      riskTier: 'medium',
+    }), '/repo/code-agent')).toEqual({
+      kind: 'codex_cli',
+      cwd: '/repo/code-agent',
+      permissionProfile: 'read_only',
+      origin: 'manual',
+    });
+  });
+
+  it('carries the catalog model separately from provider model overrides', () => {
+    expect(buildModelSwitcherEngineSelection(descriptor({
+      kind: 'claude_code',
+      label: 'Claude Code',
+      installState: 'installed',
+      defaultPermissionProfile: 'read_only',
+      riskTier: 'medium',
+    }), '/repo/code-agent', 'sonnet')).toEqual({
+      kind: 'claude_code',
+      cwd: '/repo/code-agent',
+      model: 'sonnet',
+      permissionProfile: 'read_only',
+      origin: 'manual',
+    });
+  });
 });

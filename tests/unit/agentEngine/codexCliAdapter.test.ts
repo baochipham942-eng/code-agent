@@ -127,6 +127,7 @@ describe('CodexCliAdapter.run', () => {
       prompt: 'inspect only',
       cwd: workspaceRoot,
       workspaceRoot,
+      model: 'gpt-5',
       timeoutMs: 20_000,
       stallWarningMs: 10_000,
     });
@@ -145,6 +146,8 @@ describe('CodexCliAdapter.run', () => {
       expect.objectContaining({ cwd: await fs.realpath(workspaceRoot), stdio: ['pipe', 'pipe', 'pipe'] }),
     );
     expect(args).toContain('--sandbox');
+    expect(args).toContain('--model');
+    expect(args[args.indexOf('--model') + 1]).toBe('gpt-5');
     expect(args[args.indexOf('--sandbox') + 1]).toBe('read-only');
     expect(args).not.toContain('workspace-write');
     expect(args).toContain('-C');
@@ -161,7 +164,9 @@ describe('CodexCliAdapter.run', () => {
     expect(JSON.stringify(spawnOptions.env)).not.toContain('secret-value');
 
     const firstTask = mocks.upsertTask.mock.calls[0][0];
+    expect(firstTask.command).toContain('--model gpt-5');
     expect(firstTask.command).toContain('--sandbox read-only');
+    expect(firstTask.metadata.model).toBe('gpt-5');
     expect(firstTask.command).toContain('<prompt:redacted>');
     expect(firstTask.command).not.toContain('inspect only');
     expect(firstTask.metadata.env.redacted).toEqual(expect.arrayContaining([

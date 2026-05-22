@@ -6,7 +6,7 @@
 // 用户可在对话中途切换模型，下一轮生效。
 
 import { createLogger } from '../services/infra/logger';
-import type { ModelProvider } from '../../shared/contract/model';
+import type { ModelConfig, ModelProvider } from '../../shared/contract/model';
 
 const logger = createLogger('ModelSessionState');
 
@@ -51,8 +51,8 @@ export class ModelSessionState {
    */
   getEffectiveConfig(
     sessionId: string,
-    baseConfig: { provider: ModelProvider; model: string; temperature?: number; maxTokens?: number }
-  ): { provider: ModelProvider; model: string; temperature?: number; maxTokens?: number } {
+    baseConfig: Pick<ModelConfig, 'provider' | 'model' | 'temperature' | 'maxTokens' | 'adaptive'>
+  ): Pick<ModelConfig, 'provider' | 'model' | 'temperature' | 'maxTokens' | 'adaptive'> {
     const override = this.overrides.get(sessionId);
     if (!override) return baseConfig;
 
@@ -61,6 +61,7 @@ export class ModelSessionState {
       model: override.model,
       temperature: override.temperature ?? baseConfig.temperature,
       maxTokens: override.maxTokens ?? baseConfig.maxTokens,
+      adaptive: override.adaptive ?? false,
     };
   }
 

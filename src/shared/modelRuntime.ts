@@ -42,14 +42,20 @@ export const MODEL_CAPABILITY_OPTIONS: Array<{ id: ModelCapability; label: strin
 
 const DEFAULT_SWITCHER_PROVIDERS: ModelProvider[] = [
   'moonshot',
+  'xiaomi',
+  'longcat',
   'deepseek',
   'zhipu',
   'openai',
   'claude',
+  'gemini',
+  'qwen',
+  'minimax',
+  'openrouter',
+  'perplexity',
+  'grok',
   'volcengine',
-  'longcat',
   'local',
-  'xiaomi',
   'custom',
 ];
 
@@ -214,8 +220,12 @@ export function getRuntimeModelLabel(
 export function buildRuntimeModelOptions(
   settings?: AppSettings | null,
   providerIds: readonly ModelProvider[] = DEFAULT_SWITCHER_PROVIDERS,
+  runtimeOptions: {
+    includeDisabledProviders?: readonly ModelProvider[];
+  } = {},
 ): RuntimeModelOption[] {
   const options: RuntimeModelOption[] = [];
+  const includedDisabledProviders = new Set(runtimeOptions.includeDisabledProviders ?? []);
   const dynamicProviderIds = settings
     ? (Object.keys(settings.models?.providers ?? {}) as ModelProvider[]).filter(isDynamicCustomProviderId)
     : [];
@@ -231,7 +241,7 @@ export function buildRuntimeModelOptions(
     const provider = buildProviderInfoFromSettings(providerId, providerConfig);
     if (!provider) continue;
 
-    if (settings && providerConfig?.enabled === false) continue;
+    if (settings && providerConfig?.enabled === false && !includedDisabledProviders.has(providerId)) continue;
 
     const providerLabel = providerConfig?.displayName || getProviderDisplayName(providerId) || provider.name;
     for (const model of getEnabledProviderModels(provider, providerConfig)) {

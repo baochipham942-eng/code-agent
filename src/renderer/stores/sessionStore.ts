@@ -654,14 +654,34 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
     updateSessionEngine: async (sessionId: string, engine: Partial<AgentEngineSessionMetadata>) => {
       try {
-        const normalized = await invokeAgentEngine<AgentEngineSessionMetadata>('select', {
+        const payload: {
+          sessionId: string;
+          kind: typeof engine.kind;
+          permissionProfile: typeof engine.permissionProfile;
+          model?: string;
+          workingDirectory?: string;
+        } = {
           sessionId,
           kind: engine.kind,
           permissionProfile: engine.permissionProfile,
-        });
+        };
+        if (engine.model) {
+          payload.model = engine.model;
+        }
+        if (engine.cwd) {
+          payload.workingDirectory = engine.cwd;
+        }
+        const normalized = await invokeAgentEngine<AgentEngineSessionMetadata>('select', payload);
         set((state) => ({
           sessions: state.sessions.map((s) =>
-            s.id === sessionId ? normalizeSession({ ...s, engine: normalized, updatedAt: Date.now() }) : s
+            s.id === sessionId
+              ? normalizeSession({
+                ...s,
+                engine: normalized,
+                workingDirectory: engine.cwd ?? s.workingDirectory,
+                updatedAt: Date.now(),
+              })
+              : s
           ),
         }));
       } catch (error) {

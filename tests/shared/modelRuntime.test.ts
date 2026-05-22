@@ -6,7 +6,7 @@ import {
   getProviderRuntimeModels,
   inferModelCapabilities,
 } from '../../src/shared/modelRuntime';
-import { PROVIDER_MODELS_MAP } from '../../src/shared/constants';
+import { getProviderInfo, PROVIDER_MODELS_MAP } from '../../src/shared/constants';
 
 describe('modelRuntime', () => {
   it('infers useful default capabilities from discovered model ids', () => {
@@ -57,6 +57,30 @@ describe('modelRuntime', () => {
     ]);
   });
 
+  it('can include a disabled current provider in switcher options', () => {
+    const settings = {
+      models: {
+        default: 'openai',
+        defaultProvider: 'openai',
+        providers: {
+          openai: {
+            enabled: false,
+          },
+        },
+      },
+    } as AppSettings;
+
+    expect(buildRuntimeModelOptions(settings, ['openai'])).toEqual([]);
+    expect(buildRuntimeModelOptions(settings, ['openai'], {
+      includeDisabledProviders: ['openai'],
+    })).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        provider: 'openai',
+        model: 'gpt-5.5',
+      }),
+    ]));
+  });
+
   it('builds switcher options for dynamic custom provider ids', () => {
     const settings = {
       models: {
@@ -97,5 +121,9 @@ describe('modelRuntime', () => {
         providerLabel: 'LongCat',
       }),
     ]);
+  });
+
+  it('keeps Claude provider defaults on Claude models', () => {
+    expect(getProviderInfo('claude')?.defaultModel).toBe('claude-opus-4-7');
   });
 });

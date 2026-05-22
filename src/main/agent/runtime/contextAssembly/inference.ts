@@ -390,12 +390,11 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
   }
   tools = dedupeToolDefinitions(tools);
 
-  let modelMessages: ModelMessage[] = [];
   let effectiveTools = tools;
   let effectiveConfig = ctx.runtime.modelConfig;
   let artifactRequest = false;
 
-  modelMessages = await ctx.buildModelMessages();
+  let modelMessages: ModelMessage[] = await ctx.buildModelMessages();
   if (ctx.runtime.forceFinalResponsePrompt) {
     modelMessages = [
       ...modelMessages,
@@ -447,6 +446,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     const lastUserMessage = modelMessages.filter(m => m.role === 'user').pop();
     const currentTurnMessages = lastUserMessage ? [lastUserMessage] : [];
     const requiredCapabilities = ctx.runtime.modelRouter.detectRequiredCapabilities(currentTurnMessages);
+    const allowCapabilityFallback = ctx.runtime.modelConfig.adaptive === true;
     let needsVisionFallback = false;
     let visionFallbackSucceeded = false;
 
@@ -476,6 +476,11 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
         if (!hasCapability) {
           if (capability === 'vision') {
             needsVisionFallback = true;
+          }
+
+          if (!allowCapabilityFallback) {
+            logger.info(`[Fallback] 显式模型 ${ctx.runtime.modelConfig.provider}/${ctx.runtime.modelConfig.model} 不启用 ${capability} fallback`);
+            continue;
           }
 
           const fallbackConfig = ctx.runtime.modelRouter.getFallbackConfig(capability, ctx.runtime.modelConfig);

@@ -49,6 +49,7 @@ describe('Agent Engine contract', () => {
       cwd: '/repo/code-agent',
       permissionProfile: 'read_only',
       origin: 'manual',
+      model: 'gpt-5',
       runId: 'run-1',
       externalSessionId: 'external-1',
       logPath: '/repo/code-agent/.logs/run-1.jsonl',
@@ -58,6 +59,7 @@ describe('Agent Engine contract', () => {
       cwd: '/repo/code-agent',
       permissionProfile: 'read_only',
       origin: 'manual',
+      model: 'gpt-5',
       runId: 'run-1',
       externalSessionId: 'external-1',
       logPath: '/repo/code-agent/.logs/run-1.jsonl',
@@ -139,6 +141,28 @@ describe('Agent Engine launch policy', () => {
       permissionProfile: 'read_only',
       origin: 'manual',
     });
+  });
+
+  it('preserves selected external model through launch policy', () => {
+    const selected = buildManualAgentEngineSelection(makeSession({ workingDirectory: workspaceRoot }), {
+      kind: 'claude_code',
+      label: 'Claude Code',
+      summary: '',
+      installState: 'installed',
+      runtimeState: 'ready',
+      executable: true,
+      capabilities: ['execute'],
+      defaultPermissionProfile: 'read_only',
+      cwdPolicy: 'workspace_only',
+      riskTier: 'medium',
+      detectedAt: Date.now(),
+    }, undefined, 'sonnet');
+
+    expect(selected.model).toBe('sonnet');
+    expect(resolveExternalEngineLaunch(
+      makeSession({ workingDirectory: workspaceRoot }),
+      selected,
+    ).model).toBe('sonnet');
   });
 
   it('rejects workspace-write external engine selection in the current release', () => {

@@ -49,6 +49,7 @@ export function buildManualAgentEngineSelection(
   session: Session | null | undefined,
   descriptor: AgentEngineDescriptor,
   profile?: AgentEnginePermissionProfile,
+  model?: string | null,
   now: number = Date.now(),
 ): AgentEngineSessionMetadata {
   if (descriptor.kind === 'native') {
@@ -75,6 +76,7 @@ export function buildManualAgentEngineSelection(
   const cwd = assertWorkspaceCwd(workspaceRoot, workspaceRoot);
   return normalizeAgentEngineSession({
     kind: descriptor.kind,
+    ...(model?.trim() ? { model: model.trim() } : {}),
     cwd,
     permissionProfile,
     origin: 'manual',
@@ -86,7 +88,7 @@ export function resolveExternalEngineLaunch(
   session: Session | null | undefined,
   engine: AgentEngineSessionMetadata,
   requestedCwd?: string | null,
-): { cwd: string; workspaceRoot: string; permissionProfile: 'read_only' } {
+): { cwd: string; workspaceRoot: string; permissionProfile: 'read_only'; model?: string } {
   assertExternalEngineSessionAllowed(session);
 
   if (!isExternalAgentEngine(engine.kind)) {
@@ -111,6 +113,7 @@ export function resolveExternalEngineLaunch(
     cwd,
     workspaceRoot: assertWorkspaceCwd(workspaceRoot, workspaceRoot),
     permissionProfile,
+    ...(engine.model ? { model: engine.model } : {}),
   };
 }
 

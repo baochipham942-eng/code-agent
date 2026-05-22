@@ -56,6 +56,7 @@ export class CodexCliAdapter {
 
     const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);
     const sandbox = toCodexSandbox(permissionProfile);
+    const model = request.model?.trim();
     const startedAt = Date.now();
     const runId = `codex_${startedAt}_${randomUUID().slice(0, 8)}`;
     const taskId = `agent-engine:${runId}`;
@@ -68,7 +69,14 @@ export class CodexCliAdapter {
     const lastMessagePath = path.join(logDir, `${runId}.last.md`);
     const logStream = createWriteStream(logPath, { flags: 'a' });
 
-    const commandSummary = `codex exec --json --sandbox ${sandbox} -C ${cwd} <prompt:redacted>`;
+    const commandSummary = [
+      'codex exec',
+      '--json',
+      ...(model ? [`--model ${model}`] : []),
+      `--sandbox ${sandbox}`,
+      `-C ${cwd}`,
+      '<prompt:redacted>',
+    ].join(' ');
     const timing = normalizeCodexCliRunTiming({
       timeoutMs: request.timeoutMs,
       stallWarningMs: request.stallWarningMs,
@@ -87,6 +95,7 @@ export class CodexCliAdapter {
       status: 'running',
       engine: normalizeAgentEngineSession({
         kind: 'codex_cli',
+        model,
         runId,
         logPath,
         cwd,
@@ -111,6 +120,7 @@ export class CodexCliAdapter {
       startedAt,
       metadata: {
         engine: 'codex_cli',
+        ...(model ? { model } : {}),
         permissionProfile,
         env: summarizeEnv(buildSafeEnv()),
         logPath,
@@ -123,7 +133,7 @@ export class CodexCliAdapter {
       type: 'agent_engine.started',
       status: 'running',
       message: 'Codex CLI run started',
-      data: { runId, cwd, permissionProfile },
+      data: { runId, cwd, permissionProfile, model },
     });
 
     const emit = (event: AgentEventEnvelope) => emitAgentEvent(request.sessionId, event, request.emitEvent);
@@ -136,6 +146,7 @@ export class CodexCliAdapter {
     const args = [
       'exec',
       '--json',
+      ...(model ? ['--model', model] : []),
       '--sandbox',
       sandbox,
       '--skip-git-repo-check',
@@ -329,6 +340,7 @@ export class CodexCliAdapter {
         status: 'error',
         engine: normalizeAgentEngineSession({
           kind: 'codex_cli',
+          model,
           runId,
           logPath,
           cwd,
@@ -403,6 +415,7 @@ export class CodexCliAdapter {
       status: 'idle',
       engine: normalizeAgentEngineSession({
         kind: 'codex_cli',
+        model,
         runId,
         logPath,
         cwd,

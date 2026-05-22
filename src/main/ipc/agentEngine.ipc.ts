@@ -4,9 +4,19 @@
 
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { AgentEngineKind, AgentEnginePermissionProfile } from '../../shared/contract/agentEngine';
+import type {
+  AgentEngineKind,
+  AgentEnginePermissionProfile,
+  ExternalAgentEngineKind,
+} from '../../shared/contract/agentEngine';
+import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import { getAgentEngineRegistry } from '../services/agentEngine';
 import { buildManualAgentEngineSelection } from '../services/agentEngine/agentEngineGuards';
+import {
+  getAgentEngineCatalogEngine,
+  getRemoteAgentEngineModelCatalogService,
+  resolveAgentEngineCatalogModel,
+} from '../services/agentEngine/agentEngineModelCatalog';
 import {
   AgentEngineHistoryImportError,
   getAgentEngineHistoryImportService,
@@ -14,6 +24,10 @@ import {
   type AgentEngineHistoryPreviewRequest,
 } from '../services/agentEngine/agentEngineHistoryImport';
 import { getSessionManager } from '../services/infra/sessionManager';
+
+function isExternalEngineKind(kind: AgentEngineKind | undefined): kind is ExternalAgentEngineKind {
+  return kind === 'codex_cli' || kind === 'claude_code';
+}
 
 export function registerAgentEngineHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(IPC_DOMAINS.AGENT_ENGINE, async (_event, request: IPCRequest): Promise<IPCResponse> => {
@@ -29,11 +43,16 @@ export function registerAgentEngineHandlers(ipcMain: IpcMain): void {
         case 'get':
           data = await registry.get((request.payload as { kind: AgentEngineKind }).kind);
           break;
+        case 'listModels':
+          data = await getRemoteAgentEngineModelCatalogService().readCatalog();
+          break;
         case 'select': {
           const payload = request.payload as {
             sessionId?: string;
             kind?: AgentEngineKind;
             permissionProfile?: AgentEnginePermissionProfile;
+            model?: string | null;
+            workingDirectory?: string | null;
           };
           if (!payload.sessionId || !payload.kind) {
             return {
@@ -47,14 +66,117 @@ export function registerAgentEngineHandlers(ipcMain: IpcMain): void {
           const sessionManager = getSessionManager();
           const session = await sessionManager.getSession(payload.sessionId, 1);
           const descriptor = await registry.get(payload.kind);
+          const selectedModel = isExternalEngineKind(payload.kind)
+            ? await getRemoteAgentEngineModelCatalogService().resolveModelId(payload.kind, payload.model)
+            : undefined;
+          const sessionForSelection = session && payload.workingDirectory?.trim()
+            ? { ...session, workingDirectory: payload.workingDirectory.trim() }
+            : session;
           const engine = buildManualAgentEngineSelection(
-            session,
+            sessionForSelection,
             descriptor,
             payload.permissionProfile,
+            selectedModel,
           );
           await sessionManager.updateSession(
             payload.sessionId,
-            { engine, updatedAt: engine.updatedAt ?? Date.now() },
+            {
+              engine,
+              workingDirectory: sessionForSelection?.workingDirectory,
+              updatedAt: engine.updatedAt ?? Date.now(),
+            },
+            { allowEngineUpdate: true },
+          );
+          data = engine;
+          break;
+        }
+        case 'selectModel': {
+          const payload = request.payload as {
+            sessionId?: string;
+            kind?: AgentEngineKind;
+            model?: string;
+          };
+          if (!payload.sessionId || !payload.model?.trim()) {
+            return {
+              success: false,
+              error: {
+                code: 'INVALID_PAYLOAD',
+                message: 'Agent Engine model selection requires sessionId and model.',
+              },
+            };
+          }
+
+          const sessionManager = getSessionManager();
+          const session = await sessionManager.getSession(payload.sessionId, 1);
+          if (!session) {
+            return {
+              success: false,
+              error: {
+                code: 'SESSION_NOT_FOUND',
+                message: 'Session not found for Agent Engine model selection.',
+              },
+            };
+          }
+
+          const currentEngine = normalizeAgentEngineSession(session.engine);
+          const targetKind = payload.kind ?? currentEngine.kind;
+          if (!isExternalEngineKind(targetKind)) {
+            return {
+              success: false,
+              error: {
+                code: 'INVALID_ENGINE',
+                message: 'Native Agent Neo model selection uses the normal model provider settings.',
+              },
+            };
+          }
+
+          const catalogResult = await getRemoteAgentEngineModelCatalogService().readCatalog();
+          const catalogEngine = getAgentEngineCatalogEngine(catalogResult.catalog, targetKind);
+          const model = catalogEngine?.models.find((entry) => entry.id === payload.model?.trim());
+          if (!catalogEngine || !model) {
+            return {
+              success: false,
+              error: {
+                code: 'MODEL_NOT_FOUND',
+                message: 'Selected Agent Engine model is not present in the signed catalog.',
+              },
+            };
+          }
+          if (model.disabledReason) {
+            return {
+              success: false,
+              error: {
+                code: 'MODEL_DISABLED',
+                message: model.disabledReason,
+              },
+            };
+          }
+
+          let engine;
+          if (currentEngine.kind === targetKind) {
+            const fallbackModel = resolveAgentEngineCatalogModel(catalogResult.catalog, targetKind, model.id)?.id ?? model.id;
+            engine = normalizeAgentEngineSession({
+              ...currentEngine,
+              kind: targetKind,
+              model: fallbackModel,
+              updatedAt: Date.now(),
+            });
+          } else {
+            const descriptor = await registry.get(targetKind);
+            engine = buildManualAgentEngineSelection(
+              session,
+              descriptor,
+              descriptor.defaultPermissionProfile,
+              model.id,
+            );
+          }
+
+          await sessionManager.updateSession(
+            payload.sessionId,
+            {
+              engine,
+              updatedAt: engine.updatedAt ?? Date.now(),
+            },
             { allowEngineUpdate: true },
           );
           data = engine;

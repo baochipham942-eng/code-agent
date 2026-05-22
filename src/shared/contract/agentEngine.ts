@@ -2,7 +2,11 @@
 // Agent Engine Contract
 // ============================================================================
 
+import type { ModelCapability } from './model';
+
 export type AgentEngineKind = 'native' | 'codex_cli' | 'claude_code';
+
+export type ExternalAgentEngineKind = Exclude<AgentEngineKind, 'native'>;
 
 export type AgentEngineInstallState = 'builtin' | 'installed' | 'missing';
 
@@ -33,6 +37,7 @@ export type AgentEngineRiskTier = 'low' | 'medium' | 'high';
 
 export interface AgentEngineSessionMetadata {
   kind: AgentEngineKind;
+  model?: string;
   runId?: string;
   externalSessionId?: string;
   logPath?: string;
@@ -88,6 +93,7 @@ export interface AgentEngineRunRequest {
   sessionId: string;
   prompt: string;
   cwd: string;
+  model?: string;
   permissionProfile?: AgentEnginePermissionProfile;
   clientMessageId?: string;
 }
@@ -101,6 +107,46 @@ export interface AgentEngineRunResult {
   logPath?: string;
   exitCode?: number | null;
   error?: string;
+}
+
+export interface AgentEngineModelCatalogModel {
+  id: string;
+  label: string;
+  capabilities: ModelCapability[];
+  recommended?: boolean;
+  disabledReason?: string;
+  updatedAt?: string;
+}
+
+export interface AgentEngineModelCatalogEngine {
+  kind: ExternalAgentEngineKind;
+  defaultModel: string;
+  models: AgentEngineModelCatalogModel[];
+  updatedAt?: string;
+}
+
+export interface AgentEngineModelCatalog {
+  version: string;
+  updatedAt: string;
+  engines: AgentEngineModelCatalogEngine[];
+}
+
+export type AgentEngineModelCatalogSource = 'remote' | 'bundled';
+
+export interface AgentEngineModelCatalogDiagnostic {
+  severity: 'info' | 'warning' | 'error';
+  code: string;
+  message: string;
+  path?: string;
+}
+
+export interface AgentEngineModelCatalogResult {
+  catalog: AgentEngineModelCatalog;
+  source: AgentEngineModelCatalogSource;
+  diagnostics: AgentEngineModelCatalogDiagnostic[];
+  contentHash?: string;
+  keyId?: string;
+  expiresAt?: string;
 }
 
 export const AGENT_ENGINE_KINDS: AgentEngineKind[] = ['native', 'codex_cli', 'claude_code'];
@@ -129,6 +175,7 @@ export function normalizeAgentEngineSession(value: unknown): AgentEngineSessionM
     kind,
     permissionProfile,
     origin,
+    ...(typeof input.model === 'string' && input.model ? { model: input.model } : {}),
     ...(typeof input.runId === 'string' && input.runId ? { runId: input.runId } : {}),
     ...(typeof input.externalSessionId === 'string' && input.externalSessionId ? { externalSessionId: input.externalSessionId } : {}),
     ...(typeof input.logPath === 'string' && input.logPath ? { logPath: input.logPath } : {}),

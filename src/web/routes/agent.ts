@@ -29,6 +29,7 @@ import { MessageDeltaAccumulator } from '../../main/protocol/messageDeltaAccumul
 import {
   ClaudeCodeAdapter,
   CodexCliAdapter,
+  getRemoteAgentEngineModelCatalogService,
   resolveExternalEngineLaunch,
 } from '../../main/services/agentEngine';
 import {
@@ -445,6 +446,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           prompt,
           cwd: launch.cwd,
           workspaceRoot: launch.workspaceRoot,
+          model: await getRemoteAgentEngineModelCatalogService().resolveModelId(selectedEngine.kind, launch.model),
           permissionProfile: launch.permissionProfile,
           clientMessageId,
           attachmentsCount: body.attachments?.length ?? 0,

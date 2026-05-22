@@ -3,12 +3,12 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { Brain, CheckCircle, Code2, Eye, Gauge, Key, Plus, RefreshCw, Search, Stethoscope, Wrench, Zap } from 'lucide-react';
+import { Brain, CheckCircle, Code2, Eye, Gauge, Key, Plus, RefreshCw, Search, Stethoscope, Wrench } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelCapability, ModelEntrySettings, ModelProvider, ModelProviderProtocol, ModelProviderSettings } from '@shared/contract';
-import { UI, MODEL, PROVIDER_MODELS, getProviderEndpointForProtocol } from '@shared/constants';
+import { UI, PROVIDER_MODELS, getProviderEndpointForProtocol } from '@shared/constants';
 import {
   MODEL_CAPABILITY_OPTIONS,
   buildProviderInfoFromSettings,
@@ -40,15 +40,15 @@ import {
   buildProviderManagementRows,
   createCustomProviderId,
   getModelLabel,
-  getProtocolLabel,
   hasCustomEndpointOverride,
   orderProviderManagementRows,
-  renderModelOptions,
   resolveModelForProvider,
   type DiscoverModelsResult,
   type ProviderConfigMap,
   type ProviderDisplayInfo,
 } from './ModelSettings.helpers';
+import { AgentEngineModelCatalogSection } from './AgentEngineModelCatalogSection';
+import { CurrentModelConfigurationSection } from './CurrentModelConfigurationSection';
 export type { ModelConfig };
 
 export interface ModelSettingsProps {
@@ -562,6 +562,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     >
       <WebModeBanner />
 
+      <AgentEngineModelCatalogSection />
+
       <SettingsSection
         title="Provider 管理"
         description="选择默认模型提供商，查看 endpoint、可用模型数量和当前配置状态。"
@@ -729,158 +731,33 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         </div>
       </SettingsSection>
 
-      <SettingsSection
-        title="当前模型配置"
-        description={`当前使用 ${selectedProviderRow?.name || config.provider} / ${selectedModelLabel}`}
-      >
-        <div className="grid gap-4 rounded-lg border border-zinc-700/70 bg-zinc-900/60 p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
-          <div className="space-y-4">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-zinc-200">
-                Provider 名称
-              </label>
-              <Input
-                value={currentProviderConfig?.displayName ?? ''}
-                onChange={(e) => handleDisplayNameChange(e.target.value)}
-                placeholder={currentProviderInfo?.name || config.provider}
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-zinc-200">
-                Provider 协议
-              </label>
-              {isCustomProviderProtocolEditable ? (
-                <Select
-                  value={effectiveProtocol}
-                  onChange={(event) => handleProviderProtocolChange(event.target.value as ModelProviderProtocol)}
-                >
-                  <option value="openai">OpenAI 兼容</option>
-                  <option value="claude">Claude 协议</option>
-                </Select>
-              ) : (
-                <div className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300">
-                  {getProtocolLabel(effectiveProtocol)}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <label className="block text-sm font-medium text-zinc-200">
-                  Provider 地址
-                </label>
-                {showOfficialEndpointReset && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={handleResetOfficialEndpoint}
-                    disabled={isWebMode()}
-                  >
-                    恢复官方
-                  </Button>
-                )}
-              </div>
-              <Input
-                value={configuredBaseUrl}
-                onChange={(e) => handleBaseUrlChange(e.target.value)}
-                placeholder={registryEndpoint || 'https://api.example.com/v1'}
-              />
-              <p className="mt-2 text-xs text-zinc-500">
-                OpenAI 兼容通常填到 /v1；Claude 协议通常填 Anthropic-compatible base URL。
-              </p>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-zinc-200">
-                {t.model.apiKey}
-              </label>
-              <Input
-                type="password"
-                value={config.apiKey || ''}
-                onChange={(e) => handleApiKeyChange(e.target.value)}
-                placeholder={t.model.apiKeyPlaceholder}
-                leftIcon={<Key className="w-4 h-4" />}
-              />
-              <p className="mt-2 text-xs text-zinc-500">
-                {t.model.apiKeyHint}
-              </p>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-zinc-200">
-                {t.model.modelSelect}
-              </label>
-              <Select
-                value={config.model}
-                onChange={(e) => handleModelChange(e.target.value)}
-              >
-                {renderModelOptions(selectableModels)}
-              </Select>
-              <p className="mt-2 text-xs text-zinc-500">
-                默认模型只能从已启用模型里选；未启用模型会从输入框下拉隐藏。
-              </p>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-zinc-200">
-                {t.model.temperature}: {config.temperature ?? MODEL.DEFAULT_TEMPERATURE}
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.1"
-                value={config.temperature ?? MODEL.DEFAULT_TEMPERATURE}
-                onChange={(e) => {
-                  const temperature = parseFloat(e.target.value);
-                  patchCurrentProviderConfig({ temperature });
-                  onChange({ ...config, temperature });
-                }}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-zinc-500">
-                <span>{t.model.temperaturePrecise}</span>
-                <span>{t.model.temperatureCreative}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
-              <Zap className="h-4 w-4 text-amber-300" />
-              运行摘要
-            </div>
-            <dl className="mt-3 space-y-2 text-xs">
-              <div className="flex justify-between gap-3">
-                <dt className="text-zinc-500">Provider</dt>
-                <dd className="truncate text-zinc-300">{selectedProviderRow?.name || config.provider}</dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-zinc-500">Model</dt>
-                <dd className="truncate text-zinc-300">{selectedModelLabel}</dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-zinc-500">Endpoint</dt>
-                <dd className="max-w-[150px] truncate font-mono text-zinc-400" title={effectiveBaseUrl}>
-                  {effectiveBaseUrl || '-'}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-zinc-500">API Key</dt>
-                <dd className={hasApiKey ? 'text-emerald-300' : 'text-amber-300'}>
-                  {hasApiKey ? '已填写' : '未填写'}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-zinc-500">模型池</dt>
-                <dd className="text-zinc-300">{currentEnabledModels.length}/{currentModels.length} 个</dd>
-              </div>
-            </dl>
-          </div>
-        </div>
-      </SettingsSection>
+      <CurrentModelConfigurationSection
+        config={config}
+        providerName={selectedProviderRow?.name || config.provider}
+        selectedModelLabel={selectedModelLabel}
+        providerDisplayName={currentProviderConfig?.displayName ?? ''}
+        providerNamePlaceholder={currentProviderInfo?.name || config.provider}
+        effectiveProtocol={effectiveProtocol}
+        isCustomProviderProtocolEditable={isCustomProviderProtocolEditable}
+        showOfficialEndpointReset={showOfficialEndpointReset}
+        registryEndpoint={registryEndpoint}
+        configuredBaseUrl={configuredBaseUrl}
+        effectiveBaseUrl={effectiveBaseUrl}
+        selectableModels={selectableModels}
+        hasApiKey={hasApiKey}
+        enabledModelCount={currentEnabledModels.length}
+        modelCount={currentModels.length}
+        onDisplayNameChange={handleDisplayNameChange}
+        onProviderProtocolChange={handleProviderProtocolChange}
+        onResetOfficialEndpoint={handleResetOfficialEndpoint}
+        onBaseUrlChange={handleBaseUrlChange}
+        onApiKeyChange={handleApiKeyChange}
+        onModelChange={handleModelChange}
+        onTemperatureChange={(temperature) => {
+          patchCurrentProviderConfig({ temperature });
+          onChange({ ...config, temperature });
+        }}
+      />
 
       <SettingsSection
         title="模型发现与启用"

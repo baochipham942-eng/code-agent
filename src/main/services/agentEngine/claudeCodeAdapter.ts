@@ -60,6 +60,7 @@ export class ClaudeCodeAdapter {
 
     const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);
     const permissionMode = toClaudePermissionMode(permissionProfile);
+    const model = request.model?.trim();
     const startedAt = Date.now();
     const runId = `claude_${startedAt}_${randomUUID().slice(0, 8)}`;
     const taskId = `agent-engine:${runId}`;
@@ -75,6 +76,7 @@ export class ClaudeCodeAdapter {
     const commandSummary = [
       'claude -p',
       '--verbose',
+      ...(model ? [`--model ${model}`] : []),
       '--output-format stream-json',
       `--permission-mode ${permissionMode}`,
       '--setting-sources local',
@@ -101,6 +103,7 @@ export class ClaudeCodeAdapter {
       status: 'running',
       engine: normalizeAgentEngineSession({
         kind: 'claude_code',
+        model,
         runId,
         logPath,
         cwd,
@@ -126,6 +129,7 @@ export class ClaudeCodeAdapter {
       startedAt,
       metadata: {
         engine: 'claude_code',
+        ...(model ? { model } : {}),
         permissionProfile,
         permissionMode,
         env: summarizeEnv(env),
@@ -139,7 +143,7 @@ export class ClaudeCodeAdapter {
       type: 'agent_engine.started',
       status: 'running',
       message: 'Claude Code run started',
-      data: { runId, cwd, permissionProfile, permissionMode },
+      data: { runId, cwd, permissionProfile, permissionMode, model },
     });
 
     const emit = (event: AgentEventEnvelope) => emitAgentEvent(request.sessionId, event, request.emitEvent);
@@ -149,7 +153,7 @@ export class ClaudeCodeAdapter {
       data: { turnId, iteration: 1 },
     });
 
-    const args = buildClaudeCodeArgs(permissionProfile);
+    const args = buildClaudeCodeArgs(permissionProfile, model);
     const child = spawn(descriptor.binaryPath, args, {
       cwd,
       env,
@@ -316,6 +320,7 @@ export class ClaudeCodeAdapter {
 
     const sessionEngine = normalizeAgentEngineSession({
       kind: 'claude_code',
+      model,
       runId,
       externalSessionId,
       logPath,
@@ -441,11 +446,15 @@ export class ClaudeCodeAdapter {
   }
 }
 
-export function buildClaudeCodeArgs(profile: AgentEnginePermissionProfile = 'read_only'): string[] {
+export function buildClaudeCodeArgs(
+  profile: AgentEnginePermissionProfile = 'read_only',
+  model?: string | null,
+): string[] {
   const permissionMode = toClaudePermissionMode(profile);
   return [
     '-p',
     '--verbose',
+    ...(model?.trim() ? ['--model', model.trim()] : []),
     '--setting-sources',
     'local',
     '--disable-slash-commands',

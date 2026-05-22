@@ -1,5 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import crypto from 'crypto';
 import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { createServer, type Server } from 'http';
 import { tmpdir } from 'os';
 import { delimiter, join } from 'path';
 import type { Page } from 'playwright';
@@ -22,6 +24,7 @@ type AgentEngineKind = 'native' | 'codex_cli' | 'claude_code';
 
 interface AgentEngineSessionMetadata {
   kind: AgentEngineKind;
+  model?: string;
   cwd?: string;
   permissionProfile?: string;
   origin?: string;
@@ -60,7 +63,7 @@ What it validates:
   - the local app-host serves the current renderer build
   - system Chrome headless + CDP can open the real app-host UI
   - the Engine selector exposes Native, Codex CLI, and Claude Code descriptors
-  - selecting an external engine writes session engine metadata
+  - selecting an external engine writes session engine metadata with the signed catalog default model
   - no external CLI model run is started; fake codex/claude binaries only answer --version`);
 }
 
@@ -120,7 +123,123 @@ function createFakeExternalEngineBin(): string {
   return binDir;
 }
 
-function startAppHost(port: number, fakeBinDir: string): { child: ChildProcessWithoutNullStreams; output: () => string } {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => canonicalize(entry));
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, canonicalize(entry)]),
+  );
+}
+
+function buildContentHash(payload: unknown): string {
+  return `sha256:${crypto
+    .createHash('sha256')
+    .update(JSON.stringify(canonicalize(payload)))
+    .digest('hex')}`;
+}
+
+function buildSigningPayload(envelope: Record<string, unknown>): string {
+  return JSON.stringify(canonicalize({
+    schemaVersion: envelope.schemaVersion,
+    kind: envelope.kind,
+    issuedAt: envelope.issuedAt,
+    expiresAt: envelope.expiresAt,
+    contentHash: envelope.contentHash,
+    keyId: envelope.keyId,
+    payload: envelope.payload,
+  }));
+}
+
+function createFakeSignedCatalogServer(port: number): Promise<{
+  server: Server;
+  url: string;
+  publicKeysJson: string;
+}> {
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+  const publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+  const updatedAt = '2026-05-22T00:00:00.000Z';
+  const payload = {
+    version: 'smoke-agent-engine-models',
+    updatedAt,
+    engines: [
+      {
+        kind: 'codex_cli',
+        defaultModel: 'smoke-codex',
+        updatedAt,
+        models: [{
+          id: 'smoke-codex',
+          label: 'Smoke Codex',
+          capabilities: ['code', 'reasoning'],
+          recommended: true,
+          updatedAt,
+        }],
+      },
+      {
+        kind: 'claude_code',
+        defaultModel: 'smoke-sonnet',
+        updatedAt,
+        models: [{
+          id: 'smoke-sonnet',
+          label: 'Smoke Sonnet',
+          capabilities: ['code', 'reasoning'],
+          recommended: true,
+          updatedAt,
+        }],
+      },
+    ],
+  };
+  const envelope: Record<string, unknown> = {
+    schemaVersion: 1,
+    kind: 'agent_engine_model_catalog',
+    issuedAt: updatedAt,
+    expiresAt: '2099-12-31T23:59:59.000Z',
+    contentHash: buildContentHash(payload),
+    keyId: 'agent-engine-smoke-key',
+    payload,
+  };
+  envelope.signature = crypto.sign(
+    null,
+    Buffer.from(buildSigningPayload(envelope)),
+    privateKey,
+  ).toString('base64');
+
+  const server = createServer((_req, res) => {
+    res.setHeader('content-type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify(envelope));
+  });
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', () => {
+      server.off('error', reject);
+      resolve({
+        server,
+        url: `http://127.0.0.1:${port}/api/v1/control-plane?artifact=agent_engine_models`,
+        publicKeysJson: JSON.stringify({ 'agent-engine-smoke-key': publicKeyPem }),
+      });
+    });
+  });
+}
+
+function stopServer(server: Server | null): Promise<void> {
+  if (!server?.listening) return Promise.resolve();
+  return new Promise((resolve) => server.close(() => resolve()));
+}
+
+function startAppHost(
+  port: number,
+  fakeBinDir: string,
+  catalog: { url: string; publicKeysJson: string },
+): { child: ChildProcessWithoutNullStreams; output: () => string } {
   let logs = '';
   const child = spawn('node', ['dist/web/webServer.cjs'], {
     cwd: process.cwd(),
@@ -132,6 +251,8 @@ function startAppHost(port: number, fakeBinDir: string): { child: ChildProcessWi
       CODE_AGENT_ENABLE_DEV_API: 'true',
       CODE_AGENT_E2E: '1',
       CODE_AGENT_WORKING_DIR: process.cwd(),
+      CODE_AGENT_AGENT_ENGINE_MODEL_CATALOG_URL: catalog.url,
+      CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS: catalog.publicKeysJson,
       NODE_ENV: 'development',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -215,7 +336,7 @@ Body:
 ${bodyText.slice(0, 1_500)}
 
 Original error:
-${message}`);
+${message}`, { cause: error });
   }
 }
 
@@ -334,7 +455,7 @@ async function clickEngine(page: Page, label: 'Native' | 'Codex CLI' | 'Claude C
   await button.click({ timeout: 5_000 });
 }
 
-async function waitForTriggerEngine(page: Page, shortLabel: 'Native' | 'Codex' | 'Claude'): Promise<string> {
+async function waitForTriggerEngine(page: Page, shortLabel: 'Agent Neo' | 'Codex' | 'Claude'): Promise<string> {
   const trigger = page.locator('button[aria-label="切换模型"]').last();
   const start = Date.now();
   let lastTexts: string[] = [];
@@ -383,8 +504,10 @@ async function main(): Promise<void> {
 
   const fakeBinDir = createFakeExternalEngineBin();
   const appPort = getNumberOption(args, 'port') || await getFreePort();
+  const catalogPort = await getFreePort();
+  const fakeCatalog = await createFakeSignedCatalogServer(catalogPort);
   const baseUrl = `http://127.0.0.1:${appPort}`;
-  const appHost = startAppHost(appPort, fakeBinDir);
+  const appHost = startAppHost(appPort, fakeBinDir, fakeCatalog);
   let chromeSession: Awaited<ReturnType<typeof launchSystemChromeSession>> | null = null;
   let page: Page | null = null;
   let smokeSessionId: string | null = null;
@@ -438,7 +561,7 @@ async function main(): Promise<void> {
     if (!selector.claudeCode) failures.push('Engine selector missing Claude Code.');
 
     await clickEngine(page, 'Native');
-    const nativeTrigger = await waitForTriggerEngine(page, 'Native');
+    const nativeTrigger = await waitForTriggerEngine(page, 'Agent Neo');
     const nativeEngine = await waitForSessionEngine(page, smokeSession.id, 'native');
 
     await clickEngine(page, 'Codex CLI');
@@ -457,6 +580,12 @@ async function main(): Promise<void> {
     }
     if (!codexEngine.cwd || !claudeEngine.cwd) {
       failures.push('External engine metadata missing cwd.');
+    }
+    if (codexEngine.model !== 'smoke-codex') {
+      failures.push(`Codex CLI model mismatch: ${codexEngine.model || 'missing'}`);
+    }
+    if (claudeEngine.model !== 'smoke-sonnet') {
+      failures.push(`Claude Code model mismatch: ${claudeEngine.model || 'missing'}`);
     }
 
     if (consoleErrors.length > 0) {
@@ -481,6 +610,10 @@ async function main(): Promise<void> {
       fakeExternalCli: {
         used: true,
         versionOnly: true,
+      },
+      fakeCatalog: {
+        url: fakeCatalog.url,
+        signed: true,
       },
       selector,
       engineButtons,
@@ -514,6 +647,7 @@ async function main(): Promise<void> {
         ['chromeExecutable', result.chrome?.executable],
         ['chromeMode', result.chrome?.mode],
         ['fakeExternalCliVersionOnly', result.fakeExternalCli.versionOnly],
+        ['fakeCatalogSigned', result.fakeCatalog.signed],
         ['selectorNative', result.selector.native],
         ['selectorCodexCli', result.selector.codexCli],
         ['selectorClaudeCode', result.selector.claudeCode],
@@ -523,6 +657,8 @@ async function main(): Promise<void> {
         ['claudeEngine', result.session.claudeEngine.kind],
         ['codexCwd', result.session.codexEngine.cwd],
         ['claudeCwd', result.session.claudeEngine.cwd],
+        ['codexModel', result.session.codexEngine.model],
+        ['claudeModel', result.session.claudeEngine.model],
         ['consoleErrors', consoleErrors.length],
         ['pageErrors', pageErrors.length],
       ]);
@@ -554,6 +690,7 @@ async function main(): Promise<void> {
       await stopProcess(appHost.child);
     }
     rmSync(fakeBinDir, { recursive: true, force: true });
+    await stopServer(fakeCatalog.server).catch(() => undefined);
   }
 }
 

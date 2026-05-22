@@ -9,6 +9,7 @@ import type {
   AgentEngineKind,
   AgentEngineRuntimeState,
 } from '../../../shared/contract/agentEngine';
+import { getShellPath } from '../infra/shellEnvironment';
 
 const execFileAsync = promisify(execFile);
 
@@ -134,6 +135,7 @@ export class AgentEngineRegistry {
 
     try {
       const result = await execFileAsync(binaryPath, versionArgs, {
+        env: this.getProbeEnv(),
         timeout: VERSION_TIMEOUT_MS,
         maxBuffer: 512 * 1024,
       }) as ExecProbeResult;
@@ -156,6 +158,7 @@ export class AgentEngineRegistry {
     const locator = process.platform === 'win32' ? 'where' : 'which';
     try {
       const result = await execFileAsync(locator, [command], {
+        env: this.getProbeEnv(),
         timeout: VERSION_TIMEOUT_MS,
         maxBuffer: 128 * 1024,
       }) as ExecProbeResult;
@@ -166,6 +169,13 @@ export class AgentEngineRegistry {
     } catch {
       return undefined;
     }
+  }
+
+  private getProbeEnv(): NodeJS.ProcessEnv {
+    return {
+      ...process.env,
+      PATH: getShellPath(),
+    };
   }
 }
 

@@ -566,6 +566,7 @@ describe('ModelRouter', () => {
         model: 'mimo-v2.5-pro',
         apiKey: 'test-key',
         maxTokens: 1000,
+        adaptive: true,
       };
       const onStream = vi.fn();
 
@@ -604,6 +605,7 @@ describe('ModelRouter', () => {
         model: 'mimo-v2.5-pro',
         apiKey: 'test-key',
         maxTokens: 1000,
+        adaptive: true,
       };
 
       await router.inference(
@@ -646,6 +648,7 @@ describe('ModelRouter', () => {
         model: 'mimo-v2.5-pro',
         apiKey: 'test-key',
         maxTokens: 1000,
+        adaptive: true,
       };
 
       await router.inference(
@@ -723,6 +726,7 @@ describe('ModelRouter', () => {
         model: 'mimo-v2.5-pro',
         apiKey: 'test-key',
         maxTokens: 1000,
+        adaptive: true,
       };
 
       await expect(
@@ -1262,6 +1266,7 @@ describe('ModelRouter', () => {
         model: 'mimo-v2.5-pro',
         apiKey: 'test-key',
         maxTokens: 1000,
+        adaptive: true,
       };
 
       const result = await router.inference(
@@ -1307,6 +1312,7 @@ describe('ModelRouter', () => {
         model: 'mimo-v2.5-pro',
         apiKey: 'test-key',
         maxTokens: 1000,
+        adaptive: true,
       };
 
       const result = await router.inference(
@@ -1417,6 +1423,7 @@ describe('ModelRouter', () => {
           model: 'mimo-v2.5-pro',
           apiKey: 'test-key',
           maxTokens: 1000,
+          adaptive: true,
         },
         vi.fn(),
       );
@@ -1446,6 +1453,7 @@ describe('ModelRouter', () => {
           model: 'mimo-v2.5-pro',
           apiKey: 'test-key',
           maxTokens: 1000,
+          adaptive: true,
         },
         vi.fn(),
       );
@@ -1461,6 +1469,36 @@ describe('ModelRouter', () => {
           reason: expect.stringContaining('insufficient balance'),
         }),
       );
+    });
+
+    it('does not cross-provider fallback when a concrete model is selected', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('Xiaomi API error: 402 - insufficient balance')),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'fallback should not run', finishReason: 'stop' }),
+      } as any;
+
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+
+      await expect(
+        router.inference(
+          [{ role: 'user', content: '生成一个 HTML 游戏' }],
+          [],
+          {
+            provider: 'xiaomi',
+            model: 'mimo-v2.5-pro',
+            apiKey: 'test-key',
+            maxTokens: 1000,
+            adaptive: false,
+          },
+          vi.fn(),
+        ),
+      ).rejects.toThrow('insufficient balance');
+
+      expect(zhipuProvider.inference).not.toHaveBeenCalled();
+      expect(broadcastToRendererMock).not.toHaveBeenCalled();
     });
 
     it('should treat empty artifact responses as provider failure and fall back', async () => {
@@ -1479,6 +1517,7 @@ describe('ModelRouter', () => {
         model: 'mimo-v2.5-pro',
         apiKey: 'test-key',
         maxTokens: 1000,
+        adaptive: true,
       };
 
       const result = await router.inference(
@@ -1590,6 +1629,7 @@ describe('ModelRouter', () => {
           model: 'mimo-v2.5-pro',
           apiKey: 'test-key',
           maxTokens: 1000,
+          adaptive: true,
         },
         vi.fn(),
         undefined,
@@ -1666,6 +1706,7 @@ describe('ModelRouter', () => {
         model: 'mimo-v2.5-pro',
         apiKey: 'test-key',
         maxTokens: 1000,
+        adaptive: true,
       };
 
       const result = await router.inference(
@@ -1705,6 +1746,7 @@ describe('ModelRouter', () => {
         model: 'mimo-v2.5-pro',
         apiKey: 'test-key',
         maxTokens: 1000,
+        adaptive: true,
       };
 
       const result = await router.inference(
@@ -1746,6 +1788,7 @@ describe('ModelRouter', () => {
         model: 'mimo-v2.5-pro',
         apiKey: 'test-key',
         maxTokens: 1000,
+        adaptive: true,
       };
 
       const result = await router.inference(

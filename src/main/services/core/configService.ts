@@ -171,6 +171,7 @@ const DEFAULT_SETTINGS: AppSettings = {
       xiaomi: { enabled: true },     // 小米 MiMo Token Plan Max 包月套餐
       custom: { enabled: false, baseUrl: undefined, displayName: 'Custom Provider' },
     },
+    agentEngines: {},
     // 按用途路由模型 — 引用 DEFAULT_MODELS 常量
     routing: {
       code: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.code },

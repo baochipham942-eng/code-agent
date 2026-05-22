@@ -2,6 +2,7 @@
 // Settings Types
 // ============================================================================
 
+import type { ExternalAgentEngineKind } from './agentEngine';
 import type { ModelProvider, ModelProviderProtocol } from './model';
 import type { ModelCapability } from './model';
 import type { PermissionLevel } from './tool';
@@ -30,11 +31,17 @@ export interface ModelProviderSettings {
   models?: Record<string, ModelEntrySettings>;
 }
 
+export interface AgentEngineModelPreferenceSettings {
+  defaultModel?: string;
+  updatedAt?: number;
+}
+
 export interface AppSettings {
   models: {
     default: string;
     defaultProvider?: ModelProvider;
     providers: Record<string, ModelProviderSettings>;
+    agentEngines?: Partial<Record<ExternalAgentEngineKind, AgentEngineModelPreferenceSettings>>;
     // 按用途选择模型
     routing: {
       code: { provider: ModelProvider; model: string };

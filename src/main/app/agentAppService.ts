@@ -50,6 +50,7 @@ import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import {
   ClaudeCodeAdapter,
   CodexCliAdapter,
+  getRemoteAgentEngineModelCatalogService,
   isExternalAgentEngine,
   resolveExternalEngineLaunch,
 } from '../services/agentEngine';
@@ -240,6 +241,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         prompt: envelope.content,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
+        model: await getRemoteAgentEngineModelCatalogService().resolveModelId('codex_cli', launch.model),
         permissionProfile: launch.permissionProfile,
         clientMessageId: envelope.clientMessageId,
         attachmentsCount: envelope.attachments?.length ?? 0,
@@ -255,6 +257,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         prompt: envelope.content,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
+        model: await getRemoteAgentEngineModelCatalogService().resolveModelId('claude_code', launch.model),
         permissionProfile: launch.permissionProfile,
         clientMessageId: envelope.clientMessageId,
         attachmentsCount: envelope.attachments?.length ?? 0,

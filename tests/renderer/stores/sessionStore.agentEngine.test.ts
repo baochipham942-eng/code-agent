@@ -103,6 +103,7 @@ describe('sessionStore Agent Engine metadata', () => {
       success: true,
       data: {
         kind: 'codex_cli',
+        model: 'gpt-5',
         cwd: '/repo/code-agent',
         permissionProfile: 'read_only',
         origin: 'manual',
@@ -112,6 +113,7 @@ describe('sessionStore Agent Engine metadata', () => {
 
     await useSessionStore.getState().updateSessionEngine('session-1', {
       kind: 'codex_cli',
+      model: 'gpt-5',
       permissionProfile: 'read_only',
       origin: 'manual',
     });
@@ -119,6 +121,7 @@ describe('sessionStore Agent Engine metadata', () => {
     expect(mockDomainInvoke).toHaveBeenCalledWith(IPC_DOMAINS.AGENT_ENGINE, 'select', {
       sessionId: 'session-1',
       kind: 'codex_cli',
+      model: 'gpt-5',
       permissionProfile: 'read_only',
     });
     expect(mockDomainInvoke).not.toHaveBeenCalledWith(
@@ -129,6 +132,7 @@ describe('sessionStore Agent Engine metadata', () => {
     const updated = useSessionStore.getState().sessions[0];
     expect(updated.engine).toEqual({
       kind: 'codex_cli',
+      model: 'gpt-5',
       cwd: '/repo/code-agent',
       permissionProfile: 'read_only',
       origin: 'manual',

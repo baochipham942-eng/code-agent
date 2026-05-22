@@ -8,7 +8,14 @@ import { createPortal } from 'react-dom';
 import { useSessionStore } from '../../stores/sessionStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelProvider } from '@shared/contract';
-import type { AgentEngineDescriptor, AgentEngineKind, AgentEngineSessionMetadata } from '@shared/contract/agentEngine';
+import type {
+  AgentEngineDescriptor,
+  AgentEngineKind,
+  AgentEngineModelCatalogModel,
+  AgentEngineModelCatalogResult,
+  AgentEngineSessionMetadata,
+  ExternalAgentEngineKind,
+} from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { getProviderDisplayName } from '@shared/constants';
 import {
@@ -17,13 +24,28 @@ import {
   type RuntimeModelOption,
 } from '@shared/modelRuntime';
 import { toast } from '../../hooks/useToast';
-import { Eye, Wrench, Brain, Sparkles, Zap, Cpu, Terminal } from 'lucide-react';
+import { Eye, Wrench, Brain, Sparkles, Zap, Cpu, Terminal, Code2, Gauge } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
 import type { EffortLevel } from '../../../shared/contract/agent';
 
 const QUICK_SWITCH_PROVIDERS = [
-  'moonshot', 'deepseek', 'zhipu', 'openai', 'claude', 'volcengine', 'local', 'xiaomi', 'custom',
+  'moonshot',
+  'xiaomi',
+  'longcat',
+  'deepseek',
+  'zhipu',
+  'openai',
+  'claude',
+  'gemini',
+  'qwen',
+  'minimax',
+  'openrouter',
+  'perplexity',
+  'grok',
+  'volcengine',
+  'local',
+  'custom',
 ] as const satisfies readonly ModelProvider[];
 
 // Engine 短标签（与 AgentEngineSelector 保持一致）
@@ -69,25 +91,13 @@ function formatEngineCwdPolicy(descriptor: AgentEngineDescriptor): string {
   return descriptor.cwdPolicy === 'workspace_only' ? '当前 workspace cwd' : descriptor.cwdPolicy;
 }
 
-function getEngineRuntimeClass(descriptor: AgentEngineDescriptor): string {
-  switch (descriptor.runtimeState) {
-    case 'ready':
-      return 'text-emerald-300';
-    case 'blocked':
-    case 'error':
-      return 'text-red-300';
-    case 'not_configured':
-      return 'text-amber-300';
-    default:
-      return 'text-zinc-400';
-  }
-}
-
 function formatEngineTooltip(descriptor: AgentEngineDescriptor, needsWorkspace: boolean): string {
+  const unavailableReason = getEngineUnavailableReason(descriptor, needsWorkspace);
   return [
     descriptor.label,
-    descriptor.kind === 'native' ? '内置 runtime' : '外部 CLI',
+    descriptor.kind === 'native' ? 'Native · 内置 runtime' : '外部 CLI',
     `${ENGINE_INSTALL_LABEL[descriptor.installState]} / ${ENGINE_RUNTIME_LABEL[descriptor.runtimeState]}`,
+    unavailableReason,
     descriptor.version,
     ENGINE_PERMISSION_LABEL[descriptor.defaultPermissionProfile],
     formatEngineCwdPolicy(descriptor),
@@ -98,19 +108,49 @@ function formatEngineTooltip(descriptor: AgentEngineDescriptor, needsWorkspace: 
   ].filter(Boolean).join(' · ');
 }
 
+function getEngineUnavailableReason(
+  descriptor: AgentEngineDescriptor,
+  needsWorkspace: boolean,
+): string | null {
+  if (needsWorkspace) return '需要选择 workspace';
+  if (!descriptor.executable) return descriptor.lastError || 'CLI 不可执行';
+  if (descriptor.installState === 'missing') return descriptor.lastError || '未安装';
+  if (descriptor.runtimeState === 'error' || descriptor.runtimeState === 'blocked') {
+    return descriptor.lastError || ENGINE_RUNTIME_LABEL[descriptor.runtimeState];
+  }
+  return null;
+}
+
+function isExternalEngineKind(kind: AgentEngineKind): kind is ExternalAgentEngineKind {
+  return kind === 'codex_cli' || kind === 'claude_code';
+}
+
 export function buildModelSwitcherEngineSelection(
   descriptor: AgentEngineDescriptor,
+  workingDirectory?: string | null,
+  model?: string | null,
 ): Partial<AgentEngineSessionMetadata> {
-  return {
+  const selection: Partial<AgentEngineSessionMetadata> = {
     kind: descriptor.kind,
     permissionProfile: descriptor.defaultPermissionProfile,
     origin: 'manual',
   };
+  if (descriptor.kind !== 'native' && workingDirectory) {
+    selection.cwd = workingDirectory;
+  }
+  if (descriptor.kind !== 'native' && model) {
+    selection.model = model;
+  }
+  return selection;
 }
 
 // MODEL_FEATURES 单一真理源已迁至 src/shared/constants/models.ts (2026-04-28 audit B3)
 
 const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: string }> = {
+  code: {
+    icon: <Code2 className="w-2.5 h-2.5" />,
+    color: 'bg-emerald-500/20 text-emerald-300',
+  },
   vision: {
     icon: <Eye className="w-2.5 h-2.5" />,
     color: 'bg-purple-500/20 text-purple-300',
@@ -122,6 +162,14 @@ const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: string }
   reasoning: {
     icon: <Brain className="w-2.5 h-2.5" />,
     color: 'bg-amber-500/20 text-amber-300',
+  },
+  fast: {
+    icon: <Gauge className="w-2.5 h-2.5" />,
+    color: 'bg-sky-500/20 text-sky-300',
+  },
+  longContext: {
+    icon: <span className="text-[9px] font-semibold">LC</span>,
+    color: 'bg-teal-500/20 text-teal-300',
   },
 };
 
@@ -160,6 +208,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [healthMap, setHealthMap] = useState<Record<string, { status: string; latencyP50: number; errorRate: number }>>({});
   const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
+  const [engineCatalogResult, setEngineCatalogResult] = useState<AgentEngineModelCatalogResult | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -185,10 +234,23 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     () => engineDescriptors.find((descriptor) => descriptor.kind === engine.kind) ?? null,
     [engine.kind, engineDescriptors],
   );
+  const selectedEngineCatalog = useMemo(() => {
+    if (!engineCatalogResult || !isExternalEngineKind(engine.kind)) return null;
+    return engineCatalogResult.catalog.engines.find((item) => item.kind === engine.kind) ?? null;
+  }, [engine.kind, engineCatalogResult]);
+  const modelProviderInclusions = useMemo(
+    () => Array.from(new Set([
+      defaultProvider,
+      overrideProvider,
+    ].filter(Boolean))) as ModelProvider[],
+    [defaultProvider, overrideProvider],
+  );
 
   const modelOptions = useMemo(
-    () => buildRuntimeModelOptions(modelSettings, QUICK_SWITCH_PROVIDERS),
-    [modelSettings],
+    () => buildRuntimeModelOptions(modelSettings, QUICK_SWITCH_PROVIDERS, {
+      includeDisabledProviders: modelProviderInclusions,
+    }),
+    [modelProviderInclusions, modelSettings],
   );
 
   // 搜索过滤
@@ -204,6 +266,30 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       );
     });
   }, [modelOptions, searchQuery]);
+
+  const filteredEngineModels = useMemo(() => {
+    if (!selectedEngineCatalog) return [];
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return selectedEngineCatalog.models;
+    return selectedEngineCatalog.models.filter((model) =>
+      model.id.toLowerCase().includes(query) ||
+      model.label.toLowerCase().includes(query) ||
+      model.capabilities.some((capability) => capability.toLowerCase().includes(query))
+    );
+  }, [searchQuery, selectedEngineCatalog]);
+
+  const getPreferredEngineModel = useCallback(
+    (kind: AgentEngineKind): string | undefined => {
+      if (!isExternalEngineKind(kind)) return undefined;
+      const catalogEngine = engineCatalogResult?.catalog.engines.find((item) => item.kind === kind);
+      const localDefault = modelSettings?.models?.agentEngines?.[kind]?.defaultModel;
+      const enabledModels = catalogEngine?.models.filter((model) => !model.disabledReason) ?? [];
+      return enabledModels.find((model) => model.id === localDefault)?.id
+        ?? enabledModels.find((model) => model.id === catalogEngine?.defaultModel)?.id
+        ?? enabledModels[0]?.id;
+    },
+    [engineCatalogResult, modelSettings],
+  );
 
   // 打开时自动聚焦搜索框 + 重置搜索
   useEffect(() => {
@@ -249,6 +335,16 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       .catch(() => { /* engine 检测失败时只显示当前 engine 标签 */ });
   }, [open]);
 
+  // 打开时拉取服务端签名模型目录；主进程已做验签和 bundled fallback。
+  useEffect(() => {
+    if (!open) return;
+    window.domainAPI?.invoke<AgentEngineModelCatalogResult>(IPC_DOMAINS.AGENT_ENGINE, 'listModels', {})
+      .then((res) => { if (res?.success && res.data) setEngineCatalogResult(res.data); })
+      .catch(() => {
+        setEngineCatalogResult(null);
+      });
+  }, [open]);
+
   const selectEngine = useCallback(
     async (descriptor: AgentEngineDescriptor) => {
       if (!sessionId) return;
@@ -268,9 +364,16 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         toast.error(`${descriptor.label} 不可用`);
         return;
       }
-      await updateSessionEngine(sessionId, buildModelSwitcherEngineSelection(descriptor));
+      await updateSessionEngine(
+        sessionId,
+        buildModelSwitcherEngineSelection(
+          descriptor,
+          effectiveWorkingDirectory,
+          getPreferredEngineModel(descriptor.kind),
+        ),
+      );
     },
-    [effectiveWorkingDirectory, sessionId, updateSessionEngine]
+    [effectiveWorkingDirectory, getPreferredEngineModel, sessionId, updateSessionEngine]
   );
 
   // 点击外部关闭（portal 让菜单脱离 ref，需要同时检查 triggerRef + menuRef）
@@ -360,6 +463,42 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     [sessionId]
   );
 
+  const handleSelectEngineModel = useCallback(
+    async (model: AgentEngineModelCatalogModel) => {
+      if (!sessionId || !isExternalEngineKind(engine.kind)) return;
+      if (model.disabledReason) {
+        toast.info(model.disabledReason);
+        return;
+      }
+      try {
+        const res = await window.domainAPI?.invoke<AgentEngineSessionMetadata>(
+          IPC_DOMAINS.AGENT_ENGINE,
+          'selectModel',
+          {
+            sessionId,
+            kind: engine.kind,
+            model: model.id,
+          },
+        );
+        if (!res?.success || !res.data) {
+          toast.error('模型切换失败: ' + (res?.error?.message ?? '未知错误'));
+          return;
+        }
+        useSessionStore.setState((state) => ({
+          sessions: state.sessions.map((item) =>
+            item.id === sessionId
+              ? { ...item, engine: normalizeAgentEngineSession(res.data), updatedAt: Date.now() }
+              : item
+          ),
+        }));
+        setOpen(false);
+      } catch (err) {
+        toast.error('模型切换失败: ' + (err instanceof Error ? err.message : '未知错误'));
+      }
+    },
+    [engine.kind, sessionId],
+  );
+
   const handleSelectAuto = useCallback(async () => {
     if (!sessionId) return;
     try {
@@ -410,9 +549,24 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   }, [sessionId]);
 
   const displayModel = overrideModel || currentModel;
-  const isOverridden = !!overrideModel;
+  const isOverridden = engine.kind === 'native' && !!overrideModel;
   const displayProvider = overrideProvider || defaultProvider;
-  const displayLabel = overrideAdaptive ? '自动' : getRuntimeModelLabel(displayModel, displayProvider, modelSettings);
+  const nativeDisplayLabel = overrideAdaptive ? '自动' : getRuntimeModelLabel(displayModel, displayProvider, modelSettings);
+  const selectedCatalogModel = selectedEngineCatalog?.models.find((model) => model.id === engine.model);
+  const externalModelUnavailable = Boolean(
+    isExternalEngineKind(engine.kind) &&
+    selectedEngineCatalog &&
+    engine.model &&
+    (!selectedCatalogModel || selectedCatalogModel.disabledReason),
+  );
+  const externalDisplayLabel = externalModelUnavailable
+    ? '已不可用'
+    : selectedCatalogModel?.label
+      ?? selectedEngineCatalog?.models.find((model) => model.id === selectedEngineCatalog.defaultModel)?.label
+      ?? engine.model
+      ?? selectedEngineCatalog?.defaultModel
+      ?? '默认模型';
+  const displayLabel = engine.kind === 'native' ? nativeDisplayLabel : externalDisplayLabel;
 
   const EFFORT_OPTIONS: Array<{ value: EffortLevel; label: string; color: string }> = [
     { value: 'low', label: 'Low', color: 'text-zinc-400' },
@@ -426,7 +580,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     <div
       ref={menuRef}
       className="
-        w-64 py-1
+        w-80 py-1
         bg-zinc-800 border border-zinc-700 rounded-lg
         shadow-xl
       "
@@ -449,12 +603,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                 {engineDescriptors.map((descriptor) => {
                   const selected = descriptor.kind === engine.kind;
                   const needsWorkspace = descriptor.kind !== 'native' && !effectiveWorkingDirectory;
+                  const unavailableReason = getEngineUnavailableReason(descriptor, needsWorkspace);
                   const disabled =
-                    needsWorkspace
-                    || !descriptor.executable
-                    || descriptor.installState === 'missing'
-                    || descriptor.runtimeState === 'error'
-                    || descriptor.runtimeState === 'blocked';
+                    Boolean(unavailableReason);
                   const shortLabel = ENGINE_SHORT_LABEL[descriptor.kind] ?? descriptor.label;
                   return (
                     <button
@@ -478,29 +629,20 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                   );
                 })}
               </div>
-              {selectedEngineDescriptor ? (
-                <div className="mt-2 rounded border border-zinc-700/60 bg-zinc-900/50 px-2 py-1.5 text-[10px] leading-relaxed text-zinc-400">
-                  <div className="flex flex-wrap gap-x-2 gap-y-0.5">
-                    <span className={getEngineRuntimeClass(selectedEngineDescriptor)}>
-                      {ENGINE_RUNTIME_LABEL[selectedEngineDescriptor.runtimeState]}
-                    </span>
-                    <span>{selectedEngineDescriptor.kind === 'native' ? '内置 runtime' : '外部 CLI'}</span>
-                    <span>{ENGINE_INSTALL_LABEL[selectedEngineDescriptor.installState]}</span>
-                    <span>{ENGINE_PERMISSION_LABEL[selectedEngineDescriptor.defaultPermissionProfile]}</span>
-                    <span>{formatEngineCwdPolicy(selectedEngineDescriptor)}</span>
-                    <span>{ENGINE_RISK_LABEL[selectedEngineDescriptor.riskTier]}</span>
-                    {selectedEngineDescriptor.version ? <span>{selectedEngineDescriptor.version}</span> : null}
-                  </div>
-                  {selectedEngineDescriptor.binaryPath ? (
-                    <div className="mt-1 truncate" title={selectedEngineDescriptor.binaryPath}>
-                      {selectedEngineDescriptor.binaryPath}
-                    </div>
-                  ) : null}
-                  {selectedEngineDescriptor.lastError ? (
-                    <div className="mt-1 truncate text-red-300" title={selectedEngineDescriptor.lastError}>
-                      {selectedEngineDescriptor.lastError}
-                    </div>
-                  ) : null}
+              {engineDescriptors.some((descriptor) => {
+                const needsWorkspace = descriptor.kind !== 'native' && !effectiveWorkingDirectory;
+                return Boolean(getEngineUnavailableReason(descriptor, needsWorkspace));
+              }) ? (
+                <div className="mt-1 px-1 text-[10px] leading-snug text-zinc-500">
+                  {engineDescriptors
+                    .map((descriptor) => {
+                      const needsWorkspace = descriptor.kind !== 'native' && !effectiveWorkingDirectory;
+                      const reason = getEngineUnavailableReason(descriptor, needsWorkspace);
+                      return reason ? `${ENGINE_SHORT_LABEL[descriptor.kind] ?? descriptor.label}: ${reason}` : null;
+                    })
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .join(' · ')}
                 </div>
               ) : null}
             </div>
@@ -549,72 +691,130 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             />
           </div>
           <div className="max-h-64 overflow-y-auto">
-            {/* 自动路由选项（固定顶部，不参与搜索过滤） */}
-            {!searchQuery.trim() && (
-              <button
-                type="button"
-                onClick={handleSelectAuto}
-                className={`
-                  w-full text-left px-3 py-1.5 text-xs
-                  border-b border-zinc-700/50
-                  hover:bg-zinc-700 transition-colors
-                  ${overrideAdaptive ? 'text-primary-300' : 'text-gray-200'}
-                `}
-              >
-                <div className="flex items-center gap-1.5">
-                  <Sparkles className="w-3 h-3 text-primary-400" />
-                  <span className="font-medium">自动</span>
-                  <span className="text-gray-500 text-[10px] ml-auto">按任务复杂度切换</span>
-                </div>
-              </button>
-            )}
-            {filteredOptions.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-gray-500 text-center">
+            {engine.kind === 'native' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleSelectAuto}
+                  className={`
+                    w-full text-left px-3 py-1.5 text-xs
+                    border-b border-zinc-700/50
+                    hover:bg-zinc-700 transition-colors
+                    ${overrideAdaptive ? 'text-primary-300' : 'text-gray-200'}
+                  `}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3 text-primary-400" />
+                    <span className="font-medium">自动</span>
+                    <span className="text-gray-500 text-[10px] ml-auto">按任务复杂度切换</span>
+                  </div>
+                </button>
+                {filteredOptions.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-gray-500 text-center">
+                    无匹配模型
+                  </div>
+                ) : (
+                  filteredOptions.map((opt) => (
+                    <button
+                      key={`${opt.provider}/${opt.model}`}
+                      type="button"
+                      onClick={() => handleSelect(opt)}
+                      className={`
+                        w-full text-left px-3 py-1.5 text-xs
+                        hover:bg-zinc-700 transition-colors
+                        ${displayModel === opt.model ? 'text-purple-400' : 'text-gray-300'}
+                      `}
+                    >
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="font-medium">{opt.label}</span>
+                        {opt.features.map((cap) => {
+                          const cfg = CAPABILITY_CONFIG[cap];
+                          if (!cfg) return null;
+                          return (
+                            <span
+                              key={cap}
+                              className={`inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${cfg.color}`}
+                              title={cap}
+                            >
+                              {cfg.icon}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      <span className="text-gray-500 text-[10px] inline-flex items-center gap-1">
+                        {healthMap[opt.provider] && (
+                          <span
+                            className={`inline-block w-1.5 h-1.5 rounded-full ${HEALTH_DOT_COLOR[healthMap[opt.provider].status] ?? 'bg-gray-400'}`}
+                            title={`${healthMap[opt.provider].status} | P50: ${healthMap[opt.provider].latencyP50}ms | Error: ${(healthMap[opt.provider].errorRate * 100).toFixed(0)}%`}
+                          />
+                        )}
+                        {opt.providerLabel || getProviderDisplayName(opt.provider) || opt.provider}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </>
+            ) : !selectedEngineCatalog ? (
+              <div className="px-3 py-3 text-xs text-gray-500 text-center">
+                模型目录暂不可用
+              </div>
+            ) : filteredEngineModels.length === 0 ? (
+              <div className="px-3 py-3 text-xs text-gray-500 text-center">
                 无匹配模型
               </div>
             ) : (
-              filteredOptions.map((opt) => (
-                <button
-                  key={`${opt.provider}/${opt.model}`}
-                  type="button"
-                  onClick={() => handleSelect(opt)}
-                  className={`
-                    w-full text-left px-3 py-1.5 text-xs
-                    hover:bg-zinc-700 transition-colors
-                    ${displayModel === opt.model ? 'text-purple-400' : 'text-gray-300'}
-                  `}
-                >
-                  <div className="flex items-center gap-1 flex-wrap">
-                    <span className="font-medium">{opt.label}</span>
-                    {/* 能力标签 */}
-                    {opt.features.map((cap) => {
-                      const cfg = CAPABILITY_CONFIG[cap];
-                      if (!cfg) return null;
-                      return (
-                        <span
-                          key={cap}
-                          className={`inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${cfg.color}`}
-                          title={cap}
-                        >
-                          {cfg.icon}
-                        </span>
-                      );
-                    })}
-                  </div>
-                  <span className="text-gray-500 text-[10px] inline-flex items-center gap-1">
-                    {healthMap[opt.provider] && (
-                      <span
-                        className={`inline-block w-1.5 h-1.5 rounded-full ${HEALTH_DOT_COLOR[healthMap[opt.provider].status] ?? 'bg-gray-400'}`}
-                        title={`${healthMap[opt.provider].status} | P50: ${healthMap[opt.provider].latencyP50}ms | Error: ${(healthMap[opt.provider].errorRate * 100).toFixed(0)}%`}
-                      />
-                    )}
-                    {opt.providerLabel || getProviderDisplayName(opt.provider) || opt.provider}
-                  </span>
-                </button>
-              ))
+              filteredEngineModels.map((model) => {
+                const needsWorkspace = engine.kind !== 'native' && !effectiveWorkingDirectory;
+                const unavailableReason = selectedEngineDescriptor
+                  ? getEngineUnavailableReason(selectedEngineDescriptor, needsWorkspace)
+                  : null;
+                const disabled = Boolean(model.disabledReason || unavailableReason);
+                const selected = engine.model === model.id
+                  || (!engine.model && model.id === selectedEngineCatalog.defaultModel);
+                return (
+                  <button
+                    key={model.id}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => void handleSelectEngineModel(model)}
+                    title={model.disabledReason || unavailableReason || model.id}
+                    className={`
+                      w-full text-left px-3 py-1.5 text-xs transition-colors
+                      ${selected ? 'text-purple-400' : disabled ? 'text-zinc-600 cursor-not-allowed' : 'text-gray-300 hover:bg-zinc-700'}
+                    `}
+                  >
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="font-medium">{model.label}</span>
+                      {model.recommended ? (
+                        <span className="rounded bg-emerald-500/15 px-1 py-0.5 text-[10px] text-emerald-300">推荐</span>
+                      ) : null}
+                      {model.disabledReason ? (
+                        <span className="rounded bg-zinc-700/70 px-1 py-0.5 text-[10px] text-zinc-400">不可用</span>
+                      ) : null}
+                      {model.capabilities.map((cap) => {
+                        const cfg = CAPABILITY_CONFIG[cap];
+                        if (!cfg) return null;
+                        return (
+                          <span
+                            key={cap}
+                            className={`inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${cfg.color}`}
+                            title={cap}
+                          >
+                            {cfg.icon}
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <span className="text-gray-500 text-[10px]">
+                      {model.id}
+                      {model.disabledReason ? ` · ${model.disabledReason}` : ''}
+                    </span>
+                  </button>
+                );
+              })
             )}
           </div>
-      {isOverridden && (
+      {engine.kind === 'native' && isOverridden && (
         <>
           <div className="border-t border-zinc-700 my-1" />
           <button
@@ -643,7 +843,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           ${isOverridden ? 'text-amber-400' : 'text-zinc-100'}
         `}
         title={
-          overrideAdaptive
+          engine.kind !== 'native'
+            ? `Engine: ${ENGINE_SHORT_LABEL[engine.kind]} · Model: ${engine.model ?? selectedEngineCatalog?.defaultModel ?? '默认模型'}`
+            : overrideAdaptive
             ? `自动路由（按任务复杂度切换，当前默认 ${currentModel}）`
             : isOverridden
               ? `已覆盖: ${displayProvider}/${overrideModel} (原: ${currentModel}) · Engine: ${ENGINE_SHORT_LABEL[engine.kind]}`

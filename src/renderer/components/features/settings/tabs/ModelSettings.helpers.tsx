@@ -117,21 +117,23 @@ export function buildProviderManagementRows({
 }): ProviderManagementRow[] {
   return providers.map((provider) => {
     const registryInfo = getProviderInfo(provider.id);
-    const runtimeModels = getProviderRuntimeModels(provider, providerConfigs?.[provider.id]);
+    const providerConfig = providerConfigs?.[provider.id];
+    const runtimeModels = getProviderRuntimeModels(provider, providerConfig);
     const enabledModels = runtimeModels.filter((model) => model.enabled);
+    const rowDefaultModel = providerConfig?.model || registryInfo?.defaultModel || runtimeModels[0]?.id || '-';
     return {
       id: provider.id,
-      name: providerConfigs?.[provider.id]?.displayName || provider.name,
-      description: `${provider.description}${providerConfigs?.[provider.id]?.protocol === 'claude' ? ' · Claude 协议' : ''}`,
+      name: providerConfig?.displayName || provider.name,
+      description: `${provider.description}${providerConfig?.protocol === 'claude' ? ' · Claude 协议' : ''}`,
       modelCount: runtimeModels.length,
       evalEligibleCount: provider.models.filter((model) => model.evalEligible !== false).length,
       enabledModelCount: enabledModels.length,
-      defaultModel: registryInfo?.defaultModel || runtimeModels[0]?.id || '-',
-      endpoint: providerConfigs?.[provider.id]?.baseUrl || registryInfo?.endpoint || '-',
+      defaultModel: rowDefaultModel,
+      endpoint: providerConfig?.baseUrl || registryInfo?.endpoint || '-',
       selected: config.provider === provider.id,
       selectedModelLabel: config.provider === provider.id
         ? getModelLabel(runtimeModels, config.model)
-        : getModelLabel(runtimeModels, registryInfo?.defaultModel || runtimeModels[0]?.id || '-'),
+        : getModelLabel(runtimeModels, rowDefaultModel),
     };
   });
 }

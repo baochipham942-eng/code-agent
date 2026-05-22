@@ -76,10 +76,12 @@ import {
 
 describe('Claude Code adapter helpers', () => {
   it('uses Claude Code print mode with plan permissions and read-only tools', () => {
-    const args = buildClaudeCodeArgs('workspace_write');
+    const args = buildClaudeCodeArgs('workspace_write', 'sonnet');
 
     expect(args).toContain('-p');
     expect(args).toContain('--verbose');
+    expect(args).toContain('--model');
+    expect(args[args.indexOf('--model') + 1]).toBe('sonnet');
     expect(args).toContain('--setting-sources');
     expect(args).toContain('local');
     expect(args).toContain('--disable-slash-commands');
@@ -213,6 +215,7 @@ describe('ClaudeCodeAdapter.run', () => {
       prompt: 'inspect only',
       cwd: workspaceRoot,
       workspaceRoot,
+      model: 'sonnet',
       timeoutMs: 20_000,
       stallWarningMs: 10_000,
     });
@@ -228,6 +231,8 @@ describe('ClaudeCodeAdapter.run', () => {
       expect.arrayContaining([
         '-p',
         '--verbose',
+        '--model',
+        'sonnet',
         '--setting-sources',
         'local',
         '--disable-slash-commands',
@@ -252,9 +257,11 @@ describe('ClaudeCodeAdapter.run', () => {
     const firstTask = mocks.upsertTask.mock.calls[0][0];
     expect(firstTask.command).toContain('<prompt:redacted>');
     expect(firstTask.command).toContain('--verbose');
+    expect(firstTask.command).toContain('--model sonnet');
     expect(firstTask.command).toContain('--setting-sources local');
     expect(firstTask.command).toContain('--disable-slash-commands');
     expect(firstTask.command).toContain('--tools Read,Glob,Grep,LS');
+    expect(firstTask.metadata.model).toBe('sonnet');
     expect(firstTask.metadata.env.redacted).toEqual(expect.arrayContaining([
       'ANTHROPIC_API_KEY',
       'GITHUB_TOKEN',

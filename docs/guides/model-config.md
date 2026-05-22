@@ -1,6 +1,6 @@
 # 模型配置指南
 
-> 更新时间: 2026-02-12 (GLM-5 升级)
+> 更新时间: 2026-05-22 (Agent Engine 模型目录与显式模型降级边界)
 
 ## 已配置的模型供应商
 
@@ -138,9 +138,22 @@
 }
 ```
 
+### 显式模型、自动路由与 Agent Engine 模型目录 (v0.16.79+)
+
+模型选择现在分两条链路：
+
+| 链路 | 范围 | 配置来源 | 运行规则 |
+|------|------|----------|----------|
+| Native Agent Neo 模型 | 普通 Provider 模型，如 Moonshot、OpenAI、Claude、GLM、Qwen、Local | `config.json.models.providers` + SecureStorage API Key | 用户点选具体模型时固定该 provider/model；只有选择“自动”才启用 adaptive fallback |
+| Agent Engine 模型 | 外部 CLI engine：Codex CLI / Claude Code | control-plane 签名 `agent_engine_model_catalog` + 本机 `models.agentEngines.<kind>.defaultModel` | 传给外部 CLI 的 `--model` 参数；不混入普通 Provider 路由 |
+
+显式模型的边界：用户手动选了某个 Native 模型后，`adaptive=false`，Provider 失败或 capability 不匹配不会自动换到其他 provider。这样 UI 上选了哪个模型，实际请求就留在哪条模型链路。选择“自动”时，`adaptive=true`，才允许复杂度路由、artifact-write 偏好和能力 fallback 介入。
+
+Agent Engine 模型目录由 `/api/v1/control-plane?artifact=agent_engine_models` 下发，客户端验签失败或远程不可用时使用内置目录。设置页只保存本机默认选择，不保存完整远程目录。
+
 ### 自适应路由 (v0.16.22+)
 
-简单任务自动路由到免费模型，降低 API 成本。失败时自动 fallback 到默认模型。
+简单任务自动路由到免费模型，降低 API 成本。该能力只在“自动”模式生效；显式模型不会自动切换到免费模型或默认模型。
 
 | 复杂度 | 判定条件 | 路由目标 |
 |--------|---------|---------|
@@ -152,7 +165,7 @@
 
 ### 跨 Provider 降级链 (v0.16.42+)
 
-当主 Provider 的瞬态重试（429/超时/连接错误）全部耗尽后，自动按配置链尝试下一个 Provider，无需人工干预。
+当主 Provider 的瞬态重试（429/超时/连接错误）全部耗尽后，自动按配置链尝试下一个 Provider。2026-05-22 后，这条链只在 `adaptive=true` 的自动模式生效；手动点选具体模型时失败会返回原 Provider 错误。
 
 **降级规则**：
 - 仅瞬态错误触发降级（429、timeout、ECONNRESET 等），非瞬态错误（认证失败、参数错误）**不会**降级

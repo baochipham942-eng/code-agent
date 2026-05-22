@@ -309,8 +309,8 @@ Tauri 2.x 作为 Electron 的轻量替代方案，产物体积约 33MB（Electro
 ```bash
 npm run typecheck && npm version patch --no-git-tag-version
 git add package.json && git commit -m "chore: bump version" && git push
-npm run build && npm run build:web && cargo tauri build
-# 产物位置: src-tauri/target/release/bundle/dmg/Code Agent_*.dmg
+npm run tauri:release:bundle
+# 产物位置: src-tauri/target/release/bundle/dmg/Agent Neo_*.dmg
 ```
 
 ### 开发模式

@@ -28,6 +28,7 @@ Reduce Agent Neo update/download size without replacing the Tauri updater. The s
 - Do not move `dist/web`, `dist/renderer`, `dist/native/better-sqlite3`, `keytar`, or `node-pty` in the first phase.
 - Do not make runtime assets executable from an unverified path.
 - Do not store audit JSON inside the client bundle.
+- Do not rely on a user-installed system Node for packaged macOS startup.
 
 ## Stage 0: Inventory Gate
 
@@ -311,9 +312,31 @@ Verification:
 - Packaged web server smoke: running `_up_/dist/web/webServer.cjs` with `AGENT_NEO_RESOURCE_DIR` pointed at the app resources loads better-sqlite3 from `_up_/dist/native/better-sqlite3`, initializes the database, creates `code-agent.db`, and returns `{"status":"ok"}` from `/api/health`.
 - New `_up_` size is 29.2 MiB.
 
+## Stage 11: Bundled Node Runtime for Packaged macOS
+
+Status: implemented locally; final size evidence comes from the release bundle built for this closeout.
+
+Purpose: make packaged Agent Neo independent of whichever Node binary happens to exist on the user machine, and verify `better-sqlite3` against the Node ABI that actually starts `dist/web/webServer.cjs`.
+
+Implemented behavior:
+
+- `scripts/prepare-bundled-node.mjs` prepares `dist/bundled-node/bin/node` for macOS release builds.
+- `tauri-prebuild-cleanup.sh` and `tauri-release-bundle.sh` run the prepare step before Tauri copies resources.
+- `src-tauri/tauri.conf.json` includes `dist/bundled-node/**/*`.
+- Tauri release startup resolves bundled Node before `NODE_BINARY` or system Node.
+- `verify-macos-release.sh` checks that bundled Node is executable and can load `dist/native/better-sqlite3/build/Release/better_sqlite3.node`.
+- `tauri-release-bundle.sh` re-signs the bundled Node binary with the rest of the nested Mach-O binaries before the app shell is re-signed.
+
+Verification:
+
+- `node --check scripts/prepare-bundled-node.mjs`
+- `npm run tauri:release:bundle`
+- `npm run release:verify-macos`
+- Packaged app starts webServer through bundled Node and `/api/health` reports database-backed persistence.
+
 ## Current Closure
 
-Stages 0-10 are implemented. The app still uses the existing signed Tauri update path for the core app shell, while heavy optional/local capability components are shipped as verified managed runtime assets.
+Stages 0-11 are implemented in code. The app still uses the existing signed Tauri update path for the core app shell, while heavy optional/local capability components are shipped as verified managed runtime assets. Stage 11 intentionally adds a small required runtime back into the signed shell because the startup Node ABI is core app infrastructure, not an optional local capability component.
 
 Current size movement:
 

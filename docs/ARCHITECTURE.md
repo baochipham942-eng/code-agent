@@ -1,7 +1,7 @@
 # Agent Neo / Code Agent - 架构设计文档
 
-> 版本: 9.10 (对应 v0.16.75 + 2026-05-19 Marvis 能力对照补齐)
-> 日期: 2026-05-19
+> 版本: 9.11 (对应 v0.16.79 + 2026-05-22 发布链、模型目录与持久化收口)
+> 日期: 2026-05-22
 > 作者: Lin Chen
 
 本文档是 Agent Neo（代码仓库仍名为 Code Agent）的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -64,8 +64,8 @@
 | 构建 | esbuild (main) + Vite (renderer) |
 | 本地存储 | SQLite (better-sqlite3) |
 | 云端存储 | Supabase + pgvector |
-| AI 模型 | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / 火山引擎 / Local-Ollama 多 provider 目录（14+ provider），本地 API Key 优先 |
-| Agent Engine | Native Agent Neo / Codex CLI / Claude Code，统一 engine session metadata、read-only 外部执行和 task ledger 回带 |
+| AI 模型 | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / 火山引擎 / Local-Ollama 多 provider 目录（14+ provider），本地 API Key 优先；显式模型只在 `adaptive=true` 时允许跨 provider fallback |
+| Agent Engine | Native Agent Neo / Codex CLI / Claude Code，签名模型目录、session engine metadata、read-only 外部执行和 task ledger 回带 |
 | 本地桥接 | packages/bridge (localhost:9527) |
 | 代码编辑 | CodeMirror 6 (Preview 代码/Markdown 编辑模式) |
 
@@ -232,6 +232,26 @@ code-agent/
 - In-App Validation 只承诺验证本地/生成的 HTML artifact；真实网站、反 bot、native menu、drag-and-drop 仍交给 Playwright/CDP 或人工接管。
 - 管理页的前端隐藏只做体验优化，真正边界在 `adminGuard`、Supabase RLS 和 admin RPC。
 - 分发安全 gate 只保证客户端包少带内部材料；license、entitlement、能力市场、付费策略和高价值 prompt 仍应服务端化。
+
+### 2026-05-22 发布链、Agent Engine 模型目录与 Web 持久化状态
+
+这一轮把 Agent Neo 的发布入口和运行时依赖再收紧一层：外部 Agent Engine 的模型选择改由签名控制面发布，显式模型不再默认偷偷跨 provider 降级；Web 模式把会话历史是否真正落库暴露给 UI；macOS 包内置 Node，避免用户机器 Node 版本和 `better-sqlite3` ABI 不匹配。
+
+| 模块 | 当前闭环 | 关键文件 / 入口 |
+|------|---------|----------------|
+| Agent Engine 签名模型目录 | 控制面新增 `agent_engine_model_catalog` artifact；主进程验 Ed25519 envelope，失败回退内置 catalog；`ModelSettings` 保存本机默认模型，`ModelSwitcher` 对 Codex/Claude 展示 catalog 模型，不混进普通 Provider 模型 | `src/main/services/agentEngine/agentEngineModelCatalog.ts`、`src/shared/agentEngineModelCatalog.ts`、`src/renderer/components/StatusBar/ModelSwitcher.tsx`、`src/renderer/components/features/settings/tabs/ModelSettings.tsx` |
+| 外部 engine 模型执行 | session engine metadata 增加 `model`；Codex CLI 通过 `codex exec --model ...`，Claude Code 通过 `claude -p --model ...`；选择 engine 时同时保存 workspace cwd，防止外部 CLI 从错误目录启动 | `src/shared/contract/agentEngine.ts`、`agentEngineGuards.ts`、`codexCliAdapter.ts`、`claudeCodeAdapter.ts`、`src/renderer/stores/sessionStore.ts` |
+| 显式模型降级边界 | `ModelRouter` 和 vision capability fallback 只在 `modelConfig.adaptive === true` 时跨 provider fallback；用户点选具体模型时，失败应暴露原 provider 错误，不再自动换模型 | `src/main/model/modelRouter.ts`、`src/main/agent/runtime/contextAssembly/inference.ts`、`src/main/session/modelSessionState.ts` |
+| Web 会话持久化健康 | `/api/health` 返回 `persistence`；状态栏和 Data Settings 在 SQLite 不可用时显示“历史未持久化”；新增 acceptance smoke 验证 webServer 重启后 session 可恢复 | `src/web/routes/health.ts`、`src/web/helpers/sessionCache.ts`、`src/renderer/components/StatusBar/PersistenceStatus.tsx`、`scripts/acceptance/session-persistence-smoke.ts` |
+| macOS 包内置 Node | release/prebuild 准备 `dist/bundled-node/bin/node`；Tauri release 优先用包内 Node 启动 webServer，并在 release verify 阶段用同一 Node 加载 `better-sqlite3.node` | `scripts/prepare-bundled-node.mjs`、`src-tauri/src/main.rs`、`src-tauri/tauri.conf.json`、`scripts/verify-macos-release.sh` |
+| 控制面与下载入口 | release bundle、env generator、smoke 都纳入 Agent Engine 模型目录；官网 DMG 下载改走 `/api/update?action=download`，由 update API 找最新 GitHub Release asset 或 channel override | `scripts/control-plane-release-bundle.mjs`、`scripts/generate-control-plane-env.mjs`、`scripts/control-plane-smoke.mjs`、`vercel-api/lib/updateMetadata.ts`、`public/code-agent/index.html` |
+
+**架构边界澄清**：
+
+- Agent Engine 模型目录只控制外部 CLI 的模型列表和默认值，不接管 Native Agent Neo 的 Provider API Key 或普通模型路由。
+- `agent_engine_model_catalog` 走与 cloud config / prompt / capability registry 相同的签名 envelope；远程不可用、未配置公钥或验签失败时，只能用内置兜底。
+- Web 持久化状态是用户可见的运行时健康信号，不是同步状态；它只说明当前 webServer 会话历史是否落到本机 SQLite。
+- 包内 Node 是 release runtime 依赖，不是 managed runtime asset；它必须在签名/公证前进入 Tauri resources，并由 release verify 检查 ABI。
 
 ### 2026-05-13 ~ 05-14 Context Health 溯源 + 取消级联 + Computer-use MCP 入口归位 + 工作台面板群
 

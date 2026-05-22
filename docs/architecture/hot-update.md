@@ -11,6 +11,9 @@ Code Agent 采用前后端分离的配置架构，支持多种配置的热更新
 - Feature Flags
 - MCP Server 配置
 - UI 字符串
+- Capability Registry
+- Agent Engine 模型目录
+- 更新元数据与 runtime asset manifest
 
 **核心优势**：修改配置只需部署云端，无需重新打包客户端。
 
@@ -218,9 +221,40 @@ GET https://code-agent-beta.vercel.app/api/prompts?gen=all
 }
 ```
 
-`/api/v1/control-plane?artifact=cloud_config|prompt_registry` 复用同一签名逻辑，便于后续把 capability registry 和 update manifest 也纳入同一控制面。
+`/api/v1/control-plane?artifact=cloud_config|prompt_registry|capability_registry|agent_engine_models` 复用同一签名逻辑。`agent_engine_models` 是 `agent_engine_model_catalog` 的短别名，给客户端读取 Codex / Claude 外部 engine 模型目录用；`/api/v1/agent-engine-models` 作为同类 envelope 的专用入口保留。
 
 打包链会从 `CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS` 或 `CODE_AGENT_CONTROL_PLANE_KEY_ID + CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY` 生成 `dist/web/control-plane-public-keys.json`，并通过 Tauri resources 带进客户端。运行时优先使用 env 公钥；env 缺失时读取该 bundled public key file。
+
+### Agent Engine 模型目录
+
+Agent Engine 模型目录不属于普通 Provider 路由。它只约束外部 CLI engine：
+
+| 字段 | 用途 |
+|------|------|
+| `kind` | `codex_cli` 或 `claude_code` |
+| `defaultModel` | 服务端推荐默认模型 |
+| `models[].id` | 传给 `codex exec --model` 或 `claude -p --model` 的模型 id |
+| `models[].disabledReason` | 远程禁用原因，客户端不可选择 |
+| `models[].capabilities` | UI 展示和筛选用能力标签 |
+
+客户端读取顺序：
+
+1. `RemoteAgentEngineModelCatalogService` 请求 `/api/v1/control-plane?artifact=agent_engine_models`。
+2. 验证 control-plane envelope 的 `kind`、hash、过期时间、公钥和 Ed25519 签名。
+3. 解析目录，过滤非法 engine/model/capability。
+4. 失败时回退 `BUILTIN_AGENT_ENGINE_MODEL_CATALOG`，并把 diagnostics 暴露给设置页。
+
+release bundle 和 env generator 必须同时产出 `agent-engine-model-catalog.json`，并写入 `CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON`。生产 smoke 需要覆盖该 artifact，避免只验证 cloud config / prompt / capability registry。
+
+### Update Download Redirect
+
+官网和应用内下载入口不再硬编码某个版本的 DMG：
+
+```
+GET /api/update?action=download&platform=darwin&channel=stable
+```
+
+Update API 优先读取 `UPDATE_DOWNLOAD_URL_<CHANNEL>`；没有 override 时查 `UPDATE_GITHUB_REPOSITORY` 的最新 GitHub Release，选择匹配平台的 DMG asset，并返回 302。找不到 asset 时返回 `download_asset_not_found` 和 release 页面链接。
 
 ---
 

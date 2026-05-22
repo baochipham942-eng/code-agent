@@ -11,6 +11,12 @@ permissions:
 jobs:
   release-mac:
     runs-on: macos-latest
+    env:
+      # Gate for the runtime-assets publishing steps. Empty (no secret) => those steps
+      # skip, which matches the safe default that managed runtime-asset publishing is not
+      # enabled until a control-plane signing key is provisioned (see C1 audit gate).
+      CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY }}
+      CODE_AGENT_CONTROL_PLANE_KEY_ID: ${{ secrets.CODE_AGENT_CONTROL_PLANE_KEY_ID }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -151,6 +157,10 @@ jobs:
           cat src-tauri/target/release/bundle/latest.json | head -20
 
       - name: Build and upload runtime assets
+        # Skip unless a control-plane signing key is provisioned: build-runtime-assets.mjs
+        # now signs the runtime manifest (C1) and fails closed without a key. Managed
+        # runtime-asset publishing stays off until that key is added as a repo secret.
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' }}
         env:
           ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
           ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
@@ -194,6 +204,11 @@ jobs:
             src-tauri/target/release/runtime-assets/*.tar.gz
           generate_release_notes: true
           draft: false
+          # Tags with a pre-release suffix (e.g. v0.16.80-citest1) are marked prerelease and
+          # never become "latest", so a CI smoke/test tag cannot steal the distribution
+          # download from the real latest release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

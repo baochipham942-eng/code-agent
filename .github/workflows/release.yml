@@ -125,7 +125,9 @@ jobs:
           unset TAURI_SIGNING_PRIVATE_KEY
           # 把 secret 写到临时文件传 --private-key-path
           PRIV_KEY_PATH="${RUNNER_TEMP}/tauri-updater.key"
-          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" > "${PRIV_KEY_PATH}"
+          # printf (not echo): echo appends a trailing newline that makes `cargo tauri signer
+          # sign` fail to base64-decode the key ("Invalid symbol 10").
+          printf '%s' "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" > "${PRIV_KEY_PATH}"
           chmod 600 "${PRIV_KEY_PATH}"
           cargo tauri signer sign \
             --private-key-path "${PRIV_KEY_PATH}" \

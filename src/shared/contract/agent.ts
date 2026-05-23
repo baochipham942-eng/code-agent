@@ -246,6 +246,8 @@ export type AgentEvent =
   // /goal 自治模式观测事件
   | { type: 'goal_iteration'; data: { turn: number; maxTurns: number; goalStatus: string; tokensUsed: number; tokenBudget: number; parentToolUseId?: string } }
   | { type: 'goal_gate'; data: { gate: number; pass: boolean; exitCode?: number | null; timedOut?: boolean; reason?: string; parentToolUseId?: string } }
+  // /goal 终态：三闸全过(met) 或 闸3 兜底中止(aborted)。前端据此展示"已完成/已中止"+停表。
+  | { type: 'goal_complete'; data: { status: 'met' | 'aborted'; reason?: string; turns: number; tokensUsed: number; parentToolUseId?: string } }
   // Auto Agent 思考/规划事件
   | { type: 'agent_thinking'; data: { message: string; agentId?: string; progress?: number; parentToolUseId?: string } }
   // Turn-based message events (行业最佳实践: Vercel AI SDK / LangGraph 模式)

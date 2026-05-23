@@ -172,6 +172,8 @@ export interface AgentRunOptions {
   toolScope?: import('../../shared/contract/conversationEnvelope').WorkbenchToolScope;
   executionIntent?: import('../../shared/contract/conversationEnvelope').ConversationExecutionIntent;
   runtimeInput?: import('../../shared/contract/conversationEnvelope').RuntimeInputIntent;
+  /** /goal 自治模式：存在则本轮激活 goal 模式（normal mode 下生效） */
+  goal?: import('../../shared/contract/appService').GoalRunInput;
 }
 
 // ============================================================================

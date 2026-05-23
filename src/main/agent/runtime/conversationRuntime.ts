@@ -646,6 +646,10 @@ export class ConversationRuntime {
         terminal = { status: 'cancelled' };
       } else if (this.ctx.isInterrupted) {
         terminal = { status: 'interrupted' };
+      } else if (this.ctx.goalMode?.getStatus() === 'met') {
+        // 闸1 验证通过 → markMet → loop 退出，收尾标 goal_met。
+        // （闸3 兜底中止已在 loop 内直接 terminal = 'aborted'。）
+        terminal = { status: 'goal_met' };
       }
     } catch (error) {
       terminal = { status: 'failed', error };

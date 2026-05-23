@@ -105,6 +105,10 @@ export const GOAL_MODE = {
   NO_PROGRESS_THRESHOLD: 5,
   /** 目标检查点重注入间隔（轮），对齐 GoalTracker 默认值 */
   CHECKPOINT_INTERVAL: 3,
+  /** 闸1 验证命令超时（ms）；测试/构建可能较久，超时即判失败 */
+  VERIFY_TIMEOUT_MS: 600_000,
+  /** 闸1 验证输出注回模型时的最大字符数（控 token） */
+  VERIFY_OUTPUT_MAX_CHARS: 4_000,
 } as const;
 
 /** 规划配置 */

@@ -66,6 +66,7 @@ import {
 import {
   createSubagentCancellationLifecycle,
   getSubagentExecutionTimeout,
+  getSubagentIdleTimeout,
 } from './subagentExecutorCancellation';
 
 const logger = createLogger('SubagentExecutor');
@@ -245,7 +246,7 @@ export class SubagentExecutor {
       parentSignal: context.abortSignal,
       onIdleTimeout: (idle) => {
         logger.warn(
-          `[${config.name}] idle ${idle}ms exceeded ${CANCELLATION_TIMEOUTS.IDLE_TIMEOUT}ms, triggering idle-timeout`,
+          `[${config.name}] idle ${idle}ms exceeded ${getSubagentIdleTimeout(timeout)}ms (≤90% of ${timeout}ms budget), triggering idle-timeout`,
         );
       },
     });
@@ -529,7 +530,7 @@ export class SubagentExecutor {
           const errorMsg = cancellationReason === 'timeout'
             ? `执行超时 (${Math.round(timeout / 1000)}秒)，已完成 ${iterations} 次迭代`
             : cancellationReason === 'idle-timeout'
-              ? `子代理 ${Math.round(CANCELLATION_TIMEOUTS.IDLE_TIMEOUT / 1000)}s 无 stream/progress, 已自动取消 (idle-timeout)`
+              ? `子代理 ${Math.round(getSubagentIdleTimeout(timeout) / 1000)}s 无 stream/progress, 已自动取消 (idle-timeout)`
               : `任务已取消 (${cancellationReason})`;
           agentTask.fail(errorMsg);
           // Fire SubagentStop on abort/timeout
@@ -640,8 +641,12 @@ export class SubagentExecutor {
         // user 消息，导致 AI SDK 报 "Tool result is missing"）。
         const useAiSdk = process.env.CODE_AGENT_MODEL_ENGINE !== 'legacy'
           && aiSdkSupportsProvider(context.modelConfig.provider);
+        // per-request 超时取执行预算的一半：单次 provider 卡住（接受连接但响应不返回）时在 ~budget/2 早退 +
+        // withTransientRetry 重试（重发常能过），而非把整个子代理预算耗在一次挂死上——旧 AI SDK 路径无
+        // per-request 超时，一次 stall = 整个子代理跑满 90s 硬超时报废（实测 zhipu glm-4-flash 偶发）。
+        const subagentRequestTimeoutMs = Math.floor(timeout / 2);
         const response = useAiSdk
-          ? await inferenceViaAiSdk(inferenceMessages as unknown as Parameters<typeof inferenceViaAiSdk>[0], toolDefinitions, context.modelConfig, undefined, effectiveSignal)
+          ? await inferenceViaAiSdk(inferenceMessages as unknown as Parameters<typeof inferenceViaAiSdk>[0], toolDefinitions, context.modelConfig, undefined, effectiveSignal, { requestTimeoutMs: subagentRequestTimeoutMs })
           : await this.modelRouter.inference(
               providerMessages,
               toolDefinitions,

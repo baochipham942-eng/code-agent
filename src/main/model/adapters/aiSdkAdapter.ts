@@ -33,7 +33,7 @@ import type {
 import type { StreamSnapshot } from '../providers/sseStream';
 import type { ModelResponse } from '../../agent/loopTypes';
 import type { ToolCall, ToolDefinition, ModelConfig } from '../../../shared/contract';
-import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { MODEL_API_ENDPOINTS, PROVIDER_TIMEOUT, SSE_FIRST_BYTE_TIMEOUT, SSE_INACTIVITY_TIMEOUT } from '../../../shared/constants';
 import { createLogger } from '../../services/infra/logger';
 import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/providerResolution';
@@ -148,14 +148,60 @@ function asInput(args: unknown): Record<string, unknown> {
   return {};
 }
 
+// AI SDK 严格要求 assistant(tool-call) 后【紧跟】其 tool-result，中间不能夹 system/user，否则抛
+// MissingToolResultsError（"Tool result is missing for tool call ..."）。但主 loop 会在 tool 执行期间
+// （tool-result 消息入列【前】）经 injectSystemMessage 注入 system 消息（post-tool hook / 失败告警 /
+// nudge / thinking step），使序列出现 assistant(tool-call) → system → tool(result)。这里把夹在
+// assistant tool-call 与其 tool-result 之间的 system / 无主 tool 消息移到 tool-result 之后，恢复合法配对。
+// 对齐旧 OpenAI 路径 providers/shared.ts:sanitizeToolCallOrder（同一问题旧引擎已解决，迁移到 AI SDK 时漏带）。
+function reorderToolResultsAfterAssistant(messages: ModelMessage[]): ModelMessage[] {
+  const out: ModelMessage[] = [];
+  let i = 0;
+  while (i < messages.length) {
+    const msg = messages[i];
+    const callIds = msg.role === 'assistant' ? (msg.toolCalls ?? []).map((tc) => tc.id) : [];
+    if (callIds.length === 0) {
+      out.push(msg);
+      i++;
+      continue;
+    }
+    out.push(msg);
+    i++;
+    const expectedIds = new Set(callIds);
+    const toolResults: ModelMessage[] = [];
+    const deferred: ModelMessage[] = [];
+    while (i < messages.length) {
+      const next = messages[i];
+      const nextId = next.role === 'tool' ? toolMsgCallId(next) : '';
+      if (next.role === 'tool' && nextId && expectedIds.has(nextId)) {
+        toolResults.push(next);
+        expectedIds.delete(nextId);
+        i++;
+        if (expectedIds.size === 0) break; // 该 assistant 的所有 tool-call 都配到了结果
+      } else if (next.role === 'assistant' || next.role === 'user') {
+        break; // 进入新一轮，不跨轮次重排
+      } else {
+        deferred.push(next); // system / 无主 tool 消息 → 延后到 tool-result 之后
+        i++;
+      }
+    }
+    out.push(...toolResults, ...deferred);
+  }
+  return out;
+}
+
 // ── Neo ModelMessage[]（结构化 inferenceMessages）→ AI SDK ModelMessage[] ──
 // AI SDK 严格要求 assistant 的每个 tool-call 都配一个 tool-result，否则抛
 // "Tool result is missing"。因此先建配对集合，只输出"有结果的 tool-call"和
 // "有 tool-call 的结果"，把 orphan 双向丢弃（防 Neo 历史里 in-flight / 被压缩的残缺对）。
 function toAiMessages(messages: ModelMessage[]): AiModelMessage[] {
+  // 先重排：把夹在 assistant tool-call 与 tool-result 之间的 system/user 移到 tool-result 之后，
+  // 否则 AI SDK 的配对校验会在遇到夹层 system 时报 MissingToolResultsError。
+  const ordered = reorderToolResultsAfterAssistant(messages);
+
   const idToName = new Map<string, string>();
   const resultIds = new Set<string>();
-  for (const m of messages) {
+  for (const m of ordered) {
     for (const tc of m.toolCalls ?? []) idToName.set(tc.id, tc.name);
     if (m.role === 'tool') {
       const id = toolMsgCallId(m);
@@ -164,7 +210,7 @@ function toAiMessages(messages: ModelMessage[]): AiModelMessage[] {
   }
 
   const out: AiModelMessage[] = [];
-  for (const m of messages) {
+  for (const m of ordered) {
     if (m.role === 'system') {
       out.push({ role: 'system', content: textOf(m.content) });
     } else if (m.role === 'tool') {
@@ -265,7 +311,26 @@ export async function inferenceViaAiSdk(
   if (streaming) {
     return streamViaAiSdk({ model, aiMessages, aiTools, config, onStream, signal, options, messages });
   }
-  return generateViaAiSdk({ model, aiMessages, aiTools, config, signal, messages });
+  return generateViaAiSdk({ model, aiMessages, aiTools, config, signal, options, messages });
+}
+
+// 给一次 provider 调用套 per-request 超时：组合「外部 signal + 内部超时」成一个 abortSignal。
+// AI SDK 走 fetch 默认无请求超时，旧 axios 路径有 PROVIDER_TIMEOUT，迁移时丢了——provider 偶发
+// 卡住（接受连接但响应不返回）会一直挂到外层预算耗尽（子代理 90s 硬超时），无 per-request 早退+重试。
+// 用自管 setTimeout（可被 fake timers 控制，区别于 AbortSignal.timeout）；timedOut() 让调用方区分
+// 「本超时（应重试）」与「外部 abort（父/预算取消，不应重试）」。
+function withRequestTimeout(signal: AbortSignal | undefined, timeoutMs: number): {
+  signal: AbortSignal;
+  timedOut: () => boolean;
+  cleanup: () => void;
+} {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
+    timedOut: () => controller.signal.aborted,
+    cleanup: () => clearTimeout(timer),
+  };
 }
 
 // ── 非流式：generateText（服务子代理 + 主 loop 的 artifact 非流式重试）。行为与迁移 P0 一致 ──
@@ -275,23 +340,39 @@ async function generateViaAiSdk(params: {
   aiTools: ToolSet | undefined;
   config: ModelConfig;
   signal: AbortSignal | undefined;
+  options: InferenceOptions | undefined;
   messages: ModelMessage[];
 }): Promise<ModelResponse> {
-  const { model, aiMessages, aiTools, config, signal, messages } = params;
+  const { model, aiMessages, aiTools, config, signal, options, messages } = params;
+  const requestTimeoutMs = options?.requestTimeoutMs ?? PROVIDER_TIMEOUT;
   let result;
   try {
     // maxRetries:0 关掉 SDK 自带重试，统一走项目的 withTransientRetry——后者除 HTTP 瞬态
     // (429/502/503/504) 外还覆盖纯网络错(ECONNRESET/socket hang up/ETIMEDOUT，SDK 的
     // APICallError.isRetryable 不认这些)，且带 NON_RETRYABLE_PATTERNS 护栏。避免双层重试。
     result = await withTransientRetry(
-      () => generateText({
-        model,
-        messages: aiMessages,
-        tools: aiTools,
-        abortSignal: signal,
-        temperature: config.temperature,
-        maxRetries: 0,
-      }),
+      async () => {
+        // per-request 超时：超时→抛 transient（'timeout of …' 命中 retryStrategy 模式）让 withTransientRetry
+        // 重试（重发一次通常就过）；外部 signal abort 则原样抛出（withTransientRetry 见 signal.aborted 不重试）。
+        const guard = withRequestTimeout(signal, requestTimeoutMs);
+        try {
+          return await generateText({
+            model,
+            messages: aiMessages,
+            tools: aiTools,
+            abortSignal: guard.signal,
+            temperature: config.temperature,
+            maxRetries: 0,
+          });
+        } catch (err) {
+          if (guard.timedOut() && !signal?.aborted) {
+            throw new Error(`timeout of ${requestTimeoutMs}ms exceeded`, { cause: err });
+          }
+          throw err;
+        } finally {
+          guard.cleanup();
+        }
+      },
       { providerName: config.provider, signal },
     );
   } catch (err) {
@@ -443,12 +524,31 @@ async function streamViaAiSdk(params: {
       onSnapshot(snapshot);
     };
 
+    // 首字节 / inactivity 看门狗：AI SDK 流式默认无超时，旧 sseStream 路径有
+    // SSE_FIRST_BYTE_TIMEOUT/SSE_INACTIVITY_TIMEOUT，迁移时丢了——provider 流卡住会一直挂。
+    // 自管 timer（fake-timer 可控）超时即 abort watchdog，与外部 signal 组合喂 streamText；
+    // 命中后 catch 据 timedOutKind 改成 retryStrategy 认得的瞬态文案（首字节前才重试，emittedOutput 兜底）。
+    const firstByteMs = options?.firstByteTimeoutMs ?? SSE_FIRST_BYTE_TIMEOUT;
+    const inactivityMs = options?.inactivityTimeoutMs ?? SSE_INACTIVITY_TIMEOUT;
+    const watchdog = new AbortController();
+    let timedOutKind: 'first-byte' | 'stream inactivity' | null = null;
+    let activityTimer: ReturnType<typeof setTimeout> | undefined;
+    const armWatchdog = (ms: number, kind: 'first-byte' | 'stream inactivity'): void => {
+      if (activityTimer) clearTimeout(activityTimer);
+      activityTimer = setTimeout(() => { timedOutKind = kind; watchdog.abort(); }, ms);
+    };
+    const stopWatchdog = (): void => {
+      if (activityTimer) { clearTimeout(activityTimer); activityTimer = undefined; }
+    };
+    armWatchdog(firstByteMs, 'first-byte');
+    const streamSignal = signal ? AbortSignal.any([signal, watchdog.signal]) : watchdog.signal;
+
     try {
       const result = streamText({
         model,
         messages: aiMessages,
         tools: aiTools,
-        abortSignal: signal,
+        abortSignal: streamSignal,
         temperature: config.temperature,
         // 主 loop 的 artifact 生成/修复按阶段 cap maxTokens，必须透传给 SDK 保住上限；
         // 未设时交给 provider 默认（与旧 SSE 路径 buildRequestBody 的 max_tokens 行为对齐）。
@@ -458,6 +558,8 @@ async function streamViaAiSdk(params: {
       });
 
       for await (const part of result.fullStream as AsyncIterable<TextStreamPart<ToolSet>>) {
+        // 收到任意事件即重置为 inactivity 窗口（首个事件顺带解除 first-byte 窗口）。
+        armWatchdog(inactivityMs, 'stream inactivity');
         switch (part.type) {
           case 'text-delta': {
             const delta = part.text;
@@ -537,6 +639,7 @@ async function streamViaAiSdk(params: {
         }
       }
 
+      stopWatchdog();
       // 正常完成：发 usage + complete（对齐 sseStream），落最终 snapshot，累积成 ModelResponse。
       healthMonitor.recordSuccess(config.provider, Date.now() - startTime);
       if (acc.usage) {
@@ -546,8 +649,13 @@ async function streamViaAiSdk(params: {
       emitSnapshot(true);
       return buildStreamResponse(acc, config);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      stopWatchdog();
       const code = (err as NodeJS.ErrnoException).code;
+      // 看门狗超时（且非外部 abort）→ 改成 retryStrategy 认得的瞬态文案；外部 signal abort 保持原始错误。
+      const watchdogTimedOut = timedOutKind !== null && !signal?.aborted;
+      const msg = watchdogTimedOut
+        ? `${timedOutKind} timeout`
+        : (err instanceof Error ? err.message : String(err));
       // emittedOutput 闸门：已向用户吐过 delta → 绝不重试（避免重复 emit）；只在首个可见
       // delta 之前的瞬态失败才重试，复用项目 isTransientError 策略（与旧路径同一套护栏）。
       if (!emittedOutput && attempt < maxRetries && !signal?.aborted && isTransientError(msg, code)) {
@@ -559,8 +667,9 @@ async function streamViaAiSdk(params: {
       if (!signal?.aborted) {
         onStream({ type: 'error', error: msg, ...(code ? { errorCode: code } : {}) });
       }
-      logInferenceFailure(err, 'streamText', config, messages);
-      throw err;
+      const finalErr = watchdogTimedOut ? new Error(msg, { cause: err }) : err;
+      logInferenceFailure(finalErr, 'streamText', config, messages);
+      throw finalErr;
     }
   }
 }

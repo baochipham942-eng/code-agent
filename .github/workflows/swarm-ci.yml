@@ -86,9 +86,11 @@ jobs:
   full:
     name: Swarm full (smoke + e2e)
     needs: smoke
-    # 只在 push 到 main 或显式调度时跑完整套件，
-    # PR 默认只跑 smoke 以控制 CI 成本。
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # full/e2e 现在 PR 也跑（删掉了原来限定 push/workflow_dispatch 的 if）：merge gate 只在合并后
+    # 才跑会造成"PR 绿、main 红"——只在 full 暴露的基建缺陷（如 e2e webServer 的原生模块缺失）在
+    # PR 阶段测不到，合进 main 必红（见 #166）。on.pull_request.paths 已把触发限定在 src/** /
+    # tests/** 等代码 PR，docs-only PR 不会触发整条 workflow，CI 成本可控；workflow_dispatch 仍可
+    # 手动跑。full 仍受 `needs: smoke` 门控——smoke 失败则跳过。
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:

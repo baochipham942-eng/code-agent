@@ -32,6 +32,7 @@ import { generateMessageId } from '../../../shared/utils/id';
 import { getSessionManager } from '../../services';
 import { extractArtifacts } from '../artifactExtractor';
 import { runVerifyGate } from '../goalVerifyGate';
+import { runReviewGate } from '../goalReviewGate';
 import {
   fingerprintToolCall,
   pushAndDetectStagnation,
@@ -510,9 +511,42 @@ export class MessageProcessor {
         });
 
         if (gate.pass) {
+          // 闸2（软评审）：闸1 pass 后，若 goal 契约带 reviewCondition，派 Reviewer
+          // 子代理（强模型）评无法落退出码的软条件。fail → 注理由 + continue 让模型继续改；
+          // pass（或没有 reviewCondition）才落到下面 markMet。
+          const reviewCondition = this.ctx.goalMode.getReviewCondition();
+          if (reviewCondition) {
+            const review = await runReviewGate(reviewCondition, this.ctx.goalMode.getGoal(), {
+              workingDirectory: this.ctx.workingDirectory,
+              sessionId: this.ctx.sessionId,
+              abortSignal: this.ctx.runAbortController?.signal,
+              hookManager: this.ctx.hookManager,
+            });
+            // 观测事件：闸2 判定结果（UI 用）
+            this.ctx.onEvent({
+              type: 'goal_gate',
+              data: { gate: 2, pass: review.pass, reason: review.reason },
+            });
+
+            if (!review.pass) {
+              this.ctx.goalMode.clearCompletionRequest();
+              this.contextAssembly.injectSystemMessage(
+                [
+                  '<goal-review-failed>',
+                  `软评审条件未通过：${reviewCondition}`,
+                  '目标尚未达成。请根据下面的评审意见继续改进，改好后再调 attempt_completion。',
+                  '--- 评审意见（截断）---',
+                  review.reason,
+                  '</goal-review-failed>',
+                ].join('\n'),
+              );
+              return 'continue';
+            }
+          }
+
           this.ctx.goalMode.markMet();
           this.contextAssembly.injectSystemMessage(
-            `<goal-verified>\n验证命令 \`${verifyCommand}\` 退出码 0，目标达成，结束本次 goal。\n</goal-verified>`,
+            `<goal-verified>\n验证命令 \`${verifyCommand}\` 退出码 0${reviewCondition ? '、软评审通过' : ''}，目标达成，结束本次 goal。\n</goal-verified>`,
           );
           return 'break';
         }

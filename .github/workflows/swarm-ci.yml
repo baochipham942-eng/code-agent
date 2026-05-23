@@ -115,6 +115,16 @@ jobs:
         working-directory: node_modules/better-sqlite3
         run: ../.bin/prebuild-install || true
 
+      - name: Build node-pty native binding
+        # main 的 full job 一直缺这步：npm ci --ignore-scripts 跳过了 node-pty 的 install 脚本，
+        # 而 node-pty 1.1.0 只带 darwin / win32 prebuild、不带 linux-x64，e2e webServer 启动时
+        # loadNativeModule('pty') 在 build/Release → prebuilds/linux-x64 都找不到 pty.node 直接崩
+        # （exit 1），导致每次 push main 的 full job 必红（PR 只跑 smoke 不起 webServer 所以看不出）。
+        # 这里现场编译并断言产物存在，让失败暴露在本步而非拖到 webServer 启动。
+        run: |
+          npm rebuild node-pty --build-from-source
+          test -f node_modules/node-pty/build/Release/pty.node
+
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 

@@ -6,13 +6,13 @@ import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage } from '../types';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
 import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
-import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { resolveProviderBaseUrl } from './providerResolution';
 
 export class LocalProvider extends BaseOpenAIProvider {
   readonly name = 'Local';
 
   protected getBaseUrl(config: ModelConfig): string {
-    return config.baseUrl || MODEL_API_ENDPOINTS.ollama;
+    return resolveProviderBaseUrl(config);
   }
 
   protected getApiKey(): string {

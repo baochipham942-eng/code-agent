@@ -26,7 +26,9 @@ export interface StoredSession extends Session {
 }
 
 type SQLiteRow = Record<string, unknown>;
-const cliRequire = Module.createRequire(import.meta.url);
+// CJS 打包态下 import.meta.url 为 undefined（esbuild 把 import.meta 替换成 {}），
+// 必须优先用宿主 require；仅 ESM/tsx dev 态才回退到 createRequire。对齐 nodeModuleLoader.ts。
+const cliRequire = typeof require === 'function' ? require : Module.createRequire(import.meta.url);
 
 function parseJson<T>(value: string): T {
   const parsed: unknown = JSON.parse(value);

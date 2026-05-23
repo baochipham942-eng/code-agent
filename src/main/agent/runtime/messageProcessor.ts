@@ -40,10 +40,8 @@ import {
 import { getArtifactRepairToolPolicy } from './artifactRepairGuard';
 import {
   maybeClearCompletedArtifactRepairGuardBeforeAdmission,
-  activateArtifactRepairAdmissionStop,
   ARTIFACT_REPAIR_STOP_PREFIXES,
 } from './artifactRepairAdmission';
-import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
 import { ANTI_SCRAPING_HINT_MARKER } from '../../tools/modules/network/antiScrapingDetector';
 import { applyGroundTruthGate } from './groundTruthGate';
 import { applyDesktopActionClaimGate } from './desktopActionClaimGate';
@@ -52,7 +50,6 @@ import { extractArtifactFilePathFromMessages } from './artifactPathExtractor';
 import { getHandoffProposalService } from '../../handoff/handoffProposalService';
 import { extractHandoffProposalTail } from '../../handoff/handoffTail';
 import {
-  buildArtifactRepairAdmissionRecoveryPrompt,
   buildForcedFinalAssistantContent,
   isArtifactDirectoryBootstrapOnly,
   isArtifactRepairTargetFileRead,
@@ -61,6 +58,7 @@ import {
   shouldDeferForcedFinalToInference,
   shouldPreserveToolObservation,
 } from './messageProcessorHelpers';
+import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
@@ -507,124 +505,17 @@ export class MessageProcessor {
       : [];
 
     if (unavailableToolCalls.length > 0) {
-      const requestedNames = unavailableToolCalls.map((toolCall) => toolCall.name).join(', ');
-      const allowedNames = [...visibleToolNames].join(', ') || 'none';
-      const guard = this.ctx.artifactRepairGuard;
-      const repairTurnsWithoutProgress = (guard?.repairTurnsWithoutProgress ?? 0) + 1;
-      if (guard) {
-        guard.repairTurnsWithoutProgress = repairTurnsWithoutProgress;
-        guard.lastBlockedTool = requestedNames;
-      }
-      const repairPolicy = getArtifactRepairToolPolicy(guard);
-      // Route A 死循环逃生门：连续 ARTIFACT_REPAIR_MAX_ATTEMPTS 个修复回合没有任何
-      // 成功的目标文件改动（反复请求不可用工具），强制收尾，避免无限重试。
-      if (guard?.targetFile && repairTurnsWithoutProgress >= ARTIFACT_REPAIR_MAX_ATTEMPTS) {
-        activateArtifactRepairAdmissionStop(this.ctx, guard.targetFile, requestedNames);
-      }
-      const recoveryPrompt = guard?.targetFile
-        ? buildArtifactRepairAdmissionRecoveryPrompt(
-            guard.targetFile,
-            requestedNames,
-            allowedNames,
-            repairPolicy,
-          )
-        : null;
-      this.contextAssembly.injectSystemMessage(
-        [
-          '<tool-admission-repair>',
-          `The previous tool call requested unavailable tools: ${requestedNames}.`,
-          `Only these tools are currently available: ${allowedNames}.`,
-          'Do not repeat the unavailable tool call. Pick the next action only from the currently available tools.',
-          recoveryPrompt || '',
-          '</tool-admission-repair>',
-        ].filter(Boolean).join('\n'),
+      return handleUnavailableToolCalls(
+        {
+          ctx: this.ctx,
+          contextAssembly: this.contextAssembly,
+          emitArtifactRepairStopError: (reason) => this.maybeEmitArtifactRepairStopError(reason),
+        },
+        response,
+        toolCalls,
+        unavailableToolCalls,
+        visibleToolNames,
       );
-      if (recoveryPrompt) {
-        this.contextAssembly.pushPersistentSystemContext(recoveryPrompt);
-      }
-      const assistantMsg: Message = {
-        id: this.contextAssembly.generateId(),
-        role: 'assistant',
-        content: response.content || '',
-        timestamp: Date.now(),
-        toolCalls: sanitizeToolCallsForHistory(toolCalls),
-        thinking: response.thinking,
-        effortLevel: this.ctx.effortLevel,
-        inputTokens: response.usage?.inputTokens,
-        outputTokens: response.usage?.outputTokens,
-      };
-      await this.contextAssembly.addAndPersistMessage(assistantMsg);
-      this.ctx.onEvent({ type: 'message', data: assistantMsg });
-
-      const syntheticResults: ToolResult[] = toolCalls.map((toolCall) => {
-        const blocked = unavailableToolCalls.some((blockedCall) => blockedCall.id === toolCall.id);
-        return {
-          toolCallId: toolCall.id,
-          success: false,
-          error: blocked
-            ? [
-              `Tool ${toolCall.name} is not available in the current repair step.`,
-              `Available tools: ${allowedNames}.`,
-              recoveryPrompt || 'Use the currently visible tools only.',
-            ].join('\n')
-            : 'Skipped because the same model response included unavailable repair tools.',
-          duration: 0,
-          metadata: {
-            artifactRepairGuard: {
-              blocked: true,
-              unavailableTool: blocked,
-              targetFile: guard?.targetFile,
-              phase: guard?.phase,
-              attempts: guard?.attempts,
-              repairTurnsWithoutProgress: guard?.repairTurnsWithoutProgress,
-              lastBlockedTool: requestedNames,
-            },
-          },
-        };
-      });
-      const toolMsg: Message = {
-        id: this.contextAssembly.generateId(),
-        role: 'tool',
-        content: JSON.stringify(syntheticResults),
-        timestamp: Date.now(),
-        toolResults: syntheticResults,
-      };
-      await this.contextAssembly.addAndPersistMessage(toolMsg);
-      const sanitizedResults = sanitizeToolResultsForHistoryWithCalls(syntheticResults, toolCalls);
-      this.ctx.onEvent({ type: 'message', data: toolMsg });
-      sanitizedResults.forEach((result) => {
-        this.ctx.onEvent({
-          type: 'tool_call_end',
-          data: sanitizeToolResultForObservation(
-            toolCalls.find((toolCall) => toolCall.id === result.toolCallId),
-            result,
-          ),
-        });
-      });
-
-      // admission_stop 触发分支:不能 'continue' 让模型再试一轮,否则模型继续请求 unavailable tool
-      // 永远绕过 forceFinalResponse handler(在正常 tool 路径之后),turn 永远不结束。
-      // 这里 inline 走完 forceFinal 流程: push final assistant message + emit error + turn_end + 'break'。
-      if (this.ctx.forceFinalResponseReason) {
-        const finalMessage: Message = {
-          id: this.contextAssembly.generateId(),
-          role: 'assistant',
-          content: buildForcedFinalAssistantContent(this.ctx.forceFinalResponseReason),
-          timestamp: Date.now(),
-          effortLevel: this.ctx.effortLevel,
-        };
-        await this.contextAssembly.addAndPersistMessage(finalMessage);
-        this.ctx.onEvent({ type: 'message', data: finalMessage });
-
-        this.maybeEmitArtifactRepairStopError(this.ctx.forceFinalResponseReason);
-
-        this.ctx.forceFinalResponseReason = undefined;
-        this.ctx.forceFinalResponsePrompt = undefined;
-        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.currentTurnId, '', undefined, this.ctx.currentSystemPromptHash);
-        this.ctx.onEvent({ type: 'turn_end', data: { turnId: this.ctx.currentTurnId } });
-        return 'break';
-      }
-      return 'continue';
     }
 
     logger.debug(` Tool calls received: ${toolCalls.length} calls`);

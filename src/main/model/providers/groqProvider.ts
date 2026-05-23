@@ -6,17 +6,18 @@ import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage } from '../types';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
 import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
-import { MODEL_API_ENDPOINTS, getModelMaxOutputTokens } from '../../../shared/constants';
+import { getModelMaxOutputTokens } from '../../../shared/constants';
+import { resolveProviderBaseUrl, resolveProviderApiKey } from './providerResolution';
 
 export class GroqProvider extends BaseOpenAIProvider {
   readonly name = 'Groq';
 
   protected getBaseUrl(config: ModelConfig): string {
-    return config.baseUrl || MODEL_API_ENDPOINTS.groq;
+    return resolveProviderBaseUrl(config);
   }
 
   protected getApiKey(config: ModelConfig): string {
-    return config.apiKey || '';
+    return resolveProviderApiKey(config);
   }
 
   protected buildRequestBody(

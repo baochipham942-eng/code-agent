@@ -26,6 +26,7 @@ import {
   seedSessionMessagesFromPersisted,
 } from '../helpers/sessionCache';
 import { MessageDeltaAccumulator } from '../../main/protocol/messageDeltaAccumulator';
+import { buildGoalContract } from '../../main/agent/goalModeController';
 import {
   ClaudeCodeAdapter,
   CodexCliAdapter,
@@ -479,6 +480,20 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
 
       const config = agent.getConfig();
+
+      // /goal 自治模式：body.goal 存在则激活（verify 已由 schema 强制必填，D1）。
+      // 设 config.goalContract → agentLoop 据此建 ctx.goalMode + maxIterations=maxTurns + 预加载 attempt_completion。
+      if (body.goal) {
+        config.goalContract = buildGoalContract({
+          goal: body.goal.goal ?? prompt,
+          verifyCommand: body.goal.verify,
+          reviewCondition: body.goal.review,
+          tokenBudget: body.goal.budget,
+          maxTurns: body.goal.maxTurns,
+        });
+        logger.info('[AgentRouter] Goal mode activated', { verify: body.goal.verify, sessionId });
+      }
+
       const runModelConfig = {
         provider: config.modelConfig.provider,
         model: config.modelConfig.model,

@@ -16,6 +16,7 @@ import type {
 } from '../../shared/contract/conversationEnvelope';
 import type { TelemetryAdapter } from '../../shared/contract/telemetry';
 import type { StructuredOutputConfig } from './structuredOutput';
+import type { GoalContract } from './goalModeController';
 import type { ToolExecutor } from '../tools/toolExecutor';
 import type { PlanningService } from '../planning';
 import type { HookManager } from '../hooks';
@@ -58,6 +59,8 @@ export interface AgentLoopConfig {
   toolScope?: WorkbenchToolScope;
   /** 当前 turn 的结构化执行意图 */
   executionIntent?: ConversationExecutionIntent;
+  /** /goal 自治模式契约；存在则激活 goal 模式（设 ctx.goalMode + maxIterations=maxTurns） */
+  goalContract?: GoalContract;
 }
 
 /**

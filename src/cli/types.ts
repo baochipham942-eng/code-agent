@@ -10,6 +10,7 @@ import type { AgentEvent, ModelConfig } from '../shared/contract';
 import type { MessageAttachment } from '../shared/contract';
 import type { AppServiceRunOptions } from '../shared/contract/appService';
 import type { ConversationEnvelopeContext } from '../shared/contract/conversationEnvelope';
+import type { GoalContract } from '../main/agent/goalModeController';
 
 export interface CLIGlobalOptions {
   project: string;
@@ -44,6 +45,8 @@ export interface CLIConfig {
   systemPrompt?: string;
   /** Path to write session metrics JSON (enables MetricsCollector) */
   metricsPath?: string;
+  /** /goal 自治模式契约；存在则激活 goal 模式（透传给 AgentLoop → ctx.goalMode） */
+  goalContract?: GoalContract;
 }
 
 /**

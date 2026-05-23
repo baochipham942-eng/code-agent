@@ -305,6 +305,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     let runSettled = false;
     let clientDisconnected = false;
     let runHadTerminalError = false;
+    let terminalCompletionEmitted = false;
 
     const canWriteSSE = () => !res.writableEnded && !res.destroyed;
     const emitSSE = (event: string, data: unknown) => {
@@ -320,6 +321,17 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     const emitAgentEvent = (event: AgentEvent): boolean => {
       if (isTerminalErrorEvent(event)) {
         runHadTerminalError = true;
+      }
+      // 终态完成事件（agent_complete/agent_cancelled）幂等去重：runFinalizer 经 onEvent 已发过一次后，
+      // route 末尾 line ~966 的兜底再发会重复（旧问题：clean run 双 agent_complete；cancel 时
+      // agent_cancelled 之后又跟一个 agent_complete）。这里"终态只发一次"，让 line ~966 的兜底仅在
+      // loop 自身未发终态（提前 return / 异常退出）时才真正生效。前端各 effect 把两种终态同等对待，
+      // 故 cancel 时只发 agent_cancelled 也能正常清处理态。
+      if (event.type === 'agent_complete' || event.type === 'agent_cancelled') {
+        if (terminalCompletionEmitted) {
+          return false;
+        }
+        terminalCompletionEmitted = true;
       }
       const snapshot = messageAccumulator.apply(sessionId, event);
       if (event.type === 'message_delta' && !snapshot) {

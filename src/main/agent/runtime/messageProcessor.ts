@@ -31,6 +31,7 @@ import type { ToolExecutionEngine } from './toolExecutionEngine';
 import { generateMessageId } from '../../../shared/utils/id';
 import { getSessionManager } from '../../services';
 import { extractArtifacts } from '../artifactExtractor';
+import { runVerifyGate } from '../goalVerifyGate';
 import {
   fingerprintToolCall,
   pushAndDetectStagnation,
@@ -490,21 +491,36 @@ export class MessageProcessor {
     const toolCalls = response.toolCalls ?? [];
     const requestedToolNames = toolCalls.map((toolCall) => toolCall.name).join(', ');
 
-    // Goal mode：拦截 attempt_completion —— 模型申请退出。
-    // 只记录申请（不直接判完成）；闸1/闸2 验证通过才 markMet（增量3c）。
-    // 完成判定权在代码层，模型无法靠"自称完成"绕过验证。
+    // Goal mode：拦截 attempt_completion —— 模型申请退出 → 跑闸1 确定性验证。
+    // 完成判定权在代码层：跑 verifyCommand 看退出码，0 才 markMet 收尾，否则把
+    // 真实失败输出注回让模型继续修。模型无法靠"自称完成"绕过验证（拒绝 Ralph）。
     if (this.ctx.goalMode?.isPending()) {
       const completionCall = toolCalls.find((tc) => tc.name === 'attempt_completion');
       if (completionCall) {
         const rawSummary = completionCall.arguments?.summary;
         const summary = typeof rawSummary === 'string' ? rawSummary : '';
         this.ctx.goalMode.requestCompletion(summary);
+
+        const verifyCommand = this.ctx.goalMode.getVerifyCommand();
+        const gate = await runVerifyGate(verifyCommand, this.ctx.workingDirectory);
+
+        if (gate.pass) {
+          this.ctx.goalMode.markMet();
+          this.contextAssembly.injectSystemMessage(
+            `<goal-verified>\n验证命令 \`${verifyCommand}\` 退出码 0，目标达成，结束本次 goal。\n</goal-verified>`,
+          );
+          return 'break';
+        }
+
+        this.ctx.goalMode.clearCompletionRequest();
         this.contextAssembly.injectSystemMessage(
           [
-            '<goal-completion-requested>',
-            '已记录你的完成申请，系统将运行验证命令核实——验证通过才算完成。',
-            '（验证闸接入中：在它生效前请继续推进，不要重复调用 attempt_completion。）',
-            '</goal-completion-requested>',
+            '<goal-verify-failed>',
+            `验证命令 \`${verifyCommand}\` 未通过（exit ${gate.exitCode ?? 'null'}${gate.timedOut ? '，超时' : ''}）。`,
+            '目标尚未达成。请根据下面的失败输出继续修复，修好后再调 attempt_completion。',
+            '--- 验证输出（截断）---',
+            gate.output || '(无输出)',
+            '</goal-verify-failed>',
           ].join('\n'),
         );
         return 'continue';

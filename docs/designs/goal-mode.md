@@ -93,7 +93,7 @@ attempt_completion(summary)   ← 申请，非判决
 | `goal_gate` | 闸1/闸2 判定后 | `{ gate: 1\|2, pass: bool, reason }` |
 | `goal_met` | 三闸全过 | `{ summary, iterations, budgetUsed }` |
 
-前端据此区分"还在跑"vs"达成"vs"被兜底中止"——这依赖 §9 SSE 双发修复。
+前端据此区分"还在跑"vs"达成"vs"被兜底中止"。注：per-turn 的 `goal_iteration` 是**新增事件**，与 §9 的 agent_complete 双发无关（后者是两个收尾信号，非阻塞）。
 
 ## 7. 护栏（必须放代码层）
 
@@ -106,12 +106,13 @@ attempt_completion(summary)   ← 申请，非判决
 复用（已核实存在）：循环骨架 + maxIterations、NudgeManager 注入机制、GoalTracker、Awaiter/Reviewer 子代理、modelRouter capability 路由、RunFinalizer、SSE 基础设施、deferredTools 注册。
 净新增：见 §5 末。
 
-## 9. P0 前置依赖（暂缓，等 provider 迁移落地）
+## 9. P0 前置依赖（provider 迁移 = AI SDK 引擎，已落地 @65a61bab）
 
-1. **Bug B**：子代理非流式丢 tool call（DeepSeek DSML）。闸1/闸2 靠子代理执行 → 不修则验证命令没跑却报"成功"。**/goal 硬前置**。
-2. **SSE `agent_complete` 双发**（loop + 路由各一）→ goal-mode 前端无法区分状态。
+1. **Bug B**（子代理非流式丢 tool call / DeepSeek DSML）→ **已修**。迁移 commit 487e3237 子代理默认走 AI SDK 适配器（SDK 原生归一工具调用），仅 gemini 留旧路径（`AISDK_UNSUPPORTED_PROVIDERS`）。deepseek/kimi/zhipu/mimo 默认全已绕开 DSML 路径。**闸1/闸2 trust-test 解锁**（待 E2E 实证子代理工具真执行）。
+2. **SSE `agent_complete` 双发**（runFinalizer.ts:286 + agent.ts:965，emitAgentEvent 不去重）→ **未修**（迁移没碰）。但两次都在 run() 末尾（早发解 UI loading + persist 后再发），是"两个收尾信号"非"每轮 vs 收尾混淆"——**不是 goal-mode 硬阻塞**，降级为幂等性小清理。goal-mode 的 per-turn 进度靠新增 `goal_iteration`（§6/增量3e）。
 
-两者都在 provider/事件层，provider 迁移可能顺带改到，故等迁移完再修 + trust-test。**"MVP 验证通过"这一刻最早只能排在迁移之后**（闸1 可信验证 = Bug B 修复）。
+**引擎架构**：AI SDK 迁移只换 contextAssembly/inference.ts 推理后端，未替换 conversationRuntime 循环 → 本设计的 loop 改动落在活跃默认路径上。
+**结论**：Bug B 解锁后，"MVP 验证通过"已无前置阻塞，可推进增量3b→3e。
 
 ## 10. 分阶段实施
 

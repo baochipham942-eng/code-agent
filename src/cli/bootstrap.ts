@@ -34,7 +34,9 @@ import { SYSTEM_PROMPT } from '../main/prompts/builder';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER, getModelMaxOutputTokens } from '../shared/constants';
 import { composeTelemetryAdapters } from '../main/agent/metricsCollector';
 
-const cliRequire = Module.createRequire(import.meta.url);
+// CJS 打包态下 import.meta.url 为 undefined（esbuild 把 import.meta 替换成 {}），
+// 必须优先用宿主 require；仅 ESM/tsx dev 态才回退到 createRequire。对齐 nodeModuleLoader.ts。
+const cliRequire = typeof require === 'function' ? require : Module.createRequire(import.meta.url);
 
 // 延迟导入的模块
 let AgentLoop: typeof import('../main/agent/agentLoop').AgentLoop;

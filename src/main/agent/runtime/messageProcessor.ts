@@ -21,6 +21,8 @@ import {
   estimateModelMessageTokens,
 } from '../../context/tokenOptimizer';
 import { classifyExecutionPhase } from '../../tools/executionPhase';
+import { getToolSearchService } from '../../services/toolSearch/toolSearchService';
+import { resolveToolAlias } from '../../services/toolSearch/deferredTools';
 import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector.js';
 import { MODEL_MAX_TOKENS, getModelMaxOutputTokens } from '../../../shared/constants';
@@ -507,6 +509,82 @@ export class MessageProcessor {
       : [];
 
     if (unavailableToolCalls.length > 0) {
+      // ── Graceful deferred-tool 自愈 ─────────────────────────────────
+      // 模型直接调用了尚未通过 ToolSearch 解锁的 deferred 工具（典型：Task / AgentSpawn /
+      // wait_agent 等多 agent 工具）。这并非 artifact 修复期的工具收窄——若当前不在真实
+      // artifact 修复（无 targetFile），就自动解锁这些工具：下一轮即可携带完整 schema 正常
+      // 调用，而不是用误导性的 "not available in the current repair step" 把模型劝退。
+      // 这是"多 agent 跑不通"的根因（deferred 多 agent 工具被通用拦截误伤）。
+      const isRealArtifactRepair = !!this.ctx.artifactRepairGuard?.targetFile;
+      if (!isRealArtifactRepair) {
+        const toolSearchService = getToolSearchService();
+        const autoLoaded: string[] = [];
+        for (const call of unavailableToolCalls) {
+          const canonical = resolveToolAlias(call.name);
+          const selection = toolSearchService.selectTool(canonical);
+          if (selection.loadedTools.length > 0) {
+            autoLoaded.push(...selection.loadedTools);
+          }
+        }
+        if (autoLoaded.length > 0) {
+          const loadedList = Array.from(new Set(autoLoaded)).join(', ');
+          this.contextAssembly.injectSystemMessage(
+            [
+              '<tool-auto-loaded>',
+              `These tools are now loaded and available: ${loadedList}.`,
+              'They were progressive-disclosure tools that had not been loaded yet. Call them again now with the correct arguments — do not say you lack them.',
+              '</tool-auto-loaded>',
+            ].join('\n'),
+          );
+          const assistantMsg: Message = {
+            id: this.contextAssembly.generateId(),
+            role: 'assistant',
+            content: response.content || '',
+            timestamp: Date.now(),
+            toolCalls: sanitizeToolCallsForHistory(toolCalls),
+            thinking: response.thinking,
+            effortLevel: this.ctx.effortLevel,
+            inputTokens: response.usage?.inputTokens,
+            outputTokens: response.usage?.outputTokens,
+          };
+          await this.contextAssembly.addAndPersistMessage(assistantMsg);
+          this.ctx.onEvent({ type: 'message', data: assistantMsg });
+
+          const recoveryResults: ToolResult[] = toolCalls.map((toolCall) => {
+            const wasUnavailable = unavailableToolCalls.some((c) => c.id === toolCall.id);
+            return {
+              toolCallId: toolCall.id,
+              success: false,
+              error: wasUnavailable
+                ? `Tool ${toolCall.name} was not loaded yet and has now been auto-loaded. Call it again with the correct arguments.`
+                : 'Skipped because the same model response included not-yet-loaded tools.',
+              duration: 0,
+              metadata: { autoLoadedTools: loadedList },
+            };
+          });
+          const toolMsg: Message = {
+            id: this.contextAssembly.generateId(),
+            role: 'tool',
+            content: JSON.stringify(recoveryResults),
+            timestamp: Date.now(),
+            toolResults: recoveryResults,
+          };
+          await this.contextAssembly.addAndPersistMessage(toolMsg);
+          this.ctx.onEvent({ type: 'message', data: toolMsg });
+          const sanitizedRecovery = sanitizeToolResultsForHistoryWithCalls(recoveryResults, toolCalls);
+          sanitizedRecovery.forEach((result) => {
+            this.ctx.onEvent({
+              type: 'tool_call_end',
+              data: sanitizeToolResultForObservation(
+                toolCalls.find((toolCall) => toolCall.id === result.toolCallId),
+                result,
+              ),
+            });
+          });
+          return 'continue';
+        }
+      }
+
       const requestedNames = unavailableToolCalls.map((toolCall) => toolCall.name).join(', ');
       const allowedNames = [...visibleToolNames].join(', ') || 'none';
       const guard = this.ctx.artifactRepairGuard;

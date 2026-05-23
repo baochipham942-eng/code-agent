@@ -9,6 +9,8 @@ import type { ToolContext } from '../tools/types';
 import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import { ToolExecutor } from '../tools/toolExecutor';
 import { ModelRouter } from '../model/modelRouter';
+import { resolveToolAlias } from '../services/toolSearch/deferredTools';
+import { inferenceViaAiSdk } from '../model/adapters/aiSdkAdapter';
 import { createLogger } from '../services/infra/logger';
 import { silence } from '../utils/errorHandling';
 import {
@@ -629,13 +631,21 @@ export class SubagentExecutor {
         // effectiveSignal 把父 abort + 内部 timeout 都桥接进来；
         // 不传给 inference 的话，父 abort 后这一轮 LLM call 还会跑完才被循环开头 check 拦截，
         // 期间继续烧 token + 子 agent 拖慢退出。
-        const response = await this.modelRouter.inference(
-          providerMessages,
-          toolDefinitions,
-          context.modelConfig,
-          () => {}, // No streaming for subagents
-          effectiveSignal,
-        );
+        // P0 provider 迁移：flag CODE_AGENT_MODEL_ENGINE=aisdk 时子代理走 AI SDK 适配器，
+        // 用 SDK 归一 provider 工具调用（修 Bug B：DeepSeek 非流式漏 DSML / 子代理拿不到工具）。
+        // 默认关 → 走原 modelRouter.inference，零风险可回退。
+        // 注意：AI SDK 适配器吃【压平前】的 inferenceMessages（保留 role:'tool'+toolResults
+        // 配对），不能用 buildInferenceMessages 压平后的 providerMessages（它把 tool 结果变成
+        // user 消息，导致 AI SDK 报 "Tool result is missing"）。
+        const response = process.env.CODE_AGENT_MODEL_ENGINE === 'aisdk'
+          ? await inferenceViaAiSdk(inferenceMessages as unknown as Parameters<typeof inferenceViaAiSdk>[0], toolDefinitions, context.modelConfig, undefined, effectiveSignal)
+          : await this.modelRouter.inference(
+              providerMessages,
+              toolDefinitions,
+              context.modelConfig,
+              () => {}, // No streaming for subagents
+              effectiveSignal,
+            );
         const inferenceDuration = Date.now() - inferenceStartedAt;
         markProgress();
 
@@ -1102,7 +1112,12 @@ export class SubagentExecutor {
     const defs: ToolDefinition[] = [];
     const missing: string[] = [];
     for (const name of allowedToolNames) {
-      const def = resolver.getDefinition(name);
+      // agent 定义里仍用 legacy snake_case 工具名（glob/grep/read_file/list_directory/
+      // web_search 等），而 protocol registry 用 PascalCase 规范名。先过 resolveToolAlias
+      // 归一，否则子代理的核心工具会被整组 strip 掉（"not found in registry"），导致 spawn
+      // 出来的子代理无工具可用、干不成活。这是多 agent 委派"跑不通"的根因之一。
+      const canonical = resolveToolAlias(name);
+      const def = resolver.getDefinition(canonical) ?? resolver.getDefinition(name);
       if (def) {
         defs.push(def);
       } else {

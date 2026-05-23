@@ -508,7 +508,13 @@ export class ConversationRuntime {
           });
           const fallback = this.ctx.goalMode.evaluateFallback({ turn: iterations, tokensUsed });
           if (fallback.stop) {
-            this.ctx.goalMode.markAborted(fallback.reason ?? 'goal aborted');
+            const reason = fallback.reason ?? 'goal aborted';
+            this.ctx.goalMode.markAborted(reason);
+            // 终态事件：闸3 兜底中止（UI 展示"目标已中止"+停表）
+            this.ctx.onEvent({
+              type: 'goal_complete',
+              data: { status: 'aborted', reason, turns: iterations, tokensUsed },
+            });
             terminal = { status: 'aborted' };
             break;
           }
@@ -676,6 +682,15 @@ export class ConversationRuntime {
       } else if (this.ctx.goalMode?.getStatus() === 'met') {
         // 闸1 验证通过 → markMet → loop 退出，收尾标 goal_met。
         // （闸3 兜底中止已在 loop 内直接 terminal = 'aborted'。）
+        // 终态事件：目标达成（UI 展示"目标已完成"+停表）
+        this.ctx.onEvent({
+          type: 'goal_complete',
+          data: {
+            status: 'met',
+            turns: iterations,
+            tokensUsed: this.ctx.totalInputTokens + this.ctx.totalOutputTokens,
+          },
+        });
         terminal = { status: 'goal_met' };
       }
     } catch (error) {

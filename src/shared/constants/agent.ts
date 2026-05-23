@@ -109,6 +109,10 @@ export const GOAL_MODE = {
   VERIFY_TIMEOUT_MS: 600_000,
   /** 闸1 验证输出注回模型时的最大字符数（控 token） */
   VERIFY_OUTPUT_MAX_CHARS: 4_000,
+  /** 闸2 Reviewer 子代理迭代上限（够它读文件/跑命令再裁决，又不无限循环） */
+  REVIEW_MAX_ITERATIONS: 15,
+  /** 闸2 评审理由注回模型时的最大字符数（控 token） */
+  REVIEW_OUTPUT_MAX_CHARS: 4_000,
 } as const;
 
 /** 规划配置 */

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContextAssemblyCtx } from '../../../src/main/agent/runtime/contextAssembly';
 import { inference } from '../../../src/main/agent/runtime/contextAssembly/inference';
 
@@ -141,9 +141,20 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
 }
 
 describe('contextAssembly inference artifact retry', () => {
+  // 这些用例通过 mock 掉的 modelRouter.inference 验证 inference.ts 的【引擎无关】编排逻辑
+  // （artifact 重试 / repair-guard 注入 / vision fallback / 网络重试），断言也打在 modelRouter.inference 上。
+  // 主 loop 默认引擎已翻成 aisdk（commit 65a61bab）后，runEngineInference 会绕过 modelRouter.inference
+  // 走真实 inferenceViaAiSdk —— 'mock' 是测试夹具 provider，AI SDK 适配器解析不出 baseURL 直接崩，
+  // 18 个用例齐挂。强制 legacy 引擎让 mock 重新生效；aisdk 派发本身由 aiSdkAdapter*.test.ts 覆盖。
+  const prevEngine = process.env.CODE_AGENT_MODEL_ENGINE;
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetApiKey.mockReturnValue('mock-key');
+    process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
+  });
+  afterEach(() => {
+    if (prevEngine === undefined) delete process.env.CODE_AGENT_MODEL_ENGINE;
+    else process.env.CODE_AGENT_MODEL_ENGINE = prevEngine;
   });
 
   it('emits user-visible progress while waiting for artifact model output', async () => {

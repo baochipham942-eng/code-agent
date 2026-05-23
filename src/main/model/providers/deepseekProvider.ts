@@ -6,7 +6,8 @@ import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage } from '../types';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
 import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
-import { MODEL_API_ENDPOINTS, DEFAULT_MODELS, getModelMaxOutputTokens } from '../../../shared/constants';
+import { DEFAULT_MODELS, getModelMaxOutputTokens } from '../../../shared/constants';
+import { resolveProviderBaseUrl, resolveProviderApiKey } from './providerResolution';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('DeepSeekProvider');
@@ -15,11 +16,11 @@ export class DeepSeekProvider extends BaseOpenAIProvider {
   readonly name = 'DeepSeek';
 
   protected getBaseUrl(config: ModelConfig): string {
-    return config.baseUrl || MODEL_API_ENDPOINTS.deepseek;
+    return resolveProviderBaseUrl(config);
   }
 
   protected getApiKey(config: ModelConfig): string {
-    return config.apiKey || '';
+    return resolveProviderApiKey(config);
   }
 
   protected isThinkingMode(_config: ModelConfig): boolean {

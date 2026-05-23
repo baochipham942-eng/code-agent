@@ -7,12 +7,9 @@ import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
 import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
-import { MODEL_API_ENDPOINTS, DEFAULT_MODELS, getModelMaxOutputTokens } from '../../../shared/constants';
-import { PROVIDER_REGISTRY } from '../providerRegistry';
+import { DEFAULT_MODELS, getModelMaxOutputTokens } from '../../../shared/constants';
 import { getProviderLimiter } from '../concurrencyLimiter';
-import { createLogger } from '../../services/infra/logger';
-
-const logger = createLogger('ZhipuProvider');
+import { resolveProviderBaseUrl, resolveProviderApiKey } from './providerResolution';
 
 // 智谱并发限流器：与 quick model 路径共用同一实例（见 concurrencyLimiter + PROVIDER_CONCURRENCY_LIMITS）
 const zhipuLimiter = getProviderLimiter('zhipu');
@@ -21,31 +18,11 @@ export class ZhipuProvider extends BaseOpenAIProvider {
   readonly name = '智谱';
 
   protected getBaseUrl(config: ModelConfig): string {
-    const modelInfo = this.getModelInfo(config);
-    const providerConfig = PROVIDER_REGISTRY.zhipu;
-
-    if (modelInfo?.costType === 'free') {
-      logger.info(`[智谱] 使用官方端点: ${MODEL_API_ENDPOINTS.zhipuOfficial}, 模型: ${config.model}`);
-      return config.baseUrl || MODEL_API_ENDPOINTS.zhipuOfficial;
-    }
-
-    // Coding 套餐模型使用专用端点（0ki）
-    if (modelInfo?.useCodingEndpoint && providerConfig?.codingBaseUrl) {
-      logger.info(`[智谱] 使用 Coding 套餐端点: ${providerConfig.codingBaseUrl}, 模型: ${config.model}`);
-      return providerConfig.codingBaseUrl;
-    }
-
-    const baseUrl = config.baseUrl || providerConfig?.baseUrl || MODEL_API_ENDPOINTS.zhipu;
-    logger.info(`[智谱] 使用标准端点: ${baseUrl}, 模型: ${config.model}`);
-    return baseUrl;
+    return resolveProviderBaseUrl(config);
   }
 
   protected getApiKey(config: ModelConfig): string {
-    const modelInfo = this.getModelInfo(config);
-    if (modelInfo?.costType === 'free') {
-      return process.env.ZHIPU_OFFICIAL_API_KEY || config.apiKey || '';
-    }
-    return config.apiKey || '';
+    return resolveProviderApiKey(config);
   }
 
   protected buildRequestBody(

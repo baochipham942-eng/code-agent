@@ -24,7 +24,7 @@ import type { ToolCall, ToolDefinition, ModelConfig } from '../../../shared/cont
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 import { createLogger } from '../../services/infra/logger';
 import { PROVIDER_REGISTRY } from '../providerRegistry';
-import { getConfigService } from '../../services/core/configService';
+import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/providerResolution';
 
 const logger = createLogger('AiSdkAdapter');
 
@@ -34,49 +34,19 @@ interface ProviderRequest {
   supportsTool: boolean;
 }
 
-// provider → 环境变量名（webServer dev 模式 key 在 .env/process.env，SecureStorage 为空）
-const ENV_KEY_BY_PROVIDER: Record<string, string> = {
-  claude: 'ANTHROPIC_API_KEY',
-  anthropic: 'ANTHROPIC_API_KEY',
-  openai: 'OPENAI_API_KEY',
-  deepseek: 'DEEPSEEK_API_KEY',
-  gemini: 'GEMINI_API_KEY',
-  zhipu: 'ZHIPU_API_KEY',
-  groq: 'GROQ_API_KEY',
-  moonshot: 'MOONSHOT_API_KEY',
-  xiaomi: 'XIAOMI_API_KEY',
-};
-
-// 走 Neo 的 providerRegistry + configService 解析 baseURL/apiKey/能力，
-// 不裸用 config.apiKey/MODEL_API_ENDPOINTS——子代理 modelConfig 常缺 key（曾导致 zhipu
-// "Invalid token"）。providerRegistry 同时给出 supportsTool（能力即数据，对照 Models.dev）
-// 和 zhipu 0ki coding/paas 端点区分。
+// baseURL / apiKey 走与 provider 类同一份解析（providerResolution）——不再在适配器里复制
+// zhipu 三态等逻辑（消除「每加一个 provider 就要在 adapter 再打一次补丁」）。
+// trustConfigKey:false：子代理 modelConfig 的 apiKey 是从父代理继承来的，provider 可能已被
+// 角色策略改成别家（deepseek→zhipu/xiaomi），故按 provider 重新解析（configService→env），
+// config.apiKey 仅作最后兜底，避免拿父的 key 去打子代理的 provider → "Invalid token"。
+// supportsTool（能力即数据，对照 Models.dev）仍取自 providerRegistry。
 function resolveProviderRequest(config: ModelConfig): ProviderRequest {
-  const reg = PROVIDER_REGISTRY[config.provider];
-  const modelEntry = reg?.models.find((m) => m.id === config.model);
-  // zhipu 三态端点（镜像 zhipuProvider.getBaseUrl/getApiKey）：
-  //   free → 官方 bigmodel.cn + ZHIPU_OFFICIAL_API_KEY（0ki 不稳支持免费 ID）
-  //   coding → 0ki coding 端点 ; 其余 → 0ki 标准端点
-  const isZhipuFree = config.provider === 'zhipu' && modelEntry?.costType === 'free';
-  const useCoding = !!modelEntry?.useCodingEndpoint && !!reg?.codingBaseUrl;
-  const baseURL = config.baseUrl
-    || (isZhipuFree
-      ? MODEL_API_ENDPOINTS.zhipuOfficial
-      : useCoding
-        ? reg?.codingBaseUrl
-        : reg?.baseUrl)
-    || (MODEL_API_ENDPOINTS as Record<string, string>)[config.provider];
-  // 按 provider 重新解析 key（镜像 modelRouter 的做法）：config.apiKey 降为最后兜底。
-  // 否则子代理继承了父的 apiKey、但 provider 被角色策略改成别家（deepseek→zhipu/xiaomi），
-  // 会拿父的 key 去打子代理的 provider → "Invalid token" / "Invalid API Key"。
-  // config.apiKey 留作兜底，覆盖自定义/中转 provider（registry/env 都没有时仍可用）。
-  const envKey = ENV_KEY_BY_PROVIDER[config.provider];
-  const apiKey = (isZhipuFree ? process.env.ZHIPU_OFFICIAL_API_KEY : undefined)
-    || getConfigService().getApiKey(config.provider)
-    || (envKey ? process.env[envKey] : undefined)
-    || config.apiKey
-    || undefined;
-  return { baseURL, apiKey, supportsTool: modelEntry?.supportsTool ?? true };
+  const modelEntry = PROVIDER_REGISTRY[config.provider]?.models.find((m) => m.id === config.model);
+  return {
+    baseURL: resolveProviderBaseUrl(config) || undefined,
+    apiKey: resolveProviderApiKey(config, { trustConfigKey: false }) || undefined,
+    supportsTool: modelEntry?.supportsTool ?? true,
+  };
 }
 
 // ── provider 解析：优先专用包（专用包能处理 thinking 回传等坑，通用 openai-compatible 不行）──

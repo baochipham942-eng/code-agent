@@ -6,6 +6,7 @@ import https from 'https';
 import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage } from '../types';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
+import { resolveProviderBaseUrl, resolveProviderApiKey } from './providerResolution';
 import { MODEL_API_ENDPOINTS, MODEL_MAX_TOKENS, DEFAULT_MODEL } from '../../../shared/constants';
 import { getHttpsAgent, convertToolsToOpenAI, convertToOpenAIMessages } from './shared';
 
@@ -21,17 +22,11 @@ export class MoonshotProvider extends BaseOpenAIProvider {
   readonly name = 'Moonshot';
 
   protected getBaseUrl(config: ModelConfig): string {
-    const isKimiK25 = config.model === 'kimi-k2.5';
-    return isKimiK25
-      ? (process.env.KIMI_K25_API_URL || MODEL_API_ENDPOINTS.kimiK25)
-      : (config.baseUrl || MODEL_API_ENDPOINTS.moonshot);
+    return resolveProviderBaseUrl(config);
   }
 
   protected getApiKey(config: ModelConfig): string {
-    const isKimiK25 = config.model === 'kimi-k2.5';
-    return isKimiK25
-      ? (process.env.KIMI_K25_API_KEY || config.apiKey || '')
-      : (config.apiKey || '');
+    return resolveProviderApiKey(config);
   }
 
   protected getAgent(): https.Agent {

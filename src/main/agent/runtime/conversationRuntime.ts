@@ -615,6 +615,25 @@ export class ConversationRuntime {
           if (toolAction === 'continue') continue;
         }
 
+        // Goal mode（自治循环）：本轮模型已自然收尾（无更多工具调用）。
+        // 完成判定权在代码层 —— 只要 goal 仍 pending 就不退出：
+        //   1) 先跑闸3 兜底（轮次/预算/无进展），触发即标 aborted 收尾；
+        //   2) 否则注入续跑提示，继续下一轮。
+        // 注：attempt_completion 申请退出 + 闸1/闸2 验证（标 met）在增量3 接入；
+        //     在此之前 goal 不会被标 met，循环只由闸3 收尾——刻意为之，拒绝
+        //     Ralph 式"模型自报完成即退出"。recordTurnProgress 亦于增量3 接线。
+        if (this.ctx.goalMode?.isPending()) {
+          const tokensUsed = this.ctx.totalInputTokens + this.ctx.totalOutputTokens;
+          const fallback = this.ctx.goalMode.evaluateFallback({ turn: iterations, tokensUsed });
+          if (fallback.stop) {
+            this.ctx.goalMode.markAborted(fallback.reason ?? 'goal aborted');
+            terminal = { status: 'aborted' };
+            break;
+          }
+          this.contextAssembly.injectSystemMessage(this.ctx.goalMode.buildContinuationPrompt());
+          continue;
+        }
+
         break;
       }
 

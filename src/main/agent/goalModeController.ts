@@ -119,4 +119,19 @@ export class GoalModeController {
     }
     return { stop: false };
   }
+
+  /**
+   * goal 仍 pending 时，每轮注给模型的续跑提示。
+   * 显式告知"完成判定走代码层验证命令"，对抗 Ralph 式"模型说完就完"。
+   */
+  buildContinuationPrompt(): string {
+    return [
+      '<goal-continuation>',
+      `目标尚未达成，继续推进。原始目标：${this.contract.goal}`,
+      '当你确信达成时，调用 attempt_completion 申请退出；',
+      `系统会自动运行验证命令 \`${this.contract.verifyCommand}\` 来核实，验证通过才算完成。`,
+      '不要仅凭"我觉得做完了"就停下——没调 attempt_completion 或验证不过，都会被要求继续。',
+      '</goal-continuation>',
+    ].join('\n');
+  }
 }

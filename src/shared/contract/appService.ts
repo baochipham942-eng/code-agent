@@ -18,6 +18,23 @@ import type {
 } from './conversationEnvelope';
 
 /**
+ * /goal 自治模式输入（renderer 解析斜杠命令后随 envelope 带出）。
+ * 字段与 web /api/run 的 body.goal 对齐；verify/review 至少给一个（否则无完成判据）。
+ */
+export interface GoalRunInput {
+  /** 自然语言目标；缺省时下游回落到本轮 prompt */
+  goal?: string;
+  /** 闸1：退出码 0 即硬达成的 shell 命令（硬目标） */
+  verify?: string;
+  /** 闸2：交给 Reviewer 子代理评的软条件（软目标） */
+  review?: string;
+  /** 闸3：token 预算上限 */
+  budget?: number;
+  /** 闸3：轮次上限 */
+  maxTurns?: number;
+}
+
+/**
  * Agent 运行选项（与 AgentRunOptions 对齐，但不引入 research 模块依赖）
  */
 export interface AppServiceRunOptions {
@@ -26,6 +43,8 @@ export interface AppServiceRunOptions {
   toolScope?: WorkbenchToolScope;
   executionIntent?: ConversationExecutionIntent;
   runtimeInput?: RuntimeInputIntent;
+  /** /goal 自治模式：存在则本轮激活 goal 模式 */
+  goal?: GoalRunInput;
   [key: string]: unknown;
 }
 

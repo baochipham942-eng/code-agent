@@ -14,6 +14,7 @@ import type {
 } from '../../shared/contract';
 import type { AgentRunOptions, ResearchUserSettings } from '../research/types';
 import { AgentLoop } from './agentLoop';
+import { buildGoalContract } from './goalModeController';
 import { SYSTEM_PROMPT } from '../prompts/builder';
 import { ToolExecutor } from '../tools/toolExecutor';
 import { getConfirmationGate } from './confirmationGate';
@@ -848,6 +849,18 @@ export class AgentOrchestrator {
       ? getTelemetryCollector().createAdapter(sessionId, 'main')
       : undefined;
 
+    // /goal 自治模式：options.goal 存在则建 goalContract → AgentLoop 据此建 ctx.goalMode
+    // + maxIterations=maxTurns + 预加载 attempt_completion（与 web /api/run 路径同源逻辑）。
+    const goalContract = options?.goal
+      ? buildGoalContract({
+          goal: options.goal.goal ?? content,
+          verifyCommand: options.goal.verify,
+          reviewCondition: options.goal.review,
+          tokenBudget: options.goal.budget,
+          maxTurns: options.goal.maxTurns,
+        })
+      : undefined;
+
     this.agentLoop = new AgentLoop({
       systemPrompt: routingResolution?.agent?.systemPrompt || SYSTEM_PROMPT,
       modelConfig: effectiveModelConfig,
@@ -860,6 +873,7 @@ export class AgentOrchestrator {
       isDefaultWorkingDirectory: this.isDefaultWorkingDirectory,
       toolScope,
       executionIntent,
+      goalContract,
       telemetryAdapter,
       persistMessage: sessionId
         ? async (message: Message) => {

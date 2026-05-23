@@ -25,6 +25,7 @@ import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 import { createLogger } from '../../services/infra/logger';
 import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/providerResolution';
+import { withTransientRetry } from '../providers/retryStrategy';
 
 const logger = createLogger('AiSdkAdapter');
 
@@ -216,14 +217,23 @@ export async function inferenceViaAiSdk(
     // P1b：模型不支持 tool_call 时不传 tools（能力即数据，来自 providerRegistry）
     aiTools = tools.length > 0 && req.supportsTool ? buildTools(tools) : undefined;
     aiMessages = toAiMessages(messages);
-    result = await generateText({
-      model,
-      messages: aiMessages,
-      tools: aiTools,
-      abortSignal: signal,
-      temperature: config.temperature,
-      // 不设 stopWhen → 单步：返回模型这一轮的 text 或 tool-call，由 Neo loop 继续驱动
-    });
+    // maxRetries:0 关掉 SDK 自带重试，统一走项目的 withTransientRetry——后者除 HTTP 瞬态
+    // (429/502/503/504) 外还覆盖纯网络错(ECONNRESET/socket hang up/ETIMEDOUT，SDK 的
+    // APICallError.isRetryable 不认这些)，且带 NON_RETRYABLE_PATTERNS 护栏(Invalid token 等
+    // 不重试)。与旧 modelRouter 路径同一套策略，避免双层重试。
+    const builtMessages = aiMessages;
+    result = await withTransientRetry(
+      () => generateText({
+        model,
+        messages: builtMessages,
+        tools: aiTools,
+        abortSignal: signal,
+        temperature: config.temperature,
+        maxRetries: 0,
+        // 不设 stopWhen → 单步：返回模型这一轮的 text 或 tool-call，由 Neo loop 继续驱动
+      }),
+      { providerName: config.provider, signal },
+    );
   } catch (err) {
     // 失败诊断：定位崩在哪个阶段（buildTools/toAiMessages/generateText）+ 原始消息形状
     const stage = !aiTools && tools.length > 0 ? 'buildTools'

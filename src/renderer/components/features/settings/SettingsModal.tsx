@@ -9,6 +9,7 @@ import {
   X,
   Cpu,
   Palette,
+  Fingerprint,
   Info,
   Database,
   Download,
@@ -78,6 +79,7 @@ import { WorkspaceSettings } from './tabs/WorkspaceSettings';
 import { AutomationSettings } from './tabs/AutomationSettings';
 import { ModelSettings } from './tabs/ModelSettings';
 import { AppearanceSettings } from './tabs/AppearanceSettings';
+import { SoulSettings } from './tabs/SoulSettings';
 import { DataSettings } from './tabs/DataSettings';
 import { UpdateSettings } from './tabs/UpdateSettings';
 import { MCPSettings } from './tabs/MCPSettings';
@@ -128,6 +130,7 @@ export function buildSettingsTabGroups({
     { id: 'conversation', label: '对话', icon: <GitBranch className="w-4 h-4" /> },
     { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
+    { id: 'soul', label: '人格', icon: <Fingerprint className="w-4 h-4" /> },
     { id: 'workspace', label: '工作区', icon: <FolderOpen className="w-4 h-4" /> },
     { id: 'automation', label: '自动化', icon: <Clock className="w-4 h-4" /> },
     { id: 'users', label: '用户管理', icon: <Users className="w-4 h-4" /> },
@@ -375,6 +378,7 @@ export const SettingsModal: React.FC = () => {
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}
             {activeTab === 'appearance' && <AppearanceSettings />}
+            {activeTab === 'soul' && <SoulSettings />}
             {activeTab === 'cache' && <DataSettings />}
             {activeTab === 'capabilities' && (
               <CapabilityCenterSettings onNavigateSettings={handleSearchNavigate} />

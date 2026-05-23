@@ -10,7 +10,7 @@ import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import { ToolExecutor } from '../tools/toolExecutor';
 import { ModelRouter } from '../model/modelRouter';
 import { resolveToolAlias } from '../services/toolSearch/deferredTools';
-import { inferenceViaAiSdk } from '../model/adapters/aiSdkAdapter';
+import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../model/adapters/aiSdkAdapter';
 import { createLogger } from '../services/infra/logger';
 import { silence } from '../utils/errorHandling';
 import {
@@ -265,8 +265,8 @@ export class SubagentExecutor {
       context.toolContext.workingDirectory
     );
 
-    // Filter tools to only those allowed for this subagent
-    let effectiveToolNames = config.availableTools;
+    // Filter tools to only those allowed for this subagent（下方 if/else 两档必赋值）
+    let effectiveToolNames: string[];
 
     // M2-Task 5 partial: 走 buildChildContext 三档合并算法
     // P4 收敛点：caller 没显式传 parentContext 时，自动从 ToolContext 推导，
@@ -631,13 +631,16 @@ export class SubagentExecutor {
         // effectiveSignal 把父 abort + 内部 timeout 都桥接进来；
         // 不传给 inference 的话，父 abort 后这一轮 LLM call 还会跑完才被循环开头 check 拦截，
         // 期间继续烧 token + 子 agent 拖慢退出。
-        // P0 provider 迁移：flag CODE_AGENT_MODEL_ENGINE=aisdk 时子代理走 AI SDK 适配器，
-        // 用 SDK 归一 provider 工具调用（修 Bug B：DeepSeek 非流式漏 DSML / 子代理拿不到工具）。
-        // 默认关 → 走原 modelRouter.inference，零风险可回退。
+        // Provider 迁移：子代理默认走 AI SDK 适配器（用 SDK 归一 provider 工具调用，修 Bug B：
+        // DeepSeek 非流式漏 DSML / 子代理拿不到工具）。CODE_AGENT_MODEL_ENGINE=legacy 一键回退旧
+        // modelRouter 路径。适配器不支持的 provider（gemini 原生 API）即便默认 aisdk 也自动留在旧
+        // 路径（见 aiSdkSupportsProvider），不引入回归。
         // 注意：AI SDK 适配器吃【压平前】的 inferenceMessages（保留 role:'tool'+toolResults
         // 配对），不能用 buildInferenceMessages 压平后的 providerMessages（它把 tool 结果变成
         // user 消息，导致 AI SDK 报 "Tool result is missing"）。
-        const response = process.env.CODE_AGENT_MODEL_ENGINE === 'aisdk'
+        const useAiSdk = process.env.CODE_AGENT_MODEL_ENGINE !== 'legacy'
+          && aiSdkSupportsProvider(context.modelConfig.provider);
+        const response = useAiSdk
           ? await inferenceViaAiSdk(inferenceMessages as unknown as Parameters<typeof inferenceViaAiSdk>[0], toolDefinitions, context.modelConfig, undefined, effectiveSignal)
           : await this.modelRouter.inference(
               providerMessages,

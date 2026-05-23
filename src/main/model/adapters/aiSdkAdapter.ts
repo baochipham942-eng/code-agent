@@ -28,6 +28,17 @@ import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/prov
 
 const logger = createLogger('AiSdkAdapter');
 
+// resolveModel 能处理的 provider：deepseek（专用包）/ claude·anthropic（专用包）/ 其余走
+// openai-compatible。gemini 是原生 API（非 OpenAI 兼容），适配器没有对应分支——这类 provider
+// 的子代理即便 engine 默认 aisdk 也应回退到旧 modelRouter 路径，而非把 OpenAI 格式请求误发到
+// gemini 原生端点。新增不兼容 provider 时加进这个集合。
+const AISDK_UNSUPPORTED_PROVIDERS = new Set<string>(['gemini']);
+
+/** 适配器是否能跑该 provider（false → 调用方应走旧 modelRouter 路径）。 */
+export function aiSdkSupportsProvider(provider: string): boolean {
+  return !AISDK_UNSUPPORTED_PROVIDERS.has(provider);
+}
+
 interface ProviderRequest {
   baseURL: string | undefined;
   apiKey: string | undefined;

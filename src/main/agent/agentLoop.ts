@@ -59,6 +59,7 @@ import type { PromptProfile } from '../prompts/profiles';
 import { AntiPatternDetector } from './antiPattern/detector';
 import { cleanXmlResidues } from './antiPattern/cleanXml';
 import { GoalTracker } from './goalTracker';
+import { GoalModeController } from './goalModeController';
 import { NudgeManager } from './nudgeManager';
 import { getSessionRecoveryService } from './sessionRecovery';
 import { getIncompleteTasks } from '../services/planning/taskStore';
@@ -152,7 +153,8 @@ export class AgentLoop {
       messages: config.messages,
       onEvent: config.onEvent,
       modelRouter: new ModelRouter(),
-      maxIterations: getMaxIterations(),
+      // Goal 模式：轮次上限用契约的 maxTurns（通常 > 默认 30），否则走默认
+      maxIterations: config.goalContract?.maxTurns ?? getMaxIterations(),
       workingDirectory: config.workingDirectory,
       isDefaultWorkingDirectory: config.isDefaultWorkingDirectory ?? true,
       sessionId: resolvedSessionId,
@@ -167,6 +169,8 @@ export class AgentLoop {
       circuitBreaker: new CircuitBreaker(),
       antiPatternDetector: new AntiPatternDetector(),
       goalTracker: new GoalTracker(),
+      // Goal 模式控制器：契约存在才激活（opt-in），否则 undefined（普通 run 不走 goal 分支）
+      goalMode: config.goalContract ? new GoalModeController(config.goalContract) : undefined,
       nudgeManager: new NudgeManager(),
       hookManager: config.hookManager,
       planningService: config.planningService,

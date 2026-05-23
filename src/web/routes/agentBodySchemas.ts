@@ -12,6 +12,15 @@ const ConversationEnvelopeContextBodySchema = LooseObjectSchema.transform(
   (value) => value as unknown as ConversationEnvelopeContext,
 );
 
+// /goal 自治模式契约。verify 用 .min(1) 强制必填（设计 D1）：给了 goal 就必须给 verify 命令。
+export const GoalBodySchema = z.object({
+  goal: z.string().optional(),
+  verify: z.string().min(1),
+  review: z.string().optional(),
+  budget: z.number().positive().optional(),
+  maxTurns: z.number().int().positive().optional(),
+});
+
 export const AgentRunBodySchema = z.object({
   prompt: z.string().min(1),
   project: z.string().optional(),
@@ -23,6 +32,7 @@ export const AgentRunBodySchema = z.object({
   clientMessageId: z.string().optional(),
   attachments: z.array(MessageAttachmentBodySchema).optional(),
   context: ConversationEnvelopeContextBodySchema.optional(),
+  goal: GoalBodySchema.optional(),
 }).passthrough();
 
 export const AgentCancelBodySchema = z.object({

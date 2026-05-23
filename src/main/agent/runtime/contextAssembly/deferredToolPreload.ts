@@ -6,7 +6,7 @@ const logger = createLogger('ContextAssembly');
 
 type RuntimeForDeferredToolPreload = Pick<
   RuntimeContext,
-  'enableToolDeferredLoading' | 'executionIntent' | 'messages'
+  'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode'
 >;
 
 const COMPUTER_INTENT_RE =
@@ -38,6 +38,11 @@ export function getDeferredToolsToPreloadForTurn(
   const tools = new Set<string>();
   const intent = runtime.executionIntent;
   const userText = getLatestUserText(runtime);
+
+  // Goal 模式：预加载 attempt_completion，让模型每轮都能调它申请退出（触发闸1 验证）
+  if (runtime.goalMode) {
+    tools.add('attempt_completion');
+  }
 
   if (
     intent?.browserSessionMode === 'desktop' ||

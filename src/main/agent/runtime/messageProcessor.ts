@@ -502,67 +502,72 @@ export class MessageProcessor {
         const summary = typeof rawSummary === 'string' ? rawSummary : '';
         this.ctx.goalMode.requestCompletion(summary);
 
+        // 闸1（确定性）：仅当契约带 verifyCommand 时跑；纯软目标（只给 review）→ 跳过直接进闸2。
         const verifyCommand = this.ctx.goalMode.getVerifyCommand();
-        const gate = await runVerifyGate(verifyCommand, this.ctx.workingDirectory);
-        // 观测事件：闸1 判定结果（UI 用）
-        this.ctx.onEvent({
-          type: 'goal_gate',
-          data: { gate: 1, pass: gate.pass, exitCode: gate.exitCode, timedOut: gate.timedOut },
-        });
-
-        if (gate.pass) {
-          // 闸2（软评审）：闸1 pass 后，若 goal 契约带 reviewCondition，派 Reviewer
-          // 子代理（强模型）评无法落退出码的软条件。fail → 注理由 + continue 让模型继续改；
-          // pass（或没有 reviewCondition）才落到下面 markMet。
-          const reviewCondition = this.ctx.goalMode.getReviewCondition();
-          if (reviewCondition) {
-            const review = await runReviewGate(reviewCondition, this.ctx.goalMode.getGoal(), {
-              workingDirectory: this.ctx.workingDirectory,
-              sessionId: this.ctx.sessionId,
-              abortSignal: this.ctx.runAbortController?.signal,
-              hookManager: this.ctx.hookManager,
-            });
-            // 观测事件：闸2 判定结果（UI 用）
-            this.ctx.onEvent({
-              type: 'goal_gate',
-              data: { gate: 2, pass: review.pass, reason: review.reason },
-            });
-
-            if (!review.pass) {
-              this.ctx.goalMode.clearCompletionRequest();
-              this.contextAssembly.injectSystemMessage(
-                [
-                  '<goal-review-failed>',
-                  `软评审条件未通过：${reviewCondition}`,
-                  '目标尚未达成。请根据下面的评审意见继续改进，改好后再调 attempt_completion。',
-                  '--- 评审意见（截断）---',
-                  review.reason,
-                  '</goal-review-failed>',
-                ].join('\n'),
-              );
-              return 'continue';
-            }
+        if (verifyCommand) {
+          const gate = await runVerifyGate(verifyCommand, this.ctx.workingDirectory);
+          // 观测事件：闸1 判定结果（UI 用）
+          this.ctx.onEvent({
+            type: 'goal_gate',
+            data: { gate: 1, pass: gate.pass, exitCode: gate.exitCode, timedOut: gate.timedOut },
+          });
+          if (!gate.pass) {
+            this.ctx.goalMode.clearCompletionRequest();
+            this.contextAssembly.injectSystemMessage(
+              [
+                '<goal-verify-failed>',
+                `验证命令 \`${verifyCommand}\` 未通过（exit ${gate.exitCode ?? 'null'}${gate.timedOut ? '，超时' : ''}）。`,
+                '目标尚未达成。请根据下面的失败输出继续修复，修好后再调 attempt_completion。',
+                '--- 验证输出（截断）---',
+                gate.output || '(无输出)',
+                '</goal-verify-failed>',
+              ].join('\n'),
+            );
+            return 'continue';
           }
-
-          this.ctx.goalMode.markMet();
-          this.contextAssembly.injectSystemMessage(
-            `<goal-verified>\n验证命令 \`${verifyCommand}\` 退出码 0${reviewCondition ? '、软评审通过' : ''}，目标达成，结束本次 goal。\n</goal-verified>`,
-          );
-          return 'break';
         }
 
-        this.ctx.goalMode.clearCompletionRequest();
+        // 闸2（软评审）：闸1 pass/跳过后，若契约带 reviewCondition，派 Reviewer 子代理（强模型）
+        // 评无法落退出码的软条件。fail → 注理由 + continue 让模型继续改。
+        const reviewCondition = this.ctx.goalMode.getReviewCondition();
+        if (reviewCondition) {
+          const review = await runReviewGate(reviewCondition, this.ctx.goalMode.getGoal(), {
+            workingDirectory: this.ctx.workingDirectory,
+            sessionId: this.ctx.sessionId,
+            abortSignal: this.ctx.runAbortController?.signal,
+            hookManager: this.ctx.hookManager,
+          });
+          // 观测事件：闸2 判定结果（UI 用）
+          this.ctx.onEvent({
+            type: 'goal_gate',
+            data: { gate: 2, pass: review.pass, reason: review.reason },
+          });
+          if (!review.pass) {
+            this.ctx.goalMode.clearCompletionRequest();
+            this.contextAssembly.injectSystemMessage(
+              [
+                '<goal-review-failed>',
+                `软评审条件未通过：${reviewCondition}`,
+                '目标尚未达成。请根据下面的评审意见继续改进，改好后再调 attempt_completion。',
+                '--- 评审意见（截断）---',
+                review.reason,
+                '</goal-review-failed>',
+              ].join('\n'),
+            );
+            return 'continue';
+          }
+        }
+
+        // 闸1（或跳过）+ 闸2（或跳过）全过 → 达成。
+        this.ctx.goalMode.markMet();
+        const passedGates = [
+          verifyCommand ? `验证命令 \`${verifyCommand}\` 退出码 0` : null,
+          reviewCondition ? '软评审通过' : null,
+        ].filter(Boolean).join('、');
         this.contextAssembly.injectSystemMessage(
-          [
-            '<goal-verify-failed>',
-            `验证命令 \`${verifyCommand}\` 未通过（exit ${gate.exitCode ?? 'null'}${gate.timedOut ? '，超时' : ''}）。`,
-            '目标尚未达成。请根据下面的失败输出继续修复，修好后再调 attempt_completion。',
-            '--- 验证输出（截断）---',
-            gate.output || '(无输出)',
-            '</goal-verify-failed>',
-          ].join('\n'),
+          `<goal-verified>\n${passedGates}，目标达成，结束本次 goal。\n</goal-verified>`,
         );
-        return 'continue';
+        return 'break';
       }
     }
 

@@ -481,7 +481,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       const config = agent.getConfig();
 
-      // /goal 自治模式：body.goal 存在则激活（verify 已由 schema 强制必填，D1）。
+      // /goal 自治模式：body.goal 存在则激活（schema 保证 verify/review 至少有一个）。
       // 设 config.goalContract → agentLoop 据此建 ctx.goalMode + maxIterations=maxTurns + 预加载 attempt_completion。
       if (body.goal) {
         config.goalContract = buildGoalContract({
@@ -491,7 +491,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           tokenBudget: body.goal.budget,
           maxTurns: body.goal.maxTurns,
         });
-        logger.info('[AgentRouter] Goal mode activated', { verify: body.goal.verify, sessionId });
+        logger.info('[AgentRouter] Goal mode activated', { verify: body.goal.verify, review: body.goal.review, sessionId });
       }
 
       const runModelConfig = {

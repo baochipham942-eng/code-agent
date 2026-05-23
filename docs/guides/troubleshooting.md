@@ -196,6 +196,26 @@ curl --max-time 10 --proxy http://127.0.0.1:7897 https://token-plan-sgp.xiaomimi
    - GitHub: `ghp_*`, `gho_*`, `ghu_*`, `ghs_*`, `ghr_*`
    - AWS: `AKIA*`, `ASIA*`
 
+### Swarm CI `full`/e2e 在 main 上必红：原生模块缺失 (2026-05-23, PR #166)
+**问题**: 每次 push 到 main，`Swarm full (smoke + e2e)` job 必红，但同代码在 PR 上全绿。
+**原因**: e2e 要起 webServer，而 CI 用 `npm ci --ignore-scripts` 跳过了原生模块的 install/postinstall，两个原生模块在 ubuntu runner 上没编译出来：
+- **node-pty**: 1.1.0 只带 `prebuilds/darwin-* / win32-*`，无 `linux-x64`。webServer import 时 `loadNativeModule('pty')` 在 `build/Release → prebuilds/linux-x64` 都找不到 `pty.node`，直接抛错退出（致命，webServer 起不来）。
+- **better-sqlite3**: `prebuild-install || true` 拉不到预编译被 `|| true` 吞错；`--ignore-scripts` 又跳过 postinstall(`rebuild-native:system`)，`dist/native/` 不生成，`nativeLoader` 三路径全空 → DB 初始化失败（`Could not locate the bindings file`），依赖持久化(pending_approvals)的 swarm-chain e2e 断言 `element not found`。
+
+**正确做法**（通用规则）:
+1. **CI 用 `--ignore-scripts` 时，每个原生模块都要显式补编译步**，别假设 prebuild 覆盖 linux：`(cd node_modules/<pkg> && ../.bin/prebuild-install) || npm rebuild <pkg> --build-from-source`。
+2. **绝不用 `|| true` 吞原生模块编译失败**——它把"装不上"伪装成"装好了"，故障点后移到运行时。编译后 `test -f <产物路径>` 断言（fail-loud，失败暴露在编译步而非 webServer 启动）。
+3. 断言路径要对准 **app 实际的 loader 顺序**（`src/main/services/core/database/nativeLoader.ts` 先 `dist/native/` 后 fallback `node_modules/.../build/Release/`；node-pty 见 `node_modules/node-pty/lib/utils.js` 的 `build/Release → prebuilds/<platform>-<arch>`），不是想当然的默认 require 路径。
+4. 验证修复必须在**能跑到 full 的上下文**：`workflow_dispatch` 在分支上实跑 full，绿了再合 main——别靠 PR 的 smoke 绿就当好了（见下条）。
+
+### Merge gate 只在合并后跑 = "PR 绿 main 红"盲区 (2026-05-23, PR #167)
+**问题**: 上面的原生模块缺陷能潜伏到 main 才暴露，PR 阶段完全测不到。
+**原因**: `swarm-ci.yml` 的 `full` job 原本 `if: github.event_name == 'push' || workflow_dispatch`——PR 只跑 smoke，merge gate(e2e)只在合并后跑。任何"只在 full 暴露"的缺陷，PR 绿、合进 main 才红。
+**正确做法**（通用规则）:
+1. **merge gate 必须在 PR 阶段就跑**，否则"PR 绿"不代表"main 绿"。删掉限定 push 的 `if`，让 full 在 `pull_request` 也跑。
+2. 成本靠 `on.pull_request.paths` 收窄（限定 `src/** tests/**` 等代码 PR，docs-only PR 不触发），不是靠"PR 只跑一半"省。
+3. 判断 CI 体系健康看 **main 的 push run 历史**，不只看 PR check——「PR 全绿 / main 连红」是这个 pattern 的典型信号。
+
 ---
 
 ## 模型调用问题

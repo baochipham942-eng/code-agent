@@ -66,6 +66,9 @@ export class GoalModeController {
   /** 连续无文件变更的轮次计数（闸3 无进展检测） */
   private noProgressTurns = 0;
   private abortReason?: string;
+  /** 模型是否已调 attempt_completion 申请退出（待闸1/闸2 验证；不直接改 status） */
+  private completionRequested = false;
+  private pendingSummary?: string;
 
   constructor(contract: GoalContract) {
     this.contract = contract;
@@ -89,6 +92,27 @@ export class GoalModeController {
     this.status = 'aborted';
     this.abortReason = reason;
     logger.warn('[GoalMode] goal aborted', { reason });
+  }
+
+  /** 模型调 attempt_completion → 记申请退出。不改 status——met 由闸1/闸2 全过后 markMet 决定 */
+  requestCompletion(summary: string): void {
+    this.completionRequested = true;
+    this.pendingSummary = summary;
+    logger.debug('[GoalMode] completion requested (pending verification)');
+  }
+
+  hasPendingCompletionRequest(): boolean {
+    return this.completionRequested;
+  }
+
+  getPendingSummary(): string | undefined {
+    return this.pendingSummary;
+  }
+
+  /** 闸验证处理完后清空申请（无论通过与否） */
+  clearCompletionRequest(): void {
+    this.completionRequested = false;
+    this.pendingSummary = undefined;
   }
 
   /**

@@ -86,6 +86,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    name: 'attempt_completion',
+    shortDescription: '/goal 模式下申请退出循环（触发代码层验证闸）',
+    tags: ['planning'],
+    aliases: ['finish', 'complete', 'goal-complete', 'done'],
+    source: 'builtin',
+  },
+  {
     name: 'read_clipboard',
     shortDescription: '读取系统剪贴板内容',
     tags: ['file'],

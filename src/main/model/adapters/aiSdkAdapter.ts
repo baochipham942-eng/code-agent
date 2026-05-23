@@ -148,14 +148,60 @@ function asInput(args: unknown): Record<string, unknown> {
   return {};
 }
 
+// AI SDK 严格要求 assistant(tool-call) 后【紧跟】其 tool-result，中间不能夹 system/user，否则抛
+// MissingToolResultsError（"Tool result is missing for tool call ..."）。但主 loop 会在 tool 执行期间
+// （tool-result 消息入列【前】）经 injectSystemMessage 注入 system 消息（post-tool hook / 失败告警 /
+// nudge / thinking step），使序列出现 assistant(tool-call) → system → tool(result)。这里把夹在
+// assistant tool-call 与其 tool-result 之间的 system / 无主 tool 消息移到 tool-result 之后，恢复合法配对。
+// 对齐旧 OpenAI 路径 providers/shared.ts:sanitizeToolCallOrder（同一问题旧引擎已解决，迁移到 AI SDK 时漏带）。
+function reorderToolResultsAfterAssistant(messages: ModelMessage[]): ModelMessage[] {
+  const out: ModelMessage[] = [];
+  let i = 0;
+  while (i < messages.length) {
+    const msg = messages[i];
+    const callIds = msg.role === 'assistant' ? (msg.toolCalls ?? []).map((tc) => tc.id) : [];
+    if (callIds.length === 0) {
+      out.push(msg);
+      i++;
+      continue;
+    }
+    out.push(msg);
+    i++;
+    const expectedIds = new Set(callIds);
+    const toolResults: ModelMessage[] = [];
+    const deferred: ModelMessage[] = [];
+    while (i < messages.length) {
+      const next = messages[i];
+      const nextId = next.role === 'tool' ? toolMsgCallId(next) : '';
+      if (next.role === 'tool' && nextId && expectedIds.has(nextId)) {
+        toolResults.push(next);
+        expectedIds.delete(nextId);
+        i++;
+        if (expectedIds.size === 0) break; // 该 assistant 的所有 tool-call 都配到了结果
+      } else if (next.role === 'assistant' || next.role === 'user') {
+        break; // 进入新一轮，不跨轮次重排
+      } else {
+        deferred.push(next); // system / 无主 tool 消息 → 延后到 tool-result 之后
+        i++;
+      }
+    }
+    out.push(...toolResults, ...deferred);
+  }
+  return out;
+}
+
 // ── Neo ModelMessage[]（结构化 inferenceMessages）→ AI SDK ModelMessage[] ──
 // AI SDK 严格要求 assistant 的每个 tool-call 都配一个 tool-result，否则抛
 // "Tool result is missing"。因此先建配对集合，只输出"有结果的 tool-call"和
 // "有 tool-call 的结果"，把 orphan 双向丢弃（防 Neo 历史里 in-flight / 被压缩的残缺对）。
 function toAiMessages(messages: ModelMessage[]): AiModelMessage[] {
+  // 先重排：把夹在 assistant tool-call 与 tool-result 之间的 system/user 移到 tool-result 之后，
+  // 否则 AI SDK 的配对校验会在遇到夹层 system 时报 MissingToolResultsError。
+  const ordered = reorderToolResultsAfterAssistant(messages);
+
   const idToName = new Map<string, string>();
   const resultIds = new Set<string>();
-  for (const m of messages) {
+  for (const m of ordered) {
     for (const tc of m.toolCalls ?? []) idToName.set(tc.id, tc.name);
     if (m.role === 'tool') {
       const id = toolMsgCallId(m);
@@ -164,7 +210,7 @@ function toAiMessages(messages: ModelMessage[]): AiModelMessage[] {
   }
 
   const out: AiModelMessage[] = [];
-  for (const m of messages) {
+  for (const m of ordered) {
     if (m.role === 'system') {
       out.push({ role: 'system', content: textOf(m.content) });
     } else if (m.role === 'tool') {

@@ -482,6 +482,18 @@ export class ConversationRuntime {
           break;
         }
 
+        // Goal mode 闸3（兜底，每轮先跑）：轮次/预算/无进展任一触发即标 aborted 收尾。
+        // 放在 loop 顶而非收尾点——否则 handleToolResponse 返回 'continue' 的轮次会跳过闸3。
+        if (this.ctx.goalMode?.isPending()) {
+          const tokensUsed = this.ctx.totalInputTokens + this.ctx.totalOutputTokens;
+          const fallback = this.ctx.goalMode.evaluateFallback({ turn: iterations, tokensUsed });
+          if (fallback.stop) {
+            this.ctx.goalMode.markAborted(fallback.reason ?? 'goal aborted');
+            terminal = { status: 'aborted' };
+            break;
+          }
+        }
+
         // Setup iteration (turn ID, spans, events, goal checkpoints)
         this.streamHandler.setupIteration(iterations, userMessage, langfuse);
         if (iterations === 1) {
@@ -615,21 +627,12 @@ export class ConversationRuntime {
           if (toolAction === 'continue') continue;
         }
 
-        // Goal mode（自治循环）：本轮模型已自然收尾（无更多工具调用）。
-        // 完成判定权在代码层 —— 只要 goal 仍 pending 就不退出：
-        //   1) 先跑闸3 兜底（轮次/预算/无进展），触发即标 aborted 收尾；
-        //   2) 否则注入续跑提示，继续下一轮。
-        // 注：attempt_completion 申请退出 + 闸1/闸2 验证（标 met）在增量3 接入；
-        //     在此之前 goal 不会被标 met，循环只由闸3 收尾——刻意为之，拒绝
-        //     Ralph 式"模型自报完成即退出"。recordTurnProgress 亦于增量3 接线。
+        // Goal mode（自治循环）：本轮模型已自然收尾（无更多工具调用），但 goal 仍 pending
+        // → 不退出，注入续跑提示继续下一轮。闸3 兜底已在 loop 顶每轮先跑。
+        // 注：attempt_completion 申请退出由 messageProcessor 拦截记录（增量3b）；闸1/闸2
+        //     验证通过才 markMet（增量3c）。在此之前 goal 不会被标 met，刻意拒绝 Ralph
+        //     式"模型自报完成即退出"。recordTurnProgress 于增量3e 接线。
         if (this.ctx.goalMode?.isPending()) {
-          const tokensUsed = this.ctx.totalInputTokens + this.ctx.totalOutputTokens;
-          const fallback = this.ctx.goalMode.evaluateFallback({ turn: iterations, tokensUsed });
-          if (fallback.stop) {
-            this.ctx.goalMode.markAborted(fallback.reason ?? 'goal aborted');
-            terminal = { status: 'aborted' };
-            break;
-          }
           this.contextAssembly.injectSystemMessage(this.ctx.goalMode.buildContinuationPrompt());
           continue;
         }

@@ -503,6 +503,11 @@ export class MessageProcessor {
 
         const verifyCommand = this.ctx.goalMode.getVerifyCommand();
         const gate = await runVerifyGate(verifyCommand, this.ctx.workingDirectory);
+        // 观测事件：闸1 判定结果（UI 用）
+        this.ctx.onEvent({
+          type: 'goal_gate',
+          data: { gate: 1, pass: gate.pass, exitCode: gate.exitCode, timedOut: gate.timedOut },
+        });
 
         if (gate.pass) {
           this.ctx.goalMode.markMet();

@@ -495,6 +495,17 @@ export class ConversationRuntime {
             this.ctx.goalMode.recordTurnProgress(madeProgress);
           }
           const tokensUsed = this.ctx.totalInputTokens + this.ctx.totalOutputTokens;
+          // 观测事件：每轮 goal 进度态（UI 用）
+          this.ctx.onEvent({
+            type: 'goal_iteration',
+            data: {
+              turn: iterations,
+              maxTurns: this.ctx.goalMode.getMaxTurns(),
+              goalStatus: this.ctx.goalMode.getStatus(),
+              tokensUsed,
+              tokenBudget: this.ctx.goalMode.getTokenBudget(),
+            },
+          });
           const fallback = this.ctx.goalMode.evaluateFallback({ turn: iterations, tokensUsed });
           if (fallback.stop) {
             this.ctx.goalMode.markAborted(fallback.reason ?? 'goal aborted');

@@ -243,6 +243,9 @@ export type AgentEvent =
     } }
   | { type: 'agent_complete'; data: null }
   | { type: 'agent_cancelled'; data: null }
+  // /goal 自治模式观测事件
+  | { type: 'goal_iteration'; data: { turn: number; maxTurns: number; goalStatus: string; tokensUsed: number; tokenBudget: number; parentToolUseId?: string } }
+  | { type: 'goal_gate'; data: { gate: number; pass: boolean; exitCode?: number | null; timedOut?: boolean; reason?: string; parentToolUseId?: string } }
   // Auto Agent 思考/规划事件
   | { type: 'agent_thinking'; data: { message: string; agentId?: string; progress?: number; parentToolUseId?: string } }
   // Turn-based message events (行业最佳实践: Vercel AI SDK / LangGraph 模式)

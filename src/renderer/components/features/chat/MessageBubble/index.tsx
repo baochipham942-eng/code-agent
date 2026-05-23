@@ -12,6 +12,8 @@ import type { MessageBubbleProps } from './types';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
 import { SkillStatusMessage, isSkillStatusContent } from './SkillStatusMessage';
+import { GoalNoticeMessage } from './GoalNoticeMessage';
+import { isGoalNoticeContent } from '../goalNotice';
 import { useMessageActionStore } from '../../../../stores/messageActionStore';
 
 const COMPACTION_SOURCE_LABELS: Partial<Record<NonNullable<CompactionBlock['source']>, string>> = {
@@ -212,6 +214,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   // Skill 系统：检测并渲染 Skill 状态消息
   if (message.source === 'skill' && isSkillStatusContent(message.content)) {
     return <SkillStatusMessage content={message.content} />;
+  }
+
+  // /goal 生命周期通知（开启目标 / 已完成 / 已中止）——在 system-null 之前拦截
+  if (message.source === 'goal' && isGoalNoticeContent(message.content)) {
+    return <GoalNoticeMessage content={message.content} />;
   }
 
   // System messages (nudges, recovery hints) are internal — never show to user

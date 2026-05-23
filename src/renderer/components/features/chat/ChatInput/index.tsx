@@ -41,6 +41,8 @@ import {
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
+import { parseGoalCommand, isGoalCommand } from './parseGoalCommand';
+import { buildGoalNoticeMessage } from '../goalNotice';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import {
@@ -478,6 +480,48 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     const trimmedValue = value.trim();
     let contentToSend = trimmedValue;
     let preferredAgentIdOverride: string | null | undefined;
+
+    // /goal 自治模式：拦截斜杠命令 → 解析目标 + 完成判据 → 随 envelope.options.goal 发出。
+    if (isGoalCommand(trimmedValue)) {
+      const parsed = parseGoalCommand(trimmedValue);
+      if (!parsed || !parsed.goal) {
+        toast.warning('用法：/goal <目标> --verify "<命令>"（或 --review "<软条件>"）');
+        inputAreaRef.current?.focus();
+        return;
+      }
+      if (!parsed.verify && !parsed.review) {
+        toast.warning('/goal 需要 --verify "<命令>" 或 --review "<软条件>" 至少一个（否则没有完成判据）');
+        inputAreaRef.current?.focus();
+        return;
+      }
+      const base = buildEnvelope(parsed.goal, attachments);
+      const goalEnvelope: ConversationEnvelope = {
+        ...base,
+        options: {
+          ...(base.options ?? {}),
+          goal: {
+            goal: parsed.goal,
+            verify: parsed.verify,
+            review: parsed.review,
+            budget: parsed.budget,
+            maxTurns: parsed.maxTurns,
+          },
+        },
+      };
+      if (currentSessionId) {
+        useAppStore.getState().startGoalRun(currentSessionId, { goal: parsed.goal, maxTurns: parsed.maxTurns });
+      }
+      useSessionStore.getState().addMessage(buildGoalNoticeMessage({ kind: 'start', goal: parsed.goal }));
+      addToInputHistory(trimmedValue);
+      setValue('');
+      setAttachments([]);
+      try {
+        await onSend(goalEnvelope);
+      } catch {
+        if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
+      }
+      return;
+    }
 
     const agentCommand = parseAgentSlashCommand(trimmedValue, agentEntries);
     if (agentCommand.kind === 'prompt') {

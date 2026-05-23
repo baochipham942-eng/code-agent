@@ -39,11 +39,13 @@ const ARTIFACT_REPAIR_COMPACT_WRITE_RETRY_MAX_TOKENS = 8_192;
 const ARTIFACT_REPAIR_WRITE_MAX_TOKENS = 65_536;
 const ARTIFACT_MODEL_WAIT_HEARTBEAT_MS = 15_000;
 
-// 主 loop 推理引擎选择（flag-gated）。与子代理共用 CODE_AGENT_MODEL_ENGINE，但主 loop 是
-// HOT 路径 + 用户可见聊天，回归风险最高，故【显式 opt-in】：仅 === 'aisdk' 才走 AI SDK 适配器，
-// 默认（含未设）仍走旧 modelRouter——E2E 证明前不翻默认（子代理那侧是 !== 'legacy' 默认开，
-// 主 loop 这侧更严）。gemini 等适配器不兼容的 provider 即便 flag 开也自动留旧路径
-// （aiSdkSupportsProvider），翻 flag 不引入回归。统一所有主 loop 调用点的引擎选择，避免内联复制。
+// 主 loop 推理引擎选择（flag-gated）。与子代理共用 CODE_AGENT_MODEL_ENGINE，统一所有主 loop
+// 调用点的引擎选择，避免内联复制。【默认走 AI SDK 适配器，CODE_AGENT_MODEL_ENGINE=legacy
+// 一键回退旧 modelRouter】——与子代理那侧 (!== 'legacy') 对齐。主 loop 是 HOT 路径 + 用户可见
+// 聊天，曾保持 opt-in 直到 E2E 证明（webServer 跑通 longcat 文本+工具多轮 / 纯文本 / deepseek
+// 工具，流式逐字 + reasoning + tool_call + usage 全保留，对照 legacy 零回归后才翻默认）。
+// gemini 等适配器不兼容的 provider 即便默认 aisdk 也自动留旧路径（aiSdkSupportsProvider），
+// 不引入回归。
 function runEngineInference(
   ctx: ContextAssemblyCtx,
   messages: ModelMessage[],
@@ -53,7 +55,7 @@ function runEngineInference(
   signal?: AbortSignal,
   options?: InferenceOptions,
 ): Promise<RouterModelResponse> {
-  const useAiSdk = process.env.CODE_AGENT_MODEL_ENGINE === 'aisdk'
+  const useAiSdk = process.env.CODE_AGENT_MODEL_ENGINE !== 'legacy'
     && aiSdkSupportsProvider(config.provider);
   if (useAiSdk) {
     logger.debug('[AgentLoop] inference engine = aisdk', { provider: config.provider, model: config.model, streaming: typeof onStream === 'function' && options?.forceNonStreaming !== true });

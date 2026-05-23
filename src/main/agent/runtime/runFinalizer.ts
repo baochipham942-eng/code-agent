@@ -119,7 +119,7 @@ function hasCheckboxChecklist(content: string | undefined): boolean {
 // Re-export types for backward compatibility
 export type { AgentLoopConfig };
 
-export type RunTerminalStatus = 'completed' | 'cancelled' | 'interrupted' | 'failed';
+export type RunTerminalStatus = 'completed' | 'cancelled' | 'interrupted' | 'failed' | 'goal_met' | 'aborted';
 
 export interface RunTerminalInfo {
   status?: RunTerminalStatus;

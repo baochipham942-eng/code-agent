@@ -95,6 +95,18 @@ export const SUBAGENT_COMPACTION = {
   SKIP_FIRST_ITERATIONS: 3,
 } as const;
 
+/** Goal 模式配置（/goal 自治循环；闸3 兜底阈值，用户可在 goal 契约里覆盖） */
+export const GOAL_MODE = {
+  /** 默认轮次上限（用户可用 --max-turns 覆盖） */
+  DEFAULT_MAX_TURNS: 100,
+  /** 默认 token 预算（用户可用 --budget 覆盖；Codex 失控案例烧掉 9 亿 token，必须有兜底） */
+  DEFAULT_TOKEN_BUDGET: 2_000_000,
+  /** 连续无文件变更轮次阈值 → 判定无进展、强停标 aborted */
+  NO_PROGRESS_THRESHOLD: 5,
+  /** 目标检查点重注入间隔（轮），对齐 GoalTracker 默认值 */
+  CHECKPOINT_INTERVAL: 3,
+} as const;
+
 /** 规划配置 */
 export const PLANNING = {
   /** 最大 TODO 数量 */

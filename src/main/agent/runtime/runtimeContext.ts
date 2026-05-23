@@ -15,6 +15,7 @@ import type { ModelRouter } from '../../model/modelRouter';
 import type { CircuitBreaker } from '../toolExecution/circuitBreaker';
 import type { AntiPatternDetector } from '../antiPattern/detector';
 import type { GoalTracker } from '../goalTracker';
+import type { GoalModeController } from '../goalModeController';
 import type { NudgeManager } from '../nudgeManager';
 import type { HookManager } from '../../hooks/hookManager';
 import type { PlanningService } from '../../planning/planningService';
@@ -57,6 +58,8 @@ export interface RuntimeContext {
   circuitBreaker: CircuitBreaker;
   antiPatternDetector: AntiPatternDetector;
   goalTracker: GoalTracker;
+  /** /goal 自治循环控制器；仅 goal 模式下存在（opt-in），普通 run 为 undefined */
+  goalMode?: GoalModeController;
   nudgeManager: NudgeManager;
   hookManager?: HookManager;
   planningService?: PlanningService;

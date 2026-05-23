@@ -36,20 +36,23 @@ export interface ReviewGateDeps {
 }
 
 /** Reviewer 子代理系统 prompt：对抗式审查 + 末行强制 VERDICT 格式 */
-const REVIEW_SYSTEM_PROMPT = `你是一个严格的代码评审子代理，负责裁决一个"无法用退出码确定性验证"的软条件是否达成。
+const REVIEW_SYSTEM_PROMPT = `你是一个严格的代码评审子代理。任务：裁决一个"无法用退出码确定性验证"的软条件是否达成。
 
 工作方式：
-- 默认假设条件【未】达成，主动去找证据推翻或证实它。
-- 用工具读真实文件、跑只读检查/测试命令来核实——不要凭对话或想当然下结论。
-- 只做只读检查（read_file / grep / glob / list_directory，以及 bash 里的只读或测试命令）。绝不修改文件或系统状态。
-- 标准要严：只要条件明显不满足、或证据不足以确信满足，就判 FAIL。
+- 默认假设条件【未】达成，主动用工具找证据推翻或证实它。
+- 用 read_file / grep / glob / list_directory 读真实文件核实——不要凭对话或想当然下结论。
+- 标准从严：只要条件明显不满足、或证据不足以确信满足，就判 FAIL。
+- 调查充分后立刻停止调用工具，给出最终裁决。
 
-输出格式（严格遵守）：
-- 先写 1-3 句简短理由，点出关键证据（涉及哪些文件/发现）。
-- 最后【单独一行】只输出裁决，二选一，不要加任何其它字符：
-  VERDICT: PASS
-  或
-  VERDICT: FAIL`;
+【输出要求，必须严格遵守】
+你的最后一条消息必须是纯文本（不要再调用任何工具），按下面两部分：
+1. 先用 1-3 句话说明理由和关键证据（涉及哪些文件 / 发现了什么）。
+2. 再【另起一行】，行首只放下面两种之一（大写、英文冒号、不要加 markdown 或其它字符）：
+VERDICT: PASS
+VERDICT: FAIL
+
+例如最后一行就是这样的一行：
+VERDICT: FAIL`;
 
 /** 构造交给 reviewer 的任务 prompt */
 function buildReviewPrompt(reviewCondition: string, goal: string): string {
@@ -64,11 +67,11 @@ function buildReviewPrompt(reviewCondition: string, goal: string): string {
 
 /**
  * 从 reviewer 输出里解析裁决。
- * 取【最后】一个 `VERDICT: PASS|FAIL`（容忍模型在前文复述格式说明）。
- * 找不到明确 VERDICT → parsed=false，调用方按默认 FAIL 处理。
+ * 取【最后】一个 VERDICT（容忍模型在前文复述格式说明）。容忍 markdown 加粗、
+ * 中英文冒号、PASS/FAIL 大小写。找不到明确 VERDICT → parsed=false，调用方默认 FAIL。
  */
 export function parseVerdict(output: string): { pass: boolean; parsed: boolean } {
-  const matches = [...output.matchAll(/VERDICT:\s*(PASS|FAIL)/gi)];
+  const matches = [...output.matchAll(/VERDICT\s*[:：]\s*\*{0,2}\s*(PASS|FAIL)/gi)];
   if (matches.length === 0) {
     return { pass: false, parsed: false };
   }
@@ -92,8 +95,10 @@ export async function runReviewGate(
   // apiKey/baseUrl 由 executor 内部 modelRouter/适配器自解析。
   const modelConfig: ModelConfig = { ...getModelConfig('powerful') };
 
-  // reviewer 给只读工具集（不含 write_file/edit_file）——评审只读不改，
-  // 配合 requestPermission 自动放行才安全。bash 留给跑只读/测试命令。
+  // reviewer 只给只读检索工具（read/grep/glob/ls，不含 bash/write/edit）：
+  // 闸2 评的是"无法落退出码的软判断"，跑命令/测试是闸1 的活；且子代理权限策略
+  // 默认就拦 execute 级 bash，给了也只会被拒、白费迭代还污染上下文（实测）。
+  // 配合 requestPermission 自动放行——只读工具无副作用，自动放行安全。
   const toolContext: ToolContext = {
     workingDirectory: deps.workingDirectory,
     // 自动放行：本闸只暴露只读工具，且整个 goal run 已是用户授权场景。
@@ -111,7 +116,7 @@ export async function runReviewGate(
       {
         name: 'goal-review',
         systemPrompt: REVIEW_SYSTEM_PROMPT,
-        availableTools: ['bash', 'read_file', 'grep', 'glob', 'list_directory'],
+        availableTools: ['read_file', 'grep', 'glob', 'list_directory'],
         maxIterations: GOAL_MODE.REVIEW_MAX_ITERATIONS,
       },
       {
@@ -149,6 +154,8 @@ export async function runReviewGate(
     parsed: verdict.parsed,
     iterations: result.iterations,
     toolsUsed: result.toolsUsed,
+    // 诊断：模型最终输出尾部，确认 VERDICT 行是否真的产出（非确定性闸的可观测性）
+    outputTail: result.output.slice(-220),
   });
 
   return { pass: verdict.pass, parsed: verdict.parsed, reason };

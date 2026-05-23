@@ -512,6 +512,13 @@ export class ConversationRuntime {
             terminal = { status: 'aborted' };
             break;
           }
+
+          // Codex 式审计 nudge：每 CHECKPOINT_INTERVAL 轮强制重注入"先假设没做完、
+          // 逐项找证据"的完成前自检框架，对抗模型过早自报完成（pi-goal 上下文注入思路）。
+          if (this.ctx.goalMode.shouldInjectAudit(iterations)) {
+            this.contextAssembly.injectSystemMessage(this.ctx.goalMode.buildAuditNudge());
+            logger.debug('[GoalMode] audit nudge injected', { turn: iterations });
+          }
         }
 
         // Setup iteration (turn ID, spans, events, goal checkpoints)

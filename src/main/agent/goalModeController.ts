@@ -160,4 +160,31 @@ export class GoalModeController {
       '</goal-continuation>',
     ].join('\n');
   }
+
+  /**
+   * 是否在本轮重注入审计 nudge：每 CHECKPOINT_INTERVAL 轮一次（首轮不注）。
+   * 周期性而非每轮——审计提示较长，每轮注会撑 token 且模型会脱敏。
+   */
+  shouldInjectAudit(turn: number): boolean {
+    return turn > 1 && turn % GOAL_MODE.CHECKPOINT_INTERVAL === 0;
+  }
+
+  /**
+   * Codex 式审计 nudge（参考 pi-goal 上下文注入）：周期性强制注入，框定模型
+   * "先假设目标【未】达成、再逐项找证据反驳"，对抗模型凭感觉过早自报完成。
+   * 与 buildContinuationPrompt 分工：后者在模型 text-stop 时催"继续"，本提示是
+   * 主动的完成前自检框架，并点明完成仍要过代码层闸（verify 命令 + 可选评审）。
+   */
+  buildAuditNudge(): string {
+    return [
+      '<goal-audit>',
+      '完成前自检——先假设目标【尚未】达成，再逐项找证据反驳这个假设：',
+      `原始目标：${this.contract.goal}`,
+      '1. 把目标拆成可检验的子要求；',
+      '2. 对每一项找出【具体证据】（哪个文件的哪段内容、哪条命令的输出）证明已满足；',
+      '3. 凡是只"觉得"做了却拿不出证据的子要求，一律按未完成处理，继续做。',
+      `只有每一项都有证据时才调 attempt_completion——届时系统仍会独立运行验证命令 \`${this.contract.verifyCommand}\`${this.contract.reviewCondition ? '、并派评审子代理核实软条件' : ''}，过不了照样打回。`,
+      '</goal-audit>',
+    ].join('\n');
+  }
 }

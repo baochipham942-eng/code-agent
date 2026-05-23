@@ -16,6 +16,7 @@ import { useTurnExecutionClarity } from '../hooks/useTurnExecutionClarity';
 import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { ChatInput } from './features/chat/ChatInput';
+import { GoalStatusBar } from './features/chat/GoalStatusBar';
 import type { ChatInputHandle } from './features/chat/ChatInput';
 import { useFileUpload } from './features/chat/ChatInput/useFileUpload';
 import { SwarmInlineMonitor } from './features/swarm/SwarmInlineMonitor';
@@ -519,6 +520,9 @@ export const ChatView: React.FC = () => {
 
           {/* Background agents inline monitor (Codex 风格 sticky 浮层) */}
           <SwarmInlineMonitor />
+
+          {/* /goal 运行进度条（独立一行，仅 goal 运行中显示） */}
+          <GoalStatusBar />
 
           {/* Input */}
           <ChatInput

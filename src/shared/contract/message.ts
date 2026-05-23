@@ -52,7 +52,7 @@ export interface MessageAttachment {
 }
 
 // 消息来源类型
-export type MessageSource = 'user' | 'skill' | 'system';
+export type MessageSource = 'user' | 'skill' | 'system' | 'goal';
 
 // Subagent 消息子类型
 export type MessageSubtype = 'init' | 'result' | 'thinking' | 'tool_use';

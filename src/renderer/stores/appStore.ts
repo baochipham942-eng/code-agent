@@ -123,6 +123,30 @@ const isPreviewWorkbenchId = (id: WorkbenchTabId): id is `preview:${string}` =>
   id.startsWith(PREVIEW_PREFIX);
 const previewPathOf = (id: `preview:${string}`): string => id.slice(PREVIEW_PREFIX.length);
 
+/** /goal 自治模式的前端运行态（per-session，由 SSE goal_* 事件驱动）。 */
+export interface GoalRunState {
+  /** 目标文本（"开启目标：xxx" 展示用） */
+  goal: string;
+  /** 开始时间戳（计时器据此算已运行时长） */
+  startedAt: number;
+  /** 运行态：running 进行中 / met 达成 / aborted 兜底中止 */
+  status: 'running' | 'met' | 'aborted';
+  /** 当前第几轮 */
+  turn: number;
+  /** 轮次上限 */
+  maxTurns: number;
+  /** 已用 token */
+  tokensUsed: number;
+  /** token 预算 */
+  tokenBudget: number;
+  /** 中止原因（status=aborted 时） */
+  abortReason?: string;
+  /** 结束时间戳（met/aborted 后用于停表 + 展示总耗时） */
+  finishedAt?: number;
+  /** 最近一次闸判定（UI 可显示"验证中/评审中"反馈） */
+  lastGate?: { gate: number; pass: boolean; reason?: string };
+}
+
 interface AppState {
   // UI State
   showSettings: boolean;
@@ -200,6 +224,9 @@ interface AppState {
   queuedPermissionRequests: Record<string, PermissionRequest[]>;
   sessionTaskProgress: Record<string, TaskProgressData | null | undefined>;
   sessionTaskComplete: Record<string, TaskCompleteData | null | undefined>;
+
+  // /goal 自治模式运行态（per-session，SSE goal_* 事件驱动；状态条/生命周期消息读它）
+  goalRuns: Record<string, GoalRunState | undefined>;
 
   // Model Config
   modelConfig: ModelConfig;
@@ -293,6 +320,13 @@ interface AppState {
   shiftQueuedPermissionRequest: (sessionId: string) => PermissionRequest | null;
   setSessionTaskProgress: (sessionId: string, progress: TaskProgressData | null) => void;
   setSessionTaskComplete: (sessionId: string, complete: TaskCompleteData | null) => void;
+
+  // /goal 运行态 actions
+  startGoalRun: (sessionId: string, init: { goal: string; maxTurns?: number; tokenBudget?: number }) => void;
+  updateGoalProgress: (sessionId: string, data: { turn?: number; maxTurns?: number; tokensUsed?: number; tokenBudget?: number }) => void;
+  recordGoalGate: (sessionId: string, gate: { gate: number; pass: boolean; reason?: string }) => void;
+  finishGoalRun: (sessionId: string, status: 'met' | 'aborted', abortReason?: string) => void;
+  clearGoalRun: (sessionId: string) => void;
   setModelConfig: (config: ModelConfig) => void;
   // clearChat 简化：只清除 planning 相关状态（messages/todos 由 sessionStore 管理）
   clearPlanningState: () => void;
@@ -393,6 +427,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   queuedPermissionRequests: {},
   sessionTaskProgress: {},
   sessionTaskComplete: {},
+  goalRuns: {},
 
   // Initial Model Config
   modelConfig: defaultModelConfig,
@@ -863,6 +898,69 @@ export const useAppStore = create<AppState>()((set, get) => ({
         [sessionId]: complete,
       },
     })),
+
+  // ---- /goal 运行态 ----
+  startGoalRun: (sessionId, init) =>
+    set((state) => ({
+      goalRuns: {
+        ...state.goalRuns,
+        [sessionId]: {
+          goal: init.goal,
+          startedAt: Date.now(),
+          status: 'running',
+          turn: 0,
+          maxTurns: init.maxTurns ?? 0,
+          tokensUsed: 0,
+          tokenBudget: init.tokenBudget ?? 0,
+        },
+      },
+    })),
+
+  updateGoalProgress: (sessionId, data) =>
+    set((state) => {
+      const prev = state.goalRuns[sessionId];
+      if (!prev) return {};
+      return {
+        goalRuns: {
+          ...state.goalRuns,
+          [sessionId]: {
+            ...prev,
+            turn: data.turn ?? prev.turn,
+            maxTurns: data.maxTurns ?? prev.maxTurns,
+            tokensUsed: data.tokensUsed ?? prev.tokensUsed,
+            tokenBudget: data.tokenBudget ?? prev.tokenBudget,
+          },
+        },
+      };
+    }),
+
+  recordGoalGate: (sessionId, gate) =>
+    set((state) => {
+      const prev = state.goalRuns[sessionId];
+      if (!prev) return {};
+      return {
+        goalRuns: { ...state.goalRuns, [sessionId]: { ...prev, lastGate: gate } },
+      };
+    }),
+
+  finishGoalRun: (sessionId, status, abortReason) =>
+    set((state) => {
+      const prev = state.goalRuns[sessionId];
+      if (!prev) return {};
+      return {
+        goalRuns: {
+          ...state.goalRuns,
+          [sessionId]: { ...prev, status, abortReason, finishedAt: Date.now() },
+        },
+      };
+    }),
+
+  clearGoalRun: (sessionId) =>
+    set((state) => {
+      const next = { ...state.goalRuns };
+      delete next[sessionId];
+      return { goalRuns: next };
+    }),
 
   setModelConfig: (config) => set({ modelConfig: config }),
 

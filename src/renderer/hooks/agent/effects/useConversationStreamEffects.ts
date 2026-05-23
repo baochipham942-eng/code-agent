@@ -5,6 +5,8 @@ import type { HookTriggerEventData, Message, ToolCall } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
+import { useAppStore } from '../../../stores/appStore';
+import { buildGoalNoticeMessage } from '../../../components/features/chat/goalNotice';
 import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
 
@@ -501,6 +503,56 @@ export const useConversationStreamEffects = ({
           flushRef.current();
           flushStreamingMessages();
           return;
+
+        // /goal 自治模式：进度 / 闸判定 / 终态（per-session 更新 appStore；终态在当前会话补一条生命周期消息）
+        // 注：本文件的 event 是 loose 类型（data?: unknown），按 contract 的 AgentEvent 形状断言。
+        case 'goal_iteration': {
+          logHandledEvent();
+          if (eventSessionId) {
+            const d = event.data as { turn: number; maxTurns: number; tokensUsed: number; tokenBudget: number };
+            useAppStore.getState().updateGoalProgress(eventSessionId, {
+              turn: d.turn,
+              maxTurns: d.maxTurns,
+              tokensUsed: d.tokensUsed,
+              tokenBudget: d.tokenBudget,
+            });
+          }
+          break;
+        }
+
+        case 'goal_gate': {
+          logHandledEvent();
+          if (eventSessionId) {
+            const d = event.data as { gate: number; pass: boolean; reason?: string };
+            useAppStore.getState().recordGoalGate(eventSessionId, {
+              gate: d.gate,
+              pass: d.pass,
+              reason: d.reason,
+            });
+          }
+          break;
+        }
+
+        case 'goal_complete': {
+          logHandledEvent();
+          if (eventSessionId) {
+            const d = event.data as { status: 'met' | 'aborted'; reason?: string; turns: number; tokensUsed: number };
+            const appStore = useAppStore.getState();
+            const run = appStore.goalRuns[eventSessionId];
+            appStore.finishGoalRun(eventSessionId, d.status, d.reason);
+            if (isCurrentSessionEvent) {
+              addMessage(buildGoalNoticeMessage({
+                kind: d.status === 'met' ? 'met' : 'aborted',
+                goal: run?.goal ?? '',
+                reason: d.reason,
+                turns: d.turns,
+                tokensUsed: d.tokensUsed,
+                durationMs: run ? Date.now() - run.startedAt : undefined,
+              }));
+            }
+          }
+          break;
+        }
 
         case 'turn_start':
           lastEventAtRef.current = Date.now();

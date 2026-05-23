@@ -14,8 +14,11 @@ export type GoalStatus = 'pending' | 'met' | 'aborted';
 export interface GoalContract {
   /** 自然语言目标 */
   goal: string;
-  /** 闸1：退出码 0 即硬达成的 shell 命令（强制必填，见 design D1） */
-  verifyCommand: string;
+  /**
+   * 闸1：退出码 0 即硬达成的 shell 命令。可选——纯软目标只给 reviewCondition 时缺省，
+   * 此时跳过闸1 直接走闸2。校验保证 verifyCommand / reviewCondition 至少有一个（见 design §4）。
+   */
+  verifyCommand?: string;
   /** 闸2：可选，交给 Reviewer 子代理评的软条件 */
   reviewCondition?: string;
   /** 闸3：token 预算上限 */
@@ -37,11 +40,15 @@ export interface FallbackResult {
  */
 export function buildGoalContract(input: {
   goal: string;
-  verifyCommand: string;
+  verifyCommand?: string;
   reviewCondition?: string;
   tokenBudget?: number;
   maxTurns?: number;
 }): GoalContract {
+  if (!input.verifyCommand && !input.reviewCondition) {
+    // 防御：契约级再兜一层（schema 已校验），纯空目标无完成判据 → 永远只能 abort。
+    throw new Error('goal 契约至少需要 verifyCommand 或 reviewCondition 之一');
+  }
   return {
     goal: input.goal,
     verifyCommand: input.verifyCommand,
@@ -75,7 +82,7 @@ export class GoalModeController {
   }
 
   getGoal(): string { return this.contract.goal; }
-  getVerifyCommand(): string { return this.contract.verifyCommand; }
+  getVerifyCommand(): string | undefined { return this.contract.verifyCommand; }
   getReviewCondition(): string | undefined { return this.contract.reviewCondition; }
   getStatus(): GoalStatus { return this.status; }
   isPending(): boolean { return this.status === 'pending'; }
@@ -155,10 +162,18 @@ export class GoalModeController {
       '<goal-continuation>',
       `目标尚未达成，继续推进。原始目标：${this.contract.goal}`,
       '当你确信达成时，调用 attempt_completion 申请退出；',
-      `系统会自动运行验证命令 \`${this.contract.verifyCommand}\` 来核实，验证通过才算完成。`,
-      '不要仅凭"我觉得做完了"就停下——没调 attempt_completion 或验证不过，都会被要求继续。',
+      `系统会自动${this.describeGates()}来核实，核实通过才算完成。`,
+      '不要仅凭"我觉得做完了"就停下——没调 attempt_completion 或核实不过，都会被要求继续。',
       '</goal-continuation>',
     ].join('\n');
+  }
+
+  /** 描述当前契约的完成判据（用于注入提示），按 verify/review 有无组合。 */
+  private describeGates(): string {
+    const parts: string[] = [];
+    if (this.contract.verifyCommand) parts.push(`运行验证命令 \`${this.contract.verifyCommand}\``);
+    if (this.contract.reviewCondition) parts.push('派评审子代理核实软条件');
+    return parts.join(' 并 ');
   }
 
   /**
@@ -183,7 +198,7 @@ export class GoalModeController {
       '1. 把目标拆成可检验的子要求；',
       '2. 对每一项找出【具体证据】（哪个文件的哪段内容、哪条命令的输出）证明已满足；',
       '3. 凡是只"觉得"做了却拿不出证据的子要求，一律按未完成处理，继续做。',
-      `只有每一项都有证据时才调 attempt_completion——届时系统仍会独立运行验证命令 \`${this.contract.verifyCommand}\`${this.contract.reviewCondition ? '、并派评审子代理核实软条件' : ''}，过不了照样打回。`,
+      `只有每一项都有证据时才调 attempt_completion——届时系统仍会独立${this.describeGates()}，过不了照样打回。`,
       '</goal-audit>',
     ].join('\n');
   }

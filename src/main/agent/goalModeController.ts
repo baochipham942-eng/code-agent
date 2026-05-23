@@ -80,6 +80,8 @@ export class GoalModeController {
   getStatus(): GoalStatus { return this.status; }
   isPending(): boolean { return this.status === 'pending'; }
   getAbortReason(): string | undefined { return this.abortReason; }
+  getTokenBudget(): number { return this.contract.tokenBudget; }
+  getMaxTurns(): number { return this.contract.maxTurns; }
 
   /** 模型申请退出且闸1（+闸2）全过 → 标达成 */
   markMet(): void {

@@ -489,6 +489,28 @@ export class MessageProcessor {
   ): Promise<'continue' | 'break'> {
     const toolCalls = response.toolCalls ?? [];
     const requestedToolNames = toolCalls.map((toolCall) => toolCall.name).join(', ');
+
+    // Goal mode：拦截 attempt_completion —— 模型申请退出。
+    // 只记录申请（不直接判完成）；闸1/闸2 验证通过才 markMet（增量3c）。
+    // 完成判定权在代码层，模型无法靠"自称完成"绕过验证。
+    if (this.ctx.goalMode?.isPending()) {
+      const completionCall = toolCalls.find((tc) => tc.name === 'attempt_completion');
+      if (completionCall) {
+        const rawSummary = completionCall.arguments?.summary;
+        const summary = typeof rawSummary === 'string' ? rawSummary : '';
+        this.ctx.goalMode.requestCompletion(summary);
+        this.contextAssembly.injectSystemMessage(
+          [
+            '<goal-completion-requested>',
+            '已记录你的完成申请，系统将运行验证命令核实——验证通过才算完成。',
+            '（验证闸接入中：在它生效前请继续推进，不要重复调用 attempt_completion。）',
+            '</goal-completion-requested>',
+          ].join('\n'),
+        );
+        return 'continue';
+      }
+    }
+
     const activeRepairGuard = this.ctx.artifactRepairGuard;
     if (activeRepairGuard && await maybeClearCompletedArtifactRepairGuardBeforeAdmission(
       this.ctx,

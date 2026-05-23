@@ -217,6 +217,10 @@ describe('contextAssembly inference artifact retry', () => {
         apiKey: 'current-xiaomi-key',
         temperature: 0,
         maxTokens: 131072,
+        // adaptive=true 才会启用 capability fallback（含 vision 预处理）。
+        // 自 fabfd751(2026-05-22) 起，显式模型不再自动 fallback；本用例测的就是预处理
+        // 路径，必须显式开 adaptive，否则 preflight 被跳过、只剩 1 次主模型调用。
+        adaptive: true,
       },
     } as any);
     ctx.buildModelMessages = vi.fn().mockResolvedValue([

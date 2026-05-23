@@ -2,30 +2,43 @@
 // AI SDK Adapter — 用 Vercel AI SDK 归一 provider 工具调用，替代手写解析。
 //
 // 实现与 ModelRouter.inference 相同的契约：
-//   (messages, tools, config, onStream?, signal?) => Promise<ModelResponse>
-// 内部用 AI SDK 的 generateText 做【单步】推理（不设 stopWhen）——Neo 自己驱动
-// agent loop + 执行工具，所以这里只要把模型这一轮的 text/tool-call 归一返回。
+//   (messages, tools, config, onStream?, signal?, options?) => Promise<ModelResponse>
+// 单步推理（不设 stopWhen）——Neo 自己驱动 agent loop + 执行工具，所以这里只要把
+// 模型这一轮的 text/tool-call 归一返回。
 //
-// P0 范围：先服务子代理路径（subagentExecutor），该路径 onStream 为 no-op，
-// 故本适配器暂不映射流式事件，只保证 ModelResponse 正确。flag 关时不生效。
+// 两条路径：
+//   - 非流式（onStream 缺省 或 options.forceNonStreaming）：用 generateText。
+//     服务子代理（onStream no-op）和主 loop 的 artifact 非流式重试。
+//   - 流式（onStream 存在）：用 streamText 消费 fullStream，把事件映射成项目的
+//     StreamCallback 契约（StreamChunk，见 model/types.ts）后实时回调，最终从流里
+//     累积出与非流式同形状的 ModelResponse。服务主 agent loop 的逐字输出。
+//     映射目标对齐旧 SSE 路径 providers/sseStream.ts（openAISSEStream），不自创语义。
 //
 // 收益：DeepSeek 非流式不再漏 <｜｜DSML｜｜>（SDK 层归一）；工具名经 tool() 单一
 // 定义，无 snake_case/PascalCase 漂移（对照 Bug B / Bug C）。
 // ============================================================================
 
-import { generateText, jsonSchema, tool as aiTool } from 'ai';
-import type { LanguageModel, ModelMessage as AiModelMessage, ToolSet } from 'ai';
+import { generateText, streamText, jsonSchema, tool as aiTool } from 'ai';
+import type { LanguageModel, ModelMessage as AiModelMessage, ToolSet, TextStreamPart } from 'ai';
 import { createDeepSeek } from '@ai-sdk/deepseek';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createAnthropic } from '@ai-sdk/anthropic';
-import type { ModelMessage, MessageContent } from '../types';
+import type {
+  ModelMessage,
+  MessageContent,
+  StreamCallback,
+  ResponseContentPart,
+  InferenceOptions,
+} from '../types';
+import type { StreamSnapshot } from '../providers/sseStream';
 import type { ModelResponse } from '../../agent/loopTypes';
 import type { ToolCall, ToolDefinition, ModelConfig } from '../../../shared/contract';
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 import { createLogger } from '../../services/infra/logger';
 import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/providerResolution';
-import { withTransientRetry } from '../providers/retryStrategy';
+import { withTransientRetry, isTransientError } from '../providers/retryStrategy';
+import { getProviderHealthMonitor } from '../providerHealthMonitor';
 
 const logger = createLogger('AiSdkAdapter');
 
@@ -198,59 +211,91 @@ function buildTools(toolDefs: ToolDefinition[]): ToolSet {
   return tools as ToolSet;
 }
 
+// 流式重试/节流常量（对齐旧路径：withTransientRetry 默认 maxRetries=2/baseDelay=1000，
+// sseStream token 估算每 500ms、snapshot 默认 3000ms）。
+const STREAM_MAX_RETRIES = 2;
+const STREAM_RETRY_BASE_DELAY_MS = 1000;
+const TOKEN_ESTIMATE_INTERVAL_MS = 500;
+const DEFAULT_SNAPSHOT_INTERVAL_MS = 3000;
+
+// 失败诊断：定位崩在哪个阶段 + 原始消息形状（messageProcessor 下游依赖这些日志定位坑）。
+function logInferenceFailure(err: unknown, stage: string, config: ModelConfig, messages: ModelMessage[]): void {
+  logger.error('[AiSdkAdapter] inference failed', {
+    error: err instanceof Error ? err.message : String(err),
+    stage,
+    provider: config.provider,
+    model: config.model,
+    rawMsgShapes: messages.map((m) => ({
+      role: (m as { role?: string }).role,
+      contentType: Array.isArray(m.content) ? 'array' : typeof m.content,
+      hasToolCalls: !!m.toolCalls?.length,
+      hasToolResults: !!(m as { toolResults?: unknown[] }).toolResults?.length,
+    })),
+  });
+}
+
 /**
- * 与 ModelRouter.inference 同契约的 AI SDK 实现（P0：单步、非流式、服务子代理）。
+ * 与 ModelRouter.inference 同契约的 AI SDK 实现。
+ * onStream 存在且未强制非流式 → 流式（streamText，逐字回调 + 累积）；
+ * 否则非流式（generateText）。两条路径都【单步】（不设 stopWhen），由 Neo loop 驱动多轮。
  */
 export async function inferenceViaAiSdk(
   messages: ModelMessage[],
   tools: ToolDefinition[],
   config: ModelConfig,
-  _onStream?: unknown,
+  onStream?: StreamCallback,
   signal?: AbortSignal,
+  options?: InferenceOptions,
 ): Promise<ModelResponse> {
   const req = resolveProviderRequest(config);
   const model = resolveModel(config, req);
   let aiTools: ToolSet | undefined;
   let aiMessages: AiModelMessage[] | undefined;
-  let result;
   try {
     // P1b：模型不支持 tool_call 时不传 tools（能力即数据，来自 providerRegistry）
     aiTools = tools.length > 0 && req.supportsTool ? buildTools(tools) : undefined;
     aiMessages = toAiMessages(messages);
+  } catch (err) {
+    const stage = !aiTools && tools.length > 0 && req.supportsTool ? 'buildTools' : 'toAiMessages';
+    logInferenceFailure(err, stage, config, messages);
+    throw err;
+  }
+
+  const streaming = typeof onStream === 'function' && options?.forceNonStreaming !== true;
+  if (streaming) {
+    return streamViaAiSdk({ model, aiMessages, aiTools, config, onStream, signal, options, messages });
+  }
+  return generateViaAiSdk({ model, aiMessages, aiTools, config, signal, messages });
+}
+
+// ── 非流式：generateText（服务子代理 + 主 loop 的 artifact 非流式重试）。行为与迁移 P0 一致 ──
+async function generateViaAiSdk(params: {
+  model: LanguageModel;
+  aiMessages: AiModelMessage[];
+  aiTools: ToolSet | undefined;
+  config: ModelConfig;
+  signal: AbortSignal | undefined;
+  messages: ModelMessage[];
+}): Promise<ModelResponse> {
+  const { model, aiMessages, aiTools, config, signal, messages } = params;
+  let result;
+  try {
     // maxRetries:0 关掉 SDK 自带重试，统一走项目的 withTransientRetry——后者除 HTTP 瞬态
     // (429/502/503/504) 外还覆盖纯网络错(ECONNRESET/socket hang up/ETIMEDOUT，SDK 的
-    // APICallError.isRetryable 不认这些)，且带 NON_RETRYABLE_PATTERNS 护栏(Invalid token 等
-    // 不重试)。与旧 modelRouter 路径同一套策略，避免双层重试。
-    const builtMessages = aiMessages;
+    // APICallError.isRetryable 不认这些)，且带 NON_RETRYABLE_PATTERNS 护栏。避免双层重试。
     result = await withTransientRetry(
       () => generateText({
         model,
-        messages: builtMessages,
+        messages: aiMessages,
         tools: aiTools,
         abortSignal: signal,
         temperature: config.temperature,
         maxRetries: 0,
-        // 不设 stopWhen → 单步：返回模型这一轮的 text 或 tool-call，由 Neo loop 继续驱动
       }),
       { providerName: config.provider, signal },
     );
   } catch (err) {
-    // 失败诊断：定位崩在哪个阶段（buildTools/toAiMessages/generateText）+ 原始消息形状
-    const stage = !aiTools && tools.length > 0 ? 'buildTools'
-      : !aiMessages ? 'toAiMessages'
-      : 'generateText';
-    logger.error('[AiSdkAdapter] inference failed', {
-      error: err instanceof Error ? err.message : String(err),
-      stage,
-      provider: config.provider,
-      model: config.model,
-      rawMsgShapes: messages.map((m) => ({
-        role: (m as { role?: string }).role,
-        contentType: Array.isArray(m.content) ? 'array' : typeof m.content,
-        hasToolCalls: !!m.toolCalls?.length,
-        hasToolResults: !!(m as { toolResults?: unknown[] }).toolResults?.length,
-      })),
-    });
+    logInferenceFailure(err, 'generateText', config, messages);
     throw err;
   }
 
@@ -265,10 +310,11 @@ export async function inferenceViaAiSdk(
     provider: config.provider, model: config.model,
     type: toolCalls.length ? 'tool_use' : 'text',
     toolCallCount: toolCalls.length,
+    streaming: false,
   });
 
   // contentParts：text 与 tool_call 的交错顺序。老路径(openaiWrapper)对 tool_use 会带它，
-  // 下游子代理据此把 assistant.content 建成数组；缺了会建成字符串，Neo 转换器下一轮
+  // 下游据此把 assistant.content 建成数组；缺了会建成字符串，Neo 转换器下一轮
   // 对其 .content.filter 崩（"r.content.filter is not a function"）。对齐契约。
   const contentParts: NonNullable<ModelResponse['contentParts']> = [];
   if (result.text) contentParts.push({ type: 'text', text: result.text });
@@ -286,4 +332,235 @@ export async function inferenceViaAiSdk(
     },
     finishReason: result.finishReason,
   };
+}
+
+// ── 流式累积状态（每次重试尝试用全新实例）──
+interface StreamAccumulator {
+  content: string;
+  reasoning: string;
+  finishReason: string | undefined;
+  usage: { inputTokens: number; outputTokens: number } | undefined;
+  // 按 toolCallId 索引；index 保留模型发出的先后顺序，对齐 SSE delta.tool_calls[].index 语义。
+  toolCalls: Map<string, { id: string; name: string; argsText: string; input?: Record<string, unknown>; index: number }>;
+  contentParts: ResponseContentPart[];
+  lastPartType: 'text' | 'tool_call' | null;
+  charCount: number;
+  nextToolIndex: number;
+}
+
+function createAccumulator(): StreamAccumulator {
+  return {
+    content: '', reasoning: '', finishReason: undefined, usage: undefined,
+    toolCalls: new Map(), contentParts: [], lastPartType: null, charCount: 0, nextToolIndex: 0,
+  };
+}
+
+function registerToolCall(acc: StreamAccumulator, id: string, name: string) {
+  let entry = acc.toolCalls.get(id);
+  if (!entry) {
+    entry = { id, name, argsText: '', index: acc.nextToolIndex++ };
+    acc.toolCalls.set(id, entry);
+    // 追踪交错：记录 tool_call 在内容流中的出现位置（对齐 sseStream contentParts）。
+    acc.contentParts.push({ type: 'tool_call', toolCallId: id });
+    acc.lastPartType = 'tool_call';
+  }
+  return entry;
+}
+
+function stringifyArgs(input: Record<string, unknown> | undefined, fallback: string): string {
+  if (!input) return fallback;
+  try { return JSON.stringify(input); } catch { return fallback; }
+}
+
+function buildStreamResponse(acc: StreamAccumulator, config: ModelConfig): ModelResponse {
+  const toolCalls: ToolCall[] = [...acc.toolCalls.values()]
+    .sort((a, b) => a.index - b.index)
+    .map((t) => ({
+      id: t.id,
+      name: t.name,
+      // 权威 input（已解析对象）优先；provider 未在 tool-call 给 input 时回落解析累积的 argsText。
+      arguments: (t.input ?? safeParse(t.argsText)) as ToolCall['arguments'],
+    }));
+
+  logger.debug('inferenceViaAiSdk done', {
+    provider: config.provider, model: config.model,
+    type: toolCalls.length ? 'tool_use' : 'text',
+    toolCallCount: toolCalls.length,
+    streaming: true,
+  });
+
+  return {
+    type: toolCalls.length > 0 ? 'tool_use' : 'text',
+    content: acc.content || undefined,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    contentParts: acc.contentParts.length > 0 ? acc.contentParts : undefined,
+    thinking: acc.reasoning || undefined,
+    usage: acc.usage || { inputTokens: 0, outputTokens: Math.ceil(acc.charCount / 4) },
+    finishReason: acc.finishReason,
+    truncated: acc.finishReason === 'length',
+  };
+}
+
+// ── 流式：streamText 消费 fullStream，事件→StreamChunk（对齐 sseStream openAISSEStream），
+//    最终累积出与非流式同形状的 ModelResponse。服务主 agent loop 的逐字输出 ──
+async function streamViaAiSdk(params: {
+  model: LanguageModel;
+  aiMessages: AiModelMessage[];
+  aiTools: ToolSet | undefined;
+  config: ModelConfig;
+  onStream: StreamCallback;
+  signal: AbortSignal | undefined;
+  options: InferenceOptions | undefined;
+  messages: ModelMessage[];
+}): Promise<ModelResponse> {
+  const { model, aiMessages, aiTools, config, onStream, signal, options, messages } = params;
+  const healthMonitor = getProviderHealthMonitor();
+  const maxRetries = options?.disableProviderTransientRetry ? 0 : STREAM_MAX_RETRIES;
+  const snapshotInterval = options?.snapshotIntervalMs ?? DEFAULT_SNAPSHOT_INTERVAL_MS;
+  const onSnapshot = options?.onSnapshot;
+
+  for (let attempt = 0; ; attempt++) {
+    const startTime = Date.now();
+    // 每次尝试用全新累积器：emittedOutput 闸门保证只在「尚未吐过任何 delta」时才会到这里，
+    // 故重置 content/toolCalls 不会丢用户已看到的内容。
+    const acc = createAccumulator();
+    let emittedOutput = false;
+    let lastEstimateAt = 0;
+    let lastSnapshotAt = 0;
+
+    const emitSnapshot = (isFinal: boolean): void => {
+      if (!onSnapshot) return;
+      const snapshot: StreamSnapshot = {
+        content: acc.content,
+        reasoning: acc.reasoning,
+        toolCalls: [...acc.toolCalls.values()].map((t) => ({
+          id: t.id, name: t.name, arguments: stringifyArgs(t.input, t.argsText),
+        })),
+        estimatedTokens: Math.ceil(acc.charCount / 4),
+        timestamp: Date.now(),
+        isFinal,
+      };
+      onSnapshot(snapshot);
+    };
+
+    try {
+      const result = streamText({
+        model,
+        messages: aiMessages,
+        tools: aiTools,
+        abortSignal: signal,
+        temperature: config.temperature,
+        // 主 loop 的 artifact 生成/修复按阶段 cap maxTokens，必须透传给 SDK 保住上限；
+        // 未设时交给 provider 默认（与旧 SSE 路径 buildRequestBody 的 max_tokens 行为对齐）。
+        ...(typeof config.maxTokens === 'number' && Number.isFinite(config.maxTokens)
+          ? { maxOutputTokens: config.maxTokens } : {}),
+        maxRetries: 0,
+      });
+
+      for await (const part of result.fullStream as AsyncIterable<TextStreamPart<ToolSet>>) {
+        switch (part.type) {
+          case 'text-delta': {
+            const delta = part.text;
+            if (!delta) break;
+            if (acc.lastPartType !== 'text') {
+              acc.contentParts.push({ type: 'text', text: '' });
+              acc.lastPartType = 'text';
+            }
+            const lastPart = acc.contentParts[acc.contentParts.length - 1];
+            if (lastPart?.type === 'text') lastPart.text += delta;
+            acc.content += delta;
+            acc.charCount += delta.length;
+            emittedOutput = true;
+            onStream({ type: 'text', content: delta });
+            const now = Date.now();
+            if (now - lastEstimateAt > TOKEN_ESTIMATE_INTERVAL_MS) {
+              lastEstimateAt = now;
+              onStream({ type: 'token_estimate', inputTokens: 0, outputTokens: Math.ceil(acc.charCount / 4) });
+            }
+            break;
+          }
+          case 'reasoning-delta': {
+            const delta = part.text;
+            if (!delta) break;
+            acc.reasoning += delta;
+            emittedOutput = true;
+            onStream({ type: 'reasoning', content: delta });
+            break;
+          }
+          case 'tool-input-start': {
+            const entry = registerToolCall(acc, part.id, part.toolName);
+            emittedOutput = true;
+            onStream({ type: 'tool_call_start', toolCall: { index: entry.index, id: part.id, name: part.toolName } });
+            break;
+          }
+          case 'tool-input-delta': {
+            const entry = acc.toolCalls.get(part.id);
+            if (!entry) break;
+            entry.argsText += part.delta;
+            onStream({ type: 'tool_call_delta', toolCall: { index: entry.index, argumentsDelta: part.delta } });
+            break;
+          }
+          case 'tool-call': {
+            // 权威终值：input 是已解析对象。provider 不流式工具参数时不会有 input-start，
+            // 这里补注册 + 补发 tool_call_start，保证下游拿得到 id/name/index。
+            let entry = acc.toolCalls.get(part.toolCallId);
+            if (!entry) {
+              entry = registerToolCall(acc, part.toolCallId, part.toolName);
+              emittedOutput = true;
+              onStream({ type: 'tool_call_start', toolCall: { index: entry.index, id: part.toolCallId, name: part.toolName } });
+            }
+            entry.name = part.toolName || entry.name;
+            entry.input = (part.input ?? {}) as Record<string, unknown>;
+            break;
+          }
+          case 'finish': {
+            acc.finishReason = part.finishReason;
+            acc.usage = {
+              inputTokens: part.totalUsage?.inputTokens ?? 0,
+              outputTokens: part.totalUsage?.outputTokens ?? 0,
+            };
+            break;
+          }
+          case 'error': {
+            // streamText 默认把错误作为流事件而非抛出；抛出交给下面 catch 统一处理（重试/上报）。
+            throw part.error instanceof Error ? part.error : new Error(String(part.error));
+          }
+          case 'abort': {
+            throw new Error('Request was cancelled');
+          }
+          default:
+            break;
+        }
+        if (onSnapshot && Date.now() - lastSnapshotAt > snapshotInterval) {
+          lastSnapshotAt = Date.now();
+          emitSnapshot(false);
+        }
+      }
+
+      // 正常完成：发 usage + complete（对齐 sseStream），落最终 snapshot，累积成 ModelResponse。
+      healthMonitor.recordSuccess(config.provider, Date.now() - startTime);
+      if (acc.usage) {
+        onStream({ type: 'usage', inputTokens: acc.usage.inputTokens, outputTokens: acc.usage.outputTokens });
+      }
+      onStream({ type: 'complete', finishReason: acc.finishReason || 'stop' });
+      emitSnapshot(true);
+      return buildStreamResponse(acc, config);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const code = (err as NodeJS.ErrnoException).code;
+      // emittedOutput 闸门：已向用户吐过 delta → 绝不重试（避免重复 emit）；只在首个可见
+      // delta 之前的瞬态失败才重试，复用项目 isTransientError 策略（与旧路径同一套护栏）。
+      if (!emittedOutput && attempt < maxRetries && !signal?.aborted && isTransientError(msg, code)) {
+        logger.warn(`[AiSdkAdapter] 流式瞬态错误 "${msg}" (code=${code})，首字节前重试 (${attempt + 1}/${maxRetries})`);
+        await new Promise((r) => setTimeout(r, STREAM_RETRY_BASE_DELAY_MS * (attempt + 1)));
+        continue;
+      }
+      healthMonitor.recordFailure(config.provider);
+      if (!signal?.aborted) {
+        onStream({ type: 'error', error: msg, ...(code ? { errorCode: code } : {}) });
+      }
+      logInferenceFailure(err, 'streamText', config, messages);
+      throw err;
+    }
+  }
 }

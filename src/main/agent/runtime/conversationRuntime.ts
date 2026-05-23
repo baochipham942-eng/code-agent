@@ -90,7 +90,7 @@ import {
 } from '../../agent/todoParser';
 import { fileReadTracker } from '../../tools/fileReadTracker';
 import { dataFingerprintStore } from '../../tools/dataFingerprint';
-import { MAX_PARALLEL_TOOLS } from '../../agent/loopTypes';
+import { MAX_PARALLEL_TOOLS, WRITE_TOOLS } from '../../agent/loopTypes';
 import {
   compressToolResult,
   HookMessageBuffer,
@@ -485,6 +485,15 @@ export class ConversationRuntime {
         // Goal mode 闸3（兜底，每轮先跑）：轮次/预算/无进展任一触发即标 aborted 收尾。
         // 放在 loop 顶而非收尾点——否则 handleToolResponse 返回 'continue' 的轮次会跳过闸3。
         if (this.ctx.goalMode?.isPending()) {
+          // 记录上一轮有无进展：toolsUsedInTurn 此刻尚未被 setupIteration 重置，仍是上一轮的工具。
+          // 用了写工具或 Bash 视为有进展（清零）；纯 read-only/无工具视为无进展（累加）。
+          // 连续 NO_PROGRESS_THRESHOLD 轮无进展 → evaluateFallback 触发闸3 中止。
+          if (iterations > 1) {
+            const madeProgress = this.ctx.toolsUsedInTurn.some(
+              (t) => WRITE_TOOLS.includes(t) || t === 'Bash' || t === 'bash',
+            );
+            this.ctx.goalMode.recordTurnProgress(madeProgress);
+          }
           const tokensUsed = this.ctx.totalInputTokens + this.ctx.totalOutputTokens;
           const fallback = this.ctx.goalMode.evaluateFallback({ turn: iterations, tokensUsed });
           if (fallback.stop) {

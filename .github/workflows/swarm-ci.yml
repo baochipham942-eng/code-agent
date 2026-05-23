@@ -110,10 +110,14 @@ jobs:
           npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
 
       - name: Install better-sqlite3 native binding
-        # 同 smoke job：用 prebuild-install 拉 linux x64 预编译 binary，
-        # 让 CI 上 Database 真正初始化而不是 fallback in-memory
-        working-directory: node_modules/better-sqlite3
-        run: ../.bin/prebuild-install || true
+        # npm ci --ignore-scripts 跳过了 postinstall(rebuild-native:system)，dist/native/ 不会生成，
+        # nativeLoader 最终 fallback 到 require('better-sqlite3') 命中 build/Release。原来的
+        # `prebuild-install || true` 一旦拉不到预编译就吞错，build/Release 为空 → e2e webServer 的
+        # DatabaseService 初始化失败（Could not locate the bindings file）→ 依赖持久化的 swarm-chain
+        # e2e 断言 element not found。改成：拉不到预编译就从源码编译，并断言产物存在（fail-loud）。
+        run: |
+          (cd node_modules/better-sqlite3 && ../.bin/prebuild-install) || npm rebuild better-sqlite3 --build-from-source
+          test -f node_modules/better-sqlite3/build/Release/better_sqlite3.node
 
       - name: Build node-pty native binding
         # main 的 full job 一直缺这步：npm ci --ignore-scripts 跳过了 node-pty 的 install 脚本，

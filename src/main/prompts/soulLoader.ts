@@ -15,6 +15,7 @@ import { getUserConfigDir, getProjectConfigDir } from '../config/configPaths';
 import {
   IDENTITY,
   IDENTITY_PROMPT,
+  SAFETY_RULES,
   CONCISENESS_RULES,
   TASK_GUIDELINES,
   TOOL_DISCIPLINE,
@@ -68,10 +69,12 @@ export function loadSoul(workingDirectory?: string): string {
     return cachedSoul;
   }
 
-  // 组合：核心身份（SOUL 或 IDENTITY）+ 工程层 + 可选 PROFILE 扩展
+  // 组合：核心身份（SOUL 或 IDENTITY）+ 安全红线（始终保留）+ 工程层 + 可选 PROFILE 扩展
+  // SAFETY_RULES 紧跟核心身份且不受 SOUL.md 影响 —— 终端用户自定义人格无法绕过安全底线。
   const coreIdentity = soulContent ?? IDENTITY;
   const parts = [
     coreIdentity,
+    SAFETY_RULES,
     CONCISENESS_RULES,
     TASK_GUIDELINES,
     TOOL_DISCIPLINE,

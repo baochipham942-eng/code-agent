@@ -5,6 +5,7 @@
 import { ipcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { loadSoul, getSoul } from '../prompts/soulLoader';
+import { IDENTITY } from '../prompts/identity';
 import { getUserConfigDir, getProjectConfigDir } from '../config/configPaths';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -61,6 +62,24 @@ export function registerSoulHandlers(): void {
             filePath = path.join(dir, 'SOUL.md');
           }
           fs.writeFileSync(filePath, content, 'utf-8');
+          loadSoul(wd);
+          return { success: true, data: { filePath } } satisfies IPCResponse;
+        }
+        case 'getDefault': {
+          // 返回内置身份核心块（不含安全红线/工程层，那些始终保留不可编辑）
+          // 供设置页在用户尚未自定义时预填编辑器，作为安全的起改基线。
+          return { success: true, data: { content: String(IDENTITY) } } satisfies IPCResponse;
+        }
+        case 'resetProfile': {
+          // 删除自定义人格文件，干净恢复内置默认（比写空内容更彻底，避免 getStatus 仍报 user）
+          const { scope, workingDirectory: wd } = (payload || {}) as { scope: 'project' | 'user'; workingDirectory?: string };
+          let filePath: string;
+          if (scope === 'project' && wd) {
+            filePath = path.join(getProjectConfigDir(wd), 'PROFILE.md');
+          } else {
+            filePath = path.join(getUserConfigDir(), 'SOUL.md');
+          }
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
           loadSoul(wd);
           return { success: true, data: { filePath } } satisfies IPCResponse;
         }

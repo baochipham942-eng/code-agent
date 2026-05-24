@@ -189,6 +189,23 @@ describe('macOS release fail-closed gates', () => {
     expect(resources.some((resource) => resource === '../node_modules/better-sqlite3/**/*')).toBe(false);
   });
 
+  it('keeps node-pty runtime resources free of source maps, typings, and tests', () => {
+    const tauriConfig = JSON.parse(readRepoFile('src-tauri/tauri.conf.json')) as {
+      bundle?: { resources?: string[] };
+    };
+    const resources = tauriConfig.bundle?.resources ?? [];
+
+    expect(resources).toContain('../node_modules/node-pty/package.json');
+    expect(resources).toContain('../node_modules/node-pty/lib/index.js');
+    expect(resources).toContain('../node_modules/node-pty/lib/unixTerminal.js');
+    expect(resources).toContain('../node_modules/node-pty/prebuilds/darwin-arm64/**/*');
+
+    expect(resources.some((resource) => resource.includes('node_modules/node-pty/lib/**/*'))).toBe(false);
+    expect(resources.some((resource) => resource.includes('node_modules/node-pty/typings'))).toBe(false);
+    expect(resources.some((resource) => resource.endsWith('.map'))).toBe(false);
+    expect(resources.some((resource) => resource.includes('.test.'))).toBe(false);
+  });
+
   it('bundles the prepared Node runtime in default Tauri resources', () => {
     const tauriConfig = JSON.parse(readRepoFile('src-tauri/tauri.conf.json')) as {
       bundle?: { resources?: string[] };

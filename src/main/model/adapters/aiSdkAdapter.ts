@@ -23,6 +23,8 @@ import type { LanguageModel, ModelMessage as AiModelMessage, ToolSet, TextStream
 import { createDeepSeek } from '@ai-sdk/deepseek';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createAnthropic } from '@ai-sdk/anthropic';
+import axios, { type AxiosResponse } from 'axios';
+import { Readable, Transform } from 'node:stream';
 import type {
   ModelMessage,
   MessageContent,
@@ -39,14 +41,18 @@ import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/providerResolution';
 import { withTransientRetry, isTransientError } from '../providers/retryStrategy';
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
+import { convertToolsToOpenAI, getHttpsAgent } from '../providers/shared';
 
 const logger = createLogger('AiSdkAdapter');
 
-// resolveModel 能处理的 provider：deepseek（专用包）/ claude·anthropic（专用包）/ 其余走
-// openai-compatible。gemini 是原生 API（非 OpenAI 兼容），适配器没有对应分支——这类 provider
-// 的子代理即便 engine 默认 aisdk 也应回退到旧 modelRouter 路径，而非把 OpenAI 格式请求误发到
-// gemini 原生端点。新增不兼容 provider 时加进这个集合。
-const AISDK_UNSUPPORTED_PROVIDERS = new Set<string>(['gemini']);
+// resolveModel 能处理的 provider：deepseek（专用包）/ claude·anthropic（专用包）/ 普通
+// openai-compatible。以下 provider 的旧 provider class 带有额外请求语义，AI SDK 路径尚未等价：
+// - gemini: 原生 API，非 OpenAI-compatible。
+// - xiaomi/moonshot: thinking-mode history / sampling / token 字段与旧路径不同。
+// - zhipu: provider class 带并发 limiter 与三态端点行为。
+// - openrouter: provider class 带必需推荐 headers 与 schema normalize。
+// 这些 provider 在默认 AI SDK engine 下自动回 legacy，避免把迁移不完整的外部依赖放进热路径。
+const AISDK_UNSUPPORTED_PROVIDERS = new Set<string>(['gemini', 'xiaomi', 'moonshot', 'zhipu', 'openrouter']);
 
 /** 适配器是否能跑该 provider（false → 调用方应走旧 modelRouter 路径）。 */
 export function aiSdkSupportsProvider(provider: string): boolean {
@@ -58,6 +64,115 @@ interface ProviderRequest {
   apiKey: string | undefined;
   supportsTool: boolean;
 }
+
+function headersToRecord(headers: HeadersInit | undefined): Record<string, string> | undefined {
+  if (!headers) return undefined;
+  const out: Record<string, string> = {};
+  if (headers instanceof Headers) {
+    headers.forEach((value, key) => { out[key] = value; });
+  } else if (Array.isArray(headers)) {
+    for (const [key, value] of headers) out[key] = value;
+  } else {
+    for (const [key, value] of Object.entries(headers)) {
+      if (value !== undefined) out[key] = String(value);
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function responseHeaders(headers: AxiosResponse['headers']): Headers {
+  const out = new Headers();
+  for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      for (const item of value) out.append(key, String(item));
+    } else if (value !== undefined && value !== null) {
+      out.set(key, String(value));
+    }
+  }
+  return out;
+}
+
+function isNodeReadable(value: unknown): value is Readable {
+  return value instanceof Readable
+    || (typeof value === 'object'
+      && value !== null
+      && typeof (value as { pipe?: unknown }).pipe === 'function'
+      && typeof (value as { on?: unknown }).on === 'function');
+}
+
+function requestBodyForAxios(body: BodyInit | null | undefined): unknown {
+  if (body instanceof ReadableStream) {
+    return Readable.fromWeb(body as Parameters<typeof Readable.fromWeb>[0]);
+  }
+  return body ?? undefined;
+}
+
+function toUint8Readable(readable: Readable): Readable {
+  return readable.pipe(new Transform({
+    transform(chunk: unknown, _encoding, callback) {
+      if (typeof chunk === 'string') {
+        callback(null, Buffer.from(chunk));
+      } else if (chunk instanceof Uint8Array) {
+        callback(null, chunk);
+      } else if (chunk instanceof ArrayBuffer) {
+        callback(null, Buffer.from(chunk));
+      } else {
+        callback(null, Buffer.from(String(chunk)));
+      }
+    },
+  }));
+}
+
+function responseBodyForFetch(data: unknown, status: number): BodyInit | null {
+  if (status === 204 || status === 304 || data == null) return null;
+  if (isNodeReadable(data)) {
+    return Readable.toWeb(toUint8Readable(data)) as BodyInit;
+  }
+  if (
+    typeof data === 'string'
+    || data instanceof Blob
+    || data instanceof ArrayBuffer
+    || ArrayBuffer.isView(data)
+    || data instanceof FormData
+    || data instanceof URLSearchParams
+    || data instanceof ReadableStream
+  ) {
+    return data as BodyInit;
+  }
+  return JSON.stringify(data);
+}
+
+const aiSdkFetch: typeof globalThis.fetch = async (input, init) => {
+  const request = input instanceof Request ? input : undefined;
+  const url = input instanceof URL ? input.toString() : request?.url ?? String(input);
+  const method = init?.method ?? request?.method ?? 'GET';
+  const headers = headersToRecord(init?.headers ?? request?.headers);
+  const body = requestBodyForAxios(init?.body ?? request?.body);
+  const signal = init?.signal ?? request?.signal;
+  const agent = getHttpsAgent(url);
+
+  const response = await axios({
+    url,
+    method,
+    headers,
+    data: body,
+    signal,
+    responseType: 'stream',
+    timeout: 0,
+    validateStatus: () => true,
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
+    httpAgent: agent,
+    httpsAgent: agent,
+    proxy: false,
+  });
+
+  return new Response(responseBodyForFetch(response.data, response.status), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: responseHeaders(response.headers),
+  });
+};
 
 // baseURL / apiKey 走与 provider 类同一份解析（providerResolution）——不再在适配器里复制
 // zhipu 三态等逻辑（消除「每加一个 provider 就要在 adapter 再打一次补丁」）。
@@ -78,15 +193,15 @@ function resolveProviderRequest(config: ModelConfig): ProviderRequest {
 function resolveModel(config: ModelConfig, req: ProviderRequest): LanguageModel {
   switch (config.provider) {
     case 'deepseek':
-      return createDeepSeek({ apiKey: req.apiKey })(config.model);
+      return createDeepSeek({ apiKey: req.apiKey, baseURL: req.baseURL, fetch: aiSdkFetch })(config.model);
     case 'anthropic':
     case 'claude':
-      return createAnthropic({ apiKey: req.apiKey, baseURL: req.baseURL ?? MODEL_API_ENDPOINTS.claude })(config.model);
+      return createAnthropic({ apiKey: req.apiKey, baseURL: req.baseURL ?? MODEL_API_ENDPOINTS.claude, fetch: aiSdkFetch })(config.model);
     default: {
       if (!req.baseURL) {
         throw new Error(`[AiSdkAdapter] 无法解析 provider "${config.provider}" 的 baseURL`);
       }
-      return createOpenAICompatible({ name: config.provider, baseURL: req.baseURL, apiKey: req.apiKey })(config.model);
+      return createOpenAICompatible({ name: config.provider, baseURL: req.baseURL, apiKey: req.apiKey, fetch: aiSdkFetch })(config.model);
     }
   }
 }
@@ -248,10 +363,13 @@ function toAiMessages(messages: ModelMessage[]): AiModelMessage[] {
 // ── 工具映射：tool() 只取 schema，不传 execute（执行仍由 Neo toolExecutor 负责）──
 function buildTools(toolDefs: ToolDefinition[]): ToolSet {
   const tools: Record<string, ReturnType<typeof aiTool>> = {};
-  for (const d of toolDefs) {
+  const openAiTools = convertToolsToOpenAI(toolDefs);
+  for (let i = 0; i < toolDefs.length; i++) {
+    const d = toolDefs[i];
+    const parameters = openAiTools[i]?.function.parameters ?? d.inputSchema;
     tools[d.name] = aiTool({
       description: d.description,
-      inputSchema: jsonSchema(d.inputSchema as unknown as Parameters<typeof jsonSchema>[0]),
+      inputSchema: jsonSchema(parameters as unknown as Parameters<typeof jsonSchema>[0]),
     });
   }
   return tools as ToolSet;
@@ -362,6 +480,8 @@ async function generateViaAiSdk(params: {
             tools: aiTools,
             abortSignal: guard.signal,
             temperature: config.temperature,
+            ...(typeof config.maxTokens === 'number' && Number.isFinite(config.maxTokens)
+              ? { maxOutputTokens: config.maxTokens } : {}),
             maxRetries: 0,
           });
         } catch (err) {

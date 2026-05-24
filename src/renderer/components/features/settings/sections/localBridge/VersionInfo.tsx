@@ -21,7 +21,7 @@ interface VersionInfoProps {
 export const VersionInfo: React.FC<VersionInfoProps> = ({ version, latestVersion }) => {
   const [copied, setCopied] = useState(false);
   const hasUpdate = version && latestVersion && version !== latestVersion;
-  const updateCommand = 'curl -fsSL https://code-agent.dev/install.sh | bash';
+  const updateCommand = 'https://agentneo.vercel.app/#download';
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(updateCommand);
@@ -54,7 +54,7 @@ export const VersionInfo: React.FC<VersionInfoProps> = ({ version, latestVersion
             <button
               onClick={handleCopy}
               className="flex-shrink-0 p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
-              title="复制命令"
+              title="复制下载链接"
             >
               {copied ? (
                 <Check className="w-3.5 h-3.5 text-green-400" />

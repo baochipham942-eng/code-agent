@@ -1,5 +1,5 @@
 // ============================================================================
-// Background Service Worker - 管理与本地 Code Agent 的通信
+// Background Service Worker - 管理与本地 Agent Neo 的通信
 // ============================================================================
 
 const DEFAULT_API_URL = 'http://localhost:8080';
@@ -149,7 +149,7 @@ async function extractFromTab(tabId) {
 }
 
 /**
- * 发送采集内容到本地 Code Agent
+ * 发送采集内容到本地 Agent Neo
  */
 async function sendCapture(data) {
   const { apiUrl } = await getApiConfig();
@@ -201,7 +201,7 @@ async function autoCapture(tabId, url) {
     capturedUrls.add(url);
     updateBadge();
   } catch (error) {
-    console.error('[CodeAgent] Auto-capture failed:', url, error.message);
+    console.error('[Agent Neo] Auto-capture failed:', url, error.message);
     // 连接失败时重置缓存，下次重新检查
     if (error.message?.includes('fetch')) {
       connectionOk = null;
@@ -267,4 +267,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 // Service Worker 启动时打印日志
-console.log('[CodeAgent] Service worker started');
+console.log('[Agent Neo] Service worker started');

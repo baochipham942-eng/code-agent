@@ -32,7 +32,7 @@ async function testHttpApiChannel() {
     if (callback) {
       console.log('\n正在发送响应...');
       // 模拟 AI 响应
-      const response = `你好！我是 Code Agent，一个 AI 编程助手。你发送的消息是：「${message.content}」`;
+      const response = `你好！我是 Agent Neo，一个 AI 编程助手。你发送的消息是：「${message.content}」`;
       await callback.sendText(response);
       console.log('✅ 响应已发送');
     }

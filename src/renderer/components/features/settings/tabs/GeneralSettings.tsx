@@ -339,7 +339,7 @@ export const GeneralSettings: React.FC = () => {
                   知道了
                 </button>
                 <a
-                  href="https://github.com/your-org/code-agent/releases"
+                  href="https://github.com/baochipham942-eng/code-agent/releases/latest"
                   target="_blank"
                   rel="noreferrer"
                   className="text-xs text-blue-400 underline hover:text-blue-300"

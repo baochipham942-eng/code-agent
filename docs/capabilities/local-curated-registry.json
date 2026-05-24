@@ -1,8 +1,8 @@
 {
   "version": 1,
   "source": {
-    "label": "Code Agent local curated registry",
-    "author": "Code Agent",
+    "label": "Agent Neo local curated registry",
+    "author": "Agent Neo",
     "reviewedAt": "2026-05-19",
     "expiresAt": "2026-12-31T23:59:59.000Z",
     "contentHash": "sha256:4d51529589aff2b4fd9b8ad7a8d144eee8274e7e52ed89855ee735a911be6d88"

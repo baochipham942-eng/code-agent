@@ -18,7 +18,7 @@ export const manifest: PluginManifest = {
   name: 'Image Process',
   version: '1.0.0',
   description: '图片处理工具（格式转换/压缩/缩放/放大）',
-  author: 'code-agent',
+  author: 'Agent Neo',
   main: 'index.ts',
   surfaces: ['tools'],
   capabilities: ['image-processing'],

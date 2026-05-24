@@ -1009,7 +1009,7 @@ async function main(): Promise<void> {
   const host = process.env.WEB_HOST || '127.0.0.1';
 
   console.log('╔══════════════════════════════════════════╗');
-  console.log('║   Code Agent — Web Standalone Mode       ║');
+  console.log('║   Agent Neo — Web Standalone Mode        ║');
   console.log('╚══════════════════════════════════════════╝');
   console.log();
 

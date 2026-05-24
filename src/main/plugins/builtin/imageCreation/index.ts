@@ -19,7 +19,7 @@ export const manifest: PluginManifest = {
   name: 'Image Creation',
   version: '1.0.0',
   description: 'AI 图片生成 + 图片标注（CogView-4 / FLUX.2 / 智谱视觉）',
-  author: 'code-agent',
+  author: 'Agent Neo',
   main: 'index.ts',
   surfaces: ['tools'],
   capabilities: ['image-generation', 'image-annotation'],

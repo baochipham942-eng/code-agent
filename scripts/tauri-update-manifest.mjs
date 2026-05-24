@@ -77,7 +77,7 @@ async function loadReleaseNotes(version) {
     // A first release or a source archive without git metadata falls back below.
   }
 
-  return `Code Agent v${version}`;
+  return `Agent Neo v${version}`;
 }
 
 const packageJson = JSON.parse(await readFile(path.join(rootDir, 'package.json'), 'utf8'));

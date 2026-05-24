@@ -2,7 +2,7 @@
   "name": "@code-agent/bridge",
   "version": "0.16.50",
   "private": true,
-  "description": "Local bridge service for Code Agent Web",
+  "description": "Local bridge service for Agent Neo Web",
   "main": "../../dist/bridge/code-agent-bridge.cjs",
   "type": "module",
   "bin": {

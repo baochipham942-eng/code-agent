@@ -138,7 +138,7 @@ describe('CapabilityCenterSettings', () => {
         source: {
           kind: 'curated',
           label: '本地 curated registry',
-          author: 'Code Agent',
+          author: 'Agent Neo',
           reviewedAt: '2026-05-15',
           contentHash: 'sha256:fixture',
           registryFileHash: `sha256:${'a'.repeat(64)}`,
@@ -165,7 +165,7 @@ describe('CapabilityCenterSettings', () => {
     expect(html).toContain('模板');
     expect(html).toContain('Filesystem MCP template');
     expect(html).toContain('去配置');
-    expect(html).toContain('author Code Agent');
+    expect(html).toContain('author Agent Neo');
     expect(html).toContain('reviewed 2026-05-15');
     expect(html).toContain('hash sha256:fixture');
     expect(html).toContain(`registry hash sha256:${'a'.repeat(64)}`);

@@ -8,12 +8,16 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 }));
 
 describe('aiSdkSupportsProvider', () => {
-  it('gemini 原生 API 不支持 → false（子代理回退旧路径）', () => {
+  it('provider class 语义尚未等价的 provider 不进 AI SDK 默认路径 → false（回退旧路径）', () => {
     expect(aiSdkSupportsProvider('gemini')).toBe(false);
+    expect(aiSdkSupportsProvider('xiaomi')).toBe(false);
+    expect(aiSdkSupportsProvider('moonshot')).toBe(false);
+    expect(aiSdkSupportsProvider('zhipu')).toBe(false);
+    expect(aiSdkSupportsProvider('openrouter')).toBe(false);
   });
 
-  it('deepseek / claude / 各 OpenAI 兼容 provider 支持 → true', () => {
-    for (const p of ['deepseek', 'claude', 'anthropic', 'zhipu', 'xiaomi', 'moonshot', 'openai', 'longcat']) {
+  it('DeepSeek / Claude / 普通 OpenAI 兼容 provider 支持 → true', () => {
+    for (const p of ['deepseek', 'claude', 'anthropic', 'openai', 'groq', 'qwen', 'minimax', 'perplexity', 'volcengine', 'longcat', 'local']) {
       expect(aiSdkSupportsProvider(p)).toBe(true);
     }
   });

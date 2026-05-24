@@ -4,7 +4,7 @@
 
 ## 概述
 
-Code Agent 采用前后端分离的配置架构，支持多种配置的热更新：
+Agent Neo 采用前后端分离的配置架构，支持多种配置的热更新：
 - System Prompt
 - Skill 定义
 - Tool 元数据
@@ -23,7 +23,7 @@ Code Agent 采用前后端分离的配置架构，支持多种配置的热更新
 
 ```
 ┌─────────────────┐     HTTP GET      ┌─────────────────┐
-│   Code Agent    │ ─────────────────▶│   Vercel API    │
+│   Agent Neo     │ ─────────────────▶│   Vercel API    │
 │    (Client)     │                   │  /api/v1/config │
 │                 │ ◀───────────────── │                 │
 │  CloudConfig    │ signed envelope   │   云端配置       │
@@ -163,7 +163,7 @@ export const getBuiltinConfig = (): CloudConfig => ({
 ### 获取配置
 
 ```
-GET https://code-agent-beta.vercel.app/api/v1/config
+GET https://agentneo.vercel.app/api/v1/config
 ```
 
 **响应**:
@@ -202,7 +202,7 @@ GET https://code-agent-beta.vercel.app/api/v1/config
 客户端只接受 `kind:"cloud_config"`、hash 匹配、未过期且 Ed25519 签名通过的响应。未签名、过期、hash mismatch 或未知 key 会回退到内置配置。
 
 ```
-GET https://code-agent-beta.vercel.app/api/prompts?gen=all
+GET https://agentneo.vercel.app/api/prompts?gen=all
 ```
 
 **响应**:

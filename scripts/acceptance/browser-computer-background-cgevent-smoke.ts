@@ -189,12 +189,12 @@ function makeTargetSource(): string {
   return window;
 }
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
-  NSWindow *mainWindow = [self makeWindowWithTitle:@"Code Agent Background CGEvent Smoke" surface:@"main" origin:NSMakePoint(160, 380) nonKey:NO];
-  [self makeWindowWithTitle:@"Code Agent Background CGEvent Smoke Secondary" surface:@"secondary" origin:NSMakePoint(560, 380) nonKey:NO];
-  [self makeWindowWithTitle:@"Code Agent Background CGEvent Smoke Non-Key" surface:@"nonkey" origin:NSMakePoint(360, 120) nonKey:YES];
-  [self makeWindowWithTitle:@"Code Agent Background CGEvent Smoke Covered" surface:@"covered" origin:NSMakePoint(760, 120) nonKey:NO];
-  [self makeWindowWithTitle:@"Code Agent Background CGEvent Smoke Cover" surface:@"cover" origin:NSMakePoint(800, 150) nonKey:NO];
-  NSWindow *minimizedWindow = [self makeWindowWithTitle:@"Code Agent Background CGEvent Smoke Minimized" surface:@"minimized" origin:NSMakePoint(40, 120) nonKey:NO];
+  NSWindow *mainWindow = [self makeWindowWithTitle:@"Agent Neo Background CGEvent Smoke" surface:@"main" origin:NSMakePoint(160, 380) nonKey:NO];
+  [self makeWindowWithTitle:@"Agent Neo Background CGEvent Smoke Secondary" surface:@"secondary" origin:NSMakePoint(560, 380) nonKey:NO];
+  [self makeWindowWithTitle:@"Agent Neo Background CGEvent Smoke Non-Key" surface:@"nonkey" origin:NSMakePoint(360, 120) nonKey:YES];
+  [self makeWindowWithTitle:@"Agent Neo Background CGEvent Smoke Covered" surface:@"covered" origin:NSMakePoint(760, 120) nonKey:NO];
+  [self makeWindowWithTitle:@"Agent Neo Background CGEvent Smoke Cover" surface:@"cover" origin:NSMakePoint(800, 150) nonKey:NO];
+  NSWindow *minimizedWindow = [self makeWindowWithTitle:@"Agent Neo Background CGEvent Smoke Minimized" surface:@"minimized" origin:NSMakePoint(40, 120) nonKey:NO];
   [minimizedWindow miniaturize:nil];
   [mainWindow makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
@@ -559,13 +559,13 @@ async function main(): Promise<void> {
   const context = makeToolContext();
   let target: ChildProcessWithoutNullStreams | null = null;
   const failures: string[] = [];
-  let frontmostBeforeAction: ComputerSurfaceSnapshot | null = null;
-  let listResult: ToolExecutionResult | null = null;
-  let diagnoseResult: ToolExecutionResult | null = null;
+  let frontmostBeforeAction: ComputerSurfaceSnapshot | null;
+  let listResult: ToolExecutionResult;
+  let diagnoseResult: ToolExecutionResult;
   let clickResult: ToolExecutionResult | null = null;
-  let selectedWindow: WindowCandidate | null = null;
-  let matrix: MatrixScenarioResult[] = [];
-  let finalState = '';
+  let selectedWindow: WindowCandidate | null;
+  const matrix: MatrixScenarioResult[] = [];
+  let finalState: string;
 
   try {
     const targetBinary = await buildTarget(tmpDir);
@@ -609,7 +609,7 @@ async function main(): Promise<void> {
       timeout: 10_000,
     }, context);
     const windows = getWindows(listResult);
-    selectedWindow = findWindowByExactTitle(windows, 'Code Agent Background CGEvent Smoke') || windows[0] || null;
+    selectedWindow = findWindowByExactTitle(windows, 'Agent Neo Background CGEvent Smoke') || windows[0] || null;
     if (!selectedWindow) {
       failures.push('get_windows did not return the temporary CGEvent target window.');
     }
@@ -618,12 +618,12 @@ async function main(): Promise<void> {
     }
 
     const scenarios = [
-      { name: 'appkit-main-left', action: 'click' as const, surfaceName: 'main', window: findWindowByExactTitle(windows, 'Code Agent Background CGEvent Smoke') },
-      { name: 'appkit-main-right', action: 'rightClick' as const, surfaceName: 'main', window: findWindowByExactTitle(windows, 'Code Agent Background CGEvent Smoke') },
-      { name: 'appkit-main-double', action: 'doubleClick' as const, surfaceName: 'main', window: findWindowByExactTitle(windows, 'Code Agent Background CGEvent Smoke') },
+      { name: 'appkit-main-left', action: 'click' as const, surfaceName: 'main', window: findWindowByExactTitle(windows, 'Agent Neo Background CGEvent Smoke') },
+      { name: 'appkit-main-right', action: 'rightClick' as const, surfaceName: 'main', window: findWindowByExactTitle(windows, 'Agent Neo Background CGEvent Smoke') },
+      { name: 'appkit-main-double', action: 'doubleClick' as const, surfaceName: 'main', window: findWindowByExactTitle(windows, 'Agent Neo Background CGEvent Smoke') },
       { name: 'appkit-secondary-window', action: 'click' as const, surfaceName: 'secondary', window: findWindowByTitle(windows, 'Secondary') },
       { name: 'appkit-non-key-window', action: 'click' as const, surfaceName: 'nonkey', window: findWindowByTitle(windows, 'Non-Key') },
-      { name: 'appkit-covered-window', action: 'click' as const, surfaceName: 'covered', window: findWindowByExactTitle(windows, 'Code Agent Background CGEvent Smoke Covered') },
+      { name: 'appkit-covered-window', action: 'click' as const, surfaceName: 'covered', window: findWindowByExactTitle(windows, 'Agent Neo Background CGEvent Smoke Covered') },
     ];
 
     for (const scenario of scenarios) {
@@ -647,7 +647,7 @@ async function main(): Promise<void> {
       const scenarioRun = await runUnavailableWindowScenario({
         ...scenario,
         targetApp: TARGET_APP,
-        title: 'Code Agent Background CGEvent Smoke Minimized',
+        title: 'Agent Neo Background CGEvent Smoke Minimized',
         context,
       });
       matrix.push(scenarioRun);

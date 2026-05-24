@@ -135,11 +135,11 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
         </h2>
         <p className="text-sm text-zinc-400 mt-1">
           通过外部 <code className="text-xs bg-zinc-800 px-1 rounded">OpenChronicle</code> daemon
-          抓取你的跨 app 工作活动（macOS AX Tree），让 code-agent 在新对话开始时知道你刚才在干啥。
+          抓取你的跨 app 工作活动（macOS AX Tree），让 Agent Neo 在新对话开始时知道你刚才在干啥。
         </p>
         <p className="text-xs text-amber-400 mt-2 flex items-start gap-1">
           <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
-          开启后 OpenChronicle 会 7×24 在后台运行（即使关闭 code-agent），直到你在这里关掉它。
+          开启后 OpenChronicle 会 7×24 在后台运行（即使关闭 Agent Neo），直到你在这里关掉它。
         </p>
       </header>
       )}
@@ -229,7 +229,7 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
       <section className="border border-zinc-700 rounded-lg p-4">
         <div className="font-medium mb-2">隐私黑名单</div>
         <div className="text-xs text-zinc-400 mb-3">
-          命中黑名单的 app 或 URL 不会被注入到对话上下文（OC daemon 仍会捕获，但 code-agent 端过滤）
+          命中黑名单的 app 或 URL 不会被注入到对话上下文（OC daemon 仍会捕获，但 Agent Neo 端过滤）
         </div>
 
         <div className="space-y-3">

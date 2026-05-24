@@ -1,4 +1,4 @@
-# Code Agent 工具参考手册
+# Agent Neo 工具参考手册
 
 > 从 CLAUDE.md 提取的完整工具文档
 
@@ -437,7 +437,7 @@ PdfAutomate { "action": "convert_to_docx", "input_path": "doc.pdf" }
 ```bash
 # 修订模式插入
 DocEdit { "file_path": "contract.docx", "operations": [
-  { "action": "track_insert", "after": 3, "text": "新增条款", "author": "Code Agent" }
+  { "action": "track_insert", "after": 3, "text": "新增条款", "author": "Agent Neo" }
 ]}
 
 # 建议替换（删除+插入组合修订）
@@ -544,7 +544,7 @@ photo_archive { "uuids": ["uuid-1", "uuid-2"], "mode": "all" }
 
 ```bash
 screenshot {}
-screenshot { "window": "Code Agent" }
+screenshot { "window": "Agent Neo" }
 screenshot { "region": { "x": 0, "y": 0, "width": 800, "height": 600 } }
 ```
 

@@ -17,11 +17,11 @@ const captureCountBadge = document.getElementById('captureCount');
 function setConnected(connected) {
   if (connected) {
     statusDot.className = 'status-dot connected';
-    statusText.textContent = 'Code Agent 已连接';
+    statusText.textContent = 'Agent Neo 已连接';
     captureBtn.disabled = false;
   } else {
     statusDot.className = 'status-dot disconnected';
-    statusText.textContent = 'Code Agent 未连接';
+    statusText.textContent = 'Agent Neo 未连接';
     captureBtn.disabled = true;
   }
 }

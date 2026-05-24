@@ -1,5 +1,5 @@
 // ============================================================================
-// UI/UX Tests - Playwright Tests for Code Agent
+// UI/UX Tests - Playwright Tests for Agent Neo
 // Verifies the Terminal Noir design system components
 // ============================================================================
 
@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test';
 // Configure base URL for Vite dev server
 const BASE_URL = 'http://localhost:5173';
 
-test.describe('Code Agent UI/UX Tests', () => {
+test.describe('Agent Neo UI/UX Tests', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(BASE_URL);
     // Wait for the app to fully load
@@ -32,7 +32,7 @@ test.describe('Code Agent UI/UX Tests', () => {
 
       // Check for the title
       const title = page.getByRole('heading', { level: 1 });
-      await expect(title).toContainText('Code Agent');
+      await expect(title).toContainText('Agent Neo');
     });
 
     test('should display 4 suggestion cards', async ({ page }) => {
@@ -92,7 +92,7 @@ test.describe('Code Agent UI/UX Tests', () => {
       await expect(sendButton).toBeVisible();
 
       // Type some text
-      await input.fill('Hello, Code Agent!');
+      await input.fill('Hello, Agent Neo!');
 
       // Send button should now be enabled
       await expect(sendButton).toBeEnabled();
@@ -196,17 +196,17 @@ test.describe('Code Agent UI/UX Tests', () => {
       // Test at 1920x1080
       await page.setViewportSize({ width: 1920, height: 1080 });
       await expect(mainContainer).toBeVisible();
-      await expect(page.getByRole('heading', { level: 1 })).toContainText('Code Agent');
+      await expect(page.getByRole('heading', { level: 1 })).toContainText('Agent Neo');
 
       // Test at 1280x720
       await page.setViewportSize({ width: 1280, height: 720 });
       await expect(mainContainer).toBeVisible();
-      await expect(page.getByRole('heading', { level: 1 })).toContainText('Code Agent');
+      await expect(page.getByRole('heading', { level: 1 })).toContainText('Agent Neo');
 
       // Test at smaller size
       await page.setViewportSize({ width: 1024, height: 768 });
       await expect(mainContainer).toBeVisible();
-      await expect(page.getByRole('heading', { level: 1 })).toContainText('Code Agent');
+      await expect(page.getByRole('heading', { level: 1 })).toContainText('Agent Neo');
     });
   });
 });

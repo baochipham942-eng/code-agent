@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://code-agent.local/schemas/capability-registry.schema.json",
-  "title": "Code Agent local curated capability registry",
+  "title": "Agent Neo local curated capability registry",
   "type": "object",
   "additionalProperties": true,
   "properties": {

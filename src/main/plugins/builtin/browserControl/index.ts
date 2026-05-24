@@ -29,7 +29,7 @@ export const manifest: PluginManifest = {
   name: 'Browser Control',
   version: '1.0.0',
   description: '浏览器与 in-app HTML 验证工具集（Playwright）',
-  author: 'code-agent',
+  author: 'Agent Neo',
   main: 'index.ts',
   surfaces: ['tools'],
   capabilities: ['browser-control'],

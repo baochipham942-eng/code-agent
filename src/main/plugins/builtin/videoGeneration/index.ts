@@ -18,7 +18,7 @@ export const manifest: PluginManifest = {
   name: 'Video Generation',
   version: '1.0.0',
   description: '视频生成（CogVideoX-2 异步任务 + GLM prompt 扩写）',
-  author: 'code-agent',
+  author: 'Agent Neo',
   main: 'index.ts',
   surfaces: ['tools'],
   capabilities: ['video-generation'],

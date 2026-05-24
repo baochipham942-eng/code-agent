@@ -246,7 +246,7 @@ git push origin v0.9.0
 ```bash
 # Push triggers Vercel auto-deploy
 # Verify deployment:
-curl "https://code-agent-beta.vercel.app/api/update?action=health"
+curl "https://agentneo.vercel.app/api/update?action=health"
 ```
 - [ ] API returns version 0.9.0
 

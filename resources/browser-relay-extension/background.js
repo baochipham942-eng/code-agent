@@ -17,7 +17,7 @@ async function loadConfig() {
     if (stored.relayPort) config.port = stored.relayPort;
     if (stored.authToken) config.token = stored.authToken;
   } catch (error) {
-    console.warn('[Code Agent Relay] Failed to load settings', error);
+    console.warn('[Agent Neo Relay] Failed to load settings', error);
   }
 
   try {
@@ -32,7 +32,7 @@ async function loadConfig() {
       });
     }
   } catch {
-    // Code Agent may not be running yet.
+    // Agent Neo may not be running yet.
   }
 }
 

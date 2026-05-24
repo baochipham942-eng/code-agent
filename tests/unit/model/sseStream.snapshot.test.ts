@@ -102,7 +102,7 @@ describe('openAISSEStream snapshot and incomplete tool calls', () => {
   });
 
   it('normalizes cumulative reasoning snapshots before streaming and persisting thinking', async () => {
-    const first = '看到屏幕截图分析结果了，当前画面显示 Code Agent 正在处理图片。';
+    const first = '看到屏幕截图分析结果了，当前画面显示 Agent Neo 正在处理图片。';
     const second = `${first} 用户是在追问为什么模型没有收到图片。`;
     const streamedReasoning: string[] = [];
     const snapshots: StreamSnapshot[] = [];
@@ -137,7 +137,7 @@ describe('openAISSEStream snapshot and incomplete tool calls', () => {
   });
 
   it('rejects repeated reasoning loops before returning poisoned thinking', async () => {
-    const repeated = '老公，萌萌看到了，这是我们的聊天记录，显示在 Code Agent 的界面里。';
+    const repeated = '老公，萌萌看到了，这是我们的聊天记录，显示在 Agent Neo 的界面里。';
     const baseUrl = await startServer((_req, res) => {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',

@@ -19,7 +19,7 @@ export const manifest: PluginManifest = {
   name: 'Audio Processing',
   version: '1.0.0',
   description: '语音转文字 + 文字转语音（GLM-ASR / GLM-TTS）',
-  author: 'code-agent',
+  author: 'Agent Neo',
   main: 'index.ts',
   surfaces: ['tools'],
   capabilities: ['audio-processing', 'speech-to-text', 'text-to-speech'],

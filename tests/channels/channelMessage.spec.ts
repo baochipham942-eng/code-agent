@@ -83,7 +83,7 @@ test.describe('Channel Message UI', () => {
 
     test('初始状态显示空态 hero 区域', async ({ page }) => {
       const title = page.getByRole('heading', { level: 1 });
-      await expect(title).toContainText('Code Agent');
+      await expect(title).toContainText('Agent Neo');
     });
 
     test('建议卡片可见且可点击', async ({ page }) => {
@@ -119,7 +119,7 @@ test.describe('Channel Message UI', () => {
 
       // 重置后应回到空态
       const title = page.getByRole('heading', { level: 1 });
-      await expect(title).toContainText('Code Agent');
+      await expect(title).toContainText('Agent Neo');
     });
   });
 

@@ -484,7 +484,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     // /goal 自治模式：拦截斜杠命令 → 解析目标 + 完成判据 → 随 envelope.options.goal 发出。
     if (isGoalCommand(trimmedValue)) {
       const parsed = parseGoalCommand(trimmedValue);
-      if (!parsed || !parsed.goal) {
+      if (!parsed?.goal) {
         toast.warning('用法：/goal <目标> --verify "<命令>"（或 --review "<软条件>"）');
         inputAreaRef.current?.focus();
         return;
@@ -905,6 +905,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               setShowSlashPopover(false);
               if (cmd.id === 'agent') {
                 openAgentCommand();
+                return;
+              }
+              if (cmd.id === 'goal') {
+                setValue('/goal ');
+                requestAnimationFrame(() => inputAreaRef.current?.focus());
                 return;
               }
               setValue('');

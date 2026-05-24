@@ -9,7 +9,7 @@ import {
   BarChart2, Settings, Keyboard, HelpCircle,
   Terminal, Cpu, Plug, Zap, ClipboardList,
   MessageCircleQuestion, ZapOff, Flame, Rocket,
-  Lock, LockOpen, Bot, Sparkles, Server,
+  Lock, LockOpen, Bot, Sparkles, Server, Target,
 } from 'lucide-react';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
@@ -221,6 +221,13 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: '选择 Agent',
       description: '输入 /agent coder 切换本轮 agent',
       icon: <Bot className="w-4 h-4" />,
+      action: () => {},
+    },
+    {
+      id: 'goal',
+      label: '设定目标',
+      description: '输入目标，并设置 --verify 或 --review 完成判据',
+      icon: <Target className="w-4 h-4" />,
       action: () => {},
     },
     {

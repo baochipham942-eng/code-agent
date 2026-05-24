@@ -49,7 +49,11 @@ export class StreamHandler {
     });
 
     // Accumulate token usage for task stats
-    this.ctx.totalTokensUsed += (response.usage?.inputTokens || 0) + (response.usage?.outputTokens || 0);
+    const inputTokens = response.usage?.inputTokens || 0;
+    const outputTokens = response.usage?.outputTokens || 0;
+    this.ctx.totalInputTokens += inputTokens;
+    this.ctx.totalOutputTokens += outputTokens;
+    this.ctx.totalTokensUsed += inputTokens + outputTokens;
   }
 
   /**

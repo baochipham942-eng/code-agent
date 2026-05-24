@@ -8,6 +8,7 @@ import type { Message } from '@shared/contract';
 import type { TraceProjection, TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { SwarmLaunchRequest } from '@shared/contract/swarm';
 import { isSkillStatusContent } from '../components/features/chat/MessageBubble/SkillStatusMessage';
+import { isGoalNoticeContent } from '../components/features/chat/goalNotice';
 
 export function projectTurns(
   messages: Message[],
@@ -31,6 +32,33 @@ export function projectTurns(
         content: msg.content,
         timestamp: msg.timestamp,
         subtype: 'skill_status',
+        metadata: msg.metadata,
+      };
+
+      if (!currentTurn) {
+        turnCounter++;
+        currentTurn = {
+          turnNumber: turnCounter,
+          turnId: `turn-${turnCounter}`,
+          nodes: [],
+          status: 'completed',
+          startTime: msg.timestamp,
+        };
+        turns.push(currentTurn);
+      }
+
+      currentTurn.nodes.push(node);
+      currentTurn.endTime = msg.timestamp;
+      continue;
+    }
+
+    if (msg.source === 'goal' && isGoalNoticeContent(msg.content)) {
+      const node: TraceNode = {
+        id: msg.id,
+        type: 'system',
+        content: msg.content,
+        timestamp: msg.timestamp,
+        subtype: 'goal_notice',
         metadata: msg.metadata,
       };
 

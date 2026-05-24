@@ -89,14 +89,56 @@ function download(url, targetPath) {
 }
 
 async function copyProvidedNode(sourcePath, expected) {
+  rmSync(outputRoot, { recursive: true, force: true });
   mkdirSync(path.dirname(outputBin), { recursive: true });
   await cp(sourcePath, outputBin, { force: true, dereference: true });
   await chmod(outputBin, 0o755);
+  await copyProvidedNodeSharedLibraries(sourcePath);
   const info = runBundledNodeInfo(outputBin);
   if (info.platform !== expected.platform || info.arch !== expected.arch) {
     throw new Error(`Provided Node is ${info.platform}-${info.arch}, expected ${expected.platform}-${expected.arch}`);
   }
   return info;
+}
+
+function findProvidedLibrary(sourcePath, libraryName) {
+  const sourceDir = path.dirname(sourcePath);
+  const candidates = [
+    path.join(sourceDir, libraryName),
+    path.join(sourceDir, '..', 'lib', libraryName),
+    path.join(sourceDir, '..', '..', 'lib', libraryName),
+    path.join('/opt/homebrew/lib', libraryName),
+    path.join('/usr/local/lib', libraryName),
+  ];
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
+async function copyProvidedNodeSharedLibraries(sourcePath) {
+  if (process.platform !== 'darwin') return;
+
+  let output;
+  try {
+    output = execFileSync('otool', ['-L', sourcePath], { encoding: 'utf8' });
+  } catch {
+    return;
+  }
+
+  const rpathLibraries = output
+    .split('\n')
+    .map((line) => line.trim().match(/^@rpath\/(libnode\.[^\s]+\.dylib)/)?.[1])
+    .filter(Boolean);
+  if (rpathLibraries.length === 0) return;
+
+  const outputLibDir = path.join(outputRoot, 'lib');
+  mkdirSync(outputLibDir, { recursive: true });
+
+  for (const libraryName of rpathLibraries) {
+    const sourceLibrary = findProvidedLibrary(sourcePath, libraryName);
+    if (!sourceLibrary) {
+      throw new Error(`Provided Node requires ${libraryName}, but it was not found next to ${sourcePath}`);
+    }
+    await cp(sourceLibrary, path.join(outputLibDir, libraryName), { force: true, dereference: true });
+  }
 }
 
 async function downloadOfficialNode(expected) {

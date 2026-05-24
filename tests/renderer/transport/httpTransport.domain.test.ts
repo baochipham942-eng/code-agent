@@ -146,4 +146,35 @@ describe('httpTransport domain API', () => {
     });
   });
 
+  it('promotes goal options to the /api/run goal contract for web sends', async () => {
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+
+    await api.invoke('agent:send-message', {
+      content: '修好登录',
+      sessionId: 'session-goal',
+      options: {
+        goal: {
+          goal: '修好登录',
+          verify: 'npm test',
+          maxTurns: 4,
+          budget: 2000,
+        },
+      },
+    });
+
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(String((init as RequestInit).body));
+    expect(body).toMatchObject({
+      prompt: '修好登录',
+      sessionId: 'session-goal',
+      goal: {
+        goal: '修好登录',
+        verify: 'npm test',
+        maxTurns: 4,
+        budget: 2000,
+      },
+    });
+  });
+
 });

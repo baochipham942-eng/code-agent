@@ -4,7 +4,7 @@
   "version": "0.16.80",
   "identifier": "com.linchen.code-agent",
   "build": {
-    "beforeDevCommand": "npm run build:renderer && npm run build:web && (node dist/web/webServer.cjs &) && for i in $(seq 1 60); do curl -sf http://localhost:8180/api/health >/dev/null 2>&1 && break; sleep 0.5; done",
+    "beforeDevCommand": "npm run tauri:dev:before",
     "devUrl": "http://localhost:8180",
     "frontendDist": "../dist/renderer"
   },

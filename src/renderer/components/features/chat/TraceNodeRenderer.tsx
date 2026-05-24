@@ -22,6 +22,7 @@ import {
 } from '../../../utils/toolGrouping';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { SkillStatusMessage } from './MessageBubble/SkillStatusMessage';
+import { GoalNoticeMessage } from './MessageBubble/GoalNoticeMessage';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, CircleDot, FileText, GitBranch, RotateCcw, Wrench, CornerDownRight } from 'lucide-react';
 import { UI } from '@shared/constants';
@@ -790,6 +791,10 @@ const SystemNode: React.FC<{ node: TraceNode }> = ({ node }) => {
 
   if (node.subtype === 'skill_status') {
     return <SkillStatusMessage content={node.content} />;
+  }
+
+  if (node.subtype === 'goal_notice') {
+    return <GoalNoticeMessage content={node.content} />;
   }
 
   // generic system

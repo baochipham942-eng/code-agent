@@ -650,8 +650,12 @@ export class ConversationRuntime {
         // 2b. Handle actual text response
         if (response.type === 'text' && response.content) {
           const textAction = await this.messageProcessor.handleTextResponse(response, isSimpleTask, iterations, true, langfuse);
-          if (textAction === 'break') break;
           if (textAction === 'continue') continue;
+          if (this.ctx.goalMode?.isPending()) {
+            this.contextAssembly.injectSystemMessage(this.ctx.goalMode.buildContinuationPrompt());
+            continue;
+          }
+          if (textAction === 'break') break;
         }
 
         // 3. Handle tool calls

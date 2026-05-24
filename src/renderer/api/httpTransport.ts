@@ -444,6 +444,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         const sessionId = typeof arg === 'object' && arg !== null ? (arg as { sessionId?: string }).sessionId : undefined;
         const attachments = typeof arg === 'object' && arg !== null ? (arg as { attachments?: unknown[] }).attachments : undefined;
         const options = typeof arg === 'object' && arg !== null ? (arg as { options?: unknown }).options : undefined;
+        const goal = isRecord(options) && isRecord(options.goal) ? options.goal : undefined;
         const context = typeof arg === 'object' && arg !== null ? (arg as { context?: unknown }).context : undefined;
         const clientMessageId = typeof arg === 'object' && arg !== null ? (arg as { clientMessageId?: string }).clientMessageId : undefined;
         const response = await fetch(`${baseUrl}/api/run`, {
@@ -455,6 +456,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             ...(sessionId ? { sessionId } : {}),
             ...(attachments?.length ? { attachments } : {}),
             ...(options ? { options } : {}),
+            ...(goal ? { goal } : {}),
             ...(context ? { context } : {}),
           }),
         });

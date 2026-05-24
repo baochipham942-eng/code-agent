@@ -224,6 +224,12 @@ vi.mock('../../../src/shared/constants', () => ({
   CONTEXT_WINDOWS: {},
   DEFAULT_CONTEXT_WINDOW: 128000,
   getContextWindow: vi.fn().mockReturnValue(128000),
+  GOAL_MODE: {
+    DEFAULT_TOKEN_BUDGET: 100_000,
+    DEFAULT_MAX_TURNS: 5,
+    NO_PROGRESS_THRESHOLD: 3,
+    CHECKPOINT_INTERVAL: 3,
+  },
   TOOL_PROGRESS: {},
   TOOL_TIMEOUT_THRESHOLDS: {},
 }));
@@ -341,6 +347,7 @@ vi.mock('../../../src/main/services/skills/skillInvocationResolver', () => ({
 
 import { ConversationRuntime } from '../../../src/main/agent/runtime/conversationRuntime';
 import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
+import { GoalModeController } from '../../../src/main/agent/goalModeController';
 import { buildPackedSeedMemoryBlock, buildSeedMemoryBlock } from '../../../src/main/utils/seedMemoryInjector';
 import {
   clearMemoryInjectionTracesForTest,
@@ -485,6 +492,9 @@ function createMockModules() {
     runFinalizer: {
       finalizeRun: vi.fn(),
       checkAndEmitBudgetStatus: vi.fn().mockReturnValue(false),
+      emitTaskProgress: vi.fn(),
+      emitTaskComplete: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
     } as any,
     learningPipeline: {
       learn: vi.fn(),
@@ -1038,6 +1048,42 @@ describe('ConversationRuntime', () => {
 
       expect(modules.runFinalizer.finalizeRun).toHaveBeenCalled();
       expect(ctx.goalTracker.initialize).toHaveBeenCalledWith('hello');
+    });
+
+    it('continues goal mode after a plain text response and lets the fallback gate stop it', async () => {
+      ctx.goalMode = new GoalModeController({
+        goal: 'finish',
+        verifyCommand: 'true',
+        tokenBudget: 100_000,
+        maxTurns: 2,
+      });
+      modules.contextAssembly.inference.mockResolvedValue({
+        type: 'text',
+        content: 'I am not done yet.',
+        usage: { inputTokens: 120, outputTokens: 7 },
+      });
+
+      await runtime.run('finish');
+
+      expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(1);
+      expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+        expect.stringContaining('<goal-continuation>'),
+      );
+      expect(ctx.onEvent).toHaveBeenCalledWith({
+        type: 'goal_complete',
+        data: expect.objectContaining({
+          status: 'aborted',
+          reason: expect.stringContaining('达到轮次上限 2'),
+          turns: 2,
+        }),
+      });
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'finish',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'aborted' }),
+      );
     });
 
     it('keeps truncation continuation advisory at loop-decision level', async () => {

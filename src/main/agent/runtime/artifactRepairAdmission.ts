@@ -73,11 +73,18 @@ export async function maybeClearCompletedArtifactRepairGuardBeforeAdmission(
         '<artifact-validation-passed kind="interactive_artifact">',
         'artifact repair guard revalidated the target before accepting another repair-mode tool call.',
         `requested tools: ${requestedNames}`,
+        ...(ctx.goalMode?.isPending()
+          ? [
+              'The artifact already passed validation. Do not rewrite it again.',
+              'Goal mode is still pending, so the next action must call attempt_completion with concise evidence.',
+            ]
+          : []),
         ...validation.checks.map((check, index) => `${index + 1}. ${check}`),
         'The repair guard has been cleared. Retry the user requested action with the full tool set if needed.',
         '</artifact-validation-passed>',
       ].join('\n'),
     );
+    ctx.artifactValidationPassedTargetFile = guard.targetFile;
     ctx.artifactRepairGuard = undefined;
     ctx.forceFinalResponseReason = undefined;
     ctx.forceFinalResponsePrompt = undefined;

@@ -4,6 +4,8 @@ import type { ToolCall, ToolResult } from '../../../shared/contract';
 import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
 import { fileReadTracker } from '../../tools/fileReadTracker';
 import { createLogger } from '../../services/infra/logger';
+import { runReviewGate } from '../goalReviewGate';
+import { runVerifyGate } from '../goalVerifyGate';
 import type { ArtifactRepairIssueCode } from './artifactRepairSpec';
 import { createArtifactRepairSpec, formatArtifactRepairSpecForPrompt } from './artifactRepairSpec';
 import { activateArtifactRepairAdmissionStop } from './artifactRepairAdmission';
@@ -97,6 +99,7 @@ export async function handleModifiedArtifactValidation({
 
     if (validation.shouldValidate && !validation.passed) {
       runFinalizer.emitTaskProgress('tool_running', 'artifact 验收失败，正在准备修复指令...');
+      ctx.artifactValidationPassedTargetFile = undefined;
       const postPatchContent = artifactRepairRollbackSnapshot?.filePath === absolutePath
         ? readFileSync(absolutePath, 'utf-8')
         : null;
@@ -240,17 +243,29 @@ export async function handleModifiedArtifactValidation({
     } else if (validation.shouldValidate && (validation.checks.length > 0 || appendFinalHint)) {
       runFinalizer.emitTaskProgress('tool_running', 'artifact 验收通过');
       getArtifactValidationFailureMap(ctx).delete(absolutePath);
+      ctx.artifactValidationPassedTargetFile = absolutePath;
       if (ctx.artifactRepairGuard?.targetFile === absolutePath) {
         ctx.artifactRepairGuard = undefined;
       }
       contextAssembly.injectSystemMessage(
         [
           '<artifact-validation-passed kind="interactive_artifact">',
+          ...(ctx.goalMode?.isPending()
+            ? [
+                'The artifact already passed validation. Do not rewrite it again.',
+                'Goal mode is still pending, so the next action must call attempt_completion with concise evidence.',
+              ]
+            : []),
           ...(appendFinalHint ? [appendFinalHint] : []),
           ...validation.checks.map((check, index) => `${index + 1}. ${check}`),
           '</artifact-validation-passed>',
         ].join('\n')
       );
+      await completePendingGoalAfterArtifactValidation({
+        ctx,
+        contextAssembly,
+        absolutePath,
+      });
     }
   } catch (error) {
     logger.debug('[AgentLoop] game artifact validation skipped', {
@@ -258,4 +273,83 @@ export async function handleModifiedArtifactValidation({
       filePath,
     });
   }
+}
+
+async function completePendingGoalAfterArtifactValidation({
+  ctx,
+  contextAssembly,
+  absolutePath,
+}: {
+  ctx: RuntimeContext;
+  contextAssembly: ContextAssembly;
+  absolutePath: string;
+}): Promise<void> {
+  const goalMode = ctx.goalMode;
+  if (!goalMode?.isPending()) return;
+
+  const summary = `Artifact validation passed for ${absolutePath}.`;
+  goalMode.requestCompletion(summary);
+
+  const verifyCommand = goalMode.getVerifyCommand();
+  if (verifyCommand) {
+    const gate = await runVerifyGate(verifyCommand, ctx.workingDirectory);
+    ctx.onEvent({
+      type: 'goal_gate',
+      data: { gate: 1, pass: gate.pass, exitCode: gate.exitCode, timedOut: gate.timedOut },
+    });
+    if (!gate.pass) {
+      ctx.artifactValidationPassedTargetFile = undefined;
+      goalMode.clearCompletionRequest();
+      contextAssembly.injectSystemMessage(
+        [
+          '<goal-verify-failed>',
+          `验证命令 \`${verifyCommand}\` 未通过（exit ${gate.exitCode ?? 'null'}${gate.timedOut ? '，超时' : ''}）。`,
+          '目标尚未达成。请根据下面的失败输出继续修复，修好后再调 attempt_completion。',
+          '--- 验证输出（截断）---',
+          gate.output || '(无输出)',
+          '</goal-verify-failed>',
+        ].join('\n'),
+      );
+      return;
+    }
+  }
+
+  const reviewCondition = goalMode.getReviewCondition();
+  if (reviewCondition) {
+    const review = await runReviewGate(reviewCondition, goalMode.getGoal(), {
+      workingDirectory: ctx.workingDirectory,
+      sessionId: ctx.sessionId,
+      abortSignal: ctx.runAbortController?.signal,
+      hookManager: ctx.hookManager,
+    });
+    ctx.onEvent({
+      type: 'goal_gate',
+      data: { gate: 2, pass: review.pass, reason: review.reason },
+    });
+    if (!review.pass) {
+      ctx.artifactValidationPassedTargetFile = undefined;
+      goalMode.clearCompletionRequest();
+      contextAssembly.injectSystemMessage(
+        [
+          '<goal-review-failed>',
+          `软评审条件未通过：${reviewCondition}`,
+          '目标尚未达成。请根据下面的评审意见继续改进，改好后再调 attempt_completion。',
+          '--- 评审意见（截断）---',
+          review.reason,
+          '</goal-review-failed>',
+        ].join('\n'),
+      );
+      return;
+    }
+  }
+
+  goalMode.markMet();
+  const passedGates = [
+    `artifact validation passed for ${absolutePath}`,
+    verifyCommand ? `验证命令 \`${verifyCommand}\` 退出码 0` : null,
+    reviewCondition ? '软评审通过' : null,
+  ].filter(Boolean).join('、');
+  contextAssembly.injectSystemMessage(
+    `<goal-verified>\n${passedGates}，目标达成，结束本次 goal。\n</goal-verified>`,
+  );
 }

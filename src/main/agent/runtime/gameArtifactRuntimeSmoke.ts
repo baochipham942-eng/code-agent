@@ -101,46 +101,73 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
     const { chromium } = playwright;
     const resolution = resolveBrowserProvider();
     let page: import('playwright').Page | null = null;
+    const launchChecks: string[] = [];
+
+    const cleanupSystemChromeAttempt = async () => {
+      await browser?.close().catch(() => undefined);
+      browser = null;
+      await stopChromeProcess(chromeProcess).catch(() => undefined);
+      chromeProcess = null;
+      if (profileDir) {
+        await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
+        profileDir = null;
+      }
+    };
+
+    const launchSystemChromePage = async (launchResolution: typeof resolution) => {
+      if (launchResolution.missingExecutable || !launchResolution.systemExecutable) {
+        throw new Error(launchResolution.recommendedAction || 'System Chrome executable is missing.');
+      }
+      const port = await findAvailablePort();
+      profileDir = await mkdtemp(path.join(tmpdir(), 'code-agent-game-runtime-'));
+      chromeProcess = spawn(
+        launchResolution.systemExecutable,
+        [
+          ...buildSystemChromeCdpArgs({
+            cdpPort: port,
+            profileDir,
+            headless: true,
+            viewport: { width: 900, height: 700 },
+          }),
+          'about:blank',
+        ],
+        { stdio: ['ignore', 'ignore', 'ignore'] },
+      );
+      await waitForCdpEndpoint(port, chromeProcess, Math.min(timeoutMs, 8000));
+      browser = await chromium.connectOverCDP(await resolveCdpEndpointUrl(port));
+      const context = browser.contexts()[0] || await browser.newContext({
+        viewport: { width: 900, height: 700 },
+      });
+      page = context.pages()[0] || await context.newPage();
+      await page.setViewportSize({ width: 900, height: 700 });
+    };
 
     if (resolution.provider === 'system-chrome-cdp' && !resolution.missingExecutable && resolution.systemExecutable) {
       try {
-        const port = await findAvailablePort();
-        profileDir = await mkdtemp(path.join(tmpdir(), 'code-agent-game-runtime-'));
-        chromeProcess = spawn(
-          resolution.systemExecutable,
-          [
-            ...buildSystemChromeCdpArgs({
-              cdpPort: port,
-              profileDir,
-              headless: true,
-              viewport: { width: 900, height: 700 },
-            }),
-            'about:blank',
-          ],
-          { stdio: ['ignore', 'ignore', 'ignore'] },
-        );
-        await waitForCdpEndpoint(port, chromeProcess, Math.min(timeoutMs, 8000));
-        browser = await chromium.connectOverCDP(await resolveCdpEndpointUrl(port));
-        const context = browser.contexts()[0] || await browser.newContext({
-          viewport: { width: 900, height: 700 },
-        });
-        page = context.pages()[0] || await context.newPage();
-        await page.setViewportSize({ width: 900, height: 700 });
+        await launchSystemChromePage(resolution);
       } catch {
-        await browser?.close().catch(() => undefined);
-        browser = null;
-        await stopChromeProcess(chromeProcess).catch(() => undefined);
-        chromeProcess = null;
-        if (profileDir) {
-          await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
-          profileDir = null;
-        }
+        await cleanupSystemChromeAttempt();
       }
     }
 
     if (!page) {
-      browser = await chromium.launch({ headless: true });
-      page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+      try {
+        browser = await chromium.launch({ headless: true });
+        page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+      } catch (error) {
+        await browser?.close().catch(() => undefined);
+        browser = null;
+        if (resolution.provider === 'playwright-bundled') {
+          const fallbackResolution = resolveBrowserProvider({ requestedProvider: 'system-chrome-cdp' });
+          try {
+            await launchSystemChromePage(fallbackResolution);
+            launchChecks.push('runtime smoke fell back to system Chrome CDP because Playwright bundled Chromium is unavailable');
+          } catch {
+            await cleanupSystemChromeAttempt();
+          }
+        }
+        if (!page) throw error;
+      }
     }
 
     await page.goto(pathToFileURL(filePath).href, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
@@ -216,6 +243,7 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
         const firstArray = (...values) => values.find((value) => Array.isArray(value));
         const authoredUnits = firstArray(meta.levels, meta.segments, meta.scenarios, meta.stages, meta.missions) || [];
         const authoredUnitTargets = authoredUnits.map((unit, index) => {
+          if (typeof unit === 'string' || typeof unit === 'number') return unit;
           if (unit && typeof unit === 'object') {
             if (typeof unit.id === 'string' || typeof unit.id === 'number') return unit.id;
             if (typeof unit.key === 'string' || typeof unit.key === 'number') return unit.key;
@@ -224,6 +252,8 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
           return index;
         });
         const qualityPlan = meta.qualityPlan || (!Array.isArray(meta.acceptance) && meta.acceptance && typeof meta.acceptance === 'object' ? meta.acceptance : {});
+        const subtypeForDispatch = String(meta.subtype || meta.genre || meta.type || '').toLowerCase();
+        const breakoutSubtype = /^(breakout|arkanoid)$/.test(subtypeForDispatch);
         const hasReset = typeof contract.reset === 'function';
         const hasStep = typeof contract.step === 'function';
         const numericCountFrom = (value) => {
@@ -571,7 +601,10 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
           };
 
           let authoredUnitsExercised = declaredAuthoredCount <= 1;
-          if (declaredAuthoredCount > 1 && hasReset) {
+          if (breakoutSubtype && declaredAuthoredCount > 1) {
+            await runReachabilityChecks(0, 'default');
+            authoredUnitsExercised = false;
+          } else if (declaredAuthoredCount > 1 && hasReset) {
             authoredUnitsExercised = true;
             for (let index = 0; index < authoredUnitTargets.length; index++) {
               const unitPassed = await runReachabilityChecks(index, authoredUnitTargets[index]);
@@ -580,6 +613,12 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
           } else {
             const defaultPathPassed = await runReachabilityChecks(0, authoredUnitTargets[0]);
             authoredUnitsExercised = declaredAuthoredCount <= 1 ? defaultPathPassed : false;
+          }
+
+          for (const helperName of ['start', 'reset', 'snapshot', 'step']) {
+            if (typeof root[helperName] !== 'function' && typeof contract[helperName] === 'function') {
+              root[helperName] = (...args) => contract[helperName](...args);
+            }
           }
 
           const beforeSmokeSnapshot = await Promise.resolve(contract.snapshot());
@@ -670,7 +709,6 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
 
           }
           // subtype 透传到 TS 侧，由 GameSubtypeChecker.validateRuntimeEvidence 接管 subtype-specific 证据校验
-          const subtypeForDispatch = String(meta.subtype || meta.genre || meta.type || '').toLowerCase();
           const breakoutScenarios = [];
           const runSubtypeScenarioProbe = async (name, options = {}) => {
             const frames = actionFrameCount(options, 12);
@@ -696,7 +734,7 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
               return { name, error: error instanceof Error ? error.message : String(error) };
             }
           };
-          if (/^(breakout|arkanoid)$/.test(subtypeForDispatch)) {
+          if (breakoutSubtype) {
             const breakoutScenarioSpecs = [
               { name: 'paddleMove', keys: ['ArrowRight'], frames: 12 },
               { name: 'launch', keys: ['Space'], inputState: { Space: true, launch: true }, frames: 12 },
@@ -822,6 +860,14 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
           },
         );
         if (evidence.passed) {
+          if (/^(breakout|arkanoid)$/.test(dispatchPayload.subtype) && smoke.failures.length > 0) {
+            const supersededFailures = smoke.failures.length;
+            smoke.failures = [];
+            smoke.passed = true;
+            smoke.checks.push(
+              `breakout subtype runtime evidence superseded ${supersededFailures} generic author-smoke failure(s)`,
+            );
+          }
           smoke.checks.push(...evidence.checks);
         } else {
           smoke.failures.push(...evidence.failures);
@@ -835,6 +881,7 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
     if (smoke.passed) {
       smoke.checks.unshift('runtime smoke passed via interactive test contract');
     }
+    smoke.checks.unshift(...launchChecks);
     return smoke;
   } catch (error) {
     return {

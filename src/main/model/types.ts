@@ -92,6 +92,9 @@ export interface ModelResponse {
       targetFile: string;
       contentChars: number;
     };
+    artifactValidationAttemptCompletion?: {
+      targetFile: string;
+    };
   };
 }
 

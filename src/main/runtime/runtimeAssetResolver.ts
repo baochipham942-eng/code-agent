@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { getUserDataPath } from '../platform/appPaths';
 import { ensureInside } from './runtimeAssetInstaller';
 
@@ -27,6 +28,9 @@ const RUNTIME_ASSET_KINDS: Record<RuntimeAssetKind, string[]> = {
   'dist/renderer': ['dist', 'renderer'],
   'dist/native': ['dist', 'native'],
 };
+const moduleDir = typeof __dirname === 'string'
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
 
 function normalizeRoot(root: string | undefined): string | null {
   const trimmed = root?.trim();
@@ -53,7 +57,7 @@ function getRuntimeOptions(options: RuntimeAssetResolverOptions): Required<Runti
   return {
     env: options.env ?? process.env,
     cwd: options.cwd ?? process.cwd(),
-    dirname: options.dirname ?? __dirname,
+    dirname: options.dirname ?? moduleDir,
     resourcesPath: options.resourcesPath ?? processWithResources.resourcesPath ?? '',
     existsSync: options.existsSync ?? fs.existsSync,
     readFileSync: options.readFileSync ?? fs.readFileSync,

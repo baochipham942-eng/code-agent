@@ -122,6 +122,8 @@ export interface RuntimeContext {
   pendingRuntimeDiagnostics: string[];
   forceFinalResponseReason?: string;
   forceFinalResponsePrompt?: string;
+  /** Last interactive artifact path that passed runtime/browser validation in this run. */
+  artifactValidationPassedTargetFile?: string;
   activeSkillInvocation?: {
     skillName: string;
     source: string;

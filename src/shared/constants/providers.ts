@@ -1,6 +1,10 @@
 import type { BuiltInModelProvider, ModelProviderAlias } from '../contract';
 import { DEFAULT_MODELS } from './models';
 
+function readProcessEnv(name: string, fallback: string): string {
+  return typeof process !== 'undefined' ? process.env?.[name] ?? fallback : fallback;
+}
+
 // ============================================================================
 // AI 模型 API 端点
 // ============================================================================
@@ -103,8 +107,8 @@ export function isDirectConnectHost(urlOrHost: string): boolean {
 export const PROVIDER_CONCURRENCY_LIMITS: Record<string, { maxConcurrent: number; minIntervalMs: number }> = {
   /** 智谱 GLM 免费档（glm-4.x-flash）实测并发上限约 3-4，超过即 1302 限流 */
   zhipu: {
-    maxConcurrent: parseInt(process.env.ZHIPU_MAX_CONCURRENT || '3', 10),
-    minIntervalMs: parseInt(process.env.ZHIPU_MIN_INTERVAL_MS || '200', 10),
+    maxConcurrent: parseInt(readProcessEnv('ZHIPU_MAX_CONCURRENT', '3'), 10),
+    minIntervalMs: parseInt(readProcessEnv('ZHIPU_MIN_INTERVAL_MS', '200'), 10),
   },
 };
 

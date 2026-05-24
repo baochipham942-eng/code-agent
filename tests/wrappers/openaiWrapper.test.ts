@@ -152,6 +152,30 @@ describe('openaiWrapper / parseOpenAIResponse', () => {
     expect(result.content).toBe('ok');
   });
 
+  it('compat: falls back to text when provider returns content parts in final response', () => {
+    const raw = {
+      id: 'xiaomi-final-content-parts',
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'text', text: '<!doctype html>' },
+              { type: 'text', text: '<html></html>' },
+            ],
+          },
+          finish_reason: 'stop',
+        },
+      ],
+    };
+
+    const result = parseOpenAIResponse(raw);
+
+    expect(result.type).toBe('text');
+    expect(result.content).toBe('<!doctype html><html></html>');
+  });
+
   it('throws on missing choices array', () => {
     const raw = { id: 'x' };
     expect(() => parseOpenAIResponse(raw)).toThrow(/Invalid OpenAI response shape/);

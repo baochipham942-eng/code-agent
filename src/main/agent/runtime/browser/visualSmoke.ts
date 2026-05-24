@@ -298,15 +298,26 @@ export async function runBrowserVisualSmoke(
     const { chromium } = playwright;
     const startedAt = Date.now();
     const remaining = () => Math.max(1200, timeoutMs - (Date.now() - startedAt));
-    let page: import('playwright').Page;
+    let page: import('playwright').Page | null = null;
 
-    if (resolution.provider === 'system-chrome-cdp') {
+    const cleanupSystemChromeAttempt = async () => {
+      await browser?.close().catch(() => undefined);
+      browser = null;
+      await stopChromeProcess(chromeProcess).catch(() => undefined);
+      chromeProcess = null;
+      if (profileDir) {
+        await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
+        profileDir = null;
+      }
+    };
+
+    const launchSystemChromePage = async (launchResolution: typeof resolution) => {
       const port = await findAvailablePort();
       const visualProfileDir = await mkdtemp(path.join(tmpdir(), 'code-agent-game-visual-'));
       profileDir = visualProfileDir;
-      const executable = resolution.systemExecutable;
-      if (!executable) {
-        throw new Error(resolution.recommendedAction || 'System Chrome executable is missing.');
+      const executable = launchResolution.systemExecutable;
+      if (launchResolution.missingExecutable || !executable) {
+        throw new Error(launchResolution.recommendedAction || 'System Chrome executable is missing.');
       }
       const chromeArgs = [
         ...buildSystemChromeCdpArgs({
@@ -333,12 +344,34 @@ export async function runBrowserVisualSmoke(
         viewport: { width: 1280, height: 720 },
       });
       page = context.pages()[0] || await context.newPage();
+    };
+
+    if (resolution.provider === 'system-chrome-cdp') {
+      await launchSystemChromePage(resolution);
     } else {
-      browser = await chromium.launch({ headless: true });
-      const context = await browser.newContext({
-        viewport: { width: 1280, height: 720 },
-      });
-      page = await context.newPage();
+      try {
+        browser = await chromium.launch({ headless: true });
+        const context = await browser.newContext({
+          viewport: { width: 1280, height: 720 },
+        });
+        page = await context.newPage();
+      } catch (error) {
+        await browser?.close().catch(() => undefined);
+        browser = null;
+        if (resolution.provider === 'playwright-bundled') {
+          const fallbackResolution = resolveBrowserProvider({ requestedProvider: 'system-chrome-cdp' });
+          try {
+            await launchSystemChromePage(fallbackResolution);
+            checks.push('browser visual smoke fell back to system Chrome CDP because Playwright bundled Chromium is unavailable');
+          } catch {
+            await cleanupSystemChromeAttempt();
+          }
+        }
+        if (!page) throw error;
+      }
+    }
+    if (!page) {
+      throw new Error('Browser page was not created for visual smoke.');
     }
 
     const consoleErrors: string[] = [];

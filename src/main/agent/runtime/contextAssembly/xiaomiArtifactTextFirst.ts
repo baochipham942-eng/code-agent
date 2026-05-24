@@ -18,12 +18,12 @@ interface XiaomiArtifactTextFirstInput {
 }
 
 export function shouldUseXiaomiArtifactTextFirstWrite(input: XiaomiArtifactTextFirstInput): boolean {
-  if (!input.artifactRequest) return false;
-  if (input.artifactRepairActive) return false;
+  if (!input.artifactRequest && !input.artifactRepairActive) return false;
   if (input.forceFinalResponseActive) return false;
   if (input.config.provider !== 'xiaomi') return false;
   if (!/mimo/i.test(input.config.model || '')) return false;
   if (!input.tools.some((tool) => tool.name === 'Write')) return false;
+  if (input.artifactRepairActive) return true;
   return HTML_ARTIFACT_INTENT_PATTERN.test(input.userRequestText);
 }
 
@@ -47,22 +47,70 @@ export function resolveXiaomiArtifactTextFirstTargetPath(
 export function buildXiaomiArtifactTextFirstMessages(
   messages: ModelMessage[],
   targetPath: string,
+  options: { artifactRepairActive?: boolean } = {},
 ): ModelMessage[] {
+  const isBreakout = messagesContain(messages, /breakout|arkanoid|弹砖|打砖|弹球/i);
+  const directive: ModelMessage = {
+    role: 'system',
+    content: [
+      '<xiaomi-artifact-text-first>',
+      'This provider stalls when a large generated artifact is emitted as a tool-call JSON argument.',
+      'Generate the artifact as plain visible text in this call. The runtime will write it to the file after the response.',
+      `Target file: ${targetPath}`,
+      'Output only the complete file content. For HTML, the first non-whitespace characters must be <!DOCTYPE html> or <html>, and the final non-whitespace characters must be </html>.',
+      'Do not include markdown fences, explanations, tool-call JSON, or ChatML/XML tool tags such as <tool_call>, <function=Write>, or <parameter=content>.',
+      'If this is a repair turn, output one full corrected HTML document for the target file, not a patch, diff, Edit/Write call, short snippet, or tool call.',
+      ...(isBreakout ? [
+        '',
+        'For Breakout/Arkanoid HTML games, the generated file must satisfy the runtime validator:',
+        '- Use window.__GAME_META__ with exact field name controls, not dispatchableControls.',
+        "- Include powerups: ['wide','multi','slow','through','life'].",
+        "- Include scenarios for paddleMove, launch, wallBounce, paddleBounce, brickHit, powerup:wide, powerup:multi, powerup:slow, powerup:through, powerup:life, win, lose. Prefer object entries such as { id: 'paddleMove' } so reset(levelOrScenario) receives stable ids.",
+        '- reset(levelOrScenario) must accept string ids/names and numeric indexes for every authored scenario. If scenarios are stored as strings, map numeric 0..11 to the same scenario ids before using startsWith or split.',
+        '- Keep progressPlan very small and generic for default controls: ArrowRight increases paddleX and Space changes ball.x. Do not put wallBounceCount, paddleBounceCount, brick counters, powerups, win, or lose in progressPlan.',
+        '- runSmokeTest coverage.stateChanges should include paddleX and ball.x, not only ball.launched, and should separately prove every authored scenario through reset(scenario) + step().',
+        '- reset("win") followed by step({}, frames) must deterministically reach status "won"; reset("lose") followed by step({}, frames) must deterministically reach status "lost" and lives 0.',
+        '- In step/tick, implement deterministic scenario shortcuts before or alongside physics: wallBounce increments wallBounceCount, paddleBounce increments paddleBounceCount, brickHit reduces brickCount and increases score, each powerup:* triggers that powerup, win sets status "won", lose sets status "lost".',
+        '- In runSmokeTest(), call window.__GAME_TEST__.step/reset/snapshot or define local helpers that delegate to them; never call an undefined global step(), reset(), or snapshot().',
+        '- window.__GAME_TEST__.snapshot() must expose paddleX, ball with x/y/vx/vy or speed, brickCount or bricksRemaining, score, wallBounceCount, paddleBounceCount, lives, status, activePowerups, and powerupsTriggered.',
+        '- runSmokeTest() coverage must prove all 12 scenarios reachable, with levelsPassed/totalLevels or equivalent coverage matching every scenario.',
+        '- reset(scenario), step(inputState, frames), and runSmokeTest() must drive those scenarios through live state and return string-array checks/failures.',
+      ] : []),
+      '</xiaomi-artifact-text-first>',
+    ].join('\n'),
+  };
+
+  const finalInstruction: ModelMessage = {
+    role: 'user',
+    content: [
+      'Return only the complete HTML file content now.',
+      `Write the corrected content for ${targetPath}.`,
+      'No prose, no markdown, no JSON, no tool call tags, no partial fragments.',
+    ].join('\n'),
+  };
+
+  if (!options.artifactRepairActive) {
+    return [
+      ...messages,
+      directive,
+      finalInstruction,
+    ];
+  }
+
   return [
-    ...messages,
-    {
-      role: 'system',
-      content: [
-        '<xiaomi-artifact-text-first>',
-        'This provider stalls when a large generated artifact is emitted as a tool-call JSON argument.',
-        'Generate the artifact as plain visible text in this call. The runtime will write it to the file after the response.',
-        `Target file: ${targetPath}`,
-        'Output only the complete file content. For HTML, start at <!DOCTYPE html> or <html>.',
-        'Do not include markdown fences, explanations, or tool-call JSON.',
-        '</xiaomi-artifact-text-first>',
-      ].join('\n'),
-    },
+    directive,
+    ...buildCompactRepairEvidenceMessages(messages),
+    ...buildCurrentArtifactContextMessage(targetPath),
+    finalInstruction,
   ];
+}
+
+export function buildXiaomiArtifactTextFirstConfig(config: ModelConfig): ModelConfig {
+  return {
+    ...config,
+    reasoningEffort: 'low',
+    thinkingBudget: undefined,
+  };
 }
 
 export function buildXiaomiArtifactTextFirstWriteResponse(
@@ -113,15 +161,77 @@ export function extractGeneratedHtmlContent(raw: string): string {
   const doctypeIndex = lower.indexOf('<!doctype html');
   const htmlIndex = lower.indexOf('<html');
   const starts = [doctypeIndex, htmlIndex].filter((index) => index >= 0);
-  const start = starts.length > 0 ? Math.min(...starts) : 0;
+  if (starts.length === 0) return '';
+  const start = Math.min(...starts);
   let content = source.slice(start).trim();
 
   const endIndex = content.toLowerCase().lastIndexOf('</html>');
-  if (endIndex >= 0) {
-    content = content.slice(0, endIndex + '</html>'.length).trim();
-  }
+  if (endIndex < 0) return '';
+  content = content.slice(0, endIndex + '</html>'.length).trim();
 
   return content;
+}
+
+function buildCompactRepairEvidenceMessages(messages: ModelMessage[]): ModelMessage[] {
+  const lastUser = [...messages].reverse().find((message) => message.role === 'user');
+  const evidence = messages
+    .filter((message) => {
+      if (message.role !== 'tool' && message.role !== 'system') return false;
+      const content = normalizeMessageContent(message.content);
+      return /artifact[_-]?repair|artifact validation failed|runSmokeTest|__GAME_TEST__|__INTERACTIVE_TEST__|progressPlan|frontend_visual_smoke|missing_test_contract|canvas_not_responsive|reachability|scenarioMode/i.test(content);
+    })
+    .slice(-5)
+    .map((message) => ({
+      role: message.role,
+      content: truncateText(normalizeMessageContent(message.content), 4_000),
+    }) as ModelMessage);
+
+  return [
+    ...(lastUser ? [{
+      role: 'user',
+      content: truncateText(normalizeMessageContent(lastUser.content), 1_800),
+    } as ModelMessage] : []),
+    ...evidence,
+  ];
+}
+
+function buildCurrentArtifactContextMessage(targetPath: string): ModelMessage[] {
+  try {
+    if (!fs.existsSync(targetPath)) return [];
+    const content = fs.readFileSync(targetPath, 'utf-8');
+    if (!content.trim()) return [];
+    return [{
+      role: 'user',
+      content: [
+        `<current-target-file path="${targetPath}">`,
+        truncateText(content, 32_000),
+        '</current-target-file>',
+        'Rewrite the full corrected file, preserving useful working code but fixing every validator issue.',
+      ].join('\n'),
+    }];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeMessageContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  try {
+    return JSON.stringify(content);
+  } catch {
+    return String(content || '');
+  }
+}
+
+function truncateText(content: string, limit: number): string {
+  if (content.length <= limit) return content;
+  const head = Math.floor(limit * 0.7);
+  const tail = Math.max(600, limit - head - 120);
+  return [
+    content.slice(0, head),
+    `\n...[omitted ${content.length - head - tail} chars]...\n`,
+    content.slice(-tail),
+  ].join('');
 }
 
 function extractExplicitHtmlPath(userRequestText: string): string | null {
@@ -139,6 +249,18 @@ function extractExplicitHtmlPath(userRequestText: string): string | null {
 
 function stripTrailingPathPunctuation(value: string): string {
   return value.replace(/[.,，。;；:：!！?？)）\]]+$/g, '');
+}
+
+function messagesContain(messages: ModelMessage[], pattern: RegExp): boolean {
+  return messages.some((message) => {
+    const content = message.content;
+    if (typeof content === 'string') return pattern.test(content);
+    try {
+      return pattern.test(JSON.stringify(content));
+    } catch {
+      return false;
+    }
+  });
 }
 
 function nextAvailablePath(filePath: string): string {

@@ -29,6 +29,41 @@ function normalizeToolName(name: string): string {
   return normalized || name;
 }
 
+function stringifyProviderContent(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value == null) return '';
+  if (Array.isArray(value)) {
+    return value
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object') {
+          const record = part as Record<string, unknown>;
+          return stringifyProviderContent(record.text ?? record.content ?? record.value);
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join('');
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return stringifyProviderContent(record.text ?? record.content ?? record.value);
+  }
+  return String(value);
+}
+
+function parsePermissiveTextResponse(raw: unknown): ModelResponse | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const choices = (raw as { choices?: unknown }).choices;
+  if (!Array.isArray(choices) || choices.length === 0) return null;
+  const first = choices[0];
+  if (!first || typeof first !== 'object') return null;
+  const message = (first as { message?: unknown }).message;
+  if (!message || typeof message !== 'object') return null;
+  const content = stringifyProviderContent((message as { content?: unknown }).content);
+  return content ? { type: 'text', content } : null;
+}
+
 // ── final response schemas ────────────────────────────────────────────────
 const ToolCallSchema = z
   .object({
@@ -150,6 +185,13 @@ export type OpenAIToolCallDelta = z.infer<typeof StreamToolCallDeltaSchema>;
 export function parseOpenAIResponse(raw: unknown): ModelResponse {
   const parsed = OpenAIChatCompletionSchema.safeParse(raw);
   if (!parsed.success) {
+    const fallback = parsePermissiveTextResponse(raw);
+    if (fallback) {
+      logger.warn('[parseOpenAIResponse] schema mismatch; using permissive text content fallback', {
+        issues: parsed.error.issues,
+      });
+      return fallback;
+    }
     const dataPreview = JSON.stringify(raw).substring(0, 200);
     logger.warn('[parseOpenAIResponse] schema mismatch:', {
       dataPreview,

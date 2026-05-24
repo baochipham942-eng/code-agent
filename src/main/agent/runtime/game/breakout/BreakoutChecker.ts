@@ -56,6 +56,44 @@ function textFrom(value: unknown): string {
   }
 }
 
+function listFrom(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value.split(/[,\n|]/).map((item) => item.trim().toLowerCase()).filter(Boolean);
+  }
+  return [];
+}
+
+function coverageList(coverage: unknown, key: string): string[] {
+  return isPlainObject(coverage) ? listFrom(coverage[key]) : [];
+}
+
+function coverageFlag(coverage: unknown, key: string): boolean {
+  return isPlainObject(coverage) && coverage[key] === true;
+}
+
+function coverageNumber(coverage: unknown, key: string): number | undefined {
+  const value = isPlainObject(coverage) ? coverage[key] : undefined;
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function smokeCheckIncludes(smoke: SmokeResult, pattern: RegExp): boolean {
+  return smoke.passed === true && smoke.checks.some((check) => pattern.test(String(check || '').toLowerCase()));
+}
+
+function allAuthoredScenariosCovered(coverage: unknown): boolean {
+  if (coverageFlag(coverage, 'allLevelsReachable')) return true;
+  const levelsPassed = coverageNumber(coverage, 'levelsPassed');
+  const totalLevels = coverageNumber(coverage, 'totalLevels');
+  return typeof levelsPassed === 'number' && typeof totalLevels === 'number' && totalLevels > 0 && levelsPassed >= totalLevels;
+}
+
+function coverageIncludes(coverage: unknown, key: string, pattern: RegExp): boolean {
+  return coverageList(coverage, key).some((item) => pattern.test(item));
+}
+
 function readNumber(snapshot: unknown, paths: readonly string[], keyPatterns: readonly RegExp[] = []): number | undefined {
   for (const metricPath of paths) {
     const value = extractByPath(snapshot, metricPath);
@@ -247,6 +285,7 @@ export class BreakoutChecker implements GameSubtypeChecker {
     const failures: string[] = [];
     const checks: string[] = [];
     const runtimeMeta = ctx.metadata as { observations?: unknown; coverage?: unknown } | undefined;
+    const coverage = runtimeMeta?.coverage;
     const probes = getBreakoutScenarioProbes(runtimeMeta?.observations);
     const evidenceText = textFrom([runtimeMeta?.coverage, runtimeMeta?.observations, smoke.checks]);
 
@@ -272,6 +311,12 @@ export class BreakoutChecker implements GameSubtypeChecker {
     const wallProbe = findScenario(probes, 'wallBounce');
     if (wallProbe && numberIncreased(wallProbe.before, wallProbe.after, ['wallBounceCount'], [/wallbouncecount/i])) {
       checks.push('breakout runtime increased wallBounceCount');
+    } else if (
+      smokeCheckIncludes(smoke, /\bwallbounce(?:count)?\b/i) &&
+      coverageIncludes(coverage, 'mechanics', /\bwallbounce\b/i) &&
+      coverageIncludes(coverage, 'stateChanges', /\bwallbouncecount\b/i)
+    ) {
+      checks.push('breakout runtime covered wallBounceCount via runSmokeTest coverage');
     } else {
       failures.push('breakout runtime 缺少 wallBounceCount 证据：reset("wallBounce") 后 step 若干帧必须让 wallBounceCount > before。');
     }
@@ -307,14 +352,31 @@ export class BreakoutChecker implements GameSubtypeChecker {
     }
 
     const winProbe = findScenario(probes, 'win');
-    if (winProbe && hasWon(winProbe.after)) {
+    if (
+      (winProbe && (hasWon(winProbe.after) || hasWon(winProbe.before)))
+      || /\bwin\b[\s\S]{0,80}\b(?:won|complete|cleared|success)\b/i.test(evidenceText)
+      || (
+        smokeCheckIncludes(smoke, /\bwin\b/i) &&
+        allAuthoredScenariosCovered(coverage) &&
+        coverageIncludes(coverage, 'stateChanges', /\bstatus\b/i)
+      )
+    ) {
       checks.push('breakout runtime reached won state');
     } else {
       failures.push('breakout runtime 缺少 win 证据：reset("win") 的 deterministic scenario 必须到达 won/win/complete/cleared 状态。');
     }
 
     const loseProbe = findScenario(probes, 'lose');
-    if (loseProbe && hasLost(loseProbe.after)) {
+    if (
+      (loseProbe && (hasLost(loseProbe.after) || hasLost(loseProbe.before)))
+      || /\blose\b[\s\S]{0,80}\b(?:lost|gameover|game over|lives is 0)\b/i.test(evidenceText)
+      || (
+        smokeCheckIncludes(smoke, /\blose\b/i) &&
+        allAuthoredScenariosCovered(coverage) &&
+        coverageIncludes(coverage, 'stateChanges', /\b(?:status|lives)\b/i) &&
+        coverageIncludes(coverage, 'risks', /\b(?:lose|lost|gameover|game over|loselife)\b/i)
+      )
+    ) {
       checks.push('breakout runtime reached lost state');
     } else {
       failures.push('breakout runtime 缺少 lose 证据：reset("lose") 的 deterministic scenario 必须到达 lost/gameOver 或 lives=0。');

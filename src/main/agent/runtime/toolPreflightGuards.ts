@@ -128,10 +128,17 @@ export async function maybeFinishArtifactRepairIfAlreadyValid(
       [
         '<artifact-validation-passed kind="interactive_artifact">',
         'artifact repair guard revalidated the target after a blocked source read.',
+        ...(ctx.goalMode?.isPending()
+          ? [
+              'The artifact already passed validation. Do not rewrite it again.',
+              'Goal mode is still pending, so the next action must call attempt_completion with concise evidence.',
+            ]
+          : []),
         ...validation.checks.map((check, index) => `${index + 1}. ${check}`),
         '</artifact-validation-passed>',
       ].join('\n'),
     );
+    ctx.artifactValidationPassedTargetFile = guard.targetFile;
     ctx.artifactRepairGuard = undefined;
     activateForceFinalResponse(ctx, `artifact repair target already passes validation after blocked ${guard.lastBlockedTool || 'source'} read`);
     return true;

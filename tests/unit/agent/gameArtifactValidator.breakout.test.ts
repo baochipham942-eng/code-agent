@@ -216,6 +216,109 @@ describe('validateGameArtifact breakout subtype', () => {
     expect(result.checks).toContain('breakout runtime covered wide/multi/slow/through/life powerups');
   });
 
+  it('passes string scenario metadata through to reset instead of numeric indexes', async () => {
+    const stringScenarioFixture = breakoutFixture().replace(
+      /const scenarios = \[[\s\S]*?\];/,
+      `const scenarios = [
+      'paddleMove',
+      'launch',
+      'wallBounce',
+      'paddleBounce',
+      'brickHit',
+      'powerup:wide',
+      'powerup:multi',
+      'powerup:slow',
+      'powerup:through',
+      'powerup:life',
+      'win',
+      'lose'
+    ];`,
+    );
+    const filePath = await writeFixture(stringScenarioFixture, 'arkanoid-string-scenarios.html');
+
+    const result = await validateGameArtifact(filePath, {
+      runRuntimeSmoke: true,
+      runtimeSmokeTimeoutMs: 5000,
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.failures.join('\n')).not.toContain('startsWith is not a function');
+  });
+
+  it('allows runSmokeTest to use global aliases for exposed contract helpers', async () => {
+    const globalHelperFixture = breakoutFixture().replace(
+      `window.__GAME_TEST__.reset(name);
+      const before = snapshot();
+      window.__GAME_TEST__.step(input, frames);
+      const after = snapshot();`,
+      `reset(name);
+      const before = snapshot();
+      step(input, frames);
+      const after = snapshot();`,
+    );
+    const filePath = await writeFixture(globalHelperFixture, 'arkanoid-global-helper-smoke.html');
+
+    const result = await validateGameArtifact(filePath, {
+      runRuntimeSmoke: true,
+      runtimeSmokeTimeoutMs: 5000,
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.failures.join('\n')).not.toContain('step is not defined');
+  });
+
+  it('lets breakout subtype probes supersede noisy generic author-smoke failures', async () => {
+    const noisySmokeFixture = breakoutFixture().replace(
+      `return {
+          passed: failures.length === 0,`,
+      `failures.push('progressPlan: synthetic generic author-smoke noise');
+        return {
+          passed: false,`,
+    );
+    const filePath = await writeFixture(noisySmokeFixture, 'arkanoid-noisy-author-smoke.html');
+
+    const result = await validateGameArtifact(filePath, {
+      runRuntimeSmoke: true,
+      runtimeSmokeTimeoutMs: 5000,
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.checks.join('\n')).toContain('breakout subtype runtime evidence superseded');
+  });
+
+  it('accepts structured runSmokeTest coverage when direct scenario probes are shorter than the authored path', async () => {
+    const smokeCoverageFallbackFixture = breakoutFixture()
+      .replace(`      if (state.scenario === 'wallBounce') state.wallBounceCount += 1;`, `      if (false && state.scenario === 'wallBounce') state.wallBounceCount += 1;`)
+      .replace(`      if (state.scenario === 'win') state.status = 'won';`, `      if (false && state.scenario === 'win') state.status = 'won';`)
+      .replace(`      if (state.scenario === 'lose') {
+        state.status = 'lost';
+        state.lives = 0;
+      }`, `      if (false && state.scenario === 'lose') {
+        state.status = 'lost';
+        state.lives = 0;
+      }`)
+      .replace(
+        `window.__GAME_TEST__.step(input, frames);
+      const after = snapshot();`,
+        `window.__GAME_TEST__.step(input, frames);
+      if (name === 'wallBounce') state.wallBounceCount += 1;
+      if (name === 'win') state.status = 'won';
+      if (name === 'lose') { state.status = 'lost'; state.lives = 0; }
+      const after = snapshot();`,
+      );
+    const filePath = await writeFixture(smokeCoverageFallbackFixture, 'arkanoid-smoke-coverage-fallback.html');
+
+    const result = await validateGameArtifact(filePath, {
+      runRuntimeSmoke: true,
+      runtimeSmokeTimeoutMs: 5000,
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.checks).toContain('breakout runtime covered wallBounceCount via runSmokeTest coverage');
+    expect(result.checks).toContain('breakout runtime reached won state');
+    expect(result.checks).toContain('breakout runtime reached lost state');
+  });
+
   it('fails breakout artifacts that do not expose deterministic wall bounce evidence', async () => {
     const filePath = await writeFixture(
       breakoutFixture()

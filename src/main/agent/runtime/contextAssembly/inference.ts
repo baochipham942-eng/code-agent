@@ -33,6 +33,7 @@ import {
 import { preloadDeferredToolsForTurn } from './deferredToolPreload';
 import { createHandoffTailStreamFilter } from '../../../handoff/handoffStream';
 import {
+  buildXiaomiArtifactTextFirstConfig,
   buildXiaomiArtifactTextFirstMessages,
   buildXiaomiArtifactTextFirstWriteResponse,
   resolveXiaomiArtifactTextFirstTargetPath,
@@ -153,6 +154,27 @@ function messageHasImageParts(message: ModelMessage | undefined): boolean {
 
 function contentHasImageParts(content: ModelMessage['content']): content is MessageContent[] {
   return Array.isArray(content) && content.some((part) => part.type === 'image');
+}
+
+function buildArtifactValidationAttemptCompletionResponse(targetFile: string): ModelResponse {
+  const toolCall: ToolCall = {
+    id: `call_artifact_validation_completion_${Date.now().toString(36)}`,
+    name: 'attempt_completion',
+    arguments: {
+      summary: `Artifact validation passed for ${targetFile}. Requesting goal verification.`,
+    },
+  };
+  return {
+    type: 'tool_use',
+    toolCalls: [toolCall],
+    contentParts: [{ type: 'tool_call', toolCallId: toolCall.id }],
+    finishReason: 'tool_calls',
+    runtimeDiagnostics: {
+      artifactValidationAttemptCompletion: {
+        targetFile,
+      },
+    },
+  };
 }
 
 function replaceImagesWithVisionSummary(
@@ -655,6 +677,23 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     logger.debug('[AgentLoop] Effective model:', effectiveConfig.model);
     logger.debug('[AgentLoop] Effective tools count:', effectiveTools.length);
 
+    const artifactValidationPassed = Boolean(ctx.runtime.artifactValidationPassedTargetFile);
+    if (artifactValidationPassed && ctx.runtime.goalMode?.isPending()) {
+      const targetFile = ctx.runtime.artifactValidationPassedTargetFile || 'interactive artifact';
+      ctx.runtime.artifactValidationPassedTargetFile = undefined;
+      const response = buildArtifactValidationAttemptCompletionResponse(targetFile);
+      logger.info('[AgentLoop] Artifact validation passed; requesting goal completion without another model call', {
+        targetFile,
+      });
+      langfuse.endGeneration(generationId, {
+        type: response.type,
+        contentLength: 0,
+        toolCallCount: response.toolCalls?.length || 0,
+        synthetic: true,
+      });
+      return response;
+    }
+
     // 创建 AbortController，支持中断/转向时立即终止 API 流
     ctx.runtime.abortController = new AbortController();
 
@@ -719,16 +758,19 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
 
     const requestConfig = capArtifactRepairMaxTokens(ctx, effectiveConfig);
     requestConfigForRetry = requestConfig;
-    const useXiaomiTextFirstArtifactWrite = shouldUseXiaomiArtifactTextFirstWrite({
-      artifactRequest,
-      artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
-      forceFinalResponseActive: Boolean(ctx.runtime.forceFinalResponseReason),
-      config: requestConfig,
-      tools: effectiveTools,
-      userRequestText,
-    });
+    const useXiaomiTextFirstArtifactWrite =
+      !artifactValidationPassed &&
+      shouldUseXiaomiArtifactTextFirstWrite({
+        artifactRequest,
+        artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
+        forceFinalResponseActive: Boolean(ctx.runtime.forceFinalResponseReason),
+        config: requestConfig,
+        tools: effectiveTools,
+        userRequestText,
+      });
     const xiaomiTextFirstTargetPath = useXiaomiTextFirstArtifactWrite
-      ? resolveXiaomiArtifactTextFirstTargetPath(userRequestText, ctx.runtime.workingDirectory)
+      ? ctx.runtime.artifactRepairGuard?.targetFile
+        || resolveXiaomiArtifactTextFirstTargetPath(userRequestText, ctx.runtime.workingDirectory)
       : null;
     const stopArtifactProgress = startArtifactModelWaitProgress(ctx, {
       artifactRequest,
@@ -738,6 +780,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     let response: ModelResponse;
     try {
       if (xiaomiTextFirstTargetPath) {
+        const textFirstConfig = buildXiaomiArtifactTextFirstConfig(requestConfig);
         logger.info('[AgentLoop] Xiaomi artifact text-first write path active', {
           targetPath: xiaomiTextFirstTargetPath,
         });
@@ -747,9 +790,11 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
         );
         const textFirstResponse = await runEngineInference(
           ctx,
-          buildXiaomiArtifactTextFirstMessages(modelMessages, xiaomiTextFirstTargetPath),
+          buildXiaomiArtifactTextFirstMessages(modelMessages, xiaomiTextFirstTargetPath, {
+            artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
+          }),
           [],
-          requestConfig,
+          textFirstConfig,
           undefined,
           ctx.runtime.abortController.signal,
           {

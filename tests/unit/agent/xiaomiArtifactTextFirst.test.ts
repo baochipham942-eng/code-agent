@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
+  buildXiaomiArtifactTextFirstConfig,
   buildXiaomiArtifactTextFirstMessages,
   buildXiaomiArtifactTextFirstWriteResponse,
   extractGeneratedHtmlContent,
@@ -37,7 +38,16 @@ describe('xiaomi artifact text-first write', () => {
       config: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
       tools: [WRITE_TOOL],
       userRequestText: '开发一个html弹砖块游戏',
-    })).toBe(false);
+    })).toBe(true);
+
+    expect(shouldUseXiaomiArtifactTextFirstWrite({
+      artifactRequest: false,
+      artifactRepairActive: true,
+      forceFinalResponseActive: false,
+      config: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+      tools: [WRITE_TOOL],
+      userRequestText: 'Artifact validation failed for /tmp/game.html',
+    })).toBe(true);
 
     expect(shouldUseXiaomiArtifactTextFirstWrite({
       artifactRequest: true,
@@ -71,10 +81,43 @@ describe('xiaomi artifact text-first write', () => {
       '/tmp/game.html',
     );
 
-    expect(messages).toHaveLength(2);
+    expect(messages).toHaveLength(3);
     expect(messages[1].role).toBe('system');
     expect(messages[1].content).toContain('Target file: /tmp/game.html');
     expect(messages[1].content).toContain('Do not include markdown fences');
+    expect(messages[1].content).toContain('<tool_call>');
+    expect(messages[1].content).toContain('If this is a repair turn');
+    expect(messages[2].role).toBe('user');
+    expect(messages[2].content).toContain('Return only the complete HTML file content now');
+  });
+
+  it('adds explicit breakout validator contract and disables thinking for text-first generation', () => {
+    const messages = buildXiaomiArtifactTextFirstMessages(
+      [{ role: 'user', content: '开发一个html弹砖块游戏，要求技能和关卡丰富' }],
+      '/tmp/breakout.html',
+    );
+
+    expect(messages[1].content).toContain('exact field name controls');
+    expect(messages[1].content).toContain("['wide','multi','slow','through','life']");
+    expect(messages[1].content).toContain('Keep progressPlan very small and generic');
+    expect(messages[1].content).toContain('generic for default controls');
+    expect(messages[1].content).toContain('should include paddleX and ball.x');
+    expect(messages[1].content).toContain('deterministic scenario shortcuts');
+    expect(messages[1].content).toContain('never call an undefined global step()');
+    expect(messages[1].content).toContain('reset("win")');
+    expect(messages[1].content).toContain('numeric 0..11');
+    expect(messages[1].content).toContain('all 12 scenarios reachable');
+    expect(messages[1].content).toContain('wallBounceCount');
+
+    const config = buildXiaomiArtifactTextFirstConfig({
+      provider: 'xiaomi',
+      model: 'mimo-v2.5-pro',
+      thinkingBudget: 16_384,
+      reasoningEffort: 'high',
+    });
+
+    expect(config.reasoningEffort).toBe('low');
+    expect(config.thinkingBudget).toBeUndefined();
   });
 
   it('extracts clean HTML and wraps it as a synthetic Write call', () => {
@@ -110,5 +153,18 @@ describe('xiaomi artifact text-first write', () => {
       provider: 'xiaomi',
       targetFile: '/tmp/game.html',
     });
+  });
+
+  it('refuses partial text-first fragments instead of writing broken HTML', () => {
+    expect(extractGeneratedHtmlContent('Content: 267 chars')).toBe('');
+    expect(extractGeneratedHtmlContent('<html><body>missing close')).toBe('');
+    expect(() => buildXiaomiArtifactTextFirstWriteResponse(
+      {
+        type: 'text',
+        content: '<function=Write><parameter=content>short patch</parameter>',
+        finishReason: 'stop',
+      },
+      '/tmp/game.html',
+    )).toThrow('did not contain writable artifact content');
   });
 });

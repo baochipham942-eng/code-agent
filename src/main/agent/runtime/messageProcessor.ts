@@ -1015,6 +1015,11 @@ export class MessageProcessor {
       );
     }
 
+    if (this.ctx.goalMode?.getStatus() === 'met') {
+      logger.debug('[AgentLoop] Goal mode met during tool processing; ending iteration');
+      return 'break';
+    }
+
     logger.debug(` >>>>>> Iteration ${iterations} END (continuing) <<<<<<`);
     return 'continue';
   }

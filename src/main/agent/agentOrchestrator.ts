@@ -30,6 +30,7 @@ import { getSessionStateManager } from '../session/sessionStateManager';
 import { getContextHealthService } from '../context/contextHealthService';
 import { ModelRouter } from '../model/modelRouter';
 import { generateMessageId, generatePermissionRequestId } from '../../shared/utils/id';
+import { buildGoalSeedTodos } from '../../shared/utils/goalTodos';
 import { createLogger } from '../services/infra/logger';
 import { getAgentRequirementsAnalyzer } from './agentRequirementsAnalyzer';
 import { getModelSessionState } from '../session/modelSessionState';
@@ -55,6 +56,7 @@ import {
 import { resolveModelConfig, getDefaultModelByProvider, getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { runDeepResearch, checkAndRunSemanticResearch } from './orchestrator/researchRunner';
 import { runAutoAgentMode } from './orchestrator/autoAgentRunner';
+import { setSessionTodos } from './todoParser';
 
 export type { AgentOrchestratorConfig } from './orchestrator/types';
 
@@ -860,6 +862,12 @@ export class AgentOrchestrator {
           maxTurns: options.goal.maxTurns,
         })
       : undefined;
+
+    if (goalContract && sessionId) {
+      const goalSeedTodos = buildGoalSeedTodos(goalContract.goal);
+      setSessionTodos(sessionId, goalSeedTodos);
+      dagAwareOnEvent({ type: 'todo_update', data: goalSeedTodos });
+    }
 
     this.agentLoop = new AgentLoop({
       systemPrompt: routingResolution?.agent?.systemPrompt || SYSTEM_PROMPT,

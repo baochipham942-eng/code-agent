@@ -221,7 +221,7 @@ Non-negotiable invariants:
 
 export function needsArtifactTaskBrief(message: string): boolean {
   if (!message) return false;
-  if (/\b(create|generate|build|make|design|implement|write)\b|生成|创建|制作|做个|做一个|写一个|实现一个|设计一个|搭一个/i.test(message)) {
+  if (/\b(create|generate|build|make|design|implement|write|develop)\b|生成|创建|制作|做个|做一个|写一个|实现一个|设计一个|搭一个|开发|开发一个/i.test(message)) {
     return true;
   }
 

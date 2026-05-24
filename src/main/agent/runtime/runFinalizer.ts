@@ -204,6 +204,19 @@ export class RunFinalizer {
     // Handle loop exit conditions
     if (terminalStatus === 'failed') {
       const errorMessage = formatTerminalError(terminal.error);
+      if (this.ctx.goalMode?.isPending()) {
+        const reason = `运行失败：${errorMessage}`;
+        this.ctx.goalMode.markAborted(reason);
+        this.ctx.onEvent({
+          type: 'goal_complete',
+          data: {
+            status: 'aborted',
+            reason,
+            turns: iterations,
+            tokensUsed: this.ctx.totalInputTokens + this.ctx.totalOutputTokens,
+          },
+        });
+      }
       logger.error('[AgentLoop] Loop exited due to runtime error', terminal.error);
       logCollector.agent('ERROR', `Agent run failed: ${errorMessage}`);
       this.ctx.onEvent({

@@ -414,6 +414,39 @@ describe('ModelRouter', () => {
       );
     });
 
+    it('should treat Chinese html game development goals as artifact-like for longer streaming timeout', async () => {
+      const provider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'ok', finishReason: 'stop' }),
+      } as any;
+      (router as any).providers.set('xiaomi', provider);
+
+      const config: ModelConfig = {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'test-key',
+        maxTokens: 1000,
+      };
+      const onStream = vi.fn();
+
+      await router.inference(
+        [{ role: 'user', content: '开发一个html弹砖块的游戏，要求技能和关卡丰富，可玩性强' }],
+        [],
+        config,
+        onStream,
+      );
+
+      expect(provider.inference).toHaveBeenCalledWith(
+        expect.any(Array),
+        [],
+        config,
+        onStream,
+        expect.any(AbortSignal),
+        {
+          ...ARTIFACT_STREAMING_TIMEOUT_OPTIONS,
+        },
+      );
+    });
+
     it('should keep artifact follow-up turns streaming when prior tool results are healthy and no explicit file target exists', async () => {
       const provider = {
         inference: vi.fn().mockResolvedValue({ type: 'tool_use', toolCalls: [], finishReason: 'tool_calls' }),

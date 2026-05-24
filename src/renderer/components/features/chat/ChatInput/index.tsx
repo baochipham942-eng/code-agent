@@ -43,6 +43,7 @@ import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
 import { parseGoalCommand, isGoalCommand, normalizeGoalCommand } from './parseGoalCommand';
 import { buildGoalNoticeMessage } from '../goalNotice';
+import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import {
@@ -506,6 +507,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       };
       if (currentSessionId) {
         useAppStore.getState().startGoalRun(currentSessionId, { goal: parsed.goal, maxTurns: parsed.maxTurns });
+        useSessionStore.getState().setTodos(buildGoalSeedTodos(parsed.goal));
       }
       useSessionStore.getState().addMessage(buildGoalNoticeMessage({ kind: 'start', goal: parsed.goal }));
       addToInputHistory(trimmedValue);

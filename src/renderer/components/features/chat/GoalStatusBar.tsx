@@ -32,14 +32,14 @@ export const GoalStatusBar: React.FC = () => {
     return () => clearInterval(id);
   }, [running]);
 
-  if (!run || run.status !== 'running') return null;
+  if (run?.status !== 'running') return null;
 
   const elapsed = formatElapsed(now - run.startedAt);
   const gateHint =
     run.lastGate?.gate === 1 ? '验证中…' : run.lastGate?.gate === 2 ? '评审中…' : null;
 
   return (
-    <div className="goal-status-bar mx-2 mb-1 flex items-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/[0.07] px-3 py-1.5 text-xs">
+    <div className="goal-status-bar mx-auto mb-1 flex w-full max-w-3xl items-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/[0.07] px-3 py-1.5 text-xs">
       <Target className="h-3.5 w-3.5 flex-shrink-0 text-sky-400" />
       <span className="truncate text-zinc-300" title={run.goal}>
         目标进行中：<span className="text-zinc-100">{run.goal}</span>

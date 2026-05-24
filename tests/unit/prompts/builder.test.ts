@@ -259,6 +259,7 @@ describe('Prompt Builder', () => {
   describe('needsArtifactTaskBrief', () => {
     it('matches artifact creation requests', () => {
       expect(needsArtifactTaskBrief('生成一个类似超级玛丽的游戏，主角是一只柯基')).toBe(true);
+      expect(needsArtifactTaskBrief('开发一个html弹砖块的游戏，要求技能和关卡丰富')).toBe(true);
       expect(needsArtifactTaskBrief('build an interactive dashboard for sales')).toBe(true);
       expect(needsArtifactTaskBrief('write a project report')).toBe(true);
     });

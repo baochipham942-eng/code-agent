@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildDefaultGoalReview,
   isGoalCommand,
+  normalizeGoalCommand,
   parseGoalCommand,
 } from '../../../src/renderer/components/features/chat/ChatInput/parseGoalCommand';
 
@@ -24,6 +26,18 @@ describe('/goal command helpers', () => {
     expect(parseGoalCommand("/goal 优化交互 --review '输入框聚焦时不要出现绿色描边'")).toEqual({
       goal: '优化交互',
       review: '输入框聚焦时不要出现绿色描边',
+    });
+  });
+
+  it('parses a bare goal and supplies a default soft review criterion', () => {
+    const parsed = parseGoalCommand('/goal 开发一个 html 弹砖块游戏，要求技能和关卡丰富，可玩性强');
+
+    expect(parsed).toEqual({
+      goal: '开发一个 html 弹砖块游戏，要求技能和关卡丰富，可玩性强',
+    });
+    expect(normalizeGoalCommand(parsed!)).toEqual({
+      goal: '开发一个 html 弹砖块游戏，要求技能和关卡丰富，可玩性强',
+      review: buildDefaultGoalReview('开发一个 html 弹砖块游戏，要求技能和关卡丰富，可玩性强'),
     });
   });
 

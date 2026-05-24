@@ -41,7 +41,7 @@ import {
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
-import { parseGoalCommand, isGoalCommand } from './parseGoalCommand';
+import { parseGoalCommand, isGoalCommand, normalizeGoalCommand } from './parseGoalCommand';
 import { buildGoalNoticeMessage } from '../goalNotice';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
@@ -481,19 +481,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     let contentToSend = trimmedValue;
     let preferredAgentIdOverride: string | null | undefined;
 
-    // /goal 自治模式：拦截斜杠命令 → 解析目标 + 完成判据 → 随 envelope.options.goal 发出。
+    // /goal 自治模式：拦截斜杠命令，只有目标文本也能启动；未给判据时默认走软目标评审。
     if (isGoalCommand(trimmedValue)) {
-      const parsed = parseGoalCommand(trimmedValue);
-      if (!parsed?.goal) {
-        toast.warning('用法：/goal <目标> --verify "<命令>"（或 --review "<软条件>"）');
+      const rawParsed = parseGoalCommand(trimmedValue);
+      if (!rawParsed?.goal) {
+        toast.warning('用法：/goal <目标>（可选 --verify "<命令>" 或 --review "<软条件>"）');
         inputAreaRef.current?.focus();
         return;
       }
-      if (!parsed.verify && !parsed.review) {
-        toast.warning('/goal 需要 --verify "<命令>" 或 --review "<软条件>" 至少一个（否则没有完成判据）');
-        inputAreaRef.current?.focus();
-        return;
-      }
+      const parsed = normalizeGoalCommand(rawParsed);
       const base = buildEnvelope(parsed.goal, attachments);
       const goalEnvelope: ConversationEnvelope = {
         ...base,

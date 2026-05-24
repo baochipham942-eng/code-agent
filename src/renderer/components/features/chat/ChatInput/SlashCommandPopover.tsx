@@ -226,7 +226,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     {
       id: 'goal',
       label: '设定目标',
-      description: '输入目标，并设置 --verify 或 --review 完成判据',
+      description: '直接输入目标，可选 --verify 或 --review',
       icon: <Target className="w-4 h-4" />,
       action: () => {},
     },

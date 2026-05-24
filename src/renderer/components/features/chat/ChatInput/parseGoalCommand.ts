@@ -3,7 +3,7 @@
 //   /goal <目标文本> [--verify "<shell 命令>"] [--review "<软条件>"]
 //                    [--max-turns <N>] [--budget <N>]
 // verify/review 值可用单/双引号包裹（含空格时必须），或裸写（取到下一个 flag 前）。
-// 解析结果交给 ChatInput 校验（goal 非空 + verify/review 至少一个）后随 envelope.options.goal 发出。
+// 解析结果交给 ChatInput 校验 goal 非空；未显式提供 verify/review 时走默认软目标评审。
 // ============================================================================
 
 export interface ParsedGoalCommand {
@@ -60,4 +60,18 @@ export function parseGoalCommand(raw: string): ParsedGoalCommand | null {
   }
 
   return result;
+}
+
+export function buildDefaultGoalReview(goal: string): string {
+  return `结果满足目标描述中的全部要求，且没有明显未完成项：${goal}`;
+}
+
+export function normalizeGoalCommand(parsed: ParsedGoalCommand): ParsedGoalCommand {
+  if (!parsed.goal || parsed.verify || parsed.review) {
+    return parsed;
+  }
+  return {
+    ...parsed,
+    review: buildDefaultGoalReview(parsed.goal),
+  };
 }

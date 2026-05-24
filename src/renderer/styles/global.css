@@ -226,6 +226,12 @@ body.theme-switching * {
   border-radius: var(--radius-md);
 }
 
+.chat-composer-textarea:focus,
+.chat-composer-textarea:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 /* ============================================================================
    Code & Monospace
    ============================================================================ */

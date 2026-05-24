@@ -32,6 +32,12 @@ import {
 } from '../artifactRepairGuard';
 import { preloadDeferredToolsForTurn } from './deferredToolPreload';
 import { createHandoffTailStreamFilter } from '../../../handoff/handoffStream';
+import {
+  buildXiaomiArtifactTextFirstMessages,
+  buildXiaomiArtifactTextFirstWriteResponse,
+  resolveXiaomiArtifactTextFirstTargetPath,
+  shouldUseXiaomiArtifactTextFirstWrite,
+} from './xiaomiArtifactTextFirst';
 
 const ARTIFACT_REPAIR_RECOVERY_MAX_TOKENS = 16_384;
 const ARTIFACT_REPAIR_TARGETED_EDIT_MAX_TOKENS = 32_768;
@@ -713,6 +719,17 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
 
     const requestConfig = capArtifactRepairMaxTokens(ctx, effectiveConfig);
     requestConfigForRetry = requestConfig;
+    const useXiaomiTextFirstArtifactWrite = shouldUseXiaomiArtifactTextFirstWrite({
+      artifactRequest,
+      artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
+      forceFinalResponseActive: Boolean(ctx.runtime.forceFinalResponseReason),
+      config: requestConfig,
+      tools: effectiveTools,
+      userRequestText,
+    });
+    const xiaomiTextFirstTargetPath = useXiaomiTextFirstArtifactWrite
+      ? resolveXiaomiArtifactTextFirstTargetPath(userRequestText, ctx.runtime.workingDirectory)
+      : null;
     const stopArtifactProgress = startArtifactModelWaitProgress(ctx, {
       artifactRequest,
       artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
@@ -720,24 +737,53 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     });
     let response: ModelResponse;
     try {
-      response = await runEngineInference(
-        ctx,
-        modelMessages,
-        effectiveTools,
-        requestConfig,
-        streamCallback,
-        ctx.runtime.abortController.signal,
-        {
-          onSnapshot: createSnapshotHandler(
-            ctx.runtime.sessionId,
-            ctx.runtime.currentTurnId,
-            ctx.runtime.workingDirectory,
-          ),
-          artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
-          artifactRepairWritePriority,
-          artifactRepairFullRewritePriority,
-        },
-      );
+      if (xiaomiTextFirstTargetPath) {
+        logger.info('[AgentLoop] Xiaomi artifact text-first write path active', {
+          targetPath: xiaomiTextFirstTargetPath,
+        });
+        ctx.runFinalizer.emitTaskProgress(
+          'generating',
+          `小米模型正在生成 artifact 文本，完成后写入 ${xiaomiTextFirstTargetPath}`,
+        );
+        const textFirstResponse = await runEngineInference(
+          ctx,
+          buildXiaomiArtifactTextFirstMessages(modelMessages, xiaomiTextFirstTargetPath),
+          [],
+          requestConfig,
+          undefined,
+          ctx.runtime.abortController.signal,
+          {
+            artifactRepairActive: false,
+            artifactRepairWritePriority: false,
+            artifactRepairFullRewritePriority: false,
+            disableProviderTransientRetry: true,
+            requestTimeoutMs: 1_200_000,
+            firstByteTimeoutMs: 60_000,
+            inactivityTimeoutMs: 480_000,
+            reasoningEffort: 'low',
+          },
+        );
+        response = buildXiaomiArtifactTextFirstWriteResponse(textFirstResponse, xiaomiTextFirstTargetPath);
+      } else {
+        response = await runEngineInference(
+          ctx,
+          modelMessages,
+          effectiveTools,
+          requestConfig,
+          streamCallback,
+          ctx.runtime.abortController.signal,
+          {
+            onSnapshot: createSnapshotHandler(
+              ctx.runtime.sessionId,
+              ctx.runtime.currentTurnId,
+              ctx.runtime.workingDirectory,
+            ),
+            artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
+            artifactRepairWritePriority,
+            artifactRepairFullRewritePriority,
+          },
+        );
+      }
     } finally {
       stopArtifactProgress();
     }

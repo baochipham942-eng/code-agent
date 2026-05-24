@@ -87,6 +87,11 @@ export interface ModelResponse {
       repairTurnsWithoutProgress?: number;
       activeIssueCodes?: string[];
     };
+    artifactTextFirstWrite?: {
+      provider: string;
+      targetFile: string;
+      contentChars: number;
+    };
   };
 }
 

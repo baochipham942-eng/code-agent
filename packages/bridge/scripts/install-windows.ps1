@@ -13,7 +13,8 @@ node "$BinFile" %*
 "@ | Set-Content -Path $CmdFile -Encoding ASCII
 
 $Startup = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup"
-$ShortcutPath = Join-Path $Startup "Code Agent Bridge.lnk"
+$ShortcutPath = Join-Path $Startup "Agent Neo Bridge.lnk"
+Remove-Item (Join-Path $Startup "Code Agent Bridge.lnk") -Force -ErrorAction SilentlyContinue
 $WScriptShell = New-Object -ComObject WScript.Shell
 $Shortcut = $WScriptShell.CreateShortcut($ShortcutPath)
 $Shortcut.TargetPath = $CmdFile

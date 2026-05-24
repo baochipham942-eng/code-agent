@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Code Agent Clipper",
+  "name": "Agent Neo Clipper",
   "version": "1.1.0",
-  "description": "将网页内容采集到 Code Agent 知识库",
+  "description": "将网页内容采集到 Agent Neo 知识库",
   "permissions": [
     "storage",
     "activeTab",

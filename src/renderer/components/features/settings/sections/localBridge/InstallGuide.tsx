@@ -11,6 +11,8 @@ import { Copy, Check, ChevronDown, ChevronRight } from 'lucide-react';
 
 type Platform = 'macOS' | 'Windows' | 'Linux';
 
+const DOWNLOAD_PAGE_URL = 'https://agentneo.vercel.app/#download';
+
 function detectPlatform(): Platform {
   const ua = navigator.userAgent.toLowerCase();
   if (ua.includes('win')) return 'Windows';
@@ -65,21 +67,21 @@ export const InstallGuide: React.FC = () => {
   const platform = useMemo(() => detectPlatform(), []);
 
   const installCommands: Record<Platform, string> = {
-    macOS: 'curl -fsSL https://code-agent.dev/install.sh | bash',
-    Linux: 'curl -fsSL https://code-agent.dev/install.sh | bash',
-    Windows: 'irm https://code-agent.dev/install.ps1 | iex',
+    macOS: `open ${DOWNLOAD_PAGE_URL}`,
+    Linux: `xdg-open ${DOWNLOAD_PAGE_URL}`,
+    Windows: `Start-Process "${DOWNLOAD_PAGE_URL}"`,
   };
 
   const updateCommands: Record<Platform, string> = {
-    macOS: 'curl -fsSL https://code-agent.dev/install.sh | bash',
-    Linux: 'curl -fsSL https://code-agent.dev/install.sh | bash',
-    Windows: 'irm https://code-agent.dev/install.ps1 | iex',
+    macOS: `open ${DOWNLOAD_PAGE_URL}`,
+    Linux: `xdg-open ${DOWNLOAD_PAGE_URL}`,
+    Windows: `Start-Process "${DOWNLOAD_PAGE_URL}"`,
   };
 
   const uninstallCommands: Record<Platform, string> = {
-    macOS: 'curl -fsSL https://code-agent.dev/uninstall.sh | bash',
-    Linux: 'curl -fsSL https://code-agent.dev/uninstall.sh | bash',
-    Windows: 'irm https://code-agent.dev/uninstall.ps1 | iex',
+    macOS: 'launchctl unload "$HOME/Library/LaunchAgents/com.code-agent.bridge.plist" 2>/dev/null; sudo rm -f /usr/local/bin/code-agent-bridge; rm -rf "$HOME/.code-agent-bridge"',
+    Linux: 'systemctl --user disable --now code-agent-bridge.service >/dev/null 2>&1 || true; rm -f "$HOME/.config/systemd/user/code-agent-bridge.service" "$HOME/.local/bin/code-agent-bridge"; rm -rf "$HOME/.code-agent-bridge"',
+    Windows: 'Remove-Item (Join-Path $env:APPDATA "Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Agent Neo Bridge.lnk") -Force -ErrorAction SilentlyContinue; Remove-Item (Join-Path $HOME ".code-agent-bridge") -Recurse -Force -ErrorAction SilentlyContinue',
   };
 
   return (

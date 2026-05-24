@@ -25,8 +25,8 @@ Registry files follow `registry.schema.json`:
 {
   "version": 1,
   "source": {
-    "label": "Code Agent local curated registry",
-    "author": "Code Agent",
+    "label": "Agent Neo local curated registry",
+    "author": "Agent Neo",
     "reviewedAt": "2026-05-15",
     "expiresAt": "2026-12-31T23:59:59.000Z",
     "contentHash": "sha256:<canonical registry hash>"

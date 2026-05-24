@@ -1,6 +1,6 @@
 # Identity Customization（人格定制）
 
-Code Agent 的 system prompt 分两层：
+Agent Neo 的 system prompt 分两层：
 
 1. **核心身份层（可定制）** — 回答"我是谁、我的交互风格、我的偏好"。
 2. **工程层（内置，不要动）** — 工具纪律、任务执行指引、记忆系统规则。这些由代码维护，升级时自动更新，不在用户定制范围。
@@ -36,7 +36,7 @@ code-agent init-soul --profile-only --project .
 code-agent init-soul -f
 ```
 
-生成后直接编辑对应文件，保存即生效（`soulLoader` 通过 `fs.watch` 热重载，无需重启 Code Agent）。
+生成后直接编辑对应文件，保存即生效（`soulLoader` 通过 `fs.watch` 热重载，无需重启 Agent Neo）。
 
 ## 加载优先级
 
@@ -68,7 +68,7 @@ stable prefix =
 
 ## 不做的事（out of scope）
 
-- **双向用户建模**（类似 Hermes 的 Honcho）：code-agent 是本地单用户应用，用户自己手写 SOUL 足够，没必要引入外部服务。
+- **双向用户建模**（类似 Hermes 的 Honcho）：Agent Neo 是本地单用户应用，用户自己手写 SOUL 足够，没必要引入外部服务。
 - **多层 prompt pipeline**：当前 `stable prefix` / `dynamic section` 两层分层已能满足 prefix cache 需求，不再细化。
 - **运行时修改 SOUL**：人格变更应该是用户显式行为（编辑文件），不应由 Agent 自动写入。Agent 如果发现用户偏好变了，应通过 `MemoryWrite` 工具写到 `feedback_*.md`，而不是改 SOUL.md。
 
@@ -77,7 +77,7 @@ stable prefix =
 ### SOUL.md 结构
 
 ```markdown
-# Code Agent — Core Self
+# Agent Neo — Core Self
 
 ## 身份           ← 我是什么角色
 ## 交互风格       ← 我怎么说话
@@ -108,4 +108,4 @@ A: SOUL.md 替换的是内置 IDENTITY 块（~20 行），工程层规则总 tok
 A: SOUL.md 是"我的人格"，每轮对话都会注入到 system prompt；memory 文件是"关于用户的事实/偏好"，由 LLM 按需 `MemoryRead` 调用。人格是常驻的，事实是按需的。
 
 **Q: 项目有 CLAUDE.md，还需要 PROFILE.md 吗？**
-A: CLAUDE.md 是用户维护的项目约定文档（通常给 Claude Code / Cursor 等多工具读），PROFILE.md 是专门注入 Code Agent system prompt 的精炼版。两者可以有交集但不同定位 — PROFILE 要求尽量精简（Agent prompt token 成本），CLAUDE.md 可以详细。
+A: CLAUDE.md 是用户维护的项目约定文档（通常给 Claude Code / Cursor 等多工具读），PROFILE.md 是专门注入 Agent Neo system prompt 的精炼版。两者可以有交集但不同定位 — PROFILE 要求尽量精简（Agent prompt token 成本），CLAUDE.md 可以详细。

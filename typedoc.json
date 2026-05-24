@@ -30,7 +30,7 @@
   "excludePrivate": true,
   "excludeProtected": false,
   "excludeInternal": true,
-  "name": "Code Agent API",
+  "name": "Agent Neo API",
   "readme": "none",
   "includeVersion": true,
   "categorizeByGroup": true,

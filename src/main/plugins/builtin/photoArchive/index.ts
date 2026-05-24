@@ -33,7 +33,7 @@ export const manifest: PluginManifest = {
   name: 'Photo Archive',
   version: '1.0.0',
   description: 'macOS 相册归档（Photos.app + Vision 主题/人脸聚类）',
-  author: 'code-agent',
+  author: 'Agent Neo',
   main: 'index.ts',
   surfaces: ['tools'],
   capabilities: ['photo-archive', 'image-search'],

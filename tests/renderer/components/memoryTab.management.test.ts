@@ -30,7 +30,7 @@ const userMemory = {
 
 const projectMemory = {
   filename: 'code_agent.md',
-  name: 'Code Agent',
+  name: 'Agent Neo',
   description: 'Project context',
   type: 'project',
   content: 'Settings management surface',

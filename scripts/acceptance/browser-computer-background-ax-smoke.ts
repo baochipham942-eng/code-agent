@@ -81,19 +81,19 @@ function makeTargetSource(): string {
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
   NSRect frame = NSMakeRect(0, 0, 360, 180);
   NSWindow *window = [[NSWindow alloc] initWithContentRect:frame styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable) backing:NSBackingStoreBuffered defer:NO];
-  [window setTitle:@"Code Agent Background AX Smoke"];
+  [window setTitle:@"Agent Neo Background AX Smoke"];
   [window center];
 
   NSView *content = [[NSView alloc] initWithFrame:frame];
   [window setContentView:content];
 
-  NSTextField *title = [NSTextField labelWithString:@"Code Agent AX Smoke Target"];
+  NSTextField *title = [NSTextField labelWithString:@"Agent Neo AX Smoke Target"];
   [title setFrame:NSMakeRect(24, 132, 300, 24)];
   [content addSubview:title];
 
   self.inputField = [[NSTextField alloc] initWithFrame:NSMakeRect(24, 88, 220, 28)];
   [self.inputField setPlaceholderString:@"AX Smoke Input"];
-  [self.inputField setAccessibilityLabel:@"Code Agent AX Smoke Input"];
+  [self.inputField setAccessibilityLabel:@"Agent Neo AX Smoke Input"];
   [self.inputField setDelegate:self];
   [content addSubview:self.inputField];
 
@@ -103,12 +103,12 @@ function makeTargetSource(): string {
   [button setBezelStyle:NSBezelStyleRounded];
   [button setTarget:self];
   [button setAction:@selector(buttonClicked:)];
-  [button setAccessibilityLabel:@"Code Agent AX Smoke Button"];
+  [button setAccessibilityLabel:@"Agent Neo AX Smoke Button"];
   [content addSubview:button];
 
   self.statusLabel = [NSTextField labelWithString:@"Waiting"];
   [self.statusLabel setFrame:NSMakeRect(180, 54, 150, 22)];
-  [self.statusLabel setAccessibilityLabel:@"Code Agent AX Smoke Status"];
+  [self.statusLabel setAccessibilityLabel:@"Agent Neo AX Smoke Status"];
   [content addSubview:self.statusLabel];
 
   [self writeState:@"ready"];
@@ -286,12 +286,12 @@ async function main(): Promise<void> {
   const failures: string[] = [];
   let targetPath: string | null = null;
   let targetProcess: ChildProcessWithoutNullStreams | null = null;
-  let frontmostBeforeAction: ComputerSurfaceSnapshot | null = null;
-  let listResult: ToolExecutionResult | null = null;
+  let frontmostBeforeAction: ComputerSurfaceSnapshot | null;
+  let listResult: ToolExecutionResult;
   let typeResult: ToolExecutionResult | null = null;
   let clickResult: ToolExecutionResult | null = null;
-  let inputElement: AxElement | null = null;
-  let buttonElement: AxElement | null = null;
+  let inputElement: AxElement | null;
+  let buttonElement: AxElement | null;
   let finalState: string | null = null;
 
   try {

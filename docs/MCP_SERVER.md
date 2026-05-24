@@ -1,12 +1,12 @@
-# Code Agent MCP Server
+# Agent Neo MCP Server
 
-Code Agent 提供了一个 MCP (Model Context Protocol) 服务器，允许外部 MCP 客户端（如 Claude Code）访问 Code Agent 的日志和状态。
+Agent Neo 提供了一个 MCP (Model Context Protocol) 服务器，允许外部 MCP 客户端（如 Claude Code）访问 Agent Neo 的日志和状态。
 
 ## 架构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Code Agent (Electron)                     │
+│                    Agent Neo (Electron)                      │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
 │  │ AgentLoop   │→ │ LogCollector │→ │   LogBridge (HTTP)  │  │
 │  │ BrowserSvc  │  │             │  │   port: 51820       │  │
@@ -31,9 +31,9 @@ Code Agent 提供了一个 MCP (Model Context Protocol) 服务器，允许外部
 
 ## 使用方法
 
-### 1. 启动 Code Agent
+### 1. 启动 Agent Neo
 
-首先启动 Code Agent 桌面应用：
+首先启动 Agent Neo 桌面应用：
 
 ```bash
 npm run dev
@@ -41,11 +41,11 @@ npm run dev
 npm run start
 ```
 
-Code Agent 启动后会自动在 `http://127.0.0.1:51820` 启动 Log Bridge HTTP 服务器。
+Agent Neo 启动后会自动在 `http://127.0.0.1:51820` 启动 Log Bridge HTTP 服务器。
 
 ### 2. 配置 Claude Code
 
-在 Claude Code 的 MCP 配置文件中添加 Code Agent MCP 服务器：
+在 Claude Code 的 MCP 配置文件中添加 Agent Neo MCP 服务器：
 
 **macOS/Linux**: `~/.config/claude/claude_desktop_config.json`
 
@@ -130,7 +130,7 @@ Read the code-agent://status resource
 
 ### MCP Server 无法获取日志
 
-确保 Code Agent 桌面应用正在运行，Log Bridge HTTP 服务器应在端口 51820 上运行。
+确保 Agent Neo 桌面应用正在运行，Log Bridge HTTP 服务器应在端口 51820 上运行。
 
 检查方法：
 

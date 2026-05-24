@@ -1,6 +1,6 @@
-# Code Agent 云端部署指南
+# Agent Neo 云端部署指南
 
-本文档说明如何将 Code Agent 云端服务部署到 Vercel，并配置客户端自动更新。
+本文档说明如何将 Agent Neo 云端服务部署到 Vercel，并配置客户端自动更新。
 
 ## 架构概览
 
@@ -49,9 +49,9 @@ git push -u origin main
 1. 访问 GitHub Settings → Developer settings → OAuth Apps
 2. 点击 "New OAuth App"
 3. 填写信息：
-   - Application name: `Code Agent`
-   - Homepage URL: `https://your-app.vercel.app`
-   - Authorization callback URL: `https://your-app.vercel.app/api/auth/github/callback`
+   - Application name: `Agent Neo`
+   - Homepage URL: `https://agentneo.vercel.app`
+   - Authorization callback URL: `https://agentneo.vercel.app/api/auth/github/callback`
 4. 创建后记录：
    - **Client ID**
    - **Client Secret**（点击生成）
@@ -98,7 +98,7 @@ openssl rand -base64 32
 部署完成后，初始化数据库 Schema：
 
 ```bash
-curl -X POST https://your-app.vercel.app/api/init-db \
+curl -X POST https://agentneo.vercel.app/api/init-db \
   -H "X-Init-Key: YOUR_AUTH_SECRET"
 ```
 
@@ -116,7 +116,7 @@ curl -X POST https://your-app.vercel.app/api/init-db \
 
 | Secret 名称 | 说明 |
 |-------------|------|
-| `CLOUD_API_URL` | Vercel 部署的 URL，如 `https://code-agent.vercel.app` |
+| `CLOUD_API_URL` | Vercel 部署的 URL，如 `https://agentneo.vercel.app` |
 | `CI_PUBLISH_TOKEN` | 与 Vercel 环境变量相同 |
 | `CSC_LINK` | (可选) macOS 代码签名证书 |
 | `CSC_KEY_PASSWORD` | (可选) 证书密码 |
@@ -124,7 +124,7 @@ curl -X POST https://your-app.vercel.app/api/init-db \
 ### 步骤 7: 更新 GitHub OAuth 回调 URL
 
 部署成功后，更新 GitHub OAuth App 的回调 URL：
-- `https://YOUR-VERCEL-APP.vercel.app/api/auth/github/callback`
+- `https://agentneo.vercel.app/api/auth/github/callback`
 
 ## 发布新版本
 

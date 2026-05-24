@@ -18,7 +18,7 @@ chmod +x "${BIN_WRAPPER}"
 
 cat >"${SERVICE_FILE}" <<EOF
 [Unit]
-Description=Code Agent Bridge
+Description=Agent Neo Bridge
 
 [Service]
 ExecStart=${BIN_WRAPPER}

@@ -95,7 +95,7 @@ export const CLOUD = {
 // ============================================================================
 
 /** 当前生产环境云端 API 基础 URL */
-export const PRODUCTION_CLOUD_API_URL = 'https://code-agent-beta.vercel.app';
+export const PRODUCTION_CLOUD_API_URL = 'https://agentneo.vercel.app';
 
 /** 默认云端 API 基础 URL */
 const DEFAULT_CLOUD_API_URL = PRODUCTION_CLOUD_API_URL;

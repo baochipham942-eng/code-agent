@@ -32,7 +32,7 @@ const SERVER_URL: &str = "http://localhost:8180";
 const HEALTH_URL: &str = "http://localhost:8180/api/health";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(30);
 const HEALTH_INTERVAL: Duration = Duration::from_millis(500);
-const DEFAULT_CLOUD_API_URL: &str = "https://code-agent-beta.vercel.app";
+const DEFAULT_CLOUD_API_URL: &str = "https://agentneo.vercel.app";
 const BUNDLED_RUNTIME_ROOT_ENV: &str = "AGENT_NEO_BUNDLED_RUNTIME_ROOT";
 const RESOURCE_DIR_ENV: &str = "AGENT_NEO_RESOURCE_DIR";
 const BUNDLED_NODE_PATHS: &[&[&str]] = &[
@@ -838,7 +838,7 @@ mod update_url_tests {
     #[test]
     fn allows_https_release_page() {
         assert!(validate_update_url("https://github.com/owner/repo/releases/tag/v1.2.3").is_ok());
-        assert!(validate_update_url("https://code-agent-beta.vercel.app/releases").is_ok());
+        assert!(validate_update_url("https://agentneo.vercel.app/releases").is_ok());
     }
 
     #[test]

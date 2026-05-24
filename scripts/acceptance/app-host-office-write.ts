@@ -145,8 +145,8 @@ async function runCalendarCycle(baseUrl: string, token: string, args: ReturnType
     throw new Error('calendar-cycle requires --calendar');
   }
 
-  const titlePrefix = getStringOption(args, 'title-prefix') || 'Code Agent Acceptance Event';
-  const location = getStringOption(args, 'location') || 'Code Agent Acceptance';
+  const titlePrefix = getStringOption(args, 'title-prefix') || 'Agent Neo Acceptance Event';
+  const location = getStringOption(args, 'location') || 'Agent Neo Acceptance';
   const startMinutesFromNow = getNumberOption(args, 'start-minutes-from-now') ?? 10;
   const durationMinutes = getNumberOption(args, 'duration-minutes') ?? 30;
   const project = getStringOption(args, 'project');
@@ -262,7 +262,7 @@ async function runRemindersCycle(baseUrl: string, token: string, args: ReturnTyp
     throw new Error('reminders-cycle requires --list');
   }
 
-  const titlePrefix = getStringOption(args, 'title-prefix') || 'Code Agent Acceptance Reminder';
+  const titlePrefix = getStringOption(args, 'title-prefix') || 'Agent Neo Acceptance Reminder';
   const notes = getStringOption(args, 'notes') || 'created by app-host acceptance';
   const project = getStringOption(args, 'project');
   const sessionId = getStringOption(args, 'session');
@@ -389,7 +389,7 @@ async function runMailDraft(baseUrl: string, token: string, args: ReturnType<typ
     {
       tool: 'mail_draft',
       params: {
-        subject: buildUniqueTitle(getStringOption(args, 'subject-prefix') || 'Code Agent Acceptance Draft'),
+        subject: buildUniqueTitle(getStringOption(args, 'subject-prefix') || 'Agent Neo Acceptance Draft'),
         to,
         cc: getStringArrayOption(args, 'cc'),
         bcc: getStringArrayOption(args, 'bcc'),
@@ -440,7 +440,7 @@ async function runMailSend(baseUrl: string, token: string, args: ReturnType<type
     {
       tool: 'mail_send',
       params: {
-        subject: buildUniqueTitle(getStringOption(args, 'subject-prefix') || 'Code Agent Acceptance Send'),
+        subject: buildUniqueTitle(getStringOption(args, 'subject-prefix') || 'Agent Neo Acceptance Send'),
         to,
         cc: getStringArrayOption(args, 'cc'),
         bcc: getStringArrayOption(args, 'bcc'),

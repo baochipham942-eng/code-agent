@@ -35,7 +35,7 @@ export const manifest: PluginManifest = {
   name: 'Computer Use',
   version: '1.0.0',
   description: 'macOS 桌面控制 + Vision OCR（AXUIElement / 截图）',
-  author: 'code-agent',
+  author: 'Agent Neo',
   main: 'index.ts',
   surfaces: ['tools'],
   capabilities: ['computer-use', 'ocr'],

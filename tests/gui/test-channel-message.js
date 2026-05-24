@@ -1,9 +1,9 @@
 /**
- * GUI 测试: Code Agent 消息回复功能
+ * GUI 测试: Agent Neo 消息回复功能
  * 使用 UI-TARS SDK + 豆包视觉模型进行真实 GUI 交互测试
  *
  * 前置条件:
- *   1. Code Agent Electron 应用正在运行
+ *   1. Agent Neo Electron 应用正在运行
  *   2. npm install @ui-tars/sdk @ui-tars/operator-nut-js (在本目录或全局)
  *
  * 用法:
@@ -54,7 +54,7 @@ const SCENARIOS = {
   basic: {
     name: '基础消息回复',
     instruction: `
-在屏幕上找到 Code Agent 应用窗口。执行以下步骤:
+在屏幕上找到 Agent Neo 应用窗口。执行以下步骤:
 1. 找到底部的输入框（包含"描述你想解决的问题"的文本框）
 2. 点击输入框
 3. 输入文字: "你好，请自我介绍"
@@ -75,7 +75,7 @@ const SCENARIOS = {
   empty: {
     name: '空消息过滤验证',
     instruction: `
-在屏幕上找到 Code Agent 应用窗口。执行以下步骤:
+在屏幕上找到 Agent Neo 应用窗口。执行以下步骤:
 1. 找到底部输入框，点击它
 2. 输入: "1+1等于几？"
 3. 点击发送按钮
@@ -94,7 +94,7 @@ const SCENARIOS = {
   multi: {
     name: '多轮对话',
     instruction: `
-在 Code Agent 应用窗口中执行:
+在 Agent Neo 应用窗口中执行:
 1. 在输入框中输入: "今天星期几？" 并发送
 2. 等待回复出现
 3. 再输入: "那明天呢？" 并发送
@@ -115,7 +115,7 @@ const SCENARIOS = {
   special: {
     name: '特殊字符输入',
     instruction: `
-在 Code Agent 应用窗口中执行:
+在 Agent Neo 应用窗口中执行:
 1. 在输入框中输入以下内容（包含代码和特殊字符）:
    请解释这段代码: console.log("hello 🌍")
 2. 发送消息

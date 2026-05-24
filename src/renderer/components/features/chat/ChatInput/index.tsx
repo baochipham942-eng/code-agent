@@ -506,7 +506,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         },
       };
       if (currentSessionId) {
-        useAppStore.getState().startGoalRun(currentSessionId, { goal: parsed.goal, maxTurns: parsed.maxTurns });
+        useAppStore.getState().startGoalRun(currentSessionId, {
+          goal: parsed.goal,
+          maxTurns: parsed.maxTurns,
+          tokenBudget: parsed.budget,
+        });
         useSessionStore.getState().setTodos(buildGoalSeedTodos(parsed.goal));
       }
       useSessionStore.getState().addMessage(buildGoalNoticeMessage({ kind: 'start', goal: parsed.goal }));

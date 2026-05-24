@@ -36,7 +36,7 @@ export interface TraceNode {
   };
   reasoning?: string;
   thinking?: string;
-  subtype?: 'compaction' | 'error' | 'skill_status';
+  subtype?: 'compaction' | 'error' | 'skill_status' | 'goal_notice';
   attachments?: import('./message').MessageAttachment[];
   artifacts?: import('./message').Artifact[];
   metadata?: import('./message').MessageMetadata;

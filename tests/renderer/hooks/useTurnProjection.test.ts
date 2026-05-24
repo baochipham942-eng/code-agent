@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import type { SwarmLaunchRequest } from '../../../src/shared/contract/swarm';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
+import { encodeGoalNotice } from '../../../src/renderer/components/features/chat/goalNotice';
 
 describe('projectTurns', () => {
   it('projects the latest pending launch request into the last turn', () => {
@@ -289,6 +290,47 @@ describe('projectTurns', () => {
     ]);
     expect(projection.turns[0].nodes[2]?.type).toBe('system');
     expect(projection.turns[0].nodes[2]?.subtype).toBe('skill_status');
+  });
+
+  it('keeps goal lifecycle notices inside the current turn', () => {
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '修好登录',
+        timestamp: 100,
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '已修好。',
+        timestamp: 150,
+      },
+      {
+        id: 'goal-met-1',
+        role: 'system',
+        content: encodeGoalNotice({
+          kind: 'met',
+          goal: '修好登录',
+          turns: 2,
+          tokensUsed: 1234,
+          durationMs: 2500,
+        }),
+        timestamp: 180,
+        source: 'goal',
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-goal', false, []);
+
+    expect(projection.turns).toHaveLength(1);
+    expect(projection.turns[0].nodes.map((node) => node.id)).toEqual([
+      'user-1',
+      'assistant-1-text',
+      'goal-met-1',
+    ]);
+    expect(projection.turns[0].nodes[2]?.type).toBe('system');
+    expect(projection.turns[0].nodes[2]?.subtype).toBe('goal_notice');
   });
 
   it('marks a newly submitted normal user turn active while waiting for the assistant response', () => {

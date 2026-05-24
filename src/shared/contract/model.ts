@@ -72,8 +72,9 @@ export interface ModelConfig {
   // Extended thinking budget (tokens)
   thinkingBudget?: number;
   /**
-   * OpenAI-compatible `reasoning_effort` for thinking-mode models
-   * (mimo, kimi-k2.5, deepseek-reasoner, ...). Caller-level intensity hint;
+   * Caller-level reasoning intensity for thinking-mode models. Most
+   * OpenAI-compatible providers map this to `reasoning_effort`; providers
+   * with their own API controls may translate or ignore it.
    * modelRouter defaults this to 'low' on artifact generation/repair paths
    * to keep reasoning from eating the output budget.
    * For claude (which uses a numeric thinking budget), low/medium/high are

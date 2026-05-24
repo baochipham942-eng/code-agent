@@ -22,10 +22,15 @@ export class XiaomiProvider extends BaseOpenAIProvider {
     return resolveProviderApiKey(config);
   }
 
-  // 所有 mimo-v2/v2.5 系列均返回 reasoning_content（thinking-mode），
-  // history 里的 assistant 消息需带 reasoning_content 字段才能正常续聊。
+  // MiMo 的 thinking 由官方 `thinking` 字段控制。即使默认关闭 thinking，
+  // 多轮 history 仍按 thinking-mode 保留 reasoning_content 字段，兼容之前开启
+  // thinking 的 assistant 消息。
   protected isThinkingMode(_config: ModelConfig): boolean {
     return true;
+  }
+
+  protected shouldUseReasoningEffort(_config: ModelConfig): boolean {
+    return false;
   }
 
   protected buildRequestBody(
@@ -50,6 +55,11 @@ export class XiaomiProvider extends BaseOpenAIProvider {
       max_completion_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || XIAOMI_DEFAULT_MODEL),
       stream: true,
       stream_options: { include_usage: true },
+      thinking: {
+        type: config.reasoningEffort === 'high' || (config.thinkingBudget ?? 0) > 0
+          ? 'enabled'
+          : 'disabled',
+      },
     };
 
     if (useToolCalling && openaiTools.length > 0) {

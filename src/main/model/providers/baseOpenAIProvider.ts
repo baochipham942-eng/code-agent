@@ -73,6 +73,15 @@ export abstract class BaseOpenAIProvider implements Provider {
   }
 
   /**
+   * Whether this provider accepts the OpenAI-compatible `reasoning_effort`
+   * field. Some thinking-mode providers use a provider-specific control
+   * instead while still requiring reasoning_content in assistant history.
+   */
+  protected shouldUseReasoningEffort(_config: ModelConfig): boolean {
+    return true;
+  }
+
+  /**
    * 构建请求体
    * 默认实现，子类可 override 来定制
    */
@@ -128,6 +137,7 @@ export abstract class BaseOpenAIProvider implements Provider {
     const reasoningEffort = options?.reasoningEffort ?? config.reasoningEffort;
     if (
       this.isThinkingMode(config)
+      && this.shouldUseReasoningEffort(config)
       && reasoningEffort
       && requestBody.reasoning_effort === undefined
     ) {

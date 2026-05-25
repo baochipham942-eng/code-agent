@@ -230,3 +230,43 @@ if (shouldSandbox) {
 5. PTY / 后台路径包装 + profile 清理 → 真跑验证。
 6. 全验证阶梯过一遍 + 临时文件检查。
 7. 每步 commit（功能点级），不积攒。
+
+---
+
+## 9. 实现记录与偏差（2026-05-25 完成）
+
+分支 `feat/sandbox-bypass`，3 个 commit：`docs(plan)` → `feat(sandbox): wrapCommand` → `feat(bash): bypass 接入`。**未推送、未合并**。
+
+### 与原计划的关键偏差
+
+1. **seatbelt profile 模型从「deny-default + 限定 readPaths」改为「allow-default + 锁写/网络」**（最重要）。
+   原模型实测会让 `/bin/sh` 在动态链接阶段 **SIGABRT**（deny-default 下读不了 dyld 共享缓存等系统路径）。实践可行模型（与 ASRT 思路一致）：
+   ```
+   (version 1)
+   (allow default)
+   [!allowNetwork] (deny network*)
+   (deny file-write*)
+   (allow file-write* (subpath "/dev"))
+   (allow file-write* (subpath <realpath tmp>))
+   (allow file-write* (subpath <realpath 工作目录/writePaths>))
+   ```
+   读放开（读非主要 blast-radius，应用层 Read 工具本就能读 + policyEngine 另有 ssh-keys 读规则），真正锁的是**写**与**网络**。
+2. **realpath 必踩坑**：seatbelt subpath 按真实路径匹配，`/var`→`/private/var`、`/tmp`→`/private/tmp`。不解析符号链接会导致工作目录内写入也被拒。`generateProfile` 内统一 `fs.realpathSync`。
+3. **引号转义**用 `shell-quote` 的 `quote([argv...])` 对整个 argv 数组拼接（不是手写 escape）；已加管道/引号命令单测。
+4. **profile 清理**：前台 `finally` 显式清理；PTY/后台依赖 `Seatbelt.cleanupOldProfiles` 的 10 个上限自动回收（进程异步存活，无法在调用返回时删）。
+5. **constants 命名**：`tools.ts` 已有 `SANDBOX`，故新常量用 `OS_SANDBOX.ENABLED`（env `OS_SANDBOX_ENABLED`）避让。
+
+### 验证结果（macOS / darwin）
+
+- `npm run typecheck`：通过。
+- 集成测试 `tests/integration/sandbox/seatbeltWrap.test.ts`（真实 sandbox-exec，5 测全过）：普通命令执行 / `node -v` 工具可达 / 工作目录内可写 / **越界写 HOME 被内核拒（核心隔离实证）** / 引号管道语义正确。
+- 单测 `bash.test.ts` 新增 gating（3 测）：default 不包装 / bypass 包装+执行+清理 / 不可用硬报错。
+- 全量 `tests/unit`：5155 过、7 失；**7 失在基线 main `2f6b7565` 同样失败**（artifact repair / messageProcessor.persistence / toolExecutionEngine.hooks / capabilityCenterService），属既有失败，与本改动无关。零回归。
+
+### 仍待办 / 限制
+
+- **package-lock**：`shell-quote` 已加入 `package.json` 但未 `npm install` 同步 lock（worktree 与 main 共享 node_modules，避免污染）。**merge 前需在 main 跑 `npm install`**。
+- **PTY / 后台路径**：代码已统一包装，但**未真跑验证**（只验证了前台路径）。合并前建议补 PTY/后台的真实沙箱 E2E。
+- **abort 杀进程树**：未单独验证 `sandbox-exec` 子进程树在 abort 时被杀干净（验证阶梯第 6 条未做）。
+- **Linux/bwrap**：`wrapCommand` 已实现但**无 Linux 环境验证**。
+- **read 收紧 / 网络白名单**：留作 v2（见 §7）。

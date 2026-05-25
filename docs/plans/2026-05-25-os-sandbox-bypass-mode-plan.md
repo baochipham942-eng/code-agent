@@ -270,10 +270,11 @@ if (shouldSandbox) {
 - ✅ **abort 杀进程树**：`sleep 300` abort 后 `ps | grep -E "sleep 300|sandbox-exec"` 无残留进程。
 - ✅ **PTY 路径**：node-pty 驱动沙箱包装命令实测通过（`PTY-SANDBOX-OK` + `node -v`，exit 0）。
   - ⚠️ 前提：node-pty prebuilt `spawn-helper` 必须可执行。本机（含 **main** 的 node_modules，5/22 起）该文件是 `-rw-r--r--`（缺 +x）导致 node-pty `posix_spawnp failed`——**与本沙箱改动无关的既有环境问题**，`chmod +x` 即解。沙箱+PTY 组合本身正确。
-- ⏸️ **真实 GUI app E2E**：`cargo tauri dev` 两次未起来（连不上 localhost:8180，dev-server 环境问题，非沙箱缺陷），改用 headless 兜底（直接调真实 `wrapCommandForSandbox` + `sandbox-exec`）。GUI 内"切 bypass 档→发命令"这一层仍未亲跑，但 gating 单测已覆盖 bash.ts 路由逻辑。
-- ⏸️ **Linux/bwrap**：无 Linux 环境，本轮跳过。
+- ✅ **真实 GUI app E2E**（2026-05-25 二轮，computer-use 驱动）：worktree 起 `OS_SANDBOX_ENABLED=true` 的 webServer，UI 切 Full Access(bypassPermissions)，经 agent 对话真实调 Bash 工具：`echo gui-sandbox-ok && node -v` 正常 / 工作目录内写成功 / **`echo pwned > ~/...` 被拒 exit 1 `Operation not permitted` 且文件未创建**。日志实锤经 AgentLoop→ToolExecutor→Bash 真实链路。证据 `/tmp/code-agent-gui-sandbox-e2e-20260525/`。
+  - 边界：测的是 **Chrome 里的 code-agent Web GUI**（后端 = worktree 的 webServer），非 Tauri 桌面壳。Tauri 壳只是窗口容器，bash→沙箱路径与 Web 后端完全一致，故此 E2E 对沙箱行为等价充分。（上一轮 `cargo tauri dev` 起不来真因是 8180 被僵死 webServer 占用，清端口后改用 Web GUI 路径跑通。）
+- ⏸️ **Linux/bwrap**：无 Linux 环境，跳过（唯一未验项）。
 - 🔭 **read 收紧 / 网络白名单**：留作 v2（见 §7）。
 
-### 独立于本 feature 的环境发现（建议另开修）
+### 独立于本 feature 的环境发现（已修）
 
-- **node-pty spawn-helper 缺 +x**（`node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper` = `-rw-r--r--`，main 亦然）。意味着**当前真实 app 的 PTY 功能本就是坏的**，与本沙箱无关。永久修复方向：`npm rebuild node-pty` 或加 postinstall `chmod +x`。本轮只在 worktree 临时 chmod 验证，未持久化。
+- **node-pty spawn-helper 缺 +x**（`node_modules/node-pty/prebuilds/*/spawn-helper` = `-rw-r--r--`，main 亦然）→ 真实 app PTY 本就坏的，与本沙箱无关。**已在 commit `fix(install)` 把恢复 +x 加进 `rebuild-native-system.sh`(postinstall)**，并已 chmod 修复 main 当前 node_modules（dev 即时生效；已安装的 `/Applications` app 需下次 `cargo tauri build` 重打包才带上）。

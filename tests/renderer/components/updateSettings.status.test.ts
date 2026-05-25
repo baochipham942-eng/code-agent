@@ -54,7 +54,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 0, bundledFallback: 1, missing: 0 },
-    })).toBe('图片处理已可用');
+    })).toBe('图片理解已可用');
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -66,7 +66,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 1, bundledFallback: 0, missing: 0 },
-    })).toBe('语音、浏览器和图片处理都已可用');
+    })).toBe('语音输入、网页操作、图片理解都已可用');
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -84,7 +84,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 0, bundledFallback: 1, missing: 1 },
-    })).toBe('图片处理已可用；语音、浏览器会在用到时自动下载');
+    })).toBe('图片理解已可用；语音输入、网页操作首次使用时自动下载');
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -96,7 +96,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 0, bundledFallback: 0, missing: 1 },
-    })).toBe('随应用提供的基础能力缺失');
+    })).toBe('图片理解暂不可用');
   });
 
   it('labels bundled Sharp fallback separately from optional runtime downloads', () => {
@@ -113,7 +113,7 @@ describe('UpdateSettings status visibility', () => {
       delivery: 'optional',
       state: 'missing',
       nodeModules: [],
-    })).toBe('用到时下载');
+    })).toBe('首次使用时下载');
   });
 
   it('uses user-facing runtime capability names instead of package labels', () => {
@@ -123,21 +123,21 @@ describe('UpdateSettings status visibility', () => {
       delivery: 'optional',
       state: 'missing',
       nodeModules: [],
-    })).toBe('音频处理');
+    })).toBe('语音输入');
     expect(getRuntimeAssetDisplayName({
       id: 'playwright-browser-runtime',
       label: 'Browser automation components',
       delivery: 'optional',
       state: 'missing',
       nodeModules: [],
-    })).toBe('浏览器操控');
+    })).toBe('网页操作');
     expect(getRuntimeAssetDisplayName({
       id: 'sharp-image-runtime',
       label: 'Image processing components',
       delivery: 'bundled',
       state: 'bundledFallback',
       nodeModules: [],
-    })).toBe('图片处理');
+    })).toBe('图片理解');
   });
 
   it('shows prepare action only when runtime assets need an update', () => {
@@ -152,7 +152,7 @@ describe('UpdateSettings status visibility', () => {
         manifestSha256: 'a'.repeat(64),
       },
     })).toBe(true);
-    expect(getRuntimeAssetsPrepareText(false)).toBe('提前下载语音和浏览器');
-    expect(getRuntimeAssetsPrepareText(true)).toBe('正在下载语音和浏览器...');
+    expect(getRuntimeAssetsPrepareText(false)).toBe('提前准备语音输入和网页操作');
+    expect(getRuntimeAssetsPrepareText(true)).toBe('正在准备语音输入和网页操作...');
   });
 });

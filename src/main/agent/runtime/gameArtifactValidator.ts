@@ -31,8 +31,10 @@ export interface GameArtifactValidationSummary {
 export interface GameArtifactValidationOptions {
   runRuntimeSmoke?: boolean;
   runtimeSmokeTimeoutMs?: number;
+  requireRuntimeSmoke?: boolean;
   runBrowserVisualSmoke?: boolean;
   browserVisualSmokeTimeoutMs?: number;
+  requireBrowserVisualSmoke?: boolean;
 }
 
 const HTML_EXTENSIONS = new Set(['.html', '.htm']);
@@ -78,8 +80,10 @@ function makeValidationCacheKey(
     contentHash,
     options.runRuntimeSmoke ? 'runtime' : 'static',
     runtimeTimeoutMs,
+    options.requireRuntimeSmoke ? 'require-runtime' : 'runtime-optional',
     options.runBrowserVisualSmoke ? 'visual' : 'no-visual',
     visualTimeoutMs,
+    options.requireBrowserVisualSmoke ? 'require-visual' : 'visual-optional',
   ].join('\0');
 }
 
@@ -724,7 +728,10 @@ export async function validateGameArtifact(
   let runtimeSmoke: RuntimeSmokeSummary | undefined;
   if (options.runRuntimeSmoke && isComplete && hasSmokeProbe) {
     runtimeSmoke = await runRuntimeSmoke(filePath, options.runtimeSmokeTimeoutMs ?? DEFAULT_RUNTIME_SMOKE_TIMEOUT_MS);
-    if (runtimeSmoke.passed) {
+    if (runtimeSmoke.skipped && options.requireRuntimeSmoke) {
+      const reason = runtimeSmoke.checks.find((check) => /skipped/i.test(check)) ?? 'runtime smoke skipped';
+      failures.push(`${reason}; runtime smoke is required for game artifact validation.`);
+    } else if (runtimeSmoke.passed) {
       checks.push(...runtimeSmoke.checks);
     } else {
       failures.push(...runtimeSmoke.failures);
@@ -747,7 +754,10 @@ export async function validateGameArtifact(
         filePath,
         options.browserVisualSmokeTimeoutMs ?? DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS,
       );
-      if (browserVisualSmoke.passed) {
+      if (browserVisualSmoke.skipped && options.requireBrowserVisualSmoke) {
+        const reason = browserVisualSmoke.checks.find((check) => /skipped/i.test(check)) ?? 'browser visual smoke skipped';
+        failures.push(`${reason}; browser visual smoke is required for game artifact validation.`);
+      } else if (browserVisualSmoke.passed) {
         checks.push(...browserVisualSmoke.checks);
       } else {
         failures.push(...browserVisualSmoke.failures);

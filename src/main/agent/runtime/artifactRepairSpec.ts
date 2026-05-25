@@ -146,7 +146,7 @@ function classifyFailure(failure: string): FailureClassification {
   if (/大型固定 canvas|固定 canvas|窄窗口.*裁切|horizontal canvas overflow|canvas overflow|game is likely cropped|canvas elements but none are visibly framed|none are visibly framed.*viewport|primary game canvas is undersized|distorted game canvas aspect ratio|aspect ratio.*(?:distorted|mismatch)|small centered playfield|large empty margins|mobile visual smoke.*canvas|responsive css|响应式 CSS|canvas.*(?:max-width|max-height|aspect-ratio|height:auto)/i.test(text)) {
     return {
       code: 'canvas_not_responsive',
-      repairInstruction: 'Keep the canvas internal drawing resolution if needed, but constrain both rendered width and height on the canvas or wrapper, such as max-width: calc(100vw - 16px), max-height: calc(100dvh - 16px), aspect-ratio, and height:auto. The rendered CSS aspect ratio must match the canvas internal width/height. A 390px mobile viewport must show the full playfield without horizontal overflow, and wide desktop previews should scale the primary playfield up instead of leaving large empty margins around a fixed 800px/900px canvas.',
+      repairInstruction: 'Keep the canvas internal drawing resolution if needed, but constrain the rendered canvas from both viewport width and viewport height so the CSS aspect ratio always matches the internal canvas width/height. For a 480x640 canvas, use a pattern like width: min(calc(100vw - 16px), calc((100dvh - 16px) * 480 / 640), 800px); height: auto; max-width: none. Do not put width:100% and height:100% on a canvas inside a wrapper where max-height can override aspect-ratio. A 390px mobile viewport must show the full playfield without horizontal overflow, and wide desktop previews should scale the primary playfield up instead of leaving large empty margins around a fixed 800px/900px canvas.',
     };
   }
   if (/browser visual smoke|frontend browser validation|runtime page errors|console errors|nonblank rendered content|visibly framed|visible DOM content/i.test(text)) {
@@ -534,7 +534,7 @@ function buildRepairHints(issues: ArtifactRepairIssue[]): string[] {
   }
   if (issues.some((issue) => issue.code === 'canvas_not_responsive')) {
     hints.push(
-      'Keep the game resolution stable for drawing, but avoid fixed 800px/900px width or max-height-only scaling; wrap the canvas and set max-width: calc(100vw - 16px), max-height: calc(100dvh - 16px), preserve the same aspect-ratio as the canvas internal width/height, and use height:auto so the full playfield fits in a 390px mobile viewport while still scaling up in wide desktop previews.',
+      'Keep the game resolution stable for drawing, but avoid fixed 800px/900px width or max-height-only scaling. For a 480x640 canvas, use width: min(calc(100vw - 16px), calc((100dvh - 16px) * 480 / 640), 800px); height:auto; max-width:none so the rendered aspect ratio matches the internal canvas ratio, the full playfield fits in a 390px mobile viewport, and wide desktop previews scale up without distortion.',
     );
   }
   if (issues.some((issue) => issue.code === 'frontend_visual_smoke_failed')) {

@@ -742,7 +742,9 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
             const keys = Array.isArray(options.keys) ? options.keys.filter((key) => typeof key === 'string' && key.trim()) : [];
             try {
               if (options.startOnly === true) {
-                await Promise.resolve(contract.start());
+                // Keep the freshly loaded page state intact. Calling start() or reset()
+                // can hide a broken real start screen where Space only works after the
+                // test contract mutates the game into "playing".
               } else if (hasReset) {
                 await Promise.resolve(contract.reset(name));
               } else {
@@ -766,8 +768,8 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
           };
           if (breakoutSubtype) {
             const breakoutScenarioSpecs = [
-              { name: 'paddleMove', keys: ['ArrowRight'], frames: 12 },
               { name: 'browserLaunchFromStart', keys: ['Space'], browserKeyboard: true, startOnly: true, frames: 18 },
+              { name: 'paddleMove', keys: ['ArrowRight'], frames: 12 },
               { name: 'launch', keys: ['Space'], inputState: { Space: true, launch: true }, browserKeyboard: true, frames: 12 },
               { name: 'wallBounce', frames: 20 },
               { name: 'paddleBounce', frames: 20 },

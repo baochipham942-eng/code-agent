@@ -857,6 +857,44 @@ describe('validateGameArtifact', () => {
     }
   });
 
+  it('fails required browser visual smoke when the browser probe is skipped', async () => {
+    const oldChromePath = process.env.CHROME_PATH;
+    const oldSystemChromePath = process.env.CODE_AGENT_SYSTEM_CHROME_PATH;
+    const oldBrowserProvider = process.env.CODE_AGENT_BROWSER_PROVIDER;
+    const oldComputerFallback = process.env.CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK;
+    process.env.CHROME_PATH = '';
+    process.env.CODE_AGENT_SYSTEM_CHROME_PATH = '/not/a/real/chrome';
+    process.env.CODE_AGENT_BROWSER_PROVIDER = 'system-chrome-cdp';
+    process.env.CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK = '0';
+
+    try {
+      const filePath = await writeTempHtml(minimalCanvasGameHtml(`
+        #game {
+          width: min(100vw - 16px, 800px);
+          height: auto;
+          aspect-ratio: 800 / 480;
+        }
+      `), 'visual-smoke-required-skipped.html');
+
+      const result = await validateGameArtifact(filePath, {
+        runBrowserVisualSmoke: true,
+        requireBrowserVisualSmoke: true,
+      });
+
+      expect(result.passed).toBe(false);
+      expect(result.failures.join('\n')).toContain('browser visual smoke is required');
+    } finally {
+      if (typeof oldChromePath === 'undefined') delete process.env.CHROME_PATH;
+      else process.env.CHROME_PATH = oldChromePath;
+      if (typeof oldSystemChromePath === 'undefined') delete process.env.CODE_AGENT_SYSTEM_CHROME_PATH;
+      else process.env.CODE_AGENT_SYSTEM_CHROME_PATH = oldSystemChromePath;
+      if (typeof oldBrowserProvider === 'undefined') delete process.env.CODE_AGENT_BROWSER_PROVIDER;
+      else process.env.CODE_AGENT_BROWSER_PROVIDER = oldBrowserProvider;
+      if (typeof oldComputerFallback === 'undefined') delete process.env.CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK;
+      else process.env.CODE_AGENT_BROWSER_VISUAL_SMOKE_COMPUTER_FALLBACK = oldComputerFallback;
+    }
+  });
+
   it('still reports frontend browser validation evidence when static artifact validation fails', async () => {
     const oldChromePath = process.env.CHROME_PATH;
     const oldSystemChromePath = process.env.CODE_AGENT_SYSTEM_CHROME_PATH;

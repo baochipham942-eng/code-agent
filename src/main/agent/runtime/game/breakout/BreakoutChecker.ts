@@ -305,7 +305,7 @@ export class BreakoutChecker implements GameSubtypeChecker {
     )) {
       checks.push('breakout runtime browser Space launch moved ball from start state');
     } else {
-      failures.push('breakout runtime 缺少真实 Space 发球证据：从默认开始状态派发浏览器 Space 键盘事件后，ball.x 或 ball.y 必须变化。不能只让 reset("launch") 预先把球设成已发射。');
+      failures.push('breakout runtime 缺少真实 Space 发球证据：从初始加载的开始状态派发浏览器 Space 键盘事件后，ball.x 或 ball.y 必须变化。不能依赖 __GAME_TEST__.start() 先切到 playing，也不能只让 reset("launch") 预先把球设成已发射。');
     }
 
     const launchProbe = findScenario(probes, 'launch');
@@ -395,7 +395,7 @@ export class BreakoutChecker implements GameSubtypeChecker {
 
   repairGuidance(failureCode: string): string | undefined {
     if (/breakout|arkanoid/i.test(failureCode)) {
-      return 'Expose breakout/arkanoid __GAME_META__ and __GAME_TEST__ deterministic scenarios for paddleMove, launch, wallBounce, paddleBounce, brickHit, powerup:<type>, win, and lose; each scenario must be driven by live step() and produce before/after snapshot deltas. Start the real browser game loop with requestAnimationFrame(loop) or equivalent before the script exits. Wire real browser keyboard events too: Space must use event.code === "Space" or normalize event.key === " " to the same Space input consumed by the live loop, and a real browser Space press from the start screen must move ball.x or ball.y.';
+      return 'Expose breakout/arkanoid __GAME_META__ and __GAME_TEST__ deterministic scenarios for paddleMove, launch, wallBounce, paddleBounce, brickHit, powerup:<type>, win, and lose; each scenario must be driven by live step() and produce before/after snapshot deltas. Start the real browser game loop with requestAnimationFrame(loop) or equivalent before the script exits. Wire real browser keyboard events too: Space must use event.code === "Space" or normalize event.key === " " to the same Space input consumed by the live loop, the canvas/game root should be focusable and focused on load/click, and a real browser Space press from the initial loaded start screen must move ball.x or ball.y without relying on __GAME_TEST__.start().';
     }
     return undefined;
   }

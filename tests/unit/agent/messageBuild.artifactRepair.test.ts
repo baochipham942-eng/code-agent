@@ -82,7 +82,8 @@ describe('artifact repair focus block', () => {
     const block = buildArtifactRepairFocusBlock(ctx, []);
 
     expect(block).toContain('canvas_not_responsive');
-    expect(block).toContain('rendered CSS aspect ratio must match');
+    expect(block).toContain('CSS aspect ratio always matches');
+    expect(block).toContain('calc((100dvh - 16px) * 480 / 640)');
     expect(block).toContain('large empty margins');
   });
 });

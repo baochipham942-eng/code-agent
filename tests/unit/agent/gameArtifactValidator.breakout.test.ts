@@ -385,6 +385,36 @@ describe('validateGameArtifact breakout subtype', () => {
     expect(result.failures.join('\n')).toContain('真实 Space 发球证据');
   });
 
+  it('fails breakout artifacts whose Space key only works after the test contract starts the game', async () => {
+    const contractOnlyStartFixture = breakoutFixture()
+      .replace(
+        `if (input.Space || input.launch) {
+        state.ball.x += state.ball.vx;
+        state.ball.y += state.ball.vy;
+      }`,
+        `if ((input.Space || input.launch) && state.status === 'playing') {
+        state.ball.x += state.ball.vx;
+        state.ball.y += state.ball.vy;
+      }`,
+      )
+      .replace(
+        `window.__GAME_TEST__.start();
+    requestAnimationFrame(animationLoop);`,
+        `state = baseState('default');
+    state.status = 'ready';
+    requestAnimationFrame(animationLoop);`,
+      );
+    const filePath = await writeFixture(contractOnlyStartFixture, 'arkanoid-contract-start-only.html');
+
+    const result = await validateGameArtifact(filePath, {
+      runRuntimeSmoke: true,
+      runtimeSmokeTimeoutMs: 5000,
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failures.join('\n')).toContain('__GAME_TEST__.start()');
+  });
+
   it('fails breakout artifacts whose contract step moves launch but the live loop never starts', async () => {
     const noRealLoopFixture = breakoutFixture().replace(
       `    requestAnimationFrame(animationLoop);`,
@@ -398,6 +428,6 @@ describe('validateGameArtifact breakout subtype', () => {
     });
 
     expect(result.passed).toBe(false);
-    expect(result.failures.join('\n')).toContain('从默认开始状态派发浏览器 Space');
+    expect(result.failures.join('\n')).toContain('初始加载的开始状态派发浏览器 Space');
   });
 });

@@ -86,8 +86,10 @@ export async function handleModifiedArtifactValidation({
     const artifactValidationOptions = {
       runRuntimeSmoke: true,
       runtimeSmokeTimeoutMs: 7000,
+      requireRuntimeSmoke: true,
       runBrowserVisualSmoke: true,
       browserVisualSmokeTimeoutMs: 10000,
+      requireBrowserVisualSmoke: true,
     } as const;
     const rawValidation = await validateGameArtifact(absolutePath, artifactValidationOptions);
     const validation = repairTargetLostValidation && !rawValidation.shouldValidate

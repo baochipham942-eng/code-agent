@@ -58,12 +58,12 @@ export function getRuntimeAssetsSummaryText(status: RuntimeAssetsStatus | null):
   const optionalMissing = status.assets.filter((asset) => asset.delivery === 'optional' && asset.state === 'missing').length;
   const bundledMissing = status.assets.filter((asset) => asset.delivery === 'bundled' && asset.state === 'missing').length;
   const bundledReady = status.assets.filter((asset) => asset.delivery === 'bundled' && asset.state === 'bundledFallback').length;
-  if (bundledMissing > 0) return '随应用提供的基础能力缺失';
-  if (optionalMissing > 0 && bundledReady > 0) return '图片处理已可用；语音、浏览器会在用到时自动下载';
-  if (optionalMissing > 0) return '语音、浏览器会在用到时自动下载';
+  if (bundledMissing > 0) return '图片理解暂不可用';
+  if (optionalMissing > 0 && bundledReady > 0) return '图片理解已可用；语音输入、网页操作首次使用时自动下载';
+  if (optionalMissing > 0) return '语音输入、网页操作首次使用时自动下载';
   if (status.summary.missing > 0) return '部分功能暂不可用';
-  if (status.summary.installed > 0) return '语音、浏览器和图片处理都已可用';
-  return '图片处理已可用';
+  if (status.summary.installed > 0) return '语音输入、网页操作、图片理解都已可用';
+  return '图片理解已可用';
 }
 
 export function shouldShowRuntimeAssetsPrepare(updateInfo: UpdateInfo | null): boolean {
@@ -75,21 +75,21 @@ export function shouldDisableUpdateActions(webMode: boolean, hasNativeBridge: bo
 }
 
 export function getRuntimeAssetsPrepareText(isPreparing: boolean): string {
-  return isPreparing ? '正在下载语音和浏览器...' : '提前下载语音和浏览器';
+  return isPreparing ? '正在准备语音输入和网页操作...' : '提前准备语音输入和网页操作';
 }
 
 export function getRuntimeAssetStatusText(asset: RuntimeAssetStatusEntry): string {
   if (asset.state === 'installed') return '已可用';
   if (asset.state === 'bundledFallback') return '已可用';
-  if (asset.delivery === 'optional') return '用到时下载';
+  if (asset.delivery === 'optional') return '首次使用时下载';
   return '缺失';
 }
 
 export function getRuntimeAssetDisplayName(asset: RuntimeAssetStatusEntry): string {
   const value = `${asset.id} ${asset.label}`.toLowerCase();
-  if (value.includes('audio') || value.includes('vad')) return '音频处理';
-  if (value.includes('browser') || value.includes('playwright')) return '浏览器操控';
-  if (value.includes('image') || value.includes('sharp')) return '图片处理';
+  if (value.includes('audio') || value.includes('vad')) return '语音输入';
+  if (value.includes('browser') || value.includes('playwright')) return '网页操作';
+  if (value.includes('image') || value.includes('sharp')) return '图片理解';
   return asset.label;
 }
 
@@ -321,7 +321,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         <div className="bg-zinc-800 rounded-lg p-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-sm text-zinc-400">本地能力</div>
+              <div className="text-sm text-zinc-400">本机功能</div>
               <div className="text-sm font-medium text-zinc-200 mt-1">
                 {getRuntimeAssetsSummaryText(runtimeAssetsStatus)}
               </div>

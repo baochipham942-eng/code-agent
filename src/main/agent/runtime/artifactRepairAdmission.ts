@@ -61,8 +61,10 @@ export async function maybeClearCompletedArtifactRepairGuardBeforeAdmission(
     const validation = await validateGameArtifact(guard.targetFile, {
       runRuntimeSmoke: true,
       runtimeSmokeTimeoutMs: 7000,
+      requireRuntimeSmoke: true,
       runBrowserVisualSmoke: true,
       browserVisualSmokeTimeoutMs: 10000,
+      requireBrowserVisualSmoke: true,
     });
     if (!validation.shouldValidate || !validation.passed) {
       return false;

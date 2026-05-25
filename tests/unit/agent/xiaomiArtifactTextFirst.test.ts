@@ -103,12 +103,16 @@ describe('xiaomi artifact text-first write', () => {
     expect(messages[1].content).toContain('generic for default controls');
     expect(messages[1].content).toContain('should include paddleX and ball.x');
     expect(messages[1].content).toContain('deterministic scenario shortcuts');
+    expect(messages[1].content).toContain('initial loaded start screen');
+    expect(messages[1].content).toContain('tabindex="0"');
     expect(messages[1].content).toContain('never call an undefined global step()');
     expect(messages[1].content).toContain('reset("win")');
     expect(messages[1].content).toContain('numeric 0..11');
     expect(messages[1].content).toContain('all 12 scenarios reachable');
     expect(messages[1].content).toContain('wallBounceCount');
     expect(messages[1].content).toContain('The CSS/rendered canvas aspect ratio must match');
+    expect(messages[1].content).toContain('calc((100dvh - 16px) * 480 / 640)');
+    expect(messages[1].content).toContain('Do not set width: 100% and height: 100%');
     expect(messages[1].content).toContain('large empty margins');
 
     const config = buildXiaomiArtifactTextFirstConfig({

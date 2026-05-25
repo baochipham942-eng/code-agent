@@ -17,6 +17,12 @@ interface XiaomiArtifactTextFirstInput {
   userRequestText: string;
 }
 
+export type XiaomiArtifactTextFirstStage = 'core' | 'repair';
+
+export function isBreakoutArtifactText(text: string): boolean {
+  return /breakout|arkanoid|弹砖|打砖|弹球/i.test(text);
+}
+
 export function shouldUseXiaomiArtifactTextFirstWrite(input: XiaomiArtifactTextFirstInput): boolean {
   if (!input.artifactRequest && !input.artifactRepairActive) return false;
   if (input.forceFinalResponseActive) return false;
@@ -38,7 +44,7 @@ export function resolveXiaomiArtifactTextFirstTargetPath(
       : path.resolve(workingDirectory, explicit);
   }
 
-  const fallbackName = /breakout|arkanoid|弹砖|打砖|弹球/i.test(userRequestText)
+  const fallbackName = isBreakoutArtifactText(userRequestText)
     ? 'breakout-game.html'
     : 'interactive-artifact.html';
   return nextAvailablePath(path.resolve(workingDirectory, fallbackName));
@@ -47,9 +53,12 @@ export function resolveXiaomiArtifactTextFirstTargetPath(
 export function buildXiaomiArtifactTextFirstMessages(
   messages: ModelMessage[],
   targetPath: string,
-  options: { artifactRepairActive?: boolean } = {},
+  options: { artifactRepairActive?: boolean; stage?: XiaomiArtifactTextFirstStage } = {},
 ): ModelMessage[] {
   const isBreakout = messagesContain(messages, /breakout|arkanoid|弹砖|打砖|弹球/i);
+  const stage: XiaomiArtifactTextFirstStage = options.artifactRepairActive
+    ? 'repair'
+    : options.stage || 'core';
   const directive: ModelMessage = {
     role: 'system',
     content: [
@@ -62,6 +71,14 @@ export function buildXiaomiArtifactTextFirstMessages(
       'If this is a repair turn, output one full corrected HTML document for the target file, not a patch, diff, Edit/Write call, short snippet, or tool call.',
       ...(isBreakout ? [
         '',
+        ...(stage === 'core' ? [
+          'For Breakout/Arkanoid HTML games, use a two-stage strategy. This first pass must create a small, complete, validator-friendly playable core.',
+          '- Build exactly one playable initial level in this pass. Do not add extra authored levels, menus, campaigns, stores, level editors, cutscenes, or large visual systems yet.',
+          '- Keep visuals simple but proportional. The second pass may polish CSS, HUD, particles, and feel after this core passes validation.',
+          '- Prefer direct keydown handling for Space so one real press launches the ball from the initial screen; do not depend on a long key hold.',
+        ] : [
+          'For Breakout/Arkanoid HTML repairs, preserve any working core and fix only the failing validation/playability evidence.',
+        ]),
         'For Breakout/Arkanoid HTML games, the generated file must satisfy the runtime validator:',
         '- Use window.__GAME_META__ with exact field name controls, not dispatchableControls.',
         "- Include powerups: ['wide','multi','slow','through','life'].",
@@ -106,6 +123,21 @@ export function buildXiaomiArtifactTextFirstMessages(
     ...buildCurrentArtifactContextMessage(targetPath),
     finalInstruction,
   ];
+}
+
+export function buildXiaomiBreakoutEnhancementInstruction(targetPath: string): string {
+  return [
+    '<xiaomi-artifact-enhancement stage="visual-polish">',
+    `The playable core artifact at ${targetPath} passed validation.`,
+    'Before the final response, make exactly one constrained refinement to the same file.',
+    'Prefer a targeted Edit after reading the file if needed. Use a full Write only if a targeted edit is genuinely unsafe.',
+    'Allowed changes: CSS/layout polish, canvas sizing that preserves aspect ratio, HUD readability, colors, motion feel, lightweight particles, and real-key responsiveness.',
+    'Required input fix: Space should launch from the real initial screen on a normal keydown press; it must not require the key to be held until the animation loop samples it.',
+    'Do not rename or remove the validation helper surface, scenario ids, controls metadata, powerup names, deterministic reset/step/snapshot behavior, win/lose shortcuts, or the already playable initial level.',
+    'Do not add new authored levels, campaigns, stores, menus, or large mechanics in this refinement pass.',
+    'After the edit, let runtime validation run again. Do not produce the final answer until the refined artifact passes.',
+    '</xiaomi-artifact-enhancement>',
+  ].join('\n');
 }
 
 export function buildXiaomiArtifactTextFirstConfig(config: ModelConfig): ModelConfig {

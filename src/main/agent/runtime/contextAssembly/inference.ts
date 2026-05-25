@@ -37,6 +37,7 @@ import {
   buildXiaomiArtifactTextFirstConfig,
   buildXiaomiArtifactTextFirstMessages,
   buildXiaomiArtifactTextFirstWriteResponse,
+  isBreakoutArtifactText,
   resolveXiaomiArtifactTextFirstTargetPath,
   shouldUseXiaomiArtifactTextFirstWrite,
 } from './xiaomiArtifactTextFirst';
@@ -758,8 +759,10 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
 
     const requestConfig = capArtifactRepairMaxTokens(ctx, effectiveConfig);
     requestConfigForRetry = requestConfig;
+    const xiaomiTwoStageEnhancePending = ctx.runtime.xiaomiArtifactTwoStage?.phase === 'enhance_pending';
     const useXiaomiTextFirstArtifactWrite =
       !artifactValidationPassed &&
+      !xiaomiTwoStageEnhancePending &&
       shouldUseXiaomiArtifactTextFirstWrite({
         artifactRequest,
         artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
@@ -772,17 +775,33 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       ? ctx.runtime.artifactRepairGuard?.targetFile
         || resolveXiaomiArtifactTextFirstTargetPath(userRequestText, ctx.runtime.workingDirectory)
       : null;
+    const xiaomiTextFirstArtifactRepairActive = Boolean(ctx.runtime.artifactRepairGuard);
+    const xiaomiTextFirstIsBreakoutCore =
+      Boolean(xiaomiTextFirstTargetPath)
+      && !xiaomiTextFirstArtifactRepairActive
+      && isBreakoutArtifactText(userRequestText);
     const stopArtifactProgress = startArtifactModelWaitProgress(ctx, {
       artifactRequest,
-      artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
+      artifactRepairActive: xiaomiTextFirstArtifactRepairActive,
       artifactRepairWritePriority,
     });
     let response: ModelResponse;
     try {
       if (xiaomiTextFirstTargetPath) {
+        if (xiaomiTextFirstIsBreakoutCore) {
+          const existing = ctx.runtime.xiaomiArtifactTwoStage;
+          if (existing?.targetFile !== xiaomiTextFirstTargetPath || existing.phase === 'done') {
+            ctx.runtime.xiaomiArtifactTwoStage = {
+              targetFile: xiaomiTextFirstTargetPath,
+              kind: 'breakout',
+              phase: 'core_pending',
+            };
+          }
+        }
         const textFirstConfig = buildXiaomiArtifactTextFirstConfig(requestConfig);
         logger.info('[AgentLoop] Xiaomi artifact text-first write path active', {
           targetPath: xiaomiTextFirstTargetPath,
+          stage: xiaomiTextFirstArtifactRepairActive ? 'repair' : 'core',
         });
         ctx.runFinalizer.emitTaskProgress(
           'generating',
@@ -791,7 +810,8 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
         const textFirstResponse = await runEngineInference(
           ctx,
           buildXiaomiArtifactTextFirstMessages(modelMessages, xiaomiTextFirstTargetPath, {
-            artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
+            artifactRepairActive: xiaomiTextFirstArtifactRepairActive,
+            stage: xiaomiTextFirstArtifactRepairActive ? 'repair' : 'core',
           }),
           [],
           textFirstConfig,

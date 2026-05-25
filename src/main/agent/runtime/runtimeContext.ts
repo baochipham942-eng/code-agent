@@ -124,6 +124,11 @@ export interface RuntimeContext {
   forceFinalResponsePrompt?: string;
   /** Last interactive artifact path that passed runtime/browser validation in this run. */
   artifactValidationPassedTargetFile?: string;
+  xiaomiArtifactTwoStage?: {
+    targetFile: string;
+    kind: 'breakout';
+    phase: 'core_pending' | 'enhance_pending' | 'done';
+  };
   activeSkillInvocation?: {
     skillName: string;
     source: string;

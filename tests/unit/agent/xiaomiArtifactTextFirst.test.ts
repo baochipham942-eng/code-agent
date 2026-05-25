@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
+  buildXiaomiBreakoutEnhancementInstruction,
   buildXiaomiArtifactTextFirstConfig,
   buildXiaomiArtifactTextFirstMessages,
   buildXiaomiArtifactTextFirstWriteResponse,
@@ -97,6 +98,10 @@ describe('xiaomi artifact text-first write', () => {
       '/tmp/breakout.html',
     );
 
+    expect(messages[1].content).toContain('two-stage strategy');
+    expect(messages[1].content).toContain('small, complete, validator-friendly playable core');
+    expect(messages[1].content).toContain('Build exactly one playable initial level');
+    expect(messages[1].content).toContain('second pass may polish CSS');
     expect(messages[1].content).toContain('exact field name controls');
     expect(messages[1].content).toContain("['wide','multi','slow','through','life']");
     expect(messages[1].content).toContain('Keep progressPlan very small and generic');
@@ -124,6 +129,17 @@ describe('xiaomi artifact text-first write', () => {
 
     expect(config.reasoningEffort).toBe('low');
     expect(config.thinkingBudget).toBeUndefined();
+  });
+
+  it('builds a constrained second-stage breakout enhancement instruction', () => {
+    const instruction = buildXiaomiBreakoutEnhancementInstruction('/tmp/breakout.html');
+
+    expect(instruction).toContain('<xiaomi-artifact-enhancement stage="visual-polish">');
+    expect(instruction).toContain('make exactly one constrained refinement');
+    expect(instruction).toContain('Space should launch from the real initial screen');
+    expect(instruction).toContain('must not require the key to be held');
+    expect(instruction).toContain('Do not add new authored levels');
+    expect(instruction).not.toContain('__GAME_TEST__');
   });
 
   it('keeps browser visual smoke aspect-ratio failures in compact repair evidence', () => {

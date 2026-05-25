@@ -11,6 +11,7 @@ import { createArtifactRepairSpec, formatArtifactRepairSpecForPrompt } from './a
 import { activateArtifactRepairAdmissionStop } from './artifactRepairAdmission';
 import { isSameArtifactRepairPath } from './artifactRepairGuard';
 import { validateGameArtifact } from './gameArtifactValidator';
+import { buildXiaomiBreakoutEnhancementInstruction } from './contextAssembly/xiaomiArtifactTextFirst';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
 import type { RuntimeContext } from './runtimeContext';
@@ -246,9 +247,31 @@ export async function handleModifiedArtifactValidation({
     } else if (validation.shouldValidate && (validation.checks.length > 0 || appendFinalHint)) {
       runFinalizer.emitTaskProgress('tool_running', 'artifact 验收通过');
       getArtifactValidationFailureMap(ctx).delete(absolutePath);
-      ctx.artifactValidationPassedTargetFile = absolutePath;
       if (ctx.artifactRepairGuard?.targetFile === absolutePath) {
         ctx.artifactRepairGuard = undefined;
+      }
+      const xiaomiEnhancementRequested = maybeRequestXiaomiBreakoutEnhancement({
+        ctx,
+        contextAssembly,
+        runFinalizer,
+        absolutePath,
+        checks: validation.checks,
+        appendFinalHint,
+      });
+      if (xiaomiEnhancementRequested) {
+        return;
+      }
+
+      ctx.artifactValidationPassedTargetFile = absolutePath;
+      if (
+        ctx.xiaomiArtifactTwoStage?.kind === 'breakout' &&
+        ctx.xiaomiArtifactTwoStage.phase === 'enhance_pending' &&
+        isSameArtifactRepairPath(ctx, absolutePath, ctx.xiaomiArtifactTwoStage.targetFile)
+      ) {
+        ctx.xiaomiArtifactTwoStage = {
+          ...ctx.xiaomiArtifactTwoStage,
+          phase: 'done',
+        };
       }
       contextAssembly.injectSystemMessage(
         [
@@ -276,6 +299,50 @@ export async function handleModifiedArtifactValidation({
       filePath,
     });
   }
+}
+
+function maybeRequestXiaomiBreakoutEnhancement({
+  ctx,
+  contextAssembly,
+  runFinalizer,
+  absolutePath,
+  checks,
+  appendFinalHint,
+}: {
+  ctx: RuntimeContext;
+  contextAssembly: ContextAssembly;
+  runFinalizer: RunFinalizer;
+  absolutePath: string;
+  checks: string[];
+  appendFinalHint: string | null;
+}): boolean {
+  const twoStage = ctx.xiaomiArtifactTwoStage;
+  if (twoStage?.kind !== 'breakout' || twoStage.phase !== 'core_pending') {
+    return false;
+  }
+  if (!isSameArtifactRepairPath(ctx, absolutePath, twoStage.targetFile)) {
+    return false;
+  }
+
+  ctx.xiaomiArtifactTwoStage = {
+    ...twoStage,
+    phase: 'enhance_pending',
+  };
+  ctx.artifactValidationPassedTargetFile = undefined;
+  ctx.forceFinalResponseReason = undefined;
+  ctx.forceFinalResponsePrompt = undefined;
+  runFinalizer.emitTaskProgress('tool_running', '核心版本已验收通过，准备二阶段体验增强...');
+  contextAssembly.injectSystemMessage(
+    [
+      '<artifact-validation-passed kind="interactive_artifact" stage="xiaomi-core">',
+      'The first-stage playable core passed validation. Do not finish the turn yet.',
+      ...(appendFinalHint ? [appendFinalHint] : []),
+      ...checks.map((check, index) => `${index + 1}. ${check}`),
+      '</artifact-validation-passed>',
+      buildXiaomiBreakoutEnhancementInstruction(absolutePath),
+    ].join('\n'),
+  );
+  return true;
 }
 
 async function completePendingGoalAfterArtifactValidation({

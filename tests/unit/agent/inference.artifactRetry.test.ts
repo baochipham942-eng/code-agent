@@ -302,6 +302,39 @@ describe('contextAssembly inference artifact retry', () => {
     });
   });
 
+  it('uses normal tools instead of Xiaomi text-first during the two-stage enhancement pass', async () => {
+    const ctx = buildCtx({
+      modelConfig: {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        apiKey: 'current-xiaomi-key',
+        temperature: 0,
+        maxTokens: 131072,
+      },
+      xiaomiArtifactTwoStage: {
+        targetFile: '/tmp/breakout.html',
+        kind: 'breakout',
+        phase: 'enhance_pending',
+      },
+    } as any);
+    ctx.buildModelMessages = vi.fn().mockResolvedValue([
+      { role: 'system', content: 'system' },
+      { role: 'user', content: '开发一个html弹砖块游戏，要求技能和关卡丰富' },
+    ]);
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'ready to edit',
+      finishReason: 'stop',
+    });
+
+    const result = await inference(ctx);
+
+    expect(result).toMatchObject({ type: 'text', content: 'ready to edit' });
+    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
+    const [, tools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
+    expect(tools.map((tool: { name: string }) => tool.name)).toContain('Write');
+  });
+
   it('narrows visible tools during artifact repair mode before a patch exists', async () => {
     const ctx = buildCtx({
       artifactRepairGuard: {

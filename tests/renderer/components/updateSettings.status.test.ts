@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { UpdateInfo } from '../../../src/shared/contract';
 import {
+  getRuntimeAssetDisplayName,
   getRuntimeAssetStatusText,
   getRuntimeAssetsPrepareText,
   getRuntimeAssetsSummaryText,
@@ -46,7 +47,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 0, bundledFallback: 1, missing: 0 },
-    })).toBe('使用内置能力组件');
+    })).toBe('基础能力已可用');
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -58,7 +59,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 1, bundledFallback: 0, missing: 0 },
-    })).toBe('已准备 1 个本地能力组件');
+    })).toBe('已启用 1 项本地能力');
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -76,7 +77,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 0, bundledFallback: 1, missing: 1 },
-    })).toBe('内置图片能力可用，可选能力可准备');
+    })).toBe('图片能力已可用，音频和浏览器能力可按需下载');
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -88,24 +89,48 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 0, bundledFallback: 0, missing: 1 },
-    })).toBe('内置能力组件缺失');
+    })).toBe('随应用提供的基础能力缺失');
   });
 
-  it('labels bundled Sharp fallback separately from optional runtime preparation', () => {
+  it('labels bundled Sharp fallback separately from optional runtime downloads', () => {
     expect(getRuntimeAssetStatusText({
       id: 'sharp-image-runtime',
       label: 'Image processing components',
       delivery: 'bundled',
       state: 'bundledFallback',
       nodeModules: [],
-    })).toBe('随包内置');
+    })).toBe('已内置');
     expect(getRuntimeAssetStatusText({
       id: 'playwright-browser-runtime',
       label: 'Browser automation components',
       delivery: 'optional',
       state: 'missing',
       nodeModules: [],
-    })).toBe('可选准备');
+    })).toBe('按需下载');
+  });
+
+  it('uses user-facing runtime capability names instead of package labels', () => {
+    expect(getRuntimeAssetDisplayName({
+      id: 'onnxruntime-vad',
+      label: 'Local audio capability components',
+      delivery: 'optional',
+      state: 'missing',
+      nodeModules: [],
+    })).toBe('音频处理');
+    expect(getRuntimeAssetDisplayName({
+      id: 'playwright-browser-runtime',
+      label: 'Browser automation components',
+      delivery: 'optional',
+      state: 'missing',
+      nodeModules: [],
+    })).toBe('浏览器操控');
+    expect(getRuntimeAssetDisplayName({
+      id: 'sharp-image-runtime',
+      label: 'Image processing components',
+      delivery: 'bundled',
+      state: 'bundledFallback',
+      nodeModules: [],
+    })).toBe('图片处理');
   });
 
   it('shows prepare action only when runtime assets need an update', () => {
@@ -120,7 +145,7 @@ describe('UpdateSettings status visibility', () => {
         manifestSha256: 'a'.repeat(64),
       },
     })).toBe(true);
-    expect(getRuntimeAssetsPrepareText(false)).toBe('准备本地能力组件');
-    expect(getRuntimeAssetsPrepareText(true)).toBe('正在准备本地能力组件...');
+    expect(getRuntimeAssetsPrepareText(false)).toBe('下载可选能力');
+    expect(getRuntimeAssetsPrepareText(true)).toBe('正在下载可选能力...');
   });
 });

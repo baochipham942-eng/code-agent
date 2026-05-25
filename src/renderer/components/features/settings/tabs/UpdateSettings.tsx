@@ -57,12 +57,12 @@ export function getRuntimeAssetsSummaryText(status: RuntimeAssetsStatus | null):
   const optionalMissing = status.assets.filter((asset) => asset.delivery === 'optional' && asset.state === 'missing').length;
   const bundledMissing = status.assets.filter((asset) => asset.delivery === 'bundled' && asset.state === 'missing').length;
   const bundledReady = status.assets.filter((asset) => asset.delivery === 'bundled' && asset.state === 'bundledFallback').length;
-  if (bundledMissing > 0) return '内置能力组件缺失';
-  if (optionalMissing > 0 && bundledReady > 0) return '内置图片能力可用，可选能力可准备';
-  if (optionalMissing > 0) return '有可选本地能力可准备';
-  if (status.summary.missing > 0) return '有可选本地能力待准备';
-  if (status.summary.installed > 0) return `已准备 ${status.summary.installed} 个本地能力组件`;
-  return '使用内置能力组件';
+  if (bundledMissing > 0) return '随应用提供的基础能力缺失';
+  if (optionalMissing > 0 && bundledReady > 0) return '图片能力已可用，音频和浏览器能力可按需下载';
+  if (optionalMissing > 0) return '有可选能力可按需下载';
+  if (status.summary.missing > 0) return '有本地能力尚未就绪';
+  if (status.summary.installed > 0) return `已启用 ${status.summary.installed} 项本地能力`;
+  return '基础能力已可用';
 }
 
 export function shouldShowRuntimeAssetsPrepare(updateInfo: UpdateInfo | null): boolean {
@@ -70,14 +70,22 @@ export function shouldShowRuntimeAssetsPrepare(updateInfo: UpdateInfo | null): b
 }
 
 export function getRuntimeAssetsPrepareText(isPreparing: boolean): string {
-  return isPreparing ? '正在准备本地能力组件...' : '准备本地能力组件';
+  return isPreparing ? '正在下载可选能力...' : '下载可选能力';
 }
 
 export function getRuntimeAssetStatusText(asset: RuntimeAssetStatusEntry): string {
-  if (asset.state === 'installed') return '已准备';
-  if (asset.state === 'bundledFallback') return '随包内置';
-  if (asset.delivery === 'optional') return '可选准备';
+  if (asset.state === 'installed') return '已启用';
+  if (asset.state === 'bundledFallback') return '已内置';
+  if (asset.delivery === 'optional') return '按需下载';
   return '缺失';
+}
+
+export function getRuntimeAssetDisplayName(asset: RuntimeAssetStatusEntry): string {
+  const value = `${asset.id} ${asset.label}`.toLowerCase();
+  if (value.includes('audio') || value.includes('vad')) return '音频处理';
+  if (value.includes('browser') || value.includes('playwright')) return '浏览器操控';
+  if (value.includes('image') || value.includes('sharp')) return '图片处理';
+  return asset.label;
 }
 
 function getRuntimeAssetTone(asset: RuntimeAssetStatusEntry): string {
@@ -207,7 +215,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         });
       }
     } catch (err) {
-      setRuntimeAssetsError('本地能力组件准备失败，继续使用内置组件');
+      setRuntimeAssetsError('可选能力下载失败，已继续使用内置能力');
       logger.error('Runtime assets prepare failed', err);
     } finally {
       setIsPreparingRuntimeAssets(false);
@@ -285,7 +293,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         <div className="bg-zinc-800 rounded-lg p-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-sm text-zinc-400">本地能力组件</div>
+              <div className="text-sm text-zinc-400">本地能力</div>
               <div className="text-sm font-medium text-zinc-200 mt-1">
                 {getRuntimeAssetsSummaryText(runtimeAssetsStatus)}
               </div>
@@ -293,7 +301,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
             <div className="space-y-2 text-right">
               {runtimeAssetsStatus.assets.map((asset) => (
                 <div key={asset.id} className="flex items-center justify-end gap-2">
-                  <span className="text-xs text-zinc-400">{asset.label}</span>
+                  <span className="text-xs text-zinc-400">{getRuntimeAssetDisplayName(asset)}</span>
                   <span className={`text-xs px-2 py-1 rounded border ${getRuntimeAssetTone(asset)}`}>
                     {getRuntimeAssetStatusText(asset)}
                   </span>

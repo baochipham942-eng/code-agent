@@ -553,6 +553,20 @@ fn cloud_update_info_from_response(
     }
 }
 
+fn no_update_info(current_version: String) -> TauriUpdateInfo {
+    TauriUpdateInfo {
+        has_update: false,
+        current_version,
+        latest_version: None,
+        release_notes: None,
+        date: None,
+        force_update: None,
+        download_url: None,
+        file_size: None,
+        sha256: None,
+    }
+}
+
 fn check_cloud_update(current_version: String) -> Result<TauriUpdateInfo, String> {
     let client = Client::builder()
         .timeout(Duration::from_secs(15))
@@ -632,21 +646,22 @@ async fn check_for_update(app: tauri::AppHandle) -> Result<TauriUpdateInfo, Stri
         Ok(info) => Some(info),
         Err(error) => {
             eprintln!("Native update check failed, trying cloud update: {error}");
-            None
+            Some(no_update_info(current_version.clone()))
         }
     };
 
+    let fallback_info = native_no_update.unwrap_or_else(|| no_update_info(current_version.clone()));
     let cloud_version = current_version;
     match tauri::async_runtime::spawn_blocking(move || check_cloud_update(cloud_version)).await {
         Ok(Ok(info)) => Ok(info),
         Ok(Err(error)) => {
             eprintln!("Cloud update check failed: {error}");
-            native_no_update.ok_or(error)
+            Ok(fallback_info.clone())
         }
         Err(error) => {
             let message = format!("Cloud update check task failed: {error}");
             eprintln!("{message}");
-            native_no_update.ok_or(message)
+            Ok(fallback_info)
         }
     }
 }
@@ -672,7 +687,10 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
             |_chunk_length, content_length| {
                 if !started {
                     started = true;
-                    eprintln!("[updater] download started, total size: {:?}", content_length);
+                    eprintln!(
+                        "[updater] download started, total size: {:?}",
+                        content_length
+                    );
                 }
             },
             || {
@@ -830,7 +848,7 @@ mod runtime_env_tests {
 mod update_url_tests {
     use super::{
         cloud_update_info_from_response, compare_update_versions,
-        github_release_page_from_download_url, normalize_manual_update_url,
+        github_release_page_from_download_url, no_update_info, normalize_manual_update_url,
         sanitize_release_channel, validate_update_url, CloudUpdateResponse,
     };
     use std::cmp::Ordering;
@@ -960,6 +978,43 @@ mod update_url_tests {
             Some("https://github.com/owner/repo/releases/tag/v0.16.76".to_string())
         );
         assert_eq!(info.sha256, Some("a".repeat(64)));
+    }
+
+    #[test]
+    fn treats_older_cloud_latest_as_no_update() {
+        let info = cloud_update_info_from_response(
+            CloudUpdateResponse {
+                success: Some(true),
+                has_update: Some(false),
+                force_update: Some(false),
+                current_version: Some("0.16.82".to_string()),
+                latest_version: Some("0.16.80".to_string()),
+                min_version: None,
+                download_url: Some(
+                    "https://github.com/owner/repo/releases/download/v0.16.80/Code.Agent.dmg"
+                        .to_string(),
+                ),
+                sha256: Some("b".repeat(64)),
+                release_notes: Some("older published latest".to_string()),
+                file_size: Some(123),
+                published_at: Some("2026-05-22T00:00:00Z".to_string()),
+            },
+            "0.16.82".to_string(),
+        );
+
+        assert!(!info.has_update);
+        assert_eq!(info.current_version, "0.16.82");
+        assert_eq!(info.latest_version, Some("0.16.80".to_string()));
+    }
+
+    #[test]
+    fn builds_stable_no_update_fallback() {
+        let info = no_update_info("0.16.82".to_string());
+
+        assert!(!info.has_update);
+        assert_eq!(info.current_version, "0.16.82");
+        assert_eq!(info.latest_version, None);
+        assert_eq!(info.download_url, None);
     }
 }
 

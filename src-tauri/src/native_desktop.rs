@@ -258,7 +258,7 @@ fn run_command(binary: &str, args: &[&str]) -> Result<String, String> {
     run_command_with_timeout(binary, args, Duration::from_secs(5))
 }
 
-fn run_command_with_timeout(binary: &str, args: &[&str], timeout: Duration) -> Result<String, String> {
+pub(crate) fn run_command_with_timeout(binary: &str, args: &[&str], timeout: Duration) -> Result<String, String> {
     let mut child = Command::new(binary)
         .args(args)
         .stdout(std::process::Stdio::piped())

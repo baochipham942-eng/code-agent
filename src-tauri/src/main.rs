@@ -14,11 +14,13 @@ use tauri::{
     include_image, menu::MenuBuilder, tray::TrayIconBuilder, Emitter, Manager, RunEvent,
     WindowEvent,
 };
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
 
+mod appshots;
 mod native_app_icon;
 mod native_desktop;
 
+use appshots::appshots_trigger;
 use native_app_icon::desktop_get_app_icon;
 use native_desktop::{
     desktop_capture_screenshot, desktop_get_capabilities, desktop_get_collector_status,
@@ -1070,6 +1072,18 @@ fn setup_global_shortcut(app: &tauri::App) -> Result<(), Box<dyn std::error::Err
         },
     )?;
 
+    // Appshots：抓取当前前台 app 窗口（截图 + AX/OCR 文本）送进 composer。
+    let appshots_handle = app.handle().clone();
+    app.global_shortcut().on_shortcut(
+        appshots::DEFAULT_APPSHOTS_SHORTCUT,
+        move |_app_handle, _shortcut: &Shortcut, event: ShortcutEvent| {
+            // 只在按下（而非抬起）时触发，避免一次按键跑两遍。
+            if event.state == ShortcutState::Pressed {
+                appshots::trigger_capture(appshots_handle.clone());
+            }
+        },
+    )?;
+
     Ok(())
 }
 
@@ -1108,7 +1122,8 @@ fn main() {
             desktop_request_microphone_permission,
             desktop_start_audio_rec,
             desktop_stop_audio_rec,
-            desktop_get_app_icon
+            desktop_get_app_icon,
+            appshots_trigger
         ])
         .setup(|app| {
             if cfg!(debug_assertions) && is_server_running() {

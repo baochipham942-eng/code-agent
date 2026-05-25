@@ -35,6 +35,7 @@ export interface GameArtifactValidationOptions {
   runBrowserVisualSmoke?: boolean;
   browserVisualSmokeTimeoutMs?: number;
   requireBrowserVisualSmoke?: boolean;
+  allowBrowserVisualComputerFallback?: boolean;
 }
 
 const HTML_EXTENSIONS = new Set(['.html', '.htm']);
@@ -84,6 +85,7 @@ function makeValidationCacheKey(
     options.runBrowserVisualSmoke ? 'visual' : 'no-visual',
     visualTimeoutMs,
     options.requireBrowserVisualSmoke ? 'require-visual' : 'visual-optional',
+    options.allowBrowserVisualComputerFallback === false ? 'no-computer-fallback' : 'computer-fallback',
   ].join('\0');
 }
 
@@ -752,7 +754,10 @@ export async function validateGameArtifact(
     } else {
       browserVisualSmoke = await runBrowserVisualSmoke(
         filePath,
-        options.browserVisualSmokeTimeoutMs ?? DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS,
+        {
+          timeoutMs: options.browserVisualSmokeTimeoutMs ?? DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS,
+          allowComputerUseFallback: options.allowBrowserVisualComputerFallback,
+        },
       );
       if (browserVisualSmoke.skipped && options.requireBrowserVisualSmoke) {
         const reason = browserVisualSmoke.checks.find((check) => /skipped/i.test(check)) ?? 'browser visual smoke skipped';

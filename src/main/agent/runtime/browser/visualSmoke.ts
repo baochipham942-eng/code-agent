@@ -43,16 +43,27 @@ interface CanvasLayoutMetrics {
 
 function normalizeVisualSmokeOptions(
   optionsOrTimeout: number | BrowserVisualSmokeOptions | undefined,
-): { timeoutMs: number; interactions: BrowserInteractionStep[] } {
+): { timeoutMs: number; interactions: BrowserInteractionStep[]; allowComputerUseFallback: boolean } {
   if (typeof optionsOrTimeout === 'number') {
-    return { timeoutMs: optionsOrTimeout, interactions: [] };
+    return { timeoutMs: optionsOrTimeout, interactions: [], allowComputerUseFallback: true };
   }
   if (!optionsOrTimeout) {
-    return { timeoutMs: DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS, interactions: [] };
+    return { timeoutMs: DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS, interactions: [], allowComputerUseFallback: true };
   }
   return {
     timeoutMs: optionsOrTimeout.timeoutMs ?? DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS,
     interactions: optionsOrTimeout.interactions ?? [],
+    allowComputerUseFallback: optionsOrTimeout.allowComputerUseFallback !== false,
+  };
+}
+
+function skippedVisualSmoke(reason: string): BrowserVisualSmokeSummary {
+  return {
+    attempted: false,
+    skipped: true,
+    passed: true,
+    failures: [],
+    checks: [`browser visual smoke skipped: ${reason}`],
   };
 }
 
@@ -307,9 +318,14 @@ export async function runBrowserVisualSmoke(
   filePath: string,
   optionsOrTimeout: number | BrowserVisualSmokeOptions = DEFAULT_BROWSER_VISUAL_SMOKE_TIMEOUT_MS,
 ): Promise<BrowserVisualSmokeSummary> {
-  const { timeoutMs, interactions } = normalizeVisualSmokeOptions(optionsOrTimeout);
+  const { timeoutMs, interactions, allowComputerUseFallback } = normalizeVisualSmokeOptions(optionsOrTimeout);
   const resolution = resolveBrowserProvider();
   if (resolution.provider === 'system-chrome-cdp' && (resolution.missingExecutable || !resolution.systemExecutable)) {
+    if (!allowComputerUseFallback) {
+      return skippedVisualSmoke(
+        `${resolution.recommendedAction || 'System Chrome executable is missing.'} Computer Use fallback disabled for this validation.`,
+      );
+    }
     return runComputerUseVisualFallback(
       filePath,
       resolution.recommendedAction || 'System Chrome executable is missing.',
@@ -337,6 +353,11 @@ export async function runBrowserVisualSmoke(
   try {
     const playwright = await loadPlaywrightChromium();
     if (!playwright.ok || !playwright.chromium) {
+      if (!allowComputerUseFallback) {
+        return skippedVisualSmoke(
+          `${playwright.error || 'Playwright package unavailable.'} Computer Use fallback disabled for this validation.`,
+        );
+      }
       return runComputerUseVisualFallback(
         filePath,
         playwright.error || 'Playwright package unavailable.',

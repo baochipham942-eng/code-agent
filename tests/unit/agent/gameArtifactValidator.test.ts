@@ -879,10 +879,12 @@ describe('validateGameArtifact', () => {
       const result = await validateGameArtifact(filePath, {
         runBrowserVisualSmoke: true,
         requireBrowserVisualSmoke: true,
+        allowBrowserVisualComputerFallback: false,
       });
 
       expect(result.passed).toBe(false);
       expect(result.failures.join('\n')).toContain('browser visual smoke is required');
+      expect(result.checks.join('\n')).not.toContain('browser visual smoke fell back to Computer Use desktop surface');
     } finally {
       if (typeof oldChromePath === 'undefined') delete process.env.CHROME_PATH;
       else process.env.CHROME_PATH = oldChromePath;

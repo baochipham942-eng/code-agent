@@ -65,6 +65,7 @@ export async function maybeClearCompletedArtifactRepairGuardBeforeAdmission(
       runBrowserVisualSmoke: true,
       browserVisualSmokeTimeoutMs: 10000,
       requireBrowserVisualSmoke: true,
+      allowBrowserVisualComputerFallback: false,
     });
     if (!validation.shouldValidate || !validation.passed) {
       return false;

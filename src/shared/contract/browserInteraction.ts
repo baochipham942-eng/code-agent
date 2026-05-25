@@ -44,6 +44,7 @@ export interface BrowserInteractionStepResult {
 export interface BrowserVisualSmokeOptions {
   timeoutMs?: number;
   interactions?: BrowserInteractionStep[];
+  allowComputerUseFallback?: boolean;
 }
 
 /**

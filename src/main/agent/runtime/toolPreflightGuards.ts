@@ -121,6 +121,7 @@ export async function maybeFinishArtifactRepairIfAlreadyValid(
       runBrowserVisualSmoke: true,
       browserVisualSmokeTimeoutMs: 10000,
       requireBrowserVisualSmoke: true,
+      allowBrowserVisualComputerFallback: false,
     });
     if (!validation.shouldValidate || !validation.passed) {
       return false;

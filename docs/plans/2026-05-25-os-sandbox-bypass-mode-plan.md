@@ -263,10 +263,17 @@ if (shouldSandbox) {
 - 单测 `bash.test.ts` 新增 gating（3 测）：default 不包装 / bypass 包装+执行+清理 / 不可用硬报错。
 - 全量 `tests/unit`：5155 过、7 失；**7 失在基线 main `2f6b7565` 同样失败**（artifact repair / messageProcessor.persistence / toolExecutionEngine.hooks / capabilityCenterService），属既有失败，与本改动无关。零回归。
 
-### 仍待办 / 限制
+### 待办补验（2026-05-25，艾克斯 computer-use + headless 兜底）
 
-- **package-lock**：`shell-quote` 已加入 `package.json` 但未 `npm install` 同步 lock（worktree 与 main 共享 node_modules，避免污染）。**merge 前需在 main 跑 `npm install`**。
-- **PTY / 后台路径**：代码已统一包装，但**未真跑验证**（只验证了前台路径）。合并前建议补 PTY/后台的真实沙箱 E2E。
-- **abort 杀进程树**：未单独验证 `sandbox-exec` 子进程树在 abort 时被杀干净（验证阶梯第 6 条未做）。
-- **Linux/bwrap**：`wrapCommand` 已实现但**无 Linux 环境验证**。
-- **read 收紧 / 网络白名单**：留作 v2（见 §7）。
+- ✅ **package-lock**：已 `npm install` 同步，`shell-quote ^1.8.3` 进 root direct deps，typecheck 仍过。commit `4d1f2d5e`。
+- ✅ **后台路径写隔离**：headless 真跑 `sandbox-exec`，后台越界写 HOME 同样被拒（exit 1 / Operation not permitted / 文件未创建）。
+- ✅ **abort 杀进程树**：`sleep 300` abort 后 `ps | grep -E "sleep 300|sandbox-exec"` 无残留进程。
+- ✅ **PTY 路径**：node-pty 驱动沙箱包装命令实测通过（`PTY-SANDBOX-OK` + `node -v`，exit 0）。
+  - ⚠️ 前提：node-pty prebuilt `spawn-helper` 必须可执行。本机（含 **main** 的 node_modules，5/22 起）该文件是 `-rw-r--r--`（缺 +x）导致 node-pty `posix_spawnp failed`——**与本沙箱改动无关的既有环境问题**，`chmod +x` 即解。沙箱+PTY 组合本身正确。
+- ⏸️ **真实 GUI app E2E**：`cargo tauri dev` 两次未起来（连不上 localhost:8180，dev-server 环境问题，非沙箱缺陷），改用 headless 兜底（直接调真实 `wrapCommandForSandbox` + `sandbox-exec`）。GUI 内"切 bypass 档→发命令"这一层仍未亲跑，但 gating 单测已覆盖 bash.ts 路由逻辑。
+- ⏸️ **Linux/bwrap**：无 Linux 环境，本轮跳过。
+- 🔭 **read 收紧 / 网络白名单**：留作 v2（见 §7）。
+
+### 独立于本 feature 的环境发现（建议另开修）
+
+- **node-pty spawn-helper 缺 +x**（`node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper` = `-rw-r--r--`，main 亦然）。意味着**当前真实 app 的 PTY 功能本就是坏的**，与本沙箱无关。永久修复方向：`npm rebuild node-pty` 或加 postinstall `chmod +x`。本轮只在 worktree 临时 chmod 验证，未持久化。

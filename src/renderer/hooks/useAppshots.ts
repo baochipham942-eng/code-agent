@@ -6,6 +6,7 @@
 import { useEffect } from 'react';
 import type { AppshotCapture } from '@shared/contract/appshot';
 import { useAppshotsStore } from '../stores/appshotsStore';
+import { useSessionStore } from '../stores/sessionStore';
 import { toast } from './useToast';
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -27,9 +28,14 @@ export function useAppshots(): void {
     const setup = async () => {
       try {
         const { listen } = await import('@tauri-apps/api/event');
-        const offStarting = await listen('appshots:capture_starting', () => setStarting(true));
+        const offStarting = await listen('appshots:capture_starting', () => {
+          setStarting(true, useSessionStore.getState().currentSessionId);
+        });
         const offReady = await listen<AppshotCapture>('appshots:capture_ready', async (event) => {
           const capture = { ...event.payload };
+          const sessionId =
+            useAppshotsStore.getState().startingSessionId
+            ?? useSessionStore.getState().currentSessionId;
           // 事件只带磁盘路径；按需读取 base64 dataURL 作为图片附件数据。
           try {
             capture.screenshotDataUrl = await invoke<string>('appshots_read_image_data_url', {
@@ -38,10 +44,10 @@ export function useAppshots(): void {
           } catch (error) {
             console.error('[appshot] 读取截图 dataURL 失败', error);
           }
-          setPending(capture);
+          setPending(capture, sessionId);
         });
         const offError = await listen<{ code?: string; message?: string }>('appshots:error', (event) => {
-          setStarting(false);
+          setStarting(false, null);
           const msg = event.payload?.message ?? event.payload?.code ?? '未知错误';
           toast.error(`Appshot 失败：${msg}`);
         });

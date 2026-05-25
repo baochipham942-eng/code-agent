@@ -126,7 +126,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [isFocused, setIsFocused] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
-  const pendingAppshot = useAppshotsStore((s) => s.pending);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const pendingAppshot = useAppshotsStore((s) =>
+    s.pendingSessionId === currentSessionId ? s.pending : null
+  );
   const clearAppshot = useAppshotsStore((s) => s.clear);
   const appshotSlotRef = useRef<HTMLDivElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -612,7 +615,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       const restoreDraft = () => {
         setValue(draftSnapshot.value);
         setAttachments(draftSnapshot.attachments);
-        if (draftSnapshot.appshot) useAppshotsStore.getState().setPending(draftSnapshot.appshot);
+        if (draftSnapshot.appshot) {
+          useAppshotsStore.getState().setPending(draftSnapshot.appshot, currentSessionId);
+        }
       };
 
       // 添加到输入历史
@@ -753,7 +758,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, []);
 
   const modelConfig = useAppStore((s) => s.modelConfig);
-  const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const [sessionModelOverride, setSessionModelOverride] = useState<ModelOverrideChangeDetail['override']>(null);
   const sessionCost = useStatusStore((s) => s.sessionCost);
   const statusStreaming = useStatusStore((s) => s.isStreaming);

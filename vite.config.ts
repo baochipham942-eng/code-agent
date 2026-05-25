@@ -4,6 +4,8 @@ import path from 'path';
 import fs from 'fs';
 import { builtinModules } from 'module';
 
+const packageVersion = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8')).version;
+
 /**
  * Vite plugin: stub out dynamic imports of `src/main/*` from renderer-side code.
  *
@@ -73,6 +75,9 @@ export default defineConfig({
   root: 'src/renderer',
   publicDir: path.resolve(__dirname, 'public'),
   base: './',
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageVersion),
+  },
   build: {
     outDir: '../../dist/renderer',
     emptyOutDir: true,

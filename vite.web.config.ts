@@ -19,6 +19,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import fs from 'fs';
+
+const packageVersion = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8')).version;
 
 export default defineConfig({
   plugins: [react()],
@@ -50,6 +53,7 @@ export default defineConfig({
   define: {
     // 让代码可以通过 import.meta.env 检测构建目标
     'import.meta.env.VITE_BUILD_TARGET': JSON.stringify('web'),
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageVersion),
   },
   resolve: {
     alias: {

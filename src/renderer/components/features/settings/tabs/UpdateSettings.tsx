@@ -26,6 +26,7 @@ import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('UpdateSettings');
+const BUILD_APP_VERSION = import.meta.env.VITE_APP_VERSION;
 
 // ============================================================================
 // Types
@@ -58,11 +59,11 @@ export function getRuntimeAssetsSummaryText(status: RuntimeAssetsStatus | null):
   const bundledMissing = status.assets.filter((asset) => asset.delivery === 'bundled' && asset.state === 'missing').length;
   const bundledReady = status.assets.filter((asset) => asset.delivery === 'bundled' && asset.state === 'bundledFallback').length;
   if (bundledMissing > 0) return '随应用提供的基础能力缺失';
-  if (optionalMissing > 0 && bundledReady > 0) return '图片能力已可用，音频和浏览器能力可按需下载';
-  if (optionalMissing > 0) return '有可选能力可按需下载';
-  if (status.summary.missing > 0) return '有本地能力尚未就绪';
-  if (status.summary.installed > 0) return `已启用 ${status.summary.installed} 项本地能力`;
-  return '基础能力已可用';
+  if (optionalMissing > 0 && bundledReady > 0) return '图片已可用；需要语音或浏览器操作时再下载';
+  if (optionalMissing > 0) return '需要语音或浏览器操作时再下载';
+  if (status.summary.missing > 0) return '部分功能暂不可用';
+  if (status.summary.installed > 0) return '语音和浏览器操作已就绪';
+  return '基础图片处理已就绪';
 }
 
 export function shouldShowRuntimeAssetsPrepare(updateInfo: UpdateInfo | null): boolean {
@@ -74,7 +75,7 @@ export function shouldDisableUpdateActions(webMode: boolean, hasNativeBridge: bo
 }
 
 export function getRuntimeAssetsPrepareText(isPreparing: boolean): string {
-  return isPreparing ? '正在下载可选能力...' : '下载可选能力';
+  return isPreparing ? '正在下载语音和浏览器能力...' : '下载语音和浏览器能力';
 }
 
 export function getRuntimeAssetStatusText(asset: RuntimeAssetStatusEntry): string {
@@ -103,8 +104,10 @@ function hasNativeUpdateBridge(): boolean {
   return Boolean(window.__TAURI_INTERNALS__ || window.codeAgentDomainAPI || window.domainAPI);
 }
 
-function fallbackNoUpdateInfo(version: string | null | undefined): UpdateInfo | null {
-  const currentVersion = version?.trim();
+function fallbackNoUpdateInfo(...versions: Array<string | null | undefined>): UpdateInfo | null {
+  const currentVersion = versions
+    .map((version) => version?.trim())
+    .find((version) => version && version !== '...');
   return currentVersion ? { hasUpdate: false, currentVersion } : null;
 }
 
@@ -145,6 +148,9 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         }
       } catch (err) {
         logger.error('Failed to load local version', err);
+        if (BUILD_APP_VERSION) {
+          setLocalVersion(BUILD_APP_VERSION);
+        }
       }
     };
     loadLocalVersion();
@@ -176,7 +182,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
   };
 
   // Get current version: prefer updateInfo, then local version, then placeholder
-  const currentVersion = updateInfo?.currentVersion || localVersion || '...';
+  const currentVersion = updateInfo?.currentVersion || localVersion || BUILD_APP_VERSION || '...';
   const visibleUpdateInfo = getVisibleUpdateInfo(updateInfo, isChecking, error);
 
   const checkForUpdates = async () => {
@@ -208,9 +214,11 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         }
       }
     } catch (err) {
-      const fallback = fallbackNoUpdateInfo(updateInfo?.currentVersion || localVersion);
+      const fallback = fallbackNoUpdateInfo(updateInfo?.currentVersion, localVersion, BUILD_APP_VERSION);
       if (fallback) {
         onUpdateInfoChange(fallback);
+        setLocalVersion(fallback.currentVersion);
+        setError(null);
         logger.error('Update check failed; using local version fallback', err);
       } else {
         setError(t.update?.checkError || '检查更新失败，请稍后重试');

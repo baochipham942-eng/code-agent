@@ -54,7 +54,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 0, bundledFallback: 1, missing: 0 },
-    })).toBe('基础能力已可用');
+    })).toBe('基础图片处理已就绪');
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -66,7 +66,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 1, bundledFallback: 0, missing: 0 },
-    })).toBe('已启用 1 项本地能力');
+    })).toBe('语音和浏览器操作已就绪');
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -84,7 +84,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 0, bundledFallback: 1, missing: 1 },
-    })).toBe('图片能力已可用，音频和浏览器能力可按需下载');
+    })).toBe('图片已可用；需要语音或浏览器操作时再下载');
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -152,7 +152,7 @@ describe('UpdateSettings status visibility', () => {
         manifestSha256: 'a'.repeat(64),
       },
     })).toBe(true);
-    expect(getRuntimeAssetsPrepareText(false)).toBe('下载可选能力');
-    expect(getRuntimeAssetsPrepareText(true)).toBe('正在下载可选能力...');
+    expect(getRuntimeAssetsPrepareText(false)).toBe('下载语音和浏览器能力');
+    expect(getRuntimeAssetsPrepareText(true)).toBe('正在下载语音和浏览器能力...');
   });
 });

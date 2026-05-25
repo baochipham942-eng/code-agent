@@ -12,6 +12,7 @@ import { spawn, execSync } from 'child_process';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
+import { quote } from 'shell-quote';
 import { createLogger } from '../services/infra/logger';
 import { SANDBOX_TIMEOUTS } from '../../shared/constants';
 
@@ -122,92 +123,61 @@ const DEFAULT_CONFIG: SeatbeltConfig = {
 
 /**
  * Generate a Seatbelt profile from configuration
+ *
+ * 约束模型：「读放开 + 锁写/网络」（与 ASRT 的实践思路一致）。
+ *
+ * 为什么不是 deny-default + 限定 readPaths：macOS 上进程启动需读取 dyld 共享缓存等
+ * 大量系统路径，deny-default 会令 /bin/sh 在动态链接阶段就 SIGABRT（已实测）。而读并非
+ * 主要 blast-radius（应用层 Read 工具本就能读，且 policyEngine 另有 block-ssh-keys 等读规则），
+ * 真正要防的是写到工作目录外 / `rm -rf ~` / 数据外泄。故：默认 allow，再收紧 file-write 与网络。
+ *
+ * 注意：seatbelt 的 subpath 按 realpath 匹配，必须解析符号链接（/var→/private/var、
+ * /tmp→/private/tmp），否则放行规则匹配不上真实路径导致工作目录内写入也被拒（已实测）。
+ *
+ * config.readPaths / executePaths / allowProcessExec / allowProcessFork 在本模型下不再用于
+ * 限制（allow default 已覆盖），保留字段仅为兼容历史调用方。read 收紧留作 v2。
  */
 function generateProfile(config: SeatbeltConfig): string {
   const lines: string[] = [
     '(version 1)',
-    '(deny default)',
-    '',
-    '; Allow sysctl for basic system info',
-    '(allow sysctl-read)',
-    '',
-    '; Allow mach lookups for system services',
-    '(allow mach-lookup)',
+    '(allow default)',
     '',
   ];
 
-  // Process execution
-  if (config.allowProcessExec) {
-    lines.push('; Allow process execution');
-    lines.push('(allow process-exec)');
-    lines.push('');
-  }
-
-  // Process forking
-  if (config.allowProcessFork) {
-    lines.push('; Allow process forking');
-    lines.push('(allow process-fork)');
-    lines.push('');
-  }
-
-  // Network access
-  if (config.allowNetwork) {
-    lines.push('; Allow network access');
-    lines.push('(allow network*)');
-    lines.push('');
-  } else {
+  // Network：bypass 档放行；显式关闭时 deny
+  if (!config.allowNetwork) {
     lines.push('; Deny network access');
     lines.push('(deny network*)');
     lines.push('');
   }
 
-  // Read paths
-  if (config.readPaths.length > 0) {
-    lines.push('; Allow read access');
-    for (const p of config.readPaths) {
-      lines.push(`(allow file-read* (subpath "${escapeProfileString(p)}"))`);
-    }
-    lines.push('');
+  // Writes：默认全拒，再按 realpath 放行 /dev + 临时目录 + 工作目录/显式写路径
+  lines.push('; Confine writes: deny all, re-allow specific real paths');
+  lines.push('(deny file-write*)');
+  lines.push('(allow file-write* (subpath "/dev"))');
+
+  const writeRoots = new Set<string>();
+  writeRoots.add(realPath(process.env.TMPDIR || os.tmpdir() || '/tmp'));
+  if (config.workingDirectory) writeRoots.add(realPath(config.workingDirectory));
+  for (const p of config.writePaths) writeRoots.add(realPath(p));
+
+  for (const p of writeRoots) {
+    lines.push(`(allow file-write* (subpath "${escapeProfileString(p)}"))`);
   }
-
-  // Write paths
-  if (config.writePaths.length > 0) {
-    lines.push('; Allow write access');
-    for (const p of config.writePaths) {
-      lines.push(`(allow file-write* (subpath "${escapeProfileString(p)}"))`);
-      // Also need read access to write
-      lines.push(`(allow file-read* (subpath "${escapeProfileString(p)}"))`);
-    }
-    lines.push('');
-  }
-
-  // Execute paths
-  if (config.executePaths.length > 0) {
-    lines.push('; Allow execute access');
-    for (const p of config.executePaths) {
-      lines.push(`(allow file-read* (subpath "${escapeProfileString(p)}"))`);
-    }
-    lines.push('');
-  }
-
-  // Allow reading temp directory
-  const tmpDir = process.env.TMPDIR || '/tmp';
-  lines.push('; Allow temp directory access');
-  lines.push(`(allow file-read* (subpath "${escapeProfileString(tmpDir)}"))`);
-  lines.push(`(allow file-write* (subpath "${escapeProfileString(tmpDir)}"))`);
-  lines.push('');
-
-  // Allow basic file operations needed by most commands
-  lines.push('; Allow basic file metadata operations');
-  lines.push('(allow file-read-metadata)');
-  lines.push('');
-
-  // Allow signal handling
-  lines.push('; Allow signal handling');
-  lines.push('(allow signal (target self))');
   lines.push('');
 
   return lines.join('\n');
+}
+
+/**
+ * 解析符号链接到真实路径（seatbelt subpath 按 realpath 匹配）。路径不存在时回退到 resolve。
+ */
+function realPath(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
 }
 
 /**
@@ -433,6 +403,31 @@ export class Seatbelt {
         });
       });
     });
+  }
+
+  /**
+   * 把命令包装成"带 sandbox-exec 前缀"的单条 shell 命令字符串，交给外部执行器
+   * （如 bash 工具的 runForegroundCommand）以 `spawn(cmd, { shell: true })` 运行。
+   *
+   * 与 execute() 的区别：不缓冲、不 spawn，只生成命令 + 返回清理句柄。
+   * 由此复用外部执行器已有的流式输出 / abort / 错误语义，能力白嫖。
+   *
+   * @throws sandbox-exec 不可用时抛错（调用方负责在 bypass 档拒绝执行）
+   */
+  wrapCommand(
+    command: string,
+    config: Partial<SeatbeltConfig> = {}
+  ): { command: string; cleanup: () => void } {
+    const status = this.checkAvailability();
+    if (!status.available) {
+      throw new Error(status.error || 'sandbox-exec unavailable');
+    }
+    const fullConfig: SeatbeltConfig = { ...DEFAULT_CONFIG, ...config };
+    const profile = fullConfig.customProfile || generateProfile(fullConfig);
+    const profilePath = this.writeProfile(profile);
+    // 用 shell-quote 把整个 argv 拼成安全字符串：原命令作为单一 token 交给内层 /bin/sh -c。
+    const wrapped = quote(['sandbox-exec', '-f', profilePath, '/bin/sh', '-c', command]);
+    return { command: wrapped, cleanup: () => this.cleanupProfile(profilePath) };
   }
 
   /**

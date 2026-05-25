@@ -520,7 +520,21 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
           }, innerTimeoutMs);
         });
 
+        let breakoutInitialLoadProbe = null;
         try {
+          if (breakoutSubtype) {
+            try {
+              const before = await Promise.resolve(contract.snapshot());
+              await driveBrowserKeyboard(['Space'], 18);
+              const after = await Promise.resolve(contract.snapshot());
+              breakoutInitialLoadProbe = { name: 'browserLaunchFromInitialLoad', before, after };
+            } catch (error) {
+              breakoutInitialLoadProbe = {
+                name: 'browserLaunchFromInitialLoad',
+                error: error instanceof Error ? error.message : String(error),
+              };
+            }
+          }
           await Promise.resolve(contract.start());
           if (hasStep) {
             checks.push('interactive contract exposes step(inputState, frames)');
@@ -735,7 +749,7 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
 
           }
           // subtype 透传到 TS 侧，由 GameSubtypeChecker.validateRuntimeEvidence 接管 subtype-specific 证据校验
-          const breakoutScenarios = [];
+          const breakoutScenarios = breakoutInitialLoadProbe ? [breakoutInitialLoadProbe] : [];
           const runSubtypeScenarioProbe = async (name, options = {}) => {
             const frames = actionFrameCount(options, 12);
             const inputState = options.inputState && typeof options.inputState === 'object' ? options.inputState : {};

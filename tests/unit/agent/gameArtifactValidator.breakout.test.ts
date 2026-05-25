@@ -415,6 +415,24 @@ describe('validateGameArtifact breakout subtype', () => {
     expect(result.failures.join('\n')).toContain('__GAME_TEST__.start()');
   });
 
+  it('fails breakout artifacts whose initial playable screen has no bricks', async () => {
+    const emptyInitialFixture = breakoutFixture().replace(
+      `window.__GAME_TEST__.start();
+    requestAnimationFrame(animationLoop);`,
+      `state = { ...baseState('default'), brickCount: 0, bricksRemaining: 0 };
+    requestAnimationFrame(animationLoop);`,
+    );
+    const filePath = await writeFixture(emptyInitialFixture, 'arkanoid-empty-initial.html');
+
+    const result = await validateGameArtifact(filePath, {
+      runRuntimeSmoke: true,
+      runtimeSmokeTimeoutMs: 5000,
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failures.join('\n')).toContain('初始首屏没有可打砖块');
+  });
+
   it('fails breakout artifacts whose contract step moves launch but the live loop never starts', async () => {
     const noRealLoopFixture = breakoutFixture().replace(
       `    requestAnimationFrame(animationLoop);`,

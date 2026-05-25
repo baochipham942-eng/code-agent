@@ -116,6 +116,24 @@ function readNumber(snapshot: unknown, paths: readonly string[], keyPatterns: re
   return found;
 }
 
+function readCount(snapshot: unknown, paths: readonly string[], keyPatterns: readonly RegExp[] = []): number | undefined {
+  for (const metricPath of paths) {
+    const value = extractByPath(snapshot, metricPath);
+    if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.floor(value));
+    if (Array.isArray(value)) return value.length;
+  }
+  return readNumber(snapshot, paths, keyPatterns);
+}
+
+function hasInitialBrickTargets(snapshot: unknown): boolean {
+  const count = readCount(
+    snapshot,
+    ['brickCount', 'bricksRemaining', 'bricks.length', 'game.brickCount', 'game.bricksRemaining'],
+    [/brickcount|bricksremaining/i],
+  );
+  return typeof count === 'number' && count > 0;
+}
+
 function numberIncreased(before: unknown, after: unknown, paths: readonly string[], keyPatterns: readonly RegExp[] = []): boolean {
   const beforeValue = readNumber(before, paths, keyPatterns);
   const afterValue = readNumber(after, paths, keyPatterns);
@@ -298,10 +316,16 @@ export class BreakoutChecker implements GameSubtypeChecker {
       failures.push('breakout runtime 缺少 paddle 证据：reset("paddleMove") 后 step({ArrowRight/right}, frames) 必须改变 paddleX。');
     }
 
-    const browserLaunchProbe = findScenario(probes, 'browserLaunchFromStart');
-    if (browserLaunchProbe && (
-      numberChanged(browserLaunchProbe.before, browserLaunchProbe.after, ['ball.x', 'ballX', 'balls[0].x'], [/ballx|^x$/i]) ||
-      numberChanged(browserLaunchProbe.before, browserLaunchProbe.after, ['ball.y', 'ballY', 'balls[0].y'], [/bally|^y$/i])
+    const initialLaunchProbe = findScenario(probes, 'browserLaunchFromInitialLoad') ?? findScenario(probes, 'browserLaunchFromStart');
+    if (initialLaunchProbe && hasInitialBrickTargets(initialLaunchProbe.before)) {
+      checks.push('breakout runtime initial start screen has brick targets');
+    } else {
+      failures.push('breakout runtime 初始首屏没有可打砖块：页面刚加载时 snapshot() 必须暴露 brickCount/bricksRemaining/bricks.length > 0，不能只在 reset("brickHit") 等测试场景里临时生成砖块。');
+    }
+
+    if (initialLaunchProbe && (
+      numberChanged(initialLaunchProbe.before, initialLaunchProbe.after, ['ball.x', 'ballX', 'balls[0].x'], [/ballx|^x$/i]) ||
+      numberChanged(initialLaunchProbe.before, initialLaunchProbe.after, ['ball.y', 'ballY', 'balls[0].y'], [/bally|^y$/i])
     )) {
       checks.push('breakout runtime browser Space launch moved ball from start state');
     } else {
@@ -395,7 +419,7 @@ export class BreakoutChecker implements GameSubtypeChecker {
 
   repairGuidance(failureCode: string): string | undefined {
     if (/breakout|arkanoid/i.test(failureCode)) {
-      return 'Expose breakout/arkanoid __GAME_META__ and __GAME_TEST__ deterministic scenarios for paddleMove, launch, wallBounce, paddleBounce, brickHit, powerup:<type>, win, and lose; each scenario must be driven by live step() and produce before/after snapshot deltas. Start the real browser game loop with requestAnimationFrame(loop) or equivalent before the script exits. Wire real browser keyboard events too: Space must use event.code === "Space" or normalize event.key === " " to the same Space input consumed by the live loop, the canvas/game root should be focusable and focused on load/click, and a real browser Space press from the initial loaded start screen must move ball.x or ball.y without relying on __GAME_TEST__.start().';
+      return 'Expose breakout/arkanoid __GAME_META__ and __GAME_TEST__ deterministic scenarios for paddleMove, launch, wallBounce, paddleBounce, brickHit, powerup:<type>, win, and lose; each scenario must be driven by live step() and produce before/after snapshot deltas. Start the real browser game loop with requestAnimationFrame(loop) or equivalent before the script exits, and load a playable first level on the real initial screen so snapshot() has brickCount/bricksRemaining/bricks.length > 0 before any test helper mutates state. Wire real browser keyboard events too: Space must use event.code === "Space" or normalize event.key === " " to the same Space input consumed by the live loop, the canvas/game root should be focusable and focused on load/click, and a real browser Space press from the initial loaded start screen must move ball.x or ball.y without relying on __GAME_TEST__.start().';
     }
     return undefined;
   }

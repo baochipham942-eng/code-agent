@@ -33,6 +33,9 @@ import { useSwarmStore } from '../../../../stores/swarmStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { ComboSkillCard } from './ComboSkillCard';
 import { useAppStore } from '../../../../stores/appStore';
+import { useAppshotsStore } from '../../../../stores/appshotsStore';
+import { AppshotChip } from './AppshotChip';
+import { buildAppshotXml, buildAppshotAttachment } from '@shared/contract/appshot';
 import {
   ModelSwitcher,
   MODEL_OVERRIDE_CHANGE_EVENT,
@@ -123,6 +126,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [isFocused, setIsFocused] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const pendingAppshot = useAppshotsStore((s) => s.pending);
+  const clearAppshot = useAppshotsStore((s) => s.clear);
   const [isUploading, setIsUploading] = useState(false);
   const [suggestions, setSuggestions] = useState<Array<{ id: string; text: string; source: string }>>([]);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
@@ -557,21 +562,34 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
 
     const activeRuntimeInputMode: RuntimeInputMode | undefined = isProcessing ? 'supplement' : undefined;
-    const nextEnvelope = buildEnvelope(
+    // Appshot：截图作为图片附件追加；窗口文本作为隐藏 XML 前置到消息内容。
+    const appshotAttachment = pendingAppshot ? buildAppshotAttachment(pendingAppshot) : null;
+    const effectiveAttachments = appshotAttachment ? [...attachments, appshotAttachment] : attachments;
+    const appshotXml = pendingAppshot ? buildAppshotXml(pendingAppshot) : '';
+    const baseEnvelope = buildEnvelope(
       contentToSend,
-      attachments,
+      effectiveAttachments,
       activeRuntimeInputMode,
       preferredAgentIdOverride,
     );
-    const canSubmit = ((nextEnvelope.content.trim().length > 0) || attachments.length > 0) && (!disabled || isProcessing) && !isUploading;
+    // XML 在 envelope 构建后注入 content，避开 buildEnvelope 内的 @mention 解析。
+    const nextEnvelope = appshotXml
+      ? {
+          ...baseEnvelope,
+          content: appshotXml + (baseEnvelope.content.trim() ? `\n\n${baseEnvelope.content}` : ''),
+        }
+      : baseEnvelope;
+    const canSubmit = ((nextEnvelope.content.trim().length > 0) || effectiveAttachments.length > 0) && (!disabled || isProcessing) && !isUploading;
     if (canSubmit) {
       const draftSnapshot = {
         value,
         attachments,
+        appshot: pendingAppshot,
       };
       const restoreDraft = () => {
         setValue(draftSnapshot.value);
         setAttachments(draftSnapshot.attachments);
+        if (draftSnapshot.appshot) useAppshotsStore.getState().setPending(draftSnapshot.appshot);
       };
 
       // 添加到输入历史
@@ -580,6 +598,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       }
       setValue('');
       setAttachments([]);
+      clearAppshot();
 
       // P3-18: Shell shortcut - ! prefix sends command to agent as bash request
       if (nextEnvelope.content.startsWith('!')) {
@@ -844,6 +863,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
             <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
             <span className="text-sm text-amber-400">文件处理中...</span>
+          </div>
+        )}
+
+        {/* Appshot 预览片 */}
+        {pendingAppshot && (
+          <div className="mb-2 px-2">
+            <AppshotChip capture={pendingAppshot} onRemove={clearAppshot} />
           </div>
         )}
 

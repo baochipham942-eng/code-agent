@@ -8,11 +8,14 @@ import { Pencil } from 'lucide-react';
 import type { UserMessageProps } from './types';
 import { MessageContent } from './MessageContent';
 import { AttachmentDisplay } from './AttachmentPreview';
+import { stripAppshotBlocks } from '@shared/contract/appshot';
 
 export const UserMessage: React.FC<UserMessageProps> = ({ message, onEdit }) => {
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [editContent, setEditContent] = useState(message.content || '');
+  // 用户可见正文剥掉 appshot 隐藏 XML（模型已通过该 XML 拿到窗口文本）
+  const displayContent = stripAppshotBlocks(message.content || '');
+  const [editContent, setEditContent] = useState(displayContent);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {

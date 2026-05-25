@@ -76,6 +76,22 @@ pub fn trigger_capture(app: AppHandle) {
     });
 }
 
+/// 读取 appshot 截图为 base64 data URL，供前端作为图片附件发给模型。
+/// 事件只回传磁盘路径（避免几 MB base64 塞进事件 payload），前端按需调本命令取数据。
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn appshots_read_image_data_url(path: String) -> Result<String, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let bytes = std::fs::read(&path).map_err(|e| format!("读取截图失败: {e}"))?;
+    Ok(format!("data:image/png;base64,{}", STANDARD.encode(bytes)))
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub fn appshots_read_image_data_url(_path: String) -> Result<String, String> {
+    Err("Appshots 仅支持 macOS".to_string())
+}
+
 #[cfg(target_os = "macos")]
 pub fn capture_now(app: &AppHandle) {
     let request_id = format!("appshot-{}", now_ms());

@@ -20,7 +20,7 @@ mod appshots;
 mod native_app_icon;
 mod native_desktop;
 
-use appshots::appshots_trigger;
+use appshots::{appshots_read_image_data_url, appshots_trigger};
 use native_app_icon::desktop_get_app_icon;
 use native_desktop::{
     desktop_capture_screenshot, desktop_get_capabilities, desktop_get_collector_status,
@@ -1123,7 +1123,8 @@ fn main() {
             desktop_start_audio_rec,
             desktop_stop_audio_rec,
             desktop_get_app_icon,
-            appshots_trigger
+            appshots_trigger,
+            appshots_read_image_data_url
         ])
         .setup(|app| {
             if cfg!(debug_assertions) && is_server_running() {

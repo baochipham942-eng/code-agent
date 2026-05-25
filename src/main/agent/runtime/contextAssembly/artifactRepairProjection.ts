@@ -314,7 +314,7 @@ function buildArtifactRepairDirectRequirements(failuresAndCodes: string[]): stri
 
   if (/breakout|arkanoid|wallBounceCount|paddleBounceCount|brickCount|bricksRemaining|powerup/i.test(text)) {
     requirements.push(
-      '- breakout_gameplay_contract: for Breakout/Arkanoid artifacts, expose `paddleX`, `ball`, `wallBounceCount`, `paddleBounceCount`, `brickCount` or `bricksRemaining`, `score`, and deterministic `reset()` scenarios for paddleMove, launch, wallBounce, paddleBounce, brickHit, powerup:wide/multi/slow/through/life, win, and lose; each must produce before/after `snapshot()` evidence through live `step()`.',
+      '- breakout_gameplay_contract: for Breakout/Arkanoid artifacts, expose `paddleX`, `ball`, `wallBounceCount`, `paddleBounceCount`, `brickCount` or `bricksRemaining`, `score`, and deterministic `reset()` scenarios for paddleMove, launch, wallBounce, paddleBounce, brickHit, powerup:wide/multi/slow/through/life, win, and lose; each must produce before/after `snapshot()` evidence through live `step()`. Also start the real browser loop before final script exit, and make a real Space key press from the start screen move ball.x or ball.y.',
     );
   }
 

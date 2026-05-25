@@ -741,7 +741,9 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
             const inputState = options.inputState && typeof options.inputState === 'object' ? options.inputState : {};
             const keys = Array.isArray(options.keys) ? options.keys.filter((key) => typeof key === 'string' && key.trim()) : [];
             try {
-              if (hasReset) {
+              if (options.startOnly === true) {
+                await Promise.resolve(contract.start());
+              } else if (hasReset) {
                 await Promise.resolve(contract.reset(name));
               } else {
                 await Promise.resolve(contract.start());
@@ -765,6 +767,7 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
           if (breakoutSubtype) {
             const breakoutScenarioSpecs = [
               { name: 'paddleMove', keys: ['ArrowRight'], frames: 12 },
+              { name: 'browserLaunchFromStart', keys: ['Space'], browserKeyboard: true, startOnly: true, frames: 18 },
               { name: 'launch', keys: ['Space'], inputState: { Space: true, launch: true }, browserKeyboard: true, frames: 12 },
               { name: 'wallBounce', frames: 20 },
               { name: 'paddleBounce', frames: 20 },

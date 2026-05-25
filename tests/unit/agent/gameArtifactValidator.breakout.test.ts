@@ -229,6 +229,7 @@ describe('validateGameArtifact breakout subtype', () => {
 
     expect(result.passed).toBe(true);
     expect(result.checks).toContain('breakout subtype contract applies');
+    expect(result.checks).toContain('breakout runtime browser Space launch moved ball from start state');
     expect(result.checks).toContain('breakout runtime increased wallBounceCount');
     expect(result.checks).toContain('breakout runtime covered wide/multi/slow/through/life powerups');
   });
@@ -382,5 +383,21 @@ describe('validateGameArtifact breakout subtype', () => {
 
     expect(result.passed).toBe(false);
     expect(result.failures.join('\n')).toContain('真实 Space 发球证据');
+  });
+
+  it('fails breakout artifacts whose contract step moves launch but the live loop never starts', async () => {
+    const noRealLoopFixture = breakoutFixture().replace(
+      `    requestAnimationFrame(animationLoop);`,
+      `    // animation loop intentionally not started`,
+    );
+    const filePath = await writeFixture(noRealLoopFixture, 'arkanoid-no-real-loop.html');
+
+    const result = await validateGameArtifact(filePath, {
+      runRuntimeSmoke: true,
+      runtimeSmokeTimeoutMs: 5000,
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failures.join('\n')).toContain('从默认开始状态派发浏览器 Space');
   });
 });

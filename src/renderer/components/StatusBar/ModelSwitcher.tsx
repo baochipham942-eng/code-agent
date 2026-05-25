@@ -23,6 +23,7 @@ import {
   getRuntimeModelLabel,
   type RuntimeModelOption,
 } from '@shared/modelRuntime';
+import { SUPPORTED_AGENT_EFFORT_LEVELS } from '@shared/effortLevels';
 import { toast } from '../../hooks/useToast';
 import { Eye, Wrench, Brain, Sparkles, Zap, Cpu, Terminal, Code2, Gauge } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
@@ -80,6 +81,25 @@ const ENGINE_PERMISSION_LABEL: Record<AgentEngineDescriptor['defaultPermissionPr
   read_only: '只读默认',
   workspace_write: 'workspace write',
 };
+
+const EFFORT_LABEL: Record<(typeof SUPPORTED_AGENT_EFFORT_LEVELS)[number], string> = {
+  low: 'Low',
+  medium: 'Med',
+  high: 'High',
+};
+
+const EFFORT_COLOR: Record<(typeof SUPPORTED_AGENT_EFFORT_LEVELS)[number], string> = {
+  low: 'text-zinc-400',
+  medium: 'text-blue-400',
+  high: 'text-amber-400',
+};
+
+const EFFORT_OPTIONS: Array<{ value: EffortLevel; label: string; color: string }> =
+  SUPPORTED_AGENT_EFFORT_LEVELS.map((value) => ({
+    value,
+    label: EFFORT_LABEL[value],
+    color: EFFORT_COLOR[value],
+  }));
 
 const ENGINE_RISK_LABEL: Record<AgentEngineDescriptor['riskTier'], string> = {
   low: '低风险',
@@ -568,12 +588,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       ?? '默认模型';
   const displayLabel = engine.kind === 'native' ? nativeDisplayLabel : externalDisplayLabel;
 
-  const EFFORT_OPTIONS: Array<{ value: EffortLevel; label: string; color: string }> = [
-    { value: 'low', label: 'Low', color: 'text-zinc-400' },
-    { value: 'medium', label: 'Med', color: 'text-blue-400' },
-    { value: 'high', label: 'High', color: 'text-amber-400' },
-    { value: 'max', label: 'Max', color: 'text-pink-400' },
-  ];
   const effortShort = EFFORT_OPTIONS.find((o) => o.value === effortLevel)?.label ?? 'High';
 
   const menu = open && menuPos && (
@@ -654,7 +668,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               <Zap className="w-3 h-3" />
               <span>Reasoning effort</span>
             </div>
-            <div className="grid grid-cols-4 gap-1">
+            <div className="grid grid-cols-3 gap-1">
               {EFFORT_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
@@ -682,11 +696,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="搜索模型..."
+              data-model-search-input
               className="
                 w-full px-2 py-1 text-xs
                 bg-zinc-900 border border-zinc-700 rounded
                 text-gray-200 placeholder-gray-500
-                outline-hidden focus:border-purple-500
+                outline-none focus:border-zinc-600
               "
             />
           </div>

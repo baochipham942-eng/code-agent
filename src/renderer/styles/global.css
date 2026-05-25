@@ -232,6 +232,12 @@ body.theme-switching * {
   box-shadow: none !important;
 }
 
+[data-model-search-input]:focus,
+[data-model-search-input]:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 /* ============================================================================
    Code & Monospace
    ============================================================================ */

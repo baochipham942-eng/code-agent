@@ -303,9 +303,9 @@ export class BreakoutChecker implements GameSubtypeChecker {
       numberChanged(launchProbe.before, launchProbe.after, ['ball.x', 'ballX', 'balls[0].x'], [/ballx|^x$/i]) ||
       numberChanged(launchProbe.before, launchProbe.after, ['ball.y', 'ballY', 'balls[0].y'], [/bally|^y$/i])
     )) {
-      checks.push('breakout runtime launch moved ball coordinates');
+      checks.push('breakout runtime browser Space launch moved ball coordinates');
     } else {
-      failures.push('breakout runtime 缺少 launch 证据：reset("launch") 发球后 ball.x 或 ball.y 必须变化。');
+      failures.push('breakout runtime 缺少真实 Space 发球证据：reset("launch") 后派发浏览器 Space 键盘事件，ball.x 或 ball.y 必须变化。');
     }
 
     const wallProbe = findScenario(probes, 'wallBounce');
@@ -387,7 +387,7 @@ export class BreakoutChecker implements GameSubtypeChecker {
 
   repairGuidance(failureCode: string): string | undefined {
     if (/breakout|arkanoid/i.test(failureCode)) {
-      return 'Expose breakout/arkanoid __GAME_META__ and __GAME_TEST__ deterministic scenarios for paddleMove, launch, wallBounce, paddleBounce, brickHit, powerup:<type>, win, and lose; each scenario must be driven by live step() and produce before/after snapshot deltas.';
+      return 'Expose breakout/arkanoid __GAME_META__ and __GAME_TEST__ deterministic scenarios for paddleMove, launch, wallBounce, paddleBounce, brickHit, powerup:<type>, win, and lose; each scenario must be driven by live step() and produce before/after snapshot deltas. Wire real browser keyboard events too: Space must use event.code === "Space" or normalize event.key === " " to the same Space input consumed by the live loop.';
     }
     return undefined;
   }

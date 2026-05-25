@@ -4,6 +4,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { normalizeAgentEffortLevel } from '../../shared/effortLevels';
 import { invokeDomain } from '../services/ipcService';
 
 // -----------------------------------------------------------------------------
@@ -68,8 +69,9 @@ export const useModeStore = create<ModeState>()(
 
       // Set effort level and sync to backend via IPC
       setEffortLevel: (level) => {
-        set({ effortLevel: level });
-        invokeDomain('domain:agent', 'setEffortLevel', { level }).catch(() => {
+        const normalizedLevel = normalizeAgentEffortLevel(level);
+        set({ effortLevel: normalizedLevel });
+        invokeDomain('domain:agent', 'setEffortLevel', { level: normalizedLevel }).catch(() => {
           // Silently ignore if agent not initialized yet — will apply on next message
         });
       },
@@ -97,7 +99,17 @@ export const useModeStore = create<ModeState>()(
     }),
     {
       name: 'code-agent-mode',
-      version: 3, // Bump: added interactionMode
+      version: 4, // Bump: clamp unsupported effort levels.
+      migrate: (persistedState) => {
+        if (!persistedState || typeof persistedState !== 'object') {
+          return persistedState;
+        }
+        const state = persistedState as Partial<ModeState>;
+        return {
+          ...state,
+          effortLevel: normalizeAgentEffortLevel(state.effortLevel),
+        };
+      },
     }
   )
 );

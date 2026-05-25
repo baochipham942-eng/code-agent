@@ -27,10 +27,19 @@ const INTERACTION_POST_ACTION_SETTLE_MS = 200;
 
 const BROWSER_VISUAL_SMOKE_VIEWPORTS = [
   { name: 'desktop', width: 1280, height: 720 },
+  { name: 'wide-desktop', width: 1920, height: 1080 },
   { name: 'mobile', width: 390, height: 780 },
 ] as const;
 
 type BrowserViewportName = (typeof BROWSER_VISUAL_SMOKE_VIEWPORTS)[number]['name'];
+
+interface CanvasLayoutMetrics {
+  width: number;
+  height: number;
+  visibleRatio: number;
+  internalWidth?: number;
+  internalHeight?: number;
+}
 
 function normalizeVisualSmokeOptions(
   optionsOrTimeout: number | BrowserVisualSmokeOptions | undefined,
@@ -49,7 +58,8 @@ function normalizeVisualSmokeOptions(
 
 function stepAppliesToViewport(step: BrowserInteractionStep, viewport: BrowserViewportName): boolean {
   const target = step.viewport ?? 'both';
-  return target === 'both' || target === viewport;
+  const viewportFamily = viewport === 'wide-desktop' ? 'desktop' : viewport;
+  return target === 'both' || target === viewportFamily;
 }
 
 function roundMetric(value: number): number {
@@ -79,6 +89,45 @@ function formatCanvasFrames(
 
 function mobileCanvasRepairHint(viewportWidth: number): string {
   return `Repair hint: constrain the canvas or wrapper to the viewport on both axes, e.g. max-width: calc(100vw - 16px), max-height: calc(100dvh - 16px), aspect-ratio, height:auto. The full playfield must fit a ${viewportWidth}px mobile viewport; fixed canvas width or max-height-only scaling can still overflow.`;
+}
+
+function wideCanvasRepairHint(): string {
+  return 'Repair hint: keep internal drawing resolution if needed, but let the game shell/canvas scale up on wide desktop previews with viewport-relative width and height. Avoid a fixed 800px/900px max-width that leaves the game small in a large black preview.';
+}
+
+export function isPrimaryGameCanvasUndersizedForViewport(
+  canvases: CanvasLayoutMetrics[],
+  viewport: { width: number; height: number },
+): boolean {
+  if (viewport.width < 1440 || viewport.height < 800 || canvases.length === 0) return false;
+  const primaryCanvas = canvases
+    .filter((canvas) => canvas.width >= 16 && canvas.height >= 16 && canvas.visibleRatio >= 0.82)
+    .sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
+  if (!primaryCanvas) return false;
+
+  const widthRatio = primaryCanvas.width / viewport.width;
+  const heightRatio = primaryCanvas.height / viewport.height;
+  return widthRatio < 0.5 && heightRatio < 0.65;
+}
+
+export function hasGameCanvasAspectRatioMismatch(canvases: CanvasLayoutMetrics[]): boolean {
+  return canvases.some((canvas) => {
+    if (
+      canvas.width < 16
+      || canvas.height < 16
+      || canvas.visibleRatio < 0.82
+      || !canvas.internalWidth
+      || !canvas.internalHeight
+      || canvas.internalWidth < 16
+      || canvas.internalHeight < 16
+    ) {
+      return false;
+    }
+    const renderedAspect = canvas.width / canvas.height;
+    const internalAspect = canvas.internalWidth / canvas.internalHeight;
+    const driftRatio = Math.abs(renderedAspect - internalAspect) / internalAspect;
+    return driftRatio > 0.12;
+  });
 }
 
 export function cloneBrowserVisualSmoke(summary: BrowserVisualSmokeSummary): BrowserVisualSmokeSummary {
@@ -464,6 +513,14 @@ export async function runBrowserVisualSmoke(
           __GAME_TEST__?: unknown;
           __INTERACTIVE_TEST__?: unknown;
         };
+        const interactiveMeta = metadataWindow.__INTERACTIVE_META__;
+        const interactiveMetaRecord = Boolean(interactiveMeta)
+          && typeof interactiveMeta === 'object'
+          && !Array.isArray(interactiveMeta)
+          ? interactiveMeta as Record<string, unknown>
+          : null;
+        const gameMetaPresent = Boolean(metadataWindow.__GAME_META__)
+          || interactiveMetaRecord?.domain === 'game';
 
         return {
           viewportName,
@@ -471,6 +528,7 @@ export async function runBrowserVisualSmoke(
           title: document.title,
           bodyTextLength: body?.innerText?.trim().length || 0,
           metaPresent: Boolean(metadataWindow.__GAME_META__ || metadataWindow.__INTERACTIVE_META__),
+          gameMetaPresent,
           testPresent: Boolean(metadataWindow.__GAME_TEST__ || metadataWindow.__INTERACTIVE_TEST__),
           documentWidth: documentElement.scrollWidth,
           documentHeight: documentElement.scrollHeight,
@@ -530,6 +588,21 @@ export async function runBrowserVisualSmoke(
         checks.push(`${viewport.name} visual smoke framed ${visibleCanvasCount}/${canvasCount} canvas element(s)`);
       }
 
+      if (probe.gameMetaPresent && canvasCount > 0) {
+        if (hasGameCanvasAspectRatioMismatch(probe.canvases)) {
+          failures.push(
+            `${viewport.name} visual smoke detected distorted game canvas aspect ratio (canvas=${formatCanvasFrames(probe.canvases)}). Repair hint: keep CSS aspect-ratio, rendered width/height, and canvas internal width/height consistent so the game is not stretched.`,
+          );
+        }
+        if (isPrimaryGameCanvasUndersizedForViewport(probe.canvases, probe.viewport)) {
+          failures.push(
+            `${viewport.name} visual smoke primary game canvas is undersized for the preview surface (viewport=${probe.viewport.width}x${probe.viewport.height}, canvas=${formatCanvasFrames(probe.canvases)}). ${wideCanvasRepairHint()}`,
+          );
+        } else {
+          checks.push(`${viewport.name} visual smoke primary game canvas uses the preview surface`);
+        }
+      }
+
       if (sampledCanvases.length > 0 && coloredCanvases.length === 0) {
         failures.push(`${viewport.name} visual smoke sampled canvas pixels but found no nonblank rendered content.`);
       } else if (coloredCanvases.length > 0) {
@@ -550,7 +623,9 @@ export async function runBrowserVisualSmoke(
         checks.push(`${viewport.name} visual smoke detected no horizontal canvas cropping`);
       }
 
-      const applicableSteps = interactions.filter((step) => stepAppliesToViewport(step, viewport.name));
+      const applicableSteps = viewport.name === 'wide-desktop'
+        ? []
+        : interactions.filter((step) => stepAppliesToViewport(step, viewport.name));
       for (const step of applicableSteps) {
         const stepResult = await runInteractionStep(page, step, viewport.name);
         interactionResults.push(stepResult);

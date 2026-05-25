@@ -84,14 +84,44 @@ function buildPayloads(version, now = new Date()) {
       engines: [
         {
           kind: 'codex_cli',
-          defaultModel: 'gpt-5',
+          defaultModel: 'gpt-5.5',
           updatedAt,
           models: [
             {
-              id: 'gpt-5',
-              label: 'GPT-5',
+              id: 'gpt-5.5',
+              label: 'GPT-5.5',
               capabilities: ['code', 'reasoning', 'longContext'],
               recommended: true,
+              updatedAt,
+            },
+            {
+              id: 'gpt-5.4',
+              label: 'GPT-5.4',
+              capabilities: ['code', 'reasoning', 'longContext'],
+              updatedAt,
+            },
+            {
+              id: 'gpt-5.4-mini',
+              label: 'GPT-5.4 Mini',
+              capabilities: ['code', 'fast', 'reasoning'],
+              updatedAt,
+            },
+            {
+              id: 'gpt-5.3-codex',
+              label: 'GPT-5.3 Codex',
+              capabilities: ['code', 'reasoning', 'longContext'],
+              updatedAt,
+            },
+            {
+              id: 'gpt-5.3-codex-spark',
+              label: 'GPT-5.3 Codex Spark',
+              capabilities: ['code', 'fast', 'reasoning'],
+              updatedAt,
+            },
+            {
+              id: 'gpt-5.2',
+              label: 'GPT-5.2',
+              capabilities: ['code', 'reasoning', 'longContext'],
               updatedAt,
             },
           ],
@@ -103,9 +133,15 @@ function buildPayloads(version, now = new Date()) {
           models: [
             {
               id: 'sonnet',
-              label: 'Claude Sonnet',
+              label: 'Claude Sonnet (latest alias)',
               capabilities: ['code', 'reasoning', 'longContext'],
               recommended: true,
+              updatedAt,
+            },
+            {
+              id: 'opus',
+              label: 'Claude Opus (latest alias)',
+              capabilities: ['code', 'reasoning', 'longContext'],
               updatedAt,
             },
           ],

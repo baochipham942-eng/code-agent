@@ -27,6 +27,7 @@ import { getSessionManager, type SessionWithMessages } from '../services';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
 import { getFileCheckpointService } from '../services/checkpoint';
+import { normalizeAgentEffortLevel } from '../../shared/effortLevels';
 
 const logger = createLogger('AgentAppService');
 import { getModelSessionState } from '../session/modelSessionState';
@@ -700,7 +701,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   setEffortLevel(level: import('../../shared/contract/agent').EffortLevel): void {
     const orchestrator = this.getOrchestratorOrThrow();
-    orchestrator.setEffortLevel(level);
+    orchestrator.setEffortLevel(normalizeAgentEffortLevel(level));
   }
 
   // === Interaction Mode ===

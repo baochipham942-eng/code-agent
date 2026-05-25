@@ -1,10 +1,10 @@
 // ============================================================================
 // EffortSelector - 推理强度选择器
-// 4 档 pill 按钮: Low / Med / High / Max
+// 3 档 pill 按钮: Low / Med / High
 // ============================================================================
 
 import React from 'react';
-import { Zap, ZapOff, Flame, Rocket } from 'lucide-react';
+import { Zap, ZapOff, Flame } from 'lucide-react';
 import type { EffortLevel } from '../../../../../shared/contract/agent';
 
 // ============================================================================
@@ -40,13 +40,6 @@ const EFFORT_OPTIONS: EffortOption[] = [
     icon: <Flame className="w-3 h-3" />,
     color: 'text-amber-400',
     bgColor: 'bg-amber-500/20',
-  },
-  {
-    value: 'max',
-    label: 'Max',
-    icon: <Rocket className="w-3 h-3" />,
-    color: 'text-red-400',
-    bgColor: 'bg-red-500/20',
   },
 ];
 

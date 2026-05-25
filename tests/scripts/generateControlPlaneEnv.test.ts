@@ -38,7 +38,7 @@ describe('control-plane env bundle generator', () => {
     expect(agentEngineCatalog).toMatchObject({
       version: 'test-version',
       engines: [
-        { kind: 'codex_cli', defaultModel: 'gpt-5' },
+        { kind: 'codex_cli', defaultModel: 'gpt-5.5' },
         { kind: 'claude_code', defaultModel: 'sonnet' },
       ],
     });

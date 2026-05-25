@@ -5,6 +5,7 @@ import { CONFIG_DIR_NEW } from '../../../config/configPaths';
 import { join } from 'path';
 import type { ContextAssemblyCtx } from '../contextAssembly';
 import { cachedReadFileSync, logger } from '../contextAssembly';
+import { normalizeAgentEffortLevel } from '../../../../shared/effortLevels';
 
 export function loadResearchSkillPrompt(ctx: ContextAssemblyCtx): string | null {
   // Try project-level skill first, then user-level
@@ -90,9 +91,7 @@ export async function buildPlanContextMessage(ctx: ContextAssemblyCtx): Promise<
 export function shouldThink(ctx: ContextAssemblyCtx, hasErrors: boolean): boolean {
   ctx.runtime.thinkingStepCount++;
 
-  switch (ctx.runtime.effortLevel) {
-    case 'max':
-      return true; // 每次 tool call 后都思考
+  switch (normalizeAgentEffortLevel(ctx.runtime.effortLevel)) {
     case 'high':
       return ctx.runtime.thinkingStepCount % 2 === 0 || hasErrors; // 每隔一次 + 错误时
     case 'medium':

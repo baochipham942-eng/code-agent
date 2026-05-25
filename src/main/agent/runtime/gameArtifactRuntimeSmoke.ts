@@ -410,6 +410,32 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
           }
           await sleep(80);
         };
+        const browserKeyInit = (key) => {
+          if (key === 'Space') return { key: ' ', code: 'Space' };
+          return { key, code: key };
+        };
+        const dispatchBrowserKey = (type, key) => {
+          const init = browserKeyInit(key);
+          const targets = [document.activeElement, document, window].filter(Boolean);
+          for (const target of targets) {
+            try {
+              target.dispatchEvent(new KeyboardEvent(type, {
+                key: init.key,
+                code: init.code,
+                bubbles: true,
+                cancelable: true,
+              }));
+            } catch {
+              // Continue dispatching to the remaining targets.
+            }
+          }
+        };
+        const driveBrowserKeyboard = async (keys, frames) => {
+          for (const key of keys) dispatchBrowserKey('keydown', key);
+          await sleep(Math.max(80, Math.min(1200, frames * 20)));
+          for (const key of keys) dispatchBrowserKey('keyup', key);
+          await sleep(80);
+        };
         const readMetric = (snapshot, key) => {
           if (!snapshot || typeof snapshot !== 'object') return undefined;
           return String(key).replace(/\\[(\\d+)\\]/g, '.$1').split('.').reduce((current, part) => {
@@ -721,7 +747,9 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
                 await Promise.resolve(contract.start());
               }
               const before = await Promise.resolve(contract.snapshot());
-              if (keys.length > 0) {
+              if (keys.length > 0 && options.browserKeyboard === true) {
+                await driveBrowserKeyboard(keys, frames);
+              } else if (keys.length > 0) {
                 await driveKeys(keys, frames);
               } else if (hasStep) {
                 await Promise.resolve(contract.step(inputState, frames));
@@ -737,7 +765,7 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
           if (breakoutSubtype) {
             const breakoutScenarioSpecs = [
               { name: 'paddleMove', keys: ['ArrowRight'], frames: 12 },
-              { name: 'launch', keys: ['Space'], inputState: { Space: true, launch: true }, frames: 12 },
+              { name: 'launch', keys: ['Space'], inputState: { Space: true, launch: true }, browserKeyboard: true, frames: 12 },
               { name: 'wallBounce', frames: 20 },
               { name: 'paddleBounce', frames: 20 },
               { name: 'brickHit', frames: 30 },

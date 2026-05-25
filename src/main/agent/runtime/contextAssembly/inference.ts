@@ -23,6 +23,7 @@ import {
 import type { MessageContent, ModelMessage } from '../../../agent/loopTypes';
 import type { StreamCallback, InferenceOptions, ModelResponse as RouterModelResponse } from '../../../model/types';
 import type { ModelConfig } from '../../../../shared/contract/model';
+import { normalizeAgentEffortLevel } from '../../../../shared/effortLevels';
 import type { ContextAssemblyCtx } from '../contextAssembly';
 import { logger } from '../contextAssembly';
 import {
@@ -666,9 +667,8 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       low: 2048,
       medium: 8192,
       high: 16384,
-      max: 32768,
     };
-    const budgetForEffort = EFFORT_TO_BUDGET[ctx.runtime.effortLevel];
+    const budgetForEffort = EFFORT_TO_BUDGET[normalizeAgentEffortLevel(ctx.runtime.effortLevel)];
     if (budgetForEffort && !effectiveConfig.thinkingBudget) {
       effectiveConfig = { ...effectiveConfig, thinkingBudget: budgetForEffort };
     }

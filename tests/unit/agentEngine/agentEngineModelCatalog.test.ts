@@ -51,7 +51,7 @@ describe('Agent Engine model catalog parser', () => {
     expect(parsed.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'duplicate_model', severity: 'error' }),
     ]));
-    expect(parsed.catalog.version).toBe('builtin-2026-05-22');
+    expect(parsed.catalog.version).toBe('builtin-2026-05-25');
   });
 
   it('rejects engines whose default model is not listed', () => {
@@ -66,7 +66,7 @@ describe('Agent Engine model catalog parser', () => {
     expect(parsed.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'default_model_not_found', severity: 'error' }),
     ]));
-    expect(parsed.catalog.version).toBe('builtin-2026-05-22');
+    expect(parsed.catalog.version).toBe('builtin-2026-05-25');
   });
 
   it('keeps disabled models visible but resolves execution to an enabled fallback', () => {
@@ -144,7 +144,7 @@ describe('RemoteAgentEngineModelCatalogService', () => {
     const result = await service.readCatalog();
 
     expect(result.source).toBe('bundled');
-    expect(result.catalog.version).toBe('builtin-2026-05-22');
+    expect(result.catalog.version).toBe('builtin-2026-05-25');
     expect(result.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'remote_expired_envelope' }),
     ]));

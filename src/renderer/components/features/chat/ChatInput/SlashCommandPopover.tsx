@@ -8,7 +8,7 @@ import {
   Plus, Trash2, Archive, FileText, FolderOpen,
   BarChart2, Settings, Keyboard, HelpCircle,
   Terminal, Cpu, Plug, Zap, ClipboardList,
-  MessageCircleQuestion, ZapOff, Flame, Rocket,
+  MessageCircleQuestion, ZapOff, Flame,
   Lock, LockOpen, Bot, Sparkles, Server, Target,
 } from 'lucide-react';
 import { useAppStore } from '../../../../stores/appStore';
@@ -271,13 +271,6 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       description: '设置高推理强度',
       icon: <Flame className="w-4 h-4" />,
       action: () => setEffortLevel('high'),
-    },
-    {
-      id: 'max',
-      label: '最大推理强度',
-      description: '设置最大推理强度',
-      icon: <Rocket className="w-4 h-4" />,
-      action: () => setEffortLevel('max'),
     },
     {
       id: 'default',

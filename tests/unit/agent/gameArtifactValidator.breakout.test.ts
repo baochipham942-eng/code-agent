@@ -66,6 +66,7 @@ function breakoutFixture(): string {
     };
 
     let state;
+    const browserInput = {};
     function baseState(scenario = 'default') {
       return {
         scenario,
@@ -103,10 +104,6 @@ function breakoutFixture(): string {
         state.paddle.x = state.paddleX;
       }
       if (input.Space || input.launch) {
-        state.ball.x += state.ball.vx;
-        state.ball.y += state.ball.vy;
-      }
-      if (state.scenario === 'launch') {
         state.ball.x += state.ball.vx;
         state.ball.y += state.ball.vy;
       }
@@ -195,7 +192,27 @@ function breakoutFixture(): string {
         };
       }
     };
+    document.addEventListener('keydown', (event) => {
+      if (event.code === 'Space' || event.key === ' ') {
+        browserInput.Space = true;
+        event.preventDefault();
+        return;
+      }
+      browserInput[event.key] = true;
+    });
+    document.addEventListener('keyup', (event) => {
+      if (event.code === 'Space' || event.key === ' ') {
+        browserInput.Space = false;
+        return;
+      }
+      browserInput[event.key] = false;
+    });
+    function animationLoop() {
+      tick(browserInput);
+      requestAnimationFrame(animationLoop);
+    }
     window.__GAME_TEST__.start();
+    requestAnimationFrame(animationLoop);
   </script>
 </body>
 </html>`;
@@ -334,5 +351,36 @@ describe('validateGameArtifact breakout subtype', () => {
 
     expect(result.passed).toBe(false);
     expect(result.failures.join('\n')).toContain('wallBounceCount');
+  });
+
+  it('fails breakout artifacts whose browser Space key does not launch the ball', async () => {
+    const brokenSpaceFixture = breakoutFixture()
+      .replace(
+        `if (event.code === 'Space' || event.key === ' ') {
+        browserInput.Space = true;
+        event.preventDefault();
+        return;
+      }
+      browserInput[event.key] = true;`,
+        `browserInput[event.key] = true;
+      if (event.key === ' ') event.preventDefault();`,
+      )
+      .replace(
+        `if (event.code === 'Space' || event.key === ' ') {
+        browserInput.Space = false;
+        return;
+      }
+      browserInput[event.key] = false;`,
+        `browserInput[event.key] = false;`,
+      );
+    const filePath = await writeFixture(brokenSpaceFixture, 'arkanoid-broken-space.html');
+
+    const result = await validateGameArtifact(filePath, {
+      runRuntimeSmoke: true,
+      runtimeSmokeTimeoutMs: 5000,
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failures.join('\n')).toContain('真实 Space 发球证据');
   });
 });

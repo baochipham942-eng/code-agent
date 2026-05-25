@@ -108,6 +108,8 @@ describe('xiaomi artifact text-first write', () => {
     expect(messages[1].content).toContain('numeric 0..11');
     expect(messages[1].content).toContain('all 12 scenarios reachable');
     expect(messages[1].content).toContain('wallBounceCount');
+    expect(messages[1].content).toContain('The CSS/rendered canvas aspect ratio must match');
+    expect(messages[1].content).toContain('large empty margins');
 
     const config = buildXiaomiArtifactTextFirstConfig({
       provider: 'xiaomi',
@@ -118,6 +120,23 @@ describe('xiaomi artifact text-first write', () => {
 
     expect(config.reasoningEffort).toBe('low');
     expect(config.thinkingBudget).toBeUndefined();
+  });
+
+  it('keeps browser visual smoke aspect-ratio failures in compact repair evidence', () => {
+    const messages = buildXiaomiArtifactTextFirstMessages(
+      [
+        { role: 'user', content: '修复这个弹砖块游戏' },
+        {
+          role: 'tool',
+          content: 'desktop visual smoke detected distorted game canvas aspect ratio (canvas=484x363, internal=480x640). primary game canvas is undersized.',
+        },
+      ],
+      '/tmp/breakout.html',
+      { artifactRepairActive: true },
+    );
+
+    expect(messages.some((message) => String(message.content).includes('distorted game canvas aspect ratio'))).toBe(true);
+    expect(messages.some((message) => String(message.content).includes('primary game canvas is undersized'))).toBe(true);
   });
 
   it('extracts clean HTML and wraps it as a synthetic Write call', () => {

@@ -54,7 +54,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 0, bundledFallback: 1, missing: 0 },
-    })).toBe('基础图片处理已就绪');
+    })).toBe('图片处理已可用');
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -66,7 +66,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 1, bundledFallback: 0, missing: 0 },
-    })).toBe('语音和浏览器操作已就绪');
+    })).toBe('语音、浏览器和图片处理都已可用');
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -84,7 +84,7 @@ describe('UpdateSettings status visibility', () => {
         nodeModules: [],
       }],
       summary: { installed: 0, bundledFallback: 1, missing: 1 },
-    })).toBe('图片已可用；需要语音或浏览器操作时再下载');
+    })).toBe('图片处理已可用；语音、浏览器会在用到时自动下载');
     expect(getRuntimeAssetsSummaryText({
       runtimeBaseDir: '/tmp/runtime',
       activeManifestPath: '/tmp/runtime/active.json',
@@ -106,14 +106,14 @@ describe('UpdateSettings status visibility', () => {
       delivery: 'bundled',
       state: 'bundledFallback',
       nodeModules: [],
-    })).toBe('已内置');
+    })).toBe('已可用');
     expect(getRuntimeAssetStatusText({
       id: 'playwright-browser-runtime',
       label: 'Browser automation components',
       delivery: 'optional',
       state: 'missing',
       nodeModules: [],
-    })).toBe('按需下载');
+    })).toBe('用到时下载');
   });
 
   it('uses user-facing runtime capability names instead of package labels', () => {
@@ -152,7 +152,7 @@ describe('UpdateSettings status visibility', () => {
         manifestSha256: 'a'.repeat(64),
       },
     })).toBe(true);
-    expect(getRuntimeAssetsPrepareText(false)).toBe('下载语音和浏览器能力');
-    expect(getRuntimeAssetsPrepareText(true)).toBe('正在下载语音和浏览器能力...');
+    expect(getRuntimeAssetsPrepareText(false)).toBe('提前下载语音和浏览器');
+    expect(getRuntimeAssetsPrepareText(true)).toBe('正在下载语音和浏览器...');
   });
 });

@@ -69,6 +69,7 @@ export function buildXiaomiArtifactTextFirstMessages(
         '- reset(levelOrScenario) must accept string ids/names and numeric indexes for every authored scenario. If scenarios are stored as strings, map numeric 0..11 to the same scenario ids before using startsWith or split.',
         '- Keep progressPlan very small and generic for default controls: ArrowRight increases paddleX and Space changes ball.x. Do not put wallBounceCount, paddleBounceCount, brick counters, powerups, win, or lose in progressPlan.',
         '- Start the live browser loop with requestAnimationFrame(loop) or equivalent before the script exits. A real browser Space key press from the start screen must move ball.x or ball.y, not only pass __GAME_TEST__.step().',
+        '- Keep the rendered game surface readable and proportional in desktop, wide desktop, and 390px mobile previews. The CSS/rendered canvas aspect ratio must match canvas.width / canvas.height; never stretch an internal 480x640 portrait canvas into a landscape box or the reverse. Use responsive constraints such as width: min(...), max-width: calc(100vw - 16px), max-height: calc(100dvh - 16px), aspect-ratio: <canvas.width> / <canvas.height>, and height: auto; wide desktop should not leave the primary playfield tiny with large empty margins.',
         '- runSmokeTest coverage.stateChanges should include paddleX and ball.x, not only ball.launched, and should separately prove every authored scenario through reset(scenario) + step().',
         '- reset("win") followed by step({}, frames) must deterministically reach status "won"; reset("lose") followed by step({}, frames) must deterministically reach status "lost" and lives 0.',
         '- In step/tick, implement deterministic scenario shortcuts before or alongside physics: wallBounce increments wallBounceCount, paddleBounce increments paddleBounceCount, brickHit reduces brickCount and increases score, each powerup:* triggers that powerup, win sets status "won", lose sets status "lost".',
@@ -179,7 +180,7 @@ function buildCompactRepairEvidenceMessages(messages: ModelMessage[]): ModelMess
     .filter((message) => {
       if (message.role !== 'tool' && message.role !== 'system') return false;
       const content = normalizeMessageContent(message.content);
-      return /artifact[_-]?repair|artifact validation failed|runSmokeTest|__GAME_TEST__|__INTERACTIVE_TEST__|progressPlan|frontend_visual_smoke|missing_test_contract|canvas_not_responsive|reachability|scenarioMode/i.test(content);
+      return /artifact[_-]?repair|artifact validation failed|runSmokeTest|__GAME_TEST__|__INTERACTIVE_TEST__|progressPlan|frontend_visual_smoke|browser visual smoke|visual smoke|distorted game canvas aspect ratio|primary game canvas is undersized|aspect ratio|missing_test_contract|canvas_not_responsive|reachability|scenarioMode/i.test(content);
     })
     .slice(-5)
     .map((message) => ({

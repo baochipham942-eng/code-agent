@@ -59,11 +59,11 @@ export function getRuntimeAssetsSummaryText(status: RuntimeAssetsStatus | null):
   const bundledMissing = status.assets.filter((asset) => asset.delivery === 'bundled' && asset.state === 'missing').length;
   const bundledReady = status.assets.filter((asset) => asset.delivery === 'bundled' && asset.state === 'bundledFallback').length;
   if (bundledMissing > 0) return '随应用提供的基础能力缺失';
-  if (optionalMissing > 0 && bundledReady > 0) return '图片已可用；需要语音或浏览器操作时再下载';
-  if (optionalMissing > 0) return '需要语音或浏览器操作时再下载';
+  if (optionalMissing > 0 && bundledReady > 0) return '图片处理已可用；语音、浏览器会在用到时自动下载';
+  if (optionalMissing > 0) return '语音、浏览器会在用到时自动下载';
   if (status.summary.missing > 0) return '部分功能暂不可用';
-  if (status.summary.installed > 0) return '语音和浏览器操作已就绪';
-  return '基础图片处理已就绪';
+  if (status.summary.installed > 0) return '语音、浏览器和图片处理都已可用';
+  return '图片处理已可用';
 }
 
 export function shouldShowRuntimeAssetsPrepare(updateInfo: UpdateInfo | null): boolean {
@@ -75,13 +75,13 @@ export function shouldDisableUpdateActions(webMode: boolean, hasNativeBridge: bo
 }
 
 export function getRuntimeAssetsPrepareText(isPreparing: boolean): string {
-  return isPreparing ? '正在下载语音和浏览器能力...' : '下载语音和浏览器能力';
+  return isPreparing ? '正在下载语音和浏览器...' : '提前下载语音和浏览器';
 }
 
 export function getRuntimeAssetStatusText(asset: RuntimeAssetStatusEntry): string {
-  if (asset.state === 'installed') return '已启用';
-  if (asset.state === 'bundledFallback') return '已内置';
-  if (asset.delivery === 'optional') return '按需下载';
+  if (asset.state === 'installed') return '已可用';
+  if (asset.state === 'bundledFallback') return '已可用';
+  if (asset.delivery === 'optional') return '用到时下载';
   return '缺失';
 }
 

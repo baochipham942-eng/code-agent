@@ -318,9 +318,9 @@ function buildArtifactRepairDirectRequirements(failuresAndCodes: string[]): stri
     );
   }
 
-  if (/canvas_not_responsive|固定 canvas|窄窗口.*裁切|horizontal canvas overflow|none are visibly framed|mobile visual smoke.*canvas|响应式 CSS|responsive css/i.test(text)) {
+  if (/canvas_not_responsive|固定 canvas|窄窗口.*裁切|horizontal canvas overflow|none are visibly framed|mobile visual smoke.*canvas|browser visual smoke.*canvas|distorted game canvas aspect ratio|primary game canvas is undersized|aspect ratio|small centered playfield|large empty margins|preview surface|变形|响应式 CSS|responsive css/i.test(text)) {
     requirements.push(
-      '- canvas_not_responsive: keep the drawing resolution if useful, but constrain both rendered width and height with responsive canvas or wrapper CSS such as max-width: calc(100vw - 16px), max-height: calc(100dvh - 16px), aspect-ratio, and height:auto. The full playfield and HUD must fit inside a 390px mobile viewport; fixed 800px/900px width or max-height-only scaling is not enough.',
+      '- canvas_not_responsive: keep the drawing resolution if useful, but constrain both rendered width and height with responsive canvas or wrapper CSS such as max-width: calc(100vw - 16px), max-height: calc(100dvh - 16px), aspect-ratio, and height:auto. The rendered CSS aspect ratio must match the canvas internal width/height, so do not render 480x640 as a 4:3 or 16:9 box. The full playfield and HUD must fit inside a 390px mobile viewport, and wide desktop previews should scale the primary playfield up instead of leaving large empty margins; fixed 800px/900px width or max-height-only scaling is not enough.',
     );
   }
 

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { formatArtifactRepairToolResultContent } from '../../../src/main/agent/runtime/contextAssembly/artifactRepairProjection';
+import {
+  buildArtifactRepairFocusBlock,
+  formatArtifactRepairToolResultContent,
+} from '../../../src/main/agent/runtime/contextAssembly/artifactRepairProjection';
 
 const TARGET_FILE = '/Users/test/.code-agent/work/big-game.html';
 
@@ -42,5 +45,44 @@ describe('formatArtifactRepairToolResultContent — Route A 全文不压缩', ()
       metadata: { evidenceKind: 'file_read', filePath: TARGET_FILE },
     };
     expect(formatArtifactRepairToolResultContent(ctx, result, originalContent)).toBe(originalContent);
+  });
+});
+
+describe('artifact repair focus block', () => {
+  it('turns visual aspect-ratio failures into direct canvas repair requirements', () => {
+    const ctx: any = {
+      runtime: {
+        workingDirectory: '/Users/test/.code-agent/work',
+        artifactRepairGuard: {
+          targetFile: TARGET_FILE,
+          attempts: 1,
+          phase: 'initial_repair',
+        },
+        messages: [{
+          role: 'tool',
+          content: '',
+          toolResults: [{
+            success: false,
+            output: 'validation failed',
+            metadata: {
+              artifactValidation: {
+                failed: true,
+                failures: [
+                  'desktop visual smoke detected distorted game canvas aspect ratio (canvas=484x363, internal=480x640).',
+                  'wide desktop visual smoke found primary game canvas is undersized with large empty margins.',
+                ],
+              },
+            },
+          }],
+        }],
+      },
+      getBudgetedPersistentSystemContext: () => [],
+    };
+
+    const block = buildArtifactRepairFocusBlock(ctx, []);
+
+    expect(block).toContain('canvas_not_responsive');
+    expect(block).toContain('rendered CSS aspect ratio must match');
+    expect(block).toContain('large empty margins');
   });
 });

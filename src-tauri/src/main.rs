@@ -20,7 +20,9 @@ mod appshots;
 mod native_app_icon;
 mod native_desktop;
 
-use appshots::{appshots_read_image_data_url, appshots_trigger};
+use appshots::{
+    appshots_read_image_data_url, appshots_report_composer_slot, appshots_trigger, AppshotsState,
+};
 use native_app_icon::desktop_get_app_icon;
 use native_desktop::{
     desktop_capture_screenshot, desktop_get_capabilities, desktop_get_collector_status,
@@ -1104,6 +1106,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
         .manage(NativeDesktopState::default())
+        .manage(AppshotsState::default())
         .invoke_handler(tauri::generate_handler![
             get_app_version,
             check_for_update,
@@ -1124,7 +1127,8 @@ fn main() {
             desktop_stop_audio_rec,
             desktop_get_app_icon,
             appshots_trigger,
-            appshots_read_image_data_url
+            appshots_read_image_data_url,
+            appshots_report_composer_slot
         ])
         .setup(|app| {
             if cfg!(debug_assertions) && is_server_running() {

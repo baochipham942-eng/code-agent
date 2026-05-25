@@ -12,16 +12,17 @@
 
 #[cfg(target_os = "macos")]
 use crate::native_desktop::run_command_with_timeout;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
 use std::path::PathBuf;
 #[cfg(target_os = "macos")]
 use std::process::Command;
 #[cfg(target_os = "macos")]
 use std::time::Duration;
+use std::sync::Mutex;
 use tauri::AppHandle;
 #[cfg(target_os = "macos")]
-use tauri::Emitter;
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// 默认 Appshots 热键（避开主窗口激活已占用的 CmdOrCtrl+Shift+A）。
 pub const DEFAULT_APPSHOTS_SHORTCUT: &str = "CmdOrCtrl+Shift+S";
@@ -35,7 +36,7 @@ const CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
 #[cfg(target_os = "macos")]
 const SWIFT_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScreenRect {
     pub x: f64,
@@ -76,20 +77,55 @@ pub fn trigger_capture(app: AppHandle) {
     });
 }
 
+/// 读取 PNG 为 base64 data URL（命令与飞入动画共用）。
+#[cfg(target_os = "macos")]
+fn read_png_data_url(path: &str) -> Result<String, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let bytes = std::fs::read(path).map_err(|e| format!("读取截图失败: {e}"))?;
+    Ok(format!("data:image/png;base64,{}", STANDARD.encode(bytes)))
+}
+
 /// 读取 appshot 截图为 base64 data URL，供前端作为图片附件发给模型。
 /// 事件只回传磁盘路径（避免几 MB base64 塞进事件 payload），前端按需调本命令取数据。
 #[cfg(target_os = "macos")]
 #[tauri::command]
 pub fn appshots_read_image_data_url(path: String) -> Result<String, String> {
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-    let bytes = std::fs::read(&path).map_err(|e| format!("读取截图失败: {e}"))?;
-    Ok(format!("data:image/png;base64,{}", STANDARD.encode(bytes)))
+    read_png_data_url(&path)
 }
 
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
 pub fn appshots_read_image_data_url(_path: String) -> Result<String, String> {
     Err("Appshots 仅支持 macOS".to_string())
+}
+
+/// 输入框缩略图槽位（屏幕逻辑坐标，左上原点），前端用 getBoundingClientRect + screenX/Y 上报。
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlotRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// 全局状态：缓存 composer 槽位，供飞入动画算落点。
+#[derive(Default)]
+pub struct AppshotsState {
+    composer_slot: Mutex<Option<SlotRect>>,
+}
+
+/// 前端在 composer 挂载/变化时上报输入框槽位（飞入动画的落点）。
+#[tauri::command]
+pub fn appshots_report_composer_slot(
+    state: tauri::State<'_, AppshotsState>,
+    slot: SlotRect,
+) -> Result<(), String> {
+    *state
+        .composer_slot
+        .lock()
+        .map_err(|e| format!("composer_slot 锁失败: {e}"))? = Some(slot);
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -170,6 +206,10 @@ pub fn capture_now(app: &AppHandle) {
     };
 
     let _ = app.emit("appshots:capture_ready", &info);
+
+    // 飞入动画——纯视觉锦上添花，best-effort：任何失败都不影响上面已发出的 capture_ready，
+    // composer 的 chip 照常出现。
+    animate_overlay_best_effort(app, &info);
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -430,3 +470,152 @@ fn truncate_chars(s: &str, max: usize) -> String {
     out.push_str("\n…(truncated)");
     out
 }
+
+// ---------------------------------------------------------------------------
+// 飞入动画 overlay（Phase 3）
+//
+// 在一个铺满主显示器、透明、鼠标穿透、置顶的临时 WebviewWindow 里，让截图从
+// 「源窗口在屏幕上的位置」收缩+上浮+飞向「composer 缩略图槽位」，落地淡出，由
+// composer 里真正的 chip 接管。动画用 Web Animations API，HTML 内自跑（参数在创建时
+// 内联进 data URL，免 eval 时序竞争）。
+//
+// 范围（MVP）：覆盖主显示器；坐标用屏幕逻辑坐标（CG 点 / getBoundingClientRect 同为
+// 左上原点逻辑像素）。已知限制（后续 3.1 细化）：① 跨多显示器或副屏窗口落点会偏；
+// ② 未用 objc2 抬 NSWindow level，盖不住全屏 Space 里的 app。两者都不影响核心链路。
+const ANIM_DURATION_MS: u64 = 1100;
+
+#[cfg(target_os = "macos")]
+fn animate_overlay_best_effort(app: &AppHandle, info: &AppshotsCaptureInfo) {
+    // 落点：前端上报的 composer 槽位（屏幕逻辑坐标）。没上报过就不演。
+    let slot = match app.state::<AppshotsState>().composer_slot.lock() {
+        Ok(guard) => match *guard {
+            Some(s) => s,
+            None => return,
+        },
+        Err(_) => return,
+    };
+
+    let image = match read_png_data_url(&info.screenshot_path) {
+        Ok(url) => url,
+        Err(e) => {
+            eprintln!("[appshot-overlay] 读图失败: {e}");
+            return;
+        }
+    };
+
+    // overlay 覆盖主显示器；屏幕逻辑坐标 → overlay 本地 CSS 坐标 = 减去 overlay 原点。
+    let monitor = match app.primary_monitor() {
+        Ok(Some(m)) => m,
+        _ => {
+            eprintln!("[appshot-overlay] 无主显示器");
+            return;
+        }
+    };
+    let scale = monitor.scale_factor();
+    let origin_x = monitor.position().x as f64 / scale;
+    let origin_y = monitor.position().y as f64 / scale;
+    let win_w = monitor.size().width as f64 / scale;
+    let win_h = monitor.size().height as f64 / scale;
+
+    let src = info.window_frame;
+    let params = serde_json::json!({
+        "src": { "x": src.x - origin_x, "y": src.y - origin_y, "width": src.width, "height": src.height },
+        "dst": { "x": slot.x - origin_x, "y": slot.y - origin_y, "width": slot.width, "height": slot.height },
+        "imageDataUrl": image,
+        "radius": 12,
+        "durationMs": ANIM_DURATION_MS,
+    });
+
+    let html = build_overlay_html(&params.to_string());
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let data_url = format!("data:text/html;base64,{}", STANDARD.encode(html.as_bytes()));
+    let url = match data_url.parse() {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("[appshot-overlay] data URL 解析失败: {e}");
+            return;
+        }
+    };
+
+    let label = format!("appshot-overlay-{}", now_ms());
+    let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+        .position(origin_x, origin_y)
+        .inner_size(win_w, win_h)
+        .transparent(true)
+        .decorations(false)
+        .always_on_top(true)
+        .shadow(false)
+        .focused(false)
+        .skip_taskbar(true)
+        .resizable(false)
+        .closable(false)
+        .minimizable(false)
+        .visible(true)
+        .build();
+
+    let window = match built {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("[appshot-overlay] 创建 overlay 失败: {e}");
+            return;
+        }
+    };
+    let _ = window.set_ignore_cursor_events(true);
+
+    // 动画在 HTML 内自跑；演完按 label 关窗（duration + buffer）。
+    let app_handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(ANIM_DURATION_MS + 500));
+        if let Some(w) = app_handle.get_webview_window(&label) {
+            let _ = w.close();
+        }
+    });
+}
+
+/// 构建 overlay HTML：参数在创建时内联，DOM 就绪即自跑动画（无需 eval）。
+#[cfg(target_os = "macos")]
+fn build_overlay_html(params_json: &str) -> String {
+    OVERLAY_HTML_TEMPLATE.replace("__APPSHOT_PARAMS__", params_json)
+}
+
+// 用占位符 + replace（而非 format!），避免 JS 里大量 `{}` 与 format! 冲突。
+#[cfg(target_os = "macos")]
+const OVERLAY_HTML_TEMPLATE: &str = r#"<!DOCTYPE html>
+<html><head><meta charset="utf-8"/><style>
+  html,body{margin:0;padding:0;background:transparent;overflow:hidden;width:100vw;height:100vh}
+  .shot{position:absolute;will-change:transform,opacity,border-radius;
+    box-shadow:0 22px 70px rgba(0,0,0,.32),0 6px 18px rgba(0,0,0,.2);
+    background-size:cover;background-position:center;background-repeat:no-repeat;
+    pointer-events:none;transform-origin:center center;opacity:0}
+</style></head><body><div id="stage"></div><script>
+(function(){
+  var P = __APPSHOT_PARAMS__;
+  var stage=document.getElementById('stage');
+  var src=P.src, dst=P.dst, radius=P.radius||12, totalMs=P.durationMs||1100;
+  if(!src||!dst||!P.imageDataUrl||src.width<1||src.height<1){return;}
+  var shot=document.createElement('div'); shot.className='shot';
+  shot.style.left=src.x+'px'; shot.style.top=src.y+'px';
+  shot.style.width=src.width+'px'; shot.style.height=src.height+'px';
+  shot.style.borderRadius=radius+'px';
+  shot.style.backgroundImage="url('"+P.imageDataUrl+"')";
+  stage.appendChild(shot);
+  var sCx=src.x+src.width/2, sCy=src.y+src.height/2;
+  var dCx=dst.x+dst.width/2, dCy=dst.y+dst.height/2;
+  var dx=dCx-sCx, dy=dCy-sCy;
+  var sx=dst.width/src.width, sy=dst.height/src.height;
+  var liftScale=0.5, liftY=-60;
+  function r6(v){return Math.max(6,v)+'px';}
+  function run(){
+    var anim=shot.animate([
+      {transform:'translate(0,0) scale(1,1)',borderRadius:radius+'px',opacity:0,offset:0,easing:'cubic-bezier(.22,.8,.36,1)'},
+      {transform:'translate(0,0) scale(1,1)',borderRadius:radius+'px',opacity:1,offset:.08,easing:'cubic-bezier(.32,.72,0,1)'},
+      {transform:'translate(0,'+liftY+'px) scale('+liftScale+','+liftScale+')',borderRadius:Math.max(8,radius*.9)+'px',opacity:1,offset:.36,easing:'cubic-bezier(.4,0,.2,1)'},
+      {transform:'translate('+dx+'px,'+dy+'px) scale('+sx+','+sy+')',borderRadius:r6(radius*.6),opacity:1,offset:.85,easing:'cubic-bezier(.34,1.1,.4,1)'},
+      {transform:'translate('+dx+'px,'+dy+'px) scale('+(sx*1.06)+','+(sy*1.06)+')',borderRadius:r6(radius*.6),opacity:1,offset:.93,easing:'cubic-bezier(.4,0,.2,1)'},
+      {transform:'translate('+dx+'px,'+dy+'px) scale('+sx+','+sy+')',borderRadius:r6(radius*.6),opacity:0,offset:1}
+    ],{duration:totalMs,easing:'linear',fill:'forwards'});
+    anim.finished.catch(function(){}).then(function(){try{shot.remove();}catch(e){}});
+  }
+  var img=new Image(); img.onload=run; img.onerror=run; img.src=P.imageDataUrl;
+})();
+</script></body></html>"#;

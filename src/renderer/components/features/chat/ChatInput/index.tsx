@@ -128,6 +128,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const pendingAppshot = useAppshotsStore((s) => s.pending);
   const clearAppshot = useAppshotsStore((s) => s.clear);
+  const appshotSlotRef = useRef<HTMLDivElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [suggestions, setSuggestions] = useState<Array<{ id: string; text: string; source: string }>>([]);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
@@ -242,6 +243,28 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       context: runtimeScopedContext,
     };
   }, [activeAgentId, browserSession, buildContext, swarmAgents]);
+
+  // 上报 composer 槽位给 Rust，作为 Appshot 飞入动画的落点（屏幕逻辑坐标）
+  useEffect(() => {
+    const internals = (window as unknown as { __TAURI_INTERNALS__?: { invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> } }).__TAURI_INTERNALS__;
+    if (!internals) return;
+    const report = () => {
+      const el = appshotSlotRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      internals
+        .invoke('appshots_report_composer_slot', {
+          slot: { x: r.left + window.screenX, y: r.top + window.screenY, width: 56, height: 56 },
+        })
+        .catch(() => {});
+    };
+    const timer = window.setTimeout(report, 300);
+    window.addEventListener('resize', report);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('resize', report);
+    };
+  }, []);
 
   // Expose addAttachments to parent via ref (for global drop zone)
   useImperativeHandle(ref, () => ({
@@ -865,6 +888,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             <span className="text-sm text-amber-400">文件处理中...</span>
           </div>
         )}
+
+        {/* Appshot 飞入动画落点锚（0 高，仅用于测量 composer 槽位屏幕坐标） */}
+        <div ref={appshotSlotRef} aria-hidden className="h-0" />
 
         {/* Appshot 预览片 */}
         {pendingAppshot && (

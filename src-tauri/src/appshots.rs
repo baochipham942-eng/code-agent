@@ -270,7 +270,8 @@ fn locate_frontmost_window() -> Result<Option<LocatedWindow>, String> {
         let pid = app.processIdentifier
         let bundleId = app.bundleIdentifier ?? ""
         let appName = app.localizedName ?? ""
-        if bundleId == "{own}" {{ emit(["found": false]); exit(0) }}
+        // 排除自身：按 PID（dev 二进制无 bundle id，只靠 bundleId 会漏判）+ bundle id 双保险。
+        if pid == {own_pid} || bundleId == "{own}" {{ emit(["found": false]); exit(0) }}
 
         let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let list = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else {{
@@ -298,7 +299,8 @@ fn locate_frontmost_window() -> Result<Option<LocatedWindow>, String> {
         }}
         emit(["found": false])
         "#,
-        own = OWN_BUNDLE_ID
+        own = OWN_BUNDLE_ID,
+        own_pid = std::process::id()
     );
 
     let out = run_command_with_timeout("/usr/bin/swift", &["-e", script.as_str()], SWIFT_TIMEOUT)?;

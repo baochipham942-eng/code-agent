@@ -11,6 +11,7 @@
 import { spawn, execSync } from 'child_process';
 import * as path from 'path';
 import * as os from 'os';
+import { quote } from 'shell-quote';
 import { createLogger } from '../services/infra/logger';
 import { SANDBOX_TIMEOUTS } from '../../shared/constants';
 
@@ -342,6 +343,29 @@ export class Bubblewrap {
         });
       });
     });
+  }
+
+  /**
+   * 把命令包装成"带 bwrap 前缀"的单条 shell 命令字符串，交给外部执行器
+   * （如 bash 工具的 runForegroundCommand）以 `spawn(cmd, { shell: true })` 运行。
+   *
+   * 与 execute() 的区别：不缓冲、不 spawn，只生成命令字符串。
+   * cleanup 为 no-op（bwrap 无临时 profile 文件，与 seatbelt 接口对齐）。
+   *
+   * @throws bwrap 不可用时抛错（调用方负责在 bypass 档拒绝执行）
+   */
+  wrapCommand(
+    command: string,
+    config: Partial<BubblewrapConfig> = {}
+  ): { command: string; cleanup: () => void } {
+    const status = this.checkAvailability();
+    if (!status.available) {
+      throw new Error(status.error || 'bwrap unavailable');
+    }
+    const fullConfig: BubblewrapConfig = { ...DEFAULT_CONFIG, ...config };
+    const bwrapArgs = this.buildArgs(fullConfig);
+    const wrapped = quote(['bwrap', ...bwrapArgs, '--', '/bin/sh', '-c', command]);
+    return { command: wrapped, cleanup: () => { /* no profile file to clean */ } };
   }
 
   /**

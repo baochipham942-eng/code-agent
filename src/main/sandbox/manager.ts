@@ -5,7 +5,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
-import { getBubblewrap, type BubblewrapConfig, type BubblewrapStatus } from './bubblewrap';
+import { Bubblewrap, getBubblewrap, type BubblewrapConfig, type BubblewrapStatus } from './bubblewrap';
 import { getSeatbelt, type SeatbeltConfig, type SeatbeltStatus } from './seatbelt';
 import { SANDBOX_TIMEOUTS } from '../../shared/constants';
 
@@ -78,6 +78,28 @@ export interface SandboxManagerStatus {
  * Sandbox preset types
  */
 export type SandboxPreset = 'minimal' | 'development' | 'network' | 'full';
+
+/**
+ * 命令包装结果：可直接 `spawn(command, { shell: true })` 的字符串 + 清理句柄
+ */
+export interface SandboxedCommand {
+  /** 包装后的单条 shell 命令字符串 */
+  command: string;
+  /** 执行结束后调用，清理临时 profile（bwrap 为 no-op） */
+  cleanup: () => void;
+  /** 实际使用的平台 */
+  platform: SandboxPlatform;
+}
+
+/**
+ * 命令包装选项（面向调用方的精简入参）
+ */
+export interface SandboxWrapOptions {
+  /** 工作目录，授予读写权并作为 cwd */
+  workingDirectory: string;
+  /** 是否放行网络（bypass 档默认 true） */
+  allowNetwork?: boolean;
+}
 
 // ----------------------------------------------------------------------------
 // Default Configuration
@@ -240,6 +262,53 @@ export class SandboxManager {
 
       default:
         return this.executeUnsandboxed(command, fullConfig);
+    }
+  }
+
+  /**
+   * 把命令包装成带 OS 沙箱前缀的 shell 命令字符串（不执行）。
+   *
+   * - darwin/seatbelt：读放开（profile 用 allow-default，详见 generateProfile），
+   *   只需把工作目录交给 writePaths 即可放行其写入。
+   * - linux/bwrap：靠 mount，必须显式挂载系统路径，故用"development"预设作只读基线，
+   *   工作目录作可读写挂载。
+   *
+   * @throws 平台不支持或沙箱不可用时抛错（调用方在 bypass 档据此拒绝执行）
+   */
+  wrapCommand(command: string, opts: SandboxWrapOptions): SandboxedCommand {
+    const status = this.getStatus();
+    if (!this.enabled || !status.available) {
+      throw new Error(`Sandbox unavailable: ${status.error ?? 'disabled'}`);
+    }
+
+    const resolved = path.resolve(opts.workingDirectory);
+    const allowNetwork = opts.allowNetwork ?? true;
+
+    switch (this.platform) {
+      case 'darwin': {
+        // seatbelt 读放开，仅锁写：工作目录交给 writePaths（generateProfile 内做 realpath）
+        const wrapped = getSeatbelt().wrapCommand(command, {
+          allowNetwork,
+          writePaths: [resolved],
+          workingDirectory: resolved,
+        });
+        return { ...wrapped, platform: 'darwin' };
+      }
+
+      case 'linux': {
+        // bwrap 靠 mount：开发只读基线 + 工作目录可读写挂载
+        const dev = Bubblewrap.createPreset('development');
+        const wrapped = getBubblewrap().wrapCommand(command, {
+          allowNetwork,
+          readOnlyPaths: dev.readOnlyPaths,
+          readWritePaths: [resolved],
+          workingDirectory: resolved,
+        });
+        return { ...wrapped, platform: 'linux' };
+      }
+
+      default:
+        throw new Error(`Platform ${this.platform} is not supported for sandboxing`);
     }
   }
 
@@ -447,4 +516,14 @@ export async function executeInSandbox(
   config?: Partial<SandboxConfig>
 ): Promise<SandboxResult> {
   return getSandboxManager().execute(command, config);
+}
+
+/**
+ * 便捷函数：把命令包装成带 OS 沙箱前缀的 shell 命令字符串（不执行）。
+ */
+export function wrapCommandForSandbox(
+  command: string,
+  opts: SandboxWrapOptions
+): SandboxedCommand {
+  return getSandboxManager().wrapCommand(command, opts);
 }

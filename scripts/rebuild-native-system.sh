@@ -83,3 +83,22 @@ fi
 
 echo "Done! Native module at: dist/native/better-sqlite3/"
 echo "  .node file: $(file "$NATIVE_DIR/build/Release/better_sqlite3.node")"
+
+# ----------------------------------------------------------------------------
+# 恢复 node-pty prebuilt spawn-helper 的执行位
+# ----------------------------------------------------------------------------
+# npm 安装 node-pty 的 prebuilt 二进制后，spawn-helper 有时会丢失执行位（-rw-r--r--），
+# 导致 PTY 启动报 posix_spawnp failed。release 打包路径（tauri-release-bundle.sh）会处理，
+# 但 dev/install 路径不会。这里对所有 unix prebuilds（darwin-*/linux-*）的 spawn-helper
+# 补 +x：幂等；缺失/Windows（无此文件）自然跳过。
+PTY_PREBUILDS="$PROJECT_ROOT/node_modules/node-pty/prebuilds"
+if [ -d "$PTY_PREBUILDS" ]; then
+  pty_fixed=0
+  while IFS= read -r -d '' helper; do
+    chmod +x "$helper"
+    pty_fixed=1
+  done < <(find "$PTY_PREBUILDS" -name spawn-helper -type f -print0 2>/dev/null)
+  if [ "$pty_fixed" = 1 ]; then
+    echo "Restored +x on node-pty spawn-helper(s)"
+  fi
+fi

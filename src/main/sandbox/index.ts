@@ -26,9 +26,12 @@ export {
   getSandboxManager,
   resetSandboxManager,
   executeInSandbox,
+  wrapCommandForSandbox,
   type SandboxConfig,
   type SandboxResult,
   type SandboxManagerStatus,
   type SandboxPlatform,
   type SandboxPreset,
+  type SandboxedCommand,
+  type SandboxWrapOptions,
 } from './manager';

@@ -31,7 +31,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { bashSchema as schema } from './bash.schema';
-import { BASH } from '../../../../shared/constants';
+import { BASH, OS_SANDBOX } from '../../../../shared/constants';
 import { startBackgroundTask } from '../../shell/backgroundTasks';
 import { createPtySession, getPtySessionOutput } from '../../shell/ptyExecutor';
 import { generateBashDescription } from '../../shell/dynamicDescription';
@@ -41,6 +41,8 @@ import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artif
 import { createSanitizedEnv } from '../../../utils/sanitizeEnv';
 import { truncateMiddle } from '../../../utils/truncate';
 import { checkCommandPolicy } from './commandPolicy';
+import { getPermissionModeManager } from '../../../permissions/modes';
+import { wrapCommandForSandbox } from '../../../sandbox';
 
 const MAX_TIMEOUT_MS = BASH.MAX_TIMEOUT;
 const BACKGROUND_TRAILING_OPERATOR = /(?:^|[;\n])\s*([^;&|\n][\s\S]*?)\s*&\s*$/;
@@ -390,14 +392,41 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     const rows = (args.rows as number) || 24;
     const waitForCompletion = args.wait_for_completion as boolean | undefined;
 
+    // -------------------------------------------------------------------------
+    // OS 沙箱（仅 bypassPermissions / YOLO 档）
+    // 把命令包装成带沙箱前缀的 shell 命令，前台/PTY/后台三条路径统一使用，
+    // 复用各自执行器已有的流式 / abort / 错误语义。沙箱不可用时硬报错，绝不静默裸跑。
+    // -------------------------------------------------------------------------
+    const shouldSandbox =
+      OS_SANDBOX.ENABLED && getPermissionModeManager().getMode() === 'bypassPermissions';
+    let sandboxCleanup: (() => void) | undefined;
+    /** shouldSandbox 时把命令包装成带沙箱前缀的 shell 命令，否则原样返回 */
+    const applySandbox = (cmd: string): { ok: true; command: string } | { ok: false; error: string } => {
+      if (!shouldSandbox) return { ok: true, command: cmd };
+      try {
+        const wrapped = wrapCommandForSandbox(cmd, { workingDirectory, allowNetwork: true });
+        sandboxCleanup = wrapped.cleanup;
+        return { ok: true, command: wrapped.command };
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            `bypassPermissions 档要求 OS 沙箱可用，但当前不可用：${err instanceof Error ? err.message : String(err)}。` +
+            `请安装 bubblewrap（Linux）或切换到 default 档。`,
+        };
+      }
+    };
+
     onProgress?.({ stage: 'starting', detail: `exec: ${normalizedCommand.slice(0, 60)}` });
 
     // -------------------------------------------------------------------------
     // PTY 执行
     // -------------------------------------------------------------------------
     if (usePty) {
+      const sandboxed = applySandbox(normalizedCommand);
+      if (!sandboxed.ok) return { ok: false, error: sandboxed.error, code: 'SANDBOX_UNAVAILABLE' };
       const result = createPtySession({
-        command: normalizedCommand,
+        command: sandboxed.command,
         cwd: workingDirectory,
         cols,
         rows,
@@ -489,7 +518,9 @@ Use process_kill to terminate the session.`;
     // 后台任务
     // -------------------------------------------------------------------------
     if (runInBackground) {
-      const result = startBackgroundTask(normalizedCommand, workingDirectory, timeout, {
+      const sandboxed = applySandbox(normalizedCommand);
+      if (!sandboxed.ok) return { ok: false, error: sandboxed.error, code: 'SANDBOX_UNAVAILABLE' };
+      const result = startBackgroundTask(sandboxed.command, workingDirectory, timeout, {
         sessionId: ctx.sessionId,
         toolCallId: ctx.currentToolCallId,
       });
@@ -575,13 +606,16 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       fallbackEntries: shellPathDiagnostics.fallbackEntries,
     };
 
+    const sandboxedFg = applySandbox(normalizedCommand);
+    if (!sandboxedFg.ok) return { ok: false, error: sandboxedFg.error, code: 'SANDBOX_UNAVAILABLE' };
+
     try {
       // 并行：生成动态描述（不阻塞命令执行）
       const descriptionPromise = generateBashDescription(normalizedCommand).catch(() => null);
 
       const startedAt = Date.now();
       const { stdout, stderr } = await runForegroundCommand({
-        command: normalizedCommand,
+        command: sandboxedFg.command,
         cwd: workingDirectory,
         timeout,
         abortSignal: ctx.abortSignal,
@@ -676,6 +710,10 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
         code: 'FS_ERROR',
         meta: { ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
       };
+    } finally {
+      // 清理本次前台命令的临时 sandbox profile（PTY/后台进程异步存活，
+      // 其 profile 由 Seatbelt.cleanupOldProfiles 的 10 个上限自动回收）
+      sandboxCleanup?.();
     }
   }
 }

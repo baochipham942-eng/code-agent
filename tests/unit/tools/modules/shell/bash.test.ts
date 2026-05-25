@@ -2,7 +2,7 @@
 // Bash (native ToolModule) Tests — P0-6.3 Batch 2a
 // ============================================================================
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type {
   ToolContext,
   CanUseToolFn,
@@ -56,10 +56,22 @@ vi.mock('../../../../../src/main/tools/shell/ptyExecutor', () => ({
   getPtySessionOutput: (...args: unknown[]) => getPtySessionOutputMock(...args),
 }));
 
+// OS 沙箱 gating 测试：用 spy 替换真实包装（跨平台确定性），并打开 OS_SANDBOX flag。
+// 真实隔离另由 tests/integration/sandbox/seatbeltWrap.test.ts 用 sandbox-exec 验证。
+const { wrapMock, cleanupMock } = vi.hoisted(() => {
+  process.env.OS_SANDBOX_ENABLED = 'true';
+  return { wrapMock: vi.fn(), cleanupMock: vi.fn() };
+});
+vi.mock('../../../../../src/main/sandbox', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../../src/main/sandbox')>()),
+  wrapCommandForSandbox: (...args: unknown[]) => wrapMock(...args),
+}));
+
 import {
   bashModule,
   rewriteImplicitBackgroundCommand,
 } from '../../../../../src/main/tools/modules/shell/bash';
+import { getPermissionModeManager } from '../../../../../src/main/permissions/modes';
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -556,5 +568,52 @@ describe('bashModule (native)', () => {
         expect(result.error).toContain('pty unavailable');
       }
     });
+  });
+});
+
+describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
+  const modeMgr = getPermissionModeManager();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wrapMock.mockReturnValue({ command: 'echo __SANDBOXED__', cleanup: cleanupMock });
+    modeMgr.setMode('default', true);
+  });
+  afterEach(() => {
+    modeMgr.setMode('default', true);
+  });
+
+  it('default 档：不包装，直接执行原命令', async () => {
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'echo plain-output' }, makeCtx(), allowAll);
+    expect(wrapMock).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain('plain-output');
+  });
+
+  it('bypassPermissions 档：包装命令并执行包装结果，结束后清理 profile', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'echo plain-output' }, makeCtx(), allowAll);
+    expect(wrapMock).toHaveBeenCalledTimes(1);
+    expect(wrapMock).toHaveBeenCalledWith(
+      'echo plain-output',
+      expect.objectContaining({ allowNetwork: true }),
+    );
+    expect(result.ok).toBe(true);
+    // 跑的是包装后的命令（spy 返回 echo __SANDBOXED__），证明真的走了沙箱包装结果
+    if (result.ok) expect(result.output).toContain('__SANDBOXED__');
+    expect(cleanupMock).toHaveBeenCalled();
+  });
+
+  it('bypassPermissions 档 + 沙箱不可用：硬报错 SANDBOX_UNAVAILABLE，绝不裸跑', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    wrapMock.mockImplementation(() => {
+      throw new Error('sandbox-exec unavailable');
+    });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'echo should-not-run' }, makeCtx(), allowAll);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('SANDBOX_UNAVAILABLE');
   });
 });

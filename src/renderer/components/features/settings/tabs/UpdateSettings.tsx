@@ -69,6 +69,10 @@ export function shouldShowRuntimeAssetsPrepare(updateInfo: UpdateInfo | null): b
   return Boolean(updateInfo?.runtimeAssets?.hasUpdate);
 }
 
+export function shouldDisableUpdateActions(webMode: boolean, hasNativeBridge: boolean): boolean {
+  return webMode && !hasNativeBridge;
+}
+
 export function getRuntimeAssetsPrepareText(isPreparing: boolean): string {
   return isPreparing ? '正在下载可选能力...' : '下载可选能力';
 }
@@ -92,6 +96,16 @@ function getRuntimeAssetTone(asset: RuntimeAssetStatusEntry): string {
   if (asset.state === 'installed') return 'text-green-300 bg-green-500/10 border-green-500/30';
   if (asset.state === 'bundledFallback') return 'text-amber-300 bg-amber-500/10 border-amber-500/30';
   return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
+}
+
+function hasNativeUpdateBridge(): boolean {
+  if (typeof window === 'undefined') return false;
+  return Boolean(window.__TAURI_INTERNALS__ || window.codeAgentDomainAPI || window.domainAPI);
+}
+
+function fallbackNoUpdateInfo(version: string | null | undefined): UpdateInfo | null {
+  const currentVersion = version?.trim();
+  return currentVersion ? { hasUpdate: false, currentVersion } : null;
 }
 
 // ============================================================================
@@ -194,8 +208,14 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         }
       }
     } catch (err) {
-      setError(t.update?.checkError || '检查更新失败，请稍后重试');
-      logger.error('Update check failed', err);
+      const fallback = fallbackNoUpdateInfo(updateInfo?.currentVersion || localVersion);
+      if (fallback) {
+        onUpdateInfoChange(fallback);
+        logger.error('Update check failed; using local version fallback', err);
+      } else {
+        setError(t.update?.checkError || '检查更新失败，请稍后重试');
+        logger.error('Update check failed', err);
+      }
     } finally {
       setIsChecking(false);
     }
@@ -260,7 +280,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
   };
 
   // Whether the check/update buttons should be disabled
-  const isDisabled = isWebMode();
+  const isDisabled = shouldDisableUpdateActions(isWebMode(), hasNativeUpdateBridge());
 
   return (
     <SettingsPage

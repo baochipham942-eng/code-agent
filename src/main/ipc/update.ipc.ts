@@ -8,16 +8,28 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc
 import type { PrepareRuntimeAssetsResult, RuntimeAssetsStatus, UpdateInfo } from '../../shared/contract';
 import { getUpdateService, isUpdateServiceInitialized } from '../services/cloud/updateService';
 import { getRuntimeAssetsStatus } from '../runtime/runtimeAssetStatus';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('UpdateIPC');
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
 // ----------------------------------------------------------------------------
 
 async function handleCheck(): Promise<UpdateInfo> {
+  const currentVersion = app.getVersion();
   if (!isUpdateServiceInitialized()) {
-    return { hasUpdate: false, currentVersion: app.getVersion() };
+    return { hasUpdate: false, currentVersion };
   }
-  return getUpdateService().checkForUpdates();
+  try {
+    return await getUpdateService().checkForUpdates();
+  } catch (error) {
+    logger.warn('Update check failed; using local version fallback', {
+      error: error instanceof Error ? error.message : String(error),
+      currentVersion,
+    });
+    return { hasUpdate: false, currentVersion };
+  }
 }
 
 async function handleGetInfo(): Promise<UpdateInfo | null> {

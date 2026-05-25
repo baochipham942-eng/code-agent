@@ -8,6 +8,7 @@ import {
   getVisibleUpdateInfo,
   shouldShowRuntimeAssetsPrepare,
   shouldClearUpdateInfoBeforeCheck,
+  shouldDisableUpdateActions,
 } from '../../../src/renderer/components/features/settings/tabs/UpdateSettings';
 
 const upToDateInfo: UpdateInfo = {
@@ -32,6 +33,12 @@ describe('UpdateSettings status visibility', () => {
     expect(shouldClearUpdateInfoBeforeCheck(null)).toBe(true);
     expect(shouldClearUpdateInfoBeforeCheck(upToDateInfo)).toBe(true);
     expect(shouldClearUpdateInfoBeforeCheck(availableUpdateInfo)).toBe(false);
+  });
+
+  it('keeps update actions enabled for the packaged localhost bridge', () => {
+    expect(shouldDisableUpdateActions(true, false)).toBe(true);
+    expect(shouldDisableUpdateActions(true, true)).toBe(false);
+    expect(shouldDisableUpdateActions(false, false)).toBe(false);
   });
 
   it('summarizes local runtime component status for settings', () => {

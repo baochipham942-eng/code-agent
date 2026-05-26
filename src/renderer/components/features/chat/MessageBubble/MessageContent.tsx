@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useState, useMemo, useCallback, memo, useRef, useEffect } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import remarkBreaks from 'remark-breaks';
@@ -548,6 +548,11 @@ const IACTNavCard: React.FC<{ href: string; children: React.ReactNode }> = ({ ch
   );
 };
 
+// neo:// 是自定义 scheme，react-markdown 默认 urlTransform 白名单仅 http/https/mailto/xmpp，
+// 会把 neo:// 剥成空 href 导致卡片不渲染；放行 neo://，其余仍走默认净化。
+const neoUrlTransform = (url: string): string =>
+  url.startsWith('neo://') ? url : defaultUrlTransform(url);
+
 const MarkdownRenderer = memo(function markdownRenderer({
   content,
   components,
@@ -563,6 +568,7 @@ const MarkdownRenderer = memo(function markdownRenderer({
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
       rehypePlugins={[rehypeKatex]}
+      urlTransform={neoUrlTransform}
       components={components}
     >
       {content}

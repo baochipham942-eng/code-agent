@@ -660,7 +660,7 @@ const EmptyState: React.FC<{
           <div className="min-w-0">
             <h1 className="text-xl font-semibold text-zinc-100">新会话</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              点一张卡，第一轮就给你能用的结果，不用再补信息。
+              选一个示例，或者直接输入你想完成的事。
             </p>
           </div>
         </div>

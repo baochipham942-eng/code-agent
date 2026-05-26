@@ -282,6 +282,13 @@ function normalizeAction(value: unknown): CronJobAction | null {
       };
     }
 
+    case 'memory-consolidation': {
+      return {
+        type: 'memory-consolidation',
+        dryRun: typeof value.dryRun === 'boolean' ? value.dryRun : undefined,
+      };
+    }
+
     default:
       return null;
   }
@@ -915,6 +922,17 @@ export class CronService implements Disposable {
         // IPC would need to be integrated with the IPC system
         console.error(`[CronService] Would send IPC: ${action.channel}`);
         return { channel: action.channel, payload: action.payload };
+      }
+
+      case 'memory-consolidation': {
+        // Internal maintenance: compress Light Memory without losing information.
+        const { consolidateLightMemory } = await import('../lightMemory/consolidation');
+        const report = await consolidateLightMemory({ dryRun: action.dryRun ?? false });
+        console.error(
+          `[CronService] Memory consolidation ${report.applied ? 'applied' : 'no-op'}`
+          + ` (dryRun=${report.dryRun}, triggered=${report.triggered}, actions=${report.actions.length}): ${report.reason}`,
+        );
+        return report;
       }
 
       default:

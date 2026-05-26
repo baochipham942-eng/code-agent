@@ -39,6 +39,8 @@ export const MEMORY_CONSOLIDATION = {
   TIMEOUT_MS: 60000,
   /** 单次最多投喂给 LLM 的文件正文字符数（防止超长 prompt 爆预算） */
   MAX_INPUT_CHARS: 24000,
+  /** dump 时每个文件正文至少保留的字符数（保证小文件也完整可见，便于查重） */
+  MIN_FILE_BODY_CHARS: 200,
   /** 内置 job 识别标签（启动时按此 tag 查重，避免重复注册） */
   JOB_TAG: 'light-memory-consolidation',
 } as const;

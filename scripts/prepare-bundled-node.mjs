@@ -49,6 +49,20 @@ function runBundledNodeInfo(nodePath) {
   return JSON.parse(output);
 }
 
+async function ensureBundledNodePermissions() {
+  if (existsSync(outputBin)) {
+    await chmod(outputBin, 0o755);
+  }
+  const outputLibDir = path.join(outputRoot, 'lib');
+  if (!existsSync(outputLibDir)) return;
+  const files = execFileSync('find', [outputLibDir, '-type', 'f'], { encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean);
+  for (const fileName of files) {
+    await chmod(fileName, 0o644);
+  }
+}
+
 function isPrepared(expected, expectedSource) {
   if (!existsSync(outputBin)) return false;
   const metadata = readMetadata();
@@ -137,7 +151,9 @@ async function copyProvidedNodeSharedLibraries(sourcePath) {
     if (!sourceLibrary) {
       throw new Error(`Provided Node requires ${libraryName}, but it was not found next to ${sourcePath}`);
     }
-    await cp(sourceLibrary, path.join(outputLibDir, libraryName), { force: true, dereference: true });
+    const targetLibrary = path.join(outputLibDir, libraryName);
+    await cp(sourceLibrary, targetLibrary, { force: true, dereference: true });
+    await chmod(targetLibrary, 0o644);
   }
 }
 
@@ -180,6 +196,10 @@ async function downloadOfficialNode(expected) {
     const extractedLibDir = path.join(extractDir, distName, 'lib');
     if (existsSync(extractedLibDir)) {
       await cp(extractedLibDir, path.join(outputRoot, 'lib'), { recursive: true, force: true });
+      const libDir = path.join(outputRoot, 'lib');
+      for (const fileName of execFileSync('find', [libDir, '-type', 'f'], { encoding: 'utf8' }).split('\n').filter(Boolean)) {
+        await chmod(fileName, 0o644);
+      }
     }
     await chmod(outputBin, 0o755);
     return runBundledNodeInfo(outputBin);
@@ -204,6 +224,7 @@ async function main() {
   const providedNode = process.env.BUNDLED_NODE_PATH;
   const source = providedNode ? 'BUNDLED_NODE_PATH' : 'nodejs.org';
   if (isPrepared(expected, source)) {
+    await ensureBundledNodePermissions();
     const info = runBundledNodeInfo(outputBin);
     console.log(`[prepare-bundled-node] using cached ${outputBin} (${info.version}, ABI ${info.modules})`);
     return;

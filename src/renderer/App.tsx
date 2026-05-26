@@ -59,6 +59,7 @@ import { useBackgroundTaskSync } from './hooks/useBackgroundTaskSync';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
+import { useAppshots } from './hooks/useAppshots';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, UpdateInfo } from '@shared/contract';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getProviderEndpointForProtocol } from '@shared/constants';
@@ -91,6 +92,7 @@ function useWindowWidth(): number {
 }
 
 export const App: React.FC = () => {
+  useAppshots(); // 挂载 Appshots 事件监听（热键截图 → composer）
   const {
     showSettings,
     setTaskPanelTab,

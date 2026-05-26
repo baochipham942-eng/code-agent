@@ -12,6 +12,7 @@ import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 import { useSessionUIStore } from './sessionUIStore';
 import { useAppStore } from './appStore';
+import { useAppshotsStore } from './appshotsStore';
 
 const logger = createLogger('SessionStore');
 
@@ -296,6 +297,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             : useAppStore.getState().workingDirectory;
         const nextTitle = title?.trim() || '新对话';
         if (nextTitle === '新对话') {
+          useAppshotsStore.getState().clear();
           const reusableSession = findReusableNewSessionDraft({
             sessions: get().sessions,
             currentSessionId: get().currentSessionId,
@@ -637,6 +639,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     },
 
     clearCurrentSession: () => {
+      useAppshotsStore.getState().clear();
       set({
         messages: [],
         todos: [],

@@ -8,11 +8,14 @@ import { Pencil } from 'lucide-react';
 import type { UserMessageProps } from './types';
 import { MessageContent } from './MessageContent';
 import { AttachmentDisplay } from './AttachmentPreview';
+import { stripAppshotBlocks } from '@shared/contract/appshot';
 
 export const UserMessage: React.FC<UserMessageProps> = ({ message, onEdit }) => {
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [editContent, setEditContent] = useState(message.content || '');
+  // 用户可见正文剥掉 appshot 隐藏 XML（模型已通过该 XML 拿到窗口文本）
+  const displayContent = stripAppshotBlocks(message.content || '');
+  const [editContent, setEditContent] = useState(displayContent);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -30,7 +33,7 @@ export const UserMessage: React.FC<UserMessageProps> = ({ message, onEdit }) => 
   };
 
   const handleCancel = () => {
-    setEditContent(message.content || '');
+    setEditContent(displayContent);
     setEditing(false);
   };
 
@@ -67,7 +70,7 @@ export const UserMessage: React.FC<UserMessageProps> = ({ message, onEdit }) => 
       )}
 
       {/* Text content - 左侧色条 + 现代风格 */}
-      {message.content && (
+      {displayContent && (
         <div
           className="pl-3 border-l-2 rounded-r-lg py-2 pr-3"
           style={{
@@ -102,7 +105,7 @@ export const UserMessage: React.FC<UserMessageProps> = ({ message, onEdit }) => 
             </div>
           ) : (
             <div className="text-zinc-200 leading-relaxed">
-              <MessageContent content={message.content} isUser={true} />
+              <MessageContent content={displayContent} isUser={true} />
             </div>
           )}
         </div>

@@ -46,15 +46,16 @@ export function buildCapabilitySemanticSuggestions(
   }
 
   return capabilities
-    .filter((capability) => !capability.selected)
+    .filter((capability) => !capability.selected && capability.kind !== 'mcp')
     .map((capability) => {
       const haystack = getCapabilitySuggestionHaystack(capability);
       const matchedTokens = tokens.filter((token) => haystack.includes(token));
       const labelHit = haystack.includes(query) ? 2 : 0;
+      const hasTextMatch = matchedTokens.length > 0 || labelHit > 0;
       const availabilityBoost = capability.available ? 0.25 : 0;
       return {
         capability,
-        score: matchedTokens.length + labelHit + availabilityBoost,
+        score: hasTextMatch ? matchedTokens.length + labelHit + availabilityBoost : 0,
       };
     })
     .filter((item) => item.score > 0)

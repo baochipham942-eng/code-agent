@@ -41,6 +41,19 @@ const CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
 #[cfg(target_os = "macos")]
 const SWIFT_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Appshots 总开关：前端设置同步过来，控制左右 Cmd 热键是否触发捕获。
+#[cfg(target_os = "macos")]
+static APPSHOTS_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// `#[tauri::command]`：前端把「启用 Appshots」设置同步给原生热键监听。
+#[tauri::command]
+pub fn appshots_set_enabled(enabled: bool) {
+    #[cfg(target_os = "macos")]
+    APPSHOTS_ENABLED.store(enabled, std::sync::atomic::Ordering::SeqCst);
+    #[cfg(not(target_os = "macos"))]
+    let _ = enabled;
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScreenRect {
@@ -241,7 +254,9 @@ mod dual_command_hotkey {
         );
 
         if left_down && right_down {
-            if !state.armed.swap(true, Ordering::SeqCst) {
+            if !state.armed.swap(true, Ordering::SeqCst)
+                && super::APPSHOTS_ENABLED.load(Ordering::SeqCst)
+            {
                 eprintln!("[appshot-hotkey] 左右 Cmd 触发 Appshot");
                 trigger_capture(state.app.clone());
             }

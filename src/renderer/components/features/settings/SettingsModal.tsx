@@ -28,6 +28,7 @@ import {
   Users,
   Cloud,
   PackagePlus,
+  Camera,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -77,6 +78,7 @@ import { GeneralSettings } from './tabs/GeneralSettings';
 import { ConversationSettings } from './tabs/ConversationSettings';
 import { WorkspaceSettings } from './tabs/WorkspaceSettings';
 import { AutomationSettings } from './tabs/AutomationSettings';
+import { AppshotsSettings } from './tabs/AppshotsSettings';
 import { ModelSettings } from './tabs/ModelSettings';
 import { AppearanceSettings } from './tabs/AppearanceSettings';
 import { SoulSettings } from './tabs/SoulSettings';
@@ -133,6 +135,7 @@ export function buildSettingsTabGroups({
     { id: 'soul', label: '人格', icon: <Fingerprint className="w-4 h-4" /> },
     { id: 'workspace', label: '工作区', icon: <FolderOpen className="w-4 h-4" /> },
     { id: 'automation', label: '自动化', icon: <Clock className="w-4 h-4" /> },
+    { id: 'appshots', label: 'Appshots', icon: <Camera className="w-4 h-4" /> },
     { id: 'users', label: '用户管理', icon: <Users className="w-4 h-4" /> },
     { id: 'invites', label: '邀请码管理', icon: <Ticket className="w-4 h-4" /> },
     { id: 'controlPlane', label: 'Control Plane', icon: <Cloud className="w-4 h-4" /> },
@@ -371,6 +374,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'conversation' && <ConversationSettings />}
             {activeTab === 'workspace' && <WorkspaceSettings />}
             {activeTab === 'automation' && <AutomationSettings />}
+            {activeTab === 'appshots' && <AppshotsSettings />}
             {canViewUsers && activeTab === 'users' && <UserDashboardSettings />}
             {canViewInvites && activeTab === 'invites' && <InviteCodesSettings />}
             {canViewControlPlane && activeTab === 'controlPlane' && <ControlPlaneSettings />}

@@ -8,6 +8,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getUserConfigDir } from '../config/configPaths';
 import { createLogger } from '../services/infra/logger';
+import { LIGHT_MEMORY } from '../../shared/constants';
 
 const logger = createLogger('LightMemory');
 
@@ -24,7 +25,9 @@ export function getMemoryIndexPath(): string {
 /**
  * Load INDEX.md content for system prompt injection.
  * Returns null if file doesn't exist (first run).
- * Truncates to ~200 lines to keep token cost low (~500 tokens).
+ * Truncates to INDEX_MAX_LINES to keep token cost low (~500 tokens).
+ * Note: over-budget INDEX is now auto-compressed by the consolidation cron job;
+ * this load-time truncation is only a last-resort guard between runs.
  */
 export async function loadMemoryIndex(): Promise<string | null> {
   const indexPath = getMemoryIndexPath();
@@ -32,11 +35,12 @@ export async function loadMemoryIndex(): Promise<string | null> {
     const content = await fs.readFile(indexPath, 'utf-8');
     if (!content.trim()) return null;
 
-    // Truncate to 200 lines to keep system prompt lean
+    // Truncate to keep system prompt lean
     const lines = content.split('\n');
-    if (lines.length > 200) {
-      logger.warn(`INDEX.md has ${lines.length} lines, truncating to 200`);
-      return lines.slice(0, 200).join('\n') + '\n\n<!-- Truncated: INDEX.md exceeds 200 lines. Please consolidate. -->';
+    if (lines.length > LIGHT_MEMORY.INDEX_MAX_LINES) {
+      logger.warn(`INDEX.md has ${lines.length} lines, truncating to ${LIGHT_MEMORY.INDEX_MAX_LINES}`);
+      return lines.slice(0, LIGHT_MEMORY.INDEX_MAX_LINES).join('\n')
+        + '\n\n<!-- Truncated: INDEX.md exceeds budget; consolidation will compress on next run. -->';
     }
 
     return content.trim();

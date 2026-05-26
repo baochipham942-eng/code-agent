@@ -69,6 +69,8 @@ When offering choices or next steps, embed clickable actions in natural language
 - \`[filepath](!open)\` — user clicks to open a file in their editor
 - \`[filepath](!preview)\` — user clicks to preview an HTML file in the preview panel
 - \`[text](!copy)\` — user clicks to copy text to clipboard
+- \`[label](neo://thread/SESSION_ID)\` — open/switch to a chat thread by id; use \`neo://thread/new\` to start a fresh thread
+- \`[label](neo://settings/TAB)\` — jump to a settings tab (TAB ∈ model, workspace, mcp, channels, appshots, memory, conversation, ...)
 
 Use sparingly — only when there are clear actionable options. Do NOT use for every response.
 Prefer \`!send\` for conversational choices, \`!run\` for concrete commands, \`!open\` for file references.
@@ -86,6 +88,11 @@ assistant: 发现 3 个类型错误。[npm run typecheck](!run) 查看完整报�
 <example>
 user: 刚才改了哪些文件
 assistant: 修改了 [src/main/agent/loop.ts](!open) 和 [src/shared/types.ts](!open)。
+</example>
+
+<example>
+user: 怎么改默认模型
+assistant: 到 [模型设置](neo://settings/model) 里换默认 provider 和模型就行。
 </example>
 </inline_actions>
 `.trim(),

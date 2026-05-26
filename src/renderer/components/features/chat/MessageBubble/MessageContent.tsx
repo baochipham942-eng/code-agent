@@ -11,13 +11,15 @@ import rehypeKatex from 'rehype-katex';
 import remend from 'remend';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Code2, Copy, Check, ExternalLink, Play, ZoomIn, ZoomOut, Send, PenLine, Terminal, Eye, ClipboardCopy } from 'lucide-react';
+import { Code2, Copy, Check, ExternalLink, Play, ZoomIn, ZoomOut, Send, PenLine, Terminal, Eye, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
 import mermaid from 'mermaid';
 import type { MessageContentProps } from './types';
 import { UI } from '@shared/constants';
 import 'katex/dist/katex.min.css';
 import type { Components } from 'react-markdown';
 import { useAppStore } from '../../../../stores/appStore';
+import { useSessionStore } from '../../../../stores/sessionStore';
+import { SETTINGS_TAB_IDS, type SettingsTab } from '../../../../utils/settingsTabs';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcessor';
 import { isWebMode, copyPathToClipboard } from '../../../../utils/platform';
 import { ChartBlock } from './ChartBlock';
@@ -502,6 +504,50 @@ const IACTCopyButton: React.FC<{ children: React.ReactNode }> = ({ children }) =
   );
 };
 
+// IACT: [label](neo://...) — 应用内导航卡片（开/切会话、新建会话、跳设置 Tab）
+const IACTNavCard: React.FC<{ href: string; children: React.ReactNode }> = ({ children, href }) => {
+  const rest = href.slice('neo://'.length);
+  const [head, ...tail] = rest.split('/');
+  const arg = tail.join('/');
+
+  let onClick: (() => void) | null = null;
+  let Icon = MessageSquare;
+  let title = '';
+
+  if (head === 'thread') {
+    if (arg === '' || arg === 'new') {
+      Icon = MessageSquarePlus;
+      title = '新建会话';
+      onClick = () => { void useSessionStore.getState().createSession(); };
+    } else {
+      Icon = MessageSquare;
+      title = '打开会话';
+      onClick = () => { void useSessionStore.getState().switchSession(arg); };
+    }
+  } else if (head === 'settings' && (SETTINGS_TAB_IDS as readonly string[]).includes(arg)) {
+    Icon = Settings;
+    title = '打开设置';
+    onClick = () => { useAppStore.getState().openSettingsTab(arg as SettingsTab); };
+  }
+
+  // 未识别的 neo:// 链接 → 退化为纯文本，不渲染破卡片
+  if (!onClick) {
+    return <span>{children}</span>;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 hover:text-sky-300 border border-sky-500/20 hover:border-sky-500/40 transition-all cursor-pointer text-sm font-medium"
+      title={title}
+    >
+      <Icon className="w-3 h-3 opacity-60" />
+      {children}
+    </button>
+  );
+};
+
 const MarkdownRenderer = memo(function markdownRenderer({
   content,
   components,
@@ -833,6 +879,11 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
               {children}
             </button>
           );
+        }
+
+        // IACT: [label](neo://...) — 应用内导航卡片
+        if (href?.startsWith('neo://')) {
+          return <IACTNavCard href={href}>{children}</IACTNavCard>;
         }
 
         // Raw URL（textNode === href）渲染为带 favicon 的预览 chip

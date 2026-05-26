@@ -97,13 +97,16 @@
 - **风险**：丢智谱/Moonshot 用血换来的限流和 reasoning 兜底。
 - **验证**：每阶段跑评测中心，GLM/Kimi 路径分数不回归。
 
-### WS2 — 深链动作卡片 `neo://`
-**目标**：把 AI 的"建议"从一段话变成一次点击（在 app 内执行，不开浏览器）。
+### WS2 — 导航深链卡片（扩展现有 IACT）— ✅ 已实现，待 E2E
+**⚠️ 现状修正（Explore 核出）**：Neo **已有** IACT 协议——`MessageContent.tsx` 的 `components.a` 已处理 `[文字](!send/!add/!run/!open/!preview/!copy/!ticket)`，`prompts/identity.ts` 的 `<inline_actions>` 已教模型产出，`ChatInput/index.tsx` 监听 `iact:add` 做预填。**所以 WS2 不是从零造深链**，缩小为"补 IACT 缺的**导航类**动作"，且 **in-chat 卡片纯 renderer + prompt，不需要 Tauri deep-link 插件**。
 
-- **改**：`tauri.conf.json` 注册 `neo://` scheme + src-tauri 协议处理；renderer react-markdown 拦截 `neo://` 链接渲染成卡片按钮，点击经 IPC/router 执行；`src/main/prompts/` 加 DEEP LINKS 段教模型产出 + "genuinely shortens next step 才用，别滥用"约束。
-- **路由**（对标 Alma）：`neo://thread/<id>`(+`/message/<id>`)、`thread/new`、`compose?text=`（预填**不发送**）、`compose?thread=<id>&text=`、`settings/<section>`。
-- **风险**：模型滥撒卡片（prompt 约束 + 渲染层兜底/限频）。
-- **验证**：E2E 点击各类卡片确认跳转/预填正确、`compose` 不自动发送。
+**已做**：
+- `MessageContent.tsx`：`components.a` 加 `neo://` 分支 → `IACTNavCard`（复用 `IACTCopyButton` 范式），点击调 `useSessionStore.switchSession/createSession`、`useAppStore.openSettingsTab`；settings tab 走 `SETTINGS_TAB_IDS` 白名单校验；非法链接退化纯文本不破卡。
+- `identity.ts` `<inline_actions>`：补 `neo://thread/<id>`、`neo://thread/new`、`neo://settings/<tab>` 语法 + 一个导航 example（`builder.ts` 已串入，无需改装配）。
+- `compose 预填` 已被现有 `!add` 覆盖，未重复造。
+- **不做（本轮）**：OS 级 `neo://` 外部唤起（需 `tauri-plugin-deep-link`，与 in-chat 卡片无关，单列可选增强）。
+
+**验证**：tsc + E2E 渲染含 `neo://` 的消息、点击确认切会话/新建/跳设置。
 
 ### WS3 — computer-use 实时 PiP 窗
 **目标**：自主操作（computer-use）进行时，给一个不打扰的实时活动小窗，提升信任/透明度。

@@ -324,7 +324,7 @@ function getHookSourceLabel(sources: Array<'global' | 'project'>): string {
 }
 
 function getHookTypeLabel(hookType: 'decision' | 'observer'): string {
-  return hookType === 'decision' ? '决策' : '观察';
+  return hookType === 'decision' ? '可干预' : '仅观察';
 }
 
 const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activity }) => {
@@ -352,7 +352,7 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
           {sourceLabel}
         </span>
         <span className="shrink-0 rounded bg-zinc-800/70 px-1 py-px text-[11px] text-zinc-400">
-          {hasDecisionHooks ? '决策' : '观察'}
+          {hasDecisionHooks ? '可干预' : '仅观察'}
         </span>
         {showStatus && (
           <span className={`shrink-0 rounded px-1 py-px text-[11px] ${getHookIssueClass(tone)}`}>
@@ -371,6 +371,9 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
             const label = HOOK_EVENT_LABELS[item.event] || item.event;
             const source = getHookSourceLabel(item.sources);
             const hookType = getHookTypeLabel(item.hookType);
+            const hookTypeDetail = item.hookType === 'decision'
+              ? '可干预·能拦截或改写'
+              : '仅观察·不改动';
             const title = [
               item.toolName,
               source,
@@ -388,9 +391,8 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
                 title={title || undefined}
               >
                 <span className="shrink-0">{label}</span>
-                <span className="shrink-0">钩子</span>
                 <span className="shrink-0 text-zinc-600">{source}</span>
-                <span className="shrink-0 text-zinc-600">{hookType}</span>
+                <span className="shrink-0 text-zinc-600">{hookTypeDetail}</span>
                 {item.matcher && (
                   <span className="min-w-0 truncate text-zinc-600">{item.matcher}</span>
                 )}

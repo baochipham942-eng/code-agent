@@ -47,6 +47,7 @@ import type {
   SupabaseAgentBinding,
 } from './agentRouteTypes';
 import type { WebRouteLogger } from './routeTypes';
+import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
 // key = toolCallId, value = { resolve, reject, timer }
@@ -524,41 +525,26 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
 
       // ── 构建消息历史（多轮上下文）──
-      // 将附件文本数据拼接到 prompt 中，使 Agent 能看到附件内容
-      let enrichedPrompt = prompt;
       const requestAttachments = body.attachments ?? [];
-      const imageAttachments = requestAttachments.filter((att) =>
-        att.category === 'image' || att.type === 'image'
-      );
-      if (requestAttachments.length) {
-        const textParts: string[] = [];
-        for (const att of requestAttachments) {
-          if ((att.category === 'image' || att.type === 'image')) {
-            continue;
-          }
-          if (att.data && typeof att.data === 'string') {
-            // 非图片附件：将文本数据注入到 prompt 中
-            const label = att.name || att.category || 'attachment';
-            textParts.push(`\n\n<attachment name="${label}" category="${att.category || 'file'}">\n${att.data}\n</attachment>`);
-          }
-        }
-        if (textParts.length > 0) {
-          enrichedPrompt = prompt + textParts.join('');
-        }
-      }
+      const persistedAttachments = sanitizeAttachmentsForPersistence(requestAttachments);
+      const visiblePrompt = stripInlineAttachmentBlocks(prompt);
       const msgId = clientMessageId || `msg-${Date.now()}`;
       const userMsg: CachedMessage = {
         id: msgId,
         role: 'user' as const,
-        content: enrichedPrompt,
+        content: visiblePrompt,
         timestamp: Date.now(),
-        attachments: imageAttachments.length > 0 ? imageAttachments : undefined,
+        attachments: persistedAttachments,
       };
 
       // 加载历史消息 + 当前用户消息
       const cachedHistory = await loadSessionHistoryForRun(sessionId, tryGetSessionManager, logger);
       const history = cachedHistory.map(({ id, role, content, timestamp, attachments }) => ({
-        id, role: role as 'user' | 'assistant', content, timestamp, attachments,
+        id,
+        role: role as 'user' | 'assistant',
+        content: stripInlineAttachmentBlocks(content),
+        timestamp,
+        attachments: sanitizeAttachmentsForPersistence(attachments),
       }));
       const messages = [...history, userMsg] as import('../../shared/contract').Message[];
 
@@ -738,7 +724,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       // 新会话时立即通知前端刷新列表（不等 agentLoop 完成）
       if (history.length === 0) {
-        const title = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
+        const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
         broadcastSSE('session:updated', { sessionId, updates: { title } });
         broadcastSSE('session:list-updated', undefined);
       }
@@ -754,13 +740,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           const sm = await tryGetSessionManager();
           const db = await ensureDbSession(
             sessionId,
-            buildSessionTitle(prompt),
+            buildSessionTitle(visiblePrompt),
             { provider: runModelConfig.provider as ModelProvider, model: runModelConfig.model },
           );
           await persistMessageToDb(sm, db, sessionId, {
             id: msgId,
             role: 'user',
-            content: enrichedPrompt,
+            content: visiblePrompt,
             timestamp: userMsg.timestamp,
             attachments: userMsg.attachments,
           } as Message);
@@ -773,7 +759,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       try {
         const sb = await getSupabaseForSession();
         if (sb) {
-          const title = buildSessionTitle(prompt);
+          const title = buildSessionTitle(visiblePrompt);
           await sb.supabase.from('sessions').upsert({
             id: sessionId,
             user_id: sb.userId,
@@ -789,7 +775,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             session_id: sessionId,
             user_id: sb.userId,
             role: 'user',
-            content: enrichedPrompt,
+            content: visiblePrompt,
             timestamp: userMsg.timestamp,
             updated_at: Date.now(),
             source_device_id: 'web',
@@ -800,7 +786,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         logger.warn('Pre-persist user message to Supabase failed (continuing run):', (err as Error).message);
       }
 
-      await agentLoop.run(prompt);
+      await agentLoop.run(visiblePrompt);
 
       // ── 缓存会话消息（维持多轮上下文）──
       // 无论 assistantText 是否为空都要缓存 userMsg，否则工具-only 轮次会丢失上下文
@@ -831,7 +817,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       // ── 更新内存会话元数据 ──
       {
-        const title = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
+        const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
         const existing = inMemorySessions.get(sessionId);
         if (existing) {
           existing.updatedAt = Date.now();
@@ -856,7 +842,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           const dbForSession = ensureDb();
           if (!dbForSession.getSession(sessionId)) {
             dbForSession.createSessionWithId(sessionId, {
-              title: prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt,
+              title: visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt,
               modelConfig: runModelConfig,
             });
           }
@@ -875,8 +861,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
               await sm.addMessageToSession(sessionId, {
                 id: msgId,
                 role: 'user',
-                content: prompt,
+                content: visiblePrompt,
                 timestamp: userMsg.timestamp,
+                attachments: userMsg.attachments,
               } as import('../../shared/contract').Message);
             }
             if (!runCancelled && (assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistant) {
@@ -897,8 +884,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
               db.addMessage(sessionId, {
                 id: msgId,
                 role: 'user',
-                content: prompt,
+                content: visiblePrompt,
                 timestamp: userMsg.timestamp,
+                attachments: userMsg.attachments,
               } as import('../../shared/contract').Message);
             }
             if (!runCancelled && (assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistant) {
@@ -916,7 +904,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           const { getDatabase: getDb } = await import('../../main/services/core/databaseService');
           const db = getDb();
           if (history.length === 0) {
-            const title = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
+            const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
             db.updateSession(sessionId, { title, updatedAt: Date.now() });
           } else {
             db.updateSession(sessionId, { updatedAt: Date.now() });
@@ -930,7 +918,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       try {
         const sb = await getSupabaseForSession();
         if (sb) {
-          const title = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
+          const title = visiblePrompt.length > 30 ? visiblePrompt.substring(0, 30) + '...' : visiblePrompt;
           // Upsert session
           await sb.supabase.from('sessions').upsert({
             id: sessionId,
@@ -949,7 +937,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
               session_id: sessionId,
               user_id: sb.userId,
               role: 'user',
-              content: prompt,
+              content: visiblePrompt,
               timestamp: userMsg.timestamp,
               updated_at: Date.now(),
               source_device_id: 'web',
@@ -1056,11 +1044,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     const body = rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)
       ? rawBody as Record<string, unknown>
       : {};
-    const content = typeof body.content === 'string'
+    const content = stripInlineAttachmentBlocks(typeof body.content === 'string'
       ? body.content
       : typeof body.prompt === 'string'
         ? body.prompt
-        : '';
+        : '');
     const sessionId = typeof body.sessionId === 'string' ? body.sessionId : undefined;
     const clientMessageId = typeof body.clientMessageId === 'string' ? body.clientMessageId : undefined;
     const attachments = Array.isArray(body.attachments)

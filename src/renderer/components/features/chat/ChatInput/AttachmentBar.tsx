@@ -3,8 +3,8 @@
 // ============================================================================
 
 import React from 'react';
-import { X, FileText, Code, Database, Globe, File, Folder } from 'lucide-react';
-import type { MessageAttachment, AttachmentCategory } from '../../../../../shared/contract';
+import { X, FileText, Code, Database, Globe, File, Folder, Music, Video, Presentation, Archive } from 'lucide-react';
+import type { ArchiveManifest, MessageAttachment, AttachmentCategory, PresentationSummary } from '../../../../../shared/contract';
 import { IconButton } from '../../../primitives';
 
 export interface AttachmentBarProps {
@@ -22,6 +22,14 @@ const AttachmentIcon: React.FC<{ category: AttachmentCategory }> = ({ category }
   switch (category) {
     case 'pdf':
       return <FileText className={`${iconClass} text-red-400`} />;
+    case 'audio':
+      return <Music className={`${iconClass} text-fuchsia-400`} />;
+    case 'video':
+      return <Video className={`${iconClass} text-cyan-400`} />;
+    case 'presentation':
+      return <Presentation className={`${iconClass} text-violet-400`} />;
+    case 'archive':
+      return <Archive className={`${iconClass} text-yellow-400`} />;
     case 'code':
       return <Code className={`${iconClass} text-blue-400`} />;
     case 'data':
@@ -36,6 +44,15 @@ const AttachmentIcon: React.FC<{ category: AttachmentCategory }> = ({ category }
       return <File className={`${iconClass} text-zinc-500`} />;
   }
 };
+
+function parseJson<T>(value: string | undefined): T | undefined {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * 单个附件项
@@ -53,6 +70,14 @@ const AttachmentItem: React.FC<{
     }
     if (att.category === 'pdf' && att.pageCount) {
       return `${att.pageCount} 页`;
+    }
+    if (att.category === 'presentation') {
+      const summary = parseJson<PresentationSummary>(att.pptJson);
+      return summary?.slideCount !== undefined ? `${summary.slideCount} 页` : 'PPT';
+    }
+    if (att.category === 'archive' && att.archiveManifest) {
+      const manifest = att.archiveManifest as ArchiveManifest;
+      return manifest.supported ? `${manifest.totalFiles} 个文件` : manifest.format;
     }
     if (att.language) {
       return att.language;

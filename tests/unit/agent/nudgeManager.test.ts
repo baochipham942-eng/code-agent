@@ -274,6 +274,45 @@ describe('NudgeManager', () => {
     });
   });
 
+  describe('F4: Goal completion verification', () => {
+    it('does not require write actions for appshot analysis prompts', () => {
+      manager.reset([], '<appshot app="com.apple.finder" name="Finder">Downloads</appshot> What is in this screenshot?', '/tmp/test', []);
+
+      const ctx = createMockContext({
+        isSimpleTaskMode: false,
+        iterations: 2,
+        goalTracker: {
+          isInitialized: () => true,
+          getGoalSummary: () => ({ goal: 'What is in this screenshot?', completed: [], failed: [], pending: [] }),
+        } as unknown as GoalTracker,
+      });
+
+      const result = manager.runNudgeChecks(ctx);
+
+      expect(result).toBe(false);
+      expect(ctx.injectSystemMessage).not.toHaveBeenCalled();
+    });
+
+    it('still requires write actions for explicit mutation prompts', () => {
+      manager.reset([], '修复这个 bug', '/tmp/test', []);
+
+      const ctx = createMockContext({
+        isSimpleTaskMode: false,
+        iterations: 2,
+        goalTracker: {
+          isInitialized: () => true,
+          getGoalSummary: () => ({ goal: '修复这个 bug', completed: [], failed: [], pending: [] }),
+        } as unknown as GoalTracker,
+      });
+
+      const result = manager.runNudgeChecks(ctx);
+
+      expect(result).toBe(true);
+      const injectedMessage = (ctx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(injectedMessage).toContain('goal-completion-check');
+    });
+  });
+
   // ────────────────────────────────────────────────────────────────────────
   // P3: Missing files detection
   // ────────────────────────────────────────────────────────────────────────

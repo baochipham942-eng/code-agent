@@ -123,7 +123,7 @@ export const ControlPlaneSettings: React.FC = () => {
 
   return (
     <SettingsPage
-      title="Control Plane"
+      title="控制平面"
       description="线上签名配置、能力 registry 和发布审计留痕。"
     >
       <SettingsSection

@@ -13,10 +13,19 @@ import {
   FileCode,
   Database,
   Globe,
+  Archive,
+  Music,
+  Presentation,
   Sheet,
+  Video,
 } from 'lucide-react';
 import type { AttachmentDisplayProps, AttachmentIconConfig } from './types';
-import type { AttachmentCategory, MessageAttachment } from '@shared/contract';
+import type {
+  ArchiveManifest,
+  AttachmentCategory,
+  MessageAttachment,
+  PresentationSummary,
+} from '@shared/contract';
 import { formatFileSize, FOLDER_SUMMARY_THRESHOLD, categoryLabels } from './utils';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { SpreadsheetBlock } from './SpreadsheetBlock';
@@ -28,8 +37,16 @@ function getAttachmentIconConfig(category: AttachmentCategory | undefined): Atta
   switch (category) {
     case 'pdf':
       return { icon: <FileText className={iconClass} />, color: 'text-red-400', label: 'PDF' };
+    case 'audio':
+      return { icon: <Music className={iconClass} />, color: 'text-fuchsia-400', label: '音频' };
+    case 'video':
+      return { icon: <Video className={iconClass} />, color: 'text-cyan-400', label: '视频' };
     case 'excel':
       return { icon: <Sheet className={iconClass} />, color: 'text-emerald-400', label: 'Excel' };
+    case 'presentation':
+      return { icon: <Presentation className={iconClass} />, color: 'text-violet-400', label: 'PPT' };
+    case 'archive':
+      return { icon: <Archive className={iconClass} />, color: 'text-yellow-400', label: '压缩包' };
     case 'code':
       return { icon: <FileCode className={iconClass} />, color: 'text-blue-400', label: '代码' };
     case 'data':
@@ -43,12 +60,26 @@ function getAttachmentIconConfig(category: AttachmentCategory | undefined): Atta
   }
 }
 
+function parseJson<T>(value: string | undefined): T | undefined {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return undefined;
+  }
+}
+
 // Single attachment item
 const AttachmentItem: React.FC<{
   attachment: MessageAttachment;
   onImageClick: (src: string) => void;
 }> = ({ attachment, onImageClick }) => {
   const category = attachment.category || (attachment.type === 'image' ? 'image' : 'other');
+  const presentationSummary = useMemo(
+    () => parseJson<PresentationSummary>(attachment.pptJson),
+    [attachment.pptJson],
+  );
+  const archiveManifest = attachment.archiveManifest as ArchiveManifest | undefined;
 
   if (category === 'image') {
     // 优先使用 data/thumbnail，否则回退到本地文件路径
@@ -70,6 +101,36 @@ const AttachmentItem: React.FC<{
     );
   }
 
+  if (category === 'audio') {
+    const mediaSrc = attachment.data || (attachment.path ? resolveFileUrl(attachment.path) : '');
+    return (
+      <div className="max-w-[260px] rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
+        <div className="mb-2 flex items-center gap-2 text-xs text-zinc-300">
+          <Music className="h-4 w-4 text-fuchsia-400" />
+          <span className="truncate" title={attachment.name}>{attachment.name}</span>
+        </div>
+        <audio controls src={mediaSrc} className="w-full" />
+      </div>
+    );
+  }
+
+  if (category === 'video') {
+    const mediaSrc = attachment.data || (attachment.path ? resolveFileUrl(attachment.path) : '');
+    return (
+      <div className="max-w-[320px] overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900/80">
+        <video
+          controls
+          src={mediaSrc}
+          className="max-h-[220px] w-full bg-black object-contain"
+        />
+        <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-300">
+          <Video className="h-4 w-4 shrink-0 text-cyan-400" />
+          <span className="truncate" title={attachment.name}>{attachment.name}</span>
+        </div>
+      </div>
+    );
+  }
+
   // Excel with JSON data → interactive SpreadsheetBlock
   if (category === 'excel' && attachment.sheetsJson) {
     return <SpreadsheetBlock spec={attachment.sheetsJson} />;
@@ -78,6 +139,60 @@ const AttachmentItem: React.FC<{
   // Word (.docx) with JSON data → interactive DocumentBlock
   if (category === 'document' && attachment.docxJson) {
     return <DocumentBlock spec={attachment.docxJson} />;
+  }
+
+  if (category === 'presentation') {
+    const slideCount = presentationSummary?.slideCount;
+    const firstSlides = presentationSummary?.slides?.slice(0, 2) || [];
+    return (
+      <div className="flex max-w-[260px] items-start gap-2 rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
+        <Presentation className="mt-0.5 h-5 w-5 shrink-0 text-violet-400" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm text-zinc-200" title={attachment.name}>
+            {attachment.name}
+          </div>
+          <div className="text-xs text-zinc-500">
+            {slideCount !== undefined ? `${slideCount} 页` : formatFileSize(attachment.size)}
+          </div>
+          {firstSlides.length > 0 && (
+            <div className="mt-1 space-y-0.5 text-xs text-zinc-400">
+              {firstSlides.map((slide) => (
+                <div key={slide.index} className="truncate" title={slide.title || slide.textPreview}>
+                  第 {slide.index} 页 {slide.title || slide.textPreview || '无文字标题'}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (category === 'archive') {
+    const dangerCount = archiveManifest?.dangerousEntries?.length || 0;
+    return (
+      <div className="flex max-w-[240px] items-start gap-2 rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
+        <Archive className="mt-0.5 h-5 w-5 shrink-0 text-yellow-400" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm text-zinc-200" title={attachment.name}>
+            {attachment.name}
+          </div>
+          <div className="text-xs text-zinc-500">
+            {archiveManifest
+              ? `${archiveManifest.format} · ${archiveManifest.totalFiles} 文件`
+              : formatFileSize(attachment.size)}
+          </div>
+          {archiveManifest && (
+            <div className={`mt-1 truncate text-xs ${dangerCount > 0 ? 'text-amber-300' : 'text-zinc-400'}`}>
+              {archiveManifest.supported
+                ? `${archiveManifest.entries.length}${archiveManifest.truncated ? '+' : ''} 项清单`
+                : archiveManifest.note}
+              {dangerCount > 0 ? ` · ${dangerCount} 个可疑路径` : ''}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
 
   const { icon, color, label } = getAttachmentIconConfig(category);

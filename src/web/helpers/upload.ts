@@ -170,7 +170,8 @@ export function handleScreenshot(req: Request, res: Response): void {
 
   // Security: only serve image files from known screenshot directories
   const isScreenshotDir = resolved.includes('/native-desktop/screenshots/')
-    || resolved.includes('/.code-agent/native-desktop/');
+    || resolved.includes('/.code-agent/native-desktop/')
+    || resolved.includes('/.code-agent/appshots/');
   const isImageExt = /\.(jpg|jpeg|png|webp|gif)$/i.test(resolved);
 
   if (!isScreenshotDir || !isImageExt) {

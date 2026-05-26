@@ -17,7 +17,7 @@ export const ACCESS_CONTROL_REGISTRY = {
     adminOnly: true,
   },
   'settings.controlPlane': {
-    label: 'Control Plane',
+    label: '控制平面',
     adminOnly: true,
   },
   'settings.capabilities': {

@@ -8,6 +8,7 @@
 // ── 类型 ──
 
 import type { Message, MessageAttachment, PersistenceHealth } from '../../shared/contract';
+import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 
 export interface CachedToolCall {
   id: string;
@@ -115,12 +116,12 @@ export function toCachedSessionMessages(messages: Message[]): CachedMessage[] {
       return {
         id: message.id,
         role: message.role,
-        content: message.content,
+        content: stripInlineAttachmentBlocks(message.content),
         timestamp: message.timestamp,
         toolCalls: message.toolCalls as CachedToolCall[] | undefined,
         thinking: message.thinking || message.reasoning,
         contentParts: message.contentParts as CachedContentPart[] | undefined,
-        attachments: message.attachments,
+        attachments: sanitizeAttachmentsForPersistence(message.attachments),
       };
     })
     .filter((message): message is CachedMessage => Boolean(message));

@@ -158,8 +158,12 @@ export function parseMarkdownBlocks(text: string): MarkdownBlockData[] {
 // Category labels for attachments
 export const categoryLabels: Record<string, string> = {
   image: '图片',
+  audio: '音频',
+  video: '视频',
   pdf: 'PDF',
   excel: '表格',
+  presentation: '演示文稿',
+  archive: '压缩包',
   code: '代码',
   data: '数据',
   text: '文本',

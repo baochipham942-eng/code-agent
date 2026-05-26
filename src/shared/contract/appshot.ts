@@ -78,6 +78,5 @@ export function buildAppshotAttachment(capture: AppshotCapture): MessageAttachme
     mimeType: 'image/png',
     data: capture.screenshotDataUrl,
     thumbnail: capture.screenshotDataUrl,
-    path: capture.screenshotPath,
   };
 }

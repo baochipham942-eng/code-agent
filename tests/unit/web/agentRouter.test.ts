@@ -336,6 +336,117 @@ describe('createAgentRouter', () => {
     });
   });
 
+  it('keeps rich file attachments out of persisted message content', async () => {
+    mockRun.mockResolvedValueOnce(undefined);
+    const addMessageToSession = vi.fn(async () => undefined);
+    await closeServer();
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        addMessageToSession,
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => ({ id: 'session-rich-attachments', title: 'Attachments' })),
+      }),
+    });
+    setDbAvailable(true);
+
+    const presentationAttachment = {
+      id: 'ppt-1',
+      type: 'file',
+      category: 'presentation',
+      name: 'sample-deck.pptx',
+      size: 4096,
+      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      data: 'data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64,AAAAPPTX',
+      path: '/tmp/sample-deck.pptx',
+      pptJson: '{"slideCount":6,"slides":[{"index":1,"title":"Intro"}]}',
+    };
+    const archiveAttachment = {
+      id: 'zip-1',
+      type: 'file',
+      category: 'archive',
+      name: 'bundle.zip',
+      size: 2048,
+      mimeType: 'application/zip',
+      data: 'data:application/zip;base64,AAAAZIP',
+      path: '/tmp/bundle.zip',
+      archiveManifest: {
+        format: 'zip',
+        supported: true,
+        totalFiles: 1,
+        entries: [{ path: 'plain.txt', size: 12 }],
+      },
+    };
+    const textAttachment = {
+      id: 'text-1',
+      type: 'file',
+      category: 'text',
+      name: 'plain.txt',
+      size: 12,
+      mimeType: 'text/plain',
+      data: 'hello from txt',
+      path: '/tmp/plain.txt',
+    };
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '请确认这三个附件',
+        sessionId: 'session-rich-attachments',
+        clientMessageId: 'client-msg-rich-attachments',
+        attachments: [presentationAttachment, archiveAttachment, textAttachment],
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    const loopMessages = mockCreateAgentLoop.mock.calls[0]?.[2] as Array<{
+      id: string;
+      content: string;
+      attachments?: Array<Record<string, unknown>>;
+    }>;
+    const loopUserMessage = loopMessages.at(-1);
+
+    expect(loopUserMessage).toMatchObject({
+      id: 'client-msg-rich-attachments',
+      content: '请确认这三个附件',
+    });
+    expect(loopUserMessage?.attachments).toHaveLength(3);
+    expect(loopUserMessage?.attachments?.[0]).toMatchObject({
+      id: 'ppt-1',
+      category: 'presentation',
+      pptJson: presentationAttachment.pptJson,
+    });
+    expect(loopUserMessage?.attachments?.[0]?.data).toBeUndefined();
+    expect(loopUserMessage?.attachments?.[1]).toMatchObject({
+      id: 'zip-1',
+      category: 'archive',
+      archiveManifest: archiveAttachment.archiveManifest,
+    });
+    expect(loopUserMessage?.attachments?.[1]?.data).toBeUndefined();
+    expect(loopUserMessage?.attachments?.[2]).toMatchObject({
+      id: 'text-1',
+      category: 'text',
+      data: 'hello from txt',
+    });
+
+    expect(addMessageToSession).toHaveBeenCalledWith(
+      'session-rich-attachments',
+      expect.objectContaining({
+        id: 'client-msg-rich-attachments',
+        role: 'user',
+        content: '请确认这三个附件',
+        attachments: loopUserMessage?.attachments,
+      }),
+    );
+    const serialized = JSON.stringify(addMessageToSession.mock.calls[0]?.[1]);
+    expect(serialized).not.toContain('<attachment');
+    expect(serialized).not.toContain('AAAAPPTX');
+    expect(serialized).not.toContain('AAAAZIP');
+    expect(sessionMessages.get('session-rich-attachments')?.[0]?.content).toBe('请确认这三个附件');
+  });
+
   it('routes /api/interrupt to the active loop steer method', async () => {
     activeAgentLoops.set('session-steer', {
       cancel: mockCancel,

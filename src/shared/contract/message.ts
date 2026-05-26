@@ -11,15 +11,57 @@ export type MessageVisibility = 'active' | 'rewound';
 // 附件文件类别（用于精细化处理）
 export type AttachmentCategory =
   | 'image'      // 图片：PNG, JPEG, GIF, WebP
+  | 'audio'      // 音频：MP3, WAV, M4A, etc.
+  | 'video'      // 视频：MP4, WebM, MOV, etc.
   | 'pdf'        // PDF 文档
   | 'excel'      // Excel 表格：XLSX, XLS（支持解析）
+  | 'presentation' // 演示文稿：PPTX/PPT
+  | 'archive'    // 压缩包：ZIP/TAR/GZ/RAR/7Z
   | 'code'       // 代码文件：JS, TS, Python, etc.
   | 'text'       // 纯文本：TXT, MD
   | 'data'       // 数据文件：JSON, CSV, XML
-  | 'document'   // 办公文档：DOCX, PPTX (暂不支持)
+  | 'document'   // 办公文档：DOCX
   | 'html'       // 网页：HTML
   | 'folder'     // 文件夹
   | 'other';     // 其他
+
+export interface PresentationSlideSummary {
+  index: number;
+  title?: string;
+  textPreview?: string;
+  textRuns?: number;
+  imageCount?: number;
+  tableCount?: number;
+}
+
+export interface PresentationSummary {
+  title?: string;
+  format: 'pptx' | 'ppt';
+  slideCount?: number;
+  slides?: PresentationSlideSummary[];
+  truncated?: boolean;
+  parseError?: string;
+}
+
+export interface ArchiveEntrySummary {
+  path: string;
+  size?: number;
+  compressedSize?: number;
+  isDirectory?: boolean;
+}
+
+export interface ArchiveManifest {
+  format: string;
+  supported: boolean;
+  totalFiles: number;
+  totalDirectories?: number;
+  totalUncompressedSize?: number;
+  totalCompressedSize?: number;
+  entries: ArchiveEntrySummary[];
+  dangerousEntries?: string[];
+  truncated?: boolean;
+  note?: string;
+}
 
 // 附件类型
 export interface MessageAttachment {
@@ -44,6 +86,10 @@ export interface MessageAttachment {
   sheetsJson?: string;
   // Word 特有：JSON 格式数据（供 DocumentBlock 交互式渲染）
   docxJson?: string;
+  // PowerPoint 特有：JSON 格式摘要（供预览和模型上下文使用）
+  pptJson?: string;
+  // 压缩包特有：目录清单摘要，不自动解压
+  archiveManifest?: ArchiveManifest;
   // 代码特有：语言
   language?: string;
   // 文件夹特有：文件列表和统计

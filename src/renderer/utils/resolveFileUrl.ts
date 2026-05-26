@@ -22,6 +22,11 @@ export function resolveFileUrl(filePath: string): string {
     && (!hasNativeBridge() || window.location.protocol === 'http:' || window.location.protocol === 'https:');
 
   if (isWebMode) {
+    if (filePath.includes('/.code-agent/appshots/')) {
+      const params = new URLSearchParams({ path: filePath });
+      return `/api/screenshot?${params.toString()}`;
+    }
+
     const params = new URLSearchParams({ path: filePath });
     const token = getBrowserAuthToken();
     if (token) params.set('token', token);

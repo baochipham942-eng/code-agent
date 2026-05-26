@@ -43,18 +43,19 @@ import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/providerResolution';
 import { withTransientRetry, isTransientError } from '../providers/retryStrategy';
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
+import { getProviderLimiter } from '../concurrencyLimiter';
 import { convertToolsToOpenAI, getHttpsAgent } from '../providers/shared';
 
 const logger = createLogger('AiSdkAdapter');
 
-// resolveModel 能处理的 provider：deepseek/claude·anthropic（专用包）/ gemini（@ai-sdk/google）/
-// openrouter（@openrouter/ai-sdk-provider）/ 普通 openai-compatible。
-// 以下 provider 的旧 provider class 仍带未迁等价的额外请求语义，暂留 legacy（WS1 Phase 2 处理）：
-// - xiaomi/moonshot: thinking-mode history / sampling（temp 1.0、top_p 0.95）/ token 字段
-//   （xiaomi 用 max_completion_tokens 而非 max_tokens）/ moonshot 直连 keepAlive:false agent。
-// - zhipu: 自适应并发 limiter（与 quick model 共用同一实例）+ 三态端点 + reasoning_content 兜底。
-// 这些 provider 在默认 AI SDK engine 下自动回 legacy，避免把迁移不完整的语义放进热路径。
-const AISDK_UNSUPPORTED_PROVIDERS = new Set<string>(['xiaomi', 'moonshot', 'zhipu']);
+// resolveModel 现覆盖全部 provider：deepseek/claude·anthropic（专用包）/ gemini（@ai-sdk/google）/
+// openrouter（@openrouter/ai-sdk-provider）/ 其余走 openai-compatible。zhipu/moonshot/xiaomi 的 vendor
+// quirk 经 buildVendorCompatSettings 叠加在 openai-compatible 上（thinking 字段 / 采样 / max_completion_tokens
+// / stream_options），reasoning_content 由 openai-compatible 原生映射成 reasoning-delta，zhipu 三态端点由
+// resolveProviderBaseUrl 处理、并发 limiter 在 inferenceViaAiSdk 层套。
+// 集合已清空——所有 provider 都经 AI SDK；保留此闸门仅为 CODE_AGENT_MODEL_ENGINE=legacy 一键回退，
+// WS1 Phase 3 删双路时连同闸门一并移除。
+const AISDK_UNSUPPORTED_PROVIDERS = new Set<string>([]);
 
 /** 适配器是否能跑该 provider（false → 调用方应走旧 modelRouter 路径）。 */
 export function aiSdkSupportsProvider(provider: string): boolean {
@@ -191,6 +192,59 @@ function resolveProviderRequest(config: ModelConfig): ProviderRequest {
   };
 }
 
+// ── 国内 thinking 模型（zhipu/moonshot/xiaomi）的 openai-compatible vendor quirks，迁自各 legacy
+//    provider class 的 buildRequestBody。全部走 openai-compatible 官方支持的 settings：
+//    includeUsage（stream_options.include_usage）/ headers / transformRequestBody（注入 vendor body 字段）。
+//    reasoning_content 由 openai-compatible 原生映射成 reasoning-delta；zhipu 三态端点已由
+//    resolveProviderBaseUrl 处理、并发 limiter 在 inferenceViaAiSdk 层套，故此处不重复。──
+interface OpenAICompatVendorSettings {
+  includeUsage?: boolean;
+  headers?: Record<string, string>;
+  transformRequestBody?: (body: Record<string, unknown>) => Record<string, unknown>;
+}
+
+export function buildVendorCompatSettings(config: ModelConfig): OpenAICompatVendorSettings {
+  switch (config.provider) {
+    case 'zhipu':
+      // GLM：仅 stream_options include_usage（并发 limiter 在 inferenceViaAiSdk 层，不在 body）。
+      return { includeUsage: true };
+    case 'moonshot':
+      // Kimi K2.5 thinking-mode 官方采样 temp=1.0/top_p=0.95 + 自报 UA（沿用 legacy MoonshotProvider）。
+      return {
+        includeUsage: true,
+        headers: { 'User-Agent': 'claude-code/1.0' },
+        transformRequestBody: (b) => ({
+          ...b,
+          temperature: b.temperature ?? 1.0,
+          top_p: b.top_p ?? 0.95,
+        }),
+      };
+    case 'xiaomi': {
+      // MiMo：thinking 字段（enabled/disabled 由 reasoningEffort/thinkingBudget 决定）+ 官方采样
+      // temp=1.0/top_p=0.95 + 用 max_completion_tokens 而非 max_tokens（沿用 legacy XiaomiProvider）。
+      const thinkingEnabled = config.reasoningEffort === 'high' || (config.thinkingBudget ?? 0) > 0;
+      return {
+        includeUsage: true,
+        transformRequestBody: (b) => {
+          const out: Record<string, unknown> = {
+            ...b,
+            temperature: b.temperature ?? 1.0,
+            top_p: b.top_p ?? 0.95,
+            thinking: { type: thinkingEnabled ? 'enabled' : 'disabled' },
+          };
+          if (out.max_tokens != null && out.max_completion_tokens == null) {
+            out.max_completion_tokens = out.max_tokens;
+            delete out.max_tokens;
+          }
+          return out;
+        },
+      };
+    }
+    default:
+      return {};
+  }
+}
+
 // ── provider 解析：优先专用包（专用包能处理 thinking 回传等坑，通用 openai-compatible 不行）──
 function resolveModel(config: ModelConfig, req: ProviderRequest): LanguageModel {
   switch (config.provider) {
@@ -217,7 +271,16 @@ function resolveModel(config: ModelConfig, req: ProviderRequest): LanguageModel 
       if (!req.baseURL) {
         throw new Error(`[AiSdkAdapter] 无法解析 provider "${config.provider}" 的 baseURL`);
       }
-      return createOpenAICompatible({ name: config.provider, baseURL: req.baseURL, apiKey: req.apiKey, fetch: aiSdkFetch })(config.model);
+      // zhipu/moonshot/xiaomi 在此叠加 vendor quirks；其余 openai-compatible provider
+      // （longcat/qwen/minimax/custom 等）buildVendorCompatSettings 返回 {} 不受影响。
+      const vendor = buildVendorCompatSettings(config);
+      return createOpenAICompatible({
+        name: config.provider,
+        baseURL: req.baseURL,
+        apiKey: req.apiKey,
+        fetch: aiSdkFetch,
+        ...vendor,
+      })(config.model);
     }
   }
 }
@@ -418,8 +481,40 @@ function logInferenceFailure(err: unknown, stage: string, config: ModelConfig, m
  * 与 ModelRouter.inference 同契约的 AI SDK 实现。
  * onStream 存在且未强制非流式 → 流式（streamText，逐字回调 + 累积）；
  * 否则非流式（generateText）。两条路径都【单步】（不设 stopWhen），由 Neo loop 驱动多轮。
+ *
+ * 外层套并发 limiter：getProviderLimiter 仅对声明了并发上限的 provider（当前只有 zhipu，与 quick model
+ * 路径共用同一实例）返回非 null。迁自 legacy ZhipuProvider.inference：acquire→调用→onSuccess/onRateLimit→release，
+ * 命中 1302/速率限制时自适应降并发。其余 provider limiter 为 null，直接透传。
  */
 export async function inferenceViaAiSdk(
+  messages: ModelMessage[],
+  tools: ToolDefinition[],
+  config: ModelConfig,
+  onStream?: StreamCallback,
+  signal?: AbortSignal,
+  options?: InferenceOptions,
+): Promise<ModelResponse> {
+  const limiter = getProviderLimiter(config.provider);
+  if (!limiter) {
+    return runInferenceViaAiSdk(messages, tools, config, onStream, signal, options);
+  }
+  await limiter.acquire(signal);
+  try {
+    const result = await runInferenceViaAiSdk(messages, tools, config, onStream, signal, options);
+    limiter.onSuccess();
+    return result;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('1302') || msg.includes('速率限制') || msg.includes('rate limit')) {
+      limiter.onRateLimit();
+    }
+    throw err;
+  } finally {
+    limiter.release();
+  }
+}
+
+async function runInferenceViaAiSdk(
   messages: ModelMessage[],
   tools: ToolDefinition[],
   config: ModelConfig,

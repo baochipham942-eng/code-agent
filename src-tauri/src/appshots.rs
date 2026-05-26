@@ -17,15 +17,20 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 #[cfg(target_os = "macos")]
 use std::process::Command;
+use std::sync::Mutex;
+#[cfg(target_os = "macos")]
+use std::sync::{
+    atomic::{AtomicBool, AtomicPtr, Ordering},
+    Arc,
+};
 #[cfg(target_os = "macos")]
 use std::time::Duration;
-use std::sync::Mutex;
 use tauri::AppHandle;
 #[cfg(target_os = "macos")]
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
-/// 默认 Appshots 热键（避开主窗口激活已占用的 CmdOrCtrl+Shift+A）。
-pub const DEFAULT_APPSHOTS_SHORTCUT: &str = "CmdOrCtrl+Shift+S";
+/// 默认 Appshots 热键：同时按下左右 Command。
+pub const DEFAULT_APPSHOTS_SHORTCUT: &str = "LeftCmd+RightCmd";
 
 #[cfg(target_os = "macos")]
 const OWN_BUNDLE_ID: &str = "com.linchen.code-agent";
@@ -75,6 +80,177 @@ pub fn trigger_capture(app: AppHandle) {
     std::thread::spawn(move || {
         capture_now(&app);
     });
+}
+
+/// 注册 Appshots 的左右 Command 全局热键。
+///
+/// Tauri/global-hotkey 只能表达「修饰键 + 普通按键」，不能区分左右 Command，也不能注册
+/// 纯修饰键组合。这里用 macOS listen-only event tap 监听物理左右 Command 键状态，命中后
+/// 仍然复用同一条 `trigger_capture` 链路。
+#[cfg(target_os = "macos")]
+pub fn setup_dual_command_hotkey(app: AppHandle) -> Result<(), String> {
+    dual_command_hotkey::install(app)
+}
+
+#[cfg(target_os = "macos")]
+mod dual_command_hotkey {
+    use super::*;
+    use std::os::raw::{c_long, c_void};
+
+    const K_CG_SESSION_EVENT_TAP: u32 = 1;
+    const K_CG_HEAD_INSERT_EVENT_TAP: u32 = 0;
+    const K_CG_EVENT_TAP_OPTION_LISTEN_ONLY: u32 = 1;
+    const K_CG_EVENT_FLAGS_CHANGED: u32 = 12;
+    const K_CG_EVENT_TAP_DISABLED_BY_TIMEOUT: u32 = 0xFFFF_FFFE;
+    const K_CG_EVENT_TAP_DISABLED_BY_USER_INPUT: u32 = 0xFFFF_FFFF;
+    const K_CG_EVENT_SOURCE_STATE_HID_SYSTEM_STATE: u32 = 1;
+    const NX_DEVICELCMDKEYMASK: u64 = 0x0000_0008;
+    const NX_DEVICERCMDKEYMASK: u64 = 0x0000_0010;
+
+    const LEFT_COMMAND_KEYCODE: u16 = 55;
+    const RIGHT_COMMAND_KEYCODE: u16 = 54;
+
+    type CGEventRef = *const c_void;
+    type CGEventTapProxy = *const c_void;
+    type CFMachPortRef = *mut c_void;
+    type CFRunLoopSourceRef = *mut c_void;
+    type CFRunLoopRef = *mut c_void;
+    type CFAllocatorRef = *mut c_void;
+    type CFRunLoopMode = *const c_void;
+    type CFIndex = c_long;
+
+    type CGEventTapCallBack = unsafe extern "C" fn(
+        proxy: CGEventTapProxy,
+        event_type: u32,
+        event: CGEventRef,
+        user_info: *mut c_void,
+    ) -> CGEventRef;
+
+    struct HotkeyState {
+        app: AppHandle,
+        armed: AtomicBool,
+        tap: AtomicPtr<c_void>,
+    }
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGEventTapCreate(
+            tap: u32,
+            place: u32,
+            options: u32,
+            events_of_interest: u64,
+            callback: CGEventTapCallBack,
+            user_info: *mut c_void,
+        ) -> CFMachPortRef;
+        fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
+        fn CGEventGetFlags(event: CGEventRef) -> u64;
+        fn CGEventSourceKeyState(state_id: u32, key: u16) -> bool;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        static kCFAllocatorDefault: CFAllocatorRef;
+        static kCFRunLoopCommonModes: CFRunLoopMode;
+
+        fn CFRunLoopGetMain() -> CFRunLoopRef;
+        fn CFMachPortCreateRunLoopSource(
+            allocator: CFAllocatorRef,
+            port: CFMachPortRef,
+            order: CFIndex,
+        ) -> CFRunLoopSourceRef;
+        fn CFMachPortInvalidate(port: CFMachPortRef);
+        fn CFRunLoopAddSource(rl: CFRunLoopRef, source: CFRunLoopSourceRef, mode: CFRunLoopMode);
+        fn CFRelease(cftype: *const c_void);
+    }
+
+    pub fn install(app: AppHandle) -> Result<(), String> {
+        let state = Arc::new(HotkeyState {
+            app,
+            armed: AtomicBool::new(false),
+            tap: AtomicPtr::new(std::ptr::null_mut()),
+        });
+        let state_ptr = Arc::into_raw(state) as *mut c_void;
+
+        unsafe {
+            let event_mask = 1_u64 << K_CG_EVENT_FLAGS_CHANGED;
+            let tap = CGEventTapCreate(
+                K_CG_SESSION_EVENT_TAP,
+                K_CG_HEAD_INSERT_EVENT_TAP,
+                K_CG_EVENT_TAP_OPTION_LISTEN_ONLY,
+                event_mask,
+                callback,
+                state_ptr,
+            );
+            if tap.is_null() {
+                drop(Arc::from_raw(state_ptr as *const HotkeyState));
+                return Err("创建左右 Cmd event tap 失败，请检查辅助功能/输入监控权限".to_string());
+            }
+            (*(state_ptr as *const HotkeyState))
+                .tap
+                .store(tap, Ordering::SeqCst);
+
+            let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0);
+            if source.is_null() {
+                CFMachPortInvalidate(tap);
+                CFRelease(tap as *const c_void);
+                drop(Arc::from_raw(state_ptr as *const HotkeyState));
+                return Err("创建左右 Cmd run loop source 失败".to_string());
+            }
+
+            CFRunLoopAddSource(CFRunLoopGetMain(), source, kCFRunLoopCommonModes);
+            CGEventTapEnable(tap, true);
+        }
+
+        eprintln!("[appshot-hotkey] {DEFAULT_APPSHOTS_SHORTCUT} 热键已启用");
+        Ok(())
+    }
+
+    unsafe extern "C" fn callback(
+        _proxy: CGEventTapProxy,
+        event_type: u32,
+        event: CGEventRef,
+        user_info: *mut c_void,
+    ) -> CGEventRef {
+        if event_type == K_CG_EVENT_TAP_DISABLED_BY_TIMEOUT
+            || event_type == K_CG_EVENT_TAP_DISABLED_BY_USER_INPUT
+        {
+            if !user_info.is_null() {
+                let state = &*(user_info as *const HotkeyState);
+                let tap = state.tap.load(Ordering::SeqCst);
+                if !tap.is_null() {
+                    CGEventTapEnable(tap, true);
+                }
+            }
+            return event;
+        }
+        if event_type != K_CG_EVENT_FLAGS_CHANGED || user_info.is_null() {
+            return event;
+        }
+
+        let state = &*(user_info as *const HotkeyState);
+        let flags = CGEventGetFlags(event);
+        let left_down = (flags & NX_DEVICELCMDKEYMASK) != 0
+            || CGEventSourceKeyState(
+            K_CG_EVENT_SOURCE_STATE_HID_SYSTEM_STATE,
+            LEFT_COMMAND_KEYCODE,
+        );
+        let right_down = (flags & NX_DEVICERCMDKEYMASK) != 0
+            || CGEventSourceKeyState(
+            K_CG_EVENT_SOURCE_STATE_HID_SYSTEM_STATE,
+            RIGHT_COMMAND_KEYCODE,
+        );
+
+        if left_down && right_down {
+            if !state.armed.swap(true, Ordering::SeqCst) {
+                eprintln!("[appshot-hotkey] 左右 Cmd 触发 Appshot");
+                trigger_capture(state.app.clone());
+            }
+        } else {
+            state.armed.store(false, Ordering::SeqCst);
+        }
+
+        event
+    }
 }
 
 /// 读取 PNG 为 base64 data URL（命令与飞入动画共用）。
@@ -136,8 +312,6 @@ pub fn capture_now(app: &AppHandle) {
         serde_json::json!({ "requestId": request_id }),
     );
 
-    play_shutter_sound();
-
     let located = match locate_frontmost_window() {
         Ok(Some(loc)) => loc,
         Ok(None) => {
@@ -169,6 +343,17 @@ pub fn capture_now(app: &AppHandle) {
         return;
     }
 
+    let window_frame = ScreenRect {
+        x: located.x,
+        y: located.y,
+        width: located.width,
+        height: located.height,
+    };
+
+    play_shutter_sound();
+    activate_main_window(app);
+    animate_overlay_best_effort(app, &png_path, window_frame);
+
     // 文本通道：AX 优先；AX 为空则本地 Vision OCR 兜底（免费 / 端上 / 零 token）。
     let mut text_source = "none";
     let mut text = extract_ax_text(located.pid).unwrap_or_default();
@@ -196,20 +381,11 @@ pub fn capture_now(app: &AppHandle) {
         screenshot_path: png_path.to_string_lossy().to_string(),
         ax_text,
         text_source: text_source.to_string(),
-        window_frame: ScreenRect {
-            x: located.x,
-            y: located.y,
-            width: located.width,
-            height: located.height,
-        },
+        window_frame,
         captured_at_ms: now_ms(),
     };
 
     let _ = app.emit("appshots:capture_ready", &info);
-
-    // 飞入动画——纯视觉锦上添花，best-effort：任何失败都不影响上面已发出的 capture_ready，
-    // composer 的 chip 照常出现。
-    animate_overlay_best_effort(app, &info);
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -422,12 +598,21 @@ fn ocr_image(image_path: &PathBuf) -> Option<String> {
     }
 }
 
-/// 快门音：先给即时听觉反馈，遮蔽后续抓图/OCR 延迟。fire-and-forget。
+/// 快门音：截图成功后给听觉反馈。fire-and-forget。
 #[cfg(target_os = "macos")]
 fn play_shutter_sound() {
     let _ = Command::new("afplay")
         .arg("/System/Library/Sounds/Tink.aiff")
         .spawn();
+}
+
+#[cfg(target_os = "macos")]
+fn activate_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
 }
 
 /// appshots 截图落盘目录：~/.code-agent/appshots（与 native_desktop 的 base 解析一致）。
@@ -487,7 +672,7 @@ fn truncate_chars(s: &str, max: usize) -> String {
 const ANIM_DURATION_MS: u64 = 1100;
 
 #[cfg(target_os = "macos")]
-fn animate_overlay_best_effort(app: &AppHandle, info: &AppshotsCaptureInfo) {
+fn animate_overlay_best_effort(app: &AppHandle, screenshot_path: &PathBuf, src: ScreenRect) {
     // 落点：前端上报的 composer 槽位（屏幕逻辑坐标）。没上报过就不演。
     let slot = match app.state::<AppshotsState>().composer_slot.lock() {
         Ok(guard) => match *guard {
@@ -497,7 +682,7 @@ fn animate_overlay_best_effort(app: &AppHandle, info: &AppshotsCaptureInfo) {
         Err(_) => return,
     };
 
-    let image = match read_png_data_url(&info.screenshot_path) {
+    let image = match read_png_data_url(&screenshot_path.to_string_lossy()) {
         Ok(url) => url,
         Err(e) => {
             eprintln!("[appshot-overlay] 读图失败: {e}");
@@ -519,7 +704,6 @@ fn animate_overlay_best_effort(app: &AppHandle, info: &AppshotsCaptureInfo) {
     let win_w = monitor.size().width as f64 / scale;
     let win_h = monitor.size().height as f64 / scale;
 
-    let src = info.window_frame;
     let params = serde_json::json!({
         "src": { "x": src.x - origin_x, "y": src.y - origin_y, "width": src.width, "height": src.height },
         "dst": { "x": slot.x - origin_x, "y": slot.y - origin_y, "width": slot.width, "height": slot.height },

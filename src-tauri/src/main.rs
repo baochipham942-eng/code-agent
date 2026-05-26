@@ -14,7 +14,7 @@ use tauri::{
     include_image, menu::MenuBuilder, tray::TrayIconBuilder, Emitter, Manager, RunEvent,
     WindowEvent,
 };
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent};
 
 mod appshots;
 mod native_app_icon;
@@ -1074,17 +1074,9 @@ fn setup_global_shortcut(app: &tauri::App) -> Result<(), Box<dyn std::error::Err
         },
     )?;
 
-    // Appshots：抓取当前前台 app 窗口（截图 + AX/OCR 文本）送进 composer。
-    let appshots_handle = app.handle().clone();
-    app.global_shortcut().on_shortcut(
-        appshots::DEFAULT_APPSHOTS_SHORTCUT,
-        move |_app_handle, _shortcut: &Shortcut, event: ShortcutEvent| {
-            // 只在按下（而非抬起）时触发，避免一次按键跑两遍。
-            if event.state == ShortcutState::Pressed {
-                appshots::trigger_capture(appshots_handle.clone());
-            }
-        },
-    )?;
+    #[cfg(target_os = "macos")]
+    appshots::setup_dual_command_hotkey(app.handle().clone())
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
 
     Ok(())
 }

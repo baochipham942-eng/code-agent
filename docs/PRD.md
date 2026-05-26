@@ -1,7 +1,7 @@
 # Agent Neo / Code Agent - 产品需求文档 (PRD)
 
-> 版本: 2.9
-> 日期: 2026-05-17
+> 版本: 3.0
+> 日期: 2026-05-26
 > 作者: Lin Chen
 
 ---
@@ -23,7 +23,10 @@
 | 质量闭环 | 内置 Swiss Cheese 评测框架，132→164/200 可量化 | 无内置评测 |
 | 记忆系统 | Light Memory 文件即记忆 + 记忆导入、候选收件箱、注入追踪和设置页管理 | 无跨会话学习 |
 | 协作模式 | DAG 多 Agent 并行编排 | 单 Agent |
+| 自治目标循环 | `/goal` 三层闸：完成判定权落**代码层**（确定性 verify exec + 软条件 Reviewer + 代码层兜底），不靠模型自报完成 | Ralph/Codex/Claude 的 goal 多为单层判定（字符串匹配或盲判卷） |
+| 原生上下文捕获 | Appshots：左右 Command 双击截当前窗口（截图 + AX 文本/OCR）注入多模态上下文（macOS） | 多数需手动截图 / 复制粘贴 |
 | 浏览器/桌面执行 | in-app managed browser + Browser Surface + In-App HTML Validation + Computer Surface，带会话、profile、artifact、TargetRef 和安全恢复路径 | 多数停留在单步浏览器或前台桌面点击 |
+| 执行隔离 | bypassPermissions 档接 OS 级沙箱（sandbox-exec/bwrap）+ 沙箱不可用 fail-fast | 多数 YOLO 档无内核级 blast-radius 兜底 |
 | 管理与部署 | Tauri 桌面 + Web 双模式 + 本地 API Key 配置 + 可选自动更新 + 管理员用户/邀请码页面 | 仅桌面或仅 IDE 插件 |
 
 ### 1.3 目标用户
@@ -58,6 +61,8 @@
 | 构建 | esbuild（main/preload）+ Vite（renderer） |
 | 数据库 | SQLite（better-sqlite3）+ Supabase（云同步） |
 | AI 模型 | 小米 MiMo v2.5 Pro（默认对话）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / Claude / 智谱 等 14+ Provider |
+| Provider 层 | Vercel AI SDK 双引擎（`CODE_AGENT_MODEL_ENGINE` 默认 aisdk、可回退 legacy），归一流式/非流式 tool-call |
+| 执行隔离 | macOS `sandbox-exec` / Linux `bwrap`（仅 bypassPermissions 档，`SANDBOX.OS_SANDBOX_ENABLED` 门控） |
 
 ---
 
@@ -526,6 +531,8 @@ artifact 不再只看"有没有生成文件"，而是进入按类型验证、失
 | 本地 Key 优先 | 2026-05-15 起不再依赖服务器侧 cloud proxy；用户在本机配置 Provider API Key，onboarding 会引导首次配置 |
 | 跨 provider reasoning 对齐 | `reasoning_effort` 与 thinking-mode sampling 对齐到 OpenAI、Claude、DeepSeek、Moonshot、小米等 provider wrapper |
 | Agent Engine 切换 | ModelSwitcher 同时承载 Native Agent Neo / Codex CLI / Claude Code，外部 engine 运行走 read-only、workspace-only 和 task ledger |
+| AI SDK 双引擎 | Provider 层迁 Vercel AI SDK（`aiSdkAdapter` 归一流式/非流式 tool-call），`CODE_AGENT_MODEL_ENGINE` 默认 aisdk、可回退 legacy；消灭解析不对称的整类 bug。详见 [ARCHITECTURE v0.16.80 M1](./ARCHITECTURE.md) |
+| Goal Mode（`/goal`） | 自治目标循环：完成判定权落代码层三层闸（确定性 verify exec + 软条件 Reviewer 子代理 + 代码层兜底），`--verify`/`--review` 二选一。详见 [goal-mode spec](./designs/goal-mode.md) |
 
 #### 3.2.2 评测框架（Swiss Cheese）
 

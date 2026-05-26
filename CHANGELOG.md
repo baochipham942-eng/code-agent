@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- 🎯 **Goal Mode（`/goal` 自治目标循环）**：用户给目标 + 完成条件，Agent 自己反复跑、每轮自判、达成才停。完成判定权落在**代码层**（模型只能"申请退出"），三层闸：闸1 确定性 `--verify` 命令退出码（`/bin/sh -c` 直接 exec，不经 LLM）、闸2 可选 `--review` 软条件（派强模型 Reviewer 子代理判 PASS/FAIL）、闸3 代码层兜底（token 预算 / max-turns / 连续无进展）。`--verify` 与 `--review` 二选一即可（支持纯软目标）。详见 [docs/designs/goal-mode.md](docs/designs/goal-mode.md)。
+- 🎯 `/goal` 斜杠命令 UI：触发卡片 + ChatInput 上方实时状态条（轮次 / 预算 / 计时）+ 生命周期完成卡片；走桌面 IPC + headless REST 两条链路。新增 `attempt_completion` 工具（仅 goal-mode 暴露）+ Codex 式审计 nudge（每 checkpoint 注入"先假设没做完、逐项找证据"自检）。
+- 📸 **Appshots（左右 Command 双击截窗）**：macOS `CGEventTap` listen-only 监听左+右 Command，捕获当前前台 app 窗口截图（`screencapture -l`）+ AX 无障碍树文本（OCR 兜底），以隐藏 `<appshot>` XML + 图片附件注入聊天上下文，输入框展示可预览 chip。详见 [docs/designs/appshots.md](docs/designs/appshots.md)。仅 macOS。
+- 🔒 **bypassPermissions 档接入 OS 级沙箱**：YOLO 权限档的 bash 执行用 macOS `sandbox-exec` / Linux `bwrap` 包装（命令前缀注入，复用前台执行器保住流式 / 中断 / 错误语义）；沙箱不可用时 **fail-fast 硬报错拒绝执行**，绝不静默裸跑。新增 `wrapCommand` 命令包装 API，由 `SANDBOX.OS_SANDBOX_ENABLED` flag 门控，其余权限档行为零变化。
+
+### Changed
+
+- 🔌 **Provider 层迁移到 Vercel AI SDK（双引擎）**：新增 `aiSdkAdapter`，实现现有 `ModelRouter.inference` 契约，把 provider 原生响应归一成统一 `tool-call` / `tool-result`（流式 `streamText` + 非流式 `generateText` 同源）。子代理与主 loop 默认走 AI SDK，`CODE_AGENT_MODEL_ENGINE=legacy` 一键全回退；gemini 等非 OpenAI 兼容 provider 自动留旧路径。`providerResolution.ts` 收口 baseURL/apiKey 解析为单一来源。从根上消灭"两套解析不对称"的整类 bug（DeepSeek 非流式 DSML 漏 tool call 等）。
+
+### Fixed
+
+- 修 AI SDK 主 loop regression：`toAiMessages` 漏带消息重排（夹层 system 消息导致 `MissingToolResultsError`），补 `reorderToolResultsAfterAssistant` 镜像旧路径 `sanitizeToolCallOrder`。
+- 修 `agent_complete` SSE 终态双发（runFinalizer + route 兜底各发一次）→ `emitAgentEvent` 对终态幂等。
+- 补 AI SDK 适配器丢失的 per-request / 流式超时契约（request-timeout / first-byte / inactivity 看门狗）+ 子代理 idle 看门狗死配置。
+- `postinstall` 恢复 node-pty `spawn-helper` 执行位（资源扫描 EACCES / PTY 起不来）。
+
 ## [0.16.75] - 2026-05-18
 
 ### Added

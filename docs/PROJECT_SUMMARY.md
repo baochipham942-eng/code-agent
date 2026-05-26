@@ -1,7 +1,7 @@
 # Agent Neo / Code Agent 项目总结
 
-> 版本: 2.0
-> 日期: 2026-05-17
+> 版本: 2.1
+> 日期: 2026-05-26
 > 作者: Lin Chen
 
 ---
@@ -205,6 +205,13 @@ npm run typecheck
 ---
 
 ## 最近更新
+
+### 2026-05-22 ~ 2026-05-26
+
+- ✅ **Goal Mode（`/goal` 自治目标循环）**：完成判定权落代码层的三层闸（确定性 verify exec + 可选 Reviewer 子代理 + 代码层兜底），`--verify`/`--review` 二选一支持纯软目标，斜杠命令 UI + 实时状态条 + 生命周期卡片。详见 [goal-mode spec](./designs/goal-mode.md)
+- ✅ **Provider 层迁移到 Vercel AI SDK（双引擎）**：`aiSdkAdapter` 归一流式/非流式 provider 响应，子代理 + 主 loop 默认 aisdk、`CODE_AGENT_MODEL_ENGINE=legacy` 一键回退，从根上消灭解析不对称的整类 bug
+- ✅ **Appshots（macOS）**：左右 Command 双击截当前窗口（截图 + AX 文本，OCR 兜底），隐藏 `<appshot>` XML + 图片注入聊天上下文。详见 [appshots spec](./designs/appshots.md)
+- ✅ **bypassPermissions 档接入 OS 级沙箱**：sandbox-exec/bwrap 命令包装 + 沙箱不可用 fail-fast 硬报错，其余权限档零变化
 
 ### 2026-05-15 ~ 2026-05-17
 

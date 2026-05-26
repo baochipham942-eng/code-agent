@@ -47,11 +47,11 @@ import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProje
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import {
   ArrowRight,
-  Code2,
+  BarChart3,
+  Gamepad2,
+  HardDrive,
   Image,
-  Mail,
   Search,
-  Sparkles,
   AlertTriangle,
 } from 'lucide-react';
 export const ChatView: React.FC = () => {
@@ -578,37 +578,37 @@ interface SuggestionItem {
   iconColor: string;
 }
 
-// 新会话任务卡：覆盖工作生活四类入口，并保证点开后第一轮就有可交付输出。
+// 新会话任务卡：一键直出可运行/可交互产物或真实 agent 产出，第一轮不追问、即见结果。
 export const defaultSuggestions: SuggestionItem[] = [
   {
-    icon: Mail,
-    title: '写一封项目跟进邮件',
-    description: '给背景、目标和待办，直接出正文',
-    prompt: '帮我写一封项目跟进邮件：收件人是项目组，背景是 Agent Neo 内测下周一开始，目的请大家在周五 18:00 前反馈关键问题；语气专业、简洁，输出邮件主题、正文和 3 条待办，直接给可发送版本。',
+    icon: Gamepad2,
+    title: '做个能玩的小游戏',
+    description: '霓虹贪吃蛇，键盘直接开玩',
+    prompt: '用单个 HTML 文件做一个能直接玩的霓虹风《贪吃蛇》：方向键控制、实时计分与最高分、随长度逐渐加速、撞墙或咬到自己结束并可一键重开；深色背景、霓虹描边、流畅动画。直接给出完整可运行的单文件，不要问我任何问题。',
     accent: 'bg-amber-500/10 border-amber-500/20',
     iconColor: 'text-amber-400',
   },
   {
-    icon: Sparkles,
-    title: '做一页产品方案',
-    description: '目标、范围、里程碑一次成稿',
-    prompt: '帮我写一页产品方案：主题是把团队知识库搜索从关键词升级成语义检索，读者是产品和研发评审；输出目标、用户场景、功能范围、里程碑、验收标准和风险，直接给可评审稿。',
-    accent: 'bg-violet-500/10 border-violet-500/20',
-    iconColor: 'text-violet-400',
-  },
-  {
-    icon: Search,
-    title: '对比三种工具选型',
-    description: '按维度打分，给推荐和边界',
-    prompt: '帮我对比 Notion、飞书文档、Obsidian 作为团队知识库的选型；按协作、权限、离线、迁移成本、AI 适配 5 个维度打分，最后给 1 个推荐和适用边界。',
+    icon: BarChart3,
+    title: '出一张可交互数据图表',
+    description: '聊天里直接渲染，可切换可悬停',
+    prompt: '在聊天里直接渲染一张可交互的折线图（单个 HTML 文件，数据内联）：展示 2015–2024 年 Python、JavaScript、TypeScript、Rust、Go 五种编程语言的流行度变化趋势；支持点击图例切换显隐、鼠标悬停显示具体数值、入场动画。数据用你掌握的合理近似即可。直接给出完整可运行文件，不要问我任何问题。',
     accent: 'bg-sky-500/10 border-sky-500/20',
     iconColor: 'text-blue-400',
   },
   {
-    icon: Code2,
-    title: '看当前改动风险',
-    description: '只审不改，给文件、风险和验证命令',
-    prompt: '帮我检查当前仓库这次未提交改动：先看 git status 和相关 diff，只审不改，指出最可能影响运行的 3 个风险，并建议下一步验证命令。',
+    icon: Search,
+    title: '搜一份最新行业简报',
+    description: '联网汇总近一周 AI 要闻',
+    prompt: '联网搜索过去一周 AI 行业最值得关注的 5 件事：每条给标题、一句话摘要、为什么重要、来源链接，最后用一句话总结整体趋势。直接联网开始，不要问我任何问题。',
+    accent: 'bg-violet-500/10 border-violet-500/20',
+    iconColor: 'text-violet-400',
+  },
+  {
+    icon: HardDrive,
+    title: '梳理磁盘空间占用',
+    description: '找出最占地的目录，给清理建议',
+    prompt: '帮我梳理这台 Mac 的磁盘占用：用命令找出主目录下最占空间的前 15 个目录/文件并按大小排序，识别其中可安全清理的缓存、临时文件和重复构建产物，给出每项预计可释放的空间和具体清理命令（先列出，不要直接执行删除）。直接开始，不要问我任何问题。',
     accent: 'bg-emerald-500/10 border-emerald-500/20',
     iconColor: 'text-emerald-400',
   },
@@ -660,7 +660,7 @@ const EmptyState: React.FC<{
           <div className="min-w-0">
             <h1 className="text-xl font-semibold text-zinc-100">新会话</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              把需求拆成可执行任务，第一轮先做到能验证。
+              点一张卡，第一轮就给你能用的结果，不用再补信息。
             </p>
           </div>
         </div>

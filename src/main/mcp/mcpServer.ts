@@ -15,19 +15,13 @@ import { promises as fsp } from 'node:fs';
 import { homedir } from 'node:os';
 import { join as pathJoin, resolve as pathResolve, sep as pathSep } from 'node:path';
 import { CONFIG_DIR_NEW } from '../config/configPaths.js';
-import { MCP_CAPABILITY_GATE } from '../../shared/constants/misc.js';
 
 // Log Bridge URL for fetching logs from running Electron app
 const LOG_BRIDGE_URL = 'http://127.0.0.1:51820';
 
-// 危险能力（控屏 / 命令执行 / 清日志）—— 默认不暴露，需显式 opt-in。详见 MCP_CAPABILITY_GATE。
-const DANGEROUS_TOOL_NAMES = new Set(['computer', 'execute_command', 'clear_logs']);
-
-interface BridgeExecuteResult {
-  success: boolean;
-  output?: string;
-  error?: string;
-}
+// 设计决策（WS5b）：本 MCP server 只暴露只读/安全能力。控屏（computer）/反向命令执行
+// （execute_command）不 MCP 化——外部 agent 要控屏必须由 Neo 主导（走 agentEngine），不能
+// 反向通过 MCP 控制本机。详见 docs/designs/ws5b-computeruse-mcp-security.md。
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -73,17 +67,6 @@ function parseStatus(value: unknown): Record<string, unknown> | null {
   return isRecord(value) ? value : null;
 }
 
-function parseBridgeExecuteResult(value: unknown): BridgeExecuteResult {
-  if (!isRecord(value) || typeof value.success !== 'boolean') {
-    return { success: false, error: 'Invalid bridge response' };
-  }
-  return {
-    success: value.success,
-    output: typeof value.output === 'string' ? value.output : undefined,
-    error: typeof value.error === 'string' ? value.error : undefined,
-  };
-}
-
 // Fetch logs from the HTTP bridge (when running as standalone MCP server)
 async function fetchLogsFromBridge(source: string, count: number = 50): Promise<LogEntry[]> {
   try {
@@ -119,15 +102,10 @@ async function fetchStatusFromBridge(): Promise<Record<string, unknown> | null> 
 export class CodeAgentMCPServer {
   private server: Server;
   private isRunning: boolean = false;
-  /** 是否暴露控屏/命令执行/清日志等危险能力（默认 false = 只读/安全能力）。 */
-  private readonly enableComputerControl: boolean;
   /** 解析 eval 结果时的工作目录（其下的 .code-agent/ 存放 eval-baseline.json / eval-trend.json）。 */
   private readonly workingDirectory: string;
 
-  constructor(options?: { transport?: string; port?: number; host?: string; enableWriteTools?: boolean; enableComputerControl?: boolean; workingDirectory?: string }) {
-    this.enableComputerControl =
-      options?.enableComputerControl ??
-      (process.env[MCP_CAPABILITY_GATE.DANGEROUS_ENV_FLAG] === 'true');
+  constructor(options?: { transport?: string; port?: number; host?: string; enableWriteTools?: boolean; workingDirectory?: string }) {
     this.workingDirectory = options?.workingDirectory ?? process.cwd();
     this.server = new Server(
       {
@@ -276,10 +254,10 @@ export class CodeAgentMCPServer {
       throw new Error(`Unknown resource: ${uri}`);
     });
 
-    // List available tools — 默认只暴露只读/安全能力；
-    // 危险能力（DANGEROUS_TOOL_NAMES：computer / execute_command / clear_logs）仅在 enableComputerControl 时出现。
+    // List available tools — 只读/安全能力；控屏 / 反向命令执行不 MCP 化（见文件头注释）。
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      const allTools = [
+      return {
+        tools: [
           {
             name: 'get_logs',
             description: 'Get logs from Agent Neo by source type',
@@ -305,75 +283,11 @@ export class CodeAgentMCPServer {
             },
           },
           {
-            name: 'clear_logs',
-            description: 'Clear logs from a specific source or all sources',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                source: {
-                  type: 'string',
-                  enum: ['browser', 'agent', 'tool', 'all'],
-                  description: 'Log source to clear',
-                },
-              },
-              required: ['source'],
-            },
-          },
-          {
             name: 'get_status',
             description: 'Get current Agent Neo status and statistics',
             inputSchema: {
               type: 'object',
               properties: {},
-            },
-          },
-          {
-            name: 'execute_command',
-            description: 'Execute a command on the running Agent Neo. Commands: browser_action, run_test, ping',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                command: {
-                  type: 'string',
-                  enum: ['browser_action', 'run_test', 'ping'],
-                  description: 'Command to execute',
-                },
-                params: {
-                  type: 'object',
-                  description: 'Command parameters. For browser_action: {action, url, selector, text, tabId}. For run_test: {name: "self_test" | "generation_selector"}',
-                },
-              },
-              required: ['command'],
-            },
-          },
-          {
-            name: 'computer',
-            description: 'Drive macOS UI (mouse, keyboard, Accessibility, browser smart actions). Forwards to the running Agent Neo main process. Requires Agent Neo to be running. Action enum and full param reference: see Agent Neo vision/ComputerTool.',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                action: {
-                  type: 'string',
-                  description: 'click, doubleClick, rightClick, move, type, key, scroll, drag, mouse_down, mouse_up, open_application, write_clipboard, computer_batch, hold_key, triple_click, cursor_position, get_state, observe, get_ax_elements, get_windows, diagnose_app, locate_element, locate_text, locate_role, smart_click, smart_type, smart_hover, get_elements',
-                },
-                x: { type: 'number' },
-                y: { type: 'number' },
-                toX: { type: 'number' },
-                toY: { type: 'number' },
-                text: { type: 'string' },
-                key: { type: 'string' },
-                modifiers: { type: 'array', items: { type: 'string' } },
-                selector: { type: 'string' },
-                role: { type: 'string' },
-                name: { type: 'string' },
-                axPath: { type: 'string' },
-                targetApp: { type: 'string' },
-                direction: { type: 'string', enum: ['up', 'down', 'left', 'right'] },
-                amount: { type: 'number' },
-                actions: { type: 'array', description: 'For computer_batch: list of sub-actions' },
-              },
-              required: ['action'],
-              additionalProperties: true,
             },
           },
           {
@@ -439,30 +353,13 @@ export class CodeAgentMCPServer {
               },
             },
           },
-        ];
-      return {
-        tools: allTools.filter(
-          (tool) => this.enableComputerControl || !DANGEROUS_TOOL_NAMES.has(tool.name),
-        ),
+        ],
       };
     });
 
     // Handle tool calls
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
-
-      // 安全门：危险能力（控屏 / 命令执行 / 清日志）默认关闭，未 opt-in 时即便被点名也拒绝。
-      if (DANGEROUS_TOOL_NAMES.has(name) && !this.enableComputerControl) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Tool "${name}" is disabled. It exposes screen-control / command-execution capability and is gated for safety (read-only tools like get_logs / get_status / screenshot / eval-query / appshots-query stay available). To enable, set ${MCP_CAPABILITY_GATE.DANGEROUS_ENV_FLAG}=true in this MCP server's environment — review docs/designs/ws5b-computeruse-mcp-security.md first.`,
-            },
-          ],
-          isError: true,
-        };
-      }
 
       if (name === 'get_logs') {
         const source = (args?.source as string) || 'all';
@@ -491,23 +388,6 @@ export class CodeAgentMCPServer {
         };
       }
 
-      if (name === 'clear_logs') {
-        const source = (args?.source as string) || 'all';
-        if (source === 'all') {
-          logCollector.clearAll();
-        } else {
-          logCollector.clear(source as LogSource);
-        }
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Cleared ${source} logs`,
-            },
-          ],
-        };
-      }
-
       if (name === 'get_status') {
         const status = logCollector.getStatus();
         return {
@@ -520,70 +400,14 @@ export class CodeAgentMCPServer {
         };
       }
 
-      if (name === 'execute_command') {
-        const command = args?.command as string;
-        const params = (args?.params as Record<string, unknown>) || {};
-
-        if (!command) {
-          return {
-            content: [{ type: 'text', text: 'Error: Missing command' }],
-            isError: true,
-          };
-        }
-
+      if (name === 'screenshot') {
         try {
-          const response = await fetch(`${LOG_BRIDGE_URL}/execute`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ command, params }),
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            return {
-              content: [{ type: 'text', text: `Error: ${errorText}` }],
-              isError: true,
-            };
-          }
-
-          const payload: unknown = await response.json();
-          const result = parseBridgeExecuteResult(payload);
-          return {
-            content: [
-              {
-                type: 'text',
-                text: result.success
-                  ? result.output || 'Command executed successfully'
-                  : `Error: ${result.error}`,
-              },
-            ],
-            isError: !result.success,
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `Failed to connect to Agent Neo. Make sure it's running. Error: ${error}`,
-              },
-            ],
-            isError: true,
-          };
-        }
-      }
-
-      if (name === 'computer' || name === 'screenshot') {
-        try {
-          const { ComputerTool } = await import('../tools/vision/ComputerTool.js');
           const { screenshotTool } = await import('../tools/vision/screenshot.js');
-          const tool = name === 'computer' ? ComputerTool : screenshotTool;
-          const os = await import('node:os');
-          const path = await import('node:path');
           const ctx = {
-            workingDirectory: path.join(os.homedir(), '.code-agent'),
+            workingDirectory: pathJoin(homedir(), CONFIG_DIR_NEW),
             requestPermission: async () => true,
           };
-          const result = await tool.execute((args ?? {}) as Record<string, unknown>, ctx as never);
+          const result = await screenshotTool.execute((args ?? {}) as Record<string, unknown>, ctx as never);
           return {
             content: [
               {

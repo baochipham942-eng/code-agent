@@ -17,6 +17,7 @@ describe('appStore', () => {
       settingsMemoryFocus: null,
       showKnowledgeMemoryPanel: false,
       optionalUpdateInfo: null,
+      showOptionalUpdateModal: false,
     });
   });
 
@@ -90,5 +91,13 @@ describe('appStore', () => {
     useAppStore.getState().setOptionalUpdateInfo(null);
 
     expect(useAppStore.getState().optionalUpdateInfo).toBeNull();
+  });
+
+  it('tracks the optional update modal separately from update availability', () => {
+    expect(useAppStore.getState().showOptionalUpdateModal).toBe(false);
+
+    useAppStore.getState().setShowOptionalUpdateModal(true);
+
+    expect(useAppStore.getState().showOptionalUpdateModal).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const sessionState = {
@@ -46,6 +46,8 @@ const appState = {
   setShowSettings: vi.fn(),
   openSettingsTab: vi.fn(),
   setShowEvalCenter: vi.fn(),
+  optionalUpdateInfo: null as any,
+  setShowOptionalUpdateModal: vi.fn(),
 };
 
 const authState = {
@@ -91,6 +93,11 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 import { Sidebar } from '../../../src/renderer/components/Sidebar';
 
 describe('Sidebar new session button', () => {
+  beforeEach(() => {
+    appState.optionalUpdateInfo = null;
+    appState.setShowOptionalUpdateModal.mockReset();
+  });
+
   it('does not switch into the loading spinner just because the session list is loading', () => {
     const html = renderToStaticMarkup(React.createElement(Sidebar));
     const newSessionButtonHtml = html.match(/<button[^>]*>.*?新会话<\/span><\/button>/)?.[0] ?? '';
@@ -98,5 +105,21 @@ describe('Sidebar new session button', () => {
     expect(html).toContain('新会话');
     expect(newSessionButtonHtml).toContain('lucide-plus');
     expect(newSessionButtonHtml).not.toContain('lucide-loader-circle');
+  });
+
+  it('shows a persistent update entry at the lower sidebar for optional app updates', () => {
+    appState.optionalUpdateInfo = {
+      hasUpdate: true,
+      forceUpdate: false,
+      currentVersion: '0.16.88',
+      latestVersion: '0.16.89',
+      releaseNotes: 'Small fixes',
+    };
+
+    const html = renderToStaticMarkup(React.createElement(Sidebar));
+
+    expect(html).toContain('更新可用');
+    expect(html).toContain('v0.16.89');
+    expect(html).toContain('查看 Agent Neo v0.16.89 更新内容');
   });
 });

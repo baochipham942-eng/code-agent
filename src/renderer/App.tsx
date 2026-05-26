@@ -18,6 +18,7 @@ import { MCPElicitationModal } from './components/MCPElicitationModal';
 import { AuthModal } from './components/AuthModal';
 import { PasswordResetModal } from './components/PasswordResetModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
+import { UpdateNotification } from './components/UpdateNotification';
 import { isDesktopShellMode, isTauriMode } from './utils/platform';
 // PermissionDialog moved to PermissionCard inline in ChatView
 import { TaskPanel } from './components/TaskPanel';
@@ -113,6 +114,9 @@ export const App: React.FC = () => {
     setShowSettings,
     setLanguage,
     setOptionalUpdateInfo,
+    optionalUpdateInfo,
+    showOptionalUpdateModal,
+    setShowOptionalUpdateModal,
     workbenchTabs,
     activeWorkbenchTab,
     openWorkbenchTab,
@@ -579,6 +583,14 @@ export const App: React.FC = () => {
 
       {/* Force Update Modal - 强制更新，不可关闭 */}
       {isDesktopShellMode() && !isTauriMode() && forceUpdateInfo && <ForceUpdateModal updateInfo={forceUpdateInfo} />}
+
+      {/* Optional Update Modal - 非强制更新，由左下角入口触发 */}
+      {isDesktopShellMode() && showOptionalUpdateModal && optionalUpdateInfo && !optionalUpdateInfo.forceUpdate && (
+        <UpdateNotification
+          updateInfo={optionalUpdateInfo}
+          onClose={() => setShowOptionalUpdateModal(false)}
+        />
+      )}
 
       {/* Model Onboarding Modal - 首次启动引导 */}
       {showModelOnboarding && (

@@ -40,6 +40,7 @@ import {
   Brain,
   Users,
   Ticket,
+  Download,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { IconButton, UndoToast } from './primitives';
@@ -59,6 +60,7 @@ import {
 import ipcService from '../services/ipcService';
 import { buildSessionSearchText, getDisplaySessionTitle, getSessionStatusPresentation } from '../utils/sessionPresentation';
 import { copyPathToClipboard } from '../utils/platform';
+import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
 import { canAccessFeature } from '../utils/accessControl';
 import {
   createWorkbenchRecipeMergedContext,
@@ -99,6 +101,8 @@ export const Sidebar: React.FC = () => {
     pendingPermissionRequest,
     pendingPermissionSessionId,
     queuedPermissionRequests,
+    optionalUpdateInfo,
+    setShowOptionalUpdateModal,
   } = useAppStore();
   const applySessionWorkbenchPreset = useComposerStore((state) => state.applySessionWorkbenchPreset);
   const applyWorkbenchPreset = useComposerStore((state) => state.applyWorkbenchPreset);
@@ -571,6 +575,10 @@ export const Sidebar: React.FC = () => {
   const hasAnySessions = sessions.length > 0;
   const hasSearchFilters = Boolean(searchQuery.trim()) || sessionStatusFilter !== 'all';
   const isBackgroundOnly = sessionStatusFilter === 'background';
+  const showOptionalUpdateButton = isOptionalUpdateAvailable(optionalUpdateInfo);
+  const optionalUpdateLabel = optionalUpdateInfo?.latestVersion
+    ? `v${optionalUpdateInfo.latestVersion}`
+    : '新版本';
 
   // 渲染单个会话项
   const renderSessionItem = (session: SessionWithMeta) => {
@@ -883,6 +891,25 @@ export const Sidebar: React.FC = () => {
       )}
 
 
+
+      {/* Optional update entry */}
+      {showOptionalUpdateButton && (
+        <div className="px-2 pb-1 flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowOptionalUpdateModal(true)}
+            aria-label={`查看 Agent Neo ${optionalUpdateLabel} 更新内容`}
+            title={`查看 Agent Neo ${optionalUpdateLabel} 更新内容`}
+            className="group flex w-full items-center gap-2 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-3 py-2 text-sm text-indigo-200 transition-colors hover:border-indigo-400/30 hover:bg-indigo-500/15 hover:text-indigo-100 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/30"
+          >
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-300 group-hover:text-indigo-200">
+              <Download className="h-3.5 w-3.5" />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-left font-medium">更新可用</span>
+            <span className="shrink-0 font-mono text-[11px] text-indigo-300/80">{optionalUpdateLabel}</span>
+          </button>
+        </div>
+      )}
 
       {/* Bottom: User Menu or Login */}
       <div className="p-2 relative flex-shrink-0" ref={accountMenuRef}>

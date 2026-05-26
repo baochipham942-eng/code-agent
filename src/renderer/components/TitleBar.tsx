@@ -5,15 +5,11 @@ import React, { useCallback } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, FolderOpen, Download } from 'lucide-react';
+import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, FolderOpen } from 'lucide-react';
 import { isWebMode, isTauriMode } from '../utils/platform';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
-import {
-  markUpdatePromptSeenForClientVersion,
-  shouldShowOptionalUpdatePrompt,
-} from '../utils/updatePrompt';
 export const TitleBar: React.FC = () => {
   const {
     sidebarCollapsed,
@@ -23,8 +19,6 @@ export const TitleBar: React.FC = () => {
     workbenchTabs,
     openWorkbenchTab,
     closeWorkbenchTab,
-    openSettingsTab,
-    optionalUpdateInfo,
   } = useAppStore();
   const isTaskTabOpen = workbenchTabs.includes('task');
   const composerWorkingDirectory = useComposerStore((state) => state.workingDirectory);
@@ -40,16 +34,6 @@ export const TitleBar: React.FC = () => {
   const workspaceLabel = effectiveWorkingDirectory
     ? getWorkspaceName(effectiveWorkingDirectory)
     : '选择目录';
-  const showUpdateButton = shouldShowOptionalUpdatePrompt(optionalUpdateInfo);
-  const updateButtonTitle = optionalUpdateInfo?.latestVersion
-    ? `发现新版本 v${optionalUpdateInfo.latestVersion}`
-    : '发现新版本';
-
-  const handleOpenUpdateSettings = useCallback(() => {
-    markUpdatePromptSeenForClientVersion(optionalUpdateInfo?.currentVersion);
-    openSettingsTab('update');
-  }, [openSettingsTab, optionalUpdateInfo?.currentVersion]);
-
   const handleSelectDirectory = useCallback(async () => {
     try {
       let selectedPath: string | null = null;
@@ -93,18 +77,6 @@ export const TitleBar: React.FC = () => {
           size="md"
           windowNoDrag
         />
-        {showUpdateButton && (
-          <IconButton
-            icon={<Download className="w-4 h-4" />}
-            aria-label="查看 Agent Neo 更新"
-            title={updateButtonTitle}
-            onClick={handleOpenUpdateSettings}
-            variant="ghost"
-            size="md"
-            windowNoDrag
-            className="text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300"
-          />
-        )}
         {/* Workspace Chip — 点击切换当前消息/会话的工作目录 */}
         <button
           type="button"

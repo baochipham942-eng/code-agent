@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   hasSeenUpdatePromptForClientVersion,
+  isOptionalUpdateAvailable,
   markUpdatePromptSeenForClientVersion,
   shouldShowOptionalUpdatePrompt,
 } from '../../../src/renderer/utils/updatePrompt';
@@ -52,5 +53,20 @@ describe('updatePrompt', () => {
     expect(shouldShowOptionalUpdatePrompt(updateInfo)).toBe(false);
     expect(shouldShowOptionalUpdatePrompt({ ...updateInfo, forceUpdate: true })).toBe(false);
     expect(shouldShowOptionalUpdatePrompt({ ...updateInfo, hasUpdate: false })).toBe(false);
+  });
+
+  it('keeps the persistent sidebar update entry independent from prompt seen state', () => {
+    const updateInfo = {
+      hasUpdate: true,
+      forceUpdate: false,
+      currentVersion: '0.16.75',
+      latestVersion: '0.16.76',
+    };
+
+    markUpdatePromptSeenForClientVersion('0.16.75');
+
+    expect(shouldShowOptionalUpdatePrompt(updateInfo)).toBe(false);
+    expect(isOptionalUpdateAvailable(updateInfo)).toBe(true);
+    expect(isOptionalUpdateAvailable({ ...updateInfo, forceUpdate: true })).toBe(false);
   });
 });

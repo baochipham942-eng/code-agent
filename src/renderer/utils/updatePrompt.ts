@@ -25,10 +25,13 @@ export function markUpdatePromptSeenForClientVersion(currentVersion: string | nu
   }
 }
 
+export function isOptionalUpdateAvailable(updateInfo: UpdateInfo | null | undefined): boolean {
+  return Boolean(updateInfo?.hasUpdate && !updateInfo.forceUpdate);
+}
+
 export function shouldShowOptionalUpdatePrompt(updateInfo: UpdateInfo | null | undefined): boolean {
   return Boolean(
-    updateInfo?.hasUpdate &&
-    !updateInfo.forceUpdate &&
-    !hasSeenUpdatePromptForClientVersion(updateInfo.currentVersion),
+    isOptionalUpdateAvailable(updateInfo) &&
+    !hasSeenUpdatePromptForClientVersion(updateInfo?.currentVersion),
   );
 }

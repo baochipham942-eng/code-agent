@@ -172,6 +172,7 @@ interface AppState {
   voicePasteStatus: 'idle' | 'recording' | 'transcribing' | 'processing';
   sidebarCollapsed: boolean;
   optionalUpdateInfo: UpdateInfo | null;
+  showOptionalUpdateModal: boolean;
 
   // 语言设置 - Language
   language: Language;
@@ -273,6 +274,7 @@ interface AppState {
   setVoicePasteStatus: (status: 'idle' | 'recording' | 'transcribing' | 'processing') => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setOptionalUpdateInfo: (info: UpdateInfo | null) => void;
+  setShowOptionalUpdateModal: (show: boolean) => void;
   setLanguage: (language: Language) => void;
   setCloudUIStrings: (strings: CloudUIStrings | null) => void;
   setDisclosureLevel: (level: DisclosureLevel) => void;
@@ -382,6 +384,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   voicePasteStatus: 'idle' as const,
   sidebarCollapsed: false,
   optionalUpdateInfo: null,
+  showOptionalUpdateModal: false,
 
   // 语言默认为中文
   language: defaultLanguage,
@@ -494,6 +497,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setVoicePasteStatus: (status) => set({ voicePasteStatus: status }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setOptionalUpdateInfo: (info) => set({ optionalUpdateInfo: info }),
+  setShowOptionalUpdateModal: (show) => set({ showOptionalUpdateModal: show }),
   setLanguage: (language) => set({ language }),
   setCloudUIStrings: (strings) => set({ cloudUIStrings: strings }),
   setDisclosureLevel: (level) => set({ disclosureLevel: level }),

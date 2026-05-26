@@ -358,7 +358,7 @@ pub fn capture_now(app: &AppHandle) {
     let mut text_source = "none";
     let mut text = extract_ax_text(located.pid).unwrap_or_default();
     if text.trim().is_empty() {
-        if let Some(ocr) = ocr_image(&png_path) {
+        if let Some(ocr) = ocr_image(app, &png_path) {
             if !ocr.trim().is_empty() {
                 text = ocr;
                 text_source = "ocr";
@@ -564,9 +564,23 @@ fn extract_ax_text(pid: i32) -> Option<String> {
 
 /// AX 为空时的兜底：macOS Vision 框架本地 OCR（VNRecognizeTextRequest）。
 #[cfg(target_os = "macos")]
-fn ocr_image(image_path: &PathBuf) -> Option<String> {
+fn ocr_image(app: &AppHandle, image_path: &PathBuf) -> Option<String> {
     let path = image_path.to_string_lossy().to_string();
-    // 文件名由我们生成（appshot-<ts>.png），不含引号，可直接内联。
+
+    // 优先用预编译 vision-ocr 二进制（比 swift -e 冷启快，与项目既有 OCR 用法一致）。
+    if let Some(bin) = resolve_vision_ocr(app) {
+        let bin_str = bin.to_string_lossy().to_string();
+        match run_command_with_timeout(&bin_str, &["--photo", &path], SWIFT_TIMEOUT) {
+            Ok(out) => {
+                if let Some(text) = parse_vision_ocr_full_text(&out) {
+                    return Some(text);
+                }
+            }
+            Err(e) => eprintln!("[appshot] vision-ocr 失败，回退 swift: {e}"),
+        }
+    }
+
+    // 回退：swift -e 内联（无二进制 / 解析失败时）。文件名由我们生成，不含引号，可直接内联。
     let script = format!(
         r#"
         import Vision
@@ -592,10 +606,51 @@ fn ocr_image(image_path: &PathBuf) -> Option<String> {
     match run_command_with_timeout("/usr/bin/swift", &["-e", script.as_str()], SWIFT_TIMEOUT) {
         Ok(text) => Some(text),
         Err(e) => {
-            eprintln!("[appshot] OCR 兜底失败: {e}");
+            eprintln!("[appshot] OCR swift 兜底失败: {e}");
             None
         }
     }
+}
+
+/// 解析 vision-ocr 二进制输出 JSON 的 fullText 字段。
+#[cfg(target_os = "macos")]
+fn parse_vision_ocr_full_text(json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(json.trim()).ok()?;
+    v.get("fullText")
+        .and_then(|t| t.as_str())
+        .map(|s| s.to_string())
+        .filter(|s| !s.trim().is_empty())
+}
+
+/// 解析预编译 vision-ocr 二进制位置：prod 走 resource_dir，dev 走可执行文件祖先 / cwd。
+#[cfg(target_os = "macos")]
+fn resolve_vision_ocr(app: &AppHandle) -> Option<PathBuf> {
+    if let Ok(res) = app.path().resource_dir() {
+        for cand in [
+            res.join("scripts/vision-ocr"),
+            res.join("_up_/scripts/vision-ocr"),
+            res.join("vision-ocr"),
+        ] {
+            if cand.exists() {
+                return Some(cand);
+            }
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let mut dir = exe.parent();
+        while let Some(d) = dir {
+            let cand = d.join("scripts/vision-ocr");
+            if cand.exists() {
+                return Some(cand);
+            }
+            dir = d.parent();
+        }
+    }
+    let fallback = PathBuf::from("scripts/vision-ocr");
+    if fallback.exists() {
+        return Some(fallback);
+    }
+    None
 }
 
 /// 快门音：截图成功后给听觉反馈。fire-and-forget。
@@ -690,19 +745,32 @@ fn animate_overlay_best_effort(app: &AppHandle, screenshot_path: &PathBuf, src: 
         }
     };
 
-    // overlay 覆盖主显示器；屏幕逻辑坐标 → overlay 本地 CSS 坐标 = 减去 overlay 原点。
-    let monitor = match app.primary_monitor() {
-        Ok(Some(m)) => m,
-        _ => {
-            eprintln!("[appshot-overlay] 无主显示器");
-            return;
-        }
-    };
-    let scale = monitor.scale_factor();
-    let origin_x = monitor.position().x as f64 / scale;
-    let origin_y = monitor.position().y as f64 / scale;
-    let win_w = monitor.size().width as f64 / scale;
-    let win_h = monitor.size().height as f64 / scale;
+    // overlay 覆盖「所有显示器的并集」，源窗口或 composer 落在任意副屏都在范围内。
+    // 屏幕逻辑坐标 → overlay 本地 CSS 坐标 = 减去 overlay 原点。
+    let monitors = app.available_monitors().unwrap_or_default();
+    if monitors.is_empty() {
+        eprintln!("[appshot-overlay] 无可用显示器");
+        return;
+    }
+    // 以主屏 scale 做物理→逻辑换算（同 DPI 多屏精确；混合 DPI 为近似，可接受）。
+    let scale = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| m.scale_factor())
+        .unwrap_or_else(|| monitors[0].scale_factor());
+    let (mut min_x, mut min_y, mut max_x, mut max_y) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+    for m in &monitors {
+        let (p, s) = (m.position(), m.size());
+        min_x = min_x.min(p.x);
+        min_y = min_y.min(p.y);
+        max_x = max_x.max(p.x + s.width as i32);
+        max_y = max_y.max(p.y + s.height as i32);
+    }
+    let origin_x = min_x as f64 / scale;
+    let origin_y = min_y as f64 / scale;
+    let win_w = (max_x - min_x) as f64 / scale;
+    let win_h = (max_y - min_y) as f64 / scale;
 
     let params = serde_json::json!({
         "src": { "x": src.x - origin_x, "y": src.y - origin_y, "width": src.width, "height": src.height },
@@ -748,6 +816,17 @@ fn animate_overlay_best_effort(app: &AppHandle, screenshot_path: &PathBuf, src: 
     };
     let _ = window.set_ignore_cursor_events(true);
 
+    // 抬到 screen-saver 级 + 可进所有 Space，让动画盖过全屏 app。AppKit 调用必须回主线程。
+    let app_for_level = app.clone();
+    let label_for_level = label.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(w) = app_for_level.get_webview_window(&label_for_level) {
+            if let Ok(ptr) = w.ns_window() {
+                unsafe { raise_overlay_window_level(ptr) };
+            }
+        }
+    });
+
     // 动画在 HTML 内自跑；演完按 label 关窗（duration + buffer）。
     let app_handle = app.clone();
     std::thread::spawn(move || {
@@ -756,6 +835,25 @@ fn animate_overlay_best_effort(app: &AppHandle, screenshot_path: &PathBuf, src: 
             let _ = w.close();
         }
     });
+}
+
+/// 把 overlay 的 NSWindow 抬到 screen-saver 级并允许进入所有 Space + 全屏 Space，
+/// 使飞入动画能盖在全屏 app 之上。必须在主线程调用（由 run_on_main_thread 保证）。
+#[cfg(target_os = "macos")]
+unsafe fn raise_overlay_window_level(ns_window_ptr: *mut std::ffi::c_void) {
+    use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
+    if ns_window_ptr.is_null() {
+        return;
+    }
+    let window: &NSWindow = &*(ns_window_ptr as *const NSWindow);
+    // NSScreenSaverWindowLevel = 1000
+    window.setLevel(1000);
+    window.setCollectionBehavior(
+        NSWindowCollectionBehavior::CanJoinAllSpaces
+            | NSWindowCollectionBehavior::Stationary
+            | NSWindowCollectionBehavior::FullScreenAuxiliary
+            | NSWindowCollectionBehavior::IgnoresCycle,
+    );
 }
 
 /// 构建 overlay HTML：参数在创建时内联，DOM 就绪即自跑动画（无需 eval）。

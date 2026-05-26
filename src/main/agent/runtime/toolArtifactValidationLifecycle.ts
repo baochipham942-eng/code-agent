@@ -10,7 +10,7 @@ import type { ArtifactRepairIssueCode } from './artifactRepairSpec';
 import { createArtifactRepairSpec, formatArtifactRepairSpecForPrompt } from './artifactRepairSpec';
 import { activateArtifactRepairAdmissionStop } from './artifactRepairAdmission';
 import { isSameArtifactRepairPath } from './artifactRepairGuard';
-import { validateGameArtifact } from './gameArtifactValidator';
+import { validateGameArtifact, type GameArtifactValidationOptions } from './gameArtifactValidator';
 import { buildXiaomiBreakoutEnhancementInstruction } from './contextAssembly/xiaomiArtifactTextFirst';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
@@ -61,7 +61,12 @@ export async function handleModifiedArtifactValidation({
     const absolutePath = isAbsolute(filePath)
       ? filePath
       : resolve(ctx.workingDirectory || process.cwd(), filePath);
-    const probe = await validateGameArtifact(absolutePath);
+    // 验证分级：仅 goal/验收（含 xiaomi 两阶段 breakout）走完整游戏契约 + 运行时/视觉冒烟；
+    // 普通聊天里随手生成的交互产物走轻校验，避免"能跑的休闲小游戏"被内部契约卡成"验收失败"。
+    const fullContract = Boolean(ctx.goalMode?.isPending() || ctx.xiaomiArtifactTwoStage);
+    const probe = await validateGameArtifact(absolutePath, {
+      contractLevel: fullContract ? 'full' : 'light',
+    });
     const repairTargetLostValidation =
       ctx.artifactRepairGuard?.targetFile &&
       isSameArtifactRepairPath(ctx, absolutePath, ctx.artifactRepairGuard.targetFile) &&
@@ -84,15 +89,16 @@ export async function handleModifiedArtifactValidation({
         ? '正在运行 artifact 可玩性验收...'
         : 'artifact 结构验收失败，正在准备修复上下文...',
     );
-    const artifactValidationOptions = {
-      runRuntimeSmoke: true,
+    const artifactValidationOptions: GameArtifactValidationOptions = {
+      contractLevel: fullContract ? 'full' : 'light',
+      runRuntimeSmoke: fullContract,
       runtimeSmokeTimeoutMs: 7000,
-      requireRuntimeSmoke: true,
-      runBrowserVisualSmoke: true,
+      requireRuntimeSmoke: fullContract,
+      runBrowserVisualSmoke: fullContract,
       browserVisualSmokeTimeoutMs: 10000,
-      requireBrowserVisualSmoke: true,
+      requireBrowserVisualSmoke: fullContract,
       allowBrowserVisualComputerFallback: false,
-    } as const;
+    };
     const rawValidation = await validateGameArtifact(absolutePath, artifactValidationOptions);
     const validation = repairTargetLostValidation && !rawValidation.shouldValidate
       ? buildRepairTargetLostValidationFailure(rawValidation)

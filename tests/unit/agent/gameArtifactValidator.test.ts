@@ -287,6 +287,45 @@ describe('validateGameArtifact', () => {
     expect(result.checks).toContain('responsive canvas sizing detected');
   });
 
+  it('light contract passes a runnable interactive artifact that lacks the full game contract', async () => {
+    // 复刻"做个能玩的小游戏"卡的真实场景：canvas + 键盘输入 + 玩法词，但没有
+    // __GAME_META__ / __INTERACTIVE_TEST__ / runSmokeTest 等内部机器可读契约。
+    const html = [
+      '<!doctype html>',
+      '<html><head><style>#game{max-width:calc(100vw - 16px);height:auto;aspect-ratio:1/1;}</style></head>',
+      '<body>',
+      '<canvas id="game" width="400" height="400"></canvas>',
+      '<div>得分: <span id="score">0</span> 关卡: <span id="level">1</span></div>',
+      '<script>',
+      "  const ctx = document.getElementById('game').getContext('2d');",
+      '  let score = 0; let level = 1; let snake = [[5, 5]]; let dir = [1, 0]; let food = [10, 10];',
+      "  document.addEventListener('keydown', (e) => {",
+      "    if (e.key === 'ArrowUp') dir = [0, -1];",
+      "    if (e.key === 'ArrowDown') dir = [0, 1];",
+      "    if (e.key === 'ArrowLeft') dir = [-1, 0];",
+      "    if (e.key === 'ArrowRight') dir = [1, 0];",
+      '  });',
+      '  function update() { snake.push([snake[0][0] + dir[0], snake[0][1] + dir[1]]); }',
+      '  function draw() { ctx.clearRect(0, 0, 400, 400); }',
+      '  function loop() { update(); draw(); requestAnimationFrame(loop); }',
+      '  loop();',
+      '</script>',
+      '</body></html>',
+    ].join('\n');
+
+    const fullPath = await writeTempHtml(html, 'casual-game-full.html');
+    const lightPath = await writeTempHtml(html, 'casual-game-light.html');
+    const full = await validateGameArtifact(fullPath, { contractLevel: 'full' });
+    const light = await validateGameArtifact(lightPath, { contractLevel: 'light' });
+
+    // full 模式（goal/验收）仍按既有严格契约失败——缺 __GAME_META__ / 测试合约
+    expect(full.shouldValidate).toBe(true);
+    expect(full.passed).toBe(false);
+    // light 模式（普通聊天里随手生成的产物）：HTML 完整 + 有键盘输入入口 = 能跑即过
+    expect(light.shouldValidate).toBe(true);
+    expect(light.passed).toBe(true);
+  });
+
   it('fails platformers that only move and jump without gameplay mechanics', async () => {
     const filePath = await writeTempHtml(`
       <!doctype html>

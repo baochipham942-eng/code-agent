@@ -29,6 +29,12 @@ export interface GameArtifactValidationSummary {
 }
 
 export interface GameArtifactValidationOptions {
+  /**
+   * full = 完整游戏验收契约（__GAME_META__ / 可达性元数据 + 运行时/视觉冒烟），用于 goal/验收模式。
+   * light = 仅静态轻校验（HTML 完整闭合 + 有用户输入入口），用于普通聊天里随手生成的交互产物，
+   * 不把"能跑的休闲小游戏"卡在内部机器可读契约上。默认 full，保留既有调用者与 goal 行为不变。
+   */
+  contractLevel?: 'full' | 'light';
   runRuntimeSmoke?: boolean;
   runtimeSmokeTimeoutMs?: number;
   requireRuntimeSmoke?: boolean;
@@ -614,6 +620,7 @@ export async function validateGameArtifact(
     });
   }
 
+  const contractLevel = options.contractLevel ?? 'full';
   const failures: string[] = [];
   const checks: string[] = [];
 
@@ -629,14 +636,16 @@ export async function validateGameArtifact(
     failures.push('HTML 在 </html> 之后还有非空内容；浏览器会忽略这部分脚本或数据，说明分块追加位置错误。');
   }
 
-  const largeFixedCanvas = findLargeFixedCanvas(content);
-  if (largeFixedCanvas && hasCanvasViewportCroppingRisk(content) && !hasResponsiveCanvasSizing(content)) {
-    const dimensions = [largeFixedCanvas.width, largeFixedCanvas.height]
-      .filter((value) => typeof value === 'number')
-      .join('x');
-    failures.push(`大型固定 canvas${dimensions ? ` (${dimensions})` : ''} 缺少响应式 CSS；窄窗口会裁切游戏画面。请保留内部分辨率，但给 canvas 或 wrapper 同时约束宽高，例如 max-width: calc(100vw - 16px)、max-height: calc(100dvh - 16px)、aspect-ratio、height:auto，确保 390px mobile viewport 内完整可见。`);
-  } else if (largeFixedCanvas && hasResponsiveCanvasSizing(content)) {
-    checks.push('responsive canvas sizing detected');
+  if (contractLevel === 'full') {
+    const largeFixedCanvas = findLargeFixedCanvas(content);
+    if (largeFixedCanvas && hasCanvasViewportCroppingRisk(content) && !hasResponsiveCanvasSizing(content)) {
+      const dimensions = [largeFixedCanvas.width, largeFixedCanvas.height]
+        .filter((value) => typeof value === 'number')
+        .join('x');
+      failures.push(`大型固定 canvas${dimensions ? ` (${dimensions})` : ''} 缺少响应式 CSS；窄窗口会裁切游戏画面。请保留内部分辨率，但给 canvas 或 wrapper 同时约束宽高，例如 max-width: calc(100vw - 16px)、max-height: calc(100dvh - 16px)、aspect-ratio、height:auto，确保 390px mobile viewport 内完整可见。`);
+    } else if (largeFixedCanvas && hasResponsiveCanvasSizing(content)) {
+      checks.push('responsive canvas sizing detected');
+    }
   }
 
   const hasStepProbe = INTERACTIVE_TEST_STEP_PATTERNS.some((pattern) => pattern.test(content));
@@ -648,6 +657,9 @@ export async function validateGameArtifact(
     checks.push('user input entry detected');
   }
 
+  // 重契约：完整 __GAME_META__ / 可达性 / 测试合约元数据，仅 goal/验收模式强制；
+  // 普通聊天里随手生成的交互产物（light）跳过，只要"能跑"即可，不卡内部机器可读契约。
+  if (contractLevel === 'full') {
   if (!META_COVERAGE_PATTERNS.some((pattern) => pattern.test(content))) {
     failures.push('缺少可用于验收的关卡、片段、场景或目标元数据；工程层不能只凭源码猜游戏是否完整。');
   } else {
@@ -719,11 +731,12 @@ export async function validateGameArtifact(
   const contractIntegrity = validateTestContractIntegrity(content, interactiveContractSnippet);
   checks.push(...contractIntegrity.checks);
   failures.push(...contractIntegrity.failures);
+  } // end contractLevel === 'full'（重契约元数据校验，仅 goal/验收模式强制）
 
   const hasSmokeProbe = INTERACTIVE_TEST_SMOKE_PATTERNS.some((pattern) => pattern.test(content));
-  if (!hasSmokeProbe) {
+  if (contractLevel === 'full' && !hasSmokeProbe) {
     failures.push('交互测试合约缺少 runSmokeTest()，验收无法用真实输入证明游戏可操作。');
-  } else {
+  } else if (hasSmokeProbe) {
     checks.push('interactive runtime smoke probe detected');
   }
 

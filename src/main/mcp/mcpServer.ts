@@ -11,9 +11,17 @@ import {
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { logCollector, type LogEntry, type LogLevel, type LogSource, type LogStatus } from './logCollector.js';
+import { promises as fsp } from 'node:fs';
+import { homedir } from 'node:os';
+import { join as pathJoin, resolve as pathResolve, sep as pathSep } from 'node:path';
+import { CONFIG_DIR_NEW } from '../config/configPaths.js';
+import { MCP_CAPABILITY_GATE } from '../../shared/constants/misc.js';
 
 // Log Bridge URL for fetching logs from running Electron app
 const LOG_BRIDGE_URL = 'http://127.0.0.1:51820';
+
+// 危险能力（控屏 / 命令执行 / 清日志）—— 默认不暴露，需显式 opt-in。详见 MCP_CAPABILITY_GATE。
+const DANGEROUS_TOOL_NAMES = new Set(['computer', 'execute_command', 'clear_logs']);
 
 interface BridgeExecuteResult {
   success: boolean;
@@ -111,8 +119,16 @@ async function fetchStatusFromBridge(): Promise<Record<string, unknown> | null> 
 export class CodeAgentMCPServer {
   private server: Server;
   private isRunning: boolean = false;
+  /** 是否暴露控屏/命令执行/清日志等危险能力（默认 false = 只读/安全能力）。 */
+  private readonly enableComputerControl: boolean;
+  /** 解析 eval 结果时的工作目录（其下的 .code-agent/ 存放 eval-baseline.json / eval-trend.json）。 */
+  private readonly workingDirectory: string;
 
-  constructor(_options?: { transport?: string; port?: number; host?: string; enableWriteTools?: boolean; workingDirectory?: string }) {
+  constructor(options?: { transport?: string; port?: number; host?: string; enableWriteTools?: boolean; enableComputerControl?: boolean; workingDirectory?: string }) {
+    this.enableComputerControl =
+      options?.enableComputerControl ??
+      (process.env[MCP_CAPABILITY_GATE.DANGEROUS_ENV_FLAG] === 'true');
+    this.workingDirectory = options?.workingDirectory ?? process.cwd();
     this.server = new Server(
       {
         name: 'code-agent',
@@ -260,10 +276,10 @@ export class CodeAgentMCPServer {
       throw new Error(`Unknown resource: ${uri}`);
     });
 
-    // List available tools
+    // List available tools — 默认只暴露只读/安全能力；
+    // 危险能力（DANGEROUS_TOOL_NAMES：computer / execute_command / clear_logs）仅在 enableComputerControl 时出现。
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      return {
-        tools: [
+      const allTools = [
           {
             name: 'get_logs',
             description: 'Get logs from Agent Neo by source type',
@@ -384,13 +400,69 @@ export class CodeAgentMCPServer {
               additionalProperties: true,
             },
           },
-        ],
+          {
+            name: 'eval-query',
+            description: 'Query Agent Neo evaluation results (read-only). Reads the eval baseline (global pass rate / average score / per-case pass-fail-score) and recent run trend from the working directory\'s .code-agent/eval-baseline.json and eval-trend.json. Useful for an external agent to inspect Neo\'s own benchmark health.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                view: {
+                  type: 'string',
+                  enum: ['summary', 'cases', 'trend', 'all'],
+                  description: 'summary = global metrics; cases = per-case results; trend = recent run history; all = everything. Default summary.',
+                },
+                status: {
+                  type: 'string',
+                  enum: ['passed', 'failed', 'all'],
+                  description: '[cases] Filter case results by status. Default all.',
+                },
+                trendCount: {
+                  type: 'number',
+                  description: '[trend] Number of most-recent trend points to return. Default 10.',
+                },
+                workingDirectory: {
+                  type: 'string',
+                  description: 'Override the working directory whose .code-agent/ holds eval results. Defaults to the server working directory.',
+                },
+              },
+            },
+          },
+          {
+            name: 'appshots-query',
+            description: 'List and read Agent Neo\'s persisted window captures (appshots) — read-only history of user-triggered hotkey window snapshots stored under <CODE_AGENT_DATA_DIR or ~/.code-agent>/appshots/. This does NOT trigger a live capture (that needs the running app); it reads past captures from disk. Set includeDataUrl=true (or pass an explicit path inside the appshots dir) to embed a capture\'s PNG as image content.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                limit: { type: 'number', description: 'Max captures to list, newest first. Default 10.' },
+                includeDataUrl: { type: 'boolean', description: 'Embed the newest capture (or the path-specified one) as image content. Default false (paths only).' },
+                path: { type: 'string', description: 'Absolute path of a specific capture to read as image content. Must resolve inside the appshots directory.' },
+              },
+            },
+          },
+        ];
+      return {
+        tools: allTools.filter(
+          (tool) => this.enableComputerControl || !DANGEROUS_TOOL_NAMES.has(tool.name),
+        ),
       };
     });
 
     // Handle tool calls
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
+
+      // 安全门：危险能力（控屏 / 命令执行 / 清日志）默认关闭，未 opt-in 时即便被点名也拒绝。
+      if (DANGEROUS_TOOL_NAMES.has(name) && !this.enableComputerControl) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Tool "${name}" is disabled. It exposes screen-control / command-execution capability and is gated for safety (read-only tools like get_logs / get_status / screenshot / eval-query / appshots-query stay available). To enable, set ${MCP_CAPABILITY_GATE.DANGEROUS_ENV_FLAG}=true in this MCP server's environment — review docs/designs/ws5b-computeruse-mcp-security.md first.`,
+            },
+          ],
+          isError: true,
+        };
+      }
 
       if (name === 'get_logs') {
         const source = (args?.source as string) || 'all';
@@ -530,6 +602,151 @@ export class CodeAgentMCPServer {
                 type: 'text',
                 text: `Tool execution failed: ${error instanceof Error ? error.message : String(error)}`,
               },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      if (name === 'eval-query') {
+        try {
+          const view = (args?.view as string) || 'summary';
+          const statusFilter = (args?.status as string) || 'all';
+          const trendCount = typeof args?.trendCount === 'number' ? (args.trendCount as number) : 10;
+          const workDir = (args?.workingDirectory as string) || this.workingDirectory;
+
+          const { BaselineManager } = await import('../testing/ci/baselineManager.js');
+          const { TrendTracker } = await import('../testing/ci/trendTracker.js');
+          const baseline = await new BaselineManager(workDir).load();
+
+          if (!baseline && (view === 'summary' || view === 'cases')) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `No eval baseline found under ${pathJoin(workDir, CONFIG_DIR_NEW)}. Run an evaluation first, or pass workingDirectory pointing at a project whose .code-agent/ holds eval-baseline.json.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          const out: Record<string, unknown> = { workingDirectory: workDir };
+          if (baseline && (view === 'summary' || view === 'all')) {
+            out.summary = {
+              ...baseline.globalMetrics,
+              updatedAt: baseline.updatedAt,
+              updatedBy: baseline.updatedBy,
+            };
+          }
+          if (baseline && (view === 'cases' || view === 'all')) {
+            const cases = Object.entries(baseline.caseResults)
+              .filter(([, r]) => statusFilter === 'all' || r.status === statusFilter)
+              .map(([testId, r]) => ({
+                testId,
+                status: r.status,
+                score: r.score,
+                lastPassedAt: r.lastPassedAt ?? null,
+              }));
+            out.caseCount = cases.length;
+            out.cases = cases;
+          }
+          if (view === 'trend' || view === 'all') {
+            out.trend = await new TrendTracker(workDir).getRecent(trendCount);
+          }
+
+          return { content: [{ type: 'text', text: JSON.stringify(out, null, 2) }] };
+        } catch (error) {
+          return {
+            content: [
+              { type: 'text', text: `eval-query failed: ${error instanceof Error ? error.message : String(error)}` },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      if (name === 'appshots-query') {
+        try {
+          const limit = typeof args?.limit === 'number' ? (args.limit as number) : 10;
+          const includeDataUrl = args?.includeDataUrl === true;
+          const explicitPath = args?.path as string | undefined;
+
+          const dataDir = process.env.CODE_AGENT_DATA_DIR || pathJoin(homedir(), CONFIG_DIR_NEW);
+          const appshotsDir = pathJoin(dataDir, 'appshots');
+          const appshotsRoot = pathResolve(appshotsDir);
+
+          // 路径穿越防护：显式 path 必须落在 appshots 目录内。
+          const resolveInsideDir = (p: string): string | null => {
+            const resolved = pathResolve(p);
+            return resolved === appshotsRoot || resolved.startsWith(appshotsRoot + pathSep) ? resolved : null;
+          };
+
+          let fileNames: string[];
+          try {
+            fileNames = (await fsp.readdir(appshotsDir)).filter(
+              (f) => f.startsWith('appshot-') && f.endsWith('.png'),
+            );
+          } catch {
+            return {
+              content: [{ type: 'text', text: `No appshots directory at ${appshotsDir} (no captures yet).` }],
+            };
+          }
+
+          const captures = await Promise.all(
+            fileNames.map(async (f) => {
+              const full = pathJoin(appshotsDir, f);
+              let sizeBytes = 0;
+              try {
+                sizeBytes = (await fsp.stat(full)).size;
+              } catch {
+                /* ignore unreadable file */
+              }
+              const matched = /appshot-(\d+)\.png$/.exec(f);
+              const capturedAtMs = matched ? Number(matched[1]) : 0;
+              return { path: full, fileName: f, capturedAtMs, sizeBytes };
+            }),
+          );
+          captures.sort((a, b) => b.capturedAtMs - a.capturedAtMs);
+          const limited = captures.slice(0, Math.max(0, limit));
+
+          const content: Array<
+            { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+          > = [
+            {
+              type: 'text',
+              text: JSON.stringify({ appshotsDir, count: captures.length, captures: limited }, null, 2),
+            },
+          ];
+
+          if (includeDataUrl || explicitPath) {
+            const target = explicitPath ? resolveInsideDir(explicitPath) : (limited[0]?.path ?? null);
+            if (explicitPath && !target) {
+              return {
+                content: [
+                  { type: 'text', text: `Refused: path is outside the appshots directory (${appshotsDir}).` },
+                ],
+                isError: true,
+              };
+            }
+            if (target) {
+              try {
+                const buf = await fsp.readFile(target);
+                content.push({ type: 'image', data: buf.toString('base64'), mimeType: 'image/png' });
+              } catch (e) {
+                content.push({
+                  type: 'text',
+                  text: `Failed to read capture ${target}: ${e instanceof Error ? e.message : String(e)}`,
+                });
+              }
+            }
+          }
+
+          return { content };
+        } catch (error) {
+          return {
+            content: [
+              { type: 'text', text: `appshots-query failed: ${error instanceof Error ? error.message : String(error)}` },
             ],
             isError: true,
           };

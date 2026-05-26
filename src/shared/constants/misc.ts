@@ -98,6 +98,18 @@ export const PORTS = {
     : 51820,
 } as const;
 
+/**
+ * MCP server 能力暴露门控（Neo 作为 MCP server 暴露给外部 agent 时）。
+ * 默认只暴露只读/安全能力（logs/status/screenshot/eval-query/appshots-query）；
+ * 危险能力（控屏 computer / 命令执行 execute_command / 清日志 clear_logs）默认关闭，
+ * 需在 MCP client 的 server env 里把下面这个环境变量显式设为 'true' 才暴露。
+ * 控屏完整授权门见 docs/designs/ws5b-computeruse-mcp-security.md。
+ */
+export const MCP_CAPABILITY_GATE = {
+  /** 危险能力暴露开关环境变量名（默认未设 = 关闭） */
+  DANGEROUS_ENV_FLAG: 'MCP_ENABLE_COMPUTER_CONTROL',
+} as const;
+
 /** macOS 原生连接器 id（仅枚举可用值，默认不自动启用）*/
 export const NATIVE_CONNECTOR_IDS = ['calendar', 'mail', 'reminders', 'photos'] as const;
 export type NativeConnectorId = typeof NATIVE_CONNECTOR_IDS[number];

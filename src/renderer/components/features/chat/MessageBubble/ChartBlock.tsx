@@ -69,6 +69,15 @@ function parseSpec(raw: string): ChartSpec | null {
   }
 }
 
+/**
+ * 判断一段代码块文本是否是合法的图表 spec JSON。
+ * 模型常把图表数据放进 ```json 而非 ```chart，MessageContent 用它把这类
+ * json 块同样识别为图表并内联渲染（普通 json 极少恰好 type∈图表类型 + data 数组，误判风险极低）。
+ */
+export function isChartSpecSource(raw: string): boolean {
+  return parseSpec(raw) !== null;
+}
+
 const ChartRenderer = memo(function ChartRenderer({ spec }: { spec: ChartSpec }) {
   const { type, xKey = 'name', series = [], data } = spec;
 

@@ -592,7 +592,7 @@ export const defaultSuggestions: SuggestionItem[] = [
     icon: BarChart3,
     title: '出一张可交互数据图表',
     description: '聊天里直接渲染，可切换可悬停',
-    prompt: '在聊天里直接渲染一张折线图，不要写 HTML 文件、不要调用任何工具。直接在回复里输出一个 chart 代码块（三个反引号 + chart），内容是 JSON，schema：{"type":"line","title":"编程语言流行度趋势 (2015–2024)","xKey":"year","series":[{"key":"Python"},{"key":"JavaScript"},{"key":"TypeScript"},{"key":"Rust"},{"key":"Go"}],"data":[{"year":2015,"Python":64,"JavaScript":90,"TypeScript":20,"Rust":8,"Go":18}, … 每年一条直到 2024]}。流行度取 0–100、用你掌握的合理近似。只输出这个 chart 代码块加一句话说明，不要问我任何问题。',
+    prompt: '在聊天里直接渲染一张折线图，不要写 HTML 文件、不要调用任何工具。直接在回复里输出一个代码块（语言标记用 chart 或 json 均可），内容是图表 JSON，schema：{"type":"line","title":"编程语言流行度趋势 (2015–2024)","xKey":"year","series":[{"key":"Python"},{"key":"JavaScript"},{"key":"TypeScript"},{"key":"Rust"},{"key":"Go"}],"data":[{"year":2015,"Python":64,"JavaScript":90,"TypeScript":20,"Rust":8,"Go":18}, … 每年一条直到 2024]}。流行度取 0–100、用你掌握的合理近似。只输出这个代码块加一句话说明，不要问我任何问题。',
     accent: 'bg-sky-500/10 border-sky-500/20',
     iconColor: 'text-blue-400',
   },

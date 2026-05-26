@@ -20,7 +20,7 @@ import type { Components } from 'react-markdown';
 import { useAppStore } from '../../../../stores/appStore';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcessor';
 import { isWebMode, copyPathToClipboard } from '../../../../utils/platform';
-import { ChartBlock } from './ChartBlock';
+import { ChartBlock, isChartSpecSource } from './ChartBlock';
 import { LinkPreviewCard, isRawUrlLink } from './LinkPreviewCard';
 import { GenerativeUIBlock } from './GenerativeUIBlock';
 import { openExternalLink } from '../../../../utils/platform';
@@ -589,6 +589,10 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
             return <MermaidDiagram code={codeContent} />;
           }
           if (language === 'chart') {
+            return <ChartBlock spec={codeContent} />;
+          }
+          // 模型常把图表数据放进 ```json 而非 ```chart；内容若是合法图表 spec 就同样内联渲染
+          if (language === 'json' && isChartSpecSource(codeContent)) {
             return <ChartBlock spec={codeContent} />;
           }
           if (language === 'generative_ui') {

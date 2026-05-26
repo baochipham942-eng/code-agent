@@ -8,6 +8,7 @@ import type { TraceNode } from '@shared/contract/trace';
 import type { ToolCall } from '@shared/contract';
 import type { WorkbenchMessageMetadata } from '@shared/contract/conversationEnvelope';
 import type { TurnTimelineNode as TurnTimelinePayload } from '@shared/contract/turnTimeline';
+import { stripAppshotBlocks } from '@shared/contract/appshot';
 import { MessageContent } from './MessageBubble/MessageContent';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
 import { AttachmentDisplay } from './MessageBubble/AttachmentPreview';
@@ -191,6 +192,7 @@ const UserNode: React.FC<{
   rewindDisabled?: boolean;
 }> = ({ messageId, content, attachments, metadata, onRewind, rewindDisabled }) => {
   const isGuidedTurn = metadata?.runtimeInputDelivery === 'queued_next_turn';
+  const displayContent = stripAppshotBlocks(content || '');
 
   return (
     <div>
@@ -200,7 +202,7 @@ const UserNode: React.FC<{
           <AttachmentDisplay attachments={attachments} />
         </div>
       )}
-      {content && (
+      {displayContent && (
         <div className="flex justify-end">
           <div className="max-w-[86%]">
             {isGuidedTurn && (
@@ -213,7 +215,7 @@ const UserNode: React.FC<{
               {onRewind && (
                 <button
                   type="button"
-                  onClick={() => onRewind(messageId, content)}
+                  onClick={() => onRewind(messageId, displayContent)}
                   disabled={rewindDisabled}
                   className="mt-1 flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 opacity-0 pointer-events-none transition-colors group-hover/user-prompt:opacity-100 group-hover/user-prompt:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-600 disabled:hover:bg-transparent"
                   title={rewindDisabled ? '会话运行中，暂不能回退' : '回到这条提示词'}
@@ -224,7 +226,7 @@ const UserNode: React.FC<{
               )}
               <div className="rounded-2xl px-4 py-2.5 bg-zinc-800/60 border border-white/[0.06]">
                 <div className="text-zinc-200 leading-relaxed select-text">
-                  <MessageContent content={content} isUser={true} />
+                  <MessageContent content={displayContent} isUser={true} />
                 </div>
               </div>
             </div>

@@ -11,6 +11,7 @@ import { getSupabase, isSupabaseInitialized } from './supabaseService';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type { Session, Message, ModelConfig, TodoItem } from '../../../shared/contract';
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
+import { stripAppshotBlocks } from '../../../shared/contract/appshot';
 import { deriveSessionWorkbenchSnapshot, toSessionWorkbenchProvenance } from '../../../shared/contract/sessionWorkspace';
 import { createLogger } from './logger';
 
@@ -997,10 +998,12 @@ export class SessionManager implements Disposable {
 
     if (!(isDefaultTitle && session.messageCount <= 1)) return;
 
-    let title = await this.generateSmartTitle(firstMessage);
+    const visibleMessage = stripAppshotBlocks(firstMessage);
+    const titleSource = visibleMessage || (firstMessage.trim().startsWith('<appshot') ? 'Appshot 会话' : firstMessage);
+    let title = await this.generateSmartTitle(titleSource);
 
     if (!title) {
-      const firstLine = firstMessage.trim().split('\n')[0];
+      const firstLine = titleSource.trim().split('\n')[0] || 'Appshot 会话';
       title = firstLine.slice(0, 50);
       if (firstLine.length > 50) title += '...';
     }

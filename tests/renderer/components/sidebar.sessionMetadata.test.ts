@@ -34,6 +34,21 @@ const sessionState = {
         recentToolNames: [],
       },
     },
+    {
+      id: 'session-appshot',
+      title: '<appshot app="com.apple.finder" name="Finder">',
+      modelConfig: { provider: 'openai', model: 'gpt-4.1-mini' },
+      createdAt: Date.now() - 35_000,
+      updatedAt: Date.now() - 30_000,
+      workingDirectory: '/repo/archive',
+      messageCount: 2,
+      turnCount: 1,
+      workbenchSnapshot: {
+        summary: '纯对话',
+        labels: ['纯对话'],
+        recentToolNames: [],
+      },
+    },
   ] as any[],
   currentSessionId: 'session-1',
   messages: [] as any[],
@@ -175,5 +190,13 @@ describe('Sidebar session metadata', () => {
 
     expect(html).toContain('Finished Session');
     expect(html).toContain('待确认');
+  });
+
+  it('does not expose appshot XML in session titles', () => {
+    const html = renderToStaticMarkup(React.createElement(Sidebar));
+
+    expect(html).toContain('Appshot 会话');
+    expect(html).not.toContain('&lt;appshot');
+    expect(html).not.toContain('<appshot');
   });
 });

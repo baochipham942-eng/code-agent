@@ -2,6 +2,7 @@ import type { SessionStatus } from '@shared/contract/session';
 import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
 import type { SessionRuntimeSummary } from '@shared/ipc';
 import type { BackgroundTaskInfo } from '@shared/contract/sessionState';
+import { stripAppshotBlocks } from '@shared/contract/appshot';
 import type { SessionWithMeta } from '../stores/sessionStore';
 import type { SessionState as TaskSessionState } from '../stores/taskStore';
 
@@ -24,6 +25,18 @@ const PRESENTATION: Record<SessionStatusKind, SessionStatusPresentation> = {
   incomplete: { kind: 'incomplete', label: '待处理', toneClassName: 'text-amber-300 bg-amber-500/10 border-amber-500/20', showBadge: true },
   idle:       { kind: 'idle',       label: '就绪',   toneClassName: 'text-zinc-400 bg-zinc-700/30 border-zinc-600/40', showBadge: false },
 };
+
+export function getDisplaySessionTitle(title?: string | null): string {
+  const rawTitle = title?.trim() ?? '';
+  const stripped = stripAppshotBlocks(rawTitle);
+  if (stripped && !stripped.trim().startsWith('<appshot')) {
+    return stripped;
+  }
+  if (rawTitle.startsWith('<appshot')) {
+    return 'Appshot 会话';
+  }
+  return rawTitle || '未命名会话';
+}
 
 /**
  * Classify a session's status for sidebar display.
@@ -108,7 +121,7 @@ export function buildSessionSearchText(args: {
 }): string {
   const { session, snapshot, status } = args;
   return [
-    session.title,
+    getDisplaySessionTitle(session.title),
     session.type,
     session.origin?.name,
     session.workingDirectory,

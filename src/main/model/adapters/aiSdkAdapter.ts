@@ -23,6 +23,8 @@ import type { LanguageModel, ModelMessage as AiModelMessage, ToolSet, TextStream
 import { createDeepSeek } from '@ai-sdk/deepseek';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import axios, { type AxiosResponse } from 'axios';
 import { Readable, Transform } from 'node:stream';
 import type {
@@ -45,14 +47,14 @@ import { convertToolsToOpenAI, getHttpsAgent } from '../providers/shared';
 
 const logger = createLogger('AiSdkAdapter');
 
-// resolveModel 能处理的 provider：deepseek（专用包）/ claude·anthropic（专用包）/ 普通
-// openai-compatible。以下 provider 的旧 provider class 带有额外请求语义，AI SDK 路径尚未等价：
-// - gemini: 原生 API，非 OpenAI-compatible。
-// - xiaomi/moonshot: thinking-mode history / sampling / token 字段与旧路径不同。
-// - zhipu: provider class 带并发 limiter 与三态端点行为。
-// - openrouter: provider class 带必需推荐 headers 与 schema normalize。
-// 这些 provider 在默认 AI SDK engine 下自动回 legacy，避免把迁移不完整的外部依赖放进热路径。
-const AISDK_UNSUPPORTED_PROVIDERS = new Set<string>(['gemini', 'xiaomi', 'moonshot', 'zhipu', 'openrouter']);
+// resolveModel 能处理的 provider：deepseek/claude·anthropic（专用包）/ gemini（@ai-sdk/google）/
+// openrouter（@openrouter/ai-sdk-provider）/ 普通 openai-compatible。
+// 以下 provider 的旧 provider class 仍带未迁等价的额外请求语义，暂留 legacy（WS1 Phase 2 处理）：
+// - xiaomi/moonshot: thinking-mode history / sampling（temp 1.0、top_p 0.95）/ token 字段
+//   （xiaomi 用 max_completion_tokens 而非 max_tokens）/ moonshot 直连 keepAlive:false agent。
+// - zhipu: 自适应并发 limiter（与 quick model 共用同一实例）+ 三态端点 + reasoning_content 兜底。
+// 这些 provider 在默认 AI SDK engine 下自动回 legacy，避免把迁移不完整的语义放进热路径。
+const AISDK_UNSUPPORTED_PROVIDERS = new Set<string>(['xiaomi', 'moonshot', 'zhipu']);
 
 /** 适配器是否能跑该 provider（false → 调用方应走旧 modelRouter 路径）。 */
 export function aiSdkSupportsProvider(provider: string): boolean {
@@ -197,6 +199,20 @@ function resolveModel(config: ModelConfig, req: ProviderRequest): LanguageModel 
     case 'anthropic':
     case 'claude':
       return createAnthropic({ apiKey: req.apiKey, baseURL: req.baseURL ?? MODEL_API_ENDPOINTS.claude, fetch: aiSdkFetch })(config.model);
+    case 'gemini':
+      // 原生 Generative Language API（generateContent/streamGenerateContent + x-goog-api-key）由
+      // @ai-sdk/google 接管，替掉手搓 convertToGeminiMessages/handleGeminiStream。默认端点已含
+      // /v1beta，与 provider 期望一致；国际端点经 aiSdkFetch 的 getHttpsAgent 走代理。
+      return createGoogleGenerativeAI({ apiKey: req.apiKey, baseURL: req.baseURL ?? MODEL_API_ENDPOINTS.gemini, fetch: aiSdkFetch })(config.model);
+    case 'openrouter':
+      // 官方 provider 自带 OpenRouter 推荐 headers + tool schema normalize（替掉 legacy 的
+      // normalizeJsonSchema 手搓）。HTTP-Referer/X-Title 是 OpenRouter 应用署名约定，沿用 legacy 值。
+      return createOpenRouter({
+        apiKey: req.apiKey,
+        baseURL: req.baseURL ?? MODEL_API_ENDPOINTS.openrouter,
+        headers: { 'HTTP-Referer': 'https://code-agent.app', 'X-Title': 'Agent Neo' },
+        fetch: aiSdkFetch,
+      })(config.model);
     default: {
       if (!req.baseURL) {
         throw new Error(`[AiSdkAdapter] 无法解析 provider "${config.provider}" 的 baseURL`);

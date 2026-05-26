@@ -23,6 +23,7 @@ import { isWebMode, copyPathToClipboard } from '../../../../utils/platform';
 import { ChartBlock } from './ChartBlock';
 import { LinkPreviewCard, isRawUrlLink } from './LinkPreviewCard';
 import { GenerativeUIBlock } from './GenerativeUIBlock';
+import { openExternalLink } from '../../../../utils/platform';
 import { SpreadsheetBlock } from './SpreadsheetBlock';
 import { DocumentBlock } from './DocumentBlock';
 import { shouldRenderStreamingContentAsMarkdown, useThrottledStreamingContent } from '../../../../hooks/useThrottledStreamingContent';
@@ -841,12 +842,14 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         }
 
         // Regular links（带描述文字的内联链接）
+        // Tauri webview 里 <a target="_blank"> 不会触发任何打开，必须拦截 onClick 走系统 opener
         return (
           <a
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-primary-400 hover:text-primary-300 underline underline-offset-2"
+            onClick={(e) => { if (openExternalLink(href)) e.preventDefault(); }}
+            className="text-primary-400 hover:text-primary-300 underline underline-offset-2 cursor-pointer"
           >
             {children}
           </a>

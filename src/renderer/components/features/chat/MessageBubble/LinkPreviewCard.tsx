@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { ExternalLink } from 'lucide-react';
+import { openExternalLink } from '../../../../utils/platform';
 
 interface LinkPreviewCardProps {
   href: string;
@@ -65,7 +66,8 @@ export const LinkPreviewCard: React.FC<LinkPreviewCardProps> = ({ href }) => {
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-primary-400 hover:text-primary-300 underline underline-offset-2"
+        onClick={(e) => { if (openExternalLink(href)) e.preventDefault(); }}
+        className="text-primary-400 hover:text-primary-300 underline underline-offset-2 cursor-pointer"
       >
         {href}
       </a>
@@ -82,7 +84,8 @@ export const LinkPreviewCard: React.FC<LinkPreviewCardProps> = ({ href }) => {
       target="_blank"
       rel="noopener noreferrer"
       title={href}
-      className="inline-flex items-center gap-1.5 px-2 py-0.5 mx-0.5 rounded-md bg-zinc-800/60 hover:bg-zinc-700 border border-zinc-700/60 hover:border-zinc-600 text-zinc-300 hover:text-zinc-100 transition-colors text-[0.92em] no-underline align-baseline max-w-full"
+      onClick={(e) => { if (openExternalLink(href)) e.preventDefault(); }}
+      className="inline-flex items-center gap-1.5 px-2 py-0.5 mx-0.5 rounded-md bg-zinc-800/60 hover:bg-zinc-700 border border-zinc-700/60 hover:border-zinc-600 text-zinc-300 hover:text-zinc-100 transition-colors text-[0.92em] no-underline align-baseline max-w-full cursor-pointer"
     >
       <img
         src={faviconSrc}

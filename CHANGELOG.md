@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 🎯 `/goal` 斜杠命令 UI：触发卡片 + ChatInput 上方实时状态条（轮次 / 预算 / 计时）+ 生命周期完成卡片；走桌面 IPC + headless REST 两条链路。新增 `attempt_completion` 工具（仅 goal-mode 暴露）+ Codex 式审计 nudge（每 checkpoint 注入"先假设没做完、逐项找证据"自检）。
 - 📸 **Appshots（左右 Command 双击截窗）**：macOS `CGEventTap` listen-only 监听左+右 Command，捕获当前前台 app 窗口截图（`screencapture -l`）+ AX 无障碍树文本（OCR 兜底），以隐藏 `<appshot>` XML + 图片附件注入聊天上下文，输入框展示可预览 chip。详见 [docs/designs/appshots.md](docs/designs/appshots.md)。仅 macOS。
 - 🔒 **bypassPermissions 档接入 OS 级沙箱**：YOLO 权限档的 bash 执行用 macOS `sandbox-exec` / Linux `bwrap` 包装（命令前缀注入，复用前台执行器保住流式 / 中断 / 错误语义）；沙箱不可用时 **fail-fast 硬报错拒绝执行**，绝不静默裸跑。新增 `wrapCommand` 命令包装 API，由 `SANDBOX.OS_SANDBOX_ENABLED` flag 门控，其余权限档行为零变化。
+- 📎 **附件管线 v2（多类型附件 → 端侧摘要 → 模型上下文）**：补齐 `audio` / `video` / `presentation`(PPTX) / `archive`(ZIP) 四类附件。上传时在端侧用 `jszip` 解 PPTX 逐页提文字/图/表（≤20 页）、解 ZIP 出目录清单（≤200 条 + zip-slip 危险路径检测），**不自动解压**；重二进制本体既不喂模型也不写库，持久化只留轻量摘要（`pptJson` / `archiveManifest`）。`<attachment>` 内联块沿用 Appshots 的"对用户隐藏、对模型可见"模式（`stripInlineAttachmentBlocks`），desktop + web 双链路在持久化边界统一 strip/sanitize。详见 [docs/designs/attachments.md](docs/designs/attachments.md)。🚧 来自验收迭代，未经逐行 review，待后续处理。
 
 ### Changed
 

@@ -9,6 +9,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { buildGoalNoticeMessage } from '../../../components/features/chat/goalNotice';
 import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
+import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
 
 const logger = createLogger('useAgent');
 
@@ -40,7 +41,11 @@ interface MessageSnapshotPayload extends TurnIdPayload {
 interface AssistantMessagePayload extends TurnIdPayload {
   id?: string;
   content?: string;
+  reasoning?: string;
+  thinking?: string;
   toolCalls?: ToolCall[];
+  contentParts?: Message['contentParts'];
+  artifacts?: Message['artifacts'];
 }
 
 interface RoutingResolvedPayload {
@@ -135,14 +140,56 @@ function normalizeToolCalls(value: unknown): ToolCall[] | undefined {
   return value.map(normalizeToolCall).filter((toolCall): toolCall is ToolCall => Boolean(toolCall));
 }
 
+function isArtifactType(value: unknown): value is NonNullable<Message['artifacts']>[number]['type'] {
+  return (
+    value === 'chart'
+    || value === 'spreadsheet'
+    || value === 'document'
+    || value === 'generative_ui'
+    || value === 'mermaid'
+    || value === 'question_form'
+  );
+}
+
+function normalizeArtifacts(value: unknown): Message['artifacts'] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const artifacts = value.filter((item): item is NonNullable<Message['artifacts']>[number] => {
+    if (!isRecord(item)) return false;
+    return (
+      typeof item.id === 'string'
+      && isArtifactType(item.type)
+      && typeof item.content === 'string'
+      && typeof item.version === 'number'
+    );
+  });
+  return artifacts.length > 0 ? artifacts : undefined;
+}
+
+function normalizeContentParts(value: unknown): Message['contentParts'] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const parts = value.filter((item): item is NonNullable<Message['contentParts']>[number] => {
+    if (!isRecord(item)) return false;
+    if (item.type === 'text') return typeof item.text === 'string';
+    if (item.type === 'tool_call') return typeof item.toolCallId === 'string';
+    return false;
+  });
+  return parts.length > 0 ? parts : undefined;
+}
+
 function normalizeAssistantMessagePayload(data: unknown): AssistantMessagePayload | null {
   if (!isRecord(data)) return null;
   const toolCalls = normalizeToolCalls(data.toolCalls);
+  const artifacts = normalizeArtifacts(data.artifacts);
+  const contentParts = normalizeContentParts(data.contentParts);
   return {
     ...(getStringField(data, 'id') ? { id: getStringField(data, 'id') } : {}),
     ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
     ...(getStringField(data, 'content') !== undefined ? { content: getStringField(data, 'content') } : {}),
+    ...(getStringField(data, 'reasoning') !== undefined ? { reasoning: getStringField(data, 'reasoning') } : {}),
+    ...(getStringField(data, 'thinking') !== undefined ? { thinking: getStringField(data, 'thinking') } : {}),
     ...(toolCalls ? { toolCalls } : {}),
+    ...(contentParts ? { contentParts } : {}),
+    ...(artifacts ? { artifacts } : {}),
   };
 }
 
@@ -440,6 +487,10 @@ export function applyConversationStreamEvent(
           actions.updateMessage(targetMessage.id, {
             content: mergeCommittedAssistantContent(existingContent, newContent),
             toolCalls: mergedToolCalls,
+            ...(messageData.reasoning !== undefined ? { reasoning: messageData.reasoning } : {}),
+            ...(messageData.thinking !== undefined ? { thinking: messageData.thinking } : {}),
+            ...(messageData.contentParts ? { contentParts: messageData.contentParts } : {}),
+            ...(messageData.artifacts ? { artifacts: messageData.artifacts } : {}),
           });
         }
       }
@@ -485,8 +536,8 @@ export const useConversationStreamEffects = ({
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: AgentEvent) => {
       const currentSessionId = useSessionStore.getState().currentSessionId;
-      const eventSessionId = event.sessionId || currentSessionId || null;
-      const isCurrentSessionEvent = !eventSessionId || eventSessionId === currentSessionId;
+      const eventSessionId = getAgentEventSessionId(event);
+      const isCurrentSessionEvent = isAgentEventForCurrentSession(event, currentSessionId);
       const getFreshMessages = () => useSessionStore.getState().messages;
       const logHandledEvent = () => {
         const silentEvents = ['message_delta', 'message_snapshot', 'stream_chunk', 'stream_reasoning'];

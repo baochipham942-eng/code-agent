@@ -7,6 +7,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore, type SessionStatus } from '../../../stores/taskStore';
 import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
+import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
 
 const logger = createLogger('useAgent');
 
@@ -161,8 +162,8 @@ export const useSessionLifecycleEffects = ({
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: AgentEvent) => {
       const currentSessionId = useSessionStore.getState().currentSessionId;
-      const eventSessionId = event.sessionId || currentSessionId || null;
-      const isCurrentSessionEvent = !eventSessionId || eventSessionId === currentSessionId;
+      const eventSessionId = getAgentEventSessionId(event);
+      const isCurrentSessionEvent = isAgentEventForCurrentSession(event, currentSessionId);
       const getFreshMessages = () => useSessionStore.getState().messages;
       const clearSessionProcessing = () => {
         const sessionId = eventSessionId;

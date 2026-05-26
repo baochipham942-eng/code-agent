@@ -198,4 +198,11 @@ export interface AppSettings {
   };
   // 上下文压缩配置
   contextCompression?: ContextCompressionConfig;
+  // Appshots（左右 Command 双击抓窗口截图+文本送进 composer）
+  appshots?: {
+    /** 是否启用左右 Command 双击热键 */
+    enabled: boolean;
+    /** 截图送往：当前会话 / 每次新建会话 */
+    targetSession: 'current' | 'new';
+  };
 }

@@ -21,7 +21,8 @@ mod native_app_icon;
 mod native_desktop;
 
 use appshots::{
-    appshots_read_image_data_url, appshots_report_composer_slot, appshots_trigger, AppshotsState,
+    appshots_read_image_data_url, appshots_report_composer_slot, appshots_set_enabled,
+    appshots_trigger, AppshotsState,
 };
 use native_app_icon::desktop_get_app_icon;
 use native_desktop::{
@@ -1120,7 +1121,8 @@ fn main() {
             desktop_get_app_icon,
             appshots_trigger,
             appshots_read_image_data_url,
-            appshots_report_composer_slot
+            appshots_report_composer_slot,
+            appshots_set_enabled
         ])
         .setup(|app| {
             if cfg!(debug_assertions) && is_server_running() {

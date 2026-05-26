@@ -237,6 +237,10 @@ const DEFAULT_SETTINGS: AppSettings = {
     compactModel: DEFAULT_MODELS.compact,
     auditEnabled: true,
   },
+  appshots: {
+    enabled: true,
+    targetSession: 'current',
+  },
 };
 
 export class ConfigService implements IReadConfigService {

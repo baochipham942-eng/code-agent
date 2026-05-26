@@ -24,7 +24,7 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSBitmapImageRep", "NSImage", "NSWorkspace"] }
+objc2-app-kit = { version = "0.3", features = ["NSBitmapImageRep", "NSImage", "NSWorkspace", "NSWindow", "NSResponder"] }
 objc2-foundation = { version = "0.3", features = ["NSData", "NSDictionary", "NSGeometry", "NSString", "NSURL"] }
 
 [profile.release]

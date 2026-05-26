@@ -266,9 +266,7 @@ export const en: Translations = {
     toolActivityMcp: 'External tool activity',
     toolActivityOps: '{count} tool ops',
     // StatusRail
-    runtimeTitle: 'Runtime',
     runtimeApprovalsBadge: 'Approvals',
-    sectionHandoff: 'Handoff',
     sectionContext: 'Context',
     sectionOutputs: 'Outputs',
     sectionReferences: 'References',

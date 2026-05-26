@@ -58,7 +58,7 @@ export function isHandoffProposalStatus(status: unknown): status is HandoffPropo
 export function getHandoffProposalStatusLabel(status: HandoffProposalStatus): string {
   switch (status) {
     case 'accepted':
-      return '已接力';
+      return '已继续';
     case 'dismissed':
       return '已忽略';
     case 'pending':

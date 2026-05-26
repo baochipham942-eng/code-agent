@@ -240,9 +240,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
         todosEmpty: '暂无待办',
         sectionContext: '上下文',
         sectionOutputs: '产物',
-        runtimeTitle: '运行信息',
         runtimeApprovalsBadge: '待审',
-        sectionHandoff: '接力',
         artifactsEmpty: '没有产物',
         sectionReferences: '引用',
         skillsMcpEmpty: '没有技能',
@@ -491,7 +489,7 @@ describe('TaskMonitor scope inspector slice', () => {
     expect(html).not.toContain('空闲');
   });
 
-  it('shows runtime rail in Chinese when pending handoff exists', () => {
+  it('does not surface continuation suggestions in the right rail', () => {
     workbenchReferencesState = [];
     workbenchHistoryState = [];
     currentTurnScopeResult = null;
@@ -516,9 +514,10 @@ describe('TaskMonitor scope inspector slice', () => {
       React.createElement(TaskMonitor),
     );
 
-    expect(html).toContain('运行信息');
-    expect(html).toContain('接力 1');
-    expect(html).toContain('继续验证安装包');
+    expect(html).not.toContain('运行信息');
+    expect(html).not.toContain('继续建议');
+    expect(html).not.toContain('接力');
+    expect(html).not.toContain('继续验证安装包');
     expect(html).not.toContain('Session Runtime');
     expect(html).not.toContain('空闲');
   });

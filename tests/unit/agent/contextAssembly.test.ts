@@ -478,6 +478,22 @@ describe('ContextAssembly.buildModelMessages()', () => {
     getContextInterventionState().applyIntervention(sessionId, undefined, 'excluded-message', 'exclude', false);
   });
 
+  it('does not inject hidden continuation proposal instructions into the model prompt', async () => {
+    const ctx = buildRuntimeContext({
+      sessionId: 'session-no-hidden-continuation',
+      messages: [
+        buildMessage('user-no-hidden-continuation', 'user', '帮我清理这些文件'),
+      ],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+    const systemContent = String(modelMessages[0].content);
+
+    expect(systemContent).not.toContain('handoff-proposal');
+    expect(systemContent).not.toContain('worthHandoff');
+  });
+
   it('materializes interventions into the actual model input', async () => {
     const messages: Message[] = [
       buildMessage('pinned-message', 'user', 'pinned content'),

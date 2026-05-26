@@ -24,18 +24,15 @@ import { useCurrentTurnRoutingEvidence } from '../../hooks/useCurrentTurnRouting
 import { useWorkspacePreviewModel } from '../../hooks/useWorkspacePreviewModel';
 import { useWorkbenchCapabilityQuickActionRunner } from '../../hooks/useWorkbenchCapabilityQuickActionRunner';
 import { useWorkbenchInsights } from '../../hooks/useWorkbenchInsights';
-import { useHandoffStore } from '../../stores/handoffStore';
 import {
   Loader2, AlertTriangle,
   Wrench, GitBranch,
-  ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { formatElapsed } from './taskPanelUtils';
 import { useToolProgress } from './useToolProgress';
 import { ApprovalSyncCard } from './ApprovalSyncCard';
 import { Card, CardEmptyState as EmptyState } from './Card';
-import { HandoffCard } from './HandoffCard';
 import {
   CurrentTurnArtifactOwnershipCard,
   OutputFileRows,
@@ -61,15 +58,12 @@ import {
 
 export const TaskMonitor: React.FC = () => {
   const { currentSessionId } = useSessionStore();
-  const messageCount = useSessionStore((state) => state.messages.length);
   const { workingDirectory } = useAppStore();
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
   const openWorkspacePreview = useAppStore((state) => state.openWorkspacePreview);
   const { references: referencedWorkbenchItems, history: workbenchHistory } = useWorkbenchInsights();
-  const handoffItems = useHandoffStore((state) => state.items);
-  const loadHandoffs = useHandoffStore((state) => state.load);
   const currentTurnArtifactOwnership = useCurrentTurnArtifactOwnership();
   const currentTurnCapabilityScope = useCurrentTurnCapabilityScope();
   const currentTurnRoutingEvidence = useCurrentTurnRoutingEvidence();
@@ -148,18 +142,6 @@ export const TaskMonitor: React.FC = () => {
   const mcpDefaultExpanded = mcpNeedsAttention || sourceHasActionFeedback;
   const loopFilesDefaultExpanded = loopFileItems.length > 0 || runWorkbench.run.status !== 'completed';
 
-  useEffect(() => {
-    if (!currentSessionId) return;
-    void loadHandoffs({ sessionId: currentSessionId, status: 'pending', limit: 6 });
-  }, [currentSessionId, messageCount, loadHandoffs]);
-
-  const visibleHandoffItems = useMemo(
-    () => handoffItems
-      .filter((item) => !currentSessionId || item.sessionId === currentSessionId)
-      .slice(0, 3),
-    [currentSessionId, handoffItems],
-  );
-
   // Plan title — agent 在 markdown 用 `## Plan: XXX` 显式声明的会话总标题。
   // 依赖 runWorkbench.tasks 引用变化触发 refetch：todoParser 写 plan_title 与
   // 写 todos 是同一动作，tasks 变化时 plan_title 已落 DB。
@@ -192,33 +174,6 @@ export const TaskMonitor: React.FC = () => {
   const stepsTotal = sessionTaskSteps.length;
   const stepsCompleted = sessionTaskSteps.filter((s) => s.status === 'done').length;
   const stepsPercent = stepsTotal === 0 ? 0 : Math.round((stepsCompleted / stepsTotal) * 100);
-
-  // 运行信息折叠状态（待审/接力/Outputs/上下文/MCP 包进来）。
-  // 默认折叠避免抢占任务视野；有 active 状态（pending approval / mcp 异常）时自动展开。
-  const runtimeAttention = visiblePendingApproval
-    || mcpNeedsAttention
-    || approvalCount > 0
-    || visibleHandoffItems.length > 0;
-  const [runtimeOpen, setRuntimeOpen] = useState(runtimeAttention);
-  useEffect(() => {
-    if (runtimeAttention) setRuntimeOpen(true);
-  }, [runtimeAttention]);
-  const runtimeBadges: Array<{ label: string; tone?: 'warn' | 'info' }> = [];
-  if (approvalCount > 0) runtimeBadges.push({ label: `${t.taskPanel.runtimeApprovalsBadge} ${approvalCount}`, tone: 'warn' });
-  if (visibleHandoffItems.length > 0) {
-    runtimeBadges.push({ label: `${t.taskPanel.sectionHandoff} ${visibleHandoffItems.length}` });
-  }
-  if (outputs.count > 0 || currentTurnArtifactOwnership) {
-    const outCount = currentTurnArtifactOwnership?.artifactOwnership.length ?? outputs.count;
-    runtimeBadges.push({ label: `${t.taskPanel.sectionOutputs} ${outCount}` });
-  }
-  if (loopFileItems.length > 0) {
-    runtimeBadges.push({ label: `${t.taskPanel.sectionContext} ${loopFileItems.length}` });
-  }
-  if (shouldShowMcpCard) {
-    runtimeBadges.push({ label: mcpCount > 0 ? `MCP ${mcpCount}` : 'MCP', tone: mcpNeedsAttention ? 'warn' : undefined });
-  }
-  const shouldShowRuntime = runtimeBadges.length > 0;
 
   // ── 渲染 ──
 
@@ -264,51 +219,16 @@ export const TaskMonitor: React.FC = () => {
         <TaskDashboardSummary tasks={runWorkbench.tasks} run={runWorkbench.run} />
       </Card>
 
-      {/* 运行信息折叠容器：待审 / 接力 / Outputs / 上下文 / MCP
-          5 个子区域包进来，默认收起避免抢占任务视野。 */}
-      {shouldShowRuntime && (
-      <div className="rounded-md border border-zinc-800/80 bg-zinc-900/40">
-        <button
-          type="button"
-          onClick={() => setRuntimeOpen((v) => !v)}
-          className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-left hover:bg-zinc-800/40 transition-colors"
+      {approvalCount > 0 && (
+        <Card
+          title={t.taskPanel.runtimeApprovalsBadge}
+          storageKey="approvals"
+          count={String(approvalCount)}
+          highlight={visiblePendingApproval}
         >
-          {runtimeOpen ? (
-            <ChevronDown className="w-3 h-3 text-zinc-500 flex-shrink-0" />
-          ) : (
-            <ChevronRight className="w-3 h-3 text-zinc-500 flex-shrink-0" />
-          )}
-          <span className="text-[11px] text-zinc-400 flex-shrink-0">{t.taskPanel.runtimeTitle}</span>
-          <div className="flex-1 min-w-0 flex items-center gap-1 overflow-hidden">
-            {runtimeBadges.map((b, i) => (
-                <span
-                  key={`${b.label}-${i}`}
-                  className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${
-                    b.tone === 'warn'
-                      ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
-                      : 'bg-zinc-800/60 text-zinc-400 border-zinc-700/40'
-                  }`}
-                >
-                  {b.label}
-                </span>
-            ))}
-          </div>
-        </button>
-
-        {runtimeOpen && (
-          <div className="px-2 pb-2 space-y-2 border-t border-zinc-800/60">
-            {approvalCount > 0 && (
-              <Card
-                title={t.taskPanel.runtimeApprovalsBadge}
-                storageKey="approvals"
-                count={String(approvalCount)}
-                highlight={visiblePendingApproval}
-              >
-                <ApprovalSyncCard />
-              </Card>
-            )}
-
-            <HandoffCard items={visibleHandoffItems} skipLoad />
+          <ApprovalSyncCard />
+        </Card>
+      )}
 
       {(currentTurnArtifactOwnership || outputs.count > 0) && (
         <Card
@@ -408,10 +328,6 @@ export const TaskMonitor: React.FC = () => {
             </SourceSubsection>
           </div>
         </Card>
-      )}
-          </div>
-        )}
-      </div>
       )}
 
       <WorkbenchCapabilitySheetLite

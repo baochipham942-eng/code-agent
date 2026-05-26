@@ -69,7 +69,7 @@ function kindLabel(kind: WorkspacePreviewKind): string {
     case 'diff': return 'Diff';
     case 'terminal': return 'Terminal';
     case 'trace': return 'Trace';
-    case 'handoff': return 'Handoff';
+    case 'handoff': return 'Continue';
     case 'generic_html': return 'HTML';
     case 'chart': return 'Chart';
     case 'diagram': return 'Diagram';

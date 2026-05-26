@@ -5,6 +5,7 @@
 // 后调 `pip_frame` 推进来；本模块只负责窗口创建 / 更新 / 销毁，不做捕获。
 // 用 `eval` 注入帧而非 Tauri event，避免 PiP 窗口依赖 withGlobalTauri。
 
+use std::path::PathBuf;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 const PIP_LABEL: &str = "computer-use-pip";
@@ -14,50 +15,8 @@ const PIP_MARGIN: f64 = 16.0;
 /// 顶部留白避开菜单栏。
 const PIP_TOP_OFFSET: f64 = 28.0;
 
-const PIP_HTML: &str = r#"<!DOCTYPE html>
-<html><head><meta charset="utf-8"><style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 100%; height: 100%; background: transparent; overflow: hidden; }
-  #card { position: absolute; inset: 0; border-radius: 10px; overflow: hidden;
-    background: rgba(0,0,0,0.82); box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-    border: 1px solid rgba(255,255,255,0.1); }
-  #label { position: absolute; top: 0; left: 0; right: 0; padding: 6px 10px;
-    font: 11px -apple-system, system-ui; color: #fff;
-    background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
-    z-index: 2; display: flex; align-items: center; gap: 6px; }
-  #label .dot { width: 6px; height: 6px; background: #34d399; border-radius: 50%;
-    box-shadow: 0 0 8px #34d399; }
-  #shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: none; }
-  #empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    color: rgba(255,255,255,0.4); font: 12px -apple-system, system-ui; }
-</style></head><body>
-<div id="card">
-  <div id="label"><span class="dot"></span><span>Agent Neo · Computer Use</span></div>
-  <div id="empty">等待操作…</div>
-  <img id="shot" />
-</div>
-<script>
-  window.__setFrame = function (url) {
-    if (!url) return;
-    var img = document.getElementById('shot');
-    var empty = document.getElementById('empty');
-    img.src = url;
-    img.style.display = 'block';
-    if (empty) empty.style.display = 'none';
-  };
-</script>
-</body></html>"#;
-
-fn pip_data_url() -> Result<WebviewUrl, String> {
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-    let data_url = format!(
-        "data:text/html;base64,{}",
-        STANDARD.encode(PIP_HTML.as_bytes())
-    );
-    match data_url.parse() {
-        Ok(u) => Ok(WebviewUrl::External(u)),
-        Err(e) => Err(format!("pip data url parse: {e}")),
-    }
+fn pip_url() -> WebviewUrl {
+    WebviewUrl::App(PathBuf::from("pip.html"))
 }
 
 /// 主屏工作区右上角坐标（逻辑像素）。
@@ -84,7 +43,7 @@ pub fn pip_show(app: AppHandle) -> Result<(), String> {
         let _ = w.show();
         return Ok(());
     }
-    let url = pip_data_url()?;
+    let url = pip_url();
     let (pos_x, pos_y) = pip_top_right(&app);
 
     let window = WebviewWindowBuilder::new(&app, PIP_LABEL, url)

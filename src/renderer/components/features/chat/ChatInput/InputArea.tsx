@@ -8,6 +8,8 @@ import { useModeStore } from '../../../../stores/modeStore';
 
 // 图片 MIME 类型
 const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+const AUDIO_MIMES = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/aac', 'audio/flac', 'audio/ogg', 'audio/webm'];
+const VIDEO_MIMES = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska', 'video/x-msvideo'];
 
 // 代码文件扩展名
 const CODE_EXTENSIONS = [
@@ -27,6 +29,10 @@ const TEXT_EXTENSIONS = ['.txt', '.md', '.markdown', '.rst', '.log'];
 
 // Excel 文件扩展名
 const EXCEL_EXTENSIONS = ['.xlsx', '.xls', '.xlsm', '.xlsb'];
+const PRESENTATION_EXTENSIONS = ['.pptx', '.ppt'];
+const ARCHIVE_EXTENSIONS = ['.zip', '.tar', '.tar.gz', '.tgz', '.gz', '.7z', '.rar'];
+const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.oga', '.opus', '.webm'];
+const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.m4v', '.mkv', '.avi'];
 
 export interface InputAreaProps {
   /** 输入值 */
@@ -228,6 +234,14 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       ...DATA_EXTENSIONS,
       ...TEXT_EXTENSIONS,
       ...EXCEL_EXTENSIONS,
+      ...PRESENTATION_EXTENSIONS,
+      ...ARCHIVE_EXTENSIONS,
+      ...AUDIO_MIMES,
+      ...VIDEO_MIMES,
+      ...AUDIO_EXTENSIONS,
+      ...VIDEO_EXTENSIONS,
+      'audio/*',
+      'video/*',
       '.pdf',
       'application/pdf',
       '.html',
@@ -235,6 +249,16 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       // Excel MIME types
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'application/vnd.ms-excel',
+      // PowerPoint MIME types
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.ms-powerpoint',
+      // Archive MIME types
+      'application/zip',
+      'application/x-zip-compressed',
+      'application/x-tar',
+      'application/gzip',
+      'application/x-7z-compressed',
+      'application/vnd.rar',
     ].join(',');
 
     const interactionMode = useModeStore((s) => s.interactionMode);

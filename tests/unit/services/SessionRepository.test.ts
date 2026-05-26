@@ -222,7 +222,7 @@ describe('SessionRepository', () => {
           name: 'note.md',
           size: 42,
           mimeType: 'text/markdown',
-          data: 'heavy extracted content should not be stored in metadata',
+          data: 'persisted extracted content',
           path: '/tmp/note.md',
         }],
         thinking: 'thinking trace',
@@ -261,13 +261,207 @@ describe('SessionRepository', () => {
         id: 'att-1',
         name: 'note.md',
         path: '/tmp/note.md',
+        data: 'persisted extracted content',
       })]);
-      expect(attachmentParam).not.toContain('heavy extracted content');
 
       const partsParam = updateResult!.params.find((param) => (
         typeof param === 'string' && param.includes('part text')
       )) as string;
       expect(JSON.parse(partsParam)).toEqual([{ type: 'text', text: 'part text' }]);
+    });
+
+    it('persists parsed attachment fields needed to restore rich previews', () => {
+      repo.updateMessage('message-rich-attachments', {
+        attachments: [
+          {
+            id: 'excel-1',
+            type: 'file',
+            category: 'excel',
+            name: 'sheet.xlsx',
+            size: 128,
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            data: 'a,b\n1,2',
+            path: '/tmp/sheet.xlsx',
+            sheetCount: 1,
+            rowCount: 2,
+            sheetsJson: '{"sheets":[]}',
+          },
+          {
+            id: 'docx-1',
+            type: 'file',
+            category: 'document',
+            name: 'brief.docx',
+            size: 256,
+            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            data: 'brief text',
+            path: '/tmp/brief.docx',
+            docxJson: '{"paragraphs":[]}',
+          },
+          {
+            id: 'folder-1',
+            type: 'file',
+            category: 'folder',
+            name: 'src',
+            size: 64,
+            mimeType: 'inode/directory',
+            data: '2 个文件: .ts(2)',
+            path: '/tmp/src',
+            files: [{ path: 'index.ts', content: 'export {}', size: 9 }],
+            folderStats: { totalFiles: 2, totalSize: 64, byType: { '.ts': 2 } },
+          },
+          {
+            id: 'image-1',
+            type: 'image',
+            category: 'image',
+            name: 'diagram.png',
+            size: 512,
+            mimeType: 'image/png',
+            data: 'data:image/png;base64,full-image',
+            thumbnail: 'data:image/png;base64,thumb',
+            path: '/tmp/diagram.png',
+          },
+          {
+            id: 'audio-1',
+            type: 'file',
+            category: 'audio',
+            name: 'voice.mp3',
+            size: 512,
+            mimeType: 'audio/mpeg',
+            data: 'data:audio/mpeg;base64,audio-data',
+            path: '/tmp/voice.mp3',
+          },
+          {
+            id: 'video-1',
+            type: 'file',
+            category: 'video',
+            name: 'clip.mp4',
+            size: 1024,
+            mimeType: 'video/mp4',
+            data: 'data:video/mp4;base64,video-data',
+            path: '/tmp/clip.mp4',
+          },
+          {
+            id: 'ppt-1',
+            type: 'file',
+            category: 'presentation',
+            name: 'deck.pptx',
+            size: 2048,
+            mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            data: 'data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64,ppt-data',
+            path: '/tmp/deck.pptx',
+            pptJson: '{"slideCount":3,"slides":[]}',
+          },
+          {
+            id: 'zip-1',
+            type: 'file',
+            category: 'archive',
+            name: 'bundle.zip',
+            size: 4096,
+            mimeType: 'application/zip',
+            data: 'data:application/zip;base64,zip-data',
+            path: '/tmp/bundle.zip',
+            archiveManifest: {
+              format: 'zip',
+              supported: true,
+              totalFiles: 2,
+              entries: [{ path: 'README.md', size: 32 }],
+            },
+          },
+        ],
+      });
+
+      const updateResult = mockDb._getRunResults().find((result) => (
+        result.sql.includes('UPDATE messages SET')
+      ));
+      const attachmentParam = updateResult!.params.find((param) => (
+        typeof param === 'string' && param.includes('sheet.xlsx')
+      )) as string;
+      const stored = JSON.parse(attachmentParam);
+
+      expect(stored[0]).toMatchObject({
+        id: 'excel-1',
+        data: 'a,b\n1,2',
+        sheetCount: 1,
+        rowCount: 2,
+        sheetsJson: '{"sheets":[]}',
+      });
+      expect(stored[1]).toMatchObject({
+        id: 'docx-1',
+        data: 'brief text',
+        docxJson: '{"paragraphs":[]}',
+      });
+      expect(stored[2]).toMatchObject({
+        id: 'folder-1',
+        data: '2 个文件: .ts(2)',
+        files: [{ path: 'index.ts', content: 'export {}', size: 9 }],
+        folderStats: { totalFiles: 2, totalSize: 64, byType: { '.ts': 2 } },
+      });
+      expect(stored[3]).toMatchObject({
+        id: 'image-1',
+        data: 'data:image/png;base64,full-image',
+        thumbnail: 'data:image/png;base64,thumb',
+        path: '/tmp/diagram.png',
+      });
+      expect(stored[4]).toMatchObject({
+        id: 'audio-1',
+        data: 'data:audio/mpeg;base64,audio-data',
+        path: '/tmp/voice.mp3',
+      });
+      expect(stored[5]).toMatchObject({
+        id: 'video-1',
+        data: 'data:video/mp4;base64,video-data',
+        path: '/tmp/clip.mp4',
+      });
+      expect(stored[6]).toMatchObject({
+        id: 'ppt-1',
+        path: '/tmp/deck.pptx',
+        pptJson: '{"slideCount":3,"slides":[]}',
+      });
+      expect(stored[6].data).toBeUndefined();
+      expect(stored[7]).toMatchObject({
+        id: 'zip-1',
+        path: '/tmp/bundle.zip',
+        archiveManifest: {
+          format: 'zip',
+          supported: true,
+          totalFiles: 2,
+          entries: [{ path: 'README.md', size: 32 }],
+        },
+      });
+      expect(stored[7].data).toBeUndefined();
+    });
+
+    it('persists appshot preview data without exposing the local screenshot path', () => {
+      repo.updateMessage('message-appshot', {
+        attachments: [{
+          id: 'appshot-appshot-1',
+          type: 'image',
+          category: 'image',
+          name: 'Finder 截图.png',
+          size: 256,
+          mimeType: 'image/png',
+          data: 'data:image/png;base64,full-image-data',
+          thumbnail: 'data:image/png;base64,thumb-data',
+          path: '/Users/linchen/.code-agent/appshots/appshot-1.png',
+        }],
+      });
+
+      const updateResult = mockDb._getRunResults().find((result) => (
+        result.sql.includes('UPDATE messages SET')
+      ));
+
+      const attachmentParam = updateResult!.params.find((param) => (
+        typeof param === 'string' && param.includes('Finder 截图.png')
+      )) as string;
+      const stored = JSON.parse(attachmentParam);
+
+      expect(stored).toEqual([expect.objectContaining({
+        id: 'appshot-appshot-1',
+        name: 'Finder 截图.png',
+        thumbnail: 'data:image/png;base64,thumb-data',
+      })]);
+      expect(attachmentParam).not.toContain('/Users/linchen/.code-agent/appshots/appshot-1.png');
+      expect(attachmentParam).not.toContain('full-image-data');
     });
   });
 

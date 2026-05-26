@@ -44,8 +44,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'users', tabLabel: '用户管理', label: '用户字段', keywords: ['profile', '字段', '注册时间', '注册来源', '设备', '会话', '消息'] },
   { tab: 'invites', tabLabel: '邀请码管理', label: '邀请码管理', keywords: ['invite', '邀请码', '邀请码管理', '注册', 'code', '使用次数', '有效期'] },
   { tab: 'invites', tabLabel: '邀请码管理', label: '新建邀请码', keywords: ['create invite', 'new invite', '创建', '新建', '发放', '停用', '启用'] },
-  { tab: 'controlPlane', tabLabel: 'Control Plane', label: '发布审计', keywords: ['control plane', 'audit', 'release', 'rollout', '发布', '审计', '灰度', '签名', 'payload'] },
-  { tab: 'controlPlane', tabLabel: 'Control Plane', label: '线上版本与 hash', keywords: ['hash', 'keyId', 'artifact', 'capability registry', 'prompt registry', 'cloud config', '版本'] },
+  { tab: 'controlPlane', tabLabel: '控制平面', label: '发布审计', keywords: ['control plane', 'audit', 'release', 'rollout', '发布', '审计', '灰度', '签名', 'payload'] },
+  { tab: 'controlPlane', tabLabel: '控制平面', label: '线上版本与 hash', keywords: ['hash', 'keyId', 'artifact', 'capability registry', 'prompt registry', 'cloud config', '版本'] },
 
   // Model
   { tab: 'model', tabLabel: '模型', label: '模型供应商', keywords: ['provider', '供应商', 'API', 'deepseek', 'claude', 'kimi', 'openai', '智谱', 'moonshot'] },

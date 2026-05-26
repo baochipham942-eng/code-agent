@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Session, SessionStatus, TokenUsage, Message, ModelProvider, TodoItem, SessionTask, ToolCall } from '../../../../shared/contract';
 import { normalizeAgentEngineSession } from '../../../../shared/contract/agentEngine';
 import type { ContextInterventionAction, ContextInterventionSnapshot } from '../../../../shared/contract/contextView';
+import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../../../shared/utils/messageAttachments';
 import { createLogger } from '../../infra/logger';
 import { generateFallbackShortDescription } from '../../../model/providers/shared';
 import type { StoredSession, StoredMessage } from '../../../protocol/types';
@@ -57,17 +58,7 @@ function ensureToolCallShortDescription(toolCalls: ToolCall[] | undefined): Tool
 }
 
 function buildAttachmentMetadata(attachments: Message['attachments']): Message['attachments'] | undefined {
-  return attachments?.map((a) => ({
-    id: a.id,
-    type: a.type,
-    category: a.category,
-    name: a.name,
-    size: a.size,
-    mimeType: a.mimeType,
-    path: a.path,
-    pageCount: a.pageCount,
-    language: a.language
-  }));
+  return sanitizeAttachmentsForPersistence(attachments);
 }
 
 function safeJsonStringify(value: unknown): string {
@@ -816,14 +807,14 @@ export class SessionRepository {
     return {
       id: row.id as string,
       role: row.role as Message['role'],
-      content: row.content as string,
+      content: stripInlineAttachmentBlocks((row.content as string) || ''),
       timestamp: row.timestamp as number,
       visibility: (row.visibility as Message['visibility']) || 'active',
       hiddenByRewindId: (row.hidden_by_rewind_id as string) || undefined,
       hiddenAt: (row.hidden_at as number) || undefined,
       toolCalls: parseStoredJson<Message['toolCalls']>(row.tool_calls),
       toolResults: parseStoredJson<Message['toolResults']>(row.tool_results),
-      attachments: parseStoredJson<Message['attachments']>(row.attachments),
+      attachments: sanitizeAttachmentsForPersistence(parseStoredJson<Message['attachments']>(row.attachments)),
       thinking: (row.thinking as string) || undefined,
       effortLevel: (row.effort_level as Message['effortLevel']) || undefined,
       contentParts: parseStoredJson<Message['contentParts']>(row.content_parts),

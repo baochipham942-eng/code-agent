@@ -15,6 +15,7 @@ import {
 import { useUIStore } from '../../../../stores/uiStore';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
+import { buildArchiveManifest, buildPresentationSummary } from './attachmentSummaries';
 
 const logger = createLogger('useFileUpload');
 
@@ -22,6 +23,15 @@ function formatFileSize(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
   if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)}KB`;
   return `${bytes}B`;
+}
+
+function readFileAsDataUrl(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target?.result as string);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
 }
 
 /**
@@ -84,11 +94,6 @@ export function useFileUpload() {
       return null;
     }
 
-    if (category === 'document') {
-      logger.warn('Office documents (.pptx) are not yet supported');
-      return null;
-    }
-
     // Excel 文件处理
     if (category === 'excel' && filePath) {
       const result = await ipcService.extractExcelText(filePath);
@@ -111,6 +116,37 @@ export function useFileUpload() {
       return null;
     }
 
+    if (category === 'presentation') {
+      const data = await readFileAsDataUrl(file);
+      if (!data) return null;
+
+      const summary = await buildPresentationSummary(file);
+      return {
+        id, type: 'file', category: 'presentation', name: displayName, size: file.size,
+        mimeType: file.type || (file.name.toLowerCase().endsWith('.pptx')
+          ? 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+          : 'application/vnd.ms-powerpoint'),
+        data, path: filePath, pptJson: JSON.stringify(summary),
+      };
+    }
+
+    if (category === 'archive') {
+      const data = await readFileAsDataUrl(file);
+      if (!data) return null;
+
+      const archiveManifest = await buildArchiveManifest(file);
+      return {
+        id, type: 'file', category: 'archive', name: displayName, size: file.size,
+        mimeType: file.type || 'application/octet-stream',
+        data, path: filePath, archiveManifest,
+      };
+    }
+
+    if (category === 'document') {
+      logger.warn('Unsupported Office document type', { fileName: file.name, mimeType: file.type });
+      return null;
+    }
+
     if (category === 'image') {
       return new Promise((resolve) => {
         const reader = new FileReader();
@@ -119,6 +155,22 @@ export function useFileUpload() {
           resolve({
             id, type: 'image', category: 'image', name: displayName, size: file.size,
             mimeType: file.type, data, thumbnail: data, path: filePath,
+          });
+        };
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+      });
+    }
+
+    if (category === 'audio' || category === 'video') {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const data = e.target?.result as string;
+          resolve({
+            id, type: 'file', category, name: displayName, size: file.size,
+            mimeType: file.type || (category === 'audio' ? 'audio/mpeg' : 'video/mp4'),
+            data, path: filePath,
           });
         };
         reader.onerror = () => resolve(null);

@@ -67,6 +67,7 @@ export class NudgeManager {
   // ── F4: Goal-based completion verification ──
   private goalVerificationCount: number = 0;
   private maxGoalVerifications: number = 2;
+  private expectsMutationCompletion: boolean = false;
 
   // ── P4: Subtask completion verification (Excel multi-subtask) ──
   private _subtaskNudgeCount: number = 0;
@@ -130,6 +131,10 @@ export class NudgeManager {
     this._enhancedValidationDone = false;
     this._lastStructureInfo = null;
     this._userExpectsOutput = /保存|导出|生成.*文件|输出.*文件|写入|\.xlsx|\.csv|\.png|\.pdf|export|save/i.test(userMessage);
+    this.expectsMutationCompletion =
+      expectedOutputFiles.length > 0 ||
+      targetFiles.length > 0 ||
+      this.hasExplicitMutationIntent(userMessage);
     this._enforceTaskCompletion = /任务|待办|todo|task|plan|计划|分工|TaskManager|task_create|task_update|task_list/i.test(userMessage);
     this._readOnlyTaskIntent = this.inferReadOnlyTaskIntent(userMessage, targetFiles, expectedOutputFiles);
 
@@ -326,6 +331,7 @@ export class NudgeManager {
     // F4 Nudge: Goal-based completion verification
     if (ctx.goalTracker.isInitialized()
       && !ctx.isSimpleTaskMode
+      && this.expectsMutationCompletion
       && this.goalVerificationCount < this.maxGoalVerifications) {
       const summary = ctx.goalTracker.getGoalSummary();
       const hasWriteAction = summary.completed.some(a =>
@@ -684,8 +690,7 @@ export class NudgeManager {
       return 'mutation';
     }
 
-    const explicitMutation =
-      /修改|改掉|改成|修复|修一下|实现|增加|新增|补上|补齐|落地|写入|创建|生成.*文件|编辑|重构|提交|删掉|删除|替换|跑通|完成/i.test(userMessage);
+    const explicitMutation = this.hasExplicitMutationIntent(userMessage);
     const analysisCue =
       /怎么|如何|为什么|原因|分析|诊断|排查|研究|评估|审计|看一下|看看|解释|建议|方案|对比|review|inspect|investigate|diagnos|analy[sz]e/i.test(userMessage);
 
@@ -694,6 +699,10 @@ export class NudgeManager {
     }
 
     return 'mutation';
+  }
+
+  private hasExplicitMutationIntent(userMessage: string): boolean {
+    return /修改|改掉|改成|修复|修一下|实现|增加|新增|补上|补齐|落地|写入|创建|生成.*文件|编辑|重构|提交|删掉|删除|替换|跑通|完成/i.test(userMessage);
   }
 
   private generateExploringNudge(

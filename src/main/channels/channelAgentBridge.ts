@@ -8,7 +8,7 @@ import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
 import { getChannelManager } from './channelManager';
 import type { ChannelMessage, ChannelAttachment } from '../../shared/contract/channel';
-import type { MessageAttachment, Message, AgentEvent, ModelConfig } from '../../shared/contract';
+import type { AttachmentCategory, MessageAttachment, Message, AgentEvent, ModelConfig } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { logCollector } from '../mcp/logCollector';
 import { v4 as uuidv4 } from 'uuid';
@@ -551,9 +551,13 @@ export class ChannelAgentBridge {
   /**
    * 获取附件分类
    */
-  private getAttachmentCategory(att: ChannelAttachment): 'image' | 'pdf' | 'text' | 'code' | 'data' | 'other' {
+  private getAttachmentCategory(att: ChannelAttachment): AttachmentCategory {
     if (att.type === 'image') return 'image';
+    if (att.type === 'audio' || att.mimeType?.startsWith('audio/')) return 'audio';
+    if (att.type === 'video' || att.mimeType?.startsWith('video/')) return 'video';
     if (att.mimeType?.includes('pdf')) return 'pdf';
+    if (att.mimeType?.includes('presentation') || att.mimeType?.includes('powerpoint')) return 'presentation';
+    if (att.mimeType?.includes('zip') || att.mimeType?.includes('gzip') || att.mimeType?.includes('tar')) return 'archive';
     if (att.mimeType?.includes('text')) return 'text';
     if (att.mimeType?.includes('json') || att.mimeType?.includes('csv')) return 'data';
     return 'other';

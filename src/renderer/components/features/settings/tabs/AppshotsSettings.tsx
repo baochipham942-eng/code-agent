@@ -78,7 +78,7 @@ export const AppshotsSettings: React.FC = () => {
       {/* 启用开关 */}
       <div className="flex items-center justify-between">
         <div className="pr-4">
-          <h3 className="text-sm font-medium text-zinc-200 mb-1">启用 Appshots</h3>
+          <h3 className="text-sm font-medium text-zinc-200 mb-1">启用应用截图</h3>
           <p className="text-xs text-zinc-500">
             按住<strong className="text-zinc-300"> 左 + 右 Command </strong>抓取当前前台 app 窗口，
             连同窗口文本一起送进输入框。
@@ -152,7 +152,7 @@ export const AppshotsSettings: React.FC = () => {
       <div className="pt-4 border-t border-zinc-700">
         <h3 className="text-sm font-medium text-zinc-200 mb-2">系统权限</h3>
         <p className="text-xs text-zinc-500 mb-4">
-          Appshots 需要「屏幕录制」截窗、「辅助功能」读取窗口文本。若热键无反应，请在系统设置里授权后重启应用。
+          应用截图需要「屏幕录制」截窗、「辅助功能」读取窗口文本。若热键无反应，请在系统设置里授权后重启应用。
         </p>
         <div className="space-y-2">
           <button

@@ -155,6 +155,7 @@
     "ink-spinner": "^5.0.0",
     "ink-text-input": "^6.0.0",
     "js-yaml": "^4.1.1",
+    "jszip": "^3.10.1",
     "keytar": "^7.9.0",
     "langfuse": "^3.38.20",
     "mammoth": "^1.12.0",

@@ -2,7 +2,14 @@
 // Message Converter - Convert between different message formats
 // ============================================================================
 
-import type { Message, MessageAttachment, ToolCall, ToolResult } from '../../../shared/contract';
+import type {
+  ArchiveManifest,
+  Message,
+  MessageAttachment,
+  PresentationSummary,
+  ToolCall,
+  ToolResult,
+} from '../../../shared/contract';
 import type { ModelMessage, MessageContent } from '../loopTypes';
 import { LARGE_DATA_FIELDS, LARGE_DATA_THRESHOLD } from '../loopTypes';
 import { createLogger } from '../../services/infra/logger';
@@ -241,8 +248,8 @@ export function buildMultimodalContent(
   // Process each attachment by category
   for (const attachment of attachments) {
     const category = attachment.category || (attachment.type === 'image' ? 'image' : 'other');
-    if (!attachment.data && category !== 'image') continue;
-    if (!attachment.data && !attachment.path) continue;
+    if (!attachment.data && category !== 'image' && !canProcessAttachmentWithoutData(category)) continue;
+    if (!attachment.data && !attachment.path && !attachment.pptJson && !attachment.archiveManifest) continue;
 
     // Check total size limit
     if (totalAttachmentChars >= MAX_TOTAL_ATTACHMENT_CHARS) {
@@ -257,6 +264,14 @@ export function buildMultimodalContent(
       case 'image': {
         const result = processImageAttachment(attachment, contents);
         if (!result) continue;
+        break;
+      }
+
+      case 'audio':
+      case 'video': {
+        const contentText = processMediaAttachment(attachment);
+        totalAttachmentChars += contentText.length;
+        contents.push({ type: 'text', text: contentText });
         break;
       }
 
@@ -302,6 +317,20 @@ export function buildMultimodalContent(
         break;
       }
 
+      case 'presentation': {
+        const contentText = processPresentationAttachment(attachment);
+        totalAttachmentChars += contentText.length;
+        contents.push({ type: 'text', text: contentText });
+        break;
+      }
+
+      case 'archive': {
+        const contentText = processArchiveAttachment(attachment);
+        totalAttachmentChars += contentText.length;
+        contents.push({ type: 'text', text: contentText });
+        break;
+      }
+
       case 'folder': {
         const contentText = processFolderAttachment(attachment);
         totalAttachmentChars += contentText.length;
@@ -326,21 +355,45 @@ export function buildMultimodalContent(
 }
 
 // Helper functions for attachment processing
+function canProcessAttachmentWithoutData(category: MessageAttachment['category']): boolean {
+  return category === 'audio' || category === 'video' || category === 'presentation' || category === 'archive';
+}
+
+function parseAttachmentJson<T>(value: string | undefined): T | undefined {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+function formatBytes(bytes: number | undefined): string | undefined {
+  if (!bytes || bytes < 0) return undefined;
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
 function processImageAttachment(
   attachment: MessageAttachment,
   contents: MessageContent[]
 ): boolean {
   let base64Data = attachment.data;
   let mediaType = attachment.mimeType;
-  const pathHint = attachment.path ? `\n路径: ${attachment.path}` : '';
+  const isAppshot = attachment.id.startsWith('appshot-');
+  const pathHint = attachment.path && !isAppshot ? `\n路径: ${attachment.path}` : '';
+  const appshotGuidance = isAppshot
+    ? '这是 Appshot 截图，窗口文本已在同一条消息的 <appshot> 上下文中提供；如果当前模型不能直接看图，请优先根据该文本回答，不要要求读取本地图片路径。'
+    : '如果当前模型不能直接看图，不要声称没收到图片；请说明需要可读取的本地图片路径。';
 
   contents.push({
     type: 'text',
     text: [
       `🖼️ 用户上传了图片: ${attachment.name}${pathHint}`,
-      attachment.path
+      attachment.path && !isAppshot
         ? `如果当前模型不能直接看图，先调用 image_analyze 读取这个路径，再回答用户问题。`
-        : `如果当前模型不能直接看图，不要声称没收到图片；请说明需要可读取的本地图片路径。`,
+        : appshotGuidance,
     ].join('\n'),
   });
 
@@ -390,7 +443,7 @@ function processImageAttachment(
     },
   });
 
-  if (attachment.path) {
+  if (attachment.path && !isAppshot) {
     contents.push({
       type: 'text',
       text: `📍 图片文件路径: ${attachment.path}`,
@@ -398,6 +451,19 @@ function processImageAttachment(
   }
 
   return true;
+}
+
+function processMediaAttachment(attachment: MessageAttachment): string {
+  const isAudio = attachment.category === 'audio';
+  const label = isAudio ? '音频' : '视频';
+  const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
+  const sizeInfo = attachment.size ? `\n大小: ${(attachment.size / 1024 / 1024).toFixed(2)} MB` : '';
+  const mimeInfo = attachment.mimeType ? `\nMIME: ${attachment.mimeType}` : '';
+  const guidance = isAudio && attachment.path
+    ? '\n如需转写，可调用 speech_to_text 读取该音频路径；不要把二进制 data URL 当文本分析。'
+    : '\n这是二进制媒体附件；当前文本上下文只包含元数据，不包含可直接分析的音视频内容。';
+
+  return `🎞️ **${label}附件: ${attachment.name}**${pathInfo}${sizeInfo}${mimeInfo}${guidance}`;
 }
 
 function processPdfAttachment(attachment: MessageAttachment): string {
@@ -475,6 +541,85 @@ function processExcelAttachment(attachment: MessageAttachment): string {
   return `📊 **Excel 文件: ${attachment.name}**${sheetInfo}${rowInfo}${pathInfo}\n\n⚠️ 以下是已解析的表格数据（CSV 格式），无需调用工具读取：\n\n\`\`\`csv\n${data}\n\`\`\``;
 }
 
+function processPresentationAttachment(attachment: MessageAttachment): string {
+  const summary = parseAttachmentJson<PresentationSummary>(attachment.pptJson);
+  const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
+  const sizeInfo = formatBytes(attachment.size);
+  const headerParts = [
+    `📽️ **演示文稿: ${attachment.name}**`,
+    summary?.slideCount !== undefined ? ` (${summary.slideCount} 页)` : '',
+    pathInfo,
+    sizeInfo ? `\n大小: ${sizeInfo}` : '',
+    summary?.format ? `\n格式: ${summary.format.toUpperCase()}` : '',
+  ];
+
+  const slideLines = (summary?.slides || []).slice(0, 8).map((slide) => {
+    const title = slide.title ? ` - ${slide.title}` : '';
+    const preview = slide.textPreview && slide.textPreview !== slide.title ? `: ${slide.textPreview}` : '';
+    const media = [
+      slide.imageCount ? `${slide.imageCount} 图` : '',
+      slide.tableCount ? `${slide.tableCount} 表` : '',
+    ].filter(Boolean).join(', ');
+    return `- 第 ${slide.index} 页${title}${media ? ` (${media})` : ''}${preview}`;
+  });
+
+  const parseNote = summary?.parseError ? `\n解析提示: ${summary.parseError}` : '';
+  const truncatedNote = summary?.truncated ? '\n仅展示前 20 页的提取摘要。' : '';
+  const guidance = attachment.path
+    ? '\n如需分析或编辑完整 PPT，请用 ppt_edit 的 analyze 动作读取该路径；不要把二进制 data URL 当文本分析。'
+    : '\n当前上下文只包含上传时提取的 PPT 摘要，不包含完整二进制内容。';
+
+  return [
+    headerParts.join(''),
+    parseNote,
+    truncatedNote,
+    slideLines.length > 0 ? `\n\n**页面预览：**\n${slideLines.join('\n')}` : '',
+    guidance,
+  ].join('');
+}
+
+function processArchiveAttachment(attachment: MessageAttachment): string {
+  const manifest = attachment.archiveManifest as ArchiveManifest | undefined;
+  const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
+  const sizeInfo = formatBytes(attachment.size);
+
+  if (!manifest) {
+    return `🗜️ **压缩包: ${attachment.name}**${pathInfo}${sizeInfo ? `\n大小: ${sizeInfo}` : ''}\n当前上下文只有文件元数据；不要把二进制 data URL 当文本分析。`;
+  }
+
+  const totalSize = formatBytes(manifest.totalUncompressedSize);
+  const compressedSize = formatBytes(manifest.totalCompressedSize);
+  const stats = [
+    `格式: ${manifest.format}`,
+    `文件: ${manifest.totalFiles}`,
+    manifest.totalDirectories !== undefined ? `目录: ${manifest.totalDirectories}` : '',
+    totalSize ? `解压后约: ${totalSize}` : '',
+    compressedSize ? `压缩后约: ${compressedSize}` : '',
+  ].filter(Boolean).join('\n');
+  const entries = manifest.entries.slice(0, 20).map((entry) => {
+    const entrySize = formatBytes(entry.size);
+    return `- ${entry.path}${entry.isDirectory ? '/' : ''}${entrySize ? ` (${entrySize})` : ''}`;
+  });
+  const dangerous = manifest.dangerousEntries?.length
+    ? `\n⚠️ 可疑路径: ${manifest.dangerousEntries.slice(0, 10).join(', ')}`
+    : '';
+  const note = manifest.note ? `\n清单提示: ${manifest.note}` : '';
+  const truncated = manifest.truncated ? '\n清单已截断，只展示前 200 项。' : '';
+  const guidance = manifest.supported
+    ? '\n这是压缩包目录清单摘要，不会自动解压；如需读取内容，请先确认安全目标目录再使用解压工具。'
+    : '\n该压缩格式已作为文件持久化，但当前只提供元数据；如需处理请使用系统解压工具并检查安全边界。';
+
+  return [
+    `🗜️ **压缩包: ${attachment.name}**${pathInfo}${sizeInfo ? `\n大小: ${sizeInfo}` : ''}`,
+    `\n${stats}`,
+    note,
+    dangerous,
+    truncated,
+    entries.length > 0 ? `\n\n**清单预览：**\n${entries.join('\n')}` : '',
+    guidance,
+  ].join('');
+}
+
 function processFolderAttachment(attachment: MessageAttachment): string {
   const pathInfo = attachment.path ? `\n📍 绝对路径: ${attachment.path}` : '';
   const stats = attachment.folderStats;
@@ -521,6 +666,11 @@ export function stripImagesFromMessages(messages: ModelMessage[]): ModelMessage[
       return msg;
     }
 
+    const hasAppshotContext = msg.content.some((part) => (
+      part.type === 'text'
+      && typeof part.text === 'string'
+      && (part.text.includes('<appshot') || part.text.includes('这是 Appshot 截图'))
+    ));
     const newContent: MessageContent[] = [];
     let hasImage = false;
 
@@ -529,7 +679,9 @@ export function stripImagesFromMessages(messages: ModelMessage[]): ModelMessage[
         hasImage = true;
         newContent.push({
           type: 'text',
-          text: '[用户上传了图片，但当前模型不支持直接处理图片。如需理解图片内容，请用 image_analyze 读取上下文里的图片路径；如需在图片上标注，请用 image_annotate。不要回答“没有收到图片”。]',
+          text: hasAppshotContext
+            ? '[Appshot 图片已省略；窗口文字已在同一条消息的 <appshot> 上下文中提供。请优先根据该文本回答，不要要求读取本地图片路径。]'
+            : '[用户上传了图片，但当前模型不支持直接处理图片。如需理解图片内容，请用 image_analyze 读取上下文里的图片路径；如需在图片上标注，请用 image_annotate。不要回答“没有收到图片”。]',
         });
       } else {
         newContent.push(part);

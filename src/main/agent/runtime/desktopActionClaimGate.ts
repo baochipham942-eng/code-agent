@@ -32,6 +32,7 @@ export interface DesktopActionClaimGateInput {
   assistantContent: string;
   toolCallCount: number;
   iterations: number;
+  hasDesktopEvidence?: boolean;
 }
 
 export type DesktopActionClaimGateResult =
@@ -47,7 +48,7 @@ export function applyDesktopActionClaimGate(
     return { action: 'none', content };
   }
 
-  if (input.toolCallCount > 0) {
+  if (input.toolCallCount > 0 || input.hasDesktopEvidence) {
     return { action: 'none', content };
   }
 
@@ -88,4 +89,3 @@ export function applyDesktopActionClaimGate(
     reason,
   };
 }
-

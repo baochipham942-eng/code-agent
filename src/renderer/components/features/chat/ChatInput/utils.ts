@@ -13,6 +13,8 @@ const logger = createLogger('ChatInputUtils');
 // ============================================================================
 
 export const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+export const AUDIO_MIMES = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/aac', 'audio/flac', 'audio/ogg', 'audio/webm'];
+export const VIDEO_MIMES = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska', 'video/x-msvideo'];
 
 export const CODE_EXTENSIONS: Record<string, string> = {
   '.ts': 'typescript', '.tsx': 'typescript',
@@ -32,6 +34,10 @@ export const STYLE_EXTENSIONS: Record<string, string> = {
 export const DATA_EXTENSIONS = ['.json', '.csv', '.xml', '.yaml', '.yml', '.toml'];
 export const TEXT_EXTENSIONS = ['.txt', '.md', '.markdown', '.rst', '.log'];
 export const EXCEL_EXTENSIONS = ['.xlsx', '.xls', '.xlsm', '.xlsb'];
+export const PRESENTATION_EXTENSIONS = ['.pptx', '.ppt'];
+export const ARCHIVE_EXTENSIONS = ['.zip', '.tar', '.gz', '.tgz', '.7z', '.rar'];
+export const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.oga', '.opus', '.webm'];
+export const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.m4v', '.mkv', '.avi'];
 export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 export const IGNORED_DIRS = ['node_modules', '.git', '.svn', '.hg', '__pycache__', '.DS_Store', 'dist', 'build', '.next', '.cache'];
 export const MAX_FOLDER_FILES = 50;
@@ -58,6 +64,12 @@ export function getFileCategory(file: File): { category: AttachmentCategory; lan
   if (IMAGE_MIMES.includes(mimeType) || mimeType.startsWith('image/')) {
     return { category: 'image' };
   }
+  if (AUDIO_MIMES.includes(mimeType) || AUDIO_EXTENSIONS.includes(ext) || mimeType.startsWith('audio/')) {
+    return { category: 'audio' };
+  }
+  if (VIDEO_MIMES.includes(mimeType) || VIDEO_EXTENSIONS.includes(ext) || mimeType.startsWith('video/')) {
+    return { category: 'video' };
+  }
   if (mimeType === 'application/pdf' || ext === '.pdf') {
     return { category: 'pdf' };
   }
@@ -69,6 +81,19 @@ export function getFileCategory(file: File): { category: AttachmentCategory; lan
       mimeType.includes('spreadsheet') ||
       mimeType === 'application/vnd.ms-excel') {
     return { category: 'excel' };
+  }
+  if (PRESENTATION_EXTENSIONS.includes(ext) ||
+      mimeType.includes('presentation') ||
+      mimeType === 'application/vnd.ms-powerpoint') {
+    return { category: 'presentation' };
+  }
+  if (ARCHIVE_EXTENSIONS.includes(ext) ||
+      mimeType.includes('zip') ||
+      mimeType.includes('gzip') ||
+      mimeType.includes('x-tar') ||
+      mimeType.includes('x-7z') ||
+      mimeType.includes('rar')) {
+    return { category: 'archive' };
   }
   if (CODE_EXTENSIONS[ext]) {
     return { category: 'code', language: CODE_EXTENSIONS[ext] };
@@ -83,8 +108,8 @@ export function getFileCategory(file: File): { category: AttachmentCategory; lan
   if (TEXT_EXTENSIONS.includes(ext) || mimeType === 'text/plain' || mimeType === 'text/markdown') {
     return { category: 'text', language: ext === '.md' || ext === '.markdown' ? 'markdown' : undefined };
   }
-  // 其他 Office 文档（暂不支持）
-  if (ext === '.docx' || ext === '.pptx' ||
+  // 其他 Office 文档（支持 DOCX）
+  if (ext === '.docx' ||
       mimeType.includes('officedocument') || mimeType.includes('msword')) {
     return { category: 'document' };
   }
@@ -102,6 +127,10 @@ export function shouldProcessFile(fileName: string): boolean {
     DATA_EXTENSIONS.includes(ext) ||
     TEXT_EXTENSIONS.includes(ext) ||
     EXCEL_EXTENSIONS.includes(ext) ||
+    PRESENTATION_EXTENSIONS.includes(ext) ||
+    ARCHIVE_EXTENSIONS.includes(ext) ||
+    AUDIO_EXTENSIONS.includes(ext) ||
+    VIDEO_EXTENSIONS.includes(ext) ||
     ext === '.pdf' || ext === '.html' || ext === '.htm' ||
     ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.gif' || ext === '.webp'
   );

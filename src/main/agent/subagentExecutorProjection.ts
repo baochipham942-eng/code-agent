@@ -73,8 +73,12 @@ function normalizeAttachmentCategory(category?: string, type?: string): MessageA
   }
   const validCategories = new Set<MessageAttachment['category']>([
     'image',
+    'audio',
+    'video',
     'pdf',
     'excel',
+    'presentation',
+    'archive',
     'code',
     'text',
     'data',

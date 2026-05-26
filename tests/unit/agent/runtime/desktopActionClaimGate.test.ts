@@ -51,6 +51,18 @@ describe('applyDesktopActionClaimGate', () => {
     expect(result.action).toBe('none');
   });
 
+  it('allows appshot-backed screen observations without a desktop tool call', () => {
+    const result = applyDesktopActionClaimGate({
+      latestUserMessage: '<appshot app="com.apple.finder" name="Finder">Downloads file list</appshot>',
+      assistantContent: '屏幕上显示的是 Finder 的 Downloads 文件列表。',
+      toolCallCount: 0,
+      iterations: 1,
+      hasDesktopEvidence: true,
+    });
+
+    expect(result.action).toBe('none');
+  });
+
   it('ignores non-desktop replies', () => {
     const result = applyDesktopActionClaimGate({
       latestUserMessage: '解释一下这段代码',
@@ -62,4 +74,3 @@ describe('applyDesktopActionClaimGate', () => {
     expect(result.action).toBe('none');
   });
 });
-

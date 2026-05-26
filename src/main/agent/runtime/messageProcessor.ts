@@ -361,13 +361,19 @@ export class MessageProcessor {
     const strippedRawContent = this.contextAssembly.stripInternalFormatMimicry(response.content || '');
     const handoffTail = extractHandoffProposalTail(strippedRawContent);
     const strippedContent = handoffTail.cleanedContent;
-    const latestUserContent = [...this.ctx.messages].reverse()
-      .find((message) => message.role === 'user' && message.visibility !== 'rewound')?.content;
+    const latestUserMessage = [...this.ctx.messages].reverse()
+      .find((message) => message.role === 'user' && message.visibility !== 'rewound');
+    const latestUserContent = latestUserMessage?.content;
+    const hasAppshotEvidence =
+      (typeof latestUserContent === 'string' && latestUserContent.includes('<appshot')) ||
+      latestUserMessage?.attachments?.some((attachment) => attachment.id.startsWith('appshot-')) ||
+      false;
     const desktopClaimGate = applyDesktopActionClaimGate({
       latestUserMessage: typeof latestUserContent === 'string' ? latestUserContent : undefined,
       assistantContent: strippedContent,
       toolCallCount: this.ctx.totalToolCallCount,
       iterations,
+      hasDesktopEvidence: hasAppshotEvidence,
     });
     if (desktopClaimGate.action === 'retry') {
       logger.warn('[DesktopActionClaimGate] retrying text response without desktop tool evidence', {

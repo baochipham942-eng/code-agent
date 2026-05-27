@@ -86,16 +86,21 @@
 
 ## 5. 各 WS 设计
 
-### WS1 — AI SDK 收口
-**目标**：消灭"`aiSdkAdapter` + 老 `sseStream` 双推理路"并存的维护税（历史上多次 path-drift bug 的根源）。
+### WS1 — AI SDK 收口 — ✅ Phase 1+2 已实现（分支 `feat/aisdk-finish`），Phase 3 前提被证伪、重定范围
+**目标（原）**：消灭"`aiSdkAdapter` + 老 `sseStream` 双推理路"并存的维护税。
+**目标（修正）**：把**主 agent loop + 子代理**这条推理路收口到 AI SDK（这才是 path-drift bug 的真实发生地）。"删掉 legacy providers/" 这个更大目标在 WS1 不可行——见下方 Phase 3 纠正。
 
-- **改**：`model/adapters/aiSdkAdapter.ts`（`AISDK_UNSUPPORTED_PROVIDERS` 集合）、`agent/runtime/contextAssembly/inference.ts`（fallback 路由）；全迁完删 `model/providers/` 老 sseStream。
-- **三阶段**：
-  - ① 低风险：`gemini → @ai-sdk/google`、`openrouter → @openrouter/ai-sdk-provider`（官方 provider，Alma 已在用）。
-  - ② 高风险：`zhipu`/`moonshot` 走 `@ai-sdk/openai-compatible`，**关键 quirk 以 middleware 形式带过去**——智谱并发 4 限流 + stream_options + reasoning_content 回退；Moonshot 最多 2 并发 + 无 stream_options + thinking 模式。
-  - ③ `xiaomi` 先确认是否仍在用，死了直接删；全迁完删双路。
-- **风险**：丢智谱/Moonshot 用血换来的限流和 reasoning 兜底。
-- **验证**：每阶段跑评测中心，GLM/Kimi 路径分数不回归。
+- **改（已做）**：`model/adapters/aiSdkAdapter.ts`（`AISDK_UNSUPPORTED_PROVIDERS` 清空）、迁移面=`inference.ts:runEngineInference` + `subagentExecutor.ts` 两个调用点（都 gate 在 `aiSdkSupportsProvider`）。
+- **三阶段实际落地**：
+  - **① 低风险 ✅**（commit `8479276d`）：`gemini → @ai-sdk/google`、`openrouter → @openrouter/ai-sdk-provider`（`resolveModel` switch 加 case）。无 key 没 live，结构验证（路由开关+工厂实例化）过。
+  - **② 高风险 ✅**（commit `85bc4ac2`）：`zhipu/moonshot/xiaomi` 走 `@ai-sdk/openai-compatible`，quirk 用 **openai-compatible 官方 settings**（不是 middleware）带过去：`buildVendorCompatSettings()` 的 `includeUsage`/`headers`/`transformRequestBody`（xiaomi `thinking` 字段 + `max_tokens→max_completion_tokens` + top_p；moonshot temp1.0/top_p0.95/UA）+ `inferenceViaAiSdk` 外层套 `getProviderLimiter('zhipu')`。
+  - **③ ⚠️ 原文三处假设被代码证伪**：(a) **xiaomi 不是死的**——是 MiMo（artifact text-first 核心写手 + 22 文件引用），必须迁不能删；(b) **并发限流只有 zhipu 一家**（`PROVIDER_CONCURRENCY_LIMITS` 仅声明 zhipu，env 默认 maxConcurrent=3），"Moonshot 最多 2 并发"无代码依据；(c) **reasoning_content 由 openai-compatible 原生映射成 reasoning-delta**（dist 实证），无需自写 middleware；zhipu 三态端点由 `resolveProviderBaseUrl` 处理。
+- **验证（已做）**：zhipu 全量 smoke A/B（132 case）**无回归**（aisdk 47.0%/65.7% vs legacy 45.5%/65.2%）；gpt/xiaomi/qwen/moonshot 经 adapter live smoke 工具调用正常（xiaomi 实测 vendor quirk 被真实 mimo SGP 端点接受，qwen 实测 reasoning 映射）；deepseek 此前 E2E 零回归。moonshot/xiaomi 全量 A/B 因 **groq 裁判 fallback 当日 token 配额耗尽**污染评分（与迁移无关），未取干净分。
+
+#### Phase 3「删 legacy 双路」— ❌ 原前提错误，重定为独立 epic
+**依赖审计发现**：`model/providers/` 的 17 个 legacy Provider 类**不是只给主 loop 兜底**，而是 `modelRouter` 的后端：`modelRouter.chat()`（被整个 research 子系统 researchExecutor/progressiveLoop/reportGenerator/deepResearchMode 大量调用）→ `this.inference()` → `provider.inference()`（providers Map）→ `sseStream`。此外 `modelRouter` 还提供 `detectRequiredCapabilities/getModelInfo/getFallbackConfig` 给 `inference.ts` 用。**`rm providers/` 会直接断掉 research 子系统和每个 `modelRouter.chat()` 调用方**。`shared.ts`/`providerResolution`/`retryStrategy`/`concurrencyLimiter` 还被 adapter 反向 import。
+- **结论**：WS1 收口在 Phase 1+2（主 loop+子代理已迁、验证充分，可合并）。真正"消灭 legacy 双路"= 把 `modelRouter.chat` + 全部 research 消费方 + quickModel 都迁到 AI SDK，是远超 WS1 的独立 epic，**单列后续**。
+- 只删主 loop 的 `CODE_AGENT_MODEL_ENGINE` 闸门也不划算（legacy 代码因 chat 仍在，等于丢主 loop 回退网却没减代码量）→ 暂保留闸门作回退网。
 
 ### WS2 — 导航深链卡片（扩展现有 IACT）— ✅ 已实现，待 E2E
 **⚠️ 现状修正（Explore 核出）**：Neo **已有** IACT 协议——`MessageContent.tsx` 的 `components.a` 已处理 `[文字](!send/!add/!run/!open/!preview/!copy/!ticket)`，`prompts/identity.ts` 的 `<inline_actions>` 已教模型产出，`ChatInput/index.tsx` 监听 `iact:add` 做预填。**所以 WS2 不是从零造深链**，缩小为"补 IACT 缺的**导航类**动作"，且 **in-chat 卡片纯 renderer + prompt，不需要 Tauri deep-link 插件**。

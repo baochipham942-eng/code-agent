@@ -4,6 +4,7 @@
 // ============================================================================
 
 import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import { ArrowDown } from 'lucide-react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { SearchMatch } from './ChatSearchBar';
@@ -208,6 +209,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const followedOutputSessionIdRef = useRef<string | null>(null);
   const followedOutputTurnIdRef = useRef<string | null>(null);
   const [followedOutputTurnId, setFollowedOutputTurnId] = useState<string | null>(null);
+  // 用户上滚离开底部时浮出「回到底部」按钮（贴底时隐藏）
+  const [isAtBottom, setIsAtBottom] = useState(true);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const streamSnapshot = useSessionStore((state) => state.streamSnapshot);
   const processingSessionIds = useAppStore((state) => state.processingSessionIds);
@@ -546,6 +549,14 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     [hasOutputFollowTurnOutput],
   );
 
+  // 一键回到底部并恢复跟随；抵达底部后 atBottomStateChange 会重新置位 keepActiveOutputVisible
+  const handleJumpToBottom = useCallback(() => {
+    const lastIndex = projection.turns.length - 1;
+    if (lastIndex < 0) return;
+    keepActiveOutputVisibleRef.current = true;
+    virtuosoRef.current?.scrollToIndex({ index: lastIndex, align: 'end', behavior: 'auto' });
+  }, [projection.turns.length]);
+
   // Render individual turn card
   const itemContent = useCallback(
     (index: number) => {
@@ -606,33 +617,46 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   ), []);
 
   return (
-    <Virtuoso
-      ref={virtuosoRef}
-      role="log"
-      aria-live="polite"
-      aria-label="对话消息"
-      className="h-full min-h-0 pt-3 pb-0 overflow-x-hidden"
-      scrollerRef={handleScrollerRef}
-      totalCount={projection.turns.length}
-      itemContent={itemContent}
-      followOutput={followOutput}
-      atBottomStateChange={(atBottom) => {
-        if (atBottom) {
-          keepActiveOutputVisibleRef.current = true;
-          const turnId = outputFollowTurn?.turnId ?? projection.turns[projection.turns.length - 1]?.turnId;
-          if (turnId) updateFollowedOutputTurnId(turnId);
-        }
-      }}
-      atBottomThreshold={96}
-      initialTopMostItemIndex={focusedTurnIndex >= 0 ? focusedTurnIndex : undefined}
-      startReached={handleStartReached}
-      overscan={300}
-      increaseViewportBy={{ top: 200, bottom: 200 }}
-      defaultItemHeight={80}
-      components={{
-        Header,
-        Footer,
-      }}
-    />
+    <div className="relative h-full min-h-0">
+      <Virtuoso
+        ref={virtuosoRef}
+        role="log"
+        aria-live="polite"
+        aria-label="对话消息"
+        className="h-full min-h-0 pt-3 pb-0 overflow-x-hidden"
+        scrollerRef={handleScrollerRef}
+        totalCount={projection.turns.length}
+        itemContent={itemContent}
+        followOutput={followOutput}
+        atBottomStateChange={(atBottom) => {
+          setIsAtBottom(atBottom);
+          if (atBottom) {
+            keepActiveOutputVisibleRef.current = true;
+            const turnId = outputFollowTurn?.turnId ?? projection.turns[projection.turns.length - 1]?.turnId;
+            if (turnId) updateFollowedOutputTurnId(turnId);
+          }
+        }}
+        atBottomThreshold={96}
+        initialTopMostItemIndex={focusedTurnIndex >= 0 ? focusedTurnIndex : undefined}
+        startReached={handleStartReached}
+        overscan={300}
+        increaseViewportBy={{ top: 200, bottom: 200 }}
+        defaultItemHeight={80}
+        components={{
+          Header,
+          Footer,
+        }}
+      />
+      {!isAtBottom && projection.turns.length > 0 && (
+        <button
+          type="button"
+          onClick={handleJumpToBottom}
+          aria-label="回到底部"
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center justify-center w-9 h-9 rounded-full bg-zinc-800/80 hover:bg-zinc-700/90 border border-zinc-600/50 text-zinc-200 shadow-lg backdrop-blur-sm transition-colors animate-fade-in"
+        >
+          <ArrowDown className="w-4 h-4" />
+        </button>
+      )}
+    </div>
   );
 };

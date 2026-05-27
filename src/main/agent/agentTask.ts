@@ -35,7 +35,6 @@ type PersistedAgentTaskMetadata = {
   pendingMessages?: PendingMessage[];
   blocks?: string[];
   blockedBy?: string[];
-  parentMasterTaskId?: string;
 };
 
 const AGENT_TASK_STATUSES: readonly AgentTaskStatus[] = [
@@ -132,9 +131,6 @@ function normalizePersistedMetadata(value: unknown): PersistedAgentTaskMetadata 
     pendingMessages: normalizePendingMessages(value.pendingMessages),
     blocks: normalizeStringArray(value.blocks),
     blockedBy: normalizeStringArray(value.blockedBy),
-    parentMasterTaskId: typeof value.parentMasterTaskId === 'string'
-      ? value.parentMasterTaskId
-      : undefined,
   };
 }
 
@@ -162,8 +158,6 @@ function normalizeTranscriptEntry(value: unknown): TranscriptEntry | null {
 export class AgentTask extends TaskKernel<AgentTaskStatus> {
   readonly agentType: string;
   readonly sidecarMetadata: SidecarMetadata;
-  /** 预留字段：后续派生 MasterTask 时挂接到上层任务的引用，旧 metadata 缺失时为 undefined */
-  parentMasterTaskId?: string;
 
   constructor(id: string, metadata: SidecarMetadata) {
     super(id, 'pending');
@@ -252,7 +246,6 @@ export class AgentTask extends TaskKernel<AgentTaskStatus> {
       pendingMessages: this.getPendingMessagesSnapshot(),
       blocks: Array.from(this.blocks),
       blockedBy: Array.from(this.blockedBy),
-      parentMasterTaskId: this.parentMasterTaskId,
     };
     await writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8');
   }
@@ -278,11 +271,6 @@ export class AgentTask extends TaskKernel<AgentTaskStatus> {
     // Restore dependency sets
     for (const id of meta.blocks ?? []) task.blocks.add(id);
     for (const id of meta.blockedBy ?? []) task.blockedBy.add(id);
-
-    // Restore parent MasterTask reference (旧 metadata 无此字段时保持 undefined)
-    if (meta.parentMasterTaskId) {
-      task.parentMasterTaskId = meta.parentMasterTaskId;
-    }
 
     // Load transcript
     if (existsSync(transcriptPath)) {

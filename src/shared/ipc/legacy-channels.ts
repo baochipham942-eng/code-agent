@@ -299,20 +299,6 @@ export const IPC_CHANNELS = {
   TASKLIST_SET_AUTO_ASSIGN: 'taskList:setAutoAssign',
   TASKLIST_SET_REQUIRE_APPROVAL: 'taskList:setRequireApproval',
 
-  // MasterTask channels (用户级工作单元，对应 Qoder Quest 状态机)
-  MASTER_TASK_EVENT: 'master-task:event',
-  MASTER_TASK_CREATE: 'master-task:create',
-  MASTER_TASK_LIST: 'master-task:list',
-  MASTER_TASK_LIST_IN_PROGRESS: 'master-task:listInProgress',
-  MASTER_TASK_GET_BY_ID: 'master-task:getById',
-  MASTER_TASK_UPDATE_STATUS: 'master-task:updateStatus',
-  MASTER_TASK_PAUSE: 'master-task:pause',
-  MASTER_TASK_RESUME: 'master-task:resume',
-  MASTER_TASK_CANCEL: 'master-task:cancel',
-  MASTER_TASK_APPROVE_REVIEW: 'master-task:approveReview',
-  MASTER_TASK_REJECT_REVIEW: 'master-task:rejectReview',
-  MASTER_TASK_BIND_SESSION: 'master-task:bindSession',
-
   // Checkpoint channels (Rewind UI)
   CHECKPOINT_LIST: 'checkpoint:list',
   CHECKPOINT_REWIND: 'checkpoint:rewind',

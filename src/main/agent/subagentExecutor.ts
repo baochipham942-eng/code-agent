@@ -40,8 +40,6 @@ import { getSpawnGuard, type AgentMessage } from './spawnGuard';
 import { buildChildContext, buildParentContextFromToolContext, type ParentContext } from './childContext';
 import { getPermissionModeManager } from '../permissions/modes';
 import { AgentTask, type SidecarMetadata } from './agentTask';
-import { getMasterTaskManager } from './masterTaskManager';
-import { getDatabase } from '../services/core';
 import { estimateTokens } from '../context/tokenEstimator';
 import { generateMessageId } from '../../shared/utils/id';
 import { getSubagentContextStore } from '../context/subagentContextStore';
@@ -192,23 +190,6 @@ export class SubagentExecutor {
             .catch(() => {});
         }
       };
-    }
-
-    // P3-c3: 关联 AgentTask 到 parent MasterTask（如果当前 session 已绑 master）。
-    // 关联后子 agent 的 TaskCompleted 会自动 emit MasterTaskAgentTaskCompleted 事件，
-    // 由 MasterTaskManager.attachAgentTask 内部 wrap 旧 hook 实现（不破坏上面的
-    // hookManager 转发链）。失败不阻塞主链路。
-    if (sessionId !== 'unknown') {
-      try {
-        const db = getDatabase();
-        const masterTaskId = db.getMasterTaskId(sessionId);
-        if (masterTaskId) {
-          agentTask.parentMasterTaskId = masterTaskId;
-          getMasterTaskManager().attachAgentTask(masterTaskId, agentTask);
-        }
-      } catch (err) {
-        logger.warn('[SubagentExecutor] Failed to attach AgentTask to MasterTask', err);
-      }
     }
 
     agentTask.register();

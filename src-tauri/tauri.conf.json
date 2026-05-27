@@ -94,7 +94,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/baochipham942-eng/code-agent/releases/latest/download/latest.json"
+        "https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/stable/latest.json"
       ],
       "pubkey": "DISABLED_LOCAL_BUILD_USE_TAURI_RELEASE_BUNDLE"
     }

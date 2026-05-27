@@ -316,15 +316,23 @@ export async function runtimeAssetsMetadataFromRelease(
   };
 }
 
-async function fetchLatestRelease(repo: string): Promise<GitHubReleaseResponse> {
-  const response = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+// 发布源：阿里云上海 OSS 上的 release manifest（GitHub release JSON 形状）。
+// code-agent 仓库私有后 GitHub Releases 匿名 404，分发改走 OSS（国内无需代理）。
+// manifest 形状与 GitHub release 一致，故下游 selectAsset / buildUpdateResponseFromRelease
+// / runtimeAssetsMetadataFromRelease 全部无需改动。可用 UPDATE_RELEASE_MANIFEST_URL 覆盖。
+const DEFAULT_RELEASE_MANIFEST_URL =
+  'https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/stable/release.json';
+
+async function fetchLatestRelease(_repo: string): Promise<GitHubReleaseResponse> {
+  const manifestUrl = process.env.UPDATE_RELEASE_MANIFEST_URL || DEFAULT_RELEASE_MANIFEST_URL;
+  const response = await fetch(manifestUrl, {
     headers: {
-      Accept: 'application/vnd.github+json',
+      Accept: 'application/json',
       'User-Agent': 'Agent-Neo-Update-Control-Plane',
     },
   });
   if (!response.ok) {
-    throw new Error(`GitHub Releases API returned HTTP ${response.status}`);
+    throw new Error(`Release manifest returned HTTP ${response.status}`);
   }
   return await response.json() as GitHubReleaseResponse;
 }

@@ -482,15 +482,15 @@ export class UpdateService implements Disposable {
           return updateInfo;
         }
 
-        // Invalid response, try GitHub
+        // Invalid response, try OSS release manifest fallback
         throw new Error('Invalid Vercel API response');
       } catch (serverError) {
-        logger.info('Vercel API failed, trying GitHub...', serverError);
+        logger.info('Vercel API failed, trying OSS release manifest...', serverError);
       }
 
-      // Fallback to GitHub Releases API
-      const githubUrl = 'https://api.github.com/repos/baochipham942-eng/code-agent/releases/latest';
-      logger.info(` Checking GitHub API: ${githubUrl}`);
+      // Fallback to OSS release manifest (GitHub-release-shaped JSON; repo 私有后不再直连 GitHub)
+      const githubUrl = 'https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/stable/release.json';
+      logger.info(` Checking OSS release manifest: ${githubUrl}`);
 
       try {
         const response = await this.httpGet(githubUrl);

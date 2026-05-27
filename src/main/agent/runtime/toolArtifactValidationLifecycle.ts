@@ -80,6 +80,13 @@ export async function handleModifiedArtifactValidation({
       (!isAppendTool(toolCall.name) || toolCall.arguments?.final === true || effectiveProbe.isComplete);
 
     if (!shouldRunValidation) {
+      // 普通网页 / 交互产物(light 契约且无需游戏验证)写完即视为合法完成。
+      // 标记为已通过,关闭 Xiaomi text-first 的重复触发闸(inference.ts: !artifactValidationPassed),
+      // 否则普通网页会被每轮当作新 artifact 反复生成(interactive-artifact-N),run 永不收敛。
+      // 仅对"确实无需验证"(非 append 中途、非 repair)的产物生效,不影响游戏 artifact 的分阶段验收。
+      if (!effectiveProbe.shouldValidate && !isAppendTool(toolCall.name) && !ctx.artifactRepairGuard) {
+        ctx.artifactValidationPassedTargetFile = absolutePath;
+      }
       return;
     }
 

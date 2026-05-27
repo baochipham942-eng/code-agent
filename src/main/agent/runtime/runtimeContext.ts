@@ -124,6 +124,9 @@ export interface RuntimeContext {
   forceFinalResponsePrompt?: string;
   /** Last interactive artifact path that passed runtime/browser validation in this run. */
   artifactValidationPassedTargetFile?: string;
+  /** Reused Xiaomi text-first artifact target path within this run, so repeated turns
+   *  overwrite the same file instead of nextAvailablePath minting a new interactive-artifact-N. */
+  xiaomiArtifactTextFirstTargetPath?: string;
   xiaomiArtifactTwoStage?: {
     targetFile: string;
     kind: 'breakout';

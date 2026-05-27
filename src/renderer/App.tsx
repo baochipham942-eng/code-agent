@@ -26,7 +26,6 @@ import { SkillsPanel } from './components/SkillsPanel';
 import { PreviewPanel } from './components/PreviewPanel';
 import { WorkspacePreviewPanel } from './components/WorkspacePreviewPanel';
 import { ContextPanel } from './components/ContextPanel';
-import { TaskBoardPanel } from './components/TaskBoard/TaskBoardPanel';
 import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
@@ -476,7 +475,6 @@ export const App: React.FC = () => {
         )}
         {activeWorkbenchTab === 'workspace-preview' && <WorkspacePreviewPanel />}
         {activeWorkbenchTab === 'context' && <ContextPanel />}
-        {activeWorkbenchTab === 'master-tasks' && <TaskBoardPanel />}
         {isPreviewActive && <PreviewPanel />}
       </div>
     </div>
@@ -522,7 +520,7 @@ export const App: React.FC = () => {
                     <ResizeHandle className="w-1 hover:w-1.5 bg-zinc-800 hover:bg-primary-500/50 transition-all cursor-col-resize" />
                   )}
                   {showWorkbench && (
-                    <Panel defaultSize="22" minSize="15" maxSize="45" id="right-panel">
+                    <Panel defaultSize="32" minSize="15" maxSize="45" id="right-panel">
                       {renderWorkbenchContent()}
                     </Panel>
                   )}

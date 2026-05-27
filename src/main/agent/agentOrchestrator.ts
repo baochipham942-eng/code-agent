@@ -20,8 +20,6 @@ import { ToolExecutor } from '../tools/toolExecutor';
 import { getConfirmationGate } from './confirmationGate';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
-import { getDatabase } from '../services/core';
-import { ensureMasterTaskForSession } from './ensureMasterTaskForSession';
 import type { PlanningService } from '../planning';
 import { DeepResearchMode, SemanticResearchOrchestrator } from '../research';
 import { analyzeTask } from './hybrid/taskRouter';
@@ -155,29 +153,6 @@ export class AgentOrchestrator {
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
     const sessionId = await this.resolveSessionId();
-
-    // P3-c1: 每次 session 进入 active 状态时，确保关联一个 MasterTask。
-    // 已绑 master → 仅 attachSession 幂等；未绑 → register + attachSession + 写回 master_task_id。
-    // 失败不阻塞主链路（master 子系统挂了不该让对话挂掉）。
-    if (sessionId) {
-      try {
-        const db = getDatabase();
-        const storedSession = db.getSession(sessionId);
-        if (storedSession) {
-          ensureMasterTaskForSession(
-            {
-              sessionId,
-              title: storedSession.title,
-              workingDirectory: storedSession.workingDirectory,
-              existingMasterTaskId: db.getMasterTaskId(sessionId),
-            },
-            { sessionRepo: db },
-          );
-        }
-      } catch (err) {
-        logger.warn('[AgentOrchestrator] ensureMasterTaskForSession failed (non-blocking):', err);
-      }
-    }
 
     const userMessage: Message = {
       id: clientMessageId ?? this.generateId(),

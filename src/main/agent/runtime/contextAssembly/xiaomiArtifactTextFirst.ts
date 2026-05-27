@@ -24,6 +24,11 @@ export function isBreakoutArtifactText(text: string): boolean {
 }
 
 export function shouldUseXiaomiArtifactTextFirstWrite(input: XiaomiArtifactTextFirstInput): boolean {
+  // text-first 是为 legacy 引擎下 MiMo 把大 artifact 当 tool-call JSON 会 stall 设计的绕障。
+  // AI SDK 引擎(默认)下 MiMo 能正常流式输出多个 tool-call(实测 3 tool_call / 150 delta 无截断、
+  // 文件名正常),走 text-first 反而强制单文件 + 触发 interactive-artifact-N 无限新建死循环。
+  // 故仅 legacy 引擎保留此绕障;与 inference.ts/subagentExecutor.ts 的 useAiSdk 判断对齐。
+  if (process.env.CODE_AGENT_MODEL_ENGINE !== 'legacy') return false;
   if (!input.artifactRequest && !input.artifactRepairActive) return false;
   if (input.forceFinalResponseActive) return false;
   if (input.config.provider !== 'xiaomi') return false;

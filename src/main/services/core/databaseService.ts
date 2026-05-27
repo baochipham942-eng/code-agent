@@ -452,14 +452,6 @@ export class DatabaseService {
     this.ensureDb();
     this.sessionRepo.deleteSession(sessionId, options);
   }
-  updateMasterTaskId(sessionId: string, masterTaskId: string, updatedAt?: number): void {
-    this.ensureDb();
-    this.sessionRepo.updateMasterTaskId(sessionId, masterTaskId, updatedAt);
-  }
-  getMasterTaskId(sessionId: string): string | null {
-    this.ensureDb();
-    return this.sessionRepo.getMasterTaskId(sessionId);
-  }
   updateSessionPlanTitle(sessionId: string, planTitle: string | null, updatedAt?: number): void {
     this.ensureDb();
     this.sessionRepo.updateSessionPlanTitle(sessionId, planTitle, updatedAt);

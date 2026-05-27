@@ -7,6 +7,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getMemoryDir, getMemoryIndexPath } from './indexLoader';
 import type { MemoryEntryStatus } from '../../shared/contract/memory';
+import { LIGHT_MEMORY } from '../../shared/constants';
 // Logger available for future use: createLogger('LightMemoryIPC')
 
 export { getMemoryIndexPath };
@@ -418,7 +419,7 @@ export async function getLightMemoryHealth(): Promise<LightMemoryHealthReport> {
     totalFiles: allMemoryFiles.length,
     indexExists,
     indexLineCount,
-    indexTooLong: indexLineCount > 200,
+    indexTooLong: indexLineCount > LIGHT_MEMORY.INDEX_MAX_LINES,
     missingInIndex,
     orphanInIndex: Array.from(orphanInIndex).sort(),
     invalidFrontmatter: invalidFrontmatter.sort((a, b) => a.filename.localeCompare(b.filename)),

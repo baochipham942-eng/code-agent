@@ -99,7 +99,7 @@ export interface CronExpressionConfig {
 /**
  * Action types for cron jobs
  */
-export type CronJobActionType = 'shell' | 'tool' | 'agent' | 'webhook' | 'ipc';
+export type CronJobActionType = 'shell' | 'tool' | 'agent' | 'webhook' | 'ipc' | 'memory-consolidation';
 
 /**
  * Cron job action definition
@@ -109,7 +109,8 @@ export type CronJobAction =
   | ToolAction
   | AgentAction
   | WebhookAction
-  | IpcAction;
+  | IpcAction
+  | MemoryConsolidationAction;
 
 /**
  * Shell command action
@@ -159,6 +160,17 @@ export interface IpcAction {
   type: 'ipc';
   channel: string;
   payload: unknown;
+}
+
+/**
+ * Light Memory consolidation action — runs the compress-without-loss pass over
+ * ~/.code-agent/memory/ using the quick model. An internal maintenance job; does
+ * not spin up a full agent session.
+ */
+export interface MemoryConsolidationAction {
+  type: 'memory-consolidation';
+  /** When true, compute the plan + diff but do not write to disk. */
+  dryRun?: boolean;
 }
 
 /**

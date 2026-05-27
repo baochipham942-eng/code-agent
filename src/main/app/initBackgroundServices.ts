@@ -34,7 +34,7 @@ import { initCronService, getCronService, initHeartbeatService, getHeartbeatServ
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getSkillDiscoveryService, getSkillRepositoryService, initSkillWatcher } from '../services/skills';
 import { getMainWindow } from './window';
-import { SYNC, UPDATE, getCloudApiUrl, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '../../shared/constants';
+import { SYNC, UPDATE, getCloudApiUrl, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY, MEMORY_CONSOLIDATION } from '../../shared/constants';
 import { loadSoul, watchSoulFiles } from '../prompts/soulLoader';
 import { initEventBridge } from '../services/eventing';
 // Event channel constants (post-IPC_CHANNELS deprecation)
@@ -518,6 +518,30 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
       logger.info('CronService initialized', { jobs: stats.totalJobs, active: stats.activeJobs });
     })
     .catch((error) => logger.warn('CronService initialization failed (non-blocking)', { error: String(error) }));
+
+  // Register the built-in Light Memory consolidation job (idempotent by tag).
+  // Ships in dry-run by default (MEMORY_CONSOLIDATION.DRY_RUN_DEFAULT): it logs the
+  // plan it would apply without writing, until the dry-run output is verified.
+  initCronService()
+    .then(async () => {
+      const cron = getCronService();
+      const existing = cron.listJobs({ tags: [MEMORY_CONSOLIDATION.JOB_TAG] });
+      if (existing.length > 0) return;
+      await cron.createJob({
+        name: '[Maintenance] Light Memory consolidation',
+        description: 'Compress ~/.code-agent/memory without losing information (quick model).',
+        scheduleType: 'cron',
+        schedule: { type: 'cron', expression: MEMORY_CONSOLIDATION.CRON_EXPRESSION },
+        action: { type: 'memory-consolidation', dryRun: MEMORY_CONSOLIDATION.DRY_RUN_DEFAULT },
+        enabled: true,
+        tags: [MEMORY_CONSOLIDATION.JOB_TAG],
+      });
+      logger.info('Light Memory consolidation job registered', {
+        expression: MEMORY_CONSOLIDATION.CRON_EXPRESSION,
+        dryRun: MEMORY_CONSOLIDATION.DRY_RUN_DEFAULT,
+      });
+    })
+    .catch((error) => logger.warn('Light Memory consolidation job registration failed (non-blocking)', { error: String(error) }));
 
   // Initialize Heartbeat Service
   initHeartbeatService()

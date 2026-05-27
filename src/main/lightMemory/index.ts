@@ -8,3 +8,7 @@ export { loadMemoryIndex, ensureMemoryDir, getMemoryDir, getMemoryIndexPath } fr
 export { recordSessionStart, recordSessionEnd, buildSessionMetadataBlock } from './sessionMetadata';
 export { appendConversationSummary, buildRecentConversationsBlock } from './recentConversations';
 export type { ConversationSummary } from './recentConversations';
+export { judgeConversation } from './conversationJudge';
+export type { ConversationJudgment } from './conversationJudge';
+export { consolidateLightMemory } from './consolidation';
+export type { ConsolidationReport, ConsolidationAction } from './consolidation';

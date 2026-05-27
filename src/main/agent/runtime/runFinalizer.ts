@@ -22,6 +22,7 @@ import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter
 import type { PlanningService } from '../../planning';
 import { recordSessionEnd } from '../../lightMemory/sessionMetadata';
 import { appendConversationSummary } from '../../lightMemory/recentConversations';
+import { judgeConversation } from '../../lightMemory/conversationJudge';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { generateMessageId } from '../../../shared/utils/id';
@@ -605,8 +606,12 @@ export class RunFinalizer {
   }
 
   /**
-   * Extract a conversation summary from user messages and save it.
-   * Only summarizes what the user asked — not assistant replies (following ChatGPT pattern).
+   * Judge a conversation at session end and save it to Light Memory if worth keeping.
+   * Only the user side is summarized (following the ChatGPT recent-conversations pattern);
+   * the last assistant reply is passed only as context for the judgment.
+   *
+   * Uses the quick model to judge worth / isMeeting / title / worthKnowledge, and
+   * degrades to the previous truncation heuristic on any failure (see conversationJudge).
    */
   private async extractAndSaveConversationSummary(): Promise<void> {
     const userMessages = this.ctx.messages
@@ -615,27 +620,28 @@ export class RunFinalizer {
 
     if (userMessages.length === 0) return;
 
-    // The latest user turn carries the current session topic best in multi-turn chats.
-    const latestMsg = userMessages[userMessages.length - 1];
-    const title = latestMsg.length > 50 ? latestMsg.slice(0, 50).trim() + '...' : latestMsg.trim();
-
-    // Extract highlights from recent turns so follow-up constraints replace stale first-turn text.
-    const highlights = userMessages
-      .slice(-5)
-      .map(msg => {
-        const firstLine = msg.split('\n')[0].trim();
-        return firstLine.length > 60 ? firstLine.slice(0, 60) + '...' : firstLine;
-      })
-      .filter((v, i, a) => a.indexOf(v) === i) // dedupe
+    // Last assistant text gives the judge context for the title (it is not summarized itself).
+    const lastAssistant = [...this.ctx.messages]
       .reverse()
-      .slice(0, 3);
+      .find((m: { role: string; content?: string }) =>
+        m.role === 'assistant' && typeof m.content === 'string' && m.content.trim().length > 0);
+    const lastAssistantText = typeof lastAssistant?.content === 'string' ? lastAssistant.content : undefined;
 
+    const judgment = await judgeConversation({ userMessages, lastAssistant: lastAssistantText });
+
+    // "只存值得留的" — skip trivial chats (greetings, "继续"/"ok", no-signal turns).
+    if (!judgment.worth || !judgment.title) {
+      logger.debug('[RunFinalizer] Conversation judged not worth saving, skipping summary');
+      return;
+    }
+
+    const title = judgment.isMeeting ? `[会议] ${judgment.title}` : judgment.title;
     const today = new Date().toISOString().split('T')[0];
 
     await appendConversationSummary({
       date: today,
       title: title.replace(/"/g, "'"),
-      highlights,
+      highlights: judgment.worthKnowledge,
     });
   }
 }

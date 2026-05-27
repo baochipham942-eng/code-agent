@@ -133,7 +133,7 @@ as-built 契约见 `src/shared/contract/agent.ts`：
 
 ## 9. P0 前置依赖（provider 迁移 = AI SDK 引擎，已落地 @65a61bab）
 
-1. **Bug B**（子代理非流式丢 tool call / DeepSeek DSML）→ **已修**。迁移 commit 487e3237 子代理默认走 AI SDK 适配器（SDK 原生归一工具调用），仅 gemini 留旧路径（`AISDK_UNSUPPORTED_PROVIDERS`）。deepseek/kimi/zhipu/mimo 默认全已绕开 DSML 路径。**闸1/闸2 trust-test 解锁**（待 E2E 实证子代理工具真执行）。
+1. **Bug B**（子代理非流式丢 tool call / DeepSeek DSML）→ **已修**。迁移 commit 487e3237 子代理默认走 AI SDK 适配器（SDK 原生归一工具调用），（gemini 当时留旧路径，已于 2026-05-27 全量迁移、`AISDK_UNSUPPORTED_PROVIDERS` 清空）。deepseek/kimi/zhipu/mimo 默认全已绕开 DSML 路径。**闸1/闸2 trust-test 解锁**（待 E2E 实证子代理工具真执行）。
 2. **SSE `agent_complete` 双发**（runFinalizer + route 兜底各发一次）→ **已修**（`emitAgentEvent` 对终态幂等，PR #168）。两次都在 run() 末尾，是"两个收尾信号"非"每轮 vs 收尾混淆"，本就非 goal-mode 硬阻塞。goal-mode 的 per-turn 进度靠新增 `goal_iteration`（§6）。
 
 **引擎架构**：AI SDK 迁移只换 contextAssembly/inference.ts 推理后端，未替换 conversationRuntime 循环 → 本设计的 loop 改动落在活跃默认路径上。

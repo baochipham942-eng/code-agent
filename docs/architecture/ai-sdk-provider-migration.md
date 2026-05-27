@@ -1,7 +1,7 @@
 # Provider 层迁移到 Vercel AI SDK — 设计文档
 
-> 状态：✅ **已落地并合并 main**（2026-05-23，PR #164 子代理 / #165 主 loop / #168 regression 收尾）。子代理 + 主 loop 默认走 AI SDK，`CODE_AGENT_MODEL_ENGINE=legacy` 可一键回退。
-> 本文是迁移前的设计稿（保留问题陈述与方案脉络）；**as-built 实现细节以 [ARCHITECTURE v0.16.80 M1](../ARCHITECTURE.md) 为准**。
+> 状态：✅ **全量落地**。引擎接入 + 双引擎可回退于 2026-05-23 合并 main（PR #164 子代理 / #165 主 loop / #168 regression 收尾）；**全部 provider 迁到 AI SDK 于 2026-05-27 收口**（WS1 Phase 1-2，见 §7）。`CODE_AGENT_MODEL_ENGINE=legacy` 仍可一键回退旧 modelRouter。
+> 本文 §1-§6 是迁移前的设计稿（保留问题陈述与方案脉络）；**as-built 以 §7 + [ARCHITECTURE M1](../ARCHITECTURE.md) 为准**。
 > 对标 alma(yetone) / OpenCode / CodePilot。
 
 ## 1. 为什么（问题陈述）
@@ -111,3 +111,48 @@ export async function inferenceViaAiSdk(
 ## 6. 一句话建议
 
 > 保留 Neo 的差异化（agent loop / 多 agent / 评测 / 记忆），把"接 N 个模型"这件低差异化高维护的事外包给 AI SDK。spike 已证明可行且能从根上消灭 Bug B/C 类。分发后按 P0→P3 增量切，每步 flag 可回退。
+
+---
+
+## 7. as-built — 全 provider 迁移收口（2026-05-27，WS1 Phase 1-2）
+
+5/23 完成的是「引擎接入 + 双引擎可回退」（DeepSeek/Anthropic 走专用包，其余 provider 仍经 adapter 里的 openai-compatible 通用分支或旧路径）。5/27 把剩余 provider 全部归到 AI SDK 的官方/兼容 provider 包，`AISDK_UNSUPPORTED_PROVIDERS` 清空——至此**所有 provider 都走 AI SDK 适配器**，不再有"非 OpenAI 兼容就自动降级旧路径"的逻辑。
+
+### Phase 1（commit `8479276d`）— gemini + openrouter 迁官方包
+
+| Provider | 之前 | 现在 | 包 |
+|---|---|---|---|
+| gemini | 手搓 `convertToGeminiMessages` / `handleGeminiStream`（原生 API 非 OpenAI 兼容，曾留旧路径） | `createGoogleGenerativeAI` | `@ai-sdk/google@^3.0.79` |
+| openrouter | 手搓 `normalizeJsonSchema` + 自行注入 headers | `createOpenRouter`（官方包内置 HTTP-Referer / X-Title） | `@openrouter/ai-sdk-provider@^2.9.0` |
+
+### Phase 2（commit `85bc4ac2`）— zhipu / moonshot / xiaomi 迁 openai-compatible
+
+- 三者从各自的 `BaseOpenAIProvider` 派生类，改走 `@ai-sdk/openai-compatible`。
+- 国内模型特异参数（thinking 字段、采样 temp/top_p、`max_completion_tokens` 等）由 `buildVendorCompatSettings(config)` 统一注入（`aiSdkAdapter.ts:206-246`），不再散落在各 provider class。
+- zhipu 三态端点（free→bigmodel.cn / coding→0ki-coding / 标准→0ki）由 `resolveProviderBaseUrl()` 判定；zhipu 本地免费档的**并发 limiter 移到 `inferenceViaAiSdk()` 外层**套（`aiSdkAdapter.ts:497-514`），不在 provider class 内。
+- `reasoning_content` 由 `@ai-sdk/openai-compatible` 原生映射成 `reasoning-delta`，无需额外处理。
+
+### as-built 路由全景
+
+provider 解析收敛到两处单一事实来源：
+
+```
+resolveModel()  (aiSdkAdapter.ts:249-286)         ← 按 provider 选包
+├─ deepseek            → @ai-sdk/deepseek
+├─ anthropic / claude  → @ai-sdk/anthropic
+├─ gemini              → @ai-sdk/google              (Phase 1 新)
+├─ openrouter          → @openrouter/ai-sdk-provider (Phase 1 新)
+└─ 其余(zhipu/moonshot/xiaomi/longcat/qwen/minimax/custom)
+                       → @ai-sdk/openai-compatible + buildVendorCompatSettings()
+
+providerResolution.ts  ← baseURL（resolveProviderBaseUrl）+ apiKey（resolveProviderApiKey）
+```
+
+调用 gate（`contextAssembly/inference.ts` 主 loop + `subagentExecutor.ts` 子代理）：
+`CODE_AGENT_MODEL_ENGINE !== 'legacy' && aiSdkSupportsProvider(provider)` —— 后者现**恒为 true**（unsupported 集合已空）。
+
+### 旧路径现状（P3 净删待办）
+
+- 旧手写解析层（`BaseOpenAIProvider` / `openaiWrapper.ts` / `sseStream.ts` / `parseOpenAIResponse`）+ 各旧 provider class（`ZhipuProvider`/`GeminiProvider`/…）**仍在仓库**，仅 `CODE_AGENT_MODEL_ENGINE=legacy` 时由 `modelRouter` 调用。
+- 设计稿 §4 的 **P3「删手写层」尚未执行**——双引擎稳定运行一段后再净删，届时 `AISDK_UNSUPPORTED_PROVIDERS` 集合本身也可删除。
+- 设计稿 §3/§5 提到的 `@ai-sdk-tool/parser`（prompt-based tool 兜底）**最终未引入**：全部在用 provider 都原生支持 function calling，无需兜底。

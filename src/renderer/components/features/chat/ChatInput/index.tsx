@@ -28,7 +28,6 @@ import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowse
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useComposerStore } from '../../../../stores/composerStore';
-import { useSkillStore } from '../../../../stores/skillStore';
 import { useSwarmStore } from '../../../../stores/swarmStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { ComboSkillCard } from './ComboSkillCard';
@@ -47,13 +46,6 @@ import { toast } from '../../../../hooks/useToast';
 import { parseGoalCommand, isGoalCommand, normalizeGoalCommand } from './parseGoalCommand';
 import { buildGoalNoticeMessage } from '../goalNotice';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
-import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
-import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
-import {
-  buildCapabilitySemanticSuggestions,
-  CapabilitySuggestionStrip,
-  type SkillRecommendationView,
-} from './CapabilitySuggestionStrip';
 import {
   applyAgentMentionSuggestion,
   buildDirectRoutingPlaceholder,
@@ -154,16 +146,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const buildContext = useComposerStore((state) => state.buildContext);
   const routingMode = useComposerStore((state) => state.routingMode);
   const targetAgentIds = useComposerStore((state) => state.targetAgentIds);
-  const selectedSkillIds = useComposerStore((state) => state.selectedSkillIds);
-  const setSelectedSkillIds = useComposerStore((state) => state.setSelectedSkillIds);
-  const selectedConnectorIds = useComposerStore((state) => state.selectedConnectorIds);
-  const setSelectedConnectorIds = useComposerStore((state) => state.setSelectedConnectorIds);
-  const selectedMcpServerIds = useComposerStore((state) => state.selectedMcpServerIds);
-  const setSelectedMcpServerIds = useComposerStore((state) => state.setSelectedMcpServerIds);
-  const skillRecommendations = useSkillStore((state) => state.recommendations);
-  const fetchSkillRecommendations = useSkillStore((state) => state.fetchRecommendations);
-  const mountRecommendedSkill = useSkillStore((state) => state.mountSkill);
-  const { items: workbenchCapabilityItems } = useWorkbenchCapabilityRegistry();
   const agentEntries = useAgentRegistryStore((state) => state.entries);
   const activeAgentId = useAppStore((state) => state.activeAgentId);
   const setActiveAgentId = useAppStore((state) => state.setActiveAgentId);
@@ -763,57 +745,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const statusStreaming = useStatusStore((s) => s.isStreaming);
 
   useEffect(() => {
-    const input = value.trim();
-    if (!currentSessionId || input.length < 2 || input.startsWith('/')) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      void fetchSkillRecommendations(input);
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [currentSessionId, fetchSkillRecommendations, value]);
-
-  const visibleSkillRecommendations = useMemo(() => (
-    skillRecommendations
-      .filter((recommendation) => !selectedSkillIds.includes(recommendation.skillName))
-      .slice(0, 3)
-  ), [selectedSkillIds, skillRecommendations]);
-
-  const capabilitySuggestions = useMemo(() => {
-    const skillRecommendationNames = new Set(visibleSkillRecommendations.map((recommendation) => recommendation.skillName));
-    return buildCapabilitySemanticSuggestions(value, workbenchCapabilityItems)
-      .filter((capability) => capability.kind !== 'skill' || !skillRecommendationNames.has(capability.id))
-      .slice(0, 5);
-  }, [value, visibleSkillRecommendations, workbenchCapabilityItems]);
-
-  const handleRecommendedSkillMount = useCallback(async (recommendation: SkillRecommendationView) => {
-    setSelectedSkillIds(Array.from(new Set([...selectedSkillIds, recommendation.skillName])));
-    const mounted = await mountRecommendedSkill(recommendation.skillName, recommendation.libraryId);
-    if (mounted) {
-      toast.success(`已挂载 ${recommendation.skillName}`);
-    }
-  }, [mountRecommendedSkill, selectedSkillIds, setSelectedSkillIds]);
-
-  const handleCapabilitySuggestionSelect = useCallback((capability: WorkbenchCapabilityRegistryItem) => {
-    if (capability.kind === 'skill') {
-      setSelectedSkillIds(Array.from(new Set([...selectedSkillIds, capability.id])));
-    } else if (capability.kind === 'connector') {
-      setSelectedConnectorIds(Array.from(new Set([...selectedConnectorIds, capability.id])));
-    } else {
-      setSelectedMcpServerIds(Array.from(new Set([...selectedMcpServerIds, capability.id])));
-    }
-    inputAreaRef.current?.focus();
-  }, [
-    selectedConnectorIds,
-    selectedMcpServerIds,
-    selectedSkillIds,
-    setSelectedConnectorIds,
-    setSelectedMcpServerIds,
-    setSelectedSkillIds,
-  ]);
-
-  useEffect(() => {
     if (!currentSessionId) {
       setSessionModelOverride(null);
       return;
@@ -941,15 +872,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {/* Suggestion Bar - show when input is empty */}
         {value.trim().length === 0 && suggestions.length > 0 && (
           <SuggestionBar suggestions={suggestions} onSelect={handleSuggestionSelect} />
-        )}
-
-        {value.trim().length > 0 && (
-          <CapabilitySuggestionStrip
-            skillRecommendations={visibleSkillRecommendations}
-            capabilitySuggestions={capabilitySuggestions}
-            onSkillMount={(recommendation) => void handleRecommendedSkillMount(recommendation)}
-            onCapabilitySelect={handleCapabilitySuggestionSelect}
-          />
         )}
 
         {/* Codex 风格融合：去掉明显边框 + 阴影，只用极弱 bg 区分输入区跟聊天内容 */}

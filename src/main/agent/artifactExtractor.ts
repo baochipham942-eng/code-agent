@@ -4,7 +4,34 @@
 
 import type { Artifact } from '../../shared/contract/message';
 
-let artifactCounter = 0;
+type ArtifactType = Artifact['type'];
+
+function hashString(value: string): string {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function artifactId(type: ArtifactType, content: string, index: number): string {
+  return `artifact_${type}_${index}_${hashString(content)}`;
+}
+
+function pushArtifact(
+  artifacts: Artifact[],
+  type: ArtifactType,
+  content: string,
+  title?: string,
+): void {
+  artifacts.push({
+    id: artifactId(type, content, artifacts.length + 1),
+    type,
+    content: content.trim(),
+    version: 1,
+    ...(title ? { title } : {}),
+  });
+}
 
 /**
  * 扫描消息内容中的代码块，提取 artifact（chart / spreadsheet / mermaid / generative_ui）
@@ -16,61 +43,33 @@ export function extractArtifacts(content: string): Artifact[] {
   // Match ```chart blocks
   const chartRegex = /```chart\n([\s\S]*?)```/g;
   while ((match = chartRegex.exec(content)) !== null) {
-    artifacts.push({
-      id: `artifact_${++artifactCounter}`,
-      type: 'chart',
-      content: match[1].trim(),
-      version: 1,
-      title: tryExtractTitle(match[1]),
-    });
+    pushArtifact(artifacts, 'chart', match[1], tryExtractTitle(match[1]));
   }
 
   // Match ```spreadsheet blocks
   const spreadsheetRegex = /```spreadsheet\n([\s\S]*?)```/g;
   while ((match = spreadsheetRegex.exec(content)) !== null) {
-    artifacts.push({
-      id: `artifact_${++artifactCounter}`,
-      type: 'spreadsheet',
-      content: match[1].trim(),
-      version: 1,
-      title: tryExtractTitle(match[1]),
-    });
+    pushArtifact(artifacts, 'spreadsheet', match[1], tryExtractTitle(match[1]));
   }
 
   // Match ```mermaid blocks
   const mermaidRegex = /```mermaid\n([\s\S]*?)```/g;
   while ((match = mermaidRegex.exec(content)) !== null) {
-    artifacts.push({
-      id: `artifact_${++artifactCounter}`,
-      type: 'mermaid',
-      content: match[1].trim(),
-      version: 1,
-    });
+    pushArtifact(artifacts, 'mermaid', match[1]);
   }
 
   // Match ```html blocks (generative_ui) - only substantial HTML (>500 chars)
   const htmlRegex = /```html\n([\s\S]*?)```/g;
   while ((match = htmlRegex.exec(content)) !== null) {
     if (match[1].length > 500) {
-      artifacts.push({
-        id: `artifact_${++artifactCounter}`,
-        type: 'generative_ui',
-        content: match[1].trim(),
-        version: 1,
-        title: tryExtractHtmlTitle(match[1]),
-      });
+      pushArtifact(artifacts, 'generative_ui', match[1], tryExtractHtmlTitle(match[1]));
     }
   }
 
   // Match ```question-form blocks — design brief 收集表单（先问后做）
   const questionFormRegex = /```question-form\s*\n([\s\S]*?)```/g;
   while ((match = questionFormRegex.exec(content)) !== null) {
-    artifacts.push({
-      id: `artifact_${++artifactCounter}`,
-      type: 'question_form',
-      content: match[1].trim(),
-      version: 1,
-    });
+    pushArtifact(artifacts, 'question_form', match[1]);
   }
 
   return artifacts;

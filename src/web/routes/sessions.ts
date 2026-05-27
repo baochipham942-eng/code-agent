@@ -12,6 +12,7 @@ import {
 import type { ActiveAgentLoop } from './agent';
 import { SessionCreateBodySchema } from './sessionBodySchemas';
 import type { WebRouteLogger } from './routeTypes';
+import { extractArtifacts } from '../../main/agent/artifactExtractor';
 
 interface SessionManagerLike {
   listSessions(options: { includeArchived?: boolean }): Promise<unknown[]>;
@@ -71,13 +72,15 @@ interface SessionsRouterDeps {
   activeAgentLoops: Map<string, ActiveAgentLoop>;
 }
 
-function mapSupabaseMessage(row: SupabaseMessageRow): Pick<Message, 'id' | 'role' | 'content' | 'timestamp' | 'toolCalls'> {
+function mapSupabaseMessage(row: SupabaseMessageRow): Pick<Message, 'id' | 'role' | 'content' | 'timestamp' | 'toolCalls' | 'artifacts'> {
+  const artifacts = row.role === 'assistant' ? extractArtifacts(row.content) : [];
   return {
     id: row.id,
     role: row.role,
     content: row.content,
     timestamp: row.timestamp,
     toolCalls: row.tool_calls || [],
+    ...(artifacts.length > 0 ? { artifacts } : {}),
   };
 }
 

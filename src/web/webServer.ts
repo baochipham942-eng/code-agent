@@ -269,9 +269,24 @@ async function initializeWebMcpServices(configService: ConfigServiceForBootstrap
   }
 }
 
+async function initializeWebPluginSystem(): Promise<void> {
+  try {
+    const { initPluginSystem } = await import('../main/plugins');
+    await initPluginSystem();
+    logger.info('Plugin system initialized');
+    broadcastSSE('mcp:event', {
+      type: 'capabilities_changed',
+      data: [{ server: 'plugins' }],
+    });
+  } catch (error) {
+    logger.warn('Plugin system initialization failed (non-blocking):', (error as Error).message);
+  }
+}
+
 export type WebCapabilityBootstrapOptions = {
   initializeSkills?: (configService: ConfigServiceForBootstrap) => Promise<void>;
   initializeMcp?: (configService: ConfigServiceForBootstrap) => Promise<void>;
+  initializePlugins?: () => Promise<void>;
 };
 
 export function startWebCapabilityBootstrap(
@@ -280,9 +295,11 @@ export function startWebCapabilityBootstrap(
 ): void {
   const initializeSkills = options.initializeSkills ?? initializeWebSkillServices;
   const initializeMcp = options.initializeMcp ?? initializeWebMcpServices;
+  const initializePlugins = options.initializePlugins ?? initializeWebPluginSystem;
 
   void (async () => {
     logger.info('Starting web capability bootstrap in background');
+    await initializePlugins();
     await initializeSkills(configService);
     await initializeMcp(configService);
     logger.info('Web capability bootstrap complete');

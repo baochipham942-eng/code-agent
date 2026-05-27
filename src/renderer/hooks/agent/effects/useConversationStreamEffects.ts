@@ -1,7 +1,7 @@
 // useAgentConversationStreamEffects - turn_start, message_delta, message_snapshot, stream_chunk, stream_reasoning, turn_end, message, routing_resolved, hook_trigger
 import { useEffect, useRef } from 'react';
 import { generateMessageId } from '@shared/utils/id';
-import type { ContentPart, HookTriggerEventData, Message, ToolCall } from '@shared/contract';
+import type { HookTriggerEventData, Message, ToolCall } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
@@ -9,6 +9,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { buildGoalNoticeMessage } from '../../../components/features/chat/goalNotice';
 import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
+import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
 
 const logger = createLogger('useAgent');
 
@@ -40,8 +41,11 @@ interface MessageSnapshotPayload extends TurnIdPayload {
 interface AssistantMessagePayload extends TurnIdPayload {
   id?: string;
   content?: string;
+  reasoning?: string;
+  thinking?: string;
   toolCalls?: ToolCall[];
-  contentParts?: ContentPart[];
+  contentParts?: Message['contentParts'];
+  artifacts?: Message['artifacts'];
 }
 
 interface RoutingResolvedPayload {
@@ -136,17 +140,38 @@ function normalizeToolCalls(value: unknown): ToolCall[] | undefined {
   return value.map(normalizeToolCall).filter((toolCall): toolCall is ToolCall => Boolean(toolCall));
 }
 
-function normalizeContentParts(value: unknown): ContentPart[] | undefined {
+function isArtifactType(value: unknown): value is NonNullable<Message['artifacts']>[number]['type'] {
+  return (
+    value === 'chart'
+    || value === 'spreadsheet'
+    || value === 'document'
+    || value === 'generative_ui'
+    || value === 'mermaid'
+    || value === 'question_form'
+  );
+}
+
+function normalizeArtifacts(value: unknown): Message['artifacts'] | undefined {
   if (!Array.isArray(value)) return undefined;
-  const parts = value.flatMap((raw): ContentPart[] => {
-    if (!isRecord(raw)) return [];
-    if (raw.type === 'text' && typeof raw.text === 'string') {
-      return [{ type: 'text', text: raw.text }];
-    }
-    if (raw.type === 'tool_call' && typeof raw.toolCallId === 'string') {
-      return [{ type: 'tool_call', toolCallId: raw.toolCallId }];
-    }
-    return [];
+  const artifacts = value.filter((item): item is NonNullable<Message['artifacts']>[number] => {
+    if (!isRecord(item)) return false;
+    return (
+      typeof item.id === 'string'
+      && isArtifactType(item.type)
+      && typeof item.content === 'string'
+      && typeof item.version === 'number'
+    );
+  });
+  return artifacts.length > 0 ? artifacts : undefined;
+}
+
+function normalizeContentParts(value: unknown): Message['contentParts'] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const parts = value.filter((item): item is NonNullable<Message['contentParts']>[number] => {
+    if (!isRecord(item)) return false;
+    if (item.type === 'text') return typeof item.text === 'string';
+    if (item.type === 'tool_call') return typeof item.toolCallId === 'string';
+    return false;
   });
   return parts.length > 0 ? parts : undefined;
 }
@@ -154,13 +179,17 @@ function normalizeContentParts(value: unknown): ContentPart[] | undefined {
 function normalizeAssistantMessagePayload(data: unknown): AssistantMessagePayload | null {
   if (!isRecord(data)) return null;
   const toolCalls = normalizeToolCalls(data.toolCalls);
+  const artifacts = normalizeArtifacts(data.artifacts);
   const contentParts = normalizeContentParts(data.contentParts);
   return {
     ...(getStringField(data, 'id') ? { id: getStringField(data, 'id') } : {}),
     ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
     ...(getStringField(data, 'content') !== undefined ? { content: getStringField(data, 'content') } : {}),
+    ...(getStringField(data, 'reasoning') !== undefined ? { reasoning: getStringField(data, 'reasoning') } : {}),
+    ...(getStringField(data, 'thinking') !== undefined ? { thinking: getStringField(data, 'thinking') } : {}),
     ...(toolCalls ? { toolCalls } : {}),
     ...(contentParts ? { contentParts } : {}),
+    ...(artifacts ? { artifacts } : {}),
   };
 }
 
@@ -458,11 +487,10 @@ export function applyConversationStreamEvent(
           actions.updateMessage(targetMessage.id, {
             content: mergeCommittedAssistantContent(existingContent, newContent),
             toolCalls: mergedToolCalls,
-            // 采用服务端已算好的交错顺序（text/tool_call 块），让 AssistantMessage 走
-            // ContentPartsRenderer 而非 fallback。fallback 永远把正文渲染在工具组之上，
-            // 会把"先搜索后总结"这类时序倒过来（WebSearch 折叠块落到答案下方）。
-            // 仅在事件带 contentParts 时覆盖，纯文本/纯工具轮次保持原有 fallback。
+            ...(messageData.reasoning !== undefined ? { reasoning: messageData.reasoning } : {}),
+            ...(messageData.thinking !== undefined ? { thinking: messageData.thinking } : {}),
             ...(messageData.contentParts ? { contentParts: messageData.contentParts } : {}),
+            ...(messageData.artifacts ? { artifacts: messageData.artifacts } : {}),
           });
         }
       }
@@ -508,8 +536,8 @@ export const useConversationStreamEffects = ({
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: AgentEvent) => {
       const currentSessionId = useSessionStore.getState().currentSessionId;
-      const eventSessionId = event.sessionId || currentSessionId || null;
-      const isCurrentSessionEvent = !eventSessionId || eventSessionId === currentSessionId;
+      const eventSessionId = getAgentEventSessionId(event);
+      const isCurrentSessionEvent = isAgentEventForCurrentSession(event, currentSessionId);
       const getFreshMessages = () => useSessionStore.getState().messages;
       const logHandledEvent = () => {
         const silentEvents = ['message_delta', 'message_snapshot', 'stream_chunk', 'stream_reasoning'];

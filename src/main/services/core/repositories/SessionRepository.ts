@@ -9,6 +9,7 @@ import type { Session, SessionStatus, TokenUsage, Message, ModelProvider, TodoIt
 import { normalizeAgentEngineSession } from '../../../../shared/contract/agentEngine';
 import type { ContextInterventionAction, ContextInterventionSnapshot } from '../../../../shared/contract/contextView';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../../../shared/utils/messageAttachments';
+import { extractArtifacts } from '../../../agent/artifactExtractor';
 import { createLogger } from '../../infra/logger';
 import { generateFallbackShortDescription } from '../../../model/providers/shared';
 import type { StoredSession, StoredMessage } from '../../../protocol/types';
@@ -804,10 +805,12 @@ export class SessionRepository {
   }
 
   private rowToMessage(row: SQLiteRow): Message {
+    const content = stripInlineAttachmentBlocks((row.content as string) || '');
+    const artifacts = row.role === 'assistant' ? extractArtifacts(content) : [];
     return {
       id: row.id as string,
       role: row.role as Message['role'],
-      content: stripInlineAttachmentBlocks((row.content as string) || ''),
+      content,
       timestamp: row.timestamp as number,
       visibility: (row.visibility as Message['visibility']) || 'active',
       hiddenByRewindId: (row.hidden_by_rewind_id as string) || undefined,
@@ -819,7 +822,8 @@ export class SessionRepository {
       effortLevel: (row.effort_level as Message['effortLevel']) || undefined,
       contentParts: parseStoredJson<Message['contentParts']>(row.content_parts),
       metadata: parseStoredJson<Message['metadata']>(row.metadata),
-      compaction: parseStoredJson<Message['compaction']>(row.compaction)
+      compaction: parseStoredJson<Message['compaction']>(row.compaction),
+      ...(artifacts.length > 0 ? { artifacts } : {}),
     };
   }
 

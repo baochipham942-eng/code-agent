@@ -19,6 +19,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent};
 mod appshots;
 mod native_app_icon;
 mod native_desktop;
+mod pip;
 
 use appshots::{
     appshots_read_image_data_url, appshots_report_composer_slot, appshots_set_enabled,
@@ -32,6 +33,7 @@ use native_desktop::{
     desktop_start_collector, desktop_stop_audio_rec, desktop_stop_collector,
     desktop_update_analyze_text, NativeDesktopState,
 };
+use pip::{pip_frame, pip_hide, pip_show};
 
 const SERVER_URL: &str = "http://localhost:8180";
 const HEALTH_URL: &str = "http://localhost:8180/api/health";
@@ -1122,7 +1124,10 @@ fn main() {
             appshots_trigger,
             appshots_read_image_data_url,
             appshots_report_composer_slot,
-            appshots_set_enabled
+            appshots_set_enabled,
+            pip_show,
+            pip_frame,
+            pip_hide
         ])
         .setup(|app| {
             if cfg!(debug_assertions) && is_server_running() {

@@ -15,6 +15,7 @@ import type { AgentEffectsProps } from '../useAgentEffects';
 import { applyToolOutputDelta } from '../../../utils/toolOutputStreaming';
 import { useCapabilityGapStore } from '../../../stores/capabilityGapStore';
 import type { CapabilityGap } from '../../../../shared/contract/capabilityGap';
+import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
 
 const logger = createLogger('useAgent');
 
@@ -37,8 +38,8 @@ export const useToolExecutionEffects = ({
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: AgentEvent) => {
       const currentSessionId = useSessionStore.getState().currentSessionId;
-      const eventSessionId = event.sessionId || currentSessionId || null;
-      const isCurrentSessionEvent = !eventSessionId || eventSessionId === currentSessionId;
+      const eventSessionId = getAgentEventSessionId(event);
+      const isCurrentSessionEvent = isAgentEventForCurrentSession(event, currentSessionId);
       const getFreshMessages = () => useSessionStore.getState().messages;
       const logHandledEvent = () => {
         const silentEvents = ['stream_tool_call_delta'];

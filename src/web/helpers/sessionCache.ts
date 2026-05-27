@@ -7,7 +7,7 @@
 
 // ── 类型 ──
 
-import type { Message, MessageAttachment, PersistenceHealth } from '../../shared/contract';
+import type { Artifact, Message, MessageAttachment, PersistenceHealth } from '../../shared/contract';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 
 export interface CachedToolCall {
@@ -29,6 +29,7 @@ export interface CachedMessage {
   toolCalls?: CachedToolCall[];
   thinking?: string;
   contentParts?: CachedContentPart[];
+  artifacts?: Artifact[];
   attachments?: MessageAttachment[];
 }
 
@@ -121,6 +122,7 @@ export function toCachedSessionMessages(messages: Message[]): CachedMessage[] {
         toolCalls: message.toolCalls as CachedToolCall[] | undefined,
         thinking: message.thinking || message.reasoning,
         contentParts: message.contentParts as CachedContentPart[] | undefined,
+        artifacts: message.artifacts,
         attachments: sanitizeAttachmentsForPersistence(message.attachments),
       };
     })

@@ -48,6 +48,7 @@ import type {
 } from './agentRouteTypes';
 import type { WebRouteLogger } from './routeTypes';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
+import { extractArtifacts } from '../../main/agent/artifactExtractor';
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
 // key = toolCallId, value = { resolve, reject, timer }
@@ -792,6 +793,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 无论 assistantText 是否为空都要缓存 userMsg，否则工具-only 轮次会丢失上下文
       const assistantMsgId = `msg-${Date.now()}-a`;
       const cached = [...(sessionMessages.get(sessionId) || []), userMsg];
+      const assistantArtifacts = assistantText ? extractArtifacts(assistantText) : [];
       if (!runCancelled && (assistantText || assistantToolCalls.length > 0)) {
         // 只在有交错时才附带 contentParts（纯文本或纯工具调用无需）
         const hasInterleaving = contentParts.length > 1 || (contentParts.length === 1 && assistantToolCalls.length > 0 && assistantText);
@@ -803,6 +805,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           toolCalls: assistantToolCalls.length > 0 ? assistantToolCalls : undefined,
           thinking: assistantThinking || undefined,
           contentParts: hasInterleaving ? contentParts : undefined,
+          artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
         });
         // 注意：toolResultMessages 不存入 sessionMessages，避免 role:'tool' 消息
         // 被传入 createAgentLoop 导致类型不匹配。工具结果只存到 DB/Supabase。
@@ -874,6 +877,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
                 timestamp: Date.now(),
                 toolCalls: assistantToolCalls.length > 0 ? assistantToolCalls : undefined,
                 thinking: assistantThinking || undefined,
+                artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
               } as import('../../shared/contract').Message);
             }
           } else {
@@ -897,6 +901,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
                 timestamp: Date.now(),
                 toolCalls: assistantToolCalls.length > 0 ? assistantToolCalls : undefined,
                 thinking: assistantThinking || undefined,
+                artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
               } as import('../../shared/contract').Message);
             }
           }

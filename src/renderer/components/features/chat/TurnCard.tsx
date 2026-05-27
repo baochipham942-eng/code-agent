@@ -118,6 +118,13 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   // Codex 式外壳：user 消息 + "Worked for Xm Ys" 折叠/展开按钮 + 最终 AI 结论
   // 中间的 thinking/tool_groups/中间 AI 文本根据 expanded 切换显示
   const lastIndex = displayNodes.length - 1;
+  // 末个展示节点是否「正在流式输出文字」—— 若是，正文自带内联光标，状态槽不再重复渲染光标
+  const lastDisplay = displayNodes[lastIndex];
+  const lastNodeIsStreamingText =
+    isStreaming &&
+    !!lastDisplay &&
+    lastDisplay.kind !== 'tool_group' &&
+    lastDisplay.node.type === 'assistant_text';
   const runningToolStartTime = useMemo(
     () => getRunningToolStartTime(turn.nodes),
     [turn.nodes],
@@ -243,11 +250,13 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               );
             })}
 
-            {/* Streaming indicator at bottom of active turn */}
+            {/* Streaming indicator at bottom of active turn.
+                正文正在流式输出文字时，正文已自带内联光标 → 状态槽隐去光标避免重复。 */}
             {isStreaming && turn.nodes.length > 0 && (
               <StreamingIndicator
                 startTime={turn.startTime}
                 runningToolStartTime={runningToolStartTime}
+                showCaret={!lastNodeIsStreamingText}
               />
             )}
           </>

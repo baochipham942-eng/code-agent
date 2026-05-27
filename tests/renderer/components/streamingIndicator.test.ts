@@ -6,25 +6,26 @@ import {
 } from '../../../src/renderer/components/features/chat/StreamingIndicator';
 
 describe('StreamingIndicator state', () => {
-  it('does not show the stuck phase for a long turn while no tool is running', () => {
-    const state = getStreamingIndicatorState(409 * 60 + 10);
+  it('stays in calm active mode when no tool is running, regardless of turn duration', () => {
+    // 健康的长生成（哪怕跑了很久）不算异常 —— 不升级、不报警
+    const state = getStreamingIndicatorState(undefined);
 
-    expect(state.phase.label).toBe('仍在处理...');
-    expect(state.isStuck).toBe(false);
+    expect(state.mode).toBe('active');
+    expect(state.longRunningTool).toBe(false);
   });
 
-  it('does not show the stuck phase when the turn is old but the running tool is fresh', () => {
-    const state = getStreamingIndicatorState(120, 20);
+  it('stays in active mode while a running tool is still fresh', () => {
+    const state = getStreamingIndicatorState(20);
 
-    expect(state.phase.label).toBe('仍在处理...');
-    expect(state.isStuck).toBe(false);
+    expect(state.mode).toBe('active');
+    expect(state.longRunningTool).toBe(false);
   });
 
-  it('shows the stuck phase only after a running tool crosses the stuck threshold', () => {
-    const state = getStreamingIndicatorState(120, 91);
+  it('surfaces the calm long-tool notice only after a tool genuinely runs long', () => {
+    const state = getStreamingIndicatorState(46);
 
-    expect(state.phase.label).toBe('工具仍在执行');
-    expect(state.isStuck).toBe(true);
+    expect(state.mode).toBe('long-tool');
+    expect(state.longRunningTool).toBe(true);
   });
 
   it('uses the oldest live tool execution start and ignores preparing or completed tools', () => {

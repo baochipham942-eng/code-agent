@@ -11,15 +11,17 @@ import {
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { logCollector, type LogEntry, type LogLevel, type LogSource, type LogStatus } from './logCollector.js';
+import { promises as fsp } from 'node:fs';
+import { homedir } from 'node:os';
+import { join as pathJoin, resolve as pathResolve, sep as pathSep } from 'node:path';
+import { CONFIG_DIR_NEW } from '../config/configPaths.js';
 
 // Log Bridge URL for fetching logs from running Electron app
 const LOG_BRIDGE_URL = 'http://127.0.0.1:51820';
 
-interface BridgeExecuteResult {
-  success: boolean;
-  output?: string;
-  error?: string;
-}
+// 设计决策（WS5b）：本 MCP server 只暴露只读/安全能力。控屏（computer）/反向命令执行
+// （execute_command）不 MCP 化——外部 agent 要控屏必须由 Neo 主导（走 agentEngine），不能
+// 反向通过 MCP 控制本机。详见 docs/designs/ws5b-computeruse-mcp-security.md。
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -65,17 +67,6 @@ function parseStatus(value: unknown): Record<string, unknown> | null {
   return isRecord(value) ? value : null;
 }
 
-function parseBridgeExecuteResult(value: unknown): BridgeExecuteResult {
-  if (!isRecord(value) || typeof value.success !== 'boolean') {
-    return { success: false, error: 'Invalid bridge response' };
-  }
-  return {
-    success: value.success,
-    output: typeof value.output === 'string' ? value.output : undefined,
-    error: typeof value.error === 'string' ? value.error : undefined,
-  };
-}
-
 // Fetch logs from the HTTP bridge (when running as standalone MCP server)
 async function fetchLogsFromBridge(source: string, count: number = 50): Promise<LogEntry[]> {
   try {
@@ -111,8 +102,11 @@ async function fetchStatusFromBridge(): Promise<Record<string, unknown> | null> 
 export class CodeAgentMCPServer {
   private server: Server;
   private isRunning: boolean = false;
+  /** 解析 eval 结果时的工作目录（其下的 .code-agent/ 存放 eval-baseline.json / eval-trend.json）。 */
+  private readonly workingDirectory: string;
 
-  constructor(_options?: { transport?: string; port?: number; host?: string; enableWriteTools?: boolean; workingDirectory?: string }) {
+  constructor(options?: { transport?: string; port?: number; host?: string; enableWriteTools?: boolean; workingDirectory?: string }) {
+    this.workingDirectory = options?.workingDirectory ?? process.cwd();
     this.server = new Server(
       {
         name: 'code-agent',
@@ -260,7 +254,7 @@ export class CodeAgentMCPServer {
       throw new Error(`Unknown resource: ${uri}`);
     });
 
-    // List available tools
+    // List available tools — 只读/安全能力；控屏 / 反向命令执行不 MCP 化（见文件头注释）。
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       return {
         tools: [
@@ -289,75 +283,11 @@ export class CodeAgentMCPServer {
             },
           },
           {
-            name: 'clear_logs',
-            description: 'Clear logs from a specific source or all sources',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                source: {
-                  type: 'string',
-                  enum: ['browser', 'agent', 'tool', 'all'],
-                  description: 'Log source to clear',
-                },
-              },
-              required: ['source'],
-            },
-          },
-          {
             name: 'get_status',
             description: 'Get current Agent Neo status and statistics',
             inputSchema: {
               type: 'object',
               properties: {},
-            },
-          },
-          {
-            name: 'execute_command',
-            description: 'Execute a command on the running Agent Neo. Commands: browser_action, run_test, ping',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                command: {
-                  type: 'string',
-                  enum: ['browser_action', 'run_test', 'ping'],
-                  description: 'Command to execute',
-                },
-                params: {
-                  type: 'object',
-                  description: 'Command parameters. For browser_action: {action, url, selector, text, tabId}. For run_test: {name: "self_test" | "generation_selector"}',
-                },
-              },
-              required: ['command'],
-            },
-          },
-          {
-            name: 'computer',
-            description: 'Drive macOS UI (mouse, keyboard, Accessibility, browser smart actions). Forwards to the running Agent Neo main process. Requires Agent Neo to be running. Action enum and full param reference: see Agent Neo vision/ComputerTool.',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                action: {
-                  type: 'string',
-                  description: 'click, doubleClick, rightClick, move, type, key, scroll, drag, mouse_down, mouse_up, open_application, write_clipboard, computer_batch, hold_key, triple_click, cursor_position, get_state, observe, get_ax_elements, get_windows, diagnose_app, locate_element, locate_text, locate_role, smart_click, smart_type, smart_hover, get_elements',
-                },
-                x: { type: 'number' },
-                y: { type: 'number' },
-                toX: { type: 'number' },
-                toY: { type: 'number' },
-                text: { type: 'string' },
-                key: { type: 'string' },
-                modifiers: { type: 'array', items: { type: 'string' } },
-                selector: { type: 'string' },
-                role: { type: 'string' },
-                name: { type: 'string' },
-                axPath: { type: 'string' },
-                targetApp: { type: 'string' },
-                direction: { type: 'string', enum: ['up', 'down', 'left', 'right'] },
-                amount: { type: 'number' },
-                actions: { type: 'array', description: 'For computer_batch: list of sub-actions' },
-              },
-              required: ['action'],
-              additionalProperties: true,
             },
           },
           {
@@ -382,6 +312,45 @@ export class CodeAgentMCPServer {
                 prompt: { type: 'string' },
               },
               additionalProperties: true,
+            },
+          },
+          {
+            name: 'eval-query',
+            description: 'Query Agent Neo evaluation results (read-only). Reads the eval baseline (global pass rate / average score / per-case pass-fail-score) and recent run trend from the working directory\'s .code-agent/eval-baseline.json and eval-trend.json. Useful for an external agent to inspect Neo\'s own benchmark health.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                view: {
+                  type: 'string',
+                  enum: ['summary', 'cases', 'trend', 'all'],
+                  description: 'summary = global metrics; cases = per-case results; trend = recent run history; all = everything. Default summary.',
+                },
+                status: {
+                  type: 'string',
+                  enum: ['passed', 'failed', 'all'],
+                  description: '[cases] Filter case results by status. Default all.',
+                },
+                trendCount: {
+                  type: 'number',
+                  description: '[trend] Number of most-recent trend points to return. Default 10.',
+                },
+                workingDirectory: {
+                  type: 'string',
+                  description: 'Override the working directory whose .code-agent/ holds eval results. Defaults to the server working directory.',
+                },
+              },
+            },
+          },
+          {
+            name: 'appshots-query',
+            description: 'List and read Agent Neo\'s persisted window captures (appshots) — read-only history of user-triggered hotkey window snapshots stored under <CODE_AGENT_DATA_DIR or ~/.code-agent>/appshots/. This does NOT trigger a live capture (that needs the running app); it reads past captures from disk. Set includeDataUrl=true (or pass an explicit path inside the appshots dir) to embed a capture\'s PNG as image content.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                limit: { type: 'number', description: 'Max captures to list, newest first. Default 10.' },
+                includeDataUrl: { type: 'boolean', description: 'Embed the newest capture (or the path-specified one) as image content. Default false (paths only).' },
+                path: { type: 'string', description: 'Absolute path of a specific capture to read as image content. Must resolve inside the appshots directory.' },
+              },
             },
           },
         ],
@@ -419,23 +388,6 @@ export class CodeAgentMCPServer {
         };
       }
 
-      if (name === 'clear_logs') {
-        const source = (args?.source as string) || 'all';
-        if (source === 'all') {
-          logCollector.clearAll();
-        } else {
-          logCollector.clear(source as LogSource);
-        }
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Cleared ${source} logs`,
-            },
-          ],
-        };
-      }
-
       if (name === 'get_status') {
         const status = logCollector.getStatus();
         return {
@@ -448,70 +400,14 @@ export class CodeAgentMCPServer {
         };
       }
 
-      if (name === 'execute_command') {
-        const command = args?.command as string;
-        const params = (args?.params as Record<string, unknown>) || {};
-
-        if (!command) {
-          return {
-            content: [{ type: 'text', text: 'Error: Missing command' }],
-            isError: true,
-          };
-        }
-
+      if (name === 'screenshot') {
         try {
-          const response = await fetch(`${LOG_BRIDGE_URL}/execute`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ command, params }),
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            return {
-              content: [{ type: 'text', text: `Error: ${errorText}` }],
-              isError: true,
-            };
-          }
-
-          const payload: unknown = await response.json();
-          const result = parseBridgeExecuteResult(payload);
-          return {
-            content: [
-              {
-                type: 'text',
-                text: result.success
-                  ? result.output || 'Command executed successfully'
-                  : `Error: ${result.error}`,
-              },
-            ],
-            isError: !result.success,
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `Failed to connect to Agent Neo. Make sure it's running. Error: ${error}`,
-              },
-            ],
-            isError: true,
-          };
-        }
-      }
-
-      if (name === 'computer' || name === 'screenshot') {
-        try {
-          const { ComputerTool } = await import('../tools/vision/ComputerTool.js');
           const { screenshotTool } = await import('../tools/vision/screenshot.js');
-          const tool = name === 'computer' ? ComputerTool : screenshotTool;
-          const os = await import('node:os');
-          const path = await import('node:path');
           const ctx = {
-            workingDirectory: path.join(os.homedir(), '.code-agent'),
+            workingDirectory: pathJoin(homedir(), CONFIG_DIR_NEW),
             requestPermission: async () => true,
           };
-          const result = await tool.execute((args ?? {}) as Record<string, unknown>, ctx as never);
+          const result = await screenshotTool.execute((args ?? {}) as Record<string, unknown>, ctx as never);
           return {
             content: [
               {
@@ -530,6 +426,151 @@ export class CodeAgentMCPServer {
                 type: 'text',
                 text: `Tool execution failed: ${error instanceof Error ? error.message : String(error)}`,
               },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      if (name === 'eval-query') {
+        try {
+          const view = (args?.view as string) || 'summary';
+          const statusFilter = (args?.status as string) || 'all';
+          const trendCount = typeof args?.trendCount === 'number' ? (args.trendCount as number) : 10;
+          const workDir = (args?.workingDirectory as string) || this.workingDirectory;
+
+          const { BaselineManager } = await import('../testing/ci/baselineManager.js');
+          const { TrendTracker } = await import('../testing/ci/trendTracker.js');
+          const baseline = await new BaselineManager(workDir).load();
+
+          if (!baseline && (view === 'summary' || view === 'cases')) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `No eval baseline found under ${pathJoin(workDir, CONFIG_DIR_NEW)}. Run an evaluation first, or pass workingDirectory pointing at a project whose .code-agent/ holds eval-baseline.json.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          const out: Record<string, unknown> = { workingDirectory: workDir };
+          if (baseline && (view === 'summary' || view === 'all')) {
+            out.summary = {
+              ...baseline.globalMetrics,
+              updatedAt: baseline.updatedAt,
+              updatedBy: baseline.updatedBy,
+            };
+          }
+          if (baseline && (view === 'cases' || view === 'all')) {
+            const cases = Object.entries(baseline.caseResults)
+              .filter(([, r]) => statusFilter === 'all' || r.status === statusFilter)
+              .map(([testId, r]) => ({
+                testId,
+                status: r.status,
+                score: r.score,
+                lastPassedAt: r.lastPassedAt ?? null,
+              }));
+            out.caseCount = cases.length;
+            out.cases = cases;
+          }
+          if (view === 'trend' || view === 'all') {
+            out.trend = await new TrendTracker(workDir).getRecent(trendCount);
+          }
+
+          return { content: [{ type: 'text', text: JSON.stringify(out, null, 2) }] };
+        } catch (error) {
+          return {
+            content: [
+              { type: 'text', text: `eval-query failed: ${error instanceof Error ? error.message : String(error)}` },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      if (name === 'appshots-query') {
+        try {
+          const limit = typeof args?.limit === 'number' ? (args.limit as number) : 10;
+          const includeDataUrl = args?.includeDataUrl === true;
+          const explicitPath = args?.path as string | undefined;
+
+          const dataDir = process.env.CODE_AGENT_DATA_DIR || pathJoin(homedir(), CONFIG_DIR_NEW);
+          const appshotsDir = pathJoin(dataDir, 'appshots');
+          const appshotsRoot = pathResolve(appshotsDir);
+
+          // 路径穿越防护：显式 path 必须落在 appshots 目录内。
+          const resolveInsideDir = (p: string): string | null => {
+            const resolved = pathResolve(p);
+            return resolved === appshotsRoot || resolved.startsWith(appshotsRoot + pathSep) ? resolved : null;
+          };
+
+          let fileNames: string[];
+          try {
+            fileNames = (await fsp.readdir(appshotsDir)).filter(
+              (f) => f.startsWith('appshot-') && f.endsWith('.png'),
+            );
+          } catch {
+            return {
+              content: [{ type: 'text', text: `No appshots directory at ${appshotsDir} (no captures yet).` }],
+            };
+          }
+
+          const captures = await Promise.all(
+            fileNames.map(async (f) => {
+              const full = pathJoin(appshotsDir, f);
+              let sizeBytes = 0;
+              try {
+                sizeBytes = (await fsp.stat(full)).size;
+              } catch {
+                /* ignore unreadable file */
+              }
+              const matched = /appshot-(\d+)\.png$/.exec(f);
+              const capturedAtMs = matched ? Number(matched[1]) : 0;
+              return { path: full, fileName: f, capturedAtMs, sizeBytes };
+            }),
+          );
+          captures.sort((a, b) => b.capturedAtMs - a.capturedAtMs);
+          const limited = captures.slice(0, Math.max(0, limit));
+
+          const content: Array<
+            { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+          > = [
+            {
+              type: 'text',
+              text: JSON.stringify({ appshotsDir, count: captures.length, captures: limited }, null, 2),
+            },
+          ];
+
+          if (includeDataUrl || explicitPath) {
+            const target = explicitPath ? resolveInsideDir(explicitPath) : (limited[0]?.path ?? null);
+            if (explicitPath && !target) {
+              return {
+                content: [
+                  { type: 'text', text: `Refused: path is outside the appshots directory (${appshotsDir}).` },
+                ],
+                isError: true,
+              };
+            }
+            if (target) {
+              try {
+                const buf = await fsp.readFile(target);
+                content.push({ type: 'image', data: buf.toString('base64'), mimeType: 'image/png' });
+              } catch (e) {
+                content.push({
+                  type: 'text',
+                  text: `Failed to read capture ${target}: ${e instanceof Error ? e.message : String(e)}`,
+                });
+              }
+            }
+          }
+
+          return { content };
+        } catch (error) {
+          return {
+            content: [
+              { type: 'text', text: `appshots-query failed: ${error instanceof Error ? error.message : String(error)}` },
             ],
             isError: true,
           };

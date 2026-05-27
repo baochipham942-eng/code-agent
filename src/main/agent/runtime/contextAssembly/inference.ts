@@ -773,8 +773,14 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       });
     const xiaomiTextFirstTargetPath = useXiaomiTextFirstArtifactWrite
       ? ctx.runtime.artifactRepairGuard?.targetFile
+        || ctx.runtime.xiaomiArtifactTextFirstTargetPath
         || resolveXiaomiArtifactTextFirstTargetPath(userRequestText, ctx.runtime.workingDirectory)
       : null;
+    // 路径稳定:同一 run 内复用首次解析出的 text-first 目标文件,避免每轮 nextAvailablePath
+    // 递增出新文件(interactive-artifact-5/6/7…)。repair 仍以 artifactRepairGuard.targetFile 为准。
+    if (xiaomiTextFirstTargetPath && !ctx.runtime.artifactRepairGuard) {
+      ctx.runtime.xiaomiArtifactTextFirstTargetPath = xiaomiTextFirstTargetPath;
+    }
     const xiaomiTextFirstArtifactRepairActive = Boolean(ctx.runtime.artifactRepairGuard);
     const xiaomiTextFirstIsBreakoutCore =
       Boolean(xiaomiTextFirstTargetPath)

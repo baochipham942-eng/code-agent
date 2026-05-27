@@ -115,7 +115,7 @@ export class CLIDatabaseService {
       try {
         Database = cliRequire('better-sqlite3') as typeof import('better-sqlite3');
       } catch (error) {
-        throw new Error(`Failed to load better-sqlite3: ${error instanceof Error ? error.message : error}`);
+        throw new Error(`Failed to load better-sqlite3: ${error instanceof Error ? error.message : error}`, { cause: error });
       }
     }
 
@@ -197,6 +197,14 @@ export class CLIDatabaseService {
 
     try {
       this.db.exec(`ALTER TABLE messages ADD COLUMN attachments TEXT`);
+    } catch {
+      // 列已存在
+    }
+
+    // content_parts 列：保留 text/tool_call 的交错顺序。缺失时 renderer 落 fallback
+    // （正文恒在工具组之上），会把"先搜索后总结"的时序倒过来。
+    try {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN content_parts TEXT`);
     } catch {
       // 列已存在
     }
@@ -760,8 +768,8 @@ export class CLIDatabaseService {
     if (!this.db) throw new Error('Database not initialized');
 
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, content_parts)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const attachmentsMeta = message.attachments?.map(a => ({
@@ -782,7 +790,8 @@ export class CLIDatabaseService {
       message.timestamp,
       message.toolCalls ? JSON.stringify(message.toolCalls) : null,
       message.toolResults ? JSON.stringify(message.toolResults) : null,
-      attachmentsMeta ? JSON.stringify(attachmentsMeta) : null
+      attachmentsMeta ? JSON.stringify(attachmentsMeta) : null,
+      message.contentParts ? JSON.stringify(message.contentParts) : null
     );
 
     // 更新 session 的 updated_at
@@ -813,6 +822,7 @@ export class CLIDatabaseService {
       toolCalls: row.tool_calls ? parseJson<NonNullable<Message['toolCalls']>>(String(row.tool_calls)) : undefined,
       toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
       attachments: row.attachments ? parseJson<NonNullable<Message['attachments']>>(String(row.attachments)) : undefined,
+      contentParts: row.content_parts ? parseJson<NonNullable<Message['contentParts']>>(String(row.content_parts)) : undefined,
     }));
   }
 
@@ -835,6 +845,7 @@ export class CLIDatabaseService {
       timestamp: row.timestamp as number,
       toolCalls: row.tool_calls ? parseJson<NonNullable<Message['toolCalls']>>(String(row.tool_calls)) : undefined,
       toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
+      contentParts: row.content_parts ? parseJson<NonNullable<Message['contentParts']>>(String(row.content_parts)) : undefined,
     }));
   }
 

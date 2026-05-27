@@ -196,6 +196,109 @@ describe('mergeCommittedAssistantContent', () => {
   });
 });
 
+describe('applyConversationStreamEvent contentParts adoption', () => {
+  it('adopts contentParts from the message event so tool/text order is preserved', () => {
+    // Reproduces the WebSearch ordering bug: the server emits the correct
+    // interleaved contentParts ([tool_call, text]) on the `message` event, but
+    // the renderer used to drop it and fall back to content-above-tools.
+    let messages: Message[] = [
+      {
+        id: 'turn-1',
+        role: 'assistant',
+        content: '',
+        timestamp: 100,
+        toolCalls: [
+          { id: 'call_A', name: 'WebSearch', arguments: { query: 'latest' } },
+        ],
+      },
+    ];
+    const state = {
+      currentTurnMessageId: 'turn-1',
+      committedAssistantMessageIds: new Set<string>(),
+    };
+
+    applyConversationStreamEvent(
+      {
+        type: 'message',
+        data: {
+          id: 'assistant-1',
+          turnId: 'turn-1',
+          content: '这是搜索后的简报。',
+          toolCalls: [
+            { id: 'call_A', name: 'WebSearch', arguments: { query: 'latest' } },
+          ],
+          contentParts: [
+            { type: 'tool_call', toolCallId: 'call_A' },
+            { type: 'text', text: '这是搜索后的简报。' },
+          ],
+        },
+      },
+      state,
+      {
+        addMessage: () => {},
+        updateMessage: (id, updates) => {
+          messages = messages.map((message) => (
+            message.id === id ? { ...message, ...updates } : message
+          ));
+        },
+        setMessages: (nextMessages) => {
+          messages = nextMessages;
+        },
+        getMessages: () => messages,
+        queueUpdate: () => {},
+      },
+    );
+
+    expect(messages[0]?.contentParts).toEqual([
+      { type: 'tool_call', toolCallId: 'call_A' },
+      { type: 'text', text: '这是搜索后的简报。' },
+    ]);
+  });
+
+  it('does not clobber existing contentParts when the message event omits them', () => {
+    let messages: Message[] = [
+      {
+        id: 'turn-1',
+        role: 'assistant',
+        content: 'preamble',
+        timestamp: 100,
+        contentParts: [
+          { type: 'text', text: 'preamble' },
+          { type: 'tool_call', toolCallId: 'call_A' },
+        ],
+      },
+    ];
+    const state = {
+      currentTurnMessageId: 'turn-1',
+      committedAssistantMessageIds: new Set<string>(),
+    };
+
+    applyConversationStreamEvent(
+      {
+        type: 'message',
+        data: { id: 'assistant-1', turnId: 'turn-1', content: 'preamble' },
+      },
+      state,
+      {
+        addMessage: () => {},
+        updateMessage: (id, updates) => {
+          messages = messages.map((message) => (
+            message.id === id ? { ...message, ...updates } : message
+          ));
+        },
+        setMessages: () => {},
+        getMessages: () => messages,
+        queueUpdate: () => {},
+      },
+    );
+
+    expect(messages[0]?.contentParts).toEqual([
+      { type: 'text', text: 'preamble' },
+      { type: 'tool_call', toolCallId: 'call_A' },
+    ]);
+  });
+});
+
 describe('applyConversationStreamEvent streaming accumulator', () => {
   it('routes stream chunks to the local accumulator when available', () => {
     const appendStreamingMessageDelta = vi.fn();

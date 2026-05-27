@@ -1,7 +1,7 @@
 // useAgentConversationStreamEffects - turn_start, message_delta, message_snapshot, stream_chunk, stream_reasoning, turn_end, message, routing_resolved, hook_trigger
 import { useEffect, useRef } from 'react';
 import { generateMessageId } from '@shared/utils/id';
-import type { HookTriggerEventData, Message, ToolCall } from '@shared/contract';
+import type { ContentPart, HookTriggerEventData, Message, ToolCall } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
@@ -41,6 +41,7 @@ interface AssistantMessagePayload extends TurnIdPayload {
   id?: string;
   content?: string;
   toolCalls?: ToolCall[];
+  contentParts?: ContentPart[];
 }
 
 interface RoutingResolvedPayload {
@@ -135,14 +136,31 @@ function normalizeToolCalls(value: unknown): ToolCall[] | undefined {
   return value.map(normalizeToolCall).filter((toolCall): toolCall is ToolCall => Boolean(toolCall));
 }
 
+function normalizeContentParts(value: unknown): ContentPart[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const parts = value.flatMap((raw): ContentPart[] => {
+    if (!isRecord(raw)) return [];
+    if (raw.type === 'text' && typeof raw.text === 'string') {
+      return [{ type: 'text', text: raw.text }];
+    }
+    if (raw.type === 'tool_call' && typeof raw.toolCallId === 'string') {
+      return [{ type: 'tool_call', toolCallId: raw.toolCallId }];
+    }
+    return [];
+  });
+  return parts.length > 0 ? parts : undefined;
+}
+
 function normalizeAssistantMessagePayload(data: unknown): AssistantMessagePayload | null {
   if (!isRecord(data)) return null;
   const toolCalls = normalizeToolCalls(data.toolCalls);
+  const contentParts = normalizeContentParts(data.contentParts);
   return {
     ...(getStringField(data, 'id') ? { id: getStringField(data, 'id') } : {}),
     ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
     ...(getStringField(data, 'content') !== undefined ? { content: getStringField(data, 'content') } : {}),
     ...(toolCalls ? { toolCalls } : {}),
+    ...(contentParts ? { contentParts } : {}),
   };
 }
 
@@ -440,6 +458,11 @@ export function applyConversationStreamEvent(
           actions.updateMessage(targetMessage.id, {
             content: mergeCommittedAssistantContent(existingContent, newContent),
             toolCalls: mergedToolCalls,
+            // 采用服务端已算好的交错顺序（text/tool_call 块），让 AssistantMessage 走
+            // ContentPartsRenderer 而非 fallback。fallback 永远把正文渲染在工具组之上，
+            // 会把"先搜索后总结"这类时序倒过来（WebSearch 折叠块落到答案下方）。
+            // 仅在事件带 contentParts 时覆盖，纯文本/纯工具轮次保持原有 fallback。
+            ...(messageData.contentParts ? { contentParts: messageData.contentParts } : {}),
           });
         }
       }

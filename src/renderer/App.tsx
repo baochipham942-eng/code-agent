@@ -522,7 +522,7 @@ export const App: React.FC = () => {
                     <ResizeHandle className="w-1 hover:w-1.5 bg-zinc-800 hover:bg-primary-500/50 transition-all cursor-col-resize" />
                   )}
                   {showWorkbench && (
-                    <Panel defaultSize="22" minSize="15" maxSize="45" id="right-panel">
+                    <Panel defaultSize="32" minSize="15" maxSize="45" id="right-panel">
                       {renderWorkbenchContent()}
                     </Panel>
                   )}

@@ -1,34 +1,28 @@
 // ============================================================================
-// StreamingIndicator - Phase-based streaming status with elapsed timer
+// StreamingIndicator — 生成期间的「安静在场」信号
+//
+//   active   ：一个呼吸光标 = 「还活着」。无计时、无升级，覆盖绝大多数回合，
+//              包括健康地跑了好几分钟的长生成 —— 长 ≠ 异常，跳秒表只会制造焦虑。
+//   long-tool：唯一值得浮现的「真信号」—— 某个工具确实跑了很久。给一条中性、
+//              平静的提示（绝不用警告色/惊悚措辞），并附运行时长。
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { Brain, LoaderCircle, AlertTriangle, StopCircle } from 'lucide-react';
+import { StopCircle } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
 
 interface StreamingIndicatorProps {
+  /** 回合开始时间。保留给调用方语义，不再用于「按耗时升级」。 */
   startTime: number;
   runningToolStartTime?: number;
   onForceStop?: () => void;
+  /** 正文已自带内联光标时（正在流式输出文字），状态槽隐去光标避免重复。 */
+  showCaret?: boolean;
 }
 
-// Phase thresholds (seconds) and their display config
-// 默认态 0-30s 保持 Codex 式克制：dots + 灰字；30s+ 再升级图标和颜色
-const PHASES = [
-  { threshold: 0,  label: '思考中...',       color: 'text-zinc-400', icon: null },
-  { threshold: 30, label: '分析中...',       color: 'text-zinc-300', icon: Brain },
-  { threshold: 60, label: '仍在处理...',      color: 'text-zinc-400', icon: LoaderCircle },
-  { threshold: 90, label: '工具仍在执行',      color: 'text-amber-300', icon: AlertTriangle },
-] as const;
-
-const STUCK_THRESHOLD_SECONDS = 90;
-
-function getPhase(elapsedSeconds: number) {
-  for (let i = PHASES.length - 1; i >= 0; i--) {
-    if (elapsedSeconds >= PHASES[i].threshold) return PHASES[i];
-  }
-  return PHASES[0];
-}
+// 工具真正连续运行到这个时长，才是唯一值得提示的条件。
+// 回合总耗时不算 —— 健康生成动辄数分钟，那里放计时器只会徒增焦虑。
+const LONG_TOOL_NOTICE_SECONDS = 45;
 
 function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -36,21 +30,17 @@ function formatElapsed(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export function getStreamingIndicatorState(
-  elapsedSeconds: number,
-  runningToolElapsedSeconds?: number,
-) {
-  const safeElapsed = Math.max(0, elapsedSeconds);
-  const toolStuck =
-    typeof runningToolElapsedSeconds === 'number' &&
-    runningToolElapsedSeconds >= STUCK_THRESHOLD_SECONDS;
-  const phaseElapsed = toolStuck
-    ? safeElapsed
-    : Math.min(safeElapsed, STUCK_THRESHOLD_SECONDS - 1);
+export type StreamingIndicatorMode = 'active' | 'long-tool';
 
+export function getStreamingIndicatorState(
+  runningToolElapsedSeconds?: number,
+): { mode: StreamingIndicatorMode; longRunningTool: boolean } {
+  const longRunningTool =
+    typeof runningToolElapsedSeconds === 'number' &&
+    runningToolElapsedSeconds >= LONG_TOOL_NOTICE_SECONDS;
   return {
-    phase: getPhase(phaseElapsed),
-    isStuck: toolStuck,
+    mode: longRunningTool ? 'long-tool' : 'active',
+    longRunningTool,
   };
 }
 
@@ -67,63 +57,55 @@ export function getRunningToolStartTime(nodes: TraceNode[]): number | undefined 
   return runningStarts.length > 0 ? Math.min(...runningStarts) : undefined;
 }
 
-export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({ startTime, runningToolStartTime, onForceStop }) => {
-  const [elapsed, setElapsed] = useState(0);
+export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
+  runningToolStartTime,
+  onForceStop,
+  showCaret = true,
+}) => {
   const [runningToolElapsed, setRunningToolElapsed] = useState<number | undefined>(undefined);
 
   useEffect(() => {
-    const updateElapsed = () => {
-      const now = Date.now();
-      setElapsed(Math.floor((now - startTime) / 1000));
+    const update = () => {
       setRunningToolElapsed(
         runningToolStartTime !== undefined
-          ? Math.floor((now - runningToolStartTime) / 1000)
+          ? Math.floor((Date.now() - runningToolStartTime) / 1000)
           : undefined,
       );
     };
-
-    updateElapsed();
-    const interval = setInterval(updateElapsed, 1000);
-
+    update();
+    const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
-  }, [startTime, runningToolStartTime]);
+  }, [runningToolStartTime]);
 
-  const { phase, isStuck } = getStreamingIndicatorState(elapsed, runningToolElapsed);
-  const Icon = phase.icon;
+  const { mode } = getStreamingIndicatorState(runningToolElapsed);
 
+  // 长跑工具 —— 唯一真正值得浮现的状态。中性、平静、信息性：不用警告色，不用惊悚措辞。
+  if (mode === 'long-tool') {
+    return (
+      <div className="flex items-center gap-2 py-1 text-zinc-400">
+        <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-pulse" />
+        <span className="text-xs">执行中</span>
+        {runningToolElapsed !== undefined && (
+          <span className="text-xs font-mono text-zinc-500">{formatElapsed(runningToolElapsed)}</span>
+        )}
+        {onForceStop && (
+          <button
+            onClick={onForceStop}
+            className="flex items-center gap-1 px-2 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 bg-zinc-500/10 hover:bg-zinc-500/20 border border-zinc-500/30 rounded transition-colors"
+          >
+            <StopCircle className="w-3 h-3" />
+            停止
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // active：仅一个呼吸光标 = 「还活着」，别无他物。正文正在流式时由正文自带光标，此处隐去。
+  if (!showCaret) return null;
   return (
-    <div className="flex items-center gap-2 py-1">
-      {/* Phase icon or pulsing dots for initial phase */}
-      {Icon ? (
-        <Icon
-          className={`w-3.5 h-3.5 ${phase.color} ${
-            Icon === LoaderCircle ? 'animate-spin' : phase.color.includes('red') ? '' : 'animate-pulse'
-          }`}
-        />
-      ) : (
-        <div className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '0ms' }} />
-          <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '150ms' }} />
-          <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '300ms' }} />
-        </div>
-      )}
-
-      {/* Phase label */}
-      <span className={`text-xs ${phase.color}`}>{phase.label}</span>
-
-      {/* Elapsed timer */}
-      <span className="text-xs font-mono text-zinc-500">已运行 {formatElapsed(elapsed)}</span>
-
-      {/* Force stop button for truly long-running tool executions */}
-      {isStuck && onForceStop && (
-        <button
-          onClick={onForceStop}
-          className="flex items-center gap-1 px-2 py-0.5 text-xs text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded transition-colors"
-        >
-          <StopCircle className="w-3 h-3" />
-          停止
-        </button>
-      )}
+    <div className="py-1" aria-label="生成中">
+      <span className="streaming-caret text-sm leading-none">▎</span>
     </div>
   );
 };

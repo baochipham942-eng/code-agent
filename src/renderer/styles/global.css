@@ -410,6 +410,54 @@ pre code {
 .typing-dot:nth-child(2) { animation-delay: 0.2s; }
 .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
+/* ----------------------------------------------------------------------------
+   流式文本：Alma 式平滑揭示 + 呼吸光标
+   - .streaming-text > *  ：新出现的块级元素淡入上浮（只在 mount 时跑一次，
+     已完成的文字不会重播；仅作用于流式中的 assistant 内容）
+   - .with-caret 末块 ::after ：当前书写头处的呼吸光标，贯穿等待/流式
+   ---------------------------------------------------------------------------- */
+
+@keyframes streamingTextReveal {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes streamingCaretPulse {
+  0%, 100% { opacity: 0.3;  transform: scaleY(1); }
+  50%      { opacity: 0.85; transform: scaleY(1.06); }
+}
+
+.streaming-text > * {
+  animation: streamingTextReveal 0.38s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* 末块内联光标（markdown / 纯文本两种 wrapper 通用） */
+.streaming-text.with-caret > :last-child::after {
+  content: "▎";
+  display: inline-block;
+  margin-left: 1px;
+  color: var(--brand-primary);
+  font-weight: 400;
+  animation: streamingCaretPulse 1.2s ease-in-out infinite;
+}
+
+/* 独立光标（无正文时由状态槽渲染，作为「还活着」的安静信号） */
+.streaming-caret {
+  color: var(--brand-primary);
+  font-weight: 400;
+  animation: streamingCaretPulse 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streaming-text > *,
+  .streaming-text.with-caret > :last-child::after,
+  .streaming-caret {
+    animation: none;
+  }
+  .streaming-text.with-caret > :last-child::after,
+  .streaming-caret { opacity: 0.7; }
+}
+
 /* ============================================================================
    Component Classes
    ============================================================================ */

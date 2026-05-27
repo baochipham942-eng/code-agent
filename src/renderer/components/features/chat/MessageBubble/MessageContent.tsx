@@ -964,7 +964,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
   if (isStreaming && !streamingNeedsMarkdown) {
     return (
-      <div className="text-sm leading-relaxed break-words prose prose-invert prose-sm max-w-none">
+      <div className="text-sm leading-relaxed break-words prose prose-invert prose-sm max-w-none streaming-text with-caret">
         <span className="whitespace-pre-wrap">
           {filterSystemTags(content)}
         </span>
@@ -972,8 +972,10 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     );
   }
 
+  // 流式中的 markdown 内容才加揭示动画 + 内联呼吸光标；已完成消息不加（避免重播/常驻光标）
+  const streamingDecor = isStreaming ? ' streaming-text with-caret' : '';
   return (
-    <div className="text-sm leading-relaxed break-words prose prose-invert prose-sm max-w-none">
+    <div className={`text-sm leading-relaxed break-words prose prose-invert prose-sm max-w-none${streamingDecor}`}>
       <MarkdownRenderer content={filteredContent} components={components} />
     </div>
   );

@@ -39,7 +39,10 @@ import { recordStreamingPerformanceCounter } from '../utils/streamingPerformance
 
 export { resolveDirectRouting } from './agent/useAgentIPC';
 
-const STREAMING_MESSAGE_FLUSH_INTERVAL_MS = 500;
+// 流式增量从 accumulator 推进 React state 的节流间隔。
+// 越小 → 文字到达越连续（更平滑）；markdown 重渲染另有 96ms 节流兜底，
+// 故这里压到 150ms 主要让纯文本流不再「半秒蹦一坨」，又不至于过度重渲染。
+const STREAMING_MESSAGE_FLUSH_INTERVAL_MS = 150;
 
 function buildStreamingDeltaChanges(
   message: Message,

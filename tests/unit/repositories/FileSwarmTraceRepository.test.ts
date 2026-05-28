@@ -157,6 +157,23 @@ describe('FileSwarmTraceRepository', () => {
     expect(detail!.agents[0].tokensOut).toBe(100);
   });
 
+  it('startRun 同 runId 二次写入时替换旧 JSONL，不残留旧事件', () => {
+    repo.startRun(startRun({ id: 'run-replace', startedAt: 1_000_000, totalAgents: 1 }));
+    repo.appendEvent(appendEvent({ runId: 'run-replace', seq: 0, timestamp: 1_500, summary: 'old-event' }));
+    repo.closeRun(closeRun({ id: 'run-replace', endedAt: 2_000_000, completedCount: 1 }));
+
+    repo.startRun(startRun({ id: 'run-replace', startedAt: 3_000_000, totalAgents: 2 }));
+    repo.appendEvent(appendEvent({ runId: 'run-replace', seq: 0, timestamp: 3_500, summary: 'new-event' }));
+
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith('run-replace.jsonl'));
+    expect(files).toHaveLength(1);
+    const detail = repo.getRunDetail('run-replace');
+    expect(detail!.run.startedAt).toBe(3_000_000);
+    expect(detail!.run.totalAgents).toBe(2);
+    expect(detail!.run.status).toBe('running');
+    expect(detail!.events.map((e) => e.summary)).toEqual(['new-event']);
+  });
+
   it('listRuns 按 startedAt 倒序 + limit 截断', () => {
     repo.startRun(startRun({ id: 'r-old', startedAt: new Date('2026-01-01T12:00:00').getTime() }));
     repo.closeRun(closeRun({ id: 'r-old', endedAt: 1_000_000_000 }));

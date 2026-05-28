@@ -22,12 +22,15 @@ describe('createSwarmTraceRepo (Phase 3 dispatch)', () => {
   let db: BetterSqlite3.Database;
   let tmpDir: string;
   let savedEnv: string | undefined;
+  let savedDataDir: string | undefined;
 
   beforeEach(() => {
     db = new Database(':memory:');
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-factory-'));
     savedEnv = process.env[ENV_KEY];
+    savedDataDir = process.env.CODE_AGENT_DATA_DIR;
     delete process.env[ENV_KEY];
+    delete process.env.CODE_AGENT_DATA_DIR;
   });
 
   afterEach(() => {
@@ -43,6 +46,8 @@ describe('createSwarmTraceRepo (Phase 3 dispatch)', () => {
     }
     if (savedEnv === undefined) delete process.env[ENV_KEY];
     else process.env[ENV_KEY] = savedEnv;
+    if (savedDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+    else process.env.CODE_AGENT_DATA_DIR = savedDataDir;
   });
 
   it('env 缺省 → SwarmTraceRepository (SQLite)', () => {
@@ -74,6 +79,23 @@ describe('createSwarmTraceRepo (Phase 3 dispatch)', () => {
       trigger: 'llm-spawn',
     });
     const files = fs.readdirSync(tmpDir).filter((f) => f.endsWith('run-1.jsonl'));
+    expect(files).toHaveLength(1);
+  });
+
+  it('env=file 且无 override 时使用 CODE_AGENT_DATA_DIR/swarm-runs', () => {
+    process.env[ENV_KEY] = 'file';
+    process.env.CODE_AGENT_DATA_DIR = tmpDir;
+    const repo = createSwarmTraceRepo(db);
+    repo.startRun({
+      id: 'run-data-dir',
+      sessionId: 'session-1',
+      coordinator: 'hybrid',
+      startedAt: 1_700_000_000_000,
+      totalAgents: 1,
+      trigger: 'llm-spawn',
+    });
+    const storageDir = path.join(tmpDir, SWARM_TRACE.STORAGE_DIR);
+    const files = fs.readdirSync(storageDir).filter((f) => f.endsWith('run-data-dir.jsonl'));
     expect(files).toHaveLength(1);
   });
 });

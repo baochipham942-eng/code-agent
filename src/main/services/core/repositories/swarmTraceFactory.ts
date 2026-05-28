@@ -20,6 +20,13 @@ export interface CreateSwarmTraceRepoOptions {
   storageDirOverride?: string;
 }
 
+function resolveFileStorageDir(options: CreateSwarmTraceRepoOptions): string {
+  if (options.storageDirOverride) return options.storageDirOverride;
+  const configuredDataDir = process.env.CODE_AGENT_DATA_DIR?.trim();
+  const baseDir = configuredDataDir ? path.resolve(configuredDataDir) : getUserConfigDir();
+  return path.join(baseDir, SWARM_TRACE.STORAGE_DIR);
+}
+
 /**
  * 根据 CODE_AGENT_SWARM_STORAGE 环境变量返回对应的 SwarmTraceRepo 实现。
  *
@@ -32,9 +39,7 @@ export function createSwarmTraceRepo(
 ): SwarmTraceRepo {
   const mode = process.env[SWARM_TRACE.STORAGE_MODE_ENV];
   if (mode === 'file') {
-    const storageDir =
-      options.storageDirOverride ?? path.join(getUserConfigDir(), SWARM_TRACE.STORAGE_DIR);
-    return new FileSwarmTraceRepository(storageDir);
+    return new FileSwarmTraceRepository(resolveFileStorageDir(options));
   }
   return new SwarmTraceRepository(db);
 }

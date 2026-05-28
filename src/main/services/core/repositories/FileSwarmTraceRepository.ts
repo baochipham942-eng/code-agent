@@ -180,7 +180,7 @@ export class FileSwarmTraceRepository implements SwarmTraceRepo {
   startRun(input: StartRunInput): void {
     const fileName = `${tsPrefix(input.startedAt)}__${input.id}.jsonl`;
     const filePath = path.join(this.storageDir, fileName);
-    // 文件可能已存在（同 runId 重复 startRun，对齐 SQL 的 INSERT OR REPLACE 语义）→ 探测
+    this.replaceExistingRunFile(input.id, filePath);
     const cache: RunCacheEntry = {
       filePath,
       eventCount: 0,
@@ -339,6 +339,22 @@ export class FileSwarmTraceRepository implements SwarmTraceRepo {
       }
     } catch (err) {
       logger.warn('ensureStorageDir failed', { storageDir: this.storageDir, err });
+    }
+  }
+
+  /** 对齐 SQL INSERT OR REPLACE：同 runId 重启时旧 JSONL 不应残留旧事件。 */
+  private replaceExistingRunFile(runId: string, nextFilePath: string): void {
+    try {
+      const existing = this.scanForRunFile(runId);
+      if (existing && existing !== nextFilePath) {
+        fs.unlinkSync(existing);
+      }
+      if (fs.existsSync(nextFilePath)) {
+        fs.truncateSync(nextFilePath, 0);
+      }
+      this.runCache.delete(runId);
+    } catch (err) {
+      logger.warn('replaceExistingRunFile failed', { runId, nextFilePath, err });
     }
   }
 

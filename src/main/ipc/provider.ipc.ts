@@ -11,12 +11,13 @@ import {
   MCP,
   getModelMaxOutputTokens,
 } from '../../shared/constants';
-import type { ModelCapability, ModelProviderProtocol } from '../../shared/contract';
+import type { ModelCapability, ModelProvider, ModelProviderProtocol } from '../../shared/contract';
 import { inferModelCapabilities, inferSupportsTool } from '../../shared/modelRuntime';
 import { runDiagnostics } from './doctor.ipc';
 import { runDoctor } from '../diagnostics/doctorRunner';
 import type { RunDoctorOptions } from '../diagnostics/types';
 import { getProviderHealthMonitor } from '../model/providerHealthMonitor';
+import { getConfigService } from '../services/core/configService';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -179,6 +180,16 @@ function normalizeDiscoveredModelId(value: string): string {
   return value.replace(/^models\//, '');
 }
 
+function resolveConfiguredApiKey(provider: string, apiKey?: string): string {
+  const trimmed = apiKey?.trim();
+  if (trimmed) return trimmed;
+  try {
+    return getConfigService().getApiKey(provider as ModelProvider) ?? '';
+  } catch {
+    return '';
+  }
+}
+
 export function parseDiscoveredModelsResponse(payload: unknown): DiscoveredProviderModel[] {
   const record = payload && typeof payload === 'object' && !Array.isArray(payload)
     ? payload as Record<string, unknown>
@@ -251,7 +262,8 @@ function mapHttpError(status: number, body: string): TestConnectionResult['error
 }
 
 export async function handleTestConnection(payload: TestConnectionPayload): Promise<TestConnectionResult> {
-  const config = buildTestConfig(payload.provider, payload.apiKey, payload.baseUrl, payload.protocol, payload.model);
+  const apiKey = resolveConfiguredApiKey(payload.provider, payload.apiKey);
+  const config = buildTestConfig(payload.provider, apiKey, payload.baseUrl, payload.protocol, payload.model);
 
   if (!config) {
     return {
@@ -334,7 +346,8 @@ export async function handleTestConnection(payload: TestConnectionPayload): Prom
 }
 
 export async function handleDiscoverModels(payload: DiscoverModelsPayload): Promise<DiscoverModelsResult> {
-  const discovery = getDiscoveryUrl(payload.provider, payload.baseUrl, payload.apiKey, payload.protocol);
+  const apiKey = resolveConfiguredApiKey(payload.provider, payload.apiKey);
+  const discovery = getDiscoveryUrl(payload.provider, payload.baseUrl, apiKey, payload.protocol);
   if (!discovery) {
     return {
       success: false,

@@ -517,12 +517,8 @@ export class ConfigService implements IReadConfigService {
     if (settings.models?.providers) {
       for (const provider of Object.keys(settings.models.providers)) {
         const apiKey = storage.getApiKey(provider);
-        if (apiKey) {
-          settings.models.providers[provider as keyof typeof settings.models.providers] = {
-            ...settings.models.providers[provider as keyof typeof settings.models.providers],
-            apiKey,
-          };
-        }
+        const apiKeyConfigured = Boolean(apiKey || this.getApiKey(provider as ModelProvider));
+        settings.models.providers[provider as keyof typeof settings.models.providers].apiKeyConfigured = apiKeyConfigured;
       }
     }
 

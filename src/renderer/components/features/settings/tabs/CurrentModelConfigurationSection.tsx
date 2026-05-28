@@ -25,6 +25,8 @@ interface CurrentModelConfigurationSectionProps {
   hasApiKey: boolean;
   enabledModelCount: number;
   modelCount: number;
+  needsApiKey: boolean;
+  hasStoredApiKey: boolean;
   onDisplayNameChange: (value: string) => void;
   onProviderProtocolChange: (protocol: ModelProviderProtocol) => void;
   onResetOfficialEndpoint: () => void;
@@ -50,6 +52,8 @@ export const CurrentModelConfigurationSection: React.FC<CurrentModelConfiguratio
   hasApiKey,
   enabledModelCount,
   modelCount,
+  needsApiKey,
+  hasStoredApiKey,
   onDisplayNameChange,
   onProviderProtocolChange,
   onResetOfficialEndpoint,
@@ -133,11 +137,22 @@ export const CurrentModelConfigurationSection: React.FC<CurrentModelConfiguratio
               type="password"
               value={config.apiKey || ''}
               onChange={(event) => onApiKeyChange(event.target.value)}
-              placeholder={t.model.apiKeyPlaceholder}
+              placeholder={
+                needsApiKey
+                  ? hasStoredApiKey
+                    ? '已保存，输入新密钥可替换'
+                    : t.model.apiKeyPlaceholder
+                  : '本地模型无需 API Key'
+              }
+              disabled={!needsApiKey}
               leftIcon={<Key className="w-4 h-4" />}
             />
             <p className="mt-2 text-xs text-zinc-500">
-              {t.model.apiKeyHint}
+              {needsApiKey
+                ? hasStoredApiKey && !config.apiKey
+                  ? 'API Key 已在本机加密保存。'
+                  : t.model.apiKeyHint
+                : '使用本机 OpenAI-compatible 服务。'}
             </p>
           </div>
 
@@ -199,7 +214,7 @@ export const CurrentModelConfigurationSection: React.FC<CurrentModelConfiguratio
             <div className="flex justify-between gap-3">
               <dt className="text-zinc-500">API Key</dt>
               <dd className={hasApiKey ? 'text-emerald-300' : 'text-amber-300'}>
-                {hasApiKey ? '已填写' : '未填写'}
+                {needsApiKey ? (hasApiKey ? '已保存' : '未填写') : '无需填写'}
               </dd>
             </div>
             <div className="flex justify-between gap-3">

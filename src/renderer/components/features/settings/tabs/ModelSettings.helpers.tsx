@@ -15,6 +15,7 @@ import {
   inferModelCapabilities,
   inferSupportsTool,
   isDynamicCustomProviderId,
+  type RuntimeProviderModel,
 } from '@shared/modelRuntime';
 
 export interface ProviderDisplayInfo {
@@ -140,6 +141,14 @@ export function buildProviderManagementRows({
 
 export function getProtocolLabel(protocol: ModelProviderProtocol | undefined): string {
   return protocol === 'claude' ? 'Claude 协议' : 'OpenAI 兼容';
+}
+
+export function providerRequiresApiKey(providerId: ModelProvider): boolean {
+  return providerId !== 'local';
+}
+
+export function isModelMetadataLocked(providerId: ModelProvider, model: RuntimeProviderModel): boolean {
+  return model.source === 'catalog' && providerId !== 'custom' && !isDynamicCustomProviderId(providerId);
 }
 
 export function normalizeLongCatModelId(modelId?: string): string {

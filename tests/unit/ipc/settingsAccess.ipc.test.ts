@@ -130,6 +130,7 @@ describe('settings.ipc access control', () => {
     expect(response.success).toBe(true);
     const settings = response.data as AppSettings;
     expect(settings.models.providers.openai.apiKey).toBeUndefined();
+    expect(settings.models.providers.openai.apiKeyConfigured).toBe(true);
     expect(settings.cloud.apiKey).toBeUndefined();
     expect(settings.langfuse?.secretKey).toBeUndefined();
     expect(settings.mcp).toBeUndefined();

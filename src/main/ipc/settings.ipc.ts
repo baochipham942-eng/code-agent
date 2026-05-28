@@ -29,6 +29,7 @@ function sanitizeSettingsForUser(settings: AppSettings): AppSettings {
 
   if (sanitized.models?.providers) {
     for (const providerConfig of Object.values(sanitized.models.providers)) {
+      providerConfig.apiKeyConfigured = Boolean(providerConfig.apiKey || providerConfig.apiKeyConfigured);
       delete providerConfig.apiKey;
     }
   }
@@ -170,7 +171,7 @@ async function handleCheckApiKeyConfigured(): Promise<boolean> {
     'MOONSHOT_API_KEY', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY',
     'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'ZHIPU_API_KEY',
     'GROQ_API_KEY', 'QWEN_API_KEY', 'MINIMAX_API_KEY',
-    'OPENROUTER_API_KEY', 'PERPLEXITY_API_KEY',
+    'OPENROUTER_API_KEY', 'PERPLEXITY_API_KEY', 'LONGCAT_API_KEY',
     'XIAOMI_API_KEY',
   ];
   return envKeyNames.some(name => !!process.env[name]);

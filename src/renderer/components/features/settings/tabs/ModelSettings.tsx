@@ -41,7 +41,9 @@ import {
   createCustomProviderId,
   getModelLabel,
   hasCustomEndpointOverride,
+  isModelMetadataLocked,
   orderProviderManagementRows,
+  providerRequiresApiKey,
   resolveModelForProvider,
   type DiscoverModelsResult,
   type ProviderConfigMap,
@@ -155,7 +157,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const orderedProviderRows = useMemo(() => orderProviderManagementRows(providerRows), [providerRows]);
   const selectedProviderRow = providerRows.find((provider) => provider.selected);
   const selectedModelLabel = getModelLabel(currentModels, config.model);
-  const hasApiKey = Boolean(config.apiKey?.trim());
+  const needsApiKey = providerRequiresApiKey(config.provider);
+  const hasInputApiKey = Boolean(config.apiKey?.trim());
+  const hasStoredApiKey = Boolean(currentProviderConfig?.apiKey || currentProviderConfig?.apiKeyConfigured);
+  const hasApiKey = !needsApiKey || hasInputApiKey || hasStoredApiKey;
 
   const patchCurrentProviderConfig = useCallback((patch: Partial<ModelProviderSettings>) => {
     setProviderConfigs((prev) => {
@@ -221,9 +226,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   }, [config, onChange, providerConfigs]);
 
   const handleApiKeyChange = useCallback((value: string) => {
-    patchCurrentProviderConfig({ apiKey: value });
+    patchCurrentProviderConfig({
+      apiKey: value,
+      apiKeyConfigured: value.trim() ? true : currentProviderConfig?.apiKeyConfigured,
+    });
     onChange({ ...config, apiKey: value });
-  }, [config, onChange, patchCurrentProviderConfig]);
+  }, [config, currentProviderConfig?.apiKeyConfigured, onChange, patchCurrentProviderConfig]);
 
   const handleBaseUrlChange = useCallback((value: string) => {
     patchCurrentProviderConfig({ baseUrl: value });
@@ -313,10 +321,13 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     setIsSaving(true);
     setSaveStatus('idle');
     try {
-      const providerConfigForSave: ModelProviderSettings = {
+      const currentProviderConfigWithoutKey: ModelProviderSettings = {
         ...(currentProviderConfig ?? { enabled: true }),
+      };
+      delete currentProviderConfigWithoutKey.apiKey;
+      const providerConfigForSave: ModelProviderSettings = {
+        ...currentProviderConfigWithoutKey,
         enabled: true,
-        apiKey: config.apiKey,
         baseUrl: effectiveBaseUrl,
         protocol: effectiveProtocol,
         displayName: currentProviderConfig?.displayName,
@@ -324,7 +335,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         temperature: config.temperature,
         maxTokens: config.maxTokens,
         models: currentProviderConfig?.models,
+        apiKeyConfigured: needsApiKey ? Boolean(config.apiKey?.trim() || hasStoredApiKey) : false,
       };
+      if (config.apiKey?.trim()) {
+        providerConfigForSave.apiKey = config.apiKey.trim();
+      }
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         models: {
           default: config.provider,
@@ -350,7 +365,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   };
 
   const handleTestConnection = async () => {
-    if (!config.apiKey) {
+    if (needsApiKey && !config.apiKey && !hasStoredApiKey) {
       toast.warning('请先填写 API Key');
       return;
     }
@@ -363,7 +378,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       }>(
         IPC_DOMAINS.PROVIDER,
         'test_connection',
-        { provider: config.provider, apiKey: config.apiKey, baseUrl: effectiveBaseUrl, model: config.model, protocol: effectiveProtocol }
+        { provider: config.provider, apiKey: config.apiKey || '', baseUrl: effectiveBaseUrl, model: config.model, protocol: effectiveProtocol }
       );
       if (result?.success) {
         toast.success(`连接成功，延迟 ${result.latencyMs}ms`);
@@ -389,7 +404,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       const result = await ipcService.invokeDomain<DiscoverModelsResult>(
         IPC_DOMAINS.PROVIDER,
         'discover_models',
-        { provider: config.provider, apiKey: config.apiKey, baseUrl: effectiveBaseUrl, protocol: effectiveProtocol }
+        { provider: config.provider, apiKey: config.apiKey || '', baseUrl: effectiveBaseUrl, protocol: effectiveProtocol }
       );
 
       if (!result?.success) {
@@ -430,7 +445,9 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           [config.provider]: {
             ...providerConfig,
             enabled: true,
-            apiKey: config.apiKey,
+            ...(config.apiKey?.trim()
+              ? { apiKey: config.apiKey.trim(), apiKeyConfigured: true }
+              : { apiKeyConfigured: hasStoredApiKey }),
             baseUrl: effectiveBaseUrl,
             model: providerConfig.model || config.model || firstDiscovered.id,
             models: nextModelMap,
@@ -527,7 +544,9 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         [config.provider]: {
           ...providerConfig,
           enabled: true,
-          apiKey: config.apiKey,
+          ...(config.apiKey?.trim()
+            ? { apiKey: config.apiKey.trim(), apiKeyConfigured: true }
+            : { apiKeyConfigured: hasStoredApiKey }),
           baseUrl: effectiveBaseUrl,
           protocol: effectiveProtocol,
           model: modelId,
@@ -553,7 +572,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     setManualModelLabel('');
     setModelSearch('');
     toast.success('模型已加入当前 Provider');
-  }, [config, effectiveBaseUrl, effectiveProtocol, manualModelId, manualModelLabel, onChange]);
+  }, [config, effectiveBaseUrl, effectiveProtocol, hasStoredApiKey, manualModelId, manualModelLabel, onChange]);
 
   return (
     <SettingsPage
@@ -585,7 +604,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
               ['当前 Provider', selectedProviderRow?.name || config.provider, selectedModelLabel],
               ['Provider 数量', String(providerRows.length), '可选服务商'],
               ['模型数量', `${currentEnabledModels.length}/${currentModels.length}`, '已启用 / 已发现'],
-              ['API Key', hasApiKey ? '已填写' : '未填写', hasApiKey ? '可测试连接' : '保存前需要补齐'],
+              ['API Key', needsApiKey ? (hasApiKey ? '已保存' : '未填写') : '无需填写', needsApiKey ? (hasApiKey ? '本地加密保存' : '保存前需要补齐') : '本地服务'],
             ].map(([label, value, caption]) => (
               <div key={label} className="bg-zinc-900/80 px-3 py-3">
                 <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500">{label}</div>
@@ -689,7 +708,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                         当前
                       </span>
                       <div className={hasApiKey ? 'text-[11px] text-zinc-400' : 'text-[11px] text-amber-300'}>
-                        {hasApiKey ? 'API Key 已填' : '等待 API Key'}
+                        {!needsApiKey ? '无需 API Key' : hasApiKey ? 'API Key 已保存' : '等待 API Key'}
                       </div>
                     </div>
                   ) : (
@@ -747,6 +766,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         hasApiKey={hasApiKey}
         enabledModelCount={currentEnabledModels.length}
         modelCount={currentModels.length}
+        needsApiKey={needsApiKey}
+        hasStoredApiKey={hasStoredApiKey}
         onDisplayNameChange={handleDisplayNameChange}
         onProviderProtocolChange={handleProviderProtocolChange}
         onResetOfficialEndpoint={handleResetOfficialEndpoint}
@@ -840,6 +861,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                     supportsTool: model.supportsTool,
                     supportsVision: model.supportsVision,
                   });
+                  const metadataLocked = isModelMetadataLocked(config.provider, model);
                   return (
                     <div key={model.id} className="grid gap-3 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_auto]">
                       <div className="min-w-0">
@@ -876,12 +898,15 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                         <button
                           type="button"
                           onClick={() => handleToggleModelTool(model)}
+                          disabled={metadataLocked}
                           className={`inline-flex h-7 items-center gap-1 rounded border px-2 text-[11px] transition ${
                             model.supportsTool
                               ? 'border-blue-400/50 bg-blue-500/15 text-blue-200'
-                              : 'border-zinc-700 bg-zinc-800 text-zinc-500 hover:text-zinc-300'
+                              : metadataLocked
+                                ? 'border-zinc-700 bg-zinc-800 text-zinc-500'
+                                : 'border-zinc-700 bg-zinc-800 text-zinc-500 hover:text-zinc-300'
                           }`}
-                          title="工具调用"
+                          title={metadataLocked ? '内置模型标签由模型目录决定' : '工具调用'}
                         >
                           <Wrench className="h-3 w-3" />
                           工具
@@ -893,12 +918,15 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                               key={capability.id}
                               type="button"
                               onClick={() => handleToggleModelCapability(model, capability.id)}
+                              disabled={metadataLocked}
                               className={`inline-flex h-7 items-center gap-1 rounded border px-2 text-[11px] transition ${
                                 active
                                   ? 'border-emerald-400/50 bg-emerald-500/15 text-emerald-200'
-                                  : 'border-zinc-700 bg-zinc-800 text-zinc-500 hover:text-zinc-300'
+                                  : metadataLocked
+                                    ? 'border-zinc-700 bg-zinc-800 text-zinc-500'
+                                    : 'border-zinc-700 bg-zinc-800 text-zinc-500 hover:text-zinc-300'
                               }`}
-                              title={capability.label}
+                              title={metadataLocked ? '内置模型标签由模型目录决定' : capability.label}
                             >
                               {CAPABILITY_ICONS[capability.id] ?? <span className="text-[10px]">{capability.label.slice(0, 1)}</span>}
                               {capability.label}
@@ -927,7 +955,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           {isSaving ? t.common.saving || 'Saving...' : saveStatus === 'success' ? t.common.saved || 'Saved!' : saveStatus === 'error' ? t.common.error || 'Error' : t.common.save || 'Save'}
         </Button>
         <Button
-          disabled={isWebMode() || !config.apiKey}
+          disabled={isWebMode() || (needsApiKey && !config.apiKey && !hasStoredApiKey)}
           onClick={handleTestConnection}
           loading={isTesting}
           variant="secondary"

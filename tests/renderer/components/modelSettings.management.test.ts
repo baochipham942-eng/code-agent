@@ -8,9 +8,11 @@ import {
   createCustomProviderId,
   getModelLabel,
   hasCustomEndpointOverride,
+  isModelMetadataLocked,
   isLegacyLongCatProviderConfig,
   normalizeLongCatModelId,
   orderProviderManagementRows,
+  providerRequiresApiKey,
   resolveModelForProvider,
 } from '../../../src/renderer/components/features/settings/tabs/ModelSettings.helpers';
 
@@ -183,6 +185,44 @@ describe('ModelSettings management helpers', () => {
     expect(hasCustomEndpointOverride('longcat', 'https://relay.example.com/v1', 'claude')).toBe(true);
     expect(hasCustomEndpointOverride('custom', 'https://relay.example.com/v1')).toBe(false);
     expect(hasCustomEndpointOverride('custom-relay', 'https://relay.example.com/v1')).toBe(false);
+  });
+
+  it('treats local models as keyless and locks only built-in catalog metadata', () => {
+    expect(providerRequiresApiKey('local')).toBe(false);
+    expect(providerRequiresApiKey('longcat')).toBe(true);
+
+    expect(isModelMetadataLocked('longcat', {
+      id: 'LongCat-2.0-Preview',
+      label: 'LongCat 2.0 Preview',
+      enabled: true,
+      capabilities: ['general', 'reasoning'],
+      supportsTool: true,
+      supportsVision: false,
+      supportsStreaming: true,
+      source: 'catalog',
+    })).toBe(true);
+
+    expect(isModelMetadataLocked('custom-longcat', {
+      id: 'longcat-2.0-preview',
+      label: 'LongCat 2.0 Preview',
+      enabled: true,
+      capabilities: ['general'],
+      supportsTool: true,
+      supportsVision: false,
+      supportsStreaming: true,
+      source: 'catalog',
+    })).toBe(false);
+
+    expect(isModelMetadataLocked('longcat', {
+      id: 'LongCat-Flash-Lite',
+      label: 'LongCat Flash Lite',
+      enabled: true,
+      capabilities: ['general'],
+      supportsTool: true,
+      supportsVision: false,
+      supportsStreaming: true,
+      source: 'discovered',
+    })).toBe(false);
   });
 
   it('identifies legacy custom LongCat configs for official migration', () => {

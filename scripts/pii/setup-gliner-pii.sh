@@ -1,40 +1,76 @@
 #!/usr/bin/env bash
+# ============================================================================
+# GLiNER PII 一键安装脚本 (B3 ootb 流程)
+# ============================================================================
+# 流程: 解析 uv binary -> 创建 venv -> 装 gliner+onnxruntime -> 下模型
+#       -> 原子写入 ~/.code-agent/.env (替换已有 PII 配置, 保留其他 key)
+#
+# 调用方:
+#   - dev: bash scripts/pii/setup-gliner-pii.sh
+#   - packaged Neo IPC: 通过 env 传 CODE_AGENT_BUNDLED_UV / _RUNNER 指向
+#                       Resources/_up_/scripts/ 下的路径
+#
+# 每步输出以 "▷ STEP: ..." 开头便于 IPC 流式解析。错误用 "❌" 开头。
+# ============================================================================
+
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CACHE_DIR="${CODE_AGENT_GLINER_PII_CACHE:-$HOME/.cache/code-agent/gliner-pii}"
 VENV_DIR="$CACHE_DIR/.venv"
 MODEL_DIR="${CODE_AGENT_GLINER_PII_MODEL:-$CACHE_DIR/models/knowledgator-gliner-pii-base-v1.0}"
-PYTHON_BIN="${CODE_AGENT_GLINER_PII_PYTHON:-}"
 MODEL_REPO="knowledgator/gliner-pii-base-v1.0"
 MODEL_BASE_URL="https://huggingface.co/$MODEL_REPO/resolve/main"
+ENV_FILE="$HOME/.code-agent/.env"
 
-if [[ -z "$PYTHON_BIN" ]]; then
-  if command -v python3.12 >/dev/null 2>&1; then
-    PYTHON_BIN="$(command -v python3.12)"
-  elif command -v python3 >/dev/null 2>&1; then
-    PYTHON_BIN="$(command -v python3)"
+# ---------------------------------------------------------------------------
+# 解析 uv binary: bundled (IPC 传) > scripts/uv (dev) > system PATH
+# ---------------------------------------------------------------------------
+UV_BIN="${CODE_AGENT_BUNDLED_UV:-}"
+if [[ -z "$UV_BIN" || ! -x "$UV_BIN" ]]; then
+  UV_BIN="$ROOT_DIR/scripts/uv"
+fi
+if [[ ! -x "$UV_BIN" ]]; then
+  if command -v uv >/dev/null 2>&1; then
+    UV_BIN="$(command -v uv)"
   else
-    echo "python3.12 or python3 is required" >&2
+    echo "❌ 找不到 uv binary。运行 bash scripts/fetch-uv.sh 先拉取,或装系统 uv。" >&2
     exit 1
   fi
 fi
 
-if ! command -v uv >/dev/null 2>&1; then
-  echo "uv is required to create the isolated GLiNER environment" >&2
+# ---------------------------------------------------------------------------
+# 解析 runner: bundled (IPC 传) > scripts/pii/gliner_onnx_runner.py (dev)
+# ---------------------------------------------------------------------------
+RUNNER_PATH="${CODE_AGENT_BUNDLED_RUNNER:-$ROOT_DIR/scripts/pii/gliner_onnx_runner.py}"
+if [[ ! -f "$RUNNER_PATH" ]]; then
+  echo "❌ gliner_onnx_runner.py 缺失: $RUNNER_PATH" >&2
   exit 1
 fi
 
-mkdir -p "$MODEL_DIR/onnx"
-uv venv --allow-existing --python "$PYTHON_BIN" "$VENV_DIR"
-uv pip install --python "$VENV_DIR/bin/python" 'gliner==0.2.26' 'onnxruntime>=1.18,<2'
+echo "▷ STEP: 解析依赖 (uv=$UV_BIN, runner=$RUNNER_PATH)"
 
+# ---------------------------------------------------------------------------
+# 创建 venv (uv 自动管理 Python 3.12, 没装会自动下载)
+# ---------------------------------------------------------------------------
+mkdir -p "$MODEL_DIR/onnx"
+echo "▷ STEP: 创建 Python 3.12 venv ($VENV_DIR)"
+"$UV_BIN" venv --allow-existing --python 3.12 "$VENV_DIR"
+
+echo "▷ STEP: 安装 gliner + onnxruntime"
+"$UV_BIN" pip install --python "$VENV_DIR/bin/python" 'gliner==0.2.26' 'onnxruntime>=1.18,<2'
+
+# ---------------------------------------------------------------------------
+# 下载模型文件 (HuggingFace, ~125MB, 增量跳过已存在)
+# ---------------------------------------------------------------------------
 download_if_missing() {
   local remote_path="$1"
   local target="$2"
   if [[ -s "$target" ]]; then
+    echo "▷ STEP: 模型分片已存在,跳过 ($(basename "$target"))"
     return
   fi
+  echo "▷ STEP: 下载模型分片 $(basename "$target")"
   mkdir -p "$(dirname "$target")"
   curl -L --fail --retry 3 --retry-delay 2 -o "$target" "$MODEL_BASE_URL/$remote_path"
 }
@@ -47,18 +83,26 @@ download_if_missing "added_tokens.json" "$MODEL_DIR/added_tokens.json"
 download_if_missing "spm.model" "$MODEL_DIR/spm.model"
 download_if_missing "onnx/model.onnx" "$MODEL_DIR/onnx/model.onnx"
 
-chmod +x "$ROOT_DIR/scripts/pii/gliner_onnx_runner.py"
+chmod +x "$RUNNER_PATH"
 
-cat <<EOF
-GLiNER PII Base ONNX is ready.
+# ---------------------------------------------------------------------------
+# 原子写入 ~/.code-agent/.env (替换已有 PII 配置, 保留其他 key)
+# webServer 启动时会读这个文件,自动 export 到 Neo 主进程 env (见 CLAUDE.md)
+# ---------------------------------------------------------------------------
+echo "▷ STEP: 写入 $ENV_FILE"
+mkdir -p "$(dirname "$ENV_FILE")"
+TMP_ENV="$ENV_FILE.tmp.$$"
+{
+  if [[ -f "$ENV_FILE" ]]; then
+    grep -vE '^CODE_AGENT_(PII_ENTITY|GLINER_PII)' "$ENV_FILE" || true
+  fi
+  echo "CODE_AGENT_PII_ENTITY_DETECTOR=gliner-onnx-command"
+  echo "CODE_AGENT_GLINER_PII_COMMAND=$RUNNER_PATH"
+  echo "CODE_AGENT_GLINER_PII_RUNNER_PYTHON=$VENV_DIR/bin/python"
+  echo "CODE_AGENT_GLINER_PII_MODEL=$MODEL_DIR"
+  echo "CODE_AGENT_GLINER_PII_ONNX_FILE=onnx/model.onnx"
+  echo "CODE_AGENT_PII_ENTITY_TIMEOUT_MS=30000"
+} > "$TMP_ENV"
+mv "$TMP_ENV" "$ENV_FILE"
 
-export CODE_AGENT_PII_ENTITY_DETECTOR=gliner-onnx-command
-export CODE_AGENT_GLINER_PII_COMMAND=$ROOT_DIR/scripts/pii/gliner_onnx_runner.py
-export CODE_AGENT_GLINER_PII_RUNNER_PYTHON=$VENV_DIR/bin/python
-export CODE_AGENT_GLINER_PII_MODEL=$MODEL_DIR
-export CODE_AGENT_GLINER_PII_ONNX_FILE=onnx/model.onnx
-export CODE_AGENT_PII_ENTITY_TIMEOUT_MS=30000
-
-Smoke:
-$ROOT_DIR/scripts/pii/smoke-gliner-pii.sh
-EOF
+echo "▷ STEP: 完成。重启 Neo 后本地 PII 防线生效。"

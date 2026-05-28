@@ -22,6 +22,10 @@ import {
   ARTIFACT_TASK_BRIEF_PROMPT,
   needsArtifactTaskBrief,
 } from '../../../prompts/builder';
+import {
+  loadProjectSystemPrompt,
+  type ProjectSystemPromptResult,
+} from '../../../prompts/projectSystemPrompt';
 import { getTrustedRemotePromptFragmentsRevision } from '../../../prompts/remoteFragments';
 import {
   GAME_ARTIFACT_CONTRACT_PROMPT,
@@ -102,7 +106,12 @@ function getLastUserMessage(ctx: ContextAssemblyCtx): Message | undefined {
   return [...ctx.runtime.messages].reverse().find((message) => message.role === 'user');
 }
 
-function buildDynamicPromptCacheKey(ctx: ContextAssemblyCtx, userQuery: string, artifactRepairMode: boolean): string {
+function buildDynamicPromptCacheKey(
+  ctx: ContextAssemblyCtx,
+  userQuery: string,
+  artifactRepairMode: boolean,
+  projectSystemPrompt: ProjectSystemPromptResult,
+): string {
   return [
     ctx.runtime.sessionId,
     ctx.runtime.agentId || '',
@@ -116,6 +125,11 @@ function buildDynamicPromptCacheKey(ctx: ContextAssemblyCtx, userQuery: string, 
     ctx.runtime.activeSkillContextBlock ? 'active-skill' : '',
     artifactRepairMode ? 'artifact-repair' : 'normal',
     String(getTrustedRemotePromptFragmentsRevision()),
+    // SYSTEM.md / APPEND_SYSTEM.md 变化时让缓存失效(路径 + 长度两维)
+    projectSystemPrompt.sources.customPath || 'no-custom',
+    String(projectSystemPrompt.custom?.length ?? 0),
+    projectSystemPrompt.sources.appendPath || 'no-append',
+    String(projectSystemPrompt.append?.length ?? 0),
     userQuery,
   ].join('\u0000');
 }
@@ -252,7 +266,10 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   const lastUserMessage = getLastUserMessage(ctx);
   const userQuery = typeof lastUserMessage?.content === 'string' ? lastUserMessage.content : '';
   const artifactRepairMode = isArtifactRepairMode(ctx);
-  const cacheKey = buildDynamicPromptCacheKey(ctx, userQuery, artifactRepairMode);
+  // 项目级 / 全局级 SYSTEM.md 加载(Pi 借鉴 ④):每轮加载,IO 成本小
+  // 不命中文件时 EMPTY_RESULT,行为完全跟改造前一致
+  const projectSystemPrompt = loadProjectSystemPrompt(ctx.runtime.workingDirectory || '');
+  const cacheKey = buildDynamicPromptCacheKey(ctx, userQuery, artifactRepairMode, projectSystemPrompt);
   const cache = getRuntimeAssemblyCache(ctx);
   const cached = cache.dynamicPrompt;
   const now = Date.now();
@@ -263,7 +280,18 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   }
 
   // Use optimized prompt based on task complexity
-  let systemPrompt = getPromptForTask();
+  // 项目级 SYSTEM.md 存在时替换默认 identity prompt(Pi 借鉴 ④);workdir / runtime mode /
+  // memory 等后续层照常注入。用户要保留默认 identity 又想追加内容,用 APPEND_SYSTEM.md。
+  let systemPrompt: string;
+  if (projectSystemPrompt.custom !== null) {
+    systemPrompt = projectSystemPrompt.custom;
+    logger.debug('[ContextAssembly] custom system prompt loaded', {
+      source: projectSystemPrompt.sources.customPath,
+      bytes: projectSystemPrompt.custom.length,
+    });
+  } else {
+    systemPrompt = getPromptForTask();
+  }
   const appendedBlocks = new Map<string, string>();
   const shouldInjectArtifactBrief = artifactRepairMode || (typeof userQuery === 'string' && needsArtifactTaskBrief(userQuery));
   const shouldInjectGameContract =
@@ -547,6 +575,25 @@ ${deferredToolsSummary}
       if (systemPrompt.includes(deferredToolsBlock)) {
         appendedBlocks.set('deferred tools', deferredToolsBlock);
       }
+    }
+  }
+
+  // 项目级 / 全局级 APPEND_SYSTEM.md(Pi 借鉴 ④):追加到所有默认层之后
+  // 走 appendPromptBlockWithinBudget 保证不撑爆 system prompt budget
+  if (projectSystemPrompt.append !== null) {
+    const appendBlock = `<project_append_system_prompt>\n${projectSystemPrompt.append}\n</project_append_system_prompt>`;
+    const beforeAppend = systemPrompt;
+    systemPrompt = appendPromptBlockWithinBudget(
+      systemPrompt,
+      appendBlock,
+      'project append system prompt',
+      ctx,
+    );
+    if (systemPrompt !== beforeAppend) {
+      logger.debug('[ContextAssembly] append system prompt added', {
+        source: projectSystemPrompt.sources.appendPath,
+        bytes: projectSystemPrompt.append.length,
+      });
     }
   }
 

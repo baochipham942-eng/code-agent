@@ -4,25 +4,13 @@
 // ============================================================================
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import * as Diff from 'diff';
 import { ChevronDown, ChevronRight, Undo2, Check, Loader2 } from 'lucide-react';
 import type { TraceTurn } from '@shared/contract/trace';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { DiffView } from '../../../DiffView';
-
-const FILE_WRITE_TOOLS = ['Edit', 'Write', 'edit_file', 'write_file'];
-
-interface FileChange {
-  filePath: string;
-  oldText: string;
-  newText: string;
-  added: number;
-  removed: number;
-  isNewFile: boolean;
-  editCount: number;
-}
+import { buildTurnFileChanges } from '../../../../utils/turnDiffSummary';
 
 interface CheckpointListItem {
   id: string;
@@ -46,81 +34,8 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
   const [undoError, setUndoError] = useState<string | null>(null);
   const [anchorMessageId, setAnchorMessageId] = useState<string | null>(null);
 
-  // 聚合 turn.nodes 里成功的 Edit/Write，按 filePath 合并
-  // 对老会话 args 可能缺失，fallback 从 result 字符串解析路径
-  const fileChanges = useMemo<FileChange[]>(() => {
-    const byPath = new Map<string, FileChange>();
-
-    for (const node of turn.nodes) {
-      if (node.type !== 'tool_call' || !node.toolCall) continue;
-      const tc = node.toolCall;
-      if (!FILE_WRITE_TOOLS.includes(tc.name)) continue;
-      if (tc.success === false) continue;
-
-      const args = tc.args || {};
-      let filePath = (args.file_path ?? args.path) as string | undefined;
-
-      // Fallback: 从 result 字符串 "Created file: X" / "Updated file: X" 抽取路径
-      if (!filePath && typeof tc.result === 'string') {
-        const m = tc.result.match(/(?:Created|Updated) file:\s*(.+?)(?:\s+\(|\s*\n|$)/);
-        if (m) filePath = m[1].trim();
-      }
-      if (!filePath && typeof tc.outputPath === 'string') {
-        filePath = tc.outputPath;
-      }
-      if (!filePath) continue;
-
-      let oldText = '';
-      let newText = '';
-      let isNewFile = false;
-
-      if (tc.name === 'Edit' || tc.name === 'edit_file') {
-        oldText = (args.old_string as string) ?? '';
-        newText = (args.new_string as string) ?? '';
-      } else {
-        // Write / write_file：默认视作新建；若 result 显示 "Updated" 则改为修改
-        newText = (args.content as string) ?? '';
-        isNewFile = true;
-        if (typeof tc.result === 'string' && /^Updated file/m.test(tc.result)) {
-          isNewFile = false;
-        }
-      }
-
-      // 空编辑跳过（仅当两者都非空且相等时；两者都空可能是 args 缺失的老会话，仍保留）
-      if (oldText && newText && oldText === newText) continue;
-
-      let added = 0;
-      let removed = 0;
-      if (oldText || newText) {
-        const diffChanges = Diff.diffLines(oldText, newText);
-        for (const c of diffChanges) {
-          const lines = c.value.split('\n').filter((l) => l !== '').length;
-          if (c.added) added += lines;
-          else if (c.removed) removed += lines;
-        }
-      }
-
-      const existing = byPath.get(filePath);
-      if (existing) {
-        existing.added += added;
-        existing.removed += removed;
-        existing.newText = newText;
-        existing.editCount += 1;
-      } else {
-        byPath.set(filePath, {
-          filePath,
-          oldText,
-          newText,
-          added,
-          removed,
-          isNewFile,
-          editCount: 1,
-        });
-      }
-    }
-
-    return Array.from(byPath.values());
-  }, [turn]);
+  // 聚合 turn.nodes 里成功的 Edit/Write，按 filePath 合并（纯逻辑抽到 utils 便于单测）
+  const fileChanges = useMemo(() => buildTurnFileChanges(turn), [turn]);
 
   // 查 checkpoint 找本 turn 的 rewind 锚点 messageId
   useEffect(() => {

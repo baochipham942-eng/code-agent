@@ -41,6 +41,12 @@ export function summarizeEdit(toolCall: ToolCall): string | null {
 export function summarizeWrite(toolCall: ToolCall): string | null {
   // For successful write_file, show Done or content info
   if (toolCall.result?.success) {
+    // content 在事件流里会被 sanitizeLargeTextToolArguments 压成片段，直接 split
+    // 会把几百行的文件算成 ~12 行。截断时后端保留了权威总行数 content_lines。
+    const contentLines = toolCall.arguments?.content_lines;
+    if (typeof contentLines === 'number') {
+      return `${contentLines} lines`;
+    }
     const content = toolCall.arguments?.content as string | undefined;
     if (content) {
       const lines = content.split('\n').length;

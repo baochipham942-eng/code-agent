@@ -11,6 +11,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { createLogger } from '../utils/logger';
 import { isWebMode, copyPathToClipboard } from '../utils/platform';
+import { inlineHtmlAssets } from '../utils/inlineHtmlAssets';
 
 const CodeEditor = lazy(() => import('./CodeEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
@@ -66,6 +67,9 @@ export const PreviewPanel: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  // 预览用 HTML：把同目录相对 css/js 内联进来（srcDoc iframe 无法解析相对引用）。
+  // 与可编辑/保存的 content 分开，保存仍写原始 content。
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const previewFilePath = activeTab?.path ?? null;
@@ -90,6 +94,24 @@ export const PreviewPanel: React.FC = () => {
     if (activeTab.isLoaded) return;
     void loadContent(activeTab.id, activeTab.path);
   }, [activeTab?.id, activeTab?.isLoaded]);
+
+  // 仅对要走 iframe 渲染的 HTML 产物，内联同目录相对 css/js 供预览。
+  // markdown/csv/code/图片/pdf 各有专门渲染路径，不需要。
+  useEffect(() => {
+    const renderAsHtml = !isMarkdown && !isCsv && !isCode && !isBinary;
+    if (!renderAsHtml || !content || !previewFilePath) {
+      setPreviewHtml(null);
+      return;
+    }
+    const fileDir = previewFilePath.slice(0, previewFilePath.lastIndexOf('/'));
+    let cancelled = false;
+    void inlineHtmlAssets(content, fileDir, (absPath) =>
+      invokeWorkspace<string>('readFile', { filePath: absPath }),
+    )
+      .then((html) => { if (!cancelled) setPreviewHtml(html); })
+      .catch(() => { if (!cancelled) setPreviewHtml(null); });
+    return () => { cancelled = true; };
+  }, [content, previewFilePath, isMarkdown, isCsv, isCode, isBinary]);
 
   const loadContent = async (tabId: string, filePath: string) => {
     setIsLoading(true);
@@ -414,7 +436,7 @@ export const PreviewPanel: React.FC = () => {
         ) : (
           <iframe
             ref={iframeRef}
-            srcDoc={content}
+            srcDoc={previewHtml ?? content}
             className="w-full h-full border-0"
             title="HTML Preview"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups"

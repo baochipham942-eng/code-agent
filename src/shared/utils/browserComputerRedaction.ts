@@ -684,6 +684,7 @@ function summarizeLargeText(value: string, head = 160, tail = 80): string {
   return `${value.slice(0, head)}...[${omitted} chars omitted]...${value.slice(-tail)}`;
 }
 
+
 function summarizeEditEntries(edits: unknown): unknown {
   if (!Array.isArray(edits)) {
     return edits;
@@ -716,8 +717,15 @@ export function sanitizeLargeTextToolArguments(
   const safeArgs: Record<string, unknown> = { ...args };
 
   if (typeof args.content === 'string') {
-    safeArgs.content = summarizeLargeText(args.content);
+    const summarized = summarizeLargeText(args.content);
+    safeArgs.content = summarized;
     safeArgs.content_length = args.content.length;
+    // 只有当 content 真被截断成片段时，UI 才无法从 args.content 算出真实行数
+    // （会显示 12 而非几百行）。此时留下权威总行数，供工具卡片 / TurnDiffSummary
+    // 展示。未截断的小文件不设此字段，沿用原有逐行计算，行为不变。
+    if (summarized !== args.content) {
+      safeArgs.content_lines = args.content.split('\n').length;
+    }
   }
 
   if (Array.isArray(args.edits)) {

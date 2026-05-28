@@ -99,6 +99,49 @@ describe('buildWorkspacePreviewItems', () => {
     });
   });
 
+  it('projects native Write artifacts from result.metadata (no top-level outputPath)', () => {
+    // 复刻原生 Write 工具的真实结果形状：meta.outputPath / meta.artifact 落在
+    // result.metadata 上，顶层 result.outputPath 不设（只有 MCP 工具才设顶层）。
+    // 这是 Bug 2 的关键路径——正常 Write 多文件产物必须据此进产物面板。
+    const messages: Message[] = [
+      {
+        id: 'msg-w',
+        role: 'assistant',
+        content: '',
+        timestamp: 300,
+        toolCalls: [
+          {
+            id: 'tool-w',
+            name: 'Write',
+            arguments: { file_path: '/Users/x/.code-agent/work/todo-app/index.html' },
+            result: {
+              toolCallId: 'tool-w',
+              success: true,
+              metadata: {
+                outputPath: '/Users/x/.code-agent/work/todo-app/index.html',
+                artifact: {
+                  artifactId: 'a1',
+                  kind: 'text',
+                  sourceTool: 'Write',
+                  name: 'index.html',
+                  path: '/Users/x/.code-agent/work/todo-app/index.html',
+                },
+              },
+            },
+          },
+        ],
+      },
+    ];
+
+    const items = buildWorkspacePreviewItems({ messages });
+    const htmlItem = items.find((i) => i.title === 'index.html');
+    expect(htmlItem).toBeTruthy();
+    expect(htmlItem).toMatchObject({
+      kind: 'generic_html',
+      file: { path: '/Users/x/.code-agent/work/todo-app/index.html' },
+    });
+  });
+
   it('surfaces permission diffs as draft preview items', () => {
     const request: PermissionRequest = {
       id: 'permission-1',

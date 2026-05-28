@@ -513,6 +513,12 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.BACKGROUND_TASK_UPDATE]: (event: BackgroundTaskUpdateEvent) => void;
   // TaskManager runtime events
   [IPC_CHANNELS.TASK_EVENT]: (event: TaskRuntimeEvent) => void;
+  // PII setup流式事件 (B3 一键启用本地 PII 防线)
+  [IPC_CHANNELS.PII_SETUP_EVENT]: (event:
+    | { type: 'log'; stream: 'stdout' | 'stderr'; line: string }
+    | { type: 'step'; description: string }
+    | { type: 'state'; state: 'idle' | 'running' | 'completed' | 'error'; error?: string }
+  ) => void;
   // In-App validation request (main → renderer broadcast)
   [IPC_CHANNELS.IN_APP_VALIDATION_REQUEST]: (request: InAppValidationRequest) => void;
   // DAG Visualization events

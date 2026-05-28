@@ -29,6 +29,7 @@ import {
   Cloud,
   PackagePlus,
   Camera,
+  ShieldCheck,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -93,6 +94,7 @@ import { ChannelsSettings } from './tabs/ChannelsSettings';
 import { HooksSettings } from './tabs/HooksSettings';
 import { AboutSettings } from './tabs/AboutSettings';
 import { ScreenMemorySettings } from './tabs/ScreenMemorySettings';
+import PrivacySettings from './tabs/PrivacySettings';
 import { UserDashboardSettings } from './tabs/UserDashboardSettings';
 import { InviteCodesSettings } from './tabs/InviteCodesSettings';
 import { ControlPlaneSettings } from './tabs/ControlPlaneSettings';
@@ -148,6 +150,7 @@ export function buildSettingsTabGroups({
     { id: 'hooks', label: 'Hook', icon: <Webhook className="w-4 h-4" /> },
     { id: 'memory', label: t.settings?.tabs?.memory || '记忆', icon: <Brain className="w-4 h-4" /> },
     ...(showScreenMemoryTab ? [{ id: 'openchronicle' as const, label: '屏幕记忆', icon: <Eye className="w-4 h-4" /> }] : []),
+    { id: 'privacy', label: '隐私防线', icon: <ShieldCheck className="w-4 h-4" /> },
     ...(showUpdateTab ? [{ id: 'update' as const, label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: hasOptionalUpdate }] : []),
     { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
   ];
@@ -394,6 +397,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'hooks' && <HooksSettings />}
             {activeTab === 'memory' && <MemoryTab />}
             {activeTab === 'openchronicle' && <ScreenMemorySettings />}
+            {activeTab === 'privacy' && <PrivacySettings />}
             {showUpdateTab && activeTab === 'update' && (
               <UpdateSettings
                 updateInfo={optionalUpdateInfo}

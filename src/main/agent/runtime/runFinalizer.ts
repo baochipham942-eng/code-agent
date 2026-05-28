@@ -30,6 +30,8 @@ import { classifyIntent } from '../../routing/intentClassifier';
 import { getTaskOrchestrator } from '../../planning/taskOrchestrator';
 import { getMaxIterations } from '../../services/cloud/featureFlagService';
 import { createLogger } from '../../services/infra/logger';
+import { trackNode } from '../../observability/posthogNode';
+import { POSTHOG_EVENTS } from '../../../shared/observability/posthog-events';
 import { silence } from '../../utils/errorHandling';
 import { HookManager, createHookManager } from '../../hooks';
 import type { BudgetEventData } from '../../../shared/contract';
@@ -201,6 +203,18 @@ export class RunFinalizer {
         : this.ctx.isInterrupted
           ? 'interrupted'
           : 'completed');
+
+    // PostHog: run 结束事件（按 terminalStatus 路由到 completed / failed / cancelled）
+    const runEvent = terminalStatus === 'completed'
+      ? POSTHOG_EVENTS.RUN_COMPLETED
+      : terminalStatus === 'failed'
+        ? POSTHOG_EVENTS.RUN_FAILED
+        : POSTHOG_EVENTS.RUN_CANCELLED;
+    trackNode(runEvent, {
+      sessionId: this.ctx.sessionId,
+      iterations,
+      status: terminalStatus,
+    });
 
     // Handle loop exit conditions
     if (terminalStatus === 'failed') {

@@ -7,6 +7,8 @@ import { getServiceRegistry } from '../services/serviceRegistry';
 import { generateMessageId } from '../../shared/utils/id';
 import { getTelemetryStorage } from './telemetryStorage';
 import { getAuthService } from '../services/auth/authService';
+import { trackNode } from '../observability/posthogNode';
+import { POSTHOG_EVENTS } from '../../shared/observability/posthog-events';
 import { getSystemPromptCache } from './systemPromptCache';
 import { classifyIntent, evaluateOutcome } from './intentClassifier';
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetryAdapter, QualitySignals, TelemetryPushEvent, ErrorCategory } from '../../shared/contract/telemetry';
@@ -288,6 +290,13 @@ export class TelemetryCollector {
 
     this.activeSession = session;
     getTelemetryStorage().insertSession(session);
+
+    // PostHog: session 开始事件（metadata-only，不含 workingDirectory 等可能含 PII 的字段）
+    trackNode(POSTHOG_EVENTS.SESSION_STARTED, {
+      sessionId,
+      provider: config.modelProvider,
+      model: config.modelName,
+    });
 
     // Ensure system prompt cache table exists
     try {

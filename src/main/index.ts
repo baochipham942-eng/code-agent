@@ -6,6 +6,7 @@ import { app, BrowserWindow, ipcMain, globalShortcut } from './platform';
 import { createLogger } from './services/infra/logger';
 import { initSentryNode } from './observability/sentryNode';
 import { initCrashMarker } from './observability/crashMarker';
+import { initPostHogNode } from './observability/posthogNode';
 
 const logger = createLogger('Main');
 import {
@@ -39,6 +40,8 @@ import type { PendingApprovalRepository } from './services/core/repositories/Pen
 initSentryNode();
 // 脏标记检测上次会话是否异常退出
 initCrashMarker();
+// PostHog 产品行为埋点（无 POSTHOG_KEY 时 no-op）
+initPostHogNode();
 
 // ----------------------------------------------------------------------------
 // Deep Link Protocol Handler

@@ -69,6 +69,7 @@
 **Effort:** M
 **Priority:** P2
 **Depends on:** 无
+**Progress:** ✅ SDK 装好 + 3 新模块(`shared/observability/posthog-events.ts` + `main/observability/posthogNode.ts` + `renderer/observability/posthogRenderer.ts`,镜像 Sentry 接法)。✅ 接线 7 处:renderer 入口(app_opened)、main+webServer 入口、auth 回调(identify/setCurrentDistinctId)、telemetryCollector.startSession(session_started)、runFinalizer.finalizeRun(run_completed/failed/cancelled)、lifecycle 清理(shutdownPostHog flush)。✅ env 配好(`POSTHOG_KEY/HOST` 在 `~/.code-agent/.env` + `VITE_POSTHOG_KEY/HOST` 在 worktree `.env`)。✅ typecheck 通过 + ingest 端点 live 烟测 `{"status":"Ok"}`。**待办**:`tool_used` + `model_selected` 事件(下一轮)；in-app E2E 跑 session 看 dashboard 数据流。
 
 ### Admin 控制台 UI（独立 web）
 
@@ -78,6 +79,7 @@
 **Effort:** L
 **Priority:** P3
 **Depends on:** LLM trace 回传后端、崩溃/错误回传
+**Progress:** ✅ MVP 三页面落地 `admin-console/`（Next.js 16 + @supabase/ssr + middleware admin 门）：`/login`、`/`（dashboard 统计 + sessionId 查搜索框 + 最近 10 条）、`/sessions/[id]`（会话头 + Turn 时间线 + 工具调用下钻 + 失败根因高亮）。`next build` 整体通过；runtime smoke 实证 middleware 把未登录挡到 /login。父仓 lint-staged 改函数形过滤 admin-console。**待办**：用户列表 `/users` + per-user 用量/成本聚合、错误趋势图、`/feedback`（👎 队列）、Vercel 部署。
 
 ## Completed
 

@@ -29,6 +29,7 @@ import { createLogger } from '../main/services/infra/logger';
 import { loadShellEnvironment } from '../main/services/infra/shellEnvironment';
 import { initSentryNode } from '../main/observability/sentryNode';
 import { initCrashMarker } from '../main/observability/crashMarker';
+import { initPostHogNode } from '../main/observability/posthogNode';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../shared/ipc';
 import { resolveSessionDefaultModelConfig } from '../main/services/core/sessionDefaults';
 import { getModelSessionState } from '../main/session/modelSessionState';
@@ -43,6 +44,8 @@ const logger = createLogger('WebServer');
 initSentryNode();
 // 脏标记检测上次会话是否异常退出
 initCrashMarker();
+// PostHog 产品行为埋点（无 POSTHOG_KEY 时 no-op）
+initPostHogNode();
 
 const LOCAL_WEB_AUTH_TEST_USER: AuthUser = {
   id: 'local-web-test-user',

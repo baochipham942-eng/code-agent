@@ -172,6 +172,8 @@
     "picomatch": "^4.0.4",
     "playwright": "^1.60.0",
     "postgres": "^3.4.9",
+    "posthog-js": "^1.376.3",
+    "posthog-node": "^5.35.5",
     "pptxgenjs": "4.0.1",
     "qrcode": "^1.5.4",
     "react-is": "^19.2.6",

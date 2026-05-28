@@ -22,6 +22,20 @@ import type {
   SwarmRunCoordinator,
   SwarmRunTrigger,
   SwarmEventLevel,
+  SwarmTraceRepo,
+  StartRunInput,
+  CloseRunInput,
+  UpsertAgentInput,
+  AppendEventInput,
+} from '../../../../shared/contract/swarmTrace';
+
+// 旧导出位置兼容：原来这些 Input 类型在本文件里定义并 export，repositories/index.ts
+// 仍 re-export。Phase 2 已挪到 contract，这里 re-export 保持外部 import 路径不变。
+export type {
+  StartRunInput,
+  CloseRunInput,
+  UpsertAgentInput,
+  AppendEventInput,
 } from '../../../../shared/contract/swarmTrace';
 
 type SQLiteRow = Record<string, unknown>;
@@ -50,61 +64,7 @@ function clampPayloadJson(payload: unknown): string {
   });
 }
 
-export interface StartRunInput {
-  id: string;
-  sessionId: string | null;
-  coordinator: SwarmRunCoordinator;
-  startedAt: number;
-  totalAgents: number;
-  trigger: SwarmRunTrigger;
-}
-
-export interface CloseRunInput {
-  id: string;
-  status: SwarmRunStatus;
-  endedAt: number;
-  completedCount: number;
-  failedCount: number;
-  parallelPeak: number;
-  totalTokensIn: number;
-  totalTokensOut: number;
-  totalToolCalls: number;
-  totalCostUsd: number;
-  errorSummary: string | null;
-  aggregation: SwarmRunRecord['aggregation'];
-}
-
-export interface UpsertAgentInput {
-  runId: string;
-  agentId: string;
-  name: string;
-  role: string;
-  status: SwarmRunAgentRecord['status'];
-  startTime: number | null;
-  endTime: number | null;
-  durationMs: number | null;
-  tokensIn: number;
-  tokensOut: number;
-  toolCalls: number;
-  costUsd: number;
-  error: string | null;
-  failureCategory: string | null;
-  filesChanged: string[];
-}
-
-export interface AppendEventInput {
-  runId: string;
-  seq: number;
-  timestamp: number;
-  eventType: string;
-  agentId: string | null;
-  level: SwarmEventLevel;
-  title: string;
-  summary: string;
-  payload: unknown;
-}
-
-export class SwarmTraceRepository {
+export class SwarmTraceRepository implements SwarmTraceRepo {
   constructor(private db: BetterSqlite3.Database) {}
 
   // --------------------------------------------------------------------------

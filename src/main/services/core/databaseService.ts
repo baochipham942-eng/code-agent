@@ -25,6 +25,7 @@ import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/c
 export type { StoredSession, StoredMessage, MemoryRecord, RelationQueryOptions, EntityRelation, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
 import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, SwarmTraceRepository, PendingApprovalRepository } from './repositories';
+import type { SwarmTraceRepo } from '../../../shared/contract/swarmTrace';
 
 type DatabaseRecoveryCallback = () => void;
 
@@ -78,7 +79,7 @@ export class DatabaseService {
   private configRepo!: ConfigRepository;
   private captureRepo!: CaptureRepository;
   private experimentRepo!: ExperimentRepository;
-  private swarmTraceRepo!: SwarmTraceRepository;
+  private swarmTraceRepo!: SwarmTraceRepo;
   private pendingApprovalRepo!: PendingApprovalRepository;
 
   constructor() {
@@ -859,7 +860,7 @@ export class DatabaseService {
    * 与 experiment / capture 不同，trace 写入路径调用密度高且字段繁多，
    * 不再为每个方法包一层薄门面。
    */
-  getSwarmTraceRepo(): SwarmTraceRepository {
+  getSwarmTraceRepo(): SwarmTraceRepo {
     this.ensureDb();
     return this.swarmTraceRepo;
   }

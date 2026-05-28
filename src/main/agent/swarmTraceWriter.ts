@@ -3,7 +3,7 @@
 // ============================================================================
 //
 // 订阅 EventBus 'swarm' domain，根据 swarm 事件维护一个 in-process 当前 run
-// 状态，串行写入 SwarmTraceRepository。所有写入 fire-and-forget，不阻塞
+// 状态，串行写入 SwarmTraceRepo。所有写入 fire-and-forget，不阻塞
 // 事件发布者；run 收尾时由外部调用 drain() 等待最后一笔落盘。
 //
 // 单进程同一时刻只允许一个 active run（与 SwarmEventEmitter 的 currentRunId
@@ -21,8 +21,8 @@ import type {
   SwarmRunTrigger,
   SwarmEventLevel,
   SwarmRunAgentRecord,
+  SwarmTraceRepo,
 } from '../../shared/contract/swarmTrace';
-import type { SwarmTraceRepository } from '../services/core/repositories/SwarmTraceRepository';
 import { getEventBus } from '../services/eventing/bus';
 import { createLogger } from '../services/infra/logger';
 
@@ -63,14 +63,14 @@ export interface SwarmTraceWriterOptions {
 }
 
 export class SwarmTraceWriter {
-  private readonly repo: SwarmTraceRepository;
+  private readonly repo: SwarmTraceRepo;
   private readonly options: Required<SwarmTraceWriterOptions>;
   private current: RunState | null = null;
   /** fire-and-forget 串行写入链，drain() 时 await 这条链 */
   private pendingPersist: Promise<void> = Promise.resolve();
   private unsubscribe: (() => void) | null = null;
 
-  constructor(repo: SwarmTraceRepository, options: SwarmTraceWriterOptions = {}) {
+  constructor(repo: SwarmTraceRepo, options: SwarmTraceWriterOptions = {}) {
     this.repo = repo;
     this.options = {
       getSessionId: options.getSessionId ?? (() => null),
@@ -404,7 +404,7 @@ export function getSwarmTraceWriter(): SwarmTraceWriter | null {
 }
 
 export function installSwarmTraceWriter(
-  repo: SwarmTraceRepository,
+  repo: SwarmTraceRepo,
   options?: SwarmTraceWriterOptions,
 ): SwarmTraceWriter {
   if (writerInstance) return writerInstance;

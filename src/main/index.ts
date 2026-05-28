@@ -30,7 +30,7 @@ import {
 } from './session/agentHistoryPersistence';
 import { installSwarmTraceWriter } from './agent/swarmTraceWriter';
 import { getDatabase } from './services/core/databaseService';
-import type { SwarmTraceRepository } from './services/core/repositories/SwarmTraceRepository';
+import type { SwarmTraceRepo } from '../shared/contract/swarmTrace';
 import type { PendingApprovalRepository } from './services/core/repositories/PendingApprovalRepository';
 
 // ----------------------------------------------------------------------------
@@ -149,7 +149,7 @@ app.whenReady().then(async () => {
     }
 
     // 2. Register swarm services 注入业务依赖到注册表，断开 swarm.ipc 的硬耦合
-    let swarmTraceRepo: SwarmTraceRepository | null = null;
+    let swarmTraceRepo: SwarmTraceRepo | null = null;
     let pendingApprovalRepo: PendingApprovalRepository | null = null;
     try {
       const db = getDatabase();

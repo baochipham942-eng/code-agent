@@ -9,13 +9,18 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { PluginManifest, LoadedPlugin } from '../../../../src/main/plugins/types';
+import type { AgentExtension, ExtensionRuntimeState } from '../../../../src/main/extension/types';
 
 // --- Mock layer ---------------------------------------------------------
 
-const getPluginsMock = vi.fn<() => LoadedPlugin[]>();
-vi.mock('../../../../src/main/plugins/pluginRegistry', () => ({
-  getPluginRegistry: () => ({
-    getPlugins: getPluginsMock,
+// Phase 3a: CapabilityRecommender 从 PluginRegistry 迁到 ExtensionRegistry,
+// mock 改成喂 AgentExtension[]。`mkPlugin` 工厂保留(原测试 fixture 友好),
+// 通过 `pluginToExtension` helper 转成 AgentExtension 形态。
+
+const getExtensionsMock = vi.fn<() => AgentExtension[]>();
+vi.mock('../../../../src/main/extension/extensionRegistry', () => ({
+  getExtensionRegistry: () => ({
+    getExtensions: getExtensionsMock,
   }),
 }));
 
@@ -65,6 +70,34 @@ function mkPlugin(
   };
 }
 
+/**
+ * 把 LoadedPlugin fixture 转成 AgentExtension(rootPath 推断 source,state 映射
+ * runtimeState)。等价于 production `loadedPluginToExtension`,但测试里手写避免
+ * 引入额外耦合。
+ */
+function pluginToExtension(plugin: LoadedPlugin): AgentExtension {
+  return {
+    metadata: {
+      id: plugin.manifest.id,
+      name: plugin.manifest.name,
+      description: plugin.manifest.description ?? '',
+      source: plugin.rootPath.startsWith('builtin:') ? 'builtin' : 'plugin',
+      surfaces: plugin.manifest.surfaces ?? ['tools'],
+      version: plugin.manifest.version,
+      author: plugin.manifest.author,
+      capabilities: plugin.manifest.capabilities,
+      platforms: plugin.manifest.platforms,
+      homepage: plugin.manifest.homepage,
+    },
+    runtimeState: plugin.state as ExtensionRuntimeState,
+  };
+}
+
+/** 把一批 LoadedPlugin 喂给 getExtensionsMock。 */
+function setExtensionsFromPlugins(plugins: LoadedPlugin[]): void {
+  getExtensionsMock.mockReturnValue(plugins.map(pluginToExtension));
+}
+
 // --- Tests --------------------------------------------------------------
 
 describe('CapabilityRecommender', () => {
@@ -78,7 +111,7 @@ describe('CapabilityRecommender', () => {
 
   describe('scanForCapability', () => {
     it('未在 active plugin 声明的 capability → PluginGap with empty candidates', async () => {
-      getPluginsMock.mockReturnValue([
+      setExtensionsFromPlugins([
         mkPlugin('builtin.audio', ['audio-processing']),
       ]);
       findCapableModelsMock.mockReturnValue([]); // not a model capability anyway
@@ -99,7 +132,7 @@ describe('CapabilityRecommender', () => {
     });
 
     it('未启用 plugin 声明 capability 时作为候选返回', async () => {
-      getPluginsMock.mockReturnValue([
+      setExtensionsFromPlugins([
         mkPlugin('builtin.browser-control', ['browser-control'], 'disabled'),
       ]);
       findCapableModelsMock.mockReturnValue([]);
@@ -125,7 +158,7 @@ describe('CapabilityRecommender', () => {
     });
 
     it('plugin 命中但 model 注册表无候选 → ModelGap（vision 标签 case）', async () => {
-      getPluginsMock.mockReturnValue([
+      setExtensionsFromPlugins([
         // plugin 层命中：声明了 vision
         mkPlugin('builtin.vision', ['vision']),
       ]);
@@ -147,7 +180,7 @@ describe('CapabilityRecommender', () => {
     });
 
     it('model 候选存在但 provider 都没配 key → ApiKeyGap，provider 取候选首项', async () => {
-      getPluginsMock.mockReturnValue([
+      setExtensionsFromPlugins([
         mkPlugin('builtin.vision', ['vision']),
       ]);
       findCapableModelsMock.mockReturnValue([
@@ -172,7 +205,7 @@ describe('CapabilityRecommender', () => {
     });
 
     it('inactive plugin 不计入 plugin hit', async () => {
-      getPluginsMock.mockReturnValue([
+      setExtensionsFromPlugins([
         mkPlugin('builtin.audio', ['audio-processing'], 'inactive'),
       ]);
       findCapableModelsMock.mockReturnValue([]);
@@ -188,7 +221,7 @@ describe('CapabilityRecommender', () => {
 
   describe('recommendForToolError', () => {
     it('image_analyze 失败 → 推导 vision capability，走 scanForCapability', async () => {
-      getPluginsMock.mockReturnValue([]);
+      setExtensionsFromPlugins([]);
       findCapableModelsMock.mockReturnValue([]);
       hasConfiguredKeyMock.mockReturnValue(false);
 
@@ -205,7 +238,7 @@ describe('CapabilityRecommender', () => {
     });
 
     it('无关键词匹配 → 返回空数组', async () => {
-      getPluginsMock.mockReturnValue([]);
+      setExtensionsFromPlugins([]);
       findCapableModelsMock.mockReturnValue([]);
 
       const { getCapabilityRecommender } = await import(

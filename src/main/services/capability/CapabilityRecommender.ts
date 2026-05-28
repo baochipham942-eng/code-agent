@@ -11,7 +11,7 @@
 // - 不做 fuzzy / 同义词扩展，命中精确就拼；语义匹配交给 LLM 自己判断
 // ============================================================================
 
-import { getPluginRegistry } from '../../plugins/pluginRegistry';
+import { getExtensionRegistry } from '../../extension/extensionRegistry';
 import { getConfigService } from '../core/configService';
 import { findCapableModels } from '../../model/modelRouter';
 import type { ModelDomainCapability } from '../../../shared/constants';
@@ -60,19 +60,30 @@ function buildPluginCandidateScan(requiredCapability: string): {
   activeHit: boolean;
   candidates: CapabilityGapPluginCandidate[];
 } {
-  const matches = getPluginRegistry().getPlugins().filter((plugin) =>
-    plugin.manifest.capabilities?.includes(requiredCapability),
-  );
+  // 只看 plugin 类扩展(builtin/plugin source);skill 当前无 capabilities 字段,
+  // 但加 source 锁防御未来 skill metadata 扩 capabilities 时不误命中。
+  const matches = getExtensionRegistry()
+    .getExtensions()
+    .filter(
+      (e) =>
+        (e.metadata.source === 'builtin' || e.metadata.source === 'plugin') &&
+        e.metadata.capabilities?.includes(requiredCapability),
+    );
 
   return {
-    activeHit: matches.some((plugin) => plugin.state === 'active'),
+    activeHit: matches.some((e) => e.runtimeState === 'active'),
     candidates: matches
-      .filter((plugin) => plugin.state !== 'active')
-      .map((plugin) => ({
-        id: plugin.manifest.id,
-        name: plugin.manifest.name || plugin.manifest.id,
-        version: plugin.manifest.version,
-        description: plugin.manifest.description,
+      .filter((e) => e.runtimeState !== 'active')
+      .map((e) => ({
+        id: e.metadata.id,
+        name: e.metadata.name || e.metadata.id,
+        // ExtensionMetadata.version 类型上是 optional,但 plugin source 来自
+        // PluginManifest(schema 强制 version),运行时必有。给 '' fallback
+        // 仅满足 contract `version: string`。
+        version: e.metadata.version ?? '',
+        // metadata.description 在 plugin adapter 里被强制成空字符串,这里保留
+        // 原 contract 的 undefined 语义(下游 UI 拿 falsy 判断不渲染该行)
+        description: e.metadata.description || undefined,
       })),
   };
 }

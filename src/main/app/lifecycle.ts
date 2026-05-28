@@ -8,6 +8,7 @@ import { getMCPClient } from '../mcp/mcpClient';
 import { cleanupSessionStateManager } from '../session/sessionStateManager';
 import { disposeAgentRegistry } from '../agent/agentRegistry';
 import { createLogger } from '../services/infra/logger';
+import { captureException } from '../observability/sentryNode';
 
 const logger = createLogger('Lifecycle');
 
@@ -90,9 +91,12 @@ export function setupLifecycleHandlers(
   // Handle uncaught errors
   process.on('uncaughtException', (error) => {
     logger.error('Uncaught Exception', error);
+    captureException(error, { tags: { surface: 'node', source: 'uncaughtException' } });
   });
 
   process.on('unhandledRejection', (reason, promise) => {
-    logger.error('Unhandled Rejection', reason instanceof Error ? reason : new Error(String(reason)), { promise: String(promise) });
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    logger.error('Unhandled Rejection', err, { promise: String(promise) });
+    captureException(err, { tags: { surface: 'node', source: 'unhandledRejection' } });
   });
 }

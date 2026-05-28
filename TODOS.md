@@ -22,6 +22,61 @@
 **Priority:** P1
 **Depends on:** 无
 
+## 可观测性回传（Fleet Observability）
+
+> 完整设计见 [docs/plans/2026-05-28-fleet-observability-plan.md](docs/plans/2026-05-28-fleet-observability-plan.md)。
+> 核心问题：app 已分发给用户，但崩溃/LLM trace/usage 全留在用户本机，开发者收不到、无法按 sessionId 跨用户查根因。
+>
+> 监控分三类各用成熟产品，不自造轮子：崩溃→Sentry、LLM trace→Langfuse(已接，待回传)、产品行为→PostHog。唯一自建的是"分发客户端→开发者中央台"的回传管道(Vercel endpoint + Supabase 表)——桌面应用拿不到 web SaaS 那种"请求自动过你服务器"的免费可观测性，这层胶水必须自己写。
+>
+> ⚠️ **强约束**：所有"看数据"的能力（查崩溃/查 trace/按 sessionId 根因/per-user 成本/控制台）**只有管理员能用**。用户端单向上报，中央表 RLS 只放行 `is_code_agent_admin()`、客户端只写不读；控制台走 is_admin 门且不打进分发包。本机自己 telemetry 查看不受影响。
+
+### 崩溃/错误回传（Sentry + Rust 脏标记）
+
+**What:** renderer 接 `@sentry/react`（ErrorBoundary.tsx:35 的 TODO）+ node webServer 接 `@sentry/node`（lifecycle.ts:91-96 现成 handler）+ Rust shell 启动脏标记检测崩溃；`beforeSend` 复用 sensitiveDataGuard 脱敏，崩溃报告永不含代码
+**Why:** 现在用户 app 闪退/报错开发者一无所知，没法知道"有多少用户崩了、崩在哪"
+**Context:** DSN 是 write-only 可嵌入分发包；Rust `panic=abort` 用脏标记不做进程内捕获；P0 独立、当天能验
+**Effort:** M
+**Priority:** P1
+**Depends on:** 无
+**Progress:** 代码全部落地且 typecheck 通过（worktree 分支 `worktree-fleet-observability`，9 源文件 / +351 行）。新增 `shared/observability/scrubEvent.ts`（两端共用脱敏）+ `main/observability/sentryNode.ts` + `main/observability/crashMarker.ts`（脏标记，Node 实现，连 Rust shell 崩溃一起兜）+ `renderer/observability/sentryRenderer.ts`；接线 renderer 入口/ErrorBoundary/main 入口/webServer/lifecycle 两个 handler；settings 加 `crashReporting.enabled`。脏标记**改用 Node `process.on('exit')` 而非 Rust**（更优，见计划文档决策记录）。**唯一待办**：用户建 Sentry 项目，填 DSN 到 `~/.code-agent/.env`(node) + 构建期 `VITE_SENTRY_DSN`(renderer)，做真·E2E（触发崩溃→看板收到+脱敏正确）。
+
+### LLM trace 回传后端（Supabase 表 + Vercel 接收端）
+
+**What:** 新建 `telemetry_sessions/turns/feedback` 表 + RLS（照 init_sync_tables + control_plane_governance 模板）+ `vercel-api/api/v1/telemetry.ts` 接收端（service role 写入，照 control-plane.ts handler）
+**Why:** 让分发用户的 trace 流到开发者自己的中央台，支撑"按 sessionId 跨用户查根因"和 per-user 成本聚合
+**Context:** 不把 Langfuse key 塞客户端（否则 trace 落用户自己 Langfuse）；admin 地基 is_admin/is_code_agent_admin() 已现成
+**Effort:** M
+**Priority:** P1
+**Depends on:** 无
+
+### LLM trace 回传客户端（上传器 + 反馈入口）
+
+**What:** 新建 `telemetryUploaderService.ts`（抄 syncService 的 upsert+批量+定时 loop），从本地 telemetry SQLite 增量上传；默认 metadata-only，全文仅 👎/报障时上传（脱敏）；renderer Turn 组件加 👍/👎 入口
+**Why:** 后端有表也要客户端推上去才闭环；👎 队列直接喂现有 eval set
+**Context:** userId 走 authService.getCurrentUser()?.id（telemetryCollector.ts:105 已写入）；需给 telemetryStorage 加 synced_at 列（先确认本地 schema 升级机制）
+**Effort:** M
+**Priority:** P1
+**Depends on:** LLM trace 回传后端
+
+### 产品分析埋点（PostHog）
+
+**What:** renderer 接 posthog-js + webServer 接 posthog-node，埋 app_opened/session_started/model_selected/tool_used/run_completed|failed，distinct_id = hash(userId)
+**Why:** 现在用户怎么用产品（功能使用/留存/漏斗）完全是黑盒
+**Context:** 免费档够用，opt-out 尊重；独立于崩溃和 trace 回传
+**Effort:** M
+**Priority:** P2
+**Depends on:** 无
+
+### Admin 控制台 UI（独立 web）
+
+**What:** 独立 Next.js on Vercel 控制台（admin RLS 读 Supabase）：用户列表+per-user 用量成本、错误/崩溃趋势、按 sessionId 下钻查根因、👎 反馈队列
+**Why:** 对标老师那个 ExcelMaster 控制台，把"输入 sessionId 查根因"变成真实可用的 UI
+**Context:** 后端地基（entitlements/audit/is_admin）已有只缺前端；不打进分发包
+**Effort:** L
+**Priority:** P3
+**Depends on:** LLM trace 回传后端、崩溃/错误回传
+
 ## Completed
 
 ### 修复 Observation Masking 导致的工具调用失控 ✅ 2026-03-20

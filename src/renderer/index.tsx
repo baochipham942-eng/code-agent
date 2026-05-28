@@ -1,7 +1,10 @@
 import { initTransport } from "./api";
+import { initSentryRenderer } from "./observability/sentryRenderer";
 
 // Must run before React renders — injects HTTP polyfill in browser mode
 initTransport();
+// 崩溃上报尽早初始化（无 VITE_SENTRY_DSN 时为 no-op）
+initSentryRenderer();
 
 import React from 'react';
 import { createRoot } from 'react-dom/client';

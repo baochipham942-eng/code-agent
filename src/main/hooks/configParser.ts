@@ -386,22 +386,6 @@ export function getHooksConfigPaths(workingDirectory: string): {
 }
 
 /**
- * @deprecated Use getHooksConfigPaths instead
- * Legacy function for backward compatibility
- */
-export function getLegacyHooksConfigPaths(workingDirectory: string): {
-  global: string;
-  project: string;
-} {
-  const homeDir = process.env.HOME || process.env.USERPROFILE || '';
-
-  return {
-    global: path.join(homeDir, '.claude', 'settings.json'),
-    project: path.join(workingDirectory, '.claude', 'settings.json'),
-  };
-}
-
-/**
  * Check if a file exists
  */
 async function fileExists(filePath: string): Promise<boolean> {

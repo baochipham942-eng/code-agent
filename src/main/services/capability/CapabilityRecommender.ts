@@ -60,8 +60,16 @@ function buildPluginCandidateScan(requiredCapability: string): {
   activeHit: boolean;
   candidates: CapabilityGapPluginCandidate[];
 } {
-  // 只看 plugin 类扩展(builtin/plugin source);skill 当前无 capabilities 字段,
-  // 但加 source 锁防御未来 skill metadata 扩 capabilities 时不误命中。
+  // 只看 plugin 类扩展(builtin/plugin source)。当前 skill metadata 不投影
+  // capabilities,所以 skill 不会被 `capabilities?.includes(...)` 命中。
+  //
+  // 注意 source filter 不是"防御未来 skill 加 capabilities 时不误命中" ——
+  // ExtensionRegistry 允许 skill source 是 builtin / plugin(plugin-sourced
+  // skill / builtin skill),与本 filter 用同一组字面量,无法区分 plugin
+  // extension 和 plugin-sourced skill。
+  //
+  // 将来若 skill metadata 扩出 capabilities,要靠 surface 或独立 type
+  // discriminator(如 `e.metadata.surfaces.includes('tools')`)而非 source 锁。
   const matches = getExtensionRegistry()
     .getExtensions()
     .filter(

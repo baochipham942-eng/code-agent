@@ -217,6 +217,26 @@ describe('CapabilityRecommender', () => {
       const gaps = getCapabilityRecommender().scanForCapability('audio-processing');
       expect(gaps.some((g) => g.type === 'plugin')).toBe(true);
     });
+
+    it('多 disabled 候选时 candidates 顺序透传 ExtensionRegistry,不二次排序', async () => {
+      // Phase 3a 行为契约:CapabilityRecommender 不做 candidate 重排,顺序由
+      // ExtensionRegistry.getExtensions() 决定(其排序契约由 extensionRegistry
+      // 的测试单独锁定)。这里故意给非字典序输入,断言 Recommender 不主动 sort。
+      setExtensionsFromPlugins([
+        mkPlugin('zeta', ['browser-control'], 'disabled'),
+        mkPlugin('alpha', ['browser-control'], 'disabled'),
+        mkPlugin('mid', ['browser-control'], 'disabled'),
+      ]);
+      findCapableModelsMock.mockReturnValue([]);
+      hasConfiguredKeyMock.mockReturnValue(true);
+
+      const { getCapabilityRecommender } = await import(
+        '../../../../src/main/services/capability/CapabilityRecommender'
+      );
+      const gaps = getCapabilityRecommender().scanForCapability('browser-control');
+      const pluginGap = gaps.find((g) => g.type === 'plugin');
+      expect(pluginGap?.candidates.map((c) => c.id)).toEqual(['zeta', 'alpha', 'mid']);
+    });
   });
 
   describe('recommendForToolError', () => {

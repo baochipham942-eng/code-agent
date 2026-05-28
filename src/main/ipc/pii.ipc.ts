@@ -91,7 +91,7 @@ function findBundledFile(relativeFromScripts: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// isReady 检测: env vars 在 ~/.code-agent/.env + venv python + model.onnx 都到位
+// isReady 检测: env vars 在 ~/.code-agent/.env + venv python + ONNX 模型都到位
 // ---------------------------------------------------------------------------
 interface ReadyStatus {
   ready: boolean;
@@ -127,7 +127,7 @@ function checkReady(): ReadyStatus {
   const detector = env.CODE_AGENT_PII_ENTITY_DETECTOR;
   const pythonPath = env.CODE_AGENT_GLINER_PII_RUNNER_PYTHON || null;
   const modelDir = env.CODE_AGENT_GLINER_PII_MODEL || null;
-  const onnxFile = env.CODE_AGENT_GLINER_PII_ONNX_FILE || 'onnx/model.onnx';
+  const onnxFile = env.CODE_AGENT_GLINER_PII_ONNX_FILE || 'onnx/model_quint8.onnx';
   const modelOnnx = modelDir ? path.join(modelDir, onnxFile) : null;
 
   const hasPiiKeys = detector === 'gliner-onnx-command' && !!pythonPath && !!modelDir;

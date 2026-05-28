@@ -48,6 +48,17 @@ const STATE_LABEL: Record<SetupState, { dot: string; text: string }> = {
   error:     { dot: 'bg-red-500',   text: '失败' },
 };
 
+function getSetupLogLineClass(entry: { stream: 'stdout' | 'stderr'; line: string }): string {
+  const line = entry.line.trim();
+  if (line.startsWith('❌')) return 'text-red-400';
+  if (line.startsWith('▷ STEP:')) return 'text-cyan-300';
+  if (line.startsWith('✓')) return 'text-green-400';
+  if (entry.stream === 'stderr' && /\b(error|failed|failure|fatal|exception|traceback)\b/i.test(line)) {
+    return 'text-red-400';
+  }
+  return entry.stream === 'stderr' ? 'text-zinc-400' : 'text-zinc-300';
+}
+
 const PrivacySettings: React.FC = () => {
   const [state, setState] = useState<SetupState>('idle');
   const [step, setStep] = useState<string>('');
@@ -159,7 +170,7 @@ const PrivacySettings: React.FC = () => {
   return (
     <SettingsPage
       title="隐私防线"
-      description="本地 PII 防线（GLiNER ONNX）。启用后，协作内容进入云端 LLM 前自动识别并脱敏命名实体（姓名/地址/医疗 ID/银行账号等）。模型在本地运行，~125MB 一次性下载到 ~/.cache/code-agent/gliner-pii/。"
+      description="本地 PII 防线（GLiNER ONNX）。启用后，协作内容进入云端 LLM 前自动识别并脱敏命名实体（姓名/地址/医疗 ID/银行账号等）。模型在本地运行，首次会下载约 190MB 的量化模型到 ~/.cache/code-agent/gliner-pii/。"
     >
       <SettingsSection
         title="状态"
@@ -208,7 +219,7 @@ const PrivacySettings: React.FC = () => {
 
       <SettingsSection
         title="操作"
-        description="一键启用流程：拉 Python 3.12 venv → 装 gliner+onnxruntime → 下 ~125MB 模型 → 写 ~/.code-agent/.env"
+        description="一键启用流程：准备 Python 3.12 运行环境 → 安装本地识别依赖 → 下载约 190MB 量化模型 → 写 ~/.code-agent/.env"
       >
         <div className="flex flex-wrap gap-3">
           {state === 'running' ? (
@@ -244,7 +255,7 @@ const PrivacySettings: React.FC = () => {
           {state === 'running' && (
             <span className="inline-flex items-center gap-2 text-xs text-zinc-400">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              首次安装大概 3-5 分钟,看网络
+              首次需要下载运行环境和模型,可在后台等待
             </span>
           )}
         </div>
@@ -261,17 +272,7 @@ const PrivacySettings: React.FC = () => {
             logs.map((entry, idx) => (
               <div
                 key={idx}
-                className={
-                  entry.stream === 'stderr'
-                    ? 'text-red-400'
-                    : entry.line.startsWith('▷ STEP:')
-                      ? 'text-cyan-300'
-                      : entry.line.startsWith('✓')
-                        ? 'text-green-400'
-                        : entry.line.startsWith('❌')
-                          ? 'text-red-400'
-                          : 'text-zinc-300'
-                }
+                className={getSetupLogLineClass(entry)}
               >
                 {entry.line}
               </div>

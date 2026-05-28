@@ -84,6 +84,7 @@
       "../scripts/system-audio-capture",
       "../scripts/vision-ocr",
       "../scripts/vision-tagger",
+      "../scripts/rtk",
       "../scripts/uv",
       "../scripts/pii/setup-gliner-pii.sh",
       "../scripts/pii/gliner_onnx_runner.py"

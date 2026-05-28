@@ -19,6 +19,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getDatabase } from '../../../services/core/databaseService';
+import { guardSensitiveText } from '../../../security/sensitiveDataGuard';
 import { ocrSearchSchema as schema } from './ocrSearch.schema';
 
 const BINARY_NAME = 'vision-ocr';
@@ -93,7 +94,6 @@ function runVisionOcr(
           return;
         }
         if (err) {
-          let parsedError = '';
           try {
             const parsed = JSON.parse(stdout) as OcrSwiftOutput;
             if (!parsed.ok) {
@@ -103,7 +103,7 @@ function runVisionOcr(
           } catch {
             // not JSON, fallthrough
           }
-          parsedError = stderr.trim() || err.message;
+          const parsedError = stderr.trim() || err.message;
           resolve({ ok: false, path: imagePath, error: parsedError });
           return;
         }
@@ -140,8 +140,26 @@ function persistOcrToMemory(
 ): string | undefined {
   try {
     const db = getDatabase();
-    const fullText = result.fullText || '';
-    const regions = result.regions || [];
+    const fullTextRaw = result.fullText || '';
+    const regionsRaw = result.regions || [];
+    // OCR 截图内容入本地 memories 表前过 sensitiveDataGuard：
+    // surface='memory' / mode='local-persist' 启用 secret/token/SSN/credit-card
+    // 等规则脱敏 + prompt injection neutralize,挡住密码框/Token 截图被后续 LLM 调用
+    // 当成上下文上云。summary 必须基于 guard 后的 fullText 切片,不能用 raw。
+    const fullText = guardSensitiveText(fullTextRaw, {
+      surface: 'memory',
+      mode: 'local-persist',
+      maxLength: 100_000,
+      preserveLines: true,
+    });
+    const regions: OcrRegion[] = regionsRaw.map((r) => ({
+      ...r,
+      text: guardSensitiveText(r.text, {
+        surface: 'memory',
+        mode: 'local-persist',
+        maxLength: 4_000,
+      }),
+    }));
     const memory = db.createMemory({
       type: 'ocr_result',
       category: 'screenshot_ocr',

@@ -15,6 +15,8 @@ import {
   initLangfuse,
 } from '../services';
 import { initUpdateService, getUpdateService } from '../services/cloud/updateService';
+import { getTelemetryUploaderService } from '../telemetry/telemetryUploaderService';
+import { getPostHogDistinctId, setCurrentDistinctId, identifyNode } from '../observability/posthogNode';
 import { initMCPClient, getMCPClient, type MCPServerConfig } from '../mcp/mcpClient';
 import { initPromptService, getPromptsInfo } from '../services/cloud/promptService';
 import { initCloudConfigService, getCloudConfigService } from '../services/cloud';
@@ -215,6 +217,25 @@ function initializeSupabaseServices(mainWindow: BrowserWindow | null): void {
     } else {
       syncService.stopAutoSync();
       logger.info('Auto-sync stopped');
+    }
+
+    // Fleet telemetry 回传：登录起、登出停（auth-gated，内部默认 metadata-only）
+    const telemetryUploader = getTelemetryUploaderService();
+    if (user) {
+      telemetryUploader.startAutoUpload();
+      logger.info('Telemetry upload started');
+    } else {
+      telemetryUploader.stopAutoUpload();
+      logger.info('Telemetry upload stopped');
+    }
+
+    // PostHog distinct_id：登录用稳定匿名 ID，登出清空（事件回退匿名）
+    if (user) {
+      const distinctId = getPostHogDistinctId(user.id);
+      setCurrentDistinctId(distinctId);
+      identifyNode(distinctId);
+    } else {
+      setCurrentDistinctId(null);
     }
   });
 

@@ -41,6 +41,7 @@ import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artif
 import { createSanitizedEnv } from '../../../utils/sanitizeEnv';
 import { truncateMiddle } from '../../../utils/truncate';
 import { checkCommandPolicy } from './commandPolicy';
+import { rewriteBashCommand } from './rtkRewriter';
 import { getPermissionModeManager } from '../../../permissions/modes';
 import { wrapCommandForSandbox } from '../../../sandbox';
 
@@ -640,6 +641,13 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
     }
 
     // -------------------------------------------------------------------------
+    // rtk rewrite (token-saving, B 方案)
+    // 默认关闭, fail-closed; policy 已在上面拦截危险命令,这里只动 spawn 用的命令字符串,
+    // 不改 normalizedCommand —— 动态描述/指纹/UI meta 看到的仍是模型原命令
+    // -------------------------------------------------------------------------
+    const commandForExecution = await rewriteBashCommand(normalizedCommand);
+
+    // -------------------------------------------------------------------------
     // 前台 spawn
     // -------------------------------------------------------------------------
     const shellPathDiagnostics = getShellPathDiagnostics();
@@ -651,7 +659,7 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       fallbackEntries: shellPathDiagnostics.fallbackEntries,
     };
 
-    const sandboxedFg = applySandbox(normalizedCommand);
+    const sandboxedFg = applySandbox(commandForExecution);
     if (!sandboxedFg.ok) return { ok: false, error: sandboxedFg.error, code: 'SANDBOX_UNAVAILABLE' };
 
     try {

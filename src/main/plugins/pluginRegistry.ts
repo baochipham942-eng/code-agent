@@ -317,6 +317,13 @@ export class PluginRegistry {
           ...tool,
           name: `${plugin.manifest.id}:${tool.name}`,
         };
+        // 双通道命名冲突检查(与 registerToolModule 对称)。底层 ToolRegistry
+        // 是幂等覆盖,但 plugin 层把"重复注册"视为编程错误,而不是热重载入口 ——
+        // 热重载走 reloadPlugin → deactivate(清空 registeredTools)→ activate,
+        // 不依赖 silent overwrite。
+        if (plugin.registeredTools.includes(prefixedTool.name)) {
+          throw new Error(`Tool ${prefixedTool.name} already registered`);
+        }
         const category = 'file' as ToolCategory;
         const wrapped = wrapLegacyTool(prefixedTool, {
           category,

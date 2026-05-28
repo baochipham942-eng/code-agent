@@ -94,7 +94,6 @@ const EXECUTE_TOOLS = new Set([
   'image_process',
   'image_annotate',
   'mermaid_export',
-  'speech_to_text',
   'local_speech_to_text',
   'text_to_speech',
   'xlwings_execute',

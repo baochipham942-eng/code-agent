@@ -114,7 +114,15 @@ export interface PluginHooks {
 export interface PluginAPI {
   /** Plugin's own metadata */
   metadata: PluginMetadata;
-  /** Register a tool */
+  /**
+   * 注册 v1 形态的工具（Tool）。
+   *
+   * 命名约定：工具名会自动加 `${pluginId}:` 前缀防命名冲突。
+   *
+   * 同名重复注册（包括与 registerToolModule 双通道冲突）会抛错，与 v2 对称。
+   * 热重载场景由 reloadPlugin 先 deactivate 清理 registeredTools 数组,
+   * 不依赖 idempotent overwrite。
+   */
   registerTool: (tool: Tool) => void;
   /** Unregister a tool */
   unregisterTool: (toolName: string) => void;

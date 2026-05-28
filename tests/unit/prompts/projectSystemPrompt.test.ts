@@ -150,5 +150,60 @@ describe('loadProjectSystemPrompt', () => {
   it('SYSTEM_PROMPT_FILES 常量用的文件名跟实际查找一致', () => {
     expect(SYSTEM_PROMPT_FILES.REPLACE).toBe('SYSTEM.md');
     expect(SYSTEM_PROMPT_FILES.APPEND).toBe('APPEND_SYSTEM.md');
+    expect(SYSTEM_PROMPT_FILES.FULL_REPLACE).toBe('FULL_SYSTEM.md');
+  });
+
+  // --------------------------------------------------------------------------
+  // FULL_SYSTEM.md (D 风险闭环):用户要完全接管 system prompt,跳过所有默认层
+  // --------------------------------------------------------------------------
+
+  it('项目级 FULL_SYSTEM.md 命中 → fullReplace = 内容 + fullReplacePath', () => {
+    const filePath = writeFile(projectCfgDir, SYSTEM_PROMPT_FILES.FULL_REPLACE, 'full takeover');
+    const result = loadProjectSystemPrompt(projectTmp);
+    expect(result.fullReplace).toBe('full takeover');
+    expect(result.sources.fullReplacePath).toBe(filePath);
+    expect(result.custom).toBeNull();
+    expect(result.append).toBeNull();
+  });
+
+  it('只有全局 FULL_SYSTEM.md → fullReplace = 全局内容 + 路径指全局', () => {
+    const filePath = writeFile(homeCfgDir, SYSTEM_PROMPT_FILES.FULL_REPLACE, 'global full');
+    const result = loadProjectSystemPrompt(projectTmp);
+    expect(result.fullReplace).toBe('global full');
+    expect(result.sources.fullReplacePath).toBe(filePath);
+  });
+
+  it('项目级 FULL_SYSTEM.md 覆盖全局级(短路,不合并)', () => {
+    writeFile(homeCfgDir, SYSTEM_PROMPT_FILES.FULL_REPLACE, 'global full');
+    const projectPath = writeFile(projectCfgDir, SYSTEM_PROMPT_FILES.FULL_REPLACE, 'project full');
+    const result = loadProjectSystemPrompt(projectTmp);
+    expect(result.fullReplace).toBe('project full');
+    expect(result.sources.fullReplacePath).toBe(projectPath);
+  });
+
+  it('三种文件同时存在 → 三个字段独立填充(消费者负责优先级)', () => {
+    const customPath = writeFile(projectCfgDir, SYSTEM_PROMPT_FILES.REPLACE, 'replace');
+    const appendPath = writeFile(projectCfgDir, SYSTEM_PROMPT_FILES.APPEND, 'append');
+    const fullPath = writeFile(projectCfgDir, SYSTEM_PROMPT_FILES.FULL_REPLACE, 'full');
+    const result = loadProjectSystemPrompt(projectTmp);
+    expect(result.custom).toBe('replace');
+    expect(result.append).toBe('append');
+    expect(result.fullReplace).toBe('full');
+    expect(result.sources.customPath).toBe(customPath);
+    expect(result.sources.appendPath).toBe(appendPath);
+    expect(result.sources.fullReplacePath).toBe(fullPath);
+  });
+
+  it('两层都没文件 → fullReplace + fullReplacePath 都是 null', () => {
+    const result = loadProjectSystemPrompt(projectTmp);
+    expect(result.fullReplace).toBeNull();
+    expect(result.sources.fullReplacePath).toBeNull();
+  });
+
+  it('FULL_SYSTEM.md 为空文件 → fullReplace = "" 不是 null', () => {
+    const emptyPath = writeFile(projectCfgDir, SYSTEM_PROMPT_FILES.FULL_REPLACE, '');
+    const result = loadProjectSystemPrompt(projectTmp);
+    expect(result.fullReplace).toBe('');
+    expect(result.sources.fullReplacePath).toBe(emptyPath);
   });
 });

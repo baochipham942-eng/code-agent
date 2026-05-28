@@ -56,6 +56,9 @@ export function applyTelemetryTurnsMigrations(db: BetterSqlite3.Database, logger
   safeExec(db, "ALTER TABLE telemetry_turns ADD COLUMN turn_type TEXT NOT NULL DEFAULT 'user'", logger);
   safeExec(db, "ALTER TABLE telemetry_turns ADD COLUMN parent_turn_id TEXT", logger);
 
+  // Fleet observability: 标记会话遥测是否已回传到云端（NULL = 未上传），镜像 sessions.synced_at
+  safeExec(db, 'ALTER TABLE telemetry_sessions ADD COLUMN synced_at INTEGER', logger);
+
   // telemetry_model_calls 新增 prompt/completion 列（用于评测系统重放）
   const modelCallMigrations = [
     'ALTER TABLE telemetry_model_calls ADD COLUMN prompt TEXT',

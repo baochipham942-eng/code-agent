@@ -138,14 +138,15 @@ CREATE TABLE IF NOT EXISTS public.telemetry_feedback (
   created_at BIGINT NOT NULL
 );
 ```
-- **RLS（强约束：只有管理员能看）**：中央 telemetry 表**不给普通 authenticated 用户任何 SELECT policy**——RLS 开启但只放行 admin。读取一律 `USING (public.is_code_agent_admin())`；写入只走 service role（ingest endpoint）绕过 RLS。普通用户的客户端**只写不读**这些表，从端点单向上报，永远查不到任何人（包括自己）的中央数据。（照 `20260517000000_control_plane_governance.sql` 现成 admin-only pattern）
-- **索引**：`(user_id, created_at)`、`(status)`（筛错误）、`(app_version)`、turns 的 `(session_id)`。
+- **RLS（强约束：只有管理员能看）**：用户只能 `INSERT/UPDATE` 自己的行（`auth.uid() = user_id`），**没有 SELECT policy**；只有 admin 能读全部（`USING (public.is_code_agent_admin())`）。客户端**只写自己、读不到任何人（含自己）**。（照 `20260517000000_control_plane_governance.sql` 现成 admin-only pattern）
+- **索引**：`(user_id, uploaded_at)`、`(status)`（筛错误）、`(app_version)`、turns 的 `(session_id)`。
+- 实现文件：`supabase/migrations/20260528000000_telemetry_fleet.sql`（✅ 已写）。
 
-### 后端 — Vercel 接收端点（新建）
-新文件 `vercel-api/api/v1/telemetry.ts`，照 `vercel-api/api/v1/control-plane.ts:38` 的 `handler(req,res)` 结构：
-- 鉴权：校验客户端带的 Supabase user JWT（或匿名 + deviceId）；用 `SUPABASE_SERVICE_ROLE_KEY`（control plane 已在用）连库写入，绕 RLS。
-- 接收**批量** records，幂等 `upsert({ onConflict: 'id' })`。
-- 限流（per user/device）、payload 大小校验、`{ error, message }` 标准错误返回。
+### 🔀 架构决策变更（实现中确定）：直连 supabase-js，不建 Vercel 端点
+原计划走 `vercel-api/api/v1/telemetry.ts` + service role。实现时发现 **syncService 既有模式就是客户端直连 supabase-js 以登录用户身份写自己的行、RLS 管控**。telemetry 照搬即可：
+- 客户端用 `getSupabase().from('telemetry_sessions').upsert(..., { onConflict: 'id' })`，RLS 保证只能写自己的行。
+- **不需要 Vercel 端点、不需要 service role**——更简、复用成熟模式、且满足 admin-only-read。
+- 代价：上传 **auth-gated**（仅登录用户上报，与现有 sync 一致）。匿名/登出用户的遥测不回传——非硬需求，若以后要覆盖登出用户再加一个 service-role 端点。
 
 ### 客户端 — 上传器（新建，抄 syncService）
 新文件 `src/main/telemetry/telemetryUploaderService.ts`，模仿 `src/main/services/sync/syncService.ts`：

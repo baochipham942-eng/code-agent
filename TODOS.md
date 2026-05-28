@@ -39,16 +39,17 @@
 **Effort:** M
 **Priority:** P1
 **Depends on:** 无
-**Progress:** 代码全部落地且 typecheck 通过（worktree 分支 `worktree-fleet-observability`，9 源文件 / +351 行）。新增 `shared/observability/scrubEvent.ts`（两端共用脱敏）+ `main/observability/sentryNode.ts` + `main/observability/crashMarker.ts`（脏标记，Node 实现，连 Rust shell 崩溃一起兜）+ `renderer/observability/sentryRenderer.ts`；接线 renderer 入口/ErrorBoundary/main 入口/webServer/lifecycle 两个 handler；settings 加 `crashReporting.enabled`。脏标记**改用 Node `process.on('exit')` 而非 Rust**（更优，见计划文档决策记录）。**唯一待办**：用户建 Sentry 项目，填 DSN 到 `~/.code-agent/.env`(node) + 构建期 `VITE_SENTRY_DSN`(renderer)，做真·E2E（触发崩溃→看板收到+脱敏正确）。
+**Progress:** 代码全部落地且 typecheck 通过（worktree 分支 `worktree-fleet-observability`，9 源文件 / +351 行）。新增 `shared/observability/scrubEvent.ts`（两端共用脱敏）+ `main/observability/sentryNode.ts` + `main/observability/crashMarker.ts`（脏标记，Node 实现，连 Rust shell 崩溃一起兜）+ `renderer/observability/sentryRenderer.ts`；接线 renderer 入口/ErrorBoundary/main 入口/webServer/lifecycle 两个 handler；settings 加 `crashReporting.enabled`。脏标记**改用 Node `process.on('exit')` 而非 Rust**（更优，见计划文档决策记录）。**DSN 已配**：`~/.code-agent/.env`(SENTRY_DSN) + worktree `.env`(SENTRY_DSN + VITE_SENTRY_DSN)。**发送侧已验证**：live 冒烟用真实 DSN 经代理发出一条带假密钥+家目录的事件，client/lastEventId/flush 三重确认送达。**剩余**：把本分支构建进 app，在真实 Tauri webview 里触发 renderer/node 崩溃做完整 in-app E2E（vitest/冒烟过 ≠ UI mount 过）；用户在 Sentry 看板确认收到且脱敏正确。
 
-### LLM trace 回传后端（Supabase 表 + Vercel 接收端）
+### LLM trace 回传后端（Supabase 表 + admin-only RLS）
 
-**What:** 新建 `telemetry_sessions/turns/feedback` 表 + RLS（照 init_sync_tables + control_plane_governance 模板）+ `vercel-api/api/v1/telemetry.ts` 接收端（service role 写入，照 control-plane.ts handler）
+**What:** 新建 `telemetry_sessions/turns/feedback` 表 + RLS（照 init_sync_tables + control_plane_governance 模板）。**架构决策**：客户端直连 supabase-js 写自己的行（复用 syncService 模式），**不建 Vercel 端点/不用 service role**——更简、满足 admin-only-read。
 **Why:** 让分发用户的 trace 流到开发者自己的中央台，支撑"按 sessionId 跨用户查根因"和 per-user 成本聚合
 **Context:** 不把 Langfuse key 塞客户端（否则 trace 落用户自己 Langfuse）；admin 地基 is_admin/is_code_agent_admin() 已现成
 **Effort:** M
 **Priority:** P1
 **Depends on:** 无
+**Progress:** ✅ migration `supabase/migrations/20260528000000_telemetry_fleet.sql` 已写（admin-only RLS：用户写自己、仅 admin 读）。✅ 本地存储层：`migrations.ts` 加 `telemetry_sessions.synced_at` 列 + telemetryStorage `getUnsyncedSessions()`/`markSessionsSynced()`，typecheck 通过。**待办**：用户把 migration apply 到 Supabase；建上传器 `telemetryUploaderService.ts`（下一个任务）。
 
 ### LLM trace 回传客户端（上传器 + 反馈入口）
 

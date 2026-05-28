@@ -245,6 +245,51 @@ export class TelemetryStorage {
     }
   }
 
+  // --------------------------------------------------------------------------
+  // Fleet 回传支持（云端上报）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 取尚未回传（synced_at IS NULL）、已结束（completed/error）、且有 userId 的会话。
+   * recording 中的不传；无 userId（未登录采集）的不传——上传一律 auth-gated。
+   */
+  getUnsyncedSessions(limit = 50): TelemetrySession[] {
+    if (!this.isDbAvailable()) return [];
+    try {
+      const rows = this.getStmt(
+        'get_unsynced_sessions',
+        `
+          SELECT telemetry_sessions.*,
+                 COALESCE(telemetry_sessions.user_id, sessions.user_id) AS user_id
+          FROM telemetry_sessions
+          LEFT JOIN sessions ON sessions.id = telemetry_sessions.id
+          WHERE telemetry_sessions.synced_at IS NULL
+            AND telemetry_sessions.status IN ('completed', 'error')
+            AND COALESCE(telemetry_sessions.user_id, sessions.user_id) IS NOT NULL
+          ORDER BY telemetry_sessions.start_time ASC
+          LIMIT ?
+        `
+      ).all(limit) as Record<string, unknown>[];
+      return rows.map((row) => this.rowToSession(row));
+    } catch (error) {
+      logger.error('Failed to get unsynced telemetry sessions:', error);
+      return [];
+    }
+  }
+
+  /** 标记一批会话为已回传。syncedAt 可选，未传时 fallback 当前时间。 */
+  markSessionsSynced(sessionIds: string[], syncedAt: number = Date.now()): void {
+    if (!this.isDbAvailable() || sessionIds.length === 0) return;
+    try {
+      const placeholders = sessionIds.map(() => '?').join(', ');
+      this.getDb()
+        .prepare(`UPDATE telemetry_sessions SET synced_at = ? WHERE id IN (${placeholders})`)
+        .run(syncedAt, ...sessionIds);
+    } catch (error) {
+      logger.error('Failed to mark telemetry sessions synced:', error);
+    }
+  }
+
   listSessions(options: TelemetrySessionListOptions = {}): TelemetrySessionListItem[] {
     if (!this.isDbAvailable()) return [];
     try {

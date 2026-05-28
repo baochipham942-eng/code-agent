@@ -33,14 +33,6 @@ import {
 } from '../artifactRepairGuard';
 import { preloadDeferredToolsForTurn } from './deferredToolPreload';
 import { createHandoffTailStreamFilter } from '../../../handoff/handoffStream';
-import {
-  buildXiaomiArtifactTextFirstConfig,
-  buildXiaomiArtifactTextFirstMessages,
-  buildXiaomiArtifactTextFirstWriteResponse,
-  isBreakoutArtifactText,
-  resolveXiaomiArtifactTextFirstTargetPath,
-  shouldUseXiaomiArtifactTextFirstWrite,
-} from './xiaomiArtifactTextFirst';
 
 const ARTIFACT_REPAIR_RECOVERY_MAX_TOKENS = 16_384;
 const ARTIFACT_REPAIR_TARGETED_EDIT_MAX_TOKENS = 32_768;
@@ -759,102 +751,31 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
 
     const requestConfig = capArtifactRepairMaxTokens(ctx, effectiveConfig);
     requestConfigForRetry = requestConfig;
-    const xiaomiTwoStageEnhancePending = ctx.runtime.xiaomiArtifactTwoStage?.phase === 'enhance_pending';
-    const useXiaomiTextFirstArtifactWrite =
-      !artifactValidationPassed &&
-      !xiaomiTwoStageEnhancePending &&
-      shouldUseXiaomiArtifactTextFirstWrite({
-        artifactRequest,
-        artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
-        forceFinalResponseActive: Boolean(ctx.runtime.forceFinalResponseReason),
-        config: requestConfig,
-        tools: effectiveTools,
-        userRequestText,
-      });
-    const xiaomiTextFirstTargetPath = useXiaomiTextFirstArtifactWrite
-      ? ctx.runtime.artifactRepairGuard?.targetFile
-        || ctx.runtime.xiaomiArtifactTextFirstTargetPath
-        || resolveXiaomiArtifactTextFirstTargetPath(userRequestText, ctx.runtime.workingDirectory)
-      : null;
-    // 路径稳定:同一 run 内复用首次解析出的 text-first 目标文件,避免每轮 nextAvailablePath
-    // 递增出新文件(interactive-artifact-5/6/7…)。repair 仍以 artifactRepairGuard.targetFile 为准。
-    if (xiaomiTextFirstTargetPath && !ctx.runtime.artifactRepairGuard) {
-      ctx.runtime.xiaomiArtifactTextFirstTargetPath = xiaomiTextFirstTargetPath;
-    }
-    const xiaomiTextFirstArtifactRepairActive = Boolean(ctx.runtime.artifactRepairGuard);
-    const xiaomiTextFirstIsBreakoutCore =
-      Boolean(xiaomiTextFirstTargetPath)
-      && !xiaomiTextFirstArtifactRepairActive
-      && isBreakoutArtifactText(userRequestText);
     const stopArtifactProgress = startArtifactModelWaitProgress(ctx, {
       artifactRequest,
-      artifactRepairActive: xiaomiTextFirstArtifactRepairActive,
+      artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
       artifactRepairWritePriority,
     });
     let response: ModelResponse;
     try {
-      if (xiaomiTextFirstTargetPath) {
-        if (xiaomiTextFirstIsBreakoutCore) {
-          const existing = ctx.runtime.xiaomiArtifactTwoStage;
-          if (existing?.targetFile !== xiaomiTextFirstTargetPath || existing.phase === 'done') {
-            ctx.runtime.xiaomiArtifactTwoStage = {
-              targetFile: xiaomiTextFirstTargetPath,
-              kind: 'breakout',
-              phase: 'core_pending',
-            };
-          }
-        }
-        const textFirstConfig = buildXiaomiArtifactTextFirstConfig(requestConfig);
-        logger.info('[AgentLoop] Xiaomi artifact text-first write path active', {
-          targetPath: xiaomiTextFirstTargetPath,
-          stage: xiaomiTextFirstArtifactRepairActive ? 'repair' : 'core',
-        });
-        ctx.runFinalizer.emitTaskProgress(
-          'generating',
-          `小米模型正在生成 artifact 文本，完成后写入 ${xiaomiTextFirstTargetPath}`,
-        );
-        const textFirstResponse = await runEngineInference(
-          ctx,
-          buildXiaomiArtifactTextFirstMessages(modelMessages, xiaomiTextFirstTargetPath, {
-            artifactRepairActive: xiaomiTextFirstArtifactRepairActive,
-            stage: xiaomiTextFirstArtifactRepairActive ? 'repair' : 'core',
-          }),
-          [],
-          textFirstConfig,
-          undefined,
-          ctx.runtime.abortController.signal,
-          {
-            artifactRepairActive: false,
-            artifactRepairWritePriority: false,
-            artifactRepairFullRewritePriority: false,
-            disableProviderTransientRetry: true,
-            requestTimeoutMs: 1_200_000,
-            firstByteTimeoutMs: 60_000,
-            inactivityTimeoutMs: 480_000,
-            reasoningEffort: 'low',
-          },
-        );
-        response = buildXiaomiArtifactTextFirstWriteResponse(textFirstResponse, xiaomiTextFirstTargetPath);
-      } else {
-        response = await runEngineInference(
-          ctx,
-          modelMessages,
-          effectiveTools,
-          requestConfig,
-          streamCallback,
-          ctx.runtime.abortController.signal,
-          {
-            onSnapshot: createSnapshotHandler(
-              ctx.runtime.sessionId,
-              ctx.runtime.currentTurnId,
-              ctx.runtime.workingDirectory,
-            ),
-            artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
-            artifactRepairWritePriority,
-            artifactRepairFullRewritePriority,
-          },
-        );
-      }
+      response = await runEngineInference(
+        ctx,
+        modelMessages,
+        effectiveTools,
+        requestConfig,
+        streamCallback,
+        ctx.runtime.abortController.signal,
+        {
+          onSnapshot: createSnapshotHandler(
+            ctx.runtime.sessionId,
+            ctx.runtime.currentTurnId,
+            ctx.runtime.workingDirectory,
+          ),
+          artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
+          artifactRepairWritePriority,
+          artifactRepairFullRewritePriority,
+        },
+      );
     } finally {
       stopArtifactProgress();
     }

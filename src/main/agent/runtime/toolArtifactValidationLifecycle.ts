@@ -11,7 +11,6 @@ import { createArtifactRepairSpec, formatArtifactRepairSpecForPrompt } from './a
 import { activateArtifactRepairAdmissionStop } from './artifactRepairAdmission';
 import { isSameArtifactRepairPath } from './artifactRepairGuard';
 import { validateGameArtifact, type GameArtifactValidationOptions } from './gameArtifactValidator';
-import { buildXiaomiBreakoutEnhancementInstruction } from './contextAssembly/xiaomiArtifactTextFirst';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
 import type { RuntimeContext } from './runtimeContext';
@@ -61,9 +60,9 @@ export async function handleModifiedArtifactValidation({
     const absolutePath = isAbsolute(filePath)
       ? filePath
       : resolve(ctx.workingDirectory || process.cwd(), filePath);
-    // 验证分级：仅 goal/验收（含 xiaomi 两阶段 breakout）走完整游戏契约 + 运行时/视觉冒烟；
-    // 普通聊天里随手生成的交互产物走轻校验，避免"能跑的休闲小游戏"被内部契约卡成"验收失败"。
-    const fullContract = Boolean(ctx.goalMode?.isPending() || ctx.xiaomiArtifactTwoStage);
+    // 验证分级：仅 goal 验收走完整游戏契约 + 运行时/视觉冒烟；普通聊天里随手生成的交互产物
+    // 走轻校验，避免"能跑的休闲小游戏"被内部契约卡成"验收失败"。
+    const fullContract = Boolean(ctx.goalMode?.isPending());
     const probe = await validateGameArtifact(absolutePath, {
       contractLevel: fullContract ? 'full' : 'light',
     });
@@ -263,29 +262,7 @@ export async function handleModifiedArtifactValidation({
       if (ctx.artifactRepairGuard?.targetFile === absolutePath) {
         ctx.artifactRepairGuard = undefined;
       }
-      const xiaomiEnhancementRequested = maybeRequestXiaomiBreakoutEnhancement({
-        ctx,
-        contextAssembly,
-        runFinalizer,
-        absolutePath,
-        checks: validation.checks,
-        appendFinalHint,
-      });
-      if (xiaomiEnhancementRequested) {
-        return;
-      }
-
       ctx.artifactValidationPassedTargetFile = absolutePath;
-      if (
-        ctx.xiaomiArtifactTwoStage?.kind === 'breakout' &&
-        ctx.xiaomiArtifactTwoStage.phase === 'enhance_pending' &&
-        isSameArtifactRepairPath(ctx, absolutePath, ctx.xiaomiArtifactTwoStage.targetFile)
-      ) {
-        ctx.xiaomiArtifactTwoStage = {
-          ...ctx.xiaomiArtifactTwoStage,
-          phase: 'done',
-        };
-      }
       contextAssembly.injectSystemMessage(
         [
           '<artifact-validation-passed kind="interactive_artifact">',
@@ -312,50 +289,6 @@ export async function handleModifiedArtifactValidation({
       filePath,
     });
   }
-}
-
-function maybeRequestXiaomiBreakoutEnhancement({
-  ctx,
-  contextAssembly,
-  runFinalizer,
-  absolutePath,
-  checks,
-  appendFinalHint,
-}: {
-  ctx: RuntimeContext;
-  contextAssembly: ContextAssembly;
-  runFinalizer: RunFinalizer;
-  absolutePath: string;
-  checks: string[];
-  appendFinalHint: string | null;
-}): boolean {
-  const twoStage = ctx.xiaomiArtifactTwoStage;
-  if (twoStage?.kind !== 'breakout' || twoStage.phase !== 'core_pending') {
-    return false;
-  }
-  if (!isSameArtifactRepairPath(ctx, absolutePath, twoStage.targetFile)) {
-    return false;
-  }
-
-  ctx.xiaomiArtifactTwoStage = {
-    ...twoStage,
-    phase: 'enhance_pending',
-  };
-  ctx.artifactValidationPassedTargetFile = undefined;
-  ctx.forceFinalResponseReason = undefined;
-  ctx.forceFinalResponsePrompt = undefined;
-  runFinalizer.emitTaskProgress('tool_running', '核心版本已验收通过，准备二阶段体验增强...');
-  contextAssembly.injectSystemMessage(
-    [
-      '<artifact-validation-passed kind="interactive_artifact" stage="xiaomi-core">',
-      'The first-stage playable core passed validation. Do not finish the turn yet.',
-      ...(appendFinalHint ? [appendFinalHint] : []),
-      ...checks.map((check, index) => `${index + 1}. ${check}`),
-      '</artifact-validation-passed>',
-      buildXiaomiBreakoutEnhancementInstruction(absolutePath),
-    ].join('\n'),
-  );
-  return true;
 }
 
 async function completePendingGoalAfterArtifactValidation({

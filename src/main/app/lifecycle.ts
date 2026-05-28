@@ -8,6 +8,8 @@ import { getMCPClient } from '../mcp/mcpClient';
 import { cleanupSessionStateManager } from '../session/sessionStateManager';
 import { disposeAgentRegistry } from '../agent/agentRegistry';
 import { createLogger } from '../services/infra/logger';
+import { captureException } from '../observability/sentryNode';
+import { shutdownPostHog } from '../observability/posthogNode';
 
 const logger = createLogger('Lifecycle');
 
@@ -43,6 +45,14 @@ export async function cleanup(): Promise<void> {
     logger.info('Langfuse cleaned up');
   } catch (error) {
     logger.error('Error cleaning up Langfuse', error);
+  }
+
+  // Flush PostHog buffered events before exit
+  try {
+    await shutdownPostHog();
+    logger.info('PostHog flushed');
+  } catch (error) {
+    logger.error('Error flushing PostHog', error);
   }
 
   // Cleanup session state manager timer
@@ -90,9 +100,12 @@ export function setupLifecycleHandlers(
   // Handle uncaught errors
   process.on('uncaughtException', (error) => {
     logger.error('Uncaught Exception', error);
+    captureException(error, { tags: { surface: 'node', source: 'uncaughtException' } });
   });
 
   process.on('unhandledRejection', (reason, promise) => {
-    logger.error('Unhandled Rejection', reason instanceof Error ? reason : new Error(String(reason)), { promise: String(promise) });
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    logger.error('Unhandled Rejection', err, { promise: String(promise) });
+    captureException(err, { tags: { surface: 'node', source: 'unhandledRejection' } });
   });
 }

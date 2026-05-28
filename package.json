@@ -104,9 +104,6 @@
     "tauri:update-manifest": "node scripts/tauri-update-manifest.mjs",
     "prepare": "husky"
   },
-  "lint-staged": {
-    "*.{ts,tsx}": "eslint --fix"
-  },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.79",
     "@ai-sdk/deepseek": "^2.0.35",
@@ -122,6 +119,8 @@
     "@larksuiteoapi/node-sdk": "^1.64.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@openrouter/ai-sdk-provider": "^2.9.0",
+    "@sentry/node": "^10.54.0",
+    "@sentry/react": "^10.54.0",
     "@supabase/supabase-js": "^2.106.1",
     "@tauri-apps/api": "~2.11.0",
     "@tauri-apps/plugin-dialog": "^2.7.1",
@@ -173,6 +172,8 @@
     "picomatch": "^4.0.4",
     "playwright": "^1.60.0",
     "postgres": "^3.4.9",
+    "posthog-js": "^1.376.3",
+    "posthog-node": "^5.35.5",
     "pptxgenjs": "4.0.1",
     "qrcode": "^1.5.4",
     "react-is": "^19.2.6",

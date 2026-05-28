@@ -5,6 +5,7 @@
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { captureRendererException } from '../observability/sentryRenderer';
 
 interface Props {
   children: ReactNode;
@@ -31,8 +32,11 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error('[ErrorBoundary] Caught error:', error, errorInfo);
     this.setState({ errorInfo });
 
-    // 可选：发送到错误追踪服务
-    // TODO: 集成 Sentry 或其他错误追踪服务
+    // 上报到 Sentry（无 DSN / opt-out 时为 no-op）。componentStack 入 extra 便于定位
+    captureRendererException(error, {
+      tags: { surface: 'renderer', source: 'error-boundary' },
+      extra: { componentStack: errorInfo.componentStack ?? undefined },
+    });
   }
 
   handleRetry = () => {

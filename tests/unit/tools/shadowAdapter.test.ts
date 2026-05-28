@@ -154,6 +154,35 @@ describe('protocolAdapter — buildProtocolContext', () => {
     });
   });
 
+  it('protocol ctx -> legacy ctx wraps emitted payload under AgentEvent.data', () => {
+    const emitted: Array<{ event: string; data: unknown }> = [];
+    const ctx = buildProtocolContext({
+      sessionId: 'sess_emit',
+      workingDirectory: '/tmp',
+      legacyCtx: {
+        workingDirectory: '/tmp',
+        requestPermission: async () => true,
+        emitEvent: (event: string, data: unknown) => emitted.push({ event, data }),
+      } as unknown as LegacyToolContext,
+    });
+
+    const legacy = buildLegacyCtxFromProtocol(ctx);
+    legacy.emit?.('tool_call_start', {
+      id: 'tool-1',
+      name: 'Read',
+      arguments: { file_path: 'README.md' },
+    });
+
+    expect(emitted).toEqual([{
+      event: 'tool_call_start',
+      data: {
+        id: 'tool-1',
+        name: 'Read',
+        arguments: { file_path: 'README.md' },
+      },
+    }]);
+  });
+
   it('protocol ctx -> legacy ctx forwards inline legacy permission requests through canUseTool', async () => {
     const ctx = buildProtocolContext({
       sessionId: 'sess_permission',

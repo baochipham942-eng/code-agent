@@ -375,7 +375,8 @@ export class ToolSearchService {
       return 'searchable metadata has no registered protocol tool';
     }
     if (meta.source === 'dynamic' && meta.name.startsWith('skill:')) {
-      return 'skill search result; invoke through the Skill tool';
+      const skillName = meta.name.slice('skill:'.length);
+      return `skill "${skillName}" is not a direct tool; invoke via the Skill tool (see canonicalInvocation)`;
     }
     if (meta.source === 'mcp') {
       return 'MCP tool metadata is not registered with MCPClient';

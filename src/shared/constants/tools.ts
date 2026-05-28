@@ -20,6 +20,11 @@ export const BASH = {
   MAX_OUTPUT_LENGTH: 30000,
   /** 最大缓冲区大小 (10MB) */
   MAX_BUFFER: 10 * 1024 * 1024,
+  /** shell 进程 exit 后等待 stdio 'close'（管道 EOF）的兜底窗口；
+   *  超过则用 exit 结果 settle，防止被命令后台化、持有 stdout 管道的子进程让 'close' 永不触发 */
+  POST_EXIT_DRAIN_MS: 150,
+  /** 超时/abort 先发 SIGTERM，宽限此时长后整组仍未退出则升级 SIGKILL */
+  KILL_GRACE_MS: 2000,
 } as const;
 
 /** Grep 工具配置 */

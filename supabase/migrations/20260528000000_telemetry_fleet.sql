@@ -57,6 +57,20 @@ CREATE INDEX IF NOT EXISTS idx_telemetry_sessions_status
 CREATE INDEX IF NOT EXISTS idx_telemetry_sessions_app_version
   ON public.telemetry_sessions(app_version);
 
+CREATE OR REPLACE FUNCTION public.owns_telemetry_session(p_session_id TEXT)
+RETURNS BOOLEAN
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+  SELECT p_session_id IS NOT NULL AND EXISTS (
+    SELECT 1
+    FROM public.telemetry_sessions s
+    WHERE s.id = p_session_id
+      AND s.user_id = auth.uid()
+  );
+$$;
+
 -- ----------------------------------------------------------------------------
 -- Turn 级（根因深度：intent / outcome / tool 摘要 / 报错）
 -- ----------------------------------------------------------------------------
@@ -80,13 +94,37 @@ CREATE TABLE IF NOT EXISTS public.telemetry_turns (
 
 ALTER TABLE public.telemetry_turns ENABLE ROW LEVEL SECURITY;
 
+CREATE OR REPLACE FUNCTION public.owns_telemetry_turn(p_turn_id TEXT, p_session_id TEXT DEFAULT NULL)
+RETURNS BOOLEAN
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+  SELECT p_turn_id IS NOT NULL AND EXISTS (
+    SELECT 1
+    FROM public.telemetry_turns t
+    WHERE t.id = p_turn_id
+      AND t.user_id = auth.uid()
+      AND (p_session_id IS NULL OR t.session_id = p_session_id)
+  );
+$$;
+
 DROP POLICY IF EXISTS "Users insert own telemetry turns" ON public.telemetry_turns;
 CREATE POLICY "Users insert own telemetry turns" ON public.telemetry_turns
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
+  FOR INSERT WITH CHECK (
+    auth.uid() = user_id
+    AND public.owns_telemetry_session(session_id)
+  );
 
 DROP POLICY IF EXISTS "Users update own telemetry turns" ON public.telemetry_turns;
 CREATE POLICY "Users update own telemetry turns" ON public.telemetry_turns
-  FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+  FOR UPDATE USING (
+    auth.uid() = user_id
+    AND public.owns_telemetry_session(session_id)
+  ) WITH CHECK (
+    auth.uid() = user_id
+    AND public.owns_telemetry_session(session_id)
+  );
 
 DROP POLICY IF EXISTS "Admins read all telemetry turns" ON public.telemetry_turns;
 CREATE POLICY "Admins read all telemetry turns" ON public.telemetry_turns
@@ -116,7 +154,23 @@ ALTER TABLE public.telemetry_feedback ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Users insert own telemetry feedback" ON public.telemetry_feedback;
 CREATE POLICY "Users insert own telemetry feedback" ON public.telemetry_feedback
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
+  FOR INSERT WITH CHECK (
+    auth.uid() = user_id
+    AND (session_id IS NULL OR public.owns_telemetry_session(session_id))
+    AND (turn_id IS NULL OR public.owns_telemetry_turn(turn_id, session_id))
+  );
+
+DROP POLICY IF EXISTS "Users update own telemetry feedback" ON public.telemetry_feedback;
+CREATE POLICY "Users update own telemetry feedback" ON public.telemetry_feedback
+  FOR UPDATE USING (
+    auth.uid() = user_id
+    AND (session_id IS NULL OR public.owns_telemetry_session(session_id))
+    AND (turn_id IS NULL OR public.owns_telemetry_turn(turn_id, session_id))
+  ) WITH CHECK (
+    auth.uid() = user_id
+    AND (session_id IS NULL OR public.owns_telemetry_session(session_id))
+    AND (turn_id IS NULL OR public.owns_telemetry_turn(turn_id, session_id))
+  );
 
 DROP POLICY IF EXISTS "Admins read all telemetry feedback" ON public.telemetry_feedback;
 CREATE POLICY "Admins read all telemetry feedback" ON public.telemetry_feedback

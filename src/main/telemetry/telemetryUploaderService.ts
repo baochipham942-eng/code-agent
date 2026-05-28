@@ -38,7 +38,7 @@ function getAppVersion(): string | null {
   }
 }
 
-class TelemetryUploaderService implements Disposable {
+export class TelemetryUploaderService implements Disposable {
   private deviceId: string;
   private timer: ReturnType<typeof setInterval> | null = null;
   private uploading = false;
@@ -104,16 +104,19 @@ class TelemetryUploaderService implements Disposable {
       const turnRows = sessions.flatMap((s) =>
         storage.getTurnsBySession(s.id).map((t) => this.toTurnRow(t, s.id, user.id, homeDir)),
       );
+      let turnUploadFailed = false;
       for (let i = 0; i < turnRows.length; i += BATCH_SIZE) {
         const { error: turnError } = await supabase
           .from('telemetry_turns')
           .upsert(turnRows.slice(i, i + BATCH_SIZE), { onConflict: 'id' });
         if (turnError) {
           logger.error('Failed to push telemetry_turns', { error: turnError });
+          turnUploadFailed = true;
         }
       }
+      if (turnUploadFailed) return 0;
 
-      // 3) 会话写成功后标记已同步（turn 失败不回滚——靠 session 的 upsert 幂等下轮补齐）
+      // 3) 会话和 turn 都写成功后再标记已同步；否则下轮继续补传
       storage.markSessionsSynced(sessions.map((s) => s.id));
       logger.info('Telemetry uploaded', { sessions: sessions.length, turns: turnRows.length });
       return sessions.length;

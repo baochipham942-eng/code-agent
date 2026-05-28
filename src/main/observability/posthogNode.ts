@@ -2,12 +2,13 @@
 // PostHog (Node) — 产品行为分析（DAU/留存/事件流），与 Sentry/telemetry 解耦
 // ============================================================================
 //
-// distinct_id 策略：登录后 setCurrentDistinctId(userId)；登出 setCurrentDistinctId(null)。
-// 默认匿名上报，登录后所有 track() 自动带 user-level distinct_id。
+// distinct_id 策略：登录后 setCurrentDistinctId(getPostHogDistinctId(userId))；
+// 登出 setCurrentDistinctId(null)。永远不把 raw Supabase user id 发给 PostHog。
 // 与 sentryNode 对称：无 POSTHOG_KEY 时全程 no-op；运行时 opt-out 走 setPostHogEnabled。
 //
 // ============================================================================
 
+import { createHash } from 'crypto';
 import { PostHog } from 'posthog-node';
 import { createLogger } from '../services/infra/logger';
 
@@ -16,6 +17,10 @@ const logger = createLogger('PostHogNode');
 let client: PostHog | null = null;
 let enabled = true;
 let currentDistinctId: string | null = null;
+
+export function getPostHogDistinctId(userId: string): string {
+  return `user_${createHash('sha256').update(`posthog:${userId}`).digest('hex').slice(0, 32)}`;
+}
 
 /** 初始化 PostHog Node 客户端。应在进程入口尽早调用。无 POSTHOG_KEY 时 no-op。 */
 export function initPostHogNode(): void {

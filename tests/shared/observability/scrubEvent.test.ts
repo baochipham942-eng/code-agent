@@ -117,6 +117,58 @@ describe('scrubEvent', () => {
     expect(event.request!.cookies).toBeUndefined();
   });
 
+  it('递归清洗 extra 里的密钥、家目录和 prompt-like 字段', () => {
+    const event: ScrubbableEvent = {
+      extra: {
+        nested: {
+          error: 'failed at /Users/linchen/private/app.ts with Bearer abcdef1234567890token',
+          prompt: 'private user prompt',
+          values: ['ghp_0123456789abcdefABCDEF0123456789ab'],
+        },
+      },
+    };
+    scrubEvent(event, { homeDir });
+    const serialized = JSON.stringify(event.extra);
+    expect(serialized).not.toContain('/Users/linchen');
+    expect(serialized).not.toContain('abcdef1234567890token');
+    expect(serialized).not.toContain('private user prompt');
+    expect(serialized).not.toContain('ghp_0123456789abcdefABCDEF0123456789ab');
+    expect(serialized).toContain('[REDACTED]');
+  });
+
+  it('递归清洗 breadcrumb.data', () => {
+    const event: ScrubbableEvent = {
+      breadcrumbs: [
+        {
+          message: 'request failed',
+          data: {
+            Authorization: 'Bearer abcdef1234567890token',
+            cwd: '/Users/linchen/proj',
+          },
+        },
+      ],
+    };
+    scrubEvent(event, { homeDir });
+    const serialized = JSON.stringify(event.breadcrumbs![0].data);
+    expect(serialized).not.toContain('abcdef1234567890token');
+    expect(serialized).not.toContain('/Users/linchen');
+    expect(serialized).toContain('~/proj');
+  });
+
+  it('清洗 contexts/tags/user 容器里的敏感值', () => {
+    const event: ScrubbableEvent = {
+      contexts: { runtime: { token: 'sk-abcDEF1234567890xyz' } },
+      tags: { path: '/Users/linchen/proj/src/app.ts' },
+      user: { email: 'user@example.test', id: 'user-1', apiKey: 'secret-value-1234' },
+    };
+    scrubEvent(event, { homeDir });
+    expect(JSON.stringify(event.contexts)).not.toContain('sk-abcDEF1234567890xyz');
+    expect(JSON.stringify(event.tags)).not.toContain('/Users/linchen');
+    expect(JSON.stringify(event.user)).not.toContain('user@example.test');
+    expect(JSON.stringify(event.user)).not.toContain('user-1');
+    expect(event.user!.apiKey).toBe('[REDACTED]');
+  });
+
   it('就地修改并返回同一对象', () => {
     const event: ScrubbableEvent = { message: 'hello' };
     const out = scrubEvent(event, { homeDir });

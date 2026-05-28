@@ -16,7 +16,7 @@ import {
 } from '../services';
 import { initUpdateService, getUpdateService } from '../services/cloud/updateService';
 import { getTelemetryUploaderService } from '../telemetry/telemetryUploaderService';
-import { setCurrentDistinctId, identifyNode } from '../observability/posthogNode';
+import { getPostHogDistinctId, setCurrentDistinctId, identifyNode } from '../observability/posthogNode';
 import { initMCPClient, getMCPClient, type MCPServerConfig } from '../mcp/mcpClient';
 import { initPromptService, getPromptsInfo } from '../services/cloud/promptService';
 import { initCloudConfigService, getCloudConfigService } from '../services/cloud';
@@ -229,10 +229,11 @@ function initializeSupabaseServices(mainWindow: BrowserWindow | null): void {
       logger.info('Telemetry upload stopped');
     }
 
-    // PostHog distinct_id：登录用真 userId，登出清空（事件回退匿名）
+    // PostHog distinct_id：登录用稳定匿名 ID，登出清空（事件回退匿名）
     if (user) {
-      setCurrentDistinctId(user.id);
-      identifyNode(user.id);
+      const distinctId = getPostHogDistinctId(user.id);
+      setCurrentDistinctId(distinctId);
+      identifyNode(distinctId);
     } else {
       setCurrentDistinctId(null);
     }

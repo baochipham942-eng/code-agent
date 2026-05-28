@@ -265,6 +265,9 @@ export const IPC_CHANNELS = {
   // TaskManager runtime channels
   TASK_EVENT: 'task:event',
 
+  // PII setup (B3 一键启用本地 PII 防线流式日志)
+  PII_SETUP_EVENT: 'pii:setup:event',
+
   // In-App HTML validation
   IN_APP_VALIDATION_REQUEST: 'in-app-validation:request',
   IN_APP_VALIDATION_RESULT: 'in-app-validation:result',

@@ -44,6 +44,7 @@ export const IPC_DOMAINS = {
   AGENT_REGISTRY: 'domain:agents', // 自定义 Agent 注册中心（builtin + user + project）
   AGENT_ENGINE: 'domain:agentEngine', // Native / Codex CLI / Claude Code execution engines
   CAPABILITY: 'domain:capability', // Skill / MCP / Tool / Channel 能力中心
+  PII: 'domain:pii', // 本地 PII 防线（GLiNER 一键启用，B3 推荐组合）
 } as const;
 
 export type IPCDomain = typeof IPC_DOMAINS[keyof typeof IPC_DOMAINS];

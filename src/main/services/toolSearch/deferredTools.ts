@@ -489,13 +489,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
-    name: 'speech_to_text',
-    shortDescription: '语音转文字',
-    tags: ['media'],
-    aliases: ['stt', 'transcribe', 'speech', 'audio'],
-    source: 'builtin',
-  },
-  {
     name: 'text_to_speech',
     shortDescription: '文字转语音',
     tags: ['media'],

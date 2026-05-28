@@ -1,38 +1,34 @@
 // ============================================================================
-// builtin.audioProcessing — Step 5 第 1 个 builtin plugin（音频处理剥离）
+// builtin.audioProcessing — TTS only (ASR 收敛到 local_speech_to_text)
 //
-// 与 host 同 bundle 编译/分发：speech_to_text + text_to_speech 都直接 import
-// 宿主内部 API（configService / artifactMeta / MODEL_API_ENDPOINTS），仅工具
-// 注册走 PluginAPI v2。
+// speech_to_text (云端 GLM-ASR-2512) 已下线: 原始音频不应进云端 LLM。
+// LLM 需要 ASR 时统一走 local_speech_to_text (whisper-cpp + ggml-large-v3-turbo,
+// 本地推理)。voicePaste/desktopAudioCapture 也走本地 whisper-cpp。
 //
-// 调用 `registerToolModule(module, { prefixWithPluginId: false })` 保留原工具名
-// `speech_to_text` / `text_to_speech`，避免破坏 executionPhase 分类、ToolSearch
-// deferredTools、LLM prompt / cache / eval baseline。
+// 文字转语音保留: TTS 出方向不涉及用户隐私语料上行。
 // ============================================================================
 
 import type { PluginAPI, PluginEntry, PluginManifest } from '../../types';
-import { speechToTextModule } from './speechToText';
 import { textToSpeechModule } from './textToSpeech';
 
 export const manifest: PluginManifest = {
   id: 'builtin.audioProcessing',
   name: 'Audio Processing',
-  version: '1.0.0',
-  description: '语音转文字 + 文字转语音（GLM-ASR / GLM-TTS）',
+  version: '1.1.0',
+  description: '文字转语音（GLM-TTS）。ASR 走 local_speech_to_text 本地路径。',
   author: 'Agent Neo',
   main: 'index.ts',
   surfaces: ['tools'],
-  capabilities: ['audio-processing', 'speech-to-text', 'text-to-speech'],
+  capabilities: ['audio-processing', 'text-to-speech'],
   permissions: ['filesystem', 'network'],
 };
 
 export async function activate(api: PluginAPI): Promise<void> {
-  // opt-out 前缀：保留原工具名 `speech_to_text` / `text_to_speech`
-  api.registerToolModule(speechToTextModule, { prefixWithPluginId: false });
+  // opt-out 前缀：保留原工具名 `text_to_speech`
   api.registerToolModule(textToSpeechModule, { prefixWithPluginId: false });
   api.log(
     'info',
-    `builtin.audioProcessing activated (tools: ${speechToTextModule.schema.name}, ${textToSpeechModule.schema.name})`,
+    `builtin.audioProcessing activated (tools: ${textToSpeechModule.schema.name})`,
   );
 }
 

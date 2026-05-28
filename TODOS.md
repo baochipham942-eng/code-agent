@@ -69,7 +69,7 @@
 **Effort:** M
 **Priority:** P2
 **Depends on:** 无
-**Progress:** ✅ SDK 装好 + 3 新模块(`shared/observability/posthog-events.ts` + `main/observability/posthogNode.ts` + `renderer/observability/posthogRenderer.ts`,镜像 Sentry 接法)。✅ 接线 7 处:renderer 入口(app_opened)、main+webServer 入口、auth 回调(identify/setCurrentDistinctId)、telemetryCollector.startSession(session_started)、runFinalizer.finalizeRun(run_completed/failed/cancelled)、lifecycle 清理(shutdownPostHog flush)。✅ env 配好(`POSTHOG_KEY/HOST` 在 `~/.code-agent/.env` + `VITE_POSTHOG_KEY/HOST` 在 worktree `.env`)。✅ typecheck 通过 + ingest 端点 live 烟测 `{"status":"Ok"}`。**待办**:`tool_used` + `model_selected` 事件(下一轮)；in-app E2E 跑 session 看 dashboard 数据流。
+**Progress:** ✅ SDK 装好 + 3 新模块(`shared/observability/posthog-events.ts` + `main/observability/posthogNode.ts` + `renderer/observability/posthogRenderer.ts`,镜像 Sentry 接法)。✅ 接线 8 处:renderer 入口(app_opened)、main+webServer 入口、auth 回调(identify/setCurrentDistinctId)、telemetryCollector.startSession(session_started)、telemetryCollector.onToolCallStart(tool_used,中央枢纽单点覆盖 6 个 onToolCallEnd 分支)、runFinalizer.finalizeRun(run_completed/failed/cancelled)、lifecycle 清理(shutdownPostHog flush)。✅ env 配好(`POSTHOG_KEY/HOST` 在 `~/.code-agent/.env` + `VITE_POSTHOG_KEY/HOST` 在 worktree `.env`)。✅ typecheck 通过 + ingest 端点 live 烟测 `{"status":"Ok"}`。✅ **3 看板 + 6 insights 已 API 自动建好**(`scripts/observability/posthog-dashboards.py` 幂等可复用):User Engagement / Run Quality / Tool Usage。**待办**:`model_selected` 事件(下一轮,UI 切模型时);in-app E2E 跑 session 看 dashboard 数据流(等用户 build app)。
 
 ### Admin 控制台 UI（独立 web）
 

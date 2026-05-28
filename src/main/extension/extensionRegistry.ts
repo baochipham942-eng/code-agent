@@ -25,7 +25,7 @@ import {
   pluginManifestToMetadata,
   parsedSkillToMetadata,
 } from './adapters';
-import type { AgentExtension, ExtensionSource } from './types';
+import type { AgentExtension, ExtensionOrigin } from './types';
 
 /** 上游 plugin 数据源 minimum interface(仅依赖 getPlugins) */
 export interface PluginsSource {
@@ -65,7 +65,7 @@ export class ExtensionRegistry {
     const result: AgentExtension[] = [];
 
     for (const plugin of this.pluginsSource.getPlugins()) {
-      const source: ExtensionSource = plugin.rootPath.startsWith('builtin:')
+      const source: ExtensionOrigin = plugin.rootPath.startsWith('builtin:')
         ? 'builtin'
         : 'plugin';
       result.push({

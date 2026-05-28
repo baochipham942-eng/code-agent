@@ -216,6 +216,25 @@ LSP 不再只是“有 diagnostics 工具”。当前实现把语言识别、ser
 
 5/10 后，旧 Codex sandbox / cross-verify 路径退场，shell 统一走 `src/main/tools/modules/shell/commandPolicy.ts`。它负责把命令风险、审批范围、bash policy 和 UI 展示放到同一个决策面，避免 hybrid agent 分支里再维护第二套 shell 解释。
 
+### Bash 前台命令的后台子进程逃生（2026-05-28）
+
+**问题**（commit `f6d0f031` 实证）：前台 `runForegroundCommand` 只在子进程 `'close'`（stdio 管道 EOF）才 settle。命令里被 `&` 后台化的子/孙进程（如 `python3 -m http.server 8099 &`）会**继承并持有 stdout 管道写端**，EOF 永不到达 → `'close'` 永不触发 → 工具 Promise 永不 settle → 整个 agent run 挂死到超时。
+
+而 `&` 在命令**中间**（非结尾）不会被 `rewriteImplicitBackgroundCommand` 当成后台命令，会落到前台路径触发上述问题。旧 timeout 的 `child.kill('SIGTERM')` 只能打到直接子进程（shell，常已退），孤儿后台进程收不到信号。
+
+**修复**：
+
+| 维度 | 改动 | 常量 |
+|------|------|------|
+| **D1 settle 路径** | 新增 `'exit'` 事件 + 短窗口兜底——shell 退出后给极短窗口让正常 `'close'` 优先，超时则用 exit 结果 settle，不再死等管道 EOF | `POST_EXIT_DRAIN_MS = 150ms` |
+| **D2 进程组回收** | `spawn` 时加 `detached:true`（独立进程组）；`killChild` 用 `process.kill(-pid)` 整组 kill；SIGTERM 宽限后升级 SIGKILL | `KILL_GRACE_MS = 2s` |
+| **正常命令** | 仍走 `'close'`，行为不变 | — |
+| **正常退出尊重 `&`** | 不杀被后台化的进程 | — |
+
+**验证**：
+- TDD：`bash.test.ts` 加 D1（前台起后台子进程须立即返回）/ D2（超时须整组回收）两个真实 spawn 用例，先 RED 后 GREEN
+- E2E：webServer 真实运行时让 MiMo 跑 `python3 -m http.server 8099 & echo started` → Bash 168ms 返回 `"started"`、run agent_complete 46s 收尾（旧代码挂到超时）
+
 ---
 
 ## Core / Deferred 双层架构

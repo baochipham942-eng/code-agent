@@ -510,6 +510,54 @@ ContextAssembly 每轮推理前注入两类子代理信息：
 | `intentClassifier` | `intentClassifier.ts` | 意图分类（3s 超时）+ 结果评估 |
 | `systemPromptCache` | `systemPromptCache.ts` | 系统提示缓存，避免重复构建 |
 
+---
+
+## System Prompt 分层架构（Pi 借鉴 ④，2026-05-28）
+
+借鉴 Pi 的多文件 prompt 分层模型，Agent Neo 支持用户在项目级 / 全局级目录提供三种 system prompt 文件，按语义独立组合。
+
+### 三种文件 + 语义
+
+| 文件名 | 语义 | 注入策略 |
+|--------|------|----------|
+| `SYSTEM.md` | **custom replace identity** | 只替换默认 identity prompt；后续 workdir / runtime mode / session metadata / memory / repo map / deferred tools / append 仍**照常注入** |
+| `APPEND_SYSTEM.md` | **append after defaults** | 在所有默认层之后追加（用于补充规则、加 reminder） |
+| `FULL_SYSTEM.md` | **full replace, short-circuit** | 短路 `buildCachedDynamicSystemPrompt` 所有默认层，**直接 return**；用于真接管场景（custom 不能解决全局 memory 渗透问题时） |
+
+**查找顺序**（同名文件项目级覆盖全局级，互相短路不合并）：
+1. `<workingDir>/.code-agent/<NAME>.md`
+2. `~/.code-agent/<NAME>.md`
+
+**优先级**（三类可同时存在，消费者按下面顺序决策）：
+- `fullReplace` 命中 → 完全接管，跳过 custom + append + 所有默认层
+- `custom` 命中 → 替换 identity，append 与默认层照常注入
+- 都未命中 → 走默认 identity + 默认层
+
+### 关键实现
+
+- `src/main/prompts/projectSystemPrompt.ts`：文件查找 / 读取 / 兜底（不存在返回 null，IO 错误 warn 一行）
+- `src/main/agent/runtime/contextAssembly/messageBuild.ts`：
+  - `buildCachedDynamicSystemPrompt` 命中 `fullReplace` 时直接 `return`
+  - **cache key 加 `fullReplace` 维度**，独立于 `userQuery`（commit `715e20f3` 闭环 E 风险：固定 ctx + userQuery，只改 SYSTEM.md 或 FULL_SYSTEM.md 必须使 cacheKey 变化）
+
+### 为什么有 FULL_SYSTEM.md（D 风险闭环）
+
+`SYSTEM.md` 只替换 identity prompt，**但后续 workdir / runtime mode / session metadata / memory / repo map / deferred tools / append 照常注入** — 全局 memory 仍会渗透到回复。custom 不是真接管。
+
+`FULL_SYSTEM.md` 是 D 风险（Codex audit Round 1 留下）的最终闭环：加载后**短路所有默认层**，给用户提供"完全接管 system prompt"的逃生口。
+
+### 验收
+
+- `projectSystemPrompt.test.ts` +6 cases（命中 / 全局兜底 / 项目覆盖 / 三层独立 / 空文件 / 缺失）
+- `messageBuild.cacheKey.test.ts` +6 cases（同时闭环 E 风险）
+- 端到端验证记录：[docs/audits/](../audits/)（commit `4c2299af`）
+
+### 相关 Commits
+
+- `5f51b16c` — feat(prompts): project-level SYSTEM.md / APPEND_SYSTEM.md（Pi 借鉴 ④ Phase 1-3）
+- `715e20f3` — feat(prompts): FULL_SYSTEM.md 短路所有默认层（Phase 3.5 — D 风险闭环）
+- `4c2299af` — docs(audit): system md e2e validation
+
 **TelemetryAdapter**: 由 `TelemetryCollector.createAdapter(sessionId)` 创建，注入到 AgentLoop 的 RuntimeContext 中，通过统一接口收集 Turn/ModelCall/ToolCall/Timeline 事件。
 
 **错误分类** (`classifyError`): 自动归类为 `file_not_found` / `permission_denied` / `timeout` / `syntax_error` / `edit_not_unique` / `rate_limit` / `network_error` / `command_failure` / `context_overflow` / `path_hallucination` / `unknown`。

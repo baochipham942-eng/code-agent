@@ -278,3 +278,58 @@ hooks / mcp / deferredTools 保持现有实现不动,原因:
 Pi 的 `messageRenderers` 字段在 Tauri 架构下不可直接照搬,需要替换为 renderer 侧的 ToolDisplayConfig 注册机制。Pi 的 `flags/shortcuts` 对 desktop 应用意义有限,可省略或替换为 Tauri-specific 扩展点。
 
 **最高价值的单点行动**:先做 E1 + E2 清理(1-2 人天),消除 dead code 和游离路径,为后续 D2 合并奠定干净基础。
+
+---
+
+## F. 实施进度（2026-05-28 收口）
+
+Blueprint 落地按 D2 推荐路径走，**当日完成 Phase 1 → Phase 3a + E1-E5 cleanup**，Phase 3b/3c 评估后关账。
+
+### 已完成
+
+| 阶段 | 内容 | Commit | 备注 |
+|------|------|--------|------|
+| **E1/E2/E3/E5 cleanup** | 4 个低悬果同批清理 | `6f6b9cc0` | 移除 `commands` 死代码、`notCallableReason` 提示语统一、`@deprecated` 函数标注收敛、`PluginRegistry.executeSessionStartHooks` 路径标注 |
+| **E4 — 行为变更** | `registerTool` 与 `registerToolModule` 对命名冲突的处理统一为抛错 | `6a7f7cd7` | E 节中唯一会改运行时行为的项 |
+| **D2 Phase 1** | 公共 `ExtensionMetadata` + adapter | `6ef4ec7a` | `src/main/extension/types.ts` 建立，`pluginManifestToMetadata` / `skillFrontmatterToMetadata` 落地 |
+| **D2 Phase 2** | `ExtensionRegistry` skeleton | `5fc28470` | 只读聚合层，`getExtensions()` 返回合并后的 `AgentExtension[]` |
+| **Phase 3 前置清理** | `ExtensionSource` → `ExtensionOrigin` 改名 | `e1d1d79f` | 与 UI 层 `src/shared/contract/extension.ts` 的同名类型解耦，零行为变更 |
+| **D2 Phase 3a** | `AgentExtension.runtimeState` + `CapabilityRecommender` 迁移 | `cfe48009` | `loadedPluginToExtension` / `parsedSkillToExtension` 落地；编译期 sanity check (`const _runtimeStateCompat = (s: PluginState): ExtensionRuntimeState => s` at `adapters.ts:140-143`，等价于 subset check)；首个消费方 `CapabilityRecommender` 改读 `ExtensionRegistry` |
+
+### 关账：D2 Phase 3b/3c 不做
+
+详见 [docs/audits/2026-05-28-d2-phase3b-skip-decision.md](../audits/2026-05-28-d2-phase3b-skip-decision.md)（Claude 调研 + Codex 独立二次评估，verdict 一致）。
+
+**核心理由**：
+1. Phase 3a 已经是**可用读模型**，不是半成品。`messageBuild` / `extensionOpsService` 仍直读 `PluginRegistry` 是"未全迁"而非"漏洞"。
+2. Phase 3b 风险高收益低：把 `ExtensionRegistry` 从只读聚合层变成副作用 owner，需先拆新 core 防循环依赖，且不解决任何已知 bug、不解锁任何用户能力。
+3. lifecycle 归一的触发条件未达成：需等 skill 加真 runtime lifecycle，或 marketplace/cloud sync 需要统一 inventory+events 时再启动。
+4. 未来真要做的不是 3b，是**统一 inventory/status/events 层**，与 lifecycle 搬家无关。
+
+### 当前架构形态
+
+```
+┌──────────────────────────┐     ┌────────────────────────────┐
+│   PluginRegistry         │     │   SkillDiscoveryService    │
+│   (LoadedPlugin lifecycle)│     │   (ParsedSkill 扫描)        │
+└─────────────┬────────────┘     └──────────────┬─────────────┘
+              │                                  │
+              │  loadedPluginToExtension         │  parsedSkillToExtension
+              ▼                                  ▼
+        ┌──────────────────────────────────────────────────┐
+        │           ExtensionRegistry                       │
+        │   getExtensions(): AgentExtension[]               │
+        │   (只读聚合层，runtimeState 统一暴露)              │
+        └────────────────┬──────────────────────────────────┘
+                         │
+                         ▼
+                ┌────────────────────────┐
+                │ CapabilityRecommender  │  ← 首个消费方
+                └────────────────────────┘
+```
+
+### 未做且不打算做（直到触发条件出现）
+
+- **Phase 3b**: 把 lifecycle 副作用从 PluginRegistry/SkillDiscoveryService 搬到 ExtensionRegistry — 等 skill 有真 runtime lifecycle 时再谈
+- **Phase 3c**: 统一 inventory/status/events 层 — 等 marketplace/cloud sync 接入时再谈
+- **D3 激进路径**: 5 套压成 1 套 — 不做（hooks / mcp / deferredTools 各自语义独立，压平损失大于收益）

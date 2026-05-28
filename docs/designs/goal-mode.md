@@ -147,7 +147,7 @@ as-built 契约见 `src/shared/contract/agent.ts`：
 | **P1 MVP** | 单 agent /goal：契约解析 + attempt_completion + break→continue + GoalTracker 激活 + 闸1 exec + 闸3 + 新 SSE 事件 | ✅ 完成（三态全 E2E：goal_met / 闸1-fail-continue / 闸3-abort） |
 | P2 软闸 | 闸2 Reviewer 子代理 + 强模型路由 + Codex 式审计 nudge | ✅ 完成（FAIL/PASS 双态 E2E） |
 | P3 体验 | `/goal` 斜杠命令 UI + 状态条 + 生命周期卡片 + 桌面 IPC + 软目标 | ✅ 完成（后端 + 解析器单测 + REST SSE 实证；渲染器实时点击流仅静态验证） |
-| P4 swarm goal | goal 套到多 agent（MasterTask/swarm）层 | ⬜ 未做 |
+| P4 swarm goal | goal 套到多 agent（swarm）层 | ⬜ 未做（注：MasterTask 跨 session 任务看板已于 2026-05-28 commit `841200af` 下线，P4 仅余 swarm 层覆盖） |
 
 ## 11. 验证与 Eval
 

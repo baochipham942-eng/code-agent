@@ -102,6 +102,41 @@ It must write JSON on stdout:
 
 If the command is missing, exits non-zero, times out, or returns invalid output, the guard falls back to deterministic redaction and does not block the user flow.
 
+## OCR Memory Sink (2026-05-28)
+
+`ocrSearch.ts::persistOcrToMemory` was writing OCR full text and per-region text straight into the `memories` table (`type='ocr_result'`) without going through the guard. A screenshot of a password field, token, SSN or credit-card image would therefore land in memory raw and later be pulled into prompts on the next LLM call, bypassing all 19 sink-side redactions.
+
+Both `fullText` and `regions[].text` now go through `guardSensitiveText({ surface: 'memory', mode: 'local-persist' })` before the row is inserted. The persisted summary is sliced from the guarded `fullText`, never the raw OCR output. `maxLength`: `fullText` 100,000 chars (OCR can capture a full screen), `regions[].text` 4,000.
+
+Smoke verified: AWS key / Bearer token / password / SSN / credit card → masked; prompt injection (`"ignore previous instructions"`) → `[neutralized]`; ordinary Chinese text → unchanged.
+
+Commit `4a23093e`.
+
+## ASR Surface Consolidation (2026-05-28)
+
+For cowork-friendly privacy the cloud `speech_to_text` LLM tool was removed. Neo's four ASR entry points are now:
+
+| Entry | Backend |
+|-------|---------|
+| `local_speech_to_text` (LLM tool) | local whisper-cpp |
+| `voicePaste.ipc` (renderer voice paste) | local whisper-cpp（**whisper-cpp 不可用时回退云 Groq API** — 注意这是隐式 fallback，不是 opt-in） |
+| `desktopAudioCapture` (manual record button, 不再自动检测会议 app) | local whisper-cpp 或 Qwen3-ASR fallback |
+| ~~`speech_to_text` (cloud LLM tool, GLM-ASR-2512)~~ | **removed** |
+
+Removed: `audioProcessing/speechToText.ts(+.schema.ts)`, `toolSearch/deferredTools.ts speech_to_text` entry, `tools/executionPhase.ts` array item. `audioProcessing` manifest bumped to 1.1.0. Commit `547c780b`.
+
+## PII One-Click Setup (2026-05-28)
+
+Bundle now ships the local PII detection chain so cowork installs can enable it without `brew install uv` or any external commands:
+
+- `scripts/uv` — uv 0.11.16 arm64 (aarch64-apple-darwin) sidecar (~45MB unpacked binary; ~20MB tarball pre-extract), pulled by `scripts/fetch-uv.sh` (incremental + sha256 dual-verify), bundled via `tauri.conf.json` `bundle.resources`
+- `scripts/pii/setup-gliner-pii.sh` — provisioning script (will be reworked to call bundled uv + write `.env` directly)
+- `scripts/pii/gliner_onnx_runner.py` — the runner that `CODE_AGENT_GLINER_PII_COMMAND` points at
+
+Follow-up steps (already planned, not yet committed): IPC handler + `PrivacySettings` React tab so users can flip GLiNER on from the UI without touching env vars.
+
+This **does not** change the Non-Goal of bundling GLiNER weights — weights are still pulled at first activation by the runner, ONNX runtime is still loaded lazily. Commit `fd661a49`.
+
 ## Non-Goals In Scope 1
 
 - Redacting raw session message storage.

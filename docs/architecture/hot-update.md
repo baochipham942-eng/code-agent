@@ -254,7 +254,34 @@ release bundle 和 env generator 必须同时产出 `agent-engine-model-catalog.
 GET /api/update?action=download&platform=darwin&channel=stable
 ```
 
-Update API 优先读取 `UPDATE_DOWNLOAD_URL_<CHANNEL>`；没有 override 时查 `UPDATE_GITHUB_REPOSITORY` 的最新 GitHub Release，选择匹配平台的 DMG asset，并返回 302。找不到 asset 时返回 `download_asset_not_found` 和 release 页面链接。
+Update API 优先读取 `UPDATE_DOWNLOAD_URL_<CHANNEL>`；没有 override 时通过 `vercel-api/lib/updateMetadata.ts` 内部的 `fetchLatestRelease`（模块私有函数，从外部 export 出来的是 `buildUpdateResponseFromRelease` / `runtimeAssetsMetadataFromRelease` 等高阶 helper）拉取 release manifest，选择匹配平台的 DMG asset，并返回 302。找不到 asset 时返回 `download_asset_not_found` 和 release 页面链接。
+
+### 发布托管：阿里云上海 OSS
+
+2026-05-27 主仓库改为私有后，匿名访问 GitHub Releases 全部 404，三条更新链（落地页下载 / app 内更新 / Tauri updater）同时断更。2026-05-28 整条分发链路迁移到阿里云上海 OSS（commit `8981118f`）：
+
+| 位置 | 旧端点（GitHub） | 新端点（OSS） |
+|------|------------------|---------------|
+| `vercel-api/lib/updateMetadata.ts` `fetchLatestRelease` | `https://api.github.com/repos/.../releases/latest` | `https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/stable/release.json` |
+| `tauri.conf.json` updater 端点 | `github.com/.../releases/latest/download/latest.json` | `agent-neo-releases.oss-cn-shanghai.aliyuncs.com/stable/latest.json` |
+| `updateService.ts` GitHub fallback | `api.github.com/repos/.../releases/latest` | `agent-neo-releases.oss-cn-shanghai.aliyuncs.com/stable/release.json` |
+
+**Bucket**：`agent-neo-releases` @ `oss-cn-shanghai`（国内直连 1.9MB/s+ 无需代理）。
+
+**Manifest 形状**：`stable/release.json` 保持 GitHub Release JSON 形状，下游 `selectAsset` / `buildUpdateResponseFromRelease` / `runtimeAssetsMetadataFromRelease` 无需任何改动。可通过 `UPDATE_RELEASE_MANIFEST_URL` env 覆盖。
+
+**每个版本上传 5 个对象**：
+- `v${VER}/Agent-Neo-${VER}-arm64.dmg` — DMG 本体
+- `v${VER}/Agent Neo.app.tar.gz` — Tauri updater 增量包（key 带空格，latest.json URL 用 `%20`）
+- `v${VER}/Agent Neo.app.tar.gz.sig` — 签名
+- `stable/latest.json` — Tauri updater manifest
+- `stable/release.json` — Vercel updateMetadata 读取的 GitHub-shaped manifest
+
+**上传命令**：`~/bin/ossutil cp <local> oss://agent-neo-releases/<key> --acl public-read --force`
+
+**Release 脚本钩子**：`export TAURI_UPDATER_ENDPOINT=…/stable/latest.json`（release 脚本会用它覆盖生成 updater conf）。
+
+**已知边界**：旧版本（v0.16.80 及之前）仍指向 GitHub 端点，无法自动更新到 OSS 链路，需用户手动重装一次新版本完成切换。
 
 ---
 

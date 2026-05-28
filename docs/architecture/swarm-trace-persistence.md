@@ -90,11 +90,56 @@ Context 把 trace id 作为 message header 一等公民的实践。`runId` 由
 | `MAX_LIST_LIMIT` | 200 | listRuns 上限 clamp |
 | `MAX_EVENTS_PER_RUN` | 2000 | 单 run 事件数硬上限，超过的尾部事件被丢弃保住 head |
 | `MAX_EVENT_PAYLOAD_BYTES` | 8192 | 单条事件 payload_json 字节上限，超出则截断为 `{ _truncated, preview }` |
+| `STORAGE_DIR` | `'swarm-runs'` | FileSwarmTraceRepository 的 jsonl 存放子目录（相对 `getUserConfigDir()`） |
+| `STORAGE_MODE_ENV` | `'CODE_AGENT_SWARM_STORAGE'` | 后端选择 env：`'file'` 走 JSONL，其他/缺省走 SQLite |
+
+## 双后端：SQLite vs JSONL（2026-05-28，Pi 借鉴）
+
+为支持 CLI / headless / Web Server 场景（无 better-sqlite3 可用、或不想污染主 DB），新增 JSONL 文件后端，与 SQLite 后端**实现同一个 `SwarmTraceRepo` 接口**，由 factory 按 env 路由：
+
+| 后端 | 选择条件 | 文件 |
+|------|----------|------|
+| `SwarmTraceRepository` (SQLite) | env 缺省或 `CODE_AGENT_SWARM_STORAGE` 非 `'file'` | `src/main/services/core/repositories/SwarmTraceRepository.ts` |
+| `FileSwarmTraceRepository` (JSONL) | `CODE_AGENT_SWARM_STORAGE=file` | `src/main/services/core/repositories/FileSwarmTraceRepository.ts` |
+| Factory | 按 env 路由 + 支持 `storageDirOverride` 测试隔离 | `src/main/services/core/repositories/swarmTraceFactory.ts` |
+
+**JSONL 文件布局**：
+```
+<storageDir>/<YYYY-MM-DDTHHmmss>__<runId>.jsonl
+```
+
+每个 run 一个文件，行类型 union：
+
+```
+{ "type": "run_started",    ...SwarmRunRecord 初始字段 }
+{ "type": "agent_upserted", ...SwarmRunAgent 完整字段 }
+{ "type": "event",          ...SwarmRunEvent 字段（payload 受 MAX_EVENT_PAYLOAD_BYTES clamp） }
+{ "type": "run_closed",     status, ended_at, totals, aggregation_json }
+```
+
+**读取策略**：逐行 `JSON.parse` + 内存回放还原 `SwarmRunRecord` / `agents[]` / `events[]`。`listRuns` 走目录扫描（无单独 index 文件，与 Pi 一致），`getRunDetail` 按 runId 定位文件再回放。
+
+**并发假设**：外层 `SwarmTraceWriter` 已经用 `pendingPersist` Promise 链串行化 + 单 in-process active run 假设 → repo 内部**不加锁、不开异步**。
+
+**CLI / desktop / web server 接线**（commit `bfe2b763`）：
+
+| 入口 | 实际做法 |
+|------|----------|
+| `src/cli/bootstrap.ts` | 未提供 SQLite DB 时**直接** `new FileSwarmTraceRepository(storageDir)`（不走 factory，硬编码 JSONL），通过 `installCLISwarmTraceWriterIfNeeded()` 把 writer 装进事件链 |
+| `src/main/services/core/databaseService.ts` | **唯一调用 `createSwarmTraceRepo` 的地方**（line 192），按 env 路由 SQLite vs JSONL |
+| `src/main/index.ts` / `src/web/webServer.ts` | 通过 `db.getSwarmTraceRepo()` 间接拿到 factory 产物，不直接调 factory |
+| `src/cli/adapter.ts` / `src/cli/commands/run.ts` | 不直接持有 swarm trace repo —— CLI 路径的 trace 接线全部在 bootstrap.ts |
+
+> ⚠️ bootstrap.ts 没走 factory 是已知不一致。新增第三种后端（如 cloud）时需要把 bootstrap.ts 一并切到 `createSwarmTraceRepo(...)`，否则 CLI 会继续硬编码 JSONL。
+
+**Codex 自检留下的边角修复**：
+- `be6be2cb` — legacy ctx emit 契约对齐 `AgentEvent` nested 形状（修一个 flat-spread bug pattern）
+- `b50b2c73` — Round 3 dogfood log + `npm run test:swarm:smoke` smoke script
 
 ## 写入路径
 
 `SwarmEventEmitter` → `EventBus 'swarm' domain` → `SwarmTraceWriter`
-→ `SwarmTraceRepository`（同步 better-sqlite3）。
+→ `SwarmTraceRepo`（由 factory 决定 SQLite 或 JSONL；两个实现都同步落地，JSONL 走 `fs.appendFileSync`）。
 
 写入策略：
 - `SwarmTraceWriter.schedulePersist()` 用 `Promise` 串行链 fire-and-forget

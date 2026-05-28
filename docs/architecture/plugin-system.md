@@ -18,6 +18,7 @@ Code Agent 提供插件系统，允许扩展 Agent 的能力。插件可以：
 |----|------|------|
 | Plugin System | 加载可执行插件，提供生命周期和 API | `src/main/plugins/*` |
 | Skill Discovery | 发现 builtin/user/library/project skills，并注册到 ToolSearch | `src/main/services/skills/skillDiscoveryService.ts` |
+| **Extension Registry** | **只读聚合层：把 LoadedPlugin / ParsedSkill 投影成统一的 `AgentExtension`（含 `runtimeState`），供消费方按统一形态读取**（2026-05-28 落地，D2 Phase 1-3a） | `src/main/extension/*` |
 | Capability Center | 汇总能力清单、requirements、risk、runtime state、install plan 和 action | `src/main/services/capabilities/capabilityCenterService.ts` |
 | Curated Registry | 本地 curated catalog，带 source hash、review 信息和模板定义 | `docs/capabilities/local-curated-registry.json`、`registry.schema.json` |
 | MCP Draft 安装 | 根据 template 写入项目 `.code-agent/mcp.json` 的 disabled server；删除时只回滚带 `capabilityDraft` 元数据的草稿 | `capabilityDraftResolver.ts` |
@@ -27,6 +28,27 @@ Code Agent 提供插件系统，允许扩展 Agent 的能力。插件可以：
 - Capability Center 可以生成本地 disabled draft，但不会自动启用 MCP，也不会自动连接外部服务。
 - 远程 marketplace 还没有接入；`remote / marketplace` source kind 是后续兼容位。
 - 手写 MCP 配置、普通插件和项目私有 skill 不会被 Capability Center 的 draft 删除动作误删。
+
+### Extension Registry 边界（2026-05-28）
+
+2026-05-28 引入 `ExtensionRegistry` 作为 plugin + skill 的**只读聚合层**：
+
+- **AgentExtension** 公共形态：当前仅 `{ metadata, runtimeState? }`（src/main/extension/types.ts）。`tools?` / `skillPrompt?` / `handlers?` / `searchMeta?` 按 Phase 3b+ 按需追加，**今天读取这些字段会拿到 `undefined`**
+- **ExtensionRuntimeState** 与 `PluginState` 字面量对齐（编译期 sanity check 保证）；skill 默认 `'active'`，plugin 跟随 `LoadedPlugin.state`
+- **Adapter**：`loadedPluginToExtension(plugin)` / `parsedSkillToExtension(skill)`
+- **首个消费方**：`CapabilityRecommender` 已迁到 `ExtensionRegistry`，不再直读 `PluginRegistry`
+
+**仍未迁移**：
+- ExtensionRegistry **不**拥有 lifecycle，副作用仍归 `PluginRegistry` / `SkillDiscoveryService`
+- `messageBuild` / `extensionOpsService` 等仍直读 `PluginRegistry`（"未全迁"而非"漏洞"）
+- 关账依据：[docs/audits/2026-05-28-d2-phase3b-skip-decision.md](../audits/2026-05-28-d2-phase3b-skip-decision.md)
+- 实施进度详见 [docs/designs/extension-union-blueprint.md § F](../designs/extension-union-blueprint.md#f-实施进度2026-05-28-收口)
+
+### registerTool 冲突语义对齐（2026-05-28，E4 行为变更）
+
+`registerTool` 与 `registerToolModule` 对命名冲突的处理**统一为抛错**（commit `6a7f7cd7`）。原 `registerTool` 走 `protocolRegistry.register()` 的幂等覆盖路径被废弃 — 重复注册同名工具现在会抛错，与 `registerToolModule` 行为对齐。
+
+**影响**：依赖隐式覆盖行为的 builtin plugin 或第三方 plugin 现在会启动失败，需要在 activate 前显式 unregister 或改名。
 
 ## 核心组件
 

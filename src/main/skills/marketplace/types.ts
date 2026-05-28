@@ -42,7 +42,6 @@ export const PluginEntrySchema = z.object({
   description: z.string().optional(),
   source: z.string().default('./'),
   skills: z.array(z.string()).optional(),
-  commands: z.array(z.string()).optional(),
   tags: z.array(z.string()).optional(),
   version: z.string().optional(),
   author: z.string().optional(),
@@ -114,8 +113,6 @@ export interface InstalledPluginRecord {
   pluginRoot?: string;
   /** Installed skill names */
   skills: string[];
-  /** Installed command paths */
-  commands: string[];
   /** Original marketplace source path */
   sourceMarketplacePath: string;
 }
@@ -129,13 +126,11 @@ export type InstalledPluginsFile = Record<string, InstalledPluginRecord>;
 export interface InstallResult {
   pluginSpec: string;
   installedSkills: string[];
-  installedCommands: string[];
 }
 
 export interface UninstallResult {
   pluginSpec: string;
   removedSkills: string[];
-  removedCommands: string[];
 }
 
 // ----------------------------------------------------------------------------

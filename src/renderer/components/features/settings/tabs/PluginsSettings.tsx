@@ -42,7 +42,6 @@ export interface PluginVisibilityItem {
   isEnabled: boolean;
   scope?: PluginScope;
   skills: string[];
-  commands: string[];
   reason: string;
 }
 
@@ -91,7 +90,6 @@ export function buildPluginVisibilityAssessment({
       isEnabled: plugin.isEnabled,
       scope: plugin.scope,
       skills: normalizeList(plugin.skills),
-      commands: normalizeList(plugin.commands),
       reason: plugin.isEnabled
         ? '已启用，普通用户能在能力/Skill/Command 运行面看到它暴露的能力。'
         : '已安装但未启用，只能由管理员在插件管理里看到和处理。',
@@ -115,7 +113,6 @@ export function buildPluginVisibilityAssessment({
       kind: 'available',
       isEnabled: false,
       skills: normalizeList(plugin.skills),
-      commands: normalizeList(plugin.commands),
       reason: '市场目录中的未安装插件，不进入普通用户运行面。',
     });
   }
@@ -153,7 +150,6 @@ export function filterMarketplacePlugins({
       plugin.version,
       ...(plugin.tags ?? []),
       ...(plugin.skills ?? []),
-      ...(plugin.commands ?? []),
     ]
       .filter(Boolean)
       .join(' ')
@@ -596,10 +592,6 @@ export const PluginsSettings: React.FC = () => {
                       <span className="text-zinc-300">Skills</span>
                       <span className="ml-2">{plugin.skills.length ? plugin.skills.join(' · ') : '无'}</span>
                     </div>
-                    <div className="rounded-md bg-zinc-950/60 p-2 text-xs text-zinc-500">
-                      <span className="text-zinc-300">Commands</span>
-                      <span className="ml-2">{plugin.commands.length ? `${plugin.commands.length} 个` : '无'}</span>
-                    </div>
                   </div>
                 </div>
               );
@@ -704,7 +696,6 @@ export const PluginsSettings: React.FC = () => {
                       <Pill key={tag}>{tag}</Pill>
                     ))}
                     {(plugin.skills ?? []).length > 0 && <Pill>{plugin.skills?.length} skills</Pill>}
-                    {(plugin.commands ?? []).length > 0 && <Pill>{plugin.commands?.length} commands</Pill>}
                   </div>
                 </div>
               );

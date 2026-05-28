@@ -49,10 +49,6 @@ function getSkillsDir(scope: PluginScope, projectPath?: string): string {
   return path.join(getScopeBaseDir(scope, projectPath), 'skills');
 }
 
-function getCommandsDir(scope: PluginScope, projectPath?: string): string {
-  return path.join(getScopeBaseDir(scope, projectPath), 'commands');
-}
-
 function getInstalledPluginsPath(): string {
   return path.join(getUserConfigDir(), INSTALLED_PLUGINS_FILE);
 }
@@ -247,13 +243,10 @@ export async function installPlugin(
 
   // Setup destination directories
   const skillsDestBase = getSkillsDir(scope, projectPath);
-  const commandsDestBase = path.join(getCommandsDir(scope, projectPath), plugin, marketplace);
 
   await ensureDir(skillsDestBase);
-  await ensureDir(commandsDestBase);
 
   const installedSkills: string[] = [];
-  const installedCommands: string[] = [];
 
   // Install skills
   const skillPaths = entry.skills || [];
@@ -285,36 +278,6 @@ export async function installPlugin(
     installedSkills.push(skillName);
   }
 
-  // Install commands
-  const commandPaths = entry.commands || [];
-  for (const relPath of commandPaths) {
-    const src = path.join(entrySourceBase, relPath);
-    if (!fsSync.existsSync(src)) {
-      throw new Error(`Command path not found: ${src}`);
-    }
-
-    const commandName = path.basename(src);
-    const dest = path.join(commandsDestBase, commandName);
-
-    if (fsSync.existsSync(dest) && !options.force) {
-      throw new Error(`Command destination already exists: ${dest}`);
-    }
-
-    if (fsSync.existsSync(dest)) {
-      await fs.rm(dest, { recursive: true, force: true });
-    }
-
-    const stat = await fs.stat(src);
-    if (stat.isDirectory()) {
-      await copyDirectory(src, dest);
-    } else {
-      await ensureDir(path.dirname(dest));
-      await fs.copyFile(src, dest);
-    }
-
-    installedCommands.push(dest);
-  }
-
   // Update state
   state[pluginSpec] = {
     plugin,
@@ -324,7 +287,6 @@ export async function installPlugin(
     projectPath,
     installedAt: new Date().toISOString(),
     skills: installedSkills,
-    commands: installedCommands,
     sourceMarketplacePath: rootDir,
   };
 
@@ -334,10 +296,9 @@ export async function installPlugin(
     pluginSpec,
     isEnabled: state[pluginSpec].isEnabled,
     skills: installedSkills.length,
-    commands: installedCommands.length,
   });
 
-  return { pluginSpec, installedSkills, installedCommands };
+  return { pluginSpec, installedSkills };
 }
 
 /**
@@ -396,25 +357,13 @@ export async function uninstallPlugin(
     }
   }
 
-  // Remove commands directory
-  const commandsDir = path.join(
-    getCommandsDir(scope, projectPath),
-    record.plugin,
-    record.marketplace
-  );
-  const removedCommands: string[] = [];
-  if (fsSync.existsSync(commandsDir)) {
-    await fs.rm(commandsDir, { recursive: true, force: true });
-    removedCommands.push(commandsDir);
-  }
-
   // Update state
   delete state[pluginSpec];
   await saveInstalledPlugins(state);
 
   logger.info('Plugin uninstalled', { pluginSpec });
 
-  return { pluginSpec, removedSkills, removedCommands };
+  return { pluginSpec, removedSkills };
 }
 
 /**

@@ -220,7 +220,6 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
             marketplace,
             source: plugin.source,
             skills: plugin.skills,
-            commands: plugin.commands,
             tags: plugin.tags,
             version: plugin.version,
             author: plugin.author,
@@ -253,7 +252,6 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
             marketplace,
             source: plugin.source,
             skills: plugin.skills,
-            commands: plugin.commands,
             tags: plugin.tags,
             version: plugin.version,
             author: plugin.author,
@@ -290,10 +288,8 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
             installedAt: record.installedAt,
             pluginRoot: record.pluginRoot,
             skills: record.skills,
-            commands: record.commands,
           } : undefined,
           installedSkills: result.installedSkills,
-          installedCommands: result.installedCommands,
         };
       } catch (error) {
         logger.error('Failed to install plugin', { pluginSpec, error });
@@ -342,7 +338,6 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
             installedAt: record.installedAt,
             pluginRoot: record.pluginRoot,
             skills: record.skills,
-            commands: record.commands,
           });
         }
 

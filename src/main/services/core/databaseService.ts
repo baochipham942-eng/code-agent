@@ -25,6 +25,7 @@ import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/c
 export type { StoredSession, StoredMessage, MemoryRecord, RelationQueryOptions, EntityRelation, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
 import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, SwarmTraceRepository, PendingApprovalRepository } from './repositories';
+import { createSwarmTraceRepo } from './repositories/swarmTraceFactory';
 import type { SwarmTraceRepo } from '../../../shared/contract/swarmTrace';
 
 type DatabaseRecoveryCallback = () => void;
@@ -86,6 +87,7 @@ export class DatabaseService {
     const userDataPath = app?.getPath?.('userData') || process.cwd();
     this.dbPath = path.join(userDataPath, 'code-agent.db');
   }
+
 
   // --------------------------------------------------------------------------
   // Initialization
@@ -187,7 +189,7 @@ export class DatabaseService {
       this.configRepo = new ConfigRepository(this.db);
       this.captureRepo = new CaptureRepository(this.db);
       this.experimentRepo = new ExperimentRepository(this.db);
-      this.swarmTraceRepo = new SwarmTraceRepository(this.db);
+      this.swarmTraceRepo = createSwarmTraceRepo(this.db);
       this.pendingApprovalRepo = new PendingApprovalRepository(this.db);
 
       const crashedSessions = this.sessionRepo.markCrashedActiveSessions(Date.now());

@@ -49,7 +49,7 @@
 **Effort:** M
 **Priority:** P1
 **Depends on:** 无
-**Progress:** ✅ migration `supabase/migrations/20260528000000_telemetry_fleet.sql` 已写（admin-only RLS：用户写自己、仅 admin 读）。✅ 本地存储层：`migrations.ts` 加 `telemetry_sessions.synced_at` 列 + telemetryStorage `getUnsyncedSessions()`/`markSessionsSynced()`，typecheck 通过。**待办**：用户把 migration apply 到 Supabase；建上传器 `telemetryUploaderService.ts`（下一个任务）。
+**Progress:** ✅ migration `supabase/migrations/20260528000000_telemetry_fleet.sql` 已写。✅ **已 apply 到生产 Supabase**（项目 `xepbunahzbmexsmmiqyq`，经 Supabase MCP OAuth；ref 与 app SUPABASE_URL 匹配 + 库内已有 sessions/messages 等 code-agent 表确认无误）。✅ **RLS 经 pg_policies 核实**：三表只有 `is_code_agent_admin()` 能 SELECT，用户仅能 INSERT/UPDATE 自己的行。✅ 本地存储层：`synced_at` 列 + `getUnsyncedSessions()`/`markSessionsSynced()`，typecheck 通过。**待办**：建上传器 `telemetryUploaderService.ts`（下一个任务）。
 
 ### LLM trace 回传客户端（上传器 + 反馈入口）
 
@@ -59,6 +59,7 @@
 **Effort:** M
 **Priority:** P1
 **Depends on:** LLM trace 回传后端
+**Progress:** ✅ `telemetryUploaderService.ts` 已建（抄 syncService：直连 supabase-js upsert + 批量 200 + 成功后 markSessionsSynced；auth-gated；默认 metadata-only，turn payload 不含 prompt/completion/工具内容，报错串脱敏）。✅ 接线 initBackgroundServices auth 回调（登录起/登出停）。✅ typecheck 通过 + 行 shape 经 information_schema 与线上表逐列核实对齐。**待办**：(a) opt-out 开关 `telemetry.cloudUpload.enabled`；(b) 反馈 👍/👎 UI + 👎 触发全文（P1d）；(c) in-app E2E（登录跑 session → Supabase 出 rows → 管理员按 sessionId 查链路），需 build app。
 
 ### 产品分析埋点（PostHog）
 

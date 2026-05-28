@@ -106,7 +106,7 @@ function getLastUserMessage(ctx: ContextAssemblyCtx): Message | undefined {
   return [...ctx.runtime.messages].reverse().find((message) => message.role === 'user');
 }
 
-function buildDynamicPromptCacheKey(
+export function buildDynamicPromptCacheKey(
   ctx: ContextAssemblyCtx,
   userQuery: string,
   artifactRepairMode: boolean,
@@ -125,11 +125,13 @@ function buildDynamicPromptCacheKey(
     ctx.runtime.activeSkillContextBlock ? 'active-skill' : '',
     artifactRepairMode ? 'artifact-repair' : 'normal',
     String(getTrustedRemotePromptFragmentsRevision()),
-    // SYSTEM.md / APPEND_SYSTEM.md 变化时让缓存失效(路径 + 长度两维)
+    // SYSTEM.md / APPEND_SYSTEM.md / FULL_SYSTEM.md 变化时让缓存失效(路径 + 长度两维)
     projectSystemPrompt.sources.customPath || 'no-custom',
     String(projectSystemPrompt.custom?.length ?? 0),
     projectSystemPrompt.sources.appendPath || 'no-append',
     String(projectSystemPrompt.append?.length ?? 0),
+    projectSystemPrompt.sources.fullReplacePath || 'no-full',
+    String(projectSystemPrompt.fullReplace?.length ?? 0),
     userQuery,
   ].join('\u0000');
 }
@@ -279,9 +281,33 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
     return cached.prompt;
   }
 
+  // FULL_SYSTEM.md 短路:用户要完全接管 system prompt 时直接 return,
+  // 跳过所有默认层(identity / workdir / runtime mode / session metadata / memory /
+  // repo map / deferred tools / append)。用于 D 风险闭环 —— custom 只替换 identity,
+  // 后续层(尤其全局 memory)会渗透;fullReplace 真接管。
+  if (projectSystemPrompt.fullReplace !== null) {
+    const fullPrompt = projectSystemPrompt.fullReplace;
+    const tokens = estimateTokens(fullPrompt);
+    if (tokens <= MAX_SYSTEM_PROMPT_TOKENS) {
+      cache.dynamicPrompt = { key: cacheKey, createdAt: now, prompt: fullPrompt, tokens };
+    } else {
+      cache.dynamicPrompt = undefined;
+      logger.warn(
+        `[ContextAssembly] FULL_SYSTEM.md exceeds budget: ${tokens}/${MAX_SYSTEM_PROMPT_TOKENS} tokens — using as-is`,
+      );
+    }
+    logger.debug('[ContextAssembly] FULL system prompt loaded — skipping all default layers', {
+      source: projectSystemPrompt.sources.fullReplacePath,
+      bytes: fullPrompt.length,
+      tokens,
+    });
+    return fullPrompt;
+  }
+
   // Use optimized prompt based on task complexity
   // 项目级 SYSTEM.md 存在时替换默认 identity prompt(Pi 借鉴 ④);workdir / runtime mode /
   // memory 等后续层照常注入。用户要保留默认 identity 又想追加内容,用 APPEND_SYSTEM.md。
+  // 用户要完全接管(跳过所有默认层),用 FULL_SYSTEM.md(见上面短路逻辑)。
   let systemPrompt: string;
   if (projectSystemPrompt.custom !== null) {
     systemPrompt = projectSystemPrompt.custom;

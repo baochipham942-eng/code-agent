@@ -18,8 +18,10 @@ import { describe, it, expect } from 'vitest';
 import {
   pluginManifestToMetadata,
   parsedSkillToMetadata,
+  loadedPluginToExtension,
+  parsedSkillToExtension,
 } from '../../../src/main/extension/adapters';
-import type { PluginManifest } from '../../../src/main/plugins/types';
+import type { LoadedPlugin, PluginManifest, PluginState } from '../../../src/main/plugins/types';
 import type { ParsedSkill, SkillSource } from '../../../src/shared/contract/agentSkill';
 
 // ----------------------------------------------------------------------------
@@ -203,6 +205,72 @@ describe('parsedSkillToMetadata', () => {
   it('纯函数:同输入恒同输出', () => {
     const s = fullSkill();
     expect(parsedSkillToMetadata(s)).toEqual(parsedSkillToMetadata(s));
+  });
+});
+
+// ----------------------------------------------------------------------------
+// loadedPluginToExtension (Phase 3a)
+// ----------------------------------------------------------------------------
+
+function makeLoadedPlugin(
+  rootPath: string,
+  state: PluginState = 'active',
+  manifest: PluginManifest = fullManifest(),
+): LoadedPlugin {
+  return {
+    manifest,
+    rootPath,
+    state,
+    registeredTools: [],
+    registeredHooks: [],
+  };
+}
+
+describe('loadedPluginToExtension', () => {
+  it('rootPath="builtin:..." → source="builtin"', () => {
+    const ext = loadedPluginToExtension(makeLoadedPlugin('builtin:image-process'));
+    expect(ext.metadata.source).toBe('builtin');
+  });
+
+  it('rootPath 非 builtin: 前缀 → source="plugin"', () => {
+    const ext = loadedPluginToExtension(
+      makeLoadedPlugin('/home/u/.code-agent/plugins/image-process'),
+    );
+    expect(ext.metadata.source).toBe('plugin');
+  });
+
+  it('runtimeState 直接取 LoadedPlugin.state', () => {
+    const states: PluginState[] = ['active', 'inactive', 'activating', 'error', 'disabled'];
+    for (const s of states) {
+      const ext = loadedPluginToExtension(makeLoadedPlugin('builtin:p', s));
+      expect(ext.runtimeState).toBe(s);
+    }
+  });
+
+  it('metadata 字段与 pluginManifestToMetadata(builtin) 一致', () => {
+    const plugin = makeLoadedPlugin('builtin:image-process');
+    const ext = loadedPluginToExtension(plugin);
+    expect(ext.metadata).toEqual(pluginManifestToMetadata(plugin.manifest, 'builtin'));
+  });
+});
+
+// ----------------------------------------------------------------------------
+// parsedSkillToExtension (Phase 3a)
+// ----------------------------------------------------------------------------
+
+describe('parsedSkillToExtension', () => {
+  it('runtimeState 固定 "active"(skill 无 lifecycle 概念)', () => {
+    const sources: SkillSource[] = ['builtin', 'user', 'project', 'plugin', 'library', 'cloud'];
+    for (const src of sources) {
+      const ext = parsedSkillToExtension(fullSkill(src));
+      expect(ext.runtimeState).toBe('active');
+    }
+  });
+
+  it('metadata 字段与 parsedSkillToMetadata 一致', () => {
+    const skill = fullSkill('user');
+    const ext = parsedSkillToExtension(skill);
+    expect(ext.metadata).toEqual(parsedSkillToMetadata(skill));
   });
 });
 

@@ -45,6 +45,20 @@ export type ExtensionOrigin = 'builtin' | 'user' | 'project' | 'plugin' | 'libra
 export type ExtensionPlatform = 'darwin' | 'win32' | 'linux';
 
 /**
+ * 扩展运行时状态。语义对齐 `PluginState`(`src/main/plugins/types.ts`),
+ * 这里独立声明避免 extension 模块反向依赖 plugins。
+ *
+ * - `active`: 已激活,可被消费方使用
+ * - `inactive`: 已加载未激活
+ * - `activating`: 激活中
+ * - `error`: 加载/激活出错
+ * - `disabled`: 被用户/系统禁用
+ *
+ * skill 没有 lifecycle 概念,投影时默认 `'active'`。
+ */
+export type ExtensionRuntimeState = 'inactive' | 'activating' | 'active' | 'error' | 'disabled';
+
+/**
  * 公共扩展元数据 —— `PluginManifest` 与 `ParsedSkill` 投影的统一形态。
  *
  * Phase 1 范围:仅作为只读视图供消费者(后续 ExtensionRegistry)读,不替代
@@ -78,7 +92,11 @@ export interface ExtensionMetadata {
 /**
  * 统一扩展形态。
  *
- * Phase 1 只携带 metadata;Phase 2+ 会按需追加:
+ * Phase 3a 起携带:
+ * - `metadata`:  公共元数据
+ * - `runtimeState?`: 运行时状态(skill 默认 active,plugin 跟 LoadedPlugin.state)
+ *
+ * Phase 3b+ 会按需追加:
  * - `tools?: ToolModule[]`  原 plugin 工具注册
  * - `skillPrompt?: string`  原 ParsedSkill.promptContent
  * - `handlers?: HookDefinition[]`  可选 hook 配置
@@ -86,4 +104,6 @@ export interface ExtensionMetadata {
  */
 export interface AgentExtension {
   metadata: ExtensionMetadata;
+  /** 运行时状态(可选,部分消费方无需关心) */
+  runtimeState?: ExtensionRuntimeState;
 }

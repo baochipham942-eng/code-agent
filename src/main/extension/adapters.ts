@@ -16,12 +16,14 @@
 // - 投影是确定的:相同输入恒产相同输出,便于做 cache key / diff。
 // ============================================================================
 
-import type { PluginManifest } from '../plugins/types';
+import type { LoadedPlugin, PluginManifest, PluginState } from '../plugins/types';
 import type { ParsedSkill, SkillSource } from '../../shared/contract/agentSkill';
 import type {
+  AgentExtension,
   ExtensionMetadata,
   ExtensionPlatform,
   ExtensionOrigin,
+  ExtensionRuntimeState,
   ExtensionSurface,
 } from './types';
 
@@ -79,6 +81,36 @@ export function parsedSkillToMetadata(skill: ParsedSkill): ExtensionMetadata {
 }
 
 /**
+ * `LoadedPlugin` → `AgentExtension` 投影(Phase 3a)。
+ *
+ * 比 `pluginManifestToMetadata` 多一层:吃运行时实例,带 `runtimeState`。
+ * source 判定走 `rootPath` 前缀(`builtin:` → 'builtin',其它 → 'plugin'),
+ * 与 `ExtensionRegistry.getExtensions()` 保持一致语义。
+ */
+export function loadedPluginToExtension(plugin: LoadedPlugin): AgentExtension {
+  const source: ExtensionOrigin = plugin.rootPath.startsWith('builtin:')
+    ? 'builtin'
+    : 'plugin';
+  return {
+    metadata: pluginManifestToMetadata(plugin.manifest, source),
+    runtimeState: plugin.state,
+  };
+}
+
+/**
+ * `ParsedSkill` → `AgentExtension` 投影(Phase 3a)。
+ *
+ * skill 没有 lifecycle 概念,所有进入 SkillDiscoveryService 的 skill 都视为
+ * `'active'`(发现即可用)。
+ */
+export function parsedSkillToExtension(skill: ParsedSkill): AgentExtension {
+  return {
+    metadata: parsedSkillToMetadata(skill),
+    runtimeState: 'active',
+  };
+}
+
+/**
  * 把 `SkillSource` 映射成 `ExtensionOrigin`。两者取值已对齐,纯类型口径转换。
  */
 function skillSourceToExtensionOrigin(source: SkillSource): ExtensionOrigin {
@@ -104,6 +136,11 @@ const _platformCompat: ExtensionPlatform[] = [
   'linux',
 ] satisfies ExtensionPlatform[];
 void _platformCompat;
+
+// 类型层 sanity check:PluginState 字面量集合必须是 ExtensionRuntimeState 子集。
+// 编译期如果 PluginState 加了新值而 ExtensionRuntimeState 没跟上,这里会报错。
+const _runtimeStateCompat = (s: PluginState): ExtensionRuntimeState => s;
+void _runtimeStateCompat;
 
 // 类型层 sanity check:ExtensionSurface 应包含 PluginSurface 全部取值。
 const _surfaceCompat: ExtensionSurface[] = [

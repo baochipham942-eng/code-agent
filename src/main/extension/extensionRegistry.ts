@@ -22,10 +22,10 @@ import { getSkillDiscoveryService } from '../services/skills/skillDiscoveryServi
 import type { LoadedPlugin } from '../plugins/types';
 import type { ParsedSkill } from '../../shared/contract/agentSkill';
 import {
-  pluginManifestToMetadata,
-  parsedSkillToMetadata,
+  loadedPluginToExtension,
+  parsedSkillToExtension,
 } from './adapters';
-import type { AgentExtension, ExtensionOrigin } from './types';
+import type { AgentExtension } from './types';
 
 /** 上游 plugin 数据源 minimum interface(仅依赖 getPlugins) */
 export interface PluginsSource {
@@ -65,18 +65,11 @@ export class ExtensionRegistry {
     const result: AgentExtension[] = [];
 
     for (const plugin of this.pluginsSource.getPlugins()) {
-      const source: ExtensionOrigin = plugin.rootPath.startsWith('builtin:')
-        ? 'builtin'
-        : 'plugin';
-      result.push({
-        metadata: pluginManifestToMetadata(plugin.manifest, source),
-      });
+      result.push(loadedPluginToExtension(plugin));
     }
 
     for (const skill of this.skillsSource.getAllSkills()) {
-      result.push({
-        metadata: parsedSkillToMetadata(skill),
-      });
+      result.push(parsedSkillToExtension(skill));
     }
 
     result.sort((a, b) => {

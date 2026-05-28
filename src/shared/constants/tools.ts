@@ -25,6 +25,8 @@ export const BASH = {
   POST_EXIT_DRAIN_MS: 150,
   /** 超时/abort 先发 SIGTERM，宽限此时长后整组仍未退出则升级 SIGKILL */
   KILL_GRACE_MS: 2000,
+  /** rtk rewrite 子进程超时（fail-closed 退回原命令） */
+  RTK_REWRITE_TIMEOUT: 500,
 } as const;
 
 /** Grep 工具配置 */

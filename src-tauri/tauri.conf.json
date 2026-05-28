@@ -83,7 +83,8 @@
       "../node_modules/detect-libc/lib/**/*",
       "../scripts/system-audio-capture",
       "../scripts/vision-ocr",
-      "../scripts/vision-tagger"
+      "../scripts/vision-tagger",
+      "../scripts/rtk"
     ],
     "macOS": {
       "minimumSystemVersion": "11.0",

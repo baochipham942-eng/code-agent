@@ -59,7 +59,7 @@
 **Effort:** M
 **Priority:** P1
 **Depends on:** LLM trace 回传后端
-**Progress:** ✅ `telemetryUploaderService.ts` 已建（抄 syncService：直连 supabase-js upsert + 批量 200 + 成功后 markSessionsSynced；auth-gated；默认 metadata-only，turn payload 不含 prompt/completion/工具内容，报错串脱敏）。✅ 接线 initBackgroundServices auth 回调（登录起/登出停）。✅ typecheck 通过 + 行 shape 经 information_schema 与线上表逐列核实对齐。**待办**：(a) opt-out 开关 `telemetry.cloudUpload.enabled`；(b) 反馈 👍/👎 UI + 👎 触发全文（P1d）；(c) in-app E2E（登录跑 session → Supabase 出 rows → 管理员按 sessionId 查链路），需 build app。
+**Progress:** ✅ `telemetryUploaderService.ts` 已建（抄 syncService：直连 supabase-js upsert + 批量 200 + 成功后 markSessionsSynced；auth-gated；默认 metadata-only，turn payload 不含 prompt/completion/工具内容，报错串脱敏）。✅ 接线 initBackgroundServices auth 回调（登录起/登出停）。✅ typecheck 通过 + 行 shape 经 information_schema 与线上表逐列核实对齐。✅ **真客户端 headless E2E 已跑通**（2026-05-28，用 `317054513@qq.com` 真账号 signInWithPassword 拿真 JWT → upsert telemetry_sessions+turns 经 RLS 通过 → admin 端 select 读到 → 清理）。**待办**：(a) opt-out 不做（默认开启已定）；(b) 反馈 👍/👎 UI（P1d，挂起）；(c) app 内运行时一刀（顺其自然，下次跑 app 时上传器自动走真路径，可用 MCP 抽样核实）。
 
 ### 产品分析埋点（PostHog）
 

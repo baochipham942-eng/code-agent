@@ -1,12 +1,12 @@
 # Fleet Observability — 分发用户可观测性回传计划
 
-> 状态：P0 已实现 + P1 已实现（待 in-app E2E）；P2 未动
+> 状态：P0 已实现 + P1 已实现（含真客户端 E2E 实证）；P2 admin 控制台即将推进
 > 日期：2026-05-28
 > 分支：`worktree-fleet-observability`（4 commit，未合 main）
 >
 > **进度小结**
 > - ✅ **P0 崩溃回传**：Sentry(renderer+node) + 脏标记 + 脱敏；DSN 已配；发送侧 live 实证 + 脱敏在真实看板验证；scrubEvent 15 单测锁红线。
-> - ✅ **P1 trace 回传**：三表 + admin-only RLS（**已 apply 到生产 Supabase `xepbunahzbmexsmmiqyq`**，pg_policies 实查）；本地存储层 + 上传器（auth-gated、metadata-only、行 shape 逐列对齐）；"按 sessionId 查根因"真库演示通过。
+> - ✅ **P1 trace 回传**：三表 + admin-only RLS（**已 apply 到生产 Supabase `xepbunahzbmexsmmiqyq`**，pg_policies 实查）；本地存储层 + 上传器（auth-gated、metadata-only、行 shape 逐列对齐）；"按 sessionId 查根因"真库演示通过。**真客户端 headless E2E 已跑通**（2026-05-28，真账号 signInWithPassword → upsert 经 RLS → admin select 读到 → 清理）。
 > - 🔀 决策：脏标记放 Node（非 Rust）；回传走客户端直连 supabase-js（非 Vercel 端点）。
 > - ⏳ **待办**：P1 in-app E2E（登录跑 session → 上传器写入 → 管理员按真 sessionId 查）；opt-out 开关（已决定不做，默认开启）；P1d 反馈 👍/👎 UI（挂起）；P2 产品分析 + admin 控制台 UI（未动）。
 > 背景：Agent Neo 要分发给外部用户。现有可观测性"轮子"造得好，但**全是朝内的**（开发者本机自测），没有一根线把崩溃/trace/usage 从用户机器回传到中央台。本计划补齐"收集端 + 上传器 + 崩溃钩子 + admin 前端"。

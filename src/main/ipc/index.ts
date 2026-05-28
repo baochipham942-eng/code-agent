@@ -61,6 +61,7 @@ import { registerAgentRegistryHandlers } from './agentRegistry.ipc';
 import { registerAgentEngineHandlers } from './agentEngine.ipc';
 import { registerCapabilityHandlers } from './capability.ipc';
 import { registerHandoffHandlers } from './handoff.ipc';
+import { registerPiiHandlers } from './pii.ipc';
 
 export * from './types';
 
@@ -120,6 +121,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // OpenChronicle (屏幕记忆) handlers
   registerOpenchronicleHandlers(ipcMain);
+
+  // PII 防线 handlers (B3 一键启用本地 GLiNER PII 防线)
+  registerPiiHandlers(ipcMain);
 
   // Connector handlers
   registerConnectorHandlers(ipcMain, getMainWindow, getConfigService);

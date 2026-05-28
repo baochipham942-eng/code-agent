@@ -30,6 +30,7 @@ export const SETTINGS_TAB_IDS = [
   'hooks',
   'memory',
   'openchronicle',
+  'privacy',
   'update',
   'about',
 ] as const;
@@ -84,6 +85,7 @@ export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> 
   controlPlane: 'management',
   memory: 'memory',
   openchronicle: 'memory',
+  privacy: 'memory',
   cache: 'system',
   update: 'system',
   about: 'system',

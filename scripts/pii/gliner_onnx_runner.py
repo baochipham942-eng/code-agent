@@ -25,7 +25,7 @@ DEFAULT_MODEL_DIR = (
     / "models"
     / "knowledgator-gliner-pii-base-v1.0"
 )
-DEFAULT_ONNX_FILE = "onnx/model.onnx"
+DEFAULT_ONNX_FILE = "onnx/model_quint8.onnx"
 
 
 def main() -> int:

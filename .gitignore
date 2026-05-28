@@ -97,8 +97,9 @@ scripts/system-audio-capture
 scripts/vision-ocr
 scripts/vision-tagger
 
-# Upstream sidecar binaries (run scripts/fetch-rtk.sh to regenerate)
+# Upstream sidecar binaries (run scripts/fetch-*.sh to regenerate)
 scripts/rtk
+scripts/uv
 
 # P0-5 shadow compare debug output
 data/debug/

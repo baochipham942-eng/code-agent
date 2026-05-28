@@ -83,7 +83,10 @@
       "../node_modules/detect-libc/lib/**/*",
       "../scripts/system-audio-capture",
       "../scripts/vision-ocr",
-      "../scripts/vision-tagger"
+      "../scripts/vision-tagger",
+      "../scripts/uv",
+      "../scripts/pii/setup-gliner-pii.sh",
+      "../scripts/pii/gliner_onnx_runner.py"
     ],
     "macOS": {
       "minimumSystemVersion": "11.0",

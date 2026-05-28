@@ -3,6 +3,9 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { existsSync, readFileSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import type {
   ToolContext,
   CanUseToolFn,
@@ -342,6 +345,72 @@ describe('bashModule (native)', () => {
         expect(result.output).toMatch(/(\/private)?\/tmp/);
       }
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Foreground command that spawns a long-lived background child
+  // 回归：模型常发 `python3 -m http.server 8088 & echo started` 这类命令，`&` 在
+  // 命令中间（非结尾），不被 rewriteImplicitBackgroundCommand 当后台，落到前台 spawn。
+  // 旧实现只在子进程 'close'（stdio 管道 EOF）才 resolve，被后台化的孙子进程继承并
+  // 持有 stdout 管道写端 → EOF 永不到达 → 工具永不返回，整个 run 挂死。
+  // ---------------------------------------------------------------------------
+  describe('foreground command with long-lived background child', () => {
+    const markers: string[] = [];
+    afterEach(() => {
+      for (const m of markers.splice(0)) {
+        try { rmSync(m, { force: true }); } catch { /* ignore */ }
+      }
+    });
+    const lineCount = (file: string): number =>
+      existsSync(file) ? readFileSync(file, 'utf-8').split('\n').filter(Boolean).length : 0;
+    const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    it('D1: returns promptly without waiting for a backgrounded child to exit', async () => {
+      const handler = await bashModule.createHandler();
+      const startedAt = Date.now();
+      // sleep 8 被后台化并继承 stdout 管道；前台 echo 立即完成、shell 立即退出。
+      // 工具应在 shell 退出时返回，而不是死等 8 秒后 sleep 释放管道。
+      const result = await handler.execute(
+        { command: 'sleep 8 & echo d1-started' },
+        makeCtx(),
+        allowAll,
+      );
+      const elapsed = Date.now() - startedAt;
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('d1-started');
+      }
+      expect(elapsed).toBeLessThan(3000);
+    }, 20_000);
+
+    it('D2: reaps the whole process group (backgrounded grandchild) on timeout', async () => {
+      const handler = await bashModule.createHandler();
+      const marker = join(tmpdir(), `bash-d2-${process.pid}-${Date.now()}.log`);
+      markers.push(marker);
+      // 后台子 shell 持续往 marker 追加；前台 sleep 8 撑住 shell 直到超时。
+      // 超时后必须杀掉整个进程组：工具应及时返回 TIMEOUT，且后台循环停止写入。
+      const exec = handler.execute(
+        {
+          command: `( for i in $(seq 1 80); do echo tick >> "${marker}"; sleep 0.1; done ) & sleep 8`,
+          timeout: 700,
+        },
+        makeCtx(),
+        allowAll,
+      );
+      // 防止 buggy 代码把测试本身挂死：自带 4s 兜底，超过即视为未及时返回。
+      const result = (await Promise.race([
+        exec,
+        delay(4000).then(() => ({ ok: false, code: 'TEST_TIMEOUT' as const })),
+      ])) as { ok: boolean; code?: string };
+
+      expect(result.ok).toBe(false);
+      expect(result.code).toBe('TIMEOUT');
+
+      const linesAtReturn = lineCount(marker);
+      await delay(800);
+      const linesLater = lineCount(marker);
+      expect(linesLater).toBe(linesAtReturn);
+    }, 15_000);
   });
 
   describe('pre-flight validation', () => {

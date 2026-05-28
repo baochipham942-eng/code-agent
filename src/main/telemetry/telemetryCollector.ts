@@ -816,6 +816,8 @@ export class TelemetryCollector {
       },
       onToolCallStart(turnId: string, toolCallId: string, name: string, args: unknown, index: number, parallel: boolean) {
         collector.recordToolCallStart(turnId, toolCallId, name, args, index, parallel);
+        // PostHog: 工具使用事件（在 start hook 埋点最干净——单点覆盖 6 个 onToolCallEnd 分支）
+        trackNode(POSTHOG_EVENTS.TOOL_USED, { tool: name, toolCallId });
       },
       onToolCallEnd(turnId: string, toolCallId: string, success: boolean, error: string | undefined, durationMs: number, output: string | undefined, metadata?: Record<string, unknown>) {
         collector.recordToolCallEnd(turnId, toolCallId, success, error, durationMs, output, metadata);

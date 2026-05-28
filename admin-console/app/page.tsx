@@ -45,9 +45,14 @@ export default async function Dashboard() {
           <h1 className="text-2xl font-semibold">Fleet Observability</h1>
           <p className="text-xs text-zinc-500 mt-1">Agent Neo · 跨用户 trace 与崩溃</p>
         </div>
-        <form action={signOut}>
-          <button className="text-sm text-zinc-500 hover:text-zinc-300">登出</button>
-        </form>
+        <nav className="flex items-center gap-5 text-sm">
+          <a href="/" className="text-zinc-100 hover:text-white">Dashboard</a>
+          <a href="/users" className="text-zinc-400 hover:text-zinc-100">Users</a>
+          <a href="/errors" className="text-zinc-400 hover:text-zinc-100">Errors</a>
+          <form action={signOut}>
+            <button className="text-zinc-500 hover:text-zinc-300">登出</button>
+          </form>
+        </nav>
       </header>
 
       <section className="grid grid-cols-3 gap-4 mb-8">

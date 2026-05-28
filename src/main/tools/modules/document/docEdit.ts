@@ -102,7 +102,7 @@ function buildDispatchLegacyCtx(
   canUseTool: CanUseToolFn,
 ): LegacyToolContext {
   const wrapEmit = (event: string, data: unknown) => {
-    ctx.emit({ type: event, ...((data && typeof data === 'object') ? data : { data }) } as never);
+    ctx.emit({ type: event, data } as never);
   };
 
   return {

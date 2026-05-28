@@ -63,7 +63,7 @@ export function buildLegacyCtxFromProtocol(
 ): LegacyToolContext {
   // 把 protocol AgentEvent 透传成 legacy emitEvent (string, data)
   const wrapEmit = (event: string, data: unknown) => {
-    ctx.emit({ type: event, ...((data && typeof data === 'object') ? data : { data }) } as never);
+    ctx.emit({ type: event, data } as never);
   };
 
   return {

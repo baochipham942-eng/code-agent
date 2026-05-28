@@ -1,6 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import type { Message, ModelConfig } from '../../../src/shared/contract';
-import { persistAgentLoopMessageToSession } from '../../../src/cli/bootstrap';
+import {
+  installCLISwarmTraceWriterIfNeeded,
+  persistAgentLoopMessageToSession,
+} from '../../../src/cli/bootstrap';
+import { SwarmEventEmitter } from '../../../src/main/agent/swarmEventPublisher';
+import {
+  getSwarmTraceWriter,
+  resetSwarmTraceWriter,
+} from '../../../src/main/agent/swarmTraceWriter';
+import { shutdownEventBus } from '../../../src/main/services/eventing/bus';
+import { SWARM_TRACE } from '../../../src/shared/constants/storage';
 
 const modelConfig: ModelConfig = {
   provider: 'openai',
@@ -51,5 +64,75 @@ describe('persistAgentLoopMessageToSession', () => {
 
     expect(manager.addMessage).toHaveBeenCalledWith(message);
     expect(manager.addMessageToSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('installCLISwarmTraceWriterIfNeeded', () => {
+  let tmpDir: string;
+  let savedStorageMode: string | undefined;
+  let savedDataDir: string | undefined;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-swarm-trace-'));
+    savedStorageMode = process.env[SWARM_TRACE.STORAGE_MODE_ENV];
+    savedDataDir = process.env.CODE_AGENT_DATA_DIR;
+    delete process.env[SWARM_TRACE.STORAGE_MODE_ENV];
+    process.env.CODE_AGENT_DATA_DIR = tmpDir;
+  });
+
+  afterEach(async () => {
+    await getSwarmTraceWriter()?.dispose();
+    resetSwarmTraceWriter();
+    shutdownEventBus();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (savedStorageMode === undefined) delete process.env[SWARM_TRACE.STORAGE_MODE_ENV];
+    else process.env[SWARM_TRACE.STORAGE_MODE_ENV] = savedStorageMode;
+    if (savedDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+    else process.env.CODE_AGENT_DATA_DIR = savedDataDir;
+  });
+
+  it('does nothing unless CODE_AGENT_SWARM_STORAGE=file', () => {
+    expect(installCLISwarmTraceWriterIfNeeded()).toBe(false);
+    expect(getSwarmTraceWriter()).toBeNull();
+  });
+
+  it('persists swarm events to CODE_AGENT_DATA_DIR/swarm-runs in file mode', async () => {
+    process.env[SWARM_TRACE.STORAGE_MODE_ENV] = 'file';
+
+    expect(installCLISwarmTraceWriterIfNeeded()).toBe(true);
+    const emitter = new SwarmEventEmitter();
+    emitter.started(1, 'cli-session-1');
+    const runId = emitter.getCurrentRunId();
+    expect(runId).not.toBeNull();
+    emitter.agentAdded({ id: 'agent_coder_0', name: 'coder', role: 'coder' });
+    emitter.agentUpdated('agent_coder_0', {
+      status: 'running',
+      startTime: 10,
+      toolCalls: 1,
+    });
+    emitter.agentCompleted('agent_coder_0', 'done');
+    emitter.completed({
+      total: 1,
+      completed: 1,
+      failed: 0,
+      parallelPeak: 1,
+      totalTime: 100,
+    });
+
+    await getSwarmTraceWriter()?.drain();
+
+    const storageDir = path.join(tmpDir, SWARM_TRACE.STORAGE_DIR);
+    const files = fs.readdirSync(storageDir).filter((f) => f.endsWith(`__${runId}.jsonl`));
+    expect(files).toHaveLength(1);
+
+    const entries = fs
+      .readFileSync(path.join(storageDir, files[0]), 'utf-8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { type: string; sessionId?: string });
+    expect(entries.map((entry) => entry.type)).toEqual(
+      expect.arrayContaining(['run_started', 'agent_upserted', 'event', 'run_closed']),
+    );
+    expect(entries.find((entry) => entry.type === 'run_started')?.sessionId).toBe('cli-session-1');
   });
 });

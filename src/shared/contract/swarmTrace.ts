@@ -85,6 +85,80 @@ export interface SwarmRunDetail {
   events: SwarmRunEventRecord[];
 }
 
+// ============================================================================
+// Repository 入参（SQL / File 双实现共享）
+// ============================================================================
+
+export interface StartRunInput {
+  id: string;
+  sessionId: string | null;
+  coordinator: SwarmRunCoordinator;
+  startedAt: number;
+  totalAgents: number;
+  trigger: SwarmRunTrigger;
+}
+
+export interface CloseRunInput {
+  id: string;
+  status: SwarmRunStatus;
+  endedAt: number;
+  completedCount: number;
+  failedCount: number;
+  parallelPeak: number;
+  totalTokensIn: number;
+  totalTokensOut: number;
+  totalToolCalls: number;
+  totalCostUsd: number;
+  errorSummary: string | null;
+  aggregation: SwarmRunRecord['aggregation'];
+}
+
+export interface UpsertAgentInput {
+  runId: string;
+  agentId: string;
+  name: string;
+  role: string;
+  status: SwarmRunAgentRecord['status'];
+  startTime: number | null;
+  endTime: number | null;
+  durationMs: number | null;
+  tokensIn: number;
+  tokensOut: number;
+  toolCalls: number;
+  costUsd: number;
+  error: string | null;
+  failureCategory: string | null;
+  filesChanged: string[];
+}
+
+export interface AppendEventInput {
+  runId: string;
+  seq: number;
+  timestamp: number;
+  eventType: string;
+  agentId: string | null;
+  level: SwarmEventLevel;
+  title: string;
+  summary: string;
+  payload: unknown;
+}
+
+/**
+ * Swarm Trace 持久化 repo 的统一契约。
+ * SwarmTraceRepository (SQLite) 和 FileSwarmTraceRepository (JSONL) 都 implements 它,
+ * 消费者 (SwarmTraceWriter / IPC handler / SwarmServices) 只依赖此 interface。
+ */
+export interface SwarmTraceRepo {
+  startRun(input: StartRunInput): void;
+  closeRun(input: CloseRunInput): void;
+  upsertAgent(input: UpsertAgentInput): void;
+  appendEvent(input: AppendEventInput): void;
+  listRuns(limit: number): SwarmRunListItem[];
+  getRunDetail(runId: string): SwarmRunDetail | null;
+  deleteRun(runId: string): boolean;
+  clearAll(): void;
+}
+
 export interface SwarmRunListItem {
   id: string;
   sessionId: string | null;

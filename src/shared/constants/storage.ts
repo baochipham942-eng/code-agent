@@ -98,6 +98,10 @@ export const SWARM_TRACE = {
   MAX_EVENTS_PER_RUN: 2000,
   /** 单条事件 payload_json 序列化后的字节上限（超过则截断） */
   MAX_EVENT_PAYLOAD_BYTES: 8 * 1024,
+  /** FileSwarmTraceRepository 的 jsonl 存放子目录（相对 getUserConfigDir()） */
+  STORAGE_DIR: 'swarm-runs',
+  /** 选择 swarm trace 持久化后端的环境变量（'file' 走 jsonl，其他/缺省走 sqlite） */
+  STORAGE_MODE_ENV: 'CODE_AGENT_SWARM_STORAGE',
 } as const;
 
 /** 资源管理常量 */

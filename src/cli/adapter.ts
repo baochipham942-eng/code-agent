@@ -239,32 +239,35 @@ export class CLIAgent {
       if (event.type === 'stream_chunk' && event.data?.content) {
         this.writeStreamJson('text', event.data.content);
       } else if (event.type === 'tool_call_start') {
-        const toolName = event.data.name;
-        const toolArgs = event.data.arguments;
-        this.toolCallNames.set(event.data.id, toolName);
+        const data = event.data as { id?: string; name?: string; arguments?: Record<string, unknown> } | undefined;
+        const toolName = data?.name || 'unknown';
+        const toolArgs = data?.arguments || {};
+        const toolCallId = data?.id || `unknown-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        this.toolCallNames.set(toolCallId, toolName);
         const dispatch = getAgentDispatchInfo(toolName, toolArgs);
         if (dispatch) {
           // Emit agent_dispatch for sub-agent spawning
-          this.pendingAgentCalls.set(event.data.id, dispatch);
+          this.pendingAgentCalls.set(toolCallId, dispatch);
           this.writeStreamJson('agent_dispatch', dispatch);
         } else {
           this.writeStreamJson('tool_start', { name: toolName, args: toolArgs });
         }
       } else if (event.type === 'tool_call_end') {
-        const toolCallId = event.data.toolCallId;
+        const data = event.data as { toolCallId?: string; output?: string; success?: boolean } | undefined;
+        const toolCallId = data?.toolCallId || '';
         const pending = this.pendingAgentCalls.get(toolCallId);
         if (pending) {
           // Emit agent_result for completed sub-agent
           this.pendingAgentCalls.delete(toolCallId);
           this.writeStreamJson('agent_result', {
             agent: pending.agent,
-            result: event.data.output?.substring(0, 2000) || '',
-            success: event.data.success,
+            result: data?.output?.substring(0, 2000) || '',
+            success: data?.success,
           });
         } else {
           const name = this.toolCallNames.get(toolCallId) || 'unknown';
           this.toolCallNames.delete(toolCallId);
-          this.writeStreamJson('tool_result', { name, result: { output: event.data.output } });
+          this.writeStreamJson('tool_result', { name, result: { output: data?.output } });
         }
       } else if (event.type === 'turn_start') {
         this.turnStartTime = Date.now();

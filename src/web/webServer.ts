@@ -35,7 +35,7 @@ import { resolveSessionDefaultModelConfig } from '../main/services/core/sessionD
 import { getModelSessionState } from '../main/session/modelSessionState';
 import type { AuthStatus, AuthUser, ModelProvider, PermissionResponse, Session } from '../shared/contract';
 import type { MCPServerConfig } from '../main/mcp/mcpClient';
-import type { SwarmTraceRepository } from '../main/services/core/repositories/SwarmTraceRepository';
+import type { SwarmTraceRepo } from '../shared/contract/swarmTrace';
 import type { PendingApprovalRepository } from '../main/services/core/repositories/PendingApprovalRepository';
 
 const logger = createLogger('WebServer');
@@ -609,7 +609,7 @@ function registerHandlers(): void {
     const { getDatabase } = require('../main/services/core/databaseService') as typeof import('../main/services/core/databaseService');
     /* eslint-enable @typescript-eslint/no-require-imports */
 
-    let swarmTraceRepo: SwarmTraceRepository | null = null;
+    let swarmTraceRepo: SwarmTraceRepo | null = null;
     let pendingApprovalRepo: PendingApprovalRepository | null = null;
     try {
       const db = getDatabase();

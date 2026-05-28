@@ -57,6 +57,7 @@ function resolveOutputSchema(
 
 export const runCommand = new Command('run')
   .description('执行单次任务')
+  .alias('exec')
   .argument('<prompt>', '要执行的任务描述')
   .option('-s, --session <id>', '恢复指定会话')
   .option('--output-schema <json>', '用 JSON Schema 验证输出结构')

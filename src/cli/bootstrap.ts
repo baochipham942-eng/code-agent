@@ -32,7 +32,10 @@ import type { TelemetryAdapter } from '../shared/contract/telemetry';
 import type { PlanningService } from '../main/planning';
 import { SYSTEM_PROMPT } from '../main/prompts/builder';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER, getModelMaxOutputTokens } from '../shared/constants';
+import { SWARM_TRACE } from '../shared/constants/storage';
 import { composeTelemetryAdapters } from '../main/agent/metricsCollector';
+import { FileSwarmTraceRepository } from '../main/services/core/repositories/FileSwarmTraceRepository';
+import { getSwarmTraceWriter, installSwarmTraceWriter } from '../main/agent/swarmTraceWriter';
 
 // CJS 打包态下 import.meta.url 为 undefined（esbuild 把 import.meta 替换成 {}），
 // 必须优先用宿主 require；仅 ESM/tsx dev 态才回退到 createRequire。对齐 nodeModuleLoader.ts。
@@ -47,7 +50,8 @@ let getTelemetryCollector: typeof import('../main/telemetry').getTelemetryCollec
 // CLI 数据目录
 function getCLIDataDir(): string {
   const homeDir = os.homedir();
-  const dataDir = path.join(homeDir, '.code-agent');
+  const configured = process.env.CODE_AGENT_DATA_DIR?.trim();
+  const dataDir = configured ? path.resolve(configured) : path.join(homeDir, '.code-agent');
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }
@@ -61,6 +65,7 @@ let sessionManager: CLISessionManager | null = null;
 let toolExecutor: InstanceType<typeof ToolExecutor> | null = null;
 let initialized = false;
 let currentTelemetrySessionId: string | null = null;
+let currentAgentLoopSessionId: string | null = null;
 
 type AgentLoopMessageSessionManager = Pick<CLISessionManager, 'addMessage' | 'addMessageToSession'>;
 
@@ -86,6 +91,24 @@ export async function persistAgentLoopMessageToSession(
   }
 
   await manager.addMessage(message);
+}
+
+/**
+ * CLI 没有 main DatabaseService 的 swarm_* 表；file 模式显式安装 JSONL writer。
+ */
+export function installCLISwarmTraceWriterIfNeeded(): boolean {
+  if (process.env[SWARM_TRACE.STORAGE_MODE_ENV] !== 'file') {
+    return false;
+  }
+
+  const storageDir = path.join(getCLIDataDir(), SWARM_TRACE.STORAGE_DIR);
+  const repo = new FileSwarmTraceRepository(storageDir);
+  installSwarmTraceWriter(repo, {
+    getSessionId: () => currentAgentLoopSessionId,
+    defaultTrigger: 'llm-spawn',
+    defaultCoordinator: 'hybrid',
+  });
+  return true;
 }
 
 /**
@@ -153,6 +176,10 @@ export async function initializeCLIServices(): Promise<void> {
     workingDirectory: process.cwd(),
   });
   cliLog('ToolExecutor initialized');
+
+  if (installCLISwarmTraceWriterIfNeeded()) {
+    cliLog('SwarmTraceWriter initialized for CLI file storage');
+  }
 
   // Memory service removed — Light Memory (file-based) is used instead
 
@@ -316,6 +343,7 @@ export function createAgentLoop(
     ? sessionId.trim()
     : undefined;
   const effectiveSessionId = explicitSessionId || `cli-${Date.now()}`;
+  currentAgentLoopSessionId = effectiveSessionId;
 
   // 创建 PlanningService（如果启用规划模式）
   let planningService: PlanningService | undefined = undefined;
@@ -448,6 +476,13 @@ export async function cleanup(): Promise<void> {
     }
     currentTelemetrySessionId = null;
   }
+
+  try {
+    await getSwarmTraceWriter()?.drain();
+  } catch (error) {
+    console.warn('[CLI] Failed to drain swarm trace writer:', (error as Error).message);
+  }
+  currentAgentLoopSessionId = null;
 
   // 关闭数据库连接
   if (databaseService) {

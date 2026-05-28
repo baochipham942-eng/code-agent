@@ -104,9 +104,6 @@
     "tauri:update-manifest": "node scripts/tauri-update-manifest.mjs",
     "prepare": "husky"
   },
-  "lint-staged": {
-    "*.{ts,tsx}": "eslint --fix"
-  },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.79",
     "@ai-sdk/deepseek": "^2.0.35",

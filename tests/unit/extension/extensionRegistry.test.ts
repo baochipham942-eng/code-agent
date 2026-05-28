@@ -20,7 +20,7 @@ import {
   type PluginsSource,
   type SkillsSource,
 } from '../../../src/main/extension/extensionRegistry';
-import type { LoadedPlugin, PluginManifest } from '../../../src/main/plugins/types';
+import type { LoadedPlugin, PluginManifest, PluginState } from '../../../src/main/plugins/types';
 import type { ParsedSkill, SkillSource } from '../../../src/shared/contract/agentSkill';
 
 // ----------------------------------------------------------------------------
@@ -39,12 +39,16 @@ function makeManifest(id: string, overrides: Partial<PluginManifest> = {}): Plug
 
 function makePlugin(
   id: string,
-  opts: { rootPath?: string; manifestOverrides?: Partial<PluginManifest> } = {},
+  opts: {
+    rootPath?: string;
+    manifestOverrides?: Partial<PluginManifest>;
+    state?: PluginState;
+  } = {},
 ): LoadedPlugin {
   return {
     manifest: makeManifest(id, opts.manifestOverrides),
     rootPath: opts.rootPath ?? `~/.code-agent/plugins/${id}`,
-    state: 'active',
+    state: opts.state ?? 'active',
     registeredTools: [],
     registeredHooks: [],
   };
@@ -197,6 +201,30 @@ describe('ExtensionRegistry skeleton', () => {
     };
     const reg = new ExtensionRegistry(fakePlugins, fakeSkills);
     expect(() => reg.getExtensions()).not.toThrow();
+  });
+
+  it('plugin runtimeState 跟随 LoadedPlugin.state', () => {
+    const reg = new ExtensionRegistry(
+      pluginsFrom([
+        makePlugin('act', { rootPath: 'builtin:act', state: 'active' }),
+        makePlugin('off', { rootPath: 'builtin:off', state: 'disabled' }),
+        makePlugin('bad', { rootPath: 'builtin:bad', state: 'error' }),
+      ]),
+      skillsFrom([]),
+    );
+    const byId = Object.fromEntries(
+      reg.getExtensions().map((e) => [e.metadata.id, e.runtimeState] as const),
+    );
+    expect(byId).toEqual({ act: 'active', off: 'disabled', bad: 'error' });
+  });
+
+  it('skill runtimeState 固定 "active"(skill 无 lifecycle 概念)', () => {
+    const reg = new ExtensionRegistry(
+      pluginsFrom([]),
+      skillsFrom([makeSkill('s1', 'user'), makeSkill('s2', 'builtin')]),
+    );
+    const states = reg.getExtensions().map((e) => e.runtimeState);
+    expect(states).toEqual(['active', 'active']);
   });
 
   it('plugin 完整字段投影到 metadata(version/author/capabilities/platforms)', () => {

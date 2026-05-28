@@ -28,7 +28,6 @@ export interface MarketplacePluginEntry {
   marketplace: string;
   source: string;
   skills?: string[];
-  commands?: string[];
   tags?: string[];
   version?: string;
   author?: string;
@@ -45,7 +44,6 @@ export interface InstalledPlugin {
   installedAt: string;
   pluginRoot?: string;
   skills: string[];
-  commands: string[];
 }
 
 export interface MarketplaceResult<T> {
@@ -58,6 +56,5 @@ export interface PluginInstallResult {
   success: boolean;
   plugin?: InstalledPlugin;
   installedSkills?: string[];
-  installedCommands?: string[];
   error?: string;
 }

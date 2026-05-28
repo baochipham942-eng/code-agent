@@ -4,6 +4,7 @@ import {
   buildProviderInfoFromSettings,
   buildRuntimeModelOptions,
   getProviderRuntimeModels,
+  groupRuntimeModelOptionsByProvider,
   inferModelCapabilities,
 } from '../../src/shared/modelRuntime';
 import { getProviderInfo, PROVIDER_MODELS_MAP } from '../../src/shared/constants';
@@ -125,5 +126,29 @@ describe('modelRuntime', () => {
 
   it('keeps Claude provider defaults on Claude models', () => {
     expect(getProviderInfo('claude')?.defaultModel).toBe('claude-opus-4-7');
+  });
+
+  it('groups switcher options by provider without reordering models', () => {
+    const groups = groupRuntimeModelOptionsByProvider([
+      { provider: 'deepseek', model: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', providerLabel: 'DeepSeek', features: [] },
+      { provider: 'deepseek', model: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', providerLabel: 'DeepSeek', features: ['reasoning'] },
+      { provider: 'xiaomi', model: 'mimo-v2.5-pro', label: 'MiMo v2.5 Pro', providerLabel: '小米 MiMo', features: ['tool'] },
+    ]);
+
+    expect(groups).toEqual([
+      expect.objectContaining({
+        provider: 'deepseek',
+        providerLabel: 'DeepSeek',
+        options: [
+          expect.objectContaining({ model: 'deepseek-v4-flash' }),
+          expect.objectContaining({ model: 'deepseek-v4-pro' }),
+        ],
+      }),
+      expect.objectContaining({
+        provider: 'xiaomi',
+        providerLabel: '小米 MiMo',
+        options: [expect.objectContaining({ model: 'mimo-v2.5-pro' })],
+      }),
+    ]);
   });
 });

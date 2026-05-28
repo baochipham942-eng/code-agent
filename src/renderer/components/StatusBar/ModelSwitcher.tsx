@@ -20,6 +20,7 @@ import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { getProviderDisplayName } from '@shared/constants';
 import {
   buildRuntimeModelOptions,
+  groupRuntimeModelOptionsByProvider,
   getRuntimeModelLabel,
   type RuntimeModelOption,
 } from '@shared/modelRuntime';
@@ -79,7 +80,7 @@ const ENGINE_RUNTIME_LABEL: Record<AgentEngineDescriptor['runtimeState'], string
 const ENGINE_PERMISSION_LABEL: Record<AgentEngineDescriptor['defaultPermissionProfile'], string> = {
   default: '默认权限',
   read_only: '只读默认',
-  workspace_write: 'workspace write',
+  workspace_write: '工作目录可写',
 };
 
 const EFFORT_LABEL: Record<(typeof SUPPORTED_AGENT_EFFORT_LEVELS)[number], string> = {
@@ -108,7 +109,7 @@ const ENGINE_RISK_LABEL: Record<AgentEngineDescriptor['riskTier'], string> = {
 };
 
 function formatEngineCwdPolicy(descriptor: AgentEngineDescriptor): string {
-  return descriptor.cwdPolicy === 'workspace_only' ? '当前 workspace cwd' : descriptor.cwdPolicy;
+  return descriptor.cwdPolicy === 'workspace_only' ? '当前工作目录' : descriptor.cwdPolicy;
 }
 
 function formatEngineTooltip(descriptor: AgentEngineDescriptor, needsWorkspace: boolean): string {
@@ -123,7 +124,6 @@ function formatEngineTooltip(descriptor: AgentEngineDescriptor, needsWorkspace: 
     formatEngineCwdPolicy(descriptor),
     ENGINE_RISK_LABEL[descriptor.riskTier],
     descriptor.command,
-    needsWorkspace ? '需要先选择 workspace' : undefined,
     descriptor.lastError,
   ].filter(Boolean).join(' · ');
 }
@@ -132,7 +132,7 @@ function getEngineUnavailableReason(
   descriptor: AgentEngineDescriptor,
   needsWorkspace: boolean,
 ): string | null {
-  if (needsWorkspace) return '需要选择 workspace';
+  if (needsWorkspace) return '需要先选择工作目录';
   if (!descriptor.executable) return descriptor.lastError || 'CLI 不可执行';
   if (descriptor.installState === 'missing') return descriptor.lastError || '未安装';
   if (descriptor.runtimeState === 'error' || descriptor.runtimeState === 'blocked') {
@@ -226,6 +226,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [overrideProvider, setOverrideProvider] = useState<ModelProvider | null>(null);
   const [overrideAdaptive, setOverrideAdaptive] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeOptionIndex, setActiveOptionIndex] = useState(0);
   const [healthMap, setHealthMap] = useState<Record<string, { status: string; latencyP50: number; errorRate: number }>>({});
   const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
   const [engineCatalogResult, setEngineCatalogResult] = useState<AgentEngineModelCatalogResult | null>(null);
@@ -286,6 +287,17 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       );
     });
   }, [modelOptions, searchQuery]);
+
+  const groupedFilteredOptions = useMemo(() => {
+    let nextIndex = 1;
+    return groupRuntimeModelOptionsByProvider(filteredOptions).map((group) => ({
+      ...group,
+      options: group.options.map((option) => ({
+        option,
+        index: nextIndex++,
+      })),
+    }));
+  }, [filteredOptions]);
 
   const filteredEngineModels = useMemo(() => {
     if (!selectedEngineCatalog) return [];
@@ -369,7 +381,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     async (descriptor: AgentEngineDescriptor) => {
       if (!sessionId) return;
       if (descriptor.kind !== 'native' && !effectiveWorkingDirectory) {
-        toast.error(`${descriptor.label} 需要先选择 workspace`);
+        toast.error(`${descriptor.label} 需要先选择工作目录`);
         return;
       }
       if (!descriptor.executable) {
@@ -486,6 +498,14 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const handleSelectEngineModel = useCallback(
     async (model: AgentEngineModelCatalogModel) => {
       if (!sessionId || !isExternalEngineKind(engine.kind)) return;
+      const needsWorkspace = !effectiveWorkingDirectory;
+      const unavailableReason = selectedEngineDescriptor
+        ? getEngineUnavailableReason(selectedEngineDescriptor, needsWorkspace)
+        : null;
+      if (unavailableReason) {
+        toast.info(unavailableReason);
+        return;
+      }
       if (model.disabledReason) {
         toast.info(model.disabledReason);
         return;
@@ -516,7 +536,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         toast.error('模型切换失败: ' + (err instanceof Error ? err.message : '未知错误'));
       }
     },
-    [engine.kind, sessionId],
+    [effectiveWorkingDirectory, engine.kind, selectedEngineDescriptor, sessionId],
   );
 
   const handleSelectAuto = useCallback(async () => {
@@ -567,6 +587,69 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       toast.error('清除模型覆盖失败: ' + (err instanceof Error ? err.message : '未知错误'));
     }
   }, [sessionId]);
+
+  const selectableOptionCount = engine.kind === 'native'
+    ? 1 + filteredOptions.length
+    : filteredEngineModels.length;
+
+  useEffect(() => {
+    if (!open) return;
+    setActiveOptionIndex(0);
+  }, [engine.kind, open, searchQuery]);
+
+  useEffect(() => {
+    if (!open || selectableOptionCount <= 0) return;
+    setActiveOptionIndex((index) => Math.min(index, selectableOptionCount - 1));
+  }, [open, selectableOptionCount]);
+
+  useEffect(() => {
+    if (!open || selectableOptionCount <= 0) return;
+    const active = menuRef.current?.querySelector<HTMLElement>(`[data-model-option-index="${activeOptionIndex}"]`);
+    active?.scrollIntoView({ block: 'nearest' });
+  }, [activeOptionIndex, open, selectableOptionCount]);
+
+  const handleMenuKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if (selectableOptionCount <= 0) return;
+      event.preventDefault();
+      setActiveOptionIndex((index) => {
+        const delta = event.key === 'ArrowDown' ? 1 : -1;
+        return (index + delta + selectableOptionCount) % selectableOptionCount;
+      });
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      if (selectableOptionCount <= 0) return;
+      event.preventDefault();
+      if (engine.kind === 'native') {
+        if (activeOptionIndex === 0) {
+          void handleSelectAuto();
+          return;
+        }
+        const option = filteredOptions[activeOptionIndex - 1];
+        if (option) void handleSelect(option);
+        return;
+      }
+      const model = filteredEngineModels[activeOptionIndex];
+      if (model) void handleSelectEngineModel(model);
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setOpen(false);
+    }
+  }, [
+    activeOptionIndex,
+    engine.kind,
+    filteredEngineModels,
+    filteredOptions,
+    handleSelect,
+    handleSelectAuto,
+    handleSelectEngineModel,
+    selectableOptionCount,
+  ]);
 
   const displayModel = overrideModel || currentModel;
   const isOverridden = engine.kind === 'native' && !!overrideModel;
@@ -643,22 +726,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                   );
                 })}
               </div>
-              {engineDescriptors.some((descriptor) => {
-                const needsWorkspace = descriptor.kind !== 'native' && !effectiveWorkingDirectory;
-                return Boolean(getEngineUnavailableReason(descriptor, needsWorkspace));
-              }) ? (
-                <div className="mt-1 px-1 text-[10px] leading-snug text-zinc-500">
-                  {engineDescriptors
-                    .map((descriptor) => {
-                      const needsWorkspace = descriptor.kind !== 'native' && !effectiveWorkingDirectory;
-                      const reason = getEngineUnavailableReason(descriptor, needsWorkspace);
-                      return reason ? `${ENGINE_SHORT_LABEL[descriptor.kind] ?? descriptor.label}: ${reason}` : null;
-                    })
-                    .filter(Boolean)
-                    .slice(0, 2)
-                    .join(' · ')}
-                </div>
-              ) : null}
             </div>
           )}
 
@@ -695,6 +762,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleMenuKeyDown}
               placeholder="搜索模型..."
               data-model-search-input
               className="
@@ -708,13 +776,15 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           <div className="max-h-64 overflow-y-auto">
             {engine.kind === 'native' ? (
               <>
-                <button
-                  type="button"
-                  onClick={handleSelectAuto}
-                  className={`
-                    w-full text-left px-3 py-1.5 text-xs
-                    border-b border-zinc-700/50
-                    hover:bg-zinc-700 transition-colors
+                  <button
+                    type="button"
+                    onClick={handleSelectAuto}
+                    data-model-option-index={0}
+                    className={`
+                      w-full text-left px-3 py-1.5 text-xs
+                      border-b border-zinc-700/50
+                      hover:bg-zinc-700 transition-colors
+                    ${activeOptionIndex === 0 ? 'bg-zinc-700/80' : ''}
                     ${overrideAdaptive ? 'text-primary-300' : 'text-gray-200'}
                   `}
                 >
@@ -729,43 +799,55 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                     无匹配模型
                   </div>
                 ) : (
-                  filteredOptions.map((opt) => (
-                    <button
-                      key={`${opt.provider}/${opt.model}`}
-                      type="button"
-                      onClick={() => handleSelect(opt)}
-                      className={`
-                        w-full text-left px-3 py-1.5 text-xs
-                        hover:bg-zinc-700 transition-colors
-                        ${displayModel === opt.model ? 'text-purple-400' : 'text-gray-300'}
-                      `}
-                    >
-                      <div className="flex items-center gap-1 flex-wrap">
-                        <span className="font-medium">{opt.label}</span>
-                        {opt.features.map((cap) => {
-                          const cfg = CAPABILITY_CONFIG[cap];
-                          if (!cfg) return null;
-                          return (
-                            <span
-                              key={cap}
-                              className={`inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${cfg.color}`}
-                              title={cap}
-                            >
-                              {cfg.icon}
-                            </span>
-                          );
-                        })}
+                  groupedFilteredOptions.map((group) => (
+                    <div key={group.provider}>
+                      <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
+                        {group.providerLabel || getProviderDisplayName(group.provider) || group.provider}
                       </div>
-                      <span className="text-gray-500 text-[10px] inline-flex items-center gap-1">
-                        {healthMap[opt.provider] && (
-                          <span
-                            className={`inline-block w-1.5 h-1.5 rounded-full ${HEALTH_DOT_COLOR[healthMap[opt.provider].status] ?? 'bg-gray-400'}`}
-                            title={`${healthMap[opt.provider].status} | P50: ${healthMap[opt.provider].latencyP50}ms | Error: ${(healthMap[opt.provider].errorRate * 100).toFixed(0)}%`}
-                          />
-                        )}
-                        {opt.providerLabel || getProviderDisplayName(opt.provider) || opt.provider}
-                      </span>
-                    </button>
+                      {group.options.map(({ option: opt, index }) => {
+                        const selected = displayModel === opt.model && displayProvider === opt.provider;
+                        return (
+                          <button
+                            key={`${opt.provider}/${opt.model}`}
+                            type="button"
+                            onClick={() => handleSelect(opt)}
+                            data-model-option-index={index}
+                            className={`
+                              w-full text-left px-3 py-1.5 text-xs
+                              hover:bg-zinc-700 transition-colors
+                              ${activeOptionIndex === index ? 'bg-zinc-700/80' : ''}
+                              ${selected ? 'text-purple-400' : 'text-gray-300'}
+                            `}
+                          >
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="font-medium">{opt.label}</span>
+                              {opt.features.map((cap) => {
+                                const cfg = CAPABILITY_CONFIG[cap];
+                                if (!cfg) return null;
+                                return (
+                                  <span
+                                    key={cap}
+                                    className={`inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${cfg.color}`}
+                                    title={cap}
+                                  >
+                                    {cfg.icon}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                            <span className="text-gray-500 text-[10px] inline-flex items-center gap-1">
+                              {healthMap[opt.provider] && (
+                                <span
+                                  className={`inline-block w-1.5 h-1.5 rounded-full ${HEALTH_DOT_COLOR[healthMap[opt.provider].status] ?? 'bg-gray-400'}`}
+                                  title={`${healthMap[opt.provider].status} | P50: ${healthMap[opt.provider].latencyP50}ms | Error: ${(healthMap[opt.provider].errorRate * 100).toFixed(0)}%`}
+                                />
+                              )}
+                              {opt.model}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   ))
                 )}
               </>
@@ -778,7 +860,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                 无匹配模型
               </div>
             ) : (
-              filteredEngineModels.map((model) => {
+              filteredEngineModels.map((model, index) => {
                 const needsWorkspace = engine.kind !== 'native' && !effectiveWorkingDirectory;
                 const unavailableReason = selectedEngineDescriptor
                   ? getEngineUnavailableReason(selectedEngineDescriptor, needsWorkspace)
@@ -792,9 +874,11 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                     type="button"
                     disabled={disabled}
                     onClick={() => void handleSelectEngineModel(model)}
+                    data-model-option-index={index}
                     title={model.disabledReason || unavailableReason || model.id}
                     className={`
                       w-full text-left px-3 py-1.5 text-xs transition-colors
+                      ${activeOptionIndex === index ? 'bg-zinc-700/80' : ''}
                       ${selected ? 'text-purple-400' : disabled ? 'text-zinc-600 cursor-not-allowed' : 'text-gray-300 hover:bg-zinc-700'}
                     `}
                   >

@@ -21,6 +21,7 @@ export interface ModelEntrySettings {
 
 export interface ModelProviderSettings {
   apiKey?: string;
+  apiKeyConfigured?: boolean;
   enabled: boolean;
   protocol?: ModelProviderProtocol;
   model?: string;

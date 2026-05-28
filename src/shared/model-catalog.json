@@ -234,14 +234,14 @@
       "models": [
         {
           "id": "kimi-k2.6",
-          "label": "Kimi K2.6 (中转暂不支持)",
-          "desc": "256K · 1T MoE open-weight·SWE-Bench Pro 58.6·待中转接入",
+          "label": "Kimi K2.6",
+          "desc": "256K · 1T MoE open-weight · SWE-Bench Pro 58.6",
           "evalEligible": false
         },
         {
           "id": "kimi-k2.5",
           "label": "Kimi K2.5 (推荐)",
-          "desc": "256K · 当前中转可用的最新版"
+          "desc": "256K · 稳定旗舰"
         },
         {
           "id": "kimi-k2-turbo-preview",
@@ -322,7 +322,7 @@
     {
       "id": "openrouter",
       "name": "OpenRouter",
-      "description": "中转服务",
+      "description": "多模型路由服务",
       "apiUrl": "https://openrouter.ai/api/v1",
       "default": "anthropic/claude-opus-4-7",
       "models": [

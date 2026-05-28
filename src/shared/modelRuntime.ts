@@ -30,6 +30,12 @@ export interface RuntimeModelOption {
   features: RuntimeModelFeature[];
 }
 
+export interface RuntimeModelOptionGroup {
+  provider: ModelProvider;
+  providerLabel: string;
+  options: RuntimeModelOption[];
+}
+
 export const MODEL_CAPABILITY_OPTIONS: Array<{ id: ModelCapability; label: string }> = [
   { id: 'general', label: '通用' },
   { id: 'code', label: '代码' },
@@ -271,4 +277,25 @@ export function buildRuntimeModelOptions(
       features: featuresFromModelMetadata({ modelId: model.id }),
     }))
   );
+}
+
+export function groupRuntimeModelOptionsByProvider(options: RuntimeModelOption[]): RuntimeModelOptionGroup[] {
+  const groups: RuntimeModelOptionGroup[] = [];
+  const byProvider = new Map<ModelProvider, RuntimeModelOptionGroup>();
+
+  for (const option of options) {
+    let group = byProvider.get(option.provider);
+    if (!group) {
+      group = {
+        provider: option.provider,
+        providerLabel: option.providerLabel,
+        options: [],
+      };
+      byProvider.set(option.provider, group);
+      groups.push(group);
+    }
+    group.options.push(option);
+  }
+
+  return groups;
 }

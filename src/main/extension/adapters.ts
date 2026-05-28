@@ -21,7 +21,7 @@ import type { ParsedSkill, SkillSource } from '../../shared/contract/agentSkill'
 import type {
   ExtensionMetadata,
   ExtensionPlatform,
-  ExtensionSource,
+  ExtensionOrigin,
   ExtensionSurface,
 } from './types';
 
@@ -40,7 +40,7 @@ import type {
  */
 export function pluginManifestToMetadata(
   manifest: PluginManifest,
-  source: ExtensionSource = 'plugin',
+  source: ExtensionOrigin = 'plugin',
 ): ExtensionMetadata {
   return {
     id: manifest.id,
@@ -72,17 +72,18 @@ export function parsedSkillToMetadata(skill: ParsedSkill): ExtensionMetadata {
     id: skill.name,
     name: skill.name,
     description: skill.description,
-    source: skillSourceToExtensionSource(skill.source),
+    source: skillSourceToExtensionOrigin(skill.source),
     surfaces: ['skills'],
     aliases: skill.aliases,
   };
 }
 
 /**
- * 把 `SkillSource` 映射成 `ExtensionSource`。两者取值已对齐,纯类型口径转换。
+ * 把 `SkillSource` 映射成 `ExtensionOrigin`。两者取值已对齐,纯类型口径转换。
  */
-function skillSourceToExtensionSource(source: SkillSource): ExtensionSource {
-  // 当前 SkillSource 取值是 ExtensionSource 的真子集,直接结构转换。
+function skillSourceToExtensionOrigin(source: SkillSource): ExtensionOrigin {
+  // 当前 SkillSource 取值是 ExtensionOrigin 的真子集,直接结构转换 —— skill
+  // 来源种类天然对齐 ExtensionOrigin 字面量集合。
   // 写成 switch 让 TS 在未来 SkillSource 扩字段时给 exhaustiveness 报错。
   switch (source) {
     case 'user':

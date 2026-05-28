@@ -26,15 +26,20 @@
 export type ExtensionSurface = 'tools' | 'skills' | 'theme' | 'language' | 'hooks';
 
 /**
- * 扩展来源种类。融合 plugin 和 skill 两侧的现有取值:
+ * 扩展来源种类(origin —— 哪种类型的扩展系统/目录提供)。融合 plugin 和
+ * skill 两侧的现有取值:
  * - `builtin`: 与 host 同 bundle(plugin 静态 import / skill builtin 目录)
  * - `user`: 用户级配置目录(`~/.code-agent/...`)
  * - `project`: 工程级配置目录(`<cwd>/.code-agent/...`)
  * - `plugin`: 由第三方 plugin 包提供的 skill
  * - `library`: skill marketplace / library
  * - `cloud`: 远程 cloud 来源
+ *
+ * **命名注意**:`src/shared/contract/extension.ts` 有另一个 `ExtensionSource`
+ * (取值 'local'/'marketplace'/'builtin'),用于 UI ops 层 `ExtensionInfo` 的
+ * 安装来源分类,语义层级不同。本模块统一用 `ExtensionOrigin` 避免双向冲突。
  */
-export type ExtensionSource = 'builtin' | 'user' | 'project' | 'plugin' | 'library' | 'cloud';
+export type ExtensionOrigin = 'builtin' | 'user' | 'project' | 'plugin' | 'library' | 'cloud';
 
 /** 扩展声明支持的平台 */
 export type ExtensionPlatform = 'darwin' | 'win32' | 'linux';
@@ -53,7 +58,7 @@ export interface ExtensionMetadata {
   /** 描述,plugin 缺失时退化为空字符串以满足下游消费 */
   description: string;
   /** 来源种类 */
-  source: ExtensionSource;
+  source: ExtensionOrigin;
   /** 暴露的 host surface(必填,投影时按来源给默认值) */
   surfaces: ExtensionSurface[];
   /** semver 版本(skill 无版本概念时留空) */

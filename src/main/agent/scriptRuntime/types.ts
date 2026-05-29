@@ -89,6 +89,20 @@ export interface ScriptRunSpec {
   defaultModel: string;
   /** token 预算上限（outputTokens）。给定则硬上限：耗尽后 agent() 抛错。不给 = 不设限。 */
   budgetTokens?: number;
+  /** resumable：从这个旧 run 的 journal 重放——重跑确定性脚本，命中缓存的 agent() 瞬时返回不再 inference。 */
+  resumeFromRunId?: string;
+}
+
+/** 一次成功 agent() 调用写入 journal 的记录（resumable 缓存的最小单元）。 */
+export interface ScriptRunCallRecord {
+  /** 位置序 call-id（声明序、单线程确定），= callCounter 自增后的值。 */
+  callIndex: number;
+  /** prompt + 语义 opts 的内容 hash；重放时与旧 journal 比对决定命中/失效。 */
+  contentHash: string;
+  result: PrimitiveResult;
+  tokensUsed: number;
+  label?: string;
+  ts: number;
 }
 
 /** run 的可观测状态快照（供 UI / resumable 用，纯可序列化）。 */

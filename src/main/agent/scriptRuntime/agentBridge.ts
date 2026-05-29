@@ -15,6 +15,7 @@
 // 由命令层经 ScriptRunContext 注入工厂，保持运行时与宿主解耦。
 // ============================================================================
 
+import { createHash } from 'node:crypto';
 import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage } from '../../model/types';
 import { inferenceViaAiSdk } from '../../model/adapters/aiSdkAdapter';
@@ -23,7 +24,7 @@ import { SCRIPT_RUNTIME } from '../../../shared/constants';
 import type { ConcurrencyGate } from './concurrencyGate';
 import type { BudgetTracker } from './budget';
 import { validateForcedSchema } from './scriptValidator';
-import type { AgentCallPayload, JsonSchema, PrimitiveResult, ScriptRunEvent } from './types';
+import type { AgentCallPayload, JsonSchema, PrimitiveResult, ScriptRunCallRecord, ScriptRunEvent } from './types';
 
 const STRUCTURED_OUTPUT_TOOL = 'structured_output';
 
@@ -53,6 +54,26 @@ const DEFAULT_AGENT_SYSTEM_PROMPT =
   '你是 dynamic-workflow 编排脚本派发的子 agent。专注完成下面这一个明确子任务，' +
   '用给定工具收集信息或执行操作，最后给出简洁、可被脚本直接消费的结果。' +
   '不要寒暄，不要复述任务，不要输出与结果无关的过程描述。';
+
+/** 稳定序列化（键名递归排序）——让内容 hash 不受对象键序影响。 */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`;
+}
+
+/**
+ * 一次 agent() 调用的内容 hash（resumable 缓存键的内容部分）。
+ * 只哈希【决定结果】的语义输入：prompt + schema + model + agentType + tools。
+ * 故意排除 label / phase——它们只影响进度树显示，改它们不该让缓存失效。
+ */
+function computeCallHash(call: AgentCallPayload): string {
+  const o = call.options ?? {};
+  const semantic = { schema: o.schema, model: o.model, agentType: o.agentType, tools: o.tools };
+  return createHash('sha256').update(`${call.prompt}\u0000${stableStringify(semantic)}`).digest('hex').slice(0, 16);
+}
 
 // 单例执行器：execute 是无状态 per-call（上下文全由参数传入），全 run 复用一个实例即可。
 const executor = new SubagentExecutor();
@@ -84,6 +105,13 @@ export interface ScriptRunContext {
   budget: BudgetTracker;
   /** 主线程计时（worker 内禁 Date.now；bridge 在主线程可用）。 */
   now: () => number;
+  /**
+   * resumable 重放缓存：被 resume 的旧 run 的逐调用结果，按 callIndex 索引。
+   * 命中（同 index 且 contentHash 一致）→ 瞬时返回、不 inference、不耗 budget。缺省 = 不重放（全 live）。
+   */
+  resumeCalls?: Map<number, { contentHash: string; result: PrimitiveResult }>;
+  /** 把一次成功调用（命中或 live）写进【本 run】journal，供后续链式 resume。缺省 = 不持久化。 */
+  recordCall?: (record: ScriptRunCallRecord) => void;
 }
 
 /** 执行模型脚本里的一次 agent() 调用。worker 经 RPC 把调用 marshal 到主线程后落到这里。 */
@@ -91,17 +119,46 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
   if (ctx.callCounter.count >= SCRIPT_RUNTIME.MAX_AGENT_CALLS_PER_RUN) {
     throw new Error(`agent() 调用数超过单 run 上限 ${SCRIPT_RUNTIME.MAX_AGENT_CALLS_PER_RUN}`);
   }
-  // 预算硬上限（对齐 Claude Code Workflow）：耗尽后再发起的 agent() 直接抛，让脚本能用
-  // while(budget.remaining()>x) 动态收敛。enforce 在主线程、是权威；worker 侧 budget 是只读镜像。
-  if (ctx.budget.exceeded()) {
-    throw new Error(`token budget 已耗尽（${ctx.budget.spent()}/${ctx.budget.total}）`);
-  }
+  // callCounter 自增必须在第一个 await 之前（单线程同步），保证 callIndex = 声明序、跨 run 重放对齐。
   ctx.callCounter.count++;
+  const callIndex = ctx.callCounter.count;
 
   const modelConfig = ctx.resolveModelConfig(call.options?.model);
   const provider = modelConfig.provider;
   const label = call.options?.label ?? call.options?.phase ?? 'agent';
-  const agentId = `${ctx.runId}-a${ctx.callCounter.count}`;
+  const agentId = `${ctx.runId}-a${callIndex}`;
+  const contentHash = computeCallHash(call);
+
+  // ── resumable 缓存命中：同 callIndex 且 contentHash 一致 → 瞬时返回，不 inference / 不占 gate /
+  //    不耗 budget（成本已在原 run 付过）。复制进本 run journal 使其自包含，支持链式 resume（0 token）。 ──
+  const cached = ctx.resumeCalls?.get(callIndex);
+  if (cached && cached.contentHash === contentHash) {
+    ctx.emit({
+      runId: ctx.runId,
+      type: 'agent:start',
+      ts: ctx.now(),
+      data: {
+        agentId, label, provider, model: modelConfig.model,
+        hasSchema: !!call.options?.schema, phase: call.options?.phase,
+        promptPreview: truncate(call.prompt, PROMPT_PREVIEW_CHARS),
+        cached: true,
+      },
+    });
+    ctx.emit({
+      runId: ctx.runId,
+      type: 'agent:done',
+      ts: ctx.now(),
+      data: { agentId, label, resultPreview: previewResult(cached.result), cached: true },
+    });
+    ctx.recordCall?.({ callIndex, contentHash, result: cached.result, tokensUsed: 0, label, ts: ctx.now() });
+    return cached.result;
+  }
+
+  // 预算硬上限（对齐 Claude Code Workflow）：耗尽后再发起的【live】agent() 直接抛，让脚本能用
+  // while(budget.remaining()>x) 动态收敛。命中缓存不受此限（上面已 return）。enforce 在主线程、是权威。
+  if (ctx.budget.exceeded()) {
+    throw new Error(`token budget 已耗尽（${ctx.budget.spent()}/${ctx.budget.total}）`);
+  }
 
   const release = await ctx.gate.acquire(provider, ctx.signal);
   ctx.emit({
@@ -182,6 +239,8 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
       ts: ctx.now(),
       data: { agentId, label, resultPreview: previewResult(result) },
     });
+    // 仅成功调用写 journal（失败不写 → resume 时自然 miss 重跑）。actualTokens 为本次真实消耗。
+    ctx.recordCall?.({ callIndex, contentHash, result, tokensUsed: actualTokens, label, ts: ctx.now() });
     return result;
   } catch (err) {
     ctx.emit({

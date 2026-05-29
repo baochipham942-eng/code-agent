@@ -245,3 +245,96 @@ describe('runAgentCall 工具分档 + 并行写护栏', () => {
     expect(ctx.writeGuard.warned).toBe(false);
   });
 });
+
+describe('runAgentCall resumable 缓存（P4-C）', () => {
+  type Rec = { callIndex: number; contentHash: string; result: unknown; tokensUsed: number };
+  const eventOfType = (ctx: ScriptRunContext, type: string) =>
+    (ctx.emit as ReturnType<typeof vi.fn>).mock.calls
+      .map(([e]: [{ type: string; data?: Record<string, unknown> }]) => e)
+      .find((e) => e.type === type);
+
+  it('records a successful live call via recordCall (callIndex + contentHash + tokens)', async () => {
+    const ctx = makeCtx(new BudgetTracker(1000));
+    const recorded: Rec[] = [];
+    ctx.recordCall = (r) => recorded.push(r as Rec);
+    inferenceMock.mockResolvedValue({ toolCalls: [{ name: 'structured_output', arguments: { ok: true } }], usage: { outputTokens: 5 } });
+    await runAgentCall({ prompt: 'p', options: { schema: VALID_SCHEMA as never } }, ctx);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toMatchObject({ callIndex: 1, tokensUsed: 5, result: { ok: true } });
+    expect(typeof recorded[0].contentHash).toBe('string');
+  });
+
+  it('cache hit: returns stored result, no inference, 0 budget, copies into this run journal, marks cached', async () => {
+    // 先 live 跑一次拿真实 contentHash（不写死 hash 算法）
+    const ctx1 = makeCtx(new BudgetTracker(1000));
+    const rec1: Rec[] = [];
+    ctx1.recordCall = (r) => rec1.push(r as Rec);
+    inferenceMock.mockResolvedValue({ toolCalls: [{ name: 'structured_output', arguments: { ok: true } }], usage: { outputTokens: 5 } });
+    await runAgentCall({ prompt: 'p', options: { schema: VALID_SCHEMA as never } }, ctx1);
+    const hash = rec1[0].contentHash;
+
+    inferenceMock.mockReset();
+    executeMock.mockReset();
+    const budget2 = new BudgetTracker(1000);
+    const ctx2 = makeCtx(budget2);
+    const rec2: Rec[] = [];
+    ctx2.recordCall = (r) => rec2.push(r as Rec);
+    ctx2.resumeCalls = new Map([[1, { contentHash: hash, result: { ok: true } }]]);
+
+    const result = await runAgentCall({ prompt: 'p', options: { schema: VALID_SCHEMA as never } }, ctx2);
+    expect(result).toEqual({ ok: true });
+    expect(inferenceMock).not.toHaveBeenCalled();
+    expect(budget2.spent()).toBe(0);
+    expect(rec2).toHaveLength(1);
+    expect(rec2[0]).toMatchObject({ callIndex: 1, tokensUsed: 0, result: { ok: true } });
+    expect(eventOfType(ctx2, 'agent:start')?.data?.cached).toBe(true);
+    expect(eventOfType(ctx2, 'agent:done')?.data?.cached).toBe(true);
+    expect(ctx2.gate.acquire).not.toHaveBeenCalled(); // 命中不占 gate
+  });
+
+  it('cache miss on content change: runs live and ignores the stale cached entry', async () => {
+    const budget = new BudgetTracker(1000);
+    const ctx = makeCtx(budget);
+    ctx.resumeCalls = new Map([[1, { contentHash: 'STALE', result: { ok: true } }]]);
+    inferenceMock.mockResolvedValue({ toolCalls: [{ name: 'structured_output', arguments: { ok: false } }], usage: { outputTokens: 9 } });
+    const result = await runAgentCall({ prompt: 'p', options: { schema: VALID_SCHEMA as never } }, ctx);
+    expect(inferenceMock).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ ok: false });
+    expect(budget.spent()).toBe(9);
+  });
+
+  it('cache hit is NOT blocked by an exhausted budget (cached calls cost nothing)', async () => {
+    const ctxL = makeCtx(new BudgetTracker(1000));
+    const recL: Rec[] = [];
+    ctxL.recordCall = (r) => recL.push(r as Rec);
+    inferenceMock.mockResolvedValue({ toolCalls: [{ name: 'structured_output', arguments: { ok: true } }], usage: { outputTokens: 5 } });
+    await runAgentCall({ prompt: 'p', options: { schema: VALID_SCHEMA as never } }, ctxL);
+    const hash = recL[0].contentHash;
+
+    inferenceMock.mockReset();
+    const budget = new BudgetTracker(100);
+    budget.add(100); // 预算耗尽
+    const ctx = makeCtx(budget);
+    ctx.resumeCalls = new Map([[1, { contentHash: hash, result: { ok: true } }]]);
+    const result = await runAgentCall({ prompt: 'p', options: { schema: VALID_SCHEMA as never } }, ctx);
+    expect(result).toEqual({ ok: true });
+    expect(inferenceMock).not.toHaveBeenCalled();
+  });
+
+  it('relabeling a call (label/phase only) still hits cache — display fields are not in the content hash', async () => {
+    const ctx1 = makeCtx();
+    const rec1: Rec[] = [];
+    ctx1.recordCall = (r) => rec1.push(r as Rec);
+    inferenceMock.mockResolvedValue({ toolCalls: [{ name: 'structured_output', arguments: { ok: true } }], usage: { outputTokens: 5 } });
+    await runAgentCall({ prompt: 'p', options: { schema: VALID_SCHEMA as never, label: 'old', phase: 'A' } }, ctx1);
+    const hash = rec1[0].contentHash;
+
+    inferenceMock.mockReset();
+    const ctx2 = makeCtx();
+    ctx2.resumeCalls = new Map([[1, { contentHash: hash, result: { ok: true } }]]);
+    // 只改 label/phase，prompt + schema 不变 → 仍命中
+    const result = await runAgentCall({ prompt: 'p', options: { schema: VALID_SCHEMA as never, label: 'new', phase: 'B' } }, ctx2);
+    expect(result).toEqual({ ok: true });
+    expect(inferenceMock).not.toHaveBeenCalled();
+  });
+});

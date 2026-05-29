@@ -26,7 +26,7 @@ Concurrent agent() calls are capped globally (provider-aware) and total agent() 
 ## Constraints
 - Plain JavaScript, not TypeScript (no type annotations / interfaces / generics).
 - \`require\`, \`process\`, module globals, and the filesystem are not in scope — the script orchestrates sub-agents, it does not do IO directly. Do work through \`agent()\`, not by reaching for fs/network.
-- Avoid \`Date.now()\` / \`Math.random()\` for control flow — vary work by index instead. (They keep the run deterministic and replayable; non-determinism can desync resumable replay.)
+- \`Date.now()\` / \`new Date()\` (no-arg) / \`Date()\` / \`Math.random()\` / \`performance.now()\` are REJECTED before the run starts — they break resumable replay (the cache key depends on deterministic script behavior). Vary work by index, and take any time/random seed via \`args\` instead.
 - DEFAULT to \`pipeline()\`; only use a \`parallel()\` barrier when a stage genuinely needs ALL prior-stage results at once (dedup/merge/early-exit).
 
 ## Example
@@ -67,6 +67,10 @@ const workflowInputSchema = {
     budgetTokens: {
       type: 'number',
       description: 'Optional output-token budget (hard ceiling). Exposed to the script as `budget.total`; once spent reaches it, agent() throws. Omit for no limit.',
+    },
+    resumeFromRunId: {
+      type: 'string',
+      description: 'Optional: resume from a prior run. Re-runs the same script; agent() calls whose (prompt + opts) are unchanged return their cached results instantly (no inference, no token cost), and only edited/new calls run live. Pass the runId returned in a prior run\'s failure/cancellation meta.',
     },
   },
   required: ['script'] as string[],

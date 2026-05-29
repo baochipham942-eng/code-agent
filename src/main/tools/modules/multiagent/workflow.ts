@@ -28,8 +28,9 @@ import type {
 import type { ModelConfig } from '../../../../shared/contract';
 import type { ToolResolver } from '../../dispatch/toolResolver';
 import type { SubagentContext } from '../../../agent/subagentExecutor';
-import { startRun, type ScriptRunHostDeps } from '../../../agent/scriptRuntime';
+import { startRun, type ScriptRunHostDeps, type ScriptRunJournal } from '../../../agent/scriptRuntime';
 import type { ScriptRunEvent } from '../../../agent/scriptRuntime';
+import { getWorkflowJournalRepository } from '../../../services/core/repositories/WorkflowJournalRepository';
 import { validateScript } from '../../../agent/scriptRuntime/scriptValidator';
 import { extractScriptPreview } from '../../../agent/scriptRuntime/scriptPreview';
 import { resolveToolProfile } from '../../../agent/scriptRuntime/toolProfiles';
@@ -82,6 +83,11 @@ async function runWorkflow(
       typeof args.budgetTokens === 'number' && Number.isFinite(args.budgetTokens) && args.budgetTokens > 0
         ? Math.floor(args.budgetTokens)
         : undefined;
+    // resumable：从旧 run 的 journal 重放——重跑确定性脚本，命中的 agent() 瞬时返回不再 inference。
+    const resumeFromRunId =
+      typeof args.resumeFromRunId === 'string' && args.resumeFromRunId.trim().length > 0
+        ? args.resumeFromRunId.trim()
+        : undefined;
 
     if (!ctx.modelConfig) {
       return { ok: false, error: 'workflow requires modelConfig in context', code: 'NOT_INITIALIZED' };
@@ -117,6 +123,25 @@ async function runWorkflow(
 
     // legacy ctx 提供 resolver / hookManager / workingDirectory / sessionId（与 spawnAgent 同源桥接）。
     const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
+
+    // resumable journal 网关：DB 就绪才有（getWorkflowJournalRepository() 在未就绪时返 null）→
+    // 无则不持久化、不重放，workflow 照常全 live 跑（优雅降级）。sessionId 经闭包带入 onRunStart。
+    const journalRepo = getWorkflowJournalRepository();
+    const journal: ScriptRunJournal | undefined = journalRepo
+      ? {
+          loadPriorCalls: (rid) => {
+            const prior = journalRepo.loadRun(rid);
+            if (!prior) return null;
+            const map = new Map<number, { contentHash: string; result: string | Record<string, unknown> }>();
+            for (const [idx, c] of prior.calls) map.set(idx, { contentHash: c.contentHash, result: c.result });
+            return map;
+          },
+          onRunStart: (i) =>
+            journalRepo.startRun({ runId: i.runId, scriptHash: i.scriptHash, goal: i.goal, sessionId: ctx.sessionId, startedAt: i.startedAt }),
+          onRunFinish: (i) => journalRepo.finishRun(i),
+          onCallComplete: (i) => journalRepo.recordCall(i),
+        }
+      : undefined;
 
     const deps: ScriptRunHostDeps = {
       baseModelConfig,
@@ -182,12 +207,13 @@ async function runWorkflow(
           safeProgress({ stage: 'running', detail: event.data.message });
         }
       },
+      journal,
     };
 
     safeProgress({ stage: 'starting', detail: 'workflow' });
 
     const state = await startRun(
-      { runId, script, goal, budgetTokens, defaultProvider: baseModelConfig.provider, defaultModel: baseModelConfig.model },
+      { runId, script, goal, budgetTokens, resumeFromRunId, defaultProvider: baseModelConfig.provider, defaultModel: baseModelConfig.model },
       deps,
     );
 

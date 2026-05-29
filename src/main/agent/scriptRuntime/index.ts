@@ -6,7 +6,7 @@
 // agent()/parallel()/pipeline()/phase()/log() 落到主线程受控执行。
 // ============================================================================
 
-export { startRun, cancelRun, getRunState, type ScriptRunHostDeps } from './runService';
+export { startRun, cancelRun, getRunState, type ScriptRunHostDeps, type ScriptRunJournal } from './runService';
 export type { ScriptRunContext } from './agentBridge';
 export { ConcurrencyGate } from './concurrencyGate';
 export type {

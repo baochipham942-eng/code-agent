@@ -89,11 +89,16 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
     data: { agentId, label, provider, model: modelConfig.model, hasSchema: !!call.options?.schema },
   });
 
-  // 并发预留：发起前按均值占一份 quota，让并发 agent() 看见彼此（收窄 parallel 溢出，Codex HIGH#1）。
-  const reserved = ctx.budget.reserve();
+  // 并发预留 + 权威复检：reserveOrThrow 必须在 gate.acquire 之后、与 reserve 无 await 间隔，
+  // 消除「顶部 fail-fast → await gate → 醒来」期间被并发推满预算的 TOCTOU（Codex R2 HIGH#1）。
+  // 放进 try：耗尽抛出时也走 finally 释放 gate 槽；reservedDone 防未预留却误 commit。
+  let reserved = 0;
+  let reservedDone = false;
   // 真实 outputTokens 在两条路径里求出，无论成功/失败/抛错都在 finally 统一 commit（Codex HIGH#2 漏计）。
   let actualTokens = 0;
   try {
+    reserved = ctx.budget.reserveOrThrow();
+    reservedDone = true;
     let result: PrimitiveResult;
     if (call.options?.schema) {
       const forced = await runForcedStructured(call.prompt, call.options.schema, modelConfig, ctx.signal);
@@ -125,11 +130,17 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
           { name: call.options?.agentType ?? 'workflow-agent', systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPT, availableTools: tools },
           ctx.deriveSubagentContext({ agentId, modelConfig, signal: ctx.signal }),
         );
-        actualTokens = sub.tokensUsed ?? 0; // 成功或失败都已消耗，先记账
+        actualTokens = sub.tokensUsed ?? 0; // 成功或失败（return-style）都已消耗，先记账
         if (!sub.success) {
           throw new Error(sub.error ?? `子 agent 执行失败（${sub.cancellationReason ?? 'unknown'}）`);
         }
         result = sub.output;
+      } catch (e) {
+        // execute() 真抛异常（provider 产出部分 output 后崩）时也可能已消耗 token，从 error 上取回
+        // （subagentExecutor 最外层 catch 把 outputTokensUsed 挂上）以免漏计（Codex R2 MED#4）。
+        const carried = (e as { tokensUsed?: number } | null)?.tokensUsed;
+        if (typeof carried === 'number') actualTokens = carried;
+        throw e;
       } finally {
         if (writeCapable) ctx.writeGuard.inFlight--;
       }
@@ -145,7 +156,8 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
     });
     throw err;
   } finally {
-    ctx.budget.commit(reserved, actualTokens);
+    // 只在真正预留过时 commit（reserveOrThrow 抛出 = 未预留，commit 会错误释放别人的额度）。
+    if (reservedDone) ctx.budget.commit(reserved, actualTokens);
     release();
   }
 }

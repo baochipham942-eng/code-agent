@@ -41,6 +41,17 @@ export class BudgetTracker {
     return est;
   }
 
+  /**
+   * 原子 check+reserve（Codex R2 HIGH#1）：必须在 gate.acquire 之后、与 reserve 之间无 await 调用，
+   * 消除「顶部预检 → await gate → 醒来 reserve」之间并发推满预算的 TOCTOU。已耗尽则抛、不预留。
+   */
+  reserveOrThrow(): number {
+    if (this.exceeded()) {
+      throw new Error(`token budget 已耗尽（${this._spent}/${this.total}）`);
+    }
+    return this.reserve();
+  }
+
   /** 调用结束（成功/失败/abort 都要调）：释放预留并入账真实 outputTokens。 */
   commit(reservedEst: number, outputTokens: number): void {
     this._reserved = Math.max(0, this._reserved - reservedEst);

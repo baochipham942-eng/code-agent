@@ -1077,6 +1077,11 @@ export class SubagentExecutor {
         ).catch(() => {});
       }
 
+      // 把已消耗的 outputTokens 挂到 error 上，让 dynamic-workflow 的 BudgetTracker 在抛出路径
+      // 也能记账（provider 产出部分 output 后崩的场景，Codex R2 MED#4）。不影响既有错误处理。
+      if (error && typeof error === 'object') {
+        try { (error as { tokensUsed?: number }).tokensUsed = outputTokensUsed; } catch { /* frozen error, ignore */ }
+      }
       throw error; // re-throw to preserve existing error handling
     }
   }

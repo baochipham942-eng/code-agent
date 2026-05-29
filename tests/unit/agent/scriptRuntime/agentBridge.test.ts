@@ -114,6 +114,15 @@ describe('runAgentCall token budget', () => {
     expect(budget.spent()).toBe(13);
   });
 
+  it('charges tokens carried on a thrown execute() error (Codex R2 MED#4)', async () => {
+    const budget = new BudgetTracker(1000);
+    const ctx = makeCtx(budget);
+    const err = Object.assign(new Error('stream blew up'), { tokensUsed: 17 });
+    executeMock.mockRejectedValue(err);
+    await expect(runAgentCall({ prompt: 'p' }, ctx)).rejects.toThrow(/blew up/);
+    expect(budget.spent()).toBe(17); // provider 抛错前已产出的 output 也要记账
+  });
+
   it('throws before any inference when the budget is already exhausted', async () => {
     const budget = new BudgetTracker(100);
     budget.add(100);
@@ -123,6 +132,24 @@ describe('runAgentCall token budget', () => {
     ).rejects.toThrow(/budget/i);
     expect(inferenceMock).not.toHaveBeenCalled();
     expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  // ── Codex R2 HIGH#1：预算在 gate 等待期间被耗尽 → acquire 后的权威 check 拦下，且释放 gate ──
+  it('re-checks budget after acquiring the gate and releases the slot on rejection', async () => {
+    const budget = new BudgetTracker(100); // 顶部预检时 spent=0 放行
+    const release = vi.fn();
+    const ctx = makeCtx(budget);
+    ctx.gate = {
+      acquire: vi.fn(async () => {
+        budget.add(100); // 模拟等待期间并发把预算推满
+        return release;
+      }),
+    } as never;
+    await expect(
+      runAgentCall({ prompt: 'p', options: { schema: VALID_SCHEMA as never } }, ctx),
+    ).rejects.toThrow(/budget/i);
+    expect(inferenceMock).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1); // gate 槽必须释放
   });
 });
 

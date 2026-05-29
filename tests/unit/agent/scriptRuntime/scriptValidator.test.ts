@@ -120,4 +120,12 @@ describe('validateForcedSchema', () => {
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toMatch(/上限|字节|过大/);
   });
+
+  // ── Codex R2 MED#3：循环 schema 不能在 $ref 扫描里爆栈，要优雅拒绝 ──
+  it('rejects a cyclic schema without crashing', () => {
+    const cyclic: Record<string, unknown> = { type: 'object', properties: { self: {} } };
+    (cyclic.properties as Record<string, unknown>).self = cyclic; // 自引用
+    const res = validateForcedSchema(cyclic);
+    expect(res.ok).toBe(false);
+  });
 });

@@ -71,4 +71,17 @@ describe('BudgetTracker reservation (并发硬上限)', () => {
     b.reserve(); // in-flight reservation must NOT shrink the reported remaining
     expect(b.remaining()).toBe(150);
   });
+
+  // ── Codex R2 HIGH#1：原子 check+reserve（无 await 间隔），消除 gate 等待期 TOCTOU ──
+  it('reserveOrThrow throws when exhausted and reserves atomically otherwise', () => {
+    const b = new BudgetTracker(100);
+    expect(b.reserveOrThrow()).toBe(0);   // cold start ok
+    b.commit(0, 100);                     // spent 100 → exhausted
+    expect(() => b.reserveOrThrow()).toThrow(/budget/i);
+  });
+
+  it('reserveOrThrow with no budget never throws', () => {
+    const b = new BudgetTracker(null);
+    expect(() => b.reserveOrThrow()).not.toThrow();
+  });
 });

@@ -110,9 +110,8 @@ export function validateForcedSchema(schema: unknown): ValidationResult {
     return { ok: false, error: 'schema.properties 必须是至少含一个字段的对象' };
   }
   // 有界化（Codex MED#5）：超大/超深/$ref/循环 → DoS / postMessage clone / provider 请求炸弹。
-  if (hasKey(schema, '$ref')) {
-    return { ok: false, error: 'schema 禁止使用 $ref（forced 工具参数须自包含）' };
-  }
+  // 顺序很重要（Codex R2 MED#3）：先 JSON.stringify 拦循环引用——它是唯一不依赖手写遍历就能
+  // 安全检出 cycle 的防线。放在 $ref/depth 这些手写递归之前，避免循环 schema 先在递归里爆栈。
   let bytes: number;
   try {
     bytes = Buffer.byteLength(JSON.stringify(schema), 'utf8');
@@ -121,6 +120,10 @@ export function validateForcedSchema(schema: unknown): ValidationResult {
   }
   if (bytes > SCRIPT_RUNTIME.MAX_SCHEMA_BYTES) {
     return { ok: false, error: `schema 过大（${bytes} 字节 > 上限 ${SCRIPT_RUNTIME.MAX_SCHEMA_BYTES}）` };
+  }
+  // 走到这里 schema 已确认无循环（stringify 成功），手写递归安全。
+  if (hasKey(schema, '$ref')) {
+    return { ok: false, error: 'schema 禁止使用 $ref（forced 工具参数须自包含）' };
   }
   if (schemaDepth(schema, new WeakSet()) > SCRIPT_RUNTIME.MAX_SCHEMA_DEPTH) {
     return { ok: false, error: `schema 嵌套过深（> ${SCRIPT_RUNTIME.MAX_SCHEMA_DEPTH} 层）` };

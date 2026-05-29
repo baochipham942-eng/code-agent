@@ -30,6 +30,23 @@ vi.mock('../../../../../src/main/services/eventing/bus', () => ({
   getEventBus: () => ({ publish: publishMock }),
 }));
 
+// ── mock 审批闸（P3b）：默认批准；单测可切 approved=false 验证拒绝时不 startRun ──
+const { approvalHolder } = vi.hoisted(() => ({ approvalHolder: { approved: true } }));
+vi.mock('../../../../../src/main/agent/workflowLaunchApproval', async (orig) => {
+  const actual = await orig<typeof import('../../../../../src/main/agent/workflowLaunchApproval')>();
+  return {
+    ...actual,
+    getWorkflowLaunchApprovalGate: () => ({
+      requestApproval: async ({ request }: { request: unknown }) => ({
+        approved: approvalHolder.approved,
+        autoApproved: true,
+        feedback: approvalHolder.approved ? undefined : '用户拒绝',
+        request,
+      }),
+    }),
+  };
+});
+
 import { workflowModule } from '../../../../../src/main/tools/modules/multiagent/workflow';
 
 function makeLogger(): Logger {
@@ -66,6 +83,7 @@ beforeEach(() => {
   startRunMock.mockReset();
   resolveSessionDefaultMock.mockReset();
   publishMock.mockReset();
+  approvalHolder.approved = true;
   startRunMock.mockResolvedValue(completedState());
 });
 
@@ -184,6 +202,22 @@ describe('workflow tool', () => {
       expect(JSON.parse(r.output)).toEqual({ answer: 42 });
       expect(r.meta).toMatchObject({ agentCallCount: 5, phases: ['a', 'b'] });
     }
+  });
+
+  // ── P3b: 启动审批闸 —— 拒绝时不得 startRun，归 ABORTED ──
+  it('aborts before startRun when the launch approval is rejected', async () => {
+    approvalHolder.approved = false;
+    const r = await run({ script: "phase('p'); return 1" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('ABORTED');
+    expect(startRunMock).not.toHaveBeenCalled();
+  });
+
+  it('proceeds to startRun when the launch approval is granted', async () => {
+    approvalHolder.approved = true;
+    const r = await run({ script: "phase('p'); return 1" });
+    expect(r.ok).toBe(true);
+    expect(startRunMock).toHaveBeenCalledTimes(1);
   });
 
   // ── P3a: 进度树事件通道 —— emit 把 ScriptRunEvent publish 到 'workflow' domain ──

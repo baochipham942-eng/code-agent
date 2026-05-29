@@ -31,10 +31,12 @@ import type { SubagentContext } from '../../../agent/subagentExecutor';
 import { startRun, type ScriptRunHostDeps } from '../../../agent/scriptRuntime';
 import type { ScriptRunEvent } from '../../../agent/scriptRuntime';
 import { validateScript } from '../../../agent/scriptRuntime/scriptValidator';
+import { extractScriptPreview } from '../../../agent/scriptRuntime/scriptPreview';
 import { resolveToolProfile } from '../../../agent/scriptRuntime/toolProfiles';
 import { resolveSessionDefaultModelConfig } from '../../../services/core/sessionDefaults';
 import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
 import { getEventBus } from '../../../services/eventing/bus';
+import { getWorkflowLaunchApprovalGate, buildWorkflowLaunchRequest } from '../../../agent/workflowLaunchApproval';
 import { workflowSchema } from './workflow.schema';
 
 /** 把异常归类成 ABORTED / DOMAIN_ERROR（Codex R2：取消别被压成 DOMAIN_ERROR）。 */
@@ -85,6 +87,33 @@ async function runWorkflow(
       return { ok: false, error: 'workflow requires modelConfig in context', code: 'NOT_INITIALIZED' };
     }
     const baseModelConfig = ctx.modelConfig as ModelConfig;
+
+    // runId 必须每次调用唯一（Codex HIGH#2）：currentToolCallId 可能缺失、sessionId 会复用，
+    // 撞了会让 activeRuns 覆盖 + cancel/状态串线。加 uuid 后缀兜底（主线程可用 randomUUID）。
+    // 提前到审批前算，审批请求与 run 共用同一 id，便于 renderer 关联。
+    const runId = `wf-${ctx.currentToolCallId ?? ctx.sessionId ?? 'run'}-${randomUUID().slice(0, 8)}`;
+
+    // 跑前审批闸（P3b）：静态预览脚本 → 展示 phases/扇出量/动写 + 4 维度成本 → 等用户决策。
+    // 无 renderer（headless）自动批准；超时按 writeHint 分档自动决策。拒绝则不 startRun。
+    const preview = extractScriptPreview(script);
+    const launchRequest = buildWorkflowLaunchRequest({
+      id: runId,
+      preview,
+      goal,
+      budgetTokens,
+      sessionId: ctx.sessionId,
+      now: Date.now(),
+    });
+    const approval = await getWorkflowLaunchApprovalGate().requestApproval({ request: launchRequest });
+    if (!approval.approved) {
+      ctx.logger.debug('workflow launch rejected', { runId, feedback: approval.feedback });
+      return {
+        ok: false,
+        error: `workflow launch rejected${approval.feedback ? `: ${approval.feedback}` : ''}`,
+        code: 'ABORTED',
+        meta: { runId, autoApproved: approval.autoApproved },
+      };
+    }
 
     // legacy ctx 提供 resolver / hookManager / workingDirectory / sessionId（与 spawnAgent 同源桥接）。
     const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
@@ -152,10 +181,6 @@ async function runWorkflow(
         }
       },
     };
-
-    // runId 必须每次调用唯一（Codex HIGH#2）：currentToolCallId 可能缺失、sessionId 会复用，
-    // 撞了会让 activeRuns 覆盖 + cancel/状态串线。加 uuid 后缀兜底（主线程可用 randomUUID）。
-    const runId = `wf-${ctx.currentToolCallId ?? ctx.sessionId ?? 'run'}-${randomUUID().slice(0, 8)}`;
 
     safeProgress({ stage: 'starting', detail: 'workflow' });
 

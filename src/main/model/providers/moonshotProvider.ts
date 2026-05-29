@@ -13,7 +13,7 @@ import { getHttpsAgent, convertToolsToOpenAI, convertToOpenAIMessages } from './
 // 专用 HTTPS Agent: 禁用 keepAlive 避免 SSE 流结束后连接复用导致 "socket hang up"。
 // Moonshot/Kimi 是国内直连 host，getHttpsAgent 会因 host 命中直连清单返回 undefined
 // （即使设了全局代理也绕过），落到下面的纯直连 Agent。
-const moonshotAgent = getHttpsAgent(MODEL_API_ENDPOINTS.moonshot) || new https.Agent({
+const moonshotAgent = getHttpsAgent(MODEL_API_ENDPOINTS.moonshot, 'moonshot') || new https.Agent({
   keepAlive: false,
   maxSockets: 10,
 });

@@ -19,6 +19,9 @@ export interface ModelEntrySettings {
   discoveredAt?: number;
 }
 
+/** provider 代理模式：'auto'=按内置 OVERSEAS_PROVIDERS 判断；'direct'=强制直连；'proxy'=强制走代理。 */
+export type ProxyMode = 'auto' | 'direct' | 'proxy';
+
 export interface ModelProviderSettings {
   apiKey?: string;
   apiKeyConfigured?: boolean;
@@ -32,6 +35,9 @@ export interface ModelProviderSettings {
   /** 该 provider 的最大并发请求数。留空/0 = 不限流（沿用内置默认，未声明则完全放行）。
    *  填正数则启用自适应并发限流器（命中 429 自动降级，5 分钟无限流后逐步恢复）。 */
   maxConcurrent?: number;
+  /** 该 provider 走代理还是直连。'auto'（默认）按内置 OVERSEAS_PROVIDERS 判断；
+   *  'direct' 强制直连；'proxy' 强制走全局 HTTPS_PROXY。覆盖内置 providerNeedsProxy 判断。 */
+  proxyMode?: ProxyMode;
   models?: Record<string, ModelEntrySettings>;
 }
 

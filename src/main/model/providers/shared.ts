@@ -48,7 +48,8 @@ import type { ToolDefinition, ToolCall, ToolCallTargetContext } from '../../../s
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { ContextLengthExceededError } from '../types';
 import { createLogger } from '../../services/infra/logger';
-import { PROVIDER_TIMEOUT, isDirectConnectHost } from '../../../shared/constants';
+import { PROVIDER_TIMEOUT, isDirectConnectHost, providerNeedsProxy, normalizeProviderId } from '../../../shared/constants';
+import type { ProxyMode } from '../../../shared/contract/settings';
 // Wrapper imports for @deprecated parse* delegation. Cycle is safe in ESM:
 // wrapper modules only access shared.logger / safeJsonParse at parse-time, not module-init.
 import { parseOpenAIResponse as wrapperParseOpenAIResponse } from './wrappers/openaiWrapper';
@@ -147,13 +148,31 @@ let _cachedAgent: HttpsProxyAgent<string> | undefined;
  * 智谱/Kimi/DeepSeek 等国内端点打成 TLS 断连。海外/未知 host（或不传 url）
  * 才走代理。
  */
-export function getHttpsAgent(targetUrl?: string): HttpsProxyAgent<string> | undefined {
+// 用户在模型配置页设的 per-provider 代理模式覆盖（仅存 'direct'/'proxy'；'auto' 等价无覆盖、
+// 用内置默认）。由 configService 在启动 + 保存设置时经 setProviderProxyOverrides 推入（整表替换）。
+const _proxyModeOverrides = new Map<string, ProxyMode>();
+
+export function setProviderProxyOverrides(map: Record<string, ProxyMode>): void {
+  _proxyModeOverrides.clear();
+  for (const [provider, mode] of Object.entries(map)) {
+    if (mode === 'direct' || mode === 'proxy') {
+      _proxyModeOverrides.set(normalizeProviderId(provider) ?? provider, mode);
+    }
+  }
+}
+
+export function getHttpsAgent(targetUrl?: string, provider?: string): HttpsProxyAgent<string> | undefined {
   const url = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
   if (!url || process.env.NO_PROXY === 'true' || process.env.DISABLE_PROXY === 'true') {
     return undefined;
   }
-  // 国内直连 host：即使设了全局代理也绕过
-  if (targetUrl && isDirectConnectHost(targetUrl)) {
+  // 代理决策优先级：用户 per-provider 覆盖 > 内置 providerNeedsProxy（按 provider 身份，封闭集不漏）。
+  // provider 缺省（通用 fetch helper 等无 provider 上下文）时回退到 host 白名单判定（兼容旧调用）。
+  if (provider !== undefined) {
+    const override = _proxyModeOverrides.get(normalizeProviderId(provider) ?? provider);
+    if (override === 'direct') return undefined;
+    if (override !== 'proxy' && !providerNeedsProxy(provider, targetUrl)) return undefined;
+  } else if (targetUrl && isDirectConnectHost(targetUrl)) {
     return undefined;
   }
   if (url !== _cachedProxyUrl) {

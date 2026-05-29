@@ -1,6 +1,6 @@
 import React from 'react';
 import { Key, Zap } from 'lucide-react';
-import type { ModelConfig, ModelProviderProtocol } from '@shared/contract';
+import type { ModelConfig, ModelProviderProtocol, ProxyMode } from '@shared/contract';
 import { MODEL } from '@shared/constants';
 import type { RuntimeProviderModel } from '@shared/modelRuntime';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -35,6 +35,8 @@ interface CurrentModelConfigurationSectionProps {
   maxConcurrent?: number;
   defaultMaxConcurrent?: number;
   onMaxConcurrentChange: (value: number | undefined) => void;
+  proxyMode?: ProxyMode;
+  onProxyModeChange: (mode: ProxyMode) => void;
   onModelChange: (modelId: string) => void;
   onTemperatureChange: (temperature: number) => void;
 }
@@ -65,6 +67,8 @@ export const CurrentModelConfigurationSection: React.FC<CurrentModelConfiguratio
   maxConcurrent,
   defaultMaxConcurrent,
   onMaxConcurrentChange,
+  proxyMode,
+  onProxyModeChange,
   onModelChange,
   onTemperatureChange,
 }) => {
@@ -184,6 +188,23 @@ export const CurrentModelConfigurationSection: React.FC<CurrentModelConfiguratio
             <p className="mt-2 text-xs text-zinc-500">
               限制该 Provider 的同时请求数，防止高并发（如批量子代理 / workflow）触发 429 限流。
               留空或 0 = 使用内置默认{defaultMaxConcurrent ? `（${defaultMaxConcurrent}）` : '（不限流）'}。命中限流自动降级，5 分钟无限流后回升。
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-zinc-200">
+              代理模式
+            </label>
+            <Select
+              value={proxyMode ?? 'auto'}
+              onChange={(event) => onProxyModeChange(event.target.value as ProxyMode)}
+            >
+              <option value="auto">自动（按内置国内外判断）</option>
+              <option value="direct">强制直连</option>
+              <option value="proxy">强制走代理</option>
+            </Select>
+            <p className="mt-2 text-xs text-zinc-500">
+              控制该 Provider 是否走全局 HTTPS_PROXY。自动 = 海外 provider 走代理、国内（含小米 mimo）直连；direct / proxy 强制覆盖。
             </p>
           </div>
 

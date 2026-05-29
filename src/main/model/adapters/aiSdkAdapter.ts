@@ -145,14 +145,17 @@ function responseBodyForFetch(data: unknown, status: number): BodyInit | null {
   return JSON.stringify(data);
 }
 
-const aiSdkFetch: typeof globalThis.fetch = async (input, init) => {
+// 按 provider 生成 fetch：闭包绑定 provider，使 getHttpsAgent 能按 provider 身份决定走代理/直连
+// （而非只看 url host）。修复 mimo 等「国内厂商海外节点」被全局代理打偏的问题。
+function makeAiSdkFetch(provider?: string): typeof globalThis.fetch {
+  return async (input, init) => {
   const request = input instanceof Request ? input : undefined;
   const url = input instanceof URL ? input.toString() : request?.url ?? String(input);
   const method = init?.method ?? request?.method ?? 'GET';
   const headers = headersToRecord(init?.headers ?? request?.headers);
   const body = requestBodyForAxios(init?.body ?? request?.body);
   const signal = init?.signal ?? request?.signal;
-  const agent = getHttpsAgent(url);
+  const agent = getHttpsAgent(url, provider);
 
   const response = await axios({
     url,
@@ -175,7 +178,8 @@ const aiSdkFetch: typeof globalThis.fetch = async (input, init) => {
     statusText: response.statusText,
     headers: responseHeaders(response.headers),
   });
-};
+  };
+}
 
 // baseURL / apiKey 走与 provider 类同一份解析（providerResolution）——不再在适配器里复制
 // zhipu 三态等逻辑（消除「每加一个 provider 就要在 adapter 再打一次补丁」）。
@@ -249,15 +253,15 @@ export function buildVendorCompatSettings(config: ModelConfig): OpenAICompatVend
 function resolveModel(config: ModelConfig, req: ProviderRequest): LanguageModel {
   switch (config.provider) {
     case 'deepseek':
-      return createDeepSeek({ apiKey: req.apiKey, baseURL: req.baseURL, fetch: aiSdkFetch })(config.model);
+      return createDeepSeek({ apiKey: req.apiKey, baseURL: req.baseURL, fetch: makeAiSdkFetch(config.provider) })(config.model);
     case 'anthropic':
     case 'claude':
-      return createAnthropic({ apiKey: req.apiKey, baseURL: req.baseURL ?? MODEL_API_ENDPOINTS.claude, fetch: aiSdkFetch })(config.model);
+      return createAnthropic({ apiKey: req.apiKey, baseURL: req.baseURL ?? MODEL_API_ENDPOINTS.claude, fetch: makeAiSdkFetch(config.provider) })(config.model);
     case 'gemini':
       // 原生 Generative Language API（generateContent/streamGenerateContent + x-goog-api-key）由
       // @ai-sdk/google 接管，替掉手搓 convertToGeminiMessages/handleGeminiStream。默认端点已含
       // /v1beta，与 provider 期望一致；国际端点经 aiSdkFetch 的 getHttpsAgent 走代理。
-      return createGoogleGenerativeAI({ apiKey: req.apiKey, baseURL: req.baseURL ?? MODEL_API_ENDPOINTS.gemini, fetch: aiSdkFetch })(config.model);
+      return createGoogleGenerativeAI({ apiKey: req.apiKey, baseURL: req.baseURL ?? MODEL_API_ENDPOINTS.gemini, fetch: makeAiSdkFetch(config.provider) })(config.model);
     case 'openrouter':
       // 官方 provider 自带 OpenRouter 推荐 headers + tool schema normalize（替掉 legacy 的
       // normalizeJsonSchema 手搓）。HTTP-Referer/X-Title 是 OpenRouter 应用署名约定，沿用 legacy 值。
@@ -265,7 +269,7 @@ function resolveModel(config: ModelConfig, req: ProviderRequest): LanguageModel 
         apiKey: req.apiKey,
         baseURL: req.baseURL ?? MODEL_API_ENDPOINTS.openrouter,
         headers: { 'HTTP-Referer': 'https://code-agent.app', 'X-Title': 'Agent Neo' },
-        fetch: aiSdkFetch,
+        fetch: makeAiSdkFetch(config.provider),
       })(config.model);
     default: {
       if (!req.baseURL) {
@@ -278,7 +282,7 @@ function resolveModel(config: ModelConfig, req: ProviderRequest): LanguageModel 
         name: config.provider,
         baseURL: req.baseURL,
         apiKey: req.apiKey,
-        fetch: aiSdkFetch,
+        fetch: makeAiSdkFetch(config.provider),
         ...vendor,
       })(config.model);
     }

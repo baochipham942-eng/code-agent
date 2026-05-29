@@ -13,6 +13,8 @@ import { getSecureStorage } from './secureStorage';
 import { createLogger } from '../infra/logger';
 import { getPolicyEngine } from '../../permissions/policyEngine';
 import { setProviderConcurrencyOverrides } from '../../model/concurrencyLimiter';
+import { setProviderProxyOverrides } from '../../model/providers/shared';
+import type { ProxyMode } from '../../../shared/contract/settings';
 import {
   DEFAULT_PROVIDER,
   DEFAULT_MODEL,
@@ -282,6 +284,9 @@ export class ConfigService implements IReadConfigService {
     // 把用户配置的 per-provider 并发上限推入限流器（覆盖出厂默认）
     this.applyProviderConcurrencyOverrides();
 
+    // 把用户配置的 per-provider 代理模式推入 getHttpsAgent（覆盖内置 OVERSEAS 默认）
+    this.applyProviderProxyOverrides();
+
     // 兼容性标记：旧配置首次升级到 6.8.x 时，如果用户尚未声明 inheritance，
     // 打上 _legacyPermissions=true 由 UI 弹一次性引导。strict-inherit 仍然作为默认行为。
     if (this.settings.permissions.inheritance === undefined) {
@@ -340,6 +345,27 @@ export class ConfigService implements IReadConfigService {
       logger.info('Provider concurrency overrides applied', { overridden: Object.keys(map).length });
     } catch (error) {
       logger.error('Failed to apply provider concurrency overrides:', error);
+    }
+  }
+
+  /**
+   * 把 settings.models.providers[*].proxyMode 推入 getHttpsAgent 的 per-provider 覆盖
+   * （覆盖内置 OVERSEAS_PROVIDERS 默认）。启动加载时调用一次；用户在模型配置页保存后再次调用热更新。
+   */
+  private applyProviderProxyOverrides(): void {
+    try {
+      const providers = this.settings.models?.providers ?? {};
+      const map: Record<string, ProxyMode> = {};
+      for (const [provider, cfg] of Object.entries(providers)) {
+        const mode = cfg?.proxyMode;
+        if (mode === 'direct' || mode === 'proxy') {
+          map[provider] = mode;
+        }
+      }
+      setProviderProxyOverrides(map);
+      logger.info('Provider proxy overrides applied', { overridden: Object.keys(map).length });
+    } catch (error) {
+      logger.error('Failed to apply provider proxy overrides:', error);
     }
   }
 
@@ -616,9 +642,10 @@ export class ConfigService implements IReadConfigService {
       this.applyUserPermissionRules();
     }
 
-    // 用户在模型配置页改了 provider（含 maxConcurrent）后热更新并发限流器
+    // 用户在模型配置页改了 provider（含 maxConcurrent / proxyMode）后热更新
     if (updates.models?.providers) {
       this.applyProviderConcurrencyOverrides();
+      this.applyProviderProxyOverrides();
     }
   }
 

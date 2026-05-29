@@ -28,7 +28,7 @@ const logger = createLogger('ModelSettings');
 // ============================================================================
 
 // Re-export ModelConfig from shared types for consistency
-import type { ModelConfig } from '@shared/contract';
+import type { ModelConfig, ProxyMode } from '@shared/contract';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
@@ -242,6 +242,9 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   // 由 Save 时随 currentProviderConfig 一起持久化到 settings.models.providers。
   const handleMaxConcurrentChange = useCallback((value: number | undefined) => {
     patchCurrentProviderConfig({ maxConcurrent: value });
+  }, [patchCurrentProviderConfig]);
+  const handleProxyModeChange = useCallback((mode: ProxyMode) => {
+    patchCurrentProviderConfig({ proxyMode: mode });
   }, [patchCurrentProviderConfig]);
   const defaultMaxConcurrent = PROVIDER_CONCURRENCY_LIMITS[config.provider]?.maxConcurrent;
 
@@ -783,6 +786,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         maxConcurrent={currentProviderConfig?.maxConcurrent}
         defaultMaxConcurrent={defaultMaxConcurrent}
         onMaxConcurrentChange={handleMaxConcurrentChange}
+        proxyMode={currentProviderConfig?.proxyMode}
+        onProxyModeChange={handleProxyModeChange}
         onModelChange={handleModelChange}
         onTemperatureChange={(temperature) => {
           patchCurrentProviderConfig({ temperature });

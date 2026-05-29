@@ -97,6 +97,44 @@ export function isDirectConnectHost(urlOrHost: string): boolean {
 }
 
 // ============================================================================
+// Per-provider 代理决策（按 provider 身份，而非 host 地址）
+// ----------------------------------------------------------------------------
+// 海外 provider 默认端点在墙外、需走代理；其余 provider（含国内厂商的海外节点，如小米
+// mimo 的 token-plan-sgp —— 实测直连才通、代理反而把大请求掐成 HTTP2 framing 断连）一律直连。
+// Why 按 provider 而非 host：provider 是封闭枚举集，新增国内 provider 默认直连、不会像 host
+// 白名单那样漏（mimo 曾因没加进 DIRECT_CONNECT_HOST_SUFFIXES 而被全局 HTTPS_PROXY 打偏）。
+// host 白名单（DIRECT_CONNECT_HOST_SUFFIXES）降级为「海外 provider 走国内中转 baseUrl」的
+// 例外判定（如 claude 走 clawapi.vip 国内中转）。随 bundle 分发，装机后同样按 provider 身份判。
+// ============================================================================
+
+export const OVERSEAS_PROVIDERS: ReadonlySet<string> = new Set([
+  'openai',
+  'claude',
+  'anthropic',
+  'gemini',
+  'groq',
+  'grok',
+  'xai',
+  'openrouter',
+  'perplexity',
+]);
+
+/**
+ * 判断某 provider 的请求是否需要走代理。
+ * - 国内 provider（含国内厂商的海外节点，如 xiaomi mimo）→ false（直连）
+ * - 海外 provider → true，除非 baseUrl 命中国内直连 host（走国内中转）→ false
+ */
+export function providerNeedsProxy(
+  provider: string | null | undefined,
+  baseUrl?: string,
+): boolean {
+  const normalized = normalizeProviderId(provider) ?? provider ?? '';
+  if (!OVERSEAS_PROVIDERS.has(normalized)) return false;
+  if (baseUrl && isDirectConnectHost(baseUrl)) return false;
+  return true;
+}
+
+// ============================================================================
 // Provider 并发限额（明确声明并发上限的 provider 才进此表）
 // ----------------------------------------------------------------------------
 // 用于自适应并发限流器（concurrencyLimiter）。只有在此声明的 provider 才会被节流；

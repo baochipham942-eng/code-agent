@@ -64,7 +64,7 @@ function claudeSSEStream(options: {
         ...headers,
         Accept: 'text/event-stream',
       },
-      agent: isHttps ? getHttpsAgent(url.href) : undefined,
+      agent: isHttps ? getHttpsAgent(url.href, 'claude') : undefined,
       timeout: PROVIDER_TIMEOUT,
     };
 

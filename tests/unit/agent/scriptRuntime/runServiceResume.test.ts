@@ -166,4 +166,32 @@ describe('runService resumable 重放（真 worker）', () => {
     );
     expect(logs.some((m) => /resume|重放|无.*journal|未找到/i.test(m))).toBe(true);
   });
+
+  // ── Codex round2 MED#3：警告 emit 本身必须 best-effort，不能在执行前把 run 中断 ──
+  it('a throwing resume-miss warning emit does NOT abort the run (best-effort observability)', async () => {
+    const { journal } = makeInMemoryJournal();
+    const deps = makeDeps(journal);
+    // host emit 在 run:log（即警告）上抛错；run:start/done 等放行
+    deps.emit = (e) => { if (e.type === 'run:log') throw new Error('emit boom'); };
+    inferenceMock.mockResolvedValueOnce(forced(1, 10)).mockResolvedValueOnce(forced(2, 20));
+    const r = await startRun(
+      { runId: 'run-warn-throw', script: SCRIPT, resumeFromRunId: 'nonexistent', defaultProvider: 'xiaomi', defaultModel: 'm' },
+      deps,
+    );
+    expect(r.status).toBe('completed'); // 警告 emit 抛错被吞，run 照常完成
+  });
+
+  // ── Codex round2 MED#3：执行前 emit 抛错时，journal 终态不得被写成 'running'（规整成终态）──
+  it('onRunFinish never records a stuck "running" status when a pre-execution emit throws', async () => {
+    const { journal } = makeInMemoryJournal();
+    const finishes: string[] = [];
+    journal.onRunFinish = ({ status }) => finishes.push(status);
+    const deps = makeDeps(journal);
+    deps.emit = (e) => { if (e.type === 'run:start') throw new Error('emit boom on start'); };
+    inferenceMock.mockResolvedValueOnce(forced(1, 10)).mockResolvedValueOnce(forced(2, 20));
+    await startRun({ runId: 'run-stuck', script: SCRIPT, defaultProvider: 'xiaomi', defaultModel: 'm' }, deps).catch(() => {});
+    // finally 必然调 onRunFinish；状态须是终态而非残留的 'running'
+    expect(finishes.length).toBeGreaterThan(0);
+    expect(finishes.every((s) => s !== 'running')).toBe(true);
+  });
 });

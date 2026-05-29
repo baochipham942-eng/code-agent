@@ -151,6 +151,34 @@ describe('validateScript', () => {
     const res = validateScript('const clock = { now: () => 42 };\nconst t = clock.now();\nreturn t;');
     expect(res).toEqual({ ok: true });
   });
+
+  // ── P4 Codex round2 MED#1：前缀剥离别误杀本地 window/self 对象（Node worker 无浏览器全局）──
+  it('does not false-positive on a locally-shadowed window object', () => {
+    const res = validateScript('const window = { Date: { now: () => 1 } };\nreturn window.Date.now();');
+    expect(res).toEqual({ ok: true });
+  });
+
+  it('still rejects global.Date.now() (global is a real Node global)', () => {
+    const res = validateScript('const t = global.Date.now();\nreturn t;');
+    expect(res.ok).toBe(false);
+  });
+
+  // ── P4 Codex round2 MED#2：TaggedTemplateExpression 是同义调用路径，也要拦 ──
+  it('rejects tagged-template Math.random`` (executes the banned fn as a tag)', () => {
+    const res = validateScript('const r = Math.random`x`;\nreturn r;');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/确定性|Math\.random/);
+  });
+
+  it('rejects tagged-template Date`` (current time via tag call)', () => {
+    const res = validateScript('const d = Date`x`;\nreturn d;');
+    expect(res.ok).toBe(false);
+  });
+
+  it('rejects tagged-template globalThis.performance.now``', () => {
+    const res = validateScript('const t = globalThis.performance.now`x`;\nreturn t;');
+    expect(res.ok).toBe(false);
+  });
 });
 
 describe('validateForcedSchema', () => {

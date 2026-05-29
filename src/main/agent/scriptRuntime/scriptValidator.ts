@@ -36,7 +36,11 @@ const BANNED_CALLS = new Set([
   'crypto.randomUUID',
   'crypto.getRandomValues',
 ]);
-const GLOBAL_PREFIXES = new Set(['globalThis', 'window', 'self', 'global']);
+// 只剥真实存在于 Node worker 的全局引用前缀（globalThis / global）。不含 window/self——它们在
+// worker 里根本不存在，纳入只会给本地同名对象（const window = {...}）平添误报面（Codex round2 MED#1）。
+// 注：仍是 binding-unaware 的纯路径剥离，本地遮蔽 globalThis/global 会误报，但那已属极罕见且同
+// 「别名规避」覆盖边界一档（半信任脚本、拦意外非确定性）。
+const GLOBAL_PREFIXES = new Set(['globalThis', 'global']);
 
 /** 取 MemberExpression 的属性名：`.now`(Identifier) 或 `['now']`(computed string Literal)。 */
 function memberPropName(prop: unknown, computed: boolean): string | undefined {
@@ -86,6 +90,13 @@ function detectNonDeterministic(node: unknown): string | null {
     const path = stripGlobalPrefix(dottedPath(n.callee) ?? '');
     if (path === 'Date') return 'Date()（当前时间）'; // Date() 当函数调用
     if (BANNED_CALLS.has(path)) return `${path}()`;
+  }
+
+  // TaggedTemplateExpression 是同义调用路径：Date`` / Math.random`` 一样执行被禁函数（Codex round2 MED#2）。
+  if (n.type === 'TaggedTemplateExpression') {
+    const path = stripGlobalPrefix(dottedPath(n.tag) ?? '');
+    if (path === 'Date') return 'Date``（当前时间）';
+    if (BANNED_CALLS.has(path)) return `${path}\`\``;
   }
 
   for (const key of Object.keys(n)) {

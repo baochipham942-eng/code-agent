@@ -140,12 +140,17 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     // MED-3：resume 请求但没拿到任何缓存（runId 笔误 / journal 不可用 / 旧 run 没记调用）→ 不静默
     // 退化烧预算，发一条 run:log 警告让调用方看见「这次没命中、在全量 live 跑」。
     if (spec.resumeFromRunId && (!resumeCalls || resumeCalls.size === 0)) {
-      emit({
-        runId: spec.runId,
-        type: 'run:log',
-        ts: Date.now(),
-        data: { message: `⚠️ resume 请求的 run「${spec.resumeFromRunId}」无可用 journal，本次全量 live 重跑（不命中缓存、照常计费）` },
-      });
+      // 纯观测警告——必须 best-effort（Codex round2 MED#3）：host emit 抛错不得在执行前中断 run。
+      try {
+        emit({
+          runId: spec.runId,
+          type: 'run:log',
+          ts: Date.now(),
+          data: { message: `⚠️ resume 请求的 run「${spec.resumeFromRunId}」无可用 journal，本次全量 live 重跑（不命中缓存、照常计费）` },
+        });
+      } catch {
+        /* 观测面非权威，不反噬执行 */
+      }
     }
 
     const outcome = await runScriptInWorker({
@@ -174,6 +179,9 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     // onRunFinish 放 finally + 独立 try/catch（Codex round1 HIGH#3）：即便终态 emit 抛错也保证
     // 终态落库，status 不会永卡 'running'；journal 写异常也不得吞掉 run 的真实结果/抛出。
     if (state.finishedAt === undefined) state.finishedAt = Date.now();
+    // 异常路径（执行前 emit 抛错 / worker 异常冒出）会让 status 残留 'running'；规整成终态再落库
+    // （Codex round2 MED#3），否则 journal 会把已中断的 run 永久记成 running。
+    if (state.status === 'running') state.status = controller.signal.aborted ? 'cancelled' : 'failed';
     try {
       journal?.onRunFinish({
         runId: spec.runId,

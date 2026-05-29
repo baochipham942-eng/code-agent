@@ -224,4 +224,23 @@ describe('workflow tool', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.code).toBe('DOMAIN_ERROR');
   });
+
+  // ── Round 4 ──────────────────────────────────────────────────────────────
+
+  // R4 LOW: 非 JSON-safe 结果（BigInt/循环引用）不得把已 completed 的 run 翻成 DOMAIN_ERROR
+  it('does not fail a completed run when result is not JSON-serializable', async () => {
+    startRunMock.mockResolvedValue(completedState({ result: { big: 10n } }));
+    const r = await run({ script: 'return {big:10n}' });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(typeof r.output).toBe('string');
+  });
+
+  // R4 MED(defensive): override 缺 provider（类型上不该发生，但运行时防御）—— 同 base provider 下仍继承凭证
+  it('resolveModelConfig falls back to base provider when override omits provider', async () => {
+    resolveSessionDefaultMock.mockReturnValue({ provider: 'xiaomi', model: 'mimo-lite', apiKey: '', baseUrl: undefined });
+    await run({ script: 'return 1' });
+    const deps = startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
+    const resolved = deps.resolveModelConfig({ model: 'mimo-lite' } as never);
+    expect(resolved.apiKey).toBe('base-key');
+  });
 });

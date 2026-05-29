@@ -84,10 +84,13 @@ async function runWorkflow(
       baseModelConfig,
       resolveModelConfig: (override) => {
         if (!override) return baseModelConfig;
-        const resolved = resolveSessionDefaultModelConfig({ provider: override.provider, model: override.model });
+        // override.provider 类型上必填，但运行时防御缺省（Codex R4）：缺省按 base provider 解，
+        // 否则只改 model 的同 provider override 会跳过继承分支、甚至按错误默认 provider 解。
+        const effectiveProvider = override.provider ?? baseModelConfig.provider;
+        const resolved = resolveSessionDefaultModelConfig({ provider: effectiveProvider, model: override.model });
         // 鉴权继承（Codex MED#1 + R2）：configService 未初始化时 resolved 缺 apiKey/baseUrl。
         // 同 provider 下逐字段补齐缺失项（空串也算缺失），避免 model override 把可用凭证 / 自定义 endpoint 静默清空。
-        if (override.provider === baseModelConfig.provider) {
+        if (effectiveProvider === baseModelConfig.provider) {
           return {
             ...resolved,
             apiKey: resolved.apiKey || baseModelConfig.apiKey,
@@ -158,12 +161,20 @@ async function runWorkflow(
     safeProgress({ stage: 'completing', percent: 100 });
 
     // 区分脚本 return undefined（无返回）与显式 null（Codex LOW#1）。
-    const resultText =
-      typeof state.result === 'string'
-        ? state.result
-        : state.result === undefined
-          ? '(workflow 脚本无返回值)'
-          : JSON.stringify(state.result, null, 2);
+    // 序列化单独兜住（Codex R4 LOW）：BigInt / 循环引用会让 JSON.stringify 抛错，
+    // 不兜的话会把一个已 completed 的 run 误包成 DOMAIN_ERROR。
+    let resultText: string;
+    if (typeof state.result === 'string') {
+      resultText = state.result;
+    } else if (state.result === undefined) {
+      resultText = '(workflow 脚本无返回值)';
+    } else {
+      try {
+        resultText = JSON.stringify(state.result, null, 2);
+      } catch {
+        resultText = `(workflow 结果无法序列化为 JSON: ${String(state.result)})`;
+      }
+    }
 
     return {
       ok: true,

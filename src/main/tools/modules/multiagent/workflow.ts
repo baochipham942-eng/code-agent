@@ -39,129 +39,142 @@ import { workflowSchema } from './workflow.schema';
 // 工具名须与 protocol registry 注册名精确一致（fs 工具是 PascalCase：Read/Glob/Grep）。
 const WORKFLOW_DEFAULT_AGENT_TOOLS = ['WebSearch', 'WebFetch', 'Read', 'Glob', 'Grep'];
 
+/** 把异常归类成 ABORTED / DOMAIN_ERROR（Codex R2：取消别被压成 DOMAIN_ERROR）。 */
+function isAbort(ctx: ToolContext, err: unknown): boolean {
+  return ctx.abortSignal.aborted || (err instanceof Error && err.name === 'AbortError');
+}
+
 async function runWorkflow(
   args: Record<string, unknown>,
   ctx: ToolContext,
   canUseTool: CanUseToolFn,
   onProgress: ToolProgressFn | undefined,
 ): Promise<ToolResult<string>> {
-  const permit = await canUseTool(workflowSchema.name, args);
-  if (!permit.allow) {
-    return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
-  }
-  if (ctx.abortSignal.aborted) {
-    return { ok: false, error: 'aborted', code: 'ABORTED' };
-  }
-
-  const script = args.script;
-  if (typeof script !== 'string' || script.trim().length === 0) {
-    return { ok: false, error: 'workflow requires a non-empty `script` string', code: 'INVALID_ARGS' };
-  }
-  const goal = typeof args.goal === 'string' ? args.goal : undefined;
-
-  if (!ctx.modelConfig) {
-    return { ok: false, error: 'workflow requires modelConfig in context', code: 'NOT_INITIALIZED' };
-  }
-  const baseModelConfig = ctx.modelConfig as ModelConfig;
-
-  // legacy ctx 提供 resolver / hookManager / workingDirectory / sessionId（与 spawnAgent 同源桥接）。
-  const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
-
-  const deps: ScriptRunHostDeps = {
-    baseModelConfig,
-    resolveModelConfig: (override) => {
-      if (!override) return baseModelConfig;
-      const resolved = resolveSessionDefaultModelConfig({ provider: override.provider, model: override.model });
-      // 鉴权继承（Codex MED#1）：configService 未初始化时 resolved.apiKey 为空。
-      // 同 provider 下继承 base 的 apiKey/baseUrl，避免 model override 把可用凭证静默清空。
-      if (!resolved.apiKey && override.provider === baseModelConfig.provider) {
-        return { ...resolved, apiKey: baseModelConfig.apiKey, baseUrl: resolved.baseUrl ?? baseModelConfig.baseUrl };
-      }
-      return resolved;
-    },
-    deriveSubagentContext: ({ agentId, modelConfig, signal }): SubagentContext => ({
-      modelConfig,
-      toolResolver: legacyCtx.resolver as ToolResolver,
-      // 干净 toolContext：注入 per-agent agentId + per-call modelConfig；显式清空会话/历史承载字段
-      // （Codex MED#2：不靠"legacyCtx 当前恰好没 messages"，防 buildLegacyCtxFromProtocol 未来加字段时静默泄漏）。
-      toolContext: {
-        ...legacyCtx,
-        agentId,
-        modelConfig,
-        messages: undefined,
-        todos: undefined,
-        modifiedFiles: undefined,
-        currentAttachments: undefined,
-      } as SubagentContext['toolContext'],
-      abortSignal: signal,
-      executionAgentId: agentId,
-      hookManager: legacyCtx.hookManager,
-    }),
-    defaultAgentTools: WORKFLOW_DEFAULT_AGENT_TOOLS,
-    signal: ctx.abortSignal,
-    emit: (event: ScriptRunEvent) => {
-      // run 事件 → onProgress 进度行（不耦合 AgentEvent 协议）。
-      if (event.type === 'run:phase' && typeof event.data?.title === 'string') {
-        onProgress?.({ stage: 'running', detail: `phase: ${event.data.title}` });
-      } else if (event.type === 'agent:start') {
-        onProgress?.({ stage: 'running', detail: `agent: ${String(event.data?.label ?? 'agent')}` });
-      } else if (event.type === 'run:log' && typeof event.data?.message === 'string') {
-        onProgress?.({ stage: 'running', detail: event.data.message });
-      }
-    },
+  // 观测面 best-effort：onProgress 抛错不得反向把执行结果翻成失败（Codex R2 MED）。
+  const safeProgress: ToolProgressFn = (p) => {
+    try { onProgress?.(p); } catch { /* swallow — progress is non-authoritative */ }
   };
 
-  // runId 必须每次调用唯一（Codex HIGH#2）：currentToolCallId 可能缺失、sessionId 会复用，
-  // 撞了会让 activeRuns 覆盖 + cancel/状态串线。加 uuid 后缀兜底（主线程可用 randomUUID）。
-  const runId = `wf-${ctx.currentToolCallId ?? ctx.sessionId ?? 'run'}-${randomUUID().slice(0, 8)}`;
-
-  onProgress?.({ stage: 'starting', detail: 'workflow' });
-
-  // startRun 可能同步/异步抛（worker 创建失败、deps 异常等）——兜住，别炸出 handler（Codex MED#3）。
-  let state;
+  // 顶层 try/catch：canUseTool / buildLegacyCtxFromProtocol / startRun 等任一 await 抛出都兜住，
+  // 不炸出 handler；取消归 ABORTED，其余归 DOMAIN_ERROR（Codex R2 MED：加固别只做一半）。
   try {
-    state = await startRun(
-      {
-        runId,
-        script,
-        goal,
-        defaultProvider: baseModelConfig.provider,
-        defaultModel: baseModelConfig.model,
+    const permit = await canUseTool(workflowSchema.name, args);
+    if (!permit.allow) {
+      return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
+    }
+    if (ctx.abortSignal.aborted) {
+      return { ok: false, error: 'aborted', code: 'ABORTED' };
+    }
+
+    const script = args.script;
+    if (typeof script !== 'string' || script.trim().length === 0) {
+      return { ok: false, error: 'workflow requires a non-empty `script` string', code: 'INVALID_ARGS' };
+    }
+    const goal = typeof args.goal === 'string' ? args.goal : undefined;
+
+    if (!ctx.modelConfig) {
+      return { ok: false, error: 'workflow requires modelConfig in context', code: 'NOT_INITIALIZED' };
+    }
+    const baseModelConfig = ctx.modelConfig as ModelConfig;
+
+    // legacy ctx 提供 resolver / hookManager / workingDirectory / sessionId（与 spawnAgent 同源桥接）。
+    const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
+
+    const deps: ScriptRunHostDeps = {
+      baseModelConfig,
+      resolveModelConfig: (override) => {
+        if (!override) return baseModelConfig;
+        const resolved = resolveSessionDefaultModelConfig({ provider: override.provider, model: override.model });
+        // 鉴权继承（Codex MED#1 + R2）：configService 未初始化时 resolved 缺 apiKey/baseUrl。
+        // 同 provider 下逐字段补齐缺失项（空串也算缺失），避免 model override 把可用凭证 / 自定义 endpoint 静默清空。
+        if (override.provider === baseModelConfig.provider) {
+          return {
+            ...resolved,
+            apiKey: resolved.apiKey || baseModelConfig.apiKey,
+            baseUrl: resolved.baseUrl || baseModelConfig.baseUrl,
+          };
+        }
+        return resolved;
       },
+      deriveSubagentContext: ({ agentId, modelConfig, signal }): SubagentContext => ({
+        modelConfig,
+        toolResolver: legacyCtx.resolver as ToolResolver,
+        // 干净 toolContext：注入 per-agent agentId + per-call modelConfig；显式清空会话/历史承载字段
+        // 与父级 call-scoped id（Codex MED#2 + R2：不靠"legacyCtx 恰好没 messages"，且 currentToolCallId
+        // 不清会让子 agent 下游按 tool-call id 归因时串到父 workflow 那个 call）。
+        toolContext: {
+          ...legacyCtx,
+          agentId,
+          modelConfig,
+          messages: undefined,
+          todos: undefined,
+          modifiedFiles: undefined,
+          currentAttachments: undefined,
+          currentToolCallId: undefined,
+        } as SubagentContext['toolContext'],
+        abortSignal: signal,
+        executionAgentId: agentId,
+        hookManager: legacyCtx.hookManager,
+      }),
+      defaultAgentTools: WORKFLOW_DEFAULT_AGENT_TOOLS,
+      signal: ctx.abortSignal,
+      emit: (event: ScriptRunEvent) => {
+        // run 事件 → onProgress 进度行（不耦合 AgentEvent 协议）。
+        if (event.type === 'run:phase' && typeof event.data?.title === 'string') {
+          safeProgress({ stage: 'running', detail: `phase: ${event.data.title}` });
+        } else if (event.type === 'agent:start') {
+          safeProgress({ stage: 'running', detail: `agent: ${String(event.data?.label ?? 'agent')}` });
+        } else if (event.type === 'run:log' && typeof event.data?.message === 'string') {
+          safeProgress({ stage: 'running', detail: event.data.message });
+        }
+      },
+    };
+
+    // runId 必须每次调用唯一（Codex HIGH#2）：currentToolCallId 可能缺失、sessionId 会复用，
+    // 撞了会让 activeRuns 覆盖 + cancel/状态串线。加 uuid 后缀兜底（主线程可用 randomUUID）。
+    const runId = `wf-${ctx.currentToolCallId ?? ctx.sessionId ?? 'run'}-${randomUUID().slice(0, 8)}`;
+
+    safeProgress({ stage: 'starting', detail: 'workflow' });
+
+    const state = await startRun(
+      { runId, script, goal, defaultProvider: baseModelConfig.provider, defaultModel: baseModelConfig.model },
       deps,
     );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    ctx.logger.debug('workflow startRun threw', { runId, error: msg });
-    return { ok: false, error: `workflow run failed: ${msg}`, code: 'DOMAIN_ERROR', meta: { runId } };
-  }
 
-  if (state.status !== 'completed') {
-    ctx.logger.debug('workflow run did not complete', { status: state.status, error: state.error });
+    if (state.status !== 'completed') {
+      ctx.logger.debug('workflow run did not complete', { status: state.status, error: state.error });
+      return {
+        ok: false,
+        error: `workflow ${state.status}: ${state.error ?? 'unknown error'}`,
+        code: state.status === 'cancelled' ? 'ABORTED' : 'DOMAIN_ERROR',
+        meta: { runId, status: state.status, agentCallCount: state.agentCallCount, phases: state.phases },
+      };
+    }
+
+    // 仅成功路径报完成进度（Codex LOW#3：失败先发 completing 会让 UI 先看到完成再看到报错）。
+    safeProgress({ stage: 'completing', percent: 100 });
+
+    // 区分脚本 return undefined（无返回）与显式 null（Codex LOW#1）。
+    const resultText =
+      typeof state.result === 'string'
+        ? state.result
+        : state.result === undefined
+          ? '(workflow 脚本无返回值)'
+          : JSON.stringify(state.result, null, 2);
+
     return {
-      ok: false,
-      error: `workflow ${state.status}: ${state.error ?? 'unknown error'}`,
-      code: state.status === 'cancelled' ? 'ABORTED' : 'DOMAIN_ERROR',
-      meta: { runId, status: state.status, agentCallCount: state.agentCallCount, phases: state.phases },
+      ok: true,
+      output: resultText,
+      meta: { runId, agentCallCount: state.agentCallCount, phases: state.phases },
     };
+  } catch (err) {
+    if (isAbort(ctx, err)) {
+      return { ok: false, error: 'workflow aborted', code: 'ABORTED' };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    ctx.logger.debug('workflow handler threw', { error: msg });
+    return { ok: false, error: `workflow run failed: ${msg}`, code: 'DOMAIN_ERROR' };
   }
-
-  // 仅成功路径报完成进度（Codex LOW#3：失败先发 completing 会让 UI 先看到完成再看到报错）。
-  onProgress?.({ stage: 'completing', percent: 100 });
-
-  // 区分脚本 return undefined（无返回）与显式 null（Codex LOW#1）。
-  const resultText =
-    typeof state.result === 'string'
-      ? state.result
-      : state.result === undefined
-        ? '(workflow 脚本无返回值)'
-        : JSON.stringify(state.result, null, 2);
-
-  return {
-    ok: true,
-    output: resultText,
-    meta: { runId, agentCallCount: state.agentCallCount, phases: state.phases },
-  };
 }
 
 function makeHandler(): ToolHandler<Record<string, unknown>, string> {

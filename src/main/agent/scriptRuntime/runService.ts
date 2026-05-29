@@ -76,29 +76,33 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     now: () => Date.now(),
   };
 
-  emit({ runId: spec.runId, type: 'run:start', ts: Date.now(), data: { goal: spec.goal, scriptHash } });
+  // try/finally：worker/emit/handleRpc/abort 以 rejected promise 冒出时也必须清 activeRuns，
+  // 否则 stale run 泄漏 + 后续 cancel/getRunState 串线（Codex audit R2 HIGH）。
+  try {
+    emit({ runId: spec.runId, type: 'run:start', ts: Date.now(), data: { goal: spec.goal, scriptHash } });
 
-  const outcome = await runScriptInWorker({
-    script: spec.script,
-    goal: spec.goal,
-    signal: controller.signal,
-    onRpc: (req) => handleRpc(req, ctx),
-  });
+    const outcome = await runScriptInWorker({
+      script: spec.script,
+      goal: spec.goal,
+      signal: controller.signal,
+      onRpc: (req) => handleRpc(req, ctx),
+    });
 
-  state.finishedAt = Date.now();
-  state.agentCallCount = callCounter.count;
-  if (outcome.ok) {
-    state.status = 'completed';
-    state.result = outcome.result;
-    emit({ runId: spec.runId, type: 'run:done', ts: Date.now(), data: { result: outcome.result } });
-  } else {
-    state.status = controller.signal.aborted ? 'cancelled' : 'failed';
-    state.error = outcome.error;
-    emit({ runId: spec.runId, type: 'run:error', ts: Date.now(), data: { error: outcome.error } });
+    state.finishedAt = Date.now();
+    state.agentCallCount = callCounter.count;
+    if (outcome.ok) {
+      state.status = 'completed';
+      state.result = outcome.result;
+      emit({ runId: spec.runId, type: 'run:done', ts: Date.now(), data: { result: outcome.result } });
+    } else {
+      state.status = controller.signal.aborted ? 'cancelled' : 'failed';
+      state.error = outcome.error;
+      emit({ runId: spec.runId, type: 'run:error', ts: Date.now(), data: { error: outcome.error } });
+    }
+    return state;
+  } finally {
+    activeRuns.delete(spec.runId);
   }
-
-  activeRuns.delete(spec.runId);
-  return state;
 }
 
 /** 取消一个进行中的 run。返回是否命中。 */

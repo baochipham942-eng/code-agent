@@ -162,4 +162,54 @@ describe('workflow tool', () => {
       expect(r.meta).toMatchObject({ agentCallCount: 5, phases: ['a', 'b'] });
     }
   });
+
+  // ── Round 2 ──────────────────────────────────────────────────────────────
+
+  // R2 MED: startRun 因取消抛 AbortError → 必须报 ABORTED 不是 DOMAIN_ERROR
+  it('maps AbortError / aborted signal from startRun to ABORTED', async () => {
+    const ctrl = new AbortController();
+    startRunMock.mockImplementation(async () => {
+      ctrl.abort();
+      const e = new Error('aborted');
+      e.name = 'AbortError';
+      throw e;
+    });
+    const r = await run({ script: 'return 1' }, makeCtx({ abortSignal: ctrl.signal }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('ABORTED');
+  });
+
+  // R2 MED: 同 provider override —— apiKey 有值但 baseUrl 缺失时必须继承 base 的 baseUrl
+  it('inherits base baseUrl on same-provider override when resolved baseUrl missing', async () => {
+    resolveSessionDefaultMock.mockReturnValue({ provider: 'xiaomi', model: 'mimo-lite', apiKey: 'own-key', baseUrl: undefined });
+    await run({ script: 'return 1' });
+    const deps = startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
+    const resolved = deps.resolveModelConfig({ provider: 'xiaomi', model: 'mimo-lite' });
+    expect(resolved.apiKey).toBe('own-key');
+    expect(resolved.baseUrl).toBe('https://base');
+  });
+
+  // R2 MED: 子上下文不得继承父 currentToolCallId（call-scoped id 串线）
+  it('derived subagent toolContext does not carry parent currentToolCallId', async () => {
+    const ctx = makeCtx({ currentToolCallId: 'parent-call-1' });
+    await run({ script: 'return 1' }, ctx);
+    const deps = startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
+    const sub = deps.deriveSubagentContext({ agentId: 'a1', modelConfig: { ...BASE_MODEL }, signal: new AbortController().signal });
+    expect((sub.toolContext as Record<string, unknown>).currentToolCallId).toBeUndefined();
+  });
+
+  // R2 MED: onProgress 抛错不得把成功 run 翻成失败（观测面 best-effort）
+  it('a throwing onProgress does not turn a successful run into failure', async () => {
+    const onProgress = vi.fn(() => { throw new Error('progress boom'); });
+    const r = await run({ script: 'return 1' }, makeCtx(), allowAll, onProgress);
+    expect(r.ok).toBe(true);
+  });
+
+  // R2 MED: canUseTool 等顶层调用抛错 → 不崩 handler，映射成结构化错误
+  it('unexpected throw from canUseTool maps to error result, not crash', async () => {
+    const throwingCanUse: CanUseToolFn = async () => { throw new Error('permission service down'); };
+    const r = await run({ script: 'return 1' }, makeCtx(), throwingCanUse);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('DOMAIN_ERROR');
+  });
 });

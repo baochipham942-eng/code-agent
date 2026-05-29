@@ -22,6 +22,8 @@ export interface AgentCallOptions {
   phase?: string;
   /** 子 agent 角色类型（默认通用执行体）。 */
   agentType?: string;
+  /** 工具档：'readonly'(默认) | 'edit'(+Edit/Write) | 'full'(+Bash)。仅 full-agent 路径（无 schema）生效。 */
+  tools?: string;
 }
 
 /** worker 侧 agent() 调用 marshal 给主线程的载荷。 */

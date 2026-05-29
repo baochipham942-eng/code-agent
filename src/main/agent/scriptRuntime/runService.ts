@@ -24,7 +24,7 @@ export interface ScriptRunHostDeps {
   baseModelConfig: ModelConfig;
   resolveModelConfig: ScriptRunContext['resolveModelConfig'];
   deriveSubagentContext: ScriptRunContext['deriveSubagentContext'];
-  defaultAgentTools: string[];
+  resolveAgentTools: ScriptRunContext['resolveAgentTools'];
   emit?: (event: ScriptRunEvent) => void;
   signal?: AbortSignal;
 }
@@ -72,7 +72,8 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     baseModelConfig: deps.baseModelConfig,
     resolveModelConfig: deps.resolveModelConfig,
     deriveSubagentContext: deps.deriveSubagentContext,
-    defaultAgentTools: deps.defaultAgentTools,
+    resolveAgentTools: deps.resolveAgentTools,
+    writeGuard: { inFlight: 0, warned: false },
     signal: controller.signal,
     gate: new ConcurrencyGate(SCRIPT_RUNTIME.GLOBAL_MAX_CONCURRENCY),
     emit,

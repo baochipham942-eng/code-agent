@@ -18,7 +18,7 @@
 import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage } from '../../model/types';
 import { inferenceViaAiSdk } from '../../model/adapters/aiSdkAdapter';
-import { SubagentExecutor, type SubagentConfig, type SubagentContext } from '../subagentExecutor';
+import { SubagentExecutor, type SubagentContext } from '../subagentExecutor';
 import { SCRIPT_RUNTIME } from '../../../shared/constants';
 import type { ConcurrencyGate } from './concurrencyGate';
 import type { BudgetTracker } from './budget';
@@ -46,8 +46,10 @@ export interface ScriptRunContext {
   resolveModelConfig: (override?: { provider: string; model: string }) => ModelConfig;
   /** 为一次 full-agent 调用派生隔离的干净 SubagentContext（不灌历史）。命令层持有 toolResolver/toolContext。 */
   deriveSubagentContext: (args: { agentId: string; modelConfig: ModelConfig; signal: AbortSignal }) => SubagentContext;
-  /** full-agent 路径的默认可用工具集（命令层决定，按 deferred-tools 规范名传入）。 */
-  defaultAgentTools: string[];
+  /** 把 agent({tools}) 的档名解析成工具白名单 + 是否写能力（命令层注入分档策略）。 */
+  resolveAgentTools: (profile?: string) => { tools: string[]; writeCapable: boolean };
+  /** 并行写护栏共享状态：在途写 agent 数 + 是否已告警（每 run 只告警一次）。 */
+  writeGuard: { inFlight: number; warned: boolean };
   /** run 级取消信号。 */
   signal: AbortSignal;
   /** provider-aware 全局并发闸。 */
@@ -94,16 +96,36 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
       ctx.budget.add(forced.outputTokens);
       result = forced.value;
     } else {
-      const sub = await executor.execute(
-        call.prompt,
-        buildAgentConfig(call, ctx),
-        ctx.deriveSubagentContext({ agentId, modelConfig, signal: ctx.signal }),
-      );
-      if (!sub.success) {
-        throw new Error(sub.error ?? `子 agent 执行失败（${sub.cancellationReason ?? 'unknown'}）`);
+      const { tools, writeCapable } = ctx.resolveAgentTools(call.options?.tools);
+      // 并行写护栏：多个写能力 agent 共享同一工作树时可能互相覆盖。检测到并发写就告警（每 run 一次），
+      // 真 worktree 隔离后续支持。只读 agent 不触发。
+      if (writeCapable && ctx.writeGuard.inFlight >= 1 && !ctx.writeGuard.warned) {
+        ctx.writeGuard.warned = true;
+        ctx.emit({
+          runId: ctx.runId,
+          type: 'run:log',
+          ts: ctx.now(),
+          data: {
+            message:
+              '⚠️ 检测到并行写 agent 共享同一工作树，可能互相覆盖；建议串行化写操作或拆分子路径（worktree 隔离后续支持）',
+          },
+        });
       }
-      ctx.budget.add(sub.tokensUsed ?? 0);
-      result = sub.output;
+      if (writeCapable) ctx.writeGuard.inFlight++;
+      try {
+        const sub = await executor.execute(
+          call.prompt,
+          { name: call.options?.agentType ?? 'workflow-agent', systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPT, availableTools: tools },
+          ctx.deriveSubagentContext({ agentId, modelConfig, signal: ctx.signal }),
+        );
+        if (!sub.success) {
+          throw new Error(sub.error ?? `子 agent 执行失败（${sub.cancellationReason ?? 'unknown'}）`);
+        }
+        ctx.budget.add(sub.tokensUsed ?? 0);
+        result = sub.output;
+      } finally {
+        if (writeCapable) ctx.writeGuard.inFlight--;
+      }
     }
     ctx.emit({ runId: ctx.runId, type: 'agent:done', ts: ctx.now(), data: { agentId, label } });
     return result;
@@ -118,14 +140,6 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
   } finally {
     release();
   }
-}
-
-function buildAgentConfig(call: AgentCallPayload, ctx: ScriptRunContext): SubagentConfig {
-  return {
-    name: call.options?.agentType ?? 'workflow-agent',
-    systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPT,
-    availableTools: ctx.defaultAgentTools,
-  };
 }
 
 /**

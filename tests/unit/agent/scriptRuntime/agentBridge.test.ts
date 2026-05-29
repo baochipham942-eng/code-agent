@@ -25,6 +25,7 @@ vi.mock('../../../../src/main/agent/subagentExecutor', () => ({
 import { runAgentCall, type ScriptRunContext } from '../../../../src/main/agent/scriptRuntime/agentBridge';
 import type { AgentCallPayload } from '../../../../src/main/agent/scriptRuntime/types';
 import { BudgetTracker } from '../../../../src/main/agent/scriptRuntime/budget';
+import { resolveToolProfile } from '../../../../src/main/agent/scriptRuntime/toolProfiles';
 
 function makeCtx(budget: BudgetTracker = new BudgetTracker(null)): ScriptRunContext {
   const modelConfig = { provider: 'xiaomi', model: 'm', apiKey: 'k' } as never;
@@ -33,7 +34,8 @@ function makeCtx(budget: BudgetTracker = new BudgetTracker(null)): ScriptRunCont
     baseModelConfig: modelConfig,
     resolveModelConfig: () => modelConfig,
     deriveSubagentContext: () => ({}) as never,
-    defaultAgentTools: [],
+    resolveAgentTools: (p?: string) => resolveToolProfile(p),
+    writeGuard: { inFlight: 0, warned: false },
     signal: new AbortController().signal,
     gate: { acquire: vi.fn(async () => () => {}) } as never,
     emit: vi.fn(),
@@ -103,5 +105,46 @@ describe('runAgentCall token budget', () => {
     ).rejects.toThrow(/budget/i);
     expect(inferenceMock).not.toHaveBeenCalled();
     expect(executeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('runAgentCall 工具分档 + 并行写护栏', () => {
+  it('defaults the full-agent path to readonly tools (no write tools)', async () => {
+    const ctx = makeCtx();
+    executeMock.mockResolvedValue({ success: true, output: 'ok' });
+    await runAgentCall({ prompt: 'p' }, ctx);
+    const config = executeMock.mock.calls[0][1] as { availableTools: string[] };
+    expect(config.availableTools).toEqual(['WebSearch', 'WebFetch', 'Read', 'Glob', 'Grep']);
+  });
+
+  it('passes the resolved tool list for the requested profile', async () => {
+    const ctx = makeCtx();
+    executeMock.mockResolvedValue({ success: true, output: 'ok' });
+    await runAgentCall({ prompt: 'p', options: { tools: 'edit' } }, ctx);
+    const config = executeMock.mock.calls[0][1] as { availableTools: string[] };
+    expect(config.availableTools).toContain('Edit');
+    expect(config.availableTools).toContain('Write');
+    expect(config.availableTools).not.toContain('Bash');
+  });
+
+  it('warns once when a write-capable agent runs while another writer is in flight', async () => {
+    const ctx = makeCtx();
+    ctx.writeGuard.inFlight = 1; // 模拟已有一个写 agent 在跑
+    executeMock.mockResolvedValue({ success: true, output: 'ok' });
+    await runAgentCall({ prompt: 'p', options: { tools: 'edit' } }, ctx);
+    const warned = (ctx.emit as ReturnType<typeof vi.fn>).mock.calls.some(
+      ([e]: [{ type: string; data?: { message?: string } }]) =>
+        e.type === 'run:log' && /并行写|互相覆盖/.test(e.data?.message ?? ''),
+    );
+    expect(warned).toBe(true);
+    expect(ctx.writeGuard.warned).toBe(true);
+  });
+
+  it('does not warn for readonly agents even when one is in flight', async () => {
+    const ctx = makeCtx();
+    ctx.writeGuard.inFlight = 1;
+    executeMock.mockResolvedValue({ success: true, output: 'ok' });
+    await runAgentCall({ prompt: 'p' }, ctx); // readonly
+    expect(ctx.writeGuard.warned).toBe(false);
   });
 });

@@ -21,7 +21,7 @@ function makeDeps(over: Partial<ScriptRunHostDeps> = {}): ScriptRunHostDeps {
     baseModelConfig: baseModel as never,
     resolveModelConfig: () => baseModel as never,
     deriveSubagentContext: () => ({}) as never,
-    defaultAgentTools: [],
+    resolveAgentTools: () => ({ tools: [], writeCapable: false }),
     ...over,
   };
 }

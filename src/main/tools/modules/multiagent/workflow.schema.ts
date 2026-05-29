@@ -13,7 +13,7 @@ You write the script body as a string in the \`script\` parameter. It runs in a 
 - **agent(prompt, opts?)** → spawn a sub-agent.
   - With \`opts.schema\` (a JSON Schema object): the sub-agent is forced to emit one structured result in a single turn; agent() returns the validated object. Use this for stable values your control flow branches on (counts, verdicts, extracted fields).
   - Without schema: the sub-agent runs a full tool-using agent loop and agent() returns its final text.
-  - opts: \`{ schema?, model?: {provider, model}, label?, phase?, agentType? }\`. \`model\` overrides the model for this one call (cheap model to fan out, strong model to judge).
+  - opts: \`{ schema?, model?: {provider, model}, label?, phase?, agentType?, tools? }\`. \`model\` overrides the model for this one call (cheap model to fan out, strong model to judge). \`tools\` picks the sub-agent's tool profile (full-agent path only): \`'readonly'\` (default — web + Read/Glob/Grep), \`'edit'\` (+ Edit/Write), \`'full'\` (+ Bash). Grant write tools only when the agent must modify files; running multiple write-capable agents in parallel shares one working tree and risks clobbering — serialize writers or give them distinct subpaths.
 - **parallel(thunks)** → run \`Array<() => Promise<any>>\` concurrently; BARRIER, awaits all. A thunk that throws resolves to \`null\` — drop them with \`.filter((x) => x !== null)\`.
 - **pipeline(items, ...stages)** → run each item through all stages independently, NO barrier (item A can be in stage 3 while B is still in stage 1). Each stage callback gets \`(prevResult, originalItem, index)\`. A stage that throws drops that item to \`null\`.
 - **phase(title)** → start a new progress phase; subsequent agent() calls group under it.

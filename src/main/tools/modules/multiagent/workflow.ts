@@ -9,7 +9,7 @@
 //   - resolveModelConfig   = per-call override → resolveSessionDefaultModelConfig（含 apiKey/baseUrl）
 //   - deriveSubagentContext= 为无-schema 的 full-agent 路径派生干净 SubagentContext
 //                            （toolResolver=ctx.resolver、toolContext={...legacyCtx,agentId}，不灌历史）
-//   - defaultAgentTools    = full-agent 路径默认工具白名单
+//   - resolveAgentTools    = 把 agent({tools}) 的档名解析成工具白名单（readonly/edit/full）
 //
 // 「中间结果不进主 context」：scriptRuntime 内部 agent() 直连 executor/inferenceViaAiSdk，
 // 绕开 spawn_agent/workflowOrchestrate/parallelCoordinator/cowork 四条会灌历史的高层入口；
@@ -31,14 +31,10 @@ import type { SubagentContext } from '../../../agent/subagentExecutor';
 import { startRun, type ScriptRunHostDeps } from '../../../agent/scriptRuntime';
 import type { ScriptRunEvent } from '../../../agent/scriptRuntime';
 import { validateScript } from '../../../agent/scriptRuntime/scriptValidator';
+import { resolveToolProfile } from '../../../agent/scriptRuntime/toolProfiles';
 import { resolveSessionDefaultModelConfig } from '../../../services/core/sessionDefaults';
 import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
 import { workflowSchema } from './workflow.schema';
-
-// full-agent 路径（agent() 无 schema）的默认工具白名单：读 + 调研。
-// 这是 workflow 子 agent 的策略默认值（非易变列表）；模型可在脚本里按需收窄。
-// 工具名须与 protocol registry 注册名精确一致（fs 工具是 PascalCase：Read/Glob/Grep）。
-const WORKFLOW_DEFAULT_AGENT_TOOLS = ['WebSearch', 'WebFetch', 'Read', 'Glob', 'Grep'];
 
 /** 把异常归类成 ABORTED / DOMAIN_ERROR（Codex R2：取消别被压成 DOMAIN_ERROR）。 */
 function isAbort(ctx: ToolContext, err: unknown): boolean {
@@ -134,7 +130,8 @@ async function runWorkflow(
         executionAgentId: agentId,
         hookManager: legacyCtx.hookManager,
       }),
-      defaultAgentTools: WORKFLOW_DEFAULT_AGENT_TOOLS,
+      // 三档工具策略：readonly(默认) / edit / full，模型经 agent({tools}) 按 agent 选档。
+      resolveAgentTools: (profile) => resolveToolProfile(profile),
       signal: ctx.abortSignal,
       emit: (event: ScriptRunEvent) => {
         // run 事件 → onProgress 进度行（不耦合 AgentEvent 协议）。

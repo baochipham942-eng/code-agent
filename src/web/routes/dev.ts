@@ -592,5 +592,22 @@ export function createDevRouter(deps: DevRouterDeps): Router {
     res.json({ ok: true, count: events.length });
   });
 
+  // ── POST /api/dev/emit-workflow-launch (E2E test hook，P3b) ──────────
+  // 仅 CODE_AGENT_E2E=1。注入 WorkflowLaunchEvent，走 'workflow' domain（type 前缀 launch:）
+  // → workflow.ipc bridge 按前缀路由到 'workflow:launch:event' → WorkflowLaunchCard DOM。
+  router.post('/dev/emit-workflow-launch', (req: Request, res: Response) => {
+    if (process.env.CODE_AGENT_E2E !== '1') {
+      res.status(404).json({ error: 'E2E hook disabled' });
+      return;
+    }
+    const event = req.body as { type?: string; request?: unknown } | undefined;
+    if (!event || typeof event.type !== 'string' || !event.request) {
+      res.status(400).json({ error: 'Body must be a WorkflowLaunchEvent { type, request }' });
+      return;
+    }
+    getEventBus().publish('workflow', `launch:${event.type}`, event, { bridgeToRenderer: false });
+    res.json({ ok: true });
+  });
+
   return router;
 }

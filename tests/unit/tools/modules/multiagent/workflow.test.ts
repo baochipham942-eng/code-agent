@@ -48,7 +48,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 const allowAll: CanUseToolFn = async () => ({ allow: true });
 
 function completedState(over: Partial<ScriptRunState> = {}): ScriptRunState {
-  return { runId: 'x', status: 'completed', scriptHash: 'h', startedAt: 0, agentCallCount: 3, phases: ['p'], result: { ok: 1 }, ...over };
+  return { runId: 'x', status: 'completed', scriptHash: 'h', startedAt: 0, agentCallCount: 3, tokensSpent: 0, phases: ['p'], result: { ok: 1 }, ...over };
 }
 
 async function run(args: Record<string, unknown>, ctx: ToolContext = makeCtx(), canUseTool: CanUseToolFn = allowAll, onProgress?: (p: { stage: string; percent?: number }) => void) {

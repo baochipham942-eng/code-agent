@@ -15,7 +15,8 @@ export async function handleRpc(req: RpcRequest, ctx: ScriptRunContext): Promise
     switch (req.kind) {
       case 'agent': {
         const result = await runAgentCall(req.payload as AgentCallPayload, ctx);
-        return { id: req.id, ok: true, result };
+        // 回传累计 spent，worker 侧 budget 镜像据此更新（脚本可 while(budget.remaining()>x) 收敛）。
+        return { id: req.id, ok: true, result, spent: ctx.budget.spent() };
       }
       case 'phase': {
         const { title } = req.payload as { title: string };

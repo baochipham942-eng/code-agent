@@ -78,6 +78,11 @@ async function runWorkflow(
       return { ok: false, error: `invalid workflow script: ${scriptCheck.error}`, code: 'INVALID_ARGS' };
     }
     const goal = typeof args.goal === 'string' ? args.goal : undefined;
+    // token 预算（outputTokens）：正整数才生效，硬上限耗尽后 agent() 抛错；缺省 = 不设限。
+    const budgetTokens =
+      typeof args.budgetTokens === 'number' && Number.isFinite(args.budgetTokens) && args.budgetTokens > 0
+        ? Math.floor(args.budgetTokens)
+        : undefined;
 
     if (!ctx.modelConfig) {
       return { ok: false, error: 'workflow requires modelConfig in context', code: 'NOT_INITIALIZED' };
@@ -150,7 +155,7 @@ async function runWorkflow(
     safeProgress({ stage: 'starting', detail: 'workflow' });
 
     const state = await startRun(
-      { runId, script, goal, defaultProvider: baseModelConfig.provider, defaultModel: baseModelConfig.model },
+      { runId, script, goal, budgetTokens, defaultProvider: baseModelConfig.provider, defaultModel: baseModelConfig.model },
       deps,
     );
 
@@ -160,7 +165,7 @@ async function runWorkflow(
         ok: false,
         error: `workflow ${state.status}: ${state.error ?? 'unknown error'}`,
         code: state.status === 'cancelled' ? 'ABORTED' : 'DOMAIN_ERROR',
-        meta: { runId, status: state.status, agentCallCount: state.agentCallCount, phases: state.phases },
+        meta: { runId, status: state.status, agentCallCount: state.agentCallCount, tokensSpent: state.tokensSpent, phases: state.phases },
       };
     }
 
@@ -186,7 +191,7 @@ async function runWorkflow(
     return {
       ok: true,
       output: resultText,
-      meta: { runId, agentCallCount: state.agentCallCount, phases: state.phases },
+      meta: { runId, agentCallCount: state.agentCallCount, tokensSpent: state.tokensSpent, phases: state.phases },
     };
   } catch (err) {
     if (isAbort(ctx, err)) {

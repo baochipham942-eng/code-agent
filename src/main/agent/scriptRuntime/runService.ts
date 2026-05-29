@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import { SCRIPT_RUNTIME } from '../../../shared/constants';
 import type { ModelConfig } from '../../../shared/contract';
 import { ConcurrencyGate } from './concurrencyGate';
+import { BudgetTracker } from './budget';
 import { handleRpc } from './primitives';
 import { runScriptInWorker } from './sandbox';
 import type { ScriptRunContext } from './agentBridge';
@@ -50,9 +51,12 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     scriptHash,
     startedAt: Date.now(),
     agentCallCount: 0,
+    tokensSpent: 0,
     phases: [],
   };
   activeRuns.set(spec.runId, { controller, state });
+
+  const budget = new BudgetTracker(spec.budgetTokens ?? null);
 
   const emit = (event: ScriptRunEvent): void => {
     const title = event.data?.title;
@@ -73,6 +77,7 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     gate: new ConcurrencyGate(SCRIPT_RUNTIME.GLOBAL_MAX_CONCURRENCY),
     emit,
     callCounter,
+    budget,
     now: () => Date.now(),
   };
 
@@ -84,12 +89,14 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     const outcome = await runScriptInWorker({
       script: spec.script,
       goal: spec.goal,
+      budgetTotal: budget.total,
       signal: controller.signal,
       onRpc: (req) => handleRpc(req, ctx),
     });
 
     state.finishedAt = Date.now();
     state.agentCallCount = callCounter.count;
+    state.tokensSpent = budget.spent();
     if (outcome.ok) {
       state.status = 'completed';
       state.result = outcome.result;

@@ -98,6 +98,8 @@ export interface SubagentResult {
   iterations: number;
   /** Cost incurred by this subagent */
   cost?: number;
+  /** 本次 subagent 跨迭代累计的 outputTokens（dynamic-workflow BudgetTracker 计费用）。 */
+  tokensUsed?: number;
   /** Agent ID from pipeline */
   agentId?: string;
   /** Lightweight context snapshot for swarm UI */
@@ -210,6 +212,8 @@ export class SubagentExecutor {
     const toolsUsed: string[] = [];
     let iterations = 0;
     let finalOutput = '';
+    // 跨迭代累加 outputTokens，供 dynamic-workflow 的 BudgetTracker 计费（每次推理后累加）。
+    let outputTokensUsed = 0;
 
     // P3: 计算执行超时时间
     const timeout = getSubagentExecutionTimeout(config.name, config.maxExecutionTimeMs);
@@ -661,6 +665,7 @@ export class SubagentExecutor {
           prompt: buildModelPromptSummary(providerMessages),
           completion: buildModelCompletionSummary(response),
         };
+        outputTokensUsed += modelCall.outputTokens;
 
         const persistTelemetryTurn = (assistantResponse: string, thinking?: string): void => {
           telemetryCollector.recordDetachedTurn({
@@ -1046,6 +1051,7 @@ export class SubagentExecutor {
         toolsUsed: [...new Set(toolsUsed)],
         iterations,
         cost: budgetStatus.subagentCost,
+        tokensUsed: outputTokensUsed,
         agentId: agentTask.id,
         contextSnapshot: latestContextSnapshot,
       };

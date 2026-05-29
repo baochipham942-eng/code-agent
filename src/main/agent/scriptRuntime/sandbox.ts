@@ -20,16 +20,25 @@ import type { RpcRequest, RpcResponse } from './types';
 // Promise 组合（无栅栏 pipeline：每 item 独立流过所有 stage）；脚本经 new AsyncFunction 运行。
 export const WORKER_SOURCE = `
 const { parentPort, workerData } = require('worker_threads');
-const { script, goal } = workerData;
+const { script, goal, budgetTotal } = workerData;
 
 let rpcSeq = 0;
 const pending = new Map();
+
+// budget 只读镜像：total 在 worker 启动时固定；spent 随 agent RPC 响应回传更新（主线程权威）。
+let _spent = 0;
+const budget = {
+  total: (budgetTotal === undefined ? null : budgetTotal),
+  spent: () => _spent,
+  remaining: () => (budgetTotal === undefined || budgetTotal === null) ? Infinity : Math.max(0, budgetTotal - _spent),
+};
 
 parentPort.on('message', (msg) => {
   if (msg && msg.__rpcResponse) {
     const p = pending.get(msg.id);
     if (p) {
       pending.delete(msg.id);
+      if (typeof msg.spent === 'number') _spent = msg.spent;
       if (msg.ok) p.resolve(msg.result);
       else p.reject(new Error(msg.error || 'rpc failed'));
     }
@@ -75,12 +84,12 @@ const args = goal;
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
     // shadow 危险全局：把它们作为形参传 undefined，脚本作用域内拿不到 require/fs/process。
     const fn = new AsyncFunction(
-      'agent', 'parallel', 'pipeline', 'phase', 'log', 'args',
+      'agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'budget',
       'require', 'process', 'module', 'exports', '__dirname', '__filename', 'global', 'globalThis',
       script
     );
     const result = await fn(
-      agent, parallel, pipeline, phase, log, args,
+      agent, parallel, pipeline, phase, log, args, budget,
       undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined
     );
     parentPort.postMessage({ __workerDone: true, ok: true, result });
@@ -93,6 +102,8 @@ const args = goal;
 export interface RunWorkerOptions {
   script: string;
   goal?: string;
+  /** token 预算上限（outputTokens），透传给 worker 的 budget.total/remaining 镜像。null = 不设限。 */
+  budgetTotal?: number | null;
   signal: AbortSignal;
   /** 处理 worker 发来的 RPC 请求（agent/phase/log）。 */
   onRpc: (req: RpcRequest) => Promise<RpcResponse>;
@@ -128,7 +139,7 @@ export function runScriptInWorker(opts: RunWorkerOptions): Promise<WorkerOutcome
   return new Promise<WorkerOutcome>((resolve) => {
     const worker = new Worker(WORKER_SOURCE, {
       eval: true,
-      workerData: { script: opts.script, goal: opts.goal },
+      workerData: { script: opts.script, goal: opts.goal, budgetTotal: opts.budgetTotal ?? null },
       resourceLimits: { maxOldGenerationSizeMb: SCRIPT_RUNTIME.WORKER_MAX_OLD_GEN_MB },
     });
 

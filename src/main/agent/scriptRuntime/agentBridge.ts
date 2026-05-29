@@ -21,6 +21,7 @@ import { inferenceViaAiSdk } from '../../model/adapters/aiSdkAdapter';
 import { SubagentExecutor, type SubagentConfig, type SubagentContext } from '../subagentExecutor';
 import { SCRIPT_RUNTIME } from '../../../shared/constants';
 import type { ConcurrencyGate } from './concurrencyGate';
+import type { BudgetTracker } from './budget';
 import { validateForcedSchema } from './scriptValidator';
 import type { AgentCallPayload, JsonSchema, PrimitiveResult, ScriptRunEvent } from './types';
 
@@ -55,6 +56,8 @@ export interface ScriptRunContext {
   emit: (event: ScriptRunEvent) => void;
   /** 跨 run 共享的 agent() 调用计数（失控脚本兜底）。 */
   callCounter: { count: number };
+  /** token 预算账本（主线程权威：每次 agent() 完成累加 outputTokens，发起前查上限）。 */
+  budget: BudgetTracker;
   /** 主线程计时（worker 内禁 Date.now；bridge 在主线程可用）。 */
   now: () => number;
 }
@@ -63,6 +66,11 @@ export interface ScriptRunContext {
 export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext): Promise<PrimitiveResult> {
   if (ctx.callCounter.count >= SCRIPT_RUNTIME.MAX_AGENT_CALLS_PER_RUN) {
     throw new Error(`agent() 调用数超过单 run 上限 ${SCRIPT_RUNTIME.MAX_AGENT_CALLS_PER_RUN}`);
+  }
+  // 预算硬上限（对齐 Claude Code Workflow）：耗尽后再发起的 agent() 直接抛，让脚本能用
+  // while(budget.remaining()>x) 动态收敛。enforce 在主线程、是权威；worker 侧 budget 是只读镜像。
+  if (ctx.budget.exceeded()) {
+    throw new Error(`token budget 已耗尽（${ctx.budget.spent()}/${ctx.budget.total}）`);
   }
   ctx.callCounter.count++;
 
@@ -82,7 +90,9 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
   try {
     let result: PrimitiveResult;
     if (call.options?.schema) {
-      result = await runForcedStructured(call.prompt, call.options.schema, modelConfig, ctx.signal);
+      const forced = await runForcedStructured(call.prompt, call.options.schema, modelConfig, ctx.signal);
+      ctx.budget.add(forced.outputTokens);
+      result = forced.value;
     } else {
       const sub = await executor.execute(
         call.prompt,
@@ -92,6 +102,7 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
       if (!sub.success) {
         throw new Error(sub.error ?? `子 agent 执行失败（${sub.cancellationReason ?? 'unknown'}）`);
       }
+      ctx.budget.add(sub.tokensUsed ?? 0);
       result = sub.output;
     }
     ctx.emit({ runId: ctx.runId, type: 'agent:done', ts: ctx.now(), data: { agentId, label } });
@@ -126,7 +137,7 @@ async function runForcedStructured(
   schema: JsonSchema,
   modelConfig: ModelConfig,
   signal: AbortSignal,
-): Promise<Record<string, unknown>> {
+): Promise<{ value: Record<string, unknown>; outputTokens: number }> {
   // 模型给的 schema 零校验直传会让任意值进 forced tool_choice inputSchema（deferred 审计点）。
   // 先校验是对象型且带 properties 的 JSON Schema，不合法直接抛、不发起 inference。
   const schemaCheck = validateForcedSchema(schema);
@@ -151,5 +162,5 @@ async function runForcedStructured(
   if (!toolCall) {
     throw new Error('forced structured output：模型未返回 tool call');
   }
-  return toolCall.arguments;
+  return { value: toolCall.arguments, outputTokens: response.usage?.outputTokens ?? 0 };
 }

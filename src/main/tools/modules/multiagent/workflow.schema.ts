@@ -19,6 +19,7 @@ You write the script body as a string in the \`script\` parameter. It runs in a 
 - **phase(title)** → start a new progress phase; subsequent agent() calls group under it.
 - **log(message)** → emit a progress line.
 - **args** → the \`goal\` string passed alongside the script.
+- **budget** → token budget (output tokens). \`budget.total\` (number | null), \`budget.spent()\`, \`budget.remaining()\`. When a budgetTokens param is set it is a HARD ceiling: once spent reaches it, further agent() calls throw. Use it to scale fan-out depth dynamically, e.g. \`while (budget.total && budget.remaining() > 50000) { ... }\`. With no budget, remaining() is Infinity.
 
 Concurrent agent() calls are capped globally (provider-aware) and total agent() calls per run are bounded — runaway scripts are terminated.
 
@@ -49,7 +50,8 @@ return report;
 
 ## Parameters
 - script (required): the JS orchestration script body (a string).
-- goal: the task goal; exposed to the script as \`args\`.`;
+- goal: the task goal; exposed to the script as \`args\`.
+- budgetTokens: optional output-token budget (hard ceiling); exposed as \`budget.total\`.`;
 
 const workflowInputSchema = {
   type: 'object' as const,
@@ -61,6 +63,10 @@ const workflowInputSchema = {
     goal: {
       type: 'string',
       description: 'The task goal, exposed to the script as `args`.',
+    },
+    budgetTokens: {
+      type: 'number',
+      description: 'Optional output-token budget (hard ceiling). Exposed to the script as `budget.total`; once spent reaches it, agent() throws. Omit for no limit.',
     },
   },
   required: ['script'] as string[],

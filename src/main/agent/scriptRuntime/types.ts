@@ -52,6 +52,8 @@ export interface RpcResponse {
   ok: boolean;
   result?: PrimitiveResult | null;
   error?: string;
+  /** agent 调用后回传的累计已花 outputTokens，worker 侧 budget.spent() 镜像据此更新。 */
+  spent?: number;
 }
 
 /** worker 启动时主线程注入的初始化消息（脚本源码 + 目标 + 确定性种子）。 */
@@ -91,6 +93,8 @@ export interface ScriptRunSpec {
   defaultProvider: string;
   /** 默认模型。 */
   defaultModel: string;
+  /** token 预算上限（outputTokens）。给定则硬上限：耗尽后 agent() 抛错。不给 = 不设限。 */
+  budgetTokens?: number;
 }
 
 /** run 的可观测状态快照（供 UI / resumable 用，纯可序列化）。 */
@@ -105,6 +109,8 @@ export interface ScriptRunState {
   result?: unknown;
   error?: string;
   agentCallCount: number;
+  /** 全 run 累计已花 outputTokens（预算账本终值）。 */
+  tokensSpent: number;
   phases: string[];
 }
 

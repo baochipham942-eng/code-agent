@@ -76,7 +76,11 @@ export interface WorkerDone {
 
 // ── run 生命周期 ─────────────────────────────────────────────────────────────
 
-export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+// RunStatus / ScriptRunEventType / ScriptRunEvent 是跨层可序列化契约，已下沉到
+// @shared/contract/scriptRun（renderer 视图层也要消费，renderer 从不 import @main）。
+// 此处 re-export 保持 main 侧既有 importer 零改动。
+export type { RunStatus, ScriptRunEventType, ScriptRunEvent } from '../../../shared/contract/scriptRun';
+import type { RunStatus } from '../../../shared/contract/scriptRun';
 
 export interface ScriptMeta {
   name: string;
@@ -114,23 +118,4 @@ export interface ScriptRunState {
   /** 全 run 累计已花 outputTokens（预算账本终值）。 */
   tokensSpent: number;
   phases: string[];
-}
-
-// ── run 事件（scriptRuntime 自有事件流，不复用 swarm 单-active-run 的 SwarmEventEmitter）──
-
-export type ScriptRunEventType =
-  | 'run:start'
-  | 'run:phase'
-  | 'run:log'
-  | 'agent:start'
-  | 'agent:done'
-  | 'agent:error'
-  | 'run:done'
-  | 'run:error';
-
-export interface ScriptRunEvent {
-  runId: string;
-  type: ScriptRunEventType;
-  ts: number;
-  data?: Record<string, unknown>;
 }

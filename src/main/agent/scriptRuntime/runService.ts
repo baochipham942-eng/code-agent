@@ -165,14 +165,25 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     state.agentCallCount = callCounter.count;
     state.tokensSpent = budget.spent();
     state.cacheHits = cacheHitCounter.count;
+    // terminal emit 是观测层，且发生在权威结果已定之后——必须 best-effort（Codex round3 MED）：
+    // run:done/run:error emit 抛错不得顶替 `return state`（否则成功 run 被 emit 错变成 reject、
+    // 脚本真错被 emit 错盖掉）。run:start 的 fatal 合同保留不动（见 runService.test 既定契约）。
     if (outcome.ok) {
       state.status = 'completed';
       state.result = outcome.result;
-      emit({ runId: spec.runId, type: 'run:done', ts: Date.now(), data: { result: outcome.result } });
+      try {
+        emit({ runId: spec.runId, type: 'run:done', ts: Date.now(), data: { result: outcome.result } });
+      } catch {
+        /* 观测面非权威，不反噬权威结果 */
+      }
     } else {
       state.status = controller.signal.aborted ? 'cancelled' : 'failed';
       state.error = outcome.error;
-      emit({ runId: spec.runId, type: 'run:error', ts: Date.now(), data: { error: outcome.error } });
+      try {
+        emit({ runId: spec.runId, type: 'run:error', ts: Date.now(), data: { error: outcome.error } });
+      } catch {
+        /* 观测面非权威，不盖掉脚本真错 */
+      }
     }
     return state;
   } finally {

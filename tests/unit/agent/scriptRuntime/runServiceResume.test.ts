@@ -181,6 +181,29 @@ describe('runService resumable 重放（真 worker）', () => {
     expect(r.status).toBe('completed'); // 警告 emit 抛错被吞，run 照常完成
   });
 
+  // ── Codex round3 MED：terminal emit（run:done/run:error）是观测层，抛错不得顶替权威结果 ──
+  it('a throwing run:done emit does NOT reject a successfully completed run', async () => {
+    const { journal } = makeInMemoryJournal();
+    const deps = makeDeps(journal);
+    deps.emit = (e) => { if (e.type === 'run:done') throw new Error('emit boom on done'); };
+    inferenceMock.mockResolvedValueOnce(forced(1, 10)).mockResolvedValueOnce(forced(2, 20));
+    const r = await startRun({ runId: 'run-done-throw', script: SCRIPT, defaultProvider: 'xiaomi', defaultModel: 'm' }, deps);
+    expect(r.status).toBe('completed'); // 观测 emit 抛错被吞，权威结果照常返回
+    expect(r.result).toEqual({ a: { n: 1 }, b: { n: 2 } });
+  });
+
+  it('a throwing run:error emit does NOT mask the real script error', async () => {
+    const { journal } = makeInMemoryJournal();
+    const deps = makeDeps(journal);
+    deps.emit = (e) => { if (e.type === 'run:error') throw new Error('emit boom on error'); };
+    const r = await startRun(
+      { runId: 'run-err-throw', script: "throw new Error('script boom');", defaultProvider: 'xiaomi', defaultModel: 'm' },
+      deps,
+    );
+    expect(r.status).toBe('failed');
+    expect(r.error).toMatch(/script boom/); // 调用方拿到脚本真错，不是 emit 错
+  });
+
   // ── Codex round2 MED#3：执行前 emit 抛错时，journal 终态不得被写成 'running'（规整成终态）──
   it('onRunFinish never records a stuck "running" status when a pre-execution emit throws', async () => {
     const { journal } = makeInMemoryJournal();

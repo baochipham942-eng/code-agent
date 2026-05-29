@@ -77,16 +77,17 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-/** 计算 schema 嵌套深度（对象/数组逐层下钻），用于 depth 上限。 */
-function schemaDepth(node: unknown, seen: WeakSet<object>): number {
-  if (!node || typeof node !== 'object') return 0;
-  if (seen.has(node as object)) return Infinity; // 循环引用 → 视为无限深，拒绝
-  seen.add(node as object);
-  let max = 0;
+/**
+ * 深度是否超过 limit——一旦超过立即短路返回，自身递归上界 = limit（Codex R3 MED）：不计算完整
+ * 深度、不依赖"先 stringify 排除循环"才安全。limit 取 MAX_SCHEMA_DEPTH(8)，递归至多 8 层不会爆栈。
+ */
+function depthExceeds(node: unknown, limit: number): boolean {
+  if (!node || typeof node !== 'object') return false; // 基元深度 0，不超
+  if (limit <= 0) return true; // 还有对象层但预算已尽 → 超
   for (const v of Object.values(node as Record<string, unknown>)) {
-    if (v && typeof v === 'object') max = Math.max(max, schemaDepth(v, seen));
+    if (depthExceeds(v, limit - 1)) return true;
   }
-  return max + 1;
+  return false;
 }
 
 /** 递归判断对象里任意键名是否命中黑名单（如 $ref）。 */
@@ -110,23 +111,24 @@ export function validateForcedSchema(schema: unknown): ValidationResult {
     return { ok: false, error: 'schema.properties 必须是至少含一个字段的对象' };
   }
   // 有界化（Codex MED#5）：超大/超深/$ref/循环 → DoS / postMessage clone / provider 请求炸弹。
-  // 顺序很重要（Codex R2 MED#3）：先 JSON.stringify 拦循环引用——它是唯一不依赖手写遍历就能
-  // 安全检出 cycle 的防线。放在 $ref/depth 这些手写递归之前，避免循环 schema 先在递归里爆栈。
+  // 顺序（Codex R2 MED#3 + R3 MED）：① JSON.stringify 既算字节又顺带拦循环/BigInt（抛错即拒）；
+  // ② depthExceeds 短路检查把深度卡在 MAX 内，递归自身有界；③ 此后 schema 已 ≤MAX 层，hasKey
+  // 这种全遍历手写递归才安全运行。三者顺序不能调换。
   let bytes: number;
   try {
     bytes = Buffer.byteLength(JSON.stringify(schema), 'utf8');
   } catch {
-    return { ok: false, error: 'schema 无法序列化（可能含循环引用）' };
+    return { ok: false, error: 'schema 无法序列化（含循环引用 / 嵌套过深 / BigInt 等）' };
   }
   if (bytes > SCRIPT_RUNTIME.MAX_SCHEMA_BYTES) {
     return { ok: false, error: `schema 过大（${bytes} 字节 > 上限 ${SCRIPT_RUNTIME.MAX_SCHEMA_BYTES}）` };
   }
-  // 走到这里 schema 已确认无循环（stringify 成功），手写递归安全。
+  if (depthExceeds(schema, SCRIPT_RUNTIME.MAX_SCHEMA_DEPTH)) {
+    return { ok: false, error: `schema 嵌套过深（> ${SCRIPT_RUNTIME.MAX_SCHEMA_DEPTH} 层）` };
+  }
+  // 走到这里 schema 已确认 ≤MAX 层深，hasKey 全遍历递归有界、安全。
   if (hasKey(schema, '$ref')) {
     return { ok: false, error: 'schema 禁止使用 $ref（forced 工具参数须自包含）' };
-  }
-  if (schemaDepth(schema, new WeakSet()) > SCRIPT_RUNTIME.MAX_SCHEMA_DEPTH) {
-    return { ok: false, error: `schema 嵌套过深（> ${SCRIPT_RUNTIME.MAX_SCHEMA_DEPTH} 层）` };
   }
   return { ok: true };
 }

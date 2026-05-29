@@ -75,6 +75,22 @@ describe('workflow tool', () => {
     if (!r.ok) expect(r.code).toBe('INVALID_ARGS');
   });
 
+  // ── P2-A: 主线程 fail-fast —— 语法错脚本不进 worker，归 INVALID_ARGS ──
+  it('rejects a syntactically invalid script with INVALID_ARGS and never starts a run', async () => {
+    const r = await run({ script: 'const x = ;' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('INVALID_ARGS');
+    expect(startRunMock).not.toHaveBeenCalled();
+  });
+
+  // ── P2-A: export 声明（meta 格式留 P3）被拒，不进 worker ──
+  it('rejects a script with an export declaration with INVALID_ARGS', async () => {
+    const r = await run({ script: 'export const meta = { name: "x" };\nreturn 1;' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('INVALID_ARGS');
+    expect(startRunMock).not.toHaveBeenCalled();
+  });
+
   it('NOT_INITIALIZED when no modelConfig', async () => {
     const r = await run({ script: 'return 1' }, makeCtx({ modelConfig: undefined }));
     expect(r.ok).toBe(false);

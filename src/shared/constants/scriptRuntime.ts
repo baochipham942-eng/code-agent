@@ -11,4 +11,6 @@ export const SCRIPT_RUNTIME = {
   WORKER_MAX_OLD_GEN_MB: 256,
   /** 单次 run 最多 agent() 调用数：失控脚本兜底（对齐 Claude Code Workflow 的 1000 上限）。 */
   MAX_AGENT_CALLS_PER_RUN: 1000,
+  /** 模型脚本源码体积上限（字节）：主线程在送进 worker 前 fail-fast，挡住异常大的注入。 */
+  MAX_SCRIPT_BYTES: 64 * 1024,
 } as const;

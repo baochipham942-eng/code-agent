@@ -21,6 +21,7 @@ import { inferenceViaAiSdk } from '../../model/adapters/aiSdkAdapter';
 import { SubagentExecutor, type SubagentConfig, type SubagentContext } from '../subagentExecutor';
 import { SCRIPT_RUNTIME } from '../../../shared/constants';
 import type { ConcurrencyGate } from './concurrencyGate';
+import { validateForcedSchema } from './scriptValidator';
 import type { AgentCallPayload, JsonSchema, PrimitiveResult, ScriptRunEvent } from './types';
 
 const STRUCTURED_OUTPUT_TOOL = 'structured_output';
@@ -126,6 +127,12 @@ async function runForcedStructured(
   modelConfig: ModelConfig,
   signal: AbortSignal,
 ): Promise<Record<string, unknown>> {
+  // 模型给的 schema 零校验直传会让任意值进 forced tool_choice inputSchema（deferred 审计点）。
+  // 先校验是对象型且带 properties 的 JSON Schema，不合法直接抛、不发起 inference。
+  const schemaCheck = validateForcedSchema(schema);
+  if (!schemaCheck.ok) {
+    throw new Error(`agent({schema}) 的 schema 非法: ${schemaCheck.error}`);
+  }
   const tool: ToolDefinition = {
     name: STRUCTURED_OUTPUT_TOOL,
     description: '返回符合给定 schema 的结构化结果。你必须调用此工具输出最终答案。',

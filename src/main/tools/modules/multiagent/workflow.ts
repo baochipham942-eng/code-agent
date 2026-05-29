@@ -30,6 +30,7 @@ import type { ToolResolver } from '../../dispatch/toolResolver';
 import type { SubagentContext } from '../../../agent/subagentExecutor';
 import { startRun, type ScriptRunHostDeps } from '../../../agent/scriptRuntime';
 import type { ScriptRunEvent } from '../../../agent/scriptRuntime';
+import { validateScript } from '../../../agent/scriptRuntime/scriptValidator';
 import { resolveSessionDefaultModelConfig } from '../../../services/core/sessionDefaults';
 import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
 import { workflowSchema } from './workflow.schema';
@@ -69,6 +70,12 @@ async function runWorkflow(
     const script = args.script;
     if (typeof script !== 'string' || script.trim().length === 0) {
       return { ok: false, error: 'workflow requires a non-empty `script` string', code: 'INVALID_ARGS' };
+    }
+    // 主线程 fail-fast：体积/语法/非法 import-export 在送进 worker 前就拦下（P2-A），
+    // 避免"裸 eval 才在 worker 里炸"的不透明失败。
+    const scriptCheck = validateScript(script);
+    if (!scriptCheck.ok) {
+      return { ok: false, error: `invalid workflow script: ${scriptCheck.error}`, code: 'INVALID_ARGS' };
     }
     const goal = typeof args.goal === 'string' ? args.goal : undefined;
 

@@ -198,7 +198,6 @@ describe('Integration Test Framework', () => {
     it('should provide session manager', () => {
       const session = mockServices.sessionManager.createSession({
         title: 'New Session',
-        generationId: 'gen4',
       });
 
       expect(session.title).toBe('New Session');
@@ -268,7 +267,7 @@ describe('Integration Test Framework', () => {
 
       expect(session.id).toMatch(/^session_/);
       expect(session.title).toBe('Custom Title');
-      expect(session.generationId).toBe('gen4');
+      expect(session.modelConfig.provider).toBe('openai');
     });
 
     it('createMockMessage should generate valid message', () => {

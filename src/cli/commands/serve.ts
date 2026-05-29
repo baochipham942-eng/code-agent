@@ -36,7 +36,6 @@ export const serveCommand = new Command('serve')
       await initializeCLIServices();
 
       terminalOutput.info(`项目目录: ${globalOpts?.project || process.cwd()}`);
-      terminalOutput.info(`代际: ${globalOpts?.gen || 'gen8'}`);
 
       // 创建 HTTP 服务器
       const server = http.createServer(async (req, res) => {
@@ -158,7 +157,6 @@ async function handleRun(
   // 创建 Agent
   const agent = await createCLIAgent({
     project: request.project || globalOpts?.project,
-    gen: request.generation || globalOpts?.gen,
     model: request.model || globalOpts?.model,
     provider: request.provider || globalOpts?.provider,
     json: true, // 内部使用 JSON 格式

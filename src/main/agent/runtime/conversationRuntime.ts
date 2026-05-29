@@ -774,7 +774,6 @@ export class ConversationRuntime {
     langfuse.startTrace(this.ctx.traceId, {
       sessionId: this.ctx.sessionId,
       userId: this.ctx.userId,
-      generationId: 'gen8',
       modelProvider: this.ctx.modelConfig.provider,
       modelName: this.ctx.modelConfig.model,
     }, userMessage);

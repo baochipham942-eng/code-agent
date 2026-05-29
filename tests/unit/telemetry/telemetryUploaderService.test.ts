@@ -52,7 +52,6 @@ const session: TelemetrySession = {
   id: 'session-1',
   userId: 'user-1',
   title: 'Session',
-  generationId: 'gen',
   modelProvider: 'openai',
   modelName: 'gpt-test',
   workingDirectory: '/tmp/project',

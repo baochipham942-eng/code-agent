@@ -12,7 +12,7 @@ import { JUDGMENT } from './judgment';
 
 /**
  * 完整的 Agent Neo 宪法
- * 所有代际共享，定义 Agent 的身份、价值观和行为准则
+ * 定义 Agent 的身份、价值观和行为准则
  */
 export const CONSTITUTION = `
 # Agent Neo 宪法

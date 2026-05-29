@@ -247,7 +247,7 @@ export const BUILT_IN_TEMPLATES: HookTemplate[] = [
     ],
   },
 
-  // Evolution Hooks (Gen8)
+  // Evolution Hooks
   {
     id: 'session-end-meta-learning',
     name: '会话结束元学习',

@@ -39,7 +39,6 @@ export class SystemPromptCache {
           hash TEXT PRIMARY KEY,
           content TEXT NOT NULL,
           tokens INTEGER,
-          generation_id TEXT,
           created_at INTEGER NOT NULL
         )
       `);
@@ -51,7 +50,7 @@ export class SystemPromptCache {
   /**
    * 存储系统提示词（去重：相同 hash 不重复写入）
    */
-  store(hash: string, content: string, tokens?: number, generationId?: string): void {
+  store(hash: string, content: string, tokens?: number): void {
     try {
       const db = this.getDb();
       if (!db) return;
@@ -61,9 +60,9 @@ export class SystemPromptCache {
         maxLength: 100_000,
       });
       db.prepare(`
-        INSERT OR IGNORE INTO system_prompt_cache (hash, content, tokens, generation_id, created_at)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(hash, safeContent, tokens ?? null, generationId ?? null, Date.now());
+        INSERT OR IGNORE INTO system_prompt_cache (hash, content, tokens, created_at)
+        VALUES (?, ?, ?, ?)
+      `).run(hash, safeContent, tokens ?? null, Date.now());
     } catch (error) {
       logger.debug('Failed to store system prompt:', { errorMessage: (error as Error).message });
     }
@@ -72,19 +71,18 @@ export class SystemPromptCache {
   /**
    * 按 hash 获取系统提示词
    */
-  get(hash: string): { content: string; tokens: number | null; generationId: string | null } | null {
+  get(hash: string): { content: string; tokens: number | null } | null {
     try {
       const db = this.getDb();
       if (!db) return null;
       const row = db.prepare(`
-        SELECT content, tokens, generation_id FROM system_prompt_cache WHERE hash = ?
-      `).get(hash) as { content: string; tokens: number | null; generation_id: string | null } | undefined;
+        SELECT content, tokens FROM system_prompt_cache WHERE hash = ?
+      `).get(hash) as { content: string; tokens: number | null } | undefined;
 
       if (!row) return null;
       return {
         content: row.content,
         tokens: row.tokens,
-        generationId: row.generation_id,
       };
     } catch (error) {
       logger.error('Failed to get system prompt:', error);

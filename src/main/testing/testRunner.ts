@@ -373,7 +373,6 @@ export class TestRunner {
       averageScore: avgScore,
       results,
       environment: {
-        generation: genInfo.name,
         model: genInfo.model,
         provider: genInfo.provider,
         workingDirectory: this.config.workingDirectory,

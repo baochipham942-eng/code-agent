@@ -53,26 +53,14 @@ vi.mock('../../src/main/services/cloud/cloudConfigService', () => ({
 }));
 
 import { AgentOrchestrator } from '../../src/main/agent/agentOrchestrator';
-import type { GenerationManager } from '../../src/main/generation/generationManager';
 import type { ConfigService } from '../../src/main/services/core/configService';
 
 describe('AgentOrchestrator', () => {
   let orchestrator: AgentOrchestrator;
-  let mockGenerationManager: GenerationManager;
   let mockConfigService: ConfigService;
   let mockOnEvent: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    // Mock GenerationManager
-    mockGenerationManager = {
-      getCurrentGeneration: vi.fn().mockReturnValue({
-        id: 'gen4',
-        name: 'Gen 4',
-        description: 'Test generation',
-        systemPrompt: 'You are a test agent',
-      }),
-    } as unknown as GenerationManager;
-
     // Mock ConfigService
     mockConfigService = {
       getSettings: vi.fn().mockReturnValue({
@@ -92,7 +80,6 @@ describe('AgentOrchestrator', () => {
     mockOnEvent = vi.fn();
 
     orchestrator = new AgentOrchestrator({
-      generationManager: mockGenerationManager,
       configService: mockConfigService,
       onEvent: mockOnEvent,
     });

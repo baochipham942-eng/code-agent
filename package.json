@@ -52,7 +52,6 @@
     "acceptance:deck:rebuild-fixture": "npx tsx scripts/acceptance/fixtures/deck/generate-fixture.ts",
     "acceptance:deck:live": "npx tsx scripts/acceptance/deck-generation.ts --live",
     "acceptance:deck:live:record": "npx tsx scripts/acceptance/deck-generation.ts --live --record",
-    "test:generations": "vitest run tests/generations",
     "test:all": "npm run test",
     "build:worker": "mkdir -p dist/main dist/cli && touch dist/main/worker-sandbox.cjs dist/cli/worker-sandbox.cjs",
     "build:node": "npm_config_cache=/tmp/code-agent-npm-cache npx tsx esbuild.config.ts",

@@ -504,7 +504,7 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   },
 
   // ============================================================================
-  // Gen 5: 记忆系统
+  // 记忆系统
   // ============================================================================
   {
     name: 'memory',
@@ -527,16 +527,8 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     aliases: ['learn', 'auto'],
     source: 'builtin',
   },
-  {
-    name: 'fork_session',
-    shortDescription: '分叉当前会话',
-    tags: ['memory'],
-    aliases: ['fork', 'branch'],
-    source: 'builtin',
-  },
-
   // ============================================================================
-  // Gen 7: 多代理
+  // 多代理
   // ============================================================================
   {
     name: 'SdkTask',

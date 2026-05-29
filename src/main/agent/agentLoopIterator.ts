@@ -248,7 +248,6 @@ export type EventBridge = (event: AgentEvent) => void;
  *
  * // 2. 构造 orchestrator 时使用 bridge
  * const orchestrator = new AgentOrchestrator({
- *   generationManager,
  *   configService,
  *   onEvent: (event) => {
  *     bridge(event);  // 转发给 iterator

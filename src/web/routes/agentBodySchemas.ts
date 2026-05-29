@@ -33,7 +33,6 @@ export const AgentRunBodySchema = z.object({
   sessionDir: z.string().optional(),
   model: z.string().optional(),
   provider: z.string().optional(),
-  generation: z.string().optional(),
   sessionId: z.string().optional(),
   clientMessageId: z.string().optional(),
   attachments: z.array(MessageAttachmentBodySchema).optional(),

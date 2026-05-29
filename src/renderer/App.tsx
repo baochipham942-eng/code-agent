@@ -191,7 +191,7 @@ export const App: React.FC = () => {
     },
   });
 
-  // Gen5+ Memory 事件监听
+  // Memory 事件监听
   useMemoryEvents({
     onMemoryLearned: (data) => {
       logger.info('Memory learning completed', {

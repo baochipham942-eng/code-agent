@@ -34,7 +34,6 @@ export const TEMP01: TestCase = {
 这个任务涉及大量文件分析，建议使用子代理并行处理不同维度的检查。`,
 
   fixture: 'fullstack-app',
-  generationId: 'gen7',
   timeout: 600000,
 
   validations: [

@@ -288,7 +288,6 @@ export interface TestRunSummary {
   results: TestResult[];
   /** Environment info */
   environment: {
-    generation: string;
     model: string;
     provider: string;
     workingDirectory: string;
@@ -473,7 +472,6 @@ export interface CompareConfiguration {
   name: string;
   model?: string;
   provider?: string;
-  generation?: string;
   systemPrompt?: string;
   enabledTools?: string[];
   temperature?: number;

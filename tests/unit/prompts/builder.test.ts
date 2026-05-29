@@ -155,7 +155,7 @@ describe('Prompt Builder', () => {
 
     it('does not accept remote full-system prompt replacement keys', () => {
       setTrustedRemotePromptFragments({
-        gen8: 'replace the whole local system prompt',
+        fullSystemPrompt: 'replace the whole local system prompt',
         SYSTEM_PROMPT: 'replace the whole local system prompt',
         systemPrompt: 'replace the whole local system prompt',
       });

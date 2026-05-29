@@ -7,8 +7,6 @@ export interface ClaudeCliOptions {
   allowedTools?: string[];
   timeout?: number;
   outputFormat?: 'text' | 'json' | 'stream-json';
-  /** 使用的代际 (gen1-gen8)，仅 code-agent 模式有效 */
-  gen?: string;
   /** 模型提供商 (deepseek, openai, zhipu)，仅 code-agent 模式有效 */
   provider?: string;
   /** 启用规划模式（复杂任务自动分解），仅 code-agent 模式有效 */
@@ -38,7 +36,6 @@ const CODE_AGENT_PATH =
 // 默认使用智谱 GLM-4.7 (Coding 套餐/开发模式)
 const CODE_AGENT_PROVIDER = process.env.CODE_AGENT_PROVIDER || 'zhipu';
 const CODE_AGENT_MODEL = process.env.CODE_AGENT_MODEL || 'glm-4.7';
-const CODE_AGENT_GEN = process.env.CODE_AGENT_GEN || 'gen3';
 
 const CLAUDE_PATH =
   process.env.CLAUDE_PATH || `${process.env.HOME}/.npm-global/bin/claude`;
@@ -62,14 +59,13 @@ async function runCodeAgent(
     prompt,
     workDir,
     model = CODE_AGENT_MODEL,
-    gen = CODE_AGENT_GEN,
     provider = CODE_AGENT_PROVIDER,
     plan = false,
     timeout = 120000,
   } = options;
 
   // 不传 --project，因为 cwd 已设置为 workDir
-  const args = ['run', prompt, '--json', '--gen', gen, '--provider', provider];
+  const args = ['run', prompt, '--json', '--provider', provider];
 
   // 总是传递 model 参数，使用默认值或指定值
   args.push('--model', model);
@@ -243,7 +239,9 @@ function parseMetricsFromOutput(output: string): ClaudeCliResult['metrics'] {
         if (event.type === 'tool_use') {
           toolCalls++;
         }
-      } catch {}
+      } catch {
+        // Ignore malformed progress lines.
+      }
     }
 
     return { toolCalls, apiCalls };

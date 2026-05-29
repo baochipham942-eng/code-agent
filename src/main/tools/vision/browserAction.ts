@@ -1,6 +1,6 @@
 // ============================================================================
 // Browser Action Tool - Comprehensive browser automation with AI vision
-// Available for all generations with tool calling capability
+// Available for tool-calling runtimes
 // Playwright-based browser control for testing and automation
 // 支持智谱 GLM-4.6V-Flash 视觉分析
 // ============================================================================

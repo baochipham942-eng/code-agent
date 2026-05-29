@@ -13,14 +13,14 @@ process.env.CODE_AGENT_CLI_MODE = 'true';
 
 // 1. Inject electron mock (must be FIRST, before any other imports)
 import electronMock from '../src/cli/electron-mock';
+import Module from 'module';
 
-const Module = require('module');
 const originalRequire = Module.prototype.require;
 Module.prototype.require = function(id: string) {
   if (id === 'electron') {
     return electronMock;
   }
-  return originalRequire.apply(this, arguments);
+  return originalRequire.call(this, id);
 };
 
 // 2. Now safe to import everything
@@ -28,7 +28,6 @@ import path from 'path';
 import fs from 'fs/promises';
 import * as testing from '../src/main/testing/index';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../src/shared/constants';
-const DEFAULT_GENERATION = 'gen8';
 
 // ============================================================================
 
@@ -72,7 +71,6 @@ function parseArgs() {
     ids: undefined as string[] | undefined,
     stopOnFailure: false,
     verbose: false,
-    generation: DEFAULT_GENERATION,
     provider: DEFAULT_PROVIDER,
     model: DEFAULT_MODEL,
     runs: 1,
@@ -85,7 +83,6 @@ function parseArgs() {
       case '--ids': result.ids = args[++i]?.split(',').map(t => t.trim()); break;
       case '--stop-on-failure': result.stopOnFailure = true; break;
       case '--verbose': case '-v': result.verbose = true; break;
-      case '--generation': result.generation = args[++i]; break;
       case '--provider': result.provider = args[++i]; break;
       case '--model': result.model = args[++i]; break;
       case '--runs': result.runs = parseInt(args[++i]) || 1; break;
@@ -111,7 +108,6 @@ async function main() {
 
   console.log('Configuration:');
   console.log(`  Mode:       🤖 Real Agent`);
-  console.log(`  Generation: ${args.generation}`);
   console.log(`  Provider:   ${args.provider}`);
   console.log(`  Model:      ${args.model}`);
   console.log(`  Runs:       ${args.runs}`);
@@ -137,7 +133,6 @@ async function main() {
 
   const agent = new testing.StandaloneAgentAdapter({
     workingDirectory: projectRoot,
-    generation: args.generation,
     modelConfig: { provider: args.provider, model: args.model, apiKey },
   });
 

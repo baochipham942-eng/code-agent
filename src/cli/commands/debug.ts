@@ -599,7 +599,6 @@ const replayCommand = new Command('replay')
 
     const agent = await createCLIAgent({
       project: globalOpts.project,
-      gen: globalOpts.gen,
       model: globalOpts.model,
       provider: globalOpts.provider,
       json: globalOpts.json,

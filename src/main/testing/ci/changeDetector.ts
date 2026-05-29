@@ -18,7 +18,6 @@ const TRIGGER_PATTERNS: TriggerPattern[] = [
   { glob: 'src/shared/constants.ts', scope: 'full' },
   // Smoke test triggers
   { glob: 'src/main/agent/agent*.ts', scope: 'smoke' },
-  { glob: 'src/main/agent/generation*.ts', scope: 'smoke' },
 ];
 
 const SKIP_PATTERNS = [

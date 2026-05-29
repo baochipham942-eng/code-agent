@@ -168,8 +168,6 @@ export async function initializeCLIServices(): Promise<void> {
     throw error;
   }
 
-  // 初始化代际管理器
-
   // 初始化工具执行器（CLI 模式下自动批准所有工具）
   toolExecutor = new ToolExecutor({
     requestPermission: async () => true, // CLI 模式自动批准
@@ -265,7 +263,6 @@ export function getSessionManager(): CLISessionManager {
  */
 export function buildCLIConfig(options: {
   project?: string;
-  gen?: string;
   model?: string;
   provider?: string;
   json?: boolean;

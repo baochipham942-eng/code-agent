@@ -1,14 +1,8 @@
 // ============================================================================
-// Gen7 Types - Unified exports for multi-agent system types
+// Multi-Agent Types - Unified exports for multi-agent system types
 // ============================================================================
 //
-// This file provides a single import point for all Gen7 multi-agent types.
-// Usage:
-//   import { BuiltInAgentRole, WorkflowTemplate, BUILT_IN_AGENTS } from '@shared/contract/gen7';
-//
-// Instead of importing from multiple files:
-//   import { BuiltInAgentRole } from '@shared/contract/builtInAgents';
-//   import { WorkflowTemplate } from '@shared/contract/workflow';
+// This file provides a single import point for multi-agent roles and workflows.
 
 // ============================================================================
 // Built-in Agent Types

@@ -1,5 +1,5 @@
 // ============================================================================
-// Workflow Types - Type-safe definitions for Gen7 multi-agent workflows
+// Workflow Types - Type-safe definitions for multi-agent workflows
 // ============================================================================
 
 

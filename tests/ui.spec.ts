@@ -40,7 +40,7 @@ test.describe('Agent Neo UI/UX Tests', () => {
       const cards = page.locator('button.rounded-2xl.bg-gradient-to-br');
       await expect(cards).toHaveCount(4);
 
-      // Verify card contents (Gen8 suggestions in Chinese)
+      // Verify card contents (suggestions in Chinese)
       await expect(page.getByText('做一个 3D 旋转相册')).toBeVisible();
       await expect(page.getByText('做一个代码编辑器')).toBeVisible();
       await expect(page.getByText('做一个流程图编辑器')).toBeVisible();

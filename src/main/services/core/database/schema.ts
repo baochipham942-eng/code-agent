@@ -376,7 +376,6 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       id TEXT PRIMARY KEY,
       user_id TEXT,
       title TEXT NOT NULL,
-      generation_id TEXT NOT NULL,
       model_provider TEXT NOT NULL,
       model_name TEXT NOT NULL,
       working_directory TEXT NOT NULL,

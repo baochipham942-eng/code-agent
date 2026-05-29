@@ -1,5 +1,5 @@
 // ============================================================================
-// Generation 8 - Claude Code Style (Compact) + Orchestrator Mode
+// Base tool guidance - Claude Code style (compact) + orchestrator mode
 // ============================================================================
 // 目标：~600 tokens
 // ============================================================================
@@ -7,7 +7,7 @@
 import { applyOverride } from '../registry';
 
 export const TOOLS_PROMPT = applyOverride(
-  { id: 'base.gen8.tools', category: '基础', name: '工具列表（Gen8）', description: '工具列表 + 使用规则（Claude Code 极简版）' },
+  { id: 'base.tools', category: '基础', name: '工具列表', description: '工具列表 + 使用规则（Claude Code 极简版）' },
   `
 ## Tools
 

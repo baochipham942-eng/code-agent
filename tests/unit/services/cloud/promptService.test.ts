@@ -76,7 +76,7 @@ describe('promptService control-plane trust', () => {
   it('rejects unsigned prompt registries and keeps builtin source', async () => {
     mockFetch.mockResolvedValueOnce(mockJsonResponse({
       version: 'unsigned-prompts',
-      prompts: { policyAddon: 'unsigned addon', gen8: 'remote prompt' },
+      prompts: { policyAddon: 'unsigned addon', fullSystemPrompt: 'remote prompt' },
     }));
     const { initPromptService, getPromptsInfo } = await loadPromptService();
     const { listTrustedRemotePromptFragments } = await import('../../../../src/main/prompts/remoteFragments');
@@ -102,7 +102,7 @@ describe('promptService control-plane trust', () => {
       prompts: {
         policyAddon: 'signed policy addon',
         publicSystemAddon: 'signed public addon',
-        gen8: 'remote full replacement must be ignored by prompt builder',
+        fullSystemPrompt: 'remote full replacement must be ignored by prompt builder',
       },
     };
     const { envelope, publicKeys } = buildSignedPromptRegistry(payload);
@@ -156,7 +156,7 @@ describe('promptService control-plane trust', () => {
   it('sends a bearer token when fetching prompt registry', async () => {
     mockFetch.mockResolvedValueOnce(mockJsonResponse({
       version: 'unsigned-dev-prompts',
-      prompts: { gen8: 'remote prompt' },
+      prompts: { fullSystemPrompt: 'remote prompt' },
     }));
     const { initPromptService } = await loadPromptService();
 

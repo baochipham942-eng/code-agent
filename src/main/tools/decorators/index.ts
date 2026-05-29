@@ -8,7 +8,7 @@
 // import { Tool, Param, Description, buildToolFromClass } from './decorators';
 //
 // @Description('Read the contents of a file from the filesystem')
-// @Tool('read_file', { generations: 'gen1+', permission: 'read' })
+// @Tool('read_file', { permission: 'read' })
 // @Param('file_path', { type: 'string', required: true, description: 'Path to file' })
 // @Param('encoding', { type: 'string', default: 'utf-8' })
 // class ReadFileTool implements ITool {

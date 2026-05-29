@@ -115,7 +115,7 @@ describe('vercel control-plane envelope', () => {
       CONTROL_PLANE_KEY_ID: 'env-key',
       CONTROL_PLANE_TTL_SECONDS: '3600',
     };
-    const payload = { version: 'prompts-test', prompts: { gen8: 'safe' } };
+    const payload = { version: 'prompts-test', prompts: { fullSystemPrompt: 'safe' } };
     const envelope = createControlPlaneEnvelopeFromEnv('prompt_registry', payload, env);
     const firstResponse = makeResponse();
     const previousPrivateKey = process.env.CONTROL_PLANE_PRIVATE_KEY;

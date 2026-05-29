@@ -1,6 +1,6 @@
 // ============================================================================
 // Evolution Persistence Service
-// Persists Gen8 self-evolution data (strategies, patterns) to local and cloud
+// Persists self-evolution data (strategies, patterns) to local and cloud
 // ============================================================================
 
 import { getDatabase } from '../core';

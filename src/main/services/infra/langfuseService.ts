@@ -24,13 +24,12 @@ export interface LangfuseConfig {
 export interface TraceMetadata {
   sessionId: string;
   userId?: string;
-  generationId: string; // Gen1-Gen8
   modelProvider: string;
   modelName: string;
   workingDirectory?: string;
 }
 
-export interface GenerationInput {
+export interface LlmCallInput {
   model: string;
   modelParameters?: Record<string, unknown>;
   input: unknown;
@@ -67,7 +66,7 @@ class LangfuseService implements Disposable {
   private disposed = false;
   private activeTraces: Map<string, LangfuseTraceClient> = new Map();
   private activeSpans: Map<string, LangfuseSpanClient> = new Map();
-  private activeGenerations: Map<string, LangfuseGenerationClient> = new Map();
+  private activeLlmCalls: Map<string, LangfuseGenerationClient> = new Map();
 
   // --------------------------------------------------------------------------
   // Initialization
@@ -157,17 +156,16 @@ class LangfuseService implements Disposable {
     try {
       const trace = this.client!.trace({
         id: traceId,
-        name: `Agent Run - ${metadata.generationId}`,
+        name: 'Agent Run',
         sessionId: metadata.sessionId,
         userId: metadata.userId,
         input: userMessage,
         metadata: {
-          generationId: metadata.generationId,
           modelProvider: metadata.modelProvider,
           modelName: metadata.modelName,
           workingDirectory: metadata.workingDirectory,
         },
-        tags: [metadata.generationId, metadata.modelProvider],
+        tags: [metadata.modelProvider],
       });
 
       this.activeTraces.set(traceId, trace);
@@ -292,7 +290,7 @@ class LangfuseService implements Disposable {
   }
 
   // --------------------------------------------------------------------------
-  // Generation Management (对应 LLM 调用)
+  // LLM call management (Langfuse generation events)
   // --------------------------------------------------------------------------
 
   /**
@@ -300,9 +298,9 @@ class LangfuseService implements Disposable {
    */
   startGeneration(
     traceId: string,
-    generationId: string,
+    llmCallId: string,
     name: string,
-    input: GenerationInput
+    input: LlmCallInput
   ): void {
     if (!this.isEnabled()) return;
 
@@ -317,7 +315,7 @@ class LangfuseService implements Disposable {
       const langfuseModelParams = input.modelParameters ? this.toJsonRecord(input.modelParameters) : undefined;
 
       const generation = trace.generation({
-        id: generationId,
+        id: llmCallId,
         name,
         model: input.model,
         modelParameters: langfuseModelParams,
@@ -325,8 +323,8 @@ class LangfuseService implements Disposable {
         startTime: input.startTime || new Date(),
       });
 
-      this.activeGenerations.set(generationId, generation);
-      logger.debug(` Generation started: ${name} (${generationId})`);
+      this.activeLlmCalls.set(llmCallId, generation);
+      logger.debug(` LLM call started: ${name} (${llmCallId})`);
     } catch (error) {
       logger.error(' Failed to start generation:', error);
     }
@@ -336,7 +334,7 @@ class LangfuseService implements Disposable {
    * 记录 LLM 调用结束
    */
   endGeneration(
-    generationId: string,
+    llmCallId: string,
     output: unknown,
     usage?: {
       promptTokens?: number;
@@ -348,7 +346,7 @@ class LangfuseService implements Disposable {
   ): void {
     if (!this.isEnabled()) return;
 
-    const generation = this.activeGenerations.get(generationId);
+    const generation = this.activeLlmCalls.get(llmCallId);
     if (generation) {
       try {
         // Note: end() doesn't accept endTime or level - use update() for level first if needed
@@ -364,8 +362,8 @@ class LangfuseService implements Disposable {
           } : undefined,
           statusMessage,
         });
-        this.activeGenerations.delete(generationId);
-        logger.debug(` Generation ended: ${generationId}`);
+        this.activeLlmCalls.delete(llmCallId);
+        logger.debug(` LLM call ended: ${llmCallId}`);
       } catch (error) {
         logger.error(' Failed to end generation:', error);
       }
@@ -373,13 +371,13 @@ class LangfuseService implements Disposable {
   }
 
   /**
-   * 在 Span 下记录 Generation (用于迭代中的 LLM 调用)
+   * 在 Span 下记录 LLM 调用
    */
   startGenerationInSpan(
     spanId: string,
-    generationId: string,
+    llmCallId: string,
     name: string,
-    input: GenerationInput
+    input: LlmCallInput
   ): void {
     if (!this.isEnabled()) return;
 
@@ -394,7 +392,7 @@ class LangfuseService implements Disposable {
       const langfuseModelParams = input.modelParameters ? this.toJsonRecord(input.modelParameters) : undefined;
 
       const generation = span.generation({
-        id: generationId,
+        id: llmCallId,
         name,
         model: input.model,
         modelParameters: langfuseModelParams,
@@ -402,8 +400,8 @@ class LangfuseService implements Disposable {
         startTime: input.startTime || new Date(),
       });
 
-      this.activeGenerations.set(generationId, generation);
-      logger.debug(` Generation in span started: ${name} (${generationId})`);
+      this.activeLlmCalls.set(llmCallId, generation);
+      logger.debug(` LLM call in span started: ${name} (${llmCallId})`);
     } catch (error) {
       logger.error(' Failed to start generation in span:', error);
     }
@@ -472,8 +470,8 @@ class LangfuseService implements Disposable {
    * 清理所有活跃的追踪对象 (用于应用关闭前)
    */
   async cleanupAll(): Promise<void> {
-    // 结束所有活跃的 generations
-    for (const [_id, gen] of this.activeGenerations) {
+    // 结束所有活跃的 LLM 调用
+    for (const [_id, gen] of this.activeLlmCalls) {
       try {
         gen.update({ level: 'WARNING', statusMessage: 'Cleanup: session ended' });
         gen.end({ output: 'Cleanup: session ended' });
@@ -481,7 +479,7 @@ class LangfuseService implements Disposable {
         // Ignore
       }
     }
-    this.activeGenerations.clear();
+    this.activeLlmCalls.clear();
 
     // 结束所有活跃的 spans
     for (const [_id, span] of this.activeSpans) {

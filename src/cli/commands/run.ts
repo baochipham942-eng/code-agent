@@ -120,7 +120,6 @@ export const runCommand = new Command('run')
 
       if (!isJson) {
         terminalOutput.info(`项目目录: ${globalOpts?.project || process.cwd()}`);
-        terminalOutput.info(`代际: ${globalOpts?.gen || 'gen8'}`);
         if (outputSchema) {
           terminalOutput.info(`结构化输出: 已启用 (最多重试 ${maxRetries} 次)`);
         }
@@ -132,7 +131,6 @@ export const runCommand = new Command('run')
       // 创建 Agent 并运行
       const agent = await createCLIAgent({
         project: globalOpts?.project,
-        gen: globalOpts?.gen,
         model: globalOpts?.model,
         provider: globalOpts?.provider,
         json: globalOpts?.json,

@@ -261,7 +261,6 @@ export class StandaloneAgentAdapter implements AgentInterface {
   }
 
   private workingDirectory: string;
-  private generation: string;
   private toolMode: 'all' | 'deferred';
   private currentSessionId?: string;
   private telemetrySessionActive = false;
@@ -279,7 +278,6 @@ export class StandaloneAgentAdapter implements AgentInterface {
 
   constructor(config: {
     workingDirectory: string;
-    generation: string;
     modelConfig: {
       provider: string;
       model: string;
@@ -290,7 +288,6 @@ export class StandaloneAgentAdapter implements AgentInterface {
     toolMode?: 'all' | 'deferred';
   }) {
     this.workingDirectory = config.workingDirectory;
-    this.generation = config.generation;
     this.modelConfig = config.modelConfig;
     this.inferenceOptions = config.inferenceOptions;
     this.maxIterations = config.maxIterations;
@@ -450,7 +447,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
 
   getAgentInfo(): { name: string; model: string; provider: string } {
     return {
-      name: this.generation,
+      name: 'agent-runtime',
       model: this.modelConfig.model,
       provider: this.modelConfig.provider,
     };

@@ -32,8 +32,6 @@ export interface PluginMetadata {
 export interface PluginManifest extends PluginMetadata {
   /** Entry point file (relative to plugin root) */
   main: string;
-  /** Plugin compatibility tags */
-  generations?: string[];
   /** Required permissions */
   permissions?: PluginPermission[];
   /**

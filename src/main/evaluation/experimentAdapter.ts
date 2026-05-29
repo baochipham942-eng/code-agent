@@ -332,7 +332,6 @@ export class ExperimentAdapter {
       cases,
       gitCommit: summary.gitCommit,
       config: {
-        generation: summary.environment?.generation,
         workingDirectory: summary.environment?.workingDirectory,
       },
       metadata: {

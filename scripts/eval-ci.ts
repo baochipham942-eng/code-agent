@@ -293,8 +293,6 @@ function createAgent(opts: {
   const resolvedModel = opts.model
     || process.env.AUTO_TEST_MODEL
     || DEFAULT_MODEL;
-  const generation = process.env.AUTO_TEST_GENERATION || 'gen8';
-
   console.log(chalk.cyan(`  Mode:     real`));
   console.log(chalk.cyan(`  Provider: ${resolvedProvider}`));
   console.log(chalk.cyan(`  Model:    ${resolvedModel}`));
@@ -302,7 +300,6 @@ function createAgent(opts: {
 
   return new StandaloneAgentAdapter({
     workingDirectory: opts.workingDir,
-    generation,
     modelConfig: {
       provider: resolvedProvider,
       model: resolvedModel,

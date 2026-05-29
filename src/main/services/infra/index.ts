@@ -24,7 +24,7 @@ export {
   initLangfuse,
   type LangfuseConfig,
   type TraceMetadata,
-  type GenerationInput,
+  type LlmCallInput,
   type SpanInput,
 } from './langfuseService';
 

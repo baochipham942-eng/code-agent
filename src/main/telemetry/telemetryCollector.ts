@@ -272,7 +272,6 @@ export class TelemetryCollector {
       id: sessionId,
       userId: config.userId ?? getAuthService().getCurrentUser()?.id ?? null,
       title: config.title || 'Untitled',
-      generationId: 'gen8',
       modelProvider: config.modelProvider,
       modelName: config.modelName,
       workingDirectory: config.workingDirectory,

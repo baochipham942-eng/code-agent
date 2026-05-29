@@ -40,8 +40,6 @@ MOONSHOT_LEGACY="moonshot-v1-8k"
 FORBIDDEN_FALLBACKS=(
   "|| 'deepseek'"
   "|| 'deepseek-chat'"
-  "|| 'gen3'"
-  "|| 'gen4'"
   "|| 'moonshot'"
   "|| 'kimi-k2.5'"
 )

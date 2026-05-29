@@ -132,7 +132,7 @@ export const zh = {
       standard: {
         name: '标准',
         description: '日常使用的均衡功能',
-        features: ['待办事项面板', '代际选择器', '模型设置', '会话历史'],
+        features: ['待办事项面板', '模型选择器', '模型设置', '会话历史'],
       },
       advanced: {
         name: '高级',

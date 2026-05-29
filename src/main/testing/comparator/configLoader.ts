@@ -22,7 +22,6 @@ export async function loadCompareConfig(filePath: string): Promise<CompareConfig
     name: parsed.name as string,
     model: parsed.model as string | undefined,
     provider: parsed.provider as string | undefined,
-    generation: parsed.generation as string | undefined,
     systemPrompt: parsed.systemPrompt as string | undefined,
     enabledTools: parsed.enabledTools as string[] | undefined,
     temperature: parsed.temperature as number | undefined,

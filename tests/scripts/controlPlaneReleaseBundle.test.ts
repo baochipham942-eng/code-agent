@@ -168,7 +168,7 @@ describe('control-plane release bundle', () => {
     writeSource(source, {
       promptKeys: {
         policyAddon: 'safe',
-        gen8: 'dangerous replacement',
+        fullSystemPrompt: 'dangerous replacement',
       },
     });
 
@@ -179,7 +179,7 @@ describe('control-plane release bundle', () => {
       channel: 'stable',
       keyId: 'production-2026-05-17',
       now: new Date('2026-05-17T00:00:00.000Z'),
-    })).toThrow(/unsupported prompt keys: gen8/);
+    })).toThrow(/unsupported prompt keys: fullSystemPrompt/);
   });
 
   it('rejects duplicate capability ids', () => {

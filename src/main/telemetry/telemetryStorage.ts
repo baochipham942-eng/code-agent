@@ -166,15 +166,15 @@ export class TelemetryStorage {
         'insert_session',
         `
           INSERT OR REPLACE INTO telemetry_sessions (
-            id, user_id, title, generation_id, model_provider, model_name,
+            id, user_id, title, model_provider, model_name,
             working_directory, start_time, end_time, duration_ms,
             turn_count, total_input_tokens, total_output_tokens, total_tokens,
             estimated_cost, total_tool_calls, tool_success_rate,
             total_errors, session_type, status
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       );
-      stmt.run(session.id, session.userId ?? null, guardTelemetryText(session.title, 2_000), session.generationId, session.modelProvider, session.modelName, guardTelemetryText(session.workingDirectory, 4_000), session.startTime, session.endTime ?? null, session.durationMs ?? null, session.turnCount, session.totalInputTokens, session.totalOutputTokens, session.totalTokens, session.estimatedCost, session.totalToolCalls, session.toolSuccessRate, session.totalErrors, session.sessionType ?? null, session.status);
+      stmt.run(session.id, session.userId ?? null, guardTelemetryText(session.title, 2_000), session.modelProvider, session.modelName, guardTelemetryText(session.workingDirectory, 4_000), session.startTime, session.endTime ?? null, session.durationMs ?? null, session.turnCount, session.totalInputTokens, session.totalOutputTokens, session.totalTokens, session.estimatedCost, session.totalToolCalls, session.toolSuccessRate, session.totalErrors, session.sessionType ?? null, session.status);
     } catch (error) {
       logger.error('Failed to insert telemetry session:', error);
     }
@@ -875,7 +875,6 @@ export class TelemetryStorage {
       id: row.id as string,
       userId: row.user_id == null ? null : String(row.user_id),
       title: row.title as string,
-      generationId: row.generation_id as string,
       modelProvider: row.model_provider as string,
       modelName: row.model_name as string,
       workingDirectory: row.working_directory as string,

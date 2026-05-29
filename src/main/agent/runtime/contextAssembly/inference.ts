@@ -1,3 +1,4 @@
+ 
 // ContextAssembly - Inference orchestration and model fallback.
 import type { AgentEvent, ToolCall, ToolDefinition } from '../../../../shared/contract';
 import type { ModelResponse } from '../../../agent/loopTypes';
@@ -530,7 +531,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
   });
 
   const langfuse = getLangfuseService();
-  const generationId = `gen-${ctx.runtime.traceId}-${Date.now()}`;
+  const llmCallId = `llm-${ctx.runtime.traceId}-${Date.now()}`;
   const startTime = new Date();
 
   const inputSummary = modelMessages.map(m => ({
@@ -539,7 +540,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     contentPreview: typeof m.content === 'string' ? m.content.substring(0, 200) : '[multimodal]',
   }));
 
-  langfuse.startGenerationInSpan(ctx.runtime.currentIterationSpanId, generationId, `LLM: ${ctx.runtime.modelConfig.model}`, {
+  langfuse.startGenerationInSpan(ctx.runtime.currentIterationSpanId, llmCallId, `LLM: ${ctx.runtime.modelConfig.model}`, {
     model: ctx.runtime.modelConfig.model,
     modelParameters: {
       provider: ctx.runtime.modelConfig.provider,
@@ -747,7 +748,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       logger.info('[AgentLoop] Artifact validation passed; requesting goal completion without another model call', {
         targetFile,
       });
-      langfuse.endGeneration(generationId, {
+      langfuse.endGeneration(llmCallId, {
         type: response.type,
         contentLength: 0,
         toolCallCount: response.toolCalls?.length || 0,
@@ -886,7 +887,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     ]);
     ctx.recordTokenUsage(estimatedInputTokens, estimatedOutputTokens);
 
-    langfuse.endGeneration(generationId, {
+    langfuse.endGeneration(llmCallId, {
       type: response.type,
       contentLength: response.content?.length || 0,
       toolCallCount: response.toolCalls?.length || 0,
@@ -905,7 +906,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     logger.error('[AgentLoop] Model inference error:', error);
 
     langfuse.endGeneration(
-      generationId,
+      llmCallId,
       { error: error instanceof Error ? error.message : 'Unknown error' },
       undefined,
       'ERROR',

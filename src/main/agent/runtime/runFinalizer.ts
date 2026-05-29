@@ -310,7 +310,7 @@ export class RunFinalizer {
     // === Mechanism Stats (observability) ===
     logger.info(`[AgentLoop] === Mechanism Stats ===`);
 
-    // Session end learning (Gen5+)
+    // Session end learning
     // genNum already declared above in dynamic mode detection
     if (genNum >= 5 && this.ctx.messages.length > 0) {
       this.learningPipeline.runSessionEndLearning().catch((err) => {

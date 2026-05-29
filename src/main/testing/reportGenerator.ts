@@ -46,7 +46,6 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
   lines.push('');
   lines.push('| 配置 | 值 |');
   lines.push('|------|-----|');
-  lines.push(`| 代际 | ${summary.environment.generation} |`);
   lines.push(`| 模型 | ${summary.environment.model} |`);
   lines.push(`| 提供商 | ${summary.environment.provider} |`);
   lines.push(`| 工作目录 | \`${summary.environment.workingDirectory}\` |`);

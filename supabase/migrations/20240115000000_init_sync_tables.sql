@@ -67,7 +67,6 @@ CREATE TABLE IF NOT EXISTS public.sessions (
   id TEXT PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
-  generation_id TEXT NOT NULL,
   model_provider TEXT,
   model_name TEXT,
   working_directory TEXT,

@@ -34,7 +34,6 @@ export function getAutoTestConfig(): {
   filterIds?: string[];
   stopOnFailure: boolean;
   verbose: boolean;
-  generation: string;
   provider: string;
   model: string;
 } {
@@ -46,7 +45,6 @@ export function getAutoTestConfig(): {
     filterIds: process.env.AUTO_TEST_IDS?.split(',').map(t => t.trim()),
     stopOnFailure: process.env.AUTO_TEST_STOP_ON_FAILURE === 'true',
     verbose: process.env.AUTO_TEST_VERBOSE === 'true',
-    generation: process.env.AUTO_TEST_GENERATION || 'gen8',
     provider: process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER,
     model: process.env.AUTO_TEST_MODEL || DEFAULT_MODEL,
   };
@@ -102,7 +100,6 @@ export async function runAutoTests(
   // Create agent adapter
   const agent = new StandaloneAgentAdapter({
     workingDirectory,
-    generation: config.generation,
     modelConfig: {
       provider: config.provider,
       model: config.model,

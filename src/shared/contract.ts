@@ -50,14 +50,14 @@ export * from './contract/checkpoint';
 // Skill Repository types
 export * from './contract/skillRepository';
 
-// Built-in Agent types (Gen7+)
+// Built-in Agent types
 export * from './contract/builtInAgents';
 
-// Workflow types (Gen7+)
+// Workflow types
 export * from './contract/workflow';
 
-// Gen7 unified exports
-export * from './contract/gen7';
+// Multi-agent unified exports
+export * from './contract/multiAgent';
 
 // Lab types (实验室)
 export * from './contract/lab';

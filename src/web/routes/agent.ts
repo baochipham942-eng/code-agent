@@ -285,7 +285,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
 
     const body = parsedBody.data;
-    const { prompt, project, sessionDir, model, provider, generation } = body;
+    const { prompt, project, sessionDir, model, provider } = body;
     const clientMessageId = body.clientMessageId?.trim()
       ? body.clientMessageId.trim()
       : undefined;
@@ -475,7 +475,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       const agent = await createCLIAgent({
         project: resolvedProject,
-        gen: generation,
         model: effectiveModel,
         provider: effectiveProvider,
         json: true,

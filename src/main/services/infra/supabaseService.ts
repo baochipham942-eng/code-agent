@@ -88,7 +88,6 @@ export interface Database {
           id: string;
           user_id: string;
           title: string;
-          generation_id: string | null;
           model_provider: string | null;
           model_name: string | null;
           working_directory: string | null;
@@ -101,7 +100,6 @@ export interface Database {
           id: string;
           user_id: string;
           title: string;
-          generation_id?: string | null;
           model_provider?: string | null;
           model_name?: string | null;
           working_directory?: string | null;
@@ -112,7 +110,6 @@ export interface Database {
         };
         Update: {
           title?: string;
-          generation_id?: string;
           model_provider?: string | null;
           model_name?: string | null;
           working_directory?: string | null;

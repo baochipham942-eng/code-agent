@@ -212,7 +212,6 @@ export interface TelemetrySession {
   id: string;
   userId?: string | null;
   title: string;
-  generationId: string;
   modelProvider: string;
   modelName: string;
   workingDirectory: string;

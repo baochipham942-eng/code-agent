@@ -187,7 +187,7 @@ const ATTACHMENT_HANDLING_RULES = `
 - 可以使用 offset 和 limit 参数分段读取超大文件
 `;
 
-// (gen8 prompt building logic removed — system prompt now comes from src/main/prompts/builder)
+// Prompt building logic lives in src/main/prompts/builder.
 
 // ----------------------------------------------------------------------------
 // Skills

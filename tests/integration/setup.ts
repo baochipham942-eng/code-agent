@@ -450,7 +450,6 @@ export function createMockMessage(overrides: Partial<{
 export function createMockSession(overrides: Partial<{
   id: string;
   title: string;
-  generationId: string;
   modelConfig: { provider: string; model: string };
   workingDirectory?: string;
   createdAt: number;
@@ -460,7 +459,6 @@ export function createMockSession(overrides: Partial<{
   return {
     id: `session_${now}_${Math.random().toString(36).slice(2)}`,
     title: 'Test Session',
-    generationId: 'gen4',
     modelConfig: {
       provider: 'openai',
       model: 'gpt-4',

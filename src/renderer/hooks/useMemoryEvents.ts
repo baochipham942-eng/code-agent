@@ -1,5 +1,5 @@
 // ============================================================================
-// useMemoryEvents Hook - Gen5+ Memory 事件监听
+// useMemoryEvents Hook - Memory 事件监听
 // ============================================================================
 
 import { useEffect, useCallback } from 'react';

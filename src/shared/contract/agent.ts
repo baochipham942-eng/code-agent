@@ -284,7 +284,7 @@ export type AgentEvent =
   // 长时任务进度追踪（P0 新增）
   | { type: 'task_progress'; data: TaskProgressData & { parentToolUseId?: string } }
   | { type: 'task_complete'; data: TaskCompleteData & { parentToolUseId?: string } }
-  // Gen5+ Memory 学习事件
+  // Memory 学习事件
   | { type: 'memory_learned'; data: MemoryLearnedData }
   // Deep Research 事件
   | { type: 'research_mode_started'; data: ResearchModeStartedData }

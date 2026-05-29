@@ -466,7 +466,6 @@ class SyncService implements Disposable {
           id: s.id,
           user_id: userId,
           title: s.title,
-          generation_id: null, // deprecated field, kept for cloud schema compatibility
           model_provider: s.modelConfig.provider,
           model_name: s.modelConfig.model,
           working_directory: s.workingDirectory || null,

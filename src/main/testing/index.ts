@@ -19,7 +19,6 @@
 //   AUTO_TEST_IDS=test1,test2          Filter by test IDs
 //   AUTO_TEST_STOP_ON_FAILURE=true     Stop on first failure
 //   AUTO_TEST_VERBOSE=true             Verbose output
-//   AUTO_TEST_GENERATION=gen4          Generation to test
 //   AUTO_TEST_PROVIDER=deepseek        Model provider
 //   AUTO_TEST_MODEL=deepseek-chat      Model name
 //

@@ -172,10 +172,20 @@ function recountAgents(
  * 纯函数 reducer：把单个 ScriptRunEvent 折叠进快照，返回新快照（不就地改入参）。
  * 多 run 隔离由调用方按 runId 分桶（每个 run 一个快照），本函数只管单 run。
  */
+/** 活动事件（非 run:start 自身、非 run:done/error 终态）——出现即说明 run 已在跑。 */
+const ACTIVITY_TYPES: ReadonlySet<ScriptRunEventType> = new Set([
+  'run:phase', 'run:log', 'agent:start', 'agent:done', 'agent:error',
+]);
+
 export function applyScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEvent): ScriptRunSnapshot {
-  const next = reduceScriptRunEvent(prev, event);
-  // sessionId latch（Codex R2 HIGH）：任意事件都补 sessionId，不止 run:start——run:start 可能被
-  // best-effort emit 丢掉 / renderer 晚订阅，否则 snapshot.sessionId 永远 undefined → 会话隔离失效。
+  let next = reduceScriptRunEvent(prev, event);
+  // run 状态提升（Codex R3 HIGH）：run:start 可能被 best-effort emit 丢掉 / renderer 晚订阅，
+  // 此时首个活动事件要把 pending 提升为 running 并补 startedAt，否则 activeSnapshot 的 running 过滤
+  // 会把这个 run 滤掉 → 进度树永远不出来。
+  if (next.status === 'pending' && next !== prev && ACTIVITY_TYPES.has(event.type)) {
+    next = { ...next, status: 'running', startedAt: next.startedAt ?? event.ts };
+  }
+  // sessionId latch（Codex R2 HIGH）：任意事件都补 sessionId，不止 run:start——同样防 run:start 丢失。
   if (event.sessionId && !next.sessionId) {
     return next === prev ? { ...prev, sessionId: event.sessionId } : { ...next, sessionId: event.sessionId };
   }
@@ -288,9 +298,18 @@ function upsertStartAgent(
   const idx = agents.findIndex((a) => a.id === next.id);
   if (idx < 0) return [...agents, next];
   const existing = agents[idx];
-  const merged = TERMINAL_STATUSES.has(existing.status)
-    ? { ...next, ...existing } // 终态优先：existing 覆盖 next，保留 status/finishedAt/result/error
-    : { ...existing, ...next };
+  let merged: ScriptRunAgentSnapshot;
+  if (TERMINAL_STATUSES.has(existing.status)) {
+    // 终态已落（agent:done/error 先到）：晚到的 agent:start 元数据（label/phase/prompt/provider/
+    // model/hasSchema/startedAt）应纠正 upsertTerminalAgent 造的占位（如 label='agent'），但
+    // 【终态语义字段】status/finishedAt/resultPreview/error 必须保 existing（Codex R3 MED：merge 粒度太粗）。
+    merged = { ...existing, ...next, status: existing.status };
+    if (existing.finishedAt !== undefined) merged.finishedAt = existing.finishedAt;
+    if (existing.resultPreview !== undefined) merged.resultPreview = existing.resultPreview;
+    if (existing.error !== undefined) merged.error = existing.error;
+  } else {
+    merged = { ...existing, ...next };
+  }
   return agents.map((a, i) => (i === idx ? merged : a));
 }
 

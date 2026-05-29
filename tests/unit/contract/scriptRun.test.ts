@@ -196,6 +196,35 @@ describe('scriptRun view-model: applyScriptRunEvent', () => {
     expect(snap.sessionId).toBe('sess-A');
   });
 
+  // ── Codex Round3 HIGH：run:start 丢失时，首个活动事件要把 run 提升为 running（否则进度树不出来）──
+  it('run:start 丢失时 agent:start 把 run 提升为 running 并补 startedAt', () => {
+    const snap = fold('run-1', [ev('agent:start', 1100, { agentId: 'a1', label: 'x' })]);
+    expect(snap.status).toBe('running');
+    expect(snap.startedAt).toBe(1100);
+  });
+
+  it('run:phase 在 run:start 缺失时也提升 running', () => {
+    const snap = fold('run-1', [ev('run:phase', 1100, { title: 'p' })]);
+    expect(snap.status).toBe('running');
+  });
+
+  it('run:done/run:error 不被活动提升逻辑误伤（终态优先）', () => {
+    const done = fold('run-1', [ev('run:done', 2000, { result: 1 })]);
+    expect(done.status).toBe('completed');
+  });
+
+  // ── Codex Round3 MED：终态先到时，晚到 agent:start 的真实 label 应纠正占位 'agent' ──
+  it('agent:done(无 label) 后 agent:start(真 label) 纠正占位 label，状态仍 done', () => {
+    const snap = fold('run-1', [
+      ev('agent:done', 1500, { agentId: 'a1' }),
+      ev('agent:start', 1600, { agentId: 'a1', label: 'find', promptPreview: '搜', model: 'm' }),
+    ]);
+    expect(snap.agents[0].status).toBe('done');
+    expect(snap.agents[0].label).toBe('find'); // 占位 'agent' 被真实 label 纠正
+    expect(snap.agents[0].promptPreview).toBe('搜');
+    expect(snap.agents[0].model).toBe('m');
+  });
+
   // ── Codex Round2 MED：agent:start 晚于 agent:done 到达时不得把状态降级回 running ──
   it('agent:start 晚到（终态已落）时单调更新，不降级 done→running', () => {
     const snap = fold('run-1', [

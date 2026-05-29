@@ -16,6 +16,7 @@ import {
   emptyScriptRunSnapshot,
   type ScriptRunEvent,
   type ScriptRunSnapshot,
+  type RunStatus,
   type WorkflowLaunchEvent,
   type WorkflowLaunchRequest,
 } from '@shared/contract/scriptRun';
@@ -54,6 +55,37 @@ function visibleInSession(itemSessionId: string | undefined, currentSessionId: s
   return itemSessionId === currentSessionId;
 }
 
+// 容量上限（Codex R3 MED）：renderer store 跨会话常驻，长跑会无限积。裁剪已完结的 run / 已决的审批。
+const MAX_RUNS = 50;
+const MAX_RESOLVED_LAUNCH = 20;
+const TERMINAL_RUN: ReadonlySet<RunStatus> = new Set<RunStatus>(['completed', 'failed', 'cancelled']);
+
+/** 超上限时按插入序裁掉最旧的【已完结】run，绝不裁 activeRunId / 仍在跑的 run。 */
+function pruneRuns(runs: Record<string, ScriptRunSnapshot>, activeRunId?: string): Record<string, ScriptRunSnapshot> {
+  const ids = Object.keys(runs);
+  if (ids.length <= MAX_RUNS) return runs;
+  const dropCount = ids.length - MAX_RUNS;
+  const next = { ...runs };
+  let dropped = 0;
+  for (const id of ids) { // Object.keys 保插入序，最旧在前
+    if (dropped >= dropCount) break;
+    if (id === activeRunId) continue;
+    if (TERMINAL_RUN.has(next[id].status)) { delete next[id]; dropped++; }
+  }
+  return next;
+}
+
+/** 保留所有 pending + 最近 MAX_RESOLVED_LAUNCH 条已决请求。 */
+function pruneLaunchRequests(list: WorkflowLaunchRequest[]): WorkflowLaunchRequest[] {
+  const pending = list.filter((r) => r.status === 'pending');
+  const resolved = list.filter((r) => r.status !== 'pending');
+  if (resolved.length <= MAX_RESOLVED_LAUNCH) return list;
+  const keptResolved = resolved.slice(resolved.length - MAX_RESOLVED_LAUNCH);
+  // 维持原相对顺序：按原 list 过滤出 pending ∪ keptResolved。
+  const keepSet = new Set([...pending, ...keptResolved]);
+  return list.filter((r) => keepSet.has(r));
+}
+
 export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   runs: {},
   activeRunId: undefined,
@@ -65,10 +97,11 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     const { runs, activeRunId } = get();
     const prev = runs[event.runId] ?? emptyScriptRunSnapshot(event.runId);
     const next = applyScriptRunEvent(prev, event);
+    // run:start 把 activeRunId 切到最新 run；其余事件不动选中项。
+    const nextActive = event.type === 'run:start' ? event.runId : activeRunId;
     set({
-      runs: { ...runs, [event.runId]: next },
-      // run:start 把 activeRunId 切到最新 run；其余事件不动选中项。
-      activeRunId: event.type === 'run:start' ? event.runId : activeRunId,
+      runs: pruneRuns({ ...runs, [event.runId]: next }, nextActive),
+      activeRunId: nextActive,
     });
   },
 
@@ -79,7 +112,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     const idx = launchRequests.findIndex((r) => r.id === req.id);
     // upsert by id：requested 追加、approved/rejected 更新既有（不重复追加）。
     const next = idx < 0 ? [...launchRequests, req] : launchRequests.map((r, i) => (i === idx ? req : r));
-    set({ launchRequests: next });
+    set({ launchRequests: pruneLaunchRequests(next) });
   },
 
   pendingLaunchRequest: (currentSessionId) => {

@@ -145,4 +145,33 @@ describe('workflowStore 会话隔离（Codex Round1 HIGH#1）', () => {
     expect(useWorkflowStore.getState().activeSnapshot('sess-B')).toBeUndefined();
     expect(useWorkflowStore.getState().activeSnapshot('sess-A')?.runId).toBe('rA');
   });
+
+  // ── Codex Round3 HIGH：run:start 丢失，只来 agent:start，activeSnapshot 仍要能选中 ──
+  it('run:start 丢失时只凭 agent:start 也能被 activeSnapshot 选中（已提升 running）', () => {
+    useWorkflowStore.getState().handleEvent(
+      { runId: 'rA', type: 'agent:start', ts: 1, sessionId: 'sess-A', data: { agentId: 'a1', label: 'x' } } as ScriptRunEvent,
+    );
+    expect(useWorkflowStore.getState().activeSnapshot('sess-A')?.runId).toBe('rA');
+  });
+});
+
+describe('workflowStore 容量上限（Codex Round3 MED）', () => {
+  it('完成的 run 超过上限时被裁剪，不无限累积', () => {
+    const store = useWorkflowStore.getState();
+    for (let i = 0; i < 80; i++) {
+      const id = `r${i}`;
+      store.handleEvent({ runId: id, type: 'run:start', ts: i, sessionId: 's', data: {} } as ScriptRunEvent);
+      store.handleEvent({ runId: id, type: 'run:done', ts: i + 1, sessionId: 's', data: { result: 1 } } as ScriptRunEvent);
+    }
+    expect(Object.keys(useWorkflowStore.getState().runs).length).toBeLessThanOrEqual(50);
+  });
+
+  it('已决审批请求超过上限时被裁剪', () => {
+    const store = useWorkflowStore.getState();
+    for (let i = 0; i < 40; i++) {
+      store.handleLaunchEvent({ type: 'requested', request: launchReq(`wf${i}`) });
+      store.handleLaunchEvent({ type: 'approved', request: launchReq(`wf${i}`, 'approved') });
+    }
+    expect(useWorkflowStore.getState().launchRequests.length).toBeLessThanOrEqual(20);
+  });
 });

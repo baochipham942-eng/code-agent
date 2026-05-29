@@ -42,8 +42,9 @@ import { registerBackgroundHandlers } from './background.ipc';
 import { registerBackgroundTaskLedgerHandlers } from './backgroundTaskLedger.ipc';
 import { registerDiffHandlers } from './diff.ipc';
 import { registerSwarmHandlers } from './swarm.ipc';
-// 仅为副作用 import：模块加载即自装 workflow EventBus → renderer 专用 bridge（P3a 进度树）。
-import './workflow.ipc';
+// 模块加载即自装 workflow EventBus → renderer 专用 bridge（P3a 进度树）；
+// registerWorkflowHandlers 注册启动审批 approve/reject 回传（P3b）。
+import { registerWorkflowHandlers } from './workflow.ipc';
 import { registerTaskListHandlers } from '../agent/taskList/taskList.ipc';
 import { registerTelemetryHandlers } from './telemetry.ipc';
 import { registerCronHandlers } from './cron.ipc';
@@ -188,6 +189,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Swarm handlers (Agent Teams P2P 通信)
   registerSwarmHandlers(getAppService);
+
+  // dynamic-workflow 启动审批 approve/reject 回传（P3b）
+  registerWorkflowHandlers();
 
   // TaskList handlers (任务列表可视化与管理)
   registerTaskListHandlers();

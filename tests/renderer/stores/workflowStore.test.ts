@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useWorkflowStore } from '@renderer/stores/workflowStore';
-import type { ScriptRunEvent } from '@shared/contract/scriptRun';
+import type { ScriptRunEvent, WorkflowLaunchRequest } from '@shared/contract/scriptRun';
 
 const ev = (runId: string, type: ScriptRunEvent['type'], ts: number, data?: Record<string, unknown>): ScriptRunEvent => ({
   runId,
@@ -64,5 +64,52 @@ describe('workflowStore', () => {
     const store = useWorkflowStore.getState();
     store.handleEvent({ type: 'run:start', ts: 1, data: {} } as ScriptRunEvent);
     expect(Object.keys(useWorkflowStore.getState().runs)).toHaveLength(0);
+  });
+});
+
+const launchReq = (id: string, status: WorkflowLaunchRequest['status'] = 'pending'): WorkflowLaunchRequest => ({
+  id,
+  status,
+  requestedAt: 1,
+  goal: 'g',
+  phases: ['p'],
+  estimatedAgentCalls: 3,
+  fanoutSites: 1,
+  writeHint: false,
+  dimensions: { cost: 'c', network: 'n', contextLeak: 'l', background: 'b' },
+});
+
+describe('workflowStore 启动审批（P3b）', () => {
+  it('requested 事件加入 launchRequests', () => {
+    useWorkflowStore.getState().handleLaunchEvent({ type: 'requested', request: launchReq('wf-1') });
+    const reqs = useWorkflowStore.getState().launchRequests;
+    expect(reqs).toHaveLength(1);
+    expect(reqs[0].id).toBe('wf-1');
+    expect(reqs[0].status).toBe('pending');
+  });
+
+  it('approved/rejected 事件按 id 更新状态（不重复追加）', () => {
+    const store = useWorkflowStore.getState();
+    store.handleLaunchEvent({ type: 'requested', request: launchReq('wf-1') });
+    store.handleLaunchEvent({ type: 'approved', request: launchReq('wf-1', 'approved') });
+    const reqs = useWorkflowStore.getState().launchRequests;
+    expect(reqs).toHaveLength(1);
+    expect(reqs[0].status).toBe('approved');
+  });
+
+  it('pendingLaunchRequest 只返回 pending 的最新一条', () => {
+    const store = useWorkflowStore.getState();
+    store.handleLaunchEvent({ type: 'requested', request: launchReq('wf-1') });
+    store.handleLaunchEvent({ type: 'approved', request: launchReq('wf-1', 'approved') });
+    expect(useWorkflowStore.getState().pendingLaunchRequest()).toBeUndefined();
+    store.handleLaunchEvent({ type: 'requested', request: launchReq('wf-2') });
+    expect(useWorkflowStore.getState().pendingLaunchRequest()?.id).toBe('wf-2');
+  });
+
+  it('clear 同时清空 launchRequests', () => {
+    const store = useWorkflowStore.getState();
+    store.handleLaunchEvent({ type: 'requested', request: launchReq('wf-1') });
+    store.clear();
+    expect(useWorkflowStore.getState().launchRequests).toEqual([]);
   });
 });

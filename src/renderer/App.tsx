@@ -476,6 +476,16 @@ export const App: React.FC = () => {
     };
   }, []);
 
+  // dynamic-workflow 启动审批事件通道（P3b）：'workflow:launch:event' → 审批卡状态。
+  useEffect(() => {
+    const unsubscribe = ipcService.on(IPC_CHANNELS.WORKFLOW_LAUNCH_EVENT, (event) => {
+      if (event) useWorkflowStore.getState().handleLaunchEvent(event);
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
   const renderWorkbenchContent = () => (
     <div className="flex flex-col h-full bg-zinc-900">
       <WorkbenchTabs />

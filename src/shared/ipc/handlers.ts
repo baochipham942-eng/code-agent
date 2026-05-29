@@ -15,7 +15,7 @@ import type { ContextInterventionRequest, ContextInterventionSetRequest, Context
 import type { ManagedBrowserSessionState } from '../contract/desktop';
 
 import type { DAGVisualizationEvent } from '../contract/dagVisualization';
-import type { ScriptRunEvent } from '../contract/scriptRun';
+import type { ScriptRunEvent, WorkflowLaunchEvent } from '../contract/scriptRun';
 import { DAG_CHANNELS } from './channels';
 
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryPushEvent, TelemetryHealth, ComputerSurfaceReliabilitySummary } from '../contract/telemetry';
@@ -292,6 +292,9 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SWARM_GET_DELEGATE_MODE]: () => Promise<boolean>;
   [IPC_CHANNELS.SWARM_APPROVE_LAUNCH]: (payload: { requestId: string; feedback?: string }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_REJECT_LAUNCH]: (payload: { requestId: string; feedback: string }) => Promise<boolean>;
+  // dynamic-workflow 启动审批回传（P3b）
+  [IPC_CHANNELS.WORKFLOW_APPROVE_LAUNCH]: (payload: { requestId: string; feedback?: string }) => Promise<boolean>;
+  [IPC_CHANNELS.WORKFLOW_REJECT_LAUNCH]: (payload: { requestId: string; feedback: string }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_CANCEL_RUN]: (payload?: { sessionId?: string }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_CANCEL_AGENT]: (payload: { agentId: string }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_RETRY_AGENT]: (payload: { agentId: string }) => Promise<boolean>;
@@ -534,6 +537,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.SWARM_EVENT]: (event: SwarmEvent) => void;
   // dynamic-workflow 进度树事件（workflow.ipc 专用 bridge 投递完整 ScriptRunEvent，与 swarm 同款 raw-event 风格）
   [IPC_CHANNELS.WORKFLOW_EVENT]: (event: ScriptRunEvent) => void;
+  // dynamic-workflow 启动审批事件（P3b）：requested/approved/rejected + 完整 request
+  [IPC_CHANNELS.WORKFLOW_LAUNCH_EVENT]: (event: WorkflowLaunchEvent) => void;
   // TaskList events
   [IPC_CHANNELS.TASKLIST_EVENT]: (event: TaskListEventIpc) => void;
   // Telemetry events

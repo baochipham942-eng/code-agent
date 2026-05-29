@@ -175,16 +175,16 @@ export class WorkflowLaunchApprovalGate {
         if (pending.writeHint) {
           const fb = `Auto-rejected after timeout (${this.approvalTimeoutMs}ms)；含写能力子 agent 需显式批准`;
           this.pendingResolvers.delete(requestId);
-          this.reject(requestId, fb);
+          this.reject(requestId, fb); // 直接 mutate pending（status/feedback/resolvedAt）
           logger.warn(`Workflow launch auto-rejected on timeout (writeHint): ${requestId}`);
-          resolve({ approved: false, feedback: fb, autoApproved: true, request: this.getRequest(requestId)! });
+          resolve({ approved: false, feedback: fb, autoApproved: true, request: { ...pending } });
           return;
         }
         const fb = `Auto-approved after timeout (${this.approvalTimeoutMs}ms, read-only)`;
         this.pendingResolvers.delete(requestId);
         this.approve(requestId, fb);
         logger.warn(`Workflow launch auto-approved on timeout (read-only): ${requestId}`);
-        resolve({ approved: true, feedback: fb, autoApproved: true, request: this.getRequest(requestId)! });
+        resolve({ approved: true, feedback: fb, autoApproved: true, request: { ...pending } });
       }, this.approvalTimeoutMs);
     });
   }

@@ -284,8 +284,12 @@ export const IPC_CHANNELS = {
   SWARM_CANCEL_AGENT: 'swarm:cancel-agent',
   SWARM_RETRY_AGENT: 'swarm:retry-agent',
 
-  // dynamic-workflow 进度树事件（通用 EventBridge 把 'workflow' domain 转发到此通道）
+  // dynamic-workflow 进度树事件（workflow.ipc 专用 bridge 把 'workflow' domain 转发到此通道）
   WORKFLOW_EVENT: 'workflow:event',
+  // dynamic-workflow 启动审批（P3b）：launch 事件推送 + approve/reject 回传
+  WORKFLOW_LAUNCH_EVENT: 'workflow:launch:event',
+  WORKFLOW_APPROVE_LAUNCH: 'workflow:approve-launch',
+  WORKFLOW_REJECT_LAUNCH: 'workflow:reject-launch',
   SWARM_APPROVE_PLAN: 'swarm:approve-plan',
   SWARM_REJECT_PLAN: 'swarm:reject-plan',
   SWARM_PERSIST_AGENT_RUN: 'swarm:persist-agent-run',

@@ -21,6 +21,7 @@ import type { ChatInputHandle } from './features/chat/ChatInput';
 import { useFileUpload } from './features/chat/ChatInput/useFileUpload';
 import { SwarmInlineMonitor } from './features/swarm/SwarmInlineMonitor';
 import { WorkflowInlineMonitor } from './features/workflow/WorkflowInlineMonitor';
+import { WorkflowLaunchCard } from './features/workflow/WorkflowLaunchCard';
 import { TaskStatusBar } from './features/chat/TaskStatusBar';
 import { LocalBridgePrompt } from './features/chat/LocalBridgePrompt';
 import { BridgeUpdatePrompt } from './features/chat/BridgeUpdatePrompt';
@@ -521,6 +522,9 @@ export const ChatView: React.FC = () => {
 
           {/* Background agents inline monitor (Codex 风格 sticky 浮层) */}
           <SwarmInlineMonitor />
+
+          {/* dynamic-workflow 启动审批卡（仅有 pending 审批时显示，跑前确认） */}
+          <WorkflowLaunchCard />
 
           {/* dynamic-workflow 进度树（≈ /workflows，仅 workflow run 中/失败时显示） */}
           <WorkflowInlineMonitor />

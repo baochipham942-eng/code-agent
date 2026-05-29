@@ -58,21 +58,9 @@ export interface RpcResponse {
   spent?: number;
 }
 
-/** worker 启动时主线程注入的初始化消息（脚本源码 + 目标 + 确定性种子）。 */
-export interface WorkerInit {
-  script: string;
-  goal?: string;
-  /** 用于 resumable 重放时按序生成确定性 call-id 的种子（worker 内 Date.now/Math.random 被禁）。 */
-  callIdSeed: string;
-}
-
-/** worker 执行完毕回主线程的终态消息。 */
-export interface WorkerDone {
-  ok: boolean;
-  /** 脚本 return 的值（须可结构化克隆）。 */
-  result?: unknown;
-  error?: string;
-}
+// 注：worker 的初始化/终态消息形状由 sandbox.ts 内联定义（workerData / WorkerDoneMessage）。
+// resumable（P4）的确定性 call-id 走「位置序 callCounter（声明序，单线程确定）+ prompt/opts 内容
+// hash」方案，不需要随机种子——故不再保留 WorkerInit.callIdSeed 这类前置空壳。
 
 // ── run 生命周期 ─────────────────────────────────────────────────────────────
 

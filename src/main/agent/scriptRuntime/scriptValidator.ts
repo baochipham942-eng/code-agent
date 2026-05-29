@@ -21,6 +21,76 @@ const AsyncFunctionCtor = Object.getPrototypeOf(async function () {}).constructo
   ...args: string[]
 ) => unknown;
 
+// ── P4-A 确定性加固 ──────────────────────────────────────────────────────────
+// resumable 重放靠「同脚本同 args → 逐 call 内容 hash 一致 → 缓存命中」。脚本若调
+// Date.now()/Math.random() 等，两次重放产出不同的 call 内容/控制流 → 缓存键错乱、命中错值。
+// worker 不能裸 shadow Date/Math（new Date(arg)/Math.floor 是合法确定性用法），故在此静态 AST
+// 拦截【特定非确定性形态】。威胁模型同 worker：半信任模型代码，拦意外非确定性而非对抗式别名
+// （Date.now 经 `const d=Date; d.now()` 别名规避不在覆盖内，与 eval 逃逸同档接受）。
+const NONDET_MEMBER_CALLS: Record<string, ReadonlySet<string>> = {
+  Date: new Set(['now']),
+  Math: new Set(['random']),
+  performance: new Set(['now']),
+};
+
+/** 取 MemberExpression 的属性名：`.now`(Identifier) 或 `['now']`(computed string Literal)。 */
+function memberPropName(prop: unknown, computed: boolean): string | undefined {
+  const p = prop as Record<string, unknown> | null;
+  if (!p) return undefined;
+  if (!computed && p.type === 'Identifier' && typeof p.name === 'string') return p.name;
+  if (computed && p.type === 'Literal' && typeof p.value === 'string') return p.value;
+  return undefined;
+}
+
+/** 递归找首个非确定性构造，返回其可读名（用于报错）；无命中返回 null。 */
+function detectNonDeterministic(node: unknown): string | null {
+  if (!node || typeof node !== 'object') return null;
+  const n = node as Record<string, unknown>;
+
+  // 无参 new Date() = 当前时间（new Date(arg) 是确定性，放行）。
+  if (n.type === 'NewExpression') {
+    const callee = n.callee as Record<string, unknown> | undefined;
+    const argsArr = (n.arguments as unknown[]) ?? [];
+    if (callee?.type === 'Identifier' && callee.name === 'Date' && argsArr.length === 0) {
+      return 'new Date()（无参取当前时间）';
+    }
+  }
+
+  if (n.type === 'CallExpression') {
+    const callee = n.callee as Record<string, unknown> | undefined;
+    // Date() 作为函数调用 = 当前时间字符串。
+    if (callee?.type === 'Identifier' && callee.name === 'Date') {
+      return 'Date()（当前时间）';
+    }
+    // 形如 Date.now() / Math.random() / performance.now()。
+    if (callee?.type === 'MemberExpression') {
+      const obj = callee.object as Record<string, unknown> | undefined;
+      if (obj?.type === 'Identifier' && typeof obj.name === 'string') {
+        const banned = NONDET_MEMBER_CALLS[obj.name];
+        if (banned) {
+          const prop = memberPropName(callee.property, !!callee.computed);
+          if (prop && banned.has(prop)) return `${obj.name}.${prop}()`;
+        }
+      }
+    }
+  }
+
+  for (const key of Object.keys(n)) {
+    if (key === 'type') continue;
+    const v = n[key];
+    if (Array.isArray(v)) {
+      for (const item of v) {
+        const hit = detectNonDeterministic(item);
+        if (hit) return hit;
+      }
+    } else if (v && typeof v === 'object') {
+      const hit = detectNonDeterministic(v);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
 /** 递归查 AST 里是否出现某些节点类型（用于堵 import() 动态导入）。 */
 function hasNodeType(node: unknown, types: Set<string>): boolean {
   if (!node || typeof node !== 'object') return false;
@@ -64,6 +134,14 @@ export function validateScript(script: string): ValidationResult {
     });
     if (hasNodeType(ast, new Set(['ImportExpression']))) {
       return { ok: false, error: '脚本禁止使用动态 import()（沙箱不提供模块加载）' };
+    }
+    // P4-A：拦非确定性调用——破坏 resumable 重放的缓存键一致性。
+    const nondet = detectNonDeterministic(ast);
+    if (nondet) {
+      return {
+        ok: false,
+        error: `脚本含非确定性调用 ${nondet}，会破坏 resumable 重放（缓存键依赖脚本确定性）；如需时间/随机值请由 args 传入`,
+      };
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

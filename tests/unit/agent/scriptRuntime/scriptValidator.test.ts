@@ -64,6 +64,53 @@ describe('validateScript', () => {
     const res = validateScript("await phase('x');\nconst r = await agent('hi', { schema: { type:'object', properties:{ a:{type:'string'} } } });\nreturn r;");
     expect(res).toEqual({ ok: true });
   });
+
+  // ── P4-A 确定性加固：重放正确性依赖脚本确定性，非确定性调用会让缓存键错乱，必须 fail-fast ──
+  it('rejects Date.now() (non-deterministic, breaks replay cache)', () => {
+    const res = validateScript('const t = Date.now();\nreturn t;');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/确定性|Date\.now/);
+  });
+
+  it('rejects argless new Date() (current time)', () => {
+    const res = validateScript('const d = new Date();\nreturn d.getFullYear();');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/确定性|Date/);
+  });
+
+  it('accepts new Date(arg) with arguments (deterministic)', () => {
+    const res = validateScript("const d = new Date('2020-01-01');\nreturn d.getTime();");
+    expect(res).toEqual({ ok: true });
+  });
+
+  it('rejects Date() called as a function (current time string)', () => {
+    const res = validateScript('const s = Date();\nreturn s;');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/确定性|Date/);
+  });
+
+  it('rejects Math.random() (non-deterministic)', () => {
+    const res = validateScript('const r = Math.random();\nreturn r;');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/确定性|Math\.random/);
+  });
+
+  it('rejects performance.now() (non-deterministic)', () => {
+    const res = validateScript('const t = performance.now();\nreturn t;');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/确定性|performance\.now/);
+  });
+
+  it('still accepts deterministic Math methods (floor/max/min/ceil/round)', () => {
+    const res = validateScript('const x = Math.floor(Math.max(1, 2) / Math.min(3, 4));\nreturn x;');
+    expect(res).toEqual({ ok: true });
+  });
+
+  it('detects a non-deterministic call nested inside an agent() prompt', () => {
+    const res = validateScript("const r = await agent('q ' + Date.now());\nreturn r;");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/确定性|Date\.now/);
+  });
 });
 
 describe('validateForcedSchema', () => {

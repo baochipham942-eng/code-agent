@@ -106,6 +106,9 @@ async function runWorkflow(
           ...legacyCtx,
           agentId,
           modelConfig,
+          // child-scoped signal 也要覆写到 toolContext（Codex R3）：否则下游工具读 toolContext.abortSignal
+          // 会拿到 legacyCtx 带下来的父级 signal，绕过 child-scoped cancel/timeout，与 SubagentContext.abortSignal 不一致。
+          abortSignal: signal,
           messages: undefined,
           todos: undefined,
           modifiedFiles: undefined,

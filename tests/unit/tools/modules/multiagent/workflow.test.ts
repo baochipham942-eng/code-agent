@@ -198,6 +198,18 @@ describe('workflow tool', () => {
     expect((sub.toolContext as Record<string, unknown>).currentToolCallId).toBeUndefined();
   });
 
+  // R3 MED: child toolContext.abortSignal 必须 = 入参 signal（不能从 legacyCtx 带父级 signal，
+  // 否则下游工具读 toolContext.abortSignal 会绕过 child-scoped cancel/timeout）
+  it('derived subagent toolContext.abortSignal equals the per-call signal, not parent', async () => {
+    const parentCtrl = new AbortController();
+    const childCtrl = new AbortController();
+    await run({ script: 'return 1' }, makeCtx({ abortSignal: parentCtrl.signal }));
+    const deps = startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
+    const sub = deps.deriveSubagentContext({ agentId: 'a1', modelConfig: { ...BASE_MODEL }, signal: childCtrl.signal });
+    expect(sub.abortSignal).toBe(childCtrl.signal);
+    expect((sub.toolContext as { abortSignal?: AbortSignal }).abortSignal).toBe(childCtrl.signal);
+  });
+
   // R2 MED: onProgress 抛错不得把成功 run 翻成失败（观测面 best-effort）
   it('a throwing onProgress does not turn a successful run into failure', async () => {
     const onProgress = vi.fn(() => { throw new Error('progress boom'); });

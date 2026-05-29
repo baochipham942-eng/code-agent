@@ -35,7 +35,8 @@ import { workflowSchema } from './workflow.schema';
 
 // full-agent 路径（agent() 无 schema）的默认工具白名单：读 + 调研。
 // 这是 workflow 子 agent 的策略默认值（非易变列表）；模型可在脚本里按需收窄。
-const WORKFLOW_DEFAULT_AGENT_TOOLS = ['WebSearch', 'WebFetch', 'read_file', 'glob', 'grep'];
+// 工具名须与 protocol registry 注册名精确一致（fs 工具是 PascalCase：Read/Glob/Grep）。
+const WORKFLOW_DEFAULT_AGENT_TOOLS = ['WebSearch', 'WebFetch', 'Read', 'Glob', 'Grep'];
 
 async function runWorkflow(
   args: Record<string, unknown>,

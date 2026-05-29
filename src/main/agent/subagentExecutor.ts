@@ -112,7 +112,7 @@ export interface SubagentResult {
   cancellationReason?: CancellationReason;
 }
 
-interface SubagentContext {
+export interface SubagentContext {
   modelConfig: ModelConfig;
   toolResolver: ToolResolver;
   toolContext: ToolContext;

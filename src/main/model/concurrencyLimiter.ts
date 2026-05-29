@@ -182,3 +182,15 @@ export function getProviderLimiter(provider: string | null | undefined): Concurr
   }
   return limiter;
 }
+
+/**
+ * 解析某 provider 的有效并发上限（用户覆盖 > 出厂默认），无限额返回 null。
+ * 供 scriptRuntime 的 ConcurrencyGate 做 provider-aware 全局槽分配——防止单个 provider
+ * 占满全局并发槽饿死其他 provider。与 inferenceViaAiSdk 内部 limiter 互补：gate 只做全局
+ * 公平分配、按此值卡每 provider 在途数，绝不重复 acquire provider limiter（那会双重计数）。
+ */
+export function getEffectiveProviderConcurrency(provider: string | null | undefined): number | null {
+  if (!provider) return null;
+  const limit = resolveLimit(provider);
+  return limit ? limit.maxConcurrent : null;
+}

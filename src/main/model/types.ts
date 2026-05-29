@@ -136,6 +136,12 @@ export interface InferenceOptions {
    * the provider runs so buildRequestBody can read config.reasoningEffort.
    */
   reasoningEffort?: 'low' | 'medium' | 'high';
+  /**
+   * 强制工具选择（dynamic-workflow forced structured output 用）。仅 AI SDK 路径生效，
+   * legacy provider 路径忽略。'required'=必须调某工具；{type:'tool',toolName}=必须调指定工具。
+   * 形状对齐 AI SDK 的 ToolChoice，透传时直接映射。
+   */
+  toolChoice?: 'auto' | 'none' | 'required' | { type: 'tool'; toolName: string };
 }
 
 // ----------------------------------------------------------------------------

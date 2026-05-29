@@ -19,7 +19,7 @@
 // ============================================================================
 
 import { generateText, streamText, jsonSchema, tool as aiTool } from 'ai';
-import type { LanguageModel, ModelMessage as AiModelMessage, ToolSet, TextStreamPart } from 'ai';
+import type { LanguageModel, ModelMessage as AiModelMessage, ToolSet, TextStreamPart, ToolChoice } from 'ai';
 import { createDeepSeek } from '@ai-sdk/deepseek';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createAnthropic } from '@ai-sdk/anthropic';
@@ -591,6 +591,7 @@ async function generateViaAiSdk(params: {
             tools: aiTools,
             abortSignal: guard.signal,
             temperature: config.temperature,
+            ...(options?.toolChoice ? { toolChoice: options.toolChoice as ToolChoice<ToolSet> } : {}),
             ...(typeof config.maxTokens === 'number' && Number.isFinite(config.maxTokens)
               ? { maxOutputTokens: config.maxTokens } : {}),
             maxRetries: 0,
@@ -781,6 +782,7 @@ async function streamViaAiSdk(params: {
         tools: aiTools,
         abortSignal: streamSignal,
         temperature: config.temperature,
+        ...(options?.toolChoice ? { toolChoice: options.toolChoice as ToolChoice<ToolSet> } : {}),
         // 主 loop 的 artifact 生成/修复按阶段 cap maxTokens，必须透传给 SDK 保住上限；
         // 未设时交给 provider 默认（与旧 SSE 路径 buildRequestBody 的 max_tokens 行为对齐）。
         ...(typeof config.maxTokens === 'number' && Number.isFinite(config.maxTokens)

@@ -109,6 +109,8 @@ export interface ScriptRunAgentSnapshot {
   error?: string;
   startedAt?: number;
   finishedAt?: number;
+  /** resumable 重放命中缓存（结果来自旧 run、未重新 inference、0 token）。进度树标记用。 */
+  cached?: boolean;
 }
 
 /** 一次 run 的可渲染快照。由事件流经 applyScriptRunEvent 折叠得到。 */
@@ -228,6 +230,7 @@ function reduceScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEvent): S
         provider: str(data.provider),
         model: str(data.model),
         hasSchema: typeof data.hasSchema === 'boolean' ? data.hasSchema : undefined,
+        cached: data.cached === true ? true : undefined,
         status: 'running',
         startedAt: event.ts,
       };
@@ -244,6 +247,7 @@ function reduceScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEvent): S
         label: str(data.label) ?? 'agent',
         status: 'done',
         resultPreview: str(data.resultPreview),
+        cached: data.cached === true ? true : undefined,
         finishedAt: event.ts,
       });
       return { ...prev, agents, ...recountAgents(agents) };

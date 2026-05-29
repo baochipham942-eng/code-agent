@@ -236,6 +236,40 @@ describe('scriptRun view-model: applyScriptRunEvent', () => {
     expect(snap.agents[0].model).toBe('m');
   });
 
+  // ── P4-D：resumable 重放命中的 agent 在进度树标记为 cached（瞬时 done）──
+  it('agent:start(cached) → 快照 agent 带 cached 标记', () => {
+    const snap = fold('run-1', [
+      ev('agent:start', 1100, { agentId: 'a1', label: 'find', cached: true }),
+    ]);
+    expect(snap.agents[0].cached).toBe(true);
+  });
+
+  it('缓存命中（start+done 都带 cached）→ agent 为 done 且 cached，计入 doneCount', () => {
+    const snap = fold('run-1', [
+      ev('agent:start', 1100, { agentId: 'a1', label: 'find', cached: true }),
+      ev('agent:done', 1100, { agentId: 'a1', label: 'find', resultPreview: 'ok', cached: true }),
+    ]);
+    expect(snap.agents[0].status).toBe('done');
+    expect(snap.agents[0].cached).toBe(true);
+    expect(snap.doneCount).toBe(1);
+  });
+
+  it('普通 live agent 不带 cached（字段为 undefined，不误标）', () => {
+    const snap = fold('run-1', [
+      ev('agent:start', 1100, { agentId: 'a1', label: 'find' }),
+      ev('agent:done', 1500, { agentId: 'a1', label: 'find' }),
+    ]);
+    expect(snap.agents[0].cached).toBeUndefined();
+  });
+
+  it('agent:done(cached) 先于丢失的 start 到达时也补出 cached 标记', () => {
+    const snap = fold('run-1', [
+      ev('agent:done', 1100, { agentId: 'a1', label: 'find', cached: true, resultPreview: 'ok' }),
+    ]);
+    expect(snap.agents[0].status).toBe('done');
+    expect(snap.agents[0].cached).toBe(true);
+  });
+
   // ── Codex Round2 MED：agent:start 晚于 agent:done 到达时不得把状态降级回 running ──
   it('agent:start 晚到（终态已落）时单调更新，不降级 done→running', () => {
     const snap = fold('run-1', [

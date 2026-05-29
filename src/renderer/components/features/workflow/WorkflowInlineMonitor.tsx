@@ -11,7 +11,7 @@
 // ============================================================================
 
 import React, { useState } from 'react';
-import { GitBranch, ChevronUp, ChevronDown, Loader2, Check, X, Circle, MinusCircle } from 'lucide-react';
+import { GitBranch, ChevronUp, ChevronDown, Loader2, Check, X, Circle, MinusCircle, Zap } from 'lucide-react';
 import { useWorkflowStore } from '../../../stores/workflowStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import type { ScriptRunAgentSnapshot, ScriptRunAgentStatus, ScriptRunSnapshot } from '@shared/contract/scriptRun';
@@ -141,6 +141,14 @@ function WorkflowAgentRow({ agent }: { agent: ScriptRunAgentSnapshot }) {
           </span>
           {agent.model && <span className="text-zinc-600 text-[10px]">{agent.model}</span>}
           {agent.hasSchema && <span className="text-zinc-600 text-[10px]">judge</span>}
+          {agent.cached && (
+            <span
+              className="inline-flex items-center gap-0.5 text-cyan-400/80 text-[10px]"
+              title="resumable 重放命中缓存：结果来自上一次运行，未重新调用模型（0 token）"
+            >
+              <Zap size={9} className="shrink-0" />cached
+            </span>
+          )}
         </div>
         {detail && (
           <div className={`truncate ${agent.status === 'error' ? 'text-red-400/80' : 'text-zinc-500'}`} title={detail}>

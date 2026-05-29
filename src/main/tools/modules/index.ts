@@ -70,6 +70,7 @@ import { closeAgentSchema } from './multiagent/closeAgent.schema';
 import { sendInputSchema } from './multiagent/sendInput.schema';
 import { agentMessageSchema } from './multiagent/agentMessage.schema';
 import { workflowOrchestrateSchema } from './multiagent/workflowOrchestrate.schema';
+import { workflowSchema } from './multiagent/workflow.schema';
 import { planReviewSchema } from './multiagent/planReview.schema';
 
 // excel/
@@ -316,6 +317,10 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   registry.register(
     workflowOrchestrateSchema,
     async () => (await import('./multiagent/workflowOrchestrate')).workflowOrchestrateModule,
+  );
+  registry.register(
+    workflowSchema,
+    async () => (await import('./multiagent/workflow')).workflowModule,
   );
   registry.register(
     planReviewSchema,

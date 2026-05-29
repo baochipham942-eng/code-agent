@@ -110,8 +110,16 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     if (!req || typeof req.id !== 'string') return;
     const { launchRequests } = get();
     const idx = launchRequests.findIndex((r) => r.id === req.id);
-    // upsert by id：requested 追加、approved/rejected 更新既有（不重复追加）。
-    const next = idx < 0 ? [...launchRequests, req] : launchRequests.map((r, i) => (i === idx ? req : r));
+    let next: WorkflowLaunchRequest[];
+    if (idx < 0) {
+      next = [...launchRequests, req];
+    } else if (req.status !== 'pending') {
+      // resolve（approved/rejected）：移到尾部，让「最近 N 条已决」按 resolve 时序算，
+      // 老 pending 刚 resolve 不会因原始插入位次靠前而被立刻裁掉（Codex R4）。
+      next = [...launchRequests.slice(0, idx), ...launchRequests.slice(idx + 1), req];
+    } else {
+      next = launchRequests.map((r, i) => (i === idx ? req : r));
+    }
     set({ launchRequests: pruneLaunchRequests(next) });
   },
 

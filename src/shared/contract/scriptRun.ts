@@ -307,6 +307,8 @@ function upsertStartAgent(
     if (existing.finishedAt !== undefined) merged.finishedAt = existing.finishedAt;
     if (existing.resultPreview !== undefined) merged.resultPreview = existing.resultPreview;
     if (existing.error !== undefined) merged.error = existing.error;
+    // startedAt 也是时间元数据，已有真实值时不被晚到/重复 agent:start 覆盖（Codex R4）。
+    if (existing.startedAt !== undefined) merged.startedAt = existing.startedAt;
   } else {
     merged = { ...existing, ...next };
   }

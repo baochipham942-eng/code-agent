@@ -174,4 +174,18 @@ describe('workflowStore 容量上限（Codex Round3 MED）', () => {
     }
     expect(useWorkflowStore.getState().launchRequests.length).toBeLessThanOrEqual(20);
   });
+
+  // ── Codex Round4 MED：很老的 pending 刚被 resolve 不应立刻被裁（按 resolve 时序保留最近）──
+  it('老 pending 刚 resolve 时不被裁掉（移到尾部按最近保留）', () => {
+    const store = useWorkflowStore.getState();
+    store.handleLaunchEvent({ type: 'requested', request: launchReq('wf-old') }); // 最早的 pending
+    for (let i = 0; i < 25; i++) {
+      store.handleLaunchEvent({ type: 'requested', request: launchReq(`wf${i}`) });
+      store.handleLaunchEvent({ type: 'approved', request: launchReq(`wf${i}`, 'approved') });
+    }
+    // 此刻 wf-old 仍 pending（pending 永不裁）；现在它 resolve
+    store.handleLaunchEvent({ type: 'approved', request: launchReq('wf-old', 'approved') });
+    const ids = useWorkflowStore.getState().launchRequests.map((r) => r.id);
+    expect(ids).toContain('wf-old'); // 刚 resolve 的不应立刻消失
+  });
 });

@@ -147,6 +147,17 @@ describe('scriptRun view-model: applyScriptRunEvent', () => {
     expect(snap.durationMs).toBe(1500);
   });
 
+  // ── Codex Round4 MED：终态后晚到的 agent:start 不得覆盖真实 startedAt（时间元数据保护）──
+  it('终态后晚到 agent:start 不覆盖既有 startedAt', () => {
+    const snap = fold('run-1', [
+      ev('agent:start', 1000, { agentId: 'a1', label: 'x' }),
+      ev('agent:done', 2000, { agentId: 'a1', label: 'x' }),
+      ev('agent:start', 2100, { agentId: 'a1', label: 'x' }), // 重复/晚到
+    ]);
+    expect(snap.agents[0].startedAt).toBe(1000); // 不被 2100 覆盖
+    expect(snap.agents[0].status).toBe('done');
+  });
+
   it('applyScriptRunEvent 是纯函数，不就地修改入参', () => {
     const base = emptyScriptRunSnapshot('run-1');
     const next = applyScriptRunEvent(base, ev('run:log', 1100, { message: 'x' }));

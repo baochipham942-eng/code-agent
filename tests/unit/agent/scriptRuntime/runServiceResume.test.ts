@@ -118,4 +118,52 @@ describe('runService resumable 重放（真 worker）', () => {
     expect(r3.result).toEqual({ a: { n: 1 }, b: { n: 2 } });
     expect(inferenceMock).not.toHaveBeenCalled();
   });
+
+  // ── Codex round1 HIGH#3：journal 必须真 best-effort——SQLite/网关异常不得反噬执行 ──
+  it('onCallComplete throwing does NOT fail an otherwise successful run (best-effort)', async () => {
+    const { journal } = makeInMemoryJournal();
+    journal.onCallComplete = () => { throw new Error('DB locked'); };
+    inferenceMock.mockResolvedValueOnce(forced(1, 10)).mockResolvedValueOnce(forced(2, 20));
+    const r = await startRun({ runId: 'run-x', script: SCRIPT, defaultProvider: 'xiaomi', defaultModel: 'm' }, makeDeps(journal));
+    expect(r.status).toBe('completed'); // 写库失败不该把成功 run 打成失败
+    expect(r.result).toEqual({ a: { n: 1 }, b: { n: 2 } });
+  });
+
+  it('loadPriorCalls throwing degrades to a full live run (no crash)', async () => {
+    const { journal } = makeInMemoryJournal();
+    journal.loadPriorCalls = () => { throw new Error('DB read error'); };
+    inferenceMock.mockResolvedValueOnce(forced(1, 10)).mockResolvedValueOnce(forced(2, 20));
+    const r = await startRun(
+      { runId: 'run-y', script: SCRIPT, resumeFromRunId: 'whatever', defaultProvider: 'xiaomi', defaultModel: 'm' },
+      makeDeps(journal),
+    );
+    expect(r.status).toBe('completed');
+    expect(inferenceMock).toHaveBeenCalledTimes(2); // 退化成全 live
+  });
+
+  it('onRunFinish runs even when a terminal emit throws (status never stuck running)', async () => {
+    const { journal } = makeInMemoryJournal();
+    const finishes: string[] = [];
+    journal.onRunFinish = ({ status }) => finishes.push(status);
+    inferenceMock.mockResolvedValueOnce(forced(1, 10)).mockResolvedValueOnce(forced(2, 20));
+    // deps.emit 在 run:done 终态事件上抛错
+    const deps = makeDeps(journal);
+    deps.emit = (e) => { if (e.type === 'run:done') throw new Error('emit boom'); };
+    await startRun({ runId: 'run-z', script: SCRIPT, defaultProvider: 'xiaomi', defaultModel: 'm' }, deps).catch(() => {});
+    expect(finishes).toContain('completed'); // onRunFinish 仍落库（在 finally）
+  });
+
+  // ── Codex round1 MED#3：resumeFromRunId 指向不存在的 run → 不静默，发 run:log 警告 ──
+  it('warns (run:log) when resume is requested but the prior run has no journal', async () => {
+    const { journal } = makeInMemoryJournal();
+    const logs: string[] = [];
+    const deps = makeDeps(journal);
+    deps.emit = (e) => { if (e.type === 'run:log' && typeof e.data?.message === 'string') logs.push(e.data.message); };
+    inferenceMock.mockResolvedValueOnce(forced(1, 10)).mockResolvedValueOnce(forced(2, 20));
+    await startRun(
+      { runId: 'run-w', script: SCRIPT, resumeFromRunId: 'nonexistent', defaultProvider: 'xiaomi', defaultModel: 'm' },
+      deps,
+    );
+    expect(logs.some((m) => /resume|重放|无.*journal|未找到/i.test(m))).toBe(true);
+  });
 });

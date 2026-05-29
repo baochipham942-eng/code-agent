@@ -223,7 +223,11 @@ async function runWorkflow(
         ok: false,
         error: `workflow ${state.status}: ${state.error ?? 'unknown error'}`,
         code: state.status === 'cancelled' ? 'ABORTED' : 'DOMAIN_ERROR',
-        meta: { runId, status: state.status, agentCallCount: state.agentCallCount, tokensSpent: state.tokensSpent, phases: state.phases },
+        meta: {
+          runId, status: state.status, agentCallCount: state.agentCallCount,
+          tokensSpent: state.tokensSpent, cacheHits: state.cacheHits, phases: state.phases,
+          ...(resumeFromRunId ? { resumeFromRunId } : {}),
+        },
       };
     }
 
@@ -249,7 +253,11 @@ async function runWorkflow(
     return {
       ok: true,
       output: resultText,
-      meta: { runId, agentCallCount: state.agentCallCount, tokensSpent: state.tokensSpent, phases: state.phases },
+      meta: {
+        runId, agentCallCount: state.agentCallCount, tokensSpent: state.tokensSpent,
+        cacheHits: state.cacheHits, phases: state.phases,
+        ...(resumeFromRunId ? { resumeFromRunId } : {}),
+      },
     };
   } catch (err) {
     if (isAbort(ctx, err)) {

@@ -55,23 +55,42 @@ const DEFAULT_AGENT_SYSTEM_PROMPT =
   '用给定工具收集信息或执行操作，最后给出简洁、可被脚本直接消费的结果。' +
   '不要寒暄，不要复述任务，不要输出与结果无关的过程描述。';
 
-/** 稳定序列化（键名递归排序）——让内容 hash 不受对象键序影响。 */
-function stableStringify(value: unknown): string {
+/**
+ * 稳定序列化（键名递归排序）——让内容 hash 不受对象键序影响。
+ * 带 seen 集合做【路径式】环检测（Codex round1 MED#2）：模型脚本可经 structured-clone 传入循环
+ * schema，无保护会在主线程哈希阶段无限递归爆栈。命中环回 "[Circular]"；处理后从 seen 移除，使
+ * DAG（同一子对象多处共享、非环）仍各自展开、hash 稳定。
+ */
+function stableStringify(value: unknown, seen: WeakSet<object> = new WeakSet()): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
-  const obj = value as Record<string, unknown>;
-  const keys = Object.keys(obj).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`;
+  if (seen.has(value as object)) return '"[Circular]"';
+  seen.add(value as object);
+  let out: string;
+  if (Array.isArray(value)) {
+    out = `[${value.map((v) => stableStringify(v, seen)).join(',')}]`;
+  } else {
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj).sort();
+    out = `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k], seen)}`).join(',')}}`;
+  }
+  seen.delete(value as object);
+  return out;
 }
 
 /**
  * 一次 agent() 调用的内容 hash（resumable 缓存键的内容部分）。
- * 只哈希【决定结果】的语义输入：prompt + schema + model + agentType + tools。
- * 故意排除 label / phase——它们只影响进度树显示，改它们不该让缓存失效。
+ * 哈希【决定结果】的语义输入：prompt + schema + 显式 model override + agentType + tools +
+ * 【resolved provider/model】。纳入 resolved 模型是 Codex round1 HIGH#1 修复——否则 options.model
+ * 缺省时换主模型会误命中旧结果。故意排除 label / phase（只影响显示，改它们不该让缓存失效）。
+ * 仍不快照外部世界（文件/网页/工具结果）——resumable 固有语义（同 Claude Code Workflow）：
+ * resume = 跳过已完成的活、假定环境未变，由调用方负责。
  */
-function computeCallHash(call: AgentCallPayload): string {
+function computeCallHash(call: AgentCallPayload, resolvedProvider: string, resolvedModel: string): string {
   const o = call.options ?? {};
-  const semantic = { schema: o.schema, model: o.model, agentType: o.agentType, tools: o.tools };
+  const semantic = {
+    schema: o.schema, model: o.model, agentType: o.agentType, tools: o.tools,
+    _provider: resolvedProvider, _model: resolvedModel,
+  };
   return createHash('sha256').update(`${call.prompt}\u0000${stableStringify(semantic)}`).digest('hex').slice(0, 16);
 }
 
@@ -101,6 +120,8 @@ export interface ScriptRunContext {
   emit: (event: ScriptRunEvent) => void;
   /** 跨 run 共享的 agent() 调用计数（失控脚本兜底）。 */
   callCounter: { count: number };
+  /** resumable 命中缓存的次数（供 meta 观测 resume 是否生效）。 */
+  cacheHitCounter: { count: number };
   /** token 预算账本（主线程权威：每次 agent() 完成累加 outputTokens，发起前查上限）。 */
   budget: BudgetTracker;
   /** 主线程计时（worker 内禁 Date.now；bridge 在主线程可用）。 */
@@ -127,12 +148,13 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
   const provider = modelConfig.provider;
   const label = call.options?.label ?? call.options?.phase ?? 'agent';
   const agentId = `${ctx.runId}-a${callIndex}`;
-  const contentHash = computeCallHash(call);
+  const contentHash = computeCallHash(call, provider, modelConfig.model);
 
   // ── resumable 缓存命中：同 callIndex 且 contentHash 一致 → 瞬时返回，不 inference / 不占 gate /
   //    不耗 budget（成本已在原 run 付过）。复制进本 run journal 使其自包含，支持链式 resume（0 token）。 ──
   const cached = ctx.resumeCalls?.get(callIndex);
   if (cached && cached.contentHash === contentHash) {
+    ctx.cacheHitCounter.count++;
     ctx.emit({
       runId: ctx.runId,
       type: 'agent:start',

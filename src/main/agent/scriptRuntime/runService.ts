@@ -69,6 +69,7 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     startedAt: Date.now(),
     agentCallCount: 0,
     tokensSpent: 0,
+    cacheHits: 0,
     phases: [],
   };
   activeRuns.set(spec.runId, { controller, state });
@@ -84,17 +85,30 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
   };
 
   // resumable：从旧 run 的 journal 载入逐调用缓存（仅当指定 resumeFromRunId 且有 journal）。
-  const resumeCalls =
-    spec.resumeFromRunId && deps.journal
-      ? deps.journal.loadPriorCalls(spec.resumeFromRunId) ?? undefined
-      : undefined;
-  // 把成功调用写进【本 run】journal（命中拷贝 + live 记录都走这里），便于后续链式 resume。
+  // best-effort（Codex round1 HIGH#3）：journal 读异常不得拖垮 run，捕获后退化成全 live。
   const journal = deps.journal;
+  let resumeCalls: ScriptRunContext['resumeCalls'];
+  if (spec.resumeFromRunId && journal) {
+    try {
+      resumeCalls = journal.loadPriorCalls(spec.resumeFromRunId) ?? undefined;
+    } catch {
+      resumeCalls = undefined;
+    }
+  }
+  // 把成功调用写进【本 run】journal（命中拷贝 + live 记录都走这里），便于后续链式 resume。
+  // best-effort：写库异常被吞，绝不反噬已成功的 agent 调用（token 已花，不能因写库失败翻成失败）。
   const recordCall = journal
-    ? (record: ScriptRunCallRecord) => journal.onCallComplete({ runId: spec.runId, ...record })
+    ? (record: ScriptRunCallRecord): void => {
+        try {
+          journal.onCallComplete({ runId: spec.runId, ...record });
+        } catch {
+          /* best-effort journal — 不抛 */
+        }
+      }
     : undefined;
 
   const callCounter = { count: 0 };
+  const cacheHitCounter = { count: 0 };
   const ctx: ScriptRunContext = {
     runId: spec.runId,
     baseModelConfig: deps.baseModelConfig,
@@ -106,6 +120,7 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     gate: new ConcurrencyGate(SCRIPT_RUNTIME.GLOBAL_MAX_CONCURRENCY),
     emit,
     callCounter,
+    cacheHitCounter,
     budget,
     now: () => Date.now(),
     resumeCalls,
@@ -117,7 +132,21 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
   try {
     emit({ runId: spec.runId, type: 'run:start', ts: Date.now(), data: { goal: spec.goal, scriptHash } });
     // journal 父行先于任何 onCallComplete 写入（FK + resume 自包含）；best-effort 不阻断执行。
-    journal?.onRunStart({ runId: spec.runId, scriptHash, goal: spec.goal, startedAt: state.startedAt });
+    try {
+      journal?.onRunStart({ runId: spec.runId, scriptHash, goal: spec.goal, startedAt: state.startedAt });
+    } catch {
+      /* best-effort journal — 不抛 */
+    }
+    // MED-3：resume 请求但没拿到任何缓存（runId 笔误 / journal 不可用 / 旧 run 没记调用）→ 不静默
+    // 退化烧预算，发一条 run:log 警告让调用方看见「这次没命中、在全量 live 跑」。
+    if (spec.resumeFromRunId && (!resumeCalls || resumeCalls.size === 0)) {
+      emit({
+        runId: spec.runId,
+        type: 'run:log',
+        ts: Date.now(),
+        data: { message: `⚠️ resume 请求的 run「${spec.resumeFromRunId}」无可用 journal，本次全量 live 重跑（不命中缓存、照常计费）` },
+      });
+    }
 
     const outcome = await runScriptInWorker({
       script: spec.script,
@@ -130,6 +159,7 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     state.finishedAt = Date.now();
     state.agentCallCount = callCounter.count;
     state.tokensSpent = budget.spent();
+    state.cacheHits = cacheHitCounter.count;
     if (outcome.ok) {
       state.status = 'completed';
       state.result = outcome.result;
@@ -139,16 +169,23 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
       state.error = outcome.error;
       emit({ runId: spec.runId, type: 'run:error', ts: Date.now(), data: { error: outcome.error } });
     }
-    journal?.onRunFinish({
-      runId: spec.runId,
-      status: state.status,
-      finishedAt: state.finishedAt,
-      tokensSpent: state.tokensSpent,
-      result: state.result,
-      error: state.error,
-    });
     return state;
   } finally {
+    // onRunFinish 放 finally + 独立 try/catch（Codex round1 HIGH#3）：即便终态 emit 抛错也保证
+    // 终态落库，status 不会永卡 'running'；journal 写异常也不得吞掉 run 的真实结果/抛出。
+    if (state.finishedAt === undefined) state.finishedAt = Date.now();
+    try {
+      journal?.onRunFinish({
+        runId: spec.runId,
+        status: state.status,
+        finishedAt: state.finishedAt,
+        tokensSpent: state.tokensSpent,
+        result: state.result,
+        error: state.error,
+      });
+    } catch {
+      /* best-effort journal — 不抛 */
+    }
     activeRuns.delete(spec.runId);
   }
 }

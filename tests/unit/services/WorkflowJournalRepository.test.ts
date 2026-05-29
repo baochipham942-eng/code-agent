@@ -130,6 +130,29 @@ describe('WorkflowJournalRepository', () => {
     expect(loaded.calls.get(1)).toMatchObject({ contentHash: 'h2', result: 'new', tokensUsed: 9 });
   });
 
+  // ── Codex round1 HIGH#2：run result（脚本 return 任意值）round-trip 必须类型保真，不得压扁 ──
+  it('run result round-trip is faithful for non-string/non-object types (array / number / boolean)', () => {
+    repo.startRun({ runId: 'r-arr', scriptHash: 'h', startedAt: 1 });
+    repo.finishRun({ runId: 'r-arr', status: 'completed', finishedAt: 2, tokensSpent: 0, result: [1, 2, 3] });
+    expect(repo.getRun('r-arr')?.result).toEqual([1, 2, 3]);
+
+    repo.startRun({ runId: 'r-num', scriptHash: 'h', startedAt: 1 });
+    repo.finishRun({ runId: 'r-num', status: 'completed', finishedAt: 2, tokensSpent: 0, result: 42 });
+    expect(repo.getRun('r-num')?.result).toBe(42);
+
+    repo.startRun({ runId: 'r-bool', scriptHash: 'h', startedAt: 1 });
+    repo.finishRun({ runId: 'r-bool', status: 'completed', finishedAt: 2, tokensSpent: 0, result: true });
+    expect(repo.getRun('r-bool')?.result).toBe(true);
+
+    repo.startRun({ runId: 'r-obj', scriptHash: 'h', startedAt: 1 });
+    repo.finishRun({ runId: 'r-obj', status: 'completed', finishedAt: 2, tokensSpent: 0, result: { a: 1 } });
+    expect(repo.getRun('r-obj')?.result).toEqual({ a: 1 });
+
+    repo.startRun({ runId: 'r-str', scriptHash: 'h', startedAt: 1 });
+    repo.finishRun({ runId: 'r-str', status: 'completed', finishedAt: 2, tokensSpent: 0, result: 'hi' });
+    expect(repo.getRun('r-str')?.result).toBe('hi');
+  });
+
   it('loadRun / getRun return null for unknown run', () => {
     expect(repo.loadRun('nope')).toBeNull();
     expect(repo.getRun('nope')).toBeNull();

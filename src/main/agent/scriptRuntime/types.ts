@@ -119,5 +119,7 @@ export interface ScriptRunState {
   agentCallCount: number;
   /** 全 run 累计已花 outputTokens（预算账本终值）。 */
   tokensSpent: number;
+  /** resumable 命中缓存的 agent() 次数（0 = 未命中任何缓存 / 非 resume run）。供「resume 是否生效」观测。 */
+  cacheHits: number;
   phases: string[];
 }

@@ -95,16 +95,15 @@ function serializeResult(result: unknown): string {
   }
 }
 
-function deserializeResult(json: unknown): JournalResult {
-  if (typeof json !== 'string' || json.length === 0) return '';
+/**
+ * 反序列化【忠实】还原任意 JSON 值（Codex round1 HIGH#2：原实现把 array/number/boolean/null
+ * 压成字符串，损坏脚本 return 的 run result）。run.result 是 unknown（脚本 return 任意值）；
+ * call.result 由构造恒为 string|object，故 mapCallRow 处 cast 安全。空串/非串 → undefined。
+ */
+function deserialize(json: unknown): unknown {
+  if (typeof json !== 'string' || json.length === 0) return undefined;
   try {
-    const parsed = JSON.parse(json);
-    if (typeof parsed === 'string') return parsed;
-    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-    // 数组 / 数字 / 布尔 / null 不是合法 PrimitiveResult，退化成字符串表示（防御，正常不会发生）。
-    return String(json);
+    return JSON.parse(json);
   } catch {
     return json;
   }
@@ -211,7 +210,7 @@ export class WorkflowJournalRepository {
       startedAt: row.started_at as number,
       finishedAt: (row.finished_at as number | null) ?? null,
       tokensSpent: (row.tokens_spent as number) ?? 0,
-      result: resultJson != null ? deserializeResult(resultJson) : undefined,
+      result: resultJson != null ? deserialize(resultJson) : undefined,
       error: (row.error as string | null) ?? null,
     };
   }
@@ -223,7 +222,7 @@ export class WorkflowJournalRepository {
       contentHash: row.content_hash as string,
       status: (row.status as string) ?? 'done',
       label: (row.label as string | null) ?? null,
-      result: deserializeResult(row.result_json),
+      result: deserialize(row.result_json) as JournalResult,
       tokensUsed: (row.tokens_used as number) ?? 0,
       ts: row.ts as number,
     };

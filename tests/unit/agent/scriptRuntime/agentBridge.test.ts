@@ -40,6 +40,7 @@ function makeCtx(budget: BudgetTracker = new BudgetTracker(null)): ScriptRunCont
     gate: { acquire: vi.fn(async () => () => {}) } as never,
     emit: vi.fn(),
     callCounter: { count: 0 },
+    cacheHitCounter: { count: 0 },
     budget,
     now: () => 0,
   };
@@ -318,6 +319,38 @@ describe('runAgentCall resumable 缓存（P4-C）', () => {
     ctx.resumeCalls = new Map([[1, { contentHash: hash, result: { ok: true } }]]);
     const result = await runAgentCall({ prompt: 'p', options: { schema: VALID_SCHEMA as never } }, ctx);
     expect(result).toEqual({ ok: true });
+    expect(inferenceMock).not.toHaveBeenCalled();
+  });
+
+  // ── Codex round1 HIGH#1：resolved 默认 model 必须进 hash，否则换主模型仍误命中旧结果 ──
+  it('cache MISS when the resolved default model differs (no per-call model override)', async () => {
+    const VS = VALID_SCHEMA as never;
+    // run1：默认 model = A，live 跑拿 hash
+    const ctxA = makeCtx();
+    ctxA.resolveModelConfig = () => ({ provider: 'xiaomi', model: 'model-A', apiKey: 'k' }) as never;
+    const recA: Rec[] = [];
+    ctxA.recordCall = (r) => recA.push(r as Rec);
+    inferenceMock.mockResolvedValue({ toolCalls: [{ name: 'structured_output', arguments: { ok: true } }], usage: { outputTokens: 5 } });
+    await runAgentCall({ prompt: 'p', options: { schema: VS } }, ctxA);
+    const hashA = recA[0].contentHash;
+
+    // run2：默认 model 换成 B，seed 旧 hash → 必须 MISS（resolved model 不同）→ live 重跑
+    inferenceMock.mockReset();
+    inferenceMock.mockResolvedValue({ toolCalls: [{ name: 'structured_output', arguments: { ok: false } }], usage: { outputTokens: 7 } });
+    const ctxB = makeCtx();
+    ctxB.resolveModelConfig = () => ({ provider: 'xiaomi', model: 'model-B', apiKey: 'k' }) as never;
+    ctxB.resumeCalls = new Map([[1, { contentHash: hashA, result: { ok: true } }]]);
+    const result = await runAgentCall({ prompt: 'p', options: { schema: VS } }, ctxB);
+    expect(inferenceMock).toHaveBeenCalledTimes(1); // 没命中 → live
+    expect(result).toEqual({ ok: false });
+  });
+
+  // ── Codex round1 MED#2：循环 schema 不得在 computeCallHash 爆栈，应走干净校验拒绝 ──
+  it('cyclic schema fails with a clean validation error, not a stack overflow', async () => {
+    const ctx = makeCtx();
+    const cyclic: Record<string, unknown> = { type: 'object', properties: {} };
+    (cyclic.properties as Record<string, unknown>).self = cyclic;
+    await expect(runAgentCall({ prompt: 'p', options: { schema: cyclic as never } }, ctx)).rejects.toThrow(/schema|非法|序列化/);
     expect(inferenceMock).not.toHaveBeenCalled();
   });
 

@@ -70,7 +70,7 @@ const workflowInputSchema = {
     },
     resumeFromRunId: {
       type: 'string',
-      description: 'Optional: resume from a prior run. Re-runs the same script; agent() calls whose (prompt + opts) are unchanged return their cached results instantly (no inference, no token cost), and only edited/new calls run live. Pass the runId returned in a prior run\'s failure/cancellation meta.',
+      description: 'Optional: resume from ANY prior run (completed, failed, or cancelled). Re-runs the same script; agent() calls whose (prompt + opts + resolved model) are unchanged return their cached results instantly (no inference, no token cost), and only edited/new calls run live. Pass the runId returned in a prior run\'s meta. If the runId has no journal (typo / cleaned up), the run proceeds fully live and logs a warning — it is not a hard error. The returned meta includes `cacheHits` so you can confirm resume took effect.',
     },
   },
   required: ['script'] as string[],

@@ -27,11 +27,16 @@ const AsyncFunctionCtor = Object.getPrototypeOf(async function () {}).constructo
 // worker 不能裸 shadow Date/Math（new Date(arg)/Math.floor 是合法确定性用法），故在此静态 AST
 // 拦截【特定非确定性形态】。威胁模型同 worker：半信任模型代码，拦意外非确定性而非对抗式别名
 // （Date.now 经 `const d=Date; d.now()` 别名规避不在覆盖内，与 eval 逃逸同档接受）。
-const NONDET_MEMBER_CALLS: Record<string, ReadonlySet<string>> = {
-  Date: new Set(['now']),
-  Math: new Set(['random']),
-  performance: new Set(['now']),
-};
+// 被禁的非确定性调用，按「点路径」匹配（已剥离 globalThis/window 前缀）。
+// Codex round1 MED#1：补 crypto.*；改成路径匹配以覆盖 globalThis.X.Y() / 可选链 / computed。
+const BANNED_CALLS = new Set([
+  'Date.now',
+  'Math.random',
+  'performance.now',
+  'crypto.randomUUID',
+  'crypto.getRandomValues',
+]);
+const GLOBAL_PREFIXES = new Set(['globalThis', 'window', 'self', 'global']);
 
 /** 取 MemberExpression 的属性名：`.now`(Identifier) 或 `['now']`(computed string Literal)。 */
 function memberPropName(prop: unknown, computed: boolean): string | undefined {
@@ -42,37 +47,45 @@ function memberPropName(prop: unknown, computed: boolean): string | undefined {
   return undefined;
 }
 
+/** 把纯属性链（Identifier / MemberExpression，含可选链）解析成点路径，如 'globalThis.Date.now'；非纯链返回 null。 */
+function dottedPath(node: unknown): string | null {
+  const n = node as Record<string, unknown> | null;
+  if (!n) return null;
+  if (n.type === 'Identifier' && typeof n.name === 'string') return n.name;
+  if (n.type === 'MemberExpression') {
+    const objPath = dottedPath(n.object);
+    if (objPath === null) return null;
+    const prop = memberPropName(n.property, !!n.computed);
+    if (prop === undefined) return null;
+    return `${objPath}.${prop}`;
+  }
+  return null;
+}
+
+/** 剥掉开头的全局对象前缀（globalThis.Date.now → Date.now），让 denylist 不必枚举前缀变体。 */
+function stripGlobalPrefix(path: string): string {
+  const dot = path.indexOf('.');
+  if (dot < 0) return path;
+  const head = path.slice(0, dot);
+  return GLOBAL_PREFIXES.has(head) ? stripGlobalPrefix(path.slice(dot + 1)) : path;
+}
+
 /** 递归找首个非确定性构造，返回其可读名（用于报错）；无命中返回 null。 */
 function detectNonDeterministic(node: unknown): string | null {
   if (!node || typeof node !== 'object') return null;
   const n = node as Record<string, unknown>;
 
-  // 无参 new Date() = 当前时间（new Date(arg) 是确定性，放行）。
+  // 无参 new Date()（含 new globalThis.Date()）= 当前时间；new Date(arg) 是确定性，放行。
   if (n.type === 'NewExpression') {
-    const callee = n.callee as Record<string, unknown> | undefined;
+    const path = stripGlobalPrefix(dottedPath(n.callee) ?? '');
     const argsArr = (n.arguments as unknown[]) ?? [];
-    if (callee?.type === 'Identifier' && callee.name === 'Date' && argsArr.length === 0) {
-      return 'new Date()（无参取当前时间）';
-    }
+    if (path === 'Date' && argsArr.length === 0) return 'new Date()（无参取当前时间）';
   }
 
   if (n.type === 'CallExpression') {
-    const callee = n.callee as Record<string, unknown> | undefined;
-    // Date() 作为函数调用 = 当前时间字符串。
-    if (callee?.type === 'Identifier' && callee.name === 'Date') {
-      return 'Date()（当前时间）';
-    }
-    // 形如 Date.now() / Math.random() / performance.now()。
-    if (callee?.type === 'MemberExpression') {
-      const obj = callee.object as Record<string, unknown> | undefined;
-      if (obj?.type === 'Identifier' && typeof obj.name === 'string') {
-        const banned = NONDET_MEMBER_CALLS[obj.name];
-        if (banned) {
-          const prop = memberPropName(callee.property, !!callee.computed);
-          if (prop && banned.has(prop)) return `${obj.name}.${prop}()`;
-        }
-      }
-    }
+    const path = stripGlobalPrefix(dottedPath(n.callee) ?? '');
+    if (path === 'Date') return 'Date()（当前时间）'; // Date() 当函数调用
+    if (BANNED_CALLS.has(path)) return `${path}()`;
   }
 
   for (const key of Object.keys(n)) {

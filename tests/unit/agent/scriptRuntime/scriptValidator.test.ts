@@ -111,6 +111,46 @@ describe('validateScript', () => {
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toMatch(/确定性|Date\.now/);
   });
+
+  // ── P4 Codex round1 MED#1：denylist 覆盖面太窄，补 crypto.* / globalThis.* / 可选链 ──
+  it('rejects crypto.randomUUID() (non-deterministic id)', () => {
+    const res = validateScript('const id = crypto.randomUUID();\nreturn id;');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/确定性|crypto/);
+  });
+
+  it('rejects crypto.getRandomValues()', () => {
+    const res = validateScript('const a = crypto.getRandomValues(new Uint8Array(4));\nreturn a;');
+    expect(res.ok).toBe(false);
+  });
+
+  it('rejects globalThis.Date.now() (member chain через globalThis)', () => {
+    const res = validateScript('const t = globalThis.Date.now();\nreturn t;');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/确定性|Date\.now/);
+  });
+
+  it('rejects globalThis.performance.now()', () => {
+    const res = validateScript('const t = globalThis.performance.now();\nreturn t;');
+    expect(res.ok).toBe(false);
+  });
+
+  it('rejects new globalThis.Date() (no-arg via globalThis)', () => {
+    const res = validateScript('const d = new globalThis.Date();\nreturn d.getTime();');
+    expect(res.ok).toBe(false);
+  });
+
+  it('rejects optional-chained Math?.random()', () => {
+    const res = validateScript('const r = Math?.random();\nreturn r;');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/确定性|Math\.random/);
+  });
+
+  it('still accepts non-suspicious member calls (e.g. a user object .now())', () => {
+    // 用户自定义对象的 .now()/.random() 不该被误杀（只拦特定全局入口）。
+    const res = validateScript('const clock = { now: () => 42 };\nconst t = clock.now();\nreturn t;');
+    expect(res).toEqual({ ok: true });
+  });
 });
 
 describe('validateForcedSchema', () => {

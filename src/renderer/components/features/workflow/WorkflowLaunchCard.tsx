@@ -41,6 +41,7 @@ export function WorkflowLaunchCard() {
       await ipcService.invoke(IPC_CHANNELS.WORKFLOW_APPROVE_LAUNCH, {
         requestId: request.id,
         feedback: feedback.trim() || undefined,
+        sessionId: currentSessionId, // 主进程据此做会话授权校验（Codex R2 HIGH#1）
       });
     } finally {
       setBusy(false);
@@ -55,6 +56,7 @@ export function WorkflowLaunchCard() {
       await ipcService.invoke(IPC_CHANNELS.WORKFLOW_REJECT_LAUNCH, {
         requestId: request.id,
         feedback: reason,
+        sessionId: currentSessionId,
       });
     } finally {
       setBusy(false);

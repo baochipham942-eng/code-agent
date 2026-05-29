@@ -133,6 +133,12 @@ describe('workflowStore 会话隔离（Codex Round1 HIGH#1）', () => {
     expect(useWorkflowStore.getState().pendingLaunchRequest('sess-A')?.id).toBe('wf-x');
   });
 
+  // ── Codex Round2 HIGH#1：当前会话未知（启动/切换空窗）时，会话绑定的请求 fail-closed 隐藏 ──
+  it('会话绑定请求在 currentSessionId 未知时不暴露（fail-closed，不 fail-open）', () => {
+    useWorkflowStore.getState().handleLaunchEvent({ type: 'requested', request: launchReqS('wf-A', 'sess-A') });
+    expect(useWorkflowStore.getState().pendingLaunchRequest(undefined)).toBeUndefined();
+  });
+
   it('activeSnapshot(sessionId) 只返回该会话的 run', () => {
     const store = useWorkflowStore.getState();
     store.handleEvent({ runId: 'rA', type: 'run:start', ts: 1, sessionId: 'sess-A', data: { scriptHash: 'h' } } as ScriptRunEvent);

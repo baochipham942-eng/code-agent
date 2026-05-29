@@ -292,9 +292,9 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SWARM_GET_DELEGATE_MODE]: () => Promise<boolean>;
   [IPC_CHANNELS.SWARM_APPROVE_LAUNCH]: (payload: { requestId: string; feedback?: string }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_REJECT_LAUNCH]: (payload: { requestId: string; feedback: string }) => Promise<boolean>;
-  // dynamic-workflow 启动审批回传（P3b）
-  [IPC_CHANNELS.WORKFLOW_APPROVE_LAUNCH]: (payload: { requestId: string; feedback?: string }) => Promise<boolean>;
-  [IPC_CHANNELS.WORKFLOW_REJECT_LAUNCH]: (payload: { requestId: string; feedback: string }) => Promise<boolean>;
+  // dynamic-workflow 启动审批回传（P3b）；sessionId 用于主进程会话授权校验（Codex R2 HIGH#1）
+  [IPC_CHANNELS.WORKFLOW_APPROVE_LAUNCH]: (payload: { requestId: string; feedback?: string; sessionId?: string }) => Promise<boolean>;
+  [IPC_CHANNELS.WORKFLOW_REJECT_LAUNCH]: (payload: { requestId: string; feedback: string; sessionId?: string }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_CANCEL_RUN]: (payload?: { sessionId?: string }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_CANCEL_AGENT]: (payload: { agentId: string }) => Promise<boolean>;
   [IPC_CHANNELS.SWARM_RETRY_AGENT]: (payload: { agentId: string }) => Promise<boolean>;

@@ -177,4 +177,34 @@ describe('scriptRun view-model: applyScriptRunEvent', () => {
     expect(snap.agents[0].error).toBe('boom');
     expect(snap.errorCount).toBe(1);
   });
+
+  // ── Codex Round2 HIGH：sessionId 必须在任意事件 latch，不能只认 run:start（run:start 可能丢/晚到）──
+  it('sessionId 从首个携带它的事件 latch（即便不是 run:start）', () => {
+    const evS = (type: ScriptRunEvent['type'], ts: number, data: Record<string, unknown>): ScriptRunEvent => ({
+      runId: 'run-1', type, ts, data, sessionId: 'sess-A',
+    });
+    const snap = fold('run-1', [evS('agent:start', 1100, { agentId: 'a1', label: 'x' })]);
+    expect(snap.sessionId).toBe('sess-A'); // 无 run:start 也要 latch
+  });
+
+  it('sessionId latch 后不被后续无 sessionId 事件清掉', () => {
+    const withS: ScriptRunEvent = { runId: 'run-1', type: 'run:start', ts: 1000, sessionId: 'sess-A', data: {} };
+    const snap = [withS, ev('run:log', 1100, { message: 'x' })].reduce(
+      (s, e) => applyScriptRunEvent(s, e),
+      emptyScriptRunSnapshot('run-1'),
+    );
+    expect(snap.sessionId).toBe('sess-A');
+  });
+
+  // ── Codex Round2 MED：agent:start 晚于 agent:done 到达时不得把状态降级回 running ──
+  it('agent:start 晚到（终态已落）时单调更新，不降级 done→running', () => {
+    const snap = fold('run-1', [
+      ev('agent:done', 1500, { agentId: 'a1', label: 'find', resultPreview: 'ok' }),
+      ev('agent:start', 1600, { agentId: 'a1', label: 'find', promptPreview: '搜' }),
+    ]);
+    expect(snap.agents[0].status).toBe('done'); // 不回滚
+    expect(snap.doneCount).toBe(1);
+    expect(snap.runningCount).toBe(0);
+    expect(snap.agents[0].promptPreview).toBe('搜'); // 缺字段仍可补
+  });
 });

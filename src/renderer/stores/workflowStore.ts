@@ -42,10 +42,15 @@ export interface WorkflowStore {
   clear: () => void;
 }
 
-/** 会话隔离判定：请求/快照无 sessionId（dev/legacy）→ 对任意会话可见；否则需相等。 */
+/**
+ * 会话隔离判定（Codex R2 HIGH#1：fail-closed）：
+ *   - item 无 sessionId（dev/headless 注入）→ 对任意会话可见；
+ *   - item 有 sessionId 但当前会话未知（启动/切换空窗）→ 隐藏（fail-closed，不放别人内容出来）；
+ *   - 否则需相等。
+ */
 function visibleInSession(itemSessionId: string | undefined, currentSessionId: string | undefined): boolean {
   if (!itemSessionId) return true;
-  if (!currentSessionId) return true; // 当前会话未知时不过滤（退化为不隔离，不丢内容）
+  if (!currentSessionId) return false; // 会话绑定 item + 当前会话未知 → fail-closed 隐藏
   return itemSessionId === currentSessionId;
 }
 

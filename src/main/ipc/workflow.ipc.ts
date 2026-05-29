@@ -58,11 +58,11 @@ let handlersRegistered = false;
 export function registerWorkflowHandlers(): void {
   if (handlersRegistered) return;
   handlersRegistered = true;
-  ipcMain.handle(IPC_CHANNELS.WORKFLOW_APPROVE_LAUNCH, async (_event, payload: { requestId: string; feedback?: string }) => {
-    return getWorkflowLaunchApprovalGate().approve(payload.requestId, payload.feedback);
+  ipcMain.handle(IPC_CHANNELS.WORKFLOW_APPROVE_LAUNCH, async (_event, payload: { requestId: string; feedback?: string; sessionId?: string }) => {
+    return getWorkflowLaunchApprovalGate().approve(payload.requestId, payload.feedback, payload.sessionId);
   });
-  ipcMain.handle(IPC_CHANNELS.WORKFLOW_REJECT_LAUNCH, async (_event, payload: { requestId: string; feedback: string }) => {
-    return getWorkflowLaunchApprovalGate().reject(payload.requestId, payload.feedback);
+  ipcMain.handle(IPC_CHANNELS.WORKFLOW_REJECT_LAUNCH, async (_event, payload: { requestId: string; feedback: string; sessionId?: string }) => {
+    return getWorkflowLaunchApprovalGate().reject(payload.requestId, payload.feedback, payload.sessionId);
   });
   logger.debug('Workflow approval IPC handlers registered');
 }

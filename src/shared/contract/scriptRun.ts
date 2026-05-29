@@ -173,13 +173,22 @@ function recountAgents(
  * 多 run 隔离由调用方按 runId 分桶（每个 run 一个快照），本函数只管单 run。
  */
 export function applyScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEvent): ScriptRunSnapshot {
+  const next = reduceScriptRunEvent(prev, event);
+  // sessionId latch（Codex R2 HIGH）：任意事件都补 sessionId，不止 run:start——run:start 可能被
+  // best-effort emit 丢掉 / renderer 晚订阅，否则 snapshot.sessionId 永远 undefined → 会话隔离失效。
+  if (event.sessionId && !next.sessionId) {
+    return next === prev ? { ...prev, sessionId: event.sessionId } : { ...next, sessionId: event.sessionId };
+  }
+  return next;
+}
+
+function reduceScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEvent): ScriptRunSnapshot {
   const data = event.data ?? {};
   switch (event.type) {
     case 'run:start':
       return {
         ...prev,
         status: 'running',
-        sessionId: event.sessionId ?? prev.sessionId, // 会话隔离用（HIGH#1）
         goal: str(data.goal) ?? prev.goal,
         scriptHash: str(data.scriptHash) ?? prev.scriptHash,
         startedAt: prev.startedAt ?? event.ts,
@@ -212,7 +221,7 @@ export function applyScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEve
         status: 'running',
         startedAt: event.ts,
       };
-      const agents = upsertAgent(prev.agents, agent);
+      const agents = upsertStartAgent(prev.agents, agent);
       return { ...prev, agents, ...recountAgents(agents) };
     }
 
@@ -265,14 +274,23 @@ export function applyScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEve
   }
 }
 
-/** 按 id upsert（已存在则合并补字段，不存在则追加）。 */
-function upsertAgent(
+const TERMINAL_STATUSES: ReadonlySet<ScriptRunAgentStatus> = new Set(['done', 'error', 'skipped']);
+
+/**
+ * agent:start 的 upsert：不存在则追加；已存在则补字段，但【单调】——若已是终态（done/error/
+ * skipped），不把 status 降级回 running，也不覆盖 finishedAt/resultPreview/error（Codex R2 MED：
+ * 终态先于 start 到达时，迟到的 start 只补缺失的 label/phase/startedAt，不回滚状态）。
+ */
+function upsertStartAgent(
   agents: ScriptRunAgentSnapshot[],
   next: ScriptRunAgentSnapshot,
 ): ScriptRunAgentSnapshot[] {
   const idx = agents.findIndex((a) => a.id === next.id);
   if (idx < 0) return [...agents, next];
-  const merged = { ...agents[idx], ...next };
+  const existing = agents[idx];
+  const merged = TERMINAL_STATUSES.has(existing.status)
+    ? { ...next, ...existing } // 终态优先：existing 覆盖 next，保留 status/finishedAt/result/error
+    : { ...existing, ...next };
   return agents.map((a, i) => (i === idx ? merged : a));
 }
 

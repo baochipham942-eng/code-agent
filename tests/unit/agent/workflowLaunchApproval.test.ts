@@ -136,6 +136,27 @@ describe('WorkflowLaunchApprovalGate', () => {
     expect(result.autoApproved).toBe(false); // 是人工决议路径，不是超时
   });
 
+  // ── Codex Round2 HIGH#1：approve/reject 必须做会话授权，不能只靠 UI 不显示 ──
+  it('approve 的 callerSessionId 与 request.sessionId 不符时拒绝（跨会话审批防护）', async () => {
+    const { gate } = makeGate();
+    const req = buildWorkflowLaunchRequest({ id: 'wf-A', preview: PREVIEW, sessionId: 'sess-A', now: 1 });
+    const p = gate.requestApproval({ request: req });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(gate.approve('wf-A', 'ok', 'sess-B')).toBe(false); // 别的会话来批 → 拒
+    expect(gate.approve('wf-A', 'ok', 'sess-A')).toBe(true); // 本会话批 → 通过
+    const result = await p;
+    expect(result.approved).toBe(true);
+  });
+
+  it('callerSessionId 缺省（headless/legacy）时不阻断（向后兼容）', async () => {
+    const { gate } = makeGate();
+    const req = buildWorkflowLaunchRequest({ id: 'wf-A', preview: PREVIEW, sessionId: 'sess-A', now: 1 });
+    const p = gate.requestApproval({ request: req });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(gate.approve('wf-A', 'ok')).toBe(true); // 不传 caller → 放行
+    await p;
+  });
+
   it('决议后请求从 pending 移除（不泄漏 requests map + timer）', async () => {
     const { gate } = makeGate();
     const p = gate.requestApproval({ request: REQ() });

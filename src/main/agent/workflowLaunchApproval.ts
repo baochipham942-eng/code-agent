@@ -121,12 +121,12 @@ export class WorkflowLaunchApprovalGate {
     return promise;
   }
 
-  approve(requestId: string, feedback?: string): boolean {
-    return this.resolveManual(requestId, true, feedback);
+  approve(requestId: string, feedback?: string, callerSessionId?: string): boolean {
+    return this.resolveManual(requestId, true, feedback, callerSessionId);
   }
 
-  reject(requestId: string, feedback: string): boolean {
-    return this.resolveManual(requestId, false, feedback);
+  reject(requestId: string, feedback: string, callerSessionId?: string): boolean {
+    return this.resolveManual(requestId, false, feedback, callerSessionId);
   }
 
   getPendingRequests(): WorkflowLaunchRequest[] {
@@ -141,9 +141,15 @@ export class WorkflowLaunchApprovalGate {
   }
 
   /** 人工 approve/reject 公共路径（autoApproved=false）。 */
-  private resolveManual(requestId: string, approved: boolean, feedback?: string): boolean {
+  private resolveManual(requestId: string, approved: boolean, feedback?: string, callerSessionId?: string): boolean {
     const request = this.requests.get(requestId);
     if (request?.status !== 'pending') return false;
+    // 会话授权（Codex R2 HIGH#1）：UI 不显示别会话的卡只是 display filter；这里是真授权边界——
+    // 请求归某会话时，只有该会话的调用方能决议。callerSessionId 缺省（headless/legacy）不阻断。
+    if (request.sessionId && callerSessionId && request.sessionId !== callerSessionId) {
+      logger.warn(`Cross-session ${approved ? 'approve' : 'reject'} refused: ${requestId} (owner=${request.sessionId}, caller=${callerSessionId})`);
+      return false;
+    }
     request.status = approved ? 'approved' : 'rejected';
     request.feedback = feedback;
     request.resolvedAt = this.now();

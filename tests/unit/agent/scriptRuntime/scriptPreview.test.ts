@@ -51,6 +51,12 @@ describe('extractScriptPreview', () => {
     expect(p.writeHint).toBe(true);
   });
 
+  // ── Codex Round2 HIGH：computed key 绕过（{[k]:'full'} / {[`tools`]:'edit'}）必须 fail-closed ──
+  it('computed property key（变量/模板）按写风险 fail-closed', () => {
+    expect(extractScriptPreview(`const k = 'tools'; await agent('x', { [k]: 'full' });`).writeHint).toBe(true);
+    expect(extractScriptPreview('await agent("x", { [`tools`]: "edit" });').writeHint).toBe(true);
+  });
+
   it('无 opts / 无 tools / 字面量 readonly 仍判定只读（默认安全档不误报）', () => {
     expect(extractScriptPreview(`await agent('x');`).writeHint).toBe(false);
     expect(extractScriptPreview(`await agent('x', { label: 'a' });`).writeHint).toBe(false);

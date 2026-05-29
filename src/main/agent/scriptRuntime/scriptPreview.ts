@@ -53,6 +53,8 @@ function agentHasWriteRisk(args: unknown[]): boolean {
   for (const prop of opts.properties as Array<Record<string, unknown>>) {
     if (prop.type === 'SpreadElement') return true; // spread 可能注入 tools → fail-closed
     if (prop.type !== 'Property') continue;
+    // computed key（{[k]:..} / {[`tools`]:..}）静态读不出键名 → 可能就是 tools，fail-closed（Codex R2）。
+    if (prop.computed === true) return true;
     const key = prop.key as Record<string, unknown> | undefined;
     const keyName = key?.type === 'Identifier' ? key.name : key?.type === 'Literal' ? key.value : undefined;
     if (keyName === 'tools') { toolsValue = prop.value; toolsSeen = true; }

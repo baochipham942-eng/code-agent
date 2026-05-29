@@ -465,12 +465,11 @@ export const App: React.FC = () => {
     };
   }, [openWorkbenchTab, setTaskPanelTab]);
 
-  // dynamic-workflow 进度树事件通道（P3a）：通用 EventBridge 把 'workflow' domain 转发到
-  // 'workflow:event'，payload = { type, data, timestamp }，其中 data 是完整 ScriptRunEvent。
-  // 'workflow:event' 不在 IPC_CHANNELS 强类型联合里（与 'agent:event' 同类，由 EventBridge 动态生成），故 cast。
+  // dynamic-workflow 进度树事件通道（P3a）：workflow.ipc 专用 bridge 把 'workflow' domain
+  // 投递到 'workflow:event'，payload 即完整 ScriptRunEvent（与 swarm 同款 raw-event 风格）。
   useEffect(() => {
-    const unsubscribe = ipcService.on(IPC_CHANNELS.WORKFLOW_EVENT, (msg) => {
-      if (msg?.data) useWorkflowStore.getState().handleEvent(msg.data);
+    const unsubscribe = ipcService.on(IPC_CHANNELS.WORKFLOW_EVENT, (event) => {
+      if (event) useWorkflowStore.getState().handleEvent(event);
     });
     return () => {
       unsubscribe?.();

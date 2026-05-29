@@ -44,8 +44,9 @@ function groupByPhase(snap: ScriptRunSnapshot): Array<{ phase: string; agents: S
   }
   const ordered: Array<{ phase: string; agents: ScriptRunAgentSnapshot[] }> = [];
   for (const phase of snap.phases) {
-    if (buckets.has(phase)) {
-      ordered.push({ phase, agents: buckets.get(phase)! });
+    const agents = buckets.get(phase);
+    if (agents) {
+      ordered.push({ phase, agents });
       buckets.delete(phase);
     }
   }

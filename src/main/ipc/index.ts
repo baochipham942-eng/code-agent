@@ -42,6 +42,8 @@ import { registerBackgroundHandlers } from './background.ipc';
 import { registerBackgroundTaskLedgerHandlers } from './backgroundTaskLedger.ipc';
 import { registerDiffHandlers } from './diff.ipc';
 import { registerSwarmHandlers } from './swarm.ipc';
+// 仅为副作用 import：模块加载即自装 workflow EventBus → renderer 专用 bridge（P3a 进度树）。
+import './workflow.ipc';
 import { registerTaskListHandlers } from '../agent/taskList/taskList.ipc';
 import { registerTelemetryHandlers } from './telemetry.ipc';
 import { registerCronHandlers } from './cron.ipc';

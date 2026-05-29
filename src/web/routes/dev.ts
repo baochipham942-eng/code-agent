@@ -14,6 +14,7 @@ import { formatError } from '../helpers/utils';
 import { isWorkspaceFileAllowed, getContentType } from '../helpers/upload';
 import { getEventBus } from '../../main/services/eventing/bus';
 import type { SwarmEvent } from '../../shared/contract/swarm';
+import type { ScriptRunEvent } from '../../shared/contract/scriptRun';
 import type { WebRouteLogger } from './routeTypes';
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -555,6 +556,38 @@ export function createDevRouter(deps: DevRouterDeps): Router {
       broadcastSSE(IPC_CHANNELS.AGENT_EVENT, events[0]);
     } else {
       broadcastSSE(IPC_CHANNELS.AGENT_EVENT_BATCH, events);
+    }
+    res.json({ ok: true, count: events.length });
+  });
+
+  // ── POST /api/dev/emit-workflow-events (E2E test hook，P3a) ──────────
+  // 仅 CODE_AGENT_E2E=1 启用。Playwright 注入 ScriptRunEvent[]，走完整生产路径:
+  // EventBus publish('workflow') → 通用 EventBridge → webContents.send('workflow:event')
+  // → broadcastSSE → EventSource → httpTransport → App.tsx 订阅 → workflowStore
+  // → WorkflowInlineMonitor DOM。验证进度树事件链 + UI 实挂。
+  router.post('/dev/emit-workflow-events', (req: Request, res: Response) => {
+    if (process.env.CODE_AGENT_E2E !== '1') {
+      res.status(404).json({ error: 'E2E hook disabled' });
+      return;
+    }
+
+    const body = req.body as { events?: ScriptRunEvent[] } | ScriptRunEvent[] | ScriptRunEvent | undefined;
+    const events: ScriptRunEvent[] = Array.isArray(body)
+      ? body
+      : body && 'events' in body && Array.isArray(body.events)
+        ? body.events
+        : body && typeof (body as ScriptRunEvent).type === 'string'
+          ? [body as ScriptRunEvent]
+          : [];
+    if (events.length === 0) {
+      res.status(400).json({ error: 'Body must be a ScriptRunEvent, { events }, or a ScriptRunEvent array' });
+      return;
+    }
+
+    // 与 workflow.ts emit 一致：publish 到 'workflow' domain（bridgeToRenderer:false），
+    // workflow.ipc 专用 bridge 转发到 'workflow:event'。
+    for (const event of events) {
+      getEventBus().publish('workflow', event.type, event, { sessionId: event.runId, bridgeToRenderer: false });
     }
     res.json({ ok: true, count: events.length });
   });

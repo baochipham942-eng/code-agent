@@ -532,8 +532,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.CHANNEL_ACCOUNT_STATUS_CHANGED]: (event: { accountId: string; status: string; error?: string }) => void;
   // Swarm events
   [IPC_CHANNELS.SWARM_EVENT]: (event: SwarmEvent) => void;
-  // dynamic-workflow 进度树事件（EventBridge 转发 'workflow' domain；payload 是 BusEvent 解包后的 { type, data, ... }，data 为完整 ScriptRunEvent）
-  [IPC_CHANNELS.WORKFLOW_EVENT]: (event: { type: string; data: ScriptRunEvent; timestamp?: number; sessionId?: string }) => void;
+  // dynamic-workflow 进度树事件（workflow.ipc 专用 bridge 投递完整 ScriptRunEvent，与 swarm 同款 raw-event 风格）
+  [IPC_CHANNELS.WORKFLOW_EVENT]: (event: ScriptRunEvent) => void;
   // TaskList events
   [IPC_CHANNELS.TASKLIST_EVENT]: (event: TaskListEventIpc) => void;
   // Telemetry events

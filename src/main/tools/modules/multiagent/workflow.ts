@@ -136,11 +136,11 @@ async function runWorkflow(
       signal: ctx.abortSignal,
       emit: (event: ScriptRunEvent) => {
         // ① 进度树事件通道（P3a）：把【全部】8 类 ScriptRunEvent publish 到 'workflow' domain，
-        //    通用 EventBridge 自动转发到 renderer 的 'workflow:event'（Tauri IPC + web SSE 两端通吃）。
-        //    BusEvent.data = 完整 ScriptRunEvent，renderer 直接喂 applyScriptRunEvent。
-        //    best-effort：事件总线异常不得反向把执行翻成失败。
+        //    workflow.ipc 的专用 bridge 投递到 renderer 'workflow:event'（Tauri IPC + web SSE 两端）。
+        //    bridgeToRenderer:false 避免 Tauri 主进程的通用 EventBridge 再转发一次（重复事件）。
+        //    renderer 收到的是完整 ScriptRunEvent，直接喂 applyScriptRunEvent。best-effort 不阻断执行。
         try {
-          getEventBus().publish('workflow', event.type, event, { sessionId: ctx.sessionId });
+          getEventBus().publish('workflow', event.type, event, { sessionId: ctx.sessionId, bridgeToRenderer: false });
         } catch { /* swallow — 观测面非权威 */ }
         // ② 兼容老进度行：3 类事件 → onProgress（不耦合 AgentEvent 协议）。
         if (event.type === 'run:phase' && typeof event.data?.title === 'string') {

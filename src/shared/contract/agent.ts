@@ -10,7 +10,7 @@ import type { SessionTask, TodoItem } from './planning';
 import type { FileDiff } from './diff';
 
 // Adaptive Thinking: 思考深度级别
-export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
+export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra_code';
 
 // Interaction Mode: Code / Plan / Ask
 export type InteractionMode = 'code' | 'plan' | 'ask';

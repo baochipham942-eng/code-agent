@@ -221,7 +221,7 @@ export interface Message {
   // Adaptive Thinking（交错思考）
   thinking?: string;
   // Effort 级别（Adaptive Thinking 思考深度）
-  effortLevel?: 'low' | 'medium' | 'high' | 'max';
+  effortLevel?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra_code';
   // Token usage from API response
   inputTokens?: number;
   outputTokens?: number;

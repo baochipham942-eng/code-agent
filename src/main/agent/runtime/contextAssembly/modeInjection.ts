@@ -92,6 +92,10 @@ export function shouldThink(ctx: ContextAssemblyCtx, hasErrors: boolean): boolea
   ctx.runtime.thinkingStepCount++;
 
   switch (normalizeAgentEffortLevel(ctx.runtime.effortLevel)) {
+    case 'ultra_code':
+    case 'max':
+    case 'xhigh':
+      return true;
     case 'high':
       return ctx.runtime.thinkingStepCount % 2 === 0 || hasErrors; // 每隔一次 + 错误时
     case 'medium':

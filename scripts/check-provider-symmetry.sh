@@ -5,7 +5,7 @@
 # 锚点：
 #   1. src/shared/model-catalog.json        (catalog: provider 元数据真相源)
 #   2. src/shared/constants/models.ts       (SUPPORTED_PROVIDERS: catalog 过滤白名单)
-#   3. src/renderer/components/StatusBar/ModelSwitcher.tsx (QUICK_SWITCH_PROVIDERS: UI 快速切换)
+#   3. src/renderer/components/StatusBar/modelSwitcherHelpers.tsx (QUICK_SWITCH_PROVIDERS: UI 快速切换)
 #
 # 不变量：
 #   HARD  SUPPORTED \ catalog       = ∅   (否则 PROVIDER_MODELS.filter 得空)
@@ -37,7 +37,7 @@ cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
 
 CATALOG="src/shared/model-catalog.json"
 CONSTANTS="src/shared/constants/models.ts"
-SWITCHER="src/renderer/components/StatusBar/ModelSwitcher.tsx"
+SWITCHER="src/renderer/components/StatusBar/modelSwitcherHelpers.tsx"
 
 # --- 锚点存在性 ---
 for f in "$CATALOG" "$CONSTANTS" "$SWITCHER"; do

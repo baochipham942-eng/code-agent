@@ -33,6 +33,53 @@ export interface ScriptRunEvent {
   data?: Record<string, unknown>;
 }
 
+// ── 跑前审批（P3b）──────────────────────────────────────────────────────────
+// dynamic-workflow 启动前的确认闸：展示静态预览（phases/扇出量/动写）+ 4 维度成本提示，
+// 复用 swarmLaunchApproval 的 Promise+EventBus+pendingResolvers 机制但用独立契约（workflow
+// 跑前没有 tasks[]，只有脚本静态预览 + token 预算）。
+
+/** 审批卡展示的 4 个成本/风险维度（advisory 文案）。 */
+export interface WorkflowLaunchDimensions {
+  /** 费用：扇出量 + token 预算上限。 */
+  cost: string;
+  /** 网络：子 agent 联网能力。 */
+  network: string;
+  /** 上下文泄露：中间结果是否进主对话。 */
+  contextLeak: string;
+  /** 后台占用：执行位置 + 时长上限。 */
+  background: string;
+}
+
+/** 一次 workflow 启动审批请求。 */
+export interface WorkflowLaunchRequest {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requestedAt: number;
+  resolvedAt?: number;
+  sessionId?: string;
+  /** /workflow <goal> 的目标。 */
+  goal?: string;
+  /** 脚本静态预览抽出的 phase 标题（声明顺序）。 */
+  phases: string[];
+  /** agent() 调用点估计（扇出量）。 */
+  estimatedAgentCalls: number;
+  /** parallel()+pipeline() 调用点数（并行度提示）。 */
+  fanoutSites: number;
+  /** 脚本是否含写能力 agent（tools:edit|full）。 */
+  writeHint: boolean;
+  /** token 预算上限（outputTokens），未设为 undefined（= 不限）。 */
+  budgetTokens?: number;
+  dimensions: WorkflowLaunchDimensions;
+  /** 用户审批时的可选说明 / 拒绝原因。 */
+  feedback?: string;
+}
+
+/** 审批卡推送事件（workflow:launch:event 通道）。 */
+export interface WorkflowLaunchEvent {
+  type: 'requested' | 'approved' | 'rejected';
+  request: WorkflowLaunchRequest;
+}
+
 // ── 可渲染快照（view-model）─────────────────────────────────────────────────
 // 「事件流 → 可渲染快照」中间层契约（照搬 pi-dynamic-workflows 的 WorkflowSnapshot/
 // WorkflowAgentSnapshot + 5 态状态机 + snapshot/recompute 模式）。渲染走 Neo 独立 GUI

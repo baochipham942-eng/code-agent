@@ -6,6 +6,7 @@ export {
   ToolSearchService,
   getToolSearchService,
   resetToolSearchService,
+  setProtocolToolNameChecker,
 } from './toolSearchService';
 export {
   CORE_TOOLS,

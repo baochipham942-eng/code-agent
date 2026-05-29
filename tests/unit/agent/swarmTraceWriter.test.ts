@@ -19,7 +19,8 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { SwarmTraceRepository } from '../../../src/main/services/core/repositories/SwarmTraceRepository';
 import { SwarmTraceWriter } from '../../../src/main/agent/swarmTraceWriter';
 import { SwarmEventEmitter } from '../../../src/main/agent/swarmEventPublisher';
-import { shutdownEventBus } from '../../../src/main/services/eventing/bus';
+import { getEventBus, shutdownEventBus } from '../../../src/main/services/eventing/bus';
+import type { SwarmAgentState, SwarmEvent, SwarmExecutionState } from '../../../src/shared/contract/swarm';
 
 function createSchema(db: BetterSqlite3.Database): void {
   db.exec(`
@@ -76,6 +77,35 @@ function createSchema(db: BetterSqlite3.Database): void {
       FOREIGN KEY (run_id) REFERENCES swarm_runs(id) ON DELETE CASCADE
     );
   `);
+}
+
+function makeStats(total: number, overrides: Partial<SwarmExecutionState['statistics']> = {}): SwarmExecutionState['statistics'] {
+  return {
+    total,
+    completed: 0,
+    failed: 0,
+    running: 0,
+    pending: total,
+    parallelPeak: 0,
+    totalTokens: 0,
+    totalToolCalls: 0,
+    ...overrides,
+  };
+}
+
+function makeAgent(id: string, status: SwarmAgentState['status']): SwarmAgentState {
+  return {
+    id,
+    name: id,
+    role: 'coder',
+    status,
+    iterations: 0,
+  };
+}
+
+function publishSwarm(event: SwarmEvent): void {
+  const busType = event.type.startsWith('swarm:') ? event.type.slice(6) : event.type;
+  getEventBus().publish('swarm', busType, event, { bridgeToRenderer: false });
 }
 
 describe('SwarmTraceWriter', () => {
@@ -225,5 +255,58 @@ describe('SwarmTraceWriter', () => {
     const list = repo.listRuns(10);
     expect(list.length).toBe(2);
     expect(list[0].startedAt).toBeGreaterThanOrEqual(list[1].startedAt);
+  });
+
+  it('keeps explicitly stamped overlapping runIds isolated', async () => {
+    const base = Date.now();
+    publishSwarm({
+      type: 'swarm:started',
+      runId: 'run-a',
+      sessionId: 'sess-a',
+      timestamp: base,
+      data: { statistics: makeStats(1) },
+    });
+    publishSwarm({
+      type: 'swarm:started',
+      runId: 'run-b',
+      sessionId: 'sess-b',
+      timestamp: base + 1,
+      data: { statistics: makeStats(1) },
+    });
+    publishSwarm({
+      type: 'swarm:agent:added',
+      runId: 'run-a',
+      timestamp: base + 2,
+      data: { agentId: 'a1', agentState: makeAgent('a1', 'running') },
+    });
+    publishSwarm({
+      type: 'swarm:agent:added',
+      runId: 'run-b',
+      timestamp: base + 3,
+      data: { agentId: 'b1', agentState: makeAgent('b1', 'running') },
+    });
+    publishSwarm({
+      type: 'swarm:completed',
+      runId: 'run-a',
+      timestamp: base + 4,
+      data: { statistics: makeStats(1, { completed: 1, pending: 0, parallelPeak: 1 }) },
+    });
+    publishSwarm({
+      type: 'swarm:completed',
+      runId: 'run-b',
+      timestamp: base + 5,
+      data: { statistics: makeStats(1, { completed: 1, pending: 0, parallelPeak: 1 }) },
+    });
+
+    await writer.drain();
+
+    const runA = repo.getRunDetail('run-a');
+    const runB = repo.getRunDetail('run-b');
+    expect(runA?.run.sessionId).toBe('sess-a');
+    expect(runB?.run.sessionId).toBe('sess-b');
+    expect(runA?.agents.map((agent) => agent.agentId)).toEqual(['a1']);
+    expect(runB?.agents.map((agent) => agent.agentId)).toEqual(['b1']);
+    expect(runA?.events.every((event) => event.runId === 'run-a')).toBe(true);
+    expect(runB?.events.every((event) => event.runId === 'run-b')).toBe(true);
   });
 });

@@ -3,8 +3,13 @@ import {
   getCoreToolDefinitions,
   getLoadedDeferredToolDefinitions,
 } from '../../../src/main/tools/dispatch/toolDefinitions';
+import {
+  findToolSearchExecutionContractFailures,
+  resolveToolSearchExecutionContract,
+} from '../../../src/main/tools/dispatch/toolSearchExecutionContract';
 import { getToolSearchService, resetToolSearchService } from '../../../src/main/services/toolSearch/toolSearchService';
 import { resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
+import type { ToolSearchItem } from '../../../src/shared/contract/toolSearch';
 
 const mcpToolDefinition = {
   name: 'mcp__github__search_code',
@@ -107,5 +112,63 @@ describe('toolDefinitions deferred loading', () => {
     const definitions = getLoadedDeferredToolDefinitions();
 
     expect(definitions.map((definition) => definition.name)).not.toContain('desktop_context_now');
+  });
+
+  it('keeps ToolSearch loadable results aligned with executable definitions', () => {
+    const service = getToolSearchService();
+    const taskResult = service.selectTool('Task');
+    service.registerMCPTool({
+      name: 'mcp__github__search_code',
+      shortDescription: 'Search code on GitHub',
+      tags: ['mcp', 'network'],
+      aliases: ['search_code'],
+      source: 'mcp',
+      mcpServer: 'github',
+    });
+    const mcpResult = service.selectTool('mcp__github__search_code');
+    const desktopResult = service.selectTool('desktop_context_now');
+
+    const items = [
+      ...taskResult.tools,
+      ...mcpResult.tools,
+      ...desktopResult.tools,
+    ];
+
+    expect(findToolSearchExecutionContractFailures(items)).toEqual([]);
+    expect(resolveToolSearchExecutionContract(taskResult.tools[0]!)).toMatchObject({
+      executable: true,
+      definitionName: 'Task',
+      canonicalInvocation: 'Task',
+    });
+    expect(resolveToolSearchExecutionContract(mcpResult.tools[0]!)).toMatchObject({
+      executable: true,
+      definitionName: 'mcp__github__search_code',
+      canonicalInvocation: 'mcp__github__search_code',
+    });
+    expect(resolveToolSearchExecutionContract(desktopResult.tools[0]!)).toMatchObject({
+      executable: false,
+      reason: expect.stringMatching(/Desktop workbench|no registered protocol tool/i),
+    });
+  });
+
+  it('flags a loadable ToolSearch result when no executable definition can resolve', () => {
+    const item: ToolSearchItem = {
+      name: 'phantom_tool',
+      description: 'Bad metadata',
+      score: 1,
+      source: 'builtin',
+      loadable: true,
+      canonicalInvocation: 'phantom_tool',
+    };
+
+    expect(findToolSearchExecutionContractFailures([item], {
+      resolveDefinition: () => undefined,
+    })).toEqual([
+      {
+        name: 'phantom_tool',
+        issue: 'loadable search result has no executable ToolDefinition: phantom_tool',
+        item,
+      },
+    ]);
   });
 });

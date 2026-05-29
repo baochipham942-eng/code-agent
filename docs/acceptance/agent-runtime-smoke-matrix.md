@@ -1,6 +1,6 @@
 # Agent Runtime Smoke Matrix
 
-日期：2026-05-20
+日期：2026-05-29
 
 目标：把 agent runtime 的真实产品链路验收从口头风险清单变成固定矩阵。这里不替代 unit / renderer / eval 测试；它负责证明真实 app-host、真实工具执行、真实落盘和 reload 路径没有断。
 
@@ -13,6 +13,45 @@ npm run typecheck
 npm run debt:report -- --skip-eslint --limit 15
 npm run release:security-scan
 ```
+
+涉及 tool search / executable tool contract 时补跑：
+
+```bash
+npx vitest run tests/unit/services/toolSearchService.test.ts tests/unit/tools/modules/search/toolSearch.test.ts tests/unit/tools/toolExecutor.protocolApproval.test.ts tests/unit/protocol/toolDefinitions.test.ts
+```
+
+涉及外部 paid model smoke 护栏时补跑：
+
+```bash
+npx vitest run tests/unit/agent/inference.artifactRetry.test.ts tests/unit/security/secretRedaction.test.ts tests/unit/mcp/logCollector.redaction.test.ts
+npx tsx scripts/acceptance/paid-real-model-replay-eval-smoke.ts --dry-run --json
+```
+
+OpenAI-compatible 中转真跑示例。先用本机 secret 文件提供 key，不把 key 写进命令行或 tracked 文件；中转只暴露兼容模型时，必须同时显式给模型名和价格：
+
+```bash
+CODE_AGENT_PAID_SMOKE=1 \
+CODE_AGENT_PAID_SMOKE_API_KEY_FILE=/path/to/local-secret-key-file \
+CODE_AGENT_PAID_SMOKE_BASE_URL=https://tokenflux.dev/v1 \
+CODE_AGENT_PAID_SMOKE_MODEL=gpt-5.2 \
+CODE_AGENT_PAID_SMOKE_INPUT_USD_PER_1M=1.75 \
+CODE_AGENT_PAID_SMOKE_OUTPUT_USD_PER_1M=14 \
+CODE_AGENT_PAID_SMOKE_MAX_USD=0.11 \
+CODE_AGENT_PAID_SMOKE_MAX_MODEL_CALLS=3 \
+CODE_AGENT_PAID_SMOKE_MAX_INPUT_TOKENS=15000 \
+CODE_AGENT_PAID_SMOKE_MAX_OUTPUT_TOKENS=512 \
+npm run acceptance:paid-real-model-replay-eval -- --manual-paid --json
+```
+
+这组检查必须证明：
+
+- paid smoke 默认 manual-only，不会因为 CI 或本地误触直接花钱。
+- 非默认模型必须显式提供输入/输出单价，避免低估成本。
+- OpenAI-compatible 中转必须通过 `CODE_AGENT_PAID_SMOKE_BASE_URL` 或 `OPENAI_BASE_URL` 显式配置；base URL 只允许 http/https origin + path，不能携带账号密码、query 或 fragment。
+- 脚本会加载工作区 `.env`，也支持用 `CODE_AGENT_PAID_SMOKE_API_KEY_FILE` 从本机 secret 文件读取 key；`.env` 和 secret 文件必须保持 gitignored，不能把 provider key 写进 tracked 文件、测试快照或命令输出。
+- AgentLoop 层硬限制 `maxIterations`、`maxInputTokens`、`maxOutputTokens`，输入超额会在 provider 请求前失败。
+- provider transient retry 和 runtime network retry 在 paid smoke 中关闭，避免一次 smoke 随机放大成本。
+- 日志、metadata、smoke 输出和 provider 错误都不能泄露原始 API key。
 
 涉及浏览器或 UI 状态时，优先用系统 Chrome + CDP：
 
@@ -50,6 +89,7 @@ npm run acceptance:agent-runtime-app-host -- --skip-build --json
 | Agent Team dependency/cancel | dependsOn gate、blocked/failed/cancelled 汇总和 run-level cancel 都在真实 Agent Team 中成立 | `npm run test:swarm:smoke`、`npm run test:swarm:e2e` | e2e 依赖 Playwright 环境，CI 失败时需本机证据 | 改 swarm、subagent、parallel coordinator |
 | Restart/reload recovery | task/todo/context intervention/manual compact/replay key 能跨 reload 读回 | persistence unit tests；session/replay renderer tests | 还缺统一 reload smoke | 改 `SessionRepository`、`SessionManager`、context assembly、task persistence |
 | Auto-agent replay/eval | real agent run 产出 sessionId、replayKey、telemetry completeness，Eval 能 fail/degraded | `npm run eval:smoke`、相关 evaluation IPC tests | 还缺真实 AgentLoop + tool + replay 的一条固定 smoke | 改 eval、telemetry、replay、auto/subagent telemetry |
+| External paid model replay/eval | 真实外部 provider 能在预算、token、timeout、retry 红线内跑通真实 `AgentLoop` + `Read` + telemetry replay | `npm run acceptance:paid-real-model-replay-eval -- --dry-run --json` 默认只做门禁 dry-run；真跑必须显式提供 `CODE_AGENT_PAID_SMOKE=1`、`OPENAI_API_KEY` 或 `CODE_AGENT_PAID_SMOKE_API_KEY_FILE`，并传 `--manual-paid`。OpenAI-compatible 中转还必须显式提供 `CODE_AGENT_PAID_SMOKE_BASE_URL` 或 `OPENAI_BASE_URL`，脚本会拒绝把凭证藏进 URL。运行时会硬限制 `maxIterations`、`maxInputTokens`、`maxOutputTokens`，关闭 provider/runtime retry，并输出预算上限、实际 token/估算成本、sessionId、replayKey、telemetry gate；换非默认模型时还必须显式提供 `CODE_AGENT_PAID_SMOKE_INPUT_USD_PER_1M` / `CODE_AGENT_PAID_SMOKE_OUTPUT_USD_PER_1M`。2026-05-29 已用 TokenFlux + `gpt-5.2` 跑通：`status=passed`、`telemetryGate.passed=true`、`dataSource=telemetry`、`modelBlocks=2`、`toolBlocks=1`、`actualEstimatedUsd=0.05761875`、`maxUsd=0.11` | 真 paid run 只能手动或 release 前执行，不进默认 CI；Anthropic/Gemini provider matrix 后续再接；代理模型列表可能不含默认 `gpt-4o-mini`，需先查 `/models` 并显式给模型和价格 | 改 provider wrapper、model router、testing adapter、eval/replay gate |
 
 ## 验收记录格式
 

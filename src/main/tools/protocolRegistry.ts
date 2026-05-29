@@ -10,6 +10,8 @@
 
 import { ToolRegistry } from './registry';
 import { registerMigratedTools } from './modules';
+import { setProtocolToolRegistryPort } from './protocolToolRegistration';
+import { setProtocolToolNameChecker } from '../services/toolSearch/toolSearchService';
 
 let singleton: ToolRegistry | null = null;
 
@@ -31,3 +33,12 @@ export function resetProtocolRegistry(): void {
 export function isProtocolToolName(name: string): boolean {
   return getProtocolRegistry().has(name);
 }
+
+setProtocolToolNameChecker(isProtocolToolName);
+setProtocolToolRegistryPort({
+  register: (schema, loader) => getProtocolRegistry().register(schema, loader),
+  unregister: (name) => getProtocolRegistry().unregister(name),
+  has: (name) => getProtocolRegistry().has(name),
+  getSchemas: () => getProtocolRegistry().getSchemas(),
+  resolve: (name) => getProtocolRegistry().resolve(name),
+});

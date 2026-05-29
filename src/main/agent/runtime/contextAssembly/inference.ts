@@ -19,13 +19,14 @@ import {
 import { needsArtifactTaskBrief } from '../../../prompts/builder';
 import {
   estimateModelMessageTokens,
+  estimateTokens,
 } from '../../../context/tokenOptimizer';
 import type { MessageContent, ModelMessage } from '../../../agent/loopTypes';
 import type { StreamCallback, InferenceOptions, ModelResponse as RouterModelResponse } from '../../../model/types';
 import type { ModelConfig } from '../../../../shared/contract/model';
 import { normalizeAgentEffortLevel } from '../../../../shared/effortLevels';
-import type { ContextAssemblyCtx } from '../contextAssembly';
-import { logger } from '../contextAssembly';
+import type { ContextAssemblyCtx } from './shared';
+import { logger } from './shared';
 import {
   getArtifactRepairToolPolicy,
   isArtifactRepairWritePriority as isArtifactRepairWritePriorityForGuard,
@@ -63,6 +64,56 @@ function runEngineInference(
     return inferenceViaAiSdk(messages, tools, config, onStream, signal, options);
   }
   return ctx.runtime.modelRouter.inference(messages, tools, config, onStream, signal, options);
+}
+
+function estimateInferenceInputTokens(
+  messages: ModelMessage[],
+  tools: ToolDefinition[],
+): number {
+  const messageTokens = estimateModelMessageTokens(
+    messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+    })),
+  );
+  const toolTokens = tools.reduce((sum, tool) => {
+    const schemaText = JSON.stringify({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    });
+    return sum + estimateTokens(schemaText);
+  }, 0);
+
+  return messageTokens + toolTokens;
+}
+
+function assertInputTokenBudget(
+  messages: ModelMessage[],
+  tools: ToolDefinition[],
+  options: InferenceOptions | undefined,
+): void {
+  const maxInputTokens = options?.maxInputTokens;
+  if (!maxInputTokens || maxInputTokens <= 0) return;
+
+  const estimatedInputTokens = estimateInferenceInputTokens(messages, tools);
+  if (estimatedInputTokens > maxInputTokens) {
+    throw new Error(
+      `Inference input token budget exceeded before provider request: estimated ${estimatedInputTokens} > max ${maxInputTokens}`,
+    );
+  }
+}
+
+function capOutputTokens(config: ModelConfig, options: InferenceOptions | undefined): ModelConfig {
+  const maxOutputTokens = options?.maxOutputTokens;
+  if (!maxOutputTokens || maxOutputTokens <= 0) return config;
+  const current = typeof config.maxTokens === 'number' && Number.isFinite(config.maxTokens)
+    ? config.maxTokens
+    : maxOutputTokens;
+  return {
+    ...config,
+    maxTokens: Math.min(current, maxOutputTokens),
+  };
 }
 
 function startArtifactModelWaitProgress(
@@ -169,6 +220,23 @@ function buildArtifactValidationAttemptCompletionResponse(targetFile: string): M
       },
     },
   };
+}
+
+function emitToolSchemaSnapshot(ctx: ContextAssemblyCtx, tools: ToolDefinition[]): void {
+  if (tools.length === 0) return;
+  ctx.runtime.onEvent({
+    type: 'tool_schema_snapshot',
+    data: {
+      turnId: ctx.runtime.currentTurnId,
+      toolCount: tools.length,
+      tools: tools.map((tool) => ({
+        name: tool.name,
+        inputSchema: tool.inputSchema as unknown as Record<string, unknown> | undefined,
+        requiresPermission: tool.requiresPermission,
+        permissionLevel: tool.permissionLevel,
+      })),
+    },
+  });
 }
 
 function replaceImagesWithVisionSummary(
@@ -438,6 +506,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     );
   }
   tools = dedupeToolDefinitions(tools);
+  emitToolSchemaSnapshot(ctx, tools);
 
   let effectiveTools = tools;
   let effectiveConfig = ctx.runtime.modelConfig;
@@ -749,7 +818,11 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       }
     };
 
-    const requestConfig = capArtifactRepairMaxTokens(ctx, effectiveConfig);
+    const requestConfig = capOutputTokens(
+      capArtifactRepairMaxTokens(ctx, effectiveConfig),
+      ctx.runtime.inferenceOptions,
+    );
+    assertInputTokenBudget(modelMessages, effectiveTools, ctx.runtime.inferenceOptions);
     requestConfigForRetry = requestConfig;
     const stopArtifactProgress = startArtifactModelWaitProgress(ctx, {
       artifactRequest,
@@ -765,8 +838,9 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
         requestConfig,
         streamCallback,
         ctx.runtime.abortController.signal,
-        {
-          onSnapshot: createSnapshotHandler(
+          {
+            ...ctx.runtime.inferenceOptions,
+            onSnapshot: createSnapshotHandler(
             ctx.runtime.sessionId,
             ctx.runtime.currentTurnId,
             ctx.runtime.workingDirectory,
@@ -1001,6 +1075,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     const shouldRetryNetworkError =
       isNetworkError
       && networkRetryCount < maxNetworkRetries
+      && ctx.runtime.inferenceOptions?.disableRuntimeNetworkRetry !== true
       && !(ctx.runtime.artifactRepairGuard && isSlowProviderTimeout);
     if (shouldRetryNetworkError) {
       ctx.runtime._networkRetried = true;

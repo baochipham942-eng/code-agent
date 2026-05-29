@@ -11,9 +11,14 @@ import type {
 } from '../../../shared/contract/toolSearch';
 import { DEFERRED_TOOLS_META, buildDeferredToolIndex, isCoreToolName, resolveToolAlias } from './deferredTools';
 import { createLogger } from '../infra/logger';
-import { isProtocolToolName } from '../../tools/protocolRegistry';
 
 const logger = createLogger('ToolSearchService');
+
+let protocolToolNameChecker: (name: string) => boolean = () => false;
+
+export function setProtocolToolNameChecker(checker: (name: string) => boolean): void {
+  protocolToolNameChecker = checker;
+}
 
 function normalizeToolName(name: string): string {
   return resolveToolAlias(name.trim());
@@ -363,7 +368,7 @@ export class ToolSearchService {
   private canExposeLoadedTool(meta: DeferredToolMeta): boolean {
     if (isCoreToolName(meta.name)) return true;
     if (meta.source === 'mcp') return this.mcpToolsMeta.has(meta.name);
-    if (meta.source === 'builtin') return isProtocolToolName(meta.name);
+    if (meta.source === 'builtin') return protocolToolNameChecker(meta.name);
     return false;
   }
 

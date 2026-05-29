@@ -6,8 +6,8 @@
 // 状态，串行写入 SwarmTraceRepo。所有写入 fire-and-forget，不阻塞
 // 事件发布者；run 收尾时由外部调用 drain() 等待最后一笔落盘。
 //
-// 单进程同一时刻只允许一个 active run（与 SwarmEventEmitter 的 currentRunId
-// 假设一致）。重叠场景下旧 run 会被新 run 直接覆盖。
+// Writer 以 runId 为隔离键维护 active run。SwarmEventEmitter 仍负责给常规
+// 单 run 场景自动打戳；显式携带 runId 的重叠 run 事件不会互相覆盖。
 // ============================================================================
 
 import type { BusEvent } from '../protocol/events/busTypes';
@@ -65,7 +65,7 @@ export interface SwarmTraceWriterOptions {
 export class SwarmTraceWriter {
   private readonly repo: SwarmTraceRepo;
   private readonly options: Required<SwarmTraceWriterOptions>;
-  private current: RunState | null = null;
+  private runs = new Map<string, RunState>();
   /** fire-and-forget 串行写入链，drain() 时 await 这条链 */
   private pendingPersist: Promise<void> = Promise.resolve();
   private unsubscribe: (() => void) | null = null;
@@ -151,7 +151,7 @@ export class SwarmTraceWriter {
     const totalAgents = event.data.statistics?.total ?? 0;
     const sessionId = event.sessionId ?? this.options.getSessionId();
 
-    this.current = {
+    const state: RunState = {
       runId,
       startedAt: event.timestamp,
       totalAgents,
@@ -161,6 +161,7 @@ export class SwarmTraceWriter {
       trigger: this.options.defaultTrigger,
       coordinator: this.options.defaultCoordinator,
     };
+    this.runs.set(runId, state);
 
     this.schedulePersist(() => {
       this.repo.startRun({
@@ -175,20 +176,21 @@ export class SwarmTraceWriter {
   }
 
   private onAgentEvent(event: SwarmEvent): void {
-    if (!this.current || !event.runId || event.runId !== this.current.runId) return;
+    const run = this.getRunForEvent(event);
+    if (!run) return;
     const state = event.data.agentState;
     if (!state) return;
 
-    const rollup = this.mergeAgentRollup(state);
+    const rollup = this.mergeAgentRollup(run, state);
     // parallel peak：取所有 status=running 的 agent 数量
-    const runningCount = Array.from(this.current.agents.values()).filter(
+    const runningCount = Array.from(run.agents.values()).filter(
       (a) => a.status === 'running',
     ).length;
-    if (runningCount > this.current.parallelPeak) {
-      this.current.parallelPeak = runningCount;
+    if (runningCount > run.parallelPeak) {
+      run.parallelPeak = runningCount;
     }
 
-    const runId = this.current.runId;
+    const runId = run.runId;
     this.schedulePersist(() => {
       this.repo.upsertAgent({
         runId,
@@ -214,18 +216,19 @@ export class SwarmTraceWriter {
   }
 
   private onCompleted(event: SwarmEvent): void {
-    if (!this.current || !event.runId || event.runId !== this.current.runId) return;
+    const run = this.getRunForEvent(event);
+    if (!run) return;
     const stats = event.data.statistics;
     const aggregation: SwarmAggregation | null = event.data.result?.aggregation ?? null;
-    const totals = this.aggregateAgentTotals();
+    const totals = this.aggregateAgentTotals(run);
 
     const closed = {
-      id: this.current.runId,
+      id: run.runId,
       status: (stats && stats.failed > 0 ? 'failed' : 'completed') as 'failed' | 'completed',
       endedAt: event.timestamp,
       completedCount: stats?.completed ?? 0,
       failedCount: stats?.failed ?? 0,
-      parallelPeak: Math.max(this.current.parallelPeak, stats?.parallelPeak ?? 0),
+      parallelPeak: Math.max(run.parallelPeak, stats?.parallelPeak ?? 0),
       totalTokensIn: totals.tokensIn,
       totalTokensOut: totals.tokensOut,
       totalToolCalls: totals.toolCalls,
@@ -235,19 +238,20 @@ export class SwarmTraceWriter {
     };
 
     this.schedulePersist(() => this.repo.closeRun(closed));
-    this.current = null;
+    this.runs.delete(run.runId);
   }
 
   private onCancelled(event: SwarmEvent): void {
-    if (!this.current || !event.runId || event.runId !== this.current.runId) return;
-    const totals = this.aggregateAgentTotals();
+    const run = this.getRunForEvent(event);
+    if (!run) return;
+    const totals = this.aggregateAgentTotals(run);
     const closed = {
-      id: this.current.runId,
+      id: run.runId,
       status: 'cancelled' as const,
       endedAt: event.timestamp,
       completedCount: totals.completedCount,
       failedCount: totals.failedCount,
-      parallelPeak: this.current.parallelPeak,
+      parallelPeak: run.parallelPeak,
       totalTokensIn: totals.tokensIn,
       totalTokensOut: totals.tokensOut,
       totalToolCalls: totals.toolCalls,
@@ -256,7 +260,7 @@ export class SwarmTraceWriter {
       aggregation: null,
     };
     this.schedulePersist(() => this.repo.closeRun(closed));
-    this.current = null;
+    this.runs.delete(run.runId);
   }
 
   // --------------------------------------------------------------------------
@@ -264,9 +268,10 @@ export class SwarmTraceWriter {
   // --------------------------------------------------------------------------
 
   private appendTimelineEvent(event: SwarmEvent): void {
-    if (!this.current || !event.runId || event.runId !== this.current.runId) return;
-    const seq = this.current.seq++;
-    const runId = this.current.runId;
+    const run = this.getRunForEvent(event);
+    if (!run) return;
+    const seq = run.seq++;
+    const runId = run.runId;
 
     const level: SwarmEventLevel =
       event.type === 'swarm:agent:failed' || event.type === 'swarm:cancelled'
@@ -293,11 +298,8 @@ export class SwarmTraceWriter {
     });
   }
 
-  private mergeAgentRollup(state: SwarmAgentState): AgentRollup {
-    if (!this.current) {
-      throw new Error('mergeAgentRollup called without active run');
-    }
-    const existing = this.current.agents.get(state.id);
+  private mergeAgentRollup(run: RunState, state: SwarmAgentState): AgentRollup {
+    const existing = run.agents.get(state.id);
     const next: AgentRollup = {
       name: state.name || existing?.name || '',
       role: state.role || existing?.role || '',
@@ -311,11 +313,11 @@ export class SwarmTraceWriter {
       error: state.error ?? existing?.error ?? null,
       filesChanged: state.filesChanged ?? existing?.filesChanged ?? [],
     };
-    this.current.agents.set(state.id, next);
+    run.agents.set(state.id, next);
     return next;
   }
 
-  private aggregateAgentTotals(): {
+  private aggregateAgentTotals(run: RunState | undefined): {
     tokensIn: number;
     tokensOut: number;
     toolCalls: number;
@@ -324,7 +326,7 @@ export class SwarmTraceWriter {
     failedCount: number;
     errorSummary: string | null;
   } {
-    if (!this.current) {
+    if (!run) {
       return { tokensIn: 0, tokensOut: 0, toolCalls: 0, costUsd: 0, completedCount: 0, failedCount: 0, errorSummary: null };
     }
     let tokensIn = 0;
@@ -334,7 +336,7 @@ export class SwarmTraceWriter {
     let completedCount = 0;
     let failedCount = 0;
     const errors: string[] = [];
-    for (const a of this.current.agents.values()) {
+    for (const a of run.agents.values()) {
       tokensIn += a.tokensIn;
       tokensOut += a.tokensOut;
       toolCalls += a.toolCalls;
@@ -384,6 +386,16 @@ export class SwarmTraceWriter {
     if (m.includes('network') || m.includes('econn')) return 'network';
     if (m.includes('parse')) return 'parse_error';
     return 'unknown';
+  }
+
+  private getRunForEvent(event: SwarmEvent): RunState | undefined {
+    if (event.runId) {
+      return this.runs.get(event.runId);
+    }
+    if (this.runs.size === 1) {
+      return Array.from(this.runs.values())[0];
+    }
+    return undefined;
   }
 
   private schedulePersist(fn: () => void): void {

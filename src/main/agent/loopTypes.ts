@@ -20,6 +20,7 @@ import type { GoalContract } from './goalModeController';
 import type { ToolExecutor } from '../tools/toolExecutor';
 import type { PlanningService } from '../planning';
 import type { HookManager } from '../hooks';
+import type { InferenceOptions } from '../model/types';
 
 // ----------------------------------------------------------------------------
 // Configuration Types
@@ -51,6 +52,10 @@ export interface AgentLoopConfig {
   enableToolDeferredLoading?: boolean;
   /** 遥测适配器（可选，用于记录原始数据） */
   telemetryAdapter?: TelemetryAdapter;
+  /** Per-run provider guardrails for acceptance and controlled runtime harnesses. */
+  inferenceOptions?: InferenceOptions;
+  /** Per-run iteration cap for acceptance and controlled runtime harnesses. */
+  maxIterations?: number;
   /** 工具执行日志回调 */
   onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: import('../../shared/contract').ToolResult }) => void;
   /** CLI 模式下的消息持久化回调 */

@@ -17,7 +17,7 @@
 
 import type { ToolDefinition } from '../../../shared/contract';
 import type { ToolContext, ToolExecutionResult } from '../types';
-import { getProtocolRegistry } from '../protocolRegistry';
+import { hasProtocolTool, resolveProtocolTool } from '../protocolToolRegistration';
 import { getToolDefinitionWithCloudMeta, getAllToolDefinitions } from './toolDefinitions';
 import { buildProtocolContext, buildCanUseToolFromLegacy } from './shadowAdapter';
 import { isToolNameAllowedByWorkbenchScope } from '../workbenchToolScope';
@@ -66,7 +66,6 @@ class ProtocolToolResolver implements ToolResolver {
     args: Record<string, unknown>,
     ctx: ToolContext,
   ): Promise<ToolExecutionResult> {
-    const registry = getProtocolRegistry();
     const definition = this.getDefinition(name);
     if (!definition) {
       return { success: false, error: `tool not registered: ${name}` };
@@ -107,11 +106,11 @@ class ProtocolToolResolver implements ToolResolver {
         };
       }
 
-      if (!registry.has(dispatchName)) {
+      if (!hasProtocolTool(dispatchName)) {
         return { success: false, error: `tool not registered: ${dispatchName}` };
       }
 
-      const handler = await registry.resolve(dispatchName);
+      const handler = await resolveProtocolTool(dispatchName);
       const protoCtx = buildProtocolContext({
         sessionId: (ctx as { sessionId?: string }).sessionId,
         workingDirectory: ctx.workingDirectory,

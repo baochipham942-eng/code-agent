@@ -154,7 +154,7 @@ export class AgentLoop {
       onEvent: config.onEvent,
       modelRouter: new ModelRouter(),
       // Goal 模式：轮次上限用契约的 maxTurns（通常 > 默认 30），否则走默认
-      maxIterations: config.goalContract?.maxTurns ?? getMaxIterations(),
+      maxIterations: config.maxIterations ?? config.goalContract?.maxTurns ?? getMaxIterations(),
       workingDirectory: config.workingDirectory,
       isDefaultWorkingDirectory: config.isDefaultWorkingDirectory ?? true,
       sessionId: resolvedSessionId,
@@ -174,6 +174,7 @@ export class AgentLoop {
       nudgeManager: new NudgeManager(),
       hookManager: config.hookManager,
       planningService: config.planningService,
+      inferenceOptions: config.inferenceOptions,
       hookMessageBuffer: new HookMessageBuffer(),
       messageHistoryCompressor: new MessageHistoryCompressor({
         threshold: lightCompressionThreshold,

@@ -126,6 +126,9 @@ export interface InferenceOptions {
   artifactRepairWritePriority?: boolean;
   artifactRepairFullRewritePriority?: boolean;
   disableProviderTransientRetry?: boolean;
+  disableRuntimeNetworkRetry?: boolean;
+  maxInputTokens?: number;
+  maxOutputTokens?: number;
   requestTimeoutMs?: number;
   firstByteTimeoutMs?: number;
   inactivityTimeoutMs?: number;

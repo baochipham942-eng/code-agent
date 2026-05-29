@@ -8,7 +8,7 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelCapability, ModelEntrySettings, ModelProvider, ModelProviderProtocol, ModelProviderSettings } from '@shared/contract';
-import { UI, PROVIDER_MODELS, getProviderEndpointForProtocol } from '@shared/constants';
+import { UI, PROVIDER_MODELS, getProviderEndpointForProtocol, PROVIDER_CONCURRENCY_LIMITS } from '@shared/constants';
 import {
   MODEL_CAPABILITY_OPTIONS,
   buildProviderInfoFromSettings,
@@ -237,6 +237,13 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     patchCurrentProviderConfig({ baseUrl: value });
     onChange({ ...config, baseUrl: value });
   }, [config, onChange, patchCurrentProviderConfig]);
+
+  // 并发上限是 per-provider 设置（不属于活动 ModelConfig），只写 providerConfig，
+  // 由 Save 时随 currentProviderConfig 一起持久化到 settings.models.providers。
+  const handleMaxConcurrentChange = useCallback((value: number | undefined) => {
+    patchCurrentProviderConfig({ maxConcurrent: value });
+  }, [patchCurrentProviderConfig]);
+  const defaultMaxConcurrent = PROVIDER_CONCURRENCY_LIMITS[config.provider]?.maxConcurrent;
 
   const handleResetOfficialEndpoint = useCallback(() => {
     if (!registryEndpoint) {
@@ -773,6 +780,9 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         onResetOfficialEndpoint={handleResetOfficialEndpoint}
         onBaseUrlChange={handleBaseUrlChange}
         onApiKeyChange={handleApiKeyChange}
+        maxConcurrent={currentProviderConfig?.maxConcurrent}
+        defaultMaxConcurrent={defaultMaxConcurrent}
+        onMaxConcurrentChange={handleMaxConcurrentChange}
         onModelChange={handleModelChange}
         onTemperatureChange={(temperature) => {
           patchCurrentProviderConfig({ temperature });

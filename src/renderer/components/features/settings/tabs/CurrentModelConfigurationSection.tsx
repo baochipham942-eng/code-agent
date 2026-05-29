@@ -32,6 +32,9 @@ interface CurrentModelConfigurationSectionProps {
   onResetOfficialEndpoint: () => void;
   onBaseUrlChange: (value: string) => void;
   onApiKeyChange: (value: string) => void;
+  maxConcurrent?: number;
+  defaultMaxConcurrent?: number;
+  onMaxConcurrentChange: (value: number | undefined) => void;
   onModelChange: (modelId: string) => void;
   onTemperatureChange: (temperature: number) => void;
 }
@@ -59,6 +62,9 @@ export const CurrentModelConfigurationSection: React.FC<CurrentModelConfiguratio
   onResetOfficialEndpoint,
   onBaseUrlChange,
   onApiKeyChange,
+  maxConcurrent,
+  defaultMaxConcurrent,
+  onMaxConcurrentChange,
   onModelChange,
   onTemperatureChange,
 }) => {
@@ -153,6 +159,31 @@ export const CurrentModelConfigurationSection: React.FC<CurrentModelConfiguratio
                   ? 'API Key 已在本机加密保存。'
                   : t.model.apiKeyHint
                 : '使用本机 OpenAI-compatible 服务。'}
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-zinc-200">
+              最大并发请求数
+            </label>
+            <Input
+              type="number"
+              min={0}
+              value={maxConcurrent ?? ''}
+              onChange={(event) => {
+                const raw = event.target.value.trim();
+                if (raw === '') {
+                  onMaxConcurrentChange(undefined);
+                  return;
+                }
+                const n = Math.floor(Number(raw));
+                onMaxConcurrentChange(Number.isFinite(n) && n > 0 ? n : undefined);
+              }}
+              placeholder={defaultMaxConcurrent ? `默认 ${defaultMaxConcurrent}` : '留空 = 不限流'}
+            />
+            <p className="mt-2 text-xs text-zinc-500">
+              限制该 Provider 的同时请求数，防止高并发（如批量子代理 / workflow）触发 429 限流。
+              留空或 0 = 使用内置默认{defaultMaxConcurrent ? `（${defaultMaxConcurrent}）` : '（不限流）'}。命中限流自动降级，5 分钟无限流后回升。
             </p>
           </div>
 

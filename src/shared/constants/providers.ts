@@ -104,11 +104,19 @@ export function isDirectConnectHost(urlOrHost: string): boolean {
 // maxConcurrent 触发限流后会自适应降级，5 分钟无限流后逐步恢复。
 // ============================================================================
 
+// 此表是「出厂默认」：用户在模型配置页填写的 maxConcurrent 会覆盖这里的值
+// （见 concurrencyLimiter.setProviderConcurrencyOverrides）。
 export const PROVIDER_CONCURRENCY_LIMITS: Record<string, { maxConcurrent: number; minIntervalMs: number }> = {
   /** 智谱 GLM 免费档（glm-4.x-flash）实测并发上限约 3-4，超过即 1302 限流 */
   zhipu: {
     maxConcurrent: parseInt(readProcessEnv('ZHIPU_MAX_CONCURRENT', '3'), 10),
     minIntervalMs: parseInt(readProcessEnv('ZHIPU_MIN_INTERVAL_MS', '200'), 10),
+  },
+  /** 小米 MiMo（token-plan-sgp 海外节点）：实测高扇出（>6 并发）会 429。
+   *  默认 6 防止 dynamic-workflow 规模的 429 风暴；可在模型配置页覆盖。 */
+  xiaomi: {
+    maxConcurrent: parseInt(readProcessEnv('XIAOMI_MAX_CONCURRENT', '6'), 10),
+    minIntervalMs: parseInt(readProcessEnv('XIAOMI_MIN_INTERVAL_MS', '0'), 10),
   },
 };
 

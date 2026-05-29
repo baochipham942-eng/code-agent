@@ -12,6 +12,7 @@ import { fileURLToPath } from 'url';
 import { getSecureStorage } from './secureStorage';
 import { createLogger } from '../infra/logger';
 import { getPolicyEngine } from '../../permissions/policyEngine';
+import { setProviderConcurrencyOverrides } from '../../model/concurrencyLimiter';
 import {
   DEFAULT_PROVIDER,
   DEFAULT_MODEL,
@@ -278,6 +279,9 @@ export class ConfigService implements IReadConfigService {
     // 加载用户级权限规则到 PolicyEngine（subagent 继承机制依赖这一步在 spawn 之前完成）
     this.applyUserPermissionRules();
 
+    // 把用户配置的 per-provider 并发上限推入限流器（覆盖出厂默认）
+    this.applyProviderConcurrencyOverrides();
+
     // 兼容性标记：旧配置首次升级到 6.8.x 时，如果用户尚未声明 inheritance，
     // 打上 _legacyPermissions=true 由 UI 弹一次性引导。strict-inherit 仍然作为默认行为。
     if (this.settings.permissions.inheritance === undefined) {
@@ -316,6 +320,27 @@ export class ConfigService implements IReadConfigService {
    */
   reloadUserPermissionRules(): void {
     this.applyUserPermissionRules();
+  }
+
+  /**
+   * 把 settings.models.providers[*].maxConcurrent 推入并发限流器（覆盖出厂默认）。
+   * 启动加载时调用一次；用户在模型配置页保存 provider 设置后再次调用以热更新。
+   */
+  private applyProviderConcurrencyOverrides(): void {
+    try {
+      const providers = this.settings.models?.providers ?? {};
+      const map: Record<string, { maxConcurrent: number }> = {};
+      for (const [provider, cfg] of Object.entries(providers)) {
+        const mc = cfg?.maxConcurrent;
+        if (typeof mc === 'number' && mc > 0) {
+          map[provider] = { maxConcurrent: mc };
+        }
+      }
+      setProviderConcurrencyOverrides(map);
+      logger.info('Provider concurrency overrides applied', { overridden: Object.keys(map).length });
+    } catch (error) {
+      logger.error('Failed to apply provider concurrency overrides:', error);
+    }
   }
 
   private migrateLegacyLongCatProvider(): void {
@@ -589,6 +614,11 @@ export class ConfigService implements IReadConfigService {
       updates.permissions.allow !== undefined
     )) {
       this.applyUserPermissionRules();
+    }
+
+    // 用户在模型配置页改了 provider（含 maxConcurrent）后热更新并发限流器
+    if (updates.models?.providers) {
+      this.applyProviderConcurrencyOverrides();
     }
   }
 

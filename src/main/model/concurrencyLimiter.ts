@@ -18,8 +18,8 @@ export class ConcurrencyLimiter {
   }> = [];
   private activeRequests = 0;
   private maxConcurrent: number;
-  private readonly initialMaxConcurrent: number;
-  private readonly minInterval: number;
+  private initialMaxConcurrent: number;
+  private minInterval: number;
   private lastRequestTime = 0;
   private lastRateLimitTime = 0;
 
@@ -48,6 +48,23 @@ export class ConcurrencyLimiter {
       this.maxConcurrent++;
       logger.info(`[${this.label} 限流] 恢复并发: maxConcurrent → ${this.maxConcurrent}`);
     }
+  }
+
+  /**
+   * 用户在模型配置页改了并发上限后热更新基线（无需重启）。
+   * 重置 maxConcurrent 到新基线（放弃当前的临时降级状态），上限提高时立即放行排队请求。
+   */
+  updateLimits(maxConcurrent: number, minIntervalMs?: number): void {
+    const newMax = Math.max(1, Math.floor(maxConcurrent));
+    if (newMax !== this.initialMaxConcurrent) {
+      logger.info(`[${this.label} 限流] 配置更新: maxConcurrent ${this.initialMaxConcurrent} → ${newMax}`);
+      this.initialMaxConcurrent = newMax;
+      this.maxConcurrent = newMax;
+    }
+    if (minIntervalMs !== undefined && minIntervalMs >= 0) {
+      this.minInterval = minIntervalMs;
+    }
+    this.tryNext();
   }
 
   async acquire(signal?: AbortSignal): Promise<void> {
@@ -105,16 +122,57 @@ export class ConcurrencyLimiter {
 
 const limiters = new Map<string, ConcurrencyLimiter>();
 
+// 用户在模型配置页填写的 per-provider 并发覆盖（优先级高于 PROVIDER_CONCURRENCY_LIMITS 出厂默认）。
+// 由 configService 在启动加载 + 用户保存设置时通过 setProviderConcurrencyOverrides 推入。
+const overrides = new Map<string, { maxConcurrent: number; minIntervalMs: number }>();
+
+/** 解析某 provider 的有效并发限额：用户覆盖 > 出厂默认 > 不限流(null)。 */
+function resolveLimit(provider: string): { maxConcurrent: number; minIntervalMs: number } | null {
+  const ov = overrides.get(provider);
+  if (ov) return ov;
+  const def = PROVIDER_CONCURRENCY_LIMITS[provider];
+  if (def && def.maxConcurrent > 0) return def;
+  return null;
+}
+
 /**
- * 获取某 provider 的并发限流器。仅对在 PROVIDER_CONCURRENCY_LIMITS 中声明了并发上限的
+ * 用模型配置页的用户设置覆盖各 provider 的并发上限。
+ * 整表替换语义：未在 map 中出现的 provider 回落到出厂默认。
+ * 对已存在的 limiter 实例做热更新（值变了就改、变成不限流就驱逐），无需重启。
+ */
+export function setProviderConcurrencyOverrides(
+  map: Record<string, { maxConcurrent: number; minIntervalMs?: number }>,
+): void {
+  overrides.clear();
+  for (const [provider, cfg] of Object.entries(map)) {
+    if (cfg && Number.isFinite(cfg.maxConcurrent) && cfg.maxConcurrent > 0) {
+      overrides.set(provider, {
+        maxConcurrent: Math.floor(cfg.maxConcurrent),
+        minIntervalMs: cfg.minIntervalMs ?? PROVIDER_CONCURRENCY_LIMITS[provider]?.minIntervalMs ?? 200,
+      });
+    }
+  }
+  // 热更新已实例化的 limiter
+  for (const provider of Array.from(limiters.keys())) {
+    const eff = resolveLimit(provider);
+    if (!eff) {
+      limiters.delete(provider); // 既无用户覆盖也无出厂默认 → 不再限流
+    } else {
+      limiters.get(provider)!.updateLimits(eff.maxConcurrent, eff.minIntervalMs);
+    }
+  }
+}
+
+/**
+ * 获取某 provider 的并发限流器。仅对有「有效并发限额」（用户覆盖或出厂默认）的
  * provider 返回实例；其余 provider 返回 null（调用方据此跳过节流）。
  *
- * 主模型路径（ZhipuProvider）与 quick model 路径（quickTask）共用同一实例，
+ * 主模型路径（aiSdkAdapter / ZhipuProvider）与 quick model 路径（quickTask）共用同一实例，
  * 因此对同一 provider 的总并发会被一起约束。
  */
 export function getProviderLimiter(provider: string | null | undefined): ConcurrencyLimiter | null {
   if (!provider) return null;
-  const limit = PROVIDER_CONCURRENCY_LIMITS[provider];
+  const limit = resolveLimit(provider);
   if (!limit) return null;
 
   let limiter = limiters.get(provider);

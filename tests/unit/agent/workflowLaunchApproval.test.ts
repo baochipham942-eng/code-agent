@@ -121,4 +121,30 @@ describe('WorkflowLaunchApprovalGate', () => {
     const { gate } = makeGate();
     expect(gate.approve('nope')).toBe(false);
   });
+
+  // ── Codex Round1 MED#1：resolver/timer 生命周期 ──
+  it('resolver 在 deliver 之前注册：同步 deliver 里 reject 能被即时兑现（非超时）', async () => {
+    const deliver = vi.fn();
+    let gate;
+    deliver.mockImplementation((e) => {
+      if (e.type === 'requested') gate.reject('wf-1', 'sync no');
+    });
+    gate = new WorkflowLaunchApprovalGate({ approvalTimeoutMs: 5000, hasRenderer: () => true, deliver });
+    const result = await gate.requestApproval({ request: REQ() });
+    expect(result.approved).toBe(false);
+    expect(result.feedback).toBe('sync no');
+    expect(result.autoApproved).toBe(false); // 是人工决议路径，不是超时
+  });
+
+  it('决议后请求从 pending 移除（不泄漏 requests map + timer）', async () => {
+    const { gate } = makeGate();
+    const p = gate.requestApproval({ request: REQ() });
+    await new Promise((r) => setTimeout(r, 5));
+    gate.approve('wf-1', 'ok');
+    await p;
+    expect(gate.getPendingRequests()).toHaveLength(0);
+    expect(gate.getRequest('wf-1')).toBeUndefined();
+    // 二次 approve 应失败（已结算移除）
+    expect(gate.approve('wf-1', 'again')).toBe(false);
+  });
 });

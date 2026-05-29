@@ -35,6 +35,28 @@ describe('extractScriptPreview', () => {
     expect(full.writeHint).toBe(true);
   });
 
+  // ── Codex Round1 HIGH#2：writeHint 喂超时授权决策，非字面量 tools 必须 fail-closed ──
+  it('非字面量 tools（变量）按写风险 fail-closed', () => {
+    const p = extractScriptPreview(`const t = 'edit'; await agent('x', { tools: t });`);
+    expect(p.writeHint).toBe(true); // 静态证不了只读 → 当写处理
+  });
+
+  it('opts 整体是变量（无法内省）按写风险 fail-closed', () => {
+    const p = extractScriptPreview(`const opts = { tools: 'full' }; await agent('x', opts);`);
+    expect(p.writeHint).toBe(true);
+  });
+
+  it('opts 含 spread（可能注入 tools）按写风险 fail-closed', () => {
+    const p = extractScriptPreview(`await agent('x', { ...base, label: 'a' });`);
+    expect(p.writeHint).toBe(true);
+  });
+
+  it('无 opts / 无 tools / 字面量 readonly 仍判定只读（默认安全档不误报）', () => {
+    expect(extractScriptPreview(`await agent('x');`).writeHint).toBe(false);
+    expect(extractScriptPreview(`await agent('x', { label: 'a' });`).writeHint).toBe(false);
+    expect(extractScriptPreview(`await agent('x', { tools: 'readonly', label: 'a' });`).writeHint).toBe(false);
+  });
+
   it('动态 phase 标题（非字面量）静默跳过，不抛错', () => {
     const script = `const t = 'x'; phase(t); phase('lit'); await agent('a');`;
     const p = extractScriptPreview(script);

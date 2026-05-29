@@ -229,7 +229,8 @@ describe('workflow tool', () => {
     const wfCall = publishMock.mock.calls.find((c) => c[0] === 'workflow');
     expect(wfCall).toBeDefined();
     expect(wfCall![1]).toBe('agent:start'); // BusEvent.type = ScriptRunEvent.type
-    expect(wfCall![2]).toEqual(event); // BusEvent.data = 完整 ScriptRunEvent（renderer 直接喂 reducer）
+    // BusEvent.data = 完整 ScriptRunEvent + stamp 的 sessionId（会话隔离，Codex R1 HIGH#1）。
+    expect(wfCall![2]).toEqual({ ...event, sessionId: 'sess' });
   });
 
   it('emit forwards non-progress events (agent:done/run:done) to the bus too', async () => {

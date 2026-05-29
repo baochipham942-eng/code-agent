@@ -87,6 +87,8 @@ function defaultDeliver(event: WorkflowLaunchEvent): void {
 export class WorkflowLaunchApprovalGate {
   private requests = new Map<string, WorkflowLaunchRequest>();
   private pendingResolvers = new Map<string, (r: WorkflowLaunchApprovalResult) => void>();
+  // 每个 pending 请求的超时句柄，settle 时 clearTimeout（Codex R1 MED#1：原本不清，timer 白活到超时）。
+  private timeouts = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly approvalTimeoutMs: number;
   private readonly hasRenderer: () => boolean;
   private readonly deliver: (event: WorkflowLaunchEvent) => void;
@@ -110,34 +112,21 @@ export class WorkflowLaunchApprovalGate {
       return { approved: true, feedback: request.feedback, autoApproved: true, request };
     }
 
+    // 关键顺序（Codex R1 MED#1）：先 set request + 注册 resolver/timeout，【再】deliver。
+    // 否则同步 deliver（测试注入 / 极快 UI）里调 approve/reject 时 resolver 还没登记 → 决议丢失。
     this.requests.set(request.id, request);
+    const promise = this.waitForDecision(request.id); // Promise executor 同步跑：登记 resolver + arm timeout
     this.deliver({ type: 'requested', request: { ...request } });
     logger.info(`Workflow launch requested: ${request.id} (${request.estimatedAgentCalls} agent calls)`);
-    return this.waitForDecision(request.id);
+    return promise;
   }
 
   approve(requestId: string, feedback?: string): boolean {
-    const request = this.requests.get(requestId);
-    if (request?.status !== 'pending') return false;
-    request.status = 'approved';
-    request.feedback = feedback;
-    request.resolvedAt = this.now();
-    this.deliver({ type: 'approved', request: { ...request } });
-    logger.info(`Workflow launch approved: ${requestId}`);
-    this.resolve(requestId, { approved: true, feedback, autoApproved: false, request: { ...request } });
-    return true;
+    return this.resolveManual(requestId, true, feedback);
   }
 
   reject(requestId: string, feedback: string): boolean {
-    const request = this.requests.get(requestId);
-    if (request?.status !== 'pending') return false;
-    request.status = 'rejected';
-    request.feedback = feedback;
-    request.resolvedAt = this.now();
-    this.deliver({ type: 'rejected', request: { ...request } });
-    logger.info(`Workflow launch rejected: ${requestId}`);
-    this.resolve(requestId, { approved: false, feedback, autoApproved: false, request: { ...request } });
-    return true;
+    return this.resolveManual(requestId, false, feedback);
   }
 
   getPendingRequests(): WorkflowLaunchRequest[] {
@@ -151,41 +140,47 @@ export class WorkflowLaunchApprovalGate {
     return r ? { ...r } : undefined;
   }
 
-  private resolve(requestId: string, result: WorkflowLaunchApprovalResult): void {
+  /** 人工 approve/reject 公共路径（autoApproved=false）。 */
+  private resolveManual(requestId: string, approved: boolean, feedback?: string): boolean {
+    const request = this.requests.get(requestId);
+    if (request?.status !== 'pending') return false;
+    request.status = approved ? 'approved' : 'rejected';
+    request.feedback = feedback;
+    request.resolvedAt = this.now();
+    this.deliver({ type: approved ? 'approved' : 'rejected', request: { ...request } });
+    logger.info(`Workflow launch ${approved ? 'approved' : 'rejected'}: ${requestId}`);
+    this.settle(requestId, { approved, feedback, autoApproved: false, request: { ...request } });
+    return true;
+  }
+
+  /** 终态收尾：clearTimeout + 删 resolver + 删 requests（防 timer/map 泄漏）+ resolve 一次。 */
+  private settle(requestId: string, result: WorkflowLaunchApprovalResult): void {
+    const t = this.timeouts.get(requestId);
+    if (t) { clearTimeout(t); this.timeouts.delete(requestId); }
     const resolver = this.pendingResolvers.get(requestId);
-    if (resolver) {
-      this.pendingResolvers.delete(requestId);
-      resolver(result);
-    }
+    this.pendingResolvers.delete(requestId);
+    this.requests.delete(requestId);
+    if (resolver) resolver(result);
   }
 
   private waitForDecision(requestId: string): Promise<WorkflowLaunchApprovalResult> {
     return new Promise<WorkflowLaunchApprovalResult>((resolve) => {
       this.pendingResolvers.set(requestId, resolve);
-
-      // Fail-closed 超时分档（对齐 swarm）：含写能力 → auto-reject（无人职守不放写）；
-      // 全只读 → auto-approve（保活低风险探查）。
-      setTimeout(() => {
-        if (!this.pendingResolvers.has(requestId)) return;
+      // Fail-closed 超时分档（对齐 swarm）：含写能力 → auto-reject；全只读 → auto-approve。
+      const handle = setTimeout(() => {
         const pending = this.requests.get(requestId);
-        if (!pending) {
-          this.pendingResolvers.delete(requestId);
-          return;
-        }
-        if (pending.writeHint) {
-          const fb = `Auto-rejected after timeout (${this.approvalTimeoutMs}ms)；含写能力子 agent 需显式批准`;
-          this.pendingResolvers.delete(requestId);
-          this.reject(requestId, fb); // 直接 mutate pending（status/feedback/resolvedAt）
-          logger.warn(`Workflow launch auto-rejected on timeout (writeHint): ${requestId}`);
-          resolve({ approved: false, feedback: fb, autoApproved: true, request: { ...pending } });
-          return;
-        }
-        const fb = `Auto-approved after timeout (${this.approvalTimeoutMs}ms, read-only)`;
-        this.pendingResolvers.delete(requestId);
-        this.approve(requestId, fb);
-        logger.warn(`Workflow launch auto-approved on timeout (read-only): ${requestId}`);
-        resolve({ approved: true, feedback: fb, autoApproved: true, request: { ...pending } });
+        if (pending?.status !== 'pending') return; // 已被人工决议
+        const approved = !pending.writeHint;
+        pending.status = approved ? 'approved' : 'rejected';
+        pending.feedback = approved
+          ? `Auto-approved after timeout (${this.approvalTimeoutMs}ms, read-only)`
+          : `Auto-rejected after timeout (${this.approvalTimeoutMs}ms)；含写能力子 agent 需显式批准`;
+        pending.resolvedAt = this.now();
+        this.deliver({ type: approved ? 'approved' : 'rejected', request: { ...pending } });
+        logger.warn(`Workflow launch auto-${approved ? 'approved' : 'rejected'} on timeout: ${requestId}`);
+        this.settle(requestId, { approved, feedback: pending.feedback, autoApproved: true, request: { ...pending } });
       }, this.approvalTimeoutMs);
+      this.timeouts.set(requestId, handle);
     });
   }
 }

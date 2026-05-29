@@ -113,3 +113,30 @@ describe('workflowStore 启动审批（P3b）', () => {
     expect(useWorkflowStore.getState().launchRequests).toEqual([]);
   });
 });
+
+const launchReqS = (id: string, sessionId?: string): WorkflowLaunchRequest => ({
+  ...launchReq(id),
+  sessionId,
+});
+
+describe('workflowStore 会话隔离（Codex Round1 HIGH#1）', () => {
+  it('pendingLaunchRequest(sessionId) 只返回该会话的请求，别的会话不串', () => {
+    const store = useWorkflowStore.getState();
+    store.handleLaunchEvent({ type: 'requested', request: launchReqS('wf-A', 'sess-A') });
+    store.handleLaunchEvent({ type: 'requested', request: launchReqS('wf-B', 'sess-B') });
+    expect(useWorkflowStore.getState().pendingLaunchRequest('sess-A')?.id).toBe('wf-A');
+    expect(useWorkflowStore.getState().pendingLaunchRequest('sess-B')?.id).toBe('wf-B');
+  });
+
+  it('sessionId 缺失（dev/headless 注入）的请求对任意当前会话可见', () => {
+    useWorkflowStore.getState().handleLaunchEvent({ type: 'requested', request: launchReqS('wf-x', undefined) });
+    expect(useWorkflowStore.getState().pendingLaunchRequest('sess-A')?.id).toBe('wf-x');
+  });
+
+  it('activeSnapshot(sessionId) 只返回该会话的 run', () => {
+    const store = useWorkflowStore.getState();
+    store.handleEvent({ runId: 'rA', type: 'run:start', ts: 1, sessionId: 'sess-A', data: { scriptHash: 'h' } } as ScriptRunEvent);
+    expect(useWorkflowStore.getState().activeSnapshot('sess-B')).toBeUndefined();
+    expect(useWorkflowStore.getState().activeSnapshot('sess-A')?.runId).toBe('rA');
+  });
+});

@@ -9,6 +9,7 @@
 import React, { useState } from 'react';
 import { GitBranch, Cpu, Globe, Shield, Clock, AlertTriangle } from 'lucide-react';
 import { useWorkflowStore } from '../../../stores/workflowStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 
@@ -25,7 +26,9 @@ function DimensionRow({ icon, label, text, warn }: { icon: React.ReactNode; labe
 }
 
 export function WorkflowLaunchCard() {
-  const request = useWorkflowStore((s) => s.pendingLaunchRequest());
+  // 会话隔离（Codex R1 HIGH#1）：只显示当前会话的审批请求，避免在别的会话视图里误批/误拒。
+  const currentSessionId = useSessionStore((s) => s.currentSessionId ?? undefined);
+  const request = useWorkflowStore((s) => s.pendingLaunchRequest(currentSessionId));
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
 

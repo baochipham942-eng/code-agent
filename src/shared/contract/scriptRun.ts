@@ -31,6 +31,8 @@ export interface ScriptRunEvent {
   type: ScriptRunEventType;
   ts: number;
   data?: Record<string, unknown>;
+  /** 归属会话（命令层 stamp，用于 renderer 会话隔离过滤；headless/dev 注入可缺省）。 */
+  sessionId?: string;
 }
 
 // ── 跑前审批（P3b）──────────────────────────────────────────────────────────
@@ -113,6 +115,8 @@ export interface ScriptRunAgentSnapshot {
 export interface ScriptRunSnapshot {
   runId: string;
   status: RunStatus;
+  /** 归属会话（用于 renderer 会话隔离过滤）。 */
+  sessionId?: string;
   goal?: string;
   scriptHash?: string;
   /** 去重累积的 phase 标题（进度树分组头）。 */
@@ -175,6 +179,7 @@ export function applyScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEve
       return {
         ...prev,
         status: 'running',
+        sessionId: event.sessionId ?? prev.sessionId, // 会话隔离用（HIGH#1）
         goal: str(data.goal) ?? prev.goal,
         scriptHash: str(data.scriptHash) ?? prev.scriptHash,
         startedAt: prev.startedAt ?? event.ts,
@@ -214,7 +219,10 @@ export function applyScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEve
     case 'agent:done': {
       const id = str(data.agentId);
       if (!id) return prev;
-      const agents = patchAgent(prev.agents, id, {
+      // upsert 而非 patch（Codex R1 MED#2）：emit best-effort 可能丢 agent:start，
+      // 终态遇未知 id 必须补一条，否则计数/结果被静默吃掉。
+      const agents = upsertTerminalAgent(prev.agents, id, {
+        label: str(data.label) ?? 'agent',
         status: 'done',
         resultPreview: str(data.resultPreview),
         finishedAt: event.ts,
@@ -225,7 +233,8 @@ export function applyScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEve
     case 'agent:error': {
       const id = str(data.agentId);
       if (!id) return prev;
-      const agents = patchAgent(prev.agents, id, {
+      const agents = upsertTerminalAgent(prev.agents, id, {
+        label: str(data.label) ?? 'agent',
         status: 'error',
         error: str(data.error),
         finishedAt: event.ts,
@@ -267,17 +276,29 @@ function upsertAgent(
   return agents.map((a, i) => (i === idx ? merged : a));
 }
 
-/** 按 id 局部更新（只覆盖给定字段，undefined 不覆盖既有值）。 */
-function patchAgent(
+/**
+ * 终态事件（agent:done/error）的 upsert：已存在则局部覆盖（undefined 不覆盖既有值），
+ * 不存在则补一条新 agent（emit best-effort 丢了 agent:start 的兜底，Codex R1 MED#2）。
+ * patch 必须带 status；新建时 status 取自 patch。
+ */
+function upsertTerminalAgent(
   agents: ScriptRunAgentSnapshot[],
   id: string,
-  patch: Partial<ScriptRunAgentSnapshot>,
+  patch: Partial<ScriptRunAgentSnapshot> & { status: ScriptRunAgentStatus },
 ): ScriptRunAgentSnapshot[] {
+  const idx = agents.findIndex((a) => a.id === id);
+  if (idx < 0) {
+    const created: ScriptRunAgentSnapshot = { id, label: patch.label ?? 'agent', status: patch.status };
+    for (const [k, v] of Object.entries(patch)) {
+      if (v !== undefined) (created as unknown as Record<string, unknown>)[k] = v;
+    }
+    return [...agents, created];
+  }
   return agents.map((a) => {
     if (a.id !== id) return a;
     const next = { ...a };
     for (const [k, v] of Object.entries(patch)) {
-      if (v !== undefined) (next as Record<string, unknown>)[k] = v;
+      if (v !== undefined) (next as unknown as Record<string, unknown>)[k] = v;
     }
     return next;
   });

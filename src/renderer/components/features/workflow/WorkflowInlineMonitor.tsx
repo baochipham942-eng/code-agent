@@ -13,6 +13,7 @@
 import React, { useState } from 'react';
 import { GitBranch, ChevronUp, ChevronDown, Loader2, Check, X, Circle, MinusCircle } from 'lucide-react';
 import { useWorkflowStore } from '../../../stores/workflowStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 import type { ScriptRunAgentSnapshot, ScriptRunAgentStatus, ScriptRunSnapshot } from '@shared/contract/scriptRun';
 
 const NO_PHASE = '__no_phase__';
@@ -58,8 +59,10 @@ function groupByPhase(snap: ScriptRunSnapshot): Array<{ phase: string; agents: S
 }
 
 export function WorkflowInlineMonitor() {
-  const activeRunId = useWorkflowStore((s) => s.activeRunId);
-  const snap = useWorkflowStore((s) => (activeRunId ? s.runs[activeRunId] : undefined));
+  // 会话隔离（Codex R1 HIGH#1）：只显示当前会话的 run，别串到别的会话视图。
+  const currentSessionId = useSessionStore((s) => s.currentSessionId ?? undefined);
+  // activeSnapshot 返回的快照对象在新事件到达时换引用 → Zustand 触发重渲染。
+  const snap = useWorkflowStore((s) => s.activeSnapshot(currentSessionId));
   const [collapsed, setCollapsed] = useState(false);
 
   if (!snap) return null;

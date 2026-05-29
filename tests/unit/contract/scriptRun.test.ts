@@ -154,4 +154,27 @@ describe('scriptRun view-model: applyScriptRunEvent', () => {
     expect(next.logs).toEqual(['x']);
     expect(next).not.toBe(base);
   });
+
+  // ── Codex Round1 MED#2：emit 是 best-effort（catch{}），agent:start 可能丢；终态事件
+  //    遇未知 agentId 必须 upsert 补记录，否则 done/error 被静默吃掉、计数错。──
+  it('agent:done 先于/丢失 agent:start 时 upsert 补一条 done agent', () => {
+    const snap = fold('run-1', [
+      ev('agent:done', 1500, { agentId: 'a1', label: 'find', resultPreview: 'ok' }),
+    ]);
+    expect(snap.agents).toHaveLength(1);
+    expect(snap.agents[0].id).toBe('a1');
+    expect(snap.agents[0].status).toBe('done');
+    expect(snap.agents[0].resultPreview).toBe('ok');
+    expect(snap.doneCount).toBe(1);
+  });
+
+  it('agent:error 无前置 agent:start 时 upsert 补一条 error agent（计数不丢）', () => {
+    const snap = fold('run-1', [
+      ev('agent:error', 1500, { agentId: 'a1', label: 'x', error: 'boom' }),
+    ]);
+    expect(snap.agents).toHaveLength(1);
+    expect(snap.agents[0].status).toBe('error');
+    expect(snap.agents[0].error).toBe('boom');
+    expect(snap.errorCount).toBe(1);
+  });
 });

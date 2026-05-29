@@ -31,10 +31,22 @@ export interface WorkflowStore {
   handleEvent: (event: ScriptRunEvent) => void;
   /** 消费启动审批事件。 */
   handleLaunchEvent: (event: WorkflowLaunchEvent) => void;
-  /** 当前待决的审批请求（最新一条 pending）。 */
-  pendingLaunchRequest: () => WorkflowLaunchRequest | undefined;
+  /**
+   * 当前待决的审批请求（最新一条 pending）。给 sessionId 则只返回该会话的（会话隔离，
+   * Codex R1 HIGH#1）；缺 sessionId 的请求（dev/headless 注入）对任意会话可见。
+   */
+  pendingLaunchRequest: (currentSessionId?: string) => WorkflowLaunchRequest | undefined;
+  /** 当前 active run 的快照，按会话过滤（同上隔离规则）。 */
+  activeSnapshot: (currentSessionId?: string) => ScriptRunSnapshot | undefined;
   /** 清空所有 run + 审批（新会话 / 手动重置）。 */
   clear: () => void;
+}
+
+/** 会话隔离判定：请求/快照无 sessionId（dev/legacy）→ 对任意会话可见；否则需相等。 */
+function visibleInSession(itemSessionId: string | undefined, currentSessionId: string | undefined): boolean {
+  if (!itemSessionId) return true;
+  if (!currentSessionId) return true; // 当前会话未知时不过滤（退化为不隔离，不丢内容）
+  return itemSessionId === currentSessionId;
 }
 
 export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
@@ -65,9 +77,22 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     set({ launchRequests: next });
   },
 
-  pendingLaunchRequest: () => {
-    const pending = get().launchRequests.filter((r) => r.status === 'pending');
+  pendingLaunchRequest: (currentSessionId) => {
+    const pending = get().launchRequests.filter(
+      (r) => r.status === 'pending' && visibleInSession(r.sessionId, currentSessionId),
+    );
     return pending.length > 0 ? pending[pending.length - 1] : undefined;
+  },
+
+  activeSnapshot: (currentSessionId) => {
+    const { runs, activeRunId } = get();
+    const active = activeRunId ? runs[activeRunId] : undefined;
+    if (active && visibleInSession(active.sessionId, currentSessionId)) return active;
+    // activeRunId 属别的会话 → 退而找本会话最近一个 running/failed run。
+    const visible = Object.values(runs).filter(
+      (s) => visibleInSession(s.sessionId, currentSessionId) && (s.status === 'running' || s.status === 'failed'),
+    );
+    return visible.length > 0 ? visible[visible.length - 1] : undefined;
   },
 
   clear: () => set({ runs: {}, activeRunId: undefined, launchRequests: [] }),

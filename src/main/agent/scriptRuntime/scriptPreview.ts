@@ -34,19 +34,34 @@ function literalString(node: unknown): string | undefined {
   return undefined;
 }
 
-/** 在 agent() 的第二个参数（opts 对象字面量）里找 tools: 'edit'|'full'。 */
-function optsHasWriteTools(args: unknown[]): boolean {
-  const opts = args[1] as Record<string, unknown> | undefined;
-  if (!opts || opts.type !== 'ObjectExpression' || !Array.isArray(opts.properties)) return false;
+/**
+ * 判断一次 agent() 调用是否有写风险（fail-closed，Codex R1 HIGH#2）。
+ * writeHint 会喂超时授权决策，所以「静态证不了是只读」必须当成写风险，否则非字面量 tools
+ * （变量/spread/整个 opts 是变量）会被误判只读 → 超时自动批准一个实际可写的 workflow = 审批绕过。
+ * 判定：
+ *   - 无第二参（无 opts）→ 只读（默认安全档，不误报）
+ *   - opts 是对象字面量：无 tools 键 → 只读；tools 是字面量 'readonly' → 只读；
+ *     tools 是 'edit'/'full' 字面量 → 写；tools 非字面量 → 写风险；含 spread → 写风险（可能注入 tools）
+ *   - opts 不是对象字面量（变量/调用/...）→ 写风险（无法内省）
+ */
+function agentHasWriteRisk(args: unknown[]): boolean {
+  if (args.length < 2 || args[1] == null) return false; // 无 opts = 默认只读档
+  const opts = args[1] as Record<string, unknown>;
+  if (opts.type !== 'ObjectExpression' || !Array.isArray(opts.properties)) return true; // opts 不可内省 → fail-closed
+  let toolsValue: unknown | undefined;
+  let toolsSeen = false;
   for (const prop of opts.properties as Array<Record<string, unknown>>) {
+    if (prop.type === 'SpreadElement') return true; // spread 可能注入 tools → fail-closed
     if (prop.type !== 'Property') continue;
     const key = prop.key as Record<string, unknown> | undefined;
     const keyName = key?.type === 'Identifier' ? key.name : key?.type === 'Literal' ? key.value : undefined;
-    if (keyName !== 'tools') continue;
-    const val = literalString(prop.value);
-    if (val === 'edit' || val === 'full') return true;
+    if (keyName === 'tools') { toolsValue = prop.value; toolsSeen = true; }
   }
-  return false;
+  if (!toolsSeen) return false; // 没声明 tools = 默认只读档
+  const lit = literalString(toolsValue);
+  if (lit === 'readonly') return false; // 显式只读
+  if (lit === 'edit' || lit === 'full') return true; // 显式写档
+  return true; // 非字面量 tools（变量/计算）证不了只读 → fail-closed
 }
 
 /** 递归遍历 AST，命中 CallExpression 时收集预览信息。 */
@@ -69,7 +84,7 @@ function walk(node: unknown, acc: ScriptPreview, seenPhases: Set<string>): void 
         }
         case 'agent':
           acc.agentCallSites++;
-          if (optsHasWriteTools(args)) acc.writeHint = true;
+          if (agentHasWriteRisk(args)) acc.writeHint = true;
           break;
         case 'parallel':
           acc.parallelCallSites++;

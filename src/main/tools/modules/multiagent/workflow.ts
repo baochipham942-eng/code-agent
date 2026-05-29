@@ -167,9 +167,11 @@ async function runWorkflow(
         // ① 进度树事件通道（P3a）：把【全部】8 类 ScriptRunEvent publish 到 'workflow' domain，
         //    workflow.ipc 的专用 bridge 投递到 renderer 'workflow:event'（Tauri IPC + web SSE 两端）。
         //    bridgeToRenderer:false 避免 Tauri 主进程的通用 EventBridge 再转发一次（重复事件）。
-        //    renderer 收到的是完整 ScriptRunEvent，直接喂 applyScriptRunEvent。best-effort 不阻断执行。
+        //    stamp sessionId 进 event payload，供 renderer 会话隔离过滤（Codex R1 HIGH#1：
+        //    否则别的会话/tab 会看到不属于自己的进度/goal/promptPreview）。best-effort 不阻断执行。
         try {
-          getEventBus().publish('workflow', event.type, event, { sessionId: ctx.sessionId, bridgeToRenderer: false });
+          const stamped: ScriptRunEvent = { ...event, sessionId: ctx.sessionId };
+          getEventBus().publish('workflow', stamped.type, stamped, { sessionId: ctx.sessionId, bridgeToRenderer: false });
         } catch { /* swallow — 观测面非权威 */ }
         // ② 兼容老进度行：3 类事件 → onProgress（不耦合 AgentEvent 协议）。
         if (event.type === 'run:phase' && typeof event.data?.title === 'string') {

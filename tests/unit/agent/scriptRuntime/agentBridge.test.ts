@@ -153,6 +153,58 @@ describe('runAgentCall token budget', () => {
   });
 });
 
+describe('runAgentCall 进度事件 enrich（P3a 进度树）', () => {
+  type EmittedEvent = { type: string; data?: Record<string, unknown> };
+  const emittedOfType = (ctx: ScriptRunContext, type: string): EmittedEvent | undefined =>
+    (ctx.emit as ReturnType<typeof vi.fn>).mock.calls
+      .map(([e]: [EmittedEvent]) => e)
+      .find((e) => e.type === type);
+
+  it('agent:start 携带 phase 与 promptPreview（供进度树分组 + 显示在做什么）', async () => {
+    const ctx = makeCtx();
+    inferenceMock.mockResolvedValue({
+      toolCalls: [{ name: 'structured_output', arguments: { ok: true } }],
+      usage: { outputTokens: 1 },
+    });
+    await runAgentCall(
+      { prompt: '搜索 Rust 异步运行时的调度模型', options: { schema: VALID_SCHEMA as never, phase: 'investigate', label: 'find' } },
+      ctx,
+    );
+    const start = emittedOfType(ctx, 'agent:start');
+    expect(start?.data?.phase).toBe('investigate');
+    expect(start?.data?.promptPreview).toContain('Rust 异步运行时');
+  });
+
+  it('promptPreview 截断超长 prompt（不把整段灌进事件）', async () => {
+    const ctx = makeCtx();
+    executeMock.mockResolvedValue({ success: true, output: 'ok' });
+    const longPrompt = 'x'.repeat(500);
+    await runAgentCall({ prompt: longPrompt }, ctx);
+    const start = emittedOfType(ctx, 'agent:start');
+    const preview = start?.data?.promptPreview as string;
+    expect(preview.length).toBeLessThan(longPrompt.length);
+  });
+
+  it('agent:done 携带 resultPreview（full-agent 文本结果）', async () => {
+    const ctx = makeCtx();
+    executeMock.mockResolvedValue({ success: true, output: '找到 3 条线索' });
+    await runAgentCall({ prompt: 'p' }, ctx);
+    const done = emittedOfType(ctx, 'agent:done');
+    expect(done?.data?.resultPreview).toContain('找到 3 条线索');
+  });
+
+  it('agent:done 携带 resultPreview（forced 结构化结果序列化预览）', async () => {
+    const ctx = makeCtx();
+    inferenceMock.mockResolvedValue({
+      toolCalls: [{ name: 'structured_output', arguments: { finding: 'tokio', confidence: 0.9 } }],
+      usage: { outputTokens: 1 },
+    });
+    await runAgentCall({ prompt: 'p', options: { schema: VALID_SCHEMA as never } }, ctx);
+    const done = emittedOfType(ctx, 'agent:done');
+    expect(done?.data?.resultPreview).toContain('tokio');
+  });
+});
+
 describe('runAgentCall 工具分档 + 并行写护栏', () => {
   it('defaults the full-agent path to readonly tools (no write tools)', async () => {
     const ctx = makeCtx();

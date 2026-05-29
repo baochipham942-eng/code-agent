@@ -27,6 +27,28 @@ import type { AgentCallPayload, JsonSchema, PrimitiveResult, ScriptRunEvent } fr
 
 const STRUCTURED_OUTPUT_TOOL = 'structured_output';
 
+// 进度树用的预览截断长度——只为 GUI 显示「子 agent 在做什么/产出了什么」，不灌整段（事件要轻）。
+const PROMPT_PREVIEW_CHARS = 160;
+const RESULT_PREVIEW_CHARS = 200;
+
+/** 把任意原语结果压成短预览：字符串直接截断，对象 JSON 序列化后截断。 */
+function previewResult(result: PrimitiveResult): string {
+  const text = typeof result === 'string' ? result : safeStringify(result);
+  return truncate(text, RESULT_PREVIEW_CHARS);
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
 const DEFAULT_AGENT_SYSTEM_PROMPT =
   '你是 dynamic-workflow 编排脚本派发的子 agent。专注完成下面这一个明确子任务，' +
   '用给定工具收集信息或执行操作，最后给出简洁、可被脚本直接消费的结果。' +
@@ -86,7 +108,16 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
     runId: ctx.runId,
     type: 'agent:start',
     ts: ctx.now(),
-    data: { agentId, label, provider, model: modelConfig.model, hasSchema: !!call.options?.schema },
+    data: {
+      agentId,
+      label,
+      provider,
+      model: modelConfig.model,
+      hasSchema: !!call.options?.schema,
+      // 进度树分组 + 显示「这个子 agent 在做什么」。phase 归属用 options.phase（脚本声明的所属阶段）。
+      phase: call.options?.phase,
+      promptPreview: truncate(call.prompt, PROMPT_PREVIEW_CHARS),
+    },
   });
 
   // 并发预留 + 权威复检：reserveOrThrow 必须在 gate.acquire 之后、与 reserve 无 await 间隔，
@@ -145,7 +176,12 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
         if (writeCapable) ctx.writeGuard.inFlight--;
       }
     }
-    ctx.emit({ runId: ctx.runId, type: 'agent:done', ts: ctx.now(), data: { agentId, label } });
+    ctx.emit({
+      runId: ctx.runId,
+      type: 'agent:done',
+      ts: ctx.now(),
+      data: { agentId, label, resultPreview: previewResult(result) },
+    });
     return result;
   } catch (err) {
     ctx.emit({

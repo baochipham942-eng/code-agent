@@ -34,6 +34,7 @@ import { validateScript } from '../../../agent/scriptRuntime/scriptValidator';
 import { resolveToolProfile } from '../../../agent/scriptRuntime/toolProfiles';
 import { resolveSessionDefaultModelConfig } from '../../../services/core/sessionDefaults';
 import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
+import { getEventBus } from '../../../services/eventing/bus';
 import { workflowSchema } from './workflow.schema';
 
 /** 把异常归类成 ABORTED / DOMAIN_ERROR（Codex R2：取消别被压成 DOMAIN_ERROR）。 */
@@ -134,7 +135,14 @@ async function runWorkflow(
       resolveAgentTools: (profile) => resolveToolProfile(profile),
       signal: ctx.abortSignal,
       emit: (event: ScriptRunEvent) => {
-        // run 事件 → onProgress 进度行（不耦合 AgentEvent 协议）。
+        // ① 进度树事件通道（P3a）：把【全部】8 类 ScriptRunEvent publish 到 'workflow' domain，
+        //    通用 EventBridge 自动转发到 renderer 的 'workflow:event'（Tauri IPC + web SSE 两端通吃）。
+        //    BusEvent.data = 完整 ScriptRunEvent，renderer 直接喂 applyScriptRunEvent。
+        //    best-effort：事件总线异常不得反向把执行翻成失败。
+        try {
+          getEventBus().publish('workflow', event.type, event, { sessionId: ctx.sessionId });
+        } catch { /* swallow — 观测面非权威 */ }
+        // ② 兼容老进度行：3 类事件 → onProgress（不耦合 AgentEvent 协议）。
         if (event.type === 'run:phase' && typeof event.data?.title === 'string') {
           safeProgress({ stage: 'running', detail: `phase: ${event.data.title}` });
         } else if (event.type === 'agent:start') {

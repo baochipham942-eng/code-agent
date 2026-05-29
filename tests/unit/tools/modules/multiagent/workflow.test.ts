@@ -24,6 +24,12 @@ vi.mock('../../../../../src/main/services/core/sessionDefaults', () => ({
   resolveSessionDefaultModelConfig: (args: unknown) => resolveSessionDefaultMock(args),
 }));
 
+// ── mock EventBus：捕获 emit → 'workflow' domain 的 publish（P3a 进度树事件通道）──
+const { publishMock } = vi.hoisted(() => ({ publishMock: vi.fn() }));
+vi.mock('../../../../../src/main/services/eventing/bus', () => ({
+  getEventBus: () => ({ publish: publishMock }),
+}));
+
 import { workflowModule } from '../../../../../src/main/tools/modules/multiagent/workflow';
 
 function makeLogger(): Logger {
@@ -59,6 +65,7 @@ async function run(args: Record<string, unknown>, ctx: ToolContext = makeCtx(), 
 beforeEach(() => {
   startRunMock.mockReset();
   resolveSessionDefaultMock.mockReset();
+  publishMock.mockReset();
   startRunMock.mockResolvedValue(completedState());
 });
 
@@ -177,6 +184,26 @@ describe('workflow tool', () => {
       expect(JSON.parse(r.output)).toEqual({ answer: 42 });
       expect(r.meta).toMatchObject({ agentCallCount: 5, phases: ['a', 'b'] });
     }
+  });
+
+  // ── P3a: 进度树事件通道 —— emit 把 ScriptRunEvent publish 到 'workflow' domain ──
+  it('emit publishes every ScriptRunEvent to the workflow EventBus domain for the renderer', async () => {
+    await run({ script: 'return 1' });
+    const deps = startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
+    const event = { runId: 'wf-x', type: 'agent:start' as const, ts: 123, data: { agentId: 'a1', label: 'find' } };
+    deps.emit?.(event);
+    const wfCall = publishMock.mock.calls.find((c) => c[0] === 'workflow');
+    expect(wfCall).toBeDefined();
+    expect(wfCall![1]).toBe('agent:start'); // BusEvent.type = ScriptRunEvent.type
+    expect(wfCall![2]).toEqual(event); // BusEvent.data = 完整 ScriptRunEvent（renderer 直接喂 reducer）
+  });
+
+  it('emit forwards non-progress events (agent:done/run:done) to the bus too', async () => {
+    await run({ script: 'return 1' });
+    const deps = startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
+    deps.emit?.({ runId: 'wf-x', type: 'run:done', ts: 1, data: { result: 1 } });
+    const doneCall = publishMock.mock.calls.find((c) => c[0] === 'workflow' && c[1] === 'run:done');
+    expect(doneCall).toBeDefined(); // run:done 不映射 onProgress，但必须进事件通道（否则进度树永远收不到收尾）
   });
 
   // ── Round 2 ──────────────────────────────────────────────────────────────

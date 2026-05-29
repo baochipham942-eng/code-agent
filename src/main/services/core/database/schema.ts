@@ -721,4 +721,43 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `);
+
+  // ========================================================================
+  // dynamic-workflow resumable journal（P4-B）
+  // ========================================================================
+  // workflow_runs (1) ──< workflow_run_calls (N)
+  // resumable 重放靠逐 agent() 调用的「位置序 call_index + prompt/opts 内容 hash」缓存命中。
+  // 不 FK 到 sessions：workflow journal 独立于会话生命周期（会话删了仍可 resume / 审计）。
+
+  // workflow_runs - 一行/workflow run 的元数据 + 终态结果
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS workflow_runs (
+      run_id TEXT PRIMARY KEY,
+      script_hash TEXT NOT NULL,
+      goal TEXT,
+      session_id TEXT,
+      status TEXT NOT NULL,
+      started_at INTEGER NOT NULL,
+      finished_at INTEGER,
+      tokens_spent INTEGER NOT NULL DEFAULT 0,
+      result_json TEXT,
+      error TEXT
+    )
+  `);
+
+  // workflow_run_calls - 逐 agent() 调用的结果缓存（仅成功调用），按 run_id + call_index 复合主键
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS workflow_run_calls (
+      run_id TEXT NOT NULL,
+      call_index INTEGER NOT NULL,
+      content_hash TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'done',
+      label TEXT,
+      result_json TEXT NOT NULL,
+      tokens_used INTEGER NOT NULL DEFAULT 0,
+      ts INTEGER NOT NULL,
+      PRIMARY KEY (run_id, call_index),
+      FOREIGN KEY (run_id) REFERENCES workflow_runs(run_id) ON DELETE CASCADE
+    )
+  `);
 }

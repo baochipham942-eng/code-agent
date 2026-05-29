@@ -67,6 +67,7 @@ import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getProviderEndpointForProtocol } f
 import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
 import { useSwarmStore } from './stores/swarmStore';
+import { useWorkflowStore } from './stores/workflowStore';
 import { tauriCheckForUpdate } from './utils/tauriUpdater';
 
 const logger = createLogger('App');
@@ -463,6 +464,18 @@ export const App: React.FC = () => {
       unsubscribe?.();
     };
   }, [openWorkbenchTab, setTaskPanelTab]);
+
+  // dynamic-workflow 进度树事件通道（P3a）：通用 EventBridge 把 'workflow' domain 转发到
+  // 'workflow:event'，payload = { type, data, timestamp }，其中 data 是完整 ScriptRunEvent。
+  // 'workflow:event' 不在 IPC_CHANNELS 强类型联合里（与 'agent:event' 同类，由 EventBridge 动态生成），故 cast。
+  useEffect(() => {
+    const unsubscribe = ipcService.on(IPC_CHANNELS.WORKFLOW_EVENT, (msg) => {
+      if (msg?.data) useWorkflowStore.getState().handleEvent(msg.data);
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
 
   const renderWorkbenchContent = () => (
     <div className="flex flex-col h-full bg-zinc-900">

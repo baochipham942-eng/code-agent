@@ -15,6 +15,7 @@ import type { ContextInterventionRequest, ContextInterventionSetRequest, Context
 import type { ManagedBrowserSessionState } from '../contract/desktop';
 
 import type { DAGVisualizationEvent } from '../contract/dagVisualization';
+import type { ScriptRunEvent } from '../contract/scriptRun';
 import { DAG_CHANNELS } from './channels';
 
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryPushEvent, TelemetryHealth, ComputerSurfaceReliabilitySummary } from '../contract/telemetry';
@@ -531,6 +532,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.CHANNEL_ACCOUNT_STATUS_CHANGED]: (event: { accountId: string; status: string; error?: string }) => void;
   // Swarm events
   [IPC_CHANNELS.SWARM_EVENT]: (event: SwarmEvent) => void;
+  // dynamic-workflow 进度树事件（EventBridge 转发 'workflow' domain；payload 是 BusEvent 解包后的 { type, data, ... }，data 为完整 ScriptRunEvent）
+  [IPC_CHANNELS.WORKFLOW_EVENT]: (event: { type: string; data: ScriptRunEvent; timestamp?: number; sessionId?: string }) => void;
   // TaskList events
   [IPC_CHANNELS.TASKLIST_EVENT]: (event: TaskListEventIpc) => void;
   // Telemetry events

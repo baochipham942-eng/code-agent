@@ -9,7 +9,7 @@ import {
   BarChart2, Settings, Keyboard, HelpCircle,
   Terminal, Cpu, Plug, Zap, ClipboardList,
   MessageCircleQuestion, ZapOff, Flame,
-  Lock, LockOpen, Bot, Sparkles, Server, Target,
+  Lock, LockOpen, Bot, Sparkles, Server, Target, GitBranch,
 } from 'lucide-react';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
@@ -228,6 +228,13 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: '设定目标',
       description: '直接输入目标，可选 --verify 或 --review',
       icon: <Target className="w-4 h-4" />,
+      action: () => {},
+    },
+    {
+      id: 'workflow',
+      label: '编排工作流',
+      description: '输入目标，让模型写 JS 脚本编排多个子 agent（循环/扇出/流水线）',
+      icon: <GitBranch className="w-4 h-4" />,
       action: () => {},
     },
     {

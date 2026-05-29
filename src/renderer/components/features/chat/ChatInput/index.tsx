@@ -892,6 +892,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 requestAnimationFrame(() => inputAreaRef.current?.focus());
                 return;
               }
+              if (cmd.id === 'workflow') {
+                // 预填 /workflow 前缀，用户补目标；发送后模型经 gen8 carve-out 调 workflow 工具写脚本。
+                setValue('/workflow ');
+                requestAnimationFrame(() => inputAreaRef.current?.focus());
+                return;
+              }
               setValue('');
               cmd.action();
             }}

@@ -8,13 +8,13 @@ const description = `Author and run a JS orchestration script that fans out work
 Use this when a task benefits from structured multi-agent control flow you express in code — loops, conditionals, fan-out/fan-in, staged pipelines — rather than spawning agents one by one. The middle results stay inside the script (they do NOT pollute your main context); only the script's \`return\` value comes back to you.
 
 ## How it works
-You write the script body as a string in the \`script\` parameter. It runs in a sandboxed worker with these primitives already in scope (use \`await\`, and \`return\` the final result):
+You write the script body as a string in the \`script\` parameter. It runs in a background worker thread with these primitives already in scope (use \`await\`, and \`return\` the final result):
 
 - **agent(prompt, opts?)** → spawn a sub-agent.
   - With \`opts.schema\` (a JSON Schema object): the sub-agent is forced to emit one structured result in a single turn; agent() returns the validated object. Use this for stable values your control flow branches on (counts, verdicts, extracted fields).
   - Without schema: the sub-agent runs a full tool-using agent loop and agent() returns its final text.
   - opts: \`{ schema?, model?: {provider, model}, label?, phase?, agentType? }\`. \`model\` overrides the model for this one call (cheap model to fan out, strong model to judge).
-- **parallel(thunks)** → run \`Array<() => Promise<any>>\` concurrently; BARRIER, awaits all. A thunk that throws resolves to \`null\` — \`.filter(Boolean)\` the result.
+- **parallel(thunks)** → run \`Array<() => Promise<any>>\` concurrently; BARRIER, awaits all. A thunk that throws resolves to \`null\` — drop them with \`.filter((x) => x !== null)\`.
 - **pipeline(items, ...stages)** → run each item through all stages independently, NO barrier (item A can be in stage 3 while B is still in stage 1). Each stage callback gets \`(prevResult, originalItem, index)\`. A stage that throws drops that item to \`null\`.
 - **phase(title)** → start a new progress phase; subsequent agent() calls group under it.
 - **log(message)** → emit a progress line.
@@ -22,9 +22,10 @@ You write the script body as a string in the \`script\` parameter. It runs in a 
 
 Concurrent agent() calls are capped globally (provider-aware) and total agent() calls per run are bounded — runaway scripts are terminated.
 
-## Constraints (sandbox)
+## Constraints
 - Plain JavaScript, not TypeScript (no type annotations / interfaces / generics).
-- \`Date.now()\`, \`Math.random()\`, \`require\`, \`process\`, \`fs\` are NOT available in the script scope — vary work by index instead, and don't reach for the filesystem.
+- \`require\`, \`process\`, module globals, and the filesystem are not in scope — the script orchestrates sub-agents, it does not do IO directly. Do work through \`agent()\`, not by reaching for fs/network.
+- Avoid \`Date.now()\` / \`Math.random()\` for control flow — vary work by index instead. (They keep the run deterministic and replayable; non-determinism can desync resumable replay.)
 - DEFAULT to \`pipeline()\`; only use a \`parallel()\` barrier when a stage genuinely needs ALL prior-stage results at once (dedup/merge/early-exit).
 
 ## Example

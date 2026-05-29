@@ -16,7 +16,15 @@ import { Worker } from 'node:worker_threads';
 import { SCRIPT_RUNTIME } from '../../../shared/constants';
 import type { RpcRequest, RpcResponse } from './types';
 
-// worker 线程内执行的源码（纯 JS 字符串）。注入 5 原语为 RPC stub；parallel/pipeline 在此处用
+// 注入给脚本的运行期原语（有真实值）。
+const PRIMITIVE_PARAMS = ['agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'budget'];
+// 被 shadow 成 undefined 的危险全局（脚本作用域内拿不到 require/fs/process）。
+const SHADOWED_GLOBALS = ['require', 'process', 'module', 'exports', '__dirname', '__filename', 'global', 'globalThis'];
+// worker 的 new AsyncFunction 形参表（顺序 = 原语 + shadow 全局）。scriptValidator 复用它做
+// 编译式校验，保证「校验用的形参环境」与「worker 实际执行环境」逐字一致（Codex MED#4）。
+export const WORKER_SCRIPT_PARAMS = [...PRIMITIVE_PARAMS, ...SHADOWED_GLOBALS];
+
+// worker 线程内执行的源码（纯 JS 字符串）。注入原语为 RPC stub；parallel/pipeline 在此处用
 // Promise 组合（无栅栏 pipeline：每 item 独立流过所有 stage）；脚本经 new AsyncFunction 运行。
 export const WORKER_SOURCE = `
 const { parentPort, workerData } = require('worker_threads');
@@ -82,15 +90,15 @@ const args = goal;
 (async () => {
   try {
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-    // shadow 危险全局：把它们作为形参传 undefined，脚本作用域内拿不到 require/fs/process。
+    // 形参表 = WORKER_SCRIPT_PARAMS（原语 + 被 shadow 成 undefined 的危险全局）；scriptValidator
+    // 用同一张表做编译式校验，确保语义一致。
     const fn = new AsyncFunction(
-      'agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'budget',
-      'require', 'process', 'module', 'exports', '__dirname', '__filename', 'global', 'globalThis',
+      ${WORKER_SCRIPT_PARAMS.map((p) => `'${p}'`).join(', ')},
       script
     );
     const result = await fn(
-      agent, parallel, pipeline, phase, log, args, budget,
-      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined
+      ${PRIMITIVE_PARAMS.join(', ')},
+      ${SHADOWED_GLOBALS.map(() => 'undefined').join(', ')}
     );
     parentPort.postMessage({ __workerDone: true, ok: true, result });
   } catch (err) {

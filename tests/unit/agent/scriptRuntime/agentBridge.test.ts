@@ -96,6 +96,24 @@ describe('runAgentCall token budget', () => {
     expect(budget.spent()).toBe(42);
   });
 
+  it('charges forced-path outputTokens even when the model returns no tool call (HIGH#2)', async () => {
+    const budget = new BudgetTracker(1000);
+    const ctx = makeCtx(budget);
+    inferenceMock.mockResolvedValue({ toolCalls: [], usage: { inputTokens: 3, outputTokens: 7 } });
+    await expect(
+      runAgentCall({ prompt: 'p', options: { schema: VALID_SCHEMA as never } }, ctx),
+    ).rejects.toThrow();
+    expect(budget.spent()).toBe(7); // 失败也要入账已消耗的 token
+  });
+
+  it('charges full-agent tokensUsed even when the sub-agent fails (HIGH#2)', async () => {
+    const budget = new BudgetTracker(1000);
+    const ctx = makeCtx(budget);
+    executeMock.mockResolvedValue({ success: false, error: 'boom', tokensUsed: 13 });
+    await expect(runAgentCall({ prompt: 'p' }, ctx)).rejects.toThrow(/boom/);
+    expect(budget.spent()).toBe(13);
+  });
+
   it('throws before any inference when the budget is already exhausted', async () => {
     const budget = new BudgetTracker(100);
     budget.add(100);

@@ -32,6 +32,8 @@ export async function handleRpc(req: RpcRequest, ctx: ScriptRunContext): Promise
         return { id: req.id, ok: false, error: `unknown rpc kind: ${String((req as RpcRequest).kind)}` };
     }
   } catch (err) {
-    return { id: req.id, ok: false, error: err instanceof Error ? err.message : String(err) };
+    // 失败也回传当前 spent（agent 失败路径已记账）：否则 worker 侧 budget 镜像停在旧值，
+    // 脚本 while(budget.remaining()>x) 会持续误判（Codex HIGH#2）。
+    return { id: req.id, ok: false, error: err instanceof Error ? err.message : String(err), spent: ctx.budget.spent() };
   }
 }

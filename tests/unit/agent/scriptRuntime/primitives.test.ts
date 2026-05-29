@@ -33,4 +33,16 @@ describe('handleRpc agent → spent', () => {
     expect(res.result).toBe('result');
     expect(res.spent).toBe(33);
   });
+
+  it('returns spent on the error response too, so the worker mirror does not stall (HIGH#2)', async () => {
+    const budget = new BudgetTracker(1000);
+    // 模拟：调用消耗了 token 但最终抛错（失败路径已记账，再抛）
+    runAgentCallMock.mockImplementation(async (_call: unknown, ctx: ScriptRunContext) => {
+      ctx.budget.add(21);
+      throw new Error('agent boom');
+    });
+    const res = await handleRpc({ id: 2, kind: 'agent', payload: { prompt: 'p' } }, makeCtx(budget));
+    expect(res.ok).toBe(false);
+    expect(res.spent).toBe(21);
+  });
 });

@@ -13,31 +13,92 @@
 
 import { parse } from 'acorn';
 import { SCRIPT_RUNTIME } from '../../../shared/constants';
+import { WORKER_SCRIPT_PARAMS } from './sandbox';
 
 export type ValidationResult = { ok: true } | { ok: false; error: string };
 
-/** 校验模型脚本可被 worker 安全解析执行（不真执行，只静态解析）。 */
+const AsyncFunctionCtor = Object.getPrototypeOf(async function () {}).constructor as new (
+  ...args: string[]
+) => unknown;
+
+/** 递归查 AST 里是否出现某些节点类型（用于堵 import() 动态导入）。 */
+function hasNodeType(node: unknown, types: Set<string>): boolean {
+  if (!node || typeof node !== 'object') return false;
+  const n = node as Record<string, unknown>;
+  if (typeof n.type === 'string' && types.has(n.type)) return true;
+  for (const key of Object.keys(n)) {
+    if (key === 'type') continue;
+    const v = n[key];
+    if (Array.isArray(v)) {
+      for (const item of v) if (hasNodeType(item, types)) return true;
+    } else if (v && typeof v === 'object') {
+      if (hasNodeType(v, types)) return true;
+    }
+  }
+  return false;
+}
+
+/** 校验模型脚本可被 worker 安全解析执行（不真执行，只编译/解析）。 */
 export function validateScript(script: string): ValidationResult {
   const bytes = Buffer.byteLength(script, 'utf8');
   if (bytes > SCRIPT_RUNTIME.MAX_SCRIPT_BYTES) {
     return { ok: false, error: `脚本体积 ${bytes} 字节超过上限 ${SCRIPT_RUNTIME.MAX_SCRIPT_BYTES} 字节` };
   }
+
+  // 编译式校验（不执行）：用与 worker 逐字一致的形参表构造 AsyncFunction，捕获语法错 /
+  // import-export 语句 / 与原语形参重名的词法声明（Codex MED#4：包成无参函数体解析会漏这类）。
   try {
-    // 与 worker 的 new AsyncFunction(body) 同构：包成 async 函数体解析。
-    // → return / 顶层 await 合法；import / export 在函数体内是语法错，被自动拒绝。
-    parse(`async function __wf(){\n${script}\n}`, { ecmaVersion: 'latest' });
-    return { ok: true };
+    new AsyncFunctionCtor(...WORKER_SCRIPT_PARAMS, script);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: `脚本语法错误: ${msg}` };
   }
+
+  // 动态 import() 是 ImportExpression（AsyncFunction 不拦），能绕过 require/process 的 shadow
+  // 拿到 node:fs / node:child_process（Codex HIGH#3）。AST 走查显式拒绝。
+  try {
+    const ast = parse(script, {
+      ecmaVersion: 'latest',
+      allowReturnOutsideFunction: true,
+      allowAwaitOutsideFunction: true,
+    });
+    if (hasNodeType(ast, new Set(['ImportExpression']))) {
+      return { ok: false, error: '脚本禁止使用动态 import()（沙箱不提供模块加载）' };
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `脚本解析失败: ${msg}` };
+  }
+
+  return { ok: true };
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-/** 校验模型给的 schema 是可直传 forced tool_choice inputSchema 的对象型 JSON Schema。 */
+/** 计算 schema 嵌套深度（对象/数组逐层下钻），用于 depth 上限。 */
+function schemaDepth(node: unknown, seen: WeakSet<object>): number {
+  if (!node || typeof node !== 'object') return 0;
+  if (seen.has(node as object)) return Infinity; // 循环引用 → 视为无限深，拒绝
+  seen.add(node as object);
+  let max = 0;
+  for (const v of Object.values(node as Record<string, unknown>)) {
+    if (v && typeof v === 'object') max = Math.max(max, schemaDepth(v, seen));
+  }
+  return max + 1;
+}
+
+/** 递归判断对象里任意键名是否命中黑名单（如 $ref）。 */
+function hasKey(node: unknown, key: string): boolean {
+  if (!node || typeof node !== 'object') return false;
+  if (Array.isArray(node)) return node.some((x) => hasKey(x, key));
+  const obj = node as Record<string, unknown>;
+  if (key in obj) return true;
+  return Object.values(obj).some((v) => hasKey(v, key));
+}
+
+/** 校验模型给的 schema 是可直传 forced tool_choice inputSchema 的对象型 JSON Schema，且有界。 */
 export function validateForcedSchema(schema: unknown): ValidationResult {
   if (!isPlainObject(schema)) {
     return { ok: false, error: 'schema 必须是对象' };
@@ -47,6 +108,22 @@ export function validateForcedSchema(schema: unknown): ValidationResult {
   }
   if (!isPlainObject(schema.properties) || Object.keys(schema.properties).length === 0) {
     return { ok: false, error: 'schema.properties 必须是至少含一个字段的对象' };
+  }
+  // 有界化（Codex MED#5）：超大/超深/$ref/循环 → DoS / postMessage clone / provider 请求炸弹。
+  if (hasKey(schema, '$ref')) {
+    return { ok: false, error: 'schema 禁止使用 $ref（forced 工具参数须自包含）' };
+  }
+  let bytes: number;
+  try {
+    bytes = Buffer.byteLength(JSON.stringify(schema), 'utf8');
+  } catch {
+    return { ok: false, error: 'schema 无法序列化（可能含循环引用）' };
+  }
+  if (bytes > SCRIPT_RUNTIME.MAX_SCHEMA_BYTES) {
+    return { ok: false, error: `schema 过大（${bytes} 字节 > 上限 ${SCRIPT_RUNTIME.MAX_SCHEMA_BYTES}）` };
+  }
+  if (schemaDepth(schema, new WeakSet()) > SCRIPT_RUNTIME.MAX_SCHEMA_DEPTH) {
+    return { ok: false, error: `schema 嵌套过深（> ${SCRIPT_RUNTIME.MAX_SCHEMA_DEPTH} 层）` };
   }
   return { ok: true };
 }

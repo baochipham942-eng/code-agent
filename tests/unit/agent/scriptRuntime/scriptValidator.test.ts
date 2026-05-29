@@ -44,6 +44,26 @@ describe('validateScript', () => {
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toMatch(/上限|字节/);
   });
+
+  // ── Codex HIGH#3：动态 import() 能绕过 require/process shadow，必须拒 ──
+  it('rejects a dynamic import() expression', () => {
+    const res = validateScript("const fs = await import('node:fs');\nreturn 1;");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/import/i);
+  });
+
+  // ── Codex MED#4：用真实形参编译校验 → 与 worker 的 new AsyncFunction 语义一致 ──
+  it('rejects a script that redeclares a runtime primitive parameter (param collision)', () => {
+    // worker 把 agent/parallel/... 作为形参注入；脚本里 `const agent` 会在真实构造时抛 SyntaxError，
+    // 包成无参函数体的旧校验法会漏掉。
+    const res = validateScript('const agent = 1;\nreturn agent;');
+    expect(res.ok).toBe(false);
+  });
+
+  it('still accepts a script that calls the injected primitives (they are real params, not collisions)', () => {
+    const res = validateScript("await phase('x');\nconst r = await agent('hi', { schema: { type:'object', properties:{ a:{type:'string'} } } });\nreturn r;");
+    expect(res).toEqual({ ok: true });
+  });
 });
 
 describe('validateForcedSchema', () => {
@@ -76,5 +96,28 @@ describe('validateForcedSchema', () => {
 
   it('rejects properties that is not an object', () => {
     expect(validateForcedSchema({ type: 'object', properties: 'nope' }).ok).toBe(false);
+  });
+
+  // ── Codex MED#5：超大/超深/$ref schema → DoS/计费炸弹，必须有界 ──
+  it('rejects a $ref anywhere in the schema', () => {
+    const res = validateForcedSchema({ type: 'object', properties: { x: { $ref: '#/defs/Foo' } } });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/\$ref/);
+  });
+
+  it('rejects an over-deep schema', () => {
+    let deep: Record<string, unknown> = { type: 'string' };
+    for (let i = 0; i < SCRIPT_RUNTIME.MAX_SCHEMA_DEPTH + 3; i++) {
+      deep = { type: 'object', properties: { nested: deep } };
+    }
+    expect(validateForcedSchema(deep).ok).toBe(false);
+  });
+
+  it('rejects an over-large schema (byte budget)', () => {
+    const properties: Record<string, unknown> = {};
+    for (let i = 0; i < 5000; i++) properties['field_with_a_longish_name_' + i] = { type: 'string', description: 'x'.repeat(20) };
+    const res = validateForcedSchema({ type: 'object', properties });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/上限|字节|过大/);
   });
 });

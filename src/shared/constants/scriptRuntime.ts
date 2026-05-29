@@ -13,4 +13,8 @@ export const SCRIPT_RUNTIME = {
   MAX_AGENT_CALLS_PER_RUN: 1000,
   /** 模型脚本源码体积上限（字节）：主线程在送进 worker 前 fail-fast，挡住异常大的注入。 */
   MAX_SCRIPT_BYTES: 64 * 1024,
+  /** agent({schema}) 的 forced schema JSON 体积上限（字节）：防超大 schema 的 clone/请求炸弹。 */
+  MAX_SCHEMA_BYTES: 16 * 1024,
+  /** forced schema 嵌套深度上限：防超深结构。 */
+  MAX_SCHEMA_DEPTH: 8,
 } as const;

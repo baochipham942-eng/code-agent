@@ -454,6 +454,7 @@ export class SubagentExecutor {
           error: budgetCheck.reason,
           toolsUsed: [],
           iterations: 0,
+          tokensUsed: outputTokensUsed,
           agentId: agentTask.id,
           contextSnapshot: latestContextSnapshot,
         };
@@ -526,6 +527,7 @@ export class SubagentExecutor {
             error: errorMsg,
             toolsUsed: [...new Set(toolsUsed)],
             iterations,
+            tokensUsed: outputTokensUsed,
             agentId: agentTask.id,
             contextSnapshot: latestContextSnapshot,
             cancellationReason,

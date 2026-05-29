@@ -39,3 +39,36 @@ describe('BudgetTracker', () => {
     expect(b.spent()).toBe(0);
   });
 });
+
+describe('BudgetTracker reservation (并发硬上限)', () => {
+  it('cold start: first reserve() reserves 0 so the first call is never pre-blocked', () => {
+    const b = new BudgetTracker(20);
+    expect(b.reserve()).toBe(0);
+    expect(b.exceeded()).toBe(false);
+  });
+
+  it('reserve() uses the running average of committed calls', () => {
+    const b = new BudgetTracker(1000);
+    const e0 = b.reserve();        // 0 (no data)
+    b.commit(e0, 100);            // 1 call, spent 100 → avg 100
+    expect(b.reserve()).toBe(100); // next reservation = avg
+  });
+
+  it('exceeded() accounts for in-flight reservations (concurrent calls see each other)', () => {
+    const b = new BudgetTracker(150);
+    b.commit(b.reserve(), 100);   // spent 100, avg 100
+    const e = b.reserve();        // reserve avg 100 → spent100 + reserved100 = 200 >= 150
+    expect(e).toBe(100);
+    expect(b.exceeded()).toBe(true);   // a concurrent call would now be blocked
+    b.commit(e, 30);              // reservation released, actual 30 committed
+    expect(b.spent()).toBe(130);
+    expect(b.exceeded()).toBe(false);
+  });
+
+  it('remaining() reports the committed view (spent only, not reservations)', () => {
+    const b = new BudgetTracker(200);
+    b.commit(b.reserve(), 50);
+    b.reserve(); // in-flight reservation must NOT shrink the reported remaining
+    expect(b.remaining()).toBe(150);
+  });
+});

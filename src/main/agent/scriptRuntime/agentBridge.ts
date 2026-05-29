@@ -89,12 +89,19 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
     data: { agentId, label, provider, model: modelConfig.model, hasSchema: !!call.options?.schema },
   });
 
+  // 并发预留：发起前按均值占一份 quota，让并发 agent() 看见彼此（收窄 parallel 溢出，Codex HIGH#1）。
+  const reserved = ctx.budget.reserve();
+  // 真实 outputTokens 在两条路径里求出，无论成功/失败/抛错都在 finally 统一 commit（Codex HIGH#2 漏计）。
+  let actualTokens = 0;
   try {
     let result: PrimitiveResult;
     if (call.options?.schema) {
       const forced = await runForcedStructured(call.prompt, call.options.schema, modelConfig, ctx.signal);
-      ctx.budget.add(forced.outputTokens);
-      result = forced.value;
+      actualTokens = forced.outputTokens; // 即便没拿到 tool call 也已消耗，先记账
+      if (forced.missingToolCall) {
+        throw new Error('forced structured output：模型未返回 tool call');
+      }
+      result = forced.value as PrimitiveResult;
     } else {
       const { tools, writeCapable } = ctx.resolveAgentTools(call.options?.tools);
       // 并行写护栏：多个写能力 agent 共享同一工作树时可能互相覆盖。检测到并发写就告警（每 run 一次），
@@ -118,10 +125,10 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
           { name: call.options?.agentType ?? 'workflow-agent', systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPT, availableTools: tools },
           ctx.deriveSubagentContext({ agentId, modelConfig, signal: ctx.signal }),
         );
+        actualTokens = sub.tokensUsed ?? 0; // 成功或失败都已消耗，先记账
         if (!sub.success) {
           throw new Error(sub.error ?? `子 agent 执行失败（${sub.cancellationReason ?? 'unknown'}）`);
         }
-        ctx.budget.add(sub.tokensUsed ?? 0);
         result = sub.output;
       } finally {
         if (writeCapable) ctx.writeGuard.inFlight--;
@@ -138,6 +145,7 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
     });
     throw err;
   } finally {
+    ctx.budget.commit(reserved, actualTokens);
     release();
   }
 }
@@ -151,9 +159,9 @@ async function runForcedStructured(
   schema: JsonSchema,
   modelConfig: ModelConfig,
   signal: AbortSignal,
-): Promise<{ value: Record<string, unknown>; outputTokens: number }> {
+): Promise<{ value?: Record<string, unknown>; outputTokens: number; missingToolCall?: boolean }> {
   // 模型给的 schema 零校验直传会让任意值进 forced tool_choice inputSchema（deferred 审计点）。
-  // 先校验是对象型且带 properties 的 JSON Schema，不合法直接抛、不发起 inference。
+  // 先校验是对象型且带 properties 的合规 JSON Schema，不合法直接抛、不发起 inference。
   const schemaCheck = validateForcedSchema(schema);
   if (!schemaCheck.ok) {
     throw new Error(`agent({schema}) 的 schema 非法: ${schemaCheck.error}`);
@@ -161,7 +169,7 @@ async function runForcedStructured(
   const tool: ToolDefinition = {
     name: STRUCTURED_OUTPUT_TOOL,
     description: '返回符合给定 schema 的结构化结果。你必须调用此工具输出最终答案。',
-    // schema 由模型脚本提供，运行时是合法 JSON Schema（含 type）；JsonSchema 故意放宽为 Record，此处桥接。
+    // schema 已过 validateForcedSchema；JsonSchema 故意放宽为 Record，此处桥接。
     inputSchema: schema as unknown as ToolDefinition['inputSchema'],
     requiresPermission: false,
     permissionLevel: 'read',
@@ -171,10 +179,13 @@ async function runForcedStructured(
     forceNonStreaming: true,
     toolChoice: { type: 'tool', toolName: STRUCTURED_OUTPUT_TOOL },
   });
+  const outputTokens = response.usage?.outputTokens ?? 0;
   const toolCall =
     response.toolCalls?.find((c) => c.name === STRUCTURED_OUTPUT_TOOL) ?? response.toolCalls?.[0];
+  // 没拿到 tool call 也已消耗 token：回传 outputTokens + missingToolCall 标记，由 caller 在
+  // finally 里照常 commit 后再抛（Codex HIGH#2：失败路径不能漏计）。
   if (!toolCall) {
-    throw new Error('forced structured output：模型未返回 tool call');
+    return { outputTokens, missingToolCall: true };
   }
-  return { value: toolCall.arguments, outputTokens: response.usage?.outputTokens ?? 0 };
+  return { value: toolCall.arguments, outputTokens };
 }

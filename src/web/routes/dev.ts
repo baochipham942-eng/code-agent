@@ -19,6 +19,7 @@ import type { WebRouteLogger } from './routeTypes';
 import { createDevCancellableToolSmokeRouter } from './devCancellableToolSmoke';
 import { createDevAgentLoopStubSmokeRouter } from './devAgentLoopStubSmoke';
 import { createDevAgentTeamSmokeRouter } from './devAgentTeamSmoke';
+import { registerDevTelemetrySeedRoutes } from './devTelemetrySeedRoutes';
 import type { ActiveAgentLoop } from './agent';
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ interface DevSupabaseClient {
   from(table: string): DevSupabaseQuery;
 }
 
-interface DevTelemetrySeedTurnRequest {
+export interface DevTelemetrySeedTurnRequest {
   sessionId?: unknown;
   turnId?: unknown;
   title?: unknown;
@@ -95,12 +96,12 @@ interface DevTelemetrySeedTurnRequest {
   workingDirectory?: unknown;
 }
 
-interface DevTodoSeedRequest {
+export interface DevTodoSeedRequest {
   sessionId?: unknown;
   todos?: unknown;
 }
 
-interface DevCompactStateSeedRequest {
+export interface DevCompactStateSeedRequest {
   sessionId?: unknown;
   summaryMessageId?: unknown;
   summary?: unknown;
@@ -233,7 +234,7 @@ function readObjectBody(body: unknown): Record<string, unknown> {
     : {};
 }
 
-function readRequiredString(value: unknown, fieldName: string): string {
+export function readRequiredString(value: unknown, fieldName: string): string {
   if (typeof value !== 'string' || !value.trim()) {
     throw new DevApiError(400, `${fieldName} must be a non-empty string.`);
   }
@@ -528,7 +529,7 @@ function normalizeDevAgentEvents(body: unknown): RendererAgentEvent[] | null {
   return events;
 }
 
-async function seedCompletedTelemetryTurn(body: DevTelemetrySeedTurnRequest): Promise<{
+export async function seedCompletedTelemetryTurn(body: DevTelemetrySeedTurnRequest): Promise<{
   sessionId: string;
   turnId: string;
   hasUser: boolean;
@@ -591,7 +592,7 @@ async function seedCompletedTelemetryTurn(body: DevTelemetrySeedTurnRequest): Pr
   return { sessionId, turnId, hasUser: Boolean(user?.id), messageIds: messages.map((message) => message.id) };
 }
 
-async function findCloudTelemetryFeedback(sessionId: string, turnId: string): Promise<{
+export async function findCloudTelemetryFeedback(sessionId: string, turnId: string): Promise<{
   found: boolean;
   feedback?: unknown;
 }> {
@@ -614,7 +615,7 @@ async function findCloudTelemetryFeedback(sessionId: string, turnId: string): Pr
   return row ? { found: true, feedback: row } : { found: false };
 }
 
-async function findCloudTelemetryTrace(sessionId: string, turnId: string): Promise<{
+export async function findCloudTelemetryTrace(sessionId: string, turnId: string): Promise<{
   foundSession: boolean;
   foundTurn: boolean;
   session?: unknown;
@@ -654,7 +655,7 @@ async function findCloudTelemetryTrace(sessionId: string, turnId: string): Promi
   };
 }
 
-async function seedDevTodos(body: DevTodoSeedRequest): Promise<{ sessionId: string; todos: TodoItem[] }> {
+export async function seedDevTodos(body: DevTodoSeedRequest): Promise<{ sessionId: string; todos: TodoItem[] }> {
   const sessionId = readRequiredString(body.sessionId, 'sessionId');
   const todos = normalizeDevTodoItems(body.todos);
   const { setSessionTodos, getSessionTodos } = await import('../../main/agent/todoParser');
@@ -662,13 +663,13 @@ async function seedDevTodos(body: DevTodoSeedRequest): Promise<{ sessionId: stri
   return { sessionId, todos: getSessionTodos(sessionId) };
 }
 
-async function readDevTodos(sessionId: unknown): Promise<{ sessionId: string; todos: TodoItem[] }> {
+export async function readDevTodos(sessionId: unknown): Promise<{ sessionId: string; todos: TodoItem[] }> {
   const resolvedSessionId = readRequiredString(sessionId, 'sessionId');
   const { getSessionTodos } = await import('../../main/agent/todoParser');
   return { sessionId: resolvedSessionId, todos: getSessionTodos(resolvedSessionId) };
 }
 
-async function seedDevCompactState(body: DevCompactStateSeedRequest): Promise<{
+export async function seedDevCompactState(body: DevCompactStateSeedRequest): Promise<{
   sessionId: string;
   compactionMessages: Array<{
     id: string;
@@ -757,7 +758,7 @@ async function seedDevCompactState(body: DevCompactStateSeedRequest): Promise<{
   return readDevCompactState(request.sessionId);
 }
 
-async function readDevCompactState(sessionId: unknown): Promise<{
+export async function readDevCompactState(sessionId: unknown): Promise<{
   sessionId: string;
   compactionMessages: Array<{
     id: string;
@@ -800,7 +801,7 @@ async function readDevCompactState(sessionId: unknown): Promise<{
   };
 }
 
-async function readDevReplayState(sessionId: unknown): Promise<{
+export async function readDevReplayState(sessionId: unknown): Promise<{
   sessionId: string;
   replayKey: string | null;
   dataSource: string | null;
@@ -1051,167 +1052,7 @@ export function createDevRouter(deps: DevRouterDeps): Router {
     res.json({ ok: true });
   });
 
-  // ── POST /api/dev/telemetry/seed-turn ───────────────────────────────
-  // 给端到端 smoke 造一条已完成 telemetry session/turn，避免为验证反馈链路真实打模型。
-  router.post('/dev/telemetry/seed-turn', async (req: Request, res: Response) => {
-    if (!ensureDevApiEnabled(res)) return;
-
-    try {
-      const result = await seedCompletedTelemetryTurn(req.body as DevTelemetrySeedTurnRequest);
-      res.json({ ok: true, ...result });
-    } catch (error) {
-      const status = error instanceof DevApiError ? error.status : 500;
-      logger.error('Dev telemetry seed-turn request failed', error);
-      res.status(status).json({
-        ok: false,
-        error: formatError(error),
-      });
-    }
-  });
-
-  // ── POST /api/dev/telemetry/upload ──────────────────────────────────
-  router.post('/dev/telemetry/upload', async (_req: Request, res: Response) => {
-    if (!ensureDevApiEnabled(res)) return;
-
-    try {
-      const { getTelemetryUploaderService } = await import('../../main/telemetry/telemetryUploaderService');
-      const uploaded = await getTelemetryUploaderService().upload();
-      res.json({ ok: true, uploaded });
-    } catch (error) {
-      logger.error('Dev telemetry upload request failed', error);
-      res.status(500).json({
-        ok: false,
-        error: formatError(error),
-      });
-    }
-  });
-
-  // ── POST /api/dev/todos/seed ────────────────────────────────────────
-  // E2E/dev-only hook for restart recovery smoke. Uses the real todoParser
-  // persistence path instead of writing SQLite directly.
-  router.post('/dev/todos/seed', async (req: Request, res: Response) => {
-    if (!ensureDevApiEnabled(res)) return;
-
-    try {
-      const result = await seedDevTodos(req.body as DevTodoSeedRequest);
-      res.json({ ok: true, ...result });
-    } catch (error) {
-      const status = error instanceof DevApiError ? error.status : 500;
-      logger.error('Dev todos seed request failed', error);
-      res.status(status).json({
-        ok: false,
-        error: formatError(error),
-      });
-    }
-  });
-
-  // ── GET /api/dev/todos ──────────────────────────────────────────────
-  router.get('/dev/todos', async (req: Request, res: Response) => {
-    if (!ensureDevApiEnabled(res)) return;
-
-    try {
-      const result = await readDevTodos(req.query.sessionId);
-      res.json({ ok: true, ...result });
-    } catch (error) {
-      const status = error instanceof DevApiError ? error.status : 500;
-      logger.error('Dev todos read request failed', error);
-      res.status(status).json({
-        ok: false,
-        error: formatError(error),
-      });
-    }
-  });
-
-  // ── POST /api/dev/compact-state/seed ─────────────────────────────────
-  // E2E/dev-only hook for restart recovery smoke. It seeds the post-compact
-  // durable state through SessionManager and the runtime-state repository.
-  router.post('/dev/compact-state/seed', async (req: Request, res: Response) => {
-    if (!ensureDevApiEnabled(res)) return;
-
-    try {
-      const result = await seedDevCompactState(req.body as DevCompactStateSeedRequest);
-      res.json({ ok: true, ...result });
-    } catch (error) {
-      const status = error instanceof DevApiError ? error.status : 500;
-      logger.error('Dev compact-state seed request failed', error);
-      res.status(status).json({
-        ok: false,
-        error: formatError(error),
-      });
-    }
-  });
-
-  // ── GET /api/dev/compact-state ───────────────────────────────────────
-  router.get('/dev/compact-state', async (req: Request, res: Response) => {
-    if (!ensureDevApiEnabled(res)) return;
-
-    try {
-      const result = await readDevCompactState(req.query.sessionId);
-      res.json({ ok: true, ...result });
-    } catch (error) {
-      const status = error instanceof DevApiError ? error.status : 500;
-      logger.error('Dev compact-state read request failed', error);
-      res.status(status).json({
-        ok: false,
-        error: formatError(error),
-      });
-    }
-  });
-
-  // ── GET /api/dev/replay-state ───────────────────────────────────────
-  router.get('/dev/replay-state', async (req: Request, res: Response) => {
-    if (!ensureDevApiEnabled(res)) return;
-
-    try {
-      const result = await readDevReplayState(req.query.sessionId);
-      res.json({ ok: true, ...result });
-    } catch (error) {
-      const status = error instanceof DevApiError ? error.status : 500;
-      logger.error('Dev replay-state read request failed', error);
-      res.status(status).json({
-        ok: false,
-        error: formatError(error),
-      });
-    }
-  });
-
-  // ── GET /api/dev/telemetry/cloud-feedback ───────────────────────────
-  router.get('/dev/telemetry/cloud-feedback', async (req: Request, res: Response) => {
-    if (!ensureDevApiEnabled(res)) return;
-
-    try {
-      const sessionId = readRequiredString(req.query.sessionId, 'sessionId');
-      const turnId = readRequiredString(req.query.turnId, 'turnId');
-      const result = await findCloudTelemetryFeedback(sessionId, turnId);
-      res.json({ ok: true, ...result });
-    } catch (error) {
-      const status = error instanceof DevApiError ? error.status : 500;
-      logger.error('Dev telemetry cloud-feedback request failed', error);
-      res.status(status).json({
-        ok: false,
-        error: formatError(error),
-      });
-    }
-  });
-
-  // ── GET /api/dev/telemetry/cloud-trace ──────────────────────────────
-  router.get('/dev/telemetry/cloud-trace', async (req: Request, res: Response) => {
-    if (!ensureDevApiEnabled(res)) return;
-
-    try {
-      const sessionId = readRequiredString(req.query.sessionId, 'sessionId');
-      const turnId = readRequiredString(req.query.turnId, 'turnId');
-      const result = await findCloudTelemetryTrace(sessionId, turnId);
-      res.json({ ok: true, ...result });
-    } catch (error) {
-      const status = error instanceof DevApiError ? error.status : 500;
-      logger.error('Dev telemetry cloud-trace request failed', error);
-      res.status(status).json({
-        ok: false,
-        error: formatError(error),
-      });
-    }
-  });
+  registerDevTelemetrySeedRoutes(router, { logger, ensureDevApiEnabled });
 
   return router;
 }

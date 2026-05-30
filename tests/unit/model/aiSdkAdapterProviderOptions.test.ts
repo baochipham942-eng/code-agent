@@ -151,7 +151,7 @@ describe('inferenceViaAiSdk provider options', () => {
       signal: abort.signal,
     });
 
-    expect(networkMocks.getHttpsAgent).toHaveBeenCalledWith('https://relay.example/v1/chat/completions');
+    expect(networkMocks.getHttpsAgent).toHaveBeenCalledWith('https://relay.example/v1/chat/completions', 'qwen');
     expect(vi.mocked(axios)).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://relay.example/v1/chat/completions',
       method: 'POST',

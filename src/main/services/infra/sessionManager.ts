@@ -442,7 +442,7 @@ export class SessionManager implements Disposable {
 
     try {
       const supabase = getSupabase();
-      const { data: cloudSessions, error } = await supabase.from('sessions').select('id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at, is_deleted').eq('user_id', user.id).order('updated_at', { ascending: false }).limit(100);
+      const { data: cloudSessions, error } = await supabase.from('sessions').select('id, title, model_provider, model_name, working_directory, created_at, updated_at, is_deleted').eq('user_id', user.id).order('updated_at', { ascending: false }).limit(100);
 
       if (error) {
         logger.error('Cloud session list error', { error });
@@ -458,7 +458,6 @@ export class SessionManager implements Disposable {
       interface CloudSession {
         id: string;
         title: string;
-        generation_id?: string;
         model_provider: string;
         model_name: string;
         working_directory?: string;

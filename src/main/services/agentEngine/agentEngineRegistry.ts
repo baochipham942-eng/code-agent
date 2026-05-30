@@ -54,8 +54,8 @@ export class AgentEngineRegistry {
   private nativeDescriptor(detectedAt: number): AgentEngineDescriptor {
     return {
       kind: 'native',
-      label: 'Agent Neo',
-      summary: 'Agent Neo ConversationRuntime, using the existing provider and permission stack.',
+      label: 'Neo',
+      summary: 'Neo ConversationRuntime, using the existing provider and permission stack.',
       installState: 'builtin',
       runtimeState: 'ready',
       executable: true,

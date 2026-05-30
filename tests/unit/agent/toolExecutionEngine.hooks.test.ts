@@ -17,6 +17,37 @@ const serviceMocks = vi.hoisted(() => {
   return { langfuse };
 });
 
+vi.mock('../../../src/main/agent/runtime/gameArtifactValidator', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/main/agent/runtime/gameArtifactValidator')>();
+
+  return {
+    ...actual,
+    validateGameArtifact: vi.fn(async (
+      filePath: string,
+      options?: Parameters<typeof actual.validateGameArtifact>[1],
+    ) => {
+      if (/code-agent-artifact-repair-(?:autofinish|target-read-pass)-/.test(filePath)) {
+        return {
+          shouldValidate: true,
+          inferredKind: 'game',
+          isComplete: true,
+          hasTrailingHtmlContent: false,
+          passed: true,
+          failures: [],
+          checks: [
+            'detected game artifact with interactive delivery surface',
+            'html document looks complete',
+            'runtime smoke passed via interactive test contract',
+            'browser visual smoke passed',
+          ],
+        };
+      }
+
+      return actual.validateGameArtifact(filePath, options);
+    }),
+  };
+});
+
 vi.mock('../../../src/main/services', () => ({
   getConfigService: vi.fn(),
   getAuthService: vi.fn(),
@@ -93,7 +124,7 @@ function makeRuntimeTestableGameHtml(): string {
     <!doctype html>
     <html>
     <body>
-      <canvas id="game" width="320" height="180" style="width: 100%; max-width: 320px; height: auto; aspect-ratio: 16 / 9;"></canvas>
+      <canvas id="game" width="320" height="180" style="width: min(90vw, calc(90dvh * 16 / 9)); height: auto; aspect-ratio: 16 / 9; display: block; margin: 0 auto;"></canvas>
       <script>
         const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
@@ -299,6 +330,18 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
     initialSystemPromptLength: 0,
     ...overrides,
   };
+}
+
+function makePendingGoalMode(): NonNullable<RuntimeContext['goalMode']> {
+  return {
+    isPending: vi.fn().mockReturnValue(true),
+    requestCompletion: vi.fn(),
+    getVerifyCommand: vi.fn().mockReturnValue(undefined),
+    getReviewCondition: vi.fn().mockReturnValue(undefined),
+    getGoal: vi.fn().mockReturnValue('validate artifact'),
+    markMet: vi.fn(),
+    clearCompletionRequest: vi.fn(),
+  } as unknown as NonNullable<RuntimeContext['goalMode']>;
 }
 
 function makeMessageProcessorDeps(ctx: RuntimeContext) {
@@ -1285,6 +1328,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
+      goalMode: makePendingGoalMode(),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -1388,6 +1432,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
+      goalMode: makePendingGoalMode(),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -2148,7 +2193,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       <!doctype html>
       <html>
       <body>
-        <canvas id="game" width="320" height="180" style="width: 100%; max-width: 320px; height: auto; aspect-ratio: 16 / 9;"></canvas>
+        <canvas id="game" width="320" height="180" style="width: min(90vw, calc(90dvh * 16 / 9)); height: auto; aspect-ratio: 16 / 9; display: block; margin: 0 auto;"></canvas>
         <script>
           const canvas = document.getElementById('game');
           const ctx = canvas.getContext('2d');
@@ -2353,7 +2398,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       <!doctype html>
       <html>
       <body>
-        <canvas id="game" width="320" height="180" style="width: 100%; max-width: 320px; height: auto; aspect-ratio: 16 / 9;"></canvas>
+        <canvas id="game" width="320" height="180" style="width: min(90vw, calc(90dvh * 16 / 9)); height: auto; aspect-ratio: 16 / 9; display: block; margin: 0 auto;"></canvas>
         <script>
           const canvas = document.getElementById('game');
           const ctx = canvas.getContext('2d');
@@ -3364,7 +3409,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       <!doctype html>
       <html>
       <body>
-        <canvas id="game" width="320" height="180" style="width: 100%; max-width: 320px; height: auto; aspect-ratio: 16 / 9;"></canvas>
+        <canvas id="game" width="320" height="180" style="width: min(90vw, calc(90dvh * 16 / 9)); height: auto; aspect-ratio: 16 / 9; display: block; margin: 0 auto;"></canvas>
         <script>
           const canvas = document.getElementById('game');
           const ctx = canvas.getContext('2d');
@@ -3446,6 +3491,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
+      goalMode: makePendingGoalMode(),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -3489,7 +3535,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       <!doctype html>
       <html>
       <body>
-        <canvas id="game" width="320" height="180" style="width: 100%; max-width: 320px; height: auto; aspect-ratio: 16 / 9;"></canvas>
+        <canvas id="game" width="320" height="180" style="width: min(90vw, calc(90dvh * 16 / 9)); height: auto; aspect-ratio: 16 / 9; display: block; margin: 0 auto;"></canvas>
         <script>
           const canvas = document.getElementById('game');
           const ctx = canvas.getContext('2d');
@@ -3565,6 +3611,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
+      goalMode: makePendingGoalMode(),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -3624,6 +3671,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
+      goalMode: makePendingGoalMode(),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -3692,6 +3740,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
+      goalMode: makePendingGoalMode(),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),

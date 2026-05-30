@@ -70,7 +70,6 @@ export interface ToolExecutorConfig {
  * @internal
  */
 export interface ExecuteOptions {
-  generation?: { id: string };
   planningService?: unknown; // PlanningService instance for persistent planning
   modelConfig?: unknown; // ModelConfig for subagent execution
   // Plan Mode support (borrowed from Claude Code v2.0)
@@ -174,7 +173,7 @@ export class ToolExecutor {
    * 执行指定工具
    *
    * 执行流程：
-   * 1. 查找工具并验证代际可用性
+   * 1. 查找工具定义
    * 2. 构建执行上下文
    * 3. 检查权限（如需要）
    * 4. 检查缓存（如适用）
@@ -182,7 +181,7 @@ export class ToolExecutor {
    *
    * @param toolName - 工具名称
    * @param params - 工具参数
-   * @param options - 执行选项（代际、规划服务等）
+   * @param options - 执行选项（规划服务、模型配置等）
    * @returns 工具执行结果
    */
   async execute(

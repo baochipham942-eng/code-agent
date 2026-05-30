@@ -37,7 +37,7 @@ export function applySessionsMigrations(db: BetterSqlite3.Database, logger: Logg
   }
 
   // 2026-04-15: 彻底移除废弃的 sessions.generation_id 列
-  // 背景：2026-04-12 的 refactor (8a68ee85) 把运行时 generationId 概念抹掉了，
+  // 背景：2026-04-12 的 refactor (8a68ee85) 把运行时会话分代字段抹掉了，
   // 但 sessions 表的 `generation_id TEXT NOT NULL` 没跟着放宽；SessionRepository
   // 往新 session 里插 null 触发 NOT NULL constraint failed → 桌面端点"新会话"
   // 无响应。SQLite 3.35+ 支持 DROP COLUMN，幂等 try/catch。
@@ -58,6 +58,25 @@ export function applyTelemetryTurnsMigrations(db: BetterSqlite3.Database, logger
 
   // Fleet observability: 标记会话遥测是否已回传到云端（NULL = 未上传），镜像 sessions.synced_at
   safeExec(db, 'ALTER TABLE telemetry_sessions ADD COLUMN synced_at INTEGER', logger);
+  // Runtime 会话分代已不再是会话维度；旧 telemetry 表里保留的列会让后续 insert 继续写假值。
+  safeExec(db, 'ALTER TABLE telemetry_sessions DROP COLUMN generation_id', logger);
+  safeExec(
+    db,
+    `
+      CREATE TABLE IF NOT EXISTS telemetry_feedback (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        turn_id TEXT,
+        message_id TEXT,
+        rating INTEGER NOT NULL CHECK (rating IN (-1, 1)),
+        comment TEXT,
+        full_content TEXT,
+        created_at INTEGER NOT NULL,
+        synced_at INTEGER
+      )
+    `,
+    logger,
+  );
 
   // telemetry_model_calls 新增 prompt/completion 列（用于评测系统重放）
   const modelCallMigrations = [

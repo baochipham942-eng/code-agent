@@ -6,6 +6,8 @@ import type { AgentInterface } from './testRunner';
 import type { ToolExecutionRecord } from './types';
 import type { AgentLoop } from '../agent/agentLoop';
 import type { ModelProvider } from '../../shared/contract';
+import type { ModelConfig } from '../../shared/contract/model';
+import type { InferenceOptions } from '../model/types';
 import { createLogger } from '../services/infra/logger';
 import { MODEL_MAX_TOKENS } from '../../shared/constants';
 import { app } from '../platform';
@@ -259,7 +261,6 @@ export class StandaloneAgentAdapter implements AgentInterface {
   }
 
   private workingDirectory: string;
-  private generation: string;
   private toolMode: 'all' | 'deferred';
   private currentSessionId?: string;
   private telemetrySessionActive = false;
@@ -267,7 +268,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
     provider: string;
     model: string;
     apiKey?: string;
-  };
+  } & Partial<ModelConfig>;
+  private inferenceOptions?: InferenceOptions;
+  private maxIterations?: number;
 
   // Persisted across sendMessage() calls so multi-turn follow-ups share conversation history.
   // Cleared by reset() between cases (testRunner calls reset before each case's first prompt).
@@ -275,17 +278,19 @@ export class StandaloneAgentAdapter implements AgentInterface {
 
   constructor(config: {
     workingDirectory: string;
-    generation: string;
     modelConfig: {
       provider: string;
       model: string;
       apiKey?: string;
-    };
+    } & Partial<ModelConfig>;
+    inferenceOptions?: InferenceOptions;
+    maxIterations?: number;
     toolMode?: 'all' | 'deferred';
   }) {
     this.workingDirectory = config.workingDirectory;
-    this.generation = config.generation;
     this.modelConfig = config.modelConfig;
+    this.inferenceOptions = config.inferenceOptions;
+    this.maxIterations = config.maxIterations;
     this.toolMode = config.toolMode ?? 'deferred';
     // Eval-mode signal: prevents cross-case prompt contamination via recent_conversations.
     process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS = 'true';
@@ -347,12 +352,15 @@ export class StandaloneAgentAdapter implements AgentInterface {
         workingDirectory: this.workingDirectory,
         systemPrompt: SYSTEM_PROMPT,
         modelConfig: {
+          ...this.modelConfig,
           provider: this.modelConfig.provider as ModelProvider,
           model: this.modelConfig.model,
           apiKey: this.modelConfig.apiKey || '',
-          temperature: 0.3,
-          maxTokens: MODEL_MAX_TOKENS.DEFAULT,
+          temperature: this.modelConfig.temperature ?? 0.3,
+          maxTokens: this.modelConfig.maxTokens ?? MODEL_MAX_TOKENS.DEFAULT,
         },
+        inferenceOptions: this.inferenceOptions,
+        maxIterations: this.maxIterations,
         toolExecutor,
         messages,
         enableHooks: false,
@@ -360,6 +368,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
         autoApprovePlan: true,
         telemetryAdapter,
         onEvent: (event) => {
+          if (this.currentSessionId) {
+            telemetryCollector.handleEvent(this.currentSessionId, event);
+          }
           switch (event.type) {
             case 'message':
               if (event.data?.role === 'assistant' && event.data?.content) {
@@ -436,7 +447,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
 
   getAgentInfo(): { name: string; model: string; provider: string } {
     return {
-      name: this.generation,
+      name: 'agent-runtime',
       model: this.modelConfig.model,
       provider: this.modelConfig.provider,
     };

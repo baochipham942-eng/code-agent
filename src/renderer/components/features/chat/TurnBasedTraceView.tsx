@@ -26,6 +26,7 @@ interface TurnBasedTraceViewProps {
 }
 
 export const ACTIVE_DISPLAY_SCROLL_INTERVAL_MS = 80;
+export const USER_SCROLL_PROGRAMMATIC_PAUSE_MS = 280;
 
 export function getFocusedTurnIndex(projection: TraceProjection): number {
   if (projection.turns.length === 0) return -1;
@@ -38,9 +39,45 @@ export function getFocusedTurnIndex(projection: TraceProjection): number {
   return projection.turns.length - 1;
 }
 
-export function shouldFollowTurnOutput(isAtBottom: boolean, keepActiveOutputVisible = false): 'auto' | 'smooth' | false {
+export function isProgrammaticScrollSuppressed(suppressionUntil: number, now: number): boolean {
+  return suppressionUntil > now;
+}
+
+export function getUserScrollSuppressionUntil(
+  now: number,
+  pauseMs = USER_SCROLL_PROGRAMMATIC_PAUSE_MS,
+): number {
+  return now + pauseMs;
+}
+
+export function shouldStopFollowingForWheel(deltaY: number): boolean {
+  return deltaY < 0;
+}
+
+export function shouldStopFollowingForTouchMove(
+  startY: number | null,
+  currentY: number,
+  threshold = 2,
+): boolean {
+  return startY !== null && currentY > startY + threshold;
+}
+
+export function shouldStopFollowingForKeyboardScroll(key: string, shiftKey = false): boolean {
+  return key === 'ArrowUp'
+    || key === 'PageUp'
+    || key === 'Home'
+    || (key === ' ' && shiftKey)
+    || (key === 'Space' && shiftKey);
+}
+
+export function shouldFollowTurnOutput(
+  isAtBottom: boolean,
+  keepActiveOutputVisible = false,
+  userScrollSuppressed = false,
+): 'auto' | false {
+  if (userScrollSuppressed) return false;
   if (keepActiveOutputVisible) return 'auto';
-  return isAtBottom ? 'smooth' : false;
+  return isAtBottom ? 'auto' : false;
 }
 
 export function isScrollerNearBottom(
@@ -205,6 +242,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const prevAssistantAnchorRef = useRef<string | null>(null);
   const activeDisplayScrollCancelRef = useRef<(() => void) | null>(null);
   const activeDisplayScrollLastAtRef = useRef(0);
+  const userScrollSuppressUntilRef = useRef(0);
+  const touchStartYRef = useRef<number | null>(null);
   const keepActiveOutputVisibleRef = useRef(false);
   const followedOutputSessionIdRef = useRef<string | null>(null);
   const followedOutputTurnIdRef = useRef<string | null>(null);
@@ -253,6 +292,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       scrollerElementRef.current = el;
       setScrollerElement(el);
       el.style.scrollbarGutter = 'stable both-edges';
+      el.style.overscrollBehaviorY = 'contain';
     } else {
       scrollerElementRef.current = null;
       setScrollerElement(null);
@@ -269,6 +309,16 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const updateFollowedOutputTurnId = useCallback((turnId: string | null) => {
     followedOutputTurnIdRef.current = turnId;
     setFollowedOutputTurnId((current) => current === turnId ? current : turnId);
+  }, []);
+
+  const isUserScrollSuppressed = useCallback(() => (
+    isProgrammaticScrollSuppressed(userScrollSuppressUntilRef.current, Date.now())
+  ), []);
+
+  const markUserScrollInteraction = useCallback((now = Date.now()) => {
+    userScrollSuppressUntilRef.current = getUserScrollSuppressionUntil(now);
+    activeDisplayScrollCancelRef.current?.();
+    activeDisplayScrollCancelRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -290,25 +340,48 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       keepActiveOutputVisibleRef.current = false;
     };
     const handleWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0) stopFollowing();
+      markUserScrollInteraction();
+      if (shouldStopFollowingForWheel(event.deltaY)) stopFollowing();
     };
-    const handleTouchMove = () => stopFollowing();
+    const handleTouchStart = (event: TouchEvent) => {
+      touchStartYRef.current = event.touches[0]?.clientY ?? null;
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      markUserScrollInteraction();
+      const currentY = event.touches[0]?.clientY;
+      if (typeof currentY === 'number' && shouldStopFollowingForTouchMove(touchStartYRef.current, currentY)) {
+        stopFollowing();
+      }
+    };
+    const handleTouchEnd = () => {
+      touchStartYRef.current = null;
+    };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (['ArrowUp', 'PageUp', 'Home', ' ', 'Space'].includes(event.key)) {
+      if (!['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ', 'Space'].includes(event.key)) {
+        return;
+      }
+      markUserScrollInteraction();
+      if (shouldStopFollowingForKeyboardScroll(event.key, event.shiftKey)) {
         stopFollowing();
       }
     };
 
     scroller.addEventListener('wheel', handleWheel, { passive: true });
+    scroller.addEventListener('touchstart', handleTouchStart, { passive: true });
     scroller.addEventListener('touchmove', handleTouchMove, { passive: true });
+    scroller.addEventListener('touchend', handleTouchEnd, { passive: true });
+    scroller.addEventListener('touchcancel', handleTouchEnd, { passive: true });
     scroller.addEventListener('keydown', handleKeyDown);
 
     return () => {
       scroller.removeEventListener('wheel', handleWheel);
+      scroller.removeEventListener('touchstart', handleTouchStart);
       scroller.removeEventListener('touchmove', handleTouchMove);
+      scroller.removeEventListener('touchend', handleTouchEnd);
+      scroller.removeEventListener('touchcancel', handleTouchEnd);
       scroller.removeEventListener('keydown', handleKeyDown);
     };
-  }, [scrollerElement]);
+  }, [markUserScrollInteraction, scrollerElement]);
 
   useEffect(() => {
     const scroller = scrollerElement;
@@ -465,18 +538,21 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     if (!outputFollowRevision) return;
     if (outputFollowTurnIndex < 0) return;
     if (!keepActiveOutputVisibleRef.current) return;
+    if (isUserScrollSuppressed()) return;
 
     return scheduleAfterLayout(() => {
+      if (isUserScrollSuppressed()) return;
       virtuosoRef.current?.scrollToIndex({
         index: outputFollowTurnIndex,
         align: 'end',
         behavior: 'auto',
       });
     });
-  }, [outputFollowRevision, outputFollowTurnIndex]);
+  }, [isUserScrollSuppressed, outputFollowRevision, outputFollowTurnIndex]);
 
   const scheduleActiveDisplayScroll = useCallback((turnIndex: number) => {
     if (!keepActiveOutputVisibleRef.current) return;
+    if (isUserScrollSuppressed()) return;
     if (turnIndex !== outputFollowTurnIndex) return;
     if (activeDisplayScrollCancelRef.current) return;
 
@@ -489,6 +565,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       () => {
         activeDisplayScrollCancelRef.current = null;
         if (!keepActiveOutputVisibleRef.current) return;
+        if (isUserScrollSuppressed()) return;
         if (turnIndex !== outputFollowTurnIndex) return;
         activeDisplayScrollLastAtRef.current = Date.now();
         recordStreamingPerformanceCounter('stream.active_display_scroll');
@@ -500,7 +577,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       },
       delay,
     );
-  }, [outputFollowTurnIndex]);
+  }, [isUserScrollSuppressed, outputFollowTurnIndex]);
 
   useEffect(() => {
     const scroller = scrollerElement;
@@ -544,9 +621,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       return shouldFollowTurnOutput(
         isAtBottom,
         hasOutputFollowTurnOutput && keepActiveOutputVisibleRef.current,
+        isUserScrollSuppressed(),
       );
     },
-    [hasOutputFollowTurnOutput],
+    [hasOutputFollowTurnOutput, isUserScrollSuppressed],
   );
 
   // 一键回到底部并恢复跟随；抵达底部后 atBottomStateChange 会重新置位 keepActiveOutputVisible
@@ -630,7 +708,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         followOutput={followOutput}
         atBottomStateChange={(atBottom) => {
           setIsAtBottom(atBottom);
-          if (atBottom) {
+          if (atBottom && !isUserScrollSuppressed()) {
             keepActiveOutputVisibleRef.current = true;
             const turnId = outputFollowTurn?.turnId ?? projection.turns[projection.turns.length - 1]?.turnId;
             if (turnId) updateFollowedOutputTurnId(turnId);

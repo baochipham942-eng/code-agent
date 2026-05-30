@@ -42,7 +42,7 @@ export {
   type SessionIndexEntry,
 } from './sessionPersistence';
 
-// Agent Bus (Gen7 - Multi-Agent Communication)
+// Agent Bus (Multi-Agent Communication)
 export {
   getAgentBus,
   initAgentBus,

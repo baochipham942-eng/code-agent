@@ -66,6 +66,10 @@ import {
   getSubagentExecutionTimeout,
   getSubagentIdleTimeout,
 } from './subagentExecutorCancellation';
+import {
+  executeE2ELocalSubagent,
+  shouldUseE2ELocalSubagentExecutor,
+} from './subagentE2ELocalExecutor';
 
 const logger = createLogger('SubagentExecutor');
 
@@ -84,6 +88,8 @@ export interface SubagentConfig {
   maxBudget?: number;
   /** P3: Maximum execution time in milliseconds */
   maxExecutionTimeMs?: number;
+  /** Maximum tool call attempts allowed for this subagent */
+  maxToolCalls?: number;
   /** Whether high-risk operations require plan approval from coordinator */
   requirePlanApproval?: boolean;
   /** Coordinator agent ID for plan approval (defaults to 'coordinator') */
@@ -167,6 +173,10 @@ export class SubagentExecutor {
     config: SubagentConfig,
     context: SubagentContext
   ): Promise<SubagentResult> {
+    if (shouldUseE2ELocalSubagentExecutor()) {
+      return executeE2ELocalSubagent(prompt, config, context);
+    }
+
     // Create AgentTask for lifecycle tracking
     const agentId = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const taskMetadata: SidecarMetadata = {
@@ -209,7 +219,11 @@ export class SubagentExecutor {
     }
 
     const maxIterations = config.maxIterations || 10;
+    const maxToolCalls = config.maxToolCalls !== undefined
+      ? Math.max(0, Math.floor(config.maxToolCalls))
+      : undefined;
     const toolsUsed: string[] = [];
+    let toolCallsAttempted = 0;
     let iterations = 0;
     let finalOutput = '';
     // 跨迭代累加 outputTokens，供 dynamic-workflow 的 BudgetTracker 计费（每次推理后累加）。
@@ -740,6 +754,13 @@ export class SubagentExecutor {
           });
 
           for (const [toolIndex, toolCall] of response.toolCalls.entries()) {
+            if (maxToolCalls !== undefined && toolCallsAttempted >= maxToolCalls) {
+              const error = `Tool call blocked by tool policy: maxToolCalls=${maxToolCalls}, attempted ${toolCall.name}`;
+              logger.warn(`[${config.name}] ${error}`);
+              throw new Error(error);
+            }
+            toolCallsAttempted += 1;
+
             const toolDef = allowedNames.has(toolCall.name)
               ? context.toolResolver.getDefinition(toolCall.name)
               : undefined;

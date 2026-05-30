@@ -61,7 +61,7 @@ export class EvalCritic {
     return {
       runId: summary.runId,
       timestamp: Date.now(),
-      testSuiteVersion: summary.environment?.generation ?? 'unknown',
+      testSuiteVersion: 'agent-runtime',
       overallQualityScore,
       assertionQualities,
       coverageGaps,

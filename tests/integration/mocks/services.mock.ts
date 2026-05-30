@@ -93,19 +93,17 @@ export function createMockPromptService() {
   const prompts = new Map<string, string>();
 
   // Default prompts
-  prompts.set('gen1', 'You are a coding assistant with gen1 capabilities.');
-  prompts.set('gen2', 'You are a coding assistant with gen2 capabilities.');
-  prompts.set('gen3', 'You are a coding assistant with gen3 capabilities.');
-  prompts.set('gen4', 'You are a coding assistant with gen4 capabilities.');
+  prompts.set('base', 'You are a coding assistant with core capabilities.');
+  prompts.set('tools', 'You are a coding assistant with tool-use capabilities.');
 
   return {
     initialize: vi.fn().mockResolvedValue(undefined),
     fetchPrompts: vi.fn().mockResolvedValue(Object.fromEntries(prompts)),
-    getPrompt: vi.fn((genId: string) => prompts.get(genId) ?? ''),
+    getPrompt: vi.fn((promptId: string) => prompts.get(promptId) ?? ''),
     getVersion: vi.fn().mockReturnValue('1.0.0'),
 
     // Test helpers
-    _setPrompt: (genId: string, prompt: string) => prompts.set(genId, prompt),
+    _setPrompt: (promptId: string, prompt: string) => prompts.set(promptId, prompt),
     _clear: () => prompts.clear(),
   };
 }

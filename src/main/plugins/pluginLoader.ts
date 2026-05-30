@@ -63,7 +63,6 @@ function normalizeManifest(value: unknown): PluginManifest | null {
     name: readStringField(value, 'name') ?? id,
     version,
     main: readStringField(value, 'main') ?? 'index.js',
-    generations: normalizeStringArray(value.generations),
     capabilities: normalizeStringArray(value.capabilities),
     nativeDeps: normalizeStringArray(value.nativeDeps),
   };

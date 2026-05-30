@@ -17,6 +17,15 @@ vi.mock('../../../src/main/tools/protocolRegistry', () => ({
   resetProtocolRegistry: vi.fn(),
 }));
 
+vi.mock('../../../src/main/tools/protocolToolRegistration', () => ({
+  getProtocolToolSchemas: mocks.getSchemas,
+  hasProtocolTool: mocks.has,
+  resolveProtocolTool: mocks.resolve,
+  registerProtocolTool: vi.fn(),
+  unregisterProtocolTool: vi.fn(),
+  setProtocolToolRegistryPort: vi.fn(),
+}));
+
 vi.mock('../../../src/main/services/cloud', () => ({
   getCloudConfigService: () => ({
     getAllToolMeta: () => ({}),

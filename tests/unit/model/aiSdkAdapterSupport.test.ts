@@ -1,5 +1,5 @@
-// aiSdkSupportsProvider —— 锁住「适配器支持哪些 provider」，子代理默认走 aisdk 后，
-// 不支持的 provider（gemini 原生 API）必须自动回退旧 modelRouter 路径。
+// aiSdkSupportsProvider —— 锁住「适配器支持哪些 provider」。
+// 当前 AI SDK 路径已覆盖所有内置 provider；legacy 回退由 CODE_AGENT_MODEL_ENGINE 控制。
 import { describe, expect, it, vi } from 'vitest';
 import { aiSdkSupportsProvider } from '../../../src/main/model/adapters/aiSdkAdapter';
 
@@ -8,16 +8,25 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 }));
 
 describe('aiSdkSupportsProvider', () => {
-  it('provider class 语义尚未等价的 provider 不进 AI SDK 默认路径 → false（回退旧路径）', () => {
-    expect(aiSdkSupportsProvider('gemini')).toBe(false);
-    expect(aiSdkSupportsProvider('xiaomi')).toBe(false);
-    expect(aiSdkSupportsProvider('moonshot')).toBe(false);
-    expect(aiSdkSupportsProvider('zhipu')).toBe(false);
-    expect(aiSdkSupportsProvider('openrouter')).toBe(false);
-  });
-
-  it('DeepSeek / Claude / 普通 OpenAI 兼容 provider 支持 → true', () => {
-    for (const p of ['deepseek', 'claude', 'anthropic', 'openai', 'groq', 'qwen', 'minimax', 'perplexity', 'volcengine', 'longcat', 'local']) {
+  it('all built-in providers use the AI SDK path by default', () => {
+    for (const p of [
+      'deepseek',
+      'claude',
+      'anthropic',
+      'openai',
+      'groq',
+      'qwen',
+      'minimax',
+      'perplexity',
+      'volcengine',
+      'longcat',
+      'local',
+      'gemini',
+      'xiaomi',
+      'moonshot',
+      'zhipu',
+      'openrouter',
+    ]) {
       expect(aiSdkSupportsProvider(p)).toBe(true);
     }
   });

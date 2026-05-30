@@ -141,7 +141,7 @@ describe('artifactRepairSpec', () => {
     expect(spec.issues[0].repairInstruction).toContain('390px mobile viewport');
 
     const formatted = formatArtifactRepairSpecForPrompt(spec);
-    expect(formatted).toContain('max-width: calc(100vw - 16px)');
+    expect(formatted).toContain('width: min(calc(100vw - 16px)');
     expect(formatted).toContain('fixed 800px/900px');
   });
 

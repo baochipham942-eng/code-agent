@@ -16,7 +16,7 @@
 // - 公共 metadata 字段只保留双方都能合理映射的部分(id / name / description /
 //   source / surfaces / version? / author? / capabilities? / platforms? /
 //   aliases? / homepage?)
-// - 各自独有的字段(plugin 的 `permissions`, `nativeDeps`, `generations`;
+// - 各自独有的字段(plugin 的 `permissions`, `nativeDeps`;
 //   skill 的 `allowedTools`, `bins`, `envVars`, `executionContext`, `model` 等)
 //   留在 source-specific 数据载体里,后续 Phase 通过 `AgentExtension` 的
 //   `tools? / skillPrompt? / handlers?` 字段携带

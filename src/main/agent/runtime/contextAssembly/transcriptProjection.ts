@@ -1,8 +1,8 @@
 import type { Message } from '../../../../shared/contract';
 import type { ContextInterventionSnapshot } from '../../../../shared/contract/contextView';
 import { compactModelSummarize } from '../../../context/compactModel';
-import type { ContextAssemblyCtx, ContextTranscriptEntry } from '../contextAssembly';
-import { logger } from '../contextAssembly';
+import type { ContextAssemblyCtx, ContextTranscriptEntry } from './shared';
+import { logger } from './shared';
 import {
   formatArtifactRepairToolResultContent,
   getAllowedArtifactRepairToolCallIds,

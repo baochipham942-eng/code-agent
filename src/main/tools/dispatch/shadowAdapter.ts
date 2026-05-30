@@ -17,7 +17,7 @@ import type {
 } from '../../protocol/tools';
 import type { AgentEvent } from '../../protocol/events';
 import type { ToolContext as LegacyToolContext, ToolExecutionResult } from '../types';
-import { getProtocolRegistry } from '../protocolRegistry';
+import { hasProtocolTool, resolveProtocolTool } from '../protocolToolRegistration';
 import { sameToolName } from '../toolNames';
 
 // ----------------------------------------------------------------------------
@@ -215,12 +215,11 @@ export async function executePocToolViaProtocol(
   input: ExecuteProtocolInput,
 ): Promise<ToolExecutionResult> {
   try {
-    const registry = getProtocolRegistry();
-    if (!registry.has(input.toolName)) {
+    if (!hasProtocolTool(input.toolName)) {
       return { success: false, error: `protocol tool not registered: ${input.toolName}` };
     }
 
-    const handler = await registry.resolve(input.toolName);
+    const handler = await resolveProtocolTool(input.toolName);
 
     const legacyCtx = {
       workingDirectory: input.workingDirectory,

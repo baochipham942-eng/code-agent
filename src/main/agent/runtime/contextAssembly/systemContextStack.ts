@@ -4,7 +4,7 @@ import type { ContextEventRecord } from '../../../context/contextEventLedger';
 import { getSessionManager } from '../../../services';
 import { estimateTokens } from '../../../context/tokenOptimizer';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
-import type { ContextAssemblyCtx } from '../contextAssembly';
+import type { ContextAssemblyCtx } from './shared';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 import {
   logger,
@@ -12,7 +12,7 @@ import {
   MAX_PERSISTENT_SYSTEM_CONTEXT_ITEMS,
   MAX_PERSISTENT_SYSTEM_CONTEXT_ITEM_TOKENS,
   normalizePersistentSystemContextKey,
-} from '../contextAssembly';
+} from './shared';
 
 const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
 type ContextAssemblyPersistedMessage = Message & {

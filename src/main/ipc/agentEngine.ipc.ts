@@ -125,7 +125,7 @@ export function registerAgentEngineHandlers(ipcMain: IpcMain): void {
               success: false,
               error: {
                 code: 'INVALID_ENGINE',
-                message: 'Native Agent Neo model selection uses the normal model provider settings.',
+                message: 'Native Neo model selection uses the normal model provider settings.',
               },
             };
           }

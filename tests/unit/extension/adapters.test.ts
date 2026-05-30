@@ -6,7 +6,7 @@
 //   - PluginManifest description 缺失 → 空字符串
 //   - PluginManifest surfaces 缺失 → ['tools'] 默认
 //   - PluginManifest 自定义 source(builtin / plugin)
-//   - PluginManifest source-specific 字段(permissions/nativeDeps/generations)被丢弃
+//   - PluginManifest source-specific 字段(permissions/nativeDeps/main)被丢弃
 //   - ParsedSkill 全字段投影
 //   - ParsedSkill source 六种取值都转得过
 //   - ParsedSkill surfaces 固定 ['skills']
@@ -42,7 +42,6 @@ function fullManifest(): PluginManifest {
     platforms: ['darwin', 'linux'],
     permissions: ['filesystem', 'network'],
     nativeDeps: ['ffmpeg'],
-    generations: ['gen2', 'gen3'],
   };
 }
 
@@ -108,11 +107,10 @@ describe('pluginManifestToMetadata', () => {
     expect(pluginManifestToMetadata(manifest, 'builtin').source).toBe('builtin');
   });
 
-  it('source-specific 字段(permissions/nativeDeps/generations/main)不进 metadata', () => {
+  it('source-specific 字段(permissions/nativeDeps/main)不进 metadata', () => {
     const result = pluginManifestToMetadata(fullManifest()) as Record<string, unknown>;
     expect(result).not.toHaveProperty('permissions');
     expect(result).not.toHaveProperty('nativeDeps');
-    expect(result).not.toHaveProperty('generations');
     expect(result).not.toHaveProperty('main');
   });
 

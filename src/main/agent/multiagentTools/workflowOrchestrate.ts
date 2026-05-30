@@ -17,6 +17,9 @@ import type {
   WorkflowTemplate,
   StageContext,
   StageResult,
+  ResolvedWorkflowStageToolPolicyMode,
+  WorkflowStageToolPolicy,
+  WorkflowStageToolPolicySnapshot,
 } from '../../../shared/contract/workflow';
 import {
   BUILT_IN_WORKFLOWS,
@@ -25,15 +28,19 @@ import {
 } from '../../../shared/contract/workflow';
 import { getSubagentExecutor } from '../subagentExecutor';
 import type { ToolResolver } from '../../tools/dispatch/toolResolver';
+import { resolveToolAlias } from '../../services/toolSearch/deferredTools';
 import {
   getPredefinedAgent,
   getAgentPrompt,
   getAgentTools,
   type FullAgentConfig,
 } from '../agentDefinition';
+import { applyEffortControls } from '../runtime/contextAssembly/effortControls';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('WorkflowOrchestrate');
+export const DEFAULT_WORKFLOW_STAGE_TIMEOUT_MS = 240_000;
+const MAX_WORKFLOW_STAGE_TIMEOUT_MS = 900_000;
 
 const CLAUDE_STAGE_MODEL_BY_TIER: Record<Exclude<FullAgentConfig['model'], 'inherit' | undefined>, string> = {
   fast: 'claude-haiku-4-5-20251001',
@@ -41,18 +48,161 @@ const CLAUDE_STAGE_MODEL_BY_TIER: Record<Exclude<FullAgentConfig['model'], 'inhe
   powerful: 'claude-opus-4-7',
 };
 
+const TOOL_POLICY_MODES = new Set([
+  'inherit',
+  'none',
+  'noTool',
+  'readonly',
+  'readOnly',
+  'allowlist',
+]);
+
+function normalizeToolPolicyMode(
+  policy: WorkflowStageToolPolicy | undefined,
+): ResolvedWorkflowStageToolPolicyMode {
+  if (!policy?.mode && Array.isArray(policy?.tools)) {
+    return policy.tools.length === 0 ? 'none' : 'allowlist';
+  }
+
+  switch (policy?.mode) {
+    case 'noTool':
+    case 'none':
+      return 'none';
+    case 'readOnly':
+    case 'readonly':
+      return 'readonly';
+    case 'allowlist':
+      return 'allowlist';
+    case 'inherit':
+    case undefined:
+      return 'inherit';
+    default:
+      return 'inherit';
+  }
+}
+
+function validateStageToolPolicy(
+  stage: WorkflowStage,
+): { policy?: WorkflowStageToolPolicy; error?: string } {
+  const policy = stage.toolPolicy;
+  if (!policy) {
+    return {};
+  }
+
+  if (typeof policy !== 'object' || Array.isArray(policy)) {
+    return { error: `Invalid toolPolicy for stage "${stage.name}": expected object` };
+  }
+
+  if (policy.mode !== undefined && !TOOL_POLICY_MODES.has(policy.mode)) {
+    return { error: `Invalid toolPolicy.mode for stage "${stage.name}": ${String(policy.mode)}` };
+  }
+
+  if (policy.tools !== undefined) {
+    if (!Array.isArray(policy.tools) || policy.tools.some((tool) => typeof tool !== 'string' || tool.trim().length === 0)) {
+      return { error: `Invalid toolPolicy.tools for stage "${stage.name}": expected string array` };
+    }
+  }
+
+  if (policy.maxToolCalls !== undefined) {
+    if (!Number.isInteger(policy.maxToolCalls) || policy.maxToolCalls < 0) {
+      return { error: `Invalid toolPolicy.maxToolCalls for stage "${stage.name}": expected non-negative integer` };
+    }
+  }
+
+  return { policy };
+}
+
+function resolveStageExecutionTimeout(
+  stage: WorkflowStage,
+): { maxExecutionTimeMs: number; error?: string } {
+  const rawTimeout = (stage as WorkflowStage & { maxExecutionTimeMs?: unknown }).maxExecutionTimeMs;
+  if (rawTimeout === undefined) {
+    return { maxExecutionTimeMs: DEFAULT_WORKFLOW_STAGE_TIMEOUT_MS };
+  }
+
+  if (!Number.isInteger(rawTimeout) || rawTimeout <= 0) {
+    return {
+      maxExecutionTimeMs: DEFAULT_WORKFLOW_STAGE_TIMEOUT_MS,
+      error: `Invalid maxExecutionTimeMs for stage "${stage.name}": expected positive integer milliseconds`,
+    };
+  }
+
+  return {
+    maxExecutionTimeMs: Math.min(rawTimeout, MAX_WORKFLOW_STAGE_TIMEOUT_MS),
+  };
+}
+
+function resolveStageToolPolicy(
+  stage: WorkflowStage,
+  declaredTools: string[],
+  resolver?: ToolResolver,
+): { policy?: WorkflowStageToolPolicySnapshot; error?: string } {
+  const validation = validateStageToolPolicy(stage);
+  if (validation.error) {
+    return { error: validation.error };
+  }
+
+  const rawPolicy = validation.policy;
+  const mode = normalizeToolPolicyMode(rawPolicy);
+  const declaredToolSet = new Set(declaredTools);
+  const requestedTools = rawPolicy?.tools?.map((tool) => tool.trim());
+  let availableTools: string[] = declaredTools;
+  let maxToolCalls = rawPolicy?.maxToolCalls;
+
+  if (mode === 'none') {
+    availableTools = [];
+    maxToolCalls = 0;
+  } else if (mode === 'readonly') {
+    availableTools = declaredTools.filter((toolName) => {
+      const canonicalToolName = resolveToolAlias(toolName);
+      const definition = resolver?.getDefinition(canonicalToolName) ?? resolver?.getDefinition(toolName);
+      return definition?.permissionLevel === 'read';
+    });
+  } else if (mode === 'allowlist') {
+    const allowed = new Set(requestedTools ?? []);
+    availableTools = declaredTools.filter((toolName) => allowed.has(toolName));
+    if ((requestedTools?.length ?? 0) === 0) {
+      maxToolCalls = 0;
+    }
+  }
+
+  const availableSet = new Set(availableTools);
+  const blockedTools = declaredTools.filter((toolName) => !availableSet.has(toolName));
+  const ignoredRequestedTools = requestedTools?.filter((toolName) => !declaredToolSet.has(toolName)) ?? [];
+  if (ignoredRequestedTools.length > 0) {
+    logger.warn('[Stage] toolPolicy requested tools outside declared role tools', {
+      stage: stage.name,
+      mode,
+      ignoredRequestedTools,
+    });
+  }
+
+  return {
+    policy: {
+      mode,
+      ...(requestedTools ? { requestedTools } : {}),
+      ...(maxToolCalls !== undefined ? { maxToolCalls } : {}),
+      availableTools,
+      blockedTools: [...new Set([...blockedTools, ...ignoredRequestedTools])],
+    },
+  };
+}
+
 function resolveStageModelConfig(
   baseConfig: ModelConfig,
   tier: FullAgentConfig['model'] | undefined,
   stageName: string,
 ): ModelConfig {
+  const withWorkflowThinking = (config: ModelConfig): ModelConfig =>
+    applyEffortControls(config, 'high');
+
   if (!tier || tier === 'inherit') {
-    return baseConfig;
+    return withWorkflowThinking(baseConfig);
   }
 
   const claudeModel = CLAUDE_STAGE_MODEL_BY_TIER[tier];
   if (!claudeModel) {
-    return baseConfig;
+    return withWorkflowThinking(baseConfig);
   }
 
   if (baseConfig.provider === 'claude') {
@@ -61,10 +211,10 @@ function resolveStageModelConfig(
       tier,
       model: claudeModel,
     });
-    return {
+    return withWorkflowThinking({
       ...baseConfig,
       model: claudeModel,
-    };
+    });
   }
 
   logger.info('Using inherited model for provider-incompatible stage tier', {
@@ -73,7 +223,7 @@ function resolveStageModelConfig(
     provider: baseConfig.provider,
     model: baseConfig.model,
   });
-  return baseConfig;
+  return withWorkflowThinking(baseConfig);
 }
 
 /**
@@ -296,11 +446,44 @@ ${r.success ? r.output.substring(0, 200) + (r.output.length > 200 ? '...' : '') 
 
 ${stagesSummary}`,
         ...(workflowError ? { error: workflowError } : {}),
+        metadata: {
+          workflow: workflowName,
+          workflowName: workflow.name,
+          stageCount: results.length,
+          completedStages: successCount,
+          failedStages: failedStages.length,
+          totalDuration,
+          stages: results.map((result) => ({
+            name: result.stage,
+            role: result.role,
+            success: result.success,
+            duration: result.duration,
+            toolsUsed: result.context?.toolsUsed ?? [],
+            toolPolicy: result.context?.toolPolicy,
+            error: result.error,
+          })),
+        },
       };
     } catch (error) {
       return {
         success: false,
         error: `Workflow failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        metadata: {
+          workflow: workflowName,
+          workflowName: workflow.name,
+          stageCount: workflow.stages.length,
+          completedStages: results.filter(r => r.success).length,
+          failedStages: Math.max(1, workflow.stages.length - results.filter(r => r.success).length),
+          stages: results.map((result) => ({
+            name: result.stage,
+            role: result.role,
+            success: result.success,
+            duration: result.duration,
+            toolsUsed: result.context?.toolsUsed ?? [],
+            toolPolicy: result.context?.toolPolicy,
+            error: result.error,
+          })),
+        },
       };
     }
 }
@@ -401,6 +584,44 @@ async function executeStage(
     modelTier: agentConfig.model,
   });
 
+  const toolPolicyResult = resolveStageToolPolicy(
+    stage,
+    agentConfig.tools,
+    context.resolver as ToolResolver | undefined,
+  );
+  if (toolPolicyResult.error || !toolPolicyResult.policy) {
+    return {
+      stage: stage.name,
+      role: stage.role,
+      success: false,
+      output: '',
+      error: toolPolicyResult.error ?? 'Failed to resolve stage tool policy',
+      duration: Date.now() - startTime,
+    };
+  }
+
+  const stageToolPolicy = toolPolicyResult.policy;
+  const stageTimeoutResult = resolveStageExecutionTimeout(stage);
+  if (stageTimeoutResult.error) {
+    return {
+      stage: stage.name,
+      role: stage.role,
+      success: false,
+      output: '',
+      error: stageTimeoutResult.error,
+      duration: Date.now() - startTime,
+    };
+  }
+
+  logger.info('[Stage] 工具策略已解析', {
+    stage: stage.name,
+    mode: stageToolPolicy.mode,
+    availableTools: stageToolPolicy.availableTools,
+    blockedTools: stageToolPolicy.blockedTools,
+    maxToolCalls: stageToolPolicy.maxToolCalls,
+    maxExecutionTimeMs: stageTimeoutResult.maxExecutionTimeMs,
+  });
+
   // Build context from previous stages - 使用结构化上下文
   let contextFromPrevious = '';
   if (stage.dependsOn && stage.dependsOn.length > 0) {
@@ -472,13 +693,18 @@ async function executeStage(
       {
         name: `Stage:${stage.name}`,
         systemPrompt: agentConfig.systemPrompt,
-        availableTools: agentConfig.tools,
+        availableTools: stageToolPolicy.availableTools,
         maxIterations: 15,
+        maxToolCalls: stageToolPolicy.maxToolCalls,
+        maxExecutionTimeMs: stageTimeoutResult.maxExecutionTimeMs,
       },
       {
         modelConfig: effectiveModelConfig,
         toolResolver: context.resolver as ToolResolver,
         toolContext: context,
+        parentToolUseId: context.currentToolCallId,
+        abortSignal: context.abortSignal,
+        hookManager: context.hookManager,
         // Pass attachments for multimodal support
         attachments: attachments,
       }
@@ -492,6 +718,7 @@ async function executeStage(
       structuredData: extractStructuredData(result.output),
       generatedFiles: extractGeneratedFiles(result.output),
       toolsUsed: result.toolsUsed || [],
+      toolPolicy: stageToolPolicy,
       duration,
     };
 
@@ -525,6 +752,12 @@ async function executeStage(
       output: '',
       error: error instanceof Error ? error.message : 'Unknown error',
       duration: Date.now() - startTime,
+      context: {
+        textOutput: '',
+        toolsUsed: [],
+        toolPolicy: stageToolPolicy,
+        duration: Date.now() - startTime,
+      },
     };
   }
 }

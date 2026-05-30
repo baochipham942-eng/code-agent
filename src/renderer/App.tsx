@@ -69,6 +69,7 @@ import ipcService from './services/ipcService';
 import { useSwarmStore } from './stores/swarmStore';
 import { useWorkflowStore } from './stores/workflowStore';
 import { tauriCheckForUpdate } from './utils/tauriUpdater';
+import { setSentryRendererContext } from './observability/sentryRenderer';
 
 const logger = createLogger('App');
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1180;
@@ -154,6 +155,8 @@ export const App: React.FC = () => {
 
   // Auth store
   const { showAuthModal, showPasswordResetModal, isLoading: isAuthLoading } = useAuthStore();
+  const sentryUserId = useAuthStore((state) => state.user?.id ?? null);
+  const sentrySessionId = useSessionStore((state) => state.currentSessionId);
 
   // 渐进披露 Hook（权限层：*Enabled 表示功能是否可用）
   const { isStandard, dagPanelEnabled } = useDisclosure();
@@ -192,7 +195,7 @@ export const App: React.FC = () => {
     },
   });
 
-  // Gen5+ Memory 事件监听
+  // Memory 事件监听
   useMemoryEvents({
     onMemoryLearned: (data) => {
       logger.info('Memory learning completed', {
@@ -218,6 +221,10 @@ export const App: React.FC = () => {
       logger.error('Failed to initialize auth store', error);
     });
   }, []);
+
+  useEffect(() => {
+    setSentryRendererContext({ sessionId: sentrySessionId, userId: sentryUserId });
+  }, [sentrySessionId, sentryUserId]);
 
   // Initialize agent registry store (custom .md agents 列表 + 热加载推送订阅)
   useEffect(() => {

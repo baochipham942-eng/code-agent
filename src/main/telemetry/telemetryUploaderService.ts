@@ -22,7 +22,7 @@ import { Disposable, getServiceRegistry } from '../services/serviceRegistry';
 import { app } from '../platform';
 import { getTelemetryStorage } from './telemetryStorage';
 import { scrubString } from '../../shared/observability/scrubEvent';
-import type { TelemetrySession, TelemetryTurn } from '../../shared/contract/telemetry';
+import type { TelemetryFeedback, TelemetrySession, TelemetryTurn } from '../../shared/contract/telemetry';
 
 const logger = createLogger('TelemetryUploader');
 
@@ -81,7 +81,6 @@ export class TelemetryUploaderService implements Disposable {
       const sessions = storage
         .getUnsyncedSessions(BATCH_SIZE)
         .filter((s) => !s.userId || s.userId === user.id);
-      if (sessions.length === 0) return 0;
 
       // 新表不在生成的 Database 类型里，用未类型化 client 写入
       const supabase = getSupabase() as unknown as SupabaseClient;
@@ -89,15 +88,17 @@ export class TelemetryUploaderService implements Disposable {
       const appVersion = getAppVersion();
 
       // 1) 会话级
-      const { error: sessionError } = await supabase
-        .from('telemetry_sessions')
-        .upsert(
-          sessions.map((s) => this.toSessionRow(s, user.id, appVersion)),
-          { onConflict: 'id' },
-        );
-      if (sessionError) {
-        logger.error('Failed to push telemetry_sessions', { error: sessionError });
-        return 0; // 会话没写成功就不标记已同步，下轮重试
+      if (sessions.length > 0) {
+        const { error: sessionError } = await supabase
+          .from('telemetry_sessions')
+          .upsert(
+            sessions.map((s) => this.toSessionRow(s, user.id, appVersion)),
+            { onConflict: 'id' },
+          );
+        if (sessionError) {
+          logger.error('Failed to push telemetry_sessions', { error: sessionError });
+          return 0; // 会话没写成功就不标记已同步，下轮重试
+        }
       }
 
       // 2) Turn 级（metadata-only），分批
@@ -116,9 +117,25 @@ export class TelemetryUploaderService implements Disposable {
       }
       if (turnUploadFailed) return 0;
 
-      // 3) 会话和 turn 都写成功后再标记已同步；否则下轮继续补传
+      // 3) 用户显式反馈。它依赖云端已有 session/turn，因此放在 session/turn 后面。
+      const feedback = storage.getUnsyncedFeedback(BATCH_SIZE, user.id);
+      if (feedback.length > 0) {
+        const { error: feedbackError } = await supabase
+          .from('telemetry_feedback')
+          .upsert(
+            feedback.map((item) => this.toFeedbackRow(item, user.id)),
+            { onConflict: 'id' },
+          );
+        if (feedbackError) {
+          logger.error('Failed to push telemetry_feedback', { error: feedbackError });
+        } else {
+          storage.markFeedbackSynced(feedback.map((item) => item.id));
+        }
+      }
+
+      // 4) 会话和 turn 都写成功后再标记已同步；否则下轮继续补传
       storage.markSessionsSynced(sessions.map((s) => s.id));
-      logger.info('Telemetry uploaded', { sessions: sessions.length, turns: turnRows.length });
+      logger.info('Telemetry uploaded', { sessions: sessions.length, turns: turnRows.length, feedback: feedback.length });
       return sessions.length;
     } catch (err) {
       logger.error('Telemetry upload error', err as Error);
@@ -188,6 +205,19 @@ export class TelemetryUploaderService implements Disposable {
       tool_call_count: t.toolCalls.length,
       error_count: t.outcome?.signals?.errorCount ?? 0,
       payload,
+    };
+  }
+
+  private toFeedbackRow(f: TelemetryFeedback, userId: string) {
+    return {
+      id: f.id,
+      session_id: f.sessionId,
+      turn_id: f.turnId ?? null,
+      user_id: userId,
+      rating: f.rating,
+      comment: f.comment ?? null,
+      full_content: f.rating === -1 ? (f.fullContent ?? null) : null,
+      created_at: f.createdAt,
     };
   }
 

@@ -275,6 +275,8 @@ export const TELEMETRY_CHANNELS = {
   GET_SYSTEM_PROMPT: 'telemetry:get-system-prompt',
   /** 删除会话遥测数据 */
   DELETE_SESSION: 'telemetry:delete-session',
+  /** 提交会话/轮次质量反馈 */
+  SUBMIT_FEEDBACK: 'telemetry:submit-feedback',
   /** 获取结构化回放数据 */
   GET_STRUCTURED_REPLAY: 'replay:get-structured-data',
   /** 实时事件推送（主进程 -> 渲染进程） */

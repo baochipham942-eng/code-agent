@@ -833,10 +833,16 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
       const cleanDomain = domain.replace(/^domain:/, '');
 
       try {
-        const endpoint = cleanDomain === 'agent' && action === 'interrupt'
-          ? `${baseUrl}/api/interrupt`
+        const agentRuntimeEndpoint: Record<string, string> = {
+          interrupt: '/api/interrupt',
+          pause: '/api/pause',
+          resume: '/api/resume',
+        };
+        const directAgentPath = cleanDomain === 'agent' ? agentRuntimeEndpoint[action] : undefined;
+        const endpoint = directAgentPath
+          ? `${baseUrl}${directAgentPath}`
           : `${baseUrl}/api/domain/${cleanDomain}/${action}`;
-        const body = cleanDomain === 'agent' && action === 'interrupt'
+        const body = directAgentPath
           ? payload
           : {
               action,

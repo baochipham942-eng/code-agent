@@ -11,7 +11,6 @@
 //   --ids <id1,id2>         Filter by test IDs
 //   --stop-on-failure       Stop on first failure
 //   --verbose               Verbose output
-//   --generation <gen>      Generation to test (default: from constants)
 //   --provider <provider>   Model provider (default: from constants)
 //   --model <model>         Model name (default: from constants)
 //   --runs <N>              Run each case N times (repeated-trial mode, default: 1)
@@ -25,7 +24,6 @@ import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { execSync, spawn } from 'child_process';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../src/shared/constants';
-const DEFAULT_GENERATION = 'gen8';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,7 +35,6 @@ function parseArgs(): {
   ids?: string[];
   stopOnFailure: boolean;
   verbose: boolean;
-  generation: string;
   provider: string;
   model: string;
   runs: number;
@@ -50,7 +47,6 @@ function parseArgs(): {
     ids: undefined as string[] | undefined,
     stopOnFailure: false,
     verbose: false,
-    generation: DEFAULT_GENERATION,
     provider: DEFAULT_PROVIDER,
     model: DEFAULT_MODEL,
     runs: 1,
@@ -72,9 +68,6 @@ function parseArgs(): {
       case '--verbose':
       case '-v':
         result.verbose = true;
-        break;
-      case '--generation':
-        result.generation = args[++i];
         break;
       case '--provider':
         result.provider = args[++i];
@@ -110,7 +103,6 @@ Options:
   --ids <id1,id2>         Filter tests by IDs
   --stop-on-failure       Stop on first test failure
   --verbose, -v           Show verbose output
-  --generation <gen>      Generation to test (default: ${DEFAULT_GENERATION})
   --provider <provider>   Model provider (default: ${DEFAULT_PROVIDER})
   --model <model>         Model name (default: ${DEFAULT_MODEL})
   --runs <N>              Run each case N times (repeated-trial mode, default: 1)
@@ -215,7 +207,6 @@ async function main(): Promise<void> {
 
   console.log('Configuration:');
   console.log(`  Mode:       ${args.real ? '🤖 Real Agent (LLM API)' : '🧩 Mock Agent'}`);
-  console.log(`  Generation: ${args.generation}`);
   console.log(`  Provider:   ${args.provider}`);
   console.log(`  Model:      ${args.model}`);
   console.log(`  Runs:       ${args.runs}${args.runs > 1 ? ' (repeated-trial mode)' : ''}`);
@@ -241,8 +232,12 @@ async function main(): Promise<void> {
       try {
         execSync('npm run build:test-runner', { cwd: projectRoot, stdio: 'pipe' });
         console.log('📦 Build complete\n');
-      } catch (err: any) {
-        console.error('❌ Build failed:', err.stderr?.toString() || err.message);
+      } catch (err: unknown) {
+        const stderr = typeof err === 'object' && err !== null && 'stderr' in err
+          ? (err as { stderr?: { toString?: () => string } }).stderr?.toString()
+          : undefined;
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('❌ Build failed:', stderr || message);
         process.exit(1);
       }
     }
@@ -342,11 +337,10 @@ async function main(): Promise<void> {
     }
 
     process.exit(summary.failed > 0 ? 1 : 0);
-
-
-  } catch (error: any) {
-    console.error('\n❌ Test runner failed:', error.message);
-    if (args.verbose) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('\n❌ Test runner failed:', message);
+    if (args.verbose && error instanceof Error) {
       console.error(error.stack);
     }
     process.exit(1);

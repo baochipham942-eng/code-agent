@@ -29,6 +29,25 @@ interface SmokeChromeSession {
   provider: typeof SYSTEM_CHROME_CDP_PROVIDER;
 }
 
+interface UiCancelRunRequest {
+  prompt: string;
+  sessionId: string | null;
+  status: 'pending';
+}
+
+interface DevAgentLoopStubStatus {
+  ok?: boolean;
+  sessionId?: string;
+  exists?: boolean;
+  active?: boolean;
+  cancelCount?: number;
+  cancelledAt?: number | null;
+  cancelReason?: string | null;
+  error?: string;
+}
+
+const UI_CANCEL_PROMPT = 'agent-runtime-ui-cancel-smoke-hold-run';
+
 function usage(): void {
   console.log(`Agent Runtime app-host smoke
 
@@ -49,6 +68,7 @@ What it validates:
   - system Chrome headless + CDP can open the real renderer
   - the local web auth gate returns an authenticated dev user
   - a controlled dev-only agent event hook accepts a minimal event
+  - the renderer stop button clicks through to the app-host cancel route
 
 What it avoids:
   - no external model call
@@ -300,6 +320,197 @@ async function fetchFromRenderer<T>(
   }, { requestPath: path, requestInit: init });
 }
 
+async function installUiCancelRunInterception(
+  page: Page,
+  runRequests: UiCancelRunRequest[],
+): Promise<void> {
+  await page.exposeFunction('__recordAgentRuntimeUiCancelRun', (request: UiCancelRunRequest) => {
+    runRequests.push(request);
+  });
+
+  await page.addInitScript(({ expectedPrompt }: { expectedPrompt: string }) => {
+    type SmokeWindow = Window & {
+      __recordAgentRuntimeUiCancelRun?: (request: UiCancelRunRequest) => void;
+      __agentRuntimeUiCancelRunRequests?: UiCancelRunRequest[];
+    };
+    const smokeWindow = window as SmokeWindow;
+    const originalFetch = window.fetch.bind(window);
+
+    smokeWindow.__agentRuntimeUiCancelRunRequests = [];
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+      const method = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+      const isRunEndpoint = (() => {
+        try {
+          const parsedUrl = new URL(url, window.location.href);
+          return parsedUrl.origin === window.location.origin && parsedUrl.pathname === '/api/run';
+        } catch {
+          return url === '/api/run';
+        }
+      })();
+
+      if (isRunEndpoint && method === 'POST') {
+        let body: Record<string, unknown> = {};
+        if (typeof init?.body === 'string') {
+          try {
+            body = JSON.parse(init.body) as Record<string, unknown>;
+          } catch {
+            body = {};
+          }
+        }
+        if (body.prompt !== expectedPrompt) {
+          return originalFetch(input, init);
+        }
+
+        const request: UiCancelRunRequest = {
+          prompt: typeof body.prompt === 'string' ? body.prompt : '',
+          sessionId: typeof body.sessionId === 'string' ? body.sessionId : null,
+          status: 'pending',
+        };
+        smokeWindow.__agentRuntimeUiCancelRunRequests?.push(request);
+        void smokeWindow.__recordAgentRuntimeUiCancelRun?.(request);
+        return new Promise<Response>(() => undefined);
+      }
+
+      return originalFetch(input, init);
+    };
+  }, { expectedPrompt: UI_CANCEL_PROMPT });
+}
+
+async function readLatestUiCancelRunRequest(page: Page): Promise<UiCancelRunRequest | null> {
+  return page.evaluate(() => {
+    const smokeWindow = window as Window & {
+      __agentRuntimeUiCancelRunRequests?: UiCancelRunRequest[];
+    };
+    const requests = smokeWindow.__agentRuntimeUiCancelRunRequests || [];
+    return requests[requests.length - 1] ?? null;
+  });
+}
+
+async function waitForStubCancel(
+  page: Page,
+  sessionId: string,
+  timeoutMs = 5_000,
+): Promise<DevAgentLoopStubStatus | null> {
+  const deadline = Date.now() + timeoutMs;
+  let latest: DevAgentLoopStubStatus | null = null;
+  while (Date.now() < deadline) {
+    const response = await fetchFromRenderer<DevAgentLoopStubStatus>(
+      page,
+      `/api/dev/agent-loop-stub/${encodeURIComponent(sessionId)}`,
+    );
+    latest = response.data;
+    if (response.ok && latest?.ok && latest.cancelCount && latest.cancelCount > 0 && latest.active === false) {
+      return latest;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return latest;
+}
+
+async function verifyRendererCancelClick(
+  page: Page,
+  runRequests: UiCancelRunRequest[],
+  failures: string[],
+): Promise<{
+  prompt: string;
+  sessionId: string | null;
+  runIntercepted: boolean;
+  stubCreated: boolean;
+  stopButtonVisible: boolean;
+  stubCancelled: boolean;
+  stopButtonHiddenAfterCancel: boolean;
+  cancelCount: number;
+  cancelledAt: number | null;
+}> {
+  const input = page.locator('[data-chat-input]').first();
+  await input.scrollIntoViewIfNeeded();
+  await input.fill(UI_CANCEL_PROMPT);
+  await input.press('Enter');
+
+  const runIntercepted = await page.waitForFunction(
+    () => {
+      const smokeWindow = window as Window & {
+        __agentRuntimeUiCancelRunRequests?: unknown[];
+      };
+      return (smokeWindow.__agentRuntimeUiCancelRunRequests?.length || 0) > 0;
+    },
+    undefined,
+    { timeout: 10_000 },
+  ).then(() => true).catch(() => false);
+  const latestRun = await readLatestUiCancelRunRequest(page);
+  const sessionId = latestRun?.sessionId ?? runRequests[runRequests.length - 1]?.sessionId ?? null;
+
+  if (!runIntercepted || !sessionId) {
+    failures.push('renderer cancel smoke did not reach a held /api/run request with a sessionId.');
+    return {
+      prompt: UI_CANCEL_PROMPT,
+      sessionId,
+      runIntercepted,
+      stubCreated: false,
+      stopButtonVisible: false,
+      stubCancelled: false,
+      stopButtonHiddenAfterCancel: false,
+      cancelCount: 0,
+      cancelledAt: null,
+    };
+  }
+
+  const stubCreate = await fetchFromRenderer<DevAgentLoopStubStatus>(page, '/api/dev/agent-loop-stub', {
+    method: 'POST',
+    body: { sessionId },
+  });
+  const stubCreated = Boolean(stubCreate.ok && stubCreate.data?.ok && stubCreate.data.active);
+  if (!stubCreated) {
+    failures.push(`renderer cancel smoke could not seed active loop stub: ${stubCreate.status} ${stubCreate.text.slice(0, 500)}`);
+  }
+
+  const stopButton = page.locator('button[aria-label="停止"]').first();
+  const stopButtonVisible = await stopButton.waitFor({ state: 'visible', timeout: 10_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!stopButtonVisible) {
+    failures.push('renderer cancel smoke did not render the stop button while the run was held.');
+  } else {
+    await stopButton.click();
+  }
+
+  const stubAfterCancel = sessionId ? await waitForStubCancel(page, sessionId) : null;
+  const stubCancelled = Boolean(stubAfterCancel?.ok && (stubAfterCancel.cancelCount ?? 0) > 0 && stubAfterCancel.active === false);
+  if (!stubCancelled) {
+    failures.push(`renderer cancel smoke did not cancel the app-host loop stub: ${JSON.stringify(stubAfterCancel)}`);
+  }
+
+  const stopButtonHiddenAfterCancel = await stopButton.waitFor({ state: 'hidden', timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!stopButtonHiddenAfterCancel) {
+    failures.push('renderer cancel smoke did not clear the stop button after cancel completed.');
+  }
+
+  if (sessionId) {
+    await fetchFromRenderer(page, `/api/dev/agent-loop-stub/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+    }).catch(() => undefined);
+  }
+
+  return {
+    prompt: UI_CANCEL_PROMPT,
+    sessionId,
+    runIntercepted,
+    stubCreated,
+    stopButtonVisible,
+    stubCancelled,
+    stopButtonHiddenAfterCancel,
+    cancelCount: stubAfterCancel?.cancelCount ?? 0,
+    cancelledAt: stubAfterCancel?.cancelledAt ?? null,
+  };
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (hasFlag(args, 'help')) {
@@ -315,6 +526,7 @@ async function main(): Promise<void> {
   let chromeSession: SmokeChromeSession | null = null;
   const failures: string[] = [];
   const consoleErrors: string[] = [];
+  const uiCancelRunRequests: UiCancelRunRequest[] = [];
 
   try {
     const health = await waitForHealth(baseUrl, appHost.child, appHost.output);
@@ -333,6 +545,7 @@ async function main(): Promise<void> {
       }
     });
 
+    await installUiCancelRunInterception(page, uiCancelRunRequests);
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     const renderer = await waitForRenderer(page);
 
@@ -370,6 +583,8 @@ async function main(): Promise<void> {
       failures.push(`dev agent event hook failed with ${devSignalResponse.status}: ${devSignalResponse.text.slice(0, 500)}`);
     }
 
+    const uiCancel = await verifyRendererCancelClick(page, uiCancelRunRequests, failures);
+
     if (consoleErrors.length > 0) {
       failures.push(`browser console/page errors: ${consoleErrors.slice(0, 3).join(' | ')}`);
     }
@@ -400,6 +615,7 @@ async function main(): Promise<void> {
         eventType: devEvent.type,
         sessionId: devEvent.sessionId,
       },
+      uiCancel,
       consoleErrors,
       failures,
     };
@@ -418,6 +634,10 @@ async function main(): Promise<void> {
         ['authAuthenticated', result.auth.authenticated],
         ['devSignalStatus', result.devSignal.status],
         ['devSignalAccepted', result.devSignal.accepted],
+        ['uiCancelSessionId', result.uiCancel.sessionId],
+        ['uiCancelRunIntercepted', result.uiCancel.runIntercepted],
+        ['uiCancelStubCancelled', result.uiCancel.stubCancelled],
+        ['uiCancelStopHiddenAfterCancel', result.uiCancel.stopButtonHiddenAfterCancel],
         ['consoleErrors', consoleErrors.length],
       ]);
 

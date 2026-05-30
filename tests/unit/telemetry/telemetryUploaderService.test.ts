@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => {
   const storage = {
     getUnsyncedSessions: vi.fn(),
     getTurnsBySession: vi.fn(),
+    getUnsyncedFeedback: vi.fn(),
+    markFeedbackSynced: vi.fn(),
     markSessionsSynced: vi.fn(),
   };
   return {
@@ -52,7 +54,6 @@ const session: TelemetrySession = {
   id: 'session-1',
   userId: 'user-1',
   title: 'Session',
-  generationId: 'gen',
   modelProvider: 'openai',
   modelName: 'gpt-test',
   workingDirectory: '/tmp/project',
@@ -118,6 +119,7 @@ describe('TelemetryUploaderService', () => {
     mocks.getCurrentUser.mockReturnValue({ id: 'user-1' });
     mocks.storage.getUnsyncedSessions.mockReturnValue([session]);
     mocks.storage.getTurnsBySession.mockReturnValue([turn]);
+    mocks.storage.getUnsyncedFeedback.mockReturnValue([]);
   });
 
   it('does not mark sessions synced when turn upload fails', async () => {
@@ -132,5 +134,44 @@ describe('TelemetryUploaderService', () => {
 
     await expect(service.upload()).resolves.toBe(0);
     expect(mocks.storage.markSessionsSynced).not.toHaveBeenCalled();
+  });
+
+  it('uploads unsynced feedback after session and turn metadata are accepted', async () => {
+    const upserts: Array<{ table: string; rows: unknown[] }> = [];
+    mocks.storage.getUnsyncedFeedback.mockReturnValue([
+      {
+        id: '00000000-0000-4000-8000-000000000001',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        messageId: 'turn-1',
+        rating: -1,
+        fullContent: { assistantResponse: 'bad answer' },
+        createdAt: 123,
+      },
+    ]);
+    mocks.from.mockImplementation((table: string) => ({
+      upsert: vi.fn(async (rows: unknown[]) => {
+        upserts.push({ table, rows });
+        return { error: null };
+      }),
+    }));
+
+    const { TelemetryUploaderService } = await import('../../../src/main/telemetry/telemetryUploaderService');
+    const service = new TelemetryUploaderService();
+
+    await expect(service.upload()).resolves.toBe(1);
+    expect(mocks.storage.getUnsyncedFeedback).toHaveBeenCalledWith(200, 'user-1');
+    expect(mocks.storage.markFeedbackSynced).toHaveBeenCalledWith(['00000000-0000-4000-8000-000000000001']);
+    const feedbackUpsert = upserts.find((entry) => entry.table === 'telemetry_feedback');
+    expect(feedbackUpsert?.rows).toEqual([
+      expect.objectContaining({
+        id: '00000000-0000-4000-8000-000000000001',
+        session_id: 'session-1',
+        turn_id: 'turn-1',
+        user_id: 'user-1',
+        rating: -1,
+        full_content: { assistantResponse: 'bad answer' },
+      }),
+    ]);
   });
 });

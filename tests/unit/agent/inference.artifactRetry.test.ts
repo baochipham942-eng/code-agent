@@ -39,12 +39,12 @@ vi.mock('../../../src/main/mcp/logCollector.js', () => ({
 
 const { mockToolDefinitions } = vi.hoisted(() => ({
   mockToolDefinitions: [
-    { name: 'Read', description: 'read file', input_schema: {} },
-    { name: 'Edit', description: 'edit file', input_schema: {} },
-    { name: 'Write', description: 'write file', input_schema: {} },
-    { name: 'Append', description: 'append file', input_schema: {} },
-    { name: 'Bash', description: 'run command', input_schema: {} },
-    { name: 'Task', description: 'delegate task', input_schema: {} },
+    { name: 'Read', description: 'read file', inputSchema: {} },
+    { name: 'Edit', description: 'edit file', inputSchema: {} },
+    { name: 'Write', description: 'write file', inputSchema: {} },
+    { name: 'Append', description: 'append file', inputSchema: {} },
+    { name: 'Bash', description: 'run command', inputSchema: {} },
+    { name: 'Task', description: 'delegate task', inputSchema: {} },
   ],
 }));
 
@@ -64,6 +64,7 @@ vi.mock('../../../src/main/session/streamSnapshot', () => ({
 
 vi.mock('../../../src/main/context/tokenOptimizer', () => ({
   estimateModelMessageTokens: vi.fn().mockReturnValue(12),
+  estimateTokens: vi.fn().mockReturnValue(5),
 }));
 
 vi.mock('../../../src/main/model/modelRouter', () => ({
@@ -171,6 +172,65 @@ describe('contextAssembly inference artifact retry', () => {
       'generating',
       '正在生成 artifact 内容...',
     );
+  });
+
+  it('caps main inference output tokens with per-run inferenceOptions', async () => {
+    const ctx = buildCtx({
+      inferenceOptions: {
+        maxOutputTokens: 128,
+      },
+    } as any);
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'ok',
+      finishReason: 'stop',
+    });
+
+    await inference(ctx);
+
+    const [, , config, , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
+    expect(config.maxTokens).toBe(128);
+    expect(options).toMatchObject({ maxOutputTokens: 128 });
+  });
+
+  it('fails before provider inference when the per-run input token budget is exceeded', async () => {
+    const ctx = buildCtx({
+      inferenceOptions: {
+        maxInputTokens: 1,
+      },
+    } as any);
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'should not run',
+      finishReason: 'stop',
+    });
+
+    await expect(inference(ctx)).rejects.toThrow(/input token budget exceeded before provider request/i);
+
+    expect(ctx.runtime.modelRouter.inference).not.toHaveBeenCalled();
+  });
+
+  it('does not runtime-retry network failures when the per-run paid-smoke guard disables retries', async () => {
+    const ctx = buildCtx({
+      inferenceOptions: {
+        disableRuntimeNetworkRetry: true,
+      },
+      artifactRepairGuard: {
+        targetFile: '/tmp/game.html',
+        attempts: 2,
+        phase: 'targeted_repair',
+      },
+    } as any);
+    ctx.runtime.modelRouter.inference = vi.fn()
+      .mockRejectedValueOnce(new Error('Network request failed: socket hang up'))
+      .mockResolvedValueOnce({ type: 'text', content: 'should not retry', finishReason: 'stop' });
+    ctx.inference = vi.fn(() => inference(ctx));
+
+    await expect(inference(ctx)).rejects.toThrow(/socket hang up/);
+
+    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
+    expect(ctx.inference).not.toHaveBeenCalled();
+    expect(ctx.runtime._networkRetried).toBe(false);
   });
 
   it('emits repair-specific progress while waiting for artifact repair output', async () => {

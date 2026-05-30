@@ -183,7 +183,6 @@ export const chatCommand = new Command('chat')
       // 创建 Agent
       const agent = await createCLIAgent({
         project: globalOpts?.project,
-        gen: globalOpts?.gen,
         model: globalOpts?.model,
         provider: globalOpts?.provider,
         json: globalOpts?.json,

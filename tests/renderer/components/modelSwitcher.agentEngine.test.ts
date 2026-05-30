@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentEngineDescriptor } from '../../../src/shared/contract/agentEngine';
 import { buildModelSwitcherEngineSelection } from '../../../src/renderer/components/StatusBar/ModelSwitcher';
+import { ENGINE_SHORT_LABEL, getProviderEffortOptions } from '../../../src/renderer/components/StatusBar/modelSwitcherHelpers';
 
 function descriptor(overrides: Partial<AgentEngineDescriptor>): AgentEngineDescriptor {
   return {
     kind: 'native',
-    label: 'Agent Neo',
+    label: 'Neo',
     summary: '',
     installState: 'builtin',
     runtimeState: 'ready',
@@ -20,6 +21,15 @@ function descriptor(overrides: Partial<AgentEngineDescriptor>): AgentEngineDescr
 }
 
 describe('ModelSwitcher Agent Engine selection', () => {
+  it('uses Neo as the native engine short label', () => {
+    expect(ENGINE_SHORT_LABEL.native).toBe('Neo');
+  });
+
+  it('keeps MiMo effort as intensity and leaves thinking to the separate switch', () => {
+    expect(getProviderEffortOptions('xiaomi', 'mimo-v2.5-pro').map((option) => option.label))
+      .toEqual(['Low', 'Med', 'High']);
+  });
+
   it('builds a session-scoped engine selection without model provider fields', () => {
     const selection = buildModelSwitcherEngineSelection(descriptor({
       kind: 'codex_cli',

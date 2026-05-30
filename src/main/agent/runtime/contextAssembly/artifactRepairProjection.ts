@@ -1,7 +1,7 @@
 import type { Message } from '../../../../shared/contract';
 import { REPAIR_PROMPT_LIMITS } from '../../../../shared/constants/repair';
 import { isAbsolute, resolve as resolvePath } from 'path';
-import type { ContextAssemblyCtx } from '../contextAssembly';
+import type { ContextAssemblyCtx } from './shared';
 
 const ARTIFACT_REPAIR_CONTEXT_PATTERN =
   /artifact[-\s_]*(validation|repair)|artifact validation failed|artifact repair|<artifact-validation-failed\b|artifactValidation[^]*failed/i;

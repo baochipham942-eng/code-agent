@@ -154,7 +154,7 @@ export interface MemoryStats {
 }
 
 /**
- * Memory Record - Gen5 记忆可视化
+ * Memory Record - 记忆可视化
  */
 export interface MemoryRecord {
   id: string;

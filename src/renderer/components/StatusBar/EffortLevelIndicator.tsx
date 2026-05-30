@@ -1,7 +1,7 @@
 // ============================================================================
 // EffortLevelIndicator - StatusBar 推理 effort 切换器
 // ============================================================================
-// 点击循环切换 low → medium → high → low。只暴露当前 runtime 真正支持的档位。
+// 点击循环切换当前 runtime 支持的 effort 档位。
 // ============================================================================
 
 import React from 'react';
@@ -15,14 +15,18 @@ const SHORT_LABEL: Record<EffortLevel, string> = {
   low: 'Low',
   medium: 'Med',
   high: 'High',
-  max: 'High',
+  xhigh: 'XHigh',
+  max: 'Max',
+  ultra_code: 'Ultra',
 };
 
 const COLOR: Record<EffortLevel, string> = {
   low: 'text-zinc-500',
   medium: 'text-blue-400',
   high: 'text-amber-400',
-  max: 'text-amber-400',
+  xhigh: 'text-orange-300',
+  max: 'text-rose-300',
+  ultra_code: 'text-emerald-300',
 };
 
 export function EffortLevelIndicator() {

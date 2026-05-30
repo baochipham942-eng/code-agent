@@ -13,7 +13,7 @@ import { z } from 'zod';
 
 import type { ToolCall } from '../../../../shared/contract';
 import type { ModelResponse } from '../../types';
-import { logger } from '../shared';
+import { logger } from '../providerRuntime';
 
 // ── content blocks (text | tool_use | thinking | server_tool_use) ────────
 const TextBlockSchema = z

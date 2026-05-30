@@ -40,18 +40,17 @@ export * from './gui';
 // Memory types
 export * from './memory';
 
-// Built-in Agent types (Gen7+)
+// Built-in Agent types
 export * from './builtInAgents';
 
 // Agent Registry (custom .md agents — builtin + user + project)
 export * from './agentRegistry';
 
-// Workflow types (Gen7+)
+// Workflow types
 export * from './workflow';
 
-// Gen7 unified exports (convenience re-export)
-// Users can import from '@shared/contract/gen7' for all Gen7 types in one place
-export * from './gen7';
+// Multi-agent unified exports (convenience re-export)
+export * from './multiAgent';
 
 // Lab types (实验室)
 export * from './lab';

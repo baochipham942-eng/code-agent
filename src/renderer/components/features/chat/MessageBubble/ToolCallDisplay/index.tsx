@@ -113,6 +113,10 @@ export function ToolCallDisplay({
     () => buildBrowserComputerActionPreview(toolCall),
     [toolCall],
   );
+  const workflowStagePreview = useMemo(
+    () => buildWorkflowStagePreview(toolCall),
+    [toolCall],
+  );
 
   // Auto-collapse on success after 500ms (only if user hasn't manually toggled)
   useEffect(() => {
@@ -159,6 +163,10 @@ export function ToolCallDisplay({
         <ToolExecutionMetaRow toolCall={toolCall} status={status} />
       )}
 
+      {workflowStagePreview && (
+        <WorkflowStagePreview preview={workflowStagePreview} />
+      )}
+
       {/* Bash inline output - when collapsed, show command output preview */}
       {!expanded && isBashTool(toolCall) && toolCall.result && (
         <BashOutputPreview toolCall={toolCall} status={status} />
@@ -180,6 +188,177 @@ export function ToolCallDisplay({
     </div>
   );
 }
+
+interface WorkflowStagePreviewData {
+  completedStages?: number;
+  failedStages?: number;
+  stages: Array<{
+    name: string;
+    role?: string;
+    success?: boolean;
+    duration?: number;
+    toolsUsed: string[];
+    toolPolicyMode?: string;
+    error?: string;
+  }>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function asBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+}
+
+function buildWorkflowStagePreview(toolCall: ToolCall): WorkflowStagePreviewData | null {
+  if (toolCall.name !== 'workflow_orchestrate') {
+    return null;
+  }
+
+  const metadata = toolCall.result?.metadata;
+  const rawStages = isRecord(metadata) && Array.isArray(metadata.stages)
+    ? metadata.stages
+    : [];
+  const stages = rawStages
+    .filter(isRecord)
+    .map((stage) => {
+      const toolPolicy = isRecord(stage.toolPolicy) ? stage.toolPolicy : undefined;
+      return {
+        name: asString(stage.name) || 'stage',
+        role: asString(stage.role),
+        success: asBoolean(stage.success),
+        duration: asNumber(stage.duration),
+        toolsUsed: asStringArray(stage.toolsUsed),
+        toolPolicyMode: asString(toolPolicy?.mode),
+        error: asString(stage.error),
+      };
+    });
+
+  if (stages.length === 0) {
+    return null;
+  }
+
+  return {
+    completedStages: asNumber(metadata?.completedStages),
+    failedStages: asNumber(metadata?.failedStages),
+    stages,
+  };
+}
+
+function formatWorkflowDuration(duration: number | undefined): string | null {
+  if (duration === undefined) {
+    return null;
+  }
+  if (duration < 1000) {
+    return `${duration}ms`;
+  }
+  return `${(duration / 1000).toFixed(1)}s`;
+}
+
+function formatWorkflowPolicy(mode: string | undefined): string | null {
+  switch (mode) {
+    case 'none':
+      return 'no tools';
+    case 'readonly':
+      return 'readonly';
+    case 'allowlist':
+      return 'allowlist';
+    case 'inherit':
+      return null;
+    default:
+      return mode || null;
+  }
+}
+
+function formatWorkflowStageName(stage: WorkflowStagePreviewData['stages'][number]): string {
+  const name = stage.name.trim();
+  const role = stage.role?.trim();
+  return name || role || 'stage';
+}
+
+function isPolicyAlreadyInName(name: string, policy: string | null): boolean {
+  if (!policy) {
+    return false;
+  }
+  return name.toLowerCase().includes(policy.toLowerCase());
+}
+
+const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({ preview }) => {
+  const completed = preview.completedStages ?? preview.stages.filter((stage) => stage.success !== false).length;
+  const failed = preview.failedStages ?? preview.stages.filter((stage) => stage.success === false).length;
+  const total = preview.stages.length;
+  const showSummary = total > 1;
+
+  return (
+    <div className="ml-6 mt-1 mb-0.5 space-y-1 text-xs text-zinc-500">
+      {showSummary && (
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className={failed > 0 ? 'text-amber-300' : 'text-zinc-400'}>
+            {total} 个子智能体
+          </span>
+          <span>{completed}/{total} 完成</span>
+          {failed > 0 && <span className="text-red-300">{failed} 失败</span>}
+        </div>
+      )}
+      <div className="space-y-0.5">
+        {preview.stages.map((stage, index) => {
+          const policy = formatWorkflowPolicy(stage.toolPolicyMode);
+          const duration = formatWorkflowDuration(stage.duration);
+          const displayName = formatWorkflowStageName(stage);
+          const role = stage.role?.trim();
+          const showPolicy = !isPolicyAlreadyInName(displayName, policy);
+          const tools = stage.toolsUsed.length > 0 ? stage.toolsUsed.join(', ') : null;
+          return (
+            <div
+              key={`${stage.name}-${stage.role || 'stage'}`}
+              className="space-y-0.5"
+            >
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className={stage.success === false ? 'text-red-300' : 'text-emerald-300'}>
+                  {stage.success === false ? '✗' : '↳'}
+                </span>
+                <span className="text-zinc-500">{index + 1}.</span>
+                <span className="text-zinc-300">
+                  {displayName}
+                </span>
+                {role && role !== displayName && (
+                  <span>{role}</span>
+                )}
+                {policy && showPolicy && (
+                  <span className={policy === 'readonly' ? 'text-emerald-300' : 'text-zinc-500'}>
+                    {policy}
+                  </span>
+                )}
+                {tools && <span className="truncate">{tools}</span>}
+                {duration && <span>{duration}</span>}
+              </div>
+              {stage.error && (
+                <div className="ml-9 break-words text-red-300">
+                  {stage.error}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 function getPermissionToneClass(permission: ToolPermissionView): string {
   switch (permission) {

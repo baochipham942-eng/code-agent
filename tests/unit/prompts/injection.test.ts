@@ -148,8 +148,8 @@ describe('Injection Defense Rules', () => {
   // Integration
   // --------------------------------------------------------------------------
   describe('Integration', () => {
-    it.todo('should be included in all generations', () => {
-      // Injection defense should be present in gen1-gen8
+    it.todo('should be included in assembled system prompts', () => {
+      // Injection defense should be present in the assembled system prompt.
     });
 
     it.todo('should be positioned early in system prompt', () => {

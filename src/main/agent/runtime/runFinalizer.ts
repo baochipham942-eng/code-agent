@@ -31,7 +31,6 @@ import { getTaskOrchestrator } from '../../planning/taskOrchestrator';
 import { getMaxIterations } from '../../services/cloud/featureFlagService';
 import { createLogger } from '../../services/infra/logger';
 import { trackNode } from '../../observability/posthogNode';
-import { POSTHOG_EVENTS } from '../../../shared/observability/posthog-events';
 import { silence } from '../../utils/errorHandling';
 import { HookManager, createHookManager } from '../../hooks';
 import type { BudgetEventData } from '../../../shared/contract';
@@ -97,6 +96,12 @@ import { createHash } from 'crypto';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { LearningPipeline } from './learningPipeline';
+import {
+  getRunTerminalAgentEventType,
+  getRunTerminalPostHogEvent,
+  type RunTerminalInfo,
+  type RunTerminalStatus,
+} from './runTerminalStatus';
 
 
 const logger = createLogger('AgentLoop');
@@ -121,13 +126,7 @@ function hasCheckboxChecklist(content: string | undefined): boolean {
 
 // Re-export types for backward compatibility
 export type { AgentLoopConfig };
-
-export type RunTerminalStatus = 'completed' | 'cancelled' | 'interrupted' | 'failed' | 'goal_met' | 'aborted';
-
-export interface RunTerminalInfo {
-  status?: RunTerminalStatus;
-  error?: unknown;
-}
+export type { RunTerminalInfo, RunTerminalStatus };
 
 function formatTerminalError(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -204,12 +203,7 @@ export class RunFinalizer {
           ? 'interrupted'
           : 'completed');
 
-    // PostHog: run 结束事件（按 terminalStatus 路由到 completed / failed / cancelled）
-    const runEvent = terminalStatus === 'completed'
-      ? POSTHOG_EVENTS.RUN_COMPLETED
-      : terminalStatus === 'failed'
-        ? POSTHOG_EVENTS.RUN_FAILED
-        : POSTHOG_EVENTS.RUN_CANCELLED;
+    const runEvent = getRunTerminalPostHogEvent(terminalStatus);
     trackNode(runEvent, {
       sessionId: this.ctx.sessionId,
       iterations,
@@ -308,7 +302,7 @@ export class RunFinalizer {
 
     // 先通知前端关闭 "组织回复中" loading — 核心生成已结束
     // 后续 post-processing（hooks / learning / summary）跑在后台，不再阻塞 UI
-    const terminalEventType = terminalStatus === 'cancelled' ? 'agent_cancelled' : 'agent_complete';
+    const terminalEventType = getRunTerminalAgentEventType(terminalStatus);
     logger.debug(`[AgentLoop] ========== run() END, emitting ${terminalEventType} ==========`);
     logCollector.agent('INFO', `Agent run ${terminalStatus}, ${iterations} iterations`);
     this.ctx.onEvent({ type: terminalEventType, data: null });
@@ -316,7 +310,7 @@ export class RunFinalizer {
     // === Mechanism Stats (observability) ===
     logger.info(`[AgentLoop] === Mechanism Stats ===`);
 
-    // Session end learning (Gen5+)
+    // Session end learning
     // genNum already declared above in dynamic mode detection
     if (genNum >= 5 && this.ctx.messages.length > 0) {
       this.learningPipeline.runSessionEndLearning().catch((err) => {

@@ -10,12 +10,41 @@ import { assessContextPressure } from '../../../context/contextPressureControlle
 import { logCollector } from '../../../mcp/logCollector.js';
 import { fileReadTracker } from '../../../tools/fileReadTracker';
 import { dataFingerprintStore } from '../../../tools/dataFingerprint';
+import {
+  getCoreToolDefinitions,
+  getLoadedDeferredToolDefinitions,
+} from '../../../tools/dispatch/toolDefinitions';
 import { getSessionManager } from '../../../services';
 import { getIncompleteTasks } from '../../../services/planning/taskStore';
 import { getSessionTodos } from '../../../agent/todoParser';
-import type { ContextAssemblyCtx } from '../contextAssembly';
-import { cachedReaddirSync, logger } from '../contextAssembly';
+import type { ContextAssemblyCtx } from './shared';
+import { cachedReaddirSync, logger } from './shared';
 import { persistRuntimeState } from '../runtimeStatePersistence';
+
+let toolDefTokensCache: { signature: string; tokens: number } | null = null;
+
+function estimateActiveToolDefinitionsTokens(): number {
+  try {
+    const core = getCoreToolDefinitions();
+    const deferred = getLoadedDeferredToolDefinitions();
+    const all = [...core, ...deferred];
+    const signature = `${all.length}:${all.map((tool) => tool.name).join(',')}`;
+    if (toolDefTokensCache?.signature === signature) {
+      return toolDefTokensCache.tokens;
+    }
+    const serialized = JSON.stringify(all.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    })));
+    const tokens = estimateTokens(serialized);
+    toolDefTokensCache = { signature, tokens };
+    return tokens;
+  } catch (error) {
+    logger.debug('estimateActiveToolDefinitionsTokens failed, returning 0:', error);
+    return 0;
+  }
+}
 
 async function persistCompactionTranscriptMarker(
   ctx: ContextAssemblyCtx,
@@ -223,7 +252,9 @@ export function updateContextHealth(ctx: ContextAssemblyCtx): void {
       ctx.runtime.sessionId,
       messagesForEstimation,
       ctx.runtime.systemPrompt,
-      model
+      model,
+      undefined,
+      estimateActiveToolDefinitionsTokens(),
     );
 
     // 更新压缩统计到健康状态

@@ -23,6 +23,12 @@ vi.mock('../../../src/main/agent/runtime/gameArtifactValidator', () => ({
 }));
 
 vi.mock('../../../src/main/services/infra/logger', () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -1078,12 +1084,15 @@ describe('MessageProcessor persistence', () => {
     );
 
     expect(action).toBe('continue');
-    expect(gameValidatorState.validateGameArtifact).toHaveBeenCalledWith('/tmp/game.html', {
+    expect(gameValidatorState.validateGameArtifact).toHaveBeenCalledWith('/tmp/game.html', expect.objectContaining({
       runRuntimeSmoke: true,
       runtimeSmokeTimeoutMs: 7000,
+      requireRuntimeSmoke: true,
       runBrowserVisualSmoke: true,
       browserVisualSmokeTimeoutMs: 10000,
-    });
+      requireBrowserVisualSmoke: true,
+      allowBrowserVisualComputerFallback: false,
+    }));
     expect(ctx.artifactRepairGuard).toBeUndefined();
     expect(ctx.forceFinalResponseReason).toBeUndefined();
     expect(ctx.forceFinalResponsePrompt).toBeUndefined();

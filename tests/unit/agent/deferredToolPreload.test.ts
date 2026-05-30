@@ -7,7 +7,7 @@ vi.mock('../../../src/main/tools/protocolRegistry', async () => {
   return {
     ...actual,
     isProtocolToolName: (name: string) =>
-      name === 'Browser' || name === 'Computer' || actual.isProtocolToolName(name),
+      name === 'Browser' || name === 'Computer' || name === 'workflow_orchestrate' || actual.isProtocolToolName(name),
   };
 });
 
@@ -46,7 +46,7 @@ function runtime(
   };
 }
 
-function registerProtocolToolForPreload(name: 'Browser' | 'Computer'): void {
+function registerProtocolToolForPreload(name: 'Browser' | 'Computer' | 'workflow_orchestrate'): void {
   const schema: ToolSchema = {
     name,
     description: `${name} test schema`,
@@ -54,7 +54,7 @@ function registerProtocolToolForPreload(name: 'Browser' | 'Computer'): void {
       type: 'object',
       properties: {},
     },
-    category: 'vision',
+    category: name === 'workflow_orchestrate' ? 'multiagent' : 'vision',
     permissionLevel: 'execute',
     readOnly: false,
   };
@@ -75,6 +75,7 @@ describe('deferred tool preload', () => {
     resetProtocolRegistry();
     registerProtocolToolForPreload('Browser');
     registerProtocolToolForPreload('Computer');
+    registerProtocolToolForPreload('workflow_orchestrate');
     resetToolSearchService();
   });
 
@@ -168,5 +169,30 @@ describe('deferred tool preload', () => {
         timestamp: 1,
       }],
     }))).toEqual(['Browser']);
+  });
+
+  it('preloads workflow_orchestrate for explicit workflow tool requests', () => {
+    const loaded = preloadDeferredToolsForTurn(runtime({
+      messages: [{
+        id: 'm1',
+        role: 'user',
+        content: '必须使用 workflow_orchestrate 派一个只读 reviewer 子阶段检查实现',
+        timestamp: 1,
+      }],
+    }));
+
+    expect(loaded).toEqual(['workflow_orchestrate']);
+    expect(getToolSearchService().isToolLoaded('workflow_orchestrate')).toBe(true);
+  });
+
+  it('preloads workflow_orchestrate for cowork and multi-agent requests', () => {
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      messages: [{
+        id: 'm1',
+        role: 'user',
+        content: '用 cowork 方式跑一个多 agent 协作审查任务',
+        timestamp: 1,
+      }],
+    }))).toEqual(['workflow_orchestrate']);
   });
 });

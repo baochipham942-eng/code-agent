@@ -7,8 +7,9 @@ import { TELEMETRY_CHANNELS } from '../../shared/ipc/channels';
 import { getTelemetryStorage } from '../telemetry/telemetryStorage';
 // extractStructuredReplay loaded dynamically — excluded from production bundle
 import { getTelemetryCollector } from '../telemetry/telemetryCollector';
+import { getTelemetryUploaderService } from '../telemetry/telemetryUploaderService';
 import { createLogger } from '../services/infra/logger';
-import type { TelemetryHealth, TelemetrySessionListOptions } from '../../shared/contract/telemetry';
+import type { TelemetryFeedbackSubmitRequest, TelemetryFeedbackSubmitResult, TelemetryHealth, TelemetrySessionListOptions } from '../../shared/contract/telemetry';
 import { assertAdminAccess, isCurrentUserAdmin } from './adminGuard';
 
 const logger = createLogger('TelemetryIPC');
@@ -91,6 +92,16 @@ export function registerTelemetryHandlers(getMainWindow: () => BrowserWindow | n
     assertAdminAccess('Telemetry');
     storage.deleteSession(sessionId);
     return { success: true };
+  });
+
+  // 用户显式质量反馈：普通登录用户可写；读取仍只走 admin-only 云端/本地查询。
+  ipcMain.handle(TELEMETRY_CHANNELS.SUBMIT_FEEDBACK, async (_event, payload: TelemetryFeedbackSubmitRequest): Promise<TelemetryFeedbackSubmitResult> => {
+    const feedback = storage.recordFeedback(payload);
+    if (!feedback) {
+      return { success: false, error: 'Invalid telemetry feedback payload' };
+    }
+    void getTelemetryUploaderService().upload();
+    return { success: true, feedbackId: feedback.id };
   });
 
   // 健康摘要：是否启用 + session 数 + 存储占用 + 最近事件时间

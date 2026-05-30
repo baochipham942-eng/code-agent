@@ -6,8 +6,7 @@ import { Command } from 'commander';
 
 export const listToolsCommand = new Command('list-tools')
   .description('列出所有已注册的工具定义 (JSON)')
-  .option('--gen <id>', '按代际过滤 (gen1-gen8)')
-  .action(async (_options: { gen?: string }) => {
+  .action(async () => {
     try {
       // 动态导入避免在顶层加载重量级模块
       const { getToolResolver } = await import('../../main/tools/dispatch/toolResolver');

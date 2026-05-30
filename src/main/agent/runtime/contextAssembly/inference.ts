@@ -1,3 +1,4 @@
+ 
 // ContextAssembly - Inference orchestration and model fallback.
 import type { AgentEvent, ToolCall, ToolDefinition } from '../../../../shared/contract';
 import type { ModelResponse } from '../../../agent/loopTypes';
@@ -19,13 +20,13 @@ import {
 import { needsArtifactTaskBrief } from '../../../prompts/builder';
 import {
   estimateModelMessageTokens,
+  estimateTokens,
 } from '../../../context/tokenOptimizer';
-import type { MessageContent, ModelMessage } from '../../../agent/loopTypes';
+import type { ModelMessage } from '../../../agent/loopTypes';
 import type { StreamCallback, InferenceOptions, ModelResponse as RouterModelResponse } from '../../../model/types';
 import type { ModelConfig } from '../../../../shared/contract/model';
-import { normalizeAgentEffortLevel } from '../../../../shared/effortLevels';
-import type { ContextAssemblyCtx } from '../contextAssembly';
-import { logger } from '../contextAssembly';
+import type { ContextAssemblyCtx } from './shared';
+import { logger } from './shared';
 import {
   getArtifactRepairToolPolicy,
   isArtifactRepairWritePriority as isArtifactRepairWritePriorityForGuard,
@@ -33,6 +34,12 @@ import {
 } from '../artifactRepairGuard';
 import { preloadDeferredToolsForTurn } from './deferredToolPreload';
 import { createHandoffTailStreamFilter } from '../../../handoff/handoffStream';
+import { applyEffortControls } from './effortControls';
+import { buildCompactArtifactRepairWriteRetryMessages } from './artifactRepairRetryMessages';
+import {
+  contentHasImageParts,
+  preflightImagesForMainModel,
+} from './visionPreflight';
 
 const ARTIFACT_REPAIR_RECOVERY_MAX_TOKENS = 16_384;
 const ARTIFACT_REPAIR_TARGETED_EDIT_MAX_TOKENS = 32_768;
@@ -63,6 +70,56 @@ function runEngineInference(
     return inferenceViaAiSdk(messages, tools, config, onStream, signal, options);
   }
   return ctx.runtime.modelRouter.inference(messages, tools, config, onStream, signal, options);
+}
+
+function estimateInferenceInputTokens(
+  messages: ModelMessage[],
+  tools: ToolDefinition[],
+): number {
+  const messageTokens = estimateModelMessageTokens(
+    messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+    })),
+  );
+  const toolTokens = tools.reduce((sum, tool) => {
+    const schemaText = JSON.stringify({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    });
+    return sum + estimateTokens(schemaText);
+  }, 0);
+
+  return messageTokens + toolTokens;
+}
+
+function assertInputTokenBudget(
+  messages: ModelMessage[],
+  tools: ToolDefinition[],
+  options: InferenceOptions | undefined,
+): void {
+  const maxInputTokens = options?.maxInputTokens;
+  if (!maxInputTokens || maxInputTokens <= 0) return;
+
+  const estimatedInputTokens = estimateInferenceInputTokens(messages, tools);
+  if (estimatedInputTokens > maxInputTokens) {
+    throw new Error(
+      `Inference input token budget exceeded before provider request: estimated ${estimatedInputTokens} > max ${maxInputTokens}`,
+    );
+  }
+}
+
+function capOutputTokens(config: ModelConfig, options: InferenceOptions | undefined): ModelConfig {
+  const maxOutputTokens = options?.maxOutputTokens;
+  if (!maxOutputTokens || maxOutputTokens <= 0) return config;
+  const current = typeof config.maxTokens === 'number' && Number.isFinite(config.maxTokens)
+    ? config.maxTokens
+    : maxOutputTokens;
+  return {
+    ...config,
+    maxTokens: Math.min(current, maxOutputTokens),
+  };
 }
 
 function startArtifactModelWaitProgress(
@@ -138,18 +195,6 @@ function emitAssistantMessageDelta(
   });
 }
 
-function messageHasImageParts(message: ModelMessage | undefined): boolean {
-  return Boolean(
-    message &&
-    Array.isArray(message.content) &&
-    message.content.some((part) => part.type === 'image')
-  );
-}
-
-function contentHasImageParts(content: ModelMessage['content']): content is MessageContent[] {
-  return Array.isArray(content) && content.some((part) => part.type === 'image');
-}
-
 function buildArtifactValidationAttemptCompletionResponse(targetFile: string): ModelResponse {
   const toolCall: ToolCall = {
     id: `call_artifact_validation_completion_${Date.now().toString(36)}`,
@@ -171,101 +216,21 @@ function buildArtifactValidationAttemptCompletionResponse(targetFile: string): M
   };
 }
 
-function replaceImagesWithVisionSummary(
-  messages: ModelMessage[],
-  summary: string,
-  visionModel: string,
-): ModelMessage[] {
-  return messages.map((message) => {
-    if (!Array.isArray(message.content)) return message;
-
-    let removedImages = 0;
-    const content = message.content.filter((part) => {
-      if (part.type !== 'image') return true;
-      removedImages += 1;
-      return false;
-    });
-
-    if (removedImages === 0) return message;
-
-    return {
-      ...message,
-      content: [
-        ...content,
-        {
-          type: 'text',
-          text: [
-            `[视觉预处理结果]`,
-            `模型: ${visionModel}`,
-            `图片数量: ${removedImages}`,
-            summary.trim(),
-            `[/视觉预处理结果]`,
-          ].join('\n'),
-        },
-      ],
-    };
+function emitToolSchemaSnapshot(ctx: ContextAssemblyCtx, tools: ToolDefinition[]): void {
+  if (tools.length === 0) return;
+  ctx.runtime.onEvent({
+    type: 'tool_schema_snapshot',
+    data: {
+      turnId: ctx.runtime.currentTurnId,
+      toolCount: tools.length,
+      tools: tools.map((tool) => ({
+        name: tool.name,
+        inputSchema: tool.inputSchema as unknown as Record<string, unknown> | undefined,
+        requiresPermission: tool.requiresPermission,
+        permissionLevel: tool.permissionLevel,
+      })),
+    },
   });
-}
-
-function buildVisionPreflightMessages(
-  lastUserMessage: ModelMessage,
-  userRequestText: string,
-): ModelMessage[] {
-  return [
-    {
-      role: 'system',
-      content: [
-        '你是图片预处理器。你的输出会交给另一个主模型继续回答用户。',
-        '只提炼图片里的可见事实、OCR 文字、界面元素、空间关系，以及和用户问题相关的信息。',
-        '不要代替主模型完成最终回答，不要说自己无法继续操作。',
-      ].join('\n'),
-    },
-    {
-      role: 'user',
-      content: Array.isArray(lastUserMessage.content)
-        ? [
-            {
-              type: 'text',
-              text: [
-                `用户原始问题：${userRequestText || '请理解图片内容'}`,
-                '请把图片内容整理成给主模型使用的事实摘要。',
-              ].join('\n'),
-            },
-            ...lastUserMessage.content,
-          ]
-        : lastUserMessage.content,
-    },
-  ];
-}
-
-async function preflightImagesForMainModel(
-  ctx: ContextAssemblyCtx,
-  modelMessages: ModelMessage[],
-  fallbackConfig: ModelConfig,
-  userRequestText: string,
-): Promise<ModelMessage[] | null> {
-  const lastUserMessage = modelMessages.filter((message) => message.role === 'user').pop();
-  if (!messageHasImageParts(lastUserMessage)) return null;
-  if (!lastUserMessage) return null;
-
-  const preflightConfig: ModelConfig = {
-    ...fallbackConfig,
-    maxTokens: Math.min(fallbackConfig.maxTokens || 2048, 2048),
-  };
-
-  const response = await runEngineInference(
-    ctx,
-    buildVisionPreflightMessages(lastUserMessage, userRequestText),
-    [],
-    preflightConfig,
-    undefined,
-    ctx.runtime.runAbortController?.signal,
-    { reasoningEffort: 'low' },
-  );
-  const summary = (response.content || response.thinking || '').trim();
-  if (!summary) return null;
-
-  return replaceImagesWithVisionSummary(modelMessages, summary, preflightConfig.model || 'vision-model');
 }
 
 function isArtifactRepairWritePriority(ctx: ContextAssemblyCtx): boolean {
@@ -330,86 +295,6 @@ function capArtifactRepairMaxTokens(
   };
 }
 
-function normalizeModelMessageContent(content: unknown): string {
-  if (typeof content === 'string') return content;
-  try {
-    return JSON.stringify(content);
-  } catch {
-    return String(content || '');
-  }
-}
-
-function truncateArtifactRepairEvidence(content: string, limit: number): string {
-  if (content.length <= limit) return content;
-  const head = Math.floor(limit * 0.72);
-  const tail = Math.max(800, limit - head - 160);
-  return [
-    content.slice(0, head),
-    `\n...[compact artifact repair retry omitted ${content.length - head - tail} chars]...\n`,
-    content.slice(-tail),
-  ].join('');
-}
-
-function buildCompactArtifactRepairWriteRetryMessages(
-  ctx: ContextAssemblyCtx,
-  messages: ModelMessage[],
-  errorMessage: string,
-): ModelMessage[] {
-  const guard = ctx.runtime.artifactRepairGuard;
-  const targetFile = guard?.targetFile || 'target artifact';
-  const activeIssueCodes = guard?.activeIssueCodes?.length
-    ? guard.activeIssueCodes.join(', ')
-    : 'unknown';
-
-  const systemMessage: ModelMessage = {
-    role: 'system',
-    content: [
-      '<artifact-repair-compact-write-retry>',
-      'The previous artifact repair write-priority inference timed out before emitting a patch.',
-      `Timeout: ${errorMessage.split('\n')[0]?.slice(0, 240) || 'provider timeout'}`,
-      `Target file: ${targetFile}`,
-      `Active issue codes: ${activeIssueCodes}`,
-      'Available action: call exactly one mutation tool. Prefer one complete Write of the whole self-contained HTML artifact; a focused Edit is fine when it anchors cleanly. Do not call Read, Bash, Task, or validator tools.',
-      'Use the target evidence below. If replacing an interactive test contract, a short old_text anchor around `window.__GAME_TEST__ = {` or `window.__INTERACTIVE_TEST__ = {` is acceptable; the runtime can expand the anchor to the balanced contract region.',
-      'For malformed_test_contract, replace the full active test-contract region in one balanced Edit and remove duplicate orphaned start/reset/snapshot/step/runSmokeTest methods after the contract closes.',
-      'Contract shape: assign exactly one direct plain object literal, `window.__GAME_TEST__ = { start() { ... }, reset(levelOrScenario) { ... }, snapshot() { return {...}; }, step(inputState = {}, frames = 1) { ...; return this.snapshot(); }, runSmokeTest() { return { passed, checks, failures, coverage }; } };`, or the same shape on `window.__INTERACTIVE_TEST__`.',
-      'Do not put the contract in comments, a wrapper function, class, IIFE/factory, Object.assign, or separate top-level function shells. Avoid comments inside the active contract block and remove orphaned method tails.',
-      'For mobile canvas failures, constrain both width and height with responsive CSS on the canvas or wrapper. A 390px mobile viewport must show the full playfield and HUD; do not rely on fixed 800px/900px widths or max-height:100vh with width:auto alone.',
-      'The patch must remove direct ability/reward grants, test-mode auto collection/progression, and coverage based only on existence/registration. Prove gameplay through before/after snapshot changes driven by step/input.',
-      '</artifact-repair-compact-write-retry>',
-    ].join('\n'),
-  };
-
-  const lastUser = [...messages].reverse().find((message) => message.role === 'user');
-  const evidenceCandidates = messages
-    .filter((message) => {
-      if (message.role !== 'tool' && message.role !== 'system') return false;
-      const content = normalizeModelMessageContent(message.content);
-      return /artifact-repair|artifact-validation|window\.__(?:GAME|INTERACTIVE)_TEST__|runSmokeTest|function\s+update|Treat collection|Door check|Stomp from above/i.test(content);
-    })
-    .slice(-5);
-
-  const evidenceMessages: ModelMessage[] = [];
-  let usedChars = 0;
-  for (const message of evidenceCandidates) {
-    const content = normalizeModelMessageContent(message.content);
-    const remaining = Math.max(1_200, 10_000 - usedChars);
-    if (usedChars >= 10_000) break;
-    const compact = truncateArtifactRepairEvidence(content, Math.min(3_500, remaining));
-    usedChars += compact.length;
-    evidenceMessages.push({
-      role: message.role,
-      content: compact,
-    } as ModelMessage);
-  }
-
-  return [
-    systemMessage,
-    ...(lastUser ? [{ role: 'user', content: truncateArtifactRepairEvidence(normalizeModelMessageContent(lastUser.content), 1_200) } as ModelMessage] : []),
-    ...evidenceMessages,
-  ];
-}
-
 export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse> {
   seedArtifactRepairGuardFromContext(ctx.runtime);
 
@@ -438,6 +323,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     );
   }
   tools = dedupeToolDefinitions(tools);
+  emitToolSchemaSnapshot(ctx, tools);
 
   let effectiveTools = tools;
   let effectiveConfig = ctx.runtime.modelConfig;
@@ -461,7 +347,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
   });
 
   const langfuse = getLangfuseService();
-  const generationId = `gen-${ctx.runtime.traceId}-${Date.now()}`;
+  const llmCallId = `llm-${ctx.runtime.traceId}-${Date.now()}`;
   const startTime = new Date();
 
   const inputSummary = modelMessages.map(m => ({
@@ -470,7 +356,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     contentPreview: typeof m.content === 'string' ? m.content.substring(0, 200) : '[multimodal]',
   }));
 
-  langfuse.startGenerationInSpan(ctx.runtime.currentIterationSpanId, generationId, `LLM: ${ctx.runtime.modelConfig.model}`, {
+  langfuse.startGenerationInSpan(ctx.runtime.currentIterationSpanId, llmCallId, `LLM: ${ctx.runtime.modelConfig.model}`, {
     model: ctx.runtime.modelConfig.model,
     modelParameters: {
       provider: ctx.runtime.modelConfig.provider,
@@ -548,6 +434,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
                     modelMessages,
                     fallbackConfig,
                     userRequestText,
+                    runEngineInference,
                   );
                   if (preflightMessages) {
                     modelMessages = preflightMessages;
@@ -655,16 +542,11 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       }
     }
 
-    // Apply thinking budget based on effort level
-    const EFFORT_TO_BUDGET: Record<string, number> = {
-      low: 2048,
-      medium: 8192,
-      high: 16384,
-    };
-    const budgetForEffort = EFFORT_TO_BUDGET[normalizeAgentEffortLevel(ctx.runtime.effortLevel)];
-    if (budgetForEffort && !effectiveConfig.thinkingBudget) {
-      effectiveConfig = { ...effectiveConfig, thinkingBudget: budgetForEffort };
-    }
+    effectiveConfig = applyEffortControls(
+      effectiveConfig,
+      ctx.runtime.effortLevel,
+      { thinkingEnabled: ctx.runtime.thinkingEnabled },
+    );
 
     logger.debug('[AgentLoop] Calling modelRouter.inference()...');
     logger.debug('[AgentLoop] Effective model:', effectiveConfig.model);
@@ -678,7 +560,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       logger.info('[AgentLoop] Artifact validation passed; requesting goal completion without another model call', {
         targetFile,
       });
-      langfuse.endGeneration(generationId, {
+      langfuse.endGeneration(llmCallId, {
         type: response.type,
         contentLength: 0,
         toolCallCount: response.toolCalls?.length || 0,
@@ -749,7 +631,11 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       }
     };
 
-    const requestConfig = capArtifactRepairMaxTokens(ctx, effectiveConfig);
+    const requestConfig = capOutputTokens(
+      capArtifactRepairMaxTokens(ctx, effectiveConfig),
+      ctx.runtime.inferenceOptions,
+    );
+    assertInputTokenBudget(modelMessages, effectiveTools, ctx.runtime.inferenceOptions);
     requestConfigForRetry = requestConfig;
     const stopArtifactProgress = startArtifactModelWaitProgress(ctx, {
       artifactRequest,
@@ -765,8 +651,9 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
         requestConfig,
         streamCallback,
         ctx.runtime.abortController.signal,
-        {
-          onSnapshot: createSnapshotHandler(
+          {
+            ...ctx.runtime.inferenceOptions,
+            onSnapshot: createSnapshotHandler(
             ctx.runtime.sessionId,
             ctx.runtime.currentTurnId,
             ctx.runtime.workingDirectory,
@@ -812,7 +699,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     ]);
     ctx.recordTokenUsage(estimatedInputTokens, estimatedOutputTokens);
 
-    langfuse.endGeneration(generationId, {
+    langfuse.endGeneration(llmCallId, {
       type: response.type,
       contentLength: response.content?.length || 0,
       toolCallCount: response.toolCalls?.length || 0,
@@ -831,7 +718,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     logger.error('[AgentLoop] Model inference error:', error);
 
     langfuse.endGeneration(
-      generationId,
+      llmCallId,
       { error: error instanceof Error ? error.message : 'Unknown error' },
       undefined,
       'ERROR',
@@ -1001,6 +888,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     const shouldRetryNetworkError =
       isNetworkError
       && networkRetryCount < maxNetworkRetries
+      && ctx.runtime.inferenceOptions?.disableRuntimeNetworkRetry !== true
       && !(ctx.runtime.artifactRepairGuard && isSlowProviderTimeout);
     if (shouldRetryNetworkError) {
       ctx.runtime._networkRetried = true;

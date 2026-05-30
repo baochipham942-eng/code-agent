@@ -134,7 +134,7 @@ describe('indexLoader', () => {
       const resultLines = result!.split('\n');
       // First 200 lines + truncation comment
       expect(resultLines.length).toBe(202); // 200 content + empty line + comment line (joined as single string with \n\n)
-      expect(result).toContain('<!-- Truncated: INDEX.md exceeds 200 lines');
+      expect(result).toContain('<!-- Truncated: INDEX.md exceeds budget; consolidation will compress on next run. -->');
       expect(result).toContain('Line 1');
       expect(result).toContain('Line 200');
       expect(result).not.toContain('Line 201');

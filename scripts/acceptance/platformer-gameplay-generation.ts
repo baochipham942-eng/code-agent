@@ -112,7 +112,6 @@ type AcceptanceCliOutput = {
   mode: 'validate-only' | 'generate-and-validate';
   provider?: string;
   model?: string;
-  generation?: string;
   bonN: number;
   repairCap: number;
   monotonicMode: AcceptanceMonotonicMode;
@@ -134,7 +133,6 @@ Options:
   --validate-only        Do not call a model; validate an existing artifact.
   --provider <id>        Model provider. Default: PLATFORMER_GAMEPLAY_PROVIDER or openrouter.
   --model <id>           Model id. Default: PLATFORMER_GAMEPLAY_MODEL or google/gemini-3-flash-preview.
-  --generation <id>      Agent generation. Default: gen8.
   --generation-timeout <ms>
                        Max time to wait for one agent generation. Default: 120000.
   --timeout <ms>         Runtime smoke timeout. Default: 10000.
@@ -262,7 +260,6 @@ async function runAgentGeneration(options: {
   provider: string;
   model: string;
   apiKey: string;
-  generation: string;
   /**
    * When provided, switches into P3 monotonic-repair mode: the existing
    * artifact at `artifactPath` is preserved (not deleted) and the agent gets
@@ -281,7 +278,6 @@ async function runAgentGeneration(options: {
 
   const agent = new StandaloneAgentAdapter({
     workingDirectory: projectRoot,
-    generation: options.generation,
     modelConfig: {
       provider: options.provider,
       model: options.model,
@@ -874,7 +870,6 @@ async function writeMarkdownReport(reportPath: string, output: AcceptanceCliOutp
     `- artifactPath: ${validation.artifactPath}`,
     `- provider: ${output.provider ?? 'N/A'}`,
     `- model: ${output.model ?? 'N/A'}`,
-    `- generation: ${output.generation ?? 'N/A'}`,
     `- passed: ${validation.passed}`,
     `- runtimePassed: ${validation.runtimePassed ?? 'N/A'}`,
     `- browserPassed: ${validation.browserPassed ?? 'N/A'}`,
@@ -965,8 +960,6 @@ async function main(): Promise<void> {
     envValue('PLATFORMER_GAMEPLAY_MODEL') ||
     envValue('OPENROUTER_CHAT_MODEL') ||
     'google/gemini-3-flash-preview';
-  const generation =
-    getStringOption(args, 'generation') || envValue('PLATFORMER_GAMEPLAY_GENERATION') || 'gen8';
   const timeoutMs = getNumberOption(args, 'timeout') || ACCEPTANCE_DEFAULTS.CANDIDATE_RUNTIME_TIMEOUT_MS;
   const generationTimeoutMs =
     getNumberOption(args, 'generation-timeout') ||
@@ -1002,7 +995,7 @@ async function main(): Promise<void> {
     const generate: GenerateCandidateFn = async ({ previousFailures }) => {
       try {
         const result = await withTimeout(
-          runAgentGeneration({ artifactPath, provider, model, apiKey, generation, previousFailures }),
+          runAgentGeneration({ artifactPath, provider, model, apiKey, previousFailures }),
           generationTimeoutMs,
           `Agent generation timed out after ${generationTimeoutMs}ms`,
         );
@@ -1035,7 +1028,6 @@ async function main(): Promise<void> {
     mode: validateOnly ? 'validate-only' : 'generate-and-validate',
     provider: validateOnly ? undefined : provider,
     model: validateOnly ? undefined : model,
-    generation: validateOnly ? undefined : generation,
     bonN,
     repairCap,
     monotonicMode,
@@ -1058,7 +1050,6 @@ async function main(): Promise<void> {
       ['artifactPath', artifactPath],
       ['provider', output.provider],
       ['model', output.model],
-      ['generation', output.generation],
       ['bonN', bonN],
       ['repairCap', repairCap],
       ['monotonicMode', monotonicMode],

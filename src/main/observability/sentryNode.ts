@@ -59,10 +59,35 @@ export interface CaptureContext {
   extra?: Record<string, unknown>;
 }
 
+type RuntimeTagProvider = () => Record<string, string | null | undefined>;
+
+let runtimeTagProvider: RuntimeTagProvider | null = null;
+
+export function setSentryNodeRuntimeTagProvider(provider: RuntimeTagProvider | null): void {
+  runtimeTagProvider = provider;
+}
+
+function readRuntimeTags(): Record<string, string> {
+  if (!runtimeTagProvider) return {};
+  try {
+    const tags = runtimeTagProvider();
+    return Object.fromEntries(
+      Object.entries(tags).filter((entry): entry is [string, string] => Boolean(entry[1])),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function mergeTags(tags?: Record<string, string>): Record<string, string> | undefined {
+  const merged = { ...readRuntimeTags(), ...tags };
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
 /** 上报一个异常。未初始化 / 已 opt-out 时是 no-op。 */
 export function captureException(error: unknown, context?: CaptureContext): void {
   if (!initialized || !enabled) return;
-  Sentry.captureException(error, context ? { tags: context.tags, extra: context.extra } : undefined);
+  Sentry.captureException(error, { tags: mergeTags(context?.tags), extra: context?.extra });
 }
 
 /** 上报一条消息（用于"上次会话异常退出"这类无 Error 对象的事件）。未初始化 / opt-out 时 no-op。 */
@@ -72,5 +97,5 @@ export function captureMessage(
   context?: CaptureContext,
 ): void {
   if (!initialized || !enabled) return;
-  Sentry.captureMessage(message, { level, tags: context?.tags, extra: context?.extra });
+  Sentry.captureMessage(message, { level, tags: mergeTags(context?.tags), extra: context?.extra });
 }

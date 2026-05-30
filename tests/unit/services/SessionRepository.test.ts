@@ -44,7 +44,6 @@ function createMockDb() {
         return {
           id: 'test-session-1',
           title: 'Test Session',
-          generation_id: 'gen-1',
           model_provider: 'deepseek',
           model_name: 'deepseek-chat',
           working_directory: '/test',

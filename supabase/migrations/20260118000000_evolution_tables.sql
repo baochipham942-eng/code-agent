@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Evolution Tables Migration
--- Creates tables for Gen8 self-evolution persistence
+-- Creates tables for self-evolution persistence
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -147,6 +147,6 @@ WITH CHECK (auth.uid() = user_id);
 -- These tables will be included in the cloud sync mechanism
 
 -- Comment for documentation
-COMMENT ON TABLE evolution_strategies IS 'Gen8 self-evolution: User work strategies';
-COMMENT ON TABLE evolution_patterns IS 'Gen8 self-evolution: Learned patterns from experience';
-COMMENT ON TABLE evolution_strategy_feedback IS 'Gen8 self-evolution: Strategy feedback history';
+COMMENT ON TABLE evolution_strategies IS 'Self-evolution: User work strategies';
+COMMENT ON TABLE evolution_patterns IS 'Self-evolution: Learned patterns from experience';
+COMMENT ON TABLE evolution_strategy_feedback IS 'Self-evolution: Strategy feedback history';

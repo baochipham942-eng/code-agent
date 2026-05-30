@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 import type { ToolCall } from '../../../../shared/contract';
 import type { ModelResponse } from '../../types';
-import { logger } from '../shared';
+import { logger } from '../providerRuntime';
 
 // ── parts ─────────────────────────────────────────────────────────────────
 const FunctionCallPartSchema = z

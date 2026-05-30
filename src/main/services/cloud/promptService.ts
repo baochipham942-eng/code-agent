@@ -191,7 +191,7 @@ export async function initPromptService(options?: PromptServiceOptions): Promise
 }
 
 /**
- * 获取指定代际的 system prompt
+ * 获取当前 system prompt
  * 优先返回云端版本，降级到本地内置版本
  */
 export function getSystemPrompt(): string {

@@ -14,7 +14,6 @@ import type {
   AgentEngineModelCatalogModel,
   AgentEngineModelCatalogResult,
   AgentEngineSessionMetadata,
-  ExternalAgentEngineKind,
 } from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { getProviderDisplayName } from '@shared/constants';
@@ -24,182 +23,29 @@ import {
   getRuntimeModelLabel,
   type RuntimeModelOption,
 } from '@shared/modelRuntime';
-import { SUPPORTED_AGENT_EFFORT_LEVELS } from '@shared/effortLevels';
 import { toast } from '../../hooks/useToast';
-import { Eye, Wrench, Brain, Sparkles, Zap, Cpu, Terminal, Code2, Gauge } from 'lucide-react';
+import { Brain, Sparkles, Zap, Cpu, Code2 } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
-import type { EffortLevel } from '../../../shared/contract/agent';
+import { trackRenderer } from '../../observability/posthogRenderer';
+import { POSTHOG_EVENTS } from '@shared/observability/posthog-events';
+import {
+  buildModelSwitcherEngineSelection,
+  CAPABILITY_CONFIG,
+  ENGINE_ICON,
+  ENGINE_SHORT_LABEL,
+  formatEngineTooltip,
+  getEngineEffortOptions,
+  getEngineUnavailableReason,
+  getProviderEffortOptions,
+  getSelectedEffortOption,
+  HEALTH_DOT_COLOR,
+  isExternalEngineKind,
+  ProviderLogo,
+  QUICK_SWITCH_PROVIDERS,
+} from './modelSwitcherHelpers';
 
-const QUICK_SWITCH_PROVIDERS = [
-  'moonshot',
-  'xiaomi',
-  'longcat',
-  'deepseek',
-  'zhipu',
-  'openai',
-  'claude',
-  'gemini',
-  'qwen',
-  'minimax',
-  'openrouter',
-  'perplexity',
-  'grok',
-  'volcengine',
-  'local',
-  'custom',
-] as const satisfies readonly ModelProvider[];
-
-// Engine 短标签（与 AgentEngineSelector 保持一致）
-const ENGINE_SHORT_LABEL: Record<AgentEngineKind, string> = {
-  native: 'Agent Neo',
-  codex_cli: 'Codex',
-  claude_code: 'Claude',
-};
-
-const ENGINE_ICON: Record<AgentEngineKind, React.ReactNode> = {
-  native: <Cpu className="w-3 h-3" />,
-  codex_cli: <Terminal className="w-3 h-3" />,
-  claude_code: <Terminal className="w-3 h-3" />,
-};
-
-const ENGINE_INSTALL_LABEL: Record<AgentEngineDescriptor['installState'], string> = {
-  builtin: '内置',
-  installed: '已安装',
-  missing: '未安装',
-};
-
-const ENGINE_RUNTIME_LABEL: Record<AgentEngineDescriptor['runtimeState'], string> = {
-  ready: 'Ready',
-  not_configured: 'Needs config',
-  blocked: 'Blocked',
-  error: 'Error',
-  unknown: 'Unknown',
-};
-
-const ENGINE_PERMISSION_LABEL: Record<AgentEngineDescriptor['defaultPermissionProfile'], string> = {
-  default: '默认权限',
-  read_only: '只读默认',
-  workspace_write: '工作目录可写',
-};
-
-const EFFORT_LABEL: Record<(typeof SUPPORTED_AGENT_EFFORT_LEVELS)[number], string> = {
-  low: 'Low',
-  medium: 'Med',
-  high: 'High',
-};
-
-const EFFORT_COLOR: Record<(typeof SUPPORTED_AGENT_EFFORT_LEVELS)[number], string> = {
-  low: 'text-zinc-400',
-  medium: 'text-blue-400',
-  high: 'text-amber-400',
-};
-
-const EFFORT_OPTIONS: Array<{ value: EffortLevel; label: string; color: string }> =
-  SUPPORTED_AGENT_EFFORT_LEVELS.map((value) => ({
-    value,
-    label: EFFORT_LABEL[value],
-    color: EFFORT_COLOR[value],
-  }));
-
-const ENGINE_RISK_LABEL: Record<AgentEngineDescriptor['riskTier'], string> = {
-  low: '低风险',
-  medium: '中风险',
-  high: '高风险',
-};
-
-function formatEngineCwdPolicy(descriptor: AgentEngineDescriptor): string {
-  return descriptor.cwdPolicy === 'workspace_only' ? '当前工作目录' : descriptor.cwdPolicy;
-}
-
-function formatEngineTooltip(descriptor: AgentEngineDescriptor, needsWorkspace: boolean): string {
-  const unavailableReason = getEngineUnavailableReason(descriptor, needsWorkspace);
-  return [
-    descriptor.label,
-    descriptor.kind === 'native' ? 'Native · 内置 runtime' : '外部 CLI',
-    `${ENGINE_INSTALL_LABEL[descriptor.installState]} / ${ENGINE_RUNTIME_LABEL[descriptor.runtimeState]}`,
-    unavailableReason,
-    descriptor.version,
-    ENGINE_PERMISSION_LABEL[descriptor.defaultPermissionProfile],
-    formatEngineCwdPolicy(descriptor),
-    ENGINE_RISK_LABEL[descriptor.riskTier],
-    descriptor.command,
-    descriptor.lastError,
-  ].filter(Boolean).join(' · ');
-}
-
-function getEngineUnavailableReason(
-  descriptor: AgentEngineDescriptor,
-  needsWorkspace: boolean,
-): string | null {
-  if (needsWorkspace) return '需要先选择工作目录';
-  if (!descriptor.executable) return descriptor.lastError || 'CLI 不可执行';
-  if (descriptor.installState === 'missing') return descriptor.lastError || '未安装';
-  if (descriptor.runtimeState === 'error' || descriptor.runtimeState === 'blocked') {
-    return descriptor.lastError || ENGINE_RUNTIME_LABEL[descriptor.runtimeState];
-  }
-  return null;
-}
-
-function isExternalEngineKind(kind: AgentEngineKind): kind is ExternalAgentEngineKind {
-  return kind === 'codex_cli' || kind === 'claude_code';
-}
-
-export function buildModelSwitcherEngineSelection(
-  descriptor: AgentEngineDescriptor,
-  workingDirectory?: string | null,
-  model?: string | null,
-): Partial<AgentEngineSessionMetadata> {
-  const selection: Partial<AgentEngineSessionMetadata> = {
-    kind: descriptor.kind,
-    permissionProfile: descriptor.defaultPermissionProfile,
-    origin: 'manual',
-  };
-  if (descriptor.kind !== 'native' && workingDirectory) {
-    selection.cwd = workingDirectory;
-  }
-  if (descriptor.kind !== 'native' && model) {
-    selection.model = model;
-  }
-  return selection;
-}
-
-// MODEL_FEATURES 单一真理源已迁至 src/shared/constants/models.ts (2026-04-28 audit B3)
-
-const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: string }> = {
-  code: {
-    icon: <Code2 className="w-2.5 h-2.5" />,
-    color: 'bg-emerald-500/20 text-emerald-300',
-  },
-  vision: {
-    icon: <Eye className="w-2.5 h-2.5" />,
-    color: 'bg-purple-500/20 text-purple-300',
-  },
-  tool: {
-    icon: <Wrench className="w-2.5 h-2.5" />,
-    color: 'bg-blue-500/20 text-blue-300',
-  },
-  reasoning: {
-    icon: <Brain className="w-2.5 h-2.5" />,
-    color: 'bg-amber-500/20 text-amber-300',
-  },
-  fast: {
-    icon: <Gauge className="w-2.5 h-2.5" />,
-    color: 'bg-sky-500/20 text-sky-300',
-  },
-  longContext: {
-    icon: <span className="text-[9px] font-semibold">LC</span>,
-    color: 'bg-teal-500/20 text-teal-300',
-  },
-};
-
-// 健康状态颜色映射
-const HEALTH_DOT_COLOR: Record<string, string> = {
-  healthy: 'bg-green-400',
-  degraded: 'bg-yellow-400',
-  unavailable: 'bg-red-400',
-  recovering: 'bg-blue-400',
-};
+export { buildModelSwitcherEngineSelection } from './modelSwitcherHelpers';
 
 interface ModelSwitcherProps {
   currentModel: string;
@@ -218,6 +64,10 @@ export interface ModelOverrideChangeDetail {
 
 function emitModelOverrideChange(detail: ModelOverrideChangeDetail): void {
   window.dispatchEvent(new CustomEvent<ModelOverrideChangeDetail>(MODEL_OVERRIDE_CHANGE_EVENT, { detail }));
+}
+
+function trackModelSelected(properties: Record<string, unknown>): void {
+  trackRenderer(POSTHOG_EVENTS.MODEL_SELECTED, properties);
 }
 
 export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
@@ -246,6 +96,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   // effort 切换内嵌到模型菜单顶部，对照 Codex 的"模型 + Intelligence"两层选择
   const effortLevel = useModeStore((s) => s.effortLevel);
   const setEffortLevel = useModeStore((s) => s.setEffortLevel);
+  const thinkingEnabled = useModeStore((s) => s.thinkingEnabled);
+  const setThinkingEnabled = useModeStore((s) => s.setThinkingEnabled);
   // Engine adapter（Native/Codex/Claude）— 从 AgentEngineSelector 合并进来，
   // 让"Engine · Model · Effort"在一个 trigger 里统一展示和切换。
   const engine = normalizeAgentEngineSession(session?.engine);
@@ -487,6 +339,13 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           sessionId,
           override: { provider: option.provider, model: option.model, adaptive: false },
         });
+        trackModelSelected({
+          sessionId,
+          engine: 'native',
+          provider: option.provider,
+          model: option.model,
+          mode: 'override',
+        });
         setOpen(false);
       } catch (err) {
         toast.error('模型切换失败: ' + (err instanceof Error ? err.message : '未知错误') + '。请检查 API Key 或网络连接');
@@ -531,6 +390,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               : item
           ),
         }));
+        trackModelSelected({
+          sessionId,
+          engine: engine.kind,
+          model: model.id,
+          mode: 'engine_model',
+        });
         setOpen(false);
       } catch (err) {
         toast.error('模型切换失败: ' + (err instanceof Error ? err.message : '未知错误'));
@@ -560,6 +425,13 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         sessionId,
         override: { provider: defaultProvider, model: currentModel, adaptive: true },
       });
+      trackModelSelected({
+        sessionId,
+        engine: 'native',
+        provider: defaultProvider,
+        model: currentModel,
+        mode: 'adaptive',
+      });
       setOpen(false);
     } catch (err) {
       toast.error('切换到自动模式失败: ' + (err instanceof Error ? err.message : '未知错误'));
@@ -582,11 +454,18 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       setOverrideProvider(null);
       setOverrideAdaptive(false);
       emitModelOverrideChange({ sessionId, override: null });
+      trackModelSelected({
+        sessionId,
+        engine: 'native',
+        provider: defaultProvider,
+        model: currentModel,
+        mode: 'default',
+      });
       setOpen(false);
     } catch (err) {
       toast.error('清除模型覆盖失败: ' + (err instanceof Error ? err.message : '未知错误'));
     }
-  }, [sessionId]);
+  }, [sessionId, defaultProvider, currentModel]);
 
   const selectableOptionCount = engine.kind === 'native'
     ? 1 + filteredOptions.length
@@ -655,6 +534,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const isOverridden = engine.kind === 'native' && !!overrideModel;
   const displayProvider = overrideProvider || defaultProvider;
   const nativeDisplayLabel = overrideAdaptive ? '自动' : getRuntimeModelLabel(displayModel, displayProvider, modelSettings);
+  const selectedNativeOption = useMemo(
+    () => modelOptions.find((option) => option.provider === displayProvider && option.model === displayModel),
+    [displayModel, displayProvider, modelOptions],
+  );
   const selectedCatalogModel = selectedEngineCatalog?.models.find((model) => model.id === engine.model);
   const externalModelUnavailable = Boolean(
     isExternalEngineKind(engine.kind) &&
@@ -671,13 +554,32 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       ?? '默认模型';
   const displayLabel = engine.kind === 'native' ? nativeDisplayLabel : externalDisplayLabel;
 
-  const effortShort = EFFORT_OPTIONS.find((o) => o.value === effortLevel)?.label ?? 'High';
+  const effortOptions = useMemo(
+    () => engine.kind === 'native'
+      ? getProviderEffortOptions(displayProvider, displayModel, selectedNativeOption?.features)
+      : getEngineEffortOptions(engine.kind),
+    [displayModel, displayProvider, engine.kind, selectedNativeOption?.features],
+  );
+  const selectedEffort = getSelectedEffortOption(effortLevel, effortOptions);
+  const supportsThinkingControls = engine.kind === 'native'
+    ? displayProvider === 'xiaomi'
+      || Boolean(selectedNativeOption?.features.includes('reasoning'))
+      || /reason|thinking|think|mimo|r1|o\d/i.test(displayModel)
+    : false;
+  const thinkingShortLabel = supportsThinkingControls
+    ? thinkingEnabled ? 'Think' : 'NoThink'
+    : null;
+
+  useEffect(() => {
+    if (effortOptions.some((option) => option.value === effortLevel)) return;
+    setEffortLevel(selectedEffort.value);
+  }, [effortLevel, effortOptions, selectedEffort.value, setEffortLevel]);
 
   const menu = open && menuPos && (
     <div
       ref={menuRef}
       className="
-        w-80 py-1
+        w-[22rem] py-1
         bg-zinc-800 border border-zinc-700 rounded-lg
         shadow-xl
       "
@@ -688,11 +590,11 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         zIndex: 9999,
       }}
     >
-          {/* Engine adapter 行 — 合并自原 AgentEngineSelector，与 Reasoning effort
-              一起组成"Engine · Model · Effort"三层选择 */}
+          {/* Engine adapter 行 — 三层选择的第一层 */}
           {engineDescriptors.length > 0 && (
             <div className="px-2 pt-1.5 pb-1 border-b border-zinc-700/50">
               <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
+                <span className="text-[9px] text-zinc-600">1</span>
                 <Cpu className="w-3 h-3" />
                 <span>Engine</span>
               </div>
@@ -729,53 +631,32 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             </div>
           )}
 
-          {/* Reasoning effort 行（Codex 风格 Intelligence 子菜单的扁平化） */}
-          <div className="px-2 pt-1.5 pb-1 border-b border-zinc-700/50">
-            <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
-              <Zap className="w-3 h-3" />
-              <span>Reasoning effort</span>
+          <div className="border-b border-zinc-700/50">
+            <div className="flex items-center gap-1 px-3 pt-1.5 pb-1 text-[10px] text-zinc-500">
+              <span className="text-[9px] text-zinc-600">2</span>
+              <Code2 className="w-3 h-3" />
+              <span>Model</span>
             </div>
-            <div className="grid grid-cols-3 gap-1">
-              {EFFORT_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setEffortLevel(opt.value)}
-                  className={`
-                    px-1.5 py-1 text-[10px] rounded transition-colors
-                    ${effortLevel === opt.value
-                      ? `${opt.color} bg-zinc-700 font-medium`
-                      : 'text-zinc-500 hover:bg-zinc-700/50'}
-                  `}
-                  title={`Reasoning effort: ${opt.value}`}
-                >
-                  {opt.label}
-                </button>
-              ))}
+            <div className="px-2 pb-1.5">
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleMenuKeyDown}
+                placeholder="搜索模型..."
+                data-model-search-input
+                className="
+                  w-full px-2 py-1 text-xs
+                  bg-zinc-900 border border-zinc-700 rounded
+                  text-gray-200 placeholder-gray-500
+                  outline-none focus:border-zinc-600
+                "
+              />
             </div>
-          </div>
-
-          {/* 搜索框 */}
-          <div className="px-2 py-1.5">
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleMenuKeyDown}
-              placeholder="搜索模型..."
-              data-model-search-input
-              className="
-                w-full px-2 py-1 text-xs
-                bg-zinc-900 border border-zinc-700 rounded
-                text-gray-200 placeholder-gray-500
-                outline-none focus:border-zinc-600
-              "
-            />
-          </div>
-          <div className="max-h-64 overflow-y-auto">
-            {engine.kind === 'native' ? (
-              <>
+            <div className="max-h-64 overflow-y-auto pb-1">
+              {engine.kind === 'native' ? (
+                <>
                   <button
                     type="button"
                     onClick={handleSelectAuto}
@@ -784,134 +665,201 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                       w-full text-left px-3 py-1.5 text-xs
                       border-b border-zinc-700/50
                       hover:bg-zinc-700 transition-colors
-                    ${activeOptionIndex === 0 ? 'bg-zinc-700/80' : ''}
-                    ${overrideAdaptive ? 'text-primary-300' : 'text-gray-200'}
-                  `}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <Sparkles className="w-3 h-3 text-primary-400" />
-                    <span className="font-medium">自动</span>
-                    <span className="text-gray-500 text-[10px] ml-auto">按任务复杂度切换</span>
-                  </div>
-                </button>
-                {filteredOptions.length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-gray-500 text-center">
-                    无匹配模型
-                  </div>
-                ) : (
-                  groupedFilteredOptions.map((group) => (
-                    <div key={group.provider}>
-                      <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                        {group.providerLabel || getProviderDisplayName(group.provider) || group.provider}
-                      </div>
-                      {group.options.map(({ option: opt, index }) => {
-                        const selected = displayModel === opt.model && displayProvider === opt.provider;
-                        return (
-                          <button
-                            key={`${opt.provider}/${opt.model}`}
-                            type="button"
-                            onClick={() => handleSelect(opt)}
-                            data-model-option-index={index}
-                            className={`
-                              w-full text-left px-3 py-1.5 text-xs
-                              hover:bg-zinc-700 transition-colors
-                              ${activeOptionIndex === index ? 'bg-zinc-700/80' : ''}
-                              ${selected ? 'text-purple-400' : 'text-gray-300'}
-                            `}
-                          >
-                            <div className="flex items-center gap-1 flex-wrap">
-                              <span className="font-medium">{opt.label}</span>
-                              {opt.features.map((cap) => {
-                                const cfg = CAPABILITY_CONFIG[cap];
-                                if (!cfg) return null;
-                                return (
-                                  <span
-                                    key={cap}
-                                    className={`inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${cfg.color}`}
-                                    title={cap}
-                                  >
-                                    {cfg.icon}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                            <span className="text-gray-500 text-[10px] inline-flex items-center gap-1">
-                              {healthMap[opt.provider] && (
-                                <span
-                                  className={`inline-block w-1.5 h-1.5 rounded-full ${HEALTH_DOT_COLOR[healthMap[opt.provider].status] ?? 'bg-gray-400'}`}
-                                  title={`${healthMap[opt.provider].status} | P50: ${healthMap[opt.provider].latencyP50}ms | Error: ${(healthMap[opt.provider].errorRate * 100).toFixed(0)}%`}
-                                />
-                              )}
-                              {opt.model}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))
-                )}
-              </>
-            ) : !selectedEngineCatalog ? (
-              <div className="px-3 py-3 text-xs text-gray-500 text-center">
-                模型目录暂不可用
-              </div>
-            ) : filteredEngineModels.length === 0 ? (
-              <div className="px-3 py-3 text-xs text-gray-500 text-center">
-                无匹配模型
-              </div>
-            ) : (
-              filteredEngineModels.map((model, index) => {
-                const needsWorkspace = engine.kind !== 'native' && !effectiveWorkingDirectory;
-                const unavailableReason = selectedEngineDescriptor
-                  ? getEngineUnavailableReason(selectedEngineDescriptor, needsWorkspace)
-                  : null;
-                const disabled = Boolean(model.disabledReason || unavailableReason);
-                const selected = engine.model === model.id
-                  || (!engine.model && model.id === selectedEngineCatalog.defaultModel);
-                return (
-                  <button
-                    key={model.id}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => void handleSelectEngineModel(model)}
-                    data-model-option-index={index}
-                    title={model.disabledReason || unavailableReason || model.id}
-                    className={`
-                      w-full text-left px-3 py-1.5 text-xs transition-colors
-                      ${activeOptionIndex === index ? 'bg-zinc-700/80' : ''}
-                      ${selected ? 'text-purple-400' : disabled ? 'text-zinc-600 cursor-not-allowed' : 'text-gray-300 hover:bg-zinc-700'}
+                      ${activeOptionIndex === 0 ? 'bg-zinc-700/80' : ''}
+                      ${overrideAdaptive ? 'text-primary-300' : 'text-gray-200'}
                     `}
                   >
-                    <div className="flex items-center gap-1 flex-wrap">
-                      <span className="font-medium">{model.label}</span>
-                      {model.recommended ? (
-                        <span className="rounded bg-emerald-500/15 px-1 py-0.5 text-[10px] text-emerald-300">推荐</span>
-                      ) : null}
-                      {model.disabledReason ? (
-                        <span className="rounded bg-zinc-700/70 px-1 py-0.5 text-[10px] text-zinc-400">不可用</span>
-                      ) : null}
-                      {model.capabilities.map((cap) => {
-                        const cfg = CAPABILITY_CONFIG[cap];
-                        if (!cfg) return null;
-                        return (
-                          <span
-                            key={cap}
-                            className={`inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${cfg.color}`}
-                            title={cap}
-                          >
-                            {cfg.icon}
-                          </span>
-                        );
-                      })}
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className="w-3 h-3 text-primary-400" />
+                      <span className="font-medium">自动</span>
+                      <span className="text-gray-500 text-[10px] ml-auto">按任务复杂度切换</span>
                     </div>
-                    <span className="text-gray-500 text-[10px]">
-                      {model.id}
-                      {model.disabledReason ? ` · ${model.disabledReason}` : ''}
-                    </span>
                   </button>
-                );
-              })
-            )}
+                  {filteredOptions.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-gray-500 text-center">
+                      无匹配模型
+                    </div>
+                  ) : (
+                    groupedFilteredOptions.map((group) => (
+                      <div key={group.provider}>
+                        <div className="flex items-center gap-1.5 px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
+                          <ProviderLogo
+                            provider={group.provider}
+                            label={group.providerLabel || getProviderDisplayName(group.provider) || group.provider}
+                          />
+                          <span>{group.providerLabel || getProviderDisplayName(group.provider) || group.provider}</span>
+                          {group.providerSourceLabel && (
+                            <span
+                              className="ml-auto normal-case tracking-normal text-[10px] font-medium text-zinc-500"
+                              title={`来源: ${group.providerSourceLabel}`}
+                            >
+                              来源 {group.providerSourceLabel}
+                            </span>
+                          )}
+                        </div>
+                        {group.options.map(({ option: opt, index }) => {
+                          const selected = displayModel === opt.model && displayProvider === opt.provider;
+                          return (
+                            <button
+                              key={`${opt.provider}/${opt.model}`}
+                              type="button"
+                              onClick={() => handleSelect(opt)}
+                              data-model-option-index={index}
+                              className={`
+                                w-full text-left px-3 py-1.5 text-xs
+                                hover:bg-zinc-700 transition-colors
+                                ${activeOptionIndex === index ? 'bg-zinc-700/80' : ''}
+                                ${selected ? 'text-purple-400' : 'text-gray-300'}
+                              `}
+                            >
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <span className="font-medium">{opt.label}</span>
+                                {opt.features.map((cap) => {
+                                  const cfg = CAPABILITY_CONFIG[cap];
+                                  if (!cfg) return null;
+                                  return (
+                                    <span
+                                      key={cap}
+                                      className={`inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${cfg.color}`}
+                                      title={cap}
+                                    >
+                                      {cfg.icon}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                              <span className="text-gray-500 text-[10px] inline-flex items-center gap-1">
+                                {healthMap[opt.provider] && (
+                                  <span
+                                    className={`inline-block w-1.5 h-1.5 rounded-full ${HEALTH_DOT_COLOR[healthMap[opt.provider].status] ?? 'bg-gray-400'}`}
+                                    title={`${healthMap[opt.provider].status} | P50: ${healthMap[opt.provider].latencyP50}ms | Error: ${(healthMap[opt.provider].errorRate * 100).toFixed(0)}%`}
+                                  />
+                                )}
+                                {opt.model}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))
+                  )}
+                </>
+              ) : !selectedEngineCatalog ? (
+                <div className="px-3 py-3 text-xs text-gray-500 text-center">
+                  模型目录暂不可用
+                </div>
+              ) : filteredEngineModels.length === 0 ? (
+                <div className="px-3 py-3 text-xs text-gray-500 text-center">
+                  无匹配模型
+                </div>
+              ) : (
+                filteredEngineModels.map((model, index) => {
+                  const needsWorkspace = engine.kind !== 'native' && !effectiveWorkingDirectory;
+                  const unavailableReason = selectedEngineDescriptor
+                    ? getEngineUnavailableReason(selectedEngineDescriptor, needsWorkspace)
+                    : null;
+                  const disabled = Boolean(model.disabledReason || unavailableReason);
+                  const selected = engine.model === model.id
+                    || (!engine.model && model.id === selectedEngineCatalog.defaultModel);
+                  return (
+                    <button
+                      key={model.id}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => void handleSelectEngineModel(model)}
+                      data-model-option-index={index}
+                      title={model.disabledReason || unavailableReason || model.id}
+                      className={`
+                        w-full text-left px-3 py-1.5 text-xs transition-colors
+                        ${activeOptionIndex === index ? 'bg-zinc-700/80' : ''}
+                        ${selected ? 'text-purple-400' : disabled ? 'text-zinc-600 cursor-not-allowed' : 'text-gray-300 hover:bg-zinc-700'}
+                      `}
+                    >
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="font-medium">{model.label}</span>
+                        {model.disabledReason ? (
+                          <span className="rounded bg-zinc-700/70 px-1 py-0.5 text-[10px] text-zinc-400">不可用</span>
+                        ) : null}
+                        {model.capabilities.map((cap) => {
+                          const cfg = CAPABILITY_CONFIG[cap];
+                          if (!cfg) return null;
+                          return (
+                            <span
+                              key={cap}
+                              className={`inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${cfg.color}`}
+                              title={cap}
+                            >
+                              {cfg.icon}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      <span className="text-gray-500 text-[10px]">
+                        {model.id}
+                        {model.disabledReason ? ` · ${model.disabledReason}` : ''}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {supportsThinkingControls && (
+            <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
+              <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
+                <span className="text-[9px] text-zinc-600">3</span>
+                <Brain className="w-3 h-3" />
+                <span>Thinking</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                {[
+                  { value: false, label: 'Off' },
+                  { value: true, label: 'On' },
+                ].map((option) => (
+                  <button
+                    key={option.label}
+                    type="button"
+                    onClick={() => setThinkingEnabled(option.value)}
+                    className={`
+                      inline-flex h-7 items-center justify-center rounded px-2 text-[10px] transition-colors
+                      ${thinkingEnabled === option.value
+                        ? 'text-amber-300 bg-amber-500/15 font-medium ring-1 ring-zinc-600/70'
+                        : 'text-zinc-500 hover:bg-zinc-700/50'}
+                    `}
+                    title={`Thinking: ${option.label}`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
+            <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
+              <span className="text-[9px] text-zinc-600">{supportsThinkingControls ? '4' : '3'}</span>
+              <Zap className="w-3 h-3" />
+              <span>Effort</span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {effortOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setEffortLevel(opt.value)}
+                  className={`
+                    inline-flex h-7 min-w-[3.8rem] items-center justify-center rounded px-2 text-[10px] transition-colors
+                    ${selectedEffort.value === opt.value
+                      ? `${opt.color} ${opt.tint} font-medium ring-1 ring-zinc-600/70`
+                      : 'text-zinc-500 hover:bg-zinc-700/50'}
+                  `}
+                  title={`Effort: ${opt.label}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
       {engine.kind === 'native' && isOverridden && (
         <>
@@ -937,7 +885,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         aria-label="切换模型"
         aria-expanded={open}
         className={`
-          font-medium cursor-pointer truncate max-w-[200px]
+          font-medium cursor-pointer truncate max-w-[260px]
           hover:text-white transition-colors
           ${isOverridden ? 'text-amber-400' : 'text-zinc-100'}
         `}
@@ -951,12 +899,17 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               : `当前: ${currentModel} · Engine: ${ENGINE_SHORT_LABEL[engine.kind]}`
         }
       >
-        <span className="text-zinc-400">{ENGINE_SHORT_LABEL[engine.kind] ?? 'Agent Neo'}</span>
+        <span className="text-zinc-400">{ENGINE_SHORT_LABEL[engine.kind] ?? 'Neo'}</span>
         <span className="text-zinc-500 mx-1">·</span>
         {displayLabel}
         <span className="text-zinc-500 ml-1">·</span>
-        <span className="text-zinc-400 ml-0.5">{effortShort}</span>
-        {isOverridden && <span className="text-[9px] ml-0.5">*</span>}
+        {thinkingShortLabel && (
+          <>
+            <span className="text-zinc-400 ml-0.5">{thinkingShortLabel}</span>
+            <span className="text-zinc-500 ml-1">·</span>
+          </>
+        )}
+        <span className="text-zinc-400 ml-0.5">{selectedEffort.shortLabel}</span>
       </button>
       {menu && createPortal(menu, document.body)}
     </>

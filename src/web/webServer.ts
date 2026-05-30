@@ -15,7 +15,7 @@
 import './webEnvInit';
 
 // Platform 模块替代 electron mock
-import { handlers, ipcMain as mockIpcMain, BrowserWindow, onRendererPush, type HandlerFn } from '../main/platform';
+import { handlers, ipcMain as mockIpcMain, BrowserWindow, onRendererPush } from '../main/platform';
 
 import http from 'http';
 import os from 'os';
@@ -33,10 +33,16 @@ import { initPostHogNode } from '../main/observability/posthogNode';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../shared/ipc';
 import { resolveSessionDefaultModelConfig } from '../main/services/core/sessionDefaults';
 import { getModelSessionState } from '../main/session/modelSessionState';
-import type { AuthStatus, AuthUser, ModelProvider, PermissionResponse, Session } from '../shared/contract';
-import type { MCPServerConfig } from '../main/mcp/mcpClient';
+import type { ModelProvider, PermissionResponse, Session } from '../shared/contract';
 import type { SwarmTraceRepo } from '../shared/contract/swarmTrace';
 import type { PendingApprovalRepository } from '../main/services/core/repositories/PendingApprovalRepository';
+import { installLocalWebAuthStatusHandler } from './webLocalAuth';
+import {
+  initializeWebPluginSystem as initializeWebPluginSystemCore,
+  startWebCapabilityBootstrap as startWebCapabilityBootstrapCore,
+  type ConfigServiceForBootstrap,
+  type WebCapabilityBootstrapOptions,
+} from './webCapabilityBootstrap';
 
 const logger = createLogger('WebServer');
 
@@ -47,41 +53,16 @@ initCrashMarker();
 // PostHog 产品行为埋点（无 POSTHOG_KEY 时 no-op）
 initPostHogNode();
 
-const LOCAL_WEB_AUTH_TEST_USER: AuthUser = {
-  id: 'local-web-test-user',
-  email: 'local-web-test-user@code-agent.local',
-  username: 'local-web-test-user',
-  nickname: 'Local Web Test User',
-  isAdmin: true,
-};
+export {
+  getLocalWebAuthStatus,
+  installLocalWebAuthStatusHandler,
+  shouldUseLocalWebAuthStatus,
+} from './webLocalAuth';
 
-type DomainIpcRequest = {
-  action: string;
-  payload?: unknown;
-  requestId?: string;
-};
-
-type WorkspaceSettingsForBootstrap = {
-  defaultOpenTarget?: string;
-  pinnedDirectory?: string;
-  recentDirectories?: string[];
-  defaultDirectory?: string;
-};
-
-type SupabaseSettingsForBootstrap = {
-  url?: string;
-  anonKey?: string;
-};
-
-type ConfigServiceForBootstrap = {
-  getSettings: () => {
-    mcp?: {
-      servers?: MCPServerConfig[];
-    };
-    workspace?: WorkspaceSettingsForBootstrap;
-    supabase?: SupabaseSettingsForBootstrap;
-  };
-};
+export type {
+  ConfigServiceForBootstrap,
+  WebCapabilityBootstrapOptions,
+} from './webCapabilityBootstrap';
 
 type SessionDomainPayload = {
   sessionId?: string;
@@ -105,8 +86,6 @@ type SessionDomainIpcRequest = {
 type SkillReloadStats = {
   total: number;
 };
-
-type DomainAuthHandler = (event: unknown, request?: DomainIpcRequest) => unknown | Promise<unknown>;
 
 type PermissionResponseHandler = (
   event: unknown,
@@ -279,88 +258,21 @@ async function initializeWebMcpServices(configService: ConfigServiceForBootstrap
   }
 }
 
-async function initializeWebPluginSystem(): Promise<void> {
-  try {
-    const { initPluginSystem } = await import('../main/plugins');
-    await initPluginSystem();
-    logger.info('Plugin system initialized');
-    broadcastSSE('mcp:event', {
-      type: 'capabilities_changed',
-      data: [{ server: 'plugins' }],
-    });
-  } catch (error) {
-    logger.warn('Plugin system initialization failed (non-blocking):', (error as Error).message);
-  }
+export async function initializeWebPluginSystem(): Promise<void> {
+  await initializeWebPluginSystemCore({ logger, broadcastSSE });
 }
-
-export type WebCapabilityBootstrapOptions = {
-  initializeSkills?: (configService: ConfigServiceForBootstrap) => Promise<void>;
-  initializeMcp?: (configService: ConfigServiceForBootstrap) => Promise<void>;
-  initializePlugins?: () => Promise<void>;
-};
 
 export function startWebCapabilityBootstrap(
   configService: ConfigServiceForBootstrap,
   options: WebCapabilityBootstrapOptions = {},
 ): void {
-  const initializeSkills = options.initializeSkills ?? initializeWebSkillServices;
-  const initializeMcp = options.initializeMcp ?? initializeWebMcpServices;
-  const initializePlugins = options.initializePlugins ?? initializeWebPluginSystem;
-
-  void (async () => {
-    logger.info('Starting web capability bootstrap in background');
-    await initializePlugins();
-    await initializeSkills(configService);
-    await initializeMcp(configService);
-    logger.info('Web capability bootstrap complete');
-  })().catch((error) => {
-    logger.warn('Web capability bootstrap failed (non-blocking):', (error as Error).message);
+  startWebCapabilityBootstrapCore(configService, {
+    initializeSkills: initializeWebSkillServices,
+    initializeMcp: initializeWebMcpServices,
+    initializePlugins: initializeWebPluginSystem,
+    logger,
+    ...options,
   });
-}
-
-export function shouldUseLocalWebAuthStatus(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_E2E === '1' || env.CODE_AGENT_ENABLE_DEV_API === 'true';
-}
-
-export function getLocalWebAuthStatus(): AuthStatus {
-  return {
-    isAuthenticated: true,
-    user: { ...LOCAL_WEB_AUTH_TEST_USER },
-    isLoading: false,
-  };
-}
-
-export function installLocalWebAuthStatusHandler(
-  handlerMap: Map<string, HandlerFn>,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  if (!shouldUseLocalWebAuthStatus(env)) {
-    return false;
-  }
-
-  const originalAuthHandler = handlerMap.get(IPC_DOMAINS.AUTH) as DomainAuthHandler | undefined;
-  handlerMap.set(IPC_DOMAINS.AUTH, async (event: unknown, request?: DomainIpcRequest) => {
-    if (request?.action === 'getStatus') {
-      return {
-        success: true,
-        data: getLocalWebAuthStatus(),
-      };
-    }
-
-    if (originalAuthHandler) {
-      return originalAuthHandler(event, request);
-    }
-
-    return {
-      success: false,
-      error: {
-        code: 'AUTH_HANDLER_UNAVAILABLE',
-        message: 'Auth handler unavailable in local web auth mode',
-      },
-    };
-  });
-
-  return true;
 }
 
 // ============================================================================
@@ -934,7 +846,7 @@ function createApp(): express.Express {
   app.get('/api/screenshot', handleScreenshot);
 
   // ── Dev routes (workspace/file, dev/exec-tool, dev/smoke/office) ────
-  app.use('/api', createDevRouter({ pendingDevPermissions, logger }));
+  app.use('/api', createDevRouter({ pendingDevPermissions, activeAgentLoops, logger }));
 
   // ── Shared helpers for agent & session routes ──────────────────────
 

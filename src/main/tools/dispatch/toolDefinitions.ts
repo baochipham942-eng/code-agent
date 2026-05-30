@@ -19,7 +19,7 @@
 
 import type { ToolDefinition } from '../../../shared/contract';
 import type { ToolSchema, PermissionLevel } from '../../protocol/tools';
-import { getProtocolRegistry } from '../protocolRegistry';
+import { getProtocolToolSchemas } from '../protocolToolRegistration';
 import { getCloudConfigService } from '../../services/cloud';
 import { getMCPClient } from '../../mcp';
 import { CORE_TOOLS, DEFERRED_TOOLS_META } from '../../services/toolSearch/deferredTools';
@@ -67,12 +67,10 @@ function schemaToDefinition(
  * 其他工具需要通过 tool_search 发现和加载。
  */
 export function getCoreToolDefinitions(): ToolDefinition[] {
-  const registry = getProtocolRegistry();
   const cloudToolMeta = getCloudConfigService().getAllToolMeta();
   const core = new Set(CORE_TOOLS);
 
-  return registry
-    .getSchemas()
+  return getProtocolToolSchemas()
     .filter((schema) => core.has(schema.name))
     .map((schema) => schemaToDefinition(schema, cloudToolMeta));
 }
@@ -83,12 +81,10 @@ export function getCoreToolDefinitions(): ToolDefinition[] {
  * 延迟工具不会默认发送给模型，需要通过 tool_search 加载后才可用。
  */
 export function getDeferredToolDefinitions(): ToolDefinition[] {
-  const registry = getProtocolRegistry();
   const cloudToolMeta = getCloudConfigService().getAllToolMeta();
   const core = new Set(CORE_TOOLS);
 
-  return registry
-    .getSchemas()
+  return getProtocolToolSchemas()
     .filter((schema) => !core.has(schema.name))
     .map((schema) => schemaToDefinition(schema, cloudToolMeta));
 }
@@ -99,7 +95,6 @@ export function getDeferredToolDefinitions(): ToolDefinition[] {
  * 只返回已通过 tool_search 加载的延迟工具。
  */
 export function getLoadedDeferredToolDefinitions(): ToolDefinition[] {
-  const registry = getProtocolRegistry();
   const toolSearchService = getToolSearchService();
   const core = new Set(CORE_TOOLS);
   const loadedNames = new Set(
@@ -107,8 +102,7 @@ export function getLoadedDeferredToolDefinitions(): ToolDefinition[] {
   );
   const cloudToolMeta = getCloudConfigService().getAllToolMeta();
 
-  const protocolDefinitions = registry
-    .getSchemas()
+  const protocolDefinitions = getProtocolToolSchemas()
     .filter((schema) => loadedNames.has(schema.name))
     .map((schema) => schemaToDefinition(schema, cloudToolMeta));
 
@@ -145,8 +139,7 @@ export function getDeferredToolsSummary(): string {
  * @returns ToolDefinition 或 undefined（未注册）
  */
 export function getToolDefinitionWithCloudMeta(name: string): ToolDefinition | undefined {
-  const registry = getProtocolRegistry();
-  const schemas = registry.getSchemas();
+  const schemas = getProtocolToolSchemas();
   const schema = findSchemaByName(schemas, name);
   if (!schema) {
     return getMCPClient().getToolDefinitions().find((definition) => definition.name === name);
@@ -159,10 +152,9 @@ export function getToolDefinitionWithCloudMeta(name: string): ToolDefinition | u
  * 获取全部已注册工具的定义（core + deferred 全集，带 cloud meta）
  */
 export function getAllToolDefinitions(): ToolDefinition[] {
-  const registry = getProtocolRegistry();
   const cloudToolMeta = getCloudConfigService().getAllToolMeta();
   return [
-    ...registry.getSchemas().map((schema) => schemaToDefinition(schema, cloudToolMeta)),
+    ...getProtocolToolSchemas().map((schema) => schemaToDefinition(schema, cloudToolMeta)),
     ...getMCPClient().getToolDefinitions(),
   ];
 }

@@ -165,6 +165,14 @@ fn web_server_runtime_env(
     values
 }
 
+fn web_server_node_env() -> &'static str {
+    if cfg!(debug_assertions) {
+        "development"
+    } else {
+        "production"
+    }
+}
+
 fn is_server_running() -> bool {
     let client = match Client::builder().timeout(Duration::from_secs(2)).build() {
         Ok(c) => c,
@@ -302,6 +310,7 @@ fn spawn_web_server(app: &tauri::AppHandle) -> Result<(Child, String), String> {
         .current_dir(&working_dir)
         .envs(env::vars())
         .env("CODE_AGENT_TAURI_BOOT_TOKEN", &boot_token)
+        .env("NODE_ENV", web_server_node_env())
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
@@ -794,7 +803,8 @@ fn open_update_url(url: String) -> Result<(), String> {
 #[cfg(test)]
 mod runtime_env_tests {
     use super::{
-        bundled_node_candidates, web_server_runtime_env, BUNDLED_RUNTIME_ROOT_ENV, RESOURCE_DIR_ENV,
+        bundled_node_candidates, web_server_node_env, web_server_runtime_env,
+        BUNDLED_RUNTIME_ROOT_ENV, RESOURCE_DIR_ENV,
     };
     use std::path::Path;
 
@@ -830,6 +840,15 @@ mod runtime_env_tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn web_server_node_env_matches_build_profile() {
+        #[cfg(debug_assertions)]
+        assert_eq!(web_server_node_env(), "development");
+
+        #[cfg(not(debug_assertions))]
+        assert_eq!(web_server_node_env(), "production");
     }
 
     #[test]

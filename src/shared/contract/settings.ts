@@ -32,6 +32,7 @@ export interface ModelProviderSettings {
   displayName?: string;
   temperature?: number;
   maxTokens?: number;
+  updatedAt?: number;
   /** 该 provider 的最大并发请求数。留空/0 = 不限流（沿用内置默认，未声明则完全放行）。
    *  填正数则启用自适应并发限流器（命中 429 自动降级，5 分钟无限流后逐步恢复）。 */
   maxConcurrent?: number;
@@ -72,9 +73,6 @@ export interface AppSettings {
     complex: number;
     /** 自定义超时（毫秒），用户可手动设置 */
     custom?: number;
-  };
-  generation: {
-    default?: string;
   };
   workspace: {
     defaultDirectory?: string;

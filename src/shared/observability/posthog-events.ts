@@ -5,6 +5,9 @@ export const POSTHOG_EVENTS = {
   RUN_COMPLETED: 'run_completed',
   RUN_FAILED: 'run_failed',
   RUN_CANCELLED: 'run_cancelled',
+  RUN_INTERRUPTED: 'run_interrupted',
+  RUN_ABORTED: 'run_aborted',
+  RUN_GOAL_MET: 'run_goal_met',
   TOOL_USED: 'tool_used',
   MODEL_SELECTED: 'model_selected',
 } as const;

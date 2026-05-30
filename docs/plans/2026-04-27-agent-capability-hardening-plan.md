@@ -33,11 +33,17 @@
 
 真实运行层剩余风险：
 
-- 长 run pause/resume 的真实 app smoke。
-- UI cancel 长 Bash/http_request 的真实执行终止 smoke。
-- Agent Team 多 agent 端到端消息、取消、依赖 smoke。
-- app restart / reload 后 task、todo、context intervention、manual compact 恢复 smoke。
-- auto-agent + replay + eval 的真实链路 smoke。
+- 外部模型 auto-agent full-stack 成本链路暂不塞进固定 smoke；核心 replay/eval 证据链已由本地 E2E 模型覆盖。
+
+Auto-agent replay/eval 已补固定真实链路 smoke：`npm run acceptance:real-agent-replay-eval` 覆盖真实 `AgentLoop`、真实 `Read` 工具执行、telemetry model/tool/event/schema 落盘、structured replay 回读，以及 `TestRunner` 的 `real-agent-run` gate 通过。
+
+Agent Team 已补固定 app-host smoke：`npm run acceptance:agent-team` 覆盖真实 `ParallelAgentCoordinator` 的 dependsOn failure gate、运行中 parent message drain、run-level cancel 后 running/pending cancelled。剩余只是真实外部模型 subagent full-stack 成本链路，不按高优先级技术债计。
+
+manual compact 已拆层补齐真实 smoke：`npm run acceptance:manual-compact` 覆盖真实 app-host `/api/context/compact-current` 触发 compact model boundary、生成 compaction block、替换会话消息并写入 runtime compression state；`npm run acceptance:session-persistence` 覆盖 session、session-scoped task、todo、context intervention、compact message/runtime compression state、replay key 的真实 app-host restart 读回。剩余只是不把执行和 reload 读回塞进同一条 full-stack 脚本，不按高优先级技术债计。
+
+长 run pause/resume 已有固定 app-host smoke：`npm run acceptance:pause-resume` 覆盖 `/api/pause`、`/api/resume` 对同一个 active loop 的暂停和恢复；`ConversationRuntime` 的等待态由 unit test 覆盖。剩余只是真实模型长跑 full-stack 脚本，不按高优先级技术债计。
+
+UI cancel 已拆层补齐真实 smoke：`npm run acceptance:agent-runtime-app-host` 覆盖 renderer 停止按钮 click 到 app-host cancel route；`npm run acceptance:tool-cancel` 覆盖长 Bash/http_request 的真实工具终止。剩余只是不把 UI click 和真实长工具塞进同一条 full-stack 脚本，不按高优先级技术债计。
 
 对应细项以 `docs/plans/2026-04-27-agent-capability-p1-plan.md` 和 `docs/plans/2026-04-27-agent-capability-p2-plan.md` 的 Closing 状态为准；结构性收敛看 `docs/plans/2026-04-27-agent-architecture-debt.md`。
 

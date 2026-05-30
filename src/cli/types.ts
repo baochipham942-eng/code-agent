@@ -15,7 +15,6 @@ import type { GoalContract } from '../main/agent/goalModeController';
 export interface CLIGlobalOptions {
   project: string;
   json: boolean;
-  gen: string;
   model?: string;
   provider?: string;
   plan?: boolean;

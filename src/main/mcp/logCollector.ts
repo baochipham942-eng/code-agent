@@ -5,6 +5,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from '../platform';
+import { redactSecrets, sanitizeLogValue } from '../security/secretRedaction';
 
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
 export type LogSource = 'browser' | 'agent' | 'tool';
@@ -208,12 +209,16 @@ class LogCollector {
    * Add a log entry
    */
   log(source: LogSource, level: LogLevel, message: string, metadata?: Record<string, unknown>): void {
+    const safeMessage = redactSecrets(message);
+    const safeMetadata = metadata
+      ? sanitizeLogValue(metadata) as Record<string, unknown>
+      : undefined;
     const entry: LogEntry = {
       timestamp: new Date(),
       source,
       level,
-      message,
-      metadata,
+      message: safeMessage,
+      metadata: safeMetadata,
     };
 
     const logs = this.getLogsArray(source);
@@ -230,7 +235,7 @@ class LogCollector {
     // Console output for debugging (skip in CLI mode to avoid polluting chat output)
     if (!this.isCLI) {
       const timeStr = entry.timestamp.toISOString().split('T')[1].split('.')[0];
-      console.error(`[LogCollector][${source}][${level}] ${timeStr} - ${message}`);
+      console.error(`[LogCollector][${source}][${level}] ${timeStr} - ${entry.message}`);
     }
   }
 

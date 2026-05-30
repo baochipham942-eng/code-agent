@@ -3,7 +3,7 @@
 // ============================================================================
 
 /**
- * Normalize semantic aliases used by different protocol generations.
+ * Normalize semantic aliases used by different protocol surfaces.
  *
  * The protocol schema exposes `Bash`, while older permission paths and tests
  * still use `bash`. Keep this helper deliberately narrow so unrelated tool names

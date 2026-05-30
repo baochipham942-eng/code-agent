@@ -64,7 +64,6 @@ function makeSettings(): AppSettings {
         gui: { provider: 'openai', model: 'gpt-4o' },
       },
     },
-    generation: {},
     workspace: { recentDirectories: [] },
     permissions: {
       autoApprove: {},

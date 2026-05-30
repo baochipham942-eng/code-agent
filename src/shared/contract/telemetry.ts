@@ -212,7 +212,6 @@ export interface TelemetrySession {
   id: string;
   userId?: string | null;
   title: string;
-  generationId: string;
   modelProvider: string;
   modelName: string;
   workingDirectory: string;
@@ -231,6 +230,33 @@ export interface TelemetrySession {
   totalErrors: number;
   sessionType?: UserIntentCategory; // dominant intent
   status: 'recording' | 'completed' | 'error';
+}
+
+export interface TelemetryFeedback {
+  id: string;
+  sessionId: string;
+  turnId?: string | null;
+  messageId?: string | null;
+  rating: 1 | -1;
+  comment?: string | null;
+  fullContent?: unknown;
+  createdAt: number;
+  syncedAt?: number | null;
+}
+
+export interface TelemetryFeedbackSubmitRequest {
+  sessionId: string;
+  turnId?: string | null;
+  messageId?: string | null;
+  rating: 1 | -1;
+  comment?: string | null;
+  fullContent?: unknown;
+}
+
+export interface TelemetryFeedbackSubmitResult {
+  success: boolean;
+  feedbackId?: string;
+  error?: string;
 }
 
 // ----------------------------------------------------------------------------

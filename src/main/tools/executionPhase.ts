@@ -141,6 +141,6 @@ export function classifyExecutionPhase(toolName: string): ExecutionPhase {
   }
 
   // Planning / interaction tools → other
-  // confirm_action, enter_plan_mode, exit_plan_mode, AskUserQuestion, fork_session, auto_learn, plan_review
+  // confirm_action, enter_plan_mode, exit_plan_mode, AskUserQuestion, auto_learn, plan_review
   return 'other';
 }

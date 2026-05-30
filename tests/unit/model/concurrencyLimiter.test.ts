@@ -46,8 +46,12 @@ describe('getProviderLimiter', () => {
     expect(getProviderLimiter('zhipu')).toBeInstanceOf(ConcurrencyLimiter);
   });
 
-  it('为未声明的 provider（xiaomi）返回 null', () => {
-    expect(getProviderLimiter('xiaomi')).toBeNull();
+  it('为声明了默认并发上限的 provider（xiaomi）返回限流器', () => {
+    expect(getProviderLimiter('xiaomi')).toBeInstanceOf(ConcurrencyLimiter);
+  });
+
+  it('为未声明的 provider 返回 null', () => {
+    expect(getProviderLimiter('unknown-provider')).toBeNull();
   });
 
   it('空 provider 返回 null', () => {

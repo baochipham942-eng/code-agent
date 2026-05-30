@@ -6,8 +6,8 @@
 //   <storageDir>/<YYYY-MM-DDTHHmmss>__<runId>.jsonl
 //
 // Entry 类型：run_started / agent_upserted / event / run_closed。
-// 写入由外层 SwarmTraceWriter 已经串行化（pendingPersist Promise 链）+
-// 单 in-process active run 假设保证；本 repo 内部不加锁、不开异步。
+// 写入由外层 SwarmTraceWriter 串行化（pendingPersist Promise 链），并且
+// 每条记录都携带 runId；本 repo 内部不加锁、不开异步。
 //
 // 读取通过对 jsonl 逐行 parse + 内存回放还原 SwarmRunRecord/agents/events。
 // listRuns 走目录扫描，不维护单独 index 文件（与 Pi 一致）。
@@ -490,7 +490,7 @@ export class FileSwarmTraceRepository implements SwarmTraceRepo {
 
   private readRunDetail(filePath: string): SwarmRunDetail | null {
     const replay = this.replayFile(filePath);
-    if (!replay || !replay.started) return null;
+    if (!replay?.started) return null;
     const { started, closed, agentLatest, events } = replay;
 
     // 推导未 closed 时的 totals

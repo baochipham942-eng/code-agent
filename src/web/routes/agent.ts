@@ -42,6 +42,7 @@ import {
   AgentRunBodySchema,
   AgentToolResultBodySchema,
 } from './agentBodySchemas';
+import { registerAgentLifecycleControlRoutes } from './agentLifecycleControls';
 import type {
   AgentSessionManagerLike,
   SupabaseAgentBinding,
@@ -70,6 +71,8 @@ const LOCAL_TOOL_TIMEOUT_MS = 120_000; // 2 分钟超时
 
 export interface ActiveAgentLoop {
   cancel(reason?: string): void | Promise<void>;
+  pause?(): void | Promise<void>;
+  resume?(): void | Promise<void>;
   steer?(
     newMessage: string,
     clientMessageId?: string,
@@ -285,7 +288,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
 
     const body = parsedBody.data;
-    const { prompt, project, sessionDir, model, provider, generation } = body;
+    const { prompt, project, sessionDir, model, provider } = body;
     const clientMessageId = body.clientMessageId?.trim()
       ? body.clientMessageId.trim()
       : undefined;
@@ -475,7 +478,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       const agent = await createCLIAgent({
         project: resolvedProject,
-        gen: generation,
         model: effectiveModel,
         provider: effectiveProvider,
         json: true,
@@ -1043,6 +1045,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       res.json({ message: 'No active agent to cancel' });
     }
   });
+
+  registerAgentLifecycleControlRoutes(router, activeAgentLoops);
 
   router.post('/interrupt', async (req: Request, res: Response) => {
     const rawBody: unknown = req.body;

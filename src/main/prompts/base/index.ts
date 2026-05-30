@@ -2,4 +2,4 @@
 // Base Prompts Index
 // ============================================================================
 
-export { TOOLS_PROMPT } from './gen8';
+export { TOOLS_PROMPT } from './tools';

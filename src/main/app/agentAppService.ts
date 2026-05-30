@@ -704,6 +704,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     orchestrator.setEffortLevel(normalizeAgentEffortLevel(level));
   }
 
+  setThinkingEnabled(enabled: boolean): void {
+    const orchestrator = this.getOrchestratorOrThrow();
+    orchestrator.setThinkingEnabled(enabled);
+  }
+
   // === Interaction Mode ===
 
   setInteractionMode(mode: import('../../shared/contract/agent').InteractionMode): void {

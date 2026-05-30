@@ -3,8 +3,8 @@
 // ============================================================================
 
 import type { Tool } from '../tools/types';
-import { getProtocolRegistry } from '../tools/protocolRegistry';
 import { wrapLegacyTool } from '../tools/modules/_helpers/legacyAdapter';
+import { registerProtocolTool, unregisterProtocolTool } from '../tools/protocolToolRegistration';
 import type { ToolCategory, ToolModule } from '../protocol/tools';
 import type {
   LoadedPlugin,
@@ -329,7 +329,7 @@ export class PluginRegistry {
           category,
           permissionLevel: prefixedTool.permissionLevel,
         });
-        getProtocolRegistry().register(wrapped.schema, async () => wrapped);
+        registerProtocolTool(wrapped.schema, async () => wrapped);
         pluginTools.push(prefixedTool.name);
         plugin.registeredTools.push(prefixedTool.name);
         logger.info(`Plugin ${plugin.manifest.id} registered tool: ${prefixedTool.name}`);
@@ -337,7 +337,7 @@ export class PluginRegistry {
 
       unregisterTool: (toolName: string) => {
         const prefixedName = `${plugin.manifest.id}:${toolName}`;
-        getProtocolRegistry().unregister(prefixedName);
+        unregisterProtocolTool(prefixedName);
         const idx = plugin.registeredTools.indexOf(prefixedName);
         if (idx !== -1) {
           plugin.registeredTools.splice(idx, 1);
@@ -451,7 +451,7 @@ export class PluginRegistry {
           throw new Error(`Tool ${finalName} already registered`);
         }
         // ToolLoader 签名要求返回 Promise<ToolModule>，registry 内部首次解析时再调 createHandler
-        getProtocolRegistry().register(finalModule.schema, async () => finalModule);
+        registerProtocolTool(finalModule.schema, async () => finalModule);
         plugin.registeredTools.push(finalName);
         logger.info(`Plugin ${plugin.manifest.id} registered tool module: ${finalName}`);
       },
@@ -523,7 +523,7 @@ export class PluginRegistry {
 
       // Unregister all tools
       for (const toolName of plugin.registeredTools) {
-        getProtocolRegistry().unregister(toolName);
+        unregisterProtocolTool(toolName);
       }
       plugin.registeredTools = [];
 

@@ -50,7 +50,7 @@ describe('E2E Security Scenarios', () => {
       //
       // const result = await toolExecutor.execute('bash', {
       //   command: 'echo "OPENAI_API_KEY=sk-secret123"',
-      // }, { generation: 'gen4', sessionId: session.id });
+      // }, { sessionId: session.id });
       //
       // const auditLogs = mockDb.getAuditLog({ sessionId: session.id });
       // expect(auditLogs[0].output).toContain('***REDACTED***');

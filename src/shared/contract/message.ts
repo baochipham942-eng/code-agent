@@ -211,7 +211,7 @@ export interface Message {
   source?: MessageSource;
   // 推理模型的思考过程 (glm-4.7 等)
   reasoning?: string;
-  // Subagent 追踪（Gen7+）
+  // Subagent 追踪
   /** 父工具调用 ID，用于标识消息来自哪个 subagent */
   parentToolUseId?: string;
   /** Subagent 消息子类型 */
@@ -221,7 +221,7 @@ export interface Message {
   // Adaptive Thinking（交错思考）
   thinking?: string;
   // Effort 级别（Adaptive Thinking 思考深度）
-  effortLevel?: 'low' | 'medium' | 'high' | 'max';
+  effortLevel?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra_code';
   // Token usage from API response
   inputTokens?: number;
   outputTokens?: number;

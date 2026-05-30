@@ -1,12 +1,12 @@
 // ============================================================================
-// Built-in Agent Types - Type-safe definitions for Gen7 multi-agent system
+// Built-in Agent Types - Type-safe definitions for the multi-agent system
 // ============================================================================
 
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../constants';
 
 /**
  * 6 个内置 Agent 角色
- * 这是 Gen7 多代理系统的核心角色集
+ * 这是多代理系统的核心角色集
  */
 export type BuiltInAgentRole =
   | 'coder'

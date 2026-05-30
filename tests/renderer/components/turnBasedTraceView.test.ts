@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { TraceProjection, TraceTurn } from '../../../src/shared/contract/trace';
 import {
   ACTIVE_DISPLAY_SCROLL_INTERVAL_MS,
+  USER_SCROLL_PROGRAMMATIC_PAUSE_MS,
   getActiveDisplayScrollDelay,
   getActiveAssistantTextAnchor,
   getFocusedTurnIndex,
@@ -9,7 +10,12 @@ import {
   getTurnOutputRevision,
   getTraceNodeSelector,
   getTraceTurnSelector,
+  getUserScrollSuppressionUntil,
+  isProgrammaticScrollSuppressed,
   isScrollerNearBottom,
+  shouldStopFollowingForKeyboardScroll,
+  shouldStopFollowingForTouchMove,
+  shouldStopFollowingForWheel,
   shouldFollowTurnOutput,
   shouldShowTurnTimeSeparator,
 } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
@@ -59,7 +65,7 @@ describe('TurnBasedTraceView focus helpers', () => {
 
   it('does not force bottom-follow when the viewport is away from the bottom', () => {
     expect(shouldFollowTurnOutput(false)).toBe(false);
-    expect(shouldFollowTurnOutput(true)).toBe('smooth');
+    expect(shouldFollowTurnOutput(true)).toBe('auto');
   });
 
   it('treats short or near-bottom scrollers as bottom anchored', () => {
@@ -71,6 +77,32 @@ describe('TurnBasedTraceView focus helpers', () => {
   it('keeps the active output visible after the view programmatically focused a new turn', () => {
     expect(shouldFollowTurnOutput(false, true)).toBe('auto');
     expect(shouldFollowTurnOutput(true, true)).toBe('auto');
+  });
+
+  it('pauses programmatic follow while the user is actively scrolling', () => {
+    expect(shouldFollowTurnOutput(true, false, true)).toBe(false);
+    expect(shouldFollowTurnOutput(true, true, true)).toBe(false);
+  });
+
+  it('suppresses programmatic scroll briefly after a user scroll gesture', () => {
+    const now = 1_000;
+    const until = getUserScrollSuppressionUntil(now);
+
+    expect(until).toBe(now + USER_SCROLL_PROGRAMMATIC_PAUSE_MS);
+    expect(isProgrammaticScrollSuppressed(until, until - 1)).toBe(true);
+    expect(isProgrammaticScrollSuppressed(until, until)).toBe(false);
+  });
+
+  it('only stops output following for gestures that move toward older content', () => {
+    expect(shouldStopFollowingForWheel(-1)).toBe(true);
+    expect(shouldStopFollowingForWheel(1)).toBe(false);
+    expect(shouldStopFollowingForTouchMove(100, 104)).toBe(true);
+    expect(shouldStopFollowingForTouchMove(100, 97)).toBe(false);
+    expect(shouldStopFollowingForTouchMove(null, 104)).toBe(false);
+    expect(shouldStopFollowingForKeyboardScroll('ArrowUp')).toBe(true);
+    expect(shouldStopFollowingForKeyboardScroll('PageDown')).toBe(false);
+    expect(shouldStopFollowingForKeyboardScroll(' ', true)).toBe(true);
+    expect(shouldStopFollowingForKeyboardScroll(' ', false)).toBe(false);
   });
 
   it('throttles active display scroll scheduling within the display interval', () => {

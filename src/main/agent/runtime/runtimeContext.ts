@@ -24,6 +24,7 @@ import type { AutoContextCompressor } from '../../context/autoCompressor';
 import type { CompressionState } from '../../context/compressionState';
 import type { CompressionPipeline } from '../../context/compressionPipeline';
 import type { TelemetryAdapter } from '../../../shared/contract/telemetry';
+import type { InferenceOptions } from '../../model/types';
 import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
@@ -70,6 +71,7 @@ export interface RuntimeContext {
   compressionState: CompressionState;
   compressionPipeline: CompressionPipeline;
   telemetryAdapter?: TelemetryAdapter;
+  inferenceOptions?: InferenceOptions;
 
   // --- Mutable run state ---
   lastStreamedContent: string;
@@ -177,6 +179,7 @@ export interface RuntimeContext {
 
   // --- Thinking ---
   effortLevel: EffortLevel;
+  thinkingEnabled: boolean;
   thinkingStepCount: number;
 
   // --- Interaction mode ---

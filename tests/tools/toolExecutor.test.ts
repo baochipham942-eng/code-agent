@@ -103,13 +103,13 @@ describe('ToolExecutor', () => {
       expect(result.error).toContain('Unknown tool');
     });
 
-    it('任何工具都应该可以执行（代际检查已移除）', async () => {
+    it('已注册工具应该可以执行', async () => {
       setMockTool();
       const result = await executor.execute('test_tool', {}, {});
       expect(result.success).toBe(true);
     });
 
-    it('匹配代际的工具应该执行成功', async () => {
+    it('带参数的工具应该执行成功', async () => {
       setMockTool();
       const result = await executor.execute('test_tool', { input: 'test' }, {});
       expect(result.success).toBe(true);

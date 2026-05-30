@@ -512,4 +512,122 @@ describe('projectTurns', () => {
       updatedAt: 200,
     });
   });
+
+  it('marks only the final assistant text in a completed turn as feedback eligible', () => {
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '用 workflow 派一个 reviewer 审查',
+        timestamp: 100,
+      },
+      {
+        id: 'assistant-progress',
+        role: 'assistant',
+        content: '我先使用 workflow_orchestrate 派出只读 reviewer。',
+        timestamp: 150,
+        toolCalls: [
+          {
+            id: 'tool-workflow',
+            name: 'workflow_orchestrate',
+            arguments: { workflow: 'custom' },
+            result: {
+              toolCallId: 'tool-workflow',
+              success: true,
+              output: 'ok',
+            },
+          },
+        ],
+      },
+      {
+        id: 'assistant-final',
+        role: 'assistant',
+        content: '审查完成，可以继续推进。',
+        timestamp: 200,
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-feedback', false, []);
+    const assistantNodes = projection.turns[0].nodes.filter((node) => node.type === 'assistant_text');
+
+    expect(assistantNodes.map((node) => node.feedbackEligible)).toEqual([false, true]);
+  });
+
+  it('does not mark process text before tool calls as feedback eligible', () => {
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '用 workflow 派一个 reviewer 审查',
+        timestamp: 100,
+      },
+      {
+        id: 'assistant-progress',
+        role: 'assistant',
+        content: '我先使用 workflow_orchestrate 派出只读 reviewer。',
+        timestamp: 150,
+        toolCalls: [
+          {
+            id: 'tool-workflow',
+            name: 'workflow_orchestrate',
+            arguments: { workflow: 'custom' },
+            result: {
+              toolCallId: 'tool-workflow',
+              success: true,
+              output: 'ok',
+            },
+          },
+        ],
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-progress-feedback', false, []);
+    const assistantNodes = projection.turns[0].nodes.filter((node) => node.type === 'assistant_text');
+
+    expect(assistantNodes.map((node) => node.feedbackEligible)).toEqual([false]);
+  });
+
+  it('marks final text after ordered tool calls as feedback eligible', () => {
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '跑一次 workflow',
+        timestamp: 100,
+      },
+      {
+        id: 'assistant-final-with-tool',
+        role: 'assistant',
+        content: 'workflow_orchestrate 已完成，结果可以继续看。',
+        timestamp: 150,
+        toolCalls: [
+          {
+            id: 'tool-workflow',
+            name: 'workflow_orchestrate',
+            arguments: { workflow: 'custom' },
+            result: {
+              toolCallId: 'tool-workflow',
+              success: true,
+              output: 'ok',
+            },
+          },
+        ],
+        contentParts: [
+          { type: 'tool_call', toolCallId: 'tool-workflow' },
+          { type: 'text', text: 'workflow_orchestrate 已完成，结果可以继续看。' },
+        ],
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-final-feedback', false, []);
+
+    expect(projection.turns[0].nodes.map((node) => node.type)).toEqual([
+      'user',
+      'tool_call',
+      'assistant_text',
+    ]);
+
+    const assistantNodes = projection.turns[0].nodes.filter((node) => node.type === 'assistant_text');
+    expect(assistantNodes.map((node) => node.feedbackEligible)).toEqual([true]);
+  });
 });

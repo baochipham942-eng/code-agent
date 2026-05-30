@@ -8,7 +8,7 @@
 // 现有 wiring。
 //
 // 设计契约:
-// - 投影是有损的:plugin 的 `permissions`/`nativeDeps`/`generations`,
+// - 投影是有损的:plugin 的 `permissions`/`nativeDeps`,
 //   skill 的 `allowedTools`/`bins`/`envVars`/`model`/`executionContext` 等
 //   source-specific 字段不进 metadata。Phase 2+ 通过 AgentExtension 上的
 //   source-specific 字段携带。
@@ -37,7 +37,7 @@ import type {
  * - `description` 缺失 → 空字符串(对齐 metadata 必填语义)
  * - `surfaces` 缺失 → `['tools']`(plugin 的默认 surface)
  * - `version` 必传(PluginManifest schema 强制)
- * - source-specific 字段(`permissions`/`nativeDeps`/`generations`)被丢弃,
+ * - source-specific 字段(`permissions`/`nativeDeps`)被丢弃,
  *   不进 metadata
  */
 export function pluginManifestToMetadata(

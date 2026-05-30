@@ -1,6 +1,6 @@
 // ============================================================================
 // ObservabilityPanel - AI Execution Observability (Advanced Mode)
-// 手风琴展示方式，与代际工具集挂钩
+// 手风琴展示方式，按工具能力域聚合展示
 // ============================================================================
 
 import React, { useState, useMemo } from 'react';
@@ -40,7 +40,7 @@ import {
   summarizeBrowserComputerActionResult,
 } from '../utils/browserComputerActionPreview';
 
-// 事件类型 - 7个核心分类（Gen4 新增 MCP 和 Skill）
+// 事件类型 - 核心执行分类
 export type EventCategory = 'plan' | 'bash' | 'tools' | 'memory' | 'agent' | 'mcp' | 'skill' | 'browserComputer';
 
 // 可观测事件
@@ -64,7 +64,6 @@ const categoryConfig: Record<EventCategory, {
   borderColor: string;
   // 该分类包含的工具列表
   tools: string[];
-  // 该分类首次出现的代际
 }> = {
   bash: {
     label: 'Bash',
@@ -148,10 +147,10 @@ const toolCategoryMap: Record<string, EventCategory> = {
   // Planning Tools
   todo_write: 'plan',
 
-  // Agent Tools (Gen3+)
+  // Agent Tools
   task: 'agent',
   AskUserQuestion: 'agent',
-  // Gen7 Multi-Agent Tools
+  // Multi-Agent Tools
   spawn_agent: 'agent',
   agent_message: 'agent',
   workflow_orchestrate: 'agent',
@@ -164,7 +163,7 @@ const toolCategoryMap: Record<string, EventCategory> = {
   browser_action: 'browserComputer',
   computer_use: 'browserComputer',
 
-  // MCP Tools (Gen 4+)
+  // MCP Tools
   mcp: 'mcp',
   mcp_list_tools: 'mcp',
   mcp_list_resources: 'mcp',
@@ -291,7 +290,7 @@ function getToolSummary(toolCall: ToolCall): string {
       return `读取资源: ${(args.uri as string)?.split('/').pop() || '?'}`;
     case 'mcp_get_status':
       return '获取 MCP 状态';
-    // Gen7 Multi-Agent Tools
+    // Multi-Agent Tools
     case 'spawn_agent': {
       const role = args.role as string;
       const parallel = args.parallel as boolean;
@@ -344,7 +343,7 @@ function getToolIcon(name: string): React.ReactNode {
     mcp_list_resources: <Database className="w-3 h-3" />,
     mcp_read_resource: <Database className="w-3 h-3" />,
     mcp_get_status: <Server className="w-3 h-3" />,
-    // Gen7 Multi-Agent Tools
+    // Multi-Agent Tools
     spawn_agent: <Users className="w-3 h-3" />,
     agent_message: <Users className="w-3 h-3" />,
     workflow_orchestrate: <Users className="w-3 h-3" />,
@@ -545,9 +544,6 @@ export const ObservabilityPanel: React.FC = () => {
   const [expandedCategories, setExpandedCategories] = useState<Set<EventCategory>>(new Set(['plan', 'bash']));
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
 
-  // 获取当前代际数字
-
-  // 根据代际过滤可用分类
   const availableCategories = useMemo(() => {
     return categoryOrder;
   }, []);
@@ -643,7 +639,7 @@ export const ObservabilityPanel: React.FC = () => {
     });
   };
 
-  // 如果当前代际没有可观测的分类，不渲染面板
+  // 没有可观测分类时不渲染面板
   if (availableCategories.length === 0) {
     return null;
   }
@@ -657,7 +653,7 @@ export const ObservabilityPanel: React.FC = () => {
         <div>
           <h3 className="text-sm font-medium text-zinc-200">执行追踪</h3>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Gen8 · {availableCategories.length} 个观测维度
+            {availableCategories.length} 个观测维度
           </p>
         </div>
         <button

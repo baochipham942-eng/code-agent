@@ -450,7 +450,6 @@ export function createMockMessage(overrides: Partial<{
 export function createMockSession(overrides: Partial<{
   id: string;
   title: string;
-  generationId: string;
   modelConfig: { provider: string; model: string };
   workingDirectory?: string;
   createdAt: number;
@@ -460,7 +459,6 @@ export function createMockSession(overrides: Partial<{
   return {
     id: `session_${now}_${Math.random().toString(36).slice(2)}`,
     title: 'Test Session',
-    generationId: 'gen4',
     modelConfig: {
       provider: 'openai',
       model: 'gpt-4',
@@ -509,16 +507,10 @@ export function setupIntegrationTest() {
   beforeEach(() => {
     mockDb = createMockDatabaseService();
     mockLogger = createMockLogger();
-
-    // Setup common mocks
-    vi.mock('../../src/main/services', () => ({
-      getDatabase: () => mockDb,
-      getToolCache: () => createMockToolCache(),
-    }));
-
-    vi.mock('../../src/main/services/infra/logger', () => ({
-      createLogger: () => mockLogger,
-    }));
+    // NOTE: Module mocks (vi.mock) are statically hoisted by Vitest and cannot
+    // be registered per-test from inside a shared helper. Tests that need
+    // ../../src/main/services or the logger module mocked must declare
+    // vi.mock(...) at the top level of their own test file.
   });
 
   afterEach(() => {

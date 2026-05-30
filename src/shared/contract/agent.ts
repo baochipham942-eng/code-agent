@@ -10,7 +10,7 @@ import type { SessionTask, TodoItem } from './planning';
 import type { FileDiff } from './diff';
 
 // Adaptive Thinking: 思考深度级别
-export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
+export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra_code';
 
 // Interaction Mode: Code / Plan / Ask
 export type InteractionMode = 'code' | 'plan' | 'ask';
@@ -253,6 +253,17 @@ export type AgentEvent =
   // Turn-based message events (行业最佳实践: Vercel AI SDK / LangGraph 模式)
   | { type: 'turn_start'; data: { turnId: string; iteration?: number; parentToolUseId?: string } }
   | { type: 'turn_end'; data: { turnId: string; parentToolUseId?: string } }
+  | { type: 'tool_schema_snapshot'; data: {
+      turnId?: string;
+      toolCount: number;
+      tools: Array<{
+        name: string;
+        inputSchema?: Record<string, unknown>;
+        requiresPermission?: boolean;
+        permissionLevel?: string;
+      }>;
+      parentToolUseId?: string;
+    } }
   | { type: 'model_response'; data: {
       model: string;
       provider?: string;
@@ -284,7 +295,7 @@ export type AgentEvent =
   // 长时任务进度追踪（P0 新增）
   | { type: 'task_progress'; data: TaskProgressData & { parentToolUseId?: string } }
   | { type: 'task_complete'; data: TaskCompleteData & { parentToolUseId?: string } }
-  // Gen5+ Memory 学习事件
+  // Memory 学习事件
   | { type: 'memory_learned'; data: MemoryLearnedData }
   // Deep Research 事件
   | { type: 'research_mode_started'; data: ResearchModeStartedData }

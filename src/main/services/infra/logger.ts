@@ -7,6 +7,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getUserDataPath } from '../../platform/appPaths';
+import { redactSecrets, sanitizeLogValue } from '../../security/secretRedaction';
 
 export enum LogLevel {
   DEBUG = 0,
@@ -14,17 +15,6 @@ export enum LogLevel {
   WARN = 2,
   ERROR = 3,
 }
-
-const SENSITIVE_KEYS = [
-  'apikey',
-  'api_key',
-  'password',
-  'token',
-  'secret',
-  'authorization',
-  'credential',
-  'private',
-];
 
 // ----------------------------------------------------------------------------
 // File Sink - 日志文件持久化
@@ -199,6 +189,9 @@ class Logger {
   }
 
   private log(level: string, message: string, args: unknown[]): void {
+    const sanitizedMessage = redactSecrets(message);
+    const sanitizedArgs = args.map((arg) => sanitizeLogValue(arg));
+
     // CLI 模式下只输出 ERROR（运行时检查，防止 ESM import hoisting 导致构造时 env 未设置）
     // WEB 模式不适用 — 见 constructor 注释
     const isCliOnly = process.env.CODE_AGENT_CLI_MODE === 'true'
@@ -207,7 +200,7 @@ class Logger {
         && process.env.DEBUG !== 'true' && !process.argv.includes('--debug')) {
       // 仍然写文件，但不输出到 stderr
       if (level !== 'DEBUG') {
-        writeToFile(level, this.context, message, args.length > 0 ? args : undefined);
+        writeToFile(level, this.context, sanitizedMessage, sanitizedArgs.length > 0 ? sanitizedArgs : undefined);
       }
       return;
     }
@@ -217,47 +210,16 @@ class Logger {
 
     const logFn = console.error; // All log levels → stderr
 
-    // 处理参数，对对象类型进行脱敏
-    const sanitizedArgs = args.map((arg) => {
-      if (arg && typeof arg === 'object' && !Array.isArray(arg)) {
-        return this.sanitize(arg as Record<string, unknown>);
-      }
-      return arg;
-    });
-
     if (sanitizedArgs.length > 0) {
-      logFn(`${timestamp} ${level} ${ctx} ${message}`, ...sanitizedArgs);
+      logFn(`${timestamp} ${level} ${ctx} ${sanitizedMessage}`, ...sanitizedArgs);
     } else {
-      logFn(`${timestamp} ${level} ${ctx} ${message}`);
+      logFn(`${timestamp} ${level} ${ctx} ${sanitizedMessage}`);
     }
 
     // Write to file for INFO and above (skip DEBUG in file)
     if (level !== 'DEBUG') {
-      writeToFile(level, this.context, message, sanitizedArgs.length > 0 ? sanitizedArgs : undefined);
+      writeToFile(level, this.context, sanitizedMessage, sanitizedArgs.length > 0 ? sanitizedArgs : undefined);
     }
-  }
-
-  private sanitize(
-    obj?: Record<string, unknown>
-  ): Record<string, unknown> | undefined {
-    if (!obj) return undefined;
-
-    const result: Record<string, unknown> = {};
-
-    for (const [key, value] of Object.entries(obj)) {
-      const lowerKey = key.toLowerCase();
-      const isSensitive = SENSITIVE_KEYS.some((sk) => lowerKey.includes(sk));
-
-      if (isSensitive) {
-        result[key] = '***REDACTED***';
-      } else if (typeof value === 'object' && value !== null) {
-        result[key] = this.sanitize(value as Record<string, unknown>);
-      } else {
-        result[key] = value;
-      }
-    }
-
-    return result;
   }
 
   async dispose(): Promise<void> {

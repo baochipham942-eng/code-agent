@@ -1,6 +1,13 @@
 import type { EffortLevel } from './contract/agent';
 
-export const SUPPORTED_AGENT_EFFORT_LEVELS = ['low', 'medium', 'high'] as const satisfies readonly EffortLevel[];
+export const SUPPORTED_AGENT_EFFORT_LEVELS = [
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'ultra_code',
+] as const satisfies readonly EffortLevel[];
 
 export type SupportedAgentEffortLevel = typeof SUPPORTED_AGENT_EFFORT_LEVELS[number];
 

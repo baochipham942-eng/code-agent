@@ -11,35 +11,24 @@ import {
   MCP,
   getModelMaxOutputTokens,
 } from '../../shared/constants';
-import type { ModelCapability, ModelProvider, ModelProviderProtocol } from '../../shared/contract';
+import type { ModelCapability, ModelProviderProtocol } from '../../shared/contract';
 import { inferModelCapabilities, inferSupportsTool } from '../../shared/modelRuntime';
 import { runDiagnostics } from './doctor.ipc';
 import { runDoctor } from '../diagnostics/doctorRunner';
 import type { RunDoctorOptions } from '../diagnostics/types';
 import { getProviderHealthMonitor } from '../model/providerHealthMonitor';
-import { getConfigService } from '../services/core/configService';
+import {
+  handleTestConnection,
+  mapProviderHttpError as mapHttpError,
+  resolveConfiguredApiKey,
+  trimTrailingSlash,
+  type TestConnectionPayload,
+  type TestConnectionResult,
+} from '../model/providerConnectionTest';
 
 // ----------------------------------------------------------------------------
 // Types
 // ----------------------------------------------------------------------------
-
-export interface TestConnectionPayload {
-  provider: string;
-  apiKey: string;
-  baseUrl?: string;
-  model?: string;
-  protocol?: ModelProviderProtocol;
-}
-
-export interface TestConnectionResult {
-  success: boolean;
-  latencyMs: number;
-  error?: {
-    code: string;
-    message: string;
-    suggestion: string;
-  };
-}
 
 export interface DiscoverModelsPayload {
   provider: string;
@@ -68,63 +57,6 @@ export interface DiscoverModelsResult {
 // ----------------------------------------------------------------------------
 // Internal Handlers
 // ----------------------------------------------------------------------------
-
-/**
- * 构建测试请求配置
- * 大部分 provider 兼容 OpenAI /models GET 接口，特殊 provider 单独处理
- */
-function buildTestConfig(
-  provider: string,
-  apiKey: string,
-  baseUrl?: string,
-  protocol?: ModelProviderProtocol,
-  model?: string,
-): { url: string; method: string; headers: Record<string, string>; body?: string } | null {
-  const normalizedProvider = normalizeProviderId(provider) ?? provider;
-  const providerProtocol = protocol ?? (normalizedProvider === 'claude' ? 'claude' : 'openai');
-  const endpoint = baseUrl || getProviderEndpointForProtocol(provider, providerProtocol);
-  if (!endpoint) return null;
-
-  // Anthropic Claude — 不兼容 OpenAI，用 /messages 最小请求
-  if (providerProtocol === 'claude') {
-    return {
-      url: `${trimTrailingSlash(endpoint)}/messages`,
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': API_VERSIONS.ANTHROPIC,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: model || 'claude-3-haiku-20240307',
-        max_tokens: 1,
-        messages: [{ role: 'user', content: 'Hi' }],
-      }),
-    };
-  }
-
-  // Google Gemini — REST API 格式不同
-  if (normalizedProvider === 'gemini') {
-    return {
-      url: `${endpoint}/models?key=${apiKey}`,
-      method: 'GET',
-      headers: {},
-    };
-  }
-
-  // OpenAI-compatible providers — GET /models
-  return {
-    url: `${endpoint}/models`,
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
-  };
-}
-
-function trimTrailingSlash(value: string): string {
-  return value.replace(/\/+$/, '');
-}
 
 function getDiscoveryUrl(
   provider: string,
@@ -180,16 +112,6 @@ function normalizeDiscoveredModelId(value: string): string {
   return value.replace(/^models\//, '');
 }
 
-function resolveConfiguredApiKey(provider: string, apiKey?: string): string {
-  const trimmed = apiKey?.trim();
-  if (trimmed) return trimmed;
-  try {
-    return getConfigService().getApiKey(provider as ModelProvider) ?? '';
-  } catch {
-    return '';
-  }
-}
-
 export function parseDiscoveredModelsResponse(payload: unknown): DiscoveredProviderModel[] {
   const record = payload && typeof payload === 'object' && !Array.isArray(payload)
     ? payload as Record<string, unknown>
@@ -229,120 +151,164 @@ export function parseDiscoveredModelsResponse(payload: unknown): DiscoveredProvi
   return models;
 }
 
-/**
- * 将 HTTP 状态码映射为结构化错误
- */
-function mapHttpError(status: number, body: string): TestConnectionResult['error'] {
-  switch (status) {
-    case 401:
-      return {
-        code: 'AUTH_FAILED',
-        message: `认证失败 (${status})`,
-        suggestion: '请检查 API Key 是否正确，注意前后不要有空格',
-      };
-    case 403:
-      return {
-        code: 'FORBIDDEN',
-        message: `权限不足 (${status})`,
-        suggestion: '账户可能已欠费或 API Key 权限不足，请登录对应平台检查',
-      };
-    case 429:
-      return {
-        code: 'RATE_LIMITED',
-        message: `请求频率超限 (${status})`,
-        suggestion: '请稍后重试，或检查账户配额',
-      };
-    default:
-      return {
-        code: 'API_ERROR',
-        message: `API 错误 (${status}): ${body.substring(0, 200)}`,
-        suggestion: '请检查 API 端点和 Key 配置',
-      };
-  }
+type ProviderModelFamily =
+  | 'claude'
+  | 'openai'
+  | 'gemini'
+  | 'deepseek'
+  | 'moonshot'
+  | 'zhipu'
+  | 'qwen'
+  | 'minimax'
+  | 'grok'
+  | 'perplexity'
+  | 'volcengine'
+  | 'longcat'
+  | 'xiaomi';
+
+interface ProviderModelFamilySpec {
+  family: ProviderModelFamily;
+  providerAliases: readonly string[];
+  modelMatchers: readonly RegExp[];
 }
 
-export async function handleTestConnection(payload: TestConnectionPayload): Promise<TestConnectionResult> {
-  const apiKey = resolveConfiguredApiKey(payload.provider, payload.apiKey);
-  const config = buildTestConfig(payload.provider, apiKey, payload.baseUrl, payload.protocol, payload.model);
+const BUILT_IN_PROVIDER_FAMILIES: Partial<Record<string, ProviderModelFamily>> = {
+  claude: 'claude',
+  openai: 'openai',
+  gemini: 'gemini',
+  deepseek: 'deepseek',
+  moonshot: 'moonshot',
+  zhipu: 'zhipu',
+  qwen: 'qwen',
+  minimax: 'minimax',
+  grok: 'grok',
+  perplexity: 'perplexity',
+  volcengine: 'volcengine',
+  longcat: 'longcat',
+  xiaomi: 'xiaomi',
+};
 
-  if (!config) {
-    return {
-      success: false,
-      latencyMs: 0,
-      error: {
-        code: 'UNSUPPORTED_PROVIDER',
-        message: `不支持测试的 Provider: ${payload.provider}`,
-        suggestion: '请确认 Provider 名称正确',
-      },
-    };
+const PROVIDER_MODEL_FAMILY_SPECS: readonly ProviderModelFamilySpec[] = [
+  {
+    family: 'claude',
+    providerAliases: ['claude', 'anthropic'],
+    modelMatchers: [/^claude-/, /^anthropic\//, /\/claude-/],
+  },
+  {
+    family: 'openai',
+    providerAliases: ['openai'],
+    modelMatchers: [/^openai\//, /^gpt-/, /^o[134]\b/, /^chatgpt-/],
+  },
+  {
+    family: 'gemini',
+    providerAliases: ['gemini', 'google'],
+    modelMatchers: [/^gemini-/, /^google\/gemini-/],
+  },
+  {
+    family: 'deepseek',
+    providerAliases: ['deepseek'],
+    modelMatchers: [/^deepseek\//, /^deepseek-/],
+  },
+  {
+    family: 'moonshot',
+    providerAliases: ['moonshot', 'kimi', 'moonshotai'],
+    modelMatchers: [/^moonshotai\//, /^moonshot\//, /^moonshot-/, /^kimi-/],
+  },
+  {
+    family: 'zhipu',
+    providerAliases: ['zhipu', 'glm', 'zai'],
+    modelMatchers: [/^zai-org\//, /^zhipu\//, /^glm-/, /^codegeex-/],
+  },
+  {
+    family: 'qwen',
+    providerAliases: ['qwen', 'qwq', 'qvq', 'alibaba'],
+    modelMatchers: [/^qwen\//, /^alibaba\//, /^qwen/, /^qwq-/, /^qvq-/],
+  },
+  {
+    family: 'minimax',
+    providerAliases: ['minimax'],
+    modelMatchers: [/^minimax\//, /^minimax-/],
+  },
+  {
+    family: 'grok',
+    providerAliases: ['grok', 'xai', 'x-ai'],
+    modelMatchers: [/^xai\//, /^x-ai\//, /^grok-/],
+  },
+  {
+    family: 'perplexity',
+    providerAliases: ['perplexity', 'sonar'],
+    modelMatchers: [/^perplexity\//, /^sonar/, /sonar/],
+  },
+  {
+    family: 'volcengine',
+    providerAliases: ['volcengine', 'doubao'],
+    modelMatchers: [/^volcengine\//, /^doubao-/],
+  },
+  {
+    family: 'longcat',
+    providerAliases: ['longcat'],
+    modelMatchers: [/^longcat\//, /^longcat-/],
+  },
+  {
+    family: 'xiaomi',
+    providerAliases: ['xiaomi', 'mimo'],
+    modelMatchers: [/^xiaomi\//, /^mimo-/],
+  },
+];
+
+function normalizedTokenValue(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function includesProviderToken(providerId: string, alias: string): boolean {
+  const normalizedProviderId = normalizedTokenValue(providerId);
+  const normalizedAlias = normalizedTokenValue(alias);
+  return normalizedProviderId === normalizedAlias
+    || normalizedProviderId.startsWith(`${normalizedAlias}-`)
+    || normalizedProviderId.endsWith(`-${normalizedAlias}`)
+    || normalizedProviderId.includes(`-${normalizedAlias}-`);
+}
+
+function resolveProviderModelFamily(
+  provider: string,
+  protocol?: ModelProviderProtocol,
+): ProviderModelFamily | null {
+  if (protocol === 'claude') {
+    return 'claude';
   }
 
-  const startTime = Date.now();
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), MCP.CONNECT_TIMEOUT);
-
-    const response = await fetch(config.url, {
-      method: config.method,
-      headers: config.headers,
-      body: config.body,
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-    const latencyMs = Date.now() - startTime;
-
-    if (response.ok) {
-      return { success: true, latencyMs };
-    }
-
-    const errorText = await response.text().catch(() => '');
-    return {
-      success: false,
-      latencyMs,
-      error: mapHttpError(response.status, errorText),
-    };
-  } catch (err) {
-    const latencyMs = Date.now() - startTime;
-
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      return {
-        success: false,
-        latencyMs,
-        error: {
-          code: 'TIMEOUT',
-          message: `连接超时 (${MCP.CONNECT_TIMEOUT / 1000}s)`,
-          suggestion: '请检查网络连接，国际 API 可能需要代理',
-        },
-      };
-    }
-
-    const message = err instanceof Error ? err.message : String(err);
-
-    // 网络不可达
-    if (message.includes('ECONNREFUSED') || message.includes('ENOTFOUND') || message.includes('fetch failed')) {
-      return {
-        success: false,
-        latencyMs,
-        error: {
-          code: 'NETWORK_ERROR',
-          message: `网络错误: ${message.substring(0, 150)}`,
-          suggestion: '请检查网络连接和代理设置，或确认 API 端点地址正确',
-        },
-      };
-    }
-
-    return {
-      success: false,
-      latencyMs,
-      error: {
-        code: 'UNKNOWN_ERROR',
-        message: `连接失败: ${message.substring(0, 150)}`,
-        suggestion: '请检查网络和配置后重试',
-      },
-    };
+  const normalizedProvider = normalizeProviderId(provider) ?? provider;
+  const builtInFamily = BUILT_IN_PROVIDER_FAMILIES[normalizedProvider];
+  if (builtInFamily) {
+    return builtInFamily;
   }
+
+  const providerId = provider.toLowerCase();
+  const spec = PROVIDER_MODEL_FAMILY_SPECS.find((candidate) =>
+    candidate.providerAliases.some((alias) => includesProviderToken(providerId, alias))
+  );
+  return spec?.family ?? null;
+}
+
+export function filterDiscoveredModelsForProvider(
+  provider: string,
+  models: DiscoveredProviderModel[],
+  protocol?: ModelProviderProtocol,
+): DiscoveredProviderModel[] {
+  const family = resolveProviderModelFamily(provider, protocol);
+  if (!family) {
+    return models;
+  }
+
+  const spec = PROVIDER_MODEL_FAMILY_SPECS.find((candidate) => candidate.family === family);
+  if (!spec) {
+    return models;
+  }
+
+  return models.filter((model) => {
+    const id = model.id.toLowerCase();
+    return spec.modelMatchers.some((matcher) => matcher.test(id));
+  });
 }
 
 export async function handleDiscoverModels(payload: DiscoverModelsPayload): Promise<DiscoverModelsResult> {
@@ -384,9 +350,10 @@ export async function handleDiscoverModels(payload: DiscoverModelsPayload): Prom
     }
 
     const data: unknown = await response.json().catch(() => null);
+    const models = parseDiscoveredModelsResponse(data);
     return {
       success: true,
-      models: parseDiscoveredModelsResponse(data),
+      models: filterDiscoveredModelsForProvider(payload.provider, models, payload.protocol),
       latencyMs,
     };
   } catch (err) {

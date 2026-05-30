@@ -17,7 +17,9 @@ ${listBuiltInWorkflows().map((w) => `- ${w.id}: ${w.description}`).join('\n')}
 
 **参数**：
 - workflow: 选择合适的工作流模板
-- task: 用户的原始任务描述`;
+- task: 用户的原始任务描述
+- stages[].toolPolicy: custom workflow 的阶段级工具策略，可设 none/noTool、readonly/readOnly、allowlist 或 maxToolCalls
+- stages[].maxExecutionTimeMs: 单个阶段的最长执行时间，省略时使用 workflow 默认预算`;
 
 export const workflowOrchestrateSchema: ToolSchema = {
   name: 'workflow_orchestrate',
@@ -43,6 +45,30 @@ export const workflowOrchestrateSchema: ToolSchema = {
             role: { type: 'string' },
             prompt: { type: 'string' },
             dependsOn: { type: 'array', items: { type: 'string' } },
+            maxExecutionTimeMs: {
+              type: 'number',
+              description: 'Maximum stage execution time in milliseconds. Defaults to the workflow stage budget.',
+            },
+            toolPolicy: {
+              type: 'object',
+              properties: {
+                mode: {
+                  type: 'string',
+                  enum: ['inherit', 'none', 'noTool', 'readonly', 'readOnly', 'allowlist'],
+                  description: 'Stage tool policy mode. noTool/none disables tools; readOnly/readonly only permits read permission tools; allowlist narrows to tools[].',
+                },
+                tools: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Allowed tool names for allowlist mode. This never expands beyond the selected role tools. An empty array means no tools.',
+                },
+                maxToolCalls: {
+                  type: 'number',
+                  description: 'Maximum tool calls allowed in this stage. noTool/none forces 0.',
+                },
+              },
+              description: 'Optional stage-level tool policy.',
+            },
           },
           required: ['name', 'role', 'prompt'],
         },

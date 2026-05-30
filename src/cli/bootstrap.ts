@@ -157,6 +157,9 @@ export async function initializeCLIServices(): Promise<void> {
     const toolExecutorModule = await import('../main/tools/toolExecutor');
     ToolExecutor = toolExecutorModule.ToolExecutor;
 
+    const protocolRegistryModule = await import('../main/tools/protocolRegistry');
+    protocolRegistryModule.getProtocolRegistry();
+    cliLog('Protocol tool registry initialized');
 
     const skillsModule = await import('../main/services/skills');
     getSkillDiscoveryService = skillsModule.getSkillDiscoveryService;
@@ -167,8 +170,6 @@ export async function initializeCLIServices(): Promise<void> {
     console.error('Fatal: Failed to import core modules:', error);
     throw error;
   }
-
-  // 初始化代际管理器
 
   // 初始化工具执行器（CLI 模式下自动批准所有工具）
   toolExecutor = new ToolExecutor({
@@ -265,7 +266,6 @@ export function getSessionManager(): CLISessionManager {
  */
 export function buildCLIConfig(options: {
   project?: string;
-  gen?: string;
   model?: string;
   provider?: string;
   json?: boolean;

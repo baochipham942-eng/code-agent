@@ -500,6 +500,21 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
 
+  // Telemetry Feedback - 用户对某次回复/轮次的显式质量反馈，云端仅 admin 可读
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telemetry_feedback (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      turn_id TEXT,
+      message_id TEXT,
+      rating INTEGER NOT NULL CHECK (rating IN (-1, 1)),
+      comment TEXT,
+      full_content TEXT,
+      created_at INTEGER NOT NULL,
+      synced_at INTEGER
+    )
+  `);
+
   // Captures 表 (知识库采集内容持久化)
   db.exec(`
     CREATE TABLE IF NOT EXISTS captures (

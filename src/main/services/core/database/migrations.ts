@@ -60,6 +60,23 @@ export function applyTelemetryTurnsMigrations(db: BetterSqlite3.Database, logger
   safeExec(db, 'ALTER TABLE telemetry_sessions ADD COLUMN synced_at INTEGER', logger);
   // Runtime 会话分代已不再是会话维度；旧 telemetry 表里保留的列会让后续 insert 继续写假值。
   safeExec(db, 'ALTER TABLE telemetry_sessions DROP COLUMN generation_id', logger);
+  safeExec(
+    db,
+    `
+      CREATE TABLE IF NOT EXISTS telemetry_feedback (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        turn_id TEXT,
+        message_id TEXT,
+        rating INTEGER NOT NULL CHECK (rating IN (-1, 1)),
+        comment TEXT,
+        full_content TEXT,
+        created_at INTEGER NOT NULL,
+        synced_at INTEGER
+      )
+    `,
+    logger,
+  );
 
   // telemetry_model_calls 新增 prompt/completion 列（用于评测系统重放）
   const modelCallMigrations = [

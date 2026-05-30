@@ -12,6 +12,7 @@ export type TraceNodeType =
 
 export interface TraceNode {
   id: string;
+  messageId?: string;
   type: TraceNodeType;
   content: string;
   timestamp: number;
@@ -40,6 +41,7 @@ export interface TraceNode {
   attachments?: import('./message').MessageAttachment[];
   artifacts?: import('./message').Artifact[];
   metadata?: import('./message').MessageMetadata;
+  feedbackEligible?: boolean;
   launchRequest?: import('./swarm').SwarmLaunchRequest;
   turnTimeline?: import('./turnTimeline').TurnTimelineNode;
 }

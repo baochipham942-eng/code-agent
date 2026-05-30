@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Copy, Check, FileText, RefreshCw, RotateCcw, BarChart3, Table, Code, GitBranch } from 'lucide-react';
+import { Copy, Check, FileText, RefreshCw, RotateCcw, BarChart3, Table, Code, GitBranch, ThumbsUp, ThumbsDown } from 'lucide-react';
 import type { AssistantMessageProps } from './types';
 import type { Artifact } from '@shared/contract/message';
 import { MessageContent } from './MessageContent';
@@ -12,6 +12,7 @@ import { ToolCallGroupList } from './ToolCallDisplay/ToolCallGroup';
 import { UI } from '@shared/constants';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
+import { useSessionStore } from '../../../../stores/sessionStore';
 import { groupToolCalls, extractThinkingSummary, sanitizeThinkingForDisplay } from '../../../../utils/toolGrouping';
 
 function formatTokenCount(count: number): string {
@@ -32,12 +33,25 @@ function getArtifactIcon(type: Artifact['type']): React.ReactNode {
 }
 
 export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onRegenerate, onForkFromHere }) => {
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const [showReasoning, setShowReasoning] = useState(false);
   const reasoningRef = useRef<HTMLDivElement>(null);
   const [reasoningHeight, setReasoningHeight] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [copied, setCopied] = useState<'markdown' | 'plain' | null>(null);
+  const [feedbackRating, setFeedbackRating] = useState<1 | -1 | null>(null);
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const hasToolExecutionContent = Boolean(
+    (message.toolCalls?.length ?? 0) > 0 ||
+    message.contentParts?.some((part) => part.type === 'tool_call'),
+  );
+  const canSubmitFeedback = Boolean(
+    currentSessionId &&
+    message.id &&
+    message.content?.trim() &&
+    !hasToolExecutionContent,
+  );
   const rawReasoningContent = message.thinking || message.reasoning;
   const reasoningContent = useMemo(
     () => sanitizeThinkingForDisplay(rawReasoningContent),
@@ -95,6 +109,32 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
     setTimeout(() => setCopied(null), UI.COPY_FEEDBACK_DURATION);
   }, [message.content]);
 
+  const handleFeedback = useCallback(async (rating: 1 | -1) => {
+    if (!currentSessionId || !message.id || feedbackSubmitting) return;
+    setFeedbackSubmitting(true);
+    setFeedbackRating(rating);
+    try {
+      await ipcService.invoke(IPC_CHANNELS.TELEMETRY_SUBMIT_FEEDBACK, {
+        sessionId: currentSessionId,
+        turnId: message.id,
+        messageId: message.id,
+        rating,
+        fullContent: rating === -1
+          ? {
+              messageId: message.id,
+              assistantResponse: message.content,
+              inputTokens: message.inputTokens,
+              outputTokens: message.outputTokens,
+            }
+          : undefined,
+      });
+    } catch {
+      setFeedbackRating(null);
+    } finally {
+      setFeedbackSubmitting(false);
+    }
+  }, [currentSessionId, feedbackSubmitting, message.content, message.id, message.inputTokens, message.outputTokens]);
+
   const effortLabel = message.effortLevel || '';
   const thinkingSummary = useMemo(
     () => extractThinkingSummary(reasoningContent),
@@ -140,6 +180,38 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
           )}
           {message.content && (
             <>
+              {canSubmitFeedback && (
+                <>
+                  <button
+                    onClick={() => handleFeedback(1)}
+                    disabled={feedbackSubmitting}
+                    className={`flex items-center gap-1 px-1.5 py-0.5 text-xs rounded transition-colors disabled:opacity-50 ${
+                      feedbackRating === 1
+                        ? 'bg-zinc-700 text-emerald-300'
+                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700'
+                    }`}
+                    title="标记有帮助"
+                    aria-label="标记有帮助"
+                    aria-pressed={feedbackRating === 1}
+                  >
+                    <ThumbsUp className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => handleFeedback(-1)}
+                    disabled={feedbackSubmitting}
+                    className={`flex items-center gap-1 px-1.5 py-0.5 text-xs rounded transition-colors disabled:opacity-50 ${
+                      feedbackRating === -1
+                        ? 'bg-zinc-700 text-rose-300'
+                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700'
+                    }`}
+                    title="标记有问题"
+                    aria-label="标记有问题"
+                    aria-pressed={feedbackRating === -1}
+                  >
+                    <ThumbsDown className="w-3 h-3" />
+                  </button>
+                </>
+              )}
               <button
                 onClick={() => handleCopy('markdown')}
                 className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"

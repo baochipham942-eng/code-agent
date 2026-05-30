@@ -27,12 +27,27 @@ export interface RuntimeModelOption {
   model: string;
   label: string;
   providerLabel: string;
+  providerGroup?: ModelProvider;
+  providerGroupLabel?: string;
+  providerSourceLabel?: string;
   features: RuntimeModelFeature[];
+}
+
+interface RuntimeProviderOptionSource {
+  providerId: ModelProvider;
+  providerLabel: string;
+  providerGroup: ModelProvider;
+  providerGroupLabel: string;
+  providerSourceLabel?: string;
+  providerConfig?: Partial<ModelProviderSettings>;
+  models: RuntimeProviderModel[];
+  order: number;
 }
 
 export interface RuntimeModelOptionGroup {
   provider: ModelProvider;
   providerLabel: string;
+  providerSourceLabel?: string;
   options: RuntimeModelOption[];
 }
 
@@ -76,6 +91,124 @@ export function resolveProviderProtocol(
   if (providerConfig?.protocol) return providerConfig.protocol;
   if (providerId === 'claude' || providerId === 'anthropic') return 'claude';
   return 'openai';
+}
+
+function looksLikeClaudeModelId(modelId?: string): boolean {
+  if (!modelId) return false;
+  const id = modelId.toLowerCase();
+  return id.startsWith('claude-') || id.startsWith('anthropic/') || id.includes('/claude-');
+}
+
+const CUSTOM_PROVIDER_GROUP_PATTERNS: Array<{
+  provider: ModelProvider;
+  pattern: RegExp;
+}> = [
+  { provider: 'longcat', pattern: /longcat/ },
+  { provider: 'xiaomi', pattern: /\b(mimo|xiaomi)\b/ },
+  { provider: 'moonshot', pattern: /\b(kimi|moonshot)\b/ },
+  { provider: 'claude', pattern: /\b(anthropic|claude)\b|anthropic\// },
+  { provider: 'gemini', pattern: /\b(gemini|google)\b|google\// },
+  { provider: 'openai', pattern: /\b(openai|chatgpt)\b|(^|[/\s-])gpt-[\w.-]+|(^|[/\s-])o[1345]([\s./-]|$)/ },
+  { provider: 'deepseek', pattern: /deepseek/ },
+  { provider: 'zhipu', pattern: /\b(zhipu|glm)\b|glm-/ },
+  { provider: 'qwen', pattern: /\b(qwen|dashscope)\b/ },
+  { provider: 'minimax', pattern: /minimax/ },
+  { provider: 'perplexity', pattern: /\b(perplexity|sonar)\b/ },
+  { provider: 'grok', pattern: /\b(grok|xai)\b/ },
+  { provider: 'volcengine', pattern: /\b(volcengine|doubao)\b|doubao-/ },
+];
+
+function resolveProviderGroup(args: {
+  providerId: ModelProvider;
+  providerConfig?: Partial<ModelProviderSettings>;
+  protocol: ModelProviderProtocol;
+  models: RuntimeProviderModel[];
+}): ModelProvider {
+  const isCustomProvider = args.providerId === 'custom' || isDynamicCustomProviderId(args.providerId);
+  if (!isCustomProvider) return args.providerId;
+
+  const sourceText = [
+    args.providerId,
+    args.providerConfig?.displayName,
+    args.providerConfig?.model,
+    ...Object.keys(args.providerConfig?.models ?? {}),
+    ...args.models.map((model) => model.id),
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  const matchedGroup = CUSTOM_PROVIDER_GROUP_PATTERNS.find((item) => item.pattern.test(sourceText));
+  if (matchedGroup) return matchedGroup.provider;
+
+  if (args.protocol === 'claude' || args.models.some((model) => looksLikeClaudeModelId(model.id))) {
+    return 'claude';
+  }
+
+  return args.providerId;
+}
+
+function modelBelongsToProviderGroup(modelId: string, providerGroup: ModelProvider): boolean {
+  const id = modelId.toLowerCase();
+  switch (providerGroup) {
+    case 'claude':
+      return looksLikeClaudeModelId(id);
+    case 'openai':
+      return /(^|[/\s-])gpt-[\w.-]+|(^|[/\s-])o[1345]([\s./-]|$)|openai/.test(id);
+    case 'gemini':
+      return /gemini|google\//.test(id);
+    case 'xiaomi':
+      return /mimo|xiaomi/.test(id);
+    case 'moonshot':
+      return /kimi|moonshot/.test(id);
+    case 'longcat':
+      return /longcat/.test(id);
+    case 'deepseek':
+      return /deepseek/.test(id);
+    case 'zhipu':
+      return /glm|zhipu/.test(id);
+    case 'qwen':
+      return /qwen|dashscope/.test(id);
+    case 'minimax':
+      return /minimax/.test(id);
+    case 'perplexity':
+      return /sonar|perplexity/.test(id);
+    case 'grok':
+      return /grok|xai/.test(id);
+    case 'volcengine':
+      return /doubao|volcengine/.test(id);
+    default:
+      return true;
+  }
+}
+
+function buildProviderSourceLabel(
+  providerLabel: string,
+  canonicalGroupLabel: string,
+  providerGroup: ModelProvider,
+): string | undefined {
+  if (providerLabel === canonicalGroupLabel) return undefined;
+
+  const groupWords: Partial<Record<ModelProvider, RegExp>> = {
+    claude: /\b(anthropic|claude)\b/gi,
+    openai: /\b(openai|chatgpt|gpt)\b/gi,
+    gemini: /\b(google|gemini)\b/gi,
+    xiaomi: /\b(xiaomi|mimo|小米)\b/gi,
+    moonshot: /\b(moonshot|kimi|月之暗面)\b/gi,
+    longcat: /\b(longcat)\b/gi,
+    deepseek: /\b(deepseek)\b/gi,
+    zhipu: /\b(zhipu|glm|智谱)\b/gi,
+    qwen: /\b(qwen|dashscope|通义)\b/gi,
+    minimax: /\b(minimax)\b/gi,
+    perplexity: /\b(perplexity|sonar)\b/gi,
+    grok: /\b(grok|xai)\b/gi,
+    volcengine: /\b(volcengine|doubao|豆包|火山)\b/gi,
+  };
+
+  const cleaned = providerLabel
+    .replace(groupWords[providerGroup] ?? /$^/, '')
+    .replace(/[·|/()[\]_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cleaned || providerLabel;
 }
 
 function uniqueCapabilities(values: Array<ModelCapability | undefined>): ModelCapability[] {
@@ -231,6 +364,7 @@ export function buildRuntimeModelOptions(
   } = {},
 ): RuntimeModelOption[] {
   const options: RuntimeModelOption[] = [];
+  const sources: RuntimeProviderOptionSource[] = [];
   const includedDisabledProviders = new Set(runtimeOptions.includeDisabledProviders ?? []);
   const dynamicProviderIds = settings
     ? (Object.keys(settings.models?.providers ?? {}) as ModelProvider[]).filter(isDynamicCustomProviderId)
@@ -242,20 +376,68 @@ export function buildRuntimeModelOptions(
     ]))
     : [...providerIds];
 
-  for (const providerId of sourceProviderIds) {
+  sourceProviderIds.forEach((providerId, order) => {
     const providerConfig = settings?.models?.providers?.[providerId];
     const provider = buildProviderInfoFromSettings(providerId, providerConfig);
-    if (!provider) continue;
+    if (!provider) return;
 
-    if (settings && providerConfig?.enabled === false && !includedDisabledProviders.has(providerId)) continue;
+    if (settings && providerConfig?.enabled === false && !includedDisabledProviders.has(providerId)) return;
 
     const providerLabel = providerConfig?.displayName || getProviderDisplayName(providerId) || provider.name;
-    for (const model of getEnabledProviderModels(provider, providerConfig)) {
+    const protocol = resolveProviderProtocol(providerId, providerConfig);
+    const runtimeModels = getProviderRuntimeModels(provider, providerConfig);
+    const enabledModels = runtimeModels.filter((model) => model.enabled);
+    const providerGroup = resolveProviderGroup({
+      providerId,
+      providerConfig,
+      protocol,
+      models: runtimeModels,
+    });
+    const isCustomProvider = providerId === 'custom' || isDynamicCustomProviderId(providerId);
+    const models = isCustomProvider && providerGroup !== providerId
+      ? runtimeModels.filter((model) => modelBelongsToProviderGroup(model.id, providerGroup))
+      : enabledModels;
+    if (models.length === 0) return;
+    const canonicalGroupLabel = getProviderDisplayName(providerGroup) || providerGroup;
+    const providerGroupLabel = providerGroup !== providerId || providerConfig?.displayName
+      ? canonicalGroupLabel
+      : providerLabel;
+    const providerSourceLabel = providerGroup !== providerId || Boolean(providerConfig?.displayName)
+      ? buildProviderSourceLabel(providerLabel, canonicalGroupLabel, providerGroup)
+      : undefined;
+
+    sources.push({
+      providerId,
+      providerLabel,
+      providerGroup,
+      providerGroupLabel,
+      ...(providerSourceLabel ? { providerSourceLabel } : {}),
+      providerConfig,
+      models,
+      order,
+    });
+  });
+
+  const latestSourceByGroup = new Map<ModelProvider, RuntimeProviderOptionSource>();
+  for (const source of sources) {
+    const current = latestSourceByGroup.get(source.providerGroup);
+    if (!current || compareProviderOptionSource(source, current) > 0) {
+      latestSourceByGroup.set(source.providerGroup, source);
+    }
+  }
+
+  for (const source of sources) {
+    if (latestSourceByGroup.get(source.providerGroup) !== source) continue;
+
+    for (const model of source.models) {
       options.push({
-        provider: providerId,
+        provider: source.providerId,
         model: model.id,
         label: model.label || getModelDisplayLabel(model.id),
-        providerLabel,
+        providerLabel: source.providerLabel,
+        providerGroup: source.providerGroup,
+        providerGroupLabel: source.providerGroupLabel,
+        ...(source.providerSourceLabel ? { providerSourceLabel: source.providerSourceLabel } : {}),
         features: featuresFromModelMetadata({
           modelId: model.id,
           capabilities: model.capabilities,
@@ -279,19 +461,37 @@ export function buildRuntimeModelOptions(
   );
 }
 
+function compareProviderOptionSource(
+  left: RuntimeProviderOptionSource,
+  right: RuntimeProviderOptionSource,
+): number {
+  const leftUpdatedAt = left.providerConfig?.updatedAt;
+  const rightUpdatedAt = right.providerConfig?.updatedAt;
+  const leftHasUpdatedAt = typeof leftUpdatedAt === 'number' && Number.isFinite(leftUpdatedAt);
+  const rightHasUpdatedAt = typeof rightUpdatedAt === 'number' && Number.isFinite(rightUpdatedAt);
+
+  if (leftHasUpdatedAt || rightHasUpdatedAt) {
+    return (leftHasUpdatedAt ? leftUpdatedAt : 0) - (rightHasUpdatedAt ? rightUpdatedAt : 0);
+  }
+
+  return left.order - right.order;
+}
+
 export function groupRuntimeModelOptionsByProvider(options: RuntimeModelOption[]): RuntimeModelOptionGroup[] {
   const groups: RuntimeModelOptionGroup[] = [];
   const byProvider = new Map<ModelProvider, RuntimeModelOptionGroup>();
 
   for (const option of options) {
-    let group = byProvider.get(option.provider);
+    const provider = option.providerGroup ?? option.provider;
+    let group = byProvider.get(provider);
     if (!group) {
       group = {
-        provider: option.provider,
-        providerLabel: option.providerLabel,
+        provider,
+        providerLabel: option.providerGroupLabel ?? option.providerLabel,
+        ...(option.providerSourceLabel ? { providerSourceLabel: option.providerSourceLabel } : {}),
         options: [],
       };
-      byProvider.set(option.provider, group);
+      byProvider.set(provider, group);
       groups.push(group);
     }
     group.options.push(option);

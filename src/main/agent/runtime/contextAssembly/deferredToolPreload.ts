@@ -18,6 +18,9 @@ const MEETING_DESKTOP_CONTEXT_RE =
 const BROWSER_INTERACTIVE_INTENT_RE =
   /\bbrowser[\s_-]?action\b|\bbrowser automation\b|\bplaywright\b|托管浏览器|浏览器自动化|登录|登陆|sign[\s-]?in|log[\s-]?in|表单|填表|填写|输入账号|输入密码|按钮|点击|click|press|提交|submit|多页|翻页|分页|下一页|上传|下载|视觉验证|动态页面|弹窗|dropdown|下拉|选择框|checkout|支付/i;
 
+const WORKFLOW_ORCHESTRATE_INTENT_RE =
+  /\bworkflow_orchestrate\b|\bWorkflowOrchestrate\b|\bcowork\b|\bco[-\s]?work\b|\bmulti[-\s]?agent\b|多\s*agent|多代理|多智能体|子代理|子\s*agent|子阶段|协作(?:任务|流程|模式|审查)|工作流(?:编排|子阶段)?/i;
+
 function getLatestUserText(runtime: RuntimeForDeferredToolPreload): string {
   for (let index = runtime.messages.length - 1; index >= 0; index -= 1) {
     const message = runtime.messages[index];
@@ -57,6 +60,10 @@ export function getDeferredToolsToPreloadForTurn(
     tools.add('Computer');
   } else if (intent?.allowBrowserAutomation !== false && BROWSER_INTERACTIVE_INTENT_RE.test(userText)) {
     tools.add('Browser');
+  }
+
+  if (WORKFLOW_ORCHESTRATE_INTENT_RE.test(userText)) {
+    tools.add('workflow_orchestrate');
   }
 
   return Array.from(tools);

@@ -186,46 +186,92 @@ export function projectTurns(
       // Skip empty assistant messages
       if (!hasContent && !hasReasoning && !hasToolCalls) continue;
 
-      // Text content node
-      if (hasContent || hasReasoning) {
-        currentTurn.nodes.push({
-          id: `${msg.id}-text`,
+      const turn = currentTurn;
+
+      const pushAssistantTextNode = (content: string, index?: number) => {
+        turn.nodes.push({
+          id: index && index > 1 ? `${msg.id}-text-${index}` : `${msg.id}-text`,
+          messageId: msg.id,
           type: 'assistant_text',
-          content: msg.content,
+          content,
           timestamp: msg.timestamp,
           reasoning: msg.reasoning,
           thinking: msg.thinking,
           artifacts: msg.artifacts,
           metadata: msg.metadata,
         });
+      };
+
+      const pushToolCallNode = (tc: NonNullable<Message['toolCalls']>[number]) => {
+        turn.nodes.push({
+          id: `${msg.id}-tc-${tc.id}`,
+          type: 'tool_call',
+          content: '',
+          timestamp: msg.timestamp,
+          toolCall: {
+            id: tc.id,
+            name: tc.name,
+            args: tc.arguments,
+            result: tc.result?.output || tc.result?.error,
+            success: tc.result?.success,
+            duration: tc.result?.duration,
+            outputPath: tc.result?.outputPath,
+            metadata: tc.result?.metadata,
+            liveOutput: tc.liveOutput,
+            _streaming: tc._streaming,
+            shortDescription: tc.shortDescription,
+            targetContext: tc.targetContext,
+            expectedOutcome: tc.expectedOutcome,
+          },
+          metadata: msg.metadata,
+        });
+      };
+
+      const contentParts = msg.contentParts ?? [];
+      const toolCallsById = new Map((msg.toolCalls ?? []).map((tc) => [tc.id, tc]));
+      const referencedToolCallIds = new Set<string>();
+      const hasOrderedParts = contentParts.some((part) => part.type === 'tool_call');
+
+      if (hasOrderedParts) {
+        let textIndex = 0;
+        let usedFallbackContent = false;
+        const hasNonEmptyPartText = contentParts.some((part) => (
+          part.type === 'text' && part.text.trim().length > 0
+        ));
+
+        for (const part of contentParts) {
+          if (part.type === 'text') {
+            const textContent: string = part.text || (!hasNonEmptyPartText && !usedFallbackContent ? msg.content : '');
+            usedFallbackContent = usedFallbackContent || Boolean(textContent);
+            if (textContent.trim().length > 0 || (hasReasoning && textIndex === 0)) {
+              textIndex += 1;
+              pushAssistantTextNode(textContent, textIndex);
+            }
+            continue;
+          }
+
+          const tc = toolCallsById.get(part.toolCallId);
+          if (!tc) continue;
+          referencedToolCallIds.add(part.toolCallId);
+          pushToolCallNode(tc);
+        }
+
+        for (const tc of msg.toolCalls ?? []) {
+          if (!referencedToolCallIds.has(tc.id)) pushToolCallNode(tc);
+        }
+
+        if (textIndex === 0 && (hasContent || hasReasoning)) {
+          pushAssistantTextNode(msg.content);
+        }
+        continue;
       }
 
-      // Tool call nodes
-      if (hasToolCalls) {
-        for (const tc of msg.toolCalls!) {
-          currentTurn.nodes.push({
-            id: `${msg.id}-tc-${tc.id}`,
-            type: 'tool_call',
-            content: '',
-            timestamp: msg.timestamp,
-            toolCall: {
-              id: tc.id,
-              name: tc.name,
-              args: tc.arguments,
-              result: tc.result?.output || tc.result?.error,
-              success: tc.result?.success,
-              duration: tc.result?.duration,
-              outputPath: tc.result?.outputPath,
-              metadata: tc.result?.metadata,
-              liveOutput: tc.liveOutput,
-              _streaming: tc._streaming,
-              shortDescription: tc.shortDescription,
-              targetContext: tc.targetContext,
-              expectedOutcome: tc.expectedOutcome,
-            },
-            metadata: msg.metadata,
-          });
-        }
+      if (hasContent || hasReasoning) {
+        pushAssistantTextNode(msg.content);
+      }
+
+      for (const tc of msg.toolCalls ?? []) {
+        pushToolCallNode(tc);
       }
     }
   }
@@ -296,11 +342,35 @@ export function projectTurns(
     }
   }
 
+  markFeedbackEligibleNodes(turns);
+
   return {
     sessionId,
     turns,
     activeTurnIndex,
   };
+}
+
+function markFeedbackEligibleNodes(turns: TraceTurn[]): void {
+  for (const turn of turns) {
+    let eligibleNode: TraceNode | undefined;
+    for (const node of turn.nodes) {
+      if (node.type === 'tool_call') {
+        eligibleNode = undefined;
+        continue;
+      }
+
+      if (node.type === 'assistant_text' && node.content.trim().length > 0) {
+        eligibleNode = node;
+      }
+    }
+
+    for (const node of turn.nodes) {
+      if (node.type === 'assistant_text') {
+        node.feedbackEligible = turn.status === 'completed' && node === eligibleNode;
+      }
+    }
+  }
 }
 
 export function useTurnProjection(

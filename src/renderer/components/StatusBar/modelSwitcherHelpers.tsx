@@ -31,7 +31,7 @@ export const QUICK_SWITCH_PROVIDERS = [
 ] as const satisfies readonly ModelProvider[];
 
 export const ENGINE_SHORT_LABEL: Record<AgentEngineKind, string> = {
-  native: 'Agent Neo',
+  native: 'Neo',
   codex_cli: 'Codex',
   claude_code: 'Claude',
 };
@@ -137,19 +137,6 @@ const CODE_EFFORT_OPTIONS = [
   ...BASE_EFFORT_OPTIONS,
   EFFORT_OPTION_CONFIG.xhigh,
   EFFORT_OPTION_CONFIG.ultra_code,
-];
-
-const XIAOMI_EFFORT_OPTIONS: EffortOption[] = [
-  {
-    ...EFFORT_OPTION_CONFIG.low,
-    label: 'Off',
-    shortLabel: 'Off',
-  },
-  {
-    ...EFFORT_OPTION_CONFIG.high,
-    label: 'Thinking',
-    shortLabel: 'Think',
-  },
 ];
 
 const SINGLE_EFFORT_OPTION: EffortOption[] = [
@@ -293,7 +280,7 @@ export function getProviderEffortOptions(
   model: string,
   features: readonly RuntimeModelFeature[] = [],
 ): EffortOption[] {
-  if (provider === 'xiaomi') return XIAOMI_EFFORT_OPTIONS;
+  if (provider === 'xiaomi') return BASE_EFFORT_OPTIONS;
   if (provider === 'claude') return EXTENDED_EFFORT_OPTIONS;
   if (provider === 'openai' && /codex|code/i.test(model)) return CODE_EFFORT_OPTIONS;
   if (provider === 'openai') return BASE_EFFORT_OPTIONS;

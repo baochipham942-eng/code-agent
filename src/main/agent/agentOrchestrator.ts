@@ -447,6 +447,11 @@ export class AgentOrchestrator {
     logger.info(`[AgentOrchestrator] Effort level set to ${level}`);
   }
 
+  setThinkingEnabled(enabled: boolean): void {
+    this.agentLoop?.setThinkingEnabled(enabled);
+    logger.info(`[AgentOrchestrator] Thinking ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
   setInteractionMode(mode: import('../../shared/contract/agent').InteractionMode): void {
     this.agentLoop?.setInteractionMode(mode);
     logger.info(`[AgentOrchestrator] Interaction mode set to ${mode}`);

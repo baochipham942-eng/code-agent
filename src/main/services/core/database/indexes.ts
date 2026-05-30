@@ -84,6 +84,8 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_tool_calls_name ON telemetry_tool_calls(name)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_events_turn ON telemetry_events(turn_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_events_session ON telemetry_events(session_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_feedback_session ON telemetry_feedback(session_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_feedback_synced ON telemetry_feedback(synced_at, created_at)`);
 
   // Captures indexes
   db.exec(`CREATE INDEX IF NOT EXISTS idx_captures_source ON captures(source)`);

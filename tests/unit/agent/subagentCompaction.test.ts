@@ -163,4 +163,14 @@ describe('compactSubagentMessages', () => {
     // Multimodal message should be unchanged
     expect(Array.isArray(messages[3].content)).toBe(true);
   });
+
+  it('should tolerate object-shaped content from provider adapters', () => {
+    const messages = buildConversation(20, 8000);
+    (messages[3] as unknown as { content: unknown }).content = {
+      type: 'text',
+      text: 'adapter object content',
+    };
+
+    expect(() => compactSubagentMessages(messages, 'deepseek-chat')).not.toThrow();
+  });
 });

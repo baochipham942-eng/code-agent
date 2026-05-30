@@ -8,6 +8,49 @@
 // ============================================================================
 
 /**
+ * 工作流阶段工具策略模式。
+ *
+ * `readOnly` / `noTool` are accepted as ergonomic aliases for custom workflow
+ * authors; runtime metadata normalizes them to `readonly` / `none`.
+ */
+export type WorkflowStageToolPolicyMode =
+  | 'inherit'
+  | 'none'
+  | 'noTool'
+  | 'readonly'
+  | 'readOnly'
+  | 'allowlist';
+
+/**
+ * 工作流阶段工具策略。
+ */
+export interface WorkflowStageToolPolicy {
+  /** 工具策略模式；省略时默认继承角色工具，若提供 tools 则按 allowlist 处理 */
+  mode?: WorkflowStageToolPolicyMode;
+  /** allowlist 模式下允许的工具名，不会扩张出该角色原本没有的工具 */
+  tools?: string[];
+  /** 单阶段最多允许执行的工具调用数；none / noTool 会强制为 0 */
+  maxToolCalls?: number;
+}
+
+export type ResolvedWorkflowStageToolPolicyMode =
+  | 'inherit'
+  | 'none'
+  | 'readonly'
+  | 'allowlist';
+
+/**
+ * 阶段执行后记录的工具策略快照。
+ */
+export interface WorkflowStageToolPolicySnapshot {
+  mode: ResolvedWorkflowStageToolPolicyMode;
+  requestedTools?: string[];
+  maxToolCalls?: number;
+  availableTools: string[];
+  blockedTools: string[];
+}
+
+/**
  * 工作流阶段定义
  */
 export interface WorkflowStage {
@@ -19,6 +62,10 @@ export interface WorkflowStage {
   prompt: string;
   /** 依赖的前置阶段名称列表 */
   dependsOn?: string[];
+  /** 阶段级工具策略 */
+  toolPolicy?: WorkflowStageToolPolicy;
+  /** 阶段最长执行时间；省略时由 workflow runtime 使用适合子智能体的默认预算 */
+  maxExecutionTimeMs?: number;
 }
 
 /**
@@ -62,6 +109,8 @@ export interface StageContext {
   generatedFiles?: GeneratedFile[];
   /** 工具调用记录 */
   toolsUsed: string[];
+  /** 阶段级工具策略快照 */
+  toolPolicy?: WorkflowStageToolPolicySnapshot;
   /** 执行时间（毫秒） */
   duration: number;
 }

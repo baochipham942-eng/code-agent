@@ -63,6 +63,24 @@ describe('workflow_orchestrate schema', () => {
     const desc = workflowOrchestrateModule.schema.description;
     expect(desc).toContain('可用工作流');
   });
+
+  it('exposes stage-level toolPolicy in custom stage schema', () => {
+    const stages = workflowOrchestrateModule.schema.inputSchema.properties?.stages;
+    const stageItem = stages?.items;
+    const toolPolicy = stageItem?.properties?.toolPolicy;
+
+    expect(stageItem?.properties?.maxExecutionTimeMs?.type).toBe('number');
+    expect(toolPolicy?.properties?.mode?.enum).toEqual([
+      'inherit',
+      'none',
+      'noTool',
+      'readonly',
+      'readOnly',
+      'allowlist',
+    ]);
+    expect(toolPolicy?.properties?.tools?.items?.type).toBe('string');
+    expect(toolPolicy?.properties?.maxToolCalls?.type).toBe('number');
+  });
 });
 
 describe('workflow_orchestrate behavior', () => {

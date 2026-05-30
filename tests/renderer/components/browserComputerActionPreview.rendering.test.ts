@@ -256,6 +256,48 @@ describe('browser/computer action preview rendering', () => {
     expect(html).not.toContain('等待结果');
   });
 
+  it('renders workflow subagent stages from result metadata', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ToolCallDisplay, {
+        toolCall: makeToolCall({
+          name: 'workflow_orchestrate',
+          arguments: {
+            workflow: 'custom',
+          },
+          result: {
+            toolCallId: 'tool-1',
+            success: true,
+            output: 'Workflow complete',
+            metadata: {
+              completedStages: 1,
+              failedStages: 0,
+              stages: [
+                {
+                  name: 'reviewer',
+                  role: 'reviewer',
+                  success: true,
+                  duration: 27508,
+                  toolsUsed: ['Grep', 'Glob', 'Read'],
+                  toolPolicy: {
+                    mode: 'readonly',
+                  },
+                },
+              ],
+            },
+          },
+        }),
+        index: 0,
+        total: 1,
+      }),
+    );
+
+    expect(html).not.toContain('派出 1 个子智能体');
+    expect(html).toContain('reviewer');
+    expect(html).toContain('readonly');
+    expect(html).toContain('Grep, Glob, Read');
+    expect(html).toContain('27.5s');
+  });
+
   it('preserves metadata when grouped trace nodes are rebuilt into ToolCallDisplay props', () => {
     const nodes: TraceNode[] = [
       {

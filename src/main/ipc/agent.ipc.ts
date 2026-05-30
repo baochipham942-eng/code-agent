@@ -126,6 +126,12 @@ export function registerAgentHandlers(
           appService.setEffortLevel((payload as { level: import('../../shared/contract/agent').EffortLevel }).level);
           return { success: true, data: null };
         }
+        case 'setThinkingEnabled': {
+          const appService = getAppService();
+          if (!appService) throw new Error('Agent not initialized');
+          appService.setThinkingEnabled(Boolean((payload as { enabled?: boolean }).enabled));
+          return { success: true, data: null };
+        }
         case 'setInteractionMode': {
           const appService = getAppService();
           if (!appService) throw new Error('Agent not initialized');

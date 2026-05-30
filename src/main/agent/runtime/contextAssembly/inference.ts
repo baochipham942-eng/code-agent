@@ -542,7 +542,11 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       }
     }
 
-    effectiveConfig = applyEffortControls(effectiveConfig, ctx.runtime.effortLevel);
+    effectiveConfig = applyEffortControls(
+      effectiveConfig,
+      ctx.runtime.effortLevel,
+      { thinkingEnabled: ctx.runtime.thinkingEnabled },
+    );
 
     logger.debug('[AgentLoop] Calling modelRouter.inference()...');
     logger.debug('[AgentLoop] Effective model:', effectiveConfig.model);

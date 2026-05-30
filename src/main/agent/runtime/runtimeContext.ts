@@ -179,6 +179,7 @@ export interface RuntimeContext {
 
   // --- Thinking ---
   effortLevel: EffortLevel;
+  thinkingEnabled: boolean;
   thinkingStepCount: number;
 
   // --- Interaction mode ---

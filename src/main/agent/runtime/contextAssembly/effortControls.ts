@@ -23,13 +23,18 @@ const EFFORT_TO_REASONING_EFFORT: Record<EffortLevel, 'low' | 'medium' | 'high'>
 export function applyEffortControls(
   config: ModelConfig,
   effortLevel: EffortLevel,
+  options: { thinkingEnabled?: boolean } = {},
 ): ModelConfig {
   const normalizedEffort = normalizeAgentEffortLevel(effortLevel);
-  const shouldDisableThinkingBudget =
-    config.provider === 'xiaomi' && normalizedEffort === 'low';
-  const budgetForEffort = shouldDisableThinkingBudget
-    ? undefined
-    : EFFORT_TO_BUDGET[normalizedEffort];
+  if (options.thinkingEnabled === false) {
+    return {
+      ...config,
+      thinkingBudget: undefined,
+      reasoningEffort: undefined,
+    };
+  }
+
+  const budgetForEffort = EFFORT_TO_BUDGET[normalizedEffort];
   const reasoningEffortForProvider = EFFORT_TO_REASONING_EFFORT[normalizedEffort];
 
   if (

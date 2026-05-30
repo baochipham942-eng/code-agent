@@ -41,4 +41,13 @@ describe('subagentExecutor abort signal propagation (D.1)', () => {
       ).toMatch(/\beffectiveSignal\b/);
     }
   });
+
+  it('enforces maxToolCalls before any subagent tool execution', () => {
+    const source = readFileSync(SUBAGENT_EXECUTOR_PATH, 'utf8');
+
+    expect(source).toContain('maxToolCalls?: number');
+    expect(source).toMatch(/toolCallsAttempted\s*>=\s*maxToolCalls/);
+    expect(source).toContain('Tool call blocked by tool policy');
+    expect(source).toMatch(/toolCallsAttempted\s*\+=\s*1/);
+  });
 });

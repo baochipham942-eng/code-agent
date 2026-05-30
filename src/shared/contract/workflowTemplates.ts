@@ -16,7 +16,7 @@ import type { WorkflowTemplate, WorkflowStage, BuiltInWorkflowId } from './workf
 export const BUILT_IN_WORKFLOWS: Record<BuiltInWorkflowId, WorkflowTemplate> = {
   'code-review-pipeline': {
     name: 'Code Review Pipeline',
-    description: 'Coder -> Reviewer -> Tester flow for feature development',
+    description: 'Coder -> Reviewer flow for feature development and test planning',
     tags: ['code', 'review', 'testing'],
     stages: [
       {
@@ -32,7 +32,7 @@ export const BUILT_IN_WORKFLOWS: Record<BuiltInWorkflowId, WorkflowTemplate> = {
       },
       {
         name: 'Testing',
-        role: 'tester',
+        role: 'reviewer',
         prompt: 'Write tests for the implemented feature.',
         dependsOn: ['Development'],
       },
@@ -41,12 +41,12 @@ export const BUILT_IN_WORKFLOWS: Record<BuiltInWorkflowId, WorkflowTemplate> = {
 
   'bug-fix-flow': {
     name: 'Bug Fix Flow',
-    description: 'Debugger -> Coder -> Tester flow for bug fixes',
+    description: 'Explorer -> Coder -> Reviewer flow for bug fixes',
     tags: ['debugging', 'code', 'testing'],
     stages: [
       {
         name: 'Investigation',
-        role: 'debugger',
+        role: 'explore',
         prompt: 'Investigate the bug and identify the root cause.',
       },
       {
@@ -57,7 +57,7 @@ export const BUILT_IN_WORKFLOWS: Record<BuiltInWorkflowId, WorkflowTemplate> = {
       },
       {
         name: 'Verification',
-        role: 'tester',
+        role: 'reviewer',
         prompt: 'Write tests to verify the fix and prevent regression.',
         dependsOn: ['Fix'],
       },
@@ -66,17 +66,17 @@ export const BUILT_IN_WORKFLOWS: Record<BuiltInWorkflowId, WorkflowTemplate> = {
 
   'documentation-flow': {
     name: 'Documentation Flow',
-    description: 'Architect -> Documenter flow for documentation',
+    description: 'Planner -> Coder flow for documentation',
     tags: ['documentation', 'architecture'],
     stages: [
       {
         name: 'Architecture Analysis',
-        role: 'architect',
+        role: 'plan',
         prompt: 'Analyze the system architecture and key components.',
       },
       {
         name: 'Documentation',
-        role: 'documenter',
+        role: 'coder',
         prompt: 'Write comprehensive documentation based on the architecture analysis.',
         dependsOn: ['Architecture Analysis'],
       },
@@ -85,7 +85,7 @@ export const BUILT_IN_WORKFLOWS: Record<BuiltInWorkflowId, WorkflowTemplate> = {
 
   'parallel-review': {
     name: 'Parallel Review',
-    description: 'Run reviewer and tester in parallel',
+    description: 'Run code review and test planning in parallel',
     tags: ['code', 'review', 'testing', 'parallel'],
     stages: [
       {
@@ -95,7 +95,7 @@ export const BUILT_IN_WORKFLOWS: Record<BuiltInWorkflowId, WorkflowTemplate> = {
       },
       {
         name: 'Test Writing',
-        role: 'tester',
+        role: 'reviewer',
         prompt: 'Write comprehensive tests.',
       },
     ],
@@ -108,7 +108,7 @@ export const BUILT_IN_WORKFLOWS: Record<BuiltInWorkflowId, WorkflowTemplate> = {
     stages: [
       {
         name: '视觉理解',
-        role: 'visual-understanding',
+        role: 'explore',
         prompt: `分析图片内容，识别所有需要标注的元素。
 
 输出格式要求：
@@ -120,7 +120,7 @@ export const BUILT_IN_WORKFLOWS: Record<BuiltInWorkflowId, WorkflowTemplate> = {
       },
       {
         name: '视觉处理',
-        role: 'visual-processing',
+        role: 'coder',
         prompt: `根据视觉理解阶段的分析结果，在图片上绘制标注。
 
 使用 image_annotate 工具进行标注绘制：
@@ -141,7 +141,7 @@ export const BUILT_IN_WORKFLOWS: Record<BuiltInWorkflowId, WorkflowTemplate> = {
     stages: [
       {
         name: 'OCR 识别',
-        role: 'visual-understanding',
+        role: 'explore',
         prompt: `识别图片中的所有文字区域。
 
 输出格式要求：
@@ -156,7 +156,7 @@ export const BUILT_IN_WORKFLOWS: Record<BuiltInWorkflowId, WorkflowTemplate> = {
       },
       {
         name: '矩形标注',
-        role: 'visual-processing',
+        role: 'coder',
         prompt: `根据 OCR 识别结果，用矩形框标注所有文字区域。
 
 使用 image_annotate 工具：

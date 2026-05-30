@@ -341,6 +341,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         model: config.model,
         temperature: config.temperature,
         maxTokens: config.maxTokens,
+        updatedAt: Date.now(),
         models: currentProviderConfig?.models,
         apiKeyConfigured: needsApiKey ? Boolean(config.apiKey?.trim() || hasStoredApiKey) : false,
       };
@@ -508,6 +509,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       apiKey,
       protocol: newProviderProtocol,
       model: modelId,
+      updatedAt: Date.now(),
       models: {
         [modelId]: modelSettings,
       },

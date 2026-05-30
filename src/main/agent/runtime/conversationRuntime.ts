@@ -17,8 +17,6 @@ import type {
   ToolResult,
   AgentEvent,
   AgentTaskPhase,
-  TaskPlan,
-  TodoItem,
 } from '../../../shared/contract';
 import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
 import { generateFormatCorrectionPrompt } from '../../agent/structuredOutput';
@@ -115,39 +113,15 @@ import {
   buildSkillInvocationContext,
   resolveSkillInvocation,
 } from '../../services/skills/skillInvocationResolver';
+import {
+  hasActiveSessionTodos,
+  isSessionFirstUserTurn,
+  queueRuntimeDiagnostic,
+  todosFromPlan,
+} from './conversationRuntimePlanning';
 
 
 const logger = createLogger('AgentLoop');
-
-function queueRuntimeDiagnostic(ctx: RuntimeContext, message: string): void {
-  const trimmed = message.trim();
-  if (!trimmed) return;
-  ctx.pendingRuntimeDiagnostics.push(trimmed);
-}
-
-function hasActiveSessionTodos(sessionId?: string): boolean {
-  return getSessionTodos(sessionId).some((todo) => todo.status !== 'completed');
-}
-
-function isSessionFirstUserTurn(messages: Message[]): boolean {
-  const userTurnCount = messages.filter((message) => (
-    message.role === 'user'
-    && message.metadata?.workbench?.runtimeInputMode !== 'supplement'
-  )).length;
-  return userTurnCount <= 1;
-}
-
-function todosFromPlan(plan: TaskPlan): TodoItem[] {
-  return plan.phases.flatMap((phase) =>
-    phase.steps.map((step) => ({
-      content: step.content,
-      status: step.status === 'completed' || step.status === 'skipped'
-        ? 'completed'
-        : step.status,
-      activeForm: step.activeForm || step.content,
-    })),
-  );
-}
 
 // Re-export types for backward compatibility
 export type { AgentLoopConfig };
@@ -1222,6 +1196,12 @@ export class ConversationRuntime {
     this.ctx.effortLevel = level;
     this.ctx.thinkingStepCount = 0;
     logger.debug(`[AgentLoop] Effort level set to: ${level}`);
+  }
+
+  setThinkingEnabled(enabled: boolean): void {
+    this.ctx.thinkingEnabled = enabled;
+    this.ctx.thinkingStepCount = 0;
+    logger.debug(`[AgentLoop] Thinking ${enabled ? 'enabled' : 'disabled'}`);
   }
 
   getEffortLevel(): import('../../../shared/contract/agent').EffortLevel {

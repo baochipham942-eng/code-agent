@@ -263,6 +263,7 @@ export class AgentLoop {
       // Thinking
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): effortLevel 类型 ThinkingEffort 是字面量联合 'low'|'medium'|'high'，'high' 应该匹配；可能是 const enum 没编译进类型，应该 import { ThinkingEffort } from 'types/agent' 后用 ThinkingEffort.High
       effortLevel: 'high' as any,
+      thinkingEnabled: true,
       thinkingStepCount: 0,
 
       // Interaction mode
@@ -347,6 +348,10 @@ export class AgentLoop {
 
   setEffortLevel(level: import('../../shared/contract/agent').EffortLevel): void {
     this.conversationRuntime.setEffortLevel(level);
+  }
+
+  setThinkingEnabled(enabled: boolean): void {
+    this.conversationRuntime.setThinkingEnabled(enabled);
   }
 
   getEffortLevel(): import('../../shared/contract/agent').EffortLevel {

@@ -162,6 +162,7 @@ export interface AgentApplicationService {
 
   // === Effort Level ===
   setEffortLevel(level: import('./agent').EffortLevel): void;
+  setThinkingEnabled(enabled: boolean): void;
 
   // === Interaction Mode ===
   setInteractionMode(mode: import('./agent').InteractionMode): void;

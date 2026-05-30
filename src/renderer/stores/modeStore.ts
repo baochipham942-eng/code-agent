@@ -24,6 +24,9 @@ interface ModeState {
   // Effort level (Adaptive Thinking)
   effortLevel: import('../../shared/contract/agent').EffortLevel;
 
+  // Provider thinking switch; effort controls intensity when this is on.
+  thinkingEnabled: boolean;
+
   // Interaction mode (Code / Plan / Ask)
   interactionMode: import('../../shared/contract/agent').InteractionMode;
 
@@ -34,6 +37,7 @@ interface ModeState {
   setMode: (mode: AppMode) => void;
   toggleMode: () => void;
   setEffortLevel: (level: import('../../shared/contract/agent').EffortLevel) => void;
+  setThinkingEnabled: (enabled: boolean) => void;
   setInteractionMode: (mode: import('../../shared/contract/agent').InteractionMode) => void;
   setIsPaused: (paused: boolean) => void;
 
@@ -55,6 +59,9 @@ export const useModeStore = create<ModeState>()(
       // Default effort level
       effortLevel: 'high' as import('../../shared/contract/agent').EffortLevel,
 
+      // Default provider thinking on for workflow/cowork tasks.
+      thinkingEnabled: true,
+
       // Default interaction mode
       interactionMode: 'code' as import('../../shared/contract/agent').InteractionMode,
 
@@ -72,6 +79,13 @@ export const useModeStore = create<ModeState>()(
         const normalizedLevel = normalizeAgentEffortLevel(level);
         set({ effortLevel: normalizedLevel });
         invokeDomain('domain:agent', 'setEffortLevel', { level: normalizedLevel }).catch(() => {
+          // Silently ignore if agent not initialized yet — will apply on next message
+        });
+      },
+
+      setThinkingEnabled: (enabled) => {
+        set({ thinkingEnabled: enabled });
+        invokeDomain('domain:agent', 'setThinkingEnabled', { enabled }).catch(() => {
           // Silently ignore if agent not initialized yet — will apply on next message
         });
       },
@@ -99,7 +113,7 @@ export const useModeStore = create<ModeState>()(
     }),
     {
       name: 'code-agent-mode',
-      version: 4, // Bump: clamp unsupported effort levels.
+      version: 5, // Bump: add independent provider thinking switch.
       migrate: (persistedState) => {
         if (!persistedState || typeof persistedState !== 'object') {
           return persistedState;
@@ -108,6 +122,9 @@ export const useModeStore = create<ModeState>()(
         return {
           ...state,
           effortLevel: normalizeAgentEffortLevel(state.effortLevel),
+          thinkingEnabled: typeof state.thinkingEnabled === 'boolean'
+            ? state.thinkingEnabled
+            : true,
         };
       },
     }

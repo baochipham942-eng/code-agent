@@ -24,7 +24,7 @@ import {
   type RuntimeModelOption,
 } from '@shared/modelRuntime';
 import { toast } from '../../hooks/useToast';
-import { Sparkles, Zap, Cpu, Code2 } from 'lucide-react';
+import { Brain, Sparkles, Zap, Cpu, Code2 } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
 import { trackRenderer } from '../../observability/posthogRenderer';
@@ -96,6 +96,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   // effort 切换内嵌到模型菜单顶部，对照 Codex 的"模型 + Intelligence"两层选择
   const effortLevel = useModeStore((s) => s.effortLevel);
   const setEffortLevel = useModeStore((s) => s.setEffortLevel);
+  const thinkingEnabled = useModeStore((s) => s.thinkingEnabled);
+  const setThinkingEnabled = useModeStore((s) => s.setThinkingEnabled);
   // Engine adapter（Native/Codex/Claude）— 从 AgentEngineSelector 合并进来，
   // 让"Engine · Model · Effort"在一个 trigger 里统一展示和切换。
   const engine = normalizeAgentEngineSession(session?.engine);
@@ -559,6 +561,14 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     [displayModel, displayProvider, engine.kind, selectedNativeOption?.features],
   );
   const selectedEffort = getSelectedEffortOption(effortLevel, effortOptions);
+  const supportsThinkingControls = engine.kind === 'native'
+    ? displayProvider === 'xiaomi'
+      || Boolean(selectedNativeOption?.features.includes('reasoning'))
+      || /reason|thinking|think|mimo|r1|o\d/i.test(displayModel)
+    : false;
+  const thinkingShortLabel = supportsThinkingControls
+    ? thinkingEnabled ? 'Think' : 'NoThink'
+    : null;
 
   useEffect(() => {
     if (effortOptions.some((option) => option.value === effortLevel)) return;
@@ -678,6 +688,14 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                             label={group.providerLabel || getProviderDisplayName(group.provider) || group.provider}
                           />
                           <span>{group.providerLabel || getProviderDisplayName(group.provider) || group.provider}</span>
+                          {group.providerSourceLabel && (
+                            <span
+                              className="ml-auto normal-case tracking-normal text-[10px] font-medium text-zinc-500"
+                              title={`来源: ${group.providerSourceLabel}`}
+                            >
+                              来源 {group.providerSourceLabel}
+                            </span>
+                          )}
                         </div>
                         {group.options.map(({ option: opt, index }) => {
                           const selected = displayModel === opt.model && displayProvider === opt.provider;
@@ -759,9 +777,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                     >
                       <div className="flex items-center gap-1 flex-wrap">
                         <span className="font-medium">{model.label}</span>
-                        {model.recommended ? (
-                          <span className="rounded bg-emerald-500/15 px-1 py-0.5 text-[10px] text-emerald-300">推荐</span>
-                        ) : null}
                         {model.disabledReason ? (
                           <span className="rounded bg-zinc-700/70 px-1 py-0.5 text-[10px] text-zinc-400">不可用</span>
                         ) : null}
@@ -790,9 +805,40 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             </div>
           </div>
 
+          {supportsThinkingControls && (
+            <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
+              <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
+                <span className="text-[9px] text-zinc-600">3</span>
+                <Brain className="w-3 h-3" />
+                <span>Thinking</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                {[
+                  { value: false, label: 'Off' },
+                  { value: true, label: 'On' },
+                ].map((option) => (
+                  <button
+                    key={option.label}
+                    type="button"
+                    onClick={() => setThinkingEnabled(option.value)}
+                    className={`
+                      inline-flex h-7 items-center justify-center rounded px-2 text-[10px] transition-colors
+                      ${thinkingEnabled === option.value
+                        ? 'text-amber-300 bg-amber-500/15 font-medium ring-1 ring-zinc-600/70'
+                        : 'text-zinc-500 hover:bg-zinc-700/50'}
+                    `}
+                    title={`Thinking: ${option.label}`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
             <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
-              <span className="text-[9px] text-zinc-600">3</span>
+              <span className="text-[9px] text-zinc-600">{supportsThinkingControls ? '4' : '3'}</span>
               <Zap className="w-3 h-3" />
               <span>Effort</span>
             </div>
@@ -839,7 +885,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         aria-label="切换模型"
         aria-expanded={open}
         className={`
-          font-medium cursor-pointer truncate max-w-[200px]
+          font-medium cursor-pointer truncate max-w-[260px]
           hover:text-white transition-colors
           ${isOverridden ? 'text-amber-400' : 'text-zinc-100'}
         `}
@@ -853,12 +899,17 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               : `当前: ${currentModel} · Engine: ${ENGINE_SHORT_LABEL[engine.kind]}`
         }
       >
-        <span className="text-zinc-400">{ENGINE_SHORT_LABEL[engine.kind] ?? 'Agent Neo'}</span>
+        <span className="text-zinc-400">{ENGINE_SHORT_LABEL[engine.kind] ?? 'Neo'}</span>
         <span className="text-zinc-500 mx-1">·</span>
         {displayLabel}
         <span className="text-zinc-500 ml-1">·</span>
+        {thinkingShortLabel && (
+          <>
+            <span className="text-zinc-400 ml-0.5">{thinkingShortLabel}</span>
+            <span className="text-zinc-500 ml-1">·</span>
+          </>
+        )}
         <span className="text-zinc-400 ml-0.5">{selectedEffort.shortLabel}</span>
-        {isOverridden && <span className="text-[9px] ml-0.5">*</span>}
       </button>
       {menu && createPortal(menu, document.body)}
     </>

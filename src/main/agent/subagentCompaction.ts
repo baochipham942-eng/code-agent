@@ -32,6 +32,15 @@ export type SubagentMessage = {
  */
 function messageText(msg: SubagentMessage): string {
   if (typeof msg.content === 'string') return msg.content;
+  if (!Array.isArray(msg.content)) {
+    const content = msg.content as unknown;
+    if (content && typeof content === 'object') {
+      const text = (content as { text?: unknown; content?: unknown }).text
+        ?? (content as { text?: unknown; content?: unknown }).content;
+      return typeof text === 'string' ? text : '';
+    }
+    return '';
+  }
   // Multimodal: concatenate text parts, ignore images
   return msg.content
     .filter((c) => c.type === 'text' && c.text)

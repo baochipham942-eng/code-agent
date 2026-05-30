@@ -7,7 +7,7 @@ import {
   groupRuntimeModelOptionsByProvider,
   inferModelCapabilities,
 } from '../../src/shared/modelRuntime';
-import { getProviderInfo, PROVIDER_MODELS_MAP } from '../../src/shared/constants';
+import { getModelDisplayLabel, getProviderInfo, PROVIDER_MODELS_MAP } from '../../src/shared/constants';
 
 describe('modelRuntime', () => {
   it('infers useful default capabilities from discovered model ids', () => {
@@ -82,6 +82,11 @@ describe('modelRuntime', () => {
     ]));
   });
 
+  it('uses neutral built-in model labels in the switcher catalog', () => {
+    expect(getModelDisplayLabel('mimo-v2.5-pro')).toBe('MiMo v2.5 Pro');
+    expect(getModelDisplayLabel('claude-sonnet-4-6')).toBe('Claude Sonnet 4.6');
+  });
+
   it('builds switcher options for dynamic custom provider ids', () => {
     const settings = {
       models: {
@@ -118,10 +123,151 @@ describe('modelRuntime', () => {
     expect(buildRuntimeModelOptions(settings, [])).toEqual([
       expect.objectContaining({
         provider: 'custom-longcat',
+        providerGroup: 'longcat',
+        providerGroupLabel: 'LongCat',
         model: 'longcat-2.0-preview',
         providerLabel: 'LongCat',
       }),
     ]);
+  });
+
+  it('groups Claude-shaped custom relays under Claude even when protocol is omitted', () => {
+    const settings = {
+      models: {
+        default: 'custom-commonstack-claude',
+        defaultProvider: 'custom-commonstack-claude',
+        providers: {
+          'custom-commonstack-claude': {
+            enabled: true,
+            displayName: 'CommonStack Claude',
+            baseUrl: 'https://commonstack.example/v1',
+            model: 'anthropic/claude-opus-4-8',
+            models: {
+              'anthropic/claude-opus-4-8': {
+                enabled: true,
+                label: 'Claude Opus 4 8',
+                capabilities: ['general', 'reasoning', 'vision'],
+                supportsTool: true,
+              },
+            },
+          },
+        },
+      },
+    } as AppSettings;
+
+    expect(buildRuntimeModelOptions(settings, [])).toEqual([
+      expect.objectContaining({
+        provider: 'custom-commonstack-claude',
+        providerGroup: 'claude',
+        providerGroupLabel: 'Anthropic Claude',
+        providerSourceLabel: 'CommonStack',
+        model: 'anthropic/claude-opus-4-8',
+      }),
+    ]);
+  });
+
+  it('keeps only the latest configured source per provider group in switcher options', () => {
+    const settings = {
+      models: {
+        default: 'custom-commonstack-claude',
+        defaultProvider: 'custom-commonstack-claude',
+        providers: {
+          claude: {
+            enabled: true,
+            updatedAt: 100,
+          },
+          'custom-scydao-claude': {
+            enabled: true,
+            displayName: 'ScyDAO Claude',
+            baseUrl: 'https://scydao.example/v1',
+            model: 'claude-opus-4-7-medium',
+            updatedAt: 200,
+            models: {
+              'claude-opus-4-7-medium': {
+                enabled: true,
+                label: 'Claude Opus 4.7 Medium',
+                supportsTool: true,
+              },
+            },
+          },
+          'custom-commonstack-claude': {
+            enabled: true,
+            displayName: 'CommonStack Claude',
+            baseUrl: 'https://commonstack.example/v1',
+            model: 'anthropic/claude-opus-4-8',
+            updatedAt: 300,
+            models: {
+              'anthropic/claude-opus-4-8': {
+                enabled: true,
+                label: 'Claude Opus 4 8',
+                supportsTool: true,
+              },
+              'anthropic/claude-sonnet-4-6': {
+                enabled: false,
+                label: 'Claude Sonnet 4 6',
+                supportsTool: true,
+              },
+            },
+          },
+        },
+      },
+    } as AppSettings;
+
+    const options = buildRuntimeModelOptions(settings, ['claude']);
+
+    expect(options.map((option) => option.provider)).toEqual([
+      'custom-commonstack-claude',
+      'custom-commonstack-claude',
+    ]);
+    expect(options).toEqual([
+      expect.objectContaining({
+        providerGroup: 'claude',
+        providerSourceLabel: 'CommonStack',
+        model: 'anthropic/claude-opus-4-8',
+      }),
+      expect.objectContaining({
+        providerGroup: 'claude',
+        providerSourceLabel: 'CommonStack',
+        model: 'anthropic/claude-sonnet-4-6',
+      }),
+    ]);
+  });
+
+  it('lets an official provider replace relays when it has the latest provider update', () => {
+    const settings = {
+      models: {
+        default: 'claude',
+        defaultProvider: 'claude',
+        providers: {
+          claude: {
+            enabled: true,
+            updatedAt: 400,
+          },
+          'custom-commonstack-claude': {
+            enabled: true,
+            displayName: 'CommonStack Claude',
+            baseUrl: 'https://commonstack.example/v1',
+            model: 'anthropic/claude-opus-4-8',
+            updatedAt: 300,
+            models: {
+              'anthropic/claude-opus-4-8': {
+                enabled: true,
+                label: 'Claude Opus 4 8',
+                supportsTool: true,
+              },
+            },
+          },
+        },
+      },
+    } as AppSettings;
+
+    const options = buildRuntimeModelOptions(settings, ['claude']);
+
+    expect(new Set(options.map((option) => option.provider))).toEqual(new Set(['claude']));
+    expect(options).toContainEqual(expect.objectContaining({
+      provider: 'claude',
+      model: 'claude-opus-4-7',
+    }));
   });
 
   it('keeps Claude provider defaults on Claude models', () => {
@@ -133,6 +279,16 @@ describe('modelRuntime', () => {
       { provider: 'deepseek', model: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', providerLabel: 'DeepSeek', features: [] },
       { provider: 'deepseek', model: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', providerLabel: 'DeepSeek', features: ['reasoning'] },
       { provider: 'xiaomi', model: 'mimo-v2.5-pro', label: 'MiMo v2.5 Pro', providerLabel: '小米 MiMo', features: ['tool'] },
+      {
+        provider: 'custom-claude-relay',
+        providerGroup: 'claude',
+        providerGroupLabel: 'Claude',
+        providerSourceLabel: 'Relay',
+        model: 'anthropic/claude-opus-4-8',
+        label: 'Claude Opus 4 8',
+        providerLabel: 'Relay',
+        features: ['reasoning'],
+      },
     ]);
 
     expect(groups).toEqual([
@@ -148,6 +304,17 @@ describe('modelRuntime', () => {
         provider: 'xiaomi',
         providerLabel: '小米 MiMo',
         options: [expect.objectContaining({ model: 'mimo-v2.5-pro' })],
+      }),
+      expect.objectContaining({
+        provider: 'claude',
+        providerLabel: 'Claude',
+        options: [
+          expect.objectContaining({
+            provider: 'custom-claude-relay',
+            providerSourceLabel: 'Relay',
+            model: 'anthropic/claude-opus-4-8',
+          }),
+        ],
       }),
     ]);
   });

@@ -2,9 +2,10 @@
 // Telemetry Storage - SQLite 持久化层
 // ============================================================================
 
+import { randomUUID } from 'crypto';
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
-import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, QualitySignals } from '../../shared/contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, QualitySignals, TelemetryFeedback, TelemetryFeedbackSubmitRequest } from '../../shared/contract/telemetry';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 import type Database from 'better-sqlite3';
 import { guardSensitiveJsonText, guardSensitiveText, guardSensitiveValue } from '../security/sensitiveDataGuard';
@@ -54,6 +55,15 @@ function parseFallbackInfoJson(value: unknown): TelemetryModelCall['fallbackUsed
   return typeof parsed.from === 'string' && typeof parsed.to === 'string' && typeof parsed.reason === 'string'
     ? { from: parsed.from, to: parsed.to, reason: parsed.reason }
     : undefined;
+}
+
+function parseTelemetryJson(value: unknown): unknown {
+  if (typeof value !== 'string' || !value) return undefined;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
 }
 
 const truncate = (value: string | undefined | null, limit: number): string | null => {
@@ -290,6 +300,105 @@ export class TelemetryStorage {
     }
   }
 
+  recordFeedback(input: TelemetryFeedbackSubmitRequest): TelemetryFeedback | null {
+    if (!this.isDbAvailable()) return null;
+    if (input.rating !== 1 && input.rating !== -1) return null;
+    const sessionId = input.sessionId?.trim();
+    if (!sessionId) return null;
+
+    try {
+      const db = this.getDb();
+      const messageId = input.messageId?.trim() || null;
+      const turnId = input.turnId?.trim() || null;
+      const existing = messageId
+        ? db.prepare('SELECT id FROM telemetry_feedback WHERE session_id = ? AND message_id = ?').get(sessionId, messageId) as { id?: string } | undefined
+        : undefined;
+      const id = existing?.id ?? randomUUID();
+      const createdAt = Date.now();
+      const fullContent = input.rating === -1 && input.fullContent !== undefined
+        ? stringifyGuardedTelemetry(input.fullContent)
+        : null;
+
+      db.prepare(
+        `
+          INSERT INTO telemetry_feedback (
+            id, session_id, turn_id, message_id, rating, comment, full_content, created_at, synced_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+          ON CONFLICT(id) DO UPDATE SET
+            turn_id = excluded.turn_id,
+            message_id = excluded.message_id,
+            rating = excluded.rating,
+            comment = excluded.comment,
+            full_content = excluded.full_content,
+            created_at = excluded.created_at,
+            synced_at = NULL
+        `,
+      ).run(
+        id,
+        sessionId,
+        turnId,
+        messageId,
+        input.rating,
+        guardTelemetryText(input.comment, TELEMETRY_TRUNCATION.EVENT_SUMMARY),
+        fullContent,
+        createdAt,
+      );
+
+      return {
+        id,
+        sessionId,
+        turnId,
+        messageId,
+        rating: input.rating,
+        comment: input.comment ?? null,
+        fullContent: fullContent ? parseTelemetryJson(fullContent) : undefined,
+        createdAt,
+        syncedAt: null,
+      };
+    } catch (error) {
+      logger.error('Failed to record telemetry feedback:', error);
+      return null;
+    }
+  }
+
+  getUnsyncedFeedback(limit = 50, userId?: string): TelemetryFeedback[] {
+    if (!this.isDbAvailable()) return [];
+    try {
+      const ownerFilter = userId ? 'AND COALESCE(telemetry_sessions.user_id, sessions.user_id) = ?' : '';
+      const rows = this.getStmt(
+        userId ? 'get_unsynced_feedback_for_user' : 'get_unsynced_feedback',
+        `
+          SELECT telemetry_feedback.*
+          FROM telemetry_feedback
+          LEFT JOIN telemetry_sessions ON telemetry_sessions.id = telemetry_feedback.session_id
+          LEFT JOIN sessions ON sessions.id = telemetry_feedback.session_id
+          WHERE telemetry_feedback.synced_at IS NULL
+            AND telemetry_sessions.status IN ('completed', 'error')
+            AND COALESCE(telemetry_sessions.user_id, sessions.user_id) IS NOT NULL
+            ${ownerFilter}
+          ORDER BY telemetry_feedback.created_at ASC
+          LIMIT ?
+        `,
+      ).all(...(userId ? [userId] : []), limit) as Record<string, unknown>[];
+      return rows.map((row) => this.rowToFeedback(row));
+    } catch (error) {
+      logger.error('Failed to get unsynced telemetry feedback:', error);
+      return [];
+    }
+  }
+
+  markFeedbackSynced(feedbackIds: string[], syncedAt: number = Date.now()): void {
+    if (!this.isDbAvailable() || feedbackIds.length === 0) return;
+    try {
+      const placeholders = feedbackIds.map(() => '?').join(', ');
+      this.getDb()
+        .prepare(`UPDATE telemetry_feedback SET synced_at = ? WHERE id IN (${placeholders})`)
+        .run(syncedAt, ...feedbackIds);
+    } catch (error) {
+      logger.error('Failed to mark telemetry feedback synced:', error);
+    }
+  }
+
   listSessions(options: TelemetrySessionListOptions = {}): TelemetrySessionListItem[] {
     if (!this.isDbAvailable()) return [];
     try {
@@ -353,6 +462,7 @@ export class TelemetryStorage {
     try {
       const db = this.getDb();
       db.transaction(() => {
+        db.prepare('DELETE FROM telemetry_feedback WHERE session_id = ?').run(sessionId);
         db.prepare('DELETE FROM telemetry_events WHERE session_id = ?').run(sessionId);
         db.prepare('DELETE FROM telemetry_tool_calls WHERE session_id = ?').run(sessionId);
         db.prepare('DELETE FROM telemetry_model_calls WHERE session_id = ?').run(sessionId);
@@ -379,7 +489,7 @@ export class TelemetryStorage {
   getStorageBytes(): number {
     if (!this.isDbAvailable()) return 0;
     const db = this.getDb();
-    const tables = ['telemetry_sessions', 'telemetry_turns', 'telemetry_model_calls', 'telemetry_tool_calls', 'telemetry_events'];
+    const tables = ['telemetry_sessions', 'telemetry_turns', 'telemetry_model_calls', 'telemetry_tool_calls', 'telemetry_events', 'telemetry_feedback'];
 
     // dbstat 是 SQLite 编译选项，better-sqlite3 默认未开启；先尝试
     try {
@@ -983,6 +1093,20 @@ export class TelemetryStorage {
       timestamp: row.timestamp as number,
       index: row.idx as number,
       parallel: !!(row.parallel as number)
+    };
+  }
+
+  private rowToFeedback(row: Record<string, unknown>): TelemetryFeedback {
+    return {
+      id: row.id as string,
+      sessionId: row.session_id as string,
+      turnId: row.turn_id == null ? null : String(row.turn_id),
+      messageId: row.message_id == null ? null : String(row.message_id),
+      rating: row.rating === -1 ? -1 : 1,
+      comment: row.comment == null ? null : String(row.comment),
+      fullContent: parseTelemetryJson(row.full_content),
+      createdAt: row.created_at as number,
+      syncedAt: row.synced_at == null ? null : row.synced_at as number,
     };
   }
 

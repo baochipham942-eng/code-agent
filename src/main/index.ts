@@ -4,7 +4,7 @@
 
 import { app, BrowserWindow, ipcMain, globalShortcut } from './platform';
 import { createLogger } from './services/infra/logger';
-import { initSentryNode } from './observability/sentryNode';
+import { initSentryNode, setSentryNodeRuntimeTagProvider } from './observability/sentryNode';
 import { initCrashMarker } from './observability/crashMarker';
 import { initPostHogNode } from './observability/posthogNode';
 
@@ -35,6 +35,11 @@ import { installSwarmTraceWriter } from './agent/swarmTraceWriter';
 import { getDatabase } from './services/core/databaseService';
 import type { SwarmTraceRepo } from '../shared/contract/swarmTrace';
 import type { PendingApprovalRepository } from './services/core/repositories/PendingApprovalRepository';
+
+setSentryNodeRuntimeTagProvider(() => {
+  const sessionId = getCurrentSessionId();
+  return sessionId ? { sessionId } : {};
+});
 
 // 崩溃上报尽早初始化（无 SENTRY_DSN 时为 no-op）
 initSentryNode();

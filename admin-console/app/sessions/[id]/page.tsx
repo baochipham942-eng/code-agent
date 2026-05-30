@@ -1,6 +1,8 @@
 // 按 sessionId 查根因 — 控制台第一刀的核心页面。
 // 把"Q: 用户某个 session 效果不好/出错，我能不能查到根因?"包成 UI。
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { getSentryIssuesForSession, type SentrySessionLookup } from '@/lib/sentry';
+import Link from 'next/link';
 
 type Params = Promise<{ id: string }>;
 
@@ -28,6 +30,18 @@ type TurnPayload = {
   toolCalls?: ToolCallSummary[];
 };
 
+type FeedbackRow = {
+  id: string;
+  session_id: string | null;
+  turn_id: string | null;
+  user_id: string | null;
+  rating: number | null;
+  comment: string | null;
+  full_content: unknown;
+  created_at: number | null;
+  uploaded_at: string | null;
+};
+
 export default async function SessionDetail({ params }: { params: Params }) {
   const { id: raw } = await params;
   const id = decodeURIComponent(raw);
@@ -42,9 +56,9 @@ export default async function SessionDetail({ params }: { params: Params }) {
   if (!session) {
     return (
       <main className="min-h-screen bg-zinc-950 text-zinc-100 p-8">
-        <a href="/" className="text-sm text-zinc-500 hover:text-zinc-300">
+        <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-300">
           ← 返回
-        </a>
+        </Link>
         <h1 className="text-xl font-semibold mt-4 mb-2">未找到会话</h1>
         <p className="text-zinc-400 text-sm">
           sessionId = <code className="text-zinc-300 font-mono">{id}</code> 不存在或还未上传。
@@ -53,17 +67,35 @@ export default async function SessionDetail({ params }: { params: Params }) {
     );
   }
 
-  const { data: turns } = await supabase
-    .from('telemetry_turns')
-    .select('*')
-    .eq('session_id', id)
-    .order('turn_number', { ascending: true });
+  const [{ data: turns }, { data: feedback }, sentry] = await Promise.all([
+    supabase
+      .from('telemetry_turns')
+      .select('*')
+      .eq('session_id', id)
+      .order('turn_number', { ascending: true }),
+    supabase
+      .from('telemetry_feedback')
+      .select('id, session_id, turn_id, user_id, rating, comment, full_content, created_at, uploaded_at')
+      .eq('session_id', id)
+      .order('uploaded_at', { ascending: false })
+      .returns<FeedbackRow[]>(),
+    getSentryIssuesForSession(id),
+  ]);
+  const feedbackRows = feedback ?? [];
+  const negativeFeedbackCount = feedbackRows.filter((item) => item.rating === -1).length;
+  const feedbackByTurn = new Map<string, FeedbackRow[]>();
+  for (const item of feedbackRows) {
+    if (!item.turn_id) continue;
+    const existing = feedbackByTurn.get(item.turn_id) ?? [];
+    existing.push(item);
+    feedbackByTurn.set(item.turn_id, existing);
+  }
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 p-8 max-w-5xl mx-auto">
-      <a href="/" className="text-sm text-zinc-500 hover:text-zinc-300">
+      <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-300">
         ← 返回
-      </a>
+      </Link>
 
       <header className="mt-4 mb-6">
         <h1 className="text-2xl font-semibold font-mono break-all">{session.id}</h1>
@@ -78,8 +110,31 @@ export default async function SessionDetail({ params }: { params: Params }) {
           {session.total_errors > 0 ? (
             <span className="text-red-400">{session.total_errors} errors</span>
           ) : null}
+          {feedbackRows.length > 0 ? (
+            <span className={negativeFeedbackCount > 0 ? 'text-red-300' : 'text-green-300'}>
+              {feedbackRows.length} feedback
+            </span>
+          ) : null}
         </div>
       </header>
+
+      <SentryPanel lookup={sentry} />
+
+      <section className="mb-8">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h2 className="text-xs uppercase tracking-wide text-zinc-500">反馈</h2>
+          {negativeFeedbackCount > 0 ? (
+            <Link href="/feedback" className="text-xs text-blue-400 hover:underline">
+              查看差评队列
+            </Link>
+          ) : null}
+        </div>
+        {feedbackRows.length === 0 ? (
+          <p className="text-zinc-500 text-sm">无用户反馈。</p>
+        ) : (
+          <FeedbackList feedback={feedbackRows} />
+        )}
+      </section>
 
       <section className="mb-8">
         <h2 className="text-xs uppercase tracking-wide text-zinc-500 mb-3">会话头</h2>
@@ -111,12 +166,90 @@ export default async function SessionDetail({ params }: { params: Params }) {
         ) : (
           <div className="space-y-3">
             {turns.map((t) => (
-              <TurnCard key={t.id} turn={t} />
+              <TurnCard
+                key={t.id}
+                turn={t}
+                feedback={feedbackByTurn.get(String(t.id)) ?? []}
+              />
             ))}
           </div>
         )}
       </section>
     </main>
+  );
+}
+
+function SentryPanel({ lookup }: { lookup: SentrySessionLookup }) {
+  return (
+    <section className="mb-8">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <h2 className="text-xs uppercase tracking-wide text-zinc-500">Sentry 事件</h2>
+        {lookup.searchUrl ? (
+          <a
+            href={lookup.searchUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-blue-400 hover:underline"
+          >
+            打开 Sentry 搜索
+          </a>
+        ) : null}
+      </div>
+
+      {!lookup.isConfigured ? (
+        <p className="text-zinc-500 text-sm">
+          未配置 Sentry 关联。设置 SENTRY_ORG_SLUG 后可生成搜索入口；再设置 SENTRY_AUTH_TOKEN 可在本页直接读事件。
+        </p>
+      ) : !lookup.canFetch ? (
+        <p className="text-zinc-500 text-sm">
+          已生成 Sentry 搜索入口；未配置 SENTRY_AUTH_TOKEN，本页不直接读取事件。
+        </p>
+      ) : lookup.error ? (
+        <p className="text-amber-300 text-sm">Sentry 查询失败：{lookup.error}</p>
+      ) : lookup.issues.length === 0 ? (
+        <p className="text-zinc-500 text-sm">未找到带当前 sessionId tag 的 Sentry issue。</p>
+      ) : (
+        <div className="rounded-lg border border-zinc-800 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-900/60 text-zinc-500 text-xs">
+              <tr>
+                <th className="text-left px-3 py-2 font-normal">issue</th>
+                <th className="text-left px-3 py-2 font-normal">level</th>
+                <th className="text-left px-3 py-2 font-normal">project</th>
+                <th className="text-right px-3 py-2 font-normal">events</th>
+                <th className="text-right px-3 py-2 font-normal">last seen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lookup.issues.map((issue) => (
+                <tr key={issue.id} className="border-t border-zinc-900 hover:bg-zinc-900/40">
+                  <td className="px-3 py-2">
+                    <a
+                      href={issue.permalink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue-400 hover:underline"
+                    >
+                      <span className="font-mono text-xs">{issue.shortId}</span>
+                      <span className="ml-2">{issue.title}</span>
+                    </a>
+                    {issue.culprit ? (
+                      <div className="mt-1 text-xs text-zinc-500 truncate">{issue.culprit}</div>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2 text-zinc-300">{issue.level ?? '—'}</td>
+                  <td className="px-3 py-2 text-zinc-400">{issue.projectSlug ?? '—'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{issue.count ?? '—'}</td>
+                  <td className="px-3 py-2 text-right text-zinc-400 text-xs">
+                    {formatDate(issue.lastSeen)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -142,7 +275,13 @@ function Pill({ status }: { status?: string | null }) {
   return <span className={`px-2 py-0.5 rounded text-xs ${color}`}>{status ?? '—'}</span>;
 }
 
-function TurnCard({ turn }: { turn: Record<string, unknown> }) {
+function TurnCard({
+  turn,
+  feedback,
+}: {
+  turn: Record<string, unknown>;
+  feedback: FeedbackRow[];
+}) {
   const payload = (turn.payload ?? {}) as TurnPayload;
   const toolCalls = payload.toolCalls ?? [];
   const modelCalls = payload.modelCalls ?? [];
@@ -212,6 +351,91 @@ function TurnCard({ turn }: { turn: Record<string, unknown> }) {
           （{failedTools.map((t) => t.errorCategory ?? t.name).filter(Boolean).join('，')}）
         </p>
       )}
+
+      {feedback.length > 0 ? (
+        <div className="mt-4 border-t border-zinc-800 pt-3">
+          <div className="mb-2 text-xs uppercase tracking-wide text-zinc-500">turn feedback</div>
+          <FeedbackList feedback={feedback} compact />
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function FeedbackList({
+  feedback,
+  compact = false,
+}: {
+  feedback: FeedbackRow[];
+  compact?: boolean;
+}) {
+  return (
+    <div className={compact ? 'space-y-2' : 'rounded-lg border border-zinc-800 overflow-hidden'}>
+      {feedback.map((item) => (
+        <FeedbackItem key={item.id} feedback={item} compact={compact} />
+      ))}
+    </div>
+  );
+}
+
+function FeedbackItem({
+  feedback,
+  compact,
+}: {
+  feedback: FeedbackRow;
+  compact: boolean;
+}) {
+  const isNegative = feedback.rating === -1;
+  const excerpt = getFeedbackExcerpt(feedback.full_content);
+
+  return (
+    <div
+      className={
+        compact
+          ? 'text-xs'
+          : 'border-t border-zinc-900 first:border-t-0 bg-zinc-900/20 px-3 py-2 text-sm'
+      }
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={isNegative ? 'text-red-300' : 'text-green-300'}>
+          {isNegative ? '负反馈' : '正反馈'}
+        </span>
+        {feedback.turn_id ? (
+          <span className="font-mono text-zinc-500 break-all">turn {feedback.turn_id}</span>
+        ) : null}
+        <span className="text-zinc-600">{formatDate(feedback.uploaded_at ?? feedback.created_at)}</span>
+      </div>
+      {feedback.comment ? (
+        <p className="mt-1 text-zinc-300 break-words">{feedback.comment}</p>
+      ) : null}
+      {excerpt ? (
+        <p className="mt-1 text-zinc-500 break-words">
+          assistant: <span className="text-zinc-400">{excerpt}</span>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function getFeedbackExcerpt(fullContent: unknown): string | null {
+  if (!fullContent || typeof fullContent !== 'object') return null;
+  const data = fullContent as Record<string, unknown>;
+  const text =
+    readString(data.assistantResponse) ??
+    readString(data.completion) ??
+    readString(data.output) ??
+    readString(data.response);
+  if (!text) return null;
+  return text.length > 320 ? `${text.slice(0, 320)}...` : text;
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function formatDate(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return '—';
+  const date = typeof value === 'number' ? new Date(value) : new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString();
 }

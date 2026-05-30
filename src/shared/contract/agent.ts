@@ -253,6 +253,17 @@ export type AgentEvent =
   // Turn-based message events (行业最佳实践: Vercel AI SDK / LangGraph 模式)
   | { type: 'turn_start'; data: { turnId: string; iteration?: number; parentToolUseId?: string } }
   | { type: 'turn_end'; data: { turnId: string; parentToolUseId?: string } }
+  | { type: 'tool_schema_snapshot'; data: {
+      turnId?: string;
+      toolCount: number;
+      tools: Array<{
+        name: string;
+        inputSchema?: Record<string, unknown>;
+        requiresPermission?: boolean;
+        permissionLevel?: string;
+      }>;
+      parentToolUseId?: string;
+    } }
   | { type: 'model_response'; data: {
       model: string;
       provider?: string;

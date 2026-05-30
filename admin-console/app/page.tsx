@@ -1,6 +1,7 @@
 // Fleet Observability 总览 + 按 sessionId 查根因入口。
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { signOut } from '@/app/login/actions';
+import Link from 'next/link';
 
 type SessionListRow = {
   id: string;
@@ -46,9 +47,10 @@ export default async function Dashboard() {
           <p className="text-xs text-zinc-500 mt-1">Agent Neo · 跨用户 trace 与崩溃</p>
         </div>
         <nav className="flex items-center gap-5 text-sm">
-          <a href="/" className="text-zinc-100 hover:text-white">Dashboard</a>
-          <a href="/users" className="text-zinc-400 hover:text-zinc-100">Users</a>
-          <a href="/errors" className="text-zinc-400 hover:text-zinc-100">Errors</a>
+          <Link href="/" className="text-zinc-100 hover:text-white">Dashboard</Link>
+          <Link href="/users" className="text-zinc-400 hover:text-zinc-100">Users</Link>
+          <Link href="/errors" className="text-zinc-400 hover:text-zinc-100">Errors</Link>
+          <Link href="/feedback" className="text-zinc-400 hover:text-zinc-100">Feedback</Link>
           <form action={signOut}>
             <button className="text-zinc-500 hover:text-zinc-300">登出</button>
           </form>
@@ -95,12 +97,12 @@ export default async function Dashboard() {
                 {recent.map((s) => (
                   <tr key={s.id} className="border-t border-zinc-900 hover:bg-zinc-900/40">
                     <td className="px-3 py-2">
-                      <a
+                      <Link
                         href={`/sessions/${encodeURIComponent(s.id)}`}
                         className="font-mono text-xs text-blue-400 hover:underline"
                       >
                         {s.id.length > 28 ? `${s.id.slice(0, 28)}…` : s.id}
-                      </a>
+                      </Link>
                     </td>
                     <td className="px-3 py-2">
                       <Pill status={s.status} />

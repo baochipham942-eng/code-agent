@@ -11,7 +11,7 @@
 |------|------|------|
 | **P0 崩溃回传** | renderer + node 双侧 Sentry，共用 `scrubEvent` 脱敏（密钥 / 家目录 / extra 递归） | Sentry |
 | **P1 LLM trace 回传** | telemetry sessions / turns / feedback 三表 + admin-only RLS + auth-gated metadata-only 上传器 | Supabase |
-| **P2 admin 控制台 + 行为分析** | Next.js 16 + `@supabase/ssr` 子 app；PostHog 8 处接线 + 3 看板 + 6 insights | Vercel + PostHog |
+| **P2 admin 控制台 + 行为分析** | Next.js 16 + `@supabase/ssr` 子 app；PostHog 代码侧接线 + 3 看板 + 8 insights 规格 | Vercel + PostHog |
 
 ## 关键文件
 
@@ -28,6 +28,8 @@
 | `src/shared/observability/posthog-events.ts` | 7 个 event key 常量（`app_opened` / `session_started` / `run_completed` / `run_failed` / `run_cancelled` / `tool_used` / `model_selected`）；`identify` 是 SDK 方法名（`identifyNode` / `identifyRenderer`），不是 event key |
 | `src/main/telemetry/telemetryUploaderService.ts` | LLM trace 上传器；turn 失败不标记 `synced_at`，防 partial-write 丢数据 |
 | `src/main/telemetry/telemetryStorage.ts` | 本地 SQLite 在 `telemetry_sessions` 表加 `synced_at` 列 + 迁移（turns / feedback 同步状态由 session 级 `markSessionsSynced` / `getUnsyncedSessions` 间接管理，不直接持有 `synced_at`） |
+| `scripts/observability/posthog-dashboards.py` | 幂等创建 3 个 PostHog 看板并反查 8 个 insight；`npm run acceptance:posthog-dashboards:dry-run` 可离线输出规格，`npm run acceptance:posthog-dashboards:verify` 可只做线上核验 |
+| `scripts/acceptance/posthog-live-event-smoke.py` | 用 PostHog Project API Key 发无 PII smoke event；优先 HogQL 回读，缺 `query:read` 时 fallback 到临时 insight refresh 回读 |
 
 ### 服务端侧
 
@@ -37,13 +39,13 @@
 | `admin-console/app/page.tsx` | 概览仪表盘 |
 | `admin-console/app/sessions/[id]/page.tsx` | 单 session trace 详情 |
 | `admin-console/app/users/page.tsx` | 用户列表 |
-| `admin-console/app/errors/page.tsx` | 错误聚合（Sentry → Supabase 二次落地） |
-| `admin-console/middleware.ts` | 三层 admin gate 第二层（middleware level） |
+| `admin-console/app/errors/page.tsx` | 错误聚合、14 天错误趋势和最近错误会话列表 |
+| `admin-console/proxy.ts` | 三层 admin gate 第二层（Next proxy level） |
 
 ## 三层 Admin Gate
 
 1. **Vercel SSO** — 部署级访问控制
-2. **Next.js middleware** — 路由级，未登录的非 admin 用户重定向到 `/unauthorized`
+2. **Next.js proxy** — 路由级，未登录的非 admin 用户重定向到 `/unauthorized`
 3. **Supabase RLS** — DB 级，行权策略 + 跨表归属校验函数 `owns_telemetry_session(p_session_id TEXT)` / `owns_telemetry_turn(p_turn_id TEXT, p_session_id TEXT DEFAULT NULL)` 防跨用户污染（注：参数是 TEXT 不是 uuid，turn 函数可选第二参数）
 
 ## 红线（Codex 对抗式 review 找到 4 处漏洞并修补）
@@ -63,6 +65,9 @@
 - Sentry live event 实证：真实平台上看到的 event payload 脱敏成立（密钥 / 家目录已剥）
 - Supabase RLS：`pg_policies` 元数据查询 + headless 真 JWT 双重实查
 - Vercel 部署：ready，三层 admin gate 一二三层实测均拦截非 admin 流量
+- PostHog 本地规格验：`npm run acceptance:posthog-dashboards:dry-run`
+- PostHog dashboard 线上验：`npm run acceptance:posthog-dashboards` 已在项目 `353395` create/reuse 后反查 3 个 dashboard / 8 个 insight
+- PostHog ingest + 回读线上验：`npm run acceptance:posthog-live-event` 已返回 `{"status":"Ok"}` 并通过临时 insight refresh 回读到 smoke event；旧 Personal API Key 缺 `query:read` 时自动 fallback
 
 ## 与 Sensitive Data Guard 的关系
 

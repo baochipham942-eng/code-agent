@@ -939,6 +939,8 @@ export class TelemetryCollector {
         return `Turn ${data?.iteration ?? '?'} started`;
       case 'turn_end':
         return `Turn ended`;
+      case 'tool_schema_snapshot':
+        return `${Number(data?.toolCount ?? 0)} tool schemas available`;
       case 'tool_call_start':
         return `Tool: ${data?.name ?? 'unknown'} started`;
       case 'tool_call_end':
@@ -963,6 +965,14 @@ export class TelemetryCollector {
   private extractEventData(event: AgentEvent): string | undefined {
     const data = event.data as Record<string, unknown> | undefined;
     if (!data) return undefined;
+
+    if (event.type === 'tool_schema_snapshot') {
+      return JSON.stringify({
+        turnId: data.turnId,
+        toolCount: data.toolCount,
+        tools: data.tools,
+      });
+    }
 
     // Extract only key fields, exclude large content
     const extracted: Record<string, unknown> = {};

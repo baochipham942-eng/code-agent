@@ -1,5 +1,6 @@
 // /users — per-user 用量与成本聚合（admin 控制台 P2.2）
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import Link from 'next/link';
 
 type Row = {
   user_id: string;
@@ -23,9 +24,9 @@ export default async function UsersPage() {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 p-8 max-w-5xl mx-auto">
-      <a href="/" className="text-sm text-zinc-500 hover:text-zinc-300">
+      <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-300">
         ← 返回 dashboard
-      </a>
+      </Link>
       <header className="mt-4 mb-6">
         <h1 className="text-2xl font-semibold">Users</h1>
         <p className="text-xs text-zinc-500 mt-1">

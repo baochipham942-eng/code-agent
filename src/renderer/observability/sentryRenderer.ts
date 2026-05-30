@@ -48,6 +48,15 @@ export interface CaptureContext {
   extra?: Record<string, unknown>;
 }
 
+export function setSentryRendererContext(context: {
+  sessionId?: string | null;
+  userId?: string | null;
+}): void {
+  if (!initialized) return;
+  Sentry.setTag('sessionId', context.sessionId ?? 'none');
+  Sentry.setTag('userId', context.userId ?? 'anonymous');
+}
+
 /** 上报一个异常。未初始化 / 已 opt-out 时是 no-op。 */
 export function captureRendererException(error: unknown, context?: CaptureContext): void {
   if (!initialized || !enabled) return;

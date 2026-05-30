@@ -181,9 +181,6 @@ const DEFAULT_SETTINGS: AppSettings = {
       gui: { provider: 'zhipu', model: DEFAULT_MODELS.visionFast },
     },
   },
-  generation: {
-    default: 'gen8',
-  },
   workspace: {
     recentDirectories: [],
   },
@@ -882,7 +879,6 @@ export class ConfigService implements IReadConfigService {
       const storage = getSecureStorage();
       const settingsToSync: Record<string, unknown> = {
         // 核心配置
-        generation: this.settings.generation.default,
         modelProvider: this.settings.models.default,
         permissionMode: this.settings.permissions.permissionMode || 'default',
         devModeAutoApprove: this.settings.permissions.devModeAutoApprove,

@@ -68,9 +68,6 @@ export interface AppSettings {
     /** 自定义超时（毫秒），用户可手动设置 */
     custom?: number;
   };
-  generation: {
-    default?: string;
-  };
   workspace: {
     defaultDirectory?: string;
     recentDirectories: string[];

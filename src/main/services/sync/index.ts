@@ -3,15 +3,6 @@
 // ============================================================================
 
 export {
-  CloudStorageService,
-  getCloudStorage,
-  type CloudProvider,
-  type CloudStorageConfig,
-  type SyncStatus,
-  type ExportData,
-} from './cloudStorageService';
-
-export {
   getSyncService,
   type SyncService,
   type SyncResult,

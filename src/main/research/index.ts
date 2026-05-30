@@ -31,13 +31,6 @@ export {
   type SourceAvailabilityChecker,
 } from './dataSourceRouter';
 export {
-  ResultAggregator,
-  defaultAggregator,
-  type AggregatorConfig,
-  type AggregatedResult,
-  type AggregationStats,
-} from './resultAggregator';
-export {
   AdaptiveConfigGenerator,
   createAdaptiveConfigGenerator,
   getDepthPreset,
@@ -48,19 +41,6 @@ export {
   createProgressiveLoop,
   type ProgressiveLoopConfig,
 } from './progressiveLoop';
-
-// Search fallback handler (new)
-export {
-  SearchFallbackHandler,
-  createSearchFallbackHandler,
-  classifyError,
-  SearchErrorType,
-  type SearchFallbackConfig,
-  type SearchExecutor,
-  type SearchExecutionResult,
-  type SearchAttemptResult,
-  type FallbackExecutionResult,
-} from './searchFallback';
 
 // Semantic research orchestrator (new)
 export {

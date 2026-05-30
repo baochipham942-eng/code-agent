@@ -28,10 +28,3 @@ export {
   getCoworkTemplate,
   listCoworkTemplates,
 } from './coworkContract';
-
-// Orchestrator
-export {
-  CoworkOrchestrator,
-  createCoworkOrchestrator,
-  type CoworkOrchestratorConfig,
-} from './coworkOrchestrator';

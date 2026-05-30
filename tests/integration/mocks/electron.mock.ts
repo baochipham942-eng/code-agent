@@ -267,12 +267,14 @@ export function createMockElectron(tempDir: string): MockElectron {
 }
 
 /**
- * Sets up Electron module mocks for vitest
+ * Builds the Electron mock object for a given temp dir.
+ *
+ * NOTE: To actually replace the `electron` module, declare the mock at the top
+ * level of the test file itself, e.g.:
+ *   vi.mock('electron', () => createMockElectron(tempDir));
+ * vi.mock is statically hoisted by Vitest and cannot be registered from inside
+ * this helper at runtime.
  */
 export function setupElectronMocks(tempDir: string) {
-  const mockElectron = createMockElectron(tempDir);
-
-  vi.mock('electron', () => mockElectron);
-
-  return mockElectron;
+  return createMockElectron(tempDir);
 }

@@ -507,16 +507,10 @@ export function setupIntegrationTest() {
   beforeEach(() => {
     mockDb = createMockDatabaseService();
     mockLogger = createMockLogger();
-
-    // Setup common mocks
-    vi.mock('../../src/main/services', () => ({
-      getDatabase: () => mockDb,
-      getToolCache: () => createMockToolCache(),
-    }));
-
-    vi.mock('../../src/main/services/infra/logger', () => ({
-      createLogger: () => mockLogger,
-    }));
+    // NOTE: Module mocks (vi.mock) are statically hoisted by Vitest and cannot
+    // be registered per-test from inside a shared helper. Tests that need
+    // ../../src/main/services or the logger module mocked must declare
+    // vi.mock(...) at the top level of their own test file.
   });
 
   afterEach(() => {

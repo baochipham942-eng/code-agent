@@ -79,6 +79,7 @@ describe('SettingsModal screen memory tab visibility', () => {
       'conversation',
       'model',
       'appearance',
+      'soul',
     ]);
     expect(groups[0].tabs[0].label).toBe('权限与安全');
     expect(groups[3].tabs.map((tab) => tab.id)).toEqual([
@@ -89,7 +90,7 @@ describe('SettingsModal screen memory tab visibility', () => {
     expect(groups[3].tabs.map((tab) => tab.label)).toEqual([
       '用户管理',
       '邀请码管理',
-      'Control Plane',
+      '控制平面',
     ]);
     expect(groups[1].tabs.map((tab) => tab.id)).toEqual([
       'capabilities',

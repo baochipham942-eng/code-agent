@@ -433,11 +433,21 @@ describe('validateGameArtifact breakout subtype', () => {
     expect(result.failures.join('\n')).toContain('初始首屏没有可打砖块');
   });
 
-  it('fails breakout artifacts whose contract step moves launch but the live loop never starts', async () => {
-    const noRealLoopFixture = breakoutFixture().replace(
-      `    requestAnimationFrame(animationLoop);`,
-      `    // animation loop intentionally not started`,
-    );
+  it('fails breakout artifacts whose contract step moves launch but the live loop never advances', async () => {
+    const noRealLoopFixture = breakoutFixture()
+      .replace(
+        `    function animationLoop() {
+      tick(browserInput);
+      requestAnimationFrame(animationLoop);
+    }`,
+        `    function animationLoop() {
+      // animation loop intentionally does not advance gameplay
+    }`,
+      )
+      .replace(
+        `    requestAnimationFrame(animationLoop);`,
+        `    // animation loop intentionally not started`,
+      );
     const filePath = await writeFixture(noRealLoopFixture, 'arkanoid-no-real-loop.html');
 
     const result = await validateGameArtifact(filePath, {

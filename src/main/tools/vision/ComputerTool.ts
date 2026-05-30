@@ -80,6 +80,7 @@ Desktop routing contract:
 - modifiers: Modifier keys ['cmd', 'ctrl', 'alt', 'shift']
 - direction: Scroll direction (up/down/left/right)
 - amount: Scroll amount in pixels
+- includeScreenshot: Include a screenshot path for observe (default: false)
 - exact: Exact text match (default: false)
 - timeout: Wait timeout in ms (default: 5000)
 - limit: Maximum elements for get_ax_elements
@@ -266,6 +267,10 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       amount: {
         type: 'number',
         description: 'Amount to scroll (in pixels)',
+      },
+      includeScreenshot: {
+        type: 'boolean',
+        description: 'Include a screenshot path for observe (default: false). Set true when the caller needs a screenshotPath or live PiP frame.',
       },
       // --- computer_use smart params ---
       selector: {

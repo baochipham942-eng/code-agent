@@ -12,7 +12,9 @@
  * Timeout 90s — 包括 chromium cold launch（~2s × 2 + cookie roundtrip）。
  */
 
-import { describe, expect, it, afterAll } from 'vitest';
+import { createServer, type Server } from 'http';
+import type { AddressInfo } from 'net';
+import { describe, expect, it, afterAll, beforeAll } from 'vitest';
 import { BrowserPool } from '../../src/main/services/infra/browserPool';
 import { browserService as defaultBrowserService } from '../../src/main/services/infra/browserService';
 
@@ -22,10 +24,34 @@ describe('multi-agent BrowserPool isolation (real chromium)', () => {
   const pool = new BrowserPool(4, defaultBrowserService);
   const agentA = pool.acquire('smoke-agent-a');
   const agentB = pool.acquire('smoke-agent-b');
+  let server: Server | undefined;
+  let smokeOrigin = '';
+
+  beforeAll(async () => {
+    server = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end('<!doctype html><html><body><h1>browser isolation smoke</h1></body></html>');
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server?.once('error', reject);
+      server?.listen(0, '127.0.0.1', () => resolve());
+    });
+
+    const address = server.address() as AddressInfo;
+    smokeOrigin = `http://127.0.0.1:${address.port}/`;
+  });
 
   afterAll(async () => {
     await agentA.close().catch(() => undefined);
     await agentB.close().catch(() => undefined);
+    await new Promise<void>((resolve) => {
+      if (!server?.listening) {
+        resolve();
+        return;
+      }
+      server.close(() => resolve());
+    });
   });
 
   it('grants distinct BrowserService instances and profileDirs per agent', () => {
@@ -46,7 +72,7 @@ describe('multi-agent BrowserPool isolation (real chromium)', () => {
       // agent-a — launch, write cookie + localStorage on data: URL origin, close
       await agentA.launch({ leaseOwner: 'smoke-agent-a' });
       const tabIdA = await agentA.newTab('about:blank');
-      await agentA.navigate('https://example.com', tabIdA);
+      await agentA.navigate(smokeOrigin, tabIdA);
       await agentA.runScript<unknown>(
         `document.cookie = "smoke_marker=agent_a; path=/; max-age=3600"; ` +
         `localStorage.setItem("smoke_ls", "from_a"); ` +
@@ -64,7 +90,7 @@ describe('multi-agent BrowserPool isolation (real chromium)', () => {
       // agent-b — launch on independent profileDir, navigate same origin, expect NO marker
       await agentB.launch({ leaseOwner: 'smoke-agent-b' });
       const tabIdB = await agentB.newTab('about:blank');
-      await agentB.navigate('https://example.com', tabIdB);
+      await agentB.navigate(smokeOrigin, tabIdB);
       const bCookies = await agentB.runScript<string>('document.cookie', tabIdB);
       const bLs = await agentB.runScript<string | null>('localStorage.getItem("smoke_ls")', tabIdB);
       console.log('[smoke] agent-b cookies (should be empty/no marker):', bCookies);

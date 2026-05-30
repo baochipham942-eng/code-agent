@@ -34,6 +34,7 @@ const sessionState = {
 const appState = {
   showPreviewPanel: false,
   workingDirectory: '/repo/other',
+  goalRuns: {},
   setShowSettings: vi.fn(),
   openSettingsTab: vi.fn(),
 };
@@ -188,10 +189,10 @@ describe('ChatView session shell', () => {
     expect(html).toContain('flex-1 min-h-0 flex flex-col min-w-0');
     expect(html).toContain('flex-1 min-h-0 overflow-hidden');
     expect(html).toContain('新会话');
-    expect(html).toContain('写一封项目跟进邮件');
-    expect(html).toContain('做一页产品方案');
-    expect(html).toContain('对比三种工具选型');
-    expect(html).toContain('看当前改动风险');
+    expect(html).toContain('做个能玩的小游戏');
+    expect(html).toContain('出一张可交互数据图表');
+    expect(html).toContain('搜一份最新行业简报');
+    expect(html).toContain('梳理磁盘空间占用');
     expect(html).not.toContain('继续推进 Phase 5');
     expect(html).not.toContain('/repo/other');
   });
@@ -199,20 +200,20 @@ describe('ChatView session shell', () => {
   it('keeps starter prompts concrete enough for a first-turn deliverable', () => {
     expect(defaultSuggestions).toHaveLength(4);
     expect(defaultSuggestions.map((item) => item.title)).toEqual([
-      '写一封项目跟进邮件',
-      '做一页产品方案',
-      '对比三种工具选型',
-      '看当前改动风险',
+      '做个能玩的小游戏',
+      '出一张可交互数据图表',
+      '搜一份最新行业简报',
+      '梳理磁盘空间占用',
     ]);
 
     for (const suggestion of defaultSuggestions) {
       expect(suggestion.prompt).not.toMatch(/如果|先问|先确认|和我对齐|补充信息|信息还不全/);
-      expect(suggestion.prompt).toMatch(/输出|给|指出|推荐/);
+      expect(suggestion.prompt).toMatch(/做|渲染|搜索|找出|给出|输出|联网|列出/);
     }
 
-    expect(defaultSuggestions[0].prompt).toContain('收件人是项目组');
-    expect(defaultSuggestions[1].prompt).toContain('读者是产品和研发评审');
-    expect(defaultSuggestions[2].prompt).toContain('5 个维度');
-    expect(defaultSuggestions[3].prompt).toContain('只审不改');
+    expect(defaultSuggestions[0].prompt).toContain('完整可运行的单文件');
+    expect(defaultSuggestions[1].prompt).toContain('图表 JSON');
+    expect(defaultSuggestions[2].prompt).toContain('过去一周 AI 行业');
+    expect(defaultSuggestions[3].prompt).toContain('先列出，不要直接执行删除');
   });
 });

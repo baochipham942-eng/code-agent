@@ -2,11 +2,28 @@ import { mkdtempSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { createRequire } from 'module';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { executeDesignMode } from '../../../../../../src/main/tools/media/ppt/designMode';
 import { getThemeConfig } from '../../../../../../src/main/tools/media/ppt/themes';
 
 const require = createRequire(import.meta.url);
+
+vi.mock('../../../../../../src/main/tools/media/ppt/designExecutor', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../../../src/main/tools/media/ppt/designExecutor')>();
+
+  return {
+    ...actual,
+    executeDesignScript: vi.fn(async (scriptPath: string) => {
+      const fs = await import('fs');
+      const script = fs.readFileSync(scriptPath, 'utf-8');
+      const outputMatch = script.match(/fileName:\s*'([^']+)'/);
+      if (outputMatch?.[1]) {
+        fs.writeFileSync(outputMatch[1], 'pptx-placeholder\n'.repeat(1024), 'utf-8');
+      }
+      return { success: true, stdout: '' };
+    }),
+  };
+});
 
 function validSlideCode(): string {
   return `\`\`\`typescript

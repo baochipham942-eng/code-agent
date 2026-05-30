@@ -4,6 +4,115 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+const browserMocks = vi.hoisted(() => {
+  const service = {
+    initialize: vi.fn(),
+    close: vi.fn(),
+    listTabs: vi.fn(() => []),
+    getSessionState: vi.fn(() => ({
+      isRunning: false,
+      profileId: 'test-browser-profile',
+      profileDir: '/tmp/code-agent-test/browser-profile',
+      tabs: [],
+    })),
+    logger: {
+      log: vi.fn(),
+      getLogsAsString: vi.fn(() => ''),
+    },
+    beginTrace: vi.fn(() => ({})),
+    finishTrace: vi.fn((trace: Record<string, unknown>) => trace),
+  };
+  return { service };
+});
+
+const loggerMocks = vi.hoisted(() => {
+  const createMockLogger = () => ({
+    info: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    setLevel: vi.fn(),
+    dispose: vi.fn().mockResolvedValue(undefined),
+  });
+
+  return {
+    logger: createMockLogger(),
+    createLogger: vi.fn(() => createMockLogger()),
+    LogLevel: { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 },
+  };
+});
+
+const logCollectorMocks = vi.hoisted(() => {
+  const createMockLogCollector = () => ({
+    log: vi.fn(),
+    browser: vi.fn(),
+    agent: vi.fn(),
+    tool: vi.fn(),
+    getLogs: vi.fn(() => []),
+    getAllLogs: vi.fn(() => []),
+    getLogsAsString: vi.fn(() => ''),
+    getAllLogsAsString: vi.fn(() => ''),
+    getStatus: vi.fn(() => ({
+      browserLogs: 0,
+      agentLogs: 0,
+      toolLogs: 0,
+      totalLogs: 0,
+      persistenceEnabled: false,
+    })),
+    clear: vi.fn(),
+    clearAll: vi.fn(),
+    close: vi.fn(),
+  });
+
+  return {
+    logCollector: createMockLogCollector(),
+    createLogCollector: vi.fn(() => createMockLogCollector()),
+  };
+});
+
+const configServiceMocks = vi.hoisted(() => {
+  const settings = {
+    models: {
+      default: 'openai',
+      providers: {
+        openai: { enabled: true },
+      },
+      routing: {},
+    },
+    permissions: {
+      autoApprove: {
+        read: true,
+        write: false,
+        execute: false,
+        network: false,
+      },
+      devModeAutoApprove: false,
+    },
+    connectors: {
+      enabledNative: [],
+    },
+  };
+
+  const service = {
+    getSettings: vi.fn(() => settings),
+    getApiKey: vi.fn(() => ''),
+    getServiceApiKey: vi.fn(() => ''),
+    getIntegration: vi.fn(() => undefined),
+    getModelForCapability: vi.fn(() => undefined),
+    updateSettings: vi.fn().mockResolvedValue(undefined),
+    saveSettings: vi.fn().mockResolvedValue(undefined),
+  };
+
+  return {
+    isProduction: vi.fn(() => false),
+    sanitizeForLogging: vi.fn((value: unknown) => value),
+    safeLog: vi.fn(),
+    ConfigService: vi.fn(() => service),
+    initConfigService: vi.fn(() => service),
+    getConfigService: vi.fn(() => service),
+  };
+});
+
 // Mock electron app before importing AgentOrchestrator
 vi.mock('electron', () => ({
   app: {
@@ -20,28 +129,27 @@ vi.mock('../../src/main/services', () => ({
 }));
 
 // Mock logger
-vi.mock('../../src/main/services/infra/logger', () => ({
-  logger: {
-    info: vi.fn(),
-    debug: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
-  createLogger: vi.fn(() => ({
-    info: vi.fn(),
-    debug: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  })),
-  LogLevel: { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 },
+vi.mock('../../src/main/services/infra/logger', () => loggerMocks);
+vi.mock('../../src/main/services/infra/logger.js', () => loggerMocks);
+
+vi.mock('../../src/main/mcp/logCollector', () => logCollectorMocks);
+vi.mock('../../src/main/mcp/logCollector.js', () => logCollectorMocks);
+
+vi.mock('../../src/main/services/core/configService', () => configServiceMocks);
+vi.mock('../../src/main/services/core/configService.js', () => configServiceMocks);
+
+// Mock browser service at the actual infra layer used by ToolExecutor imports.
+vi.mock('../../src/main/services/infra/browserService.js', () => ({
+  browserService: browserMocks.service,
+  BrowserService: vi.fn(() => browserMocks.service),
+  redactBrowserWorkbenchTraceParams: (_toolName: string, params: Record<string, unknown>) => params,
 }));
 
-// Mock browser service
-vi.mock('../../src/main/services/vision/browserService', () => ({
-  getBrowserService: vi.fn(() => ({
-    initialize: vi.fn(),
-    close: vi.fn(),
-  })),
+vi.mock('../../src/main/services/infra/browserPool.js', () => ({
+  browserPool: {
+    acquire: vi.fn(() => browserMocks.service),
+  },
+  getBrowserService: vi.fn(() => browserMocks.service),
 }));
 
 // Mock cloud config service

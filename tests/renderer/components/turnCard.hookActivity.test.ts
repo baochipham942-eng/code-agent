@@ -131,7 +131,7 @@ describe('TurnCard hook activity', () => {
 
     expect(html).toContain('执行了 2 个钩子');
     expect(html).toContain('全局+项目');
-    expect(html).toContain('决策');
+    expect(html).toContain('可干预');
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain('用户提示提交');
     expect(html).not.toContain('会话开始');

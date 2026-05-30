@@ -73,6 +73,25 @@ describe('compactModelSummarize', () => {
     compactModelMocks.inference.mockReset();
     compactModelMocks.inference.mockResolvedValue({ type: 'text', content: '压缩摘要', finishReason: 'stop' });
     delete process.env.KIMI_K25_API_KEY;
+    delete process.env.CODE_AGENT_E2E;
+    delete process.env.CODE_AGENT_E2E_LOCAL_COMPACT_MODEL;
+  });
+
+  it('uses the local compact model boundary for E2E app-host smokes', async () => {
+    process.env.CODE_AGENT_E2E = '1';
+    process.env.CODE_AGENT_E2E_LOCAL_COMPACT_MODEL = '1';
+
+    const result = await compactModelSummarizeWithMetadata('请压缩这段上下文', 500);
+
+    expect(result).toMatchObject({
+      metadata: {
+        provider: 'acceptance',
+        model: 'e2e-local-compact-model',
+        useMainModel: false,
+      },
+    });
+    expect(result.summary).toContain('E2E local compact summary');
+    expect(compactModelMocks.inference).not.toHaveBeenCalled();
   });
 
   it('uses the selected fallback provider key instead of an unrelated service key', async () => {

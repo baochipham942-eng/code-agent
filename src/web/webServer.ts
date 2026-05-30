@@ -279,8 +279,9 @@ async function initializeWebMcpServices(configService: ConfigServiceForBootstrap
   }
 }
 
-async function initializeWebPluginSystem(): Promise<void> {
+export async function initializeWebPluginSystem(): Promise<void> {
   try {
+    await import('../main/tools/protocolRegistry');
     const { initPluginSystem } = await import('../main/plugins');
     await initPluginSystem();
     logger.info('Plugin system initialized');
@@ -934,7 +935,7 @@ function createApp(): express.Express {
   app.get('/api/screenshot', handleScreenshot);
 
   // ── Dev routes (workspace/file, dev/exec-tool, dev/smoke/office) ────
-  app.use('/api', createDevRouter({ pendingDevPermissions, logger }));
+  app.use('/api', createDevRouter({ pendingDevPermissions, activeAgentLoops, logger }));
 
   // ── Shared helpers for agent & session routes ──────────────────────
 

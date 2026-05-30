@@ -62,6 +62,10 @@ import {
 } from './agentCommand';
 import { collectDroppedAttachments, shouldClearComposerAfterSend } from './utils';
 import { buildBrowserSessionIntentSnapshot } from '../../../../utils/browserExecutionIntent';
+import {
+  clearDebugDraftParamsFromCurrentUrl,
+  readDebugDraftFromLocation,
+} from './debugDraftUrl';
 
 // ============================================================================
 // 类型定义
@@ -141,6 +145,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     toolNames: string[];
   } | null>(null);
   const inputAreaRef = useRef<InputAreaRef>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const debugDraftAppliedRef = useRef(false);
   const { processFile, processFolderEntry } = useFileUpload();
   const browserSession = useWorkbenchBrowserSession();
   const buildContext = useComposerStore((state) => state.buildContext);
@@ -267,6 +273,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       inputAreaRef.current?.focus();
     },
   }), []);
+
+  useEffect(() => {
+    if (debugDraftAppliedRef.current) return;
+    const draft = readDebugDraftFromLocation(window.location);
+    if (!draft) return;
+
+    debugDraftAppliedRef.current = true;
+    setValue(draft.content);
+    setAttachments([]);
+    clearDebugDraftParamsFromCurrentUrl(window);
+    window.setTimeout(() => {
+      inputAreaRef.current?.focus();
+      if (draft.autoSubmit) {
+        formRef.current?.requestSubmit();
+      }
+    }, 0);
+  }, []);
 
   // Listen for context-aware suggestions from agent (pushed after each turn)
   useEffect(() => {
@@ -803,7 +826,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     >
       {/* Command Palette triggered by / */}
       <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
-      <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
+      <form ref={formRef} onSubmit={handleSubmit} className="max-w-3xl mx-auto">
         {/* Plan 入口按钮 - 仅当有 Plan 时显示 */}
         {hasPlan && onPlanClick && (
           <button

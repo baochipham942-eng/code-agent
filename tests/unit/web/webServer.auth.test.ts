@@ -17,6 +17,16 @@ const platformMock = vi.hoisted(() => {
   };
 });
 
+const pluginBootstrapMock = vi.hoisted(() => {
+  const events: string[] = [];
+  return {
+    events,
+    initPluginSystem: vi.fn(async () => {
+      events.push('plugins');
+    }),
+  };
+});
+
 vi.mock('../../../src/main/platform', () => platformMock);
 vi.mock('electron', () => ({
   ...platformMock,
@@ -31,12 +41,23 @@ vi.mock('electron', () => ({
     quit: vi.fn(),
   },
 }));
+vi.mock('../../../src/main/tools/protocolRegistry', () => {
+  pluginBootstrapMock.events.push('protocolRegistry');
+  return {};
+});
+vi.mock('../../../src/main/plugins', () => ({
+  initPluginSystem: pluginBootstrapMock.initPluginSystem,
+}));
 
 type WebServerAuthModule = typeof import('../../../src/web/webServer');
 
 let webServerAuth: Pick<
   WebServerAuthModule,
-  'getLocalWebAuthStatus' | 'installLocalWebAuthStatusHandler' | 'shouldUseLocalWebAuthStatus' | 'startWebCapabilityBootstrap'
+  | 'getLocalWebAuthStatus'
+  | 'installLocalWebAuthStatusHandler'
+  | 'shouldUseLocalWebAuthStatus'
+  | 'startWebCapabilityBootstrap'
+  | 'initializeWebPluginSystem'
 >;
 
 beforeAll(async () => {
@@ -111,6 +132,16 @@ describe('webServer local auth status', () => {
 });
 
 describe('webServer capability bootstrap', () => {
+  it('initializes the protocol registry before loading plugins', async () => {
+    pluginBootstrapMock.events.length = 0;
+    pluginBootstrapMock.initPluginSystem.mockClear();
+
+    await webServerAuth.initializeWebPluginSystem();
+
+    expect(pluginBootstrapMock.events).toEqual(['protocolRegistry', 'plugins']);
+    expect(pluginBootstrapMock.initPluginSystem).toHaveBeenCalledTimes(1);
+  });
+
   it('starts skill and MCP services without blocking the caller', async () => {
     const events: string[] = [];
     let releaseSkills: () => void = () => undefined;
@@ -127,21 +158,32 @@ describe('webServer capability bootstrap', () => {
     const initializeMcp = vi.fn(async () => {
       events.push('mcp-started');
     });
+    const initializePlugins = vi.fn(async () => {
+      events.push('plugins-started');
+    });
 
     webServerAuth.startWebCapabilityBootstrap(configService, {
       initializeSkills,
       initializeMcp,
+      initializePlugins,
     });
     events.push('caller-returned');
 
+    expect(initializePlugins).toHaveBeenCalledTimes(1);
+    expect(initializeSkills).not.toHaveBeenCalled();
+    expect(initializeMcp).not.toHaveBeenCalled();
+    expect(events).toEqual(['plugins-started', 'caller-returned']);
+
+    await Promise.resolve();
+
     expect(initializeSkills).toHaveBeenCalledTimes(1);
     expect(initializeMcp).not.toHaveBeenCalled();
-    expect(events).toEqual(['skills-started', 'caller-returned']);
+    expect(events).toEqual(['plugins-started', 'caller-returned', 'skills-started']);
 
     releaseSkills();
     await Promise.resolve();
 
     expect(initializeMcp).toHaveBeenCalledTimes(1);
-    expect(events).toEqual(['skills-started', 'caller-returned', 'skills-finished', 'mcp-started']);
+    expect(events).toEqual(['plugins-started', 'caller-returned', 'skills-started', 'skills-finished', 'mcp-started']);
   });
 });

@@ -119,6 +119,21 @@ describe('httpTransport domain API', () => {
     expect(JSON.parse(String(requestInit.body))).toEqual(payload);
   });
 
+  it('routes agent pause and resume through web runtime endpoints', async () => {
+    const api = createHttpDomainAPI('http://localhost:8180');
+    const payload = { sessionId: 'session-paused' };
+
+    await api.invoke(IPC_DOMAINS.AGENT, 'pause', payload);
+    await api.invoke(IPC_DOMAINS.AGENT, 'resume', payload);
+
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:8180/api/pause');
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual(payload);
+    expect(fetchMock.mock.calls[1][0]).toBe('http://localhost:8180/api/resume');
+    expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).toEqual(payload);
+  });
+
   it('forwards clientMessageId for SSE-backed chat sends', async () => {
     const api = createHttpCodeAgentAPI('http://localhost:8180');
 

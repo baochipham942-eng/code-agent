@@ -157,6 +157,9 @@ export async function initializeCLIServices(): Promise<void> {
     const toolExecutorModule = await import('../main/tools/toolExecutor');
     ToolExecutor = toolExecutorModule.ToolExecutor;
 
+    const protocolRegistryModule = await import('../main/tools/protocolRegistry');
+    protocolRegistryModule.getProtocolRegistry();
+    cliLog('Protocol tool registry initialized');
 
     const skillsModule = await import('../main/services/skills');
     getSkillDiscoveryService = skillsModule.getSkillDiscoveryService;

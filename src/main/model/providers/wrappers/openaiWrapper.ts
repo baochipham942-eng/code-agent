@@ -12,7 +12,7 @@ import { z } from 'zod';
 
 import type { ToolCall } from '../../../../shared/contract';
 import type { ModelResponse } from '../../types';
-import { logger, safeJsonParse } from '../shared';
+import { logger, safeJsonParse } from '../providerRuntime';
 
 // ── helpers ───────────────────────────────────────────────────────────────
 /**

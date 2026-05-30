@@ -43,8 +43,8 @@ import { getSystemPromptCache } from '../../../telemetry/systemPromptCache';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { countTraceEntries, recordMemoryInjectionTrace } from '../../../memory/memoryInjectionTrace';
 import { createHash } from 'crypto';
-import type { ContextAssemblyCtx, ContextTranscriptEntry } from '../contextAssembly';
-import { logger, MAX_SYSTEM_PROMPT_TOKENS } from '../contextAssembly';
+import type { ContextAssemblyCtx, ContextTranscriptEntry } from './shared';
+import { logger, MAX_SYSTEM_PROMPT_TOKENS } from './shared';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 import { getPluginRegistry } from '../../../plugins/pluginRegistry';
 import {

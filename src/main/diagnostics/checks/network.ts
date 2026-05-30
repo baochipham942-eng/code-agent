@@ -6,7 +6,7 @@
 
 import { PROVIDER_REGISTRY } from '../../../shared/constants';
 import type { BuiltInModelProvider } from '../../../shared/contract';
-import { handleTestConnection } from '../../ipc/provider.ipc';
+import { handleTestConnection } from '../../model/providerConnectionTest';
 import { getConfigService } from '../../services/core/configService';
 import type { DoctorItem } from '../types';
 

@@ -3,8 +3,8 @@ import type { Message, ToolCall, ToolResult } from '../../../../shared/contract'
 import { getToolSearchService } from '../../../services/toolSearch';
 import { CONFIG_DIR_NEW } from '../../../config/configPaths';
 import { join } from 'path';
-import type { ContextAssemblyCtx } from '../contextAssembly';
-import { cachedReadFileSync, logger } from '../contextAssembly';
+import type { ContextAssemblyCtx } from './shared';
+import { cachedReadFileSync, logger } from './shared';
 import { normalizeAgentEffortLevel } from '../../../../shared/effortLevels';
 
 export function loadResearchSkillPrompt(ctx: ContextAssemblyCtx): string | null {

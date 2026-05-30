@@ -23,7 +23,6 @@ import {
 import { createLogger } from '../services/infra/logger';
 import { getSessionStateManager } from '../session/sessionStateManager';
 import type { ToolCall } from '../../shared/contract';
-import { getCoreToolDefinitions, getLoadedDeferredToolDefinitions } from '../tools/dispatch/toolDefinitions';
 
 /**
  * Extended message type for context health tracking
@@ -62,39 +61,8 @@ export class ContextHealthService {
   private averageUserMessageTokens: number = 200; // 用户消息平均 tokens
   private averageAssistantMessageTokens: number = 800; // 助手消息平均 tokens
 
-  // 工具 schema token 估算缓存：tool 数量+签名 hash 不变时复用
-  private toolDefTokensCache: { signature: string; tokens: number } | null = null;
-
   // bySource 更新的 debounce 定时器（每 session 一个）
   private sourceDebounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
-
-  /**
-   * 估算当前活跃工具 schema 序列化后的 token 占用。
-   * 每次推理都会把这一坨发给模型（name + description + inputSchema JSON），
-   * 不算进 currentTokens 会让 UI 显示比真实 input 偏低（小红书 session 漏算 ~14k）。
-   */
-  private estimateActiveToolDefinitionsTokens(): number {
-    try {
-      const core = getCoreToolDefinitions();
-      const deferred = getLoadedDeferredToolDefinitions();
-      const all = [...core, ...deferred];
-      const signature = `${all.length}:${all.map((t) => t.name).join(',')}`;
-      if (this.toolDefTokensCache?.signature === signature) {
-        return this.toolDefTokensCache.tokens;
-      }
-      const serialized = JSON.stringify(all.map((t) => ({
-        name: t.name,
-        description: t.description,
-        inputSchema: t.inputSchema,
-      })));
-      const tokens = estimateTokens(serialized);
-      this.toolDefTokensCache = { signature, tokens };
-      return tokens;
-    } catch (error) {
-      logger.debug('estimateActiveToolDefinitionsTokens failed, returning 0:', error);
-      return 0;
-    }
-  }
 
   /**
    * 设置主窗口用于发送事件
@@ -135,7 +103,7 @@ export class ContextHealthService {
     const toolResultsTokens = this.calculateToolResultsTokens(messages);
     // 工具 schema 定义：每次请求都会发给模型（包含 name/description/inputSchema JSON）。
     // 优先用调用方显式传值，否则自动从工具 registry 估算（registry 不可用时回退 0）。
-    const toolDefTokens = toolDefinitionsTokens ?? this.estimateActiveToolDefinitionsTokens();
+    const toolDefTokens = toolDefinitionsTokens ?? 0;
 
     // 保留上轮的 bySource 累加值（recordSourceContribution 之间的状态）
     // 同时把 conversation 字段按扣减法重算：messages - 其他 source 之和
@@ -428,7 +396,7 @@ export class ContextHealthService {
       if (!message.toolCalls?.length) continue;
 
       for (const toolCall of message.toolCalls) {
-        let args = '';
+        let args: string;
         try {
           args = JSON.stringify(toolCall.arguments ?? {});
         } catch {

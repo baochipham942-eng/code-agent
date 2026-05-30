@@ -47,10 +47,8 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { ToolDefinition, ToolCall, ToolCallTargetContext } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { ContextLengthExceededError } from '../types';
-import { createLogger } from '../../services/infra/logger';
 import { PROVIDER_TIMEOUT, isDirectConnectHost } from '../../../shared/constants';
-// Wrapper imports for @deprecated parse* delegation. Cycle is safe in ESM:
-// wrapper modules only access shared.logger / safeJsonParse at parse-time, not module-init.
+import { logger, safeJsonParse } from './providerRuntime';
 import { parseOpenAIResponse as wrapperParseOpenAIResponse } from './wrappers/openaiWrapper';
 import { parseClaudeResponse as wrapperParseClaudeResponse } from './wrappers/anthropicWrapper';
 import {
@@ -58,7 +56,7 @@ import {
   parseGeminiStreamChunk,
 } from './wrappers/geminiWrapper';
 
-export const logger = createLogger('ModelRouter');
+export { logger, safeJsonParse } from './providerRuntime';
 
 // ----------------------------------------------------------------------------
 // Provider Message & Tool Types
@@ -878,72 +876,6 @@ export function convertToGeminiMessages(messages: ModelMessage[]): any[] {
 // ----------------------------------------------------------------------------
 
 /**
- * 修复未闭合的 JSON 括号/引号
- */
-function closeOpenBrackets(str: string): string {
-  let braceCount = 0;
-  let bracketCount = 0;
-  let inString = false;
-  let escapeNext = false;
-
-  for (let i = 0; i < str.length; i++) {
-    const char = str[i];
-    if (escapeNext) { escapeNext = false; continue; }
-    if (char === '\\') { escapeNext = true; continue; }
-    if (char === '"') { inString = !inString; continue; }
-    if (!inString) {
-      if (char === '{') braceCount++;
-      else if (char === '}') braceCount--;
-      else if (char === '[') bracketCount++;
-      else if (char === ']') bracketCount--;
-    }
-  }
-
-  let result = str;
-  if (inString) result += '"';
-  while (bracketCount > 0) { result += ']'; bracketCount--; }
-  while (braceCount > 0) { result += '}'; braceCount--; }
-  return result;
-}
-
-/**
- * 安全解析 JSON，支持多级备份提取策略
- */
-export function safeJsonParse(str: string): Record<string, unknown> {
-  // 策略 1: 直接解析
-  try {
-    const result = JSON.parse(str) as Record<string, unknown>;
-    logger.debug('[safeJsonParse] Direct parse succeeded');
-    return result;
-  } catch (e) {
-    const errorMessage = e instanceof Error ? e.message : 'Unknown parse error';
-    logger.debug(`[safeJsonParse] Direct parse failed: ${errorMessage}, trying repair strategies...`);
-  }
-
-  // 策略 2: 修复常见 JSON 问题
-  const repaired = repairJsonForArguments(str);
-  if (repaired) {
-    logger.info('[safeJsonParse] Repaired JSON parse succeeded');
-    return repaired;
-  }
-
-  // 策略 3: 从原始字符串提取键值对
-  const extracted = extractKeyValuePairs(str);
-  if (extracted && Object.keys(extracted).length > 0) {
-    logger.info('[safeJsonParse] Extracted key-value pairs:', Object.keys(extracted).join(', '));
-    return extracted;
-  }
-
-  logger.warn('[safeJsonParse] All parse strategies failed');
-  logger.warn(`[safeJsonParse] Raw arguments (first 500 chars): ${str.substring(0, 500)}`);
-  return {
-    __parseError: true,
-    __errorMessage: 'All JSON parse strategies failed',
-    __rawArguments: str.substring(0, 1000),
-  };
-}
-
-/**
  * 把流式累积好的 tool_call 拼接对象转成 ToolCall：
  * 1. 解析 arguments JSON
  * 2. 抽出约定的 `_meta` envelope 字段（产品视角语义元数据：shortDescription /
@@ -1083,87 +1015,6 @@ export function generateFallbackShortDescription(
     default:
       return `Use ${toolName}`;
   }
-}
-
-/**
- * 修复常见的 JSON 问题用于 arguments 解析
- */
-function repairJsonForArguments(str: string): Record<string, unknown> | null {
-  if (!str?.trim()) return null;
-
-  let repaired = str.trim();
-  repaired = repaired.replace(/^[^{\[]*/, '');
-  repaired = repaired.replace(/[^}\]]*$/, '');
-
-  if (!repaired.startsWith('{') && !repaired.startsWith('[')) {
-    return null;
-  }
-
-  repaired = closeOpenBrackets(repaired);
-
-  try {
-    return JSON.parse(repaired) as Record<string, unknown>;
-  } catch {
-    const lastComma = repaired.lastIndexOf(',');
-    if (lastComma > 0) {
-      try {
-        return JSON.parse(repaired.substring(0, lastComma) + '}') as Record<string, unknown>;
-      } catch {
-        /* Continue */
-      }
-    }
-    return null;
-  }
-}
-
-/**
- * 从原始字符串提取键值对
- */
-function extractKeyValuePairs(str: string): Record<string, unknown> | null {
-  if (!str?.trim()) return null;
-
-  const result: Record<string, unknown> = {};
-
-  const stringPattern = /"(\w+)":\s*"([^"\\]*(?:\\.[^"\\]*)*)"/g;
-  const numberPattern = /"(\w+)":\s*(-?\d+\.?\d*)/g;
-  const booleanPattern = /"(\w+)":\s*(true|false)/g;
-  const nullPattern = /"(\w+)":\s*null/g;
-
-  let match;
-  while ((match = stringPattern.exec(str)) !== null) {
-    result[match[1]] = match[2].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-  }
-
-  while ((match = numberPattern.exec(str)) !== null) {
-    if (!(match[1] in result)) {
-      result[match[1]] = parseFloat(match[2]);
-    }
-  }
-
-  while ((match = booleanPattern.exec(str)) !== null) {
-    if (!(match[1] in result)) {
-      result[match[1]] = match[2] === 'true';
-    }
-  }
-
-  while ((match = nullPattern.exec(str)) !== null) {
-    if (!(match[1] in result)) {
-      result[match[1]] = null;
-    }
-  }
-
-  const arrayPattern = /"(\w+)":\s*\[([^\]]*)\]/g;
-  while ((match = arrayPattern.exec(str)) !== null) {
-    if (!(match[1] in result)) {
-      try {
-        result[match[1]] = JSON.parse(`[${match[2]}]`);
-      } catch {
-        result[match[1]] = match[2].split(',').map(s => s.trim().replace(/^"|"$/g, ''));
-      }
-    }
-  }
-
-  return Object.keys(result).length > 0 ? result : null;
 }
 
 /**

@@ -133,6 +133,28 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 
 验证口径：`feature/cancellation-cascading` 分支带 AC 测试套件覆盖 cascade / non-cascade 场景。产品口径里，它把多 agent 取消从"取消一个可能误伤一片"升级为"取消语义按 reason 显式分层"。
 
+## 0.0.4 2026-05-29 Dynamic Workflow — 命令式脚本编排运行时
+
+这轮新增**第 4 条多 Agent 路径**：在既有「声明式 stage-DAG」之外，加一条「模型当场写 JS 编排脚本 → 受限 worker 沙箱后台确定性执行」的命令式运行时（复刻 Claude Code Workflow）。声明式 `workflow_orchestrate` 保留并存。
+
+| 路径 | 模型契约 | 控制流 | 适用 |
+|------|----------|--------|------|
+| `spawn_agent` / Task | 逐轮决定 | 模型每轮选下一步 | 即兴拆分 |
+| `workflow_orchestrate`（声明式）| 选模板 / 填 `stages[]` | 运行时按 DAG 跑 | 固定模板流水线 |
+| **`workflow`（命令式，新）** | 当场写 JS 脚本 | 脚本自持 loop/branch/中间变量 | 几十上百扇出 + 对抗验证 + resumable |
+
+| 能力 | 当前状态 | 关键文件 |
+|------|----------|---------|
+| 5 原语脚本运行时 | `agent/parallel/pipeline/phase/log` + `args`/`budget`，worker_threads 沙箱（`eval` 字符串规避打包陷阱）+ 超时/内存上限 | `src/main/agent/scriptRuntime/{sandbox,primitives,runService}.ts` |
+| forced 结构化输出 | `agent({schema})`=单轮 forced tool_choice 取稳定判断值（命令式控制流地基）；无 schema=完整 SubagentExecutor loop | `…/agentBridge.ts`、`InferenceOptions.toolChoice` |
+| 多 run 隔离 | runService 自持 activeRuns，**破 swarm 单 active-run 假设**（ADR-009/010）；agent() 直连 executor 绕 4 条灌历史高层入口 | `…/runService.ts`、`…/agentBridge.ts` |
+| provider-aware 并发闸 | 全局上限 16，确认 provider capacity 后再占全局槽，防 zhipu/3 饿死 | `…/concurrencyGate.ts` |
+| token budget + 三档工具 | per-run BudgetTracker（reserve/commit 消 TOCTOU）+ readonly/edit/full 工具档 + 并行写护栏 | `…/budget.ts`、`…/toolProfiles.ts` |
+| UI（进度树/审批卡/触发）| WorkflowPanel/InlineMonitor + 跑前审批卡（4 维度成本）+ `/workflow` gen8 carve-out；专用 IPC bridge | `src/renderer/components/features/workflow/*`、`src/main/ipc/workflow.ipc.ts`、`src/main/agent/workflowLaunchApproval.ts` |
+| resumable | 源码重放 + agent 结果缓存（不序列化 VM 状态）；专用表 `workflow_runs`/`workflow_run_calls`；命中 0 token | `WorkflowJournalRepository`、`…/scriptValidator.ts`（确定性加固）|
+
+安全边界：威胁模型是**半信任模型代码**（非对抗者）；已知缺口 = worker `new AsyncFunction` 字符串求值逃逸（`isolated-vm` 硬沙箱排后单独排期）。完整设计见 **[dynamic-workflow.md](./dynamic-workflow.md)**。
+
 ## 0.1 节点级 Checkpoint（断点恢复）
 
 多 agent DAG 执行中，网络中断或 token 耗尽会导致已完成节点工作白费。

@@ -87,6 +87,7 @@ interface IPCResponse<T = unknown> {
 | `domain:prompt` | prompt.ipc.ts | Prompt Registry 查看、override、debug system prompt |
 | `domain:hook` | hook.ipc.ts | Hook 配置摘要、启用状态、配置文件打开/定位 |
 | `evaluation:delivery-review:run` | evaluation.ipc.ts | Workspace Preview 触发 Delivery Review，失败可入 review queue 和 preview feedback |
+| `workflow:*` | workflow.ipc.ts | Dynamic Workflow 运行进度 + 跑前审批（专用 bridge，run/launch 双通道）|
 
 ---
 
@@ -163,6 +164,19 @@ interface IPCResponse<T = unknown> {
 | `setServerEnabled` | `{ serverName, enabled }` | `{ success }` | 启用/禁用服务器 |
 | `reconnectServer` | `{ serverName }` | `boolean` | 重新连接 |
 
+### Workflow 通道 (`workflow.ipc.ts`)
+
+Dynamic Workflow（命令式脚本运行时，见 [dynamic-workflow.md](./dynamic-workflow.md)）用**专用 bridge** 推送，因 webServer 不起通用 EventBridge（与 swarm 同款坑）。bridge 按 `BusEvent.type` 前缀路由：`launch:*`（审批事件）→ launch 通道，其余（run 事件）→ run 通道。
+
+| 通道常量 | 字符串 | 方向 | Payload | 说明 |
+|---------|--------|------|---------|------|
+| `WORKFLOW_EVENT` | `workflow:event` | 推 → renderer | `ScriptRunEvent` | run 进度：`run:start/phase/log`、`agent:start/done/error`、`run:done/error` |
+| `WORKFLOW_LAUNCH_EVENT` | `workflow:launch:event` | 推 → renderer | `WorkflowLaunchEvent` | 跑前审批卡（phases/扇出/写提示 + 4 维度成本）|
+| `WORKFLOW_APPROVE_LAUNCH` | `workflow:approve-launch` | renderer → main | `{ requestId, feedback?, sessionId? }` | 批准启动 |
+| `WORKFLOW_REJECT_LAUNCH` | `workflow:reject-launch` | renderer → main | `{ requestId, feedback, sessionId? }` | 拒绝启动 |
+
+> 事件契约 `ScriptRunEvent` / `WorkflowLaunchEvent` 定义在 `src/shared/contract/scriptRun.ts`，renderer+main 共用；renderer 侧 `workflowStore` 按 `runId` 分桶折叠成进度树。
+
 ---
 
 ## 调用示例
@@ -212,6 +226,7 @@ src/main/ipc/
 ├── planning.ipc.ts    # Planning 通道
 ├── prompt.ipc.ts      # Prompt 管理通道
 ├── hook.ipc.ts        # Hook 管理通道
+├── workflow.ipc.ts    # Dynamic Workflow run/launch 专用 bridge
 └── data.ipc.ts        # Data 通道
 
 src/shared/

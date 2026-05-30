@@ -12,7 +12,7 @@
 | Gen4 | + skill, WebFetch, WebSearch, ReadDocument, MCPUnified |
 | Gen5 | + memory_store, memory_search, code_index, auto_learn, ppt_generate, image_generate, image_analyze, docx_generate, excel_generate, **read_xlsx** |
 | Gen6 | + screenshot, computer_use, browser_navigate, browser_action |
-| Gen7 | + spawn_agent, agent_message, workflow_orchestrate |
+| Gen7 | + spawn_agent, agent_message, workflow_orchestrate, **workflow**（命令式脚本编排）|
 | Gen8 | + strategy_optimize, tool_create, self_evaluate, learn_pattern |
 
 ---
@@ -655,13 +655,30 @@ agent_message { "action": "status", "agentId": "agent_coder_123" }
 agent_message { "action": "result", "agentId": "agent_coder_123" }
 ```
 
-### workflow_orchestrate - 工作流编排
+### workflow_orchestrate - 工作流编排（声明式 stage-DAG）
 
 预定义模板：`code-review-pipeline`、`bug-fix-flow`、`documentation-flow`、`parallel-review`
 
 ```bash
 workflow_orchestrate { "workflow": "code-review-pipeline", "task": "实现用户认证功能" }
 ```
+
+### workflow - 命令式脚本编排（v0.16.88+，2026-05-29）
+
+模型**当场写一段 JS 编排脚本**，在受限 worker 沙箱后台确定性执行，扇出几十上百子 agent 做对抗验证 / 流水线 / resumable 调研。与声明式 `workflow_orchestrate` 是**两条并存路径**：前者填模板/stages，后者用代码级 loop/branch/中间变量。完整设计见 [architecture/dynamic-workflow.md](../architecture/dynamic-workflow.md)。
+
+脚本内已注入 5 原语 + `args`/`budget`：`agent(prompt,{schema,model,tools,phase,label})`（带 schema=单轮 forced 结构化判断值，无 schema=完整子 agent loop）、`parallel(thunks)`（栅栏）、`pipeline(items,...stages)`（无栅栏流水线）、`phase(title)`、`log(msg)`。中间结果留在脚本变量，**不进主 context**，只有 `return` 值回到主 agent。
+
+入参：`script`（必填，JS 脚本体）/ `goal`（→ `args`）/ `budgetTokens`（输出 token 硬上限 → `budget.total`）/ `resumeFromRunId`（resumable 重放）。`/workflow <目标>` 触发（gen8 carve-out，不走 Skill）。
+
+```bash
+workflow {
+  "goal": "调研 Rust 异步运行时选型",
+  "script": "phase('decompose'); const { questions } = await agent('拆成 2 个子问题: '+args, { schema: { type:'object', properties:{ questions:{ type:'array', items:{ type:'string' } } }, required:['questions'] } }); const findings = await pipeline(questions, q => agent('调研: '+q, { schema:{ type:'object', properties:{ finding:{ type:'string' } }, required:['finding'] } })); return findings;"
+}
+```
+
+> 约束：脚本里 `require`/`process`/`fs` 不在作用域；`Date.now()`/`Math.random()`/无参 `new Date()` 跑前被拒（破坏 resumable 重放）；并发上限 16（provider-aware）、单 run ≤1000 agent。
 
 ---
 

@@ -1,13 +1,8 @@
 // ============================================================================
 // File Tools - 文件操作工具
 // ============================================================================
-// Read / Write / Glob 已在 P0-6.3 Batch 1 迁至 modules/file/ 下的 native ToolModule。
-// 此 barrel 仅保留尚未迁移的 legacy 工具 + pathUtils。
-
-export { editFileTool } from './edit';
-export { listDirectoryTool } from './listDirectory';
-export { readClipboardTool } from './readClipboard';
-export { notebookEditTool } from './notebookEdit';
+// 所有 legacy 文件工具已迁至 modules/file/ 下的 native ToolModule 并删除旧实现。
+// 此 barrel 仅保留 pathUtils（仍被 modules/decorated 测试夹具引用）。
 
 // Path utilities
 export { expandTilde, resolvePath } from './pathUtils';

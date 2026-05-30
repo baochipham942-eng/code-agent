@@ -78,13 +78,6 @@ export {
 } from './timeoutController';
 
 export {
-  checkDiskSpace,
-  assertDiskSpaceAvailable,
-  DISK_THRESHOLDS,
-  type DiskSpaceCheckResult,
-} from './diskSpace';
-
-export {
   onShutdown,
   removeShutdownHandler,
   gracefulShutdown,
@@ -93,11 +86,3 @@ export {
   setupDefaultSignalHandlers,
 } from './gracefulShutdown';
 
-export {
-  FileLogger,
-  getFileLogger,
-  initFileLogger,
-  closeFileLogger,
-  LOG_CONFIG,
-  type FileLoggerConfig,
-} from './fileLogger';

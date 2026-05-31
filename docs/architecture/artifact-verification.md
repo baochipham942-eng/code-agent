@@ -1,41 +1,33 @@
 # Artifact Verification 架构
 
-> 2026-05-11 当前口径：AcceptanceRunner + Game / Deck / Dashboard verifier + Delivery Review + Preview Feedback
+> 2026-05-31 当前口径：旧 `AcceptanceRunner` / Delivery Review / Preview Feedback 已下线；保留 kind-specific verifier 和生成物 repair guard。
 
 ## 目标
 
-Artifact Verification 负责回答一个更产品化的问题：生成物是否真的能交付。它不只检查“文件是否存在”，还要按 artifact 类型跑结构化验收、给出可修复反馈，并把失败项送回聊天主链路。
+Artifact Verification 负责回答一个更产品化的问题：生成物是否真的能交付。当前系统不再维护旧的通用 Delivery Review 队列，验收能力应优先落在具体 artifact runtime 上，用真实文件、浏览器 smoke 或运行时 contract 采证。
 
-当前用户入口有两个：
+当前用户入口：
 
 | 入口 | 作用 |
 |------|------|
-| Workspace Preview | 预览 artifact、运行 Delivery Review、查看 Preview Feedback、把反馈 send back to chat |
-| TaskPanel task rail | 展示验收状态、待审项、产物和当前修复动作 |
+| Workspace Preview | 预览 artifact、查看 Design PPT / Prompt Apps / Gallery 等生成物资产 |
+| TaskPanel task rail | 展示任务运行状态、产物和当前修复动作 |
 
-## 数据流
+## 已下线的旧链路
 
-```
-Artifact generated
-  -> WorkspacePreviewItem
-  -> DeliveryReviewService
-  -> AcceptanceRunner / kind verifier
-  -> ReviewQueueService(reason=delivery_review)
-  -> PreviewFeedbackService
-  -> Workspace Preview feedback sidebar
-  -> send back to chat for repair
-```
+5/7 曾接入过 `WorkspacePreviewItem -> DeliveryReviewService -> AcceptanceRunner -> ReviewQueueService(reason=delivery_review) -> PreviewFeedbackService`。这条线在 5/19 随 evaluation 子系统清理下线，相关 IPC、DB 表、Eval Center UI、Preview Feedback UI 都已删除。
+
+旧 `AcceptanceRunner` 只做静态规则检查，缺少真实浏览器/运行时证据、自动修复和复验闭环，因此不再保留为 runtime 入口。
 
 ## 运行时分层
 
 | 层 | 文件 | 职责 |
 |----|------|------|
-| Scenario acceptance | `src/shared/contract/scenarioAcceptance.ts` | 前后端共享验收 contract |
-| Acceptance runner | `src/main/agent/runtime/acceptance/AcceptanceRunner.ts` | frontend/admin/doc/research/deploy/game 等交付场景的通用验收入口 |
-| Scenario skills | `src/main/agent/runtime/acceptance/scenarioSkills.ts` | 每类交付的检查项、修复建议和 skill 映射 |
-| Delivery review | `src/main/evaluation/deliveryReviewService.ts` | 运行审查，失败时入 review queue |
-| Preview feedback | `src/main/evaluation/previewFeedbackService.ts` | 维护 UI 可操作反馈项 |
-| Review queue | `src/main/evaluation/reviewQueueService.ts` | 保存 `delivery_review` reason 和结构化结果 |
+| Game verifier | `src/main/agent/runtime/game/*` | generated game subtype checker、runtime evidence 和 repair issue codes |
+| Deck verifier | `src/main/agent/runtime/deck/DeckVerifier.ts` | deck schema / narrative probes |
+| Dashboard verifier | `src/main/agent/runtime/dashboard/DashboardVerifier.ts` | HTML probes、browser visual smoke、interaction probes |
+| Browser visual smoke | `src/main/agent/runtime/browser/visualSmoke.ts` | desktop/mobile viewport、console/page errors、canvas 非空、overflow |
+| Repair guard | `src/main/agent/runtime/repair/*` | repair scope、monotonicity、prompt limit 和修复轮次限制 |
 
 ## Verifier Family
 
@@ -69,13 +61,11 @@ ADR-016 明确不提前抽 `ArtifactKindVerifier` 顶层接口。原因是各类
 | dashboard | file path + browser runtime |
 | game | generated HTML + runtime evidence + subtype checker |
 
-等第三类 verifier 稳定跑通后，再考虑是否抽公共接口。现在公共层只放 runner、feedback、review queue 和 repair guard。
+等第三类 verifier 稳定跑通后，再考虑是否抽公共接口。当前公共层只保留 repair guard 和真实证据采集工具，不再保留通用 Delivery Review runner。
 
 ## 存储
 
 | 表 / 存储 | 说明 |
 |------|------|
-| `preview_feedback_items` | Workspace Preview feedback 侧栏的数据源 |
-| `review_queue_items.delivery_review` | Delivery Review 未通过时进入 Review Queue |
 | artifact files / preview metadata | 生成物和 UI preview item 的事实来源 |
 | telemetry / replay | 审查过程与工具证据的复盘来源 |

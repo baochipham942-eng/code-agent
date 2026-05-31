@@ -250,15 +250,14 @@ v0.16.74 新增 `HooksSettings`：位于"能力与连接"分组，调用 `domain
 
 ## Workspace Preview Panel
 
-`components/WorkspacePreviewPanel.tsx` 是会话级 artifact review workbench，不只是预览列表。它展示 preview item、正文、Design PPT renderer、Delivery Review 和 Preview Feedback 侧栏，并能把反馈回灌聊天。
+`components/WorkspacePreviewPanel.tsx` 是会话级 artifact workbench，不只是预览列表。它展示 preview item、正文、Design PPT renderer、Prompt Apps 和 Gallery。旧 Delivery Review / Preview Feedback 侧栏已随 evaluation 子系统下线。
 
 | Preview kind / 区域 | 职责 |
 |------|------|
 | `designBrief` / `questionForm` | Design Brief 链路的结构化意图和问卷预览 |
 | `design_ppt` | `DesignPptPreview` 展示 slides、theme、iterations、截图网格、prompt/code path，并提供 Open PPTX / Edit code |
-| Delivery Review | 调 `EVALUATION_CHANNELS.DELIVERY_REVIEW_RUN` 跑 artifact 验收，可 `enqueueOnNeedsWork` |
-| Preview Feedback | 反馈项可 resolve / dismiss，也可 send back to chat 作为修复上下文 |
-| Acceptance 状态 | game/deck/dashboard verifier 的用户入口在 Review/Feedback 和 TaskPanel task rail，不单独开页面 |
+| Artifact assets | 展示生成物资产和可打开文件，不再写入旧 review queue |
+| Acceptance 状态 | game/deck/dashboard verifier 的用户入口在具体 runtime / TaskPanel task rail，不单独开页面 |
 
 ## Live Preview 面板
 

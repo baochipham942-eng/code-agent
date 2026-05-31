@@ -19,7 +19,7 @@
 | **本地执行** | 文件、Shell、Git、浏览器、桌面和 artifact 验证都优先落在本机 runtime | ✅ 已产品化 |
 | **聊天原生工作台** | Task / Skills / Files / Preview / Browser / Validation 收敛到聊天右侧工作面 | ✅ 已产品化 |
 | **模型与 Agent 选择** | 14+ Provider 本地 API Key 配置，Native Agent Neo / Codex CLI / Claude Code 受控切换 | ✅ 已产品化 |
-| **质量闭环** | Swiss Cheese 评测、artifact acceptance、Delivery Review、Preview Feedback 和 Review Queue | ✅ 已产品化 |
+| **质量闭环** | kind-specific artifact verifier、repair guard、telemetry / replay 基础设施；旧 Swiss Cheese / Delivery Review / Preview Feedback 已下线 | 部分保留 |
 | **记忆系统** | Light Memory + 记忆导入、条目管理、注入 trace 和 Knowledge Memory Audit | ✅ 已产品化 |
 | **能力中心** | Skill / MCP template / tool bundle / channel / workflow / connector / agent engine 本地货架 | ✅ P0 完成 |
 | **云端同步与管理** | Supabase 认证、同步、管理员用户 dashboard、邀请码管理、显式 grants | ✅ 已接入 |

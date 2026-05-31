@@ -209,7 +209,7 @@
 |------|------|
 | Run Status Rail | Chat 顶部在后台任务、队列或 Agent Team 活跃时展示 running/queued、活跃 session、swarm chip 和进度，可跳转 session 或打开 TaskPanel/Agent Team |
 | TaskPanel task rail | TaskPanel 收敛成 task-first 状态工作面，过滤工具性步骤，只露出当前动作、检查项、产物、approval、outputs、context、MCP、memory 和待审项 |
-| Workspace Preview review | Workspace Preview 从 artifact 预览升级为 review workbench，支持 Delivery Review、Preview Feedback、resolve/dismiss、send back to chat |
+| Workspace Preview assets | Workspace Preview 从 artifact 预览升级为 asset workbench，支持 Design PPT、Prompt Apps、Gallery 和 TaskMonitor scope inspector；旧 Delivery Review / Preview Feedback 已下线 |
 | Design PPT preview | `design_ppt` artifact 专用预览，展示 slides、theme、iterations、截图网格、prompt/code path，并提供 Open PPTX / Edit code |
 
 ### Artifact Acceptance / Repair
@@ -466,4 +466,4 @@ scripts/
 1. **完善 GUI Agent 操作实现** - 集成 robotjs 或原生模块
 2. **添加 Google AI UI 支持** - 等待 Gemini 2.0 API
 3. **API Key 加密存储** - 实现安全存储
-4. **交付验收闭环** - Delivery Review / Preview Feedback / artifact verifier 持续补验收场景
+4. **Artifact verifier 闭环** - 基于 game / deck / dashboard verifier 和新的 artifact issue 模型重建验收入口

@@ -265,17 +265,16 @@ Eval 不再只看 final answer。`TelemetryQueryService` 会构建 structured re
 - `packages/eval-harness/src/runner/ExperimentRunner.ts`
 - `src/shared/contract/evaluation.ts`
 
-### Delivery Review runtime
+### Artifact verifier runtime
 
-5/7 之后，agent 交付不再只停在 final answer。`AcceptanceRunner` 可以按 scenario 选择验收技能；`DeliveryReviewService` 把未通过项转成 `delivery_review` review queue item；`PreviewFeedbackService` 把同一组问题挂到 Workspace Preview 侧栏，用户可以 resolve、dismiss，或 send back to chat 作为下一轮修复上下文。
+5/19 之后，旧 `AcceptanceRunner` / Delivery Review / Preview Feedback 链路已随 evaluation 子系统清理下线。当前 artifact 验收不再走通用 review queue，而是保留 game / deck / dashboard 这类 kind-specific verifier，优先采集真实文件、浏览器 smoke 或运行时 contract 证据。
 
 | 模块 | 位置 | 职责 |
 |------|------|------|
-| AcceptanceRunner | `src/main/agent/runtime/acceptance/AcceptanceRunner.ts` | 按 frontend / admin / doc / research / deploy / game 等 scenario 执行验收 |
-| Scenario skills | `src/main/agent/runtime/acceptance/scenarioSkills.ts` | 把不同交付类型映射到检查项和修复提示 |
-| DeliveryReviewService | `src/main/evaluation/deliveryReviewService.ts` | 运行交付审查，把 needs-work 结果送入 review queue |
-| PreviewFeedbackService | `src/main/evaluation/previewFeedbackService.ts` | 维护 Workspace Preview feedback items |
-| Contract | `src/shared/contract/scenarioAcceptance.ts` | 前后端共享验收结果结构 |
+| Game verifier | `src/main/agent/runtime/game/*` | game subtype checker、runtime evidence 和 repair issue codes |
+| DeckVerifier | `src/main/agent/runtime/deck/DeckVerifier.ts` | deck schema / narrative probes |
+| DashboardVerifier | `src/main/agent/runtime/dashboard/DashboardVerifier.ts` | HTML probes、browser visual smoke、interaction probes |
+| Repair guard | `src/main/agent/runtime/repair/*` | 控制 repair scope、修复轮次和单调性 |
 
 ### Artifact verifier family
 
@@ -410,7 +409,7 @@ ContextAssembly 每轮推理前注入两类子代理信息：
 | commands | 关键命令、退出码、短输出 |
 | errors | 失败原因、错误类别、后续修复提示 |
 | todos / open work | 未完成事项、待验证点、approval 状态 |
-| artifacts | 生成物、preview item、delivery review 关联 |
+| artifacts | 生成物、preview item、artifact verifier 证据 |
 | fingerprint | 防止 summary 后把旧数据当最新事实的校验锚点 |
 
 ### Audit / validation / hooks

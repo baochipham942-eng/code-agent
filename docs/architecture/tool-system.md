@@ -109,6 +109,18 @@ FOR EACH toolCall:
 - `tests/unit/tools/legacyAdapter.permission.test.ts`
 - `tests/unit/tools/skillMetaTool.security.test.ts`
 
+### Decision Trace 与写隔离（2026-06-01）
+
+产品闭环阶段把“自动批准为什么发生”和“多个写动作会不会互相踩”收进工具执行层。
+
+| 能力 | 当前合同 | 关键文件 / 测试 |
+|------|----------|----------------|
+| `DecisionTrace` | 自动 permission decision 必须能回放 classifier、reason、risk 和结果；artifact/eval 质量问题也可引用同一 trace | `src/main/security/decisionHistory.ts`、`src/shared/contract/productClosure.ts`、`tests/unit/tools/toolExecutor.decisionTrace.test.ts` |
+| workspace/file write isolation | `Bash` / execute 视为 workspace 写锁；`Write` / `Edit` / `Append` / `MultiEdit` 按目标文件判断冲突；无文件参数时退到 workspace 锁 | `src/main/security/writeIsolation.ts`、`tests/unit/tools/toolExecutor.writeIsolation.test.ts` |
+| dynamic workflow write gate | workflow run 内 edit/full agent 先过 `SerialWriteGate` 串行，普通工具执行再过 ToolExecutor 写隔离 | `src/main/agent/scriptRuntime/writeGate.ts`、`tests/unit/agent/scriptRuntime/agentBridge.test.ts` |
+
+这层是进程内串行和冲突判断，不等于 per-agent git worktree。真正需要并行写入同一个 repo 时，仍要在上层分配独立工作树或做更细的文件锁策略。
+
 ### MCP dynamic direct execute
 
 MCP tool 的模型可见名称仍沿用 Claude Code 风格：`mcp__<server>__<tool>`。2026-04-27 之后，`ToolResolver` 能识别这类 dynamic tool，并把调用落到 `MCPClient.callTool(serverName, toolName, args)`，不再停在 ToolSearch 可见、execute unknown 的半截状态。

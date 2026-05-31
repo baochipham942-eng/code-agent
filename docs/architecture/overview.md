@@ -154,7 +154,7 @@
 |------|----------|----------|
 | Native ToolModule registry | `src/main/tools/registry.ts` 三段式 schema/loader/handler registry；`modules/index.ts` 注册 108 个 native ToolModule；旧 wrapper 只保留兼容 | [tool-system.md](./tool-system.md) |
 | Runtime / Context hardening | CompactionService + SurvivorManifest + audit/validation/hooks；partial-failure trace、Web session recovery、assistant persistence、failure-mode loop breaker | [agent-core.md](./agent-core.md) |
-| Delivery Review / Artifact verifier | AcceptanceRunner、Game/Deck/Dashboard verifier、Delivery Review、Preview Feedback 进入交付验收闭环 | [artifact-verification.md](./artifact-verification.md) |
+| Artifact quality gate | checker-level verifier 产出证据；产品级质量问题进入 `ArtifactIssue`、`EvalReplayQualityReport` 和 Admin Review Queue | [artifact-verification.md](./artifact-verification.md) |
 | Browser / Computer multi-agent isolation | BrowserService pool、ephemeral launch semaphore、ComputerSurface write lock、targetApp screenshot crop | [multiagent-system.md](./multiagent-system.md) |
 | Custom Agent registry | `~/.code-agent/agents/*.md` 与 `<cwd>/.code-agent/agents/*.md` 进入 `agentRegistry` 单一来源；project > user > builtin；CLI / spawn / @mention / StatusBar 共用同一列表 | [multiagent-system.md](./multiagent-system.md) |
 | Subagent permission inheritance | `strict-inherit` 默认；parentContext、用户 deny/ask/allow、readonly→writer 禁止派生进入 subagent 运行时 | [multiagent-system.md](./multiagent-system.md) |
@@ -223,7 +223,7 @@
 | **Activity Providers** | `src/main/services/activity/` + `src/shared/contract/activity*.ts` | 统一 OpenChronicle / Tauri Native Desktop / audio / screenshot-analysis 的上下文来源和注入边界 |
 | **Live Preview V2** | `src/main/services/infra/devServerManager.ts` + `src/renderer/components/LivePreview/` | 自动启动本地 dev server、iframe source grounding、TweakPanel 原子样式编辑 |
 | **Browser / Computer Workbench** | `src/main/services/infra/browserService.ts` + `browserPool.ts` + `src/main/services/desktop/` | 托管浏览器会话、per-agent 隔离、TargetRef、artifact、Computer Surface 安全动作面 |
-| **Delivery Review / Artifact Verifiers** | `src/main/agent/runtime/acceptance/` + `runtime/{game,deck,dashboard}/` + `src/main/evaluation/previewFeedbackService.ts` | artifact 验收、交付审查、反馈回灌聊天 |
+| **Artifact Quality Gate** | `src/main/agent/runtime/acceptance/` + `runtime/{game,deck,dashboard}/` + `src/shared/contract/productClosure.ts` + `ArtifactIssueRepository` | checker-level 验收、artifact issue、replay quality report、admin review queue |
 | **Context Health 溯源** | `src/main/context/contextHealthService.ts` + `src/shared/contract/contextHealth.ts` + renderer `ContextPanel/ContextHealthPanel` | `TokenBreakdown.bySource` 六维来源溯源（rules/skills/mcp/subagents/fileReads/conversation），workbench context tab 二级展开，✕ 卸载接 `setServerEnabled` IPC |
 | **取消级联 / Shutdown Protocol** | `src/shared/contract/cancellation.ts` + `src/main/agent/shutdownProtocol.ts` + `src/main/agent/subagentExecutor.ts` | `CancellationReason` 区分 CASCADE/NON_CASCADE，四阶段 shutdown，idle watchdog，per-agent Stop UI |
 | **Agent Engine Adapters** | `src/shared/contract/agentEngine.ts` + `src/main/services/agentEngine/` + `src/main/ipc/agentEngine.ipc.ts` | Native / Codex CLI / Claude Code engine 元数据、检测、read-only 执行、历史导入和 task ledger 回带 |

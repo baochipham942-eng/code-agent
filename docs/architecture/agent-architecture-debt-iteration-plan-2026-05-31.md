@@ -19,6 +19,7 @@
 - Iteration 3 runtime ports are implemented and covered by targeted tests.
 - Iteration 4 model/app-host boundaries are implemented and covered by targeted tests.
 - Maintenance follow-up split provider JSON/HTTP helpers, extracted agent run event collection, and removed production `any` noise from CLI schema output, IPC types, and channel fallback message construction.
+- Iteration 5 prompt/session/release gates are implemented: stale prompt token scan, low-cost real prompt smoke, subagent guidance regressions, session owner scoping, eval worktree isolation, and experiment schema migration coverage.
 
 ## Iteration 1: Runtime Safety And Workflow Semantics
 
@@ -44,7 +45,6 @@ Maintenance follow-up verification:
 - `npx vitest run tests/unit/model/providers-shared.test.ts tests/unit/model/baseOpenAIProvider.test.ts tests/unit/model/sseStream.snapshot.test.ts tests/unit/web/agentRouter.test.ts tests/channels/channelMessageReply.test.ts tests/unit/ipc/channel.ipc.test.ts tests/unit/cli/agentDispatch.test.ts`
 - `npm run typecheck`
 - `npx madge --ts-config tsconfig.json --extensions ts,tsx --circular src/main src/web/routes`
-- `npm run debt:report -- --skip-eslint --limit 20`
 - `npm run debt:report -- --skip-eslint --limit 20`
 
 ## Iteration 2: Workflow Resume And Provider Fairness
@@ -98,6 +98,28 @@ Verification:
 - `npx vitest run tests/unit/model/modelRouterPolicy.test.ts tests/unit/model/modelRouter.test.ts tests/unit/model/baseOpenAIProvider.test.ts tests/unit/model/sseStream.snapshot.test.ts tests/unit/web/devRouter.test.ts tests/unit/web/agentRouter.test.ts`
 - `npm run typecheck`
 
+## Iteration 5: Prompt, Session, And Release Gates
+
+Goal: prevent recent runtime cleanups from regressing through stale prompt wording, wrong user ownership, or test harness side effects.
+
+Deliverables:
+
+- Add static stale-token scanning for current prompt/tool contracts.
+- Add low-cost real-model prompt smoke cases for Read, Write, Edit, Grep, ToolSearch, Task, and no-auto-commit git behavior.
+- Align `spawn_agent`, core agent guidance, and nudges with current ToolSearch / Task / file tool names.
+- Keep dynamic `workflow` and legacy `workflow_orchestrate` role semantics distinct in compatibility tests.
+- Scope session reads, writes, cache access, and session-manager operations to the current authenticated user.
+- Keep web responses from leaking provider `apiKey` in serialized session model config.
+- Guard eval file tools so fixture writes stay inside the intended worktree.
+- Ensure experiments schema creates the table before applying `git_commit` migration.
+
+Verification:
+
+- `npm run eval:prompt-gate`
+- `npx vitest run tests/unit/prompts/promptRegression.test.ts tests/unit/agent/multiagentTools/workflowOrchestrate.legacy.test.ts`
+- `npx vitest run tests/unit/services/SessionRepository.agentEngine.test.ts tests/unit/services/infra/sessionManager.cloudSync.test.ts tests/unit/services/databaseSchema.experiments.test.ts`
+- `npx vitest run tests/unit/tools/modules/file/append.test.ts tests/unit/tools/modules/file/multiEdit.test.ts tests/unit/tools/modules/file/write.test.ts`
+
 ## Completion Gate
 
 The architecture debt effort is complete only when:
@@ -106,4 +128,5 @@ The architecture debt effort is complete only when:
 - `debt:report` has no unwhitelisted effective-over-limit files.
 - `madge` reports no circular dependencies for `src/main` and relevant `src/web/routes`.
 - Workflow resume, provider concurrency, and runtime port boundaries have targeted tests.
+- Prompt/tool contract gates and session owner scope tests pass.
 - Remaining high-risk extractions are either implemented or explicitly tracked as later product work with verification commands.

@@ -265,17 +265,17 @@ Eval 不再只看 final answer。`TelemetryQueryService` 会构建 structured re
 - `packages/eval-harness/src/runner/ExperimentRunner.ts`
 - `src/shared/contract/evaluation.ts`
 
-### Delivery Review runtime
+### Product closure quality runtime
 
-5/7 之后，agent 交付不再只停在 final answer。`AcceptanceRunner` 可以按 scenario 选择验收技能；`DeliveryReviewService` 把未通过项转成 `delivery_review` review queue item；`PreviewFeedbackService` 把同一组问题挂到 Workspace Preview 侧栏，用户可以 resolve、dismiss，或 send back to chat 作为下一轮修复上下文。
+6/1 之后，agent 交付质量不再依赖已下线的 DeliveryReviewService / PreviewFeedbackService 数据面。checker-level `AcceptanceRunner` 仍可按 scenario 产生规则问题，但产品级质量状态要进入 `ArtifactIssue`、`EvalReplayQualityReport` 和 Admin Review Queue，才能参与 replay/eval 和 release gate。
 
 | 模块 | 位置 | 职责 |
 |------|------|------|
-| AcceptanceRunner | `src/main/agent/runtime/acceptance/AcceptanceRunner.ts` | 按 frontend / admin / doc / research / deploy / game 等 scenario 执行验收 |
+| AcceptanceRunner | `src/main/agent/runtime/acceptance/AcceptanceRunner.ts` | checker-level 规则检查器，不承担产品级 DB/UI 数据面 |
 | Scenario skills | `src/main/agent/runtime/acceptance/scenarioSkills.ts` | 把不同交付类型映射到检查项和修复提示 |
-| DeliveryReviewService | `src/main/evaluation/deliveryReviewService.ts` | 运行交付审查，把 needs-work 结果送入 review queue |
-| PreviewFeedbackService | `src/main/evaluation/previewFeedbackService.ts` | 维护 Workspace Preview feedback items |
-| Contract | `src/shared/contract/scenarioAcceptance.ts` | 前后端共享验收结果结构 |
+| Product closure contract | `src/shared/contract/productClosure.ts` | `ArtifactIssue`、`ArtifactEvidenceRef`、`EvalReplayQualityReport`、`AdminReviewQueueItem` |
+| ArtifactIssueRepository | `src/main/services/core/repositories/ArtifactIssueRepository.ts` | 持久化 issue/evidence/quality report/admin review 决策 |
+| Admin review route | `src/web/routes/adminReviewQueue.ts` | app-host 本地 review queue API |
 
 ### Artifact verifier family
 
@@ -285,7 +285,7 @@ artifact 验收分成通用 runner 和 kind-specific verifier 两层。当前不
 |------|--------|------|
 | Game | `src/main/agent/runtime/gameArtifactValidator.ts` + `runtime/game/*` | subtype registry、Platformer/Runner/Breakout checker、skill loader、verb taxonomy、repair codes |
 | Deck | `src/main/agent/runtime/deck/DeckVerifier.ts` | schemaProbe + declarative / imperative narrative probes，替代旧 `validateNarrative` |
-| Dashboard / interactive app | `src/main/agent/runtime/dashboard/DashboardVerifier.ts` | HTML probes、browser visual smoke、interaction probes、state_change_on_click 反 Potemkin |
+| Dashboard / interactive app | `src/main/agent/runtime/dashboard/*` | HTML probes、browser visual smoke、interaction probes、state_change_on_click 反 Potemkin |
 | Browser visual smoke | `src/main/agent/runtime/browser/visualSmoke.ts` | desktop/mobile viewport、console/page errors、canvas 非空、overflow 等探针 |
 | Repair toolkit | `src/main/agent/runtime/repair/*` | scope guards、monotonicity tracker、repair cap、Best-of-N 支撑 |
 

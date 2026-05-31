@@ -155,6 +155,24 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 
 安全边界：威胁模型是**半信任模型代码**（非对抗者）；已知缺口 = worker `new AsyncFunction` 字符串求值逃逸（`isolated-vm` 硬沙箱排后单独排期）。完整设计见 **[dynamic-workflow.md](./dynamic-workflow.md)**。
 
+## 0.0.5 2026-06-01 Agent Neo Product Closure — 多 Agent 产品层级
+
+产品闭环阶段把多 Agent 入口按用户心智重新分层，避免 prompt、UI 和测试各说一套。
+
+| 入口 | 产品层级 | 当前口径 |
+|------|----------|----------|
+| Chat | default | 普通交互任务入口。 |
+| `/workflow` / `workflow` | default | 复杂长任务默认路径，支持脚本控制流、恢复、取消、暂停和后台。 |
+| Agent Team | expert | 并行审计、专题分解和只读 evidence gathering，默认不让子 agent 自动改代码。 |
+| `spawn_agent` | compatibility | 单个子 agent 委派和历史调用兼容。 |
+| `workflow_orchestrate` | compatibility | 声明式 stage-DAG 兼容路径，不抢 `/workflow` 的命令式默认口径。 |
+
+配套回归：
+
+- `promptRegression.test.ts` 覆盖当前 Task / ToolSearch / file tool 指引。
+- `workflowOrchestrate.legacy.test.ts` 保证旧 role 归一后仍能跑 compatibility path。
+- `spawnGuard` 继续禁止子 agent 再开 workflow 类工具，避免多层长任务互相套娃。
+
 ## 0.1 节点级 Checkpoint（断点恢复）
 
 多 agent DAG 执行中，网络中断或 token 耗尽会导致已完成节点工作白费。

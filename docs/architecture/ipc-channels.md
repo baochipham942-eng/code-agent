@@ -86,7 +86,6 @@ interface IPCResponse<T = unknown> {
 | `domain:openchronicle` | openchronicle.ipc.ts | 外部 OpenChronicle daemon |
 | `domain:prompt` | prompt.ipc.ts | Prompt Registry 查看、override、debug system prompt |
 | `domain:hook` | hook.ipc.ts | Hook 配置摘要、启用状态、配置文件打开/定位 |
-| `evaluation:delivery-review:run` | evaluation.ipc.ts | Workspace Preview 触发 Delivery Review，失败可入 review queue 和 preview feedback |
 | `workflow:*` | workflow.ipc.ts | Dynamic Workflow 运行进度 + 跑前审批（专用 bridge，run/launch 双通道）|
 
 ---
@@ -174,6 +173,7 @@ Dynamic Workflow（命令式脚本运行时，见 [dynamic-workflow.md](./dynami
 | `WORKFLOW_LAUNCH_EVENT` | `workflow:launch:event` | 推 → renderer | `WorkflowLaunchEvent` | 跑前审批卡（phases/扇出/写提示 + 4 维度成本）|
 | `WORKFLOW_APPROVE_LAUNCH` | `workflow:approve-launch` | renderer → main | `{ requestId, feedback?, sessionId? }` | 批准启动 |
 | `WORKFLOW_REJECT_LAUNCH` | `workflow:reject-launch` | renderer → main | `{ requestId, feedback, sessionId? }` | 拒绝启动 |
+| `WORKFLOW_CANCEL_RUN` | `workflow:cancel-run` | renderer → main | `{ runId, sessionId? }` | 取消 workflow run，带 sessionId 时做授权约束 |
 
 > 事件契约 `ScriptRunEvent` / `WorkflowLaunchEvent` 定义在 `src/shared/contract/scriptRun.ts`，renderer+main 共用；renderer 侧 `workflowStore` 按 `runId` 分桶折叠成进度树。
 

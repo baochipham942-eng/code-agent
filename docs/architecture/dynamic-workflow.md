@@ -43,7 +43,7 @@ Code Agent 此前已有三层多 Agent 基建（详见 [multiagent-system.md](./
 | `edit` | readonly + Edit / Write | 改文件 |
 | `full` | edit + Bash | 迁移、跑命令 |
 
-> 写能力档（edit/full）会触发并行写护栏：≥2 个写 agent 并发同工作树时 run:log 告警（真 git-worktree 隔离后置）。
+> 写能力档（edit/full）会进入 `SerialWriteGate`：同一 workflow run 内写 agent 串行放行，排队期间响应 abort。跨 run / 跨普通工具调用的写冲突由 `ToolExecutor` 的 workspace/file write isolation 兜底。
 
 ## 3. 架构分层
 
@@ -85,6 +85,12 @@ Code Agent 此前已有三层多 Agent 基建（详见 [multiagent-system.md](./
                                  │  确认 provider capacity 后     │
                                  │  再占全局槽，防 zhipu/3 饿死   │
                                  └──────────────────────────────┘
+                                            ▼
+                                 ┌──────────────────────────────┐
+                                 │ writeGate.ts                  │
+                                 │  edit/full agent 串行写闸       │
+                                 │  abort 时移除等待队列           │
+                                 └──────────────────────────────┘
 ```
 
 facade：`src/main/agent/scriptRuntime/index.ts` 导出 `startRun / cancelRun / getRunState / ScriptRunHostDeps / ScriptRunJournal / ConcurrencyGate`。
@@ -102,7 +108,7 @@ facade：`src/main/agent/scriptRuntime/index.ts` 导出 `startRun / cancelRun / 
 
 - **输入加固**（`scriptValidator.ts`）：体积上限 64KB（`new AsyncFunction(...)` 编译式校验，与 worker 环境逐字一致）+ acorn AST 拒动态 `import` + forced schema 校验（对象型/`$ref` 拒绝/JSON 16KB 上限/深度≤8/循环检测）。
 - **token budget**（`budget.ts` `BudgetTracker`）：按 outputTokens 计；reserve/commit 并发预留模型（`reserveOrThrow` 原子 check+reserve 消 TOCTOU）；worker 暴露只读 `budget`。
-- **三档工具 profile**（`toolProfiles.ts`，见 §2）+ 并行写护栏。
+- **三档工具 profile**（`toolProfiles.ts`，见 §2）+ `SerialWriteGate` 串行写护栏。
 
 ### P3 UI（进度树 / 审批卡 / 触发入口）
 
@@ -124,6 +130,7 @@ facade：`src/main/agent/scriptRuntime/index.ts` 导出 `startRun / cancelRun / 
 |----|------|
 | 威胁模型 | **半信任模型代码**（非对抗者）：模型可能写 bug，但不假设它蓄意越狱 |
 | 沙箱 | worker_threads（`eval:true`）+ `require/process/fs` shadow + 超时/内存上限 |
+| 写隔离 | workflow run 内用 `SerialWriteGate` 串行 edit/full agent；跨工具调用由 `WriteIsolationManager` 统一判断 file/workspace 冲突 |
 | ⚠️ 已知缺口（延后） | worker 用 `new AsyncFunction` 跑脚本 → 字符串求值（`eval`/`Function`/`.constructor` walk）能拿回 worker globalThis/process，readonly 档也挡不住本地访问 |
 | ❌ 已证伪的修法 | `vm.createContext` no-codegen **挡不住** `host函数.constructor` walk（node 官方明言 vm 不是安全边界，已删分支） |
 | 唯一真边界 | `isolated-vm`（独立 v8 isolate，host 对象跨不过去）——代价是原生编译 + 打包链变重，**单独排期** |
@@ -151,6 +158,7 @@ facade：`src/main/agent/scriptRuntime/index.ts` 导出 `startRun / cancelRun / 
 | `…/primitives.ts` | 主线程 RPC dispatcher |
 | `…/agentBridge.ts` | `runAgentCall` 两路 + 结果缓存 + 缓存键 hash |
 | `…/concurrencyGate.ts` | provider-aware 全局并发闸 |
+| `…/writeGate.ts` | edit/full agent 串行写护栏 |
 | `…/budget.ts` | `BudgetTracker`（reserve/commit）|
 | `…/scriptValidator.ts` | 输入加固 + forced schema 校验 + 确定性 AST 走查 |
 | `…/scriptPreview.ts` | 审批卡用 AST 静态预览（phases/扇出/写提示）|

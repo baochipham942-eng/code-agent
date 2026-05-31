@@ -89,6 +89,40 @@ describe('executeWorkflowOrchestrate legacy behavior', () => {
     });
   });
 
+  it('normalizes legacy workflow role names to core agents', async () => {
+    executeSubagentMock.mockResolvedValue({
+      success: true,
+      output: 'legacy-role-ok',
+      toolsUsed: [],
+    });
+
+    const result = await executeWorkflowOrchestrate(
+      {
+        workflow: 'custom',
+        task: 'legacy role smoke',
+        parallel: false,
+        stages: [
+          {
+            name: 'Architecture Analysis',
+            role: 'architect',
+            prompt: 'Analyze architecture.',
+          },
+          {
+            name: 'Documentation',
+            role: 'documenter',
+            prompt: 'Write docs.',
+            dependsOn: ['Architecture Analysis'],
+          },
+        ],
+      },
+      makeContext(),
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('2/2 stages completed');
+    expect(executeSubagentMock).toHaveBeenCalledTimes(2);
+  });
+
   it('inherits the active provider model when a stage tier is provider-incompatible', async () => {
     executeSubagentMock.mockResolvedValue({
       success: true,
@@ -336,10 +370,10 @@ describe('executeWorkflowOrchestrate legacy behavior', () => {
     executeSubagentMock.mockResolvedValue({
       success: true,
       output: 'readonly-output',
-      toolsUsed: ['read_file'],
+      toolsUsed: ['Read'],
     });
 
-    const readTools = new Set(['Glob', 'Grep', 'Read', 'ListDirectory', 'task_list', 'task_get']);
+    const readTools = new Set(['Glob', 'Grep', 'Read', 'ListDirectory']);
     const resolver = {
       getDefinition: vi.fn((name: string) => ({
         name,
@@ -371,22 +405,20 @@ describe('executeWorkflowOrchestrate legacy behavior', () => {
     const stageConfig = executeSubagentMock.mock.calls[0][1] as { availableTools: string[] };
     expect(stageConfig.availableTools.length).toBeGreaterThan(0);
     expect(stageConfig.availableTools).toEqual(expect.arrayContaining([
-      'glob',
-      'grep',
-      'read_file',
-      'list_directory',
-      'task_list',
-      'task_get',
+      'Glob',
+      'Grep',
+      'Read',
+      'ListDirectory',
     ]));
-    expect(stageConfig.availableTools).not.toContain('write_file');
-    expect(stageConfig.availableTools).not.toContain('edit_file');
+    expect(stageConfig.availableTools).not.toContain('Write');
+    expect(stageConfig.availableTools).not.toContain('Edit');
     expect(result.metadata).toMatchObject({
       stages: [
         expect.objectContaining({
           toolPolicy: expect.objectContaining({
             mode: 'readonly',
             availableTools: stageConfig.availableTools,
-            blockedTools: expect.arrayContaining(['bash', 'write_file', 'edit_file']),
+            blockedTools: expect.arrayContaining(['Bash', 'Write', 'Edit']),
           }),
         }),
       ],
@@ -397,7 +429,7 @@ describe('executeWorkflowOrchestrate legacy behavior', () => {
     executeSubagentMock.mockResolvedValue({
       success: true,
       output: 'allowlist-output',
-      toolsUsed: ['read_file'],
+      toolsUsed: ['Read'],
     });
 
     const result = await executeWorkflowOrchestrate(
@@ -410,7 +442,7 @@ describe('executeWorkflowOrchestrate legacy behavior', () => {
             name: 'inspect',
             role: 'reviewer',
             prompt: 'Inspect one file.',
-            toolPolicy: { mode: 'allowlist', tools: ['read_file', 'web_search'] },
+            toolPolicy: { mode: 'allowlist', tools: ['Read', 'WebSearch'] },
           },
         ],
       },
@@ -421,7 +453,7 @@ describe('executeWorkflowOrchestrate legacy behavior', () => {
     expect(executeSubagentMock).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        availableTools: ['read_file'],
+        availableTools: ['Read'],
       }),
       expect.any(Object),
     );
@@ -430,9 +462,9 @@ describe('executeWorkflowOrchestrate legacy behavior', () => {
         expect.objectContaining({
           toolPolicy: expect.objectContaining({
             mode: 'allowlist',
-            requestedTools: ['read_file', 'web_search'],
-            availableTools: ['read_file'],
-            blockedTools: expect.arrayContaining(['web_search']),
+            requestedTools: ['Read', 'WebSearch'],
+            availableTools: ['Read'],
+            blockedTools: expect.arrayContaining(['WebSearch']),
           }),
         }),
       ],

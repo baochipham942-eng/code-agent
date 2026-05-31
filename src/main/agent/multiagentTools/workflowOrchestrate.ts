@@ -57,6 +57,26 @@ const TOOL_POLICY_MODES = new Set([
   'allowlist',
 ]);
 
+const LEGACY_WORKFLOW_ROLE_ALIASES: Record<string, string> = {
+  architect: 'plan',
+  planner: 'plan',
+  documenter: 'coder',
+  writer: 'coder',
+  tester: 'reviewer',
+  debugger: 'explore',
+  explorer: 'explore',
+  researcher: 'explore',
+  'code-explore': 'explore',
+  'visual-understanding': 'explore',
+  'visual-processing': 'coder',
+};
+
+function normalizeWorkflowRole(roleOrId: string): { role: string; originalRole?: string } {
+  const trimmed = roleOrId.trim();
+  const normalized = LEGACY_WORKFLOW_ROLE_ALIASES[trimmed] ?? LEGACY_WORKFLOW_ROLE_ALIASES[trimmed.toLowerCase()] ?? trimmed;
+  return normalized === roleOrId ? { role: normalized } : { role: normalized, originalRole: roleOrId };
+}
+
 function normalizeToolPolicyMode(
   policy: WorkflowStageToolPolicy | undefined,
 ): ResolvedWorkflowStageToolPolicyMode {
@@ -145,7 +165,9 @@ function resolveStageToolPolicy(
   const rawPolicy = validation.policy;
   const mode = normalizeToolPolicyMode(rawPolicy);
   const declaredToolSet = new Set(declaredTools);
+  const declaredCanonicalToolSet = new Set(declaredTools.map((tool) => resolveToolAlias(tool)));
   const requestedTools = rawPolicy?.tools?.map((tool) => tool.trim());
+  const requestedCanonicalTools = requestedTools?.map((tool) => resolveToolAlias(tool));
   let availableTools: string[] = declaredTools;
   let maxToolCalls = rawPolicy?.maxToolCalls;
 
@@ -159,8 +181,8 @@ function resolveStageToolPolicy(
       return definition?.permissionLevel === 'read';
     });
   } else if (mode === 'allowlist') {
-    const allowed = new Set(requestedTools ?? []);
-    availableTools = declaredTools.filter((toolName) => allowed.has(toolName));
+    const allowed = new Set(requestedCanonicalTools ?? requestedTools ?? []);
+    availableTools = declaredTools.filter((toolName) => allowed.has(resolveToolAlias(toolName)));
     if ((requestedTools?.length ?? 0) === 0) {
       maxToolCalls = 0;
     }
@@ -168,7 +190,10 @@ function resolveStageToolPolicy(
 
   const availableSet = new Set(availableTools);
   const blockedTools = declaredTools.filter((toolName) => !availableSet.has(toolName));
-  const ignoredRequestedTools = requestedTools?.filter((toolName) => !declaredToolSet.has(toolName)) ?? [];
+  const ignoredRequestedTools = requestedTools?.filter((toolName, index) => {
+    const canonicalToolName = requestedCanonicalTools?.[index] ?? toolName;
+    return !declaredToolSet.has(toolName) && !declaredCanonicalToolSet.has(canonicalToolName);
+  }) ?? [];
   if (ignoredRequestedTools.length > 0) {
     logger.warn('[Stage] toolPolicy requested tools outside declared role tools', {
       stage: stage.name,
@@ -527,25 +552,46 @@ function buildExecutionGroups(stages: WorkflowStage[]): WorkflowStage[][] {
 function resolveAgentConfig(
   roleOrId: string,
   legacyRoles: Record<string, { name: string; systemPrompt: string; tools: string[] }>
-): { name: string; systemPrompt: string; tools: string[]; model?: FullAgentConfig['model'] } | undefined {
+): {
+  name: string;
+  systemPrompt: string;
+  tools: string[];
+  model?: FullAgentConfig['model'];
+  resolvedRole: string;
+  originalRole?: string;
+} | undefined {
+  const { role: resolvedRole, originalRole } = normalizeWorkflowRole(roleOrId);
+
   // Check predefined agents (all agents are now unified here)
-  const predefined = getPredefinedAgent(roleOrId);
-  if (predefined) {
-    return {
-      name: predefined.name,
-      systemPrompt: getAgentPrompt(predefined),
-      tools: getAgentTools(predefined),
-      model: predefined.model,
-    };
+  try {
+    const predefined = getPredefinedAgent(resolvedRole);
+    if (predefined) {
+      return {
+        name: predefined.name,
+        systemPrompt: getAgentPrompt(predefined),
+        tools: getAgentTools(predefined),
+        model: predefined.model,
+        resolvedRole,
+        originalRole,
+      };
+    }
+  } catch (error) {
+    logger.debug('[Workflow] 预定义 agent 解析失败，尝试 legacy role', {
+      role: roleOrId,
+      resolvedRole,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   // Fall back to legacy roles (for backward compatibility)
-  const legacy = legacyRoles[roleOrId];
+  const legacy = legacyRoles[resolvedRole] ?? legacyRoles[roleOrId];
   if (legacy) {
     return {
       name: legacy.name,
       systemPrompt: legacy.systemPrompt,
       tools: legacy.tools,
+      resolvedRole,
+      originalRole,
     };
   }
 
@@ -580,6 +626,9 @@ async function executeStage(
   logger.info('[Stage] Agent 配置已解析', {
     stage: stage.name,
     agentName: agentConfig.name,
+    role: stage.role,
+    resolvedRole: agentConfig.resolvedRole,
+    originalRole: agentConfig.originalRole,
     tools: agentConfig.tools,
     modelTier: agentConfig.model,
   });

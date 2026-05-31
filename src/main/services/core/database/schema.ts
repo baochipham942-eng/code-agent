@@ -575,6 +575,74 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, 'ALTER TABLE experiments ADD COLUMN git_commit TEXT', logger);
   safeAlter(db, 'ALTER TABLE experiment_cases ADD COLUMN session_id TEXT', logger);
 
+  // Artifact Issues / Eval Replay Quality Reports（Agent Neo product closure）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS artifact_issues (
+      issue_id TEXT PRIMARY KEY,
+      artifact_id TEXT NOT NULL,
+      artifact_kind TEXT NOT NULL,
+      trace_id TEXT NOT NULL,
+      trace_source TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      replay_key TEXT NOT NULL,
+      source TEXT NOT NULL,
+      code TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      status TEXT NOT NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      run_id TEXT,
+      case_id TEXT,
+      owner TEXT,
+      repair_instruction TEXT,
+      anchors_json TEXT NOT NULL DEFAULT '[]',
+      decision_trace_json TEXT,
+      related_issue_ids_json TEXT NOT NULL DEFAULT '[]',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS artifact_issue_evidence (
+      issue_id TEXT NOT NULL,
+      evidence_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      ref TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      data_source TEXT,
+      sensitivity TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (issue_id, evidence_id),
+      FOREIGN KEY (issue_id) REFERENCES artifact_issues(issue_id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_artifact_issues_trace
+    ON artifact_issues(trace_id, replay_key)
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_artifact_issues_status
+    ON artifact_issues(status, severity, updated_at)
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS eval_replay_quality_reports (
+      report_id TEXT PRIMARY KEY,
+      trace_id TEXT NOT NULL,
+      trace_source TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      replay_key TEXT NOT NULL,
+      status TEXT NOT NULL,
+      run_id TEXT,
+      case_id TEXT,
+      report_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER
+    )
+  `);
+
   // ========================================================================
   // Swarm Trace 持久化表（ADR-010 #5）
   // ========================================================================

@@ -52,6 +52,16 @@ describe('workflowStore', () => {
     expect(runs['wf-2'].runningCount).toBe(1);
   });
 
+  it('run:cancelled 折叠为 cancelled 终态并保留取消原因', () => {
+    const store = useWorkflowStore.getState();
+    store.handleEvent(ev('wf-1', 'run:start', 1000, { scriptHash: 'h' }));
+    store.handleEvent(ev('wf-1', 'run:cancelled', 1800, { reason: 'user cancel' }));
+    const snap = useWorkflowStore.getState().runs['wf-1'];
+    expect(snap.status).toBe('cancelled');
+    expect(snap.error).toBe('user cancel');
+    expect(snap.durationMs).toBe(800);
+  });
+
   it('clear 清空所有 run', () => {
     const store = useWorkflowStore.getState();
     store.handleEvent(ev('wf-1', 'run:start', 1000, { scriptHash: 'h' }));

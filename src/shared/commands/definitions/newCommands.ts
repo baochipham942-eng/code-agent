@@ -533,7 +533,10 @@ export const permissionsCommand: CommandDefinition = {
       } else {
         for (const entry of recent) {
           const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
-          lines.push(`    ${time} ${entry.toolName}(${entry.summary.substring(0, 40)}) → ${entry.outcome}  (${entry.reason}, ${entry.durationMs}ms)`);
+          const trace = entry.decisionTrace
+            ? `, trace=${entry.decisionTrace.finalOutcome}/${entry.decisionTrace.steps.length}`
+            : '';
+          lines.push(`    ${time} ${entry.toolName}(${entry.summary.substring(0, 40)}) → ${entry.outcome}  (${entry.reason}, ${entry.durationMs}ms${trace})`);
         }
       }
     } catch {

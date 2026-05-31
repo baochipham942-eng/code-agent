@@ -147,6 +147,17 @@ describe('scriptRun view-model: applyScriptRunEvent', () => {
     expect(snap.durationMs).toBe(1500);
   });
 
+  it('run:cancelled 置 cancelled 并记录取消原因', () => {
+    const snap = fold('run-1', [
+      ev('run:start', 1000, { scriptHash: 'h' }),
+      ev('run:cancelled', 2500, { reason: 'run aborted' }),
+    ]);
+    expect(snap.status).toBe('cancelled');
+    expect(snap.error).toBe('run aborted');
+    expect(snap.finishedAt).toBe(2500);
+    expect(snap.durationMs).toBe(1500);
+  });
+
   // ── Codex Round4 MED：终态后晚到的 agent:start 不得覆盖真实 startedAt（时间元数据保护）──
   it('终态后晚到 agent:start 不覆盖既有 startedAt', () => {
     const snap = fold('run-1', [

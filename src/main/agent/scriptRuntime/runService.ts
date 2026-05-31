@@ -86,6 +86,7 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
   const state: ScriptRunState = {
     runId: spec.runId,
     status: 'running',
+    sessionId: spec.sessionId,
     scriptHash,
     startedAt: Date.now(),
     agentCallCount: 0,
@@ -228,7 +229,14 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
       state.status = controller.signal.aborted ? 'cancelled' : 'failed';
       state.error = outcome.error;
       try {
-        emit({ runId: spec.runId, type: 'run:error', ts: Date.now(), data: { error: outcome.error } });
+        emit({
+          runId: spec.runId,
+          type: state.status === 'cancelled' ? 'run:cancelled' : 'run:error',
+          ts: Date.now(),
+          data: state.status === 'cancelled'
+            ? { reason: outcome.error ?? 'run aborted' }
+            : { error: outcome.error },
+        });
       } catch {
         /* 观测面非权威，不盖掉脚本真错 */
       }
@@ -258,9 +266,10 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
 }
 
 /** 取消一个进行中的 run。返回是否命中。 */
-export function cancelRun(runId: string): boolean {
+export function cancelRun(runId: string, options: { sessionId?: string } = {}): boolean {
   const run = activeRuns.get(runId);
   if (!run) return false;
+  if (run.state.sessionId && options.sessionId && run.state.sessionId !== options.sessionId) return false;
   run.controller.abort();
   return true;
 }

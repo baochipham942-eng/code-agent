@@ -11,9 +11,11 @@
 // ============================================================================
 
 import React, { useState } from 'react';
-import { GitBranch, ChevronUp, ChevronDown, Loader2, Check, X, Circle, MinusCircle, Zap } from 'lucide-react';
+import { GitBranch, ChevronUp, ChevronDown, Loader2, Check, X, Circle, MinusCircle, Zap, Square } from 'lucide-react';
 import { useWorkflowStore } from '../../../stores/workflowStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { IPC_CHANNELS } from '@shared/ipc';
+import ipcService from '../../../services/ipcService';
 import type { ScriptRunAgentSnapshot, ScriptRunAgentStatus, ScriptRunSnapshot } from '@shared/contract/scriptRun';
 
 const NO_PHASE = '__no_phase__';
@@ -64,6 +66,7 @@ export function WorkflowInlineMonitor() {
   // activeSnapshot 返回的快照对象在新事件到达时换引用 → Zustand 触发重渲染。
   const snap = useWorkflowStore((s) => s.activeSnapshot(currentSessionId));
   const [collapsed, setCollapsed] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   if (!snap) return null;
   // running / failed 显示（失败保留报错可见）；completed / cancelled / pending 不显示。
@@ -73,6 +76,19 @@ export function WorkflowInlineMonitor() {
   const durationSec = snap.startedAt
     ? Math.max(0, Math.round(((snap.finishedAt ?? Date.now()) - snap.startedAt) / 1000))
     : undefined;
+
+  const handleCancel = async () => {
+    if (cancelling || snap.status !== 'running') return;
+    setCancelling(true);
+    try {
+      await ipcService.invoke(IPC_CHANNELS.WORKFLOW_CANCEL_RUN, {
+        runId: snap.runId,
+        sessionId: currentSessionId,
+      });
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   return (
     <div className="w-full shrink-0 px-4">
@@ -86,6 +102,17 @@ export function WorkflowInlineMonitor() {
             {snap.doneCount > 0 && <span>{snap.doneCount} done</span>}
             {snap.errorCount > 0 && <span className="text-red-400">{snap.errorCount} error</span>}
             {durationSec !== undefined && <span>{durationSec}s</span>}
+            {snap.status === 'running' && (
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={cancelling}
+                className="text-zinc-500 hover:text-red-300 disabled:opacity-50 transition-colors"
+                title="取消 workflow"
+              >
+                <Square size={12} />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setCollapsed(!collapsed)}

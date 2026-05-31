@@ -290,6 +290,7 @@ export const IPC_CHANNELS = {
   WORKFLOW_LAUNCH_EVENT: 'workflow:launch:event',
   WORKFLOW_APPROVE_LAUNCH: 'workflow:approve-launch',
   WORKFLOW_REJECT_LAUNCH: 'workflow:reject-launch',
+  WORKFLOW_CANCEL_RUN: 'workflow:cancel-run',
   SWARM_APPROVE_PLAN: 'swarm:approve-plan',
   SWARM_REJECT_PLAN: 'swarm:reject-plan',
   SWARM_PERSIST_AGENT_RUN: 'swarm:persist-agent-run',

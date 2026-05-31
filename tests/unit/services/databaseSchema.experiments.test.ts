@@ -55,4 +55,53 @@ describe('database experiment schema', () => {
       db.close();
     }
   });
+
+  it('creates artifact issue and quality report tables for product closure', () => {
+    const db = new Database(':memory:');
+    const logger = createLogger();
+
+    try {
+      applySchema(db, logger as never);
+      expect(logger.warn).not.toHaveBeenCalled();
+
+      const tables = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+        .all()
+        .map((row) => (row as { name: string }).name);
+
+      expect(tables).toContain('artifact_issues');
+      expect(tables).toContain('artifact_issue_evidence');
+      expect(tables).toContain('eval_replay_quality_reports');
+      expect(() => {
+        db.prepare(`
+          INSERT INTO artifact_issues (
+            issue_id, artifact_id, artifact_kind,
+            trace_id, trace_source, session_id, replay_key,
+            source, code, severity, status, title, message,
+            anchors_json, related_issue_ids_json, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          'issue-1',
+          'artifact-1',
+          'dashboard',
+          'session:session-1',
+          'session_replay',
+          'session-1',
+          'session-1',
+          'artifact_verifier',
+          'console_error',
+          'high',
+          'open',
+          'Console error',
+          'Generated artifact has a console error.',
+          '[]',
+          '[]',
+          100,
+          100,
+        );
+      }).not.toThrow();
+    } finally {
+      db.close();
+    }
+  });
 });

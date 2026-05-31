@@ -2,6 +2,8 @@
 // Decision History - Circular buffer of permission decisions
 // ============================================================================
 
+import type { DecisionTrace } from '../../shared/contract/decisionTrace';
+
 /**
  * Outcome of a permission decision
  */
@@ -26,6 +28,8 @@ export interface DecisionHistoryEntry {
   outcome: DecisionOutcome;
   reason: string;
   durationMs: number;
+  /** Reviewable trace for auto allow/deny/ask decisions. */
+  decisionTrace?: DecisionTrace;
 }
 
 const MAX_HISTORY = 50;

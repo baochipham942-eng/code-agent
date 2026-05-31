@@ -5,6 +5,7 @@ import { useSwarmStore } from '../stores/swarmStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useCronStore } from '../stores/cronStore';
 import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
+import { useWorkflowStore } from '../stores/workflowStore';
 import { useCurrentTurnExecutionProjection } from './useCurrentTurnExecutionProjection';
 import { useStatusRailModel } from './useStatusRailModel';
 import type {
@@ -13,6 +14,7 @@ import type {
   TaskRecord,
   TaskRecordOutputRef,
 } from '../types/runWorkbench';
+import type { ScriptRunAgentSnapshot, ScriptRunSnapshot } from '@shared/contract/scriptRun';
 import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
 import type { Task } from '@shared/contract/backgroundTask';
 import {
@@ -135,6 +137,84 @@ function backgroundTaskStatusLabel(task: Task): string {
     default:
       return task.status;
   }
+}
+
+function workflowStatusToTaskStatus(status: ScriptRunSnapshot['status']): TaskRecord['status'] {
+  if (status === 'running' || status === 'pending') return 'in_progress';
+  if (status === 'completed') return 'done';
+  if (status === 'failed' || status === 'cancelled') return 'blocked';
+  return 'pending';
+}
+
+function workflowStatusLabel(snapshot: ScriptRunSnapshot): string {
+  switch (snapshot.status) {
+    case 'pending':
+      return '等待启动';
+    case 'running':
+      return snapshot.currentPhase ? `执行中：${snapshot.currentPhase}` : '执行中';
+    case 'completed':
+      return '已完成';
+    case 'failed':
+      return '执行失败';
+    case 'cancelled':
+      return '已取消';
+    default:
+      return snapshot.status;
+  }
+}
+
+export function buildWorkflowTaskRecord(snapshot: ScriptRunSnapshot | undefined): TaskRecord | null {
+  if (!snapshot) return null;
+  const status = workflowStatusToTaskStatus(snapshot.status);
+  const agentSummary = [
+    snapshot.runningCount > 0 ? `${snapshot.runningCount} running` : null,
+    snapshot.doneCount > 0 ? `${snapshot.doneCount} done` : null,
+    snapshot.errorCount > 0 ? `${snapshot.errorCount} error` : null,
+  ].filter(Boolean).join(' · ');
+
+  return {
+    id: `workflow:${snapshot.runId}`,
+    scope: 'session',
+    title: snapshot.goal ? `Workflow: ${snapshot.goal}` : 'Workflow run',
+    status,
+    steps: [
+      {
+        title: workflowStatusLabel(snapshot),
+        status,
+      },
+      ...(agentSummary ? [{
+        title: agentSummary,
+        status,
+      }] : []),
+    ],
+    ownerRunId: snapshot.runId,
+    sourceThreadId: snapshot.sessionId ?? null,
+    resumeHint: snapshot.error,
+    outputRefs: [{
+      id: `workflow:${snapshot.runId}:replay`,
+      type: 'replay',
+      label: 'Workflow replay',
+    }],
+  };
+}
+
+function workflowAgentStatus(agent: ScriptRunAgentSnapshot): string {
+  if (agent.cached && agent.status === 'done') return 'cached';
+  return agent.status;
+}
+
+export function buildWorkflowSubagentViews(snapshot: ScriptRunSnapshot | undefined): SubagentRunView[] {
+  if (!snapshot) return [];
+  return snapshot.agents.map((agent) => ({
+    id: `workflow:${snapshot.runId}:${agent.id}`,
+    parentRunId: snapshot.runId,
+    role: agent.label || 'workflow agent',
+    status: workflowAgentStatus(agent),
+    inputSummary: agent.promptPreview || agent.phase || snapshot.goal || 'workflow agent',
+    lastOutput: agent.resultPreview || agent.error || '',
+    resultSummary: agent.resultPreview,
+    handoff: agent.error,
+  }));
 }
 
 function formatBackgroundTaskDuration(durationMs?: number): string | null {
@@ -299,6 +379,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
   const cronJobs = useCronStore((state) => state.jobs);
   const cronLatestExecutions = useCronStore((state) => state.latestExecutions);
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
+  const workflowSnapshot = useWorkflowStore((state) => state.activeSnapshot(currentSessionId ?? undefined));
 
   const taskProgress = currentSessionId ? sessionTaskProgress[currentSessionId] ?? null : null;
   const sessionStatus = currentSessionId ? sessionStates[currentSessionId]?.status ?? null : null;
@@ -331,6 +412,8 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
       latestExecutions: cronLatestExecutions,
     });
     const ledgerTasks = buildLedgerTaskRecords(backgroundTasks);
+    const workflowTask = buildWorkflowTaskRecord(workflowSnapshot);
+    const workflowSubagents = buildWorkflowSubagentViews(workflowSnapshot);
 
     return {
       run,
@@ -338,6 +421,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
       tools: buildToolCapabilityViews(projection),
       tasks: [
         ...(sessionTask ? [sessionTask] : []),
+        ...(workflowTask ? [workflowTask] : []),
         ...globalTasks,
         ...ledgerTasks,
         ...scheduledTasks,
@@ -346,7 +430,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
         runId: run.identity.runId,
         agents,
         selectedAgentId: selectedSwarmAgentId,
-      }),
+      }).concat(workflowSubagents),
       memoryActivities: buildMemoryActivityEvents(projection),
       outputs: buildOutputArtifactViews(projection),
     };
@@ -363,5 +447,6 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
     sessionStatus,
     statusRail.todos.items,
     taskProgress,
+    workflowSnapshot,
   ]);
 }

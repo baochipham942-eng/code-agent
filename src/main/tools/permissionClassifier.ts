@@ -401,13 +401,16 @@ export class PermissionClassifier {
       }
     }
 
-    // B3: 在项目目录内的 npm/npx 命令 → approve
+    // B3: 包管理器命令可能安装依赖、运行任意 package script 或访问网络，默认 ask。
+    // 明确只读/验证类命令已在 B2 白名单列出。
     if (/^(npm|npx|pnpm|yarn)\s/.test(trimmed)) {
+      const reason = '包管理器命令可能修改依赖、执行脚本或访问网络';
       return {
-        decision: 'approve',
-        reason: '包管理器命令',
-        confidence: 0.9,
+        decision: 'ask',
+        reason,
+        confidence: 0.85,
         cached: false,
+        traceStep: createTraceStep('permission_classifier', 'B3: package_manager', 'ask', reason, startTime),
       };
     }
 
@@ -518,10 +521,11 @@ export class PermissionClassifier {
 
   private buildCacheKey(toolName: string, args: Record<string, unknown>): string {
     if (isBashToolName(toolName)) {
-      // Bash 命令：取前两个 token 作为 pattern
+      // Bash 命令：使用完整归一化命令。只取前缀会把 `npm run test` 和 `npm run postinstall`
+      // 合并成一个缓存项，进而复用错误的权限判断。
       const command = (args.command as string) || '';
-      const tokens = command.trim().split(/\s+/).slice(0, 2).join(' ');
-      return crypto.createHash('md5').update(`bash:${tokens}`).digest('hex');
+      const normalized = command.trim().replace(/\s+/g, ' ');
+      return crypto.createHash('md5').update(`bash:${normalized}`).digest('hex');
     }
 
     // 其他工具：标准化参数后 hash

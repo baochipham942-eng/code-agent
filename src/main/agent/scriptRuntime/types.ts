@@ -79,6 +79,8 @@ export interface ScriptMeta {
 /** 一次 dynamic-workflow run 的规格（由 /workflow 命令层构造并交给 runService.startRun）。 */
 export interface ScriptRunSpec {
   runId: string;
+  /** 归属会话，用于控制面授权和 renderer 会话隔离。 */
+  sessionId?: string;
   /** 模型当场写的 JS 编排脚本源码。 */
   script: string;
   /** /workflow <goal> 的任务目标。 */
@@ -109,6 +111,8 @@ export interface ScriptRunCallRecord {
 export interface ScriptRunState {
   runId: string;
   status: RunStatus;
+  /** 归属会话，用于 cancel/pause/resume 等控制面授权。 */
+  sessionId?: string;
   /** 脚本源码 hash——resumable 重放时校验脚本未变。 */
   scriptHash: string;
   startedAt: number;

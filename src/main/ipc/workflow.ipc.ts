@@ -21,6 +21,7 @@ import type { ScriptRunEvent, WorkflowLaunchEvent } from '../../shared/contract/
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getEventBus } from '../services/eventing/bus';
 import { getWorkflowLaunchApprovalGate } from '../agent/workflowLaunchApproval';
+import { cancelRun } from '../agent/scriptRuntime';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('WorkflowIPC');
@@ -63,6 +64,10 @@ export function registerWorkflowHandlers(): void {
   });
   ipcMain.handle(IPC_CHANNELS.WORKFLOW_REJECT_LAUNCH, async (_event, payload: { requestId: string; feedback: string; sessionId?: string }) => {
     return getWorkflowLaunchApprovalGate().reject(payload.requestId, payload.feedback, payload.sessionId);
+  });
+  ipcMain.handle(IPC_CHANNELS.WORKFLOW_CANCEL_RUN, async (_event, payload: { runId: string; sessionId?: string }) => {
+    if (!payload?.runId) return false;
+    return cancelRun(payload.runId, { sessionId: payload.sessionId });
   });
   logger.debug('Workflow approval IPC handlers registered');
 }

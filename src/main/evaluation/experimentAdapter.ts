@@ -16,6 +16,10 @@ import type {
   TelemetryCompleteness,
 } from '../../shared/contract/evaluation';
 import { buildSessionTraceIdentity } from '../../shared/contract/reviewQueue';
+import {
+  buildEvalReplayQualityReport,
+  type ArtifactIssue,
+} from '../../shared/contract/productClosure';
 
 type ExperimentDbWriter = Pick<DatabaseService, 'insertExperiment' | 'insertExperimentCases'>;
 
@@ -137,17 +141,44 @@ export class ExperimentAdapter {
   }
 
   private buildCaseDataJson(run: CanonicalEvalRun, c: CanonicalEvalCase): string {
+    const qualityReport = this.buildCaseQualityReport(run, c);
     return JSON.stringify({
       ...(c.metadata || {}),
       sessionId: c.sessionId,
       replayKey: c.replayKey,
       telemetryCompleteness: c.telemetryCompleteness,
+      qualityReport,
       failureReason: c.failureReason,
       failureStage: c.failureStage,
       aggregation: run.aggregation,
       source: run.source,
       score100: c.score,
       ...(c.trials ? { trials: c.trials } : {}),
+    });
+  }
+
+  private buildCaseQualityReport(run: CanonicalEvalRun, c: CanonicalEvalCase) {
+    if (!c.sessionId) return undefined;
+    const traceIdentity = buildSessionTraceIdentity(c.sessionId);
+    const realAgentRun = c.metadata?.realAgentRun as { reasons?: string[]; gateFailures?: string[]; failureReasons?: string[] } | undefined;
+    const gateFailures = Array.from(new Set([
+      ...(realAgentRun?.reasons || []),
+      ...(realAgentRun?.gateFailures || []),
+      ...(realAgentRun?.failureReasons || []),
+    ]));
+    const artifactIssues = Array.isArray(c.metadata?.artifactIssues)
+      ? c.metadata.artifactIssues as ArtifactIssue[]
+      : undefined;
+
+    return buildEvalReplayQualityReport({
+      reportId: `quality:${run.runId}:${c.caseId}`,
+      traceIdentity,
+      telemetryCompleteness: c.telemetryCompleteness,
+      gateFailures,
+      artifactIssues,
+      createdAt: run.endTime ?? run.startTime,
+      runId: run.runId,
+      caseId: c.caseId,
     });
   }
 

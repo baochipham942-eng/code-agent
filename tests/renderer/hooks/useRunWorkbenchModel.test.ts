@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   buildGlobalTaskRecords,
   buildLedgerTaskRecords,
+  buildWorkflowSubagentViews,
+  buildWorkflowTaskRecord,
 } from '../../../src/renderer/hooks/useRunWorkbenchModel';
+import type { ScriptRunSnapshot } from '../../../src/shared/contract/scriptRun';
 import type { SessionState } from '../../../src/renderer/stores/taskStore';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
 
@@ -115,6 +118,73 @@ describe('buildLedgerTaskRecords', () => {
       status: 'blocked',
       resumeHint: 'Codex CLI exited with code 1',
     });
+  });
+});
+
+describe('buildWorkflowTaskRecord', () => {
+  it('projects workflow snapshot into the TaskPanel task model', () => {
+    const snapshot: ScriptRunSnapshot = {
+      runId: 'wf-1',
+      sessionId: 'session-1',
+      status: 'running',
+      goal: '整理产品闭环',
+      scriptHash: 'h',
+      phases: ['audit'],
+      currentPhase: 'audit',
+      logs: [],
+      agents: [
+        {
+          id: 'wf-1-a1',
+          label: 'Runtime',
+          status: 'running',
+          promptPreview: '审计 workflow',
+        },
+        {
+          id: 'wf-1-a2',
+          label: 'UX',
+          status: 'done',
+          resultPreview: '发现状态口径分裂',
+          cached: true,
+        },
+      ],
+      runningCount: 1,
+      doneCount: 1,
+      errorCount: 0,
+      startedAt: 100,
+    };
+
+    expect(buildWorkflowTaskRecord(snapshot)).toMatchObject({
+      id: 'workflow:wf-1',
+      scope: 'session',
+      title: 'Workflow: 整理产品闭环',
+      status: 'in_progress',
+      ownerRunId: 'wf-1',
+      sourceThreadId: 'session-1',
+      steps: [
+        { title: '执行中：audit', status: 'in_progress' },
+        { title: '1 running · 1 done', status: 'in_progress' },
+      ],
+      outputRefs: [
+        { type: 'replay', label: 'Workflow replay' },
+      ],
+    });
+
+    expect(buildWorkflowSubagentViews(snapshot)).toMatchObject([
+      {
+        id: 'workflow:wf-1:wf-1-a1',
+        parentRunId: 'wf-1',
+        role: 'Runtime',
+        status: 'running',
+        inputSummary: '审计 workflow',
+      },
+      {
+        id: 'workflow:wf-1:wf-1-a2',
+        parentRunId: 'wf-1',
+        role: 'UX',
+        status: 'cached',
+        lastOutput: '发现状态口径分裂',
+      },
+    ]);
   });
 });
 

@@ -118,6 +118,21 @@ describe('ExperimentAdapter canonical harness persistence', () => {
         passed: false,
         reasons: expect.arrayContaining(['missing_telemetry_completeness']),
       },
+      qualityReport: {
+        reportId: 'quality:test-run-1:case-a',
+        status: 'failed',
+        traceIdentity: {
+          traceId: 'session:session-a',
+          replayKey: 'session-a',
+        },
+        gates: [
+          {
+            gateId: 'telemetry_replay',
+            status: 'failed',
+            failures: expect.arrayContaining(['missing_telemetry_completeness']),
+          },
+        ],
+      },
     });
   });
 
@@ -217,6 +232,16 @@ describe('ExperimentAdapter canonical harness persistence', () => {
         sessionId: 'session-eval-a',
         replayKey: 'session-eval-a',
       },
+      qualityReport: {
+        reportId: 'quality:eval-harness-run-1:eval-case-a',
+        status: 'passed',
+        gates: [
+          {
+            gateId: 'telemetry_replay',
+            status: 'passed',
+          },
+        ],
+      },
     });
   });
 
@@ -289,6 +314,17 @@ describe('ExperimentAdapter canonical harness persistence', () => {
         passed: false,
         degraded: true,
         gateFailures: ['missing_model_decisions', 'missing_tool_schemas'],
+      },
+      qualityReport: {
+        reportId: 'quality:eval-harness-gated-run:eval-case-gated',
+        status: 'failed',
+        gates: [
+          {
+            gateId: 'telemetry_replay',
+            status: 'failed',
+            failures: expect.arrayContaining(['missing_model_decisions', 'missing_tool_schemas']),
+          },
+        ],
       },
     });
   });

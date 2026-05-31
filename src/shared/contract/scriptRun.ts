@@ -24,6 +24,7 @@ export type ScriptRunEventType =
   | 'agent:done'
   | 'agent:error'
   | 'run:done'
+  | 'run:cancelled'
   | 'run:error';
 
 export interface ScriptRunEvent {
@@ -279,6 +280,15 @@ function reduceScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEvent): S
         ...prev,
         status: 'failed',
         error: str(data.error),
+        finishedAt: event.ts,
+        durationMs: prev.startedAt !== undefined ? event.ts - prev.startedAt : prev.durationMs,
+      };
+
+    case 'run:cancelled':
+      return {
+        ...prev,
+        status: 'cancelled',
+        error: str(data.reason) ?? str(data.error),
         finishedAt: event.ts,
         durationMs: prev.startedAt !== undefined ? event.ts - prev.startedAt : prev.durationMs,
       };

@@ -22,7 +22,12 @@ import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddlew
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { classifyPermission } from './permissionClassifier';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
-import { getDecisionHistory, type DecisionOutcome } from '../security/decisionHistory';
+import { getDecisionHistory, type DecisionOutcome as HistoryDecisionOutcome } from '../security/decisionHistory';
+import type {
+  DecisionLayer,
+  DecisionOutcome as TraceDecisionOutcome,
+  DecisionTrace,
+} from '../../shared/contract/decisionTrace';
 import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
 import type {
@@ -36,13 +41,51 @@ const logger = createLogger('ToolExecutor');
 /** Record a permission decision to the history buffer */
 function recordDecision(
   toolName: string, params: Record<string, unknown>,
-  outcome: DecisionOutcome, reason: string, startTime: number
+  outcome: HistoryDecisionOutcome, reason: string, startTime: number, trace?: DecisionTrace
 ): void {
   const summary = String(params.command || params.file_path || params.path || params.pattern || toolName).substring(0, 80);
+  const decisionTrace = trace ?? buildHistoryDecisionTrace(toolName, outcome, reason, startTime);
   getDecisionHistory().record({
     timestamp: Date.now(), toolName, summary, outcome, reason,
     durationMs: Date.now() - startTime,
+    decisionTrace,
   });
+}
+
+function historyOutcomeToTraceOutcome(outcome: HistoryDecisionOutcome): TraceDecisionOutcome {
+  if (outcome === 'auto-approve' || outcome === 'ask-approved' || outcome === 'policy-allow') return 'allow';
+  return 'deny';
+}
+
+function historyOutcomeToLayer(outcome: HistoryDecisionOutcome): DecisionLayer {
+  if (outcome === 'policy-allow' || outcome === 'policy-deny' || outcome === 'monitor-blocked') {
+    return outcome === 'monitor-blocked' ? 'guard_fabric' : 'policy_enforcer';
+  }
+  if (outcome === 'classifier-deny' || outcome === 'auto-approve') return 'permission_classifier';
+  if (outcome === 'hook-blocked') return 'plugin_hook';
+  return 'plan_approval';
+}
+
+function buildHistoryDecisionTrace(
+  toolName: string,
+  outcome: HistoryDecisionOutcome,
+  reason: string,
+  startTime: number,
+): DecisionTrace {
+  const result = historyOutcomeToTraceOutcome(outcome);
+  return {
+    toolName,
+    finalOutcome: result,
+    steps: [{
+      layer: historyOutcomeToLayer(outcome),
+      rule: outcome,
+      result,
+      reason,
+      durationMs: Date.now() - startTime,
+      timestamp: Date.now(),
+    }],
+    totalDurationMs: Date.now() - startTime,
+  };
 }
 
 function commandMatchesScopedPrefix(command: string, prefix: string): boolean {
@@ -397,7 +440,17 @@ export class ToolExecutor {
             cached: classification.cached,
           });
           needsUserApproval = false;
-          recordDecision(executionToolName, params, 'auto-approve', classification.reason || 'classifier', permStartTime);
+          const trace = classification.traceStep
+            ? createTraceBuilder(executionToolName)
+              .addStep(
+                classification.traceStep.layer,
+                classification.traceStep.rule,
+                classification.traceStep.result,
+                classification.traceStep.reason,
+              )
+              .build('allow')
+            : undefined;
+          recordDecision(executionToolName, params, 'auto-approve', classification.reason || 'classifier', permStartTime, trace);
         } else if (classification.decision === 'deny') {
           // Collect trace step from classifier
           if (classification.traceStep) {
@@ -417,7 +470,7 @@ export class ToolExecutor {
             executionToolName, classification.reason || 'classifier deny', 'classifier',
             options.sessionId || 'unknown',
           ).catch(() => {});
-          recordDecision(executionToolName, params, 'classifier-deny', classification.reason || 'classifier', permStartTime);
+          recordDecision(executionToolName, params, 'classifier-deny', classification.reason || 'classifier', permStartTime, traceBuilder.build('deny'));
           return {
             success: false,
             error: `Denied: ${classification.reason}`,

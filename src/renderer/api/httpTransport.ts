@@ -815,11 +815,6 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
 }
 
 /**
- * @deprecated Compatibility alias for older imports and tests.
- */
-export const createHttpElectronAPI = createHttpCodeAgentAPI;
-
-/**
  * 基于 HTTP API 的 DomainAPI polyfill
  */
 export function createHttpDomainAPI(baseUrl: string): DomainAPI {

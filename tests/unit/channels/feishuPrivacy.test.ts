@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChannelMessage } from '../../../src/shared/contract/channel';
 import {
-  sanitizeFeishuInboundContent,
   sanitizeFeishuInboundMessage,
-  sanitizeFeishuRawEventForStorage,
 } from '../../../src/main/channels/feishu/feishuPrivacy';
 
 function makeMessage(content: string): ChannelMessage {
@@ -38,15 +36,6 @@ function makeMessage(content: string): ChannelMessage {
 }
 
 describe('Feishu channel privacy sample', () => {
-  it('sanitizes inbound Feishu text before agent routing', () => {
-    const sanitized = sanitizeFeishuInboundContent('email alice@example.com card 4242 4242 4242 4242');
-
-    expect(sanitized).toContain('[email hidden]');
-    expect(sanitized).toContain('[credit card hidden]');
-    expect(sanitized).not.toContain('alice@example.com');
-    expect(sanitized).not.toContain('4242 4242 4242 4242');
-  });
-
   it('sanitizes message content, attachment data, and retained raw payloads', () => {
     const sanitized = sanitizeFeishuInboundMessage(makeMessage('card 4242 4242 4242 4242'));
     const json = JSON.stringify(sanitized);
@@ -79,22 +68,5 @@ describe('Feishu channel privacy sample', () => {
     expect(unfiltered.content).toContain('4242 4242 4242 4242');
     expect(unfiltered.attachments?.[0]?.data).toBe('base64-secret');
     expect(JSON.stringify(unfiltered.raw)).toContain('4242 4242 4242 4242');
-  });
-
-  it('drops raw Feishu content fields while preserving routing metadata', () => {
-    const raw = sanitizeFeishuRawEventForStorage({
-      message: {
-        message_id: 'om_1',
-        chat_id: 'oc_1',
-        content: '{"text":"password=hunter2"}',
-      },
-      sender: {
-        sender_id: { open_id: 'ou_1' },
-      },
-    }) as Record<string, unknown>;
-
-    expect(JSON.stringify(raw)).toContain('om_1');
-    expect(JSON.stringify(raw)).toContain('[redacted]');
-    expect(JSON.stringify(raw)).not.toContain('hunter2');
   });
 });

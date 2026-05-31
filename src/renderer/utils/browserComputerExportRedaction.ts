@@ -6,7 +6,6 @@ import {
   redactBrowserComputerInputPayloadsInValue,
 } from '@shared/utils/browserComputerRedaction';
 import {
-  formatBrowserComputerActionArguments,
   formatBrowserComputerActionResultDetails,
   summarizeBrowserComputerActionResult,
 } from './browserComputerActionPreview';
@@ -21,11 +20,6 @@ function redactToolResultText(
   }
   const redacted = redactBrowserComputerInputPayloadsInValue(toolName, args, value);
   return typeof redacted === 'string' ? redacted : String(redacted);
-}
-
-export function formatToolArgumentsForBrowserComputerExport(call: ToolCall): string {
-  const safeBrowserComputerArgs = formatBrowserComputerActionArguments(call.name, call.arguments || {});
-  return safeBrowserComputerArgs || JSON.stringify(call.arguments || {}, null, 2);
 }
 
 export function formatToolResultForBrowserComputerExport(call: ToolCall): string | undefined {
@@ -94,15 +88,4 @@ export function sanitizeMessagesForBrowserComputerExport(messages: Message[]): M
     ...message,
     toolCalls: message.toolCalls?.map(sanitizeBrowserComputerToolCallForExport),
   }));
-}
-
-export function sanitizeSessionForBrowserComputerExport<T extends { messages?: Message[] }>(data: T): T {
-  if (!Array.isArray(data.messages)) {
-    return data;
-  }
-
-  return {
-    ...data,
-    messages: sanitizeMessagesForBrowserComputerExport(data.messages),
-  };
 }

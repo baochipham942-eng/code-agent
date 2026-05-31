@@ -50,12 +50,6 @@ export interface FrontmostContextSnapshot {
   batteryCharging?: boolean | null;
 }
 
-export interface ScreenshotCaptureResult {
-  path: string;
-  bytes: number;
-  capturedAtMs: number;
-}
-
 export interface DesktopActivityEvent {
   id: string;
   capturedAtMs: number;
@@ -236,12 +230,6 @@ export async function getMacOSAppIcon(query: string, size = 64): Promise<AppIcon
   return invoke<AppIconResult>('desktop_get_app_icon', { query, size });
 }
 
-export async function captureNativeDesktopScreenshot(outputPath?: string): Promise<ScreenshotCaptureResult> {
-  return invoke<ScreenshotCaptureResult>('desktop_capture_screenshot', {
-    request: { outputPath },
-  });
-}
-
 export async function getNativeDesktopCollectorStatus(): Promise<NativeDesktopCollectorStatus> {
   return invoke<NativeDesktopCollectorStatus>('desktop_get_collector_status');
 }
@@ -262,13 +250,6 @@ export async function stopNativeDesktopCollector(): Promise<NativeDesktopCollect
 
 export async function listRecentNativeDesktopEvents(limit = 8): Promise<DesktopActivityEvent[]> {
   return invoke<DesktopActivityEvent[]>('desktop_list_recent_events', { limit });
-}
-
-export async function updateNativeDesktopAnalyzeText(eventId: string, analyzeText: string): Promise<boolean> {
-  return invoke<boolean>('desktop_update_analyze_text', {
-    eventId,
-    analyzeText,
-  });
 }
 
 export interface AudioCaptureStatus {
@@ -377,16 +358,6 @@ async function invokeDesktopDomain<T>(
 
 export async function startAudioCapture(mode: 'microphone' | 'system-audio' = 'microphone'): Promise<AudioCaptureStatus> {
   return postDesktopAction<AudioCaptureStatus>('startAudioCapture', { mode });
-}
-
-/** 后台请求麦克风权限（不阻塞 UI，app 启动时调用一次） */
-export async function requestMicrophonePermission(): Promise<string> {
-  if (!isNativeDesktopAvailable()) return 'unsupported';
-  try {
-    return await invoke<string>('desktop_request_microphone_permission');
-  } catch {
-    return 'error';
-  }
 }
 
 export async function stopAudioCapture(): Promise<AudioCaptureStatus> {

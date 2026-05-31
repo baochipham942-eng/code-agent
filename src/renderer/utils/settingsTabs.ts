@@ -91,16 +91,6 @@ export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> 
   about: 'system',
 };
 
-const SETTINGS_TAB_ID_SET = new Set<string>(SETTINGS_TAB_IDS);
-
-export function isSettingsTab(value: unknown): value is SettingsTab {
-  return typeof value === 'string' && SETTINGS_TAB_ID_SET.has(value);
-}
-
-export const ADMIN_ONLY_SETTINGS_TABS = ['users', 'invites', 'controlPlane', 'capabilities', 'plugins', 'hooks'] as const satisfies readonly SettingsTab[];
-
-const ADMIN_ONLY_SETTINGS_TAB_SET = new Set<SettingsTab>(ADMIN_ONLY_SETTINGS_TABS);
-
 const SETTINGS_TAB_ACCESS_FEATURES: Partial<Record<SettingsTab, AccessControlledFeature>> = {
   users: 'settings.users',
   invites: 'settings.invites',
@@ -109,10 +99,6 @@ const SETTINGS_TAB_ACCESS_FEATURES: Partial<Record<SettingsTab, AccessControlled
   plugins: 'settings.plugins',
   hooks: 'settings.hooks',
 };
-
-export function isAdminOnlySettingsTab(tab: SettingsTab): boolean {
-  return ADMIN_ONLY_SETTINGS_TAB_SET.has(tab);
-}
 
 export function canAccessSettingsTab(tab: SettingsTab, subject?: AccessSubject | null): boolean {
   const feature = SETTINGS_TAB_ACCESS_FEATURES[tab];

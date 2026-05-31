@@ -49,7 +49,7 @@ Two firewall layers wrap the shared guard so that inbound channel messages and l
 | `allow-raw` | Business text is still redacted, but the original raw payload is retained for connector debugging. |
 | `off` | Channel-layer redaction disabled, length-trim only — controlled local debugging use. |
 
-`feishuPrivacy.ts` is the thin Feishu binding (`sanitizeFeishuInboundMessage` / `sanitizeFeishuRawEventForStorage`); `FeishuChannel` resolves the mode at init and sanitizes every inbound message at construction. The mode is configurable per channel in `ChannelsSettings`. `ChannelPrivacyConfig` is mixed into `HttpApiChannelConfig` / `FeishuChannelConfig` / `TelegramChannelConfig`.
+`feishuPrivacy.ts` is the thin Feishu binding (`resolveFeishuPrivacyMode` / `sanitizeFeishuInboundMessage`); `FeishuChannel` resolves the mode at init and sanitizes every inbound message at construction. The mode is configurable per channel in `ChannelsSettings`. `ChannelPrivacyConfig` is mixed into `HttpApiChannelConfig` / `FeishuChannelConfig` / `TelegramChannelConfig`.
 
 ### Local activity privacy firewall
 

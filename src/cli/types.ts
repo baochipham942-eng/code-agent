@@ -100,11 +100,3 @@ export interface APIStatusResponse {
   startTime?: number;
   duration?: number;
 }
-
-/**
- * SSE 事件类型
- */
-export interface SSEEvent {
-  event: string;
-  data: string;
-}

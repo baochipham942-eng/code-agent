@@ -23,6 +23,11 @@ import { getConfirmationGate } from '../agent/confirmationGate';
 import { classifyPermission } from './permissionClassifier';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import { getDecisionHistory, type DecisionOutcome as HistoryDecisionOutcome } from '../security/decisionHistory';
+import {
+  getWriteIsolationManager,
+  getWriteIsolationScope,
+  type WriteIsolationMetadata,
+} from '../security/writeIsolation';
 import type {
   DecisionLayer,
   DecisionOutcome as TraceDecisionOutcome,
@@ -293,15 +298,6 @@ export class ToolExecutor {
         error: `工具 "${executionToolName}" 缺少必填参数: ${missing.join(', ')}。请检查工具 schema 并重新调用。`,
       };
     }
-
-
-    // 文件检查点：在写入工具执行前保存原文件
-    await createFileCheckpointIfNeeded(executionToolName, params, () => {
-      if (!options.sessionId) return null;
-      // messageId 从 context 中获取，如果没有则使用工具调用 ID
-      const messageId = options.currentToolCallId || `msg_${Date.now()}`;
-      return { sessionId: options.sessionId, messageId };
-    });
 
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
@@ -625,15 +621,51 @@ export class ToolExecutor {
       logger.debug('Cache MISS', { toolName: executionToolName });
     }
 
+    const writeIsolationScope = getWriteIsolationScope(
+      executionToolName,
+      params,
+      this.workingDirectory,
+      toolDef.permissionLevel,
+    );
+    let releaseWriteIsolation: (() => void) | undefined;
+    let writeIsolationMetadata: WriteIsolationMetadata | undefined;
     const startTime = Date.now();
     try {
+      if (writeIsolationScope) {
+        const waitStart = Date.now();
+        releaseWriteIsolation = await getWriteIsolationManager().acquire(writeIsolationScope, options.abortSignal);
+        writeIsolationMetadata = {
+          kind: writeIsolationScope.kind,
+          targetPath: writeIsolationScope.targetPath,
+          lockKey: writeIsolationScope.lockKey,
+          waitMs: Date.now() - waitStart,
+        };
+      }
+
+      // 文件检查点：写隔离锁拿到后再保存原文件，避免并行 worker 竞争同一目标。
+      await createFileCheckpointIfNeeded(executionToolName, params, () => {
+        if (!options.sessionId) return null;
+        // messageId 从 context 中获取，如果没有则使用工具调用 ID
+        const messageId = options.currentToolCallId || `msg_${Date.now()}`;
+        return { sessionId: options.sessionId, messageId };
+      });
+
       // Execute the tool via protocol resolver
       context.approvedToolCall = {
         toolName: executionToolName,
         args: params,
       };
       logger.debug('Dispatching to protocol resolver', { toolName: executionToolName, requestedToolName });
-      const result = await resolver.execute(executionToolName, params, context);
+      const rawResult = await resolver.execute(executionToolName, params, context);
+      const result = writeIsolationMetadata
+        ? {
+          ...rawResult,
+          metadata: {
+            ...(rawResult.metadata ?? {}),
+            writeIsolation: writeIsolationMetadata,
+          },
+        }
+        : rawResult;
       const duration = Date.now() - startTime;
 
       logger.debug('Tool result', { toolName: executionToolName, success: result.success, error: result.error });
@@ -684,6 +716,8 @@ export class ToolExecutor {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
       };
+    } finally {
+      releaseWriteIsolation?.();
     }
   }
 

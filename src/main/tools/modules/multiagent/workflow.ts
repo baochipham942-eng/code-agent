@@ -38,6 +38,10 @@ import { resolveSessionDefaultModelConfig } from '../../../services/core/session
 import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
 import { getEventBus } from '../../../services/eventing/bus';
 import { getWorkflowLaunchApprovalGate, buildWorkflowLaunchRequest } from '../../../agent/workflowLaunchApproval';
+import {
+  buildWorkflowFailureRecoveryProposal,
+  recordLongTaskRecoveryProposal,
+} from '../../../handoff/longTaskRecoveryProposal';
 import { workflowSchema } from './workflow.schema';
 
 /** 把异常归类成 ABORTED / DOMAIN_ERROR（Codex R2：取消别被压成 DOMAIN_ERROR）。 */
@@ -233,6 +237,18 @@ async function runWorkflow(
 
     if (state.status !== 'completed') {
       ctx.logger.debug('workflow run did not complete', { status: state.status, error: state.error });
+      if (state.status !== 'cancelled') {
+        recordLongTaskRecoveryProposal(buildWorkflowFailureRecoveryProposal({
+          sessionId: ctx.sessionId,
+          runId,
+          goal,
+          status: state.status,
+          error: state.error,
+          resumeFromRunId: runId,
+          cacheHits: state.cacheHits,
+          phaseCount: state.phases.length,
+        }));
+      }
       return {
         ok: false,
         error: `workflow ${state.status}: ${state.error ?? 'unknown error'}`,

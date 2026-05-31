@@ -38,6 +38,7 @@ The shared contract lives in `src/shared/contract/productClosure.ts` and reuses 
 | Contract | Purpose | Boundary |
 |---|---|---|
 | `ProductClosureAuditReport` | Phase 1 Agent Team audit product | Evidence and priority only; not an implementation status |
+| `LongTaskSurfaceContract` / `LongTaskUiStatus` | Phase 2 product hierarchy and status vocabulary | `/workflow` default, Agent Team expert, compatibility tools explicit; UI must normalize into the shared vocabulary |
 | `DecisionTrace` | Permission decision explanation | Reuse existing security trace; do not create a second permission event stream |
 | `ArtifactIssue` | Generated artifact quality issue and evidence references | Replace old scenario-acceptance failure expression without reviving old tables |
 | `EvalReplayQualityReport` | Product-level replay/eval quality report | Bind to `UnifiedTraceIdentity`; do not maintain separate trace ids |
@@ -48,9 +49,9 @@ The shared contract lives in `src/shared/contract/productClosure.ts` and reuses 
 This first implementation closes the minimum product path without introducing a parallel long-task data plane:
 
 - Phase 1: `ProductClosureAuditReport`, the read-only Agent Team audit document, and the product-closure acceptance script are checked in.
-- Phase 2: `ScriptRunEvent` now has `run:cancelled`; workflow cancellation is available through IPC; active workflow runs project into `RunWorkbenchModel` so TaskPanel and Run Status can share one status vocabulary.
-- Phase 3: classifier auto decisions now persist a reviewable `DecisionTrace`; dangerous package-manager/bash commands have focused regressions; the decision history command surfaces trace outcome and step count.
-- Phase 4: workflow runs carry `sessionId` through `ScriptRunSpec` and cancellation authorization, so long-task control is tied back to the session contract rather than free-floating process ids.
+- Phase 2: `ScriptRunEvent` now has `run:cancelled`; workflow cancellation is available through IPC; active workflow runs project into `RunWorkbenchModel`; `LongTaskSurfaceContract` marks `/workflow` as the default complex-task path, Agent Team as expert, and `spawn_agent` / `workflow_orchestrate` as compatibility paths.
+- Phase 3: classifier auto decisions now persist a reviewable `DecisionTrace`; dangerous package-manager/bash commands have focused regressions; ToolExecutor serializes concurrent write/execute calls with file/workspace write-isolation metadata.
+- Phase 4: workflow runs carry `sessionId` through `ScriptRunSpec` and cancellation authorization; workflow and Agent Team failures create handoff/retry proposals that reference replay, journal, checkpoint, and failed-task evidence.
 - Phase 5: artifact issues and eval/replay quality reports have persisted SQLite repositories; `ExperimentAdapter` emits a quality report for replay-backed cases and keeps artifact issues tied to `UnifiedTraceIdentity`.
 
 ## Agent Team Audit Protocol
@@ -88,6 +89,6 @@ Each finding must include `priority`, `currentState`, `gap`, `recommendation`, a
 ## Open Risks
 
 - Some docs still mention Delivery Review / Review Queue in the old sense and need to be aligned to artifact issue.
-- Workflow write fanout only has partial guardrails and cannot be treated as default safe parallel writing.
+- Write isolation is now a shared ToolExecutor guard, but it serializes access inside one host process; per-agent worktree and strong external isolation remain separate hardening tracks.
 - Worker-thread sandboxing cannot defend against adversarial scripts; strong isolation needs a separate design.
 - Eval/replay quality reports must bind to `UnifiedTraceIdentity` to avoid another split data plane.

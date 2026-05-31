@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { buildSessionTraceIdentity } from '@shared/contract/reviewQueue';
 import {
+  LONG_TASK_STATUS_VOCABULARY,
+  LONG_TASK_SURFACE_CONTRACTS,
   buildEvalReplayQualityReport,
+  getLongTaskStatusLabel,
+  normalizeLongTaskStatus,
   normalizeQualityReportStatus,
   type ArtifactIssue,
   type EvalReplayQualityGate,
@@ -45,6 +49,33 @@ describe('product closure contracts', () => {
     expect(report.sourceAgents.map((agent) => agent.role).sort()).toEqual([...roles].sort());
     expect(report.findings).toHaveLength(5);
     expect(report.findings.every((finding) => finding.evidence.length > 0)).toBe(true);
+  });
+
+  it('declares one product hierarchy and status vocabulary for long tasks', () => {
+    expect(LONG_TASK_SURFACE_CONTRACTS.workflow).toMatchObject({
+      productLevel: 'default',
+      entrypoint: '/workflow',
+      primaryUse: 'complex long tasks',
+    });
+    expect(LONG_TASK_SURFACE_CONTRACTS.agent_team.productLevel).toBe('expert');
+    expect(LONG_TASK_SURFACE_CONTRACTS.spawn_agent.productLevel).toBe('compatibility');
+    expect(LONG_TASK_SURFACE_CONTRACTS.workflow_orchestrate.productLevel).toBe('compatibility');
+
+    expect(LONG_TASK_STATUS_VOCABULARY).toEqual([
+      'queued',
+      'running',
+      'waiting_approval',
+      'paused',
+      'completed',
+      'failed',
+      'cancelled',
+      'blocked',
+    ]);
+    expect(normalizeLongTaskStatus('pending')).toBe('queued');
+    expect(normalizeLongTaskStatus('done')).toBe('completed');
+    expect(normalizeLongTaskStatus('error')).toBe('failed');
+    expect(normalizeLongTaskStatus('aborted')).toBe('cancelled');
+    expect(getLongTaskStatusLabel('waiting_approval')).toBe('等待确认');
   });
 
   it('keeps artifact issues tied to the unified replay identity', () => {

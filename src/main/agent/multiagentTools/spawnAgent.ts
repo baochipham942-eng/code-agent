@@ -44,6 +44,10 @@ import { aggregateTeamResults } from '../resultAggregator';
 import { shouldUseForkMode, buildForkContexts, applyCacheControl } from '../forkContext.js';
 import { validateNoCycles, detectCycles } from '../taskDag.js';
 import {
+  buildAgentTeamFailureRecoveryProposal,
+  recordLongTaskRecoveryProposal,
+} from '../../handoff/longTaskRecoveryProposal';
+import {
   shouldActivateCoordinator,
   createCoordinatorSession,
 } from '../coordinatorMode';
@@ -842,6 +846,36 @@ Agent Results:
 ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''}`,
       };
     } else {
+      const failedTaskIds = new Set(result.errors.map((entry) => entry.taskId));
+      const failedTasks = result.results
+        .filter((taskResult) => !taskResult.success || failedTaskIds.has(taskResult.taskId))
+        .map((taskResult) => {
+          const task = tasks.find((candidate) => candidate.id === taskResult.taskId);
+          return {
+            taskId: taskResult.taskId,
+            role: taskResult.role,
+            task: task?.task,
+            error: taskResult.error,
+          };
+        });
+      if (failedTasks.length === 0) {
+        failedTasks.push(...result.errors.map((entry) => {
+          const task = tasks.find((candidate) => candidate.id === entry.taskId);
+          return {
+            taskId: entry.taskId,
+            role: task?.role ?? entry.taskId,
+            task: task?.task,
+            error: entry.error,
+          };
+        }));
+      }
+      recordLongTaskRecoveryProposal(buildAgentTeamFailureRecoveryProposal({
+        sessionId: context.sessionId,
+        sourceMessageId: context.currentToolCallId ? `agent-team:${context.currentToolCallId}:failure` : undefined,
+        totalTasks: tasks.length,
+        failedTasks,
+        summary: aggregation.summary,
+      }));
       return {
         success: false,
         error: `Parallel execution failed: ${result.errors.length} errors. ${aggregation.summary}`,

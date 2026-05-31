@@ -1,4 +1,5 @@
 import type { PermissionLevel } from '@shared/contract/tool';
+import type { LongTaskUiStatus } from '@shared/contract/productClosure';
 
 export type RunUiStatus =
   | 'planning'
@@ -81,7 +82,7 @@ export interface SubagentRunView {
   id: string;
   parentRunId: string | null;
   role: string;
-  status: string;
+  status: LongTaskUiStatus;
   inputSummary: string;
   lastOutput: string;
   resultSummary?: string;

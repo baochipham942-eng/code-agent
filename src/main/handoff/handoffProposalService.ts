@@ -6,12 +6,14 @@ import type Database from 'better-sqlite3';
 import type {
   CreateHandoffProposalInput,
   HandoffProposal,
+  HandoffProposalSource,
   HandoffProposalStatus,
   ListHandoffProposalsInput,
   UpdateHandoffProposalStatusInput,
 } from '../../shared/contract/handoff';
 import {
   buildHandoffProposalId,
+  isHandoffProposalSource,
   isHandoffProposalStatus,
 } from '../../shared/contract/handoff';
 import { getDatabase } from '../services/core/databaseService';
@@ -115,8 +117,10 @@ export class HandoffProposalService {
     const title = clamp(input.title, 120);
     const prompt = clamp(input.prompt, 4000);
     const reason = input.reason ? clamp(input.reason, 280) : null;
+    const source = input.source ?? 'assistant_tail';
     if (!sessionId) throw new Error('sessionId is required');
     if (!sourceMessageId) throw new Error('sourceMessageId is required');
+    if (!isHandoffProposalSource(source)) throw new Error(`Invalid handoff source: ${String(source)}`);
     if (!title) throw new Error('title is required');
     if (!prompt) throw new Error('prompt is required');
 
@@ -147,8 +151,9 @@ export class HandoffProposalService {
         reason,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, 'assistant_tail', 'pending', ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
+        source = excluded.source,
         title = excluded.title,
         prompt = excluded.prompt,
         reason = excluded.reason,
@@ -161,6 +166,7 @@ export class HandoffProposalService {
       id,
       sessionId,
       sourceMessageId,
+      source,
       title,
       prompt,
       reason,
@@ -210,11 +216,12 @@ export class HandoffProposalService {
 
   private rowToProposal(row: SQLiteRow): HandoffProposal {
     const status = row.status as HandoffProposalStatus;
+    const source = isHandoffProposalSource(row.source) ? row.source : 'assistant_tail';
     return {
       id: row.id as string,
       sessionId: row.session_id as string,
       sourceMessageId: row.source_message_id as string,
-      source: 'assistant_tail',
+      source: source as HandoffProposalSource,
       status,
       title: row.title as string,
       prompt: row.prompt as string,

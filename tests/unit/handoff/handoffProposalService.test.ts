@@ -73,6 +73,23 @@ describe('HandoffProposalService', () => {
     expect(service.list({ sessionId: 'session-1' })).toHaveLength(1);
   });
 
+  it('persists long-task recovery proposal sources', () => {
+    const item = service.create({
+      sessionId: 'session-1',
+      sourceMessageId: 'workflow:wf-1:failure',
+      source: 'workflow_failure',
+      title: '重试 workflow',
+      prompt: '继续失败 workflow。',
+      createdAt: 100,
+    });
+
+    expect(item.source).toBe('workflow_failure');
+    expect(service.list({ sessionId: 'session-1' })[0]).toMatchObject({
+      id: 'handoff:session-1:workflow:wf-1:failure',
+      source: 'workflow_failure',
+    });
+  });
+
   it('updates accepted and dismissed status out of the pending list', () => {
     const item = service.create({
       sessionId: 'session-1',

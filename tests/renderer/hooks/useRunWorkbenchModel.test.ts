@@ -162,7 +162,7 @@ describe('buildWorkflowTaskRecord', () => {
       sourceThreadId: 'session-1',
       steps: [
         { title: '执行中：audit', status: 'in_progress' },
-        { title: '1 running · 1 done', status: 'in_progress' },
+        { title: '1 执行中 · 1 已完成', status: 'in_progress' },
       ],
       outputRefs: [
         { type: 'replay', label: 'Workflow replay' },
@@ -181,7 +181,7 @@ describe('buildWorkflowTaskRecord', () => {
         id: 'workflow:wf-1:wf-1-a2',
         parentRunId: 'wf-1',
         role: 'UX',
-        status: 'cached',
+        status: 'completed',
         lastOutput: '发现状态口径分裂',
       },
     ]);

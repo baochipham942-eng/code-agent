@@ -4,7 +4,7 @@
 
 export type HandoffProposalStatus = 'pending' | 'accepted' | 'dismissed';
 
-export type HandoffProposalSource = 'assistant_tail';
+export type HandoffProposalSource = 'assistant_tail' | 'workflow_failure' | 'agent_team_failure';
 
 export interface HandoffProposal {
   id: string;
@@ -28,6 +28,7 @@ export interface HandoffProposalDraft {
 export interface CreateHandoffProposalInput extends HandoffProposalDraft {
   sessionId: string;
   sourceMessageId: string;
+  source?: HandoffProposalSource;
   createdAt?: number;
 }
 
@@ -53,6 +54,10 @@ export function buildHandoffProposalId(sessionId: string, sourceMessageId: strin
 
 export function isHandoffProposalStatus(status: unknown): status is HandoffProposalStatus {
   return status === 'pending' || status === 'accepted' || status === 'dismissed';
+}
+
+export function isHandoffProposalSource(source: unknown): source is HandoffProposalSource {
+  return source === 'assistant_tail' || source === 'workflow_failure' || source === 'agent_team_failure';
 }
 
 export function getHandoffProposalStatusLabel(status: HandoffProposalStatus): string {

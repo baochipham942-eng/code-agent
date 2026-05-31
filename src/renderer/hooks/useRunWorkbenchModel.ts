@@ -18,6 +18,11 @@ import type { ScriptRunAgentSnapshot, ScriptRunSnapshot } from '@shared/contract
 import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
 import type { Task } from '@shared/contract/backgroundTask';
 import {
+  getLongTaskStatusLabel,
+  normalizeLongTaskStatus,
+  type LongTaskUiStatus,
+} from '@shared/contract/productClosure';
+import {
   buildLoopDecisionViews,
   buildMemoryActivityEvents,
   buildOutputArtifactViews,
@@ -140,26 +145,24 @@ function backgroundTaskStatusLabel(task: Task): string {
 }
 
 function workflowStatusToTaskStatus(status: ScriptRunSnapshot['status']): TaskRecord['status'] {
-  if (status === 'running' || status === 'pending') return 'in_progress';
+  return longTaskUiStatusToTaskStatus(normalizeLongTaskStatus(status));
+}
+
+function longTaskUiStatusToTaskStatus(status: LongTaskUiStatus): TaskRecord['status'] {
+  if (status === 'queued' || status === 'running' || status === 'waiting_approval' || status === 'paused') {
+    return 'in_progress';
+  }
   if (status === 'completed') return 'done';
-  if (status === 'failed' || status === 'cancelled') return 'blocked';
-  return 'pending';
+  return 'blocked';
 }
 
 function workflowStatusLabel(snapshot: ScriptRunSnapshot): string {
-  switch (snapshot.status) {
-    case 'pending':
-      return '等待启动';
+  const status = normalizeLongTaskStatus(snapshot.status);
+  switch (status) {
     case 'running':
       return snapshot.currentPhase ? `执行中：${snapshot.currentPhase}` : '执行中';
-    case 'completed':
-      return '已完成';
-    case 'failed':
-      return '执行失败';
-    case 'cancelled':
-      return '已取消';
     default:
-      return snapshot.status;
+      return getLongTaskStatusLabel(status);
   }
 }
 
@@ -167,9 +170,9 @@ export function buildWorkflowTaskRecord(snapshot: ScriptRunSnapshot | undefined)
   if (!snapshot) return null;
   const status = workflowStatusToTaskStatus(snapshot.status);
   const agentSummary = [
-    snapshot.runningCount > 0 ? `${snapshot.runningCount} running` : null,
-    snapshot.doneCount > 0 ? `${snapshot.doneCount} done` : null,
-    snapshot.errorCount > 0 ? `${snapshot.errorCount} error` : null,
+    snapshot.runningCount > 0 ? `${snapshot.runningCount} ${getLongTaskStatusLabel('running')}` : null,
+    snapshot.doneCount > 0 ? `${snapshot.doneCount} ${getLongTaskStatusLabel('completed')}` : null,
+    snapshot.errorCount > 0 ? `${snapshot.errorCount} ${getLongTaskStatusLabel('failed')}` : null,
   ].filter(Boolean).join(' · ');
 
   return {
@@ -198,9 +201,8 @@ export function buildWorkflowTaskRecord(snapshot: ScriptRunSnapshot | undefined)
   };
 }
 
-function workflowAgentStatus(agent: ScriptRunAgentSnapshot): string {
-  if (agent.cached && agent.status === 'done') return 'cached';
-  return agent.status;
+function workflowAgentStatus(agent: ScriptRunAgentSnapshot): LongTaskUiStatus {
+  return normalizeLongTaskStatus(agent.status);
 }
 
 export function buildWorkflowSubagentViews(snapshot: ScriptRunSnapshot | undefined): SubagentRunView[] {
@@ -352,7 +354,7 @@ function buildSubagentViews(args: {
   selectedAgentId: string | null;
 }): SubagentRunView[] {
   return args.agents.map((agent) => {
-    const status = agent.status || 'idle';
+    const status = normalizeLongTaskStatus(agent.status || 'idle');
     return {
       id: agent.id,
       parentRunId: args.runId,

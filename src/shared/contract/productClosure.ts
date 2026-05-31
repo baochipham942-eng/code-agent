@@ -21,6 +21,149 @@ export type ProductClosurePhase =
 
 export type ProductClosurePriority = 'P0' | 'P1' | 'P2';
 
+export type LongTaskSurface =
+  | 'chat'
+  | 'workflow'
+  | 'agent_team'
+  | 'workflow_orchestrate'
+  | 'spawn_agent'
+  | 'background_task';
+
+export type LongTaskProductLevel = 'default' | 'expert' | 'compatibility';
+
+export type LongTaskUiStatus =
+  | 'queued'
+  | 'running'
+  | 'waiting_approval'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'blocked';
+
+export interface LongTaskSurfaceContract {
+  surface: LongTaskSurface;
+  productLevel: LongTaskProductLevel;
+  primaryUse: string;
+  entrypoint: string;
+}
+
+export const LONG_TASK_STATUS_VOCABULARY: readonly LongTaskUiStatus[] = [
+  'queued',
+  'running',
+  'waiting_approval',
+  'paused',
+  'completed',
+  'failed',
+  'cancelled',
+  'blocked',
+];
+
+export const LONG_TASK_SURFACE_CONTRACTS: Record<LongTaskSurface, LongTaskSurfaceContract> = {
+  chat: {
+    surface: 'chat',
+    productLevel: 'default',
+    primaryUse: 'ordinary interactive tasks',
+    entrypoint: 'Chat',
+  },
+  workflow: {
+    surface: 'workflow',
+    productLevel: 'default',
+    primaryUse: 'complex long tasks',
+    entrypoint: '/workflow',
+  },
+  agent_team: {
+    surface: 'agent_team',
+    productLevel: 'expert',
+    primaryUse: 'specialist parallel review and decomposition',
+    entrypoint: 'Agent Team panel',
+  },
+  workflow_orchestrate: {
+    surface: 'workflow_orchestrate',
+    productLevel: 'compatibility',
+    primaryUse: 'legacy scripted orchestration callers',
+    entrypoint: 'workflow_orchestrate',
+  },
+  spawn_agent: {
+    surface: 'spawn_agent',
+    productLevel: 'compatibility',
+    primaryUse: 'legacy single-agent and tool-call callers',
+    entrypoint: 'spawn_agent',
+  },
+  background_task: {
+    surface: 'background_task',
+    productLevel: 'expert',
+    primaryUse: 'managed external agent engines',
+    entrypoint: 'Task Ledger',
+  },
+};
+
+export function normalizeLongTaskStatus(status: unknown): LongTaskUiStatus {
+  const normalized = String(status ?? '').trim().toLowerCase();
+  switch (normalized) {
+    case 'pending':
+    case 'queued':
+    case 'ready':
+    case 'idle':
+      return 'queued';
+    case 'in_progress':
+    case 'executing':
+    case 'using_tools':
+    case 'running':
+      return 'running';
+    case 'waiting_input':
+    case 'waiting_approval':
+    case 'waiting-approval':
+      return 'waiting_approval';
+    case 'paused':
+      return 'paused';
+    case 'done':
+    case 'success':
+    case 'succeeded':
+    case 'completed':
+    case 'cached':
+      return 'completed';
+    case 'error':
+    case 'errored':
+    case 'failed':
+      return 'failed';
+    case 'abort':
+    case 'aborted':
+    case 'cancel':
+    case 'cancelled':
+    case 'canceled':
+      return 'cancelled';
+    case 'blocked':
+    case 'expired':
+    case 'orphaned':
+    case 'stalled':
+      return 'blocked';
+    default:
+      return 'queued';
+  }
+}
+
+export function getLongTaskStatusLabel(status: LongTaskUiStatus): string {
+  switch (status) {
+    case 'queued':
+      return '等待启动';
+    case 'running':
+      return '执行中';
+    case 'waiting_approval':
+      return '等待确认';
+    case 'paused':
+      return '已暂停';
+    case 'completed':
+      return '已完成';
+    case 'failed':
+      return '执行失败';
+    case 'cancelled':
+      return '已取消';
+    case 'blocked':
+      return '阻塞中';
+  }
+}
+
 export interface ProductClosureEvidenceRef {
   label: string;
   path?: string;

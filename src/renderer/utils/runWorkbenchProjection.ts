@@ -469,13 +469,75 @@ function isSessionTaskClosed(task: SessionTask | undefined): boolean {
   return Boolean(task && (task.status === 'completed' || task.status === 'cancelled'));
 }
 
-function getBlockingTaskIds(task: SessionTask, tasksById: Map<string, SessionTask>): string[] {
+function addDependency(
+  incomingByTask: Map<string, Set<string>>,
+  outgoingByTask: Map<string, Set<string>>,
+  blockerId: string,
+  blockedId: string,
+): void {
+  if (blockerId === blockedId) return;
+  if (!incomingByTask.has(blockedId)) incomingByTask.set(blockedId, new Set());
+  if (!outgoingByTask.has(blockerId)) outgoingByTask.set(blockerId, new Set());
+  incomingByTask.get(blockedId)!.add(blockerId);
+  outgoingByTask.get(blockerId)!.add(blockedId);
+}
+
+function buildSessionTaskDependencyMaps(tasks: SessionTask[]): {
+  incomingByTask: Map<string, Set<string>>;
+  outgoingByTask: Map<string, Set<string>>;
+} {
+  const incomingByTask = new Map<string, Set<string>>();
+  const outgoingByTask = new Map<string, Set<string>>();
+
+  for (const task of tasks) {
+    incomingByTask.set(task.id, new Set());
+    outgoingByTask.set(task.id, new Set());
+  }
+
+  for (const task of tasks) {
+    for (const blockerId of task.blockedBy ?? []) {
+      addDependency(incomingByTask, outgoingByTask, blockerId, task.id);
+    }
+    for (const blockedId of task.blocks ?? []) {
+      addDependency(incomingByTask, outgoingByTask, task.id, blockedId);
+    }
+  }
+
+  return { incomingByTask, outgoingByTask };
+}
+
+function taskIdsToTitles(taskIds: string[], tasksById: Map<string, SessionTask>): string[] {
+  return taskIds.map((taskId) => {
+    const task = tasksById.get(taskId);
+    return task ? taskDisplayTitle(task) : taskId;
+  });
+}
+
+function getBlockingTaskIds(
+  task: SessionTask,
+  tasksById: Map<string, SessionTask>,
+  incomingByTask: Map<string, Set<string>>,
+): string[] {
   if (task.status === 'completed' || task.status === 'cancelled') {
     return [];
   }
-  return (task.blockedBy ?? []).filter((taskId) => {
+  return Array.from(incomingByTask.get(task.id) ?? []).filter((taskId) => {
     const blockingTask = tasksById.get(taskId);
     return blockingTask ? !isSessionTaskClosed(blockingTask) : true;
+  });
+}
+
+function getBlockedTaskIds(
+  task: SessionTask,
+  tasksById: Map<string, SessionTask>,
+  outgoingByTask: Map<string, Set<string>>,
+): string[] {
+  if (task.status === 'completed' || task.status === 'cancelled') {
+    return [];
+  }
+  return Array.from(outgoingByTask.get(task.id) ?? []).filter((taskId) => {
+    const blockedTask = tasksById.get(taskId);
+    return blockedTask ? !isSessionTaskClosed(blockedTask) : true;
   });
 }
 
@@ -496,21 +558,24 @@ function buildSessionTaskRecordFromSessionTasks(args: {
   if (tasks.length === 0) return null;
 
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  const { incomingByTask, outgoingByTask } = buildSessionTaskDependencyMaps(tasks);
   const blockedIdsByTask = new Map<string, string[]>();
+  const blocksIdsByTask = new Map<string, string[]>();
   for (const task of tasks) {
-    blockedIdsByTask.set(task.id, getBlockingTaskIds(task, tasksById));
+    blockedIdsByTask.set(task.id, getBlockingTaskIds(task, tasksById, incomingByTask));
+    blocksIdsByTask.set(task.id, getBlockedTaskIds(task, tasksById, outgoingByTask));
   }
 
   const steps = tasks.map((task) => {
     const blockedByIds = blockedIdsByTask.get(task.id) ?? [];
-    const blockedByTitles = blockedByIds.map((taskId) => {
-      const blockingTask = tasksById.get(taskId);
-      return blockingTask ? taskDisplayTitle(blockingTask) : taskId;
-    });
+    const blocksIds = blocksIdsByTask.get(task.id) ?? [];
+    const blockedByTitles = taskIdsToTitles(blockedByIds, tasksById);
+    const blockedTaskTitles = taskIdsToTitles(blocksIds, tasksById);
     return {
       title: taskDisplayTitle(task),
       status: blockedByIds.length > 0 ? 'blocked' as const : sessionTaskPersistentStatus(task.status),
       blockedByTitles: blockedByTitles.length > 0 ? blockedByTitles : undefined,
+      blockedTaskTitles: blockedTaskTitles.length > 0 ? blockedTaskTitles : undefined,
     };
   });
 

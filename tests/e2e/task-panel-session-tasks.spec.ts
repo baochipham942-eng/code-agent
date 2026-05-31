@@ -143,6 +143,7 @@ test('task_update renders SessionTask lifecycle and dependencies in the task pan
 
   await expect(page.getByText('等待前置检查').first()).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText('等待 渲染依赖状态').first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText('解锁 等待前置检查').first()).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText('1/3').first()).toBeVisible({ timeout: 10_000 });
 
   await emitAgentEvents(request, token, [{

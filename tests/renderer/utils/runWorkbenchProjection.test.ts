@@ -462,10 +462,59 @@ describe('runWorkbenchProjection', () => {
       scope: 'session',
       status: 'blocked',
       steps: [
-        { title: 'Read code', status: 'pending' },
+        { title: 'Read code', status: 'pending', blockedTaskTitles: ['Patch UI'] },
         { title: 'Patch UI', status: 'blocked', blockedByTitles: ['Read code'] },
       ],
     });
+  });
+
+  it('derives blocked tasks from blocks-only SessionTask dependencies', () => {
+    const task = buildSessionTaskRecord({
+      sessionId: 'session-1',
+      runId: 'turn-1',
+      runStatus: 'running',
+      sessionTasks: [
+        {
+          id: 'task-a',
+          subject: 'Prepare source data',
+          description: 'Prepare source data',
+          activeForm: 'Preparing source data',
+          status: 'pending',
+          priority: 'normal',
+          blocks: ['task-b'],
+          blockedBy: [],
+          metadata: {},
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          id: 'task-b',
+          subject: 'Render dependency state',
+          description: 'Render dependency state',
+          activeForm: 'Rendering dependency state',
+          status: 'pending',
+          priority: 'normal',
+          blocks: [],
+          blockedBy: [],
+          metadata: {},
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    expect(task?.steps).toEqual([
+      expect.objectContaining({
+        title: 'Prepare source data',
+        status: 'pending',
+        blockedTaskTitles: ['Render dependency state'],
+      }),
+      expect.objectContaining({
+        title: 'Render dependency state',
+        status: 'blocked',
+        blockedByTitles: ['Prepare source data'],
+      }),
+    ]);
   });
 
   it('suppresses incomplete stored session todos after a completed run', () => {

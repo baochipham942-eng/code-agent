@@ -15,6 +15,7 @@ import type {
 } from '../../types/runWorkbench';
 import {
   deriveTaskRailView,
+  type TaskRailDependencySummary,
   type TaskRailStepView,
 } from '../../utils/taskRailPresentation';
 import { useI18n } from '../../hooks/useI18n';
@@ -141,6 +142,38 @@ const TASK_SCOPE_LABEL: Record<TaskRecord['scope'], string> = {
   scheduled: '定时',
 };
 
+function formatTemplate(template: string, values: Record<string, string | number>): string {
+  return Object.entries(values).reduce(
+    (text, [key, value]) => text.replaceAll(`{${key}}`, String(value)),
+    template,
+  );
+}
+
+function joinDependencyTitles(titles: string[], language: string): string {
+  return titles.join(language === 'en' ? ', ' : '、');
+}
+
+function dependencySummaryLabel(
+  summary: TaskRailDependencySummary | undefined,
+  t: ReturnType<typeof useI18n>['t'],
+): string | null {
+  if (!summary) return null;
+
+  const parts: string[] = [];
+  if (summary.waitingCount > 0) {
+    parts.push(formatTemplate(t.taskPanel.taskDependencySummaryWaiting, {
+      count: summary.waitingCount,
+    }));
+  }
+  if (summary.unlockingCount > 0) {
+    parts.push(formatTemplate(t.taskPanel.taskDependencySummaryUnlocking, {
+      count: summary.unlockingCount,
+    }));
+  }
+
+  return parts.length > 0 ? parts.join(t.taskPanel.taskDependencySummarySeparator) : null;
+}
+
 export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?: RunUiState | null }) => {
   if (tasks.length === 0) return <EmptyState text="暂无任务" />;
 
@@ -175,8 +208,10 @@ export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?
 };
 
 const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?: RunUiState | null; primary?: boolean }) => {
+  const { t } = useI18n();
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const rail = deriveTaskRailView(task, run);
+  const dependencySummary = dependencySummaryLabel(rail.dependencySummary, t);
   const detailLabel = task.status === 'blocked'
     ? '原因'
     : task.status === 'completed'
@@ -193,6 +228,16 @@ const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?:
           <span className="text-[10px] tabular-nums text-zinc-600">{rail.completed}/{rail.total}</span>
         )}
       </div>
+
+      {dependencySummary && (
+        <div
+          className="mt-1 truncate text-[10px] text-zinc-500"
+          data-testid="task-dependency-summary"
+          title={dependencySummary}
+        >
+          {dependencySummary}
+        </div>
+      )}
 
       {rail.mode === 'checklist' && (
         <div className="mt-2 space-y-1">
@@ -270,9 +315,18 @@ const TaskOutputRefRows = ({ refs }: { refs: TaskRecordOutputRef[] }) => (
 );
 
 const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; muted?: boolean }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const blockedByTitles = step.blockedByTitles?.length
+    ? joinDependencyTitles(step.blockedByTitles, language)
+    : null;
+  const blockedTaskTitles = step.blockedTaskTitles?.length
+    ? joinDependencyTitles(step.blockedTaskTitles, language)
+    : null;
   const waitingHint = step.blockedByTitles?.length
-    ? t.taskPanel.taskDependencyWaiting.replace('{tasks}', step.blockedByTitles.join('、'))
+    ? formatTemplate(t.taskPanel.taskDependencyWaiting, { tasks: blockedByTitles ?? '' })
+    : null;
+  const unlocksHint = step.blockedTaskTitles?.length
+    ? formatTemplate(t.taskPanel.taskDependencyUnlocks, { tasks: blockedTaskTitles ?? '' })
     : null;
 
   return (
@@ -284,8 +338,19 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
         {step.title}
       </span>
       {waitingHint && (
-        <span className="min-w-0 flex-shrink truncate text-[10px] text-amber-300/80">
+        <span
+          className="min-w-0 flex-shrink truncate rounded border border-amber-400/15 bg-amber-400/5 px-1 py-0.5 text-[10px] text-amber-300/80"
+          title={waitingHint}
+        >
           {waitingHint}
+        </span>
+      )}
+      {unlocksHint && (
+        <span
+          className="min-w-0 flex-shrink truncate rounded border border-sky-400/15 bg-sky-400/5 px-1 py-0.5 text-[10px] text-sky-300/75"
+          title={unlocksHint}
+        >
+          {unlocksHint}
         </span>
       )}
     </div>

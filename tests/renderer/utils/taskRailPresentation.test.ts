@@ -82,7 +82,7 @@ describe('deriveTaskRailView', () => {
     expect(view.total).toBe(3);
   });
 
-  it('orders blocked work before the running step and hides distant pending steps', () => {
+  it('prioritizes actionable work before blocked dependencies', () => {
     const view = deriveTaskRailView(makeTask({
       title: '修复任务状态',
       status: 'blocked',
@@ -100,8 +100,8 @@ describe('deriveTaskRailView', () => {
     }));
 
     expect(view.visibleSteps.map((step) => step.status)).toEqual([
-      'blocked',
       'in_progress',
+      'pending',
       'pending',
       'pending',
       'pending',
@@ -109,6 +109,29 @@ describe('deriveTaskRailView', () => {
     ]);
     expect(view.hiddenPendingCount).toBe(2);
     expect(view.hiddenCompletedCount).toBe(1);
+  });
+
+  it('keeps dependency metadata available for richer task rail rendering', () => {
+    const view = deriveTaskRailView(makeTask({
+      title: '渲染依赖关系',
+      status: 'blocked',
+      steps: [
+        { title: '准备数据源', status: 'pending', blockedTaskTitles: ['渲染依赖状态'] },
+        { title: '渲染依赖状态', status: 'blocked', blockedByTitles: ['准备数据源'] },
+        { title: '验证解除阻塞', status: 'pending' },
+      ],
+    }));
+
+    expect(view.dependencySummary).toEqual({ waitingCount: 1, unlockingCount: 1 });
+    expect(view.visibleSteps.map((step) => ({
+      title: step.title,
+      blockedByTitles: step.blockedByTitles,
+      blockedTaskTitles: step.blockedTaskTitles,
+    }))).toEqual([
+      { title: '准备数据源', blockedByTitles: undefined, blockedTaskTitles: ['渲染依赖状态'] },
+      { title: '验证解除阻塞', blockedByTitles: undefined, blockedTaskTitles: undefined },
+      { title: '渲染依赖状态', blockedByTitles: ['准备数据源'], blockedTaskTitles: undefined },
+    ]);
   });
 
   it('does not promote file reads, commands, searches, or tool calls into visible tasks', () => {

@@ -83,6 +83,40 @@ describe('RunOverview memory link', () => {
 });
 
 describe('TaskDashboardSummary background outputs', () => {
+  it('renders dependency summary and bidirectional dependency hints', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TaskDashboardSummary, {
+        run: null,
+        tasks: [
+          {
+            id: 'session-1:session-tasks',
+            scope: 'session',
+            title: '渲染依赖关系',
+            status: 'blocked',
+            steps: [
+              {
+                title: '准备数据源',
+                status: 'pending',
+                blockedTaskTitles: ['等待前置检查'],
+              },
+              {
+                title: '等待前置检查',
+                status: 'blocked',
+                blockedByTitles: ['准备数据源'],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain('data-testid="task-dependency-summary"');
+    expect(html).toContain('1 项等待前置');
+    expect(html).toContain('1 项解锁后续');
+    expect(html).toContain('解锁 等待前置检查');
+    expect(html).toContain('等待 准备数据源');
+  });
+
   it('renders ledger output refs next to background agent tasks', () => {
     const html = renderToStaticMarkup(
       React.createElement(TaskDashboardSummary, {

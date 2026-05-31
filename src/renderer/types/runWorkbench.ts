@@ -67,6 +67,7 @@ export interface TaskRecord {
     title: string;
     status: 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled';
     blockedByTitles?: string[];
+    blockedTaskTitles?: string[];
   }>;
   ownerRunId?: string | null;
   sourceThreadId?: string | null;

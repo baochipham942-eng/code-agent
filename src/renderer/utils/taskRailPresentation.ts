@@ -7,6 +7,12 @@ export interface TaskRailStepView {
   status: TaskRecord['steps'][number]['status'];
   originalIndex: number;
   blockedByTitles?: string[];
+  blockedTaskTitles?: string[];
+}
+
+export interface TaskRailDependencySummary {
+  waitingCount: number;
+  unlockingCount: number;
 }
 
 export interface TaskRailView {
@@ -19,15 +25,16 @@ export interface TaskRailView {
   hiddenPendingCount: number;
   completed: number;
   total: number;
+  dependencySummary?: TaskRailDependencySummary;
   currentAction?: string;
 }
 
 const MAX_VISIBLE_STEPS = 6;
 
 const STATUS_RANK: Record<TaskRecord['steps'][number]['status'], number> = {
-  blocked: 0,
-  in_progress: 1,
-  pending: 2,
+  in_progress: 0,
+  pending: 1,
+  blocked: 2,
   completed: 3,
   cancelled: 4,
 };
@@ -105,6 +112,7 @@ function toStepViews(task: TaskRecord): TaskRailStepView[] {
       status: step.status,
       originalIndex: index,
       blockedByTitles: step.blockedByTitles,
+      blockedTaskTitles: step.blockedTaskTitles,
     }))
     .filter((step) => step.title && !isUtilityStepTitle(step.title));
 }
@@ -120,6 +128,11 @@ function sortSteps(steps: TaskRailStepView[]): TaskRailStepView[] {
 export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null): TaskRailView {
   const taskSteps = toStepViews(task);
   const isEnded = (status: TaskRailStepView['status']) => status === 'completed' || status === 'cancelled';
+  const waitingCount = taskSteps.filter((step) => (step.blockedByTitles?.length ?? 0) > 0).length;
+  const unlockingCount = taskSteps.filter((step) => (step.blockedTaskTitles?.length ?? 0) > 0).length;
+  const dependencySummary = waitingCount > 0 || unlockingCount > 0
+    ? { waitingCount, unlockingCount }
+    : undefined;
   // 已结束区 = 已完成 + 已取消（都折叠展示，靠 dot/样式区分），active 区排除二者
   const completedSteps = sortSteps(taskSteps.filter((step) => isEnded(step.status)));
   const activeSteps = sortSteps(taskSteps.filter((step) => !isEnded(step.status)));
@@ -139,6 +152,7 @@ export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null): T
       hiddenPendingCount: 0,
       completed,
       total,
+      dependencySummary,
       currentAction: task.resumeHint && task.resumeHint !== task.title ? task.resumeHint : undefined,
     };
   }
@@ -158,6 +172,7 @@ export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null): T
     hiddenPendingCount,
     completed,
     total,
+    dependencySummary,
     currentAction: task.resumeHint && task.resumeHint !== task.title ? task.resumeHint : undefined,
   };
 }

@@ -85,6 +85,7 @@ import {
   getSessionTodos,
   setSessionTodos,
   clearSessionTodos,
+  syncTodosToSessionTasks,
 } from '../../agent/todoParser';
 import { fileReadTracker } from '../../tools/fileReadTracker';
 import { dataFingerprintStore } from '../../tools/dataFingerprint';
@@ -868,7 +869,20 @@ export class ConversationRuntime {
             if (hasActivePlan && existingPlan) {
               const { todos: seededTodos } = advanceTodoStatus(todosFromPlan(existingPlan));
               setSessionTodos(this.ctx.sessionId, seededTodos);
+              const taskSync = syncTodosToSessionTasks(this.ctx.sessionId, seededTodos);
               this.ctx.onEvent({ type: 'todo_update', data: seededTodos });
+              this.ctx.onEvent({
+                type: 'task_update',
+                data: {
+                  tasks: taskSync.tasks,
+                  action: 'sync',
+                  taskIds: [
+                    ...taskSync.created.map((task) => task.id),
+                    ...taskSync.updated.map((task) => task.id),
+                  ],
+                  source: 'planning_bootstrap',
+                },
+              });
               queueRuntimeDiagnostic(
                 this.ctx,
                 `已从当前计划同步 ${seededTodos.length} 条待办，右侧进度不再回退成工具活动`,

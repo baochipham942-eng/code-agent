@@ -116,6 +116,18 @@
 | **AI 模型** | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / Claude / Ollama | 多模型路由，本地 API Key 优先 |
 | **Agent Engine** | Native Agent Neo / Codex CLI / Claude Code | read-only 外部 engine、workspace-only cwd、task ledger 输出回带 |
 
+## 2026-05-29~31 架构增量（Dynamic Workflow / Runtime Consolidation）
+
+这一轮的主线是把复杂多 Agent 编排、模型运行时控制、真实 app-host 验收和旧入口删除收成同一张运行时地图。详细快照见 [Runtime Consolidation 2026-05-31](./runtime-consolidation-2026-05-31.md)，产品和验收合同见 [Runtime Consolidation Spec](../specs/2026-05-31-runtime-consolidation-and-workflow.md)。
+
+| 能力域 | 当前形态 | 详细文档 |
+|------|----------|----------|
+| Dynamic Workflow | `workflow` 工具让模型写 JS 编排脚本，在 worker 沙箱中用 `agent / parallel / pipeline / phase / log / budget` 执行；支持跑前审批、进度树、token budget、provider-aware 并发闸和显式 resume | [dynamic-workflow.md](./dynamic-workflow.md) |
+| Provider 运行时控制 | Model Settings 增加 per-provider `maxConcurrent` 和 `proxyMode`；ConfigService 保存后热更新 limiter/proxy override；workflow runtime 读取 provider cap 做全局公平分配 | [runtime-consolidation-2026-05-31.md](./runtime-consolidation-2026-05-31.md) |
+| App-host runtime smoke | pause/resume、UI cancel、tool cancel、session persistence、manual compact、Agent Team、real-agent replay/eval 进入固定验收矩阵 | [agent-runtime-smoke-matrix.md](../acceptance/agent-runtime-smoke-matrix.md) |
+| Fleet Observability | Sentry、Supabase telemetry、PostHog dashboard 和 admin-console errors/feedback/session detail 形成分发用户观测链路 | [observability.md](./observability.md) |
+| 旧入口删除 | legacy generation shell、MasterTask remnants、dead worker/teamManager、scenario AcceptanceRunner、TaskPanel ConnectorsCard、decorator tool framework 等下线，当前归属写入冗余审计 | [2026-05-30-redundancy-audit.md](../audits/2026-05-30-redundancy-audit.md) |
+
 ## 2026-05-15~17 架构增量（Agent Neo / 管理面 / 外部 Agent Engine / In-App 验证）
 
 这一轮的主线是把 Agent Neo 的产品壳、配置面、外部 agent 接力和交付验证接到现有 runtime 上。它复用 ConversationRuntime、ToolExecutor、TaskPanel、Settings 和 Capability Center，没有新建第二套 agent loop。
@@ -154,7 +166,7 @@
 |------|----------|----------|
 | Native ToolModule registry | `src/main/tools/registry.ts` 三段式 schema/loader/handler registry；`modules/index.ts` 注册 108 个 native ToolModule；旧 wrapper 只保留兼容 | [tool-system.md](./tool-system.md) |
 | Runtime / Context hardening | CompactionService + SurvivorManifest + audit/validation/hooks；partial-failure trace、Web session recovery、assistant persistence、failure-mode loop breaker | [agent-core.md](./agent-core.md) |
-| Artifact quality gate | checker-level verifier 产出证据；产品级质量问题进入 `ArtifactIssue`、`EvalReplayQualityReport` 和 Admin Review Queue | [artifact-verification.md](./artifact-verification.md) |
+| Artifact quality gate | Game/Deck/Dashboard verifier 和 repair guard 产出真实证据；产品级质量问题进入 `ArtifactIssue`、`EvalReplayQualityReport` 和 Admin Review Queue；旧 AcceptanceRunner / Delivery Review / Preview Feedback 已下线 | [artifact-verification.md](./artifact-verification.md) |
 | Browser / Computer multi-agent isolation | BrowserService pool、ephemeral launch semaphore、ComputerSurface write lock、targetApp screenshot crop | [multiagent-system.md](./multiagent-system.md) |
 | Custom Agent registry | `~/.code-agent/agents/*.md` 与 `<cwd>/.code-agent/agents/*.md` 进入 `agentRegistry` 单一来源；project > user > builtin；CLI / spawn / @mention / StatusBar 共用同一列表 | [multiagent-system.md](./multiagent-system.md) |
 | Subagent permission inheritance | `strict-inherit` 默认；parentContext、用户 deny/ask/allow、readonly→writer 禁止派生进入 subagent 运行时 | [multiagent-system.md](./multiagent-system.md) |
@@ -223,7 +235,7 @@
 | **Activity Providers** | `src/main/services/activity/` + `src/shared/contract/activity*.ts` | 统一 OpenChronicle / Tauri Native Desktop / audio / screenshot-analysis 的上下文来源和注入边界 |
 | **Live Preview V2** | `src/main/services/infra/devServerManager.ts` + `src/renderer/components/LivePreview/` | 自动启动本地 dev server、iframe source grounding、TweakPanel 原子样式编辑 |
 | **Browser / Computer Workbench** | `src/main/services/infra/browserService.ts` + `browserPool.ts` + `src/main/services/desktop/` | 托管浏览器会话、per-agent 隔离、TargetRef、artifact、Computer Surface 安全动作面 |
-| **Artifact Quality Gate** | `src/main/agent/runtime/acceptance/` + `runtime/{game,deck,dashboard}/` + `src/shared/contract/productClosure.ts` + `ArtifactIssueRepository` | checker-level 验收、artifact issue、replay quality report、admin review queue |
+| **Artifact Quality Gate** | `src/main/agent/runtime/{game,deck,dashboard}/` + `src/main/agent/runtime/repair/` + `src/shared/contract/productClosure.ts` + `ArtifactIssueRepository` | kind-specific 验收、真实证据采集、artifact issue、replay quality report、admin review queue |
 | **Context Health 溯源** | `src/main/context/contextHealthService.ts` + `src/shared/contract/contextHealth.ts` + renderer `ContextPanel/ContextHealthPanel` | `TokenBreakdown.bySource` 六维来源溯源（rules/skills/mcp/subagents/fileReads/conversation），workbench context tab 二级展开，✕ 卸载接 `setServerEnabled` IPC |
 | **取消级联 / Shutdown Protocol** | `src/shared/contract/cancellation.ts` + `src/main/agent/shutdownProtocol.ts` + `src/main/agent/subagentExecutor.ts` | `CancellationReason` 区分 CASCADE/NON_CASCADE，四阶段 shutdown，idle watchdog，per-agent Stop UI |
 | **Agent Engine Adapters** | `src/shared/contract/agentEngine.ts` + `src/main/services/agentEngine/` + `src/main/ipc/agentEngine.ipc.ts` | Native / Codex CLI / Claude Code engine 元数据、检测、read-only 执行、历史导入和 task ledger 回带 |

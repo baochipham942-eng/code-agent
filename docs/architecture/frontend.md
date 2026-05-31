@@ -250,14 +250,15 @@ v0.16.74 新增 `HooksSettings`：位于"能力与连接"分组，调用 `domain
 
 ## Workspace Preview Panel
 
-`components/WorkspacePreviewPanel.tsx` 是会话级 artifact preview workbench，不只是预览列表。它展示 preview item、正文和 Design PPT renderer；6/1 后产品级质量状态不再走旧 Delivery Review / Preview Feedback 前端链路，而是进入 `ArtifactIssue` / Admin Review Queue。
+`components/WorkspacePreviewPanel.tsx` 是会话级 artifact workbench，不只是预览列表。它展示 preview item、正文、Design PPT renderer、Prompt Apps 和 Gallery。旧 Delivery Review / Preview Feedback 侧栏已随 evaluation 子系统下线；6/1 后产品级质量状态进入 `ArtifactIssue` / Admin Review Queue。
 
 | Preview kind / 区域 | 职责 |
 |------|------|
 | `designBrief` / `questionForm` | Design Brief 链路的结构化意图和问卷预览 |
 | `design_ppt` | `DesignPptPreview` 展示 slides、theme、iterations、截图网格、prompt/code path，并提供 Open PPTX / Edit code |
-| Artifact quality | checker-level verifier 可作为证据来源，产品级 issue 由 `ArtifactIssueRepository` 和 admin review route 承载 |
-| Acceptance 状态 | game/deck/dashboard verifier 不单独开页面；release gate 看 artifact issue / replay quality report |
+| Artifact quality | kind-specific verifier 可作为证据来源，产品级 issue 由 `ArtifactIssueRepository` 和 admin review route 承载 |
+| Artifact assets | 展示生成物资产和可打开文件，不再写入旧 review queue |
+| Acceptance 状态 | game/deck/dashboard verifier 的用户入口在具体 runtime / TaskPanel task rail；release gate 看 artifact issue / replay quality report |
 
 ## Live Preview 面板
 

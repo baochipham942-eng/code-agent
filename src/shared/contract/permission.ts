@@ -65,10 +65,3 @@ export interface PermissionRequest {
 
 // 权限响应（兼容旧版）
 export type PermissionResponse = 'allow' | 'allow_session' | 'deny';
-
-// 权限响应（新版，包含审批级别）
-export interface PermissionResponseWithLevel {
-  id: string;
-  allowed: boolean;
-  level: ApprovalLevel;
-}

@@ -4,10 +4,6 @@
 
 export type NetworkStatusType = 'online' | 'offline' | 'slow';
 
-export interface ModelIndicatorProps {
-  model: string;
-}
-
 export interface MessageCounterProps {
   count: number;
 }

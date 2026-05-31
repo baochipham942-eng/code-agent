@@ -48,6 +48,20 @@ vi.mock('../../../src/main/agent/runtime/gameArtifactValidator', async (importOr
   };
 });
 
+vi.mock('../../../src/main/agent/runtime/browser/visualSmoke', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/main/agent/runtime/browser/visualSmoke')>();
+
+  return {
+    ...actual,
+    runBrowserVisualSmoke: vi.fn(async () => ({
+      attempted: true,
+      passed: true,
+      failures: [],
+      checks: ['browser visual smoke passed'],
+    })),
+  };
+});
+
 vi.mock('../../../src/main/services', () => ({
   getConfigService: vi.fn(),
   getAuthService: vi.fn(),
@@ -344,7 +358,7 @@ function makePendingGoalMode(): NonNullable<RuntimeContext['goalMode']> {
   } as unknown as NonNullable<RuntimeContext['goalMode']>;
 }
 
-function makeMessageProcessorDeps(ctx: RuntimeContext) {
+function makeMessageProcessorDeps(_ctx: RuntimeContext) {
   const injected: string[] = [];
   return {
     contextAssembly: {

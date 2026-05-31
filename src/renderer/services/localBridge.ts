@@ -257,10 +257,3 @@ export function getLocalBridgeClient(): LocalBridgeClient {
   if (!client) client = new LocalBridgeClient();
   return client;
 }
-
-export function resetLocalBridgeClient(): void {
-  if (client) {
-    client.disconnect();
-    client = null;
-  }
-}

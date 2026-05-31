@@ -50,14 +50,14 @@ const TOOL_BUCKET_PREFIX: Array<[string, ContextBucket]> = [
 /**
  * 对单个 attachment category 分类
  */
-export function classifyAttachment(category: string): ContextBucket {
+function classifyAttachment(category: string): ContextBucket {
   return ATTACHMENT_BUCKET[category] ?? 'other';
 }
 
 /**
  * 对单个 tool call name 分类
  */
-export function classifyToolCall(toolName: string): ContextBucket {
+function classifyToolCall(toolName: string): ContextBucket {
   if (TOOL_BUCKET_EXACT[toolName]) return TOOL_BUCKET_EXACT[toolName];
   for (const [prefix, bucket] of TOOL_BUCKET_PREFIX) {
     if (toolName.startsWith(prefix)) return bucket;
@@ -149,7 +149,7 @@ export function extractContextItems(messages: Message[], recentCount = 30): Cont
       for (const tc of msg.toolCalls) {
         const args = tc.arguments as Record<string, unknown>;
         const bucket = classifyToolCall(tc.name);
-        let label: string | null = null;
+        let label: string;
         let detail = tc.name;
         let path: string | undefined;
 

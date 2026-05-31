@@ -22,22 +22,12 @@ export function isWebMode(): boolean {
   return import.meta.env.VITE_BUILD_TARGET === 'web';
 }
 
-export function isLegacyElectronMode(): boolean {
+function isLegacyElectronMode(): boolean {
   return !isWebMode() && !isTauriMode();
 }
 
-/**
- * @deprecated Use isLegacyElectronMode() only when checking the old desktop shell.
- * Prefer isDesktopShellMode() for product capability gates.
- */
-export const isElectronMode = isLegacyElectronMode;
-
 export function isDesktopShellMode(): boolean {
   return isLegacyElectronMode() || isTauriMode();
-}
-
-export function isNativeAppMode(): boolean {
-  return isDesktopShellMode();
 }
 
 export function getDesktopShellLabel(): string {

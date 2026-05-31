@@ -648,20 +648,3 @@ export function getChannelManager(): ChannelManager {
   }
   return channelManagerInstance;
 }
-
-/**
- * 初始化通道管理器
- * - 加载已保存的账号配置
- * - 自动连接所有启用的账号
- */
-export async function initChannelManager(): Promise<ChannelManager> {
-  const manager = getChannelManager();
-
-  // 加载账号配置
-  await manager.loadAccounts();
-
-  // 自动连接所有启用的账号
-  await manager.connectAllEnabled();
-
-  return manager;
-}

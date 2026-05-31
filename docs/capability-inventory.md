@@ -231,9 +231,9 @@
 - **描述**: 工具调用分类(并行安全/写入/验证), 最大化并行度
 
 ### 2.15 Decorated Tools (装饰器模式)
-- **状态**: ✅ 已实现
-- **关键文件**: `src/main/tools/decorated/` + `src/main/tools/decorators/`
-- **描述**: TypeScript 装饰器定义工具，含 builder/description/param/tool 装饰器。BashTool, GlobTool, ReadFileTool 使用此模式
+- **状态**: 已删除
+- **关键文件**: 已删除 `src/main/tools/decorated/` + `src/main/tools/decorators/`
+- **描述**: 这条装饰器工具定义实验未接入当前 `module/schema/handler` 工具体系，已作为冗余代码移除。
 
 ### 2.16 动态 Bash 描述
 - **状态**: ✅ 已实现
@@ -356,9 +356,9 @@
 - **描述**: 上下文健康度监控
 
 ### 4.9 Code Preserver
-- **状态**: ✅ 已实现
-- **关键文件**: `src/main/context/codePreserver.ts`
-- **描述**: 压缩时保留关键代码片段
+- **状态**: 已删除
+- **关键文件**: 已删除 `src/main/context/codePreserver.ts`
+- **描述**: 旧摘要链路的代码块保护实验未接入当前压缩主链路，已作为冗余代码移除。
 
 ### 4.10 Reminder Budget
 - **状态**: ✅ 已实现

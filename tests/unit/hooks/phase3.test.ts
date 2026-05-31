@@ -190,7 +190,7 @@ describe('Observer Downgrade in configParser', () => {
     const path = await import('path');
     const os = await import('os');
     const { parseHooksConfig } = await vi.importActual<typeof import('../../../src/main/hooks/configParser')>(
-      '../../../src/main/hooks/configParser'
+      '../../../src/main/hooks/configParser',
     );
 
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hooks-observer-test-'));

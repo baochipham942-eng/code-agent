@@ -285,7 +285,7 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
       // 内存降级（最后兜底）
       const messages = (sessionMessages.get(sessionId) || []).map(m => ({
         ...m,
-        toolCalls: [],
+        toolCalls: (m as CachedMessage & { toolCalls?: CachedToolCall[] }).toolCalls || [],
       }));
       res.json({ success: true, data: messages });
     } catch (error) {
@@ -305,8 +305,19 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
         const sb = await getSupabaseForSession();
         if (sb) {
           const now = Date.now();
-          await sb.supabase.from('sessions').update({ is_deleted: true, updated_at: now }).eq('id', sessionId).eq('user_id', sb.userId);
-          await sb.supabase.from('messages').update({ is_deleted: true, updated_at: now }).eq('session_id', sessionId).eq('user_id', sb.userId);
+          const { error: sessionDeleteError } = await sb.supabase
+            .from('sessions')
+            .update({ is_deleted: true, updated_at: now })
+            .eq('id', sessionId)
+            .eq('user_id', sb.userId);
+          if (sessionDeleteError) throw sessionDeleteError;
+
+          const { error: messageDeleteError } = await sb.supabase
+            .from('messages')
+            .update({ is_deleted: true, updated_at: now })
+            .eq('session_id', sessionId)
+            .eq('user_id', sb.userId);
+          if (messageDeleteError) throw messageDeleteError;
         }
       }
       inMemorySessions.delete(sessionId);

@@ -66,8 +66,6 @@ import { registerCapabilityHandlers } from './capability.ipc';
 import { registerHandoffHandlers } from './handoff.ipc';
 import { registerPiiHandlers } from './pii.ipc';
 
-export * from './types';
-
 /**
  * IPC handler 注册所需的依赖
  */

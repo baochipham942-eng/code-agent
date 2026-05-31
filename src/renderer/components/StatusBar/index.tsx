@@ -8,7 +8,6 @@ import React from 'react';
 import { useStatusStore } from '../../stores/statusStore';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
-import { ModelIndicator } from './ModelIndicator';
 import { ModelSwitcher } from './ModelSwitcher';
 import { AgentSwitcher } from './AgentSwitcher';
 import { InteractionModeIndicator } from './InteractionModeIndicator';
@@ -107,7 +106,6 @@ export function StatusBar() {
 }
 
 // 导出所有子组件，方便单独使用
-export { ModelIndicator } from './ModelIndicator';
 export { ModelSwitcher } from './ModelSwitcher';
 export { AgentSwitcher } from './AgentSwitcher';
 export { MessageCounter } from './MessageCounter';

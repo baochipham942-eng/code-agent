@@ -13,6 +13,11 @@ import { createLogger } from '../../main/services/infra/logger';
 
 const logger = createLogger('CLI-Serve');
 type RunRequestFacade = Pick<APIRunRequest, 'prompt' | 'project' | 'generation' | 'model' | 'provider'>;
+interface ServeRequestHandlerOptions {
+  host: string;
+  port: number;
+  globalOpts: CLIGlobalOptions;
+}
 
 // 全局状态
 let currentTask: {
@@ -38,42 +43,7 @@ export const serveCommand = new Command('serve')
       terminalOutput.info(`项目目录: ${globalOpts?.project || process.cwd()}`);
 
       // 创建 HTTP 服务器
-      const server = http.createServer(async (req, res) => {
-        // CORS headers
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-        if (req.method === 'OPTIONS') {
-          res.writeHead(204);
-          res.end();
-          return;
-        }
-
-        const url = new URL(req.url || '/', `http://${host}:${port}`);
-
-        try {
-          // 路由
-          if (url.pathname === '/api/run' && req.method === 'POST') {
-            await handleRun(req, res, globalOpts);
-          } else if (url.pathname === '/api/status' && req.method === 'GET') {
-            handleStatus(res);
-          } else if (url.pathname === '/api/health' && req.method === 'GET') {
-            handleHealth(res);
-          } else if (url.pathname === '/api/cancel' && req.method === 'POST') {
-            handleCancel(res);
-          } else {
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Not Found' }));
-          }
-        } catch (error) {
-          logger.error('Request error', error);
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            error: error instanceof Error ? error.message : 'Internal Server Error',
-          }));
-        }
-      });
+      const server = http.createServer(createServeRequestHandler({ host, port, globalOpts }));
 
       // 启动服务
       server.listen(port, host, () => {
@@ -109,6 +79,47 @@ export const serveCommand = new Command('serve')
       process.exit(1);
     }
   });
+
+export function createServeRequestHandler(options: ServeRequestHandlerOptions): http.RequestListener {
+  const { host, port, globalOpts } = options;
+
+  return async (req, res) => {
+    // CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    const url = new URL(req.url || '/', `http://${host}:${port}`);
+
+    try {
+      // 路由
+      if (url.pathname === '/api/run' && req.method === 'POST') {
+        await handleRun(req, res, globalOpts);
+      } else if (url.pathname === '/api/status' && req.method === 'GET') {
+        handleStatus(res);
+      } else if (url.pathname === '/api/health' && req.method === 'GET') {
+        handleHealth(res);
+      } else if (url.pathname === '/api/cancel' && req.method === 'POST') {
+        handleCancel(res);
+      } else {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Not Found' }));
+      }
+    } catch (error) {
+      logger.error('Request error', error);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        error: error instanceof Error ? error.message : 'Internal Server Error',
+      }));
+    }
+  };
+}
 
 /**
  * 处理 /api/run 请求

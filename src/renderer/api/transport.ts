@@ -19,13 +19,6 @@ export function hasNativeBridge(): boolean {
 }
 
 /**
- * @deprecated Use hasNativeBridge().
- */
-export function isElectron(): boolean {
-  return hasNativeBridge();
-}
-
-/**
  * 获取 HTTP API 基地址
  * 优先级：URL 参数 > localStorage > 默认值
  */

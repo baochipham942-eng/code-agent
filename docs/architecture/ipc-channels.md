@@ -86,6 +86,7 @@ interface IPCResponse<T = unknown> {
 | `domain:openchronicle` | openchronicle.ipc.ts | 外部 OpenChronicle daemon |
 | `domain:prompt` | prompt.ipc.ts | Prompt Registry 查看、override、debug system prompt |
 | `domain:hook` | hook.ipc.ts | Hook 配置摘要、启用状态、配置文件打开/定位 |
+| ~~`evaluation:delivery-review:run`~~ | 已下线 | 5/19 随 evaluation 子系统删除；Workspace Preview 不再触发旧 Delivery Review |
 | `workflow:*` | workflow.ipc.ts | Dynamic Workflow 运行进度 + 跑前审批（专用 bridge，run/launch 双通道）|
 
 ---

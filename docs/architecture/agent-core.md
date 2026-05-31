@@ -265,17 +265,19 @@ Eval 不再只看 final answer。`TelemetryQueryService` 会构建 structured re
 - `packages/eval-harness/src/runner/ExperimentRunner.ts`
 - `src/shared/contract/evaluation.ts`
 
-### Product closure quality runtime
+### Artifact verifier + product closure quality runtime
 
-6/1 之后，agent 交付质量不再依赖已下线的 DeliveryReviewService / PreviewFeedbackService 数据面。checker-level `AcceptanceRunner` 仍可按 scenario 产生规则问题，但产品级质量状态要进入 `ArtifactIssue`、`EvalReplayQualityReport` 和 Admin Review Queue，才能参与 replay/eval 和 release gate。
+5/19 之后，旧 `AcceptanceRunner` / Delivery Review / Preview Feedback 链路已随 evaluation 子系统清理下线。6/1 之后，agent 交付质量状态进入 `ArtifactIssue`、`EvalReplayQualityReport` 和 Admin Review Queue；game / deck / dashboard 这类 kind-specific verifier 负责采集真实文件、浏览器 smoke 或运行时 contract 证据。
 
 | 模块 | 位置 | 职责 |
 |------|------|------|
-| AcceptanceRunner | `src/main/agent/runtime/acceptance/AcceptanceRunner.ts` | checker-level 规则检查器，不承担产品级 DB/UI 数据面 |
-| Scenario skills | `src/main/agent/runtime/acceptance/scenarioSkills.ts` | 把不同交付类型映射到检查项和修复提示 |
 | Product closure contract | `src/shared/contract/productClosure.ts` | `ArtifactIssue`、`ArtifactEvidenceRef`、`EvalReplayQualityReport`、`AdminReviewQueueItem` |
 | ArtifactIssueRepository | `src/main/services/core/repositories/ArtifactIssueRepository.ts` | 持久化 issue/evidence/quality report/admin review 决策 |
 | Admin review route | `src/web/routes/adminReviewQueue.ts` | app-host 本地 review queue API |
+| Game verifier | `src/main/agent/runtime/game/*` | game subtype checker、runtime evidence 和 repair issue codes |
+| DeckVerifier | `src/main/agent/runtime/deck/DeckVerifier.ts` | deck schema / narrative probes |
+| DashboardVerifier | `src/main/agent/runtime/dashboard/DashboardVerifier.ts` | HTML probes、browser visual smoke、interaction probes |
+| Repair guard | `src/main/agent/runtime/repair/*` | 控制 repair scope、修复轮次和单调性 |
 
 ### Artifact verifier family
 
@@ -410,7 +412,7 @@ ContextAssembly 每轮推理前注入两类子代理信息：
 | commands | 关键命令、退出码、短输出 |
 | errors | 失败原因、错误类别、后续修复提示 |
 | todos / open work | 未完成事项、待验证点、approval 状态 |
-| artifacts | 生成物、preview item、delivery review 关联 |
+| artifacts | 生成物、preview item、artifact verifier 证据 |
 | fingerprint | 防止 summary 后把旧数据当最新事实的校验锚点 |
 
 ### Audit / validation / hooks

@@ -19,18 +19,6 @@ export interface ToolCallRecord {
 }
 
 /**
- * 消息记录
- */
-export interface MessageRecord {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  contentLength: number;
-  timestamp: number;
-  hasCode: boolean;
-  codeBlocks: number;
-}
-
-/**
  * 客观指标 - 直接从数据库计算，不需要 LLM
  */
 export interface ObjectiveMetrics {
@@ -157,40 +145,6 @@ export interface SubjectiveAssessment {
 }
 
 /**
- * 完整的会话分析结果
- */
-export interface SessionAnalysis {
-  id: string;
-  sessionId: string;
-  timestamp: number;
-
-  // 客观指标（立即可用）
-  objective: ObjectiveMetrics;
-
-  // 主观评测（按需执行）
-  subjective: SubjectiveAssessment | null;
-
-  // 历史评测
-  previousEvaluations: {
-    id: string;
-    timestamp: number;
-    overallScore: number;
-    grade: string;
-  }[];
-}
-
-/**
- * 评测状态
- */
-export type EvaluationStatus =
-  | 'idle'           // 初始状态
-  | 'loading_stats'  // 加载客观指标
-  | 'stats_loaded'   // 客观指标已加载
-  | 'evaluating'     // 正在 LLM 评测
-  | 'completed'      // 评测完成
-  | 'error';         // 评测出错
-
-/**
  * 维度名称映射
  */
 export const DIMENSION_NAMES: Record<SubjectiveDimension, string> = {
@@ -233,40 +187,4 @@ export const DIMENSION_ICONS: Record<SubjectiveDimension, string> = {
   [SubjectiveDimension.COMMUNICATION]: '🤝',
   [SubjectiveDimension.EFFICIENCY]: '⚡',
   [SubjectiveDimension.SAFETY]: '🔒',
-};
-
-/**
- * 评分等级
- */
-export function scoreToGrade(score: number): string {
-  if (score >= 90) return 'S';
-  if (score >= 80) return 'A';
-  if (score >= 70) return 'B';
-  if (score >= 60) return 'C';
-  if (score >= 50) return 'D';
-  return 'F';
-}
-
-/**
- * 等级颜色
- */
-export const GRADE_COLORS: Record<string, string> = {
-  S: 'text-purple-400',
-  A: 'text-green-400',
-  B: 'text-blue-400',
-  C: 'text-yellow-400',
-  D: 'text-orange-400',
-  F: 'text-red-400',
-};
-
-/**
- * 等级背景颜色
- */
-export const GRADE_BG_COLORS: Record<string, string> = {
-  S: 'bg-purple-500/20',
-  A: 'bg-green-500/20',
-  B: 'bg-blue-500/20',
-  C: 'bg-yellow-500/20',
-  D: 'bg-orange-500/20',
-  F: 'bg-red-500/20',
 };

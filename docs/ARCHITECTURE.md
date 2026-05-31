@@ -1,6 +1,6 @@
 # Agent Neo / Code Agent - 架构设计文档
 
-> 版本: 9.14 (对应 v0.16.88 + Runtime Consolidation / Agent Neo Product Closure / Prompt Gate / Admin Review Queue；接 v0.16.88 AI SDK 全量迁移收口)
+> 版本: 9.15 (对应 v0.16.88 + Dynamic Workflow / Runtime Consolidation / Fleet Observability / Agent Neo Product Closure / Prompt Gate / Admin Review Queue / 死代码收敛；接 v0.16.88 AI SDK 全量迁移收口)
 > 日期: 2026-06-01
 > 作者: Lin Chen
 
@@ -22,10 +22,10 @@
 | [云端/同步历史架构](./architecture/cloud-architecture.md) | 历史 cloud task / orchestrator 设计归档；当前保留配置、更新、feature flag、cloud proxy 等服务 |
 | [多 Agent 编排](./architecture/multiagent-system.md) | Agent Team 并行执行、parallel inbox、dependsOn gate、run-level cancel、SpawnGuard |
 | [Dynamic Workflow](./architecture/dynamic-workflow.md) | 命令式脚本编排运行时：模型写 JS 脚本 → worker 沙箱后台执行、5 原语、forced 结构化、provider-aware 并发闸、token budget、跑前审批、resumable |
-| [Runtime Consolidation Snapshot](./architecture/runtime-consolidation-2026-05-31.md) | 2026-05-29~06-01 运行时收口 as-built：workflow、provider 控制、app-host 验收、dead path 归属、product closure |
+| [Runtime Consolidation Snapshot](./architecture/runtime-consolidation-2026-05-31.md) | 2026-05-29~06-01 运行时收口 as-built：workflow、provider 控制、app-host 验收、observability、dead path 归属、product closure |
 | [Agent Architecture Debt Iteration](./architecture/agent-architecture-debt-iteration-plan-2026-05-31.md) | runtime ports、model/app-host 拆分、prompt/session/eval gates 的分阶段闭环 |
 | [Chat-Native Workbench](./architecture/workbench.md) | 聊天主链路能力工作台（ConversationEnvelope + InlineWorkbenchBar + Turn Timeline + Prompt Rewind），与 TaskPanel(sidecar) 分工 |
-| [Artifact Verification](./architecture/artifact-verification.md) | checker-level verifier、ArtifactIssue、EvalReplayQualityReport、Admin Review Queue |
+| [Artifact Verification](./architecture/artifact-verification.md) | Game/Deck/Dashboard verifier、repair guard、ArtifactIssue、EvalReplayQualityReport、Admin Review Queue；旧 AcceptanceRunner / Delivery Review / Preview Feedback 已下线 |
 | [Activity Providers](./architecture/activity-providers.md) | OpenChronicle / Tauri Native Desktop / audio / screenshot-analysis 统一上下文 provider 边界 |
 | [Native App 集成](./architecture/native-app-integration.md) | Skill / Tool / Service / Connector / MCP 边界与调用链路；为什么 macOS 原生应用走 connector 不走 MCP |
 | [CLI 架构](./architecture/cli.md) | 5 种运行模式、CLIAgent 适配层、输出格式化、命令系统 |
@@ -320,7 +320,7 @@ code-agent/
 | Level 1 native tool protocol | Web/Search、Excel、Document、MCP、Skill、LSP、Multiagent、Planning、Vision、Network/Media/Docgen/PPT 按 wave 迁到 native module；旧 wrappers/legacy path 分批删除；IPC schema 不变的工具保留前端兼容 | `src/main/tools/modules/*`、`src/main/tools/registry.ts`、`docs/migrations/legacy-tools-removal-sop.md` |
 | Tool reliability | WebFetch 强制 URL；toolSearch 无 callable 命中时明确失败；Edit old_text mismatch 返回最近 anchor lines；LSP 扩到 100+ extension map 并能返回 install hint；shell 统一走 command policy | `src/main/tools/modules/network/*`、`src/main/tools/utils/anchorHint.ts`、`src/main/lsp/*`、`src/main/tools/modules/shell/commandPolicy.ts` |
 | Runtime / Web / Context hardening | compaction/browser recovery、partial-failure trace、Web 401/403 token mismatch recovery、run 前持久化 user message、activeAgentLoops flush、telemetry classifier、token-trigger compaction、context fill 包含 tool schemas | `src/main/context/*`、`src/web/webServer.ts`、`src/main/telemetry/*`、`src/renderer/components/features/chat/*` |
-| Artifact acceptance / repair | checker-level AcceptanceRunner、通用 repair toolkit、Game subtype registry、DeckVerifier、dashboard subtype checkers；产品级质量状态进入 ArtifactIssue / EvalReplayQualityReport / Admin Review Queue | `src/main/agent/runtime/acceptance/*`、`src/main/agent/runtime/repair/*`、`src/main/agent/runtime/game/*`、`src/main/agent/runtime/deck/*`、`src/main/agent/runtime/dashboard/*`、`src/shared/contract/productClosure.ts` |
+| Artifact acceptance / repair | 通用 repair toolkit、Game subtype registry、Best-of-N + repair cap + monotonicity gate、DeckVerifier + schema/narrative probes、DashboardVerifier + browser visual smoke + state_change_on_click probe；产品级质量状态进入 ArtifactIssue / EvalReplayQualityReport / Admin Review Queue；旧 AcceptanceRunner / Delivery Review / Preview Feedback 已下线 | `src/main/agent/runtime/repair/*`、`src/main/agent/runtime/game/*`、`src/main/agent/runtime/deck/*`、`src/main/agent/runtime/dashboard/*`、`src/shared/contract/productClosure.ts`、`src/main/services/core/repositories/ArtifactIssueRepository.ts` |
 | Browser / Computer multi-agent isolation | 子 agent 工具调用带 `agentId`，BrowserService pool 提供 per-agent cookie/storage 隔离；ephemeral Chromium FIFO semaphore；ComputerSurface 写动作 mutex；新增 mouse_down/up、open_application、write_clipboard、computer_batch、hold_key、triple_click、cursor_position | `src/main/services/infra/browserPool.ts`、`src/main/services/infra/browserService.ts`、`src/main/services/infra/playwrightLaunchSemaphore.ts`、`src/main/services/desktop/computerSurfaceLock.ts`、`src/main/tools/vision/computerUse.ts`、`tests/smoke/*` |
 | Multi-agent signal propagation | subagent dispatch 将 `agentId` 注入 `ToolContext`；`effectiveSignal` 透传 `modelRouter.inference`，避免子 agent cancel / abort 丢到模型调用外 | `src/main/agent/multiagentTools/*`、`src/main/model/modelRouter.ts` |
 | Typed IPC / Web payload | `shared/ipc` zod schemas、`defineHandler`、renderer `typedInvoke`、web `parseBody` 建成 typed IPC/HTTP payload 校验起点 | `src/shared/ipc/*`、`src/main/platform/ipcRegistry.ts`、`src/renderer/services/typedInvoke.ts`、`src/web/helpers/typedBody.ts` |
@@ -375,8 +375,8 @@ code-agent/
 | `max-lines: 1000` ESLint 守门 | 1000 行上限作为 God File 硬护栏，19 个 legacy God File 进白名单逐步消化 | `.eslintrc`、`docs/audits/2026-04-27-codex-2day-burst-cleanup.md` |
 | Supabase services 类型清理 | 一次性移除 18+ 处 `as any`，并修出 latent bug（B5 audit） | `src/main/services/sync/*` |
 | Design Brief 生产化 (Phase A→C.3) | `src/design/`（direction-tokens + 5-dim critique）、`src/artifacts/question-form.ts`、`src/main/prompts/selfCritique.ts`、`src/main/prompts/questionForm.ts`、`src/main/app/workbenchTurnContext.ts` 把 brief 生产路径接进 envelope 与 system prompt；C.3 路线 A 借鉴 nexu-io 模式注入 silent self-critique pre-emit gate | `src/design/*`、`src/artifacts/*`、`src/shared/contract/designBrief.ts`、`src/main/prompts/selfCritique.ts` |
-| Workspace Preview Panel | 右侧 artifact preview workbench：承载 designBrief / questionForm / design_ppt / 文件预览；产品级质量状态已迁到 ArtifactIssue / Admin Review Queue | `src/renderer/components/WorkspacePreviewPanel.tsx`、`src/renderer/components/QuestionFormPreview.tsx`、`src/renderer/hooks/useWorkspacePreviewModel.ts`、`src/renderer/utils/workspacePreview.ts` |
-| Channel inbox / outbox 实时事件 | 入站 / 出站事件统一 IPC 通道，renderer 可 `list / dismiss`；`ConnectorsCard` 直接消费 channel inbox 状态 | `src/main/channels/*`、`src/renderer/components/.../ConnectorsCard.tsx` |
+| Workspace Preview Panel | 右侧 artifact workbench：承载 designBrief / questionForm / design_ppt / Prompt Apps / Gallery；产品级质量状态已迁到 ArtifactIssue / Admin Review Queue，旧 delivery review / preview feedback 已下线 | `src/renderer/components/WorkspacePreviewPanel.tsx`、`src/renderer/components/QuestionFormPreview.tsx`、`src/renderer/hooks/useWorkspacePreviewModel.ts`、`src/renderer/utils/workspacePreview.ts` |
+| Channel inbox / outbox 实时事件 | 入站 / 出站事件统一 IPC 通道，renderer 可 `list / dismiss`；当前 UI 入口由 TaskMonitor / 任务分解视图承接能力状态与事件摘要 | `src/main/channels/*`、`src/renderer/components/TaskPanel/TaskMonitor.tsx` |
 | Chat-view 新会话首屏 | 新 session 首屏从"示例 prompt 卡"改为写邮件/排日程、做方案/文档/PPT、调研/对比、代码改动四类具体任务入口 | `src/renderer/components/ChatView.tsx` |
 | ~~Eval Center Review Queue~~（v0.16.79 移除）| `SessionListView` 把待评 session 集中分桶，标注 replay 完整度与异常 case；行点击进详情；fatal inference error 熔断；DB 去重 | 整套 evalCenter UI + `testRunner.ts` 已随 evaluation 子系统删除 |
 | Computer Surface `locate_role+targetApp` | 走 macOS background AX 直连指定 app 控件树，避免唤起前台；`type` / `key` 没有 background target 时降级前台键盘事件，bridge 显式 warn；文档 Computer / computer_use 别名映射 + 截图可见性规则 | `src/main/tools/computerUse.ts`、`src/main/tools/desktop.ts`、`docs/guides/computer-use.md` |

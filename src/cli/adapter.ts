@@ -2,7 +2,7 @@
 // CLI Adapter - 适配 AgentLoop 到 CLI
 // ============================================================================
 
-import { createAgentLoop, buildCLIConfig, initializeCLIServices, cleanup, getSessionManager, syncCLIWorkingDirectory, getConfigService } from './bootstrap';
+import { createAgentLoop, buildCLIConfig, initializeCLIServices, getSessionManager, syncCLIWorkingDirectory, getConfigService } from './bootstrap';
 import { terminalOutput, jsonOutput } from './output';
 import { addSwarmEventListener } from '../main/ipc/swarm.ipc';
 import fs from 'fs';
@@ -557,17 +557,4 @@ export async function createCLIAgent(options: Partial<CLIGlobalOptions> = {}): P
   const agent = new CLIAgent(options);
   await syncCLIWorkingDirectory(agent.getConfig().workingDirectory);
   return agent;
-}
-
-/**
- * 单次运行（便捷函数）
- */
-export async function runOnce(
-  prompt: string,
-  options: Partial<CLIGlobalOptions> = {}
-): Promise<CLIRunResult> {
-  const agent = await createCLIAgent(options);
-  const result = await agent.run(prompt);
-  await cleanup();
-  return result;
 }

@@ -8,7 +8,7 @@
 - `tools/toolExecutor.ts` — 执行器（protocol dispatch 路径）
 - `tools/types.ts` — 兼容类型
 - `tools/fileReadTracker.ts`, `tools/dataFingerprint.ts`, `tools/permissionClassifier.ts`, `tools/backgroundTaskPersistence.ts`, `tools/executionPhase.ts` — 共享基础设施
-- `tools/utils/**`, `tools/middleware/**`, `tools/decorators/**`, `tools/decorated/**` — 横切基础设施
+- `tools/utils/**`, `tools/middleware/**` — 横切基础设施
 
 ## 不得从外部（非 modules/）import 的 legacy category：
 

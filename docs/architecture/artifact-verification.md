@@ -1,23 +1,30 @@
 # Artifact Verification 架构
 
-> 2026-06-01 当前口径：checker-level verifier + ArtifactIssue / EvalReplayQualityReport / Admin Review Queue
+> 2026-06-01 当前口径：Game / Deck / Dashboard verifier + ArtifactIssue / EvalReplayQualityReport / Admin Review Queue；旧 AcceptanceRunner / Delivery Review / Preview Feedback 已下线
 
 ## 目标
 
-Artifact Verification 负责回答一个更产品化的问题：生成物是否真的能交付。它不只检查“文件是否存在”，还要按 artifact 类型跑结构化验收、生成可审计证据，并把质量问题进入 release / admin review gate。
+Artifact Verification 负责回答一个更产品化的问题：生成物是否真的能交付。当前系统不再维护旧的通用 Delivery Review 队列，验收能力优先落在具体 artifact runtime 上，用真实文件、浏览器 smoke 或运行时 contract 采证，再把产品级质量问题进入 release / admin review gate。
 
-当前用户入口有两个：
+当前用户入口：
 
 | 入口 | 作用 |
 |------|------|
-| Workspace Preview | 预览 artifact、查看生成结果、打开相关文件 |
+| Workspace Preview | 预览 artifact、查看 Design PPT / Prompt Apps / Gallery 等生成物资产 |
+| TaskPanel task rail | 展示任务运行状态、产物和当前修复动作 |
 | Admin Review Queue | 审查高风险 `ArtifactIssue`，做 `allow_release` 或 `request_changes` 决策 |
 
-## 数据流
+## 已下线的旧链路
+
+5/7 曾接入过 `WorkspacePreviewItem -> DeliveryReviewService -> AcceptanceRunner -> ReviewQueueService(reason=delivery_review) -> PreviewFeedbackService`。这条线在 5/19 随 evaluation 子系统清理下线，相关 IPC、DB 表、Eval Center UI、Preview Feedback UI 都已删除。
+
+旧 `AcceptanceRunner` 只做静态规则检查，缺少真实浏览器/运行时证据、自动修复和复验闭环，因此不再保留为 runtime 入口。
+
+当前产品级质量链路：
 
 ```
 Artifact / replay / eval evidence
-  -> checker-level verifier or eval adapter
+  -> kind-specific verifier or eval adapter
   -> ArtifactIssue + ArtifactEvidenceRef
   -> ArtifactIssueRepository
   -> AdminReviewQueueItem
@@ -29,13 +36,15 @@ Artifact / replay / eval evidence
 
 | 层 | 文件 | 职责 |
 |----|------|------|
-| Legacy checker contract | `src/shared/contract/scenarioAcceptance.ts` | 低层验收结果结构，保留给 checker / unit tests，不作为产品级 DB/UI 数据面 |
-| Legacy checker runner | `src/main/agent/runtime/acceptance/AcceptanceRunner.ts` | frontend/admin/doc/research/deploy/game 等场景的规则检查器 |
-| Scenario skills | `src/main/agent/runtime/acceptance/scenarioSkills.ts` | 每类交付的检查项、修复建议和 skill 映射 |
 | Product quality contract | `src/shared/contract/productClosure.ts` | `ArtifactIssue`、`ArtifactEvidenceRef`、`EvalReplayQualityReport`、`AdminReviewQueueItem` |
 | Persistence | `src/main/services/core/repositories/ArtifactIssueRepository.ts` | 持久化 issue、evidence、quality report 和 admin review 决策 |
 | App-host review API | `src/web/routes/adminReviewQueue.ts` | list / upsert issue / apply decision |
 | Eval adapter | `src/main/evaluation/experimentAdapter.ts` | replay-backed case 转成 quality report，并把 artifact issues 绑到 `UnifiedTraceIdentity` |
+| Game verifier | `src/main/agent/runtime/game/*` | generated game subtype checker、runtime evidence 和 repair issue codes |
+| Deck verifier | `src/main/agent/runtime/deck/DeckVerifier.ts` | deck schema / narrative probes |
+| Dashboard verifier | `src/main/agent/runtime/dashboard/DashboardVerifier.ts` | HTML probes、browser visual smoke、interaction probes |
+| Browser visual smoke | `src/main/agent/runtime/browser/visualSmoke.ts` | desktop/mobile viewport、console/page errors、canvas 非空、overflow |
+| Repair guard | `src/main/agent/runtime/repair/*` | repair scope、monotonicity、prompt limit 和修复轮次限制 |
 
 ## Verifier Family
 
@@ -69,7 +78,7 @@ ADR-016 明确不提前抽 `ArtifactKindVerifier` 顶层接口。原因是各类
 | dashboard | file path + browser runtime |
 | game | generated HTML + runtime evidence + subtype checker |
 
-等第三类 verifier 稳定跑通后，再考虑是否抽公共接口。现在公共层只放 checker runner、artifact issue contract、quality report、admin review queue 和 repair guard。
+等第三类 verifier 稳定跑通后，再考虑是否抽公共接口。当前公共层只保留 repair guard、真实证据采集工具、artifact issue contract、quality report 和 admin review queue，不再保留通用 Delivery Review runner。
 
 ## 存储
 
@@ -83,6 +92,6 @@ ADR-016 明确不提前抽 `ArtifactKindVerifier` 顶层接口。原因是各类
 
 ## 边界
 
-- `AcceptanceRunner` 仍是 checker-level 工具，不再承担产品级 review queue / release gate 数据面。
-- 新的 release gate 只看 `ArtifactIssue` 和 `EvalReplayQualityReport`，旧 `ScenarioAcceptanceResult` 要先转换成 issue/evidence 才能进入 admin review。
+- `AcceptanceRunner` / `scenarioAcceptance` 已下线，不再作为当前 artifact runtime 或产品级 review queue 数据面。
+- 新的 release gate 只看 `ArtifactIssue` 和 `EvalReplayQualityReport`。
 - Workspace Preview 负责查看 artifact，不再假设有 DeliveryReviewService / PreviewFeedbackService 这条已下线链路。

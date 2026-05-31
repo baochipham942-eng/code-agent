@@ -102,6 +102,10 @@ import {
   type RunTerminalInfo,
   type RunTerminalStatus,
 } from './runTerminalStatus';
+import {
+  buildCompletionSummaryRecord,
+  persistCompletionSummaryRecord,
+} from '../../session/completionSummaryService';
 
 
 const logger = createLogger('AgentLoop');
@@ -300,8 +304,29 @@ export class RunFinalizer {
       langfuse.endTrace(this.ctx.traceId, `Completed in ${iterations} iterations`);
     }
 
-    // 先通知前端关闭 "组织回复中" loading — 核心生成已结束
-    // 后续 post-processing（hooks / learning / summary）跑在后台，不再阻塞 UI
+    try {
+      const completionSummary = await buildCompletionSummaryRecord({
+        ctx: this.ctx,
+        status: terminalStatus,
+        iterations,
+        userMessage,
+        error: terminal.error,
+      });
+      await persistCompletionSummaryRecord(completionSummary);
+      logger.info('[CompletionSummary] persisted run completion contract', {
+        sessionId: this.ctx.sessionId,
+        summaryId: completionSummary.id,
+        status: completionSummary.status,
+      });
+    } catch (error) {
+      logger.warn('[CompletionSummary] failed to persist run completion contract', {
+        sessionId: this.ctx.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    // 先落内部 completion contract，再通知前端关闭 "组织回复中" loading。
+    // 后续 post-processing（hooks / learning / summary）跑在后台，不再阻塞 UI。
     const terminalEventType = getRunTerminalAgentEventType(terminalStatus);
     logger.debug(`[AgentLoop] ========== run() END, emitting ${terminalEventType} ==========`);
     logCollector.agent('INFO', `Agent run ${terminalStatus}, ${iterations} iterations`);

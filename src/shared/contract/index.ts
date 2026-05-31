@@ -101,6 +101,7 @@ export * from './sessionWorkspace';
 export * from './workbenchPreset';
 export * from './reviewQueue';
 export * from './productClosure';
+export * from './completionSummary';
 export * from './handoff';
 export * from './persistence';
 

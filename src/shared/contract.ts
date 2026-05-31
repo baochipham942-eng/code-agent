@@ -96,6 +96,7 @@ export * from './contract/appService';
 export * from './contract/trace';
 export * from './contract/reviewQueue';
 export * from './contract/productClosure';
+export * from './contract/completionSummary';
 export * from './contract/persistence';
 
 // Decision Trace types (Security decision chain transparency)

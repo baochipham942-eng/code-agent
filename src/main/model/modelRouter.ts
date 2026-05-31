@@ -10,7 +10,7 @@ import type {
   ModelProvider
 } from '../../shared/contract';
 import { PROVIDER_REGISTRY } from './providerRegistry';
-import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS, modelHasCapability, type ModelDomainCapability } from '../../shared/constants';
+import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS } from '../../shared/constants';
 import { isFallbackEligible } from './providers/retryStrategy';
 import { getModelMaxOutputTokens } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
@@ -39,6 +39,22 @@ import {
   shouldRetrySelectedArtifactProvider,
   type ProviderFallbackCategory,
 } from './modelRouterPolicy';
+import {
+  ARTIFACT_FIRST_BYTE_TIMEOUT_MS,
+  ARTIFACT_INACTIVITY_TIMEOUT_MS,
+  ARTIFACT_PROVIDER_TIMEOUT_MS,
+  ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS,
+  ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS,
+  ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS,
+  ARTIFACT_REPAIR_RETRY_FIRST_BYTE_TIMEOUT_MS,
+  ARTIFACT_REPAIR_TARGETED_WRITE_FIRST_BYTE_TIMEOUT_MS,
+  ARTIFACT_REPAIR_TARGETED_WRITE_INACTIVITY_TIMEOUT_MS,
+  ARTIFACT_REPAIR_TARGETED_WRITE_TIMEOUT_MS,
+  ARTIFACT_REPAIR_WRITE_FIRST_BYTE_TIMEOUT_MS,
+  ARTIFACT_REPAIR_WRITE_INACTIVITY_TIMEOUT_MS,
+  ARTIFACT_REPAIR_WRITE_TIMEOUT_MS,
+  ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS,
+} from './modelRouterTimeouts';
 
 const logger = createLogger('ModelRouter');
 import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, MessageContent } from './types';
@@ -65,39 +81,8 @@ import { buildE2ELocalAgentModelResponse, shouldUseE2ELocalAgentModel } from './
 
 // Re-export PROVIDER_REGISTRY for external use
 export { PROVIDER_REGISTRY };
-
-// Reasoning-model 友好的 timeout 默认值。原 120s/45s/90s 在 MiMo Max 等
-// 长 thinking 模型上会误杀。所有常量都支持同名 env 覆盖，无需重新打包。
-function envTimeoutMs(name: string, defaultMs: number): number {
-  const raw = typeof process !== 'undefined' ? process.env?.[name] : undefined;
-  if (!raw) return defaultMs;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultMs;
-}
-const ARTIFACT_PROVIDER_TIMEOUT_MS = envTimeoutMs('ARTIFACT_PROVIDER_TIMEOUT_MS', 1_200_000);
-const ARTIFACT_FIRST_BYTE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_FIRST_BYTE_TIMEOUT_MS', 60_000);
-const ARTIFACT_INACTIVITY_TIMEOUT_MS = envTimeoutMs('ARTIFACT_INACTIVITY_TIMEOUT_MS', 480_000);
-const ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_RECOVERY_TIMEOUT_MS', 480_000);
-const ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_RECOVERY_FIRST_BYTE_TIMEOUT_MS', 60_000);
-const ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_RECOVERY_INACTIVITY_TIMEOUT_MS', 240_000);
-// Selected-provider retry uses a shorter first-byte timeout than the primary
-// call. Rationale: when a provider has just returned provider_unavailable, the
-// retry is essentially a probe — if it accepts the TCP connection but never
-// emits a byte (mimo's observed failure mode), the original first-byte timeout
-// (60s) plus per-call inactivity (240s+) can stack across both retry attempts
-// and stall the loop for >10 minutes before cross-provider fallback gets a
-// turn. A 30s probe timeout fails fast enough to yield to the fallback chain
-// while still leaving room for legitimate transient slowness.
-const ARTIFACT_REPAIR_RETRY_FIRST_BYTE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_RETRY_FIRST_BYTE_TIMEOUT_MS', 30_000);
-const ARTIFACT_REPAIR_TARGETED_WRITE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_TARGETED_WRITE_TIMEOUT_MS', 600_000);
-const ARTIFACT_REPAIR_TARGETED_WRITE_FIRST_BYTE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_TARGETED_WRITE_FIRST_BYTE_TIMEOUT_MS', 60_000);
-const ARTIFACT_REPAIR_TARGETED_WRITE_INACTIVITY_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_TARGETED_WRITE_INACTIVITY_TIMEOUT_MS', 360_000);
-const ARTIFACT_REPAIR_WRITE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_WRITE_TIMEOUT_MS', 900_000);
-const ARTIFACT_REPAIR_WRITE_FIRST_BYTE_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_WRITE_FIRST_BYTE_TIMEOUT_MS', 60_000);
-const ARTIFACT_REPAIR_WRITE_INACTIVITY_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAIR_WRITE_INACTIVITY_TIMEOUT_MS', 480_000);
-const ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS = process.env.NODE_ENV === 'test'
-  ? [0, 0]
-  : [1_000, 2_500];
+export { findCapableModels } from './modelCapabilities';
+export type { ModelCandidate } from './modelCapabilities';
 
 // ----------------------------------------------------------------------------
 // Model Router
@@ -985,36 +970,4 @@ export class ModelRouter {
 
     return this.inference(messages, [], config, onStream);
   }
-}
-
-// ============================================================================
-// findCapableModels — Step 7 PR 2，按 ModelDomainCapability (kebab-case)
-// 遍历 PROVIDER_REGISTRY 返回全量候选。与 ModelRouter.selectModelByCapability
-// (UI 维度 ModelCapability camelCase) 受众分离，不互通。
-// ============================================================================
-
-export interface ModelCandidate {
-  provider: string;
-  model: string;
-}
-
-export function findCapableModels(capability: ModelDomainCapability): ModelCandidate[] {
-  const cfg = getConfigService();
-  const candidates: ModelCandidate[] = [];
-  for (const [providerId, providerConfig] of Object.entries(PROVIDER_REGISTRY)) {
-    for (const model of providerConfig.models) {
-      if (modelHasCapability(model.id, capability)) {
-        candidates.push({ provider: providerId, model: model.id });
-      }
-    }
-  }
-  candidates.sort((a, b) => {
-    const aHasKey = cfg.getApiKey(a.provider as ModelProvider) !== undefined ? 0 : 1;
-    const bHasKey = cfg.getApiKey(b.provider as ModelProvider) !== undefined ? 0 : 1;
-    if (aHasKey !== bHasKey) return aHasKey - bHasKey;
-    const providerCmp = a.provider.localeCompare(b.provider);
-    if (providerCmp !== 0) return providerCmp;
-    return a.model.localeCompare(b.model);
-  });
-  return candidates;
 }

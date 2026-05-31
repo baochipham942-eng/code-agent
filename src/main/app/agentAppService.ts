@@ -28,6 +28,7 @@ import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { normalizeAgentEffortLevel } from '../../shared/effortLevels';
+import type { AgentRunOptions } from '../research/types';
 
 const logger = createLogger('AgentAppService');
 import { getModelSessionState } from '../session/modelSessionState';
@@ -61,6 +62,17 @@ function isTaskManagerOwnedRunState(status: SessionStatus): boolean {
     || status === 'paused'
     || status === 'queued'
     || status === 'cancelling';
+}
+
+function toAgentRunOptions(options: AppServiceRunOptions | undefined): AgentRunOptions | undefined {
+  if (!options) {
+    return undefined;
+  }
+
+  return {
+    ...options,
+    mode: options.mode ?? (options.researchMode ? 'deep-research' : 'normal'),
+  };
 }
 
 export class AgentAppServiceImpl implements AgentApplicationService {
@@ -280,8 +292,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       resolvedSessionId,
       envelope.content,
       envelope.attachments,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): TaskManager.startTask 期望 RunOptions，AppServiceRunOptions 是其超集（多了 systemContext），应让 TaskManager 直接接受 AppServiceRunOptions 或重命名后统一
-      options as any,
+      toAgentRunOptions(options),
       this.getMessageMetadata(envelope),
       envelope.clientMessageId,
     );
@@ -385,8 +396,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       resolvedSessionId,
       envelope.content,
       envelope.attachments,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): TaskManager.interruptAndContinue 期望 RunOptions，同 startTask；统一后这里可以直接传 AppServiceRunOptions
-      options as any,
+      toAgentRunOptions(options),
       this.getMessageMetadata(envelope),
       envelope.clientMessageId,
     );

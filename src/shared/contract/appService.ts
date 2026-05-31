@@ -17,6 +17,15 @@ import type {
   WorkbenchToolScope,
 } from './conversationEnvelope';
 
+export type AppServiceRunMode = 'normal' | 'deep-research';
+export type AppServiceReportStyle =
+  | 'academic'
+  | 'popular_science'
+  | 'news'
+  | 'social_media'
+  | 'strategic_investment'
+  | 'default';
+
 /**
  * /goal 自治模式输入（renderer 解析斜杠命令后随 envelope 带出）。
  * 字段与 web /api/run 的 body.goal 对齐；纯目标输入会在 renderer 补默认 review 判据。
@@ -38,8 +47,11 @@ export interface GoalRunInput {
  * Agent 运行选项（与 AgentRunOptions 对齐，但不引入 research 模块依赖）
  */
 export interface AppServiceRunOptions {
+  mode?: AppServiceRunMode;
   researchMode?: boolean;
+  reportStyle?: AppServiceReportStyle;
   agentOverrideId?: string | null;
+  turnSystemContext?: string[];
   toolScope?: WorkbenchToolScope;
   executionIntent?: ConversationExecutionIntent;
   runtimeInput?: RuntimeInputIntent;

@@ -2,8 +2,18 @@
 // Platform: IPC Types - 替代 Electron IPC 类型
 // ============================================================================
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type HandlerFn = (event: any, ...args: any[]) => any;
+interface PlatformIpcEvent {
+  sender?: unknown;
+  senderFrame?: unknown;
+  reply?: (channel: string, ...args: unknown[]) => void;
+  [key: string]: unknown;
+}
+
+export type IpcMainInvokeEvent = PlatformIpcEvent;
+export type IpcMainEvent = PlatformIpcEvent;
+export type HandlerFn = {
+  bivarianceHack(event: unknown, ...args: unknown[]): unknown | Promise<unknown>;
+}['bivarianceHack'];
 
 /**
  * IpcMain 接口 — 兼容 Electron ipcMain API
@@ -18,19 +28,9 @@ export interface IpcMain {
   removeAllListeners(channel?: string): void;
 }
 
-/** IpcMainInvokeEvent — ipcMain.handle 回调的第一个参数 */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type IpcMainInvokeEvent = any;
-
-/** IpcMainEvent — ipcMain.on 回调的第一个参数 */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type IpcMainEvent = any;
-
 // Electron namespace 兼容
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace Electron {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export type IpcMainInvokeEvent = any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export type IpcMainEvent = any;
+  export type IpcMainInvokeEvent = PlatformIpcEvent;
+  export type IpcMainEvent = PlatformIpcEvent;
 }

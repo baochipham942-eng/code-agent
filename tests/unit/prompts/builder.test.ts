@@ -56,7 +56,7 @@ describe('Prompt Builder', () => {
 
     it('should include identity in prompt', () => {
       const prompt = buildPrompt();
-      expect(prompt).toContain('Code Agent');
+      expect(prompt).toContain('Agent Neo');
     });
 
     it('should include base TOOLS_PROMPT', () => {
@@ -145,7 +145,7 @@ describe('Prompt Builder', () => {
 
       const prompt = promptText(getPromptForTask());
 
-      expect(prompt).toContain('Code Agent');
+      expect(prompt).toContain('Agent Neo');
       expect(prompt).toContain('<signed_remote_prompt_fragments>');
       expect(prompt).toContain('<policyAddon>');
       expect(prompt).toContain('Use the public hosted policy addendum.');
@@ -162,7 +162,7 @@ describe('Prompt Builder', () => {
 
       const prompt = promptText(getPromptForTask());
 
-      expect(prompt).toContain('Code Agent');
+      expect(prompt).toContain('Agent Neo');
       expect(prompt).not.toContain('replace the whole local system prompt');
       expect(prompt).not.toContain('<signed_remote_prompt_fragments>');
     });
@@ -173,7 +173,7 @@ describe('Prompt Builder', () => {
       const prompt = promptText(getPromptForTask());
 
       expect(prompt).toBe(promptText(SYSTEM_PROMPT));
-      expect(prompt).toContain('Code Agent');
+      expect(prompt).toContain('Agent Neo');
       expect(prompt).not.toContain('<signed_remote_prompt_fragments>');
     });
   });
@@ -190,7 +190,7 @@ describe('Prompt Builder', () => {
 
     it('should include identity components', () => {
       const prompt = buildPrompt();
-      expect(prompt).toContain('Code Agent');
+      expect(prompt).toContain('Agent Neo');
     });
 
     it('should have substantial content', () => {

@@ -9,7 +9,7 @@ import {
   DYNAMIC_BOUNDARY_MARKER,
 } from '../../../src/main/prompts/cacheBreakDetection';
 
-const STABLE = 'You are Code Agent.\n\n## Tools\n\nBash, Read, Write';
+const STABLE = 'You are Agent Neo.\n\n## Tools\n\nBash, Read, Write';
 const DYNAMIC = '## Rules\n\nBe concise.\n\n## Generative UI\n\nEnabled.';
 const PROMPT_WITH_BOUNDARY = `${STABLE}${DYNAMIC_BOUNDARY_MARKER}${DYNAMIC}`;
 

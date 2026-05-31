@@ -113,4 +113,15 @@ describe('todoParser extraction guard', () => {
     expect(parsed).toHaveLength(2);
     expect(parsed?.[0].content).toBe('修复内部判断 fallback');
   });
+
+  it('promotes checkbox lists when an explicit plan title is present', () => {
+    const parsed = parseTodos([
+      '## Plan: Stabilize task panel',
+      '- [ ] Load SessionTask records through IPC',
+      '- [ ] Render dependency updates',
+    ].join('\n'));
+
+    expect(parsed).toHaveLength(2);
+    expect(parsed?.[0].content).toBe('Load SessionTask records through IPC');
+  });
 });

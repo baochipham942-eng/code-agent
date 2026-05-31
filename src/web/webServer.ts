@@ -713,6 +713,18 @@ function registerHandlers(): void {
         case 'getMessages':
           data = await sm.getMessages(payload?.sessionId as string);
           break;
+        case 'getSessionTasks': {
+          const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
+          if (!sessionId) {
+            return {
+              success: false,
+              error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' },
+            };
+          }
+          const { listTasks } = await import('../main/services/planning/taskStore');
+          data = listTasks(sessionId);
+          break;
+        }
         case 'rewindToPrompt': {
           const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
           const userMessageId = typeof payload?.userMessageId === 'string' ? payload.userMessageId.trim() : '';

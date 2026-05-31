@@ -96,6 +96,9 @@ function stripCodeBlocks(content: string): string {
 }
 
 function hasExplicitTodoIntent(content: string): boolean {
+  if (extractPlanTitle(content) !== null) {
+    return true;
+  }
   return /(?:^|\n)\s*(?:#{1,6}\s*)?(?:todo(?:s)?|task list|execution plan|agent tasks|任务清单|执行计划|待办|行动项|工作计划)\s*[:：]?\s*(?:\n|$)/i
     .test(content);
 }

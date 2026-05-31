@@ -56,6 +56,7 @@ import {
   isExternalAgentEngine,
   resolveExternalEngineLaunch,
 } from '../services/agentEngine';
+import { listTasks } from '../services/planning/taskStore';
 
 function isTaskManagerOwnedRunState(status: SessionStatus): boolean {
   return status === 'running'
@@ -527,11 +528,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   }
 
   async getSessionTasks(sessionId: string): Promise<SessionTask[]> {
-    const db = getDatabase();
-    if (!db.isReady) {
-      return [];
-    }
-    return db.getSessionTasks(sessionId);
+    return listTasks(sessionId);
   }
 
   async rewindToPrompt(params: { sessionId: string; userMessageId: string }): Promise<PromptRewindResult> {

@@ -23,6 +23,7 @@ type SQLiteRow = Record<string, unknown>;
 
 type SyncOrigin = 'local' | 'remote';
 type MessageQueryOptions = { includeRewound?: boolean };
+type SessionOwnerFilter = string | null | undefined;
 
 export interface PromptRewindRecordInput {
   checkpointMessageId?: string | null;
@@ -141,6 +142,16 @@ export class SessionRepository {
   // Session CRUD
   // --------------------------------------------------------------------------
 
+  private applyOwnerFilter(filters: string[], params: unknown[], userId: SessionOwnerFilter): void {
+    if (userId === undefined) return;
+    if (userId === null) {
+      filters.push('s.user_id IS NULL');
+      return;
+    }
+    filters.push('s.user_id = ?');
+    params.push(userId);
+  }
+
   createSession(session: Session): void {
     const stmt = this.db.prepare(`
         INSERT INTO sessions (
@@ -190,28 +201,34 @@ export class SessionRepository {
     stmt.run(id, data.userId ?? null, data.title, data.modelConfig.provider, data.modelConfig.model, data.workingDirectory || null, data.type || 'chat', data.origin ? JSON.stringify(data.origin) : null, data.parentSessionId || null, data.sourceRunId || null, data.engine ? JSON.stringify(normalizeAgentEngineSession(data.engine)) : null, data.readOnly ? 1 : 0, data.retryOfSessionId || null, createdAt, updatedAt, data.isDeleted ? 1 : 0, this.resolveSyncedAt(options));
   }
 
-  getSession(sessionId: string, options?: { includeDeleted?: boolean }): StoredSession | null {
+  getSession(sessionId: string, options?: { includeDeleted?: boolean; userId?: string | null }): StoredSession | null {
+    const filters = ['s.id = ?', '(? = 1 OR s.is_deleted = 0)'];
+    const params: unknown[] = [sessionId, options?.includeDeleted ? 1 : 0];
+    this.applyOwnerFilter(filters, params, options?.userId);
+
     const stmt = this.db.prepare(`
       SELECT s.*,
              COUNT(m.id) as message_count,
              COALESCE(SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END), 0) as turn_count
       FROM sessions s
       LEFT JOIN messages m ON s.id = m.session_id AND ${activeMessageWhere('m')}
-      WHERE s.id = ? AND (? = 1 OR s.is_deleted = 0)
+      WHERE ${filters.join(' AND ')}
       GROUP BY s.id
     `);
 
-    const row = stmt.get(sessionId, options?.includeDeleted ? 1 : 0) as SQLiteRow | undefined;
+    const row = stmt.get(...params) as SQLiteRow | undefined;
     if (!row) return null;
 
     return this.rowToSession(row);
   }
 
-  listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false): StoredSession[] {
+  listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false, userId?: string | null): StoredSession[] {
     const filters = ['s.is_deleted = 0'];
+    const params: unknown[] = [];
     if (!includeArchived) {
       filters.push("s.status != 'archived'");
     }
+    this.applyOwnerFilter(filters, params, userId);
     const whereClause = `WHERE ${filters.join(' AND ')}`;
     const stmt = this.db.prepare(`
       SELECT s.*,
@@ -225,7 +242,7 @@ export class SessionRepository {
       LIMIT ? OFFSET ?
     `);
 
-    const rows = stmt.all(limit, offset) as SQLiteRow[];
+    const rows = stmt.all(...params, limit, offset) as SQLiteRow[];
     return rows.map((row) => this.rowToSession(row));
   }
 
@@ -1013,7 +1030,10 @@ export class SessionRepository {
   // Session Archive
   // --------------------------------------------------------------------------
 
-  listArchivedSessions(limit: number = 50, offset: number = 0): StoredSession[] {
+  listArchivedSessions(limit: number = 50, offset: number = 0, userId?: string | null): StoredSession[] {
+    const filters = ["s.status = 'archived'", 's.is_deleted = 0'];
+    const params: unknown[] = [];
+    this.applyOwnerFilter(filters, params, userId);
     const rows = this.db
       .prepare(
         `
@@ -1021,12 +1041,12 @@ export class SessionRepository {
              (SELECT COUNT(*) FROM messages WHERE session_id = s.id AND ${activeMessageWhere('messages')}) as message_count,
              (SELECT COUNT(*) FROM messages WHERE session_id = s.id AND role = 'user' AND ${activeMessageWhere('messages')}) as turn_count
       FROM sessions s
-      WHERE s.status = 'archived' AND s.is_deleted = 0
+      WHERE ${filters.join(' AND ')}
       ORDER BY s.updated_at DESC
       LIMIT ? OFFSET ?
     `
       )
-      .all(limit, offset) as SQLiteRow[];
+      .all(...params, limit, offset) as SQLiteRow[];
 
     return rows.map((row) => this.rowToSession(row));
   }

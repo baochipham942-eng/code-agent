@@ -130,6 +130,19 @@ describe('SessionRepository Agent Engine metadata', () => {
     expect(repo.getSession('owned-session')?.userId).toBe('user-1');
   });
 
+  it('scopes session reads and lists by owner user id', () => {
+    repo.createSession(makeSession({ id: 'user-1-session', userId: 'user-1', updatedAt: 3 }));
+    repo.createSession(makeSession({ id: 'user-2-session', userId: 'user-2', updatedAt: 2 }));
+    repo.createSession(makeSession({ id: 'anonymous-session', userId: null, updatedAt: 1 }));
+
+    expect(repo.listSessions(50, 0, false, 'user-1').map((session) => session.id)).toEqual(['user-1-session']);
+    expect(repo.listSessions(50, 0, false, 'user-2').map((session) => session.id)).toEqual(['user-2-session']);
+    expect(repo.listSessions(50, 0, false, null).map((session) => session.id)).toEqual(['anonymous-session']);
+
+    expect(repo.getSession('user-2-session', { userId: 'user-1' })).toBeNull();
+    expect(repo.getSession('anonymous-session', { userId: null })?.id).toBe('anonymous-session');
+  });
+
   it('updates engine metadata without changing the session model provider', () => {
     repo.createSession(
       makeSession({

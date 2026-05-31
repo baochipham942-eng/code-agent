@@ -439,13 +439,13 @@ export class DatabaseService {
     this.ensureDb();
     this.sessionRepo.createSessionWithId(id, data, options);
   }
-  getSession(sessionId: string, options?: { includeDeleted?: boolean }): import('./repositories').StoredSession | null {
+  getSession(sessionId: string, options?: { includeDeleted?: boolean; userId?: string | null }): import('./repositories').StoredSession | null {
     this.ensureDb();
     return this.sessionRepo.getSession(sessionId, options);
   }
-  listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false): import('./repositories').StoredSession[] {
+  listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false, userId?: string | null): import('./repositories').StoredSession[] {
     this.ensureDb();
-    return this.sessionRepo.listSessions(limit, offset, includeArchived);
+    return this.sessionRepo.listSessions(limit, offset, includeArchived, userId);
   }
   updateSession(sessionId: string, updates: Partial<Session>, options?: { syncOrigin?: 'local' | 'remote'; isDeleted?: boolean }): void {
     this.ensureDb();
@@ -592,9 +592,9 @@ export class DatabaseService {
     this.ensureDb();
     return this.sessionRepo.getSessionRuntimeState(sessionId);
   }
-  listArchivedSessions(limit: number = 50, offset: number = 0): import('./repositories').StoredSession[] {
+  listArchivedSessions(limit: number = 50, offset: number = 0, userId?: string | null): import('./repositories').StoredSession[] {
     this.ensureDb();
-    return this.sessionRepo.listArchivedSessions(limit, offset);
+    return this.sessionRepo.listArchivedSessions(limit, offset, userId);
   }
   archiveSession(sessionId: string): import('./repositories').StoredSession | null {
     this.ensureDb();

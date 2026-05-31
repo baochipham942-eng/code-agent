@@ -28,6 +28,24 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+let sessionReloadForAuthPromise: Promise<void> | null = null;
+
+async function reloadSessionsForAuthenticatedUser(): Promise<void> {
+  if (!sessionReloadForAuthPromise) {
+    sessionReloadForAuthPromise = (async () => {
+      try {
+        const { reloadSessionsForAuthChange } = await import('./sessionStore');
+        await reloadSessionsForAuthChange();
+      } catch (error) {
+        logger.warn('Failed to reload sessions after auth change', { error: getErrorMessage(error) });
+      } finally {
+        sessionReloadForAuthPromise = null;
+      }
+    })();
+  }
+  await sessionReloadForAuthPromise;
+}
+
 interface AuthState {
   // Auth state
   isAuthenticated: boolean;
@@ -116,6 +134,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           isLoading: false,
           showAuthModal: false,
         });
+        await reloadSessionsForAuthenticatedUser();
         return true;
       }
       set({ error: result?.error || '登录失败', isLoading: false });
@@ -137,6 +156,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           isLoading: false,
           showAuthModal: false,
         });
+        await reloadSessionsForAuthenticatedUser();
         return true;
       }
       set({ error: result?.error || '注册失败', isLoading: false });
@@ -168,6 +188,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           isLoading: false,
           showAuthModal: false,
         });
+        await reloadSessionsForAuthenticatedUser();
         return true;
       }
       set({ error: result?.error || '快捷登录失败', isLoading: false });
@@ -186,6 +207,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         isAuthenticated: false,
         syncStatus: { ...get().syncStatus, isEnabled: false },
       });
+      await reloadSessionsForAuthenticatedUser();
     } catch (error) {
       logger.error('Sign out failed', error);
     }
@@ -318,6 +340,9 @@ export async function initializeAuthStore(): Promise<void> {
     const status = await invokeDomain<AuthStatus>(IPC_DOMAINS.AUTH, 'getStatus');
     if (status) {
       store.setUser(status.user);
+      if (status.user) {
+        void reloadSessionsForAuthenticatedUser();
+      }
     }
   } catch (error) {
     logger.error('Failed to load auth status', error);
@@ -341,8 +366,10 @@ export async function initializeAuthStore(): Promise<void> {
       store.setUser(event.user);
       store.setLoading(false);
       store.setShowAuthModal(false);
+      void reloadSessionsForAuthenticatedUser();
     } else if (event.type === 'signed_out') {
       store.setUser(null);
+      void reloadSessionsForAuthenticatedUser();
     } else if (event.type === 'user_updated' && event.user) {
       store.setUser(event.user);
     }

@@ -7,8 +7,16 @@ const dbState = {
 };
 
 const dbMock = {
-  listSessions: vi.fn(() => dbState.sessions),
-  getSession: vi.fn((id: string) => dbState.sessions.find((session) => session.id === id) ?? null),
+  listSessions: vi.fn((_limit = 50, _offset = 0, _includeArchived = false, userId?: string | null) =>
+    dbState.sessions.filter((session) => userId === undefined || (userId === null ? session.userId == null : session.userId === userId))
+  ),
+  getSession: vi.fn((id: string, options?: { userId?: string | null }) =>
+    dbState.sessions.find((session) => {
+      if (session.id !== id) return false;
+      if (options?.userId === undefined) return true;
+      return options.userId === null ? session.userId == null : session.userId === options.userId;
+    }) ?? null
+  ),
   createSession: vi.fn(),
   createSessionWithId: vi.fn(),
   updateSession: vi.fn(),
@@ -54,6 +62,7 @@ vi.mock('../../../../src/main/services/infra/supabaseService', () => ({
 
 describe('SessionManager cloud sync notifications', () => {
   beforeEach(() => {
+    dbState.sessions = [];
     sendMock.mockReset();
     dbMock.listSessions.mockClear();
     dbMock.getSession.mockClear();
@@ -84,6 +93,7 @@ describe('SessionManager cloud sync notifications', () => {
   it('does not broadcast session:list-updated when cloud sync finds no metadata changes', async () => {
     dbState.sessions = [{
       id: 'session-1',
+      userId: 'user-1',
       title: 'Same',
       updatedAt: 100,
       createdAt: 10,
@@ -119,6 +129,7 @@ describe('SessionManager cloud sync notifications', () => {
   it('broadcasts session:list-updated once when cloud sync updates local metadata', async () => {
     dbState.sessions = [{
       id: 'session-1',
+      userId: 'user-1',
       title: 'Old',
       updatedAt: 100,
       createdAt: 10,
@@ -146,5 +157,36 @@ describe('SessionManager cloud sync notifications', () => {
 
     expect(dbMock.updateSession).toHaveBeenCalledTimes(1);
     expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('lists only sessions for the current auth user', async () => {
+    dbState.sessions = [
+      {
+        id: 'session-user-1',
+        userId: 'user-1',
+        title: 'Mine',
+        updatedAt: 100,
+        createdAt: 10,
+      },
+      {
+        id: 'session-user-2',
+        userId: 'user-2',
+        title: 'Other user',
+        updatedAt: 90,
+        createdAt: 9,
+      },
+    ];
+    supabaseLimitMock.mockResolvedValue({
+      data: [],
+      error: null,
+    });
+
+    const { SessionManager } = await import('../../../../src/main/services/infra/sessionManager');
+    const manager = new SessionManager();
+
+    const sessions = await manager.listSessions();
+
+    expect(dbMock.listSessions).toHaveBeenCalledWith(50, 0, false, 'user-1');
+    expect(sessions.map((session) => session.id)).toEqual(['session-user-1']);
   });
 });

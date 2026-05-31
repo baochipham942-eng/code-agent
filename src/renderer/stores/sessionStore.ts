@@ -864,6 +864,48 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
 let _initialized = false;
 
+function clearSessionStateForAuthChange(): void {
+  invalidatePendingSessionSwitches();
+  useAppshotsStore.getState().clear();
+  useAppStore.getState().setWorkingDirectory(null);
+  useAppStore.getState().setContextHealth(null);
+  useSessionStore.setState({
+    sessions: [],
+    currentSessionId: null,
+    messages: [],
+    todos: [],
+    streamSnapshot: null,
+    isLoading: false,
+    error: null,
+    unreadSessionIds: new Set<string>(),
+    runningSessionIds: new Set<string>(),
+    sessionRuntimes: new Map<string, SessionRuntimeSummary>(),
+    backgroundTasks: [],
+    hasOlderMessages: false,
+    isLoadingOlder: false,
+    sessionDesignBriefs: new Map<string, DesignBrief>(),
+  });
+}
+
+export async function reloadSessionsForAuthChange(): Promise<void> {
+  clearSessionStateForAuthChange();
+  if (!_initialized) {
+    return;
+  }
+
+  const store = useSessionStore.getState();
+  await store.loadSessions();
+  const { sessions, currentSessionId } = useSessionStore.getState();
+  if (currentSessionId) {
+    return;
+  }
+  if (sessions.length > 0) {
+    await store.switchSession(sessions[0].id);
+  } else {
+    await store.createSession('新对话', { workingDirectory: null });
+  }
+}
+
 export async function initializeSessionStore(): Promise<void> {
   if (_initialized) return;
   _initialized = true;

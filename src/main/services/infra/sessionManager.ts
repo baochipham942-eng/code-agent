@@ -179,6 +179,33 @@ export class SessionManager implements Disposable {
     session.workbenchSnapshot = this.buildWorkbenchSnapshot(session, session.messages);
   }
 
+  private currentOwnerUserId(): string | null {
+    return getAuthService().getCurrentUser()?.id ?? null;
+  }
+
+  private sessionMatchesOwner(session: Pick<Session, 'userId'>, userId: string | null): boolean {
+    return userId === null ? session.userId == null : session.userId === userId;
+  }
+
+  private getAccessibleStoredSession(
+    sessionId: string,
+    options: { includeDeleted?: boolean } = {},
+    userId: string | null = this.currentOwnerUserId()
+  ): StoredSession | null {
+    return getDatabase().getSession(sessionId, {
+      ...options,
+      userId
+    });
+  }
+
+  private assertAccessibleSession(sessionId: string, userId: string | null = this.currentOwnerUserId()): StoredSession {
+    const session = this.getAccessibleStoredSession(sessionId, {}, userId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+    return session;
+  }
+
   private isDuplicateMessageError(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);
     return message.includes('UNIQUE constraint failed: messages.id');
@@ -279,26 +306,31 @@ export class SessionManager implements Disposable {
    */
   async getSession(sessionId: string, messageLimit: number = 30): Promise<SessionWithMessages | null> {
     const db = getDatabase();
+    const ownerId = this.currentOwnerUserId();
 
     // 检查缓存
     if (this.sessionCache.has(sessionId)) {
       const cached = this.sessionCache.get(sessionId)!;
-      const backfilled = this.backfillMissingTelemetryUserPrompts(sessionId);
-      if (backfilled > 0) {
-        const reloadLimit = Math.max(messageLimit, cached.messages.length + backfilled);
-        cached.messages = db.getRecentMessages(sessionId, reloadLimit);
-        cached.messageCount = db.getSession(sessionId)?.messageCount ?? cached.messages.length;
-        this.updateCachedWorkbenchState(cached);
+      if (!this.sessionMatchesOwner(cached, ownerId)) {
+        this.sessionCache.delete(sessionId);
+      } else {
+        const backfilled = this.backfillMissingTelemetryUserPrompts(sessionId);
+        if (backfilled > 0) {
+          const reloadLimit = Math.max(messageLimit, cached.messages.length + backfilled);
+          cached.messages = db.getRecentMessages(sessionId, reloadLimit);
+          cached.messageCount = db.getSession(sessionId, { userId: ownerId })?.messageCount ?? cached.messages.length;
+          this.updateCachedWorkbenchState(cached);
+        }
+        return cached;
       }
-      return cached;
     }
 
-    let storedSession = db.getSession(sessionId);
+    let storedSession = db.getSession(sessionId, { userId: ownerId });
     if (!storedSession) return null;
 
     const backfilled = this.backfillMissingTelemetryUserPrompts(sessionId);
     if (backfilled > 0) {
-      storedSession = db.getSession(sessionId) ?? storedSession;
+      storedSession = db.getSession(sessionId, { userId: ownerId }) ?? storedSession;
     }
 
     // 懒加载：只加载最近 N 条消息（性能优化）
@@ -399,8 +431,9 @@ export class SessionManager implements Disposable {
   async listSessions(options: SessionListOptions = {}): Promise<StoredSession[]> {
     const db = getDatabase();
     const { limit = 50, offset = 0, includeArchived = false } = options;
+    const ownerId = this.currentOwnerUserId();
 
-    let sessions = db.listSessions(limit, offset, includeArchived);
+    let sessions = db.listSessions(limit, offset, includeArchived, ownerId);
 
     // 搜索过滤
     if (options.searchQuery) {
@@ -415,11 +448,12 @@ export class SessionManager implements Disposable {
 
     return sessions.map((session) => {
       const cached = this.sessionCache.get(session.id);
-      const recentMessages = cached?.messages.length ? cached.messages.slice(-12) : db.getRecentMessages(session.id, 12);
+      const ownerMatchedCached = cached && this.sessionMatchesOwner(cached, ownerId) ? cached : null;
+      const recentMessages = ownerMatchedCached?.messages.length ? ownerMatchedCached.messages.slice(-12) : db.getRecentMessages(session.id, 12);
 
       return {
         ...session,
-        workbenchSnapshot: this.buildWorkbenchSnapshot(cached || session, recentMessages)
+        workbenchSnapshot: this.buildWorkbenchSnapshot(ownerMatchedCached || session, recentMessages)
       };
     });
   }
@@ -429,7 +463,7 @@ export class SessionManager implements Disposable {
    */
   async listArchivedSessions(limit: number = 50, offset: number = 0): Promise<StoredSession[]> {
     const db = getDatabase();
-    return db.listArchivedSessions(limit, offset);
+    return db.listArchivedSessions(limit, offset, this.currentOwnerUserId());
   }
 
   /**
@@ -469,7 +503,8 @@ export class SessionManager implements Disposable {
       // 更新本地缓存（只更新元数据，不拉取消息）
       for (const cloudSession of cloudSessions as CloudSession[]) {
         const localSession = db.getSession(cloudSession.id, {
-          includeDeleted: true
+          includeDeleted: true,
+          userId: user.id
         });
 
         if (cloudSession.is_deleted) {
@@ -559,6 +594,8 @@ export class SessionManager implements Disposable {
     }
 
     const db = getDatabase();
+    const ownerId = this.currentOwnerUserId();
+    this.assertAccessibleSession(sessionId, ownerId);
     db.updateSession(sessionId, updates);
 
     // 更新缓存
@@ -594,6 +631,7 @@ export class SessionManager implements Disposable {
    */
   async deleteSession(sessionId: string): Promise<void> {
     const db = getDatabase();
+    this.assertAccessibleSession(sessionId);
     db.deleteSession(sessionId);
 
     // 清除缓存
@@ -614,6 +652,8 @@ export class SessionManager implements Disposable {
    */
   async archiveSession(sessionId: string): Promise<Session | null> {
     const db = getDatabase();
+    const ownerId = this.currentOwnerUserId();
+    this.assertAccessibleSession(sessionId, ownerId);
 
     // 归档会话
     db.archiveSession(sessionId);
@@ -625,7 +665,7 @@ export class SessionManager implements Disposable {
     this.notifySessionListUpdated();
 
     // 获取更新后的会话
-    const session = db.getSession(sessionId);
+    const session = db.getSession(sessionId, { userId: ownerId });
 
     // 记录审计日志
     db.logAuditEvent('session_archived', { sessionId }, sessionId);
@@ -638,6 +678,8 @@ export class SessionManager implements Disposable {
    */
   async unarchiveSession(sessionId: string): Promise<Session | null> {
     const db = getDatabase();
+    const ownerId = this.currentOwnerUserId();
+    this.assertAccessibleSession(sessionId, ownerId);
 
     // 取消归档
     db.unarchiveSession(sessionId);
@@ -649,7 +691,7 @@ export class SessionManager implements Disposable {
     this.notifySessionListUpdated();
 
     // 获取更新后的会话
-    const session = db.getSession(sessionId);
+    const session = db.getSession(sessionId, { userId: ownerId });
 
     // 记录审计日志
     db.logAuditEvent('session_unarchived', { sessionId }, sessionId);
@@ -722,6 +764,7 @@ export class SessionManager implements Disposable {
    */
   async addMessageToSession(sessionId: string, message: Message): Promise<void> {
     const db = getDatabase();
+    this.assertAccessibleSession(sessionId);
     let inserted = false;
     try {
       db.addMessage(sessionId, message);
@@ -799,11 +842,15 @@ export class SessionManager implements Disposable {
    */
   async getMessages(sessionId: string, limit?: number, options?: { includeRewound?: boolean }): Promise<Message[]> {
     const db = getDatabase();
+    if (!this.getAccessibleStoredSession(sessionId)) {
+      return [];
+    }
     return db.getMessages(sessionId, limit, undefined, options);
   }
 
   async replaceMessages(sessionId: string, messages: Message[]): Promise<void> {
     const db = getDatabase();
+    this.assertAccessibleSession(sessionId);
     db.replaceMessages(sessionId, messages);
 
     if (this.sessionCache.has(sessionId)) {
@@ -821,6 +868,9 @@ export class SessionManager implements Disposable {
     persistentSystemContext: string[];
   } | null {
     const db = getDatabase();
+    if (!this.getAccessibleStoredSession(sessionId)) {
+      return null;
+    }
     return db.getSessionRuntimeState(sessionId);
   }
 
@@ -829,6 +879,9 @@ export class SessionManager implements Disposable {
    */
   async getRecentMessages(sessionId: string, count: number, options?: { includeRewound?: boolean }): Promise<Message[]> {
     const db = getDatabase();
+    if (!this.getAccessibleStoredSession(sessionId)) {
+      return [];
+    }
     return db.getRecentMessages(sessionId, count, options);
   }
 
@@ -837,6 +890,12 @@ export class SessionManager implements Disposable {
    */
   async loadOlderMessages(sessionId: string, beforeTimestamp: number, limit: number = 30): Promise<{ messages: Message[]; hasMore: boolean }> {
     const db = getDatabase();
+    if (!this.getAccessibleStoredSession(sessionId)) {
+      return {
+        messages: [],
+        hasMore: false
+      };
+    }
     const messages = db.getMessagesBefore(sessionId, beforeTimestamp, limit);
     return {
       messages,
@@ -846,6 +905,7 @@ export class SessionManager implements Disposable {
 
   async applyPromptRewind(sessionId: string, userMessageId: string, record?: Parameters<ReturnType<typeof getDatabase>['applyPromptRewind']>[2]): Promise<ReturnType<ReturnType<typeof getDatabase>['applyPromptRewind']>> {
     const db = getDatabase();
+    this.assertAccessibleSession(sessionId);
     const result = db.applyPromptRewind(sessionId, userMessageId, record);
 
     this.sessionCache.delete(sessionId);
@@ -887,6 +947,7 @@ export class SessionManager implements Disposable {
     if (!this.currentSessionId) return;
 
     const db = getDatabase();
+    if (!this.getAccessibleStoredSession(this.currentSessionId)) return;
     db.saveTodos(this.currentSessionId, todos);
 
     // 更新缓存
@@ -901,6 +962,9 @@ export class SessionManager implements Disposable {
    */
   async getTodos(sessionId: string): Promise<TodoItem[]> {
     const db = getDatabase();
+    if (!this.getAccessibleStoredSession(sessionId)) {
+      return [];
+    }
     return db.getTodos(sessionId);
   }
 
@@ -1106,6 +1170,8 @@ export class SessionManager implements Disposable {
    */
   async mergeSessions(targetId: string, sourceId: string): Promise<void> {
     const db = getDatabase();
+    this.assertAccessibleSession(targetId);
+    this.assertAccessibleSession(sourceId);
 
     const sourceMessages = db.getMessages(sourceId);
     for (const message of sourceMessages) {

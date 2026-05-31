@@ -3,7 +3,7 @@
 > 核心代码：`src/main/agent/scriptRuntime/`（运行时）+ `src/main/tools/modules/multiagent/workflow.ts`（命令层入口）
 >
 > 上线：2026-05-29 ~ 05-30，P1→P4 四阶段，已合入 `origin/main`（feature 线 44 commit）。
-> 关联：[多 Agent 编排](./multiagent-system.md)、[IPC 通道](./ipc-channels.md)、[数据存储](./data-storage.md)。
+> 关联：[多 Agent 编排](./multiagent-system.md)、[IPC 通道](./ipc-channels.md)、[数据存储](./data-storage.md)、[Runtime Consolidation Spec](../specs/2026-05-31-runtime-consolidation-and-workflow.md)。
 
 ## 1. 定位：声明式 DAG → 命令式脚本运行时
 

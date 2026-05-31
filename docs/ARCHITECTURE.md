@@ -1,7 +1,7 @@
 # Agent Neo / Code Agent - 架构设计文档
 
-> 版本: 9.13 (对应 v0.16.88 + AI SDK 全量迁移收口 / Light Memory 质量闭环 / MCP 只读安全边界 / Alma 式渲染；接 v0.16.80 Goal Mode 三层闸 / Appshots / OS 沙箱)
-> 日期: 2026-05-26
+> 版本: 9.14 (对应 v0.16.88 + Dynamic Workflow / Runtime Consolidation / Fleet Observability / 死代码收敛；接 v0.16.80 Goal Mode 三层闸 / Appshots / OS 沙箱)
+> 日期: 2026-05-31
 > 作者: Lin Chen
 
 本文档是 Agent Neo（代码仓库仍名为 Code Agent）的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -22,6 +22,7 @@
 | [云端/同步历史架构](./architecture/cloud-architecture.md) | 历史 cloud task / orchestrator 设计归档；当前保留配置、更新、feature flag、cloud proxy 等服务 |
 | [多 Agent 编排](./architecture/multiagent-system.md) | Agent Team 并行执行、parallel inbox、dependsOn gate、run-level cancel、SpawnGuard |
 | [Dynamic Workflow](./architecture/dynamic-workflow.md) | 命令式脚本编排运行时：模型写 JS 脚本 → worker 沙箱后台执行、5 原语、forced 结构化、provider-aware 并发闸、token budget、跑前审批、resumable |
+| [Runtime Consolidation 2026-05-31](./architecture/runtime-consolidation-2026-05-31.md) | 2026-05-29~31 两天提交后的运行时、模型控制、验收面、observability 和旧入口删除总览 |
 | [Chat-Native Workbench](./architecture/workbench.md) | 聊天主链路能力工作台（ConversationEnvelope + InlineWorkbenchBar + Turn Timeline + Prompt Rewind），与 TaskPanel(sidecar) 分工 |
 | [Artifact Verification](./architecture/artifact-verification.md) | Game/Deck/Dashboard verifier、repair guard；旧 AcceptanceRunner / Delivery Review 已下线 |
 | [Activity Providers](./architecture/activity-providers.md) | OpenChronicle / Tauri Native Desktop / audio / screenshot-analysis 统一上下文 provider 边界 |

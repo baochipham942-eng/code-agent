@@ -116,6 +116,18 @@
 | **AI 模型** | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / Claude / Ollama | 多模型路由，本地 API Key 优先 |
 | **Agent Engine** | Native Agent Neo / Codex CLI / Claude Code | read-only 外部 engine、workspace-only cwd、task ledger 输出回带 |
 
+## 2026-05-29~31 架构增量（Dynamic Workflow / Runtime Consolidation）
+
+这一轮的主线是把复杂多 Agent 编排、模型运行时控制、真实 app-host 验收和旧入口删除收成同一张运行时地图。详细快照见 [Runtime Consolidation 2026-05-31](./runtime-consolidation-2026-05-31.md)，产品和验收合同见 [Runtime Consolidation Spec](../specs/2026-05-31-runtime-consolidation-and-workflow.md)。
+
+| 能力域 | 当前形态 | 详细文档 |
+|------|----------|----------|
+| Dynamic Workflow | `workflow` 工具让模型写 JS 编排脚本，在 worker 沙箱中用 `agent / parallel / pipeline / phase / log / budget` 执行；支持跑前审批、进度树、token budget、provider-aware 并发闸和显式 resume | [dynamic-workflow.md](./dynamic-workflow.md) |
+| Provider 运行时控制 | Model Settings 增加 per-provider `maxConcurrent` 和 `proxyMode`；ConfigService 保存后热更新 limiter/proxy override；workflow runtime 读取 provider cap 做全局公平分配 | [runtime-consolidation-2026-05-31.md](./runtime-consolidation-2026-05-31.md) |
+| App-host runtime smoke | pause/resume、UI cancel、tool cancel、session persistence、manual compact、Agent Team、real-agent replay/eval 进入固定验收矩阵 | [agent-runtime-smoke-matrix.md](../acceptance/agent-runtime-smoke-matrix.md) |
+| Fleet Observability | Sentry、Supabase telemetry、PostHog dashboard 和 admin-console errors/feedback/session detail 形成分发用户观测链路 | [observability.md](./observability.md) |
+| 旧入口删除 | legacy generation shell、MasterTask remnants、dead worker/teamManager、scenario AcceptanceRunner、TaskPanel ConnectorsCard、decorator tool framework 等下线，当前归属写入冗余审计 | [2026-05-30-redundancy-audit.md](../audits/2026-05-30-redundancy-audit.md) |
+
 ## 2026-05-15~17 架构增量（Agent Neo / 管理面 / 外部 Agent Engine / In-App 验证）
 
 这一轮的主线是把 Agent Neo 的产品壳、配置面、外部 agent 接力和交付验证接到现有 runtime 上。它复用 ConversationRuntime、ToolExecutor、TaskPanel、Settings 和 Capability Center，没有新建第二套 agent loop。

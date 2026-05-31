@@ -224,3 +224,39 @@ test('task panel loads persisted SessionTask records when a session is opened', 
 
   await expect(page.getByText(taskSubject).first()).toBeVisible({ timeout: 10_000 });
 });
+
+test('real agent loop creates SessionTask records that render in the task panel', async ({ page }) => {
+  test.skip(
+    process.env.CODE_AGENT_E2E_LOCAL_AGENT_MODEL !== '1',
+    'Manual/nightly smoke: set CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1 to run the deterministic local agent loop.',
+  );
+
+  const ssePromise = page.waitForResponse(
+    (resp) => resp.url().includes('/api/events'),
+    { timeout: 20_000 },
+  );
+
+  await page.goto('/');
+  await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
+  await ssePromise;
+  await createCleanSession(page);
+
+  const input = page.locator('[data-chat-input]');
+  await input.fill([
+    'E2E_TASK_PANEL_SESSION_TASKS',
+    '请做一个三步真实 agent 任务面板烟测：创建两个保留任务，并把旧路径标记为 cancelled。',
+  ].join(' '));
+
+  const sendButton = page.getByRole('button', { name: '发送消息' }).last();
+  await expect(sendButton).toBeEnabled({ timeout: 10_000 });
+  await sendButton.click();
+
+  await expect(page.getByText('梳理真实 agent 任务').first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('执行保留路径').first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('E2E task panel real-agent smoke completed').first()).toBeVisible({ timeout: 30_000 });
+
+  const closedTasksButton = page.getByRole('button', { name: /已完成 1 项/ });
+  await expect(closedTasksButton).toBeVisible({ timeout: 10_000 });
+  await closedTasksButton.click();
+  await expect(page.getByText('放弃旧路径').first()).toBeVisible({ timeout: 10_000 });
+});

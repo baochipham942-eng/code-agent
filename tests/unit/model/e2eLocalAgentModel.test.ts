@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildE2ELocalAgentModelResponse,
   shouldUseE2ELocalAgentModel,
+  shouldUseE2ELocalAgentModelForMessages,
 } from '../../../src/main/model/e2eLocalAgentModel';
 import type { ModelConfig, ToolDefinition } from '../../../src/shared/contract';
 import type { ModelMessage } from '../../../src/main/model/types';
@@ -28,6 +29,20 @@ const readTool: ToolDefinition = {
   permissionLevel: 'read',
 };
 
+const taskManagerTool: ToolDefinition = {
+  name: 'TaskManager',
+  description: 'Manage tasks',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      action: { type: 'string' },
+    },
+    required: ['action'],
+  },
+  requiresPermission: true,
+  permissionLevel: 'write',
+};
+
 describe('e2eLocalAgentModel', () => {
   it('requires both E2E env guards', () => {
     expect(shouldUseE2ELocalAgentModel({ CODE_AGENT_E2E: '1' })).toBe(false);
@@ -36,6 +51,13 @@ describe('e2eLocalAgentModel', () => {
       CODE_AGENT_E2E: '1',
       CODE_AGENT_E2E_LOCAL_AGENT_MODEL: '1',
     })).toBe(true);
+  });
+
+  it('allows the task panel smoke marker in E2E mode', () => {
+    const messages: ModelMessage[] = [{ role: 'user', content: 'E2E_TASK_PANEL_SESSION_TASKS' }];
+
+    expect(shouldUseE2ELocalAgentModelForMessages(messages, {})).toBe(false);
+    expect(shouldUseE2ELocalAgentModelForMessages(messages, { CODE_AGENT_E2E: '1' })).toBe(true);
   });
 
   it('calls the real Read tool before producing the final eval response', () => {
@@ -72,5 +94,64 @@ describe('e2eLocalAgentModel', () => {
     expect(final.type).toBe('text');
     expect(final.content).toContain('E2E real agent replay eval smoke completed');
     expect(final.content).toContain('E2E_REAL_AGENT_REPLAY_EVAL_FIXTURE');
+  });
+
+  it('drives the task panel smoke through TaskManager create and cancel calls', () => {
+    const first = buildE2ELocalAgentModelResponse(
+      [{ role: 'user', content: 'E2E_TASK_PANEL_SESSION_TASKS' }],
+      [taskManagerTool],
+      config,
+    );
+
+    expect(first.type).toBe('tool_use');
+    expect(first.toolCalls?.map((toolCall) => toolCall.name)).toEqual([
+      'TaskManager',
+      'TaskManager',
+      'TaskManager',
+    ]);
+    expect(first.toolCalls?.[0].arguments).toMatchObject({
+      action: 'create',
+      subject: '梳理真实 agent 任务',
+    });
+
+    const second = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'user', content: 'E2E_TASK_PANEL_SESSION_TASKS' },
+        {
+          role: 'tool',
+          toolCallId: 'e2e-task-panel-create-3',
+          content: 'Task #3 created:\n  Subject: 放弃旧路径',
+        },
+      ],
+      [taskManagerTool],
+      config,
+    );
+
+    expect(second.type).toBe('tool_use');
+    expect(second.toolCalls?.[0]).toMatchObject({
+      id: 'e2e-task-panel-cancel-old-path',
+      name: 'TaskManager',
+      arguments: {
+        action: 'update',
+        taskId: '3',
+        status: 'cancelled',
+      },
+    });
+
+    const final = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'user', content: 'E2E_TASK_PANEL_SESSION_TASKS' },
+        {
+          role: 'tool',
+          toolCallId: 'e2e-task-panel-cancel-old-path',
+          content: 'Task #3 updated:\n  Subject: 放弃旧路径\n  Status: cancelled',
+        },
+      ],
+      [taskManagerTool],
+      config,
+    );
+
+    expect(final.type).toBe('text');
+    expect(final.content).toContain('E2E task panel real-agent smoke completed');
   });
 });

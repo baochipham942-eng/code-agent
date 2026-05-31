@@ -42,7 +42,7 @@ import { GeminiProvider } from './providers/geminiProvider';
 import { VolcengineProvider } from './providers/volcengineProvider';
 import { LongCatProvider } from './providers/longcatProvider';
 import { XiaomiProvider } from './providers/xiaomiProvider';
-import { buildE2ELocalAgentModelResponse, shouldUseE2ELocalAgentModel } from './e2eLocalAgentModel';
+import { buildE2ELocalAgentModelResponse, shouldUseE2ELocalAgentModelForMessages } from './e2eLocalAgentModel';
 
 // Re-export PROVIDER_REGISTRY for external use
 export { PROVIDER_REGISTRY };
@@ -456,7 +456,7 @@ export class ModelRouter {
       throw new Error('Request was cancelled before starting');
     }
 
-    if (shouldUseE2ELocalAgentModel()) {
+    if (shouldUseE2ELocalAgentModelForMessages(messages)) {
       return buildE2ELocalAgentModelResponse(messages, tools, config, onStream);
     }
 

@@ -320,6 +320,29 @@ describe('protocolAdapter — buildProtocolContext', () => {
     expect(captured).toHaveLength(1);
     expect(captured[0].name).toBe('tool_use_started');
   });
+
+  it('emit 兼容 legacy event/data 签名', () => {
+    const captured: Array<{ name: string; data: unknown }> = [];
+    const legacy = {
+      workingDirectory: '/tmp',
+      requestPermission: async () => true,
+      emitEvent: (name: string, data: unknown) => {
+        captured.push({ name, data });
+      },
+    } as unknown as LegacyToolContext;
+    const ctx = buildProtocolContext({
+      workingDirectory: '/tmp',
+      legacyCtx: legacy,
+    });
+
+    (ctx.emit as unknown as (name: string, data: unknown) => void)('task_update', {
+      tasks: [{ id: '1', subject: '测试任务' }],
+    });
+
+    expect(captured).toEqual([
+      { name: 'task_update', data: { tasks: [{ id: '1', subject: '测试任务' }] } },
+    ]);
+  });
 });
 
 describe('protocolAdapter — buildCanUseToolFromLegacy', () => {

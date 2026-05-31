@@ -46,6 +46,7 @@ export interface StreamSnapshot {
 
 export interface SSEStreamOptions {
   providerName: string;
+  provider?: string;
   baseUrl: string;
   apiKey: string;
   requestBody: Record<string, unknown>;
@@ -188,6 +189,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
   const {
     providerName,
     baseUrl,
+    provider,
     apiKey,
     requestBody,
     onStream,
@@ -266,7 +268,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
         Accept: 'text/event-stream',
         ...extraHeaders,
       },
-      agent: agent || getHttpsAgent(url.href),
+      agent: agent || getHttpsAgent(url.href, provider),
       timeout,
     };
 

@@ -7,7 +7,7 @@ import { getTaskManager } from '../task';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
 import { getChannelManager } from './channelManager';
-import type { ChannelMessage, ChannelAttachment } from '../../shared/contract/channel';
+import type { ChannelMessage, ChannelAttachment, ChannelContext, ChannelSender } from '../../shared/contract/channel';
 import type { AttachmentCategory, MessageAttachment, Message, AgentEvent, ModelConfig } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { logCollector } from '../mcp/logCollector';
@@ -16,6 +16,41 @@ import { IngressPipeline, type IngressMessage } from './ingressPipeline';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 
 const logger = createLogger('ChannelAgentBridge');
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function toChannelSender(value: unknown): ChannelSender {
+  if (isRecord(value) && typeof value.id === 'string' && typeof value.name === 'string') {
+    return {
+      id: value.id,
+      name: value.name,
+      avatarUrl: typeof value.avatarUrl === 'string' ? value.avatarUrl : undefined,
+      isBot: typeof value.isBot === 'boolean' ? value.isBot : undefined,
+    };
+  }
+
+  return { id: 'api', name: 'API' };
+}
+
+function toChannelContext(value: unknown): ChannelContext {
+  if (
+    isRecord(value) &&
+    typeof value.chatId === 'string' &&
+    (value.chatType === 'p2p' || value.chatType === 'group' || value.chatType === 'channel')
+  ) {
+    return {
+      chatId: value.chatId,
+      chatType: value.chatType,
+      chatName: typeof value.chatName === 'string' ? value.chatName : undefined,
+      threadId: typeof value.threadId === 'string' ? value.threadId : undefined,
+      replyToMessageId: typeof value.replyToMessageId === 'string' ? value.replyToMessageId : undefined,
+    };
+  }
+
+  return { chatId: 'api', chatType: 'p2p' };
+}
 
 /**
  * 通道 Agent 桥接配置
@@ -168,12 +203,9 @@ export class ChannelAgentBridge {
     const pending = this.pendingChannelMessages.get(ingressKey);
     const message: ChannelMessage = pending?.message ?? {
       id: (meta.messageId as string) || uuidv4(),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): channelId 类型 ChannelType 是字面量联合 'telegram'|'webhook'|... 'api' 不在内但语义对应外部 API；应该把 'api' 加进 ChannelType 或专门用 ChannelType | 'api'
-      channelId: 'api' as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): meta 是 Record<string, unknown>，sender 应该 narrow 成 ChannelSender；走 zod 校验或在写入 metadata 前定型
-      sender: meta.sender as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同 sender，context 应 narrow 成 ChannelContext
-      context: meta.context as any,
+      channelId: 'api',
+      sender: toChannelSender(meta.sender),
+      context: toChannelContext(meta.context),
       content: msg.content,
       attachments: meta.attachments as ChannelAttachment[] | undefined,
       timestamp: msg.timestamp,

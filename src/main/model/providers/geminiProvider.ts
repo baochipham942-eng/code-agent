@@ -68,6 +68,7 @@ export class GeminiProvider implements Provider {
         },
         body: JSON.stringify(requestBody),
         signal,
+        provider: config.provider,
       });
 
       if (!response.ok) {

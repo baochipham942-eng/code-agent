@@ -3,7 +3,7 @@ import type { Request, Response } from 'express';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import type { AgentEvent, Message, MessageAttachment, MessageMetadata, Session, SessionStatus } from '../../shared/contract';
+import type { Message, MessageAttachment, MessageMetadata, Session, SessionStatus } from '../../shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
 import type {
   ConversationEnvelopeContext,
@@ -13,19 +13,16 @@ import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import type { ExecuteOptions } from '../../main/tools/toolExecutor';
 import type { DatabaseService } from '../../main/services/core/databaseService';
 import { isLocalTool, mapToolName } from '../../shared/localTools';
-import { broadcastSSE, sendSSE } from '../helpers/sse';
-import { createAgentRunSSEBatcher } from '../helpers/agentRunSSEBatcher';
+import { broadcastSSE } from '../helpers/sse';
 import { formatError } from '../helpers/utils';
 import {
   type CachedMessage,
-  type CachedToolCall,
   sessionMessages,
   SESSION_CACHE_MAX,
   inMemorySessions,
   dbAvailable,
   seedSessionMessagesFromPersisted,
 } from '../helpers/sessionCache';
-import { MessageDeltaAccumulator } from '../../main/protocol/messageDeltaAccumulator';
 import { buildGoalContract } from '../../main/agent/goalModeController';
 import {
   ClaudeCodeAdapter,
@@ -50,6 +47,8 @@ import type {
 import type { WebRouteLogger } from './routeTypes';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 import { extractArtifacts } from '../../main/agent/artifactExtractor';
+import { AgentRunController } from './agentRunController';
+import { AgentRunEventCollector } from './agentRunEventCollector';
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
 // key = toolCallId, value = { resolve, reject, timer }
@@ -136,16 +135,6 @@ function toWorkbenchMetadata(context?: ConversationEnvelopeContext): MessageMeta
   }
 
   return Object.keys(workbench).length > 0 ? { workbench } : undefined;
-}
-
-function isTerminalErrorEvent(event: AgentEvent): boolean {
-  if (event.type !== 'error') return false;
-  const payload = event.data && typeof event.data === 'object'
-    ? event.data as Record<string, unknown>
-    : {};
-  return payload.level !== 'warning'
-    && payload.severity !== 'warning'
-    && payload.terminal !== false;
 }
 
 function isDuplicateMessageError(error: unknown): boolean {
@@ -308,90 +297,17 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     const taskId = `task-${Date.now()}`;
     // 使用请求中的 sessionId，或生成一个临时的（web 模式兼容）
     const sessionId = body.sessionId || `web-session-${Date.now()}`;
-    let runSettled = false;
-    let clientDisconnected = false;
-    let runHadTerminalError = false;
-    let terminalCompletionEmitted = false;
+    const runController = new AgentRunController({
+      res,
+      sessionId,
+      activeAgentLoops,
+      logger,
+      tryGetSessionManager,
+    });
 
-    const canWriteSSE = () => !res.writableEnded && !res.destroyed;
-    const emitSSE = (event: string, data: unknown) => {
-      if (!canWriteSSE()) return;
-      try {
-        sendSSE(res, event, data);
-      } catch (error) {
-        logger.warn(`[AgentRouter] Failed to write SSE event ${event} for ${sessionId}:`, error);
-      }
-    };
-    const agentSSEBatcher = createAgentRunSSEBatcher(emitSSE, sessionId);
-    const messageAccumulator = new MessageDeltaAccumulator();
-    const emitAgentEvent = (event: AgentEvent): boolean => {
-      if (isTerminalErrorEvent(event)) {
-        runHadTerminalError = true;
-      }
-      // 终态完成事件（agent_complete/agent_cancelled）幂等去重：runFinalizer 经 onEvent 已发过一次后，
-      // route 末尾 line ~966 的兜底再发会重复（旧问题：clean run 双 agent_complete；cancel 时
-      // agent_cancelled 之后又跟一个 agent_complete）。这里"终态只发一次"，让 line ~966 的兜底仅在
-      // loop 自身未发终态（提前 return / 异常退出）时才真正生效。前端各 effect 把两种终态同等对待，
-      // 故 cancel 时只发 agent_cancelled 也能正常清处理态。
-      if (event.type === 'agent_complete' || event.type === 'agent_cancelled') {
-        if (terminalCompletionEmitted) {
-          return false;
-        }
-        terminalCompletionEmitted = true;
-      }
-      const snapshot = messageAccumulator.apply(sessionId, event);
-      if (event.type === 'message_delta' && !snapshot) {
-        return false;
-      }
-      const finalSnapshot = (
-        event.type === 'turn_end'
-        || event.type === 'agent_complete'
-        || event.type === 'agent_cancelled'
-      )
-        ? messageAccumulator.getSnapshot(sessionId, true)
-        : null;
-      if (finalSnapshot) {
-        agentSSEBatcher.emit({ type: 'message_snapshot', data: finalSnapshot });
-      }
-      agentSSEBatcher.emit(event);
-      if (finalSnapshot) {
-        messageAccumulator.clear(sessionId);
-      }
-      return true;
-    };
-    const updateRunSessionStatus = async (status: SessionStatus): Promise<void> => {
-      const updates = { status, updatedAt: Date.now() };
-      try {
-        const sm = await tryGetSessionManager();
-        if (sm?.updateSession) {
-          await sm.updateSession(sessionId, updates);
-        } else {
-          const { getDatabase } = await import('../../main/services/core/databaseService');
-          const db = getDatabase();
-          if (db.isReady) {
-            db.updateSession(sessionId, updates);
-          }
-        }
-        broadcastSSE('session:updated', { sessionId, updates });
-        broadcastSSE('session:list-updated', undefined);
-      } catch (error) {
-        logger.warn(`[AgentRouter] Failed to persist session status ${status} for ${sessionId}:`, error);
-      }
-    };
-    const cancelForDisconnect = () => {
-      if (runSettled || clientDisconnected) return;
-      clientDisconnected = true;
-      const activeLoop = activeAgentLoops.get(sessionId);
-      if (!activeLoop) return;
-      logger.warn(`[AgentRouter] SSE client disconnected, cancelling active run for ${sessionId}`);
-      void Promise.resolve(activeLoop.cancel('user')).catch((error) => {
-        logger.warn(`[AgentRouter] Failed to cancel disconnected run for ${sessionId}:`, error);
-      });
-    };
-
-    res.once('close', cancelForDisconnect);
-    emitSSE('task_start', { taskId, prompt, sessionId });
-    await updateRunSessionStatus('running');
+    res.once('close', runController.cancelForDisconnect);
+    runController.emitSSE('task_start', { taskId, prompt, sessionId });
+    await runController.updateSessionStatus('running');
 
     let externalEngineFailureContext: ExternalAgentEngineFailureContext | undefined;
 
@@ -469,10 +385,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           clientMessageId,
           attachmentsCount: body.attachments?.length ?? 0,
           messageMetadata: toWorkbenchMetadata(body.context),
-          emitEvent: (event) => emitAgentEvent(event),
+          emitEvent: (event) => runController.emitAgentEvent(event),
         });
-        agentSSEBatcher.flush();
-        await updateRunSessionStatus(result.status === 'failed' ? 'error' : 'completed');
+        runController.flush();
+        await runController.updateSessionStatus(result.status === 'failed' ? 'error' : 'completed');
         return;
       }
 
@@ -573,7 +489,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             const bridgeTool = mapToolName(toolName);
             const toolCallId = `bridge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-            emitSSE('tool_call_local', {
+            runController.emitSSE('tool_call_local', {
               toolCallId,
               tool: bridgeTool,
               originalTool: toolName,
@@ -612,115 +528,19 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         };
       }
 
-      // 收集助手回复（文本 + 工具调用 + 思考过程）
-      let assistantText = '';
-      let assistantThinking = '';
-      let consecutiveToolFailures = 0;
-      const assistantToolCalls: CachedToolCall[] = [];
-      const toolResultMessages: CachedMessage[] = [];
-      const loopEmittedAssistantMessageIds = new Set<string>();
-      let runCancelled = false;
-      // 追踪 text 和 tool_call 的交错顺序
-      const contentParts: Array<{ type: 'text'; text: string } | { type: 'tool_call'; toolCallId: string }> = [];
-      let lastPartType: 'text' | 'tool_call' | null = null;
+      const runEventCollector = new AgentRunEventCollector({
+        sessionId,
+        emitToolWarning: (data) => runController.emitSSE('tool_warning', data),
+      });
 
       const agentLoop = createAgentLoop(config, (event) => {
-        // 附带 sessionId 确保前端会话隔离。
-        // event.data 可能是对象或数组（如 todo_update 的 TodoItem[]），
-        // 数组不能 spread 进对象，需要区分处理。
-        const emitted = emitAgentEvent(event);
-        if (!emitted) return;
-        if (event.type === 'agent_cancelled') {
-          runCancelled = true;
-        }
-
-        if (event.type === 'message' && event.data && typeof event.data === 'object') {
-          const message = event.data as import('../../shared/contract').Message;
-          if (message.id && message.role === 'assistant') {
-            loopEmittedAssistantMessageIds.add(message.id);
-          }
-        }
-
-        // 收集 message_delta / stream_chunk 中的文本
-        if (event.type === 'message_delta' && event.data?.text) {
-          if (event.data.path === 'content') {
-            if (lastPartType !== 'text') {
-              contentParts.push({ type: 'text', text: '' });
-              lastPartType = 'text';
-            }
-            const lastPart = contentParts[contentParts.length - 1];
-            if (lastPart?.type === 'text') lastPart.text += event.data.text;
-            assistantText += event.data.text;
-          } else if (event.data.path === 'reasoning') {
-            assistantThinking += event.data.text;
-          }
-        }
-        if (event.type === 'stream_chunk' && event.data?.content) {
-          if (lastPartType !== 'text') {
-            contentParts.push({ type: 'text', text: '' });
-            lastPartType = 'text';
-          }
-          const lastPart = contentParts[contentParts.length - 1];
-          if (lastPart?.type === 'text') lastPart.text += event.data.content;
-          assistantText += event.data.content;
-        }
-        // 收集 reasoning/thinking
-        if (event.type === 'stream_reasoning' && event.data?.content) {
-          assistantThinking += event.data.content;
-        }
-        // 收集工具调用开始
-        if (event.type === 'tool_call_start' && event.data) {
-          const toolCallId = event.data.id || `tool-${assistantToolCalls.length}`;
-          assistantToolCalls.push({
-            id: toolCallId,
-            name: event.data.name || 'unknown',
-          });
-          contentParts.push({ type: 'tool_call', toolCallId });
-          lastPartType = 'tool_call';
-        }
-        // 收集工具调用结果 + 连续失败检测
-        if (event.type === 'tool_call_end' && event.data) {
-          const output = event.data.success
-            ? String(event.data.output || '').substring(0, 500)
-            : `Error: ${event.data.error || 'unknown'}`;
-          toolResultMessages.push({
-            id: `toolres-${Date.now()}-${toolResultMessages.length}`,
-            role: 'tool',
-            content: output,
-            timestamp: Date.now(),
-          });
-          // 回填 result 到对应的 toolCall（前端渲染状态需要）
-          const callId = event.data.toolCallId;
-          if (callId) {
-            const tc = assistantToolCalls.find(t => t.id === callId);
-            if (tc) {
-              tc.result = {
-                success: !!event.data.success,
-                output: event.data.success ? String(event.data.output || '').substring(0, 200) : undefined,
-                error: event.data.success ? undefined : String(event.data.error || 'unknown'),
-                metadata: event.data.metadata as Record<string, unknown> | undefined,
-              };
-            }
-          }
-          // 工具失败时通知前端
-          if (!event.data.success) {
-            consecutiveToolFailures++;
-            if (consecutiveToolFailures >= 2) {
-              emitSSE('tool_warning', {
-                message: `工具连续 ${consecutiveToolFailures} 次失败: ${event.data.error || 'unknown'}`,
-                level: 'warning',
-                sessionId,
-              });
-            }
-          } else {
-            consecutiveToolFailures = 0;
-          }
-        }
+        const emitted = runController.emitAgentEvent(event);
+        runEventCollector.observe(event, emitted);
       }, messages, sessionId, undefined, bridgeToolExecutor);
 
       // 存储当前 agentLoop 引用，供 cancel 使用
       activeAgentLoops.set(sessionId, agentLoop);
-      if (clientDisconnected) {
+      if (runController.disconnected) {
         logger.warn(`[AgentRouter] Client already disconnected before run started; cancelling ${sessionId}`);
         await Promise.resolve(agentLoop.cancel('user'));
       }
@@ -795,22 +615,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 无论 assistantText 是否为空都要缓存 userMsg，否则工具-only 轮次会丢失上下文
       const assistantMsgId = `msg-${Date.now()}-a`;
       const cached = [...(sessionMessages.get(sessionId) || []), userMsg];
-      const assistantArtifacts = assistantText ? extractArtifacts(assistantText) : [];
-      if (!runCancelled && (assistantText || assistantToolCalls.length > 0)) {
-        // 只在有交错时才附带 contentParts（纯文本或纯工具调用无需）
-        const hasInterleaving = contentParts.length > 1 || (contentParts.length === 1 && assistantToolCalls.length > 0 && assistantText);
+      const assistantArtifacts = runEventCollector.assistantText ? extractArtifacts(runEventCollector.assistantText) : [];
+      if (!runEventCollector.runCancelled && runEventCollector.hasAssistantOutput()) {
         cached.push({
           id: assistantMsgId,
           role: 'assistant',
-          content: assistantText,
+          content: runEventCollector.assistantText,
           timestamp: Date.now(),
-          toolCalls: assistantToolCalls.length > 0 ? assistantToolCalls : undefined,
-          thinking: assistantThinking || undefined,
-          contentParts: hasInterleaving ? contentParts : undefined,
+          toolCalls: runEventCollector.assistantToolCalls.length > 0 ? runEventCollector.assistantToolCalls : undefined,
+          thinking: runEventCollector.assistantThinking || undefined,
+          contentParts: runEventCollector.hasInterleaving() ? runEventCollector.contentParts : undefined,
           artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
         });
-        // 注意：toolResultMessages 不存入 sessionMessages，避免 role:'tool' 消息
-        // 被传入 createAgentLoop 导致类型不匹配。工具结果只存到 DB/Supabase。
       }
       sessionMessages.set(sessionId, cached);
 
@@ -855,7 +671,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           const sm = await tryGetSessionManager();
           const loopPersistedAssistant = await hasPersistedLoopAssistantMessage(
             sessionId,
-            loopEmittedAssistantMessageIds,
+            runEventCollector.loopEmittedAssistantMessageIds,
             sm,
             dbForSession,
             logger,
@@ -871,14 +687,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
                 attachments: userMsg.attachments,
               } as import('../../shared/contract').Message);
             }
-            if (!runCancelled && (assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistant) {
+            if (!runEventCollector.runCancelled && runEventCollector.hasAssistantOutput() && !loopPersistedAssistant) {
               await sm.addMessageToSession(sessionId, {
                 id: assistantMsgId,
                 role: 'assistant',
-                content: assistantText,
+                content: runEventCollector.assistantText,
                 timestamp: Date.now(),
-                toolCalls: assistantToolCalls.length > 0 ? assistantToolCalls : undefined,
-                thinking: assistantThinking || undefined,
+                toolCalls: runEventCollector.assistantToolCalls.length > 0 ? runEventCollector.assistantToolCalls : undefined,
+                thinking: runEventCollector.assistantThinking || undefined,
                 artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
               } as import('../../shared/contract').Message);
             }
@@ -895,14 +711,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
                 attachments: userMsg.attachments,
               } as import('../../shared/contract').Message);
             }
-            if (!runCancelled && (assistantText || assistantToolCalls.length > 0) && !loopPersistedAssistant) {
+            if (!runEventCollector.runCancelled && runEventCollector.hasAssistantOutput() && !loopPersistedAssistant) {
               db.addMessage(sessionId, {
                 id: assistantMsgId,
                 role: 'assistant',
-                content: assistantText,
+                content: runEventCollector.assistantText,
                 timestamp: Date.now(),
-                toolCalls: assistantToolCalls.length > 0 ? assistantToolCalls : undefined,
-                thinking: assistantThinking || undefined,
+                toolCalls: runEventCollector.assistantToolCalls.length > 0 ? runEventCollector.assistantToolCalls : undefined,
+                thinking: runEventCollector.assistantThinking || undefined,
                 artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
               } as import('../../shared/contract').Message);
             }
@@ -951,15 +767,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             });
           }
           // Insert assistant message
-          if (!runCancelled && (assistantText || assistantToolCalls.length > 0)) {
+          if (!runEventCollector.runCancelled && runEventCollector.hasAssistantOutput()) {
             await sb.supabase.from('messages').insert({
               id: assistantMsgId,
               session_id: sessionId,
               user_id: sb.userId,
               role: 'assistant',
-              content: assistantText,
-              tool_calls: assistantToolCalls.length > 0 ? JSON.stringify(assistantToolCalls) : null,
-              thinking: assistantThinking || null,
+              content: runEventCollector.assistantText,
+              tool_calls: runEventCollector.assistantToolCalls.length > 0 ? JSON.stringify(runEventCollector.assistantToolCalls) : null,
+              thinking: runEventCollector.assistantThinking || null,
               timestamp: Date.now(),
               updated_at: Date.now(),
               source_device_id: 'web',
@@ -974,17 +790,17 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         logger.warn('Failed to persist messages to Supabase:', (sbErr as Error).message);
       }
 
-      const finalStatus: SessionStatus = runCancelled
+      const finalStatus: SessionStatus = runEventCollector.runCancelled
         ? 'interrupted'
-        : runHadTerminalError
+        : runController.hadTerminalError
           ? 'error'
           : 'completed';
-      await updateRunSessionStatus(finalStatus);
+      await runController.updateSessionStatus(finalStatus);
 
       // session:updated 和 session:list-updated 已按运行状态广播
 
       // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
-      emitAgentEvent({ type: 'agent_complete', data: null });
+      runController.emitAgentEvent({ type: 'agent_complete', data: null });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       if (externalEngineFailureContext) {
@@ -994,9 +810,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           context: externalEngineFailureContext,
         }, logger);
       }
-      await updateRunSessionStatus('error');
-      if (!clientDisconnected) {
-        emitAgentEvent({
+      await runController.updateSessionStatus('error');
+      if (!runController.disconnected) {
+        runController.emitAgentEvent({
           type: 'error',
           data: {
             message,
@@ -1004,19 +820,17 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         });
       }
     } finally {
-      runSettled = true;
-      res.off('close', cancelForDisconnect);
+      runController.markSettled();
+      res.off('close', runController.cancelForDisconnect);
       activeAgentLoops.delete(sessionId);
-      agentSSEBatcher.destroy();
+      runController.destroy();
       // Telemetry: 结束会话追踪（写入聚合指标到 telemetry_sessions）
       try {
         const { getTelemetryCollector } = await import('../../main/telemetry');
         const collector = getTelemetryCollector();
         collector.endSession(sessionId);
       } catch { /* telemetry cleanup failure is non-fatal */ }
-      if (canWriteSSE()) {
-        res.end();
-      }
+      runController.endResponseIfOpen();
     }
   });
 

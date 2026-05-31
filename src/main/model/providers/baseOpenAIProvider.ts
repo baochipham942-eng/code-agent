@@ -162,6 +162,7 @@ export abstract class BaseOpenAIProvider implements Provider {
             body: safeJsonStringify(requestBody),
             signal,
             timeoutMs: options?.requestTimeoutMs,
+            provider: config.provider,
           });
 
           if (!response.ok) {
@@ -195,6 +196,7 @@ export abstract class BaseOpenAIProvider implements Provider {
         firstByteTimeout: options?.firstByteTimeoutMs,
         inactivityTimeout: options?.inactivityTimeoutMs,
         agent: this.getAgent(),
+        provider: config.provider,
         extraHeaders: this.getExtraHeaders(),
         endpoint: this.getEndpoint(),
       }),

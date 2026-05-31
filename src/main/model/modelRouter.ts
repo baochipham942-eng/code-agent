@@ -10,7 +10,7 @@ import type {
   ModelProvider
 } from '../../shared/contract';
 import { PROVIDER_REGISTRY } from './providerRegistry';
-import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS, PROVIDER_FALLBACK_CHAIN, modelHasCapability, type ModelDomainCapability } from '../../shared/constants';
+import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS, modelHasCapability, type ModelDomainCapability } from '../../shared/constants';
 import { isFallbackEligible } from './providers/retryStrategy';
 import { getModelMaxOutputTokens } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
@@ -18,8 +18,27 @@ import { getInferenceCache } from './inferenceCache';
 import { getAdaptiveRouter } from './adaptiveRouter';
 import { getConfigService } from '../services/core/configService';
 import { getProviderHealthMonitor } from './providerHealthMonitor';
-import { needsArtifactTaskBrief } from '../prompts/artifactGeneration';
 import { combineAbortSignals, createTimedAbortController } from '../agent/shutdownProtocol';
+import {
+  ARTIFACT_UNUSABLE_RESPONSE_PATTERN,
+  PERSISTENT_PROVIDER_ERROR_PATTERN,
+  classifyProviderFallbackReason,
+  extractMessageText,
+  formatFallbackReason,
+  getFallbackChainForRequest,
+  hasArtifactFileWriteRequiredMarker,
+  hasArtifactRepairToolBlockedMarker,
+  hasArtifactValidationFailureMarker,
+  hasExplicitArtifactRepairIntent,
+  isArtifactLikeRequest,
+  shouldAllowArtifactFallbackAfterSelectedRetry,
+  shouldKeepArtifactRequestOnSelectedProvider,
+  shouldPreferNonStreamingArtifactFileTurn,
+  shouldPreferNonStreamingArtifactTurn,
+  shouldRetryArtifactNonStreaming,
+  shouldRetrySelectedArtifactProvider,
+  type ProviderFallbackCategory,
+} from './modelRouterPolicy';
 
 const logger = createLogger('ModelRouter');
 import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, MessageContent } from './types';
@@ -79,19 +98,6 @@ const ARTIFACT_REPAIR_WRITE_INACTIVITY_TIMEOUT_MS = envTimeoutMs('ARTIFACT_REPAI
 const ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS = process.env.NODE_ENV === 'test'
   ? [0, 0]
   : [1_000, 2_500];
-const PERSISTENT_PROVIDER_ERROR_PATTERN = /401|403|unauthorized|forbidden|incorrect api key|invalid[_ ]api[_ ]key|model_not_allowed|subscription plan does not include access|insufficient balance|余额不足/i;
-const ARTIFACT_UNUSABLE_RESPONSE_PATTERN = /empty artifact response/i;
-
-type ProviderFallbackCategory =
-  | 'timeout'
-  | 'rate_limit'
-  | 'quota'
-  | 'auth'
-  | 'provider_unavailable'
-  | 'network'
-  | 'artifact_response'
-  | 'model'
-  | 'unknown';
 
 // ----------------------------------------------------------------------------
 // Model Router
@@ -126,24 +132,6 @@ export class ModelRouter {
     getProviderHealthMonitor().recordFailure(provider);
     getProviderHealthMonitor().recordFailure(provider);
     getProviderHealthMonitor().recordFailure(provider);
-  }
-
-  private classifyProviderFallbackReason(message: string, code?: string): ProviderFallbackCategory {
-    const normalized = `${message} ${code || ''}`.toLowerCase();
-    if (/timeout|timed out|etimedout|first-byte timeout|inactivity timeout/.test(normalized)) return 'timeout';
-    if (/429|rate.?limit|too many requests|requests per minute/.test(normalized)) return 'rate_limit';
-    if (/402|insufficient[_ ]quota|insufficient balance|payment required|quota exceeded|billing|credit|余额不足/.test(normalized)) return 'quota';
-    if (/401|403|unauthorized|forbidden|invalid[_ ]api[_ ]key|invalid token|authentication/.test(normalized)) return 'auth';
-    if (/no available accounts|503|502|504|service unavailable|bad gateway|gateway timeout|overloaded|capacity/.test(normalized)) return 'provider_unavailable';
-    if (/econnreset|econnrefused|enotfound|eai_again|socket hang up|socket disconnected|secure tls connection|network request failed|network error|fetch failed/.test(normalized)) return 'network';
-    if (ARTIFACT_UNUSABLE_RESPONSE_PATTERN.test(message)) return 'artifact_response';
-    if (/reasoning loop detected|repetitive reasoning|model degeneration/.test(normalized)) return 'model';
-    if (/model_not_allowed|model.*(?:deprecated|decommissioned|retired|not found|does not exist)/.test(normalized)) return 'model';
-    return 'unknown';
-  }
-
-  private formatFallbackReason(message: string): string {
-    return message.split('\n')[0]?.slice(0, 240) || 'unknown';
   }
 
   // --------------------------------------------------------------------------
@@ -270,10 +258,10 @@ export class ModelRouter {
     messages: ModelMessage[],
     config: ModelConfig,
   ): ModelConfig | null {
-    if (!this.hasArtifactFileWriteRequiredMarker(messages)) return null;
-    if (this.isArtifactLikeRequest(messages)) return null;
+    if (!hasArtifactFileWriteRequiredMarker(messages)) return null;
+    if (isArtifactLikeRequest(messages)) return null;
 
-    const chain = this.getFallbackChainForRequest(messages, config.provider);
+    const chain = getFallbackChainForRequest(messages, config.provider);
     if (!chain || chain.length === 0) return null;
 
     for (const fallback of chain) {
@@ -298,28 +286,6 @@ export class ModelRouter {
     }
 
     return null;
-  }
-
-  private getFallbackChainForRequest(
-    messages: ModelMessage[],
-    provider: ModelProvider,
-  ): Array<{ provider: string; model: string }> {
-    const chain = PROVIDER_FALLBACK_CHAIN[provider];
-    if (!chain || chain.length === 0) return [];
-    if (!this.isArtifactLikeRequest(messages)) return chain;
-
-    const artifactPriority = new Map([
-      ['zhipu', 0],
-      ['deepseek', 1],
-      ['openai', 2],
-      ['moonshot', 3],
-    ]);
-
-    return [...chain].sort((a, b) => {
-      const aRank = artifactPriority.get(a.provider) ?? 99;
-      const bRank = artifactPriority.get(b.provider) ?? 99;
-      return aRank - bRank;
-    });
   }
 
   /**
@@ -545,15 +511,15 @@ export class ModelRouter {
         throw primaryErr;
       }
 
-      const fallbackCategory = this.classifyProviderFallbackReason(errMsg, errCode);
-      const fallbackReason = this.formatFallbackReason(errMsg);
-      const artifactLikeRequest = this.isArtifactLikeRequest(messages);
+      const fallbackCategory = classifyProviderFallbackReason(errMsg, errCode);
+      const fallbackReason = formatFallbackReason(errMsg);
+      const artifactLikeRequest = isArtifactLikeRequest(messages);
       const artifactRepairActive = normalizedOptions?.artifactRepairActive === true;
 
       if (
         artifactRepairActive
         && artifactLikeRequest
-        && !this.shouldRetrySelectedArtifactProvider(fallbackCategory, normalizedOptions)
+        && !shouldRetrySelectedArtifactProvider(fallbackCategory, normalizedOptions)
       ) {
         logger.warn(
           `[ModelRouter] Artifact repair failed with non-transient ${fallbackCategory}; keeping selected provider/model: ${fallbackReason}`
@@ -561,7 +527,7 @@ export class ModelRouter {
         throw primaryErr;
       }
 
-      if (this.shouldKeepArtifactRequestOnSelectedProvider(messages, fallbackCategory)) {
+      if (shouldKeepArtifactRequestOnSelectedProvider(messages, fallbackCategory)) {
         const selectedProviderRetry = await this.retrySelectedProviderForArtifactTransient(
           messages,
           tools,
@@ -575,7 +541,7 @@ export class ModelRouter {
           return selectedProviderRetry;
         }
 
-        if (!this.shouldAllowArtifactFallbackAfterSelectedRetry(fallbackCategory, normalizedOptions)) {
+        if (!shouldAllowArtifactFallbackAfterSelectedRetry(fallbackCategory, normalizedOptions)) {
           logger.warn(
             `[ModelRouter] Provider ${effectiveConfig.provider} hit artifact transient error; keeping selected provider/model instead of cross-provider fallback: ${fallbackReason}`
           );
@@ -594,7 +560,7 @@ export class ModelRouter {
         throw primaryErr;
       }
 
-      const chain = this.getFallbackChainForRequest(messages, effectiveConfig.provider);
+      const chain = getFallbackChainForRequest(messages, effectiveConfig.provider);
       if (!chain || chain.length === 0) {
         throw primaryErr;
       }
@@ -739,7 +705,7 @@ export class ModelRouter {
     try {
       return await this._callProvider(messages, tools, config, onStream, signal, options);
     } catch (err) {
-      if (!this.shouldRetryArtifactNonStreaming(messages, err, onStream, signal, options)) {
+      if (!shouldRetryArtifactNonStreaming(messages, err, onStream, signal, options)) {
         throw err;
       }
 
@@ -763,52 +729,6 @@ export class ModelRouter {
     }
   }
 
-  private shouldRetryArtifactNonStreaming(
-    messages: ModelMessage[],
-    err: unknown,
-    onStream?: StreamCallback,
-    signal?: AbortSignal,
-    options?: InferenceOptions,
-  ): boolean {
-    if (!onStream) return false;
-    if (signal?.aborted) return false;
-    if (options?.forceNonStreaming === true) return false;
-    if (!this.isArtifactLikeRequest(messages)) return false;
-    if (this.hasArtifactRepairToolBlockedMarker(messages)) return false;
-
-    const errMsg = err instanceof Error ? err.message : String(err);
-    return /stream inactivity timeout|first-byte timeout|流式响应无内容|stream ended before \[DONE\]|refusing to execute incomplete tool arguments|invalid streamed tool arguments/i.test(errMsg);
-  }
-
-  private shouldKeepArtifactRequestOnSelectedProvider(
-    messages: ModelMessage[],
-    fallbackCategory: ProviderFallbackCategory,
-  ): boolean {
-    if (!this.isArtifactLikeRequest(messages)) return false;
-    return fallbackCategory !== 'quota'
-      && fallbackCategory !== 'auth'
-      && fallbackCategory !== 'model'
-      && fallbackCategory !== 'artifact_response';
-  }
-
-  private shouldRetrySelectedArtifactProvider(
-    fallbackCategory: ProviderFallbackCategory,
-    options?: InferenceOptions,
-  ): boolean {
-    return fallbackCategory === 'provider_unavailable'
-      || fallbackCategory === 'network'
-      || fallbackCategory === 'rate_limit'
-      || (fallbackCategory === 'timeout' && options?.artifactRepairActive === true);
-  }
-
-  private shouldAllowArtifactFallbackAfterSelectedRetry(
-    fallbackCategory: ProviderFallbackCategory,
-    options?: InferenceOptions,
-  ): boolean {
-    return options?.artifactRepairActive === true
-      && this.shouldRetrySelectedArtifactProvider(fallbackCategory, options);
-  }
-
   private async retrySelectedProviderForArtifactTransient(
     messages: ModelMessage[],
     tools: ToolDefinition[],
@@ -818,7 +738,7 @@ export class ModelRouter {
     signal?: AbortSignal,
     options?: InferenceOptions,
   ): Promise<ModelResponse | null> {
-    if (!this.shouldRetrySelectedArtifactProvider(fallbackCategory, options)) return null;
+    if (!shouldRetrySelectedArtifactProvider(fallbackCategory, options)) return null;
     if (signal?.aborted) return null;
 
     // P0: skip retry when the provider was just marked unavailable by the
@@ -863,11 +783,11 @@ export class ModelRouter {
       } catch (retryErr) {
         const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
         const retryCode = (retryErr as NodeJS.ErrnoException).code;
-        const retryCategory = this.classifyProviderFallbackReason(retryMsg, retryCode);
+        const retryCategory = classifyProviderFallbackReason(retryMsg, retryCode);
         logger.warn(
           `[ModelRouter] Selected artifact provider retry ${attempt + 1} failed: ${retryMsg.split('\n')[0]}`
         );
-        if (!this.shouldRetrySelectedArtifactProvider(retryCategory, options)) {
+        if (!shouldRetrySelectedArtifactProvider(retryCategory, options)) {
           throw retryErr;
         }
 
@@ -931,7 +851,7 @@ export class ModelRouter {
       };
     }
 
-    if (this.hasArtifactRepairToolBlockedMarker(messages)) {
+    if (hasArtifactRepairToolBlockedMarker(messages)) {
       logger.info('[ModelRouter] Artifact repair blocked-tool recovery detected; using shorter streaming timeout');
       return {
         ...options,
@@ -943,7 +863,7 @@ export class ModelRouter {
       };
     }
 
-    if (this.hasArtifactValidationFailureMarker(messages)) {
+    if (hasArtifactValidationFailureMarker(messages)) {
       logger.info('[ModelRouter] Artifact validation repair turn detected; preferring non-streaming inference with shorter timeout');
       return {
         ...options,
@@ -956,7 +876,7 @@ export class ModelRouter {
       };
     }
 
-    if (this.hasExplicitArtifactRepairIntent(messages)) {
+    if (hasExplicitArtifactRepairIntent(messages)) {
       logger.info('[ModelRouter] Explicit artifact repair turn detected; preferring non-streaming inference with shorter timeout');
       return {
         ...options,
@@ -969,7 +889,7 @@ export class ModelRouter {
       };
     }
 
-    if (this.shouldPreferNonStreamingArtifactFileTurn(messages, onStream, options)) {
+    if (shouldPreferNonStreamingArtifactFileTurn(messages, onStream, options)) {
       // v2 streaming-first: 保持 SSE chunk 不断流，避开上游网关对长 non-streaming 响应的 ~168s 硬超时（实测 Xiaomi sgp）。
       // tool-arg 解析失败时由 _callProviderWithArtifactFallback 接住，自动退到 forceNonStreaming 重试一次。
       logger.info('[ModelRouter] Artifact file-generation turn detected; v2 streaming-first (non-streaming fallback on tool-arg parse error)');
@@ -986,9 +906,9 @@ export class ModelRouter {
     const shouldDisableProviderRetry =
       Boolean(onStream) &&
       options?.forceNonStreaming !== true &&
-      this.isArtifactLikeRequest(messages);
+      isArtifactLikeRequest(messages);
 
-    if (!this.shouldPreferNonStreamingArtifactTurn(messages, onStream, options)) {
+    if (!shouldPreferNonStreamingArtifactTurn(messages, onStream, options)) {
       return shouldDisableProviderRetry
         ? {
             ...options,
@@ -1018,7 +938,7 @@ export class ModelRouter {
     response: ModelResponse,
     config: ModelConfig,
   ): void {
-    if (!this.isArtifactLikeRequest(messages)) return;
+    if (!isArtifactLikeRequest(messages)) return;
     if (!this.isEmptyTextResponse(response)) return;
 
     throw new Error(
@@ -1030,138 +950,6 @@ export class ModelRouter {
     if (response.type !== 'text') return false;
     if (response.toolCalls && response.toolCalls.length > 0) return false;
     return !response.content || response.content.trim().length === 0;
-  }
-
-  private isArtifactLikeRequest(messages: ModelMessage[]): boolean {
-    if (this.hasArtifactRepairContextMarker(messages)) return true;
-
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const message = messages[i];
-      if (message.role !== 'user') continue;
-
-      const text = this.extractMessageText(message);
-      if (needsArtifactTaskBrief(text)) return true;
-    }
-    return false;
-  }
-
-  private hasArtifactRepairContextMarker(messages: ModelMessage[]): boolean {
-    return messages.some((message) => {
-      const text = this.extractMessageText(message);
-      return text.includes('<artifact-validation-failed')
-        || text.includes('<artifact-repair-')
-        || text.includes('<tool-admission-repair>')
-        || text.includes('Artifact validation failed for ');
-    });
-  }
-
-  private shouldPreferNonStreamingArtifactFileTurn(
-    messages: ModelMessage[],
-    onStream?: StreamCallback,
-    options?: InferenceOptions,
-  ): boolean {
-    if (!onStream) return false;
-    if (options?.forceNonStreaming === true) return false;
-    if (!this.isArtifactLikeRequest(messages)) return false;
-    return this.hasExplicitFileArtifactIntent(messages);
-  }
-
-  private hasArtifactRepairToolBlockedMarker(messages: ModelMessage[]): boolean {
-    return messages.some((message) => {
-      if (message.role !== 'system' && message.role !== 'tool') return false;
-      const text = this.extractMessageText(message);
-      return text.includes('<artifact-repair-recovery>')
-        || text.includes('<artifact-repair-admission-blocked>')
-        || text.includes('<artifact-repair-tool-blocked>');
-    });
-  }
-
-  private hasArtifactValidationFailureMarker(messages: ModelMessage[]): boolean {
-    return messages.some((message) => {
-      if (message.role !== 'system' && message.role !== 'tool') return false;
-      const text = this.extractMessageText(message);
-      return text.includes('<artifact-validation-failed');
-    });
-  }
-
-  private hasExplicitFileArtifactIntent(messages: ModelMessage[]): boolean {
-    const explicitFileIntentPattern = /保存到|写到|写入|输出到|生成到|单文件|single[-\s]?file|\.html\b|\.tsx?\b|\.jsx?\b|\.css\b|\.md\b|\/[\w.-]+|\\[\w .-]+|file path|save (it )?to|write (it )?to/i;
-
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const message = messages[i];
-      if (message.role !== 'user' && message.role !== 'system') continue;
-      const text = this.extractMessageText(message);
-      if (!text) continue;
-      if (text.includes('<artifact-file-write-required>')) return true;
-      if (message.role === 'user' && explicitFileIntentPattern.test(text)) return true;
-    }
-
-    return false;
-  }
-
-  private hasExplicitArtifactRepairIntent(messages: ModelMessage[]): boolean {
-    const repairIntentPattern = /\b(fix|repair|patch|correct|restore)\b|修复|修正|修好|改好|失败|不通过|报错|不过/i;
-    const artifactTargetPattern = /\b\w[\w.-]*\.(html|tsx?|jsx?|css|md|json|csv|xlsx?|pptx?|docx?)\b|\/[\w .@-]+\/[\w .@-]+\.(html|tsx?|jsx?|css|md|json|csv|xlsx?|pptx?|docx?)|\\[\w .@-]+\\[\w .@-]+\.(html|tsx?|jsx?|css|md|json|csv|xlsx?|pptx?|docx?)/i;
-
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const message = messages[i];
-      if (message.role !== 'user') continue;
-      const text = this.extractMessageText(message);
-      if (!text) continue;
-      if (repairIntentPattern.test(text) && artifactTargetPattern.test(text)) return true;
-    }
-
-    return false;
-  }
-
-  private hasArtifactFileWriteRequiredMarker(messages: ModelMessage[]): boolean {
-    return messages.some((message) =>
-      message.role === 'system' &&
-      this.extractMessageText(message).includes('<artifact-file-write-required>')
-    );
-  }
-
-  private shouldPreferNonStreamingArtifactTurn(
-    messages: ModelMessage[],
-    onStream?: StreamCallback,
-    options?: InferenceOptions,
-  ): boolean {
-    if (!onStream) return false;
-    if (options?.forceNonStreaming === true) return false;
-    if (!this.isArtifactLikeRequest(messages)) return false;
-    if (!this.hasToolResultContext(messages)) return false;
-    return this.hasIncompleteArtifactToolStream(messages);
-  }
-
-  private hasToolResultContext(messages: ModelMessage[]): boolean {
-    return messages.some((message) => message.role === 'tool');
-  }
-
-  private hasIncompleteArtifactToolStream(messages: ModelMessage[]): boolean {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const message = messages[i];
-      if (message.role !== 'tool') continue;
-
-      const content = this.extractMessageText(message).toLowerCase();
-      return (
-        content.includes('stream ended before [done]') ||
-        content.includes('invalid streamed tool arguments') ||
-        content.includes('refusing to execute incomplete tool arguments') ||
-        content.includes('工具参数不完整') ||
-        content.includes('代码完整性警告')
-      );
-    }
-    return false;
-  }
-
-  private extractMessageText(message: ModelMessage): string {
-    if (typeof message.content === 'string') return message.content;
-    // 防御非 string 非 array 的 content（mimo 等 provider 偶尔返回 object/undefined）
-    if (!Array.isArray(message.content)) return '';
-    return message.content
-      .filter((part) => part.type === 'text' && typeof part.text === 'string')
-      .map((part) => part.text)
-      .join('\n');
   }
 
   /**

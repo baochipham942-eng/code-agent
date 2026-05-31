@@ -200,8 +200,7 @@ export const runCommand = new Command('run')
               terminalOutput.success('结构化输出验证通过 ✓');
             }
             // 将验证过的 JSON 附加到 result
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): result 类型 (AgentRunResult) 没声明 structuredOutput 字段，应该把它加进 AgentRunResult 接口或包装成扩展类型 RunResultWithSchema
-            (result as any).structuredOutput = extracted;
+            result.structuredOutput = extracted;
             break;
           }
 
@@ -247,8 +246,7 @@ export const runCommand = new Command('run')
           structuredOutput: extracted,
           schemaValid: validation?.valid ?? false,
           schemaErrors: validation?.valid === false ? validation.errors : undefined,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): jsonOutput.result 接收 AgentRunResult，但这里扩展了 structuredOutput/schemaValid/schemaErrors 字段；同上 RunResultWithSchema 重构
-        } as any);
+        });
       }
 
       // 设置退出码并退出

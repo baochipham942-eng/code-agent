@@ -85,6 +85,10 @@ describe('BaseOpenAIProvider', () => {
 
     expect(result).toMatchObject({ type: 'text', content: 'recovered' });
     expect(mockElectronFetch).toHaveBeenCalledTimes(2);
+    expect(mockElectronFetch).toHaveBeenCalledWith(
+      'https://example.test/v1/chat/completions',
+      expect.objectContaining({ provider: 'openai' }),
+    );
   });
 
   it('honors disabled transient retry for non-streaming requests', async () => {
@@ -110,5 +114,9 @@ describe('BaseOpenAIProvider', () => {
     ).rejects.toThrow('socket hang up');
 
     expect(mockElectronFetch).toHaveBeenCalledTimes(1);
+    expect(mockElectronFetch).toHaveBeenCalledWith(
+      'https://example.test/v1/chat/completions',
+      expect.objectContaining({ provider: 'openai' }),
+    );
   });
 });

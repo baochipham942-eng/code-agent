@@ -17,7 +17,8 @@
 - Iteration 1 is implemented and covered by targeted tests.
 - Iteration 2 provider fairness and workflow resume context checks are implemented and covered by targeted tests.
 - Iteration 3 runtime ports are implemented and covered by targeted tests.
-- The `dev.ts <-> devTelemetrySeedRoutes.ts` cycle from Iteration 4 was pulled forward and resolved.
+- Iteration 4 model/app-host boundaries are implemented and covered by targeted tests.
+- Maintenance follow-up split provider JSON/HTTP helpers, extracted agent run event collection, and removed production `any` noise from CLI schema output, IPC types, and channel fallback message construction.
 
 ## Iteration 1: Runtime Safety And Workflow Semantics
 
@@ -37,6 +38,13 @@ Verification:
 
 - `npx vitest run tests/unit/services/toolSearchService.test.ts tests/unit/protocol/toolDefinitions.test.ts tests/unit/agent/deferredToolPreload.test.ts tests/unit/tools/multiagentProtocolSchema.test.ts tests/unit/agent/spawnGuard.test.ts tests/unit/tools/executionPhase.test.ts tests/unit/agent/scriptRuntime/agentBridge.test.ts tests/unit/agent/scriptRuntime/scriptValidator.test.ts tests/unit/agent/toolExecutionEngine.hooks.test.ts`
 - `npm run typecheck`
+
+Maintenance follow-up verification:
+
+- `npx vitest run tests/unit/model/providers-shared.test.ts tests/unit/model/baseOpenAIProvider.test.ts tests/unit/model/sseStream.snapshot.test.ts tests/unit/web/agentRouter.test.ts tests/channels/channelMessageReply.test.ts tests/unit/ipc/channel.ipc.test.ts tests/unit/cli/agentDispatch.test.ts`
+- `npm run typecheck`
+- `npx madge --ts-config tsconfig.json --extensions ts,tsx --circular src/main src/web/routes`
+- `npm run debt:report -- --skip-eslint --limit 20`
 - `npm run debt:report -- --skip-eslint --limit 20`
 
 ## Iteration 2: Workflow Resume And Provider Fairness
@@ -82,12 +90,12 @@ Deliverables:
 - Break `dev.ts <-> devTelemetrySeedRoutes.ts` by moving shared helpers into a neutral service.
 - Pass provider identity through provider fetch helpers where the provider is known.
 - Extract pure artifact/fallback policy helpers from `modelRouter`.
-- Later, extract an `agentRunController` from `src/web/routes/agent.ts` so the route owns HTTP/SSE binding only.
+- Extract an `agentRunController` from `src/web/routes/agent.ts` for SSE writes, terminal-event dedupe, disconnect cancellation, and run status updates.
 
 Verification:
 
 - `npx madge --ts-config tsconfig.json --extensions ts,tsx --circular src/main src/web/routes`
-- `npx vitest run tests/unit/model/modelRouter.test.ts tests/unit/model/providers-shared.test.ts tests/unit/web/devRouter.test.ts tests/unit/web/agentRouter.test.ts`
+- `npx vitest run tests/unit/model/modelRouterPolicy.test.ts tests/unit/model/modelRouter.test.ts tests/unit/model/baseOpenAIProvider.test.ts tests/unit/model/sseStream.snapshot.test.ts tests/unit/web/devRouter.test.ts tests/unit/web/agentRouter.test.ts`
 - `npm run typecheck`
 
 ## Completion Gate

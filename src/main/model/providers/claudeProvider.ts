@@ -496,6 +496,7 @@ export class ClaudeProvider implements Provider {
       headers,
       body: JSON.stringify(requestBody),
       signal,
+      provider: config.provider,
     });
 
     if (!response.ok) {

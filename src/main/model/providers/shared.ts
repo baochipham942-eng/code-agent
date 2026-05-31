@@ -2,54 +2,20 @@
 // Shared Utilities for Model Providers
 // ============================================================================
 
-/**
- * 安全 JSON 序列化：在 stringify 之前递归 sanitize 所有 string 值，把不成对的
- * UTF-16 surrogate 替换为 U+FFFD（REPLACEMENT CHARACTER）。
- *
- * Why: 部分严格 provider（如 Xiaomi MiMo）的 API gateway 会因为 payload 含
- * lone high/low surrogate 直接 400 "no low surrogate in string"。坏字符通常
- * 是上下文压缩/截断按 char index 切割时把 4-byte UTF-8（emoji / surrogate pair）
- * 切到 pair 中间。OpenAI/Claude 容忍这种 payload，Xiaomi 不容忍。
- *
- * 注意必须在 stringify *之前*操作 string 值——JSON.stringify 会把 lone surrogate
- * 编成 ASCII 转义 `\udXXX`（6 字符），那时再后处理就要 parse 转义序列，更脆弱。
- */
-export function safeJsonStringify(value: unknown): string {
-  return JSON.stringify(deepSanitizeStrings(value));
-}
-
-function deepSanitizeStrings(value: unknown): unknown {
-  if (typeof value === 'string') return sanitizeSurrogates(value);
-  if (Array.isArray(value)) return value.map(deepSanitizeStrings);
-  if (value && typeof value === 'object') {
-    // 保留原型链上的非可枚举属性（如 toJSON）由 JSON.stringify 自然处理；
-    // 这里只复制可枚举自有属性，已经是 JSON.stringify 默认行为。
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = deepSanitizeStrings(v);
-    }
-    return out;
-  }
-  return value;
-}
-
-function sanitizeSurrogates(s: string): string {
-  // 高半区 (U+D800-U+DBFF) 后面没跟低半区 (U+DC00-U+DFFF) → 单独高半区
-  // 低半区前面没跟高半区 → 单独低半区
-  // 配对完整的 surrogate pair（emoji 等）保留
-  return s
-    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '�')
-    .replace(/(^|[^\uD800-\uDBFF])([\uDC00-\uDFFF])/g, (_m, prefix) => `${prefix}�`);
-}
-
-import axios, { type AxiosResponse } from 'axios';
-import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { ToolDefinition, ToolCall, ToolCallTargetContext } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { ContextLengthExceededError } from '../types';
-import { PROVIDER_TIMEOUT, isDirectConnectHost, providerNeedsProxy, normalizeProviderId } from '../../../shared/constants';
-import type { ProxyMode } from '../../../shared/contract/settings';
 import { logger, safeJsonParse } from './providerRuntime';
+export { safeJsonStringify } from './providerJson';
+export {
+  electronFetch,
+  getHttpsAgent,
+  httpsAgent,
+  normalizeClaudeBaseUrl,
+  setProviderProxyOverrides,
+  type ElectronFetchOptions,
+  type ElectronFetchResponse,
+} from './providerHttp';
 // Wrapper imports for @deprecated parse* delegation. Cycle is safe in ESM:
 // wrapper modules only access shared.logger / safeJsonParse at parse-time, not module-init.
 import { parseOpenAIResponse as wrapperParseOpenAIResponse } from './wrappers/openaiWrapper';
@@ -131,113 +97,10 @@ interface ClaudeToolDefinition {
 /** JSON Schema type for normalizeJsonSchema */
 type JsonSchemaNode = Record<string, unknown>;
 
-// ----------------------------------------------------------------------------
-// Proxy Configuration
-// ----------------------------------------------------------------------------
-
-let _cachedProxyUrl: string | undefined;
-let _cachedAgent: HttpsProxyAgent<string> | undefined;
-
-/**
- * 运行时读取代理配置并返回 HttpsProxyAgent。
- * 不同于模块级常量，本函数每次调用都会重新读 env，便于运行时切换代理。
- * 按 URL 缓存复用同一 Agent 实例，避免每次请求新建导致连接池失效。
- *
- * Per-provider 代理：传入请求目标 URL 时，命中国内直连 host
- * （isDirectConnectHost）一律绕过代理直连——避免海外 HTTPS_PROXY 把
- * 智谱/Kimi/DeepSeek 等国内端点打成 TLS 断连。海外/未知 host（或不传 url）
- * 才走代理。
- */
-// 用户在模型配置页设的 per-provider 代理模式覆盖（仅存 'direct'/'proxy'；'auto' 等价无覆盖、
-// 用内置默认）。由 configService 在启动 + 保存设置时经 setProviderProxyOverrides 推入（整表替换）。
-const _proxyModeOverrides = new Map<string, ProxyMode>();
-
-export function setProviderProxyOverrides(map: Record<string, ProxyMode>): void {
-  _proxyModeOverrides.clear();
-  for (const [provider, mode] of Object.entries(map)) {
-    if (mode === 'direct' || mode === 'proxy') {
-      _proxyModeOverrides.set(normalizeProviderId(provider) ?? provider, mode);
-    }
-  }
-}
-
-export function getHttpsAgent(targetUrl?: string, provider?: string): HttpsProxyAgent<string> | undefined {
-  const url = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
-  if (!url || process.env.NO_PROXY === 'true' || process.env.DISABLE_PROXY === 'true') {
-    return undefined;
-  }
-  // 代理决策优先级：用户 per-provider 覆盖 > 内置 providerNeedsProxy（按 provider 身份，封闭集不漏）。
-  // provider 缺省（通用 fetch helper 等无 provider 上下文）时回退到 host 白名单判定（兼容旧调用）。
-  if (provider !== undefined) {
-    const override = _proxyModeOverrides.get(normalizeProviderId(provider) ?? provider);
-    if (override === 'direct') return undefined;
-    if (override !== 'proxy' && !providerNeedsProxy(provider, targetUrl)) return undefined;
-  } else if (targetUrl && isDirectConnectHost(targetUrl)) {
-    return undefined;
-  }
-  if (url !== _cachedProxyUrl) {
-    _cachedProxyUrl = url;
-    _cachedAgent = new HttpsProxyAgent(url);
-  }
-  return _cachedAgent;
-}
-
-/** @deprecated 模块加载时快照，运行时改 env 不生效。请用 `getHttpsAgent()`。 */
-export const httpsAgent = getHttpsAgent();
-
-/**
- * 规范化 Claude baseUrl：保证以 /v1 结尾。
- * 容忍中转 env 只填域名（clawapi.vip 这类中转首页会返回 HTML，让 SSE 解析伪装成 ECONNRESET）。
- */
-export function normalizeClaudeBaseUrl(url: string): string {
-  const trimmed = url.replace(/\/+$/, '');
-  return /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
-}
-
-// ----------------------------------------------------------------------------
-// HTTP Utilities
-// ----------------------------------------------------------------------------
-
-/**
- * Helper function to wrap axios in a fetch-like interface for consistency
- * @param signal - AbortSignal for cancellation support
- */
-export async function electronFetch(url: string, options: {
-  method?: string;
-  headers?: Record<string, string>;
-  body?: string;
-  signal?: AbortSignal;
-  timeoutMs?: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): json() 返回任意 JSON，应改成 unknown 让调用方 narrow（或加 generic <T>）
-}): Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<any>; body?: ReadableStream<Uint8Array> }> {
-  try {
-    const response: AxiosResponse<unknown> = await axios({
-      url,
-      method: options.method || 'GET',
-      headers: options.headers,
-      data: options.body ? (JSON.parse(options.body) as unknown) : undefined,
-      timeout: options.timeoutMs ?? PROVIDER_TIMEOUT,
-      httpsAgent: getHttpsAgent(url),
-      validateStatus: () => true,
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-      signal: options.signal,
-    });
-
-    return {
-      ok: response.status >= 200 && response.status < 300,
-      status: response.status,
-      text: async () => typeof response.data === 'string' ? response.data : JSON.stringify(response.data),
-      json: async (): Promise<unknown> => response.data,
-    };
-  } catch (error: unknown) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    if (axios.isCancel(error) || (error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError'))) {
-      throw new Error('Request was cancelled', { cause: error });
-    }
-    throw new Error(`Network request failed: ${errMsg}`, { cause: error });
-  }
-}
+type GeminiContent = {
+  role: 'user' | 'model';
+  parts: Array<{ text: string }>;
+};
 
 // ----------------------------------------------------------------------------
 // Error Detection
@@ -826,8 +689,7 @@ function sanitizeClaudeToolPairing(messages: ClaudeMessage[]): ClaudeMessage[] {
  * Convert messages to text-only format (for models that don't support tool calling)
  * 回退到纯文本：toolCalls → toolCallText, tool → user
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): provider 私有 wire format 不统一，应抽 OpenAIChatMessage 类型替换 any[]
-export function convertToTextOnlyMessages(messages: ModelMessage[]): any[] {
+export function convertToTextOnlyMessages(messages: ModelMessage[]): OpenAIMessage[] {
   return messages.map((m) => {
     // assistant + toolCallText → 纯文本回退
     if (m.role === 'assistant' && m.toolCallText) {
@@ -840,10 +702,10 @@ export function convertToTextOnlyMessages(messages: ModelMessage[]): any[] {
     }
     // 其他消息
     if (typeof m.content === 'string') {
-      return { role: m.role, content: m.content };
+      return { role: m.role as OpenAIMessage['role'], content: m.content };
     }
     return {
-      role: m.role,
+      role: m.role as OpenAIMessage['role'],
       content: m.content.map((c) => {
         if (c.type === 'text') return { type: 'text', text: c.text };
         if (c.type === 'image' && c.source) {
@@ -861,10 +723,8 @@ export function convertToTextOnlyMessages(messages: ModelMessage[]): any[] {
 /**
  * Convert messages to Gemini format
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): Gemini wire format（{ role, parts: [{ text|inlineData|functionCall|functionResponse }] }）应抽 GeminiContent 类型
-export function convertToGeminiMessages(messages: ModelMessage[]): any[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): 同上 GeminiContent 类型抽出后即可去掉
-  const contents: any[] = [];
+export function convertToGeminiMessages(messages: ModelMessage[]): GeminiContent[] {
+  const contents: GeminiContent[] = [];
 
   for (const m of messages) {
     if (m.role === 'system') {

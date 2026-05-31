@@ -73,6 +73,12 @@ export interface CLIRunResult {
   duration?: number;
   /** Path to the metrics JSON file (if --metrics was used) */
   metricsPath?: string;
+  /** Extracted JSON when --output-schema is enabled. */
+  structuredOutput?: unknown;
+  /** Validation status for structured-output runs. */
+  schemaValid?: boolean;
+  /** Validation errors for structured-output runs. */
+  schemaErrors?: Array<{ path: string; message: string }>;
 }
 
 /**

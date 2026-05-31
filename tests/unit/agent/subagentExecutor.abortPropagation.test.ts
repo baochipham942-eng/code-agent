@@ -22,6 +22,10 @@ const SUBAGENT_EXECUTOR_PATH = path.resolve(
   __dirname,
   '../../../src/main/agent/subagentExecutor.ts',
 );
+const SUBAGENT_EXECUTOR_TYPES_PATH = path.resolve(
+  __dirname,
+  '../../../src/main/agent/subagentExecutorTypes.ts',
+);
 
 describe('subagentExecutor abort signal propagation (D.1)', () => {
   it('every modelRouter.inference call must pass effectiveSignal as 5th arg', () => {
@@ -44,8 +48,9 @@ describe('subagentExecutor abort signal propagation (D.1)', () => {
 
   it('enforces maxToolCalls before any subagent tool execution', () => {
     const source = readFileSync(SUBAGENT_EXECUTOR_PATH, 'utf8');
+    const typesSource = readFileSync(SUBAGENT_EXECUTOR_TYPES_PATH, 'utf8');
 
-    expect(source).toContain('maxToolCalls?: number');
+    expect(typesSource).toContain('maxToolCalls?: number');
     expect(source).toMatch(/toolCallsAttempted\s*>=\s*maxToolCalls/);
     expect(source).toContain('Tool call blocked by tool policy');
     expect(source).toMatch(/toolCallsAttempted\s*\+=\s*1/);

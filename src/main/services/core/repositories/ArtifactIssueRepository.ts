@@ -1,5 +1,5 @@
 import type BetterSqlite3 from 'better-sqlite3';
-import { getDatabase } from '../index';
+import { getDatabase } from '../databaseService';
 import type {
   ArtifactEvidenceRef,
   ArtifactIssue,

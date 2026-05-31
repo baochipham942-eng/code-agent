@@ -19,8 +19,3 @@ export {
   type InsertPendingApprovalInput,
   type ResolvePendingApprovalInput,
 } from './PendingApprovalRepository';
-export {
-  ArtifactIssueRepository,
-  getArtifactIssueRepository,
-  type ArtifactIssueListFilter,
-} from './ArtifactIssueRepository';

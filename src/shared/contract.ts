@@ -95,6 +95,7 @@ export * from './contract/appService';
 // Trace types
 export * from './contract/trace';
 export * from './contract/reviewQueue';
+export * from './contract/completionSummary';
 export * from './contract/scenarioAcceptance';
 export * from './contract/persistence';
 

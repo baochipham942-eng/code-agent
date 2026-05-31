@@ -100,6 +100,7 @@ export * from './turnTimeline';
 export * from './sessionWorkspace';
 export * from './workbenchPreset';
 export * from './reviewQueue';
+export * from './completionSummary';
 export * from './handoff';
 export * from './scenarioAcceptance';
 export * from './persistence';

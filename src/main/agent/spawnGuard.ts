@@ -12,7 +12,7 @@ import { writeFile, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { createLogger } from '../services/infra/logger';
-import type { SubagentResult } from './subagentExecutor';
+import type { SubagentResult } from './subagentExecutorTypes';
 
 const logger = createLogger('SpawnGuard');
 
@@ -565,6 +565,8 @@ const SUBAGENT_DISABLED_TOOLS = [
   'SendInput',
   'ask_user_question',  // 子代理不能问用户
   'AskUserQuestion',
+  'workflow',
+  'DynamicWorkflow',
   'workflow_orchestrate',
   'WorkflowOrchestrate',
   'teammate',

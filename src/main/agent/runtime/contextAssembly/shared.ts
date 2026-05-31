@@ -10,7 +10,7 @@ import type { ContextEventRecord } from '../../../context/contextEventLedger';
 import type { ProjectableMessage } from '../../../context/projectionEngine';
 import { createLogger } from '../../../services/infra/logger';
 import type { RuntimeContext } from '../runtimeContext';
-import type { RunFinalizer } from '../runFinalizer';
+import type { TaskProgressPort } from '../runtimePorts';
 
 const fileCache = new Map<string, { content: string; mtime: number }>();
 
@@ -82,7 +82,7 @@ export type CurrentAttachment = {
 
 export interface ContextAssemblyCtx {
   runtime: RuntimeContext;
-  runFinalizer: RunFinalizer;
+  taskProgress: TaskProgressPort;
   recordTokenUsage(inputTokens: number, outputTokens: number): void;
   inference(): Promise<ModelResponse>;
   buildModelMessages(): Promise<ModelMessage[]>;

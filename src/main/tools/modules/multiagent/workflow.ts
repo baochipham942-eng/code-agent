@@ -27,7 +27,7 @@ import type {
 } from '../../../protocol/tools';
 import type { ModelConfig } from '../../../../shared/contract';
 import type { ToolResolver } from '../../dispatch/toolResolver';
-import type { SubagentContext } from '../../../agent/subagentExecutor';
+import type { SubagentContext } from '../../../agent/subagentExecutorTypes';
 import { startRun, type ScriptRunHostDeps, type ScriptRunJournal } from '../../../agent/scriptRuntime';
 import type { ScriptRunEvent } from '../../../agent/scriptRuntime';
 import { getWorkflowJournalRepository } from '../../../services/core/repositories/WorkflowJournalRepository';
@@ -129,6 +129,20 @@ async function runWorkflow(
     const journalRepo = getWorkflowJournalRepository();
     const journal: ScriptRunJournal | undefined = journalRepo
       ? {
+          loadPriorRun: (rid) => {
+            const prior = journalRepo.loadRun(rid);
+            if (!prior) return null;
+            const calls = new Map<number, { contentHash: string; result: string | Record<string, unknown> }>();
+            for (const [idx, c] of prior.calls) calls.set(idx, { contentHash: c.contentHash, result: c.result });
+            return {
+              run: {
+                runId: prior.run.runId,
+                scriptHash: prior.run.scriptHash,
+                goal: prior.run.goal,
+              },
+              calls,
+            };
+          },
           loadPriorCalls: (rid) => {
             const prior = journalRepo.loadRun(rid);
             if (!prior) return null;

@@ -128,7 +128,7 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
 
   return {
     runtime,
-    runFinalizer: {
+    taskProgress: {
       emitTaskProgress: vi.fn(),
     } as any,
     recordTokenUsage: vi.fn(),
@@ -168,7 +168,7 @@ describe('contextAssembly inference artifact retry', () => {
 
     await inference(ctx);
 
-    expect(ctx.runFinalizer.emitTaskProgress).toHaveBeenCalledWith(
+    expect(ctx.taskProgress.emitTaskProgress).toHaveBeenCalledWith(
       'generating',
       '正在生成 artifact 内容...',
     );
@@ -244,7 +244,7 @@ describe('contextAssembly inference artifact retry', () => {
 
     await inference(ctx);
 
-    expect(ctx.runFinalizer.emitTaskProgress).toHaveBeenCalledWith(
+    expect(ctx.taskProgress.emitTaskProgress).toHaveBeenCalledWith(
       'generating',
       '正在写入 artifact 修复补丁...',
     );
@@ -272,7 +272,7 @@ describe('contextAssembly inference artifact retry', () => {
         message: '生成文件时模型流中断，正在切换到更稳的非流式方式重试。',
       },
     });
-    expect(ctx.runFinalizer.emitTaskProgress).toHaveBeenCalledWith(
+    expect(ctx.taskProgress.emitTaskProgress).toHaveBeenCalledWith(
       'generating',
       '模型流中断，正在用非流式方式重试 artifact 生成...',
     );
@@ -453,7 +453,7 @@ describe('contextAssembly inference artifact retry', () => {
     const toolNames = tools.map((tool: { name: string }) => tool.name);
     expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash', 'Task']);
     expect(options).toMatchObject({ artifactRepairActive: false });
-    expect(ctx.runFinalizer.emitTaskProgress).toHaveBeenCalledWith(
+    expect(ctx.taskProgress.emitTaskProgress).toHaveBeenCalledWith(
       'generating',
       '正在生成 artifact 内容...',
     );

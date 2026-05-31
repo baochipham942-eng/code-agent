@@ -52,6 +52,30 @@ describe('validateScript', () => {
     if (!res.ok) expect(res.error).toMatch(/import/i);
   });
 
+  it('rejects eval() codegen escapes', () => {
+    const res = validateScript("const g = eval('this');\nreturn g;");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/codegen|eval/);
+  });
+
+  it('rejects Function constructor codegen escapes', () => {
+    const res = validateScript("const f = Function('return process');\nreturn f();");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/codegen|Function/);
+  });
+
+  it('rejects .constructor escape chains', () => {
+    const res = validateScript("const f = (async () => {}).constructor('return globalThis');\nreturn f();");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/constructor|codegen/);
+  });
+
+  it('rejects Reflect.construct escapes', () => {
+    const res = validateScript("const f = Reflect.construct(Function, ['return process']);\nreturn f();");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/Reflect\\.construct|codegen/);
+  });
+
   // ── Codex MED#4：用真实形参编译校验 → 与 worker 的 new AsyncFunction 语义一致 ──
   it('rejects a script that redeclares a runtime primitive parameter (param collision)', () => {
     // worker 把 agent/parallel/... 作为形参注入；脚本里 `const agent` 会在真实构造时抛 SyntaxError，

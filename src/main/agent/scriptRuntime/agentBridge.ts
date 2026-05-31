@@ -19,12 +19,14 @@ import { createHash } from 'node:crypto';
 import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage } from '../../model/types';
 import { inferenceViaAiSdk } from '../../model/adapters/aiSdkAdapter';
-import { SubagentExecutor, type SubagentContext } from '../subagentExecutor';
+import { SubagentExecutor } from '../subagentExecutor';
+import type { SubagentContext } from '../subagentExecutorTypes';
 import { SCRIPT_RUNTIME } from '../../../shared/constants';
 import type { ConcurrencyGate } from './concurrencyGate';
 import type { BudgetTracker } from './budget';
 import { validateForcedSchema } from './scriptValidator';
 import type { AgentCallPayload, JsonSchema, PrimitiveResult, ScriptRunCallRecord, ScriptRunEvent } from './types';
+import type { WriteGate } from './writeGate';
 
 const STRUCTURED_OUTPUT_TOOL = 'structured_output';
 
@@ -80,16 +82,22 @@ function stableStringify(value: unknown, seen: WeakSet<object> = new WeakSet()):
 /**
  * 一次 agent() 调用的内容 hash（resumable 缓存键的内容部分）。
  * 哈希【决定结果】的语义输入：prompt + schema + 显式 model override + agentType + tools +
- * 【resolved provider/model】。纳入 resolved 模型是 Codex round1 HIGH#1 修复——否则 options.model
- * 缺省时换主模型会误命中旧结果。故意排除 label / phase（只影响显示，改它们不该让缓存失效）。
+ * 【resolved provider/model】+ run 级 goal/args 上下文。纳入 resolved 模型是 Codex round1 HIGH#1
+ * 修复——否则 options.model 缺省时换主模型会误命中旧结果。故意排除 label / phase（只影响显示，
+ * 改它们不该让缓存失效）。
  * 仍不快照外部世界（文件/网页/工具结果）——resumable 固有语义（同 Claude Code Workflow）：
  * resume = 跳过已完成的活、假定环境未变，由调用方负责。
  */
-function computeCallHash(call: AgentCallPayload, resolvedProvider: string, resolvedModel: string): string {
+function computeCallHash(
+  call: AgentCallPayload,
+  resolvedProvider: string,
+  resolvedModel: string,
+  runInputHash: string,
+): string {
   const o = call.options ?? {};
   const semantic = {
     schema: o.schema, model: o.model, agentType: o.agentType, tools: o.tools,
-    _provider: resolvedProvider, _model: resolvedModel,
+    _provider: resolvedProvider, _model: resolvedModel, _runInputHash: runInputHash,
   };
   return createHash('sha256').update(`${call.prompt}\u0000${stableStringify(semantic)}`).digest('hex').slice(0, 16);
 }
@@ -103,6 +111,8 @@ const executor = new SubagentExecutor();
  */
 export interface ScriptRunContext {
   runId: string;
+  /** run 级 goal/args 上下文 hash，纳入每次 agent() 的 resumable 缓存键。 */
+  runInputHash: string;
   baseModelConfig: ModelConfig;
   /** 解析 per-call model override → 完整 ModelConfig（含 apiKey/baseUrl）。命令层持有 configService/settings。 */
   resolveModelConfig: (override?: { provider: string; model: string }) => ModelConfig;
@@ -112,6 +122,8 @@ export interface ScriptRunContext {
   resolveAgentTools: (profile?: string) => { tools: string[]; writeCapable: boolean };
   /** 并行写护栏共享状态：在途写 agent 数 + 是否已告警（每 run 只告警一次）。 */
   writeGuard: { inFlight: number; warned: boolean };
+  /** 写能力 agent 共用同一工作树时必须串行，避免并行 Edit/Write/Bash 互相覆盖。 */
+  writeGate: WriteGate;
   /** run 级取消信号。 */
   signal: AbortSignal;
   /** provider-aware 全局并发闸。 */
@@ -148,12 +160,12 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
   const provider = modelConfig.provider;
   const label = call.options?.label ?? call.options?.phase ?? 'agent';
   const agentId = `${ctx.runId}-a${callIndex}`;
-  const contentHash = computeCallHash(call, provider, modelConfig.model);
+  const contentHash = computeCallHash(call, provider, modelConfig.model, ctx.runInputHash);
 
   // ── resumable 缓存命中：同 callIndex 且 contentHash 一致 → 瞬时返回，不 inference / 不占 gate /
   //    不耗 budget（成本已在原 run 付过）。复制进本 run journal 使其自包含，支持链式 resume（0 token）。 ──
   const cached = ctx.resumeCalls?.get(callIndex);
-  if (cached && cached.contentHash === contentHash) {
+  if (cached?.contentHash === contentHash) {
     ctx.cacheHitCounter.count++;
     ctx.emit({
       runId: ctx.runId,
@@ -219,8 +231,8 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
       result = forced.value as PrimitiveResult;
     } else {
       const { tools, writeCapable } = ctx.resolveAgentTools(call.options?.tools);
-      // 并行写护栏：多个写能力 agent 共享同一工作树时可能互相覆盖。检测到并发写就告警（每 run 一次），
-      // 真 worktree 隔离后续支持。只读 agent 不触发。
+      // 写能力 agent 共享同一工作树时必须串行。检测到并发写仍告警一次，让进度树解释排队原因；
+      // 后续若做 per-agent worktree/subpath lock，可替换这个 gate。
       if (writeCapable && ctx.writeGuard.inFlight >= 1 && !ctx.writeGuard.warned) {
         ctx.writeGuard.warned = true;
         ctx.emit({
@@ -229,10 +241,11 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
           ts: ctx.now(),
           data: {
             message:
-              '⚠️ 检测到并行写 agent 共享同一工作树，可能互相覆盖；建议串行化写操作或拆分子路径（worktree 隔离后续支持）',
+              '⚠️ 检测到多个写 agent 共享同一工作树，已串行执行以避免互相覆盖；需要真实并行写时请拆分子路径或启用 worktree 隔离',
           },
         });
       }
+      const releaseWrite = writeCapable ? await ctx.writeGate.acquire(ctx.signal) : undefined;
       if (writeCapable) ctx.writeGuard.inFlight++;
       try {
         const sub = await executor.execute(
@@ -253,6 +266,7 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
         throw e;
       } finally {
         if (writeCapable) ctx.writeGuard.inFlight--;
+        releaseWrite?.();
       }
     }
     ctx.emit({

@@ -43,7 +43,8 @@ import type { ModelConfig } from '../../shared/contract';
 import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
 import type { ToolContext } from '../tools/types';
 import type { ToolResolver } from '../tools/dispatch/toolResolver';
-import { getSubagentExecutor, type SubagentResult } from './subagentExecutor';
+import type { SubagentResult } from './subagentExecutorTypes';
+import type { SubagentExecutorPort } from './subagentExecutorPort';
 import { createTextMessage, type AgentMessage } from './spawnGuard';
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
@@ -176,6 +177,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
   private modelConfig?: ModelConfig;
   private toolResolver?: ToolResolver;
   private toolContext?: ToolContext;
+  private subagentExecutor?: SubagentExecutorPort;
   /** Fire-and-forget persist 的串行链，保证 delete/drain 能排干所有 in-flight save */
   private pendingPersist: Promise<void> = Promise.resolve();
 
@@ -197,10 +199,22 @@ export class ParallelAgentCoordinator extends EventEmitter {
     modelConfig: ModelConfig;
     toolResolver: ToolResolver;
     toolContext: ToolContext;
+    subagentExecutor?: SubagentExecutorPort;
   }): void {
     this.modelConfig = context.modelConfig;
     this.toolResolver = context.toolResolver;
     this.toolContext = context.toolContext;
+    this.subagentExecutor = context.subagentExecutor;
+  }
+
+  setSubagentExecutor(executor: SubagentExecutorPort): void {
+    this.subagentExecutor = executor;
+  }
+
+  private async getSubagentExecutor(): Promise<SubagentExecutorPort> {
+    if (this.subagentExecutor) return this.subagentExecutor;
+    const { getSubagentExecutor } = await import('./subagentExecutor');
+    return getSubagentExecutor();
   }
 
   /**
@@ -389,7 +403,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
     try {
       // Execute task
-      const executor = getSubagentExecutor();
+      const executor = await this.getSubagentExecutor();
 
       // Inject shared context into system prompt if available
       let enhancedPrompt = task.systemPrompt || '';
@@ -870,6 +884,9 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
     // Get scheduler and execute
     const scheduler = getDAGScheduler();
+    if (this.subagentExecutor && 'setSubagentExecutor' in scheduler) {
+      scheduler.setSubagentExecutor(this.subagentExecutor);
+    }
     const result = await scheduler.execute(dag, {
       modelConfig: this.modelConfig,
       toolResolver: this.toolResolver,

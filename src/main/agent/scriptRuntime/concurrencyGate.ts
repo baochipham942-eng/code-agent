@@ -11,7 +11,7 @@
 // cap 做纯计数判断。两层互补：gate 管全局公平，limiter 管 provider API 保护。
 // ============================================================================
 
-import { getEffectiveProviderConcurrency } from '../../model/concurrencyLimiter';
+import { getEffectiveProviderConcurrency, getProviderConcurrencyKey } from '../../model/concurrencyLimiter';
 
 interface Waiter {
   provider: string;
@@ -33,13 +33,14 @@ export class ConcurrencyGate {
    * signal abort 时：若仍在排队则从队列移除并 reject；已放行的由调用方自己 release。
    */
   acquire(provider: string, signal?: AbortSignal): Promise<() => void> {
-    const cap = getEffectiveProviderConcurrency(provider) ?? this.globalMax;
+    const providerKey = getProviderConcurrencyKey(provider) ?? (provider.trim() || 'unknown');
+    const cap = getEffectiveProviderConcurrency(providerKey) ?? this.globalMax;
     return new Promise<() => void>((resolve, reject) => {
       if (signal?.aborted) {
         reject(new Error('agent call aborted before admission'));
         return;
       }
-      const waiter: Waiter = { provider, cap, resolve, reject, settled: false };
+      const waiter: Waiter = { provider: providerKey, cap, resolve, reject, settled: false };
       if (signal) {
         signal.addEventListener(
           'abort',

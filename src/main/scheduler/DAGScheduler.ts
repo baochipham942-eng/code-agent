@@ -21,7 +21,7 @@ import { TaskDAG } from './TaskDAG';
 import { withTimeout } from '../services/infra/timeoutController';
 import type { ToolContext } from '../tools/types';
 import type { ToolResolver } from '../tools/dispatch/toolResolver';
-import { getSubagentExecutor } from '../agent/subagentExecutor';
+import type { SubagentExecutorPort } from '../agent/subagentExecutorPort';
 import { createLogger } from '../services/infra/logger';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -160,6 +160,7 @@ export class DAGScheduler extends EventEmitter {
 
   // Agent 任务解析器（由 initBackgroundServices 注入，ADR-008 Phase 4 避免循环依赖）
   private agentResolver?: AgentTaskResolver;
+  private subagentExecutor?: SubagentExecutorPort;
 
   constructor(config: Partial<DAGSchedulerConfig> = {}) {
     super();
@@ -187,6 +188,16 @@ export class DAGScheduler extends EventEmitter {
    */
   setAgentResolver(resolver: AgentTaskResolver): void {
     this.agentResolver = resolver;
+  }
+
+  setSubagentExecutor(executor: SubagentExecutorPort): void {
+    this.subagentExecutor = executor;
+  }
+
+  private async getSubagentExecutor(): Promise<SubagentExecutorPort> {
+    if (this.subagentExecutor) return this.subagentExecutor;
+    const { getSubagentExecutor } = await import('../agent/subagentExecutor');
+    return getSubagentExecutor();
   }
 
   /**
@@ -461,7 +472,7 @@ export class DAGScheduler extends EventEmitter {
     }
 
     // 执行 Agent
-    const executor = getSubagentExecutor();
+    const executor = await this.getSubagentExecutor();
     const result = await executor.execute(
       enhancedPrompt,
       {

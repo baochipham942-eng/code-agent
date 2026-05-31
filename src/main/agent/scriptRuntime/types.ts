@@ -97,7 +97,7 @@ export interface ScriptRunSpec {
 export interface ScriptRunCallRecord {
   /** 位置序 call-id（声明序、单线程确定），= callCounter 自增后的值。 */
   callIndex: number;
-  /** prompt + 语义 opts 的内容 hash；重放时与旧 journal 比对决定命中/失效。 */
+  /** prompt + 语义 opts + resolved model + run goal/args 上下文的内容 hash；重放时与旧 journal 比对决定命中/失效。 */
   contentHash: string;
   result: PrimitiveResult;
   tokensUsed: number;

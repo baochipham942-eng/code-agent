@@ -141,10 +141,10 @@ function startArtifactModelWaitProgress(
       : '正在分析 artifact 修复方案...'
     : '正在生成 artifact 内容...';
 
-  ctx.runFinalizer.emitTaskProgress('generating', baseStep);
+  ctx.taskProgress.emitTaskProgress('generating', baseStep);
   const timer = setInterval(() => {
     const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
-    ctx.runFinalizer.emitTaskProgress(
+    ctx.taskProgress.emitTaskProgress(
       'generating',
       `${baseStep} 已等待 ${elapsedSeconds} 秒，模型仍在处理。`,
     );
@@ -775,7 +775,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
         },
       });
 
-      ctx.runFinalizer.emitTaskProgress('failed', '上下文超限');
+      ctx.taskProgress.emitTaskProgress('failed', '上下文超限');
       return { type: 'text', content: '' };
     }
 
@@ -793,7 +793,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
           message: '生成文件时模型流中断，正在切换到更稳的非流式方式重试。',
         },
       } as AgentEvent);
-      ctx.runFinalizer.emitTaskProgress('generating', '模型流中断，正在用非流式方式重试 artifact 生成...');
+      ctx.taskProgress.emitTaskProgress('generating', '模型流中断，正在用非流式方式重试 artifact 生成...');
       try {
         const retryResult = await runEngineInference(
           ctx,
@@ -823,7 +823,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       ctx.runtime._artifactRepairCompactWriteRetried = true;
       logger.warn('[AgentLoop] Artifact repair write-priority timed out; retrying once with compact mutation-only context');
       logCollector.agent('WARN', 'Artifact repair write-priority timed out; retrying compact mutation-only context');
-      ctx.runFinalizer.emitTaskProgress('generating', 'artifact 修复写入超时，正在用更小上下文重试...');
+      ctx.taskProgress.emitTaskProgress('generating', 'artifact 修复写入超时，正在用更小上下文重试...');
       try {
         const compactMessages = buildCompactArtifactRepairWriteRetryMessages(ctx, modelMessages, errMsg);
         const compactConfig = {

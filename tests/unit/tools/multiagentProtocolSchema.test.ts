@@ -3,6 +3,8 @@ import { exploreSchema } from '../../../src/main/tools/modules/planning/explore.
 import { taskSchema } from '../../../src/main/tools/modules/multiagent/task.schema';
 import { sendInputSchema } from '../../../src/main/tools/modules/multiagent/sendInput.schema';
 import { spawnAgentSchema, agentSpawnSchema } from '../../../src/main/tools/modules/multiagent/spawnAgent.schema';
+import { workflowSchema } from '../../../src/main/tools/modules/multiagent/workflow.schema';
+import { workflowOrchestrateSchema } from '../../../src/main/tools/modules/multiagent/workflowOrchestrate.schema';
 import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/main/tools/protocolRegistry';
 
 describe('multiagent protocol schemas', () => {
@@ -52,5 +54,16 @@ describe('multiagent protocol schemas', () => {
     expect(schema?.inputSchema.properties).not.toHaveProperty('agent_id');
     expect(schema?.inputSchema.properties).not.toHaveProperty('input');
     expect(sendInputSchema.description).not.toMatch(/interrupt=true/);
+  });
+
+  it('keeps dynamic workflow and legacy workflow_orchestrate as distinct protocol schemas', () => {
+    const schemas = getProtocolRegistry().getSchemas();
+    const dynamicWorkflow = schemas.find((toolSchema) => toolSchema.name === 'workflow');
+    const legacyWorkflow = schemas.find((toolSchema) => toolSchema.name === 'workflow_orchestrate');
+
+    expect(dynamicWorkflow?.inputSchema).toEqual(workflowSchema.inputSchema);
+    expect(legacyWorkflow?.inputSchema).toEqual(workflowOrchestrateSchema.inputSchema);
+    expect(dynamicWorkflow?.inputSchema.required).toEqual(['script']);
+    expect(legacyWorkflow?.inputSchema.required).toEqual(['workflow', 'task']);
   });
 });

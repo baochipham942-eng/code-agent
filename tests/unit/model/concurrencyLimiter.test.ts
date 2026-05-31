@@ -2,8 +2,18 @@
 // ConcurrencyLimiter Tests
 // ============================================================================
 
-import { describe, it, expect } from 'vitest';
-import { ConcurrencyLimiter, getProviderLimiter } from '../../../src/main/model/concurrencyLimiter';
+import { afterEach, describe, it, expect } from 'vitest';
+import {
+  ConcurrencyLimiter,
+  getEffectiveProviderConcurrency,
+  getProviderConcurrencyKey,
+  getProviderLimiter,
+  setProviderConcurrencyOverrides,
+} from '../../../src/main/model/concurrencyLimiter';
+
+afterEach(() => {
+  setProviderConcurrencyOverrides({});
+});
 
 describe('ConcurrencyLimiter', () => {
   it('caps in-flight requests at maxConcurrent and queues the rest', async () => {
@@ -61,5 +71,15 @@ describe('getProviderLimiter', () => {
 
   it('同一 provider 复用同一实例', () => {
     expect(getProviderLimiter('zhipu')).toBe(getProviderLimiter('zhipu'));
+  });
+
+  it('normalizes provider aliases before resolving overrides and limiter instances', () => {
+    setProviderConcurrencyOverrides({
+      anthropic: { maxConcurrent: 2, minIntervalMs: 0 },
+    });
+
+    expect(getProviderConcurrencyKey(' anthropic ')).toBe('claude');
+    expect(getEffectiveProviderConcurrency('claude')).toBe(2);
+    expect(getProviderLimiter('anthropic')).toBe(getProviderLimiter('claude'));
   });
 });

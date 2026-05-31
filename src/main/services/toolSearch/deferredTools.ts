@@ -573,10 +573,18 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
-    name: 'workflow_orchestrate',
-    shortDescription: '编排多代理工作流',
+    name: 'workflow',
+    shortDescription: '命令式 dynamic-workflow 脚本运行时，支持 agent/parallel/pipeline/phase/log 原语',
     tags: ['multiagent', 'planning'],
-    aliases: ['WorkflowOrchestrate', 'workflow', 'orchestrate', 'dag'],
+    aliases: ['dynamic_workflow', 'DynamicWorkflow', 'script workflow', 'programmatic workflow'],
+    searchHint: ['workflow', 'dynamic workflow', 'scripted multi-agent workflow', 'agent parallel pipeline'],
+    source: 'builtin',
+  },
+  {
+    name: 'workflow_orchestrate',
+    shortDescription: '声明式 legacy 多代理工作流编排，按预定义 stage/DAG 执行',
+    tags: ['multiagent', 'planning'],
+    aliases: ['WorkflowOrchestrate', 'legacy workflow', 'orchestrate', 'dag', 'declarative workflow'],
     source: 'builtin',
   },
 
@@ -665,6 +673,8 @@ export const TOOL_ALIASES: Record<string, string> = {
   wait_agent: 'wait_agent',
   CloseAgent: 'close_agent',
   close_agent: 'close_agent',
+  DynamicWorkflow: 'workflow',
+  dynamic_workflow: 'workflow',
   WorkflowOrchestrate: 'workflow_orchestrate',
   workflow_orchestrate: 'workflow_orchestrate',
 };

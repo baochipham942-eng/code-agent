@@ -21,17 +21,38 @@ const baseModel = { provider: 'xiaomi', model: 'm', apiKey: 'k' };
 
 /** 内存假 journal：run 写入的 calls 在另一 run resume 时回放（按 runId 分桶）。 */
 function makeInMemoryJournal() {
-  const runs = new Map<string, Map<number, { contentHash: string; result: string | Record<string, unknown> }>>();
+  const runs = new Map<string, {
+    scriptHash: string;
+    goal?: string | null;
+    inputHash?: string | null;
+    calls: Map<number, { contentHash: string; result: string | Record<string, unknown> }>;
+  }>();
   const journal: ScriptRunJournal = {
-    loadPriorCalls: (rid) => runs.get(rid) ?? null,
-    onRunStart: ({ runId }) => {
-      if (!runs.has(runId)) runs.set(runId, new Map());
+    loadPriorRun: (rid) => {
+      const run = runs.get(rid);
+      return run
+        ? {
+            run: { runId: rid, scriptHash: run.scriptHash, goal: run.goal ?? null, inputHash: run.inputHash ?? null },
+            calls: run.calls,
+          }
+        : null;
+    },
+    loadPriorCalls: (rid) => runs.get(rid)?.calls ?? null,
+    onRunStart: ({ runId, scriptHash, goal, inputHash }) => {
+      if (!runs.has(runId)) {
+        runs.set(runId, { scriptHash, goal: goal ?? null, inputHash, calls: new Map() });
+      }
     },
     onRunFinish: () => {},
     onCallComplete: ({ runId, callIndex, contentHash, result }) => {
-      const m = runs.get(runId) ?? new Map();
-      m.set(callIndex, { contentHash, result });
-      runs.set(runId, m);
+      const run = runs.get(runId) ?? {
+        scriptHash: 'unknown',
+        goal: null,
+        inputHash: null,
+        calls: new Map<number, { contentHash: string; result: string | Record<string, unknown> }>(),
+      };
+      run.calls.set(callIndex, { contentHash, result });
+      runs.set(runId, run);
     },
   };
   return { journal, runs };
@@ -102,6 +123,31 @@ describe('runService resumable 重放（真 worker）', () => {
     expect(r2.result).toEqual({ a: { n: 1 }, b: { n: 99 } }); // a 命中旧值，b 重跑新值
     expect(inferenceMock).toHaveBeenCalledTimes(1); // 只重跑 b
     expect(r2.tokensSpent).toBe(7);
+  });
+
+  it('resume misses all calls and warns when the goal/args context changes', async () => {
+    const { journal } = makeInMemoryJournal();
+    const logs: string[] = [];
+    const deps = makeDeps(journal);
+    deps.emit = (e) => { if (e.type === 'run:log' && typeof e.data?.message === 'string') logs.push(e.data.message); };
+    inferenceMock.mockResolvedValueOnce(forced(1, 10)).mockResolvedValueOnce(forced(2, 20));
+    await startRun(
+      { runId: 'run-1', script: SCRIPT, goal: 'alpha', defaultProvider: 'xiaomi', defaultModel: 'm' },
+      deps,
+    );
+
+    inferenceMock.mockReset();
+    inferenceMock.mockResolvedValueOnce(forced(10, 3)).mockResolvedValueOnce(forced(20, 4));
+    const r2 = await startRun(
+      { runId: 'run-2', script: SCRIPT, goal: 'beta', resumeFromRunId: 'run-1', defaultProvider: 'xiaomi', defaultModel: 'm' },
+      deps,
+    );
+
+    expect(r2.result).toEqual({ a: { n: 10 }, b: { n: 20 } });
+    expect(r2.cacheHits).toBe(0);
+    expect(r2.tokensSpent).toBe(7);
+    expect(inferenceMock).toHaveBeenCalledTimes(2);
+    expect(logs.some((message) => /goal\/args|上下文.*不同|全量 live/.test(message))).toBe(true);
   });
 
   it('resumed run journal is self-contained (chained resume re-hits both calls)', async () => {

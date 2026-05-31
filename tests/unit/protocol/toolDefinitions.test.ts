@@ -94,14 +94,16 @@ describe('toolDefinitions deferred loading', () => {
     expect(definitions.map((definition) => definition.name)).not.toContain('TaskManager');
   });
 
-  it('includes canonical multiagent tools loaded through PascalCase aliases', () => {
+  it('includes canonical multiagent tools loaded through aliases without mixing workflow generations', () => {
     const service = getToolSearchService();
     service.selectTool('WaitAgent');
+    service.selectTool('DynamicWorkflow');
     service.selectTool('WorkflowOrchestrate');
 
     const names = getLoadedDeferredToolDefinitions().map((definition) => definition.name);
 
     expect(names).toContain('wait_agent');
+    expect(names).toContain('workflow');
     expect(names).toContain('workflow_orchestrate');
   });
 

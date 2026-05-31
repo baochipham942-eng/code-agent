@@ -42,6 +42,9 @@ const BANNED_CALLS = new Set([
 // 「别名规避」覆盖边界一档（半信任脚本、拦意外非确定性）。
 const GLOBAL_PREFIXES = new Set(['globalThis', 'global']);
 
+const CODEGEN_GLOBALS = new Set(['eval', 'Function', 'AsyncFunction']);
+const DANGEROUS_GLOBAL_ROOTS = new Set(['globalThis', 'global', 'process']);
+
 /** 取 MemberExpression 的属性名：`.now`(Identifier) 或 `['now']`(computed string Literal)。 */
 function memberPropName(prop: unknown, computed: boolean): string | undefined {
   const p = prop as Record<string, unknown> | null;
@@ -115,6 +118,53 @@ function detectNonDeterministic(node: unknown): string | null {
   return null;
 }
 
+function firstPathSegment(path: string): string {
+  const dot = path.indexOf('.');
+  return dot < 0 ? path : path.slice(0, dot);
+}
+
+/** 递归找首个 codegen / global escape 形态。此处防误用，不声称对抗式完整隔离。 */
+function detectCodegenEscape(node: unknown): string | null {
+  if (!node || typeof node !== 'object') return null;
+  const n = node as Record<string, unknown>;
+
+  if (n.type === 'MemberExpression') {
+    const prop = memberPropName(n.property, !!n.computed);
+    if (prop === 'constructor') return '.constructor';
+
+    const path = dottedPath(n);
+    if (path && DANGEROUS_GLOBAL_ROOTS.has(firstPathSegment(path))) return path;
+  }
+
+  if (n.type === 'CallExpression' || n.type === 'NewExpression') {
+    const path = dottedPath(n.callee) ?? '';
+    if (CODEGEN_GLOBALS.has(path)) return `${path}()`;
+    if (path === 'Reflect.construct') return 'Reflect.construct()';
+    if (DANGEROUS_GLOBAL_ROOTS.has(firstPathSegment(path))) return path;
+  }
+
+  if (n.type === 'TaggedTemplateExpression') {
+    const path = dottedPath(n.tag) ?? '';
+    if (CODEGEN_GLOBALS.has(path)) return `${path}\`\``;
+    if (DANGEROUS_GLOBAL_ROOTS.has(firstPathSegment(path))) return `${path}\`\``;
+  }
+
+  for (const key of Object.keys(n)) {
+    if (key === 'type') continue;
+    const v = n[key];
+    if (Array.isArray(v)) {
+      for (const item of v) {
+        const hit = detectCodegenEscape(item);
+        if (hit) return hit;
+      }
+    } else if (v && typeof v === 'object') {
+      const hit = detectCodegenEscape(v);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
 /** 递归查 AST 里是否出现某些节点类型（用于堵 import() 动态导入）。 */
 function hasNodeType(node: unknown, types: Set<string>): boolean {
   if (!node || typeof node !== 'object') return false;
@@ -165,6 +215,14 @@ export function validateScript(script: string): ValidationResult {
       return {
         ok: false,
         error: `脚本含非确定性调用 ${nondet}，会破坏 resumable 重放（缓存键依赖脚本确定性）；如需时间/随机值请由 args 传入`,
+      };
+    }
+
+    const escape = detectCodegenEscape(ast);
+    if (escape) {
+      return {
+        ok: false,
+        error: `脚本禁止使用 codegen/global escape 形态 ${escape}（workflow 沙箱只开放 agent/parallel/pipeline/phase/log/args/budget 原语）`,
       };
     }
   } catch (err) {

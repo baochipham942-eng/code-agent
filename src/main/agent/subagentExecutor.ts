@@ -3,8 +3,7 @@
 // Enhanced with unified pipeline (T4)
 // ============================================================================
 
-import type { ModelConfig, ToolCall, ToolDefinition } from '../../shared/contract';
-import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
+import type { ToolCall, ToolDefinition } from '../../shared/contract';
 import type { ToolContext } from '../tools/types';
 import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import { ToolExecutor } from '../tools/toolExecutor';
@@ -25,7 +24,6 @@ import {
   getAgentPermissionPreset,
   getAgentMaxBudget,
 } from './agentDefinition';
-import type { PermissionPreset } from '@shared/contract';
 import { PROVIDER_REGISTRY } from '../model/modelRouter';
 import { compactSubagentMessages } from './subagentCompaction';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
@@ -36,7 +34,7 @@ import { CANCELLATION_TIMEOUTS } from '../../shared/constants';
 import { getUserDataPath } from '../platform/appPaths';
 import { join as pathJoin } from 'path';
 import { getPlanApprovalGate } from './planApproval';
-import { getSpawnGuard, type AgentMessage } from './spawnGuard';
+import { getSpawnGuard } from './spawnGuard';
 import { buildChildContext, buildParentContextFromToolContext, type ParentContext } from './childContext';
 import { getPermissionModeManager } from '../permissions/modes';
 import { AgentTask, type SidecarMetadata } from './agentTask';
@@ -46,7 +44,6 @@ import { getSubagentContextStore } from '../context/subagentContextStore';
 import { getConfigService } from '../services/core/configService';
 import { applyInterventionsToMessages } from '../context/contextInterventionHelpers';
 import { getContextInterventionState } from '../context/contextInterventionState';
-import type { HookManager } from '../hooks/hookManager';
 import { getTelemetryCollector } from '../telemetry/telemetryCollector';
 import type { TelemetryModelCall } from '../../shared/contract/telemetry';
 import {
@@ -70,88 +67,15 @@ import {
   executeE2ELocalSubagent,
   shouldUseE2ELocalSubagentExecutor,
 } from './subagentE2ELocalExecutor';
+import type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
+
+export type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
 
 const logger = createLogger('SubagentExecutor');
 
 // ----------------------------------------------------------------------------
 // Types
 // ----------------------------------------------------------------------------
-
-export interface SubagentConfig {
-  name: string;
-  systemPrompt: string;
-  availableTools: string[];
-  maxIterations?: number;
-  /** Permission preset for pipeline integration */
-  permissionPreset?: PermissionPreset;
-  /** Maximum budget for this subagent */
-  maxBudget?: number;
-  /** P3: Maximum execution time in milliseconds */
-  maxExecutionTimeMs?: number;
-  /** Maximum tool call attempts allowed for this subagent */
-  maxToolCalls?: number;
-  /** Whether high-risk operations require plan approval from coordinator */
-  requirePlanApproval?: boolean;
-  /** Coordinator agent ID for plan approval (defaults to 'coordinator') */
-  coordinatorId?: string;
-}
-
-export interface SubagentResult {
-  success: boolean;
-  output: string;
-  error?: string;
-  toolsUsed: string[];
-  iterations: number;
-  /** Cost incurred by this subagent */
-  cost?: number;
-  /** 本次 subagent 跨迭代累计的 outputTokens（dynamic-workflow BudgetTracker 计费用）。 */
-  tokensUsed?: number;
-  /** Agent ID from pipeline */
-  agentId?: string;
-  /** Lightweight context snapshot for swarm UI */
-  contextSnapshot?: SwarmAgentContextSnapshot;
-  /**
-   * When success === false because of an abort, this carries the
-   * cancellation reason (`user-cancel | parent-cancel | timeout |
-   * idle-timeout | child-error | session-switch | budget-exceeded`).
-   * Caller (spawnAgent / parallel coordinator) can route on this to
-   * decide whether to retry, surface to UI, or treat as terminal.
-   */
-  cancellationReason?: CancellationReason;
-}
-
-export interface SubagentContext {
-  modelConfig: ModelConfig;
-  toolResolver: ToolResolver;
-  toolContext: ToolContext;
-  /** Attachments (images, files) to include in the first message */
-  attachments?: Array<{
-    type: string;
-    category?: string;
-    name?: string;
-    path?: string;
-    data?: string;
-    mimeType?: string;
-  }>;
-  /** 父工具调用 ID，用于标识消息来自哪个 subagent */
-  parentToolUseId?: string;
-  /** AbortSignal 用于取消任务执行 */
-  abortSignal?: AbortSignal;
-  /** SpawnGuard agent ID — used to drain message queue for send_input */
-  spawnGuardId?: string;
-  /** Optional external message queue drain, used by parallel executor inboxes. */
-  messageDrain?: () => AgentMessage[];
-  /** External task agent ID (e.g. DAG task ID) for context observability */
-  executionAgentId?: string;
-  /** Parent context for child context inheritance */
-  parentContext?: ParentContext;
-  /** Worktree path if agent is running in an isolated git worktree */
-  worktreePath?: string;
-  /** Optional callback for lightweight context updates */
-  onContextSnapshot?: (snapshot: SwarmAgentContextSnapshot) => void;
-  /** HookManager for firing SubagentStart/Stop and TaskCreated/Completed events */
-  hookManager?: HookManager;
-}
 
 // ----------------------------------------------------------------------------
 // Subagent Executor

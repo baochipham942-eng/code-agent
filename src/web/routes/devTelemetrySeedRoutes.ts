@@ -4,7 +4,7 @@
 //
 // Split out of dev.ts to keep that file under the God File limit (max-lines).
 // These routes back the restart-recovery / telemetry-feedback E2E smoke tests
-// and reuse the seed/read helpers that remain defined in dev.ts.
+// and reuse the seed/read helpers from a neutral module to avoid route cycles.
 // ============================================================================
 
 import type { Router, Request, Response } from 'express';
@@ -21,12 +21,12 @@ import {
   seedDevCompactState,
   readDevCompactState,
   readDevReplayState,
-} from './dev';
+} from './devSeedHelpers';
 import type {
   DevTelemetrySeedTurnRequest,
   DevTodoSeedRequest,
   DevCompactStateSeedRequest,
-} from './dev';
+} from './devSeedHelpers';
 
 interface DevTelemetrySeedRouteDeps {
   logger: WebRouteLogger;

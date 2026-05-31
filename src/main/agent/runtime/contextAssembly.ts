@@ -17,7 +17,7 @@ import type {
   ModelMessage,
 } from '../../agent/loopTypes';
 import type { RuntimeContext } from './runtimeContext';
-import type { RunFinalizer } from './runFinalizer';
+import type { TaskProgressPort } from './runtimePorts';
 import type { ContextInterventionSnapshot } from '../../../shared/contract/contextView';
 import type { ContextEventRecord } from '../../context/contextEventLedger';
 import type {
@@ -91,12 +91,12 @@ export {
  */
 
 export class ContextAssembly {
-  runFinalizer!: RunFinalizer;
+  taskProgress!: TaskProgressPort;
 
   constructor(protected ctx: RuntimeContext) {}
 
-  setModules(runFinalizer: RunFinalizer): void {
-    this.runFinalizer = runFinalizer;
+  setModules(taskProgress: TaskProgressPort): void {
+    this.taskProgress = taskProgress;
   }
 
   // Convenience: emit event through context
@@ -118,7 +118,7 @@ export class ContextAssembly {
   private makeCtx(): ContextAssemblyCtx {
     return {
       runtime: this.ctx,
-      runFinalizer: this.runFinalizer,
+      taskProgress: this.taskProgress,
       recordTokenUsage: this.recordTokenUsage.bind(this),
       inference: this.inference.bind(this),
       buildModelMessages: this.buildModelMessages.bind(this),

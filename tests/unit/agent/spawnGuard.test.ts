@@ -332,6 +332,9 @@ describe('SpawnGuard', () => {
       expect(disabled).toContain('spawn_agent');
       expect(disabled).toContain('AgentSpawn');
       expect(disabled).toContain('Task');
+      expect(disabled).toContain('workflow');
+      expect(disabled).toContain('DynamicWorkflow');
+      expect(disabled).toContain('workflow_orchestrate');
     });
 
     it('getReadonlyDisabledTools 额外包含写入类工具', () => {

@@ -6,7 +6,7 @@
 // 只有在 PROVIDER_CONCURRENCY_LIMITS 中声明并发上限的 provider 才会被节流。
 // ============================================================================
 
-import { PROVIDER_CONCURRENCY_LIMITS } from '../../shared/constants';
+import { PROVIDER_CONCURRENCY_LIMITS, normalizeProviderId } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ConcurrencyLimiter');
@@ -126,11 +126,19 @@ const limiters = new Map<string, ConcurrencyLimiter>();
 // 由 configService 在启动加载 + 用户保存设置时通过 setProviderConcurrencyOverrides 推入。
 const overrides = new Map<string, { maxConcurrent: number; minIntervalMs: number }>();
 
+export function getProviderConcurrencyKey(provider: string | null | undefined): string | null {
+  const trimmed = typeof provider === 'string' ? provider.trim() : '';
+  if (!trimmed) return null;
+  return normalizeProviderId(trimmed) ?? trimmed;
+}
+
 /** 解析某 provider 的有效并发限额：用户覆盖 > 出厂默认 > 不限流(null)。 */
 function resolveLimit(provider: string): { maxConcurrent: number; minIntervalMs: number } | null {
-  const ov = overrides.get(provider);
+  const providerKey = getProviderConcurrencyKey(provider);
+  if (!providerKey) return null;
+  const ov = overrides.get(providerKey);
   if (ov) return ov;
-  const def = PROVIDER_CONCURRENCY_LIMITS[provider];
+  const def = PROVIDER_CONCURRENCY_LIMITS[providerKey];
   if (def && def.maxConcurrent > 0) return def;
   return null;
 }
@@ -145,10 +153,12 @@ export function setProviderConcurrencyOverrides(
 ): void {
   overrides.clear();
   for (const [provider, cfg] of Object.entries(map)) {
+    const providerKey = getProviderConcurrencyKey(provider);
+    if (!providerKey) continue;
     if (cfg && Number.isFinite(cfg.maxConcurrent) && cfg.maxConcurrent > 0) {
-      overrides.set(provider, {
+      overrides.set(providerKey, {
         maxConcurrent: Math.floor(cfg.maxConcurrent),
-        minIntervalMs: cfg.minIntervalMs ?? PROVIDER_CONCURRENCY_LIMITS[provider]?.minIntervalMs ?? 200,
+        minIntervalMs: cfg.minIntervalMs ?? PROVIDER_CONCURRENCY_LIMITS[providerKey]?.minIntervalMs ?? 200,
       });
     }
   }
@@ -171,14 +181,15 @@ export function setProviderConcurrencyOverrides(
  * 因此对同一 provider 的总并发会被一起约束。
  */
 export function getProviderLimiter(provider: string | null | undefined): ConcurrencyLimiter | null {
-  if (!provider) return null;
-  const limit = resolveLimit(provider);
+  const providerKey = getProviderConcurrencyKey(provider);
+  if (!providerKey) return null;
+  const limit = resolveLimit(providerKey);
   if (!limit) return null;
 
-  let limiter = limiters.get(provider);
+  let limiter = limiters.get(providerKey);
   if (!limiter) {
-    limiter = new ConcurrencyLimiter(provider, limit.maxConcurrent, limit.minIntervalMs);
-    limiters.set(provider, limiter);
+    limiter = new ConcurrencyLimiter(providerKey, limit.maxConcurrent, limit.minIntervalMs);
+    limiters.set(providerKey, limiter);
   }
   return limiter;
 }
@@ -190,7 +201,8 @@ export function getProviderLimiter(provider: string | null | undefined): Concurr
  * 公平分配、按此值卡每 provider 在途数，绝不重复 acquire provider limiter（那会双重计数）。
  */
 export function getEffectiveProviderConcurrency(provider: string | null | undefined): number | null {
-  if (!provider) return null;
-  const limit = resolveLimit(provider);
+  const providerKey = getProviderConcurrencyKey(provider);
+  if (!providerKey) return null;
+  const limit = resolveLimit(providerKey);
   return limit ? limit.maxConcurrent : null;
 }

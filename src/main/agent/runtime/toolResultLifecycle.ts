@@ -4,8 +4,8 @@ import { getInputSanitizer } from '../../security/inputSanitizer';
 import { getCitationService } from '../../services/citation/citationService';
 import { createLogger } from '../../services/infra/logger';
 import type { ContextAssembly } from './contextAssembly';
-import type { ConversationRuntime } from './conversationRuntime';
 import type { RuntimeContext } from './runtimeContext';
+import type { RuntimeControlPort } from './runtimeControl';
 import {
   buildArtifactRepairEditAnchorFailurePrompt,
   buildArtifactRepairRecoveryPrompt,
@@ -19,7 +19,7 @@ const EXTERNAL_DATA_TOOLS = ['web_fetch', 'web_search', 'mcp', 'read_pdf', 'read
 type HandleToolResultBookkeepingArgs = {
   ctx: RuntimeContext;
   contextAssembly: ContextAssembly;
-  conversationRuntime: ConversationRuntime;
+  runtimeControl: RuntimeControlPort;
   toolCall: ToolCall;
   normalizedResult: ToolExecutionResult;
   toolResult: ToolResult;
@@ -28,7 +28,7 @@ type HandleToolResultBookkeepingArgs = {
 export function handleToolResultBookkeeping({
   ctx,
   contextAssembly,
-  conversationRuntime,
+  runtimeControl,
   toolCall,
   normalizedResult,
   toolResult,
@@ -170,7 +170,7 @@ export function handleToolResultBookkeeping({
     const outputStr = toolResult.output;
     if (outputStr.includes('⚠️ **代码完整性警告**') || outputStr.includes('代码完整性警告')) {
       logger.debug('[AgentLoop] ⚠️ Detected truncated file! Injecting auto-continuation prompt');
-      contextAssembly.injectSystemMessage(conversationRuntime.generateAutoContinuationPrompt());
+      contextAssembly.injectSystemMessage(runtimeControl.generateAutoContinuationPrompt());
     }
   }
 }

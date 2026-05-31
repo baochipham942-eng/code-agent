@@ -145,15 +145,25 @@ describe('ToolSearchService loadable results', () => {
     expect(service.isToolLoaded('mcp__github__search_code')).toBe(true);
   });
 
-  it('normalizes common multiagent aliases to registered protocol tool names', () => {
+  it('keeps dynamic workflow and legacy workflow_orchestrate as separate invocations', async () => {
     const service = new ToolSearchService();
 
     const waitResult = service.selectTool('WaitAgent');
+    const dynamicWorkflowResult = service.selectTool('workflow');
+    const dynamicWorkflowAliasResult = service.selectTool('DynamicWorkflow');
     const workflowResult = service.selectTool('WorkflowOrchestrate');
+    const searchResult = await service.searchTools('workflow', { maxResults: 2, includeMCP: false });
 
     expect(waitResult.loadedTools).toEqual(['wait_agent']);
     expect(waitResult.tools[0]?.canonicalInvocation).toBe('wait_agent');
     expect(service.isToolLoaded('wait_agent')).toBe(true);
+
+    expect(dynamicWorkflowResult.loadedTools).toEqual(['workflow']);
+    expect(dynamicWorkflowResult.tools[0]?.canonicalInvocation).toBe('workflow');
+    expect(dynamicWorkflowAliasResult.loadedTools).toEqual(['workflow']);
+    expect(dynamicWorkflowAliasResult.tools[0]?.canonicalInvocation).toBe('workflow');
+    expect(searchResult.tools[0]?.name).toBe('workflow');
+    expect(searchResult.tools[0]?.canonicalInvocation).toBe('workflow');
 
     expect(workflowResult.loadedTools).toEqual(['workflow_orchestrate']);
     expect(workflowResult.tools[0]?.canonicalInvocation).toBe('workflow_orchestrate');

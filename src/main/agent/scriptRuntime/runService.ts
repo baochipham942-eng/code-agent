@@ -13,6 +13,7 @@ import { ConcurrencyGate } from './concurrencyGate';
 import { BudgetTracker } from './budget';
 import { handleRpc } from './primitives';
 import { runScriptInWorker } from './sandbox';
+import { SerialWriteGate } from './writeGate';
 import type { ScriptRunContext } from './agentBridge';
 import type { RunStatus, ScriptRunCallRecord, ScriptRunSpec, ScriptRunState, ScriptRunEvent } from './types';
 
@@ -20,11 +21,23 @@ import type { RunStatus, ScriptRunCallRecord, ScriptRunSpec, ScriptRunState, Scr
  * resumable journal 网关（持久化解耦）：runService 只认这个接口，真实落地（SQLite）由命令层
  * 用 WorkflowJournalRepository 注入；DB 未就绪时命令层注入 undefined → 全 live 跑、不持久化。
  */
+export interface ScriptRunPriorJournal {
+  run: {
+    runId: string;
+    scriptHash: string;
+    goal?: string | null;
+    inputHash?: string | null;
+  };
+  calls: Map<number, { contentHash: string; result: ScriptRunCallRecord['result'] }>;
+}
+
 export interface ScriptRunJournal {
+  /** 载入被 resume 的旧 run 元数据与逐调用缓存；有实现时优先于 loadPriorCalls。 */
+  loadPriorRun?(runId: string): ScriptRunPriorJournal | null;
   /** 载入被 resume 的旧 run 的逐调用缓存（callIndex → {contentHash, result}）；无则 null。 */
   loadPriorCalls(runId: string): Map<number, { contentHash: string; result: ScriptRunCallRecord['result'] }> | null;
   /** 本 run 开始：写 running 占位（必须先于任何 onCallComplete，FK 父行）。 */
-  onRunStart(input: { runId: string; scriptHash: string; goal?: string; startedAt: number }): void;
+  onRunStart(input: { runId: string; scriptHash: string; goal?: string; inputHash: string; startedAt: number }): void;
   /** 本 run 收尾：写终态 + 结果/错误 + 累计 token。 */
   onRunFinish(input: { runId: string; status: RunStatus; finishedAt: number; tokensSpent: number; result?: unknown; error?: string }): void;
   /** 记录一次成功调用（命中或 live）到本 run journal。 */
@@ -53,9 +66,17 @@ interface ActiveRun {
 
 const activeRuns = new Map<string, ActiveRun>();
 
+function computeRunInputHash(spec: Pick<ScriptRunSpec, 'goal'>): string {
+  return createHash('sha256')
+    .update(JSON.stringify({ goal: spec.goal ?? null }))
+    .digest('hex')
+    .slice(0, 16);
+}
+
 /** 启动一次 dynamic-workflow run，阻塞到脚本结束/失败/取消，返回终态 state。 */
 export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Promise<ScriptRunState> {
   const scriptHash = createHash('sha256').update(spec.script).digest('hex').slice(0, 16);
+  const runInputHash = computeRunInputHash(spec);
   const controller = new AbortController();
   if (deps.signal) {
     if (deps.signal.aborted) controller.abort();
@@ -88,9 +109,23 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
   // best-effort（Codex round1 HIGH#3）：journal 读异常不得拖垮 run，捕获后退化成全 live。
   const journal = deps.journal;
   let resumeCalls: ScriptRunContext['resumeCalls'];
+  let resumeInputMismatchMessage: string | undefined;
   if (spec.resumeFromRunId && journal) {
     try {
-      resumeCalls = journal.loadPriorCalls(spec.resumeFromRunId) ?? undefined;
+      if (journal.loadPriorRun) {
+        const prior = journal.loadPriorRun(spec.resumeFromRunId);
+        if (prior) {
+          const priorInputHash = prior.run.inputHash ?? computeRunInputHash({ goal: prior.run.goal ?? undefined });
+          if (priorInputHash === runInputHash) {
+            resumeCalls = prior.calls;
+          } else {
+            resumeInputMismatchMessage =
+              `⚠️ resume 源 run「${spec.resumeFromRunId}」的 goal/args 上下文与本次不同，本次全量 live 重跑（不命中缓存、照常计费）`;
+          }
+        }
+      } else {
+        resumeCalls = journal.loadPriorCalls(spec.resumeFromRunId) ?? undefined;
+      }
     } catch {
       resumeCalls = undefined;
     }
@@ -111,11 +146,13 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
   const cacheHitCounter = { count: 0 };
   const ctx: ScriptRunContext = {
     runId: spec.runId,
+    runInputHash,
     baseModelConfig: deps.baseModelConfig,
     resolveModelConfig: deps.resolveModelConfig,
     deriveSubagentContext: deps.deriveSubagentContext,
     resolveAgentTools: deps.resolveAgentTools,
     writeGuard: { inFlight: 0, warned: false },
+    writeGate: new SerialWriteGate(),
     signal: controller.signal,
     gate: new ConcurrencyGate(SCRIPT_RUNTIME.GLOBAL_MAX_CONCURRENCY),
     emit,
@@ -133,13 +170,24 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     emit({ runId: spec.runId, type: 'run:start', ts: Date.now(), data: { goal: spec.goal, scriptHash } });
     // journal 父行先于任何 onCallComplete 写入（FK + resume 自包含）；best-effort 不阻断执行。
     try {
-      journal?.onRunStart({ runId: spec.runId, scriptHash, goal: spec.goal, startedAt: state.startedAt });
+      journal?.onRunStart({ runId: spec.runId, scriptHash, goal: spec.goal, inputHash: runInputHash, startedAt: state.startedAt });
     } catch {
       /* best-effort journal — 不抛 */
     }
     // MED-3：resume 请求但没拿到任何缓存（runId 笔误 / journal 不可用 / 旧 run 没记调用）→ 不静默
     // 退化烧预算，发一条 run:log 警告让调用方看见「这次没命中、在全量 live 跑」。
-    if (spec.resumeFromRunId && (!resumeCalls || resumeCalls.size === 0)) {
+    if (resumeInputMismatchMessage) {
+      try {
+        emit({
+          runId: spec.runId,
+          type: 'run:log',
+          ts: Date.now(),
+          data: { message: resumeInputMismatchMessage },
+        });
+      } catch {
+        /* 观测面非权威，不反噬执行 */
+      }
+    } else if (spec.resumeFromRunId && (!resumeCalls || resumeCalls.size === 0)) {
       // 纯观测警告——必须 best-effort（Codex round2 MED#3）：host emit 抛错不得在执行前中断 run。
       try {
         emit({

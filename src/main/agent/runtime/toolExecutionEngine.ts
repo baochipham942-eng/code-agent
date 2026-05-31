@@ -31,7 +31,7 @@ import { getDiffTracker } from '../../services/diff/diffTracker';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
-import type { ConversationRuntime } from './conversationRuntime';
+import type { RuntimeControlPort } from './runtimeControl';
 import {
   isSameArtifactRepairPath,
   seedArtifactRepairGuardFromContext,
@@ -85,7 +85,7 @@ export type { AgentLoopConfig };
 export class ToolExecutionEngine {
   contextAssembly!: ContextAssembly;
   runFinalizer!: RunFinalizer;
-  conversationRuntime!: ConversationRuntime;
+  runtimeControl!: RuntimeControlPort;
   private forceFinalResponseReasonAtBatchStart: string | undefined;
   private forceFinalResponseBatchActive = false;
 
@@ -94,11 +94,11 @@ export class ToolExecutionEngine {
   setModules(
     contextAssembly: ContextAssembly,
     runFinalizer: RunFinalizer,
-    conversationRuntime: ConversationRuntime,
+    runtimeControl: RuntimeControlPort,
   ): void {
     this.contextAssembly = contextAssembly;
     this.runFinalizer = runFinalizer;
-    this.conversationRuntime = conversationRuntime;
+    this.runtimeControl = runtimeControl;
   }
 
   // Convenience: emit event through context
@@ -654,8 +654,8 @@ export class ToolExecutionEngine {
         {
           planningService: this.ctx.planningService,
           modelConfig: this.ctx.modelConfig,
-          setPlanMode: this.conversationRuntime.setPlanMode.bind(this.conversationRuntime),
-          isPlanMode: this.conversationRuntime.isPlanMode.bind(this.conversationRuntime),
+          setPlanMode: this.runtimeControl.setPlanMode.bind(this.runtimeControl),
+          isPlanMode: this.runtimeControl.isPlanMode.bind(this.runtimeControl),
           emitEvent: (event: string, data: unknown) => this.ctx.onEvent({ type: event, data, sessionId: this.ctx.sessionId } as AgentEvent),
           sessionId: this.ctx.sessionId,
           // Per-agent BrowserPool / ComputerSurface 隔离的关键：把 RuntimeContext.agentId
@@ -731,7 +731,7 @@ export class ToolExecutionEngine {
       handleToolResultBookkeeping({
         ctx: this.ctx,
         contextAssembly: this.contextAssembly,
-        conversationRuntime: this.conversationRuntime,
+        runtimeControl: this.runtimeControl,
         toolCall,
         normalizedResult,
         toolResult,

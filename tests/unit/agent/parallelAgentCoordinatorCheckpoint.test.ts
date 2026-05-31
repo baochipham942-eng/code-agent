@@ -108,6 +108,9 @@ function makeContext(sessionId: string) {
       hookManager: undefined,
       sessionId,
     } as never,
+    subagentExecutor: {
+      execute: executorState.executeMock,
+    },
   };
 }
 

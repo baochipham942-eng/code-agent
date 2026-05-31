@@ -83,6 +83,9 @@ function makeFakeContext() {
       currentToolCallId: 'call-1',
       hookManager: undefined,
     } as never,
+    subagentExecutor: {
+      execute: executorState.executeMock,
+    },
   };
 }
 
@@ -144,6 +147,31 @@ describe('ParallelAgentCoordinator', () => {
       expect(coordinator.getConfig().maxParallelTasks).toBe(2);
       // 原有字段保留
       expect(coordinator.getConfig().enableSharedContext).toBe(true);
+    });
+
+    it('uses an injected subagent executor port instead of the singleton executor', async () => {
+      const injectedExecute = vi.fn(async (_task: string, spec: { name: string }) => ({
+        success: true,
+        output: `injected:${spec.name}`,
+        iterations: 1,
+        toolsUsed: ['Read'],
+      }));
+      const injected = new ParallelAgentCoordinator({
+        maxParallelTasks: 1,
+        taskTimeout: 5000,
+        aggregateResults: false,
+      });
+      injected.initialize({
+        ...makeFakeContext(),
+        subagentExecutor: { execute: injectedExecute },
+      });
+
+      const result = await injected.executeParallel([makeTask('injected-task')]);
+
+      expect(result.success).toBe(true);
+      expect(result.results[0].output).toBe('injected:coder');
+      expect(injectedExecute).toHaveBeenCalledTimes(1);
+      expect(executorState.executeMock).not.toHaveBeenCalled();
     });
   });
 

@@ -26,16 +26,19 @@ import { runAgentCall, type ScriptRunContext } from '../../../../src/main/agent/
 import type { AgentCallPayload } from '../../../../src/main/agent/scriptRuntime/types';
 import { BudgetTracker } from '../../../../src/main/agent/scriptRuntime/budget';
 import { resolveToolProfile } from '../../../../src/main/agent/scriptRuntime/toolProfiles';
+import { SerialWriteGate } from '../../../../src/main/agent/scriptRuntime/writeGate';
 
 function makeCtx(budget: BudgetTracker = new BudgetTracker(null)): ScriptRunContext {
   const modelConfig = { provider: 'xiaomi', model: 'm', apiKey: 'k' } as never;
   return {
     runId: 'run1',
+    runInputHash: 'goal-default',
     baseModelConfig: modelConfig,
     resolveModelConfig: () => modelConfig,
     deriveSubagentContext: () => ({}) as never,
     resolveAgentTools: (p?: string) => resolveToolProfile(p),
     writeGuard: { inFlight: 0, warned: false },
+    writeGate: new SerialWriteGate(),
     signal: new AbortController().signal,
     gate: { acquire: vi.fn(async () => () => {}) } as never,
     emit: vi.fn(),
@@ -232,7 +235,7 @@ describe('runAgentCall 工具分档 + 并行写护栏', () => {
     await runAgentCall({ prompt: 'p', options: { tools: 'edit' } }, ctx);
     const warned = (ctx.emit as ReturnType<typeof vi.fn>).mock.calls.some(
       ([e]: [{ type: string; data?: { message?: string } }]) =>
-        e.type === 'run:log' && /并行写|互相覆盖/.test(e.data?.message ?? ''),
+        e.type === 'run:log' && /多个写 agent|串行执行|互相覆盖/.test(e.data?.message ?? ''),
     );
     expect(warned).toBe(true);
     expect(ctx.writeGuard.warned).toBe(true);
@@ -244,6 +247,47 @@ describe('runAgentCall 工具分档 + 并行写护栏', () => {
     executeMock.mockResolvedValue({ success: true, output: 'ok' });
     await runAgentCall({ prompt: 'p' }, ctx); // readonly
     expect(ctx.writeGuard.warned).toBe(false);
+  });
+
+  it('serializes write-capable agents that share the same worktree', async () => {
+    const ctx = makeCtx();
+    const events: string[] = [];
+    let releaseFirst: (() => void) | undefined;
+
+    executeMock.mockImplementation((prompt: string) => {
+      events.push(`start:${prompt}`);
+      if (prompt === 'first writer') {
+        return new Promise((resolve) => {
+          releaseFirst = () => {
+            events.push('finish:first writer');
+            resolve({ success: true, output: 'first done' });
+          };
+        });
+      }
+      events.push(`finish:${prompt}`);
+      return Promise.resolve({ success: true, output: 'second done' });
+    });
+
+    const first = runAgentCall({ prompt: 'first writer', options: { tools: 'edit' } }, ctx);
+    await vi.waitFor(() => {
+      expect(events).toEqual(['start:first writer']);
+      expect(ctx.writeGate.stats()).toMatchObject({ inFlight: 1 });
+    });
+
+    const second = runAgentCall({ prompt: 'second writer', options: { tools: 'edit' } }, ctx);
+    await Promise.resolve();
+    expect(events).toEqual(['start:first writer']);
+    expect(ctx.writeGate.stats()).toMatchObject({ inFlight: 1, queued: 1 });
+
+    releaseFirst?.();
+    await expect(first).resolves.toBe('first done');
+    await expect(second).resolves.toBe('second done');
+    expect(events).toEqual([
+      'start:first writer',
+      'finish:first writer',
+      'start:second writer',
+      'finish:second writer',
+    ]);
   });
 });
 

@@ -94,8 +94,8 @@ import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
 import { createHash } from 'crypto';
 import type { RuntimeContext } from './runtimeContext';
-import type { ContextAssembly } from './contextAssembly';
 import type { LearningPipeline } from './learningPipeline';
+import type { MessageWriterPort } from './runtimePorts';
 import {
   getRunTerminalAgentEventType,
   getRunTerminalPostHogEvent,
@@ -171,16 +171,16 @@ function hasVisibleAssistantTextAfterLastUser(messages: Message[]): boolean {
  */
 
 export class RunFinalizer {
-  contextAssembly!: ContextAssembly;
+  messageWriter!: MessageWriterPort;
   learningPipeline!: LearningPipeline;
 
   constructor(protected ctx: RuntimeContext) {}
 
   setModules(
-    contextAssembly: ContextAssembly,
+    messageWriter: MessageWriterPort,
     learningPipeline: LearningPipeline,
   ): void {
-    this.contextAssembly = contextAssembly;
+    this.messageWriter = messageWriter;
     this.learningPipeline = learningPipeline;
   }
 
@@ -253,12 +253,12 @@ export class RunFinalizer {
       logCollector.agent('WARN', `Circuit breaker stopped agent after ${iterations} iterations`);
 
       const errorMessage: Message = {
-        id: this.contextAssembly.generateId(),
+        id: this.messageWriter.generateId(),
         role: 'assistant',
         content: '⚠️ **工具调用异常**\n\n连续多次工具调用失败，已自动停止执行。这可能是由于：\n- 文件路径不存在\n- 网络连接问题\n- 工具参数错误\n\n请检查上面的错误信息，然后告诉我如何继续。',
         timestamp: Date.now(),
       };
-      await this.contextAssembly.addAndPersistMessage(errorMessage);
+      await this.messageWriter.addAndPersistMessage(errorMessage);
       this.ctx.onEvent({ type: 'message', data: errorMessage });
 
       // Fire-and-forget: emit StopFailure hook
@@ -289,12 +289,12 @@ export class RunFinalizer {
     } else {
       if (!hasVisibleAssistantTextAfterLastUser(this.ctx.messages)) {
         const fallbackMessage: Message = {
-          id: this.contextAssembly.generateId(),
+          id: this.messageWriter.generateId(),
           role: 'assistant',
           content: '任务已结束，执行记录和产物已保留。这一轮没有生成最终说明，请直接查看上面的工具结果。',
           timestamp: Date.now(),
         };
-        await this.contextAssembly.addAndPersistMessage(fallbackMessage);
+        await this.messageWriter.addAndPersistMessage(fallbackMessage);
         this.ctx.onEvent({ type: 'message', data: fallbackMessage });
       }
       langfuse.endTrace(this.ctx.traceId, `Completed in ${iterations} iterations`);
@@ -551,7 +551,7 @@ export class RunFinalizer {
     if (skillResult.newMessages) {
       for (const msg of skillResult.newMessages) {
         const messageToInject: Message = {
-          id: this.contextAssembly.generateId(),
+          id: this.messageWriter.generateId(),
           role: msg.role,
           content: msg.content,
           timestamp: Date.now(),

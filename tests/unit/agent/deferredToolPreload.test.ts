@@ -7,7 +7,7 @@ vi.mock('../../../src/main/tools/protocolRegistry', async () => {
   return {
     ...actual,
     isProtocolToolName: (name: string) =>
-      name === 'Browser' || name === 'Computer' || name === 'workflow_orchestrate' || actual.isProtocolToolName(name),
+      name === 'Browser' || name === 'Computer' || name === 'workflow' || name === 'workflow_orchestrate' || actual.isProtocolToolName(name),
   };
 });
 
@@ -46,7 +46,7 @@ function runtime(
   };
 }
 
-function registerProtocolToolForPreload(name: 'Browser' | 'Computer' | 'workflow_orchestrate'): void {
+function registerProtocolToolForPreload(name: 'Browser' | 'Computer' | 'workflow' | 'workflow_orchestrate'): void {
   const schema: ToolSchema = {
     name,
     description: `${name} test schema`,
@@ -54,7 +54,7 @@ function registerProtocolToolForPreload(name: 'Browser' | 'Computer' | 'workflow
       type: 'object',
       properties: {},
     },
-    category: name === 'workflow_orchestrate' ? 'multiagent' : 'vision',
+    category: name === 'workflow' || name === 'workflow_orchestrate' ? 'multiagent' : 'vision',
     permissionLevel: 'execute',
     readOnly: false,
   };
@@ -75,6 +75,7 @@ describe('deferred tool preload', () => {
     resetProtocolRegistry();
     registerProtocolToolForPreload('Browser');
     registerProtocolToolForPreload('Computer');
+    registerProtocolToolForPreload('workflow');
     registerProtocolToolForPreload('workflow_orchestrate');
     resetToolSearchService();
   });
@@ -183,6 +184,29 @@ describe('deferred tool preload', () => {
 
     expect(loaded).toEqual(['workflow_orchestrate']);
     expect(getToolSearchService().isToolLoaded('workflow_orchestrate')).toBe(true);
+  });
+
+  it('preloads dynamic workflow for /workflow and script workflow requests', () => {
+    const loaded = preloadDeferredToolsForTurn(runtime({
+      messages: [{
+        id: 'm1',
+        role: 'user',
+        content: '/workflow 分批派 agent 梳理架构债并汇总',
+        timestamp: 1,
+      }],
+    }));
+
+    expect(loaded).toEqual(['workflow']);
+    expect(getToolSearchService().isToolLoaded('workflow')).toBe(true);
+
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      messages: [{
+        id: 'm2',
+        role: 'user',
+        content: 'Use a dynamic workflow with parallel agents',
+        timestamp: 2,
+      }],
+    }))).toEqual(['workflow']);
   });
 
   it('preloads workflow_orchestrate for cowork and multi-agent requests', () => {

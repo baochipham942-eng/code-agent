@@ -11,6 +11,7 @@ import { readdirSync, readFileSync, statSync } from 'fs';
 import { describe, expect, it } from 'vitest';
 import { buildPrompt, buildDynamicPromptV2 } from '../../../src/main/prompts/builder';
 import { injectWorkingDirectoryContext } from '../../../src/main/agent/messageHandling/contextBuilder';
+import { CORE_AGENTS } from '../../../src/main/agent/hybrid/coreAgents';
 
 const repoRoot = process.cwd();
 
@@ -146,5 +147,40 @@ describe('prompt regressions', () => {
     ]) {
       expect(combined).not.toContain(staleToken);
     }
+  });
+
+  it('keeps built-in subagent prompts aligned with canonical tool names', () => {
+    const combinedPrompts = Object.values(CORE_AGENTS)
+      .map((agent) => `${agent.id}\n${String(agent.prompt)}`)
+      .join('\n\n');
+    const combinedTools = Object.values(CORE_AGENTS)
+      .flatMap((agent) => agent.tools)
+      .join('\n');
+
+    for (const staleToken of [
+      'read_file',
+      'write_file',
+      'edit_file',
+      'web_search',
+      'web_fetch',
+      'task_create',
+      'task_update',
+      'task_list',
+      'task_get',
+      'execute_command',
+    ]) {
+      expect(combinedPrompts).not.toContain(staleToken);
+      expect(combinedTools).not.toContain(staleToken);
+    }
+  });
+
+  it('keeps runtime nudge wording on current tool names', () => {
+    const nudgeSource = readFileSync(`${repoRoot}/src/main/agent/nudgeManager.ts`, 'utf8');
+
+    expect(nudgeSource).toContain('use TaskManager with action="update"');
+    expect(nudgeSource).toContain('Edit 或 Write');
+    expect(nudgeSource).not.toContain('use task_update with status');
+    expect(nudgeSource).not.toContain('edit_file 或 write_file');
+    expect(nudgeSource).not.toContain('请在 <think>');
   });
 });

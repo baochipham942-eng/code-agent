@@ -297,9 +297,13 @@ function todoToTaskStatus(status: TodoStatus): SessionTask['status'] {
   return 'pending';
 }
 
+function isTerminalSessionTaskStatus(status: SessionTask['status']): boolean {
+  return status === 'completed' || status === 'cancelled';
+}
+
 function shouldUpdateTaskFromTodo(task: SessionTask, todo: TodoItem): boolean {
   const nextStatus = todoToTaskStatus(todo.status);
-  if (task.status !== nextStatus && !(task.status === 'completed' && nextStatus !== 'completed')) {
+  if (task.status !== nextStatus && !isTerminalSessionTaskStatus(task.status)) {
     return true;
   }
   return task.subject !== todo.content || task.description !== todo.content || task.activeForm !== todo.activeForm;
@@ -341,11 +345,12 @@ export function syncTodosToSessionTasks(
     }
 
     const nextStatus = todoToTaskStatus(todo.status);
+    const status = isTerminalSessionTaskStatus(task.status) ? task.status : nextStatus;
     const nextTask = updateTask(sessionId, task.id, {
       subject: todo.content,
       description: todo.content,
       activeForm: todo.activeForm,
-      status: task.status === 'completed' && nextStatus !== 'completed' ? 'completed' : nextStatus,
+      status,
       metadata: { source: 'todo_parser' },
     });
     if (nextTask) {
@@ -369,28 +374,22 @@ export function syncTodosToSessionTasks(
  * 当第 N-1 个任务完成时，第 N 个任务标记为 in_progress
  */
 export function advanceTodoStatus(todos: TodoItem[]): { updated: boolean; todos: TodoItem[] } {
-  let updated = false;
-  const result = todos.map((todo, index) => {
-    if (todo.status === 'pending' && index > 0) {
-      // 检查前一个任务是否已完成
-      const prevTodo = todos[index - 1];
-      if (prevTodo.status === 'completed') {
-        updated = true;
-        return { ...todo, status: 'in_progress' as TodoStatus };
-      }
-    }
-    // 第一个 pending 任务自动变为 in_progress（如果没有正在进行的任务）
-    if (todo.status === 'pending' && index === 0) {
-      const hasInProgress = todos.some(t => t.status === 'in_progress');
-      if (!hasInProgress) {
-        updated = true;
-        return { ...todo, status: 'in_progress' as TodoStatus };
-      }
-    }
-    return todo;
-  });
+  if (todos.some(t => t.status === 'in_progress')) {
+    return { updated: false, todos };
+  }
 
-  return { updated, todos: result };
+  const nextIndex = todos.findIndex((todo, index) => (
+    todo.status === 'pending'
+    && (index === 0 || todos[index - 1]?.status === 'completed')
+  ));
+  if (nextIndex < 0) return { updated: false, todos };
+
+  return {
+    updated: true,
+    todos: todos.map((todo, index) => (
+      index === nextIndex ? { ...todo, status: 'in_progress' as TodoStatus } : todo
+    )),
+  };
 }
 
 /**

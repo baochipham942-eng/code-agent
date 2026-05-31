@@ -25,13 +25,14 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 }));
 
 import {
+  advanceTodoStatus,
   clearSessionTodos,
   getSessionTodos,
   parseTodos,
   setSessionTodos,
   syncTodosToSessionTasks,
 } from '../../../src/main/agent/todoParser';
-import { clearTasks } from '../../../src/main/services/planning/taskStore';
+import { clearTasks, updateTask } from '../../../src/main/services/planning/taskStore';
 
 describe('todoParser persistence', () => {
   beforeEach(() => {
@@ -89,6 +90,35 @@ describe('todoParser persistence', () => {
     expect(second.created).toHaveLength(0);
     expect(second.updated).toHaveLength(1);
     expect(second.tasks.map((task) => task.status)).toEqual(['completed', 'completed']);
+  });
+
+  it('does not resurrect cancelled SessionTask records from parsed todos', () => {
+    clearTasks('todo-session-cancelled');
+
+    const first = syncTodosToSessionTasks('todo-session-cancelled', [
+      { content: 'Drop old path', status: 'pending', activeForm: 'Dropping old path' },
+    ]);
+    expect(first.tasks[0].status).toBe('pending');
+
+    updateTask('todo-session-cancelled', first.tasks[0].id, { status: 'cancelled' });
+
+    const second = syncTodosToSessionTasks('todo-session-cancelled', [
+      { content: 'Drop old path', status: 'in_progress', activeForm: 'Dropping old path' },
+    ]);
+
+    expect(second.created).toHaveLength(0);
+    expect(second.tasks[0].status).toBe('cancelled');
+  });
+
+  it('does not promote a second todo while another todo is already in progress', () => {
+    const result = advanceTodoStatus([
+      { content: 'Read code', status: 'completed', activeForm: 'Reading code' },
+      { content: 'Patch UI', status: 'pending', activeForm: 'Patching UI' },
+      { content: 'Verify behavior', status: 'in_progress', activeForm: 'Verifying behavior' },
+    ]);
+
+    expect(result.updated).toBe(false);
+    expect(result.todos.map((todo) => todo.status)).toEqual(['completed', 'pending', 'in_progress']);
   });
 });
 

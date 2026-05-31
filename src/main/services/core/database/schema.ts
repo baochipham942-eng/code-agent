@@ -97,10 +97,6 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
 
-  // Experiments 表迁移
-  safeAlter(db, 'ALTER TABLE experiments ADD COLUMN git_commit TEXT', logger);
-  safeAlter(db, 'ALTER TABLE experiment_cases ADD COLUMN session_id TEXT', logger);
-
   // Tool Executions 表 (用于缓存和审计)
   db.exec(`
     CREATE TABLE IF NOT EXISTS tool_executions (
@@ -555,7 +551,8 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       scope TEXT DEFAULT 'full',
       config_json TEXT,
       summary_json TEXT NOT NULL,
-      source TEXT DEFAULT 'test-runner'
+      source TEXT DEFAULT 'test-runner',
+      git_commit TEXT
     )
   `);
 
@@ -573,6 +570,10 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
     )
   `);
+
+  // Experiments 表迁移（必须在建表之后跑；新库建表前 ALTER 会被 SQLite 当成 no such table）。
+  safeAlter(db, 'ALTER TABLE experiments ADD COLUMN git_commit TEXT', logger);
+  safeAlter(db, 'ALTER TABLE experiment_cases ADD COLUMN session_id TEXT', logger);
 
   // ========================================================================
   // Swarm Trace 持久化表（ADR-010 #5）

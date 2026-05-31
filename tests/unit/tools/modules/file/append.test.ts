@@ -106,4 +106,33 @@ describe('appendModule (native)', () => {
       expect(second.meta?.fileSize).toBe('<html><body>hello</body></html>'.length);
     }
   });
+
+  it('confines eval absolute repo paths to the sandbox', async () => {
+    const realRoot = path.join(tmpDir, 'repo');
+    const sandbox = path.join(tmpDir, 'sandbox');
+    const realFile = path.join(realRoot, 'artifact.txt');
+    const sandboxFile = path.join(sandbox, 'artifact.txt');
+    const previousRealRoot = process.env.CODE_AGENT_EVAL_REAL_ROOT;
+    process.env.CODE_AGENT_EVAL_REAL_ROOT = realRoot;
+
+    try {
+      const handler = await appendModule.createHandler();
+      const result = await handler.execute(
+        { file_path: realFile, content: 'chunk' },
+        makeCtx({ workingDir: sandbox }),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      expect(await fs.readFile(sandboxFile, 'utf-8')).toBe('chunk');
+      await expect(fs.access(realFile)).rejects.toThrow();
+      if (result.ok) expect(result.meta?.outputPath).toBe(sandboxFile);
+    } finally {
+      if (previousRealRoot === undefined) {
+        delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+      } else {
+        process.env.CODE_AGENT_EVAL_REAL_ROOT = previousRealRoot;
+      }
+    }
+  });
 });

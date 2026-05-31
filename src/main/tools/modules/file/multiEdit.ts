@@ -39,6 +39,7 @@ import { getResourceLockManager } from '../../../services/infra/resourceLockMana
 import { getPostEditDiagnostics } from '../../lsp/diagnosticsHelper';
 import { multiEditSchema as schema } from './multiEdit.schema';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
+import { confineEvalPath } from '../../file/pathUtils';
 
 interface EditOperation {
   old_text: string;
@@ -102,9 +103,10 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
       return { ok: false, error: 'aborted', code: 'ABORTED' };
     }
 
-    const filePath = path.isAbsolute(inputPath)
+    const inputFilePath = path.isAbsolute(inputPath)
       ? path.resolve(inputPath)
       : path.resolve(ctx.workingDir, inputPath);
+    const filePath = confineEvalPath(inputFilePath, ctx.workingDir);
 
     // Safety: file 必须先 Read
     if (!force && !fileReadTracker.hasBeenRead(filePath)) {

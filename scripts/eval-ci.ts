@@ -229,6 +229,38 @@ function getCommitSha(): string {
   }
 }
 
+function getRepoStatusSnapshot(repoDir: string): string[] | null {
+  try {
+    execSync('git rev-parse --is-inside-work-tree', { cwd: repoDir, stdio: 'ignore' });
+    const output = execSync('git status --porcelain=v1 --untracked-files=all', {
+      cwd: repoDir,
+      encoding: 'utf8',
+    });
+    return output.split('\n').filter(Boolean).sort();
+  } catch {
+    return null;
+  }
+}
+
+function diffStatusSnapshot(before: string[] | null, after: string[] | null): string[] {
+  if (!before || !after) return [];
+  const beforeSet = new Set(before);
+  return after.filter((line) => !beforeSet.has(line));
+}
+
+function assertRepoUnchanged(repoDir: string, before: string[] | null): void {
+  const after = getRepoStatusSnapshot(repoDir);
+  const added = diffStatusSnapshot(before, after);
+  if (added.length === 0) return;
+
+  const shown = added.slice(0, 20).join('\n    ');
+  const more = added.length > 20 ? `\n    ... and ${added.length - 20} more` : '';
+  throw new Error(
+    `Eval modified the source worktree. This is blocked because real evals must write only inside the sandbox.\n` +
+    `New/changed status entries:\n    ${shown}${more}`
+  );
+}
+
 function readEnvValue(filePath: string, name: string): string | undefined {
   try {
     const content = fs.readFileSync(filePath, 'utf8');
@@ -390,6 +422,7 @@ async function runEvals(
   opts: { real: boolean; model?: string; provider?: string; concurrency?: number; tags?: string[]; ids?: string[] }
 ): Promise<TestRunSummary> {
   // \u9694\u79BB\u6C99\u7BB1\uFF1Aagent \u7684 working directory \u8D70\u4E34\u65F6\u5FEB\u7167\uFF1Btest-cases / results \u4ECD\u8BFB\u5199\u771F\u5B9E\u4ED3\u5E93\u3002
+  const repoStatusBefore = getRepoStatusSnapshot(workingDir);
   const sandbox = createEvalSandbox(workingDir);
   const agentWorkingDir = sandbox?.dir ?? workingDir;
   try {
@@ -439,6 +472,10 @@ async function runEvals(
 
     const savedFiles = await saveReport(summary, config.resultsDir);
     console.log(chalk.dim(`  Reports saved to: ${savedFiles[0]}`));
+
+    if (sandbox) {
+      assertRepoUnchanged(workingDir, repoStatusBefore);
+    }
 
     return summary;
   } finally {

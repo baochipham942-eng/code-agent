@@ -170,6 +170,35 @@ describe('writeModule (native)', () => {
       expect(await fs.readFile(file, 'utf-8')).toBe('nested');
     });
 
+    it('confines eval absolute repo paths to the sandbox', async () => {
+      const realRoot = path.join(tmpDir, 'repo');
+      const sandbox = path.join(tmpDir, 'sandbox');
+      const realFile = path.join(realRoot, 'src', 'generated.txt');
+      const sandboxFile = path.join(sandbox, 'src', 'generated.txt');
+      const previousRealRoot = process.env.CODE_AGENT_EVAL_REAL_ROOT;
+      process.env.CODE_AGENT_EVAL_REAL_ROOT = realRoot;
+
+      try {
+        const handler = await writeModule.createHandler();
+        const result = await handler.execute(
+          { file_path: realFile, content: 'confined' },
+          makeCtx({ workingDir: sandbox }),
+          allowAll,
+        );
+
+        expect(result.ok).toBe(true);
+        expect(await fs.readFile(sandboxFile, 'utf-8')).toBe('confined');
+        await expect(fs.access(realFile)).rejects.toThrow();
+        if (result.ok) expect(result.meta?.outputPath).toBe(sandboxFile);
+      } finally {
+        if (previousRealRoot === undefined) {
+          delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+        } else {
+          process.env.CODE_AGENT_EVAL_REAL_ROOT = previousRealRoot;
+        }
+      }
+    });
+
     it('writes empty string content', async () => {
       const file = path.join(tmpDir, 'empty.txt');
       const handler = await writeModule.createHandler();

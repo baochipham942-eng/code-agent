@@ -114,4 +114,40 @@ describe('multiEditModule evidence metadata', () => {
       expect(result.error).toContain('abilities: [');
     }
   });
+
+  it('confines eval absolute repo paths to the sandbox', async () => {
+    const realRoot = path.join(tmpDir, 'repo');
+    const sandbox = path.join(tmpDir, 'sandbox');
+    const realFile = path.join(realRoot, 'note.txt');
+    const sandboxFile = path.join(sandbox, 'note.txt');
+    const previousRealRoot = process.env.CODE_AGENT_EVAL_REAL_ROOT;
+    process.env.CODE_AGENT_EVAL_REAL_ROOT = realRoot;
+
+    try {
+      await fs.mkdir(path.dirname(sandboxFile), { recursive: true });
+      await fs.writeFile(sandboxFile, 'alpha\nbeta\n', 'utf-8');
+      await fileReadTracker.recordReadWithStats(sandboxFile);
+
+      const handler = await editModule.createHandler();
+      const result = await handler.execute(
+        {
+          file_path: realFile,
+          edits: [{ old_text: 'beta', new_text: 'gamma' }],
+        },
+        makeCtx({ workingDir: sandbox }),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      expect(await fs.readFile(sandboxFile, 'utf-8')).toBe('alpha\ngamma\n');
+      await expect(fs.access(realFile)).rejects.toThrow();
+      if (result.ok) expect(result.meta?.path).toBe(sandboxFile);
+    } finally {
+      if (previousRealRoot === undefined) {
+        delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+      } else {
+        process.env.CODE_AGENT_EVAL_REAL_ROOT = previousRealRoot;
+      }
+    }
+  });
 });

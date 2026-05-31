@@ -11,6 +11,7 @@ import type {
 } from '../../../protocol/tools';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
+import { confineEvalPath } from '../../file/pathUtils';
 import { appendSchema as schema } from './append.schema';
 
 const LOCK_HOLD_TIMEOUT_MS = 60_000;
@@ -70,7 +71,7 @@ class AppendHandler implements ToolHandler<Record<string, unknown>, string> {
     }
 
     const filePath = resolveInputPath(rawPath, ctx.workingDir);
-    const resolvedPath = path.resolve(filePath);
+    const resolvedPath = confineEvalPath(path.resolve(filePath), ctx.workingDir);
 
     onProgress?.({ stage: 'starting', detail: `append ${path.basename(filePath)}` });
 
@@ -93,12 +94,12 @@ class AppendHandler implements ToolHandler<Record<string, unknown>, string> {
     }
 
     try {
-      await fs.mkdir(path.dirname(filePath), { recursive: true });
-      await fs.appendFile(filePath, content, 'utf-8');
-      const stat = await fs.stat(filePath);
+      await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
+      await fs.appendFile(resolvedPath, content, 'utf-8');
+      const stat = await fs.stat(resolvedPath);
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.info('Append done', {
-        filePath,
+        filePath: resolvedPath,
         appendedBytes: Buffer.byteLength(content, 'utf-8'),
         size: stat.size,
         final,
@@ -106,17 +107,17 @@ class AppendHandler implements ToolHandler<Record<string, unknown>, string> {
       return {
         ok: true,
         output:
-          `Appended file: ${filePath} (${content.length} chars appended, ${stat.size} bytes total` +
+          `Appended file: ${resolvedPath} (${content.length} chars appended, ${stat.size} bytes total` +
           `${final ? ', final chunk' : ''})`,
         meta: {
-          artifact: await createFileArtifact(filePath, schema.name, ctx, {
+          artifact: await createFileArtifact(resolvedPath, schema.name, ctx, {
             metadata: {
               final,
               appendedChars: content.length,
               appendedBytes: Buffer.byteLength(content, 'utf-8'),
             },
           }),
-          outputPath: filePath,
+          outputPath: resolvedPath,
           final,
           contentLength: content.length,
           fileSize: stat.size,

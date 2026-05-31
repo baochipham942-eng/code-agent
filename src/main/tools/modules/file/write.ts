@@ -266,19 +266,19 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
     }
 
     try {
-      const dir = path.dirname(filePath);
+      const dir = path.dirname(resolvedPath);
       await fs.mkdir(dir, { recursive: true });
 
       let existed = false;
       try {
-        await fs.access(filePath);
+        await fs.access(resolvedPath);
         existed = true;
       } catch {
         // 不存在，正常创建
       }
 
-      const largeSingleWriteArtifact = isLargeSingleWriteArtifact(filePath, content, existed);
-      if (shouldRejectOversizedSingleWriteArtifact(filePath, content, existed)) {
+      const largeSingleWriteArtifact = isLargeSingleWriteArtifact(resolvedPath, content, existed);
+      if (shouldRejectOversizedSingleWriteArtifact(resolvedPath, content, existed)) {
         return {
           ok: false,
           error:
@@ -287,35 +287,35 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
             'Use Write for the initial chunk, then Append ordered chunks and set final=true on the last chunk.',
           code: 'PREFER_APPEND_FOR_LARGE_ARTIFACT',
           meta: {
-            outputPath: filePath,
+            outputPath: resolvedPath,
             contentLength: content.length,
             maxSingleWriteChars: MAX_SINGLE_WRITE_ARTIFACT_CHAR_LIMIT,
           },
         };
       }
 
-      await atomicWriteFile(filePath, content, 'utf-8');
+      await atomicWriteFile(resolvedPath, content, 'utf-8');
       const action = existed ? 'Updated' : 'Created';
 
       // 代码完整性检测（仅代码文件）
-      const ext = path.extname(filePath).toLowerCase();
+      const ext = path.extname(resolvedPath).toLowerCase();
       if (CODE_EXTENSIONS.has(ext)) {
-        const check = checkCodeCompleteness(content, filePath);
+        const check = checkCodeCompleteness(content, resolvedPath);
         if (!check.isComplete) {
           ctx.logger.warn('Code completeness check failed', {
-            filePath,
+            filePath: resolvedPath,
             issues: check.issues,
           });
           onProgress?.({ stage: 'completing', percent: 100 });
           return {
             ok: true,
             output:
-              `${action} file: ${filePath} (${content.length} chars)\n\n` +
+              `${action} file: ${resolvedPath} (${content.length} chars)\n\n` +
               `⚠️ **代码完整性警告**: 检测到文件可能不完整！\n` +
               `问题:\n${check.issues.map((i) => `- ${i}`).join('\n')}\n\n` +
               `**建议**: 请使用 edit_file 工具追加剩余代码，或重新生成完整文件。`,
             meta: {
-              artifact: await createFileArtifact(filePath, schema.name, ctx, {
+              artifact: await createFileArtifact(resolvedPath, schema.name, ctx, {
                 metadata: {
                   action: action.toLowerCase(),
                   completenessIssues: check.issues,
@@ -323,7 +323,7 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
                   largeSingleWriteArtifact,
                 },
               }),
-              outputPath: filePath,
+              outputPath: resolvedPath,
               completenessIssues: check.issues,
               largeSingleWriteArtifact,
               contentLength: content.length,
@@ -332,14 +332,14 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
         }
       }
 
-      let output = `${action} file: ${filePath} (${content.length} chars)`;
+      let output = `${action} file: ${resolvedPath} (${content.length} chars)`;
       if (largeSingleWriteArtifact) {
         output += `\nAccepted large generated artifact in one complete Write (${content.length} chars).`;
       }
 
       // LSP 诊断闭环
       try {
-        const diagResult = await getPostEditDiagnostics(filePath);
+        const diagResult = await getPostEditDiagnostics(resolvedPath);
         if (diagResult) {
           output += diagResult.formatted;
         }
@@ -348,19 +348,19 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
       }
 
       onProgress?.({ stage: 'completing', percent: 100 });
-      ctx.logger.info('Write done', { filePath, bytes: content.length, existed });
+      ctx.logger.info('Write done', { filePath: resolvedPath, bytes: content.length, existed });
       return {
         ok: true,
         output,
         meta: {
-          artifact: await createFileArtifact(filePath, schema.name, ctx, {
+          artifact: await createFileArtifact(resolvedPath, schema.name, ctx, {
             metadata: {
               action: action.toLowerCase(),
               contentLength: content.length,
               largeSingleWriteArtifact,
             },
           }),
-          outputPath: filePath,
+          outputPath: resolvedPath,
           largeSingleWriteArtifact,
           contentLength: content.length,
         },

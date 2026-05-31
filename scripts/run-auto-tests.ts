@@ -153,6 +153,7 @@ const PROVIDER_KEY_CANDIDATES: Record<string, string[]> = {
   qwen: ['QWEN_API_KEY', 'DASHSCOPE_API_KEY'],
   minimax: ['MINIMAX_API_KEY'],
   openrouter: ['OPENROUTER_API_KEY'],
+  xiaomi: ['XIAOMI_API_KEY'],
 };
 
 async function loadApiKey(provider: string): Promise<string | undefined> {

@@ -28,12 +28,26 @@ import {
   MockAgentAdapter,
   StandaloneAgentAdapter,
   loadAllTestSuites,
+  filterTestCases,
   generateConsoleReport,
   saveReport,
 } from '../src/main/testing/index';
 import type { AgentInterface } from '../src/main/testing/testRunner';
 import type { TestRunSummary, TrendDataPoint } from '../src/main/testing/types';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../src/shared/constants';
+
+const PROVIDER_KEY_CANDIDATES: Record<string, string[]> = {
+  moonshot: ['KIMI_K25_API_KEY', 'MOONSHOT_API_KEY'],
+  deepseek: ['DEEPSEEK_API_KEY'],
+  zhipu: ['ZHIPU_API_KEY'],
+  openai: ['OPENAI_API_KEY'],
+  claude: ['ANTHROPIC_API_KEY'],
+  groq: ['GROQ_API_KEY'],
+  qwen: ['QWEN_API_KEY', 'DASHSCOPE_API_KEY'],
+  minimax: ['MINIMAX_API_KEY'],
+  openrouter: ['OPENROUTER_API_KEY'],
+  xiaomi: ['XIAOMI_API_KEY'],
+};
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -71,6 +85,8 @@ function parseArgs(argv: string[]) {
   let concurrency: number | undefined;
   let maxCases: number = DEFAULT_MAX_CASES;
   let force = false;
+  let tags: string[] | undefined;
+  let ids: string[] | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -100,6 +116,10 @@ function parseArgs(argv: string[]) {
       concurrency = parseInt(args[++i], 10);
     } else if (arg === '--max-cases' && i + 1 < args.length) {
       maxCases = parseInt(args[++i], 10);
+    } else if (arg === '--tags' && i + 1 < args.length) {
+      tags = args[++i].split(',').map((tag) => tag.trim()).filter(Boolean);
+    } else if (arg === '--ids' && i + 1 < args.length) {
+      ids = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
     } else if (arg === '--force') {
       force = true;
     } else if (arg === '--help' || arg === '-h') {
@@ -120,7 +140,7 @@ function parseArgs(argv: string[]) {
     process.exit(1);
   }
 
-  return { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force };
+  return { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids };
 }
 
 function printUsage() {
@@ -136,6 +156,8 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --provider <name>  Model provider (default: from constants)
   npx tsx scripts/eval-ci.ts --concurrency <n>  Parallel test execution count
   npx tsx scripts/eval-ci.ts --max-cases <n>    Max cases in --real mode (default: 50)
+  npx tsx scripts/eval-ci.ts --tags <a,b>       Filter test cases by tags
+  npx tsx scripts/eval-ci.ts --ids <a,b>        Filter test cases by IDs
   npx tsx scripts/eval-ci.ts --force             Bypass --max-cases limit
   npx tsx scripts/eval-ci.ts --promote          Promote current results to baseline
   npx tsx scripts/eval-ci.ts --baseline-info    Show current baseline
@@ -207,6 +229,34 @@ function getCommitSha(): string {
   }
 }
 
+function readEnvValue(filePath: string, name: string): string | undefined {
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const match = content.match(new RegExp(`^${name}=["']?([^"'\\s\\n]+)["']?`, 'm'));
+    return match?.[1]?.trim();
+  } catch {
+    return undefined;
+  }
+}
+
+function loadApiKey(provider: string, workingDir: string): string | undefined {
+  const candidates = PROVIDER_KEY_CANDIDATES[provider] || [`${provider.toUpperCase()}_API_KEY`];
+  const envFiles = [
+    path.join(workingDir, '.env'),
+    path.join(os.homedir(), '.code-agent', '.env'),
+  ];
+
+  for (const name of candidates) {
+    if (process.env[name]) return process.env[name];
+    for (const envFile of envFiles) {
+      const value = readEnvValue(envFile, name);
+      if (value) return value;
+    }
+  }
+
+  return undefined;
+}
+
 /**
  * 隔离沙箱：把仓库 tracked 文件（git archive HEAD，不含 .git/node_modules/未跟踪产物）
  * 快照到临时目录，作为 agent 执行的 working directory。
@@ -267,6 +317,7 @@ function createAgent(opts: {
   model?: string;
   provider?: string;
   workingDir: string;
+  repoDir: string;
 }): AgentInterface {
   if (!opts.real) {
     const mockAgent = new MockAgentAdapter();
@@ -298,28 +349,59 @@ function createAgent(opts: {
   console.log(chalk.cyan(`  Model:    ${resolvedModel}`));
   console.log('');
 
+  const apiKey = process.env.AUTO_TEST_API_KEY || loadApiKey(resolvedProvider, opts.repoDir);
+  if (!apiKey) {
+    const candidates = PROVIDER_KEY_CANDIDATES[resolvedProvider] || [`${resolvedProvider.toUpperCase()}_API_KEY`];
+    throw new Error(`No API key found for ${resolvedProvider}. Set AUTO_TEST_API_KEY or ${candidates.join(' / ')}.`);
+  }
+
   return new StandaloneAgentAdapter({
     workingDirectory: opts.workingDir,
     modelConfig: {
       provider: resolvedProvider,
       model: resolvedModel,
-      apiKey: process.env.AUTO_TEST_API_KEY,
+      apiKey,
     },
   });
+}
+
+async function prepareRealEvalRuntime(): Promise<void> {
+  process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS ||= '12000';
+  process.env.CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS ||= 'false';
+  process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS = 'true';
+
+  const { getProtocolRegistry } = await import('../src/main/tools/protocolRegistry');
+  getProtocolRegistry();
+
+  try {
+    const { getDatabase } = await import('../src/main/services/core/databaseService');
+    const db = getDatabase();
+    if (!db.isReady) {
+      await db.initialize();
+    }
+  } catch (error) {
+    console.log(chalk.yellow(`  Warning: eval DB initialization skipped: ${error instanceof Error ? error.message : String(error)}`));
+  }
 }
 
 async function runEvals(
   workingDir: string,
   _scope: 'smoke' | 'full',
-  opts: { real: boolean; model?: string; provider?: string; concurrency?: number }
+  opts: { real: boolean; model?: string; provider?: string; concurrency?: number; tags?: string[]; ids?: string[] }
 ): Promise<TestRunSummary> {
   // \u9694\u79BB\u6C99\u7BB1\uFF1Aagent \u7684 working directory \u8D70\u4E34\u65F6\u5FEB\u7167\uFF1Btest-cases / results \u4ECD\u8BFB\u5199\u771F\u5B9E\u4ED3\u5E93\u3002
   const sandbox = createEvalSandbox(workingDir);
   const agentWorkingDir = sandbox?.dir ?? workingDir;
   try {
+    if (opts.real) {
+      await prepareRealEvalRuntime();
+    }
+
     const config = createDefaultConfig(workingDir, {
       verbose: false,
       workingDirectory: agentWorkingDir,
+      filterTags: opts.tags,
+      filterIds: opts.ids,
       ...(opts.concurrency ? { maxParallel: opts.concurrency, parallel: true } : {}),
     });
 
@@ -328,6 +410,7 @@ async function runEvals(
       model: opts.model,
       provider: opts.provider,
       workingDir: agentWorkingDir,
+      repoDir: workingDir,
     });
 
     const runner = new TestRunner(config, agent);
@@ -368,7 +451,7 @@ async function runEvals(
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force } = parseArgs(process.argv);
+  const { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids } = parseArgs(process.argv);
 
   // --model implies --real
   const effectiveReal = real || !!model;
@@ -395,7 +478,7 @@ async function main() {
     if (effectiveReal) {
       const testCaseDir_ = createDefaultConfig(workingDir).testCaseDir;
       const suites = await loadAllTestSuites(testCaseDir_);
-      const totalCases = suites.reduce((sum, s) => sum + s.cases.length, 0);
+      const totalCases = filterTestCases(suites, { filterTags: tags, filterIds: ids }).length;
       const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
       const resolvedProvider = provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
       const costPerCase = estimateCostPerCase(resolvedModel);
@@ -419,7 +502,7 @@ async function main() {
 
     console.log(chalk.bold('  Running evals before promoting to baseline...'));
     console.log('');
-    const summary = await runEvals(workingDir, 'full', { real: effectiveReal, model, provider, concurrency });
+    const summary = await runEvals(workingDir, 'full', { real: effectiveReal, model, provider, concurrency, tags, ids });
     const commitSha = getCommitSha();
     await manager.promote(summary, commitSha);
     console.log(chalk.green(`  Baseline promoted (commit: ${commitSha.slice(0, 7)})`));
@@ -452,6 +535,12 @@ async function main() {
       console.log(chalk.dim(`    ... and ${detection.changedFiles.length - 10} more`));
     }
   }
+  if (tags?.length) {
+    console.log(`  Tags:        ${tags.join(', ')}`);
+  }
+  if (ids?.length) {
+    console.log(`  IDs:          ${ids.join(', ')}`);
+  }
   console.log('');
 
   if (!detection.shouldRunEval && !scope) {
@@ -465,7 +554,7 @@ async function main() {
     // Load suites to count total cases
     const testCaseDir_ = createDefaultConfig(workingDir).testCaseDir;
     const suites = await loadAllTestSuites(testCaseDir_);
-    const totalCases = suites.reduce((sum, s) => sum + s.cases.length, 0);
+    const totalCases = filterTestCases(suites, { filterTags: tags, filterIds: ids }).length;
     const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
     const resolvedProvider = provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
     const costPerCase = estimateCostPerCase(resolvedModel);
@@ -490,7 +579,7 @@ async function main() {
   // Run evals
   console.log(chalk.cyan(`  Running ${effectiveScope} eval suite...`));
   console.log('');
-  const summary = await runEvals(workingDir, effectiveScope, { real: effectiveReal, model, provider, concurrency });
+  const summary = await runEvals(workingDir, effectiveScope, { real: effectiveReal, model, provider, concurrency, tags, ids });
 
   // Compare to baseline
   const delta = await manager.compare(summary);

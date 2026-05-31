@@ -159,7 +159,7 @@ export class NudgeManager {
   // ──────────────────────────────────────────────────────────────────────────
 
   /**
-   * Track a file that was successfully modified (edit_file / write_file).
+   * Track a file that was successfully modified (Edit / Write).
    */
   trackModifiedFile(filePath: string): void {
     const normalizedPath = filePath.replace(/^\.\//, '').replace(/^\//, '');

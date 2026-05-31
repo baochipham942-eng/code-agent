@@ -1,0 +1,226 @@
+# ============================================================================
+# Prompt Real Smoke Tests - prompt/tool contract gate
+# ============================================================================
+
+name: "Prompt Real Smoke Tests"
+description: "Low-cost real-model smoke coverage for prompt/tool schema regressions."
+default_timeout: 90000
+tags:
+  - prompt-real-smoke
+  - core-path
+
+cases:
+  - id: prompt-smoke-read-package
+    type: tool
+    category: basic_tool
+    difficulty: easy
+    description: "Read canonical file through current Read guidance"
+    prompt: "Read package.json and tell me only the package name and version."
+    expectations:
+      - type: response_contains
+        weight: 1
+        critical: true
+        params:
+          text: "code-agent"
+      - type: response_contains
+        weight: 0.8
+        params:
+          text: "0.16"
+      - type: min_tool_calls
+        weight: 0.5
+        params:
+          min: 1
+      - type: no_crash
+        weight: 1
+        critical: true
+        params: {}
+
+  - id: prompt-smoke-write-file
+    type: tool
+    category: basic_tool
+    difficulty: easy
+    description: "Write a tiny file without stale write_file wording"
+    prompt: "Create prompt-smoke-write.txt with exactly this content: prompt smoke write ok"
+    expectations:
+      - type: file_exists
+        weight: 1
+        critical: true
+        params:
+          path: prompt-smoke-write.txt
+      - type: content_contains
+        weight: 1
+        critical: true
+        params:
+          path: prompt-smoke-write.txt
+          contains: "prompt smoke write ok"
+      - type: no_crash
+        weight: 1
+        critical: true
+        params: {}
+    cleanup:
+      - rm -f prompt-smoke-write.txt
+
+  - id: prompt-smoke-edit-edits-schema
+    type: tool
+    category: basic_tool
+    difficulty: easy
+    description: "Edit through edits[].old_text/new_text guidance"
+    setup:
+      - |
+        cat > prompt-smoke-edit.txt << 'EOF'
+        color=red
+        shape=square
+        EOF
+    prompt: "Read prompt-smoke-edit.txt, then change color=red to color=blue."
+    expectations:
+      - type: content_contains
+        weight: 1
+        critical: true
+        params:
+          path: prompt-smoke-edit.txt
+          contains: "color=blue"
+      - type: content_not_contains
+        weight: 0.8
+        params:
+          path: prompt-smoke-edit.txt
+          not_contains: "color=red"
+      - type: no_crash
+        weight: 1
+        critical: true
+        params: {}
+    cleanup:
+      - rm -f prompt-smoke-edit.txt
+
+  - id: prompt-smoke-edit-multiple-replacements
+    type: tool
+    category: basic_tool
+    difficulty: easy
+    description: "Apply multiple replacements in one edit task"
+    setup:
+      - |
+        cat > prompt-smoke-multi-edit.txt << 'EOF'
+        alpha=old
+        beta=old
+        gamma=keep
+        EOF
+    prompt: "Read prompt-smoke-multi-edit.txt, then change alpha=old to alpha=new and beta=old to beta=new."
+    expectations:
+      - type: content_contains
+        weight: 1
+        critical: true
+        params:
+          path: prompt-smoke-multi-edit.txt
+          contains: "alpha=new"
+      - type: content_contains
+        weight: 1
+        critical: true
+        params:
+          path: prompt-smoke-multi-edit.txt
+          contains: "beta=new"
+      - type: no_crash
+        weight: 1
+        critical: true
+        params: {}
+    cleanup:
+      - rm -f prompt-smoke-multi-edit.txt
+
+  - id: prompt-smoke-grep-current-name
+    type: tool
+    category: basic_tool
+    difficulty: easy
+    description: "Search using current Grep guidance"
+    prompt: "Search package.json for the string code-agent and report whether it appears."
+    expectations:
+      - type: tool_output_contains
+        weight: 1
+        critical: true
+        params:
+          text: "code-agent"
+      - type: min_tool_calls
+        weight: 0.5
+        params:
+          min: 1
+      - type: no_crash
+        weight: 1
+        critical: true
+        params: {}
+
+  - id: prompt-smoke-toolsearch-json-arguments
+    type: task
+    category: tool_discovery
+    difficulty: easy
+    description: "Load a deferred tool with ToolSearch JSON arguments"
+    prompt: "Use ToolSearch to search for browser tooling. Then reply with the loaded or discovered tool name."
+    expectations:
+      - type: tool_called
+        weight: 1
+        critical: true
+        params:
+          tool: ToolSearch
+      - type: response_contains
+        weight: 0.5
+        params:
+          text: "Browser|browser"
+      - type: no_crash
+        weight: 1
+        critical: true
+        params: {}
+
+  - id: prompt-smoke-task-single-delegate
+    type: task
+    category: multiagent
+    difficulty: easy
+    description: "Use Task as a single synchronous delegate"
+    prompt: "Use exactly one Task delegate to inspect package.json and return the package name. Do not spawn parallel delegates."
+    expectations:
+      - type: tool_called
+        weight: 1
+        critical: true
+        params:
+          tool: Task
+      - type: response_contains
+        weight: 1
+        critical: true
+        params:
+          text: "code-agent"
+      - type: max_tool_calls
+        weight: 0.4
+        params:
+          max: 5
+      - type: no_crash
+        weight: 1
+        critical: true
+        params: {}
+
+  - id: prompt-smoke-git-status-no-commit
+    type: task
+    category: git_workflow
+    difficulty: easy
+    description: "Inspect git state without auto-commit behavior"
+    setup:
+      - |
+        mkdir -p prompt-smoke-git && git -C prompt-smoke-git init
+        git -C prompt-smoke-git config user.email test@example.com
+        git -C prompt-smoke-git config user.name "Prompt Smoke"
+        echo hello > prompt-smoke-git/file.txt
+        git -C prompt-smoke-git add file.txt
+        git -C prompt-smoke-git commit -m init
+        echo changed >> prompt-smoke-git/file.txt
+    prompt: "Check git status in prompt-smoke-git. Do not commit anything."
+    expectations:
+      - type: tool_called
+        weight: 1
+        critical: true
+        params:
+          tool: Bash
+      - type: tool_output_contains
+        weight: 0.8
+        params:
+          tool: Bash
+          text: "modified|Changes"
+      - type: no_crash
+        weight: 1
+        critical: true
+        params: {}
+    cleanup:
+      - rm -rf prompt-smoke-git

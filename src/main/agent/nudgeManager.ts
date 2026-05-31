@@ -276,7 +276,7 @@ export class NudgeManager {
           `STOP! You have ${totalIncomplete} incomplete item(s):\n${combinedList}\n\n` +
           `You MUST complete these tasks before finishing. Do NOT provide a final summary until all items are marked as completed.\n` +
           `- 未完成的 Todo 项会在工具执行后自动推进状态\n` +
-          `- For Tasks: use task_update with status="completed" (or status="deleted" if no longer needed)\n` +
+          `- For Tasks: use TaskManager with action="update" and status="completed" (or status="deleted" if no longer needed)\n` +
           `Continue working on the remaining items NOW.\n` +
           `</task-completion-check>`
         );
@@ -718,12 +718,12 @@ export class NudgeManager {
       );
     }
 
-    const mutationTools = mutationToolPrompt || 'edit_file 或 write_file';
+    const mutationTools = mutationToolPrompt || 'Edit 或 Write';
     return (
       `<checkpoint-nudge priority="medium">\n` +
       `已连续 ${this.maxConsecutiveExploring} 轮只读取未修改。\n` +
       `如果已充分了解问题，请开始用 ${mutationTools} 实施修改。\n` +
-      `如果仍需调查，请在 <think> 中说明还需要了解什么，然后有针对性地读取。\n` +
+      `如果仍需调查，请用一句可见说明交代还缺什么证据，然后有针对性地读取。\n` +
       `</checkpoint-nudge>`
     );
   }

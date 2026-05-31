@@ -89,7 +89,7 @@ const EXPLORER_SUFFIX = `
 # Sub-agent Execution Mode
 You are running as a research sub-agent. Explore the codebase and gather information to answer the question.
 Read related files, trace call chains, and build a complete picture.
-Only use execute_command for read-only operations (ls, grep, git log).
+Use Read, Glob, Grep, or Bash for read-only operations; do not run commands that modify files or system state.
 Do not modify files or system state.
 Keep your result concise. Include a "Relevant file paths" section listing only file paths, one per line.`;
 
@@ -168,9 +168,9 @@ export const CORE_AGENTS: Record<CoreAgentId, CoreAgentConfig> = {
 - Follow project conventions and patterns
 
 ## Tool Selection
-- Use \`read_file\` for source code (.ts, .js, .py, .md, .json, .yaml, etc.)
-- Use \`bash\` for running commands (typecheck, tests, build)
-- NEVER use read_pdf/read_docx for source code files
+- Use \`Read\` for source code (.ts, .js, .py, .md, .json, .yaml, etc.)
+- Use \`Bash\` for running commands (typecheck, tests, build)
+- NEVER use document tools for source code files
 
 ## Anti-patterns to Avoid
 - Don't edit without reading first
@@ -178,15 +178,15 @@ export const CORE_AGENTS: Record<CoreAgentId, CoreAgentConfig> = {
 - Don't create new files unless absolutely necessary
 
 ## Task Management
-- Use task_list to check available tasks before starting work
-- Use task_update to claim tasks (set owner to your name) and mark completed
-- After completing a task, call task_list to find next available work
-- Create sub-tasks with task_create if you discover additional work needed`,
+- Use TaskManager({ action: "list" }) to check available tasks before starting work
+- Use TaskManager({ action: "update", ... }) to claim tasks (set owner to your name) and mark completed
+- After completing a task, call TaskManager({ action: "list" }) to find next available work
+- Create sub-tasks with TaskManager({ action: "create", ... }) if you discover additional work needed`,
     ),
     tools: [
-      'bash', 'read_file', 'write_file', 'edit_file',
-      'glob', 'grep', 'list_directory',
-      'task_list', 'task_get', 'task_update', 'task_create',
+      'Bash', 'Read', 'Write', 'Edit',
+      'Glob', 'Grep', 'ListDirectory',
+      'TaskManager',
     ],
     model: 'powerful',
     maxIterations: 20,
@@ -231,20 +231,20 @@ When testing:
 Be constructive and specific. Focus on actionable feedback.
 
 ## Tool Selection
-- Use \`read_file\` for source code (.ts, .js, .py, .md, .json, .yaml, etc.)
-- Use \`glob\`/\`grep\` for searching files and patterns
-- NEVER use read_pdf/read_docx for source code files
+- Use \`Read\` for source code (.ts, .js, .py, .md, .json, .yaml, etc.)
+- Use \`Glob\`/\`Grep\` for searching files and patterns
+- NEVER use document tools for source code files
 
 ## Task Management
-- Use task_list to check available tasks before starting work
-- Use task_update to claim tasks (set owner to your name) and mark completed
-- After completing a task, call task_list to find next available work
-- Create sub-tasks with task_create if you discover additional work needed`,
+- Use TaskManager({ action: "list" }) to check available tasks before starting work
+- Use TaskManager({ action: "update", ... }) to claim tasks (set owner to your name) and mark completed
+- After completing a task, call TaskManager({ action: "list" }) to find next available work
+- Create sub-tasks with TaskManager({ action: "create", ... }) if you discover additional work needed`,
     ),
     tools: [
-      'bash', 'read_file', 'write_file', 'edit_file',
-      'glob', 'grep', 'list_directory',
-      'task_list', 'task_get', 'task_update', 'task_create',
+      'Bash', 'Read', 'Write', 'Edit',
+      'Glob', 'Grep', 'ListDirectory',
+      'TaskManager',
     ],
     model: 'balanced',
     maxIterations: 15,
@@ -274,12 +274,11 @@ Be constructive and specific. Focus on actionable feedback.
 3. **Source Attribution**: Always cite where information came from
 
 ## Tool Selection
-- Use \`read_file\` for source code and text files (.ts, .js, .py, .md, .json, .yaml, .txt, etc.)
-- Use \`read_pdf\` ONLY for .pdf files
-- Use \`read_docx\` ONLY for .docx files
-- Use \`read_xlsx\` ONLY for .xlsx files
-- Use \`glob\`/\`grep\` for searching files and patterns
-- NEVER use read_pdf/read_docx/read_xlsx on source code files
+- Use \`Read\` for source code and text files (.ts, .js, .py, .md, .json, .yaml, .txt, etc.)
+- Use \`ReadDocument\` for PDFs, Word documents, and spreadsheet inspection
+- Use \`ExcelAutomate\` when Excel-specific structured reading or workbook automation is needed
+- Use \`Glob\`/\`Grep\` for searching files and patterns
+- NEVER use document tools on source code files
 
 ## Rules
 - READ-ONLY: You search and read, NEVER modify files
@@ -288,8 +287,8 @@ Be constructive and specific. Focus on actionable feedback.
 - Suggest next steps if appropriate
 
 ## Task Management
-- Use task_list to see available tasks and overall progress
-- Use task_get to read task details before starting
+- Use TaskManager({ action: "list" }) to see available tasks and overall progress
+- Use TaskManager({ action: "get", taskId }) to read task details before starting
 
 ## Output Format
 For code exploration:
@@ -308,10 +307,10 @@ Suggested actions:
 \`\`\``,
     ),
     tools: [
-      'glob', 'grep', 'read_file', 'list_directory',
-      'web_search', 'web_fetch',
-      'read_pdf', 'read_docx', 'read_xlsx',
-      'task_list', 'task_get',
+      'Glob', 'Grep', 'Read', 'ListDirectory',
+      'WebSearch', 'WebFetch',
+      'ReadDocument', 'ExcelAutomate',
+      'TaskManager',
     ],
     model: 'fast',
     maxIterations: 15,
@@ -369,20 +368,20 @@ Suggested actions:
 - Plan for evolution and change
 
 ## Tool Selection
-- Use \`read_file\` for source code (.ts, .js, .py, .md, .json, .yaml, etc.)
-- Use \`glob\`/\`grep\` for searching files and patterns
-- NEVER use read_pdf/read_docx for source code files
+- Use \`Read\` for source code (.ts, .js, .py, .md, .json, .yaml, etc.)
+- Use \`Glob\`/\`Grep\` for searching files and patterns
+- NEVER use document tools for source code files
 
 ## Task Management
-- Use task_list to check available tasks before starting work
-- Use task_update to claim tasks (set owner to your name) and mark completed
-- After completing a task, call task_list to find next available work
-- Create sub-tasks with task_create to break down complex plans`,
+- Use TaskManager({ action: "list" }) to check available tasks before starting work
+- Use TaskManager({ action: "update", ... }) to claim tasks (set owner to your name) and mark completed
+- After completing a task, call TaskManager({ action: "list" }) to find next available work
+- Create sub-tasks with TaskManager({ action: "create", ... }) to break down complex plans`,
     ),
     tools: [
-      'glob', 'grep', 'read_file', 'list_directory',
-      'write_file',
-      'task_list', 'task_get', 'task_update', 'task_create',
+      'Glob', 'Grep', 'Read', 'ListDirectory',
+      'Write',
+      'TaskManager',
     ],
     model: 'balanced',
     maxIterations: 12,
@@ -412,7 +411,7 @@ Suggested actions:
 4. Do NOT interpret or modify the output beyond basic formatting
 
 ## Rules
-- Use \`bash\` with long timeouts for your commands
+- Use \`Bash\` with long timeouts for your commands
 - Do NOT modify files or system state beyond running the command
 - Do NOT interpret test failures — just report them accurately
 - If command keeps timing out, report that fact and stop
@@ -428,7 +427,7 @@ Output (last 200 lines):
 <output>
 \`\`\``,
     ),
-    tools: ['bash', 'read_file'],
+    tools: ['Bash', 'Read'],
     model: 'fast',
     maxIterations: 30,
     readonly: false,  // 需要执行命令

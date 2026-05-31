@@ -113,7 +113,7 @@ export async function executeSpawnAgent(
       // Dynamic mode: use customPrompt and customTools
       agentName = 'Dynamic Agent';
       systemPrompt = customPrompt!;
-      tools = customTools || ['read_file', 'glob', 'grep']; // Default read-only tools for safety
+      tools = customTools || ['Read', 'Glob', 'Grep']; // Default read-only tools for safety
     } else {
       // Declarative mode: resolve from predefined agents
       if (!role) {
@@ -147,11 +147,11 @@ export async function executeSpawnAgent(
       }
     }
 
-    // 根据 task 内容过滤文档工具 — 代码任务不需要 read_pdf/read_docx/read_xlsx
+    // 根据 task 内容过滤文档工具 — 代码任务不需要文档/Excel 专用读取工具
     {
-      const DOCUMENT_TOOLS = ['read_pdf', 'read_docx', 'read_xlsx'];
+      const DOCUMENT_TOOLS = ['read_pdf', 'read_docx', 'read_xlsx', 'ReadDocument', 'ExcelAutomate'];
       const taskLower = task.toLowerCase();
-      const needsDocTools = DOCUMENT_TOOLS.some(t => taskLower.includes(t))
+      const needsDocTools = DOCUMENT_TOOLS.some(t => taskLower.includes(t.toLowerCase()))
         || /\.(pdf|docx|xlsx|doc|xls)\b/.test(taskLower);
       if (!needsDocTools) {
         tools = tools.filter(t => !DOCUMENT_TOOLS.includes(t));
@@ -564,10 +564,10 @@ async function executeParallelAgents(
     // 也支持 "role-index" 格式引用
     roleToId.set(`${agent.role}-${index}`, taskId);
 
-    // 根据 task 内容过滤文档工具 — 代码任务不需要 read_pdf/read_docx/read_xlsx
-    const DOCUMENT_TOOLS = ['read_pdf', 'read_docx', 'read_xlsx'];
+    // 根据 task 内容过滤文档工具 — 代码任务不需要文档/Excel 专用读取工具
+    const DOCUMENT_TOOLS = ['read_pdf', 'read_docx', 'read_xlsx', 'ReadDocument', 'ExcelAutomate'];
     const taskLower = agent.task.toLowerCase();
-    const needsDocTools = DOCUMENT_TOOLS.some(t => taskLower.includes(t))
+    const needsDocTools = DOCUMENT_TOOLS.some(t => taskLower.includes(t.toLowerCase()))
       || /\.(pdf|docx|xlsx|doc|xls)\b/.test(taskLower);
     let tools = getAgentTools(agentConfig);
     if (!needsDocTools) {

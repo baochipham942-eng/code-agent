@@ -11,6 +11,7 @@ const listTasksMock = vi.fn().mockReturnValue([]);
 vi.mock('../../../../../src/main/services/planning/taskStore', () => ({
   getTask: (...args: unknown[]) => getTaskMock(...args),
   listTasks: (...args: unknown[]) => listTasksMock(...args),
+  isClosedTaskStatus: (status: string) => status === 'completed' || status === 'cancelled',
 }));
 
 import { taskGetModule } from '../../../../../src/main/tools/modules/planning/taskGet';
@@ -127,7 +128,7 @@ describe('task_get behavior', () => {
     expect(onProgress).toHaveBeenCalledWith({ stage: 'completing', percent: 100 });
   });
 
-  it('blockedBy all completed → "all resolved"', async () => {
+  it('blockedBy all completed/cancelled → "all resolved"', async () => {
     const task = {
       id: '1',
       subject: 'x',
@@ -140,12 +141,17 @@ describe('task_get behavior', () => {
       metadata: {},
     };
     getTaskMock.mockReturnValue(task);
-    listTasksMock.mockReturnValue([task, { id: '2', status: 'completed', blockedBy: [] }]);
+    listTasksMock.mockReturnValue([
+      task,
+      { id: '2', status: 'completed', blockedBy: [] },
+      { id: '3', status: 'cancelled', blockedBy: [] },
+    ]);
+    task.blockedBy.push('3');
     const handler = await taskGetModule.createHandler();
     const result = await handler.execute({ taskId: '1' }, makeCtx(), allowAll);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.output).toContain('Blocked By: 2 (all resolved)');
+      expect(result.output).toContain('Blocked By: 2, 3 (all resolved)');
     }
   });
 });

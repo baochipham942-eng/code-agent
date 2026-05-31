@@ -5,9 +5,10 @@
 // 支持：markdown checkbox、编号列表格式
 // 规则：忽略代码块内的列表，只提升带明确任务意图的 checkbox 清单
 
-import type { TodoItem, TodoStatus } from '../../shared/contract';
+import type { SessionTask, TodoItem, TodoStatus } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
+import { createTask, listTasks, updateTask } from '../services/planning/taskStore';
 
 const logger = createLogger('TodoParser');
 
@@ -285,6 +286,75 @@ function isSameTask(a: string, b: string): boolean {
   }
 
   return false;
+}
+
+function todoToTaskStatus(status: TodoStatus): SessionTask['status'] {
+  if (status === 'completed') return 'completed';
+  if (status === 'in_progress') return 'in_progress';
+  return 'pending';
+}
+
+function shouldUpdateTaskFromTodo(task: SessionTask, todo: TodoItem): boolean {
+  const nextStatus = todoToTaskStatus(todo.status);
+  if (task.status !== nextStatus && !(task.status === 'completed' && nextStatus !== 'completed')) {
+    return true;
+  }
+  return task.subject !== todo.content || task.description !== todo.content || task.activeForm !== todo.activeForm;
+}
+
+export function syncTodosToSessionTasks(
+  sessionId: string,
+  todos: TodoItem[],
+): { tasks: SessionTask[]; created: SessionTask[]; updated: SessionTask[] } {
+  const existingTasks = listTasks(sessionId);
+  const matchedTaskIds = new Set<string>();
+  const created: SessionTask[] = [];
+  const updated: SessionTask[] = [];
+
+  for (const todo of todos) {
+    const task = existingTasks.find((candidate) => (
+      !matchedTaskIds.has(candidate.id)
+      && (isSameTask(candidate.subject, todo.content) || isSameTask(candidate.description, todo.content))
+    ));
+
+    if (!task) {
+      const createdTask = createTask(sessionId, {
+        subject: todo.content,
+        description: todo.content,
+        activeForm: todo.activeForm,
+        metadata: { source: 'todo_parser' },
+      });
+      const nextStatus = todoToTaskStatus(todo.status);
+      const finalTask = nextStatus === 'pending'
+        ? createdTask
+        : updateTask(sessionId, createdTask.id, { status: nextStatus }) ?? createdTask;
+      created.push(finalTask);
+      continue;
+    }
+
+    matchedTaskIds.add(task.id);
+    if (!shouldUpdateTaskFromTodo(task, todo)) {
+      continue;
+    }
+
+    const nextStatus = todoToTaskStatus(todo.status);
+    const nextTask = updateTask(sessionId, task.id, {
+      subject: todo.content,
+      description: todo.content,
+      activeForm: todo.activeForm,
+      status: task.status === 'completed' && nextStatus !== 'completed' ? 'completed' : nextStatus,
+      metadata: { source: 'todo_parser' },
+    });
+    if (nextTask) {
+      updated.push(nextTask);
+    }
+  }
+
+  return {
+    tasks: listTasks(sessionId),
+    created,
+    updated,
+  };
 }
 
 // ============================================================================

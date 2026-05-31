@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { AgentsChangedEvent } from '../contract/agentRegistry';
-import type { Message, PermissionResponse, Session, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, MCPElicitationRequest, MCPElicitationResponse, AuthUser, AuthStatus, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
+import type { Message, PermissionResponse, Session, SessionTask, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, MCPElicitationRequest, MCPElicitationResponse, AuthUser, AuthStatus, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
 
 import type { InAppValidationRequest, InAppValidationResultPayload } from '../contract/browserInteraction';
 
@@ -59,6 +59,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SESSION_LOAD]: (id: string) => Promise<Session>;
   [IPC_CHANNELS.SESSION_DELETE]: (id: string) => Promise<void>;
   [IPC_CHANNELS.SESSION_GET_MESSAGES]: (sessionId: string) => Promise<Message[]>;
+  [IPC_CHANNELS.SESSION_GET_TASKS]: (sessionId: string) => Promise<SessionTask[]>;
   [IPC_CHANNELS.SESSION_EXPORT]: (sessionId: string) => Promise<SessionExport>;
   [IPC_CHANNELS.SESSION_IMPORT]: (data: SessionExport) => Promise<string>;
   [IPC_CHANNELS.SESSION_ARCHIVE]: (sessionId: string) => Promise<Session>;

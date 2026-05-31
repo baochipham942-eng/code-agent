@@ -142,10 +142,7 @@ export const TaskMonitor: React.FC = () => {
   const mcpDefaultExpanded = mcpNeedsAttention || sourceHasActionFeedback;
   const loopFilesDefaultExpanded = loopFileItems.length > 0 || runWorkbench.run.status !== 'completed';
 
-  // Plan title — agent 在 markdown 用 `## Plan: XXX` 显式声明的会话总标题。
-  // 依赖 runWorkbench.tasks 引用变化触发 refetch：todoParser 写 plan_title 与
-  // 写 todos 是同一动作，tasks 变化时 plan_title 已落 DB。
-  // NULL 时 UI 隐藏 plan title 行只显示 checklist (产品决策 2c)。
+  // Plan title 来自 markdown 显式声明；SessionTask 已能独立撑起进度卡。
   const [planTitle, setPlanTitle] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -166,14 +163,17 @@ export const TaskMonitor: React.FC = () => {
     };
   }, [currentSessionId, runWorkbench.tasks]);
 
-  // 进度条 — 基于当前 session 主任务的 steps 完成度
-  const sessionTaskSteps = useMemo(() => {
-    const sessionTask = runWorkbench.tasks.find((tk) => tk.scope === 'session');
-    return sessionTask?.steps ?? [];
-  }, [runWorkbench.tasks]);
-  const stepsTotal = sessionTaskSteps.length;
-  const stepsCompleted = sessionTaskSteps.filter((s) => s.status === 'done').length;
+  const sessionTask = useMemo(
+    () => runWorkbench.tasks.find((tk) => tk.scope === 'session') ?? null,
+    [runWorkbench.tasks],
+  );
+
+  // 进度条 — 基于当前 session 主任务的 steps 完成度；取消项不计入分母。
+  const sessionTaskSteps = sessionTask?.steps ?? [];
+  const stepsTotal = sessionTaskSteps.filter((s) => s.status !== 'cancelled').length;
+  const stepsCompleted = sessionTaskSteps.filter((s) => s.status === 'completed').length;
   const stepsPercent = stepsTotal === 0 ? 0 : Math.round((stepsCompleted / stepsTotal) * 100);
+  const taskProgressTitle = planTitle || sessionTask?.title || t.taskPanel.taskProgressFallbackTitle;
 
   // ── 渲染 ──
 
@@ -187,12 +187,10 @@ export const TaskMonitor: React.FC = () => {
         </div>
       )}
 
-      {/* Plan title + 进度条 — agent 在 markdown 用 `## Plan: XXX` 声明时显示。
-          plan_title 为 NULL 时隐藏整条（产品决策 2c），不 fallback session.title。 */}
-      {planTitle && (
+      {(planTitle || stepsTotal > 0) && (
         <div className="rounded-md border border-sky-500/15 bg-sky-500/[0.04] px-3 py-2.5">
-          <div className="text-[13px] font-medium text-zinc-100 leading-snug" title={planTitle}>
-            {planTitle}
+          <div className="text-[13px] font-medium text-zinc-100 leading-snug" title={taskProgressTitle}>
+            {taskProgressTitle}
           </div>
           {stepsTotal > 0 && (
             <div className="mt-2 flex items-center gap-2">

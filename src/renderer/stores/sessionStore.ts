@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Session, Message, TodoItem, StreamRecoverySnapshot } from '@shared/contract';
+import type { Session, Message, SessionTask, TodoItem, StreamRecoverySnapshot } from '@shared/contract';
 import type { AgentEngineSessionMetadata } from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import type { DesignBrief } from '@shared/contract/designBrief';
@@ -199,6 +199,7 @@ interface SessionState {
   currentSessionId: string | null;
   messages: Message[];
   todos: TodoItem[];
+  sessionTasks: SessionTask[];
   streamSnapshot: StreamRecoverySnapshot | null;
   isLoading: boolean;
   error: string | null;
@@ -224,6 +225,7 @@ interface SessionActions {
   updateMessage: (id: string, updates: Partial<Message>) => void;
   setMessages: (messages: Message[]) => void;
   setTodos: (todos: TodoItem[]) => void;
+  setSessionTasks: (tasks: SessionTask[]) => void;
   loadOlderMessages: () => Promise<void>;
   clearCurrentSession: () => void;
   updateSessionTitle: (sessionId: string, title: string) => void;
@@ -251,6 +253,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     currentSessionId: null,
     messages: [],
     todos: [],
+    sessionTasks: [],
     streamSnapshot: null,
     isLoading: false,
     error: null,
@@ -334,6 +337,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             currentSessionId: session.id,
             messages: [],
             todos: [],
+            sessionTasks: [],
             streamSnapshot: null,
             hasOlderMessages: false,
             isLoadingOlder: false,
@@ -369,6 +373,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         currentSessionId: sessionId,
         messages: [],
         todos: [],
+        sessionTasks: [],
         streamSnapshot: null,
         hasOlderMessages: false,
         isLoadingOlder: false,
@@ -377,7 +382,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         error: null,
       });
       try {
-        const session = await invokeSession<Session & { messages?: Message[]; todos?: TodoItem[] } | null>('load', { sessionId });
+        const [session, sessionTasks] = await Promise.all([
+          invokeSession<Session & { messages?: Message[]; todos?: TodoItem[] } | null>('load', { sessionId }),
+          invokeSession<SessionTask[]>('getSessionTasks', { sessionId }),
+        ]);
 
         // 竞态检查：如果在等待期间又发起了新的切换，丢弃本次结果
         if (switchVersion !== _switchCounter || useSessionStore.getState().currentSessionId !== sessionId) {
@@ -399,6 +407,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             currentSessionId: sessionId,
             messages: loadedMessages,
             todos: session.todos || [],
+            sessionTasks: sessionTasks || [],
             streamSnapshot: session.streamSnapshot || null,
             isLoading: false,
             unreadSessionIds: nextUnreadIds,
@@ -417,6 +426,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             currentSessionId: sessionId,
             messages: [],
             todos: [],
+            sessionTasks: [],
             streamSnapshot: null,
             isLoading: false,
           });
@@ -471,7 +481,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             set({ sessions: newSessions });
             await get().switchSession(newSessions[0].id);
           } else {
-            set({ sessions: newSessions, currentSessionId: null, messages: [], streamSnapshot: null });
+            set({ sessions: newSessions, currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null });
           }
         } else {
           set({ sessions: newSessions });
@@ -499,7 +509,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
               set({ sessions: newSessions });
               await get().switchSession(newSessions[0].id);
             } else {
-              set({ sessions: newSessions, currentSessionId: null, messages: [], streamSnapshot: null });
+              set({ sessions: newSessions, currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null });
             }
           } else {
             set({ sessions: newSessions });
@@ -609,6 +619,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       set({ todos });
     },
 
+    setSessionTasks: (sessionTasks: SessionTask[]) => {
+      set({ sessionTasks });
+    },
+
     loadOlderMessages: async () => {
       const { isLoadingOlder, hasOlderMessages, messages, currentSessionId } = get();
       if (isLoadingOlder || !hasOlderMessages || !currentSessionId || messages.length === 0) return;
@@ -643,6 +657,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       set({
         messages: [],
         todos: [],
+        sessionTasks: [],
         streamSnapshot: null,
       });
     },

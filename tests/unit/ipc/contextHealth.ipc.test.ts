@@ -128,6 +128,7 @@ import type { Message } from '../../../src/shared/contract';
 function makeAppService(sessionId: string, messages: Message[], modelOverride?: string): AgentApplicationService {
   return {
     getMessages: async () => messages,
+    getSessionTasks: async () => [],
     getSerializedCompressionState: () => null,
     getCurrentSessionId: () => sessionId,
     sendMessage: async () => {},

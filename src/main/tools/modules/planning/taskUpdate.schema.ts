@@ -5,7 +5,8 @@ export const taskUpdateSchema: ToolSchema = {
   name: 'task_update',
   description:
     'Update a task\'s status, details, or dependencies. ' +
-    'Set status="deleted" to permanently remove a task. ' +
+    'Set status="cancelled" to abandon a task while keeping it visible; ' +
+    'set status="deleted" to permanently remove a task. ' +
     'Use addBlockedBy/addBlocks to establish task dependencies.',
   inputSchema: {
     type: 'object',
@@ -16,9 +17,10 @@ export const taskUpdateSchema: ToolSchema = {
       },
       status: {
         type: 'string',
-        enum: ['pending', 'in_progress', 'completed', 'deleted'],
+        enum: ['pending', 'in_progress', 'completed', 'cancelled', 'deleted'],
         description:
-          'New status for the task. Use "deleted" to permanently remove the task.',
+          'New status for the task. Use "cancelled" to abandon but keep it visible (struck through); '
+          + 'use "deleted" to permanently remove the task.',
       },
       subject: {
         type: 'string',

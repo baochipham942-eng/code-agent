@@ -6,6 +6,8 @@ const dbState = vi.hoisted(() => ({
     isReady: true,
     saveTodos: vi.fn(),
     getTodos: vi.fn(),
+    saveSessionTasks: vi.fn(),
+    getSessionTasks: vi.fn(),
   },
 }));
 
@@ -27,7 +29,9 @@ import {
   getSessionTodos,
   parseTodos,
   setSessionTodos,
+  syncTodosToSessionTasks,
 } from '../../../src/main/agent/todoParser';
+import { clearTasks } from '../../../src/main/services/planning/taskStore';
 
 describe('todoParser persistence', () => {
   beforeEach(() => {
@@ -35,6 +39,9 @@ describe('todoParser persistence', () => {
     dbState.db.saveTodos.mockReset();
     dbState.db.getTodos.mockReset();
     dbState.db.getTodos.mockReturnValue([]);
+    dbState.db.saveSessionTasks.mockReset();
+    dbState.db.getSessionTasks.mockReset();
+    dbState.db.getSessionTasks.mockReturnValue([]);
   });
 
   it('persists todos whenever session todos are set', () => {
@@ -59,6 +66,29 @@ describe('todoParser persistence', () => {
     expect(getSessionTodos('todo-session-hydrate')).toEqual(persisted);
     expect(dbState.db.getTodos).toHaveBeenCalledWith('todo-session-hydrate');
     expect(dbState.db.saveTodos).not.toHaveBeenCalled();
+  });
+
+  it('upserts parsed todos into SessionTask records for the task rail', () => {
+    clearTasks('todo-session-sync');
+    dbState.db.saveSessionTasks.mockClear();
+
+    const first = syncTodosToSessionTasks('todo-session-sync', [
+      { content: 'Read code', status: 'completed', activeForm: 'Reading code' },
+      { content: 'Patch UI', status: 'in_progress', activeForm: 'Patching UI' },
+    ]);
+
+    expect(first.created).toHaveLength(2);
+    expect(first.tasks.map((task) => task.status)).toEqual(['completed', 'in_progress']);
+    expect(first.tasks.map((task) => task.subject)).toEqual(['Read code', 'Patch UI']);
+
+    const second = syncTodosToSessionTasks('todo-session-sync', [
+      { content: 'Read code', status: 'pending', activeForm: 'Reading code' },
+      { content: 'Patch UI', status: 'completed', activeForm: 'Patching UI' },
+    ]);
+
+    expect(second.created).toHaveLength(0);
+    expect(second.updated).toHaveLength(1);
+    expect(second.tasks.map((task) => task.status)).toEqual(['completed', 'completed']);
   });
 });
 

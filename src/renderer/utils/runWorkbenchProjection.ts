@@ -1,5 +1,5 @@
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
-import type { TaskProgressData, TodoItem } from '@shared/contract';
+import type { SessionTask, TaskProgressData, TodoItem } from '@shared/contract';
 import type { TurnTimelineNode } from '@shared/contract/turnTimeline';
 import type { ToolResult } from '@shared/contract/tool';
 import type {
@@ -447,15 +447,104 @@ export function buildOutputArtifactViews(projection: TraceProjection): OutputArt
 }
 
 function todoStatus(status: TodoItem['status']): TaskRecord['steps'][number]['status'] {
-  if (status === 'completed') return 'done';
+  if (status === 'completed') return 'completed';
   if (status === 'in_progress') return 'in_progress';
   return 'pending';
 }
 
 function taskProgressStepStatus(progress: TaskProgressData): TaskRecord['steps'][number]['status'] {
-  if (progress.phase === 'completed') return 'done';
+  if (progress.phase === 'completed') return 'completed';
   if (progress.phase === 'failed') return 'blocked';
   return 'in_progress';
+}
+
+function sessionTaskPersistentStatus(status: SessionTask['status']): TaskRecord['steps'][number]['status'] {
+  if (status === 'completed') return 'completed';
+  if (status === 'cancelled') return 'cancelled';
+  if (status === 'in_progress') return 'in_progress';
+  return 'pending';
+}
+
+function isSessionTaskClosed(task: SessionTask | undefined): boolean {
+  return Boolean(task && (task.status === 'completed' || task.status === 'cancelled'));
+}
+
+function getBlockingTaskIds(task: SessionTask, tasksById: Map<string, SessionTask>): string[] {
+  if (task.status === 'completed' || task.status === 'cancelled') {
+    return [];
+  }
+  return (task.blockedBy ?? []).filter((taskId) => {
+    const blockingTask = tasksById.get(taskId);
+    return blockingTask ? !isSessionTaskClosed(blockingTask) : true;
+  });
+}
+
+function taskDisplayTitle(task: SessionTask): string {
+  if (task.status === 'in_progress' && task.activeForm?.trim()) {
+    return task.activeForm.trim();
+  }
+  return task.subject.trim() || task.description.trim() || task.id;
+}
+
+function buildSessionTaskRecordFromSessionTasks(args: {
+  sessionId: string | null;
+  runId: string | null;
+  sessionTasks: SessionTask[];
+  taskProgress?: TaskProgressData | null;
+}): TaskRecord | null {
+  const tasks = args.sessionTasks.filter((task) => task.subject?.trim() || task.description?.trim());
+  if (tasks.length === 0) return null;
+
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  const blockedIdsByTask = new Map<string, string[]>();
+  for (const task of tasks) {
+    blockedIdsByTask.set(task.id, getBlockingTaskIds(task, tasksById));
+  }
+
+  const steps = tasks.map((task) => {
+    const blockedByIds = blockedIdsByTask.get(task.id) ?? [];
+    const blockedByTitles = blockedByIds.map((taskId) => {
+      const blockingTask = tasksById.get(taskId);
+      return blockingTask ? taskDisplayTitle(blockingTask) : taskId;
+    });
+    return {
+      title: taskDisplayTitle(task),
+      status: blockedByIds.length > 0 ? 'blocked' as const : sessionTaskPersistentStatus(task.status),
+      blockedByTitles: blockedByTitles.length > 0 ? blockedByTitles : undefined,
+    };
+  });
+
+  const nonCancelledTasks = tasks.filter((task) => task.status !== 'cancelled');
+  const allActionableCompleted = nonCancelledTasks.length > 0
+    && nonCancelledTasks.every((task) => task.status === 'completed');
+  const allCancelled = tasks.every((task) => task.status === 'cancelled');
+  const hasBlocked = steps.some((step) => step.status === 'blocked');
+  const activeTask = tasks.find((task) => task.status === 'in_progress')
+    ?? tasks.find((task) => (blockedIdsByTask.get(task.id) ?? []).length > 0)
+    ?? tasks.find((task) => task.status === 'pending')
+    ?? tasks[0];
+
+  let status: TaskRecord['status'] = 'pending';
+  if (allActionableCompleted) {
+    status = 'completed';
+  } else if (allCancelled) {
+    status = 'cancelled';
+  } else if (hasBlocked) {
+    status = 'blocked';
+  } else if (tasks.some((task) => task.status === 'in_progress')) {
+    status = 'in_progress';
+  }
+
+  return {
+    id: `${args.sessionId || 'session'}:session-tasks`,
+    scope: 'session',
+    title: taskDisplayTitle(activeTask),
+    status,
+    steps,
+    ownerRunId: args.runId,
+    sourceThreadId: args.sessionId,
+    resumeHint: taskProgressHint(args.taskProgress),
+  };
 }
 
 function taskProgressTitle(progress: TaskProgressData): string {
@@ -489,9 +578,19 @@ export function buildSessionTaskRecord(args: {
   sessionId: string | null;
   runId: string | null;
   runStatus?: RunUiStatus;
+  sessionTasks?: SessionTask[];
   todos?: TodoItem[];
   taskProgress?: TaskProgressData | null;
 }): TaskRecord | null {
+  if (args.sessionTasks && args.sessionTasks.length > 0) {
+    return buildSessionTaskRecordFromSessionTasks({
+      sessionId: args.sessionId,
+      runId: args.runId,
+      sessionTasks: args.sessionTasks,
+      taskProgress: args.taskProgress,
+    });
+  }
+
   const todos = args.todos || [];
   const completed = todos.filter((todo) => todo.status === 'completed').length;
   const allTodosCompleted = todos.length > 0 && completed === todos.length;
@@ -507,7 +606,7 @@ export function buildSessionTaskRecord(args: {
       id: `${args.sessionId || 'session'}:progress`,
       scope: 'session',
       title,
-      status: status === 'done' ? 'done' : status === 'blocked' ? 'blocked' : 'in_progress',
+      status: status === 'completed' ? 'completed' : status === 'blocked' ? 'blocked' : 'in_progress',
       steps: [{ title, status }],
       ownerRunId: args.runId,
       sourceThreadId: args.sessionId,
@@ -522,7 +621,7 @@ export function buildSessionTaskRecord(args: {
     id: `${args.sessionId || 'session'}:todos`,
     scope: 'session',
     title: objective?.content || active?.activeForm || active?.content || `${completed}/${todos.length} tasks`,
-    status: completed === todos.length ? 'done' : active?.status === 'in_progress' ? 'in_progress' : 'pending',
+    status: completed === todos.length ? 'completed' : active?.status === 'in_progress' ? 'in_progress' : 'pending',
     steps: todos.map((todo) => ({
       title: todo.activeForm || todo.content,
       status: todoStatus(todo.status),

@@ -226,11 +226,15 @@ export function listTasks(sessionId: string): SessionTask[] {
   return Array.from(taskMap.values());
 }
 
+export function isClosedTaskStatus(status: SessionTaskStatus): boolean {
+  return status === 'completed' || status === 'cancelled';
+}
+
 /**
  * 获取未完成任务数量
  */
 export function getIncompleteTasks(sessionId: string): SessionTask[] {
-  return listTasks(sessionId).filter((t) => t.status !== 'completed');
+  return listTasks(sessionId).filter((t) => !isClosedTaskStatus(t.status));
 }
 
 /**

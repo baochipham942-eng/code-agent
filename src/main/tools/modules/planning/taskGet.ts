@@ -16,7 +16,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { getTask, listTasks } from '../../../services/planning/taskStore';
+import { getTask, isClosedTaskStatus, listTasks } from '../../../services/planning/taskStore';
 import { taskGetSchema as schema } from './taskGet.schema';
 
 export async function executeTaskGet(
@@ -60,7 +60,7 @@ export async function executeTaskGet(
   const allTasks = listTasks(sessionId);
   const openBlockers = task.blockedBy.filter((id) => {
     const blocker = allTasks.find((t) => t.id === id);
-    return blocker && blocker.status !== 'completed';
+    return blocker && !isClosedTaskStatus(blocker.status);
   });
 
   const blockedByInfo =

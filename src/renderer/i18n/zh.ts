@@ -225,6 +225,8 @@ export const zh = {
     // Progress (legacy)
     noProgress: '暂无进度',
     progressEmpty: '暂无任务计划',
+    taskProgressFallbackTitle: '任务进度',
+    taskDependencyWaiting: '等待 {tasks}',
     showMore: '展开 {count} 项',
     phaseThinking: '分析请求中',
     phaseGenerating: '生成回复中',

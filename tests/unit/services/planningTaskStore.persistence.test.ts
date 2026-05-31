@@ -48,6 +48,23 @@ describe('taskStore persistence', () => {
     expect(lastSavedTasks[0].status).toBe('completed');
   });
 
+  it('does not count cancelled tasks as incomplete', async () => {
+    const taskStore = await import('../../../src/main/services/planning/taskStore');
+
+    const pending = taskStore.createTask('task-session-closed', {
+      subject: 'Pending task',
+      description: 'Still open',
+    });
+    const cancelled = taskStore.createTask('task-session-closed', {
+      subject: 'Cancelled task',
+      description: 'Abandoned but visible',
+    });
+
+    taskStore.updateTask('task-session-closed', cancelled.id, { status: 'cancelled' });
+
+    expect(taskStore.getIncompleteTasks('task-session-closed').map((task) => task.id)).toEqual([pending.id]);
+  });
+
   it('hydrates persisted tasks after module reload', async () => {
     const persisted: SessionTask[] = [
       {

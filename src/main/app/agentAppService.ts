@@ -20,6 +20,7 @@ import type {
   ModelProvider,
   PermissionResponse,
   Session,
+  SessionTask,
 } from '../../shared/contract';
 import type { SessionStatus, TaskManager } from '../task';
 import type { ConfigService } from '../services';
@@ -523,6 +524,14 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   async getMessages(sessionId: string): Promise<Message[]> {
     return getSessionManager().getMessages(sessionId);
+  }
+
+  async getSessionTasks(sessionId: string): Promise<SessionTask[]> {
+    const db = getDatabase();
+    if (!db.isReady) {
+      return [];
+    }
+    return db.getSessionTasks(sessionId);
   }
 
   async rewindToPrompt(params: { sessionId: string; userMessageId: string }): Promise<PromptRewindResult> {

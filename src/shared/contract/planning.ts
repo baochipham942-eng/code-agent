@@ -16,7 +16,9 @@ export interface TodoItem {
 // ============================================================================
 
 // 使用前缀避免与其他模块的 TaskStatus/TaskPriority 冲突
-export type SessionTaskStatus = 'pending' | 'in_progress' | 'completed';
+// cancelled: 主动放弃但留痕可见（区别于 update status='deleted' 的物理删除）
+// blocked 不是持久状态，由 blockedBy 含未完成任务派生（见 taskList 的 blocked 检测）
+export type SessionTaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 export type SessionTaskPriority = 'low' | 'normal' | 'high';
 
 export interface SessionTask {
@@ -24,7 +26,7 @@ export interface SessionTask {
   subject: string;         // 祈使句 "Implement login"
   description: string;     // 详细描述
   activeForm: string;      // 进行时 "Implementing login"
-  status: SessionTaskStatus;      // pending | in_progress | completed
+  status: SessionTaskStatus;      // pending | in_progress | completed | cancelled
   priority: SessionTaskPriority;  // low | normal | high
 
   // 依赖关系

@@ -381,7 +381,7 @@ describe('runWorkbenchProjection', () => {
       status: 'in_progress',
       ownerRunId: 'turn-1',
     });
-    expect(task?.steps.map((step) => step.status)).toEqual(['done', 'in_progress']);
+    expect(task?.steps.map((step) => step.status)).toEqual(['completed', 'in_progress']);
   });
 
   it('uses an explicit task objective as the stable title', () => {
@@ -417,9 +417,55 @@ describe('runWorkbenchProjection', () => {
     expect(task).toMatchObject({
       scope: 'session',
       title: '任务目标：验证任务面板复杂任务展示',
-      status: 'done',
+      status: 'completed',
     });
-    expect(task?.steps.map((step) => step.status)).toEqual(['done', 'done', 'done']);
+    expect(task?.steps.map((step) => step.status)).toEqual(['completed', 'completed', 'completed']);
+  });
+
+  it('builds a session task record from canonical SessionTask data with dependencies', () => {
+    const task = buildSessionTaskRecord({
+      sessionId: 'session-1',
+      runId: 'turn-1',
+      runStatus: 'running',
+      sessionTasks: [
+        {
+          id: 'task-a',
+          subject: 'Read code',
+          description: 'Inspect current task panel',
+          activeForm: 'Reading code',
+          status: 'pending',
+          priority: 'normal',
+          blocks: ['task-b'],
+          blockedBy: [],
+          metadata: {},
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          id: 'task-b',
+          subject: 'Patch UI',
+          description: 'Render dependencies',
+          activeForm: 'Patching UI',
+          status: 'pending',
+          priority: 'normal',
+          blocks: [],
+          blockedBy: ['task-a'],
+          metadata: {},
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    expect(task).toMatchObject({
+      id: 'session-1:session-tasks',
+      scope: 'session',
+      status: 'blocked',
+      steps: [
+        { title: 'Read code', status: 'pending' },
+        { title: 'Patch UI', status: 'blocked', blockedByTitles: ['Read code'] },
+      ],
+    });
   });
 
   it('suppresses incomplete stored session todos after a completed run', () => {

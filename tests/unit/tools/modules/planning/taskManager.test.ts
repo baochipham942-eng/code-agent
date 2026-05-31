@@ -16,6 +16,7 @@ vi.mock('../../../../../src/main/services/planning/taskStore', () => ({
   updateTask: (...a: unknown[]) => updateTaskMock(...a),
   getTask: (...a: unknown[]) => getTaskMock(...a),
   listTasks: (...a: unknown[]) => listTasksMock(...a),
+  isClosedTaskStatus: (status: string) => status === 'completed' || status === 'cancelled',
 }));
 vi.mock('../../../../../src/main/desktop/desktopActivityUnderstandingService', () => ({
   getDesktopActivityUnderstandingService: () => ({
@@ -59,6 +60,7 @@ describe('TaskManager schema', () => {
     expect(taskManagerModule.schema.inputSchema.required).toEqual(['action']);
     const props = taskManagerModule.schema.inputSchema.properties as Record<string, { enum?: string[] }>;
     expect(props.action.enum).toEqual(['create', 'get', 'list', 'update']);
+    expect(props.status.enum).toEqual(['pending', 'in_progress', 'completed', 'cancelled', 'deleted']);
   });
 });
 

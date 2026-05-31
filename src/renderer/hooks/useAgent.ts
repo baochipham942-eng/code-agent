@@ -78,6 +78,7 @@ export const useAgent = () => {
     messages,
     addMessage,
     updateMessage,
+    setSessionTasks,
     setTodos,
     currentSessionId,
   } = useSessionStore();
@@ -266,6 +267,7 @@ export const useAgent = () => {
     setResearchDetected,
     setSessionTaskComplete,
     setSessionTaskProgress,
+    setSessionTasks,
     setTodos,
     setToolTimeoutWarning,
     shiftQueuedPermissionRequest,

@@ -37,6 +37,7 @@ function normalizeStepContent(content: string): string {
 function toStepStatus(task: SessionTask): TaskStepStatus {
   if (task.status === 'completed') return 'completed';
   if (task.status === 'in_progress') return 'in_progress';
+  if (task.status === 'cancelled') return 'skipped';
   return 'pending';
 }
 
@@ -87,7 +88,7 @@ export async function syncDesktopTasksToPlanningService(
 ): Promise<DesktopPlanningSyncResult> {
   const desktopTasks = tasks
     .filter(isDesktopDerivedTask)
-    .filter((task) => task.status !== 'completed');
+    .filter((task) => task.status !== 'completed' && task.status !== 'cancelled');
 
   if (desktopTasks.length === 0) {
     return {

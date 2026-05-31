@@ -17,6 +17,7 @@ import {
   deriveTaskRailView,
   type TaskRailStepView,
 } from '../../utils/taskRailPresentation';
+import { useI18n } from '../../hooks/useI18n';
 
 function runStatusClass(status: RunUiStatus): string {
   switch (status) {
@@ -93,10 +94,12 @@ function getTaskStatusClass(status: TaskRecord['status']): string {
   switch (status) {
     case 'in_progress':
       return 'text-sky-300';
-    case 'done':
+    case 'completed':
       return 'text-emerald-300';
     case 'blocked':
       return 'text-red-300';
+    case 'cancelled':
+      return 'text-zinc-600 line-through';
     default:
       return 'text-zinc-500';
   }
@@ -106,10 +109,12 @@ function getTaskStatusLabel(status: TaskRecord['status']): string {
   switch (status) {
     case 'in_progress':
       return '进行中';
-    case 'done':
+    case 'completed':
       return '完成';
     case 'blocked':
       return '阻塞';
+    case 'cancelled':
+      return '已取消';
     default:
       return '待开始';
   }
@@ -117,12 +122,14 @@ function getTaskStatusLabel(status: TaskRecord['status']): string {
 
 function getStepDotClass(status: TaskRailStepView['status']): string {
   switch (status) {
-    case 'done':
+    case 'completed':
       return 'border-emerald-400/30 bg-emerald-400/20 text-emerald-300';
     case 'blocked':
       return 'border-red-400/30 bg-red-400/15 text-red-300';
     case 'in_progress':
       return 'border-sky-400/40 bg-sky-400/15 text-sky-300';
+    case 'cancelled':
+      return 'border-white/[0.05] bg-white/[0.01] text-zinc-600';
     default:
       return 'border-white/[0.08] bg-white/[0.02] text-zinc-500';
   }
@@ -172,7 +179,7 @@ const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?:
   const rail = deriveTaskRailView(task, run);
   const detailLabel = task.status === 'blocked'
     ? '原因'
-    : task.status === 'done'
+    : task.status === 'completed'
       ? '结果'
       : '当前动作';
 
@@ -207,7 +214,7 @@ const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?:
           {completedExpanded && rail.completedSteps.length > 0 && (
             <div className="space-y-1">
               {rail.completedSteps.map((step) => (
-                <TaskRailStepRow key={`${step.originalIndex}:${step.title}:done`} step={step} muted />
+              <TaskRailStepRow key={`${step.originalIndex}:${step.title}:completed`} step={step} muted />
               ))}
             </div>
           )}
@@ -262,16 +269,28 @@ const TaskOutputRefRows = ({ refs }: { refs: TaskRecordOutputRef[] }) => (
   </div>
 );
 
-const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; muted?: boolean }) => (
-  <div className={`flex min-w-0 items-center gap-2 ${muted ? 'opacity-60' : ''}`}>
-    <span className={`flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded-full border text-[9px] ${getStepDotClass(step.status)}`}>
-      {step.status === 'done' ? '✓' : step.status === 'blocked' ? '!' : ''}
-    </span>
-    <span className={`truncate text-[11px] ${step.status === 'done' ? 'text-zinc-500' : 'text-zinc-300'}`}>
-      {step.title}
-    </span>
-  </div>
-);
+const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; muted?: boolean }) => {
+  const { t } = useI18n();
+  const waitingHint = step.blockedByTitles?.length
+    ? t.taskPanel.taskDependencyWaiting.replace('{tasks}', step.blockedByTitles.join('、'))
+    : null;
+
+  return (
+    <div className={`flex min-w-0 items-center gap-2 ${muted ? 'opacity-60' : ''}`}>
+      <span className={`flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded-full border text-[9px] ${getStepDotClass(step.status)}`}>
+        {step.status === 'completed' ? '✓' : step.status === 'blocked' ? '!' : ''}
+      </span>
+      <span className={`truncate text-[11px] ${step.status === 'completed' ? 'text-zinc-500' : 'text-zinc-300'}`}>
+        {step.title}
+      </span>
+      {waitingHint && (
+        <span className="min-w-0 flex-shrink truncate text-[10px] text-amber-300/80">
+          {waitingHint}
+        </span>
+      )}
+    </div>
+  );
+};
 
 export const RunTimeline = ({ decisions }: { decisions: LoopDecisionView[] }) => {
   if (decisions.length === 0) return <EmptyState text="暂无运行事件" />;

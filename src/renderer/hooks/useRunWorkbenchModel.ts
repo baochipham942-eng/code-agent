@@ -59,7 +59,8 @@ export function buildGlobalTaskRecords(args: {
 function cronExecutionToTaskStatus(execution: CronJobExecution | null | undefined, enabled: boolean): TaskRecord['status'] {
   if (execution?.status === 'running' || execution?.status === 'pending') return 'in_progress';
   if (execution?.status === 'failed') return 'blocked';
-  return enabled ? 'pending' : 'done';
+  if (execution?.status === 'cancelled') return 'cancelled';
+  return enabled ? 'pending' : 'completed';
 }
 
 function formatCronSchedule(job: CronJobDefinition): string {
@@ -89,7 +90,7 @@ function buildScheduledTaskRecords(args: {
       steps: [
         {
           title: formatCronSchedule(job),
-          status: job.enabled ? 'pending' : 'done',
+          status: job.enabled ? 'pending' : 'completed',
         },
         ...(latest ? [{
           title: latest.status,
@@ -105,8 +106,9 @@ function backgroundTaskStatusToTaskStatus(status: Task['status']): TaskRecord['s
   if (status === 'running' || status === 'queued' || status === 'paused' || status === 'waiting_input' || status === 'stalled') {
     return 'in_progress';
   }
-  if (status === 'completed') return 'done';
-  if (status === 'failed' || status === 'cancelled' || status === 'expired' || status === 'orphaned') return 'blocked';
+  if (status === 'completed') return 'completed';
+  if (status === 'cancelled') return 'cancelled';
+  if (status === 'failed' || status === 'expired' || status === 'orphaned') return 'blocked';
   return 'pending';
 }
 
@@ -299,6 +301,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
   const cronJobs = useCronStore((state) => state.jobs);
   const cronLatestExecutions = useCronStore((state) => state.latestExecutions);
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
+  const sessionTasks = useSessionStore((state) => state.sessionTasks);
 
   const taskProgress = currentSessionId ? sessionTaskProgress[currentSessionId] ?? null : null;
   const sessionStatus = currentSessionId ? sessionStates[currentSessionId]?.status ?? null : null;
@@ -319,6 +322,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
       sessionId: currentSessionId,
       runId: run.identity.runId,
       runStatus: run.status,
+      sessionTasks,
       todos: statusRail.todos.items,
       taskProgress,
     });
@@ -361,6 +365,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
     selectedSwarmAgentId,
     sessionStates,
     sessionStatus,
+    sessionTasks,
     statusRail.todos.items,
     taskProgress,
   ]);

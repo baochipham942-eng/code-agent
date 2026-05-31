@@ -92,11 +92,11 @@ describe('TaskDashboardSummary background outputs', () => {
             id: 'background:agent:claude:run-1',
             scope: 'global',
             title: 'Claude Code',
-            status: 'done',
+            status: 'completed',
             steps: [
-              { title: '已完成', status: 'done' },
-              { title: 'Claude Code log：run-1.log', status: 'done' },
-              { title: 'Claude Code final message：run-1.last.md', status: 'done' },
+              { title: '已完成', status: 'completed' },
+              { title: 'Claude Code log：run-1.log', status: 'completed' },
+              { title: 'Claude Code final message：run-1.last.md', status: 'completed' },
             ],
             resumeHint: '最终输出：run-1.last.md',
             outputRefs: [

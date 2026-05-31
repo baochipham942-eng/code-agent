@@ -31,10 +31,10 @@ describe('deriveTaskRailView', () => {
     const view = deriveTaskRailView(makeTask({
       title: '实现右侧任务面板',
       steps: [
-        { title: '完成一', status: 'done' },
-        { title: '完成二', status: 'done' },
-        { title: '完成三', status: 'done' },
-        { title: '完成四', status: 'done' },
+        { title: '完成一', status: 'completed' },
+        { title: '完成二', status: 'completed' },
+        { title: '完成三', status: 'completed' },
+        { title: '完成四', status: 'completed' },
         { title: '改造任务卡展示', status: 'in_progress' },
         { title: '补 helper 单测', status: 'pending' },
         { title: '补组件测试', status: 'pending' },
@@ -61,16 +61,16 @@ describe('deriveTaskRailView', () => {
   it('shows completed checklist steps directly when the whole task is done', () => {
     const view = deriveTaskRailView(makeTask({
       title: '任务目标：验证任务面板复杂任务展示',
-      status: 'done',
+      status: 'completed',
       steps: [
-        { title: '任务目标：验证任务面板复杂任务展示', status: 'done' },
-        { title: '检查多个子任务', status: 'done' },
-        { title: '验证完成态', status: 'done' },
+        { title: '任务目标：验证任务面板复杂任务展示', status: 'completed' },
+        { title: '检查多个子任务', status: 'completed' },
+        { title: '验证完成态', status: 'completed' },
       ],
     }));
 
     expect(view.mode).toBe('checklist');
-    expect(view.status).toBe('done');
+    expect(view.status).toBe('completed');
     expect(view.title).toBe('任务目标：验证任务面板复杂任务展示');
     expect(view.visibleSteps.map((step) => step.title)).toEqual([
       '任务目标：验证任务面板复杂任务展示',
@@ -95,7 +95,7 @@ describe('deriveTaskRailView', () => {
         { title: '待办四', status: 'pending' },
         { title: '待办五', status: 'pending' },
         { title: '待办六', status: 'pending' },
-        { title: '已完成项', status: 'done' },
+        { title: '已完成项', status: 'completed' },
       ],
     }));
 
@@ -115,10 +115,10 @@ describe('deriveTaskRailView', () => {
     const view = deriveTaskRailView(makeTask({
       title: '给出推荐结论',
       steps: [
-        { title: '读取文件', status: 'done' },
-        { title: '运行命令', status: 'done' },
-        { title: '搜索信息', status: 'done' },
-        { title: '调用工具', status: 'done' },
+        { title: '读取文件', status: 'completed' },
+        { title: '运行命令', status: 'completed' },
+        { title: '搜索信息', status: 'completed' },
+        { title: '调用工具', status: 'completed' },
         { title: '给出推荐结论', status: 'in_progress' },
       ],
     }));
@@ -126,5 +126,22 @@ describe('deriveTaskRailView', () => {
     expect(view.mode).toBe('simple');
     expect(view.visibleSteps).toEqual([]);
     expect(view.total).toBe(1);
+  });
+
+  it('folds cancelled steps and removes them from progress total', () => {
+    const view = deriveTaskRailView(makeTask({
+      title: '调整计划',
+      status: 'in_progress',
+      steps: [
+        { title: '保留路径', status: 'completed' },
+        { title: '放弃旧路径', status: 'cancelled' },
+        { title: '继续验证', status: 'in_progress' },
+      ],
+    }));
+
+    expect(view.visibleSteps.map((step) => step.title)).toEqual(['继续验证']);
+    expect(view.completedSteps.map((step) => step.status)).toEqual(['completed', 'cancelled']);
+    expect(view.completed).toBe(1);
+    expect(view.total).toBe(2);
   });
 });

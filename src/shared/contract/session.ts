@@ -19,7 +19,15 @@ export type SessionStatus = 'idle' | 'running' | 'queued' | 'paused' | 'cancelli
  */
 export type SessionType = 'chat' | 'schedule' | 'heartbeat' | 'subagent';
 
-export type SessionOriginKind = 'manual' | 'cron' | 'heartbeat' | 'subagent' | 'channel' | 'import' | 'retry';
+export type SessionOriginKind =
+  | 'manual'
+  | 'cron'
+  | 'heartbeat'
+  | 'subagent'
+  | 'channel'
+  | 'import'
+  | 'retry'
+  | 'agent_session_manager';
 
 export interface SessionOrigin {
   kind: SessionOriginKind;

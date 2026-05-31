@@ -72,6 +72,7 @@ import { agentMessageSchema } from './multiagent/agentMessage.schema';
 import { workflowOrchestrateSchema } from './multiagent/workflowOrchestrate.schema';
 import { workflowSchema } from './multiagent/workflow.schema';
 import { planReviewSchema } from './multiagent/planReview.schema';
+import { sessionManagerSchema } from './session/sessionManager.schema';
 
 // excel/
 import { excelAutomateSchema } from './excel/excelAutomate.schema';
@@ -325,6 +326,11 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   registry.register(
     planReviewSchema,
     async () => (await import('./multiagent/planReview')).planReviewModule,
+  );
+
+  registry.register(
+    sessionManagerSchema,
+    async () => (await import('./session/sessionManager')).sessionManagerModule,
   );
 
   // ── batch 7: mcp/document/excel/planning（21 个）─────────────────────────

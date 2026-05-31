@@ -274,7 +274,49 @@ export interface ArtifactIssue {
   anchors?: ArtifactAnchor[];
   evidenceRefs: ArtifactEvidenceRef[];
   decisionTrace?: DecisionTrace;
+  adminReview?: ArtifactIssueAdminReview;
   relatedIssueIds?: string[];
+}
+
+export type AdminReviewDecision = 'allow_release' | 'request_changes';
+
+export interface ArtifactIssueAdminReview {
+  decision: AdminReviewDecision;
+  reviewer: string;
+  reviewedAt: number;
+  note?: string;
+  statusAfter: ArtifactIssueStatus;
+}
+
+export type AdminReviewQueueStatus = 'pending' | 'approved' | 'rejected';
+
+export interface AdminReviewQueueItem {
+  itemId: string;
+  issueId: string;
+  traceIdentity: UnifiedTraceIdentity;
+  artifactId: string;
+  artifactKind: string;
+  source: ArtifactIssueSource;
+  code: string;
+  severity: ArtifactIssueSeverity;
+  issueStatus: ArtifactIssueStatus;
+  reviewStatus: AdminReviewQueueStatus;
+  title: string;
+  message: string;
+  reason: string;
+  evidenceRefs: ArtifactEvidenceRef[];
+  decisionTrace?: DecisionTrace;
+  adminReview?: ArtifactIssueAdminReview;
+  recommendedDecision: AdminReviewDecision;
+  updatedAt: number;
+}
+
+export interface ApplyArtifactIssueAdminReviewInput {
+  decision: AdminReviewDecision;
+  reviewer: string;
+  note?: string;
+  reviewedAt?: number;
+  repairInstruction?: string;
 }
 
 export type QualityGateStatus = 'passed' | 'failed' | 'degraded' | 'skipped';
@@ -340,6 +382,100 @@ const ACTIVE_ARTIFACT_ISSUE_STATUSES = new Set<ArtifactIssueStatus>([
   'accepted',
   'in_progress',
 ]);
+
+function getAdminReviewQueueStatus(issue: ArtifactIssue): AdminReviewQueueStatus {
+  if (issue.adminReview?.decision === 'allow_release') return 'approved';
+  if (issue.adminReview?.decision === 'request_changes') return 'rejected';
+  return 'pending';
+}
+
+function buildAdminReviewReason(issue: ArtifactIssue): string {
+  const reasons: string[] = [];
+  if (severityRank(issue.severity) >= 4) {
+    reasons.push(`${issue.severity} severity issue blocks release`);
+  }
+  if (issue.decisionTrace) {
+    reasons.push(`permission decision trace ended with ${issue.decisionTrace.finalOutcome}`);
+  }
+  if (issue.source === 'eval_gate' || issue.source === 'review_queue' || issue.source === 'admin') {
+    reasons.push(`${issue.source} source requires admin disposition`);
+  }
+  return reasons.length > 0
+    ? reasons.join('; ')
+    : 'active artifact issue needs admin disposition';
+}
+
+export function artifactIssueNeedsAdminReview(issue: ArtifactIssue): boolean {
+  if (!ACTIVE_ARTIFACT_ISSUE_STATUSES.has(issue.status)) return false;
+  return (
+    severityRank(issue.severity) >= 4
+    || Boolean(issue.decisionTrace)
+    || issue.source === 'eval_gate'
+    || issue.source === 'review_queue'
+    || issue.source === 'admin'
+  );
+}
+
+export function buildAdminReviewQueueItem(issue: ArtifactIssue): AdminReviewQueueItem | null {
+  if (!artifactIssueNeedsAdminReview(issue) && !issue.adminReview) return null;
+
+  const reviewStatus = getAdminReviewQueueStatus(issue);
+  return {
+    itemId: `artifact_issue:${issue.issueId}`,
+    issueId: issue.issueId,
+    traceIdentity: issue.traceIdentity,
+    artifactId: issue.artifactId,
+    artifactKind: issue.artifactKind,
+    source: issue.source,
+    code: issue.code,
+    severity: issue.severity,
+    issueStatus: issue.status,
+    reviewStatus,
+    title: issue.title,
+    message: issue.message,
+    reason: buildAdminReviewReason(issue),
+    evidenceRefs: issue.evidenceRefs,
+    decisionTrace: issue.decisionTrace,
+    adminReview: issue.adminReview,
+    recommendedDecision: severityRank(issue.severity) >= 4 ? 'request_changes' : 'allow_release',
+    updatedAt: issue.updatedAt,
+  };
+}
+
+export function listAdminReviewQueueItems(
+  issues: ArtifactIssue[],
+  options: { includeReviewed?: boolean } = {},
+): AdminReviewQueueItem[] {
+  return issues
+    .map((issue) => buildAdminReviewQueueItem(issue))
+    .filter((item): item is AdminReviewQueueItem => Boolean(item))
+    .filter((item) => options.includeReviewed || item.reviewStatus === 'pending')
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export function applyArtifactIssueAdminReview(
+  issue: ArtifactIssue,
+  input: ApplyArtifactIssueAdminReviewInput,
+): ArtifactIssue {
+  const reviewedAt = input.reviewedAt ?? Date.now();
+  const statusAfter: ArtifactIssueStatus = input.decision === 'allow_release'
+    ? 'dismissed'
+    : 'in_progress';
+
+  return {
+    ...issue,
+    status: statusAfter,
+    updatedAt: reviewedAt,
+    repairInstruction: input.repairInstruction ?? issue.repairInstruction,
+    adminReview: {
+      decision: input.decision,
+      reviewer: input.reviewer,
+      reviewedAt,
+      note: input.note,
+      statusAfter,
+    },
+  };
+}
 
 function severityRank(severity: ArtifactIssueSeverity): number {
   switch (severity) {

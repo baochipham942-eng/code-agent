@@ -53,6 +53,8 @@ This first implementation closes the minimum product path without introducing a 
 - Phase 3: classifier auto decisions now persist a reviewable `DecisionTrace`; dangerous package-manager/bash commands have focused regressions; ToolExecutor serializes concurrent write/execute calls with file/workspace write-isolation metadata.
 - Phase 4: workflow runs carry `sessionId` through `ScriptRunSpec` and cancellation authorization; workflow and Agent Team failures create handoff/retry proposals that reference replay, journal, checkpoint, and failed-task evidence.
 - Phase 5: artifact issues and eval/replay quality reports have persisted SQLite repositories; `ExperimentAdapter` emits a quality report for replay-backed cases and keeps artifact issues tied to `UnifiedTraceIdentity`.
+- Post-baseline runtime hardening: `acceptance:pause-resume` now exercises pause, resume, move-to-background, background completion notification, and foreground restore through the app-host API.
+- Post-baseline admin review wiring: artifact issues can be listed as admin review queue items, decided as `allow_release` or `request_changes`, and audited through the same artifact issue repository.
 
 ## Agent Team Audit Protocol
 
@@ -75,7 +77,7 @@ Each finding must include `priority`, `currentState`, `gap`, `recommendation`, a
 | Product closure contracts | `npm run acceptance:product-closure`, `npm run typecheck` |
 | Runtime / workflow | `npm run acceptance:agent-runtime-app-host`, `npm run acceptance:pause-resume`, `npm run acceptance:tool-cancel`, `npm run acceptance:session-persistence` |
 | Agent Team / default path | `npm run acceptance:agent-team`, plus focused workflow E2E when UI changes |
-| Eval / replay / release gate | `npm run acceptance:real-agent-replay-eval`, `npm run acceptance:telemetry-feedback-cloud -- --json`, `npm run acceptance:posthog-dashboards:dry-run` |
+| Eval / replay / release gate | `npm run acceptance:real-agent-replay-eval`, `npm run acceptance:admin-review-queue`, `npm run acceptance:telemetry-feedback-cloud -- --json`, `npm run acceptance:posthog-dashboards:dry-run` |
 | Paid provider | Default to `npm run acceptance:paid-real-model-replay-eval -- --dry-run --json`; real paid runs require explicit manual-paid approval |
 
 ## Rollout Order

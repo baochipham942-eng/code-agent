@@ -22,6 +22,8 @@ import { createDevAgentTeamSmokeRouter } from './devAgentTeamSmoke';
 import { registerDevTelemetrySeedRoutes } from './devTelemetrySeedRoutes';
 import { DevApiError } from './devSeedHelpers';
 import type { ActiveAgentLoop } from './agent';
+import { getBackgroundTaskManager } from '../../main/session/backgroundTaskManager';
+import { notificationService } from '../../main/services/infra/notificationService';
 
 export {
   DevApiError,
@@ -551,6 +553,42 @@ export function createDevRouter(deps: DevRouterDeps): Router {
         error: message,
       });
     }
+  });
+
+  // ── Background task controls for app-host long-task acceptance ──────
+  router.post('/dev/background-task/complete', async (req: Request, res: Response) => {
+    if (!ensureDevApiEnabled(res)) return;
+
+    try {
+      const body = readObjectBody(req.body as unknown);
+      const sessionId = typeof body.sessionId === 'string' && body.sessionId.trim()
+        ? body.sessionId.trim()
+        : '';
+      if (!sessionId) {
+        res.status(400).json({ ok: false, error: 'sessionId is required.' });
+        return;
+      }
+      const message = typeof body.message === 'string' && body.message.trim()
+        ? body.message.trim()
+        : undefined;
+
+      await getBackgroundTaskManager().markCompleted(sessionId, message);
+      res.json({ ok: true, sessionId });
+    } catch (error) {
+      logger.error('Dev background task complete failed', error);
+      res.status(500).json({ ok: false, error: formatError(error) });
+    }
+  });
+
+  router.get('/dev/notifications', (req: Request, res: Response) => {
+    if (!ensureDevApiEnabled(res)) return;
+    res.json({ ok: true, notifications: notificationService.getRecentNotifications() });
+  });
+
+  router.delete('/dev/notifications', (req: Request, res: Response) => {
+    if (!ensureDevApiEnabled(res)) return;
+    notificationService.clearRecentNotifications();
+    res.json({ ok: true });
   });
 
   // ── POST /api/dev/emit-swarm-event (E2E test hook) ──────────────────

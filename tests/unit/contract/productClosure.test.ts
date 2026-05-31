@@ -3,8 +3,11 @@ import { buildSessionTraceIdentity } from '@shared/contract/reviewQueue';
 import {
   LONG_TASK_STATUS_VOCABULARY,
   LONG_TASK_SURFACE_CONTRACTS,
+  applyArtifactIssueAdminReview,
+  buildAdminReviewQueueItem,
   buildEvalReplayQualityReport,
   getLongTaskStatusLabel,
+  listAdminReviewQueueItems,
   normalizeLongTaskStatus,
   normalizeQualityReportStatus,
   type ArtifactIssue,
@@ -187,6 +190,61 @@ describe('product closure contracts', () => {
     expect(report.gates[1]).toMatchObject({
       status: 'failed',
       failures: ['runtime_error:issue-2'],
+    });
+  });
+
+  it('turns blocking artifact issues into admin review queue decisions', () => {
+    const traceIdentity = buildSessionTraceIdentity('session-3');
+    const issue: ArtifactIssue = {
+      issueId: 'issue-3',
+      artifactId: 'artifact-3',
+      artifactKind: 'html_artifact',
+      traceIdentity,
+      source: 'eval_gate',
+      code: 'visual_regression',
+      severity: 'critical',
+      status: 'open',
+      title: 'Artifact fails visual review',
+      message: 'The artifact layout overlaps on mobile.',
+      createdAt: 1_780_252_800_000,
+      updatedAt: 1_780_252_800_000,
+      evidenceRefs: [{
+        evidenceId: 'evidence-3',
+        kind: 'browser_probe',
+        ref: 'probe:mobile',
+        summary: 'Mobile screenshot has overlapping controls.',
+        sensitivity: 'metadata_only',
+        createdAt: 1_780_252_800_000,
+      }],
+    };
+
+    const queueItem = buildAdminReviewQueueItem(issue);
+    expect(queueItem).toMatchObject({
+      issueId: 'issue-3',
+      reviewStatus: 'pending',
+      recommendedDecision: 'request_changes',
+    });
+    expect(queueItem?.reason).toContain('critical severity');
+    expect(listAdminReviewQueueItems([issue])).toHaveLength(1);
+
+    const reviewed = applyArtifactIssueAdminReview(issue, {
+      decision: 'allow_release',
+      reviewer: 'release-admin',
+      reviewedAt: 1_780_252_900_000,
+      note: 'Accepted for this release after manual visual pass.',
+    });
+
+    expect(reviewed).toMatchObject({
+      status: 'dismissed',
+      adminReview: {
+        decision: 'allow_release',
+        reviewer: 'release-admin',
+        statusAfter: 'dismissed',
+      },
+    });
+    expect(listAdminReviewQueueItems([reviewed])).toEqual([]);
+    expect(listAdminReviewQueueItems([reviewed], { includeReviewed: true })[0]).toMatchObject({
+      reviewStatus: 'approved',
     });
   });
 });

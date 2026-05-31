@@ -597,11 +597,13 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       repair_instruction TEXT,
       anchors_json TEXT NOT NULL DEFAULT '[]',
       decision_trace_json TEXT,
+      admin_review_json TEXT,
       related_issue_ids_json TEXT NOT NULL DEFAULT '[]',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )
   `);
+  safeAlter(db, 'ALTER TABLE artifact_issues ADD COLUMN admin_review_json TEXT', logger);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS artifact_issue_evidence (

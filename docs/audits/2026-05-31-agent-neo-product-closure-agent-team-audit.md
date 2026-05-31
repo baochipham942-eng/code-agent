@@ -74,7 +74,7 @@ Recommendation: Phase 5 should use `ArtifactIssue` and `EvalReplayQualityReport`
 | Phase 4 Managed Long Task Runtime | Carried `sessionId` through workflow script runs and cancellation so background control remains tied to the originating session |
 | Phase 5 Quality Release Loop | Added artifact issue / evidence persistence, eval/replay quality report persistence, and quality report emission from replay-backed eval cases |
 
-Remaining post-baseline work stays in the spec acceptance matrix: pause/resume/background notification E2E, per-agent worktree or file-lock isolation for write fanout, admin review queue wiring, and trend/release gate UI.
+Post-baseline update: pause/resume/background notification E2E and admin review queue wiring are now implemented as focused app-host smokes. Remaining post-baseline work stays in the spec acceptance matrix: per-agent worktree or file-lock isolation for write fanout and trend/release gate UI.
 
 ## Verification
 

@@ -34,6 +34,31 @@ type AgentLoopStubState = {
   resumeCount: number;
 };
 
+type SessionSummary = {
+  id: string;
+  title: string;
+};
+
+type BackgroundTaskInfo = {
+  sessionId: string;
+  title: string;
+  startedAt: number;
+  backgroundedAt: number;
+  status: 'running' | 'completed' | 'failed';
+  progress?: number;
+  completionMessage?: string;
+};
+
+type RecordedNotification = {
+  id: string;
+  type: 'needs_input' | 'task_complete';
+  sessionId: string;
+  title: string;
+  body: string;
+  createdAt: number;
+  delivery: 'sent' | 'dry_run';
+};
+
 type WrappedResponse<T> = {
   success: boolean;
   data?: T;
@@ -117,6 +142,7 @@ async function startServer(dataDir: string): Promise<StartedServer> {
       ...process.env,
       CODE_AGENT_DATA_DIR: dataDir,
       CODE_AGENT_E2E: '1',
+      CODE_AGENT_NOTIFICATION_DRY_RUN: '1',
       CODE_AGENT_WORKING_DIR: process.cwd(),
       WEB_HOST: '127.0.0.1',
       WEB_PORT: String(port),
@@ -197,6 +223,41 @@ async function deleteStub(server: StartedServer, sessionId: string): Promise<voi
   await requestJson(server, 'DELETE', `/api/dev/agent-loop-stub/${encodeURIComponent(sessionId)}`);
 }
 
+async function createSession(server: StartedServer): Promise<SessionSummary> {
+  const response = await requestJson<WrappedResponse<SessionSummary>>(server, 'POST', '/api/sessions', {
+    title: `pause-resume-background-${Date.now()}`,
+    workingDirectory: process.cwd(),
+  });
+  if (!response.success || !response.data?.id) {
+    throw new Error(`Session creation returned unexpected payload: ${JSON.stringify(response)}`);
+  }
+  return response.data;
+}
+
+async function listBackgroundTasks(server: StartedServer): Promise<BackgroundTaskInfo[]> {
+  const response = await requestJson<WrappedResponse<BackgroundTaskInfo[]>>(server, 'GET', '/api/background/tasks');
+  if (!response.success || !Array.isArray(response.data)) {
+    throw new Error(`Background task list returned unexpected payload: ${JSON.stringify(response)}`);
+  }
+  return response.data;
+}
+
+async function clearNotifications(server: StartedServer): Promise<void> {
+  await requestJson(server, 'DELETE', '/api/dev/notifications');
+}
+
+async function listNotifications(server: StartedServer): Promise<RecordedNotification[]> {
+  const response = await requestJson<{ ok: boolean; notifications: RecordedNotification[] }>(
+    server,
+    'GET',
+    '/api/dev/notifications',
+  );
+  if (!response.ok || !Array.isArray(response.notifications)) {
+    throw new Error(`Notification list returned unexpected payload: ${JSON.stringify(response)}`);
+  }
+  return response.notifications;
+}
+
 async function runPauseResumeSmoke(server: StartedServer, sessionId: string): Promise<{
   created: AgentLoopStubState;
   paused: AgentLoopStubState;
@@ -240,17 +301,99 @@ async function runPauseResumeSmoke(server: StartedServer, sessionId: string): Pr
   return { created, paused, resumed };
 }
 
+async function runBackgroundNotificationSmoke(
+  server: StartedServer,
+  sessionId: string,
+): Promise<{
+  runningTask: BackgroundTaskInfo;
+  completedTask: BackgroundTaskInfo;
+  notification: RecordedNotification;
+  foregroundTask: BackgroundTaskInfo;
+}> {
+  const backgroundResponse = await requestJson<WrappedResponse<{ sessionId: string }>>(
+    server,
+    'POST',
+    '/api/background/move-to-background',
+    { sessionId },
+  );
+  if (!backgroundResponse.success || backgroundResponse.data?.sessionId !== sessionId) {
+    throw new Error(`Move-to-background returned unexpected payload: ${JSON.stringify(backgroundResponse)}`);
+  }
+
+  const runningTask = (await listBackgroundTasks(server)).find((task) => task.sessionId === sessionId);
+  if (!runningTask || runningTask.status !== 'running') {
+    throw new Error(`Session did not appear as a running background task: ${JSON.stringify(runningTask)}`);
+  }
+
+  const completionMessage = 'long task completed while in background';
+  const completeResponse = await requestJson<{ ok: boolean; sessionId: string }>(
+    server,
+    'POST',
+    '/api/dev/background-task/complete',
+    { sessionId, message: completionMessage },
+  );
+  if (!completeResponse.ok || completeResponse.sessionId !== sessionId) {
+    throw new Error(`Background completion returned unexpected payload: ${JSON.stringify(completeResponse)}`);
+  }
+
+  const completedTask = (await listBackgroundTasks(server)).find((task) => task.sessionId === sessionId);
+  if (
+    !completedTask
+    || completedTask.status !== 'completed'
+    || completedTask.progress !== 100
+    || completedTask.completionMessage !== completionMessage
+  ) {
+    throw new Error(`Background task did not complete with message/progress: ${JSON.stringify(completedTask)}`);
+  }
+
+  const notification = (await listNotifications(server)).find((entry) => (
+    entry.sessionId === sessionId
+    && entry.type === 'task_complete'
+    && entry.delivery === 'dry_run'
+    && entry.body.includes(completionMessage)
+  ));
+  if (!notification) {
+    throw new Error(`Task completion notification was not recorded for ${sessionId}`);
+  }
+
+  const foregroundResponse = await requestJson<WrappedResponse<BackgroundTaskInfo>>(
+    server,
+    'POST',
+    '/api/background/move-to-foreground',
+    { sessionId },
+  );
+  if (!foregroundResponse.success || foregroundResponse.data?.sessionId !== sessionId) {
+    throw new Error(`Move-to-foreground returned unexpected payload: ${JSON.stringify(foregroundResponse)}`);
+  }
+
+  const remainingTask = (await listBackgroundTasks(server)).find((task) => task.sessionId === sessionId);
+  if (remainingTask) {
+    throw new Error(`Background task remained after foreground restore: ${JSON.stringify(remainingTask)}`);
+  }
+
+  return {
+    runningTask,
+    completedTask,
+    notification,
+    foregroundTask: foregroundResponse.data,
+  };
+}
+
 async function main(): Promise<void> {
   await ensureBuiltWebServer();
 
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'code-agent-pause-resume-'));
-  const sessionId = `pause-resume-smoke-${Date.now()}`;
   let server: StartedServer | null = null;
+  let sessionId: string | null = null;
   let cleanupStub = false;
 
   try {
     server = await startServer(dataDir);
+    await clearNotifications(server);
+    const session = await createSession(server);
+    sessionId = session.id;
     const result = await runPauseResumeSmoke(server, sessionId);
+    const background = await runBackgroundNotificationSmoke(server, sessionId);
     cleanupStub = true;
 
     console.log(JSON.stringify({
@@ -258,6 +401,16 @@ async function main(): Promise<void> {
       dataDir,
       sessionId,
       loopId: result.created.id,
+      background: {
+        runningStatus: background.runningTask.status,
+        completedStatus: background.completedTask.status,
+        restoredToForeground: background.foregroundTask.sessionId === sessionId,
+      },
+      notification: {
+        type: background.notification.type,
+        delivery: background.notification.delivery,
+        title: background.notification.title,
+      },
       pause: {
         active: result.paused.active,
         paused: result.paused.paused,
@@ -270,7 +423,7 @@ async function main(): Promise<void> {
       },
     }, null, 2));
   } finally {
-    if (server && cleanupStub) {
+    if (server && cleanupStub && sessionId) {
       await deleteStub(server, sessionId).catch(() => undefined);
     }
     if (server) await stopServer(server);

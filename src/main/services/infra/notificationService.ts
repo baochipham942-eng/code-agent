@@ -19,9 +19,46 @@ export interface TaskNotificationData {
   toolsUsed: string[];
 }
 
+export interface RecordedNotification {
+  id: string;
+  type: 'needs_input' | 'task_complete';
+  sessionId: string;
+  title: string;
+  body: string;
+  createdAt: number;
+  delivery: 'sent' | 'dry_run';
+}
+
 class NotificationService implements Disposable {
   private enabled: boolean = true;
   private disposed = false;
+  private recentNotifications: RecordedNotification[] = [];
+
+  private isDryRun(): boolean {
+    return process.env.CODE_AGENT_NOTIFICATION_DRY_RUN === '1';
+  }
+
+  private record(notification: Omit<RecordedNotification, 'id' | 'createdAt' | 'delivery'>): RecordedNotification {
+    const entry: RecordedNotification = {
+      ...notification,
+      id: `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      createdAt: Date.now(),
+      delivery: this.isDryRun() ? 'dry_run' : 'sent',
+    };
+    this.recentNotifications.push(entry);
+    if (this.recentNotifications.length > 50) {
+      this.recentNotifications.shift();
+    }
+    return entry;
+  }
+
+  getRecentNotifications(): RecordedNotification[] {
+    return [...this.recentNotifications];
+  }
+
+  clearRecentNotifications(): void {
+    this.recentNotifications = [];
+  }
 
   /**
    * 检查是否应该发送通知
@@ -29,11 +66,17 @@ class NotificationService implements Disposable {
    */
   private shouldNotify(): boolean {
     if (!this.enabled) return false;
+    if (this.isDryRun()) return true;
     if (!Notification.isSupported()) return false;
 
     // 检查是否有焦点窗口
     const focusedWindow = BrowserWindow.getFocusedWindow();
     return focusedWindow === null;
+  }
+
+  private showNotification(notification: Notification): void {
+    if (this.isDryRun()) return;
+    notification.show();
   }
 
   /**
@@ -75,7 +118,13 @@ class NotificationService implements Disposable {
       }
     });
 
-    notification.show();
+    this.showNotification(notification);
+    this.record({
+      type: 'needs_input',
+      sessionId: data.sessionId,
+      title: data.title,
+      body: data.body,
+    });
     logger.info('Needs-input notification sent', { title: data.title });
   }
 
@@ -125,7 +174,13 @@ class NotificationService implements Disposable {
       }
     });
 
-    notification.show();
+    this.showNotification(notification);
+    this.record({
+      type: 'task_complete',
+      sessionId: data.sessionId,
+      title: `任务完成 - ${sessionTitle}`,
+      body: body.trim(),
+    });
     logger.info('Notification sent', { sessionTitle });
   }
 
@@ -150,7 +205,7 @@ class NotificationService implements Disposable {
    * 获取通知状态
    */
   isEnabled(): boolean {
-    return this.enabled && Notification.isSupported();
+    return this.enabled && (this.isDryRun() || Notification.isSupported());
   }
 }
 

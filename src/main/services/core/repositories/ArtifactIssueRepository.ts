@@ -1,10 +1,16 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { getDatabase } from '../databaseService';
 import type {
+  AdminReviewQueueItem,
+  ApplyArtifactIssueAdminReviewInput,
   ArtifactEvidenceRef,
   ArtifactIssue,
   ArtifactIssueStatus,
   EvalReplayQualityReport,
+} from '../../../../shared/contract/productClosure';
+import {
+  applyArtifactIssueAdminReview,
+  listAdminReviewQueueItems,
 } from '../../../../shared/contract/productClosure';
 import type { UnifiedTraceIdentity } from '../../../../shared/contract/reviewQueue';
 
@@ -58,9 +64,9 @@ export class ArtifactIssueRepository {
             trace_id, trace_source, session_id, replay_key,
             source, code, severity, status, title, message,
             run_id, case_id, owner, repair_instruction,
-            anchors_json, decision_trace_json, related_issue_ids_json,
+            anchors_json, decision_trace_json, admin_review_json, related_issue_ids_json,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           nextIssue.issueId,
@@ -82,6 +88,7 @@ export class ArtifactIssueRepository {
           nextIssue.repairInstruction ?? null,
           serialize(nextIssue.anchors ?? []),
           nextIssue.decisionTrace ? serialize(nextIssue.decisionTrace) : null,
+          nextIssue.adminReview ? serialize(nextIssue.adminReview) : null,
           serialize(nextIssue.relatedIssueIds ?? []),
           nextIssue.createdAt,
           nextIssue.updatedAt,
@@ -146,6 +153,21 @@ export class ArtifactIssueRepository {
       .prepare('UPDATE artifact_issues SET status = ?, updated_at = ? WHERE issue_id = ?')
       .run(status, updatedAt, issueId);
     return result.changes > 0;
+  }
+
+  listAdminReviewQueue(options: { includeReviewed?: boolean; limit?: number } = {}): AdminReviewQueueItem[] {
+    const limit = Math.max(1, Math.min(options.limit ?? 50, 200));
+    return listAdminReviewQueueItems(this.listIssues({ limit }), {
+      includeReviewed: options.includeReviewed,
+    }).slice(0, limit);
+  }
+
+  applyAdminReview(issueId: string, input: ApplyArtifactIssueAdminReviewInput): ArtifactIssue | null {
+    const issue = this.getIssue(issueId);
+    if (!issue) return null;
+    const reviewed = applyArtifactIssueAdminReview(issue, input);
+    this.upsertIssue(reviewed);
+    return reviewed;
   }
 
   upsertQualityReport(report: EvalReplayQualityReport): void {
@@ -229,6 +251,7 @@ export class ArtifactIssueRepository {
       anchors: deserialize<ArtifactIssue['anchors']>(row.anchors_json, []),
       evidenceRefs,
       decisionTrace: deserialize<ArtifactIssue['decisionTrace']>(row.decision_trace_json, undefined),
+      adminReview: deserialize<ArtifactIssue['adminReview']>(row.admin_review_json, undefined),
       relatedIssueIds: deserialize<ArtifactIssue['relatedIssueIds']>(row.related_issue_ids_json, []),
     };
   }

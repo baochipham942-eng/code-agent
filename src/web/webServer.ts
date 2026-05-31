@@ -310,6 +310,8 @@ import { createSessionsRouter } from './routes/sessions';
 import type { SupabaseSessionBinding } from './routes/sessions';
 import { createDevRouter } from './routes/dev';
 import type { PendingDevPermissionRequest } from './routes/dev';
+import { createBackgroundRouter } from './routes/background';
+import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
 
 type WebSupabaseBinding = SupabaseAgentBinding & SupabaseSessionBinding;
 
@@ -890,6 +892,9 @@ function createApp(): express.Express {
     tryGetSessionManager,
     getSupabaseForSession,
   }));
+
+  app.use('/api', createBackgroundRouter({ logger }));
+  app.use('/api', createAdminReviewQueueRouter({ logger }));
 
   // ── Session routes (extracted to routes/sessions.ts) ────────────────
   app.use('/api', createSessionsRouter({

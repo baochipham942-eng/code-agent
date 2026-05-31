@@ -30,6 +30,7 @@ function createSchema(db: BetterSqlite3.Database): void {
       repair_instruction TEXT,
       anchors_json TEXT NOT NULL DEFAULT '[]',
       decision_trace_json TEXT,
+      admin_review_json TEXT,
       related_issue_ids_json TEXT NOT NULL DEFAULT '[]',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -150,6 +151,42 @@ describe('ArtifactIssueRepository', () => {
 
     expect(repo.getQualityReport('report-1')).toEqual(report);
     expect(repo.listQualityReports(traceIdentity.traceId)).toEqual([report]);
+  });
+
+  it('applies admin review decisions to the artifact issue queue', () => {
+    repo.upsertIssue(makeIssue());
+
+    const [pending] = repo.listAdminReviewQueue();
+    expect(pending).toMatchObject({
+      issueId: 'issue-1',
+      reviewStatus: 'pending',
+      recommendedDecision: 'request_changes',
+    });
+    expect(pending.reason).toContain('high severity');
+
+    const reviewed = repo.applyAdminReview('issue-1', {
+      decision: 'request_changes',
+      reviewer: 'admin@example.com',
+      note: 'Needs a regression before release.',
+      reviewedAt: 300,
+      repairInstruction: 'Create a regression for the chart render path.',
+    });
+
+    expect(reviewed).toMatchObject({
+      status: 'in_progress',
+      updatedAt: 300,
+      repairInstruction: 'Create a regression for the chart render path.',
+      adminReview: {
+        decision: 'request_changes',
+        reviewer: 'admin@example.com',
+        statusAfter: 'in_progress',
+      },
+    });
+    expect(repo.listAdminReviewQueue()).toEqual([]);
+    expect(repo.listAdminReviewQueue({ includeReviewed: true })[0]).toMatchObject({
+      issueId: 'issue-1',
+      reviewStatus: 'rejected',
+    });
   });
 });
 

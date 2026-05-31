@@ -25,19 +25,10 @@ export interface TaskRailView {
   hiddenPendingCount: number;
   completed: number;
   total: number;
+  taskCount: number;
   dependencySummary?: TaskRailDependencySummary;
   currentAction?: string;
 }
-
-const MAX_VISIBLE_STEPS = 6;
-
-const STATUS_RANK: Record<TaskRecord['steps'][number]['status'], number> = {
-  in_progress: 0,
-  pending: 1,
-  blocked: 2,
-  completed: 3,
-  cancelled: 4,
-};
 
 const UTILITY_STEP_PATTERNS = [
   /^read$/i,
@@ -117,28 +108,17 @@ function toStepViews(task: TaskRecord): TaskRailStepView[] {
     .filter((step) => step.title && !isUtilityStepTitle(step.title));
 }
 
-function sortSteps(steps: TaskRailStepView[]): TaskRailStepView[] {
-  return [...steps].sort((a, b) => {
-    const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
-    if (rankDiff !== 0) return rankDiff;
-    return a.originalIndex - b.originalIndex;
-  });
-}
-
 export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null): TaskRailView {
   const taskSteps = toStepViews(task);
-  const isEnded = (status: TaskRailStepView['status']) => status === 'completed' || status === 'cancelled';
   const waitingCount = taskSteps.filter((step) => (step.blockedByTitles?.length ?? 0) > 0).length;
   const unlockingCount = taskSteps.filter((step) => (step.blockedTaskTitles?.length ?? 0) > 0).length;
   const dependencySummary = waitingCount > 0 || unlockingCount > 0
     ? { waitingCount, unlockingCount }
     : undefined;
-  // 已结束区 = 已完成 + 已取消（都折叠展示，靠 dot/样式区分），active 区排除二者
-  const completedSteps = sortSteps(taskSteps.filter((step) => isEnded(step.status)));
-  const activeSteps = sortSteps(taskSteps.filter((step) => !isEnded(step.status)));
   const completed = taskSteps.filter((step) => step.status === 'completed').length;
   // 进度分母剔除已取消：取消的子任务不计入任务量，否则进度永远到不了 100%
   const total = taskSteps.filter((step) => step.status !== 'cancelled').length;
+  const taskCount = taskSteps.length;
   const isChecklist = taskSteps.length >= 2;
 
   if (!isChecklist) {
@@ -147,31 +127,28 @@ export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null): T
       title: simpleTitle(task, run),
       status: task.status,
       visibleSteps: [],
-      completedSteps,
-      hiddenCompletedCount: completedSteps.length,
+      completedSteps: [],
+      hiddenCompletedCount: 0,
       hiddenPendingCount: 0,
       completed,
       total,
+      taskCount,
       dependencySummary,
       currentAction: task.resumeHint && task.resumeHint !== task.title ? task.resumeHint : undefined,
     };
   }
 
-  const isAllDone = activeSteps.length === 0 && completedSteps.length > 0;
-  const visibleSteps = (isAllDone ? completedSteps : activeSteps).slice(0, MAX_VISIBLE_STEPS);
-  const foldedCompletedSteps = isAllDone ? completedSteps.slice(MAX_VISIBLE_STEPS) : completedSteps;
-  const hiddenPendingCount = isAllDone ? 0 : Math.max(0, activeSteps.length - visibleSteps.length);
-
   return {
     mode: 'checklist',
     title: task.title || runStatusLabel(run) || statusLabel(task.status),
     status: task.status,
-    visibleSteps,
-    completedSteps: foldedCompletedSteps,
-    hiddenCompletedCount: foldedCompletedSteps.length,
-    hiddenPendingCount,
+    visibleSteps: taskSteps,
+    completedSteps: [],
+    hiddenCompletedCount: 0,
+    hiddenPendingCount: 0,
     completed,
     total,
+    taskCount,
     dependencySummary,
     currentAction: task.resumeHint && task.resumeHint !== task.title ? task.resumeHint : undefined,
   };

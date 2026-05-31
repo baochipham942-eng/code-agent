@@ -4,25 +4,29 @@ import type { ToolSchema } from '../../../protocol/tools';
 export const taskCreateSchema: ToolSchema = {
   name: 'task_create',
   description:
-    'Create a new task to track work progress. ' +
+    'Create a semantic work-unit task to track progress. ' +
     'Use this for multi-step tasks that need progress tracking. ' +
+    'Do not create tasks for low-level tool operations such as reading files, writing files, or running tests. ' +
     'Tasks are session-scoped and support dependencies via task_update.',
   inputSchema: {
     type: 'object',
     properties: {
       subject: {
         type: 'string',
-        description: 'Brief task title in imperative form (e.g., "Implement login feature")',
+        description:
+          'Brief semantic task title visible to the user. Describe the work goal or outcome, not the tool operation ' +
+          '(good: "Validate task panel lifecycle"; bad: "Read file", "Write file", or "Run tests").',
       },
       description: {
         type: 'string',
-        description: 'Detailed description of what needs to be done',
+        description: 'Detailed user-visible purpose and completion criteria for this work unit',
       },
       activeForm: {
         type: 'string',
         description:
-          'Present continuous form shown while task is in progress ' +
-          '(e.g., "Implementing login feature"). Auto-generated if not provided.',
+          'Present continuous semantic form shown while task is in progress ' +
+          '(e.g., "Validating task panel lifecycle"). Do not use raw tool actions such as "Reading file". ' +
+          'Auto-generated if not provided.',
       },
       priority: {
         type: 'string',

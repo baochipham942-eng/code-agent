@@ -184,8 +184,12 @@ test('task_update renders SessionTask lifecycle and dependencies in the task pan
   await expect(page.getByText('2/3').first()).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText('等待 渲染依赖状态').first()).toBeHidden({ timeout: 10_000 });
 
-  await page.getByRole('button', { name: /已完成 3 项/ }).click();
-  await expect(page.getByText('放弃旧路径').first()).toBeVisible({ timeout: 10_000 });
+  const taskCard = page.getByTestId('task-record-row').filter({ hasText: '准备数据源' });
+  await expect(taskCard.getByText('已完成 2 个任务（共 4 个任务）')).toBeVisible({ timeout: 10_000 });
+  await expect(taskCard.getByTestId('task-rail-step').filter({ hasText: '准备数据源' })).toHaveAttribute('data-task-status', 'completed');
+  await expect(taskCard.getByTestId('task-rail-step').filter({ hasText: '渲染依赖状态' })).toHaveAttribute('data-task-status', 'completed');
+  await expect(taskCard.getByTestId('task-rail-step').filter({ hasText: '等待前置检查' })).toHaveAttribute('data-task-status', 'pending');
+  await expect(taskCard.getByTestId('task-rail-step').filter({ hasText: '放弃旧路径' })).toHaveAttribute('data-task-status', 'cancelled');
 });
 
 test('task panel loads persisted SessionTask records when a session is opened', async ({ page, request }) => {
@@ -252,12 +256,15 @@ test('real agent loop creates SessionTask records that render in the task panel'
   await expect(sendButton).toBeEnabled({ timeout: 10_000 });
   await sendButton.click();
 
-  await expect(page.getByText('梳理真实 agent 任务').first()).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText('执行保留路径').first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('梳理任务面板验收口径').first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('验证保留任务路径').first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('E2E task panel real-agent smoke completed').first()).toBeVisible({ timeout: 30_000 });
 
-  const closedTasksButton = page.getByRole('button', { name: /已完成 1 项/ });
-  await expect(closedTasksButton).toBeVisible({ timeout: 10_000 });
-  await closedTasksButton.click();
-  await expect(page.getByText('放弃旧路径').first()).toBeVisible({ timeout: 10_000 });
+  const taskCard = page.getByTestId('task-record-row').filter({ hasText: '梳理任务面板验收口径' });
+  await expect(taskCard).toBeVisible({ timeout: 10_000 });
+  await expect(taskCard.getByTestId('task-record-status')).toHaveAttribute('data-task-status', 'completed');
+  await expect(taskCard.getByText('已完成 2 个任务（共 3 个任务）')).toBeVisible({ timeout: 10_000 });
+  await expect(taskCard.getByTestId('task-rail-step').filter({ hasText: '梳理任务面板验收口径' })).toHaveAttribute('data-task-status', 'completed');
+  await expect(taskCard.getByTestId('task-rail-step').filter({ hasText: '验证保留任务路径' })).toHaveAttribute('data-task-status', 'completed');
+  await expect(taskCard.getByTestId('task-rail-step').filter({ hasText: '放弃旧路径' })).toHaveAttribute('data-task-status', 'cancelled');
 });

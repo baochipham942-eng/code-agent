@@ -33,6 +33,25 @@ task_create → task_update(in_progress) → task_update(completed)
                                       → task_update(deleted)   # 误建/不该存在，物理删除
 \`\`\`
 
+### 任务标题语义
+
+SessionTask 表示用户能理解的工作单元，不是工具调用日志。subject/activeForm 要写“正在推进的目标”或“要完成的结果”，不要写底层工具动作。
+
+**好的任务标题：**
+- 梳理验收口径
+- 接通 SessionTask 数据流
+- 修复任务面板状态聚合
+- 验证任务面板生命周期
+
+**不要这样写：**
+- 读取文件
+- 写入文件
+- 运行测试
+- 调用 API
+- 使用 Bash
+
+文件读写、命令执行、浏览器点击这类动作会进入工具活动/Trace，不要重复塞进 SessionTask。
+
 ### 用户意图识别（重要）
 
 用户不一定会直白地说"再加一个XXX功能"，需要从上下文和语义分析识别任务变化：
@@ -63,7 +82,7 @@ task_create → task_update(in_progress) → task_update(completed)
 "我理解您希望增加/修改/取消XXX任务"
 
 // 2. 更新任务列表
-task_create({ subject: "新任务", description: "..." })
+task_create({ subject: "补齐任务面板生命周期验收", description: "验证拆分、执行、阻塞、取消和完成状态" })
 // 或：不再执行但仍应留痕
 task_update({ taskId: "X", status: "cancelled" })
 

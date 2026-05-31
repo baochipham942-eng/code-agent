@@ -111,12 +111,22 @@ describe('e2eLocalAgentModel', () => {
     ]);
     expect(first.toolCalls?.[0].arguments).toMatchObject({
       action: 'create',
-      subject: '梳理真实 agent 任务',
+      subject: '梳理任务面板验收口径',
     });
 
     const second = buildE2ELocalAgentModelResponse(
       [
         { role: 'user', content: 'E2E_TASK_PANEL_SESSION_TASKS' },
+        {
+          role: 'tool',
+          toolCallId: 'e2e-task-panel-create-1',
+          content: 'Task #1 created:\n  Subject: 梳理任务面板验收口径',
+        },
+        {
+          role: 'tool',
+          toolCallId: 'e2e-task-panel-create-2',
+          content: 'Task #2 created:\n  Subject: 验证保留任务路径',
+        },
         {
           role: 'tool',
           toolCallId: 'e2e-task-panel-create-3',
@@ -128,13 +138,77 @@ describe('e2eLocalAgentModel', () => {
     );
 
     expect(second.type).toBe('tool_use');
-    expect(second.toolCalls?.[0]).toMatchObject({
-      id: 'e2e-task-panel-cancel-old-path',
-      name: 'TaskManager',
-      arguments: {
+    expect(second.toolCalls?.map((toolCall) => toolCall.id)).toEqual([
+      'e2e-task-panel-complete-scope',
+      'e2e-task-panel-start-retained-path',
+      'e2e-task-panel-cancel-old-path',
+    ]);
+    expect(second.toolCalls?.map((toolCall) => toolCall.arguments)).toEqual([
+      expect.objectContaining({
+        action: 'update',
+        taskId: '1',
+        status: 'completed',
+        addBlocks: ['2'],
+      }),
+      expect.objectContaining({
+        action: 'update',
+        taskId: '2',
+        status: 'in_progress',
+        addBlockedBy: ['1'],
+      }),
+      expect.objectContaining({
         action: 'update',
         taskId: '3',
         status: 'cancelled',
+      }),
+    ]);
+
+    const third = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'user', content: 'E2E_TASK_PANEL_SESSION_TASKS' },
+        {
+          role: 'tool',
+          toolCallId: 'e2e-task-panel-create-1',
+          content: 'Task #1 created:\n  Subject: 梳理任务面板验收口径',
+        },
+        {
+          role: 'tool',
+          toolCallId: 'e2e-task-panel-create-2',
+          content: 'Task #2 created:\n  Subject: 验证保留任务路径',
+        },
+        {
+          role: 'tool',
+          toolCallId: 'e2e-task-panel-create-3',
+          content: 'Task #3 created:\n  Subject: 放弃旧路径',
+        },
+        {
+          role: 'tool',
+          toolCallId: 'e2e-task-panel-complete-scope',
+          content: 'Task #1 updated:\n  Subject: 梳理任务面板验收口径\n  Status: completed',
+        },
+        {
+          role: 'tool',
+          toolCallId: 'e2e-task-panel-start-retained-path',
+          content: 'Task #2 updated:\n  Subject: 验证保留任务路径\n  Status: in_progress',
+        },
+        {
+          role: 'tool',
+          toolCallId: 'e2e-task-panel-cancel-old-path',
+          content: 'Task #3 updated:\n  Subject: 放弃旧路径\n  Status: cancelled',
+        },
+      ],
+      [taskManagerTool],
+      config,
+    );
+
+    expect(third.type).toBe('tool_use');
+    expect(third.toolCalls?.[0]).toMatchObject({
+      id: 'e2e-task-panel-complete-retained-path',
+      name: 'TaskManager',
+      arguments: {
+        action: 'update',
+        taskId: '2',
+        status: 'completed',
       },
     });
 
@@ -143,8 +217,8 @@ describe('e2eLocalAgentModel', () => {
         { role: 'user', content: 'E2E_TASK_PANEL_SESSION_TASKS' },
         {
           role: 'tool',
-          toolCallId: 'e2e-task-panel-cancel-old-path',
-          content: 'Task #3 updated:\n  Subject: 放弃旧路径\n  Status: cancelled',
+          toolCallId: 'e2e-task-panel-complete-retained-path',
+          content: 'Task #2 updated:\n  Subject: 验证保留任务路径\n  Status: completed',
         },
       ],
       [taskManagerTool],

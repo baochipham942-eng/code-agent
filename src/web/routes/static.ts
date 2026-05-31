@@ -43,10 +43,10 @@ export function createStaticRouter(deps: StaticDeps): Router {
         cachedIndexHtml = fs.readFileSync(indexPath, 'utf-8');
         cachedIndexMtimeMs = stat.mtimeMs;
       }
-      // Inject auth token into HTML so httpTransport can attach it to API requests
+      // Inject auth token into HTML so httpTransport can attach it to API requests.
       const injectedHtml = cachedIndexHtml.replace(
-        '<head>',
-        `<head><script>window.__CODE_AGENT_TOKEN__="${serverAuthToken}";</script>`
+        /<head(\s[^>]*)?>/i,
+        (headTag) => `${headTag}<script>window.__CODE_AGENT_TOKEN__="${serverAuthToken}";</script>`
       );
       res.type('html').send(injectedHtml);
     } catch {

@@ -584,8 +584,13 @@ function buildSessionTaskRecordFromSessionTasks(args: {
     && nonCancelledTasks.every((task) => task.status === 'completed');
   const allCancelled = tasks.every((task) => task.status === 'cancelled');
   const hasBlocked = steps.some((step) => step.status === 'blocked');
+  const hasInProgress = tasks.some((task) => task.status === 'in_progress');
+  const actionablePendingTask = tasks.find((task) => (
+    task.status === 'pending'
+    && (blockedIdsByTask.get(task.id) ?? []).length === 0
+  ));
   const activeTask = tasks.find((task) => task.status === 'in_progress')
-    ?? tasks.find((task) => (blockedIdsByTask.get(task.id) ?? []).length > 0)
+    ?? actionablePendingTask
     ?? tasks.find((task) => task.status === 'pending')
     ?? tasks[0];
 
@@ -594,10 +599,12 @@ function buildSessionTaskRecordFromSessionTasks(args: {
     status = 'completed';
   } else if (allCancelled) {
     status = 'cancelled';
+  } else if (hasInProgress) {
+    status = 'in_progress';
+  } else if (actionablePendingTask) {
+    status = 'pending';
   } else if (hasBlocked) {
     status = 'blocked';
-  } else if (tasks.some((task) => task.status === 'in_progress')) {
-    status = 'in_progress';
   }
 
   return {

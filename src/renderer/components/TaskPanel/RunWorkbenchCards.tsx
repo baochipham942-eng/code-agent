@@ -1,6 +1,15 @@
-import { useState } from 'react';
 import type React from 'react';
-import { AlertTriangle, ArrowUpRight, Brain, Radio } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  Brain,
+  CheckCircle2,
+  Circle,
+  ListChecks,
+  Loader2,
+  Radio,
+  XCircle,
+} from 'lucide-react';
 import { CardEmptyState as EmptyState } from './Card';
 import { WorkbenchPill } from '../workbench/WorkbenchPrimitives';
 import type {
@@ -121,21 +130,6 @@ function getTaskStatusLabel(status: TaskRecord['status']): string {
   }
 }
 
-function getStepDotClass(status: TaskRailStepView['status']): string {
-  switch (status) {
-    case 'completed':
-      return 'border-emerald-400/30 bg-emerald-400/20 text-emerald-300';
-    case 'blocked':
-      return 'border-red-400/30 bg-red-400/15 text-red-300';
-    case 'in_progress':
-      return 'border-sky-400/40 bg-sky-400/15 text-sky-300';
-    case 'cancelled':
-      return 'border-white/[0.05] bg-white/[0.01] text-zinc-600';
-    default:
-      return 'border-white/[0.08] bg-white/[0.02] text-zinc-500';
-  }
-}
-
 const TASK_SCOPE_LABEL: Record<TaskRecord['scope'], string> = {
   session: '会话',
   global: '后台',
@@ -209,7 +203,6 @@ export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?
 
 const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?: RunUiState | null; primary?: boolean }) => {
   const { t } = useI18n();
-  const [completedExpanded, setCompletedExpanded] = useState(false);
   const rail = deriveTaskRailView(task, run);
   const dependencySummary = dependencySummaryLabel(rail.dependencySummary, t);
   const detailLabel = task.status === 'blocked'
@@ -219,15 +212,26 @@ const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?:
       : '当前动作';
 
   return (
-    <div className={`min-w-0 rounded-md bg-black/10 px-2 py-1.5 ${primary ? 'border border-sky-500/10' : ''}`}>
-      <div className="flex items-center gap-2">
-        <span className="text-[10px] uppercase tracking-wide text-zinc-500">{TASK_SCOPE_LABEL[task.scope]}</span>
-        <span className={`text-[10px] ${getTaskStatusClass(rail.status)}`}>{getTaskStatusLabel(rail.status)}</span>
-        <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{rail.title}</span>
-        {rail.mode === 'checklist' && rail.total > 0 && (
-          <span className="text-[10px] tabular-nums text-zinc-600">{rail.completed}/{rail.total}</span>
-        )}
-      </div>
+    <div
+      className={`min-w-0 rounded-md bg-black/10 px-2 py-1.5 ${primary ? 'border border-white/[0.07]' : ''}`}
+      data-testid="task-record-row"
+      data-task-status={rail.status}
+    >
+      {rail.mode === 'checklist' ? (
+        <TaskChecklistHeader rail={rail} />
+      ) : (
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wide text-zinc-500">{TASK_SCOPE_LABEL[task.scope]}</span>
+          <span
+            className={`text-[10px] ${getTaskStatusClass(rail.status)}`}
+            data-testid="task-record-status"
+            data-task-status={rail.status}
+          >
+            {getTaskStatusLabel(rail.status)}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{rail.title}</span>
+        </div>
+      )}
 
       {dependencySummary && (
         <div
@@ -240,29 +244,10 @@ const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?:
       )}
 
       {rail.mode === 'checklist' && (
-        <div className="mt-2 space-y-1">
+        <div className="mt-2 space-y-1.5">
           {rail.visibleSteps.map((step) => (
             <TaskRailStepRow key={`${step.originalIndex}:${step.title}`} step={step} />
           ))}
-          {rail.hiddenPendingCount > 0 && (
-            <div className="pl-5 text-[11px] text-zinc-600">还有 {rail.hiddenPendingCount} 项未显示</div>
-          )}
-          {rail.hiddenCompletedCount > 0 && (
-            <button
-              type="button"
-              onClick={() => setCompletedExpanded((prev) => !prev)}
-              className="pl-5 text-left text-[11px] text-zinc-600 hover:text-zinc-400"
-            >
-              已完成 {rail.hiddenCompletedCount} 项
-            </button>
-          )}
-          {completedExpanded && rail.completedSteps.length > 0 && (
-            <div className="space-y-1">
-              {rail.completedSteps.map((step) => (
-              <TaskRailStepRow key={`${step.originalIndex}:${step.title}:completed`} step={step} muted />
-              ))}
-            </div>
-          )}
         </div>
       )}
 
@@ -276,6 +261,25 @@ const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?:
     </div>
   );
 };
+
+const TaskChecklistHeader = ({ rail }: { rail: ReturnType<typeof deriveTaskRailView> }) => (
+  <div className="flex min-w-0 items-center gap-2">
+    <ListChecks className="h-4 w-4 flex-shrink-0 text-zinc-300" />
+    <span
+      className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-snug text-zinc-100"
+      title={rail.title}
+    >
+      已完成 {rail.completed} 个任务（共 {rail.taskCount} 个任务）
+    </span>
+    <span
+      className="sr-only"
+      data-testid="task-record-status"
+      data-task-status={rail.status}
+    >
+      {getTaskStatusLabel(rail.status)}
+    </span>
+  </div>
+);
 
 function outputRefTone(type: TaskRecordOutputRef['type']): string {
   if (type === 'log') return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
@@ -330,29 +334,52 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
     : null;
 
   return (
-    <div className={`flex min-w-0 items-center gap-2 ${muted ? 'opacity-60' : ''}`}>
-      <span className={`flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded-full border text-[9px] ${getStepDotClass(step.status)}`}>
-        {step.status === 'completed' ? '✓' : step.status === 'blocked' ? '!' : ''}
+    <div
+      className={`grid min-w-0 grid-cols-[20px_24px_minmax(0,1fr)] items-center gap-2 ${muted ? 'opacity-60' : ''}`}
+      data-testid="task-rail-step"
+      data-task-status={step.status}
+    >
+      <span className="flex h-4 w-4 items-center justify-center" title={getTaskStatusLabel(step.status)}>
+        {step.status === 'completed' ? (
+          <CheckCircle2 className="h-4 w-4 fill-zinc-200 text-zinc-950" />
+        ) : step.status === 'in_progress' ? (
+          <Loader2 className="h-4 w-4 animate-spin text-zinc-300" />
+        ) : step.status === 'blocked' ? (
+          <AlertTriangle className="h-3.5 w-3.5 text-red-300" />
+        ) : step.status === 'cancelled' ? (
+          <XCircle className="h-4 w-4 text-zinc-500" />
+        ) : (
+          <Circle className="h-4 w-4 text-zinc-500" />
+        )}
       </span>
-      <span className={`truncate text-[11px] ${step.status === 'completed' ? 'text-zinc-500' : 'text-zinc-300'}`}>
-        {step.title}
-      </span>
-      {waitingHint && (
-        <span
-          className="min-w-0 flex-shrink truncate rounded border border-amber-400/15 bg-amber-400/5 px-1 py-0.5 text-[10px] text-amber-300/80"
-          title={waitingHint}
-        >
-          {waitingHint}
+      <span className="text-right text-xs tabular-nums text-zinc-500">{step.originalIndex + 1}.</span>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className={`truncate text-[13px] leading-5 ${
+          step.status === 'completed'
+            ? 'text-zinc-500 line-through decoration-zinc-500/80'
+            : step.status === 'cancelled'
+              ? 'text-zinc-600 line-through decoration-zinc-600/80'
+              : 'text-zinc-200'
+        }`}>
+          {step.title}
         </span>
-      )}
-      {unlocksHint && (
-        <span
-          className="min-w-0 flex-shrink truncate rounded border border-sky-400/15 bg-sky-400/5 px-1 py-0.5 text-[10px] text-sky-300/75"
-          title={unlocksHint}
-        >
-          {unlocksHint}
-        </span>
-      )}
+        {waitingHint && (
+          <span
+            className="min-w-0 flex-shrink truncate rounded border border-amber-400/15 bg-amber-400/5 px-1 py-0.5 text-[10px] text-amber-300/80"
+            title={waitingHint}
+          >
+            {waitingHint}
+          </span>
+        )}
+        {unlocksHint && (
+          <span
+            className="min-w-0 flex-shrink truncate rounded border border-sky-400/15 bg-sky-400/5 px-1 py-0.5 text-[10px] text-sky-300/75"
+            title={unlocksHint}
+          >
+            {unlocksHint}
+          </span>
+        )}
+      </div>
     </div>
   );
 };

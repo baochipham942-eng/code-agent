@@ -370,14 +370,14 @@ describe('runWorkbenchProjection', () => {
       runId: 'turn-1',
       runStatus: 'running',
       todos: [
-        { content: 'Read code', status: 'completed' },
-        { content: 'Patch UI', activeForm: 'Patching UI', status: 'in_progress' },
+        { content: '梳理任务面板现状', status: 'completed' },
+        { content: '改造任务面板展示', activeForm: '改造任务面板展示', status: 'in_progress' },
       ],
     });
 
     expect(task).toMatchObject({
       scope: 'session',
-      title: 'Patching UI',
+      title: '改造任务面板展示',
       status: 'in_progress',
       ownerRunId: 'turn-1',
     });
@@ -430,9 +430,9 @@ describe('runWorkbenchProjection', () => {
       sessionTasks: [
         {
           id: 'task-a',
-          subject: 'Read code',
-          description: 'Inspect current task panel',
-          activeForm: 'Reading code',
+          subject: '梳理任务面板现状',
+          description: '确认当前任务面板的数据来源和展示状态',
+          activeForm: '梳理任务面板现状',
           status: 'pending',
           priority: 'normal',
           blocks: ['task-b'],
@@ -443,9 +443,9 @@ describe('runWorkbenchProjection', () => {
         },
         {
           id: 'task-b',
-          subject: 'Patch UI',
-          description: 'Render dependencies',
-          activeForm: 'Patching UI',
+          subject: '渲染依赖状态',
+          description: '把 SessionTask 依赖关系展示到任务面板',
+          activeForm: '渲染依赖状态',
           status: 'pending',
           priority: 'normal',
           blocks: [],
@@ -460,10 +460,87 @@ describe('runWorkbenchProjection', () => {
     expect(task).toMatchObject({
       id: 'session-1:session-tasks',
       scope: 'session',
+      title: '梳理任务面板现状',
+      status: 'pending',
+      steps: [
+        { title: '梳理任务面板现状', status: 'pending', blockedTaskTitles: ['渲染依赖状态'] },
+        { title: '渲染依赖状态', status: 'blocked', blockedByTitles: ['梳理任务面板现状'] },
+      ],
+    });
+  });
+
+  it('does not let blocked downstream dependencies mask the actionable SessionTask status', () => {
+    const task = buildSessionTaskRecord({
+      sessionId: 'session-1',
+      runId: 'turn-1',
+      runStatus: 'running',
+      sessionTasks: [
+        {
+          id: 'task-a',
+          subject: '修复任务面板状态聚合',
+          description: '让可执行任务状态优先于被阻塞的下游任务',
+          activeForm: '修复任务面板状态聚合',
+          status: 'in_progress',
+          priority: 'normal',
+          blocks: ['task-b'],
+          blockedBy: [],
+          metadata: {},
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          id: 'task-b',
+          subject: '验证依赖展示',
+          description: '确认下游依赖以 blocked 状态展示',
+          activeForm: '验证依赖展示',
+          status: 'pending',
+          priority: 'normal',
+          blocks: [],
+          blockedBy: ['task-a'],
+          metadata: {},
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    expect(task).toMatchObject({
+      title: '修复任务面板状态聚合',
+      status: 'in_progress',
+      steps: [
+        { title: '修复任务面板状态聚合', status: 'in_progress', blockedTaskTitles: ['验证依赖展示'] },
+        { title: '验证依赖展示', status: 'blocked', blockedByTitles: ['修复任务面板状态聚合'] },
+      ],
+    });
+  });
+
+  it('only reports the aggregate SessionTask status as blocked when no pending task is actionable', () => {
+    const task = buildSessionTaskRecord({
+      sessionId: 'session-1',
+      runId: 'turn-1',
+      runStatus: 'running',
+      sessionTasks: [
+        {
+          id: 'task-a',
+          subject: 'Wait for source',
+          description: 'Wait for source',
+          activeForm: 'Wait for source',
+          status: 'pending',
+          priority: 'normal',
+          blocks: [],
+          blockedBy: ['missing-source'],
+          metadata: {},
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+
+    expect(task).toMatchObject({
+      title: 'Wait for source',
       status: 'blocked',
       steps: [
-        { title: 'Read code', status: 'pending', blockedTaskTitles: ['Patch UI'] },
-        { title: 'Patch UI', status: 'blocked', blockedByTitles: ['Read code'] },
+        { title: 'Wait for source', status: 'blocked', blockedByTitles: ['missing-source'] },
       ],
     });
   });

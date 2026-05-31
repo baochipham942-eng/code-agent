@@ -697,7 +697,7 @@ describe('TaskMonitor scope inspector slice', () => {
     expect(html).not.toContain('文件读取活动');
   });
 
-  it('prioritizes active and pending plan items while folding completed items', () => {
+  it('renders plan items as an ordered checklist with completed items visible', () => {
     statusRailTodosState.items = [
       { status: 'completed', content: '已完成一', activeForm: '已完成一' },
       { status: 'completed', content: '已完成二', activeForm: '已完成二' },
@@ -724,12 +724,12 @@ describe('TaskMonitor scope inspector slice', () => {
       React.createElement(TaskMonitor),
     );
 
-    expect(html).toContain('4/10');
+    expect(html).toContain('已完成 4 个任务（共 10 个任务）');
+    expect(html).toContain('已完成一');
+    expect(html).toContain('已完成四');
     expect(html).toContain('正在改造任务卡展示');
     expect(html).toContain('补 helper 单测');
     expect(html).toContain('回读结果');
-    expect(html).toContain('已完成 4 项');
-    expect(html).not.toContain('已完成一');
     expect(html).not.toContain('0/1 steps');
   });
 

@@ -8,6 +8,11 @@ import { ContextLengthExceededError } from '../types';
 import { logger, safeJsonParse } from './providerRuntime';
 export { safeJsonStringify } from './providerJson';
 export {
+  parseClaudeResponse,
+  parseGeminiResponse,
+  parseOpenAIResponse,
+} from './providerResponseParsers';
+export {
   electronFetch,
   getHttpsAgent,
   httpsAgent,
@@ -16,14 +21,7 @@ export {
   type ElectronFetchOptions,
   type ElectronFetchResponse,
 } from './providerHttp';
-// Wrapper imports for @deprecated parse* delegation. Cycle is safe in ESM:
-// wrapper modules only access shared.logger / safeJsonParse at parse-time, not module-init.
-import { parseOpenAIResponse as wrapperParseOpenAIResponse } from './wrappers/openaiWrapper';
-import { parseClaudeResponse as wrapperParseClaudeResponse } from './wrappers/anthropicWrapper';
-import {
-  parseGeminiResponse as wrapperParseGeminiResponse,
-  parseGeminiStreamChunk,
-} from './wrappers/geminiWrapper';
+import { parseGeminiStreamChunk } from './wrappers/geminiWrapper';
 
 export { logger, safeJsonParse } from './providerRuntime';
 
@@ -896,40 +894,6 @@ export function generateFallbackShortDescription(
     default:
       return `Use ${toolName}`;
   }
-}
-
-/**
- * Parse OpenAI-compatible response.
- *
- * @deprecated 实际逻辑已迁移到 `./wrappers/openaiWrapper.ts:parseOpenAIResponse`，
- *             包含 zod schema 校验 + 旧 fallback 逻辑（normalizeToolName /
- *             safeJsonParse repair / text-based tool call regex）。
- *             新代码请直接 import wrapper 版本。本函数将在 PR-3 后删除。
- */
-export function parseOpenAIResponse(data: unknown): ModelResponse {
-  return wrapperParseOpenAIResponse(data);
-}
-
-/**
- * Parse Claude response.
- *
- * @deprecated 实际逻辑已迁移到 `./wrappers/anthropicWrapper.ts:parseClaudeResponse`，
- *             含 ClaudeMessage zod schema 校验 + ContentBlock discriminatedUnion。
- *             新代码请直接 import wrapper 版本。本函数将在 PR-3 后删除。
- */
-export function parseClaudeResponse(data: unknown): ModelResponse {
-  return wrapperParseClaudeResponse(data);
-}
-
-/**
- * Parse Gemini response.
- *
- * @deprecated 实际逻辑已迁移到 `./wrappers/geminiWrapper.ts:parseGeminiResponse`，
- *             含 GeminiResponse zod schema 校验。新代码请直接 import wrapper 版本。
- *             本函数将在 PR-3 后删除。
- */
-export function parseGeminiResponse(data: unknown): ModelResponse {
-  return wrapperParseGeminiResponse(data);
 }
 
 // ----------------------------------------------------------------------------

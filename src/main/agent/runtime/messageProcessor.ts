@@ -18,7 +18,6 @@ import {
 } from '../../agent/messageHandling/converter';
 import {
   compressToolResult,
-  estimateModelMessageTokens,
 } from '../../context/tokenOptimizer';
 import { classifyExecutionPhase } from '../../tools/executionPhase';
 import { createLogger } from '../../services/infra/logger';
@@ -61,6 +60,7 @@ import {
   shouldPreserveToolObservation,
 } from './messageProcessorHelpers';
 import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
+import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
 
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
@@ -1038,56 +1038,7 @@ export class MessageProcessor {
     iterations: number,
     inferenceDuration: number,
   ): void {
-    if (!this.ctx.telemetryAdapter) return;
-
-    const MAX_PROMPT_LENGTH = 8000;
-    const MAX_COMPLETION_LENGTH = 4000;
-
-    const recentMessages = this.ctx.messages.slice(-3);
-    const promptSummary = recentMessages.map((m: Message) =>
-      `[${m.role}] ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`
-    ).join('\n---\n');
-
-    let completionText = '';
-    if (response.content) {
-      completionText = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-    }
-    if (response.toolCalls?.length) {
-      const toolsSummary = response.toolCalls.map((tc: ToolCall) => `${tc.name}(${JSON.stringify(tc.arguments).substring(0, 200)})`).join('; ');
-      completionText += (completionText ? '\n' : '') + `[tools: ${toolsSummary}]`;
-    }
-
-    const apiInputTokens = response.usage?.inputTokens ?? 0;
-    const apiOutputTokens = response.usage?.outputTokens ?? 0;
-    let effectiveInputTokens = apiInputTokens;
-    let effectiveOutputTokens = apiOutputTokens;
-    if (apiInputTokens === 0 || apiOutputTokens === 0) {
-      const estInput = estimateModelMessageTokens(
-        this.ctx.messages.slice(-10).map((m: Message) => ({ role: m.role, content: m.content }))
-      );
-      const outContent = (response.content || '') +
-        (response.toolCalls?.map((tc: ToolCall) => JSON.stringify(tc.arguments || {})).join('') || '');
-      const estOutput = estimateModelMessageTokens([{ role: 'assistant', content: outContent }]);
-      if (apiInputTokens === 0) effectiveInputTokens = estInput;
-      if (apiOutputTokens === 0) effectiveOutputTokens = estOutput;
-    }
-
-    this.ctx.telemetryAdapter.onModelCall(this.ctx.currentTurnId, {
-      id: `mc-${this.ctx.currentTurnId}-${iterations}`,
-      timestamp: Date.now(),
-      provider: response.actualProvider ?? response.fallback?.to.provider ?? this.ctx.modelConfig.provider,
-      model: response.actualModel ?? response.fallback?.to.model ?? this.ctx.modelConfig.model,
-      temperature: this.ctx.modelConfig.temperature,
-      maxTokens: this.ctx.modelConfig.maxTokens,
-      inputTokens: effectiveInputTokens,
-      outputTokens: effectiveOutputTokens,
-      latencyMs: inferenceDuration,
-      responseType: response.type as 'text' | 'tool_use' | 'thinking',
-      toolCallCount: response.toolCalls?.length ?? 0,
-      truncated: !!response.truncated,
-      prompt: promptSummary.substring(0, MAX_PROMPT_LENGTH),
-      completion: completionText.substring(0, MAX_COMPLETION_LENGTH),
-    });
+    recordMessageProcessorModelCallTelemetry(this.ctx, response, iterations, inferenceDuration);
   }
 
   /**

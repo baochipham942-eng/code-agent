@@ -8,8 +8,7 @@
 //
 // ============================================================================
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type HandlerFn = (event: any, ...args: any[]) => any;
+export type HandlerFn = (event: unknown, ...args: unknown[]) => unknown;
 
 /** 所有通过 ipcMain.handle() 注册的 handler */
 export const handlers = new Map<string, HandlerFn>();
@@ -47,21 +46,17 @@ export const ipcMain = {
 export type IpcMain = typeof ipcMain;
 
 /** Stub for Electron.IpcMainInvokeEvent — used as first arg in ipcMain.handle callbacks */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type IpcMainInvokeEvent = any;
+export type IpcMainInvokeEvent = unknown;
 
 /** Stub for Electron.IpcMainEvent */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type IpcMainEvent = any;
+export type IpcMainEvent = unknown;
 
 // ── Electron namespace (for `Electron.BrowserWindow`, `Electron.IpcMainInvokeEvent`, etc.) ──
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace Electron {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export type IpcMainInvokeEvent = any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export type IpcMainEvent = any;
+  export type IpcMainInvokeEvent = unknown;
+  export type IpcMainEvent = unknown;
   // Re-export BrowserWindow type under namespace
   export type BrowserWindow = InstanceType<typeof import('./electronMock').BrowserWindow>;
 }
@@ -97,29 +92,19 @@ export const app = {
   getName: () => 'code-agent-web',
   isReady: () => true,
   isPackaged: false,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron app API mock 占位签名，等 IPC zod 重构后改成具体 Electron 类型
-  commandLine: { appendSwitch: (..._args: any[]) => {} },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron app API mock 占位签名，等 IPC zod 重构后改成具体 Electron 类型
-  on: (..._args: any[]) => app,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  once: (..._args: any[]) => app,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  off: (..._args: any[]) => app,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  removeListener: (..._args: any[]) => app,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  removeAllListeners: (..._args: any[]) => app,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  emit: (..._args: any[]) => false,
+  commandLine: { appendSwitch: (..._args: unknown[]) => {} },
+  on: (..._args: unknown[]) => app,
+  once: (..._args: unknown[]) => app,
+  off: (..._args: unknown[]) => app,
+  removeListener: (..._args: unknown[]) => app,
+  removeAllListeners: (..._args: unknown[]) => app,
+  emit: (..._args: unknown[]) => false,
   quit: () => {},
   exit: () => {},
   requestSingleInstanceLock: () => true,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron app API mock 占位签名，等 IPC zod 重构后改成具体 Electron 类型
-  setAppUserModelId: (..._args: any[]) => {},
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron app API mock 占位签名，等 IPC zod 重构后改成具体 Electron 类型
-  setAsDefaultProtocolClient: (..._args: any[]) => false as boolean,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron app API mock 占位签名，等 IPC zod 重构后改成具体 Electron 类型
-  setPath: (..._args: any[]) => {},
+  setAppUserModelId: (..._args: unknown[]) => {},
+  setAsDefaultProtocolClient: (..._args: unknown[]) => false as boolean,
+  setPath: (..._args: unknown[]) => {},
   getAppPath: () => process.cwd(),
   getLocale: () => 'en-US',
   whenReady: () => Promise.resolve(),
@@ -151,26 +136,19 @@ export class BrowserWindow {
       // 将 Electron IPC 事件转发到 SSE 客户端
       getBroadcastSSE()(channel, args.length === 1 ? args[0] : args);
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    on: (..._args: any[]) => {},
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    once: (..._args: any[]) => {},
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    openDevTools: (..._args: any[]) => {},
+    on: (..._args: unknown[]) => {},
+    once: (..._args: unknown[]) => {},
+    openDevTools: (..._args: unknown[]) => {},
     session: { clearCache: async () => {} },
     getURL: () => '',
     isDestroyed: () => false, // Web 模式下窗口始终"存在"
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    setWindowOpenHandler: (..._args: any[]) => {},
+    setWindowOpenHandler: (..._args: unknown[]) => {},
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  constructor(_options?: Record<string, any>) {}
+  constructor(_options?: Record<string, unknown>) {}
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  loadURL(..._args: any[]) { return Promise.resolve(); }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  loadFile(..._args: any[]) { return Promise.resolve(); }
+  loadURL(..._args: unknown[]) { return Promise.resolve(); }
+  loadFile(..._args: unknown[]) { return Promise.resolve(); }
   show() {}
   hide() {}
   close() {}
@@ -185,47 +163,32 @@ export class BrowserWindow {
   isMaximized() { return false; }
   isVisible() { return false; }
   isDestroyed() { return true; }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  setTitle(..._args: any[]) {}
+  setTitle(..._args: unknown[]) {}
   getTitle() { return ''; }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  setBounds(..._args: any[]) {}
+  setBounds(..._args: unknown[]) {}
   getBounds() { return { x: 0, y: 0, width: 800, height: 600 }; }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  setSize(..._args: any[]) {}
+  setSize(..._args: unknown[]) {}
   getSize() { return [800, 600]; }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  on(..._args: any[]) { return this; }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  once(..._args: any[]) { return this; }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  removeListener(..._args: any[]) { return this; }
+  on(..._args: unknown[]) { return this; }
+  once(..._args: unknown[]) { return this; }
+  removeListener(..._args: unknown[]) { return this; }
 
   static getAllWindows(): BrowserWindow[] { return []; }
   static getFocusedWindow(): BrowserWindow | null { return null; }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  static fromWebContents(..._args: any[]): BrowserWindow | null { return null; }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  static fromId(..._args: any[]): BrowserWindow | null { return null; }
+  static fromWebContents(..._args: unknown[]): BrowserWindow | null { return null; }
+  static fromId(..._args: unknown[]): BrowserWindow | null { return null; }
 }
 
 // ── dialog ───────────────────────────────────────────────────────────
 
 export const dialog = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  showOpenDialog: async (..._args: any[]) => ({ canceled: true, filePaths: [] as string[] }),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  showSaveDialog: async (..._args: any[]) => ({ canceled: true, filePath: undefined }),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  showMessageBox: async (..._args: any[]) => ({ response: 0, checkboxChecked: false }),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  showErrorBox: (..._args: any[]) => {},
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  showOpenDialogSync: (..._args: any[]) => undefined,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  showSaveDialogSync: (..._args: any[]) => undefined,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  showMessageBoxSync: (..._args: any[]) => 0,
+  showOpenDialog: async (..._args: unknown[]) => ({ canceled: true, filePaths: [] as string[] }),
+  showSaveDialog: async (..._args: unknown[]) => ({ canceled: true, filePath: undefined }),
+  showMessageBox: async (..._args: unknown[]) => ({ response: 0, checkboxChecked: false }),
+  showErrorBox: (..._args: unknown[]) => {},
+  showOpenDialogSync: (..._args: unknown[]) => undefined,
+  showSaveDialogSync: (..._args: unknown[]) => undefined,
+  showMessageBoxSync: (..._args: unknown[]) => 0,
 };
 
 // ── shell ────────────────────────────────────────────────────────────
@@ -237,29 +200,21 @@ export const shell = _shell;
 
 export const clipboard = {
   readText: () => '',
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  writeText: (..._args: any[]) => {},
+  writeText: (..._args: unknown[]) => {},
   readHTML: () => '',
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  writeHTML: (..._args: any[]) => {},
+  writeHTML: (..._args: unknown[]) => {},
   readImage: () => nativeImage.createEmpty(),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  writeImage: (..._args: any[]) => {},
+  writeImage: (..._args: unknown[]) => {},
   readRTF: () => '',
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  writeRTF: (..._args: any[]) => {},
+  writeRTF: (..._args: unknown[]) => {},
   clear: () => {},
   availableFormats: () => [] as string[],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  has: (..._args: any[]) => false,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  read: (..._args: any[]) => '',
+  has: (..._args: unknown[]) => false,
+  read: (..._args: unknown[]) => '',
   readBookmark: () => ({ title: '', url: '' }),
   readFindText: () => '',
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  writeFindText: (..._args: any[]) => {},
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  writeBookmark: (..._args: any[]) => {},
+  writeFindText: (..._args: unknown[]) => {},
+  writeBookmark: (..._args: unknown[]) => {},
 };
 
 // ── nativeTheme ──────────────────────────────────────────────────────
@@ -267,16 +222,11 @@ export const clipboard = {
 export const nativeTheme = {
   themeSource: 'system' as string,
   shouldUseDarkColors: false,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  on: (..._args: any[]) => nativeTheme,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  once: (..._args: any[]) => nativeTheme,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  off: (..._args: any[]) => nativeTheme,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  removeListener: (..._args: any[]) => nativeTheme,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  removeAllListeners: (..._args: any[]) => nativeTheme,
+  on: (..._args: unknown[]) => nativeTheme,
+  once: (..._args: unknown[]) => nativeTheme,
+  off: (..._args: unknown[]) => nativeTheme,
+  removeListener: (..._args: unknown[]) => nativeTheme,
+  removeAllListeners: (..._args: unknown[]) => nativeTheme,
 };
 
 // ── screen ───────────────────────────────────────────────────────────
@@ -290,8 +240,7 @@ export const screen = {
   }),
   getAllDisplays: () => [],
   getCursorScreenPoint: () => ({ x: 0, y: 0 }),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  on: (..._args: any[]) => screen,
+  on: (..._args: unknown[]) => screen,
 };
 
 // ── safeStorage ──────────────────────────────────────────────────────
@@ -311,17 +260,13 @@ const emptyImage = {
   toDataURL: () => '',
   getSize: () => ({ width: 0, height: 0 }),
   isEmpty: () => true,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  resize: (..._args: any[]) => emptyImage,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  crop: (..._args: any[]) => emptyImage,
+  resize: (..._args: unknown[]) => emptyImage,
+  crop: (..._args: unknown[]) => emptyImage,
   getBitmap: () => Buffer.alloc(0),
   getNativeHandle: () => Buffer.alloc(0),
   isTemplateImage: () => false,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  setTemplateImage: (..._args: any[]) => {},
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  addRepresentation: (..._args: any[]) => {},
+  setTemplateImage: (..._args: unknown[]) => {},
+  addRepresentation: (..._args: unknown[]) => {},
   getAspectRatio: () => 1,
   getScaleFactors: () => [1],
   toRGBA: () => ({ data: Buffer.alloc(0), width: 0, height: 0 }),
@@ -329,81 +274,60 @@ const emptyImage = {
 
 export const nativeImage = {
   createEmpty: () => ({ ...emptyImage }),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  createFromPath: (..._args: any[]) => ({ ...emptyImage }),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  createFromBuffer: (..._args: any[]) => ({ ...emptyImage }),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  createFromDataURL: (..._args: any[]) => ({ ...emptyImage }),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  createThumbnailFromPath: async (..._args: any[]) => ({ ...emptyImage }),
+  createFromPath: (..._args: unknown[]) => ({ ...emptyImage }),
+  createFromBuffer: (..._args: unknown[]) => ({ ...emptyImage }),
+  createFromDataURL: (..._args: unknown[]) => ({ ...emptyImage }),
+  createThumbnailFromPath: async (..._args: unknown[]) => ({ ...emptyImage }),
 };
 
 // ── desktopCapturer ──────────────────────────────────────────────────
 
 export const desktopCapturer = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  getSources: async (..._args: any[]) => [] as Array<{ id: string; name: string; thumbnail: ReturnType<typeof nativeImage.createEmpty> }>,
+  getSources: async (..._args: unknown[]) => [] as Array<{ id: string; name: string; thumbnail: ReturnType<typeof nativeImage.createEmpty> }>,
 };
 
 // ── globalShortcut ───────────────────────────────────────────────────
 
 export const globalShortcut = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  register: (..._args: any[]) => false,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  registerAll: (..._args: any[]) => {},
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  unregister: (..._args: any[]) => {},
+  register: (..._args: unknown[]) => false,
+  registerAll: (..._args: unknown[]) => {},
+  unregister: (..._args: unknown[]) => {},
   unregisterAll: () => {},
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  isRegistered: (..._args: any[]) => false,
+  isRegistered: (..._args: unknown[]) => false,
 };
 
 // ── Menu / MenuItem / Tray ───────────────────────────────────────────
 
 export class Menu {
   items: unknown[] = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  static setApplicationMenu(..._args: any[]) {}
+  static setApplicationMenu(..._args: unknown[]) {}
   static getApplicationMenu() { return null; }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  static buildFromTemplate(..._args: any[]) { return new Menu(); }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  popup(..._args: any[]) {}
+  static buildFromTemplate(..._args: unknown[]) { return new Menu(); }
+  popup(..._args: unknown[]) {}
   closePopup() {}
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  append(..._args: any[]) {}
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  insert(..._args: any[]) {}
+  append(..._args: unknown[]) {}
+  insert(..._args: unknown[]) {}
 }
 
 export class MenuItem {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  constructor(_options?: any) {}
+  constructor(_options?: unknown) {}
 }
 
 export class Tray {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  constructor(_image?: any) {}
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  setToolTip(..._args: any[]) {}
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  setContextMenu(..._args: any[]) {}
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  on(..._args: any[]) { return this; }
+  constructor(_image?: unknown) {}
+  setToolTip(..._args: unknown[]) {}
+  setContextMenu(..._args: unknown[]) {}
+  on(..._args: unknown[]) { return this; }
   destroy() {}
 }
 
 // ── Notification ─────────────────────────────────────────────────────
 
 export class Notification {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  constructor(_options?: { title?: string; body?: string; icon?: any; [key: string]: any }) {}
+  constructor(_options?: { title?: string; body?: string; icon?: unknown; [key: string]: unknown }) {}
   show() {}
   close() {}
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  on(..._args: any[]) { return this; }
+  on(..._args: unknown[]) { return this; }
   static isSupported() { return false; }
 }
 
@@ -412,58 +336,40 @@ export class Notification {
 const mockSession = {
   clearCache: async () => {},
   clearStorageData: async () => {},
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  setProxy: async (..._args: any[]) => {},
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  resolveProxy: async (..._args: any[]) => 'DIRECT',
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  on: (..._args: any[]) => mockSession,
+  setProxy: async (..._args: unknown[]) => {},
+  resolveProxy: async (..._args: unknown[]) => 'DIRECT',
+  on: (..._args: unknown[]) => mockSession,
   webRequest: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    onBeforeRequest: (..._args: any[]) => {},
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    onBeforeSendHeaders: (..._args: any[]) => {},
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    onHeadersReceived: (..._args: any[]) => {},
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    onCompleted: (..._args: any[]) => {},
+    onBeforeRequest: (..._args: unknown[]) => {},
+    onBeforeSendHeaders: (..._args: unknown[]) => {},
+    onHeadersReceived: (..._args: unknown[]) => {},
+    onCompleted: (..._args: unknown[]) => {},
   },
   protocol: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    registerFileProtocol: (..._args: any[]) => false,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    registerStringProtocol: (..._args: any[]) => false,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    registerHttpProtocol: (..._args: any[]) => false,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    interceptFileProtocol: (..._args: any[]) => false,
+    registerFileProtocol: (..._args: unknown[]) => false,
+    registerStringProtocol: (..._args: unknown[]) => false,
+    registerHttpProtocol: (..._args: unknown[]) => false,
+    interceptFileProtocol: (..._args: unknown[]) => false,
   },
   cookies: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    get: async (..._args: any[]) => [],
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    set: async (..._args: any[]) => {},
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    remove: async (..._args: any[]) => {},
+    get: async (..._args: unknown[]) => [],
+    set: async (..._args: unknown[]) => {},
+    remove: async (..._args: unknown[]) => {},
   },
 };
 
 export const session = {
   defaultSession: mockSession,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  fromPartition: (..._args: any[]) => mockSession,
+  fromPartition: (..._args: unknown[]) => mockSession,
 };
 
 // ── net ──────────────────────────────────────────────────────────────
 
 export const net = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  request: (..._args: any[]) => ({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    on: (..._args2: any[]) => {},
+  request: (..._args: unknown[]) => ({
+    on: (..._args2: unknown[]) => {},
     end: () => {},
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-    write: (..._args2: any[]) => {},
+    write: (..._args2: unknown[]) => {},
     abort: () => {},
   }),
   isOnline: () => true,
@@ -475,16 +381,11 @@ export const autoUpdater = {
   checkForUpdates: () => {},
   checkForUpdatesAndNotify: async () => null,
   downloadUpdate: async () => {},
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  quitAndInstall: (..._args: any[]) => {},
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  on: (..._args: any[]) => autoUpdater,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  once: (..._args: any[]) => autoUpdater,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  removeListener: (..._args: any[]) => autoUpdater,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  setFeedURL: (..._args: any[]) => {},
+  quitAndInstall: (..._args: unknown[]) => {},
+  on: (..._args: unknown[]) => autoUpdater,
+  once: (..._args: unknown[]) => autoUpdater,
+  removeListener: (..._args: unknown[]) => autoUpdater,
+  setFeedURL: (..._args: unknown[]) => {},
   getFeedURL: () => '',
   currentVersion: { version: '0.0.0-web' },
 };
@@ -492,16 +393,12 @@ export const autoUpdater = {
 // ── powerMonitor ─────────────────────────────────────────────────────
 
 export const powerMonitor = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  getSystemIdleState: (..._args: any[]) => 'active',
+  getSystemIdleState: (..._args: unknown[]) => 'active',
   getSystemIdleTime: () => 0,
   isOnBatteryPower: () => false,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  on: (..._args: any[]) => powerMonitor,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  once: (..._args: any[]) => powerMonitor,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  removeListener: (..._args: any[]) => powerMonitor,
+  on: (..._args: unknown[]) => powerMonitor,
+  once: (..._args: unknown[]) => powerMonitor,
+  removeListener: (..._args: unknown[]) => powerMonitor,
 };
 
 // ── systemPreferences ────────────────────────────────────────────────
@@ -510,21 +407,16 @@ export const systemPreferences = {
   isDarkMode: () => false,
   getAccentColor: () => '0078d7',
   isSwipeTrackingFromScrollEventsEnabled: () => false,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  getMediaAccessStatus: (..._args: any[]) => 'not-determined',
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  askForMediaAccess: async (..._args: any[]) => false,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  on: (..._args: any[]) => systemPreferences,
+  getMediaAccessStatus: (..._args: unknown[]) => 'not-determined',
+  askForMediaAccess: async (..._args: unknown[]) => false,
+  on: (..._args: unknown[]) => systemPreferences,
 };
 
 // ── contentTracing ───────────────────────────────────────────────────
 
 export const contentTracing = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  startRecording: async (..._args: any[]) => {},
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  stopRecording: async (..._args: any[]) => '',
+  startRecording: async (..._args: unknown[]) => {},
+  stopRecording: async (..._args: unknown[]) => '',
   getCategories: async () => [],
   getTraceBufferUsage: async () => ({ value: 0, percentage: 0 }),
 };
@@ -532,28 +424,21 @@ export const contentTracing = {
 // ── protocol ─────────────────────────────────────────────────────────
 
 export const protocol = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  registerSchemesAsPrivileged: (..._args: any[]) => {},
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  registerFileProtocol: (..._args: any[]) => false,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  registerStringProtocol: (..._args: any[]) => false,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  registerHttpProtocol: (..._args: any[]) => false,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  interceptFileProtocol: (..._args: any[]) => false,
+  registerSchemesAsPrivileged: (..._args: unknown[]) => {},
+  registerFileProtocol: (..._args: unknown[]) => false,
+  registerStringProtocol: (..._args: unknown[]) => false,
+  registerHttpProtocol: (..._args: unknown[]) => false,
+  interceptFileProtocol: (..._args: unknown[]) => false,
 };
 
 // ── crashReporter ────────────────────────────────────────────────────
 
 export const crashReporter = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  start: (..._args: any[]) => {},
+  start: (..._args: unknown[]) => {},
   getLastCrashReport: () => null,
   getUploadedReports: () => [],
   getUploadToServer: () => false,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  setUploadToServer: (..._args: any[]) => {},
+  setUploadToServer: (..._args: unknown[]) => {},
 };
 
 // ── webContents ──────────────────────────────────────────────────────
@@ -561,8 +446,7 @@ export const crashReporter = {
 export const webContents = {
   getAllWebContents: () => [],
   getFocusedWebContents: () => null,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): electron mock 函数签名占位，整个文件是 web 模式下的 electron API stub，等迁移到 Electron 类型 import 后整体收紧
-  fromId: (..._args: any[]) => null,
+  fromId: (..._args: unknown[]) => null,
 };
 
 // Preload API mocks

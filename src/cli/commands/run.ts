@@ -18,8 +18,14 @@ import { validateSchema, formatValidationErrors, type JSONSchema } from '../util
 async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) return '';
   const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk);
+  for await (const chunk of process.stdin as AsyncIterable<unknown>) {
+    if (Buffer.isBuffer(chunk)) {
+      chunks.push(chunk);
+    } else if (chunk instanceof Uint8Array) {
+      chunks.push(Buffer.from(chunk));
+    } else {
+      chunks.push(Buffer.from(String(chunk)));
+    }
   }
   return Buffer.concat(chunks).toString('utf-8').trim();
 }
@@ -87,10 +93,11 @@ export const runCommand = new Command('run')
         console.log('请提供任务描述');
       }
       process.exit(0);
+      return;
     }
 
     // 解析 output schema
-    let outputSchema: JSONSchema | null = null;
+    let outputSchema: JSONSchema | null;
     try {
       outputSchema = resolveOutputSchema(options.outputSchema, options.outputSchemaFile);
     } catch (error) {
@@ -101,6 +108,7 @@ export const runCommand = new Command('run')
         terminalOutput.error(message);
       }
       process.exit(1);
+      return;
     }
 
     const maxRetries = parseInt(options.maxRetries || '3', 10);

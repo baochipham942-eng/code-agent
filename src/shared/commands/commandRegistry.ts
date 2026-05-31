@@ -12,6 +12,24 @@ export class CommandRegistry {
    * 注册一个命令定义，同时注册别名
    */
   register(def: CommandDefinition): void {
+    if (this.commands.has(def.id)) {
+      throw new Error(`Command already registered: /${def.id}`);
+    }
+    const idAliasTarget = this.aliasMap.get(def.id);
+    if (idAliasTarget) {
+      throw new Error(`Command id /${def.id} conflicts with alias for /${idAliasTarget}`);
+    }
+
+    for (const alias of def.aliases ?? []) {
+      const aliasTarget = this.aliasMap.get(alias);
+      if (aliasTarget) {
+        throw new Error(`Alias /${alias} is already registered to /${aliasTarget}`);
+      }
+      if (this.commands.has(alias)) {
+        throw new Error(`Alias /${alias} conflicts with command id /${alias}`);
+      }
+    }
+
     this.commands.set(def.id, def);
     if (def.aliases) {
       for (const alias of def.aliases) {

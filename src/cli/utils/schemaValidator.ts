@@ -56,7 +56,7 @@ function validate(
   if (schema.type) {
     const types = Array.isArray(schema.type) ? schema.type : [schema.type];
     const actualType = getJSONType(data);
-    if (!types.includes(actualType)) {
+    if (!matchesJSONType(actualType, types)) {
       errors.push({
         path: path || '/',
         message: `期望类型 ${types.join(' | ')}，实际为 ${actualType}`,
@@ -96,6 +96,22 @@ function validate(
       for (const [key, propSchema] of Object.entries(schema.properties)) {
         if (key in obj) {
           validate(obj[key], propSchema, joinPath(path, key), errors);
+        }
+      }
+    }
+
+    if (schema.additionalProperties !== undefined) {
+      const knownKeys = new Set(Object.keys(schema.properties ?? {}));
+      for (const key of Object.keys(obj)) {
+        if (knownKeys.has(key)) continue;
+
+        if (schema.additionalProperties === false) {
+          errors.push({
+            path: joinPath(path, key),
+            message: `不允许额外字段 "${key}"`,
+          });
+        } else if (typeof schema.additionalProperties === 'object') {
+          validate(obj[key], schema.additionalProperties, joinPath(path, key), errors);
         }
       }
     }
@@ -166,6 +182,11 @@ function getJSONType(value: unknown): string {
   if (Array.isArray(value)) return 'array';
   if (typeof value === 'number' && Number.isInteger(value)) return 'integer'; // 同时匹配 number
   return typeof value; // string, number, boolean, object
+}
+
+function matchesJSONType(actualType: string, expectedTypes: string[]): boolean {
+  if (expectedTypes.includes(actualType)) return true;
+  return actualType === 'integer' && expectedTypes.includes('number');
 }
 
 /**

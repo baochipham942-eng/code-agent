@@ -20,7 +20,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage --silent",
     "test:swarm:smoke": "vitest run tests/integration/swarm-chain/swarmChain.test.ts tests/renderer/stores/swarmStore.test.ts",
     "test:swarm:e2e": "playwright test --config tests/e2e/playwright.e2e.config.ts tests/e2e/swarm-chain.spec.ts",
     "test:swarm:full": "npm run test:swarm:smoke && npm run test:swarm:e2e",

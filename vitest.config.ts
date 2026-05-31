@@ -19,7 +19,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['./tests/setup.ts'],
-    include: ['tests/**/*.test.ts', 'src/design/**/*.test.ts'],
+    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx', 'src/design/**/*.test.ts'],
     // 排除需要特殊处理的原生模块测试
     exclude: [
       '**/node_modules/**',
@@ -29,7 +29,20 @@ export default defineConfig({
     ],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html'],
+      reporter: ['text', 'json-summary', 'json', 'html'],
+      all: true,
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/**/*.d.ts',
+        'src/**/__tests__/**',
+        'src/main/tools/media/ppt/__tests__/**',
+      ],
+      thresholds: {
+        statements: 38,
+        branches: 34,
+        functions: 36,
+        lines: 39,
+      },
     },
     testTimeout: 30000,
     hookTimeout: 10000,

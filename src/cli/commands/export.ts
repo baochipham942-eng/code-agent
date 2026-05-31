@@ -5,7 +5,6 @@
 import { Command } from 'commander';
 import { terminalOutput } from '../output';
 import { initializeCLIServices, getDatabaseService } from '../bootstrap';
-import type { CLIGlobalOptions } from '../types';
 
 export const exportCommand = new Command('export')
   .description('导出会话记录为 Markdown/JSON')
@@ -23,9 +22,7 @@ export const exportCommand = new Command('export')
     summary?: boolean;
     anonymize?: boolean;
     list?: boolean;
-  }, command: Command) => {
-    const globalOpts = command.parent?.opts() as CLIGlobalOptions;
-
+  }) => {
     try {
       // 初始化服务
       await initializeCLIServices();
@@ -34,6 +31,7 @@ export const exportCommand = new Command('export')
       if (!db) {
         terminalOutput.error('数据库未初始化');
         process.exit(1);
+        return;
       }
 
       // 列出会话模式
@@ -42,6 +40,7 @@ export const exportCommand = new Command('export')
         if (sessions.length === 0) {
           terminalOutput.info('没有找到会话记录');
           process.exit(0);
+          return;
         }
 
         terminalOutput.info('可用会话:');
@@ -51,6 +50,7 @@ export const exportCommand = new Command('export')
           console.log(`  ${session.id}  ${date}  ${preview}`);
         }
         process.exit(0);
+        return;
       }
 
       // 动态导入 TranscriptExporter（避免循环依赖）
@@ -64,6 +64,7 @@ export const exportCommand = new Command('export')
         if (recentSessions.length === 0) {
           terminalOutput.error('没有找到会话记录，请指定会话 ID');
           process.exit(1);
+          return;
         }
         targetSessionId = recentSessions[0].id;
         terminalOutput.info(`使用最近会话: ${targetSessionId}`);
@@ -74,6 +75,7 @@ export const exportCommand = new Command('export')
       if (!session) {
         terminalOutput.error(`会话不存在: ${targetSessionId}`);
         process.exit(1);
+        return;
       }
 
       // 获取消息
@@ -129,6 +131,7 @@ export const exportCommand = new Command('export')
           terminalOutput.stopThinking();
           terminalOutput.error(`导出失败: ${result.error}`);
           process.exit(1);
+          return;
         }
       } else {
         // 输出到 stdout
@@ -141,10 +144,12 @@ export const exportCommand = new Command('export')
         } else {
           terminalOutput.error(`导出失败: ${result.error}`);
           process.exit(1);
+          return;
         }
       }
 
       process.exit(0);
+      return;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       terminalOutput.error(message);

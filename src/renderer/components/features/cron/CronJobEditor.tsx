@@ -296,7 +296,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
             onClick={() => setActiveTab(tab.key)}
             className={`flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-xs font-medium transition-colors ${
               activeTab === tab.key
-                ? 'border-primary-500 text-zinc-100'
+                ? 'border-zinc-400 text-zinc-100'
                 : 'border-transparent text-zinc-500 hover:text-zinc-300'
             }`}
           >

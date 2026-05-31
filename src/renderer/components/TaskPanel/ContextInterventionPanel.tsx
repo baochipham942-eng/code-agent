@@ -109,8 +109,8 @@ export const ContextInterventionPanel: React.FC<Props> = ({
                       onClick={() => onAction(item.id, action.action, nextEnabled)}
                       className={`flex items-center gap-1 rounded border px-2 py-1 transition ${
                         isActive
-                          ? 'border-primary-500 bg-primary-500/20 text-primary-200'
-                          : 'border-white/10 bg-white/5 text-zinc-300 hover:border-primary-400 hover:text-zinc-100'
+                          ? 'border-zinc-500 bg-zinc-800/70 text-zinc-100'
+                          : 'border-white/10 bg-white/5 text-zinc-300 hover:border-zinc-500 hover:text-zinc-100'
                       }`}
                     >
                       {action.icon}

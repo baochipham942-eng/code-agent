@@ -40,18 +40,23 @@ Tool 3: bash - git log --oneline -5
 
 ### 子代理并行派发
 
-除了基础工具，**Task 工具也支持并行**：
+除了基础工具，复杂子代理并行应使用 **AgentSpawn** 的 parallel 模式，或使用 **workflow** 编排 fan-out/fan-in。Task 适合单个同步委派。
 
-**可并行的 Task 调用**:
+**可并行的 AgentSpawn 调用**:
 - 审计不同维度（安全/性能/质量）
 - 分析不同模块（auth/payment/user）
 - 不同类型检查（类型安全/错误处理/日志规范）
 
-**示例**（单个响应中同时派发）:
-\`\`\`
-Task(subagent_type="reviewer", prompt="安全审计")
-Task(subagent_type="explore", prompt="性能分析")
-Task(subagent_type="reviewer", prompt="代码质量检查")
+**示例**:
+\`\`\`json
+{
+  "parallel": true,
+  "agents": [
+    { "role": "reviewer", "task": "安全审计" },
+    { "role": "explore", "task": "性能分析" },
+    { "role": "reviewer", "task": "代码质量检查" }
+  ]
+}
 \`\`\`
 `,
 );

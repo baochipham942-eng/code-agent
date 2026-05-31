@@ -152,7 +152,7 @@ const CreateInputRow: React.FC<{
       <input
         ref={inputRef}
         className={`flex-1 bg-zinc-800 rounded px-1 py-0.5 text-xs text-zinc-100 focus:outline-hidden ${
-          error ? 'border border-red-500/60' : 'border border-primary-500/40 focus:border-primary-500'
+          error ? 'border border-red-500/60' : 'border border-zinc-600 focus:border-zinc-500'
         }`}
         value={name}
         onChange={(e) => { setName(e.target.value); setError(null); }}

@@ -146,7 +146,7 @@ const Chip: React.FC<{
     title={title}
     className={`rounded px-2 py-0.5 text-[10px] transition-colors ${
       active
-        ? 'bg-primary-500/30 text-primary-100 ring-1 ring-primary-400/60'
+        ? 'bg-zinc-800/80 text-zinc-100 ring-1 ring-white/15'
         : 'bg-white/[0.04] text-zinc-400 hover:bg-white/[0.08] hover:text-zinc-200'
     }`}
   >

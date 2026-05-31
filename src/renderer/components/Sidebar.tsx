@@ -834,7 +834,7 @@ export const Sidebar: React.FC = () => {
                         aria-label={`在 ${group.name} 新建会话`}
                         title={`在 ${group.name} 新建会话`}
                         onClick={(e) => handleNewWorkspaceChat(e, group.key, group.path)}
-                        className={`ml-1 inline-flex h-5 w-5 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden focus:ring-1 focus:ring-zinc-600 ${
+                        className={`ml-1 inline-flex h-5 w-5 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden ${
                           creatingWorkspaceKey === group.key
                             ? 'opacity-100'
                             : 'opacity-0 group-hover:opacity-100 focus:opacity-100'
@@ -900,7 +900,7 @@ export const Sidebar: React.FC = () => {
             onClick={() => setShowOptionalUpdateModal(true)}
             aria-label={`查看 Agent Neo ${optionalUpdateLabel} 更新内容`}
             title={`查看 Agent Neo ${optionalUpdateLabel} 更新内容`}
-            className="group flex w-full items-center gap-2 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-3 py-2 text-sm text-indigo-200 transition-colors hover:border-indigo-400/30 hover:bg-indigo-500/15 hover:text-indigo-100 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/30"
+            className="group flex w-full items-center gap-2 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-3 py-2 text-sm text-indigo-200 transition-colors hover:border-indigo-400/30 hover:bg-indigo-500/15 hover:text-indigo-100 focus:outline-hidden"
           >
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-300 group-hover:text-indigo-200">
               <Download className="h-3.5 w-3.5" />

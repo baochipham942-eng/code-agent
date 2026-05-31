@@ -308,7 +308,7 @@ export const SettingsModal: React.FC = () => {
             <button
               type="button"
               onClick={handleClose}
-              className="mb-5 inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 focus:outline-hidden focus:ring-2 focus:ring-primary-500/30"
+              className="mb-5 inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 focus:outline-hidden"
             >
               <ChevronLeft className="h-4 w-4" />
               <span>返回应用</span>

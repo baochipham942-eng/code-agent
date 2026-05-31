@@ -41,7 +41,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
   onStop,
   label,
 }) => {
-  const baseIconButtonClass = 'flex-shrink-0 h-9 w-9 rounded-xl grid place-items-center transition-all duration-200 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-white/20';
+  const baseIconButtonClass = 'flex-shrink-0 h-9 w-9 rounded-xl grid place-items-center transition-all duration-200 focus-visible:outline-hidden';
 
   // 运行中输入接入中：显示旋转加载图标
   if (isInterrupting) {

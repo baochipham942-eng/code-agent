@@ -5,7 +5,7 @@
 /**
  * 详细的 Task 工具描述
  *
- * 精简版，强调并行派发能力
+ * 精简版，强调同步委派边界
  * 约 400 tokens
  */
 import { applyOverride } from '../registry';
@@ -15,7 +15,7 @@ export const TASK_TOOL_DESCRIPTION = applyOverride(
   `
 ## Task 工具
 
-启动子代理处理复杂任务。工具名是 **Task**。目标文件和编辑区域已经明确时，直接用读写工具完成，不要为了单点修改再委派。
+启动一个子代理同步处理单个明确任务。工具名是 **Task**。目标文件和编辑区域已经明确时，直接用读写工具完成，不要为了单点修改再委派。
 
 ### 子代理类型
 
@@ -27,33 +27,25 @@ export const TASK_TOOL_DESCRIPTION = applyOverride(
 | plan | 设计方案、任务分解、架构规划 |
 | awaiter | 长命令等待、测试监控 |
 
-### 并行派发（重要）
+### 和其他多代理工具的边界
 
-当任务包含多个独立维度时，**同时派发多个 Task**：
-
-\`\`\`
-// 在单个响应中并行派发
-Task(subagent_type="reviewer", prompt="安全审计：扫描 API 认证问题")
-Task(subagent_type="explore", prompt="性能分析：找出 N+1 查询")
-Task(subagent_type="reviewer", prompt="代码质量：检查 any 类型")
-\`\`\`
-
-**并行场景**：
-- 安全 + 性能 + 质量审计
-- 前端 + 后端 + 数据库层分析
-- 多个独立模块的探索
+- **Task**：一个子代理、同步等待结果、适合单次探索/审查/实现
+- **AgentSpawn**：并行、后台、自定义工具/提示词、预算控制
+- **workflow**：用 JS 编排多代理 fan-out/fan-in、循环、流水线
 
 ### 使用示例
 
 \`\`\`json
-Task {
+{
+  "description": "Explore auth",
   "subagent_type": "explore",
   "prompt": "找到所有处理用户认证的文件"
 }
 \`\`\`
 
 \`\`\`json
-Task {
+{
+  "description": "Review auth",
   "subagent_type": "reviewer",
   "prompt": "审查 src/auth/ 的安全性"
 }

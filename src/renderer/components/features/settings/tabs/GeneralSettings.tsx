@@ -493,7 +493,7 @@ export const GeneralSettings: React.FC = () => {
                   inheritanceRows.map((row) => (
                     <tr
                       key={row.id}
-                      className={row.selected ? 'bg-emerald-500/10' : 'bg-zinc-900/40 hover:bg-zinc-800/60'}
+                      className={row.selected ? 'bg-zinc-800/70' : 'bg-zinc-900/40 hover:bg-zinc-800/60'}
                     >
                       <td className="px-3 py-3 align-top">
                         <div className="flex items-start gap-2">
@@ -522,7 +522,7 @@ export const GeneralSettings: React.FC = () => {
                       <td className="px-3 py-3 align-top">
                         <span className={`inline-flex rounded border px-2 py-1 ${
                           row.selected
-                            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                            ? 'border-zinc-500 bg-zinc-800 text-zinc-200'
                             : 'border-zinc-700 bg-zinc-800 text-zinc-400'
                         }`}
                         >
@@ -617,7 +617,7 @@ export const GeneralSettings: React.FC = () => {
                   disabled={isWebMode()}
                   placeholder={'Read(*)\nBash(ls *)\nBash(git status)'}
                   rows={3}
-                  className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-emerald-500/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50"
                 />
               </div>
             </div>

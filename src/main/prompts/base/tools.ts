@@ -18,15 +18,16 @@ export const TOOLS_PROMPT = applyOverride(
 | Glob / Grep | File discovery / content search |
 | WebSearch | Web info lookup |
 | AskUserQuestion | Ask user for clarification |
-| Task / Explore | Sub-agents for broad exploration or complex parallel work |
-| teammate | Agent coordination (handoff/query/broadcast) |
+| Task | Single synchronous sub-agent delegation |
+| AgentSpawn / workflow | Advanced parallel/background/scripted multi-agent work (load when available) |
+| TaskManager | Track multi-step work when a durable task list is useful |
+| ToolSearch | Find/load deferred tools when core tools are insufficient |
 | Skill | Slash commands (\`/xxx\` always routes here) |
-| CodeExecute | Batch 3+ similar tool calls in JS |
 
 ### Rules
-- Dedicated file tools over Bash (no cat/grep/sed in shell) — structured, auditable
+- Prefer dedicated file tools for ordinary file ops; use Bash for tests, builds, git, local CLIs, diagnostics, and cases where dedicated tools are insufficient
 - File / Office routing: read/search/summarize with Read, Glob, Grep, or \`rg\`; use Office skills only for edits, generation, multi-file transforms, charts, or export validation
-- \`/xxx\` commands MUST go through the \`Skill\` tool, not direct calls — EXCEPT \`/workflow <goal>\`: author and run a \`workflow\` tool script for \`<goal>\` (coded multi-agent orchestration: loops / fan-out / staged pipelines). Prefer \`workflow\` over spawning agents one-by-one (Task/teammate) when the task needs control flow expressed in code; do not route it to Skill.
+- \`/xxx\` commands MUST go through the \`Skill\` tool, not direct calls — EXCEPT \`/workflow <goal>\`: author and run a \`workflow\` tool script for \`<goal>\` (coded multi-agent orchestration: loops / fan-out / staged pipelines). Prefer \`workflow\` over spawning agents one-by-one when the task needs control flow expressed in code; do not route it to Skill.
 - User/project skill files can be edited in-place (auto-reload); don't modify builtin/library/plugin skills
 - For 2+ files or 3+ steps, list a numbered plan in your response — system auto-tracks it
 `,

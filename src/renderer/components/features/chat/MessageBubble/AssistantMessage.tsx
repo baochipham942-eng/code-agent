@@ -180,38 +180,6 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
           )}
           {message.content && (
             <>
-              {canSubmitFeedback && (
-                <>
-                  <button
-                    onClick={() => handleFeedback(1)}
-                    disabled={feedbackSubmitting}
-                    className={`flex items-center gap-1 px-1.5 py-0.5 text-xs rounded transition-colors disabled:opacity-50 ${
-                      feedbackRating === 1
-                        ? 'bg-zinc-700 text-emerald-300'
-                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700'
-                    }`}
-                    title="标记有帮助"
-                    aria-label="标记有帮助"
-                    aria-pressed={feedbackRating === 1}
-                  >
-                    <ThumbsUp className="w-3 h-3" />
-                  </button>
-                  <button
-                    onClick={() => handleFeedback(-1)}
-                    disabled={feedbackSubmitting}
-                    className={`flex items-center gap-1 px-1.5 py-0.5 text-xs rounded transition-colors disabled:opacity-50 ${
-                      feedbackRating === -1
-                        ? 'bg-zinc-700 text-rose-300'
-                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700'
-                    }`}
-                    title="标记有问题"
-                    aria-label="标记有问题"
-                    aria-pressed={feedbackRating === -1}
-                  >
-                    <ThumbsDown className="w-3 h-3" />
-                  </button>
-                </>
-              )}
               <button
                 onClick={() => handleCopy('markdown')}
                 className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
@@ -303,6 +271,39 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
             </div>
           )}
         </>
+      )}
+
+      {canSubmitFeedback && (
+        <div className="mt-2 flex items-center justify-start gap-1">
+          <button
+            onClick={() => handleFeedback(1)}
+            disabled={feedbackSubmitting}
+            className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors disabled:opacity-50 ${
+              feedbackRating === 1
+                ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                : 'border-transparent text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-zinc-300'
+            }`}
+            title="标记有帮助"
+            aria-label="标记有帮助"
+            aria-pressed={feedbackRating === 1}
+          >
+            <ThumbsUp className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => handleFeedback(-1)}
+            disabled={feedbackSubmitting}
+            className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors disabled:opacity-50 ${
+              feedbackRating === -1
+                ? 'border-rose-400/30 bg-rose-400/10 text-rose-300'
+                : 'border-transparent text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-zinc-300'
+            }`}
+            title="标记有问题"
+            aria-label="标记有问题"
+            aria-pressed={feedbackRating === -1}
+          >
+            <ThumbsDown className="w-3.5 h-3.5" />
+          </button>
+        </div>
       )}
 
       {/* Artifacts bar */}

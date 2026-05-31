@@ -220,7 +220,7 @@ const UserNode: React.FC<{
                   type="button"
                   onClick={() => onRewind(messageId, displayContent)}
                   disabled={rewindDisabled}
-                  className="mt-1 flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 opacity-0 pointer-events-none transition-colors group-hover/user-prompt:opacity-100 group-hover/user-prompt:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-600 disabled:hover:bg-transparent"
+                  className="mt-1 flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 opacity-0 pointer-events-none transition-colors group-hover/user-prompt:opacity-100 group-hover/user-prompt:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto focus-visible:outline-hidden hover:text-zinc-200 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-600 disabled:hover:bg-transparent"
                   title={rewindDisabled ? '会话运行中，暂不能回退' : '回到这条提示词'}
                   aria-label="回到这条提示词"
                 >
@@ -469,39 +469,37 @@ const AssistantTextNode: React.FC<{
       )}
 
       {canSubmitFeedback && (
-        <div className="mt-3 flex justify-end">
-          <div className="inline-flex items-center gap-0.5 rounded-md border border-zinc-700 bg-zinc-800 px-0.5 py-0.5 shadow-lg">
-            <button
-              type="button"
-              onClick={() => handleFeedback(1)}
-              disabled={feedbackSubmitting}
-              className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors disabled:opacity-50 ${
-                feedbackRating === 1
-                  ? 'bg-zinc-700 text-emerald-300'
-                  : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
-              }`}
-              title="标记有帮助"
-              aria-label="标记有帮助"
-              aria-pressed={feedbackRating === 1}
-            >
-              <ThumbsUp className="h-3 w-3" />
-            </button>
-            <button
-              type="button"
-              onClick={() => handleFeedback(-1)}
-              disabled={feedbackSubmitting}
-              className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors disabled:opacity-50 ${
-                feedbackRating === -1
-                  ? 'bg-zinc-700 text-rose-300'
-                  : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
-              }`}
-              title="标记有问题"
-              aria-label="标记有问题"
-              aria-pressed={feedbackRating === -1}
-            >
-              <ThumbsDown className="h-3 w-3" />
-            </button>
-          </div>
+        <div className="mt-2 flex items-center justify-start gap-1">
+          <button
+            type="button"
+            onClick={() => handleFeedback(1)}
+            disabled={feedbackSubmitting}
+            className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors disabled:opacity-50 ${
+              feedbackRating === 1
+                ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                : 'border-transparent text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-zinc-300'
+            }`}
+            title="标记有帮助"
+            aria-label="标记有帮助"
+            aria-pressed={feedbackRating === 1}
+          >
+            <ThumbsUp className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleFeedback(-1)}
+            disabled={feedbackSubmitting}
+            className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors disabled:opacity-50 ${
+              feedbackRating === -1
+                ? 'border-rose-400/30 bg-rose-400/10 text-rose-300'
+                : 'border-transparent text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-zinc-300'
+            }`}
+            title="标记有问题"
+            aria-label="标记有问题"
+            aria-pressed={feedbackRating === -1}
+          >
+            <ThumbsDown className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
     </div>

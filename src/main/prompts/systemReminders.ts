@@ -33,12 +33,17 @@ export const REMINDERS: Record<ReminderType, string> = {
 <system-reminder>
 **并行派发提醒**：检测到多维度任务。
 
-你应该在**单个响应中同时派发多个 Task**，而不是逐个执行：
+你应该使用 AgentSpawn 的 parallel 模式，或用 workflow 编排 fan-out/fan-in，而不是逐个执行：
 
 \`\`\`
-Task(subagent_type="reviewer", prompt="维度1: ...")
-Task(subagent_type="explore", prompt="维度2: ...")
-Task(subagent_type="reviewer", prompt="维度3: ...")
+{
+  "parallel": true,
+  "agents": [
+    { "role": "reviewer", "task": "维度1: ..." },
+    { "role": "explore", "task": "维度2: ..." },
+    { "role": "reviewer", "task": "维度3: ..." }
+  ]
+}
 \`\`\`
 
 各维度之间无依赖关系时，并行派发能显著提高效率。
@@ -52,13 +57,13 @@ Task(subagent_type="reviewer", prompt="维度3: ...")
 <system-reminder>
 **委派提醒**：这是一个需要广泛探索的复杂任务。
 
-可以使用 Task 工具委派给子代理，子代理有专门的工具和上下文窗口。
+可以使用 Task 工具委派给单个同步子代理；需要并行、后台、自定义工具或预算控制时用 AgentSpawn。
 
 如果目标文件、函数、编辑区域已经明确，直接使用 Read/Grep/Edit 完成。
 需要委派时使用真实工具名：
-- 安全审计 → Task(subagent_type="reviewer", prompt="...")
-- 代码探索 → Task(subagent_type="explore", prompt="...")
-- 架构分析 → Task(subagent_type="plan", prompt="...")
+- 安全审计 → Task，参数 {"subagent_type": "reviewer", "prompt": "..."}
+- 代码探索 → Task，参数 {"subagent_type": "explore", "prompt": "..."}
+- 架构分析 → Task，参数 {"subagent_type": "plan", "prompt": "..."}
 </system-reminder>
 `,
 
@@ -70,7 +75,7 @@ Task(subagent_type="reviewer", prompt="维度3: ...")
 **Plan Mode 已激活**：你现在处于只读规划模式。
 
 5-Phase 流程：
-1. Phase 1: 并行派发 explore 子代理探索代码库
+1. Phase 1: 用 Task(explore) 做单点探索；多路独立探索用 AgentSpawn
 2. Phase 2: 派发 plan 子代理设计方案
 3. Phase 3: 整合结果，使用 AskUserQuestion 澄清
 4. Phase 4: 生成最终计划
@@ -88,7 +93,7 @@ Task(subagent_type="reviewer", prompt="维度3: ...")
 **审计模式**：检测到安全/代码审计任务。
 
 推荐流程：
-1. 并行派发多个 reviewer 子代理，每个负责一个维度
+1. 使用 AgentSpawn 并行派发多个 reviewer 子代理，每个负责一个维度
 2. 收集所有子代理的审计结果
 3. 整合生成完整审计报告
 
@@ -105,7 +110,7 @@ Task(subagent_type="reviewer", prompt="维度3: ...")
 
 推荐流程：
 1. 先用 bash 获取变更文件列表（git diff --name-only）
-2. 并行派发 reviewer 子代理分析不同方面
+2. 需要多维度并行时，用 AgentSpawn 派发 reviewer 子代理分析不同方面
 3. 整合生成审查报告
 
 审查维度示例：代码质量、潜在问题、性能考量、安全性、可维护性

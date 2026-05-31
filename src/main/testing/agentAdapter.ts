@@ -271,6 +271,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
   } & Partial<ModelConfig>;
   private inferenceOptions?: InferenceOptions;
   private maxIterations?: number;
+  private sessionRecordEnsured = false;
 
   // Persisted across sendMessage() calls so multi-turn follow-ups share conversation history.
   // Cleared by reset() between cases (testRunner calls reset before each case's first prompt).
@@ -294,6 +295,45 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.toolMode = config.toolMode ?? 'deferred';
     // Eval-mode signal: prevents cross-case prompt contamination via recent_conversations.
     process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS = 'true';
+  }
+
+  private async ensureStandaloneSessionRecord(prompt: string): Promise<void> {
+    if (!this.currentSessionId || this.sessionRecordEnsured) return;
+
+    try {
+      const { getDatabase } = await import('../services/core/databaseService');
+      const db = getDatabase();
+      if (!db.isReady) return;
+
+      if (!db.getSession(this.currentSessionId)) {
+        db.createSessionWithId(
+          this.currentSessionId,
+          {
+            title: prompt.substring(0, 80) || 'Evaluation test run',
+            userId: null,
+            modelConfig: {
+              provider: this.modelConfig.provider as ModelProvider,
+              model: this.modelConfig.model,
+            },
+            workingDirectory: this.workingDirectory,
+            type: 'chat',
+            origin: {
+              kind: 'manual',
+              name: 'evaluation-runner',
+              metadata: { source: 'StandaloneAgentAdapter' },
+            },
+            readOnly: true,
+          },
+        );
+      }
+
+      this.sessionRecordEnsured = true;
+    } catch (error) {
+      logger.debug('Failed to ensure standalone evaluation session record', {
+        sessionId: this.currentSessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   async sendMessage(prompt: string): Promise<{
@@ -336,6 +376,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
       // 4. Create AgentLoop with correct event handlers
       // Reuse session id across follow-ups so AgentLoop's session-scoped state stays consistent.
       if (!this.currentSessionId) this.currentSessionId = `test-${Date.now()}`;
+      await this.ensureStandaloneSessionRecord(prompt);
       const telemetryCollector = getTelemetryCollector();
       if (!this.telemetrySessionActive) {
         telemetryCollector.startSession(this.currentSessionId, {
@@ -433,6 +474,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
     await this.finalizeSession();
     this.messages = [];
     this.currentSessionId = undefined;
+    this.sessionRecordEnsured = false;
   }
 
   async finalizeSession(): Promise<void> {

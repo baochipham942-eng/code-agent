@@ -613,13 +613,13 @@ export const PluginsSettings: React.FC = () => {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="搜索插件、skill、command、标签"
-                className="h-9 w-full rounded-lg border border-zinc-700 bg-zinc-950 pl-9 pr-3 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-primary-500"
+                className="h-9 w-full rounded-lg border border-zinc-700 bg-zinc-950 pl-9 pr-3 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-zinc-500"
               />
             </label>
             <select
               value={selectedMarketplace}
               onChange={(event) => setSelectedMarketplace(event.target.value)}
-              className="h-9 rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 outline-hidden focus:border-primary-500"
+              className="h-9 rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 outline-hidden focus:border-zinc-500"
               aria-label="选择 marketplace"
             >
               <option value="all">全部市场</option>
@@ -630,7 +630,7 @@ export const PluginsSettings: React.FC = () => {
             <select
               value={installScope}
               onChange={(event) => setInstallScope(event.target.value as PluginScope)}
-              className="h-9 rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 outline-hidden focus:border-primary-500"
+              className="h-9 rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 outline-hidden focus:border-zinc-500"
               aria-label="安装 scope"
             >
               <option value="user">用户级安装</option>
@@ -643,7 +643,7 @@ export const PluginsSettings: React.FC = () => {
               value={projectPath}
               onChange={(event) => setProjectPath(event.target.value)}
               placeholder="项目路径，留空时使用当前工作目录"
-              className="mt-3 h-9 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-primary-500"
+              className="mt-3 h-9 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-zinc-500"
             />
           )}
         </div>
@@ -714,7 +714,7 @@ export const PluginsSettings: React.FC = () => {
             value={newMarketplaceSource}
             onChange={(event) => setNewMarketplaceSource(event.target.value)}
             placeholder="dir:/path/to/plugins 或 owner/repo"
-            className="h-9 min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-primary-500"
+            className="h-9 min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 outline-hidden transition-colors placeholder:text-zinc-600 focus:border-zinc-500"
           />
           <Button
             variant="secondary"

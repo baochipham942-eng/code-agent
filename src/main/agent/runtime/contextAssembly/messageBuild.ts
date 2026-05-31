@@ -590,7 +590,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
 
 ${deferredToolsSummary}
 
-用法：ToolSearch("browser") 搜索浏览器工具 | ToolSearch("select:Browser") 直接加载
+用法：调用 ToolSearch 时传入 JSON 参数，例如 {"query":"browser"} 搜索浏览器工具，或 {"query":"select:Browser"} 直接加载。
 </deferred-tools>`;
       systemPrompt = appendPromptBlockWithinBudget(
         systemPrompt,

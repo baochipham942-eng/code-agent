@@ -9,14 +9,14 @@ export const PLAN_MODE_RULES = applyOverride(
   `
 ## Plan Mode（规划模式）
 
-复杂任务（3+文件、架构变更、需求不明确）使用 \`enter_plan_mode\`。
+复杂任务（3+文件、架构变更、需求不明确）使用 \`PlanMode\`。
 
 **流程**：
-1. 并行 Task(explore) 探索代码库
+1. 必要时用 Task(explore) 做单点探索；多路并行探索用 AgentSpawn
 2. Task(plan) 设计方案
 3. 整合结果 + AskUserQuestion 澄清
 4. 生成计划（文件清单、步骤、风险）
-5. **必须** exit_plan_mode 请求批准
+5. **必须** PlanMode({ action: "exit", plan }) 请求批准
 
 **跳过规划**：单文件修改、需求明确、纯探索任务。
 

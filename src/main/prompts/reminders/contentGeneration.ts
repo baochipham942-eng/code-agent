@@ -40,7 +40,7 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 **数据处理必须遵循的流程**：
 
 **第一步：读取数据（必须）**
-- 用 read_xlsx/Read 读取源数据，确认列名、数据类型、行数
+- Excel 文件用 ExcelAutomate(read)，普通文本/CSV 用 Read 或 Bash+pandas，先确认列名、数据类型、行数
 - 不要猜测数据结构，必须先看数据
 
 **第二步：处理规范**

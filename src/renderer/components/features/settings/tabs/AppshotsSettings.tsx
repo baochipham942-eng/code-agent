@@ -129,7 +129,7 @@ export const AppshotsSettings: React.FC = () => {
                 onClick={() => handleTarget(option.id)}
                 className={`relative p-3 rounded-lg border text-left transition-all disabled:opacity-40 ${
                   active
-                    ? 'border-primary-500 bg-primary-500/10 ring-1 ring-primary-500/50'
+                    ? 'border-zinc-500 bg-zinc-800/60 ring-1 ring-white/10'
                     : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                 }`}
               >
@@ -138,8 +138,8 @@ export const AppshotsSettings: React.FC = () => {
                 </div>
                 <div className="text-xs text-zinc-500 mt-0.5">{option.desc}</div>
                 {active && (
-                  <div className="absolute top-2 right-2 w-4 h-4 rounded-full bg-primary-500 flex items-center justify-center">
-                    <Check className="w-2.5 h-2.5 text-white" />
+                  <div className="absolute top-2 right-2 w-4 h-4 rounded-full bg-zinc-200 flex items-center justify-center">
+                    <Check className="w-2.5 h-2.5 text-zinc-950" />
                   </div>
                 )}
               </button>

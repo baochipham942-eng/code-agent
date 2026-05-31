@@ -137,14 +137,19 @@ export function injectWorkingDirectoryContext(
 - **Absolute paths** (e.g., \`/Users/xxx/project/file.txt\`) → used directly
 - **Home paths** (e.g., \`~/Desktop/file.txt\`) → expanded to user's home directory
 
-**When user intent is UNCLEAR about location**, use \`ask_user_question\`:
+**When user intent is UNCLEAR about location**, use \`AskUserQuestion\`:
 \`\`\`json
 {
-  "question": "你想把文件保存在哪里？",
-  "options": [
-    { "label": "桌面", "description": "~/Desktop" },
-    { "label": "下载文件夹", "description": "~/Downloads" },
-    { "label": "默认工作区", "description": "${workingDirectory}" }
+  "questions": [
+    {
+      "header": "保存位置",
+      "question": "你想把文件保存在哪里？",
+      "options": [
+        { "label": "桌面", "description": "~/Desktop" },
+        { "label": "下载文件夹", "description": "~/Downloads" },
+        { "label": "默认工作区", "description": "${workingDirectory}" }
+      ]
+    }
   ]
 }
 \`\`\`

@@ -55,7 +55,7 @@
   --border-subtle: rgba(255, 255, 255, 0.04);
   --border-default: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.12);
-  --border-focus: var(--brand-primary);
+  --border-focus: #71717A;
 
   /* Shadow system */
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
@@ -83,9 +83,9 @@
   /* Input */
   --input-bg: #1A1A1D;
   --input-border: rgba(255, 255, 255, 0.08);
-  --input-border-focus: var(--brand-primary);
+  --input-border-focus: #71717A;
   --input-placeholder: #52525B;
 
   /* Focus ring */
-  --focus-ring: rgba(20, 184, 166, 0.5);
+  --focus-ring: rgba(255, 255, 255, 0.22);
 }

@@ -222,12 +222,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     onClick={() => setFormat(option.id)}
                     className={`p-3 rounded-lg border text-left transition-all ${
                       isSelected
-                        ? 'border-primary-500 bg-primary-500/10'
+                        ? 'border-zinc-500 bg-zinc-800/60'
                         : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                     }`}
                   >
                     <div className="flex items-center gap-2 mb-1">
-                      <span className={isSelected ? 'text-primary-400' : 'text-zinc-400'}>
+                      <span className={isSelected ? 'text-zinc-200' : 'text-zinc-400'}>
                         {option.icon}
                       </span>
                       <span className={`font-medium ${isSelected ? 'text-zinc-200' : 'text-zinc-400'}`}>

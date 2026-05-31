@@ -19,11 +19,11 @@ export const TOOL_DECISION_TREE = applyOverride(
 
 \`\`\`
 1. 任务包含多个独立维度？（安全+性能+质量 等）
-   ├─ 是 → **并行派发多个 Task**（最高效）
+   ├─ 是 → **使用 AgentSpawn parallel**（或 workflow 编排）
    └─ 否 → 继续判断 ↓
 
 2. 是否需要广泛理解/探索代码库？
-   ├─ 是 → Task(explore) 或 Task(reviewer)
+   ├─ 是 → Task(explore) 或 Task(reviewer)，单个同步委派
    └─ 否 → 继续判断 ↓
 
 3. 是否是审计/审查/规划类任务？
@@ -42,7 +42,7 @@ export const TOOL_DECISION_TREE = applyOverride(
 | "读取 src/index.ts" | 路径已知 | Read |
 | "找到 UserService 类" | 精确查找 | glob/grep |
 | "这个项目怎么处理错误？" | 需要广泛理解 | Task(explore) |
-| "审计安全+性能+质量" | 多个独立维度 | **并行 3 个 Task** |
+| "审计安全+性能+质量" | 多个独立维度 | **AgentSpawn parallel** |
 | "修改已知文件里的按钮文案" | 目标明确 | Read/Edit |
 
 ### 并行判断算法

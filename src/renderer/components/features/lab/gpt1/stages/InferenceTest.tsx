@@ -306,7 +306,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
                 onKeyDown={handleKeyDown}
                 placeholder="输入消息..."
                 disabled={isGenerating}
-                className="flex-1 px-4 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-emerald-500 disabled:opacity-50"
+                className="flex-1 px-4 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-zinc-500 disabled:opacity-50"
               />
               <button
                 onClick={handleSend}

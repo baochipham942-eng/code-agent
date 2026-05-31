@@ -11,26 +11,28 @@ export const BASH_TOOL_DESCRIPTION = applyOverride(
   `
 ## Bash Tool
 
-Run shell commands (git, npm, build, test). Timeout: 120s default, 600s max.
+Run shell commands (git, npm, build, test, local CLIs, environment probes). Timeout: 120000ms default, 600000ms max.
 
 ### Rules
 - Quote paths with spaces: \`cd "/path/with spaces"\`
 - Verify parent dir before creating files
-- Use && for dependent commands: \`git add . && git commit -m "msg"\`
-- Parallel calls for independent ops
+- Use Bash for tests, builds, git, package managers, installed CLIs, and diagnostics
+- Prefer Read / Glob / Grep / Edit / Write for ordinary file operations
+- Use Bash as an escape hatch when dedicated tools are insufficient for repo-wide search, data wrangling, niche formats, or local CLI workflows
+- Keep independent read-only commands parallel when the runtime supports parallel tool calls
 
-### Forbidden (use dedicated tools)
-| Don't | Use |
-|-------|-----|
-| cat/head/tail | Read |
-| find | glob |
-| grep -r | grep |
-| sed | Edit |
-| echo > | Write |
+### Prefer Dedicated Tools
+| Task | Prefer |
+|------|--------|
+| read one file | Read |
+| find files | Glob |
+| search content | Grep |
+| edit files | Edit |
+| create/overwrite files | Write |
 
 ## Git Commit
 
-When user asks to commit:
+Only commit when the user explicitly asks.
 
 1. **Gather** (parallel, one message):
    \`git status\` + \`git diff\` + \`git log -3 --oneline\`

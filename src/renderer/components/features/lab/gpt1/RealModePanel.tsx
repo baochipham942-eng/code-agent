@@ -660,7 +660,7 @@ export const RealModePanel: React.FC = () => {
                     onChange={(e) => setInferenceInput(e.target.value)}
                     placeholder="输入测试文本..."
                     disabled={!projectStatus?.hasTrainedModel && trainingUIStatus !== 'completed'}
-                    className="flex-1 px-3 py-2 rounded-lg bg-zinc-700 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-emerald-500 disabled:opacity-50"
+                    className="flex-1 px-3 py-2 rounded-lg bg-zinc-700 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-zinc-500 disabled:opacity-50"
                   />
                   <button
                     onClick={handleInference}

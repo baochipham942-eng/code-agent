@@ -19,7 +19,7 @@ export const MODE_REMINDERS: ReminderDefinition[] = [
 2. 派发 plan 子代理设计方案
 3. 整合结果，使用 AskUserQuestion 澄清
 4. 生成最终计划
-5. 调用 exit_plan_mode
+5. 调用 PlanMode({ action: "exit", plan })
 
 **禁止**：在 Plan Mode 中进行任何文件写入操作。
 </system-reminder>`,
@@ -35,7 +35,7 @@ export const MODE_REMINDERS: ReminderDefinition[] = [
 **审计模式**：检测到安全/代码审计任务。
 
 推荐流程：
-1. 并行派发多个 reviewer 子代理
+1. 使用 AgentSpawn 并行派发多个 reviewer 子代理
 2. 收集所有子代理的审计结果
 3. 整合生成完整审计报告
 
@@ -54,7 +54,7 @@ export const MODE_REMINDERS: ReminderDefinition[] = [
 
 推荐流程：
 1. 获取变更文件列表（git diff --name-only）
-2. 并行派发 reviewer 子代理分析
+2. 需要多维度并行时，用 AgentSpawn 派发 reviewer 子代理分析
 3. 整合生成审查报告
 </system-reminder>`,
     tokens: 80,

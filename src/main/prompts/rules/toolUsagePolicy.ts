@@ -28,15 +28,20 @@ export const TOOL_USAGE_POLICY = applyOverride(
 
 | 任务特征 | 正确做法 |
 |---------|---------|
-| 安全审计（认证+输入验证+数据安全） | 并行派发 3 个 Task |
-| 代码审查（质量+安全+性能） | 并行派发 3 个 Task |
-| 分析多个模块（auth+payment+notification） | 并行派发 3 个 Task |
+| 安全审计（认证+输入验证+数据安全） | AgentSpawn parallel 派发 3 个 reviewer |
+| 代码审查（质量+安全+性能） | AgentSpawn parallel 派发 3 个 reviewer |
+| 分析多个模块（auth+payment+notification） | AgentSpawn parallel 派发 3 个 explore/reviewer |
 
 **示例**（在单个响应中同时调用）：
 \`\`\`
-Task(subagent_type="reviewer", prompt="安全审计：扫描 API 端点的认证问题")
-Task(subagent_type="explore", prompt="性能分析：找出 N+1 查询和慢查询")
-Task(subagent_type="reviewer", prompt="代码质量：检查 any 类型使用")
+{
+  "parallel": true,
+  "agents": [
+    { "role": "reviewer", "task": "安全审计：扫描 API 端点的认证问题" },
+    { "role": "explore", "task": "性能分析：找出 N+1 查询和慢查询" },
+    { "role": "reviewer", "task": "代码质量：检查 any 类型使用" }
+  ]
+}
 \`\`\`
 
 **判断标准**：
@@ -45,7 +50,7 @@ Task(subagent_type="reviewer", prompt="代码质量：检查 any 类型使用")
 
 ### 何时考虑使用 Task 工具委派
 
-当你遇到以下情况时，**可以优先考虑**使用 Task 工具：
+当你遇到以下情况时，**可以优先考虑**使用 Task 工具做单个同步委派；需要并行、后台、自定义工具或预算控制时使用 AgentSpawn。
 
 1. **需要广泛探索代码库**
    - 不知道相关代码在哪里
@@ -85,7 +90,7 @@ Task(subagent_type="reviewer", prompt="代码质量：检查 any 类型使用")
 收到任务
     ↓
 任务包含多个独立维度？
-    ├── 是 → 并行派发多个 Task
+    ├── 是 → 使用 AgentSpawn parallel
     └── 否 → 继续判断
                 ↓
         需要广泛探索代码库？

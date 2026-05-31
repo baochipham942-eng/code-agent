@@ -403,7 +403,7 @@ export const WorkspaceSettings: React.FC = () => {
                     disabled={isWebMode() || savingPreference}
                     className={`flex flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-colors ${
                       selected
-                        ? 'border-primary-500/40 bg-primary-500/15 text-primary-200'
+                        ? 'border-zinc-500 bg-zinc-800/70 text-zinc-100'
                         : 'border-white/[0.08] bg-white/[0.02] text-zinc-300 hover:border-white/[0.16] hover:bg-white/[0.04]'
                     } ${isWebMode() ? 'cursor-not-allowed opacity-50' : ''}`}
                   >
@@ -513,7 +513,7 @@ export const WorkspaceSettings: React.FC = () => {
                 onClick={() => setBrowserSessionMode(opt.value)}
                 className={`flex flex-col items-start gap-1 px-3 py-2 rounded-lg border transition-colors text-left ${
                   selected
-                    ? 'border-primary-500/40 bg-primary-500/15 text-primary-200'
+                    ? 'border-zinc-500 bg-zinc-800/70 text-zinc-100'
                     : 'border-white/[0.08] bg-white/[0.02] text-zinc-300 hover:border-white/[0.16] hover:bg-white/[0.04]'
                 }`}
               >
@@ -638,7 +638,7 @@ export const WorkspaceSettings: React.FC = () => {
                   rows.map((row) => (
                     <tr
                       key={row.path}
-                      className={row.active ? 'bg-emerald-500/10' : 'bg-zinc-900/40 hover:bg-zinc-800/60'}
+                      className={row.active ? 'bg-zinc-800/70' : 'bg-zinc-900/40 hover:bg-zinc-800/60'}
                     >
                       <td className="px-3 py-3 align-middle">
                         <button
@@ -661,7 +661,7 @@ export const WorkspaceSettings: React.FC = () => {
                         <span
                           className={`inline-flex rounded border px-2 py-1 ${
                             row.active
-                              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                              ? 'border-zinc-500 bg-zinc-800 text-zinc-200'
                               : 'border-zinc-700 bg-zinc-800 text-zinc-400'
                           }`}
                         >

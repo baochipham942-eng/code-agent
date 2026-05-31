@@ -167,7 +167,7 @@ export const AppearanceSettings: React.FC = () => {
                 onClick={() => handleThemeChange(option.id)}
                 className={`relative p-3 rounded-lg border text-left transition-all ${
                   isActive
-                    ? 'border-primary-500 bg-primary-500/10 ring-1 ring-primary-500/50'
+                    ? 'border-zinc-500 bg-zinc-800/60 ring-1 ring-white/10'
                     : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                 }`}
               >
@@ -176,7 +176,7 @@ export const AppearanceSettings: React.FC = () => {
 
                 {/* Label */}
                 <div className="flex items-center gap-2">
-                  <span className={isActive ? 'text-primary-400' : 'text-zinc-400'}>
+                  <span className={isActive ? 'text-zinc-200' : 'text-zinc-400'}>
                     {option.icon}
                   </span>
                   <span className={`text-sm ${isActive ? 'text-zinc-200' : 'text-zinc-400'}`}>
@@ -186,8 +186,8 @@ export const AppearanceSettings: React.FC = () => {
 
                 {/* Checkmark */}
                 {isActive && (
-                  <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-primary-500 flex items-center justify-center">
-                    <Check className="w-3 h-3 text-white" />
+                  <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-zinc-200 flex items-center justify-center">
+                    <Check className="w-3 h-3 text-zinc-950" />
                   </div>
                 )}
               </button>
@@ -224,7 +224,7 @@ export const AppearanceSettings: React.FC = () => {
                 onClick={() => handleFontSizeChange(option.id)}
                 className={`p-3 rounded-lg border text-center transition-all ${
                   isActive
-                    ? 'border-primary-500/50 bg-primary-500/10'
+                    ? 'border-zinc-500 bg-zinc-800/60'
                     : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                 }`}
               >
@@ -234,7 +234,7 @@ export const AppearanceSettings: React.FC = () => {
                 >
                   Aa
                 </span>
-                <span className={`text-xs mt-1 ${isActive ? 'text-primary-400' : 'text-zinc-500'}`}>
+                <span className={`text-xs mt-1 ${isActive ? 'text-zinc-200' : 'text-zinc-500'}`}>
                   {option.label}
                 </span>
               </button>
@@ -257,7 +257,7 @@ export const AppearanceSettings: React.FC = () => {
               onClick={() => handleLanguageChange(lang.code as Language)}
               className={`w-full p-3 rounded-lg border text-left transition-all ${
                 language === lang.code
-                  ? 'border-primary-500 bg-primary-500/10 ring-1 ring-primary-500/50'
+                  ? 'border-zinc-500 bg-zinc-800/60 ring-1 ring-white/10'
                   : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
               }`}
             >
@@ -266,7 +266,7 @@ export const AppearanceSettings: React.FC = () => {
                   <div
                     className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-medium ${
                       language === lang.code
-                        ? 'bg-primary-500/20 text-primary-400'
+                        ? 'bg-zinc-700 text-zinc-100'
                         : 'bg-zinc-700 text-zinc-400'
                     }`}
                   >

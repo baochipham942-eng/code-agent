@@ -228,7 +228,7 @@ export const AutomationSettings: React.FC = () => {
                 onClick={() => setFilterMode(opt.value)}
                 className={`rounded border px-2 py-1 transition-colors ${
                   filterMode === opt.value
-                    ? 'border-primary-500/40 bg-primary-500/15 text-primary-200'
+                    ? 'border-zinc-500 bg-zinc-800/70 text-zinc-100'
                     : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:bg-zinc-700'
                 }`}
               >

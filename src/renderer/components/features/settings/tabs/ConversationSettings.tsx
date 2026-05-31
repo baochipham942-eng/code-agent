@@ -154,7 +154,7 @@ export const ConversationSettings: React.FC = () => {
                 onClick={() => setRoutingMode(opt.value)}
                 className={`flex flex-col items-start gap-1 px-3 py-2 rounded-lg border transition-colors text-left ${
                   selected
-                    ? 'border-primary-500/40 bg-primary-500/15 text-primary-200'
+                    ? 'border-zinc-500 bg-zinc-800/70 text-zinc-100'
                     : 'border-white/[0.08] bg-white/[0.02] text-zinc-300 hover:border-white/[0.16] hover:bg-white/[0.04]'
                 }`}
               >
@@ -249,7 +249,7 @@ export const ConversationSettings: React.FC = () => {
                         max={50}
                         value={compressionState.config.preserveRecentCount}
                         onChange={(event) => updateCompression({ preserveRecentCount: Number(event.target.value) })}
-                        className="w-16 rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-hidden focus:border-primary-500/60"
+                        className="w-16 rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-hidden focus:border-zinc-500"
                       />
                       <span className="text-xs text-zinc-500">条消息</span>
                     </div>
@@ -298,7 +298,7 @@ export const ConversationSettings: React.FC = () => {
                         max={1000}
                         value={Math.round((compressionState.config.triggerTokens ?? 100000) / 1000)}
                         onChange={(event) => updateCompression({ triggerTokens: Number(event.target.value) * 1000 })}
-                        className="w-20 rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-hidden focus:border-primary-500/60"
+                        className="w-20 rounded-md border border-white/[0.08] bg-zinc-900 px-2 py-1 text-sm text-zinc-200 outline-hidden focus:border-zinc-500"
                       />
                       <span className="text-xs text-zinc-500">K tokens</span>
                     </div>

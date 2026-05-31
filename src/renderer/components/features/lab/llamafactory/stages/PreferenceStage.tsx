@@ -141,7 +141,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
               className={`
                 p-4 rounded-lg border text-left transition-all
                 ${userChoice === 'chosen'
-                  ? 'bg-emerald-500/20 border-emerald-500/30 ring-2 ring-emerald-500/30'
+                  ? 'bg-zinc-800/80 border-zinc-500 ring-1 ring-white/15'
                   : 'bg-zinc-800 border-zinc-800 hover:border-zinc-600'
                 }
               `}
@@ -176,7 +176,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
           {userChoice && (
             <div className={`
               mt-4 p-3 rounded-lg
-              ${userChoice === 'chosen' ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-amber-500/10 border border-amber-500/20'}
+              ${userChoice === 'chosen' ? 'bg-zinc-800/70 border border-zinc-600' : 'bg-amber-500/10 border border-amber-500/20'}
             `}>
               <p className="text-sm">
                 {userChoice === 'chosen' ? (

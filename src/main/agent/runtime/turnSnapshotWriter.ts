@@ -43,7 +43,7 @@ export interface TurnSnapshotInput {
   sessionId: string;
   turnId?: string | null;
   turnIndex: number;
-  systemPrompt?: string;
+  systemPrompt?: string | { toString(): string };
   messages?: Message[];
   inputTokens?: number;
   outputTokens?: number;
@@ -109,11 +109,12 @@ export function writeTurnSnapshot(input: TurnSnapshotInput): void {
     const sink = getSnapshotSink();
     if (!sink) return;
 
-    const systemPromptSize = input.systemPrompt
-      ? Buffer.byteLength(input.systemPrompt, 'utf8')
+    const systemPrompt = input.systemPrompt ? String(input.systemPrompt) : '';
+    const systemPromptSize = systemPrompt
+      ? Buffer.byteLength(systemPrompt, 'utf8')
       : 0;
 
-    const layers = parseSystemPromptLayers(input.systemPrompt ?? '');
+    const layers = parseSystemPromptLayers(systemPrompt);
 
     // 最近 20 条消息的轻量摘要（Layer 5 — Current Session）
     const recentMessages = (input.messages ?? []).slice(-20).map((m) => ({

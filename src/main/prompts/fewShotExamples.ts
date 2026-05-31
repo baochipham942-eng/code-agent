@@ -48,33 +48,33 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
     type: 'parallel_dispatch',
     title: '多维度安全审计',
     userPrompt: '对项目进行全面的安全审计',
-    assistantResponse: `我将从多个维度并行审计，同时派发 4 个 reviewer 子代理：
+    assistantResponse: `我将从多个维度并行审计，使用 AgentSpawn 并行派发 4 个 reviewer 子代理：
 
 1. **认证授权审计** — 检查身份验证、访问控制、会话管理
 2. **输入验证审计** — 检查 SQL 注入、XSS、命令注入
 3. **数据安全审计** — 检查敏感数据处理、加密、存储安全
 4. **依赖安全审计** — 检查第三方依赖漏洞
 
-[并行调用 4 次 Task 工具，每个使用 subagent_type="reviewer"，各自聚焦一个维度]
+[调用 AgentSpawn，parallel=true，agents 中放入 4 个 reviewer，每个聚焦一个维度]
 
 所有审计完成后，我将汇总发现并按严重程度排序。`,
-    tokens: estimateTokens(`我将从多个维度并行审计，同时派发 4 个 reviewer 子代理：1. 认证授权审计 2. 输入验证审计 3. 数据安全审计 4. 依赖安全审计 [并行调用 4 次 Task 工具] 所有审计完成后，我将汇总发现并按严重程度排序。`),
+    tokens: estimateTokens(`我将从多个维度并行审计，使用 AgentSpawn 并行派发 4 个 reviewer 子代理：1. 认证授权审计 2. 输入验证审计 3. 数据安全审计 4. 依赖安全审计 [调用 AgentSpawn parallel=true] 所有审计完成后，我将汇总发现并按严重程度排序。`),
     tags: ['audit', 'security', 'parallel'],
   },
   {
     type: 'parallel_dispatch',
     title: '代码质量多维度分析',
     userPrompt: '分析这个模块的代码质量',
-    assistantResponse: `我将并行派发 3 个子代理分析代码质量：
+    assistantResponse: `我将用 AgentSpawn 并行派发 3 个子代理分析代码质量：
 
 1. **可维护性** — reviewer 检查代码结构、命名规范、模块耦合度
 2. **性能** — reviewer 检查算法复杂度、内存使用、潜在瓶颈
 3. **测试覆盖** — reviewer 检查测试完整性、边界条件处理
 
-[并行调用 3 次 Task 工具，各自聚焦一个维度]
+[调用 AgentSpawn，parallel=true，agents 中放入 3 个 reviewer，各自聚焦一个维度]
 
 汇总后给出整体评分和优先改进建议。`,
-    tokens: estimateTokens(`我将并行派发 3 个子代理分析代码质量：1. 可维护性 2. 性能 3. 测试覆盖 [并行调用 3 次 Task 工具] 汇总后给出整体评分和优先改进建议。`),
+    tokens: estimateTokens(`我将用 AgentSpawn 并行派发 3 个子代理分析代码质量：1. 可维护性 2. 性能 3. 测试覆盖 [调用 AgentSpawn parallel=true] 汇总后给出整体评分和优先改进建议。`),
     tags: ['quality', 'parallel'],
   },
 
@@ -116,8 +116,8 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
     assistantResponse: `Edit 失败了，文件内容与预期不符。恢复步骤：
 
 1. **重新读取文件** — 用 Read 获取最新内容，确认实际文本
-2. **定位差异** — 对比 old_string 与实际内容，找出不匹配原因（空格？换行？已被修改？）
-3. **重新编辑** — 基于最新内容构建正确的 old_string 再次 Edit
+2. **定位差异** — 对比 Edit 的 old_text 与实际内容，找出不匹配原因（空格？换行？已被修改？）
+3. **重新编辑** — 基于最新内容构建正确的 edits 数组再次 Edit
 
 如果第二次仍失败，我将改用 Write 重写整个文件。`,
     tokens: estimateTokens(`Edit 失败了，文件内容与预期不符。恢复步骤：1. 重新读取文件 2. 定位差异 3. 重新编辑。如果第二次仍失败，我将改用 Write 重写整个文件。`),
@@ -133,7 +133,7 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
     userPrompt: '帮我实现一个新的用户管理功能',
     assistantResponse: `这是一个复杂任务，我将分阶段执行：
 
-**Phase 1: 探索** — 并行派发 2 个 explore 子代理，分别探索用户相关代码和数据库 schema
+**Phase 1: 探索** — 使用 AgentSpawn 并行派发 2 个 explore 子代理，分别探索用户相关代码和数据库 schema
 **Phase 2: 设计** — 基于探索结果，用 plan 子代理设计实现方案
 **Phase 3: 确认** — 用 AskUserQuestion 确认关键设计决策（数据模型、API 接口、权限模型）
 **Phase 4: 实施** — 按计划逐步编码，每完成一个模块立即验证
@@ -172,8 +172,8 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
     assistantResponse: `先用 Read 读取 authService.ts 确认当前内容和插入位置。
 
 然后用 Edit 精确插入 logout 方法：
-- old_string: 定位到插入点附近的唯一代码片段
-- new_string: 在该位置前插入 logout 方法
+- edits[0].old_text: 定位到插入点附近的唯一代码片段
+- edits[0].new_text: 在该位置前插入 logout 方法
 
 只修改需要变更的部分，不重写整个文件。`,
     tokens: estimateTokens(`先用 Read 读取文件确认当前内容。然后用 Edit 精确插入方法。只修改需要变更的部分，不重写整个文件。`),

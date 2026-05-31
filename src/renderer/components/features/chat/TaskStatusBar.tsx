@@ -199,7 +199,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
               transition-all duration-200 shrink-0
               ${
                 task.sessionId === currentSessionId
-                  ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30'
+                  ? 'bg-zinc-800/70 text-zinc-100 border border-zinc-500'
                   : 'hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200'
               }
             `}

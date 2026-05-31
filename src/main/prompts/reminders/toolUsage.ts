@@ -1,5 +1,5 @@
 // ============================================================================
-// 工具使用提醒 - edit vs write / task 委派 / git 提交
+// 工具使用提醒 - edit vs write / task 委派 / git 安全
 // ============================================================================
 
 import type { ReminderDefinition } from './types';
@@ -38,15 +38,12 @@ Edit 更安全，只修改指定部分，减少意外覆盖。
     category: 'tool',
   },
   {
-    id: 'GIT_COMMIT_REMINDER',
+    id: 'GIT_NO_AUTO_COMMIT',
     priority: 2,
     content: `<system-reminder>
-**Git 提交**：完成功能修改后，记得提交变更：
-1. git add <具体文件>（不要用 -A）
-2. 写有意义的 commit message
-3. 除非用户明确要求，否则不要 push
+**Git 安全**：不要因为完成了文件修改就自动提交。只有用户明确要求 commit 时，才检查状态、暂存具体文件并提交；除非用户明确要求，否则不要 push。
 </system-reminder>`,
-    tokens: 60,
+    tokens: 45,
     shouldInclude: (ctx) =>
       ctx.toolsUsedInTurn.includes('Edit') ||
       ctx.toolsUsedInTurn.includes('Write')

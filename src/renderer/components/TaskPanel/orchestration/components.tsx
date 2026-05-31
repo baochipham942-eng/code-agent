@@ -384,7 +384,7 @@ export const ApprovalCard: React.FC<{ review: SwarmPlanReview }> = ({ review }) 
             value={feedback}
             onChange={(event) => setFeedback(event.target.value)}
             placeholder="可选反馈；驳回时填写原因"
-            className="min-h-[72px] w-full resize-y rounded-lg border border-zinc-700 bg-zinc-900/80 px-2.5 py-2 text-xs text-zinc-200 placeholder-zinc-600 outline-hidden transition-colors focus:border-primary-500/40"
+            className="min-h-[72px] w-full resize-y rounded-lg border border-zinc-700 bg-zinc-900/80 px-2.5 py-2 text-xs text-zinc-200 placeholder-zinc-600 outline-hidden transition-colors focus:border-zinc-500"
           />
           {error && <div className="text-xs text-red-400">{error}</div>}
           <div className="flex items-center gap-2">

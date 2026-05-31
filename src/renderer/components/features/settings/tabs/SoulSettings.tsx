@@ -177,7 +177,7 @@ export const SoulSettings: React.FC = () => {
           spellCheck={false}
           rows={14}
           placeholder="例如：You are Agent Neo, an AI coworker…"
-          className="w-full resize-y rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 font-mono text-sm leading-relaxed text-zinc-200 outline-none transition-colors focus:border-primary-500/60 focus:ring-1 focus:ring-primary-500/30"
+          className="w-full resize-y rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 font-mono text-sm leading-relaxed text-zinc-200 outline-none transition-colors focus:border-zinc-500 focus:ring-1 focus:ring-white/10"
         />
       </div>
 

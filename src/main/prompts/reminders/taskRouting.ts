@@ -14,10 +14,15 @@ export const TASK_ROUTING_REMINDERS: ReminderDefinition[] = [
     content: `<system-reminder>
 **并行派发**：检测到多维度任务。
 
-在单个响应中同时派发多个 Task：
+使用 AgentSpawn 的 parallel 模式，或用 workflow 编排多代理 fan-out/fan-in：
 \`\`\`
-Task(subagent_type="...", prompt="维度1: ...")
-Task(subagent_type="...", prompt="维度2: ...")
+{
+  "parallel": true,
+  "agents": [
+    { "role": "reviewer", "task": "维度1: ..." },
+    { "role": "explore", "task": "维度2: ..." }
+  ]
+}
 \`\`\`
 </system-reminder>`,
     tokens: 70,
@@ -28,13 +33,13 @@ Task(subagent_type="...", prompt="维度2: ...")
     id: 'MUST_DELEGATE',
     priority: 1,
     content: `<system-reminder>
-**委派提醒**：需要广泛探索的复杂任务可以使用 Task 工具委派给子代理。
+**委派提醒**：需要广泛探索的复杂任务可以使用 Task 工具委派给单个同步子代理；需要并行、后台或自定义控制时用 AgentSpawn。
 
 如果目标文件、函数、编辑区域已经明确，直接使用 Read/Grep/Edit 完成。
 需要委派时使用真实工具名：
-- 安全审计 → Task(subagent_type="reviewer", ...)
-- 代码探索 → Task(subagent_type="explore", ...)
-- 架构分析 → Task(subagent_type="plan", ...)
+- 安全审计 → Task，参数 {"subagent_type": "reviewer", "prompt": "..."}
+- 代码探索 → Task，参数 {"subagent_type": "explore", "prompt": "..."}
+- 架构分析 → Task，参数 {"subagent_type": "plan", "prompt": "..."}
 </system-reminder>`,
     tokens: 90,
     shouldInclude: (ctx) =>
@@ -58,7 +63,7 @@ Task(subagent_type="...", prompt="维度2: ...")
     priority: 2,
     content: `<system-reminder>
 **批量操作**：多个独立的工具调用应在单个响应中并行发送。
-例如：同时派发多个 Task，或同时读取多个文件。
+例如：同时读取多个文件；多路子代理并行用 AgentSpawn。
 </system-reminder>`,
     tokens: 50,
     shouldInclude: (ctx) =>

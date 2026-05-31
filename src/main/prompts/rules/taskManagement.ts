@@ -1,16 +1,16 @@
 // ============================================================================
 // Task Management Rules - 任务动态管理指导
-// Claude Code 2.x compatible Task API guidance
+// TaskManager API guidance
 // ============================================================================
 
 import { applyOverride } from '../registry';
 
 export const TASK_MANAGEMENT_RULES = applyOverride(
-  { id: 'rules.taskManagement', category: '规则', name: '任务管理', description: 'TodoWrite 使用时机与列表管理' },
+  { id: 'rules.taskManagement', category: '规则', name: '任务管理', description: 'TaskManager 使用时机与列表管理' },
   `
 ## 任务动态管理
 
-使用 task_create/task_update/task_list/task_get 工具进行任务管理。
+使用 TaskManager 工具进行任务管理。
 
 ### 何时使用任务管理
 
@@ -28,8 +28,8 @@ export const TASK_MANAGEMENT_RULES = applyOverride(
 ### 任务生命周期
 
 \`\`\`
-task_create → task_update(in_progress) → task_update(completed)
-                                      → task_update(deleted)  # 不再需要时
+TaskManager(create) → TaskManager(update: in_progress) → TaskManager(update: completed)
+                                                     → TaskManager(update: deleted)  # 不再需要时
 \`\`\`
 
 ### 用户意图识别（重要）
@@ -62,9 +62,9 @@ task_create → task_update(in_progress) → task_update(completed)
 "我理解您希望增加/修改/取消XXX任务"
 
 // 2. 更新任务列表
-task_create({ subject: "新任务", description: "..." })
+TaskManager({ action: "create", subject: "新任务", description: "..." })
 // 或
-task_update({ taskId: "X", status: "deleted" })
+TaskManager({ action: "update", taskId: "X", status: "deleted" })
 
 // 3. 继续执行
 "现在开始处理..."
@@ -74,10 +74,10 @@ task_update({ taskId: "X", status: "deleted" })
 
 | 操作 | 使用场景 |
 |------|----------|
-| task_create | 创建新任务 |
-| task_update(in_progress) | 开始执行任务前 |
-| task_update(completed) | 任务完成后 |
-| task_update(deleted) | 任务不再需要 |
+| TaskManager(create) | 创建新任务 |
+| TaskManager(update: in_progress) | 开始执行任务前 |
+| TaskManager(update: completed) | 任务完成后 |
+| TaskManager(update: deleted) | 任务不再需要 |
 
 ### 依赖关系
 
@@ -85,7 +85,8 @@ task_update({ taskId: "X", status: "deleted" })
 
 \`\`\`typescript
 // 任务 B 依赖任务 A
-task_update({
+TaskManager({
+  action: "update",
   taskId: "B",
   addBlockedBy: ["A"]
 })

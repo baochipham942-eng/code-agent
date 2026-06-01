@@ -134,7 +134,7 @@ export async function syncDesktopTasksToPlanningService(
   const stepByContent = new Map(
     getAllPlanSteps(plan).map((item) => [normalizeStepContent(item.step.content), item] as const)
   );
-  const recoveryPhase = plan.phases.find((phase) => phase.title === DESKTOP_RECOVERY_PHASE_TITLE) || null;
+  let recoveryPhase = plan.phases.find((phase) => phase.title === DESKTOP_RECOVERY_PHASE_TITLE) || null;
   const missingTasks: SessionTask[] = [];
 
   for (const task of desktopTasks) {

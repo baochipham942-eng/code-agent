@@ -154,7 +154,7 @@ function longTaskUiStatusToTaskStatus(status: LongTaskUiStatus): TaskRecord['sta
   if (status === 'queued' || status === 'running' || status === 'waiting_approval' || status === 'paused') {
     return 'in_progress';
   }
-  if (status === 'completed') return 'done';
+  if (status === 'completed') return 'completed';
   return 'blocked';
 }
 

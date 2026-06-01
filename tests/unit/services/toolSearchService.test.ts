@@ -97,6 +97,17 @@ describe('ToolSearchService loadable results', () => {
     expect(service.isToolLoaded('TaskManager')).toBe(true);
   });
 
+  it('loads SessionManager as a deferred builtin callable', () => {
+    const service = new ToolSearchService();
+
+    const result = service.selectTool('session_manager');
+
+    expect(result.loadedTools).toEqual(['SessionManager']);
+    expect(result.tools[0]?.loadable).toBe(true);
+    expect(result.tools[0]?.canonicalInvocation).toBe('SessionManager');
+    expect(service.isToolLoaded('SessionManager')).toBe(true);
+  });
+
   it('does not load a selected builtin search result without protocol schema', () => {
     const service = new ToolSearchService();
 

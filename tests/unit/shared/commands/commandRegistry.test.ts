@@ -115,3 +115,20 @@ describe('CommandRegistry', () => {
     });
   });
 });
+
+describe('initializeCommands', () => {
+  it('registers all built-in command definitions without conflicts', async () => {
+    const { initializeCommands, getCommandRegistry } = await import('../../../../src/shared/commands');
+
+    // 真实定义集注册不应抛错（回归：modelCommands 与 newCommands 曾同时定义 /cost，
+    // 注册表加严格校验后启动即崩 — v0.16.89 打包验证发现）
+    expect(() => initializeCommands()).not.toThrow();
+    // 幂等：重复调用不应重复注册
+    expect(() => initializeCommands()).not.toThrow();
+
+    const registry = getCommandRegistry();
+    expect(registry.get('cost')).toBeDefined();
+    expect(registry.get('clear')).toBeDefined();
+    expect(registry.get('help')).toBeDefined();
+  });
+});

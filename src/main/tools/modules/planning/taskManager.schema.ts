@@ -9,13 +9,14 @@ Actions:
 - create: Create a new task (requires subject, description; optional activeForm, priority, metadata)
 - get: Get full details of a task by ID (requires taskId)
 - list: List all tasks in the current session (no params needed)
-- update: Update a task's status, details, or dependencies (requires taskId; optional status, subject, description, activeForm, owner, addBlockedBy, addBlocks, metadata, desktopAction, desktopSnoozeHours). Set status="deleted" to remove a task.
+- update: Update a task's status, details, or dependencies (requires taskId; optional status, subject, description, activeForm, owner, addBlockedBy, addBlocks, metadata, desktopAction, desktopSnoozeHours). Set status="cancelled" to abandon a task while keeping it visible; set status="deleted" to remove a task.
 
 Examples:
 - Create: { "action": "create", "subject": "Implement login", "description": "Add OAuth login flow" }
 - Get: { "action": "get", "taskId": "1" }
 - List: { "action": "list" }
 - Update status: { "action": "update", "taskId": "1", "status": "in_progress" }
+- Cancel: { "action": "update", "taskId": "1", "status": "cancelled" }
 - Add dependency: { "action": "update", "taskId": "2", "addBlockedBy": ["1"] }
 - Snooze desktop task: { "action": "update", "taskId": "3", "desktopAction": "snooze", "desktopSnoozeHours": 24 }
 - Delete: { "action": "update", "taskId": "1", "status": "deleted" }`,
@@ -54,8 +55,10 @@ Examples:
       // --- update only ---
       status: {
         type: 'string',
-        enum: ['pending', 'in_progress', 'completed', 'deleted'],
-        description: '[update] New status. Use "deleted" to permanently remove the task.',
+        enum: ['pending', 'in_progress', 'completed', 'cancelled', 'deleted'],
+        description:
+          '[update] New status. Use "cancelled" to abandon but keep it visible; '
+          + 'use "deleted" to permanently remove the task.',
       },
       owner: {
         type: 'string',

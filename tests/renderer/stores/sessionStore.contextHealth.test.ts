@@ -3,7 +3,7 @@ import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 import type { ContextHealthState } from '../../../src/shared/contract/contextHealth';
-import type { Message, Session, TodoItem } from '../../../src/shared/contract';
+import type { Message, Session, SessionTask, TodoItem } from '../../../src/shared/contract';
 
 const mockDomainInvoke = vi.fn();
 const mockInvoke = vi.fn();
@@ -81,10 +81,26 @@ describe('sessionStore context health refresh', () => {
       status: 'completed',
     };
     const health = makeHealth(2345);
+    const sessionTasks: SessionTask[] = [{
+      id: 'task-1',
+      subject: 'Inspect task panel',
+      description: 'Load SessionTask records for the right rail',
+      activeForm: 'Inspecting task panel',
+      status: 'pending',
+      priority: 'normal',
+      blocks: [],
+      blockedBy: [],
+      metadata: {},
+      createdAt: 1,
+      updatedAt: 1,
+    }];
 
     mockDomainInvoke.mockImplementation(async (domain: string, action: string) => {
       if (domain === IPC_DOMAINS.SESSION && action === 'load') {
         return { success: true, data: session };
+      }
+      if (domain === IPC_DOMAINS.SESSION && action === 'getSessionTasks') {
+        return { success: true, data: sessionTasks };
       }
       return { success: false, error: { message: 'unexpected domain call' } };
     });
@@ -99,6 +115,7 @@ describe('sessionStore context health refresh', () => {
 
     expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.CONTEXT_HEALTH_GET, 'session-1');
     expect(useAppStore.getState().contextHealth).toEqual(health);
+    expect(useSessionStore.getState().sessionTasks).toEqual(sessionTasks);
   });
 
   it('refreshes context health for the current session after a completed turn', async () => {
@@ -197,6 +214,9 @@ describe('sessionStore context health refresh', () => {
         return new Promise((resolve) => {
           resolveOldLoad = resolve as typeof resolveOldLoad;
         });
+      }
+      if (domain === IPC_DOMAINS.SESSION && action === 'getSessionTasks') {
+        return { success: true, data: [] };
       }
       if (domain === IPC_DOMAINS.SESSION && action === 'create') {
         return { success: true, data: newSession };

@@ -1,6 +1,6 @@
 // useAgentTaskProgressEffects - task_progress, task_complete, todo_update
 import { useEffect } from 'react';
-import type { AgentEventEnvelope, TodoItem } from '@shared/contract';
+import type { AgentEventEnvelope, SessionTask, TodoItem } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
 import ipcService from '../../../services/ipcService';
@@ -26,10 +26,19 @@ function getTodoItems(data: unknown): TodoItem[] | null {
   return Array.isArray(items) ? items as TodoItem[] : null;
 }
 
+function getSessionTasks(data: unknown): SessionTask[] | null {
+  if (!isRecord(data)) {
+    return null;
+  }
+  const tasks = data.tasks;
+  return Array.isArray(tasks) ? tasks as SessionTask[] : null;
+}
+
 export const useTaskProgressEffects = ({
   lastEventAtRef,
   setSessionTaskComplete,
   setSessionTaskProgress,
+  setSessionTasks,
   setTodos,
   updateMessage,
   setIsProcessing,
@@ -58,6 +67,15 @@ export const useTaskProgressEffects = ({
           if (event.data && isCurrentSessionEvent) {
             const todos = getTodoItems(event.data);
             if (todos) setTodos(todos);
+          }
+          break;
+
+        case 'task_update':
+          lastEventAtRef.current = Date.now();
+          logHandledEvent();
+          if (event.data && isCurrentSessionEvent) {
+            const tasks = getSessionTasks(event.data);
+            if (tasks) setSessionTasks(tasks);
           }
           break;
 
@@ -93,6 +111,7 @@ export const useTaskProgressEffects = ({
     };
   }, [
     updateMessage,
+    setSessionTasks,
     setTodos,
     setIsProcessing,
     setPendingPermissionRequest,

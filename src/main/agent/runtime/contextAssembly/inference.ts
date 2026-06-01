@@ -25,6 +25,7 @@ import {
 import type { ModelMessage } from '../../../agent/loopTypes';
 import type { StreamCallback, InferenceOptions, ModelResponse as RouterModelResponse } from '../../../model/types';
 import type { ModelConfig } from '../../../../shared/contract/model';
+import { buildE2ELocalAgentModelResponse, shouldUseE2ELocalAgentModelForMessages } from '../../../model/e2eLocalAgentModel';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
 import {
@@ -63,6 +64,10 @@ function runEngineInference(
   signal?: AbortSignal,
   options?: InferenceOptions,
 ): Promise<RouterModelResponse> {
+  if (shouldUseE2ELocalAgentModelForMessages(messages)) {
+    return Promise.resolve(buildE2ELocalAgentModelResponse(messages, tools, config, onStream));
+  }
+
   const useAiSdk = process.env.CODE_AGENT_MODEL_ENGINE !== 'legacy'
     && aiSdkSupportsProvider(config.provider);
   if (useAiSdk) {

@@ -72,6 +72,11 @@ describe('buildLedgerTaskRecords', () => {
         status: 'failed',
         failure: { message: 'Codex CLI exited with code 1', exitCode: 1, category: 'agent_engine' },
       }),
+      makeLedgerTask({
+        id: 'agent:codex:run-4',
+        title: 'Codex CLI cancelled',
+        status: 'cancelled',
+      }),
     ]);
 
     expect(tasks[0]).toMatchObject({
@@ -92,7 +97,7 @@ describe('buildLedgerTaskRecords', () => {
     ]);
 
     expect(tasks[1]).toMatchObject({
-      status: 'done',
+      status: 'completed',
       resumeHint: '最终输出：run-2.last.md',
       outputRefs: [
         {
@@ -118,6 +123,10 @@ describe('buildLedgerTaskRecords', () => {
       status: 'blocked',
       resumeHint: 'Codex CLI exited with code 1',
     });
+    expect(tasks[3]).toMatchObject({
+      status: 'cancelled',
+    });
+    expect(tasks[3].steps.map((step) => step.title)).toEqual(['已取消']);
   });
 });
 

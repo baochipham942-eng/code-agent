@@ -59,7 +59,7 @@ describe('task_update schema', () => {
     expect(taskUpdateModule.schema.allowInPlanMode).toBe(true);
     expect(taskUpdateModule.schema.inputSchema.required).toEqual(['taskId']);
     const props = taskUpdateModule.schema.inputSchema.properties as Record<string, { enum?: string[] }>;
-    expect(props.status.enum).toEqual(['pending', 'in_progress', 'completed', 'deleted']);
+    expect(props.status.enum).toEqual(['pending', 'in_progress', 'completed', 'cancelled', 'deleted']);
     expect(props.desktopAction.enum).toEqual(['accept', 'dismiss', 'snooze', 'reopen', 'supersede']);
   });
 });
@@ -209,6 +209,27 @@ describe('task_update behavior', () => {
     }));
   });
 
+  it('status="cancelled" → updated task stays visible', async () => {
+    getTaskMock.mockReturnValue({ id: '1', subject: 'X', status: 'pending' });
+    updateTaskMock.mockReturnValue({ id: '1', subject: 'X', status: 'cancelled' });
+    const emitFn = vi.fn();
+    const handler = await taskUpdateModule.createHandler();
+    const result = await handler.execute(
+      { taskId: '1', status: 'cancelled' },
+      makeCtx({ emit: emitFn } as unknown as Partial<ToolContext>),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('Status: cancelled');
+      expect(result.meta).toEqual({ task: { id: '1', subject: 'X', status: 'cancelled' } });
+    }
+    expect(emitFn).toHaveBeenCalledWith('task_update', expect.objectContaining({
+      action: 'update',
+      taskId: '1',
+    }));
+  });
+
   it('desktopAction=snooze → recordTodoFeedbackForTask 调用 snoozed + reason', async () => {
     const desktopTask = { id: '1', metadata: { desktopTodoKey: 'k1' } };
     getTaskMock.mockReturnValue(desktopTask);
@@ -228,6 +249,24 @@ describe('task_update behavior', () => {
         source: 'task',
         reason: 'task_update:snooze:6h',
       }),
+    );
+  });
+
+  it('desktop-derived cancelled task records dismissed feedback', async () => {
+    const desktopTask = { id: '1', metadata: { desktopTodoKey: 'k1' } };
+    getTaskMock.mockReturnValue(desktopTask);
+    updateTaskMock.mockReturnValue({ ...desktopTask, status: 'cancelled' });
+    isDesktopDerivedSessionTaskMock.mockReturnValue(true);
+    const handler = await taskUpdateModule.createHandler();
+    await handler.execute(
+      { taskId: '1', status: 'cancelled' },
+      makeCtx(),
+      allowAll,
+    );
+    expect(desktopActivityServiceMock.recordTodoFeedbackForTask).toHaveBeenCalledWith(
+      expect.objectContaining({ id: '1', status: 'cancelled' }),
+      'dismissed',
+      { sessionId: 'sess-1', source: 'task' },
     );
   });
 });

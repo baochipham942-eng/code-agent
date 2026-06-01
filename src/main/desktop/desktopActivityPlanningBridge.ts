@@ -37,6 +37,7 @@ function normalizeStepContent(content: string): string {
 function toStepStatus(task: SessionTask): TaskStepStatus {
   if (task.status === 'completed') return 'completed';
   if (task.status === 'in_progress') return 'in_progress';
+  if (task.status === 'cancelled') return 'skipped';
   return 'pending';
 }
 
@@ -87,7 +88,7 @@ export async function syncDesktopTasksToPlanningService(
 ): Promise<DesktopPlanningSyncResult> {
   const desktopTasks = tasks
     .filter(isDesktopDerivedTask)
-    .filter((task) => task.status !== 'completed');
+    .filter((task) => task.status !== 'completed' && task.status !== 'cancelled');
 
   if (desktopTasks.length === 0) {
     return {
@@ -133,7 +134,7 @@ export async function syncDesktopTasksToPlanningService(
   const stepByContent = new Map(
     getAllPlanSteps(plan).map((item) => [normalizeStepContent(item.step.content), item] as const)
   );
-  let recoveryPhase = plan.phases.find((phase) => phase.title === DESKTOP_RECOVERY_PHASE_TITLE) || null;
+  const recoveryPhase = plan.phases.find((phase) => phase.title === DESKTOP_RECOVERY_PHASE_TITLE) || null;
   const missingTasks: SessionTask[] = [];
 
   for (const task of desktopTasks) {
@@ -157,7 +158,7 @@ export async function syncDesktopTasksToPlanningService(
 
   if (missingTasks.length > 0) {
     if (!recoveryPhase) {
-      recoveryPhase = await planningService.plan.addPhase({
+      await planningService.plan.addPhase({
         title: DESKTOP_RECOVERY_PHASE_TITLE,
         notes: DESKTOP_RECOVERY_PHASE_NOTES,
         steps: missingTasks.map(buildPhaseStep),

@@ -4,8 +4,10 @@ import type { ToolSchema } from '../../../protocol/tools';
 export const taskUpdateSchema: ToolSchema = {
   name: 'task_update',
   description:
-    'Update a task\'s status, details, or dependencies. ' +
-    'Set status="deleted" to permanently remove a task. ' +
+    'Update a semantic work-unit task\'s status, details, or dependencies. ' +
+    'Keep task titles user-visible and outcome-oriented; do not rename tasks to raw tool operations. ' +
+    'Set status="cancelled" to abandon a task while keeping it visible; ' +
+    'set status="deleted" to permanently remove a task. ' +
     'Use addBlockedBy/addBlocks to establish task dependencies.',
   inputSchema: {
     type: 'object',
@@ -16,21 +18,24 @@ export const taskUpdateSchema: ToolSchema = {
       },
       status: {
         type: 'string',
-        enum: ['pending', 'in_progress', 'completed', 'deleted'],
+        enum: ['pending', 'in_progress', 'completed', 'cancelled', 'deleted'],
         description:
-          'New status for the task. Use "deleted" to permanently remove the task.',
+          'New status for the task. Use "cancelled" to abandon but keep it visible (struck through); '
+          + 'use "deleted" to permanently remove the task.',
       },
       subject: {
         type: 'string',
-        description: 'New subject for the task',
+        description:
+          'New semantic subject for the task. Describe the work goal or outcome, not a raw tool action like "Read file".',
       },
       description: {
         type: 'string',
-        description: 'New description for the task',
+        description: 'New user-visible purpose and completion criteria for this work unit',
       },
       activeForm: {
         type: 'string',
-        description: 'Present continuous form shown in spinner when in_progress',
+        description:
+          'Present continuous semantic form shown in spinner when in_progress; avoid raw tool actions like "Writing file".',
       },
       owner: {
         type: 'string',

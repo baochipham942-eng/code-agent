@@ -243,6 +243,12 @@ export const en: Translations = {
     // Progress (legacy)
     noProgress: 'No progress yet',
     progressEmpty: 'No task plan yet',
+    taskProgressFallbackTitle: 'Task progress',
+    taskDependencyWaiting: 'Waiting for {tasks}',
+    taskDependencyUnlocks: 'Unlocks {tasks}',
+    taskDependencySummaryWaiting: '{count} waiting on dependencies',
+    taskDependencySummaryUnlocking: '{count} unlocking follow-ups',
+    taskDependencySummarySeparator: ' · ',
     showMore: 'Show {count} more',
     phaseThinking: 'Understanding request',
     phaseGenerating: 'Generating response',

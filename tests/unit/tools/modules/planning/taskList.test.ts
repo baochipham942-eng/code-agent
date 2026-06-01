@@ -9,6 +9,7 @@ const listTasksMock = vi.fn();
 
 vi.mock('../../../../../src/main/services/planning/taskStore', () => ({
   listTasks: (...args: unknown[]) => listTasksMock(...args),
+  isClosedTaskStatus: (status: string) => status === 'completed' || status === 'cancelled',
 }));
 
 import { taskListModule } from '../../../../../src/main/tools/modules/planning/taskList';
@@ -89,7 +90,24 @@ describe('task_list behavior', () => {
       expect(result.output).not.toContain('◐ #2: do B [blocked');
       expect(result.output).toContain('○ #3: do C [blocked by: 2]');
       expect(result.output).toContain('Status: 1 completed, 1 in progress, 1 pending, 1 blocked');
-      expect(result.meta?.stats).toEqual({ total: 3, completed: 1, inProgress: 1, pending: 1, blocked: 1 });
+      expect(result.meta?.stats).toEqual({ total: 3, completed: 1, inProgress: 1, pending: 1, cancelled: 0, blocked: 1 });
+    }
+  });
+
+  it('cancelled tasks stay visible but do not keep dependents blocked', async () => {
+    listTasksMock.mockReturnValue([
+      { id: '1', subject: 'drop obsolete work', status: 'cancelled', owner: undefined, blockedBy: [], blocks: ['2'], metadata: {} },
+      { id: '2', subject: 'continue current path', status: 'pending', owner: undefined, blockedBy: ['1'], blocks: [], metadata: {} },
+    ]);
+    const handler = await taskListModule.createHandler();
+    const result = await handler.execute({}, makeCtx(), allowAll);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('⊘ #1: drop obsolete work');
+      expect(result.output).toContain('○ #2: continue current path');
+      expect(result.output).not.toContain('[blocked by: 1]');
+      expect(result.output).toContain('Status: 0 completed, 0 in progress, 1 pending, 1 cancelled');
+      expect(result.meta?.stats).toEqual({ total: 2, completed: 0, inProgress: 0, pending: 1, cancelled: 1, blocked: 0 });
     }
   });
 

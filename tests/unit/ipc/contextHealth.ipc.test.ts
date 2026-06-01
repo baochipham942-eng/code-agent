@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const compactMocks = vi.hoisted(() => {
@@ -128,6 +128,7 @@ import type { Message } from '../../../src/shared/contract';
 function makeAppService(sessionId: string, messages: Message[], modelOverride?: string): AgentApplicationService {
   return {
     getMessages: async () => messages,
+    getSessionTasks: async () => [],
     getSerializedCompressionState: () => null,
     getCurrentSessionId: () => sessionId,
     sendMessage: async () => {},

@@ -4,8 +4,9 @@ import { defineConfig } from '@playwright/test';
 delete process.env.FORCE_COLOR;
 delete process.env.NO_COLOR;
 
-const webPort = Number(process.env.E2E_WEB_PORT || 8180);
-const reuseExistingServer = !process.env.CI && !process.env.E2E_WEB_PORT;
+const useLocalAgentModel = process.env.CODE_AGENT_E2E_LOCAL_AGENT_MODEL === '1';
+const webPort = Number(process.env.E2E_WEB_PORT || (useLocalAgentModel ? 8181 : 8180));
+const reuseExistingServer = !process.env.CI && !process.env.E2E_WEB_PORT && !useLocalAgentModel;
 
 export default defineConfig({
   testDir: '.',
@@ -32,6 +33,7 @@ export default defineConfig({
       // Enables /api/dev/emit-swarm-event for swarm-chain.spec.ts.
       // Benign for other specs — the route 404s unless this flag is set.
       CODE_AGENT_E2E: '1',
+      ...(useLocalAgentModel ? { CODE_AGENT_E2E_LOCAL_AGENT_MODEL: '1' } : {}),
     },
   },
 });

@@ -370,18 +370,18 @@ describe('runWorkbenchProjection', () => {
       runId: 'turn-1',
       runStatus: 'running',
       todos: [
-        { content: 'Read code', status: 'completed' },
-        { content: 'Patch UI', activeForm: 'Patching UI', status: 'in_progress' },
+        { content: '梳理任务面板现状', status: 'completed' },
+        { content: '改造任务面板展示', activeForm: '改造任务面板展示', status: 'in_progress' },
       ],
     });
 
     expect(task).toMatchObject({
       scope: 'session',
-      title: 'Patching UI',
+      title: '改造任务面板展示',
       status: 'in_progress',
       ownerRunId: 'turn-1',
     });
-    expect(task?.steps.map((step) => step.status)).toEqual(['done', 'in_progress']);
+    expect(task?.steps.map((step) => step.status)).toEqual(['completed', 'in_progress']);
   });
 
   it('uses an explicit task objective as the stable title', () => {
@@ -417,9 +417,181 @@ describe('runWorkbenchProjection', () => {
     expect(task).toMatchObject({
       scope: 'session',
       title: '任务目标：验证任务面板复杂任务展示',
-      status: 'done',
+      status: 'completed',
     });
-    expect(task?.steps.map((step) => step.status)).toEqual(['done', 'done', 'done']);
+    expect(task?.steps.map((step) => step.status)).toEqual(['completed', 'completed', 'completed']);
+  });
+
+  it('builds a session task record from canonical SessionTask data with dependencies', () => {
+    const task = buildSessionTaskRecord({
+      sessionId: 'session-1',
+      runId: 'turn-1',
+      runStatus: 'running',
+      sessionTasks: [
+        {
+          id: 'task-a',
+          subject: '梳理任务面板现状',
+          description: '确认当前任务面板的数据来源和展示状态',
+          activeForm: '梳理任务面板现状',
+          status: 'pending',
+          priority: 'normal',
+          blocks: ['task-b'],
+          blockedBy: [],
+          metadata: {},
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          id: 'task-b',
+          subject: '渲染依赖状态',
+          description: '把 SessionTask 依赖关系展示到任务面板',
+          activeForm: '渲染依赖状态',
+          status: 'pending',
+          priority: 'normal',
+          blocks: [],
+          blockedBy: ['task-a'],
+          metadata: {},
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    expect(task).toMatchObject({
+      id: 'session-1:session-tasks',
+      scope: 'session',
+      title: '梳理任务面板现状',
+      status: 'pending',
+      steps: [
+        { title: '梳理任务面板现状', status: 'pending', blockedTaskTitles: ['渲染依赖状态'] },
+        { title: '渲染依赖状态', status: 'blocked', blockedByTitles: ['梳理任务面板现状'] },
+      ],
+    });
+  });
+
+  it('does not let blocked downstream dependencies mask the actionable SessionTask status', () => {
+    const task = buildSessionTaskRecord({
+      sessionId: 'session-1',
+      runId: 'turn-1',
+      runStatus: 'running',
+      sessionTasks: [
+        {
+          id: 'task-a',
+          subject: '修复任务面板状态聚合',
+          description: '让可执行任务状态优先于被阻塞的下游任务',
+          activeForm: '修复任务面板状态聚合',
+          status: 'in_progress',
+          priority: 'normal',
+          blocks: ['task-b'],
+          blockedBy: [],
+          metadata: {},
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          id: 'task-b',
+          subject: '验证依赖展示',
+          description: '确认下游依赖以 blocked 状态展示',
+          activeForm: '验证依赖展示',
+          status: 'pending',
+          priority: 'normal',
+          blocks: [],
+          blockedBy: ['task-a'],
+          metadata: {},
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    expect(task).toMatchObject({
+      title: '修复任务面板状态聚合',
+      status: 'in_progress',
+      steps: [
+        { title: '修复任务面板状态聚合', status: 'in_progress', blockedTaskTitles: ['验证依赖展示'] },
+        { title: '验证依赖展示', status: 'blocked', blockedByTitles: ['修复任务面板状态聚合'] },
+      ],
+    });
+  });
+
+  it('only reports the aggregate SessionTask status as blocked when no pending task is actionable', () => {
+    const task = buildSessionTaskRecord({
+      sessionId: 'session-1',
+      runId: 'turn-1',
+      runStatus: 'running',
+      sessionTasks: [
+        {
+          id: 'task-a',
+          subject: 'Wait for source',
+          description: 'Wait for source',
+          activeForm: 'Wait for source',
+          status: 'pending',
+          priority: 'normal',
+          blocks: [],
+          blockedBy: ['missing-source'],
+          metadata: {},
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+
+    expect(task).toMatchObject({
+      title: 'Wait for source',
+      status: 'blocked',
+      steps: [
+        { title: 'Wait for source', status: 'blocked', blockedByTitles: ['missing-source'] },
+      ],
+    });
+  });
+
+  it('derives blocked tasks from blocks-only SessionTask dependencies', () => {
+    const task = buildSessionTaskRecord({
+      sessionId: 'session-1',
+      runId: 'turn-1',
+      runStatus: 'running',
+      sessionTasks: [
+        {
+          id: 'task-a',
+          subject: 'Prepare source data',
+          description: 'Prepare source data',
+          activeForm: 'Preparing source data',
+          status: 'pending',
+          priority: 'normal',
+          blocks: ['task-b'],
+          blockedBy: [],
+          metadata: {},
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          id: 'task-b',
+          subject: 'Render dependency state',
+          description: 'Render dependency state',
+          activeForm: 'Rendering dependency state',
+          status: 'pending',
+          priority: 'normal',
+          blocks: [],
+          blockedBy: [],
+          metadata: {},
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    expect(task?.steps).toEqual([
+      expect.objectContaining({
+        title: 'Prepare source data',
+        status: 'pending',
+        blockedTaskTitles: ['Render dependency state'],
+      }),
+      expect.objectContaining({
+        title: 'Render dependency state',
+        status: 'blocked',
+        blockedByTitles: ['Prepare source data'],
+      }),
+    ]);
   });
 
   it('suppresses incomplete stored session todos after a completed run', () => {

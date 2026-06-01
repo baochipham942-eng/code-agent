@@ -35,6 +35,7 @@ export interface AgentEffectsProps {
   setResearchDetected: Dispatch<SetStateAction<ResearchDetectedData | null>>;
   setSessionTaskComplete: AppStoreState['setSessionTaskComplete'];
   setSessionTaskProgress: AppStoreState['setSessionTaskProgress'];
+  setSessionTasks: SessionStoreState['setSessionTasks'];
   setTodos: SessionStoreState['setTodos'];
   setToolTimeoutWarning: Dispatch<SetStateAction<ToolTimeoutData | null>>;
   shiftQueuedPermissionRequest: AppStoreState['shiftQueuedPermissionRequest'];

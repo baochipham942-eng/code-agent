@@ -7,6 +7,7 @@
 
 import type { PermissionResponse } from './permission';
 import type { Session } from './session';
+import type { SessionTask } from './planning';
 import type { AgentEngineSessionMetadata } from './agentEngine';
 import type { Message, MessageAttachment } from './message';
 import type { ModelProvider } from './model';
@@ -149,6 +150,7 @@ export interface AgentApplicationService {
   archiveSession(sessionId: string): Promise<Session | null>;
   unarchiveSession(sessionId: string): Promise<Session | null>;
   getMessages(sessionId: string): Promise<Message[]>;
+  getSessionTasks(sessionId: string): Promise<SessionTask[]>;
   rewindToPrompt(params: { sessionId: string; userMessageId: string }): Promise<PromptRewindResult>;
   getSerializedCompressionState(sessionId?: string): string | null;
   loadOlderMessages(sessionId: string, beforeTimestamp: number, limit: number): Promise<{ messages: Message[]; hasMore: boolean }>;

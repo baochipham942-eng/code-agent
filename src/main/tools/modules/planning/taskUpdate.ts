@@ -170,7 +170,7 @@ export async function executeTaskUpdate(
         }
       }
     } else if (
-      (args.status === 'completed' || args.status === 'deleted') &&
+      (args.status === 'completed' || args.status === 'cancelled' || args.status === 'deleted') &&
       isDesktopDerivedSessionTask(lifecycleTask)
     ) {
       desktopActivity.recordTodoFeedbackForTask(

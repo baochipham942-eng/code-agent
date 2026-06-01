@@ -73,6 +73,7 @@ import {
   completeCurrentAndAdvance,
   getSessionTodos,
   setSessionTodos,
+  syncTodosToSessionTasks,
   clearSessionTodos,
 } from '../../agent/todoParser';
 import { getDatabase } from '../../services/core/databaseService';
@@ -415,14 +416,12 @@ export class RunFinalizer {
 
     if (!parsed || parsed.length === 0) return;
 
-    // 解析成功后顺带提取 plan 标题（识别 `## Plan: ...` / `**计划**: ...` 等显式
-    // 标记）。失败返回 null，写入 plan_title=NULL，UI 隐藏 plan title 行只显示
-    // checklist。
+    // 解析成功后顺带提取显式 plan 标题；没有标题时保留现有值。
     if (parsedFrom) {
       const planTitle = extractPlanTitle(parsedFrom);
       try {
         const db = getDatabase();
-        if (db.isReady) {
+        if (db.isReady && planTitle !== null) {
           db.updateSessionPlanTitle(this.ctx.sessionId, planTitle);
         }
       } catch (err) {
@@ -437,9 +436,22 @@ export class RunFinalizer {
     // 自动推进状态：确保有一个 in_progress 的任务
     const { todos: advanced } = advanceTodoStatus(merged);
     setSessionTodos(this.ctx.sessionId, advanced);
+    const taskSync = syncTodosToSessionTasks(this.ctx.sessionId, advanced);
 
     // 推送到前端
     this.ctx.onEvent({ type: 'todo_update', data: advanced });
+    this.ctx.onEvent({
+      type: 'task_update',
+      data: {
+        tasks: taskSync.tasks,
+        action: 'sync',
+        taskIds: [
+          ...taskSync.created.map((task) => task.id),
+          ...taskSync.updated.map((task) => task.id),
+        ],
+        source: 'todo_parser',
+      },
+    });
     pushRuntimeDiagnostic(this.ctx, `识别到显式任务清单，已同步 ${advanced.length} 条待办`);
 
     logger.debug(`[AgentLoop] 自动解析到 ${parsed.length} 个任务，合并后 ${advanced.length} 个`);
@@ -473,7 +485,20 @@ export class RunFinalizer {
     const { updated, todos: advanced } = completeCurrentAndAdvance(todos);
     if (updated) {
       setSessionTodos(this.ctx.sessionId, advanced);
+      const taskSync = syncTodosToSessionTasks(this.ctx.sessionId, advanced);
       this.ctx.onEvent({ type: 'todo_update', data: advanced });
+      this.ctx.onEvent({
+        type: 'task_update',
+        data: {
+          tasks: taskSync.tasks,
+          action: 'sync',
+          taskIds: [
+            ...taskSync.created.map((task) => task.id),
+            ...taskSync.updated.map((task) => task.id),
+          ],
+          source: 'todo_parser',
+        },
+      });
       logger.debug(`[AgentLoop] 自动推进任务状态（检测到修改类操作）`);
     }
   }

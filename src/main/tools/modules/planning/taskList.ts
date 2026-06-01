@@ -17,7 +17,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { listTasks } from '../../../services/planning/taskStore';
+import { isClosedTaskStatus, listTasks } from '../../../services/planning/taskStore';
 import { taskListSchema as schema } from './taskList.schema';
 
 export async function executeTaskList(
@@ -49,11 +49,11 @@ export async function executeTaskList(
 
   const taskSummaries = tasks.map((task) => {
     const statusIcon =
-      task.status === 'completed' ? '●' : task.status === 'in_progress' ? '◐' : '○';
+      task.status === 'completed' ? '●' : task.status === 'in_progress' ? '◐' : task.status === 'cancelled' ? '⊘' : '○';
 
     const openBlockers = task.blockedBy.filter((id) => {
       const blocker = tasks.find((t) => t.id === id);
-      return blocker && blocker.status !== 'completed';
+      return blocker && !isClosedTaskStatus(blocker.status);
     });
 
     const blockedInfo =
@@ -67,12 +67,13 @@ export async function executeTaskList(
   const completed = tasks.filter((t) => t.status === 'completed').length;
   const inProgress = tasks.filter((t) => t.status === 'in_progress').length;
   const pending = tasks.filter((t) => t.status === 'pending').length;
+  const cancelled = tasks.filter((t) => t.status === 'cancelled').length;
   const blocked = tasks.filter((t) => {
     const openBlockers = t.blockedBy.filter((id) => {
       const blocker = tasks.find((bt) => bt.id === id);
-      return blocker && blocker.status !== 'completed';
+      return blocker && !isClosedTaskStatus(blocker.status);
     });
-    return openBlockers.length > 0 && t.status !== 'completed';
+    return openBlockers.length > 0 && !isClosedTaskStatus(t.status);
   }).length;
 
   onProgress?.({ stage: 'completing', percent: 100 });
@@ -85,6 +86,7 @@ export async function executeTaskList(
       taskSummaries.join('\n') +
       '\n\n' +
       `Status: ${completed} completed, ${inProgress} in progress, ${pending} pending` +
+      (cancelled > 0 ? `, ${cancelled} cancelled` : '') +
       (blocked > 0 ? `, ${blocked} blocked` : ''),
     meta: {
       tasks: tasks.map((t) => ({
@@ -94,7 +96,7 @@ export async function executeTaskList(
         owner: t.owner,
         blockedBy: t.blockedBy,
       })),
-      stats: { total: tasks.length, completed, inProgress, pending, blocked },
+      stats: { total: tasks.length, completed, inProgress, pending, cancelled, blocked },
     },
   };
 }

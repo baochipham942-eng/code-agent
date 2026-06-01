@@ -20,6 +20,7 @@ import type {
   ModelProvider,
   PermissionResponse,
   Session,
+  SessionTask,
 } from '../../shared/contract';
 import type { SessionStatus, TaskManager } from '../task';
 import type { ConfigService } from '../services';
@@ -56,6 +57,7 @@ import {
   isExternalAgentEngine,
   resolveExternalEngineLaunch,
 } from '../services/agentEngine';
+import { listTasks } from '../services/planning/taskStore';
 
 function isTaskManagerOwnedRunState(status: SessionStatus): boolean {
   return status === 'running'
@@ -533,6 +535,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   async getMessages(sessionId: string): Promise<Message[]> {
     return getSessionManager().getMessages(sessionId);
+  }
+
+  async getSessionTasks(sessionId: string): Promise<SessionTask[]> {
+    return listTasks(sessionId);
   }
 
   async rewindToPrompt(params: { sessionId: string; userMessageId: string }): Promise<PromptRewindResult> {

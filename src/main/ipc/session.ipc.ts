@@ -52,6 +52,9 @@ export function registerSessionHandlers(
         case 'getMessages':
           data = await requireAppService().getMessages((payload as { sessionId: string }).sessionId);
           break;
+        case 'getSessionTasks':
+          data = await requireAppService().getSessionTasks((payload as { sessionId: string }).sessionId);
+          break;
         case 'rewindToPrompt': {
           const p = payload as { sessionId: string; userMessageId: string };
           data = await requireAppService().rewindToPrompt(p);
@@ -148,6 +151,10 @@ export function registerSessionHandlers(
     } catch {
       return null;
     }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_GET_TASKS, async (_, sessionId: string) => {
+    return requireAppService().getSessionTasks(sessionId);
   });
 }
 

@@ -63,8 +63,13 @@ export interface TaskRecord {
   id: string;
   scope: 'session' | 'global' | 'scheduled';
   title: string;
-  status: 'pending' | 'in_progress' | 'done' | 'blocked';
-  steps: Array<{ title: string; status: 'pending' | 'in_progress' | 'done' | 'blocked' }>;
+  status: 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled';
+  steps: Array<{
+    title: string;
+    status: 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled';
+    blockedByTitles?: string[];
+    blockedTaskTitles?: string[];
+  }>;
   ownerRunId?: string | null;
   sourceThreadId?: string | null;
   resumeHint?: string;

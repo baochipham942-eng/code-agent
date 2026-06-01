@@ -25,16 +25,17 @@ describe('deriveTaskRailView', () => {
     expect(view.title).toBe('生成回复中');
     expect(view.visibleSteps).toEqual([]);
     expect(view.currentAction).toBe('工具：Read · 第 1/3 个工具');
+    expect(view.taskCount).toBe(1);
   });
 
-  it('prioritizes active and pending work while folding completed steps', () => {
+  it('keeps checklist steps in their semantic order', () => {
     const view = deriveTaskRailView(makeTask({
       title: '实现右侧任务面板',
       steps: [
-        { title: '完成一', status: 'done' },
-        { title: '完成二', status: 'done' },
-        { title: '完成三', status: 'done' },
-        { title: '完成四', status: 'done' },
+        { title: '完成一', status: 'completed' },
+        { title: '完成二', status: 'completed' },
+        { title: '完成三', status: 'completed' },
+        { title: '完成四', status: 'completed' },
         { title: '改造任务卡展示', status: 'in_progress' },
         { title: '补 helper 单测', status: 'pending' },
         { title: '补组件测试', status: 'pending' },
@@ -46,6 +47,10 @@ describe('deriveTaskRailView', () => {
 
     expect(view.mode).toBe('checklist');
     expect(view.visibleSteps.map((step) => step.title)).toEqual([
+      '完成一',
+      '完成二',
+      '完成三',
+      '完成四',
       '改造任务卡展示',
       '补 helper 单测',
       '补组件测试',
@@ -53,24 +58,26 @@ describe('deriveTaskRailView', () => {
       '跑 typecheck',
       '回读结果',
     ]);
-    expect(view.hiddenCompletedCount).toBe(4);
+    expect(view.hiddenCompletedCount).toBe(0);
+    expect(view.hiddenPendingCount).toBe(0);
     expect(view.completed).toBe(4);
     expect(view.total).toBe(10);
+    expect(view.taskCount).toBe(10);
   });
 
   it('shows completed checklist steps directly when the whole task is done', () => {
     const view = deriveTaskRailView(makeTask({
       title: '任务目标：验证任务面板复杂任务展示',
-      status: 'done',
+      status: 'completed',
       steps: [
-        { title: '任务目标：验证任务面板复杂任务展示', status: 'done' },
-        { title: '检查多个子任务', status: 'done' },
-        { title: '验证完成态', status: 'done' },
+        { title: '任务目标：验证任务面板复杂任务展示', status: 'completed' },
+        { title: '检查多个子任务', status: 'completed' },
+        { title: '验证完成态', status: 'completed' },
       ],
     }));
 
     expect(view.mode).toBe('checklist');
-    expect(view.status).toBe('done');
+    expect(view.status).toBe('completed');
     expect(view.title).toBe('任务目标：验证任务面板复杂任务展示');
     expect(view.visibleSteps.map((step) => step.title)).toEqual([
       '任务目标：验证任务面板复杂任务展示',
@@ -80,9 +87,10 @@ describe('deriveTaskRailView', () => {
     expect(view.hiddenCompletedCount).toBe(0);
     expect(view.completed).toBe(3);
     expect(view.total).toBe(3);
+    expect(view.taskCount).toBe(3);
   });
 
-  it('orders blocked work before the running step and hides distant pending steps', () => {
+  it('keeps blocked dependencies in task order while preserving metadata', () => {
     const view = deriveTaskRailView(makeTask({
       title: '修复任务状态',
       status: 'blocked',
@@ -95,7 +103,7 @@ describe('deriveTaskRailView', () => {
         { title: '待办四', status: 'pending' },
         { title: '待办五', status: 'pending' },
         { title: '待办六', status: 'pending' },
-        { title: '已完成项', status: 'done' },
+        { title: '已完成项', status: 'completed' },
       ],
     }));
 
@@ -106,19 +114,45 @@ describe('deriveTaskRailView', () => {
       'pending',
       'pending',
       'pending',
+      'pending',
+      'pending',
+      'completed',
     ]);
-    expect(view.hiddenPendingCount).toBe(2);
-    expect(view.hiddenCompletedCount).toBe(1);
+    expect(view.hiddenPendingCount).toBe(0);
+    expect(view.hiddenCompletedCount).toBe(0);
+  });
+
+  it('keeps dependency metadata available for richer task rail rendering', () => {
+    const view = deriveTaskRailView(makeTask({
+      title: '渲染依赖关系',
+      status: 'blocked',
+      steps: [
+        { title: '准备数据源', status: 'pending', blockedTaskTitles: ['渲染依赖状态'] },
+        { title: '渲染依赖状态', status: 'blocked', blockedByTitles: ['准备数据源'] },
+        { title: '验证解除阻塞', status: 'pending' },
+      ],
+    }));
+
+    expect(view.dependencySummary).toEqual({ waitingCount: 1, unlockingCount: 1 });
+    expect(view.visibleSteps.map((step) => ({
+      title: step.title,
+      blockedByTitles: step.blockedByTitles,
+      blockedTaskTitles: step.blockedTaskTitles,
+    }))).toEqual([
+      { title: '准备数据源', blockedByTitles: undefined, blockedTaskTitles: ['渲染依赖状态'] },
+      { title: '渲染依赖状态', blockedByTitles: ['准备数据源'], blockedTaskTitles: undefined },
+      { title: '验证解除阻塞', blockedByTitles: undefined, blockedTaskTitles: undefined },
+    ]);
   });
 
   it('does not promote file reads, commands, searches, or tool calls into visible tasks', () => {
     const view = deriveTaskRailView(makeTask({
       title: '给出推荐结论',
       steps: [
-        { title: '读取文件', status: 'done' },
-        { title: '运行命令', status: 'done' },
-        { title: '搜索信息', status: 'done' },
-        { title: '调用工具', status: 'done' },
+        { title: '读取文件', status: 'completed' },
+        { title: '运行命令', status: 'completed' },
+        { title: '搜索信息', status: 'completed' },
+        { title: '调用工具', status: 'completed' },
         { title: '给出推荐结论', status: 'in_progress' },
       ],
     }));
@@ -126,5 +160,23 @@ describe('deriveTaskRailView', () => {
     expect(view.mode).toBe('simple');
     expect(view.visibleSteps).toEqual([]);
     expect(view.total).toBe(1);
+  });
+
+  it('folds cancelled steps and removes them from progress total', () => {
+    const view = deriveTaskRailView(makeTask({
+      title: '调整计划',
+      status: 'in_progress',
+      steps: [
+        { title: '保留路径', status: 'completed' },
+        { title: '放弃旧路径', status: 'cancelled' },
+        { title: '继续验证', status: 'in_progress' },
+      ],
+    }));
+
+    expect(view.visibleSteps.map((step) => step.title)).toEqual(['保留路径', '放弃旧路径', '继续验证']);
+    expect(view.completedSteps).toEqual([]);
+    expect(view.completed).toBe(1);
+    expect(view.total).toBe(2);
+    expect(view.taskCount).toBe(3);
   });
 });

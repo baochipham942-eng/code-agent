@@ -6,6 +6,8 @@ const dbState = vi.hoisted(() => ({
     isReady: true,
     saveTodos: vi.fn(),
     getTodos: vi.fn(),
+    saveSessionTasks: vi.fn(),
+    getSessionTasks: vi.fn(),
   },
 }));
 
@@ -23,11 +25,14 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 }));
 
 import {
+  advanceTodoStatus,
   clearSessionTodos,
   getSessionTodos,
   parseTodos,
   setSessionTodos,
+  syncTodosToSessionTasks,
 } from '../../../src/main/agent/todoParser';
+import { clearTasks, updateTask } from '../../../src/main/services/planning/taskStore';
 
 describe('todoParser persistence', () => {
   beforeEach(() => {
@@ -35,6 +40,9 @@ describe('todoParser persistence', () => {
     dbState.db.saveTodos.mockReset();
     dbState.db.getTodos.mockReset();
     dbState.db.getTodos.mockReturnValue([]);
+    dbState.db.saveSessionTasks.mockReset();
+    dbState.db.getSessionTasks.mockReset();
+    dbState.db.getSessionTasks.mockReturnValue([]);
   });
 
   it('persists todos whenever session todos are set', () => {
@@ -60,6 +68,58 @@ describe('todoParser persistence', () => {
     expect(dbState.db.getTodos).toHaveBeenCalledWith('todo-session-hydrate');
     expect(dbState.db.saveTodos).not.toHaveBeenCalled();
   });
+
+  it('upserts parsed todos into SessionTask records for the task rail', () => {
+    clearTasks('todo-session-sync');
+    dbState.db.saveSessionTasks.mockClear();
+
+    const first = syncTodosToSessionTasks('todo-session-sync', [
+      { content: 'Read code', status: 'completed', activeForm: 'Reading code' },
+      { content: 'Patch UI', status: 'in_progress', activeForm: 'Patching UI' },
+    ]);
+
+    expect(first.created).toHaveLength(2);
+    expect(first.tasks.map((task) => task.status)).toEqual(['completed', 'in_progress']);
+    expect(first.tasks.map((task) => task.subject)).toEqual(['Read code', 'Patch UI']);
+
+    const second = syncTodosToSessionTasks('todo-session-sync', [
+      { content: 'Read code', status: 'pending', activeForm: 'Reading code' },
+      { content: 'Patch UI', status: 'completed', activeForm: 'Patching UI' },
+    ]);
+
+    expect(second.created).toHaveLength(0);
+    expect(second.updated).toHaveLength(1);
+    expect(second.tasks.map((task) => task.status)).toEqual(['completed', 'completed']);
+  });
+
+  it('does not resurrect cancelled SessionTask records from parsed todos', () => {
+    clearTasks('todo-session-cancelled');
+
+    const first = syncTodosToSessionTasks('todo-session-cancelled', [
+      { content: 'Drop old path', status: 'pending', activeForm: 'Dropping old path' },
+    ]);
+    expect(first.tasks[0].status).toBe('pending');
+
+    updateTask('todo-session-cancelled', first.tasks[0].id, { status: 'cancelled' });
+
+    const second = syncTodosToSessionTasks('todo-session-cancelled', [
+      { content: 'Drop old path', status: 'in_progress', activeForm: 'Dropping old path' },
+    ]);
+
+    expect(second.created).toHaveLength(0);
+    expect(second.tasks[0].status).toBe('cancelled');
+  });
+
+  it('does not promote a second todo while another todo is already in progress', () => {
+    const result = advanceTodoStatus([
+      { content: 'Read code', status: 'completed', activeForm: 'Reading code' },
+      { content: 'Patch UI', status: 'pending', activeForm: 'Patching UI' },
+      { content: 'Verify behavior', status: 'in_progress', activeForm: 'Verifying behavior' },
+    ]);
+
+    expect(result.updated).toBe(false);
+    expect(result.todos.map((todo) => todo.status)).toEqual(['completed', 'pending', 'in_progress']);
+  });
 });
 
 describe('todoParser extraction guard', () => {
@@ -82,5 +142,16 @@ describe('todoParser extraction guard', () => {
 
     expect(parsed).toHaveLength(2);
     expect(parsed?.[0].content).toBe('修复内部判断 fallback');
+  });
+
+  it('promotes checkbox lists when an explicit plan title is present', () => {
+    const parsed = parseTodos([
+      '## Plan: Stabilize task panel',
+      '- [ ] Load SessionTask records through IPC',
+      '- [ ] Render dependency updates',
+    ].join('\n'));
+
+    expect(parsed).toHaveLength(2);
+    expect(parsed?.[0].content).toBe('Load SessionTask records through IPC');
   });
 });

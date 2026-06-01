@@ -54,7 +54,7 @@ import {
 import { resolveModelConfig, getDefaultModelByProvider, getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { runDeepResearch, checkAndRunSemanticResearch } from './orchestrator/researchRunner';
 import { runAutoAgentMode } from './orchestrator/autoAgentRunner';
-import { setSessionTodos } from './todoParser';
+import { setSessionTodos, syncTodosToSessionTasks } from './todoParser';
 
 export type { AgentOrchestratorConfig } from './orchestrator/types';
 
@@ -846,7 +846,20 @@ export class AgentOrchestrator {
     if (goalContract && sessionId) {
       const goalSeedTodos = buildGoalSeedTodos(goalContract.goal);
       setSessionTodos(sessionId, goalSeedTodos);
+      const taskSync = syncTodosToSessionTasks(sessionId, goalSeedTodos);
       dagAwareOnEvent({ type: 'todo_update', data: goalSeedTodos });
+      dagAwareOnEvent({
+        type: 'task_update',
+        data: {
+          tasks: taskSync.tasks,
+          action: 'sync',
+          taskIds: [
+            ...taskSync.created.map((task) => task.id),
+            ...taskSync.updated.map((task) => task.id),
+          ],
+          source: 'goal_mode',
+        },
+      });
     }
 
     this.agentLoop = new AgentLoop({

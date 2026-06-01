@@ -63,4 +63,18 @@ describe('createStaticRouter', () => {
     expect(response.headers.get('content-type')).toContain('text/html');
     expect(body).toContain('window.__CODE_AGENT_TOKEN__="test-token"');
   });
+
+  it('injects the auth token when the built index has a formatted head tag', async () => {
+    fs.writeFileSync(
+      path.join(staticDir, 'index.html'),
+      '<!doctype html><html>\\n  <head data-vite="true">\\n  </head><body><div id="root"></div></body></html>',
+      'utf-8',
+    );
+
+    const response = await fetch(`${baseUrl}/`);
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('<head data-vite="true"><script>window.__CODE_AGENT_TOKEN__="test-token";</script>');
+  });
 });

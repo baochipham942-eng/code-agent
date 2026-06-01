@@ -5,9 +5,10 @@
 // 支持：markdown checkbox、编号列表格式
 // 规则：忽略代码块内的列表，只提升带明确任务意图的 checkbox 清单
 
-import type { TodoItem, TodoStatus } from '../../shared/contract';
+import type { SessionTask, TodoItem, TodoStatus } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
+import { createTask, listTasks, updateTask } from '../services/planning/taskStore';
 
 const logger = createLogger('TodoParser');
 
@@ -95,6 +96,9 @@ function stripCodeBlocks(content: string): string {
 }
 
 function hasExplicitTodoIntent(content: string): boolean {
+  if (extractPlanTitle(content) !== null) {
+    return true;
+  }
   return /(?:^|\n)\s*(?:#{1,6}\s*)?(?:todo(?:s)?|task list|execution plan|agent tasks|任务清单|执行计划|待办|行动项|工作计划)\s*[:：]?\s*(?:\n|$)/i
     .test(content);
 }
@@ -287,6 +291,80 @@ function isSameTask(a: string, b: string): boolean {
   return false;
 }
 
+function todoToTaskStatus(status: TodoStatus): SessionTask['status'] {
+  if (status === 'completed') return 'completed';
+  if (status === 'in_progress') return 'in_progress';
+  return 'pending';
+}
+
+function isTerminalSessionTaskStatus(status: SessionTask['status']): boolean {
+  return status === 'completed' || status === 'cancelled';
+}
+
+function shouldUpdateTaskFromTodo(task: SessionTask, todo: TodoItem): boolean {
+  const nextStatus = todoToTaskStatus(todo.status);
+  if (task.status !== nextStatus && !isTerminalSessionTaskStatus(task.status)) {
+    return true;
+  }
+  return task.subject !== todo.content || task.description !== todo.content || task.activeForm !== todo.activeForm;
+}
+
+export function syncTodosToSessionTasks(
+  sessionId: string,
+  todos: TodoItem[],
+): { tasks: SessionTask[]; created: SessionTask[]; updated: SessionTask[] } {
+  const existingTasks = listTasks(sessionId);
+  const matchedTaskIds = new Set<string>();
+  const created: SessionTask[] = [];
+  const updated: SessionTask[] = [];
+
+  for (const todo of todos) {
+    const task = existingTasks.find((candidate) => (
+      !matchedTaskIds.has(candidate.id)
+      && (isSameTask(candidate.subject, todo.content) || isSameTask(candidate.description, todo.content))
+    ));
+
+    if (!task) {
+      const createdTask = createTask(sessionId, {
+        subject: todo.content,
+        description: todo.content,
+        activeForm: todo.activeForm,
+        metadata: { source: 'todo_parser' },
+      });
+      const nextStatus = todoToTaskStatus(todo.status);
+      const finalTask = nextStatus === 'pending'
+        ? createdTask
+        : updateTask(sessionId, createdTask.id, { status: nextStatus }) ?? createdTask;
+      created.push(finalTask);
+      continue;
+    }
+
+    matchedTaskIds.add(task.id);
+    if (!shouldUpdateTaskFromTodo(task, todo)) {
+      continue;
+    }
+
+    const nextStatus = todoToTaskStatus(todo.status);
+    const status = isTerminalSessionTaskStatus(task.status) ? task.status : nextStatus;
+    const nextTask = updateTask(sessionId, task.id, {
+      subject: todo.content,
+      description: todo.content,
+      activeForm: todo.activeForm,
+      status,
+      metadata: { source: 'todo_parser' },
+    });
+    if (nextTask) {
+      updated.push(nextTask);
+    }
+  }
+
+  return {
+    tasks: listTasks(sessionId),
+    created,
+    updated,
+  };
+}
+
 // ============================================================================
 // 任务状态自动推进
 // ============================================================================
@@ -296,28 +374,22 @@ function isSameTask(a: string, b: string): boolean {
  * 当第 N-1 个任务完成时，第 N 个任务标记为 in_progress
  */
 export function advanceTodoStatus(todos: TodoItem[]): { updated: boolean; todos: TodoItem[] } {
-  let updated = false;
-  const result = todos.map((todo, index) => {
-    if (todo.status === 'pending' && index > 0) {
-      // 检查前一个任务是否已完成
-      const prevTodo = todos[index - 1];
-      if (prevTodo.status === 'completed') {
-        updated = true;
-        return { ...todo, status: 'in_progress' as TodoStatus };
-      }
-    }
-    // 第一个 pending 任务自动变为 in_progress（如果没有正在进行的任务）
-    if (todo.status === 'pending' && index === 0) {
-      const hasInProgress = todos.some(t => t.status === 'in_progress');
-      if (!hasInProgress) {
-        updated = true;
-        return { ...todo, status: 'in_progress' as TodoStatus };
-      }
-    }
-    return todo;
-  });
+  if (todos.some(t => t.status === 'in_progress')) {
+    return { updated: false, todos };
+  }
 
-  return { updated, todos: result };
+  const nextIndex = todos.findIndex((todo, index) => (
+    todo.status === 'pending'
+    && (index === 0 || todos[index - 1]?.status === 'completed')
+  ));
+  if (nextIndex < 0) return { updated: false, todos };
+
+  return {
+    updated: true,
+    todos: todos.map((todo, index) => (
+      index === nextIndex ? { ...todo, status: 'in_progress' as TodoStatus } : todo
+    )),
+  };
 }
 
 /**

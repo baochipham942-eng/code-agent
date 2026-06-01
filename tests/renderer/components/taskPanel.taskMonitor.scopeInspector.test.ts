@@ -12,6 +12,7 @@ const appState = {
 const sessionState = {
   currentSessionId: 'session-1',
   messages: [] as Array<any>,
+  sessionTasks: [] as Array<any>,
   sessionDesignBriefs: new Map<string, any>(),
 };
 
@@ -245,6 +246,8 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
         sectionReferences: '引用',
         skillsMcpEmpty: '没有技能',
         progressEmpty: '暂无任务计划',
+        taskProgressFallbackTitle: '任务进度',
+        taskDependencyWaiting: '等待 {tasks}',
         phaseThinking: '分析请求中',
         phaseGenerating: '生成回复中',
         phaseToolPending: '准备执行',
@@ -361,6 +364,7 @@ describe('TaskMonitor scope inspector slice', () => {
     appState.sessionTaskProgress = {};
     appState.processingSessionIds = new Set<string>();
     sessionState.messages = [];
+    sessionState.sessionTasks = [];
     handoffState.items = [];
     handoffState.load.mockClear();
     handoffState.updateStatus.mockClear();
@@ -469,6 +473,45 @@ describe('TaskMonitor scope inspector slice', () => {
     expect(html).not.toContain('工具活动');
     expect(html).not.toContain('文件读取活动');
     expect(html).not.toContain('2 次工具操作');
+  });
+
+  it('shows progress summary from SessionTask even without a plan title', () => {
+    sessionState.sessionTasks = [
+      {
+        id: 'task-1',
+        subject: '梳理数据链路',
+        description: '确认 SessionTask 数据源',
+        activeForm: '梳理数据链路',
+        status: 'completed',
+        priority: 'normal',
+        blocks: ['task-2'],
+        blockedBy: [],
+        metadata: {},
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: 'task-2',
+        subject: '渲染任务面板',
+        description: '展示任务进度',
+        activeForm: '渲染任务面板',
+        status: 'pending',
+        priority: 'normal',
+        blocks: [],
+        blockedBy: ['task-1'],
+        metadata: {},
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      React.createElement(TaskMonitor),
+    );
+
+    expect(html).toContain('1/2');
+    expect(html).toContain('50%');
+    expect(html).toContain('渲染任务面板');
   });
 
   it('hides runtime rail when there is no runtime content', () => {
@@ -654,7 +697,7 @@ describe('TaskMonitor scope inspector slice', () => {
     expect(html).not.toContain('文件读取活动');
   });
 
-  it('prioritizes active and pending plan items while folding completed items', () => {
+  it('renders plan items as an ordered checklist with completed items visible', () => {
     statusRailTodosState.items = [
       { status: 'completed', content: '已完成一', activeForm: '已完成一' },
       { status: 'completed', content: '已完成二', activeForm: '已完成二' },
@@ -681,12 +724,12 @@ describe('TaskMonitor scope inspector slice', () => {
       React.createElement(TaskMonitor),
     );
 
-    expect(html).toContain('4/10');
+    expect(html).toContain('已完成 4 个任务（共 10 个任务）');
+    expect(html).toContain('已完成一');
+    expect(html).toContain('已完成四');
     expect(html).toContain('正在改造任务卡展示');
     expect(html).toContain('补 helper 单测');
     expect(html).toContain('回读结果');
-    expect(html).toContain('已完成 4 项');
-    expect(html).not.toContain('已完成一');
     expect(html).not.toContain('0/1 steps');
   });
 

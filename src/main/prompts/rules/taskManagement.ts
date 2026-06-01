@@ -10,7 +10,7 @@ export const TASK_MANAGEMENT_RULES = applyOverride(
   `
 ## 任务动态管理
 
-使用 TaskManager 工具进行任务管理。
+优先使用 task_create/task_update/task_list/task_get 工具维护任务分解。复杂任务不要只在回复里写 checklist；右侧任务面板以这些工具写入的 SessionTask 为事实源。
 
 ### 何时使用任务管理
 
@@ -28,9 +28,29 @@ export const TASK_MANAGEMENT_RULES = applyOverride(
 ### 任务生命周期
 
 \`\`\`
-TaskManager(create) → TaskManager(update: in_progress) → TaskManager(update: completed)
-                                                     → TaskManager(update: deleted)  # 不再需要时
+task_create → task_update(in_progress) → task_update(completed)
+                                      → task_update(cancelled) # 主动放弃但保留可见记录
+                                      → task_update(deleted)   # 误建/不该存在，物理删除
 \`\`\`
+
+### 任务标题语义
+
+SessionTask 表示用户能理解的工作单元，不是工具调用日志。subject/activeForm 要写“正在推进的目标”或“要完成的结果”，不要写底层工具动作。
+
+**好的任务标题：**
+- 梳理验收口径
+- 接通 SessionTask 数据流
+- 修复任务面板状态聚合
+- 验证任务面板生命周期
+
+**不要这样写：**
+- 读取文件
+- 写入文件
+- 运行测试
+- 调用 API
+- 使用 Bash
+
+文件读写、命令执行、浏览器点击这类动作会进入工具活动/Trace，不要重复塞进 SessionTask。
 
 ### 用户意图识别（重要）
 
@@ -62,9 +82,9 @@ TaskManager(create) → TaskManager(update: in_progress) → TaskManager(update:
 "我理解您希望增加/修改/取消XXX任务"
 
 // 2. 更新任务列表
-TaskManager({ action: "create", subject: "新任务", description: "..." })
-// 或
-TaskManager({ action: "update", taskId: "X", status: "deleted" })
+task_create({ subject: "补齐任务面板生命周期验收", description: "验证拆分、执行、阻塞、取消和完成状态" })
+// 或：不再执行但仍应留痕
+task_update({ taskId: "X", status: "cancelled" })
 
 // 3. 继续执行
 "现在开始处理..."
@@ -74,10 +94,11 @@ TaskManager({ action: "update", taskId: "X", status: "deleted" })
 
 | 操作 | 使用场景 |
 |------|----------|
-| TaskManager(create) | 创建新任务 |
-| TaskManager(update: in_progress) | 开始执行任务前 |
-| TaskManager(update: completed) | 任务完成后 |
-| TaskManager(update: deleted) | 任务不再需要 |
+| task_create | 创建新任务 |
+| task_update(in_progress) | 开始执行任务前 |
+| task_update(completed) | 任务完成后 |
+| task_update(cancelled) | 任务主动放弃但仍需保留给用户看 |
+| task_update(deleted) | 误建或不该存在的任务 |
 
 ### 依赖关系
 
@@ -96,7 +117,8 @@ TaskManager({
 
 1. **即时响应**：识别到意图变化后立即更新任务列表
 2. **保持同步**：任务列表应反映当前实际工作状态
-3. **主动清理**：不再需要的任务应该删除，而非保留
-4. **透明沟通**：更新任务后简要告知用户
+3. **声明依赖**：后置任务等待前置任务时，用 addBlockedBy/addBlocks 表达依赖，不要只写在自然语言里
+4. **保留取消记录**：任务范围变化导致不做时用 cancelled；只有误建任务才 deleted
+5. **透明沟通**：更新任务后简要告知用户
 `,
 );

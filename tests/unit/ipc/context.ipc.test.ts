@@ -33,6 +33,7 @@ function makeAppService(
 ): AgentApplicationService {
   return {
     getMessages: async () => messages,
+    getSessionTasks: async () => [],
     getSerializedCompressionState: () => serializedCompressionState,
     getCurrentSessionId: () => sessionId,
     sendMessage: async () => {},
@@ -410,6 +411,7 @@ describe('buildContextViewFromSession()', () => {
 
     const appService: AgentApplicationService = {
       getMessages: async () => sessionMessages,
+      getSessionTasks: async () => [],
       getSerializedCompressionState: () => null,
       getCurrentSessionId: () => sessionId,
       sendMessage: async () => {},
@@ -491,6 +493,7 @@ describe('buildContextViewFromSession()', () => {
 
     const appService: AgentApplicationService = {
       getMessages: async () => sessionMessages,
+      getSessionTasks: async () => [],
       getSerializedCompressionState: () => null,
       getCurrentSessionId: () => fallbackSessionId,
       sendMessage: async () => {},
@@ -654,6 +657,7 @@ describe('buildContextViewFromSession()', () => {
 
     const appService: AgentApplicationService = {
       getMessages: async () => sessionMessages,
+      getSessionTasks: async () => [],
       getSerializedCompressionState: () => null,
       getCurrentSessionId: () => multiEventSessionId,
       sendMessage: async () => {},

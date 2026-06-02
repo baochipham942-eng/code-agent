@@ -16,8 +16,8 @@ import * as path from 'path';
 import { getUserConfigDir } from '../config/configPaths';
 import { TOOL_RESULT_SPILL } from '../../shared/constants';
 
-/** 落盘提示的标识前缀（同时用于防止重复落盘） */
-export const SPILL_NOTICE_MARKER = '[Full output saved to:';
+/** 落盘提示的标识前缀（同时用于防止重复落盘 + 压缩层豁免），常量定义见 TOOL_RESULT_SPILL */
+export const SPILL_NOTICE_MARKER: string = TOOL_RESULT_SPILL.NOTICE_MARKER;
 
 export interface SpillOptions {
   /** 完整输出内容 */

@@ -66,6 +66,12 @@ export const TOOL_RESULT_SPILL = {
   SHARED_SESSION: 'shared',
   /** 单文件最大落盘字节数（10MB，防止异常超大输出写爆磁盘） */
   MAX_SPILL_BYTES: 10 * 1024 * 1024,
+  /**
+   * 落盘提示的标识前缀。
+   * 同时用于：防重复落盘（toolResultSpill）+ 压缩豁免（tokenOptimizer 提取后拼回，
+   * 否则 compressToolResult 的尾部预算 ~30 token 会把带长路径的提示行整体吞掉）。
+   */
+  NOTICE_MARKER: '[Full output saved to:',
 } as const;
 
 /** Codex 会话挖掘配置 */

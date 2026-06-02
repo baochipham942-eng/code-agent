@@ -54,7 +54,6 @@ import {
   type ProviderConfigMap,
   type ProviderDisplayInfo,
 } from './ModelSettings.helpers';
-import { AgentEngineModelCatalogSection } from './AgentEngineModelCatalogSection';
 import { ProviderListPanel } from './ProviderListPanel';
 import {
   ProviderAdvancedSection,
@@ -945,9 +944,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           )}
         </div>
       </div>
-
-      {/* Agent 引擎目录（Codex / Claude CLI 模型偏好）— 独立于 API Provider 配置 */}
-      <AgentEngineModelCatalogSection />
 
       <ProviderDoctorDialog
         isOpen={isDoctorOpen}

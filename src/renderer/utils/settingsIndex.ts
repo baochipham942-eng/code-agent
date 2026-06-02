@@ -53,6 +53,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'model', tabLabel: '模型', label: '模型选择', keywords: ['model', '模型', '选择', '切换'] },
   { tab: 'model', tabLabel: '模型', label: '温度', keywords: ['temperature', '温度', '创造性', '精确'] },
   { tab: 'model', tabLabel: '模型', label: '测试连接', keywords: ['test', 'connection', '测试', '连接'] },
+  { tab: 'model', tabLabel: '模型', label: '中转站', keywords: ['relay', '中转', '自定义', 'custom', 'new-api', 'one-api', '接口地址', 'base url'] },
+
+  // Agent Engine
+  { tab: 'agentEngine', tabLabel: 'Agent 引擎', label: 'Codex CLI', keywords: ['codex', 'cli', '引擎', 'engine', '外部引擎'] },
+  { tab: 'agentEngine', tabLabel: 'Agent 引擎', label: 'Claude Code', keywords: ['claude code', 'cli', '引擎', 'engine', '外部引擎'] },
+  { tab: 'agentEngine', tabLabel: 'Agent 引擎', label: '引擎默认模型', keywords: ['engine', 'model', '引擎模型', '默认模型'] },
 
   // Appearance
   { tab: 'appearance', tabLabel: '外观', label: '主题', keywords: ['theme', '主题', '深色', '浅色', 'dark', 'light', '夜间'] },

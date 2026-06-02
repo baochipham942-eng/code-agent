@@ -47,6 +47,20 @@ test('模型设置页渲染 Master-Detail 布局', async ({ page }) => {
   await page.screenshot({ path: 'screenshots/model-settings-master-detail.png', fullPage: false });
 });
 
+test('Agent 引擎拆为独立 tab，模型页不再包含引擎目录', async ({ page }) => {
+  const dialog = await openModelSettings(page);
+
+  // 模型页里不再有 Agent Engine 模型目录
+  await expect(dialog.getByText('接口地址（Base URL）').first()).toBeVisible({ timeout: 10_000 });
+  await expect(dialog.getByText('Agent Engine 模型目录')).not.toBeVisible();
+
+  // 独立的 Agent 引擎 tab 存在且能渲染引擎目录
+  await dialog.getByRole('button', { name: 'Agent 引擎', exact: true }).click();
+  await expect(dialog.getByText('Agent Engine 模型目录')).toBeVisible({ timeout: 10_000 });
+
+  await page.screenshot({ path: 'screenshots/agent-engine-settings-tab.png', fullPage: false });
+});
+
 test('「新增 / 中转站」切换到新增表单', async ({ page }) => {
   const dialog = await openModelSettings(page);
 

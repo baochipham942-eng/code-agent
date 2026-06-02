@@ -78,6 +78,7 @@ describe('SettingsModal screen memory tab visibility', () => {
       'general',
       'conversation',
       'model',
+      'agentEngine',
       'appearance',
       'soul',
     ]);

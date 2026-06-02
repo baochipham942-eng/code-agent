@@ -30,6 +30,7 @@ import {
   PackagePlus,
   Camera,
   ShieldCheck,
+  Terminal,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -81,6 +82,7 @@ import { WorkspaceSettings } from './tabs/WorkspaceSettings';
 import { AutomationSettings } from './tabs/AutomationSettings';
 import { AppshotsSettings } from './tabs/AppshotsSettings';
 import { ModelSettings } from './tabs/ModelSettings';
+import { AgentEngineSettings } from './tabs/AgentEngineSettings';
 import { AppearanceSettings } from './tabs/AppearanceSettings';
 import { SoulSettings } from './tabs/SoulSettings';
 import { DataSettings } from './tabs/DataSettings';
@@ -133,6 +135,7 @@ export function buildSettingsTabGroups({
     { id: 'general', label: '权限与安全', icon: <Shield className="w-4 h-4" /> },
     { id: 'conversation', label: '对话', icon: <GitBranch className="w-4 h-4" /> },
     { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
+    { id: 'agentEngine', label: 'Agent 引擎', icon: <Terminal className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'soul', label: '人格', icon: <Fingerprint className="w-4 h-4" /> },
     { id: 'workspace', label: '工作区', icon: <FolderOpen className="w-4 h-4" /> },
@@ -384,6 +387,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'model' && (
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}
+            {activeTab === 'agentEngine' && <AgentEngineSettings />}
             {activeTab === 'appearance' && <AppearanceSettings />}
             {activeTab === 'soul' && <SoulSettings />}
             {activeTab === 'cache' && <DataSettings />}

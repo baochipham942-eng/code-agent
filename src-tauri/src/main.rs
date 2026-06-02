@@ -420,14 +420,22 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 /// 启动失败时弹原生错误框告知用户，代替裸 panic（SIGABRT 闪退无提示）。
-fn show_startup_failure(app: &tauri::AppHandle, error: &str) {
-    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+///
+/// 注意：此函数在 Tauri setup hook 阶段调用，此时 NSApplication 事件循环尚未
+/// 启动，tauri-plugin-dialog 的 blocking_show 无法呈现 modal（会静默失败）。
+/// 改用 osascript 拉起独立的原生 alert 进程，不依赖宿主事件循环，确保用户
+/// 一定能看到提示而不是无声闪退。
+fn show_startup_failure(error: &str) {
     eprintln!("Startup failure: {error}");
-    app.dialog()
-        .message(error)
-        .title("Agent Neo 启动失败")
-        .kind(MessageDialogKind::Error)
-        .blocking_show();
+    // AppleScript 字符串转义：反斜杠、双引号、换行
+    let safe = error
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', " ");
+    let script = format!(
+        "display alert \"Agent Neo 启动失败\" message \"{safe}\" as critical"
+    );
+    let _ = Command::new("osascript").arg("-e").arg(&script).status();
 }
 
 fn cleanup_server(app: &tauri::AppHandle) {
@@ -1221,7 +1229,7 @@ fn main() {
                     Ok(child) => app.state::<AppState>().store_child(child),
                     Err(error) => {
                         // 不走 panic（SIGABRT 闪退无提示）：弹错误框告知用户后干净退出
-                        show_startup_failure(&app.handle(), &error);
+                        show_startup_failure(&error);
                         std::process::exit(1);
                     }
                 }

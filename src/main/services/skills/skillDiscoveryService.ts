@@ -8,6 +8,7 @@ import type { ParsedSkill, SkillSource } from '../../../shared/contract/agentSki
 import { parseSkillMetadataOnly, hasSkillMd } from './skillParser';
 import { bridgeCloudSkill } from './skillBridge';
 import { getBuiltinSkills } from './builtinSkills';
+import { getSkillRepositoryService } from './skillRepositoryService';
 import { getCloudConfigService } from '../cloud';
 import { createLogger } from '../infra/logger';
 import { getToolSearchService } from '../toolSearch';
@@ -166,6 +167,13 @@ class SkillDiscoveryService {
       skills: Array.from(this.skills.keys()),
     });
 
+    // 加载全局禁用配置（disabledSkills 黑名单），失败时 fail-open 全部可用
+    try {
+      await getSkillRepositoryService().initialize();
+    } catch (error) {
+      logger.warn('Failed to initialize skill repository service for enabled gating', { error });
+    }
+
     // 注册 Skills 到 ToolSearchService，支持通过 tool_search 发现
     this.registerSkillsToToolSearch();
   }
@@ -188,23 +196,41 @@ class SkillDiscoveryService {
   }
 
   /**
+   * 检查 skill 是否被全局启用（disabledSkills 黑名单语义）
+   * 仓库服务异常时 fail-open，不阻断 skill 可用性
+   */
+  isSkillEnabled(skillName: string): boolean {
+    try {
+      return getSkillRepositoryService().isSkillEnabled(skillName);
+    } catch {
+      return true;
+    }
+  }
+
+  /**
    * 将发现的 Skills 注册到 ToolSearchService
    * 使模型可以通过 tool_search 发现可用的 skills
+   * 被全局禁用的 skill 不注册（模型不可见）
+   *
+   * 启用状态变更后可再次调用以同步注册表
    */
-  private registerSkillsToToolSearch(): void {
+  registerSkillsToToolSearch(): void {
     try {
       const toolSearchService = getToolSearchService();
       toolSearchService.clearSkills(); // 清除旧的 skills
 
-      const skillsToRegister = Array.from(this.skills.values()).map(skill => ({
-        name: skill.name,
-        description: skill.description,
-        aliases: skill.aliases,
-      }));
+      const skillsToRegister = Array.from(this.skills.values())
+        .filter((skill) => this.isSkillEnabled(skill.name))
+        .map(skill => ({
+          name: skill.name,
+          description: skill.description,
+          aliases: skill.aliases,
+        }));
 
       toolSearchService.registerSkills(skillsToRegister);
       logger.debug('Registered skills to ToolSearchService', {
         count: skillsToRegister.length,
+        total: this.skills.size,
       });
     } catch (error) {
       logger.warn('Failed to register skills to ToolSearchService', { error });
@@ -383,17 +409,22 @@ class SkillDiscoveryService {
 
   /**
    * 获取可供模型上下文使用的 Skills
-   * 排除 disableModelInvocation = true 的 Skills
+   * 排除 disableModelInvocation = true 和被全局禁用的 Skills
    */
   getSkillsForContext(): ParsedSkill[] {
-    return this.getAllSkills().filter((s) => !s.disableModelInvocation);
+    return this.getAllSkills().filter(
+      (s) => !s.disableModelInvocation && this.isSkillEnabled(s.name)
+    );
   }
 
   /**
    * 获取用户可通过 /name 调用的 Skills
+   * 排除被全局禁用的 Skills
    */
   getUserInvocableSkills(): ParsedSkill[] {
-    return this.getAllSkills().filter((s) => s.userInvocable);
+    return this.getAllSkills().filter(
+      (s) => s.userInvocable && this.isSkillEnabled(s.name)
+    );
   }
 
   /**

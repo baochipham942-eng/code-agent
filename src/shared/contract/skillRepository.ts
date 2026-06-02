@@ -136,8 +136,13 @@ export interface SessionSkillMount {
 export interface SkillConfig {
   /** 已添加的仓库列表 */
   repositories: SkillRepository[];
-  /** 全局启用的 skill 名称列表 */
+  /**
+   * 全局启用的 skill 名称列表
+   * @deprecated 已改用 disabledSkills 黑名单语义（默认全开），保留此字段仅为兼容旧配置文件
+   */
   enabledSkills: string[];
+  /** 全局禁用的 skill 名称列表（黑名单：不在列表中的 skill 默认启用） */
+  disabledSkills: string[];
   /** 自动下载的仓库 ID 列表 */
   autoDownload: string[];
 }

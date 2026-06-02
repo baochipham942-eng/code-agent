@@ -6,6 +6,7 @@ const skills: ParsedSkill[] = [];
 vi.mock('../../../../src/main/services/skills/skillDiscoveryService', () => ({
   getSkillDiscoveryService: () => ({
     getAllSkills: () => skills,
+    getUserInvocableSkills: () => skills.filter((skill) => skill.userInvocable),
     getSkill: (name: string) => skills.find((skill) => skill.name === name),
   }),
 }));

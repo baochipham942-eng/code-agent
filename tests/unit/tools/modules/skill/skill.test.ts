@@ -19,6 +19,7 @@ const getSkillMock = vi.fn<(name: string) => ParsedSkill | undefined>();
 const getAllSkillsMock = vi.fn<() => ParsedSkill[]>();
 const getSkillsForContextMock = vi.fn<() => ParsedSkill[]>();
 const getWorkingDirectoryMock = vi.fn<() => string>(() => '/test/wd');
+const isSkillEnabledMock = vi.fn<(name: string) => boolean>(() => true);
 
 let registryAvailable = true;
 
@@ -31,6 +32,7 @@ vi.mock('../../../../../src/main/services/skills', () => ({
           getAllSkills: getAllSkillsMock,
           getSkillsForContext: getSkillsForContextMock,
           getWorkingDirectory: getWorkingDirectoryMock,
+          isSkillEnabled: isSkillEnabledMock,
           isInitialized: () => true,
         }
       : undefined,
@@ -131,6 +133,8 @@ beforeEach(() => {
   getSkillsForContextMock.mockReturnValue([]);
   getWorkingDirectoryMock.mockReset();
   getWorkingDirectoryMock.mockReturnValue('/test/wd');
+  isSkillEnabledMock.mockReset();
+  isSkillEnabledMock.mockReturnValue(true);
   loadSkillContentMock.mockReset();
   loadSkillContentMock.mockImplementation(async () => {});
   recordSkillUsageMock.mockReset();
@@ -225,6 +229,32 @@ describe('skillModule (native)', () => {
       if (!result.ok) {
         expect(result.code).toBe('WORKBENCH_SCOPE_DENIED');
         expect(result.error).toContain('blocked');
+      }
+    });
+
+    it('returns SKILL_DISABLED when skill is globally disabled', async () => {
+      getSkillMock.mockReturnValue(makeSkill({ name: 'muted' }));
+      isSkillEnabledMock.mockImplementation((name) => name !== 'muted');
+      const result = await run({ command: 'muted' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('SKILL_DISABLED');
+        expect(result.error).toContain('muted');
+      }
+    });
+
+    it('excludes disabled skills from the available list in unknown-skill error', async () => {
+      getSkillMock.mockReturnValue(undefined);
+      getAllSkillsMock.mockReturnValue([
+        makeSkill({ name: 'visible' }),
+        makeSkill({ name: 'hidden' }),
+      ]);
+      isSkillEnabledMock.mockImplementation((name) => name !== 'hidden');
+      const result = await run({ command: 'missing' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain('visible');
+        expect(result.error).not.toContain('hidden');
       }
     });
   });

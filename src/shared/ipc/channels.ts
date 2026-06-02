@@ -76,6 +76,17 @@ export const SKILL_CHANNELS = {
   COMBO_SAVE: 'skill:combo:save',
   /** 获取录制数据 */
   COMBO_GET_RECORDING: 'skill:combo:get-recording',
+
+  // ------------------------------------------------------------------------
+  // Skill 草稿确认队列（GAP-005 半自动蒸馏，严禁自动入库）
+  // ------------------------------------------------------------------------
+
+  /** 列出待确认草稿 */
+  DRAFT_LIST: 'skill:draft:list',
+  /** 确认草稿（移入 skills 目录） */
+  DRAFT_CONFIRM: 'skill:draft:confirm',
+  /** 拒绝草稿（删除并记入 rejected ledger，不再重复打扰） */
+  DRAFT_REJECT: 'skill:draft:reject',
 } as const;
 
 /**

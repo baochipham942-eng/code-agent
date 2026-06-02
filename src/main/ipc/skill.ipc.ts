@@ -13,6 +13,7 @@ import type { SkillRepository } from '../../shared/contract/skillRepository';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
 import { getComboRecorder } from '../services/skills/comboRecorder';
+import { listSkillDrafts, confirmSkillDraft, rejectSkillDraft } from '../services/skills/skillDraftQueue';
 
 const logger = createLogger('SkillIPC');
 
@@ -589,6 +590,46 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
       };
     } catch (error) {
       logger.error('Failed to get combo recording', { sessionId, error });
+      throw error;
+    }
+  });
+
+  // ------------------------------------------------------------------------
+  // Skill 草稿确认队列（GAP-005 半自动蒸馏，严禁自动入库）
+  // ------------------------------------------------------------------------
+
+  ipcMain.handle(SKILL_CHANNELS.DRAFT_LIST, async () => {
+    try {
+      return await listSkillDrafts();
+    } catch (error) {
+      logger.error('Failed to list skill drafts', { error });
+      throw error;
+    }
+  });
+
+  ipcMain.handle(
+    SKILL_CHANNELS.DRAFT_CONFIRM,
+    async (_, draftId: string, workingDirectory?: string) => {
+      try {
+        const result = await confirmSkillDraft(draftId, workingDirectory);
+        if (result.success) {
+          // 入库后重扫 skill discovery，让新 skill 立即可用
+          const discoveryService = getSkillDiscoveryService();
+          await discoveryService.initialize(workingDirectory || getSkillIpcWorkingDirectory());
+        }
+        return result;
+      } catch (error) {
+        logger.error('Failed to confirm skill draft', { draftId, error });
+        throw error;
+      }
+    }
+  );
+
+  ipcMain.handle(SKILL_CHANNELS.DRAFT_REJECT, async (_, draftId: string) => {
+    try {
+      return await rejectSkillDraft(draftId);
+    } catch (error) {
+      logger.error('Failed to reject skill draft', { draftId, error });
       throw error;
     }
   });

@@ -864,6 +864,8 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
             entry.role === 'tool' &&
             (entry as ContextTranscriptEntry).preserveObservation === true,
           interventions: transcriptInterventions,
+          // GAP-009: 超预算工具结果落盘到 session 临时目录
+          spillSessionId: ctx.runtime.sessionId,
         },
       );
 

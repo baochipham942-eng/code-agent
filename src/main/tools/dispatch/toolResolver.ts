@@ -89,7 +89,11 @@ class ProtocolToolResolver implements ToolResolver {
           mcpToolName.serverName,
           mcpToolName.toolName,
           args,
-          { abortSignal: ctx.abortSignal },
+          {
+            abortSignal: ctx.abortSignal,
+            // GAP-009: 超阈值输出落盘到 session 临时目录
+            sessionId: (ctx as { sessionId?: string }).sessionId,
+          },
         );
         return {
           success: result.success,

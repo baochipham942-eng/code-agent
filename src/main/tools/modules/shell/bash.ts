@@ -40,6 +40,7 @@ import { extractBashFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { createSanitizedEnv } from '../../../utils/sanitizeEnv';
 import { truncateMiddle } from '../../../utils/truncate';
+import { spillToolResult, buildSpillNotice } from '../../../utils/toolResultSpill';
 import { checkCommandPolicy } from './commandPolicy';
 import { rewriteBashCommand } from './rtkRewriter';
 import { getPermissionModeManager } from '../../../permissions/modes';
@@ -113,15 +114,26 @@ function detectHeredocTruncation(command: string): { ok: true } | { ok: false; r
   return { ok: true };
 }
 
-/** 添加 guidance 文本的输出截断 */
-function truncateOutput(output: string): string {
+/** 添加 guidance 文本的输出截断；超阈值时先落盘完整输出（GAP-009） */
+function truncateOutput(
+  output: string,
+  spillCtx?: { sessionId?: string; toolCallId?: string },
+): string {
   if (output.length <= BASH.MAX_OUTPUT_LENGTH) return output;
   const originalLength = output.length;
+  // 截断前落盘完整输出，模型可用 Read/Grep 回查而不必重跑命令
+  const spillPath = spillToolResult({
+    content: output,
+    toolName: schema.name,
+    sessionId: spillCtx?.sessionId,
+    toolCallId: spillCtx?.toolCallId,
+  });
   const truncated = truncateMiddle(output, BASH.MAX_OUTPUT_LENGTH);
   return (
     truncated +
     `\n\n[Guidance: Output was ${originalLength} chars, truncated to ${BASH.MAX_OUTPUT_LENGTH}. ` +
-    `Use Read tool with offset/limit to read specific sections, or use Edit tool to make targeted changes without reading the entire file.]`
+    `Use Read tool with offset/limit to read specific sections, or use Edit tool to make targeted changes without reading the entire file.]` +
+    (spillPath ? buildSpillNotice(spillPath) : '')
   );
 }
 
@@ -507,7 +519,10 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           };
         }
 
-        const outputText = truncateOutput(output.output);
+        const outputText = truncateOutput(output.output, {
+          sessionId: ctx.sessionId,
+          toolCallId: ctx.currentToolCallId,
+        });
         const meta: BashMeta = {
           sessionId: result.sessionId,
           exitCode: output.exitCode,
@@ -683,7 +698,10 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       if (stderr) {
         output += `\n[stderr]: ${stderr}`;
       }
-      output = truncateOutput(output);
+      output = truncateOutput(output, {
+        sessionId: ctx.sessionId,
+        toolCallId: ctx.currentToolCallId,
+      });
 
       const dynamicDesc = await descriptionPromise;
 
@@ -731,7 +749,9 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       if (errObj.stderr) {
         errorOutput += (errorOutput ? '\n' : '') + `[stderr]: ${String(errObj.stderr)}`;
       }
-      errorOutput = errorOutput ? truncateOutput(errorOutput) : errorOutput;
+      errorOutput = errorOutput
+        ? truncateOutput(errorOutput, { sessionId: ctx.sessionId, toolCallId: ctx.currentToolCallId })
+        : errorOutput;
 
       // 模型可见通道是 result.error（messageProcessor 取 output||error），meta.output 不会被读到。
       // 因此把命令输出折进 error，保证非零退出/超时时模型能看到 traceback / stderr，

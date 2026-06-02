@@ -9,10 +9,17 @@
 
 import { CompressionState } from '../compressionState';
 import { estimateTokens } from '../tokenEstimator';
+import { spillToolResult, buildSpillNotice } from '../../utils/toolResultSpill';
 
 export interface ToolResultBudgetConfig {
   maxTokensPerResult: number; // default: 2000
   protectedMessageIds?: Set<string>;
+  /**
+   * GAP-009: 提供 sessionId 时，超预算的工具结果先落盘再截断，
+   * 截断文本尾部附加路径提示，模型可用 Read/Grep 回查完整输出。
+   * 不提供则保持纯截断（兼容旧行为 / 测试）。
+   */
+  spillSessionId?: string;
 }
 
 const DEFAULT_CONFIG: Pick<ToolResultBudgetConfig, 'maxTokensPerResult'> = {
@@ -201,11 +208,21 @@ export function applyToolResultBudget(
     const originalTokens = estimateTokens(msg.content);
     if (originalTokens <= cfg.maxTokensPerResult) continue;
 
+    // GAP-009: 截断前落盘完整输出（已带落盘提示的内容会被 spillToolResult 跳过，防止二次落盘）
+    const spillPath = cfg.spillSessionId !== undefined
+      ? spillToolResult({
+          content: msg.content,
+          toolName: 'tool-result',
+          sessionId: cfg.spillSessionId,
+          toolCallId: msg.toolCallId || msg.id,
+        })
+      : null;
+
     const truncated = truncateHeadTail(msg.content, cfg.maxTokensPerResult);
     const truncatedTokens = estimateTokens(truncated);
 
     // Mutate the message content
-    msg.content = truncated;
+    msg.content = spillPath ? truncated + buildSpillNotice(spillPath) : truncated;
 
     // Record the commit
     state.applyCommit({

@@ -71,6 +71,12 @@ export interface ParsedSkill {
   // === 来源追踪 ===
   source: SkillSource;
 
+  /**
+   * 全局启用状态（disabledSkills 黑名单语义，默认 true）
+   * 仅在 IPC 返回给前端时填充，发现阶段不写入
+   */
+  enabled?: boolean;
+
   // === 依赖信息 ===
   bins?: string[];
   envVars?: string[];

@@ -262,12 +262,22 @@ export async function executeSkill(
   if (!skill) {
     const available = discoveryService
       .getAllSkills()
+      .filter((s) => discoveryService.isSkillEnabled(s.name))
       .map((s) => s.name)
       .join(', ');
     return {
       ok: false,
       error: `Unknown skill: ${command}. Available skills: ${available || 'none'}`,
       code: 'INVALID_ARGS',
+    };
+  }
+
+  // 全局禁用闸控：被禁用的 skill 对模型和用户都不可调用
+  if (!discoveryService.isSkillEnabled(command)) {
+    return {
+      ok: false,
+      error: `Skill "${command}" 已在设置中被禁用。可在 设置 → Skills 中重新启用。`,
+      code: 'SKILL_DISABLED',
     };
   }
 

@@ -165,7 +165,8 @@ class SessionSkillService {
     const mounted = this.getMountedSkills(sessionId);
     const mountedNames = new Set(mounted.map((m) => m.skillName));
     const discoveryService = getSkillDiscoveryService();
-    const allSkills = discoveryService.getAllSkills().filter((skill) => skill.userInvocable);
+    // getUserInvocableSkills 已过滤被全局禁用的 skill
+    const allSkills = discoveryService.getUserInvocableSkills();
 
     if (!input.trim()) {
       return [];

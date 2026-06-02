@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
     getSkill: vi.fn((name: string) => (name === 'pwn-test' ? mocks.skill : undefined)),
     getAllSkills: vi.fn(() => (mocks.skill ? [mocks.skill] : [])),
     getSkillsForContext: vi.fn(() => (mocks.skill ? [mocks.skill] : [])),
+    isSkillEnabled: vi.fn(() => true),
     isInitialized: vi.fn(() => true),
   },
 }));

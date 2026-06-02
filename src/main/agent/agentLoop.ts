@@ -209,6 +209,7 @@ export class AgentLoop {
       userHooksInitialized: false,
       stopHookRetryCount: 0,
       maxStopHookRetries: 3,
+      userStopHookBlockCount: 0,
 
       // Tool execution
       toolCallRetryCount: 0,

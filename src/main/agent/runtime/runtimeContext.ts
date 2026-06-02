@@ -96,6 +96,8 @@ export interface RuntimeContext {
   userHooksInitialized: boolean;
   stopHookRetryCount: number;
   maxStopHookRetries: number;
+  /** GAP-006: 用户 Stop hook block 触发的重试计数（独立于 planning stop hook 计数） */
+  userStopHookBlockCount: number;
   userHooks?: unknown;
 
   // --- Tool execution ---

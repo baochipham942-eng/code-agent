@@ -115,6 +115,12 @@ export const GOAL_MODE = {
   REVIEW_OUTPUT_MAX_CHARS: 4_000,
 } as const;
 
+/** Stop hook 完成闸配置（GAP-006） */
+export const STOP_HOOK = {
+  /** 用户 Stop hook block 后允许的最大重试（继续干活）次数，超过即放行停止，防 hook 无限拦截死循环 */
+  USER_MAX_RETRIES: 1,
+} as const;
+
 /** 规划配置 */
 export const PLANNING = {
   /** 最大 TODO 数量 */

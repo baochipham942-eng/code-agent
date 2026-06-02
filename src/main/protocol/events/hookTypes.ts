@@ -120,6 +120,8 @@ export interface StopContext extends HookEventContext {
   response?: string;
   /** For SubagentStop: the subagent type */
   subagentType?: string;
+  /** GAP-006: true 表示本次 Stop 是上一次 stop-hook block 后的重试（hook 可据此避免无限拦截） */
+  stopHookActive?: boolean;
 }
 
 /**
@@ -304,6 +306,8 @@ export const HOOK_ENV_VARS = {
   WORKING_DIR: 'HOOK_WORKING_DIR',
   /** User prompt (for UserPromptSubmit) */
   USER_PROMPT: 'HOOK_USER_PROMPT',
+  /** GAP-006: "true" when Stop event fires after a previous stop-hook block */
+  STOP_HOOK_ACTIVE: 'HOOK_STOP_HOOK_ACTIVE',
 } as const;
 
 /**
@@ -382,6 +386,11 @@ export function createHookEnvVars(context: AnyHookContext): Record<string, strin
   if (context.event === 'StopFailure' && 'phase' in context) {
     env[HOOK_ENV_VARS.ERROR_MESSAGE] = String((context as StopFailureContext).error);
     env['HOOK_PHASE'] = String((context as StopFailureContext).phase);
+  }
+
+  // Stop / SubagentStop context (GAP-006: expose stop_hook_active to scripts)
+  if ((context.event === 'Stop' || context.event === 'SubagentStop') && 'stopHookActive' in context) {
+    env[HOOK_ENV_VARS.STOP_HOOK_ACTIVE] = String((context as StopContext).stopHookActive === true);
   }
 
   return env;

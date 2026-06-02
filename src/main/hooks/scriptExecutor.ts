@@ -175,10 +175,22 @@ function parseScriptOutput(stdout: string, duration: number): HookExecutionResul
   if (output.startsWith('{')) {
     const json = parseJsonRecord(output);
     if (json) {
+      // GAP-014: Claude Code 兼容协议 —— decision/reason + (hookSpecificOutput.)additionalContext
+      // 让用户可以直接复用 CC 的 hook 脚本形成自修复闭环
+      const additionalContext = extractAdditionalContext(json);
+      if (json.decision === 'block') {
+        return {
+          action: 'block',
+          message: readString(json, 'reason') || additionalContext || 'Blocked by hook script',
+          duration,
+        };
+      }
+
       const action = validateAction(json.action);
+      const message = readString(json, 'message') ?? additionalContext;
       return {
         action,
-        message: readString(json, 'message'),
+        message,
         modifiedInput: readString(json, 'modifiedInput'),
         duration,
       };
@@ -193,6 +205,20 @@ function parseScriptOutput(stdout: string, duration: number): HookExecutionResul
       : output,
     duration,
   };
+}
+
+/**
+ * GAP-014: 提取 additionalContext（支持顶层字段和 CC 的 hookSpecificOutput 嵌套格式）
+ */
+function extractAdditionalContext(json: Record<string, unknown>): string | undefined {
+  const topLevel = readString(json, 'additionalContext');
+  if (topLevel) return topLevel;
+
+  const hookSpecific = json.hookSpecificOutput;
+  if (isRecord(hookSpecific)) {
+    return readString(hookSpecific, 'additionalContext');
+  }
+  return undefined;
 }
 
 /**

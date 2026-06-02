@@ -248,7 +248,8 @@ export class HookManager {
    */
   async triggerStop(
     response: string | undefined,
-    sessionId: string
+    sessionId: string,
+    stopHookActive = false
   ): Promise<HookTriggerResult> {
     const context: StopContext = {
       event: 'Stop',
@@ -256,6 +257,7 @@ export class HookManager {
       timestamp: Date.now(),
       workingDirectory: this.config.workingDirectory,
       response,
+      stopHookActive,
     };
 
     return this.triggerEventHooks('Stop', context);

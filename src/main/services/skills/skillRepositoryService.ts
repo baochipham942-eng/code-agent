@@ -25,7 +25,6 @@ import { parseSkillMd, hasSkillMd } from './skillParser';
 import {
   RECOMMENDED_REPOSITORIES,
   getDefaultAutoDownloadRepos,
-  getDefaultEnabledSkills,
   isRecommendedSkillAutoDownloadAllowed,
 } from './skillRepositories';
 import { createLogger } from '../infra/logger';
@@ -60,6 +59,7 @@ class SkillRepositoryService implements Disposable {
     this.config = {
       repositories: [],
       enabledSkills: [],
+      disabledSkills: [],
       autoDownload: getDefaultAutoDownloadRepos(),
     };
   }
@@ -182,13 +182,7 @@ class SkillRepositoryService implements Disposable {
         this.config.repositories.push(repo);
       }
 
-      // 启用默认 Skills
-      const defaultSkills = getDefaultEnabledSkills(repo.id);
-      for (const skillName of defaultSkills) {
-        if (!this.config.enabledSkills.includes(skillName)) {
-          this.config.enabledSkills.push(skillName);
-        }
-      }
+      // 黑名单语义下新安装的 skills 默认全部启用，无需额外写入
 
       await this.saveConfig();
 
@@ -316,9 +310,9 @@ class SkillRepositoryService implements Disposable {
       // 更新配置
       this.config.repositories = this.config.repositories.filter((r) => r.id !== repoId);
 
-      // 移除该库中所有 skills 的启用状态
+      // 清理该库中所有 skills 的禁用记录
       const skillNames = library.skills.map((s) => s.name);
-      this.config.enabledSkills = this.config.enabledSkills.filter(
+      this.config.disabledSkills = this.config.disabledSkills.filter(
         (s) => !skillNames.includes(s)
       );
 
@@ -426,57 +420,43 @@ class SkillRepositoryService implements Disposable {
   }
 
   // ==========================================================================
-  // Skill Enable/Disable
+  // Skill Enable/Disable（黑名单语义：默认启用，禁用进 disabledSkills）
   // ==========================================================================
 
   /**
-   * 启用 skill
+   * 启用 skill（从黑名单移除）
    */
   enableSkill(skillName: string): void {
-    if (!this.config.enabledSkills.includes(skillName)) {
-      this.config.enabledSkills.push(skillName);
+    if (this.config.disabledSkills.includes(skillName)) {
+      this.config.disabledSkills = this.config.disabledSkills.filter((s) => s !== skillName);
       this.updateSkillEnabledStatus(skillName, true);
       this.saveConfig();
     }
   }
 
   /**
-   * 禁用 skill
+   * 禁用 skill（加入黑名单）
    */
   disableSkill(skillName: string): void {
-    this.config.enabledSkills = this.config.enabledSkills.filter((s) => s !== skillName);
-    this.updateSkillEnabledStatus(skillName, false);
-    this.saveConfig();
+    if (!this.config.disabledSkills.includes(skillName)) {
+      this.config.disabledSkills.push(skillName);
+      this.updateSkillEnabledStatus(skillName, false);
+      this.saveConfig();
+    }
   }
 
   /**
-   * 检查 skill 是否启用
+   * 检查 skill 是否启用（不在黑名单 = 启用）
    */
   isSkillEnabled(skillName: string): boolean {
-    return this.config.enabledSkills.includes(skillName);
+    return !this.config.disabledSkills.includes(skillName);
   }
 
   /**
-   * 获取所有启用的 skills
+   * 获取所有被禁用的 skills
    */
-  getEnabledSkills(): string[] {
-    return [...this.config.enabledSkills];
-  }
-
-  /**
-   * 批量设置启用的 skills
-   */
-  setEnabledSkills(skillNames: string[]): void {
-    this.config.enabledSkills = [...skillNames];
-
-    // 更新所有 skill 的启用状态
-    for (const library of this.libraries.values()) {
-      for (const skill of library.skills) {
-        skill.enabled = skillNames.includes(skill.name);
-      }
-    }
-
-    this.saveConfig();
+  getDisabledSkills(): string[] {
+    return [...this.config.disabledSkills];
   }
 
   // ==========================================================================
@@ -494,12 +474,13 @@ class SkillRepositoryService implements Disposable {
       this.config = {
         repositories: loaded.repositories || [],
         enabledSkills: loaded.enabledSkills || [],
+        disabledSkills: loaded.disabledSkills || [],
         autoDownload: loaded.autoDownload || getDefaultAutoDownloadRepos(),
       };
 
       logger.debug('Config loaded', {
         repositoryCount: this.config.repositories.length,
-        enabledSkillCount: this.config.enabledSkills.length,
+        disabledSkillCount: this.config.disabledSkills.length,
       });
     } catch (error) {
       // 配置文件不存在或无效，使用默认值
@@ -610,7 +591,7 @@ class SkillRepositoryService implements Disposable {
             description: parsed.description,
             libraryId: path.basename(libraryPath),
             localPath: skillDir,
-            enabled: this.config.enabledSkills.includes(parsed.name),
+            enabled: !this.config.disabledSkills.includes(parsed.name),
           };
 
           skills.push(skillInfo);

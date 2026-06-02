@@ -1,13 +1,17 @@
 import React from 'react';
 import {
-  AlertTriangle,
   Check,
   ExternalLink,
   Package,
   Plus,
   Star,
 } from 'lucide-react';
-import type { LocalSkillInfo, SkillRepository } from '@shared/contract/skillRepository';
+import type {
+  RecommendedSkillEntry,
+  SkillRepository,
+  SkillRoleBundle,
+} from '@shared/contract/skillRepository';
+import { BUILTIN_REPO_ID } from '@shared/contract/skillRepository';
 import { Button } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
 
@@ -21,69 +25,6 @@ export interface SkillsMPSearchResult {
   stars: number;
   updatedAt: number;
 }
-
-interface SkillCheckboxProps {
-  skill: LocalSkillInfo;
-  onToggle: (skillName: string, enabled: boolean) => void;
-  disabled?: boolean;
-}
-
-export const SkillCheckbox: React.FC<SkillCheckboxProps> = ({ skill, onToggle, disabled }) => {
-  const hasMissingDeps = skill.dependencyStatus && !skill.dependencyStatus.satisfied;
-  const getTooltipContent = () => {
-    if (!skill.dependencyStatus || skill.dependencyStatus.satisfied) return null;
-    const parts: string[] = [];
-    if (skill.dependencyStatus.missingBins?.length) {
-      parts.push(`缺少命令: ${skill.dependencyStatus.missingBins.join(', ')}`);
-    }
-    if (skill.dependencyStatus.missingEnvVars?.length) {
-      parts.push(`缺少环境变量: ${skill.dependencyStatus.missingEnvVars.join(', ')}`);
-    }
-    if (skill.dependencyStatus.missingReferences?.length) {
-      parts.push(`缺少文件: ${skill.dependencyStatus.missingReferences.join(', ')}`);
-    }
-    return parts.join('\n');
-  };
-  const tooltipContent = getTooltipContent();
-
-  return (
-    <label
-      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${
-        hasMissingDeps
-          ? 'bg-amber-500/20 text-amber-400'
-          : skill.enabled
-            ? 'bg-emerald-500/20 text-emerald-400'
-            : 'bg-zinc-700 text-zinc-400 hover:bg-zinc-600'
-      } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-      title={tooltipContent || undefined}
-    >
-      <input
-        type="checkbox"
-        checked={skill.enabled}
-        onChange={(e) => onToggle(skill.name, e.target.checked)}
-        disabled={disabled}
-        className="sr-only"
-      />
-      <span
-        className={`w-3 h-3 rounded border flex items-center justify-center ${
-          hasMissingDeps
-            ? 'bg-amber-500 border-amber-500'
-            : skill.enabled
-              ? 'bg-emerald-500 border-emerald-500'
-              : 'border-zinc-600'
-        }`}
-      >
-        {hasMissingDeps ? (
-          <AlertTriangle className="w-2 h-2 text-white" />
-        ) : (
-          skill.enabled && <Check className="w-2 h-2 text-white" />
-        )}
-      </span>
-      <span>{skill.name}</span>
-      {hasMissingDeps && <AlertTriangle className="w-3 h-3 ml-0.5" />}
-    </label>
-  );
-};
 
 interface RecommendedRepoCardProps {
   repo: SkillRepository;
@@ -115,6 +56,125 @@ export const RecommendedRepoCard: React.FC<RecommendedRepoCardProps> = ({
     >
       安装
     </Button>
+  </div>
+);
+
+// ----------------------------------------------------------------------------
+// 推荐 Skill 卡片（skill 粒度，按产物分类展示）
+// ----------------------------------------------------------------------------
+
+interface RecommendedSkillCardProps {
+  entry: RecommendedSkillEntry;
+  /** skill 已在本地（内置或已随仓库安装） */
+  isInstalled: boolean;
+  /** 来源仓库显示名（builtin 时为空） */
+  sourceRepoName?: string;
+  onInstall: (entry: RecommendedSkillEntry) => void;
+  isInstalling: boolean;
+}
+
+export const RecommendedSkillCard: React.FC<RecommendedSkillCardProps> = ({
+  entry,
+  isInstalled,
+  sourceRepoName,
+  onInstall,
+  isInstalling,
+}) => {
+  const isBuiltin = entry.repoId === BUILTIN_REPO_ID;
+
+  return (
+    <div className="bg-zinc-800 rounded-lg border border-zinc-700 p-3 hover:border-zinc-600 transition-colors flex flex-col gap-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h5 className="text-sm font-medium text-zinc-200 truncate">{entry.displayName}</h5>
+            {entry.badge && (
+              <span className="shrink-0 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-400">
+                {entry.badge}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{entry.description}</p>
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-2 mt-auto">
+        <span className="text-[10px] text-zinc-500 truncate">
+          {isBuiltin ? '内置 Skill' : sourceRepoName ? `来源: ${sourceRepoName}` : ''}
+        </span>
+        {isBuiltin || isInstalled ? (
+          <span className="flex shrink-0 items-center gap-1 text-xs text-emerald-400">
+            <Check className="w-3 h-3" />
+            {isBuiltin ? '已内置' : '已安装'}
+          </span>
+        ) : (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => onInstall(entry)}
+            loading={isInstalling}
+            disabled={isWebMode()}
+            leftIcon={!isInstalling ? <Plus className="w-3 h-3" /> : undefined}
+          >
+            安装
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ----------------------------------------------------------------------------
+// 角色场景包卡片
+// ----------------------------------------------------------------------------
+
+interface RoleBundleCardProps {
+  bundle: SkillRoleBundle;
+  /** 包内所有非内置 skill 的来源仓库是否都已安装 */
+  isReady: boolean;
+  onInstall: (bundle: SkillRoleBundle) => void;
+  isInstalling: boolean;
+}
+
+export const RoleBundleCard: React.FC<RoleBundleCardProps> = ({
+  bundle,
+  isReady,
+  onInstall,
+  isInstalling,
+}) => (
+  <div className="bg-zinc-800 rounded-lg border border-zinc-700 p-4 hover:border-zinc-600 transition-colors flex flex-col gap-3">
+    <div>
+      <h5 className="text-sm font-medium text-zinc-200">{bundle.name}</h5>
+      <p className="text-xs text-zinc-400 mt-1">{bundle.description}</p>
+    </div>
+    <div className="flex flex-wrap gap-1.5">
+      {bundle.skills.map((skill) => (
+        <span
+          key={skill.name}
+          className="rounded bg-zinc-700/60 px-1.5 py-0.5 text-[10px] text-zinc-300"
+        >
+          {skill.displayName}
+        </span>
+      ))}
+    </div>
+    <div className="flex items-center justify-end mt-auto">
+      {isReady ? (
+        <span className="flex items-center gap-1 text-xs text-emerald-400">
+          <Check className="w-3 h-3" />
+          已就绪
+        </span>
+      ) : (
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={() => onInstall(bundle)}
+          loading={isInstalling}
+          disabled={isWebMode()}
+          leftIcon={!isInstalling ? <Plus className="w-3 h-3" /> : undefined}
+        >
+          一键安装
+        </Button>
+      )}
+    </div>
   </div>
 );
 

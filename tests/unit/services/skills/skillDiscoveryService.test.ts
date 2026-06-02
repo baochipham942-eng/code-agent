@@ -29,6 +29,13 @@ vi.mock('../../../../src/main/services/toolSearch', () => ({
   }),
 }));
 
+vi.mock('../../../../src/main/services/skills/skillRepositoryService', () => ({
+  getSkillRepositoryService: () => ({
+    initialize: vi.fn().mockResolvedValue(undefined),
+    isSkillEnabled: () => true,
+  }),
+}));
+
 import { SkillDiscoveryService } from '../../../../src/main/services/skills/skillDiscoveryService';
 
 async function writeSkill(baseDir: string, name: string): Promise<void> {

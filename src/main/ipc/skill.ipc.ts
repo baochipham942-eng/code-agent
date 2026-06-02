@@ -111,12 +111,17 @@ async function handleRepoAddCustom(url: string, name?: string) {
 // ----------------------------------------------------------------------------
 
 /**
- * 获取所有可用 skills
+ * 获取所有可用 skills（附带全局启用状态）
  */
 async function handleSkillList() {
   await ensureSkillDiscoveryForIpc();
+  const repoService = getSkillRepositoryService();
+  await repoService.initialize();
   const discoveryService = getSkillDiscoveryService();
-  return discoveryService.getAllSkills();
+  return discoveryService.getAllSkills().map((skill) => ({
+    ...skill,
+    enabled: repoService.isSkillEnabled(skill.name),
+  }));
 }
 
 /**
@@ -126,6 +131,8 @@ async function handleSkillEnable(skillName: string) {
   const service = getSkillRepositoryService();
   await service.initialize();
   service.enableSkill(skillName);
+  // 同步 ToolSearch 注册表，让启用立即对模型生效
+  await refreshToolSearchRegistration();
 }
 
 /**
@@ -135,6 +142,20 @@ async function handleSkillDisable(skillName: string) {
   const service = getSkillRepositoryService();
   await service.initialize();
   service.disableSkill(skillName);
+  // 同步 ToolSearch 注册表，让禁用立即对模型生效
+  await refreshToolSearchRegistration();
+}
+
+/**
+ * 启用状态变更后刷新 ToolSearch 注册表
+ */
+async function refreshToolSearchRegistration(): Promise<void> {
+  try {
+    await ensureSkillDiscoveryForIpc();
+    getSkillDiscoveryService().registerSkillsToToolSearch();
+  } catch (error) {
+    logger.warn('Failed to refresh ToolSearch registration after toggle', { error });
+  }
 }
 
 // ----------------------------------------------------------------------------

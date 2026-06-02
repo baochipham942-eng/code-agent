@@ -433,7 +433,7 @@ function parseMemoryRecipe(content: string): { name: string; description: string
 
 async function readWorkflowRecipes(): Promise<CapabilityCenterItem[]> {
   const dir = getMemoryDir();
-  let entries: string[] = [];
+  let entries: string[];
   try {
     entries = await fs.readdir(dir);
   } catch (error) {
@@ -736,9 +736,8 @@ class CapabilityCenterService {
       const library = localLibraryBySkill.get(skill.name);
       const sourceKind = sourceKindFromSkillSource(skill.source);
       const sourcePath = library?.localPath || skill.basePath;
-      const enableState = skill.source === 'library'
-        ? library?.enabled ? 'enabled' : 'disabled'
-        : 'enabled';
+      // 黑名单语义：所有来源的 skill 都支持全局启停
+      const enableState = repository.isSkillEnabled(skill.name) ? 'enabled' : 'disabled';
       const deps = buildSkillDependencies(skill);
       const risk = riskFromAllowedTools(skill.allowedTools);
 
@@ -770,13 +769,9 @@ class CapabilityCenterService {
         dependencies: deps,
         audit: {
           installedFiles: sourcePath ? [sourcePath] : undefined,
-          notes: [
-            skill.source === 'library'
-              ? 'library skill 可全局启停'
-              : '非 library skill 目前由来源目录决定可见性',
-          ],
+          notes: ['所有来源的 skill 都支持全局启停（disabledSkills 黑名单）'],
         },
-        actions: buildAction(skill.source === 'library', skill.source === 'library' ? undefined : '只有 library skill 支持全局启停'),
+        actions: buildAction(true),
       } satisfies CapabilityCenterItem;
     });
   }

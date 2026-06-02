@@ -1,51 +1,23 @@
 // ============================================================================
 // Skill Repositories - Preconfigured and Recommended Repositories
 // ============================================================================
-
-import type { SkillRepository } from '@shared/contract/skillRepository';
-
-// ============================================================================
-// Recommended Repositories
+// 推荐仓库 / 分类 / 推荐 skill / 角色场景包的静态数据统一放在
+// @shared/constants/skillCatalog（main 与 renderer 共用），此处只保留
+// main 进程专属的默认配置与帮助函数，并 re-export 数据保持既有导入不变。
 // ============================================================================
 
-/**
- * 预配置的推荐 Skill 仓库
- */
-export const RECOMMENDED_REPOSITORIES: SkillRepository[] = [
-  {
-    id: 'anthropic-skills',
-    name: 'Anthropic Official Skills',
-    url: 'https://github.com/baochipham942-eng/skills',
-    branch: 'main',
-    skillsPath: 'skills',
-    category: 'core',
-    recommended: true,
-    description: '官方文档生成 Skills (PPT, Excel, Word, PDF)',
-    author: 'Anthropic',
-  },
-  {
-    id: 'superpowers',
-    name: 'Superpowers Workflow',
-    url: 'https://github.com/obra/superpowers',
-    branch: 'main',
-    skillsPath: 'skills',
-    category: 'workflow',
-    recommended: true,
-    description: '开发工作流 Skills (TDD, 调试, 代码审查)',
-    author: 'obra',
-  },
-  {
-    id: 'composio-skills',
-    name: 'Composio Productivity',
-    url: 'https://github.com/ComposioHQ/awesome-claude-skills',
-    branch: 'master',
-    skillsPath: '.', // skills 在根目录
-    category: 'productivity',
-    recommended: true,
-    description: '生产力 Skills (文件整理, 会议分析, 简历生成)',
-    author: 'ComposioHQ',
-  },
-];
+// ============================================================================
+// Recommended Repositories（re-export 自 shared catalog）
+// ============================================================================
+
+export {
+  RECOMMENDED_REPOSITORIES,
+  RECOMMENDED_SKILLS,
+  SKILL_CATEGORIES,
+  SKILL_ROLE_BUNDLES,
+  findRecommendedRepository,
+  groupRecommendedSkillsByCategory,
+} from '@shared/constants/skillCatalog';
 
 // ============================================================================
 // Default Settings
@@ -92,6 +64,15 @@ export const DEFAULT_ENABLED_SKILLS: Record<string, string[]> = {
   ],
   'composio-skills': [
     // Composio 默认不自动启用，用户需手动选择
+  ],
+  'pm-claude-skills': [
+    // 远程仓库 skill 下载后由用户手动选择启用
+  ],
+  'marketing-skills': [
+    // 远程仓库 skill 下载后由用户手动选择启用
+  ],
+  'second-brain-skills': [
+    // 远程仓库 skill 下载后由用户手动选择启用
   ],
 };
 
@@ -141,11 +122,4 @@ export function findSkillsByKeyword(keyword: string): string[] {
  */
 export function getDefaultEnabledSkills(repoId: string): string[] {
   return DEFAULT_ENABLED_SKILLS[repoId] || [];
-}
-
-/**
- * 根据 ID 查找推荐仓库
- */
-export function findRecommendedRepository(repoId: string): SkillRepository | undefined {
-  return RECOMMENDED_REPOSITORIES.find((r) => r.id === repoId);
 }

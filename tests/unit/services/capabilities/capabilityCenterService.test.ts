@@ -168,6 +168,8 @@ vi.mock('../../../../src/main/services/skills/skillRepositoryService', () => ({
     ],
     enableSkill: skillEnable,
     disableSkill: skillDisable,
+    // 黑名单语义：slides 在禁用名单中，其余 skill 默认启用
+    isSkillEnabled: (name: string) => name !== 'slides',
   }),
 }));
 
@@ -949,6 +951,10 @@ describe('CapabilityCenterService', () => {
     expect(skillEnable).toHaveBeenCalledWith('slides');
     expect(skillRefresh).toHaveBeenCalled();
 
+    // 黑名单语义：非 library 来源（如 project skill）也支持全局启停
+    await service.setEnabled({ id: 'skill:research', kind: 'skill', enabled: false }, { configService });
+    expect(skillDisable).toHaveBeenCalledWith('research');
+
     await service.setEnabled({ id: 'mcp:github', kind: 'mcp_template', enabled: false }, { configService });
     expect(mcpSetEnabled).toHaveBeenCalledWith('github', false);
     expect(clearMcpContext).toHaveBeenCalledWith('github');
@@ -1153,15 +1159,10 @@ describe('CapabilityCenterService', () => {
       { configService },
     )).rejects.toThrow('Channels 设置');
     await expect(service.setEnabled(
-      { id: 'skill:research', kind: 'skill', enabled: false },
-      { configService },
-    )).rejects.toThrow('library skill');
-    await expect(service.setEnabled(
       { id: 'curated:mcp_template%3Amcp-filesystem-readonly', kind: 'mcp_template', enabled: true },
       { configService },
     )).rejects.toThrow('disabled MCP');
 
-    expect(skillDisable).not.toHaveBeenCalled();
     expect(channelUpdateAccount).not.toHaveBeenCalled();
     expect(mcpSetEnabled).not.toHaveBeenCalled();
   });

@@ -321,6 +321,16 @@ export const SUBSET_CHANNELS = {
 } as const;
 
 /**
+ * 评测实验 IPC 通道（GAP-017: Harness 对照实验）
+ */
+export const EVALUATION_CHANNELS = {
+  /** 启动 harness 对照实验（固定模型，变 harness 配置；fire-and-forget，返回预生成 runId） */
+  RUN_HARNESS_COMPARISON: 'evaluation:run-harness-comparison',
+  /** 列出已落 DB 的实验（含 config_json harness 维度，用于对比/轮询完成状态） */
+  LIST_EXPERIMENTS: 'evaluation:list-experiments',
+} as const;
+
+/**
  * Subset 通道名称类型
  */
 export type SubsetChannel = (typeof SUBSET_CHANNELS)[keyof typeof SUBSET_CHANNELS];

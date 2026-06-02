@@ -381,6 +381,8 @@ export class TestRunner {
       gitCommit: (() => { try { return execSync('git rev-parse HEAD', { encoding: 'utf8', timeout: 5000 }).trim(); } catch { return 'unknown'; } })(),
       ...(casesWithTrials.length > 0 ? { unstableCaseCount, averageStdDev } : {}),
       ...(this.aborted && this.abortReason ? { aborted: true, abortReason: this.abortReason } : {}),
+      // GAP-017: harness 配置随 summary 落 DB（对照实验维度）
+      ...(this.config.harness ? { harness: this.config.harness } : {}),
     };
 
     this.emit({ type: 'suite_end', summary });

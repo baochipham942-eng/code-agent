@@ -31,6 +31,7 @@ import { registerStatusHandlers } from './status.ipc';
 import { registerContextHealthHandlers } from './contextHealth.ipc';
 import { registerSessionStatusHandlers } from './sessionStatus.ipc';
 import { registerSkillHandlers } from './skill.ipc';
+import { registerEvaluationHandlers } from './evaluation.ipc';
 import { registerMarketplaceHandlers } from './marketplace.ipc';
 import { registerExtensionHandlers } from './extension.ipc';
 import { registerLabHandlers } from './lab.ipc';
@@ -156,6 +157,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Skill handlers (Skill 仓库管理和会话挂载)
   registerSkillHandlers(ipcMain);
+
+  // Evaluation handlers (GAP-017: Harness 对照实验)
+  registerEvaluationHandlers(ipcMain);
 
   // Marketplace handlers (Skill Marketplace)
   registerMarketplaceHandlers(ipcMain);

@@ -8,8 +8,10 @@
 
 import { createLogger } from '../services/infra/logger';
 import type { ModelConfig, ModelProvider } from '../../shared/contract';
+import type { ModelProviderSettings } from '../../shared/contract/settings';
 import type { ModelMessage } from './types';
 import { DEFAULT_MODELS } from '../../shared/constants';
+import { isDynamicCustomProviderId } from '../../shared/modelRuntime';
 import { getAdaptiveRouter } from './adaptiveRouter';
 
 const logger = createLogger('ModelDecision');
@@ -65,6 +67,88 @@ const FREE_MODEL = {
   provider: 'zhipu' as ModelProvider,
   model: DEFAULT_MODELS.quick,
 };
+
+/**
+ * 判定 provider 的计费方式（ADR-019 决策 4 + 6.2）。
+ *
+ * 优先级：用户配置 > 类型默认值。
+ * 默认值贴近现实：普通 provider 默认按量付费（API Key 主流形态，省钱路由默认生效）；
+ * 动态 custom provider（中转站）默认 unknown（保守，不参与省钱路由）。
+ * 配错的代价不对称：包月被当按量 = 没省到钱但不多花钱；按量不路由 = 损失真实节省。
+ */
+export function resolveProviderBillingMode(
+  provider: string,
+  providers: Record<string, Pick<ModelProviderSettings, 'enabled' | 'billingMode'>> | undefined,
+): BillingMode {
+  const configured = providers?.[provider]?.billingMode;
+  if (configured) return configured;
+  return isDynamicCustomProviderId(provider) ? 'unknown' : 'payg';
+}
+
+// ----------------------------------------------------------------------------
+// 档位 → 实际模型解析（ADR-019 修正 1：分发版无硬编码）
+// ----------------------------------------------------------------------------
+
+/** 档位解析所需的用户配置切片（纯数据，调用方从 configService 取后注入） */
+export interface TierResolutionSettings {
+  defaultProvider?: string;
+  defaultModel?: string;
+  providers?: Record<string, Pick<ModelProviderSettings, 'enabled' | 'apiKey' | 'apiKeyConfigured' | 'billingMode'>>;
+  /** 用户在设置里指定的"快速模型"偏好（settings.models.routing.fast） */
+  routingFast?: { provider: string; model: string };
+}
+
+function isProviderUsable(provider: string, settings: TierResolutionSettings): boolean {
+  const p = settings.providers?.[provider];
+  if (!p) return false;
+  if (p.enabled === false) return false;
+  return !!p.apiKey || !!p.apiKeyConfigured;
+}
+
+/**
+ * 角色档位 → 实际模型。
+ *
+ * 解析顺序：
+ * - powerful（主力档）= 用户默认模型，永不硬编码厂商
+ * - fast：用户 routing.fast 偏好 → 内置免费推荐（需用户配了该 provider 的 key）→ 用户默认模型
+ * - balanced：内置标准推荐（需用户配了 key）→ 用户默认模型
+ * - 无 settings（测试/CLI 环境）：沿用内置默认，行为不变
+ *
+ * 核心保证：分发给任何用户都不会因为"没配某个特定厂商的 key"而让 subagent 直接坏掉。
+ */
+export function resolveTierModelConfig(
+  tier: 'fast' | 'balanced' | 'powerful',
+  builtinDefault: { provider: string; model: string },
+  settings: TierResolutionSettings | undefined,
+): { provider: ModelProvider; model: string } {
+  if (!settings) {
+    return builtinDefault as { provider: ModelProvider; model: string };
+  }
+
+  const userDefault = {
+    provider: (settings.defaultProvider ?? builtinDefault.provider) as ModelProvider,
+    model: settings.defaultModel ?? builtinDefault.model,
+  };
+
+  // 主力档 = 用户默认模型（分发核心：不硬编码任何厂商）
+  if (tier === 'powerful') {
+    return userDefault;
+  }
+
+  // fast 档：用户 routing 偏好优先
+  if (tier === 'fast' && settings.routingFast && isProviderUsable(settings.routingFast.provider, settings)) {
+    return settings.routingFast as { provider: ModelProvider; model: string };
+  }
+
+  // 内置推荐：用户配了对应 provider 的 key 才用
+  if (isProviderUsable(builtinDefault.provider, settings)) {
+    return builtinDefault as { provider: ModelProvider; model: string };
+  }
+
+  // 该档位的 provider 用户没配 → 降级到用户默认模型（保证能跑）
+  logger.info(`[ModelDecision] tier=${tier} 内置推荐 ${builtinDefault.provider} 未配置，降级到用户默认模型 ${userDefault.provider}/${userDefault.model}`);
+  return userDefault;
+}
 
 /**
  * 单一路由决策入口。

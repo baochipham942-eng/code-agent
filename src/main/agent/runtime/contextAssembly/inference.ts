@@ -26,6 +26,7 @@ import type { ModelMessage } from '../../../agent/loopTypes';
 import type { StreamCallback, InferenceOptions, ModelResponse as RouterModelResponse } from '../../../model/types';
 import type { ModelConfig } from '../../../../shared/contract/model';
 import { getAdaptiveRouter } from '../../../model/adaptiveRouter';
+import { resolveModelDecision, resolveProviderBillingMode, type BillingMode } from '../../../model/modelDecision';
 import { buildE2ELocalAgentModelResponse, shouldUseE2ELocalAgentModelForMessages } from '../../../model/e2eLocalAgentModel';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
@@ -97,26 +98,36 @@ function runEngineInference(
 /**
  * 自动模式下简单任务的免费模型路由（aiSdk 路径用）。
  *
- * 返回带 apiKey 的免费模型配置；不满足条件（非自动模式 / 非简单任务 / 免费模型
- * 无 key 或被禁用）时返回 null，调用方继续用原配置。
+ * ADR-019 批 2：决策交给单一入口 resolveModelDecision（含计费门控——
+ * 包月/未知 provider 不做省钱路由），本函数只负责执行层的 API key 解析。
+ *
+ * 返回带 apiKey 的免费模型配置；不满足条件时返回 null，调用方继续用原配置。
  */
 function resolveAdaptiveSimpleTaskConfig(
   messages: ModelMessage[],
   config: ModelConfig,
 ): ModelConfig | null {
-  if (config.adaptive !== true) return null;
+  // 计费方式：用户配置 > 类型默认值（settings 不可用时缺省 payg）
+  let billingMode: BillingMode | undefined;
+  try {
+    const settings = getConfigService().getSettings();
+    billingMode = resolveProviderBillingMode(config.provider, settings.models?.providers);
+  } catch { /* 测试/CLI 环境无 settings → resolveModelDecision 内部缺省 payg */ }
 
-  const adaptiveRouter = getAdaptiveRouter();
-  const complexity = adaptiveRouter.estimateComplexity(messages);
-  if (complexity.level !== 'simple') return null;
+  const { decision, config: decided } = resolveModelDecision({
+    requestedConfig: config,
+    messages,
+    context: 'main-chat',
+    billingMode,
+  });
+  if (decision.reason !== 'simple-task-free') return null;
 
-  const adapted = adaptiveRouter.selectModel(complexity, config);
-  if (adapted.provider === config.provider && adapted.model === config.model) return null;
-
+  // 执行层：API key 解析（决策层不碰 key）
+  const adapted = { ...decided };
   if (adapted.provider !== config.provider) {
     const apiKey = getConfigService().getApiKey(adapted.provider);
     if (!apiKey) {
-      adaptiveRouter.disableFreeModel(`no API key for ${adapted.provider}`);
+      getAdaptiveRouter().disableFreeModel(`no API key for ${adapted.provider}`);
       return null;
     }
     adapted.apiKey = apiKey;

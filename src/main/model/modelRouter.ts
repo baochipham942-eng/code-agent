@@ -17,6 +17,7 @@ import { getModelMaxOutputTokens } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import { getInferenceCache } from './inferenceCache';
 import { getAdaptiveRouter } from './adaptiveRouter';
+import { resolveModelDecision, resolveProviderBillingMode, type BillingMode } from './modelDecision';
 import { getConfigService } from '../services/core/configService';
 import { getProviderHealthMonitor } from './providerHealthMonitor';
 import { combineAbortSignals, createTimedAbortController } from '../agent/shutdownProtocol';
@@ -440,10 +441,25 @@ export class ModelRouter {
     }
 
     // Adaptive routing for simple tasks — 仅在用户选了"自动"时启用
+    // ADR-019 批 2：决策交给单一入口（含计费门控——包月/未知 provider 不做省钱路由），
+    // 本路径只负责执行（API key 解析 + 调用 + 失败回退）
     const adaptiveRouter = getAdaptiveRouter();
     const complexity = adaptiveRouter.estimateComplexity(messages);
-    if (config.adaptive === true && complexity.level === 'simple') {
-      const adaptedConfig = adaptiveRouter.selectModel(complexity, config);
+    let simpleTaskBillingMode: BillingMode | undefined;
+    try {
+      simpleTaskBillingMode = resolveProviderBillingMode(
+        config.provider,
+        getConfigService().getSettings().models?.providers,
+      );
+    } catch { /* settings 不可用 → 决策入口内部缺省 payg */ }
+    const simpleTaskDecision = resolveModelDecision({
+      requestedConfig: config,
+      messages,
+      context: 'main-chat',
+      billingMode: simpleTaskBillingMode,
+    });
+    if (simpleTaskDecision.decision.reason === 'simple-task-free') {
+      const adaptedConfig = { ...simpleTaskDecision.config };
       if (adaptedConfig.provider !== config.provider || adaptedConfig.model !== config.model) {
         // 切换 provider 时需要获取对应的 apiKey
         let canUseFreeModel = true;

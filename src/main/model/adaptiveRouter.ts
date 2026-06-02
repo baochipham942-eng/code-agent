@@ -118,8 +118,12 @@ export class AdaptiveRouter {
       logger.info(`[AdaptiveRouter] Stats after ${this.callCount} calls:`, this.routingStats);
     }
 
-    // CLI 模式或环境变量禁用自适应路由（评测等场景需统一模型）
-    if (process.env.ADAPTIVE_ROUTER_DISABLED === 'true' || process.env.CODE_AGENT_CLI_MODE === 'true') {
+    // 环境变量禁用自适应路由（评测等场景需统一模型）。
+    // 注意：webServer 也会设 CODE_AGENT_CLI_MODE=true（keytar 守卫），但桌面/web 聊天
+    // 是用户选"自动"的主场景，必须用 CODE_AGENT_WEB_MODE 区分，只禁纯 CLI/评测。
+    const isCliOnly = process.env.CODE_AGENT_CLI_MODE === 'true'
+      && process.env.CODE_AGENT_WEB_MODE !== 'true';
+    if (process.env.ADAPTIVE_ROUTER_DISABLED === 'true' || isCliOnly) {
       return defaultConfig;
     }
 

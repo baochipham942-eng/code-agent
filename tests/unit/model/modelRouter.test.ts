@@ -70,9 +70,11 @@ vi.mock('../../../src/main/model/providers/moonshotProvider', () => ({
 }));
 
 // Mock configService
+const mockGetSettings = vi.hoisted(() => vi.fn(() => ({} as Record<string, unknown>)));
 vi.mock('../../../src/main/services/core/configService', () => ({
   getConfigService: () => ({
     getApiKey: vi.fn().mockReturnValue('mock-api-key'),
+    getSettings: mockGetSettings,
   }),
 }));
 
@@ -171,6 +173,56 @@ describe('ModelRouter', () => {
     it('should return null for unknown model in valid provider', () => {
       const info = router.getModelInfo('deepseek', 'nonexistent-model');
       expect(info).toBeNull();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // getModelInfo — 动态 custom provider 从用户设置兜底
+  // --------------------------------------------------------------------------
+  describe('getModelInfo custom provider settings fallback', () => {
+    beforeEach(() => {
+      mockGetSettings.mockReturnValue({
+        models: {
+          providers: {
+            'custom-commonstack-claude': {
+              enabled: true,
+              models: {
+                'anthropic/claude-opus-4-8': {
+                  enabled: true,
+                  label: 'Claude Opus 4 8',
+                  capabilities: ['general', 'code', 'reasoning'],
+                  supportsVision: true,
+                  supportsTool: true,
+                  supportsStreaming: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    afterEach(() => {
+      mockGetSettings.mockReturnValue({});
+    });
+
+    it('builds ModelInfo from user settings for dynamic custom provider', () => {
+      const info = router.getModelInfo('custom-commonstack-claude', 'anthropic/claude-opus-4-8');
+      expect(info).not.toBeNull();
+      expect(info?.id).toBe('anthropic/claude-opus-4-8');
+      expect(info?.supportsVision).toBe(true);
+      expect(info?.capabilities).toContain('code');
+    });
+
+    it('still returns null for a model not present in settings either', () => {
+      const info = router.getModelInfo('custom-commonstack-claude', 'unknown-model');
+      expect(info).toBeNull();
+    });
+
+    it('prefers static registry over settings for built-in providers', () => {
+      const info = router.getModelInfo('deepseek', 'deepseek-chat');
+      expect(info).not.toBeNull();
+      expect(info?.id).toBe('deepseek-chat');
     });
   });
 

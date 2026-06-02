@@ -8,6 +8,8 @@ export interface OnboardingProviderCopy {
   description: string;
   badge?: string;
   recommended: boolean;
+  /** 中转站/自定义卡片：需要用户填 Base URL，模型列表完全依赖在线发现 */
+  requiresBaseUrl?: boolean;
 }
 
 export interface OnboardingDiscoveredModel {
@@ -110,6 +112,16 @@ const PROVIDER_COPY: Partial<Record<ModelProvider, Pick<OnboardingProviderCopy, 
     name: '小米 MiMo',
     description: '小米 MiMo Token Plan',
   },
+};
+
+/** 中转站/自定义卡片（OpenAI 兼容），让只有中转 key 的新用户也能完成 onboarding */
+export const ONBOARDING_RELAY_CARD: OnboardingProviderCopy = {
+  id: 'custom',
+  name: '中转站 / 自定义',
+  description: 'OpenAI 兼容中转站（new-api / one-api 等），填接口地址和 Key',
+  badge: '中转',
+  recommended: false,
+  requiresBaseUrl: true,
 };
 
 export function getOnboardingProviderCards(): OnboardingProviderCopy[] {

@@ -8,6 +8,7 @@ import ipcService from '../../services/ipcService';
 import {
   buildOnboardingModelSelection,
   getOnboardingProviderCards,
+  ONBOARDING_RELAY_CARD,
   type OnboardingDiscoveredModel,
 } from './modelOnboarding';
 
@@ -34,6 +35,8 @@ interface DiscoverModelsResult {
 
 export interface ModelOnboardingModalProps {
   onComplete: (config: ModelConfig) => void;
+  /** 跳过配置，稍后在设置里完成。不传则不显示跳过按钮。 */
+  onSkip?: () => void;
 }
 
 type StepStatus = 'idle' | 'testing' | 'discovering' | 'saving' | 'ready' | 'error';
@@ -43,18 +46,25 @@ function formatProviderError(result: ProviderTestResult | DiscoverModelsResult |
   return [result.error.message, result.error.suggestion].filter(Boolean).join('。');
 }
 
-export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onComplete }) => {
+export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onComplete, onSkip }) => {
   const cards = useMemo(() => getOnboardingProviderCards(), []);
   const recommendedCards = cards.filter((card) => card.recommended);
   const moreCards = cards.filter((card) => !card.recommended);
   const [selectedProvider, setSelectedProvider] = useState<ModelProvider>('deepseek');
   const [apiKey, setApiKey] = useState('');
+  const [customBaseUrl, setCustomBaseUrl] = useState('');
   const [status, setStatus] = useState<StepStatus>('idle');
   const [message, setMessage] = useState('选择 Provider 后填写 API Key。');
   const [discoveredCount, setDiscoveredCount] = useState<number | null>(null);
 
-  const selectedCard = cards.find((card) => card.id === selectedProvider);
-  const endpoint = getProviderInfo(selectedProvider)?.endpoint || '';
+  const selectedCard = selectedProvider === ONBOARDING_RELAY_CARD.id
+    ? ONBOARDING_RELAY_CARD
+    : cards.find((card) => card.id === selectedProvider);
+  const isRelay = Boolean(selectedCard?.requiresBaseUrl);
+  // 中转站端点由用户填写；官方 Provider 锁定注册表端点
+  const endpoint = isRelay
+    ? customBaseUrl.trim().replace(/\/+$/, '')
+    : getProviderInfo(selectedProvider)?.endpoint || '';
   const isBusy = status === 'testing' || status === 'discovering' || status === 'saving';
 
   const handleSave = async () => {
@@ -62,6 +72,11 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
     if (!trimmedKey) {
       setStatus('error');
       setMessage('请先填写 API Key。');
+      return;
+    }
+    if (isRelay && !endpoint) {
+      setStatus('error');
+      setMessage('请先填写中转站接口地址（如 https://example.com/v1）。');
       return;
     }
 
@@ -97,6 +112,14 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
         setDiscoveredCount(discoverResult.models.length);
       }
 
+      // 中转站没有内置模型目录可兜底，必须从 /models 拉到真实模型列表才能保存，
+      // 否则会落一个该站不存在的占位模型 ID（custom-model），聊天必报错。
+      if (isRelay && discoveredModels.length === 0) {
+        setStatus('error');
+        setMessage('无法从该中转站读取模型列表。请确认接口地址（通常以 /v1 结尾）和 Key 的分组权限。');
+        return;
+      }
+
       setStatus('saving');
       setMessage(discoveredModels.length > 0 ? '正在保存默认模型...' : '正在保存内置推荐模型...');
 
@@ -106,6 +129,13 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
         baseUrl: endpoint,
         discoveredModels,
       });
+
+      // 中转站用域名当显示名，模型切换面板里比 "Custom Provider" 可读
+      if (isRelay) {
+        try {
+          selection.providerSettings.displayName = new URL(endpoint).hostname;
+        } catch { /* URL 异常时保留默认显示名 */ }
+      }
 
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         models: {
@@ -144,14 +174,25 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
           <div className="text-xs text-zinc-500">
             API Key 只保存在本机安全存储里。
           </div>
-          <Button
-            onClick={handleSave}
-            loading={isBusy}
-            disabled={!apiKey.trim()}
-            leftIcon={status === 'ready' ? <CheckCircle className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
-          >
-            测试并保存
-          </Button>
+          <div className="flex items-center gap-2">
+            {onSkip && (
+              <Button
+                variant="ghost"
+                onClick={onSkip}
+                disabled={isBusy}
+              >
+                跳过，稍后在设置里配置
+              </Button>
+            )}
+            <Button
+              onClick={handleSave}
+              loading={isBusy}
+              disabled={!apiKey.trim() || (isRelay && !endpoint)}
+              leftIcon={status === 'ready' ? <CheckCircle className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+            >
+              测试并保存
+            </Button>
+          </div>
         </div>
       }
     >
@@ -180,7 +221,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
             <div>
               <p className="text-sm text-zinc-200">账号已就绪，还需要连接一个模型才能开始对话。</p>
               <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-                这里只放官方直连 Provider。高级中转、本地模型和自定义地址仍在设置里管理。
+                支持官方直连 Provider 和 OpenAI 兼容中转站。本地模型（Ollama）仍在设置里管理。
               </p>
             </div>
           </div>
@@ -246,13 +287,58 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
           </div>
         </section>
 
+        <section className="space-y-3">
+          <h3 className="text-sm font-medium text-zinc-200">中转站 / 自定义</h3>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedProvider(ONBOARDING_RELAY_CARD.id);
+              setStatus('idle');
+              setMessage('填写中转站接口地址和 API Key。');
+            }}
+            className={`w-full rounded-lg border p-3 text-left transition ${
+              selectedProvider === ONBOARDING_RELAY_CARD.id
+                ? 'border-blue-400/60 bg-blue-500/10'
+                : 'border-zinc-800 bg-zinc-950/30 hover:border-zinc-700 hover:bg-zinc-900/70'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-medium text-zinc-100">{ONBOARDING_RELAY_CARD.name}</span>
+              <span className="rounded border border-blue-400/30 bg-blue-500/10 px-1.5 py-0.5 text-[11px] text-blue-200">
+                {ONBOARDING_RELAY_CARD.badge}
+              </span>
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-zinc-500">{ONBOARDING_RELAY_CARD.description}</p>
+          </button>
+        </section>
+
         <section className="grid gap-4 rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
           <div>
             <h3 className="text-sm font-medium text-zinc-200">{selectedCard?.name || selectedProvider}</h3>
             <p className="mt-1 text-xs leading-relaxed text-zinc-500">{selectedCard?.description}</p>
-            <div className="mt-3 rounded border border-zinc-800 bg-zinc-900/50 px-3 py-2 font-mono text-[11px] text-zinc-500">
-              {endpoint}
-            </div>
+            {isRelay ? (
+              <div className="mt-3">
+                <label className="mb-2 block text-sm font-medium text-zinc-200">接口地址（Base URL）</label>
+                <Input
+                  value={customBaseUrl}
+                  onChange={(event) => {
+                    setCustomBaseUrl(event.target.value);
+                    if (status === 'error') {
+                      setStatus('idle');
+                      setMessage('填写中转站接口地址和 API Key。');
+                    }
+                  }}
+                  placeholder="https://example.com/v1"
+                />
+                <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+                  填到 /v1 为止，不要带 /chat/completions。
+                </p>
+              </div>
+            ) : (
+              <div className="mt-3 rounded border border-zinc-800 bg-zinc-900/50 px-3 py-2 font-mono text-[11px] text-zinc-500">
+                {endpoint}
+              </div>
+            )}
           </div>
           <div>
             <label className="mb-2 block text-sm font-medium text-zinc-200">API Key</label>

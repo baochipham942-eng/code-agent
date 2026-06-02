@@ -630,6 +630,10 @@ export const App: React.FC = () => {
             setShowModelOnboarding(false);
             setShowSettings(false);
           }}
+          onSkip={() => {
+            // 跳过不算完成：不置 completedRef，下次冷启动仍会提示，避免用户忘配后续无入口
+            setShowModelOnboarding(false);
+          }}
         />
       )}
 

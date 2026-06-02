@@ -67,6 +67,7 @@ import {
   executeE2ELocalSubagent,
   shouldUseE2ELocalSubagentExecutor,
 } from './subagentE2ELocalExecutor';
+import { buildSubagentSkillsBlock } from '../services/skills/subagentSkillInjection';
 import type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
 
 export type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
@@ -174,11 +175,22 @@ export class SubagentExecutor {
       },
     });
 
+    // GAP-011（课程"方向 A"）：skills 全文预注入子代理 system prompt。
+    // 只注入知识，不改变 availableTools 权限边界（与 GAP-001 fork 限权正交）。
+    let effectiveSystemPrompt = config.systemPrompt;
+    if (config.skills && config.skills.length > 0) {
+      const { block, loaded, missing } = await buildSubagentSkillsBlock(config.skills);
+      if (block) {
+        effectiveSystemPrompt = `${config.systemPrompt}\n\n${block}`;
+      }
+      logger.info(`[${config.name}] skills preloaded into system prompt`, { loaded, missing });
+    }
+
     // Create pipeline context
     const pipeline = getSubagentPipeline();
     const dynamicConfig: DynamicAgentConfig = {
       name: config.name,
-      systemPrompt: config.systemPrompt,
+      systemPrompt: effectiveSystemPrompt,
       tools: config.availableTools,
       maxIterations: config.maxIterations,
       permissionPreset: config.permissionPreset || 'development',
@@ -321,7 +333,7 @@ export class SubagentExecutor {
 
     const messages = buildInitialSubagentMessages({
       agentName: config.name,
-      systemPrompt: config.systemPrompt,
+      systemPrompt: effectiveSystemPrompt,
       prompt,
       attachments: context.attachments,
       logger,
@@ -1048,6 +1060,8 @@ export class SubagentExecutor {
       name: agentDef.name,
       systemPrompt: getAgentPrompt(agentDef),
       availableTools: getAgentTools(agentDef),
+      // GAP-011：agent 定义里的预装 skills（方向 A）
+      skills: agentDef.skills,
       maxIterations: getAgentMaxIterations(agentDef),
       permissionPreset: getAgentPermissionPreset(agentDef),
       maxBudget: getAgentMaxBudget(agentDef),

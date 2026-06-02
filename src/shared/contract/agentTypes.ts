@@ -39,6 +39,13 @@ export interface AgentCore {
   /** 可用工具列表 */
   tools?: string[];
 
+  /**
+   * GAP-011（课程"方向 A"）：预装 skill 列表。
+   * spawn 时把对应 SKILL.md 全文注入子代理 system prompt（知识注入），
+   * 与 tools 权限边界正交——声明 skill 不扩张工具集。
+   */
+  skills?: string[];
+
   /** 模型层级 */
   model?: ModelTier;
 

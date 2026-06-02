@@ -80,6 +80,7 @@ function toFullAgentConfig(core: CoreAgentConfig): FullAgentConfig {
     description: core.description,
     prompt: core.prompt,
     tools: core.tools,
+    skills: core.skills,
     model: core.model === 'fast' ? 'fast' : core.model === 'powerful' ? 'powerful' : 'balanced',
     runtime: {
       maxIterations: core.maxIterations,

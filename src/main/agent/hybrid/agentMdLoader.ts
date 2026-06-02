@@ -49,6 +49,8 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
     description: description || `Custom agent: ${name}`,
     prompt,
     tools: stringArrayValue(frontmatter.tools) || ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep'],
+    // GAP-011：skills 字段（课程"方向 A"）——预装 skill 全文注入子代理 system prompt
+    skills: stringArrayValue(frontmatter.skills),
     model: modelTierValue(frontmatter.model) || 'balanced',
     maxIterations: numberValue(frontmatter['max-iterations']) || 30,
     readonly: booleanValue(frontmatter.readonly) ?? false,

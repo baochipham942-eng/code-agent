@@ -118,6 +118,24 @@ const CUSTOM_PROVIDER_GROUP_PATTERNS: Array<{
   { provider: 'volcengine', pattern: /\b(volcengine|doubao)\b|doubao-/ },
 ];
 
+function inferProviderGroupFromText(value: string): ModelProvider | undefined {
+  const text = value.toLowerCase();
+  return CUSTOM_PROVIDER_GROUP_PATTERNS.find((item) => item.pattern.test(text))?.provider;
+}
+
+function inferSingleModelProviderGroup(models: RuntimeProviderModel[]): ModelProvider | undefined {
+  const groups = new Set<ModelProvider>();
+
+  for (const model of models) {
+    const group = inferProviderGroupFromText(model.id);
+    if (!group) return undefined;
+    groups.add(group);
+    if (groups.size > 1) return undefined;
+  }
+
+  return groups.values().next().value;
+}
+
 function resolveProviderGroup(args: {
   providerId: ModelProvider;
   providerConfig?: Partial<ModelProviderSettings>;
@@ -127,20 +145,20 @@ function resolveProviderGroup(args: {
   const isCustomProvider = args.providerId === 'custom' || isDynamicCustomProviderId(args.providerId);
   if (!isCustomProvider) return args.providerId;
 
-  const sourceText = [
+  const providerIdentityText = [
     args.providerId,
     args.providerConfig?.displayName,
-    args.providerConfig?.model,
-    ...Object.keys(args.providerConfig?.models ?? {}),
-    ...args.models.map((model) => model.id),
   ].filter(Boolean).join(' ').toLowerCase();
 
-  const matchedGroup = CUSTOM_PROVIDER_GROUP_PATTERNS.find((item) => item.pattern.test(sourceText));
-  if (matchedGroup) return matchedGroup.provider;
+  const matchedGroup = inferProviderGroupFromText(providerIdentityText);
+  if (matchedGroup) return matchedGroup;
 
-  if (args.protocol === 'claude' || args.models.some((model) => looksLikeClaudeModelId(model.id))) {
+  if (args.protocol === 'claude') {
     return 'claude';
   }
+
+  const singleModelGroup = inferSingleModelProviderGroup(args.models);
+  if (singleModelGroup) return singleModelGroup;
 
   return args.providerId;
 }
@@ -408,10 +426,10 @@ export function buildRuntimeModelOptions(
       : enabledModels;
     if (models.length === 0) return;
     const canonicalGroupLabel = getProviderDisplayName(providerGroup) || providerGroup;
-    const providerGroupLabel = providerGroup !== providerId || providerConfig?.displayName
+    const providerGroupLabel = providerGroup !== providerId
       ? canonicalGroupLabel
       : providerLabel;
-    const providerSourceLabel = providerGroup !== providerId || Boolean(providerConfig?.displayName)
+    const providerSourceLabel = providerGroup !== providerId
       ? buildProviderSourceLabel(providerLabel, canonicalGroupLabel, providerGroup)
       : undefined;
 
@@ -468,6 +486,11 @@ export function buildRuntimeModelOptions(
       features: featuresFromModelMetadata({ modelId: model.id }),
     }))
   );
+}
+
+export function hasConfiguredRuntimeModels(settings?: AppSettings | null): boolean {
+  if (!settings) return false;
+  return buildRuntimeModelOptions(settings).length > 0;
 }
 
 function compareProviderOptionSource(

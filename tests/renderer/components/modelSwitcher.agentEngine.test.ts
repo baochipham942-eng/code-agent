@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { AppSettings } from '../../../src/shared/contract';
 import type { AgentEngineDescriptor } from '../../../src/shared/contract/agentEngine';
-import { buildModelSwitcherEngineSelection } from '../../../src/renderer/components/StatusBar/ModelSwitcher';
+import { buildModelSwitcherEngineSelection, shouldShowModelSettingsPrompt } from '../../../src/renderer/components/StatusBar/ModelSwitcher';
 import { ENGINE_SHORT_LABEL, getProviderEffortOptions } from '../../../src/renderer/components/StatusBar/modelSwitcherHelpers';
 
 function descriptor(overrides: Partial<AgentEngineDescriptor>): AgentEngineDescriptor {
@@ -20,6 +21,13 @@ function descriptor(overrides: Partial<AgentEngineDescriptor>): AgentEngineDescr
   };
 }
 
+const emptyModelSettings = {
+  models: {
+    default: 'xiaomi',
+    providers: {},
+  },
+} as AppSettings;
+
 describe('ModelSwitcher Agent Engine selection', () => {
   it('uses Neo as the native engine short label', () => {
     expect(ENGINE_SHORT_LABEL.native).toBe('Neo');
@@ -28,6 +36,13 @@ describe('ModelSwitcher Agent Engine selection', () => {
   it('keeps MiMo effort as intensity and leaves thinking to the separate switch', () => {
     expect(getProviderEffortOptions('xiaomi', 'mimo-v2.5-pro').map((option) => option.label))
       .toEqual(['Low', 'Med', 'High']);
+  });
+
+  it('shows the model settings prompt only for native sessions after settings prove no configured models', () => {
+    expect(shouldShowModelSettingsPrompt('native', null, false)).toBe(false);
+    expect(shouldShowModelSettingsPrompt('native', emptyModelSettings, false)).toBe(true);
+    expect(shouldShowModelSettingsPrompt('native', emptyModelSettings, true)).toBe(false);
+    expect(shouldShowModelSettingsPrompt('codex_cli', emptyModelSettings, false)).toBe(false);
   });
 
   it('builds a session-scoped engine selection without model provider fields', () => {

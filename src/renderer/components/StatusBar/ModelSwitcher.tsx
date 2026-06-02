@@ -21,10 +21,11 @@ import {
   buildRuntimeModelOptions,
   groupRuntimeModelOptionsByProvider,
   getRuntimeModelLabel,
+  hasConfiguredRuntimeModels,
   type RuntimeModelOption,
 } from '@shared/modelRuntime';
 import { toast } from '../../hooks/useToast';
-import { Brain, Sparkles, Zap, Cpu, Code2 } from 'lucide-react';
+import { Brain, Sparkles, Zap, Cpu, Code2, Settings } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
 import { trackRenderer } from '../../observability/posthogRenderer';
@@ -62,6 +63,16 @@ export interface ModelOverrideChangeDetail {
   } | null;
 }
 
+export function shouldShowModelSettingsPrompt(
+  engineKind: AgentEngineKind,
+  modelSettings: AppSettings | null,
+  nativeHasConfiguredModels: boolean,
+): boolean {
+  return engineKind === 'native'
+    && modelSettings !== null
+    && !nativeHasConfiguredModels;
+}
+
 function emitModelOverrideChange(detail: ModelOverrideChangeDetail): void {
   window.dispatchEvent(new CustomEvent<ModelOverrideChangeDetail>(MODEL_OVERRIDE_CHANGE_EVENT, { detail }));
 }
@@ -91,6 +102,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       : null
   );
   const updateSessionEngine = useSessionStore((s) => s.updateSessionEngine);
+  const openSettingsTab = useAppStore((s) => s.openSettingsTab);
   const appWorkingDirectory = useAppStore((s) => s.workingDirectory);
   const defaultProvider = useAppStore((s) => s.modelConfig.provider);
   // effort 切换内嵌到模型菜单顶部，对照 Codex 的"模型 + Intelligence"两层选择
@@ -125,12 +137,22 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     }),
     [modelProviderInclusions, modelSettings],
   );
+  const nativeHasConfiguredModels = useMemo(
+    () => hasConfiguredRuntimeModels(modelSettings),
+    [modelSettings],
+  );
+  const showModelSettingsPrompt = shouldShowModelSettingsPrompt(
+    engine.kind,
+    modelSettings,
+    nativeHasConfiguredModels,
+  );
+  const visibleModelOptions = showModelSettingsPrompt ? [] : modelOptions;
 
   // 搜索过滤
   const filteredOptions = useMemo(() => {
-    if (!searchQuery.trim()) return modelOptions;
+    if (!searchQuery.trim()) return visibleModelOptions;
     const q = searchQuery.toLowerCase();
-    return modelOptions.filter((opt) => {
+    return visibleModelOptions.filter((opt) => {
       const providerName = (opt.providerLabel || getProviderDisplayName(opt.provider) || opt.provider).toLowerCase();
       return (
         opt.label.toLowerCase().includes(q) ||
@@ -138,7 +160,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         providerName.includes(q)
       );
     });
-  }, [modelOptions, searchQuery]);
+  }, [searchQuery, visibleModelOptions]);
 
   const groupedFilteredOptions = useMemo(() => {
     let nextIndex = 1;
@@ -354,6 +376,11 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     [sessionId]
   );
 
+  const handleOpenModelSettings = useCallback(() => {
+    setOpen(false);
+    openSettingsTab('model');
+  }, [openSettingsTab]);
+
   const handleSelectEngineModel = useCallback(
     async (model: AgentEngineModelCatalogModel) => {
       if (!sessionId || !isExternalEngineKind(engine.kind)) return;
@@ -468,7 +495,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   }, [sessionId, defaultProvider, currentModel]);
 
   const selectableOptionCount = engine.kind === 'native'
-    ? 1 + filteredOptions.length
+    ? showModelSettingsPrompt ? 0 : 1 + filteredOptions.length
     : filteredEngineModels.length;
 
   useEffect(() => {
@@ -552,7 +579,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       ?? engine.model
       ?? selectedEngineCatalog?.defaultModel
       ?? '默认模型';
-  const displayLabel = engine.kind === 'native' ? nativeDisplayLabel : externalDisplayLabel;
+  const displayLabel = engine.kind === 'native'
+    ? showModelSettingsPrompt ? '配置模型' : nativeDisplayLabel
+    : externalDisplayLabel;
 
   const effortOptions = useMemo(
     () => engine.kind === 'native'
@@ -561,7 +590,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     [displayModel, displayProvider, engine.kind, selectedNativeOption?.features],
   );
   const selectedEffort = getSelectedEffortOption(effortLevel, effortOptions);
-  const supportsThinkingControls = engine.kind === 'native'
+  const supportsThinkingControls = !showModelSettingsPrompt && engine.kind === 'native'
     ? displayProvider === 'xiaomi'
       || Boolean(selectedNativeOption?.features.includes('reasoning'))
       || /reason|thinking|think|mimo|r1|o\d/i.test(displayModel)
@@ -656,7 +685,25 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             </div>
             <div className="max-h-64 overflow-y-auto pb-1">
               {engine.kind === 'native' ? (
-                <>
+                showModelSettingsPrompt ? (
+                  <div className="px-3 py-4 text-center">
+                    <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded bg-zinc-700/60 text-zinc-300">
+                      <Settings className="h-4 w-4" />
+                    </div>
+                    <div className="text-xs font-medium text-zinc-200">还没有可用模型</div>
+                    <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">
+                      配好 Provider 和 API Key 后再发送消息。
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleOpenModelSettings}
+                      className="mt-3 inline-flex h-7 items-center justify-center rounded bg-zinc-700 px-3 text-xs font-medium text-zinc-100 transition-colors hover:bg-zinc-600"
+                    >
+                      去模型配置
+                    </button>
+                  </div>
+                ) : (
+                  <>
                   <button
                     type="button"
                     onClick={handleSelectAuto}
@@ -743,7 +790,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                       </div>
                     ))
                   )}
-                </>
+                  </>
+                )
               ) : !selectedEngineCatalog ? (
                 <div className="px-3 py-3 text-xs text-gray-500 text-center">
                   模型目录暂不可用
@@ -805,7 +853,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             </div>
           </div>
 
-          {supportsThinkingControls && (
+          {!showModelSettingsPrompt && supportsThinkingControls && (
             <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
               <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
                 <span className="text-[9px] text-zinc-600">3</span>
@@ -836,6 +884,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             </div>
           )}
 
+          {!showModelSettingsPrompt && (
           <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
             <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
               <span className="text-[9px] text-zinc-600">{supportsThinkingControls ? '4' : '3'}</span>
@@ -861,7 +910,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               ))}
             </div>
           </div>
-      {engine.kind === 'native' && isOverridden && (
+          )}
+      {engine.kind === 'native' && isOverridden && !showModelSettingsPrompt && (
         <>
           <div className="border-t border-zinc-700 my-1" />
           <button
@@ -892,6 +942,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         title={
           engine.kind !== 'native'
             ? `Engine: ${ENGINE_SHORT_LABEL[engine.kind]} · Model: ${engine.model ?? selectedEngineCatalog?.defaultModel ?? '默认模型'}`
+            : showModelSettingsPrompt
+              ? '还没有可用模型'
             : overrideAdaptive
             ? `自动路由（按任务复杂度切换，当前默认 ${currentModel}）`
             : isOverridden
@@ -902,14 +954,18 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         <span className="text-zinc-400">{ENGINE_SHORT_LABEL[engine.kind] ?? 'Neo'}</span>
         <span className="text-zinc-500 mx-1">·</span>
         {displayLabel}
-        <span className="text-zinc-500 ml-1">·</span>
-        {thinkingShortLabel && (
+        {!showModelSettingsPrompt && (
           <>
-            <span className="text-zinc-400 ml-0.5">{thinkingShortLabel}</span>
             <span className="text-zinc-500 ml-1">·</span>
+            {thinkingShortLabel && (
+              <>
+                <span className="text-zinc-400 ml-0.5">{thinkingShortLabel}</span>
+                <span className="text-zinc-500 ml-1">·</span>
+              </>
+            )}
+            <span className="text-zinc-400 ml-0.5">{selectedEffort.shortLabel}</span>
           </>
         )}
-        <span className="text-zinc-400 ml-0.5">{selectedEffort.shortLabel}</span>
       </button>
       {menu && createPortal(menu, document.body)}
     </>

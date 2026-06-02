@@ -34,12 +34,13 @@ import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { useMessageActionStore } from '../stores/messageActionStore';
 import { isWebMode } from '../utils/platform';
 import { toast } from '../hooks/useToast';
+import { hasConfiguredRuntimeModels } from '@shared/modelRuntime';
 
 // PlanPanel moved to inline display in TurnBasedTraceView
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
 // PermissionCard moved to inline display in TurnBasedTraceView
-import type { MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
+import type { AppSettings, MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
 import type { PromptRewindResult } from '@shared/contract/appService';
 import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
@@ -59,6 +60,7 @@ import {
 export const ChatView: React.FC = () => {
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
   const setTaskPlan = useAppStore((state) => state.setTaskPlan);
+  const openSettingsTab = useAppStore((state) => state.openSettingsTab);
   const {
     currentSessionId,
     hasOlderMessages,
@@ -360,14 +362,30 @@ export const ChatView: React.FC = () => {
       chatInputRef.current?.addAttachments(newAttachments);
     }
   }, [clearGlobalDragState, processFile, processFolderEntry]);
+  const ensureModelConfigured = useCallback(async (): Promise<boolean> => {
+    try {
+      const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
+      if (hasConfiguredRuntimeModels(settings)) {
+        return true;
+      }
+      toast.info('先配置一个模型后再发送。');
+      openSettingsTab('model');
+      return false;
+    } catch {
+      return true;
+    }
+  }, [openSettingsTab]);
+
   // 发送消息需要登录
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
     const didSend = await requireAuthAsync(async () => {
+      const modelReady = await ensureModelConfigured();
+      if (!modelReady) return false;
       await sendMessage(envelope);
       return true;
     });
     return didSend === true;
-  }, [requireAuthAsync, sendMessage]);
+  }, [ensureModelConfigured, requireAuthAsync, sendMessage]);
 
   const handleSendMessage = useCallback(async (content: string, attachments?: MessageAttachment[]) => {
     return handleSendEnvelope(buildEnvelope(content, attachments));

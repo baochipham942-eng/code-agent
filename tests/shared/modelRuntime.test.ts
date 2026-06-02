@@ -5,6 +5,7 @@ import {
   buildRuntimeModelOptions,
   getProviderRuntimeModels,
   groupRuntimeModelOptionsByProvider,
+  hasConfiguredRuntimeModels,
   inferModelCapabilities,
 } from '../../src/shared/modelRuntime';
 import { getModelDisplayLabel, getProviderInfo, PROVIDER_MODELS_MAP } from '../../src/shared/constants';
@@ -129,6 +130,49 @@ describe('modelRuntime', () => {
     ]));
   });
 
+  it('treats enabled providers without API keys as no configured runtime model', () => {
+    const settings = {
+      models: {
+        default: 'xiaomi',
+        defaultProvider: 'xiaomi',
+        providers: {
+          xiaomi: { enabled: true },
+          zhipu: { enabled: true },
+          local: { enabled: false },
+        },
+      },
+    } as AppSettings;
+
+    expect(hasConfiguredRuntimeModels(settings)).toBe(false);
+    expect(buildRuntimeModelOptions(settings, ['xiaomi'], {
+      includeDisabledProviders: ['xiaomi'],
+    }).length).toBeGreaterThan(0);
+  });
+
+  it('accepts stored API keys and enabled local models as configured runtime models', () => {
+    const keyedSettings = {
+      models: {
+        default: 'xiaomi',
+        defaultProvider: 'xiaomi',
+        providers: {
+          xiaomi: { enabled: true, apiKeyConfigured: true },
+        },
+      },
+    } as AppSettings;
+    const localSettings = {
+      models: {
+        default: 'local',
+        defaultProvider: 'local',
+        providers: {
+          local: { enabled: true },
+        },
+      },
+    } as AppSettings;
+
+    expect(hasConfiguredRuntimeModels(keyedSettings)).toBe(true);
+    expect(hasConfiguredRuntimeModels(localSettings)).toBe(true);
+  });
+
   it('uses neutral built-in model labels in the switcher catalog', () => {
     expect(getModelDisplayLabel('mimo-v2.5-pro')).toBe('MiMo v2.5 Pro');
     expect(getModelDisplayLabel('claude-sonnet-4-6')).toBe('Claude Sonnet 4.6');
@@ -211,6 +255,58 @@ describe('modelRuntime', () => {
         providerGroupLabel: 'Anthropic Claude',
         providerSourceLabel: 'CommonStack',
         model: 'anthropic/claude-opus-4-8',
+      }),
+    ]);
+  });
+
+  it('keeps neutral mixed custom relays under their own provider group', () => {
+    const settings = {
+      models: {
+        default: 'custom-muyuan-do',
+        defaultProvider: 'custom-muyuan-do',
+        providers: {
+          'custom-muyuan-do': {
+            enabled: true,
+            apiKeyConfigured: true,
+            protocol: 'openai',
+            displayName: 'muyuan.do',
+            baseUrl: 'https://muyuan.do/v1',
+            model: 'gpt-5.4-mini',
+            models: {
+              'gpt-5.4-mini': {
+                enabled: true,
+                label: 'gpt-5.4-mini',
+                supportsTool: true,
+              },
+              'claude-sonnet-4-6': {
+                enabled: true,
+                label: 'claude-sonnet-4-6',
+                supportsTool: true,
+              },
+            },
+          },
+        },
+      },
+    } as AppSettings;
+
+    const options = buildRuntimeModelOptions(settings, []);
+
+    expect(options.map((option) => option.model)).toEqual([
+      'gpt-5.4-mini',
+      'claude-sonnet-4-6',
+    ]);
+    expect(options).toEqual([
+      expect.objectContaining({
+        provider: 'custom-muyuan-do',
+        providerGroup: 'custom-muyuan-do',
+        providerGroupLabel: 'muyuan.do',
+        model: 'gpt-5.4-mini',
+      }),
+      expect.objectContaining({
+        provider: 'custom-muyuan-do',
+        providerGroup: 'custom-muyuan-do',
+        providerGroupLabel: 'muyuan.do',
+        model: 'claude-sonnet-4-6',
       }),
     ]);
   });

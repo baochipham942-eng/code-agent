@@ -10,7 +10,8 @@
  * 拿 BrowserService；本测试经过 BrowserTool execute → browserActionTool execute
  * → getBrowserService(ctx.agentId) 完整链路，验证 wiring 真正生效。
  *
- * 跑法：npm test -- --run tests/smoke/subagentDispatchWiring.smoke.test.ts
+ * 跑法：npm run test:smoke -- tests/smoke/subagentDispatchWiring.smoke.test.ts
+ *（smoke 测试已从默认 npm test 中隔离 —— 会真实操作桌面/启动真实进程）
  * Timeout 90s — 含 2 次 chromium cold launch + cookie roundtrip。
  */
 

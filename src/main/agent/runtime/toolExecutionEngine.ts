@@ -663,6 +663,8 @@ export class ToolExecutionEngine {
           // 实现层（BrowserTool/browserAction/computerUse）按 agentId 取自己的 BrowserContext。
           agentId: this.ctx.agentId,
           preApprovedTools: this.ctx.preApprovedTools,
+          // GAP-001: skill allowed-tools 限权边界透传
+          skillToolBoundary: this.ctx.skillToolBoundary,
           currentAttachments,
           // 传递当前工具调用 ID（用于 subagent 追踪）
           currentToolCallId: toolCall.id,

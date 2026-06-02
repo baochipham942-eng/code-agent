@@ -227,6 +227,19 @@ function parseHooksObject(
     'StopFailure',        // Phase 3
   ];
 
+  // GAP-007: 未知事件名告警。
+  // 大小写/拼写错误的事件名（如 "preToolUse"）会被静默忽略 = 用户以为有 hook 实际没有。
+  const knownEventSet = new Set<string>(events);
+  for (const key of Object.keys(hooks)) {
+    if (!knownEventSet.has(key)) {
+      const suggestion = events.find(e => e.toLowerCase() === key.toLowerCase());
+      console.warn(
+        `[Hooks] Warning: unknown event "${key}" in ${source} config is ignored.` +
+          (suggestion ? ` Did you mean "${suggestion}"?` : '')
+      );
+    }
+  }
+
   for (const event of events) {
     const matchers = hooks[event];
     if (!matchers || !Array.isArray(matchers)) {
@@ -275,6 +288,12 @@ function parseHooksObject(
 /**
  * Validate and filter hooks array
  */
+// GAP-007: HookDefinition 已知字段清单（与接口定义同步）
+const KNOWN_HOOK_FIELDS = new Set([
+  'type', 'command', 'prompt', 'timeout', 'async', 'once',
+  'agent', 'agentPrompt', 'url', 'headers', 'allowedEnvVars', 'if',
+]);
+
 function validateHooks(hooks: unknown): HookDefinition[] {
   if (!Array.isArray(hooks)) {
     return [];
@@ -282,34 +301,52 @@ function validateHooks(hooks: unknown): HookDefinition[] {
 
   return hooks.filter((hook): hook is HookDefinition => {
     if (typeof hook !== 'object' || hook === null) {
+      console.warn('[Hooks] Warning: hook entry dropped — not an object');
       return false;
     }
 
     const h = hook as Record<string, unknown>;
 
+    // GAP-007: 被丢弃的 hook 必须告警（静默丢弃 = 用户以为有护栏实际没有）
     // Must have valid type
     if (h.type !== 'command' && h.type !== 'prompt' && h.type !== 'agent' && h.type !== 'http') {
+      console.warn(
+        `[Hooks] Warning: hook dropped — invalid type "${String(h.type)}" (expected command/prompt/agent/http)`
+      );
       return false;
     }
 
     // Command hooks must have command
     if (h.type === 'command' && typeof h.command !== 'string') {
+      console.warn('[Hooks] Warning: command hook dropped — missing "command" field');
       return false;
     }
 
     // Prompt hooks must have prompt
     if (h.type === 'prompt' && typeof h.prompt !== 'string') {
+      console.warn('[Hooks] Warning: prompt hook dropped — missing "prompt" field');
       return false;
     }
 
     // Agent hooks must have agent role
     if (h.type === 'agent' && typeof h.agent !== 'string') {
+      console.warn('[Hooks] Warning: agent hook dropped — missing "agent" field');
       return false;
     }
 
     // HTTP hooks must have url
     if (h.type === 'http' && typeof h.url !== 'string') {
+      console.warn('[Hooks] Warning: http hook dropped — missing "url" field');
       return false;
+    }
+
+    // GAP-007: 未知字段告警（不 reject，保持向前兼容）
+    for (const key of Object.keys(h)) {
+      if (!KNOWN_HOOK_FIELDS.has(key)) {
+        console.warn(
+          `[Hooks] Warning: unknown field "${key}" in hook definition is ignored.`
+        );
+      }
     }
 
     return true;

@@ -795,6 +795,10 @@ export class ConversationRuntime {
             this.ctx.preApprovedTools.add(tool);
           }
         }
+        // GAP-001: skill allowed-tools 限权边界
+        if (skillContext.contextModifier.toolBoundary) {
+          this.ctx.skillToolBoundary = skillContext.contextModifier.toolBoundary;
+        }
         if (skillContext.contextModifier.modelOverride) {
           this.ctx.skillModelOverride = skillContext.contextModifier.modelOverride;
         }

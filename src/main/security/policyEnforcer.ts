@@ -436,14 +436,21 @@ export class PolicyEnforcer {
 // ----------------------------------------------------------------------------
 
 let instance: PolicyEnforcer | null = null;
+// 缓存"无 policy 文件"的探测结果，避免热路径上每次工具调用都做 fs.existsSync。
+let initializedProjectDir: string | undefined;
 
 export function getPolicyEnforcer(projectDir?: string): PolicyEnforcer | null {
-  if (!instance && projectDir) {
-    instance = new PolicyEnforcer(projectDir);
-    // Only keep active instance
-    if (!instance.isActive) {
-      instance = null;
+  // projectDir 变化（切换工作区）时重新初始化
+  if (projectDir && projectDir !== initializedProjectDir) {
+    if (instance) {
+      instance.dispose();
     }
+    const enforcer = new PolicyEnforcer(projectDir);
+    instance = enforcer.isActive ? enforcer : null;
+    if (!enforcer.isActive) {
+      enforcer.dispose();
+    }
+    initializedProjectDir = projectDir;
   }
   return instance;
 }
@@ -453,4 +460,5 @@ export function resetPolicyEnforcer(): void {
     instance.dispose();
     instance = null;
   }
+  initializedProjectDir = undefined;
 }

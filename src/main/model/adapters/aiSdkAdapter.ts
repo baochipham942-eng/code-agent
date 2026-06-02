@@ -443,6 +443,60 @@ function toAiMessages(messages: ModelMessage[]): AiModelMessage[] {
   return out;
 }
 
+// ── GAP-003: Anthropic prompt caching 断点注入 ──
+// 旧 claudeProvider 路径默认开启 caching（system + tools 断点），AI SDK 迁移时丢了。
+// 这里补回并增强：
+//   断点 1：最后一条 system 消息 → 缓存 tools + system 前缀（Anthropic 缓存覆盖断点之前的全部内容）
+//   断点 2：倒数第二条非 system 消息 → 对话历史增量缓存（长会话省钱的大头，旧路径也没有）
+// 仅 anthropic/claude 需要显式断点（DeepSeek/Kimi 等服务端自动缓存）。
+// cache hit 价格是 0.1x，miss 写入是 1.25x——长会话/多轮 agent loop 场景净收益显著为正。
+const ANTHROPIC_CACHE_PROVIDERS = new Set(['anthropic', 'claude']);
+
+function withCacheControl(message: AiModelMessage): AiModelMessage {
+  return {
+    ...message,
+    providerOptions: {
+      ...(message as { providerOptions?: Record<string, Record<string, unknown>> }).providerOptions,
+      anthropic: {
+        ...(message as { providerOptions?: Record<string, Record<string, unknown>> }).providerOptions?.anthropic,
+        cacheControl: { type: 'ephemeral' },
+      },
+    },
+  } as AiModelMessage;
+}
+
+export function applyAnthropicCacheBreakpoints(
+  aiMessages: AiModelMessage[],
+  provider: string,
+): AiModelMessage[] {
+  if (!ANTHROPIC_CACHE_PROVIDERS.has(provider) || aiMessages.length === 0) {
+    return aiMessages;
+  }
+
+  const out = [...aiMessages];
+
+  // 断点 1：最后一条 system 消息（覆盖 tools + system 前缀）
+  let lastSystemIdx = -1;
+  for (let i = 0; i < out.length; i++) {
+    if (out[i].role === 'system') lastSystemIdx = i;
+  }
+  if (lastSystemIdx >= 0) {
+    out[lastSystemIdx] = withCacheControl(out[lastSystemIdx]);
+  }
+
+  // 断点 2：倒数第二条非 system 消息（最后一条是本轮新输入，缓存它没有意义）
+  const nonSystemIndices: number[] = [];
+  for (let i = 0; i < out.length; i++) {
+    if (out[i].role !== 'system') nonSystemIndices.push(i);
+  }
+  if (nonSystemIndices.length >= 2) {
+    const idx = nonSystemIndices[nonSystemIndices.length - 2];
+    out[idx] = withCacheControl(out[idx]);
+  }
+
+  return out;
+}
+
 // ── 工具映射：tool() 只取 schema，不传 execute（执行仍由 Neo toolExecutor 负责）──
 function buildTools(toolDefs: ToolDefinition[]): ToolSet {
   const tools: Record<string, ReturnType<typeof aiTool>> = {};
@@ -534,6 +588,8 @@ async function runInferenceViaAiSdk(
     // P1b：模型不支持 tool_call 时不传 tools（能力即数据，来自 providerRegistry）
     aiTools = tools.length > 0 && req.supportsTool ? buildTools(tools) : undefined;
     aiMessages = toAiMessages(messages);
+    // GAP-003: Anthropic prompt caching 断点（system 前缀 + 对话历史增量）
+    aiMessages = applyAnthropicCacheBreakpoints(aiMessages, config.provider);
   } catch (err) {
     const stage = !aiTools && tools.length > 0 && req.supportsTool ? 'buildTools' : 'toAiMessages';
     logInferenceFailure(err, stage, config, messages);
@@ -628,6 +684,8 @@ async function generateViaAiSdk(params: {
     type: toolCalls.length ? 'tool_use' : 'text',
     toolCallCount: toolCalls.length,
     streaming: false,
+    // GAP-003: 缓存命中验证（Anthropic caching 生效时 > 0）
+    cachedInputTokens: result.usage?.cachedInputTokens ?? 0,
   });
 
   // contentParts：text 与 tool_call 的交错顺序。老路径(openaiWrapper)对 tool_use 会带它，

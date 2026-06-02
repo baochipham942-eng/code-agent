@@ -18,6 +18,76 @@ import {
 // Frontmatter 正则：匹配 --- 开头和结尾的 YAML 块
 const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
 
+// GAP-007: 已知 frontmatter 字段清单（与 SkillFrontmatter 契约同步）。
+// 未知字段静默忽略会造成"假护栏"（如 alowed-tools 拼写错误导致限权失效），必须告警。
+const KNOWN_FRONTMATTER_FIELDS = new Set([
+  'name',
+  'description',
+  'aliases',
+  'license',
+  'compatibility',
+  'metadata',
+  'allowed-tools',
+  'disable-model-invocation',
+  'user-invocable',
+  'model',
+  'context',
+  'agent',
+  'argument-hint',
+  'bins',
+  'env-vars',
+  'references',
+]);
+
+/**
+ * Levenshtein 编辑距离（用于未知字段的拼写建议）
+ */
+function editDistance(a: string, b: string): number {
+  const dp: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+/**
+ * GAP-007: 检查未知 frontmatter 字段并产生告警。
+ * 不 reject（保持向前兼容），但必须让用户看见，避免拼写错误导致配置静默失效。
+ */
+function collectUnknownFieldWarnings(
+  frontmatter: Record<string, unknown>,
+  skillPath: string,
+): string[] {
+  const warnings: string[] = [];
+  for (const key of Object.keys(frontmatter)) {
+    if (KNOWN_FRONTMATTER_FIELDS.has(key)) continue;
+
+    // 找最接近的已知字段做拼写建议（编辑距离 ≤ 2）
+    let suggestion: string | undefined;
+    let bestDistance = 3;
+    for (const known of KNOWN_FRONTMATTER_FIELDS) {
+      const distance = editDistance(key.toLowerCase(), known);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        suggestion = known;
+      }
+    }
+
+    const message = suggestion
+      ? `Unknown frontmatter field "${key}" is ignored. Did you mean "${suggestion}"?`
+      : `Unknown frontmatter field "${key}" is ignored.`;
+    warnings.push(message);
+    console.warn(`[SkillParser] ${skillPath}: ${message}`);
+  }
+  return warnings;
+}
+
 // Skill name 格式验证：小写字母开头，只包含小写字母、数字和单个连字符
 const SKILL_NAME_REGEX = /^[a-z]([a-z0-9-]*[a-z0-9])?$/;
 const TOOL_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_.:-]*$/;
@@ -106,6 +176,12 @@ export async function parseSkillMd(
   // 7. 解析 allowed-tools
   const allowedTools = parseAllowedTools(frontmatter['allowed-tools']);
 
+  // 7.5 GAP-007: 未知字段告警
+  const frontmatterWarnings = collectUnknownFieldWarnings(
+    frontmatter as unknown as Record<string, unknown>,
+    skillPath,
+  );
+
   // 8. 构建 ParsedSkill
   return {
     name: frontmatter.name,
@@ -128,6 +204,7 @@ export async function parseSkillMd(
     bins: frontmatter.bins,
     envVars: frontmatter['env-vars'],
     references: frontmatter.references,
+    ...(frontmatterWarnings.length > 0 ? { frontmatterWarnings } : {}),
   };
 }
 
@@ -313,6 +390,12 @@ export async function parseSkillMetadataOnly(
   // 7. 解析 allowed-tools
   const allowedTools = parseAllowedTools(frontmatter['allowed-tools']);
 
+  // 7.5 GAP-007: 未知字段告警
+  const frontmatterWarnings = collectUnknownFieldWarnings(
+    frontmatter as unknown as Record<string, unknown>,
+    skillPath,
+  );
+
   // 8. 构建 ParsedSkill（不加载 promptContent）
   return {
     name: frontmatter.name,
@@ -335,6 +418,7 @@ export async function parseSkillMetadataOnly(
     envVars: frontmatter['env-vars'],
     references: frontmatter.references,
     loaded: false,
+    ...(frontmatterWarnings.length > 0 ? { frontmatterWarnings } : {}),
   };
 }
 

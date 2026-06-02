@@ -80,6 +80,9 @@ export interface ParsedSkill {
 
   /** Whether the full promptContent has been loaded (for lazy loading) */
   loaded?: boolean;
+
+  /** GAP-007: 解析时发现的未知 frontmatter 字段告警（拼写错误检测，供 UI/日志展示） */
+  frontmatterWarnings?: string[];
 }
 
 export type SkillSource = 'user' | 'project' | 'plugin' | 'builtin' | 'cloud' | 'library';
@@ -111,6 +114,23 @@ export interface SkillToolResult {
 export interface SkillContextModifier {
   preApprovedTools?: string[];
   modelOverride?: string;
+  /**
+   * GAP-001: Skill allowed-tools 限权边界。
+   * 设置后，边界外的工具调用强制用户审批（不能被 classifier/安全白名单/预授权自动放行）。
+   * 与 preApprovedTools 的区别：preApprovedTools 是扩权（边界内免审批，仅 builtin/plugin），
+   * toolBoundary 是限权（边界外强制审批，所有来源的 skill 都生效）。
+   */
+  toolBoundary?: SkillToolBoundary;
+}
+
+/**
+ * Skill 工具边界（来自 allowed-tools frontmatter）
+ */
+export interface SkillToolBoundary {
+  /** 设定边界的 skill 名（用于审批提示与日志） */
+  skillName: string;
+  /** 边界内的工具列表（支持 Bash(git:*) 前缀模式） */
+  allowedTools: string[];
 }
 
 /**

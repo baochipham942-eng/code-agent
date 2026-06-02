@@ -30,6 +30,7 @@ import type {
   WorkbenchToolScope,
 } from '../../../shared/contract/conversationEnvelope';
 import type { SkillInvocationMatchKind } from '../../services/skills/skillInvocationResolver';
+import type { SkillToolBoundary } from '../../../shared/contract/agentSkill';
 import type { TurnTraceRecorder } from './turnTrace';
 
 /**
@@ -102,6 +103,8 @@ export interface RuntimeContext {
   maxToolCallRetries: number;
   externalDataCallCount: number;
   preApprovedTools: Set<string>;
+  /** GAP-001: 当前激活 skill 的 allowed-tools 限权边界（边界外的工具调用强制用户审批） */
+  skillToolBoundary?: SkillToolBoundary;
   skillModelOverride?: string;
   enableToolDeferredLoading: boolean;
 

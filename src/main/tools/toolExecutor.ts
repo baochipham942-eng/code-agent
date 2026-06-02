@@ -16,12 +16,16 @@ import {
   isKnownSafeCommand,
   validateCommand,
   getExecPolicyStore,
+  getPolicyEnforcer,
+  type PolicyEnforcer,
+  type PolicyCheckResult,
   type ValidationResult,
 } from '../security';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getConfirmationGate } from '../agent/confirmationGate';
-import { classifyPermission } from './permissionClassifier';
-import { createTraceBuilder } from '../security/decisionTraceBuilder';
+import { classifyPermission, type ClassificationResult } from './permissionClassifier';
+import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
+import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBuilder';
 import { getDecisionHistory, type DecisionOutcome as HistoryDecisionOutcome } from '../security/decisionHistory';
 import {
   getWriteIsolationManager,
@@ -131,6 +135,9 @@ export interface ExecuteOptions {
   agentId?: string;
   // Skill 系统支持：预授权工具列表（跳过权限确认）
   preApprovedTools?: Set<string>;
+  // GAP-001: Skill allowed-tools 限权边界。设置后，边界外的工具调用强制用户审批
+  //（不能被预授权/安全白名单/classifier 自动放行）。
+  skillToolBoundary?: SkillToolBoundary;
   // Current message attachments for multi-agent workflows
   currentAttachments?: Array<{
     type: string;
@@ -379,9 +386,72 @@ export class ToolExecutor {
       }
     }
 
+    // P0: Policy Enforcer — code-agent-policy.toml 硬规则（system/user/project 三层合并）。
+    // deny 不可被任何后续层推翻（skill 预授权 / 安全命令白名单 / classifier / 用户审批）。
+    // 无 policy 文件时 getPolicyEnforcer 返回 null，零开销。
+    const policyEnforcer = getPolicyEnforcer(this.workingDirectory);
+    if (policyEnforcer?.isActive) {
+      const policyCheck = this.checkAgainstPolicy(policyEnforcer, executionToolName, policyToolName, params, toolDef);
+      if (!policyCheck.allowed) {
+        logger.warn('Blocked by policy enforcer', {
+          toolName: executionToolName,
+          section: policyCheck.section,
+          reason: policyCheck.reason,
+        });
+        policyEnforcer.logToolCall(executionToolName, params, 'blocked', policyCheck.reason);
+
+        if (this.auditEnabled) {
+          getAuditLogger().logSecurityIncident({
+            sessionId: options.sessionId || 'unknown',
+            toolName: executionToolName,
+            incident: `Blocked by policy: ${policyCheck.reason}`,
+            details: { section: policyCheck.section },
+            riskLevel: 'critical',
+          });
+        }
+
+        // Fire-and-forget: emit PermissionDenied hook
+        options.hookManager?.triggerPermissionDenied(
+          executionToolName, policyCheck.reason || 'security policy', 'policy',
+          options.sessionId || 'unknown',
+        ).catch(() => {});
+
+        const trace = policyCheck.traceStep
+          ? createTraceBuilder(executionToolName)
+            .addStep(
+              policyCheck.traceStep.layer,
+              policyCheck.traceStep.rule,
+              policyCheck.traceStep.result,
+              policyCheck.traceStep.reason,
+            )
+            .build('deny')
+          : undefined;
+        recordDecision(executionToolName, params, 'policy-deny', policyCheck.reason || 'policy', permStartTime, trace);
+
+        return {
+          success: false,
+          error: `Blocked by policy: ${policyCheck.reason}`,
+        };
+      }
+      policyEnforcer.logToolCall(executionToolName, params, 'allowed');
+    }
+
+    // Policy tools.always_confirm: 强制走用户审批，无视预授权/安全白名单/classifier 放行
+    const policyForcesConfirmation = policyEnforcer?.requiresConfirmation(executionToolName) ?? false;
+
+    // GAP-001: Skill allowed-tools 限权边界 — 边界外的工具调用强制用户审批。
+    // 对所有 skill 来源生效（user/project skill 不能扩权，但它声明的边界必须被尊重）。
+    // 只约束 requiresPermission 的工具（只读工具不受限）。
+    const boundaryViolation = options.skillToolBoundary
+      && toolDef.requiresPermission
+      && !this.toolMatchesPatternSet(executionToolName, params, new Set(options.skillToolBoundary.allowedTools))
+      ? options.skillToolBoundary
+      : undefined;
+
     // Check permission if required
-    // Skill 系统：预授权工具跳过权限检查
-    const isPreApproved = this.isToolPreApproved(executionToolName, params, options.preApprovedTools);
+    // Skill 系统：预授权工具跳过权限检查（但不能跳过边界违规检查）
+    const isPreApproved = !boundaryViolation
+      && this.isToolPreApproved(executionToolName, params, options.preApprovedTools);
     if (isPreApproved) {
       logger.debug('Tool pre-approved by Skill system, skipping permission check', { toolName: executionToolName });
       recordDecision(executionToolName, params, 'auto-approve', 'pre-approved', permStartTime);
@@ -418,16 +488,48 @@ export class ToolExecutor {
       }
     }
 
-    if (toolDef.requiresPermission && !isPreApproved && !isSafeCommand) {
+    if (toolDef.requiresPermission && (policyForcesConfirmation || boundaryViolation || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // Lazy trace: only created when needed (deny/ask path)
       const traceBuilder = createTraceBuilder(executionToolName);
       try {
-        const classification = await classifyPermission(policyToolName, params, {
-          workingDirectory: this.workingDirectory,
-          permissionLevel: toolDef.permissionLevel,
-        });
+        // Policy always_confirm / skill 边界违规命中时跳过 classifier，直接进用户审批
+        let classification: ClassificationResult;
+        if (policyForcesConfirmation) {
+          classification = {
+            decision: 'ask',
+            reason: `Tool "${executionToolName}" requires confirmation by policy (tools.always_confirm)`,
+            confidence: 1,
+            cached: false,
+            traceStep: createTraceStep(
+              'policy_enforcer',
+              'tools.always_confirm',
+              'ask',
+              'Tool requires confirmation by policy',
+              permStartTime,
+            ),
+          };
+        } else if (boundaryViolation) {
+          classification = {
+            decision: 'ask',
+            reason: `Tool "${executionToolName}" is outside skill "${boundaryViolation.skillName}" allowed-tools boundary (${boundaryViolation.allowedTools.join(', ')})`,
+            confidence: 1,
+            cached: false,
+            traceStep: createTraceStep(
+              'permission_classifier',
+              'skill.allowed-tools-boundary',
+              'ask',
+              `Outside skill "${boundaryViolation.skillName}" tool boundary`,
+              permStartTime,
+            ),
+          };
+        } else {
+          classification = await classifyPermission(policyToolName, params, {
+            workingDirectory: this.workingDirectory,
+            permissionLevel: toolDef.permissionLevel,
+          });
+        }
         if (classification.decision === 'approve') {
           logger.info('Auto-approved by classifier', {
             tool: executionToolName,
@@ -876,6 +978,47 @@ export class ToolExecutor {
    * @param preApprovedTools - 预授权工具集合
    * @returns 是否预授权
    */
+  /**
+   * GAP-002: 按工具类型路由到 PolicyEnforcer 对应的检查方法。
+   * 返回第一个命中的 deny；全部通过返回 { allowed: true }。
+   */
+  private checkAgainstPolicy(
+    enforcer: PolicyEnforcer,
+    executionToolName: string,
+    policyToolName: string,
+    params: Record<string, unknown>,
+    toolDef: ToolDefinition,
+  ): PolicyCheckResult {
+    // 1. 工具禁用清单（所有工具）
+    const toolCheck = enforcer.checkTool(executionToolName);
+    if (!toolCheck.allowed) return toolCheck;
+
+    // 2. Shell 命令规则（denied_commands 正则 / allowed_command_prefixes / allow_shell）
+    if (isBashToolName(policyToolName) && typeof params.command === 'string') {
+      const commandCheck = enforcer.checkCommand(params.command);
+      if (!commandCheck.allowed) return commandCheck;
+    }
+
+    // 3. 文件路径规则（denied_paths / denied_file_patterns / writable_paths）
+    const filePath = typeof params.file_path === 'string'
+      ? params.file_path
+      : typeof params.path === 'string'
+        ? params.path
+        : undefined;
+    if (filePath && (toolDef.permissionLevel === 'read' || toolDef.permissionLevel === 'write')) {
+      const fileCheck = enforcer.checkFilePath(filePath, toolDef.permissionLevel);
+      if (!fileCheck.allowed) return fileCheck;
+    }
+
+    // 4. 网络域名白名单
+    if (toolDef.permissionLevel === 'network' && typeof params.url === 'string') {
+      const networkCheck = enforcer.checkNetwork(params.url);
+      if (!networkCheck.allowed) return networkCheck;
+    }
+
+    return { allowed: true };
+  }
+
   private isToolPreApproved(
     toolName: string,
     params: Record<string, unknown>,
@@ -884,17 +1027,32 @@ export class ToolExecutor {
     if (!preApprovedTools || preApprovedTools.size === 0) {
       return false;
     }
+    return this.toolMatchesPatternSet(toolName, params, preApprovedTools);
+  }
+
+  /**
+   * 工具调用是否匹配模式集合（精确名 / Bash(prefix:*) 前缀模式）。
+   * 同时服务于：Skill 预授权（扩权）与 Skill allowed-tools 边界（限权，GAP-001）。
+   */
+  private toolMatchesPatternSet(
+    toolName: string,
+    params: Record<string, unknown>,
+    patterns: Set<string>
+  ): boolean {
+    if (patterns.size === 0) {
+      return false;
+    }
 
     // 1. 精确匹配（Bash/bash 语义归一）
     const normalizedToolName = normalizeToolName(toolName);
-    for (const approved of preApprovedTools) {
-      if (sameToolName(approved, normalizedToolName)) {
+    for (const candidate of patterns) {
+      if (sameToolName(candidate, normalizedToolName)) {
         return true;
       }
     }
 
     // 2. 通配符匹配（如 Bash(git:*)）
-    for (const pattern of preApprovedTools) {
+    for (const pattern of patterns) {
       // 匹配格式: ToolName(prefix:*)
       const match = pattern.match(/^([A-Za-z][A-Za-z0-9_.:-]*)\(([A-Za-z0-9._/@+-]+):\*\)$/);
       if (!match) continue;

@@ -9,6 +9,6 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["api/**/*.ts", "lib/**/*.ts"],
+  "include": ["api/**/*.ts", "lib/**/*.ts", "server.ts"],
   "exclude": ["node_modules"]
 }

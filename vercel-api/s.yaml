@@ -1,0 +1,67 @@
+edition: 3.0.0
+name: agent-neo-control-plane
+
+vars:
+  region: "ap-southeast-1"
+
+resources:
+  framework:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: "agent-neo-control-plane"
+      description: "Agent Neo control plane and download landing page"
+      runtime: custom.debian10
+      cpu: 1
+      memorySize: 1024
+      diskSize: 512
+      timeout: 60
+      instanceConcurrency: 10
+      code: ./
+      customRuntimeConfig:
+        command:
+          - /var/fc/lang/nodejs20/bin/node
+          - dist/server.js
+        port: 3000
+      triggers:
+        - triggerName: http-trigger
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods:
+              - GET
+              - HEAD
+              - POST
+      environmentVariables:
+        PORT: "3000"
+        NODE_ENV: "production"
+        UPDATE_RELEASE_CHANNEL: "stable"
+        UPDATE_RELEASE_MANIFEST_URL: "https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/stable/release.json"
+        UPDATE_GITHUB_REPOSITORY: "baochipham942-eng/code-agent"
+        GITHUB_REPOSITORY: "baochipham942-eng/code-agent"
+        AUTH_SECRET: ${env(AUTH_SECRET)}
+        CI_PUBLISH_TOKEN: ${env(CI_PUBLISH_TOKEN)}
+        DATABASE_URL: ${env(DATABASE_URL)}
+        DEEPSEEK_API_KEY: ${env(DEEPSEEK_API_KEY)}
+        GITHUB_CALLBACK_URL: "https://neo.llmxy.xyz/api/auth?action=callback"
+        GITHUB_CLIENT_ID: ${env(GITHUB_CLIENT_ID)}
+        GITHUB_CLIENT_SECRET: ${env(GITHUB_CLIENT_SECRET)}
+        CONTROL_PLANE_PRIVATE_KEY: ${env(CONTROL_PLANE_PRIVATE_KEY)}
+        CONTROL_PLANE_KEY_ID: ${env(CONTROL_PLANE_KEY_ID)}
+        CONTROL_PLANE_TTL_SECONDS: ${env(CONTROL_PLANE_TTL_SECONDS)}
+        CONTROL_PLANE_CLOUD_CONFIG_JSON: ${env(CONTROL_PLANE_CLOUD_CONFIG_JSON)}
+        CONTROL_PLANE_PROMPT_REGISTRY_JSON: ${env(CONTROL_PLANE_PROMPT_REGISTRY_JSON)}
+        CONTROL_PLANE_CAPABILITY_REGISTRY_JSON: ${env(CONTROL_PLANE_CAPABILITY_REGISTRY_JSON)}
+        CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON: ${env(CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON)}
+      customDomain:
+        domainName: neo.llmxy.xyz
+        autoCName: true
+        protocol: HTTP,HTTPS
+        certConfig:
+          certName: cert-neo-llmxy-20260601
+          certificate: ${env(FC_CUSTOM_DOMAIN_CERTIFICATE_PATH)}
+          privateKey: ${env(FC_CUSTOM_DOMAIN_PRIVATE_KEY_PATH)}
+        route:
+          path: /*
+          functionName: "agent-neo-control-plane"
+          qualifier: LATEST

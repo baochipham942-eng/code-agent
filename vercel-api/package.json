@@ -6,6 +6,9 @@
     "node": ">=20"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "deploy:fc": "npm run build && s deploy",
+    "start": "node dist/server.js",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

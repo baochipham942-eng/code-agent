@@ -1,0 +1,11 @@
+.env
+.env.*
+.vercel/
+.git/
+.DS_Store
+*.log
+npm-debug.log*
+tsconfig*.json
+server.ts
+api/**/*.ts
+lib/**/*.ts

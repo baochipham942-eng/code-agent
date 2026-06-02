@@ -2,7 +2,7 @@ import * as crypto from 'node:crypto';
 import {
   recordControlPlaneAuditErrorBackground,
   recordControlPlaneAuditEventBackground,
-} from './controlPlaneAudit.ts';
+} from './controlPlaneAudit.js';
 
 export type ControlPlaneArtifactKind =
   | 'cloud_config'

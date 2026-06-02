@@ -28,6 +28,8 @@ import { WebModeBanner } from '../WebModeBanner';
 import { LocalBridgeSection } from '../sections/localBridge';
 import { NativeConnectorsSection } from '../sections';
 import { McpServerEditor, type McpServerConfig } from '../McpServerEditor';
+import { McpDiscoverTab } from './McpDiscoverTab';
+import type { RecommendedMcpServerEntry } from '@shared/contract/mcpCatalog';
 import { WorkbenchCapabilityDetailButton } from '../../../workbench/WorkbenchPrimitives';
 import { WorkbenchCapabilitySheetLite } from '../../../workbench/WorkbenchCapabilitySheetLite';
 import {
@@ -43,8 +45,11 @@ import {
 
 const logger = createLogger('MCPSettings');
 
+type McpViewTab = 'connected' | 'discover';
+
 export const MCPSettings: React.FC = () => {
   const isAdmin = useAuthStore((s) => s.user?.isAdmin === true);
+  const [activeTab, setActiveTab] = useState<McpViewTab>('connected');
   const {
     status: mcpStatus,
     isLoading,
@@ -62,6 +67,8 @@ export const MCPSettings: React.FC = () => {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [reconnectingServer, setReconnectingServer] = useState<string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editorInitialConfig, setEditorInitialConfig] = useState<Partial<McpServerConfig> | undefined>(undefined);
+  const [discoverActionLoading, setDiscoverActionLoading] = useState<string | null>(null);
   const [activeSheetTarget, setActiveSheetTarget] = useState<WorkbenchCapabilityTarget | null>(null);
 
   const activeSheetCapability = useMemo(
@@ -178,6 +185,54 @@ export const MCPSettings: React.FC = () => {
     }
   }, [isAdmin, reloadMcpStatus]);
 
+  // ---- 发现连接：推荐 MCP 的三类动作 ----
+
+  /** 免配置 server 一键连接 */
+  const handleQuickConnect = useCallback(async (entry: RecommendedMcpServerEntry) => {
+    if (!isAdmin || !entry.connection) return;
+    setDiscoverActionLoading(entry.id);
+    try {
+      await handleAddServer({
+        name: entry.id,
+        type: entry.connection.type,
+        command: entry.connection.command,
+        args: entry.connection.args,
+        env: entry.connection.env,
+        url: entry.connection.url,
+        headers: entry.connection.headers,
+      });
+      await reloadMcpStatus();
+    } finally {
+      setDiscoverActionLoading(null);
+    }
+  }, [isAdmin, handleAddServer, reloadMcpStatus]);
+
+  /** 需要凭证的 server：打开预填编辑器让用户补凭证 */
+  const handleConnectWithConfig = useCallback((entry: RecommendedMcpServerEntry) => {
+    if (!isAdmin || !entry.connection) return;
+    setEditorInitialConfig({
+      name: entry.id,
+      type: entry.connection.type,
+      command: entry.connection.command,
+      args: entry.connection.args,
+      env: entry.connection.env,
+      url: entry.connection.url,
+      headers: entry.connection.headers,
+    });
+    setIsEditorOpen(true);
+  }, [isAdmin]);
+
+  /** 内置 server 启用 */
+  const handleEnableBuiltin = useCallback(async (serverId: string) => {
+    if (!isAdmin) return;
+    setDiscoverActionLoading(serverId);
+    try {
+      await handleToggleServer(serverId, true);
+    } finally {
+      setDiscoverActionLoading(null);
+    }
+  }, [isAdmin, handleToggleServer]);
+
   const openCapabilitySheet = useCallback((server: WorkbenchMcpRegistryItem) => {
     setActiveSheetTarget({
       kind: server.kind,
@@ -230,6 +285,40 @@ export const MCPSettings: React.FC = () => {
     >
       <WebModeBanner />
 
+      {/* Tab 切换：已连接 / 发现连接 */}
+      <div className="flex w-fit items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
+        {([
+          ['connected', `已连接 (${serverSummary.total})`],
+          ['discover', '发现连接'],
+        ] as Array<[McpViewTab, string]>).map(([tab, label]) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              activeTab === tab
+                ? 'bg-zinc-700 text-zinc-100'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'discover' && (
+        <McpDiscoverTab
+          existingServerIds={new Set(mcpServers.map((server) => server.id))}
+          enabledServerIds={new Set(mcpServers.filter((server) => server.enabled).map((server) => server.id))}
+          isAdmin={isAdmin}
+          actionLoading={discoverActionLoading}
+          onQuickConnect={handleQuickConnect}
+          onConnectWithConfig={handleConnectWithConfig}
+          onEnableBuiltin={handleEnableBuiltin}
+        />
+      )}
+
+      {activeTab === 'connected' && (<>
       <SettingsSection
         title="MCP 管理台"
         description="集中查看 server 可用性、工具资源数量和主操作入口。"
@@ -477,13 +566,18 @@ export const MCPSettings: React.FC = () => {
           已配置的服务器会在应用启动时自动连接。云端配置支持热更新，无需重启应用。
         </p>
       </SettingsDetails>
+      </>)}
 
       {/* Add Server Editor Modal */}
       {isAdmin && (
         <McpServerEditor
           isOpen={isEditorOpen}
-          onClose={() => setIsEditorOpen(false)}
+          onClose={() => {
+            setIsEditorOpen(false);
+            setEditorInitialConfig(undefined);
+          }}
           onSave={handleAddServer}
+          initialConfig={editorInitialConfig}
         />
       )}
 

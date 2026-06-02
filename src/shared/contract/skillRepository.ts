@@ -12,6 +12,79 @@
  */
 export type SkillRepositoryCategory = 'core' | 'workflow' | 'productivity' | 'community';
 
+// ----------------------------------------------------------------------------
+// 推荐分类（产物导向）
+// ----------------------------------------------------------------------------
+
+/**
+ * Skill 产物分类
+ * 按"用户要交付什么"划分，面向 cowork 协作者（非程序员）的心智模型
+ */
+export type SkillCategory =
+  | 'docs-office' // 文档办公
+  | 'data-analysis' // 数据分析
+  | 'design-creative' // 设计创意
+  | 'content-marketing' // 内容营销
+  | 'research' // 研究调研
+  | 'automation' // 效率自动化
+  | 'development'; // 开发工程
+
+/**
+ * Skill 产物分类元数据（用于推荐页展示）
+ */
+export interface SkillCategoryMeta {
+  /** 分类 ID */
+  id: SkillCategory;
+  /** 中文显示名 */
+  label: string;
+  /** 一句话说明 */
+  description: string;
+}
+
+/**
+ * 推荐 Skill 条目（skill 粒度）
+ * 安装时下载其来源仓库；repoId 为 'builtin' 表示已内置无需安装
+ */
+export interface RecommendedSkillEntry {
+  /** skill 名称（与仓库内 skill 目录名一致） */
+  name: string;
+  /** 中文显示名 */
+  displayName: string;
+  /** 一句话功能描述 */
+  description: string;
+  /** 产物分类 */
+  category: SkillCategory;
+  /** 来源仓库 ID；'builtin' 表示内置 */
+  repoId: string;
+  /** 热度/来源标签（如 "官方生产级"、"GitHub 20万+ Star"） */
+  badge?: string;
+}
+
+/**
+ * 角色场景包
+ * 按用户角色组织的精选 skill 合集（产品经理包、运营增长包等）
+ */
+export interface SkillRoleBundle {
+  /** 唯一标识 */
+  id: string;
+  /** 显示名称 */
+  name: string;
+  /** 一句话说明 */
+  description: string;
+  /** 包内 skill 引用 */
+  skills: Array<{
+    /** skill 名称（与仓库内 skill 目录名一致） */
+    name: string;
+    /** 中文显示名 */
+    displayName: string;
+    /** 来源仓库 ID；'builtin' 表示内置 */
+    repoId: string;
+  }>;
+}
+
+/** 内置 skill 的来源仓库 ID 标记 */
+export const BUILTIN_REPO_ID = 'builtin';
+
 /**
  * Skill 仓库配置
  * 定义一个可下载的 Skill 仓库源

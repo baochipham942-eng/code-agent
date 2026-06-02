@@ -26,6 +26,8 @@ interface McpServerEditorProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (config: McpServerConfig) => void;
+  /** 打开时预填的配置（推荐 MCP 一键连接入口使用） */
+  initialConfig?: Partial<McpServerConfig>;
 }
 
 type ServerType = McpServerConfig['type'];
@@ -138,11 +140,19 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
   isOpen,
   onClose,
   onSave,
+  initialConfig,
 }) => {
   const [config, setConfig] = useState<McpServerConfig>({ ...EMPTY_CONFIG });
   const [viewMode, setViewMode] = useState<ViewMode>('form');
   const [jsonText, setJsonText] = useState('');
   const [jsonError, setJsonError] = useState<string | null>(null);
+
+  // 打开时应用预填配置（用于推荐 MCP 的"连接"入口）
+  React.useEffect(() => {
+    if (isOpen) {
+      setConfig(initialConfig ? { ...EMPTY_CONFIG, ...initialConfig } : { ...EMPTY_CONFIG });
+    }
+  }, [isOpen, initialConfig]);
 
   // Reset state when opening
   const handleClose = useCallback(() => {

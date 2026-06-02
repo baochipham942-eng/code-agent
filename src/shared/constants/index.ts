@@ -20,3 +20,4 @@ export * from './vision';
 export * from './sandbox';
 export * from './memory';
 export * from './scriptRuntime';
+export * from './mcpCatalog';

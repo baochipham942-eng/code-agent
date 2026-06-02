@@ -37,6 +37,7 @@ import {
 } from '../agentDefinition';
 import { applyEffortControls } from '../runtime/contextAssembly/effortControls';
 import { WORKFLOW_ANTI_LOOP } from '../../../shared/constants';
+import { validateAgainstSchema, type JsonSchema } from '../structuredOutput';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('WorkflowOrchestrate');
@@ -762,6 +763,24 @@ function resolveAgentConfig(
   return undefined;
 }
 
+/**
+ * GAP-016: 校验阶段输出是否符合声明的 outputSchema。
+ * 无结构化数据 = 失败（声明了 schema 就必须产出可解析的 JSON）。
+ */
+function validateStageOutput(
+  structuredData: Record<string, unknown> | undefined,
+  outputSchema: Record<string, unknown>,
+): { passed: boolean; errors: string[] } {
+  if (!structuredData) {
+    return {
+      passed: false,
+      errors: ['Stage declared an outputSchema but no JSON could be extracted from its output'],
+    };
+  }
+  const result = validateAgainstSchema(structuredData, outputSchema as unknown as JsonSchema);
+  return { passed: result.valid, errors: result.errors };
+}
+
 // Execute a single stage
 async function executeStage(
   stage: WorkflowStage,
@@ -878,9 +897,21 @@ async function executeStage(
     }
   }
 
+  // GAP-016: 声明了 outputSchema 的阶段，把 schema 要求写进 prompt，让子代理知道输出契约
+  const outputSchemaRequirement = stage.outputSchema
+    ? [
+        '',
+        '',
+        '**Output Schema Requirement:** 你的最终输出必须包含一个 ```json 代码块，其内容符合以下 JSON Schema：',
+        '```json',
+        JSON.stringify(stage.outputSchema, null, 2),
+        '```',
+      ].join('\n')
+    : '';
+
   const fullPrompt = `${stage.prompt}
 
-**Overall Task:** ${task}${contextFromPrevious}`;
+**Overall Task:** ${task}${contextFromPrevious}${outputSchemaRequirement}`;
 
   try {
     const executor = getSubagentExecutor();
@@ -935,21 +966,39 @@ async function executeStage(
       duration,
     };
 
+    // GAP-016: 输出端质量检查点——校验失败按阶段失败处理，不让下游拿脏数据
+    let outputValidationError: string | undefined;
+    if (stage.outputSchema && result.success) {
+      const validation = validateStageOutput(stageContext.structuredData, stage.outputSchema);
+      stageContext.validationResult = validation;
+      if (!validation.passed) {
+        outputValidationError =
+          `Stage output failed schema validation: ${validation.errors.join('; ')}`;
+        logger.warn('[Stage] 输出 schema 校验失败', {
+          stage: stage.name,
+          errors: validation.errors,
+        });
+      }
+    }
+
+    const stageSuccess = result.success && !outputValidationError;
+
     logger.info('[Stage] 阶段执行完成', {
       stage: stage.name,
-      success: result.success,
+      success: stageSuccess,
       duration,
       outputLength: result.output?.length || 0,
       hasStructuredData: !!stageContext.structuredData,
       generatedFilesCount: stageContext.generatedFiles?.length || 0,
+      outputSchemaValidated: stage.outputSchema ? stageContext.validationResult?.passed : undefined,
     });
 
     return {
       stage: stage.name,
       role: stage.role,
-      success: result.success,
+      success: stageSuccess,
       output: result.output,
-      error: result.error,
+      error: outputValidationError ?? result.error,
       duration,
       context: stageContext,
     };

@@ -200,8 +200,10 @@ function extractJson(content: string): string | null {
 /**
  * Validate data against a JSON schema
  * This is a simplified validator - for production, consider using ajv
+ *
+ * Exported for reuse: GAP-016 workflow stage outputSchema 校验复用此实现
  */
-function validateAgainstSchema(
+export function validateAgainstSchema(
   data: unknown,
   schema: JsonSchema
 ): { valid: boolean; errors: string[] } {

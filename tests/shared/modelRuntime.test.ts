@@ -27,6 +27,7 @@ describe('modelRuntime', () => {
         providers: {
           custom: {
             enabled: true,
+            apiKeyConfigured: true,
             displayName: 'mimo',
             baseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
             models: {
@@ -56,6 +57,52 @@ describe('modelRuntime', () => {
         features: expect.arrayContaining(['tool', 'reasoning']),
       }),
     ]);
+  });
+
+  it('hides providers without a configured API key from switcher options', () => {
+    const settings = {
+      models: {
+        default: 'deepseek',
+        defaultProvider: 'deepseek',
+        providers: {
+          // enabled 但没配 key（默认设置里 deepseek/claude 等就是这个状态）→ 不出现
+          deepseek: { enabled: true },
+          claude: { enabled: true },
+          // 配了 key → 出现
+          moonshot: { enabled: true, apiKeyConfigured: true },
+        },
+      },
+    } as AppSettings;
+
+    const options = buildRuntimeModelOptions(settings, ['deepseek', 'claude', 'moonshot']);
+    expect(new Set(options.map((option) => option.provider))).toEqual(new Set(['moonshot']));
+
+    // includeDisabledProviders 豁免：当前会话/默认 provider 即使没 key 也保留
+    const withInclusion = buildRuntimeModelOptions(settings, ['deepseek', 'claude', 'moonshot'], {
+      includeDisabledProviders: ['deepseek'],
+    });
+    expect(new Set(withInclusion.map((option) => option.provider))).toEqual(new Set(['deepseek', 'moonshot']));
+  });
+
+  it('keeps local provider in switcher options without an API key', () => {
+    const settings = {
+      models: {
+        default: 'local',
+        defaultProvider: 'local',
+        providers: {
+          local: {
+            enabled: true,
+            models: {
+              'llama3.2': { enabled: true, label: 'Llama 3.2' },
+            },
+          },
+        },
+      },
+    } as AppSettings;
+
+    const options = buildRuntimeModelOptions(settings, ['local']);
+    expect(options.length).toBeGreaterThan(0);
+    expect(new Set(options.map((option) => option.provider))).toEqual(new Set(['local']));
   });
 
   it('can include a disabled current provider in switcher options', () => {
@@ -95,6 +142,7 @@ describe('modelRuntime', () => {
         providers: {
           'custom-longcat': {
             enabled: true,
+            apiKeyConfigured: true,
             protocol: 'claude',
             displayName: 'LongCat',
             baseUrl: 'https://api.longcat.example/v1',
@@ -139,6 +187,7 @@ describe('modelRuntime', () => {
         providers: {
           'custom-commonstack-claude': {
             enabled: true,
+            apiKeyConfigured: true,
             displayName: 'CommonStack Claude',
             baseUrl: 'https://commonstack.example/v1',
             model: 'anthropic/claude-opus-4-8',
@@ -174,10 +223,12 @@ describe('modelRuntime', () => {
         providers: {
           claude: {
             enabled: true,
+            apiKeyConfigured: true,
             updatedAt: 100,
           },
           'custom-scydao-claude': {
             enabled: true,
+            apiKeyConfigured: true,
             displayName: 'ScyDAO Claude',
             baseUrl: 'https://scydao.example/v1',
             model: 'claude-opus-4-7-medium',
@@ -192,6 +243,7 @@ describe('modelRuntime', () => {
           },
           'custom-commonstack-claude': {
             enabled: true,
+            apiKeyConfigured: true,
             displayName: 'CommonStack Claude',
             baseUrl: 'https://commonstack.example/v1',
             model: 'anthropic/claude-opus-4-8',
@@ -241,10 +293,12 @@ describe('modelRuntime', () => {
         providers: {
           claude: {
             enabled: true,
+            apiKeyConfigured: true,
             updatedAt: 400,
           },
           'custom-commonstack-claude': {
             enabled: true,
+            apiKeyConfigured: true,
             displayName: 'CommonStack Claude',
             baseUrl: 'https://commonstack.example/v1',
             model: 'anthropic/claude-opus-4-8',

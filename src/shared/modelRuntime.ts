@@ -383,6 +383,15 @@ export function buildRuntimeModelOptions(
 
     if (settings && providerConfig?.enabled === false && !includedDisabledProviders.has(providerId)) return;
 
+    // 没配置 API Key 的 provider 不进聊天切换面板（local/Ollama 无需 key 除外）。
+    // apiKeyConfigured 由 configService.getSettings() 动态注入：SecureStorage / env 任一有 key 即 true，
+    // 因此老配置（key 存在但 settings 文件里没该字段）也能被正确识别。
+    // 当前会话 / 默认 provider 走 includeDisabledProviders 豁免，避免选中项凭空消失。
+    const missingApiKey = providerId !== 'local'
+      && !providerConfig?.apiKeyConfigured
+      && !providerConfig?.apiKey;
+    if (settings && missingApiKey && !includedDisabledProviders.has(providerId)) return;
+
     const providerLabel = providerConfig?.displayName || getProviderDisplayName(providerId) || provider.name;
     const protocol = resolveProviderProtocol(providerId, providerConfig);
     const runtimeModels = getProviderRuntimeModels(provider, providerConfig);

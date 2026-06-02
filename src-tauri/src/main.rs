@@ -129,8 +129,12 @@ fn candidate_roots(app: &tauri::AppHandle) -> Vec<PathBuf> {
         roots.extend(dev_roots);
         roots.extend(packaged_roots);
     } else {
+        // release 只信任 bundle 内资源。dev_roots = 编译机的 CARGO_MANIFEST_DIR
+        // 源码路径 + 运行时 cwd，在用户机器上要么不存在、要么不可信：fallback 到
+        // 它们只会加载版本不匹配的旧副本（白屏）或用户可控目录里的代码。bundle
+        // 缺失时宁可走 Layer 3 启动失败弹窗，也不 fallback 到 dev 路径。
+        let _ = dev_roots;
         roots.extend(packaged_roots);
-        roots.extend(dev_roots);
     }
 
     unique_paths(roots)

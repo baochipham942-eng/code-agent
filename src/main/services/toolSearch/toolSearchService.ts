@@ -305,6 +305,14 @@ export class ToolSearchService {
   }
 
   /**
+   * 获取所有已注册的 MCP 工具元数据
+   * GAP-008: 用于把 MCP 工具名索引注入 system prompt（schema 仍按需加载）
+   */
+  getMCPToolsMeta(): DeferredToolMeta[] {
+    return Array.from(this.mcpToolsMeta.values());
+  }
+
+  /**
    * 检查工具是否已加载
    */
   isToolLoaded(name: string): boolean {

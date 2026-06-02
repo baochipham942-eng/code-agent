@@ -156,6 +156,60 @@ describe('ToolSearchService loadable results', () => {
     expect(service.isToolLoaded('mcp__github__search_code')).toBe(true);
   });
 
+  it('exposes registered MCP tool metadata via getMCPToolsMeta for the name index', () => {
+    const service = new ToolSearchService();
+    service.registerMCPTools([
+      {
+        name: 'mcp__github__search_code',
+        shortDescription: 'Search code on GitHub',
+        tags: ['mcp', 'network'],
+        aliases: ['search_code', 'github'],
+        source: 'mcp',
+        mcpServer: 'github',
+      },
+      {
+        name: 'mcp__supabase__execute_sql',
+        shortDescription: 'Execute SQL on Supabase',
+        tags: ['mcp', 'network'],
+        aliases: ['execute_sql', 'supabase'],
+        source: 'mcp',
+        mcpServer: 'supabase',
+      },
+    ]);
+
+    const metas = service.getMCPToolsMeta();
+
+    expect(metas.map((m) => m.name)).toEqual([
+      'mcp__github__search_code',
+      'mcp__supabase__execute_sql',
+    ]);
+    expect(metas.map((m) => m.mcpServer)).toEqual(['github', 'supabase']);
+  });
+
+  it('removes unregistered server tools from getMCPToolsMeta', () => {
+    const service = new ToolSearchService();
+    service.registerMCPTool({
+      name: 'mcp__github__search_code',
+      shortDescription: 'Search code on GitHub',
+      tags: ['mcp', 'network'],
+      aliases: ['search_code'],
+      source: 'mcp',
+      mcpServer: 'github',
+    });
+    service.registerMCPTool({
+      name: 'mcp__supabase__execute_sql',
+      shortDescription: 'Execute SQL on Supabase',
+      tags: ['mcp', 'network'],
+      aliases: ['execute_sql'],
+      source: 'mcp',
+      mcpServer: 'supabase',
+    });
+
+    service.unregisterMCPServer('github');
+
+    expect(service.getMCPToolsMeta().map((m) => m.name)).toEqual(['mcp__supabase__execute_sql']);
+  });
+
   it('keeps dynamic workflow and legacy workflow_orchestrate as separate invocations', async () => {
     const service = new ToolSearchService();
 

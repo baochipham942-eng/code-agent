@@ -591,6 +591,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
 ${deferredToolsSummary}
 
 用法：调用 ToolSearch 时传入 JSON 参数，例如 {"query":"browser"} 搜索浏览器工具，或 {"query":"select:Browser"} 直接加载。
+[mcp:*] 分组下是外部 MCP 服务器提供的工具（命名格式 mcp__<server>__<tool>），同样通过 ToolSearch 加载后才能调用，例如 {"query":"select:mcp__github__search_code"}。
 </deferred-tools>`;
       systemPrompt = appendPromptBlockWithinBudget(
         systemPrompt,
@@ -863,6 +864,8 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
             entry.role === 'tool' &&
             (entry as ContextTranscriptEntry).preserveObservation === true,
           interventions: transcriptInterventions,
+          // GAP-009: 超预算工具结果落盘到 session 临时目录
+          spillSessionId: ctx.runtime.sessionId,
         },
       );
 

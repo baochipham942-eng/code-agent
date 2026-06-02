@@ -293,3 +293,56 @@ describe('observationMask', () => {
     });
   });
 });
+
+// ============================================================================
+// GAP-009: compressToolResult 必须保留落盘提示行
+// E2E 实测 bug：truncate 策略尾部预算 ~30 token，带长路径的提示行（~45 token）
+// 第一行就超预算 → 整个尾部被清空 → 模型永远看不到完整输出的路径。
+// ============================================================================
+
+import { compressToolResult } from '../../../src/main/context/tokenOptimizer';
+import { TOOL_RESULT_SPILL } from '../../../src/shared/constants';
+
+describe('compressToolResult spill notice preservation (GAP-009)', () => {
+  // 复现 E2E 实测场景：bash 截断后的输出（cwd 前缀 + 数千行数字 + Guidance + 长路径落盘提示）
+  function makeBashSpilledOutput(): string {
+    const numbers = Array.from({ length: 5700 }, (_, i) => String(i + 1)).join('\n');
+    return (
+      '[cwd: /Users/linchen/.claude/worktrees/gap-phase2]\n' +
+      numbers +
+      '\n\n[Guidance: Output was 108894 chars, truncated to 30000. Use Read tool with offset/limit to read specific sections, or use Edit tool to make targeted changes without reading the entire file.]' +
+      `\n${TOOL_RESULT_SPILL.NOTICE_MARKER} /Users/linchen/.code-agent/tmp/gap2-e2e-spill-1/tool-results/Bash-call_c8f816dc0dc448caa456c288.txt — use Read/Grep on this file to inspect the full output.]`
+    );
+  }
+
+  it('keeps the spill notice line (with long absolute path) after aggressive compression', () => {
+    const output = makeBashSpilledOutput();
+
+    const result = compressToolResult(output);
+
+    expect(result.compressed).toBe(true);
+    // 压缩后内容仍然包含完整的落盘路径提示
+    expect(result.content).toContain(TOOL_RESULT_SPILL.NOTICE_MARKER);
+    expect(result.content).toContain('Bash-call_c8f816dc0dc448caa456c288.txt');
+    // 提示在尾部（拼回时追加在压缩内容之后）
+    expect(result.content.trimEnd().endsWith('the full output.]')).toBe(true);
+  });
+
+  it('does not duplicate the notice when content has multiple notice lines', () => {
+    const output = makeBashSpilledOutput() + `\n${TOOL_RESULT_SPILL.NOTICE_MARKER} /tmp/another.txt — use Read/Grep on this file to inspect the full output.]`;
+
+    const result = compressToolResult(output);
+
+    const occurrences = result.content.split(TOOL_RESULT_SPILL.NOTICE_MARKER).length - 1;
+    expect(occurrences).toBe(2); // 两条原始提示都保留，不多不少
+  });
+
+  it('leaves content without spill notice unchanged in behavior', () => {
+    const numbers = Array.from({ length: 3000 }, (_, i) => String(i + 1)).join('\n');
+
+    const result = compressToolResult(numbers);
+
+    expect(result.compressed).toBe(true);
+    expect(result.content).not.toContain(TOOL_RESULT_SPILL.NOTICE_MARKER);
+  });
+});

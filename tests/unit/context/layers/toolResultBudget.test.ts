@@ -2,10 +2,25 @@
 // L1: Tool Result Budget Tests
 // ============================================================================
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { applyToolResultBudget } from '../../../../src/main/context/layers/toolResultBudget';
 import { CompressionState } from '../../../../src/main/context/compressionState';
 import { estimateTokens } from '../../../../src/main/context/tokenEstimator';
+import { SPILL_NOTICE_MARKER } from '../../../../src/main/utils/toolResultSpill';
+
+// mock factory 与测试体各自计算同一确定性路径（避免 vi.hoisted 跨作用域引用）
+const spillTestRoot = path.join(os.tmpdir(), `neo-budget-spill-test-${process.pid}`);
+
+vi.mock('../../../../src/main/config/configPaths', async () => {
+  const osMod = await import('os');
+  const pathMod = await import('path');
+  return {
+    getUserConfigDir: () => pathMod.join(osMod.tmpdir(), `neo-budget-spill-test-${process.pid}`),
+  };
+});
 
 type TestMessage = { id: string; role: string; content: string; toolCallId?: string };
 
@@ -200,6 +215,62 @@ describe('applyToolResultBudget', () => {
 
       expect(msg.content).toContain('...[truncated]...');
       expect(msg.content).not.toContain('key line(s) preserved');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // GAP-009: spill to disk before truncation
+  // --------------------------------------------------------------------------
+  describe('spill to disk (GAP-009)', () => {
+    afterAll(() => {
+      fs.rmSync(spillTestRoot, { recursive: true, force: true });
+    });
+
+    it('spills full content to disk and appends a path notice when spillSessionId is provided', () => {
+      const bigContent = makeText(3000);
+      const msg = makeToolMsg('t1', bigContent);
+
+      applyToolResultBudget([msg], state, { maxTokensPerResult: 2000, spillSessionId: 'sess-1' });
+
+      // 截断后的内容带落盘提示
+      expect(msg.content).toContain(SPILL_NOTICE_MARKER);
+      // 提示里的文件路径真实存在且内容是完整原文
+      const match = msg.content.match(/\[Full output saved to: (.+?) — /);
+      expect(match).not.toBeNull();
+      const spillFile = match![1];
+      expect(fs.existsSync(spillFile)).toBe(true);
+      expect(fs.readFileSync(spillFile, 'utf-8')).toBe(bigContent);
+      // 落盘目录按 session 隔离
+      expect(spillFile).toContain(path.join('tmp', 'sess-1', 'tool-results'));
+    });
+
+    it('keeps plain truncation behavior when spillSessionId is not provided', () => {
+      const msg = makeToolMsg('t1', makeText(3000));
+
+      applyToolResultBudget([msg], state);
+
+      expect(msg.content).not.toContain(SPILL_NOTICE_MARKER);
+    });
+
+    it('does not spill results that are within budget', () => {
+      const msg = makeToolMsg('t1', 'small result');
+
+      applyToolResultBudget([msg], state, { maxTokensPerResult: 2000, spillSessionId: 'sess-2' });
+
+      expect(msg.content).toBe('small result');
+      const sessDir = path.join(spillTestRoot, 'tmp', 'sess-2', 'tool-results');
+      expect(fs.existsSync(sessDir)).toBe(false);
+    });
+
+    it('does not re-spill content that already carries a spill notice', () => {
+      // 模拟 bash 层已落盘过的结果再次进入 L1 budget
+      const alreadySpilled = makeText(3000) + `\n${SPILL_NOTICE_MARKER} /earlier/path.txt — use Read/Grep on this file to inspect the full output.]`;
+      const msg = makeToolMsg('t1', alreadySpilled);
+
+      applyToolResultBudget([msg], state, { maxTokensPerResult: 2000, spillSessionId: 'sess-3' });
+
+      // 内容被截断但没有第二个落盘提示指向 sess-3
+      expect(msg.content).not.toContain(path.join('tmp', 'sess-3'));
     });
   });
 

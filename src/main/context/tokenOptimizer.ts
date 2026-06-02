@@ -10,7 +10,7 @@
 
 import { createLogger } from '../services/infra/logger';
 import { estimateTokens } from './tokenEstimator';
-import { OBSERVATION_MASKING } from '../../shared/constants';
+import { OBSERVATION_MASKING, TOOL_RESULT_SPILL } from '../../shared/constants';
 import { ContextCompressor } from './compressor';
 
 const logger = createLogger('TokenOptimizer');
@@ -141,14 +141,28 @@ export function compressToolResult(
     return { content, compressed: false, savedTokens: 0 };
   }
 
+  // GAP-009: 落盘提示是模型回查完整输出的唯一通道，和反爬 hint 同理必须存活。
+  // truncate 策略的尾部预算极小（~30 token），带长路径的提示行会被整体丢弃
+  // （webFetch 反爬 hint 踩过同一坑）。解法：压缩前抽出提示行，压缩后拼回尾部。
+  let spillNotice = '';
+  let compressibleContent = content;
+  if (content.includes(TOOL_RESULT_SPILL.NOTICE_MARKER)) {
+    const lines = content.split('\n');
+    spillNotice = lines.filter((line) => line.includes(TOOL_RESULT_SPILL.NOTICE_MARKER)).join('\n');
+    compressibleContent = lines.filter((line) => !line.includes(TOOL_RESULT_SPILL.NOTICE_MARKER)).join('\n');
+  }
+  const withSpillNotice = (compressed: string): string =>
+    spillNotice ? `${compressed}\n${spillNotice}` : compressed;
+
   // Special handling for read_xlsx results: preserve schema + sample rows + hint
-  const xlsxCompressed = compressXlsxResult(content, cfg.targetTokens);
+  const xlsxCompressed = compressXlsxResult(compressibleContent, cfg.targetTokens);
   if (xlsxCompressed) {
-    const compressedTokens = estimateTokens(xlsxCompressed);
+    const finalContent = withSpillNotice(xlsxCompressed);
+    const compressedTokens = estimateTokens(finalContent);
     const savedTokens = originalTokens - compressedTokens;
     logger.debug(`XLSX result compressed (schema-aware): ${originalTokens}→${compressedTokens} tokens (saved ${savedTokens})`);
     return {
-      content: xlsxCompressed,
+      content: finalContent,
       compressed: true,
       savedTokens,
       compressionInfo: { originalTokens, compressedTokens },
@@ -165,17 +179,19 @@ export function compressToolResult(
       : [{ type: 'truncate', threshold: 0.8, targetRatio: 0.5, priority: 1 }],
   });
 
-  const result = compressor.compressText(content);
+  const result = compressor.compressText(compressibleContent);
 
   if (result.wasCompressed) {
-    logger.debug(`Tool result compressed: ${originalTokens}→${result.compressedTokens} tokens (saved ${result.savedTokens})`);
+    const finalContent = withSpillNotice(result.content);
+    const compressedTokens = estimateTokens(finalContent);
+    logger.debug(`Tool result compressed: ${originalTokens}→${compressedTokens} tokens (saved ${originalTokens - compressedTokens})`);
     return {
-      content: result.content, // Keep original format, no header prepended
+      content: finalContent, // Keep original format, no header prepended
       compressed: true,
-      savedTokens: result.savedTokens,
+      savedTokens: originalTokens - compressedTokens,
       compressionInfo: {
         originalTokens,
-        compressedTokens: result.compressedTokens,
+        compressedTokens,
       },
     };
   }

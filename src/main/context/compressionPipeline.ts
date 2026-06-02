@@ -37,6 +37,8 @@ export interface PipelineConfig {
   toolResultBudget: number; // default: 2000
   protectedToolResultPredicate?: (message: ProjectableMessage) => boolean;
   interventions?: ContextInterventionSnapshot;
+  /** GAP-009: 提供时 L1 超预算结果先落盘再截断（透传给 toolResultBudget） */
+  spillSessionId?: string;
 }
 
 export interface PipelineResult {
@@ -110,6 +112,7 @@ export class CompressionPipeline {
     applyToolResultBudget(transcript, state, {
       maxTokensPerResult: config.toolResultBudget ?? 2000,
       protectedMessageIds,
+      spillSessionId: config.spillSessionId,
     });
     layersTriggered.push('tool-result-budget');
 

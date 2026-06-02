@@ -9,6 +9,7 @@ import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
 import { maskSensitiveData } from '../security';
 import { MCP_TIMEOUTS } from '../../shared/constants';
+import { spillToolResult, buildSpillNotice } from '../utils/toolResultSpill';
 import { getToolSearchService } from '../services/toolSearch';
 import type {
   MCPTool,
@@ -23,6 +24,8 @@ const logger = createLogger('MCPToolRegistry');
 interface MCPToolRegistryCallOptions {
   timeoutMs?: number;
   abortSignal?: AbortSignal;
+  /** 会话 ID（GAP-009: 超阈值输出落盘到 session 临时目录） */
+  sessionId?: string;
 }
 
 function buildCancelledToolResult(toolCallId: string, startTime: number): ToolResult {
@@ -443,7 +446,11 @@ export class MCPToolRegistry {
       }
 
       // Truncate oversized output to prevent context overflow
-      const truncatedOutput = truncateMcpOutput(output, serverName, toolName);
+      // GAP-009: 截断前落盘完整输出，模型可用 Read/Grep 回查
+      const truncatedOutput = truncateMcpOutput(output, serverName, toolName, {
+        sessionId: options.sessionId,
+        toolCallId,
+      });
 
       return {
         toolCallId,
@@ -624,11 +631,24 @@ const TRUNCATION_NOTICE = '\n\n[Output truncated: exceeded size limit. Use more 
 /**
  * Truncate oversized MCP tool output to prevent context window overflow.
  * Preserves the first and last portions for context continuity.
+ * GAP-009: 截断前落盘完整输出到 session 临时目录，截断文本尾部附加路径提示。
  */
-function truncateMcpOutput(output: string, serverName: string, toolName: string): string {
+function truncateMcpOutput(
+  output: string,
+  serverName: string,
+  toolName: string,
+  spillCtx?: { sessionId?: string; toolCallId?: string },
+): string {
   if (output.length <= MCP_MAX_OUTPUT_CHARS) {
     return output;
   }
+
+  const spillPath = spillToolResult({
+    content: output,
+    toolName: `mcp__${serverName}__${toolName}`,
+    sessionId: spillCtx?.sessionId,
+    toolCallId: spillCtx?.toolCallId,
+  });
 
   const keepStart = Math.floor(MCP_MAX_OUTPUT_CHARS * 0.7);
   const keepEnd = Math.floor(MCP_MAX_OUTPUT_CHARS * 0.2);
@@ -637,11 +657,12 @@ function truncateMcpOutput(output: string, serverName: string, toolName: string)
     output.slice(0, keepStart) +
     `\n\n... [${output.length - keepStart - keepEnd} characters omitted] ...\n\n` +
     output.slice(-keepEnd) +
-    TRUNCATION_NOTICE;
+    TRUNCATION_NOTICE +
+    (spillPath ? buildSpillNotice(spillPath) : '');
 
   logger.warn(
     `MCP output truncated: ${serverName}/${toolName} ` +
-    `(${output.length} → ${truncated.length} chars)`
+    `(${output.length} → ${truncated.length} chars${spillPath ? `, full output spilled to ${spillPath}` : ''})`
   );
 
   return truncated;

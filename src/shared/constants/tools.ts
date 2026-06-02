@@ -51,6 +51,29 @@ export const SANDBOX = {
   DEFAULT_TIMEOUT: 5000,
 } as const;
 
+/**
+ * 工具结果落盘配置 (GAP-009)
+ *
+ * 截断 = 信息永久丢失，agent 想再看只能重跑命令；
+ * 落盘 = 上下文留摘要+路径，agent 可用 Read/Grep 回查。
+ */
+export const TOOL_RESULT_SPILL = {
+  /** ~/.code-agent/ 下的临时目录名 */
+  TMP_DIR: 'tmp',
+  /** session 临时目录下的工具结果子目录名 */
+  SUBDIR: 'tool-results',
+  /** 无 session 上下文时的目录名 */
+  SHARED_SESSION: 'shared',
+  /** 单文件最大落盘字节数（10MB，防止异常超大输出写爆磁盘） */
+  MAX_SPILL_BYTES: 10 * 1024 * 1024,
+  /**
+   * 落盘提示的标识前缀。
+   * 同时用于：防重复落盘（toolResultSpill）+ 压缩豁免（tokenOptimizer 提取后拼回，
+   * 否则 compressToolResult 的尾部预算 ~30 token 会把带长路径的提示行整体吞掉）。
+   */
+  NOTICE_MARKER: '[Full output saved to:',
+} as const;
+
 /** Codex 会话挖掘配置 */
 export const CODEX_SESSION = {
   /** Codex 会话存储目录 */

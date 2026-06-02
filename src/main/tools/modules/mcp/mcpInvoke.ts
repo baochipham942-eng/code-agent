@@ -180,7 +180,10 @@ export async function executeMcpInvoke(
   try {
     const toolCallId = uuidv4();
     const result = await withAbort(
-      mcpClient.callTool(toolCallId, server, tool, toolArgs, { abortSignal: ctx.abortSignal }),
+      mcpClient.callTool(toolCallId, server, tool, toolArgs, {
+        abortSignal: ctx.abortSignal,
+        sessionId: ctx.sessionId,
+      }),
       ctx.abortSignal,
     );
 

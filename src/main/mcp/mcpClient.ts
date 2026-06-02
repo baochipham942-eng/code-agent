@@ -71,6 +71,8 @@ const logger = createLogger('MCPClient');
 export interface MCPToolCallOptions {
   timeoutMs?: number;
   abortSignal?: AbortSignal;
+  /** 会话 ID（GAP-009: 超阈值输出落盘到 session 临时目录） */
+  sessionId?: string;
 }
 
 function isAbortError(error: unknown): boolean {
@@ -662,6 +664,7 @@ export class MCPClient extends EventEmitter {
   ): Promise<ToolResult> {
     const timeoutMs = typeof options === 'number' ? options : options.timeoutMs ?? 60000;
     const abortSignal = typeof options === 'number' ? undefined : options.abortSignal;
+    const sessionId = typeof options === 'number' ? undefined : options.sessionId;
     if (abortSignal?.aborted) {
       return buildCancelledToolResult(toolCallId);
     }
@@ -705,6 +708,7 @@ export class MCPClient extends EventEmitter {
       return await this.registry.callExternalTool(toolCallId, serverName, toolName, args, client, {
         timeoutMs,
         abortSignal,
+        sessionId,
       });
     } catch (error: unknown) {
       if (isAbortError(error) || abortSignal?.aborted) {

@@ -31,6 +31,7 @@ import { useComposerStore } from '../../../../stores/composerStore';
 import { useSwarmStore } from '../../../../stores/swarmStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { ComboSkillCard } from './ComboSkillCard';
+import { SkillDraftNotifications } from './SkillDraftCard';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { AppshotChip } from './AppshotChip';
@@ -891,6 +892,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onSaved={() => setComboSuggestion(null)}
           />
         )}
+
+        <SkillDraftNotifications />
 
         {/* Suggestion Bar - show when input is empty */}
         {value.trim().length === 0 && suggestions.length > 0 && (

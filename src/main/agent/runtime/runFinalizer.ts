@@ -337,8 +337,9 @@ export class RunFinalizer {
     logger.info(`[AgentLoop] === Mechanism Stats ===`);
 
     // Session end learning
-    // genNum already declared above in dynamic mode detection
-    if (genNum >= 5 && this.ctx.messages.length > 0) {
+    // GAP-005: 学习管线只读本会话 telemetry（本地 DB，开销极低），
+    // 不再用 genNum>=5 门槛——短会话里重复 3 次的失败模式同样值得沉淀。
+    if (this.ctx.messages.length > 0) {
       this.learningPipeline.runSessionEndLearning().catch((err) => {
         logger.error('[AgentLoop] Session end learning error:', err);
       });

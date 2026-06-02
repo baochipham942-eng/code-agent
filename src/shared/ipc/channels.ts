@@ -76,6 +76,17 @@ export const SKILL_CHANNELS = {
   COMBO_SAVE: 'skill:combo:save',
   /** 获取录制数据 */
   COMBO_GET_RECORDING: 'skill:combo:get-recording',
+
+  // ------------------------------------------------------------------------
+  // Skill 草稿确认队列（GAP-005 半自动蒸馏，严禁自动入库）
+  // ------------------------------------------------------------------------
+
+  /** 列出待确认草稿 */
+  DRAFT_LIST: 'skill:draft:list',
+  /** 确认草稿（移入 skills 目录） */
+  DRAFT_CONFIRM: 'skill:draft:confirm',
+  /** 拒绝草稿（删除并记入 rejected ledger，不再重复打扰） */
+  DRAFT_REJECT: 'skill:draft:reject',
 } as const;
 
 /**
@@ -307,6 +318,16 @@ export const SUBSET_CHANNELS = {
   LOAD: 'evaluation:load-test-subset',
   /** 删除指定子集 */
   DELETE: 'evaluation:delete-test-subset',
+} as const;
+
+/**
+ * 评测实验 IPC 通道（GAP-017: Harness 对照实验）
+ */
+export const EVALUATION_CHANNELS = {
+  /** 启动 harness 对照实验（固定模型，变 harness 配置；fire-and-forget，返回预生成 runId） */
+  RUN_HARNESS_COMPARISON: 'evaluation:run-harness-comparison',
+  /** 列出已落 DB 的实验（含 config_json harness 维度，用于对比/轮询完成状态） */
+  LIST_EXPERIMENTS: 'evaluation:list-experiments',
 } as const;
 
 /**

@@ -11,6 +11,12 @@ export interface SubagentConfig {
   name: string;
   systemPrompt: string;
   availableTools: string[];
+  /**
+   * GAP-011（课程"方向 A"）：spawn 时把这些 skill 的 SKILL.md 全文拼进子代理
+   * system prompt（知识注入）。与 availableTools 权限边界正交——注入 skill
+   * 不扩张子代理的工具集。
+   */
+  skills?: string[];
   maxIterations?: number;
   /** Permission preset for pipeline integration */
   permissionPreset?: PermissionPreset;

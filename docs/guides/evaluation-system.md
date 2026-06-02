@@ -489,6 +489,41 @@ currentSessionId: string | null;
 
 8 个评分维度：正确性 25%、效率 15%、可读性 15%、可维护性 15%、安全性 10%、性能 10%、覆盖率 5%、简洁性 5%。
 
+### 8.4 Harness 对照实验（GAP-017，阶段四）
+
+**动机**：课程 H2 观点——"同一模型在不同 Harness 中的差距 > 不同模型在同一 Harness 中的差距"。要验证它，就得**固定模型、只变 harness 配置**，跑 ablation 对照实验，看 harness 维度对结果的影响有多大。
+
+**三个维度**（`HarnessVariantConfig`，每个变体带一个 `name` 用于命名和 DB 对比）：
+
+| 维度 | 取值 | 含义 |
+|------|------|------|
+| `contextCompression` | `true` / `false` / `undefined` | context 自动压缩开/关（undefined = 跟随全局配置）|
+| `hooksEnabled` | `true` / `false` / `undefined` | hooks 开/关（undefined = 评测默认关闭）|
+| `toolMode` | `'all'` / `'deferred'` | 工具集：全量加载 vs 延迟加载（裁剪模型可见工具面）|
+
+`StandaloneAgentAdapter` 按变体落地：`hooksEnabled` 控制 per-loop enableHooks；`contextCompression` 临时覆盖 autoCompressor、run 后恢复；`toolMode` 走 enableToolDeferredLoading。`runHarnessComparison` 串行跑每个变体（固定模型），每变体预生成一个 `runId`、落一条 experiment 记录（避免双写）。
+
+**怎么触发**——IPC：`evaluation:run-harness-comparison`（fire-and-forget，返回预生成 runId 列表，至少 2 个变体）。webServer 自动暴露为 HTTP API：
+
+```bash
+# 固定 glm-5/zhipu 跑 2 个变体：baseline（压缩开 + deferred 工具）vs 压缩关 + 全量工具
+curl -X POST http://localhost:<port>/api/evaluation/run-harness-comparison \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "glm-5",
+    "provider": "zhipu",
+    "filterIds": ["bash-echo"],
+    "variants": [
+      { "name": "baseline", "contextCompression": true, "toolMode": "deferred" },
+      { "name": "compression-off-tools-all", "contextCompression": false, "toolMode": "all" }
+    ]
+  }'
+```
+
+**结果怎么看**：每个变体落 `experiments` 表，harness 维度写在 `config_json.harness`，实验名带变体名（`harness-<variant>-<date>`）便于跨实验对比；用 `evaluation:list-experiments`（`POST /api/evaluation/list-experiments`，可带 `limit`）拉已落 DB 的实验列表，含解析后的 config/summary，同时用于轮询各变体完成状态。上述 E2E 实测中两个变体各 1/1 通过，DB 中 `config_json.harness` 分别携带两组维度。
+
+**关键文件**：`src/main/testing/types.ts`（`HarnessVariantConfig` / `TestRunnerConfig.harness` / `TestRunSummary.harness`）、`src/main/testing/agentAdapter.ts`（变体应用）、`src/main/testing/harnessComparison.ts`（串行调度）、`src/main/evaluation/experimentAdapter.ts`（落 DB）、`src/main/ipc/evaluation.ipc.ts`（IPC 注册）。详见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
+
 ---
 
 ## 9. 失败漏斗分析
@@ -532,6 +567,10 @@ Stage 5: LLM Scoring       → LLM 评分低于阈值（概率性判断）
 | `evaluation:load-experiment` | renderer → main | 加载实验详情 + 用例数据 |
 | `evaluation:get-failure-funnel` | renderer → main | 获取失败漏斗分析数据 |
 | `evaluation:get-cross-experiment` | renderer → main | 跨实验对比数据 |
+| `evaluation:run-harness-comparison` | renderer → main | 启动 Harness 对照实验（GAP-017，阶段四；fire-and-forget，返回预生成 runId 列表）|
+| `evaluation:list-experiments` | renderer → main | 列出已落 DB 的实验（含 `config_json.harness`，用于对比/轮询）（GAP-017，阶段四）|
+
+> Harness 对照实验通道详见 [§8.4](#84-harness-对照实验gap-017阶段四)；webServer 自动暴露为 `POST /api/evaluation/run-harness-comparison` 等 HTTP API。
 
 ---
 

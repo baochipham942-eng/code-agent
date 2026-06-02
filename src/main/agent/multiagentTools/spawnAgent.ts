@@ -336,6 +336,8 @@ export async function executeSpawnAgent(
         name: agentName,
         systemPrompt,
         availableTools: tools,
+        // GAP-011：声明式 agent 定义里的预装 skills 透传给 executor（方向 A）
+        skills: agentConfig?.skills,
         maxIterations,
         permissionPreset,
         maxBudget: effectiveMaxBudget,

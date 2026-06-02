@@ -44,3 +44,26 @@ export const MEMORY_CONSOLIDATION = {
   /** 内置 job 识别标签（启动时按此 tag 查重，避免重复注册） */
   JOB_TAG: 'light-memory-consolidation',
 } as const;
+
+/** GAP-005: 经验沉淀管线（learningPipeline → failure journal / skill 草稿） */
+export const LEARNING_PIPELINE = {
+  /** 同一失败模式累计出现次数达到该阈值才写入 failure journal */
+  FAILURE_PATTERN_THRESHOLD: 3,
+  /** 同一成功工具序列出现次数达到该阈值才生成 skill 草稿 */
+  SUCCESS_PATTERN_THRESHOLD: 3,
+  /** 成功模式提取的工具序列长度范围（n-gram） */
+  SUCCESS_SEQUENCE_MIN_LENGTH: 2,
+  SUCCESS_SEQUENCE_MAX_LENGTH: 4,
+  /** failure journal 最多保留的模式条数（超出按 lastSeen 淘汰最旧的） */
+  JOURNAL_MAX_ENTRIES: 30,
+  /** 每个模式最多保留的来源 session 数 */
+  JOURNAL_MAX_SESSIONS_PER_ENTRY: 5,
+  /** 归一化错误消息的截断长度 */
+  ERROR_PATTERN_MAX_CHARS: 100,
+  /** 注入 system prompt 的 journal 块最多包含的模式条数（按 lastSeen 取最新） */
+  INJECTION_MAX_ENTRIES: 15,
+  /** failure journal 在 Light Memory 中的文件名 */
+  JOURNAL_FILENAME: 'failure-journal.md',
+  /** skill 草稿队列目录名（位于 ~/.code-agent/ 下，与 skills/ 平级，避免被 discovery 扫描） */
+  DRAFTS_DIR_NAME: 'skill-drafts',
+} as const;

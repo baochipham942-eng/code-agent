@@ -356,7 +356,10 @@ export class ExperimentAdapter {
       startTime: summary.startTime,
       endTime: summary.endTime,
       durationMs: summary.duration || 0,
-      name: `eval-${new Date(summary.startTime).toISOString().slice(0, 10)}`,
+      // GAP-017: harness 对照实验用变体名命名，便于跨实验对比时识别维度
+      name: summary.harness
+        ? `harness-${summary.harness.name}-${new Date(summary.startTime).toISOString().slice(0, 10)}`
+        : `eval-${new Date(summary.startTime).toISOString().slice(0, 10)}`,
       scope: 'full',
       environment: summary.environment,
       totals: this.computeTotals(cases),
@@ -364,6 +367,8 @@ export class ExperimentAdapter {
       gitCommit: summary.gitCommit,
       config: {
         workingDirectory: summary.environment?.workingDirectory,
+        // GAP-017: harness 配置维度落 config_json（固定模型变 harness 的 ablation 对比依据）
+        ...(summary.harness ? { harness: summary.harness } : {}),
       },
       metadata: {
         performance: summary.performance,

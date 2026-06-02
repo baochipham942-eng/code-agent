@@ -118,8 +118,25 @@ FOR EACH toolCall:
 | `DecisionTrace` | 自动 permission decision 必须能回放 classifier、reason、risk 和结果；artifact/eval 质量问题也可引用同一 trace | `src/main/security/decisionHistory.ts`、`src/shared/contract/productClosure.ts`、`tests/unit/tools/toolExecutor.decisionTrace.test.ts` |
 | workspace/file write isolation | `Bash` / execute 视为 workspace 写锁；`Write` / `Edit` / `Append` / `MultiEdit` 按目标文件判断冲突；无文件参数时退到 workspace 锁 | `src/main/security/writeIsolation.ts`、`tests/unit/tools/toolExecutor.writeIsolation.test.ts` |
 | dynamic workflow write gate | workflow run 内 edit/full agent 先过 `SerialWriteGate` 串行，普通工具执行再过 ToolExecutor 写隔离 | `src/main/agent/scriptRuntime/writeGate.ts`、`tests/unit/agent/scriptRuntime/agentBridge.test.ts` |
+| hook 日志脱敏（GAP-015，PR #196）| hook 执行的观测日志（UI 可见的 hookManager trigger history + async hook 失败日志）接 `maskSensitiveData` 脱敏，复用 auditLogger 同款掩码，避免密钥经 hook 日志泄漏 | `src/main/hooks/hookExecutionEngine.ts`、`src/main/hooks/hookManager.ts`、`tests/unit/hooks/hookSanitizationAndTrace.test.ts` |
 
 这层是进程内串行和冲突判断，不等于 per-agent git worktree。真正需要并行写入同一个 repo 时，仍要在上层分配独立工作树或做更细的文件锁策略。
+
+### Skill allowed-tools 限权边界（GAP-001，PR #192）
+
+`allowed-tools` 从"仅预审批扩权"升级为"限权边界"。此前 project/user skill 的 `allowed-tools` 只对 builtin/plugin skill 起自动扩权作用，列表外的工具仍可被无审批调用——一个"只读" skill 若上下文里有 `Bash` 仍能写文件。现在 `allowed-tools` 对**所有来源**的 skill 都构成工具边界：
+
+- 边界外工具调用强制走用户审批（rule: `skill.allowed-tools-boundary`），通过 `runtimeContext.skillToolBoundary` 传递；
+- 仅 builtin/plugin skill 的**边界内**工具可继续免审批；只读工具不受门控；
+- fork 模式语义不变（已通过 subagent `availableTools` 天然受限）。
+
+关键文件：`src/main/tools/modules/skill/skill.ts`、`src/main/tools/toolExecutor.ts`、`src/main/services/skills/skillInvocationResolver.ts`、`src/shared/contract/agentSkill.ts`。细节见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
+
+### PolicyEnforcer 接线（GAP-002，PR #192）
+
+`PolicyEnforcer` 此前整层是 dead code（完整实现但从未被调用），`policy.toml` 的 `denied_path` 等规则形同虚设。现在它接进 `ToolExecutor.execute()`——在 guard_fabric 之后、任何审批路径（skill 预审批 / 安全白名单 / classifier）之前执行 policy 检查，规则真实生效，`DecisionTrace` 里随之出现 `policy_enforcer` 层。无 policy 文件时不再每次调用都重新探测文件系统。
+
+关键文件：`src/main/security/policyEnforcer.ts`、`src/main/agent/runtime/toolExecutionEngine.ts`。开关：`policy.toml` 存在即生效。细节见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
 
 ### MCP dynamic direct execute
 
@@ -140,6 +157,12 @@ ToolSearch("github search")
 - `src/main/tools/dispatch/toolResolver.ts`
 - `tests/unit/protocol/toolResolver.mcpDirect.test.ts`
 - `tests/unit/tools/toolExecutor.mcpDirect.test.ts`
+
+### MCP 工具名索引（GAP-008，PR #194）
+
+MCP 工具不再把全量 schema 注入每轮请求。deferred-tools summary 只注入名字索引（`mcp__<server>__<tool>` 格式），完整 schema 通过 `ToolSearch` 按需加载，再走上面的 dynamic direct execute 链路调用。这样模型既能"看见"所有 MCP 工具的存在并主动检索，又不会被大量 MCP schema 撑爆上下文。
+
+关键文件：`src/main/mcp/mcpToolRegistry.ts`、`src/main/tools/dispatch/toolDefinitions.ts`、`src/main/services/toolSearch/toolSearchService.ts`。细节见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
 
 ### ToolSearch loadable 语义
 

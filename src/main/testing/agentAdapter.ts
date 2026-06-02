@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { AgentInterface } from './testRunner';
-import type { ToolExecutionRecord } from './types';
+import type { ToolExecutionRecord, HarnessVariantConfig } from './types';
 import type { AgentLoop } from '../agent/agentLoop';
 import type { ModelProvider } from '../../shared/contract';
 import type { ModelConfig } from '../../shared/contract/model';
@@ -272,6 +272,8 @@ export class StandaloneAgentAdapter implements AgentInterface {
   private inferenceOptions?: InferenceOptions;
   private maxIterations?: number;
   private sessionRecordEnsured = false;
+  /** GAP-017: harness 配置变体（对照实验维度） */
+  private harness?: HarnessVariantConfig;
 
   // Persisted across sendMessage() calls so multi-turn follow-ups share conversation history.
   // Cleared by reset() between cases (testRunner calls reset before each case's first prompt).
@@ -287,12 +289,16 @@ export class StandaloneAgentAdapter implements AgentInterface {
     inferenceOptions?: InferenceOptions;
     maxIterations?: number;
     toolMode?: 'all' | 'deferred';
+    /** GAP-017: harness 配置变体 */
+    harness?: HarnessVariantConfig;
   }) {
     this.workingDirectory = config.workingDirectory;
     this.modelConfig = config.modelConfig;
     this.inferenceOptions = config.inferenceOptions;
     this.maxIterations = config.maxIterations;
-    this.toolMode = config.toolMode ?? 'deferred';
+    this.harness = config.harness;
+    // harness.toolMode 优先于顶层 toolMode（对照实验显式控制工具集维度）
+    this.toolMode = config.harness?.toolMode ?? config.toolMode ?? 'deferred';
     // Eval-mode signal: prevents cross-case prompt contamination via recent_conversations.
     process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS = 'true';
   }
@@ -404,7 +410,8 @@ export class StandaloneAgentAdapter implements AgentInterface {
         maxIterations: this.maxIterations,
         toolExecutor,
         messages,
-        enableHooks: false,
+        // GAP-017: hooks 是 harness 对照实验维度之一（评测默认关闭）
+        enableHooks: this.harness?.hooksEnabled ?? false,
         enableToolDeferredLoading: this.toolMode === 'deferred',
         autoApprovePlan: true,
         telemetryAdapter,
@@ -449,7 +456,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
         },
       });
 
-      // Add user message to messages array before run() - 
+      // Add user message to messages array before run() -
       // orchestrator does this but test adapter was missing it
       messages.push({
         id: `user-${Date.now()}`,
@@ -458,7 +465,21 @@ export class StandaloneAgentAdapter implements AgentInterface {
         timestamp: Date.now(),
       } as import('../../shared/contract').Message);
 
-      await loop.run(prompt);
+      // GAP-017: context 压缩是 harness 对照实验维度之一。
+      // autoCompressor 是全局单例，run 期间临时覆盖、结束后恢复，避免污染同进程其他会话。
+      if (this.harness?.contextCompression !== undefined) {
+        const { getAutoCompressor } = await import('../context/autoCompressor');
+        const compressor = getAutoCompressor();
+        const originalEnabled = compressor.getConfig().enabled;
+        compressor.updateConfig({ enabled: this.harness.contextCompression });
+        try {
+          await loop.run(prompt);
+        } finally {
+          compressor.updateConfig({ enabled: originalEnabled });
+        }
+      } else {
+        await loop.run(prompt);
+      }
 
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

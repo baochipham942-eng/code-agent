@@ -12,3 +12,11 @@ export { judgeConversation } from './conversationJudge';
 export type { ConversationJudgment } from './conversationJudge';
 export { consolidateLightMemory } from './consolidation';
 export type { ConsolidationReport, ConsolidationAction } from './consolidation';
+export {
+  recordFailurePatterns,
+  loadFailureJournalEntries,
+  buildFailureJournalBlock,
+  buildFailurePatternKey,
+  normalizeErrorMessage,
+} from './failureJournal';
+export type { FailurePattern } from './failureJournal';

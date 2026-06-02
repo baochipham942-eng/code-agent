@@ -2,7 +2,8 @@ export type MemoryInjectionBlockType =
   | 'seed-memory'
   | 'memory_index'
   | 'memory_hint'
-  | 'recent_conversations';
+  | 'recent_conversations'
+  | 'failure_journal';
 
 export interface MemoryInjectionTrace {
   id: string;

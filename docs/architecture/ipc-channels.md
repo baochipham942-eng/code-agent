@@ -88,6 +88,8 @@ interface IPCResponse<T = unknown> {
 | `domain:hook` | hook.ipc.ts | Hook 配置摘要、启用状态、配置文件打开/定位 |
 | ~~`evaluation:delivery-review:run`~~ | 已下线 | 5/19 随 evaluation 子系统删除；Workspace Preview 不再触发旧 Delivery Review |
 | `workflow:*` | workflow.ipc.ts | Dynamic Workflow 运行进度 + 跑前审批（专用 bridge，run/launch 双通道）|
+| `evaluation:run-harness-comparison` / `evaluation:list-experiments` | evaluation.ipc.ts | Harness 对照实验启动与实验列表（GAP-017，阶段四）|
+| `skill:draft:*` | skill.ipc.ts | Skill 蒸馏草稿确认队列（list/confirm/reject，GAP-005，阶段四）|
 
 ---
 
@@ -178,6 +180,27 @@ Dynamic Workflow（命令式脚本运行时，见 [dynamic-workflow.md](./dynami
 
 > 事件契约 `ScriptRunEvent` / `WorkflowLaunchEvent` 定义在 `src/shared/contract/scriptRun.ts`，renderer+main 共用；renderer 侧 `workflowStore` 按 `runId` 分桶折叠成进度树。
 
+### 评测实验通道 (`evaluation.ipc.ts`)
+
+GAP-017（阶段四）新增的 Harness 对照实验入口。固定模型、变 harness 配置做 ablation 对比，详见 [评测系统指南 — Harness 对照实验](../guides/evaluation-system.md) 与 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
+
+| 通道常量 | 字符串 | 方向 | Payload | 说明 |
+|---------|--------|------|---------|------|
+| `RUN_HARNESS_COMPARISON` | `evaluation:run-harness-comparison` | renderer → main | `{ model, provider, apiKey?, variants[], workingDirectory?, testCaseDir?, filterTags?, filterIds?, maxIterations?, defaultTimeout? }` | 启动 harness 对照实验（fire-and-forget，串行跑每个变体；返回预生成的 `runIds`，可据此轮询完成状态）。`variants` 至少 2 个，每个为 `HarnessVariantConfig`（`name` + `contextCompression?` / `hooksEnabled?` / `toolMode?`）|
+| `LIST_EXPERIMENTS` | `evaluation:list-experiments` | renderer → main | `{ limit? }`（默认 50）| 列出已落 DB 的实验，含解析后的 config/summary（含 `config_json.harness` 维度），用于跨实验对比与轮询各变体完成状态 |
+
+### Skill 草稿确认通道 (`skill.ipc.ts`)
+
+GAP-005（阶段四）skill 蒸馏半自动确认队列。蒸馏出的草稿**严禁自动入库**，必须经此队列人工确认，详见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
+
+| 通道常量 | 字符串 | 方向 | Payload | 说明 |
+|---------|--------|------|---------|------|
+| `DRAFT_LIST` | `skill:draft:list` | renderer → main | - | 列出待确认草稿 |
+| `DRAFT_CONFIRM` | `skill:draft:confirm` | renderer → main | `(draftId, workingDirectory?)` | 确认草稿：移入 `~/.code-agent/skills/` 并重扫 discovery |
+| `DRAFT_REJECT` | `skill:draft:reject` | renderer → main | `(draftId)` | 拒绝草稿：删除并记入 rejected ledger，同一模式不再重复打扰 |
+
+> webServer 把上述通道自动暴露为 `POST /api/<channel 冒号转斜杠>`，如 `evaluation:run-harness-comparison` → `POST /api/evaluation/run-harness-comparison`。
+
 ---
 
 ## 调用示例
@@ -228,6 +251,8 @@ src/main/ipc/
 ├── prompt.ipc.ts      # Prompt 管理通道
 ├── hook.ipc.ts        # Hook 管理通道
 ├── workflow.ipc.ts    # Dynamic Workflow run/launch 专用 bridge
+├── evaluation.ipc.ts  # Harness 对照实验 + 实验列表（GAP-017）
+├── skill.ipc.ts       # Skill 草稿确认队列（GAP-005）
 └── data.ipc.ts        # Data 通道
 
 src/shared/

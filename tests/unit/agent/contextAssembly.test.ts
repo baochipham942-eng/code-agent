@@ -71,6 +71,11 @@ vi.mock('../../../src/main/lightMemory/indexLoader', () => ({
   loadMemoryIndex: vi.fn().mockResolvedValue(null),
 }));
 
+// GAP-005: messageBuild 注入 failure journal 的依赖
+vi.mock('../../../src/main/lightMemory/failureJournal', () => ({
+  buildFailureJournalBlock: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock('../../../src/main/lightMemory/skillLoader', () => ({
   loadRelevantSkills: vi.fn().mockResolvedValue([]),
   buildSkillInjectionBlock: vi.fn().mockReturnValue(null),

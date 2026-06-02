@@ -128,6 +128,18 @@ export interface MemoryLearnedData {
   toolPreferencesUpdated: number;
 }
 
+// GAP-005: Skill 蒸馏草稿待确认事件数据（半自动确认制，严禁自动入库）
+export interface SkillDraftPendingData {
+  sessionId: string;
+  drafts: Array<{
+    id: string;
+    name: string;
+    description: string;
+    toolSequence: string[];
+    occurrences: number;
+  }>;
+}
+
 // Deep Research 相关类型
 export type ResearchPhase = 'planning' | 'researching' | 'reporting' | 'complete' | 'error';
 
@@ -297,6 +309,8 @@ export type AgentEvent =
   | { type: 'task_complete'; data: TaskCompleteData & { parentToolUseId?: string } }
   // Memory 学习事件
   | { type: 'memory_learned'; data: MemoryLearnedData }
+  // GAP-005: Skill 蒸馏草稿待确认事件（session 结束学习产出，弹用户确认）
+  | { type: 'skill_draft_pending'; data: SkillDraftPendingData }
   // Deep Research 事件
   | { type: 'research_mode_started'; data: ResearchModeStartedData }
   | { type: 'research_progress'; data: ResearchProgressData }

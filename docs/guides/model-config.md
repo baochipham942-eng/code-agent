@@ -200,6 +200,19 @@ Agent Engine 模型目录由 `/api/v1/control-plane?artifact=agent_engine_models
 
 相关代码：`src/main/model/inferenceCache.ts`
 
+### Anthropic Prompt Caching（GAP-003，PR #192）
+
+AI SDK 迁移时丢失的 Anthropic provider 端 prompt caching 已恢复。`applyAnthropicCacheBreakpoints()` 在 AI SDK 路径注入两个 `cache_control` 断点：
+
+| 断点 | 位置 | 缓存内容 |
+|------|------|----------|
+| 1 | 最后一条 system 消息 | tools + system 前缀（Anthropic 缓存覆盖断点之前的全部内容） |
+| 2 | 倒数第二条对话消息 | 对话历史增量缓存（长 cowork 会话的主要收益，连 legacy 路径都没有） |
+
+仅 anthropic/claude provider 需要显式断点（DeepSeek/Kimi 等服务端自动缓存，原样透传）；cache hit 价格 0.1x、miss 写入 1.25x，多轮 agent loop 净收益显著为正。验证方式：日志 `cachedInputTokens > 0`。这与上面的本地推理请求缓存（LRU）互补——前者省 provider 计费，后者省重复请求。细节见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
+
+相关代码：`src/main/model/adapters/aiSdkAdapter.ts`
+
 ### 评测系统专用配置
 
 评测系统使用 **Kimi K2.5** 作为评审模型（支持并发 4 个评审员同时调用）：

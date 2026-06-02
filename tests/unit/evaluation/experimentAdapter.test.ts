@@ -136,6 +136,70 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     });
   });
 
+  it('persists harness variant config into config_json and experiment name (GAP-017)', async () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    const summary: TestRunSummary = {
+      runId: 'harness-run-1',
+      startTime: Date.parse('2026-06-02T01:00:00.000Z'),
+      endTime: Date.parse('2026-06-02T01:00:10.000Z'),
+      duration: 10000,
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      partial: 0,
+      averageScore: 0.9,
+      results: [
+        {
+          testId: 'case-h',
+          description: 'harness case',
+          status: 'passed',
+          duration: 9000,
+          startTime: 1,
+          endTime: 2,
+          toolExecutions: [],
+          responses: ['ok'],
+          errors: [],
+          turnCount: 1,
+          score: 0.9,
+        },
+      ],
+      environment: {
+        model: 'glm-5',
+        provider: 'zhipu',
+        workingDirectory: '/tmp/project',
+      },
+      performance: {
+        avgResponseTime: 1000,
+        maxResponseTime: 1000,
+        totalToolCalls: 0,
+        totalTurns: 1,
+      },
+      gitCommit: 'abc123',
+      // GAP-017: 固定模型变 harness 的对照实验维度
+      harness: {
+        name: 'compression-off',
+        contextCompression: false,
+        hooksEnabled: false,
+        toolMode: 'all',
+      },
+    };
+
+    await adapter.persistTestRun(summary);
+
+    const experiment = db.insertExperiment.mock.calls[0]?.[0];
+    // 实验名带变体名，便于跨实验对比识别
+    expect(experiment.name).toContain('harness-compression-off');
+    // harness 维度落 config_json
+    expect(JSON.parse(experiment.config_json).harness).toEqual({
+      name: 'compression-off',
+      contextCompression: false,
+      hooksEnabled: false,
+      toolMode: 'all',
+    });
+  });
+
   it('persists eval-harness ExperimentRunner results with median-threshold semantics', async () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);

@@ -313,6 +313,27 @@ export interface TestRunSummary {
   unstableCaseCount?: number;
   /** Mean stdDev across all cases with trials (stability metric) */
   averageStdDev?: number;
+  /** GAP-017: 本次 run 使用的 harness 配置（对照实验维度，落 DB config_json） */
+  harness?: HarnessVariantConfig;
+}
+
+// ============================================================================
+// GAP-017: Harness 对照实验（固定模型，变 harness 配置）
+// ============================================================================
+
+/**
+ * Harness 配置维度 — 课程 H2："同一模型在不同 Harness 中的差距 > 不同模型在
+ * 同一 Harness 中的差距"。固定模型跑多个 harness 变体做 ablation 对比。
+ */
+export interface HarnessVariantConfig {
+  /** 变体名（用于实验命名和 DB 对比，如 "compression-off" / "hooks-on"） */
+  name: string;
+  /** context 自动压缩开/关（undefined = 跟随全局配置） */
+  contextCompression?: boolean;
+  /** hooks 开/关（undefined = 评测默认关闭） */
+  hooksEnabled?: boolean;
+  /** 工具集维度：'all' 全量加载 | 'deferred' 延迟加载（裁剪模型可见工具面） */
+  toolMode?: 'all' | 'deferred';
 }
 
 /**
@@ -353,6 +374,8 @@ export interface TestRunnerConfig {
   toolMode?: 'all' | 'deferred';
   /** Number of trials per test case (default 1). When >1, each case runs multiple times for stability measurement */
   trialsPerCase?: number;
+  /** GAP-017: harness 配置变体（对照实验维度，随 summary 落 DB） */
+  harness?: HarnessVariantConfig;
 }
 
 /**

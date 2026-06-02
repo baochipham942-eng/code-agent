@@ -10,6 +10,7 @@ import {
   buildRuntimeModeBlock,
 } from '../../../agent/messageHandling/contextBuilder';
 import { loadMemoryIndex } from '../../../lightMemory/indexLoader';
+import { buildFailureJournalBlock } from '../../../lightMemory/failureJournal';
 import { loadRelevantSkills, buildSkillInjectionBlock } from '../../../lightMemory/skillLoader';
 import { getRepoMap } from '../../../context/repoMap';
 import { buildSessionMetadataBlock } from '../../../lightMemory/sessionMetadata';
@@ -512,6 +513,30 @@ ${deferredToolsSummary}
       'session metadata',
       ctx,
     );
+  }
+
+  // GAP-005: 注入 failure journal（跨会话失败模式，避免重复踩坑）。
+  // journal 由 learningPipeline 在 session 结束时自动沉淀；为空时不注入。
+  if (!artifactRepairMode && !shouldInjectArtifactBrief) {
+    const failureJournalBlock = await buildFailureJournalBlock();
+    if (failureJournalBlock) {
+      const beforeFailureJournal = systemPrompt;
+      systemPrompt = appendPromptBlockWithinBudget(
+        systemPrompt,
+        failureJournalBlock,
+        'failure journal',
+        ctx,
+      );
+      recordMemoryInjectionTrace({
+        blockType: 'failure_journal',
+        trigger: 'session_failure_patterns',
+        chars: failureJournalBlock.length,
+        injected: systemPrompt !== beforeFailureJournal,
+        source: 'light-memory-failure-journal',
+        count: countTraceEntries(failureJournalBlock),
+        sessionId: ctx.runtime.sessionId,
+      });
+    }
   }
 
   // 注入轻量记忆索引（File-as-Memory）

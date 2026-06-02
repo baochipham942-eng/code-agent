@@ -311,7 +311,9 @@ fn spawn_web_server(app: &tauri::AppHandle) -> Result<(Child, String), String> {
         .envs(env::vars())
         .env("CODE_AGENT_TAURI_BOOT_TOKEN", &boot_token)
         .env("NODE_ENV", web_server_node_env())
-        .stdin(Stdio::null())
+        // stdin 用 pipe：本进程死亡（含 panic/SIGABRT）时管道关闭，
+        // webServer 监听 stdin EOF 自杀，不留孤儿进程占住端口
+        .stdin(Stdio::piped())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
@@ -370,6 +372,62 @@ fn wait_for_healthcheck(
         HEALTH_TIMEOUT.as_secs(),
         HEALTH_URL
     ))
+}
+
+/// spawn webServer 并等待健康检查通过。失败时清理子进程，并对"端口被占"场景
+/// 给出可操作的错误信息（而不是裸超时）。
+fn start_web_server(app: &tauri::AppHandle) -> Result<Child, String> {
+    let (mut child, boot_token) = spawn_web_server(app)?;
+    if let Err(error) = wait_for_healthcheck(&mut child, Some(&boot_token)) {
+        let _ = child.kill();
+        let _ = child.wait();
+        if is_server_running() {
+            return Err(format!(
+                "端口 8180 被其他进程占用，Agent Neo 无法启动自己的服务。\n\
+                 请退出占用端口的程序（或重启电脑）后重试。\n\n原始错误: {error}"
+            ));
+        }
+        return Err(error);
+    }
+    Ok(child)
+}
+
+/// 僵尸实例自愈：主窗口已销毁时重建窗口并导航到 webServer；
+/// webServer 已死则先重新拉起。保证用户双击图标永远能得到一个窗口。
+fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
+    if !is_server_running() {
+        let child = start_web_server(app)?;
+        app.state::<AppState>().store_child(child);
+    }
+
+    let url = SERVER_URL
+        .parse::<tauri::Url>()
+        .map_err(|error| format!("Invalid server URL: {error}"))?;
+
+    // 与 tauri.conf.json 的 main window 配置保持一致
+    let window =
+        tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::External(url))
+            .title("Agent Neo")
+            .inner_size(1200.0, 800.0)
+            .min_inner_size(960.0, 640.0)
+            .disable_drag_drop_handler()
+            .build()
+            .map_err(|error| format!("Failed to rebuild main window: {error}"))?;
+
+    let _ = window.show();
+    let _ = window.set_focus();
+    Ok(())
+}
+
+/// 启动失败时弹原生错误框告知用户，代替裸 panic（SIGABRT 闪退无提示）。
+fn show_startup_failure(app: &tauri::AppHandle, error: &str) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+    eprintln!("Startup failure: {error}");
+    app.dialog()
+        .message(error)
+        .title("Agent Neo 启动失败")
+        .kind(MessageDialogKind::Error)
+        .blocking_show();
 }
 
 fn cleanup_server(app: &tauri::AppHandle) {
@@ -1108,10 +1166,14 @@ fn main() {
         // single-instance 必须在其他 plugin 之前注册：后启动的进程会直接退出，
         // 并把 argv/cwd 传给已运行的实例，由 callback 聚焦已有窗口。
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            // 有窗口就弹出聚焦；窗口已销毁（僵尸实例）就重建，
+            // 保证用户双击图标永远能得到一个窗口而不是"闪退"。
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.unminimize();
                 let _ = win.show();
                 let _ = win.set_focus();
+            } else if let Err(error) = recreate_main_window(app) {
+                eprintln!("Failed to recreate main window: {error}");
             }
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -1155,15 +1217,14 @@ fn main() {
                 // a stale dev server can serve mismatched renderer assets and leave the app white.
                 println!("Web server already running on {SERVER_URL}, skipping spawn");
             } else {
-                let (mut child, boot_token) = spawn_web_server(&app.handle())?;
-
-                if let Err(error) = wait_for_healthcheck(&mut child, Some(&boot_token)) {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(error.into());
+                match start_web_server(&app.handle()) {
+                    Ok(child) => app.state::<AppState>().store_child(child),
+                    Err(error) => {
+                        // 不走 panic（SIGABRT 闪退无提示）：弹错误框告知用户后干净退出
+                        show_startup_failure(&app.handle(), &error);
+                        std::process::exit(1);
+                    }
                 }
-
-                app.state::<AppState>().store_child(child);
             }
 
             if let Some(window) = app.get_webview_window("main") {

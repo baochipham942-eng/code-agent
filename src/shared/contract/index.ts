@@ -22,6 +22,7 @@ export * from './agentEngine';
 export * from './skill';
 export * from './agentSkill';
 export * from './skillRepository';
+export * from './mcpCatalog';
 
 // Infrastructure types
 export * from './auth';

@@ -435,9 +435,22 @@ export const PluginsSettings: React.FC = () => {
       title="插件管理"
       description="管理 marketplace、插件安装和启停状态；普通用户只会接触启用后暴露出来的能力。"
     >
+      {/* 操作结果通知（页面级，所有 section 的操作都在这里反馈） */}
+      {notice && (
+        <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
+          notice.type === 'success'
+            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+            : 'border-red-500/30 bg-red-500/10 text-red-200'
+        }`}
+        >
+          {notice.type === 'success' ? <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
+          <span>{notice.text}</span>
+        </div>
+      )}
+
       <SettingsSection
-        title="管理概览"
-        description="这里评估的是前端插件管理闭环和角色可见性，不改变后端管理员保护。"
+        title="已安装插件"
+        description="禁用状态下只对管理员可见；启用后才进入普通用户运行面。"
         actions={(
           <Button
             variant="ghost"
@@ -449,88 +462,6 @@ export const PluginsSettings: React.FC = () => {
             刷新
           </Button>
         )}
-      >
-        <div className="grid gap-3 md:grid-cols-5">
-          <SummaryTile label="Marketplace" value={marketplaces.length} />
-          <SummaryTile label="市场插件" value={catalog.length} />
-          <SummaryTile label="已安装" value={visibility.installedTotal} />
-          <SummaryTile label="已启用" value={visibility.enabledTotal} tone="success" />
-          <SummaryTile label="仅管理员可见" value={visibility.adminOnly.length} tone="warning" />
-        </div>
-
-        {notice && (
-          <div className={`mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
-            notice.type === 'success'
-              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-              : 'border-red-500/30 bg-red-500/10 text-red-200'
-          }`}
-          >
-            {notice.type === 'success' ? <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
-            <span>{notice.text}</span>
-          </div>
-        )}
-
-        <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
-          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-200">
-            <Shield className="h-4 w-4 text-amber-300" />
-            角色可见性
-          </div>
-          <div className="grid gap-2 md:grid-cols-3">
-            <div className="rounded-lg bg-zinc-950/60 p-3">
-              <div className="text-xs font-medium text-zinc-300">管理员</div>
-              <p className="mt-1 text-xs leading-5 text-zinc-500">
-                可见 marketplace、未安装插件、禁用插件和全部生命周期操作。
-              </p>
-            </div>
-            <div className="rounded-lg bg-zinc-950/60 p-3">
-              <div className="text-xs font-medium text-zinc-300">普通用户</div>
-              <p className="mt-1 text-xs leading-5 text-zinc-500">
-                不显示插件管理面板；只在运行面看到已启用插件提供的 skills、commands 或能力。
-              </p>
-            </div>
-            <div className="rounded-lg bg-zinc-950/60 p-3">
-              <div className="text-xs font-medium text-zinc-300">安装策略</div>
-              <p className="mt-1 text-xs leading-5 text-zinc-500">
-                安装后保持禁用，由管理员复核后再启用。
-              </p>
-            </div>
-          </div>
-        </div>
-      </SettingsSection>
-
-      <SettingsSection
-        title="完整性评估"
-        description="当前前端已经开放管理闭环；治理类能力仍按后续产品化处理。"
-      >
-        <div className="overflow-hidden rounded-lg border border-zinc-800">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-zinc-900 text-xs text-zinc-500">
-              <tr>
-                <th className="px-3 py-2 font-medium">模块</th>
-                <th className="px-3 py-2 font-medium">状态</th>
-                <th className="px-3 py-2 font-medium">说明</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800 bg-zinc-950/30">
-              {PLUGIN_COMPLETENESS_ROWS.map((row) => (
-                <tr key={row.area}>
-                  <td className="px-3 py-2 text-zinc-300">{row.area}</td>
-                  <td className="px-3 py-2">
-                    <Pill tone={row.status === 'complete' ? 'success' : 'warning'}>
-                      {row.status === 'complete' ? '已开放' : '部分'}
-                    </Pill>
-                  </td>
-                  <td className="px-3 py-2 text-xs leading-5 text-zinc-500">{row.detail}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </SettingsSection>
-
-      <SettingsSection
-        title="已安装插件"
-        description="禁用状态下只对管理员可见；启用后才进入普通用户运行面。"
       >
         {loading ? (
           <div className="flex items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/40 py-8 text-sm text-zinc-500">
@@ -705,6 +636,76 @@ export const PluginsSettings: React.FC = () => {
       </SettingsSection>
 
       <SettingsDetails
+        title="管理概览"
+        description="插件规模统计与角色可见性说明，默认收起。"
+      >
+        <div className="grid gap-3 md:grid-cols-5">
+          <SummaryTile label="Marketplace" value={marketplaces.length} />
+          <SummaryTile label="市场插件" value={catalog.length} />
+          <SummaryTile label="已安装" value={visibility.installedTotal} />
+          <SummaryTile label="已启用" value={visibility.enabledTotal} tone="success" />
+          <SummaryTile label="仅管理员可见" value={visibility.adminOnly.length} tone="warning" />
+        </div>
+
+        <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-200">
+            <Shield className="h-4 w-4 text-amber-300" />
+            角色可见性
+          </div>
+          <div className="grid gap-2 md:grid-cols-3">
+            <div className="rounded-lg bg-zinc-950/60 p-3">
+              <div className="text-xs font-medium text-zinc-300">管理员</div>
+              <p className="mt-1 text-xs leading-5 text-zinc-500">
+                可见 marketplace、未安装插件、禁用插件和全部生命周期操作。
+              </p>
+            </div>
+            <div className="rounded-lg bg-zinc-950/60 p-3">
+              <div className="text-xs font-medium text-zinc-300">普通用户</div>
+              <p className="mt-1 text-xs leading-5 text-zinc-500">
+                不显示插件管理面板；只在运行面看到已启用插件提供的 skills、commands 或能力。
+              </p>
+            </div>
+            <div className="rounded-lg bg-zinc-950/60 p-3">
+              <div className="text-xs font-medium text-zinc-300">安装策略</div>
+              <p className="mt-1 text-xs leading-5 text-zinc-500">
+                安装后保持禁用，由管理员复核后再启用。
+              </p>
+            </div>
+          </div>
+        </div>
+      </SettingsDetails>
+
+      <SettingsDetails
+        title="完整性评估"
+        description="前端插件管理闭环的开放状态，默认收起。"
+      >
+        <div className="overflow-hidden rounded-lg border border-zinc-800">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-zinc-900 text-xs text-zinc-500">
+              <tr>
+                <th className="px-3 py-2 font-medium">模块</th>
+                <th className="px-3 py-2 font-medium">状态</th>
+                <th className="px-3 py-2 font-medium">说明</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-800 bg-zinc-950/30">
+              {PLUGIN_COMPLETENESS_ROWS.map((row) => (
+                <tr key={row.area}>
+                  <td className="px-3 py-2 text-zinc-300">{row.area}</td>
+                  <td className="px-3 py-2">
+                    <Pill tone={row.status === 'complete' ? 'success' : 'warning'}>
+                      {row.status === 'complete' ? '已开放' : '部分'}
+                    </Pill>
+                  </td>
+                  <td className="px-3 py-2 text-xs leading-5 text-zinc-500">{row.detail}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </SettingsDetails>
+
+      <SettingsDetails
         title="Marketplace 源"
         description="新增支持本地目录、GitHub repo、URL、npm 包等后端已支持的源格式。"
       >
@@ -792,8 +793,7 @@ export const PluginsSettings: React.FC = () => {
 
       <SettingsDetails
         title="可见插件清单"
-        description="按当前安装与启用状态拆分管理员可见和普通用户可见。"
-        defaultOpen
+        description="按当前安装与启用状态拆分管理员可见和普通用户可见，默认收起。"
       >
         <div className="grid gap-4 lg:grid-cols-2">
           <div>

@@ -25,6 +25,7 @@ import {
 import type { ModelMessage } from '../../../agent/loopTypes';
 import type { StreamCallback, InferenceOptions, ModelResponse as RouterModelResponse } from '../../../model/types';
 import type { ModelConfig } from '../../../../shared/contract/model';
+import { getAdaptiveRouter } from '../../../model/adaptiveRouter';
 import { buildE2ELocalAgentModelResponse, shouldUseE2ELocalAgentModelForMessages } from '../../../model/e2eLocalAgentModel';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
@@ -71,10 +72,59 @@ function runEngineInference(
   const useAiSdk = process.env.CODE_AGENT_MODEL_ENGINE !== 'legacy'
     && aiSdkSupportsProvider(config.provider);
   if (useAiSdk) {
+    // 自动模式（adaptive）简单任务路由：legacy modelRouter.inference 内置了这段逻辑，
+    // aiSdk 路径（默认引擎）必须在这里等价接入，否则用户选"自动"后路由完全不生效。
+    const adaptedConfig = resolveAdaptiveSimpleTaskConfig(messages, config);
+    if (adaptedConfig) {
+      logger.info(`[AgentLoop] inference engine = aisdk (adaptive: ${config.provider}/${config.model} → ${adaptedConfig.provider}/${adaptedConfig.model})`);
+      return inferenceViaAiSdk(messages, tools, adaptedConfig, onStream, signal, options).catch((err: unknown) => {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        // 401/403 是持久性错误（key 过期/无效），禁用 free model 避免重复失败
+        if (/401|403|unauthorized|forbidden/i.test(errMsg)) {
+          getAdaptiveRouter().disableFreeModel(errMsg.split('\n')[0]);
+        } else {
+          logger.warn(`[AdaptiveRouter] Free model failed on aisdk path, falling back to default: ${errMsg.split('\n')[0]}`);
+        }
+        return inferenceViaAiSdk(messages, tools, config, onStream, signal, options);
+      });
+    }
     logger.debug('[AgentLoop] inference engine = aisdk', { provider: config.provider, model: config.model, streaming: typeof onStream === 'function' && options?.forceNonStreaming !== true });
     return inferenceViaAiSdk(messages, tools, config, onStream, signal, options);
   }
   return ctx.runtime.modelRouter.inference(messages, tools, config, onStream, signal, options);
+}
+
+/**
+ * 自动模式下简单任务的免费模型路由（aiSdk 路径用）。
+ *
+ * 返回带 apiKey 的免费模型配置；不满足条件（非自动模式 / 非简单任务 / 免费模型
+ * 无 key 或被禁用）时返回 null，调用方继续用原配置。
+ */
+function resolveAdaptiveSimpleTaskConfig(
+  messages: ModelMessage[],
+  config: ModelConfig,
+): ModelConfig | null {
+  if (config.adaptive !== true) return null;
+
+  const adaptiveRouter = getAdaptiveRouter();
+  const complexity = adaptiveRouter.estimateComplexity(messages);
+  if (complexity.level !== 'simple') return null;
+
+  const adapted = adaptiveRouter.selectModel(complexity, config);
+  if (adapted.provider === config.provider && adapted.model === config.model) return null;
+
+  if (adapted.provider !== config.provider) {
+    const apiKey = getConfigService().getApiKey(adapted.provider);
+    if (!apiKey) {
+      adaptiveRouter.disableFreeModel(`no API key for ${adapted.provider}`);
+      return null;
+    }
+    adapted.apiKey = apiKey;
+    // 跨 provider 切换时清掉原模型的 baseUrl，否则免费模型会打到原 provider 的端点
+    adapted.baseUrl = undefined;
+  }
+
+  return adapted;
 }
 
 function estimateInferenceInputTokens(

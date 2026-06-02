@@ -31,16 +31,16 @@
 
 | 编号 | 类型 | 优先级 | 标题 | 状态 |
 |------|------|--------|------|------|
-| GAP-001 | 应该纠正 | P0 | Skill allowed-tools 语义反转（inline 扩权 vs 限权） | OPEN |
-| GAP-002 | 应该纠正 | P0 | PolicyEnforcer 整层 dead code | OPEN |
-| GAP-003 | 应该纠正 | P0 | AI SDK 迁移丢失 prompt caching（旧路径有、新默认路径无） | OPEN |
+| GAP-001 | 应该纠正 | P0 | Skill allowed-tools 语义反转（inline 扩权 vs 限权） | FIXED (PR #192) |
+| GAP-002 | 应该纠正 | P0 | PolicyEnforcer 整层 dead code | FIXED (PR #192) |
+| GAP-003 | 应该纠正 | P0 | AI SDK 迁移丢失 prompt caching（旧路径有、新默认路径无） | FIXED (PR #192) |
 | GAP-004 | 建议加强 | P0 | 多 Agent 流水线无反死循环策略 | OPEN |
 | GAP-005 | 建议加强 | P0 | 跨会话经验沉淀链路被掏空（learningPipeline no-op） | OPEN |
 | GAP-006 | 应该纠正 | P1 | Stop hook 是观察者不是完成闸 | OPEN |
-| GAP-007 | 应该纠正 | P1 | 子代理/运行时配置未知字段静默忽略 | OPEN |
-| GAP-008 | 应该纠正 | P1 | MCP 工具 schema 全量注入（与 native 工具 deferred 策略不一致） | OPEN |
-| GAP-009 | 建议加强 | P1 | 大工具结果只截断不落盘 | OPEN |
-| GAP-010 | 建议加强 | P1 | Git 上下文只注入 boolean | OPEN |
+| GAP-007 | 应该纠正 | P1 | 子代理/运行时配置未知字段静默忽略 | FIXED (PR #192) |
+| GAP-008 | 应该纠正 | P1 | MCP 工具 schema 全量注入（与 native 工具 deferred 策略不一致） | FIXED (PR #194) |
+| GAP-009 | 建议加强 | P1 | 大工具结果只截断不落盘 | FIXED (PR #194) |
+| GAP-010 | 建议加强 | P1 | Git 上下文只注入 boolean | FIXED (PR #194) |
 | GAP-011 | 建议加强 | P1 | 子代理缺 skills 全文预注入（课程"方向 A"） | OPEN |
 | GAP-012 | 建议加强 | P1 | SubagentStop hook 拿不到子代理 transcript | OPEN |
 | GAP-013 | 建议加强 | P1 | Generator-Critic 未集成为交付前自动验证 | OPEN |
@@ -53,6 +53,7 @@
 | GAP-020 | 建议加强 | P2 | CLI 缺 --max-turns / --allowedTools 无人值守约束旗标 | OPEN |
 | GAP-021 | 建议加强 | P2 | Skill 命名空间 + monorepo 路径感知发现缺失 | OPEN |
 | GAP-022 | 建议加强 | P2 | 插件缺远程分发机制（marketplace / git 安装） | OPEN |
+| GAP-023 | 应该纠正 | P1 | system prompt budget 超限时静默丢弃 deferred-tools/skills 等注入块 | OPEN |
 
 ---
 
@@ -337,6 +338,25 @@
 **Neo 现状**：`src/main/plugins/pluginLoader.ts:88-103`——manifest（plugin.json）+ 目录约定 + 版本字段都有 ✓，但只能从本地 `~/.code-agent/plugins/` 加载，无 install-from-git/registry
 
 **建议动作**：先做 `code-agent plugin install <git-url>`（git clone 到 plugins 目录 + manifest 校验），marketplace 等有多用户需求再说。
+
+---
+
+## 五、阶段二 E2E 发现的新增项
+
+### GAP-023【应该纠正】system prompt budget 超限时静默丢弃能力发现块
+
+**发现出处**：阶段二 E2E 验收（2026-06-02，非课程内容）——webServer headless 真实链路实测
+
+**Neo 现状**：
+- `src/main/agent/runtime/contextAssembly/messageBuild.ts` 的 `appendPromptBlockWithinBudget`：system prompt budget 默认 6000 token（可用 `CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS` 覆盖）
+- 用户记忆注入（Light Memory 索引 + soul，实测 ~4-5K token）吃掉大部分预算后，**后续追加的所有块按序被静默丢弃**：session metadata / memory hint / plugins / skills / recent conversations / **deferred-tools**
+- 实测日志：`Skipping deferred tools: system prompt budget would be 7952/6000 tokens`，只有 WARN 级日志，用户/模型均无感知
+- 后果：**deferred 工具发现机制在重记忆环境下实际失效**——模型不知道有哪些可加载工具（含全部 MCP 工具索引），skills 索引也不可见，agent 能力大幅缩水且无任何报错
+
+**建议动作**：
+1. budget 动态化：按模型上下文窗口比例（如 8-12%）而非固定 6000，大窗口模型不该被小预算卡死
+2. 注入块优先级排序：能力发现类块（deferred-tools / skills 索引）优先级应高于 recent conversations / memory hint 这类锦上添花的块——现在是先到先得
+3. 丢弃可见化：被丢弃的块在 context health 面板展示，不只是 debug log
 
 ---
 

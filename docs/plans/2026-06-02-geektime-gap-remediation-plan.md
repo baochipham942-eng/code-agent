@@ -8,9 +8,9 @@
 
 | 阶段 | 主题 | 包含 GAP | 分支 | 状态 |
 |------|------|---------|------|------|
-| 一 | 拆假护栏（安全） | 002, 001, 007, 003 | `fix/geektime-gap-phase1-guardrails` | DONE (PR #192) |
-| 二 | 上下文经济 | 008, 009, 010 | `feat/geektime-gap-phase2-context-economy` | DONE（4 commits，待开 PR） |
-| 三 | 质量闭环 | 006+014, 013, 004, 016, 012+015 | `feat/geektime-gap-phase3-quality-loops` | PENDING |
+| 一 | 拆假护栏（安全） | 002, 001, 007, 003 | `fix/geektime-gap-phase1-guardrails` | **MERGED** (PR #192, 236cd71e) |
+| 二 | 上下文经济 | 008, 009, 010 | `feat/geektime-gap-phase2-context-economy` | **MERGED** (PR #194, 52aef229) |
+| 三 | 质量闭环 | 006+014, 013, 004, 016, 012+015, **023(阶段二 E2E 新增)** | `feat/geektime-gap-phase3-quality-loops` | PENDING |
 | 四 | 经验沉淀（修正版） | 005(仅 Failure Journal + 半自动 skill 草稿), 011, 017 | `feat/geektime-gap-phase4-experience` | PENDING |
 | 出局 | — | 018(等阶段三基建), 019, 020, 021, 022 | — | WONT_DO（现阶段） |
 
@@ -53,6 +53,7 @@
 - [ ] PostToolUse hook 的输出能注入下一轮上下文（写文件 → lint 失败 → agent 自动修）
 - [ ] workflow stage 失败达到 maxRetries 后走回退路由而非死循环；circuit breaker 跳闸通知用户
 - [ ] MiMo text-first 死循环 case 复现测试通过（不再卡死）
+- [ ] GAP-023：重记忆环境（注入 ≥5K token 记忆）下 deferred-tools 块仍进 system prompt（优先级排序生效），被丢弃的块在 context health 可见
 
 ## 阶段四验收标准（经验沉淀，修正版）
 

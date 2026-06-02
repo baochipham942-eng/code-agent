@@ -6,7 +6,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { AlertCircle, Check, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '../../../primitives';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
-import type { LocalSkillLibrary, SkillRepository } from '@shared/contract/skillRepository';
+import type {
+  LocalSkillLibrary,
+  SkillRepository,
+  SkillRoleBundle,
+} from '@shared/contract/skillRepository';
+import { BUILTIN_REPO_ID } from '@shared/contract/skillRepository';
+import { findRecommendedRepository } from '@shared/constants/skillCatalog';
 import type { ParsedSkill } from '@shared/contract/agentSkill';
 import { createLogger } from '../../../../utils/logger';
 import { WebModeBanner } from '../WebModeBanner';
@@ -147,6 +153,51 @@ export const SkillsSettings: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to download repo', err);
+      setMessage({ type: 'error', text: '安装失败' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // 安装角色场景包：下载包内 skill 涉及的所有未安装仓库
+  const handleInstallBundle = async (bundle: SkillRoleBundle) => {
+    const installedIds = new Set(libraries.map((lib) => lib.repoId));
+    const missingRepoIds = [
+      ...new Set(
+        bundle.skills
+          .map((skill) => skill.repoId)
+          .filter((repoId) => repoId !== BUILTIN_REPO_ID && !installedIds.has(repoId))
+      ),
+    ];
+    if (missingRepoIds.length === 0) return;
+
+    setActionLoading(`bundle-${bundle.id}`);
+    setMessage(null);
+    try {
+      const failures: string[] = [];
+      for (const repoId of missingRepoIds) {
+        const repo = findRecommendedRepository(repoId);
+        if (!repo) {
+          failures.push(repoId);
+          continue;
+        }
+        const result = await invokeSkillIPC<{ success: boolean; error?: string }>(
+          SKILL_CHANNELS.REPO_DOWNLOAD,
+          repo
+        );
+        if (!result?.success) {
+          failures.push(repo.name);
+        }
+      }
+      if (failures.length === 0) {
+        setMessage({ type: 'success', text: `${bundle.name} 安装成功` });
+        setActiveTab('installed');
+      } else {
+        setMessage({ type: 'error', text: `部分安装失败: ${failures.join(', ')}` });
+      }
+      await loadData();
+    } catch (err) {
+      logger.error('Failed to install bundle', err);
       setMessage({ type: 'error', text: '安装失败' });
     } finally {
       setActionLoading(null);
@@ -392,8 +443,11 @@ export const SkillsSettings: React.FC = () => {
       ) : (
         <SkillsDiscoverTab
           recommendedRepos={recommendedRepos}
+          installedRepoIds={new Set(libraries.map((lib) => lib.repoId))}
+          installedSkillNames={new Set(discoveredSkills.map((skill) => skill.name))}
           actionLoading={actionLoading}
           onInstallRepo={handleInstallRepo}
+          onInstallBundle={handleInstallBundle}
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
           searchResults={searchResults}

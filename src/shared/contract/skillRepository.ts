@@ -58,6 +58,8 @@ export interface RecommendedSkillEntry {
   repoId: string;
   /** 热度/来源标签（如 "官方生产级"、"GitHub 20万+ Star"） */
   badge?: string;
+  /** 意图匹配关键词（用于聊天输入时推荐未安装的 skill） */
+  keywords?: string[];
 }
 
 /**
@@ -285,4 +287,10 @@ export interface SkillRecommendation {
   reason: string;
   /** 推荐分数 (0-1) */
   score: number;
+  /** 推荐动作：mount=已安装可挂载（默认），install=未安装可从推荐目录获取 */
+  action?: 'mount' | 'install';
+  /** action=install 时的中文显示名 */
+  displayName?: string;
+  /** action=install 时的来源仓库 ID */
+  repoId?: string;
 }

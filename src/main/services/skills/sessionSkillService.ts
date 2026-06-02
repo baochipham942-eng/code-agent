@@ -7,10 +7,12 @@ import type {
   SessionSkillMount,
   SkillRecommendation,
 } from '../../../shared/contract/skillRepository';
+import { BUILTIN_REPO_ID } from '../../../shared/contract/skillRepository';
 import type { ParsedSkill } from '../../../shared/contract/agentSkill';
 import { getSkillDiscoveryService } from './skillDiscoveryService';
 import { getSkillInvocationAliases } from './skillInvocationResolver';
 import { SKILL_KEYWORDS, DEFAULT_ENABLED_SKILLS } from './skillRepositories';
+import { getCloudConfigService } from '../cloud';
 import { createLogger } from '../infra/logger';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { estimateTokens } from '../../context/tokenEstimator';
@@ -221,6 +223,43 @@ class SessionSkillService {
           });
         }
       }
+    }
+
+    // 第三轮：匹配推荐目录中"未安装但可获取"的 skill（聊天流导购）
+    // 用户说"帮我做个 PPT"而 pptx 未安装时，推荐从来源仓库安装
+    try {
+      const catalog = getCloudConfigService().getSkillCatalog();
+      const localNames = new Set(allSkills.map((skill) => skill.name));
+
+      for (const entry of catalog.skills) {
+        // 本地已有（含内置）/ 已挂载 / 已被前两轮命中的跳过
+        if (localNames.has(entry.name)) continue;
+        if (mountedNames.has(entry.name)) continue;
+        if (recommendationMap.has(entry.name)) continue;
+        // 内置条目本地却没有，说明环境异常，不推荐安装
+        if (entry.repoId === BUILTIN_REPO_ID) continue;
+
+        const keywords = entry.keywords ?? [];
+        const matchedKeywords = keywords.filter((keyword) => input.includes(keyword.toLowerCase()));
+        const displayNameHit = input.includes(entry.displayName.toLowerCase());
+
+        if (matchedKeywords.length === 0 && !displayNameHit) continue;
+
+        // 安装类推荐分数上限低于挂载类，避免压过本地可用的 skill
+        const score = Math.min(0.8, 0.45 + matchedKeywords.length * 0.12 + (displayNameHit ? 0.15 : 0));
+        recommendationMap.set(entry.name, {
+          skillName: entry.name,
+          libraryId: entry.repoId,
+          reason: `可获取「${entry.displayName}」: ${entry.description}`,
+          score,
+          action: 'install',
+          displayName: entry.displayName,
+          repoId: entry.repoId,
+        });
+      }
+    } catch (error) {
+      // 目录读取失败不影响已安装 skill 的推荐
+      logger.warn('Failed to load skill catalog for install recommendations', { error });
     }
 
     // 按匹配分数排序

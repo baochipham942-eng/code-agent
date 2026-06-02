@@ -6,6 +6,12 @@ export interface SkillRecommendationView {
   skillName: string;
   libraryId: string;
   reason: string;
+  /** mount=已安装可挂载（默认），install=未安装可从推荐目录获取 */
+  action?: 'mount' | 'install';
+  /** action=install 时的中文显示名 */
+  displayName?: string;
+  /** action=install 时的来源仓库 ID */
+  repoId?: string;
 }
 
 function normalizeCapabilityText(value: string | undefined): string {
@@ -68,14 +74,20 @@ interface CapabilitySuggestionStripProps {
   skillRecommendations: SkillRecommendationView[];
   capabilitySuggestions: WorkbenchCapabilityRegistryItem[];
   onSkillMount: (recommendation: SkillRecommendationView) => void;
+  /** 安装未安装的推荐 skill（从来源仓库获取） */
+  onSkillInstall?: (recommendation: SkillRecommendationView) => void;
   onCapabilitySelect: (capability: WorkbenchCapabilityRegistryItem) => void;
+  /** 正在安装中的 skill 名称 */
+  installingSkillName?: string | null;
 }
 
 export const CapabilitySuggestionStrip: React.FC<CapabilitySuggestionStripProps> = ({
   skillRecommendations,
   capabilitySuggestions,
   onSkillMount,
+  onSkillInstall,
   onCapabilitySelect,
+  installingSkillName,
 }) => {
   if (skillRecommendations.length === 0 && capabilitySuggestions.length === 0) {
     return null;
@@ -85,16 +97,30 @@ export const CapabilitySuggestionStrip: React.FC<CapabilitySuggestionStripProps>
     <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.025] px-2.5 py-2">
       <Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />
       {skillRecommendations.map((recommendation) => (
-        <button
-          key={`skill-rec:${recommendation.skillName}`}
-          type="button"
-          onClick={() => onSkillMount(recommendation)}
-          className="inline-flex max-w-full items-center gap-1 rounded-md border border-fuchsia-400/20 bg-fuchsia-400/10 px-2 py-1 text-[11px] text-fuchsia-100 hover:border-fuchsia-400/40"
-          title={recommendation.reason}
-        >
-          <span>挂载</span>
-          <span className="truncate">{recommendation.skillName}</span>
-        </button>
+        recommendation.action === 'install' ? (
+          <button
+            key={`skill-rec:${recommendation.skillName}`}
+            type="button"
+            disabled={installingSkillName === recommendation.skillName}
+            onClick={() => onSkillInstall?.(recommendation)}
+            className="inline-flex max-w-full items-center gap-1 rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[11px] text-emerald-100 hover:border-emerald-400/40 disabled:opacity-60"
+            title={recommendation.reason}
+          >
+            <span>{installingSkillName === recommendation.skillName ? '安装中...' : '安装'}</span>
+            <span className="truncate">{recommendation.displayName || recommendation.skillName}</span>
+          </button>
+        ) : (
+          <button
+            key={`skill-rec:${recommendation.skillName}`}
+            type="button"
+            onClick={() => onSkillMount(recommendation)}
+            className="inline-flex max-w-full items-center gap-1 rounded-md border border-fuchsia-400/20 bg-fuchsia-400/10 px-2 py-1 text-[11px] text-fuchsia-100 hover:border-fuchsia-400/40"
+            title={recommendation.reason}
+          >
+            <span>挂载</span>
+            <span className="truncate">{recommendation.skillName}</span>
+          </button>
+        )
       ))}
       {capabilitySuggestions.map((capability) => (
         <button

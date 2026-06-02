@@ -115,6 +115,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     category: 'docs-office',
     repoId: 'anthropic-skills',
     badge: '官方生产级',
+    keywords: ['ppt', 'powerpoint', '演示', '幻灯片', 'slides', '汇报'],
   },
   {
     name: 'docx',
@@ -123,6 +124,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     category: 'docs-office',
     repoId: 'anthropic-skills',
     badge: '官方生产级',
+    keywords: ['word', '文档', '报告', '合同模板'],
   },
   {
     name: 'pdf',
@@ -131,6 +133,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     category: 'docs-office',
     repoId: 'anthropic-skills',
     badge: '官方生产级',
+    keywords: ['pdf', '提取', '合并', '表单'],
   },
   {
     name: 'xlsx',
@@ -153,6 +156,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     category: 'docs-office',
     repoId: 'anthropic-skills',
     badge: '官方',
+    keywords: ['提案', '技术规范', '决策文档', '共创'],
   },
   {
     name: 'internal-comms',
@@ -161,6 +165,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     category: 'docs-office',
     repoId: 'anthropic-skills',
     badge: '官方',
+    keywords: ['周报', '公告', '状态报告', 'faq', '内部沟通'],
   },
 
   // ---- 数据分析 ----
@@ -184,6 +189,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: '从图表截图中提取出结构化数据表格',
     category: 'data-analysis',
     repoId: 'pm-claude-skills',
+    keywords: ['图表', '截图提取', '图片转表格'],
   },
   {
     name: 'cohort-analysis',
@@ -191,6 +197,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: 'Cohort 留存分析框架与解读',
     category: 'data-analysis',
     repoId: 'pm-claude-skills',
+    keywords: ['留存', '分群', 'cohort'],
   },
   {
     name: 'sql-query-explainer',
@@ -198,6 +205,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: '把 SQL 查询翻译成业务语言，辅助非技术人员理解',
     category: 'data-analysis',
     repoId: 'pm-claude-skills',
+    keywords: ['sql', '查询解释'],
   },
   {
     name: 'dashboard-brief',
@@ -215,6 +223,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     category: 'design-creative',
     repoId: 'anthropic-skills',
     badge: '官方热门',
+    keywords: ['界面', '前端设计', 'ui', '网页设计', 'landing'],
   },
   {
     name: 'canvas-design',
@@ -223,6 +232,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     category: 'design-creative',
     repoId: 'anthropic-skills',
     badge: '官方',
+    keywords: ['海报', '封面', '视觉设计'],
   },
   {
     name: 'theme-factory',
@@ -238,6 +248,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: '一次定义品牌色/语气，供其他产物复用保持一致',
     category: 'design-creative',
     repoId: 'second-brain-skills',
+    keywords: ['品牌', 'vi', '品牌系统'],
   },
   {
     name: 'remotion',
@@ -245,6 +256,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: '用 Remotion + React 以代码生成视频',
     category: 'design-creative',
     repoId: 'second-brain-skills',
+    keywords: ['视频', '动画视频', '宣传片'],
   },
   {
     name: 'slack-gif-creator',
@@ -263,6 +275,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     category: 'content-marketing',
     repoId: 'marketing-skills',
     badge: '社区热门',
+    keywords: ['文案', '营销文案', '广告语', '落地页文案'],
   },
   {
     name: 'content-strategy',
@@ -270,6 +283,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: '内容规划、选题、分发渠道策略',
     category: 'content-marketing',
     repoId: 'marketing-skills',
+    keywords: ['内容策略', '选题', '内容规划'],
   },
   {
     name: 'seo-audit',
@@ -277,6 +291,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: '网站 SEO 问题诊断与优化建议',
     category: 'content-marketing',
     repoId: 'marketing-skills',
+    keywords: ['seo', '搜索优化', '收录'],
   },
   {
     name: 'social-media-strategy',
@@ -284,6 +299,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: '社交媒体运营策略与内容日历',
     category: 'content-marketing',
     repoId: 'pm-claude-skills',
+    keywords: ['社媒', '小红书', '抖音', '运营策略'],
   },
   {
     name: 'notes-humanizer',
@@ -291,6 +307,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: '改写 AI 生成内容，保留个人声音去除机器感',
     category: 'content-marketing',
     repoId: 'pm-claude-skills',
+    keywords: ['去ai味', '人味', '改写', '降ai'],
   },
   {
     name: 'competitor-profiling',
@@ -298,6 +315,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: '竞争对手定位、信息流与营销策略画像',
     category: 'content-marketing',
     repoId: 'marketing-skills',
+    keywords: ['竞品画像', '对手分析'],
   },
 
   // ---- 研究调研 ----
@@ -328,6 +346,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: '结构化竞品对比分析与战略建议',
     category: 'research',
     repoId: 'pm-claude-skills',
+    keywords: ['竞品分析', '竞品对比', '竞争分析'],
   },
   {
     name: 'user-research-synthesis',
@@ -335,6 +354,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: '访谈/调研原始数据综合成洞察报告',
     category: 'research',
     repoId: 'pm-claude-skills',
+    keywords: ['用户研究', '访谈', '调研综合'],
   },
   {
     name: 'customer-research',
@@ -342,6 +362,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: '客户需求挖掘与调研方案设计',
     category: 'research',
     repoId: 'marketing-skills',
+    keywords: ['客户调研', '需求挖掘'],
   },
 
   // ---- 效率自动化 ----
@@ -379,6 +400,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: '把口述流程整理成标准操作程序文档',
     category: 'automation',
     repoId: 'second-brain-skills',
+    keywords: ['sop', '流程文档', '操作手册'],
   },
   {
     name: 'project-status-report',
@@ -386,6 +408,7 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: '生成结构化项目进展报告',
     category: 'automation',
     repoId: 'pm-claude-skills',
+    keywords: ['项目报告', '进展汇报', '状态报告'],
   },
 
   // ---- 开发工程 ----

@@ -22,7 +22,7 @@ function isGitRepo(dir: string): boolean {
   const cached = gitRepoCache.get(dir);
   if (cached !== undefined) return cached;
   try {
-    execSync('git rev-parse --is-inside-work-tree', { cwd: dir, stdio: 'pipe', timeout: 3000 });
+    execSync('git rev-parse --is-inside-work-tree', { cwd: dir, stdio: 'pipe', timeout: GIT_CMD_TIMEOUT_MS });
     gitRepoCache.set(dir, true);
     return true;
   } catch {
@@ -31,9 +31,96 @@ function isGitRepo(dir: string): boolean {
   }
 }
 
+// ----------------------------------------------------------------------------
+// Git Context (GAP-010)
+// 课程 H3 五项优化之一："Git 上下文自动加载——注入分支名/commit/diff"
+// 约 100-200 token 换 agent 对仓库状态的基础感知（cowork 场景下用户说
+// "继续昨天的活"时尤其有用）。分支/commit/dirty 状态是易变信息，用 TTL
+// 缓存而非永久缓存，避免每轮 prompt assembly 跑 3 次 execSync。
+// ----------------------------------------------------------------------------
+
+const GIT_CMD_TIMEOUT_MS = 3000;
+const GIT_CONTEXT_TTL_MS = 30_000;
+const GIT_RECENT_COMMITS_COUNT = 5;
+
+interface GitContextInfo {
+  isRepo: boolean;
+  branch?: string;
+  recentCommits?: string[];
+  dirtyFileCount?: number;
+}
+
+const gitContextCache = new Map<string, { info: GitContextInfo; fetchedAt: number }>();
+
+function runGit(dir: string, args: string): string | null {
+  try {
+    return execSync(`git ${args}`, { cwd: dir, stdio: 'pipe', timeout: GIT_CMD_TIMEOUT_MS })
+      .toString()
+      .trim();
+  } catch {
+    return null;
+  }
+}
+
+function getGitContext(dir: string): GitContextInfo {
+  const cached = gitContextCache.get(dir);
+  if (cached && Date.now() - cached.fetchedAt < GIT_CONTEXT_TTL_MS) return cached.info;
+
+  if (!isGitRepo(dir)) {
+    const info: GitContextInfo = { isRepo: false };
+    gitContextCache.set(dir, { info, fetchedAt: Date.now() });
+    return info;
+  }
+
+  const branch = runGit(dir, 'branch --show-current') || undefined;
+  const log = runGit(dir, `log --oneline -${GIT_RECENT_COMMITS_COUNT}`);
+  const recentCommits = log ? log.split('\n').filter(Boolean) : undefined;
+  const status = runGit(dir, 'status --porcelain');
+  const dirtyFileCount = status === null
+    ? undefined
+    : status
+      ? status.split('\n').filter(Boolean).length
+      : 0;
+
+  const info: GitContextInfo = { isRepo: true, branch, recentCommits, dirtyFileCount };
+  gitContextCache.set(dir, { info, fetchedAt: Date.now() });
+  return info;
+}
+
+/** 测试用：清空 git 上下文缓存 */
+export function resetGitContextCache(): void {
+  gitRepoCache.clear();
+  gitContextCache.clear();
+}
+
+/** 把 git 上下文渲染成 env block 里的多行文本 */
+function renderGitContext(git: GitContextInfo): string {
+  if (!git.isRepo) return 'Is directory a git repo: No';
+
+  const lines = ['Is directory a git repo: Yes'];
+  lines.push(`Current branch: ${git.branch || '(detached HEAD)'}`);
+  if (git.dirtyFileCount !== undefined) {
+    lines.push(
+      git.dirtyFileCount > 0
+        ? `Working tree: dirty (${git.dirtyFileCount} file(s) changed)`
+        : 'Working tree: clean',
+    );
+  }
+  if (git.recentCommits && git.recentCommits.length > 0) {
+    lines.push('Recent commits:');
+    for (const commit of git.recentCommits) {
+      lines.push(`  ${commit}`);
+    }
+  }
+  return lines.join('\n');
+}
+
 /**
  * Build environment info block (Claude Code style <env> block)
- * Injected once per prompt assembly — ~60 tokens, zero tool calls saved.
+ * Injected once per prompt assembly — ~100-250 tokens, zero tool calls saved.
+ *
+ * Git 仓库时额外注入分支 / working tree dirty 状态 / 最近 commit（GAP-010），
+ * 让模型不用跑 git status/log 就有仓库状态的基础感知。
  *
  * 如果启动时探针已跑完（getEnvCapabilities 返回非 null），还会追加一个
  * <env-capabilities> 块列出本地可用的 CLI，并提示模型用 Bash + `--help` 探索。
@@ -44,11 +131,11 @@ function buildEnvironmentBlock(workingDirectory: string): string {
   const osVersion = `${os.type()} ${os.release()}`;    // Darwin 25.2.0
   const shell = process.env.SHELL || process.env.COMSPEC || 'unknown';
   const today = new Date().toISOString().split('T')[0]; // 2026-02-13
-  const gitRepo = isGitRepo(workingDirectory);
+  const gitContext = getGitContext(workingDirectory);
 
   const baseBlock = `<env>
 Working directory: ${workingDirectory}
-Is directory a git repo: ${gitRepo ? 'Yes' : 'No'}
+${renderGitContext(gitContext)}
 Platform: ${platform}
 OS Version: ${osVersion}
 Default Shell: ${shell}

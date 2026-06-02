@@ -66,6 +66,13 @@ export interface WorkflowStage {
   toolPolicy?: WorkflowStageToolPolicy;
   /** 阶段最长执行时间；省略时由 workflow runtime 使用适合子智能体的默认预算 */
   maxExecutionTimeMs?: number;
+  /** GAP-004: 阶段失败后的最大重试次数（默认 WORKFLOW_ANTI_LOOP.DEFAULT_MAX_RETRIES） */
+  maxRetries?: number;
+  /**
+   * GAP-004: 重试耗尽后的回退路由——回退重跑指定的上游阶段（拿新上下文）再给本阶段最后一次机会。
+   * 对应课程原则："Verifier 失败时回退到 Analyzer 而非让 Fixer 再试一次"。
+   */
+  onFailureRoute?: string;
 }
 
 /**

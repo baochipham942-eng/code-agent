@@ -36,6 +36,7 @@ import {
   type FullAgentConfig,
 } from '../agentDefinition';
 import { applyEffortControls } from '../runtime/contextAssembly/effortControls';
+import { WORKFLOW_ANTI_LOOP } from '../../../shared/constants';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('WorkflowOrchestrate');
@@ -412,13 +413,18 @@ export async function executeWorkflowOrchestrate(
         groups: executionGroups.map((g, i) => `Group${i+1}: [${g.map(s => s.name).join(', ')}]`).join(', '),
       });
 
+      // GAP-004: 反死循环状态（重试/回退路由/circuit breaker）
+      const antiLoop: WorkflowAntiLoopState = { totalFallbacks: 0, breakerTripped: false };
+
       for (const group of executionGroups) {
         logger.info('[Workflow] 执行阶段组', { stages: group.map(s => s.name).join(', ') });
 
         if (parallel && group.length > 1) {
           // Execute stages in parallel
           const groupResults = await Promise.all(
-            group.map((stage) => executeStage(stage, task, stageContexts, legacyRoles, context))
+            group.map((stage) =>
+              executeStageWithAntiLoop(stage, task, stageContexts, legacyRoles, context, workflow.stages, antiLoop)
+            )
           );
 
           for (let i = 0; i < group.length; i++) {
@@ -433,12 +439,60 @@ export async function executeWorkflowOrchestrate(
         } else {
           // Execute stages sequentially
           for (const stage of group) {
-            const result = await executeStage(stage, task, stageContexts, legacyRoles, context);
+            const result = await executeStageWithAntiLoop(
+              stage, task, stageContexts, legacyRoles, context, workflow.stages, antiLoop,
+            );
             results.push(result);
             if (result.success && result.context) {
               stageContexts.set(stage.name, result.context);
             }
+            // breaker 跳闸 → 不再执行本组后续阶段
+            if (antiLoop.breakerTripped) break;
           }
+        }
+
+        // GAP-004: circuit breaker 跳闸 → 终止 workflow，剩余阶段不执行
+        if (antiLoop.breakerTripped) {
+          logger.error('[Workflow] circuit breaker 跳闸，终止 workflow', {
+            reason: antiLoop.breakerReason,
+            executedStages: results.length,
+            totalStages: workflow.stages.length,
+          });
+          const executedNames = new Set(results.map((r) => r.stage));
+          const skippedStages = workflow.stages.filter((s) => !executedNames.has(s.name));
+          return {
+            success: false,
+            error: `Workflow halted by circuit breaker: ${antiLoop.breakerReason}`,
+            output: [
+              `## Workflow: ${workflow.name} (已被 circuit breaker 终止)`,
+              '',
+              `**原因:** ${antiLoop.breakerReason}`,
+              '',
+              `**已执行阶段:** ${results.map((r) => `${r.success ? '✅' : '❌'} ${r.stage}`).join(', ')}`,
+              `**未执行阶段:** ${skippedStages.map((s) => s.name).join(', ') || '(无)'}`,
+              '',
+              '请检查失败阶段的错误后人工介入（调整 prompt / 修复依赖 / 重新发起）。',
+            ].join('\n'),
+            metadata: {
+              workflow: workflowName,
+              workflowName: workflow.name,
+              circuitBreakerTripped: true,
+              stageCount: workflow.stages.length,
+              completedStages: results.filter(r => r.success).length,
+              failedStages: results.filter(r => !r.success).length,
+              skippedStages: skippedStages.map((s) => s.name),
+              totalFallbacks: antiLoop.totalFallbacks,
+              stages: results.map((result) => ({
+                name: result.stage,
+                role: result.role,
+                success: result.success,
+                duration: result.duration,
+                toolsUsed: result.context?.toolsUsed ?? [],
+                toolPolicy: result.context?.toolPolicy,
+                error: result.error,
+              })),
+            },
+          };
         }
       }
 
@@ -511,6 +565,116 @@ ${stagesSummary}`,
         },
       };
     }
+}
+
+// ============================================================================
+// GAP-004: 多 Agent 流水线反死循环
+// 1. stage 失败 → 自动重试至 maxRetries（默认 WORKFLOW_ANTI_LOOP.DEFAULT_MAX_RETRIES）
+// 2. 重试耗尽 + 配置了 onFailureRoute → 回退路由：重跑上游阶段拿新上下文，再给本阶段最后一次机会
+//    （课程原则：Verifier 失败时回退到 Analyzer 而非让 Fixer 再试一次）
+// 3. 同一 run 总回退次数超过 MAX_TOTAL_FALLBACKS → circuit breaker 跳闸：终止 workflow + 通知用户
+// ============================================================================
+
+interface WorkflowAntiLoopState {
+  /** 同一 workflow run 内累计的回退（onFailureRoute）次数 */
+  totalFallbacks: number;
+  /** circuit breaker 是否已跳闸 */
+  breakerTripped: boolean;
+  /** 跳闸原因（用于 workflow 级错误信息） */
+  breakerReason?: string;
+}
+
+/** 向用户发通知（cowork 产品的"人工介入"= 弹给用户）；emit 不可用时静默降级为日志 */
+function notifyWorkflowUser(context: ToolContext, message: string): void {
+  try {
+    (context.emit as unknown as ((event: string, payload: unknown) => void) | undefined)?.(
+      'notification',
+      { message },
+    );
+  } catch {
+    /* emit 信道不可用时仅日志兜底 */
+  }
+  logger.warn(`[Workflow] ${message}`);
+}
+
+/**
+ * 带反死循环保护的 stage 执行：重试 → 回退路由 → circuit breaker。
+ */
+async function executeStageWithAntiLoop(
+  stage: WorkflowStage,
+  task: string,
+  stageContexts: Map<string, StageContext>,
+  roles: Record<string, { name: string; systemPrompt: string; tools: string[] }>,
+  context: ToolContext,
+  allStages: WorkflowStage[],
+  antiLoop: WorkflowAntiLoopState,
+): Promise<StageResult> {
+  const maxRetries = stage.maxRetries ?? WORKFLOW_ANTI_LOOP.DEFAULT_MAX_RETRIES;
+
+  // 初次执行 + 最多 maxRetries 次同阶段重试
+  let lastResult: StageResult | undefined;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      logger.info('[Workflow] stage 失败重试', { stage: stage.name, attempt, maxRetries });
+    }
+    lastResult = await executeStage(stage, task, stageContexts, roles, context);
+    if (lastResult.success) {
+      return lastResult;
+    }
+  }
+  const failedResult = lastResult as StageResult;
+
+  // 重试耗尽：无回退路由 → 按失败返回（保持原有"失败不阻塞后续阶段"语义）
+  if (!stage.onFailureRoute) {
+    return failedResult;
+  }
+
+  const routeTarget = allStages.find((candidate) => candidate.name === stage.onFailureRoute);
+  if (!routeTarget) {
+    logger.warn('[Workflow] onFailureRoute 指向不存在的阶段，跳过回退', {
+      stage: stage.name,
+      route: stage.onFailureRoute,
+    });
+    return failedResult;
+  }
+
+  // 回退前先过 circuit breaker：总回退次数超限 → 跳闸
+  antiLoop.totalFallbacks++;
+  if (antiLoop.totalFallbacks > WORKFLOW_ANTI_LOOP.MAX_TOTAL_FALLBACKS) {
+    antiLoop.breakerTripped = true;
+    antiLoop.breakerReason =
+      `阶段 ${stage.name} 重试 ${maxRetries} 次后仍失败，且 workflow 总回退次数已超上限 ` +
+      `(${WORKFLOW_ANTI_LOOP.MAX_TOTAL_FALLBACKS})，circuit breaker 跳闸`;
+    notifyWorkflowUser(
+      context,
+      `Workflow circuit breaker 跳闸：${antiLoop.breakerReason}。已暂停执行，请人工介入。`,
+    );
+    return {
+      ...failedResult,
+      error: `${failedResult.error ?? 'Stage failed'} [circuit breaker tripped]`,
+    };
+  }
+
+  // 回退路由：重跑上游阶段（刷新其上下文），再给本阶段最后一次机会
+  logger.info('[Workflow] 回退路由：重跑上游阶段', {
+    stage: stage.name,
+    route: stage.onFailureRoute,
+    totalFallbacks: antiLoop.totalFallbacks,
+  });
+  notifyWorkflowUser(context, `阶段 ${stage.name} 多次失败，回退到上游阶段 ${stage.onFailureRoute} 重新执行`);
+
+  const routeResult = await executeStage(routeTarget, task, stageContexts, roles, context);
+  if (routeResult.success && routeResult.context) {
+    stageContexts.set(routeTarget.name, routeResult.context);
+  } else {
+    logger.warn('[Workflow] 回退的上游阶段也失败了，按原失败结果返回', {
+      stage: stage.name,
+      route: stage.onFailureRoute,
+    });
+    return failedResult;
+  }
+
+  return executeStage(stage, task, stageContexts, roles, context);
 }
 
 // Build execution groups based on dependencies

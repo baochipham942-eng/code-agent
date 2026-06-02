@@ -121,6 +121,14 @@ export const STOP_HOOK = {
   USER_MAX_RETRIES: 1,
 } as const;
 
+/** 多 Agent 流水线反死循环配置（GAP-004） */
+export const WORKFLOW_ANTI_LOOP = {
+  /** 单 stage 失败后的默认重试次数（stage 可用 maxRetries 覆盖） */
+  DEFAULT_MAX_RETRIES: 2,
+  /** 同一 workflow run 内允许的总回退（onFailureRoute）次数，超过即 circuit breaker 跳闸暂停 + 通知用户 */
+  MAX_TOTAL_FALLBACKS: 1,
+} as const;
+
 /** Generator-Critic 交付前自动验证配置（GAP-013） */
 export const DELIVERY_CRITIC = {
   /** 触发 critic 的最小修改文件数（修改 ≥N 个文件的 run 才值得花一次子代理审查） */

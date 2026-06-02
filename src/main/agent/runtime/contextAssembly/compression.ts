@@ -255,6 +255,8 @@ export function updateContextHealth(ctx: ContextAssemblyCtx): void {
       model,
       undefined,
       estimateActiveToolDefinitionsTokens(),
+      // GAP-023: 被预算丢弃的 prompt 块可见化到 context health 面板
+      ctx.runtime.droppedPromptBlocks ? [...ctx.runtime.droppedPromptBlocks] : undefined,
     );
 
     // 更新压缩统计到健康状态

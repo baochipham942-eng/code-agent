@@ -78,6 +78,8 @@ type RuntimeAssemblyCache = {
     createdAt: number;
     prompt: string;
     tokens: number;
+    /** GAP-023: 该缓存 prompt 构建时被预算丢弃的块（缓存命中时恢复，保持可见化一致） */
+    droppedBlocks?: string[];
   };
   compression?: {
     key: string;
@@ -136,6 +138,17 @@ export function buildDynamicPromptCacheKey(
   ].join('\u0000');
 }
 
+/**
+ * GAP-023: 记录被预算丢弃/裁剪的 prompt 块（去重），供 context health 面板可见化。
+ */
+function recordDroppedPromptBlock(ctx: ContextAssemblyCtx | undefined, label: string): void {
+  if (!ctx) return;
+  const dropped = (ctx.runtime.droppedPromptBlocks ??= []);
+  if (!dropped.includes(label)) {
+    dropped.push(label);
+  }
+}
+
 function appendPromptBlockWithinBudget(
   prompt: string,
   block: string | null | undefined,
@@ -150,6 +163,8 @@ function appendPromptBlockWithinBudget(
     ctx?.runtime.pendingRuntimeDiagnostics.push(
       `上下文预算跳过 ${label}：预计 ${nextTokens}/${MAX_SYSTEM_PROMPT_TOKENS} tokens`,
     );
+    // GAP-023: 丢弃可见化（context health 面板），不只是 debug log
+    recordDroppedPromptBlock(ctx, label);
     return prompt;
   }
   return nextPrompt;
@@ -240,6 +255,8 @@ function appendPromptBlockWithinBudgetWithStatus(
     workingPrompt = nextCandidatePrompt;
     appendedBlocks.delete(candidate);
     trimmed.push(candidate);
+    // GAP-023: 为保必需块而被裁掉的块同样可见化
+    recordDroppedPromptBlock(ctx, candidate);
     const retriedPrompt = appendPromptBlockWithinBudget(workingPrompt, block, label, ctx);
     if (retriedPrompt !== workingPrompt) {
       return { prompt: retriedPrompt, appended: true, trimmed };
@@ -278,8 +295,13 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
 
   if (cached?.key === cacheKey && now - cached.createdAt < DYNAMIC_PROMPT_CACHE_TTL_MS) {
     logger.debug('[ContextAssembly] dynamic system prompt cache hit', { tokens: cached.tokens });
+    // GAP-023: 缓存命中时恢复该 prompt 构建时的丢弃记录，保持可见化与实际 prompt 一致
+    ctx.runtime.droppedPromptBlocks = [...(cached.droppedBlocks ?? [])];
     return cached.prompt;
   }
+
+  // GAP-023: 实际重建 prompt，重置丢弃记录
+  ctx.runtime.droppedPromptBlocks = [];
 
   // FULL_SYSTEM.md 短路:用户要完全接管 system prompt 时直接 return,
   // 跳过所有默认层(identity / workdir / runtime mode / session metadata / memory /
@@ -384,6 +406,97 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   systemPrompt = injectWorkingDirectoryContext(systemPrompt, ctx.runtime.workingDirectory, ctx.runtime.isDefaultWorkingDirectory);
   systemPrompt += buildRuntimeModeBlock();
 
+  // GAP-023: 注入块优先级排序 —— 能力发现类块（plugins / skills / deferred-tools）
+  // 先于锦上添花块（session metadata / memory / recent conversations）追加。
+  // 预算吃紧时优先保住"模型知道自己有哪些能力可用"，被丢弃的是次要增强信息。
+
+  // 注入 active plugin 能力清单（Step 7 PR 2，让模型按语义自主识别能力缺口）
+  try {
+    const activePlugins = getPluginRegistry()
+      .getPlugins()
+      .filter((p) => p.state === 'active' && p.manifest.description);
+    if (activePlugins.length > 0) {
+      const lines = activePlugins.map((p) => {
+        const desc = (p.manifest.description ?? '').slice(0, 60);
+        const caps = p.manifest.capabilities?.length
+          ? ` [${p.manifest.capabilities.join(', ')}]`
+          : '';
+        return `- ${p.manifest.id}: ${desc}${caps}`;
+      });
+      const pluginBlock = `<available_plugins>\n${lines.join('\n')}\n</available_plugins>`;
+      systemPrompt = appendPromptBlockWithinBudget(systemPrompt, pluginBlock, 'available plugins', ctx);
+    }
+  } catch (err) {
+    logger.debug(
+      `[ContextAssembly] plugin description injection skipped: ${err instanceof Error ? err.message : 'unknown'}`,
+    );
+  }
+
+  // 注入相关 Skill（Hermes Procedural layer）— 按用户查询关键词匹配。
+  // P3.5 change: artifact-brief turns (Round 0 generation) now ALSO get skill
+  // injection. Empirically Round 0 is where models miss the most concrete
+  // implementation patterns (step()/runSmokeTest wiring); a domain-specific
+  // skill in ~/.code-agent/memory/skill_*.md is far cheaper to maintain than
+  // bloating the global game contract prompt. Repair turns (artifactRepairMode)
+  // still skip skill injection — they already get the contract + reference
+  // impl block, and adding skills on top would push past the 6K system budget.
+  //
+  // Provider-aware skip: mimo (xiaomi) is reasoning-heavy and its content
+  // output collapses when the system prompt grows past ~10K. GPT-5.4 and
+  // similar handle long prompts fine. Until skill content can be shortened
+  // for the reasoning-heavy track, mimo opts out and falls back to the
+  // contract-only prompt (which it tolerates well — see the A'+B' baseline).
+  const provider = ctx.runtime.modelConfig?.provider;
+  const skipSkillsForLongPromptIntolerantProvider = provider === 'xiaomi';
+  if (
+    !artifactRepairMode
+    && !ctx.runtime.isSimpleTaskMode
+    && userQuery
+    && !skipSkillsForLongPromptIntolerantProvider
+  ) {
+    try {
+      const skills = await loadRelevantSkills(userQuery);
+      const skillBlock = buildSkillInjectionBlock(skills);
+      if (skillBlock) {
+        systemPrompt = appendPromptBlockWithinBudget(systemPrompt, skillBlock, 'skills', ctx);
+        if (systemPrompt.includes(skillBlock)) {
+          appendedBlocks.set('skills', skillBlock);
+        }
+        logger.debug(
+          `[ContextAssembly] Injected ${skills.length} relevant skill(s) into prompt`,
+        );
+      }
+    } catch (err) {
+      logger.debug(
+        `[ContextAssembly] Skill injection skipped: ${err instanceof Error ? err.message : 'unknown'}`,
+      );
+    }
+  }
+
+  // 注入延迟工具提示（能力发现块，GAP-023 提前到锦上添花块之前）
+  if (!artifactRepairMode && !shouldInjectArtifactBrief && ctx.runtime.enableToolDeferredLoading) {
+    const deferredToolsSummary = getDeferredToolsSummary();
+    if (deferredToolsSummary) {
+      const deferredToolsBlock = `<deferred-tools>
+除了核心工具外，以下工具可通过 ToolSearch 发现和加载。当核心工具无法完成任务时（例如需要浏览器操作、截图、PPT/Excel 生成、图片分析等），你必须先用 ToolSearch 加载对应工具。
+
+${deferredToolsSummary}
+
+用法：调用 ToolSearch 时传入 JSON 参数，例如 {"query":"browser"} 搜索浏览器工具，或 {"query":"select:Browser"} 直接加载。
+[mcp:*] 分组下是外部 MCP 服务器提供的工具（命名格式 mcp__<server>__<tool>），同样通过 ToolSearch 加载后才能调用，例如 {"query":"select:mcp__github__search_code"}。
+</deferred-tools>`;
+      systemPrompt = appendPromptBlockWithinBudget(
+        systemPrompt,
+        deferredToolsBlock,
+        'deferred tools',
+        ctx,
+      );
+      if (systemPrompt.includes(deferredToolsBlock)) {
+        appendedBlocks.set('deferred tools', deferredToolsBlock);
+      }
+    }
+  }
+
   // 注入 Session Metadata（使用频率/行为模式，借鉴 ChatGPT Layer 2）
   if (!artifactRepairMode && !shouldInjectArtifactBrief) {
     systemPrompt = appendPromptBlockWithinBudget(
@@ -447,69 +560,6 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       count: 1,
       sessionId: ctx.runtime.sessionId,
     });
-  }
-
-  // 注入 active plugin 能力清单（Step 7 PR 2，让模型按语义自主识别能力缺口）
-  try {
-    const activePlugins = getPluginRegistry()
-      .getPlugins()
-      .filter((p) => p.state === 'active' && p.manifest.description);
-    if (activePlugins.length > 0) {
-      const lines = activePlugins.map((p) => {
-        const desc = (p.manifest.description ?? '').slice(0, 60);
-        const caps = p.manifest.capabilities?.length
-          ? ` [${p.manifest.capabilities.join(', ')}]`
-          : '';
-        return `- ${p.manifest.id}: ${desc}${caps}`;
-      });
-      const pluginBlock = `<available_plugins>\n${lines.join('\n')}\n</available_plugins>`;
-      systemPrompt = appendPromptBlockWithinBudget(systemPrompt, pluginBlock, 'available plugins', ctx);
-    }
-  } catch (err) {
-    logger.debug(
-      `[ContextAssembly] plugin description injection skipped: ${err instanceof Error ? err.message : 'unknown'}`,
-    );
-  }
-
-  // 注入相关 Skill（Hermes Procedural layer）— 按用户查询关键词匹配。
-  // P3.5 change: artifact-brief turns (Round 0 generation) now ALSO get skill
-  // injection. Empirically Round 0 is where models miss the most concrete
-  // implementation patterns (step()/runSmokeTest wiring); a domain-specific
-  // skill in ~/.code-agent/memory/skill_*.md is far cheaper to maintain than
-  // bloating the global game contract prompt. Repair turns (artifactRepairMode)
-  // still skip skill injection — they already get the contract + reference
-  // impl block, and adding skills on top would push past the 6K system budget.
-  //
-  // Provider-aware skip: mimo (xiaomi) is reasoning-heavy and its content
-  // output collapses when the system prompt grows past ~10K. GPT-5.4 and
-  // similar handle long prompts fine. Until skill content can be shortened
-  // for the reasoning-heavy track, mimo opts out and falls back to the
-  // contract-only prompt (which it tolerates well — see the A'+B' baseline).
-  const provider = ctx.runtime.modelConfig?.provider;
-  const skipSkillsForLongPromptIntolerantProvider = provider === 'xiaomi';
-  if (
-    !artifactRepairMode
-    && !ctx.runtime.isSimpleTaskMode
-    && userQuery
-    && !skipSkillsForLongPromptIntolerantProvider
-  ) {
-    try {
-      const skills = await loadRelevantSkills(userQuery);
-      const skillBlock = buildSkillInjectionBlock(skills);
-      if (skillBlock) {
-        systemPrompt = appendPromptBlockWithinBudget(systemPrompt, skillBlock, 'skills', ctx);
-        if (systemPrompt.includes(skillBlock)) {
-          appendedBlocks.set('skills', skillBlock);
-        }
-        logger.debug(
-          `[ContextAssembly] Injected ${skills.length} relevant skill(s) into prompt`,
-        );
-      }
-    } catch (err) {
-      logger.debug(
-        `[ContextAssembly] Skill injection skipped: ${err instanceof Error ? err.message : 'unknown'}`,
-      );
-    }
   }
 
   // 注入 Repo Map（代码结构索引，借鉴 Aider）
@@ -581,30 +631,6 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
     logger.debug('[ContextAssembly] GenerativeUI + QuestionForm prompts injected (intent matched)');
   }
 
-  // 注入延迟工具提示
-  if (!artifactRepairMode && !shouldInjectArtifactBrief && ctx.runtime.enableToolDeferredLoading) {
-    const deferredToolsSummary = getDeferredToolsSummary();
-    if (deferredToolsSummary) {
-      const deferredToolsBlock = `<deferred-tools>
-除了核心工具外，以下工具可通过 ToolSearch 发现和加载。当核心工具无法完成任务时（例如需要浏览器操作、截图、PPT/Excel 生成、图片分析等），你必须先用 ToolSearch 加载对应工具。
-
-${deferredToolsSummary}
-
-用法：调用 ToolSearch 时传入 JSON 参数，例如 {"query":"browser"} 搜索浏览器工具，或 {"query":"select:Browser"} 直接加载。
-[mcp:*] 分组下是外部 MCP 服务器提供的工具（命名格式 mcp__<server>__<tool>），同样通过 ToolSearch 加载后才能调用，例如 {"query":"select:mcp__github__search_code"}。
-</deferred-tools>`;
-      systemPrompt = appendPromptBlockWithinBudget(
-        systemPrompt,
-        deferredToolsBlock,
-        'deferred tools',
-        ctx,
-      );
-      if (systemPrompt.includes(deferredToolsBlock)) {
-        appendedBlocks.set('deferred tools', deferredToolsBlock);
-      }
-    }
-  }
-
   // 项目级 / 全局级 APPEND_SYSTEM.md(Pi 借鉴 ④):追加到所有默认层之后
   // 走 appendPromptBlockWithinBudget 保证不撑爆 system prompt budget
   if (projectSystemPrompt.append !== null) {
@@ -631,6 +657,8 @@ ${deferredToolsSummary}
       createdAt: now,
       prompt: systemPrompt,
       tokens,
+      // GAP-023: 缓存丢弃记录，命中时恢复
+      droppedBlocks: [...(ctx.runtime.droppedPromptBlocks ?? [])],
     };
   } else {
     cache.dynamicPrompt = undefined;

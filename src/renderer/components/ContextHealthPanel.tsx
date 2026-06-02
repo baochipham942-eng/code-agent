@@ -269,6 +269,26 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
             </span>
           </div>
 
+          {/* GAP-023: 被预算丢弃的 prompt 块（能力可见化——agent 能力缩水时用户能看到原因） */}
+          {(health.droppedPromptBlocks?.length ?? 0) > 0 && (
+            <div className="flex items-start gap-2 p-2 bg-orange-500/20 rounded-md">
+              <AlertTriangle className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-orange-300 space-y-1">
+                <div>以下上下文块因 system prompt 预算超限被丢弃，agent 部分能力可能不可见：</div>
+                <div className="flex flex-wrap gap-1">
+                  {health.droppedPromptBlocks?.map((block) => (
+                    <span
+                      key={block}
+                      className="px-1.5 py-0.5 bg-orange-500/20 rounded font-mono text-orange-200"
+                    >
+                      {block}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 警告提示 */}
           {health.warningLevel === 'critical' && (
             <div className="flex items-center gap-2 p-2 bg-red-500/20 rounded-md">

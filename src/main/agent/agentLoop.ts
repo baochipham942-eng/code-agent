@@ -235,6 +235,7 @@ export class AgentLoop {
       currentTurnId: '',
       messageDeltaSeq: 0,
       pendingRuntimeDiagnostics: [],
+      droppedPromptBlocks: [],
       forceFinalResponseReason: undefined,
       forceFinalResponsePrompt: undefined,
       activeSkillInvocation: undefined,

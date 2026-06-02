@@ -167,6 +167,21 @@ vi.mock('../../../src/shared/constants', () => ({
   getContextWindow: vi.fn().mockReturnValue(128000),
   TOOL_PROGRESS: {},
   TOOL_TIMEOUT_THRESHOLDS: {},
+  // tokenOptimizer 依赖（pre-existing 缺失：GAP-009 引入 TOOL_RESULT_SPILL 后 mock 未同步，导致整个 suite 加载失败）
+  OBSERVATION_MASKING: {
+    PRESERVE_RECENT_COUNT: 10,
+    MIN_TOKEN_THRESHOLD: 100,
+    PLACEHOLDER_SUCCESS: '[output cleared - tool was executed successfully]',
+    PLACEHOLDER_ERROR: '[output cleared - tool returned error]',
+    PLACEHOLDER_FILE_READ: '[File content omitted from history to save context.]',
+  },
+  TOOL_RESULT_SPILL: {
+    TMP_DIR: 'tmp',
+    SUBDIR: 'tool-results',
+    SHARED_SESSION: 'shared',
+    MAX_SPILL_BYTES: 10 * 1024 * 1024,
+    NOTICE_MARKER: '[Full output saved to:',
+  },
 }));
 
 vi.mock('../../../src/main/agent/toolExecution/parallelStrategy', () => ({
@@ -714,6 +729,63 @@ describe('ContextAssembly.buildModelMessages()', () => {
 
     expect(modelMessages[0].role).toBe('system');
     expect(modelMessages[0].content).not.toContain('PERSISTENT_MARKER');
+  });
+
+  it('prioritizes capability discovery blocks over nice-to-have blocks under budget pressure (GAP-023)', async () => {
+    // base prompt 占掉大部分预算，session metadata（锦上添花）很大、deferred tools（能力发现）很小：
+    // 重排后 deferred tools 先追加（能装下），session metadata 后追加（超预算被丢弃）。
+    // 重排前的旧行为是反过来的——session metadata 先到先得，deferred tools 被静默丢弃。
+    vi.mocked(getPromptForTask).mockReturnValueOnce('base '.repeat(4000));
+    vi.mocked(buildSessionMetadataBlock).mockResolvedValueOnce(
+      `<session_metadata>${'session '.repeat(3000)}</session_metadata>`,
+    );
+    vi.mocked(getDeferredToolsSummary).mockReturnValueOnce('browser: 浏览器操作工具组');
+
+    const ctx = buildRuntimeContext({
+      enableToolDeferredLoading: true,
+      messages: [buildMessage('user-gap023', 'user', '帮我查一下这个仓库的代码结构')],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+
+    const systemPrompt = modelMessages[0].content;
+    // 能力发现块保住了
+    expect(systemPrompt).toContain('<deferred-tools>');
+    expect(systemPrompt).toContain('browser: 浏览器操作工具组');
+    // 锦上添花块被丢弃
+    expect(systemPrompt).not.toContain('<session_metadata>');
+    expect(estimateTokens(systemPrompt)).toBeLessThanOrEqual(MAX_SYSTEM_PROMPT_TOKENS);
+    // GAP-023 丢弃可见化：被丢弃的块记录到 runtime ctx（流向 context health 面板）
+    const droppedBlocks = (ctx as { droppedPromptBlocks?: string[] }).droppedPromptBlocks ?? [];
+    expect(droppedBlocks).toContain('session metadata');
+    expect(droppedBlocks).not.toContain('deferred tools');
+  });
+
+  it('places capability discovery blocks before nice-to-have blocks in the prompt (GAP-023)', async () => {
+    // 预算充足时全部块都注入，但顺序必须是能力发现块在前
+    vi.mocked(getDeferredToolsSummary).mockReturnValueOnce('browser: deferred tools entry');
+    vi.mocked(buildSessionMetadataBlock).mockResolvedValueOnce('<session_metadata>light usage</session_metadata>');
+
+    const ctx = buildRuntimeContext({
+      enableToolDeferredLoading: true,
+      messages: [buildMessage('user-gap023-order', 'user', '帮我查一下今天的天气')],
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+
+    const systemPrompt = modelMessages[0].content;
+    const deferredToolsIndex = systemPrompt.indexOf('<deferred-tools>');
+    const sessionMetadataIndex = systemPrompt.indexOf('<session_metadata>');
+    const memoryHintIndex = systemPrompt.indexOf('<memory_hint>');
+
+    expect(deferredToolsIndex).toBeGreaterThan(-1);
+    expect(sessionMetadataIndex).toBeGreaterThan(-1);
+    expect(memoryHintIndex).toBeGreaterThan(-1);
+    // 能力发现块（deferred tools）在锦上添花块（session metadata / memory hint）之前
+    expect(deferredToolsIndex).toBeLessThan(sessionMetadataIndex);
+    expect(deferredToolsIndex).toBeLessThan(memoryHintIndex);
   });
 
   it('injects compact game contract and skips optional prompt blocks for game artifact generation tasks', async () => {

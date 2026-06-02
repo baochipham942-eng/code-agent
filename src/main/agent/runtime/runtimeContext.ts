@@ -131,6 +131,8 @@ export interface RuntimeContext {
   /** G20: per-run 结构化 turn trace（决策 / dispatch / compaction） */
   turnTrace: TurnTraceRecorder;
   pendingRuntimeDiagnostics: string[];
+  /** GAP-023: 当前生效 system prompt 构建时被预算丢弃/裁剪的块（可见化到 context health） */
+  droppedPromptBlocks?: string[];
   forceFinalResponseReason?: string;
   forceFinalResponsePrompt?: string;
   /** Last interactive artifact path that passed runtime/browser validation in this run. */

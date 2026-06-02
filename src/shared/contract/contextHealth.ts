@@ -153,6 +153,11 @@ export interface ContextHealthState {
   lastUpdated: number;
   /** 压缩统计 */
   compression?: CompressionStats;
+  /**
+   * GAP-023: 被 system prompt 预算丢弃/裁剪的注入块标签（如 'deferred tools' / 'skills'）。
+   * 用于 context health 面板可见化——agent 能力缩水时用户能看到原因，不再静默。
+   */
+  droppedPromptBlocks?: string[];
 }
 
 /**

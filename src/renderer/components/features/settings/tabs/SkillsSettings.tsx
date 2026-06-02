@@ -5,7 +5,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AlertCircle, Check, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '../../../primitives';
-import { SettingsPage } from '../SettingsLayout';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type { LocalSkillLibrary, SkillRepository } from '@shared/contract/skillRepository';
 import type { ParsedSkill } from '@shared/contract/agentSkill';
@@ -326,10 +325,8 @@ export const SkillsSettings: React.FC = () => {
   }
 
   return (
-    <SettingsPage
-      title="Skills"
-      description="管理已安装的 Skill 和启用状态，或从推荐仓库与社区市场安装新的 Skill。"
-    >
+    // 弹窗头部已展示「Skills / 能力与连接」标题，内容区直接从 Tab 开始，不再叠标题
+    <div className="space-y-6">
       <WebModeBanner />
 
       {/* 操作结果消息 */}
@@ -411,6 +408,6 @@ export const SkillsSettings: React.FC = () => {
           onAddCustom={handleAddCustom}
         />
       )}
-    </SettingsPage>
+    </div>
   );
 };

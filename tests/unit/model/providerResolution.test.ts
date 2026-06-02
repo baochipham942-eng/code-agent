@@ -18,9 +18,11 @@ import {
 } from '../../../src/main/model/providers/providerResolution';
 
 // configService 单例：adapter 模式（trustConfigKey:false）会查它，受控返回。
+// getSettings：动态 custom provider 的 baseUrl 兜底来源（settings.models.providers[id].baseUrl）。
 const mockGetApiKey = vi.fn<(provider: string) => string | undefined>();
+const mockGetSettings = vi.fn<() => unknown>();
 vi.mock('../../../src/main/services/core/configService', () => ({
-  getConfigService: () => ({ getApiKey: mockGetApiKey }),
+  getConfigService: () => ({ getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
 }));
 
 const cfg = (provider: string, model: string, extra: Partial<ModelConfig> = {}): ModelConfig =>
@@ -40,6 +42,8 @@ beforeEach(() => {
   }
   mockGetApiKey.mockReset();
   mockGetApiKey.mockReturnValue(undefined);
+  mockGetSettings.mockReset();
+  mockGetSettings.mockReturnValue({});
 });
 afterEach(() => {
   for (const k of ENV_KEYS) {
@@ -65,6 +69,25 @@ describe('resolveProviderBaseUrl', () => {
   it('config.baseUrl 覆盖默认端点（简单 provider）', () => {
     expect(resolveProviderBaseUrl(cfg('deepseek', 'deepseek-chat', { baseUrl: 'https://relay.test/v1' })))
       .toBe('https://relay.test/v1');
+  });
+
+  it('动态 custom provider：config.baseUrl 缺失时从 settings.models.providers[id].baseUrl 兜底', () => {
+    mockGetSettings.mockReturnValue({
+      models: { providers: { 'custom-lc-ai-02': { baseUrl: 'https://windhub.cc/v1' } } },
+    });
+    // config.baseUrl 没传下来（aiSdk 子代理/重建 config 的场景）→ 从用户设置兜底
+    expect(resolveProviderBaseUrl(cfg('custom-lc-ai-02', 'deepseek-v3-2-251201')))
+      .toBe('https://windhub.cc/v1');
+    // config.baseUrl 仍最高优先
+    expect(resolveProviderBaseUrl(cfg('custom-lc-ai-02', 'deepseek-v3-2-251201', { baseUrl: 'https://other.test/v1' })))
+      .toBe('https://other.test/v1');
+  });
+
+  it('动态 custom provider：settings 也没有 → 返回空串（调用方报错）', () => {
+    expect(resolveProviderBaseUrl(cfg('custom-unknown-99', 'some-model'))).toBe('');
+    // configService 抛异常也不致命
+    mockGetSettings.mockImplementation(() => { throw new Error('not ready'); });
+    expect(resolveProviderBaseUrl(cfg('custom-unknown-99', 'some-model'))).toBe('');
   });
 
   it('local → ENDPOINTS.ollama（provider id 与 endpoint key 不同名）', () => {

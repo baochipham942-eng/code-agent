@@ -92,8 +92,21 @@ export function resolveProviderBaseUrl(config: ModelConfig): string {
     return config.baseUrl || MODEL_API_ENDPOINTS.ollama;
   }
 
-  // 通用：config.baseUrl || ENDPOINTS[provider]
-  return config.baseUrl || ENDPOINTS[provider] || '';
+  // 通用：config.baseUrl || 用户设置里该 provider 的 baseUrl || ENDPOINTS[provider]
+  // 动态 custom provider（custom-xxx）不在 ENDPOINTS 里，端点唯一来源是用户设置
+  // （settings.models.providers[id].baseUrl）——与 legacy modelRouter.getDynamicCustomProvider
+  // 的查找对齐，否则 config.baseUrl 一旦没随调用链传下来，aiSdk 路径直接抛
+  // 「无法解析 provider 的 baseURL」。
+  return config.baseUrl || getSettingsProviderBaseUrl(provider) || ENDPOINTS[provider] || '';
+}
+
+/** 用户设置里该 provider 配置的 baseUrl（动态 custom provider 的唯一端点来源）。 */
+function getSettingsProviderBaseUrl(provider: string): string | undefined {
+  try {
+    return getConfigService().getSettings().models?.providers?.[provider]?.baseUrl;
+  } catch {
+    return undefined;
+  }
 }
 
 interface ResolveApiKeyOptions {

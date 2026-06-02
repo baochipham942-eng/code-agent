@@ -8,6 +8,7 @@
 
 import type {
   RecommendedSkillEntry,
+  SkillCatalogPayload,
   SkillCategoryMeta,
   SkillRepository,
   SkillRoleBundle,
@@ -506,18 +507,33 @@ export const SKILL_ROLE_BUNDLES: SkillRoleBundle[] = [
 // Helper
 // ----------------------------------------------------------------------------
 
-/** 按分类分组推荐 skill（保持 SKILL_CATEGORIES 顺序） */
-export function groupRecommendedSkillsByCategory(): Array<{
+/** 内置 skill 推荐目录载荷（云端未下发时的兜底） */
+export function getBuiltinSkillCatalogPayload(): SkillCatalogPayload {
+  return {
+    categories: SKILL_CATEGORIES,
+    skills: RECOMMENDED_SKILLS,
+    bundles: SKILL_ROLE_BUNDLES,
+    repositories: RECOMMENDED_REPOSITORIES,
+  };
+}
+
+/** 按分类分组推荐 skill（保持分类顺序）；不传 catalog 时用内置目录 */
+export function groupRecommendedSkillsByCategory(
+  catalog: SkillCatalogPayload = getBuiltinSkillCatalogPayload()
+): Array<{
   category: SkillCategoryMeta;
   skills: RecommendedSkillEntry[];
 }> {
-  return SKILL_CATEGORIES.map((category) => ({
+  return catalog.categories.map((category) => ({
     category,
-    skills: RECOMMENDED_SKILLS.filter((skill) => skill.category === category.id),
+    skills: catalog.skills.filter((skill) => skill.category === category.id),
   })).filter((group) => group.skills.length > 0);
 }
 
-/** 根据 ID 查找推荐仓库 */
-export function findRecommendedRepository(repoId: string): SkillRepository | undefined {
-  return RECOMMENDED_REPOSITORIES.find((r) => r.id === repoId);
+/** 根据 ID 查找推荐仓库；不传 repositories 时在内置目录中查找 */
+export function findRecommendedRepository(
+  repoId: string,
+  repositories: SkillRepository[] = RECOMMENDED_REPOSITORIES
+): SkillRepository | undefined {
+  return repositories.find((r) => r.id === repoId);
 }

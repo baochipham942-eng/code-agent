@@ -4,12 +4,14 @@
 
 import React from 'react';
 import { Check, Plug, Plus } from 'lucide-react';
-import type { RecommendedMcpServerEntry } from '@shared/contract/mcpCatalog';
+import type { McpCatalogPayload, RecommendedMcpServerEntry } from '@shared/contract/mcpCatalog';
 import { groupRecommendedMcpServersByCategory } from '@shared/constants/mcpCatalog';
 import { Button } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
 
 export interface McpDiscoverTabProps {
+  /** 推荐目录（云端下发优先，内置兜底） */
+  catalog: McpCatalogPayload;
   /** 当前已配置的 server ID 集合（含内置与用户添加） */
   existingServerIds: Set<string>;
   /** 已启用的 server ID 集合 */
@@ -126,6 +128,7 @@ const McpServerCard: React.FC<McpServerCardProps> = ({
 );
 
 export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
+  catalog,
   existingServerIds,
   enabledServerIds,
   isAdmin,
@@ -134,7 +137,7 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
   onConnectWithConfig,
   onEnableBuiltin,
 }) => {
-  const categoryGroups = groupRecommendedMcpServersByCategory();
+  const categoryGroups = groupRecommendedMcpServersByCategory(catalog);
 
   return (
     <div className="space-y-4">

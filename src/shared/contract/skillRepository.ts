@@ -86,6 +86,21 @@ export interface SkillRoleBundle {
 export const BUILTIN_REPO_ID = 'builtin';
 
 /**
+ * Skill 推荐目录完整载荷
+ * 云端下发与客户端兜底共用的数据形状
+ */
+export interface SkillCatalogPayload {
+  /** 产物分类 */
+  categories: SkillCategoryMeta[];
+  /** 推荐 skill 条目 */
+  skills: RecommendedSkillEntry[];
+  /** 角色场景包 */
+  bundles: SkillRoleBundle[];
+  /** 推荐仓库（安装来源） */
+  repositories: SkillRepository[];
+}
+
+/**
  * Skill 仓库配置
  * 定义一个可下载的 Skill 仓库源
  */

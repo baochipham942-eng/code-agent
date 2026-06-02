@@ -8,6 +8,7 @@
 // ============================================================================
 
 import type {
+  McpCatalogPayload,
   McpCategoryMeta,
   RecommendedMcpServerEntry,
 } from '../contract/mcpCatalog';
@@ -235,18 +236,31 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
 // Helper
 // ----------------------------------------------------------------------------
 
-/** 按分类分组推荐 MCP server（保持 MCP_CATEGORIES 顺序） */
-export function groupRecommendedMcpServersByCategory(): Array<{
+/** 内置 MCP 推荐目录载荷（云端未下发时的兜底） */
+export function getBuiltinMcpCatalogPayload(): McpCatalogPayload {
+  return {
+    categories: MCP_CATEGORIES,
+    servers: RECOMMENDED_MCP_SERVERS,
+  };
+}
+
+/** 按分类分组推荐 MCP server（保持分类顺序）；不传 catalog 时用内置目录 */
+export function groupRecommendedMcpServersByCategory(
+  catalog: McpCatalogPayload = getBuiltinMcpCatalogPayload()
+): Array<{
   category: McpCategoryMeta;
   servers: RecommendedMcpServerEntry[];
 }> {
-  return MCP_CATEGORIES.map((category) => ({
+  return catalog.categories.map((category) => ({
     category,
-    servers: RECOMMENDED_MCP_SERVERS.filter((server) => server.category === category.id),
+    servers: catalog.servers.filter((server) => server.category === category.id),
   })).filter((group) => group.servers.length > 0);
 }
 
-/** 根据 ID 查找推荐 MCP server */
-export function findRecommendedMcpServer(id: string): RecommendedMcpServerEntry | undefined {
-  return RECOMMENDED_MCP_SERVERS.find((server) => server.id === id);
+/** 根据 ID 查找推荐 MCP server；不传 servers 时在内置目录中查找 */
+export function findRecommendedMcpServer(
+  id: string,
+  servers: RecommendedMcpServerEntry[] = RECOMMENDED_MCP_SERVERS
+): RecommendedMcpServerEntry | undefined {
+  return servers.find((server) => server.id === id);
 }

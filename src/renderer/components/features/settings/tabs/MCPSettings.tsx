@@ -29,7 +29,8 @@ import { LocalBridgeSection } from '../sections/localBridge';
 import { NativeConnectorsSection } from '../sections';
 import { McpServerEditor, type McpServerConfig } from '../McpServerEditor';
 import { McpDiscoverTab } from './McpDiscoverTab';
-import type { RecommendedMcpServerEntry } from '@shared/contract/mcpCatalog';
+import type { McpCatalogPayload, RecommendedMcpServerEntry } from '@shared/contract/mcpCatalog';
+import { getBuiltinMcpCatalogPayload } from '@shared/constants/mcpCatalog';
 import { WorkbenchCapabilityDetailButton } from '../../../workbench/WorkbenchPrimitives';
 import { WorkbenchCapabilitySheetLite } from '../../../workbench/WorkbenchCapabilitySheetLite';
 import {
@@ -70,6 +71,26 @@ export const MCPSettings: React.FC = () => {
   const [editorInitialConfig, setEditorInitialConfig] = useState<Partial<McpServerConfig> | undefined>(undefined);
   const [discoverActionLoading, setDiscoverActionLoading] = useState<string | null>(null);
   const [activeSheetTarget, setActiveSheetTarget] = useState<WorkbenchCapabilityTarget | null>(null);
+  // 推荐目录：内置数据为初始值，云端下发到达后覆盖
+  const [mcpCatalog, setMcpCatalog] = useState<McpCatalogPayload>(getBuiltinMcpCatalogPayload);
+
+  // 加载云端 MCP 推荐目录（失败时保持内置兜底）
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await window.domainAPI?.invoke<McpCatalogPayload>(IPC_DOMAINS.MCP, 'getCatalog');
+        if (!cancelled && result?.success && result.data) {
+          setMcpCatalog(result.data);
+        }
+      } catch (error) {
+        logger.warn('Failed to load MCP catalog from cloud, using builtin fallback', { error });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const activeSheetCapability = useMemo(
     () => resolveWorkbenchCapabilityFromSources({
@@ -308,6 +329,7 @@ export const MCPSettings: React.FC = () => {
 
       {activeTab === 'discover' && (
         <McpDiscoverTab
+          catalog={mcpCatalog}
           existingServerIds={new Set(mcpServers.map((server) => server.id))}
           enabledServerIds={new Set(mcpServers.filter((server) => server.enabled).map((server) => server.id))}
           isAdmin={isAdmin}

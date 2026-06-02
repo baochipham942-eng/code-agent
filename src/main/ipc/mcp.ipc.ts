@@ -12,6 +12,7 @@ import {
 } from '../mcp/mcpClient';
 import { ensureConfigDir, getMcpConfigPath, pathExists } from '../config';
 import { getContextHealthService } from '../context/contextHealthService';
+import { getCloudConfigService } from '../services/cloud';
 import { getAdminAccessIpcError } from './adminGuard';
 
 const BLOCKED_STDIO_COMMANDS = new Set([
@@ -324,6 +325,10 @@ export function registerMcpHandlers(ipcMain: IpcMain, options: RegisterMcpHandle
       switch (action) {
         case 'getStatus':
           data = await handleGetStatus();
+          break;
+        case 'getCatalog':
+          // MCP 推荐目录（云端下发优先，内置兜底）
+          data = getCloudConfigService().getMcpCatalog();
           break;
         case 'listTools':
           data = await handleListTools();

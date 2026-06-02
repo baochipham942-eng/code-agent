@@ -52,6 +52,8 @@ export const SKILL_CHANNELS = {
 
   /** 获取推荐仓库列表 */
   RECOMMENDED_REPOS: 'skill:recommended-repos',
+  /** 获取 Skill 推荐目录（分类/条目/场景包/仓库，云端下发优先） */
+  CATALOG: 'skill:catalog',
 
   // ------------------------------------------------------------------------
   // SkillsMP 搜索

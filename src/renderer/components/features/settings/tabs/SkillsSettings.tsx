@@ -8,11 +8,15 @@ import { Button } from '../../../primitives';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type {
   LocalSkillLibrary,
+  SkillCatalogPayload,
   SkillRepository,
   SkillRoleBundle,
 } from '@shared/contract/skillRepository';
 import { BUILTIN_REPO_ID } from '@shared/contract/skillRepository';
-import { findRecommendedRepository } from '@shared/constants/skillCatalog';
+import {
+  findRecommendedRepository,
+  getBuiltinSkillCatalogPayload,
+} from '@shared/constants/skillCatalog';
 import type { ParsedSkill } from '@shared/contract/agentSkill';
 import { createLogger } from '../../../../utils/logger';
 import { WebModeBanner } from '../WebModeBanner';
@@ -73,6 +77,8 @@ export const SkillsSettings: React.FC = () => {
   const [libraries, setLibraries] = useState<LocalSkillLibrary[]>([]);
   const [discoveredSkills, setDiscoveredSkills] = useState<ParsedSkill[]>([]);
   const [recommendedRepos, setRecommendedRepos] = useState<SkillRepository[]>([]);
+  // 推荐目录：内置数据为初始值，云端下发到达后覆盖（web 模式 IPC 不可用时保持内置）
+  const [catalog, setCatalog] = useState<SkillCatalogPayload>(getBuiltinSkillCatalogPayload);
   const [customUrl, setCustomUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -92,8 +98,12 @@ export const SkillsSettings: React.FC = () => {
       const libs = await invokeSkillIPC<LocalSkillLibrary[]>(SKILL_CHANNELS.REPO_LIST);
       const skills = await invokeSkillIPC<ParsedSkill[]>(SKILL_CHANNELS.SKILL_LIST);
       const repos = await invokeSkillIPC<SkillRepository[]>(SKILL_CHANNELS.RECOMMENDED_REPOS);
+      const remoteCatalog = await invokeSkillIPC<SkillCatalogPayload>(SKILL_CHANNELS.CATALOG);
       setLibraries(libs || []);
       setDiscoveredSkills(skills || []);
+      if (remoteCatalog) {
+        setCatalog(remoteCatalog);
+      }
       // 推荐列表里排除已安装的仓库
       const installedIds = new Set((libs || []).map((l) => l.repoId));
       setRecommendedRepos((repos || []).filter((r) => !installedIds.has(r.id)));
@@ -176,7 +186,7 @@ export const SkillsSettings: React.FC = () => {
     try {
       const failures: string[] = [];
       for (const repoId of missingRepoIds) {
-        const repo = findRecommendedRepository(repoId);
+        const repo = findRecommendedRepository(repoId, catalog.repositories);
         if (!repo) {
           failures.push(repoId);
           continue;
@@ -442,6 +452,7 @@ export const SkillsSettings: React.FC = () => {
         />
       ) : (
         <SkillsDiscoverTab
+          catalog={catalog}
           recommendedRepos={recommendedRepos}
           installedRepoIds={new Set(libraries.map((lib) => lib.repoId))}
           installedSkillNames={new Set(discoveredSkills.map((skill) => skill.name))}

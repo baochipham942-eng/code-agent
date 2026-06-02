@@ -78,8 +78,16 @@ function handleInlineExecution(
   ];
 
   const contextModifier: SkillContextModifier = {};
-  if (skill.allowedTools.length > 0 && canSkillAutoPreApproveTools(skill)) {
-    contextModifier.preApprovedTools = skill.allowedTools;
+  if (skill.allowedTools.length > 0) {
+    // GAP-001 限权：所有来源的 skill，allowed-tools 都构成工具边界（边界外强制用户审批）
+    contextModifier.toolBoundary = {
+      skillName: skill.name,
+      allowedTools: skill.allowedTools,
+    };
+    // 扩权：仅 builtin/plugin skill 的边界内工具可免审批
+    if (canSkillAutoPreApproveTools(skill)) {
+      contextModifier.preApprovedTools = skill.allowedTools;
+    }
   }
   if (skill.model) {
     contextModifier.modelOverride = skill.model;

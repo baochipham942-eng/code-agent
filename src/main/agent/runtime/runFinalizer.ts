@@ -633,6 +633,12 @@ export class RunFinalizer {
         logger.debug(`[AgentLoop] Pre-approved tools: ${[...this.ctx.preApprovedTools].join(', ')}`);
       }
 
+      // GAP-001: skill allowed-tools 限权边界（边界外的工具调用强制用户审批）
+      if (skillResult.contextModifier.toolBoundary) {
+        this.ctx.skillToolBoundary = skillResult.contextModifier.toolBoundary;
+        logger.debug(`[AgentLoop] Skill tool boundary set by "${skillResult.contextModifier.toolBoundary.skillName}": ${skillResult.contextModifier.toolBoundary.allowedTools.join(', ')}`);
+      }
+
       if (skillResult.contextModifier.modelOverride) {
         this.ctx.skillModelOverride = skillResult.contextModifier.modelOverride;
         logger.debug(`[AgentLoop] Model override set to: ${this.ctx.skillModelOverride}`);

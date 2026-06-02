@@ -34,26 +34,26 @@
 | GAP-001 | 应该纠正 | P0 | Skill allowed-tools 语义反转（inline 扩权 vs 限权） | FIXED (PR #192) |
 | GAP-002 | 应该纠正 | P0 | PolicyEnforcer 整层 dead code | FIXED (PR #192) |
 | GAP-003 | 应该纠正 | P0 | AI SDK 迁移丢失 prompt caching（旧路径有、新默认路径无） | FIXED (PR #192) |
-| GAP-004 | 建议加强 | P0 | 多 Agent 流水线无反死循环策略 | OPEN |
+| GAP-004 | 建议加强 | P0 | 多 Agent 流水线无反死循环策略 | FIXED (阶段三分支) |
 | GAP-005 | 建议加强 | P0 | 跨会话经验沉淀链路被掏空（learningPipeline no-op） | OPEN |
-| GAP-006 | 应该纠正 | P1 | Stop hook 是观察者不是完成闸 | OPEN |
+| GAP-006 | 应该纠正 | P1 | Stop hook 是观察者不是完成闸 | FIXED (阶段三分支) |
 | GAP-007 | 应该纠正 | P1 | 子代理/运行时配置未知字段静默忽略 | FIXED (PR #192) |
 | GAP-008 | 应该纠正 | P1 | MCP 工具 schema 全量注入（与 native 工具 deferred 策略不一致） | FIXED (PR #194) |
 | GAP-009 | 建议加强 | P1 | 大工具结果只截断不落盘 | FIXED (PR #194) |
 | GAP-010 | 建议加强 | P1 | Git 上下文只注入 boolean | FIXED (PR #194) |
 | GAP-011 | 建议加强 | P1 | 子代理缺 skills 全文预注入（课程"方向 A"） | OPEN |
-| GAP-012 | 建议加强 | P1 | SubagentStop hook 拿不到子代理 transcript | OPEN |
-| GAP-013 | 建议加强 | P1 | Generator-Critic 未集成为交付前自动验证 | OPEN |
-| GAP-014 | 建议加强 | P1 | PostToolUse 缺 additionalContext 自修复闭环 | OPEN |
-| GAP-015 | 应该纠正 | P2 | Hook 执行日志无密钥脱敏（auditLogger 已脱敏，hook 路径没有） | OPEN |
-| GAP-016 | 应该纠正 | P2 | 子代理输出端无质量检查点（现有 checkpoint 仅是崩溃恢复） | OPEN |
+| GAP-012 | 建议加强 | P1 | SubagentStop hook 拿不到子代理 transcript | FIXED (阶段三分支) |
+| GAP-013 | 建议加强 | P1 | Generator-Critic 未集成为交付前自动验证 | FIXED (阶段三分支) |
+| GAP-014 | 建议加强 | P1 | PostToolUse 缺 additionalContext 自修复闭环 | FIXED (阶段三分支) |
+| GAP-015 | 应该纠正 | P2 | Hook 执行日志无密钥脱敏（auditLogger 已脱敏，hook 路径没有） | FIXED (阶段三分支) |
+| GAP-016 | 应该纠正 | P2 | 子代理输出端无质量检查点（现有 checkpoint 仅是崩溃恢复） | FIXED (阶段三分支) |
 | GAP-017 | 建议加强 | P2 | 评测中心缺 Harness 对照实验（ablation） | OPEN |
 | GAP-018 | 建议加强 | P2 | 竞争假设/辩论编排模式缺失（基建已有） | OPEN |
 | GAP-019 | 建议加强 | P2 | 无可嵌入 npm SDK（仅 HTTP API） | OPEN |
 | GAP-020 | 建议加强 | P2 | CLI 缺 --max-turns / --allowedTools 无人值守约束旗标 | OPEN |
 | GAP-021 | 建议加强 | P2 | Skill 命名空间 + monorepo 路径感知发现缺失 | OPEN |
 | GAP-022 | 建议加强 | P2 | 插件缺远程分发机制（marketplace / git 安装） | OPEN |
-| GAP-023 | 应该纠正 | P1 | system prompt budget 超限时静默丢弃 deferred-tools/skills 等注入块 | OPEN |
+| GAP-023 | 应该纠正 | P1 | system prompt budget 超限时静默丢弃 deferred-tools/skills 等注入块 | FIXED (阶段三分支) |
 
 ---
 

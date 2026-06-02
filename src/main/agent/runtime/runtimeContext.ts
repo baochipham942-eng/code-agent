@@ -98,6 +98,10 @@ export interface RuntimeContext {
   maxStopHookRetries: number;
   /** GAP-006: 用户 Stop hook block 触发的重试计数（独立于 planning stop hook 计数） */
   userStopHookBlockCount: number;
+  /** GAP-013: Generator-Critic 交付前自动验证开关 */
+  enableDeliveryCritic: boolean;
+  /** GAP-013: 本 run 是否已跑过交付前 critic（每 run 最多一次，防死循环） */
+  deliveryCriticRan: boolean;
   userHooks?: unknown;
 
   // --- Tool execution ---

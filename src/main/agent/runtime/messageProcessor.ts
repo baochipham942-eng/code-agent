@@ -22,7 +22,8 @@ import {
 import { classifyExecutionPhase } from '../../tools/executionPhase';
 import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector.js';
-import { MODEL_MAX_TOKENS, STOP_HOOK, getModelMaxOutputTokens } from '../../../shared/constants';
+import { DELIVERY_CRITIC, MODEL_MAX_TOKENS, STOP_HOOK, getModelMaxOutputTokens } from '../../../shared/constants';
+import { runDeliveryCritic } from '../deliveryCritic';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
@@ -248,6 +249,57 @@ export class MessageProcessor {
         }
       } catch (error) {
         logger.error('[AgentLoop] User stop hook error:', error);
+      }
+    }
+
+    // GAP-013: Generator-Critic 交付前自动验证
+    // 修改文件数达到阈值的 run，在交付前自动派 code-review 子代理审查；
+    // 发现 Critical 问题 → 阻塞交付 + 注入审查意见让模型修复。每 run 最多跑一次。
+    if (
+      !isForcedFinalTextPass &&
+      !isSimpleTask &&
+      this.ctx.enableDeliveryCritic &&
+      !this.ctx.deliveryCriticRan
+    ) {
+      const modifiedFiles = Array.from(this.ctx.nudgeManager.getModifiedFiles());
+      if (modifiedFiles.length >= DELIVERY_CRITIC.FILE_THRESHOLD) {
+        this.ctx.deliveryCriticRan = true;
+        try {
+          this.runFinalizer.emitTaskProgress('generating', '交付前自动审查中...');
+          const userFirstMessage = this.ctx.messages.find((m) => m.role === 'user')?.content;
+          const criticResult = await runDeliveryCritic(
+            modifiedFiles,
+            typeof userFirstMessage === 'string' ? userFirstMessage : '',
+            {
+              workingDirectory: this.ctx.workingDirectory,
+              sessionId: this.ctx.sessionId,
+              abortSignal: this.ctx.runAbortController?.signal,
+              hookManager: this.ctx.hookManager,
+            },
+          );
+          if (!criticResult.pass) {
+            logger.info('[AgentLoop] Delivery blocked by critic', {
+              reason: criticResult.reason.slice(0, 200),
+              fileCount: modifiedFiles.length,
+            });
+            logCollector.agent('WARN', 'Delivery critic found critical issues, blocking delivery');
+            this.contextAssembly.injectSystemMessage(
+              [
+                '<delivery-critic>',
+                '交付前自动审查发现 Critical 问题，请先修复再交付：',
+                criticResult.reason,
+                '</delivery-critic>',
+              ].join('\n'),
+            );
+            this.ctx.onEvent({
+              type: 'notification',
+              data: { message: '交付前审查发现 Critical 问题，正在修复' },
+            });
+            return 'continue';
+          }
+        } catch (error) {
+          logger.error('[AgentLoop] Delivery critic error:', error);
+        }
       }
     }
 

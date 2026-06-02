@@ -210,6 +210,8 @@ export class AgentLoop {
       stopHookRetryCount: 0,
       maxStopHookRetries: 3,
       userStopHookBlockCount: 0,
+      enableDeliveryCritic: config.enableDeliveryCritic ?? process.env.CODE_AGENT_DELIVERY_CRITIC === '1',
+      deliveryCriticRan: false,
 
       // Tool execution
       toolCallRetryCount: 0,

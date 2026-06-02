@@ -121,6 +121,16 @@ export const STOP_HOOK = {
   USER_MAX_RETRIES: 1,
 } as const;
 
+/** Generator-Critic 交付前自动验证配置（GAP-013） */
+export const DELIVERY_CRITIC = {
+  /** 触发 critic 的最小修改文件数（修改 ≥N 个文件的 run 才值得花一次子代理审查） */
+  FILE_THRESHOLD: 3,
+  /** critic 子代理迭代上限 */
+  MAX_ITERATIONS: 15,
+  /** critic 意见注回模型时的最大字符数（控 token） */
+  OUTPUT_MAX_CHARS: 4_000,
+} as const;
+
 /** 规划配置 */
 export const PLANNING = {
   /** 最大 TODO 数量 */

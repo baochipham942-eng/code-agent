@@ -9,6 +9,7 @@ import type {
 import type { ContextEventRecord } from '../../../context/contextEventLedger';
 import type { ProjectableMessage } from '../../../context/projectionEngine';
 import { createLogger } from '../../../services/infra/logger';
+import { SYSTEM_PROMPT_BUDGET, getContextWindow } from '../../../../shared/constants';
 import type { RuntimeContext } from '../runtimeContext';
 import type { TaskProgressPort } from '../runtimePorts';
 
@@ -52,7 +53,26 @@ export function normalizePersistentSystemContextKey(content: string): string {
 }
 
 export const logger = createLogger('AgentLoop');
-export const MAX_SYSTEM_PROMPT_TOKENS = parseInt(process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS || '6000', 10);
+export const MAX_SYSTEM_PROMPT_TOKENS = parseInt(process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS || String(SYSTEM_PROMPT_BUDGET.MIN_TOKENS), 10);
+
+/**
+ * GAP-023: system prompt 预算动态化。
+ * - 显式 env 覆盖（CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS）优先——评测/对照实验用
+ * - 否则按模型上下文窗口的 WINDOW_RATIO 计算，下限 MIN_TOKENS（小窗口模型不低于历史默认值）
+ * 修复重记忆环境下 base prompt 吃满固定 6000 后能力发现块全被静默丢弃的问题。
+ */
+export function getSystemPromptBudget(model?: string): number {
+  if (process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS) {
+    return MAX_SYSTEM_PROMPT_TOKENS;
+  }
+  if (model) {
+    return Math.max(
+      SYSTEM_PROMPT_BUDGET.MIN_TOKENS,
+      Math.floor(getContextWindow(model) * SYSTEM_PROMPT_BUDGET.WINDOW_RATIO),
+    );
+  }
+  return MAX_SYSTEM_PROMPT_TOKENS;
+}
 export const MAX_PERSISTENT_SYSTEM_CONTEXT_TOKENS = 1200;
 export const MAX_PERSISTENT_SYSTEM_CONTEXT_ITEMS = 6;
 export const MAX_PERSISTENT_SYSTEM_CONTEXT_ITEM_TOKENS = 260;

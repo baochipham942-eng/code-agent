@@ -10,7 +10,7 @@
 |------|------|---------|------|------|
 | 一 | 拆假护栏（安全） | 002, 001, 007, 003 | `fix/geektime-gap-phase1-guardrails` | **MERGED** (PR #192, 236cd71e) |
 | 二 | 上下文经济 | 008, 009, 010 | `feat/geektime-gap-phase2-context-economy` | **MERGED** (PR #194, 52aef229) |
-| 三 | 质量闭环 | 006+014, 013, 004, 016, 012+015, **023(阶段二 E2E 新增)** | `feat/geektime-gap-phase3-quality-loops` | PENDING |
+| 三 | 质量闭环 | 006+014, 013, 004, 016, 012+015, **023(阶段二 E2E 新增)** | `feat/geektime-gap-phase3-quality-loops` | **DONE**（7 commits 待 PR） |
 | 四 | 经验沉淀（修正版） | 005(仅 Failure Journal + 半自动 skill 草稿), 011, 017 | `feat/geektime-gap-phase4-experience` | PENDING |
 | 出局 | — | 018(等阶段三基建), 019, 020, 021, 022 | — | WONT_DO（现阶段） |
 
@@ -49,11 +49,23 @@
 
 ## 阶段三验收标准（质量闭环）
 
-- [ ] Stop hook 返回 block 时 agent 继续工作（最多重试 1 次的安全阀生效）
-- [ ] PostToolUse hook 的输出能注入下一轮上下文（写文件 → lint 失败 → agent 自动修）
-- [ ] workflow stage 失败达到 maxRetries 后走回退路由而非死循环；circuit breaker 跳闸通知用户
-- [ ] MiMo text-first 死循环 case 复现测试通过（不再卡死）
-- [ ] GAP-023：重记忆环境（注入 ≥5K token 记忆）下 deferred-tools 块仍进 system prompt（优先级排序生效），被丢弃的块在 context health 可见
+- [x] Stop hook 返回 block 时 agent 继续工作（最多重试 1 次的安全阀生效）
+  - E2E（webServer headless + glm-5 + 真实 project hooks）：Stop hook 首次 `block` → 日志 "Stop prevented by user hook" → agent 继续干活 → 第二次 Stop 时 `HOOK_STOP_HOOK_ACTIVE=true` → hook 放行 → `agent_complete` 正常结束。安全阀（持续 block 达上限放行）由单测覆盖
+- [x] PostToolUse hook 的输出能注入下一轮上下文（写文件 → lint 失败 → agent 自动修）
+  - E2E：agent 写 note.txt → PostToolUse hook 返回 CC 格式 `hookSpecificOutput.additionalContext`（"第一行必须是 E2E-FIXED"）→ agent 下一轮自动改写文件 → 最终文件第一行 = `E2E-FIXED`，闭环坐实
+- [x] workflow stage 失败达到 maxRetries 后走回退路由而非死循环；circuit breaker 跳闸通知用户
+  - 单测覆盖（6 个 anti-loop 测试）：默认/自定义 maxRetries 重试、onFailureRoute 回退重跑上游、总回退超限跳闸 + emit notification + 剩余阶段 skipped、无效路由降级
+- [x] MiMo text-first 死循环 case 复现测试通过（不再卡死）
+  - text-first 整套绕障已在 main 全删（commit 29ac3019），防回归测试 `toolArtifactValidationLifecycle.plainArtifact.test.ts` 2/2 通过
+- [x] GAP-023：重记忆环境下 deferred-tools 块仍进 system prompt，被丢弃的块在 context health 可见
+  - E2E（默认配置、不带 `CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS`）：glm-5 确认 `<deferred-tools>` 在 system prompt 中并逐字引用真实工具名（notebook_edit/lsp/Task/Explore），budget skip 日志为零
+  - 注意：仅排序+可见化不够（这个环境 base prompt 本身 ≥6000），补了报告建议 1（budget 动态化：max(6000, 模型窗口×10%)，glm-5→12800）才达成
+  - 丢弃可见化：SSE reasoning 流出现 `[runtime] 上下文预算跳过 ...` + ContextHealthState.droppedPromptBlocks 流向 UI 面板
+
+### 阶段三 E2E 发现的额外问题
+
+1. **contextAssembly.test.ts 整个 suite 在 main 上静默加载失败**（已修，随 GAP-023 commit）：阶段二 GAP-009 给 tokenOptimizer 加 `TOOL_RESULT_SPILL` import 后，该测试文件的 shared/constants mock 未同步 → suite 加载即失败。rtk 压缩输出把 suite 级失败掩盖成 "PASS (0)"，跑测试时需用 `rtk proxy npx vitest run` 看原始输出。
+2. **4 个 pre-existing 测试文件失败**（未修，与 origin/main 基线完全一致）：runtimeAssetsManifestSigning（4）/ agentDefinition（4）/ promptRegression（2，阶段二已记录）/ toolExecutor.mcpDirect（2）。
 
 ## 阶段四验收标准（经验沉淀，修正版）
 
@@ -69,3 +81,4 @@
 | 2026-06-02 | 计划确认，阶段一开工 |
 | 2026-06-02 | 阶段一完成，PR #192 |
 | 2026-06-02 | 阶段二完成：GAP-008/009/010 + E2E 发现的压缩层修复，4 commits 在 `feat/geektime-gap-phase2-context-economy`（独立 worktree），E2E 验收 3/3 通过（webServer headless + glm-5 真实链路），待确认后开 PR |
+| 2026-06-02 | 阶段三完成：GAP-006+014（Stop hook 安全阀 + CC 兼容 additionalContext）/ 013（交付前 critic）/ 004（workflow 反死循环）/ 016（stage outputSchema）/ 012+015（SubagentStop trace 入口 + hook 日志脱敏）/ 023（块优先级排序 + 丢弃可见化 + budget 动态化），7 commits 在 `feat/geektime-gap-phase3-quality-loops`（独立 worktree），E2E 验收 5/5 通过（webServer headless + glm-5 + 真实 hooks），待确认后开 PR |

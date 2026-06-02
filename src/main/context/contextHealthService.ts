@@ -93,6 +93,7 @@ export class ContextHealthService {
     model: string = DEFAULT_MODEL,
     compression?: CompressionStats,
     toolDefinitionsTokens?: number,
+    droppedPromptBlocks?: string[],
   ): ContextHealthState {
     const maxTokens = this.getModelContextLimit(model);
     const previousHealth = this.sessionStates.get(sessionId);
@@ -142,6 +143,8 @@ export class ContextHealthService {
       estimatedTurnsRemaining,
       lastUpdated: Date.now(),
       compression: compression ?? previousHealth?.compression,
+      // GAP-023: 被预算丢弃的 prompt 块可见化（undefined = 调用方没传，沿用上次；[] = 明确无丢弃）
+      droppedPromptBlocks: droppedPromptBlocks ?? previousHealth?.droppedPromptBlocks,
     };
 
     // 保存状态

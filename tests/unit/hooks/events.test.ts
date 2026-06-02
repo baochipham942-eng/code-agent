@@ -177,6 +177,36 @@ describe('Hook Events', () => {
       expect(env.HOOK_SESSION_ID).toBe('test-session');
     });
 
+    it('should expose stop_hook_active flag for stop context retries (GAP-006)', () => {
+      const context: StopContext = {
+        event: 'Stop',
+        sessionId: 'test-session',
+        timestamp: Date.now(),
+        workingDirectory: '/test',
+        response: 'Task completed',
+        stopHookActive: true,
+      };
+
+      const env = createHookEnvVars(context);
+
+      expect(env.HOOK_STOP_HOOK_ACTIVE).toBe('true');
+    });
+
+    it('should expose stop_hook_active=false on first stop trigger (GAP-006)', () => {
+      const context: StopContext = {
+        event: 'Stop',
+        sessionId: 'test-session',
+        timestamp: Date.now(),
+        workingDirectory: '/test',
+        response: 'Task completed',
+        stopHookActive: false,
+      };
+
+      const env = createHookEnvVars(context);
+
+      expect(env.HOOK_STOP_HOOK_ACTIVE).toBe('false');
+    });
+
     it('should handle compact context', () => {
       const context: CompactContext = {
         event: 'PreCompact',

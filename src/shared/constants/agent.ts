@@ -115,6 +115,38 @@ export const GOAL_MODE = {
   REVIEW_OUTPUT_MAX_CHARS: 4_000,
 } as const;
 
+/** Stop hook 完成闸配置（GAP-006） */
+export const STOP_HOOK = {
+  /** 用户 Stop hook block 后允许的最大重试（继续干活）次数，超过即放行停止，防 hook 无限拦截死循环 */
+  USER_MAX_RETRIES: 1,
+} as const;
+
+/** System prompt 预算配置（GAP-023 动态化） */
+export const SYSTEM_PROMPT_BUDGET = {
+  /** 预算下限（无模型信息/小窗口模型时的默认值，等于历史固定值 6000） */
+  MIN_TOKENS: 6000,
+  /** 按模型上下文窗口动态计算的比例（大窗口模型不被固定 6000 卡死能力发现块） */
+  WINDOW_RATIO: 0.1,
+} as const;
+
+/** 多 Agent 流水线反死循环配置（GAP-004） */
+export const WORKFLOW_ANTI_LOOP = {
+  /** 单 stage 失败后的默认重试次数（stage 可用 maxRetries 覆盖） */
+  DEFAULT_MAX_RETRIES: 2,
+  /** 同一 workflow run 内允许的总回退（onFailureRoute）次数，超过即 circuit breaker 跳闸暂停 + 通知用户 */
+  MAX_TOTAL_FALLBACKS: 1,
+} as const;
+
+/** Generator-Critic 交付前自动验证配置（GAP-013） */
+export const DELIVERY_CRITIC = {
+  /** 触发 critic 的最小修改文件数（修改 ≥N 个文件的 run 才值得花一次子代理审查） */
+  FILE_THRESHOLD: 3,
+  /** critic 子代理迭代上限 */
+  MAX_ITERATIONS: 15,
+  /** critic 意见注回模型时的最大字符数（控 token） */
+  OUTPUT_MAX_CHARS: 4_000,
+} as const;
+
 /** 规划配置 */
 export const PLANNING = {
   /** 最大 TODO 数量 */

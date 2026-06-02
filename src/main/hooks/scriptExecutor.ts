@@ -6,6 +6,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import type { HookExecutionResult, AnyHookContext, HookActionResult } from '../protocol/events';
 import { createHookEnvVars } from '../protocol/events';
+import { maskSensitiveData } from '../security/sensitiveDetector';
 import { createLogger } from '../services/infra/logger';
 import { HOOK_TIMEOUTS } from '../../shared/constants';
 
@@ -102,8 +103,9 @@ export async function executeScript(
     const duration = Date.now() - startTime;
 
     // Log stderr as warning if present
+    // GAP-015: stderr 可能带出密钥（如脚本 set -x / 报错回显环境变量），日志前脱敏
     if (stderr?.trim()) {
-      logger.warn('Hook script stderr', { stderr: stderr.trim() });
+      logger.warn('Hook script stderr', { stderr: maskSensitiveData(stderr.trim()) });
     }
 
     // Parse output
@@ -147,9 +149,10 @@ export async function executeScript(
     }
 
     // Other errors
+    // GAP-015: command/error 可能含密钥（用户把 token 写进 hook 命令），日志前脱敏
     logger.error('Hook script execution failed', {
-      command: options.command,
-      error: errMsg,
+      command: maskSensitiveData(options.command),
+      error: maskSensitiveData(errMsg),
       exitCode: readNumber(errorRecord, 'code'),
     });
 
@@ -175,10 +178,22 @@ function parseScriptOutput(stdout: string, duration: number): HookExecutionResul
   if (output.startsWith('{')) {
     const json = parseJsonRecord(output);
     if (json) {
+      // GAP-014: Claude Code 兼容协议 —— decision/reason + (hookSpecificOutput.)additionalContext
+      // 让用户可以直接复用 CC 的 hook 脚本形成自修复闭环
+      const additionalContext = extractAdditionalContext(json);
+      if (json.decision === 'block') {
+        return {
+          action: 'block',
+          message: readString(json, 'reason') || additionalContext || 'Blocked by hook script',
+          duration,
+        };
+      }
+
       const action = validateAction(json.action);
+      const message = readString(json, 'message') ?? additionalContext;
       return {
         action,
-        message: readString(json, 'message'),
+        message,
         modifiedInput: readString(json, 'modifiedInput'),
         duration,
       };
@@ -193,6 +208,20 @@ function parseScriptOutput(stdout: string, duration: number): HookExecutionResul
       : output,
     duration,
   };
+}
+
+/**
+ * GAP-014: 提取 additionalContext（支持顶层字段和 CC 的 hookSpecificOutput 嵌套格式）
+ */
+function extractAdditionalContext(json: Record<string, unknown>): string | undefined {
+  const topLevel = readString(json, 'additionalContext');
+  if (topLevel) return topLevel;
+
+  const hookSpecific = json.hookSpecificOutput;
+  if (isRecord(hookSpecific)) {
+    return readString(hookSpecific, 'additionalContext');
+  }
+  return undefined;
 }
 
 /**

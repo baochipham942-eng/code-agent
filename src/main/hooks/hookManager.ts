@@ -35,6 +35,7 @@ import {
   executeHooks as runHooks,
   type HookTriggerResult as EngineHookTriggerResult,
 } from './hookExecutionEngine';
+import { maskSensitiveData } from '../security/sensitiveDetector';
 import { createLogger } from '../services/infra/logger';
 
 export type HookTriggerResult = EngineHookTriggerResult;
@@ -248,7 +249,8 @@ export class HookManager {
    */
   async triggerStop(
     response: string | undefined,
-    sessionId: string
+    sessionId: string,
+    stopHookActive = false
   ): Promise<HookTriggerResult> {
     const context: StopContext = {
       event: 'Stop',
@@ -256,6 +258,7 @@ export class HookManager {
       timestamp: Date.now(),
       workingDirectory: this.config.workingDirectory,
       response,
+      stopHookActive,
     };
 
     return this.triggerEventHooks('Stop', context);
@@ -474,7 +477,8 @@ export class HookManager {
   async triggerSubagentStop(
     subagentType: string,
     response: string | undefined,
-    sessionId: string
+    sessionId: string,
+    agentId?: string
   ): Promise<HookTriggerResult> {
     const context: StopContext = {
       event: 'SubagentStop',
@@ -483,6 +487,8 @@ export class HookManager {
       workingDirectory: this.config.workingDirectory,
       response,
       subagentType,
+      // GAP-012: sessionId + agentId 构成 swarm trace 查询入口
+      agentId,
     };
 
     return this.triggerEventHooks('SubagentStop', context);
@@ -631,7 +637,9 @@ export class HookManager {
       sources: metadata?.sources || [],
       hookType: metadata?.hookType || 'observer',
       ...(errorCount > 0 ? { errorCount } : {}),
-      ...(result.message ? { message: result.message } : {}),
+      // GAP-015: trigger history 是观测日志（UI/导出可见），message 必须脱敏；
+      // HookTriggerResult.message 本身（注入上下文用）不脱敏，保持功能不变
+      ...(result.message ? { message: maskSensitiveData(result.message) } : {}),
       ...(metadata?.toolName ? { toolName: metadata.toolName } : {}),
       ...(metadata?.matcher ? { matcher: metadata.matcher } : {}),
     };

@@ -96,6 +96,12 @@ export interface RuntimeContext {
   userHooksInitialized: boolean;
   stopHookRetryCount: number;
   maxStopHookRetries: number;
+  /** GAP-006: 用户 Stop hook block 触发的重试计数（独立于 planning stop hook 计数） */
+  userStopHookBlockCount: number;
+  /** GAP-013: Generator-Critic 交付前自动验证开关 */
+  enableDeliveryCritic: boolean;
+  /** GAP-013: 本 run 是否已跑过交付前 critic（每 run 最多一次，防死循环） */
+  deliveryCriticRan: boolean;
   userHooks?: unknown;
 
   // --- Tool execution ---
@@ -125,6 +131,8 @@ export interface RuntimeContext {
   /** G20: per-run 结构化 turn trace（决策 / dispatch / compaction） */
   turnTrace: TurnTraceRecorder;
   pendingRuntimeDiagnostics: string[];
+  /** GAP-023: 当前生效 system prompt 构建时被预算丢弃/裁剪的块（可见化到 context health） */
+  droppedPromptBlocks?: string[];
   forceFinalResponseReason?: string;
   forceFinalResponsePrompt?: string;
   /** Last interactive artifact path that passed runtime/browser validation in this run. */

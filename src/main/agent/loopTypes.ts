@@ -66,6 +66,8 @@ export interface AgentLoopConfig {
   executionIntent?: ConversationExecutionIntent;
   /** /goal 自治模式契约；存在则激活 goal 模式（设 ctx.goalMode + maxIterations=maxTurns） */
   goalContract?: GoalContract;
+  /** GAP-013: 启用 Generator-Critic 交付前自动验证（默认读 CODE_AGENT_DELIVERY_CRITIC 环境变量） */
+  enableDeliveryCritic?: boolean;
 }
 
 /**

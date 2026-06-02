@@ -18,6 +18,7 @@ import { executeScript } from './scriptExecutor';
 import { executePromptHook } from './promptHook';
 import { executeAgentHook } from './agentHook';
 import { executeHttpHook } from './httpHookExecutor';
+import { maskSensitiveData } from '../security/sensitiveDetector';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('HookExecutionEngine');
@@ -76,7 +77,8 @@ export async function executeHook(
 
   if (hook.async) {
     executeHookCore(hook, context, env).catch((error) => {
-      logger.warn('Async hook execution failed', { error: (error as Error).message });
+      // GAP-015: hook 错误信息可能带出命令输出/密钥，日志前脱敏
+      logger.warn('Async hook execution failed', { error: maskSensitiveData((error as Error).message) });
     });
     return { action: 'allow', message: 'Async hook fired', duration: 0 };
   }

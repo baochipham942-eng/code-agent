@@ -44,7 +44,7 @@ import { logCollector } from '../../../mcp/logCollector.js';
 import { countTraceEntries, recordMemoryInjectionTrace } from '../../../memory/memoryInjectionTrace';
 import { createHash } from 'crypto';
 import type { ContextAssemblyCtx, ContextTranscriptEntry } from './shared';
-import { logger, MAX_SYSTEM_PROMPT_TOKENS } from './shared';
+import { logger, MAX_SYSTEM_PROMPT_TOKENS, getSystemPromptBudget } from './shared';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 import { getPluginRegistry } from '../../../plugins/pluginRegistry';
 import {
@@ -139,6 +139,13 @@ export function buildDynamicPromptCacheKey(
 }
 
 /**
+ * GAP-023: 按当前模型解析 system prompt 预算（动态化）；无 ctx 时退回静态默认值。
+ */
+function promptBudget(ctx?: ContextAssemblyCtx): number {
+  return getSystemPromptBudget(ctx?.runtime.modelConfig?.model);
+}
+
+/**
  * GAP-023: 记录被预算丢弃/裁剪的 prompt 块（去重），供 context health 面板可见化。
  */
 function recordDroppedPromptBlock(ctx: ContextAssemblyCtx | undefined, label: string): void {
@@ -158,10 +165,10 @@ function appendPromptBlockWithinBudget(
   if (!block) return prompt;
   const nextPrompt = `${prompt}\n\n${block}`;
   const nextTokens = estimateTokens(nextPrompt);
-  if (nextTokens > MAX_SYSTEM_PROMPT_TOKENS) {
-    logger.warn(`[ContextAssembly] Skipping ${label}: system prompt budget would be ${nextTokens}/${MAX_SYSTEM_PROMPT_TOKENS} tokens`);
+  if (nextTokens > promptBudget(ctx)) {
+    logger.warn(`[ContextAssembly] Skipping ${label}: system prompt budget would be ${nextTokens}/${promptBudget(ctx)} tokens`);
     ctx?.runtime.pendingRuntimeDiagnostics.push(
-      `上下文预算跳过 ${label}：预计 ${nextTokens}/${MAX_SYSTEM_PROMPT_TOKENS} tokens`,
+      `上下文预算跳过 ${label}：预计 ${nextTokens}/${promptBudget(ctx)} tokens`,
     );
     // GAP-023: 丢弃可见化（context health 面板），不只是 debug log
     recordDroppedPromptBlock(ctx, label);
@@ -178,12 +185,12 @@ function appendRequiredPromptBlock(
 ): string {
   const nextPrompt = `${prompt}\n\n${block}`;
   const nextTokens = estimateTokens(nextPrompt);
-  if (nextTokens > MAX_SYSTEM_PROMPT_TOKENS) {
+  if (nextTokens > promptBudget(ctx)) {
     logger.warn(
-      `[ContextAssembly] Preserving required ${label}: system prompt budget is ${nextTokens}/${MAX_SYSTEM_PROMPT_TOKENS} tokens`,
+      `[ContextAssembly] Preserving required ${label}: system prompt budget is ${nextTokens}/${promptBudget(ctx)} tokens`,
     );
     ctx?.runtime.pendingRuntimeDiagnostics.push(
-      `上下文预算保留必需 ${label}：预计 ${nextTokens}/${MAX_SYSTEM_PROMPT_TOKENS} tokens`,
+      `上下文预算保留必需 ${label}：预计 ${nextTokens}/${promptBudget(ctx)} tokens`,
     );
   }
   return nextPrompt;
@@ -202,7 +209,7 @@ function trimPreambleBeforeRequiredArtifactBlock(
   prompt: string,
   ctx?: ContextAssemblyCtx,
 ): string {
-  if (estimateTokens(prompt) <= MAX_SYSTEM_PROMPT_TOKENS) return prompt;
+  if (estimateTokens(prompt) <= promptBudget(ctx)) return prompt;
 
   const markerMatch = /\n\n## Game Artifact (?:Repair )?Contract\b/.exec(prompt);
   if (!markerMatch || typeof markerMatch.index !== 'number' || markerMatch.index <= 0) return prompt;
@@ -211,14 +218,14 @@ function trimPreambleBeforeRequiredArtifactBlock(
   let prefix = prompt.slice(0, markerMatch.index);
   const trimNotice = '\n[base prompt trimmed to preserve required artifact contract]\n';
 
-  while (prefix.length > 0 && estimateTokens(`${prefix}${trimNotice}${suffix}`) > MAX_SYSTEM_PROMPT_TOKENS) {
-    const overflow = estimateTokens(`${prefix}${trimNotice}${suffix}`) - MAX_SYSTEM_PROMPT_TOKENS;
+  while (prefix.length > 0 && estimateTokens(`${prefix}${trimNotice}${suffix}`) > promptBudget(ctx)) {
+    const overflow = estimateTokens(`${prefix}${trimNotice}${suffix}`) - promptBudget(ctx);
     const removeChars = Math.max(240, overflow * 5);
     prefix = prefix.slice(0, Math.max(0, prefix.length - removeChars)).trimEnd();
   }
 
   const trimmedPrompt = `${prefix}${trimNotice}${suffix}`;
-  if (estimateTokens(trimmedPrompt) <= MAX_SYSTEM_PROMPT_TOKENS) {
+  if (estimateTokens(trimmedPrompt) <= promptBudget(ctx)) {
     ctx?.runtime.pendingRuntimeDiagnostics.push('上下文预算压缩 base prompt：保留必需 game artifact contract');
     return trimmedPrompt;
   }
@@ -310,12 +317,12 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   if (projectSystemPrompt.fullReplace !== null) {
     const fullPrompt = projectSystemPrompt.fullReplace;
     const tokens = estimateTokens(fullPrompt);
-    if (tokens <= MAX_SYSTEM_PROMPT_TOKENS) {
+    if (tokens <= promptBudget(ctx)) {
       cache.dynamicPrompt = { key: cacheKey, createdAt: now, prompt: fullPrompt, tokens };
     } else {
       cache.dynamicPrompt = undefined;
       logger.warn(
-        `[ContextAssembly] FULL_SYSTEM.md exceeds budget: ${tokens}/${MAX_SYSTEM_PROMPT_TOKENS} tokens — using as-is`,
+        `[ContextAssembly] FULL_SYSTEM.md exceeds budget: ${tokens}/${promptBudget(ctx)} tokens — using as-is`,
       );
     }
     logger.debug('[ContextAssembly] FULL system prompt loaded — skipping all default layers', {
@@ -651,7 +658,7 @@ ${deferredToolsSummary}
   }
 
   const tokens = estimateTokens(systemPrompt);
-  if (tokens <= MAX_SYSTEM_PROMPT_TOKENS) {
+  if (tokens <= promptBudget(ctx)) {
     cache.dynamicPrompt = {
       key: cacheKey,
       createdAt: now,
@@ -805,11 +812,11 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   // Check system prompt length and warn if too long
   systemPrompt = trimPreambleBeforeRequiredArtifactBlock(systemPrompt, ctx);
   const trimmedSystemPromptTokens = estimateTokens(systemPrompt);
-  if (trimmedSystemPromptTokens > MAX_SYSTEM_PROMPT_TOKENS) {
-    logger.warn(`[AgentLoop] System prompt too long: ${trimmedSystemPromptTokens} tokens (limit: ${MAX_SYSTEM_PROMPT_TOKENS})`);
+  if (trimmedSystemPromptTokens > promptBudget(ctx)) {
+    logger.warn(`[AgentLoop] System prompt too long: ${trimmedSystemPromptTokens} tokens (limit: ${promptBudget(ctx)})`);
     logCollector.agent('WARN', 'System prompt exceeds recommended limit', {
       tokens: trimmedSystemPromptTokens,
-      limit: MAX_SYSTEM_PROMPT_TOKENS,
+      limit: promptBudget(ctx),
     });
   }
 

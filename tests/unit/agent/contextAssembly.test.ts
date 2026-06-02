@@ -3,7 +3,7 @@
 // Verifies runtime model input honors context interventions.
 // ============================================================================
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import { CompressionPipeline } from '../../../src/main/context/compressionPipeline';
 import { CompressionState } from '../../../src/main/context/compressionState';
@@ -167,6 +167,8 @@ vi.mock('../../../src/shared/constants', () => ({
   getContextWindow: vi.fn().mockReturnValue(128000),
   TOOL_PROGRESS: {},
   TOOL_TIMEOUT_THRESHOLDS: {},
+  // GAP-023: system prompt 预算动态化依赖
+  SYSTEM_PROMPT_BUDGET: { MIN_TOKENS: 6000, WINDOW_RATIO: 0.1 },
   // tokenOptimizer 依赖（pre-existing 缺失：GAP-009 引入 TOOL_RESULT_SPILL 后 mock 未同步，导致整个 suite 加载失败）
   OBSERVATION_MASKING: {
     PRESERVE_RECENT_COUNT: 10,
@@ -437,7 +439,14 @@ function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
   };
 }
 
+afterAll(() => {
+  delete process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS;
+});
+
 beforeEach(() => {
+  // GAP-023: 预算已动态化（按模型窗口比例）。本文件存量测试都按固定 6000 预算设计，
+  // 用 env 覆盖钉住 6000，动态化行为由专项测试单独验证（临时删掉 env）。
+  process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS = '6000';
   clearMemoryInjectionTracesForTest();
   serviceMocks.sessionManager.addMessage.mockClear();
   serviceMocks.sessionManager.addMessageToSession.mockClear();
@@ -760,6 +769,30 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const droppedBlocks = (ctx as { droppedPromptBlocks?: string[] }).droppedPromptBlocks ?? [];
     expect(droppedBlocks).toContain('session metadata');
     expect(droppedBlocks).not.toContain('deferred tools');
+  });
+
+  it('expands the budget by model context window when no env override is set (GAP-023 dynamization)', async () => {
+    // 删掉 env 覆盖 → 预算按 getContextWindow('test-model')=128000 * 0.1 = 12800
+    delete process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS;
+    try {
+      // base 5000 + deferred tools ~2000：固定 6000 预算下会被丢弃，动态 12800 预算下应该保留
+      vi.mocked(getPromptForTask).mockReturnValueOnce('base '.repeat(5000));
+      vi.mocked(getDeferredToolsSummary).mockReturnValueOnce('tools '.repeat(2000));
+
+      const ctx = buildRuntimeContext({
+        enableToolDeferredLoading: true,
+        messages: [buildMessage('user-gap023-dyn', 'user', '帮我查一下今天的天气')],
+      });
+
+      const assembly = new ContextAssembly(ctx as never);
+      const modelMessages = await assembly.buildModelMessages();
+
+      expect(modelMessages[0].content).toContain('<deferred-tools>');
+      const droppedBlocks = (ctx as { droppedPromptBlocks?: string[] }).droppedPromptBlocks ?? [];
+      expect(droppedBlocks).not.toContain('deferred tools');
+    } finally {
+      process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS = '6000';
+    }
   });
 
   it('places capability discovery blocks before nice-to-have blocks in the prompt (GAP-023)', async () => {

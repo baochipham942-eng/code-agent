@@ -121,6 +121,14 @@ export const STOP_HOOK = {
   USER_MAX_RETRIES: 1,
 } as const;
 
+/** System prompt 预算配置（GAP-023 动态化） */
+export const SYSTEM_PROMPT_BUDGET = {
+  /** 预算下限（无模型信息/小窗口模型时的默认值，等于历史固定值 6000） */
+  MIN_TOKENS: 6000,
+  /** 按模型上下文窗口动态计算的比例（大窗口模型不被固定 6000 卡死能力发现块） */
+  WINDOW_RATIO: 0.1,
+} as const;
+
 /** 多 Agent 流水线反死循环配置（GAP-004） */
 export const WORKFLOW_ANTI_LOOP = {
   /** 单 stage 失败后的默认重试次数（stage 可用 maxRetries 覆盖） */

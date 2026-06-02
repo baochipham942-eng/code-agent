@@ -173,6 +173,22 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 - `workflowOrchestrate.legacy.test.ts` 保证旧 role 归一后仍能跑 compatibility path。
 - `spawnGuard` 继续禁止子 agent 再开 workflow 类工具，避免多层长任务互相套娃。
 
+## 0.0.6 2026-06 SubagentStop trace 入口（GAP-012，PR #196）
+
+子 agent 结束时触发的 `SubagentStop` hook 此前缺少回溯入口——无法把单次 subagent 的 stop 事件关联回 swarm 里的具体 agent。本轮给 `SubagentStop` hook context 补上 `agentId`，作为 swarm trace 的查询入口，并新增 `HOOK_SUBAGENT_ID`（及 `HOOK_SUBAGENT_TYPE`）环境变量给 command hook 使用；`subagentExecutor` 里 4 个 `triggerSubagentStop` 调用点全部带上 `agentTask.id`。
+
+关键文件：`src/main/agent/subagentExecutor.ts`、`src/main/protocol/events/hookTypes.ts`。细节见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
+
+## 0.0.7 2026-06 子代理 skills 全文预注入（GAP-011，PR #194）
+
+课程"方向 A"：让自定义 agent 可以预装领域知识。`SubagentConfig` / `AgentCore` / `CoreAgentConfig` 新增 `skills?: string[]` 字段，自定义 agent `.md` frontmatter 支持 `skills:` 列表，从而定义"预装领域知识"的专家子代理。
+
+- spawn 时 `buildSubagentSkillsBlock`（`src/main/services/skills/subagentSkillInjection.ts`）把 SKILL.md 全文一次性拼进子代理 system prompt 的 `<preloaded_skills>` 块——**全量加载**，非 Skill 元工具的渐进式披露。
+- 与 GAP-001 fork 限权**正交**：注入 skill 只加知识，不扩张子代理 `availableTools` 的权限边界。
+- 链路：`agentMdLoader → CoreAgentConfig → toFullAgentConfig → spawnAgent / executeFromDefinition → SubagentConfig → subagentExecutor`。
+
+关键文件：`src/main/services/skills/subagentSkillInjection.ts`、`src/main/agent/subagentExecutor.ts`、`src/main/agent/subagentExecutorTypes.ts`。细节见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
+
 ## 0.1 节点级 Checkpoint（断点恢复）
 
 多 agent DAG 执行中，网络中断或 token 耗尽会导致已完成节点工作白费。

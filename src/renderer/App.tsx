@@ -631,8 +631,10 @@ export const App: React.FC = () => {
             setShowSettings(false);
           }}
           onSkip={() => {
-            // 跳过不算完成：不置 completedRef，下次冷启动仍会提示，避免用户忘配后续无入口
+            // 跳过不算完成：不置 completedRef，下次冷启动仍会提示，避免用户忘配后续无入口；
+            // 同时直接带用户去设置页，让"稍后配置"有明确入口（#193）
             setShowModelOnboarding(false);
+            setShowSettings(true);
           }}
         />
       )}

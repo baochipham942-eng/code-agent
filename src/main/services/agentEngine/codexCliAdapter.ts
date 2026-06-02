@@ -19,6 +19,7 @@ import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngin
 import { generateMessageId } from '../../../shared/utils/id';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
+import { getShellPath } from '../infra/shellEnvironment';
 import { getBackgroundTaskLedger } from '../../tasks/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
 import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
@@ -451,6 +452,10 @@ function buildSafeEnv(): NodeJS.ProcessEnv {
       env[key] = value;
     }
   }
+  // PATH 用 login shell 捕获的完整 PATH（与 registry 探测同源）。Finder/launchd 启动的打包 app
+  // process.env.PATH 只有系统目录，codex 的 #!/usr/bin/env node shebang 找不到 node 会直接
+  // 报 "env: node: No such file or directory"——探测能找到 binary 但执行挂掉的不对称就出在这。
+  env.PATH = getShellPath();
   return env;
 }
 

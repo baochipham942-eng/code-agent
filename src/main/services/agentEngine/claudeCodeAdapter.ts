@@ -19,6 +19,7 @@ import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngin
 import { generateMessageId } from '../../../shared/utils/id';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
+import { getShellPath } from '../infra/shellEnvironment';
 import { getBackgroundTaskLedger } from '../../tasks/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
 import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
@@ -511,6 +512,9 @@ function buildSafeEnv(): NodeJS.ProcessEnv {
       env[key] = value;
     }
   }
+  // PATH 用 login shell 捕获的完整 PATH（与 registry 探测同源），否则打包 app 下
+  // claude 的 node shebang 找不到 node（同 codexCliAdapter）。
+  env.PATH = getShellPath();
   return env;
 }
 

@@ -22,7 +22,6 @@ import {
   type SkillDraftMeta,
   type SkillDraftStep,
 } from '../../services/skills/skillDraftQueue';
-import { getEventBus } from '../../services/eventing';
 import { LEARNING_PIPELINE } from '../../../shared/constants';
 import { createLogger } from '../../services/infra/logger';
 
@@ -250,13 +249,22 @@ export class LearningPipeline {
         sessionId: this.ctx.sessionId,
         drafts: enqueued.map((draft) => draft.name),
       });
-      // 通知前端弹确认卡片（复用 combo_skill_suggestion 的 EventBus 桥接通道）
-      getEventBus().publish(
-        'agent',
-        'skill_draft_pending',
-        { sessionId: this.ctx.sessionId, drafts: enqueued },
-        { sessionId: this.ctx.sessionId, bridgeToRenderer: true },
-      );
+      // 通知前端弹确认卡片。走 ctx.onEvent → run SSE 流 → renderer agent:event
+      // （与 suggestions_update / memory_learned 同一条产线通路；EventBus 桥接在
+      //  webServer 架构下没有被启动，不能用）。
+      this.onEvent({
+        type: 'skill_draft_pending',
+        data: {
+          sessionId: this.ctx.sessionId,
+          drafts: enqueued.map((draft) => ({
+            id: draft.id,
+            name: draft.name,
+            description: draft.description,
+            toolSequence: draft.toolSequence,
+            occurrences: draft.occurrences,
+          })),
+        },
+      });
     }
   }
 

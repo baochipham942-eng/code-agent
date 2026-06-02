@@ -49,23 +49,23 @@ vi.mock('../../../../src/main/config/configPaths', () => ({
 }));
 
 const draftMocks = vi.hoisted(() => ({
-  enqueueSkillDraft: vi.fn(async (input: { name: string }) => ({
+  enqueueSkillDraft: vi.fn(async (input: {
+    name: string;
+    description: string;
+    toolSequence: string[];
+    occurrences: number;
+  }) => ({
     id: `${input.name}-1`,
     name: input.name,
+    description: input.description,
+    toolSequence: input.toolSequence,
+    occurrences: input.occurrences,
     status: 'pending',
   })),
 }));
 
 vi.mock('../../../../src/main/services/skills/skillDraftQueue', () => ({
   enqueueSkillDraft: draftMocks.enqueueSkillDraft,
-}));
-
-const eventBusMocks = vi.hoisted(() => ({
-  publish: vi.fn(),
-}));
-
-vi.mock('../../../../src/main/services/eventing', () => ({
-  getEventBus: () => ({ publish: eventBusMocks.publish }),
 }));
 
 import {
@@ -263,7 +263,7 @@ describe('LearningPipeline', () => {
     );
   });
 
-  it('runSkillDistillation should enqueue drafts and publish confirmation event (never auto-install)', async () => {
+  it('runSkillDistillation should enqueue drafts and emit confirmation event (never auto-install)', async () => {
     const calls: TelemetryToolCall[] = [];
     for (let i = 0; i < LEARNING_PIPELINE.SUCCESS_PATTERN_THRESHOLD; i++) {
       calls.push(makeToolCall({ name: 'Grep' }));
@@ -276,16 +276,21 @@ describe('LearningPipeline', () => {
     await pipeline.runSkillDistillation();
 
     expect(draftMocks.enqueueSkillDraft).toHaveBeenCalled();
-    // 通知用户确认（EventBus 桥接到 renderer）
-    expect(eventBusMocks.publish).toHaveBeenCalledWith(
-      'agent',
-      'skill_draft_pending',
-      expect.objectContaining({ sessionId: 'session-skill' }),
-      expect.objectContaining({ sessionId: 'session-skill', bridgeToRenderer: true }),
+    // 通知用户确认（ctx.onEvent → run SSE 流 → renderer，与 memory_learned 同通路）
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'skill_draft_pending',
+        data: expect.objectContaining({
+          sessionId: 'session-skill',
+          drafts: expect.arrayContaining([
+            expect.objectContaining({ name: expect.any(String), occurrences: expect.any(Number) }),
+          ]),
+        }),
+      }),
     );
   });
 
-  it('runSkillDistillation should not publish event when all drafts are deduped', async () => {
+  it('runSkillDistillation should not emit event when all drafts are deduped', async () => {
     const calls: TelemetryToolCall[] = [];
     for (let i = 0; i < LEARNING_PIPELINE.SUCCESS_PATTERN_THRESHOLD; i++) {
       calls.push(makeToolCall({ name: 'Grep' }));
@@ -298,7 +303,7 @@ describe('LearningPipeline', () => {
     const pipeline = new LearningPipeline(ctx);
     await pipeline.runSkillDistillation();
 
-    expect(eventBusMocks.publish).not.toHaveBeenCalled();
+    expect(ctx.onEvent).not.toHaveBeenCalled();
   });
 
   it('runSessionEndLearning should run both passes from telemetry', async () => {

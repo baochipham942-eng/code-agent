@@ -122,6 +122,12 @@ export interface StopContext extends HookEventContext {
   subagentType?: string;
   /** GAP-006: true 表示本次 Stop 是上一次 stop-hook block 后的重试（hook 可据此避免无限拦截） */
   stopHookActive?: boolean;
+  /**
+   * GAP-012: For SubagentStop: 子代理的 agent task id。
+   * 与 sessionId 一起构成 swarm trace（swarm_runs / swarm_run_agents / swarm_run_events）
+   * 的查询入口，hook 可据此回溯"子代理怎么得出结论"的完整过程，而不只看最终输出。
+   */
+  agentId?: string;
 }
 
 /**
@@ -308,6 +314,10 @@ export const HOOK_ENV_VARS = {
   USER_PROMPT: 'HOOK_USER_PROMPT',
   /** GAP-006: "true" when Stop event fires after a previous stop-hook block */
   STOP_HOOK_ACTIVE: 'HOOK_STOP_HOOK_ACTIVE',
+  /** GAP-012: Subagent type (for SubagentStop) */
+  SUBAGENT_TYPE: 'HOOK_SUBAGENT_TYPE',
+  /** GAP-012: Subagent agent task id — swarm trace 查询入口 (for SubagentStop) */
+  SUBAGENT_ID: 'HOOK_SUBAGENT_ID',
 } as const;
 
 /**
@@ -391,6 +401,17 @@ export function createHookEnvVars(context: AnyHookContext): Record<string, strin
   // Stop / SubagentStop context (GAP-006: expose stop_hook_active to scripts)
   if ((context.event === 'Stop' || context.event === 'SubagentStop') && 'stopHookActive' in context) {
     env[HOOK_ENV_VARS.STOP_HOOK_ACTIVE] = String((context as StopContext).stopHookActive === true);
+  }
+
+  // SubagentStop context (GAP-012: expose trace query entry to scripts)
+  if (context.event === 'SubagentStop') {
+    const stopContext = context as StopContext;
+    if (stopContext.subagentType) {
+      env[HOOK_ENV_VARS.SUBAGENT_TYPE] = stopContext.subagentType;
+    }
+    if (stopContext.agentId) {
+      env[HOOK_ENV_VARS.SUBAGENT_ID] = stopContext.agentId;
+    }
   }
 
   return env;

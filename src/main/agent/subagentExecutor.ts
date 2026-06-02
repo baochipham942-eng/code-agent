@@ -385,7 +385,7 @@ export class SubagentExecutor {
         pipeline.completeContext(pipelineContext.agentId, false, budgetCheck.reason);
         agentTask.fail(budgetCheck.reason || 'budget exceeded');
         // Fire SubagentStop on early budget failure
-        context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId).catch(silence(logger, 'triggerSubagentStop:budget', 'warn'));
+        context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId, agentTask.id).catch(silence(logger, 'triggerSubagentStop:budget', 'warn'));
         return {
           success: false,
           output: '',
@@ -458,7 +458,7 @@ export class SubagentExecutor {
               : `任务已取消 (${cancellationReason})`;
           agentTask.fail(errorMsg);
           // Fire SubagentStop on abort/timeout
-          context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId).catch(silence(logger, 'triggerSubagentStop:abort', 'warn'));
+          context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId, agentTask.id).catch(silence(logger, 'triggerSubagentStop:abort', 'warn'));
           return {
             success: false,
             output: finalOutput || '',
@@ -984,11 +984,13 @@ export class SubagentExecutor {
       agentTask.stop();
 
       // Fire SubagentStop hook (fire-and-forget)
+      // GAP-012: 带上 agentId 作为 swarm trace 查询入口
       if (context.hookManager) {
         context.hookManager.triggerSubagentStop(
           config.name,
           finalOutput || undefined,
           sessionId,
+          agentTask.id,
         ).catch(() => {});
       }
 
@@ -1014,11 +1016,13 @@ export class SubagentExecutor {
       agentTask.fail(error instanceof Error ? error.message : String(error));
 
       // Fire SubagentStop hook on failure (fire-and-forget)
+      // GAP-012: 带上 agentId 作为 swarm trace 查询入口
       if (context.hookManager) {
         context.hookManager.triggerSubagentStop(
           config.name,
           undefined,
           sessionId,
+          agentTask.id,
         ).catch(() => {});
       }
 

@@ -2,7 +2,7 @@
 // AdaptiveRouter — selectFallback tests
 // ============================================================================
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AdaptiveRouter } from '../../../src/main/model/adaptiveRouter';
 import type { FallbackContext } from '../../../src/main/model/adaptiveRouter';
 
@@ -142,5 +142,70 @@ describe('AdaptiveRouter.selectFallback', () => {
       currentModel: 'grok-4-1-fast-reasoning',
     }));
     expect(result).toBeNull();
+  });
+});
+
+// --------------------------------------------------------------------------
+// selectModel — CLI_MODE / WEB_MODE 守卫
+// --------------------------------------------------------------------------
+
+describe('AdaptiveRouter.selectModel env guards', () => {
+  let router: AdaptiveRouter;
+  const defaultConfig = {
+    provider: 'custom-commonstack-claude',
+    model: 'anthropic/claude-opus-4-8',
+  } as Parameters<AdaptiveRouter['selectModel']>[1];
+  const simpleComplexity = { level: 'simple' as const, score: 20, signals: ['short_message'] };
+
+  const savedEnv: Record<string, string | undefined> = {};
+  const ENV_KEYS = ['ADAPTIVE_ROUTER_DISABLED', 'CODE_AGENT_CLI_MODE', 'CODE_AGENT_WEB_MODE'];
+
+  beforeEach(() => {
+    router = new AdaptiveRouter();
+    for (const key of ENV_KEYS) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of ENV_KEYS) {
+      if (savedEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedEnv[key];
+    }
+  });
+
+  it('routes simple task to free model with no env flags set', () => {
+    const result = router.selectModel(simpleComplexity, defaultConfig);
+    expect(result.provider).not.toBe(defaultConfig.provider);
+  });
+
+  it('disables routing in pure CLI mode (CLI_MODE=true, WEB_MODE unset)', () => {
+    process.env.CODE_AGENT_CLI_MODE = 'true';
+    const result = router.selectModel(simpleComplexity, defaultConfig);
+    expect(result).toEqual(defaultConfig);
+  });
+
+  it('keeps routing in web/desktop mode (CLI_MODE=true + WEB_MODE=true)', () => {
+    // webServer 同时设置两个变量（keytar 守卫），自动模式必须仍然生效
+    process.env.CODE_AGENT_CLI_MODE = 'true';
+    process.env.CODE_AGENT_WEB_MODE = 'true';
+    const result = router.selectModel(simpleComplexity, defaultConfig);
+    expect(result.provider).not.toBe(defaultConfig.provider);
+  });
+
+  it('ADAPTIVE_ROUTER_DISABLED=true always disables routing, even in web mode', () => {
+    process.env.ADAPTIVE_ROUTER_DISABLED = 'true';
+    process.env.CODE_AGENT_CLI_MODE = 'true';
+    process.env.CODE_AGENT_WEB_MODE = 'true';
+    const result = router.selectModel(simpleComplexity, defaultConfig);
+    expect(result).toEqual(defaultConfig);
+  });
+
+  it('does not route moderate/complex tasks to free model regardless of env', () => {
+    process.env.CODE_AGENT_WEB_MODE = 'true';
+    const moderate = { level: 'moderate' as const, score: 50, signals: [] };
+    const result = router.selectModel(moderate, defaultConfig);
+    expect(result.provider).toBe(defaultConfig.provider);
   });
 });

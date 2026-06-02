@@ -7,7 +7,8 @@ import type {
   ToolDefinition,
   ModelCapability,
   ModelInfo,
-  ModelProvider
+  ModelProvider,
+  ModelProviderSettings
 } from '../../shared/contract';
 import { PROVIDER_REGISTRY } from './providerRegistry';
 import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS } from '../../shared/constants';
@@ -146,11 +147,27 @@ export class ModelRouter {
 
   /**
    * 获取模型信息
+   *
+   * 静态 PROVIDER_REGISTRY 查不到时（动态 custom provider，如 custom-xxx），
+   * 从用户设置的 models 配置兜底构造 ModelInfo —— 否则 capability 检查（vision 等）
+   * 会把用户配置的模型一律判为"无能力"，导致不必要的 fallback 或直接报错。
    */
   getModelInfo(provider: string, modelId: string): ModelInfo | null {
     const providerConfig = PROVIDER_REGISTRY[provider];
-    if (!providerConfig) return null;
-    return providerConfig.models.find((m) => m.id === modelId) || null;
+    const registryModel = providerConfig?.models.find((m) => m.id === modelId);
+    if (registryModel) return registryModel;
+
+    const settingsModel = this.getProviderSettings(provider as ModelProvider)?.models?.[modelId];
+    if (!settingsModel) return null;
+    return {
+      id: modelId,
+      name: settingsModel.label ?? modelId,
+      capabilities: settingsModel.capabilities ?? [],
+      maxTokens: settingsModel.maxTokens ?? getModelMaxOutputTokens(modelId),
+      supportsTool: settingsModel.supportsTool !== false,
+      supportsVision: settingsModel.supportsVision === true,
+      supportsStreaming: settingsModel.supportsStreaming !== false,
+    };
   }
 
   /**
@@ -231,7 +248,7 @@ export class ModelRouter {
     };
   }
 
-  private getProviderSettings(provider: ModelProvider): { baseUrl?: string } | undefined {
+  private getProviderSettings(provider: ModelProvider): ModelProviderSettings | undefined {
     try {
       return getConfigService().getSettings().models?.providers?.[provider];
     } catch {
@@ -670,10 +687,10 @@ export class ModelRouter {
     if (config.protocol === 'openai') return this.providers.get('custom');
     try {
       const providerConfig = getConfigService().getSettings().models?.providers?.[config.provider];
-      if (!providerConfig?.baseUrl) return undefined;
-      return providerConfig.protocol === 'claude'
-        ? this.providers.get('claude')
-        : this.providers.get('custom');
+      if (providerConfig?.protocol === 'claude') return this.providers.get('claude');
+      // baseUrl 优先级与 aiSdk providerResolution 对齐：config.baseUrl > settings.baseUrl
+      if (providerConfig?.baseUrl || config.baseUrl) return this.providers.get('custom');
+      return undefined;
     } catch {
       return config.baseUrl ? this.providers.get('custom') : undefined;
     }

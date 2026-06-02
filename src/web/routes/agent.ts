@@ -317,10 +317,17 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 否则 UI 切换看似生效但推理仍走 default(实测:UI 选 deepseek,日志仍 xiaomi)。
       let effectiveModel = model;
       let effectiveProvider = provider;
+      // 自动模式（override.adaptive=true）：不用 override 的占位模型（保持默认模型），
+      // 但必须把 adaptive 标志透传进 agent loop 的 modelConfig，
+      // 否则 adaptiveRouter 简单任务路由 / vision capability fallback 全部失效
+      //（实测 0.16.89：UI 选"自动"后日志仍报"显式模型 ... 不启用 vision fallback"）。
+      let sessionAdaptive = false;
       if (!effectiveModel || !effectiveProvider) {
         const { getModelSessionState } = await import('../../main/session/modelSessionState');
         const override = getModelSessionState().getOverride(sessionId);
-        if (override && !override.adaptive) {
+        if (override?.adaptive === true) {
+          sessionAdaptive = true;
+        } else if (override) {
           effectiveProvider = effectiveProvider ?? override.provider;
           effectiveModel = effectiveModel ?? override.model;
         }
@@ -400,6 +407,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
 
       const config = agent.getConfig();
+
+      // 自动模式标志透传：adaptiveRouter 简单任务路由 + vision capability fallback 的总闸门
+      if (sessionAdaptive) {
+        config.modelConfig.adaptive = true;
+      }
 
       // /goal 自治模式：body.goal 存在则激活（schema 保证 verify/review 至少有一个）。
       // 设 config.goalContract → agentLoop 据此建 ctx.goalMode + maxIterations=maxTurns + 预加载 attempt_completion。

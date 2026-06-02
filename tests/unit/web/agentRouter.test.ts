@@ -51,9 +51,10 @@ vi.mock('../../../src/cli/bootstrap', () => ({
   getToolExecutor: vi.fn(() => undefined),
 }));
 
+const mockGetOverride = vi.hoisted(() => vi.fn<() => unknown>(() => null));
 vi.mock('../../../src/main/session/modelSessionState', () => ({
   getModelSessionState: () => ({
-    getOverride: vi.fn(() => null),
+    getOverride: mockGetOverride,
   }),
 }));
 
@@ -686,6 +687,70 @@ describe('createAgentRouter', () => {
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
       project: '/tmp/context-project',
     }));
+  });
+
+  it('propagates adaptive flag into the agent loop config when session override is auto mode', async () => {
+    mockGetOverride.mockReturnValueOnce({
+      provider: 'custom-commonstack-claude',
+      model: 'anthropic/claude-opus-4-8',
+      adaptive: true,
+    });
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '你好',
+        sessionId: 'session-adaptive-auto',
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    // 自动模式：override 的 provider/model 只是占位，不当显式模型用（走默认模型）
+    const cliAgentArgs = vi.mocked(createCLIAgent).mock.calls[0][0];
+    expect(cliAgentArgs.model).toBeUndefined();
+    expect(cliAgentArgs.provider).toBeUndefined();
+
+    // adaptive 标志必须透传进 agent loop 的 modelConfig（vision fallback / adaptiveRouter 的闸门）
+    expect(mockCreateAgentLoop).toHaveBeenCalled();
+    const loopConfig = mockCreateAgentLoop.mock.calls[0][0] as { modelConfig: { adaptive?: boolean } };
+    expect(loopConfig.modelConfig.adaptive).toBe(true);
+  });
+
+  it('uses override model/provider as explicit model when override is not adaptive', async () => {
+    mockGetOverride.mockReturnValueOnce({
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+    });
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '你好',
+        sessionId: 'session-explicit-override',
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
+      model: 'deepseek-chat',
+      provider: 'deepseek',
+    }));
+    const loopConfig = mockCreateAgentLoop.mock.calls[0][0] as { modelConfig: { adaptive?: boolean } };
+    expect(loopConfig.modelConfig.adaptive).toBeUndefined();
   });
 
   it('routes Codex engine sessions through the Codex adapter instead of the native web agent', async () => {

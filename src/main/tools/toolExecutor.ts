@@ -16,12 +16,15 @@ import {
   isKnownSafeCommand,
   validateCommand,
   getExecPolicyStore,
+  getPolicyEnforcer,
+  type PolicyEnforcer,
+  type PolicyCheckResult,
   type ValidationResult,
 } from '../security';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { classifyPermission } from './permissionClassifier';
-import { createTraceBuilder } from '../security/decisionTraceBuilder';
+import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBuilder';
 import { getDecisionHistory, type DecisionOutcome as HistoryDecisionOutcome } from '../security/decisionHistory';
 import {
   getWriteIsolationManager,
@@ -379,6 +382,59 @@ export class ToolExecutor {
       }
     }
 
+    // P0: Policy Enforcer — code-agent-policy.toml 硬规则（system/user/project 三层合并）。
+    // deny 不可被任何后续层推翻（skill 预授权 / 安全命令白名单 / classifier / 用户审批）。
+    // 无 policy 文件时 getPolicyEnforcer 返回 null，零开销。
+    const policyEnforcer = getPolicyEnforcer(this.workingDirectory);
+    if (policyEnforcer?.isActive) {
+      const policyCheck = this.checkAgainstPolicy(policyEnforcer, executionToolName, policyToolName, params, toolDef);
+      if (!policyCheck.allowed) {
+        logger.warn('Blocked by policy enforcer', {
+          toolName: executionToolName,
+          section: policyCheck.section,
+          reason: policyCheck.reason,
+        });
+        policyEnforcer.logToolCall(executionToolName, params, 'blocked', policyCheck.reason);
+
+        if (this.auditEnabled) {
+          getAuditLogger().logSecurityIncident({
+            sessionId: options.sessionId || 'unknown',
+            toolName: executionToolName,
+            incident: `Blocked by policy: ${policyCheck.reason}`,
+            details: { section: policyCheck.section },
+            riskLevel: 'critical',
+          });
+        }
+
+        // Fire-and-forget: emit PermissionDenied hook
+        options.hookManager?.triggerPermissionDenied(
+          executionToolName, policyCheck.reason || 'security policy', 'policy',
+          options.sessionId || 'unknown',
+        ).catch(() => {});
+
+        const trace = policyCheck.traceStep
+          ? createTraceBuilder(executionToolName)
+            .addStep(
+              policyCheck.traceStep.layer,
+              policyCheck.traceStep.rule,
+              policyCheck.traceStep.result,
+              policyCheck.traceStep.reason,
+            )
+            .build('deny')
+          : undefined;
+        recordDecision(executionToolName, params, 'policy-deny', policyCheck.reason || 'policy', permStartTime, trace);
+
+        return {
+          success: false,
+          error: `Blocked by policy: ${policyCheck.reason}`,
+        };
+      }
+      policyEnforcer.logToolCall(executionToolName, params, 'allowed');
+    }
+
+    // Policy tools.always_confirm: 强制走用户审批，无视预授权/安全白名单/classifier 放行
+    const policyForcesConfirmation = policyEnforcer?.requiresConfirmation(executionToolName) ?? false;
+
     // Check permission if required
     // Skill 系统：预授权工具跳过权限检查
     const isPreApproved = this.isToolPreApproved(executionToolName, params, options.preApprovedTools);
@@ -418,16 +474,31 @@ export class ToolExecutor {
       }
     }
 
-    if (toolDef.requiresPermission && !isPreApproved && !isSafeCommand) {
+    if (toolDef.requiresPermission && (policyForcesConfirmation || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // Lazy trace: only created when needed (deny/ask path)
       const traceBuilder = createTraceBuilder(executionToolName);
       try {
-        const classification = await classifyPermission(policyToolName, params, {
-          workingDirectory: this.workingDirectory,
-          permissionLevel: toolDef.permissionLevel,
-        });
+        // Policy always_confirm 命中时跳过 classifier，直接进用户审批
+        const classification = policyForcesConfirmation
+          ? {
+            decision: 'ask' as const,
+            reason: `Tool "${executionToolName}" requires confirmation by policy (tools.always_confirm)`,
+            confidence: 1,
+            cached: false,
+            traceStep: createTraceStep(
+              'policy_enforcer',
+              'tools.always_confirm',
+              'ask',
+              'Tool requires confirmation by policy',
+              permStartTime,
+            ),
+          }
+          : await classifyPermission(policyToolName, params, {
+            workingDirectory: this.workingDirectory,
+            permissionLevel: toolDef.permissionLevel,
+          });
         if (classification.decision === 'approve') {
           logger.info('Auto-approved by classifier', {
             tool: executionToolName,
@@ -876,6 +947,47 @@ export class ToolExecutor {
    * @param preApprovedTools - 预授权工具集合
    * @returns 是否预授权
    */
+  /**
+   * GAP-002: 按工具类型路由到 PolicyEnforcer 对应的检查方法。
+   * 返回第一个命中的 deny；全部通过返回 { allowed: true }。
+   */
+  private checkAgainstPolicy(
+    enforcer: PolicyEnforcer,
+    executionToolName: string,
+    policyToolName: string,
+    params: Record<string, unknown>,
+    toolDef: ToolDefinition,
+  ): PolicyCheckResult {
+    // 1. 工具禁用清单（所有工具）
+    const toolCheck = enforcer.checkTool(executionToolName);
+    if (!toolCheck.allowed) return toolCheck;
+
+    // 2. Shell 命令规则（denied_commands 正则 / allowed_command_prefixes / allow_shell）
+    if (isBashToolName(policyToolName) && typeof params.command === 'string') {
+      const commandCheck = enforcer.checkCommand(params.command);
+      if (!commandCheck.allowed) return commandCheck;
+    }
+
+    // 3. 文件路径规则（denied_paths / denied_file_patterns / writable_paths）
+    const filePath = typeof params.file_path === 'string'
+      ? params.file_path
+      : typeof params.path === 'string'
+        ? params.path
+        : undefined;
+    if (filePath && (toolDef.permissionLevel === 'read' || toolDef.permissionLevel === 'write')) {
+      const fileCheck = enforcer.checkFilePath(filePath, toolDef.permissionLevel);
+      if (!fileCheck.allowed) return fileCheck;
+    }
+
+    // 4. 网络域名白名单
+    if (toolDef.permissionLevel === 'network' && typeof params.url === 'string') {
+      const networkCheck = enforcer.checkNetwork(params.url);
+      if (!networkCheck.allowed) return networkCheck;
+    }
+
+    return { allowed: true };
+  }
+
   private isToolPreApproved(
     toolName: string,
     params: Record<string, unknown>,

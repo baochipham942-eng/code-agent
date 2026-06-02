@@ -98,3 +98,11 @@ export {
   type DecisionHistoryEntry,
   type DecisionOutcome,
 } from './decisionHistory';
+
+// Policy Enforcer (code-agent-policy.toml hard rules — deny cannot be overridden)
+export {
+  PolicyEnforcer,
+  getPolicyEnforcer,
+  resetPolicyEnforcer,
+  type PolicyCheckResult,
+} from './policyEnforcer';

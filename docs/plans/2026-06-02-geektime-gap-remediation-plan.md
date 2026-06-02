@@ -10,8 +10,8 @@
 |------|------|---------|------|------|
 | 一 | 拆假护栏（安全） | 002, 001, 007, 003 | `fix/geektime-gap-phase1-guardrails` | **MERGED** (PR #192, 236cd71e) |
 | 二 | 上下文经济 | 008, 009, 010 | `feat/geektime-gap-phase2-context-economy` | **MERGED** (PR #194, 52aef229) |
-| 三 | 质量闭环 | 006+014, 013, 004, 016, 012+015, **023(阶段二 E2E 新增)** | `feat/geektime-gap-phase3-quality-loops` | **DONE**（7 commits 待 PR） |
-| 四 | 经验沉淀（修正版） | 005(仅 Failure Journal + 半自动 skill 草稿), 011, 017 | `feat/geektime-gap-phase4-experience` | PENDING |
+| 三 | 质量闭环 | 006+014, 013, 004, 016, 012+015, **023(阶段二 E2E 新增)** | `feat/geektime-gap-phase3-quality-loops` | **MERGED** (PR #196, 95c9c3de) |
+| 四 | 经验沉淀（修正版） | 005(仅 Failure Journal + 半自动 skill 草稿), 011, 017 | `feat/geektime-gap-phase4-experience` | **DONE**（4 commits 待 PR） |
 | 出局 | — | 018(等阶段三基建), 019, 020, 021, 022 | — | WONT_DO（现阶段） |
 
 ## 排序逻辑
@@ -69,10 +69,16 @@
 
 ## 阶段四验收标准（经验沉淀，修正版）
 
-- [ ] 同一错误模式出现 ≥3 次后，Light Memory 出现 failure journal 条目
-- [ ] 下一个 session 遇到同类操作时，journal 条目被注入上下文且 agent 未重复踩坑（eval 可测）
-- [ ] 重复成功模式 ≥3 次后生成 skill 草稿并弹用户确认（不自动入库）
-- [ ] 评测中心支持固定模型、变 harness 配置的对照实验
+- [x] 同一错误模式出现 ≥3 次后，Light Memory 出现 failure journal 条目
+  - E2E（webServer headless + glm-5）：agent 连续 Read 三个不存在的文件（路径仅数字不同）→ 三次失败被归一化为同一模式 → session 结束 learningPipeline 自动写入 `~/.code-agent/memory/failure-journal.md`（count=3）+ INDEX.md 条目 + `memory_learned` 事件出现在 run SSE 流
+- [x] 下一个 session 遇到同类操作时，journal 条目被注入上下文且 agent 未重复踩坑（eval 可测）
+  - E2E：新 sessionId 发起 run → 模型逐字引用 system prompt 中的 `<failure_journal>` 块（含 "Read (unknown, 3次): File not found: /tmp/gapN-missing-N.txt"），跨会话注入坐实
+- [x] 重复成功模式 ≥3 次后生成 skill 草稿并弹用户确认（不自动入库）
+  - E2E：agent 执行 Write→Read ×3 → session 结束草稿落 `~/.code-agent/skill-drafts/write-read-*/`（SKILL.md + draft.json，status=pending）→ `skill_draft_pending` 事件出现在 run SSE 流（renderer 确认卡片的数据源）→ skills 目录全程干净（不自动入库）
+  - 确认/拒绝闭环：`skill:draft:confirm` → SKILL.md 装入 `~/.code-agent/skills/<name>/`；`skill:draft:reject` → 草稿删除 + patternKey 进 rejected ledger（不再重复打扰）
+  - E2E 发现并修复接线问题：EventBus→EventBridge 桥接在 webServer 架构（所有发行版的实际架构）下不会启动，改为 ctx.onEvent → run SSE 流（与 suggestions_update/memory_learned 同通路）
+- [x] 评测中心支持固定模型、变 harness 配置的对照实验
+  - E2E：`POST /api/evaluation/run-harness-comparison`（固定 glm-5，2 个变体：baseline=压缩开+deferred 工具 vs 压缩关+全量工具）→ 串行各跑 bash-echo case → 2 条 experiment 记录落 DB，`config_json.harness` 携带维度（contextCompression/hooksEnabled/toolMode），实验名带变体名可跨实验对比
 
 ## 进度日志
 
@@ -82,3 +88,5 @@
 | 2026-06-02 | 阶段一完成，PR #192 |
 | 2026-06-02 | 阶段二完成：GAP-008/009/010 + E2E 发现的压缩层修复，4 commits 在 `feat/geektime-gap-phase2-context-economy`（独立 worktree），E2E 验收 3/3 通过（webServer headless + glm-5 真实链路），待确认后开 PR |
 | 2026-06-02 | 阶段三完成：GAP-006+014（Stop hook 安全阀 + CC 兼容 additionalContext）/ 013（交付前 critic）/ 004（workflow 反死循环）/ 016（stage outputSchema）/ 012+015（SubagentStop trace 入口 + hook 日志脱敏）/ 023（块优先级排序 + 丢弃可见化 + budget 动态化），7 commits 在 `feat/geektime-gap-phase3-quality-loops`（独立 worktree），E2E 验收 5/5 通过（webServer headless + glm-5 + 真实 hooks），待确认后开 PR |
+| 2026-06-02 | 阶段三 MERGED（PR #196, 95c9c3de） |
+| 2026-06-02 | 阶段四完成：GAP-005 修正版（learningPipeline 重建：failure journal 全自动 + skill 蒸馏半自动确认队列 + SkillDraftNotifications 确认 UI）/ GAP-011（SubagentConfig.skills 全文预注入，agent .md frontmatter 支持 skills 字段）/ GAP-017（HarnessVariantConfig 三维度 + runHarnessComparison + evaluation:run-harness-comparison IPC），4 commits 在 `feat/geektime-gap-phase4-experience`（独立 worktree），E2E 验收 4/4 通过（webServer headless + glm-5），E2E 额外发现并修复 EventBus→renderer 桥接在 webServer 架构下失效的接线问题，待确认后开 PR |

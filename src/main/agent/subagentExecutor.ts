@@ -68,6 +68,7 @@ import {
   shouldUseE2ELocalSubagentExecutor,
 } from './subagentE2ELocalExecutor';
 import { buildSubagentSkillsBlock } from '../services/skills/subagentSkillInjection';
+import { resolveModelDecision } from '../model/modelDecision';
 import type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
 
 export type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
@@ -98,6 +99,17 @@ export class SubagentExecutor {
     config: SubagentConfig,
     context: SubagentContext
   ): Promise<SubagentResult> {
+    // ADR-019 批 1：单一防御点——subagent 永不继承父会话的 adaptive 标志。
+    // 所有 spawn 路径（Task 工具 / spawn_agent / parallel coordinator）都经过
+    // 这里，入口归一化一次覆盖全部，下游 context.modelConfig 引用自动安全。
+    const { config: normalizedModelConfig } = resolveModelDecision({
+      requestedConfig: context.modelConfig,
+      messages: [],
+      context: 'subagent',
+      subagentRole: config.name,
+    });
+    context = { ...context, modelConfig: normalizedModelConfig };
+
     if (shouldUseE2ELocalSubagentExecutor()) {
       return executeE2ELocalSubagent(prompt, config, context);
     }

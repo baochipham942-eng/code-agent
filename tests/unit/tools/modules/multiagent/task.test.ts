@@ -325,3 +325,40 @@ describe('Task happy / failure', () => {
     }
   });
 });
+
+describe('Task adaptive 泄漏修复（ADR-019 批 1）', () => {
+  it('父会话 adaptive=true 不泄漏给 subagent：executor 收到 adaptive=false', async () => {
+    executorExecuteMock.mockResolvedValue({ success: true, output: 'ok', iterations: 1, toolsUsed: [] });
+    const handler = await taskModule.createHandler();
+    const result = await handler.execute(
+      { prompt: 'do thing', subagent_type: 'coder' },
+      makeCtx({
+        modelConfig: { provider: 'deepseek', model: 'deepseek-chat', adaptive: true },
+      } as never),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    expect(executorExecuteMock).toHaveBeenCalled();
+
+    const executorOpts = executorExecuteMock.mock.calls[0][2];
+    // 泄漏修复：subagent 的 modelConfig 必须显式 adaptive=false
+    expect(executorOpts.modelConfig.adaptive).toBe(false);
+    // 角色分层结果不受影响（mock 的 getSubagentModelConfig 返回 kimi/kimi-k2.5）
+    expect(executorOpts.modelConfig.provider).toBe('kimi');
+    expect(executorOpts.modelConfig.model).toBe('kimi-k2.5');
+  });
+
+  it('父会话无 adaptive 标志时同样显式置 false（防御未来回归）', async () => {
+    executorExecuteMock.mockResolvedValue({ success: true, output: 'ok', iterations: 1, toolsUsed: [] });
+    const handler = await taskModule.createHandler();
+    const result = await handler.execute(
+      { prompt: 'do thing', subagent_type: 'coder' },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    expect(executorExecuteMock).toHaveBeenCalled();
+    const executorOpts = executorExecuteMock.mock.calls[0][2];
+    expect(executorOpts.modelConfig.adaptive).toBe(false);
+  });
+});

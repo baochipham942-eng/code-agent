@@ -56,3 +56,40 @@ describe('subagentExecutor abort signal propagation (D.1)', () => {
     expect(source).toMatch(/toolCallsAttempted\s*\+=\s*1/);
   });
 });
+
+// ============================================================================
+// ADR-019 批 1：adaptive 泄漏防御（单一防御点）
+//
+// 不变量：subagentExecutor.execute() 入口必须把 context.modelConfig 经
+// resolveModelDecision(context: 'subagent') 归一化——subagent 永不继承
+// 父会话的 adaptive 标志。这是所有 spawn 路径（Task 工具 / spawn_agent /
+// parallel coordinator）的共同 choke point，在这里防御一次覆盖全部。
+// 同 D.1 采用源码契约测试（完整 runtime mock 链得不偿失）。
+// ============================================================================
+
+describe('subagentExecutor adaptive leak defense (ADR-019)', () => {
+  it('execute() must normalize modelConfig via resolveModelDecision with subagent context', () => {
+    const source = readFileSync(SUBAGENT_EXECUTOR_PATH, 'utf8');
+
+    // 必须 import 单一决策入口
+    expect(source).toMatch(/import\s*\{[^}]*resolveModelDecision[^}]*\}\s*from\s*'\.\.\/model\/modelDecision'/);
+    // 必须以 subagent context 调用（剥离 adaptive 的路径）
+    expect(source).toMatch(/resolveModelDecision\(\s*\{[\s\S]*?context:\s*'subagent'/);
+  });
+
+  it('execute() must reassign context.modelConfig to the normalized config at entry', () => {
+    const source = readFileSync(SUBAGENT_EXECUTOR_PATH, 'utf8');
+
+    // 入口归一化后必须重新赋值 context，让所有下游 context.modelConfig 引用
+    // 自动使用剥离 adaptive 后的配置（最小 diff，不强迫全文件改名）
+    expect(source).toMatch(/context\s*=\s*\{\s*\.\.\.context,\s*modelConfig:/);
+
+    // 归一化必须发生在 execute() 函数体内、E2E 早退分支之前
+    const executeBody = source.slice(source.indexOf('async execute('));
+    const normalizeIdx = executeBody.indexOf('resolveModelDecision');
+    const e2eIdx = executeBody.indexOf('shouldUseE2ELocalSubagentExecutor');
+    expect(normalizeIdx).toBeGreaterThan(-1);
+    expect(e2eIdx).toBeGreaterThan(-1);
+    expect(normalizeIdx).toBeLessThan(e2eIdx);
+  });
+});

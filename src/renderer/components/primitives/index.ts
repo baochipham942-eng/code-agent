@@ -37,6 +37,10 @@ export {
 export { Modal, ModalHeader, ModalFooter } from './Modal';
 export type { ModalProps, ModalSize, ModalHeaderProps, ModalFooterProps } from './Modal';
 
+// Toggle
+export { Toggle } from './Toggle';
+export type { ToggleProps, ToggleSize } from './Toggle';
+
 // UndoToast
 export { UndoToast } from './UndoToast';
 export type { UndoToastProps } from './UndoToast';

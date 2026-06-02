@@ -8,8 +8,8 @@
 
 | 阶段 | 主题 | 包含 GAP | 分支 | 状态 |
 |------|------|---------|------|------|
-| 一 | 拆假护栏（安全） | 002, 001, 007, 003 | `fix/geektime-gap-phase1-guardrails` | IN PROGRESS |
-| 二 | 上下文经济 | 008, 009, 010 | `feat/geektime-gap-phase2-context-economy` | PENDING |
+| 一 | 拆假护栏（安全） | 002, 001, 007, 003 | `fix/geektime-gap-phase1-guardrails` | DONE (PR #192) |
+| 二 | 上下文经济 | 008, 009, 010 | `feat/geektime-gap-phase2-context-economy` | DONE（4 commits，待开 PR） |
 | 三 | 质量闭环 | 006+014, 013, 004, 016, 012+015 | `feat/geektime-gap-phase3-quality-loops` | PENDING |
 | 四 | 经验沉淀（修正版） | 005(仅 Failure Journal + 半自动 skill 草稿), 011, 017 | `feat/geektime-gap-phase4-experience` | PENDING |
 | 出局 | — | 018(等阶段三基建), 019, 020, 021, 022 | — | WONT_DO（现阶段） |
@@ -34,9 +34,18 @@
 
 ## 阶段二验收标准（上下文经济）
 
-- [ ] 接入 ≥2 个 MCP server 后，系统提示词中 MCP 工具只有名字索引，schema 按需加载
-- [ ] 工具输出超阈值时落盘到 session 临时目录，上下文只留摘要+路径，agent 可用 Read 回查
-- [ ] env block 包含当前分支、最近 commit、working tree dirty 状态
+- [x] 接入 ≥2 个 MCP server 后，系统提示词中 MCP 工具只有名字索引，schema 按需加载
+  - E2E：6 个 MCP server（memory-kv/code-index/context7/firecrawl/deepwiki/exa）的名字索引被 glm-5 逐字引用；tool_schema_snapshot 仅 17 个 core 工具 schema
+- [x] 工具输出超阈值时落盘到 session 临时目录，上下文只留摘要+路径，agent 可用 Read 回查
+  - E2E：`seq 1 20000`（108KB）→ `~/.code-agent/tmp/<session>/tool-results/` 完整 20000 行落盘，模型逐字引用回查路径
+- [x] env block 包含当前分支、最近 commit、working tree dirty 状态
+  - E2E：glm-5 逐字引用分支名 / clean 状态 / 全部 5 条 commit oneline
+
+### 阶段二 E2E 发现的额外问题
+
+1. **compressToolResult 吞落盘提示**（已修，commit 8f175859d）：messageProcessor 压缩层 truncate 策略尾部预算 ~30 token，带长路径的落盘提示行整体被丢。修复 = 压缩前抽出提示行、压缩后拼回尾部（与反爬 hint 豁免同一模式）。
+2. **system prompt budget 6000 token 太小**（未修，pre-existing）：用户记忆注入大时 deferred-tools/skills/plugins/recent-conversations 块全被静默丢弃——deferred 工具发现机制在重记忆环境下实际失效。验收时用 `CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS=16000` 绕过。**建议列为下期 GAP-023 候选。**
+3. **promptRegression 测试 2 个 pre-existing 失败**（未修，main HEAD 上同样失败）：`src/main/prompts/rules/taskManagement.ts` 含 `task_create` 旧工具名 + `nudgeManager.ts` 措辞与测试期望不符。
 
 ## 阶段三验收标准（质量闭环）
 
@@ -57,3 +66,5 @@
 | 日期 | 进展 |
 |------|------|
 | 2026-06-02 | 计划确认，阶段一开工 |
+| 2026-06-02 | 阶段一完成，PR #192 |
+| 2026-06-02 | 阶段二完成：GAP-008/009/010 + E2E 发现的压缩层修复，4 commits 在 `feat/geektime-gap-phase2-context-economy`（独立 worktree），E2E 验收 3/3 通过（webServer headless + glm-5 真实链路），待确认后开 PR |

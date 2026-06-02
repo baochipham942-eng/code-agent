@@ -1,14 +1,18 @@
 // ============================================================================
 // ModelSettings - Model Configuration Tab
+//
+// Master-Detail 布局：左侧 Provider 列表（已配置 / 未配置分组）+ 右侧详情面板。
+// 详情面板三段式：① 连接 → ② 模型 → ③ 高级（折叠）。
+// 所有保存 / 测试 / 发现 / 新增 handler 与重构前完全一致，仅 UI 结构重组。
 // ============================================================================
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { Brain, CheckCircle, Code2, Eye, Gauge, Key, Plus, RefreshCw, Search, Stethoscope, Wrench } from 'lucide-react';
+import { Brain, Code2, Eye, Gauge, Key, Plus, RefreshCw, Search, Wrench } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelCapability, ModelEntrySettings, ModelProvider, ModelProviderProtocol, ModelProviderSettings } from '@shared/contract';
-import { UI, PROVIDER_MODELS, getProviderEndpointForProtocol, PROVIDER_CONCURRENCY_LIMITS } from '@shared/constants';
+import { MODEL, UI, PROVIDER_MODELS, getProviderEndpointForProtocol, PROVIDER_CONCURRENCY_LIMITS } from '@shared/constants';
 import {
   MODEL_CAPABILITY_OPTIONS,
   buildProviderInfoFromSettings,
@@ -31,7 +35,7 @@ const logger = createLogger('ModelSettings');
 import type { ModelConfig, ProxyMode } from '@shared/contract';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
-import { SettingsPage, SettingsSection } from '../SettingsLayout';
+import { SettingsPage } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { ProviderDoctorDialog } from '../ProviderDoctorDialog';
 import {
@@ -40,6 +44,7 @@ import {
   buildProviderManagementRows,
   createCustomProviderId,
   getModelLabel,
+  getProtocolLabel,
   hasCustomEndpointOverride,
   isModelMetadataLocked,
   orderProviderManagementRows,
@@ -50,7 +55,12 @@ import {
   type ProviderDisplayInfo,
 } from './ModelSettings.helpers';
 import { AgentEngineModelCatalogSection } from './AgentEngineModelCatalogSection';
-import { CurrentModelConfigurationSection } from './CurrentModelConfigurationSection';
+import { ProviderListPanel } from './ProviderListPanel';
+import {
+  ProviderAdvancedSection,
+  ProviderConnectionSection,
+  ProviderDetailCard,
+} from './ProviderDetailSections';
 export type { ModelConfig };
 
 export interface ModelSettingsProps {
@@ -80,6 +90,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const [newProviderBaseUrl, setNewProviderBaseUrl] = useState('');
   const [newProviderApiKey, setNewProviderApiKey] = useState('');
   const [newProviderProtocol, setNewProviderProtocol] = useState<ModelProviderProtocol>('openai');
+  // Master-Detail：右侧面板是否处于「新增 Provider」模式
+  const [isAddingProvider, setIsAddingProvider] = useState(false);
 
   // Build provider display list with i18n names where available
   const providers = useMemo(() => {
@@ -140,7 +152,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     () => currentModels.filter((model) => model.enabled),
     [currentModels],
   );
-  const selectableModels = currentEnabledModels.length > 0 ? currentEnabledModels : currentModels;
   const filteredCurrentModels = useMemo(() => {
     const query = modelSearch.trim().toLowerCase();
     if (!query) return currentModels;
@@ -161,6 +172,21 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const hasInputApiKey = Boolean(config.apiKey?.trim());
   const hasStoredApiKey = Boolean(currentProviderConfig?.apiKey || currentProviderConfig?.apiKeyConfigured);
   const hasApiKey = !needsApiKey || hasInputApiKey || hasStoredApiKey;
+
+  // Master-Detail：按「是否已配置 Key」给左侧列表分组（local 等无需 Key 的视为已配置）
+  const providerHasKey = useCallback((providerId: ModelProvider) => {
+    if (!providerRequiresApiKey(providerId)) return true;
+    const providerConfig = providerConfigs[providerId];
+    return Boolean(providerConfig?.apiKeyConfigured || providerConfig?.apiKey);
+  }, [providerConfigs]);
+  const configuredRows = useMemo(
+    () => orderedProviderRows.filter((row) => providerHasKey(row.id)),
+    [orderedProviderRows, providerHasKey],
+  );
+  const unconfiguredRows = useMemo(
+    () => orderedProviderRows.filter((row) => !providerHasKey(row.id)),
+    [orderedProviderRows, providerHasKey],
+  );
 
   const patchCurrentProviderConfig = useCallback((patch: Partial<ModelProviderSettings>) => {
     setProviderConfigs((prev) => {
@@ -223,6 +249,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       maxTokens: nextRuntimeModel?.maxTokens ?? config.maxTokens,
     });
     setModelSearch('');
+    setIsAddingProvider(false);
   }, [config, onChange, providerConfigs]);
 
   const handleApiKeyChange = useCallback((value: string) => {
@@ -537,7 +564,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     setNewProviderApiKey('');
     setNewProviderProtocol('openai');
     setModelSearch('');
-    toast.success('Provider 已添加，补充模型后保存即可使用');
+    setIsAddingProvider(false);
+    toast.success('Provider 已添加，点击「发现模型」拉取可用模型');
   }, [config, newProviderApiKey, newProviderBaseUrl, newProviderName, newProviderProtocol, onChange, providerConfigs]);
 
   const handleAddManualModel = useCallback(() => {
@@ -586,401 +614,340 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     toast.success('模型已加入当前 Provider');
   }, [config, effectiveBaseUrl, effectiveProtocol, hasStoredApiKey, manualModelId, manualModelLabel, onChange]);
 
+  const providerTitle = currentProviderConfig?.displayName || selectedProviderRow?.name || config.provider;
+
   return (
     <SettingsPage
       title={t.model.title}
-      description="管理默认 Provider、模型、API Key 和生成参数。诊断与连接测试保留在当前页，不进入普通对话流。"
+      description="左侧选择或新增 Provider，右侧完成连接、模型与高级配置。保存后该 Provider 成为默认。"
     >
       <WebModeBanner />
 
-      <AgentEngineModelCatalogSection />
+      {/* ── Master-Detail：左 Provider 列表 + 右详情 ── */}
+      <div className="grid gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:items-start">
+        <ProviderListPanel
+          configuredRows={configuredRows}
+          unconfiguredRows={unconfiguredRows}
+          selectedProviderId={config.provider}
+          isAddingProvider={isAddingProvider}
+          onSelect={handleSelectProvider}
+          onStartAddProvider={() => setIsAddingProvider(true)}
+          onOpenDoctor={() => setIsDoctorOpen(true)}
+        />
 
-      <SettingsSection
-        title="Provider 管理"
-        description="选择默认模型提供商，查看 endpoint、可用模型数量和当前配置状态。"
-        actions={(
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => setIsDoctorOpen(true)}
-            disabled={isWebMode()}
-            leftIcon={<Stethoscope className="h-3 w-3" />}
-          >
-            运行诊断
-          </Button>
-        )}
-      >
-        <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
-          <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
-            {[
-              ['当前 Provider', selectedProviderRow?.name || config.provider, selectedModelLabel],
-              ['Provider 数量', String(providerRows.length), '可选服务商'],
-              ['模型数量', `${currentEnabledModels.length}/${currentModels.length}`, '已启用 / 已发现'],
-              ['API Key', needsApiKey ? (hasApiKey ? '已保存' : '未填写') : '无需填写', needsApiKey ? (hasApiKey ? '本地加密保存' : '保存前需要补齐') : '本地服务'],
-            ].map(([label, value, caption]) => (
-              <div key={label} className="bg-zinc-900/80 px-3 py-3">
-                <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-zinc-500">{label}</div>
-                <div className="mt-1 truncate text-lg font-semibold text-zinc-100">{value}</div>
-                <div className="mt-0.5 truncate text-[11px] text-zinc-500">{caption}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="grid gap-3 border-b border-zinc-800 p-3 lg:grid-cols-[minmax(140px,0.75fr)_minmax(140px,0.65fr)_minmax(220px,1.15fr)_minmax(180px,0.9fr)_auto] lg:items-end">
-            <div>
-              <label className="mb-2 block text-xs font-medium text-zinc-400">
-                新 Provider
-              </label>
-              <Input
-                value={newProviderName}
-                onChange={(event) => setNewProviderName(event.target.value)}
-                placeholder="LongCat"
-                inputSize="sm"
-              />
-            </div>
-            <div>
-              <label className="mb-2 block text-xs font-medium text-zinc-400">
-                协议
-              </label>
-              <Select
-                value={newProviderProtocol}
-                onChange={(event) => setNewProviderProtocol(event.target.value as ModelProviderProtocol)}
-                selectSize="sm"
-              >
-                <option value="openai">OpenAI 兼容</option>
-                <option value="claude">Claude 协议</option>
-              </Select>
-            </div>
-            <div>
-              <label className="mb-2 block text-xs font-medium text-zinc-400">
-                Provider 地址
-              </label>
-              <Input
-                value={newProviderBaseUrl}
-                onChange={(event) => setNewProviderBaseUrl(event.target.value)}
-                placeholder="https://api.example.com/v1"
-                inputSize="sm"
-              />
-            </div>
-            <div>
-              <label className="mb-2 block text-xs font-medium text-zinc-400">
-                API Key
-              </label>
-              <Input
-                type="password"
-                value={newProviderApiKey}
-                onChange={(event) => setNewProviderApiKey(event.target.value)}
-                placeholder="sk-..."
-                inputSize="sm"
-                leftIcon={<Key className="h-3.5 w-3.5" />}
-              />
-            </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={handleAddProvider}
-              disabled={isWebMode() || !newProviderName.trim() || !newProviderBaseUrl.trim()}
-              leftIcon={<Plus className="h-3 w-3" />}
-              className="lg:mb-px"
-            >
-              添加 Provider
-            </Button>
-          </div>
-
-          <div className="divide-y divide-zinc-800/80">
-            {orderedProviderRows.map((provider) => (
-              <div
-                key={provider.id}
-                className={`grid gap-3 px-3 py-3 transition-colors lg:grid-cols-[minmax(180px,1.15fr)_minmax(120px,0.65fr)_minmax(150px,0.75fr)_minmax(180px,1fr)_auto] lg:items-center ${
-                  provider.selected ? 'bg-blue-500/10' : 'bg-zinc-900/40 hover:bg-zinc-800/60'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => handleSelectProvider(provider.id)}
-                  disabled={provider.selected}
-                  className="min-w-0 text-left disabled:cursor-default"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium text-zinc-200">{provider.name}</span>
-                    <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">
-                      {provider.id}
-                    </span>
+        <div className="min-w-0 space-y-4">
+          {isAddingProvider ? (
+            /* ── 新增 Provider / 中转站 ── */
+            <ProviderDetailCard step="+" title="新增 Provider / 中转站">
+              <div className="space-y-4">
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-zinc-200">显示名称</label>
+                    <Input
+                      value={newProviderName}
+                      onChange={(event) => setNewProviderName(event.target.value)}
+                      placeholder="windhub.cc"
+                    />
                   </div>
-                <div className="mt-1 max-w-[280px] truncate text-xs text-zinc-500">
-                  {provider.description}
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-zinc-200">协议</label>
+                    <Select
+                      value={newProviderProtocol}
+                      onChange={(event) => setNewProviderProtocol(event.target.value as ModelProviderProtocol)}
+                    >
+                      <option value="openai">OpenAI 兼容</option>
+                      <option value="claude">Claude 协议</option>
+                    </Select>
+                  </div>
                 </div>
-                </button>
-
                 <div>
-                  {provider.selected ? (
-                    <div className="space-y-1">
-                      <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-300">
-                        <CheckCircle className="h-3 w-3" />
-                        当前
-                      </span>
-                      <div className={hasApiKey ? 'text-[11px] text-zinc-400' : 'text-[11px] text-amber-300'}>
-                        {!needsApiKey ? '无需 API Key' : hasApiKey ? 'API Key 已保存' : '等待 API Key'}
-                      </div>
-                    </div>
-                  ) : (
-                    <span className="inline-flex rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-400">
-                      可选择
-                    </span>
+                  <label className="mb-2 block text-sm font-medium text-zinc-200">接口地址（Base URL）</label>
+                  <Input
+                    value={newProviderBaseUrl}
+                    onChange={(event) => setNewProviderBaseUrl(event.target.value)}
+                    placeholder="https://example.com/v1"
+                  />
+                  <p className="mt-2 text-xs text-zinc-500">填到 /v1 为止，不要带 /chat/completions。</p>
+                </div>
+                <div className="flex items-end gap-3">
+                  <div className="min-w-0 flex-1">
+                    <label className="mb-2 block text-sm font-medium text-zinc-200">API Key</label>
+                    <Input
+                      type="password"
+                      value={newProviderApiKey}
+                      onChange={(event) => setNewProviderApiKey(event.target.value)}
+                      placeholder="sk-..."
+                      leftIcon={<Key className="h-4 w-4" />}
+                    />
+                  </div>
+                  <Button
+                    onClick={handleAddProvider}
+                    disabled={isWebMode() || !newProviderName.trim() || !newProviderBaseUrl.trim()}
+                    leftIcon={<Plus className="h-4 w-4" />}
+                    className="shrink-0"
+                  >
+                    添加 Provider
+                  </Button>
+                </div>
+                <p className="text-xs text-zinc-500">添加后点击「发现模型」拉取该 Provider 的可用模型列表。</p>
+              </div>
+            </ProviderDetailCard>
+          ) : (
+            <>
+              {/* ── 详情 Header ── */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800 text-base font-bold text-zinc-200">
+                    {providerTitle.slice(0, 1).toUpperCase()}
+                  </span>
+                  <div>
+                    <h4 className="text-base font-semibold text-zinc-100">{providerTitle}</h4>
+                    <p className="mt-0.5 max-w-[420px] truncate text-xs text-zinc-500" title={effectiveBaseUrl}>
+                      {getProtocolLabel(effectiveProtocol)} · {effectiveBaseUrl || '未设置地址'}
+                    </p>
+                  </div>
+                </div>
+                <span className={`text-xs ${hasApiKey ? 'text-emerald-300' : 'text-amber-300'}`}>
+                  {!needsApiKey ? '无需 API Key' : hasApiKey ? 'API Key 已保存' : '等待 API Key'}
+                </span>
+              </div>
+
+              {/* ── ① 连接 ── */}
+              <ProviderConnectionSection
+                providerDisplayName={currentProviderConfig?.displayName ?? ''}
+                providerNamePlaceholder={currentProviderInfo?.name || config.provider}
+                effectiveProtocol={effectiveProtocol}
+                isCustomProviderProtocolEditable={isCustomProviderProtocolEditable}
+                showOfficialEndpointReset={showOfficialEndpointReset}
+                registryEndpoint={registryEndpoint}
+                configuredBaseUrl={configuredBaseUrl}
+                apiKey={config.apiKey || ''}
+                needsApiKey={needsApiKey}
+                hasStoredApiKey={hasStoredApiKey}
+                isTesting={isTesting}
+                canTestConnection={!needsApiKey || Boolean(config.apiKey) || hasStoredApiKey}
+                onDisplayNameChange={handleDisplayNameChange}
+                onProviderProtocolChange={handleProviderProtocolChange}
+                onResetOfficialEndpoint={handleResetOfficialEndpoint}
+                onBaseUrlChange={handleBaseUrlChange}
+                onApiKeyChange={handleApiKeyChange}
+                onTestConnection={handleTestConnection}
+              />
+
+              {/* ── ② 模型（配好 Key 后展示） ── */}
+              {hasApiKey ? (
+                <ProviderDetailCard
+                  step="2"
+                  title="模型"
+                  meta={`${currentEnabledModels.length} 已启用 / ${currentModels.length} 个`}
+                  actions={(
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={handleDiscoverModels}
+                      disabled={isWebMode() || !effectiveBaseUrl}
+                      loading={isDiscovering}
+                      leftIcon={<RefreshCw className="h-3 w-3" />}
+                    >
+                      发现模型
+                    </Button>
                   )}
-                </div>
-
-                <div className="min-w-0 text-xs text-zinc-300">
-                  <div className="text-[11px] uppercase tracking-[0.08em] text-zinc-500">默认模型</div>
-                  <div className="mt-1 truncate" title={provider.defaultModel}>
-                    {provider.defaultModel}
-                  </div>
-                </div>
-
-                <div className="min-w-0 text-xs text-zinc-300">
-                  <div>{provider.modelCount} 个模型</div>
-                  <div className="mt-0.5 text-[11px] text-zinc-500">
-                    {provider.enabledModelCount} 个已启用
-                  </div>
-                  <div className="mt-1 truncate font-mono text-[11px] text-zinc-500" title={provider.endpoint}>
-                    {provider.endpoint}
-                  </div>
-                </div>
-
-                <Button
-                  size="sm"
-                  variant={provider.selected ? 'ghost' : 'secondary'}
-                  onClick={() => handleSelectProvider(provider.id)}
-                  disabled={provider.selected}
-                  className="justify-self-start lg:justify-self-end"
                 >
-                  {provider.selected ? '已选择' : '使用'}
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
-      </SettingsSection>
+                  {/* 搜索 + 手动添加 */}
+                  <div className="mb-3 grid gap-3 lg:grid-cols-[minmax(160px,1fr)_minmax(140px,1fr)_minmax(120px,0.8fr)_auto] lg:items-end">
+                    <div>
+                      <label className="mb-2 block text-xs font-medium text-zinc-400">搜索模型</label>
+                      <Input
+                        value={modelSearch}
+                        onChange={(event) => setModelSearch(event.target.value)}
+                        placeholder="搜索模型..."
+                        inputSize="sm"
+                        leftIcon={<Search className="h-3.5 w-3.5" />}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-xs font-medium text-zinc-400">手动添加：模型 ID</label>
+                      <Input
+                        value={manualModelId}
+                        onChange={(event) => setManualModelId(event.target.value)}
+                        placeholder="deepseek-v3-2-251201"
+                        inputSize="sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-xs font-medium text-zinc-400">显示名称</label>
+                      <Input
+                        value={manualModelLabel}
+                        onChange={(event) => setManualModelLabel(event.target.value)}
+                        placeholder={manualModelId || '可选'}
+                        inputSize="sm"
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={handleAddManualModel}
+                      disabled={isWebMode() || !manualModelId.trim()}
+                      leftIcon={<Plus className="h-3 w-3" />}
+                      className="lg:mb-px"
+                    >
+                      添加
+                    </Button>
+                  </div>
 
-      <CurrentModelConfigurationSection
-        config={config}
-        providerName={selectedProviderRow?.name || config.provider}
-        selectedModelLabel={selectedModelLabel}
-        providerDisplayName={currentProviderConfig?.displayName ?? ''}
-        providerNamePlaceholder={currentProviderInfo?.name || config.provider}
-        effectiveProtocol={effectiveProtocol}
-        isCustomProviderProtocolEditable={isCustomProviderProtocolEditable}
-        showOfficialEndpointReset={showOfficialEndpointReset}
-        registryEndpoint={registryEndpoint}
-        configuredBaseUrl={configuredBaseUrl}
-        effectiveBaseUrl={effectiveBaseUrl}
-        selectableModels={selectableModels}
-        hasApiKey={hasApiKey}
-        enabledModelCount={currentEnabledModels.length}
-        modelCount={currentModels.length}
-        needsApiKey={needsApiKey}
-        hasStoredApiKey={hasStoredApiKey}
-        onDisplayNameChange={handleDisplayNameChange}
-        onProviderProtocolChange={handleProviderProtocolChange}
-        onResetOfficialEndpoint={handleResetOfficialEndpoint}
-        onBaseUrlChange={handleBaseUrlChange}
-        onApiKeyChange={handleApiKeyChange}
-        maxConcurrent={currentProviderConfig?.maxConcurrent}
-        defaultMaxConcurrent={defaultMaxConcurrent}
-        onMaxConcurrentChange={handleMaxConcurrentChange}
-        proxyMode={currentProviderConfig?.proxyMode}
-        onProxyModeChange={handleProxyModeChange}
-        onModelChange={handleModelChange}
-        onTemperatureChange={(temperature) => {
-          patchCurrentProviderConfig({ temperature });
-          onChange({ ...config, temperature });
-        }}
-      />
-
-      <SettingsSection
-        title="模型发现与启用"
-        description="从 Provider 拉取模型列表，按模型选择启用状态和能力标签。"
-        actions={(
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={handleDiscoverModels}
-            disabled={isWebMode() || !effectiveBaseUrl}
-            loading={isDiscovering}
-            leftIcon={<RefreshCw className="h-3 w-3" />}
-          >
-            发现模型
-          </Button>
-        )}
-      >
-        <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
-          <div className="flex flex-col gap-3 border-b border-zinc-800 p-3 md:flex-row md:items-center md:justify-between">
-            <div className="text-xs text-zinc-500">
-              {currentEnabledModels.length} 个已启用，{currentModels.length} 个在当前模型池
-            </div>
-            <div className="relative w-full md:w-72">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
-              <Input
-                value={modelSearch}
-                onChange={(event) => setModelSearch(event.target.value)}
-                placeholder="搜索模型..."
-                className="pl-8"
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-3 border-b border-zinc-800 p-3 lg:grid-cols-[minmax(180px,1fr)_minmax(160px,0.75fr)_auto] lg:items-end">
-            <div>
-              <label className="mb-2 block text-xs font-medium text-zinc-400">
-                模型 ID
-              </label>
-              <Input
-                value={manualModelId}
-                onChange={(event) => setManualModelId(event.target.value)}
-                placeholder="longcat-2.0-preview"
-                inputSize="sm"
-              />
-            </div>
-            <div>
-              <label className="mb-2 block text-xs font-medium text-zinc-400">
-                显示名称
-              </label>
-              <Input
-                value={manualModelLabel}
-                onChange={(event) => setManualModelLabel(event.target.value)}
-                placeholder={manualModelId || 'LongCat 2.0 Preview'}
-                inputSize="sm"
-              />
-            </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={handleAddManualModel}
-              disabled={isWebMode() || !manualModelId.trim()}
-              leftIcon={<Plus className="h-3 w-3" />}
-              className="lg:mb-px"
-            >
-              添加模型
-            </Button>
-          </div>
-
-          <div className="max-h-[420px] overflow-y-auto">
-            {filteredCurrentModels.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-zinc-500">
-                没有匹配模型
-              </div>
-            ) : (
-              <div className="divide-y divide-zinc-800">
-                {filteredCurrentModels.map((model) => {
-                  const features = featuresFromModelMetadata({
-                    modelId: model.id,
-                    capabilities: model.capabilities,
-                    supportsTool: model.supportsTool,
-                    supportsVision: model.supportsVision,
-                  });
-                  const metadataLocked = isModelMetadataLocked(config.provider, model);
-                  return (
-                    <div key={model.id} className="grid gap-3 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <label className="inline-flex items-center gap-2 text-sm font-medium text-zinc-100">
-                            <input
-                              type="checkbox"
-                              checked={model.enabled}
-                              onChange={(event) => handleToggleModelEnabled(model, event.target.checked)}
-                              className="h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-blue-500"
-                            />
-                            <span>{model.label}</span>
-                          </label>
-                          <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">
-                            {model.source === 'discovered' ? '发现' : '内置'}
-                          </span>
-                          {features.map((feature) => (
-                            <span
-                              key={feature}
-                              className="inline-flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
-                            >
-                              {CAPABILITY_ICONS[feature]}
-                              {feature}
-                            </span>
-                          ))}
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-[11px] text-zinc-500">
-                          <span>{model.id}</span>
-                          {model.maxTokens ? <span>{model.maxTokens.toLocaleString()} tokens</span> : null}
-                        </div>
+                  {/* 模型列表 */}
+                  <div className="max-h-[420px] overflow-y-auto rounded-lg border border-zinc-800">
+                    {filteredCurrentModels.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-sm text-zinc-500">
+                        没有匹配模型
                       </div>
-
-                      <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleModelTool(model)}
-                          disabled={metadataLocked}
-                          className={`inline-flex h-7 items-center gap-1 rounded border px-2 text-[11px] transition ${
-                            model.supportsTool
-                              ? 'border-blue-400/50 bg-blue-500/15 text-blue-200'
-                              : metadataLocked
-                                ? 'border-zinc-700 bg-zinc-800 text-zinc-500'
-                                : 'border-zinc-700 bg-zinc-800 text-zinc-500 hover:text-zinc-300'
-                          }`}
-                          title={metadataLocked ? '内置模型标签由模型目录决定' : '工具调用'}
-                        >
-                          <Wrench className="h-3 w-3" />
-                          工具
-                        </button>
-                        {MODEL_CAPABILITY_PICKER.map((capability) => {
-                          const active = model.capabilities.includes(capability.id);
+                    ) : (
+                      <div className="divide-y divide-zinc-800">
+                        {filteredCurrentModels.map((model) => {
+                          const features = featuresFromModelMetadata({
+                            modelId: model.id,
+                            capabilities: model.capabilities,
+                            supportsTool: model.supportsTool,
+                            supportsVision: model.supportsVision,
+                          });
+                          const metadataLocked = isModelMetadataLocked(config.provider, model);
                           return (
-                            <button
-                              key={capability.id}
-                              type="button"
-                              onClick={() => handleToggleModelCapability(model, capability.id)}
-                              disabled={metadataLocked}
-                              className={`inline-flex h-7 items-center gap-1 rounded border px-2 text-[11px] transition ${
-                                active
-                                  ? 'border-emerald-400/50 bg-emerald-500/15 text-emerald-200'
-                                  : metadataLocked
-                                    ? 'border-zinc-700 bg-zinc-800 text-zinc-500'
-                                    : 'border-zinc-700 bg-zinc-800 text-zinc-500 hover:text-zinc-300'
-                              }`}
-                              title={metadataLocked ? '内置模型标签由模型目录决定' : capability.label}
-                            >
-                              {CAPABILITY_ICONS[capability.id] ?? <span className="text-[10px]">{capability.label.slice(0, 1)}</span>}
-                              {capability.label}
-                            </button>
+                            <div key={model.id} className="grid gap-3 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <label className="inline-flex items-center gap-2 text-sm font-medium text-zinc-100">
+                                    <input
+                                      type="checkbox"
+                                      checked={model.enabled}
+                                      onChange={(event) => handleToggleModelEnabled(model, event.target.checked)}
+                                      className="h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-blue-500"
+                                    />
+                                    <span>{model.label}</span>
+                                  </label>
+                                  <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">
+                                    {model.source === 'discovered' ? '发现' : '内置'}
+                                  </span>
+                                  {features.map((feature) => (
+                                    <span
+                                      key={feature}
+                                      className="inline-flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
+                                    >
+                                      {CAPABILITY_ICONS[feature]}
+                                      {feature}
+                                    </span>
+                                  ))}
+                                </div>
+                                <div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-[11px] text-zinc-500">
+                                  <span>{model.id}</span>
+                                  {model.maxTokens ? <span>{model.maxTokens.toLocaleString()} tokens</span> : null}
+                                </div>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
+                                {/* 设为默认 */}
+                                {config.model === model.id ? (
+                                  <span className="inline-flex h-7 items-center gap-1 rounded border border-blue-400/50 bg-blue-500/15 px-2 text-[11px] text-blue-200">
+                                    ★ 默认
+                                  </span>
+                                ) : model.enabled ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleModelChange(model.id)}
+                                    className="inline-flex h-7 items-center rounded border border-zinc-700 bg-zinc-800 px-2 text-[11px] text-zinc-500 transition hover:text-zinc-300"
+                                  >
+                                    设为默认
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleModelTool(model)}
+                                  disabled={metadataLocked}
+                                  className={`inline-flex h-7 items-center gap-1 rounded border px-2 text-[11px] transition ${
+                                    model.supportsTool
+                                      ? 'border-blue-400/50 bg-blue-500/15 text-blue-200'
+                                      : metadataLocked
+                                        ? 'border-zinc-700 bg-zinc-800 text-zinc-500'
+                                        : 'border-zinc-700 bg-zinc-800 text-zinc-500 hover:text-zinc-300'
+                                  }`}
+                                  title={metadataLocked ? '内置模型标签由模型目录决定' : '工具调用'}
+                                >
+                                  <Wrench className="h-3 w-3" />
+                                  工具
+                                </button>
+                                {MODEL_CAPABILITY_PICKER.map((capability) => {
+                                  const active = model.capabilities.includes(capability.id);
+                                  return (
+                                    <button
+                                      key={capability.id}
+                                      type="button"
+                                      onClick={() => handleToggleModelCapability(model, capability.id)}
+                                      disabled={metadataLocked}
+                                      className={`inline-flex h-7 items-center gap-1 rounded border px-2 text-[11px] transition ${
+                                        active
+                                          ? 'border-emerald-400/50 bg-emerald-500/15 text-emerald-200'
+                                          : metadataLocked
+                                            ? 'border-zinc-700 bg-zinc-800 text-zinc-500'
+                                            : 'border-zinc-700 bg-zinc-800 text-zinc-500 hover:text-zinc-300'
+                                      }`}
+                                      title={metadataLocked ? '内置模型标签由模型目录决定' : capability.label}
+                                    >
+                                      {CAPABILITY_ICONS[capability.id] ?? <span className="text-[10px]">{capability.label.slice(0, 1)}</span>}
+                                      {capability.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           );
                         })}
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      </SettingsSection>
+                    )}
+                  </div>
+                </ProviderDetailCard>
+              ) : (
+                <div className="rounded-lg border border-dashed border-zinc-800 bg-zinc-900/30 px-4 py-6 text-center text-xs text-zinc-500">
+                  填写 API Key 并测试连接后，即可发现和启用该 Provider 的模型。
+                </div>
+              )}
 
-      <div className="flex gap-3 border-t border-zinc-800 pt-4">
-        <Button
-          disabled={isWebMode()}
-          onClick={handleSave}
-          loading={isSaving}
-          fullWidth
-          variant={saveStatus === 'error' ? 'danger' : 'primary'}
-          className={saveStatus === 'success' ? '!bg-green-600 hover:!bg-green-500' : ''}
-        >
-          {isSaving ? t.common.saving || 'Saving...' : saveStatus === 'success' ? t.common.saved || 'Saved!' : saveStatus === 'error' ? t.common.error || 'Error' : t.common.save || 'Save'}
-        </Button>
-        <Button
-          disabled={isWebMode() || (needsApiKey && !config.apiKey && !hasStoredApiKey)}
-          onClick={handleTestConnection}
-          loading={isTesting}
-          variant="secondary"
-          className="shrink-0"
-        >
-          测试连接
-        </Button>
+              {/* ── ③ 高级（折叠） ── */}
+              {hasApiKey && (
+                <ProviderAdvancedSection
+                  maxConcurrent={currentProviderConfig?.maxConcurrent}
+                  defaultMaxConcurrent={defaultMaxConcurrent}
+                  proxyMode={currentProviderConfig?.proxyMode}
+                  temperature={config.temperature ?? MODEL.DEFAULT_TEMPERATURE}
+                  onMaxConcurrentChange={handleMaxConcurrentChange}
+                  onProxyModeChange={handleProxyModeChange}
+                  onTemperatureChange={(temperature) => {
+                    patchCurrentProviderConfig({ temperature });
+                    onChange({ ...config, temperature });
+                  }}
+                />
+              )}
+
+              {/* ── 保存 ── */}
+              <div className="flex items-center gap-3 border-t border-zinc-800 pt-4">
+                <Button
+                  disabled={isWebMode()}
+                  onClick={handleSave}
+                  loading={isSaving}
+                  variant={saveStatus === 'error' ? 'danger' : 'primary'}
+                  className={saveStatus === 'success' ? '!bg-green-600 hover:!bg-green-500' : ''}
+                >
+                  {isSaving ? t.common.saving || 'Saving...' : saveStatus === 'success' ? t.common.saved || 'Saved!' : saveStatus === 'error' ? t.common.error || 'Error' : t.common.save || 'Save'}
+                </Button>
+                <span className="text-xs text-zinc-500">
+                  保存后 {providerTitle} / {selectedModelLabel} 将成为默认模型。
+                </span>
+              </div>
+            </>
+          )}
+        </div>
       </div>
+
+      {/* Agent 引擎目录（Codex / Claude CLI 模型偏好）— 独立于 API Provider 配置 */}
+      <AgentEngineModelCatalogSection />
 
       <ProviderDoctorDialog
         isOpen={isDoctorOpen}

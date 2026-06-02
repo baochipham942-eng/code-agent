@@ -1,4 +1,5 @@
 import type React from 'react';
+import { getLongTaskStatusLabel } from '@shared/contract/productClosure';
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -18,6 +19,7 @@ import type {
   RunWorkbenchModel,
   RunUiState,
   RunUiStatus,
+  SubagentRunView,
   TaskRecord,
   TaskRecordOutputRef,
   ToolCapabilityView,
@@ -44,6 +46,25 @@ function runStatusClass(status: RunUiStatus): string {
     case 'running':
     default:
       return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
+  }
+}
+
+function subagentStatusClass(status: SubagentRunView['status']): string {
+  switch (status) {
+    case 'completed':
+      return 'text-emerald-300';
+    case 'failed':
+    case 'blocked':
+      return 'text-red-300';
+    case 'cancelled':
+      return 'text-zinc-600';
+    case 'queued':
+    case 'waiting_approval':
+    case 'paused':
+      return 'text-amber-300';
+    case 'running':
+    default:
+      return 'text-sky-300';
   }
 }
 
@@ -197,6 +218,45 @@ export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+export const SubagentRunRows = ({ subagents }: { subagents: SubagentRunView[] }) => {
+  if (subagents.length === 0) return <EmptyState text="暂无子代理" />;
+
+  return (
+    <div className="space-y-1.5">
+      {subagents.map((agent) => (
+        <div
+          key={agent.id}
+          className="min-w-0 rounded-md bg-black/10 px-2.5 py-2"
+          data-testid="subagent-run-row"
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <span className={`text-[10px] ${subagentStatusClass(agent.status)}`}>
+              {getLongTaskStatusLabel(agent.status)}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-200">
+              {agent.role}
+            </span>
+            {agent.model && (
+              <span
+                className="max-w-[120px] shrink truncate rounded border border-white/[0.07] bg-white/[0.03] px-1.5 py-0.5 font-mono text-[10px] text-zinc-400"
+                title={agent.model}
+                data-testid="subagent-model-tag"
+              >
+                {agent.model}
+              </span>
+            )}
+          </div>
+          {(agent.lastOutput || agent.inputSummary) && (
+            <div className="mt-1 truncate text-[11px] text-zinc-500">
+              {agent.lastOutput || agent.inputSummary}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 };

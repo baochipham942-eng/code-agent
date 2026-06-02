@@ -9,6 +9,7 @@
 import { createLogger } from '../services/infra/logger';
 import type { ModelConfig, ModelProvider } from '../../shared/contract';
 import type { ModelProviderSettings } from '../../shared/contract/settings';
+import type { BillingMode, ModelDecision, ModelDecisionReason } from '../../shared/contract/modelDecision';
 import type { ModelMessage } from './types';
 import { DEFAULT_MODELS } from '../../shared/constants';
 import { isDynamicCustomProviderId } from '../../shared/modelRuntime';
@@ -16,31 +17,7 @@ import { getAdaptiveRouter } from './adaptiveRouter';
 
 const logger = createLogger('ModelDecision');
 
-/** Provider 计费方式（ADR-019 决策 4：计费语义四分类） */
-export type BillingMode = 'free' | 'plan' | 'payg' | 'unknown';
-
-/** 决策原因 — UI trace 文案和日志都从这里派生 */
-export type ModelDecisionReason =
-  | 'user-selected'          // 用户指定模型，未干预
-  | 'role-tier'              // subagent 角色分层（确定性映射）
-  | 'simple-task-free'       // 简单任务 → 免费档（仅按量付费时）
-  | 'billing-gate-skip'      // 简单任务但计费门控跳过（包月/未知，省的钱 = 0）
-  | 'capability-vision'      // 视觉能力兜底
-  | 'fallback-availability'; // 可用性降级（限流/网络/余额）
-
-/** 结构化路由决策 — 唯一出口对象 */
-export interface ModelDecision {
-  requestedProvider: string;
-  requestedModel: string;
-  resolvedProvider: string;
-  resolvedModel: string;
-  /** subagent 角色（explore/coder 等），主聊天为 null */
-  role: string | null;
-  reason: ModelDecisionReason;
-  billingMode: BillingMode;
-  /** 可用性降级时记录降级前的模型，其余为 null */
-  fallbackFrom: string | null;
-}
+export type { BillingMode, ModelDecision, ModelDecisionReason } from '../../shared/contract/modelDecision';
 
 export interface ModelDecisionInput {
   /** 请求的模型配置（会话默认或 override） */

@@ -27,11 +27,11 @@ describe('单一决策入口接线（ADR-019 批 2）', () => {
     expect(source).toMatch(/resolveModelDecision\(/);
     expect(source).toMatch(/resolveProviderBillingMode\(/);
     // 决策判断不再直接依赖 adaptiveRouter.estimateComplexity（收口到决策入口内部）
-    const simpleTaskFn = source.slice(
-      source.indexOf('function resolveAdaptiveSimpleTaskConfig'),
+    const mainDecisionFn = source.slice(
+      source.indexOf('function resolveMainChatModelDecision'),
       source.indexOf('function estimateInferenceInputTokens'),
     );
-    expect(simpleTaskFn).not.toMatch(/estimateComplexity\(/);
+    expect(mainDecisionFn).not.toMatch(/estimateComplexity\(/);
   });
 
   it('legacy 引擎（modelRouter.ts）的 adaptive 判断必须经 resolveModelDecision + 计费门控', () => {

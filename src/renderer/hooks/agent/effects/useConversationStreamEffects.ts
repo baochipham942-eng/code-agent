@@ -1,12 +1,13 @@
-// useAgentConversationStreamEffects - turn_start, message_delta, message_snapshot, stream_chunk, stream_reasoning, turn_end, message, routing_resolved, hook_trigger
+// useAgentConversationStreamEffects - turn_start, message_delta, message_snapshot, stream_chunk, stream_reasoning, turn_end, message, model_decision, routing_resolved, hook_trigger
 import { useEffect, useRef } from 'react';
 import { generateMessageId } from '@shared/utils/id';
-import type { HookTriggerEventData, Message, ToolCall } from '@shared/contract';
+import type { BillingMode, HookTriggerEventData, Message, ModelDecisionEventData, ModelDecisionReason, ToolCall } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { buildGoalNoticeMessage } from '../../../components/features/chat/goalNotice';
+import { buildModelFallbackNoticeMessage } from '../../../components/features/chat/fallbackNotice';
 import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
 import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
@@ -57,6 +58,28 @@ interface RoutingResolvedPayload {
   score: number;
   fallbackToDefault?: boolean;
 }
+
+interface ModelFallbackPayload {
+  reason: string;
+  from: string;
+  to: string;
+}
+
+const MODEL_DECISION_REASONS = new Set<ModelDecisionReason>([
+  'user-selected',
+  'role-tier',
+  'simple-task-free',
+  'billing-gate-skip',
+  'capability-vision',
+  'fallback-availability',
+]);
+
+const BILLING_MODES = new Set<BillingMode>([
+  'free',
+  'plan',
+  'payg',
+  'unknown',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -210,6 +233,50 @@ function normalizeRoutingResolvedPayload(data: unknown): RoutingResolvedPayload 
     ...(getNumberField(data, 'timestamp') !== undefined ? { timestamp: getNumberField(data, 'timestamp') } : {}),
     ...(getBooleanField(data, 'fallbackToDefault') !== undefined ? { fallbackToDefault: getBooleanField(data, 'fallbackToDefault') } : {}),
   };
+}
+
+function normalizeModelDecisionPayload(data: unknown): ModelDecisionEventData | null {
+  if (!isRecord(data)) return null;
+  const requestedProvider = getStringField(data, 'requestedProvider');
+  const requestedModel = getStringField(data, 'requestedModel');
+  const resolvedProvider = getStringField(data, 'resolvedProvider');
+  const resolvedModel = getStringField(data, 'resolvedModel');
+  const reason = getStringField(data, 'reason') as ModelDecisionReason | undefined;
+  const billingMode = getStringField(data, 'billingMode') as BillingMode | undefined;
+  if (
+    !requestedProvider
+    || !requestedModel
+    || !resolvedProvider
+    || !resolvedModel
+    || !reason
+    || !MODEL_DECISION_REASONS.has(reason)
+    || !billingMode
+    || !BILLING_MODES.has(billingMode)
+  ) {
+    return null;
+  }
+
+  return {
+    requestedProvider,
+    requestedModel,
+    resolvedProvider,
+    resolvedModel,
+    reason,
+    billingMode,
+    role: getStringField(data, 'role') ?? null,
+    fallbackFrom: getStringField(data, 'fallbackFrom') ?? null,
+    ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
+    ...(getNumberField(data, 'timestamp') !== undefined ? { timestamp: getNumberField(data, 'timestamp') } : {}),
+  };
+}
+
+function normalizeModelFallbackPayload(data: unknown): ModelFallbackPayload | null {
+  if (!isRecord(data)) return null;
+  const reason = getStringField(data, 'reason');
+  const from = getStringField(data, 'from');
+  const to = getStringField(data, 'to');
+  if (!reason || !from || !to) return null;
+  return { reason, from, to };
 }
 
 function normalizeHookTriggerData(data: unknown): HookTriggerEventData | null {
@@ -436,6 +503,24 @@ export function applyConversationStreamEvent(
       }
       break;
 
+    case 'model_decision':
+      {
+        const decisionData = normalizeModelDecisionPayload(event.data);
+        if (!decisionData) break;
+        const targetMessageId = decisionData.turnId || state.currentTurnMessageId;
+        const freshMsgs = getFreshMessages();
+        const targetMessage = targetMessageId
+          ? freshMsgs.find(m => m.id === targetMessageId)
+          : freshMsgs[freshMsgs.length - 1];
+
+        if (targetMessage?.role === 'assistant') {
+          actions.updateMessage(targetMessage.id, {
+            modelDecision: decisionData,
+          });
+        }
+      }
+      break;
+
     case 'message':
       {
         const messageData = normalizeAssistantMessagePayload(event.data);
@@ -639,6 +724,7 @@ export const useConversationStreamEffects = ({
         case 'stream_chunk':
         case 'message_delta':
         case 'message_snapshot':
+        case 'model_decision':
           lastEventAtRef.current = Date.now();
           logHandledEvent();
           if (!isCurrentSessionEvent) {
@@ -725,6 +811,20 @@ export const useConversationStreamEffects = ({
               score: routingData.score,
               fallbackToDefault: routingData.fallbackToDefault,
             });
+          }
+          break;
+
+        case 'model_fallback':
+          lastEventAtRef.current = Date.now();
+          logHandledEvent();
+          if (!isCurrentSessionEvent) {
+            break;
+          }
+          {
+            const fallbackData = normalizeModelFallbackPayload(event.data);
+            if (fallbackData) {
+              addMessage(buildModelFallbackNoticeMessage(fallbackData));
+            }
           }
           break;
 

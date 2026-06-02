@@ -8,6 +8,7 @@ import type { ToolCall, ToolResult } from './tool';
 import type { PermissionRequest } from './permission';
 import type { SessionTask, TodoItem } from './planning';
 import type { FileDiff } from './diff';
+import type { ModelDecisionEventData } from './modelDecision';
 
 // Adaptive Thinking: 思考深度级别
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra_code';
@@ -233,6 +234,7 @@ export type AgentEvent =
   | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string; parentToolUseId?: string } }
   | { type: 'tool_call_end'; data: ToolResult & { parentToolUseId?: string } }
   | { type: 'permission_request'; data: PermissionRequest }
+  | { type: 'model_decision'; data: ModelDecisionEventData }
   | { type: 'hook_trigger'; data: HookTriggerEventData }
   | { type: 'error'; data: { message: string; code?: string; suggestion?: string; details?: Record<string, unknown>; parentToolUseId?: string } }
   | { type: 'message_delta'; data: MessageDeltaData }

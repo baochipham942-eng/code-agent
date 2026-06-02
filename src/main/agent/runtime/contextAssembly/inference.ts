@@ -66,16 +66,16 @@ function runEngineInference(
   signal?: AbortSignal,
   options?: InferenceOptions,
 ): Promise<RouterModelResponse> {
+  const adaptedConfig = resolveMainChatModelDecision(ctx, messages, config);
+  const effectiveConfig = adaptedConfig ?? config;
+
   if (shouldUseE2ELocalAgentModelForMessages(messages)) {
-    return Promise.resolve(buildE2ELocalAgentModelResponse(messages, tools, config, onStream));
+    return Promise.resolve(buildE2ELocalAgentModelResponse(messages, tools, effectiveConfig, onStream));
   }
 
   const useAiSdk = process.env.CODE_AGENT_MODEL_ENGINE !== 'legacy'
-    && aiSdkSupportsProvider(config.provider);
+    && aiSdkSupportsProvider(effectiveConfig.provider);
   if (useAiSdk) {
-    // 自动模式（adaptive）简单任务路由：legacy modelRouter.inference 内置了这段逻辑，
-    // aiSdk 路径（默认引擎）必须在这里等价接入，否则用户选"自动"后路由完全不生效。
-    const adaptedConfig = resolveAdaptiveSimpleTaskConfig(messages, config);
     if (adaptedConfig) {
       logger.info(`[AgentLoop] inference engine = aisdk (adaptive: ${config.provider}/${config.model} → ${adaptedConfig.provider}/${adaptedConfig.model})`);
       return inferenceViaAiSdk(messages, tools, adaptedConfig, onStream, signal, options).catch((err: unknown) => {
@@ -89,10 +89,10 @@ function runEngineInference(
         return inferenceViaAiSdk(messages, tools, config, onStream, signal, options);
       });
     }
-    logger.debug('[AgentLoop] inference engine = aisdk', { provider: config.provider, model: config.model, streaming: typeof onStream === 'function' && options?.forceNonStreaming !== true });
-    return inferenceViaAiSdk(messages, tools, config, onStream, signal, options);
+    logger.debug('[AgentLoop] inference engine = aisdk', { provider: effectiveConfig.provider, model: effectiveConfig.model, streaming: typeof onStream === 'function' && options?.forceNonStreaming !== true });
+    return inferenceViaAiSdk(messages, tools, effectiveConfig, onStream, signal, options);
   }
-  return ctx.runtime.modelRouter.inference(messages, tools, config, onStream, signal, options);
+  return ctx.runtime.modelRouter.inference(messages, tools, effectiveConfig, onStream, signal, options);
 }
 
 /**
@@ -103,7 +103,8 @@ function runEngineInference(
  *
  * 返回带 apiKey 的免费模型配置；不满足条件时返回 null，调用方继续用原配置。
  */
-function resolveAdaptiveSimpleTaskConfig(
+export function resolveMainChatModelDecision(
+  ctx: ContextAssemblyCtx,
   messages: ModelMessage[],
   config: ModelConfig,
 ): ModelConfig | null {
@@ -120,20 +121,38 @@ function resolveAdaptiveSimpleTaskConfig(
     context: 'main-chat',
     billingMode,
   });
-  if (decision.reason !== 'simple-task-free') return null;
+  let emittedDecision = decision;
+  let adapted: ModelConfig | null = null;
 
-  // 执行层：API key 解析（决策层不碰 key）
-  const adapted = { ...decided };
-  if (adapted.provider !== config.provider) {
-    const apiKey = getConfigService().getApiKey(adapted.provider);
-    if (!apiKey) {
-      getAdaptiveRouter().disableFreeModel(`no API key for ${adapted.provider}`);
-      return null;
+  if (decision.reason === 'simple-task-free') {
+    adapted = { ...decided };
+    if (adapted.provider !== config.provider) {
+      const apiKey = getConfigService().getApiKey(adapted.provider);
+      if (!apiKey) {
+        getAdaptiveRouter().disableFreeModel(`no API key for ${adapted.provider}`);
+        emittedDecision = {
+          ...decision,
+          resolvedProvider: config.provider,
+          resolvedModel: config.model,
+          reason: 'user-selected',
+        };
+        adapted = null;
+      } else {
+        adapted.apiKey = apiKey;
+        // 跨 provider 切换时清掉原模型的 baseUrl，否则免费模型会打到原 provider 的端点
+        adapted.baseUrl = undefined;
+      }
     }
-    adapted.apiKey = apiKey;
-    // 跨 provider 切换时清掉原模型的 baseUrl，否则免费模型会打到原 provider 的端点
-    adapted.baseUrl = undefined;
   }
+
+  ctx.runtime.onEvent({
+    type: 'model_decision',
+    data: {
+      ...emittedDecision,
+      turnId: ctx.runtime.currentTurnId,
+      timestamp: Date.now(),
+    },
+  });
 
   return adapted;
 }

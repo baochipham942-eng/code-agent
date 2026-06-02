@@ -24,6 +24,8 @@ import {
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { SkillStatusMessage } from './MessageBubble/SkillStatusMessage';
 import { GoalNoticeMessage } from './MessageBubble/GoalNoticeMessage';
+import { FallbackBanner } from './MessageBubble/FallbackBanner';
+import { RouteTraceChip } from './RouteTraceChip';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, CircleDot, FileText, GitBranch, RotateCcw, Wrench, CornerDownRight, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { UI } from '@shared/constants';
@@ -421,6 +423,12 @@ const AssistantTextNode: React.FC<{
         <div className="mb-2 flex min-w-0 items-center gap-2 rounded-md border border-sky-500/15 bg-sky-500/[0.06] px-2.5 py-1.5 text-xs text-sky-200/90">
           <CircleDot className="h-3.5 w-3.5 shrink-0 text-sky-300" />
           <span className="min-w-0 truncate">{progressSummary}</span>
+        </div>
+      )}
+
+      {node.modelDecision && (
+        <div className="mb-2 flex min-w-0">
+          <RouteTraceChip decision={node.modelDecision} />
         </div>
       )}
 
@@ -871,6 +879,10 @@ const SystemNode: React.FC<{ node: TraceNode }> = ({ node }) => {
 
   if (node.subtype === 'goal_notice') {
     return <GoalNoticeMessage content={node.content} />;
+  }
+
+  if (node.subtype === 'model_fallback') {
+    return <FallbackBanner content={node.content} />;
   }
 
   // generic system

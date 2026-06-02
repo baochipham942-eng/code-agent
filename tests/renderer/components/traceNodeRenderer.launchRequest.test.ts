@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { TraceNode } from '../../../src/shared/contract/trace';
 import type { SwarmLaunchRequest } from '../../../src/shared/contract/swarm';
 import type { TurnTimelineNode } from '../../../src/shared/contract/turnTimeline';
+import { encodeModelFallbackNotice } from '../../../src/renderer/components/features/chat/fallbackNotice';
 
 vi.mock('../../../src/renderer/components/features/chat/MessageBubble/MessageContent', () => ({
   MessageContent: () => null,
@@ -155,6 +156,57 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('Connector mail');
     expect(html).toContain('MCP github');
     expect(html).toContain('Browser Managed');
+  });
+
+  it('renders model decision route chip on assistant text', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'assistant-route-1',
+          messageId: 'turn-1',
+          type: 'assistant_text',
+          content: '你好',
+          timestamp: 420,
+          modelDecision: {
+            turnId: 'turn-1',
+            requestedProvider: 'moonshot',
+            requestedModel: 'kimi-k2.5',
+            resolvedProvider: 'zhipu',
+            resolvedModel: 'glm-4.5-flash',
+            reason: 'simple-task-free',
+            role: null,
+            billingMode: 'payg',
+            fallbackFrom: null,
+          },
+        } satisfies TraceNode,
+      }),
+    );
+
+    expect(html).toContain('简单任务');
+    expect(html).toContain('kimi-k2.5');
+    expect(html).toContain('glm-4.5-flash');
+  });
+
+  it('renders model fallback banner inline', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'fallback-1',
+          type: 'system',
+          content: encodeModelFallbackNotice({
+            reason: 'vision',
+            from: 'kimi-k2.5',
+            to: 'glm-4.5v',
+          }),
+          timestamp: 520,
+          subtype: 'model_fallback',
+        } satisfies TraceNode,
+      }),
+    );
+
+    expect(html).toContain('模型已降级');
+    expect(html).toContain('kimi-k2.5');
+    expect(html).toContain('glm-4.5v');
   });
 
   it('renders a prompt rewind action beside user prompts', () => {

@@ -4,6 +4,7 @@
 
 import type { ToolCall, ToolResult } from './tool';
 import type { WorkbenchMessageMetadata } from './conversationEnvelope';
+import type { ModelDecisionEventData } from './modelDecision';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageVisibility = 'active' | 'rewound';
@@ -98,7 +99,7 @@ export interface MessageAttachment {
 }
 
 // 消息来源类型
-export type MessageSource = 'user' | 'skill' | 'system' | 'goal';
+export type MessageSource = 'user' | 'skill' | 'system' | 'goal' | 'model';
 
 // Subagent 消息子类型
 export type MessageSubtype = 'init' | 'result' | 'thinking' | 'tool_use';
@@ -225,6 +226,8 @@ export interface Message {
   // Token usage from API response
   inputTokens?: number;
   outputTokens?: number;
+  // ADR-019: 模型路由决策，供聊天 trace / replay 展示
+  modelDecision?: ModelDecisionEventData;
   // Generative UI Artifacts（生成式 UI 产物追踪）
   artifacts?: Artifact[];
   // 附加消息元数据（workbench 上下文快照等）

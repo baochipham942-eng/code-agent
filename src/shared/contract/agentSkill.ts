@@ -80,6 +80,9 @@ export interface ParsedSkill {
 
   /** Whether the full promptContent has been loaded (for lazy loading) */
   loaded?: boolean;
+
+  /** GAP-007: 解析时发现的未知 frontmatter 字段告警（拼写错误检测，供 UI/日志展示） */
+  frontmatterWarnings?: string[];
 }
 
 export type SkillSource = 'user' | 'project' | 'plugin' | 'builtin' | 'cloud' | 'library';

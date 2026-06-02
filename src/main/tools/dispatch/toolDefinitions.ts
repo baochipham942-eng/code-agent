@@ -117,6 +117,8 @@ export function getLoadedDeferredToolDefinitions(): ToolDefinition[] {
  * 获取延迟工具摘要（用于 system prompt 提示）
  *
  * 返回延迟工具名称列表，提示模型可通过 tool_search 发现这些工具。
+ * GAP-008: MCP 工具只注入名字索引（按 server 分组），schema 通过 ToolSearch 按需加载，
+ * 与 builtin deferred 工具执行同一条"工具多了要 defer"原则。
  */
 export function getDeferredToolsSummary(): string {
   const grouped = new Map<string, string[]>();
@@ -130,6 +132,19 @@ export function getDeferredToolsSummary(): string {
   for (const [category, tools] of grouped) {
     lines.push(`[${category}] ${tools.join(' | ')}`);
   }
+
+  // MCP 工具名索引：按 server 分组，只列名字不带 schema
+  const mcpMetas = getToolSearchService().getMCPToolsMeta();
+  const byServer = new Map<string, string[]>();
+  for (const meta of mcpMetas) {
+    const server = meta.mcpServer || 'unknown';
+    if (!byServer.has(server)) byServer.set(server, []);
+    byServer.get(server)!.push(meta.name);
+  }
+  for (const [server, names] of byServer) {
+    lines.push(`[mcp:${server}] ${names.join(' | ')}`);
+  }
+
   return lines.join('\n');
 }
 

@@ -276,7 +276,7 @@ export class NudgeManager {
           `STOP! You have ${totalIncomplete} incomplete item(s):\n${combinedList}\n\n` +
           `You MUST complete these tasks before finishing. Do NOT provide a final summary until all items are marked as completed.\n` +
           `- 未完成的 Todo 项会在工具执行后自动推进状态\n` +
-          `- For Tasks: use task_update with status="completed", status="cancelled" to abandon but keep visible, or status="deleted" to remove\n` +
+          `- For Tasks: use TaskManager with action="update" and status="completed", status="cancelled" to abandon but keep visible, or status="deleted" to remove\n` +
           `Continue working on the remaining items NOW.\n` +
           `</task-completion-check>`
         );

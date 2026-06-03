@@ -10,7 +10,7 @@ export const TASK_MANAGEMENT_RULES = applyOverride(
   `
 ## 任务动态管理
 
-优先使用 task_create/task_update/task_list/task_get 工具维护任务分解。复杂任务不要只在回复里写 checklist；右侧任务面板以这些工具写入的 SessionTask 为事实源。
+优先使用 TaskManager 工具（action: create / update / list / get）维护任务分解。复杂任务不要只在回复里写 checklist；右侧任务面板以该工具写入的 SessionTask 为事实源。
 
 ### 何时使用任务管理
 
@@ -28,10 +28,12 @@ export const TASK_MANAGEMENT_RULES = applyOverride(
 ### 任务生命周期
 
 \`\`\`
-task_create → task_update(in_progress) → task_update(completed)
-                                      → task_update(cancelled) # 主动放弃但保留可见记录
-                                      → task_update(deleted)   # 误建/不该存在，物理删除
+create → update(status="in_progress") → update(status="completed")
+                                      → update(status="cancelled") # 主动放弃但保留可见记录
+                                      → update(status="deleted")   # 误建/不该存在，物理删除
 \`\`\`
+
+以上均为 TaskManager 的 action/status 组合。
 
 ### 任务标题语义
 
@@ -82,9 +84,9 @@ SessionTask 表示用户能理解的工作单元，不是工具调用日志。su
 "我理解您希望增加/修改/取消XXX任务"
 
 // 2. 更新任务列表
-task_create({ subject: "补齐任务面板生命周期验收", description: "验证拆分、执行、阻塞、取消和完成状态" })
+TaskManager({ action: "create", subject: "补齐任务面板生命周期验收", description: "验证拆分、执行、阻塞、取消和完成状态" })
 // 或：不再执行但仍应留痕
-task_update({ taskId: "X", status: "cancelled" })
+TaskManager({ action: "update", taskId: "X", status: "cancelled" })
 
 // 3. 继续执行
 "现在开始处理..."
@@ -92,13 +94,13 @@ task_update({ taskId: "X", status: "cancelled" })
 
 ### 任务状态管理
 
-| 操作 | 使用场景 |
+| TaskManager 调用 | 使用场景 |
 |------|----------|
-| task_create | 创建新任务 |
-| task_update(in_progress) | 开始执行任务前 |
-| task_update(completed) | 任务完成后 |
-| task_update(cancelled) | 任务主动放弃但仍需保留给用户看 |
-| task_update(deleted) | 误建或不该存在的任务 |
+| action="create" | 创建新任务 |
+| action="update", status="in_progress" | 开始执行任务前 |
+| action="update", status="completed" | 任务完成后 |
+| action="update", status="cancelled" | 任务主动放弃但仍需保留给用户看 |
+| action="update", status="deleted" | 误建或不该存在的任务 |
 
 ### 依赖关系
 

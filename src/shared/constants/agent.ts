@@ -12,6 +12,18 @@ export const AGENT = {
   MAX_SUBTASK_DEPTH: 5,
 } as const;
 
+/** SpawnGuard 子代理守卫（spawn 并发 + 嵌套深度） */
+export const SPAWN_GUARD = {
+  /** 最大并发子代理数 */
+  MAX_AGENTS: 6,
+  /**
+   * 最大 spawn 嵌套深度。1 = 主→子一层，子代理不再向下 spawn。
+   * 与工具黑名单（SUBAGENT_DISABLED_TOOLS 屏蔽 spawn_agent）互为双保险：
+   * 黑名单是 prompt/工具层，本值是执行层的第二道防线。
+   */
+  MAX_DEPTH: 1,
+} as const;
+
 /** Agent 超时配置 (按角色) */
 export const AGENT_TIMEOUT = {
   PLANNER: 60000,

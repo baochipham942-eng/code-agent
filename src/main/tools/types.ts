@@ -67,6 +67,12 @@ export interface ToolContext {
   agentName?: string;
   /** 当前 Agent 角色 */
   agentRole?: string;
+  /**
+   * 当前 agent 在 spawn 链路中的嵌套深度（主 agent = 0；每 spawn 一层 +1）。
+   * executeSpawnAgent 用它算 childDepth 做 checkDepth 防爆栈，并把 +1 后的值
+   * 注入子 toolContext，让深度沿链路流转（swarm 护栏 P1-2 #2）。
+   */
+  spawnDepth?: number;
 
   // ============================================================================
   // 模型回调支持（工具内二次调用模型）

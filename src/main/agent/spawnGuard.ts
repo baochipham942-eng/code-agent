@@ -12,6 +12,7 @@ import { writeFile, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { createLogger } from '../services/infra/logger';
+import { SPAWN_GUARD } from '../../shared/constants/agent';
 import type { SubagentResult } from './subagentExecutorTypes';
 
 const logger = createLogger('SpawnGuard');
@@ -106,8 +107,8 @@ interface PersistedSpawnGuardState {
 // SpawnGuard
 // ============================================================================
 
-const DEFAULT_MAX_AGENTS = 6;
-const DEFAULT_MAX_DEPTH = 1;
+const DEFAULT_MAX_AGENTS = SPAWN_GUARD.MAX_AGENTS;
+const DEFAULT_MAX_DEPTH = SPAWN_GUARD.MAX_DEPTH;
 
 export type OnAgentCompleteCallback = (agent: ManagedAgent) => void;
 

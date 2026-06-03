@@ -24,6 +24,7 @@ import {
   createAgentMessage,
 } from '../../../src/main/agent/spawnGuard';
 import type { SubagentResult } from '../../../src/main/agent/subagentExecutor';
+import { SPAWN_GUARD } from '../../../src/shared/constants/agent';
 
 type Guard = ReturnType<typeof getSpawnGuard>;
 
@@ -114,6 +115,14 @@ describe('SpawnGuard', () => {
       expect(guard.checkDepth(1)).toBe(true);
       expect(guard.checkDepth(2)).toBe(true);
       expect(guard.checkDepth(3)).toBe(false);
+    });
+
+    it('未配置时默认 maxDepth / maxAgents 取自 SPAWN_GUARD 常量（不硬编码）', () => {
+      resetSpawnGuard();
+      const defaultGuard = getSpawnGuard();
+      expect(defaultGuard.getMaxAgents()).toBe(SPAWN_GUARD.MAX_AGENTS);
+      expect(defaultGuard.checkDepth(SPAWN_GUARD.MAX_DEPTH)).toBe(true);
+      expect(defaultGuard.checkDepth(SPAWN_GUARD.MAX_DEPTH + 1)).toBe(false);
     });
   });
 

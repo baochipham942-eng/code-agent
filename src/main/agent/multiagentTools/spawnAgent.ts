@@ -38,6 +38,7 @@ import { getSwarmEventEmitter } from '../swarmEventPublisher';
 import { checkReadonlyParentRule, buildParentContextFromToolContext, type ParentContext } from '../childContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getSpawnGuard } from '../spawnGuard';
+import { routeFailureCode } from '../../../shared/contract/cancellation';
 import { getSwarmLaunchApprovalGate } from '../swarmLaunchApproval';
 import { createAgentWorktree, cleanupAgentWorktree, cleanupOrphanedWorktrees } from '../agentWorktree';
 import { aggregateTeamResults } from '../resultAggregator';
@@ -225,9 +226,34 @@ export async function executeSpawnAgent(
       [], // FullAgentConfig 不带 capabilities；spawnAgent 这层只用 role 做黑名单匹配
     );
     if (!readonlyCheck.allowed) {
+      // swarm 护栏 P1-2 #2：readonly 父拒启 writer 子 → 结构化 child-refusal 失败码，
+      // 让编排层按 routeFailureCode（'surface'）上抛而非 parse error 字符串。
       return {
         success: false,
         error: `PERMISSION_DENIED: ${readonlyCheck.reason}. Switch to default mode or spawn a non-writer agent.`,
+        metadata: {
+          cancellationReason: 'child-refusal',
+          failureRouting: routeFailureCode('child-refusal'),
+        },
+      };
+    }
+
+    // ========================================================================
+    // swarm 护栏 P1-2 #2：spawn 嵌套深度截断（执行层第二道防线）
+    // 工具黑名单（SUBAGENT_DISABLED_TOOLS）已在 prompt/工具层屏蔽子代理 spawn；
+    // 这里按 depth 流转再确定性兜底——子代理若经非工具路径走到这里也防爆栈。
+    // ========================================================================
+    const parentDepth = context.spawnDepth ?? 0;
+    const childDepth = parentDepth + 1;
+    if (!guard.checkDepth(childDepth)) {
+      return {
+        success: false,
+        error: `DEPTH_LIMIT: spawn 嵌套深度超限（child depth ${childDepth} 超过 maxDepth）。子代理不应再向下 spawn——确定性失败，重试无意义。`,
+        metadata: {
+          cancellationReason: 'depth-limit',
+          failureRouting: routeFailureCode('depth-limit'),
+          childDepth,
+        },
       };
     }
 
@@ -322,7 +348,8 @@ export async function executeSpawnAgent(
       const executorContext = {
         modelConfig: context.modelConfig as ModelConfig,
         toolResolver: context.resolver as ToolResolver,
-        toolContext: { ...context, agentId },
+        // swarm 护栏 P1-2 #2：把递增后的深度注入子 toolContext，让深度沿 spawn 链路流转
+        toolContext: { ...context, agentId, spawnDepth: childDepth },
         parentToolUseId: context.currentToolCallId,
         abortSignal: abortController.signal,
         spawnGuardId: agentId,

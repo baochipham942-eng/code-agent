@@ -826,9 +826,12 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       finished_at INTEGER,
       tokens_spent INTEGER NOT NULL DEFAULT 0,
       result_json TEXT,
-      error TEXT
+      error TEXT,
+      working_directory TEXT
     )
   `);
+  // 旧 DB 补列：删除 run 记录前可据此抢救工作目录的文件改动成 patch
+  safeAlter(db, `ALTER TABLE workflow_runs ADD COLUMN working_directory TEXT`, logger);
 
   // workflow_run_calls - 逐 agent() 调用的结果缓存（仅成功调用），按 run_id + call_index 复合主键
   db.exec(`

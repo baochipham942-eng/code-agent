@@ -12,6 +12,7 @@ import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
 import { createLogger } from '../services/infra/logger';
+import { captureWorkspacePatch } from '../services/checkpoint/taskPatchService';
 
 const execAsync = promisify(exec);
 const logger = createLogger('AgentWorktree');
@@ -169,7 +170,15 @@ export async function cleanupAgentWorktree(
       return { hasChanges: false, branchName };
     }
 
-    // Has changes — preserve worktree
+    // Has changes — capture a patch safety net, then preserve worktree for
+    // the parent to review/merge. The patch means the changes survive even if
+    // the worktree is later force-removed (orphan cleanup / crash).
+    // best-effort: capture failure never blocks cleanup.
+    try {
+      await captureWorkspacePatch(worktreePath, agentId, 'worktree-cleanup');
+    } catch (err) {
+      logger.warn(`[${agentId}] captureWorkspacePatch failed during cleanup:`, err);
+    }
     logger.info(`[${agentId}] Worktree preserved (has changes) at ${worktreePath}`);
     return { hasChanges: true, branchName, worktreePath };
   } catch (err) {
@@ -217,6 +226,17 @@ export async function cleanupOrphanedWorktrees(
     const entries = stdout.split('\n\n').filter(block => block.trim());
     const now = Date.now();
 
+    // `git worktree list` reports resolved real paths; on macOS the managed base
+    // dir (/tmp/...) resolves to /private/tmp/... So match against both the literal
+    // base dir and its realpath, otherwise orphan cleanup is a no-op on macOS.
+    const baseDirCandidates = [WORKTREE_BASE_DIR];
+    try {
+      const real = fs.realpathSync(WORKTREE_BASE_DIR);
+      if (real !== WORKTREE_BASE_DIR) baseDirCandidates.push(real);
+    } catch {
+      // base dir may not exist yet — literal prefix is enough
+    }
+
     for (const entry of entries) {
       const pathMatch = entry.match(/^worktree\s+(.+)$/m);
       const branchMatch = entry.match(/^branch\s+refs\/heads\/(.+)$/m);
@@ -226,7 +246,7 @@ export async function cleanupOrphanedWorktrees(
       const branchName = branchMatch?.[1];
 
       // 3. Only clean worktrees in our managed directory
-      if (!wtPath.startsWith(WORKTREE_BASE_DIR)) continue;
+      if (!baseDirCandidates.some(base => wtPath.startsWith(base))) continue;
 
       // 4. Check directory mtime
       try {
@@ -237,7 +257,19 @@ export async function cleanupOrphanedWorktrees(
         // Directory doesn't exist on disk — git still references it, force remove
       }
 
-      // 5. Remove the orphaned worktree
+      // 5. Capture a patch before force-removing, so any uncommitted work in a
+      //    stale/orphaned worktree isn't silently lost. best-effort; if the
+      //    worktree dir is already gone captureWorkspacePatch returns null.
+      const orphanAgentId = branchName?.startsWith('agent/')
+        ? branchName.slice('agent/'.length)
+        : path.basename(wtPath);
+      try {
+        await captureWorkspacePatch(wtPath, orphanAgentId, 'worktree-cleanup');
+      } catch (err) {
+        logger.warn(`[OrphanCleanup] captureWorkspacePatch failed for ${wtPath}:`, err);
+      }
+
+      // 6. Remove the orphaned worktree
       try {
         await execAsync(
           `git worktree remove --force '${wtPath}'`,

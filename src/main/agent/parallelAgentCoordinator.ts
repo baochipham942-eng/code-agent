@@ -92,6 +92,12 @@ export interface SharedContext {
   files: Map<string, string>;
   decisions: Map<string, string>;
   errors: string[];
+  /**
+   * 每个 finding/file/decision key 的最后更新时间戳（ms epoch）。
+   * 子代理读队友共享数据时据此判断新鲜度（isStale），避免基于陈旧 draft 决策
+   * （swarm 护栏 P1-2 #5）。
+   */
+  lastUpdated: Map<string, number>;
 }
 
 export type CoordinatorEventType =
@@ -140,6 +146,8 @@ interface ParallelCheckpoint {
     files: Record<string, string>;
     decisions: Record<string, string>;
     errors: string[];
+    /** key → 最后更新时间戳；老 checkpoint 可能没有，restore 时按缺省空对象处理 */
+    lastUpdated?: Record<string, number>;
   };
 }
 
@@ -189,6 +197,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       files: new Map(),
       decisions: new Map(),
       errors: [],
+      lastUpdated: new Map(),
     };
   }
 
@@ -510,7 +519,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
   /**
    * Update shared context from task result
    */
-  private updateSharedContext(result: AgentTaskResult): void {
+  private updateSharedContext(result: AgentTaskResult, at: number = Date.now()): void {
     // Extract findings from output (simple heuristic)
     const output = result.output.toLowerCase();
 
@@ -520,15 +529,18 @@ export class ParallelAgentCoordinator extends EventEmitter {
       for (const match of fileMatches) {
         const path = match.replace(/(?:file|path)[:\s]+/i, '').trim();
         this.sharedContext.files.set(path, result.role);
+        this.sharedContext.lastUpdated.set(path, at);
       }
     }
 
     // Look for key findings
     if (output.includes('found') || output.includes('discovered') || output.includes('issue')) {
+      const findingKey = `${result.role}_${result.taskId}`;
       this.sharedContext.findings.set(
-        `${result.role}_${result.taskId}`,
+        findingKey,
         result.output.substring(0, 500)
       );
+      this.sharedContext.lastUpdated.set(findingKey, at);
       this.emit('discovery', { taskId: result.taskId, finding: result.output.substring(0, 200) });
     }
 
@@ -592,10 +604,31 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
   /**
    * Share a finding with all agents
+   * @param at 版本戳（ms epoch），未传时取 Date.now()。云端同步 / 回放场景应显式传入
+   *           原始时间戳，保留真实新鲜度（与全局禁硬编码 Date.now() 的约定一致）。
    */
-  shareDiscovery(key: string, value: unknown): void {
+  shareDiscovery(key: string, value: unknown, at: number = Date.now()): void {
     this.sharedContext.findings.set(key, value);
+    this.sharedContext.lastUpdated.set(key, at);
     this.emit('discovery', { key, value });
+  }
+
+  /**
+   * 取某个 key 的最后更新时间戳（无记录返回 undefined）。
+   */
+  getLastUpdated(key: string): number | undefined {
+    return this.sharedContext.lastUpdated.get(key);
+  }
+
+  /**
+   * 判断某个共享 key 是否已过期（stale）。
+   * 无版本戳的 key 保守判为 stale —— 没有新鲜度信息时，宁可让子代理重新核实
+   * 而不是基于来历不明的 draft 决策（swarm 护栏 P1-2 #5）。
+   */
+  isStale(key: string, maxAgeMs: number, now: number = Date.now()): boolean {
+    const ts = this.sharedContext.lastUpdated.get(key);
+    if (ts === undefined) return true;
+    return now - ts > maxAgeMs;
   }
 
   /**
@@ -613,12 +646,14 @@ export class ParallelAgentCoordinator extends EventEmitter {
     files: Record<string, string>;
     decisions: Record<string, string>;
     errors: string[];
+    lastUpdated: Record<string, number>;
   } {
     return {
       findings: Object.fromEntries(this.sharedContext.findings),
       files: Object.fromEntries(this.sharedContext.files),
       decisions: Object.fromEntries(this.sharedContext.decisions),
       errors: [...this.sharedContext.errors],
+      lastUpdated: Object.fromEntries(this.sharedContext.lastUpdated),
     };
   }
 
@@ -630,6 +665,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
     files?: Record<string, string>;
     decisions?: Record<string, string>;
     errors?: string[];
+    lastUpdated?: Record<string, number>;
   }): void {
     if (data.findings) {
       for (const [k, v] of Object.entries(data.findings)) {
@@ -649,6 +685,12 @@ export class ParallelAgentCoordinator extends EventEmitter {
     if (data.errors) {
       this.sharedContext.errors.push(...data.errors);
     }
+    // 保留原始版本戳（回放 / 跨会话恢复时维持真实新鲜度，不重新 stamp）
+    if (data.lastUpdated) {
+      for (const [k, ts] of Object.entries(data.lastUpdated)) {
+        this.sharedContext.lastUpdated.set(k, ts);
+      }
+    }
   }
 
   /**
@@ -660,6 +702,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       files: new Map(),
       decisions: new Map(),
       errors: [],
+      lastUpdated: new Map(),
     };
   }
 
@@ -707,6 +750,15 @@ export class ParallelAgentCoordinator extends EventEmitter {
     const messages = [...queue];
     queue.length = 0;
     return messages;
+  }
+
+  /**
+   * 非破坏性查看某 task 的待办消息（swarm 护栏 P1-2 #4 桥接用）。
+   * 返回队列副本——不消费，drainMessages 仍能取到。
+   */
+  peekMessages(taskId: string): AgentMessage[] {
+    const queue = this.messageQueues.get(taskId);
+    return queue ? [...queue] : [];
   }
 
   private isCancellationError(errorMessage?: string): boolean {

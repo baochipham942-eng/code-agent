@@ -33,7 +33,14 @@ export type CancellationReason =
   | 'child-error' // 单个 child 抛错（兄弟不受影响，**不**触发 cascade）
   | 'timeout' // 执行时长超过 maxExecutionTimeMs（沿用 shutdownProtocol 现有语义）
   | 'idle-timeout' // N 分钟无 stream/progress（场景 D 新增）
-  | 'budget-exceeded'; // 超 budget 兜底（沿用现有）
+  | 'budget-exceeded' // 超 budget 兜底（沿用现有）
+  // ── swarm 护栏 P1-2 #1：把笼统的 child-error 细分成可路由的结构化失败码 ──
+  // 三者都属 NON_CASCADE（单 agent 问题，不连坐兄弟）。
+  | 'depth-limit' // spawn 嵌套深度超过 maxDepth（确定性，重试无意义）
+  | 'child-refusal' // 子代理被拒绝执行（如 readonly 父 role 拒启 writer 子）
+  | 'child-max-tokens' // 子代理触顶自身 token/预算（已产出部分工作，可降级续跑）
+  // ── swarm 护栏 P1-2 #5：孤儿回收 ──
+  | 'parent-gone'; // 后台 detached 子代理探活发现父 run 已结束/被新 run 取代 → 自我中止
 
 /**
  * Cascade reasons — 这些 reason 应向下传播到所有 child / subagent。
@@ -58,6 +65,12 @@ export const NON_CASCADE_REASONS: readonly CancellationReason[] = [
   'timeout',
   'idle-timeout',
   'budget-exceeded',
+  // swarm 护栏 P1-2 #1：细粒度 child 失败码同样只影响当前 agent，绝不连坐兄弟
+  'depth-limit',
+  'child-refusal',
+  'child-max-tokens',
+  // swarm 护栏 P1-2 #5：孤儿自我中止只影响自己（兄弟也是孤儿，各自独立探活）
+  'parent-gone',
 ] as const;
 
 /**
@@ -92,4 +105,45 @@ export function normalizeCancellationReason(
   fallback: CancellationReason = 'user-cancel',
 ): CancellationReason {
   return isKnownCancellationReason(reason) ? reason : fallback;
+}
+
+// ============================================================================
+// 按码分治 —— 失败码消费策略（swarm 护栏 P1-2 #1）
+// ============================================================================
+//
+// 编排层（spawnAgent 返回给主 loop / agentBridge / coordinator）拿到失败码后，
+// 不再 parse error 字符串猜路由，而是查这张表决定怎么处理：
+//
+//   - 'retry'   瞬时故障，可原样重试（timeout / idle-timeout / child-error）
+//   - 'throw'   确定性 / 终态失败，重试无意义，直接终止（depth-limit / budget /
+//               用户或父级主动取消）
+//   - 'surface' 上抛给编排层决策，不自动重试（child-refusal / 未知码——保守默认）
+//   - 'degrade' 子代理已产出部分工作，可降级 / 截断续跑（child-max-tokens）
+// ============================================================================
+
+/** 失败码的消费策略。 */
+export type FailureRouting = 'retry' | 'throw' | 'surface' | 'degrade';
+
+/**
+ * 把失败码映射到消费策略。未知 / undefined 落到 'surface'（不静默重试，交编排层决策）。
+ */
+export function routeFailureCode(reason: unknown): FailureRouting {
+  switch (reason) {
+    case 'depth-limit':
+    case 'budget-exceeded':
+    case 'user-cancel':
+    case 'session-switch':
+    case 'parent-cancel':
+    case 'parent-gone':
+      return 'throw';
+    case 'child-max-tokens':
+      return 'degrade';
+    case 'timeout':
+    case 'idle-timeout':
+    case 'child-error':
+      return 'retry';
+    case 'child-refusal':
+    default:
+      return 'surface';
+  }
 }

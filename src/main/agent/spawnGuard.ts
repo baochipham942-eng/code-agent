@@ -12,6 +12,7 @@ import { writeFile, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { createLogger } from '../services/infra/logger';
+import { SPAWN_GUARD } from '../../shared/constants/agent';
 import type { SubagentResult } from './subagentExecutorTypes';
 
 const logger = createLogger('SpawnGuard');
@@ -106,8 +107,8 @@ interface PersistedSpawnGuardState {
 // SpawnGuard
 // ============================================================================
 
-const DEFAULT_MAX_AGENTS = 6;
-const DEFAULT_MAX_DEPTH = 1;
+const DEFAULT_MAX_AGENTS = SPAWN_GUARD.MAX_AGENTS;
+const DEFAULT_MAX_DEPTH = SPAWN_GUARD.MAX_DEPTH;
 
 export type OnAgentCompleteCallback = (agent: ManagedAgent) => void;
 
@@ -363,6 +364,15 @@ class SpawnGuard {
     payload: Record<string, unknown>
   ): boolean {
     return this.sendMessage(id, createAgentMessage(type, from, payload));
+  }
+
+  /**
+   * 非破坏性查看某 agent 的待办消息（swarm 护栏 P1-2 #4 桥接用）。
+   * 返回队列副本——不消费，drainMessages 仍能取到，便于统一 inbox 门面只读聚合。
+   */
+  peekMessages(id: string): AgentMessage[] {
+    const agent = this.agents.get(id);
+    return agent ? [...agent.messageQueue] : [];
   }
 
   /**

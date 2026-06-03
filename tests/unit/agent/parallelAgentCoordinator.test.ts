@@ -468,6 +468,49 @@ describe('ParallelAgentCoordinator', () => {
   });
 
   // ==========================================================================
+  // Draft 新鲜度（swarm 护栏 P1-2 #5）—— 版本戳 + isStale
+  // ==========================================================================
+
+  describe('Draft 新鲜度', () => {
+    it('shareDiscovery 写入版本戳（lastUpdated）', () => {
+      coordinator.shareDiscovery('k', 'v', 1000);
+      const ctx = coordinator.getSharedContext();
+      expect(ctx.lastUpdated.get('k')).toBe(1000);
+      expect(coordinator.getLastUpdated('k')).toBe(1000);
+    });
+
+    it('isStale：新鲜数据返回 false，超龄数据返回 true', () => {
+      coordinator.shareDiscovery('k', 'v', 1000);
+      // now=1500，maxAge=1000 → 龄 500ms，未超
+      expect(coordinator.isStale('k', 1000, 1500)).toBe(false);
+      // now=2500，maxAge=1000 → 龄 1500ms，超龄
+      expect(coordinator.isStale('k', 1000, 2500)).toBe(true);
+    });
+
+    it('isStale：无版本戳的 key 保守判为 stale（无新鲜度信息）', () => {
+      expect(coordinator.isStale('never-written', 1000, 9999)).toBe(true);
+    });
+
+    it('clearSharedContext 同时清空版本戳', () => {
+      coordinator.shareDiscovery('k', 'v', 1000);
+      coordinator.clearSharedContext();
+      expect(coordinator.getSharedContext().lastUpdated.size).toBe(0);
+      expect(coordinator.getLastUpdated('k')).toBeUndefined();
+    });
+
+    it('export/import 往返保留版本戳', () => {
+      coordinator.shareDiscovery('k', 'v', 1234);
+      const exported = coordinator.exportSharedContext();
+      expect(exported.lastUpdated).toEqual({ k: 1234 });
+
+      const fresh = new ParallelAgentCoordinator();
+      fresh.importSharedContext(exported);
+      expect(fresh.getLastUpdated('k')).toBe(1234);
+      expect(fresh.isStale('k', 1000, 1500)).toBe(false);
+    });
+  });
+
+  // ==========================================================================
   // 事件发射
   // ==========================================================================
 

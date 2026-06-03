@@ -14,7 +14,7 @@
 // ============================================================================
 
 import { createLogger } from '../infra/logger';
-import { ROLE_PROACTIVITY } from '../../../shared/constants';
+import { ROLE_PROACTIVITY, SWARM_GOAL } from '../../../shared/constants';
 import type {
   RoleProactivityConfig,
   RoleProactivityLevel,
@@ -102,7 +102,12 @@ function buildWakePrompt(trigger: RoleWakeTrigger, extraContext?: string): strin
     '1. 读你的工作履历（上面角色资产注入块里），找出你经手过的产物',
     '2. 逐个检查这些产物的现状（文件还在吗、内容有没有需要跟进的）',
     '3. 四选一决策并执行：',
-    '   - 【推进 advance】产物有明确的下一步且你能独立完成 → 直接做，做完汇报',
+    '   - 【推进 advance】产物有明确的下一步：',
+    '       · 一步就能做完 → 直接做，做完汇报',
+    '       · 需要多步推进（修复+验证、重构+测试等）→ 不要自己零散地做，改为给出一个目标提案，',
+    '         系统会为它发起一个带完成判定的正式 goal run（干完必须过验证闸才算数）：',
+    '           <goal>用一句话写清要达成什么</goal>',
+    '           <verify>验收用的 shell 命令，退出码 0 即达成（能写就写，写不出可省略）</verify>',
     '   - 【汇报 report】发现了值得用户知道的变化/问题 → 写简报',
     '   - 【建议 suggest】有改进想法但需要用户拍板 → 列出建议',
     '   - 【沉默 silence】检查完没有值得说的 → 直接结束（沉默是合法结果，不要为了显得有用而硬找话说）',
@@ -123,6 +128,26 @@ export function parseWakeDecision(finalOutput: string): RoleWakeDecision {
     return match[1].toLowerCase() as RoleWakeDecision;
   }
   return ROLE_PROACTIVITY.FALLBACK_DECISION as RoleWakeDecision;
+}
+
+/** advance 多步推进时模型给出的 goal 提案（docs/designs/swarm-goal.md §3.2） */
+export interface AdvanceGoalProposal {
+  goal: string;
+  /** 可选的闸1 验证命令；缺省时把 goal 文本作为闸2 软评审条件 */
+  verify?: string;
+}
+
+/**
+ * 从 advance 醒来产出解析 goal 提案。
+ * 有 <goal> 标记 → 返回提案（含可选 <verify>）；无 → 返回 null（按普通 advance 处理，不发起 goal run）。
+ */
+export function parseAdvanceGoalProposal(finalOutput: string): AdvanceGoalProposal | null {
+  const goalMatch = finalOutput.match(SWARM_GOAL.GOAL_TAG_PATTERN);
+  const goal = goalMatch?.[1]?.trim();
+  if (!goal) return null;
+  const verifyMatch = finalOutput.match(SWARM_GOAL.VERIFY_TAG_PATTERN);
+  const verify = verifyMatch?.[1]?.trim();
+  return verify ? { goal, verify } : { goal };
 }
 
 // ----------------------------------------------------------------------------
@@ -276,18 +301,36 @@ export async function wakeRole(
   // ---- 步骤 5：读最终产出，解析四选一决策 ----
   // 两条路径都把消息持久化进会话（orchestrator persistMessage / CLI persistAgentLoopMessageToSession），
   // 统一从会话读最后一条 assistant 消息。
-  let finalOutput = '';
-  {
-    const sessionWithMessages = await sessionManager.getSession(session.id);
-    const assistantMessages = (sessionWithMessages?.messages ?? []).filter((m) => m.role === 'assistant' && m.content);
-    finalOutput = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1].content : '';
-  }
+  const sessionWithMessages = await sessionManager.getSession(session.id);
+  const assistantMessages = (sessionWithMessages?.messages ?? []).filter((m) => m.role === 'assistant' && m.content);
+  const finalOutput = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1].content : '';
 
   const decision = parseWakeDecision(finalOutput);
-  const summary = finalOutput
+  let summary = finalOutput
     .replace(ROLE_PROACTIVITY.DECISION_TAG_PATTERN, '')
     .trim()
     .slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+
+  // ---- 步骤 5.5：advance 合流（P4）——多步推进升级为带完成判定的 goal run ----
+  // 醒来实例是侦察兵（便宜，判断要不要推进/推进什么）；goal run 是执行者（带闸，干完过验证）。
+  // 仅当 advance 且模型给出 <goal> 提案时升级；提案缺省 → 按普通 advance（侦察兵已自己做完）处理。
+  let advanceGoalStatus: 'met' | 'aborted' | undefined;
+  if (decision === 'advance') {
+    const proposal = parseAdvanceGoalProposal(finalOutput);
+    if (proposal) {
+      logger.info('Advance → goal run', { roleId, goal: proposal.goal, hasVerify: !!proposal.verify });
+      advanceGoalStatus = await launchAdvanceGoalRun({
+        sessionId: session.id,
+        roleId,
+        proposal,
+        contextBlock: instantiation.contextBlock,
+        workspacePath,
+        orchestrator: tm.getOrCreateCurrentOrchestrator(session.id),
+        taskManager: tm,
+      });
+      summary = `[goal:${advanceGoalStatus}] ${proposal.goal}`.slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+    }
+  }
 
   // ---- 步骤 6：沉默处理（归档会话，不打扰用户）----
   if (decision === 'silence') {
@@ -328,7 +371,7 @@ export async function wakeRole(
     (err) => logger.warn('RoleWake hook failed', { roleId, error: String(err) }),
   );
 
-  return { roleId, trigger, status: 'completed', decision, sessionId: session.id, summary };
+  return { roleId, trigger, status: 'completed', decision, sessionId: session.id, summary, advanceGoalStatus };
 }
 
 // ----------------------------------------------------------------------------
@@ -522,6 +565,121 @@ async function runWakeViaCliLoop(params: {
 
   const agentLoop = createAgentLoop(config, () => { /* 醒来是后台运行，无 UI 事件消费方 */ }, [], params.sessionId);
   await agentLoop.run(params.wakePrompt);
+}
+
+// ----------------------------------------------------------------------------
+// advance → goal run（P4 合流，docs/designs/swarm-goal.md §3.2）
+// ----------------------------------------------------------------------------
+
+/** advance goal run 的初始 prompt（goal 本体经 goalContract 注入，这里只下达任务指令） */
+function buildAdvanceGoalPrompt(proposal: AdvanceGoalProposal): string {
+  return [
+    `你之前巡检产物时判定需要多步推进，现进入 goal 模式正式执行这个目标：`,
+    proposal.goal,
+    '',
+    '系统会在你申请完成时独立验证，过不了会要求你继续。请一步步推进直到目标真正达成。',
+  ].join('\n');
+}
+
+/**
+ * 从已持久化的会话事件里读 goal 终态（Electron orchestrator 路径用——事件经
+ * sessionEventService 落库，run 结束后查最后一条 goal_complete）。读不到保守按 aborted。
+ */
+async function readGoalTerminalFromEvents(sessionId: string): Promise<'met' | 'aborted'> {
+  try {
+    const { getSessionEventService } = await import('../../evaluation/sessionEventService');
+    const events = getSessionEventService().getEventsByType(sessionId, 'goal_complete');
+    const last = events[events.length - 1];
+    const data = last?.eventData as { status?: string } | undefined;
+    return data?.status === 'met' ? 'met' : 'aborted';
+  } catch {
+    return 'aborted';
+  }
+}
+
+/**
+ * 发起单 agent goal run（allowSwarm=false，无人值守不扇出；预算用 ADVANCE_GOAL_* 常量）。
+ * 双路径（与醒来实例同构）：
+ *   - Electron orchestrator：sendMessage 带 goal 选项 → 终态从落库事件读
+ *   - headless CLI loop：config.goalContract + onEvent 捕获 goal_complete.status
+ * 防递归：goal run 跑在醒来会话内（origin=role-cadence），其 runFinalizer 的 event 醒来被会话 origin 守卫跳过。
+ */
+async function launchAdvanceGoalRun(params: {
+  sessionId: string;
+  roleId: string;
+  proposal: AdvanceGoalProposal;
+  contextBlock: string | null;
+  workspacePath?: string;
+  orchestrator?: import('../../agent/agentOrchestrator').AgentOrchestrator;
+  taskManager: import('../../task').TaskManager;
+}): Promise<'met' | 'aborted'> {
+  const goalPrompt = buildAdvanceGoalPrompt(params.proposal);
+  // 无 verify → 把 goal 文本作为闸2 软评审条件，保证契约有完成判据（buildGoalContract 要求二选一）
+  const goalInput = {
+    goal: params.proposal.goal,
+    verify: params.proposal.verify,
+    review: params.proposal.verify ? undefined : params.proposal.goal,
+    budget: SWARM_GOAL.ADVANCE_GOAL_TOKEN_BUDGET,
+    maxTurns: SWARM_GOAL.ADVANCE_GOAL_MAX_TURNS,
+    allowSwarm: false,
+  };
+
+  if (params.orchestrator) {
+    if (params.workspacePath) params.taskManager.setWorkingDirectory(params.sessionId, params.workspacePath);
+    try {
+      await params.orchestrator.sendMessage(goalPrompt, undefined, {
+        mode: 'normal',
+        agentOverrideId: params.roleId,
+        turnSystemContext: params.contextBlock ? [params.contextBlock] : undefined,
+        goal: goalInput,
+      });
+    } finally {
+      params.taskManager.cleanup(params.sessionId);
+    }
+    return await readGoalTerminalFromEvents(params.sessionId);
+  }
+
+  // headless：CLI loop + goalContract，onEvent 捕获终态
+  const { createCLIAgent } = await import('../../../cli/adapter');
+  const { createAgentLoop } = await import('../../../cli/bootstrap');
+  const { buildGoalContract } = await import('../../agent/goalModeController');
+
+  const agent = await createCLIAgent({
+    ...(params.workspacePath ? { project: params.workspacePath } : {}),
+    json: true,
+  });
+  const config = agent.getConfig();
+
+  let rolePrompt = '';
+  try {
+    const { resolveAgent } = await import('../../agent/agentRegistry');
+    rolePrompt = resolveAgent(params.roleId)?.prompt ?? '';
+  } catch { /* registry 不可用 → 只用记忆注入块 */ }
+
+  config.systemPrompt = [rolePrompt, params.contextBlock ?? ''].filter((s) => s.trim().length > 0).join('\n\n');
+  config.goalContract = buildGoalContract({
+    goal: goalInput.goal,
+    verifyCommand: goalInput.verify,
+    reviewCondition: goalInput.review,
+    tokenBudget: goalInput.budget,
+    maxTurns: goalInput.maxTurns,
+    allowSwarm: false,
+  });
+
+  let terminal: 'met' | 'aborted' = 'aborted';
+  const agentLoop = createAgentLoop(
+    config,
+    (event) => {
+      if (event.type === 'goal_complete') {
+        const status = (event.data as { status?: string } | undefined)?.status;
+        terminal = status === 'met' ? 'met' : 'aborted';
+      }
+    },
+    [],
+    params.sessionId,
+  );
+  await agentLoop.run(goalPrompt);
+  return terminal;
 }
 
 /** realtime 档桌面通知（headless / webServer 环境无 electron 时静默跳过） */

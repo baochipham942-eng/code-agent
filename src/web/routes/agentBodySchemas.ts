@@ -23,6 +23,7 @@ export const GoalBodySchema = z.object({
   review: z.string().min(1).optional(),
   budget: z.number().positive().optional(),
   maxTurns: z.number().int().positive().optional(),
+  allowSwarm: z.boolean().optional(),
 }).refine((g) => !!g.verify || !!g.review, {
   message: 'goal 至少需要 verify 或 review 之一（否则无完成判据，永远无法达成）',
 });

@@ -422,8 +422,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           reviewCondition: body.goal.review,
           tokenBudget: body.goal.budget,
           maxTurns: body.goal.maxTurns,
+          allowSwarm: body.goal.allowSwarm,
         });
-        logger.info('[AgentRouter] Goal mode activated', { verify: body.goal.verify, review: body.goal.review, sessionId });
+        logger.info('[AgentRouter] Goal mode activated', { verify: body.goal.verify, review: body.goal.review, allowSwarm: body.goal.allowSwarm, sessionId });
       }
 
       const runModelConfig = {

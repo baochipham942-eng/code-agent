@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { ParsedSkill } from '../../../shared/contract/agentSkill';
+import type { SkillCategory } from '../../../shared/contract/skillRepository';
 
 /**
  * 内置 Skill 定义列表
@@ -1205,6 +1206,47 @@ end tell
     loaded: true,
   },
 ];
+
+// ----------------------------------------------------------------------------
+// 内置 Skill 产物分类（P2-2：与技能包/角色共用 7 类 SkillCategory）
+// ----------------------------------------------------------------------------
+//
+// 单一真理源：分类写在这里（skill 自带分类），renderer 的"已安装"页据此把内置组
+// 二次分组成产物分类。与 skillCatalog.ts 的 RECOMMENDED_SKILLS（安装推荐层）解耦——
+// 这里覆盖全部 17 个内置 skill（含未进推荐目录的 dev 类 commit/review/test/...）。
+// 新增内置 skill 时在此补一行；缺映射的 skill 前端归入"其他"。
+const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
+  // 开发工程
+  commit: 'development',
+  review: 'development',
+  test: 'development',
+  explain: 'development',
+  refactor: 'development',
+  docker: 'development',
+  // 数据分析
+  'data-cleaning': 'data-analysis',
+  'data-analysis-helper': 'data-analysis',
+  // 文档办公
+  xlsx: 'docs-office',
+  'meeting-summary': 'docs-office',
+  // 研究调研
+  'literature-review': 'research',
+  'paper-distillation': 'research',
+  'research-monitor': 'research',
+  // 效率自动化
+  'computer-housekeeper': 'automation',
+  'contract-review': 'automation',
+  'image-ocr-search': 'automation',
+  'photo-archive': 'automation',
+};
+
+// 一次性把分类回填到 metadata.category（idempotent；所有 getter 共享同一引用）
+for (const skill of BUILTIN_SKILLS) {
+  const category = BUILTIN_SKILL_CATEGORY[skill.name];
+  if (category) {
+    skill.metadata = { ...skill.metadata, category };
+  }
+}
 
 /**
  * 获取所有内置 Skills

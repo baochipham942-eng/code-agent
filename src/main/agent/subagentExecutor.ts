@@ -69,6 +69,7 @@ import {
   shouldUseE2ELocalSubagentExecutor,
 } from './subagentE2ELocalExecutor';
 import { buildSubagentSkillsBlock } from '../services/skills/subagentSkillInjection';
+import { buildRoleContextBlock, runRoleWriteBack } from '../services/roleAssets';
 import { resolveModelDecision } from '../model/modelDecision';
 import type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
 
@@ -161,6 +162,8 @@ export class SubagentExecutor {
       ? Math.max(0, Math.floor(config.maxToolCalls))
       : undefined;
     const toolsUsed: string[] = [];
+    // 持久化角色履历用：收集实例产出的产物（设计 §4.3 履历 = 产物清单）
+    const instanceArtifacts: Array<{ label: string; ref?: string }> = [];
     let toolCallsAttempted = 0;
     let iterations = 0;
     let finalOutput = '';
@@ -197,6 +200,24 @@ export class SubagentExecutor {
         effectiveSystemPrompt = `${config.systemPrompt}\n\n${block}`;
       }
       logger.info(`[${config.name}] skills preloaded into system prompt`, { loaded, missing });
+    }
+
+    // 持久化角色资产注入（设计 docs/designs/persistent-role-assets.md §5 步骤 1）：
+    // roles/<roleId>/ 目录存在 → 注入角色记忆索引 + 项目记忆索引 + 最近履历。
+    // 非持久角色返回 null，行为与此功能上线前完全一致。失败不阻塞 spawn。
+    if (config.roleId) {
+      try {
+        const roleBlock = await buildRoleContextBlock(
+          config.roleId,
+          context.toolContext.workingDirectory,
+        );
+        if (roleBlock) {
+          effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${roleBlock}`;
+          logger.info(`[${config.name}] role assets injected`, { roleId: config.roleId });
+        }
+      } catch (err) {
+        logger.warn(`[${config.name}] role assets injection failed (non-blocking)`, err);
+      }
     }
 
     // Create pipeline context
@@ -865,6 +886,8 @@ export class SubagentExecutor {
                 {
                   sessionId: (context.toolContext as { sessionId?: string }).sessionId,
                   agentId: pipelineContext.agentId,
+                  // 持久化角色 ID → 透传给工具层（MemoryWrite/Read scope='role' 路由用）
+                  agentRole: config.roleId,
                   hookManager: context.hookManager,
                   abortSignal: context.abortSignal,
                   currentToolCallId: toolCall.id,
@@ -878,6 +901,16 @@ export class SubagentExecutor {
               toolResults.push(
                 `Tool ${toolCall.name}: ${result.success ? 'Success' : 'Failed'}\n${result.output || result.error || ''}`
               );
+              // 持久化角色履历：从工具结果里收集产物引用
+              if (config.roleId && result.success && result.metadata && typeof result.metadata === 'object') {
+                const artifact = (result.metadata as { artifact?: { name?: string; path?: string; id?: string } }).artifact;
+                if (artifact && (artifact.name || artifact.path)) {
+                  instanceArtifacts.push({
+                    label: artifact.name || artifact.path || toolCall.name,
+                    ref: artifact.id ? `artifact://${artifact.id}` : artifact.path,
+                  });
+                }
+              }
               telemetryToolCalls.push({
                 toolCallId: toolCall.id,
                 name: toolCall.name,
@@ -1033,6 +1066,19 @@ export class SubagentExecutor {
         ).catch(() => {});
       }
 
+      // 持久化角色写回（设计 §5 步骤 3，fire-and-forget）：
+      // 实例正常结束 → quick model 判断值得记的知识 → write gate → 落盘 + 履历。
+      // 非持久角色在 runRoleWriteBack 内部零成本跳过；失败只记日志，绝不影响实例返回。
+      if (config.roleId && finalOutput) {
+        runRoleWriteBack({
+          roleId: config.roleId,
+          workspacePath: context.toolContext.workingDirectory,
+          taskPrompt: prompt,
+          finalOutput,
+          artifacts: instanceArtifacts,
+        }).catch(silence(logger, 'runRoleWriteBack', 'warn'));
+      }
+
       return {
         success: true,
         output: finalOutput || 'Subagent completed without output',
@@ -1085,6 +1131,8 @@ export class SubagentExecutor {
     // Convert AgentDefinition to SubagentConfig using helper functions
     const config: SubagentConfig = {
       name: agentDef.name,
+      // 持久化角色资产绑定 key（agent 注册 id）
+      roleId: agentDef.id,
       systemPrompt: getAgentPrompt(agentDef),
       availableTools: getAgentTools(agentDef),
       // GAP-011：agent 定义里的预装 skills（方向 A）

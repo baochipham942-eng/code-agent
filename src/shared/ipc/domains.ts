@@ -42,6 +42,7 @@ export const IPC_DOMAINS = {
   PROMPT: 'domain:prompt', // 提示词管理（查看 + override）
   HOOK: 'domain:hook', // Hook 管理（列出已启用/未启用 + 打开配置）
   AGENT_REGISTRY: 'domain:agents', // 自定义 Agent 注册中心（builtin + user + project）
+  ROLES: 'domain:roles', // 持久化角色资产（角色面板：列表/详情/记忆删改）
   AGENT_ENGINE: 'domain:agentEngine', // Native / Codex CLI / Claude Code execution engines
   CAPABILITY: 'domain:capability', // Skill / MCP / Tool / Channel 能力中心
   PII: 'domain:pii', // 本地 PII 防线（GLiNER 一键启用，B3 推荐组合）

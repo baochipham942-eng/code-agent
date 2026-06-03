@@ -507,6 +507,21 @@ async function initializeServices(): Promise<void> {
     logger.warn('Failed to bind contextHealthService window:', (error as Error).message);
   }
 
+  // 6. 预设角色安装 + Agent Registry 初始化。
+  // Registry 此前只在 Electron main 路径（initBackgroundServices.ts）初始化，而所有发行版
+  // 实际跑的是本文件的 Tauri+webServer 路径 —— 自定义 agent（~/.code-agent/agents/*.md）
+  // 在发行版里从未被加载，spawn_agent 只能用 builtin 角色。持久化角色资产依赖自定义 agent
+  // 解析，这里补上（与 fleet telemetry 同类的 web/main 路径分离修复）。
+  try {
+    const { installBuiltinRoles } = await import('../main/services/roleAssets');
+    await installBuiltinRoles();
+    const { initAgentRegistry } = await import('../main/agent/agentRegistry');
+    await initAgentRegistry(undefined);
+    logger.info('Agent registry initialized (user-level agents + builtin roles)');
+  } catch (error) {
+    logger.warn('Agent registry init failed (non-blocking):', (error as Error).message);
+  }
+
   logger.info('Backend services initialized');
 }
 

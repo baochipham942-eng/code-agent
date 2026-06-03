@@ -23,27 +23,42 @@ import type {
 import { getMemoryDir } from '../../../lightMemory/indexLoader';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { guardSensitiveTextAsync } from '../../../security/sensitiveDataGuard';
+import { getRoleMemoriesDir, getProjectMemoriesDir } from '../../../services/roleAssets/roleAssetPaths';
 
-const schema: ToolSchema = {
-  name: 'MemoryRead',
-  description:
-    'Read a memory detail file from the persistent file-based memory system. ' +
-    'Use after checking INDEX.md (injected in system prompt) to load specific memories relevant to the current task.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      filename: {
-        type: 'string',
-        description: 'Memory filename to read (e.g., "user_role.md"). Must end with .md.',
-      },
-    },
-    required: ['filename'],
-  },
-  category: 'fs',
-  permissionLevel: 'read',
-  readOnly: true,
-  allowInPlanMode: true,
-};
+// Schema lives in memoryRead.schema.ts (P0-7 single source of truth)
+import { memoryReadSchema } from './memoryRead.schema';
+const schema: ToolSchema = memoryReadSchema;
+
+/**
+ * 按 scope 解析记忆目录（持久化角色资产三层记忆，设计 §3）：
+ * - global（默认）：~/.code-agent/memory/（现有 Light Memory）
+ * - role：roles/<roleId>/memories/，roleId 来自 ctx.subagent.agentRole
+ * - project：projects/<hash>/memory/memories/，key 来自 ctx.workingDir
+ * 返回 null 表示该 scope 在当前上下文不可用（如非持久角色请求 role scope）。
+ */
+function resolveScopedMemoryDir(scope: string | undefined, ctx: ToolContext): { dir: string } | { error: string } {
+  if (!scope || scope === 'global') {
+    return { dir: getMemoryDir() };
+  }
+  if (scope === 'role') {
+    const roleId = ctx.subagent?.agentRole;
+    if (!roleId) {
+      return { error: 'scope "role" is only available when running as a persistent role agent' };
+    }
+    try {
+      return { dir: getRoleMemoriesDir(roleId) };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+  if (scope === 'project') {
+    if (!ctx.workingDir) {
+      return { error: 'scope "project" requires a working directory' };
+    }
+    return { dir: getProjectMemoriesDir(ctx.workingDir) };
+  }
+  return { error: `Unknown scope: "${scope}". Use "global", "role" or "project".` };
+}
 
 class MemoryReadHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
@@ -80,7 +95,13 @@ class MemoryReadHandler implements ToolHandler<Record<string, unknown>, string> 
 
     onProgress?.({ stage: 'starting', detail: `read ${sanitized}` });
 
-    const filePath = path.join(getMemoryDir(), sanitized);
+    // scope 路由（global / role / project 三层记忆）
+    const scope = args.scope as string | undefined;
+    const resolved = resolveScopedMemoryDir(scope, ctx);
+    if ('error' in resolved) {
+      return { ok: false, error: resolved.error, code: 'INVALID_ARGS' };
+    }
+    const filePath = path.join(resolved.dir, sanitized);
 
     try {
       const content = await fs.readFile(filePath, 'utf-8');
@@ -96,7 +117,8 @@ class MemoryReadHandler implements ToolHandler<Record<string, unknown>, string> 
         mimeType: 'text/markdown',
         metadata: {
           filename: sanitized,
-          memoryDir: getMemoryDir(),
+          memoryDir: resolved.dir,
+          scope: scope || 'global',
           bytes: Buffer.byteLength(content, 'utf8'),
         },
       });
@@ -106,6 +128,7 @@ class MemoryReadHandler implements ToolHandler<Record<string, unknown>, string> 
         meta: {
           filename: sanitized,
           path: filePath,
+          scope: scope || 'global',
           bytes: Buffer.byteLength(content, 'utf8'),
           artifact,
         },

@@ -415,6 +415,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
         task.task,
         {
           name: task.role,
+          // 持久化角色资产绑定 key（并行路径下 role 即 agent 注册 id）
+          roleId: task.role,
           systemPrompt: enhancedPrompt,
           availableTools: task.tools,
           maxIterations: task.maxIterations || 20,

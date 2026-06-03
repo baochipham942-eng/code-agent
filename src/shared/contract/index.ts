@@ -48,6 +48,9 @@ export * from './builtInAgents';
 // Agent Registry (custom .md agents — builtin + user + project)
 export * from './agentRegistry';
 
+// Role Assets (持久化角色资产 — 角色面板)
+export * from './roleAssets';
+
 // Workflow types
 export * from './workflow';
 

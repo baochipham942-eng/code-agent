@@ -640,7 +640,10 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
   }
 
   // Initialize Agent Registry (custom agents from .code-agent/agents/*.md)
+  // 预设角色（研究员/数据分析师）先安装再扫描，registry 才能解析到它们的 agent 定义
   try {
+    const { installBuiltinRoles } = await import('../services/roleAssets');
+    await installBuiltinRoles();
     const workingDir = getDesktopBootstrapWorkingDirectory(configService);
     await initAgentRegistry(workingDir);
     logger.info('Agent registry initialized');

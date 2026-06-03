@@ -334,6 +334,9 @@ export async function executeSpawnAgent(
 
       const executorConfig = {
         name: agentName,
+        // 持久化角色资产绑定 key（roles/<roleId>/）。declarative 模式下 role 即 agent 注册 id；
+        // dynamic 模式没有 role，不参与角色资产链路。
+        roleId: role || undefined,
         systemPrompt,
         availableTools: tools,
         // GAP-011：声明式 agent 定义里的预装 skills 透传给 executor（方向 A）

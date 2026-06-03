@@ -72,9 +72,6 @@ import {
 } from '../../agent/messageHandling/contextBuilder';
 import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../../prompts/builder';
 import { detectTaskFeatures } from '../../prompts/systemReminders';
-import { AntiPatternDetector } from '../../agent/antiPattern/detector';
-import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
-import { GoalTracker } from '../../agent/goalTracker';
 import { getSessionRecoveryService } from '../../agent/sessionRecovery';
 import { getIncompleteTasks } from '../../services/planning/taskStore';
 import {
@@ -110,6 +107,7 @@ import type { RunFinalizer, RunTerminalInfo } from './runFinalizer';
 import type { LearningPipeline } from './learningPipeline';
 import { MessageProcessor } from './messageProcessor';
 import { StreamHandler } from './streamHandler';
+import { goalTokensUsedWithSwarm, maybeInjectSwarmGuidance } from './swarmGoalIntegration';
 import {
   buildSkillInvocationContext,
   resolveSkillInvocation,
@@ -469,7 +467,9 @@ export class ConversationRuntime {
             );
             this.ctx.goalMode.recordTurnProgress(madeProgress);
           }
+          // 主 agent 消耗；swarm 消耗在 evaluateFallback 内部统一加总，观测事件用加总值展示
           const tokensUsed = this.ctx.totalInputTokens + this.ctx.totalOutputTokens;
+          const tokensUsedWithSwarm = goalTokensUsedWithSwarm(this.ctx);
           // 观测事件：每轮 goal 进度态（UI 用）
           this.ctx.onEvent({
             type: 'goal_iteration',
@@ -477,7 +477,7 @@ export class ConversationRuntime {
               turn: iterations,
               maxTurns: this.ctx.goalMode.getMaxTurns(),
               goalStatus: this.ctx.goalMode.getStatus(),
-              tokensUsed,
+              tokensUsed: tokensUsedWithSwarm,
               tokenBudget: this.ctx.goalMode.getTokenBudget(),
             },
           });
@@ -488,11 +488,14 @@ export class ConversationRuntime {
             // 终态事件：闸3 兜底中止（UI 展示"目标已中止"+停表）
             this.ctx.onEvent({
               type: 'goal_complete',
-              data: { status: 'aborted', reason, turns: iterations, tokensUsed },
+              data: { status: 'aborted', reason, turns: iterations, tokensUsed: tokensUsedWithSwarm },
             });
             terminal = { status: 'aborted' };
             break;
           }
+
+          // Swarm goal（P4）：allowSwarm 时首轮注入一次编排引导
+          maybeInjectSwarmGuidance(this.ctx, (m) => this.contextAssembly.injectSystemMessage(m), iterations);
 
           // Codex 式审计 nudge：每 CHECKPOINT_INTERVAL 轮强制重注入"先假设没做完、
           // 逐项找证据"的完成前自检框架，对抗模型过早自报完成（pi-goal 上下文注入思路）。
@@ -667,7 +670,7 @@ export class ConversationRuntime {
           data: {
             status: 'met',
             turns: iterations,
-            tokensUsed: this.ctx.totalInputTokens + this.ctx.totalOutputTokens,
+            tokensUsed: goalTokensUsedWithSwarm(this.ctx),
           },
         });
         terminal = { status: 'goal_met' };

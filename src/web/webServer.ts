@@ -33,7 +33,7 @@ import { initPostHogNode } from '../main/observability/posthogNode';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../shared/ipc';
 import { resolveSessionDefaultModelConfig } from '../main/services/core/sessionDefaults';
 import { getModelSessionState } from '../main/session/modelSessionState';
-import type { ModelProvider, PermissionResponse, Session } from '../shared/contract';
+import type { AuthUser, ModelProvider, PermissionResponse, Session } from '../shared/contract';
 import type { SwarmTraceRepo } from '../shared/contract/swarmTrace';
 import type { PendingApprovalRepository } from '../main/services/core/repositories/PendingApprovalRepository';
 import { installLocalWebAuthStatusHandler } from './webLocalAuth';
@@ -446,6 +446,36 @@ async function initializeServices(): Promise<void> {
       logger.warn('Database init stack:', error.stack);
     } else {
       logger.warn('Database not available (using in-memory sessions):', String(error));
+    }
+  }
+
+  // 5. Fleet telemetry 回传：登录起、登出停（auth-gated，metadata-only）
+  // 上传器此前只在 Electron main 路径（initBackgroundServices.ts）启动，而所有发行版实际跑的
+  // 是本文件的 Tauri+webServer 路径 —— 没人启动它，这就是生产 trace 零回传的根因（2026-06-03 修复）。
+  // 必须放在 Database init 之后：upload() 要读本地 telemetry 表，而 auth 恢复（步骤 3）早于 DB 就绪。
+  if (process.env.CODE_AGENT_E2E === '1') {
+    logger.info('Telemetry uploader skipped in E2E mode');
+  } else {
+    try {
+      const { getAuthService } = await import('../main/services/auth/authService');
+      const { getTelemetryUploaderService } = await import('../main/telemetry/telemetryUploaderService');
+      const authService = getAuthService();
+      const telemetryUploader = getTelemetryUploaderService();
+      const syncTelemetryUploader = (user: AuthUser | null): void => {
+        if (user) {
+          telemetryUploader.startAutoUpload();
+          logger.info('Telemetry upload started');
+        } else {
+          telemetryUploader.stopAutoUpload();
+          logger.info('Telemetry upload stopped');
+        }
+      };
+      // 步骤 3 的 auth 回调触发时 DB 还没就绪，这里按已恢复的登录态补启动
+      syncTelemetryUploader(authService.getCurrentUser());
+      // 后续登录/登出跟随切换
+      authService.addAuthChangeCallback(syncTelemetryUploader);
+    } catch (error) {
+      logger.warn('Telemetry uploader not available:', (error as Error).message);
     }
   }
 

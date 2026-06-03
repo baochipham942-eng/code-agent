@@ -69,7 +69,7 @@ import {
   shouldUseE2ELocalSubagentExecutor,
 } from './subagentE2ELocalExecutor';
 import { buildSubagentSkillsBlock } from '../services/skills/subagentSkillInjection';
-import { buildRoleContextBlock, runRoleWriteBack } from '../services/roleAssets';
+import { buildRoleContextBlock, runRoleWriteBack, recordRoleParticipation } from '../services/roleAssets';
 import { resolveModelDecision } from '../model/modelDecision';
 import type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
 
@@ -1077,6 +1077,9 @@ export class SubagentExecutor {
           finalOutput,
           artifacts: instanceArtifacts,
         }).catch(silence(logger, 'runRoleWriteBack', 'warn'));
+
+        // 角色参与记录：主 run 结束后据此触发 event 醒来（docs/designs/role-proactivity.md §2.2）
+        recordRoleParticipation(sessionId, config.roleId);
       }
 
       return {

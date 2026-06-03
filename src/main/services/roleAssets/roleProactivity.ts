@@ -282,6 +282,64 @@ export async function wakeRole(
 }
 
 // ----------------------------------------------------------------------------
+// event 入口：长任务跑完触发（设计 §2.2）
+// ----------------------------------------------------------------------------
+
+/** 本次 run 中 spawn 过的持久化角色（sessionId → roleIds），run 结束后据此触发 event 醒来 */
+const roleParticipationBySession = new Map<string, Set<string>>();
+
+/** 记录角色参与（subagentExecutor 在持久化角色子代理结束时调用） */
+export function recordRoleParticipation(sessionId: string, roleId: string): void {
+  let roles = roleParticipationBySession.get(sessionId);
+  if (!roles) {
+    roles = new Set();
+    roleParticipationBySession.set(sessionId, roles);
+  }
+  roles.add(roleId);
+}
+
+/** 取出并清空一个会话的角色参与记录 */
+function takeRoleParticipation(sessionId: string): string[] {
+  const roles = [...(roleParticipationBySession.get(sessionId) ?? [])];
+  roleParticipationBySession.delete(sessionId);
+  return roles;
+}
+
+/**
+ * 长任务跑完触发参与角色醒来（runFinalizer 在 run 成功收尾后 fire-and-forget 调用）。
+ * 条件（设计 §2.2）：run 达到长任务门槛 + 本次 run spawn 过持久化角色 + 非醒来会话（防递归）。
+ */
+export async function triggerEventWakes(sessionId: string, iterations: number, runSummary?: string): Promise<void> {
+  // 长任务门槛不满足 → 清记录直接返回
+  if (iterations < ROLE_PROACTIVITY.LONG_TASK_MIN_TURNS) {
+    takeRoleParticipation(sessionId);
+    return;
+  }
+
+  const roles = takeRoleParticipation(sessionId);
+  if (roles.length === 0) return;
+
+  // 防递归：醒来会话自己结束不再触发 event 醒来
+  try {
+    const { getSessionManager } = await import('../infra/sessionManager');
+    const session = await getSessionManager().getSession(sessionId, 1);
+    if (session?.origin?.name === ROLE_PROACTIVITY.CADENCE_JOB_TAG) {
+      logger.debug('Event wake skipped: session is itself a wake session', { sessionId });
+      return;
+    }
+  } catch {
+    // 会话读取失败不阻塞（保守继续触发，wakeRole 内部还有预算护栏）
+  }
+
+  logger.info('Long task completed, triggering event wakes', { sessionId, iterations, roles });
+  for (const roleId of roles) {
+    wakeRole(roleId, 'event', { sourceSessionId: sessionId, runSummary }).catch((err) =>
+      logger.warn('Event wake failed', { roleId, sessionId, error: String(err) }),
+    );
+  }
+}
+
+// ----------------------------------------------------------------------------
 // cadence cron job 同步注册（设计 §2.1，参考 memory-consolidation 幂等模式）
 // ----------------------------------------------------------------------------
 

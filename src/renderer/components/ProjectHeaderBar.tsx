@@ -27,6 +27,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import type { ProjectArtifact, ProjectDetail, ProjectGoal } from '@shared/contract/project';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
 import ipcService from '../services/ipcService';
+import { RoleIcon } from './features/shared/RoleIcon';
 import {
   addProjectGoal,
   addProjectRole,
@@ -339,9 +340,10 @@ export const ProjectHeaderBar: React.FC = () => {
                       key={r.roleId}
                       type="button"
                       onClick={() => handleAddRole(r.roleId)}
-                      className="block w-full truncate rounded px-1.5 py-0.5 text-left text-zinc-300 hover:bg-zinc-700"
+                      className="flex w-full items-center gap-1.5 truncate rounded px-1.5 py-0.5 text-left text-zinc-300 hover:bg-zinc-700"
                     >
-                      {r.roleId}
+                      <RoleIcon name={r.icon} className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                      <span className="min-w-0 flex-1 truncate">{r.roleId}</span>
                     </button>
                   ))
                 )}

@@ -4,12 +4,54 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Brain, FileText, History, RefreshCw, Trash2, Pencil, X, Check, UserCircle, AlarmClock } from 'lucide-react';
+import { ArrowLeft, Brain, FileText, History, RefreshCw, Trash2, Pencil, X, Check, AlarmClock } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { RolePanelEntry, RolePanelDetail, RolePanelMemory, RoleProactivityLevel } from '@shared/contract/roleAssets';
+import type { SkillCategory } from '@shared/contract/skillRepository';
+import { SKILL_CATEGORIES } from '@shared/constants/skillCatalog';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
+import { RoleIcon } from '../../shared/RoleIcon';
 import { SettingsPage, SettingsSection, SettingsDetails } from '../SettingsLayout';
+
+// ----------------------------------------------------------------------------
+// 角色分类分组（P2-1：复用 7 类 SkillCategory，未分类归入"其他"）
+// ----------------------------------------------------------------------------
+
+const UNCATEGORIZED_KEY = '__uncategorized__';
+
+export interface RoleCategoryGroup {
+  /** 分类 key：SkillCategory 或 UNCATEGORIZED_KEY */
+  key: string;
+  /** 分组显示名 */
+  label: string;
+  entries: RolePanelEntry[];
+}
+
+/** 取分类中文名（来自 SKILL_CATEGORIES）；未知 category 返回 undefined */
+function categoryLabel(category: SkillCategory): string | undefined {
+  return SKILL_CATEGORIES.find((c) => c.id === category)?.label;
+}
+
+/**
+ * 按产物分类对角色分组（纯函数，供 UI + 单测）。
+ * - 顺序跟随 SKILL_CATEGORIES，空分类不出现
+ * - 无 category（用户自建角色）统一归入末尾"其他"组
+ */
+export function groupRolesByCategory(entries: RolePanelEntry[]): RoleCategoryGroup[] {
+  const groups: RoleCategoryGroup[] = [];
+  for (const meta of SKILL_CATEGORIES) {
+    const inCategory = entries.filter((e) => e.category === meta.id);
+    if (inCategory.length > 0) {
+      groups.push({ key: meta.id, label: meta.label, entries: inCategory });
+    }
+  }
+  const uncategorized = entries.filter((e) => !e.category || !categoryLabel(e.category));
+  if (uncategorized.length > 0) {
+    groups.push({ key: UNCATEGORIZED_KEY, label: '其他', entries: uncategorized });
+  }
+  return groups;
+}
 
 const logger = createLogger('RolesTab');
 
@@ -60,7 +102,7 @@ const RoleCard: React.FC<RoleCardProps> = ({ entry, onClick }) => (
   >
     <div className="flex items-center gap-3">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-300">
-        <UserCircle className="h-6 w-6" />
+        <RoleIcon name={entry.icon} className="h-6 w-6" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -310,10 +352,12 @@ const ProactivitySelector: React.FC<ProactivitySelectorProps> = ({ roleId, curre
 
 interface RoleDetailViewProps {
   roleId: string;
+  /** 角色图标名（来自列表 entry；缺省兜底 UserCircle） */
+  icon?: string;
   onBack: () => void;
 }
 
-const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, onBack }) => {
+const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, icon, onBack }) => {
   const [detail, setDetail] = useState<RolePanelDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -347,7 +391,7 @@ const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, onBack }) => {
 
       <header className="flex items-center gap-3">
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800 text-zinc-300">
-          <UserCircle className="h-7 w-7" />
+          <RoleIcon name={icon} className="h-7 w-7" />
         </div>
         <div>
           <h3 className="text-base font-medium text-zinc-200">{roleId}</h3>
@@ -466,6 +510,7 @@ export const RolesTab: React.FC = () => {
     return (
       <RoleDetailView
         roleId={selectedRoleId}
+        icon={entries.find((e) => e.roleId === selectedRoleId)?.icon}
         onBack={() => {
           setSelectedRoleId(null);
           void loadList();
@@ -499,11 +544,18 @@ export const RolesTab: React.FC = () => {
             暂无持久化角色。重启应用后会自动安装预设角色（研究员 / 数据分析师）。
           </div>
         ) : null}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {entries.map((entry) => (
-            <RoleCard key={entry.roleId} entry={entry} onClick={() => setSelectedRoleId(entry.roleId)} />
-          ))}
-        </div>
+        {groupRolesByCategory(entries).map((group) => (
+          <div key={group.key} className="mb-4 last:mb-0" data-role-category={group.key}>
+            <div className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+              {group.label}（{group.entries.length}）
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {group.entries.map((entry) => (
+                <RoleCard key={entry.roleId} entry={entry} onClick={() => setSelectedRoleId(entry.roleId)} />
+              ))}
+            </div>
+          </div>
+        ))}
       </SettingsSection>
     </SettingsPage>
   );

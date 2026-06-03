@@ -6,6 +6,7 @@
 // 这里只暴露跨进程序列化后的角色面板类型，供 IPC + 渲染端共用。
 
 import type { AgentSource } from './agentRegistry';
+import type { SkillCategory } from './skillRepository';
 
 /** 角色面板列表条目（设计 §7：卡片 = 名字/记忆条数/最近工作） */
 export interface RolePanelEntry {
@@ -19,6 +20,16 @@ export interface RolePanelEntry {
   memoryCount: number;
   /** 最近一条工作履历（原始行） */
   lastWork: string | null;
+  /**
+   * 角色视觉化（P2-1）：lucide 图标名（curated 子集，见 builtinRoles.ts）。
+   * 仅预设角色配死；用户自建角色缺省，前端兜底 UserCircle。
+   */
+  icon?: string;
+  /**
+   * 角色产物分类（P2-1）：复用 skillRepository 的 7 类 SkillCategory 子集，
+   * 与技能包共用一套分类体系。仅预设角色配置；用户自建角色缺省，前端归入"其他"。
+   */
+  category?: SkillCategory;
 }
 
 /** 角色面板的单条记忆 */

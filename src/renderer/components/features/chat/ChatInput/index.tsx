@@ -23,6 +23,7 @@ import { useStatusStore } from '../../../../stores/statusStore';
 import { CommandPalette } from '../../../CommandPalette';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { useFileUpload } from './useFileUpload';
+import { useChatInputSessionScope } from './useChatInputSessionScope';
 import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
 import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowserSession';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
@@ -125,7 +126,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [isFocused, setIsFocused] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
-  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  // 会话作用域：currentSessionId / engine 类型 / 切换会话时清空草稿
+  const { currentSessionId, sessionEngineKind } = useChatInputSessionScope(setValue, setAttachments);
   const pendingAppshot = useAppshotsStore((s) =>
     s.pendingSessionId === currentSessionId ? s.pending : null
   );
@@ -825,7 +827,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const selectedModelHasVision =
     effectiveModelFeatures.includes('vision') ||
     (effectiveModelId === modelConfig.model && (modelConfig.capabilities ?? []).includes('vision'));
-  const showVisionModelNotice = hasImageAttachments && !selectedModelHasVision;
+  // 外部引擎（Codex/Claude CLI）自行处理图片，这条针对 Neo 原生模型的提示不适用
+  const showVisionModelNotice = hasImageAttachments && !selectedModelHasVision && sessionEngineKind === 'native';
 
   return (
     <div

@@ -541,6 +541,12 @@ export function useAgentIPC({
         addMessage(errorMessage);
         // 按会话清除处理状态
         setSessionProcessing(effectiveSessionId!, false);
+        // taskStore 也必须重置，否则会话永远卡在 'running'：
+        // 后续消息全部进入"运行中排队"分支但没有 run 去消费，表现为永远不回复
+        useTaskStore.getState().updateSessionState(effectiveSessionId!, {
+          status: 'error',
+          error: String(error),
+        });
       }
     },
     [addMessage, enqueueRuntimeInput, setSessionProcessing, isProcessing, currentSessionId]

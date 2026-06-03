@@ -318,6 +318,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           }
         }
 
+        // 记录上一个会话的 engine，外部引擎（Codex/Claude）选择在新会话创建后继承
+        const previousEngine = get().sessions.find((s) => s.id === get().currentSessionId)?.engine;
+
         set({ isLoading: true, error: null });
         const session = await invokeSession<Session | null>('create', {
           title: nextTitle,
@@ -344,6 +347,21 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             isLoading: false,
           }));
           useAppStore.getState().setContextHealth(null);
+
+          // 继承上一个会话的外部 engine 选择（后端禁止创建时直接指定外部引擎，
+          // 必须走创建后的 select 校验路径：需要工作目录 + 引擎可用，失败则保持 native）
+          if (!options?.engine && previousEngine && previousEngine.kind !== 'native') {
+            try {
+              await get().updateSessionEngine(session.id, {
+                kind: previousEngine.kind,
+                permissionProfile: previousEngine.permissionProfile,
+                model: previousEngine.model,
+                cwd: previousEngine.cwd ?? newSessionWithMeta.workingDirectory ?? undefined,
+              });
+            } catch {
+              logger.warn('Failed to inherit external engine for new session, falling back to native');
+            }
+          }
           return session;
         }
         return null;

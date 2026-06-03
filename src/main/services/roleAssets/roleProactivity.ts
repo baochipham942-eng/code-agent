@@ -14,7 +14,7 @@
 // ============================================================================
 
 import { createLogger } from '../infra/logger';
-import { ROLE_PROACTIVITY, DEFAULT_PROVIDER, DEFAULT_MODELS } from '../../../shared/constants';
+import { ROLE_PROACTIVITY } from '../../../shared/constants';
 import type {
   RoleProactivityConfig,
   RoleProactivityLevel,
@@ -189,10 +189,13 @@ export async function wakeRole(
   const titleStamp = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const session = await sessionManager.createSession({
     title: `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX} ${titleStamp}`,
+    // 注意：provider/model 不传常量兜底——传 undefined 让 resolver 落到
+    // settings.models.defaultProvider（headless webServer 没有 currentSession，
+    // 硬传 DEFAULT_PROVIDER 会绕过用户配置的默认 provider）
     modelConfig: resolveSessionDefaultModelConfig({
-      provider: settings.model?.provider || currentSession?.modelConfig.provider || DEFAULT_PROVIDER,
-      model: settings.model?.model || currentSession?.modelConfig.model || DEFAULT_MODELS.chat,
-      temperature: settings.model?.temperature ?? currentSession?.modelConfig.temperature ?? 0.7,
+      provider: settings.model?.provider || currentSession?.modelConfig.provider,
+      model: settings.model?.model || currentSession?.modelConfig.model,
+      temperature: settings.model?.temperature ?? currentSession?.modelConfig.temperature,
       maxTokens: settings.model?.maxTokens ?? currentSession?.modelConfig.maxTokens,
     }),
     workingDirectory: workspacePath,

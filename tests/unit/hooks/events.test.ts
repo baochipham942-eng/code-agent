@@ -60,8 +60,9 @@ describe('Hook Events', () => {
       }
     });
 
-    it('should have 19 event types', () => {
-      expect(Object.keys(HOOK_EVENT_DESCRIPTIONS)).toHaveLength(19);
+    it('should have 20 event types', () => {
+      // 19 + RoleWake（角色主动性醒来，docs/designs/role-proactivity.md §2.3）
+      expect(Object.keys(HOOK_EVENT_DESCRIPTIONS)).toHaveLength(20);
     });
   });
 

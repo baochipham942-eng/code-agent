@@ -148,7 +148,14 @@ export async function wakeRole(
   trigger: RoleWakeTrigger,
   options?: WakeRoleOptions,
 ): Promise<RoleWakeResult> {
-  // ---- 步骤 0：等级检查（silent 档不醒）----
+  // ---- 步骤 0：持久化角色门槛 ----
+  // 必须最先检查：cron job 可能指向已删除的角色，后续守卫（空产物静默）会写履历，
+  // 对已删除角色写履历等于把它的目录重新创建出来（单测实测踩坑）。
+  if (!(await isPersistentRole(roleId))) {
+    throw new Error(`Role "${roleId}" is not a persistent role (no roles/${roleId}/ directory); cannot wake it via ${trigger}`);
+  }
+
+  // ---- 步骤 0.5：等级检查（silent 档不醒）----
   const config = await resolveRoleProactivityConfig(roleId);
   if (config.level === 'silent') {
     logger.info('Wake skipped: role is silent', { roleId, trigger });
@@ -355,7 +362,10 @@ function takeRoleParticipation(sessionId: string): string[] {
 export async function triggerEventWakes(sessionId: string, iterations: number, runSummary?: string): Promise<void> {
   // 长任务门槛不满足 → 清记录直接返回
   if (iterations < ROLE_PROACTIVITY.LONG_TASK_MIN_TURNS) {
-    takeRoleParticipation(sessionId);
+    const dropped = takeRoleParticipation(sessionId);
+    if (dropped.length > 0) {
+      logger.debug('Event wake skipped: below long-task threshold', { sessionId, iterations, dropped });
+    }
     return;
   }
 

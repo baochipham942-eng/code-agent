@@ -3,6 +3,8 @@
 // ============================================================================
 // Extracted to break circular dependency between agentMdLoader ↔ coreAgents.
 
+import type { RoleProactivityConfig } from '../../../shared/contract/roleAssets';
+
 /**
  * 核心角色 ID（4 个）
  */
@@ -27,4 +29,6 @@ export interface CoreAgentConfig {
   model: ModelTier;
   maxIterations: number;
   readonly: boolean;
+  /** 角色主动性配置（frontmatter proactivity-level / proactivity-cadence，docs/designs/role-proactivity.md §4） */
+  proactivity?: RoleProactivityConfig;
 }

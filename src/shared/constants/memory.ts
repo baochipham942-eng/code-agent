@@ -77,6 +77,32 @@ export const ROLE_ASSETS = {
   INJECT_HISTORY_MAX_ENTRIES: 10,
 } as const;
 
+/** 角色主动性（cadence 触发器 + 醒来循环，docs/designs/role-proactivity.md） */
+export const ROLE_PROACTIVITY = {
+  /** 单次醒来最大工具调用轮数（硬约束，传给醒来实例的 maxIterations） */
+  WAKE_MAX_ITERATIONS: 15,
+  /** 每角色每天最多醒来次数（cadence + event 合计），超出后本次醒来被 skip */
+  MAX_WAKES_PER_DAY: 4,
+  /** 长任务门槛：主会话 run 达到这个迭代数才触发 event 醒来（设计 §2.2） */
+  LONG_TASK_MIN_TURNS: 5,
+  /** 默认每日简报档的 cron 表达式（6 字段，croner）：每天 09:00 本地时间 */
+  DAILY_BRIEF_CRON: '0 0 9 * * *',
+  /** cadence cron job 的幂等 tag（启动时按 tag 同步注册，参考 memory-consolidation 模式） */
+  CADENCE_JOB_TAG: 'role-cadence',
+  /** 醒来会话标题前缀（会话列表识别用） */
+  WAKE_SESSION_TITLE_PREFIX: '主动巡检',
+  /** 醒来实例的运行超时（ms），超时按失败处理 */
+  WAKE_TIMEOUT_MS: 600000,
+  /** 默认主动等级（角色 frontmatter / settings 都没配置时） */
+  DEFAULT_LEVEL: 'daily',
+  /** 醒来产出里决策标记的提取正则（四选一：advance/report/suggest/silence） */
+  DECISION_TAG_PATTERN: /<decision>\s*(advance|report|suggest|silence)\s*<\/decision>/i,
+  /** 提取不到决策标记时的保守兜底决策 */
+  FALLBACK_DECISION: 'report',
+  /** 醒来履历条目的产出摘要截断字符数 */
+  HISTORY_SUMMARY_MAX_CHARS: 200,
+} as const;
+
 /** GAP-005: 经验沉淀管线（learningPipeline → failure journal / skill 草稿） */
 export const LEARNING_PIPELINE = {
   /** 同一失败模式累计出现次数达到该阈值才写入 failure journal */

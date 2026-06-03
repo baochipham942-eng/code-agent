@@ -39,6 +39,7 @@ import {
   type WorkspacePreviewRuntimeStatus,
 } from '../utils/workspacePreview';
 import { DiffView } from './DiffView';
+import { LocalityFeedbackBar } from './LivePreview/LocalityFeedbackBar';
 import { ChartBlock } from './features/chat/MessageBubble/ChartBlock';
 import { DocumentBlock } from './features/chat/MessageBubble/DocumentBlock';
 import { SpreadsheetBlock } from './features/chat/MessageBubble/SpreadsheetBlock';
@@ -415,6 +416,14 @@ function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
         </div>
       )}
 
+      {/* 定点反馈：当前选中页（selectedIndex 即 0-based slide_index）+ pptxPath → 锚点消息发给 agent */}
+      {pptxPath && selectedScreenshot && (
+        <LocalityFeedbackBar
+          anchor={{ kind: 'ppt', filePath: pptxPath, slideIndex: selectedIndex, displayName: item.title }}
+          locationLabel={`第 ${selectedIndex + 1} 页`}
+        />
+      )}
+
       {screenshots.length > 1 && (
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
           {screenshots.map((screenshot, index) => (
@@ -470,7 +479,7 @@ function PreviewBody({ item }: { item: WorkspacePreviewItem }) {
     return <WorkspaceHtmlPreview item={item} />;
   }
   if (item.kind === 'spreadsheet' && item.content?.json) {
-    return <SpreadsheetBlock spec={item.content.json} />;
+    return <SpreadsheetBlock spec={item.content.json} filePath={item.file?.path} />;
   }
   if (item.kind === 'document' && item.content?.json) {
     return <DocumentBlock spec={item.content.json} />;

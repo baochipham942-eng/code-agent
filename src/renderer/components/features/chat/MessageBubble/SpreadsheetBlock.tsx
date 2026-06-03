@@ -5,6 +5,7 @@
 
 import { memo, useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { Sheet, Download, Copy, Check, ChevronLeft, ChevronRight, BarChart3, Table2, Filter, ArrowUpDown } from 'lucide-react';
+import { LocalityFeedbackBar } from '../../../LivePreview/LocalityFeedbackBar';
 import { UI } from '@shared/constants';
 import { useI18n } from '../../../../hooks/useI18n';
 
@@ -186,11 +187,24 @@ const SheetTabs = memo(function SheetTabs({
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec }: { spec: string }) {
+// 列索引 → A1 列字母（0→A, 25→Z, 26→AA）
+function columnLetter(ci: number): string {
+  let n = ci;
+  let s = '';
+  do {
+    s = String.fromCharCode(65 + (n % 26)) + s;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return s;
+}
+
+export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, filePath }: { spec: string; filePath?: string }) {
   const [copied, setCopied] = useState(false);
   const [activeSheet, setActiveSheet] = useState(0);
   const [selectedColumns, setSelectedColumns] = useState<number[]>([]);
   const [page, setPage] = useState(0);
+  // 定点反馈：选中单元格（A1 引用，如 "B7"）。filePath 存在时才启用（来自 Workspace 预览）。
+  const [selectedCell, setSelectedCell] = useState<string | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
   const { t } = useI18n();
 
@@ -389,14 +403,18 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec }
                     const isSelected = selectedColumns.includes(ci);
                     const value = row[ci];
                     const isNum = typeof value === 'number';
+                    // A1 引用：列字母 + xlsx 行号（rowNum 是 1-based 数据行，xlsx header 占第 1 行 → +1）
+                    const cellRef = `${columnLetter(ci)}${rowNum + 1}`;
+                    const isCellSelected = filePath != null && selectedCell === cellRef;
 
                     return (
                       <td
                         key={ci}
+                        onClick={filePath != null ? () => setSelectedCell(cellRef) : undefined}
                         className={`px-3 py-1 border-r border-zinc-700/30 truncate max-w-[200px] ${
-                          isSelected ? 'bg-blue-500/5' : ''
-                        } ${isNum ? 'text-right tabular-nums text-zinc-300' : 'text-zinc-400'}`}
-                        title={formatCellValue(value)}
+                          isCellSelected ? 'bg-cyan-500/20 outline outline-1 outline-cyan-400' : isSelected ? 'bg-blue-500/5' : ''
+                        } ${filePath != null ? 'cursor-pointer' : ''} ${isNum ? 'text-right tabular-nums text-zinc-300' : 'text-zinc-400'}`}
+                        title={filePath != null ? `${cellRef} · ${formatCellValue(value)}（点选定点反馈）` : formatCellValue(value)}
                       >
                         {formatCellValue(value)}
                       </td>
@@ -408,6 +426,16 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec }
           </tbody>
         </table>
       </div>
+
+      {/* 定点反馈：选中单元格后输入反馈 → 锚点消息发给 agent 走 DocEdit 定向改 */}
+      {filePath != null && selectedCell && (
+        <div className="border-t border-zinc-700 px-3 py-2">
+          <LocalityFeedbackBar
+            anchor={{ kind: 'sheet', filePath, cell: selectedCell }}
+            locationLabel={`单元格 ${selectedCell}`}
+          />
+        </div>
+      )}
 
       {/* Pagination */}
       {totalPages > 1 && (

@@ -613,6 +613,8 @@ export class MessageProcessor {
             sessionId: this.ctx.sessionId,
             abortSignal: this.ctx.runAbortController?.signal,
             hookManager: this.ctx.hookManager,
+            // 可用性降级链：powerful tier 没配 key 时，闸2 降级用主 run 的模型
+            parentModelConfig: this.ctx.modelConfig,
           });
           // 观测事件：闸2 判定结果（UI 用）
           this.ctx.onEvent({

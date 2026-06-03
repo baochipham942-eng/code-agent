@@ -64,7 +64,8 @@ import {
   getAgentSlashCommandQuery,
   parseAgentSlashCommand,
 } from './agentCommand';
-import { collectDroppedAttachments, shouldClearComposerAfterSend } from './utils';
+import { shouldClearComposerAfterSend } from './utils';
+import { useDragAndDrop } from './useDragAndDrop';
 import { buildBrowserSessionIntentSnapshot } from '../../../../utils/browserExecutionIntent';
 import {
   clearDebugDraftParamsFromCurrentUrl,
@@ -124,7 +125,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 }, ref) => {
   const [value, setValue] = useState('');
   const [isFocused, setIsFocused] = useState(false);
-  const [isDragOver, setIsDragOver] = useState(false);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   // 会话作用域：currentSessionId / engine 类型 / 切换会话时清空草稿
   const { currentSessionId, sessionEngineKind } = useChatInputSessionScope(setValue, setAttachments);
@@ -153,6 +153,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const formRef = useRef<HTMLFormElement>(null);
   const debugDraftAppliedRef = useRef(false);
   const { processFile, processFolderEntry } = useFileUpload();
+  // 拖放附件处理（高亮状态 + 文件/文件夹拖入转附件）
+  const { isDragOver, handleDragOver, handleDragLeave, handleDrop } = useDragAndDrop({
+    processFile,
+    processFolderEntry,
+    setAttachments,
+    setIsUploading: (uploading) => setIsUploading(uploading),
+  });
   // 输入命中技能关键词时的推荐（已安装→挂载 / 未安装→从推荐目录安装）
   const {
     recommendations: skillRecommendations,
@@ -249,7 +256,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   // 上报 composer 槽位给 Rust，作为 Appshot 飞入动画的落点（屏幕逻辑坐标）
   useEffect(() => {
-    const internals = (window as unknown as { __TAURI_INTERNALS__?: { invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> } }).__TAURI_INTERNALS__;
+    // Window.__TAURI_INTERNALS__ 类型来自 types/tauri.d.ts 全局声明
+    const internals = window.__TAURI_INTERNALS__;
     if (!internals) return;
     const report = () => {
       const el = appshotSlotRef.current;
@@ -400,7 +408,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, [dismissAutocomplete, searchFiles, swarmAgents]);
 
   // Handle @ file selection
-  const handleFileSelect_autocomplete = useCallback((filePath: string) => {
+  const handleFileSelectAutocomplete = useCallback((filePath: string) => {
     // Replace @query with the file path
     const beforeAt = value.replace(new RegExp(`@${atQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), '');
     setValue(beforeAt + '@' + filePath + ' ');
@@ -712,54 +720,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
   }, [processFile]);
 
-  // 拖放处理
-  const clearDragState = useCallback(() => {
-    setIsDragOver(false);
-  }, []);
-
-  useEffect(() => {
-    if (!isDragOver) return;
-    window.addEventListener('dragend', clearDragState);
-    window.addEventListener('drop', clearDragState);
-    window.addEventListener('blur', clearDragState);
-    return () => {
-      window.removeEventListener('dragend', clearDragState);
-      window.removeEventListener('drop', clearDragState);
-      window.removeEventListener('blur', clearDragState);
-    };
-  }, [clearDragState, isDragOver]);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer.types.includes('Files')) {
-      setIsDragOver(true);
-    }
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-  }, []);
-
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-    setIsUploading(true);
-
-    try {
-      const newAttachments = await collectDroppedAttachments(e.dataTransfer, processFile, processFolderEntry);
-
-      if (newAttachments.length > 0) {
-        setAttachments((prev) => [...prev, ...newAttachments].slice(0, UI.MAX_ATTACHMENTS_DROP));
-      }
-    } finally {
-      setIsUploading(false);
-    }
-  }, [processFile, processFolderEntry]);
-
   // 移除附件
   const removeAttachment = (id: string) => {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
@@ -1013,7 +973,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 <button
                   key={i}
                   type="button"
-                  onClick={() => handleFileSelect_autocomplete(f.path)}
+                  onClick={() => handleFileSelectAutocomplete(f.path)}
                   className="w-full px-3 py-1.5 text-left text-sm text-zinc-400 hover:bg-zinc-700 transition-colors font-mono truncate"
                 >
                   {f.name}

@@ -16,6 +16,7 @@ import { applySchema } from '../../../src/main/services/core/database/schema';
 import { applySessionsMigrations } from '../../../src/main/services/core/database/migrations';
 import { applyIndexes } from '../../../src/main/services/core/database/indexes';
 import { ProjectRepository } from '../../../src/main/services/core/repositories/ProjectRepository';
+import { buildProjectArtifacts } from '../../../src/main/services/project/projectService';
 import { getProjectKey } from '../../../src/main/services/roleAssets/roleAssetPaths';
 import { UNSORTED_PROJECT_ID, type Project } from '../../../src/shared/contract/project';
 
@@ -139,5 +140,49 @@ describe('ProjectRepository', () => {
     repo.setProjectStatus(p.id, 'archived', NOW + 1, NOW + 1);
     expect(repo.listProjects(false).find((x) => x.id === p.id)).toBeUndefined();
     expect(repo.listProjects(true).find((x) => x.id === p.id)).toBeDefined();
+  });
+});
+
+describe('buildProjectArtifacts（跨 session 产物聚合）', () => {
+  const chartBlock = (title: string) => '```chart\n' + JSON.stringify({ title, type: 'bar' }) + '\n```';
+  const htmlBlock = '```html\n' + '<title>报告</title>' + 'x'.repeat(600) + '\n```';
+
+  it('跨多个 session 聚合 + 时间倒序', () => {
+    const sessions = [
+      { id: 's1', title: '会话一' },
+      { id: 's2', title: '会话二' },
+    ];
+    const messages: Record<string, Array<{ role: string; content: string; timestamp: number }>> = {
+      s1: [{ role: 'assistant', content: chartBlock('图A'), timestamp: 100 }],
+      s2: [{ role: 'assistant', content: htmlBlock, timestamp: 200 }],
+    };
+    const items = buildProjectArtifacts(sessions, (id) => messages[id] ?? []);
+    expect(items).toHaveLength(2);
+    expect(items[0].sessionId).toBe('s2'); // 时间倒序：200 在前
+    expect(items[0].kind).toBe('generative_ui');
+    expect(items[1].sessionId).toBe('s1');
+    expect(items[1].sessionTitle).toBe('会话一');
+  });
+
+  it('内容相同的产物跨 session 去重', () => {
+    const sessions = [{ id: 's1', title: 'a' }, { id: 's2', title: 'b' }];
+    const same = chartBlock('同图');
+    const items = buildProjectArtifacts(sessions, () => [{ role: 'assistant', content: same, timestamp: 1 }]);
+    expect(items).toHaveLength(1); // 同内容 → 同 hash id → 去重
+  });
+
+  it('只抽 assistant 消息，跳过 user', () => {
+    const items = buildProjectArtifacts([{ id: 's1', title: 'a' }], () => [
+      { role: 'user', content: chartBlock('用户贴的'), timestamp: 1 },
+      { role: 'assistant', content: chartBlock('助手出的'), timestamp: 2 },
+    ]);
+    expect(items).toHaveLength(1);
+    expect(items[0].title).toBe('助手出的');
+  });
+
+  it('limit 截断', () => {
+    const msgs = Array.from({ length: 5 }, (_, i) => ({ role: 'assistant', content: chartBlock(`图${i}`), timestamp: i }));
+    const items = buildProjectArtifacts([{ id: 's1', title: 'a' }], () => msgs, 3);
+    expect(items).toHaveLength(3);
   });
 });

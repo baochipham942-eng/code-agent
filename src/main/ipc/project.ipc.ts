@@ -86,6 +86,12 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
           return detail ? { success: true, data: detail } : notFound('project not found');
         }
 
+        case 'artifacts': {
+          const { projectId, limit } = (payload ?? {}) as DetailPayload & { limit?: number };
+          if (!projectId) return invalid('projectId is required');
+          return { success: true, data: svc.getProjectArtifacts(projectId, typeof limit === 'number' ? limit : undefined) };
+        }
+
         case 'rename': {
           const { projectId, name } = (payload ?? {}) as RenamePayload;
           if (!projectId || !name?.trim()) return invalid('projectId and name are required');

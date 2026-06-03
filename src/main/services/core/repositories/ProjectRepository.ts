@@ -200,6 +200,14 @@ export class ProjectRepository {
     return rows.map((r) => r.id as string);
   }
 
+  /** 项目下的 session（含标题，用于产物列表标注来源），按更新时间倒序 */
+  listProjectSessions(projectId: string): Array<{ id: string; title: string; updatedAt: number }> {
+    const rows = this.db
+      .prepare('SELECT id, title, updated_at FROM sessions WHERE project_id = ? AND is_deleted = 0 ORDER BY updated_at DESC')
+      .all(projectId) as SQLiteRow[];
+    return rows.map((r) => ({ id: r.id as string, title: (r.title as string) || '', updatedAt: r.updated_at as number }));
+  }
+
   /**
    * 回填归桶（D4）：把 project_id IS NULL 的存量 session 按 working_directory(缺则 workspace)
    * 算 hash 归入对应 project；无目录的归 UNSORTED_PROJECT_ID。幂等、单事务、不改 session 其它字段。

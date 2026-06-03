@@ -14,12 +14,14 @@ import type { ProjectRepository } from '../core/repositories';
 import { getProjectKey } from '../roleAssets/roleAssetPaths';
 import { linkProjectIdToMeta } from '../roleAssets/roleAssetService';
 import { createLogger } from '../infra/logger';
+import { extractArtifacts } from '../../agent/artifactExtractor';
 import type { GoalRunInput } from '../../../shared/contract/appService';
 import {
   UNSORTED_PROJECT_ID,
   UNSORTED_PROJECT_NAME,
   type CreateProjectGoalInput,
   type Project,
+  type ProjectArtifact,
   type ProjectDetail,
   type ProjectGoal,
   type ProjectGoalStatus,
@@ -31,6 +33,34 @@ const logger = createLogger('ProjectService');
 
 function shortId(prefix: string): string {
   return `${prefix}_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+}
+
+/** 跨 session 抽取 artifact 并按内容哈希去重、时间倒序、取前 limit（纯函数，便于单测）。 */
+export function buildProjectArtifacts(
+  sessions: Array<{ id: string; title: string }>,
+  loadMessages: (sessionId: string) => Array<{ role: string; content: string; timestamp: number }>,
+  limit = 60,
+): ProjectArtifact[] {
+  const seen = new Set<string>();
+  const items: ProjectArtifact[] = [];
+  for (const session of sessions) {
+    for (const msg of loadMessages(session.id)) {
+      if (msg.role !== 'assistant' || !msg.content) continue;
+      for (const art of extractArtifacts(msg.content)) {
+        if (seen.has(art.id)) continue;
+        seen.add(art.id);
+        items.push({
+          id: art.id,
+          sessionId: session.id,
+          sessionTitle: session.title || undefined,
+          kind: art.type,
+          title: art.title,
+          createdAt: msg.timestamp,
+        });
+      }
+    }
+  }
+  return items.sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
 }
 
 /** 由 workspace 路径构造一个新 Project 行（不落库，仅生成实体）。 */
@@ -112,6 +142,18 @@ export class ProjectService {
       roles: repo.listRoles(projectId),
       sessionIds: repo.listSessionIds(projectId),
     };
+  }
+
+  /**
+   * 中心视图"产物列表"数据源：跨该项目所有 session 抽取 artifact，按内容哈希去重、时间倒序、取前 limit。
+   * 产物 = assistant 消息内 chart/spreadsheet/mermaid/generative_ui/question-form 代码块（extractArtifacts）。
+   */
+  getProjectArtifacts(projectId: string, limit = 60): ProjectArtifact[] {
+    const db = getDatabase();
+    const repo = this.repo();
+    if (!repo.getProject(projectId)) return [];
+    const sessions = repo.listProjectSessions(projectId);
+    return buildProjectArtifacts(sessions, (sessionId) => db.getMessages(sessionId), limit);
   }
 
   renameProject(projectId: string, name: string, now: number): Project | undefined {

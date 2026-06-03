@@ -22,6 +22,8 @@ const mockSessionManager = vi.hoisted(() => ({
   archiveSession: vi.fn(),
 }));
 const mockRunRoleWriteBack = vi.hoisted(() => vi.fn(async () => ({ written: [], skipped: [], historyAppended: true })));
+// advance→goal run（P4）：Electron 路径用落库事件读 goal 终态
+const mockSessionEvents = vi.hoisted(() => ({ getEventsByType: vi.fn(() => [] as Array<{ eventData?: unknown }>) }));
 
 vi.mock('../../../../src/main/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
@@ -66,6 +68,10 @@ vi.mock('../../../../src/main/task', () => ({
 
 vi.mock('../../../../src/main/services/roleAssets/roleWriteBack', () => ({
   runRoleWriteBack: mockRunRoleWriteBack,
+}));
+
+vi.mock('../../../../src/main/evaluation/sessionEventService', () => ({
+  getSessionEventService: () => mockSessionEvents,
 }));
 
 // agentRegistry：测试角色无 frontmatter 配置 → 走 settings / 出厂默认
@@ -217,6 +223,48 @@ describe('roleProactivity', () => {
       const wakeEntries = history.filter((l) => l.includes(ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX));
       expect(wakeEntries.length).toBe(1);
       expect(wakeEntries[0]).toContain('[report]');
+    });
+
+    it('advance + <goal> 提案 → 升级为 goal run，回填 advanceGoalStatus（单测版 E2E AC4）', async () => {
+      await seedProductHistory(RESEARCHER);
+      // 醒来产出：advance 决策 + goal 提案（带 verify）
+      const wakeOutput = '我要推进。<goal>创建 DONE.md 标记完成</goal><verify>test -f DONE.md</verify><decision>advance</decision>';
+      mockSessionManager.createSession.mockResolvedValue({ id: 'wake-advance-1', workingDirectory: undefined });
+      mockSessionManager.getSession.mockResolvedValue({
+        id: 'wake-advance-1',
+        messages: [{ id: 'm2', role: 'assistant', content: wakeOutput, timestamp: 2 }],
+      });
+      mockOrchestrator.sendMessage.mockResolvedValue(undefined);
+      // Electron 路径从落库事件读 goal 终态 → 预置 goal_complete=met
+      mockSessionEvents.getEventsByType.mockReturnValue([{ eventData: { status: 'met' } }]);
+
+      const result = await wakeRole(RESEARCHER, 'cadence');
+
+      expect(result.decision).toBe('advance');
+      // 升级为 goal run，终态回填
+      expect(result.advanceGoalStatus).toBe('met');
+      // 两次 sendMessage：① 侦察醒来 ② goal run
+      expect(mockOrchestrator.sendMessage).toHaveBeenCalledTimes(2);
+      // 第 2 次（goal run）带 goal 选项且 allowSwarm=false（无人值守不扇出）
+      const goalCallOptions = mockOrchestrator.sendMessage.mock.calls[1][2];
+      expect(goalCallOptions.goal).toBeDefined();
+      expect(goalCallOptions.goal.allowSwarm).toBe(false);
+      expect(goalCallOptions.goal.verify).toBe('test -f DONE.md');
+      // 履历记 [goal:met]
+      const history = await loadRoleHistory(RESEARCHER, 100);
+      expect(history.some((l) => l.includes('[goal:met]'))).toBe(true);
+    });
+
+    it('advance 但无 <goal> 提案 → 按普通 advance 处理，不发起 goal run', async () => {
+      await seedProductHistory(RESEARCHER);
+      primeWakeRun('advance', 'wake-advance-noproposal');
+
+      const result = await wakeRole(RESEARCHER, 'cadence');
+
+      expect(result.decision).toBe('advance');
+      expect(result.advanceGoalStatus).toBeUndefined();
+      // 只有侦察醒来这一次 sendMessage，没有第二次 goal run
+      expect(mockOrchestrator.sendMessage).toHaveBeenCalledTimes(1);
     });
 
     it('沉默决策 → 会话归档 + 履历记"巡检无需行动"（单测版 E2E AC3 模型路径）', async () => {

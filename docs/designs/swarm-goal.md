@@ -116,8 +116,8 @@ launchAdvanceGoalRun()（roleProactivity 内部新增）
 
 | 方向 | 缺口（as-is） | 设计（to-be） | 落点 |
 |------|--------------|--------------|------|
-| **下行**：goal → workflow | workflow 的 `budgetTokens` 参数由模型在工具调用里自报——模型可以不传或乱传，绕过 goal 预算 | messageProcessor 在 goal mode 下**拦截 workflow 工具调用**（与 attempt_completion 拦截同位置 `messageProcessor.ts:574`），在 dispatch 前把 `budgetTokens` clamp 到 `min(模型自报值, goal 剩余预算 × MAX_BUDGET_FRACTION)`。剩余预算 = tokenBudget − 主 agent 消耗 − 已记账 swarm 消耗 | `messageProcessor.ts` handleToolResponse |
-| **上行**：workflow → 闸3 | workflow 子 agent 的消耗只活在 scriptRuntime 的 BudgetTracker 里，**不汇入主 run 的 tokensUsed**（`conversationRuntime.ts:472`），闸3 对 swarm 消耗失明 | workflow 工具结果已带 `meta.tokensSpent`（成功/失败路径都有，`workflow.ts` 返回值）→ messageProcessor 在工具结果回来后调 `goalMode.recordSwarmTokens(meta.tokensSpent)` → 闸3 `evaluateFallback` 和 SSE `goal_iteration` 的 tokensUsed 都计入 swarm 消耗 | `messageProcessor.ts` + `goalModeController.ts` |
+| **下行**：goal → workflow | workflow 的 `budgetTokens` 参数由模型在工具调用里自报——模型可以不传或乱传，绕过 goal 预算 | goal mode + allowSwarm 时，**toolExecutionEngine 在 dispatch 前**调 `applySwarmBudgetClamp` 把 workflow 调用的 `budgetTokens` clamp 到 `min(模型自报值, 剩余预算 × MAX_BUDGET_FRACTION)`。剩余预算 = tokenBudget − 主 agent 消耗 − 已记账 swarm 消耗 | `swarmGoalIntegration.ts` ← `toolExecutionEngine.executeToolsWithHooks` |
+| **上行**：workflow → 闸3 | workflow 子 agent 的消耗只活在 scriptRuntime 的 BudgetTracker 里，**不汇入主 run 的 tokensUsed**（`conversationRuntime.ts`），闸3 对 swarm 消耗失明 | workflow 工具结果带 `meta.tokensSpent`（→ `ToolResult.metadata.tokensSpent`）→ tool 执行后 `recordSwarmSpend` 调 `goalMode.recordSwarmTokens` → 闸3 `evaluateFallback` 内部加总 + SSE `goal_iteration`/`goal_complete` 的 tokensUsed 都计入 swarm | `swarmGoalIntegration.ts` + `goalModeController.ts` |
 
 ### 4.2 GoalContract 扩展（唯一的契约改动）
 
@@ -174,11 +174,13 @@ export const SWARM_GOAL = {
 | 契约 | `GoalContract` 加 `allowSwarm?: boolean`；`buildGoalContract` 透传（默认 true） | `src/main/agent/goalModeController.ts` | 修改 |
 | 常量 | `SWARM_GOAL` 块 | `src/shared/constants/agent.ts` | 修改 |
 | 工具预加载 | goal mode 且 allowSwarm → 预加载 `workflow` | `src/main/agent/runtime/contextAssembly/deferredToolPreload.ts` | 修改 |
-| 编排引导 | goal system prompt 加 swarm 指引段（仅 allowSwarm 时） | `src/main/agent/goalModeController.ts` | 修改 |
-| 预算下行 | goal mode 下拦截 workflow 调用 → clamp budgetTokens | `src/main/agent/runtime/messageProcessor.ts` | 修改 |
-| 预算上行 | workflow 结果 meta.tokensSpent → `recordSwarmTokens()` | `src/main/agent/runtime/messageProcessor.ts` + `goalModeController.ts` | 修改 |
-| 闸3 计入 | `evaluateFallback` / `goal_iteration` 的 tokensUsed 加 swarm 消耗 | `src/main/agent/goalModeController.ts` + `runtime/conversationRuntime.ts` | 修改 |
-| 入口透传 | desktop（agentOrchestrator）/ web（routes/agent.ts）的 goal 入参支持 allowSwarm（可选，默认 true） | `src/main/agent/agentOrchestrator.ts` + `src/web/routes/agent.ts` + `src/shared/contract/appService.ts` | 修改 |
+| 编排引导 | goal 首轮注入 swarm 指引（仅 allowSwarm 时，`buildSwarmGuidance`） | `goalModeController.ts` + `runtime/conversationRuntime.ts`（经 swarmGoalIntegration） | 修改 |
+| 胶水模块 | clamp / record / guidance 注入 / 加总展示（独立成模块，便于确定性单测） | `src/main/agent/runtime/swarmGoalIntegration.ts` | **新建** |
+| 预算下行 | dispatch 前 clamp workflow budgetTokens | `swarmGoalIntegration.applySwarmBudgetClamp` ← `runtime/toolExecutionEngine.ts` | 修改 |
+| 预算上行 | workflow 结果 metadata.tokensSpent → `recordSwarmTokens()` | `swarmGoalIntegration.recordSwarmSpend` ← `runtime/toolExecutionEngine.ts` + `goalModeController.ts` | 修改 |
+| 闸3 计入 | `evaluateFallback` 内部加总 swarm；`goal_iteration`/`goal_complete` tokensUsed 加 swarm | `goalModeController.ts` + `runtime/conversationRuntime.ts` | 修改 |
+| 工具预加载 | goal mode 且 allowSwarm → 预加载 `workflow` | `src/main/agent/runtime/contextAssembly/deferredToolPreload.ts` | 修改 |
+| 入口透传 | desktop（agentOrchestrator）/ web（routes/agent.ts + agentBodySchemas.ts）的 goal 入参支持 allowSwarm | `agentOrchestrator.ts` + `web/routes/agent.ts` + `web/routes/agentBodySchemas.ts` + `shared/contract/appService.ts` | 修改 |
 
 ### 功能点②：advance → goal run
 
@@ -213,19 +215,22 @@ export const SWARM_GOAL = {
 
 ---
 
-## 7. E2E 验收标准
+## 7. E2E 验收标准与结果（2026-06-03 验收完成）
 
-脚本：`scripts/acceptance/swarm-goal-e2e.ts`（参考 `role-proactivity-e2e.ts`：假 HOME 隔离 + webServer headless + 真实模型 xiaomi/mimo 直连）
+脚本：`scripts/acceptance/swarm-goal-e2e.ts`（参考 `role-proactivity-e2e.ts`：假 HOME 隔离 + webServer headless + 真实模型）
+单测：`swarmGoal.test.ts`（24）+ `swarmGoalToolPreload.test.ts`（3，走真实 `getDeferredToolsToPreloadForTurn`）+ `advanceGoalProposal.test.ts`（6）+ `roleProactivity.test.ts`（19，含 advance→goal 2 条）
 
-| # | 场景 | 验证方式 | 成本 |
+| # | 场景 | 验证方式 | 结果 |
 |---|------|---------|------|
-| AC1 | goal mode（allowSwarm=true）下 workflow 工具被预加载；allowSwarm=false 时不预加载 | 确定性（检查 run 的工具列表/SSE 事件） | 零模型成本 |
-| AC2 | goal run 内模型用 workflow 扇出 → 子 agent 消耗计入 goal tokensUsed → `goal_iteration`/`goal_complete` 事件的 tokensUsed 包含 swarm 消耗 | 真实模型全链路 | mimo 包月 |
-| AC3 | 预算下行 clamp：goal 剩余预算不足时 workflow budgetTokens 被压到剩余 × 0.8 | 单测确定性覆盖（messageProcessor clamp 逻辑） | 零模型成本 |
-| AC4 | advance → goal run：预埋产物 → 角色醒来 → advance + goal 提案 → 发起 goal run → 过闸 → 履历记录 met/aborted | 真实模型全链路 | mimo 包月 |
-| AC5 | advance goal run 禁 swarm：AC4 发起的 goal run 中 workflow 工具不可用 | 确定性（检查工具列表） | 零模型成本 |
+| AC1 | goal mode（allowSwarm=true）下 workflow 被预加载；false 时不预加载 | 真实门控函数单测 | ✅ PASS（确定性） |
+| AC2 | goal run 内模型用 workflow 扇出 → 全链路达成 + swarm 消耗记账 | 真实模型 E2E（mimo） | ✅ PASS — 日志实证完整链路：`swarm guidance injected` → `workflow budget clamped {requested:undefined, clamped:300814}`（下行）→ `swarm tokens recorded`（上行）→ `goal marked met`（闸1 verify 通过） |
+| AC3 | 预算下行 clamp：剩余预算不足时 budgetTokens 压到剩余 × 0.8 | 单测（6 条 clamp） | ✅ PASS（确定性）+ AC2 日志实证 clamp 实跑 |
+| AC4 | advance + `<goal>` 提案 → 单 agent goal run（allowSwarm=false）→ 终态回填 | 单测（roleProactivity）+ 真实模型 E2E | ✅ 单测 PASS（advance+提案 → 二次 sendMessage 带 goal.allowSwarm=false → advanceGoalStatus=met → 履历 [goal:met]）；⚠ 真模型 E2E 见下 |
+| AC5 | advance goal run 禁 swarm：workflow 工具不可用 | 真实门控函数单测 | ✅ PASS（确定性） |
 
-单测：`tests/unit/agent/swarmGoal.test.ts`（clamp 计算 / recordSwarmTokens 记账 / 提案解析 / allowSwarm 默认值）
+**AC4 真模型 E2E 说明**（与 role-proactivity AC5 同类）：全链路依赖醒来侦察实例**主动选 advance 并产出 `<goal>` 提案**。mimo 实测醒来后选 `report`（读了待办但选择汇报而非自主推进）——失败来自模型决策，非代码缺陷。advance→goal 胶水（决策=advance + 提案存在 → `launchAdvanceGoalRun` 双路径发起 + allowSwarm=false + 终态回填）由 roleProactivity.test.ts 确定性覆盖。另：mimo 慢思考导致醒来(15)+goal(30)链 >10min，`SWARM_E2E_WAKE_TIMEOUT_MS` 可调长。
+
+> 注：§4.1 下行 clamp 的实现落点为 `swarmGoalIntegration.ts`（被 `toolExecutionEngine` 调用），非 messageProcessor——后者已贴 max-lines 上限，胶水独立成模块便于确定性单测。
 
 ---
 

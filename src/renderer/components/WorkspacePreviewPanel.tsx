@@ -39,6 +39,7 @@ import {
   type WorkspacePreviewRuntimeStatus,
 } from '../utils/workspacePreview';
 import { DiffView } from './DiffView';
+import { LocalityFeedbackBar } from './LivePreview/LocalityFeedbackBar';
 import { ChartBlock } from './features/chat/MessageBubble/ChartBlock';
 import { DocumentBlock } from './features/chat/MessageBubble/DocumentBlock';
 import { SpreadsheetBlock } from './features/chat/MessageBubble/SpreadsheetBlock';
@@ -412,6 +413,14 @@ function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.05] p-3 text-xs text-amber-200">
           {spec?.screenshotError || 'No slide screenshots available.'}
         </div>
+      )}
+
+      {/* 定点反馈：当前选中页（selectedIndex 即 0-based slide_index）+ pptxPath → 锚点消息发给 agent */}
+      {pptxPath && selectedScreenshot && (
+        <LocalityFeedbackBar
+          anchor={{ kind: 'ppt', filePath: pptxPath, slideIndex: selectedIndex, displayName: item.title }}
+          locationLabel={`第 ${selectedIndex + 1} 页`}
+        />
       )}
 
       {screenshots.length > 1 && (

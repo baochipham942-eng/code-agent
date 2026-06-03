@@ -904,5 +904,16 @@ export function getDatabase(): DatabaseService {
 export async function initDatabase(): Promise<DatabaseService> {
   const db = getDatabase();
   await db.initialize();
+  // P0-2：存量 session 按 workspace 自动归桶（幂等，仅当存在未归桶 session 时执行）。
+  // 懒加载 ProjectService 避免初始化期循环依赖。
+  try {
+    const { getProjectService } = await import('../project/projectService');
+    const migrated = getProjectService().backfillSessions(Date.now());
+    if (migrated > 0) {
+      logger.info(`[DatabaseService] P0-2 backfill: ${migrated} 个存量 session 已归桶到项目`);
+    }
+  } catch (err) {
+    logger.warn('[DatabaseService] P0-2 backfill 失败（不阻塞启动）:', err instanceof Error ? err.message : String(err));
+  }
   return db;
 }

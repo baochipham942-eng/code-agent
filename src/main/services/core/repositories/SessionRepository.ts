@@ -1136,7 +1136,8 @@ export class SessionRepository {
       isArchived,
       archivedAt: isArchived ? (row.updated_at as number) : undefined,
       isDeleted,
-      gitBranch: row.git_branch as string | undefined
+      gitBranch: row.git_branch as string | undefined,
+      projectId: (row.project_id as string) || undefined
     };
   }
 }

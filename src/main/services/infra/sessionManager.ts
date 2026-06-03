@@ -280,6 +280,17 @@ export class SessionManager implements Disposable {
 
     db.createSession(session);
 
+    // P0-2：按 workspace 隐式归桶到 project（拿/建 project + 写 project_id）。
+    // 失败不阻塞会话创建（项目空间是增量能力）。
+    try {
+      const { getProjectService } = await import('../project/projectService');
+      const project = await getProjectService().ensureProjectForWorkspace(session.workingDirectory, now);
+      db.getProjectRepo().assignSessionProject(session.id, project.id);
+      session.projectId = project.id;
+    } catch (err) {
+      logger.warn('[SessionManager] P0-2 项目归桶失败（不阻塞）:', err instanceof Error ? err.message : String(err));
+    }
+
     // 初始化缓存条目，确保后续 addMessageToSession 能正确更新缓存
     this.sessionCache.set(session.id, {
       ...session,

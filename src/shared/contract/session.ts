@@ -108,4 +108,6 @@ export interface Session {
   prLink?: PRLink; // GitHub PR 关联信息
   // Git 分支
   gitBranch?: string; // 创建会话时的 git 分支
+  // 项目空间（P0-2）：归属的 project；存量由 backfillSessions 回填，新建时按 workspace 隐式归桶
+  projectId?: string;
 }

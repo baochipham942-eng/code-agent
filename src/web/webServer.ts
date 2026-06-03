@@ -1037,6 +1037,15 @@ async function main(): Promise<void> {
 
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+
+  // Tauri 父进程死亡检测：父进程退出/崩溃（含 SIGABRT）时 stdin 管道关闭，
+  // webServer 跟着优雅退出，不留孤儿进程占住端口。
+  // 仅在被 Tauri spawn 时生效（standalone / dev 模式没有这个环境变量，不受影响）。
+  if (process.env.CODE_AGENT_TAURI_BOOT_TOKEN) {
+    process.stdin.resume();
+    process.stdin.on('end', () => { void shutdown(); });
+    process.stdin.on('error', () => { void shutdown(); });
+  }
 }
 
 if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') {

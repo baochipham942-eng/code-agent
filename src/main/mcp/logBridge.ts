@@ -14,6 +14,17 @@ export type CommandHandler = (command: string, params: Record<string, unknown>) 
   error?: string;
 }>;
 
+/**
+ * 只读任务状态提供者（P3-A）。logBridge 不直接依赖 TaskStatusProvider 具体类，
+ * 只依赖这个最小接口（同 CommandHandler 的解耦模式），上层在 app 进程内注入实现。
+ * 全部 read-only：仅暴露元数据，不碰写/执行路径。
+ */
+export interface TaskStatusBridgeProvider {
+  listTasks(opts: { limit?: number }): unknown;
+  getTaskStatus(runId: string): unknown;
+  listProjects(opts: { includeArchived?: boolean }): unknown;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -31,6 +42,7 @@ class LogBridge {
   private server: http.Server | null = null;
   private port: number = PORTS.logBridge;
   private commandHandler: CommandHandler | null = null;
+  private taskStatusProvider: TaskStatusBridgeProvider | null = null;
 
   /**
    * Start the HTTP log bridge server (called from Electron main process)
@@ -84,6 +96,43 @@ class LogBridge {
           const status = logCollector.getStatus();
           res.writeHead(200);
           res.end(JSON.stringify(status));
+        } else if (path === '/tasks') {
+          // P3-A 只读：列 swarm 运行历史 + 实时会话状态（仅元数据）。
+          if (!this.taskStatusProvider) {
+            res.writeHead(503);
+            res.end(JSON.stringify({ error: 'No task status provider registered' }));
+          } else {
+            const limitRaw = url.searchParams.get('limit');
+            const limit = limitRaw ? parseInt(limitRaw, 10) : undefined;
+            res.writeHead(200);
+            res.end(JSON.stringify(this.taskStatusProvider.listTasks({ limit })));
+          }
+        } else if (path === '/task-status') {
+          // P3-A 只读：查指定 swarm run 详情（进度/token/事件计数，仅元数据）。
+          if (!this.taskStatusProvider) {
+            res.writeHead(503);
+            res.end(JSON.stringify({ error: 'No task status provider registered' }));
+          } else {
+            const id = url.searchParams.get('id');
+            if (!id) {
+              res.writeHead(400);
+              res.end(JSON.stringify({ error: 'Missing id parameter' }));
+            } else {
+              const status = this.taskStatusProvider.getTaskStatus(id);
+              res.writeHead(status ? 200 : 404);
+              res.end(JSON.stringify(status ?? { error: `Run ${id} not found` }));
+            }
+          }
+        } else if (path === '/projects') {
+          // P3-A 只读：列项目 + goal 状态（仅元数据）。
+          if (!this.taskStatusProvider) {
+            res.writeHead(503);
+            res.end(JSON.stringify({ error: 'No task status provider registered' }));
+          } else {
+            const includeArchived = url.searchParams.get('includeArchived') === 'true';
+            res.writeHead(200);
+            res.end(JSON.stringify(this.taskStatusProvider.listProjects({ includeArchived })));
+          }
         } else if (path === '/health') {
           res.writeHead(200);
           res.end(JSON.stringify({ status: 'ok', port: this.port }));
@@ -150,6 +199,14 @@ class LogBridge {
   setCommandHandler(handler: CommandHandler): void {
     this.commandHandler = handler;
     console.error('[LogBridge] Command handler registered');
+  }
+
+  /**
+   * 注册只读任务状态提供者（P3-A）。在 app 进程内调用，提供 swarm/project/session 查询。
+   */
+  setTaskStatusProvider(provider: TaskStatusBridgeProvider): void {
+    this.taskStatusProvider = provider;
+    console.error('[LogBridge] Task status provider registered');
   }
 
   /**

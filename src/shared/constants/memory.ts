@@ -45,6 +45,38 @@ export const MEMORY_CONSOLIDATION = {
   JOB_TAG: 'light-memory-consolidation',
 } as const;
 
+/** 持久化角色资产（roles/<name>/ 三层记忆 + 履历 + 写回，docs/designs/persistent-role-assets.md） */
+export const ROLE_ASSETS = {
+  /** 角色资产根目录名（相对 getUserConfigDir()）：~/.code-agent/roles/ */
+  ROLES_DIR: 'roles',
+  /** 项目记忆根目录名（相对 getUserConfigDir()）：~/.code-agent/projects/（P0-2 项目空间落地前的过渡 key） */
+  PROJECTS_DIR: 'projects',
+  /** 角色/项目记忆正文子目录名 */
+  MEMORIES_SUBDIR: 'memories',
+  /** 记忆索引文件名（注入用，格式与全局 Light Memory INDEX.md 一致） */
+  INDEX_FILENAME: 'MEMORY.md',
+  /** 工作履历文件名（产物清单，设计 §4.3） */
+  HISTORY_FILENAME: 'history.md',
+  /** 项目目录元数据文件名（记录原始 workspace 路径，P0-2 迁移用） */
+  META_FILENAME: 'meta.json',
+  /** 项目 key 的 hash 截断长度 */
+  PROJECT_KEY_LENGTH: 16,
+  /** 角色/项目记忆索引行预算（与 LIGHT_MEMORY.INDEX_MAX_LINES 同语义） */
+  INDEX_MAX_LINES: 200,
+  /** write gate 配额：单次实例写回最多条数（设计 §5.1） */
+  WRITE_BACK_MAX_ENTRIES: 3,
+  /** 写回判断 quick model max_tokens（要容纳最多 3 条记忆正文） */
+  WRITE_BACK_MAX_TOKENS: 2048,
+  /** 写回判断 quick model 超时（ms），异步执行不阻塞实例返回 */
+  WRITE_BACK_TIMEOUT_MS: 20000,
+  /** 喂给写回判断的 transcript 截断字符数 */
+  WRITE_BACK_TRANSCRIPT_MAX_CHARS: 8000,
+  /** 单条写回记忆正文的最大字符数（write gate 质量闸） */
+  WRITE_BACK_CONTENT_MAX_CHARS: 4000,
+  /** 注入块中履历最多保留的最近条数 */
+  INJECT_HISTORY_MAX_ENTRIES: 10,
+} as const;
+
 /** GAP-005: 经验沉淀管线（learningPipeline → failure journal / skill 草稿） */
 export const LEARNING_PIPELINE = {
   /** 同一失败模式累计出现次数达到该阈值才写入 failure journal */

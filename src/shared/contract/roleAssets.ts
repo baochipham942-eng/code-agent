@@ -72,6 +72,8 @@ export interface RoleWakeResult {
   sessionId?: string;
   /** 醒来产出摘要（履历同款） */
   summary?: string;
+  /** advance 升级为 goal run 时的终态（met/aborted）；未升级则缺省（P4，docs/designs/swarm-goal.md） */
+  advanceGoalStatus?: 'met' | 'aborted';
 }
 
 /** 角色详情（设计 §7：定义 / 记忆 / 履历 / 主动性） */

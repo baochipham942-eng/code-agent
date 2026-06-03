@@ -3,7 +3,7 @@
 // 设计见 docs/designs/goal-mode.md
 // ============================================================================
 
-import { GOAL_MODE } from '../../shared/constants';
+import { GOAL_MODE, SWARM_GOAL } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('GoalModeController');
@@ -25,6 +25,11 @@ export interface GoalContract {
   tokenBudget: number;
   /** 闸3：轮次上限 */
   maxTurns: number;
+  /**
+   * 是否允许 swarm 扇出（控制 workflow 工具预加载 + 预算注入，docs/designs/swarm-goal.md）。
+   * 交互式 /goal 默认 true；主动性 advance 发起的 goal run 强制 false（无人值守不扇出）。
+   */
+  allowSwarm?: boolean;
 }
 
 /** 闸3 判定结果 */
@@ -44,6 +49,7 @@ export function buildGoalContract(input: {
   reviewCondition?: string;
   tokenBudget?: number;
   maxTurns?: number;
+  allowSwarm?: boolean;
 }): GoalContract {
   if (!input.verifyCommand && !input.reviewCondition) {
     // 防御：契约级再兜一层（schema 已校验），纯空目标无完成判据 → 永远只能 abort。
@@ -55,6 +61,8 @@ export function buildGoalContract(input: {
     reviewCondition: input.reviewCondition,
     tokenBudget: input.tokenBudget ?? GOAL_MODE.DEFAULT_TOKEN_BUDGET,
     maxTurns: input.maxTurns ?? GOAL_MODE.DEFAULT_MAX_TURNS,
+    // 缺省 = 允许扇出（交互式 /goal）；主动性 advance 路径显式传 false
+    allowSwarm: input.allowSwarm ?? true,
   };
 }
 
@@ -76,6 +84,8 @@ export class GoalModeController {
   /** 模型是否已调 attempt_completion 申请退出（待闸1/闸2 验证；不直接改 status） */
   private completionRequested = false;
   private pendingSummary?: string;
+  /** swarm（workflow 子 agent）累计消耗的 token —— 计入闸3 预算（docs/designs/swarm-goal.md §4） */
+  private swarmTokensUsed = 0;
 
   constructor(contract: GoalContract) {
     this.contract = contract;
@@ -89,6 +99,45 @@ export class GoalModeController {
   getAbortReason(): string | undefined { return this.abortReason; }
   getTokenBudget(): number { return this.contract.tokenBudget; }
   getMaxTurns(): number { return this.contract.maxTurns; }
+  /** 是否允许 swarm 扇出（workflow 工具预加载 + 预算注入的总开关） */
+  allowsSwarm(): boolean { return this.contract.allowSwarm ?? true; }
+
+  // ==========================================================================
+  // Swarm 预算（P4：上行记账 + 下行 clamp，docs/designs/swarm-goal.md §4.1）
+  // ==========================================================================
+
+  /**
+   * 上行记账：workflow 工具结果的 meta.tokensSpent → 计入 goal 消耗。
+   * 防御：undefined / NaN / 负数一律跳过（记账缺失不影响主流程，仍有 maxTurns 兜底）。
+   */
+  recordSwarmTokens(tokens: unknown): void {
+    if (typeof tokens !== 'number' || !Number.isFinite(tokens) || tokens <= 0) {
+      return;
+    }
+    this.swarmTokensUsed += Math.floor(tokens);
+    logger.debug('[GoalMode] swarm tokens recorded', { tokens, total: this.swarmTokensUsed });
+  }
+
+  /** swarm 累计消耗（闸3 evaluateFallback 与 goal_iteration 事件的 tokensUsed 须计入） */
+  getSwarmTokensUsed(): number {
+    return this.swarmTokensUsed;
+  }
+
+  /**
+   * 下行 clamp：goal 模式下 workflow 工具调用的 budgetTokens 不可信模型自报，
+   * 压到「goal 剩余预算 × MAX_BUDGET_FRACTION」以内。
+   * @param requested 模型自报的 budgetTokens（可能缺省）
+   * @param mainTokensUsed 主 agent 已消耗的 token（input + output）
+   * @returns clamp 后的预算（≥0；0 表示剩余预算已耗尽，调用方应拒绝扇出）
+   */
+  clampSwarmBudget(requested: number | undefined, mainTokensUsed: number): number {
+    const remaining = Math.max(0, this.contract.tokenBudget - mainTokensUsed - this.swarmTokensUsed);
+    const ceiling = Math.floor(remaining * SWARM_GOAL.MAX_BUDGET_FRACTION);
+    if (requested === undefined || !Number.isFinite(requested) || requested <= 0) {
+      return ceiling;
+    }
+    return Math.min(Math.floor(requested), ceiling);
+  }
 
   /** 模型申请退出且闸1（+闸2）全过 → 标达成 */
   markMet(): void {
@@ -139,13 +188,18 @@ export class GoalModeController {
   /**
    * 闸3：纯代码层兜底判定。任一触发即返回 stop=true + reason。
    * 由 loop 每轮调用，写在代码层，模型无法绕过。
+   *
+   * 注：input.tokensUsed 是主 agent 消耗（input + output）；swarm 子 agent 消耗
+   * （recordSwarmTokens 记账）在本方法内部统一计入，调用方无需自己加总。
    */
   evaluateFallback(input: { turn: number; tokensUsed: number }): FallbackResult {
     if (input.turn >= this.contract.maxTurns) {
       return { stop: true, reason: `达到轮次上限 ${this.contract.maxTurns}，目标未达成` };
     }
-    if (input.tokensUsed >= this.contract.tokenBudget) {
-      return { stop: true, reason: `达到 token 预算上限 ${this.contract.tokenBudget}，目标未达成` };
+    const totalTokensUsed = input.tokensUsed + this.swarmTokensUsed;
+    if (totalTokensUsed >= this.contract.tokenBudget) {
+      const swarmNote = this.swarmTokensUsed > 0 ? `（含 swarm 子 agent 消耗 ${this.swarmTokensUsed}）` : '';
+      return { stop: true, reason: `达到 token 预算上限 ${this.contract.tokenBudget}${swarmNote}，目标未达成` };
     }
     if (this.noProgressTurns >= GOAL_MODE.NO_PROGRESS_THRESHOLD) {
       return { stop: true, reason: `连续 ${this.noProgressTurns} 轮无文件变更，判定无进展` };
@@ -182,6 +236,25 @@ export class GoalModeController {
    */
   shouldInjectAudit(turn: number): boolean {
     return turn > 1 && turn % GOAL_MODE.CHECKPOINT_INTERVAL === 0;
+  }
+
+  /**
+   * Swarm 编排引导（P4，仅 allowSwarm 时在 goal run 首轮注入一次）：
+   * 告知模型可用 workflow 工具扇出并行子 agent，并框定使用边界
+   * （只有天然可并行的目标才扇出 + 预算受 goal 剩余预算约束 + 子任务建议带验证 stage）。
+   */
+  buildSwarmGuidance(): string {
+    return [
+      '<goal-swarm-guidance>',
+      '本 goal 支持多 agent 并行执行：当目标天然可并行（多个相互独立的子任务，如修多个测试文件、',
+      '给多个模块写文档）时，你可以调用 workflow 工具，当场写一段编排脚本扇出并行子 agent 分头干。',
+      '使用约束：',
+      '1. 只有天然可并行的目标才扇出——单线任务直接自己做，扇出反而浪费；',
+      '2. 扇出预算由系统自动限制在 goal 剩余预算以内，无需你自己计算；',
+      '3. 编排脚本里建议给关键子任务写验证 stage（让另一个子 agent 检查产出），脏结果不要直接收；',
+      '4. 子 agent 的产出汇总回来后，仍由你负责整体收尾——最终完成判定依然要过系统的验证闸。',
+      '</goal-swarm-guidance>',
+    ].join('\n');
   }
 
   /**

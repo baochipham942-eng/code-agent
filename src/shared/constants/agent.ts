@@ -115,6 +115,20 @@ export const GOAL_MODE = {
   REVIEW_OUTPUT_MAX_CHARS: 4_000,
 } as const;
 
+/** Swarm goal 配置（P4：goal 内 swarm 执行 + 主动性 advance 合流，docs/designs/swarm-goal.md） */
+export const SWARM_GOAL = {
+  /** 单次 workflow 扇出预算占 goal 剩余预算的最大比例（留余量给主 agent 收尾 + 闸2 评审） */
+  MAX_BUDGET_FRACTION: 0.8,
+  /** advance 发起的 goal run 默认 token 预算（无人值守场景，远小于交互式 /goal 的默认值） */
+  ADVANCE_GOAL_TOKEN_BUDGET: 200_000,
+  /** advance 发起的 goal run 默认轮次上限 */
+  ADVANCE_GOAL_MAX_TURNS: 30,
+  /** advance 目标提案标记提取正则（角色醒来输出 <goal>…</goal> 时升级为 goal run） */
+  GOAL_TAG_PATTERN: /<goal>([\s\S]*?)<\/goal>/i,
+  /** advance 验收命令提案标记提取正则（可选，有则作为闸1 verify 命令） */
+  VERIFY_TAG_PATTERN: /<verify>([\s\S]*?)<\/verify>/i,
+} as const;
+
 /** Stop hook 完成闸配置（GAP-006） */
 export const STOP_HOOK = {
   /** 用户 Stop hook block 后允许的最大重试（继续干活）次数，超过即放行停止，防 hook 无限拦截死循环 */

@@ -42,6 +42,11 @@ export interface GoalRunInput {
   budget?: number;
   /** 闸3：轮次上限 */
   maxTurns?: number;
+  /**
+   * 是否允许 swarm 扇出（P4，docs/designs/swarm-goal.md）。缺省 = true（交互式 /goal）；
+   * 角色主动性 advance 发起的无人值守 goal run 传 false。
+   */
+  allowSwarm?: boolean;
 }
 
 /**

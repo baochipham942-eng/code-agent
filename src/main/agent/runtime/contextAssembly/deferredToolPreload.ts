@@ -48,6 +48,11 @@ export function getDeferredToolsToPreloadForTurn(
   // Goal 模式：预加载 attempt_completion，让模型每轮都能调它申请退出（触发闸1 验证）
   if (runtime.goalMode) {
     tools.add('attempt_completion');
+    // Swarm goal（P4）：allowSwarm 时同时预加载 workflow，让模型能扇出并行子 agent。
+    // advance 发起的无人值守 goal run（allowSwarm=false）不预加载——无人监督不扇出。
+    if (runtime.goalMode.allowsSwarm()) {
+      tools.add('workflow');
+    }
   }
 
   if (

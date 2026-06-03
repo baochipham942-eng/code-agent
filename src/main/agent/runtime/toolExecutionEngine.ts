@@ -55,6 +55,7 @@ import {
 import { maybeRepairArtifactContractEditAnchors } from './toolArtifactContractAnchors';
 import { handleModifiedArtifactValidation } from './toolArtifactValidationLifecycle';
 import { handleToolResultBookkeeping } from './toolResultLifecycle';
+import { applySwarmBudgetClamp, recordSwarmSpend } from './swarmGoalIntegration';
 import {
   activateForceFinalResponse,
   getReadOnlyPreflightWarning,
@@ -165,6 +166,8 @@ export class ToolExecutionEngine {
     this.forceFinalResponseBatchActive = true;
     this.forceFinalResponseReasonAtBatchStart = this.ctx.forceFinalResponseReason;
     seedArtifactRepairGuardFromContext(this.ctx);
+    // Swarm goal（P4）预算下行 clamp：workflow 扇出预算压到 goal 剩余预算以内（模型自报不可信）
+    applySwarmBudgetClamp(this.ctx, toolCalls);
 
     // Check for external file changes before executing tools
     try {
@@ -265,6 +268,9 @@ export class ToolExecutionEngine {
 
     this.forceFinalResponseBatchActive = false;
     this.forceFinalResponseReasonAtBatchStart = undefined;
+    // Swarm goal（P4）预算上行记账：workflow 结果的 tokensSpent → goal 消耗（闸3 可见）。
+    // 放在 suppress 过滤前——token 已真实花掉，结果被压制也要记账。
+    recordSwarmSpend(this.ctx.goalMode, toolCalls, results);
     return results.filter((r): r is ToolResult => r !== undefined && !this.shouldSuppressResult(r));
   }
 

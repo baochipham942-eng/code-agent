@@ -752,6 +752,15 @@ export class ParallelAgentCoordinator extends EventEmitter {
     return messages;
   }
 
+  /**
+   * 非破坏性查看某 task 的待办消息（swarm 护栏 P1-2 #4 桥接用）。
+   * 返回队列副本——不消费，drainMessages 仍能取到。
+   */
+  peekMessages(taskId: string): AgentMessage[] {
+    const queue = this.messageQueues.get(taskId);
+    return queue ? [...queue] : [];
+  }
+
   private isCancellationError(errorMessage?: string): boolean {
     if (!errorMessage) return false;
     const normalized = errorMessage.toLowerCase();

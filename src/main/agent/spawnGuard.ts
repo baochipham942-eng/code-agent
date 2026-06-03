@@ -367,6 +367,15 @@ class SpawnGuard {
   }
 
   /**
+   * 非破坏性查看某 agent 的待办消息（swarm 护栏 P1-2 #4 桥接用）。
+   * 返回队列副本——不消费，drainMessages 仍能取到，便于统一 inbox 门面只读聚合。
+   */
+  peekMessages(id: string): AgentMessage[] {
+    const agent = this.agents.get(id);
+    return agent ? [...agent.messageQueue] : [];
+  }
+
+  /**
    * Drain all pending messages for an agent (called by executor).
    */
   drainMessages(id: string): AgentMessage[] {

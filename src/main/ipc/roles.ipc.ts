@@ -3,23 +3,26 @@
 // ============================================================================
 //
 // 暴露（设计 §7 角色面板最小版）：
-// - action 'list'         -> 角色列表（roleId / 描述 / 记忆条数 / 最近工作）
-// - action 'detail'       -> 角色详情（定义原文 / 记忆 / 履历）
-// - action 'deleteMemory' -> 删除一条角色记忆
-// - action 'updateMemory' -> 编辑一条角色记忆（覆盖写）
+// - action 'list'           -> 角色列表（roleId / 描述 / 记忆条数 / 最近工作）
+// - action 'detail'         -> 角色详情（定义原文 / 记忆 / 履历 / 主动性配置）
+// - action 'deleteMemory'   -> 删除一条角色记忆
+// - action 'updateMemory'   -> 编辑一条角色记忆（覆盖写）
+// - action 'setProactivity' -> 设置角色主动等级（写 settings + 立即同步 cadence cron）
 // ============================================================================
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { RolePanelDetail, RolePanelEntry } from '../../shared/contract/roleAssets';
+import type { RolePanelDetail, RolePanelEntry, RoleProactivityLevel } from '../../shared/contract/roleAssets';
 import {
   listPersistentRoles,
   listScopedMemories,
   loadRoleHistory,
   deleteScopedMemory,
   writeScopedMemory,
+  resolveRoleProactivityConfig,
+  syncCadenceJobs,
 } from '../services/roleAssets';
 import { listAllAgents } from '../agent/agentRegistry';
 import { getAgentsMdDir } from '../config/configPaths';
@@ -45,6 +48,13 @@ interface UpdateMemoryPayload extends RoleIdPayload {
   description?: string;
   content?: string;
 }
+
+interface SetProactivityPayload extends RoleIdPayload {
+  level?: string;
+  cadence?: string;
+}
+
+const PROACTIVITY_LEVELS: ReadonlySet<string> = new Set(['silent', 'daily', 'realtime']);
 
 // ----------------------------------------------------------------------------
 // Actions
@@ -79,9 +89,10 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
     definition = null;
   }
 
-  const [memories, history] = await Promise.all([
+  const [memories, history, proactivity] = await Promise.all([
     listScopedMemories({ scope: 'role', roleId }),
     loadRoleHistory(roleId, 50),
+    resolveRoleProactivityConfig(roleId),
   ]);
 
   return {
@@ -96,7 +107,31 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
       updatedAt: m.updatedAt,
     })),
     history,
+    proactivity,
   };
+}
+
+/**
+ * 设置角色主动等级：写入 settings.roleAssets.proactivity.roles[roleId]（最高优先级），
+ * 然后立即同步 cadence cron（开 → 注册闹钟；关 → 删除闹钟），不用等重启。
+ */
+async function handleSetProactivity(roleId: string, level: RoleProactivityLevel, cadence?: string) {
+  const { getConfigService } = await import('../services/core/configService');
+  await getConfigService().updateSettings({
+    roleAssets: {
+      proactivity: {
+        roles: { [roleId]: { level, ...(cadence ? { cadence } : {}) } },
+      },
+    },
+  });
+
+  // cron 同步失败不阻塞设置保存（headless 测试环境可能没有 cron 服务），下次启动会兜底同步
+  const synced = await syncCadenceJobs().catch((error) => {
+    logger.warn('syncCadenceJobs after setProactivity failed (will sync on next startup)', error);
+    return null;
+  });
+
+  return { proactivity: await resolveRoleProactivityConfig(roleId), synced };
 }
 
 // ----------------------------------------------------------------------------
@@ -142,6 +177,20 @@ export function registerRolesHandlers(ipcMain: IpcMain): void {
             { filename, name, description, content },
           );
           return { success: true, data: { path: filePath } };
+        }
+
+        case 'setProactivity': {
+          const { roleId, level, cadence } = (payload ?? {}) as SetProactivityPayload;
+          if (!roleId || !level || !PROACTIVITY_LEVELS.has(level)) {
+            return {
+              success: false,
+              error: { code: 'INVALID_ARGS', message: 'roleId and level (silent|daily|realtime) are required' },
+            };
+          }
+          return {
+            success: true,
+            data: await handleSetProactivity(roleId, level as RoleProactivityLevel, cadence),
+          };
         }
 
         default:

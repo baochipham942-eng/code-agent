@@ -74,7 +74,7 @@ export interface RoleWakeResult {
   summary?: string;
 }
 
-/** 角色详情（设计 §7：定义 / 记忆 / 履历） */
+/** 角色详情（设计 §7：定义 / 记忆 / 履历 / 主动性） */
 export interface RolePanelDetail {
   roleId: string;
   /** agents/<id>.md 原始内容（只读展示）；定义文件缺失时为 null */
@@ -85,4 +85,6 @@ export interface RolePanelDetail {
   memories: RolePanelMemory[];
   /** 工作履历（产物清单，最新在后） */
   history: string[];
+  /** 主动性配置（解析后的生效值：settings 覆盖 > frontmatter > 出厂默认 silent） */
+  proactivity: RoleProactivityConfig;
 }

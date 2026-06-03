@@ -50,19 +50,52 @@ test('角色面板渲染预设角色卡片', async ({ page }) => {
   await page.screenshot({ path: 'screenshots/roles-tab-list.png', fullPage: false });
 });
 
-test('角色详情：记忆 / 履历 / 定义 三区块渲染', async ({ page }) => {
+test('角色详情：主动性 / 记忆 / 履历 / 定义 四区块渲染', async ({ page }) => {
   const dialog = await openRolesSettings(page);
 
   // 点击研究员卡片进入详情
   await dialog.getByText('研究员', { exact: true }).first().click();
 
-  // 三个区块（记忆可能为空 → 空态文案也算渲染成功）
-  await expect(dialog.getByText(/角色记忆（\d+）/)).toBeVisible({ timeout: 10_000 });
+  // 四个区块（记忆可能为空 → 空态文案也算渲染成功）
+  await expect(dialog.getByText('主动性', { exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(dialog.getByText(/角色记忆（\d+）/)).toBeVisible();
   await expect(dialog.getByText('工作履历', { exact: true })).toBeVisible();
   await expect(dialog.getByText('角色定义', { exact: true })).toBeVisible();
+
+  // 主动性出厂默认为静默档
+  await expect(dialog.getByText('静默', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('每日简报', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('实时介入', { exact: true })).toBeVisible();
 
   // 返回列表
   await page.screenshot({ path: 'screenshots/roles-tab-detail.png', fullPage: false });
   await dialog.getByText('返回角色列表').click();
   await expect(dialog.getByText('数据分析师', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+});
+
+test('主动性开关：设置页开启每日简报 → 立即生效并持久化', async ({ page }) => {
+  const dialog = await openRolesSettings(page);
+  await dialog.getByText('研究员', { exact: true }).first().click();
+  await expect(dialog.getByText('主动性', { exact: true })).toBeVisible({ timeout: 10_000 });
+
+  // 点击"每日简报"档
+  await dialog.getByText('每日简报', { exact: true }).click();
+
+  // 选中态：每日简报的提示文案出现且选中样式生效（重新加载 detail 后仍是每日简报）
+  await expect(dialog.getByText(/每天 09:00 醒来巡检产物/)).toBeVisible({ timeout: 10_000 });
+
+  // 退出再进入详情 → 配置已持久化（settings 写入 + detail 反映）
+  await dialog.getByText('返回角色列表').click();
+  await dialog.getByText('研究员', { exact: true }).first().click();
+  await expect(dialog.getByText('主动性', { exact: true })).toBeVisible({ timeout: 10_000 });
+  // 每日简报处于选中态（emerald 高亮的选项里包含"每日简报"）
+  const selectedOption = dialog.locator('button.border-emerald-600\\/70');
+  await expect(selectedOption).toHaveCount(1, { timeout: 10_000 });
+  await expect(selectedOption).toContainText('每日简报');
+
+  await page.screenshot({ path: 'screenshots/roles-tab-proactivity.png', fullPage: false });
+
+  // 收尾：改回静默（不污染后续测试/环境）
+  await dialog.getByText('静默', { exact: true }).click();
+  await expect(dialog.locator('button.border-emerald-600\\/70')).toContainText('静默', { timeout: 10_000 });
 });

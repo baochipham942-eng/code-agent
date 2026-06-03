@@ -31,6 +31,7 @@ import {
   Camera,
   ShieldCheck,
   Terminal,
+  UserCircle,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -64,6 +65,7 @@ const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
   'model',
   'mcp',
   'skills',
+  'roles',
   'channels',
   'hooks',
   'memory',
@@ -89,6 +91,7 @@ import { DataSettings } from './tabs/DataSettings';
 import { UpdateSettings } from './tabs/UpdateSettings';
 import { MCPSettings } from './tabs/MCPSettings';
 import { MemoryTab } from './tabs/MemoryTab';
+import { RolesTab } from './tabs/RolesTab';
 import { SkillsSettings } from './tabs/SkillsSettings';
 import { PluginsSettings } from './tabs/PluginsSettings';
 import { CapabilityCenterSettings } from './tabs/CapabilityCenterSettings';
@@ -149,6 +152,7 @@ export function buildSettingsTabGroups({
     { id: 'plugins', label: '插件管理', icon: <PackagePlus className="w-4 h-4" /> },
     { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
     { id: 'skills', label: 'Skills', icon: <Sparkles className="w-4 h-4" /> },
+    { id: 'roles', label: '角色', icon: <UserCircle className="w-4 h-4" /> },
     { id: 'channels', label: '通道', icon: <MessageSquare className="w-4 h-4" /> },
     { id: 'hooks', label: 'Hook', icon: <Webhook className="w-4 h-4" /> },
     { id: 'memory', label: t.settings?.tabs?.memory || '记忆', icon: <Brain className="w-4 h-4" /> },
@@ -397,6 +401,7 @@ export const SettingsModal: React.FC = () => {
             {canViewPlugins && activeTab === 'plugins' && <PluginsSettings />}
             {activeTab === 'mcp' && <MCPSettings />}
             {activeTab === 'skills' && <SkillsSettings />}
+            {activeTab === 'roles' && <RolesTab />}
             {activeTab === 'channels' && <ChannelsSettings />}
             {activeTab === 'hooks' && <HooksSettings />}
             {activeTab === 'memory' && <MemoryTab />}

@@ -62,6 +62,7 @@ import { registerInAppValidationHandlers } from './inAppValidation.ipc';
 import { registerPromptHandlers } from './prompt.ipc';
 import { registerHookHandlers } from './hook.ipc';
 import { registerAgentRegistryHandlers } from './agentRegistry.ipc';
+import { registerRolesHandlers } from './roles.ipc';
 import { registerAgentEngineHandlers } from './agentEngine.ipc';
 import { registerCapabilityHandlers } from './capability.ipc';
 import { registerHandoffHandlers } from './handoff.ipc';
@@ -253,6 +254,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
     const { BrowserWindow } = require('../platform') as typeof import('../platform');
     return BrowserWindow.getAllWindows();
   });
+
+  // Roles handlers (持久化角色资产面板：列表/详情/记忆删改)
+  registerRolesHandlers(ipcMain);
 
   // Agent Engine handlers (Native / Codex CLI / Claude Code detection)
   registerAgentEngineHandlers(ipcMain);

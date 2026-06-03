@@ -208,6 +208,30 @@ async function cronApi<T>(server: StartedServer, action: string, payload?: unkno
   }
 }
 
+/**
+ * 触发一次醒来并等待完成。
+ *
+ * 不能用单个长连接等 triggerJob 响应——Node fetch（undici）默认 headersTimeout 300s，
+ * 醒来（思考模型 + 最多 15 轮）经常超过 5 分钟，长连接会被 undici 掐断（E2E 实测踩坑）。
+ * 改为：fire-and-forget 触发 + 轮询 getExecutions 直到出现终态执行记录。
+ */
+async function triggerJobAndWait(server: StartedServer, jobId: string): Promise<WakeExecution> {
+  const before = await cronApi<WakeExecution[]>(server, 'getExecutions', { jobId, limit: 50 });
+  const knownIds = new Set(before.map((e) => e.id));
+
+  // fire-and-forget：响应可能因 headers timeout 失败，忽略（执行结果靠轮询拿）
+  cronApi<WakeExecution>(server, 'triggerJob', { jobId }, WAKE_TIMEOUT_MS).catch(() => undefined);
+
+  const deadline = Date.now() + WAKE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await delay(10_000);
+    const executions = await cronApi<WakeExecution[]>(server, 'getExecutions', { jobId, limit: 50 });
+    const fresh = executions.find((e) => !knownIds.has(e.id) && (e.status === 'completed' || e.status === 'failed'));
+    if (fresh) return fresh;
+  }
+  throw new Error(`Wake execution did not finish within ${WAKE_TIMEOUT_MS / 1000}s (jobId=${jobId})`);
+}
+
 interface SessionEntry {
   id: string;
   title: string;
@@ -436,8 +460,8 @@ async function scenario2(env: E2EEnv, server: StartedServer, researcherJobId: st
   const historyBefore = (await readHistoryEntries(env, RESEARCHER)).length;
   const sessionsBefore = (await listSessions(server, true)).length;
 
-  // 触发醒来（triggerJob 同步等待醒来循环完成）
-  const execution = await cronApi<WakeExecution>(server, 'triggerJob', { jobId: researcherJobId }, WAKE_TIMEOUT_MS);
+  // 触发醒来（fire-and-forget + 轮询执行记录）
+  const execution = await triggerJobAndWait(server, researcherJobId);
 
   if (execution.status === 'completed' && execution.result?.status === 'completed') {
     result.evidence.push(`✓ 醒来执行完成（decision=${execution.result.decision}, session=${execution.result.sessionId}）`);
@@ -492,7 +516,7 @@ async function scenario2(env: E2EEnv, server: StartedServer, researcherJobId: st
 async function scenario3(env: E2EEnv, server: StartedServer, analystJobId: string): Promise<ScenarioResult> {
   const result: ScenarioResult = { id: 'AC3', title: '沉默路径（空履历 → silence → 归档）', pass: false, evidence: [], failures: [] };
 
-  const execution = await cronApi<WakeExecution>(server, 'triggerJob', { jobId: analystJobId }, WAKE_TIMEOUT_MS);
+  const execution = await triggerJobAndWait(server, analystJobId);
 
   if (execution.status !== 'completed' || execution.result?.status !== 'completed') {
     result.failures.push(`✗ 醒来执行未完成: ${JSON.stringify(execution.result)}, error=${execution.error}`);
@@ -552,7 +576,7 @@ async function scenario4(env: E2EEnv, server: StartedServer, analystJobId: strin
   result.evidence.push(`✓ 预埋：当天醒来记录补至 ${existing + toSeed} 条（上限 ${MAX_WAKES_PER_DAY}）`);
 
   // 再触发 → 必须被预算护栏拦截
-  const execution = await cronApi<WakeExecution>(server, 'triggerJob', { jobId: analystJobId }, WAKE_TIMEOUT_MS);
+  const execution = await triggerJobAndWait(server, analystJobId);
 
   if (execution.result?.status === 'skipped' && (execution.result.skipReason ?? '').includes('daily_budget_exceeded')) {
     result.evidence.push(`✓ 第 ${MAX_WAKES_PER_DAY + 1} 次醒来被预算护栏拦截: ${execution.result.skipReason}`);

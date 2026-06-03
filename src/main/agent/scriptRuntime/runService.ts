@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto';
 import { SCRIPT_RUNTIME } from '../../../shared/constants';
 import type { ModelConfig } from '../../../shared/contract';
+import { captureWorkspacePatch } from '../../services/checkpoint/taskPatchService';
 import { ConcurrencyGate } from './concurrencyGate';
 import { BudgetTracker } from './budget';
 import { handleRpc } from './primitives';
@@ -62,6 +63,8 @@ export interface ScriptRunHostDeps {
 interface ActiveRun {
   controller: AbortController;
   state: ScriptRunState;
+  /** run 的工作目录，取消时用于抢救文件改动成 patch（缺省则不抓取）。 */
+  workingDir?: string;
 }
 
 const activeRuns = new Map<string, ActiveRun>();
@@ -94,7 +97,7 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     cacheHits: 0,
     phases: [],
   };
-  activeRuns.set(spec.runId, { controller, state });
+  activeRuns.set(spec.runId, { controller, state, workingDir: spec.workingDir });
 
   const budget = new BudgetTracker(spec.budgetTokens ?? null);
 
@@ -270,6 +273,13 @@ export function cancelRun(runId: string, options: { sessionId?: string } = {}): 
   const run = activeRuns.get(runId);
   if (!run) return false;
   if (run.state.sessionId && options.sessionId && run.state.sessionId !== options.sessionId) return false;
+
+  // abort 前抢救工作目录的文件改动成 patch。best-effort：不 await，capture 失败/慢
+  // 都不能阻塞取消流程本身（capture 内部已 try/catch 吞错）。
+  if (run.workingDir) {
+    void captureWorkspacePatch(run.workingDir, runId, 'cancel');
+  }
+
   run.controller.abort();
   return true;
 }

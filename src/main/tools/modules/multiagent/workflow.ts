@@ -231,7 +231,7 @@ async function runWorkflow(
     safeProgress({ stage: 'starting', detail: 'workflow' });
 
     const state = await startRun(
-      { runId, sessionId: ctx.sessionId, script, goal, budgetTokens, resumeFromRunId, defaultProvider: baseModelConfig.provider, defaultModel: baseModelConfig.model },
+      { runId, sessionId: ctx.sessionId, workingDir: legacyCtx.workingDirectory, script, goal, budgetTokens, resumeFromRunId, defaultProvider: baseModelConfig.provider, defaultModel: baseModelConfig.model },
       deps,
     );
 

@@ -81,6 +81,8 @@ export interface ScriptRunSpec {
   runId: string;
   /** 归属会话，用于控制面授权和 renderer 会话隔离。 */
   sessionId?: string;
+  /** run 的工作目录（宿主从 toolContext 注入）。取消/丢弃时用于抢救文件改动成 patch。 */
+  workingDir?: string;
   /** 模型当场写的 JS 编排脚本源码。 */
   script: string;
   /** /workflow <goal> 的任务目标。 */

@@ -28,6 +28,11 @@ import {
 } from '../../../lightMemory/indexLoader';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { guardSensitiveText } from '../../../security/sensitiveDataGuard';
+import {
+  writeScopedMemory,
+  deleteScopedMemory,
+  type ScopedMemoryTarget,
+} from '../../../services/roleAssets/roleAssetService';
 
 const VALID_TYPES = ['user', 'feedback', 'project', 'reference', 'skill'] as const;
 type MemoryType = (typeof VALID_TYPES)[number];
@@ -88,9 +93,20 @@ class MemoryWriteHandler implements ToolHandler<Record<string, unknown>, string>
 
     onProgress?.({ stage: 'starting', detail: `${action} ${sanitized}` });
 
+    // scope 路由（持久化角色资产三层记忆，设计 §3）：
+    // global（默认）走现有 Light Memory；role/project 走 roleAssetService。
+    const scope = args.scope as string | undefined;
+    const scopedTarget = resolveScopedTarget(scope, ctx);
+    if (scopedTarget && 'error' in scopedTarget) {
+      return { ok: false, error: scopedTarget.error, code: 'INVALID_ARGS' };
+    }
+
     try {
-      const result =
-        action === 'write'
+      const result = scopedTarget
+        ? action === 'write'
+          ? await executeScopedWrite(args, sanitized, scopedTarget, ctx)
+          : await executeScopedDelete(sanitized, scopedTarget, ctx)
+        : action === 'write'
           ? await executeWrite(args, sanitized, ctx)
           : await executeDelete(sanitized, ctx);
       onProgress?.({ stage: 'completing', percent: 100 });
@@ -106,6 +122,105 @@ class MemoryWriteHandler implements ToolHandler<Record<string, unknown>, string>
       };
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Scoped write/delete（role / project 层，设计 §3 三层记忆）
+// ---------------------------------------------------------------------------
+
+/**
+ * 解析 scope 参数到 roleAssetService 的写入目标。
+ * 返回 undefined = global scope（走现有逻辑）；返回 { error } = scope 不可用。
+ */
+function resolveScopedTarget(
+  scope: string | undefined,
+  ctx: ToolContext,
+): ScopedMemoryTarget | { error: string } | undefined {
+  if (!scope || scope === 'global') return undefined;
+  if (scope === 'role') {
+    const roleId = ctx.subagent?.agentRole;
+    if (!roleId) {
+      return { error: 'scope "role" is only available when running as a persistent role agent' };
+    }
+    return { scope: 'role', roleId };
+  }
+  if (scope === 'project') {
+    if (!ctx.workingDir) {
+      return { error: 'scope "project" requires a working directory' };
+    }
+    return { scope: 'project', workspacePath: ctx.workingDir };
+  }
+  return { error: `Unknown scope: "${scope}". Use "global", "role" or "project".` };
+}
+
+async function executeScopedWrite(
+  args: Record<string, unknown>,
+  filename: string,
+  target: ScopedMemoryTarget,
+  ctx: ToolContext,
+): Promise<ToolResult<string>> {
+  const name = args.name as string | undefined;
+  const description = args.description as string | undefined;
+  const content = args.content as string | undefined;
+
+  if (!name || !description || !content) {
+    return {
+      ok: false,
+      error: 'write action requires: name, description, content',
+      code: 'INVALID_ARGS',
+    };
+  }
+
+  // 写入 + 索引维护都在 roleAssetService 内完成（已带 sensitive guard）
+  const filePath = await writeScopedMemory(target, { filename, name, description, content });
+
+  const artifact = await createFileArtifact(filePath, schema.name, ctx, {
+    kind: 'text',
+    mimeType: 'text/markdown',
+    metadata: {
+      action: 'write',
+      filename,
+      path: filePath,
+      scope: target.scope,
+      description,
+    },
+  });
+
+  return {
+    ok: true,
+    output: `Memory saved: ${filename}\n- Scope: ${target.scope}\n- Description: ${description}`,
+    meta: {
+      action: 'write',
+      filename,
+      path: filePath,
+      scope: target.scope,
+      description,
+      artifact,
+    },
+  };
+}
+
+async function executeScopedDelete(
+  filename: string,
+  target: ScopedMemoryTarget,
+  ctx: ToolContext,
+): Promise<ToolResult<string>> {
+  const existed = await deleteScopedMemory(target, filename);
+  const artifact = createVirtualArtifact({
+    sourceTool: schema.name,
+    kind: 'text',
+    sessionId: ctx.sessionId,
+    name: filename,
+    mimeType: 'text/markdown',
+    contentLength: 0,
+    preview: `Memory deleted: ${filename}`,
+    metadata: { action: 'delete', filename, scope: target.scope, existed },
+  });
+  return {
+    ok: true,
+    output: `Memory deleted: ${filename} (scope: ${target.scope})`,
+    meta: { action: 'delete', filename, scope: target.scope, existed, artifact },
+  };
 }
 
 // ---------------------------------------------------------------------------

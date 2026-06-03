@@ -17,6 +17,15 @@ export const memoryWriteSchema: ToolSchema = {
         enum: ['write', 'delete'],
         description: '"write" creates or overwrites a memory file. "delete" removes it.',
       },
+      scope: {
+        type: 'string',
+        enum: ['global', 'role', 'project'],
+        description:
+          'Memory layer. "global" (default) = user-level memory shared by all agents. ' +
+          '"role" = persistent-role memory (only available when running as a persistent role; ' +
+          'professional knowledge reusable across projects). ' +
+          '"project" = current-workspace memory (knowledge only meaningful in this project).',
+      },
       filename: {
         type: 'string',
         description:

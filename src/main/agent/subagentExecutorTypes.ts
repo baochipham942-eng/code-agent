@@ -9,6 +9,13 @@ import type { ParentContext } from './childContext';
 
 export interface SubagentConfig {
   name: string;
+  /**
+   * 角色 ID（agent 注册 id，即 agents/<id>.md 的 frontmatter name）。
+   * 持久化角色资产（roles/<roleId>/）按这个 id 绑定——config.name 是显示名
+   * （自定义 agent 的 name = description），不能用作绑定 key。
+   * 未设置时跳过角色资产链路（行为与持久化角色功能上线前完全一致）。
+   */
+  roleId?: string;
   systemPrompt: string;
   availableTools: string[];
   /**

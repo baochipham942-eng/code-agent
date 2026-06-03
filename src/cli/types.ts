@@ -46,6 +46,8 @@ export interface CLIConfig {
   metricsPath?: string;
   /** /goal 自治模式契约；存在则激活 goal 模式（透传给 AgentLoop → ctx.goalMode） */
   goalContract?: GoalContract;
+  /** 迭代数硬上限（角色主动性醒来等预算受限场景；不传用 AgentLoop 默认值） */
+  maxIterations?: number;
 }
 
 /**

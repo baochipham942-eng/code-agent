@@ -177,7 +177,15 @@ export async function wakeRole(
   const settings = configService.getSettings();
   const currentSessionId = sessionManager.getCurrentSessionId();
   const currentSession = currentSessionId ? await sessionManager.getSession(currentSessionId) : null;
-  const workspacePath = options?.workspacePath ?? currentSession?.workingDirectory;
+  // workspace 解析链（与 webServer/desktop bootstrap 同序）：显式传入 > 当前会话 >
+  // CODE_AGENT_WORKING_DIR > 用户工作区偏好。不能落到 process.cwd()——那是应用安装目录，
+  // 角色会跑去巡检应用自己的代码（E2E 实测踩坑）。
+  const workspacePath = options?.workspacePath
+    ?? currentSession?.workingDirectory
+    ?? process.env.CODE_AGENT_WORKING_DIR?.trim()
+    ?? settings.workspace?.pinnedDirectory
+    ?? settings.workspace?.recentDirectories?.[0]
+    ?? settings.workspace?.defaultDirectory;
 
   const instantiation = await instantiateRole(roleId, trigger, {
     task: `${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}（${trigger}）`,
@@ -208,32 +216,46 @@ export async function wakeRole(
   });
 
   // ---- 步骤 4：跑实例（角色 agent 定义 + 记忆注入 + 迭代数硬约束）----
+  // 双路径（web/main 路径分离）：
+  //   - Electron main：TaskManager orchestrator（带 UI 事件路由 / 权限弹窗）
+  //   - webServer/headless（发行版后端）：cli/bootstrap createAgentLoop（与 /api/run 同源）
+  const wakePrompt = buildWakePrompt(trigger, options?.runSummary);
   const { getTaskManager } = await import('../../task');
   const tm = getTaskManager();
   const orchestrator = tm.getOrCreateCurrentOrchestrator(session.id);
-  if (!orchestrator) {
-    throw new Error(`AgentOrchestrator not available for wake session ${session.id}`);
-  }
-  if (workspacePath) {
-    tm.setWorkingDirectory(session.id, workspacePath);
-  }
 
-  let finalOutput = '';
-  try {
-    const wakePrompt = buildWakePrompt(trigger, options?.runSummary);
-    await orchestrator.sendMessage(wakePrompt, undefined, {
-      mode: 'normal',
-      agentOverrideId: roleId,
-      turnSystemContext: instantiation.contextBlock ? [instantiation.contextBlock] : undefined,
-      maxIterations: ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS,
+  if (orchestrator) {
+    if (workspacePath) {
+      tm.setWorkingDirectory(session.id, workspacePath);
+    }
+    try {
+      await orchestrator.sendMessage(wakePrompt, undefined, {
+        mode: 'normal',
+        agentOverrideId: roleId,
+        turnSystemContext: instantiation.contextBlock ? [instantiation.contextBlock] : undefined,
+        maxIterations: ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS,
+      });
+    } finally {
+      tm.cleanup(session.id);
+    }
+  } else {
+    await runWakeViaCliLoop({
+      sessionId: session.id,
+      roleId,
+      wakePrompt,
+      contextBlock: instantiation.contextBlock,
+      workspacePath,
     });
+  }
 
-    // ---- 步骤 5：读最终产出，解析四选一决策 ----
+  // ---- 步骤 5：读最终产出，解析四选一决策 ----
+  // 两条路径都把消息持久化进会话（orchestrator persistMessage / CLI persistAgentLoopMessageToSession），
+  // 统一从会话读最后一条 assistant 消息。
+  let finalOutput = '';
+  {
     const sessionWithMessages = await sessionManager.getSession(session.id);
     const assistantMessages = (sessionWithMessages?.messages ?? []).filter((m) => m.role === 'assistant' && m.content);
     finalOutput = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1].content : '';
-  } finally {
-    tm.cleanup(session.id);
   }
 
   const decision = parseWakeDecision(finalOutput);
@@ -421,6 +443,45 @@ export async function syncCadenceJobs(): Promise<{ registered: string[]; removed
 // ----------------------------------------------------------------------------
 // 内部 helpers
 // ----------------------------------------------------------------------------
+
+/**
+ * headless 醒来路径：cli/bootstrap createAgentLoop（与 /api/run 同源的执行链路）。
+ * webServer（发行版后端）没有 Electron main 的 TaskManager orchestrator，走这条。
+ *
+ * 简化（MVP）：角色的 system prompt 和记忆注入块通过 config.systemPrompt 附加，
+ * 工具集用默认全集（角色 tools 白名单约束在这条路径暂不生效，由醒来 prompt 约束行为）。
+ */
+async function runWakeViaCliLoop(params: {
+  sessionId: string;
+  roleId: string;
+  wakePrompt: string;
+  contextBlock: string | null;
+  workspacePath?: string;
+}): Promise<void> {
+  const { createCLIAgent } = await import('../../../cli/adapter');
+  const { createAgentLoop } = await import('../../../cli/bootstrap');
+
+  const agent = await createCLIAgent({
+    ...(params.workspacePath ? { project: params.workspacePath } : {}),
+    json: true,
+  });
+  const config = agent.getConfig();
+
+  // 角色 agent 定义的 system prompt（有定义则注入，让醒来实例带角色人设）
+  let rolePrompt = '';
+  try {
+    const { resolveAgent } = await import('../../agent/agentRegistry');
+    rolePrompt = resolveAgent(params.roleId)?.prompt ?? '';
+  } catch {
+    // registry 不可用 → 只用记忆注入块
+  }
+
+  config.systemPrompt = [rolePrompt, params.contextBlock ?? ''].filter((s) => s.trim().length > 0).join('\n\n');
+  config.maxIterations = ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS;
+
+  const agentLoop = createAgentLoop(config, () => { /* 醒来是后台运行，无 UI 事件消费方 */ }, [], params.sessionId);
+  await agentLoop.run(params.wakePrompt);
+}
 
 /** realtime 档桌面通知（headless / webServer 环境无 electron 时静默跳过） */
 async function sendDesktopNotification(title: string, body: string): Promise<void> {

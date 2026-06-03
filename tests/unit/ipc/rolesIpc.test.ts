@@ -20,12 +20,23 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 }));
 
 // agentRegistry 返回固定的 agent 列表（研究员有定义，孤儿角色没有）
+// 注意：预设角色（研究员）安装到用户目录后 registry 报 source: 'user'，
+// list action 需要对照 BUILTIN_ROLE_IDS 改写为 'builtin'
 vi.mock('../../../src/main/agent/agentRegistry', () => ({
   listAllAgents: () => [
     {
       id: '研究员',
       name: '调研、信息收集、报告产出专家',
       description: '调研、信息收集、报告产出专家',
+      source: 'user',
+      modelTier: 'balanced',
+      readonly: false,
+      tools: [],
+    },
+    {
+      id: '自定义角色',
+      name: '用户自建的角色',
+      description: '用户自建的角色',
       source: 'user',
       modelTier: 'balanced',
       readonly: false,
@@ -96,10 +107,27 @@ describe('roles.ipc (domain:roles)', () => {
       expect(res.data?.length).toBe(1);
       const entry = res.data![0];
       expect(entry.roleId).toBe('研究员');
-      expect(entry.source).toBe('user');
       expect(entry.description).toContain('调研');
       expect(entry.memoryCount).toBe(2);
       expect(entry.lastWork).toContain('Q2 报告');
+    });
+
+    it('marks builtin roles as builtin even when registry reports user source', async () => {
+      // 预设角色安装到用户目录后 agentRegistry 报 source: 'user'，
+      // 面板应显示"预设"而不是"自建"
+      await ensureRoleAssetDirs('研究员');
+      const res = await invoke<RolePanelEntry[]>('list');
+      expect(res.success).toBe(true);
+      expect(res.data![0].roleId).toBe('研究员');
+      expect(res.data![0].source).toBe('builtin');
+    });
+
+    it('keeps user source for non-builtin roles', async () => {
+      await ensureRoleAssetDirs('自定义角色');
+      const res = await invoke<RolePanelEntry[]>('list');
+      expect(res.success).toBe(true);
+      expect(res.data![0].roleId).toBe('自定义角色');
+      expect(res.data![0].source).toBe('user');
     });
 
     it('marks roles without agent definition as orphan', async () => {

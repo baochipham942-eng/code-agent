@@ -15,6 +15,7 @@ import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { RolePanelDetail, RolePanelEntry } from '../../shared/contract/roleAssets';
 import {
+  BUILTIN_ROLE_IDS,
   listPersistentRoles,
   listScopedMemories,
   loadRoleHistory,
@@ -50,6 +51,10 @@ interface UpdateMemoryPayload extends RoleIdPayload {
 // Actions
 // ----------------------------------------------------------------------------
 
+// 预设角色安装到用户目录后 agentRegistry 报 source: 'user'，
+// 面板需要按 roleId 对照预设清单还原成 'builtin'（显示"预设"标签）
+const builtinRoleIdSet = new Set<string>(BUILTIN_ROLE_IDS);
+
 async function handleList(): Promise<RolePanelEntry[]> {
   const roleIds = await listPersistentRoles();
   const agents = new Map(listAllAgents().map((a) => [a.id, a]));
@@ -59,10 +64,13 @@ async function handleList(): Promise<RolePanelEntry[]> {
     const agent = agents.get(roleId);
     const memories = await listScopedMemories({ scope: 'role', roleId });
     const history = await loadRoleHistory(roleId, 1);
+    const source = agent
+      ? (builtinRoleIdSet.has(roleId) ? 'builtin' : agent.source)
+      : 'orphan';
     entries.push({
       roleId,
       description: agent?.description ?? '',
-      source: agent?.source ?? 'orphan',
+      source,
       memoryCount: memories.length,
       lastWork: history.length > 0 ? history[history.length - 1] : null,
     });

@@ -17,6 +17,14 @@ import {
 import { createLogger } from '../infra/logger';
 import { CACHE, CLOUD, CLOUD_ENDPOINTS } from '../../../shared/constants';
 import {
+  getBuiltinSkillCatalogPayload,
+} from '../../../shared/constants/skillCatalog';
+import {
+  getBuiltinMcpCatalogPayload,
+} from '../../../shared/constants/mcpCatalog';
+import type { SkillCatalogPayload } from '../../../shared/contract/skillRepository';
+import type { McpCatalogPayload } from '../../../shared/contract/mcpCatalog';
+import {
   getControlPlanePublicKeysFromEnv,
   isControlPlaneEnvelope,
   verifyControlPlaneEnvelope,
@@ -216,6 +224,30 @@ export class CloudConfigService {
   getFeatureFlag<K extends keyof FeatureFlags>(key: K): FeatureFlags[K] {
     const flags = this.getFeatureFlags();
     return flags[key];
+  }
+
+  /**
+   * 获取 Skill 推荐目录
+   * 云端下发优先；数据缺失或不完整时降级到内置目录
+   */
+  getSkillCatalog(): SkillCatalogPayload {
+    const catalog = this.getConfig().skillCatalog;
+    if (catalog?.categories?.length && catalog?.skills?.length) {
+      return catalog;
+    }
+    return getBuiltinSkillCatalogPayload();
+  }
+
+  /**
+   * 获取 MCP 推荐目录
+   * 云端下发优先；数据缺失或不完整时降级到内置目录
+   */
+  getMcpCatalog(): McpCatalogPayload {
+    const catalog = this.getConfig().mcpCatalog;
+    if (catalog?.categories?.length && catalog?.servers?.length) {
+      return catalog;
+    }
+    return getBuiltinMcpCatalogPayload();
   }
 
   getEntitlement(): EntitlementPolicy {

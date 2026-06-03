@@ -15,6 +15,18 @@ export interface CloudConfigPayload {
   };
   rules: Record<string, string>;
   mcpServers: unknown[];
+  /** Skill 推荐目录（运营下发；缺省时客户端用内置兜底） */
+  skillCatalog?: {
+    categories: unknown[];
+    skills: unknown[];
+    bundles: unknown[];
+    repositories: unknown[];
+  };
+  /** MCP 推荐目录（运营下发；缺省时客户端用内置兜底） */
+  mcpCatalog?: {
+    categories: unknown[];
+    servers: unknown[];
+  };
   entitlement?: {
     status: 'active' | 'trial' | 'expired' | 'revoked';
     plan: string;

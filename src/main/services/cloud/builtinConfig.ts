@@ -3,6 +3,8 @@
 // ============================================================================
 
 import type { SkillDefinition } from '../../../shared/contract';
+import type { SkillCatalogPayload } from '../../../shared/contract/skillRepository';
+import type { McpCatalogPayload } from '../../../shared/contract/mcpCatalog';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -86,6 +88,10 @@ export interface CloudConfig {
   entitlement?: EntitlementPolicy;
   killSwitches?: KillSwitchPolicy;
   release?: ReleasePolicy;
+  /** Skill 推荐目录（运营下发；缺省时客户端用内置兜底） */
+  skillCatalog?: SkillCatalogPayload;
+  /** MCP 推荐目录（运营下发；缺省时客户端用内置兜底） */
+  mcpCatalog?: McpCatalogPayload;
 }
 
 // ----------------------------------------------------------------------------

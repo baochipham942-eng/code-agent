@@ -54,6 +54,17 @@ export interface RecommendedMcpConnectionTemplate {
 }
 
 /**
+ * MCP 推荐目录完整载荷
+ * 云端下发与客户端兜底共用的数据形状
+ */
+export interface McpCatalogPayload {
+  /** 用途分类 */
+  categories: McpCategoryMeta[];
+  /** 推荐 server 条目 */
+  servers: RecommendedMcpServerEntry[];
+}
+
+/**
  * 推荐 MCP Server 条目
  */
 export interface RecommendedMcpServerEntry {

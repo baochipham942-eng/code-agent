@@ -7,12 +7,12 @@ import React from 'react';
 import { AlertCircle, Plus, Search, X } from 'lucide-react';
 import type {
   RecommendedSkillEntry,
+  SkillCatalogPayload,
   SkillRepository,
   SkillRoleBundle,
 } from '@shared/contract/skillRepository';
 import { BUILTIN_REPO_ID } from '@shared/contract/skillRepository';
 import {
-  SKILL_ROLE_BUNDLES,
   findRecommendedRepository,
   groupRecommendedSkillsByCategory,
 } from '@shared/constants/skillCatalog';
@@ -27,6 +27,8 @@ import {
 } from './SkillsSettingsCards';
 
 export interface SkillsDiscoverTabProps {
+  /** 推荐目录（云端下发优先，内置兜底） */
+  catalog: SkillCatalogPayload;
   recommendedRepos: SkillRepository[];
   /** 已安装仓库 ID 集合 */
   installedRepoIds: Set<string>;
@@ -70,6 +72,7 @@ export function getBundleMissingRepoIds(
 }
 
 export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
+  catalog,
   recommendedRepos,
   installedRepoIds,
   installedSkillNames,
@@ -89,11 +92,11 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
   onCustomUrlChange,
   onAddCustom,
 }) => {
-  const categoryGroups = groupRecommendedSkillsByCategory();
+  const categoryGroups = groupRecommendedSkillsByCategory(catalog);
 
   // 推荐 skill 的安装动作 = 安装其来源仓库
   const handleInstallSkill = (entry: RecommendedSkillEntry) => {
-    const repo = findRecommendedRepository(entry.repoId);
+    const repo = findRecommendedRepository(entry.repoId, catalog.repositories);
     if (repo) {
       onInstallRepo(repo);
     }
@@ -108,7 +111,7 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
           <p className="text-xs text-zinc-500 mt-0.5">按你的角色一键配齐常用 Skill</p>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          {SKILL_ROLE_BUNDLES.map((bundle) => (
+          {catalog.bundles.map((bundle) => (
             <RoleBundleCard
               key={bundle.id}
               bundle={bundle}
@@ -140,7 +143,7 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
                   isInstalled={
                     installedSkillNames.has(entry.name) || installedRepoIds.has(entry.repoId)
                   }
-                  sourceRepoName={findRecommendedRepository(entry.repoId)?.name}
+                  sourceRepoName={findRecommendedRepository(entry.repoId, catalog.repositories)?.name}
                   onInstall={handleInstallSkill}
                   isInstalling={actionLoading === entry.repoId}
                 />

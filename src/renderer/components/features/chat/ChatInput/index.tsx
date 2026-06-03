@@ -32,6 +32,8 @@ import { useSwarmStore } from '../../../../stores/swarmStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { ComboSkillCard } from './ComboSkillCard';
 import { SkillDraftNotifications } from './SkillDraftCard';
+import { CapabilitySuggestionStrip } from './CapabilitySuggestionStrip';
+import { useSkillRecommendations } from './useSkillRecommendations';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { AppshotChip } from './AppshotChip';
@@ -149,6 +151,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const formRef = useRef<HTMLFormElement>(null);
   const debugDraftAppliedRef = useRef(false);
   const { processFile, processFolderEntry } = useFileUpload();
+  // 输入命中技能关键词时的推荐（已安装→挂载 / 未安装→从推荐目录安装）
+  const {
+    recommendations: skillRecommendations,
+    installingSkillName,
+    mountRecommendedSkill,
+    installRecommendedSkill,
+  } = useSkillRecommendations(currentSessionId, value);
   const browserSession = useWorkbenchBrowserSession();
   const buildContext = useComposerStore((state) => state.buildContext);
   const routingMode = useComposerStore((state) => state.routingMode);
@@ -899,6 +908,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {value.trim().length === 0 && suggestions.length > 0 && (
           <SuggestionBar suggestions={suggestions} onSelect={handleSuggestionSelect} />
         )}
+
+        {/* Skill 推荐条 - 输入命中技能关键词时显示（挂载已安装 / 安装未安装） */}
+        <CapabilitySuggestionStrip
+          skillRecommendations={skillRecommendations}
+          capabilitySuggestions={[]}
+          onSkillMount={mountRecommendedSkill}
+          onSkillInstall={installRecommendedSkill}
+          onCapabilitySelect={() => {}}
+          installingSkillName={installingSkillName}
+        />
 
         {/* Codex 风格融合：去掉明显边框 + 阴影，只用极弱 bg 区分输入区跟聊天内容 */}
         <div className="relative bg-white/[0.02] backdrop-blur-sm rounded-2xl focus-within:bg-white/[0.04] transition-colors duration-200">

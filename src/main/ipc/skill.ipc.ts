@@ -9,6 +9,7 @@ import { getSkillRepositoryService } from '../services/skills/skillRepositorySer
 import { getSessionSkillService } from '../services/skills/sessionSkillService';
 import { getSkillDiscoveryService } from '../services/skills/skillDiscoveryService';
 import { RECOMMENDED_REPOSITORIES } from '../services/skills/skillRepositories';
+import { getCloudConfigService } from '../services/cloud';
 import type { SkillRepository } from '../../shared/contract/skillRepository';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
@@ -206,9 +207,21 @@ async function handleSessionRecommend(sessionId: string, userInput?: string) {
 
 /**
  * 获取推荐仓库列表
+ * 云端目录下发优先，异常时降级到内置列表
  */
 function handleRecommendedRepos() {
-  return RECOMMENDED_REPOSITORIES;
+  try {
+    return getCloudConfigService().getSkillCatalog().repositories;
+  } catch {
+    return RECOMMENDED_REPOSITORIES;
+  }
+}
+
+/**
+ * 获取 Skill 推荐目录（分类/条目/场景包/仓库）
+ */
+function handleSkillCatalog() {
+  return getCloudConfigService().getSkillCatalog();
 }
 
 // ----------------------------------------------------------------------------
@@ -519,6 +532,15 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
       return handleRecommendedRepos();
     } catch (error) {
       logger.error('Failed to get recommended repos', { error });
+      throw error;
+    }
+  });
+
+  ipcMain.handle(SKILL_CHANNELS.CATALOG, () => {
+    try {
+      return handleSkillCatalog();
+    } catch (error) {
+      logger.error('Failed to get skill catalog', { error });
       throw error;
     }
   });

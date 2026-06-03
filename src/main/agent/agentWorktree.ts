@@ -12,6 +12,7 @@ import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
 import { createLogger } from '../services/infra/logger';
+import { captureWorkspacePatch } from '../services/checkpoint/taskPatchService';
 
 const execAsync = promisify(exec);
 const logger = createLogger('AgentWorktree');
@@ -54,7 +55,76 @@ export async function createAgentWorktree(
   await execAsync(cmd, { cwd: repoPath, timeout: WORKTREE_TIMEOUT });
 
   logger.info(`[${agentId}] Worktree created at ${worktreePath} (branch: ${branchName})`);
+
+  // 共享主仓库的 gitignored 依赖目录（如 node_modules）到 worktree，避免每个并行 agent
+  // 重新 npm install。best-effort：任一 symlink 失败只记 warning，不让 worktree 创建失败。
+  await shareGitignoredDirs(agentId, repoPath, worktreePath);
+
   return { worktreePath, branchName };
+}
+
+/**
+ * Parse the top-level plain directory entries from a .gitignore file.
+ * Only handles bare directory-name entries (e.g. `node_modules/`, `dist`, `.next/`).
+ * Skips entries that contain wildcards, path separators, negations, or that are
+ * comments/blank — those are too complex to safely map to a single top-level dir.
+ */
+export function parseGitignoreTopLevelDirs(gitignoreContent: string): string[] {
+  const dirs: string[] = [];
+  for (const rawLine of gitignoreContent.split('\n')) {
+    const line = rawLine.trim();
+    // Skip blanks, comments, negations
+    if (!line || line.startsWith('#') || line.startsWith('!')) continue;
+    // Skip anything with a glob char or an embedded path separator
+    if (/[*?[\]]/.test(line)) continue;
+    // Strip a single trailing slash (directory marker), then reject if a slash remains
+    const stripped = line.endsWith('/') ? line.slice(0, -1) : line;
+    if (!stripped || stripped.includes('/')) continue;
+    dirs.push(stripped);
+  }
+  return dirs;
+}
+
+/**
+ * Best-effort: symlink the main repo's gitignored top-level directories into the
+ * new worktree so parallel agents reuse installed deps instead of re-installing.
+ * Any single failure is logged as a warning and skipped — never throws.
+ */
+async function shareGitignoredDirs(
+  agentId: string,
+  repoPath: string,
+  worktreePath: string,
+): Promise<void> {
+  try {
+    const gitignorePath = path.join(repoPath, '.gitignore');
+    let content: string;
+    try {
+      content = fs.readFileSync(gitignorePath, 'utf-8');
+    } catch {
+      // No .gitignore (or unreadable) — nothing to share
+      return;
+    }
+
+    const entries = parseGitignoreTopLevelDirs(content);
+    for (const entry of entries) {
+      const source = path.join(repoPath, entry);
+      const target = path.join(worktreePath, entry);
+      try {
+        // Source must exist and be a directory
+        const sourceStat = fs.statSync(source);
+        if (!sourceStat.isDirectory()) continue;
+        // Skip if the worktree already has this path (file or dir)
+        if (fs.existsSync(target)) continue;
+        fs.symlinkSync(source, target, 'dir');
+        logger.debug(`[${agentId}] Shared gitignored dir via symlink: ${entry}`);
+      } catch (err) {
+        logger.warn(`[${agentId}] Failed to share gitignored dir '${entry}':`, err);
+      }
+    }
+  } catch (err) {
+    // Whole step is best-effort; never block worktree creation
+    logger.warn(`[${agentId}] shareGitignoredDirs failed:`, err);
+  }
 }
 
 /**
@@ -100,7 +170,15 @@ export async function cleanupAgentWorktree(
       return { hasChanges: false, branchName };
     }
 
-    // Has changes — preserve worktree
+    // Has changes — capture a patch safety net, then preserve worktree for
+    // the parent to review/merge. The patch means the changes survive even if
+    // the worktree is later force-removed (orphan cleanup / crash).
+    // best-effort: capture failure never blocks cleanup.
+    try {
+      await captureWorkspacePatch(worktreePath, agentId, 'worktree-cleanup');
+    } catch (err) {
+      logger.warn(`[${agentId}] captureWorkspacePatch failed during cleanup:`, err);
+    }
     logger.info(`[${agentId}] Worktree preserved (has changes) at ${worktreePath}`);
     return { hasChanges: true, branchName, worktreePath };
   } catch (err) {
@@ -148,6 +226,17 @@ export async function cleanupOrphanedWorktrees(
     const entries = stdout.split('\n\n').filter(block => block.trim());
     const now = Date.now();
 
+    // `git worktree list` reports resolved real paths; on macOS the managed base
+    // dir (/tmp/...) resolves to /private/tmp/... So match against both the literal
+    // base dir and its realpath, otherwise orphan cleanup is a no-op on macOS.
+    const baseDirCandidates = [WORKTREE_BASE_DIR];
+    try {
+      const real = fs.realpathSync(WORKTREE_BASE_DIR);
+      if (real !== WORKTREE_BASE_DIR) baseDirCandidates.push(real);
+    } catch {
+      // base dir may not exist yet — literal prefix is enough
+    }
+
     for (const entry of entries) {
       const pathMatch = entry.match(/^worktree\s+(.+)$/m);
       const branchMatch = entry.match(/^branch\s+refs\/heads\/(.+)$/m);
@@ -157,7 +246,7 @@ export async function cleanupOrphanedWorktrees(
       const branchName = branchMatch?.[1];
 
       // 3. Only clean worktrees in our managed directory
-      if (!wtPath.startsWith(WORKTREE_BASE_DIR)) continue;
+      if (!baseDirCandidates.some(base => wtPath.startsWith(base))) continue;
 
       // 4. Check directory mtime
       try {
@@ -168,7 +257,19 @@ export async function cleanupOrphanedWorktrees(
         // Directory doesn't exist on disk — git still references it, force remove
       }
 
-      // 5. Remove the orphaned worktree
+      // 5. Capture a patch before force-removing, so any uncommitted work in a
+      //    stale/orphaned worktree isn't silently lost. best-effort; if the
+      //    worktree dir is already gone captureWorkspacePatch returns null.
+      const orphanAgentId = branchName?.startsWith('agent/')
+        ? branchName.slice('agent/'.length)
+        : path.basename(wtPath);
+      try {
+        await captureWorkspacePatch(wtPath, orphanAgentId, 'worktree-cleanup');
+      } catch (err) {
+        logger.warn(`[OrphanCleanup] captureWorkspacePatch failed for ${wtPath}:`, err);
+      }
+
+      // 6. Remove the orphaned worktree
       try {
         await execAsync(
           `git worktree remove --force '${wtPath}'`,

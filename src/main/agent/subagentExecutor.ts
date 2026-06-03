@@ -33,6 +33,7 @@ import { normalizeCancellationReason } from '../../shared/contract/cancellation'
 import { CANCELLATION_TIMEOUTS } from '../../shared/constants';
 import { getUserDataPath } from '../platform/appPaths';
 import { join as pathJoin } from 'path';
+import { captureWorkspacePatch } from '../services/checkpoint/taskPatchService';
 import { getPlanApprovalGate } from './planApproval';
 import { getSpawnGuard } from './spawnGuard';
 import { buildChildContext, buildParentContextFromToolContext, type ParentContext } from './childContext';
@@ -465,6 +466,20 @@ export class SubagentExecutor {
                 } catch (err) {
                   logger.warn(
                     `[${config.name}] saveToDisk failed during flush`,
+                    err,
+                  );
+                }
+                // 取消时把工作目录的文件改动抢救成 patch（saveToDisk 只存 transcript）。
+                // 有 worktree 用 worktree 路径，否则用会话工作目录。best-effort 不阻塞取消。
+                try {
+                  const patchDir =
+                    context.worktreePath || context.toolContext.workingDirectory;
+                  if (patchDir) {
+                    await captureWorkspacePatch(patchDir, agentTask.id, 'cancel');
+                  }
+                } catch (err) {
+                  logger.warn(
+                    `[${config.name}] captureWorkspacePatch failed during flush`,
                     err,
                   );
                 }

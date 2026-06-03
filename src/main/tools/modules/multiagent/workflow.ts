@@ -155,7 +155,7 @@ async function runWorkflow(
             return map;
           },
           onRunStart: (i) =>
-            journalRepo.startRun({ runId: i.runId, scriptHash: i.scriptHash, goal: i.goal, sessionId: ctx.sessionId, startedAt: i.startedAt }),
+            journalRepo.startRun({ runId: i.runId, scriptHash: i.scriptHash, goal: i.goal, sessionId: ctx.sessionId, startedAt: i.startedAt, workingDir: legacyCtx.workingDirectory }),
           onRunFinish: (i) => journalRepo.finishRun(i),
           onCallComplete: (i) => journalRepo.recordCall(i),
         }
@@ -231,7 +231,7 @@ async function runWorkflow(
     safeProgress({ stage: 'starting', detail: 'workflow' });
 
     const state = await startRun(
-      { runId, sessionId: ctx.sessionId, script, goal, budgetTokens, resumeFromRunId, defaultProvider: baseModelConfig.provider, defaultModel: baseModelConfig.model },
+      { runId, sessionId: ctx.sessionId, workingDir: legacyCtx.workingDirectory, script, goal, budgetTokens, resumeFromRunId, defaultProvider: baseModelConfig.provider, defaultModel: baseModelConfig.model },
       deps,
     );
 

@@ -34,6 +34,8 @@ export interface StartRunInput {
   goal?: string;
   sessionId?: string;
   startedAt: number;
+  /** run 的工作目录；删除 run 记录前据此抢救文件改动成 patch。 */
+  workingDir?: string;
 }
 
 export interface FinishRunInput {
@@ -66,6 +68,7 @@ export interface WorkflowRunRecord {
   tokensSpent: number;
   result: unknown;
   error: string | null;
+  workingDir: string | null;
 }
 
 export interface WorkflowCallRecord {
@@ -119,10 +122,10 @@ export class WorkflowJournalRepository {
     this.db
       .prepare(`
         INSERT OR REPLACE INTO workflow_runs (
-          run_id, script_hash, goal, session_id, status, started_at, finished_at, tokens_spent, result_json, error
-        ) VALUES (?, ?, ?, ?, 'running', ?, NULL, 0, NULL, NULL)
+          run_id, script_hash, goal, session_id, status, started_at, finished_at, tokens_spent, result_json, error, working_directory
+        ) VALUES (?, ?, ?, ?, 'running', ?, NULL, 0, NULL, NULL, ?)
       `)
-      .run(input.runId, input.scriptHash, input.goal ?? null, input.sessionId ?? null, input.startedAt);
+      .run(input.runId, input.scriptHash, input.goal ?? null, input.sessionId ?? null, input.startedAt, input.workingDir ?? null);
   }
 
   /** run 收尾：更新终态 + 结果/错误 + 累计 token。 */
@@ -212,6 +215,7 @@ export class WorkflowJournalRepository {
       tokensSpent: (row.tokens_spent as number) ?? 0,
       result: resultJson != null ? deserialize(resultJson) : undefined,
       error: (row.error as string | null) ?? null,
+      workingDir: (row.working_directory as string | null) ?? null,
     };
   }
 

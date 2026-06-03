@@ -114,6 +114,7 @@ import {
   createAgentWorktree,
   cleanupAgentWorktree,
   cleanupOrphanedWorktrees,
+  parseGitignoreTopLevelDirs,
 } from '../../../src/main/agent/agentWorktree';
 
 describe('AgentWorktree', () => {
@@ -345,6 +346,30 @@ describe('AgentWorktree', () => {
       const cleaned = await cleanupOrphanedWorktrees('/repo');
 
       expect(cleaned).toBe(0);
+    });
+  });
+
+  // ==========================================================================
+  // parseGitignoreTopLevelDirs — 只取纯顶层目录名，跳过复杂 pattern
+  // ==========================================================================
+
+  describe('parseGitignoreTopLevelDirs', () => {
+    it('解析纯目录名条目（含带/不带尾斜杠）', () => {
+      const dirs = parseGitignoreTopLevelDirs('node_modules/\ndist\n.next/\n.cache');
+      expect(dirs).toEqual(['node_modules', 'dist', '.next', '.cache']);
+    });
+
+    it('跳过注释、空行和取反条目', () => {
+      const dirs = parseGitignoreTopLevelDirs('# comment\n\nnode_modules/\n!keep\n  \n');
+      expect(dirs).toEqual(['node_modules']);
+    });
+
+    it('跳过含通配符或路径分隔符的复杂 pattern', () => {
+      const dirs = parseGitignoreTopLevelDirs(
+        '*.log\nbuild/**\nsrc/generated/\nfoo/bar\n**/tmp\ndist/'
+      );
+      // 只剩纯顶层目录名 dist；其余皆含 * 或 /
+      expect(dirs).toEqual(['dist']);
     });
   });
 });

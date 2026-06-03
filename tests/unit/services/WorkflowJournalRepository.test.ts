@@ -28,7 +28,8 @@ function createSchema(db: BetterSqlite3.Database): void {
       finished_at INTEGER,
       tokens_spent INTEGER NOT NULL DEFAULT 0,
       result_json TEXT,
-      error TEXT
+      error TEXT,
+      working_directory TEXT
     )
   `);
   db.exec(`
@@ -76,6 +77,18 @@ describe('WorkflowJournalRepository', () => {
       finishedAt: null,
       tokensSpent: 0,
     });
+  });
+
+  it('startRun persists workingDir and getRun reads it back', () => {
+    repo.startRun({ runId: 'wf-wd', scriptHash: 'abc', startedAt: 1000, workingDir: '/some/repo' });
+    const run = repo.getRun('wf-wd');
+    expect(run?.workingDir).toBe('/some/repo');
+  });
+
+  it('startRun without workingDir leaves it null', () => {
+    repo.startRun({ runId: 'wf-no-wd', scriptHash: 'abc', startedAt: 1000 });
+    const run = repo.getRun('wf-no-wd');
+    expect(run?.workingDir).toBeNull();
   });
 
   it('finishRun updates status / finishedAt / tokensSpent / result', () => {

@@ -39,15 +39,16 @@ export interface ReviewGateDeps {
 }
 
 /**
- * 解析闸2 使用的模型 —— 可用性降级链。
+ * 解析评审类子代理（闸2 / delivery critic）使用的模型 —— 可用性降级链。
  *
  * powerful tier（默认 DEFAULT_PROVIDER/DEFAULT_MODEL = xiaomi/mimo）指向的 provider
  * 在用户机器上可能根本没配 key：主 run 能跑 ≠ powerful 能跑，两者是独立配置。
  * 实测无 XIAOMI_API_KEY 时评审子代理报 'Invalid API Key' → 闸2 永远默认 FAIL →
- * 软目标在这类机器上永远完不成（只能跑满轮次被闸3 强停）。
+ * 软目标在这类机器上永远完不成（只能跑满轮次被闸3 强停）；delivery critic 则永远
+ * 被静默跳过（质量门形同虚设）。
  *
  * 降级链：powerful 有可解析的 key → 用 powerful（保留强模型评审的设计意图）；
- * 没有 → 降级用主 run 的模型（goal run 本身在跑，证明它一定可用）。
+ * 没有 → 降级用主 run 的模型（主 run 本身在跑，证明它一定可用）。
  */
 export function resolveReviewModelConfig(parentModelConfig?: ModelConfig): ModelConfig {
   const powerful: ModelConfig = { ...getModelConfig('powerful') };
@@ -56,7 +57,7 @@ export function resolveReviewModelConfig(parentModelConfig?: ModelConfig): Model
     return powerful;
   }
   if (parentModelConfig) {
-    logger.warn('[GoalGate] powerful tier 无可用 API key，闸2 降级用主 run 模型', {
+    logger.warn('[GoalGate] powerful tier 无可用 API key，评审子代理降级用主 run 模型', {
       powerful: `${powerful.provider}/${powerful.model}`,
       fallback: `${parentModelConfig.provider}/${parentModelConfig.model}`,
     });

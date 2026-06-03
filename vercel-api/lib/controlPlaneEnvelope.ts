@@ -1,8 +1,4 @@
 import * as crypto from 'node:crypto';
-import {
-  recordControlPlaneAuditErrorBackground,
-  recordControlPlaneAuditEventBackground,
-} from './controlPlaneAudit.js';
 
 export type ControlPlaneArtifactKind =
   | 'cloud_config'
@@ -234,6 +230,38 @@ function sendError(res: ControlPlaneResponseLike, statusCode: number, code: stri
     error: code,
     message,
   });
+}
+
+// ── Audit 模块惰性加载 ────────────────────────────────────────────────────────
+// 不能静态 import './controlPlaneAudit.js'：NodeNext 的 .js 后缀在 tsc 编译产物
+//（FC/Vercel 部署）里指向真实 .js 文件，但 scripts/build-runtime-assets.mjs 用 node
+// 直跑本文件（类型剥离模式）时解析不到 .ts 源文件，整条 import 链在加载期就崩
+//（实测烧掉 4 个 runtimeAssetsManifestSigning 单测 + release:runtime-assets 脚本）。
+// audit 调用全部是 API 请求路径的 fire-and-forget 埋点；构建脚本只用
+// createControlPlaneEnvelopeFromEnv，永远不会触发这里的动态加载。
+// 加载失败时静默跳过埋点——埋点不可用不应影响响应本身。
+type AuditModule = typeof import('./controlPlaneAudit.js');
+let auditModulePromise: Promise<AuditModule | null> | null = null;
+
+function loadAuditModule(): Promise<AuditModule | null> {
+  if (!auditModulePromise) {
+    auditModulePromise = import('./controlPlaneAudit.js').catch(() => null);
+  }
+  return auditModulePromise;
+}
+
+function recordControlPlaneAuditEventBackground(
+  req: ControlPlaneRequestLike,
+  options: Parameters<AuditModule['recordControlPlaneAuditEventBackground']>[1],
+): void {
+  void loadAuditModule().then((mod) => mod?.recordControlPlaneAuditEventBackground(req, options));
+}
+
+function recordControlPlaneAuditErrorBackground(
+  req: ControlPlaneRequestLike,
+  options: Parameters<AuditModule['recordControlPlaneAuditErrorBackground']>[1],
+): void {
+  void loadAuditModule().then((mod) => mod?.recordControlPlaneAuditErrorBackground(req, options));
 }
 
 function sendCreatedControlPlaneEnvelope<TPayload>(

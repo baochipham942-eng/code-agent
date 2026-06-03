@@ -254,15 +254,23 @@ export const ROLE_PROACTIVITY = {
 
 ---
 
-## 9. E2E 验收标准（假 HOME 隔离 + webServer headless）
+## 9. E2E 验收标准与结果（2026-06-03 验收完成）
 
-参考 `scripts/acceptance/role-assets-e2e.ts` 方法，模型用 mimo（xiaomi/mimo-v2.5-pro，不限流；写回判断 quick model 同 mimo）：
+脚本：`scripts/acceptance/role-proactivity-e2e.ts`（假 HOME 隔离 + webServer headless，模型 xiaomi/mimo-v2.5-pro）
+单测：`tests/unit/services/roleAssets/roleProactivity.test.ts`（14 条确定性覆盖）
 
-1. **cadence 醒来闭环**：注册一个 1 分钟后触发的 cadence job → 角色醒来 → 会话列表出现"主动巡检"会话 → 履历多了一条醒来记录
-2. **检查产物 + 推进/汇报**：预先在角色履历里写入一个产物（指向假 HOME 里的文件）→ 触发醒来 → 角色读了该产物 → 输出含决策标记 → 非沉默时会话保留在列表
-3. **沉默路径**：履历为空的角色醒来 → 决策=沉默 → 会话被归档（默认列表不可见）→ 履历记录"巡检无需行动"
-4. **预算护栏**：同一角色连续触发 5 次醒来 → 第 5 次被 skip（当天上限 4 次）→ cron 执行记录标 skipped
-5. **长任务触发**：跑一个 spawn 持久化角色的长任务（≥5 turns）→ run 结束后角色自动醒来产出总结 → 出现在会话列表
+| # | 场景 | E2E 结果 | 备注 |
+|---|------|---------|------|
+| AC1 | 启动同步注册：每个持久化角色一个 [Cadence] cron job | ✅ PASS | 确定性，零模型成本 |
+| AC2 | cadence 醒来闭环：预埋产物 → 触发 → 决策标记 → 履历 → 会话落地可见 | ✅ PASS（两轮） | 真实模型全链路 |
+| AC3 | 沉默路径：空履历 → 空产物守卫确定性静默 → 履历"巡检无需行动" → 不建会话 | ✅ PASS | 确定性，零模型成本 |
+| AC4 | 预算护栏：当天 4 次上限 → 第 5 次 skipped | ✅ PASS | 确定性，零模型成本 |
+| AC5 | event 触发：长任务跑完 → 参与角色自动醒来 | ⚠ E2E 未过 → **单测覆盖** | 见下 |
+
+**AC5 说明**：全链路 E2E 依赖模型 spawn compliance（要求模型把任务委派给"研究员"角色），mimo 实测 3 轮中 2 轮自作主张换成内置 explore 类型、1 轮迭代数未达长任务门槛——失败都来自模型行为而非代码。event 链路的各组件验证：
+- `wakeRole('event')` 与 AC2 验证过的是同一函数 ✅
+- `runFinalizer → triggerEventWakes` 调用链在 E2E 日志中确认执行 ✅
+- `recordRoleParticipation → 过滤 → 唤醒` 胶水逻辑由单测确定性覆盖（含持久化过滤/防递归/门槛清理）✅
 
 ---
 

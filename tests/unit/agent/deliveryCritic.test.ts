@@ -8,6 +8,10 @@ const executorState = vi.hoisted(() => ({
   execute: vi.fn(),
 }));
 
+const providerResolutionState = vi.hoisted(() => ({
+  resolveProviderApiKey: vi.fn(),
+}));
+
 vi.mock('../../../src/main/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => executorState,
 }));
@@ -18,6 +22,11 @@ vi.mock('../../../src/main/tools/dispatch/toolResolver', () => ({
 
 vi.mock('../../../src/main/agent/hybrid/coreAgents', () => ({
   getModelConfig: () => ({ provider: 'zhipu', model: 'glm-5' }),
+}));
+
+// critic 经 resolveReviewModelConfig（goalReviewGate）解析模型，依赖 key 可用性检查
+vi.mock('../../../src/main/model/providers/providerResolution', () => ({
+  resolveProviderApiKey: providerResolutionState.resolveProviderApiKey,
 }));
 
 vi.mock('../../../src/main/services/infra/logger', () => ({
@@ -41,6 +50,9 @@ const modifiedFiles = ['/tmp/project/a.ts', '/tmp/project/b.ts', '/tmp/project/c
 describe('runDeliveryCritic (GAP-013)', () => {
   beforeEach(() => {
     executorState.execute.mockReset();
+    // 默认：powerful tier（mock 为 zhipu/glm-5）有可用 key → 既有用例行为不变
+    providerResolutionState.resolveProviderApiKey.mockReset();
+    providerResolutionState.resolveProviderApiKey.mockReturnValue('sk-valid');
   });
 
   it('passes when critic verdict is PASS', async () => {
@@ -130,5 +142,45 @@ describe('runDeliveryCritic (GAP-013)', () => {
     expect(result.pass).toBe(true);
     expect(result.parsed).toBe(false);
     expect(result.reason).toContain('model unavailable');
+  });
+
+  // 可用性降级链（与闸2 共用 resolveReviewModelConfig）
+  it('powerful tier 无 key 时，critic 用主 run 模型派发', async () => {
+    providerResolutionState.resolveProviderApiKey.mockReturnValue('');
+    executorState.execute.mockResolvedValue({
+      success: true,
+      output: 'VERDICT: PASS',
+      iterations: 1,
+      toolsUsed: [],
+    });
+
+    await runDeliveryCritic(modifiedFiles, '修复登录 bug', {
+      ...deps,
+      parentModelConfig: { provider: 'deepseek', model: 'deepseek-chat' } as never,
+    });
+
+    const [, , context] = executorState.execute.mock.calls[0];
+    expect(context.modelConfig.provider).toBe('deepseek');
+    expect(context.modelConfig.model).toBe('deepseek-chat');
+  });
+
+  it('powerful tier 有 key 时，critic 仍用 powerful（强模型审查）', async () => {
+    providerResolutionState.resolveProviderApiKey.mockReturnValue('sk-valid');
+    executorState.execute.mockResolvedValue({
+      success: true,
+      output: 'VERDICT: PASS',
+      iterations: 1,
+      toolsUsed: [],
+    });
+
+    await runDeliveryCritic(modifiedFiles, '修复登录 bug', {
+      ...deps,
+      parentModelConfig: { provider: 'deepseek', model: 'deepseek-chat' } as never,
+    });
+
+    const [, , context] = executorState.execute.mock.calls[0];
+    // coreAgents mock 的 powerful = zhipu/glm-5
+    expect(context.modelConfig.provider).toBe('zhipu');
+    expect(context.modelConfig.model).toBe('glm-5');
   });
 });

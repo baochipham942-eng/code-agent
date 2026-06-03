@@ -549,13 +549,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   // 多代理
   // ============================================================================
   {
-    name: 'SdkTask',
-    shortDescription: 'SDK 兼容的任务执行',
-    tags: ['multiagent'],
-    aliases: ['sdk', 'task'],
-    source: 'builtin',
-  },
-  {
     name: 'AgentSpawn',
     shortDescription: '生成新的子代理',
     tags: ['multiagent'],

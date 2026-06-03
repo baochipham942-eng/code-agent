@@ -18,7 +18,10 @@
 
 **核心模块**：`goalModeController.ts`（契约 / 闸3 / nudge / 进度）· `goalVerifyGate.ts`（闸1）· `goalReviewGate.ts`（闸2）· `messageProcessor.ts`（attempt_completion 拦截 + 闸编排）· `conversationRuntime.ts`（break→continue + loop-top 闸3）· 契约 `src/shared/contract/agent.ts`（`goal_iteration` / `goal_gate` / `goal_complete` 事件）。
 
-**遗留（非阻塞）**：闸2 默认走 `powerful` tier（生产需代理走通海外模型，否则落默认 FAIL）；`SdkTask` 死条目；P4 swarm goal 未做。
+**遗留（非阻塞）**：P4 swarm goal 未做。
+~~闸2 powerful tier 生产路径~~（已修，2026-06-03）：powerful tier 指向的 provider（默认 xiaomi/mimo）没配 key 时，闸2 经 `resolveReviewModelConfig` 可用性降级链回落到主 run 模型，软目标不再因 `Invalid API Key` 永远 FAIL。
+~~`SdkTask` 死条目~~（已清理，2026-06-03）。
+~~渲染器实时点击流 E2E~~（已补，2026-06-03）：`tests/e2e/goal-mode.spec.ts`。
 
 ---
 
@@ -146,7 +149,7 @@ as-built 契约见 `src/shared/contract/agent.ts`：
 | P0 前置 | 修 Bug B + SSE 双发 | ✅ 完成（随 AI SDK 迁移 PR #168） |
 | **P1 MVP** | 单 agent /goal：契约解析 + attempt_completion + break→continue + GoalTracker 激活 + 闸1 exec + 闸3 + 新 SSE 事件 | ✅ 完成（三态全 E2E：goal_met / 闸1-fail-continue / 闸3-abort） |
 | P2 软闸 | 闸2 Reviewer 子代理 + 强模型路由 + Codex 式审计 nudge | ✅ 完成（FAIL/PASS 双态 E2E） |
-| P3 体验 | `/goal` 斜杠命令 UI + 状态条 + 生命周期卡片 + 桌面 IPC + 软目标 | ✅ 完成（后端 + 解析器单测 + REST SSE 实证；渲染器实时点击流仅静态验证） |
+| P3 体验 | `/goal` 斜杠命令 UI + 状态条 + 生命周期卡片 + 桌面 IPC + 软目标 | ✅ 完成（后端 + 解析器单测 + REST SSE 实证 + 渲染器实时点击流 E2E `tests/e2e/goal-mode.spec.ts`，met/aborted 双路径 + 截图入库） |
 | P4 swarm goal | goal 套到多 agent（swarm）层 | ⬜ 未做（注：MasterTask 跨 session 任务看板已于 2026-05-28 commit `841200af` 下线，P4 仅余 swarm 层覆盖） |
 
 ## 11. 验证与 Eval

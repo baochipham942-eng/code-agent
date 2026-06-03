@@ -15,8 +15,7 @@
 
 import { getSubagentExecutor } from './subagentExecutor';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
-import { getModelConfig } from './hybrid/coreAgents';
-import { parseVerdict } from './goalReviewGate';
+import { parseVerdict, resolveReviewModelConfig } from './goalReviewGate';
 import { DELIVERY_CRITIC } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import type { ModelConfig } from '../../shared/contract';
@@ -40,6 +39,8 @@ export interface DeliveryCriticDeps {
   sessionId: string;
   abortSignal?: AbortSignal;
   hookManager?: HookManager;
+  /** 主 run 正在用的模型（powerful tier 无可用 key 时的降级目标） */
+  parentModelConfig?: ModelConfig;
 }
 
 /** Critic 子代理系统 prompt：只抓 Critical、末行强制 VERDICT 格式 */
@@ -93,7 +94,9 @@ export async function runDeliveryCritic(
     cwd: deps.workingDirectory,
   });
 
-  const modelConfig: ModelConfig = { ...getModelConfig('powerful') };
+  // 强模型路由 + 可用性降级链（与闸2 共用 resolveReviewModelConfig）：powerful tier
+  // 没配 key 时降级用主 run 模型，否则 critic 在这类机器上永远被静默跳过。
+  const modelConfig: ModelConfig = resolveReviewModelConfig(deps.parentModelConfig);
 
   // critic 只给只读检索工具：审查不需要改文件/跑命令，且子代理权限策略默认拦
   // execute 级 bash。配合 requestPermission 自动放行——只读工具无副作用。

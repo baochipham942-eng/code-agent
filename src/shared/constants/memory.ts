@@ -93,8 +93,9 @@ export const ROLE_PROACTIVITY = {
   WAKE_SESSION_TITLE_PREFIX: '主动巡检',
   /** 醒来实例的运行超时（ms），超时按失败处理 */
   WAKE_TIMEOUT_MS: 600000,
-  /** 默认主动等级（角色 frontmatter / settings 都没配置时） */
-  DEFAULT_LEVEL: 'daily',
+  /** 默认主动等级（角色 frontmatter / settings 都没配置时）。
+   *  出厂 silent = 功能默认关闭（opt-in）：用户通过 settings.roleAssets.proactivity 或角色 frontmatter 显式开启。 */
+  DEFAULT_LEVEL: 'silent',
   /** 醒来产出里决策标记的提取正则（四选一：advance/report/suggest/silence） */
   DECISION_TAG_PATTERN: /<decision>\s*(advance|report|suggest|silence)\s*<\/decision>/i,
   /** 提取不到决策标记时的保守兜底决策 */

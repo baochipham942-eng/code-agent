@@ -36,9 +36,12 @@ vi.mock('../../../../src/main/services/infra/sessionManager', () => ({
   getSessionManager: () => mockSessionManager,
 }));
 
+// settings 可变 mock：默认空（= 出厂 silent），各测试按需 opt-in
+const mockSettings = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
+
 vi.mock('../../../../src/main/services/core/configService', () => ({
   getConfigService: () => ({
-    getSettings: () => ({}),
+    getSettings: () => mockSettings.value,
     getApiKey: () => '',
   }),
 }));
@@ -65,7 +68,7 @@ vi.mock('../../../../src/main/services/roleAssets/roleWriteBack', () => ({
   runRoleWriteBack: mockRunRoleWriteBack,
 }));
 
-// agentRegistry：测试角色无 frontmatter 配置 → 走默认每日简报档
+// agentRegistry：测试角色无 frontmatter 配置 → 走 settings / 出厂默认
 vi.mock('../../../../src/main/agent/agentRegistry', () => ({
   resolveAgent: () => undefined,
 }));
@@ -121,6 +124,8 @@ describe('roleProactivity', () => {
   beforeEach(async () => {
     mockConfigDir.dir = await fs.mkdtemp(path.join(os.tmpdir(), 'role-proactivity-'));
     await ensureRoleAssetDirs(RESEARCHER);
+    // 出厂默认 silent（opt-in）：醒来循环类测试通过 settings 显式开启每日简报档
+    mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'daily' } } };
     vi.clearAllMocks();
   });
 
@@ -133,10 +138,31 @@ describe('roleProactivity', () => {
   // --------------------------------------------------------------------------
 
   describe('配置与决策解析', () => {
-    it('默认配置为每日简报档', async () => {
+    it('出厂默认（无任何配置）为静默档：功能默认关闭，opt-in', async () => {
+      mockSettings.value = {};
+      const config = await resolveRoleProactivityConfig(RESEARCHER);
+      expect(config.level).toBe('silent');
+      expect(cadenceForConfig(config)).toBeNull();
+    });
+
+    it('settings 全局默认开启每日简报档后生效', async () => {
       const config = await resolveRoleProactivityConfig(RESEARCHER);
       expect(config.level).toBe('daily');
       expect(cadenceForConfig(config)).toBe(ROLE_PROACTIVITY.DAILY_BRIEF_CRON);
+    });
+
+    it('settings per-role 覆盖优先于全局默认', async () => {
+      mockSettings.value = {
+        roleAssets: {
+          proactivity: {
+            defaultLevel: 'daily',
+            roles: { [RESEARCHER]: { level: 'realtime', cadence: '0 0 */6 * * *' } },
+          },
+        },
+      };
+      const config = await resolveRoleProactivityConfig(RESEARCHER);
+      expect(config.level).toBe('realtime');
+      expect(cadenceForConfig(config)).toBe('0 0 */6 * * *');
     });
 
     it('silent 档不产生 cadence', () => {
@@ -159,6 +185,18 @@ describe('roleProactivity', () => {
   // --------------------------------------------------------------------------
 
   describe('wakeRole 醒来循环', () => {
+    it('出厂默认（silent，无任何配置）下醒来被跳过，不烧 token', async () => {
+      mockSettings.value = {};
+      await seedProductHistory(RESEARCHER);
+
+      const result = await wakeRole(RESEARCHER, 'cadence');
+
+      expect(result.status).toBe('skipped');
+      expect(result.skipReason).toBe('silent_level');
+      expect(mockOrchestrator.sendMessage).not.toHaveBeenCalled();
+      expect(mockSessionManager.createSession).not.toHaveBeenCalled();
+    });
+
     it('cadence 醒来完整循环：实例化 → 跑实例 → 决策 → 履历（单测版 E2E AC2）', async () => {
       await seedProductHistory(RESEARCHER);
       primeWakeRun('report');

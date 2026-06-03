@@ -396,6 +396,11 @@ async function prepareEnvFile(env: E2EEnv): Promise<void> {
         chat: { provider: MAIN_PROVIDER, model: MAIN_MODEL },
       },
     },
+    // 角色主动性出厂默认 silent（opt-in）：E2E 通过 settings 显式开启每日简报档，
+    // 否则 AC1 的 cadence job 注册和后续醒来场景都不会发生
+    roleAssets: {
+      proactivity: { defaultLevel: 'daily' },
+    },
   };
   await mkdir(env.dataDir, { recursive: true });
   await writeFile(path.join(env.dataDir, 'config.json'), JSON.stringify(minimalConfig, null, 2), 'utf-8');

@@ -451,6 +451,18 @@ export class SubagentExecutor {
         iterations++;
         logger.info(`[${config.name}] Iteration ${iterations}`);
 
+        // 孤儿回收（swarm 护栏 P1-2 #5）：后台 detached 子代理每轮探活，父 run 已结束/
+        // 被新 run 取代时用 parent-gone 中止，避免成孤儿继续烧预算。abort 后立即落到
+        // 下方现有 abort 路径（normalize 'parent-gone' 已知 → 落盘部分产物后返回）。
+        if (
+          context.isParentAlive &&
+          !effectiveSignal.aborted &&
+          !context.isParentAlive()
+        ) {
+          logger.warn(`[${config.name}] Parent run gone — reaping orphan subagent (parent-gone)`);
+          effectiveController.abort('parent-gone');
+        }
+
         // Check abort signal (covers both external cancel and timeout).
         // Wires the four-phase shutdownProtocol (Signal→Grace→Flush→Force)
         // so that partial transcript + metadata get persisted via

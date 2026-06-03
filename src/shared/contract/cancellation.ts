@@ -38,7 +38,9 @@ export type CancellationReason =
   // 三者都属 NON_CASCADE（单 agent 问题，不连坐兄弟）。
   | 'depth-limit' // spawn 嵌套深度超过 maxDepth（确定性，重试无意义）
   | 'child-refusal' // 子代理被拒绝执行（如 readonly 父 role 拒启 writer 子）
-  | 'child-max-tokens'; // 子代理触顶自身 token/预算（已产出部分工作，可降级续跑）
+  | 'child-max-tokens' // 子代理触顶自身 token/预算（已产出部分工作，可降级续跑）
+  // ── swarm 护栏 P1-2 #5：孤儿回收 ──
+  | 'parent-gone'; // 后台 detached 子代理探活发现父 run 已结束/被新 run 取代 → 自我中止
 
 /**
  * Cascade reasons — 这些 reason 应向下传播到所有 child / subagent。
@@ -67,6 +69,8 @@ export const NON_CASCADE_REASONS: readonly CancellationReason[] = [
   'depth-limit',
   'child-refusal',
   'child-max-tokens',
+  // swarm 护栏 P1-2 #5：孤儿自我中止只影响自己（兄弟也是孤儿，各自独立探活）
+  'parent-gone',
 ] as const;
 
 /**
@@ -130,6 +134,7 @@ export function routeFailureCode(reason: unknown): FailureRouting {
     case 'user-cancel':
     case 'session-switch':
     case 'parent-cancel':
+    case 'parent-gone':
       return 'throw';
     case 'child-max-tokens':
       return 'degrade';

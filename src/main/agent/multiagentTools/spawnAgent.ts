@@ -39,6 +39,7 @@ import { checkReadonlyParentRule, buildParentContextFromToolContext, type Parent
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getSpawnGuard } from '../spawnGuard';
 import { routeFailureCode } from '../../../shared/contract/cancellation';
+import { isParentRunAlive } from '../orphanLiveness';
 import { getSwarmLaunchApprovalGate } from '../swarmLaunchApproval';
 import { createAgentWorktree, cleanupAgentWorktree, cleanupOrphanedWorktrees } from '../agentWorktree';
 import { aggregateTeamResults } from '../resultAggregator';
@@ -345,6 +346,27 @@ export async function executeSpawnAgent(
         role: context.agentRole,
       });
 
+      // 孤儿回收（swarm 护栏 P1-2 #5）：仅后台 detached 子代理注入父探活。
+      // 前台子代理被父 await，不会成孤儿，跳过（多余开销）。
+      // 动态 import 取 TaskManager，避开 task→agent 的静态循环依赖。
+      let isParentAlive: (() => boolean) | undefined;
+      if (!waitForCompletion && context.sessionId) {
+        try {
+          const { getTaskManager } = await import('../../task/TaskManager');
+          const tm = getTaskManager();
+          const parentSessionId = context.sessionId;
+          const parentState = tm.getSessionState(parentSessionId);
+          // 只在父确实处于活跃 run 时装探活；否则无法判定父子归属，保守不杀
+          if (parentState.status === 'running' || parentState.status === 'paused') {
+            const parentStartTime = parentState.startTime;
+            isParentAlive = () =>
+              isParentRunAlive(tm.getSessionState(parentSessionId), parentStartTime);
+          }
+        } catch {
+          // TaskManager 不可用（测试 / CLI / 无 run 上下文）→ 不装探活
+        }
+      }
+
       const executorContext = {
         modelConfig: context.modelConfig as ModelConfig,
         toolResolver: context.resolver as ToolResolver,
@@ -357,6 +379,8 @@ export async function executeSpawnAgent(
         worktreePath: worktreeInfo?.worktreePath,
         hookManager: context.hookManager,
         parentContext,
+        // 后台 detached 子代理的父探活（仅 !waitForCompletion 时非 undefined）
+        isParentAlive,
       };
 
       const executorConfig = {

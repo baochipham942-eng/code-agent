@@ -40,6 +40,7 @@ describe('CancellationReason partition', () => {
       'depth-limit',
       'child-refusal',
       'child-max-tokens',
+      'parent-gone',
     ];
     for (const r of expected) {
       expect(all.has(r)).toBe(true);
@@ -113,6 +114,23 @@ describe('structured failure codes', () => {
       // normalize 应原样透传，不再 fallback 到 user-cancel
       expect(normalizeCancellationReason(code)).toBe(code);
     }
+  });
+});
+
+// ============================================================================
+// 孤儿回收（swarm 护栏 P1-2 #5）—— parent-gone
+// ============================================================================
+describe('orphan reclamation — parent-gone', () => {
+  it('parent-gone 是已知 NON_CASCADE 失败码', () => {
+    expect(isKnownCancellationReason('parent-gone')).toBe(true);
+    expect(new Set<string>(NON_CASCADE_REASONS).has('parent-gone')).toBe(true);
+    // 孤儿自我中止只影响自己；它的子孙通过现有 parent-cancel 桥接级联，不靠本码
+    expect(isCascadeReason('parent-gone')).toBe(false);
+    expect(normalizeCancellationReason('parent-gone')).toBe('parent-gone');
+  });
+
+  it('parent-gone → throw（父已消失，确定性终态，重试无意义）', () => {
+    expect(routeFailureCode('parent-gone')).toBe('throw');
   });
 });
 

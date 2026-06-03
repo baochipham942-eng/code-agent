@@ -13,6 +13,17 @@
 | **P1 LLM trace 回传** | telemetry sessions / turns / feedback 三表 + admin-only RLS + auth-gated metadata-only 上传器 | Supabase |
 | **P2 admin 控制台 + 行为分析** | Next.js 16 + `@supabase/ssr` 子 app；PostHog 代码侧接线 + 3 看板 + 8 insights 规格 | Vercel + PostHog |
 
+## P1 上传器启停（webServer 路径，2026-06-03）
+
+发行版的真实运行路径是 **Tauri + webServer**，不是 Electron main。上传器 (`telemetryUploaderService`) 此前只在 Electron main 的 `initBackgroundServices.ts` 里启动，发行版没人调它 —— 生产 telemetry 表长期只有冒烟数据，线上 trace 零回传。
+
+现在 (as-built) 在 `src/web/webServer.ts:initializeServices()` **步骤 5** 做 auth-gated 启停：
+
+- **登录起、登出停**：通过 `authService.addAuthChangeCallback(syncTelemetryUploader)` 跟随登录态，`user` 非空 `startAutoUpload()`、为空 `stopAutoUpload()`。
+- **必须在 DB init 之后**：`upload()` 要读本地 telemetry 表，而 auth 恢复（步骤 3）早于 DB 就绪，所以这里用 `authService.getCurrentUser()` 按已恢复的登录态补一次启动。
+- **E2E 模式跳过**：`CODE_AGENT_E2E === '1'` 时只记日志不启动，避免测试环境往云端回传。
+- 全程 try/catch 包裹，上传器不可用只 `logger.warn` 降级，不阻塞服务初始化。
+
 ## 关键文件
 
 ### 客户端侧

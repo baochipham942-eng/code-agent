@@ -1,6 +1,6 @@
 # 模型配置指南
 
-> 更新时间: 2026-05-22 (Agent Engine 模型目录与显式模型降级边界)
+> 更新时间: 2026-06-03 (ADR-019 自动模式路由体系：单一决策入口 / 计费四分类 / 路由可视化)
 
 ## 已配置的模型供应商
 
@@ -25,6 +25,9 @@
 | `monthly` | 📅 | 包月套餐 |
 | `yearly` | 📅 | 包年套餐 |
 | `payg` | 💰 | 按量付费 (Pay As You Go) |
+
+> 上表是模型目录里的**静态成本标签**（"市场价"，全局常量）。
+> 自动模式路由读的是另一套**运行时计费语义**——某个 provider 对**当前用户**而言怎么计费（用户配置）。两者分离，见下文「计费语义四分类」。
 
 ---
 
@@ -151,17 +154,60 @@
 
 Agent Engine 模型目录由 `/api/v1/control-plane?artifact=agent_engine_models` 下发，客户端验签失败或远程不可用时使用内置目录。设置页只保存本机默认选择，不保存完整远程目录。
 
-### 自适应路由 (v0.16.22+)
+### Custom Provider / 中转站支持 (2026-06-03)
+
+用户可在设置中添加动态 custom provider（`custom-xxx`，不在 `MODEL_API_ENDPOINTS` 静态注册表里），通常指向中转站。三处兜底/过滤保证其在主链路可用：
+
+- **baseURL 从用户设置兜底**：aiSdk 路径下，当 `config.baseUrl` 没随调用链传下来时（子代理 / 重建 config），`providerResolution` 按 `config.baseUrl > settings.models.providers[id].baseUrl > ENDPOINTS[provider]` 兜底，与 legacy `getDynamicCustomProvider` 对齐，不再直接抛"无法解析 baseURL"（`src/main/model/providers/providerResolution.ts`）。
+- **能力识别从用户设置兜底**：`modelRouter.getModelInfo` 在静态 `PROVIDER_REGISTRY` 查不到时，从用户设置构造 `ModelInfo`——动态 custom provider 模型此前一律被判为"无 vision 能力"，用户配置里的 `supportsVision: true` 被忽略，触发无意义的 vision fallback（`src/main/model/modelRouter.ts`）。
+- **relay 模型处理**：处理未配置（unconfigured）和混合（mixed）relay 模型场景（`src/shared/modelRuntime.ts`、`src/renderer/components/ChatView.tsx`）。
+
+**ModelSwitcher 过滤未配置 Key 的 provider**：聊天模型切换面板不再展示没配 API Key 的默认启用 provider（避免新用户看到一堆点了就报错的死模型）。`apiKeyConfigured` 由 `configService.getSettings()` 动态注入（SecureStorage / env 任一有 key 即 true）；`local`（Ollama）无需 key 豁免；当前会话 / 默认 provider 走 `includeDisabledProviders` 豁免，选中项不会凭空消失（`src/shared/modelRuntime.ts`、`.../StatusBar/ModelSwitcher.tsx`）。
+
+### 自适应路由 (v0.16.22+，ADR-019 重构于 2026-06-03)
 
 简单任务自动路由到免费模型，降低 API 成本。该能力只在“自动”模式生效；显式模型不会自动切换到免费模型或默认模型。
 
 | 复杂度 | 判定条件 | 路由目标 |
 |--------|---------|---------|
-| `simple` (score < 30) | 用户消息 < 50 字 + 无代码块 + 无文件引用 | zhipu/glm-4.7-flash（免费）|
+| `simple` (score < 30) | 用户消息 < 50 字 + 无代码块 + 无文件引用 | zhipu/glm-4-flash（免费）|
 | `moderate` (30-60) | 50-200 字 或 1 个代码块 | 保持默认（moonshot/kimi-k2.5） |
 | `complex` (60+) | > 200 字 或 多代码块 或 "重构/架构" 关键词 | 保持默认 |
 
-相关代码：`src/main/model/adaptiveRouter.ts`
+**计费门控（2026-06-03）**：simple → 免费模型路由不再一刀切，按用户默认 provider 的**计费方式**门控——只有按量付费（`payg`）才路由（真省钱）；包月（`plan`）或未知（`unknown`）默认不路由（省的钱是 0，纯增加不确定性）。判定见 `resolveProviderBillingMode()`（`src/main/model/modelDecision.ts`）。
+
+**两条主链路真正生效（2026-06-03）**：此前自动模式在打包版的桌面/web 主链路（`/api/run` + aiSdk 引擎）失效，UI 选“自动”后简单任务仍直打默认模型。三个断点已修复：
+
+1. **`/api/run` 透传 adaptive**：会话 override 读取时把 `override.adaptive=true` 透传进 agent loop 的 `modelConfig.adaptive`，否则 vision capability fallback 的闸门（`modelConfig.adaptive === true`）恒为 false（`src/web/routes/agent.ts`）。
+2. **aiSdk 引擎接入免费模型路由**：aiSdk 引擎（`CODE_AGENT_MODEL_ENGINE` 默认值）此前完全绕过 adaptiveRouter，简单任务→免费模型只存在于 legacy `modelRouter.inference` 内部。现在 `runEngineInference` 在 aiSdk 路径等价接入（含 apiKey 解析、跨 provider 清 baseUrl、失败回退默认模型、401/403 永久禁用免费模型），见 `src/main/agent/runtime/contextAssembly/inference.ts`。
+3. **CLI_MODE 守卫加 WEB_MODE 例外**：webServer（桌面/web 聊天主链路）为 keytar 守卫也设了 `CLI_MODE=true`，导致 adaptiveRouter 的 CLI_MODE 守卫把简单任务路由一刀切禁用。现在加 `CODE_AGENT_WEB_MODE` 例外，只禁纯 CLI / 评测场景（`src/main/model/adaptiveRouter.ts`）。
+
+相关代码：`src/main/model/adaptiveRouter.ts`、`src/main/model/modelDecision.ts`
+
+### 计费语义四分类（ADR-019 决策 4，2026-06-03）
+
+为替代不可维护的"价格感知路由"（BYOK 场景下精确价格表无法维护），路由门控改为读 provider 的**计费方式**标记。这是「某 provider 对当前用户怎么计费」的用户配置，与模型目录里的静态成本标签（市场价）分离：
+
+| `billingMode` | 含义 | 来源 | 默认值 |
+|---------------|------|------|--------|
+| `free` | provider 官方免费（如 glm-4-flash） | 全局常量 | — |
+| `plan` | 用户套餐内 / 包月（如当前用户的 kimi-k2.5） | **用户设置** | — |
+| `payg` | 低成本按量 / 普通 API Key | 用户设置 | 普通 provider 默认 `payg` |
+| `unknown` | 中转站 / 未知价格 | 用户设置 | 动态 custom provider 默认 `unknown` |
+
+默认值贴近现实：普通 provider 默认按量（API Key 主流形态，省钱路由默认生效），中转站保守取未知。配错的代价不对称——包月被当按量 = 没省到钱但不多花钱；按量不路由 = 损失真实节省。详见 [ADR-019](../decisions/019-auto-mode-scope.md)。
+
+相关代码：`src/shared/contract/modelDecision.ts`（`BillingMode` 类型）、`src/shared/contract/settings.ts`（`ModelProviderSettings.billingMode`）
+
+### 路由透明度（model_decision trace，ADR-019 批 3，2026-06-03）
+
+每次推理前路由决策结构化为 `ModelDecision`，作为 `model_decision` 事件透传到 trace / 消息，UI 据此渲染路由可视化（业内 auto 模式普遍是黑盒，透明度是本产品差异化点）：
+
+- **RouteTraceChip**（`src/renderer/components/features/chat/RouteTraceChip.tsx`）：主聊天消息上方的收起式 chip（如「自动 · 已用 GLM-4-Flash 回答 · 免费 ▸」），点击展开决策详情。
+- **FallbackBanner**（`.../chat/MessageBubble/FallbackBanner.tsx`）：可用性降级（限流 / 网络 / 余额不足切 provider）时原位插入聊天流的横幅；文案只说"回复风格可能略有差异"，不夸大成丢上下文（Neo 消息历史模型无关，切 provider 不丢上下文）。
+- subagent 任务卡常驻模型标签（`RunWorkbenchCards.tsx`）。
+
+`ModelDecisionReason` 枚举：`user-selected` / `role-tier` / `simple-task-free` / `billing-gate-skip` / `capability-vision` / `fallback-availability`。
 
 ### 跨 Provider 降级链 (v0.16.42+)
 

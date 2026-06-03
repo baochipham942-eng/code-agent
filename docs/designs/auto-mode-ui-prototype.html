@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ADR-019 自动模式 · 前端原型 · Agent Neo</title>
+<style>
+  /* ============================================================
+     设计 Review 文档（基于 Agent Neo Linear 暗色设计系统）
+
+     Assumptions（来自 ADR-019 + 现有 UI 截图）：
+     1. 配色/层级直接复用 Neo 的 CSS 变量值（dark.css 抽取）
+     2. 聊天布局参考 smoke-02 截图：左会话列表/中聊天/右任务面板
+     3. 设置页布局参考 model-settings 截图：master-detail
+     4. 所有文案使用产品真实语言（中文），不用 lorem ipsum
+     ============================================================ */
+  :root {
+    /* === Neo 设计令牌（从 src/renderer/styles/themes/dark.css 抽取）=== */
+    --bg-void: #101012;
+    --bg-deep: #141417;
+    --bg-surface: #18181B;
+    --bg-elevated: #1F1F23;
+    --bg-hover: #27272B;
+    --bg-active: #2F2F34;
+    --text-primary: #F4F4F5;
+    --text-secondary: #A1A1AA;
+    --text-tertiary: #71717A;
+    --text-disabled: #52525B;
+    --brand: #14B8A6;
+    --brand-hover: #0D9488;
+    --brand-muted: rgba(20, 184, 166, 0.14);
+    --warning: #F59E0B;
+    --warning-muted: rgba(245, 158, 11, 0.12);
+    --error: #EF4444;
+    --error-muted: rgba(239, 68, 68, 0.12);
+    --info: #3B82F6;
+    --info-muted: rgba(59, 130, 246, 0.12);
+    --success: #22C55E;
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --border-default: rgba(255, 255, 255, 0.1);
+    --border-strong: rgba(255, 255, 255, 0.16);
+
+    /* === Review 文档自己的层（区别于 mockup）=== */
+    --doc-bg: #0A0A0B;
+    --doc-annotation: #14B8A6;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--doc-bg);
+    color: var(--text-primary);
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection { background: var(--brand-muted); }
+
+  .page { max-width: 1280px; margin: 0 auto; padding: 64px 48px 120px; }
+
+  /* ---------- 文档章节排版 ---------- */
+  .doc-header { margin-bottom: 72px; }
+  .doc-eyebrow {
+    font-family: "SF Mono", ui-monospace, monospace;
+    font-size: 12px; letter-spacing: 0.2em; color: var(--brand);
+    text-transform: uppercase; margin-bottom: 16px;
+  }
+  h1 {
+    font-family: "Songti SC", "Noto Serif SC", serif;
+    font-size: 42px; font-weight: 700; letter-spacing: 0.01em;
+    margin-bottom: 20px;
+  }
+  .doc-lede {
+    font-size: 16px; color: var(--text-secondary); max-width: 720px;
+  }
+  .doc-lede strong { color: var(--text-primary); font-weight: 600; }
+
+  .principles {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+    margin-top: 40px;
+  }
+  .principle {
+    background: var(--bg-deep); border: 1px solid var(--border-subtle);
+    border-radius: 10px; padding: 20px 22px;
+  }
+  .principle .num {
+    font-family: "SF Mono", ui-monospace, monospace;
+    font-size: 11px; color: var(--brand); margin-bottom: 10px;
+  }
+  .principle h3 { font-size: 15px; margin-bottom: 6px; }
+  .principle p { font-size: 13px; color: var(--text-tertiary); }
+
+  section { margin-bottom: 96px; }
+  .sec-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 12px; }
+  .sec-num {
+    font-family: "Songti SC", "Noto Serif SC", serif; font-style: italic;
+    font-size: 48px; color: var(--text-disabled); line-height: 1;
+  }
+  h2 {
+    font-family: "Songti SC", "Noto Serif SC", serif;
+    font-size: 28px; font-weight: 700;
+  }
+  .sec-desc {
+    font-size: 14px; color: var(--text-secondary);
+    max-width: 760px; margin-bottom: 36px;
+  }
+  .sec-desc code {
+    font-family: "SF Mono", ui-monospace, monospace; font-size: 12.5px;
+    background: var(--bg-elevated); padding: 1px 6px; border-radius: 4px;
+    color: var(--brand);
+  }
+
+  /* ---------- 标注系统 ---------- */
+  .anno {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--doc-annotation); color: #062421;
+    font-size: 12px; font-weight: 700; flex-shrink: 0;
+    font-family: "SF Mono", ui-monospace, monospace;
+  }
+  .anno-list { margin-top: 28px; display: grid; gap: 12px; max-width: 860px; }
+  .anno-item { display: flex; gap: 12px; align-items: flex-start; }
+  .anno-item .anno { margin-top: 2px; }
+  .anno-item p { font-size: 13.5px; color: var(--text-secondary); }
+  .anno-item p strong { color: var(--text-primary); }
+  .anno-item p em { color: var(--brand); font-style: normal; }
+
+  /* ---------- App 窗口框 ---------- */
+  .app-window {
+    background: var(--bg-void); border: 1px solid var(--border-default);
+    border-radius: 12px; overflow: hidden;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.4);
+  }
+  .window-titlebar {
+    height: 40px; background: var(--bg-deep);
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex; align-items: center; padding: 0 16px; gap: 8px;
+  }
+  .traffic { display: flex; gap: 7px; }
+  .traffic span { width: 11px; height: 11px; border-radius: 50%; }
+  .traffic span:nth-child(1) { background: #FF5F57; }
+  .traffic span:nth-child(2) { background: #FEBC2E; }
+  .traffic span:nth-child(3) { background: #28C840; }
+  .window-title {
+    flex: 1; text-align: center; font-size: 12px; color: var(--text-tertiary);
+  }
+
+  /* ---------- 原型 A：聊天界面 ---------- */
+  .chat-layout { display: flex; height: 1060px; }
+
+  .chat-sidebar {
+    width: 200px; background: var(--bg-deep);
+    border-right: 1px solid var(--border-subtle);
+    padding: 14px 10px; flex-shrink: 0;
+  }
+  .chat-sidebar .new-chat {
+    font-size: 12.5px; padding: 8px 12px; border-radius: 7px;
+    background: var(--bg-elevated); color: var(--text-secondary);
+    margin-bottom: 16px; border: 1px solid var(--border-subtle);
+  }
+  .session-group { font-size: 10.5px; color: var(--text-disabled); padding: 0 8px; margin: 14px 0 6px; }
+  .session-item {
+    font-size: 12.5px; color: var(--text-secondary); padding: 7px 8px;
+    border-radius: 6px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-item.active { background: var(--bg-active); color: var(--text-primary); }
+
+  .chat-main { flex: 1; display: flex; flex-direction: column; background: var(--bg-void); position: relative; }
+  .chat-scroll { flex: 1; overflow: hidden; padding: 28px 40px 16px; display: flex; flex-direction: column; gap: 22px; }
+
+  .msg { max-width: 78%; }
+  .msg.user { align-self: flex-end; }
+  .msg.user .bubble {
+    background: var(--bg-elevated); border: 1px solid var(--border-subtle);
+    border-radius: 14px 14px 4px 14px; padding: 12px 16px; font-size: 13.5px;
+  }
+  .msg.assistant { align-self: flex-start; max-width: 88%; }
+  .msg.assistant .bubble {
+    font-size: 13.5px; color: var(--text-primary); line-height: 1.7;
+  }
+
+  /* —— 核心新组件 1：路由 trace chip —— */
+  .route-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; padding: 3px 10px 3px 6px; border-radius: 999px;
+    background: var(--bg-elevated); border: 1px solid var(--border-subtle);
+    color: var(--text-secondary); margin-bottom: 10px;
+    cursor: default; position: relative;
+  }
+  .route-chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .route-chip .dot.free { background: var(--success); }
+  .route-chip .dot.main { background: var(--brand); }
+  .route-chip .dot.fallback { background: var(--warning); }
+  .route-chip .sep { color: var(--text-disabled); }
+  .route-chip .reason { color: var(--text-tertiary); }
+  .route-chip:hover { border-color: var(--border-strong); }
+
+  /* —— 核心新组件 2：决策详情卡 ——
+     实际产品中：hover 路由 chip 展开（popover）
+     本原型中：在流内常驻展开（review 文档不藏关键信息，且零遮挡） */
+  .decision-card {
+    width: 360px; background: #232329;
+    border: 1px solid var(--border-strong); border-radius: 10px;
+    border-left: 2px solid var(--brand);
+    padding: 14px 16px; margin: 2px 0 12px;
+  }
+  .decision-card .demo-note {
+    font-size: 10px; color: var(--text-disabled); margin-top: 10px;
+    text-align: center; font-style: italic;
+  }
+  .decision-card h4 {
+    font-size: 11px; color: var(--text-tertiary); font-weight: 500;
+    letter-spacing: 0.08em; margin-bottom: 10px;
+  }
+  .decision-row {
+    display: flex; justify-content: space-between; font-size: 12px;
+    padding: 5px 0; border-bottom: 1px solid var(--border-subtle);
+  }
+  .decision-row:last-child { border-bottom: none; }
+  .decision-row .k { color: var(--text-tertiary); }
+  .decision-row .v { font-family: "SF Mono", ui-monospace, monospace; font-size: 11.5px; }
+  .decision-row .v.green { color: var(--success); }
+  .decision-row .v.teal { color: var(--brand); }
+  .decision-card .switch-back {
+    margin-top: 12px; text-align: center; font-size: 12px;
+    padding: 6px; border-radius: 6px; background: var(--bg-hover);
+    color: var(--text-secondary); cursor: pointer;
+  }
+
+  /* —— 核心新组件 3：降级事件横幅 —— */
+  .fallback-banner {
+    align-self: stretch; display: flex; align-items: center; gap: 10px;
+    background: var(--warning-muted); border: 1px solid rgba(245,158,11,0.25);
+    border-radius: 8px; padding: 9px 14px; font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+  .fallback-banner .icon { color: var(--warning); font-size: 14px; }
+  .fallback-banner strong { color: var(--text-primary); font-weight: 600; }
+  .fallback-banner .actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
+  .fallback-banner .btn {
+    font-size: 11.5px; padding: 3px 10px; border-radius: 5px; cursor: pointer;
+  }
+  .fallback-banner .btn.primary { background: var(--warning); color: #1F1303; font-weight: 600; }
+  .fallback-banner .btn.ghost { border: 1px solid var(--border-default); color: var(--text-secondary); }
+
+  /* —— 核心新组件 4：subagent 任务卡的角色分层 —— */
+  .task-card {
+    align-self: stretch; background: var(--bg-deep);
+    border: 1px solid var(--border-subtle); border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .task-card .task-title {
+    font-size: 12px; color: var(--text-tertiary); margin-bottom: 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .task-card .task-title .spinner {
+    width: 12px; height: 12px; border: 1.5px solid var(--border-strong);
+    border-top-color: var(--brand); border-radius: 50%;
+  }
+  .agent-row {
+    display: flex; align-items: center; gap: 10px; padding: 7px 0;
+    font-size: 13px; border-bottom: 1px solid var(--border-subtle);
+  }
+  .agent-row:last-child { border-bottom: none; }
+  .agent-role {
+    width: 76px; font-weight: 600; font-size: 12.5px; flex-shrink: 0;
+  }
+  .agent-model-tag {
+    font-family: "SF Mono", ui-monospace, monospace; font-size: 11px;
+    padding: 2px 8px; border-radius: 5px; flex-shrink: 0;
+  }
+  .agent-model-tag.free { background: rgba(34,197,94,0.12); color: var(--success); }
+  .agent-model-tag.mid { background: var(--info-muted); color: var(--info); }
+  .agent-model-tag.main { background: var(--brand-muted); color: var(--brand); }
+  .agent-status { margin-left: auto; font-size: 11.5px; color: var(--text-tertiary); }
+
+  .chat-input-bar {
+    margin: 0 40px 14px; background: var(--bg-elevated);
+    border: 1px solid var(--border-default); border-radius: 12px;
+    padding: 12px 16px; font-size: 13px; color: var(--text-disabled);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .chat-input-bar .send {
+    margin-left: auto; width: 28px; height: 28px; border-radius: 7px;
+    background: var(--brand); display: flex; align-items: center; justify-content: center;
+    color: #062421; font-size: 13px;
+  }
+
+  /* —— 核心新组件 5：StatusBar 自动模式状态 —— */
+  .status-bar {
+    height: 34px; background: var(--bg-deep);
+    border-top: 1px solid var(--border-subtle);
+    display: flex; align-items: center; padding: 0 16px; gap: 14px;
+    font-size: 11.5px; color: var(--text-tertiary);
+  }
+  .model-switcher {
+    display: flex; align-items: center; gap: 7px;
+    background: var(--bg-elevated); border: 1px solid var(--border-subtle);
+    padding: 4px 10px; border-radius: 6px; color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .model-switcher .auto-badge {
+    font-size: 10px; padding: 1px 6px; border-radius: 4px;
+    background: var(--brand-muted); color: var(--brand); font-weight: 600;
+  }
+  .model-switcher .current-route {
+    font-family: "SF Mono", ui-monospace, monospace; font-size: 10.5px;
+    color: var(--text-tertiary);
+  }
+  .status-spacer { flex: 1; }
+  .session-cost {
+    display: flex; align-items: center; gap: 6px;
+    font-family: "SF Mono", ui-monospace, monospace; font-size: 10.5px;
+  }
+  .session-cost .saved { color: var(--success); }
+
+  /* ---------- 原型 B：设置页 ---------- */
+  .settings-layout { display: flex; height: 1480px; }
+  .settings-nav {
+    width: 200px; background: var(--bg-deep); flex-shrink: 0;
+    border-right: 1px solid var(--border-subtle); padding: 16px 10px;
+  }
+  .settings-nav .nav-group { font-size: 10.5px; color: var(--text-disabled); padding: 0 10px; margin: 16px 0 6px; }
+  .settings-nav .nav-item {
+    font-size: 13px; color: var(--text-secondary); padding: 8px 10px;
+    border-radius: 6px; display: flex; align-items: center; gap: 9px;
+  }
+  .settings-nav .nav-item.active { background: var(--bg-active); color: var(--text-primary); }
+  .settings-nav .nav-item .ic { width: 15px; text-align: center; opacity: 0.7; }
+
+  .settings-content { flex: 1; padding: 36px 44px; overflow: hidden; background: var(--bg-void); }
+  .settings-content h3 { font-size: 22px; margin-bottom: 4px; }
+  .settings-content .subtitle { font-size: 13px; color: var(--text-tertiary); margin-bottom: 28px; }
+
+  .settings-block {
+    background: var(--bg-surface); border: 1px solid var(--border-subtle);
+    border-radius: 10px; padding: 20px 24px; margin-bottom: 18px;
+  }
+  .settings-block .block-head {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
+  }
+  .settings-block .block-num {
+    width: 20px; height: 20px; border-radius: 5px; background: var(--bg-elevated);
+    font-size: 11px; display: flex; align-items: center; justify-content: center;
+    color: var(--text-tertiary); font-family: "SF Mono", ui-monospace, monospace;
+  }
+  .settings-block .block-title { font-size: 14.5px; font-weight: 600; }
+  .settings-block .block-desc { font-size: 12.5px; color: var(--text-tertiary); margin-bottom: 18px; margin-left: 30px; }
+
+  /* —— 核心新组件 6：provider 计费方式标记 —— */
+  .provider-row {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 14px; border-radius: 8px; margin-left: 30px;
+    border: 1px solid var(--border-subtle); margin-bottom: 8px;
+    background: var(--bg-deep);
+  }
+  .provider-avatar {
+    width: 30px; height: 30px; border-radius: 7px; background: var(--bg-elevated);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600; flex-shrink: 0;
+  }
+  .provider-info { flex: 1; }
+  .provider-name { font-size: 13.5px; font-weight: 500; }
+  .provider-model { font-size: 11.5px; color: var(--text-tertiary); font-family: "SF Mono", ui-monospace, monospace; }
+
+  .billing-select {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--bg-elevated); border: 1px solid var(--border-default);
+    border-radius: 7px; padding: 6px 12px; font-size: 12.5px; cursor: pointer;
+  }
+  .billing-select .caret { color: var(--text-disabled); font-size: 10px; }
+
+  .billing-badge {
+    font-size: 11px; padding: 3px 10px; border-radius: 999px; font-weight: 500;
+  }
+  .billing-badge.free { background: rgba(34,197,94,0.12); color: var(--success); }
+  .billing-badge.plan { background: var(--brand-muted); color: var(--brand); }
+  .billing-badge.payg { background: var(--info-muted); color: var(--info); }
+  .billing-badge.unknown { background: var(--bg-hover); color: var(--text-tertiary); }
+
+  /* 计费方式下拉展开示意 */
+  .billing-dropdown {
+    margin-left: 30px; margin-top: -2px; margin-bottom: 14px;
+    width: 380px; background: var(--bg-elevated);
+    border: 1px solid var(--border-default); border-radius: 10px;
+    padding: 8px; box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  }
+  .billing-option {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 12px; border-radius: 7px; cursor: pointer;
+  }
+  .billing-option:hover { background: var(--bg-hover); }
+  .billing-option.selected { background: var(--brand-muted); }
+  .billing-option .radio {
+    width: 14px; height: 14px; border-radius: 50%; margin-top: 3px;
+    border: 1.5px solid var(--border-strong); flex-shrink: 0;
+  }
+  .billing-option.selected .radio { border-color: var(--brand); background: radial-gradient(circle, var(--brand) 40%, transparent 45%); }
+  .billing-option .opt-name { font-size: 13px; font-weight: 500; }
+  .billing-option .opt-desc { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; }
+
+  /* —— 核心新组件 7：simple 路由门控 + 联动提示 —— */
+  .gate-row {
+    display: flex; align-items: center; gap: 14px; margin-left: 30px;
+    padding: 14px 0;
+  }
+  .gate-info { flex: 1; }
+  .gate-title { font-size: 13.5px; font-weight: 500; }
+  .gate-desc { font-size: 12px; color: var(--text-tertiary); margin-top: 3px; }
+  .toggle {
+    width: 40px; height: 22px; border-radius: 999px; position: relative;
+    background: var(--bg-active); flex-shrink: 0; cursor: pointer;
+    border: 1px solid var(--border-default);
+  }
+  .toggle.on { background: var(--brand); border-color: var(--brand); }
+  .toggle::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 16px; height: 16px; border-radius: 50%; background: #fff;
+    transition: left 0.15s;
+  }
+  .toggle.on::after { left: 20px; }
+  .toggle.disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .smart-hint {
+    margin-left: 30px; display: flex; gap: 10px; align-items: flex-start;
+    background: var(--info-muted); border: 1px solid rgba(59,130,246,0.2);
+    border-radius: 8px; padding: 11px 14px; font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+  .smart-hint .icon { color: var(--info); flex-shrink: 0; }
+  .smart-hint strong { color: var(--text-primary); }
+
+  /* —— 核心新组件 8：硬约束声明 —— */
+  .hard-rule {
+    margin-left: 30px; display: flex; gap: 12px; align-items: center;
+    border: 1px dashed var(--border-strong); border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .hard-rule .lock { font-size: 16px; }
+  .hard-rule p { font-size: 13px; color: var(--text-secondary); }
+  .hard-rule p strong { color: var(--text-primary); }
+  .hard-rule .tag {
+    margin-left: auto; flex-shrink: 0; font-size: 10.5px; padding: 3px 8px;
+    border-radius: 5px; background: var(--bg-elevated); color: var(--text-tertiary);
+    font-family: "SF Mono", ui-monospace, monospace;
+  }
+
+  /* ---------- 流程图 ---------- */
+  .flow-wrap {
+    background: var(--bg-deep); border: 1px solid var(--border-subtle);
+    border-radius: 12px; padding: 40px; overflow-x: auto;
+  }
+  .flow-wrap svg { display: block; margin: 0 auto; }
+
+  /* SVG 内部样式 */
+  .fnode { fill: var(--bg-elevated); stroke: rgba(255,255,255,0.12); stroke-width: 1; rx: 8; }
+  .fnode.entry { fill: var(--brand-muted); stroke: var(--brand); }
+  .fnode.system-b { fill: rgba(59,130,246,0.1); stroke: rgba(59,130,246,0.4); }
+  .fnode.interceptor { fill: rgba(245,158,11,0.08); stroke: rgba(245,158,11,0.35); }
+  .fnode.hard { fill: rgba(239,68,68,0.08); stroke: rgba(239,68,68,0.4); stroke-dasharray: 5 3; }
+  .fnode.output { fill: rgba(34,197,94,0.08); stroke: rgba(34,197,94,0.4); }
+  .ftext { fill: #F4F4F5; font-size: 13px; font-family: -apple-system, "PingFang SC", sans-serif; }
+  .ftext.small { font-size: 11px; fill: #A1A1AA; }
+  .ftext.mono { font-family: "SF Mono", ui-monospace, monospace; font-size: 10.5px; fill: #71717A; }
+  .ftext.label { font-size: 11px; fill: #71717A; }
+  .fedge { stroke: rgba(255,255,255,0.25); stroke-width: 1.5; fill: none; }
+  .fedge.highlight { stroke: #14B8A6; }
+
+  /* ---------- 改动映射表 ---------- */
+  .impact-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .impact-table th {
+    text-align: left; padding: 12px 16px; color: var(--text-tertiary);
+    font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--border-default);
+  }
+  .impact-table td { padding: 13px 16px; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+  .impact-table td:first-child { font-weight: 600; white-space: nowrap; }
+  .impact-table .new { color: var(--success); font-size: 11px; font-family: "SF Mono", ui-monospace, monospace; }
+  .impact-table .mod { color: var(--warning); font-size: 11px; font-family: "SF Mono", ui-monospace, monospace; }
+  .impact-table code {
+    font-family: "SF Mono", ui-monospace, monospace; font-size: 11.5px;
+    background: var(--bg-elevated); padding: 1px 6px; border-radius: 4px;
+    color: var(--text-secondary);
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ================= 文档头 ================= -->
+  <header class="doc-header">
+    <div class="doc-eyebrow">Agent Neo · ADR-019 · Design Prototype</div>
+    <h1>自动模式改造 · 前端原型</h1>
+    <p class="doc-lede">
+      核心思路一句话：<strong>把"黑盒路由"翻转成"白盒调度"</strong>。
+      业内 auto 模式（Cursor / GPT-5 Router）最大的失败不是算法，是用户不知道发生了什么。
+      Neo 反着做——每一次模型选择都看得见、看得懂、可撤销。
+    </p>
+    <div class="principles">
+      <div class="principle">
+        <div class="num">PRINCIPLE 01</div>
+        <h3>白盒化</h3>
+        <p>路由发生的那一刻就告诉用户：谁在干活、用什么模型、为什么。不需要打开任何面板。</p>
+      </div>
+      <div class="principle">
+        <div class="num">PRINCIPLE 02</div>
+        <h3>计费感知</h3>
+        <p>"省钱"只对按量付费成立。包月用户的免费路由省的是 0 元——UI 要诚实地反映这一点。</p>
+      </div>
+      <div class="principle">
+        <div class="num">PRINCIPLE 03</div>
+        <h3>永不向上</h3>
+        <p>自动模式永远不选比用户默认模型更贵的模型。这是写进代码的硬约束，UI 把它说出来建立信任。</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= 原型 A ================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">A</span><h2>聊天主链路 · 透明度 Trace（P1）</h2></div>
+    <p class="sec-desc">
+      所有路由事件在聊天流里<strong>原位</strong>呈现，复用现有 MessageBubble / TaskPanel 结构，只新增 5 个轻量组件。
+      数据全部来自 P2 的结构化路由决策 <code>{requested, resolved, reason, role, billingMode}</code>——UI 不自己猜，只渲染决策结果。
+    </p>
+
+    <div class="app-window">
+      <div class="window-titlebar">
+        <div class="traffic"><span></span><span></span><span></span></div>
+        <div class="window-title">Agent Neo</div>
+      </div>
+      <div class="chat-layout">
+        <!-- 左侧会话列表 -->
+        <div class="chat-sidebar">
+          <div class="new-chat">＋ 新会话</div>
+          <div class="session-group">今天</div>
+          <div class="session-item active">分析 README 质量</div>
+          <div class="session-item">用 /frontend-slides 做演示</div>
+          <div class="session-item">这个 Excel 有几行数据</div>
+          <div class="session-group">昨天</div>
+          <div class="session-item">帮我做一个 3D 旋转相册</div>
+          <div class="session-item">重构 modelRouter</div>
+        </div>
+
+        <!-- 中间聊天区 -->
+        <div class="chat-main">
+          <div class="chat-scroll">
+
+            <!-- 用户消息 -->
+            <div class="msg user">
+              <div class="bubble">帮我看看这个项目的 README 写得怎么样，顺便检查一下文档结构</div>
+            </div>
+
+            <!-- ① 简单回复：免费模型路由 + chip（默认收起态） -->
+            <div class="msg assistant">
+              <div class="route-chip">
+                <span class="dot free"></span>
+                <span>自动 · 已用 GLM-4-Flash 回答</span>
+                <span class="sep">·</span>
+                <span class="reason">免费</span>
+                <span class="sep" style="margin-left:2px">▸</span>
+              </div>
+              <div class="bubble">好的，我先读取 README.md 和 docs/ 目录结构，然后从完整性、可读性、上手路径三个维度分析…</div>
+            </div>
+
+            <!-- ①b 同一组件的展开态：点击 chip 后显示决策详情 -->
+            <div class="msg assistant">
+              <div class="route-chip" style="border-color: var(--border-strong)">
+                <span class="dot free"></span>
+                <span>自动 · 已用 GLM-4-Flash 回答</span>
+                <span class="sep">·</span>
+                <span class="reason">免费</span>
+                <span class="sep" style="margin-left:2px">▾</span>
+              </div>
+              <!-- ② 决策详情卡（点击 chip 展开） -->
+              <div class="decision-card">
+                <h4>为什么用这个模型</h4>
+                <div class="decision-row"><span class="k">会话默认</span><span class="v">kimi-k2.5</span></div>
+                <div class="decision-row"><span class="k">实际使用</span><span class="v green">glm-4-flash</span></div>
+                <div class="decision-row"><span class="k">触发规则</span><span class="v">轻量任务 → 免费档</span></div>
+                <div class="decision-row"><span class="k">判断依据</span><span class="v">短消息 · 无代码 · 无文件</span></div>
+                <div class="decision-row"><span class="k">计费影响</span><span class="v teal">你的 Key 按量计费 → 本轮 0 成本</span></div>
+                <div class="switch-back">本轮改用默认模型重答</div>
+                <div class="demo-note">▸ 收起态（上一条消息）点击后展开为本卡片</div>
+              </div>
+              <div class="bubble">docs/ 下共 14 篇文档，其中 4 篇引用了已删除的代码路径。建议优先修 ARCHITECTURE.md 的导航链接…</div>
+            </div>
+
+            <!-- ③ subagent 任务卡：角色分层一目了然 -->
+            <div class="task-card">
+              <div class="task-title"><span class="spinner"></span> 并行任务 · 文档体检（3 个子代理）</div>
+              <div class="agent-row">
+                <span class="agent-role">Explore</span>
+                <span class="agent-model-tag free">glm-4-flash</span>
+                <span style="font-size:12px; color:var(--text-tertiary)">扫描 docs/ 目录 + 现有文档清单</span>
+                <span class="agent-status">✓ 完成 · 免费</span>
+              </div>
+              <div class="agent-row">
+                <span class="agent-role">Reviewer</span>
+                <span class="agent-model-tag mid">glm-5</span>
+                <span style="font-size:12px; color:var(--text-tertiary)">交叉检查 README 与实际代码一致性</span>
+                <span class="agent-status">运行中 · 12s</span>
+              </div>
+              <div class="agent-row">
+                <span class="agent-role">Coder</span>
+                <span class="agent-model-tag main">kimi-k2.5</span>
+                <span style="font-size:12px; color:var(--text-tertiary)">生成改进后的 README 草稿</span>
+                <span class="agent-status">等待依赖</span>
+              </div>
+            </div>
+
+            <!-- ④ 降级事件横幅 -->
+            <div class="fallback-banner">
+              <span class="icon">⚠</span>
+              <span><strong>Kimi K2.5 触发限流</strong>，Coder 子代理已切换至 <strong>DeepSeek V4</strong> 继续。对话记录会完整交给新模型，回复风格可能略有差异。</span>
+              <div class="actions">
+                <span class="btn ghost">等待 Kimi 恢复</span>
+                <span class="btn primary">继续</span>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="chat-input-bar">
+            <span>描述你想解决的问题...</span>
+            <span class="send">↑</span>
+          </div>
+
+          <!-- ⑤ StatusBar：保持现状，只有"自动"徽标（不加路由结果和省钱金额） -->
+          <div class="status-bar">
+            <div class="model-switcher">
+              <span class="auto-badge">自动</span>
+              <span>Kimi K2.5</span>
+            </div>
+            <div class="status-spacer"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="anno-list">
+      <div class="anno-item"><span class="anno">1</span><p><strong>路由 Chip（默认收起）</strong>——文案"自动 · 已用 GLM-4-Flash 回答 · 免费"，一行讲清三件事：这是自动决定的 / 用了什么 / 对钱包的影响。绿点=免费档、青点=主力、黄点=降级，末尾 ▸ 暗示可展开。默认只占一行，<em>不打断阅读流</em>。</p></div>
+      <div class="anno-item"><span class="anno">2</span><p><strong>决策详情卡（点击 chip 展开 / 再点收起）</strong>——标题用"为什么用这个模型"而不是"路由决策详情"（用户语言 &gt; 系统语言）。关键是最后一行<em>计费影响</em>：按量付费显示真实节省，包月显示"套餐内 · 无额外成本"，绝不显示虚假的省钱数字。底部"本轮改用默认模型重答"——<em>可撤销是信任的最后一环</em>。</p></div>
+      <div class="anno-item"><span class="anno">3</span><p><strong>任务卡角色分层</strong>——系统 B（角色即路由）的可视化：每个子代理一行，模型标签用颜色区分档位。用户第一次直观看到"为什么探索便宜、写码用主力"。这块复用现有 TaskPanel 卡片，只是把模型标签从隐藏改为常驻。</p></div>
+      <div class="anno-item"><span class="anno">4</span><p><strong>降级横幅</strong>——可用性兜底触发时<em>原位置插入</em>聊天流（不是 toast，toast 会消失）。文案准确性：Neo 的消息历史是模型无关的，切 provider <em>不会丢上下文</em>，只是回复风格可能有差异——横幅只说真话，不夸大风险。提供"等待恢复"选项，把决定权还给用户。</p></div>
+      <div class="anno-item"><span class="anno">5</span><p><strong>StatusBar 保持现状</strong>——只保留现有的"自动"徽标 + 默认模型名，<em>不加</em>本轮路由结果和省钱金额（信息已在 chip 和决策卡中，StatusBar 重复展示是噪音）。</p></div>
+    </div>
+  </section>
+
+  <!-- ================= 原型 B ================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">B</span><h2>设置页 · 计费语义四分类（P2）</h2></div>
+    <p class="sec-desc">
+      复用现有"模型设置"master-detail 布局，在 Provider 详情里新增<strong>计费方式</strong>一栏。
+      这是整个取舍方案的地基：<code>simple 路由门控</code>、<code>成本统计</code>、<code>决策卡的计费影响</code>全部从这个用户配置读取，不再依赖手工维护的价格表猜测。
+    </p>
+
+    <div class="app-window">
+      <div class="window-titlebar">
+        <div class="traffic"><span></span><span></span><span></span></div>
+        <div class="window-title">Agent Neo · 设置</div>
+      </div>
+      <div class="settings-layout">
+        <div class="settings-nav">
+          <div class="nav-group">基础偏好</div>
+          <div class="nav-item"><span class="ic">🛡</span>权限与安全</div>
+          <div class="nav-item"><span class="ic">💬</span>对话</div>
+          <div class="nav-item active"><span class="ic">⚙</span>模型</div>
+          <div class="nav-item"><span class="ic">🤖</span>Agent 引擎</div>
+          <div class="nav-item"><span class="ic">🎨</span>外观</div>
+          <div class="nav-group">能力与连接</div>
+          <div class="nav-item"><span class="ic">⚡</span>能力中心</div>
+          <div class="nav-item"><span class="ic">🧩</span>插件管理</div>
+          <div class="nav-item"><span class="ic">🔌</span>MCP</div>
+        </div>
+
+        <div class="settings-content">
+          <h3>模型</h3>
+          <div class="subtitle">基础偏好 · 自动模式与计费</div>
+
+          <!-- 块 1：计费方式标记 -->
+          <div class="settings-block">
+            <div class="block-head">
+              <span class="block-num">1</span>
+              <span class="block-title">Provider 计费方式</span>
+              <span class="anno" style="margin-left:auto">6</span>
+            </div>
+            <p class="block-desc">告诉 Neo 你的每个 Key 是怎么计费的——自动模式据此判断"切换到免费模型"对你是否真的省钱。</p>
+
+            <div class="provider-row">
+              <div class="provider-avatar"><svg viewBox="0 0 24 24" width="16" height="16" fill="#F4F4F5"><path d="M21.846 0a1.923 1.923 0 110 3.846H20.15a.226.226 0 01-.227-.226V1.923C19.923.861 20.784 0 21.846 0z"/><path d="M11.065 11.199l7.257-7.2c.137-.136.06-.41-.116-.41H14.3a.164.164 0 00-.117.051l-7.82 7.756c-.122.12-.302.013-.302-.179V3.82c0-.127-.083-.23-.185-.23H3.186c-.103 0-.186.103-.186.23V19.77c0 .128.083.23.186.23h2.69c.103 0 .186-.102.186-.23v-3.25c0-.069.025-.135.069-.178l2.424-2.406a.158.158 0 01.205-.023l6.484 4.772a7.677 7.677 0 003.453 1.283c.108.012.2-.095.2-.23v-3.06c0-.117-.07-.212-.164-.227a5.028 5.028 0 01-2.027-.807l-5.613-4.064c-.117-.078-.132-.279-.028-.381z"/></svg></div>
+              <div class="provider-info">
+                <div class="provider-name">Kimi（默认模型）</div>
+                <div class="provider-model">kimi-k2.5</div>
+              </div>
+              <span class="billing-badge plan">套餐内（包月）</span>
+              <div class="billing-select"><span>套餐内</span><span class="caret">▾</span></div>
+            </div>
+
+            <!-- 展开的下拉：四分类 -->
+            <div class="billing-dropdown">
+              <div class="billing-option">
+                <span class="radio"></span>
+                <div><div class="opt-name">官方免费</div><div class="opt-desc">厂商免费模型，永远 0 成本（如 glm-4-flash）</div></div>
+              </div>
+              <div class="billing-option selected">
+                <span class="radio"></span>
+                <div><div class="opt-name">套餐内（包月 / 订阅）</div><div class="opt-desc">已购买固定额度套餐，调用不产生额外费用</div></div>
+              </div>
+              <div class="billing-option">
+                <span class="radio"></span>
+                <div><div class="opt-name">按量付费（新 Key 默认）</div><div class="opt-desc">每次调用按 token 计费——API Key 的最常见形态，省钱路由对它价值最大</div></div>
+              </div>
+              <div class="billing-option">
+                <span class="radio"></span>
+                <div><div class="opt-name">未知（中转站默认）</div><div class="opt-desc">无法确认计费方式的 Key，按保守策略处理（不参与省钱路由）</div></div>
+              </div>
+            </div>
+
+            <div class="provider-row">
+              <div class="provider-avatar"><svg viewBox="0 0 24 24" width="15" height="15" fill="#F4F4F5"><path d="M12.105 2L9.927 4.953H.653L2.83 2h9.276zM23.254 19.048L21.078 22h-9.242l2.174-2.952h9.244zM24 2L9.264 22H0L14.736 2H24z"/></svg></div>
+              <div class="provider-info">
+                <div class="provider-name">智谱 AI</div>
+                <div class="provider-model">glm-4-flash / glm-5</div>
+              </div>
+              <span class="billing-badge free">官方免费</span>
+              <div class="billing-select"><span>官方免费</span><span class="caret">▾</span></div>
+            </div>
+
+            <div class="provider-row">
+              <div class="provider-avatar"><svg viewBox="0 0 24 24" width="16" height="16" fill="#4D6BFE"><path d="M23.748 4.651c-.254-.124-.364.113-.512.233-.051.04-.094.09-.137.137-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.155-.708-.311-.955-.65-.172-.24-.219-.509-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.094.172.187.129.323-.082.28-.18.553-.266.833-.055.179-.137.218-.328.14a5.5 5.5 0 0 1-1.737-1.179c-.857-.828-1.631-1.743-2.597-2.46a12 12 0 0 0-.689-.47c-.985-.957.13-1.743.387-1.836.27-.098.094-.433-.778-.428-.872.003-1.67.295-2.687.685a3 3 0 0 1-.465.136 9.6 9.6 0 0 0-2.883-.101c-1.885.21-3.39 1.1-4.497 2.622C.082 8.776-.231 10.854.152 13.02c.403 2.284 1.568 4.175 3.36 5.653 1.857 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.132-.284 4.994-1.86.47.234.962.328 1.78.398.629.058 1.235-.031 1.705-.129.735-.155.684-.836.418-.961-2.155-1.004-1.682-.595-2.112-.926 1.095-1.295 2.768-3.598 3.284-6.733.05-.346.115-.834.108-1.114-.004-.171.035-.238.23-.257a4.2 4.2 0 0 0 1.545-.475c1.397-.763 1.96-2.016 2.093-3.517.02-.23-.004-.467-.247-.588M11.58 18.168c-2.088-1.642-3.101-2.183-3.52-2.16-.39.024-.32.472-.234.763.09.288.207.487.371.74.114.167.192.416-.113.603-.673.416-1.842-.14-1.897-.168-1.361-.801-2.5-1.86-3.301-3.306-.775-1.393-1.225-2.888-1.299-4.482-.02-.385.094-.522.477-.592a4.7 4.7 0 0 1 1.53-.038c2.131.311 3.946 1.264 5.467 2.774.868.86 1.525 1.887 2.202 2.89.72 1.066 1.494 2.082 2.48 2.915.348.291.626.513.892.677-.802.09-2.14.109-3.055-.615z"/></svg></div>
+              <div class="provider-info">
+                <div class="provider-name">DeepSeek</div>
+                <div class="provider-model">deepseek-v4-flash</div>
+              </div>
+              <span class="billing-badge payg">按量付费（默认）</span>
+              <div class="billing-select"><span>按量付费</span><span class="caret">▾</span></div>
+            </div>
+
+            <div class="provider-row">
+              <div class="provider-avatar">C</div>
+              <div class="provider-info">
+                <div class="provider-name">CommonStack Claude（中转站）</div>
+                <div class="provider-model">claude-opus-4-8</div>
+              </div>
+              <span class="billing-badge unknown">未知</span>
+              <div class="billing-select"><span>未知</span><span class="caret">▾</span></div>
+            </div>
+          </div>
+
+          <!-- 块 2：simple 路由门控 -->
+          <div class="settings-block">
+            <div class="block-head">
+              <span class="block-num">2</span>
+              <span class="block-title">自动模式行为</span>
+              <span class="anno" style="margin-left:auto">7</span>
+            </div>
+
+            <div class="gate-row">
+              <div class="gate-info">
+                <div class="gate-title">简单任务使用免费模型</div>
+                <div class="gate-desc">短消息、无代码、无文件引用的轻量任务路由到 glm-4-flash</div>
+              </div>
+              <div class="toggle disabled"></div>
+            </div>
+
+            <div class="smart-hint">
+              <span class="icon">ⓘ</span>
+              <span>你的默认模型 <strong>Kimi K2.5 是包月套餐</strong>——切换到免费模型不会节省任何费用，反而可能损失回复质量。此开关已自动关闭。<br>
+              <span style="color:var(--text-tertiary); font-size:11.5px">如果你将默认模型换成按量付费的 Key（如 DeepSeek），此开关会自动可用。</span></span>
+            </div>
+
+            <div class="gate-row">
+              <div class="gate-info">
+                <div class="gate-title">能力兜底（视觉 / 长上下文）</div>
+                <div class="gate-desc">主模型不支持图片时，自动用视觉模型预处理图片再回答</div>
+              </div>
+              <div class="toggle on"></div>
+            </div>
+
+            <div class="gate-row">
+              <div class="gate-info">
+                <div class="gate-title">可用性兜底（限流 / 故障 / 余额不足）</div>
+                <div class="gate-desc">主模型不可用时按降级链自动切换，并在聊天中提示</div>
+              </div>
+              <div class="toggle on"></div>
+            </div>
+          </div>
+
+          <!-- 块 3：硬约束 -->
+          <div class="settings-block">
+            <div class="block-head">
+              <span class="block-num">3</span>
+              <span class="block-title">成本保护</span>
+              <span class="anno" style="margin-left:auto">8</span>
+            </div>
+            <div style="height:14px"></div>
+            <div class="hard-rule">
+              <span class="lock">🔒</span>
+              <p><strong>自动模式永远不会选择比你的默认模型更贵的模型。</strong><br>
+              <span style="font-size:12px; color:var(--text-tertiary)">这是产品的硬性承诺，不是可配置项——所有自动切换只会向下（更便宜）或平级（兜底）。</span></p>
+              <span class="tag">不可关闭</span>
+            </div>
+          </div>
+
+          <!-- 块 4：模型价格档位（贵贱比较的依据 + 数据源） -->
+          <div class="settings-block">
+            <div class="block-head">
+              <span class="block-num">4</span>
+              <span class="block-title">模型价格档位</span>
+              <span class="anno" style="margin-left:auto">9</span>
+            </div>
+            <p class="block-desc">"更贵 / 更便宜"的比较依据。档位来自社区价格库（LiteLLM），每周自动更新——你不需要维护它，只需要知道它存在。</p>
+
+            <div class="provider-row" style="background: transparent; border-style: dashed">
+              <div class="provider-info">
+                <div class="provider-name" style="font-size:12.5px; color: var(--text-tertiary)">模型</div>
+              </div>
+              <span style="font-size:12px; color: var(--text-tertiary); width: 110px">价格档位</span>
+              <span style="font-size:12px; color: var(--text-tertiary); width: 170px">参考价（输出 / 1M tokens）</span>
+            </div>
+            <div class="provider-row">
+              <div class="provider-info"><div class="provider-model" style="font-size:12.5px">claude-opus-4-8</div></div>
+              <span class="billing-badge" style="background: rgba(239,68,68,0.12); color: var(--error); width: 90px; text-align:center">$$$$ 旗舰</span>
+              <span style="font-family: 'SF Mono', monospace; font-size: 12px; color: var(--text-secondary); width: 170px">$25.00</span>
+            </div>
+            <div class="provider-row">
+              <div class="provider-info"><div class="provider-model" style="font-size:12.5px">kimi-k2.5</div></div>
+              <span class="billing-badge" style="background: var(--warning-muted); color: var(--warning); width: 90px; text-align:center">$$ 中</span>
+              <span style="font-family: 'SF Mono', monospace; font-size: 12px; color: var(--text-secondary); width: 170px">$2.50</span>
+            </div>
+            <div class="provider-row">
+              <div class="provider-info"><div class="provider-model" style="font-size:12.5px">deepseek-v4-flash</div></div>
+              <span class="billing-badge" style="background: var(--info-muted); color: var(--info); width: 90px; text-align:center">$ 低</span>
+              <span style="font-family: 'SF Mono', monospace; font-size: 12px; color: var(--text-secondary); width: 170px">$0.28</span>
+            </div>
+            <div class="provider-row">
+              <div class="provider-info"><div class="provider-model" style="font-size:12.5px">glm-4-flash</div></div>
+              <span class="billing-badge free" style="width: 90px; text-align:center">免费</span>
+              <span style="font-family: 'SF Mono', monospace; font-size: 12px; color: var(--text-secondary); width: 170px">$0.00</span>
+            </div>
+
+            <div class="smart-hint" style="margin-top: 14px">
+              <span class="icon">↻</span>
+              <span>价格数据来自 <strong>LiteLLM 社区价格库</strong>（覆盖 1000+ 模型）· 上次更新 2026-06-01 · 离线时使用内置快照<br>
+              <span style="color:var(--text-tertiary); font-size:11.5px">中转站模型按同名官方模型归档（claude-opus-4-8 走中转站 = 仍是旗舰档）；档位只用于"不向上切换"的比较，成本展示才用精确价格。</span></span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="anno-list">
+      <div class="anno-item"><span class="anno">6</span><p><strong>计费方式四分类</strong>——下拉只有四个选项，每个都用人话解释。重点：这是<em>用户配置</em>而不是系统猜测。市场价（来自价格库）和"你的 Key 怎么计费"（用户配置）从此分离。默认值贴近现实：新 Key 默认<em>按量付费</em>（API Key 的主流形态，省钱路由默认生效），中转站默认"未知"（保守）。</p></div>
+      <div class="anno-item"><span class="anno">7</span><p><strong>门控开关 + 智能默认</strong>——三个开关对应 adaptive 拦截器的三个职责（省钱 / 能力 / 可用性）。关键交互：<em>简单任务开关的可用性由计费方式决定</em>——包月用户看到的是"已自动关闭 + 解释原因"，而不是一个骗自己的开关。这就是"计费感知"原则落在 UI 上的样子。</p></div>
+      <div class="anno-item"><span class="anno">8</span><p><strong>硬约束声明</strong>——用虚线框 + 锁图标 + "不可关闭"标签做视觉隔离，刻意和普通设置项区分开。它不是设置，是<em>承诺</em>。面试讲这个细节：产品如何用 UI 语言传达"这是底线不是选项"。</p></div>
+      <div class="anno-item"><span class="anno">9</span><p><strong>价格档位 + 数据源</strong>——回答"Opus 一定比 DeepSeek 贵，系统怎么知道"：路由约束只需要<em>比大小</em>，所以用 5 档价格带（免费 / $ / $$ / $$$ / $$$$），不依赖精确数字。数据源是 LiteLLM 社区价格库（业内通用），打包内置快照 + 每周自动更新，<em>分发给任何用户都不需要手工维护价格表</em>。Provider logo 复用项目已有的 providerLogoCatalog.ts，不是字母占位。</p></div>
+    </div>
+  </section>
+
+  <!-- ================= 流程图 ================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">C</span><h2>路由决策流程 · 单一入口（P2 核心）</h2></div>
+    <p class="sec-desc">
+      最复杂的部分：两套系统（角色分层 / adaptive 拦截器）如何在<strong>一个决策入口</strong>里协作，
+      消除现在"两条引擎、两种行为"的问题。所有路径殊途同归到同一个<code>结构化决策对象</code>，UI / 日志 / 成本统计只消费这个对象。
+    </p>
+
+    <div class="flow-wrap">
+      <svg width="1100" height="980" viewBox="0 0 1100 980">
+        <!-- 箭头定义 -->
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.4)" />
+          </marker>
+          <marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#14B8A6" />
+          </marker>
+        </defs>
+
+        <!-- 入口 -->
+        <rect class="fnode" x="450" y="20" width="200" height="50" rx="8"/>
+        <text class="ftext" x="550" y="42" text-anchor="middle">推理请求</text>
+        <text class="ftext mono" x="550" y="58" text-anchor="middle">主聊天 / subagent / 工具内调用</text>
+
+        <path class="fedge highlight" d="M 550 70 L 550 110" marker-end="url(#arrow-teal)"/>
+
+        <!-- 单一决策入口 -->
+        <rect class="fnode entry" x="400" y="110" width="300" height="56" rx="8"/>
+        <text class="ftext" x="550" y="134" text-anchor="middle" font-weight="600">单一路由决策入口</text>
+        <text class="ftext mono" x="550" y="152" text-anchor="middle">resolveModelDecision()</text>
+
+        <path class="fedge" d="M 550 166 L 550 200" marker-end="url(#arrow)"/>
+
+        <!-- 分支：是否 subagent -->
+        <rect class="fnode" x="455" y="200" width="190" height="44" rx="22"/>
+        <text class="ftext" x="550" y="227" text-anchor="middle">subagent 任务？</text>
+
+        <!-- 左分支：系统 B -->
+        <path class="fedge" d="M 455 222 L 240 222 L 240 280" marker-end="url(#arrow)"/>
+        <text class="ftext label" x="340" y="214">是</text>
+
+        <rect class="fnode system-b" x="120" y="280" width="240" height="130" rx="8"/>
+        <text class="ftext" x="240" y="306" text-anchor="middle" font-weight="600">系统 B · 角色分层（主干）</text>
+        <text class="ftext small" x="140" y="330">Explore / Awaiter → 免费档</text>
+        <text class="ftext small" x="140" y="350">Reviewer / Plan → 标准档</text>
+        <text class="ftext small" x="140" y="370">Coder → 主力档（= 用户默认模型）</text>
+        <text class="ftext mono" x="140" y="392">档位 → 模型：运行时按用户已配置的</text>
+        <text class="ftext mono" x="140" y="406">provider 解析，分发版无硬编码</text>
+
+        <!-- 右分支：主聊天 -->
+        <path class="fedge" d="M 645 222 L 800 222 L 800 280" marker-end="url(#arrow)"/>
+        <text class="ftext label" x="730" y="214">否（主聊天）</text>
+
+        <rect class="fnode" x="705" y="280" width="190" height="44" rx="22"/>
+        <text class="ftext" x="800" y="307" text-anchor="middle">用户选了"自动"？</text>
+
+        <!-- 自动=否：直连 -->
+        <path class="fedge" d="M 895 302 L 1010 302 L 1010 880" marker-end="url(#arrow)"/>
+        <text class="ftext label" x="920" y="294">否</text>
+        <text class="ftext small" x="1020" y="500" transform="rotate(90, 1020, 500)">用户指定模型 · 直连不干预</text>
+
+        <!-- 自动=是：进入拦截器 -->
+        <path class="fedge highlight" d="M 800 324 L 800 370" marker-end="url(#arrow-teal)"/>
+        <text class="ftext label" x="810" y="350">是</text>
+
+        <!-- adaptive 拦截器组 -->
+        <rect class="fnode interceptor" x="600" y="370" width="400" height="320" rx="10"/>
+        <text class="ftext" x="800" y="398" text-anchor="middle" font-weight="600">系统 A · adaptive 拦截器（辅助）</text>
+
+        <!-- 检查 1 -->
+        <rect class="fnode" x="630" y="416" width="340" height="72" rx="8"/>
+        <text class="ftext" x="650" y="440">① 能力检查</text>
+        <text class="ftext small" x="650" y="460">消息带图 + 主模型不支持视觉</text>
+        <text class="ftext small" x="650" y="478">→ 视觉模型预处理图片，主模型继续回答</text>
+
+        <!-- 检查 2 -->
+        <rect class="fnode" x="630" y="500" width="340" height="86" rx="8"/>
+        <text class="ftext" x="650" y="524">② 计费门控（simple → 免费档）</text>
+        <text class="ftext small" x="650" y="544">默认模型按量付费 + 任务判定 simple → 切免费模型</text>
+        <text class="ftext small" x="650" y="562">默认模型包月 / 未知 → 跳过（省的钱 = 0）</text>
+        <text class="ftext mono" x="650" y="580">读 用户计费配置，不读价格表</text>
+
+        <!-- 检查 3 -->
+        <rect class="fnode" x="630" y="598" width="340" height="72" rx="8"/>
+        <text class="ftext" x="650" y="622">③ 可用性检查</text>
+        <text class="ftext small" x="650" y="642">限流 / 网络错误 / 余额不足 / provider 故障</text>
+        <text class="ftext small" x="650" y="660">→ 沿降级链切换 + 聊天内横幅提示</text>
+
+        <!-- 硬约束门 -->
+        <path class="fedge highlight" d="M 800 690 L 800 730" marker-end="url(#arrow-teal)"/>
+        <path class="fedge" d="M 240 410 L 240 750 L 420 750" marker-end="url(#arrow)"/>
+
+        <rect class="fnode hard" x="420" y="730" width="430" height="64" rx="8"/>
+        <text class="ftext" x="635" y="756" text-anchor="middle" font-weight="600">🔒 硬约束门：候选模型价格档位 ≤ 默认模型价格档位</text>
+        <text class="ftext small" x="635" y="776" text-anchor="middle">违反则放弃切换，保持默认模型（写进代码，不可配置）</text>
+
+        <path class="fedge highlight" d="M 635 794 L 635 830" marker-end="url(#arrow-teal)"/>
+
+        <!-- 结构化决策输出 -->
+        <rect class="fnode output" x="385" y="830" width="500" height="68" rx="8"/>
+        <text class="ftext" x="635" y="856" text-anchor="middle" font-weight="600">结构化路由决策（唯一出口）</text>
+        <text class="ftext mono" x="635" y="878" text-anchor="middle">{ requested, resolved, role, reason, billingMode, fallbackFrom }</text>
+
+        <!-- 直连汇入 -->
+        <path class="fedge" d="M 1010 880 L 885 880" marker-end="url(#arrow)"/>
+
+        <!-- 三个消费方 -->
+        <path class="fedge" d="M 470 898 L 320 898 L 320 930" marker-end="url(#arrow)"/>
+        <path class="fedge" d="M 635 898 L 635 930" marker-end="url(#arrow)"/>
+        <path class="fedge" d="M 800 898 L 950 898 L 950 930" marker-end="url(#arrow)"/>
+
+        <rect class="fnode" x="220" y="930" width="200" height="40" rx="8"/>
+        <text class="ftext" x="320" y="955" text-anchor="middle">UI Trace（原型 A）</text>
+
+        <rect class="fnode" x="535" y="930" width="200" height="40" rx="8"/>
+        <text class="ftext" x="635" y="955" text-anchor="middle">日志 / 调试 / 评测</text>
+
+        <rect class="fnode" x="850" y="930" width="200" height="40" rx="8"/>
+        <text class="ftext" x="950" y="955" text-anchor="middle">成本统计（真实节省）</text>
+      </svg>
+    </div>
+
+    <div class="anno-list">
+      <div class="anno-item"><span class="anno">9</span><p><strong>为什么必须是"单一入口"</strong>——现在的 bug（adaptive 泄漏、两引擎不一致）根源是路由决策散落在 4 个地方各自为政。收口后：决策逻辑只有一份，AI SDK 引擎和 legacy 引擎都调用它，<em>行为不可能再分叉</em>。</p></div>
+      <div class="anno-item"><span class="anno">10</span><p><strong>系统 B 在左、系统 A 在右</strong>——subagent 任务直接走角色映射，<em>根本不经过</em> adaptive 拦截器（彻底解决泄漏问题，而不是修补泄漏）。只有主聊天 + 用户开了自动，才进入右侧三个检查。</p></div>
+      <div class="anno-item"><span class="anno">11</span><p><strong>硬约束门是所有路径的必经之路</strong>——无论从哪个分支出来，切换动作都要过"不比默认贵"这道门。把它画成虚线红框 + 锁，对应设置页里"不可关闭"的声明——<em>代码、流程、UI 三处说同一句话</em>。</p></div>
+    </div>
+  </section>
+
+  <!-- ================= 改动映射 ================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">D</span><h2>改动范围映射</h2></div>
+    <p class="sec-desc">原型中每个新组件对应的工程改动——给排期用。</p>
+
+    <div class="flow-wrap" style="padding: 8px 24px">
+      <table class="impact-table">
+        <thead><tr><th>原型组件</th><th>类型</th><th>对应工程改动</th><th>优先级</th></tr></thead>
+        <tbody>
+          <tr><td>路由 Chip + 决策卡</td><td><span class="new">NEW</span></td><td>新组件 <code>RouteTraceChip.tsx</code>，挂在 MessageBubble 头部，消费决策对象</td><td>P1</td></tr>
+          <tr><td>降级横幅</td><td><span class="new">NEW</span></td><td>新组件 <code>FallbackBanner.tsx</code>，作为消息类型插入聊天流（非 toast）</td><td>P1</td></tr>
+          <tr><td>任务卡模型标签</td><td><span class="mod">MOD</span></td><td>TaskPanel 子代理行增加 <code>agent-model-tag</code>，数据已有只是没展示</td><td>P1</td></tr>
+          <tr><td>价格档位数据源</td><td><span class="new">NEW</span></td><td>内置 LiteLLM 价格库快照 + 周更拉取；替换手工维护的 <code>MODEL_PRICING_PER_1M</code></td><td>P2</td></tr>
+          <tr><td>单一路由决策入口</td><td><span class="new">NEW</span></td><td><code>resolveModelDecision()</code>，main 进程，两引擎统一调用；删除 legacy 路径里的 adaptive 覆盖</td><td>P2</td></tr>
+          <tr><td>计费方式四分类</td><td><span class="new">NEW</span></td><td>设置页"模型"tab 新增计费区块；settings schema 加 <code>billingMode</code> 字段</td><td>P2</td></tr>
+          <tr><td>simple 路由门控联动</td><td><span class="mod">MOD</span></td><td>开关可用性 = <code>billingMode === 'payg'</code>，adaptive 检查 ② 读同一字段</td><td>P2</td></tr>
+          <tr><td>Output 精控</td><td><span class="mod">MOD</span></td><td>subagent prompt 模板 + maxTokens 策略调整（无 UI，仅决策卡里展示生效状态）</td><td>P3</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

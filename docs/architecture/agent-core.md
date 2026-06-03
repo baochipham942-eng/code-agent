@@ -388,6 +388,36 @@ ContextAssembly 每轮推理前注入两类子代理信息：
 
 ---
 
+## 模型路由决策（ADR-019，2026-06-03）
+
+ContextAssembly 每轮推理前要决定"这一轮用哪个模型"。此前存在两套互不感知的选择系统 + 两条引擎行为不一致 + adaptive 标志泄漏，[ADR-019](../decisions/019-auto-mode-scope.md) 把它收口成单一决策入口。
+
+### 单一决策入口 resolveModelDecision
+
+**位置**: `src/main/model/modelDecision.ts`
+
+所有路由决策（主聊天 adaptive / subagent 角色分层）的唯一出口，输出结构化 `ModelDecision`，UI trace / 日志 / 成本统计统一消费同一个对象。两条推理引擎（aiSdk / legacy `modelRouter`）的 simple 路由都经此决策，引擎只负责执行层的 API key 解析。三条硬规则：
+
+1. **subagent 永远剥离 adaptive**：角色分层是确定性映射，不被 adaptive 覆盖（修复 `...ctx.modelConfig` spread 泄漏）。
+2. **simple → 免费档仅 `payg` 生效**：包月 / 未知 provider 不做省钱路由（计费门控，见下）。
+3. **永不向上**：所有切换只会切到免费档，不会切到更贵的模型。
+
+`runEngineInference` 在 aiSdk 路径调用 `resolveMainChatModelDecision`：决策为 `simple-task-free` 时解析免费模型的 apiKey、跨 provider 清 baseUrl、失败回退默认模型、401/403 永久禁用免费模型；无论是否改路由都发 `model_decision` 事件供 UI 消费（`src/main/agent/runtime/contextAssembly/inference.ts`）。
+
+### 计费语义四分类
+
+替代不可维护的"价格感知路由"。`BillingMode` = `free` / `plan` / `payg` / `unknown`，区分"市场价"（全局常量）与"用户的计费方式"（用户配置）。`resolveProviderBillingMode()` 优先读用户设置，缺省时普通 provider 取 `payg`、动态 custom provider 取 `unknown`。详见 [模型配置指南](../guides/model-config.md#计费语义四分类adr-019-决策-42026-06-03)。
+
+### 角色档位去硬编码
+
+subagent 角色映射到抽象档位（`fast` / `balanced` / `powerful`），`resolveTierModelConfig()` 在运行时按用户已配置的 provider 解析：主力档 = 用户默认模型（不硬编码厂商）；fast / balanced 档的内置推荐只在用户配了对应 key 时使用，否则降级到用户默认模型。保证分发给没配特定厂商 key 的用户也不会让 subagent 直接坏掉（`getSubagentModelConfig` → `agentDefinition.ts`）。
+
+### model_decision 透传与可视化
+
+`ModelDecision` 经 `model_decision` 事件透传到 trace / 消息，renderer 据此渲染 RouteTraceChip（收起式路由 chip）、FallbackBanner（降级横幅原位插入聊天流）、subagent 任务卡常驻模型标签。契约见 `src/shared/contract/modelDecision.ts`，UI 见 `src/renderer/components/features/chat/`。
+
+---
+
 ## 上下文组装加固（极客时间差距修复，2026-06-02）
 
 这一轮把 ContextAssembly 的"注入什么、注入多少、超额怎么办"补成可解释的闭环。详见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。

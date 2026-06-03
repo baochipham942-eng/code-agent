@@ -689,6 +689,16 @@ vercel-api/api/v1/
 | featureFlags | 功能开关 |
 | uiStrings | UI 文案（中/英） |
 | rules | Agent 规则 |
+| skillCatalog | Skill 推荐目录（运营下发，2026-06-03 起） |
+| mcpCatalog | MCP 推荐目录（运营下发，2026-06-03 起） |
+
+#### 推荐目录云端下发（PR #202，2026-06-03）
+
+Skill / MCP 的推荐目录从"纯内置常量"升级为**云端下发优先 + 内置兜底**。运营可以在控制平面调整推荐目录而无需发版，客户端拉不到或数据不完整时无缝降级到打包内置数据。
+
+- **下发字段**：`CloudConfig.skillCatalog` / `mcpCatalog`（`src/main/services/cloud/builtinConfig.ts`），由控制平面 payload (`vercel-api/lib/controlPlanePayloads.ts:CloudConfigPayload`) 携带。
+- **取数 + 降级**：`CloudConfigService.getSkillCatalog()` / `getMcpCatalog()`（`src/main/services/cloud/cloudConfigService.ts`）。云端 `categories` 与 `skills`/`servers` 同时非空才采信，否则回落 `getBuiltinSkillCatalogPayload()` / `getBuiltinMcpCatalogPayload()`（`src/shared/constants/skillCatalog.ts` / `mcpCatalog.ts`）。
+- **配套**：聊天输入框新增 skill 导购（`CapabilitySuggestionStrip` + `useSkillRecommendations`），设置页 Skill/MCP 发现 tab 改读云端目录。回归脚本 `scripts/claude-e2e/verify-chat-skill-recommend.mjs`。
 
 **Feature Flags**：
 | Flag | 说明 |
@@ -724,6 +734,20 @@ vercel-api/
 │   └── rateLimit.ts        # 速率限制
 └── vercel.json             # Vercel 配置
 ```
+
+### 控制平面双托管：Vercel + 阿里云 FC（2026-06-02）
+
+`vercel-api/` 的控制平面 API 除 Vercel serverless 外，新增**阿里云函数计算（FC 3.0）**部署，对外走自定义域名 `agentneo.llmxy.xyz`。两套托管复用同一批 API handler，便于国内访问与多活降级。
+
+| 文件 | 作用 |
+|------|------|
+| `vercel-api/server.ts` | standalone HTTP server 入口，包装现有 API handler（替代 FC 下的 Vercel serverless runtime） |
+| `vercel-api/s.yaml` | Serverless Devs FC3 配置：自定义域名 + env 引用，控制平面密钥走 `${env(...)}`，无硬编码凭证 |
+| `vercel-api/tsconfig.build.json` + `package.json` 脚本 | `build` / `deploy:fc` / `start` |
+| `vercel-api/.fcignore` / `.signore` | 部署产物排除 |
+| `docs/guides/agent-neo-fc-page-deploy.md` | 部署 runbook |
+
+> FC 用 NodeNext 构建，导入扩展名需 `.js`（`controlPlaneEnvelope.ts` 已改）。
 
 ### 待实现
 

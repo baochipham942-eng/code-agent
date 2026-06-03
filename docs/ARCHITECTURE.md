@@ -1,7 +1,7 @@
 # Agent Neo / Code Agent - 架构设计文档
 
-> 版本: 9.16 (对应 v0.16.88 + Dynamic Workflow / Runtime Consolidation / Fleet Observability / Agent Neo Product Closure / Prompt Gate / Admin Review Queue / 死代码收敛 + 极客时间课程差距修复四阶段：假护栏拆除 / 上下文经济 / 质量闭环 / 经验沉淀)
-> 日期: 2026-06-02
+> 版本: 9.17 (9.16 + 自动模式路由体系 ADR-019：单一决策入口 / 计费四分类 / 路由可视化 + 设置页系列重构：Skills/模型/Agent 引擎/MCP + 推荐目录云端下发 + Onboarding 中转站 + 桌面三层自愈 + 生产 trace 回传修复)
+> 日期: 2026-06-03
 > 作者: Lin Chen
 
 本文档是 Agent Neo（代码仓库仍名为 Code Agent）的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -34,6 +34,7 @@
 
 | Spec | 覆盖 |
 |------|------|
+| [自动模式路由体系 + 设置页重构批次](./specs/2026-06-03-auto-mode-and-settings-batch.md) | 自动模式失效三断点修复 + ADR-019 三批（modelDecision 单一决策入口/计费四分类/路由可视化）、设置页 Master-Detail/双 Tab 系列、推荐目录云端下发、Onboarding 中转站、僵尸实例三层自愈、生产 trace 回传修复 |
 | [极客时间课程差距修复（四阶段 as-built）](./specs/2026-06-02-geektime-gap-remediation.md) | 17 条 GAP 修复：skill 限权/policy 接线/prompt caching（假护栏）、MCP 索引化/结果落盘/git 注入（上下文经济）、Stop hook 完成闸/反死循环/交付前 critic/prompt 预算治理（质量闭环）、failure journal/skill 蒸馏/子代理 skills/harness 对照实验（经验沉淀） |
 | [Runtime Consolidation and Dynamic Workflow](./specs/2026-05-31-runtime-consolidation-and-workflow.md) | 2026-05-29~06-01 运行时、workflow、provider、app-host、prompt gate、owner scope、dead path 下线 |
 | [Agent Neo Product Closure](./specs/2026-05-31-agent-neo-product-closure.md) | 默认长任务路径、安全自治、managed runtime、artifact issue/replay quality release loop |
@@ -60,6 +61,7 @@
 | [016](./decisions/016-no-cross-kind-verifier-interface.md) | 不提前抽 cross-kind verifier interface | accepted |
 | [017](./decisions/017-plugin-boundary-three-layers.md) | Plugin 边界三层划分 | accepted |
 | [018](./decisions/018-mastertask-sunset.md) | MasterTask sunset | accepted |
+| [019](./decisions/019-auto-mode-scope.md) | 自动模式（Auto Mode）的能力边界与取舍 | accepted |
 
 ---
 

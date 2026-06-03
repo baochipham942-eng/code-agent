@@ -13,6 +13,7 @@ import {
   isCascadeReason,
   isKnownCancellationReason,
   normalizeCancellationReason,
+  routeFailureCode,
   type CancellationReason,
 } from '../../src/shared/contract/cancellation';
 import { createChildAbortController } from '../../src/main/agent/shutdownProtocol';
@@ -36,6 +37,9 @@ describe('CancellationReason partition', () => {
       'timeout',
       'idle-timeout',
       'budget-exceeded',
+      'depth-limit',
+      'child-refusal',
+      'child-max-tokens',
     ];
     for (const r of expected) {
       expect(all.has(r)).toBe(true);
@@ -81,6 +85,66 @@ describe('CancellationReason partition', () => {
 
   it('normalizeCancellationReason: explicit fallback wins on unknown', () => {
     expect(normalizeCancellationReason('weird', 'parent-cancel')).toBe('parent-cancel');
+  });
+});
+
+// ============================================================================
+// 结构化失败码（swarm 护栏 P1-2 #1）—— depth-limit / child-refusal / child-max-tokens
+// ============================================================================
+describe('structured failure codes', () => {
+  const STRUCTURED: CancellationReason[] = [
+    'depth-limit',
+    'child-refusal',
+    'child-max-tokens',
+  ];
+
+  it('the 3 structured codes are NON_CASCADE (single-agent, must not abort siblings)', () => {
+    const nonCascade = new Set<string>(NON_CASCADE_REASONS);
+    for (const code of STRUCTURED) {
+      expect(nonCascade.has(code)).toBe(true);
+      // 关键不变量：细粒度 child 失败码不能 cascade 到兄弟
+      expect(isCascadeReason(code)).toBe(false);
+    }
+  });
+
+  it('the 3 structured codes are recognized as known reasons', () => {
+    for (const code of STRUCTURED) {
+      expect(isKnownCancellationReason(code)).toBe(true);
+      // normalize 应原样透传，不再 fallback 到 user-cancel
+      expect(normalizeCancellationReason(code)).toBe(code);
+    }
+  });
+});
+
+describe('routeFailureCode — 按码分治消费策略', () => {
+  it('depth-limit → throw（确定性失败，重试无意义）', () => {
+    expect(routeFailureCode('depth-limit')).toBe('throw');
+  });
+
+  it('child-refusal → surface（上抛给编排层，不自动重试）', () => {
+    expect(routeFailureCode('child-refusal')).toBe('surface');
+  });
+
+  it('child-max-tokens → degrade（子已产出部分工作，可降级/截断续跑）', () => {
+    expect(routeFailureCode('child-max-tokens')).toBe('degrade');
+  });
+
+  it('transient codes（timeout / idle-timeout / child-error）→ retry', () => {
+    expect(routeFailureCode('timeout')).toBe('retry');
+    expect(routeFailureCode('idle-timeout')).toBe('retry');
+    expect(routeFailureCode('child-error')).toBe('retry');
+  });
+
+  it('terminal codes（budget-exceeded / user-cancel / session-switch / parent-cancel）→ throw', () => {
+    expect(routeFailureCode('budget-exceeded')).toBe('throw');
+    expect(routeFailureCode('user-cancel')).toBe('throw');
+    expect(routeFailureCode('session-switch')).toBe('throw');
+    expect(routeFailureCode('parent-cancel')).toBe('throw');
+  });
+
+  it('unknown / undefined → surface（安全默认：交编排层决策，不静默重试）', () => {
+    expect(routeFailureCode('bogus')).toBe('surface');
+    expect(routeFailureCode(undefined)).toBe('surface');
   });
 });
 

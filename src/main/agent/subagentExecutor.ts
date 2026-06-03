@@ -441,6 +441,9 @@ export class SubagentExecutor {
           tokensUsed: outputTokensUsed,
           agentId: agentTask.id,
           contextSnapshot: latestContextSnapshot,
+          // swarm 护栏 P1-2 #1：子代理触顶自身预算 → 结构化失败码，
+          // 编排层 routeFailureCode 据此降级（'degrade'）而非 parse error 字符串。
+          cancellationReason: 'child-max-tokens',
         };
       }
 

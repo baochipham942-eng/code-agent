@@ -55,6 +55,7 @@ import {
 } from './WorkspaceAssets';
 import { useSessionStore } from '../stores/sessionStore';
 import ipcService from '../services/ipcService';
+import ProjectHeaderBar from './ProjectHeaderBar';
 
 type WorkspaceAssetDrawer = 'apps' | 'gallery' | 'feedback';
 
@@ -584,6 +585,8 @@ export const WorkspacePreviewPanel: React.FC = () => {
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900">
+      {/* P0-2 项目空间 header：项目维度的目标/状态/入驻角色/跨 session 聚合产物 */}
+      <ProjectHeaderBar />
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.06] px-3 py-2">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">

@@ -848,4 +848,50 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       FOREIGN KEY (run_id) REFERENCES workflow_runs(run_id) ON DELETE CASCADE
     )
   `);
+
+  // Projects 表 (P0-2 项目空间容器) — 项目 = 目标 + 产物 + 角色 + 会话
+  // 1:1 绑定 workspace（独立 ID）；workspace_key 接管项目记忆目录（docs/designs/project-space.md §3.1）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      workspace_path TEXT,
+      workspace_key TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      description TEXT,
+      is_deleted INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      archived_at INTEGER
+    )
+  `);
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_workspace_key ON projects(workspace_key) WHERE workspace_key IS NOT NULL`);
+
+  // Project Goals 表 — 一个项目多个并行 goal，各自带状态
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_goals (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      goal TEXT NOT NULL,
+      verify TEXT,
+      review TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      last_run_session_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_project_goals_project ON project_goals(project_id)`);
+
+  // Project Roles 表 — 角色入驻项目（join 表，D6）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_roles (
+      project_id TEXT NOT NULL,
+      role_id TEXT NOT NULL,
+      joined_at INTEGER NOT NULL,
+      PRIMARY KEY (project_id, role_id),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    )
+  `);
 }

@@ -138,6 +138,24 @@ export async function ensureProjectMemoryDirs(workspacePath: string): Promise<vo
   }
 }
 
+/**
+ * P0-2 项目空间接管：把 Project 实体 ID 写入 projects/<key>/meta.json（设计 §3.4「只换索引不动文件」）。
+ * 只读改 meta.json，记忆文件不动。meta.json 不存在则按 ensureProjectMemoryDirs 语义补建。
+ */
+export async function linkProjectIdToMeta(workspacePath: string, projectId: string): Promise<void> {
+  await ensureProjectMemoryDirs(workspacePath);
+  const metaPath = getProjectMetaPath(workspacePath);
+  let meta: Record<string, unknown> = {};
+  try {
+    meta = JSON.parse(await fs.readFile(metaPath, 'utf-8')) as Record<string, unknown>;
+  } catch {
+    meta = { workspacePath: path.resolve(workspacePath), schemaVersion: 1 };
+  }
+  if (meta.projectId === projectId) return; // 幂等
+  meta.projectId = projectId;
+  await fs.writeFile(metaPath, JSON.stringify(meta, null, 2), 'utf-8');
+}
+
 // ----------------------------------------------------------------------------
 // 记忆读写（角色层 / 项目层共用一套实现，只差目录）
 // ----------------------------------------------------------------------------

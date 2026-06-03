@@ -12,6 +12,7 @@ export * from './permission';
 
 // Domain types
 export * from './session';
+export * from './project';
 export * from './workspace';
 export * from './workspacePreview';
 export * from './designBrief';

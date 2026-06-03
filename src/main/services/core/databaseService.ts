@@ -24,7 +24,7 @@ import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/c
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, RelationQueryOptions, EntityRelation, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, SwarmTraceRepository, PendingApprovalRepository } from './repositories';
+import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository } from './repositories';
 import { createSwarmTraceRepo } from './repositories/swarmTraceFactory';
 import type { SwarmTraceRepo } from '../../../shared/contract/swarmTrace';
 
@@ -80,6 +80,7 @@ export class DatabaseService {
   private configRepo!: ConfigRepository;
   private captureRepo!: CaptureRepository;
   private experimentRepo!: ExperimentRepository;
+  private projectRepo!: ProjectRepository;
   private swarmTraceRepo!: SwarmTraceRepo;
   private pendingApprovalRepo!: PendingApprovalRepository;
 
@@ -189,6 +190,7 @@ export class DatabaseService {
       this.configRepo = new ConfigRepository(this.db);
       this.captureRepo = new CaptureRepository(this.db);
       this.experimentRepo = new ExperimentRepository(this.db);
+      this.projectRepo = new ProjectRepository(this.db);
       this.swarmTraceRepo = createSwarmTraceRepo(this.db);
       this.pendingApprovalRepo = new PendingApprovalRepository(this.db);
 
@@ -876,6 +878,13 @@ export class DatabaseService {
     this.ensureDb();
     return this.pendingApprovalRepo;
   }
+
+  // --- ProjectRepository ---
+  /** 暴露 projects 仓库给 ProjectService / IPC handler 直接使用（P0-2 项目空间）。 */
+  getProjectRepo(): ProjectRepository {
+    this.ensureDb();
+    return this.projectRepo;
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -895,5 +904,16 @@ export function getDatabase(): DatabaseService {
 export async function initDatabase(): Promise<DatabaseService> {
   const db = getDatabase();
   await db.initialize();
+  // P0-2：存量 session 按 workspace 自动归桶（幂等，仅当存在未归桶 session 时执行）。
+  // 懒加载 ProjectService 避免初始化期循环依赖。
+  try {
+    const { getProjectService } = await import('../project/projectService');
+    const migrated = getProjectService().backfillSessions(Date.now());
+    if (migrated > 0) {
+      logger.info(`[DatabaseService] P0-2 backfill: ${migrated} 个存量 session 已归桶到项目`);
+    }
+  } catch (err) {
+    logger.warn('[DatabaseService] P0-2 backfill 失败（不阻塞启动）:', err instanceof Error ? err.message : String(err));
+  }
   return db;
 }

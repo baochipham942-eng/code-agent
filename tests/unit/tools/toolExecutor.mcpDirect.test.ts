@@ -111,7 +111,8 @@ describe('ToolExecutor MCP dynamic direct execution', () => {
       'github',
       'search_code',
       { query: 'repo:example test' },
-      { abortSignal: undefined },
+      // GAP-009：sessionId 透传给 MCP，超阈值输出落盘到 session 临时目录
+      { abortSignal: undefined, sessionId: 'sess-1' },
     );
     expect(result).toMatchObject({
       success: true,
@@ -139,7 +140,7 @@ describe('ToolExecutor MCP dynamic direct execution', () => {
       'github',
       'search_code',
       { query: 'repo:example test' },
-      { abortSignal: controller.signal },
+      { abortSignal: controller.signal, sessionId: 'sess-1' },
     );
   });
 

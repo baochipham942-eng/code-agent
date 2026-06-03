@@ -94,10 +94,11 @@ describe('AgentDefinition - Hybrid Architecture', () => {
       const agent = PREDEFINED_AGENTS['coder'];
 
       it('should have write tools', () => {
-        expect(agent.tools).toContain('bash');
-        expect(agent.tools).toContain('read_file');
-        expect(agent.tools).toContain('write_file');
-        expect(agent.tools).toContain('edit_file');
+        // 工具名与真实注册名对齐（PascalCase，1b27ea9eb）
+        expect(agent.tools).toContain('Bash');
+        expect(agent.tools).toContain('Read');
+        expect(agent.tools).toContain('Write');
+        expect(agent.tools).toContain('Edit');
       });
 
       it('should be in execution layer', () => {
@@ -113,10 +114,10 @@ describe('AgentDefinition - Hybrid Architecture', () => {
       const agent = PREDEFINED_AGENTS['reviewer'];
 
       it('should have review tools', () => {
-        expect(agent.tools).toContain('bash');
-        expect(agent.tools).toContain('read_file');
-        expect(agent.tools).toContain('glob');
-        expect(agent.tools).toContain('grep');
+        expect(agent.tools).toContain('Bash');
+        expect(agent.tools).toContain('Read');
+        expect(agent.tools).toContain('Glob');
+        expect(agent.tools).toContain('Grep');
       });
 
       it('should be in execution layer (can write tests)', () => {
@@ -128,14 +129,14 @@ describe('AgentDefinition - Hybrid Architecture', () => {
       const agent = PREDEFINED_AGENTS['explore'];
 
       it('should have read-only tools', () => {
-        expect(agent.tools).toContain('glob');
-        expect(agent.tools).toContain('grep');
-        expect(agent.tools).toContain('read_file');
-        expect(agent.tools).toContain('list_directory');
+        expect(agent.tools).toContain('Glob');
+        expect(agent.tools).toContain('Grep');
+        expect(agent.tools).toContain('Read');
+        expect(agent.tools).toContain('ListDirectory');
         // Should NOT have write tools
-        expect(agent.tools).not.toContain('write_file');
-        expect(agent.tools).not.toContain('edit_file');
-        expect(agent.tools).not.toContain('bash');
+        expect(agent.tools).not.toContain('Write');
+        expect(agent.tools).not.toContain('Edit');
+        expect(agent.tools).not.toContain('Bash');
       });
 
       it('should be in exploration layer', () => {
@@ -155,15 +156,13 @@ describe('AgentDefinition - Hybrid Architecture', () => {
       const agent = PREDEFINED_AGENTS['plan'];
 
       it('should have planning tools (read-only + write for plans + task management)', () => {
-        expect(agent.tools).toContain('glob');
-        expect(agent.tools).toContain('grep');
-        expect(agent.tools).toContain('read_file');
-        expect(agent.tools).toContain('list_directory');
-        expect(agent.tools).toContain('write_file'); // Can write plan documents
-        expect(agent.tools).toContain('task_list');
-        expect(agent.tools).toContain('task_get');
-        expect(agent.tools).toContain('task_update');
-        expect(agent.tools).toContain('task_create');
+        expect(agent.tools).toContain('Glob');
+        expect(agent.tools).toContain('Grep');
+        expect(agent.tools).toContain('Read');
+        expect(agent.tools).toContain('ListDirectory');
+        expect(agent.tools).toContain('Write'); // Can write plan documents
+        // task_list/get/update/create 已合并为单一 TaskManager 工具
+        expect(agent.tools).toContain('TaskManager');
       });
 
       it('should be in exploration layer (primarily read-only)', () => {

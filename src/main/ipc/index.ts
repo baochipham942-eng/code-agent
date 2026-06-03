@@ -63,6 +63,7 @@ import { registerPromptHandlers } from './prompt.ipc';
 import { registerHookHandlers } from './hook.ipc';
 import { registerAgentRegistryHandlers } from './agentRegistry.ipc';
 import { registerRolesHandlers } from './roles.ipc';
+import { registerProjectHandlers } from './project.ipc';
 import { registerAgentEngineHandlers } from './agentEngine.ipc';
 import { registerCapabilityHandlers } from './capability.ipc';
 import { registerHandoffHandlers } from './handoff.ipc';
@@ -257,6 +258,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Roles handlers (持久化角色资产面板：列表/详情/记忆删改)
   registerRolesHandlers(ipcMain);
+
+  // Project handlers (P0-2 项目空间容器：项目/目标/角色入驻/产物聚合)
+  registerProjectHandlers(ipcMain);
 
   // Agent Engine handlers (Native / Codex CLI / Claude Code detection)
   registerAgentEngineHandlers(ipcMain);

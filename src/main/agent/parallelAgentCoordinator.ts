@@ -541,7 +541,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
         result.output.substring(0, 500)
       );
       this.sharedContext.lastUpdated.set(findingKey, at);
-      this.emit('discovery', { taskId: result.taskId, finding: result.output.substring(0, 200) });
+      this.emit('discovery', { taskId: result.taskId, role: result.role, finding: result.output.substring(0, 200), at });
     }
 
     // Track errors

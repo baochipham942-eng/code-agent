@@ -44,4 +44,41 @@ describe('SwarmEventEmitter', () => {
       { bridgeToRenderer: false },
     );
   });
+
+  it('publishes SharedContext updates as swarm:context:update with the update payload and at-derived timestamp', () => {
+    const emitter = new SwarmEventEmitter();
+    emitter.started(2, 'session-ctx');
+    const runId = emitter.getCurrentRunId();
+    eventBusState.publish.mockClear();
+
+    emitter.contextUpdate({
+      kind: 'decision',
+      agentId: 'agent_researcher_0',
+      role: 'researcher',
+      content: '采用方案 A：服务端聚合',
+      at: 1700000000000,
+    });
+
+    expect(eventBusState.publish).toHaveBeenCalledWith(
+      'swarm',
+      'context:update',
+      expect.objectContaining({
+        type: 'swarm:context:update',
+        // timestamp 必须复用 update.at（SharedContext 版本戳），保证讨论流时序对齐数据新鲜度
+        timestamp: 1700000000000,
+        runId,
+        sessionId: 'session-ctx',
+        data: expect.objectContaining({
+          agentId: 'agent_researcher_0',
+          contextUpdate: expect.objectContaining({
+            kind: 'decision',
+            role: 'researcher',
+            content: '采用方案 A：服务端聚合',
+            at: 1700000000000,
+          }),
+        }),
+      }),
+      { bridgeToRenderer: false },
+    );
+  });
 });

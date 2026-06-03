@@ -4,3 +4,4 @@
 
 export { SwarmMonitor } from './SwarmMonitor';
 export { SwarmTraceHistory } from './SwarmTraceHistory';
+export { DiscussionStream } from './DiscussionStream';

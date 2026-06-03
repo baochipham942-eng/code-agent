@@ -16,6 +16,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { AgentStatus, SwarmAgentState } from '@shared/contract/swarm';
 import ipcService from '../../../services/ipcService';
+import { DiscussionStream } from './DiscussionStream';
 
 const AGENT_COLORS = [
   'text-emerald-400',
@@ -125,11 +126,15 @@ export function SwarmInlineMonitor() {
           </div>
         </div>
         {!collapsed && (
-          <div className="border-t border-zinc-700/40 max-h-48 overflow-y-auto">
-            {agents.map((agent) => (
-              <SwarmAgentRow key={agent.id} agent={agent} />
-            ))}
-          </div>
+          <>
+            <div className="border-t border-zinc-700/40 max-h-48 overflow-y-auto">
+              {agents.map((agent) => (
+                <SwarmAgentRow key={agent.id} agent={agent} />
+              ))}
+            </div>
+            {/* 协作过程可见性（P1-3）：agent 间讨论 / 发现 / 决策 / 人话状态 */}
+            <DiscussionStream />
+          </>
         )}
       </div>
     </div>

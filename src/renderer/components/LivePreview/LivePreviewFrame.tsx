@@ -5,7 +5,7 @@
 // 由前端清 store。
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw, ExternalLink, Target, FileCode } from 'lucide-react';
+import { RefreshCw, ExternalLink, Target, FileCode, Send } from 'lucide-react';
 import {
   isBridgeMessage,
   MESSAGE_SOURCE_PARENT,
@@ -13,6 +13,7 @@ import {
 } from '../../../shared/livePreview/protocol';
 import { IPC_DOMAINS } from '../../../shared/ipc';
 import { useAppStore, type LivePreviewSelectedElement } from '../../stores/appStore';
+import { useMessageActionStore } from '../../stores/messageActionStore';
 import { invokeDomain } from '../../services/ipcService';
 import { TweakPanel } from './TweakPanel';
 
@@ -88,6 +89,24 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
   const [refreshNonce, setRefreshNonce] = useState(0);
   // V2-B TweakPanel 折叠状态（默认展开，让用户立刻看到能力）
   const [tweakCollapsed, setTweakCollapsed] = useState(false);
+  // 定点反馈：选中元素后内联留言。提交走聊天发送通道（sendPrompt），选区由
+  // composerStore.buildContext() → readActiveLivePreviewSelection() 随 envelope 自动带出，
+  // main 侧 workbenchTurnContext 注入 <live_preview_selection> 引导模型用 visual_edit 定向迭代。
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackSending, setFeedbackSending] = useState(false);
+  const sendPrompt = useMessageActionStore((s) => s.sendPrompt);
+
+  const handleSubmitFeedback = useCallback(async () => {
+    const text = feedbackText.trim();
+    if (!text || feedbackSending) return;
+    setFeedbackSending(true);
+    try {
+      await sendPrompt(text);
+      setFeedbackText('');
+    } finally {
+      setFeedbackSending(false);
+    }
+  }, [feedbackText, feedbackSending, sendPrompt]);
 
   const iframeSrc = useMemo(() => {
     if (refreshNonce === 0) return devServerUrl;
@@ -103,6 +122,7 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
     setFrameError(null);
     setRefreshNonce(0);
     setSelectedElement(tabId, null);
+    setFeedbackText('');
   }, [devServerUrl, tabId, setSelectedElement]);
 
   // 读当前页面生效的 CSP（Tauri 把 tauri.conf.json 的 csp 注入成 meta tag）
@@ -279,26 +299,54 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
         </button>
       </div>
 
-      {/* 选中提示条 */}
+      {/* 选中提示条 + 定点反馈留言框 */}
       {displayFile && selectedElement && (
-        <div className="flex items-center gap-2 px-3 py-1.5 text-xs bg-primary-500/10 border-b border-primary-500/30 text-primary-200 font-mono">
-          <span className="text-primary-400">selected</span>
-          <span className="text-zinc-400">&lt;{selectedElement.tag}&gt;</span>
-          <span className="text-primary-200">{displayFile}</span>
-          <button
-            className="ml-2 flex items-center gap-1 px-2 py-0.5 rounded bg-primary-500/20 hover:bg-primary-500/30 text-primary-100"
-            onClick={() => jumpToFileLine(selectedElement.file, selectedElement.line)}
-            title="在编辑器打开并跳转到该行（需 workingDirectory 设为项目根）"
-          >
-            <FileCode className="w-3 h-3" />
-            跳转源码
-          </button>
-          <button
-            className="ml-auto text-zinc-400 hover:text-zinc-200"
-            onClick={() => setSelectedElement(tabId, null)}
-          >
-            清除
-          </button>
+        <div className="border-b border-primary-500/30 bg-primary-500/10">
+          <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-primary-200 font-mono">
+            <span className="text-primary-400">selected</span>
+            <span className="text-zinc-400">&lt;{selectedElement.tag}&gt;</span>
+            <span className="text-primary-200">{displayFile}</span>
+            <button
+              className="ml-2 flex items-center gap-1 px-2 py-0.5 rounded bg-primary-500/20 hover:bg-primary-500/30 text-primary-100"
+              onClick={() => jumpToFileLine(selectedElement.file, selectedElement.line)}
+              title="在编辑器打开并跳转到该行（需 workingDirectory 设为项目根）"
+            >
+              <FileCode className="w-3 h-3" />
+              跳转源码
+            </button>
+            <button
+              className="ml-auto text-zinc-400 hover:text-zinc-200"
+              onClick={() => setSelectedElement(tabId, null)}
+            >
+              清除
+            </button>
+          </div>
+          {/* 定点反馈：圈选 + 留言 → 直接发给 agent 定向迭代 */}
+          <div className="flex items-center gap-2 px-3 pb-2">
+            <input
+              type="text"
+              value={feedbackText}
+              onChange={(e) => setFeedbackText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  void handleSubmitFeedback();
+                }
+              }}
+              placeholder="这里改成…（针对选中元素的反馈，回车发送）"
+              disabled={feedbackSending}
+              className="flex-1 px-2 py-1 text-xs bg-zinc-900 text-zinc-200 border border-primary-500/30 rounded placeholder-zinc-500 focus:outline-none focus:border-primary-400 disabled:opacity-60"
+            />
+            <button
+              onClick={() => void handleSubmitFeedback()}
+              disabled={feedbackSending || !feedbackText.trim()}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs rounded bg-primary-500/30 hover:bg-primary-500/40 text-primary-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="把反馈发给 agent，针对选中元素定向修改"
+            >
+              <Send className="w-3 h-3" />
+              {feedbackSending ? '发送中' : '发送'}
+            </button>
+          </div>
         </div>
       )}
 

@@ -6,3 +6,4 @@ export * from './roleAssetPaths';
 export * from './roleAssetService';
 export * from './roleWriteBack';
 export * from './builtinRoles';
+export * from './roleProactivity';

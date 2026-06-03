@@ -289,6 +289,16 @@ function normalizeAction(value: unknown): CronJobAction | null {
       };
     }
 
+    case 'role-wake': {
+      if (typeof value.roleId !== 'string') {
+        return null;
+      }
+      return {
+        type: 'role-wake',
+        roleId: value.roleId,
+      };
+    }
+
     default:
       return null;
   }
@@ -933,6 +943,18 @@ export class CronService implements Disposable {
           + ` (dryRun=${report.dryRun}, triggered=${report.triggered}, actions=${report.actions.length}): ${report.reason}`,
         );
         return report;
+      }
+
+      case 'role-wake': {
+        // 角色主动性：cadence 到点 → 完整醒来循环（docs/designs/role-proactivity.md）
+        const { wakeRole } = await import('../services/roleAssets/roleProactivity');
+        const wakeResult = await wakeRole(action.roleId, 'cadence');
+        console.error(
+          `[CronService] Role wake ${wakeResult.status}`
+          + ` (role=${wakeResult.roleId}, decision=${wakeResult.decision ?? '-'}, session=${wakeResult.sessionId ?? '-'})`
+          + (wakeResult.skipReason ? `: ${wakeResult.skipReason}` : ''),
+        );
+        return wakeResult;
       }
 
       default:

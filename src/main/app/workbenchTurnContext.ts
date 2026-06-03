@@ -1,4 +1,5 @@
 import type { ConversationEnvelopeContext, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
+import type { SelectedElementInfo } from '../../shared/livePreview/protocol';
 import type { AppServiceRunOptions } from '../../shared/contract/appService';
 import { normalizeDesignBrief } from '../../shared/contract/designBrief';
 import type { DesignBrief } from '../../shared/contract/designBrief';
@@ -119,6 +120,9 @@ export function buildWorkbenchTurnSystemContext(
     lines.push(`修复提示：${browserSessionSnapshot.blockedHint}`);
   }
 
+  const livePreviewSelectionLines = buildLivePreviewSelectionPromptLines(context.livePreviewSelection);
+  lines.push(...livePreviewSelectionLines);
+
   if (lines.length === 0) {
     return [];
   }
@@ -131,6 +135,44 @@ export function buildWorkbenchTurnSystemContext(
       '这些偏好只作用于当前 turn；如果与任务无关，不要强行使用，也不要在回复里机械复述这段说明。',
       '</turn_workbench_context>',
     ].join('\n'),
+  ];
+}
+
+// 定点反馈 loop（locality-anchored feedback）：把用户在 Live Preview 里圈选的
+// 渲染元素注入 turn context，引导模型用 visual_edit 定向迭代。选区由 composer 侧
+// readActiveLivePreviewSelection() 随 envelope 带出，main 侧在这里消费（此前 envelope
+// 字段是死数据，模型看不到用户圈选了什么）。
+function buildLivePreviewSelectionPromptLines(
+  selection?: SelectedElementInfo | null,
+): string[] {
+  if (!selection?.location?.file || !selection.location.line) {
+    return [];
+  }
+
+  const { file, line, column } = selection.location;
+  const detail: string[] = [
+    `- 源文件（绝对路径）：${file}`,
+    `- 行号：${line}${column ? `  列号：${column}` : ''}`,
+  ];
+  if (selection.tag) {
+    detail.push(`- DOM 标签：<${selection.tag}>${selection.componentName ? `  组件：${selection.componentName}` : ''}`);
+  } else if (selection.componentName) {
+    detail.push(`- 组件：${selection.componentName}`);
+  }
+  const text = selection.text?.trim();
+  if (text) {
+    // 截断避免长文本元素把 prompt 撑爆
+    detail.push(`- 可见文本：${text.length > 160 ? `${text.slice(0, 160)}…` : text}`);
+  }
+
+  return [
+    '<live_preview_selection>',
+    '用户在 Live Preview 里圈选了一个渲染后的元素，本轮消息是针对它的定点反馈。',
+    ...detail,
+    '路由指引：用 visual_edit 工具做定向修改，file/line 直接用上面给的值，userIntent = 用户这条消息的诉求。',
+    '这是局部锚定反馈——只改这个元素相关的代码，不要全局重写、不要顺手改别的地方。',
+    '如果用户这条消息与圈选元素明显无关（例如在问别的问题），忽略本段。',
+    '</live_preview_selection>',
   ];
 }
 

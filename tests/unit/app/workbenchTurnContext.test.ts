@@ -223,4 +223,60 @@ describe('workbenchTurnContext', () => {
 
     expect(withWorkbenchTurnSystemContext(options, undefined)).toBe(options);
   });
+
+  // 定点反馈 loop：main 侧消费 envelope.livePreviewSelection（此前是死数据）。
+  it('injects a live_preview_selection block guiding visual_edit when an element is selected', () => {
+    const blocks = buildWorkbenchTurnSystemContext({
+      livePreviewSelection: {
+        location: { file: '/abs/project/src/App.tsx', line: 42, column: 7 },
+        tag: 'button',
+        text: '提交',
+        rect: { x: 0, y: 0, width: 100, height: 40 },
+        componentName: 'PrimaryButton',
+      },
+    });
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toContain('<live_preview_selection>');
+    expect(blocks[0]).toContain('定点反馈');
+    expect(blocks[0]).toContain('/abs/project/src/App.tsx');
+    expect(blocks[0]).toContain('行号：42');
+    expect(blocks[0]).toContain('列号：7');
+    expect(blocks[0]).toContain('<button>');
+    expect(blocks[0]).toContain('PrimaryButton');
+    expect(blocks[0]).toContain('可见文本：提交');
+    expect(blocks[0]).toContain('visual_edit');
+    expect(blocks[0]).toContain('局部锚定反馈');
+    expect(blocks[0]).toContain('忽略本段');
+  });
+
+  it('does not inject a selection block when livePreviewSelection is absent or incomplete', () => {
+    expect(buildWorkbenchTurnSystemContext({ livePreviewSelection: null })).toHaveLength(0);
+    expect(buildWorkbenchTurnSystemContext({
+      // 缺 line：定位不全，不注入（避免给模型半截坐标）
+      livePreviewSelection: {
+        location: { file: '/abs/x.tsx', line: 0, column: 0 },
+        tag: 'div',
+        text: '',
+        rect: { x: 0, y: 0, width: 0, height: 0 },
+      },
+    })).toHaveLength(0);
+  });
+
+  it('carries a selection-only context through withWorkbenchTurnSystemContext (not swallowed by the early return)', () => {
+    const merged = withWorkbenchTurnSystemContext(
+      { mode: 'normal' },
+      {
+        livePreviewSelection: {
+          location: { file: '/abs/x.tsx', line: 10, column: 1 },
+          tag: 'span',
+          text: 'hi',
+          rect: { x: 0, y: 0, width: 10, height: 10 },
+        },
+      },
+    );
+
+    expect(merged).not.toBe(undefined);
+    expect(merged?.turnSystemContext?.[0]).toContain('<live_preview_selection>');
+  });
 });

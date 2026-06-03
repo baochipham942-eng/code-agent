@@ -20,6 +20,7 @@ import type {
   PermissionDeniedContext,
   PostCompactContext,
   StopFailureContext,
+  RoleWakeContext,
 } from '../protocol/events';
 import type { MergedHookConfig, MergeStrategy } from './merger';
 import type { AICompletionFn } from './promptHook';
@@ -605,6 +606,30 @@ export class HookManager {
     };
 
     return this.triggerEventHooks('StopFailure', context);
+  }
+
+  /**
+   * Trigger hooks when a persistent role wakes up proactively (observer-only)
+   * 角色主动性醒来事件（docs/designs/role-proactivity.md §2.3）
+   * @experimental API may change between minor versions
+   */
+  async triggerRoleWake(params: {
+    roleId: string;
+    trigger: 'cadence' | 'event';
+    decision: 'advance' | 'report' | 'suggest' | 'silence';
+    sessionId: string;
+  }): Promise<HookTriggerResult> {
+    const context: RoleWakeContext = {
+      event: 'RoleWake',
+      sessionId: params.sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+      roleId: params.roleId,
+      trigger: params.trigger,
+      decision: params.decision,
+    };
+
+    return this.triggerEventHooks('RoleWake', context);
   }
 
   // ==========================================================================

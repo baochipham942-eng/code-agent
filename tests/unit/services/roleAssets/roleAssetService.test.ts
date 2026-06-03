@@ -394,7 +394,7 @@ describe('roleAssetService', () => {
     });
   });
 
-  describe('instantiateRole (设计 §9 接口预留)', () => {
+  describe('instantiateRole (设计 §9 → 主动性已实现)', () => {
     it('supports user trigger and returns context block', async () => {
       await ensureRoleAssetDirs('研究员');
       const result = await instantiateRole('研究员', 'user', { task: '调研 AI 市场' });
@@ -402,9 +402,17 @@ describe('roleAssetService', () => {
       expect(result.contextBlock).toContain('role_assets');
     });
 
-    it('rejects cadence/event triggers (下期实现)', async () => {
-      await expect(instantiateRole('研究员', 'cadence', { task: 'x' })).rejects.toThrow('not implemented');
-      await expect(instantiateRole('研究员', 'event', { task: 'x' })).rejects.toThrow('not implemented');
+    it('supports cadence/event triggers for persistent roles (角色主动性)', async () => {
+      await ensureRoleAssetDirs('研究员');
+      const cadence = await instantiateRole('研究员', 'cadence', { task: '主动巡检' });
+      expect(cadence.trigger).toBe('cadence');
+      expect(cadence.contextBlock).toContain('role_assets');
+      const event = await instantiateRole('研究员', 'event', { task: '任务总结' });
+      expect(event.trigger).toBe('event');
+    });
+
+    it('rejects cadence/event triggers for non-persistent roles', async () => {
+      await expect(instantiateRole('不存在的角色', 'cadence', { task: 'x' })).rejects.toThrow('not a persistent role');
     });
   });
 });

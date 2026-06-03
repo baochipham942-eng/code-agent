@@ -174,6 +174,8 @@ export interface AgentRunOptions {
   runtimeInput?: import('../../shared/contract/conversationEnvelope').RuntimeInputIntent;
   /** /goal 自治模式：存在则本轮激活 goal 模式（normal mode 下生效） */
   goal?: import('../../shared/contract/appService').GoalRunInput;
+  /** 本轮迭代数硬上限（角色主动性醒来等预算受限场景；不传用 AgentLoop 默认值） */
+  maxIterations?: number;
 }
 
 // ============================================================================

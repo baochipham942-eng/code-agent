@@ -39,6 +39,7 @@ export type HookEvent =
   | 'PermissionDenied'
   | 'PostCompact'
   | 'StopFailure'
+  | 'RoleWake'
   // internal (legacy)
   | 'Setup'
   | 'Notification';
@@ -66,6 +67,7 @@ export const HOOK_EVENT_DESCRIPTIONS: Record<HookEvent, string> = {
   PermissionDenied: 'Triggered when a tool permission is denied (observer-only).',
   PostCompact: 'Triggered after context compaction completes (observer-only).',
   StopFailure: 'Triggered when the agent stops due to an error (observer-only).',
+  RoleWake: 'Triggered when a persistent role wakes up proactively (cadence/event, observer-only).',
 };
 
 /**
@@ -257,6 +259,21 @@ export interface StopFailureContext extends HookEventContext {
 }
 
 /**
+ * Context for role wake events (observer-only) — 角色主动性醒来
+ * docs/designs/role-proactivity.md §2.3
+ * @experimental
+ */
+export interface RoleWakeContext extends HookEventContext {
+  event: 'RoleWake';
+  /** 持久化角色 ID */
+  roleId: string;
+  /** 触发方式：cadence=定时 / event=长任务跑完 */
+  trigger: 'cadence' | 'event';
+  /** 醒来的四选一决策 */
+  decision: 'advance' | 'report' | 'suggest' | 'silence';
+}
+
+/**
  * Union type of all hook contexts
  */
 export type AnyHookContext =
@@ -274,7 +291,8 @@ export type AnyHookContext =
   | TaskCompletedContext
   | PermissionDeniedContext
   | PostCompactContext
-  | StopFailureContext;
+  | StopFailureContext
+  | RoleWakeContext;
 
 /**
  * Result returned by a hook execution

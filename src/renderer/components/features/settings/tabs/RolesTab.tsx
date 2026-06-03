@@ -4,9 +4,9 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Brain, FileText, History, RefreshCw, Trash2, Pencil, X, Check, UserCircle } from 'lucide-react';
+import { ArrowLeft, Brain, FileText, History, RefreshCw, Trash2, Pencil, X, Check, UserCircle, AlarmClock } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { RolePanelEntry, RolePanelDetail, RolePanelMemory } from '@shared/contract/roleAssets';
+import type { RolePanelEntry, RolePanelDetail, RolePanelMemory, RoleProactivityLevel } from '@shared/contract/roleAssets';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { SettingsPage, SettingsSection, SettingsDetails } from '../SettingsLayout';
@@ -37,6 +37,10 @@ async function updateRoleMemory(roleId: string, memory: RolePanelMemory): Promis
     description: memory.description,
     content: memory.content,
   });
+}
+
+async function setRoleProactivity(roleId: string, level: RoleProactivityLevel): Promise<void> {
+  await ipcService.invokeDomain(IPC_DOMAINS.ROLES, 'setProactivity', { roleId, level });
 }
 
 // ----------------------------------------------------------------------------
@@ -231,6 +235,76 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
 };
 
 // ----------------------------------------------------------------------------
+// 主动性等级选择（docs/designs/role-proactivity.md §4.2）
+// ----------------------------------------------------------------------------
+
+const PROACTIVITY_OPTIONS: Array<{ value: RoleProactivityLevel; label: string; hint: string }> = [
+  { value: 'silent', label: '静默', hint: '不会主动醒来（默认）' },
+  { value: 'daily', label: '每日简报', hint: '每天 09:00 醒来巡检产物，有进展时生成简报会话' },
+  { value: 'realtime', label: '实时介入', hint: '可自定义频率（每天最多 4 次）+ 有产出时桌面通知' },
+];
+
+interface ProactivitySelectorProps {
+  roleId: string;
+  current: RoleProactivityLevel;
+  onChanged: () => void;
+}
+
+const ProactivitySelector: React.FC<ProactivitySelectorProps> = ({ roleId, current, onChanged }) => {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSelect = async (level: RoleProactivityLevel) => {
+    if (level === current || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await setRoleProactivity(roleId, level);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      logger.error('Failed to set role proactivity', err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {PROACTIVITY_OPTIONS.map((option) => {
+        const selected = option.value === current;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            disabled={busy}
+            onClick={() => void handleSelect(option.value)}
+            className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors ${
+              selected
+                ? 'border-emerald-600/70 bg-emerald-900/20'
+                : 'border-zinc-700/70 bg-zinc-900/40 hover:border-zinc-500'
+            } ${busy ? 'opacity-60' : ''}`}
+          >
+            <div
+              className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                selected ? 'border-emerald-500' : 'border-zinc-600'
+              }`}
+            >
+              {selected ? <div className="h-2 w-2 rounded-full bg-emerald-500" /> : null}
+            </div>
+            <div className="min-w-0">
+              <div className={`text-sm ${selected ? 'text-emerald-300' : 'text-zinc-300'}`}>{option.label}</div>
+              <div className="mt-0.5 text-xs text-zinc-500">{option.hint}</div>
+            </div>
+          </button>
+        );
+      })}
+      {error ? <div className="text-xs text-red-400">{error}</div> : null}
+    </div>
+  );
+};
+
+// ----------------------------------------------------------------------------
 // 角色详情
 // ----------------------------------------------------------------------------
 
@@ -286,6 +360,23 @@ const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, onBack }) => {
 
       {detail ? (
         <>
+          {/* 主动性（定时醒来巡检产物） */}
+          <SettingsSection
+            title="主动性"
+            description="角色定时醒来巡检自己经手的产物，自主决定推进 / 汇报 / 沉默。改动立即生效。"
+          >
+            <div className="flex items-start gap-2">
+              <AlarmClock className="mt-1 h-4 w-4 shrink-0 text-zinc-500" />
+              <div className="min-w-0 flex-1">
+                <ProactivitySelector
+                  roleId={roleId}
+                  current={detail.proactivity?.level ?? 'silent'}
+                  onChanged={loadDetail}
+                />
+              </div>
+            </div>
+          </SettingsSection>
+
           {/* 记忆（可删可编辑） */}
           <SettingsSection
             title={`角色记忆（${detail.memories.length}）`}

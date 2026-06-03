@@ -30,7 +30,51 @@ export interface RolePanelMemory {
   updatedAt: string;
 }
 
-/** 角色详情（设计 §7：定义 / 记忆 / 履历） */
+// ----------------------------------------------------------------------------
+// 角色主动性（docs/designs/role-proactivity.md §4 配置设计）
+// ----------------------------------------------------------------------------
+
+/** 主动等级：静默（不醒来）/ 每日简报（默认）/ 实时介入（自定义频率 + 桌面通知） */
+export type RoleProactivityLevel = 'silent' | 'daily' | 'realtime';
+
+/** 单个角色的主动性配置（来自 frontmatter proactivity 字段或 settings 覆盖） */
+export interface RoleProactivityConfig {
+  level: RoleProactivityLevel;
+  /** 自定义 cron 表达式（6 字段，croner）；不填用等级默认 */
+  cadence?: string;
+}
+
+/** settings.json 里的主动性配置（用户级覆盖，优先级高于角色 frontmatter） */
+export interface RoleProactivitySettings {
+  /** 全局默认主动等级（角色没配置时的兜底） */
+  defaultLevel?: RoleProactivityLevel;
+  /** per-role 覆盖 */
+  roles?: Record<string, RoleProactivityConfig>;
+}
+
+/** 醒来循环的四选一决策（设计 §3.2） */
+export type RoleWakeDecision = 'advance' | 'report' | 'suggest' | 'silence';
+
+/** 醒来触发方式 */
+export type RoleWakeTrigger = 'cadence' | 'event';
+
+/** 一次醒来的执行结果（cron 执行记录 / E2E 验收用） */
+export interface RoleWakeResult {
+  roleId: string;
+  trigger: RoleWakeTrigger;
+  /** skipped = 预算护栏拦截（当天次数超限）或角色为 silent 档 */
+  status: 'completed' | 'skipped' | 'failed';
+  /** status='skipped' 时的原因 */
+  skipReason?: string;
+  /** 四选一决策（completed 时存在） */
+  decision?: RoleWakeDecision;
+  /** 醒来会话 ID（completed/failed 时存在） */
+  sessionId?: string;
+  /** 醒来产出摘要（履历同款） */
+  summary?: string;
+}
+
+/** 角色详情（设计 §7：定义 / 记忆 / 履历 / 主动性） */
 export interface RolePanelDetail {
   roleId: string;
   /** agents/<id>.md 原始内容（只读展示）；定义文件缺失时为 null */
@@ -41,4 +85,6 @@ export interface RolePanelDetail {
   memories: RolePanelMemory[];
   /** 工作履历（产物清单，最新在后） */
   history: string[];
+  /** 主动性配置（解析后的生效值：settings 覆盖 > frontmatter > 出厂默认 silent） */
+  proactivity: RoleProactivityConfig;
 }

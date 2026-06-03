@@ -91,6 +91,7 @@ export interface HooksConfig {
   PermissionDenied?: HookMatcher[];   // Phase 3: observer-only
   PostCompact?: HookMatcher[];        // Phase 3: observer-only
   StopFailure?: HookMatcher[];        // Phase 3: observer-only
+  RoleWake?: HookMatcher[];           // 角色主动性醒来: observer-only
 }
 
 /**
@@ -175,6 +176,7 @@ const OBSERVER_ONLY_EVENTS: ReadonlySet<HookEvent> = new Set([
   'PermissionDenied',
   'PostCompact',
   'StopFailure',
+  'RoleWake',
 ]);
 
 function compileHookMatcher(
@@ -225,6 +227,7 @@ function parseHooksObject(
     'PermissionDenied',   // Phase 3
     'PostCompact',        // Phase 3
     'StopFailure',        // Phase 3
+    'RoleWake',           // 角色主动性（docs/designs/role-proactivity.md §2.3）
   ];
 
   // GAP-007: 未知事件名告警。

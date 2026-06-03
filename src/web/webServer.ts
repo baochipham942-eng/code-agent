@@ -522,6 +522,20 @@ async function initializeServices(): Promise<void> {
     logger.warn('Agent registry init failed (non-blocking):', (error as Error).message);
   }
 
+  // 7. Cron 服务 + 角色主动性 cadence 同步。
+  // 与步骤 6 同类的 web/main 路径分离修复：发行版跑的是 webServer，cron 调度器和
+  // 角色 cadence job 必须在这里初始化，否则角色主动性在发行版里永远不会醒来。
+  // 必须在 Agent Registry 之后（cadence 配置解析依赖 registry 的 frontmatter）。
+  try {
+    const { initCronService } = await import('../main/cron/cronService');
+    await initCronService();
+    const { syncCadenceJobs } = await import('../main/services/roleAssets/roleProactivity');
+    const synced = await syncCadenceJobs();
+    logger.info('Cron service initialized + role cadence jobs synced', synced);
+  } catch (error) {
+    logger.warn('Cron / role cadence init failed (non-blocking):', (error as Error).message);
+  }
+
   logger.info('Backend services initialized');
 }
 

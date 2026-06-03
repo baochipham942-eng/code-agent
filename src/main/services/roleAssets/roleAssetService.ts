@@ -337,7 +337,7 @@ export async function buildRoleContextBlock(roleId: string, workspacePath?: stri
 }
 
 // ----------------------------------------------------------------------------
-// 主动性接口预留（设计 §9，本期只有 trigger: 'user' 路径）
+// 主动性实例化入口（设计 §9 → docs/designs/role-proactivity.md）
 // ----------------------------------------------------------------------------
 
 export interface InstantiationContext {
@@ -352,13 +352,12 @@ export interface InstantiationContext {
 export type InstantiationTrigger = 'user' | 'cadence' | 'event';
 
 /**
- * 角色实例化统一入口（设计 §9 接口预留）。
+ * 角色实例化统一入口（设计 §9）。
  *
- * 本期只有 trigger='user' 路径：用户通过 spawn_agent / @角色名 唤起，
- * 实际 spawn 由现有 executeSpawnAgent 链路执行，本函数只做角色资产侧的准备
- * （确保目录骨架存在）并返回角色上下文。
- *
- * 下期主动性：Hook cadence 触发器调同一个入口传 'cadence'。
+ * - trigger='user'：用户通过 spawn_agent / @角色名 唤起，实际 spawn 由现有
+ *   executeSpawnAgent 链路执行，本函数只做角色资产侧的准备并返回角色上下文。
+ * - trigger='cadence' / 'event'：角色主动性醒来（roleProactivityService.wakeRole 调用），
+ *   除角色上下文外要求角色必须是持久化角色（非持久化角色没有履历可巡检，醒来无意义）。
  */
 export async function instantiateRole(
   roleName: string,
@@ -366,7 +365,11 @@ export async function instantiateRole(
   context: InstantiationContext,
 ): Promise<{ roleId: string; trigger: InstantiationTrigger; contextBlock: string | null }> {
   if (trigger !== 'user') {
-    throw new Error(`Instantiation trigger "${trigger}" is not implemented yet (reserved for proactivity phase)`);
+    // 主动性路径：持久化角色才有资格被定时/事件唤醒
+    const persistent = await isPersistentRole(roleName);
+    if (!persistent) {
+      throw new Error(`Role "${roleName}" is not a persistent role (no roles/${roleName}/ directory); cannot wake it via ${trigger}`);
+    }
   }
   const contextBlock = await buildRoleContextBlock(roleName, context.workspacePath);
   return { roleId: roleName, trigger, contextBlock };

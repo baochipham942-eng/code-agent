@@ -7,6 +7,7 @@ import type { ModelProvider, ModelProviderProtocol } from './model';
 import type { ModelCapability } from './model';
 import type { PermissionLevel } from './tool';
 import type { ContextCompressionConfig } from './contextHealth';
+import type { RoleProactivitySettings } from './roleAssets';
 
 export interface ModelEntrySettings {
   enabled?: boolean;
@@ -217,5 +218,9 @@ export interface AppSettings {
     enabled: boolean;
     /** 截图送往：当前会话 / 每次新建会话 */
     targetSession: 'current' | 'new';
+  };
+  // 持久化角色资产（docs/designs/role-proactivity.md §4：主动性用户级配置）
+  roleAssets?: {
+    proactivity?: RoleProactivitySettings;
   };
 }

@@ -7,6 +7,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import type { RoleProactivityLevel } from '../../../shared/contract/roleAssets';
 import type { CoreAgentConfig, CoreAgentId, ModelTier } from './types';
 
 function stringValue(value: unknown): string | undefined {
@@ -29,6 +30,10 @@ function modelTierValue(value: unknown): ModelTier | undefined {
   return value === 'fast' || value === 'balanced' || value === 'powerful' ? value : undefined;
 }
 
+function proactivityLevelValue(value: unknown): RoleProactivityLevel | undefined {
+  return value === 'silent' || value === 'daily' || value === 'realtime' ? value : undefined;
+}
+
 /**
  * Parse a single agent .md file.
  * Returns null if the file has no valid frontmatter.
@@ -43,6 +48,10 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
   const name = stringValue(frontmatter.name) || path.basename(filename, '.md');
   const description = stringValue(frontmatter.description);
 
+  // 角色主动性（docs/designs/role-proactivity.md §4）：扁平 key 适配 simple YAML parser
+  const proactivityLevel = proactivityLevelValue(frontmatter['proactivity-level']);
+  const proactivityCadence = stringValue(frontmatter['proactivity-cadence']);
+
   return {
     id: name as CoreAgentId,
     name: description || name,
@@ -54,6 +63,9 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
     model: modelTierValue(frontmatter.model) || 'balanced',
     maxIterations: numberValue(frontmatter['max-iterations']) || 30,
     readonly: booleanValue(frontmatter.readonly) ?? false,
+    ...(proactivityLevel
+      ? { proactivity: { level: proactivityLevel, ...(proactivityCadence ? { cadence: proactivityCadence } : {}) } }
+      : {}),
   };
 }
 

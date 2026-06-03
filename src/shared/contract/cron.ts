@@ -99,7 +99,7 @@ export interface CronExpressionConfig {
 /**
  * Action types for cron jobs
  */
-export type CronJobActionType = 'shell' | 'tool' | 'agent' | 'webhook' | 'ipc' | 'memory-consolidation';
+export type CronJobActionType = 'shell' | 'tool' | 'agent' | 'webhook' | 'ipc' | 'memory-consolidation' | 'role-wake';
 
 /**
  * Cron job action definition
@@ -110,7 +110,8 @@ export type CronJobAction =
   | AgentAction
   | WebhookAction
   | IpcAction
-  | MemoryConsolidationAction;
+  | MemoryConsolidationAction
+  | RoleWakeAction;
 
 /**
  * Shell command action
@@ -171,6 +172,17 @@ export interface MemoryConsolidationAction {
   type: 'memory-consolidation';
   /** When true, compute the plan + diff but do not write to disk. */
   dryRun?: boolean;
+}
+
+/**
+ * Role wake action — 角色主动性 cadence 触发器（docs/designs/role-proactivity.md）。
+ * cron 到点后调 roleProactivityService.wakeRole() 执行完整醒来循环
+ * （带记忆实例化 → 检查履历产物 → 推进/汇报/建议/沉默 → 写回销毁）。
+ */
+export interface RoleWakeAction {
+  type: 'role-wake';
+  /** 持久化角色 ID（roles/<roleId>/ 目录名） */
+  roleId: string;
 }
 
 /**

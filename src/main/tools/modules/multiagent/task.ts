@@ -273,6 +273,11 @@ export async function executeTask(
       prompt,
       {
         name: agentName,
+        // 持久化角色资产绑定 key（roles/<roleId>/）：subagent_type 即 agent 注册 id。
+        // spawn_agent 工具在 PR #204 已接线，Task 工具此前漏接 —— 导致 Task 派生的
+        // 角色子代理不注入角色记忆、不写回、不记录主动性参与（docs/designs/role-proactivity.md §2.2）。
+        // 非持久化角色（explore/coder 等）downstream 由 isPersistentRole 零成本跳过。
+        roleId: subagentType,
         systemPrompt,
         availableTools: tools,
         maxIterations,

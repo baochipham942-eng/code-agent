@@ -43,6 +43,47 @@ vi.mock('../../../src/main/agent/agentRegistry', () => ({
       tools: [],
     },
   ],
+  resolveAgent: () => undefined,
+}));
+
+// configService：有状态 mock（setProactivity 写入 → detail 读出）
+const mockSettingsStore = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
+const mockUpdateSettings = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../src/main/services/core/configService', () => {
+  const deepMerge = (base: Record<string, unknown>, updates: Record<string, unknown>): Record<string, unknown> => {
+    const result = { ...base };
+    for (const [key, value] of Object.entries(updates)) {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        result[key] = deepMerge((result[key] ?? {}) as Record<string, unknown>, value as Record<string, unknown>);
+      } else {
+        result[key] = value;
+      }
+    }
+    return result;
+  };
+  return {
+    getConfigService: () => ({
+      getSettings: () => mockSettingsStore.value,
+      getApiKey: () => '',
+      updateSettings: mockUpdateSettings.mockImplementation(async (updates: Record<string, unknown>) => {
+        mockSettingsStore.value = deepMerge(mockSettingsStore.value, updates);
+      }),
+    }),
+  };
+});
+
+// cronService：setProactivity 后立即同步 cadence job
+const mockCronCreateJob = vi.hoisted(() => vi.fn(async (def: unknown) => ({ ...(def as object), id: 'job-1' })));
+const mockCronDeleteJob = vi.hoisted(() => vi.fn(async () => true));
+
+vi.mock('../../../src/main/cron/cronService', () => ({
+  getCronService: () => ({
+    listJobs: () => [],
+    createJob: mockCronCreateJob,
+    updateJob: vi.fn(),
+    deleteJob: mockCronDeleteJob,
+  }),
 }));
 
 import { registerRolesHandlers } from '../../../src/main/ipc/roles.ipc';
@@ -71,6 +112,8 @@ async function invoke<T>(action: string, payload?: unknown): Promise<IPCResponse
 describe('roles.ipc (domain:roles)', () => {
   beforeEach(async () => {
     mockConfigDir.dir = await fs.mkdtemp(path.join(os.tmpdir(), 'roles-ipc-'));
+    mockSettingsStore.value = {};
+    vi.clearAllMocks();
     registerRolesHandlers(mockIpcMain);
   });
 
@@ -169,6 +212,8 @@ describe('roles.ipc (domain:roles)', () => {
       expect(res.data?.memories.length).toBe(1);
       expect(res.data?.memories[0].filename).toBe('knowledge.md');
       expect(res.data?.history.length).toBe(1);
+      // 主动性配置：无任何配置时为出厂默认 silent
+      expect(res.data?.proactivity.level).toBe('silent');
     });
 
     it('returns null definition when agent md missing', async () => {
@@ -220,6 +265,58 @@ describe('roles.ipc (domain:roles)', () => {
 
       const memories = await listScopedMemories({ scope: 'role', roleId: '研究员' });
       expect(memories[0].content).toContain('新内容');
+    });
+  });
+
+  describe('setProactivity（设置页开启主动性，docs/designs/role-proactivity.md §4）', () => {
+    it('写入 settings 覆盖 + 立即同步 cadence cron + detail 反映新值', async () => {
+      await ensureRoleAssetDirs('研究员');
+
+      // 出厂默认 silent
+      const before = await invoke<RolePanelDetail>('detail', { roleId: '研究员' });
+      expect(before.data?.proactivity.level).toBe('silent');
+
+      // 设置页开启每日简报
+      const res = await invoke<{ proactivity: { level: string } }>('setProactivity', {
+        roleId: '研究员',
+        level: 'daily',
+      });
+      expect(res.success).toBe(true);
+      expect(res.data?.proactivity.level).toBe('daily');
+
+      // settings 写入了 per-role 覆盖
+      expect(mockUpdateSettings).toHaveBeenCalledWith({
+        roleAssets: { proactivity: { roles: { 研究员: { level: 'daily' } } } },
+      });
+      // cadence cron 立即注册（不用等重启）
+      expect(mockCronCreateJob).toHaveBeenCalledWith(
+        expect.objectContaining({ action: { type: 'role-wake', roleId: '研究员' } }),
+      );
+
+      // detail 反映新值
+      const after = await invoke<RolePanelDetail>('detail', { roleId: '研究员' });
+      expect(after.data?.proactivity.level).toBe('daily');
+    });
+
+    it('关闭（改回 silent）后 detail 反映 silent', async () => {
+      await ensureRoleAssetDirs('研究员');
+      await invoke('setProactivity', { roleId: '研究员', level: 'daily' });
+      await invoke('setProactivity', { roleId: '研究员', level: 'silent' });
+
+      const detail = await invoke<RolePanelDetail>('detail', { roleId: '研究员' });
+      expect(detail.data?.proactivity.level).toBe('silent');
+    });
+
+    it('校验 level 取值', async () => {
+      const res = await invoke('setProactivity', { roleId: '研究员', level: 'always-on' });
+      expect(res.success).toBe(false);
+      expect(res.error?.code).toBe('INVALID_ARGS');
+    });
+
+    it('requires roleId', async () => {
+      const res = await invoke('setProactivity', { level: 'daily' });
+      expect(res.success).toBe(false);
+      expect(res.error?.code).toBe('INVALID_ARGS');
     });
   });
 

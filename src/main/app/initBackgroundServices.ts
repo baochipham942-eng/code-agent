@@ -564,6 +564,16 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
     })
     .catch((error) => logger.warn('Light Memory consolidation job registration failed (non-blocking)', { error: String(error) }));
 
+  // 角色主动性：按主动性配置同步 cadence cron job（幂等，每个持久化角色一个 job）
+  // docs/designs/role-proactivity.md §2.1
+  initCronService()
+    .then(async () => {
+      const { syncCadenceJobs } = await import('../services/roleAssets/roleProactivity');
+      const synced = await syncCadenceJobs();
+      logger.info('Role cadence jobs synced', synced);
+    })
+    .catch((error) => logger.warn('Role cadence jobs sync failed (non-blocking)', { error: String(error) }));
+
   // Initialize Heartbeat Service
   initHeartbeatService()
     .then(() => {

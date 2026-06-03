@@ -364,6 +364,15 @@ export class RunFinalizer {
       logger.error('[RunFinalizer] Conversation summary extraction failed:', err);
     });
 
+    // 角色主动性：长任务跑完 → 参与过的持久化角色 event 醒来总结 + 提 next steps
+    // （fire-and-forget；门槛/防递归/预算护栏都在 triggerEventWakes 内部，docs/designs/role-proactivity.md §2.2）
+    if (terminalStatus === 'completed') {
+      const lastAssistant = [...this.ctx.messages].reverse().find((m) => m.role === 'assistant' && m.content);
+      import('../../services/roleAssets/roleProactivity')
+        .then(({ triggerEventWakes }) => triggerEventWakes(this.ctx.sessionId, iterations, lastAssistant?.content))
+        .catch(silence(logger, 'triggerEventWakes', 'warn'));
+    }
+
     // Pre-completion Hook: Only check explicit Tasks (persistent), not auto-parsed todos
     // 对标 Claude Code：模型返回 text response 即视为完成，不覆盖模型的判断
     // auto-parsed todos 误报率高（编号列表/建议性文本被误识别），不作为完成度依据

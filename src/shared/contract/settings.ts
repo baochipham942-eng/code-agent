@@ -39,6 +39,11 @@ export interface ModelProviderSettings {
   /** 该 provider 走代理还是直连。'auto'（默认）按内置 OVERSEAS_PROVIDERS 判断；
    *  'direct' 强制直连；'proxy' 强制走全局 HTTPS_PROXY。覆盖内置 providerNeedsProxy 判断。 */
   proxyMode?: ProxyMode;
+  /** 该 provider 的计费方式（ADR-019 计费语义四分类）：
+   *  'free'=官方免费 / 'plan'=套餐内（包月/订阅）/ 'payg'=按量付费 / 'unknown'=无法确认。
+   *  未设置时：普通 provider 默认 payg（API Key 主流形态），动态 custom provider（中转站）默认 unknown。
+   *  自动模式的 simple→免费档路由仅在 payg 时生效（包月切免费省的钱是 0）。 */
+  billingMode?: 'free' | 'plan' | 'payg' | 'unknown';
   models?: Record<string, ModelEntrySettings>;
 }
 

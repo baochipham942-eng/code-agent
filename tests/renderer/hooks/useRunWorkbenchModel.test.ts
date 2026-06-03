@@ -147,6 +147,7 @@ describe('buildWorkflowTaskRecord', () => {
           label: 'Runtime',
           status: 'running',
           promptPreview: '审计 workflow',
+          model: 'kimi-k2.5',
         },
         {
           id: 'wf-1-a2',
@@ -183,6 +184,7 @@ describe('buildWorkflowTaskRecord', () => {
         id: 'workflow:wf-1:wf-1-a1',
         parentRunId: 'wf-1',
         role: 'Runtime',
+        model: 'kimi-k2.5',
         status: 'running',
         inputSummary: '审计 workflow',
       },

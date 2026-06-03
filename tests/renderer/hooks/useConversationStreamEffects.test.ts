@@ -137,6 +137,62 @@ describe('removeUncommittedAssistantDraft', () => {
   });
 });
 
+describe('applyConversationStreamEvent model_decision', () => {
+  it('attaches the model decision to the current assistant message', () => {
+    let messages: Message[] = [
+      {
+        id: 'turn-1',
+        role: 'assistant',
+        content: '',
+        timestamp: 100,
+      },
+    ];
+
+    applyConversationStreamEvent(
+      {
+        type: 'model_decision',
+        data: {
+          turnId: 'turn-1',
+          requestedProvider: 'moonshot',
+          requestedModel: 'kimi-k2.5',
+          resolvedProvider: 'zhipu',
+          resolvedModel: 'glm-4.5-flash',
+          reason: 'simple-task-free',
+          role: null,
+          billingMode: 'payg',
+          fallbackFrom: null,
+          timestamp: 200,
+        },
+      },
+      {
+        currentTurnMessageId: 'turn-1',
+        committedAssistantMessageIds: new Set<string>(),
+      },
+      {
+        addMessage: (message) => {
+          messages = [...messages, message];
+        },
+        updateMessage: (id, updates) => {
+          messages = messages.map((message) =>
+            message.id === id ? { ...message, ...updates } : message
+          );
+        },
+        setMessages: (nextMessages) => {
+          messages = nextMessages;
+        },
+        getMessages: () => messages,
+        queueUpdate: () => {},
+      },
+    );
+
+    expect(messages[0].modelDecision).toMatchObject({
+      requestedModel: 'kimi-k2.5',
+      resolvedModel: 'glm-4.5-flash',
+      reason: 'simple-task-free',
+    });
+  });
+});
+
 describe('mergeCommittedAssistantContent', () => {
   it('uses the committed message content to correct duplicated streamed text', () => {
     expect(

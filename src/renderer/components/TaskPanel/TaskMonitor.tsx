@@ -38,6 +38,7 @@ import {
   OutputFileRows,
 } from './OutputArtifactRows';
 import {
+  SubagentRunRows,
   TaskDashboardSummary,
 } from './RunWorkbenchCards';
 import { WorkbenchCapabilityDetailButton, WorkbenchReferenceRow } from './WorkbenchPrimitives';
@@ -216,6 +217,17 @@ export const TaskMonitor: React.FC = () => {
       >
         <TaskDashboardSummary tasks={runWorkbench.tasks} run={runWorkbench.run} />
       </Card>
+
+      {runWorkbench.subagents.length > 0 && (
+        <Card
+          title="子代理"
+          storageKey="subagents"
+          count={String(runWorkbench.subagents.length)}
+          highlight={runWorkbench.subagents.some((agent) => agent.status === 'failed' || agent.status === 'blocked')}
+        >
+          <SubagentRunRows subagents={runWorkbench.subagents} />
+        </Card>
+      )}
 
       {approvalCount > 0 && (
         <Card

@@ -61,6 +61,8 @@ import {
   resolveAgent as registryResolveAgent,
   listAllAgents as registryListAllAgents,
 } from './agentRegistry';
+import { resolveTierModelConfig, type TierResolutionSettings } from '../model/modelDecision';
+import { getConfigService } from '../services/core/configService';
 
 import type { FullAgentConfig } from '../../shared/contract/agentTypes';
 import type { PermissionPreset } from '@shared/contract';
@@ -323,23 +325,48 @@ export function getAgentDynamicMaxIterations(agent: FullAgentConfig, prompt?: st
 /**
  * 获取子代理模型配置
  *
- * 使用混合架构的模型层级：
- * - explore → fast (GLM-4-Flash)
- * - reviewer, plan → balanced (GLM-4.7)
- * - coder → powerful (Kimi K2.5)
+ * 使用混合架构的模型层级（档位）：
+ * - explore / awaiter → fast（免费档）
+ * - reviewer / plan → balanced（标准档）
+ * - coder → powerful（主力档 = 用户默认模型）
+ *
+ * ADR-019 批 2：档位经 resolveTierModelConfig 解析为用户已配置的 provider——
+ * 内置推荐（如智谱免费模型）只在用户配了对应 key 时使用，否则降级到用户
+ * 默认模型。分发版不因"没配某个特定厂商的 key"而坏。
  */
 export function getSubagentModelConfig(agentId: string): { provider: ModelProvider; model: string } {
   const resolved = registryResolveAgent(agentId);
-  if (resolved) {
-    return MODEL_CONFIG[resolved.model];
+  const tier = resolved
+    ? resolved.model
+    : isCoreAgent(agentId)
+      ? CORE_AGENTS[agentId].model
+      : null;
+
+  if (tier === null) {
+    const knownIds = registryListAllAgents().map((a) => a.id);
+    const fallback = knownIds.length > 0 ? knownIds.join(', ') : CORE_AGENT_IDS.join(', ');
+    throw new Error(`Invalid agent ID: "${agentId}". Valid IDs: ${fallback}`);
   }
-  if (isCoreAgent(agentId)) {
-    const tier = CORE_AGENTS[agentId].model;
-    return MODEL_CONFIG[tier];
+
+  return resolveTierModelConfig(tier, MODEL_CONFIG[tier], getTierResolutionSettingsSafe());
+}
+
+/** 从 configService 取档位解析所需的 settings 切片；不可用（测试/CLI）返回 undefined → 沿用内置默认 */
+function getTierResolutionSettingsSafe(): TierResolutionSettings | undefined {
+  try {
+    const settings = getConfigService().getSettings();
+    const models = settings.models;
+    if (!models) return undefined;
+    const defaultProvider = models.defaultProvider ?? models.default;
+    return {
+      defaultProvider,
+      defaultModel: models.providers?.[defaultProvider]?.model,
+      providers: models.providers,
+      routingFast: models.routing?.fast,
+    };
+  } catch {
+    return undefined;
   }
-  const knownIds = registryListAllAgents().map((a) => a.id);
-  const fallback = knownIds.length > 0 ? knownIds.join(', ') : CORE_AGENT_IDS.join(', ');
-  throw new Error(`Invalid agent ID: "${agentId}". Valid IDs: ${fallback}`);
 }
 
 /**

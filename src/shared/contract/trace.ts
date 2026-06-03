@@ -37,9 +37,10 @@ export interface TraceNode {
   };
   reasoning?: string;
   thinking?: string;
-  subtype?: 'compaction' | 'error' | 'skill_status' | 'goal_notice';
+  subtype?: 'compaction' | 'error' | 'skill_status' | 'goal_notice' | 'model_fallback';
   attachments?: import('./message').MessageAttachment[];
   artifacts?: import('./message').Artifact[];
+  modelDecision?: import('./modelDecision').ModelDecisionEventData;
   metadata?: import('./message').MessageMetadata;
   feedbackEligible?: boolean;
   launchRequest?: import('./swarm').SwarmLaunchRequest;

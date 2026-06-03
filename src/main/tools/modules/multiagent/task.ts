@@ -44,6 +44,7 @@ import {
   isCoreAgent,
 } from '../../../agent/agentDefinition';
 import { taskDeduplication } from '../../../agent/taskDeduplication';
+import { resolveModelDecision } from '../../../model/modelDecision';
 import {
   SubagentContextBuilder,
   getAgentContextLevel,
@@ -247,12 +248,19 @@ export async function executeTask(
   }
 
   // P4: 子代理专用模型配置
+  // ADR-019 批 1：经单一路由决策入口构造，显式剥离 adaptive 标志——
+  // 角色分层是确定性映射，父会话的自动模式不得泄漏进 subagent
   const subagentModelConfig = getSubagentModelConfig(subagentType);
-  const effectiveModelConfig: ModelConfig = {
-    ...(ctx.modelConfig as ModelConfig),
-    provider: subagentModelConfig.provider,
-    model: subagentModelConfig.model,
-  };
+  const { config: effectiveModelConfig } = resolveModelDecision({
+    requestedConfig: {
+      ...(ctx.modelConfig as ModelConfig),
+      provider: subagentModelConfig.provider,
+      model: subagentModelConfig.model,
+    },
+    messages: [],
+    context: 'subagent',
+    subagentRole: subagentType,
+  });
 
   try {
     const executor = getSubagentExecutor();

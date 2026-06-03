@@ -9,6 +9,7 @@ import type { TraceProjection, TraceTurn, TraceNode } from '@shared/contract/tra
 import type { SwarmLaunchRequest } from '@shared/contract/swarm';
 import { isSkillStatusContent } from '../components/features/chat/MessageBubble/SkillStatusMessage';
 import { isGoalNoticeContent } from '../components/features/chat/goalNotice';
+import { isModelFallbackNoticeContent } from '../components/features/chat/fallbackNotice';
 
 export function projectTurns(
   messages: Message[],
@@ -59,6 +60,33 @@ export function projectTurns(
         content: msg.content,
         timestamp: msg.timestamp,
         subtype: 'goal_notice',
+        metadata: msg.metadata,
+      };
+
+      if (!currentTurn) {
+        turnCounter++;
+        currentTurn = {
+          turnNumber: turnCounter,
+          turnId: `turn-${turnCounter}`,
+          nodes: [],
+          status: 'completed',
+          startTime: msg.timestamp,
+        };
+        turns.push(currentTurn);
+      }
+
+      currentTurn.nodes.push(node);
+      currentTurn.endTime = msg.timestamp;
+      continue;
+    }
+
+    if (msg.source === 'model' && isModelFallbackNoticeContent(msg.content)) {
+      const node: TraceNode = {
+        id: msg.id,
+        type: 'system',
+        content: msg.content,
+        timestamp: msg.timestamp,
+        subtype: 'model_fallback',
         metadata: msg.metadata,
       };
 
@@ -198,6 +226,7 @@ export function projectTurns(
           reasoning: msg.reasoning,
           thinking: msg.thinking,
           artifacts: msg.artifacts,
+          modelDecision: msg.modelDecision,
           metadata: msg.metadata,
         });
       };

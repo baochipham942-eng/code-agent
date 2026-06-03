@@ -4,6 +4,7 @@
 
 // Core types
 export * from './model';
+export * from './modelDecision';
 export * from './message';
 export * from './appshot';
 export * from './tool';

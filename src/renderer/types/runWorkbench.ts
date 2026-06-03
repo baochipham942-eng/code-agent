@@ -87,6 +87,7 @@ export interface SubagentRunView {
   id: string;
   parentRunId: string | null;
   role: string;
+  model?: string;
   status: LongTaskUiStatus;
   inputSummary: string;
   lastOutput: string;

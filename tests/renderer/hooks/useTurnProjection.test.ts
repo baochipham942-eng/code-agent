@@ -3,6 +3,7 @@ import type { Message } from '../../../src/shared/contract';
 import type { SwarmLaunchRequest } from '../../../src/shared/contract/swarm';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 import { encodeGoalNotice } from '../../../src/renderer/components/features/chat/goalNotice';
+import { encodeModelFallbackNotice } from '../../../src/renderer/components/features/chat/fallbackNotice';
 
 describe('projectTurns', () => {
   it('projects the latest pending launch request into the last turn', () => {
@@ -56,6 +57,68 @@ describe('projectTurns', () => {
       'swarm_launch_request',
     ]);
     expect(projection.turns[0].nodes[2]?.launchRequest?.id).toBe('launch-pending');
+  });
+
+  it('projects model decisions onto assistant text nodes', () => {
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '你好',
+        timestamp: 100,
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '你好',
+        timestamp: 150,
+        modelDecision: {
+          turnId: 'assistant-1',
+          requestedProvider: 'moonshot',
+          requestedModel: 'kimi-k2.5',
+          resolvedProvider: 'zhipu',
+          resolvedModel: 'glm-4.5-flash',
+          reason: 'simple-task-free',
+          role: null,
+          billingMode: 'payg',
+          fallbackFrom: null,
+        },
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-1', false, []);
+    const assistantNode = projection.turns[0].nodes.find((node) => node.type === 'assistant_text');
+
+    expect(assistantNode?.modelDecision?.reason).toBe('simple-task-free');
+    expect(assistantNode?.modelDecision?.resolvedModel).toBe('glm-4.5-flash');
+  });
+
+  it('projects model fallback notices as system nodes in the current turn', () => {
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '看这张图',
+        timestamp: 100,
+      },
+      {
+        id: 'fallback-1',
+        role: 'system',
+        source: 'model',
+        content: encodeModelFallbackNotice({
+          reason: 'vision',
+          from: 'kimi-k2.5',
+          to: 'glm-4.5v',
+        }),
+        timestamp: 130,
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-1', false, []);
+    const fallbackNode = projection.turns[0].nodes.find((node) => node.subtype === 'model_fallback');
+
+    expect(fallbackNode?.type).toBe('system');
+    expect(fallbackNode?.content).toContain('__modelFallbackNotice');
   });
 
   it('creates a standalone turn when only a pending launch request exists', () => {

@@ -7,6 +7,7 @@
 
 // Core types
 export * from './contract/model';
+export * from './contract/modelDecision';
 export * from './contract/message';
 export * from './contract/tool';
 export * from './contract/permission';

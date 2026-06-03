@@ -1,3 +1,4 @@
+import os from 'os';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TelemetrySession, TelemetryTurn } from '../../../src/shared/contract/telemetry';
 
@@ -5,6 +6,7 @@ const mocks = vi.hoisted(() => {
   const storage = {
     getUnsyncedSessions: vi.fn(),
     getTurnsBySession: vi.fn(),
+    getTurnCalls: vi.fn(),
     getUnsyncedFeedback: vi.fn(),
     markFeedbackSynced: vi.fn(),
     markSessionsSynced: vi.fn(),
@@ -119,7 +121,83 @@ describe('TelemetryUploaderService', () => {
     mocks.getCurrentUser.mockReturnValue({ id: 'user-1' });
     mocks.storage.getUnsyncedSessions.mockReturnValue([session]);
     mocks.storage.getTurnsBySession.mockReturnValue([turn]);
+    mocks.storage.getTurnCalls.mockReturnValue({ modelCalls: [], toolCalls: [] });
     mocks.storage.getUnsyncedFeedback.mockReturnValue([]);
+  });
+
+  it('hydrates turn payload with model/tool call details so cloud traces can be drilled into', async () => {
+    // 回归测试：rowToTurn 从 DB 读出的 turn 不带 modelCalls/toolCalls（独立表），
+    // 上传器必须用 getTurnCalls 补齐，否则云端 payload 全是空数组，admin 无法定位报错根因。
+    mocks.storage.getTurnCalls.mockReturnValue({
+      modelCalls: [
+        {
+          id: 'mc-1',
+          timestamp: 1,
+          provider: 'codex',
+          model: 'gpt-5.5-codex',
+          inputTokens: 10,
+          outputTokens: 0,
+          latencyMs: 200,
+          responseType: 'text',
+          toolCallCount: 0,
+          truncated: false,
+          error: `Codex CLI engine P0 only supports text prompts. ${os.homedir()}/secret.png`,
+        },
+      ],
+      toolCalls: [
+        {
+          id: 'tc-1',
+          toolCallId: 'call-1',
+          name: 'read_file',
+          arguments: '{}',
+          resultSummary: '',
+          success: false,
+          error: 'File not found: /tmp/missing.txt',
+          errorCategory: 'unknown',
+          durationMs: 5,
+          timestamp: 1,
+          index: 0,
+          parallel: false,
+        },
+      ],
+    });
+
+    const upserts: Array<{ table: string; rows: Record<string, unknown>[] }> = [];
+    mocks.from.mockImplementation((table: string) => ({
+      upsert: vi.fn(async (rows: Record<string, unknown>[]) => {
+        upserts.push({ table, rows });
+        return { error: null };
+      }),
+    }));
+
+    const { TelemetryUploaderService } = await import('../../../src/main/telemetry/telemetryUploaderService');
+    const service = new TelemetryUploaderService();
+
+    await expect(service.upload()).resolves.toBe(1);
+    expect(mocks.storage.getTurnCalls).toHaveBeenCalledWith('turn-1');
+
+    const turnUpsert = upserts.find((entry) => entry.table === 'telemetry_turns');
+    const payload = turnUpsert?.rows[0]?.payload as {
+      modelCalls: Array<Record<string, unknown>>;
+      toolCalls: Array<Record<string, unknown>>;
+    };
+    expect(payload.modelCalls).toHaveLength(1);
+    expect(payload.modelCalls[0]).toMatchObject({
+      provider: 'codex',
+      model: 'gpt-5.5-codex',
+      responseType: 'text',
+    });
+    expect(payload.toolCalls).toHaveLength(1);
+    expect(payload.toolCalls[0]).toMatchObject({
+      name: 'read_file',
+      success: false,
+      errorCategory: 'unknown',
+    });
+    // 报错串必须经过脱敏（家目录替换为 ~，不泄露本机用户名），但要保留可定位的错误信息
+    expect(String(payload.modelCalls[0].error)).toContain('Codex CLI engine P0 only supports text prompts');
+    expect(String(payload.modelCalls[0].error)).not.toContain(os.homedir());
+    expect(String(payload.modelCalls[0].error)).toContain('~/secret.png');
+    expect(String(payload.toolCalls[0].error)).toContain('File not found');
   });
 
   it('does not mark sessions synced when turn upload fails', async () => {

@@ -649,23 +649,13 @@ export class TelemetryStorage {
     }
   }
 
-  getTurnDetail(turnId: string): {
-    turn: TelemetryTurn;
-    modelCalls: TelemetryModelCall[];
-    toolCalls: TelemetryToolCall[];
-    events: TelemetryTimelineEvent[];
-  } | null {
-    if (!this.isDbAvailable()) return null;
+  /**
+   * 只取 turn 的模型/工具调用明细，不连带 events（每 turn 约 90 条，云端上传用不上）。
+   * rowToTurn 出来的 turn 这两个数组恒为空（明细在独立表里），上传器必须用这个补齐。
+   */
+  getTurnCalls(turnId: string): { modelCalls: TelemetryModelCall[]; toolCalls: TelemetryToolCall[] } {
+    if (!this.isDbAvailable()) return { modelCalls: [], toolCalls: [] };
     try {
-      const turnRow = this.getStmt(
-        'get_turn',
-        `
-        SELECT * FROM telemetry_turns WHERE id = ?
-      `
-      ).get(turnId) as Record<string, unknown> | undefined;
-
-      if (!turnRow) return null;
-
       const modelCalls = (
         this.getStmt(
           'get_model_calls',
@@ -683,6 +673,32 @@ export class TelemetryStorage {
       `
         ).all(turnId) as Record<string, unknown>[]
       ).map((r) => this.rowToToolCall(r));
+
+      return { modelCalls, toolCalls };
+    } catch (error) {
+      logger.error('Failed to get telemetry turn calls:', error);
+      return { modelCalls: [], toolCalls: [] };
+    }
+  }
+
+  getTurnDetail(turnId: string): {
+    turn: TelemetryTurn;
+    modelCalls: TelemetryModelCall[];
+    toolCalls: TelemetryToolCall[];
+    events: TelemetryTimelineEvent[];
+  } | null {
+    if (!this.isDbAvailable()) return null;
+    try {
+      const turnRow = this.getStmt(
+        'get_turn',
+        `
+        SELECT * FROM telemetry_turns WHERE id = ?
+      `
+      ).get(turnId) as Record<string, unknown> | undefined;
+
+      if (!turnRow) return null;
+
+      const { modelCalls, toolCalls } = this.getTurnCalls(turnId);
 
       const events = (
         this.getStmt(

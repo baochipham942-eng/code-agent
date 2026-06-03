@@ -102,8 +102,13 @@ export class TelemetryUploaderService implements Disposable {
       }
 
       // 2) Turn 级（metadata-only），分批
+      // getTurnsBySession 出来的 turn 不带 modelCalls/toolCalls（明细在独立表里，rowToTurn 恒为空数组），
+      // 上传前必须用 getTurnCalls 补齐，否则云端 payload 全空，admin 无法下钻报错根因。
       const turnRows = sessions.flatMap((s) =>
-        storage.getTurnsBySession(s.id).map((t) => this.toTurnRow(t, s.id, user.id, homeDir)),
+        storage.getTurnsBySession(s.id).map((t) => {
+          const { modelCalls, toolCalls } = storage.getTurnCalls(t.id);
+          return this.toTurnRow({ ...t, modelCalls, toolCalls }, s.id, user.id, homeDir);
+        }),
       );
       let turnUploadFailed = false;
       for (let i = 0; i < turnRows.length; i += BATCH_SIZE) {

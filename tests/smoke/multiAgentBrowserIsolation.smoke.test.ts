@@ -6,7 +6,8 @@
  *   2. 真 launch chromium 后 cookies/localStorage 隔离
  *   3. 同 agentId 二次 acquire 命中缓存（但本测试每次 acquire 后会 close 不重入）
  *
- * 跑法：npm test -- --run tests/smoke/multiAgentBrowserIsolation.smoke.test.ts
+ * 跑法：npm run test:smoke -- tests/smoke/multiAgentBrowserIsolation.smoke.test.ts
+ *（smoke 测试已从默认 npm test 中隔离 —— 会真实操作桌面/启动真实进程）
  * 依赖：playwright bundled chromium 已就位（~/Library/Caches/ms-playwright/chromium-*）
  *
  * Timeout 90s — 包括 chromium cold launch（~2s × 2 + cookie roundtrip）。

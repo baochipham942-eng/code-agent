@@ -12,7 +12,8 @@
  *     backgroundCgEventSurface.listWindows 返回空，本测试自动 skip 而非 fail。
  *   - 一个能启动并产生 AX 可见窗口的 app（默认 Calculator —— 内置 + 启动即开窗）
  *
- * 跑法：npm test -- --run tests/smoke/multiAgentScreenshotCrop.smoke.test.ts
+ * 跑法：npm run test:smoke -- tests/smoke/multiAgentScreenshotCrop.smoke.test.ts
+ *（smoke 测试已从默认 npm test 中隔离 —— 会真实操作桌面/启动真实进程）
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

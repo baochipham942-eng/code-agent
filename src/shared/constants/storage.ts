@@ -104,6 +104,12 @@ export const SWARM_TRACE = {
   STORAGE_MODE_ENV: 'CODE_AGENT_SWARM_STORAGE',
 } as const;
 
+/** 任务取消/丢弃前的 patch 快照（execution-layer safety net） */
+export const TASK_PATCH = {
+  /** 被丢弃任务的 patch 存放子目录（相对 getUserConfigDir()） */
+  TRASH_DIR: 'trashed-task-patches',
+} as const;
+
 /** 资源管理常量 */
 export const RESOURCE_MANAGEMENT = {
   /** 磁盘空间警告阈值（1GB） */

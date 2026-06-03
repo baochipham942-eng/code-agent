@@ -54,7 +54,76 @@ export async function createAgentWorktree(
   await execAsync(cmd, { cwd: repoPath, timeout: WORKTREE_TIMEOUT });
 
   logger.info(`[${agentId}] Worktree created at ${worktreePath} (branch: ${branchName})`);
+
+  // 共享主仓库的 gitignored 依赖目录（如 node_modules）到 worktree，避免每个并行 agent
+  // 重新 npm install。best-effort：任一 symlink 失败只记 warning，不让 worktree 创建失败。
+  await shareGitignoredDirs(agentId, repoPath, worktreePath);
+
   return { worktreePath, branchName };
+}
+
+/**
+ * Parse the top-level plain directory entries from a .gitignore file.
+ * Only handles bare directory-name entries (e.g. `node_modules/`, `dist`, `.next/`).
+ * Skips entries that contain wildcards, path separators, negations, or that are
+ * comments/blank — those are too complex to safely map to a single top-level dir.
+ */
+export function parseGitignoreTopLevelDirs(gitignoreContent: string): string[] {
+  const dirs: string[] = [];
+  for (const rawLine of gitignoreContent.split('\n')) {
+    const line = rawLine.trim();
+    // Skip blanks, comments, negations
+    if (!line || line.startsWith('#') || line.startsWith('!')) continue;
+    // Skip anything with a glob char or an embedded path separator
+    if (/[*?[\]]/.test(line)) continue;
+    // Strip a single trailing slash (directory marker), then reject if a slash remains
+    const stripped = line.endsWith('/') ? line.slice(0, -1) : line;
+    if (!stripped || stripped.includes('/')) continue;
+    dirs.push(stripped);
+  }
+  return dirs;
+}
+
+/**
+ * Best-effort: symlink the main repo's gitignored top-level directories into the
+ * new worktree so parallel agents reuse installed deps instead of re-installing.
+ * Any single failure is logged as a warning and skipped — never throws.
+ */
+async function shareGitignoredDirs(
+  agentId: string,
+  repoPath: string,
+  worktreePath: string,
+): Promise<void> {
+  try {
+    const gitignorePath = path.join(repoPath, '.gitignore');
+    let content: string;
+    try {
+      content = fs.readFileSync(gitignorePath, 'utf-8');
+    } catch {
+      // No .gitignore (or unreadable) — nothing to share
+      return;
+    }
+
+    const entries = parseGitignoreTopLevelDirs(content);
+    for (const entry of entries) {
+      const source = path.join(repoPath, entry);
+      const target = path.join(worktreePath, entry);
+      try {
+        // Source must exist and be a directory
+        const sourceStat = fs.statSync(source);
+        if (!sourceStat.isDirectory()) continue;
+        // Skip if the worktree already has this path (file or dir)
+        if (fs.existsSync(target)) continue;
+        fs.symlinkSync(source, target, 'dir');
+        logger.debug(`[${agentId}] Shared gitignored dir via symlink: ${entry}`);
+      } catch (err) {
+        logger.warn(`[${agentId}] Failed to share gitignored dir '${entry}':`, err);
+      }
+    }
+  } catch (err) {
+    // Whole step is best-effort; never block worktree creation
+    logger.warn(`[${agentId}] shareGitignoredDirs failed:`, err);
+  }
 }
 
 /**

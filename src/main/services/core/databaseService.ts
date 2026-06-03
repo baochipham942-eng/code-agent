@@ -24,7 +24,7 @@ import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/c
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, RelationQueryOptions, EntityRelation, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, SwarmTraceRepository, PendingApprovalRepository } from './repositories';
+import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository } from './repositories';
 import { createSwarmTraceRepo } from './repositories/swarmTraceFactory';
 import type { SwarmTraceRepo } from '../../../shared/contract/swarmTrace';
 
@@ -80,6 +80,7 @@ export class DatabaseService {
   private configRepo!: ConfigRepository;
   private captureRepo!: CaptureRepository;
   private experimentRepo!: ExperimentRepository;
+  private projectRepo!: ProjectRepository;
   private swarmTraceRepo!: SwarmTraceRepo;
   private pendingApprovalRepo!: PendingApprovalRepository;
 
@@ -189,6 +190,7 @@ export class DatabaseService {
       this.configRepo = new ConfigRepository(this.db);
       this.captureRepo = new CaptureRepository(this.db);
       this.experimentRepo = new ExperimentRepository(this.db);
+      this.projectRepo = new ProjectRepository(this.db);
       this.swarmTraceRepo = createSwarmTraceRepo(this.db);
       this.pendingApprovalRepo = new PendingApprovalRepository(this.db);
 
@@ -875,6 +877,13 @@ export class DatabaseService {
   getPendingApprovalRepo(): PendingApprovalRepository {
     this.ensureDb();
     return this.pendingApprovalRepo;
+  }
+
+  // --- ProjectRepository ---
+  /** 暴露 projects 仓库给 ProjectService / IPC handler 直接使用（P0-2 项目空间）。 */
+  getProjectRepo(): ProjectRepository {
+    this.ensureDb();
+    return this.projectRepo;
   }
 }
 

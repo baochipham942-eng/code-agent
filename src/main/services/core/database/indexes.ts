@@ -40,6 +40,7 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_status_updated ON sessions(status, updated_at DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_user_updated ON sessions(user_id, updated_at DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_type_updated ON sessions(session_type, updated_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_session_timestamp ON messages(session_id, timestamp DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_session_visibility_timestamp ON messages(session_id, visibility, timestamp DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_hidden_by_rewind ON messages(hidden_by_rewind_id)`);

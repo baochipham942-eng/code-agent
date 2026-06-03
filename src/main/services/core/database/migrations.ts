@@ -30,6 +30,8 @@ export function applySessionsMigrations(db: BetterSqlite3.Database, logger: Logg
     'ALTER TABLE sessions ADD COLUMN agent_engine TEXT',
     'ALTER TABLE sessions ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE sessions ADD COLUMN retry_of_session_id TEXT',
+    // P0-2 项目空间：session 归属的 project（可空，存量由 ProjectRepository.backfillSessions 回填归桶）
+    'ALTER TABLE sessions ADD COLUMN project_id TEXT',
   ];
 
   for (const sql of migrations) {

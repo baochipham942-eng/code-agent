@@ -478,7 +478,7 @@ function PreviewBody({ item }: { item: WorkspacePreviewItem }) {
     return <WorkspaceHtmlPreview item={item} />;
   }
   if (item.kind === 'spreadsheet' && item.content?.json) {
-    return <SpreadsheetBlock spec={item.content.json} />;
+    return <SpreadsheetBlock spec={item.content.json} filePath={item.file?.path} />;
   }
   if (item.kind === 'document' && item.content?.json) {
     return <DocumentBlock spec={item.content.json} />;

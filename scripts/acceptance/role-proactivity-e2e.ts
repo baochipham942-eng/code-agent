@@ -239,7 +239,7 @@ interface SessionEntry {
   type?: string;
 }
 
-/** 会话列表（GET /api/sessions?includeArchived=...） */
+/** 会话列表（GET /api/sessions?includeArchived=... → { success, data: Session[] }） */
 async function listSessions(server: StartedServer, includeArchived: boolean): Promise<SessionEntry[]> {
   const response = await fetch(`${server.baseUrl}/api/sessions?includeArchived=${includeArchived}`, {
     headers: { Authorization: `Bearer ${server.token}` },
@@ -247,8 +247,8 @@ async function listSessions(server: StartedServer, includeArchived: boolean): Pr
   if (!response.ok) {
     throw new Error(`GET /api/sessions failed: ${response.status} ${await response.text()}`);
   }
-  const body = await response.json() as { sessions?: SessionEntry[] } | SessionEntry[];
-  return Array.isArray(body) ? body : (body.sessions ?? []);
+  const body = await response.json() as { success?: boolean; data?: SessionEntry[] } | SessionEntry[];
+  return Array.isArray(body) ? body : (body.data ?? []);
 }
 
 interface CronJob {
@@ -512,10 +512,11 @@ async function scenario2(env: E2EEnv, server: StartedServer, researcherJobId: st
   return result;
 }
 
-/** AC3：沉默路径 — 空履历角色醒来 → silence → 归档 + "巡检无需行动" */
+/** AC3：沉默路径 — 空履历角色醒来 → 空产物守卫确定性静默（零模型成本）+ 履历"巡检无需行动" */
 async function scenario3(env: E2EEnv, server: StartedServer, analystJobId: string): Promise<ScenarioResult> {
-  const result: ScenarioResult = { id: 'AC3', title: '沉默路径（空履历 → silence → 归档）', pass: false, evidence: [], failures: [] };
+  const result: ScenarioResult = { id: 'AC3', title: '沉默路径（空履历 → 确定性 silence）', pass: false, evidence: [], failures: [] };
 
+  const sessionsBefore = (await listSessions(server, true)).length;
   const execution = await triggerJobAndWait(server, analystJobId);
 
   if (execution.status !== 'completed' || execution.result?.status !== 'completed') {
@@ -524,34 +525,27 @@ async function scenario3(env: E2EEnv, server: StartedServer, analystJobId: strin
   }
 
   const decision = execution.result.decision ?? '';
-  result.evidence.push(`✓ 醒来完成，决策: ${decision}`);
-
-  // 履历记录（沉默也记）
-  const history = await readHistoryEntries(env, ANALYST);
-  const wakeEntry = history.find((l) => l.includes(WAKE_TITLE_PREFIX));
-  if (wakeEntry) {
-    result.evidence.push(`✓ 履历有醒来记录: ${wakeEntry}`);
+  if (decision === 'silence') {
+    result.evidence.push('✓ 空履历角色醒来 → 确定性 silence（空产物守卫，未烧模型 token）');
   } else {
-    result.failures.push('✗ 履历没有醒来记录');
+    result.failures.push(`✗ 空履历角色未静默，决策为: ${decision}`);
   }
 
-  if (decision === 'silence') {
-    // 沉默语义断言：履历记"巡检无需行动" + 会话归档
-    if (wakeEntry?.includes('巡检无需行动')) {
-      result.evidence.push('✓ 沉默履历记录为"巡检无需行动"');
-    } else {
-      result.failures.push(`✗ 沉默履历记录措辞不对: ${wakeEntry}`);
-    }
-    const visibleSessions = await listSessions(server, false);
-    const inDefaultList = visibleSessions.some((s) => s.id === execution.result?.sessionId);
-    if (!inDefaultList) {
-      result.evidence.push('✓ 沉默会话已归档（不在默认列表）');
-    } else {
-      result.failures.push('✗ 沉默会话未归档');
-    }
+  // 履历记录（沉默也记）且措辞为"巡检无需行动"
+  const history = await readHistoryEntries(env, ANALYST);
+  const wakeEntry = history.find((l) => l.includes(WAKE_TITLE_PREFIX));
+  if (wakeEntry?.includes('巡检无需行动')) {
+    result.evidence.push(`✓ 履历有沉默记录: ${wakeEntry}`);
   } else {
-    // 模型没选沉默（概率行为，不算机制失败）：记录但不挂掉场景，机制断言改为会话未归档
-    result.evidence.push(`⚠ 模型对空履历选择了 ${decision}（非 silence，概率行为）；沉默归档机制未在本轮覆盖`);
+    result.failures.push(`✗ 履历沉默记录缺失或措辞不对: ${wakeEntry ?? '（无）'}`);
+  }
+
+  // 静默不打扰：不应产生新会话（空产物守卫在创建会话前就返回了）
+  const sessionsAfter = (await listSessions(server, true)).length;
+  if (sessionsAfter === sessionsBefore) {
+    result.evidence.push(`✓ 静默醒来没有产生新会话（${sessionsBefore} → ${sessionsAfter}）`);
+  } else {
+    result.failures.push(`✗ 静默醒来产生了多余会话（${sessionsBefore} → ${sessionsAfter}）`);
   }
 
   result.pass = result.failures.length === 0;
@@ -596,12 +590,16 @@ async function scenario5(env: E2EEnv, server: StartedServer): Promise<ScenarioRe
     .filter((l) => l.includes(`${WAKE_TITLE_PREFIX}(event)`)).length;
 
   // 长任务：多步骤强制 ≥5 迭代（spawn 子代理 + 写文件 + 读文件 + 汇报）
+  // 注意 subagent_type 必须精确写明（上一轮 E2E 实测：mimo 会把"委派给研究员"自作主张替换成
+  // 内置 explore 类型 → 没有持久化角色参与 run → 不触发 event 醒来，测试失效）
   const sse = await runAgent(server, {
     sessionId: `proactivity-e2e-ac5-${Date.now()}`,
     project: env.workspace,
     prompt: [
       '请严格按以下步骤依次执行（每步都要真实调用工具，不要跳步）：',
-      `1. 调用 spawn_agent 工具，role='${RESEARCHER}'，waitForCompletion=true，task='用两句话总结 AI 编程工具的市场现状'`,
+      `1. 调用 Task 工具委派子代理，参数 subagent_type 必须精确填 '${RESEARCHER}'（就是这三个汉字，`,
+      `   禁止替换成 explore/coder/general 等任何内置类型——'${RESEARCHER}' 是已注册的自定义角色），`,
+      `   prompt 填 '用两句话总结 AI 编程工具的市场现状'`,
       `2. 把子代理的回复写入文件 ${path.join(env.workspace, 'market-summary.md')}（用 Write 工具）`,
       `3. 用 Read 工具读取 ${path.join(env.workspace, 'ai-coding-report.md')}，检查"竞品定价"一节是否完整`,
       `4. 把检查结论追加写入 ${path.join(env.workspace, 'market-summary.md')}（用 Edit 或 Write 工具）`,

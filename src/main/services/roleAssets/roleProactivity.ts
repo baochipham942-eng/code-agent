@@ -22,7 +22,7 @@ import type {
   RoleWakeResult,
   RoleWakeTrigger,
 } from '../../../shared/contract/roleAssets';
-import { instantiateRole, appendRoleHistory, loadRoleHistory, listPersistentRoles } from './roleAssetService';
+import { instantiateRole, appendRoleHistory, loadRoleHistory, listPersistentRoles, isPersistentRole } from './roleAssetService';
 import { runRoleWriteBack } from './roleWriteBack';
 
 const logger = createLogger('RoleProactivity');
@@ -165,6 +165,24 @@ export async function wakeRole(
       status: 'skipped',
       skipReason: `daily_budget_exceeded (${wakesToday}/${ROLE_PROACTIVITY.MAX_WAKES_PER_DAY})`,
     };
+  }
+
+  // ---- 步骤 1.5：空产物守卫（成本闸）----
+  // cadence 醒来的输入是"自己经手过的产物"；履历里没有任何产物条目（排除醒来记录本身）
+  // 就没有东西可巡检，确定性静默，不烧模型 token。event 触发不受此限（run 总结的输入是 runSummary）。
+  if (trigger === 'cadence') {
+    const allHistory = await loadRoleHistory(roleId, Number.MAX_SAFE_INTEGER);
+    const productEntries = allHistory.filter((l) => !l.includes(ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX));
+    if (productEntries.length === 0) {
+      logger.info('Wake resolved to silence: no products in history', { roleId, trigger });
+      await appendRoleHistory(roleId, {
+        date: new Date().toISOString().slice(0, 10),
+        artifactLabel: wakeHistoryLabel(trigger),
+        artifactRef: '-',
+        summary: '巡检无需行动（履历中没有产物）',
+      });
+      return { roleId, trigger, status: 'completed', decision: 'silence', summary: '履历中没有产物，无需巡检' };
+    }
   }
 
   // ---- 步骤 2：实例化（带记忆；非持久化角色在这里抛错）----
@@ -341,8 +359,21 @@ export async function triggerEventWakes(sessionId: string, iterations: number, r
     return;
   }
 
-  const roles = takeRoleParticipation(sessionId);
-  if (roles.length === 0) return;
+  const participants = takeRoleParticipation(sessionId);
+  if (participants.length === 0) {
+    logger.debug('Event wake skipped: no role participation in this run', { sessionId, iterations });
+    return;
+  }
+
+  // 只有持久化角色才有资格被 event 唤醒（参与记录里可能混入 explore/coder 等内置瞬时 agent）
+  const roles: string[] = [];
+  for (const roleId of participants) {
+    if (await isPersistentRole(roleId)) roles.push(roleId);
+  }
+  if (roles.length === 0) {
+    logger.debug('Event wake skipped: no persistent roles participated', { sessionId, participants });
+    return;
+  }
 
   // 防递归：醒来会话自己结束不再触发 event 醒来
   try {

@@ -249,6 +249,10 @@ async function main(): Promise<void> {
     check('detail 含两个 session（A1+A2）', detail.sessionIds.includes(sA1) && detail.sessionIds.includes(sA2), `sessionIds=${JSON.stringify(detail.sessionIds)}`);
     check('detail.sessionIds 不含 B1', !detail.sessionIds.includes(sB1));
 
+    // AC3.1 跨 session 产物聚合端点（无产物时返回空数组，不报错）
+    const arts = await projectApi<unknown[]>(server, 'artifacts', { projectId });
+    check('artifacts 端点返回数组', Array.isArray(arts), `got=${typeof arts}`);
+
     // AC4 多 goal
     console.log('\nAC4 多 goal 并行');
     const g1 = await projectApi<{ id: string }>(server, 'addGoal', { projectId, goal: '目标一' });

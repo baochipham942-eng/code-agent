@@ -194,8 +194,19 @@ P4 swarm goal 已合并 origin/main（`feat/swarm-goal` 系列：`GoalContract.a
 
 ## 8. 范围与排期
 
-**MVP（本期）**：§3 数据模型 + §4 迁移归桶 + §5 后端（Repo/Service/API/IPC）+ §6 前端升级 + §7 边界 + D6 角色入驻。
+**MVP（本期，✅ 已交付）**：§3 数据模型 + §4 迁移归桶 + §5 后端（Repo/Service/`domain:project` IPC，桌面原生 + HTTP 双链路统一）+ §6 前端 header + D6 角色入驻 + **跨 session 产物聚合**（`getProjectArtifacts`，原列 P1，按拍板提前到本期）。
 
-**留 P1**：显式"新建项目"入口、session 积累升格建议、角色履历按项目分组（依赖本期 join 表）、项目记忆面板、N:1 多目录项目。
+**留 P1**：显式"新建项目"入口、session 积累升格建议、角色履历按项目分组（依赖本期 join 表）、项目记忆面板、N:1 多目录项目、产物聚合纳入工具输出文件（当前仅 assistant 消息内 artifact 代码块）。
 
-**验证**：每功能点 `npm run typecheck`；ProjectRepository/Service 单测；headless E2E 验收（照 `scripts/acceptance/role-proactivity-e2e.ts`）——建项目 → 挂 2 条 goal → 入驻角色 → 跨 session 产物聚合 → 存量 session 归桶不丢。不跑全量 vitest。
+**验证（✅ 全绿）**：
+- typecheck 全程通过；`ProjectRepository.test.ts` 单测 13 条（迁移路径 / 1:1 归桶 / unsorted / 幂等 / 不破坏存量 / 多 goal 独立状态 / 角色入驻 / 归档过滤 / 跨 session 聚合·去重·limit）。
+- `scripts/acceptance/project-space-e2e.ts` headless E2E 14 条（隐式归桶 / 1:1 绑定 / 详情聚合 / artifacts 端点 / 多 goal / 角色入驻 / 改名归档 / meta.json projectId 接管）。
+- 前端：served webServer + Playwright 实跑——header 随会话 projectId 渲染、展开显 2 goal + 角色 chip、勾选 goal→已达成写回 round-trip、desktop + mobile(390px) 双端无布局破裂。
+
+## 9. as-built 偏差
+
+| 维度 | 设计 | as-built |
+|---|---|---|
+| 后端 transport | §5.3 写 express 路由 `routes/projects.ts` | 改为 **`domain:project` IPC 处理器**（`project.ipc.ts`），经 `domain.ts` 同时服务桌面原生 + HTTP，DRY 且桌面有 parity；express 路由已删 |
+| 产物聚合 | §1/D5 列为"项目维度聚合"，§8 原把跨 session 聚合留 P1 | 按拍板**提前到本期**：`getProjectArtifacts` 扫项目下所有 session 抽 artifact，纯函数 `buildProjectArtifacts` 便于单测 |
+| P4 边界 | 担心并行冲突 | P4 swarm-goal 已先合并 origin/main，本分支在其上开；`GoalContract`/`GoalRunInput` 零改动，仅单向投影 |

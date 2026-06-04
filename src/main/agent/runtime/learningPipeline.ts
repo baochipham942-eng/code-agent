@@ -23,6 +23,7 @@ import {
   type SkillDraftStep,
 } from '../../services/skills/skillDraftQueue';
 import { reviewConversationForSkill } from '../../lightMemory/conversationReview';
+import { broadcastToRenderer } from '../../platform/windowBridge';
 import { LEARNING_PIPELINE, SKILL_REVIEW } from '../../../shared/constants';
 import { createLogger } from '../../services/infra/logger';
 
@@ -177,6 +178,26 @@ export class LearningPipeline {
     this.ctx.onEvent(event);
   }
 
+  private emitSkillDraftPending(drafts: SkillDraftMeta[]): void {
+    const event: AgentEvent = {
+      type: 'skill_draft_pending',
+      data: {
+        sessionId: this.ctx.sessionId,
+        drafts: drafts.map((draft) => ({
+          id: draft.id,
+          name: draft.name,
+          description: draft.description,
+          toolSequence: draft.toolSequence,
+          occurrences: draft.occurrences,
+          origin: draft.origin,
+        })),
+      },
+    };
+
+    this.onEvent(event);
+    broadcastToRenderer('agent:event', event);
+  }
+
   /**
    * Session 结束学习入口（runFinalizer 调用，fire-and-forget）。
    * 三条链路相互独立，单边失败不影响另一边：
@@ -235,20 +256,7 @@ export class LearningPipeline {
       name: draft.name,
       signal: reviewed.signal,
     });
-    this.onEvent({
-      type: 'skill_draft_pending',
-      data: {
-        sessionId: this.ctx.sessionId,
-        drafts: [{
-          id: draft.id,
-          name: draft.name,
-          description: draft.description,
-          toolSequence: draft.toolSequence,
-          occurrences: draft.occurrences,
-          origin: draft.origin,
-        }],
-      },
-    });
+    this.emitSkillDraftPending([draft]);
   }
 
   /**
@@ -305,23 +313,7 @@ export class LearningPipeline {
         sessionId: this.ctx.sessionId,
         drafts: enqueued.map((draft) => draft.name),
       });
-      // 通知前端弹确认卡片。走 ctx.onEvent → run SSE 流 → renderer agent:event
-      // （与 suggestions_update / memory_learned 同一条产线通路；EventBus 桥接在
-      //  webServer 架构下没有被启动，不能用）。
-      this.onEvent({
-        type: 'skill_draft_pending',
-        data: {
-          sessionId: this.ctx.sessionId,
-          drafts: enqueued.map((draft) => ({
-            id: draft.id,
-            name: draft.name,
-            description: draft.description,
-            toolSequence: draft.toolSequence,
-            occurrences: draft.occurrences,
-            origin: draft.origin,
-          })),
-        },
-      });
+      this.emitSkillDraftPending(enqueued);
     }
   }
 

@@ -85,7 +85,9 @@ import {
   extractSuccessPatterns,
   suggestSkillName,
 } from '../../../../src/main/agent/runtime/learningPipeline';
+import { onRendererPush } from '../../../../src/main/platform/windowBridge';
 import { LEARNING_PIPELINE } from '../../../../src/shared/constants';
+import type { AgentEvent } from '../../../../src/shared/contract';
 
 // ── Fixtures ──
 
@@ -123,6 +125,21 @@ function makeCtx(sessionId = 'session-1', messages: Array<{ role: string; conten
     onEvent: vi.fn(),
     messages,
   } as unknown as ConstructorParameters<typeof LearningPipeline>[0];
+}
+
+function captureRendererPushes() {
+  const pushes: Array<{ channel: string; data: unknown }> = [];
+  const dispose = onRendererPush((channel, data) => {
+    pushes.push({ channel, data });
+  });
+  return { pushes, dispose };
+}
+
+function findSkillDraftPush(pushes: Array<{ channel: string; data: unknown }>) {
+  return pushes.find((push) => (
+    push.channel === 'agent:event'
+    && (push.data as AgentEvent | undefined)?.type === 'skill_draft_pending'
+  ));
 }
 
 // ── Tests ──
@@ -285,11 +302,29 @@ describe('LearningPipeline', () => {
 
     const ctx = makeCtx('session-skill');
     const pipeline = new LearningPipeline(ctx);
-    await pipeline.runSkillDistillation();
+    const { pushes, dispose } = captureRendererPushes();
+    try {
+      await pipeline.runSkillDistillation();
+    } finally {
+      dispose();
+    }
 
     expect(draftMocks.enqueueSkillDraft).toHaveBeenCalled();
-    // 通知用户确认（ctx.onEvent → run SSE 流 → renderer，与 memory_learned 同通路）
+    // run SSE 流仍能收到，兼容已有事件通路。
     expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'skill_draft_pending',
+        data: expect.objectContaining({
+          sessionId: 'session-skill',
+          drafts: expect.arrayContaining([
+            expect.objectContaining({ name: expect.any(String), occurrences: expect.any(Number) }),
+          ]),
+        }),
+      }),
+    );
+    // session-end learning 是 fire-and-forget，可能发生在 run SSE 已结束之后；
+    // 因此必须同时推到全局 renderer 通道，聊天页才能弹确认卡。
+    expect(findSkillDraftPush(pushes)?.data).toEqual(
       expect.objectContaining({
         type: 'skill_draft_pending',
         data: expect.objectContaining({
@@ -313,9 +348,15 @@ describe('LearningPipeline', () => {
 
     const ctx = makeCtx();
     const pipeline = new LearningPipeline(ctx);
-    await pipeline.runSkillDistillation();
+    const { pushes, dispose } = captureRendererPushes();
+    try {
+      await pipeline.runSkillDistillation();
+    } finally {
+      dispose();
+    }
 
     expect(ctx.onEvent).not.toHaveBeenCalled();
+    expect(findSkillDraftPush(pushes)).toBeUndefined();
   });
 
   it('runSessionEndLearning should run both passes from telemetry', async () => {
@@ -376,7 +417,12 @@ describe('runConversationReviewDistillation', () => {
     });
 
     const ctx = makeCtx('session-review', convo);
-    await new LearningPipeline(ctx).runConversationReviewDistillation();
+    const { pushes, dispose } = captureRendererPushes();
+    try {
+      await new LearningPipeline(ctx).runConversationReviewDistillation();
+    } finally {
+      dispose();
+    }
 
     expect(draftMocks.enqueueSkillDraft).toHaveBeenCalledTimes(1);
     const arg = draftMocks.enqueueSkillDraft.mock.calls[0][0] as Record<string, unknown>;
@@ -387,6 +433,21 @@ describe('runConversationReviewDistillation', () => {
 
     expect(ctx.onEvent).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'skill_draft_pending' }),
+    );
+    expect(findSkillDraftPush(pushes)?.data).toEqual(
+      expect.objectContaining({
+        type: 'skill_draft_pending',
+        data: expect.objectContaining({
+          sessionId: 'session-review',
+          drafts: [
+            expect.objectContaining({
+              name: 'deploy-tauri-macos',
+              description: '部署 Tauri 桌面应用的标准流程',
+              origin: 'llm-review',
+            }),
+          ],
+        }),
+      }),
     );
   });
 

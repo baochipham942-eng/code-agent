@@ -110,6 +110,7 @@
     "release:resource-inventory": "node scripts/tauri-resource-inventory.mjs",
     "release:runtime-assets": "node scripts/build-runtime-assets.mjs",
     "release:runtime-assets:install": "npx tsx scripts/install-runtime-asset.ts",
+    "release:renderer-bundle": "npx tsx scripts/build-renderer-bundle.mjs",
     "release:verify-macos": "bash scripts/verify-macos-release.sh",
     "release:notarize-macos": "bash scripts/tauri-notarize.sh",
     "control-plane:release-bundle": "node scripts/control-plane-release-bundle.mjs",

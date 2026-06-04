@@ -62,6 +62,7 @@ import {
 } from './messageProcessorHelpers';
 import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
+import { generateTruncationWarning } from './truncationPrompts';
 
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
@@ -717,7 +718,7 @@ export class MessageProcessor {
         const content = writeFileCall.arguments?.content as string;
         if (content) {
           logger.warn(`${writeFileCall.name} content length: ${content.length} chars - may be truncated!`);
-          this.contextAssembly.injectSystemMessage(this.generateTruncationWarning());
+          this.contextAssembly.injectSystemMessage(generateTruncationWarning());
         }
       } else {
         // 检测截断的 bash heredoc
@@ -1141,38 +1142,6 @@ export class MessageProcessor {
         logger.error('[AgentLoop] Failed to persist steer message:', err);
       });
     }
-  }
-
-  generateTruncationWarning(): string {
-    return (
-      `<truncation-detected>\n` +
-      `⚠️ CRITICAL: Your previous tool call was TRUNCATED due to output length limits!\n` +
-      `The file content is INCOMPLETE and will not work correctly.\n\n` +
-      `You MUST use a MULTI-STEP approach for large files:\n` +
-      `1. First, create a SKELETON file with just the structure (HTML head, empty body, empty script tag)\n` +
-      `2. Then use edit_file to ADD sections one at a time:\n` +
-      `   - Step 1: Add CSS styles\n` +
-      `   - Step 2: Add HTML body content\n` +
-      `   - Step 3: Add JavaScript variables and constants\n` +
-      `   - Step 4: Add JavaScript functions (one or two at a time)\n` +
-      `   - Step 5: Add event listeners and initialization\n\n` +
-      `DO NOT try to write the entire file in one write_file call!\n` +
-      `</truncation-detected>`
-    );
-  }
-
-  generateAutoContinuationPrompt(): string {
-    return (
-      `<auto-continuation-required>\n` +
-      `CRITICAL: The file you just wrote appears to be INCOMPLETE (truncated).\n` +
-      `The write_file tool detected missing closing brackets/tags.\n\n` +
-      `You MUST immediately:\n` +
-      `1. Use edit_file to APPEND the remaining code to complete the file\n` +
-      `2. Start from where the code was cut off\n` +
-      `3. Ensure all functions, classes, and HTML tags are properly closed\n\n` +
-      `DO NOT start over or rewrite the entire file - just APPEND the missing parts!\n` +
-      `</auto-continuation-required>`
-    );
   }
 
   private applyDeferredSkillActivations(toolResults: ToolResult[]): void {

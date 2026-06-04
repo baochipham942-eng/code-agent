@@ -48,6 +48,7 @@ import { DEFAULT_MODELS, MODEL_MAX_TOKENS, getContextWindow, TOOL_PROGRESS, TOOL
 
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
+import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
 
 // Import refactored modules
 import type {
@@ -1235,11 +1236,7 @@ export class ConversationRuntime {
     logger.debug(`[AgentLoop] Interaction mode set to: ${mode}`);
   }
 
-  generateTruncationWarning(): string {
-    return this.messageProcessor.generateTruncationWarning();
-  }
-
   generateAutoContinuationPrompt(): string {
-    return this.messageProcessor.generateAutoContinuationPrompt();
+    return buildAutoContinuationPrompt();
   }
 }

@@ -804,14 +804,9 @@ describe('ConversationRuntime', () => {
   // ==========================================================================
 
   describe('delegation helpers', () => {
-    it('generateTruncationWarning should delegate to messageProcessor', () => {
-      const warning = runtime.generateTruncationWarning();
-      expect(warning).toBe('Warning: context truncated');
-    });
-
-    it('generateAutoContinuationPrompt should delegate to messageProcessor', () => {
+    it('generateAutoContinuationPrompt 返回续写指引', () => {
       const prompt = runtime.generateAutoContinuationPrompt();
-      expect(prompt).toBe('Continue...');
+      expect(prompt).toContain('auto-continuation-required');
     });
 
     it('getPlanningService should return from context', () => {

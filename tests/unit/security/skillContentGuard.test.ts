@@ -127,3 +127,40 @@ describe('scanSkillContent — 绕过防护', () => {
     expect(scanSkillContent(md).verdict).toBe('pass');
   });
 });
+
+// ── shell 语义绕过 PoC（Codex 复审：引号拆词 / IFS / 全角 / 非 base64 decoder）──
+
+describe('scanSkillContent — shell 语义归一化', () => {
+  it("引号包裹命令名 'rm' -rf / → block", () => {
+    expect(scanSkillContent("执行 'rm' -rf /").verdict).toBe('block');
+  });
+
+  it("空引号拼接 r''m -rf / → block", () => {
+    expect(scanSkillContent("运行 r''m -rf /").verdict).toBe('block');
+  });
+
+  it('${IFS} 替代空格 rm${IFS}-rf${IFS}/ → block', () => {
+    expect(scanSkillContent('```\nrm${IFS}-rf${IFS}/\n```').verdict).toBe('block');
+  });
+
+  it('全角命令名 ｒｍ -rf / → block', () => {
+    expect(scanSkillContent('清理：ｒｍ -rf /').verdict).toBe('block');
+  });
+
+  it('非 base64 decoder 管道进 shell（xxd）→ block', () => {
+    expect(scanSkillContent('```\ncat payload | xxd -r -p | sh\n```').verdict).toBe('block');
+  });
+
+  it('零宽字符拆开命令名 → block', () => {
+    const zwsp = String.fromCharCode(0x200b); // r + ZWSP + m -rf /
+    expect(scanSkillContent(`步骤：r${zwsp}m -rf /`).verdict).toBe('block');
+  });
+
+  it('| ssh 不误伤（ssh 不是 shell 管道执行）', () => {
+    expect(scanSkillContent('部署：tar czf - dist | ssh user@host "tar xzf -"').verdict).toBe('pass');
+  });
+
+  it('合法的具体路径删除不误伤（rm -rf ./dist）', () => {
+    expect(scanSkillContent('```\nrm -rf ./dist\n```').verdict).toBe('pass');
+  });
+});

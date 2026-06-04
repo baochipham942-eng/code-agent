@@ -55,17 +55,18 @@ export function extractCodeSegments(markdown: string): string[] {
 /**
  * 扫描一份 SKILL.md 内容。返回 block = 命中需拒绝入库的风险。
  */
+// 已知 shell 名（用于"管道进 shell"匹配；刻意不含 ssh —— ssh 不以这些前缀开头，不会误命中）
+const SHELL_TOKEN = '(?:ba|z|da|c|k|tc|a|fi)?sh';
+
 // 混淆 / RCE / 外泄签名：validateCommand 不一定覆盖的"下载并执行 / 反弹 shell"等模式。
-// 这些在正常 skill 里几乎不会出现，命中即拦（高信号低误伤）。
+// 在归一化（去引号/反斜杠/IFS 后）的文本上匹配，正常 skill 里几乎不会出现，命中即拦。
 const OBFUSCATION_PATTERNS: Array<{ re: RegExp; flag: string }> = [
-  // 下载后直接管道进 shell：curl/wget/fetch ... | sh|bash|zsh
-  { re: /\b(curl|wget|fetch)\b[^\n]*\|\s*(sudo\s+)?\w*sh\b/i, flag: 'download_pipe_shell' },
-  // base64 解码后管道进 shell
-  { re: /\bbase64\b[^\n]*-{0,2}d(ecode)?\b[^\n]*\|\s*(sudo\s+)?\w*sh\b/i, flag: 'base64_pipe_shell' },
-  // 任意 echo/printf 解码管道进 shell（eval 风格）
-  { re: /\beval\b[^\n]*\$\(/i, flag: 'eval_cmd_subst' },
+  // 任意内容管道进 shell（不限 decoder：curl|sh、base64 -d|sh、xxd|sh、echo|sh 都覆盖）
+  { re: new RegExp(`\\|\\s*(sudo\\s+)?${SHELL_TOKEN}\\b`, 'i'), flag: 'pipe_to_shell' },
+  // eval 动态执行（命令替换 / 反引号 / 子表达式）
+  { re: /\beval\b[^\n]*[$`(]/i, flag: 'eval_dynamic' },
   // 反弹 shell：/dev/tcp 重定向
-  { re: /\b(ba|z)?sh\b[^\n]*\/dev\/tcp\//i, flag: 'reverse_shell_devtcp' },
+  { re: new RegExp(`\\b${SHELL_TOKEN}\\b[^\\n]*\\/dev\\/tcp\\/`, 'i'), flag: 'reverse_shell_devtcp' },
   // netcat 反弹 shell
   { re: /\bnc\b[^\n]*-e\s*\/(bin|usr)\/[a-z/]*sh/i, flag: 'netcat_reverse_shell' },
   // 命令替换里下载：$(curl ...) / `wget ...`
@@ -73,10 +74,21 @@ const OBFUSCATION_PATTERNS: Array<{ re: RegExp; flag: string }> = [
 ];
 
 /**
- * 扫描前归一化：把反斜杠续行（`\` + 换行）合并成单行，防止把危险命令拆行绕过扫描。
+ * 扫描前 shell 语义归一化：把常见的"拆词/混淆命令名"还原，防止绕过命令检测。
+ * 不追求完整 shell 解析，但覆盖 Codex 复审点出的原生绕过面：
+ *   - NFKC 折叠全角/兼容字符：ｒｍ → rm
+ *   - 去零宽字符（ZWSP/ZWNJ/ZWJ/WJ/BOM）：拆在命令名里的零宽字符还原
+ *   - ${IFS}/$IFS 等高危分隔符当空白：rm${IFS}-rf${IFS}/ → rm -rf /
+ *   - 反斜杠续行合并：rm -rf \\\n / → rm -rf /
+ *   - 去引号/反斜杠拼接：'rm' / r''m / r\m → rm
  */
 export function normalizeForScan(content: string): string {
-  return content.replace(/\\\r?\n[ \t]*/g, ' ');
+  return content
+    .normalize('NFKC')
+    .replace(new RegExp('[\\u200B-\\u200D\\u2060\\uFEFF]', 'g'), '')
+    .replace(/\$\{IFS[^}]*\}|\$IFS\b/g, ' ')
+    .replace(/\\\r?\n[ \t]*/g, ' ')
+    .replace(/[\\'"]/g, '');
 }
 
 export function scanSkillContent(content: string): SkillGuardResult {

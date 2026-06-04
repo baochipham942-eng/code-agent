@@ -20,7 +20,9 @@ Agent Neo 提供了一个 MCP (Model Context Protocol) 服务器，允许外部 
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │  - Resources: logs/browser, logs/agent, logs/tool   │    │
 │  │  - Tools: get_logs, get_status, screenshot,         │    │
-│  │           eval-query, appshots-query (read-only)    │    │
+│  │           eval-query, appshots-query,               │    │
+│  │           neo_list_tasks, neo_get_task_status,      │    │
+│  │           neo_list_projects (all read-only)         │    │
 │  └─────────────────────────────────────────────────────┘    │
 └────────────────────────────┬────────────────────────────────┘
                              │ STDIO
@@ -99,8 +101,25 @@ MCP Server 仅暴露**只读**工具（截至 2026-05-27，WS5 决策后）：
 | `screenshot` | 截取当前屏幕（只读读屏，不含点击/输入等控屏） |
 | `eval-query` | 读取评测 baseline / 趋势数据（只读） |
 | `appshots-query` | 读取历史窗口截图（只读，`resolveInsideDir` 路径穿越防护） |
+| `neo_list_tasks` | 列出 swarm run + 活跃 session 元数据（P3-A，仅元数据） |
+| `neo_get_task_status` | 按 runId 聚合任务状态（agent 数 / token / 时长 / `failureCategory` 枚举，不出事件正文） |
+| `neo_list_projects` | 列出项目 + goal 状态计数（不出项目描述） |
 
 > 已移除：`clear_logs`、`computer`、`execute_command`。原因见文末「安全边界（WS5）」。
+
+### 4.1 只读任务/项目状态（P3-A，2026-06-04）
+
+P3-A 把任务与项目状态暴露给外部编排器（Coze / codeg 等），守住"本地隐私"卖点——**只出结构化元数据，绝不出正文**。设计见 [批次 spec](./specs/2026-06-04-swarm-project-space-and-capability-batch.md)。
+
+| 工具 | LogBridge 路由 | 出 | 不出 |
+|------|---------------|----|------|
+| `neo_list_tasks` | `GET /tasks?limit=20` | 状态枚举 / 进度计数 / token-cost / 时间戳 | prompt / 输出正文 |
+| `neo_get_task_status` | `GET /task-status?id=<runId>` | 按 run 聚合 agent 数、token、时长、`failureCategory` 枚举、`filesChangedCount`（计数）| 事件 message 正文 / 文件路径 / error 自由文本 |
+| `neo_list_projects` | `GET /projects?includeArchived=true` | 项目 + goal 状态计数 | 项目描述 / goal 指令 |
+
+- **隐私基线**：`includeContent` 默认 false。三工具均只读，不暴露 prompt / agent 输出 / 文件路径 / goal 指令 / 项目描述。
+- **桥接模式**：`TaskStatusProvider`（`src/main/mcp/taskStatusProvider.ts`）接口由 app 进程启动时注册具体实现，数据源 `getDatabase()` / `getProjectService()` / `getTaskManager()`。
+- **双路注册（关键修复）**：main/Electron 路径走 `initBackgroundServices.ts`，web 路径（发行版 `dist/web/webServer.cjs`）走 `webServer.ts` `initializeServices()` step 8——本批次修复的正是 web 路径漏启 `logBridge` + 漏注册 `TaskStatusProvider`，导致只读 server 在发行版后端不可用。两路幂等。
 
 ## 示例
 

@@ -189,6 +189,52 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 
 关键文件：`src/main/services/skills/subagentSkillInjection.ts`、`src/main/agent/subagentExecutor.ts`、`src/main/agent/subagentExecutorTypes.ts`。细节见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
 
+## 0.0.8 2026-06-03 Swarm goal + 主动性合流（P4）
+
+goal 模式接入 swarm 并行执行，并把角色主动性的 advance 收进 goal-based 执行做完成校验。设计见 [swarm-goal.md](../designs/swarm-goal.md)，产品合同见 [批次 spec](../specs/2026-06-04-swarm-project-space-and-capability-batch.md)。
+
+| 能力 | 当前口径 | 关键文件 |
+|------|----------|---------|
+| `GoalContract.allowSwarm` | 默认 true；advance→goal 路径强制 false（防 token burn）；开启时以 dynamic-workflow scriptRuntime 为编排基底，复用 BudgetTracker / ConcurrencyGate / SerialWriteGate，不引入新并行运行时 | `src/main/agent/goalModeController.ts`、`src/shared/contract/appService.ts` |
+| 三层闸只在总体层 | goal 闸1/2/3 语义不变；子任务校验交给脚本 verification 阶段；不做子级 DAG / 子级闸（P4.2+ 再做） | `src/main/agent/goalModeController.ts` |
+| 预算双向打通 | swarm 子运行 token 经 `ToolResult.metadata.tokensSpent` 上报回灌 goal 预算；`SWARM_GOAL` 常量约束总预算分数与 advance 预算（200k token / 30 turn） | `src/main/agent/runtime/contextAssembly/deferredToolPreload.ts`、`src/shared/constants/agent.ts`（`SWARM_GOAL`） |
+| 闸2 / delivery critic 降级链 | powerful tier 无 key 时软评审/交付 critic 复用同一模型可用性降级链 | `src/main/agent/goalModeController.ts` |
+
+## 0.0.9 2026-06-03 Swarm 执行层护栏（P1-2 / P1-4）
+
+延续 0.0.3 取消级联契约，给 spawn 嵌套与跨 agent 协调补结构化失败语义和孤儿回收。无独立设计文档，as-built 见 [批次 spec](../specs/2026-06-04-swarm-project-space-and-capability-batch.md)。
+
+| 能力 | 当前口径 | 关键文件 |
+|------|----------|---------|
+| 结构化失败码 | NON_CASCADE 新增 `depth-limit` / `child-refusal` / `child-max-tokens` / `parent-gone`；`routeFailureCode()` 路由为 throw / degrade / retry / surface | `src/shared/contract/cancellation.ts`、`src/main/agent/subagentExecutorTypes.ts` |
+| spawn 深度截断 | `SPAWN_GUARD.MAX_DEPTH=1` / `MAX_AGENTS=6`，执行层 2 线防御（非工具黑名单）；越界注入 depth-limit prompt | `src/main/agent/multiagentTools/spawnAgent.ts`、`src/shared/constants/agent.ts`（`SPAWN_GUARD`） |
+| SharedContext 新鲜度 | `lastUpdated` 版本戳 + `isStale` 判定，避免读到过期共享态 | `src/main/agent/parallelAgentCoordinator.ts` |
+| Agent Inbox 桥接 | `peekUnifiedInbox()` 只读统一查询入口，非破坏（不碰 write/drain 路径） | `src/main/agent/agentInbox.ts`、`src/main/agent/spawnGuard.ts` |
+| 孤儿回收父探活 | 后台 detached 子代理每轮迭代探活父 run（`isParentRunAlive`），父已不在则自 abort（`parent-gone`）——结构化并发回收，非 heartbeat/WeakRef | `src/main/agent/orphanLiveness.ts`、`src/main/agent/subagentExecutor.ts` |
+
+## 0.0.10 2026-06-04 Swarm 协作可见性（P1-3）
+
+把多 agent 协作过程做成时间线讨论流，让用户看到子代理在"发现什么 / 决定什么 / 当前在干什么"。前端侧见 [frontend.md](./frontend.md)。
+
+- `SwarmContextUpdate`（`src/shared/contract/swarm.ts`）：`kind = finding | decision | status | result` + `agentId` / `role` / `content` / `key`（去重）/ `at`（ms epoch，源自 0.0.9 的 `lastUpdated` 版本戳）。
+- 发布：`SwarmEventEmitter.contextUpdate()` 发 `swarm:context:update` 事件；子代理 `STATUS:` / `DECISION:` 自报行经 `statusReport.ts` 解析喂入；discovery 事件映射为 finding。
+- 渲染：`stores/swarmStore.ts` 的 `buildTimelineEntry()` 映射到 eventLog；`DiscussionStream.tsx` 按 `kind` 给图标、决策高亮、相对时间；`SwarmInlineMonitor.tsx` 嵌入悬浮层，收起态显近 3 条、展开全时间线。
+
+关键文件：`src/main/agent/swarmEventPublisher.ts`、`src/main/agent/multiagentTools/statusReport.ts`、`src/renderer/components/features/swarm/DiscussionStream.tsx`。
+
+## 0.0.11 2026-06-03 角色主动性（role-proactivity，P0-1 下半）
+
+角色从被动工具升为主动协作者：按 cadence 或长任务事件醒来，查自己的产物历史，自主决定 advance/report/suggest/silence。设计见 [role-proactivity.md](../designs/role-proactivity.md)。
+
+| 能力 | 当前口径 | 关键文件 |
+|------|----------|---------|
+| 双触发入口 | cadence（启动 `syncCadenceJobs()` 注册 per-role cron，幂等 tag `role-cadence`）+ event（长任务 Stop hook，turn≥5 且未超日配额，经 `runFinalizer`） | `src/main/services/roleAssets/roleProactivity.ts`、`src/main/agent/runtime/runFinalizer.ts` |
+| 8 步 wakeRole 循环 | 日配额检查 → `instantiateRole` 注入 memory+history → 建 schedule 会话 → 双路执行（Electron orchestrator / headless cli bootstrap）→ 解析 `<decision>advance\|report\|suggest\|silence</decision>` → silence 归档/非 silence 推 `SESSION_LIST_UPDATED` → 写回 history | `src/main/services/roleAssets/roleProactivity.ts` |
+| 硬预算 | 每次醒来 15 turn、每角色每天 4 次（cadence + event 合并计数）；醒来会话标 `origin=role-cadence`，Stop hook 跳过此类会话防递归 | `src/shared/constants/memory.ts`（`ROLE_PROACTIVITY`）|
+| 配置分层 + 出厂默认 | 角色 frontmatter `proactivity-level` > `settings.roleAssets.proactivity.defaultLevel` > 常量；`RoleProactivityLevel = silent\|daily\|realtime`，**出厂默认 silent（opt-in）**；设置页角色面板露主动等级开关 | `src/shared/contract/roleAssets.ts`、`src/renderer/components/features/settings/tabs/RolesTab.tsx` |
+
+范围自限：只查角色自己参与的产物历史（P0-2 项目空间落地后升项目维度）；不接外部渠道（飞书等），只走 session 消息 + history append + （realtime）Electron Notification。
+
 ## 0.1 节点级 Checkpoint（断点恢复）
 
 多 agent DAG 执行中，网络中断或 token 耗尽会导致已完成节点工作白费。

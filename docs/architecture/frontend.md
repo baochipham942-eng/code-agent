@@ -413,6 +413,44 @@ ModelSwitcher（`StatusBar/ModelSwitcher.tsx` + `modelRuntime.ts`）过滤未配
 
 ---
 
+## 2026-06-03 ~ 06-04 增量 — Swarm 讨论流 + 项目 header + 能力产品化 + 定点反馈
+
+承接[多 Agent 协作批次](../specs/2026-06-04-swarm-project-space-and-capability-batch.md)的前端落点。
+
+### Swarm 协作可见性（讨论流，P1-3）
+
+把多 agent 协作过程做成时间线，让用户看到子代理"发现什么 / 决定什么 / 在干什么"。
+
+| 组件 | 文件 | 职责 |
+|------|------|------|
+| **DiscussionStream** | `features/swarm/DiscussionStream.tsx` | 时间线讨论流，按 `SwarmContextUpdate.kind`（finding/decision/status/result）给图标，决策高亮，相对时间；收起态显近 3 条、展开全时间线 |
+| **SwarmInlineMonitor** | `features/swarm/SwarmInlineMonitor.tsx` | 把 DiscussionStream 嵌入悬浮监控层 |
+| **swarmStore** | `stores/swarmStore.ts` | `buildTimelineEntry()` 把 `swarm:context:update` 事件映射进 eventLog |
+
+> ⚠️ `SwarmMonitor`（旧全屏面板）是死代码；可见性走 `SwarmInlineMonitor` 这条线。
+
+### 项目 header（项目空间 P0-2，D5/D6）
+
+`ProjectHeaderBar`（`renderer/.../ProjectHeaderBar.tsx`）在工作区顶部露当前项目：名称/状态、多 goal、入驻角色、跨 session 聚合产物。数据走 `domain:project` 的 `detail` / `artifacts` action；Workspace Preview 升项目维度（`renderer/utils/workspacePreview.ts` 的 `buildProjectArtifacts()` 跨 session 去重排序），不新增整页。
+
+### 能力产品化（P2-1 / P2-2）
+
+| 组件 | 文件 | 职责 |
+|------|------|------|
+| **RoleIcon** | `features/shared/RoleIcon.tsx` | 内置角色 curated lucide 图标查表（研究员→`Microscope`、数据分析师→`BarChart3`），无元数据回落 `UserCircle` |
+| **RolesTab** | `features/settings/tabs/RolesTab.tsx` | 角色按 `SkillCategory` 分组渲染 icon + 名称；并露主动等级开关（role-proactivity 配置入口）|
+| **SkillsInstalledTab** | `features/settings/tabs/SkillsInstalledTab.tsx` | 已安装内置技能 `groupBuiltinSkillsByCategory()` 按产物分类二次分组（复用既有七分类，不造 `SkillBundle`）|
+
+### 定点反馈（locality-feedback，Layer B）
+
+每面渲染产物加"点选→局部反馈"入口，反馈经 system prompt 的 `<live_preview_selection>` 块（Layer A 在主进程注入）触发模型自路由 `visual_edit`/`ppt_edit`/`excel_edit`。
+
+- **网页（Phase 1）**：`LivePreview/LivePreviewFrame.tsx` 选中条加内联留言框（占位"这里改成…"，Enter 提交），`sendPrompt` 经 `composerStore.buildContext()` 自动带选区（file/line）。
+- **PPT（Phase 2）**：`DesignPptPreview` 接入定点反馈栏，锚点编码进消息前缀（如 `[针对 deck.pptx 第 3 页]`），零扩 envelope。
+- **表格（Phase 3）**：`SpreadsheetBlock` 加 cell 点击 + filePath，单元格定点反馈。
+
+---
+
 ## 文件结构
 
 ```

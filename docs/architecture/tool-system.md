@@ -188,6 +188,14 @@ lazy stdio MCP server 不会在启动时全量拉起；ToolSearch 遇到相关 q
 
 对应展示路径见 [workbench.md](./workbench.md#46-semantic-tool-ui)。
 
+### 出站 MCP：只读任务状态 server（P3-A，2026-06-04）
+
+上面的 MCP 链路是 **入站**（Neo 作为 client 消费外部 MCP server 的工具）。P3-A 是 **出站**——Neo 自己起一个只读 MCP server，把任务/项目状态暴露给外部编排器（Coze / codeg 等）。它不进 native ToolModule registry，走独立 `src/main/mcp/mcpServer.ts` + `logBridge.ts`，与现有 `get_logs`/`get_status`/`screenshot` 等只读工具同源。
+
+- 新增三只读工具 `neo_list_tasks` / `neo_get_task_status` / `neo_list_projects`，只出状态枚举/进度计数/token-cost/`filesChangedCount`（计数不出路径），`includeContent` 默认 false。
+- 数据经 `TaskStatusProvider`（`src/main/mcp/taskStatusProvider.ts`）桥接，app 进程启动注册；web 路径（发行版）与 main 路径双注册幂等。
+- 完整工具清单与隐私边界见 [MCP_SERVER.md](../MCP_SERVER.md#41-只读任务项目状态p3-a2026-06-04)。延续 WS5 不变量：只读、绝不暴露控屏/写入/正文。
+
 ---
 
 ## 2026-05 Native ToolModule 迁移

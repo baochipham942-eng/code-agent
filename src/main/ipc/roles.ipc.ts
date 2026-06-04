@@ -17,6 +17,7 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc
 import type { RolePanelDetail, RolePanelEntry, RoleProactivityLevel } from '../../shared/contract/roleAssets';
 import {
   BUILTIN_ROLE_IDS,
+  getBuiltinRoleVisual,
   listPersistentRoles,
   listScopedMemories,
   loadRoleHistory,
@@ -77,12 +78,16 @@ async function handleList(): Promise<RolePanelEntry[]> {
     const source = agent
       ? (builtinRoleIdSet.has(roleId) ? 'builtin' : agent.source)
       : 'orphan';
+    // P2-1：预设角色回填 icon/category（用户自建角色缺省，前端兜底）
+    const visual = getBuiltinRoleVisual(roleId);
     entries.push({
       roleId,
       description: agent?.description ?? '',
       source,
       memoryCount: memories.length,
       lastWork: history.length > 0 ? history[history.length - 1] : null,
+      icon: visual?.icon,
+      category: visual?.category,
     });
   }
   return entries;

@@ -16,6 +16,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import type { SkillCategory } from '../../../shared/contract/skillRepository';
 import { getAgentsMdDir } from '../../config/configPaths';
 import { createLogger } from '../infra/logger';
 import { ensureRoleAssetDirs } from './roleAssetService';
@@ -26,11 +27,24 @@ const logger = createLogger('BuiltinRoles');
 // 角色定义
 // ----------------------------------------------------------------------------
 
+/** 预设角色视觉元数据（P2-1，与技能包共用 SkillCategory 分类体系） */
+export interface BuiltinRoleVisual {
+  /** lucide 图标名（curated，前端按名渲染） */
+  icon: string;
+  /** 产物分类（复用 7 类 SkillCategory 子集） */
+  category: SkillCategory;
+}
+
 export interface BuiltinRoleDefinition {
   /** 角色 ID = agents/<id>.md 文件名 = roles/<id>/ 目录名 */
   id: string;
   /** agents/<id>.md 的完整内容（frontmatter + system prompt） */
   agentMd: string;
+  /**
+   * 视觉化 metadata（P2-1）：随产品分发，不写入用户 agent 定义文件，
+   * 由 roles IPC 在构建 RolePanelEntry 时按 id 回填。
+   */
+  visual: BuiltinRoleVisual;
 }
 
 export const BUILTIN_ROLE_IDS = ['研究员', '数据分析师'] as const;
@@ -62,6 +76,7 @@ max-iterations: 20
 ## 输出格式
 调研报告包含：摘要（3 句以内）、关键发现（带来源）、证据清单、结论与建议。
 `,
+    visual: { icon: 'Microscope', category: 'research' },
   },
   {
     id: '数据分析师',
@@ -89,8 +104,19 @@ max-iterations: 20
 ## 输出格式
 分析报告包含：数据概览、关键指标、异常点、趋势判断、建议动作。
 `,
+    visual: { icon: 'BarChart3', category: 'data-analysis' },
   },
 ];
+
+/** 预设角色视觉 metadata 按 id 查表（P2-1：roles IPC 回填 RolePanelEntry 用） */
+const BUILTIN_ROLE_VISUAL_BY_ID = new Map<string, BuiltinRoleVisual>(
+  BUILTIN_ROLES.map((role) => [role.id, role.visual]),
+);
+
+/** 取预设角色视觉 metadata；非预设角色返回 undefined（前端兜底默认 icon + "其他"分类） */
+export function getBuiltinRoleVisual(roleId: string): BuiltinRoleVisual | undefined {
+  return BUILTIN_ROLE_VISUAL_BY_ID.get(roleId);
+}
 
 // ----------------------------------------------------------------------------
 // 安装（幂等）

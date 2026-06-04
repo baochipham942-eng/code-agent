@@ -13,7 +13,8 @@ import {
   X,
 } from 'lucide-react';
 import type { ParsedSkill } from '@shared/contract/agentSkill';
-import type { LocalSkillLibrary } from '@shared/contract/skillRepository';
+import type { LocalSkillLibrary, SkillCategory } from '@shared/contract/skillRepository';
+import { SKILL_CATEGORIES } from '@shared/constants/skillCatalog';
 import { Button, Input, Toggle } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
 
@@ -56,6 +57,47 @@ const GROUP_ORDER: Record<SkillGroupKind, number> = {
 
 function sortSkills(skills: ParsedSkill[]): ParsedSkill[] {
   return [...skills].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// ----------------------------------------------------------------------------
+// 内置组按产物分类二次分组（P2-2：复用 7 类 SkillCategory）
+// ----------------------------------------------------------------------------
+
+const UNCATEGORIZED_SKILL_KEY = '__uncategorized__';
+
+export interface SkillCategorySubGroup {
+  /** 分类 key：SkillCategory 或 UNCATEGORIZED_SKILL_KEY */
+  key: string;
+  label: string;
+  skills: ParsedSkill[];
+}
+
+/** 取 skill 的产物分类（来自 metadata.category，由 builtinSkills 回填） */
+function skillCategoryId(skill: ParsedSkill): SkillCategory | undefined {
+  const raw = skill.metadata?.category;
+  if (!raw) return undefined;
+  return SKILL_CATEGORIES.some((c) => c.id === raw) ? (raw as SkillCategory) : undefined;
+}
+
+/**
+ * 把内置 skill 按产物分类分组（纯函数，供 UI + 单测）。
+ * - 顺序跟随 SKILL_CATEGORIES，空分类不出现
+ * - 无 category 的内置 skill 统一归入末尾"其他"组
+ * - 组内 skill 按名排序（与来源组一致）
+ */
+export function groupBuiltinSkillsByCategory(skills: ParsedSkill[]): SkillCategorySubGroup[] {
+  const groups: SkillCategorySubGroup[] = [];
+  for (const meta of SKILL_CATEGORIES) {
+    const inCategory = skills.filter((s) => skillCategoryId(s) === meta.id);
+    if (inCategory.length > 0) {
+      groups.push({ key: meta.id, label: meta.label, skills: sortSkills(inCategory) });
+    }
+  }
+  const uncategorized = skills.filter((s) => !skillCategoryId(s));
+  if (uncategorized.length > 0) {
+    groups.push({ key: UNCATEGORIZED_SKILL_KEY, label: '其他', skills: sortSkills(uncategorized) });
+  }
+  return groups;
 }
 
 /**
@@ -358,9 +400,29 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
                   )}
                 </div>
 
-                {/* 组内 skill 行 */}
+                {/* 组内 skill 行：内置组按产物分类二次分组，其余组平铺 */}
                 {group.skills.length === 0 ? (
                   <p className="px-3 py-4 text-center text-xs text-zinc-500">该库中没有可用的 Skill</p>
+                ) : group.kind === 'builtin' ? (
+                  <div>
+                    {groupBuiltinSkillsByCategory(group.skills).map((sub) => (
+                      <div key={sub.key} data-skill-category={sub.key}>
+                        <div className="border-b border-zinc-800/60 bg-zinc-900/40 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                          {sub.label}（{sub.skills.length}）
+                        </div>
+                        <div className="divide-y divide-zinc-800/80">
+                          {sub.skills.map((skill) => (
+                            <SkillRow
+                              key={`${skill.source}:${skill.basePath || skill.name}`}
+                              skill={skill}
+                              onToggle={onToggleSkill}
+                              toggleDisabled={Boolean(actionLoading)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   <div className="divide-y divide-zinc-800/80">
                     {group.skills.map((skill) => (

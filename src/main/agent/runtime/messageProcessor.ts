@@ -31,8 +31,7 @@ import type { ToolExecutionEngine } from './toolExecutionEngine';
 import { generateMessageId } from '../../../shared/utils/id';
 import { getSessionManager } from '../../services';
 import { extractArtifacts } from '../artifactExtractor';
-import { runVerifyGate } from '../goalVerifyGate';
-import { runReviewGate } from '../goalReviewGate';
+import { handleGoalCompletionGate } from './goalCompletionGate';
 import {
   fingerprintToolCall,
   pushAndDetectStagnation,
@@ -572,86 +571,10 @@ export class MessageProcessor {
     const toolCalls = response.toolCalls ?? [];
     const requestedToolNames = toolCalls.map((toolCall) => toolCall.name).join(', ');
 
-    // Goal mode：拦截 attempt_completion —— 模型申请退出 → 跑闸1 确定性验证。
-    // 完成判定权在代码层：跑 verifyCommand 看退出码，0 才 markMet 收尾，否则把
-    // 真实失败输出注回让模型继续修。模型无法靠"自称完成"绕过验证（拒绝 Ralph）。
-    if (this.ctx.goalMode?.isPending()) {
-      const completionCall = toolCalls.find((tc) => tc.name === 'attempt_completion');
-      if (completionCall) {
-        const rawSummary = completionCall.arguments?.summary;
-        const summary = typeof rawSummary === 'string' ? rawSummary : '';
-        this.ctx.goalMode.requestCompletion(summary);
-
-        // 闸1（确定性）：仅当契约带 verifyCommand 时跑；纯软目标（只给 review）→ 跳过直接进闸2。
-        const verifyCommand = this.ctx.goalMode.getVerifyCommand();
-        if (verifyCommand) {
-          const gate = await runVerifyGate(verifyCommand, this.ctx.workingDirectory);
-          // 观测事件：闸1 判定结果（UI 用）
-          this.ctx.onEvent({
-            type: 'goal_gate',
-            data: { gate: 1, pass: gate.pass, exitCode: gate.exitCode, timedOut: gate.timedOut },
-          });
-          if (!gate.pass) {
-            this.ctx.goalMode.clearCompletionRequest();
-            this.contextAssembly.injectSystemMessage(
-              [
-                '<goal-verify-failed>',
-                `验证命令 \`${verifyCommand}\` 未通过（exit ${gate.exitCode ?? 'null'}${gate.timedOut ? '，超时' : ''}）。`,
-                '目标尚未达成。请根据下面的失败输出继续修复，修好后再调 attempt_completion。',
-                '--- 验证输出（截断）---',
-                gate.output || '(无输出)',
-                '</goal-verify-failed>',
-              ].join('\n'),
-            );
-            return 'continue';
-          }
-        }
-
-        // 闸2（软评审）：闸1 pass/跳过后，若契约带 reviewCondition，派 Reviewer 子代理（强模型）
-        // 评无法落退出码的软条件。fail → 注理由 + continue 让模型继续改。
-        const reviewCondition = this.ctx.goalMode.getReviewCondition();
-        if (reviewCondition) {
-          const review = await runReviewGate(reviewCondition, this.ctx.goalMode.getGoal(), {
-            workingDirectory: this.ctx.workingDirectory,
-            sessionId: this.ctx.sessionId,
-            abortSignal: this.ctx.runAbortController?.signal,
-            hookManager: this.ctx.hookManager,
-            // 可用性降级链：powerful tier 没配 key 时，闸2 降级用主 run 的模型
-            parentModelConfig: this.ctx.modelConfig,
-          });
-          // 观测事件：闸2 判定结果（UI 用）
-          this.ctx.onEvent({
-            type: 'goal_gate',
-            data: { gate: 2, pass: review.pass, reason: review.reason },
-          });
-          if (!review.pass) {
-            this.ctx.goalMode.clearCompletionRequest();
-            this.contextAssembly.injectSystemMessage(
-              [
-                '<goal-review-failed>',
-                `软评审条件未通过：${reviewCondition}`,
-                '目标尚未达成。请根据下面的评审意见继续改进，改好后再调 attempt_completion。',
-                '--- 评审意见（截断）---',
-                review.reason,
-                '</goal-review-failed>',
-              ].join('\n'),
-            );
-            return 'continue';
-          }
-        }
-
-        // 闸1（或跳过）+ 闸2（或跳过）全过 → 达成。
-        this.ctx.goalMode.markMet();
-        const passedGates = [
-          verifyCommand ? `验证命令 \`${verifyCommand}\` 退出码 0` : null,
-          reviewCondition ? '软评审通过' : null,
-        ].filter(Boolean).join('、');
-        this.contextAssembly.injectSystemMessage(
-          `<goal-verified>\n${passedGates}，目标达成，结束本次 goal。\n</goal-verified>`,
-        );
-        return 'break';
-      }
-    }
+    // Goal mode：拦截 attempt_completion → 双闸验证（闸1 确定性 verifyCommand + 闸2 软评审 reviewCondition）。
+    // 完成判定权在代码层，模型无法靠"自称完成"绕过（拒绝 Ralph）。详见 goalCompletionGate。
+    const goalGateResult = await handleGoalCompletionGate(this.ctx, this.contextAssembly, toolCalls);
+    if (goalGateResult) return goalGateResult;
 
     const activeRepairGuard = this.ctx.artifactRepairGuard;
     if (activeRepairGuard && await maybeClearCompletedArtifactRepairGuardBeforeAdmission(

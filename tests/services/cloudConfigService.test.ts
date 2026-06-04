@@ -86,6 +86,11 @@ describe('CloudConfigService', () => {
       expect(typeof rule).toBe('string');
     });
 
+    it('getModelRouting 未配置时返回 undefined（消费方据此降级硬编码链）', () => {
+      const service = getCloudConfigService();
+      expect(service.getModelRouting()).toBeUndefined();
+    });
+
     it('getSkills 应该返回数组', () => {
       const service = getCloudConfigService();
       const skills = service.getSkills();

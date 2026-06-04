@@ -27,6 +27,10 @@ export interface CloudConfigPayload {
     categories: unknown[];
     servers: unknown[];
   };
+  /** 模型路由 override（运营下发；缺省/畸形时客户端降级硬编码 PROVIDER_FALLBACK_CHAIN） */
+  modelRouting?: {
+    fallbackChain?: Record<string, Array<{ provider: string; model: string }>>;
+  };
   entitlement?: {
     status: 'active' | 'trial' | 'expired' | 'revoked';
     plan: string;

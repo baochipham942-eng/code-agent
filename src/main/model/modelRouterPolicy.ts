@@ -19,6 +19,55 @@ export interface ProviderFallbackTarget {
   model: string;
 }
 
+// ============================================================================
+// 云端可调降级链（控制面 override）
+// ============================================================================
+// CloudConfig 加载后可注入 fallbackChain override，让运营改 Vercel env 即可换
+// 模型/调降级链，无需发版。兜底铁律：override 缺失 / 字段畸形 / 该 provider 无
+// 合法链时，一律降级到硬编码 PROVIDER_FALLBACK_CHAIN —— 坏配置绝不能让请求全挂。
+export interface ModelRoutingOverride {
+  fallbackChain?: Record<string, ProviderFallbackTarget[]>;
+}
+
+let modelRoutingOverrideChains: Record<string, ProviderFallbackTarget[]> = {};
+
+function normalizeOverrideChain(value: unknown): ProviderFallbackTarget[] | null {
+  if (!Array.isArray(value)) return null;
+  const cleaned = value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const obj = entry as Record<string, unknown>;
+      if (typeof obj.provider !== 'string' || obj.provider.length === 0) return null;
+      if (typeof obj.model !== 'string' || obj.model.length === 0) return null;
+      return { provider: obj.provider, model: obj.model } satisfies ProviderFallbackTarget;
+    })
+    .filter((entry): entry is ProviderFallbackTarget => entry !== null);
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+export function setModelRoutingOverride(override: ModelRoutingOverride | null | undefined): void {
+  const next: Record<string, ProviderFallbackTarget[]> = {};
+  if (override && typeof override === 'object'
+    && override.fallbackChain && typeof override.fallbackChain === 'object') {
+    for (const [provider, chain] of Object.entries(override.fallbackChain)) {
+      const normalized = normalizeOverrideChain(chain);
+      if (normalized) next[provider] = normalized;
+    }
+  }
+  modelRoutingOverrideChains = next;
+}
+
+export function resetModelRoutingOverride(): void {
+  modelRoutingOverrideChains = {};
+}
+
+// 单一真相源：override 优先、缺失/畸形降级硬编码。路由各处统一走这里。
+export function resolveBaseFallbackChain(provider: string): ProviderFallbackTarget[] {
+  const override = modelRoutingOverrideChains[provider];
+  if (override && override.length > 0) return override;
+  return PROVIDER_FALLBACK_CHAIN[provider] ?? [];
+}
+
 export const PERSISTENT_PROVIDER_ERROR_PATTERN =
   /401|403|unauthorized|forbidden|incorrect api key|invalid[_ ]api[_ ]key|model_not_allowed|subscription plan does not include access|insufficient balance|余额不足/i;
 
@@ -56,7 +105,7 @@ export function getFallbackChainForRequest(
   messages: ModelMessage[],
   provider: ModelProvider,
 ): ProviderFallbackTarget[] {
-  const chain = PROVIDER_FALLBACK_CHAIN[provider];
+  const chain = resolveBaseFallbackChain(provider);
   if (!chain || chain.length === 0) return [];
   if (!isArtifactLikeRequest(messages)) return chain;
 

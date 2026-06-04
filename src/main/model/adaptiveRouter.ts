@@ -9,9 +9,9 @@ import {
   DEFAULT_MODELS,
   MODEL_MAX_TOKENS,
   getContextWindow,
-  PROVIDER_FALLBACK_CHAIN,
   PROVIDER_REGISTRY,
 } from '../../shared/constants';
+import { resolveBaseFallbackChain } from './modelRouterPolicy';
 
 const logger = createLogger('AdaptiveRouter');
 
@@ -172,7 +172,7 @@ export class AdaptiveRouter {
 
   private findLargerContextModel(context: FallbackContext): FallbackResult | null {
     const currentWindow = getContextWindow(context.currentModel);
-    const chain = PROVIDER_FALLBACK_CHAIN[context.currentProvider] || [];
+    const chain = resolveBaseFallbackChain(context.currentProvider);
     for (const { provider, model } of chain) {
       if (provider === context.currentProvider) continue;
       const window = getContextWindow(model);
@@ -204,7 +204,7 @@ export class AdaptiveRouter {
   }
 
   private findAlternateProvider(context: FallbackContext): FallbackResult | null {
-    const chain = PROVIDER_FALLBACK_CHAIN[context.currentProvider] || [];
+    const chain = resolveBaseFallbackChain(context.currentProvider);
     for (const { provider, model } of chain) {
       if (provider === context.currentProvider) continue;
       return {

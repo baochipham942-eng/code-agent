@@ -56,6 +56,12 @@ export interface ReleasePolicy {
   sha256?: string;
 }
 
+// 模型路由 override：控制面下发后可改 Vercel env 即换模型/调降级链，无需发版。
+// 缺省 / 畸形时消费方（modelRouterPolicy.resolveBaseFallbackChain）降级硬编码 PROVIDER_FALLBACK_CHAIN。
+export interface ModelRoutingConfig {
+  fallbackChain?: Record<string, Array<{ provider: string; model: string }>>;
+}
+
 // MCP Server 配置
 export interface MCPServerCloudConfig {
   id: string;
@@ -88,6 +94,8 @@ export interface CloudConfig {
   entitlement?: EntitlementPolicy;
   killSwitches?: KillSwitchPolicy;
   release?: ReleasePolicy;
+  /** 模型路由 override（运营下发；缺省/畸形时降级硬编码 PROVIDER_FALLBACK_CHAIN） */
+  modelRouting?: ModelRoutingConfig;
   /** Skill 推荐目录（运营下发；缺省时客户端用内置兜底） */
   skillCatalog?: SkillCatalogPayload;
   /** MCP 推荐目录（运营下发；缺省时客户端用内置兜底） */

@@ -13,7 +13,9 @@ import {
   type EntitlementPolicy,
   type KillSwitchPolicy,
   type ReleasePolicy,
+  type ModelRoutingConfig,
 } from './builtinConfig';
+import { setModelRoutingOverride } from '../../model/modelRouterPolicy';
 import { createLogger } from '../infra/logger';
 import { CACHE, CLOUD, CLOUD_ENDPOINTS } from '../../../shared/constants';
 import {
@@ -134,6 +136,8 @@ export class CloudConfigService {
       this.cacheExpiry = Date.now() + CACHE.CONFIG_TTL;
       this.isInitialized = true;
       this.lastError = error instanceof Error ? error.message : 'Unknown error';
+      // builtin 无 modelRouting → 清空 override，路由降级硬编码
+      setModelRoutingOverride(this.cache.modelRouting);
     }
   }
 
@@ -260,6 +264,10 @@ export class CloudConfigService {
 
   getReleasePolicy(): ReleasePolicy {
     return this.getConfig().release ?? getBuiltinConfig().release!;
+  }
+
+  getModelRouting(): ModelRoutingConfig | undefined {
+    return this.getConfig().modelRouting;
   }
 
   isGlobalKillSwitchActive(): boolean {
@@ -494,6 +502,8 @@ export class CloudConfigService {
       this.cache = config;
       this.cacheExpiry = Date.now() + CACHE.CONFIG_TTL;
       this.etag = response.headers.get('ETag');
+      // 同步模型路由 override（缺省/畸形会在 setter 内降级硬编码 PROVIDER_FALLBACK_CHAIN）
+      setModelRoutingOverride(config.modelRouting);
 
       logger.info(`Fetched trusted config v${config.version}`, {
         expiresAt: this.lastTrust.expiresAt || 'not set',

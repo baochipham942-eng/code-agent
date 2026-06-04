@@ -30,6 +30,7 @@ import {
   getAgentMaxBudget,
 } from '../agentDefinition';
 import { SUBAGENT_SUFFIXES, type CoreAgentId, isCoreAgent } from '../hybrid/coreAgents';
+import { SWARM_STATUS_REPORT_SUFFIX, parseStatusReport } from './statusReport';
 import {
   SubagentContextBuilder,
   getAgentContextLevel,
@@ -648,6 +649,8 @@ async function executeParallelAgents(
         systemPrompt += suffix;
       }
     }
+    // 协作可见性（P1-3）：所有并行子代理统一自报 STATUS/DECISION，喂给讨论流
+    systemPrompt += SWARM_STATUS_REPORT_SUFFIX;
 
     return {
       id: taskId,
@@ -773,6 +776,16 @@ async function executeParallelAgents(
     if (evt.result.success) {
       emitter.agentCompleted(evt.taskId, evt.result.output);
       coordSession?.complete(evt.taskId, evt.result.output ?? '');
+      // 协作可见性（P1-3）：解析子代理自报的人话状态 / 决策 → 讨论流
+      const report = parseStatusReport(evt.result.output ?? '');
+      const reportRole = tasks.find((t) => t.id === evt.taskId)?.role;
+      const reportAt = Date.now();
+      if (report.status) {
+        emitter.contextUpdate({ kind: 'status', agentId: evt.taskId, role: reportRole, content: report.status, at: reportAt });
+      }
+      if (report.decision) {
+        emitter.contextUpdate({ kind: 'decision', agentId: evt.taskId, role: reportRole, content: report.decision, at: reportAt });
+      }
     } else {
       const errorMessage = evt.result.error || 'Unknown error';
       if (isCancelledTaskError(errorMessage)) {
@@ -800,10 +813,25 @@ async function executeParallelAgents(
     coordSession?.fail(evt.taskId, evt.error);
   };
 
+  // 协作可见性（P1-3）：SharedContext 发现（discovery）桥接成讨论流事件
+  const onDiscovery = (evt: { taskId?: string; role?: string; finding?: string; key?: string; value?: unknown; at?: number }) => {
+    const content = evt.finding ?? (typeof evt.value === 'string' ? evt.value : evt.key);
+    if (!content) return;
+    emitter.contextUpdate({
+      kind: 'finding',
+      agentId: evt.taskId,
+      role: evt.role ?? (evt.taskId ? tasks.find((t) => t.id === evt.taskId)?.role : undefined),
+      content,
+      key: evt.key,
+      at: evt.at ?? Date.now(),
+    });
+  };
+
   coordinator.on('task:start', onTaskStart);
   coordinator.on('task:progress', onTaskProgress);
   coordinator.on('task:complete', onTaskComplete);
   coordinator.on('task:error', onTaskError);
+  coordinator.on('discovery', onDiscovery);
 
   const onRunAbort = () => coordinator.abortAllRunning('run_cancelled');
   if (context.abortSignal?.aborted) {
@@ -950,6 +978,7 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
     coordinator.off('task:progress', onTaskProgress);
     coordinator.off('task:complete', onTaskComplete);
     coordinator.off('task:error', onTaskError);
+    coordinator.off('discovery', onDiscovery);
     context.abortSignal?.removeEventListener('abort', onRunAbort);
   }
 }

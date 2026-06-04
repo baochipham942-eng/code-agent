@@ -10,6 +10,7 @@ import type {
   SwarmVerificationResult,
   SwarmAggregation,
   SwarmLaunchRequest,
+  SwarmContextUpdateKind,
 } from '@shared/contract/swarm';
 import type { CompletedAgentRun } from '@shared/contract/agentHistory';
 
@@ -51,6 +52,10 @@ export interface SwarmTimelineEvent {
   summary: string;
   tone: 'neutral' | 'success' | 'warning' | 'error';
   agentId?: string;
+  /** SharedContext 变更类型（讨论流分类用，P1-3） */
+  contextKind?: SwarmContextUpdateKind;
+  /** 决策点高亮（P1-3）：agent 关键方案选择 / 分歧，渲染时突出显示 */
+  highlight?: boolean;
 }
 
 export interface SwarmRunSnapshot {
@@ -619,6 +624,37 @@ function buildTimelineEntry(event: SwarmEvent, agents: SwarmAgentState[]): Swarm
         summary: '任务被中止',
         tone: 'warning',
       };
+    case 'swarm:context:update': {
+      // SharedContext 协作过程 → 讨论流（P1-3）
+      const update = event.data.contextUpdate;
+      const who = update?.role || agentName || 'Agent';
+      const kind: SwarmContextUpdateKind = update?.kind ?? 'status';
+      const titleByKind: Record<SwarmContextUpdateKind, string> = {
+        finding: `${who} 发现`,
+        decision: `${who} 决策`,
+        status: `${who} 进展`,
+        result: `${who} 交付`,
+      };
+      const toneByKind: Record<SwarmContextUpdateKind, SwarmTimelineEvent['tone']> = {
+        finding: 'neutral',
+        decision: 'warning',
+        status: 'neutral',
+        result: 'success',
+      };
+      return {
+        id: `evt-${event.timestamp}-${event.type}-${kind}-${update?.key ?? agentId ?? 'ctx'}`,
+        sessionId,
+        runId,
+        type: event.type,
+        timestamp: event.timestamp,
+        title: titleByKind[kind],
+        summary: update?.content || '',
+        tone: toneByKind[kind],
+        agentId: update?.agentId ?? agentId,
+        contextKind: kind,
+        highlight: kind === 'decision',
+      };
+    }
     default:
       return null;
   }

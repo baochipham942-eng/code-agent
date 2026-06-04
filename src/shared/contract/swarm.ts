@@ -138,7 +138,32 @@ export type SwarmEventType =
   | 'swarm:agent:plan_review'     // plan 审批请求
   | 'swarm:agent:plan_approved'   // plan 通过
   | 'swarm:agent:plan_rejected'   // plan 驳回
-  | 'swarm:user:message';         // 用户直接消息
+  | 'swarm:user:message'          // 用户直接消息
+  | 'swarm:context:update';       // SharedContext 协作过程（发现/决策/人话状态）→ 讨论流
+
+/**
+ * SharedContext 协作过程的一条变更，用于 SwarmMonitor「讨论流」渲染（P1-3）。
+ * - `finding`：子代理产出的发现（coordinator `discovery` 事件桥接而来）
+ * - `decision`：关键方案选择 / agent 分歧（子代理自报，渲染时高亮）
+ * - `status`：子代理自报的一句人话状态（"Planning completed. No product code modified."）
+ * - `result`：result passing（一个 agent 的产出被传递给下游）
+ * `at` 取自 SharedContext.lastUpdated（#213 版本戳），用于展示「X 分钟前更新」。
+ */
+export type SwarmContextUpdateKind = 'finding' | 'decision' | 'status' | 'result';
+
+export interface SwarmContextUpdate {
+  kind: SwarmContextUpdateKind;
+  /** 产出该条目的子代理 id（对应 SwarmAgentState.id），可空（系统级条目） */
+  agentId?: string;
+  /** 子代理角色名，便于无 agentState 时也能显示「研究员」而非时间戳 id */
+  role?: string;
+  /** 人话内容 */
+  content: string;
+  /** SharedContext 中的 key（finding/decision 的键），用于去重展示 */
+  key?: string;
+  /** 最后更新时间戳（ms epoch），取自 SharedContext.lastUpdated */
+  at: number;
+}
 
 /**
  * 验证检查结果（用于 Swarm 验证步骤）
@@ -201,5 +226,7 @@ export interface SwarmEvent {
       status?: 'pending' | 'approved' | 'rejected';
       feedback?: string;
     };
+    /** SharedContext 协作过程变更（P1-3 讨论流） */
+    contextUpdate?: SwarmContextUpdate;
   };
 }

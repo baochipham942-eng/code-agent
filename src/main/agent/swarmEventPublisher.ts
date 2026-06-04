@@ -16,6 +16,7 @@ import type {
   SwarmAgentContextSnapshot,
   SwarmAggregation,
   SwarmLaunchRequest,
+  SwarmContextUpdate,
 } from '../../shared/contract/swarm';
 import { getEventBus } from '../services/eventing/bus';
 
@@ -286,6 +287,22 @@ export class SwarmEventEmitter {
       timestamp: Date.now(),
       data: {
         message: { from, to, content, messageType },
+      },
+    });
+  }
+
+  /**
+   * SharedContext 协作过程变更（P1-3 讨论流）：发现 / 决策 / 人话状态 / result passing。
+   * 事件 timestamp 复用 update.at（SharedContext.lastUpdated 版本戳），保证讨论流时序
+   * 与底层数据新鲜度一致。
+   */
+  contextUpdate(update: SwarmContextUpdate): void {
+    this.publish({
+      type: 'swarm:context:update',
+      timestamp: update.at,
+      data: {
+        agentId: update.agentId,
+        contextUpdate: update,
       },
     });
   }

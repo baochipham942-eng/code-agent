@@ -475,6 +475,64 @@ describe('swarmStore', () => {
     });
   });
 
+  describe('discussion stream (context:update)', () => {
+    it('finding/status/decision 各产出一条 eventLog，决策点高亮且角色名落到标题', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 1000, 'session-1', 'run-1'));
+
+      store.handleEvent(
+        evt('swarm:context:update', {
+          agentId: 'agent_researcher_0',
+          contextUpdate: { kind: 'finding', agentId: 'agent_researcher_0', role: '研究员', content: '发现接口缺分页', at: 1100 },
+        }, 1100, 'session-1', 'run-1'),
+      );
+      store.handleEvent(
+        evt('swarm:context:update', {
+          agentId: 'agent_researcher_0',
+          contextUpdate: { kind: 'status', agentId: 'agent_researcher_0', role: '研究员', content: '调研完成，未改产品代码', at: 1200 },
+        }, 1200, 'session-1', 'run-1'),
+      );
+      store.handleEvent(
+        evt('swarm:context:update', {
+          agentId: 'agent_architect_1',
+          contextUpdate: { kind: 'decision', agentId: 'agent_architect_1', role: '架构师', content: '采用服务端聚合方案', at: 1300 },
+        }, 1300, 'session-1', 'run-1'),
+      );
+
+      const log = useSwarmStore.getState().eventLog.filter((e) => e.type === 'swarm:context:update');
+      expect(log).toHaveLength(3);
+
+      const finding = log.find((e) => e.contextKind === 'finding');
+      expect(finding?.title).toBe('研究员 发现');
+      expect(finding?.summary).toBe('发现接口缺分页');
+      expect(finding?.highlight).toBeFalsy();
+
+      const status = log.find((e) => e.contextKind === 'status');
+      expect(status?.title).toBe('研究员 进展');
+
+      const decision = log.find((e) => e.contextKind === 'decision');
+      expect(decision?.title).toBe('架构师 决策');
+      expect(decision?.highlight).toBe(true);
+      expect(decision?.tone).toBe('warning');
+    });
+
+    it('context:update 复用 update.role，无 agentState 也不退化成时间戳 id', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 1000, 'session-1', 'run-1'));
+      store.handleEvent(
+        evt('swarm:context:update', {
+          agentId: 'agent_worker_3',
+          contextUpdate: { kind: 'result', agentId: 'agent_worker_3', role: '数据分析师', content: '产出图表 3 张', at: 1400 },
+        }, 1400, 'session-1', 'run-1'),
+      );
+
+      const entry = useSwarmStore.getState().eventLog.find((e) => e.contextKind === 'result');
+      expect(entry?.title).toBe('数据分析师 交付');
+      expect(entry?.tone).toBe('success');
+      expect(entry?.title).not.toContain('agent_worker_3');
+    });
+  });
+
   describe('reset', () => {
     it('reset 清空所有字段', () => {
       const store = useSwarmStore.getState();

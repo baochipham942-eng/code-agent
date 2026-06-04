@@ -114,6 +114,7 @@ export function DiscussionStream({ previewCount = 3 }: DiscussionStreamProps) {
     <div className="border-t border-zinc-700/40" data-testid="discussion-stream">
       <button
         type="button"
+        data-testid="discussion-stream-toggle"
         onClick={() => setExpanded((v) => !v)}
         className="w-full flex items-center gap-1.5 px-3 py-1.5 hover:bg-zinc-800/40 transition-colors"
         title={expanded ? '折叠讨论流' : '展开完整讨论流'}

@@ -197,11 +197,11 @@ function PreviewListItem({
       }`}
       title={item.file?.path || item.title}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-start gap-2">
         <KindIcon kind={item.kind} />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-xs font-medium text-zinc-100">{item.title}</div>
-          <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-zinc-500">
+          <div className="line-clamp-2 break-words text-xs font-medium leading-snug text-zinc-100">{item.title}</div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-zinc-500">
             <span>{kindLabel(item.kind)}</span>
             {item.subtitle && <span className="truncate">· {item.subtitle}</span>}
           </div>
@@ -214,7 +214,7 @@ function PreviewListItem({
             </div>
           )}
         </div>
-        <span className={`rounded border px-1.5 py-0.5 text-[10px] ${statusClass(item.status)}`}>
+        <span className={`mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${statusClass(item.status)}`}>
           {item.status}
         </span>
       </div>
@@ -640,13 +640,13 @@ export const WorkspacePreviewPanel: React.FC = () => {
           </div>
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(136px,34%)_minmax(0,1fr)]">
-          <div className="min-h-0 overflow-y-auto border-r border-white/[0.06] p-3">
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="shrink-0 border-b border-white/[0.06] p-3">
             <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-zinc-500">
               <span>Files</span>
               <span>{items.length}</span>
             </div>
-            <div className="space-y-2">
+            <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
               {items.map((item) => (
                 <PreviewListItem
                   key={item.id}
@@ -657,7 +657,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
               ))}
             </div>
           </div>
-          <div className="min-h-0 overflow-y-auto p-4">
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
             {selected && (
               <div className="space-y-3">
                 <div className="flex items-start gap-2">

@@ -39,6 +39,15 @@ const ENV_KEY_BY_PROVIDER: Record<string, string> = {
   longcat: 'LONGCAT_API_KEY',
 };
 
+function normalizeApiKey(value?: string): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
 function modelInfoOf(config: ModelConfig) {
   const reg = PROVIDER_REGISTRY[config.provider];
   return {
@@ -126,21 +135,22 @@ export function resolveProviderApiKey(config: ModelConfig, opts: ResolveApiKeyOp
 
   // vendor 专用官方 key 始终最高优先（不依赖 config.apiKey 是否可信）
   const officialKey = isZhipuFree(config)
-    ? process.env.ZHIPU_OFFICIAL_API_KEY
+    ? normalizeApiKey(process.env.ZHIPU_OFFICIAL_API_KEY)
     : isKimiK25(config)
-      ? process.env.KIMI_K25_API_KEY
+      ? normalizeApiKey(process.env.KIMI_K25_API_KEY)
       : undefined;
   if (officialKey) return officialKey;
 
   const envKey = ENV_KEY_BY_PROVIDER[config.provider];
-  const envVal = envKey ? process.env[envKey] : undefined;
+  const envVal = normalizeApiKey(envKey ? process.env[envKey] : undefined);
+  const configKey = normalizeApiKey(config.apiKey);
 
   if (trustConfigKey) {
     // 主 loop：config.apiKey 已由 modelRouter 按 provider 注入，可信。
-    return config.apiKey || envVal || '';
+    return configKey || envVal || '';
   }
 
   // 子代理：config.apiKey 可能是父代理别家 provider 的 key，降为最后兜底。
-  const serviceKey = getConfigService().getApiKey(config.provider);
-  return serviceKey || envVal || config.apiKey || '';
+  const serviceKey = normalizeApiKey(getConfigService().getApiKey(config.provider));
+  return serviceKey || envVal || configKey || '';
 }

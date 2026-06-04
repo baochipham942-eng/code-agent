@@ -21,6 +21,15 @@ describe('CLIConfigService env api key mapping', () => {
     expect(service.getApiKey('xiaomi')).toBe('xiaomi-test-key');
   });
 
+  it('strips surrounding quotes from env api keys copied from .env backups', async () => {
+    process.env.XIAOMI_API_KEY = '"xiaomi-test-key"';
+
+    const { getCLIConfigService } = await import('../../../src/cli/config');
+    const service = getCLIConfigService();
+
+    expect(service.getApiKey('xiaomi')).toBe('xiaomi-test-key');
+  });
+
   it('prefers MOONSHOT_API_KEY and falls back to KIMI_K25_API_KEY', async () => {
     process.env.MOONSHOT_API_KEY = '';
     process.env.KIMI_K25_API_KEY = 'kimi-fallback-key';

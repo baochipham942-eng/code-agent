@@ -253,7 +253,7 @@ export const ProjectHeaderBar: React.FC = () => {
 
       {/* 摘要行（折叠时） */}
       {!expanded && (
-        <div className="mt-1 flex items-center gap-3 pl-6 text-[11px] text-zinc-500">
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 pl-6 text-[11px] text-zinc-500">
           <span className="flex items-center gap-1"><Target className="h-3 w-3" />{detail.goals.filter((g) => g.status === 'active').length} 目标</span>
           <span>{detail.roles.length} 角色</span>
           <span>{artifacts.length} 产物</span>
@@ -262,7 +262,7 @@ export const ProjectHeaderBar: React.FC = () => {
       )}
 
       {expanded && (
-        <div className="mt-2 space-y-3 pl-6">
+        <div className="mt-2 space-y-3 pl-5 pr-1">
           {/* 目标 */}
           <section>
             <div className="mb-1 flex items-center justify-between">
@@ -364,7 +364,7 @@ export const ProjectHeaderBar: React.FC = () => {
                     <li key={art.id} className="flex items-center gap-2 text-zinc-300">
                       <Icon className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
                       <span className="min-w-0 flex-1 truncate">{art.title || art.kind}</span>
-                      {art.sessionTitle && <span className="shrink-0 truncate text-[10px] text-zinc-600">{art.sessionTitle}</span>}
+                      {art.sessionTitle && <span className="max-w-[96px] shrink-0 truncate text-[10px] text-zinc-600">{art.sessionTitle}</span>}
                     </li>
                   );
                 })}

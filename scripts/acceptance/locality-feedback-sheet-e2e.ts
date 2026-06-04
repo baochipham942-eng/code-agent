@@ -12,17 +12,13 @@
 //   env -u HTTPS_PROXY -u HTTP_PROXY node .lfb-sheet.cjs
 // ============================================================================
 
-import { mkdtempSync, copyFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
-import { initializeCLIServices } from '../../src/cli/bootstrap';
-import { resolveSessionDefaultModelConfig } from '../../src/main/services/core/sessionDefaults';
-import { StandaloneAgentAdapter } from '../../src/main/testing/agentAdapter';
-import { buildLocalityFeedbackMessage } from '../../src/shared/livePreview/localityFeedback';
 
-function loadEnvIntoProcess(): void {
+function loadEnvIntoProcess(realHome = homedir()): void {
   try {
-    const envPath = join(homedir(), '.code-agent', '.env');
+    const envPath = join(realHome, '.code-agent', '.env');
     for (const raw of readFileSync(envPath, 'utf8').split('\n')) {
       const line = raw.trim();
       if (!line || line.startsWith('#')) continue;
@@ -36,9 +32,20 @@ function loadEnvIntoProcess(): void {
   } catch { /* optional */ }
 }
 
+function prepareIsolatedHome(): { fakeHome: string; dataDir: string } {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'lfb-sheet-home-'));
+  const dataDir = join(fakeHome, '.code-agent');
+  mkdirSync(dataDir, { recursive: true });
+  process.env.HOME = fakeHome;
+  process.env.CODE_AGENT_HOME = fakeHome;
+  process.env.CODE_AGENT_DATA_DIR = dataDir;
+  process.env.CODE_AGENT_E2E = '1';
+  return { fakeHome, dataDir };
+}
+
 async function readCell(xlsx: string, cell: string): Promise<unknown> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const ExcelJS = require('exceljs');
+  const mod = await import('exceljs') as typeof import('exceljs') & { default?: typeof import('exceljs') };
+  const ExcelJS = mod.default ?? mod;
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.readFile(xlsx);
   const ws = wb.worksheets[0];
@@ -47,11 +54,18 @@ async function readCell(xlsx: string, cell: string): Promise<unknown> {
 }
 
 async function main(): Promise<void> {
-  loadEnvIntoProcess();
+  const realHome = process.env.HOME || homedir();
+  loadEnvIntoProcess(realHome);
+  const isolated = prepareIsolatedHome();
+  console.log(`=== isolated HOME: ${isolated.fakeHome} ===`);
   delete process.env.HTTPS_PROXY; delete process.env.HTTP_PROXY;
   delete process.env.https_proxy; delete process.env.http_proxy;
 
   console.log('=== initializeCLIServices ===');
+  const { initializeCLIServices } = await import('../../src/cli/bootstrap');
+  const { resolveSessionDefaultModelConfig } = await import('../../src/main/services/core/sessionDefaults');
+  const { StandaloneAgentAdapter } = await import('../../src/main/testing/agentAdapter');
+  const { buildLocalityFeedbackMessage } = await import('../../src/shared/livePreview/localityFeedback');
   await initializeCLIServices();
   const mc = resolveSessionDefaultModelConfig({ provider: 'xiaomi', model: 'mimo-v2.5-pro' });
   console.log('  xiaomi(mimo) apiKey:', mc.apiKey ? 'present ✓' : 'MISSING ✗');
@@ -109,6 +123,7 @@ async function main(): Promise<void> {
   console.log('  [1] 模型调用了 DocEdit:', docCalls.length > 0);
   console.log(`  [2] 命中 xlsx 路径 + 单元格 ${TARGET_CELL}:`, hitTarget);
   console.log(`  [3] ${TARGET_CELL} 真改成 ${NEW_VALUE}:`, cellChanged);
+  rmSync(isolated.fakeHome, { recursive: true, force: true });
   process.exit(pass ? 0 : 1);
 }
 

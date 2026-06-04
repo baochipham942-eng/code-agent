@@ -13,17 +13,13 @@
 //   env -u HTTPS_PROXY -u HTTP_PROXY node .lfb-ppt.cjs
 // ============================================================================
 
-import { mkdtempSync, copyFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
-import { initializeCLIServices } from '../../src/cli/bootstrap';
-import { getConfigService } from '../../src/main/services/core/configService';
-import { resolveSessionDefaultModelConfig } from '../../src/main/services/core/sessionDefaults';
-import { StandaloneAgentAdapter } from '../../src/main/testing/agentAdapter';
 
-function loadEnvIntoProcess(): void {
+function loadEnvIntoProcess(realHome = homedir()): void {
   try {
-    const envPath = join(homedir(), '.code-agent', '.env');
+    const envPath = join(realHome, '.code-agent', '.env');
     for (const raw of readFileSync(envPath, 'utf8').split('\n')) {
       const line = raw.trim();
       if (!line || line.startsWith('#')) continue;
@@ -37,21 +33,38 @@ function loadEnvIntoProcess(): void {
   } catch { /* optional */ }
 }
 
+function prepareIsolatedHome(): { fakeHome: string; dataDir: string } {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'lfb-ppt-home-'));
+  const dataDir = join(fakeHome, '.code-agent');
+  mkdirSync(dataDir, { recursive: true });
+  process.env.HOME = fakeHome;
+  process.env.CODE_AGENT_HOME = fakeHome;
+  process.env.CODE_AGENT_DATA_DIR = dataDir;
+  process.env.CODE_AGENT_E2E = '1';
+  return { fakeHome, dataDir };
+}
+
 // 解 pptx（zip）读某页 XML 文本，验标题真改了。slide_index 0 → ppt/slides/slide1.xml
 async function readSlideXml(pptxPath: string, slideIndex: number): Promise<string> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const JSZip = require('jszip') as { loadAsync(b: Buffer): Promise<{ file(p: string): { async(t: 'string'): Promise<string> } | null }> };
+  const mod = await import('jszip') as typeof import('jszip');
+  const JSZip = mod.default ?? mod;
   const zip = await JSZip.loadAsync(readFileSync(pptxPath));
   const entry = zip.file(`ppt/slides/slide${slideIndex + 1}.xml`);
   return entry ? entry.async('string') : '';
 }
 
 async function main(): Promise<void> {
-  loadEnvIntoProcess();
+  const realHome = process.env.HOME || homedir();
+  loadEnvIntoProcess(realHome);
+  const isolated = prepareIsolatedHome();
+  console.log(`=== isolated HOME: ${isolated.fakeHome} ===`);
   delete process.env.HTTPS_PROXY; delete process.env.HTTP_PROXY;
   delete process.env.https_proxy; delete process.env.http_proxy;
 
   console.log('=== initializeCLIServices ===');
+  const { initializeCLIServices } = await import('../../src/cli/bootstrap');
+  const { resolveSessionDefaultModelConfig } = await import('../../src/main/services/core/sessionDefaults');
+  const { StandaloneAgentAdapter } = await import('../../src/main/testing/agentAdapter');
   await initializeCLIServices();
   const mc = resolveSessionDefaultModelConfig({ provider: 'xiaomi', model: 'mimo-v2.5-pro' });
   console.log('  xiaomi(mimo) apiKey:', mc.apiKey ? 'present ✓' : 'MISSING ✗');
@@ -110,6 +123,7 @@ async function main(): Promise<void> {
   console.log('  [1] 模型调用了 ppt_edit:', pptCalls.length > 0);
   console.log(`  [2] 命中正确 file_path + slide_index=${TARGET_SLIDE} + title 类 action:`, !!editCall);
   console.log(`  [3] 第 ${TARGET_SLIDE} 页标题真改成「${NEW_TITLE}」:`, titleChanged);
+  rmSync(isolated.fakeHome, { recursive: true, force: true });
   process.exit(pass ? 0 : 1);
 }
 

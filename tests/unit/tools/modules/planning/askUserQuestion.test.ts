@@ -19,11 +19,12 @@ import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/main/
 const ipcMainHandleMock = vi.hoisted(() => vi.fn());
 const sendMock = vi.hoisted(() => vi.fn());
 const getAllWindowsMock = vi.hoisted(() => vi.fn());
+const hasInteractiveRendererMock = vi.hoisted(() => vi.fn());
 const notifyNeedsInputMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../../src/main/platform', () => ({
   ipcMain: { handle: ipcMainHandleMock },
-  BrowserWindow: { getAllWindows: getAllWindowsMock },
+  BrowserWindow: { getAllWindows: getAllWindowsMock, hasInteractiveRenderer: hasInteractiveRendererMock },
 }));
 vi.mock('../../../../../src/main/services/infra/notificationService', () => ({
   notificationService: {
@@ -56,6 +57,7 @@ const denyAll: CanUseToolFn = async () => ({ allow: false, reason: 'blocked' });
 beforeEach(() => {
   vi.clearAllMocks();
   getAllWindowsMock.mockReturnValue([]);
+  hasInteractiveRendererMock.mockReturnValue(false);
   sendMock.mockReset();
 });
 
@@ -91,6 +93,7 @@ describe('AskUserQuestion IPC protocol invariants', () => {
   it('webContents.send(USER_QUESTION_ASK, request) shape = {id, questions, timestamp} + ipcMain.handle 注册 USER_QUESTION_RESPONSE', async () => {
     const window = { webContents: { send: sendMock } };
     getAllWindowsMock.mockReturnValue([window]);
+    hasInteractiveRendererMock.mockReturnValue(true);
 
     const handler = await askUserQuestionModule.createHandler();
 
@@ -297,6 +300,36 @@ describe('AskUserQuestion CLI fallback', () => {
       expect(result.output).toContain('2. B - bbb');
       expect(result.output).toContain('⚠️ 用户无法回答问题');
       expect(result.output).toContain('不要创建、修改或删除任何文件');
+    }
+  });
+
+  it('有 webServer mock window 但没有 renderer 连接 → 不等待 IPC，直接 fallback', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(false);
+
+    const handler = await askUserQuestionModule.createHandler();
+    const result = await handler.execute(
+      {
+        questions: [
+          {
+            question: '要继续吗',
+            header: '确认',
+            options: [
+              { label: '继续', description: '继续当前操作' },
+              { label: '停止', description: '停下等待' },
+            ],
+          },
+        ],
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(sendMock).not.toHaveBeenCalled();
+    if (result.ok) {
+      expect(result.output).toContain('[用户未响应 - CLI 模式无法交互]');
+      expect(result.output).toContain('[确认] 要继续吗');
     }
   });
 });

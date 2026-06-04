@@ -112,6 +112,15 @@ function normalizeStringRecord(value: unknown): Record<string, string> | null {
   return normalized;
 }
 
+function normalizeApiKey(value?: string): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
 // Load .env file from project root or app resources
 import { app as electronApp } from '../../platform';
 
@@ -663,11 +672,11 @@ export class ConfigService implements IReadConfigService {
   getApiKey(provider: ModelProvider): string | undefined {
     // Priority: secure storage > environment variable
     const storage = getSecureStorage();
-    const secureKey = storage.getApiKey(provider);
+    const secureKey = normalizeApiKey(storage.getApiKey(provider));
     if (secureKey) return secureKey;
 
     // Legacy: check config.json (for migration)
-    const configKey = this.settings.models.providers[provider]?.apiKey;
+    const configKey = normalizeApiKey(this.settings.models.providers[provider]?.apiKey);
     if (configKey) {
       // Migrate to secure storage
       storage.setApiKey(provider, configKey);
@@ -698,11 +707,11 @@ export class ConfigService implements IReadConfigService {
     };
 
     const envKey = envKeyMap[provider];
-    const primaryEnvKey = envKey ? process.env[envKey] : undefined;
+    const primaryEnvKey = normalizeApiKey(envKey ? process.env[envKey] : undefined);
     if (primaryEnvKey) return primaryEnvKey;
 
     if (provider === 'moonshot') {
-      return process.env.KIMI_K25_API_KEY || undefined;
+      return normalizeApiKey(process.env.KIMI_K25_API_KEY);
     }
 
     return undefined;
@@ -717,7 +726,7 @@ export class ConfigService implements IReadConfigService {
    * 优先读 ZHIPU_OFFICIAL_API_KEY，缺失时回落到 ZHIPU_API_KEY。
    */
   public getZhipuOfficialKey(): string | undefined {
-    return process.env.ZHIPU_OFFICIAL_API_KEY || this.getApiKey('zhipu');
+    return normalizeApiKey(process.env.ZHIPU_OFFICIAL_API_KEY) || this.getApiKey('zhipu');
   }
 
   /**

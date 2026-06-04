@@ -48,7 +48,7 @@ function sheetMessage(a: SheetLocalityAnchor, feedback: string): string {
     `[定点反馈] 用户在表格预览里点选了《${name}》${sheetClause}单元格 ${a.cell}` +
     `（文件路径：${a.filePath}）。\n` +
     `针对这个位置的诉求：${feedback}。\n` +
-    `请用表格编辑工具（DocEdit / excel_edit），file_path 用上面给的路径，` +
+    `请调用 DocEdit 工具，file_path 用上面给的路径，` +
     `定位到${sheetClause}${a.cell}，做定向修改——只改这个位置相关的内容。`
   );
 }

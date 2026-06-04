@@ -103,6 +103,7 @@ function buildWakePrompt(trigger: RoleWakeTrigger, extraContext?: string): strin
     '2. 逐个检查这些产物的现状（文件还在吗、内容有没有需要跟进的）',
     '3. 四选一决策并执行：',
     '   - 【推进 advance】产物有明确的下一步：',
+    '       · 履历或产物里出现 TODO、未完成待办、"下一步需要"、可验证的本地修复/创建/修改动作时，必须选择 advance',
     '       · 一步就能做完 → 直接做，做完汇报',
     '       · 需要多步推进（修复+验证、重构+测试等）→ 不要自己零散地做，改为给出一个目标提案，',
     '         系统会为它发起一个带完成判定的正式 goal run（干完必须过验证闸才算数）：',
@@ -147,6 +148,53 @@ export function parseAdvanceGoalProposal(finalOutput: string): AdvanceGoalPropos
   if (!goal) return null;
   const verifyMatch = finalOutput.match(SWARM_GOAL.VERIFY_TAG_PATTERN);
   const verify = verifyMatch?.[1]?.trim();
+  return verify ? { goal, verify } : { goal };
+}
+
+const ADVANCE_SIGNAL_PATTERN = /(?:TODO|待办|未完成|下一步(?:需要|要)|还没做|尚未|待处理|待推进|未验证|verify|test\s+-f)/i;
+const VERIFY_COMMAND_PATTERN = /(?:^|[\s，。；;])((?:test\s+-f\s+(?:"[^"]+"|'[^']+'|[^\s，。；;]+))|(?:npx\s+vitest\s+run[^\n，。；;]*)|(?:npm\s+(?:run\s+)?test[^\n，。；;]*)|(?:pnpm\s+test[^\n，。；;]*)|(?:yarn\s+test[^\n，。；;]*))/im;
+
+function cleanInferredText(text: string): string {
+  return text
+    .replace(/^[\s\-*[\]\d.)]+/, '')
+    .replace(/^下一步(?:需要|要)[:：]?\s*/, '')
+    .replace(/^目标是[:：]?\s*/, '')
+    .replace(/[。；;，,]+$/g, '')
+    .trim();
+}
+
+function inferVerifyCommand(text: string): string | undefined {
+  const command = text.match(VERIFY_COMMAND_PATTERN)?.[1]?.trim();
+  return command ? cleanInferredText(command) : undefined;
+}
+
+function inferGoalText(text: string, verify?: string): string {
+  const explicitGoal = text.match(/(?:目标是|下一步(?:需要|要))[:：]?\s*([^\n。]+)/)?.[1];
+  if (explicitGoal) return cleanInferredText(explicitGoal);
+
+  const todoLine = text
+    .split('\n')
+    .map((line) => cleanInferredText(line))
+    .find((line) => ADVANCE_SIGNAL_PATTERN.test(line) && line.length > 0 && !line.includes(ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX));
+  if (todoLine) return todoLine.slice(0, 160);
+
+  const changedFile = text.match(/(?:创建|生成|写入|修改)\s+([A-Za-z0-9_.-]+\.(?:md|txt|json|tsx?|jsx?|html|css|xlsx?|pptx?))/)?.[1];
+  if (changedFile && verify) return `完成 ${changedFile} 并通过 ${verify} 验证`;
+  if (verify) return `完成履历中的未完成待办，并通过 ${verify} 验证`;
+  return '推进履历中的未完成待办';
+}
+
+/**
+ * 模型偶尔会把明确的可验证下一步误标为 report。这里只在产出/角色资产里出现
+ * 强推进信号时做确定性兜底，避免把普通巡检简报伪装成 advance。
+ */
+export function inferAdvanceGoalProposalFromWake(finalOutput: string, contextBlock?: string | null): AdvanceGoalProposal | null {
+  const explicitProposal = parseAdvanceGoalProposal(finalOutput);
+  if (explicitProposal) return explicitProposal;
+  const source = [finalOutput, contextBlock ?? ''].filter((s) => s.trim().length > 0).join('\n');
+  if (!ADVANCE_SIGNAL_PATTERN.test(source)) return null;
+  const verify = inferVerifyCommand(source);
+  const goal = inferGoalText(source, verify);
   return verify ? { goal, verify } : { goal };
 }
 
@@ -305,18 +353,30 @@ export async function wakeRole(
   const assistantMessages = (sessionWithMessages?.messages ?? []).filter((m) => m.role === 'assistant' && m.content);
   const finalOutput = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1].content : '';
 
-  const decision = parseWakeDecision(finalOutput);
+  const parsedDecision = parseWakeDecision(finalOutput);
+  const inferredAdvanceProposal = parsedDecision === 'advance'
+    ? null
+    : inferAdvanceGoalProposalFromWake(finalOutput, instantiation.contextBlock);
+  const decision = inferredAdvanceProposal ? 'advance' : parsedDecision;
   let summary = finalOutput
     .replace(ROLE_PROACTIVITY.DECISION_TAG_PATTERN, '')
     .trim()
     .slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+  if (inferredAdvanceProposal) {
+    logger.info('Wake decision inferred as advance from verifiable next-step signals', {
+      roleId,
+      trigger,
+      parsedDecision,
+      hasVerify: !!inferredAdvanceProposal.verify,
+    });
+  }
 
   // ---- 步骤 5.5：advance 合流（P4）——多步推进升级为带完成判定的 goal run ----
   // 醒来实例是侦察兵（便宜，判断要不要推进/推进什么）；goal run 是执行者（带闸，干完过验证）。
   // 仅当 advance 且模型给出 <goal> 提案时升级；提案缺省 → 按普通 advance（侦察兵已自己做完）处理。
   let advanceGoalStatus: 'met' | 'aborted' | undefined;
   if (decision === 'advance') {
-    const proposal = parseAdvanceGoalProposal(finalOutput);
+    const proposal = parseAdvanceGoalProposal(finalOutput) ?? inferredAdvanceProposal;
     if (proposal) {
       logger.info('Advance → goal run', { roleId, goal: proposal.goal, hasVerify: !!proposal.verify });
       advanceGoalStatus = await launchAdvanceGoalRun({

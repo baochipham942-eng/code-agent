@@ -235,6 +235,19 @@ describe('ToolSearchService loadable results', () => {
     expect(service.isToolLoaded('workflow_orchestrate')).toBe(true);
   });
 
+  it('loads spawn_agent by its exact legacy name instead of redirecting to AgentSpawn', async () => {
+    const service = new ToolSearchService();
+
+    const selected = service.selectTool('spawn_agent');
+    const searched = await service.searchTools('spawn_agent', { maxResults: 3, includeMCP: false });
+
+    expect(selected.loadedTools).toEqual(['spawn_agent']);
+    expect(selected.tools[0]?.canonicalInvocation).toBe('spawn_agent');
+    expect(service.isToolLoaded('spawn_agent')).toBe(true);
+    expect(searched.tools[0]?.name).toBe('spawn_agent');
+    expect(searched.tools[0]?.canonicalInvocation).toBe('spawn_agent');
+  });
+
   it('normalizes browser/computer/screenshot compatibility aliases to unified tools', () => {
     const service = new ToolSearchService();
 

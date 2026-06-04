@@ -83,6 +83,11 @@ export function onRendererPush(listener: (channel: string, data: unknown) => voi
 
 const liveWindows = new Set<BrowserWindow>();
 let nextWindowId = 1;
+let rendererInteractionProbe: (() => boolean) | null = null;
+
+export function setBrowserWindowInteractionProbe(probe: (() => boolean) | null): void {
+  rendererInteractionProbe = probe;
+}
 
 export class BrowserWindow implements WindowLike {
   id: number;
@@ -135,6 +140,9 @@ export class BrowserWindow implements WindowLike {
   removeListener(..._args: unknown[]) { return this; }
 
   static getAllWindows(): BrowserWindow[] { return Array.from(liveWindows); }
+  static hasInteractiveRenderer(): boolean {
+    return rendererInteractionProbe ? rendererInteractionProbe() : liveWindows.size > 0;
+  }
   static getFocusedWindow(): BrowserWindow | null {
     const iter = liveWindows.values().next();
     return iter.done ? null : iter.value;

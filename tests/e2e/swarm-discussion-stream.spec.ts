@@ -103,7 +103,7 @@ test('swarm:context:update 渲染成讨论流，决策点高亮', async ({ page,
   await expect(stream).toBeVisible({ timeout: 10_000 });
 
   // 展开看全量（折叠态默认只显最近 3 条，这里点开确保都能断言到）
-  await stream.getByRole('button', { name: '讨论流', exact: false }).click();
+  await stream.locator('[data-testid="discussion-stream-toggle"]').click();
 
   // 4. 三类条目都渲染，且角色名落到标题
   await expect(stream.getByText(findingMark)).toBeVisible({ timeout: 10_000 });

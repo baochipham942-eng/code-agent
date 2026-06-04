@@ -48,6 +48,19 @@ const pendingQuestions = new Map<string, {
 // Register IPC handler for user responses (only once)
 let handlerRegistered = false;
 
+function formatNoInteractiveUserOutput(questions: UserQuestion[]): string {
+  const formatted = questions
+    .map((q) => {
+      const optionsStr = q.options
+        .map((o, j) => `  ${j + 1}. ${o.label} - ${o.description}`)
+        .join('\n');
+      return `[${q.header}] ${q.question}\n${optionsStr}`;
+    })
+    .join('\n\n');
+
+  return `[用户未响应 - CLI 模式无法交互]\n\n${formatted}\n\n⚠️ 用户无法回答问题。请不要自行选择选项，而是基于当前已知信息给出分析和建议，等待用户下一步指示。不要创建、修改或删除任何文件。`;
+}
+
 function registerResponseHandler(): void {
   if (handlerRegistered) return;
   handlerRegistered = true;
@@ -126,21 +139,12 @@ export async function executeAskUserQuestion(
   };
 
   const mainWindow = BrowserWindow.getAllWindows()[0];
-  if (!mainWindow) {
-    // CLI 模式：返回 fallback 文案（与 legacy 1:1 复刻，模型无法假装"用户没反对"）
-    const formatted = questions
-      .map((q) => {
-        const optionsStr = q.options
-          .map((o, j) => `  ${j + 1}. ${o.label} - ${o.description}`)
-          .join('\n');
-        return `[${q.header}] ${q.question}\n${optionsStr}`;
-      })
-      .join('\n\n');
-
+  if (!mainWindow || !BrowserWindow.hasInteractiveRenderer()) {
+    // CLI/headless webServer 模式：返回 fallback 文案（与 legacy 1:1 复刻，模型无法假装"用户没反对"）
     onProgress?.({ stage: 'completing', percent: 100 });
     return {
       ok: true,
-      output: `[用户未响应 - CLI 模式无法交互]\n\n${formatted}\n\n⚠️ 用户无法回答问题。请不要自行选择选项，而是基于当前已知信息给出分析和建议，等待用户下一步指示。不要创建、修改或删除任何文件。`,
+      output: formatNoInteractiveUserOutput(questions),
     };
   }
 

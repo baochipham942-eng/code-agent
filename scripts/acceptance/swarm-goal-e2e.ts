@@ -309,12 +309,14 @@ async function scenario4(env: E2EEnv, server: StartedServer, researcherJobId: st
     '# 待办清单（半成品）',
     '',
     '- [ ] 创建 DONE.md 文件标记任务完成',
+    '- [ ] 用 test -f DONE.md 验证标记文件存在',
+    '- [ ] 验证通过后在 DONE.md 里保留 done',
     '',
-    '说明：下一步需要在工作目录创建一个 DONE.md 文件，内容写 "done"。',
+    '说明：这是多步推进，不要只写一段汇报；下一步需要发起带 verify 的 goal run，目标是在工作目录创建 DONE.md，内容写 "done"，并用 test -f DONE.md 验证。',
   ].join('\n'), 'utf-8');
   await appendFile(
     roleHistoryPath(env, RESEARCHER),
-    `- ${todayUtc()} | [待办清单](${draftPath}) | 列了待办，下一步要创建 DONE.md 标记完成，还没做\n`,
+    `- ${todayUtc()} | [待办清单](${draftPath}) | 列了多步待办，下一步要创建 DONE.md 并用 test -f DONE.md 验证，还没做\n`,
     'utf-8',
   );
   result.evidence.push('✓ 预埋：多步推进产物 + 履历指向它（下一步可被 verify 命令验证）');

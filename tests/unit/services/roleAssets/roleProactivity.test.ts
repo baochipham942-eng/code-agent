@@ -94,6 +94,7 @@ import {
   triggerEventWakes,
   countWakesToday,
   parseWakeDecision,
+  inferAdvanceGoalProposalFromWake,
   resolveRoleProactivityConfig,
   cadenceForConfig,
 } from '../../../../src/main/services/roleAssets/roleProactivity';
@@ -184,6 +185,31 @@ describe('roleProactivity', () => {
     it('解析不出决策时保守兜底为汇报', () => {
       expect(parseWakeDecision('没有任何标记的输出')).toBe('report');
     });
+
+    it('从可验证待办信号推断 advance goal 提案', () => {
+      const proposal = inferAdvanceGoalProposalFromWake(
+        '我先汇报现状。<decision>report</decision>',
+        [
+          '- 2026-06-04 | 待办清单 | 下一步需要创建 DONE.md，内容写 done，并用 test -f DONE.md 验证',
+        ].join('\n'),
+      );
+
+      expect(proposal).toEqual({
+        goal: '创建 DONE.md，内容写 done，并用 test -f DONE.md 验证',
+        verify: 'test -f DONE.md',
+      });
+    });
+
+    it('模型给了 goal 提案但误标 report 时仍可升级', () => {
+      const proposal = inferAdvanceGoalProposalFromWake(
+        '需要继续推进。<goal>创建 DONE.md</goal><verify>test -f DONE.md</verify><decision>report</decision>',
+      );
+
+      expect(proposal).toEqual({
+        goal: '创建 DONE.md',
+        verify: 'test -f DONE.md',
+      });
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -214,6 +240,9 @@ describe('roleProactivity', () => {
       expect(mockOrchestrator.sendMessage).toHaveBeenCalledTimes(1);
       // 醒来 prompt 注入了角色上下文（turnSystemContext）+ 迭代数硬上限
       const callOptions = mockOrchestrator.sendMessage.mock.calls[0][2];
+      const wakePrompt = mockOrchestrator.sendMessage.mock.calls[0][0];
+      expect(wakePrompt).toContain('出现 TODO');
+      expect(wakePrompt).toContain('必须选择 advance');
       expect(callOptions.maxIterations).toBe(ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS);
       expect(callOptions.agentOverrideId).toBe(RESEARCHER);
       // 非沉默 → 会话不归档
@@ -251,6 +280,28 @@ describe('roleProactivity', () => {
       expect(goalCallOptions.goal.allowSwarm).toBe(false);
       expect(goalCallOptions.goal.verify).toBe('test -f DONE.md');
       // 履历记 [goal:met]
+      const history = await loadRoleHistory(RESEARCHER, 100);
+      expect(history.some((l) => l.includes('[goal:met]'))).toBe(true);
+    });
+
+    it('report 误判但履历有可验证下一步 → 确定性升级为 advance goal run', async () => {
+      await appendRoleHistory(RESEARCHER, {
+        date: TODAY,
+        artifactLabel: '待办清单',
+        artifactRef: '/tmp/todo-list.md',
+        summary: '下一步需要创建 DONE.md，内容写 done，并用 test -f DONE.md 验证，还没做',
+      });
+      primeWakeRun('report', 'wake-inferred-advance-1');
+      mockSessionEvents.getEventsByType.mockReturnValue([{ eventData: { status: 'met' } }]);
+
+      const result = await wakeRole(RESEARCHER, 'cadence');
+
+      expect(result.decision).toBe('advance');
+      expect(result.advanceGoalStatus).toBe('met');
+      expect(mockOrchestrator.sendMessage).toHaveBeenCalledTimes(2);
+      const goalCallOptions = mockOrchestrator.sendMessage.mock.calls[1][2];
+      expect(goalCallOptions.goal.verify).toBe('test -f DONE.md');
+      expect(goalCallOptions.goal.allowSwarm).toBe(false);
       const history = await loadRoleHistory(RESEARCHER, 100);
       expect(history.some((l) => l.includes('[goal:met]'))).toBe(true);
     });

@@ -15,7 +15,7 @@
 import './webEnvInit';
 
 // Platform 模块替代 electron mock
-import { handlers, ipcMain as mockIpcMain, BrowserWindow, onRendererPush } from '../main/platform';
+import { handlers, ipcMain as mockIpcMain, BrowserWindow, onRendererPush, setBrowserWindowInteractionProbe } from '../main/platform';
 
 import http from 'http';
 import os from 'os';
@@ -279,7 +279,7 @@ export function startWebCapabilityBootstrap(
 // SSE 客户端管理 & 会话缓存（从 helpers/ 导入）
 // ============================================================================
 
-import { broadcastSSE } from './helpers/sse';
+import { broadcastSSE, sseClients } from './helpers/sse';
 import { formatError } from './helpers/utils';
 import {
   dbAvailable,
@@ -579,6 +579,7 @@ async function initializeServices(): Promise<void> {
  */
 // Web 模式的全局 BrowserWindow 实例（webContents.send → broadcastSSE）
 const webModeWindow = new BrowserWindow();
+setBrowserWindowInteractionProbe(() => sseClients.size > 0);
 
 // 注册到 main/app/window.ts 的 module-level mainWindow，让所有调
 // getMainWindow() 的后台服务（auth、update、mcp 等）能拿到 mock window

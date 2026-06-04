@@ -419,7 +419,7 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     name: 'DocEdit',
     shortDescription: '文档增量编辑（Excel/PPT/Word 原子操作 + 自动快照）',
     tags: ['document'],
-    aliases: ['doc_edit', 'docx_edit', 'document_edit', 'edit_document'],
+    aliases: ['doc_edit', 'docx_edit', 'document_edit', 'edit_document', 'xlsx_edit', 'sheet_edit', 'cell_edit'],
     source: 'builtin',
   },
   {
@@ -549,10 +549,17 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   // 多代理
   // ============================================================================
   {
-    name: 'AgentSpawn',
-    shortDescription: '生成新的子代理',
+    name: 'spawn_agent',
+    shortDescription: '启动一个子代理执行指定角色任务（兼容入口，适合持久化角色委派）',
     tags: ['multiagent'],
-    aliases: ['spawn', 'agent', 'create-agent'],
+    aliases: ['spawn_agent', 'subagent', 'delegate', 'role agent', 'agent spawn'],
+    source: 'builtin',
+  },
+  {
+    name: 'AgentSpawn',
+    shortDescription: '高级子代理创建（并行、后台、自定义 prompt / tools、预算控制）',
+    tags: ['multiagent'],
+    aliases: ['spawn', 'agent', 'create-agent', 'agent_spawn', 'parallel agents'],
     source: 'builtin',
   },
   {
@@ -679,7 +686,7 @@ export const TOOL_ALIASES: Record<string, string> = {
   append: 'Append',
   edit: 'Edit',
   // Multi-agent aliases
-  spawn_agent: 'AgentSpawn',
+  agent_spawn: 'AgentSpawn',
   AgentMessage: 'agent_message',
   agent_message: 'agent_message',
   SendInput: 'send_input',

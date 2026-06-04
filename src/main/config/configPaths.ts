@@ -49,7 +49,7 @@ export interface ResolvedPaths {
  * Get home directory
  */
 export function getHomeDir(): string {
-  return os.homedir();
+  return process.env.CODE_AGENT_HOME || os.homedir();
 }
 
 /**

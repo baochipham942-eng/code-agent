@@ -156,6 +156,15 @@ describe('resolveProviderApiKey — provider 类模式（trustConfigKey 默认 t
   it('全部缺失返回空串', () => {
     expect(resolveProviderApiKey(cfg('deepseek', 'deepseek-chat'))).toBe('');
   });
+
+  it('去掉 config/env/官方 key 首尾成对引号，避免复制 .env.bak 后 401', () => {
+    process.env.XIAOMI_API_KEY = '"env-xiaomi"';
+    process.env.ZHIPU_OFFICIAL_API_KEY = "'official-zhipu'";
+
+    expect(resolveProviderApiKey(cfg('xiaomi', 'mimo-v2.5-pro'))).toBe('env-xiaomi');
+    expect(resolveProviderApiKey(cfg('xiaomi', 'mimo-v2.5-pro', { apiKey: "'cfg-x'" }))).toBe('cfg-x');
+    expect(resolveProviderApiKey(cfg('zhipu', 'glm-4-flash', { apiKey: 'cfg-z' }))).toBe('official-zhipu');
+  });
 });
 
 describe('resolveProviderApiKey — adapter 模式（trustConfigKey:false）', () => {

@@ -19,15 +19,10 @@
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
-import { initializeCLIServices } from '../../src/cli/bootstrap';
-import { getConfigService } from '../../src/main/services/core/configService';
-import { resolveSessionDefaultModelConfig } from '../../src/main/services/core/sessionDefaults';
-import { buildWorkbenchTurnSystemContext } from '../../src/main/app/workbenchTurnContext';
-import { StandaloneAgentAdapter } from '../../src/main/testing/agentAdapter';
 
-function loadEnvIntoProcess(): void {
+function loadEnvIntoProcess(realHome = homedir()): void {
   try {
-    const envPath = join(homedir(), '.code-agent', '.env');
+    const envPath = join(realHome, '.code-agent', '.env');
     for (const raw of readFileSync(envPath, 'utf8').split('\n')) {
       const line = raw.trim();
       if (!line || line.startsWith('#')) continue;
@@ -43,6 +38,17 @@ function loadEnvIntoProcess(): void {
   }
 }
 
+function prepareIsolatedHome(): { fakeHome: string; dataDir: string } {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'locality-fb-home-'));
+  const dataDir = join(fakeHome, '.code-agent');
+  mkdirSync(dataDir, { recursive: true });
+  process.env.HOME = fakeHome;
+  process.env.CODE_AGENT_HOME = fakeHome;
+  process.env.CODE_AGENT_DATA_DIR = dataDir;
+  process.env.CODE_AGENT_E2E = '1';
+  return { fakeHome, dataDir };
+}
+
 // 复刻 src/main/agent/agentOrchestrator.ts:943 applyTurnSystemContext 的拼装格式，
 // 保证 E2E 喂给模型的 prompt 与生产主循环逐字一致。
 function applyTurnSystemContext(content: string, turnSystemContext: string[]): string {
@@ -52,13 +58,21 @@ function applyTurnSystemContext(content: string, turnSystemContext: string[]): s
 }
 
 async function main(): Promise<void> {
-  loadEnvIntoProcess();
+  const realHome = process.env.HOME || homedir();
+  loadEnvIntoProcess(realHome);
+  const isolated = prepareIsolatedHome();
+  console.log(`=== isolated HOME: ${isolated.fakeHome} ===`);
   delete process.env.HTTPS_PROXY;
   delete process.env.HTTP_PROXY;
   delete process.env.https_proxy;
   delete process.env.http_proxy;
 
   console.log('=== initializeCLIServices ===');
+  const { initializeCLIServices } = await import('../../src/cli/bootstrap');
+  const { getConfigService } = await import('../../src/main/services/core/configService');
+  const { resolveSessionDefaultModelConfig } = await import('../../src/main/services/core/sessionDefaults');
+  const { buildWorkbenchTurnSystemContext } = await import('../../src/main/app/workbenchTurnContext');
+  const { StandaloneAgentAdapter } = await import('../../src/main/testing/agentAdapter');
   await initializeCLIServices();
 
   // 前置：key 探针（缺则早退，不白烧 mimo）
@@ -158,6 +172,7 @@ async function main(): Promise<void> {
   console.log('  [4] 源文件文字改对（"提交"→"立即报名"）:', changed);
 
   rmSync(dir, { recursive: true, force: true });
+  rmSync(isolated.fakeHome, { recursive: true, force: true });
   process.exit(pass ? 0 : 1);
 }
 

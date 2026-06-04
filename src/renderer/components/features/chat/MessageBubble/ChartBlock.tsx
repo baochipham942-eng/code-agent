@@ -12,20 +12,11 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import { UI } from '@shared/constants';
-
-interface SeriesItem {
-  key: string;
-  name?: string;
-  color?: string;
-}
-
-interface ChartSpec {
-  type: 'bar' | 'line' | 'area' | 'pie' | 'radar' | 'scatter';
-  title?: string;
-  xKey?: string;
-  series?: SeriesItem[];
-  data: Record<string, unknown>[];
-}
+import {
+  parseChartSpecSource,
+  type ChartSpec,
+} from '@shared/chartSpec';
+export { isChartSpecSource } from '@shared/chartSpec';
 
 const DEFAULT_COLORS = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -45,38 +36,6 @@ const darkTooltipStyle = {
 };
 
 const axisStyle = { fontSize: 11, fill: '#a1a1aa' };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function isChartSpec(value: unknown): value is ChartSpec {
-  if (!isRecord(value)) return false;
-  const type = value.type;
-  return (
-    (type === 'bar' || type === 'line' || type === 'area' || type === 'pie' || type === 'radar' || type === 'scatter')
-    && Array.isArray(value.data)
-    && value.data.every(isRecord)
-  );
-}
-
-function parseSpec(raw: string): ChartSpec | null {
-  try {
-    const spec: unknown = JSON.parse(raw);
-    return isChartSpec(spec) ? spec : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * 判断一段代码块文本是否是合法的图表 spec JSON。
- * 模型常把图表数据放进 ```json 而非 ```chart，MessageContent 用它把这类
- * json 块同样识别为图表并内联渲染（普通 json 极少恰好 type∈图表类型 + data 数组，误判风险极低）。
- */
-export function isChartSpecSource(raw: string): boolean {
-  return parseSpec(raw) !== null;
-}
 
 const ChartRenderer = memo(function ChartRenderer({ spec }: { spec: ChartSpec }) {
   const { type, xKey = 'name', series = [], data } = spec;
@@ -154,6 +113,14 @@ const ChartRenderer = memo(function ChartRenderer({ spec }: { spec: ChartSpec })
   const ChartComponent = type === 'line' ? LineChart : type === 'area' ? AreaChart : BarChart;
   const SeriesComponent = type === 'line' ? Line : type === 'area' ? Area : Bar;
 
+  if (series.length === 0) {
+    return (
+      <div className="flex h-[220px] items-center justify-center rounded-lg border border-dashed border-zinc-700 bg-zinc-950/40 px-4 text-center text-xs leading-relaxed text-zinc-500">
+        No numeric data series found.
+      </div>
+    );
+  }
+
   return (
     <ResponsiveContainer width="100%" height={300}>
       <ChartComponent data={data}>
@@ -181,7 +148,7 @@ export const ChartBlock = memo(function ChartBlock({ spec: rawSpec }: { spec: st
   const [copied, setCopied] = useState(false);
   const { t } = useI18n();
 
-  const parsedSpec = useMemo(() => parseSpec(rawSpec), [rawSpec]);
+  const parsedSpec = useMemo(() => parseChartSpecSource(rawSpec), [rawSpec]);
 
   const handleCopy = useCallback(async () => {
     await navigator.clipboard.writeText(rawSpec);
@@ -195,16 +162,16 @@ export const ChartBlock = memo(function ChartBlock({ spec: rawSpec }: { spec: st
 
   return (
     <div className="my-3 rounded-xl bg-zinc-900 overflow-hidden border border-zinc-700 shadow-lg">
-      <div className="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">
-        <div className="flex items-center gap-2">
-          <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="text-xs font-medium text-emerald-400">
+      <div className="flex items-center justify-between gap-3 px-4 py-2 bg-zinc-800 border-b border-zinc-700">
+        <div className="flex min-w-0 items-center gap-2">
+          <BarChart3 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+          <span className="min-w-0 truncate text-xs font-medium text-emerald-400">
             {parsedSpec.title || t.generativeUI.chart}
           </span>
         </div>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all text-xs"
+          className="flex shrink-0 items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all text-xs"
         >
           {copied ? (
             <>

@@ -35,7 +35,8 @@ describe('buildLocalityFeedbackMessage', () => {
     expect(msg).toContain('B7');
     expect(msg).toContain('Sheet1');
     expect(msg).toContain('单元格 B7');
-    expect(msg).toMatch(/DocEdit|excel_edit/);
+    expect(msg).toContain('DocEdit');
+    expect(msg).not.toContain('excel_edit');
     expect(msg).toContain('这个数改成 42000');
   });
 

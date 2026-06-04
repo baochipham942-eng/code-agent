@@ -173,13 +173,21 @@ async function saveRejectedKeys(keys: Set<string>): Promise<void> {
   await fs.writeFile(getRejectedLedgerPath(), JSON.stringify(Array.from(keys), null, 2), 'utf-8');
 }
 
-// accepted ledger：草稿确认入库后记账，避免同一 pattern 跨会话反复蒸馏打扰用户
+// accepted ledger：草稿确认入库后记账，避免同一 pattern 跨会话反复蒸馏打扰用户。
+// 注：读-改-写无文件锁——失效的最坏后果只是"多弹一次确认卡"（非数据/安全损失），
+// 故不引入锁/原子写的复杂度；但文件损坏要告警，避免 fail-open 静默丢失全部记录。
 async function loadAcceptedKeys(): Promise<Set<string>> {
+  let raw: string;
   try {
-    const raw = await fs.readFile(getAcceptedLedgerPath(), 'utf-8');
+    raw = await fs.readFile(getAcceptedLedgerPath(), 'utf-8');
+  } catch {
+    return new Set(); // 文件不存在属正常
+  }
+  try {
     const parsed = JSON.parse(raw) as string[];
     return new Set(Array.isArray(parsed) ? parsed : []);
   } catch {
+    logger.warn('Accepted ledger corrupted, treating as empty (may re-prompt previously accepted skills)');
     return new Set();
   }
 }
@@ -239,6 +247,12 @@ export async function enqueueSkillDraft(input: {
 }): Promise<SkillDraftMeta | null> {
   const createdAt = input.timestamp ?? Date.now();
   const origin: SkillDraftOrigin = input.origin ?? 'telemetry-distilled';
+
+  // 空 patternKey 无法去重（确认/拒绝后还会反复入队），直接拒绝入队
+  if (!input.patternKey || !input.patternKey.trim()) {
+    logger.warn('Skill draft rejected: empty patternKey', { name: input.name });
+    return null;
+  }
 
   const [existing, rejected, accepted] = await Promise.all([
     listSkillDrafts(),

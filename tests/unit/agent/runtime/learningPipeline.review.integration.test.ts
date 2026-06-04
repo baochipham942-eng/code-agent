@@ -3,6 +3,10 @@
 // 只 mock quick model（fake 返回）+ telemetry，不 mock conversationReview / skillDraftQueue / 安全闸，
 // 证明 runSessionEndLearning → 真 reviewConversationForSkill → quickTask → 真 enqueue → 事件 → 真 confirm 落盘
 // 整条链活着穿透，而不是各段单测各自 mock。
+//
+// 这是【单元集成测试】，不是 provider 级 e2e。仍未覆盖（需真 app/真模型）：
+// 真实 quick model 配置与 fetch、真实 timeout race、SSE→renderer 事件桥、IPC confirm handler。
+// 那部分留给真模型 E2E（起 app 跑一轮）。
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';

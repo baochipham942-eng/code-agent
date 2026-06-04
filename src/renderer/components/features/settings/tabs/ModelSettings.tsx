@@ -6,7 +6,7 @@
 // 所有保存 / 测试 / 发现 / 新增 handler 与重构前完全一致，仅 UI 结构重组。
 // ============================================================================
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Brain, Code2, Eye, Gauge, Key, Plus, RefreshCw, Search, Wrench } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
@@ -81,7 +81,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const [isTesting, setIsTesting] = useState(false);
   const [isDoctorOpen, setIsDoctorOpen] = useState(false);
   const [isDiscovering, setIsDiscovering] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [providerConfigs, setProviderConfigs] = useState<ProviderConfigMap>({});
+  // 本地 Provider「打开即自动发现」的去重闸：每个 Provider 一个会话只自动发现一次
+  const autoDiscoveredRef = useRef<Set<string>>(new Set());
   const [modelSearch, setModelSearch] = useState('');
   const [manualModelId, setManualModelId] = useState('');
   const [manualModelLabel, setManualModelLabel] = useState('');
@@ -120,6 +123,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         logger.warn('Failed to load provider settings', {
           error: error instanceof Error ? error.message : String(error),
         });
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSettingsLoaded(true);
+        }
       });
     return () => {
       cancelled = true;
@@ -431,9 +439,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     }
   };
 
-  const handleDiscoverModels = async () => {
+  const handleDiscoverModels = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
     if (!effectiveBaseUrl) {
-      toast.warning('请先填写 Provider 地址');
+      if (!silent) toast.warning('请先填写 Provider 地址');
       return;
     }
     setIsDiscovering(true);
@@ -445,13 +454,15 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       );
 
       if (!result?.success) {
-        const detail = result?.error?.suggestion ? `\n${result.error.suggestion}` : '';
-        toast.error(`${result?.error?.message || '模型发现失败'}${detail}`);
+        if (!silent) {
+          const detail = result?.error?.suggestion ? `\n${result.error.suggestion}` : '';
+          toast.error(`${result?.error?.message || '模型发现失败'}${detail}`);
+        }
         return;
       }
 
       if (!result.models.length) {
-        toast.warning('没有从 Provider 返回可用模型');
+        if (!silent) toast.warning('没有从 Provider 返回可用模型');
         return;
       }
 
@@ -501,13 +512,24 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         });
       }
 
-      toast.success(`发现 ${result.models.length} 个模型，已合入当前 Provider`);
+      if (!silent) toast.success(`发现 ${result.models.length} 个模型，已合入当前 Provider`);
     } catch (error) {
-      toast.error('模型发现失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      if (!silent) toast.error('模型发现失败: ' + (error instanceof Error ? error.message : '未知错误'));
     } finally {
       setIsDiscovering(false);
     }
-  };
+  }, [config, currentEnabledModels, effectiveBaseUrl, effectiveProtocol, hasStoredApiKey, onChange]);
+
+  // 本地 Ollama：选中即自动发现已装模型，下拉框出厂预填，避免用户手敲出幽灵模型名。
+  // 本地清单零成本、随时可读，静默发现（失败不弹错），每个 Provider 一个会话只跑一次。
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    if (config.provider !== 'local') return;
+    if (!effectiveBaseUrl) return;
+    if (autoDiscoveredRef.current.has(config.provider)) return;
+    autoDiscoveredRef.current.add(config.provider);
+    void handleDiscoverModels({ silent: true });
+  }, [settingsLoaded, config.provider, effectiveBaseUrl, handleDiscoverModels]);
 
   const handleAddProvider = useCallback(() => {
     const displayName = newProviderName.trim();
@@ -743,7 +765,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                     <Button
                       size="sm"
                       variant="secondary"
-                      onClick={handleDiscoverModels}
+                      onClick={() => handleDiscoverModels()}
                       disabled={isWebMode() || !effectiveBaseUrl}
                       loading={isDiscovering}
                       leftIcon={<RefreshCw className="h-3 w-3" />}

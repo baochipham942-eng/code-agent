@@ -7,6 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import { FlaskConical, Check, X, Loader2 } from 'lucide-react';
 import ipcService from '../../../../services/ipcService';
+import { toast } from '../../../../hooks/useToast';
 import type { SkillDraftOrigin } from '../../../../../shared/contract/agent';
 
 export interface SkillDraftSummary {
@@ -80,9 +81,12 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
       const result = await invokeSkillDraft<{ success: boolean }>('skill:draft:confirm', draftId);
       if (result?.success) {
         onResolved(draftId);
+        toast.success('Skill 已保存');
+      } else {
+        toast.error('Skill 草稿采纳失败');
       }
-    } catch {
-      // Silently fail
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Skill 草稿采纳失败');
     } finally {
       setBusyId(null);
     }
@@ -93,8 +97,9 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
     try {
       await invokeSkillDraft<{ success: boolean }>('skill:draft:reject', draftId);
       onResolved(draftId);
-    } catch {
-      // Silently fail
+      toast.info('已跳过 Skill 草稿');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Skill 草稿处理失败');
     } finally {
       setBusyId(null);
     }

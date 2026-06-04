@@ -31,6 +31,7 @@ import {
   buildReviewPrompt,
   reviewConversationForSkill,
 } from '../../../src/main/lightMemory/conversationReview';
+import { SKILL_REVIEW, SESSION_JUDGE } from '../../../src/shared/constants';
 
 beforeEach(() => {
   quickModelMocks.quickTask.mockReset();
@@ -134,6 +135,11 @@ describe('buildReviewPrompt', () => {
 
 describe('reviewConversationForSkill', () => {
   const turns = ['第一轮提问', '第二轮纠正：应该用脚本安装'];
+
+  it('skill 复盘要给足生成正文的真实 provider 超时预算', () => {
+    expect(SKILL_REVIEW.TIMEOUT_MS).toBeGreaterThanOrEqual(30_000);
+    expect(SKILL_REVIEW.TIMEOUT_MS).toBeGreaterThan(SESSION_JUDGE.TIMEOUT_MS);
+  });
 
   it('用户轮数不足 MIN_USER_TURNS → 直接 null，不调用模型', async () => {
     const r = await reviewConversationForSkill({ userMessages: ['只有一轮'] });

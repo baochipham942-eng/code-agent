@@ -30,8 +30,8 @@ export const SESSION_JUDGE = {
 export const SKILL_REVIEW = {
   /** quick model max_tokens：需返回含 skill 正文的 JSON，给足余量 */
   MAX_TOKENS: 1024,
-  /** LLM 复盘调用超时（ms）。收尾异步执行，不阻塞会话，比会话归档判断更宽松 */
-  TIMEOUT_MS: 15000,
+  /** LLM 复盘调用超时（ms）。收尾异步执行，不阻塞会话；Mimo 等 reasoning 模型关闭思考后仍可能需要 20s+ 输出 skill 正文 */
+  TIMEOUT_MS: 45000,
   /** 参与复盘的最近用户轮数 */
   RECENT_USER_TURNS: 10,
   /** 助手最后回复纳入复盘时的截断字符数 */

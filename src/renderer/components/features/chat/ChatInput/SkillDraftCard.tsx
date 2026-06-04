@@ -7,6 +7,8 @@
 import React, { useState, useEffect } from 'react';
 import { FlaskConical, Check, X, Loader2 } from 'lucide-react';
 import ipcService from '../../../../services/ipcService';
+import { toast } from '../../../../hooks/useToast';
+import type { SkillDraftOrigin } from '../../../../../shared/contract/agent';
 
 export interface SkillDraftSummary {
   id: string;
@@ -14,6 +16,15 @@ export interface SkillDraftSummary {
   description: string;
   toolSequence: string[];
   occurrences: number;
+  /** 来源：缺省按经验蒸馏处理（兼容旧事件） */
+  origin?: SkillDraftOrigin;
+}
+
+/** 来源徽标文案 + 配色（区分 telemetry 经验蒸馏 vs LLM 自沉淀） */
+function originBadge(origin?: SkillDraftOrigin): { label: string; className: string } {
+  return origin === 'llm-review'
+    ? { label: 'AI 自沉淀', className: 'bg-violet-500/20 text-violet-300' }
+    : { label: '经验蒸馏', className: 'bg-sky-500/20 text-sky-300' };
 }
 
 /**
@@ -70,9 +81,12 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
       const result = await invokeSkillDraft<{ success: boolean }>('skill:draft:confirm', draftId);
       if (result?.success) {
         onResolved(draftId);
+        toast.success('Skill 已保存');
+      } else {
+        toast.error('Skill 草稿采纳失败');
       }
-    } catch {
-      // Silently fail
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Skill 草稿采纳失败');
     } finally {
       setBusyId(null);
     }
@@ -83,8 +97,9 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
     try {
       await invokeSkillDraft<{ success: boolean }>('skill:draft:reject', draftId);
       onResolved(draftId);
-    } catch {
-      // Silently fail
+      toast.info('已跳过 Skill 草稿');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Skill 草稿处理失败');
     } finally {
       setBusyId(null);
     }
@@ -109,14 +124,25 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
         </button>
       </div>
 
-      {drafts.map((draft) => (
+      {drafts.map((draft) => {
+        const badge = originBadge(draft.origin);
+        // LLM 自沉淀草稿没有工具序列，副标题展示描述；经验蒸馏展示工具序列 + 成功次数
+        const subtitle = draft.origin === 'llm-review'
+          ? draft.description
+          : `${draft.toolSequence.join(' → ')}（成功 ${draft.occurrences} 次）`;
+        return (
         <div key={draft.id} className="flex items-center gap-2 py-1">
           <div className="flex-1 min-w-0">
-            <div className="text-xs text-sky-200 truncate" title={draft.name}>
-              {draft.name}
+            <div className="flex items-center gap-1.5">
+              <span className={`px-1.5 py-px text-[10px] rounded flex-shrink-0 ${badge.className}`}>
+                {badge.label}
+              </span>
+              <span className="text-xs text-sky-200 truncate" title={draft.name}>
+                {draft.name}
+              </span>
             </div>
-            <div className="text-[11px] text-sky-200/60 truncate" title={draft.description}>
-              {draft.toolSequence.join(' → ')}（成功 {draft.occurrences} 次）
+            <div className="text-[11px] text-sky-200/60 truncate" title={subtitle}>
+              {subtitle}
             </div>
           </div>
 
@@ -143,7 +169,8 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
             不需要
           </button>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 };

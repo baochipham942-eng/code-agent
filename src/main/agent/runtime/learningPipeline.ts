@@ -22,7 +22,9 @@ import {
   type SkillDraftMeta,
   type SkillDraftStep,
 } from '../../services/skills/skillDraftQueue';
-import { LEARNING_PIPELINE } from '../../../shared/constants';
+import { reviewConversationForSkill } from '../../lightMemory/conversationReview';
+import { broadcastToRenderer } from '../../platform/windowBridge';
+import { LEARNING_PIPELINE, SKILL_REVIEW } from '../../../shared/constants';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('LearningPipeline');
@@ -176,23 +178,85 @@ export class LearningPipeline {
     this.ctx.onEvent(event);
   }
 
+  private emitSkillDraftPending(drafts: SkillDraftMeta[]): void {
+    const event: AgentEvent = {
+      type: 'skill_draft_pending',
+      data: {
+        sessionId: this.ctx.sessionId,
+        drafts: drafts.map((draft) => ({
+          id: draft.id,
+          name: draft.name,
+          description: draft.description,
+          toolSequence: draft.toolSequence,
+          occurrences: draft.occurrences,
+          origin: draft.origin,
+        })),
+      },
+    };
+
+    this.onEvent(event);
+    broadcastToRenderer('agent:event', event);
+  }
+
   /**
    * Session 结束学习入口（runFinalizer 调用，fire-and-forget）。
-   * 两条链路相互独立，单边失败不影响另一边。
+   * 三条链路相互独立，单边失败不影响另一边：
+   *   - 失败模式 / n-gram 成功蒸馏：依赖本会话 telemetry，无工具调用则跳过
+   *   - LLM 语义复盘：读对话内容，即使没有工具调用（纯对话纠正）也值得沉淀
    */
   async runSessionEndLearning(): Promise<void> {
     const toolCalls = this.getSessionToolCalls();
-    if (toolCalls.length === 0) return;
 
-    const results = await Promise.allSettled([
-      this.runErrorPatternLearning(toolCalls),
-      this.runSkillDistillation(toolCalls),
-    ]);
+    const passes: Promise<void>[] = [this.runConversationReviewDistillation()];
+    if (toolCalls.length > 0) {
+      passes.push(this.runErrorPatternLearning(toolCalls), this.runSkillDistillation(toolCalls));
+    }
+
+    const results = await Promise.allSettled(passes);
     for (const result of results) {
       if (result.status === 'rejected') {
         logger.warn('Learning pass failed', { reason: String(result.reason) });
       }
     }
+  }
+
+  /**
+   * LLM 语义复盘蒸馏（半自动确认制）：读本会话对话内容，让 quick model 提炼一条
+   * class-level skill 草稿（借鉴 Hermes background_review）。与 telemetry n-gram 蒸馏互补——
+   * 这条看语义、那条看工具序列。产出同样进 skill-drafts 队列由用户确认，绝不自动入库。
+   */
+  async runConversationReviewDistillation(): Promise<void> {
+    const messages = this.ctx.messages ?? [];
+    const userMessages = messages
+      .filter((m) => m.role === 'user' && typeof m.content === 'string' && m.content.trim().length > 0)
+      .map((m) => m.content as string);
+    if (userMessages.length < SKILL_REVIEW.MIN_USER_TURNS) return;
+
+    const lastAssistant = [...messages]
+      .reverse()
+      .find((m) => m.role === 'assistant' && typeof m.content === 'string' && m.content.trim().length > 0);
+    const lastAssistantText = typeof lastAssistant?.content === 'string' ? lastAssistant.content : undefined;
+
+    const reviewed = await reviewConversationForSkill({ userMessages, lastAssistant: lastAssistantText });
+    if (!reviewed) return;
+
+    const draft = await enqueueSkillDraft({
+      name: reviewed.name,
+      description: reviewed.description,
+      // 以 skill 名做去重 key：同一类技能不重复打扰，被拒绝过的不再入队
+      patternKey: `${SKILL_REVIEW.ORIGIN}:${reviewed.name}`,
+      origin: SKILL_REVIEW.ORIGIN,
+      body: reviewed.body,
+      sessionId: this.ctx.sessionId,
+    });
+    if (!draft) return;
+
+    logger.info('Conversation-review skill draft enqueued, awaiting user confirmation', {
+      sessionId: this.ctx.sessionId,
+      name: draft.name,
+      signal: reviewed.signal,
+    });
+    this.emitSkillDraftPending([draft]);
   }
 
   /**
@@ -249,22 +313,7 @@ export class LearningPipeline {
         sessionId: this.ctx.sessionId,
         drafts: enqueued.map((draft) => draft.name),
       });
-      // 通知前端弹确认卡片。走 ctx.onEvent → run SSE 流 → renderer agent:event
-      // （与 suggestions_update / memory_learned 同一条产线通路；EventBus 桥接在
-      //  webServer 架构下没有被启动，不能用）。
-      this.onEvent({
-        type: 'skill_draft_pending',
-        data: {
-          sessionId: this.ctx.sessionId,
-          drafts: enqueued.map((draft) => ({
-            id: draft.id,
-            name: draft.name,
-            description: draft.description,
-            toolSequence: draft.toolSequence,
-            occurrences: draft.occurrences,
-          })),
-        },
-      });
+      this.emitSkillDraftPending(enqueued);
     }
   }
 

@@ -52,14 +52,16 @@ const draftMocks = vi.hoisted(() => ({
   enqueueSkillDraft: vi.fn(async (input: {
     name: string;
     description: string;
-    toolSequence: string[];
-    occurrences: number;
+    toolSequence?: string[];
+    occurrences?: number;
+    origin?: string;
   }) => ({
     id: `${input.name}-1`,
     name: input.name,
     description: input.description,
-    toolSequence: input.toolSequence,
-    occurrences: input.occurrences,
+    toolSequence: input.toolSequence ?? [],
+    occurrences: input.occurrences ?? 0,
+    origin: input.origin ?? 'telemetry-distilled',
     status: 'pending',
   })),
 }));
@@ -68,13 +70,24 @@ vi.mock('../../../../src/main/services/skills/skillDraftQueue', () => ({
   enqueueSkillDraft: draftMocks.enqueueSkillDraft,
 }));
 
+// LLM 复盘链：mock 掉语义复盘器，单测只验"复盘命中 → 入队 + 发事件"的接线
+const reviewMocks = vi.hoisted(() => ({
+  reviewConversationForSkill: vi.fn<() => Promise<unknown>>(async () => null),
+}));
+
+vi.mock('../../../../src/main/lightMemory/conversationReview', () => ({
+  reviewConversationForSkill: reviewMocks.reviewConversationForSkill,
+}));
+
 import {
   LearningPipeline,
   extractFailurePatterns,
   extractSuccessPatterns,
   suggestSkillName,
 } from '../../../../src/main/agent/runtime/learningPipeline';
+import { onRendererPush } from '../../../../src/main/platform/windowBridge';
 import { LEARNING_PIPELINE } from '../../../../src/shared/constants';
+import type { AgentEvent } from '../../../../src/shared/contract';
 
 // ── Fixtures ──
 
@@ -106,11 +119,27 @@ function makeFailedCall(name: string, error: string, category = 'command_failure
   });
 }
 
-function makeCtx(sessionId = 'session-1') {
+function makeCtx(sessionId = 'session-1', messages: Array<{ role: string; content: string }> = []) {
   return {
     sessionId,
     onEvent: vi.fn(),
+    messages,
   } as unknown as ConstructorParameters<typeof LearningPipeline>[0];
+}
+
+function captureRendererPushes() {
+  const pushes: Array<{ channel: string; data: unknown }> = [];
+  const dispose = onRendererPush((channel, data) => {
+    pushes.push({ channel, data });
+  });
+  return { pushes, dispose };
+}
+
+function findSkillDraftPush(pushes: Array<{ channel: string; data: unknown }>) {
+  return pushes.find((push) => (
+    push.channel === 'agent:event'
+    && (push.data as AgentEvent | undefined)?.type === 'skill_draft_pending'
+  ));
 }
 
 // ── Tests ──
@@ -273,11 +302,29 @@ describe('LearningPipeline', () => {
 
     const ctx = makeCtx('session-skill');
     const pipeline = new LearningPipeline(ctx);
-    await pipeline.runSkillDistillation();
+    const { pushes, dispose } = captureRendererPushes();
+    try {
+      await pipeline.runSkillDistillation();
+    } finally {
+      dispose();
+    }
 
     expect(draftMocks.enqueueSkillDraft).toHaveBeenCalled();
-    // 通知用户确认（ctx.onEvent → run SSE 流 → renderer，与 memory_learned 同通路）
+    // run SSE 流仍能收到，兼容已有事件通路。
     expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'skill_draft_pending',
+        data: expect.objectContaining({
+          sessionId: 'session-skill',
+          drafts: expect.arrayContaining([
+            expect.objectContaining({ name: expect.any(String), occurrences: expect.any(Number) }),
+          ]),
+        }),
+      }),
+    );
+    // session-end learning 是 fire-and-forget，可能发生在 run SSE 已结束之后；
+    // 因此必须同时推到全局 renderer 通道，聊天页才能弹确认卡。
+    expect(findSkillDraftPush(pushes)?.data).toEqual(
       expect.objectContaining({
         type: 'skill_draft_pending',
         data: expect.objectContaining({
@@ -301,9 +348,15 @@ describe('LearningPipeline', () => {
 
     const ctx = makeCtx();
     const pipeline = new LearningPipeline(ctx);
-    await pipeline.runSkillDistillation();
+    const { pushes, dispose } = captureRendererPushes();
+    try {
+      await pipeline.runSkillDistillation();
+    } finally {
+      dispose();
+    }
 
     expect(ctx.onEvent).not.toHaveBeenCalled();
+    expect(findSkillDraftPush(pushes)).toBeUndefined();
   });
 
   it('runSessionEndLearning should run both passes from telemetry', async () => {
@@ -336,5 +389,83 @@ describe('LearningPipeline', () => {
     const ctx = makeCtx();
     const pipeline = new LearningPipeline(ctx);
     await expect(pipeline.runSessionEndLearning()).resolves.toBeUndefined();
+  });
+});
+
+// ── LLM 语义复盘链（runConversationReviewDistillation）──
+
+describe('runConversationReviewDistillation', () => {
+  const convo = [
+    { role: 'user', content: '帮我部署 Tauri 应用' },
+    { role: 'assistant', content: '好的，已用安装脚本部署' },
+    { role: 'user', content: '记住：以后部署都用 scripts/tauri-install.sh，别手动 cp' },
+  ];
+
+  beforeEach(() => {
+    reviewMocks.reviewConversationForSkill.mockReset();
+    reviewMocks.reviewConversationForSkill.mockResolvedValue(null);
+    draftMocks.enqueueSkillDraft.mockClear();
+  });
+
+  it('复盘命中 → 以 origin=llm-review 入队 + 发 skill_draft_pending 事件', async () => {
+    reviewMocks.reviewConversationForSkill.mockResolvedValue({
+      shouldCreate: true,
+      signal: 'remember_request',
+      name: 'deploy-tauri-macos',
+      description: '部署 Tauri 桌面应用的标准流程',
+      body: '## 要点\n用 scripts/tauri-install.sh，手动 cp 会残留旧文件',
+    });
+
+    const ctx = makeCtx('session-review', convo);
+    const { pushes, dispose } = captureRendererPushes();
+    try {
+      await new LearningPipeline(ctx).runConversationReviewDistillation();
+    } finally {
+      dispose();
+    }
+
+    expect(draftMocks.enqueueSkillDraft).toHaveBeenCalledTimes(1);
+    const arg = draftMocks.enqueueSkillDraft.mock.calls[0][0] as Record<string, unknown>;
+    expect(arg.origin).toBe('llm-review');
+    expect(arg.patternKey).toBe('llm-review:deploy-tauri-macos');
+    expect(arg.body).toContain('tauri-install.sh');
+    expect(arg.name).toBe('deploy-tauri-macos');
+
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'skill_draft_pending' }),
+    );
+    expect(findSkillDraftPush(pushes)?.data).toEqual(
+      expect.objectContaining({
+        type: 'skill_draft_pending',
+        data: expect.objectContaining({
+          sessionId: 'session-review',
+          drafts: [
+            expect.objectContaining({
+              name: 'deploy-tauri-macos',
+              description: '部署 Tauri 桌面应用的标准流程',
+              origin: 'llm-review',
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it('复盘无可沉淀（返回 null）→ 不入队、不发事件', async () => {
+    reviewMocks.reviewConversationForSkill.mockResolvedValue(null);
+
+    const ctx = makeCtx('session-review-empty', convo);
+    await new LearningPipeline(ctx).runConversationReviewDistillation();
+
+    expect(draftMocks.enqueueSkillDraft).not.toHaveBeenCalled();
+    expect(ctx.onEvent).not.toHaveBeenCalled();
+  });
+
+  it('用户轮数不足 → 不调用复盘器', async () => {
+    const ctx = makeCtx('session-review-short', [{ role: 'user', content: '只有一轮' }]);
+    await new LearningPipeline(ctx).runConversationReviewDistillation();
+
+    expect(reviewMocks.reviewConversationForSkill).not.toHaveBeenCalled();
+    expect(draftMocks.enqueueSkillDraft).not.toHaveBeenCalled();
   });
 });

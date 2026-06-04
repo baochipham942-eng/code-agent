@@ -22,6 +22,32 @@ export const SESSION_JUDGE = {
   RECENT_USER_TURNS: 8,
 } as const;
 
+/**
+ * SKILL_REVIEW — 运行时 skill 自沉淀的 LLM 语义复盘链（借鉴 Hermes background_review）。
+ * 与 telemetry n-gram 蒸馏并联：n-gram 只看工具序列，这条链让 quick model 读对话内容，
+ * 提炼"这一类任务怎么做"的 class-level skill 草稿（仍进 skill-drafts 队列，由用户确认入库）。
+ */
+export const SKILL_REVIEW = {
+  /** quick model max_tokens：需返回含 skill 正文的 JSON，给足余量 */
+  MAX_TOKENS: 1024,
+  /** LLM 复盘调用超时（ms）。收尾异步执行，不阻塞会话，比会话归档判断更宽松 */
+  TIMEOUT_MS: 15000,
+  /** 参与复盘的最近用户轮数 */
+  RECENT_USER_TURNS: 10,
+  /** 助手最后回复纳入复盘时的截断字符数 */
+  ASSISTANT_SNIPPET_CHARS: 600,
+  /** skill 正文最大字符数（防止 LLM 灌水） */
+  MAX_BODY_CHARS: 4000,
+  /** 建议 skill 名最大长度 */
+  MAX_NAME_CHARS: 48,
+  /** skill 描述最大字符数 */
+  MAX_DESCRIPTION_CHARS: 200,
+  /** 触发复盘的最少用户轮数（太短的会话没有可沉淀的"类"） */
+  MIN_USER_TURNS: 2,
+  /** 自沉淀来源标记（写入草稿 meta.origin / SKILL.md frontmatter，可在设置页筛人建 vs 自沉淀） */
+  ORIGIN: 'llm-review',
+} as const;
+
 /** 记忆 consolidation（cron 周期任务 → consolidation 模块） */
 export const MEMORY_CONSOLIDATION = {
   /** 调度 cron 表达式（6 字段，croner）：默认每周一 04:00 本地时间 */

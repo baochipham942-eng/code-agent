@@ -12,5 +12,5 @@ export const OS_SANDBOX = {
    * 是否在 bypassPermissions（YOLO）档对 bash 执行启用 OS 级沙箱。
    * 默认关闭，行为零变化；需显式设置 env `OS_SANDBOX_ENABLED=true` 启用。
    */
-  ENABLED: process.env.OS_SANDBOX_ENABLED === 'true',
+  ENABLED: typeof process !== 'undefined' && process.env?.OS_SANDBOX_ENABLED === 'true',
 } as const;

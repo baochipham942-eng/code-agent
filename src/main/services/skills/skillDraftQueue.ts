@@ -9,6 +9,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getUserConfigDir, getSkillsDir } from '../../config/configPaths';
 import { LEARNING_PIPELINE } from '../../../shared/constants';
+import { scanSkillContent } from '../../security/skillContentGuard';
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('SkillDraftQueue');
@@ -284,6 +285,21 @@ export async function confirmSkillDraft(
 
   try {
     const skillContent = await fs.readFile(path.join(draftDir, 'SKILL.md'), 'utf-8');
+
+    // fail-closed 安全闸：草稿入库前过内容扫描，命中 critical 危险命令 / 明文密钥则拒绝。
+    // 反超 Hermes（其 agent-created skill 默认不扫描）；草稿留在队列，用户可查看后删除。
+    const guard = scanSkillContent(skillContent);
+    if (guard.verdict === 'block') {
+      logger.warn('Skill draft blocked by content guard', {
+        id,
+        findings: guard.findings.map((f) => f.kind),
+      });
+      return {
+        success: false,
+        error: `安全扫描未通过，已拒绝入库：${guard.findings.map((f) => f.detail).join('；')}`,
+      };
+    }
+
     const skillsDir = getSkillsDir(workingDirectory);
     const targetDir = path.join(skillsDir.user.new, meta.name);
     await fs.mkdir(targetDir, { recursive: true });

@@ -22,14 +22,14 @@ import { BUILTIN_REPO_ID } from '../contract/skillRepository';
 export const RECOMMENDED_REPOSITORIES: SkillRepository[] = [
   {
     id: 'anthropic-skills',
-    name: 'Anthropic Official Skills',
+    name: 'Anthropic Skills（社区镜像）',
     url: 'https://github.com/baochipham942-eng/skills',
     branch: 'main',
     skillsPath: 'skills',
     category: 'core',
     recommended: true,
-    description: '官方文档与创意 Skills（Word/PPT/PDF/前端设计/主题工厂）',
-    author: 'Anthropic',
+    description: 'Anthropic 文档与创意 Skills（Word/PPT/PDF/前端设计/主题工厂），托管于社区镜像仓库',
+    author: 'Anthropic（社区镜像）',
   },
   {
     id: 'superpowers',

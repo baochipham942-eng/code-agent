@@ -13,7 +13,7 @@ import type {
 } from '../../../shared/contract/controlPlane';
 
 export type ControlPlanePublicKeys = Record<string, string>;
-export type SupportedControlPlaneArtifactKind = ControlPlaneArtifactKind | 'runtime_assets_manifest';
+export type SupportedControlPlaneArtifactKind = ControlPlaneArtifactKind | 'runtime_assets_manifest' | 'renderer_bundle';
 
 export interface VerifyControlPlaneEnvelopeOptions {
   kind: SupportedControlPlaneArtifactKind;

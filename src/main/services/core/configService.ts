@@ -170,7 +170,7 @@ const DEFAULT_SETTINGS: AppSettings = {
       openai: { enabled: false },
       gemini: { enabled: false },
       groq: { enabled: false },
-      local: { enabled: false },
+      local: { enabled: true },
       zhipu: { enabled: true },     // 智谱默认启用 (视觉 + 备用语言)
       qwen: { enabled: false },
       moonshot: { enabled: true },  // Kimi K2.5 包月套餐
@@ -280,6 +280,7 @@ export class ConfigService implements IReadConfigService {
     // Try to restore settings from Keychain (survives app reinstall)
     await this.restoreFromKeychain();
     this.migrateLegacyLongCatProvider();
+    this.enableDefaultLocalProvider();
 
     // Save merged settings
     await this.save();
@@ -447,6 +448,33 @@ export class ConfigService implements IReadConfigService {
     }
 
     logger.info('Migrated legacy custom LongCat provider to official longcat provider');
+  }
+
+  private enableDefaultLocalProvider(): void {
+    const local = this.settings.models.providers.local;
+    if (!local) {
+      this.settings.models.providers.local = { enabled: true };
+      return;
+    }
+
+    const hasCustomLocalSettings = Boolean(
+      local.baseUrl
+      || local.model
+      || local.displayName
+      || local.protocol
+      || local.updatedAt
+      || local.apiKeyConfigured
+      || local.maxConcurrent
+      || local.proxyMode
+      || local.temperature
+      || local.maxTokens
+      || (local.models && Object.keys(local.models).length > 0)
+    );
+
+    if (local.enabled === false && !hasCustomLocalSettings) {
+      local.enabled = true;
+      logger.info('Settings upgrade: enabled default local provider');
+    }
   }
 
   // Restore user settings from Keychain (for app reinstall scenarios)

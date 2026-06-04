@@ -55,21 +55,59 @@ export function extractCodeSegments(markdown: string): string[] {
 /**
  * 扫描一份 SKILL.md 内容。返回 block = 命中需拒绝入库的风险。
  */
+// 混淆 / RCE / 外泄签名：validateCommand 不一定覆盖的"下载并执行 / 反弹 shell"等模式。
+// 这些在正常 skill 里几乎不会出现，命中即拦（高信号低误伤）。
+const OBFUSCATION_PATTERNS: Array<{ re: RegExp; flag: string }> = [
+  // 下载后直接管道进 shell：curl/wget/fetch ... | sh|bash|zsh
+  { re: /\b(curl|wget|fetch)\b[^\n]*\|\s*(sudo\s+)?\w*sh\b/i, flag: 'download_pipe_shell' },
+  // base64 解码后管道进 shell
+  { re: /\bbase64\b[^\n]*-{0,2}d(ecode)?\b[^\n]*\|\s*(sudo\s+)?\w*sh\b/i, flag: 'base64_pipe_shell' },
+  // 任意 echo/printf 解码管道进 shell（eval 风格）
+  { re: /\beval\b[^\n]*\$\(/i, flag: 'eval_cmd_subst' },
+  // 反弹 shell：/dev/tcp 重定向
+  { re: /\b(ba|z)?sh\b[^\n]*\/dev\/tcp\//i, flag: 'reverse_shell_devtcp' },
+  // netcat 反弹 shell
+  { re: /\bnc\b[^\n]*-e\s*\/(bin|usr)\/[a-z/]*sh/i, flag: 'netcat_reverse_shell' },
+  // 命令替换里下载：$(curl ...) / `wget ...`
+  { re: /[$`]\(?\s*(curl|wget|fetch)\b[^)`\n]*\)?/i, flag: 'cmdsubst_download' },
+];
+
+/**
+ * 扫描前归一化：把反斜杠续行（`\` + 换行）合并成单行，防止把危险命令拆行绕过扫描。
+ */
+export function normalizeForScan(content: string): string {
+  return content.replace(/\\\r?\n[ \t]*/g, ' ');
+}
+
 export function scanSkillContent(content: string): SkillGuardResult {
   const findings: SkillGuardFinding[] = [];
+  const normalized = normalizeForScan(content);
 
-  // 1) 危险命令：只在代码片段上跑 validateCommand，命中 critical 才拦
-  for (const segment of extractCodeSegments(content)) {
-    const result = validateCommand(segment);
+  // 1) 危险命令：对【全文】逐行跑 validateCommand（不止代码块——skill 散文本身就是
+  //    agent 会照着执行的指令，藏在散文里的危险命令同样要拦），命中 critical 即拦。
+  const seen = new Set<string>();
+  for (const rawLine of normalized.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || seen.has(line)) continue;
+    seen.add(line);
+    const result = validateCommand(line);
     if (result.riskLevel === 'critical') {
       findings.push({
         kind: 'dangerous_command',
-        detail: `危险命令（${result.securityFlags.join(',') || 'critical'}）：${segment.slice(0, 80)}`,
+        detail: `危险命令（${result.securityFlags.join(',') || 'critical'}）：${line.slice(0, 80)}`,
       });
     }
   }
 
-  // 2) 嵌入密钥：高置信的明文密钥/私钥不应写进 skill
+  // 2) 混淆 / RCE / 外泄签名（对归一化后的全文匹配）
+  for (const { re, flag } of OBFUSCATION_PATTERNS) {
+    const m = normalized.match(re);
+    if (m) {
+      findings.push({ kind: 'dangerous_command', detail: `可疑混淆/远程执行（${flag}）：${m[0].slice(0, 80)}` });
+    }
+  }
+
+  // 3) 嵌入密钥：高置信的明文密钥/私钥不应写进 skill
   const detection = getSensitiveDetector().detect(content);
   for (const match of detection.matches) {
     if (match.confidence === 'high') {

@@ -49,6 +49,7 @@ export default async function Dashboard() {
         <nav className="flex items-center gap-5 text-sm">
           <Link href="/" className="text-zinc-100 hover:text-white">Dashboard</Link>
           <Link href="/users" className="text-zinc-400 hover:text-zinc-100">Users</Link>
+          <Link href="/entitlements" className="text-zinc-400 hover:text-zinc-100">授权</Link>
           <Link href="/errors" className="text-zinc-400 hover:text-zinc-100">Errors</Link>
           <Link href="/feedback" className="text-zinc-400 hover:text-zinc-100">Feedback</Link>
           <form action={signOut}>

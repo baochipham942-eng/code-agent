@@ -101,6 +101,8 @@ function getDesktopBootstrapWorkingDirectory(configService?: ConfigService): str
 async function initializeCloudAndMCP(configService: ConfigService, mainWindow: BrowserWindow | null): Promise<void> {
   await initCloudConfigService({
     getAccessToken: () => getAuthService().getAccessToken(),
+    // 把控制面下发的团队共享 provider（中转站）reconcile 进本地 settings（web/main 路径都要接）。
+    onSharedProvidersResolved: (providers) => configService.reconcileManagedProviders(providers),
   });
 
   const info = getCloudConfigService().getInfo();

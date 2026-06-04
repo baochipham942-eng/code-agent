@@ -14,6 +14,7 @@ import {
   type KillSwitchPolicy,
   type ReleasePolicy,
   type ModelRoutingConfig,
+  type SharedProviderConfig,
 } from './builtinConfig';
 import { setModelRoutingOverride } from '../../model/modelRouterPolicy';
 import { createLogger } from '../infra/logger';
@@ -57,6 +58,9 @@ export interface CloudConfigServiceOptions {
   getAccessToken?: () => Promise<string | null>;
   controlPlanePublicKeys?: ControlPlanePublicKeys;
   allowUnsignedCloudConfig?: boolean;
+  /** 成功拉取到可信 cloud config 后回调，用于把团队共享 provider（中转站）reconcile 进本地 settings。
+   *  仅在真正拿到云端配置时触发；离线/降级 builtin 时不触发（避免误删本地已下发的）。 */
+  onSharedProvidersResolved?: (providers: SharedProviderConfig[]) => void | Promise<void>;
 }
 
 // ----------------------------------------------------------------------------
@@ -268,6 +272,11 @@ export class CloudConfigService {
 
   getModelRouting(): ModelRoutingConfig | undefined {
     return this.getConfig().modelRouting;
+  }
+
+  /** 控制面下发的团队共享 provider（中转站）；已按本人 entitlement 在网关层过滤。 */
+  getSharedProviders(): SharedProviderConfig[] {
+    return this.getConfig().sharedProviders ?? [];
   }
 
   isGlobalKillSwitchActive(): boolean {
@@ -504,6 +513,16 @@ export class CloudConfigService {
       this.etag = response.headers.get('ETag');
       // 同步模型路由 override（缺省/畸形会在 setter 内降级硬编码 PROVIDER_FALLBACK_CHAIN）
       setModelRoutingOverride(config.modelRouting);
+
+      // 把控制面下发的团队共享 provider（中转站）reconcile 进本地 settings。
+      // 只在「成功拿到可信云端配置」时触发：sharedProviders 缺省 → 传 []，会移除本地已托管的（=管理员关闭）。
+      if (this.options.onSharedProvidersResolved) {
+        try {
+          await this.options.onSharedProvidersResolved(config.sharedProviders ?? []);
+        } catch (error) {
+          logger.warn('Failed to reconcile shared providers', { error: String(error) });
+        }
+      }
 
       logger.info(`Fetched trusted config v${config.version}`, {
         expiresAt: this.lastTrust.expiresAt || 'not set',

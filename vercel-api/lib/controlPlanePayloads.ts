@@ -3,6 +3,34 @@ import type { ControlPlaneRequestLike } from './controlPlaneEnvelope.js';
 import { applyServerEntitlementGate, applyServerEntitlementGateAsync } from './controlPlaneEntitlements.js';
 import { readJsonPayloadFromEnv } from './controlPlaneEnvelope.js';
 
+/**
+ * 团队共享 provider（中转站）下发配置。
+ * 让管理员把一把中转站 key 通过控制面下发给被授权的用户，用户零配置即可在模型选择器里
+ * 看到并使用这些模型——key 永远不进客户端构建包，只随 cloud_config 信封按 subject 下发。
+ *
+ * - `requiredCapability` 缺省 → team-wide：所有「通过鉴权」的用户都能拿到（开放给大家）。
+ * - `requiredCapability` 指定（如 'shared_relay'）→ 仅 entitlement.capabilities 命中的用户能拿到，
+ *   其余用户在网关层就被剥离整条配置（含 apiKey），密钥不下发。
+ */
+export interface SharedProviderConfig {
+  /** provider id，必须是动态 custom provider 形态（custom-xxx），客户端据此注入选择器。 */
+  id: string;
+  /** 选择器里展示的分组名，例如「团队共享」。 */
+  displayName: string;
+  /** 中转站 OpenAI 兼容端点，例如 https://tokenflux.dev/v1。 */
+  baseUrl: string;
+  /** 中转站 key（机密）。仅下发给被授权 subject。 */
+  apiKey: string;
+  /** 协议，缺省 openai。 */
+  protocol?: 'openai' | 'claude';
+  /** 计费方式（影响自动模式路由），中转站默认 unknown。 */
+  billingMode?: 'free' | 'plan' | 'payg' | 'unknown';
+  /** 暴露给用户的模型白名单（由管理员在控制面/中转站侧策展）。 */
+  models: Array<{ id: string; label?: string }>;
+  /** entitlement 能力门；缺省=team-wide（所有鉴权用户），指定=仅命中该 capability 的用户。 */
+  requiredCapability?: string;
+}
+
 export interface CloudConfigPayload {
   version: string;
   prompts: Record<string, string>;
@@ -31,6 +59,8 @@ export interface CloudConfigPayload {
   modelRouting?: {
     fallbackChain?: Record<string, Array<{ provider: string; model: string }>>;
   };
+  /** 团队共享 provider（中转站）；按 subject 的 entitlement 在网关层过滤后下发。 */
+  sharedProviders?: SharedProviderConfig[];
   entitlement?: {
     status: 'active' | 'trial' | 'expired' | 'revoked';
     plan: string;

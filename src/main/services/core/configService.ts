@@ -14,7 +14,9 @@ import { createLogger } from '../infra/logger';
 import { getPolicyEngine } from '../../permissions/policyEngine';
 import { setProviderConcurrencyOverrides } from '../../model/concurrencyLimiter';
 import { setProviderProxyOverrides } from '../../model/providers/shared';
-import type { ProxyMode } from '../../../shared/contract/settings';
+import type { ProxyMode, ModelEntrySettings } from '../../../shared/contract/settings';
+import type { SharedProviderConfig } from '../cloud/builtinConfig';
+import { isDynamicCustomProviderId } from '../../../shared/modelRuntime';
 import {
   DEFAULT_PROVIDER,
   DEFAULT_MODEL,
@@ -695,6 +697,67 @@ export class ConfigService implements IReadConfigService {
       // Don't store apiKey in config.json anymore
     };
     await this.save();
+  }
+
+  /**
+   * 协调控制面下发的「团队共享 provider（中转站）」到本地 settings。
+   *
+   * 入参 `providers` 是控制面**已按本人 entitlement 过滤**后的列表（无权的在网关层就被剥离）。
+   * 本方法做幂等 reconcile：
+   *  - 下发列表里的 → upsert 成 managedByCloud 的动态 custom provider（key 存 SecureStorage，不落明文）；
+   *  - 之前托管、本次不再下发的 → 删除（管理员关闭/吊销/kill switch 后，下次拉取即自动消失）。
+   *
+   * 仅在「成功拿到可信 cloud config」后调用——离线/拉取失败时不要调用（避免误删本地已下发的）。
+   */
+  async reconcileManagedProviders(providers: SharedProviderConfig[]): Promise<void> {
+    const storage = getSecureStorage();
+    const desired = new Map(
+      (providers ?? [])
+        .filter((p) => p && typeof p.id === 'string' && isDynamicCustomProviderId(p.id) && p.baseUrl && p.apiKey)
+        .map((p) => [p.id, p] as const),
+    );
+
+    let changed = false;
+
+    // 1) 移除：之前托管、本次不再下发的
+    for (const id of Object.keys(this.settings.models.providers)) {
+      const existing = this.settings.models.providers[id];
+      if (existing?.managedByCloud && !desired.has(id)) {
+        delete this.settings.models.providers[id];
+        storage.deleteApiKey(id);
+        changed = true;
+        logger.info('Removed managed shared provider (no longer delivered)', { provider: id });
+      }
+    }
+
+    // 2) upsert：本次下发的
+    for (const [id, p] of desired) {
+      storage.setApiKey(id, p.apiKey);
+      const models: Record<string, ModelEntrySettings> = {};
+      for (const m of p.models ?? []) {
+        if (!m?.id) continue;
+        models[m.id] = { enabled: true, ...(m.label ? { label: m.label } : {}) };
+      }
+      this.settings.models.providers[id] = {
+        ...this.settings.models.providers[id],
+        enabled: true,
+        managedByCloud: true,
+        baseUrl: p.baseUrl,
+        displayName: p.displayName,
+        protocol: p.protocol ?? 'openai',
+        billingMode: p.billingMode ?? 'unknown',
+        ...(Object.keys(models).length > 0 ? { models } : {}),
+      };
+      // 托管 provider 的 key 不落明文 settings，只进 SecureStorage（对齐普通 provider）
+      delete (this.settings.models.providers[id] as { apiKey?: string }).apiKey;
+      changed = true;
+    }
+
+    if (changed) {
+      await this.save();
+      this.applyProviderConcurrencyOverrides();
+      this.applyProviderProxyOverrides();
+    }
   }
 
   getApiKey(provider: ModelProvider): string | undefined {

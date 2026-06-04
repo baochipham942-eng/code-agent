@@ -130,6 +130,9 @@ export interface MemoryLearnedData {
 }
 
 // GAP-005: Skill 蒸馏草稿待确认事件数据（半自动确认制，严禁自动入库）
+/** skill 草稿来源：telemetry n-gram 机械蒸馏 vs LLM 语义复盘自沉淀 */
+export type SkillDraftOrigin = 'telemetry-distilled' | 'llm-review';
+
 export interface SkillDraftPendingData {
   sessionId: string;
   drafts: Array<{
@@ -138,6 +141,7 @@ export interface SkillDraftPendingData {
     description: string;
     toolSequence: string[];
     occurrences: number;
+    origin: SkillDraftOrigin;
   }>;
 }
 

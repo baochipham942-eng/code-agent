@@ -245,6 +245,7 @@ export class LearningPipeline {
           description: draft.description,
           toolSequence: draft.toolSequence,
           occurrences: draft.occurrences,
+          origin: draft.origin,
         }],
       },
     });
@@ -317,6 +318,7 @@ export class LearningPipeline {
             description: draft.description,
             toolSequence: draft.toolSequence,
             occurrences: draft.occurrences,
+            origin: draft.origin,
           })),
         },
       });

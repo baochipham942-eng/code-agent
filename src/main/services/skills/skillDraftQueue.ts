@@ -9,16 +9,16 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getUserConfigDir, getSkillsDir } from '../../config/configPaths';
 import { LEARNING_PIPELINE } from '../../../shared/constants';
+import type { SkillDraftOrigin } from '../../../shared/contract/agent';
 import { scanSkillContent } from '../../security/skillContentGuard';
 import { createLogger } from '../infra/logger';
+
+export type { SkillDraftOrigin };
 
 const logger = createLogger('SkillDraftQueue');
 
 const DRAFT_META_FILENAME = 'draft.json';
 const REJECTED_LEDGER_FILENAME = 'rejected.json';
-
-/** 草稿来源：telemetry n-gram 机械蒸馏 vs LLM 语义复盘自沉淀（设置页可据此筛选） */
-export type SkillDraftOrigin = 'telemetry-distilled' | 'llm-review';
 
 export interface SkillDraftMeta {
   /** 草稿目录名（队列内唯一） */

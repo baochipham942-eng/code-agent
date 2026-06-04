@@ -931,9 +931,13 @@ class TelemetryQueryService {
               llmUsed: attribution.llmUsed,
               durationMs: attribution.durationMs,
             };
-          } catch {}
+          } catch (error) {
+            logger.debug('失败归因(FailureAttributor)计算失败，跳过', { error: String(error) });
+          }
         }
-      } catch {}
+      } catch (error) {
+        logger.debug('失败归因外层处理异常，跳过', { error: String(error) });
+      }
 
       const selfRepair = this.calculateSelfRepairStats(data.toolCallRows);
       const hasToolSchemas = turns.some(turn => turn.blocks.some(block => (

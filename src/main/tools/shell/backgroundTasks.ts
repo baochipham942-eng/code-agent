@@ -292,8 +292,10 @@ export function startBackgroundTask(
       clearTimeout(taskState.killTimeout);
     }
 
-    // Close output stream
-    taskState.outputStream?.end();
+    // Close output stream（幂等：error 与 close 可能先后触发，避免重复 end 抛 ERR_STREAM_WRITE_AFTER_END）
+    if (taskState.outputStream && !taskState.outputStream.writableEnded) {
+      taskState.outputStream.end();
+    }
     emitTaskLifecycleEvent(taskState.status === 'completed' ? 'completed' : 'failed', taskState);
   });
 
@@ -303,8 +305,11 @@ export function startBackgroundTask(
     taskState.endTime = Date.now();
     const errorMsg = `[error] ${err.message}`;
     taskState.output.push(errorMsg);
-    taskState.outputStream?.write(errorMsg + '\n');
-    taskState.outputStream?.end();
+    // 幂等：若 close 已先触发结束流，跳过 write/end，避免 ERR_STREAM_WRITE_AFTER_END
+    if (taskState.outputStream && !taskState.outputStream.writableEnded) {
+      taskState.outputStream.write(errorMsg + '\n');
+      taskState.outputStream.end();
+    }
 
     // 清理所有定时器
     if (taskState.timeout) {

@@ -593,7 +593,8 @@ export class ConversationRuntime {
             maxTokens: getContextWindow(this.ctx.modelConfig.model),
             errorType: null,
             consecutiveErrors: this.ctx.consecutiveErrors,
-            budgetRemaining: 1.0, // TODO: wire to budgetService
+            // budgetRemaining: budgetService 真实剩余比例（0-1）；未配预算时 usagePercentage=0 → 1.0，不误触发停止闸
+            budgetRemaining: Math.max(0, Math.min(1, 1 - getBudgetService().checkBudget().usagePercentage)),
             iterationCount: iterations,
             maxIterations: this.ctx.maxIterations,
           };

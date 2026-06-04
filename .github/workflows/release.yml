@@ -35,14 +35,20 @@ jobs:
           TAURI_CLI_VERSION: '2.10.1'
         run: cargo install tauri-cli --version "${TAURI_CLI_VERSION}" --locked
 
-      - name: Build native helper binaries (Tauri bundle resources)
+      - name: Build native helpers + fetch sidecars (Tauri bundle resources)
         # tauri.conf.json bundles three Swift Mach-O helpers (system-audio-capture, vision-ocr,
-        # vision-tagger) that are build artifacts NOT committed to the repo. A fresh CI checkout
-        # must compile all of them or `tauri build` fails with "resource path doesn't exist".
+        # vision-tagger) AND two fetched sidecar binaries (rtk, uv). All five are build artifacts
+        # NOT committed to the repo. A fresh CI checkout must produce every one or `tauri build`
+        # fails with "resource path doesn't exist" — this is exactly why v0.16.89 (2026-06-01)
+        # failed: rtk/uv were added to bundle resources after the last green run but this step
+        # was never updated to fetch them. fetch-rtk/fetch-uv pull from GitHub releases; the CI
+        # runner reaches GitHub directly so no proxy is needed (unlike local dev).
         run: |
           bash scripts/build-audio-capture.sh
           bash scripts/build-vision-ocr.sh
           bash scripts/build-vision-tagger.sh
+          bash scripts/fetch-rtk.sh
+          bash scripts/fetch-uv.sh
 
       - name: Import Developer ID certificate
         env:
@@ -97,6 +103,14 @@ jobs:
           bash scripts/tauri-release-bundle.sh
           npm run release:notarize-macos
           npm run release:verify-macos
+
+      - name: Smoke-probe renderer startup (block publish on ErrorBoundary crash)
+        # typecheck/vitest 全过 ≠ renderer 真能 mount。v0.16.89 公证全过、装机却 ErrorBoundary
+        # 崩（命令重复注册），烧掉一轮 ~25min 公证才在装机时暴露。本 step 用 runner 预装的
+        # Google Chrome + playwright-core headless 启动已构建的 webServer 首页，渲染出"出错了"
+        # 或主壳未挂载就 fail —— 让 CI 绿真正等于"可装"，崩的版本绝不会被上传 OSS / 发 Release。
+        # 放在公证之后、上传之前：拦住坏版本发布；后续可前移到 cargo build 之前以省公证时间。
+        run: node scripts/release-renderer-probe.mjs 8182
 
       # 重打 .app.tar.gz：
       # 1) tauri-bundler 在 nested 签名前已先打过一份 tar.gz（stale）

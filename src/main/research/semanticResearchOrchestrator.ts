@@ -21,6 +21,7 @@ import { DataSourceRouter } from './dataSourceRouter';
 import { AdaptiveConfigGenerator } from './adaptiveConfig';
 import { ProgressiveResearchLoop } from './progressiveLoop';
 import { ReportGenerator } from './reportGenerator';
+import { getMCPClient } from '../mcp/mcpClient';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('SemanticResearchOrchestrator');
@@ -382,9 +383,12 @@ export class SemanticResearchOrchestrator {
         return true;
 
       case 'mcp_deepwiki':
+        // 真实检查：DeepWiki MCP server 是否已连接（未配置/未连接则不可用）
+        return getMCPClient().isConnected('deepwiki');
+
       case 'mcp_github':
-        // TODO: 检查 MCP 连接状态
-        return false;
+        // 真实检查：GitHub MCP server 是否已连接
+        return getMCPClient().isConnected('github');
 
       case 'academic_search':
       case 'code_search':

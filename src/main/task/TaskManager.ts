@@ -757,7 +757,11 @@ export class TaskManager extends EventEmitter {
         broadcastDAGEvent: (event) => {
           for (const win of BrowserWindow.getAllWindows()) {
             if (!win.isDestroyed() && win.webContents) {
-              try { win.webContents.send(DAG_CHANNELS.EVENT, event); } catch {}
+              try {
+                win.webContents.send(DAG_CHANNELS.EVENT, event);
+              } catch (error) {
+                logger.warn('广播 DAG 事件到渲染进程失败', { error: String(error) });
+              }
             }
           }
         },

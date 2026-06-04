@@ -164,3 +164,60 @@ describe('scanSkillContent — shell 语义归一化', () => {
     expect(scanSkillContent('```\nrm -rf ./dist\n```').verdict).toBe('pass');
   });
 });
+
+// ── 动态命令名 fail-closed（Codex 三审 HIGH#1）──
+
+describe('scanSkillContent — 动态命令名', () => {
+  it('变量赋值后用作命令 a=rm;$a -rf / → block', () => {
+    expect(scanSkillContent('```\na=rm;$a -rf /\n```').verdict).toBe('block');
+  });
+
+  it('参数展开变形 ${cmd/x/r} -rf / → block', () => {
+    expect(scanSkillContent('```\ncmd=xm;${cmd/x/r} -rf /\n```').verdict).toBe('block');
+  });
+
+  it('命令替换作命令名 $(printf %b ...) -rf / → block', () => {
+    expect(scanSkillContent("```\n$(printf %b '\\x72\\x6d') -rf /\n```").verdict).toBe('block');
+  });
+
+  it('base64 解码作命令名 $(echo cm0=|base64 -d) -rf / → block', () => {
+    expect(scanSkillContent('```\n$(echo cm0= | base64 -d) -rf /\n```').verdict).toBe('block');
+  });
+
+  it("ANSI-C quote 命令名 $'\\x72\\x6d' -rf / → block", () => {
+    expect(scanSkillContent("```\n$'\\x72\\x6d' -rf /\n```").verdict).toBe('block');
+  });
+
+  it('动态在参数位不误伤：git checkout $(git rev-parse HEAD) → pass', () => {
+    expect(scanSkillContent('```\ngit checkout $(git rev-parse HEAD)\n```').verdict).toBe('pass');
+  });
+
+  it('前置环境赋值不误伤：VERSION=1.0 npm publish → pass', () => {
+    expect(scanSkillContent('```\nVERSION=1.0 npm publish\n```').verdict).toBe('pass');
+  });
+
+  it('$ 后非标识符不误伤：价格 $5 元 → pass', () => {
+    expect(scanSkillContent('价格 $5 元，含 $HOME 变量说明').verdict).toBe('pass');
+  });
+});
+
+// ── pipe-to-shell 变体（Codex 三审 HIGH#2：路径/env/busybox/pwsh）──
+
+describe('scanSkillContent — pipe 进解释器变体', () => {
+  for (const cmd of [
+    'cat payload | /bin/sh',
+    'cat payload | /usr/bin/bash',
+    'cat payload | env bash',
+    'cat payload | busybox sh',
+    'cat payload | pwsh',
+    'cat payload | powershell',
+  ]) {
+    it(`${cmd} → block`, () => {
+      expect(scanSkillContent('```\n' + cmd + '\n```').verdict).toBe('block');
+    });
+  }
+
+  it('| shasum 不误伤', () => {
+    expect(scanSkillContent('```\ncat f | shasum -a 256\n```').verdict).toBe('pass');
+  });
+});

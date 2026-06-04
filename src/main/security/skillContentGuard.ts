@@ -55,14 +55,36 @@ export function extractCodeSegments(markdown: string): string[] {
 /**
  * 扫描一份 SKILL.md 内容。返回 block = 命中需拒绝入库的风险。
  */
+// 命令位置的动态构造：命令名是变量/命令替换/参数展开/ANSI-C quote（如 $a、$(...)、${cmd/x/r}、$'\x72'）时，
+// 静态扫描无法判定它最终会展开成什么，对 skill 入库一律 fail-closed。
+// 注：反引号命令替换不在此列（markdown 行首内联代码会大量误伤）；反引号下载由 cmdsubst 签名覆盖。
+const DYNAMIC_CMD_START = /^(\$\(|\$\{|\$'|\$[A-Za-z_])/;
+const CMD_SEPARATORS = /[;&|\n]+/;
+const LEADING_ASSIGNMENTS = /^(?:[A-Za-z_]\w*=\S*\s+)+/;
+
+/** 检测是否存在"动态命令名"（命令位置出现 $.../${...}/$(...)/ANSI-C/反引号） */
+export function findDynamicCommandName(normalized: string): string | null {
+  for (const rawSeg of normalized.split(CMD_SEPARATORS)) {
+    const seg = rawSeg.trim().replace(LEADING_ASSIGNMENTS, '');
+    if (DYNAMIC_CMD_START.test(seg)) return seg.slice(0, 60);
+  }
+  return null;
+}
+
 // 已知 shell 名（用于"管道进 shell"匹配；刻意不含 ssh —— ssh 不以这些前缀开头，不会误命中）
 const SHELL_TOKEN = '(?:ba|z|da|c|k|tc|a|fi)?sh';
 
 // 混淆 / RCE / 外泄签名：validateCommand 不一定覆盖的"下载并执行 / 反弹 shell"等模式。
 // 在归一化（去引号/反斜杠/IFS 后）的文本上匹配，正常 skill 里几乎不会出现，命中即拦。
 const OBFUSCATION_PATTERNS: Array<{ re: RegExp; flag: string }> = [
-  // 任意内容管道进 shell（不限 decoder：curl|sh、base64 -d|sh、xxd|sh、echo|sh 都覆盖）
-  { re: new RegExp(`\\|\\s*(sudo\\s+)?${SHELL_TOKEN}\\b`, 'i'), flag: 'pipe_to_shell' },
+  // 任意内容管道进解释器（不限 decoder；覆盖绝对路径 /bin/sh、env bash、busybox sh、pwsh/powershell）
+  {
+    re: new RegExp(
+      `\\|\\s*(sudo\\s+)?(env\\s+|busybox\\s+)?([\\w./-]*/)?(?:${SHELL_TOKEN}|pwsh|powershell)\\b`,
+      'i',
+    ),
+    flag: 'pipe_to_shell',
+  },
   // eval 动态执行（命令替换 / 反引号 / 子表达式）
   { re: /\beval\b[^\n]*[$`(]/i, flag: 'eval_dynamic' },
   // 反弹 shell：/dev/tcp 重定向
@@ -117,6 +139,12 @@ export function scanSkillContent(content: string): SkillGuardResult {
     if (m) {
       findings.push({ kind: 'dangerous_command', detail: `可疑混淆/远程执行（${flag}）：${m[0].slice(0, 80)}` });
     }
+  }
+
+  // 2.5) 动态命令名：命令位置是变量/替换/展开 → 静态不可判定，fail-closed
+  const dynamic = findDynamicCommandName(normalized);
+  if (dynamic) {
+    findings.push({ kind: 'dangerous_command', detail: `命令名为动态构造，无法静态判定，已拒绝：${dynamic}` });
   }
 
   // 3) 嵌入密钥：高置信的明文密钥/私钥不应写进 skill

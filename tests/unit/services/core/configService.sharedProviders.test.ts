@@ -130,4 +130,34 @@ describe('ConfigService.reconcileManagedProviders', () => {
     expect(service.getSettings().models.providers['custom-my-own']).toBeTruthy();
     expect(service.getSettings().models.providers['custom-team-relay']).toBeUndefined();
   });
+
+  it('无可用默认模型时：把共享 provider 首个模型设为激活默认（零配置可聊）', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'cfg-shared-'));
+    const { ConfigService } = await loadConfigService(dataDir);
+    const service = new ConfigService();
+    await service.initialize();
+
+    await service.reconcileManagedProviders([relayProvider]);
+
+    const s = service.getSettings();
+    expect(s.models.default).toBe('custom-team-relay');
+    expect(s.models.defaultProvider).toBe('custom-team-relay');
+    expect(s.models.providers['custom-team-relay']?.model).toBe('gpt-5.3');
+  });
+
+  it('已有可用默认（已配自己的 key）时：不抢默认', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'cfg-shared-'));
+    const { ConfigService } = await loadConfigService(dataDir);
+    const service = new ConfigService();
+    await service.initialize();
+
+    // 给当前默认 provider 配上 key → 可用
+    const currentDefault = service.getSettings().models.default;
+    keyStore.set(currentDefault, 'my-own-existing-key');
+
+    await service.reconcileManagedProviders([relayProvider]);
+
+    // 默认不被共享 provider 抢走
+    expect(service.getSettings().models.default).toBe(currentDefault);
+  });
 });

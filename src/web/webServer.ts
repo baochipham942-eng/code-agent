@@ -481,6 +481,20 @@ async function initializeServices(): Promise<void> {
       syncTelemetryUploader(authService.getCurrentUser());
       // 后续登录/登出跟随切换
       authService.addAuthChangeCallback(syncTelemetryUploader);
+
+      // 共享 provider（中转站）是 auth-gated：登录后重拉云端配置，触发 reconcile 下发共享模型。
+      // 仅在「未登录→登录」跃迁刷新，避免刷新风暴。
+      const { getCloudConfigService } = await import('../main/services/cloud');
+      let lastAuthedCloud = Boolean(authService.getCurrentUser());
+      authService.addAuthChangeCallback((user) => {
+        const authed = Boolean(user);
+        if (authed && !lastAuthedCloud) {
+          void getCloudConfigService().refresh().catch((err) => {
+            logger.warn('Cloud config refresh on login failed:', (err as Error).message);
+          });
+        }
+        lastAuthedCloud = authed;
+      });
     } catch (error) {
       logger.warn('Telemetry uploader not available:', (error as Error).message);
     }

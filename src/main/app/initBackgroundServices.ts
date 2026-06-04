@@ -105,6 +105,21 @@ async function initializeCloudAndMCP(configService: ConfigService, mainWindow: B
     onSharedProvidersResolved: (providers) => configService.reconcileManagedProviders(providers),
   });
 
+  // 共享 provider 是 auth-gated：启动时的拉取还没登录拿不到，登录后必须重拉一次，否则共享模型要等
+  // 缓存过期/重启才下发。仅在「未登录→登录」跃迁时刷新，避免刷新风暴。
+  {
+    let lastAuthed = false;
+    getAuthService().addAuthChangeCallback((user) => {
+      const authed = Boolean(user);
+      if (authed && !lastAuthed) {
+        void getCloudConfigService().refresh().catch((error) => {
+          logger.warn('Cloud config refresh on login failed', { error: String(error) });
+        });
+      }
+      lastAuthed = authed;
+    });
+  }
+
   const info = getCloudConfigService().getInfo();
   logger.info('CloudConfig initialized', { source: info.fromCloud ? 'cloud' : 'builtin', version: info.version });
 

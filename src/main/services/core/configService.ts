@@ -753,6 +753,28 @@ export class ConfigService implements IReadConfigService {
       changed = true;
     }
 
+    // 零配置兜底：当前默认 provider 不可用（无 key 且非 local）时，把共享 provider 的首个模型设为激活默认，
+    // 让没配过 key 的同事登录后直接能聊。已有可用默认（含用户自己配的 key）则不动——尊重用户选择。
+    if (desired.size > 0) {
+      const currentDefault = this.settings.models.default;
+      const currentUsable = currentDefault === 'local'
+        || Boolean(this.getApiKey(currentDefault as ModelProvider));
+      if (!currentUsable) {
+        const [firstId, firstProvider] = [...desired][0];
+        const firstModel = firstProvider.models?.[0]?.id;
+        if (firstModel) {
+          this.settings.models.default = firstId;
+          this.settings.models.defaultProvider = firstId as ModelProvider;
+          this.settings.models.providers[firstId]!.model = firstModel;
+          changed = true;
+          logger.info('Set shared provider as default model (no usable model before)', {
+            provider: firstId,
+            model: firstModel,
+          });
+        }
+      }
+    }
+
     if (changed) {
       await this.save();
       this.applyProviderConcurrencyOverrides();

@@ -19,6 +19,7 @@ const logger = createLogger('SkillDraftQueue');
 
 const DRAFT_META_FILENAME = 'draft.json';
 const REJECTED_LEDGER_FILENAME = 'rejected.json';
+const ACCEPTED_LEDGER_FILENAME = 'accepted.json';
 
 export interface SkillDraftMeta {
   /** 草稿目录名（队列内唯一） */
@@ -50,6 +51,10 @@ export function getSkillDraftsDir(): string {
 
 function getRejectedLedgerPath(): string {
   return path.join(getSkillDraftsDir(), REJECTED_LEDGER_FILENAME);
+}
+
+function getAcceptedLedgerPath(): string {
+  return path.join(getSkillDraftsDir(), ACCEPTED_LEDGER_FILENAME);
 }
 
 // ----------------------------------------------------------------------------
@@ -168,6 +173,26 @@ async function saveRejectedKeys(keys: Set<string>): Promise<void> {
   await fs.writeFile(getRejectedLedgerPath(), JSON.stringify(Array.from(keys), null, 2), 'utf-8');
 }
 
+// accepted ledger：草稿确认入库后记账，避免同一 pattern 跨会话反复蒸馏打扰用户
+async function loadAcceptedKeys(): Promise<Set<string>> {
+  try {
+    const raw = await fs.readFile(getAcceptedLedgerPath(), 'utf-8');
+    const parsed = JSON.parse(raw) as string[];
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    return new Set();
+  }
+}
+
+async function recordAcceptedKey(patternKey: string): Promise<void> {
+  if (!patternKey) return;
+  const accepted = await loadAcceptedKeys();
+  if (accepted.has(patternKey)) return;
+  accepted.add(patternKey);
+  await fs.mkdir(getSkillDraftsDir(), { recursive: true });
+  await fs.writeFile(getAcceptedLedgerPath(), JSON.stringify(Array.from(accepted), null, 2), 'utf-8');
+}
+
 /**
  * 列出待确认的草稿。
  */
@@ -215,9 +240,17 @@ export async function enqueueSkillDraft(input: {
   const createdAt = input.timestamp ?? Date.now();
   const origin: SkillDraftOrigin = input.origin ?? 'telemetry-distilled';
 
-  const [existing, rejected] = await Promise.all([listSkillDrafts(), loadRejectedKeys()]);
+  const [existing, rejected, accepted] = await Promise.all([
+    listSkillDrafts(),
+    loadRejectedKeys(),
+    loadAcceptedKeys(),
+  ]);
   if (rejected.has(input.patternKey)) {
     logger.debug('Skill draft skipped (previously rejected)', { patternKey: input.patternKey });
+    return null;
+  }
+  if (accepted.has(input.patternKey)) {
+    logger.debug('Skill draft skipped (already accepted/installed)', { patternKey: input.patternKey });
     return null;
   }
   if (existing.some((draft) => draft.patternKey === input.patternKey)) {
@@ -307,6 +340,8 @@ export async function confirmSkillDraft(
     const skillPath = path.join(targetDir, 'SKILL.md');
     await fs.writeFile(skillPath, skillContent, 'utf-8');
     await fs.rm(draftDir, { recursive: true, force: true });
+    // 记入 accepted ledger：同一 pattern 已采纳后不再跨会话重复蒸馏打扰
+    await recordAcceptedKey(meta.patternKey);
 
     logger.info('Skill draft confirmed and installed', { id, name: meta.name, skillPath });
     return { success: true, skillPath };

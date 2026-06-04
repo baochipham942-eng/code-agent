@@ -23,6 +23,10 @@ import { initCloudConfigService, getCloudConfigService } from '../services/cloud
 import { initDesktopActivityUnderstandingService } from '../desktop/desktopActivityUnderstandingService';
 import { initWorkspaceArtifactIndexService } from '../desktop/workspaceArtifactIndexService';
 import { logBridge } from '../mcp/logBridge.js';
+import { TaskStatusProvider } from '../mcp/taskStatusProvider.js';
+import { getDatabase } from '../services/core/databaseService';
+import { getProjectService } from '../services/project/projectService';
+import { getTaskManager } from '../task/TaskManager';
 import { initPluginSystem } from '../plugins';
 import { initDAGEventBridge, getDAGScheduler } from '../scheduler';
 import {
@@ -409,6 +413,22 @@ async function setupLogBridge(): Promise<void> {
         return { success: false, error: `Unknown command: ${command}` };
     }
   });
+
+  // P3-A：注册只读任务状态提供者（swarm/project/session 查询，仅元数据）。
+  // 用 lazy getter，容忍 DB 尚未初始化——按请求取，取不到 repo 时安全降级（空/null）。
+  logBridge.setTaskStatusProvider(
+    new TaskStatusProvider({
+      getSwarmRepo: () => {
+        try {
+          return getDatabase().getSwarmTraceRepo();
+        } catch {
+          return null;
+        }
+      },
+      getProjectService: () => getProjectService(),
+      getTaskManager: () => getTaskManager(),
+    }),
+  );
 
   // Start Log Bridge server in background
   logBridge.start()

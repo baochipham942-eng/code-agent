@@ -95,6 +95,22 @@ async function fetchStatusFromBridge(): Promise<Record<string, unknown> | null> 
   }
 }
 
+// P3-A：从 bridge 拉只读任务状态（/tasks /task-status /projects）。
+// app 未运行时 fetch 抛错 → 返回 { _unavailable } 提示，由调用方友好展示。
+async function fetchJsonFromBridge(pathAndQuery: string): Promise<{ ok: boolean; status: number; data: unknown }> {
+  try {
+    const response = await fetch(`${LOG_BRIDGE_URL}${pathAndQuery}`);
+    const data: unknown = await response.json().catch(() => null);
+    return { ok: response.ok, status: response.status, data };
+  } catch {
+    return {
+      ok: false,
+      status: 0,
+      data: { _unavailable: true, message: 'Agent Neo is not running (log bridge unreachable). Start the app to query live task status.' },
+    };
+  }
+}
+
 // ----------------------------------------------------------------------------
 // MCP Server Class
 // ----------------------------------------------------------------------------
@@ -353,6 +369,37 @@ export class CodeAgentMCPServer {
               },
             },
           },
+          {
+            name: 'neo_list_tasks',
+            description: 'List Agent Neo\'s current and recent tasks (read-only, metadata only). Returns recent swarm runs (status / progress counts / token & cost totals / timestamps) plus live in-memory session states (running/paused/queued/idle). Does NOT expose task prompts, agent outputs, or file paths — only the shape of activity. Requires Agent Neo to be running.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                limit: { type: 'number', description: 'Max swarm runs to return, newest first. Default 20.' },
+              },
+            },
+          },
+          {
+            name: 'neo_get_task_status',
+            description: 'Get the detailed status of a specific Agent Neo swarm run by id (read-only, metadata only). Returns run-level status/progress/token/cost, per-agent rollups (status/tokens/duration/enum failure category, file-change COUNT only), and an event summary (counts by type & level). Does NOT expose event message text, error free-text, or changed file paths. Requires Agent Neo to be running.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'The swarm run id (from neo_list_tasks).' },
+              },
+              required: ['id'],
+            },
+          },
+          {
+            name: 'neo_list_projects',
+            description: 'List Agent Neo\'s projects and their goal status (read-only, metadata only). Returns project name/status/timestamps and per-project goal/role/session counts plus goal status breakdown. Does NOT expose project descriptions or goal/verify/review instruction text — only structural status. Requires Agent Neo to be running.',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                includeArchived: { type: 'boolean', description: 'Include archived projects. Default false.' },
+              },
+            },
+          },
         ],
       };
     });
@@ -575,6 +622,38 @@ export class CodeAgentMCPServer {
             isError: true,
           };
         }
+      }
+
+      if (name === 'neo_list_tasks') {
+        const limit = typeof args?.limit === 'number' ? (args.limit as number) : undefined;
+        const query = limit && limit > 0 ? `/tasks?limit=${limit}` : '/tasks';
+        const { ok, data } = await fetchJsonFromBridge(query);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+          isError: !ok,
+        };
+      }
+
+      if (name === 'neo_get_task_status') {
+        const id = args?.id as string | undefined;
+        if (!id) {
+          return { content: [{ type: 'text', text: 'Error: id is required' }], isError: true };
+        }
+        const { ok, data } = await fetchJsonFromBridge(`/task-status?id=${encodeURIComponent(id)}`);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+          isError: !ok,
+        };
+      }
+
+      if (name === 'neo_list_projects') {
+        const includeArchived = args?.includeArchived === true;
+        const query = includeArchived ? '/projects?includeArchived=true' : '/projects';
+        const { ok, data } = await fetchJsonFromBridge(query);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+          isError: !ok,
+        };
       }
 
       throw new Error(`Unknown tool: ${name}`);

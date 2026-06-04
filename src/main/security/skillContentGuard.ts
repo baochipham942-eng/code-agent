@@ -139,6 +139,8 @@ const OBFUSCATION_PATTERNS: Array<{ re: RegExp; flag: string }> = [
   { re: /\bnc\b[^\n]*-e\s*\/(bin|usr)\/[a-z/]*sh/i, flag: 'netcat_reverse_shell' },
   // 命令替换里下载：$(curl ...) / `wget ...`
   { re: /[$`]\(?\s*(curl|wget|fetch)\b[^)`\n]*\)?/i, flag: 'cmdsubst_download' },
+  // 进程替换里下载执行：bash <(curl ...) / sh <(wget ...)
+  { re: /[<>]\(\s*(curl|wget|fetch)\b/i, flag: 'procsub_download' },
 ];
 
 /**

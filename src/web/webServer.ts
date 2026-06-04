@@ -1016,7 +1016,12 @@ function createApp(): express.Express {
   app.use('/api', createDomainRouter({ handlers, logger }));
 
   // ── Static & SPA (extracted to routes/static.ts) ───────────────────
-  app.use(createStaticRouter({ serverAuthToken: SERVER_AUTH_TOKEN }));
+  // 传 dataDir → 运行时解析 serve 目录：云端 active bundle 健康则 serve 热更前端，
+  // 否则回包内基线（builtinDir 由 static.ts 按 __dirname 解析）。
+  app.use(createStaticRouter({
+    serverAuthToken: SERVER_AUTH_TOKEN,
+    dataDir: resolveCodeAgentDataDir(),
+  }));
 
   return app;
 }

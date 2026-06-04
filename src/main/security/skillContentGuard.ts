@@ -60,13 +60,59 @@ export function extractCodeSegments(markdown: string): string[] {
 // 注：反引号命令替换不在此列（markdown 行首内联代码会大量误伤）；反引号下载由 cmdsubst 签名覆盖。
 const DYNAMIC_CMD_START = /^(\$\(|\$\{|\$'|\$[A-Za-z_])/;
 const CMD_SEPARATORS = /[;&|\n]+/;
-const LEADING_ASSIGNMENTS = /^(?:[A-Za-z_]\w*=\S*\s+)+/;
 
-/** 检测是否存在"动态命令名"（命令位置出现 $.../${...}/$(...)/ANSI-C/反引号） */
+// 透明包装前缀：这些命令本身无害，真正要执行的命令名在其后。判断动态命令名前需把它们
+// （及其带参选项）剥掉，否则 `sudo $a -rf /` 会因段首是 sudo 而漏判。value = 需要消费下一个
+// token 作为参数的短选项集合。
+const COMMAND_WRAPPERS: Record<string, Set<string>> = {
+  command: new Set(),
+  builtin: new Set(),
+  exec: new Set(['-a']),
+  nohup: new Set(),
+  setsid: new Set(),
+  doas: new Set(['-u', '-C']),
+  sudo: new Set(['-u', '-g', '-C', '-p', '-r', '-t', '-h', '-U', '-R', '-T']),
+  env: new Set(['-u', '-S', '-C', '-P']),
+  nice: new Set(['-n']),
+  time: new Set(['-o', '-f']),
+  stdbuf: new Set(['-i', '-o', '-e']),
+  timeout: new Set(['-s', '-k']), // 另含一个位置参数 DURATION，单独处理
+};
+
+/** 提取一个命令段真正的"命令名"token（剥离前置赋值 + 透明 wrapper 及其选项），判断是否动态。 */
+export function commandWordIsDynamic(segment: string): boolean {
+  const tokens = segment.trim().split(/\s+/).filter(Boolean);
+  let i = 0;
+  while (i < tokens.length && /^[A-Za-z_]\w*=/.test(tokens[i])) i++; // 前置环境赋值
+  let guard = 0;
+  while (i < tokens.length && guard++ < 20) {
+    const word = tokens[i].toLowerCase();
+    const argOpts = COMMAND_WRAPPERS[word];
+    if (argOpts === undefined) {
+      return DYNAMIC_CMD_START.test(tokens[i]); // 第一个非 wrapper token = 命令名
+    }
+    i++; // 消费 wrapper 名
+    while (i < tokens.length && tokens[i].startsWith('-')) {
+      const opt = tokens[i].split('=')[0];
+      const inlineArg = tokens[i].includes('=');
+      i++;
+      if (argOpts.has(opt) && !inlineArg) i++; // 消费该选项的参数
+    }
+    if (word === 'env') {
+      while (i < tokens.length && /^[A-Za-z_]\w*=/.test(tokens[i])) i++; // env NAME=val
+    }
+    if (word === 'timeout' && i < tokens.length && !DYNAMIC_CMD_START.test(tokens[i])) {
+      i++; // timeout DURATION 位置参数
+    }
+  }
+  return false;
+}
+
+/** 检测是否存在"动态命令名"（命令位置出现 $.../${...}/$(...)/ANSI-C，含 wrapper 前缀后的命令名）。 */
 export function findDynamicCommandName(normalized: string): string | null {
   for (const rawSeg of normalized.split(CMD_SEPARATORS)) {
-    const seg = rawSeg.trim().replace(LEADING_ASSIGNMENTS, '');
-    if (DYNAMIC_CMD_START.test(seg)) return seg.slice(0, 60);
+    const seg = rawSeg.trim();
+    if (seg && commandWordIsDynamic(seg)) return seg.slice(0, 60);
   }
   return null;
 }

@@ -201,6 +201,42 @@ describe('scanSkillContent — 动态命令名', () => {
   });
 });
 
+// ── wrapper 前缀后的动态命令名（Codex 四审 HIGH）──
+
+describe('scanSkillContent — wrapper 透明前缀', () => {
+  for (const cmd of [
+    'a=rm; command $a -rf /',
+    'a=rm; sudo $a -rf /',
+    'a=rm; env $a -rf /',
+    'a=rm; nice $a -rf /',
+    'a=rm; nohup $a -rf /',
+    'a=rm; time $a -rf /',
+    'a=rm; sudo -u root $a -rf /',
+    'a=rm; timeout 5 $a -rf /',
+    'command env sudo $(echo cm0= | base64 -d) -rf /',
+  ]) {
+    it(`${cmd.slice(0, 40)} → block`, () => {
+      expect(scanSkillContent('```\n' + cmd + '\n```').verdict).toBe('block');
+    });
+  }
+
+  it('wrapper 后静态命令名不误伤：sudo apt install foo → pass', () => {
+    expect(scanSkillContent('```\nsudo apt install foo\n```').verdict).toBe('pass');
+  });
+
+  it('动态在参数位（wrapper 后）不误伤：sudo systemctl restart $SERVICE → pass', () => {
+    expect(scanSkillContent('```\nsudo systemctl restart $SERVICE\n```').verdict).toBe('pass');
+  });
+
+  it('env NAME=val 后静态命令不误伤：env NODE_ENV=prod node app.js → pass', () => {
+    expect(scanSkillContent('```\nenv NODE_ENV=prod node app.js\n```').verdict).toBe('pass');
+  });
+
+  it('time 包装正常命令不误伤：time npm run build → pass', () => {
+    expect(scanSkillContent('```\ntime npm run build\n```').verdict).toBe('pass');
+  });
+});
+
 // ── pipe-to-shell 变体（Codex 三审 HIGH#2：路径/env/busybox/pwsh）──
 
 describe('scanSkillContent — pipe 进解释器变体', () => {

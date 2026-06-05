@@ -62,7 +62,7 @@ import { MemoFloater } from './components/features/memo/MemoFloater';
 import { useAppshots } from './hooks/useAppshots';
 import { useComputerUsePip } from './hooks/useComputerUsePip';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
-import { postOsNotification, registerNotificationClick } from './utils/osNotification';
+import { postOsNotification, registerNotificationClick, requestOsNotificationPermission } from './utils/osNotification';
 import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, UpdateInfo } from '@shared/contract';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getProviderEndpointForProtocol } from '@shared/constants';
 import { createLogger } from './utils/logger';
@@ -480,6 +480,8 @@ export const App: React.FC = () => {
         void postOsNotification({ title: event.title, body: event.body });
       }
     );
+    // 启动即主动请求通知授权——让用户看到 macOS 授权弹窗，而非静默被拦后自己进设置
+    void requestOsNotificationPermission();
     void registerNotificationClick(() => {
       const sessionId = lastNotifSessionIdRef.current;
       if (!sessionId) return;

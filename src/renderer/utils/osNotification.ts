@@ -25,6 +25,22 @@ async function ensureTauriPermission(mod: NotifModule): Promise<boolean> {
   return granted;
 }
 
+/**
+ * 主动请求系统通知授权。应在 app 启动时调用一次——让用户在权限"未决"时看到 macOS
+ * 授权弹窗，而不是等第一条通知静默被拦、再让用户自己去系统设置开（普通用户不会）。
+ * 已授权/已拒绝时系统不再弹（plugin 行为）。返回最终是否已授权。
+ */
+export async function requestOsNotificationPermission(): Promise<boolean> {
+  if (!isTauriMode()) return false;
+  try {
+    const mod = await loadModule();
+    return await ensureTauriPermission(mod);
+  } catch (err) {
+    console.warn('[osNotification] 主动请求通知授权失败', err);
+    return false;
+  }
+}
+
 /** 发一条原生系统通知。Tauri 下自动带 Agent Neo 图标/身份；web 回落浏览器通知。 */
 export async function postOsNotification(opts: { title: string; body: string }): Promise<void> {
   if (isTauriMode()) {

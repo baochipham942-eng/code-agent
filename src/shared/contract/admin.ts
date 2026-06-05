@@ -21,11 +21,19 @@ export interface AdminUserDashboardItem {
   deviceCount: number;
   sessionCount: number;
   messageCount: number;
+  /** 是否能用「团队共享 provider（中转站）」——entitlement.capabilities 含 shared_relay 或 *。 */
+  hasSharedRelay?: boolean;
 }
 
 export interface AdminUserDashboardResult {
   users: AdminUserDashboardItem[];
   unavailableReason?: string;
+}
+
+/** 给某用户开/关「团队共享 key」。开=写入 [基础功能能力 + shared_relay]；关=去掉 shared_relay 保留基础功能。 */
+export interface AdminSetSharedRelayInput {
+  userId: string;
+  enabled: boolean;
 }
 
 export interface AdminInviteCodeItem {

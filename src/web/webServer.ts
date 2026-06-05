@@ -588,6 +588,19 @@ async function initializeServices(): Promise<void> {
     logger.warn('LogBridge / task status provider init failed (non-blocking):', (error as Error).message);
   }
 
+  // 9. 补 web 路径：初始化 TaskManager 单例（onAgentEvent/configService 注入）。
+  // main 路径在 bootstrap → createAgentRuntime 里做，webServer 此前从未做 —— 又一处
+  // web/main 路径分离：不补这里，loop / cron 的 agent action 调
+  // getOrCreateCurrentOrchestrator 永远 unavailable（发行版跑的就是本 webServer 路径）。
+  // createAgentRuntime 用 getMainWindow()（web 模式 = webModeWindow → SSE）转发 agent 事件。
+  try {
+    const { createAgentRuntime } = await import('../main/app/createAgentRuntime');
+    createAgentRuntime(configService as unknown as Parameters<typeof createAgentRuntime>[0]);
+    logger.info('TaskManager initialized (web path) via createAgentRuntime');
+  } catch (error) {
+    logger.warn('createAgentRuntime init failed (web, non-blocking):', (error as Error).message);
+  }
+
   logger.info('Backend services initialized');
 }
 

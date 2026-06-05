@@ -33,6 +33,7 @@ import { useSwarmStore } from '../../../../stores/swarmStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { ComboSkillCard } from './ComboSkillCard';
 import { SkillDraftNotifications } from './SkillDraftCard';
+import { RoleDraftNotifications } from './RoleDraftCard';
 import { CapabilitySuggestionStrip } from './CapabilitySuggestionStrip';
 import { useSkillRecommendations } from './useSkillRecommendations';
 import { useAppStore } from '../../../../stores/appStore';
@@ -930,6 +931,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         )}
 
         <SkillDraftNotifications />
+        <RoleDraftNotifications />
 
         {/* Suggestion Bar - show when input is empty */}
         {value.trim().length === 0 && suggestions.length > 0 && (

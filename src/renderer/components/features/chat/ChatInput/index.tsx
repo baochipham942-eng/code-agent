@@ -49,7 +49,11 @@ import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
 import { parseGoalCommand, isGoalCommand, normalizeGoalCommand } from './parseGoalCommand';
 import { parseScheduleCommand, isScheduleCommand } from './parseScheduleCommand';
+import { parseLoopCommand, isLoopCommand } from './parseLoopCommand';
 import { cronClient, type CreateCronJobInput } from '../../../../services/cronClient';
+import { loopClient } from '../../../../services/loopClient';
+import { useLoopStore } from '../../../../stores/loopStore';
+import { LoopStatusBar } from './LoopStatusBar';
 import { buildGoalNoticeMessage } from '../goalNotice';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 import {
@@ -561,6 +565,41 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       return;
     }
 
+    // /loop：会话内循环——在当前 session 反复执行同一 prompt，直到达成软条件 / 喊停 / 触到轮次上限。
+    if (isLoopCommand(trimmedValue)) {
+      const parsed = parseLoopCommand(trimmedValue);
+      if (!parsed?.prompt) {
+        toast.warning('用法：/loop [间隔] <要反复做的事> [--until "<停止条件>"]，例如 /loop 30s 查部署状态，好了告诉我');
+        inputAreaRef.current?.focus();
+        return;
+      }
+      if (!currentSessionId) {
+        toast.warning('请先打开一个会话再启动循环');
+        inputAreaRef.current?.focus();
+        return;
+      }
+      addToInputHistory(trimmedValue);
+      setValue('');
+      try {
+        const state = await loopClient.start({
+          sessionId: currentSessionId,
+          prompt: parsed.prompt,
+          intervalMs: parsed.intervalMs,
+          maxTurns: parsed.maxTurns,
+          until: parsed.until,
+        });
+        useLoopStore.getState().track(state);
+        toast.success(
+          parsed.intervalMs
+            ? `循环已启动（每 ${Math.round(parsed.intervalMs / 1000)}s 一轮）`
+            : '循环已启动（自定步调）',
+        );
+      } catch (err) {
+        toast.error(`启动循环失败：${err instanceof Error ? err.message : '未知错误'}`);
+      }
+      return;
+    }
+
     // /goal 自治模式：拦截斜杠命令，只有目标文本也能启动；未给判据时默认走软目标评审。
     if (isGoalCommand(trimmedValue)) {
       const rawParsed = parseGoalCommand(trimmedValue);
@@ -823,6 +862,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       {/* Command Palette triggered by / */}
       <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
       <form ref={formRef} onSubmit={handleSubmit} className="max-w-3xl mx-auto">
+        {/* 会话内循环（/loop）运行状态条 */}
+        <LoopStatusBar sessionId={currentSessionId} />
         {/* Plan 入口按钮 - 仅当有 Plan 时显示 */}
         {hasPlan && onPlanClick && (
           <button

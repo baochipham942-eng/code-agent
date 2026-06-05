@@ -1,0 +1,108 @@
+name: Publish Renderer Bundle (hot update)
+
+# 前端热更：构建 + 签名 + 传 OSS renderer bundle，独立于整包发版。
+# 这才是「改前端不发版」的省时点 —— 不跑 cargo build / 公证（~25min），只 ~1min。
+# 触发：改了前端源码 push 到 main，或手动 dispatch。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/renderer/**'
+      - 'src/shared/**'
+      - 'index.html'
+      - 'vite.config.ts'
+      - 'scripts/build-renderer-bundle.mjs'
+  workflow_dispatch:
+    inputs:
+      min_shell_version:
+        description: '最低壳版本（前端用了需要新壳的 IPC 时手动调高；默认=当前 app 版本）'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  publish-renderer-bundle:
+    runs-on: ubuntu-latest
+    # 兜底：缺控制面签名 key 时整个 job 跳过（build-renderer-bundle 非 dry-run 会 fail closed）。
+    # 与 release.yml runtime-assets 同样的「key 未配置即不发布」安全默认。
+    env:
+      CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY }}
+      CODE_AGENT_CONTROL_PLANE_KEY_ID: ${{ secrets.CODE_AGENT_CONTROL_PLANE_KEY_ID }}
+    steps:
+      - name: Skip if signing key not provisioned
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY == '' }}
+        run: |
+          echo "::notice::Control-plane signing key not configured — renderer bundle publishing is disabled."
+          echo "SKIP=true" >> "$GITHUB_ENV"
+
+      - name: Checkout code
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' }}
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' }}
+        run: npm ci
+
+      - name: Build + sign renderer bundle
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' }}
+        env:
+          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+          ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          # bundle.tar.gz 在 OSS 的最终落点（fetcher 据 manifest.bundleUrl 下载）
+          BUNDLE_BASE_URL="https://${ALIYUN_OSS_BUCKET}.oss-${ALIYUN_OSS_REGION}.aliyuncs.com/renderer-bundle/latest"
+          MIN_SHELL_VERSION="${{ github.event.inputs.min_shell_version }}"
+          ARGS=(--version "${VERSION}" --bundle-base-url "${BUNDLE_BASE_URL}")
+          if [ -n "${MIN_SHELL_VERSION}" ]; then
+            ARGS+=(--min-shell-version "${MIN_SHELL_VERSION}")
+          fi
+          npm run release:renderer-bundle -- "${ARGS[@]}"
+          echo "--- manifest.json ---"
+          cat dist/renderer-bundle/manifest.json
+
+      - name: Install ossutil (Aliyun OSS CLI)
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' }}
+        run: |
+          curl -sL -o /tmp/ossutil.zip "https://gosspublic.alicdn.com/ossutil/v2/2.1.2/ossutil-2.1.2-linux-amd64.zip"
+          unzip -o /tmp/ossutil.zip -d /tmp/ossutil
+          sudo mv /tmp/ossutil/ossutil-*/ossutil /usr/local/bin/ossutil
+          chmod +x /usr/local/bin/ossutil
+          ossutil version
+
+      - name: Upload renderer bundle to Aliyun OSS
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' }}
+        env:
+          ALIYUN_OSS_ACCESS_KEY_ID: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_ID }}
+          ALIYUN_OSS_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_SECRET }}
+          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+          ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
+        run: |
+          cat > ~/.ossutilconfig <<EOF
+          [default]
+          accessKeyID=${ALIYUN_OSS_ACCESS_KEY_ID}
+          accessKeySecret=${ALIYUN_OSS_ACCESS_KEY_SECRET}
+          region=${ALIYUN_OSS_REGION}
+          endpoint=oss-${ALIYUN_OSS_REGION}.aliyuncs.com
+          EOF
+          chmod 600 ~/.ossutilconfig
+
+          # 先传版本快照（不可变归档），再覆盖 latest/（客户端入口）。
+          # 顺序保证 latest 指向的两个文件总是配套的（manifest 与 bundle 同时刷新）。
+          SNAP="oss://${ALIYUN_OSS_BUCKET}/renderer-bundle/v${VERSION}"
+          LATEST="oss://${ALIYUN_OSS_BUCKET}/renderer-bundle/latest"
+          ossutil cp -f dist/renderer-bundle/bundle.tar.gz "${SNAP}/bundle.tar.gz"
+          ossutil cp -f dist/renderer-bundle/manifest.json "${SNAP}/manifest.json"
+          ossutil cp -f dist/renderer-bundle/bundle.tar.gz "${LATEST}/bundle.tar.gz"
+          ossutil cp -f dist/renderer-bundle/manifest.json "${LATEST}/manifest.json"
+          echo "::notice::Published renderer bundle v${VERSION} to ${LATEST}"

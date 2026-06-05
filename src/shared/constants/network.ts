@@ -178,6 +178,21 @@ export const ACADEMIC_SEARCH_MAX_LIMIT = 30;
 /** Jira REST API 版本路径（jira tool 使用） */
 export const JIRA_API_VERSION_PATH = '/rest/api/3';
 
+// ============================================================================
+// 前端热更（renderer hot update）OSS 端点
+// ============================================================================
+
+/** OSS 发布资源 bucket 基础 URL（阿里云上海，与整包发版同 bucket） */
+export const OSS_RELEASES_BASE_URL = 'https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com';
+
+/** 前端热更 bundle OSS 端点（manifest 为签名 envelope，bundle.tar.gz 地址在 manifest.payload 内） */
+export const RENDERER_BUNDLE_ENDPOINTS = {
+  /** 最新前端 bundle 的签名 manifest（控制面入口） */
+  get manifestUrl() {
+    return `${OSS_RELEASES_BASE_URL}/renderer-bundle/latest/manifest.json`;
+  },
+} as const;
+
 /** 默认 Supabase URL */
 export const DEFAULT_SUPABASE_URL = 'https://xepbunahzbmexsmmiqyq.supabase.co';
 

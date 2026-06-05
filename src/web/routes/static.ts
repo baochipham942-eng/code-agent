@@ -1,33 +1,64 @@
 import { Router } from 'express';
-import type { Request, Response } from 'express';
+import type { Request, RequestHandler, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import express from 'express';
+import { resolveRendererServeDir } from '../../main/services/renderer/rendererBundleCache';
 
 interface StaticDeps {
   serverAuthToken: string;
+  /** 固定 serve 目录（显式覆盖，测试/特殊场景用）。提供则忽略 dataDir/builtinDir 运行时解析。 */
   staticDir?: string;
+  /** 数据目录（~/.code-agent），用于解析云端 active bundle。 */
+  dataDir?: string;
+  /** 包内基线 renderer 目录（兜底）。 */
+  builtinDir?: string;
 }
 
 export function createStaticRouter(deps: StaticDeps): Router {
   const router = Router();
   const { serverAuthToken } = deps;
 
-  // ── Static file serving (production) ─────────────────────────────
-  // 用 __dirname 解析，不靠 process.cwd()——cargo tauri dev 启动 main process 时
+  // ── serve 目录运行时解析 ─────────────────────────────────────────
+  // 用 __dirname 解析包内基线，不靠 process.cwd()——cargo tauri dev 启动 main process 时
   // cwd 是 src-tauri/，导致 join(cwd, 'dist/renderer') 解析到不存在的 src-tauri/dist/renderer。
-  // bundled webServer.cjs 在 dist/web/，dist/renderer 在 ../renderer (dev) /
-  // app bundle 里也是 ../renderer (prod)，两处一致。
-  const staticDir = deps.staticDir ?? path.resolve(__dirname, '..', 'renderer');
-  router.use(express.static(staticDir, {
-    // Don't serve index.html via static middleware — we inject the auth token below
-    index: false,
-  }));
+  // bundled webServer.cjs 在 dist/web/，dist/renderer 在 ../renderer (dev/prod 一致)。
+  const builtinDir = deps.builtinDir ?? path.resolve(__dirname, '..', 'renderer');
+
+  // 每次请求解析当前 serve 目录：
+  // - staticDir 显式覆盖 → 固定
+  // - 否则按 dataDir 解析 active（健康则云端版，否则回包内 builtin）
+  // 兜底铁律：active 不健康 → resolveRendererServeDir 自动回 builtin，绝不 serve 损坏前端。
+  function resolveServeDir(): string {
+    if (deps.staticDir) return deps.staticDir;
+    if (deps.dataDir) return resolveRendererServeDir(deps.dataDir, builtinDir);
+    return builtinDir;
+  }
+
+  // ── Static file serving ──────────────────────────────────────────
+  // express.static 绑定目录在创建时固定，故按 serve 目录缓存 handler，切换时复用对应实例。
+  const staticHandlers = new Map<string, RequestHandler>();
+  function staticHandlerFor(serveDir: string): RequestHandler {
+    let handler = staticHandlers.get(serveDir);
+    if (!handler) {
+      handler = express.static(serveDir, {
+        // Don't serve index.html via static middleware — we inject the auth token below
+        index: false,
+      });
+      staticHandlers.set(serveDir, handler);
+    }
+    return handler;
+  }
+
+  router.use((req, res, next) => {
+    staticHandlerFor(resolveServeDir())(req, res, next);
+  });
 
   // SPA fallback — serve index.html with injected auth token
   // This ensures only clients that load the page from this server can call APIs.
-  const indexPath = path.join(staticDir, 'index.html');
+  // 缓存按 (serve 目录 + mtime) 失效：切换 serve 目录或 index.html 变更都会重新读取。
   let cachedIndexHtml: string | null = null;
+  let cachedIndexDir: string | null = null;
   let cachedIndexMtimeMs = 0;
 
   router.get('/{*path}', (req: Request, res: Response) => {
@@ -37,10 +68,14 @@ export function createStaticRouter(deps: StaticDeps): Router {
       return;
     }
 
+    const serveDir = resolveServeDir();
+    const indexPath = path.join(serveDir, 'index.html');
+
     try {
       const stat = fs.statSync(indexPath);
-      if (!cachedIndexHtml || stat.mtimeMs !== cachedIndexMtimeMs) {
+      if (!cachedIndexHtml || cachedIndexDir !== serveDir || stat.mtimeMs !== cachedIndexMtimeMs) {
         cachedIndexHtml = fs.readFileSync(indexPath, 'utf-8');
+        cachedIndexDir = serveDir;
         cachedIndexMtimeMs = stat.mtimeMs;
       }
       // Inject auth token into HTML so httpTransport can attach it to API requests.

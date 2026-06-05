@@ -310,6 +310,8 @@ import { createSettingsRouter } from './routes/settings';
 import { createExtractRouter } from './routes/extract';
 import { createDomainRouter } from './routes/domain';
 import { createStaticRouter } from './routes/static';
+import { applyRendererBundleUpdate } from '../main/services/renderer/rendererBundleFetcher';
+import { getAppVersion } from '../main/platform';
 import { createAgentRouter } from './routes/agent';
 import type { ActiveAgentLoop, PendingLocalToolCall } from './routes/agent';
 import type { SupabaseAgentBinding } from './routes/agentRouteTypes';
@@ -1051,7 +1053,12 @@ function createApp(): express.Express {
   app.use('/api', createDomainRouter({ handlers, logger }));
 
   // ── Static & SPA (extracted to routes/static.ts) ───────────────────
-  app.use(createStaticRouter({ serverAuthToken: SERVER_AUTH_TOKEN }));
+  // 传 dataDir → 运行时解析 serve 目录：云端 active bundle 健康则 serve 热更前端，
+  // 否则回包内基线（builtinDir 由 static.ts 按 __dirname 解析）。
+  app.use(createStaticRouter({
+    serverAuthToken: SERVER_AUTH_TOKEN,
+    dataDir: resolveCodeAgentDataDir(),
+  }));
 
   return app;
 }
@@ -1162,6 +1169,19 @@ async function main(): Promise<void> {
 
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+
+  // ── 前端热更：启动后异步拉取（不阻塞 health，失败不影响启动）─────────
+  // 下次启动生效：本次后台拉取+验签+切换 active/，当前会话仍 serve 旧前端。
+  // 兜底铁律全在 applyRendererBundleUpdate 内，任何失败都保持当前前端。
+  if (process.env.CODE_AGENT_RENDERER_HOT_UPDATE !== 'false') {
+    void applyRendererBundleUpdate({
+      dataDir: resolveCodeAgentDataDir(),
+      currentShellVersion: getAppVersion(),
+      logger: (msg) => console.log(msg),
+    }).catch((err) => {
+      console.warn('[renderer-hot-update] background update error:', err);
+    });
+  }
 
   // Tauri 父进程死亡检测：父进程退出/崩溃（含 SIGABRT）时 stdin 管道关闭，
   // webServer 跟着优雅退出，不留孤儿进程占住端口。

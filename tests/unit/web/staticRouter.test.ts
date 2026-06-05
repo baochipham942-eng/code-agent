@@ -78,3 +78,122 @@ describe('createStaticRouter', () => {
     expect(body).toContain('<head data-vite="true"><script>window.__CODE_AGENT_TOKEN__="test-token";</script>');
   });
 });
+
+// ── 循环4：运行时 serve 目录解析（包内基线 ⇄ 云端 active 热更）────────────
+describe('createStaticRouter — runtime serve dir resolution', () => {
+  let dataDir: string;
+  let builtinDir: string;
+  let rtServer: http.Server;
+  let rtBaseUrl: string;
+
+  function writeBuiltin(): void {
+    fs.writeFileSync(
+      path.join(builtinDir, 'index.html'),
+      '<!doctype html><html><head></head><body>BUILTIN</body></html>',
+      'utf-8',
+    );
+  }
+
+  function writeActiveBundle(): void {
+    const active = path.join(dataDir, 'renderer-cache', 'active');
+    fs.mkdirSync(path.join(active, 'assets'), { recursive: true });
+    fs.writeFileSync(
+      path.join(active, 'index.html'),
+      '<!doctype html><html><head></head><body>CLOUD</body></html>',
+      'utf-8',
+    );
+    fs.writeFileSync(path.join(active, 'assets', 'app.js'), 'console.log("cloud-asset")', 'utf-8');
+    fs.writeFileSync(
+      path.join(active, '.bundle-meta.json'),
+      JSON.stringify({ version: '9.9.9', contentHash: 'deadbeef' }),
+      'utf-8',
+    );
+  }
+
+  async function startServer(): Promise<void> {
+    const app = express();
+    app.use(createStaticRouter({ serverAuthToken: 'rt-token', dataDir, builtinDir }));
+    rtServer = await new Promise<http.Server>((resolve) => {
+      const next = app.listen(0, '127.0.0.1', () => resolve(next));
+    });
+    const address = rtServer.address();
+    if (!address || typeof address === 'string') throw new Error('Expected TCP test server address');
+    rtBaseUrl = `http://127.0.0.1:${address.port}`;
+  }
+
+  beforeEach(() => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'code-agent-data-'));
+    builtinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'code-agent-builtin-'));
+    fs.mkdirSync(path.join(builtinDir, 'assets'));
+    writeBuiltin();
+  });
+
+  afterEach(async () => {
+    if (rtServer) {
+      await new Promise<void>((resolve, reject) => {
+        rtServer.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
+    fs.rmSync(dataDir, { recursive: true, force: true });
+    fs.rmSync(builtinDir, { recursive: true, force: true });
+  });
+
+  it('serves builtin index when no active bundle exists', async () => {
+    await startServer();
+    const response = await fetch(`${rtBaseUrl}/`);
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('BUILTIN');
+    expect(body).toContain('window.__CODE_AGENT_TOKEN__="rt-token"');
+  });
+
+  it('serves cloud active index when active bundle is healthy', async () => {
+    writeActiveBundle();
+    await startServer();
+    const response = await fetch(`${rtBaseUrl}/`);
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('CLOUD');
+    expect(body).not.toContain('BUILTIN');
+    expect(body).toContain('window.__CODE_AGENT_TOKEN__="rt-token"');
+  });
+
+  it('serves static assets from the active bundle dir', async () => {
+    writeActiveBundle();
+    await startServer();
+    const response = await fetch(`${rtBaseUrl}/assets/app.js`);
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('cloud-asset');
+  });
+
+  it('resets cached index.html when serve dir switches to active', async () => {
+    await startServer();
+    const first = await (await fetch(`${rtBaseUrl}/`)).text();
+    expect(first).toContain('BUILTIN');
+
+    // active 出现后再次请求应切到云端版（缓存按 serve 目录重置）
+    writeActiveBundle();
+    const second = await (await fetch(`${rtBaseUrl}/`)).text();
+    expect(second).toContain('CLOUD');
+    expect(second).not.toContain('BUILTIN');
+  });
+
+  it('falls back to builtin when active bundle is unhealthy (missing index.html)', async () => {
+    const active = path.join(dataDir, 'renderer-cache', 'active');
+    fs.mkdirSync(active, { recursive: true });
+    fs.writeFileSync(
+      path.join(active, '.bundle-meta.json'),
+      JSON.stringify({ version: '9.9.9', contentHash: 'deadbeef' }),
+      'utf-8',
+    );
+    // 故意不写 index.html → 不健康
+    await startServer();
+    const body = await (await fetch(`${rtBaseUrl}/`)).text();
+
+    expect(body).toContain('BUILTIN');
+  });
+});

@@ -48,6 +48,8 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
 import { parseGoalCommand, isGoalCommand, normalizeGoalCommand } from './parseGoalCommand';
+import { parseScheduleCommand, isScheduleCommand } from './parseScheduleCommand';
+import { cronClient, type CreateCronJobInput } from '../../../../services/cronClient';
 import { buildGoalNoticeMessage } from '../goalNotice';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 import {
@@ -537,6 +539,27 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     const trimmedValue = value.trim();
     let contentToSend = trimmedValue;
     let preferredAgentIdOverride: string | null | undefined;
+
+    // /schedule：自然语言 → 定时任务。复用 cron:generateFromPrompt（LLM 出配置）+ createJob。
+    if (isScheduleCommand(trimmedValue)) {
+      const parsed = parseScheduleCommand(trimmedValue);
+      if (!parsed?.description) {
+        toast.warning('用法：/schedule <自然语言描述>，例如 /schedule 每天早上8点跑市场调研');
+        inputAreaRef.current?.focus();
+        return;
+      }
+      addToInputHistory(trimmedValue);
+      setValue('');
+      toast.info('正在解析定时任务…');
+      try {
+        const draft = await cronClient.generateFromPrompt(parsed.description);
+        const job = await cronClient.createJob(draft as unknown as CreateCronJobInput);
+        toast.success(`已创建定时任务「${job.name || '未命名'}」，可在「定时任务」面板查看`);
+      } catch (err) {
+        toast.error(`创建定时任务失败：${err instanceof Error ? err.message : '未知错误'}`);
+      }
+      return;
+    }
 
     // /goal 自治模式：拦截斜杠命令，只有目标文本也能启动；未给判据时默认走软目标评审。
     if (isGoalCommand(trimmedValue)) {

@@ -108,7 +108,7 @@
     "release:security-scan": "node scripts/release-security-scan.mjs",
     "release:security-scan:bundle": "node scripts/release-security-scan.mjs src-tauri/target/release/bundle/macos",
     "release:resource-inventory": "node scripts/tauri-resource-inventory.mjs",
-    "release:runtime-assets": "node scripts/build-runtime-assets.mjs",
+    "release:runtime-assets": "npx tsx scripts/build-runtime-assets.mjs",
     "release:runtime-assets:install": "npx tsx scripts/install-runtime-asset.ts",
     "release:verify-macos": "bash scripts/verify-macos-release.sh",
     "release:notarize-macos": "bash scripts/tauri-notarize.sh",

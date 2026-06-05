@@ -74,6 +74,7 @@ jobs:
           security find-identity -v -p codesigning "${KEYCHAIN_PATH}"
 
       - name: Build signed Tauri updater bundle
+        timeout-minutes: 60
         env:
           TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -91,6 +92,8 @@ jobs:
           CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY }}
           CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE }}
           REQUIRE_NOTARIZATION: '1'
+          NOTARYTOOL_WAIT_TIMEOUT: '30m'
+          NOTARYTOOL_NO_S3_ACCELERATION: '1'
         # Run the release chain WITHOUT the trailing tauri-clean-bundle-apps.sh: that cleanup
         # removes bundle/macos/Agent Neo.app, but the subsequent "Repack updater archive" step
         # needs the .app to rebuild a clean (no-AppleDouble) updater tarball. Cleanup is a local

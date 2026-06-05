@@ -6,6 +6,8 @@ APP_NAME="${APP_NAME:-Agent Neo}"
 APP_PATH="${APP_PATH:-${ROOT_DIR}/src-tauri/target/release/bundle/macos/${APP_NAME}.app}"
 DMG_DIR="${DMG_DIR:-${ROOT_DIR}/src-tauri/target/release/bundle/dmg}"
 REQUIRE_NOTARIZATION="${REQUIRE_NOTARIZATION:-0}"
+NOTARYTOOL_WAIT_TIMEOUT="${NOTARYTOOL_WAIT_TIMEOUT:-30m}"
+NOTARYTOOL_NO_S3_ACCELERATION="${NOTARYTOOL_NO_S3_ACCELERATION:-1}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "[tauri-notarize] skipped: macOS notarization requires Darwin"
@@ -41,7 +43,11 @@ fi
 
 for dmg_path in "${dmg_files[@]}"; do
   echo "[tauri-notarize] submitting dmg: ${dmg_path}"
-  xcrun notarytool submit "${dmg_path}" "${NOTARY_ARGS[@]}" --wait
+  submit_args=(submit "${dmg_path}" "${NOTARY_ARGS[@]}" --wait --timeout "${NOTARYTOOL_WAIT_TIMEOUT}")
+  if [[ "${NOTARYTOOL_NO_S3_ACCELERATION}" == "1" || "${NOTARYTOOL_NO_S3_ACCELERATION}" == "true" ]]; then
+    submit_args+=(--no-s3-acceleration)
+  fi
+  xcrun notarytool "${submit_args[@]}"
 
   echo "[tauri-notarize] stapling dmg: ${dmg_path}"
   xcrun stapler staple "${dmg_path}"

@@ -194,13 +194,16 @@ export class LoopController {
           title,
           message: summary,
         });
-        notificationService.notifyTaskComplete({
-          sessionId: state.sessionId,
-          sessionTitle: title,
-          summary,
-          duration: durationMs,
-          toolsUsed: [],
-        });
+        notificationService.notifyTaskComplete(
+          {
+            sessionId: state.sessionId,
+            sessionTitle: title,
+            summary,
+            duration: durationMs,
+            toolsUsed: [],
+          },
+          { force: true }, // 后台 loop 完成：绕过焦点门，无论 app 前台/在哪条会话都提醒
+        );
       }
     } catch (err) {
       logger.warn(`finalizeTask failed for ${state.id}:`, err);

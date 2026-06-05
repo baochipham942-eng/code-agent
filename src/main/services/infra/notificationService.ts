@@ -64,12 +64,17 @@ class NotificationService implements Disposable {
    * 检查是否应该发送通知
    * 只在 App 窗口非焦点时发送
    */
-  private shouldNotify(): boolean {
+  private shouldNotify(force = false): boolean {
     if (!this.enabled) return false;
     if (this.isDryRun()) return true;
     if (!Notification.isSupported()) return false;
 
-    // 检查是否有焦点窗口
+    // force：后台任务（loop/定时任务）完成——绕过焦点门，无论 app 前台/后台都提醒。
+    // 这类任务是用户主动发起、默默长跑、完成才冒头，提醒符合预期，不算打扰。
+    // 「切到别的会话」≠「app 失焦」，普通焦点门会漏掉这种完成提醒。
+    if (force) return true;
+
+    // 前台 agent 任务：仅在 app 整体失焦时提醒，避免你正盯着看时被打扰。
     const focusedWindow = BrowserWindow.getFocusedWindow();
     return focusedWindow === null;
   }
@@ -130,9 +135,10 @@ class NotificationService implements Disposable {
 
   /**
    * 发送任务完成通知
+   * @param options.force 后台任务（loop/定时任务）完成时传 true，绕过焦点门强制提醒
    */
-  notifyTaskComplete(data: TaskNotificationData): void {
-    if (!this.shouldNotify()) {
+  notifyTaskComplete(data: TaskNotificationData, options?: { force?: boolean }): void {
+    if (!this.shouldNotify(options?.force)) {
       logger.debug('Skip notification - app is focused');
       return;
     }

@@ -131,8 +131,10 @@ async function startServer(env: E2EEnv): Promise<StartedServer> {
       HOME: env.fakeHome,
       CODE_AGENT_DATA_DIR: env.dataDir,
       CODE_AGENT_E2E: '1',
-      // 通知走 dry-run：notificationService 仍记录最近通知（供 getRecent 断言），但不真的弹系统通知
-      CODE_AGENT_NOTIFICATION_DRY_RUN: '1',
+      // 故意【不开】CODE_AGENT_NOTIFICATION_DRY_RUN：dry-run 会在焦点判断前短路 shouldNotify，
+      // 测不到后台任务完成通知的 force 绕过焦点门（艾克斯抓到的真实 gap）。
+      // 不开 dry-run 时 webServer 的 mock 窗口判定为 focused，普通通知会被跳过，
+      // 唯有 loop/定时任务的 force 通知能穿过焦点门并被 record——正是要验证的修复。
       CODE_AGENT_WORKING_DIR: env.workspace,
       WEB_HOST: '127.0.0.1',
       WEB_PORT: String(port),
@@ -411,5 +413,29 @@ test.describe('/schedule + /loop 斜杠命令', () => {
     const successToast = page.getByText(/已创建定时任务/);
     await expect(successToast).toBeVisible({ timeout: 60_000 });
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'slash-schedule-template-created.png') });
+  });
+
+  // P0 护栏：过去时间的一次性任务必须被拒绝（不能静默"创建成功"却不跑）
+  test('/schedule 护栏：过去时间的 at 任务被拒绝', async ({ page }) => {
+    test.setTimeout(60_000);
+    await openAppWithCleanSession(page, server.baseUrl);
+
+    const past = new Date(Date.now() - 60_000).toISOString();
+    let errored = false;
+    let message = '';
+    try {
+      await invokeDomain(page, 'domain:cron', 'createJob', {
+        name: `过去任务-${Date.now()}`,
+        scheduleType: 'at',
+        schedule: { type: 'at', datetime: past },
+        action: { type: 'agent', agentType: 'general', prompt: 'x' },
+        enabled: true,
+      });
+    } catch (err) {
+      errored = true;
+      message = err instanceof Error ? err.message : String(err);
+    }
+    expect(errored).toBe(true);
+    expect(message).toMatch(/过去|将来/);
   });
 });

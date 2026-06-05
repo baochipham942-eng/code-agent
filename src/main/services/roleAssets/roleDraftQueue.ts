@@ -134,7 +134,15 @@ export interface EnqueueRoleDraftResult {
 
 /**
  * 把模型起草的角色定义入队为草稿。
- * 拒绝入队（draft=null）的情况：roleId 非法 / 已存在同名持久化角色 / 队列里已有同名待确认草稿。
+ *
+ * 两种模式：
+ * - 新建（editingRoleId 缺省）：拒绝同名持久化角色（不能造重名）。
+ * - 改已有（editingRoleId 有值）：跳过同名去重（改已有就是要同名），改为校验
+ *   editingRoleId 对应角色真实存在；本期不支持改名，editingRoleId !== roleId 直接拒。
+ *
+ * 拒绝入队（draft=null）的情况：roleId 非法 / 缺 systemPrompt /
+ * （新建）已存在同名持久化角色 /（改已有）目标角色不存在 / 改名 /
+ * 队列里已有同名待确认草稿。
  */
 export async function enqueueRoleDraft(input: {
   roleId: string;
@@ -144,9 +152,12 @@ export async function enqueueRoleDraft(input: {
   systemPrompt: string;
   sessionId: string;
   timestamp?: number;
+  /** 有值 = 对话式改已有角色（覆盖该角色定义，绝不动其记忆/履历） */
+  editingRoleId?: string;
 }): Promise<EnqueueRoleDraftResult> {
   const createdAt = input.timestamp ?? Date.now();
   const roleId = input.roleId?.trim();
+  const editingRoleId = input.editingRoleId?.trim() || undefined;
 
   if (!roleId || !isSafeRoleId(roleId)) {
     logger.warn('Role draft rejected: invalid roleId', { roleId: input.roleId });
@@ -156,10 +167,24 @@ export async function enqueueRoleDraft(input: {
     return { draft: null, reason: '缺少系统提示词（systemPrompt）' };
   }
 
-  // 去重：已存在同名持久化角色，或队列里已有同名待确认草稿
-  if (await isPersistentRole(roleId)) {
+  if (editingRoleId) {
+    // 改已有：本期只改内容不改名
+    if (editingRoleId !== roleId) {
+      return {
+        draft: null,
+        reason: `暂不支持改名（从「${editingRoleId}」改为「${roleId}」），本期只能改内容`,
+      };
+    }
+    // 目标角色必须真实存在
+    if (!(await isPersistentRole(editingRoleId))) {
+      return { draft: null, reason: `要修改的角色「${editingRoleId}」不存在` };
+    }
+  } else if (await isPersistentRole(roleId)) {
+    // 新建：已存在同名持久化角色 → 拒绝
     return { draft: null, reason: `已存在同名角色「${roleId}」，请换一个名字` };
   }
+
+  // 队列里已有同名待确认草稿 → 拒绝（迭代时让用户先确认/放弃旧草稿）
   const existing = await listRoleDrafts();
   if (existing.some((d) => d.roleId === roleId)) {
     return { draft: null, reason: `已有一个待确认的「${roleId}」草稿，请先确认或放弃它` };
@@ -181,6 +206,7 @@ export async function enqueueRoleDraft(input: {
     sessionId: input.sessionId,
     createdAt,
     status: 'pending',
+    editingRoleId,
   };
 
   const agentMd = generateRoleAgentMd({
@@ -235,20 +261,31 @@ export async function confirmRoleDraft(
       };
     }
 
-    // 不覆盖已有定义（与 installBuiltinRoles 同策略："定义归用户所有"）
+    const isEdit = Boolean(meta.editingRoleId);
+    // 改已有时本期只改内容不改名（防御性二次校验：草稿被外部篡改也兜得住）
+    if (isEdit && meta.editingRoleId !== meta.roleId) {
+      return {
+        success: false,
+        error: `暂不支持改名（从「${meta.editingRoleId}」改为「${meta.roleId}」），本期只能改内容`,
+      };
+    }
+
     const agentMdPath = path.join(getAgentsMdDir().user, `${meta.roleId}.md`);
     const alreadyExists = await fs.access(agentMdPath).then(() => true, () => false);
-    if (alreadyExists) {
+    // 新建：不覆盖已有定义（与 installBuiltinRoles 同策略："定义归用户所有"）。
+    // 改已有：允许覆盖定义——这正是用户要的；但只换 agents/<id>.md，绝不动 roles/<id>/ 记忆与履历。
+    if (alreadyExists && !isEdit) {
       return { success: false, error: `已存在同名角色定义「${meta.roleId}」，未覆盖` };
     }
 
     await fs.mkdir(path.dirname(agentMdPath), { recursive: true });
     await fs.writeFile(agentMdPath, agentMd, 'utf-8');
-    // 角色资产骨架（roles/<roleId>/ MEMORY.md + memories/ + history.md），幂等
+    // 角色资产骨架（roles/<roleId>/ MEMORY.md + memories/ + history.md），幂等。
+    // 改已有时这是 no-op（目录与索引已存在），不会重置用户积累的记忆/履历。
     await ensureRoleAssetDirs(meta.roleId);
     await fs.rm(draftDir, { recursive: true, force: true });
 
-    logger.info('Role draft confirmed and installed', { id, roleId: meta.roleId, agentMdPath });
+    logger.info('Role draft confirmed and installed', { id, roleId: meta.roleId, isEdit, agentMdPath });
     return { success: true, roleId: meta.roleId, agentMdPath };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

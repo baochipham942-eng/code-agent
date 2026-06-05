@@ -50,6 +50,7 @@ import { registerTaskListHandlers } from '../agent/taskList/taskList.ipc';
 import { registerTelemetryHandlers } from './telemetry.ipc';
 import { registerCronHandlers } from './cron.ipc';
 import { registerLoopHandlers } from './loop.ipc';
+import { registerNotificationHandlers } from './notification.ipc';
 import { registerCaptureHandlers } from './capture.ipc';
 import { registerDesktopHandlers } from './desktop.ipc';
 import { registerSuggestionsHandlers } from './suggestions.ipc';
@@ -209,6 +210,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Loop handlers (会话内循环 /loop)
   registerLoopHandlers();
+
+  // Notification handlers (桌面通知只读查询)
+  registerNotificationHandlers();
 
   // Capture handlers (浏览器采集)
   registerCaptureHandlers(ipcMain);

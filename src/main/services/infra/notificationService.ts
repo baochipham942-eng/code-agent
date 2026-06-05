@@ -3,7 +3,7 @@
 // 桌面通知服务 - 在 App 非焦点时发送任务完成通知
 // ============================================================================
 
-import { Notification, BrowserWindow, app } from '../../platform';
+import { Notification, BrowserWindow, broadcastToRenderer } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { createLogger } from './logger';
 import type { Disposable } from '../serviceRegistry';
@@ -17,6 +17,8 @@ export interface TaskNotificationData {
   summary?: string;
   duration: number;
   toolsUsed: string[];
+  /** false 表示任务失败——通知标题用「任务失败」而非「任务完成」。缺省视为成功。 */
+  succeeded?: boolean;
 }
 
 export interface RecordedNotification {
@@ -64,19 +66,29 @@ class NotificationService implements Disposable {
    * 检查是否应该发送通知
    * 只在 App 窗口非焦点时发送
    */
-  private shouldNotify(): boolean {
+  private shouldNotify(force = false): boolean {
     if (!this.enabled) return false;
     if (this.isDryRun()) return true;
     if (!Notification.isSupported()) return false;
 
-    // 检查是否有焦点窗口
+    // force：后台任务（loop/定时任务）完成——绕过焦点门，无论 app 前台/后台都提醒。
+    // 这类任务是用户主动发起、默默长跑、完成才冒头，提醒符合预期，不算打扰。
+    // 「切到别的会话」≠「app 失焦」，普通焦点门会漏掉这种完成提醒。
+    if (force) return true;
+
+    // 前台 agent 任务：仅在 app 整体失焦时提醒，避免你正盯着看时被打扰。
     const focusedWindow = BrowserWindow.getFocusedWindow();
     return focusedWindow === null;
   }
 
-  private showNotification(notification: Notification): void {
+  /**
+   * 投递系统通知：交给渲染端用 Tauri 通知插件发送——原生通知自动带 app（Agent Neo）
+   * 图标与身份，点击经 onAction 跳到对应会话。替代旧的 osascript（无图标、点击不回调）。
+   * dry-run 下只记录不投递（E2E 用 getRecent 断言，不真弹）。
+   */
+  private deliver(payload: { id: string; title: string; body: string; sessionId: string }): void {
     if (this.isDryRun()) return;
-    notification.show();
+    broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, payload);
   }
 
   /**
@@ -98,41 +110,22 @@ class NotificationService implements Disposable {
   notifyNeedsInput(data: { sessionId: string; title: string; body: string }): void {
     if (!this.shouldNotify()) return;
 
-    const notification = new Notification({
-      title: data.title,
-      body: data.body,
-      silent: false,
-      urgency: 'critical',
-      ...(process.platform === 'darwin' && { sound: 'default' }),
-    });
-
-    notification.on('click', () => {
-      const windows = BrowserWindow.getAllWindows();
-      if (windows.length > 0) {
-        const mainWindow = windows[0];
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
-        mainWindow.webContents.send(IPC_CHANNELS.NOTIFICATION_CLICKED, {
-          sessionId: data.sessionId,
-        });
-      }
-    });
-
-    this.showNotification(notification);
-    this.record({
+    const entry = this.record({
       type: 'needs_input',
       sessionId: data.sessionId,
       title: data.title,
       body: data.body,
     });
+    this.deliver({ id: entry.id, title: data.title, body: data.body, sessionId: data.sessionId });
     logger.info('Needs-input notification sent', { title: data.title });
   }
 
   /**
    * 发送任务完成通知
+   * @param options.force 后台任务（loop/定时任务）完成时传 true，绕过焦点门强制提醒
    */
-  notifyTaskComplete(data: TaskNotificationData): void {
-    if (!this.shouldNotify()) {
+  notifyTaskComplete(data: TaskNotificationData, options?: { force?: boolean }): void {
+    if (!this.shouldNotify(options?.force)) {
       logger.debug('Skip notification - app is focused');
       return;
     }
@@ -148,39 +141,15 @@ class NotificationService implements Disposable {
     }
     body += `\n耗时: ${this.formatDuration(duration)}`;
 
-    const notification = new Notification({
-      title: `任务完成 - ${sessionTitle}`,
-      body: body.trim(),
-      silent: false,
-      // macOS 特有
-      ...(process.platform === 'darwin' && {
-        sound: 'default',
-      }),
-    });
-
-    // 点击通知时激活窗口
-    notification.on('click', () => {
-      const windows = BrowserWindow.getAllWindows();
-      if (windows.length > 0) {
-        const mainWindow = windows[0];
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore();
-        }
-        mainWindow.focus();
-        // 通过 IPC 切换到对应会话
-        mainWindow.webContents.send(IPC_CHANNELS.NOTIFICATION_CLICKED, {
-          sessionId: data.sessionId,
-        });
-      }
-    });
-
-    this.showNotification(notification);
-    this.record({
+    const title = `${data.succeeded === false ? '任务失败' : '任务完成'} - ${sessionTitle}`;
+    const trimmedBody = body.trim();
+    const entry = this.record({
       type: 'task_complete',
       sessionId: data.sessionId,
-      title: `任务完成 - ${sessionTitle}`,
-      body: body.trim(),
+      title,
+      body: trimmedBody,
     });
+    this.deliver({ id: entry.id, title, body: trimmedBody, sessionId: data.sessionId });
     logger.info('Notification sent', { sessionTitle });
   }
 

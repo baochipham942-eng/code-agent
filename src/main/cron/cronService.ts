@@ -21,6 +21,7 @@ import { getDatabase } from '../services/core/databaseService';
 import type { Disposable } from '../services/serviceRegistry';
 import { getServiceRegistry } from '../services/serviceRegistry';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
+import { notificationService } from '../services/infra/notificationService';
 
 const execAsync = promisify(exec);
 
@@ -444,6 +445,22 @@ export class CronService implements Disposable {
     definition: Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'>
   ): Promise<CronJobDefinition> {
     const now = Date.now();
+
+    // 一次性（at）任务护栏：datetime 必须是将来时间。
+    // 否则（如 LLM 把「明天」算成过去）任务会静默不跑，用户却看到「创建成功」。
+    if (definition.scheduleType === 'at' && definition.schedule?.type === 'at') {
+      const raw = definition.schedule.datetime;
+      const ts = typeof raw === 'number' ? raw : Date.parse(String(raw));
+      if (Number.isNaN(ts)) {
+        throw new Error(`定时任务时间无法解析：${String(raw)}`);
+      }
+      if (ts <= now) {
+        throw new Error(
+          `定时任务时间已过去（${new Date(ts).toLocaleString('zh-CN')}），请改成将来的时间`,
+        );
+      }
+    }
+
     const job: CronJobDefinition = {
       ...definition,
       id: uuidv4(),
@@ -842,9 +859,36 @@ export class CronService implements Disposable {
 
       // Save execution to database
       await this.saveExecutionToDatabase(execution);
+
+      // 定时 agent 任务执行完成后发系统通知，点通知跳到生成的 session
+      this.notifyAgentExecution(definition, execution);
     }
 
     return execution;
+  }
+
+  /**
+   * 定时 agent 任务跑完后发完成通知。
+   * 只对生成了会话的 agent action 发——点击通知经 NOTIFICATION_CLICKED 跳到该 session。
+   */
+  private notifyAgentExecution(definition: CronJobDefinition, execution: CronJobExecution): void {
+    if (definition.action.type !== 'agent' || !execution.sessionId) return;
+    try {
+      const succeeded = execution.status === 'completed';
+      notificationService.notifyTaskComplete(
+        {
+          sessionId: execution.sessionId,
+          sessionTitle: `[定时] ${definition.name}`,
+          summary: succeeded ? '定时任务已完成' : `定时任务失败：${execution.error ?? '未知错误'}`,
+          duration: execution.duration ?? 0,
+          toolsUsed: [],
+          succeeded,
+        },
+        { force: true }, // 后台定时任务完成：绕过焦点门，app 前台/后台都提醒
+      );
+    } catch (err) {
+      console.error('[CronService] notifyAgentExecution failed:', err);
+    }
   }
 
   private async executeAction(

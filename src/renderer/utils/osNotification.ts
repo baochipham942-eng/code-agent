@@ -1,0 +1,101 @@
+// ============================================================================
+// 原生系统通知（渲染端出口）
+//
+// 主进程（webServer sidecar）经 SSE 推 NOTIFICATION_SHOW，由这里在渲染端真正发出：
+//   - Tauri 模式：用 @tauri-apps/plugin-notification，原生通知自动带 app（Agent Neo）
+//     图标与身份，点击经 onAction 跳到对应会话——替代旧 osascript（无图标、点击不回调）。
+//   - Web 模式：回落浏览器 Notification API（best-effort，无权限/headless 时静默）。
+// ============================================================================
+
+import { isTauriMode } from './platform';
+import { IPC_DOMAINS } from '@shared/ipc';
+import ipcService from '../services/ipcService';
+
+type NotifModule = typeof import('@tauri-apps/plugin-notification');
+
+/** 把原生通知投递结果回报主进程（落日志，便于诊断「没弹」）。fire-and-forget。 */
+function reportDelivery(report: Record<string, unknown>): void {
+  try {
+    void ipcService.invokeDomain(IPC_DOMAINS.NOTIFICATION, 'reportClientDelivery', report);
+  } catch {
+    /* ignore */
+  }
+}
+
+let modulePromise: Promise<NotifModule> | null = null;
+function loadModule(): Promise<NotifModule> {
+  if (!modulePromise) modulePromise = import('@tauri-apps/plugin-notification');
+  return modulePromise;
+}
+
+async function ensureTauriPermission(mod: NotifModule): Promise<boolean> {
+  let granted = await mod.isPermissionGranted();
+  if (!granted) {
+    granted = (await mod.requestPermission()) === 'granted';
+  }
+  return granted;
+}
+
+/**
+ * 主动请求系统通知授权。应在 app 启动时调用一次——让用户在权限"未决"时看到 macOS
+ * 授权弹窗，而不是等第一条通知静默被拦、再让用户自己去系统设置开（普通用户不会）。
+ * 已授权/已拒绝时系统不再弹（plugin 行为）。返回最终是否已授权。
+ */
+export async function requestOsNotificationPermission(): Promise<boolean> {
+  if (!isTauriMode()) return false;
+  try {
+    const mod = await loadModule();
+    return await ensureTauriPermission(mod);
+  } catch (err) {
+    console.warn('[osNotification] 主动请求通知授权失败', err);
+    return false;
+  }
+}
+
+/** 发一条原生系统通知。Tauri 下自动带 Agent Neo 图标/身份；web 回落浏览器通知。 */
+export async function postOsNotification(opts: { title: string; body: string }): Promise<void> {
+  if (isTauriMode()) {
+    try {
+      const mod = await loadModule();
+      const granted = await ensureTauriPermission(mod);
+      if (!granted) {
+        reportDelivery({ mode: 'tauri', granted: false, sent: false });
+        return;
+      }
+      mod.sendNotification({ title: opts.title, body: opts.body });
+      reportDelivery({ mode: 'tauri', granted: true, sent: true });
+    } catch (err) {
+      console.warn('[osNotification] Tauri sendNotification 失败', err);
+      reportDelivery({ mode: 'tauri', error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+  reportDelivery({ mode: 'web', perm: typeof Notification !== 'undefined' ? Notification.permission : 'unavailable' });
+  // Web 回落：浏览器通知（best-effort）
+  try {
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission === 'default') {
+      await Notification.requestPermission();
+    }
+    if (Notification.permission === 'granted') {
+      // eslint-disable-next-line no-new
+      new Notification(opts.title, { body: opts.body });
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * 注册一次通知点击回调（Tauri onAction）。桌面端点击支持有限，作 best-effort 跳转用；
+ * 即便回调不触发，点击通知也会由系统把 app 带到前台。
+ */
+export async function registerNotificationClick(handler: () => void): Promise<void> {
+  if (!isTauriMode()) return;
+  try {
+    const mod = await loadModule();
+    await mod.onAction(() => handler());
+  } catch (err) {
+    console.warn('[osNotification] onAction 不支持（桌面端常见），点击仅前置 app', err);
+  }
+}

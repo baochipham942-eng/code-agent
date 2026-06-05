@@ -14,6 +14,7 @@ import {
 } from '../../../tools/dispatch/toolDefinitions';
 import { filterToolDefinitionsByWorkbenchScope } from '../../../tools/workbenchToolScope';
 import { filterToolDefinitionsByStrictSkillBoundary } from '../../../tools/skillBoundaryScope';
+import { filterToolsByRunPolicy } from '../toolRunPolicy';
 import {
   stripImagesFromMessages,
   extractUserRequestText,
@@ -277,6 +278,7 @@ function emitAssistantMessageDelta(
       turnId: ctx.runtime.currentTurnId,
       messageId: ctx.runtime.currentTurnId,
       deltaSeq: ++ctx.runtime.messageDeltaSeq,
+      ...(ctx.runtime.historyVisibility === 'meta' ? { isMeta: true } : {}),
     },
   });
 }
@@ -409,6 +411,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       `[AgentLoop] Strict skill toolset: tool list narrowed ${beforeStrict} -> ${tools.length} (skill=${ctx.runtime.skillToolBoundary?.skillName})`,
     );
   }
+  tools = filterToolsByRunPolicy(tools, ctx.runtime);
   if (isArtifactRepairMode(ctx)) {
     const before = tools.length;
     const phase = ctx.runtime.artifactRepairGuard?.phase ?? 'initial_repair';

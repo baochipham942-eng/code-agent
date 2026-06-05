@@ -45,6 +45,14 @@ function activeMessageWhere(alias = 'm'): string {
   return `COALESCE(${alias}.visibility, 'active') = 'active'`;
 }
 
+function loopInternalMessageWhere(alias = 'm'): string {
+  return `COALESCE(${alias}.content, '') NOT LIKE '%【循环模式 · 第%轮】%' AND COALESCE(${alias}.content, '') NOT LIKE '%[[LOOP_WAIT]]%'`;
+}
+
+function visibleHistoryMessageWhere(alias = 'm'): string {
+  return `${activeMessageWhere(alias)} AND COALESCE(${alias}.is_meta, 0) = 0 AND ${loopInternalMessageWhere(alias)}`;
+}
+
 /**
  * 入库 choke point：保证持久化的所有 ToolCall 都有 shortDescription（产品视角
  * 语义短句）。任何上游路径——messageProcessor / TaskManager.turnState 重构造 /
@@ -211,7 +219,7 @@ export class SessionRepository {
              COUNT(m.id) as message_count,
              COALESCE(SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END), 0) as turn_count
       FROM sessions s
-      LEFT JOIN messages m ON s.id = m.session_id AND ${activeMessageWhere('m')}
+      LEFT JOIN messages m ON s.id = m.session_id AND ${visibleHistoryMessageWhere('m')}
       WHERE ${filters.join(' AND ')}
       GROUP BY s.id
     `);
@@ -235,7 +243,7 @@ export class SessionRepository {
              COUNT(m.id) as message_count,
              COALESCE(SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END), 0) as turn_count
       FROM sessions s
-      LEFT JOIN messages m ON s.id = m.session_id AND ${activeMessageWhere('m')}
+      LEFT JOIN messages m ON s.id = m.session_id AND ${visibleHistoryMessageWhere('m')}
       ${whereClause}
       GROUP BY s.id
       ORDER BY s.updated_at DESC
@@ -370,19 +378,19 @@ export class SessionRepository {
     const stmt = this.db.prepare(`
       INSERT INTO messages (
         id, session_id, role, content, timestamp, tool_calls, tool_results,
-        attachments, thinking, effort_level, synced_at, content_parts, metadata,
+        attachments, thinking, effort_level, synced_at, content_parts, metadata, is_meta,
         compaction, visibility, hidden_by_rewind_id, hidden_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const attachmentsMeta = buildAttachmentMetadata(message.attachments);
     const thinkingContent = message.thinking || message.reasoning || null;
 
     const toolCallsForStorage = ensureToolCallShortDescription(message.toolCalls);
-    stmt.run(message.id, sessionId, message.role, message.content, message.timestamp, toolCallsForStorage ? JSON.stringify(toolCallsForStorage) : null, message.toolResults ? JSON.stringify(message.toolResults) : null, attachmentsMeta ? JSON.stringify(attachmentsMeta) : null, thinkingContent, message.effortLevel || null, this.resolveSyncedAt(options), message.contentParts ? JSON.stringify(message.contentParts) : null, message.metadata ? JSON.stringify(message.metadata) : null, message.compaction ? JSON.stringify(message.compaction) : null, message.visibility ?? 'active', message.hiddenByRewindId ?? null, message.hiddenAt ?? null);
+    stmt.run(message.id, sessionId, message.role, message.content, message.timestamp, toolCallsForStorage ? JSON.stringify(toolCallsForStorage) : null, message.toolResults ? JSON.stringify(message.toolResults) : null, attachmentsMeta ? JSON.stringify(attachmentsMeta) : null, thinkingContent, message.effortLevel || null, this.resolveSyncedAt(options), message.contentParts ? JSON.stringify(message.contentParts) : null, message.metadata ? JSON.stringify(message.metadata) : null, message.isMeta ? 1 : 0, message.compaction ? JSON.stringify(message.compaction) : null, message.visibility ?? 'active', message.hiddenByRewindId ?? null, message.hiddenAt ?? null);
 
-    if (!options?.skipTimestampUpdate) {
+    if (!options?.skipTimestampUpdate && !message.isMeta) {
       this.db.prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?').run(options?.updatedAt ?? Date.now(), sessionId);
     }
   }
@@ -447,6 +455,10 @@ export class SessionRepository {
       setClauses.push('metadata = ?');
       values.push(updates.metadata ? JSON.stringify(updates.metadata) : null);
     }
+    if (updates.isMeta !== undefined) {
+      setClauses.push('is_meta = ?');
+      values.push(updates.isMeta ? 1 : 0);
+    }
     if (updates.compaction !== undefined) {
       setClauses.push('compaction = ?');
       values.push(updates.compaction ? JSON.stringify(updates.compaction) : null);
@@ -501,7 +513,7 @@ export class SessionRepository {
       SELECT COUNT(*) as count
       FROM messages
       WHERE session_id = ?
-      ${options.includeRewound ? '' : `AND ${activeMessageWhere('messages')}`}
+      ${options.includeRewound ? '' : `AND ${visibleHistoryMessageWhere('messages')}`}
     `);
     const row = stmt.get(sessionId) as SQLiteRow | undefined;
     return (row?.count as number) || 0;
@@ -584,6 +596,7 @@ export class SessionRepository {
           SELECT f.message_id, f.session_id, f.role, f.content, f.timestamp
           FROM session_messages_fts f
           WHERE f.content MATCH ? ${whereSession}
+            AND ${loopInternalMessageWhere('f')}
           ORDER BY rank, f.timestamp DESC
           LIMIT ?
           `
@@ -592,7 +605,7 @@ export class SessionRepository {
           FROM session_messages_fts f
           JOIN messages m ON m.id = f.message_id
           WHERE f.content MATCH ? ${whereSession}
-            AND ${activeMessageWhere('m')}
+            AND ${visibleHistoryMessageWhere('m')}
           ORDER BY rank, f.timestamp DESC
           LIMIT ?
           `;
@@ -637,6 +650,8 @@ export class SessionRepository {
           INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
           SELECT id, session_id, role, COALESCE(content, ''), timestamp
           FROM messages
+          WHERE COALESCE(is_meta, 0) = 0
+            AND ${loopInternalMessageWhere('messages')}
           `
         )
         .run();
@@ -657,7 +672,7 @@ export class SessionRepository {
              COUNT(m.id) as message_count,
              COALESCE(SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END), 0) as turn_count
       FROM sessions s
-      LEFT JOIN messages m ON s.id = m.session_id AND ${activeMessageWhere('m')}
+      LEFT JOIN messages m ON s.id = m.session_id AND ${visibleHistoryMessageWhere('m')}
       WHERE s.synced_at IS NULL
       GROUP BY s.id
       ORDER BY s.updated_at ASC
@@ -680,7 +695,10 @@ export class SessionRepository {
       SELECT m.*
       FROM messages m
       JOIN sessions s ON s.id = m.session_id
-      WHERE m.synced_at IS NULL AND s.is_deleted = 0
+      WHERE m.synced_at IS NULL
+        AND s.is_deleted = 0
+        AND COALESCE(m.is_meta, 0) = 0
+        AND ${loopInternalMessageWhere('m')}
       ORDER BY m.timestamp ASC
       LIMIT ?
     `);
@@ -812,6 +830,7 @@ export class SessionRepository {
       effortLevel: (row.effort_level as Message['effortLevel']) || undefined,
       contentParts: parseStoredJson<Message['contentParts']>(row.content_parts),
       metadata: parseStoredJson<Message['metadata']>(row.metadata),
+      ...(row.is_meta ? { isMeta: true } : {}),
       compaction: parseStoredJson<Message['compaction']>(row.compaction),
       ...(artifacts.length > 0 ? { artifacts } : {}),
     };
@@ -1038,8 +1057,8 @@ export class SessionRepository {
       .prepare(
         `
       SELECT s.*,
-             (SELECT COUNT(*) FROM messages WHERE session_id = s.id AND ${activeMessageWhere('messages')}) as message_count,
-             (SELECT COUNT(*) FROM messages WHERE session_id = s.id AND role = 'user' AND ${activeMessageWhere('messages')}) as turn_count
+             (SELECT COUNT(*) FROM messages WHERE session_id = s.id AND ${visibleHistoryMessageWhere('messages')}) as message_count,
+             (SELECT COUNT(*) FROM messages WHERE session_id = s.id AND role = 'user' AND ${visibleHistoryMessageWhere('messages')}) as turn_count
       FROM sessions s
       WHERE ${filters.join(' AND ')}
       ORDER BY s.updated_at DESC

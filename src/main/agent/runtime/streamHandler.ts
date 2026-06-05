@@ -95,6 +95,7 @@ export class StreamHandler {
         data: {
           content: `\n[runtime] ${diagnostic}\n`,
           turnId: this.ctx.currentTurnId,
+          ...(this.ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
         },
       });
     }
@@ -119,7 +120,11 @@ export class StreamHandler {
 
     this.ctx.onEvent({
       type: 'turn_start',
-      data: { turnId: this.ctx.currentTurnId, iteration: iterations },
+      data: {
+        turnId: this.ctx.currentTurnId,
+        iteration: iterations,
+        ...(this.ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
+      },
     });
     this.flushRuntimeDiagnostics();
 

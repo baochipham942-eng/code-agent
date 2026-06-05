@@ -438,6 +438,13 @@ export interface NotificationClickedEvent {
   sessionId: string;
 }
 
+export interface NotificationShowEvent {
+  id: string;
+  title: string;
+  body: string;
+  sessionId: string;
+}
+
 export type MCPEventType = 'connection_errors' | 'server_connected' | 'server_disconnected' | 'capabilities_changed';
 
 export interface MCPEvent {
@@ -507,6 +514,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.WORKSPACE_CURRENT_CHANGED]: (event: { dir: string | null }) => void;
   [IPC_CHANNELS.UPDATE_EVENT]: (event: UpdateEvent) => void;
   [IPC_CHANNELS.NOTIFICATION_CLICKED]: (event: NotificationClickedEvent) => void;
+  [IPC_CHANNELS.NOTIFICATION_SHOW]: (event: NotificationShowEvent) => void;
   [IPC_CHANNELS.MCP_EVENT]: (event: MCPEvent) => void;
   [IPC_CHANNELS.CONNECTOR_EVENT]: (event: ConnectorEvent) => void;
   [IPC_CHANNELS.CONTEXT_HEALTH_EVENT]: (event: ContextHealthUpdateEvent) => void;

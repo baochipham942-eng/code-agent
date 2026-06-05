@@ -73,6 +73,8 @@ export interface RuntimeContext {
   compressionPipeline: CompressionPipeline;
   telemetryAdapter?: TelemetryAdapter;
   inferenceOptions?: InferenceOptions;
+  historyVisibility?: 'visible' | 'meta';
+  deniedToolNames?: string[];
 
   // --- Mutable run state ---
   lastStreamedContent: string;

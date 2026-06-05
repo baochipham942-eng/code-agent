@@ -40,6 +40,14 @@ function parseJsonRecord(value: string): Record<string, unknown> {
   return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : {};
 }
 
+function loopInternalMessageWhere(alias = 'm'): string {
+  return `COALESCE(${alias}.content, '') NOT LIKE '%【循环模式 · 第%轮】%' AND COALESCE(${alias}.content, '') NOT LIKE '%[[LOOP_WAIT]]%'`;
+}
+
+function visibleHistoryMessageWhere(alias = 'm'): string {
+  return `COALESCE(${alias}.is_meta, 0) = 0 AND ${loopInternalMessageWhere(alias)}`;
+}
+
 // ----------------------------------------------------------------------------
 // CLI Database Service
 // ----------------------------------------------------------------------------
@@ -191,6 +199,7 @@ export class CLIDatabaseService {
         tool_calls TEXT,
         tool_results TEXT,
         attachments TEXT,
+        is_meta INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       )
     `);
@@ -205,6 +214,12 @@ export class CLIDatabaseService {
     // （正文恒在工具组之上），会把"先搜索后总结"的时序倒过来。
     try {
       this.db.exec(`ALTER TABLE messages ADD COLUMN content_parts TEXT`);
+    } catch {
+      // 列已存在
+    }
+
+    try {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN is_meta INTEGER NOT NULL DEFAULT 0`);
     } catch {
       // 列已存在
     }
@@ -320,9 +335,16 @@ export class CLIDatabaseService {
       )
     `);
     this.db.exec(`
+      DROP TRIGGER IF EXISTS messages_ai_fts;
+      DROP TRIGGER IF EXISTS messages_au_fts;
+    `);
+    this.db.exec(`
       CREATE TRIGGER IF NOT EXISTS messages_ai_fts AFTER INSERT ON messages BEGIN
         INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
-        VALUES (new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp);
+        SELECT new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp
+        WHERE COALESCE(new.is_meta, 0) = 0
+          AND COALESCE(new.content, '') NOT LIKE '%【循环模式 · 第%轮】%'
+          AND COALESCE(new.content, '') NOT LIKE '%[[LOOP_WAIT]]%';
       END
     `);
     this.db.exec(`
@@ -331,11 +353,24 @@ export class CLIDatabaseService {
       END
     `);
     this.db.exec(`
-      CREATE TRIGGER IF NOT EXISTS messages_au_fts AFTER UPDATE OF content ON messages BEGIN
+      CREATE TRIGGER IF NOT EXISTS messages_au_fts AFTER UPDATE OF content, is_meta ON messages BEGIN
         DELETE FROM session_messages_fts WHERE message_id = old.id;
         INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
-        VALUES (new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp);
+        SELECT new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp
+        WHERE COALESCE(new.is_meta, 0) = 0
+          AND COALESCE(new.content, '') NOT LIKE '%【循环模式 · 第%轮】%'
+          AND COALESCE(new.content, '') NOT LIKE '%[[LOOP_WAIT]]%';
       END
+    `);
+    this.db.exec(`
+      DELETE FROM session_messages_fts
+      WHERE message_id IN (
+        SELECT id
+        FROM messages
+        WHERE COALESCE(is_meta, 0) != 0
+          OR COALESCE(content, '') LIKE '%【循环模式 · 第%轮】%'
+          OR COALESCE(content, '') LIKE '%[[LOOP_WAIT]]%'
+      )
     `);
 
     // 首次升级后从已有 messages backfill（幂等：只在 FTS 空 + messages 非空时跑）
@@ -346,6 +381,8 @@ export class CLIDatabaseService {
         this.db.exec(`
           INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
           SELECT id, session_id, role, COALESCE(content, ''), timestamp FROM messages
+          WHERE COALESCE(is_meta, 0) = 0
+            AND ${loopInternalMessageWhere('messages')}
         `);
       }
     } catch {
@@ -654,7 +691,7 @@ export class CLIDatabaseService {
     const stmt = this.db.prepare(`
       SELECT s.*, COUNT(m.id) as message_count
       FROM sessions s
-      LEFT JOIN messages m ON s.id = m.session_id
+      LEFT JOIN messages m ON s.id = m.session_id AND ${visibleHistoryMessageWhere('m')}
       WHERE s.id = ?
       GROUP BY s.id
     `);
@@ -671,7 +708,7 @@ export class CLIDatabaseService {
     const stmt = this.db.prepare(`
       SELECT s.*, COUNT(m.id) as message_count
       FROM sessions s
-      LEFT JOIN messages m ON s.id = m.session_id
+      LEFT JOIN messages m ON s.id = m.session_id AND ${visibleHistoryMessageWhere('m')}
       WHERE s.status != 'archived'
       GROUP BY s.id
       ORDER BY s.updated_at DESC
@@ -768,8 +805,8 @@ export class CLIDatabaseService {
     if (!this.db) throw new Error('Database not initialized');
 
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, content_parts)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, content_parts, is_meta)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const attachmentsMeta = message.attachments?.map(a => ({
@@ -791,11 +828,14 @@ export class CLIDatabaseService {
       message.toolCalls ? JSON.stringify(message.toolCalls) : null,
       message.toolResults ? JSON.stringify(message.toolResults) : null,
       attachmentsMeta ? JSON.stringify(attachmentsMeta) : null,
-      message.contentParts ? JSON.stringify(message.contentParts) : null
+      message.contentParts ? JSON.stringify(message.contentParts) : null,
+      message.isMeta ? 1 : 0
     );
 
     // 更新 session 的 updated_at
-    this.db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(Date.now(), sessionId);
+    if (!message.isMeta) {
+      this.db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(Date.now(), sessionId);
+    }
   }
 
   getMessages(sessionId: string, limit?: number): Message[] {
@@ -823,6 +863,7 @@ export class CLIDatabaseService {
       toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
       attachments: row.attachments ? parseJson<NonNullable<Message['attachments']>>(String(row.attachments)) : undefined,
       contentParts: row.content_parts ? parseJson<NonNullable<Message['contentParts']>>(String(row.content_parts)) : undefined,
+      ...(row.is_meta ? { isMeta: true } : {}),
     }));
   }
 
@@ -846,6 +887,7 @@ export class CLIDatabaseService {
       toolCalls: row.tool_calls ? parseJson<NonNullable<Message['toolCalls']>>(String(row.tool_calls)) : undefined,
       toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
       contentParts: row.content_parts ? parseJson<NonNullable<Message['contentParts']>>(String(row.content_parts)) : undefined,
+      ...(row.is_meta ? { isMeta: true } : {}),
     }));
   }
 
@@ -1002,7 +1044,7 @@ export class CLIDatabaseService {
     const params: unknown[] = [ftsQuery];
     let whereSession = '';
     if (options.sessionId) {
-      whereSession = 'AND session_id = ?';
+      whereSession = 'AND f.session_id = ?';
       params.push(options.sessionId);
     }
     params.push(limit);
@@ -1011,10 +1053,12 @@ export class CLIDatabaseService {
       const rows = this.db
         .prepare(
           `
-          SELECT message_id, session_id, role, content, timestamp
-          FROM session_messages_fts
-          WHERE content MATCH ? ${whereSession}
-          ORDER BY rank, timestamp DESC
+          SELECT f.message_id, f.session_id, f.role, f.content, f.timestamp
+          FROM session_messages_fts f
+          JOIN messages m ON m.id = f.message_id
+          WHERE f.content MATCH ? ${whereSession}
+            AND ${visibleHistoryMessageWhere('m')}
+          ORDER BY rank, f.timestamp DESC
           LIMIT ?
           `,
         )

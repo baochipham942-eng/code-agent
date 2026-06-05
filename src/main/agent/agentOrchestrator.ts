@@ -162,6 +162,7 @@ export class AgentOrchestrator {
       attachments: attachments as MessageAttachment[] | undefined,
       metadata: messageMetadata,
     };
+    this.applyHistoryVisibility(userMessage, options);
 
     this.addMessage(userMessage);
     logger.debug('User message added, hasAttachments:', !!userMessage.attachments?.length, 'count:', userMessage.attachments?.length || 0);
@@ -531,6 +532,14 @@ export class AgentOrchestrator {
     }
   }
 
+  private applyHistoryVisibility(message: Message, options?: AgentRunOptions): Message {
+    if (options?.historyVisibility === 'meta') {
+      message.isMeta = true;
+      message.source = message.source ?? 'system';
+    }
+    return message;
+  }
+
   private updateContextHealthSnapshot(sessionId: string, model: string): void {
     try {
       getContextHealthService().update(
@@ -626,7 +635,7 @@ export class AgentOrchestrator {
     await runDeepResearch(this.applyTurnSystemContext(topic, options), options?.reportStyle, onEvent, modelConfig, {
       toolExecutor: this.toolExecutor,
       generateId: () => this.generateId(),
-      addMessage: (msg) => this.addMessage(msg),
+      addMessage: (msg) => this.addMessage(this.applyHistoryVisibility(msg, options)),
     });
   }
 
@@ -671,7 +680,7 @@ export class AgentOrchestrator {
           sessionId: this.sessionId,
           taskListManager: this.taskListManager,
           generateId: () => this.generateId(),
-          addMessage: (msg) => this.addMessage(msg),
+          addMessage: (msg) => this.addMessage(this.applyHistoryVisibility(msg, options)),
           sendDAGStatusEvent: (dagId, agentId, status) => this.syncAutoAgentDAGStatus(dagId, agentId, status),
           runStandardAgentLoop: (c, e, m, s, executionPrompt, toolScope, executionIntent) =>
             this.runStandardAgentLoop(c, e, m, s, executionPrompt, toolScope, executionIntent, options),
@@ -878,6 +887,8 @@ export class AgentOrchestrator {
       goalContract,
       // 迭代数硬上限（角色主动性醒来等预算受限场景，docs/designs/role-proactivity.md §6）
       maxIterations: options?.maxIterations,
+      historyVisibility: options?.historyVisibility,
+      deniedToolNames: options?.deniedToolNames,
       telemetryAdapter,
       persistMessage: sessionId
         ? async (message: Message) => {

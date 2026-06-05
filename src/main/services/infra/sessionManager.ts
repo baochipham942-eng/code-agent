@@ -29,6 +29,10 @@ export interface SessionWithMessages extends Session {
   turnCount?: number;
 }
 
+function isVisibleHistoryMessage(message: Message): boolean {
+  return !message.isMeta && message.visibility !== 'rewound';
+}
+
 export interface SessionCreateOptions {
   title?: string;
   modelConfig: ModelConfig;
@@ -84,7 +88,7 @@ export class SessionManager implements Disposable {
   private sessionCache: Map<string, SessionWithMessages> = new Map();
 
   private buildWorkbenchSnapshot(session: Pick<Session, 'workingDirectory' | 'workbenchProvenance'>, messages: Message[]) {
-    return deriveSessionWorkbenchSnapshot(messages, {
+    return deriveSessionWorkbenchSnapshot(messages.filter(isVisibleHistoryMessage), {
       workingDirectory: session.workingDirectory ?? null,
       provenance: session.workbenchProvenance
     });
@@ -175,7 +179,9 @@ export class SessionManager implements Disposable {
   }
 
   private updateCachedWorkbenchState(session: SessionWithMessages): void {
-    session.turnCount = session.messages.filter((message) => message.role === 'user').length;
+    const visibleMessages = session.messages.filter(isVisibleHistoryMessage);
+    session.messageCount = visibleMessages.length;
+    session.turnCount = visibleMessages.filter((message) => message.role === 'user').length;
     session.workbenchSnapshot = this.buildWorkbenchSnapshot(session, session.messages);
   }
 
@@ -763,7 +769,7 @@ export class SessionManager implements Disposable {
 
     // 自动更新会话标题（如果是第一条用户消息）
     // fire-and-forget：标题生成调用 quick model，不阻塞主推理链路
-    if (message.role === 'user') {
+    if (isVisibleHistoryMessage(message) && message.role === 'user') {
       void this.maybeUpdateTitle(message.content).catch(() => {
         /* 静默降级 */
       });
@@ -805,11 +811,13 @@ export class SessionManager implements Disposable {
         };
       } else {
         cached.messages.push(message);
-        if (inserted) {
+        if (inserted && isVisibleHistoryMessage(message)) {
           cached.messageCount++;
         }
       }
-      cached.updatedAt = Date.now();
+      if (isVisibleHistoryMessage(message)) {
+        cached.updatedAt = Date.now();
+      }
       if (provenance) {
         cached.workbenchProvenance = provenance;
       }
@@ -817,7 +825,7 @@ export class SessionManager implements Disposable {
     }
 
     // 第一条用户消息时自动生成会话标题（webServer 多会话路径走这里）
-    if (inserted && message.role === 'user' && typeof message.content === 'string' && message.content.trim()) {
+    if (inserted && isVisibleHistoryMessage(message) && message.role === 'user' && typeof message.content === 'string' && message.content.trim()) {
       void this.maybeUpdateTitleForSession(sessionId, message.content).catch(() => {
         /* 静默降级 */
       });
@@ -867,7 +875,7 @@ export class SessionManager implements Disposable {
     if (this.sessionCache.has(sessionId)) {
       const cached = this.sessionCache.get(sessionId)!;
       cached.messages = [...messages];
-      cached.messageCount = messages.length;
+      cached.messageCount = messages.filter(isVisibleHistoryMessage).length;
       cached.updatedAt = Date.now();
       cached.workbenchProvenance = this.extractWorkbenchProvenance(messages);
       this.updateCachedWorkbenchState(cached);
@@ -923,8 +931,8 @@ export class SessionManager implements Disposable {
     const restored = await this.getSession(sessionId, Number.MAX_SAFE_INTEGER);
     if (restored) {
       restored.messages = result.activeMessages;
-      restored.messageCount = result.activeMessages.length;
-      restored.turnCount = result.activeMessages.filter((message) => message.role === 'user').length;
+      restored.messageCount = result.activeMessages.filter(isVisibleHistoryMessage).length;
+      restored.turnCount = result.activeMessages.filter((message) => isVisibleHistoryMessage(message) && message.role === 'user').length;
       restored.updatedAt = Date.now();
       restored.workbenchSnapshot = this.buildWorkbenchSnapshot(restored, result.activeMessages);
       this.sessionCache.set(sessionId, restored);

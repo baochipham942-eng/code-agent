@@ -143,6 +143,7 @@
     "@supabase/supabase-js": "^2.106.1",
     "@tauri-apps/api": "~2.11.0",
     "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2.5.4",
     "@types/dagre": "^0.7.54",
     "@types/papaparse": "^5.5.2",

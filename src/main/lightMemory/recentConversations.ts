@@ -14,6 +14,7 @@ const logger = createLogger('RecentConversations');
 
 const SUMMARY_FILE = 'recent-conversations.md';
 const MAX_ENTRIES = 15;
+const LOOP_AUTOMATION_SUMMARY_PATTERN = /(?:【循环模式\s*·\s*第\s*\d+\s*轮】|\[\[LOOP_WAIT\]\]|--max-turns|只回复一句|连续跑[一二两三四五六七八九十\d]+轮)/i;
 
 function getSummaryPath(): string {
   return path.join(getMemoryDir(), SUMMARY_FILE);
@@ -44,6 +45,15 @@ function mergeHighlights(existing: string[], next: string[]): string[] {
     if (merged.length >= 3) break;
   }
   return merged;
+}
+
+export function isLoopAutomationSummaryText(text: string | undefined): boolean {
+  return Boolean(text && LOOP_AUTOMATION_SUMMARY_PATTERN.test(text));
+}
+
+function isLoopAutomationSummary(summary: ConversationSummary): boolean {
+  return isLoopAutomationSummaryText(summary.title)
+    || summary.highlights.some((highlight) => isLoopAutomationSummaryText(highlight));
 }
 
 /**
@@ -97,9 +107,15 @@ function formatSummaries(summaries: ConversationSummary[]): string {
  */
 export async function appendConversationSummary(summary: ConversationSummary): Promise<void> {
   if (process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS === 'true') return;
+  if (isLoopAutomationSummary(summary)) {
+    logger.debug(`Skipping loop automation summary: "${summary.title}"`);
+    return;
+  }
+
   try {
     await ensureMemoryDir();
     let summaries = await loadSummaries();
+    summaries = summaries.filter((item) => !isLoopAutomationSummary(item));
 
     const summaryKey = normalizeSummaryKey(summary);
     const existingIndex = summaries.findIndex((item) => normalizeSummaryKey(item) === summaryKey);
@@ -135,7 +151,7 @@ export async function appendConversationSummary(summary: ConversationSummary): P
 export async function buildRecentConversationsBlock(): Promise<string | null> {
   if (process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS === 'true') return null;
   try {
-    const summaries = await loadSummaries();
+    const summaries = (await loadSummaries()).filter((item) => !isLoopAutomationSummary(item));
     if (summaries.length === 0) return null;
 
     const formatted = formatSummaries(summaries);

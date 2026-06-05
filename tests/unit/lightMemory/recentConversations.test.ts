@@ -28,6 +28,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 import {
   appendConversationSummary,
   buildRecentConversationsBlock,
+  isLoopAutomationSummaryText,
 } from '../../../src/main/lightMemory/recentConversations';
 import type { ConversationSummary } from '../../../src/main/lightMemory/recentConversations';
 
@@ -135,6 +136,23 @@ describe('recentConversations', () => {
       const content = await fs.readFile(summaryPath, 'utf-8');
       expect(content).toContain('refactoring, testing, deployment');
     });
+
+    it('should skip loop automation summaries', async () => {
+      await appendConversationSummary({
+        date: '2026-03-19',
+        title: '只回复一句检查中',
+        highlights: ['loop run --max-turns 1'],
+      });
+      await appendConversationSummary({
+        date: '2026-03-19',
+        title: 'Normal session',
+        highlights: ['manual user request'],
+      });
+
+      const content = await fs.readFile(summaryPath, 'utf-8');
+      expect(content).not.toContain('只回复一句检查中');
+      expect(content).toContain('Normal session');
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -184,6 +202,34 @@ describe('recentConversations', () => {
 
       const block = await buildRecentConversationsBlock();
       expect(block).toContain('last 5 sessions');
+    });
+
+    it('should filter old loop automation summaries from prompt injection', async () => {
+      await fs.mkdir(memDir, { recursive: true });
+      await fs.writeFile(
+        summaryPath,
+        [
+          '# Recent Conversations',
+          '',
+          '- **2026-03-18**: "【循环模式 · 第 1 轮】只回复一句检查中" — background loop',
+          '- **2026-03-19**: "Manual debugging" — inspect renderer state',
+          '',
+        ].join('\n'),
+        'utf-8',
+      );
+
+      const block = await buildRecentConversationsBlock();
+      expect(block).not.toContain('检查中');
+      expect(block).toContain('Manual debugging');
+      expect(block).toContain('last 1 sessions');
+    });
+  });
+
+  describe('isLoopAutomationSummaryText', () => {
+    it('detects loop automation prompt fragments', () => {
+      expect(isLoopAutomationSummaryText('只回复一句检查中')).toBe(true);
+      expect(isLoopAutomationSummaryText('/loop 检查状态 --max-turns 1')).toBe(true);
+      expect(isLoopAutomationSummaryText('正常调试会话')).toBe(false);
     });
   });
 

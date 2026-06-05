@@ -6,26 +6,49 @@
 //   - 触到 maxTurns 上限（completed/max_turns）
 //   - 用户喊停（stopped/user）
 //   - 出错（failed/error）
-// 每轮回复走当前 session 的正常流式链路，自然显示在聊天里——无需专门事件推送。
-// Slice 2 再做后台化（脱离会话存活、持久化、完成通知）。
+// 每轮回复走当前 session 的模型历史链路，但标成 meta，不污染用户可见聊天历史。
+//
+// Slice 2 后台化：LoopController 仍是内存里的执行器（loop 本就跑在主进程单例上，
+// 切走/关会话不会被杀），这里只把生命周期**镜像**进 backgroundTaskLedger——
+// 登记 kind='loop' 的任务、每轮更新进度、终态发系统通知 + 入台账通知，
+// 让后台运行的 loop 在任务面板可见、跑完能提醒。App 重启恢复运行不在本切片范围。
 // ============================================================================
 
 import { randomUUID } from 'node:crypto';
 import {
   LOOP_DEFAULT_MAX_TURNS,
+  LOOP_TASK_KIND,
+  LOOP_TASK_TITLE_MAX_LEN,
   type LoopRunConfig,
   type LoopRunState,
   type LoopStatus,
   type LoopStopReason,
 } from '../../shared/contract/loop';
+import type { TaskStatus } from '../../shared/contract/backgroundTask';
 import { buildTurnPrompt, detectDoneMarker, parseWaitMs } from './loopPrompt';
 import { getTaskManager } from '../task';
 import { getSessionManager } from '../services/infra/sessionManager';
+import { getBackgroundTaskLedger } from '../tasks/backgroundTaskLedger';
+import { notificationService } from '../services/infra/notificationService';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('LoopController');
 /** 读取最近 assistant 回复时回看的消息条数。 */
 const REPLY_LOOKBACK = 5;
+
+/** loop 终态 → 后台任务台账终态的映射（running 不在此表内）。 */
+const LOOP_TO_TASK_STATUS: Record<Exclude<LoopStatus, 'running'>, TaskStatus> = {
+  completed: 'completed',
+  failed: 'failed',
+  stopped: 'cancelled',
+};
+
+function loopTaskTitle(prompt: string): string {
+  const flat = prompt.replace(/\s+/g, ' ').trim();
+  const clipped =
+    flat.length > LOOP_TASK_TITLE_MAX_LEN ? `${flat.slice(0, LOOP_TASK_TITLE_MAX_LEN)}…` : flat;
+  return `循环 · ${clipped || '未命名任务'}`;
+}
 
 export class LoopController {
   private loops = new Map<string, LoopRunState>();
@@ -47,6 +70,7 @@ export class LoopController {
       startedAt: Date.now(),
     };
     this.loops.set(id, state);
+    this.registerTask(state);
     void this.runLoop(id);
     return { ...state };
   }
@@ -60,6 +84,7 @@ export class LoopController {
       state.status = 'stopped';
       state.stopReason = reason;
       state.nextRunAt = undefined;
+      this.finalizeTask(state);
     }
     return { ...state };
   }
@@ -90,6 +115,100 @@ export class LoopController {
     s.stopReason = reason;
     s.nextRunAt = undefined;
     if (error) s.error = error;
+    this.finalizeTask(s);
+  }
+
+  // --------------------------------------------------------------------------
+  // 后台任务台账镜像：登记 / 进度 / 终态通知
+  // --------------------------------------------------------------------------
+
+  /** loop 启动时在台账登记一条 running 任务。 */
+  private registerTask(state: LoopRunState): void {
+    try {
+      getBackgroundTaskLedger().upsertTask({
+        id: state.id,
+        kind: LOOP_TASK_KIND,
+        source: LOOP_TASK_KIND,
+        sessionId: state.sessionId,
+        title: loopTaskTitle(state.prompt),
+        status: 'running',
+        createdAt: state.startedAt,
+        startedAt: state.startedAt,
+        progress: { current: 0, total: state.maxTurns, label: '0 轮' },
+        metadata: { loopId: state.id, until: state.until, intervalMs: state.intervalMs },
+      });
+    } catch (err) {
+      logger.warn(`registerTask failed for ${state.id}:`, err);
+    }
+  }
+
+  /** 每轮推进时更新台账进度。 */
+  private syncTaskProgress(state: LoopRunState): void {
+    try {
+      getBackgroundTaskLedger().upsertTask({
+        id: state.id,
+        status: 'running',
+        progress: { current: state.turn, total: state.maxTurns, label: `${state.turn} 轮` },
+        metadata: { loopId: state.id, turn: state.turn, lastTurnAt: state.lastTurnAt },
+      });
+    } catch (err) {
+      logger.warn(`syncTaskProgress failed for ${state.id}:`, err);
+    }
+  }
+
+  /** loop 进入终态时：置台账终态 + 自然完成（非用户喊停）发系统通知与台账通知。 */
+  private finalizeTask(state: LoopRunState): void {
+    if (state.status === 'running') return;
+    const taskStatus = LOOP_TO_TASK_STATUS[state.status];
+    const completedAt = Date.now();
+    const durationMs = completedAt - state.startedAt;
+    const title = loopTaskTitle(state.prompt);
+    const succeeded = state.status === 'completed';
+    const summary = state.error
+      ? state.error
+      : succeeded
+        ? `已完成 ${state.turn} 轮`
+        : `已停止（${state.turn} 轮）`;
+
+    try {
+      const ledger = getBackgroundTaskLedger();
+      ledger.upsertTask({
+        id: state.id,
+        status: taskStatus,
+        completedAt,
+        durationMs,
+        summary,
+        progress: { current: state.turn, total: state.maxTurns, label: `${state.turn} 轮` },
+        ...(state.error
+          ? { failure: { message: state.error, reason: state.stopReason } }
+          : {}),
+        metadata: { loopId: state.id, turn: state.turn, stopReason: state.stopReason },
+      });
+
+      // 用户主动喊停不算「跑完」，不发完成提醒；自然完成 / 失败才通知。
+      if (state.status !== 'stopped') {
+        ledger.queueNotification({
+          taskId: state.id,
+          sessionId: state.sessionId,
+          type: succeeded ? 'task_completed' : 'task_failed',
+          title,
+          message: summary,
+        });
+        notificationService.notifyTaskComplete(
+          {
+            sessionId: state.sessionId,
+            sessionTitle: title,
+            summary,
+            duration: durationMs,
+            toolsUsed: [],
+            succeeded,
+          },
+          { force: true }, // 后台 loop 完成：绕过焦点门，无论 app 前台/在哪条会话都提醒
+        );
+      }
+    } catch (err) {
+      logger.warn(`finalizeTask failed for ${state.id}:`, err);
+    }
   }
 
   private async runLoop(id: string): Promise<void> {
@@ -104,6 +223,7 @@ export class LoopController {
         state.turn += 1;
         state.lastTurnAt = Date.now();
         state.nextRunAt = undefined;
+        this.syncTaskProgress(state);
 
         const orchestrator = getTaskManager().getOrCreateCurrentOrchestrator(state.sessionId);
         if (!orchestrator) {
@@ -111,7 +231,11 @@ export class LoopController {
           break;
         }
 
-        await orchestrator.sendMessage(buildTurnPrompt(state));
+        await orchestrator.sendMessage(buildTurnPrompt(state), undefined, {
+          mode: 'normal',
+          historyVisibility: 'meta',
+          deniedToolNames: ['AskUserQuestion', 'ask_user_question'],
+        });
         if (this.aborted.has(id)) break;
 
         const reply = await this.readLastAssistantReply(state.sessionId);

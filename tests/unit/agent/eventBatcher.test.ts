@@ -21,6 +21,34 @@ describe('EventBatcher', () => {
     ]);
   });
 
+  it('preserves isMeta when stream chunks are merged', () => {
+    vi.useFakeTimers();
+    const onFlush = vi.fn();
+    const batcher = new EventBatcher({ onFlush, flushInterval: 16 });
+
+    batcher.emit({ type: 'stream_chunk', data: { content: 'hidden ', turnId: 'turn-1', isMeta: true } });
+    batcher.emit({ type: 'stream_chunk', data: { content: 'text', turnId: 'turn-1', isMeta: true } });
+    vi.advanceTimersByTime(16);
+
+    expect(onFlush).toHaveBeenCalledWith([
+      { type: 'stream_chunk', data: { content: 'hidden text', turnId: 'turn-1', parentToolUseId: undefined, isMeta: true } },
+    ]);
+  });
+
+  it('does not merge visible and meta stream chunks', () => {
+    const onFlush = vi.fn();
+    const batcher = new EventBatcher({ onFlush });
+
+    batcher.emit({ type: 'stream_chunk', data: { content: 'visible', turnId: 'turn-1' } });
+    batcher.emit({ type: 'stream_chunk', data: { content: 'hidden', turnId: 'turn-1', isMeta: true } });
+    batcher.flush();
+
+    expect(onFlush).toHaveBeenCalledWith([
+      { type: 'stream_chunk', data: { content: 'visible', turnId: 'turn-1', parentToolUseId: undefined } },
+      { type: 'stream_chunk', data: { content: 'hidden', turnId: 'turn-1', parentToolUseId: undefined, isMeta: true } },
+    ]);
+  });
+
   it('preserves renderer envelope metadata when stream chunks are merged', () => {
     vi.useFakeTimers();
     const onFlush = vi.fn();
@@ -138,6 +166,54 @@ describe('EventBatcher', () => {
           messageId: 'turn-1',
           deltaSeq: 2,
           parentToolUseId: undefined,
+        },
+      },
+    ]);
+  });
+
+  it('preserves isMeta when message deltas are merged', () => {
+    vi.useFakeTimers();
+    const onFlush = vi.fn();
+    const batcher = new EventBatcher({ onFlush, flushInterval: 16 });
+
+    batcher.emit({
+      type: 'message_delta',
+      data: {
+        role: 'assistant',
+        path: 'content',
+        op: 'append',
+        text: 'hidden ',
+        turnId: 'turn-1',
+        messageId: 'turn-1',
+        isMeta: true,
+      },
+    });
+    batcher.emit({
+      type: 'message_delta',
+      data: {
+        role: 'assistant',
+        path: 'content',
+        op: 'append',
+        text: 'delta',
+        turnId: 'turn-1',
+        messageId: 'turn-1',
+        isMeta: true,
+      },
+    });
+    vi.advanceTimersByTime(16);
+
+    expect(onFlush).toHaveBeenCalledWith([
+      {
+        type: 'message_delta',
+        data: {
+          role: 'assistant',
+          path: 'content',
+          op: 'append',
+          text: 'hidden delta',
+          turnId: 'turn-1',
+          messageId: 'turn-1',
+          parentToolUseId: undefined,
+          isMeta: true,
         },
       },
     ]);

@@ -83,4 +83,21 @@ describe('systemContextStack.addAndPersistMessage', () => {
     expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith('runtime-session-1', message);
     expect(sessionManagerState.addMessage).not.toHaveBeenCalled();
   });
+
+  it('marks messages as meta when the run is hidden from user history', async () => {
+    const ctx = makeCtx('runtime-session-1');
+    ctx.runtime.historyVisibility = 'meta';
+    const message: Message = {
+      id: 'message-1',
+      role: 'assistant',
+      content: 'loop reply',
+      timestamp: 123,
+    };
+
+    await addAndPersistMessage(ctx, message);
+
+    expect(message.isMeta).toBe(true);
+    expect(ctx.runtime.messages).toEqual([message]);
+    expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith('runtime-session-1', message);
+  });
 });

@@ -162,6 +162,26 @@ describe('deriveTaskRailView', () => {
     expect(view.total).toBe(1);
   });
 
+  it('renders background (global) tasks as simple even with multiple metadata steps', () => {
+    // 后台 loop 失败：steps 是 [状态标签, 时长] 等元信息，不是子任务，
+    // 不能渲染成"已完成 N 个任务（共 M 个）"，且必须保留任务名。
+    const view = deriveTaskRailView(makeTask({
+      scope: 'global',
+      title: '循环 · 只回复一句"检查中"',
+      status: 'blocked',
+      steps: [
+        { title: '执行失败', status: 'blocked' },
+        { title: '19s', status: 'blocked' },
+      ],
+      resumeHint: 'Unauthorized',
+    }));
+
+    expect(view.mode).toBe('simple');
+    expect(view.visibleSteps).toEqual([]);
+    expect(view.title).toBe('循环 · 只回复一句"检查中"');
+    expect(view.currentAction).toBe('Unauthorized');
+  });
+
   it('folds cancelled steps and removes them from progress total', () => {
     const view = deriveTaskRailView(makeTask({
       title: '调整计划',

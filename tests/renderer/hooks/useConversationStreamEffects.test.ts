@@ -193,6 +193,111 @@ describe('applyConversationStreamEvent model_decision', () => {
   });
 });
 
+describe('applyConversationStreamEvent meta turns', () => {
+  it('does not render meta loop turn starts or append their stream chunks to the previous assistant', () => {
+    const appendStreamingMessageDelta = vi.fn();
+    const queueUpdate = vi.fn();
+    let messages: Message[] = [
+      {
+        id: 'assistant-visible',
+        role: 'assistant',
+        content: 'visible answer',
+        timestamp: 100,
+      },
+    ];
+    const state = {
+      currentTurnMessageId: 'assistant-visible',
+      committedAssistantMessageIds: new Set<string>(['assistant-visible']),
+    };
+
+    const actions = {
+      addMessage: (message: Message) => {
+        messages = [...messages, message];
+      },
+      appendStreamingMessageDelta,
+      updateMessage: () => {},
+      setMessages: (nextMessages: Message[]) => {
+        messages = nextMessages;
+      },
+      getMessages: () => messages,
+      queueUpdate,
+      now: () => 200,
+      generateId: () => 'generated-turn',
+    };
+
+    applyConversationStreamEvent(
+      { type: 'turn_start', data: { turnId: 'turn-meta', iteration: 1, isMeta: true } },
+      state,
+      actions,
+    );
+    applyConversationStreamEvent(
+      { type: 'stream_chunk', data: { turnId: 'turn-meta', content: 'hidden text', isMeta: true } },
+      state,
+      actions,
+    );
+    applyConversationStreamEvent(
+      { type: 'message', data: { id: 'assistant-meta', turnId: 'turn-meta', content: 'hidden final', isMeta: true } },
+      state,
+      actions,
+    );
+
+    expect(messages).toEqual([
+      {
+        id: 'assistant-visible',
+        role: 'assistant',
+        content: 'visible answer',
+        timestamp: 100,
+      },
+    ]);
+    expect(state.currentTurnMessageId).toBe('turn-meta');
+    expect(state.committedAssistantMessageIds.has('turn-meta')).toBe(true);
+    expect(state.committedAssistantMessageIds.has('assistant-meta')).toBe(true);
+    expect(appendStreamingMessageDelta).not.toHaveBeenCalled();
+    expect(queueUpdate).not.toHaveBeenCalled();
+  });
+
+  it('removes an existing assistant draft when the final message is meta', () => {
+    let messages: Message[] = [
+      {
+        id: 'turn-meta',
+        role: 'assistant',
+        content: 'draft that should not remain visible',
+        timestamp: 100,
+      },
+    ];
+    const state = {
+      currentTurnMessageId: 'turn-meta',
+      committedAssistantMessageIds: new Set<string>(),
+    };
+
+    applyConversationStreamEvent(
+      {
+        type: 'message',
+        data: {
+          id: 'assistant-meta',
+          turnId: 'turn-meta',
+          content: 'hidden final',
+          isMeta: true,
+        },
+      },
+      state,
+      {
+        addMessage: () => {},
+        updateMessage: () => {},
+        setMessages: (nextMessages) => {
+          messages = nextMessages;
+        },
+        getMessages: () => messages,
+        queueUpdate: () => {},
+      },
+    );
+
+    expect(messages).toEqual([]);
+    expect(state.committedAssistantMessageIds.has('turn-meta')).toBe(true);
+    expect(state.committedAssistantMessageIds.has('assistant-meta')).toBe(true);
+  });
+});
+
 describe('mergeCommittedAssistantContent', () => {
   it('uses the committed message content to correct duplicated streamed text', () => {
     expect(

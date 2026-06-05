@@ -21,7 +21,7 @@ import type { ToolExecutor } from '../../tools/toolExecutor';
 import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter';
 import type { PlanningService } from '../../planning';
 import { recordSessionEnd } from '../../lightMemory/sessionMetadata';
-import { appendConversationSummary } from '../../lightMemory/recentConversations';
+import { appendConversationSummary, isLoopAutomationSummaryText } from '../../lightMemory/recentConversations';
 import { judgeConversation } from '../../lightMemory/conversationJudge';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
@@ -117,7 +117,11 @@ function pushRuntimeDiagnostic(ctx: RuntimeContext, message: string): void {
   if (ctx.currentTurnId) {
     ctx.onEvent({
       type: 'stream_reasoning',
-      data: { content: `\n[runtime] ${trimmed}\n`, turnId: ctx.currentTurnId },
+      data: {
+        content: `\n[runtime] ${trimmed}\n`,
+        turnId: ctx.currentTurnId,
+        ...(ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
+      },
     });
     return;
   }
@@ -689,7 +693,12 @@ export class RunFinalizer {
    */
   private async extractAndSaveConversationSummary(): Promise<void> {
     const userMessages = this.ctx.messages
-      .filter((m: { role: string; content?: string }) => m.role === 'user' && m.content)
+      .filter((m: { role: string; content?: string; isMeta?: boolean }) =>
+        m.role === 'user'
+        && !m.isMeta
+        && m.content
+        && !isLoopAutomationSummaryText(m.content)
+      )
       .map((m: { content?: string }) => m.content || '');
 
     if (userMessages.length === 0) return;
@@ -697,8 +706,12 @@ export class RunFinalizer {
     // Last assistant text gives the judge context for the title (it is not summarized itself).
     const lastAssistant = [...this.ctx.messages]
       .reverse()
-      .find((m: { role: string; content?: string }) =>
-        m.role === 'assistant' && typeof m.content === 'string' && m.content.trim().length > 0);
+      .find((m: { role: string; content?: string; isMeta?: boolean }) =>
+        m.role === 'assistant'
+        && !m.isMeta
+        && typeof m.content === 'string'
+        && m.content.trim().length > 0
+        && !isLoopAutomationSummaryText(m.content));
     const lastAssistantText = typeof lastAssistant?.content === 'string' ? lastAssistant.content : undefined;
 
     const judgment = await judgeConversation({ userMessages, lastAssistant: lastAssistantText });

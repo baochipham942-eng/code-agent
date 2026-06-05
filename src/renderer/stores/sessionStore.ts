@@ -76,6 +76,10 @@ function hydrateToolCallResults(messages: Message[]): Message[] {
   });
 }
 
+function isVisibleHistoryMessage(message: Message): boolean {
+  return !message.isMeta && message.visibility !== 'rewound';
+}
+
 async function refreshContextHealthForSession(sessionId: string, switchVersion: number): Promise<void> {
   try {
     const health = await ipcService.invoke(IPC_CHANNELS.CONTEXT_HEALTH_GET, sessionId) as ContextHealthState | null;
@@ -132,12 +136,13 @@ function normalizeSession(session: Session & {
 }
 
 function deriveCurrentSessionMeta(session: SessionWithMeta, messages: Message[]): SessionWithMeta {
-  const nextTurnCount = messages.filter((message) => message.role === 'user').length;
+  const visibleMessages = messages.filter(isVisibleHistoryMessage);
+  const nextTurnCount = visibleMessages.filter((message) => message.role === 'user').length;
   return {
     ...session,
-    messageCount: Math.max(session.messageCount, messages.length),
+    messageCount: Math.max(session.messageCount, visibleMessages.length),
     turnCount: Math.max(session.turnCount, nextTurnCount),
-    workbenchSnapshot: deriveSessionWorkbenchSnapshot(messages, {
+    workbenchSnapshot: deriveSessionWorkbenchSnapshot(visibleMessages, {
       workingDirectory: session.workingDirectory ?? null,
     }),
   };
@@ -180,9 +185,10 @@ export function findReusableNewSessionDraft(params: {
   const current = params.currentSessionId
     ? params.sessions.find((session) => session.id === params.currentSessionId) ?? null
     : null;
+  const visibleMessages = params.messages.filter(isVisibleHistoryMessage);
   if (
     current &&
-    params.messages.length === 0 &&
+    visibleMessages.length === 0 &&
     params.todos.length === 0 &&
     isUntouchedNewSession(current, params.workingDirectory)
   ) {
@@ -414,8 +420,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         if (session) {
           const normalizedSession = normalizeSession({
             ...session,
-            messageCount: (session as SessionWithMeta).messageCount || session.messages?.length || 0,
-            turnCount: session.turnCount || session.messages?.filter((message) => message.role === 'user').length || 0,
+            messageCount: (session as SessionWithMeta).messageCount || session.messages?.filter(isVisibleHistoryMessage).length || 0,
+            turnCount: session.turnCount || session.messages?.filter((message) => isVisibleHistoryMessage(message) && message.role === 'user').length || 0,
           });
           const loadedMessages = hydrateToolCallResults(session.messages || []);
           // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): session 类型上没声明 messageCount，但 normalizeSession 已确保它存在，应在 Session/SessionWithMeta 类型中加上 messageCount?: number
@@ -578,6 +584,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     },
 
     addMessage: (message: Message) => {
+      if (message.isMeta) {
+        set({ streamSnapshot: null });
+        return;
+      }
+
       set((state) => ({
         messages: hydrateToolCallResults([...state.messages, message]),
         streamSnapshot: null,
@@ -591,9 +602,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             s.id === currentSessionId
               ? deriveCurrentSessionMeta({
                   ...s,
-                  messageCount: s.messageCount + 1,
-                  turnCount: message.role === 'user' ? s.turnCount + 1 : s.turnCount,
-                  updatedAt: Date.now(),
+                  messageCount: isVisibleHistoryMessage(message) ? s.messageCount + 1 : s.messageCount,
+                  turnCount: isVisibleHistoryMessage(message) && message.role === 'user' ? s.turnCount + 1 : s.turnCount,
+                  updatedAt: isVisibleHistoryMessage(message) ? Date.now() : s.updatedAt,
                 }, nextMessages)
               : s
           ),

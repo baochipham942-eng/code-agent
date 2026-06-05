@@ -62,6 +62,7 @@ import {
 import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
 import { generateTruncationWarning } from './truncationPrompts';
+import { isToolDeniedForRun } from './toolRunPolicy';
 
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
@@ -570,6 +571,39 @@ export class MessageProcessor {
   ): Promise<'continue' | 'break'> {
     const toolCalls = response.toolCalls ?? [];
     const requestedToolNames = toolCalls.map((toolCall) => toolCall.name).join(', ');
+
+    const deniedToolCalls = toolCalls.filter((toolCall) => isToolDeniedForRun(this.ctx, toolCall.name));
+    if (deniedToolCalls.length > 0) {
+      this.ctx.toolCallRetryCount++;
+      const deniedNames = Array.from(new Set(deniedToolCalls.map((toolCall) => toolCall.name))).join(', ');
+      this.contextAssembly.injectSystemMessage(
+        [
+          '<tool-run-policy>',
+          `The previous tool call requested disabled tools for this run: ${deniedNames}.`,
+          'Continue without those tools. If you need user input, state the blocker in your final text instead of calling an interactive tool.',
+          '</tool-run-policy>',
+        ].join('\n'),
+      );
+      if (this.ctx.toolCallRetryCount > this.ctx.maxToolCallRetries) {
+        const finalMessage: Message = {
+          id: this.contextAssembly.generateId(),
+          role: 'assistant',
+          content: `本轮请求了后台运行禁用的交互工具（${deniedNames}），已停止继续调用工具。`,
+          timestamp: Date.now(),
+          effortLevel: this.ctx.effortLevel,
+          ...(this.ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
+        };
+        await this.contextAssembly.addAndPersistMessage(finalMessage);
+        this.ctx.onEvent({ type: 'message', data: finalMessage });
+        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.currentTurnId, '', response.thinking, this.ctx.currentSystemPromptHash);
+        this.ctx.onEvent({
+          type: 'turn_end',
+          data: { turnId: this.ctx.currentTurnId },
+        });
+        return 'break';
+      }
+      return 'continue';
+    }
 
     // Goal mode：拦截 attempt_completion → 双闸验证（闸1 确定性 verifyCommand + 闸2 软评审 reviewCondition）。
     // 完成判定权在代码层，模型无法靠"自称完成"绕过（拒绝 Ralph）。详见 goalCompletionGate。

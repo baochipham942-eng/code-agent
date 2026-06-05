@@ -175,6 +175,8 @@ export class AgentLoop {
       hookManager: config.hookManager,
       planningService: config.planningService,
       inferenceOptions: config.inferenceOptions,
+      historyVisibility: config.historyVisibility,
+      deniedToolNames: config.deniedToolNames,
       hookMessageBuffer: new HookMessageBuffer(),
       messageHistoryCompressor: new MessageHistoryCompressor({
         threshold: lightCompressionThreshold,

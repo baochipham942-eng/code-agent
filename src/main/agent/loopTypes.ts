@@ -56,6 +56,10 @@ export interface AgentLoopConfig {
   inferenceOptions?: InferenceOptions;
   /** Per-run iteration cap for acceptance and controlled runtime harnesses. */
   maxIterations?: number;
+  /** 当前 run 写入模型历史但不进入用户可见聊天历史。 */
+  historyVisibility?: 'visible' | 'meta';
+  /** 当前 run 禁用的工具名。 */
+  deniedToolNames?: string[];
   /** 工具执行日志回调 */
   onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: import('../../shared/contract').ToolResult }) => void;
   /** CLI 模式下的消息持久化回调 */

@@ -144,13 +144,18 @@ export function registerCronHandlers(): void {
             return { success: false, error: { code: 'INVALID_INPUT', message: '请输入任务描述' } } satisfies IPCResponse;
           }
           const router = new ModelRouter();
+          // 注入当前时间锚点：LLM 默认拿训练期日期，会把「明天/下周」算成过去时间，
+          // 生成 at 类型任务静默不跑（艾克斯 in-app 验证抓到）。必须给当前时间做基准。
+          const nowAnchor = `\n\n【当前时间】${new Date().toISOString()}（UTC，默认时区 Asia/Shanghai）。`
+            + `用户用「今天/明天/今晚/本周/下周」等相对时间时，必须以此为基准换算成将来的绝对时间，`
+            + `生成的 at 类型 datetime 绝不能早于当前时间。`;
           // 跟随项目默认 provider（mimo 包月），取代原硬编码 zhipu——app 的 zhipu
           // 端点经 0ki 中转，中转 key 一旦失效会直接卡死 /schedule 的自然语言生成。
           const response = await router.chat({
             provider: DEFAULT_PROVIDER,
             model: DEFAULT_MODEL,
             messages: [
-              { role: 'system', content: CRON_GENERATION_SYSTEM_PROMPT },
+              { role: 'system', content: CRON_GENERATION_SYSTEM_PROMPT + nowAnchor },
               { role: 'user', content: prompt.trim() },
             ],
             maxTokens: 1024,

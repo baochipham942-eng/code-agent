@@ -33,6 +33,7 @@ export const IPC_DOMAINS = {
   ERROR: 'domain:error',
   CRON: 'domain:cron',
   LOOP: 'domain:loop', // 会话内循环（/loop）：反复执行直到达成/喊停
+  NOTIFICATION: 'domain:notification', // 桌面通知只读查询（核验后台任务/定时任务完成提醒）
   CAPTURE: 'domain:capture', // 浏览器采集
   DESKTOP: 'domain:desktop', // 原生桌面活动
   ACTIVITY: 'domain:activity', // 屏幕记忆 / 桌面活动 provider 聚合

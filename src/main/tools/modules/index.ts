@@ -125,6 +125,7 @@ import { visualEditSchema } from './vision/visualEdit.schema';
 import { memoryReadSchema } from './lightMemory/memoryRead.schema';
 import { memoryWriteSchema } from './lightMemory/memoryWrite.schema';
 import { episodicRecallSchema } from './lightMemory/episodicRecall.schema';
+import { proposeRoleSchema } from './roleAuthoring/proposeRole.schema';
 
 // planning/
 import { planModeFacadeSchema } from './planning/planModeFacade.schema';
@@ -604,6 +605,12 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   registry.register(
     episodicRecallSchema,
     async () => (await import('./lightMemory/episodicRecall')).episodicRecallModule,
+  );
+
+  // roleAuthoring (1): propose_role —— 对话式建角色起草
+  registry.register(
+    proposeRoleSchema,
+    async () => (await import('./roleAuthoring/proposeRole')).proposeRoleModule,
   );
 
   // network (2): ppt_generate / ppt_edit

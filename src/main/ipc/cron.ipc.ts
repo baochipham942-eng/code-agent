@@ -7,7 +7,7 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc
 import { getCronService } from '../cron/cronService';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
-import { DEFAULT_MODELS } from '../../shared/constants';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import type { CronJobDefinition } from '../../shared/contract/cron';
 
 const logger = createLogger('CronIPC');
@@ -144,9 +144,11 @@ export function registerCronHandlers(): void {
             return { success: false, error: { code: 'INVALID_INPUT', message: '请输入任务描述' } } satisfies IPCResponse;
           }
           const router = new ModelRouter();
+          // 跟随项目默认 provider（mimo 包月），取代原硬编码 zhipu——app 的 zhipu
+          // 端点经 0ki 中转，中转 key 一旦失效会直接卡死 /schedule 的自然语言生成。
           const response = await router.chat({
-            provider: 'zhipu',
-            model: DEFAULT_MODELS.quick,
+            provider: DEFAULT_PROVIDER,
+            model: DEFAULT_MODEL,
             messages: [
               { role: 'system', content: CRON_GENERATION_SYSTEM_PROMPT },
               { role: 'user', content: prompt.trim() },

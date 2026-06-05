@@ -24,6 +24,9 @@ export function projectTurns(
   const turns: TraceTurn[] = [];
   let currentTurn: TraceTurn | null = null;
   let turnCounter = 0;
+  // 连续相同的模型路由决策只显示首个——agent 一个 turn 内多次 LLM 调用会各发一条
+  // "用户选择 mimo"，重复刷没意义；模型变化（降级/角色档位）时 key 不同会照常显示。
+  let lastModelDecisionKey: string | null = null;
 
   for (const msg of messages) {
     if (msg.source === 'skill' && isSkillStatusContent(msg.content)) {
@@ -217,6 +220,16 @@ export function projectTurns(
       const turn = currentTurn;
 
       const pushAssistantTextNode = (content: string, index?: number) => {
+        // 去重：连续相同的模型决策只在首个节点显示，避免每条消息都刷"用户选择 mimo"
+        let modelDecision = msg.modelDecision;
+        if (modelDecision) {
+          const key = `${modelDecision.reason}|${modelDecision.requestedProvider}/${modelDecision.requestedModel}->${modelDecision.resolvedProvider}/${modelDecision.resolvedModel}`;
+          if (key === lastModelDecisionKey) {
+            modelDecision = undefined;
+          } else {
+            lastModelDecisionKey = key;
+          }
+        }
         turn.nodes.push({
           id: index && index > 1 ? `${msg.id}-text-${index}` : `${msg.id}-text`,
           messageId: msg.id,
@@ -226,7 +239,7 @@ export function projectTurns(
           reasoning: msg.reasoning,
           thinking: msg.thinking,
           artifacts: msg.artifacts,
-          modelDecision: msg.modelDecision,
+          modelDecision,
           metadata: msg.metadata,
         });
       };

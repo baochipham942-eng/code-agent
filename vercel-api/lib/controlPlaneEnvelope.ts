@@ -1,11 +1,34 @@
 import * as crypto from 'node:crypto';
-import { waitUntil } from '@vercel/functions';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+let cachedWaitUntil: ((promise: Promise<unknown>) => void) | null | undefined;
+
+function getVercelWaitUntil(): ((promise: Promise<unknown>) => void) | null {
+  if (cachedWaitUntil !== undefined) {
+    return cachedWaitUntil;
+  }
+
+  try {
+    const mod = require('@vercel/functions') as { waitUntil?: (promise: Promise<unknown>) => void };
+    cachedWaitUntil = typeof mod.waitUntil === 'function' ? mod.waitUntil : null;
+  } catch {
+    cachedWaitUntil = null;
+  }
+  return cachedWaitUntil;
+}
 
 // serverless（Vercel/Lambda）上 res 一发、handler 一返回，实例立即冻结/回收，
 // 挂在事件循环里的 fire-and-forget Promise 跑不完就被丢弃——审计写入因此永远落不了库。
 // 用 waitUntil 把背景 Promise 交给平台等待；非 Vercel 运行时（本地单测 / release 脚本，
 // 无 request context）waitUntil 可能抛错或 no-op，catch 后退回原 fire-and-forget 行为。
 function safeWaitUntil(promise: Promise<unknown>): void {
+  const waitUntil = getVercelWaitUntil();
+  if (!waitUntil) {
+    void promise;
+    return;
+  }
+
   try {
     waitUntil(promise);
   } catch {

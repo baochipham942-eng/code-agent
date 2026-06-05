@@ -15,6 +15,10 @@ export const LOOP_DEFAULT_MAX_TURNS = 50;
 export const LOOP_DONE_MARKER = '[[LOOP_DONE]]';
 /** 自定步调：agent 用 `[[LOOP_WAIT]] <秒数>` 指定下一轮间隔。 */
 export const LOOP_WAIT_MARKER = '[[LOOP_WAIT]]';
+/** loop 在后台任务台账（backgroundTaskLedger）中登记时使用的 kind / source。 */
+export const LOOP_TASK_KIND = 'loop';
+/** loop 任务标题在 prompt 上的截断长度。 */
+export const LOOP_TASK_TITLE_MAX_LEN = 40;
 
 export interface LoopRunConfig {
   sessionId: string;

@@ -174,21 +174,72 @@ function revokedEntitlement(reason: string): EntitlementPolicy {
   };
 }
 
+type SharedProvider = NonNullable<CloudConfigPayload['sharedProviders']>[number];
+
+/** 该 subject 的 entitlement 是否有权拿到这条共享 provider（含其 apiKey）。 */
+function isEntitledToSharedProvider(
+  provider: SharedProvider,
+  entitlement: EntitlementPolicy | null,
+): boolean {
+  // team-wide：无 capability 门，所有「已通过鉴权」的 subject 都能拿到。
+  if (!provider.requiredCapability) {
+    return true;
+  }
+  if (!entitlement) {
+    return false;
+  }
+  if (entitlement.status !== 'active' && entitlement.status !== 'trial') {
+    return false;
+  }
+  if (entitlement.capabilities.includes('*')) {
+    return true;
+  }
+  return entitlement.capabilities.includes(provider.requiredCapability);
+}
+
+/**
+ * 按 entitlement 过滤 sharedProviders——无权的整条剥离（含 apiKey），密钥绝不下发给无权 subject。
+ * entitlement=null 表示「无可信 entitlement」（开放模式无 builtin / fail-closed），此时只保留 team-wide。
+ */
+function filterSharedProviders(
+  payload: CloudConfigPayload,
+  entitlement: EntitlementPolicy | null,
+): CloudConfigPayload {
+  const shared = payload.sharedProviders;
+  if (!shared || shared.length === 0) {
+    return payload;
+  }
+  const allowed = shared.filter((provider) => isEntitledToSharedProvider(provider, entitlement));
+  if (allowed.length === shared.length) {
+    return payload;
+  }
+  if (allowed.length === 0) {
+    const { sharedProviders: _removed, ...rest } = payload;
+    return rest;
+  }
+  return { ...payload, sharedProviders: allowed };
+}
+
 function applySubjectEntitlement(
   payload: CloudConfigPayload,
   subject: ControlPlaneSubject,
   entitlement: EntitlementPolicy,
 ): CloudConfigPayload {
-  return {
-    ...payload,
-    subject,
+  return filterSharedProviders(
+    {
+      ...payload,
+      subject,
+      entitlement,
+    },
     entitlement,
-  };
+  );
 }
 
 function applyFailClosedEntitlement(payload: CloudConfigPayload, reason: string): CloudConfigPayload {
+  // 鉴权失败/缺主体：剥离所有 sharedProviders（含 team-wide），不向未验证客户端下发任何中转站 key。
+  const { sharedProviders: _removed, ...rest } = payload;
   return {
-    ...payload,
+    ...rest,
     subject: undefined,
     entitlement: revokedEntitlement(reason),
   };
@@ -343,7 +394,9 @@ export function applyServerEntitlementGate(
   const supabaseAuth = resolveSupabaseAuthMode(env);
 
   if (!authRequired && !tokenMap && !supabaseAuth.shouldUse) {
-    return payload;
+    // 开放模式（无鉴权配置）：按 builtin entitlement 过滤共享 provider；
+    // 无 builtin entitlement 时只保留 team-wide（capability 门控的需要鉴权才下发）。
+    return filterSharedProviders(payload, payload.entitlement ?? null);
   }
 
   const token = getBearerToken(req);
@@ -374,7 +427,9 @@ export async function applyServerEntitlementGateAsync(
   const supabaseAuth = resolveSupabaseAuthMode(env);
 
   if (!authRequired && !tokenMap && !supabaseAuth.shouldUse) {
-    return payload;
+    // 开放模式（无鉴权配置）：按 builtin entitlement 过滤共享 provider；
+    // 无 builtin entitlement 时只保留 team-wide（capability 门控的需要鉴权才下发）。
+    return filterSharedProviders(payload, payload.entitlement ?? null);
   }
 
   const token = getBearerToken(req);

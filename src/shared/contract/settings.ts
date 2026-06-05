@@ -45,6 +45,9 @@ export interface ModelProviderSettings {
    *  未设置时：普通 provider 默认 payg（API Key 主流形态），动态 custom provider（中转站）默认 unknown。
    *  自动模式的 simple→免费档路由仅在 payg 时生效（包月切免费省的钱是 0）。 */
   billingMode?: 'free' | 'plan' | 'payg' | 'unknown';
+  /** true=该 provider 由控制面下发的团队共享 provider（中转站）托管，由 reconcile 自动增删，
+   *  用户不应手动编辑；控制面停发（管理员关闭/吊销）后会在下次拉取时被自动移除。 */
+  managedByCloud?: boolean;
   models?: Record<string, ModelEntrySettings>;
 }
 

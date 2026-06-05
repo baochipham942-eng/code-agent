@@ -145,7 +145,14 @@ function getWebBootstrapWorkingDirectory(configService?: ConfigServiceForBootstr
 async function initializeWebSkillServices(configService: ConfigServiceForBootstrap): Promise<void> {
   try {
     const { initCloudConfigService, getCloudConfigService } = await import('../main/services/cloud');
-    await initCloudConfigService();
+    const { getAuthService } = await import('../main/services/auth/authService');
+    const { getConfigService } = await import('../main/services/core/configService');
+    await initCloudConfigService({
+      // 发行版跑的就是本 webServer 路径：必须带上 access token，capability 门控的共享 provider 才会被下发。
+      getAccessToken: () => getAuthService().getAccessToken(),
+      // 把控制面下发的团队共享 provider（中转站）reconcile 进本地 settings（web/main 路径都要接，否则发行版不生效）。
+      onSharedProvidersResolved: (providers) => getConfigService().reconcileManagedProviders(providers),
+    });
     const info = getCloudConfigService().getInfo();
     logger.info('CloudConfig initialized', {
       source: info.fromCloud ? 'cloud' : 'builtin',
@@ -474,6 +481,20 @@ async function initializeServices(): Promise<void> {
       syncTelemetryUploader(authService.getCurrentUser());
       // 后续登录/登出跟随切换
       authService.addAuthChangeCallback(syncTelemetryUploader);
+
+      // 共享 provider（中转站）是 auth-gated：登录后重拉云端配置，触发 reconcile 下发共享模型。
+      // 仅在「未登录→登录」跃迁刷新，避免刷新风暴。
+      const { getCloudConfigService } = await import('../main/services/cloud');
+      let lastAuthedCloud = Boolean(authService.getCurrentUser());
+      authService.addAuthChangeCallback((user) => {
+        const authed = Boolean(user);
+        if (authed && !lastAuthedCloud) {
+          void getCloudConfigService().refresh().catch((err) => {
+            logger.warn('Cloud config refresh on login failed:', (err as Error).message);
+          });
+        }
+        lastAuthedCloud = authed;
+      });
     } catch (error) {
       logger.warn('Telemetry uploader not available:', (error as Error).message);
     }

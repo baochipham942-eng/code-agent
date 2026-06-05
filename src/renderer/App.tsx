@@ -258,6 +258,53 @@ export const App: React.FC = () => {
     }
   }, []);
 
+  // 从最新 settings 读激活模型并推入 store（初始加载与 onboarding 自动解除共用）。
+  const loadActiveModelConfig = useCallback(async () => {
+    try {
+      const settings = await invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
+      if (!settings?.models) return;
+      const defaultProvider = (settings.models.defaultProvider || settings.models.default || DEFAULT_PROVIDER) as ModelProvider;
+      const providerConfig = settings.models.providers?.[defaultProvider];
+      if (!providerConfig) return;
+      const model = providerConfig.model || DEFAULT_MODEL;
+      const modelSettings = providerConfig.models?.[model];
+      setModelConfig({
+        provider: defaultProvider,
+        model,
+        apiKey: providerConfig.apiKey || '',
+        baseUrl: providerConfig.baseUrl || getProviderEndpointForProtocol(defaultProvider, providerConfig.protocol) || '',
+        protocol: providerConfig.protocol,
+        temperature: providerConfig.temperature ?? 0.7,
+        maxTokens: modelSettings?.maxTokens ?? providerConfig.maxTokens ?? 4096,
+        capabilities: modelSettings?.capabilities,
+      });
+    } catch (error) {
+      logger.error('Failed to load active model config', error);
+    }
+  }, [setModelConfig]);
+
+  // onboarding 弹窗期间，若团队共享 provider（中转站）登录后被下发到位，自动关闭弹窗并切到共享模型，
+  // 不让没配 key 的同事卡在"配置 key"弹窗上。
+  useEffect(() => {
+    if (!showModelOnboarding) return;
+    let cancelled = false;
+    const timer = setInterval(async () => {
+      try {
+        const configured = await invokeDomain<boolean>(IPC_DOMAINS.SETTINGS, 'checkApiKeyConfigured');
+        if (cancelled || !configured) return;
+        modelOnboardingCompletedRef.current = true;
+        await loadActiveModelConfig();
+        if (!cancelled) setShowModelOnboarding(false);
+      } catch {
+        // 忽略单次轮询失败，下次再试
+      }
+    }, 1500);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [showModelOnboarding, loadActiveModelConfig]);
+
   useEffect(() => {
     if (!isNarrowViewport) {
       appliedNarrowSidebarDefaultRef.current = false;

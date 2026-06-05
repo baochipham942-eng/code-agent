@@ -79,6 +79,23 @@ export interface MCPServerCloudConfig {
   description?: string;
 }
 
+/**
+ * 团队共享 provider（中转站）下发配置。镜像 vercel-api 的 SharedProviderConfig。
+ * 控制面已按 subject 的 entitlement 在网关层过滤——客户端拿到的就是「本人有权使用」的那几条，
+ * 直接注入模型选择器即可，无需再做权限判断。
+ */
+export interface SharedProviderConfig {
+  /** 必须是动态 custom provider 形态（custom-xxx）。 */
+  id: string;
+  displayName: string;
+  baseUrl: string;
+  apiKey: string;
+  protocol?: 'openai' | 'claude';
+  billingMode?: 'free' | 'plan' | 'payg' | 'unknown';
+  models: Array<{ id: string; label?: string }>;
+  requiredCapability?: string;
+}
+
 export interface CloudConfig {
   version: string;
   prompts: Record<string, string>;
@@ -100,6 +117,8 @@ export interface CloudConfig {
   skillCatalog?: SkillCatalogPayload;
   /** MCP 推荐目录（运营下发；缺省时客户端用内置兜底） */
   mcpCatalog?: McpCatalogPayload;
+  /** 团队共享 provider（中转站）；控制面已按 entitlement 过滤，客户端直接注入选择器。 */
+  sharedProviders?: SharedProviderConfig[];
 }
 
 // ----------------------------------------------------------------------------

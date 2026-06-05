@@ -131,6 +131,8 @@ async function startServer(env: E2EEnv): Promise<StartedServer> {
       HOME: env.fakeHome,
       CODE_AGENT_DATA_DIR: env.dataDir,
       CODE_AGENT_E2E: '1',
+      // 通知走 dry-run：notificationService 仍记录最近通知（供 getRecent 断言），但不真的弹系统通知
+      CODE_AGENT_NOTIFICATION_DRY_RUN: '1',
       CODE_AGENT_WORKING_DIR: env.workspace,
       WEB_HOST: '127.0.0.1',
       WEB_PORT: String(port),
@@ -207,6 +209,56 @@ async function submitCommand(page: Page, command: string) {
   await chatInput.press('Enter');
 }
 
+/** 在页面里通过 window.domainAPI 调一次领域 IPC（与 app 同路径）。 */
+async function invokeDomain<T = unknown>(
+  page: Page,
+  domain: string,
+  action: string,
+  payload: unknown,
+): Promise<T> {
+  return page.evaluate(
+    async ({ domain, action, payload }) => {
+      const api = (window as unknown as {
+        domainAPI?: { invoke: (d: string, a: string, p: unknown) => Promise<{ success: boolean; data?: unknown; error?: { message?: string } }> };
+      }).domainAPI;
+      if (!api) throw new Error('window.domainAPI 不可用');
+      const res = await api.invoke(domain, action, payload);
+      if (!res?.success) throw new Error(res?.error?.message || `${domain}:${action} failed`);
+      return res.data;
+    },
+    { domain, action, payload },
+  ) as Promise<T>;
+}
+
+/** 轮询某个领域查询，直到 select() 返回非 null，或超时。 */
+async function pollDomain<T>(
+  page: Page,
+  domain: string,
+  action: string,
+  payload: unknown,
+  select: (data: unknown) => T | null,
+  timeoutMs: number,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  let last: unknown;
+  while (Date.now() < deadline) {
+    last = await invokeDomain(page, domain, action, payload);
+    const picked = select(last);
+    if (picked !== null && picked !== undefined) return picked;
+    await delay(750);
+  }
+  throw new Error(`pollDomain 超时：${domain}:${action}，最后一次=${JSON.stringify(last)}`);
+}
+
+async function currentSessionId(page: Page): Promise<string> {
+  const id = await page
+    .locator('[data-session-id][aria-current="true"]')
+    .first()
+    .getAttribute('data-session-id');
+  if (!id) throw new Error('拿不到当前 sessionId');
+  return id;
+}
+
 test.describe.configure({ mode: 'serial' });
 test.describe('/schedule + /loop 斜杠命令', () => {
   test.skip(!apiKey, '缺 XIAOMI key（真模型 E2E，不进 CI）');
@@ -259,5 +311,105 @@ test.describe('/schedule + /loop 斜杠命令', () => {
     await page.getByRole('button', { name: /停止/ }).first().click();
     await expect(statusBar).toBeHidden({ timeout: 15_000 });
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'slash-loop-stopped.png') });
+  });
+
+  // Block 1：loop 后台化——登记进 backgroundTaskLedger + 跑完发完成通知
+  test('/loop 后台化：台账登记 kind=loop 任务 + 完成通知', async ({ page }) => {
+    test.setTimeout(120_000);
+    await openAppWithCleanSession(page, server.baseUrl);
+
+    // max-turns 1：跑满 1 轮即自然完成（completed），触发终态通知
+    await submitCommand(page, '/loop 回复一句“检查中”即可 --max-turns 1');
+
+    // 台账里出现 kind=loop 的任务，并跑到终态
+    const task = await pollDomain(
+      page,
+      'domain:backgroundTasks',
+      'listTasks',
+      { source: 'loop' },
+      (data) => {
+        const list = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+        const t = list.find((x) => x.kind === 'loop');
+        if (!t) return null;
+        const status = String(t.status);
+        return status === 'completed' || status === 'failed' || status === 'cancelled' ? t : null;
+      },
+      90_000,
+    );
+    expect(task.kind).toBe('loop');
+    expect(['completed', 'failed', 'cancelled']).toContain(String(task.status));
+
+    // 自然完成发出了任务完成通知（dry-run 已记录）
+    const notif = await pollDomain(
+      page,
+      'domain:notification',
+      'getRecent',
+      {},
+      (data) => {
+        const list = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+        return list.find((n) => n.type === 'task_complete' && String(n.title).includes('循环')) ?? null;
+      },
+      20_000,
+    );
+    expect(notif).toBeTruthy();
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'slash-loop-backgrounded.png') });
+  });
+
+  // Block 2：定时 agent 任务跑完发系统通知（点通知能跳到生成的 session）
+  test('/schedule 通知闭环：近未来一次性 agent 任务执行后发完成通知', async ({ page }) => {
+    test.setTimeout(120_000);
+    await openAppWithCleanSession(page, server.baseUrl);
+
+    const jobName = `E2E定时通知-${Date.now()}`;
+    const runAt = new Date(Date.now() + 4_000).toISOString();
+
+    // 直接经 cron 领域建一个 4 秒后跑一次的 agent 任务（绕开 LLM 出时间，专测执行→通知链路）
+    await invokeDomain(page, 'domain:cron', 'createJob', {
+      name: jobName,
+      scheduleType: 'at',
+      schedule: { type: 'at', datetime: runAt },
+      action: { type: 'agent', agentType: 'general', prompt: '回复一句“定时已执行”即可，不要调用任何工具。' },
+      enabled: true,
+    });
+
+    // 等执行完成 → notifyAgentExecution 记录完成通知，title 含任务名
+    const notif = await pollDomain(
+      page,
+      'domain:notification',
+      'getRecent',
+      {},
+      (data) => {
+        const list = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+        return list.find((n) => n.type === 'task_complete' && String(n.title).includes(jobName)) ?? null;
+      },
+      90_000,
+    );
+    expect(notif).toBeTruthy();
+    expect(String((notif as Record<string, unknown>).sessionId)).toBeTruthy();
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'slash-schedule-notified.png') });
+  });
+
+  // Block 3：/schedule 不带参数 → 对话式创建卡片 + 模板填空即建
+  test('/schedule 空参：弹对话式卡片 → 选模板填空 → 创建成功', async ({ page }) => {
+    test.setTimeout(90_000);
+    await openAppWithCleanSession(page, server.baseUrl);
+
+    // 不带描述 → 不报错，弹 ScheduleComposerCard
+    await submitCommand(page, '/schedule');
+    const composer = page.locator('[data-schedule-composer]');
+    await expect(composer).toBeVisible({ timeout: 10_000 });
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'slash-schedule-composer.png') });
+
+    // 选「每日简报」模板 → 出现填空字段
+    await composer.locator('[data-schedule-template="daily-briefing"]').click();
+    const topicField = composer.locator('[data-schedule-field="topic"]');
+    await expect(topicField).toBeVisible({ timeout: 5_000 });
+    await topicField.fill('汇总昨天的部署与告警');
+
+    // 点「创建定时任务」→ generateFromPrompt + createJob → 成功 toast
+    await composer.locator('[data-schedule-create]').click();
+    const successToast = page.getByText(/已创建定时任务/);
+    await expect(successToast).toBeVisible({ timeout: 60_000 });
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'slash-schedule-template-created.png') });
   });
 });

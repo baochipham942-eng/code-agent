@@ -8,8 +8,19 @@
 // ============================================================================
 
 import { isTauriMode } from './platform';
+import { IPC_DOMAINS } from '@shared/ipc';
+import ipcService from '../services/ipcService';
 
 type NotifModule = typeof import('@tauri-apps/plugin-notification');
+
+/** 把原生通知投递结果回报主进程（落日志，便于诊断「没弹」）。fire-and-forget。 */
+function reportDelivery(report: Record<string, unknown>): void {
+  try {
+    void ipcService.invokeDomain(IPC_DOMAINS.NOTIFICATION, 'reportClientDelivery', report);
+  } catch {
+    /* ignore */
+  }
+}
 
 let modulePromise: Promise<NotifModule> | null = null;
 function loadModule(): Promise<NotifModule> {
@@ -46,13 +57,20 @@ export async function postOsNotification(opts: { title: string; body: string }):
   if (isTauriMode()) {
     try {
       const mod = await loadModule();
-      if (!(await ensureTauriPermission(mod))) return;
+      const granted = await ensureTauriPermission(mod);
+      if (!granted) {
+        reportDelivery({ mode: 'tauri', granted: false, sent: false });
+        return;
+      }
       mod.sendNotification({ title: opts.title, body: opts.body });
+      reportDelivery({ mode: 'tauri', granted: true, sent: true });
     } catch (err) {
       console.warn('[osNotification] Tauri sendNotification 失败', err);
+      reportDelivery({ mode: 'tauri', error: err instanceof Error ? err.message : String(err) });
     }
     return;
   }
+  reportDelivery({ mode: 'web', perm: typeof Notification !== 'undefined' ? Notification.permission : 'unavailable' });
   // Web 回落：浏览器通知（best-effort）
   try {
     if (typeof Notification === 'undefined') return;

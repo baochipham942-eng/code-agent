@@ -14,11 +14,16 @@ const logger = createLogger('NotificationIPC');
 
 export function registerNotificationHandlers(): void {
   ipcMain.handle(IPC_DOMAINS.NOTIFICATION, async (_event, request: IPCRequest) => {
-    const { action } = request;
+    const { action, payload } = request;
     try {
       switch (action) {
         case 'getRecent':
           return { success: true, data: notificationService.getRecentNotifications() } satisfies IPCResponse;
+
+        // 渲染端把原生通知投递结果回报主进程，落到日志便于诊断「没弹」问题
+        case 'reportClientDelivery':
+          logger.info('Client OS notification delivery', { report: payload });
+          return { success: true, data: null } satisfies IPCResponse;
 
         default:
           return {

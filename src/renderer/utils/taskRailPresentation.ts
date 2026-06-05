@@ -90,10 +90,13 @@ function runStatusLabel(run?: RunUiState | null): string | null {
 }
 
 function simpleTitle(task: TaskRecord, run?: RunUiState | null): string {
+  // 有明确标题优先显示标题（行内已单独展示状态标签，无需用状态词顶替标题）——
+  // 否则终态的后台任务（如"循环 · …"失败）会丢掉名字、只剩"已阻塞/已取消"。
+  if (task.title) return task.title;
   if (task.status === 'completed' || task.status === 'blocked' || task.status === 'cancelled') {
     return statusLabel(task.status);
   }
-  return task.title || runStatusLabel(run) || statusLabel(task.status);
+  return runStatusLabel(run) || statusLabel(task.status);
 }
 
 function toStepViews(task: TaskRecord): TaskRailStepView[] {
@@ -119,7 +122,10 @@ export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null): T
   // 进度分母剔除已取消：取消的子任务不计入任务量，否则进度永远到不了 100%
   const total = taskSteps.filter((step) => step.status !== 'cancelled').length;
   const taskCount = taskSteps.length;
-  const isChecklist = taskSteps.length >= 2;
+  // checklist（"已完成 N 个任务（共 M 个）"）只对会话内的真计划生效。
+  // 后台/定时任务（global/scheduled）的 steps 是状态/时长/输出等元信息，不是子任务，
+  // 不能当多任务清单渲染——否则单个后台任务会显示成"已完成 N 个任务（共 M 个）"。
+  const isChecklist = task.scope === 'session' && taskSteps.length >= 2;
 
   if (!isChecklist) {
     return {

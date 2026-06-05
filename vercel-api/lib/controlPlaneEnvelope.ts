@@ -1,4 +1,17 @@
 import * as crypto from 'node:crypto';
+import { waitUntil } from '@vercel/functions';
+
+// serverless（Vercel/Lambda）上 res 一发、handler 一返回，实例立即冻结/回收，
+// 挂在事件循环里的 fire-and-forget Promise 跑不完就被丢弃——审计写入因此永远落不了库。
+// 用 waitUntil 把背景 Promise 交给平台等待；非 Vercel 运行时（本地单测 / release 脚本，
+// 无 request context）waitUntil 可能抛错或 no-op，catch 后退回原 fire-and-forget 行为。
+function safeWaitUntil(promise: Promise<unknown>): void {
+  try {
+    waitUntil(promise);
+  } catch {
+    void promise;
+  }
+}
 
 export type ControlPlaneArtifactKind =
   | 'cloud_config'
@@ -252,16 +265,16 @@ function loadAuditModule(): Promise<AuditModule | null> {
 
 function recordControlPlaneAuditEventBackground(
   req: ControlPlaneRequestLike,
-  options: Parameters<AuditModule['recordControlPlaneAuditEventBackground']>[1],
+  options: Parameters<AuditModule['recordControlPlaneAuditEvent']>[1],
 ): void {
-  void loadAuditModule().then((mod) => mod?.recordControlPlaneAuditEventBackground(req, options));
+  safeWaitUntil(loadAuditModule().then((mod) => mod?.recordControlPlaneAuditEvent(req, options)));
 }
 
 function recordControlPlaneAuditErrorBackground(
   req: ControlPlaneRequestLike,
-  options: Parameters<AuditModule['recordControlPlaneAuditErrorBackground']>[1],
+  options: Parameters<AuditModule['recordControlPlaneAuditError']>[1],
 ): void {
-  void loadAuditModule().then((mod) => mod?.recordControlPlaneAuditErrorBackground(req, options));
+  safeWaitUntil(loadAuditModule().then((mod) => mod?.recordControlPlaneAuditError(req, options)));
 }
 
 function sendCreatedControlPlaneEnvelope<TPayload>(

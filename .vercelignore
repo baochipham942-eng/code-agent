@@ -5,3 +5,13 @@
 *
 !vercel-api
 !vercel-api/**
+
+# 本地一旦 `npm install`，vercel-api/node_modules 会生成（26MB+）。上面的 `!vercel-api/**`
+# 会把它一并 allowlist 上传，覆盖/干扰 Vercel 云端 install，曾导致部署异常。这里重新排除，
+# 让依赖始终由 Vercel 按 package.json 在云端安装。dist/.env 同理排除（前者云端构建、后者用 Vercel env）。
+vercel-api/node_modules
+vercel-api/node_modules/**
+vercel-api/dist
+vercel-api/dist/**
+vercel-api/.env
+vercel-api/.env.*

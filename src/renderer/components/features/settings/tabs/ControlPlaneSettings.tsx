@@ -181,44 +181,53 @@ export const ControlPlaneSettings: React.FC = () => {
       <SettingsSection title="最近事件">
         <div className="overflow-hidden rounded-lg border border-zinc-800">
           <div className="overflow-x-auto">
-            <table className="min-w-[1100px] w-full text-left text-xs">
+            <table className="w-full min-w-[960px] text-left text-xs">
               <thead className="bg-zinc-900/80 text-zinc-500">
                 <tr>
-                  <th className="px-3 py-2 font-medium">时间</th>
-                  <th className="px-3 py-2 font-medium">Artifact</th>
-                  <th className="px-3 py-2 font-medium">版本</th>
-                  <th className="px-3 py-2 font-medium">Key</th>
-                  <th className="px-3 py-2 font-medium">Hash</th>
-                  <th className="px-3 py-2 font-medium">结果</th>
-                  <th className="px-3 py-2 font-medium">Subject</th>
-                  <th className="px-3 py-2 font-medium">Entitlement</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">时间</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Artifact</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">版本</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Key</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Hash</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">结果</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Subject</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Entitlement</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800 bg-zinc-950/40 text-zinc-300">
                 {events.map((event) => (
                   <tr key={event.id} className="hover:bg-zinc-900/60">
-                    <td className="px-3 py-3 text-zinc-400">{formatDate(event.createdAt)}</td>
-                    <td className="px-3 py-3 font-medium text-zinc-100">
+                    <td className="whitespace-nowrap px-3 py-3 text-zinc-400">{formatDate(event.createdAt)}</td>
+                    <td className="whitespace-nowrap px-3 py-3 font-medium text-zinc-100">
                       {ARTIFACT_LABELS[event.artifactKind]}
                     </td>
-                    <td className="px-3 py-3 font-mono text-zinc-400">{releaseLabel(event)}</td>
-                    <td className="px-3 py-3 font-mono text-zinc-500">{event.keyId || '-'}</td>
-                    <td className="px-3 py-3 font-mono text-zinc-500" title={event.contentHash}>
+                    <td className="whitespace-nowrap px-3 py-3 font-mono text-zinc-400">{releaseLabel(event)}</td>
+                    <td className="whitespace-nowrap px-3 py-3 font-mono text-zinc-500">{event.keyId || '-'}</td>
+                    <td className="whitespace-nowrap px-3 py-3 font-mono text-zinc-500" title={event.contentHash}>
                       {shortHash(event.contentHash)}
                     </td>
-                    <td className="px-3 py-3">
-                      <span className={`rounded-md border px-2 py-1 text-[11px] ${OUTCOME_CLASSES[event.outcome]}`}>
+                    <td className="whitespace-nowrap px-3 py-3">
+                      <span className={`inline-block whitespace-nowrap rounded-md border px-2 py-1 text-[11px] ${OUTCOME_CLASSES[event.outcome]}`}>
                         {event.outcome} · {event.statusCode}
                       </span>
                     </td>
                     <td className="px-3 py-3 font-mono text-zinc-500">
-                      {event.subjectId || '-'}
-                      {event.subjectSource ? <span className="ml-1 text-zinc-600">({event.subjectSource})</span> : null}
+                      <div
+                        className="max-w-[220px] truncate"
+                        title={`${event.subjectId || '-'}${event.subjectSource ? ` (${event.subjectSource})` : ''}`}
+                      >
+                        {event.subjectId || '-'}
+                        {event.subjectSource ? <span className="ml-1 text-zinc-600">({event.subjectSource})</span> : null}
+                      </div>
                     </td>
-                    <td className="px-3 py-3 text-zinc-400">
+                    <td className="whitespace-nowrap px-3 py-3 text-zinc-400">
                       {event.entitlementStatus || '-'}
                       {event.entitlementPlan ? <span className="ml-1 text-zinc-600">/ {event.entitlementPlan}</span> : null}
-                      {event.entitlementReason ? <div className="mt-1 text-[11px] text-zinc-600">{event.entitlementReason}</div> : null}
+                      {event.entitlementReason ? (
+                        <div className="mt-1 max-w-[200px] truncate text-[11px] text-zinc-600" title={event.entitlementReason}>
+                          {event.entitlementReason}
+                        </div>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

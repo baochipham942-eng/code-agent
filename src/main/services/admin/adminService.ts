@@ -16,10 +16,18 @@ import type {
   AdminCreateInviteCodeInput,
   AdminInviteCodeItem,
   AdminInviteCodeListResult,
+  AdminSetSharedRelayInput,
   AdminUpdateInviteCodeInput,
   AdminUserDashboardItem,
   AdminUserDashboardResult,
 } from '../../../shared/contract';
+
+// 团队共享 provider（中转站）授权能力。授予时连同基础功能能力一起写，避免新同事拿到「只有 shared_relay
+// 但没有 cloud/memory 等」的残缺 entitlement（开了按用户鉴权后，无行=fail-closed）。
+const SHARED_RELAY_CAPABILITY = 'shared_relay';
+const BASE_FEATURE_CAPABILITIES = [
+  'cloud_agent', 'memory', 'computer_use', 'experimental_tools', 'mcp_cloud', 'mcp_server',
+] as const;
 
 type AdminUserRow = Database['public']['Functions']['admin_list_users']['Returns'][number];
 type InviteCodeRow = Database['public']['Functions']['admin_list_invite_codes']['Returns'][number];
@@ -126,7 +134,67 @@ class AdminService {
       throw new Error(error.message);
     }
 
-    return { users: (data || []).map(toUserDashboardItem) };
+    const sharedRelayIds = await this.fetchSharedRelayUserIds();
+    return {
+      users: (data || []).map((row) => {
+        const item = toUserDashboardItem(row);
+        item.hasSharedRelay = sharedRelayIds.has(item.id);
+        return item;
+      }),
+    };
+  }
+
+  /** 拿到「有团队共享 provider 权限」的 user_id 集合（capabilities 含 shared_relay 或 *）。admin RLS 允许读全表。 */
+  private async fetchSharedRelayUserIds(): Promise<Set<string>> {
+    const { data, error } = await getSupabase()
+      .from('control_plane_entitlements')
+      .select('user_id,capabilities');
+    if (error || !data) {
+      return new Set<string>();
+    }
+    const ids = new Set<string>();
+    for (const row of data) {
+      const caps = row.capabilities ?? [];
+      if (caps.includes(SHARED_RELAY_CAPABILITY) || caps.includes('*')) {
+        ids.add(row.user_id);
+      }
+    }
+    return ids;
+  }
+
+  /** 给某用户开/关团队共享 key。开=补齐基础功能+shared_relay；关=去掉 shared_relay 保留基础功能。 */
+  async setUserSharedRelay(input: AdminSetSharedRelayInput): Promise<AdminUserDashboardResult> {
+    if (!isSupabaseInitialized()) {
+      return { users: [], unavailableReason: 'Supabase not initialized' };
+    }
+    const supabase = getSupabase();
+    const { data: existing } = await supabase
+      .from('control_plane_entitlements')
+      .select('capabilities,plan')
+      .eq('user_id', input.userId)
+      .maybeSingle();
+
+    const caps = new Set(existing?.capabilities ?? []);
+    if (input.enabled) {
+      for (const cap of BASE_FEATURE_CAPABILITIES) caps.add(cap);
+      caps.add(SHARED_RELAY_CAPABILITY);
+    } else {
+      caps.delete(SHARED_RELAY_CAPABILITY);
+    }
+
+    const { error } = await supabase
+      .from('control_plane_entitlements')
+      .upsert({
+        user_id: input.userId,
+        status: 'active',
+        plan: existing?.plan && existing.plan !== 'free' ? existing.plan : 'team',
+        capabilities: Array.from(caps),
+      }, { onConflict: 'user_id' });
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return this.listUsers();
   }
 
   async listInviteCodes(): Promise<AdminInviteCodeListResult> {

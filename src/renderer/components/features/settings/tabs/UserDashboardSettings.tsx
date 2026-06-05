@@ -92,6 +92,7 @@ export const UserDashboardSettings: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<UserStatusFilter>('all');
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -113,6 +114,25 @@ export const UserDashboardSettings: React.FC = () => {
   useEffect(() => {
     void loadUsers();
   }, [loadUsers]);
+
+  // 给某用户开/关「团队共享 key」。IPC 写 entitlement 后返回刷新后的用户列表。
+  const toggleSharedRelay = useCallback(async (user: AdminUserDashboardItem) => {
+    setBusyUserId(user.id);
+    setError(null);
+    try {
+      const result = await ipcService.invokeDomain<AdminUserDashboardResult>(
+        IPC_DOMAINS.ADMIN,
+        'setSharedRelay',
+        { userId: user.id, enabled: !user.hasSharedRelay },
+      );
+      setUsers(result.users);
+      setUnavailableReason(result.unavailableReason || null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyUserId(null);
+    }
+  }, []);
 
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
@@ -237,6 +257,7 @@ export const UserDashboardSettings: React.FC = () => {
                   <th className="px-3 py-2 font-medium">用户</th>
                   <th className="px-3 py-2 font-medium">角色</th>
                   <th className="px-3 py-2 font-medium">状态</th>
+                  <th className="px-3 py-2 font-medium">共享 key</th>
                   <th className="px-3 py-2 font-medium">来源</th>
                   <th className="px-3 py-2 font-medium">注册时间</th>
                   <th className="px-3 py-2 font-medium">上次登录</th>
@@ -267,6 +288,21 @@ export const UserDashboardSettings: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-3 py-3">
+                      <button
+                        type="button"
+                        disabled={busyUserId === user.id}
+                        onClick={() => void toggleSharedRelay(user)}
+                        title={user.hasSharedRelay ? '点击撤销团队共享 key' : '点击授予团队共享 key'}
+                        className={`rounded-md px-2 py-1 text-[11px] transition-colors disabled:opacity-50 ${
+                          user.hasSharedRelay
+                            ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+                            : 'border border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+                        }`}
+                      >
+                        {busyUserId === user.id ? '…' : user.hasSharedRelay ? '● 已开' : '○ 开通'}
+                      </button>
+                    </td>
+                    <td className="px-3 py-3">
                       <div className="text-zinc-300">{user.signupSource || user.provider || 'unknown'}</div>
                       <div className="mt-1 font-mono text-[11px] text-zinc-500">{user.inviteCode || '-'}</div>
                     </td>
@@ -283,7 +319,7 @@ export const UserDashboardSettings: React.FC = () => {
                 ))}
                 {!loading && filteredUsers.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-3 py-10 text-center text-zinc-500">
+                    <td colSpan={10} className="px-3 py-10 text-center text-zinc-500">
                       没有匹配的用户
                     </td>
                   </tr>

@@ -7,6 +7,7 @@ import type {
   AdminCreateInviteCodeInput,
   AdminInviteCodeItem,
   AdminInviteCodeListResult,
+  AdminSetSharedRelayInput,
   AdminUpdateInviteCodeInput,
   AdminUserDashboardItem,
   AdminUserDashboardResult,
@@ -36,6 +37,7 @@ const AdminUserDashboardItemSchema: z.ZodType<AdminUserDashboardItem> = z.object
   deviceCount: z.number(),
   sessionCount: z.number(),
   messageCount: z.number(),
+  hasSharedRelay: z.boolean().optional(),
 });
 
 const AdminUserDashboardResultSchema: z.ZodType<AdminUserDashboardResult> = z.object({
@@ -77,6 +79,11 @@ const AdminUpdateInviteCodeInputSchema: z.ZodType<AdminUpdateInviteCodeInput> = 
   maxUses: z.number().optional(),
   expiresAt: NullableStringSchema,
   isActive: z.boolean().optional(),
+});
+
+const AdminSetSharedRelayInputSchema: z.ZodType<AdminSetSharedRelayInput> = z.object({
+  userId: z.string(),
+  enabled: z.boolean(),
 });
 
 const AdminControlPlaneArtifactKindSchema = z.enum([
@@ -167,6 +174,12 @@ const ListControlPlaneRolloutSummaryRequestSchema = z.object({
   requestId: z.string().optional(),
 });
 
+const SetSharedRelayRequestSchema = z.object({
+  action: z.literal('setSharedRelay'),
+  payload: AdminSetSharedRelayInputSchema,
+  requestId: z.string().optional(),
+});
+
 const AdminRequestSchema = z.discriminatedUnion('action', [
   ListUsersRequestSchema,
   ListInviteCodesRequestSchema,
@@ -174,6 +187,7 @@ const AdminRequestSchema = z.discriminatedUnion('action', [
   UpdateInviteCodeRequestSchema,
   ListControlPlaneAuditEventsRequestSchema,
   ListControlPlaneRolloutSummaryRequestSchema,
+  SetSharedRelayRequestSchema,
 ]);
 
 const AdminResultDataSchema = z.union([
@@ -221,6 +235,11 @@ export const AdminSchemas = {
     channel: IPC_DOMAINS.ADMIN,
     payload: ListControlPlaneRolloutSummaryRequestSchema,
     response: IPCResponseSchema(AdminControlPlaneRolloutSummaryResultSchema),
+  }),
+  SET_SHARED_RELAY: channelSchema({
+    channel: IPC_DOMAINS.ADMIN,
+    payload: SetSharedRelayRequestSchema,
+    response: IPCResponseSchema(AdminUserDashboardResultSchema),
   }),
 } as const;
 

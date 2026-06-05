@@ -77,6 +77,8 @@ interface IPCResponse<T = unknown> {
 | `domain:diff` | diff.ipc.ts | 变更追踪 |
 | `domain:error` | error.ipc.ts | 错误与诊断 |
 | `domain:cron` | cron.ipc.ts | 定时任务与心跳 |
+| `domain:loop` | loop.ipc.ts | 会话内循环 `/loop` 启停、状态查询；后台化后进 task ledger |
+| `domain:notification` | notification.ipc.ts | 桌面通知只读查询与 renderer 投递结果回报 |
 | `domain:capture` | capture.ipc.ts | 浏览器采集 |
 | `domain:desktop` | desktop.ipc.ts | 原生桌面活动 |
 | `domain:activity` | activity.ipc.ts | Activity Providers 聚合 |
@@ -87,6 +89,10 @@ interface IPCResponse<T = unknown> {
 | `domain:openchronicle` | openchronicle.ipc.ts | 外部 OpenChronicle daemon |
 | `domain:prompt` | prompt.ipc.ts | Prompt Registry 查看、override、debug system prompt |
 | `domain:hook` | hook.ipc.ts | Hook 配置摘要、启用状态、配置文件打开/定位 |
+| `domain:roles` | roles.ipc.ts | 持久化角色资产、角色记忆、主动性和角色草稿确认队列 |
+| `domain:agents` | agentRegistry.ipc.ts | 自定义 Agent 注册中心（builtin + user + project）|
+| `domain:agentEngine` | agentEngine.ipc.ts | Native / Codex CLI / Claude Code execution engines |
+| `domain:capability` | capability.ipc.ts | Skill / MCP / Tool / Channel 能力中心 |
 | ~~`evaluation:delivery-review:run`~~ | 已下线 | 5/19 随 evaluation 子系统删除；Workspace Preview 不再触发旧 Delivery Review |
 | `workflow:*` | workflow.ipc.ts | Dynamic Workflow 运行进度 + 跑前审批（专用 bridge，run/launch 双通道）|
 | `evaluation:run-harness-comparison` / `evaluation:list-experiments` | evaluation.ipc.ts | Harness 对照实验启动与实验列表（GAP-017，阶段四）|
@@ -166,6 +172,44 @@ interface IPCResponse<T = unknown> {
 | `listResources` | - | 资源列表 | 列出所有资源 |
 | `setServerEnabled` | `{ serverName, enabled }` | `{ success }` | 启用/禁用服务器 |
 | `reconnectServer` | `{ serverName }` | `boolean` | 重新连接 |
+
+### Cron / Loop / Notification 通道
+
+`/schedule` 和 `/loop` 属于聊天输入层的两个自动化入口：`/schedule` 创建 cron job，`/loop` 在当前 session 上反复运行直到完成或喊停。2026-06-05 后，loop 和定时 agent 完成会通过后台任务台账和系统通知提醒用户。
+
+| Domain / Channel | Action / Event | Payload | 响应 / 说明 |
+|------------------|----------------|---------|-------------|
+| `domain:cron` | `generateFromPrompt` | `{ prompt: string }` | 调模型把自然语言解析成 `CreateCronJobInput` 草稿 |
+| `domain:cron` | `createJob` | `CreateCronJobInput` | 创建 cron job；一次性 `at` 任务必须是未来时间 |
+| `domain:cron` | `listJobs` / `deleteJob` / `toggleJob` | 见 `cron.ipc.ts` | Cron Center 与 `/schedule` 共用 |
+| `domain:loop` | `start` | `LoopRunConfig` | 启动会话内循环，返回 `LoopRunState` |
+| `domain:loop` | `stop` | `{ id: string; reason?: LoopStopReason }` | 用户停止 loop；终态映射为 task ledger `cancelled` |
+| `domain:loop` | `list` / `get` | `{ sessionId? }` / `{ id }` | 查询 loop 状态，供 `LoopStatusBar` 展示 |
+| `domain:notification` | `getRecent` | - | 只读返回 `notificationService.getRecentNotifications()`，E2E/诊断用 |
+| `domain:notification` | `reportClientDelivery` | `{ mode, granted?, sent?, error? }` | renderer 把 Tauri/browser 通知投递结果回报主进程，方便诊断「没弹」 |
+| `notification:show` | main → renderer | `{ id, title, body, sessionId }` | 主进程请求 renderer 投递原生通知 |
+| `notification:clicked` | renderer/main → app | `{ sessionId }` | 点击通知后 best-effort 前置 app 并跳转到对应 session |
+
+### Roles 通道 (`domain:roles`)
+
+`domain:roles` 同时服务持久化角色面板和 2026-06-05 的对话式角色草稿确认队列。草稿确认队列的原则是：模型只能起草，用户确认后才写正式角色定义。
+
+| Action | Payload | 响应 | 说明 |
+|--------|---------|------|------|
+| `list` | - | `RolePanelEntry[]` | 列出持久化角色 |
+| `detail` | `{ roleId }` | `RolePanelDetail` | 角色记忆、履历和主动性详情 |
+| `deleteMemory` | `{ roleId, memoryId }` | `null` | 删除一条角色记忆 |
+| `updateMemory` | `{ roleId, memoryId, content }` | `null` | 覆盖编辑一条角色记忆 |
+| `setProactivity` | `{ roleId, level, cadence? }` | `RoleProactivityConfig` | 设置角色主动等级并同步 cadence cron |
+| `listDrafts` | - | `RoleDraftMeta[]` | 列出 `~/.code-agent/role-drafts/` 待确认草稿 |
+| `confirmDraft` | `{ draftId }` | `{ success, roleId, agentMdPath }` | 安全扫描通过后写 `agents/<roleId>.md`，并初始化/保留 `roles/<roleId>/` |
+| `rejectDraft` | `{ draftId }` | `{ success }` | 删除草稿目录 |
+
+草稿事件不是 IPC action，而是 agent event：
+
+| Event | 方向 | Payload | 说明 |
+|-------|------|---------|------|
+| `role_draft_pending` | main → renderer (`agent:event`) | `{ sessionId, drafts: RoleDraftSummary[] }` | `propose_role` 入队成功后发出，`RoleDraftCard` 据此渲染确认卡 |
 
 ### Workflow 通道 (`workflow.ipc.ts`)
 
@@ -264,6 +308,10 @@ src/main/ipc/
 ├── mcp.ipc.ts         # MCP 通道
 ├── memory.ipc.ts      # Memory 通道
 ├── planning.ipc.ts    # Planning 通道
+├── cron.ipc.ts        # Cron / schedule 通道
+├── loop.ipc.ts        # 会话内循环 /loop 通道
+├── notification.ipc.ts # 桌面通知只读查询与 renderer 投递结果回报
+├── roles.ipc.ts       # 持久化角色资产 + 角色草稿确认队列
 ├── prompt.ipc.ts      # Prompt 管理通道
 ├── hook.ipc.ts        # Hook 管理通道
 ├── workflow.ipc.ts    # Dynamic Workflow run/launch 专用 bridge

@@ -1,7 +1,7 @@
 # Agent Neo / Code Agent - 架构设计文档
 
-> 版本: 9.17 (9.16 + 自动模式路由体系 ADR-019：单一决策入口 / 计费四分类 / 路由可视化 + 设置页系列重构：Skills/模型/Agent 引擎/MCP + 推荐目录云端下发 + Onboarding 中转站 + 桌面三层自愈 + 生产 trace 回传修复)
-> 日期: 2026-06-03
+> 版本: 9.18 (9.17 + 2026-06-05 对话式角色创建/修改、/schedule 模板创建、/loop 后台 task ledger 镜像、系统通知投递链路、模型设置 provider-only 保存语义)
+> 日期: 2026-06-05
 > 作者: Lin Chen
 
 本文档是 Agent Neo（代码仓库仍名为 Code Agent）的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -34,6 +34,7 @@
 
 | Spec | 覆盖 |
 |------|------|
+| [对话式角色 + 会话自动化 + 模型设置收口](./specs/2026-06-05-conversational-roles-automation-settings.md) | `/schedule` 空参模板创建、`/loop` 后台化 + meta turns + task ledger 通知、定时 agent 完成通知、原生通知 renderer 投递、对话式新建/修改持久化角色（roleDraftQueue + propose_role + strict skill toolset）、模型设置 provider 保存与默认模型拆分 |
 | [多 Agent 协作层 + 项目空间 + 角色产品化批次](./specs/2026-06-04-swarm-project-space-and-capability-batch.md) | swarm goal（P4 allowSwarm + advance 合流）、swarm 护栏（结构化失败码/深度截断/孤儿回收/Inbox 桥接）、swarm 协作可见性（讨论流）、角色主动性（cadence+event 双触发，出厂 silent）、项目空间三表 + 隐式归桶 + 跨 session 产物聚合、定点反馈两层分离、能力产品化（角色/技能 icon+分类）、只读任务状态 MCP（P3-A 三工具） |
 | [自动模式路由体系 + 设置页重构批次](./specs/2026-06-03-auto-mode-and-settings-batch.md) | 自动模式失效三断点修复 + ADR-019 三批（modelDecision 单一决策入口/计费四分类/路由可视化）、设置页 Master-Detail/双 Tab 系列、推荐目录云端下发、Onboarding 中转站、僵尸实例三层自愈、生产 trace 回传修复 |
 | [极客时间课程差距修复（四阶段 as-built）](./specs/2026-06-02-geektime-gap-remediation.md) | 17 条 GAP 修复：skill 限权/policy 接线/prompt caching（假护栏）、MCP 索引化/结果落盘/git 注入（上下文经济）、Stop hook 完成闸/反死循环/交付前 critic/prompt 预算治理（质量闭环）、failure journal/skill 蒸馏/子代理 skills/harness 对照实验（经验沉淀） |
@@ -172,9 +173,9 @@ code-agent/
 └── supabase/                    # 数据库迁移
 ```
 
-### 工具体系（108 个 native ToolModule）
+### 工具体系（108+ 个 native ToolModule）
 
-按功能分为 9 类，其中 15 个核心工具始终发送给模型，其余通过 ToolSearch 按需加载。2026-05 native migration 后，`src/main/tools/registry.ts` 当前注册 108 个 ToolModule，`src/main/tools/modules/` 下有 108 个 schema 文件；下表按能力域说明，不把每类数量写成长期不变量。
+按功能分为 9 类，其中 15 个核心工具始终发送给模型，其余通过 ToolSearch 按需加载。2026-05 native migration 后，`src/main/tools/registry.ts` 注册 108 个 ToolModule；2026-06-05 角色创作分支新增 deferred 工具 `propose_role`，合并后进入同一 native module registry。下表按能力域说明，不把每类数量写成长期不变量。
 
 | 分类 | 代表工具 |
 |------|----------|
@@ -191,6 +192,27 @@ code-agent/
 > **工具合并**: 31 个独立延迟工具合并为统一工具（Process, MCPUnified, TaskManager 等），使用 action 参数分发。详见 [ADR-006](./decisions/006-deferred-tools-consolidation.md)。
 >
 > **文档编辑统一**: DocEdit 统一入口，富文档为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
+
+### 2026-06-05 对话式角色、会话自动化和模型设置收口
+
+这一轮把"主聊天里发起长期任务"、"用对话创建/修改持久化角色"和"模型设置保存语义"补成产品合同。当前 `main` 已含模型设置修复；`/schedule`、`/loop`、角色创建/修改在对应本地 worktree 分支，合并时以 [2026-06-05 spec](./specs/2026-06-05-conversational-roles-automation-settings.md) 为验收口径。
+
+| 模块 | 当前闭环 | 关键文件 / 入口 |
+|------|---------|----------------|
+| `/schedule` 对话式创建 | `/schedule` 空参打开 `ScheduleComposerCard`，用户可选每日简报、缺陷扫描、周回顾或自定义；创建仍走 `cron:generateFromPrompt -> createJob` 单一路径 | `src/renderer/components/features/chat/ChatInput/ScheduleComposerCard.tsx`、`scheduleTemplates.ts`、`src/main/cron/cronService.ts` |
+| `/loop` 后台化 | `LoopController` 在启动时登记 `kind='loop'` 的 `BackgroundTaskLedger` 任务，每轮更新进度，终态写 completed/failed/cancelled；自然完成和失败触发 ledger notification + 系统通知 | `src/main/loop/loopController.ts`、`src/shared/contract/loop.ts`、`src/main/tasks/backgroundTaskLedger.ts` |
+| loop meta turns | loop 内部轮次以 `historyVisibility: 'meta'` 写入，事件带 `isMeta`；SQLite `messages.is_meta`、FTS trigger、session count/search/sync 都过滤 meta 和 loop marker | `src/main/services/core/database/schema.ts`、`SessionRepository.ts`、`eventBatcher.ts`、`runFinalizer.ts` |
+| 系统通知投递 | main 侧只记录并广播通知请求，renderer 用 Tauri notification plugin 投递，Web 模式 best-effort；`domain:notification/getRecent` 供诊断和 E2E 读取最近通知 | `src/main/services/infra/notificationService.ts`、`src/main/ipc/notification.ipc.ts`、`src/renderer/utils/osNotification.ts` |
+| 对话式角色创建/修改 | `create-role` / `edit-role` skill 通过确定性 slash seed 进入；模型调用 `propose_role` 生成草稿，`RoleDraftCard` 由用户确认后才写 `agents/<roleId>.md` 并初始化/保留 `roles/<roleId>/` | `src/main/services/roleAssets/roleDraftQueue.ts`、`src/main/tools/modules/roleAuthoring/proposeRole.ts`、`src/renderer/components/features/chat/ChatInput/RoleDraftCard.tsx` |
+| strict skill toolset | 对 role authoring skill 启用 `strictToolset`，把模型可见工具收缩到 allowedTools；deferred-loading 会预加载 active skill 的非 core allowed tools，保证 `propose_role` 可见 | `src/main/tools/skillBoundaryScope.ts`、`deferredToolPreload.ts`、`skillInvocationResolver.ts` |
+| 模型设置保存语义 | Provider 连接保存只写 `models.providers[provider]`；点击「设为默认」才写 `models.default/defaultProvider`。左栏文案改成「已可用 / 待添加 Key」 | `src/renderer/components/features/settings/tabs/ModelSettings.tsx`、`ModelSettings.helpers.tsx`、`ProviderListPanel.tsx` |
+
+**架构边界澄清**：
+
+- 角色创建/修改不是直接文件编辑入口。模型只能产出草稿，确认卡 IPC 才能落盘；落盘前必须走内容安全扫描。
+- `strictToolset` 是 opt-in，当前用于 `create-role` / `edit-role` 这类 meta skill，不改变普通 skill 的 GAP-001 软边界语义。
+- loop 后台化当前是主进程内存运行 + task ledger 镜像，不承诺 app 重启恢复。
+- Provider 保存和默认模型设置是两条用户意图，不能在保存连接配置时隐式切默认模型。
 
 ### 2026-05-19 Marvis 能力对照补齐：场景化 skill + Vision Framework 工具栈 + Photos connector
 

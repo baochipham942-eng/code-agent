@@ -35,6 +35,7 @@ CREATE TABLE messages (
   tool_calls TEXT,     -- JSON
   tool_results TEXT,   -- JSON
   timestamp INTEGER,
+  is_meta INTEGER NOT NULL DEFAULT 0,
   visibility TEXT NOT NULL DEFAULT 'active',
   hidden_by_rewind_id TEXT,
   hidden_at INTEGER,
@@ -51,6 +52,7 @@ CREATE TABLE messages (
 | `sessions.status` | session 级运行终态，支持 `idle/running/paused/interrupted/orphaned` 等状态 | `SessionRepository` / `TaskManager` |
 | `sessions.workbench_provenance` | Workbench 能力选择、direct routing、session-backed reuse 的会话级投影 | `lightMemory/sessionMetadata.ts` / workbench provenance |
 | `messages.metadata` | user message 的 `metadata.workbench`、direct routing delivery 等消息级上下文 | `SessionRepository.addMessage()` |
+| `messages.is_meta` | 后台自动化和内部运行轮次标记；普通会话列表、FTS、同步和 summary 默认过滤 | `SessionRepository.addMessage()`、`LoopController` meta turns |
 | `messages.compaction` | manual compact / autocompact 的 compaction survivor 信息 | `contextHealth.ipc.ts` / `contextAssembly/compression.ts` |
 | `todos` | auto todo 与 finalizer 消费的 session-scoped todo 状态 | `src/main/agent/todoParser.ts` |
 | `session_tasks` | Task tool / planning taskStore 的 durable task graph | `src/main/services/planning/taskStore.ts` |
@@ -152,6 +154,25 @@ Admin review queue 不再是单独表，而是 `artifact_issues` 的派生视图
 ### 2026-06 session owner scope
 
 `sessions.user_id` 现在是本地读取边界的一部分。`SessionRepository` 的 list/get/update/delete/message 查询都可传 `userId`；`SessionManager` 默认使用当前 auth user，未登录时只看 `user_id IS NULL`。Web 返回 session 前会剥离 `modelConfig.apiKey`，避免本机 key 通过 JSON 响应泄露给客户端。
+
+### 2026-06-05 role drafts and loop meta state
+
+对话式角色创建/修改和 `/loop` 后台化新增两类本地状态：一类是文件系统里的角色草稿，一类是 SQLite 里的 meta message 标记。
+
+| 存储 / 字段 | 用途 | 主要路径 |
+|-------------|------|----------|
+| `~/.code-agent/role-drafts/<draftId>/draft.json` | 待确认角色草稿元数据：roleId、description、category、tools、sessionId、createdAt、editingRoleId | `src/main/services/roleAssets/roleDraftQueue.ts` |
+| `~/.code-agent/role-drafts/<draftId>/agent.md` | 模型起草出的完整 agent 定义。草稿目录不被 `agentRegistry` 扫描 | `generateRoleAgentMd()` |
+| `~/.code-agent/agents/<roleId>.md` | 用户确认后写入正式角色定义；新建模式拒绝覆盖同名，修改模式允许覆盖同名定义 | `confirmRoleDraft()` |
+| `~/.code-agent/roles/<roleId>/` | 角色记忆和履历资产目录；确认新角色时初始化，修改已有角色时保持幂等不清空 | `ensureRoleAssetDirs()` |
+| `messages.is_meta` | loop 内部自动化轮次、runtime diagnostics 等不应进入用户可见 transcript 的消息标记 | `LoopController`、`EventBatcher`、`SessionRepository` |
+| `session_messages_fts` trigger 过滤 | insert/update 时跳过 `is_meta=1`、`【循环模式 · 第%轮】` 和 `[[LOOP_WAIT]]` 内容，并清理旧脏索引 | `src/main/services/core/database/schema.ts` |
+
+读取边界：
+
+- 普通 session list/count/search/sync 使用 `visibleHistoryMessageWhere()`，过滤 rewound、meta 和 loop marker。
+- 显式调试或 replay 若需要看内部轮次，需要走专门路径，不应复用普通会话列表的 count。
+- 角色草稿被确认前不进入 `agents/`，因此不会被 `agentRegistry` 当成可调用角色。
 
 ## 云端存储 (Supabase)
 

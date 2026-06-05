@@ -20,6 +20,10 @@
 │  │  │Sidebar User  │ │Semantic Tool │ │ Browser /    │ │Automation   │  │  │
 │  │  │Menu          │ │UI + Citation │ │Validation UI │ │/Cron Center │  │  │
 │  │  └──────────────┘ └──────────────┘ └──────────────┘ └─────────────┘  │  │
+│  │  ┌──────────────┐                                                    │  │
+│  │  │Role Draft /  │                                                    │  │
+│  │  │Schedule Cards│                                                    │  │
+│  │  └──────────────┘                                                    │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                            │ Platform Abstraction                            │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
@@ -38,14 +42,14 @@
 │  │  │  │  Memory    │ │  Center   │ │ Abstraction│ │  Adapters   │  │ │  │
 │  │  │  └────────────┘ └────────────┘ └────────────┘ └─────────────┘  │ │  │
 │  │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌─────────────┐  │ │  │
-│  │  │  │Task Ledger │ │Structured  │ │Telemetry / │ │Admin /     │  │ │  │
-│  │  │  │+ Handoff   │ │Replay      │ │Eval Gate   │ │Updates     │  │ │  │
+│  │  │  │Task Ledger │ │Structured  │ │Telemetry / │ │Role Assets │  │ │  │
+│  │  │  │+ Loop/Cron │ │Replay      │ │Eval Gate   │ │+ Drafts    │  │ │  │
 │  │  │  └────────────┘ └────────────┘ └────────────┘ └─────────────┘  │ │  │
 │  │  └──────────────────────────────────────────────────────────────────┘ │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                    │                                        │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                      Tool Layer (108 native modules, 9 类)             │  │
+│  │                      Tool Layer (108+ native modules, 9 类)            │  │
 │  │                                                                        │  │
 │  │  Shell & 文件    规划 & 任务      文档 & 媒体      多 Agent            │  │
 │  │  ┌──────────┐   ┌──────────┐    ┌──────────┐    ┌──────────┐         │  │
@@ -115,6 +119,20 @@
 | **云端存储** | Supabase + pgvector | 同步 + 向量存储 |
 | **AI 模型** | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / Claude / Ollama | 多模型路由，本地 API Key 优先 |
 | **Agent Engine** | Native Agent Neo / Codex CLI / Claude Code | read-only 外部 engine、workspace-only cwd、task ledger 输出回带 |
+
+## 2026-06-05 架构增量（对话式角色 / 会话自动化 / 设置保存语义）
+
+这一轮的主线是把聊天入口里的长期任务和角色资产变成显式可确认的产品链路，同时修正模型设置页的默认模型写入边界。详细合同见 [2026-06-05 as-built spec](../specs/2026-06-05-conversational-roles-automation-settings.md)。
+
+| 能力域 | 当前形态 | 详细文档 |
+|------|----------|----------|
+| `/schedule` 模板创建 | `/schedule` 空参打开 `ScheduleComposerCard`，模板只生成自然语言描述，仍复用 `cron:generateFromPrompt -> createJob`；一次性 `at` 任务必须是未来时间 | [frontend.md](./frontend.md)、[ipc-channels.md](./ipc-channels.md) |
+| `/loop` 后台化 | `LoopController` 继续在当前主进程内存跑，但把运行、进度、终态镜像到 `BackgroundTaskLedger`；自然完成/失败发台账通知和系统通知 | [agent-core.md](./agent-core.md)、[frontend.md](./frontend.md) |
+| loop meta turns | loop 自动轮次走 `historyVisibility: 'meta'`，消息、事件和 SQLite 带 `isMeta`；会话列表、FTS、同步和 summary 过滤 meta 与 loop marker | [agent-core.md](./agent-core.md)、[data-storage.md](./data-storage.md) |
+| 系统通知投递 | main 负责记录和广播通知，renderer 用 Tauri notification plugin 投递；`domain:notification/getRecent` 是只读诊断口 | [ipc-channels.md](./ipc-channels.md)、[frontend.md](./frontend.md) |
+| 对话式角色创建/修改 | `create-role` / `edit-role` skill 通过 slash seed 触发，`propose_role` 只入队草稿，`RoleDraftCard` 用户确认后才写 `agents/<roleId>.md` | [agent-core.md](./agent-core.md)、[frontend.md](./frontend.md)、[data-storage.md](./data-storage.md) |
+| strict skill toolset | `strictToolset` 只对 opt-in skill 收缩模型可见工具，防止 role authoring 绕过确认卡；active skill allowedTools 会驱动 deferred 工具预加载 | [agent-core.md](./agent-core.md) |
+| 模型设置保存 | 保存 provider 只写连接和 provider config；显式「设为默认」才写默认模型字段 | [frontend.md](./frontend.md) |
 
 ## 2026-05-29~31 架构增量（Dynamic Workflow / Runtime Consolidation）
 
@@ -242,10 +260,13 @@
 | **Capability Center** | `src/shared/contract/capability.ts` + `src/main/services/capabilities/` + `docs/capabilities/` | 本地能力货架，覆盖 skill、MCP template、workflow recipe、connector、agent engine，MCP draft 默认 disabled |
 | **In-App HTML Validation** | `src/shared/contract/browserInteraction.ts` + `src/main/tools/modules/vision/validateHtmlInApp.ts` + `InAppValidationPanel.tsx` | HTML artifact 在 app 内 iframe 中运行交互脚本和 expect 断言，形成用户可见的验证轨迹 |
 | **Admin / Invite Management** | `src/main/ipc/adminGuard.ts` + `src/main/services/admin/` + `supabase/migrations/20260516000000_user_invite_management.sql` | 管理员用户 dashboard、邀请码管理、RLS/RPC admin guard |
+| **Conversation Automation Cards** | `ScheduleComposerCard` + `scheduleTemplates` + `LoopStatusBar` + `TaskStatusBar` | `/schedule` 空参模板创建，`/loop` 后台任务状态进入主聊天和 task rail |
+| **Role Authoring Drafts** | `roleDraftQueue` + `propose_role` + `RoleDraftCard` + `create-role/edit-role` builtin skills | 对话式创建/修改持久化角色，草稿隔离，用户确认后落盘 |
+| **Notification Delivery Bridge** | `notificationService` + `notification.ipc.ts` + `osNotification.ts` | 主进程记录通知，renderer 负责原生投递和投递结果回报 |
 
-## 工具体系（108 个 native ToolModule）
+## 工具体系（108+ 个 native ToolModule）
 
-15 个核心工具始终发送给模型，其余通过 ToolSearch 按需加载。当前 native registry 注册 108 个 ToolModule，按功能分为 9 类：
+15 个核心工具始终发送给模型，其余通过 ToolSearch 按需加载。当前 native registry 以 108 个 ToolModule 为基线，2026-06-05 角色创作分支新增 deferred native 工具 `propose_role`。按功能分为 9 类：
 
 | 分类 | 代表工具 |
 |------|----------|

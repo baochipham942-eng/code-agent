@@ -1,6 +1,7 @@
 import type { ControlPlaneArtifactKind } from './controlPlaneEnvelope.js';
 import type { ControlPlaneRequestLike } from './controlPlaneEnvelope.js';
 import { applyServerEntitlementGate, applyServerEntitlementGateAsync } from './controlPlaneEntitlements.js';
+import { loadSharedProvidersFromStore } from './controlPlaneSharedProviders.js';
 import { readJsonPayloadFromEnv } from './controlPlaneEnvelope.js';
 
 /**
@@ -132,11 +133,16 @@ export function readCloudConfigPayloadForRequest(
   return applyServerEntitlementGate(req, readCloudConfigPayload(env), env);
 }
 
-export function readCloudConfigPayloadForRequestAsync(
+export async function readCloudConfigPayloadForRequestAsync(
   req: ControlPlaneRequestLike,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<CloudConfigPayload> {
-  return applyServerEntitlementGateAsync(req, readCloudConfigPayload(env), env);
+  const base = readCloudConfigPayload(env);
+  // 混合方案：已配 Supabase 时，sharedProviders 以 DB 为唯一事实来源（key 仍从 env 取并已注入）；
+  // 未配 Supabase 时 fromStore=null → 保留 env-JSON 里的 sharedProviders（向后兼容）。
+  const fromStore = await loadSharedProvidersFromStore(env);
+  const payload = fromStore !== null ? { ...base, sharedProviders: fromStore } : base;
+  return applyServerEntitlementGateAsync(req, payload, env);
 }
 
 export function readPromptRegistryPayload(env: NodeJS.ProcessEnv = process.env): PromptRegistryPayload {

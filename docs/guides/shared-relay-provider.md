@@ -45,32 +45,36 @@ CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY = <service role key>   # 仅用于服务
 
 在 `CONTROL_PLANE_CLOUD_CONFIG_JSON` 里加入 `sharedProviders`（**key 放这里，永远不进客户端构建包**）：
 
-```jsonc
-{
-  // …原有 cloud_config 字段…
-  "sharedProviders": [
-    {
-      "id": "custom-team-relay",
-      "displayName": "团队共享",
-      "baseUrl": "https://tokenflux.dev/v1",
-      "apiKey": "<中转站 token，机密>",
-      "protocol": "openai",
-      "billingMode": "unknown",
-      "models": [
-        { "id": "gpt-5.5" },
-        { "id": "gpt-5.4-mini", "label": "GPT-5.4 mini" }
-      ],
-      "requiredCapability": "shared_relay"
-    }
-  ]
-}
+**推荐：混合方案（key 留 env、配置进 DB，改配置零部署）。**
+
+为什么混合：anon key 本就是公开的（打进客户端/每个请求头都带），所以一旦把 key 放进 DB，RLS 就是唯一的墙，配错即漏。把 key 留在 Vercel env（对客户端零可达面），只把「会变的配置」放 DB，既拿到"改模型/开关不用重新部署 Vercel"的好处，又让 key 永不进库。
+
+**Vercel env（一次性，含机密）：**
+```
+CONTROL_PLANE_SHARED_PROVIDERS_FROM_DB   = 1                 # 打开 DB 取配置（不开则走 env-JSON 兜底）
+CONTROL_PLANE_SUPABASE_URL               = <Supabase URL>
+CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY  = <service role key>  # 服务端读表/校验 JWT，绕过 RLS
+SHARED_RELAY_API_KEY                      = <中转站 token，机密>  # key 只在这里；表里只存这个变量名
 ```
 
-- `requiredCapability: "shared_relay"` → 仅被管理员授权的用户才会拿到（推荐，对应「手动在用户管理配置」）。
-- 想**开放给所有已登录用户**：去掉 `requiredCapability`（team-wide）。⚠️ 仍必须保持上面的 Supabase 鉴权 env 开启，否则开放模式会把 key 下发给任何匿名请求（端点是公开的）。
-- `models` 是暴露给用户的白名单，**自己挑能用的**：实测 `gpt-5.5` / `gpt-5.4-mini` 通，`gpt-5.3` 上游 502，别放。
+**Supabase（DB，零部署改）：** 应用迁移 `supabase/migrations/20260605000000_shared_providers.sql`（建 `control_plane_shared_providers` 表 + admin-only RLS）。然后在管理台 **共享Provider** 页加一条：
+- id `custom-team-relay`、展示名「团队共享」、端点 `https://tokenflux.dev/v1`
+- **key 所在 env 变量名** = `SHARED_RELAY_API_KEY`（不是 key 本身）
+- 模型白名单**自己挑能用的**：实测 `gpt-5.5` / `gpt-5.4-mini` 通，`gpt-5.3` 上游 502，别放
+- 授权门 capability = `shared_relay`（仅授权用户）；留空 = 所有登录用户
 
-部署：push 触发或 `vercel --prod`。⚠️ 控制面部署历史上卡在 Hobby plan 账单（见 `code_agent_distribution_architecture` memory），发版前确认 Vercel 构建未被 block。
+以后改模型/换端点/开关 = 管理台点一下，**零 Vercel 部署**。换 key = 改那个 env 变量（少见，需一次重部署）。
+
+**RLS 验证（强烈建议，把"会不会写松"变确定性）：** 应用迁移后跑 anon-probe，证明公开 anon key 读不到这两张表：
+```
+HTTPS_PROXY=http://127.0.0.1:7897 SUPABASE_URL=https://<ref>.supabase.co \
+SUPABASE_ANON_KEY=<anon> node scripts/verify-shared-providers-rls.mjs
+# 期望全部 ✓：anon 被拒或 0 行
+```
+
+**兜底（不想动 DB 时）：** 不设 `CONTROL_PLANE_SHARED_PROVIDERS_FROM_DB`，直接在 `CONTROL_PLANE_CLOUD_CONFIG_JSON` 里塞 `sharedProviders`（含 `apiKey`）即可——但这样 key 进了 env-JSON、改配置要重部署，且失去 DB 管理。仅建议临时验证用。
+
+部署：push 触发或 `vercel --prod`。⚠️ 控制面部署历史上卡在 Hobby plan 账单（见 `code_agent_distribution_architecture` memory），发版前确认 Vercel 构建未被 block。**注意：只有"加 DB 读取逻辑"这一次需要重新部署；之后改配置全走 DB。**
 
 ### 2. 客户端发版
 

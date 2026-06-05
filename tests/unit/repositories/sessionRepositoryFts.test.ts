@@ -54,6 +54,7 @@ function createSchema(db: BetterSqlite3.Database): void {
         synced_at INTEGER,
         content_parts TEXT,
         metadata TEXT,
+        is_meta INTEGER NOT NULL DEFAULT 0,
         compaction TEXT,
         visibility TEXT NOT NULL DEFAULT 'active',
         hidden_by_rewind_id TEXT,
@@ -89,7 +90,10 @@ function createSchema(db: BetterSqlite3.Database): void {
   db.exec(`
     CREATE TRIGGER IF NOT EXISTS messages_ai_fts AFTER INSERT ON messages BEGIN
       INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
-      VALUES (new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp);
+      SELECT new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp
+      WHERE COALESCE(new.is_meta, 0) = 0
+        AND COALESCE(new.content, '') NOT LIKE '%【循环模式 · 第%轮】%'
+        AND COALESCE(new.content, '') NOT LIKE '%[[LOOP_WAIT]]%';
     END;
   `);
   db.exec(`
@@ -98,10 +102,13 @@ function createSchema(db: BetterSqlite3.Database): void {
     END;
   `);
   db.exec(`
-    CREATE TRIGGER IF NOT EXISTS messages_au_fts AFTER UPDATE OF content ON messages BEGIN
+    CREATE TRIGGER IF NOT EXISTS messages_au_fts AFTER UPDATE OF content, is_meta ON messages BEGIN
       DELETE FROM session_messages_fts WHERE message_id = old.id;
       INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
-      VALUES (new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp);
+      SELECT new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp
+      WHERE COALESCE(new.is_meta, 0) = 0
+        AND COALESCE(new.content, '') NOT LIKE '%【循环模式 · 第%轮】%'
+        AND COALESCE(new.content, '') NOT LIKE '%[[LOOP_WAIT]]%';
     END;
   `);
 }
@@ -156,6 +163,21 @@ describe('SessionRepository — Episodic FTS5', () => {
       }
     ).c;
     expect(ftsCount).toBe(2);
+  });
+
+  it('does not index meta or loop-internal messages via trigger', () => {
+    repo.addMessage('sess-A', makeMessage('visible', 'visible loopsecret control'));
+    repo.addMessage('sess-A', {
+      ...makeMessage('meta', 'hidden loopsecret meta'),
+      isMeta: true,
+    });
+    repo.addMessage('sess-A', makeMessage('loop', '【循环模式 · 第 1 轮】 hidden loopsecret prompt'));
+
+    const ftsRows = db.prepare('SELECT message_id FROM session_messages_fts ORDER BY message_id ASC').all() as Array<{ message_id: string }>;
+    expect(ftsRows.map((row) => row.message_id)).toEqual(['visible']);
+
+    const results = repo.searchSessionMessagesFts('loopsecret');
+    expect(results.map((row) => row.messageId)).toEqual(['visible']);
   });
 
   it('searches across sessions and ranks by relevance', () => {
@@ -219,6 +241,20 @@ describe('SessionRepository — Episodic FTS5', () => {
     expect(repo.searchSessionMessagesFts('topic-bbb').length).toBe(1);
   });
 
+  it('removes FTS row when a message is later marked meta or loop-internal', () => {
+    repo.addMessage('sess-A', makeMessage('m1', 'visible content about markmeta'));
+    repo.addMessage('sess-A', makeMessage('m2', 'visible content about markloop'));
+
+    expect(repo.searchSessionMessagesFts('markmeta').length).toBe(1);
+    expect(repo.searchSessionMessagesFts('markloop').length).toBe(1);
+
+    repo.updateMessage('m1', { isMeta: true });
+    repo.updateMessage('m2', { content: '【循环模式 · 第 2 轮】 hidden markloop content' });
+
+    expect(repo.searchSessionMessagesFts('markmeta')).toEqual([]);
+    expect(repo.searchSessionMessagesFts('markloop')).toEqual([]);
+  });
+
   it('backfills FTS from pre-existing messages when FTS is empty', () => {
     // Seed messages AFTER disabling the insert trigger, simulating a pre-FTS install
     db.exec('DROP TRIGGER IF EXISTS messages_ai_fts;');
@@ -246,6 +282,27 @@ describe('SessionRepository — Episodic FTS5', () => {
 
     const results = repo.searchSessionMessagesFts('legacy');
     expect(results.length).toBe(3);
+  });
+
+  it('backfill skips meta and loop-internal messages', () => {
+    db.exec('DROP TRIGGER IF EXISTS messages_ai_fts;');
+    const stmt = db.prepare(
+      `
+      INSERT INTO messages (id, session_id, role, content, timestamp, is_meta)
+      VALUES (?, ?, ?, ?, ?, ?)
+      `
+    );
+    stmt.run('legacy-visible', 'sess-A', 'user', 'legacy clean visiblemarker', Date.now(), 0);
+    stmt.run('legacy-meta', 'sess-A', 'user', 'legacy hidden visiblemarker meta', Date.now(), 1);
+    stmt.run('legacy-loop', 'sess-A', 'user', '【循环模式 · 第 3 轮】 legacy hidden visiblemarker loop', Date.now(), 0);
+
+    const inserted = repo.backfillSessionMessagesFts();
+    expect(inserted).toBe(1);
+
+    const results = repo.searchSessionMessagesFts('visiblemarker', {
+      includeRewound: true
+    });
+    expect(results.map((row) => row.messageId)).toEqual(['legacy-visible']);
   });
 
   it('backfill is a no-op when FTS already has rows', () => {

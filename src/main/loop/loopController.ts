@@ -6,7 +6,7 @@
 //   - 触到 maxTurns 上限（completed/max_turns）
 //   - 用户喊停（stopped/user）
 //   - 出错（failed/error）
-// 每轮回复走当前 session 的正常流式链路，自然显示在聊天里——无需专门事件推送。
+// 每轮回复走当前 session 的模型历史链路，但标成 meta，不污染用户可见聊天历史。
 //
 // Slice 2 后台化：LoopController 仍是内存里的执行器（loop 本就跑在主进程单例上，
 // 切走/关会话不会被杀），这里只把生命周期**镜像**进 backgroundTaskLedger——
@@ -231,7 +231,11 @@ export class LoopController {
           break;
         }
 
-        await orchestrator.sendMessage(buildTurnPrompt(state));
+        await orchestrator.sendMessage(buildTurnPrompt(state), undefined, {
+          mode: 'normal',
+          historyVisibility: 'meta',
+          deniedToolNames: ['AskUserQuestion', 'ask_user_question'],
+        });
         if (this.aborted.has(id)) break;
 
         const reply = await this.readLastAssistantReply(state.sessionId);

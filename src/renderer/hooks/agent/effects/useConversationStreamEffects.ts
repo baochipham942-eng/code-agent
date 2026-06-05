@@ -18,6 +18,7 @@ type AgentEvent = { type: string; data?: unknown; sessionId?: string };
 
 interface TurnIdPayload {
   turnId?: string;
+  isMeta?: boolean;
 }
 
 interface StreamTextPayload extends TurnIdPayload {
@@ -104,6 +105,7 @@ function normalizeTurnIdPayload(data: unknown): TurnIdPayload {
   if (!isRecord(data)) return {};
   return {
     ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
+    ...(getBooleanField(data, 'isMeta') ? { isMeta: true } : {}),
   };
 }
 
@@ -114,6 +116,7 @@ function normalizeStreamTextPayload(data: unknown): StreamTextPayload | null {
   return {
     content,
     ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
+    ...(getBooleanField(data, 'isMeta') ? { isMeta: true } : {}),
   };
 }
 
@@ -128,6 +131,7 @@ function normalizeMessageDeltaPayload(data: unknown): MessageDeltaPayload | null
     text,
     ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
     ...(getStringField(data, 'messageId') ? { messageId: getStringField(data, 'messageId') } : {}),
+    ...(getBooleanField(data, 'isMeta') ? { isMeta: true } : {}),
   };
 }
 
@@ -141,6 +145,7 @@ function normalizeMessageSnapshotPayload(data: unknown): MessageSnapshotPayload 
     ...(getStringField(data, 'reasoning') ? { reasoning: getStringField(data, 'reasoning') } : {}),
     ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
     ...(getStringField(data, 'messageId') ? { messageId: getStringField(data, 'messageId') } : {}),
+    ...(getBooleanField(data, 'isMeta') ? { isMeta: true } : {}),
   };
 }
 
@@ -210,6 +215,7 @@ function normalizeAssistantMessagePayload(data: unknown): AssistantMessagePayloa
     ...(getStringField(data, 'content') !== undefined ? { content: getStringField(data, 'content') } : {}),
     ...(getStringField(data, 'reasoning') !== undefined ? { reasoning: getStringField(data, 'reasoning') } : {}),
     ...(getStringField(data, 'thinking') !== undefined ? { thinking: getStringField(data, 'thinking') } : {}),
+    ...(getBooleanField(data, 'isMeta') ? { isMeta: true } : {}),
     ...(toolCalls ? { toolCalls } : {}),
     ...(contentParts ? { contentParts } : {}),
     ...(artifacts ? { artifacts } : {}),
@@ -405,6 +411,11 @@ export function applyConversationStreamEvent(
       {
         const turnData = normalizeTurnIdPayload(event.data);
         const turnId = turnData.turnId || makeId();
+        if (turnData.isMeta) {
+          state.currentTurnMessageId = turnId;
+          state.committedAssistantMessageIds.delete(turnId);
+          break;
+        }
         const newMessage: Message = {
           id: turnId,
           role: 'assistant',
@@ -422,6 +433,7 @@ export function applyConversationStreamEvent(
       {
         const chunkData = normalizeStreamTextPayload(event.data);
         if (!chunkData?.content) break;
+        if (chunkData.isMeta) break;
         const targetMessageId = chunkData.turnId || state.currentTurnMessageId;
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
@@ -432,6 +444,8 @@ export function applyConversationStreamEvent(
           appendAssistantStreamDelta(actions, targetMessage.id, {
             content: chunkData.content,
           });
+        } else if (targetMessageId) {
+          break;
         } else {
           const lastMessage = getFreshMessages()[getFreshMessages().length - 1];
           if (lastMessage?.role === 'assistant') {
@@ -463,6 +477,7 @@ export function applyConversationStreamEvent(
       {
         const deltaData = normalizeMessageDeltaPayload(event.data);
         if (!deltaData?.text) break;
+        if (deltaData.isMeta) break;
         const targetMessageId = deltaData.messageId || deltaData.turnId || state.currentTurnMessageId;
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
@@ -488,6 +503,7 @@ export function applyConversationStreamEvent(
       {
         const snapshotData = normalizeMessageSnapshotPayload(event.data);
         if (!snapshotData) break;
+        if (snapshotData.isMeta) break;
         const targetMessageId = snapshotData.turnId || snapshotData.messageId || state.currentTurnMessageId;
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
@@ -507,6 +523,7 @@ export function applyConversationStreamEvent(
       {
         const decisionData = normalizeModelDecisionPayload(event.data);
         if (!decisionData) break;
+        if (isRecord(event.data) && getBooleanField(event.data, 'isMeta')) break;
         const targetMessageId = decisionData.turnId || state.currentTurnMessageId;
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
@@ -529,6 +546,19 @@ export function applyConversationStreamEvent(
         const targetMessage = targetMessageId
           ? getFreshMessages().find(m => m.id === targetMessageId)
           : getFreshMessages()[getFreshMessages().length - 1];
+
+        if (messageData.isMeta) {
+          if (targetMessage?.role === 'assistant') {
+            actions.setMessages(getFreshMessages().filter((message) => message.id !== targetMessage.id));
+          }
+          if (targetMessageId) {
+            state.committedAssistantMessageIds.add(targetMessageId);
+          }
+          if (messageData.id) {
+            state.committedAssistantMessageIds.add(messageData.id);
+          }
+          break;
+        }
 
         if (targetMessage?.role === 'assistant') {
           state.committedAssistantMessageIds.add(targetMessage.id);
@@ -574,6 +604,7 @@ export function applyConversationStreamEvent(
             toolCalls: mergedToolCalls,
             ...(messageData.reasoning !== undefined ? { reasoning: messageData.reasoning } : {}),
             ...(messageData.thinking !== undefined ? { thinking: messageData.thinking } : {}),
+            ...(messageData.isMeta !== undefined ? { isMeta: messageData.isMeta } : {}),
             ...(messageData.contentParts ? { contentParts: messageData.contentParts } : {}),
             ...(messageData.artifacts ? { artifacts: messageData.artifacts } : {}),
           });
@@ -585,6 +616,7 @@ export function applyConversationStreamEvent(
       {
         const reasoningData = normalizeStreamTextPayload(event.data);
         if (!reasoningData?.content) break;
+        if (reasoningData.isMeta) break;
         const targetMessageId = reasoningData.turnId || state.currentTurnMessageId;
         const targetMessage = targetMessageId
           ? getFreshMessages().find(m => m.id === targetMessageId)

@@ -169,6 +169,10 @@ export interface AgentRunOptions {
   reportStyle?: ReportStyle;
   agentOverrideId?: string | null;
   turnSystemContext?: string[];
+  /** 当前 run 写入同一模型历史，但不进入用户可见聊天历史。 */
+  historyVisibility?: 'visible' | 'meta';
+  /** 当前 run 禁用的工具名。用于后台/无人值守场景屏蔽交互工具。 */
+  deniedToolNames?: string[];
   toolScope?: import('../../shared/contract/conversationEnvelope').WorkbenchToolScope;
   executionIntent?: import('../../shared/contract/conversationEnvelope').ConversationExecutionIntent;
   runtimeInput?: import('../../shared/contract/conversationEnvelope').RuntimeInputIntent;

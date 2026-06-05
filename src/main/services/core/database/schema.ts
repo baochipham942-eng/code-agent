@@ -60,6 +60,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       attachments TEXT,
       compaction TEXT,
       metadata TEXT,
+      is_meta INTEGER NOT NULL DEFAULT 0,
       visibility TEXT NOT NULL DEFAULT 'active',
       hidden_by_rewind_id TEXT,
       hidden_at INTEGER,
@@ -74,6 +75,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE messages ADD COLUMN synced_at INTEGER`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN content_parts TEXT`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN metadata TEXT`, logger);
+  safeAlter(db, `ALTER TABLE messages ADD COLUMN is_meta INTEGER NOT NULL DEFAULT 0`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN compaction TEXT`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN visibility TEXT NOT NULL DEFAULT 'active'`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN hidden_by_rewind_id TEXT`, logger);
@@ -747,11 +749,20 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   `);
 
   // 自动同步 triggers — 任何往 messages 表写的代码路径都会被 catch
+  // Recreate insert/update triggers so existing DBs pick up meta/loop filtering.
+  db.exec(`
+    DROP TRIGGER IF EXISTS messages_ai_fts;
+    DROP TRIGGER IF EXISTS messages_au_fts;
+  `);
+
   // AFTER INSERT：新消息追加到 FTS
   db.exec(`
     CREATE TRIGGER IF NOT EXISTS messages_ai_fts AFTER INSERT ON messages BEGIN
       INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
-      VALUES (new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp);
+      SELECT new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp
+      WHERE COALESCE(new.is_meta, 0) = 0
+        AND COALESCE(new.content, '') NOT LIKE '%【循环模式 · 第%轮】%'
+        AND COALESCE(new.content, '') NOT LIKE '%[[LOOP_WAIT]]%';
     END
   `);
 
@@ -762,14 +773,29 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     END
   `);
 
-  // AFTER UPDATE OF content：只在 content 变化时刷新 FTS（tool_calls / tool_results
-  // 更新不触发，避免流式调用时的无效写）
+  // AFTER UPDATE OF content/is_meta：刷新 FTS；tool_calls / tool_results 更新不触发，
+  // 避免流式调用时的无效写。is_meta 变化时必须能把旧索引删掉。
   db.exec(`
-    CREATE TRIGGER IF NOT EXISTS messages_au_fts AFTER UPDATE OF content ON messages BEGIN
+    CREATE TRIGGER IF NOT EXISTS messages_au_fts AFTER UPDATE OF content, is_meta ON messages BEGIN
       DELETE FROM session_messages_fts WHERE message_id = old.id;
       INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
-      VALUES (new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp);
+      SELECT new.id, new.session_id, new.role, COALESCE(new.content, ''), new.timestamp
+      WHERE COALESCE(new.is_meta, 0) = 0
+        AND COALESCE(new.content, '') NOT LIKE '%【循环模式 · 第%轮】%'
+        AND COALESCE(new.content, '') NOT LIKE '%[[LOOP_WAIT]]%';
     END
+  `);
+
+  // Clean stale rows inserted before the triggers learned about hidden/meta loop turns.
+  db.exec(`
+    DELETE FROM session_messages_fts
+    WHERE message_id IN (
+      SELECT id
+      FROM messages
+      WHERE COALESCE(is_meta, 0) != 0
+        OR COALESCE(content, '') LIKE '%【循环模式 · 第%轮】%'
+        OR COALESCE(content, '') LIKE '%[[LOOP_WAIT]]%'
+    )
   `);
 
   // Turn Snapshots — 调试快照（与 CLIDatabaseService 共用同一张表）

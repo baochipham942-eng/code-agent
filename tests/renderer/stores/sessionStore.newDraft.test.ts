@@ -42,4 +42,22 @@ describe('findReusableNewSessionDraft', () => {
       workingDirectory: null,
     })).toBeNull();
   });
+
+  it('treats meta-only current messages as an unused draft', () => {
+    const draft = session({ id: 'draft-1' });
+
+    expect(findReusableNewSessionDraft({
+      sessions: [draft],
+      currentSessionId: 'draft-1',
+      messages: [{
+        id: 'meta-1',
+        role: 'user',
+        content: 'loop internal prompt',
+        timestamp: 1,
+        isMeta: true,
+      }],
+      todos: [],
+      workingDirectory: null,
+    })?.id).toBe('draft-1');
+  });
 });

@@ -86,6 +86,37 @@ describe('sessionStore Agent Engine metadata', () => {
     });
   });
 
+  it('does not append meta messages from hidden background runs', () => {
+    useSessionStore.setState({
+      sessions: [makeSession({ id: 'session-1' })],
+      currentSessionId: 'session-1',
+      messages: [],
+      streamSnapshot: {
+        sessionId: 'session-1',
+        turnId: 'meta-1',
+        content: 'hidden',
+        reasoning: '',
+        toolCalls: [],
+        estimatedTokens: 1,
+        timestamp: 1,
+        isFinal: false,
+        streamStatus: 'incomplete',
+      },
+    });
+
+    useSessionStore.getState().addMessage({
+      id: 'meta-1',
+      role: 'assistant',
+      content: 'hidden loop output',
+      timestamp: 1,
+      isMeta: true,
+    });
+
+    expect(useSessionStore.getState().messages).toEqual([]);
+    expect(useSessionStore.getState().streamSnapshot).toBeNull();
+    expect(useSessionStore.getState().sessions[0].messageCount).toBe(0);
+  });
+
   it('updates session engine metadata without switching the model provider', async () => {
     const existing = makeSession({
       id: 'session-1',

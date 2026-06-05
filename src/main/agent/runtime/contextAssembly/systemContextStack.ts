@@ -145,6 +145,10 @@ export function inferBufferedSystemMessageCategory(ctx: ContextAssemblyCtx, cont
 }
 
 export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Message): Promise<void> {
+  if (ctx.runtime.historyVisibility === 'meta') {
+    message.isMeta = true;
+  }
+
   ctx.runtime.messages.push(message);
   ctx.recordContextEventsForMessage(message);
 

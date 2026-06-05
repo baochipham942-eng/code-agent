@@ -123,6 +123,54 @@ describe('MessageProcessor persistence', () => {
     expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith('runtime-session-1', ctx.messages[0]);
   });
 
+  it('marks denied-tool stop messages as meta when the run history is hidden', async () => {
+    const persistedMessages: unknown[] = [];
+    const ctx = {
+      deniedToolNames: ['AskUserQuestion'],
+      toolCallRetryCount: 0,
+      maxToolCallRetries: 0,
+      effortLevel: 'medium',
+      historyVisibility: 'meta',
+      currentTurnId: 'turn-1',
+      currentSystemPromptHash: 'hash-1',
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+    };
+    const contextAssembly = {
+      injectSystemMessage: vi.fn(),
+      generateId: vi.fn(() => 'assistant-denied-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        persistedMessages.push(message);
+      }),
+    };
+    const processor = createProcessor(ctx, contextAssembly);
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '',
+        toolCalls: [{ id: 'tool-1', name: 'AskUserQuestion', arguments: { question: 'continue?' } }],
+      } as ModelResponse,
+      false,
+      1,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('break');
+    expect(persistedMessages[0]).toMatchObject({
+      id: 'assistant-denied-1',
+      role: 'assistant',
+      isMeta: true,
+    });
+    expect(ctx.onEvent).toHaveBeenCalledWith({
+      type: 'message',
+      data: expect.objectContaining({
+        id: 'assistant-denied-1',
+        isMeta: true,
+      }),
+    });
+  });
+
   it('does not persist tool results when the run is cancelled after execution returns', async () => {
     const ctx = {
       sessionId: 'runtime-session-1',

@@ -13,6 +13,7 @@ import {
   getAllToolDefinitions,
 } from '../../../tools/dispatch/toolDefinitions';
 import { filterToolDefinitionsByWorkbenchScope } from '../../../tools/workbenchToolScope';
+import { filterToolsByRunPolicy } from '../toolRunPolicy';
 import {
   stripImagesFromMessages,
   extractUserRequestText,
@@ -276,6 +277,7 @@ function emitAssistantMessageDelta(
       turnId: ctx.runtime.currentTurnId,
       messageId: ctx.runtime.currentTurnId,
       deltaSeq: ++ctx.runtime.messageDeltaSeq,
+      ...(ctx.runtime.historyVisibility === 'meta' ? { isMeta: true } : {}),
     },
   });
 }
@@ -398,7 +400,10 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     logger.debug('Tools:', tools.map((t) => t.name));
   }
 
-  tools = filterToolDefinitionsByWorkbenchScope(tools, ctx.runtime.toolScope);
+  tools = filterToolsByRunPolicy(
+    filterToolDefinitionsByWorkbenchScope(tools, ctx.runtime.toolScope),
+    ctx.runtime,
+  );
   if (isArtifactRepairMode(ctx)) {
     const before = tools.length;
     const phase = ctx.runtime.artifactRepairGuard?.phase ?? 'initial_repair';

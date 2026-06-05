@@ -32,6 +32,7 @@ interface EventEnvelopeMeta {
 interface StreamTextBuffer {
   type: StreamTextEventType;
   content: string;
+  isMeta?: boolean;
   role?: 'assistant';
   path?: 'content' | 'reasoning';
   op?: 'append';
@@ -125,6 +126,7 @@ export class EventBatcher<TEvent extends AgentEvent = AgentEvent> {
         messageId?: string;
         deltaSeq?: number;
         parentToolUseId?: string;
+        isMeta?: boolean;
       };
       const content = event.type === 'message_delta' ? data.text : data.content;
       const meta = getEventEnvelopeMeta(event);
@@ -143,6 +145,7 @@ export class EventBatcher<TEvent extends AgentEvent = AgentEvent> {
             this.streamTextBuffer.turnId !== data.turnId ||
             this.streamTextBuffer.messageId !== data.messageId ||
             this.streamTextBuffer.parentToolUseId !== data.parentToolUseId ||
+            this.streamTextBuffer.isMeta !== data.isMeta ||
             this.streamTextBuffer.meta.sessionId !== meta.sessionId
           )
         ) {
@@ -160,6 +163,7 @@ export class EventBatcher<TEvent extends AgentEvent = AgentEvent> {
             messageId: data.messageId,
             deltaSeq: data.deltaSeq,
             parentToolUseId: data.parentToolUseId,
+            isMeta: data.isMeta,
             meta,
           };
         }
@@ -272,6 +276,7 @@ export class EventBatcher<TEvent extends AgentEvent = AgentEvent> {
             messageId: buffered.messageId,
             ...(buffered.deltaSeq !== undefined ? { deltaSeq: buffered.deltaSeq } : {}),
             parentToolUseId: buffered.parentToolUseId,
+            ...(buffered.isMeta ? { isMeta: true } : {}),
           },
           ...(hasEnvelopeMeta(buffered.meta) ? buffered.meta : {}),
         } as TEvent);
@@ -282,6 +287,7 @@ export class EventBatcher<TEvent extends AgentEvent = AgentEvent> {
             content: buffered.content,
             turnId: buffered.turnId,
             parentToolUseId: buffered.parentToolUseId,
+            ...(buffered.isMeta ? { isMeta: true } : {}),
           },
           ...(hasEnvelopeMeta(buffered.meta) ? buffered.meta : {}),
         } as TEvent);

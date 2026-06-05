@@ -50,6 +50,7 @@ function createSchema(db: BetterSqlite3.Database): void {
         synced_at INTEGER,
         content_parts TEXT,
         metadata TEXT,
+        is_meta INTEGER NOT NULL DEFAULT 0,
         compaction TEXT,
         visibility TEXT NOT NULL DEFAULT 'active',
         hidden_by_rewind_id TEXT,
@@ -121,6 +122,34 @@ describe('SessionRepository runtime recovery state', () => {
     db = new Database(':memory:');
     createSchema(db);
     repo = new SessionRepository(db);
+  });
+
+  it('keeps meta messages in model history but excludes them from visible session counts', () => {
+    const visibleUser: Message = {
+      id: 'visible-user',
+      role: 'user',
+      content: 'hello',
+      timestamp: 10,
+    };
+    const metaUser: Message = {
+      id: 'meta-user',
+      role: 'user',
+      content: 'loop internal prompt',
+      timestamp: 20,
+      isMeta: true,
+    };
+
+    repo.addMessage('session-1', visibleUser);
+    repo.addMessage('session-1', metaUser);
+
+    const session = repo.getSession('session-1');
+    expect(session?.messageCount).toBe(1);
+    expect(session?.turnCount).toBe(1);
+    expect(repo.getMessageCount('session-1')).toBe(1);
+
+    const messages = repo.getMessages('session-1');
+    expect(messages).toHaveLength(2);
+    expect(messages[1]).toMatchObject({ id: 'meta-user', isMeta: true });
   });
 
   afterEach(() => {

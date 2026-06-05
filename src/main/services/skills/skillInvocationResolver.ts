@@ -322,6 +322,7 @@ export async function buildSkillInvocationContext(
     contextModifier.toolBoundary = {
       skillName: skill.name,
       allowedTools: skill.allowedTools,
+      strict: skill.strictToolset === true,
     };
     // 扩权：仅 builtin/plugin skill 的边界内工具可免审批
     if (canSkillAutoPreApproveTools(skill)) {

@@ -63,6 +63,28 @@ describe('propose_role tool', () => {
     expect(event.data.drafts[0].tools).toEqual(['WebSearch', 'WebFetch']);
   });
 
+  it('改已有角色：带 editingRoleId → 入队不拒同名 + 事件透传 editingRoleId', async () => {
+    // 预置一个真实存在的持久化角色
+    await fs.mkdir(path.join(mockConfigDir.dir, 'roles', '研究员'), { recursive: true });
+    const handler = proposeRoleModule.createHandler();
+    const ctx = makeCtx();
+    const result = await handler.execute(
+      {
+        roleId: '研究员',
+        editingRoleId: '研究员',
+        description: '升级版研究员',
+        tools: ['Read', 'WebSearch'],
+        systemPrompt: '你是升级版研究员',
+      },
+      ctx as never,
+      allow as never,
+    );
+    expect(result.ok).toBe(true);
+    expect(ctx.emit).toHaveBeenCalledTimes(1);
+    const event = (ctx.emit as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(event.data.drafts[0].editingRoleId).toBe('研究员');
+  });
+
   it('缺 systemPrompt → INVALID_ARGS，不发事件', async () => {
     const handler = proposeRoleModule.createHandler();
     const ctx = makeCtx();

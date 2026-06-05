@@ -112,6 +112,7 @@ import { goalTokensUsedWithSwarm, maybeInjectSwarmGuidance } from './swarmGoalIn
 import {
   buildSkillInvocationContext,
   resolveSkillInvocation,
+  type ResolvedSkillInvocation,
 } from '../../services/skills/skillInvocationResolver';
 import {
   hasActiveSessionTodos,
@@ -122,6 +123,8 @@ import {
 
 
 const logger = createLogger('AgentLoop');
+
+const STICKY_STRICT_SKILL_NAMES = new Set(['create-role', 'edit-role']);
 
 // Re-export types for backward compatibility
 export type { AgentLoopConfig };
@@ -781,7 +784,9 @@ export class ConversationRuntime {
       !startupTaskFeatures.isFuzzyCodeReview &&
       !startupTaskFeatures.isFuzzyTroubleshooting;
     try {
-      const skillInvocation = await resolveSkillInvocation(userMessage, this.ctx.workingDirectory);
+      const skillInvocation =
+        await resolveSkillInvocation(userMessage, this.ctx.workingDirectory)
+        ?? await this.resolveStickyStrictSkillInvocation(userMessage);
       if (skillInvocation) {
         const skillContext = await buildSkillInvocationContext(skillInvocation, this.ctx.workingDirectory);
         this.ctx.activeSkillInvocation = {
@@ -1132,6 +1137,53 @@ export class ConversationRuntime {
     }
 
     return { langfuse, isSimpleTask, genNum };
+  }
+
+  private async resolveStickyStrictSkillInvocation(userMessage: string): Promise<ResolvedSkillInvocation | null> {
+    if (userMessage.trim().startsWith('/')) {
+      return null;
+    }
+
+    const seed = this.findLatestStrictSkillSeed();
+    if (!seed) {
+      return null;
+    }
+
+    const invocation = await resolveSkillInvocation(seed, this.ctx.workingDirectory);
+    if (!invocation || !this.isStickyStrictSkill(invocation)) {
+      return null;
+    }
+
+    logger.info('[AgentLoop] Restored sticky strict skill invocation from session history', {
+      skillName: invocation.skill.name,
+      matchKind: invocation.matchKind,
+      matchedText: invocation.matchedText,
+    });
+    logCollector.agent('INFO', `Sticky strict skill invocation restored: ${invocation.skill.name}`, {
+      matchKind: invocation.matchKind,
+      matchedText: invocation.matchedText,
+    });
+
+    return invocation;
+  }
+
+  private findLatestStrictSkillSeed(): string | null {
+    for (let i = this.ctx.messages.length - 1; i >= 0; i--) {
+      const msg = this.ctx.messages[i];
+      if (!msg || msg.role !== 'user' || msg.visibility === 'rewound') {
+        continue;
+      }
+      const text = msg.content.trim();
+      if (/^\/(?:create-role|edit-role)(?:\s|$)/.test(text)) {
+        return text;
+      }
+    }
+    return null;
+  }
+
+  private isStickyStrictSkill(invocation: ResolvedSkillInvocation): boolean {
+    return invocation.skill.strictToolset === true
+      && STICKY_STRICT_SKILL_NAMES.has(invocation.skill.name);
   }
 
   // ========================================================================

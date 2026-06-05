@@ -50,6 +50,15 @@ export const proposeRoleSchema: ToolSchema = {
           'The role system prompt (markdown). Describe its expertise, working principles, and output format. ' +
           'This is the body of agents/<roleId>.md after frontmatter.',
       },
+      editingRoleId: {
+        type: 'string',
+        description:
+          'EDIT MODE ONLY. Set this to the id of an EXISTING persistent role when the user wants to MODIFY it ' +
+          '(change its description/tools/system prompt) instead of creating a new one. ' +
+          'It must equal roleId (renaming is not supported yet — keep the same name). ' +
+          'When set, confirming overwrites the role definition but NEVER touches the role\'s accumulated memories or history. ' +
+          'Omit this field entirely when creating a brand-new role.',
+      },
     },
     required: ['roleId', 'systemPrompt'],
   },

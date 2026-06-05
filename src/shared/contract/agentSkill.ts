@@ -18,6 +18,8 @@ export interface SkillFrontmatter {
   // Claude Code 扩展字段
   'disable-model-invocation'?: boolean;
   'user-invocable'?: boolean;
+  /** opt-in 严格工具集：激活时模型只看得见 allowed-tools 的工具（隐藏 core Edit/Write 等） */
+  'strict-toolset'?: boolean;
   model?: string;
   context?: 'fork' | 'inline';
   agent?: string;
@@ -63,6 +65,12 @@ export interface ParsedSkill {
   allowedTools: string[];
   disableModelInvocation: boolean;
   userInvocable: boolean;
+  /**
+   * opt-in 严格工具集（frontmatter: strict-toolset）：true 时该 skill 激活期间模型只看得见
+   * allowedTools 里的工具，边界外工具（含 core 的 Edit/Write/Bash）不发给模型。
+   * 用于必须强约束工具选择的 meta skill（edit-role/create-role）。默认 false。
+   */
+  strictToolset?: boolean;
   model?: string;
   executionContext: 'fork' | 'inline';
   agent?: string;
@@ -137,6 +145,13 @@ export interface SkillToolBoundary {
   skillName: string;
   /** 边界内的工具列表（支持 Bash(git:*) 前缀模式） */
   allowedTools: string[];
+  /**
+   * opt-in 严格工具集：true 时把模型**可见**工具集硬收缩到 allowedTools（边界外工具
+   * 直接不发给模型），而非 GAP-001 默认的「可见但调用强制审批」软边界。
+   * 用于 meta skill（edit-role/create-role），防止弱模型抓 core 工具（Edit/Write）绕过
+   * skill 设计的流程（如 propose_role 确认卡）。仅对显式开启的 skill 生效。
+   */
+  strict?: boolean;
 }
 
 /**

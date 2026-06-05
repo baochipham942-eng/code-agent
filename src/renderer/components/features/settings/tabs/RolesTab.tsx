@@ -4,8 +4,9 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Brain, FileText, History, RefreshCw, Trash2, Pencil, X, Check, AlarmClock, UserPlus } from 'lucide-react';
+import { ArrowLeft, Brain, FileText, History, RefreshCw, Trash2, Pencil, X, Check, AlarmClock, UserPlus, MessageSquarePlus } from 'lucide-react';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
+import { startEditRoleChat } from '../../../../utils/startEditRoleChat';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { RolePanelEntry, RolePanelDetail, RolePanelMemory, RoleProactivityLevel } from '@shared/contract/roleAssets';
 import type { SkillCategory } from '@shared/contract/skillRepository';
@@ -394,10 +395,20 @@ const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, icon, onBack })
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800 text-zinc-300">
           <RoleIcon name={icon} className="h-7 w-7" />
         </div>
-        <div>
+        <div className="min-w-0 flex-1">
           <h3 className="text-base font-medium text-zinc-200">{roleId}</h3>
           <p className="text-xs text-zinc-500">持久化角色 — 记忆与履历归你所有</p>
         </div>
+        {/* 对话式修改：起会话改这个角色的定义/工具/提示词（只换定义，不动记忆履历） */}
+        <button
+          type="button"
+          onClick={() => void startEditRoleChat(roleId)}
+          title="用对话修改这个角色（改描述 / 工具 / 系统提示词）"
+          className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/25"
+        >
+          <MessageSquarePlus className="h-3.5 w-3.5" />
+          对话式修改
+        </button>
       </header>
 
       {loading ? <div className="text-sm text-zinc-500">加载中…</div> : null}

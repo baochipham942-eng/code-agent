@@ -41,6 +41,8 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
     const description = typeof args.description === 'string' ? args.description.trim() : '';
     const category = typeof args.category === 'string' ? (args.category as SkillCategory) : undefined;
     const tools = toStringArray(args.tools);
+    const editingRoleId =
+      typeof args.editingRoleId === 'string' && args.editingRoleId.trim() ? args.editingRoleId.trim() : undefined;
 
     if (!roleId) {
       return { ok: false, error: 'roleId is required', code: 'INVALID_ARGS' };
@@ -66,6 +68,7 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
       tools,
       systemPrompt,
       sessionId: ctx.sessionId,
+      editingRoleId,
     });
 
     if (!draft) {
@@ -85,6 +88,7 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
             description: draft.description,
             category: draft.category,
             tools: draft.tools,
+            editingRoleId: draft.editingRoleId,
           },
         ],
       },
@@ -94,18 +98,20 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
     onProgress?.({ stage: 'completing', percent: 100 });
 
     const toolsLine = tools.length > 0 ? tools.join(', ') : '（默认全集）';
+    const verb = editingRoleId ? '修改' : '创建';
     return {
       ok: true,
       output:
-        `已为「${draft.roleId}」生成草稿，确认卡已弹出，等待用户点击确认。\n` +
+        `已为「${draft.roleId}」生成${editingRoleId ? '修改' : ''}草稿，确认卡已弹出，等待用户点击确认。\n` +
         `- 描述：${draft.description || '（无）'}\n` +
         `- 工具：${toolsLine}\n` +
-        `请告诉用户：可以直接确认创建，或继续提出修改（你会重新起草）。在用户确认前不要重复调用本工具，除非用户要求改动。`,
+        `请告诉用户：可以直接确认${verb}，或继续提出修改（你会重新起草）。在用户确认前不要重复调用本工具，除非用户要求改动。`,
       meta: {
         draftId: draft.id,
         roleId: draft.roleId,
         category: draft.category,
         tools: draft.tools,
+        editingRoleId: draft.editingRoleId,
       },
     };
   }

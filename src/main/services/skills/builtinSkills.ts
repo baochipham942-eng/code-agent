@@ -1252,6 +1252,56 @@ end tell
 - 访谈要短：用户烦被盘问，能推断就别问。`,
     basePath: '',
     allowedTools: ['propose_role', 'ask_user_question', 'read_file', 'glob', 'grep'],
+    // 严格工具集：只暴露上面这些工具，隐藏 core 的 Edit/Write，逼模型走 propose_role 确认卡
+    strictToolset: true,
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'builtin',
+    loaded: true,
+  },
+  {
+    name: 'edit-role',
+    description:
+      '对话式修改一个已存在的持久化角色（改它的描述、工具白名单或系统提示词）。先读取现有定义，访谈要改什么，重新起草让用户确认。' +
+      '触发词：修改角色、编辑角色、改一下XX角色、调整角色、edit role。注意：是改已有角色，不是新建。',
+    promptContent: `你现在进入「改角色」流程：通过对话帮用户修改一个**已存在的**持久化角色。
+只换角色定义（agents/<名字>.md：描述 / 工具 / 系统提示词），**绝不动**该角色已经积累的记忆和工作履历——那是用户的资产。
+
+## 你的工作方式
+
+你是「角色架构师」。由你读现状、访谈、起草、解释，用户只需自然语言描述要改什么并确认。
+
+### 1. 先载入现有定义（必做）
+要修改的角色名由本次调用的参数给出（消息末尾的 "User provided arguments: <角色名>"；若没有则看用户消息里点名的角色）。
+先用 \`read_file\` 读它的当前定义：\`~/.code-agent/agents/<角色名>.md\`（角色名可中文，原样填，不要翻译/改写）。
+读到后，简要复述它现在是什么样（描述 / 有哪些工具 / 大致职责），让用户在已知现状的基础上提改动。
+如果读不到（路径不对或角色不存在），告诉用户没找到这个角色，让他确认名字。
+
+### 2. 访谈要改什么（简短）
+基于现有定义问清楚改动点：改描述？加 / 减哪些能力（工具）？调整工作准则或语气？能从用户已说的话推断就别再问。
+
+### 3. 起草并调用 propose_role（带 editingRoleId）
+把"现有定义 + 用户的改动"合并成完整的新定义，调用 \`propose_role\`，并且**必须带上 \`editingRoleId\`**：
+- **editingRoleId**：等于被修改角色的名字（与 roleId 相同——本期不支持改名）
+- **roleId**：保持与 editingRoleId 一致（不要改名；用户若想改名，告诉他本期暂不支持）
+- **description / category / tools / systemPrompt**：合并后的完整新定义（不是只填改动的部分——是整份覆盖）
+  - tools 取最小够用集，增减能力时用一句话告诉用户你动了哪些（尤其 Bash / 写文件这种高权限）
+\`propose_role\` 会生成**修改草稿**并在聊天里弹出确认卡。草稿不会自动入库。
+
+### 4. 迭代与确认
+- 工具返回后告诉用户："修改草稿好了，你可以直接点确认修改，或继续告诉我要再改什么。"
+- 用户要再改 → 重新调用 \`propose_role\`（仍带 editingRoleId）。
+- **不要替用户点确认**——确认只能由用户在卡片上操作。
+
+## 红线
+- 只改定义，绝不动角色记忆 / 履历（那是用户积累的资产，确认落盘只覆盖 agents/<名字>.md）。
+- 不支持改名：editingRoleId 必须等于 roleId，想改名直接告诉用户本期不支持。
+- 严禁自动落盘：你只负责读现状 + 起草（propose_role），确认由用户在卡片上完成。`,
+    basePath: '',
+    allowedTools: ['propose_role', 'read_file', 'ask_user_question', 'glob', 'grep'],
+    // 严格工具集：只暴露上面这些工具，隐藏 core 的 Edit/Write，逼模型走 propose_role 确认卡
+    strictToolset: true,
     disableModelInvocation: false,
     userInvocable: true,
     executionContext: 'inline',
@@ -1266,7 +1316,7 @@ end tell
 //
 // 单一真理源：分类写在这里（skill 自带分类），renderer 的"已安装"页据此把内置组
 // 二次分组成产物分类。与 skillCatalog.ts 的 RECOMMENDED_SKILLS（安装推荐层）解耦——
-// 这里覆盖全部 17 个内置 skill（含未进推荐目录的 dev 类 commit/review/test/...）。
+// 这里覆盖全部 18 个内置 skill（含未进推荐目录的 dev 类 commit/review/test/...）。
 // 新增内置 skill 时在此补一行；缺映射的 skill 前端归入"其他"。
 const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
   // 开发工程
@@ -1292,6 +1342,7 @@ const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
   'image-ocr-search': 'automation',
   'photo-archive': 'automation',
   'create-role': 'automation',
+  'edit-role': 'automation',
 };
 
 // 一次性把分类回填到 metadata.category（idempotent；所有 getter 共享同一引用）

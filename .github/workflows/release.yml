@@ -248,6 +248,42 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Upload dmg to Aliyun OSS (versioned)
+        # dmg 此前只进 GitHub Release；私有仓库匿名下不了，in-app updater 需从 OSS 取，故也传一份。
+        # ~/.ossutilconfig 由前面 "Upload tar.gz + sig to OSS" 步骤写好，同 job 持久，无需重写。
+        env:
+          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          DMG_SRC="$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -1)"
+          ossutil cp -f "${DMG_SRC}" \
+            "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/Agent-Neo-${VERSION}-arm64.dmg"
+
+      - name: Promote to stable channel (latest.json + release.json)
+        # 提升 stable = 把全体用户推到新版（Tauri updater 端点读 stable/latest.json；
+        # in-app updater 经 Vercel updateMetadata 读 stable/release.json）。
+        # 仅对正式 tag（无 - 后缀）执行；预发布 tag（如 v0.16.x-citest1）不碰全员分发——
+        # 与上面 make_latest/prerelease 同一道闸，替代历来手动 bump OSS stable 的人工确认。
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+          ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Tauri 内置 updater：把已指向 OSS v<ver> 的 manifest 提升为 stable
+          ossutil cp -f src-tauri/target/release/bundle/latest.json \
+            "oss://${ALIYUN_OSS_BUCKET}/stable/latest.json"
+          # in-app updater：生成 GitHub-release 形状（dmg 指向 OSS）并提升为 stable
+          DMG_URL="https://${ALIYUN_OSS_BUCKET}.oss-${ALIYUN_OSS_REGION}.aliyuncs.com/v${VERSION}/Agent-Neo-${VERSION}-arm64.dmg"
+          node scripts/build-stable-release-json.mjs \
+            --version "${VERSION}" \
+            --tag "${GITHUB_REF_NAME}" \
+            --dmg-url "${DMG_URL}" \
+            --html-url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}" \
+            --output "${RUNNER_TEMP}/stable-release.json"
+          ossutil cp -f "${RUNNER_TEMP}/stable-release.json" \
+            "oss://${ALIYUN_OSS_BUCKET}/stable/release.json"
+
       - name: Publish optional update metadata to Cloud API
         env:
           CLOUD_API_URL: ${{ secrets.CLOUD_API_URL }}

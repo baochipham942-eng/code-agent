@@ -58,6 +58,37 @@ export interface Database {
         };
         Relationships: [];
       };
+      control_plane_entitlements: {
+        Row: {
+          user_id: string;
+          status: 'active' | 'trial' | 'expired' | 'revoked';
+          plan: string;
+          capabilities: string[];
+          expires_at: string | null;
+          reason: string | null;
+          created_at: string;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          user_id: string;
+          status?: 'active' | 'trial' | 'expired' | 'revoked';
+          plan?: string;
+          capabilities?: string[];
+          expires_at?: string | null;
+          reason?: string | null;
+          updated_by?: string | null;
+        };
+        Update: {
+          status?: 'active' | 'trial' | 'expired' | 'revoked';
+          plan?: string;
+          capabilities?: string[];
+          expires_at?: string | null;
+          reason?: string | null;
+          updated_by?: string | null;
+        };
+        Relationships: [];
+      };
       devices: {
         Row: {
           id: string;

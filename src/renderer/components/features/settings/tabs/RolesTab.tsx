@@ -4,7 +4,8 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Brain, FileText, History, RefreshCw, Trash2, Pencil, X, Check, AlarmClock } from 'lucide-react';
+import { ArrowLeft, Brain, FileText, History, RefreshCw, Trash2, Pencil, X, Check, AlarmClock, UserPlus } from 'lucide-react';
+import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { RolePanelEntry, RolePanelDetail, RolePanelMemory, RoleProactivityLevel } from '@shared/contract/roleAssets';
 import type { SkillCategory } from '@shared/contract/skillRepository';
@@ -527,14 +528,24 @@ export const RolesTab: React.FC = () => {
       <SettingsSection
         title={`持久化角色（${entries.length}）`}
         actions={
-          <button
-            type="button"
-            onClick={() => void loadList()}
-            title="刷新"
-            className="rounded p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700/60 hover:text-zinc-200"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void startCreateRoleChat()}
+              className="flex items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/25"
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+              新建角色
+            </button>
+            <button
+              type="button"
+              onClick={() => void loadList()}
+              title="刷新"
+              className="rounded p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700/60 hover:text-zinc-200"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </button>
+          </div>
         }
       >
         {loading ? <div className="text-sm text-zinc-500">加载中…</div> : null}

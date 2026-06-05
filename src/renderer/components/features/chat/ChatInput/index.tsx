@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { AlertTriangle, Image, FileText, Clock3, CornerDownRight, X } from 'lucide-react';
+import { AlertTriangle, Image, FileText, Clock3, CornerDownRight, X, UserPlus } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import type { ConversationEnvelope, RuntimeInputMode } from '@shared/contract/conversationEnvelope';
 import { getModelDisplayLabel, MODEL_FEATURES, UI } from '@shared/constants';
@@ -33,6 +33,8 @@ import { useSwarmStore } from '../../../../stores/swarmStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { ComboSkillCard } from './ComboSkillCard';
 import { SkillDraftNotifications } from './SkillDraftCard';
+import { RoleDraftNotifications } from './RoleDraftCard';
+import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import { CapabilitySuggestionStrip } from './CapabilitySuggestionStrip';
 import { useSkillRecommendations } from './useSkillRecommendations';
 import { useAppStore } from '../../../../stores/appStore';
@@ -930,6 +932,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         )}
 
         <SkillDraftNotifications />
+        <RoleDraftNotifications />
 
         {/* Suggestion Bar - show when input is empty */}
         {value.trim().length === 0 && suggestions.length > 0 && (
@@ -957,6 +960,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               setShowSlashPopover(false);
               if (cmd.id === 'agent') {
                 openAgentCommand();
+                return;
+              }
+              if (cmd.id === 'create-role') {
+                // 对话式建角色：起新会话 + 发种子消息触发 create-role skill
+                setValue('');
+                void startCreateRoleChat();
                 return;
               }
               if (cmd.id === 'goal') {
@@ -1001,6 +1010,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                   </div>
                 </button>
               ))}
+              {/* 角色名单底部"招新"：对话式建角色入口（role-creation-flow §7） */}
+              <button
+                type="button"
+                onClick={() => { setValue(''); void startCreateRoleChat(); }}
+                className="flex w-full items-center gap-1.5 border-t border-zinc-800 px-3 py-2 text-left text-xs text-emerald-300 transition-colors hover:bg-emerald-500/10"
+              >
+                <UserPlus className="h-3.5 w-3.5 shrink-0" />
+                新建角色…
+              </button>
             </div>
           )}
           {/* @ File autocomplete dropdown */}

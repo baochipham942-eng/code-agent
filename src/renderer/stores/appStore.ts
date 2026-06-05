@@ -152,6 +152,8 @@ interface AppState {
   showSettings: boolean;
   settingsInitialTab: SettingsTab | null; // 打开设置时默认选中的 Tab
   settingsMemoryFocus: SettingsMemoryFocus | null;
+  // 对话式建角色：待发送的种子消息（入口触发，ChatView 在新会话就绪后自动发出）
+  pendingRoleChatSeed: string | null;
   showPromptManager: boolean;
   showWorkspace: boolean;
   taskPanelTab: TaskPanelTab;
@@ -248,6 +250,7 @@ interface AppState {
 
   // Actions
   setShowSettings: (show: boolean) => void;
+  setPendingRoleChatSeed: (seed: string | null) => void;
   openSettingsTab: (tab: SettingsTab) => void; // 打开设置并跳转到指定 Tab
   openMemorySettings: (focus?: Omit<SettingsMemoryFocus, 'nonce'>) => void;
   clearSettingsInitialTab: () => void; // 清除初始 Tab（设置页使用后调用）
@@ -365,6 +368,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showSettings: false,
   settingsInitialTab: null,
   settingsMemoryFocus: null,
+  pendingRoleChatSeed: null,
   showPromptManager: false,
   showWorkspace: false,
   taskPanelTab: 'monitor',
@@ -447,6 +451,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // Actions
   setShowSettings: (show) => set({ showSettings: show }),
+  setPendingRoleChatSeed: (seed) => set({ pendingRoleChatSeed: seed }),
   setShowPromptManager: (show) => set({ showPromptManager: show }),
   openSettingsTab: (tab) => set({ showSettings: true, settingsInitialTab: tab, settingsMemoryFocus: null }),
   openMemorySettings: (focus) => set({

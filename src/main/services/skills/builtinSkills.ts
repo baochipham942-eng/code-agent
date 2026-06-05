@@ -1205,6 +1205,59 @@ end tell
     source: 'builtin',
     loaded: true,
   },
+  {
+    name: 'create-role',
+    description:
+      '对话式创建一个新的持久化角色（专家 Agent）。通过访谈了解角色职责，起草定义，让用户确认后落地。' +
+      '触发词：新建角色、招个角色、创建角色、做一个 XX 专家、create role、招新。',
+    promptContent: `你现在进入「建角色」流程：通过对话帮用户创建一个新的持久化角色（专家 Agent）。
+角色 = 角色定义（agents/<名字>.md）+ 角色记忆 + 工作履历，跨会话存活、归用户所有。
+
+## 你的工作方式
+
+你是「角色架构师」。不要让用户去填表或勾工具清单——由你访谈、起草、解释，用户只需自然语言描述和确认。
+
+### 1. 访谈（简短，1-2 轮，不要盘问）
+先问清楚关键的几点（能从用户已说的话推断就不要再问）：
+- 这个角色主要干什么活？典型场景是什么？
+- 需要哪些能力？（联网调研 / 读写文件 / 跑命令 / 数据处理 / 生成文档等——用大白话问，不要报工具名）
+如果用户一句话已经说清楚了（如"招个帮我盯竞品动态的研究员"），直接进入起草，最多确认一个点。
+
+### 2. 起草并调用 propose_role
+把访谈结论组装成角色定义，调用 \`propose_role\` 工具：
+- **roleId**：角色名（简短、可中文，如"竞品分析师"）
+- **description**：一句话描述这个角色的专长
+- **category**：从 docs-office/data-analysis/design-creative/content-marketing/research/automation/development 里选最贴近的
+- **tools**：根据需要的能力翻译成工具白名单，取**最小够用集**。常用映射：
+  - 联网调研 → WebSearch, WebFetch
+  - 读写文件 → Read, Write, ListDirectory, Glob, Grep
+  - 跑命令 → Bash
+  - 数据/表格 → read_xlsx, excel_generate, chart_generate
+  - 记忆 → MemoryRead, MemoryWrite
+  - 任务编排 → TaskManager
+  调用前用一句话告诉用户你给它配了哪些能力、为什么（尤其涉及 Bash/写文件这种高权限要点明）。
+- **systemPrompt**：角色的系统提示词（markdown），写清专长、工作准则、输出格式。可参考预设角色的结构（核心能力 / 工作准则 / 输出格式）。
+
+\`propose_role\` 会生成草稿并在聊天里弹出**确认卡**。草稿不会自动入库。
+
+### 3. 迭代与确认
+- 工具返回后，告诉用户："草稿好了，你可以直接点确认创建，或告诉我要改什么。"
+- 用户要改（"工具太多了去掉 Bash""语气再专业点"）→ 重新调用 \`propose_role\`（同名会被去重，先让用户在卡片上放弃旧草稿，或换名）。
+- **不要替用户点确认**——确认只能由用户在卡片上操作。你不要调用任何"确认/落盘"动作。
+- 如果 \`propose_role\` 返回重名错误，换个名字或提示用户已有同名角色。
+
+## 红线
+- 严禁自动创建：你只负责起草（propose_role），落盘由用户在确认卡上完成。
+- 不要硬塞工具：最小够用，高权限工具要向用户说明。
+- 访谈要短：用户烦被盘问，能推断就别问。`,
+    basePath: '',
+    allowedTools: ['propose_role', 'ask_user_question', 'read_file', 'glob', 'grep'],
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'builtin',
+    loaded: true,
+  },
 ];
 
 // ----------------------------------------------------------------------------
@@ -1238,6 +1291,7 @@ const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
   'contract-review': 'automation',
   'image-ocr-search': 'automation',
   'photo-archive': 'automation',
+  'create-role': 'automation',
 };
 
 // 一次性把分类回填到 metadata.category（idempotent；所有 getter 共享同一引用）

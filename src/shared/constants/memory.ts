@@ -101,6 +101,9 @@ export const ROLE_ASSETS = {
   WRITE_BACK_CONTENT_MAX_CHARS: 4000,
   /** 注入块中履历最多保留的最近条数 */
   INJECT_HISTORY_MAX_ENTRIES: 10,
+  /** 角色草稿队列目录名（位于 ~/.code-agent/ 下，与 roles/ 平级，避免被 agentRegistry 扫描）。
+   *  对话式建角色：模型起草 → 落草稿 → 用户确认才写 agents/<id>.md（镜像 skill-drafts 范式）。 */
+  DRAFTS_DIR_NAME: 'role-drafts',
 } as const;
 
 /** 角色主动性（cadence 触发器 + 醒来循环，docs/designs/role-proactivity.md） */

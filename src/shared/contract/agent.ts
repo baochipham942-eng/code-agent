@@ -145,6 +145,18 @@ export interface SkillDraftPendingData {
   }>;
 }
 
+// role-creation-flow: 对话式建角色草稿待确认（propose_role 工具发射，聊天弹确认卡）
+export interface RoleDraftPendingData {
+  sessionId: string;
+  drafts: Array<{
+    id: string;
+    roleId: string;
+    description: string;
+    category?: string;
+    tools: string[];
+  }>;
+}
+
 // Deep Research 相关类型
 export type ResearchPhase = 'planning' | 'researching' | 'reporting' | 'complete' | 'error';
 
@@ -317,6 +329,8 @@ export type AgentEvent =
   | { type: 'memory_learned'; data: MemoryLearnedData }
   // GAP-005: Skill 蒸馏草稿待确认事件（session 结束学习产出，弹用户确认）
   | { type: 'skill_draft_pending'; data: SkillDraftPendingData }
+  // role-creation-flow: 对话式建角色草稿待确认事件
+  | { type: 'role_draft_pending'; data: RoleDraftPendingData }
   // Deep Research 事件
   | { type: 'research_mode_started'; data: ResearchModeStartedData }
   | { type: 'research_progress'; data: ResearchProgressData }

@@ -9,7 +9,7 @@ import {
   BarChart2, Settings, Keyboard, HelpCircle,
   Terminal, Cpu, Plug, Zap, ClipboardList,
   MessageCircleQuestion, ZapOff, Flame,
-  Lock, LockOpen, Bot, Sparkles, Server, Target, GitBranch,
+  Lock, LockOpen, Bot, Sparkles, Server, Target, GitBranch, UserPlus,
 } from 'lucide-react';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
@@ -221,6 +221,13 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: '选择 Agent',
       description: '输入 /agent coder 切换本轮 agent',
       icon: <Bot className="w-4 h-4" />,
+      action: () => {},
+    },
+    {
+      id: 'create-role',
+      label: '新建角色',
+      description: '对话式创建一个新的持久化角色（专家 Agent）',
+      icon: <UserPlus className="w-4 h-4" />,
       action: () => {},
     },
     {
@@ -442,7 +449,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
               {cmd.icon}
             </span>
             <div className="flex-1 min-w-0">
-              <span className="text-sm">/{cmd.id}</span>
+              <span className="text-sm">{cmd.label}</span>
+              <span className="text-[10px] font-mono text-zinc-600 ml-2">/{cmd.id}</span>
               <span className="text-xs text-zinc-500 ml-2">{cmd.description}</span>
             </div>
             {cmd.shortcut && (

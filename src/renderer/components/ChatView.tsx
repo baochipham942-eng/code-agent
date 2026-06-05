@@ -391,6 +391,16 @@ export const ChatView: React.FC = () => {
     return handleSendEnvelope(buildEnvelope(content, attachments));
   }, [buildEnvelope, handleSendEnvelope]);
 
+  // 对话式建角色：入口（RolesTab / AgentSwitcher）起新会话后写入种子消息，
+  // 这里在新会话就绪后自动发出可见的种子消息，触发 create-role skill。
+  const pendingRoleChatSeed = useAppStore((state) => state.pendingRoleChatSeed);
+  useEffect(() => {
+    if (!pendingRoleChatSeed || !currentSessionId || effectiveIsProcessing) return;
+    const seed = pendingRoleChatSeed;
+    useAppStore.getState().setPendingRoleChatSeed(null);
+    void handleSendMessage(seed);
+  }, [pendingRoleChatSeed, currentSessionId, effectiveIsProcessing, handleSendMessage]);
+
   const handleRequestPromptRewind = useCallback((messageId: string, content: string) => {
     if (!currentSessionId) return;
     if (effectiveIsProcessing) {

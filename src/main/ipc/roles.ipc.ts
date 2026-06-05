@@ -8,6 +8,9 @@
 // - action 'deleteMemory'   -> 删除一条角色记忆
 // - action 'updateMemory'   -> 编辑一条角色记忆（覆盖写）
 // - action 'setProactivity' -> 设置角色主动等级（写 settings + 立即同步 cadence cron）
+// - action 'listDrafts'     -> 列出待确认的角色草稿（对话式建角色）
+// - action 'confirmDraft'   -> 确认草稿：写 agents/<id>.md + 建 roles/<id>/（过安全闸）
+// - action 'rejectDraft'    -> 放弃草稿：删草稿目录
 // ============================================================================
 
 import * as fs from 'fs/promises';
@@ -25,6 +28,9 @@ import {
   writeScopedMemory,
   resolveRoleProactivityConfig,
   syncCadenceJobs,
+  listRoleDrafts,
+  confirmRoleDraft,
+  rejectRoleDraft,
 } from '../services/roleAssets';
 import { listAllAgents } from '../agent/agentRegistry';
 import { getAgentsMdDir } from '../config/configPaths';
@@ -54,6 +60,10 @@ interface UpdateMemoryPayload extends RoleIdPayload {
 interface SetProactivityPayload extends RoleIdPayload {
   level?: string;
   cadence?: string;
+}
+
+interface DraftIdPayload {
+  draftId?: string;
 }
 
 const PROACTIVITY_LEVELS: ReadonlySet<string> = new Set(['silent', 'daily', 'realtime']);
@@ -204,6 +214,35 @@ export function registerRolesHandlers(ipcMain: IpcMain): void {
             success: true,
             data: await handleSetProactivity(roleId, level as RoleProactivityLevel, cadence),
           };
+        }
+
+        // --- 对话式建角色：草稿队列（role-creation-flow） ---
+        case 'listDrafts': {
+          return { success: true, data: await listRoleDrafts() };
+        }
+
+        case 'confirmDraft': {
+          const { draftId } = (payload ?? {}) as DraftIdPayload;
+          if (!draftId) {
+            return { success: false, error: { code: 'INVALID_ARGS', message: 'draftId is required' } };
+          }
+          const result = await confirmRoleDraft(draftId);
+          if (!result.success) {
+            return { success: false, error: { code: 'CONFIRM_FAILED', message: result.error ?? 'confirm failed' } };
+          }
+          return { success: true, data: result };
+        }
+
+        case 'rejectDraft': {
+          const { draftId } = (payload ?? {}) as DraftIdPayload;
+          if (!draftId) {
+            return { success: false, error: { code: 'INVALID_ARGS', message: 'draftId is required' } };
+          }
+          const result = await rejectRoleDraft(draftId);
+          if (!result.success) {
+            return { success: false, error: { code: 'REJECT_FAILED', message: result.error ?? 'reject failed' } };
+          }
+          return { success: true, data: result };
         }
 
         default:

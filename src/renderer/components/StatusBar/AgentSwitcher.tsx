@@ -9,10 +9,9 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, Hammer, User, FolderTree, UserPlus } from 'lucide-react';
+import { Bot, Hammer, User, FolderTree } from 'lucide-react';
 import { useAgentRegistryStore } from '../../stores/agentRegistryStore';
 import { useAppStore } from '../../stores/appStore';
-import { startCreateRoleChat } from '../../utils/startCreateRoleChat';
 import type { AgentListEntry, AgentSource } from '@shared/contract/agentRegistry';
 
 const SOURCE_META: Record<AgentSource, { label: string; icon: React.ReactNode; badge: string }> = {
@@ -233,17 +232,6 @@ export function AgentSwitcher() {
             </button>
           </>
         )}
-        <div className="border-t border-zinc-700 my-1" />
-        <button
-          onClick={() => {
-            setOpen(false);
-            void startCreateRoleChat();
-          }}
-          className="flex w-full items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/15"
-        >
-          <UserPlus className="w-3 h-3" />
-          新建角色
-        </button>
       </div>
     ) : null;
 

@@ -154,6 +154,8 @@ export interface RoleDraftPendingData {
     description: string;
     category?: string;
     tools: string[];
+    /** 有值 = 对话式改已有角色（确认卡切「确认修改」文案；缺省 = 新建） */
+    editingRoleId?: string;
   }>;
 }
 

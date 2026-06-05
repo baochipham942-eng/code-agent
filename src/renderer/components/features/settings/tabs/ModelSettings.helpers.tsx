@@ -1,5 +1,6 @@
 import React from 'react';
 import type {
+  AppSettings,
   ModelConfig,
   ModelCapability,
   ModelEntrySettings,
@@ -53,6 +54,89 @@ export interface DiscoverModelsResult {
   }>;
   latencyMs: number;
   error?: { code: string; message: string; suggestion?: string };
+}
+
+export interface BuildProviderConfigForSaveOptions {
+  currentProviderConfig?: ModelProviderSettings;
+  baseUrl: string;
+  protocol?: ModelProviderProtocol;
+  displayName?: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  models?: Record<string, ModelEntrySettings>;
+  apiKey?: string;
+  needsApiKey: boolean;
+  hasStoredApiKey: boolean;
+  updatedAt?: number;
+}
+
+export function buildProviderConfigForSave({
+  currentProviderConfig,
+  baseUrl,
+  protocol,
+  displayName,
+  model,
+  temperature,
+  maxTokens,
+  models,
+  apiKey,
+  needsApiKey,
+  hasStoredApiKey,
+  updatedAt = Date.now(),
+}: BuildProviderConfigForSaveOptions): ModelProviderSettings {
+  const providerConfigWithoutKey: ModelProviderSettings = {
+    ...(currentProviderConfig ?? { enabled: true }),
+  };
+  delete providerConfigWithoutKey.apiKey;
+
+  const nextConfig: ModelProviderSettings = {
+    ...providerConfigWithoutKey,
+    enabled: true,
+    baseUrl,
+    protocol,
+    displayName,
+    model,
+    temperature,
+    maxTokens,
+    updatedAt,
+    models,
+    apiKeyConfigured: needsApiKey ? Boolean(apiKey?.trim() || hasStoredApiKey) : false,
+  };
+
+  if (apiKey?.trim()) {
+    nextConfig.apiKey = apiKey.trim();
+  }
+
+  return nextConfig;
+}
+
+export function buildProviderSettingsUpdate(
+  provider: ModelProvider,
+  providerConfig: ModelProviderSettings,
+): Partial<AppSettings> {
+  return {
+    models: {
+      providers: {
+        [provider]: providerConfig,
+      },
+    },
+  } as Partial<AppSettings>;
+}
+
+export function buildDefaultModelSettingsUpdate(
+  provider: ModelProvider,
+  providerConfig: ModelProviderSettings,
+): Partial<AppSettings> {
+  return {
+    models: {
+      default: provider,
+      defaultProvider: provider,
+      providers: {
+        [provider]: providerConfig,
+      },
+    },
+  } as Partial<AppSettings>;
 }
 
 export function renderModelOptions(models: Array<Pick<ProviderModelEntry, 'id' | 'label' | 'group'>>): React.ReactNode {

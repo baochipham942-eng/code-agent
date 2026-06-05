@@ -1,7 +1,7 @@
 // ============================================================================
 // ModelSettings - Model Configuration Tab
 //
-// Master-Detail 布局：左侧 Provider 列表（已配置 / 未配置分组）+ 右侧详情面板。
+// Master-Detail 布局：左侧 Provider 列表（已可用 / 待添加 Key 分组）+ 右侧详情面板。
 // 详情面板三段式：① 连接 → ② 模型 → ③ 高级（折叠）。
 // 所有保存 / 测试 / 发现 / 新增 handler 与重构前完全一致，仅 UI 结构重组。
 // ============================================================================
@@ -40,10 +40,12 @@ import ipcService from '../../../../services/ipcService';
 import { ProviderDoctorDialog } from '../ProviderDoctorDialog';
 import {
   buildManualModelSettings,
+  buildDefaultModelSettingsUpdate,
   buildLegacyLongCatProviderMigration,
+  buildProviderConfigForSave,
   buildProviderManagementRows,
+  buildProviderSettingsUpdate,
   createCustomProviderId,
-  getModelLabel,
   getProtocolLabel,
   hasCustomEndpointOverride,
   isModelMetadataLocked,
@@ -70,6 +72,11 @@ export interface ModelSettingsProps {
 const CAPABILITY_ICONS: Record<string, React.ReactNode> = { tool: <Wrench className="h-3 w-3" />, vision: <Eye className="h-3 w-3" />, reasoning: <Brain className="h-3 w-3" />, code: <Code2 className="h-3 w-3" />, fast: <Gauge className="h-3 w-3" /> };
 const MODEL_CAPABILITY_PICKER = MODEL_CAPABILITY_OPTIONS.filter((capability) => ['code', 'vision', 'reasoning', 'fast', 'longContext', 'search'].includes(capability.id));
 
+interface DefaultModelSelection {
+  provider: ModelProvider;
+  model: string;
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -88,6 +95,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const [modelSearch, setModelSearch] = useState('');
   const [manualModelId, setManualModelId] = useState('');
   const [manualModelLabel, setManualModelLabel] = useState('');
+  const [defaultSelection, setDefaultSelection] = useState<DefaultModelSelection>({
+    provider: config.provider,
+    model: config.model,
+  });
+  const [settingDefaultModelId, setSettingDefaultModelId] = useState<string | null>(null);
   const [newProviderName, setNewProviderName] = useState('');
   const [newProviderBaseUrl, setNewProviderBaseUrl] = useState('');
   const [newProviderApiKey, setNewProviderApiKey] = useState('');
@@ -117,6 +129,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       .then((settings) => {
         if (!cancelled) {
           setProviderConfigs(settings?.models?.providers ?? {});
+          const defaultProvider = (settings?.models?.defaultProvider || settings?.models?.default || config.provider) as ModelProvider;
+          const defaultProviderConfig = settings?.models?.providers?.[defaultProvider];
+          setDefaultSelection({
+            provider: defaultProvider,
+            model: defaultProviderConfig?.model || config.model,
+          });
         }
       })
       .catch((error: unknown) => {
@@ -174,7 +192,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   );
   const orderedProviderRows = useMemo(() => orderProviderManagementRows(providerRows), [providerRows]);
   const selectedProviderRow = providerRows.find((provider) => provider.selected);
-  const selectedModelLabel = getModelLabel(currentModels, config.model);
   const needsApiKey = providerRequiresApiKey(config.provider);
   const hasInputApiKey = Boolean(config.apiKey?.trim());
   const hasStoredApiKey = Boolean(currentProviderConfig?.apiKey || currentProviderConfig?.apiKeyConfigured);
@@ -306,16 +323,61 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     onChange({ ...config, protocol });
   }, [config, onChange, patchCurrentProviderConfig]);
 
-  const handleModelChange = useCallback((modelId: string) => {
+  const buildCurrentProviderConfigForSave = useCallback((modelId: string) => buildProviderConfigForSave({
+    currentProviderConfig,
+    baseUrl: effectiveBaseUrl,
+    protocol: effectiveProtocol,
+    displayName: currentProviderConfig?.displayName,
+    model: modelId,
+    temperature: config.temperature,
+    maxTokens: config.maxTokens,
+    models: currentProviderConfig?.models,
+    apiKey: config.apiKey,
+    needsApiKey,
+    hasStoredApiKey,
+  }), [
+    config.apiKey,
+    config.maxTokens,
+    config.temperature,
+    currentProviderConfig,
+    effectiveBaseUrl,
+    effectiveProtocol,
+    hasStoredApiKey,
+    needsApiKey,
+  ]);
+
+  const handleSetDefaultModel = useCallback(async (modelId: string) => {
     const selectedModel = currentModels.find((model) => model.id === modelId);
-    patchCurrentProviderConfig({ model: modelId });
-    onChange({
+    const nextConfig = {
       ...config,
       model: modelId,
       capabilities: selectedModel?.capabilities ?? config.capabilities,
       maxTokens: selectedModel?.maxTokens ?? config.maxTokens,
-    });
-  }, [config, currentModels, onChange, patchCurrentProviderConfig]);
+    };
+    const providerConfigForSave = buildCurrentProviderConfigForSave(modelId);
+
+    setSettingDefaultModelId(modelId);
+    try {
+      await ipcService.invokeDomain(
+        IPC_DOMAINS.SETTINGS,
+        'set',
+        buildDefaultModelSettingsUpdate(config.provider, providerConfigForSave)
+      );
+      patchCurrentProviderConfig({ model: modelId });
+      onChange(nextConfig);
+      setProviderConfigs((prev) => ({
+        ...prev,
+        [config.provider]: providerConfigForSave,
+      }));
+      setDefaultSelection({ provider: config.provider, model: modelId });
+      toast.success('默认模型已更新');
+    } catch (error) {
+      logger.error('Failed to set default model', error);
+      toast.error('默认模型保存失败: ' + (error instanceof Error ? error.message : '未知错误'));
+    } finally {
+      setSettingDefaultModelId(null);
+    }
+  }, [buildCurrentProviderConfigForSave, config, currentModels, onChange, patchCurrentProviderConfig]);
 
   const handleToggleModelEnabled = useCallback((model: RuntimeProviderModel, enabled: boolean) => {
     patchCurrentModelSettings(model, { enabled });
@@ -365,35 +427,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     setIsSaving(true);
     setSaveStatus('idle');
     try {
-      const currentProviderConfigWithoutKey: ModelProviderSettings = {
-        ...(currentProviderConfig ?? { enabled: true }),
-      };
-      delete currentProviderConfigWithoutKey.apiKey;
-      const providerConfigForSave: ModelProviderSettings = {
-        ...currentProviderConfigWithoutKey,
-        enabled: true,
-        baseUrl: effectiveBaseUrl,
-        protocol: effectiveProtocol,
-        displayName: currentProviderConfig?.displayName,
-        model: config.model,
-        temperature: config.temperature,
-        maxTokens: config.maxTokens,
-        updatedAt: Date.now(),
-        models: currentProviderConfig?.models,
-        apiKeyConfigured: needsApiKey ? Boolean(config.apiKey?.trim() || hasStoredApiKey) : false,
-      };
-      if (config.apiKey?.trim()) {
-        providerConfigForSave.apiKey = config.apiKey.trim();
-      }
+      const providerConfigForSave = buildCurrentProviderConfigForSave(currentProviderConfig?.model || config.model);
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
-        models: {
-          default: config.provider,
-          defaultProvider: config.provider,
-          providers: {
-            [config.provider]: providerConfigForSave,
-          },
-        },
-      } as Partial<AppSettings>);
+        ...buildProviderSettingsUpdate(config.provider, providerConfigForSave),
+      });
       setProviderConfigs((prev) => ({
         ...prev,
         [config.provider]: providerConfigForSave,
@@ -610,7 +647,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
             : { apiKeyConfigured: hasStoredApiKey }),
           baseUrl: effectiveBaseUrl,
           protocol: effectiveProtocol,
-          model: modelId,
           models: {
             ...providerConfig.models,
             [modelId]: {
@@ -623,12 +659,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         },
       };
     });
-    onChange({
-      ...config,
-      model: modelId,
-      capabilities: manualModel.capabilities,
-      maxTokens: manualModel.maxTokens ?? config.maxTokens,
-    });
     setManualModelId('');
     setManualModelLabel('');
     setModelSearch('');
@@ -640,7 +670,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   return (
     <SettingsPage
       title={t.model.title}
-      description="左侧选择或新增 Provider，右侧完成连接、模型与高级配置。保存后该 Provider 成为默认。"
+      description="左侧选择或新增 Provider，右侧完成连接、模型与高级配置。"
     >
       <WebModeBanner />
 
@@ -866,17 +896,18 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
 
                               <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
                                 {/* 设为默认 */}
-                                {config.model === model.id ? (
+                                {defaultSelection.provider === config.provider && defaultSelection.model === model.id ? (
                                   <span className="inline-flex h-7 items-center gap-1 rounded border border-blue-400/50 bg-blue-500/15 px-2 text-[11px] text-blue-200">
                                     ★ 默认
                                   </span>
                                 ) : model.enabled ? (
                                   <button
                                     type="button"
-                                    onClick={() => handleModelChange(model.id)}
+                                    onClick={() => void handleSetDefaultModel(model.id)}
+                                    disabled={settingDefaultModelId !== null}
                                     className="inline-flex h-7 items-center rounded border border-zinc-700 bg-zinc-800 px-2 text-[11px] text-zinc-500 transition hover:text-zinc-300"
                                   >
-                                    设为默认
+                                    {settingDefaultModelId === model.id ? '保存中...' : '设为默认'}
                                   </button>
                                 ) : null}
                                 <button
@@ -959,7 +990,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                   {isSaving ? t.common.saving || 'Saving...' : saveStatus === 'success' ? t.common.saved || 'Saved!' : saveStatus === 'error' ? t.common.error || 'Error' : t.common.save || 'Save'}
                 </Button>
                 <span className="text-xs text-zinc-500">
-                  保存后 {providerTitle} / {selectedModelLabel} 将成为默认模型。
+                  保存 {providerTitle} 的连接、模型和高级配置。
                 </span>
               </div>
             </>

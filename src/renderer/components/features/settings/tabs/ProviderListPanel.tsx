@@ -1,8 +1,8 @@
 // ============================================================================
 // ProviderListPanel - Master-Detail 布局的左侧 Provider 列表
 //
-//   已配置（有 Key 或无需 Key）：完整行（名称 + Key 状态 + 模型数 + 当前徽章）
-//   未配置：折叠分组，精简行（点击 = 选中进入配置）
+//   已可用（有 Key 或无需 Key）：完整行（名称 + Key 状态 + 模型数 + 当前徽章）
+//   待添加 Key：折叠分组，精简行（点击 = 选中进入连接配置）
 //   顶部：搜索 + 新增 Provider/中转站 + 运行诊断
 // ============================================================================
 
@@ -82,7 +82,7 @@ const UnconfiguredRow: React.FC<{
     </span>
     <span className="min-w-0 flex-1 truncate text-xs text-zinc-400">{row.name}</span>
     <span className={`shrink-0 text-[11px] ${selected ? 'text-blue-400' : 'text-zinc-600 group-hover:text-blue-400'}`}>
-      配置 →
+      添加 Key
     </span>
   </button>
 );
@@ -97,7 +97,7 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
   onOpenDoctor,
 }) => {
   const [search, setSearch] = useState('');
-  // 选中项在未配置组里时自动展开该组
+  // 选中项在待添加 Key 组里时自动展开该组
   const selectedInUnconfigured = unconfiguredRows.some((row) => row.id === selectedProviderId);
   const [unconfiguredExpanded, setUnconfiguredExpanded] = useState(selectedInUnconfigured);
 
@@ -110,7 +110,7 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
     () => (query ? unconfiguredRows.filter((row) => matchRow(row, query)) : unconfiguredRows),
     [unconfiguredRows, query],
   );
-  // 搜索时强制展开未配置组，否则按用户折叠状态 + 选中项位置
+  // 搜索时强制展开待添加 Key 组，否则按用户折叠状态 + 选中项位置
   const showUnconfigured = Boolean(query) || unconfiguredExpanded || selectedInUnconfigured;
 
   return (
@@ -148,7 +148,7 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
 
       <div className="max-h-[560px] space-y-0.5 overflow-y-auto p-2">
         <div className="px-1.5 pb-1 pt-1.5 text-[11px] text-zinc-500">
-          已配置 · {filteredConfigured.length}
+          已可用 · {filteredConfigured.length}
         </div>
         {filteredConfigured.map((row) => (
           <ConfiguredRow
@@ -168,9 +168,10 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
               type="button"
               onClick={() => setUnconfiguredExpanded((prev) => !prev)}
               className="flex w-full items-center gap-1 px-1.5 pb-1 pt-3 text-left text-[11px] text-zinc-500 hover:text-zinc-400"
+              title="这些 Provider 还没有保存 API Key，添加后才会显示模型列表。"
             >
               {showUnconfigured ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-              未配置 · {filteredUnconfigured.length}
+              待添加 Key · {filteredUnconfigured.length}
             </button>
             {showUnconfigured && filteredUnconfigured.map((row) => (
               <UnconfiguredRow

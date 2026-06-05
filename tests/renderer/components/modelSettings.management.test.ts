@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { ModelConfig, ModelProviderSettings } from '../../../src/shared/contract';
 import type { ProviderInfo } from '../../../src/shared/constants';
 import {
+  buildDefaultModelSettingsUpdate,
   buildManualModelSettings,
   buildLegacyLongCatProviderMigration,
+  buildProviderConfigForSave,
   buildProviderManagementRows,
+  buildProviderSettingsUpdate,
   createCustomProviderId,
   getModelLabel,
   hasCustomEndpointOverride,
@@ -170,6 +173,64 @@ describe('ModelSettings management helpers', () => {
       supportsVision: true,
       supportsStreaming: true,
       discoveredAt: 12345,
+    });
+  });
+
+  it('builds provider-only settings updates without changing the global default model', () => {
+    const providerConfig = buildProviderConfigForSave({
+      currentProviderConfig: {
+        enabled: true,
+        apiKey: 'old-secret',
+        model: 'gpt-5.5',
+      },
+      baseUrl: 'https://api.openai.com/v1',
+      protocol: 'openai',
+      displayName: 'OpenAI',
+      model: 'gpt-5.5',
+      temperature: 0.3,
+      maxTokens: 8192,
+      apiKey: '',
+      needsApiKey: true,
+      hasStoredApiKey: true,
+      updatedAt: 12345,
+    });
+    const update = buildProviderSettingsUpdate('openai', providerConfig);
+
+    expect(providerConfig).toMatchObject({
+      enabled: true,
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-5.5',
+      apiKeyConfigured: true,
+      updatedAt: 12345,
+    });
+    expect(providerConfig.apiKey).toBeUndefined();
+    expect(update.models).toHaveProperty('providers.openai');
+    expect(update.models).not.toHaveProperty('default');
+    expect(update.models).not.toHaveProperty('defaultProvider');
+  });
+
+  it('builds explicit default model updates only for the set-default action', () => {
+    const providerConfig = buildProviderConfigForSave({
+      currentProviderConfig: { enabled: true },
+      baseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
+      protocol: 'openai',
+      model: 'mimo-v2.5-pro',
+      apiKey: ' sk-test ',
+      needsApiKey: true,
+      hasStoredApiKey: false,
+      updatedAt: 12345,
+    });
+    const update = buildDefaultModelSettingsUpdate('xiaomi', providerConfig);
+
+    expect(providerConfig.apiKey).toBe('sk-test');
+    expect(update.models).toMatchObject({
+      default: 'xiaomi',
+      defaultProvider: 'xiaomi',
+      providers: {
+        xiaomi: {
+          model: 'mimo-v2.5-pro',
+        },
+      },
     });
   });
 

@@ -17,6 +17,8 @@ export interface TaskNotificationData {
   summary?: string;
   duration: number;
   toolsUsed: string[];
+  /** false 表示任务失败——通知标题用「任务失败」而非「任务完成」。缺省视为成功。 */
+  succeeded?: boolean;
 }
 
 export interface RecordedNotification {
@@ -139,7 +141,7 @@ class NotificationService implements Disposable {
     }
     body += `\n耗时: ${this.formatDuration(duration)}`;
 
-    const title = `任务完成 - ${sessionTitle}`;
+    const title = `${data.succeeded === false ? '任务失败' : '任务完成'} - ${sessionTitle}`;
     const trimmedBody = body.trim();
     const entry = this.record({
       type: 'task_complete',

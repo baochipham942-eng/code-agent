@@ -201,6 +201,7 @@ export class LoopController {
             summary,
             duration: durationMs,
             toolsUsed: [],
+            succeeded,
           },
           { force: true }, // 后台 loop 完成：绕过焦点门，无论 app 前台/在哪条会话都提醒
         );

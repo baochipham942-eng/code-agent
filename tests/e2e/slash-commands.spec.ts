@@ -354,6 +354,8 @@ test.describe('/schedule + /loop 斜杠命令', () => {
       20_000,
     );
     expect(notif).toBeTruthy();
+    // 成功完成的 loop 标题应是「任务完成 - 循环 · …」（失败态走「任务失败」分支）
+    expect(String((notif as Record<string, unknown>).title)).toMatch(/^任务完成 - 循环/);
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'slash-loop-backgrounded.png') });
   });
 

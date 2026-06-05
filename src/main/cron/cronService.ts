@@ -882,6 +882,7 @@ export class CronService implements Disposable {
           summary: succeeded ? '定时任务已完成' : `定时任务失败：${execution.error ?? '未知错误'}`,
           duration: execution.duration ?? 0,
           toolsUsed: [],
+          succeeded,
         },
         { force: true }, // 后台定时任务完成：绕过焦点门，app 前台/后台都提醒
       );

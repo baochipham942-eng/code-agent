@@ -21,7 +21,7 @@
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'fs/promises';
-import { constants, createWriteStream } from 'fs';
+import { constants, createWriteStream, readFileSync } from 'fs';
 import * as crypto from 'crypto';
 import http from 'http';
 import os from 'os';
@@ -32,12 +32,42 @@ import { setTimeout as delay } from 'timers/promises';
 // 配置
 // ----------------------------------------------------------------------------
 
-// 默认 zhipu/glm-5（2026-06-03 实测可用组合：0ki 包年代理 key 通过 ROLE_E2E_API_KEY 传入，
-// app 的 zhipu 端点本来就是 0ki）。可用 ROLE_E2E_PROVIDER / ROLE_E2E_MODEL / ROLE_E2E_API_KEY 覆盖。
+// 主模型默认跟随 app 当前配置的默认 provider（~/.code-agent/settings.json 的 models.defaultProvider），
+// 不再写死——这样 E2E 始终用爸设置里的默认（现在是 xiaomi/mimo），切谁跟谁，不用每次手挑 key。
+// 仍可用 ROLE_E2E_PROVIDER / ROLE_E2E_MODEL / ROLE_E2E_API_KEY 显式覆盖。
 // 注意：Groq 免费档单请求 12k tokens 上限 < agent loop 单请求 ~20k tokens，不能当主模型，
 // 只够给写回判断（quick model）用。
-const MAIN_PROVIDER = process.env.ROLE_E2E_PROVIDER || 'zhipu';
-const MAIN_MODEL = process.env.ROLE_E2E_MODEL || 'glm-5';
+// 各 provider 在 settings 没显式写 model 时的兜底默认（与 app 默认对齐）
+const PROVIDER_DEFAULT_MODEL: Record<string, string> = {
+  xiaomi: 'mimo-v2.5-pro',
+  zhipu: 'glm-5',
+  deepseek: 'deepseek-chat',
+  moonshot: 'kimi-k2.5',
+  groq: 'llama-3.3-70b-versatile',
+};
+
+/** 读 app 配置的默认 provider/model（跟随 settings.json，读不到则回落 zhipu/glm-5）。 */
+function readConfiguredDefault(): { provider: string; model: string } {
+  try {
+    const settingsPath = path.join(os.homedir(), '.code-agent', 'settings.json');
+    const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+    const provider: string | undefined = settings?.models?.defaultProvider;
+    if (provider) {
+      const model =
+        settings?.models?.providers?.[provider]?.model ||
+        PROVIDER_DEFAULT_MODEL[provider] ||
+        '';
+      if (model) return { provider, model };
+    }
+  } catch {
+    // settings 读不到/解析失败 → 回落
+  }
+  return { provider: 'zhipu', model: 'glm-5' };
+}
+
+const configuredDefault = readConfiguredDefault();
+const MAIN_PROVIDER = process.env.ROLE_E2E_PROVIDER || configuredDefault.provider;
+const MAIN_MODEL = process.env.ROLE_E2E_MODEL || configuredDefault.model;
 const RUN_TIMEOUT_MS = 360_000; // 单次 agent run 上限（含 Groq 免费档限流重试的余量）
 const WRITE_BACK_POLL_MS = 120_000; // 写回是异步的，最多等这么久（含限流重试余量）
 /** 场景之间的间歇，给 Groq 免费档 TPM 限流留恢复窗口 */
@@ -395,6 +425,12 @@ async function prepareEnvFile(env: E2EEnv): Promise<void> {
     throw new Error(`缺少主模型 key：请设置 ROLE_E2E_API_KEY 或在 ~/.code-agent/.env 提供 ${mainEnvKey}`);
   }
   lines.push(`${mainEnvKey}=${mainKey}`);
+
+  // 1.5) xiaomi/mimo 需要 XIAOMI_API_URL（token-plan-sgp 海外端点；providers.ts 已强制直连，不要给它套代理）
+  if (MAIN_PROVIDER === 'xiaomi') {
+    const xiaomiUrl = readRealEnvValue('XIAOMI_API_URL');
+    if (xiaomiUrl) lines.push(`XIAOMI_API_URL=${xiaomiUrl}`);
+  }
 
   // 2) 写回判断 quick model 的 groq key（主模型不是 groq 时才需要单独的）
   const groqKey = MAIN_PROVIDER === 'groq' ? mainKey : readRealEnvValue('GROQ_API_KEY');

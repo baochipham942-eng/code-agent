@@ -54,6 +54,7 @@ import { cronClient, type CreateCronJobInput } from '../../../../services/cronCl
 import { loopClient } from '../../../../services/loopClient';
 import { useLoopStore } from '../../../../stores/loopStore';
 import { LoopStatusBar } from './LoopStatusBar';
+import { ScheduleComposerCard } from './ScheduleComposerCard';
 import { buildGoalNoticeMessage } from '../goalNotice';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 import {
@@ -155,6 +156,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     stepCount: number;
     toolNames: string[];
   } | null>(null);
+  // /schedule 不带参数时的对话式创建卡片
+  const [scheduleComposerOpen, setScheduleComposerOpen] = useState(false);
+  const [creatingSchedule, setCreatingSchedule] = useState(false);
   const inputAreaRef = useRef<InputAreaRef>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const debugDraftAppliedRef = useRef(false);
@@ -535,6 +539,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     return '引导对话，本轮结束后发送...';
   }, [inputPlaceholder, isProcessing]);
 
+  // 定时任务创建统一入口：内联 /schedule 和对话式卡片都走这里（cron:generateFromPrompt → createJob）。
+  const runScheduleCreation = useCallback(async (description: string): Promise<boolean> => {
+    toast.info('正在解析定时任务…');
+    try {
+      const draft = await cronClient.generateFromPrompt(description);
+      const job = await cronClient.createJob(draft as unknown as CreateCronJobInput);
+      toast.success(`已创建定时任务「${job.name || '未命名'}」，可在「定时任务」面板查看`);
+      return true;
+    } catch (err) {
+      toast.error(`创建定时任务失败：${err instanceof Error ? err.message : '未知错误'}`);
+      return false;
+    }
+  }, []);
+
   // 处理提交
   // 运行中允许提交，把新输入排到当前回复结束后发送。
   // P3-18: ! prefix executes shell command directly
@@ -548,20 +566,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     if (isScheduleCommand(trimmedValue)) {
       const parsed = parseScheduleCommand(trimmedValue);
       if (!parsed?.description) {
-        toast.warning('用法：/schedule <自然语言描述>，例如 /schedule 每天早上8点跑市场调研');
-        inputAreaRef.current?.focus();
+        // 不带描述 → 打开对话式创建卡片（解释怎么运作 + 模板/自定义），而非直接报错
+        setValue('');
+        setScheduleComposerOpen(true);
         return;
       }
       addToInputHistory(trimmedValue);
       setValue('');
-      toast.info('正在解析定时任务…');
-      try {
-        const draft = await cronClient.generateFromPrompt(parsed.description);
-        const job = await cronClient.createJob(draft as unknown as CreateCronJobInput);
-        toast.success(`已创建定时任务「${job.name || '未命名'}」，可在「定时任务」面板查看`);
-      } catch (err) {
-        toast.error(`创建定时任务失败：${err instanceof Error ? err.message : '未知错误'}`);
-      }
+      await runScheduleCreation(parsed.description);
       return;
     }
 
@@ -864,6 +876,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       <form ref={formRef} onSubmit={handleSubmit} className="max-w-3xl mx-auto">
         {/* 会话内循环（/loop）运行状态条 */}
         <LoopStatusBar sessionId={currentSessionId} />
+        {/* 定时任务对话式创建卡片（/schedule 不带参数时） */}
+        {scheduleComposerOpen && (
+          <ScheduleComposerCard
+            creating={creatingSchedule}
+            onSubmit={async (description) => {
+              setCreatingSchedule(true);
+              const ok = await runScheduleCreation(description);
+              setCreatingSchedule(false);
+              if (ok) setScheduleComposerOpen(false);
+            }}
+            onDismiss={() => setScheduleComposerOpen(false)}
+          />
+        )}
         {/* Plan 入口按钮 - 仅当有 Plan 时显示 */}
         {hasPlan && onPlanClick && (
           <button

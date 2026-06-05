@@ -1252,6 +1252,8 @@ end tell
 - 访谈要短：用户烦被盘问，能推断就别问。`,
     basePath: '',
     allowedTools: ['propose_role', 'ask_user_question', 'read_file', 'glob', 'grep'],
+    // 严格工具集：只暴露上面这些工具，隐藏 core 的 Edit/Write，逼模型走 propose_role 确认卡
+    strictToolset: true,
     disableModelInvocation: false,
     userInvocable: true,
     executionContext: 'inline',
@@ -1298,6 +1300,8 @@ end tell
 - 严禁自动落盘：你只负责读现状 + 起草（propose_role），确认由用户在卡片上完成。`,
     basePath: '',
     allowedTools: ['propose_role', 'read_file', 'ask_user_question', 'glob', 'grep'],
+    // 严格工具集：只暴露上面这些工具，隐藏 core 的 Edit/Write，逼模型走 propose_role 确认卡
+    strictToolset: true,
     disableModelInvocation: false,
     userInvocable: true,
     executionContext: 'inline',

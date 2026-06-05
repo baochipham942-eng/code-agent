@@ -157,4 +157,47 @@ describe('skillInvocationResolver', () => {
     expect(context.block).toContain('source="cloud"');
     expect(context.block).toContain('Skill source: cloud inline skill');
   });
+
+  // role-edit-flow：strictToolset 必须流进 toolBoundary.strict，inference 才会硬收缩可见工具集
+  it('strictToolset 透传到 contextModifier.toolBoundary.strict', async () => {
+    const editRole = skill({
+      name: 'edit-role',
+      description: 'edit a role',
+      promptContent: 'edit role instructions',
+      basePath: '',
+      source: 'builtin',
+      loaded: true,
+      allowedTools: ['propose_role', 'read_file'],
+      strictToolset: true,
+    });
+    const context = await buildSkillInvocationContext({
+      skill: editRole,
+      matchedText: '/edit-role',
+      matchKind: 'slash',
+      args: '研究员',
+      confidence: 1,
+    }, '/tmp/work');
+    expect(context.contextModifier.toolBoundary?.strict).toBe(true);
+    expect(context.contextModifier.toolBoundary?.allowedTools).toEqual(['propose_role', 'read_file']);
+  });
+
+  it('未设 strictToolset 的 skill → toolBoundary.strict 为 false（软边界不变）', async () => {
+    const soft = skill({
+      name: 'soft-skill',
+      description: 'soft',
+      promptContent: 'x',
+      basePath: '',
+      source: 'builtin',
+      loaded: true,
+      allowedTools: ['Read'],
+    });
+    const context = await buildSkillInvocationContext({
+      skill: soft,
+      matchedText: '/soft-skill',
+      matchKind: 'slash',
+      args: '',
+      confidence: 1,
+    }, '/tmp/work');
+    expect(context.contextModifier.toolBoundary?.strict).toBe(false);
+  });
 });

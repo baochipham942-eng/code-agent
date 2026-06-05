@@ -13,6 +13,7 @@ import {
   getAllToolDefinitions,
 } from '../../../tools/dispatch/toolDefinitions';
 import { filterToolDefinitionsByWorkbenchScope } from '../../../tools/workbenchToolScope';
+import { filterToolDefinitionsByStrictSkillBoundary } from '../../../tools/skillBoundaryScope';
 import {
   stripImagesFromMessages,
   extractUserRequestText,
@@ -399,6 +400,15 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
   }
 
   tools = filterToolDefinitionsByWorkbenchScope(tools, ctx.runtime.toolScope);
+  // opt-in 严格工具集：strict-toolset skill（edit-role/create-role）激活时，把可见工具集
+  // 硬收缩到其 allowedTools，防止模型抓 core 的 Edit/Write 绕过 skill 流程。非 strict 不受影响。
+  const beforeStrict = tools.length;
+  tools = filterToolDefinitionsByStrictSkillBoundary(tools, ctx.runtime.skillToolBoundary);
+  if (tools.length !== beforeStrict) {
+    logger.info(
+      `[AgentLoop] Strict skill toolset: tool list narrowed ${beforeStrict} -> ${tools.length} (skill=${ctx.runtime.skillToolBoundary?.skillName})`,
+    );
+  }
   if (isArtifactRepairMode(ctx)) {
     const before = tools.length;
     const phase = ctx.runtime.artifactRepairGuard?.phase ?? 'initial_repair';

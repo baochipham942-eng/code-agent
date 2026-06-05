@@ -5,6 +5,7 @@ import {
   getSkillInvocationAliases,
   resolveSkillInvocationFromSkills,
 } from '../../../../src/main/services/skills/skillInvocationResolver';
+import { BUILTIN_SKILLS } from '../../../../src/main/services/skills/builtinSkills';
 
 function skill(overrides: Partial<ParsedSkill> & Pick<ParsedSkill, 'name' | 'description'>): ParsedSkill {
   return {
@@ -20,6 +21,24 @@ function skill(overrides: Partial<ParsedSkill> & Pick<ParsedSkill, 'name' | 'des
 }
 
 describe('skillInvocationResolver', () => {
+  // role-edit-flow 回归护栏：对话式改角色的种子 `/edit-role <roleId>` 必须确定性命中
+  // edit-role 内置 skill（否则模型不进上下文 → propose_role 不可见 → 无确认卡，正是验收暴露的根因）。
+  it('对话式改角色种子 /edit-role <roleId> 确定性命中 edit-role 内置 skill 并透传 roleId', () => {
+    const editRole = BUILTIN_SKILLS.find((s) => s.name === 'edit-role');
+    expect(editRole, 'edit-role 内置 skill 应存在').toBeTruthy();
+    expect(editRole!.allowedTools).toContain('propose_role');
+    expect(editRole!.userInvocable).toBe(true);
+
+    // 与 startEditRoleChat.buildEditRoleSeed 的产物保持一致：`/edit-role <roleId>`
+    const resolved = resolveSkillInvocationFromSkills('/edit-role 研究员', [editRole!]);
+    expect(resolved).toMatchObject({
+      matchKind: 'slash',
+      args: '研究员',
+      confidence: 1,
+    });
+    expect(resolved?.skill.name).toBe('edit-role');
+  });
+
   it('resolves a leading slash command before model intent classification', () => {
     const lobster = skill({
       name: 'lobster',

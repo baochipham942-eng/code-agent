@@ -983,6 +983,80 @@ describe('ConversationRuntime', () => {
       expect(markSemanticProgress).toHaveBeenCalledWith('skill invocation resolved: lobster');
     });
 
+    it('restores strict role-edit skill context from a prior slash seed on follow-up turns', async () => {
+      const markSemanticProgress = vi.fn();
+      ctx.antiPatternDetector = { ...ctx.antiPatternDetector, markSemanticProgress } as any;
+      ctx.messages = [
+        {
+          id: 'm-seed',
+          role: 'user',
+          content: '/edit-role 研究员',
+          timestamp: 1,
+        },
+        {
+          id: 'm-assistant',
+          role: 'assistant',
+          content: '当前研究员角色是调研专家。你想改什么？',
+          timestamp: 2,
+        },
+      ];
+
+      const invocation = {
+        skill: {
+          name: 'edit-role',
+          description: '对话式修改角色',
+          promptContent: '',
+          basePath: '',
+          allowedTools: ['propose_role', 'read_file', 'ask_user_question', 'glob', 'grep'],
+          strictToolset: true,
+          disableModelInvocation: false,
+          userInvocable: true,
+          executionContext: 'inline',
+          source: 'builtin',
+        },
+        matchKind: 'slash',
+        matchedText: '/edit-role',
+        args: '研究员',
+        confidence: 1,
+        aliases: ['edit-role'],
+        reason: 'explicit slash command',
+      } as const;
+
+      vi.mocked(resolveSkillInvocation)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(invocation as any);
+      vi.mocked(buildSkillInvocationContext).mockResolvedValueOnce({
+        block: '<required-skill-invocation name="edit-role">...</required-skill-invocation>',
+        contextModifier: {
+          preApprovedTools: invocation.skill.allowedTools,
+          toolBoundary: {
+            skillName: 'edit-role',
+            allowedTools: invocation.skill.allowedTools,
+            strict: true,
+          },
+        },
+      });
+
+      const result = await runtime.initializeRun('描述改成专盯 AI 赛道竞品的高级研究员，加 WebFetch。');
+
+      expect(result?.isSimpleTask).toBe(false);
+      expect(resolveSkillInvocation).toHaveBeenNthCalledWith(1, '描述改成专盯 AI 赛道竞品的高级研究员，加 WebFetch。', '/tmp/test');
+      expect(resolveSkillInvocation).toHaveBeenNthCalledWith(2, '/edit-role 研究员', '/tmp/test');
+      expect(ctx.activeSkillInvocation).toMatchObject({
+        skillName: 'edit-role',
+        matchKind: 'slash',
+        matchedText: '/edit-role',
+      });
+      expect(ctx.activeSkillContextBlock).toContain('required-skill-invocation');
+      expect(ctx.skillToolBoundary).toEqual({
+        skillName: 'edit-role',
+        allowedTools: ['propose_role', 'read_file', 'ask_user_question', 'glob', 'grep'],
+        strict: true,
+      });
+      expect([...ctx.preApprovedTools]).toEqual(['propose_role', 'read_file', 'ask_user_question', 'glob', 'grep']);
+      expect(markSemanticProgress).toHaveBeenCalledWith('skill invocation resolved: edit-role');
+    });
+
     it('can inject desktop activity through the ActivityContext legacy formatter', async () => {
       await (runtime as any).injectActivityContext({ includeDesktopActivity: true });
 

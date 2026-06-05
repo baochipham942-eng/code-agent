@@ -61,7 +61,8 @@ import { FileExplorerPanel } from './components/features/explorer/FileExplorerPa
 import { MemoFloater } from './components/features/memo/MemoFloater';
 import { useAppshots } from './hooks/useAppshots';
 import { useComputerUsePip } from './hooks/useComputerUsePip';
-import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
+import { postOsNotification, registerNotificationClick } from './utils/osNotification';
 import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, UpdateInfo } from '@shared/contract';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getProviderEndpointForProtocol } from '@shared/constants';
 import { createLogger } from './utils/logger';
@@ -462,6 +463,30 @@ export const App: React.FC = () => {
         setTaskPanelTab('monitor');
       }
     );
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [openWorkbenchTab, setTaskPanelTab]);
+
+  // 主进程请求发原生系统通知（Tauri 通知插件，带 Agent Neo 图标/身份）。
+  // 点击经 onAction best-effort 跳到最近一条通知对应的会话。
+  const lastNotifSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const unsubscribe = ipcService.on(
+      IPC_CHANNELS.NOTIFICATION_SHOW,
+      (event: NotificationShowEvent) => {
+        lastNotifSessionIdRef.current = event.sessionId;
+        void postOsNotification({ title: event.title, body: event.body });
+      }
+    );
+    void registerNotificationClick(() => {
+      const sessionId = lastNotifSessionIdRef.current;
+      if (!sessionId) return;
+      void useSessionStore.getState().switchSession(sessionId);
+      openWorkbenchTab('task');
+      setTaskPanelTab('monitor');
+    });
 
     return () => {
       unsubscribe?.();

@@ -155,6 +155,8 @@ export const IPC_CHANNELS = {
 
   // Notification channels
   NOTIFICATION_CLICKED: 'notification:clicked',
+  // 主进程请求渲染端发原生系统通知（Tauri 通知插件，带 Neo 图标/身份 + 可点击跳转）
+  NOTIFICATION_SHOW: 'notification:show',
 
   // Security channels (API Key setup, tool create confirm)
   SECURITY_CHECK_API_KEY_CONFIGURED: 'security:check-api-key-configured',

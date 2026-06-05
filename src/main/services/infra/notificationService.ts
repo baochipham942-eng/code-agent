@@ -3,7 +3,7 @@
 // 桌面通知服务 - 在 App 非焦点时发送任务完成通知
 // ============================================================================
 
-import { Notification, BrowserWindow, app } from '../../platform';
+import { Notification, BrowserWindow, broadcastToRenderer } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { createLogger } from './logger';
 import type { Disposable } from '../serviceRegistry';
@@ -79,9 +79,14 @@ class NotificationService implements Disposable {
     return focusedWindow === null;
   }
 
-  private showNotification(notification: Notification): void {
+  /**
+   * 投递系统通知：交给渲染端用 Tauri 通知插件发送——原生通知自动带 app（Agent Neo）
+   * 图标与身份，点击经 onAction 跳到对应会话。替代旧的 osascript（无图标、点击不回调）。
+   * dry-run 下只记录不投递（E2E 用 getRecent 断言，不真弹）。
+   */
+  private deliver(payload: { id: string; title: string; body: string; sessionId: string }): void {
     if (this.isDryRun()) return;
-    notification.show();
+    broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, payload);
   }
 
   /**
@@ -103,33 +108,13 @@ class NotificationService implements Disposable {
   notifyNeedsInput(data: { sessionId: string; title: string; body: string }): void {
     if (!this.shouldNotify()) return;
 
-    const notification = new Notification({
-      title: data.title,
-      body: data.body,
-      silent: false,
-      urgency: 'critical',
-      ...(process.platform === 'darwin' && { sound: 'default' }),
-    });
-
-    notification.on('click', () => {
-      const windows = BrowserWindow.getAllWindows();
-      if (windows.length > 0) {
-        const mainWindow = windows[0];
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
-        mainWindow.webContents.send(IPC_CHANNELS.NOTIFICATION_CLICKED, {
-          sessionId: data.sessionId,
-        });
-      }
-    });
-
-    this.showNotification(notification);
-    this.record({
+    const entry = this.record({
       type: 'needs_input',
       sessionId: data.sessionId,
       title: data.title,
       body: data.body,
     });
+    this.deliver({ id: entry.id, title: data.title, body: data.body, sessionId: data.sessionId });
     logger.info('Needs-input notification sent', { title: data.title });
   }
 
@@ -154,39 +139,15 @@ class NotificationService implements Disposable {
     }
     body += `\n耗时: ${this.formatDuration(duration)}`;
 
-    const notification = new Notification({
-      title: `任务完成 - ${sessionTitle}`,
-      body: body.trim(),
-      silent: false,
-      // macOS 特有
-      ...(process.platform === 'darwin' && {
-        sound: 'default',
-      }),
-    });
-
-    // 点击通知时激活窗口
-    notification.on('click', () => {
-      const windows = BrowserWindow.getAllWindows();
-      if (windows.length > 0) {
-        const mainWindow = windows[0];
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore();
-        }
-        mainWindow.focus();
-        // 通过 IPC 切换到对应会话
-        mainWindow.webContents.send(IPC_CHANNELS.NOTIFICATION_CLICKED, {
-          sessionId: data.sessionId,
-        });
-      }
-    });
-
-    this.showNotification(notification);
-    this.record({
+    const title = `任务完成 - ${sessionTitle}`;
+    const trimmedBody = body.trim();
+    const entry = this.record({
       type: 'task_complete',
       sessionId: data.sessionId,
-      title: `任务完成 - ${sessionTitle}`,
-      body: body.trim(),
+      title,
+      body: trimmedBody,
     });
+    this.deliver({ id: entry.id, title, body: trimmedBody, sessionId: data.sessionId });
     logger.info('Notification sent', { sessionTitle });
   }
 

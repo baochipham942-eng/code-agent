@@ -14,6 +14,7 @@
     "dialog:allow-open",
     "opener:allow-open-path",
     "opener:allow-open-url",
-    "opener:allow-reveal-item-in-dir"
+    "opener:allow-reveal-item-in-dir",
+    "notification:default"
   ]
 }

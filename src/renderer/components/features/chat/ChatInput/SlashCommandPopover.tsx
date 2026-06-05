@@ -449,7 +449,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
               {cmd.icon}
             </span>
             <div className="flex-1 min-w-0">
-              <span className="text-sm">/{cmd.id}</span>
+              <span className="text-sm">{cmd.label}</span>
+              <span className="text-[10px] font-mono text-zinc-600 ml-2">/{cmd.id}</span>
               <span className="text-xs text-zinc-500 ml-2">{cmd.description}</span>
             </div>
             {cmd.shortcut && (

@@ -17,6 +17,8 @@ export interface RoleDraftSummary {
   description: string;
   category?: string;
   tools: string[];
+  /** 有值 = 改已有角色（确认卡切「确认修改」文案；缺省 = 新建） */
+  editingRoleId?: string;
 }
 
 /**
@@ -65,6 +67,8 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
   const [definitions, setDefinitions] = useState<Record<string, string>>({});
 
   const handleConfirm = async (draftId: string) => {
+    const isEdit = Boolean(drafts.find((d) => d.id === draftId)?.editingRoleId);
+    const verb = isEdit ? '修改' : '创建';
     setBusyId(draftId);
     try {
       const result = await ipcService.invokeDomain<{ success?: boolean; roleId?: string }>(
@@ -74,13 +78,13 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
       );
       if (result?.success) {
         onResolved(draftId);
-        toast.success(`角色「${result.roleId ?? ''}」已创建`);
+        toast.success(`角色「${result.roleId ?? ''}」已${verb}`);
       } else {
-        toast.error('角色创建失败');
+        toast.error(`角色${verb}失败`);
       }
     } catch (error) {
       // 安全闸拦截 / 重名等会走到这里，把后端原因透出
-      toast.error(error instanceof Error ? error.message : '角色创建失败');
+      toast.error(error instanceof Error ? error.message : `角色${verb}失败`);
     } finally {
       setBusyId(null);
     }
@@ -127,7 +131,9 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
       <div className="flex items-center gap-2 mb-1">
         <UserPlus className="w-4 h-4 text-emerald-400 flex-shrink-0" />
         <span className="text-xs text-emerald-300 flex-1">
-          新角色待确认：确认后才会创建（写入角色定义 + 角色记忆目录）
+          {drafts.some((d) => d.editingRoleId)
+            ? '角色改动待确认：确认后才会更新角色定义（不动已有记忆与履历）'
+            : '新角色待确认：确认后才会创建（写入角色定义 + 角色记忆目录）'}
         </span>
         <button
           type="button"
@@ -142,11 +148,17 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
       {drafts.map((draft) => {
         const expanded = expandedId === draft.id;
         const toolsLine = draft.tools.length > 0 ? draft.tools.join('、') : '默认全集';
+        const isEdit = Boolean(draft.editingRoleId);
         return (
           <div key={draft.id} className="py-1">
             <div className="flex items-center gap-2">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
+                  {isEdit && (
+                    <span className="px-1.5 py-px text-[10px] rounded bg-amber-500/20 text-amber-300 flex-shrink-0">
+                      修改
+                    </span>
+                  )}
                   <span className="text-xs font-medium text-emerald-100 truncate" title={draft.roleId}>
                     {draft.roleId}
                   </span>
@@ -174,7 +186,7 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
                 className="flex items-center gap-1 px-2 py-1 text-xs bg-emerald-500/20 text-emerald-300 rounded hover:bg-emerald-500/30 transition-colors disabled:opacity-50"
               >
                 {busyId === draft.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                确认创建
+                {isEdit ? '确认修改' : '确认创建'}
               </button>
 
               <button

@@ -219,4 +219,33 @@ describe('deferred tool preload', () => {
       }],
     }))).toEqual(['workflow_orchestrate']);
   });
+
+  // role-edit-flow 根因 #2 回归护栏：active skill 的 allowedTools 里的非 core 工具
+  // （如 propose_role）必须本轮预加载，否则 deferred-loading 下模型看不见它，会退用 Edit 绕过流程。
+  it('preloads a skill boundary\'s non-core allowedTools (propose_role)，core 工具被过滤', () => {
+    const preload = getDeferredToolsToPreloadForTurn({
+      enableToolDeferredLoading: true,
+      executionIntent: undefined,
+      messages: [{ id: 'm1', role: 'user', content: '/edit-role 研究员', timestamp: 1 }],
+      skillToolBoundary: {
+        skillName: 'edit-role',
+        // read_file/glob/grep/ask_user_question 都会归一到 core，应被过滤
+        allowedTools: ['propose_role', 'read_file', 'ask_user_question', 'glob', 'grep'],
+      },
+    } as never);
+    expect(preload).toEqual(['propose_role']);
+  });
+
+  it('actually loads propose_role through the skill boundary path', () => {
+    registerProtocolToolForPreload('propose_role' as never);
+    resetToolSearchService();
+    const loaded = preloadDeferredToolsForTurn({
+      enableToolDeferredLoading: true,
+      executionIntent: undefined,
+      messages: [{ id: 'm1', role: 'user', content: '/edit-role 研究员', timestamp: 1 }],
+      skillToolBoundary: { skillName: 'edit-role', allowedTools: ['propose_role', 'read_file'] },
+    } as never);
+    expect(loaded).toEqual(['propose_role']);
+    expect(getToolSearchService().isToolLoaded('propose_role')).toBe(true);
+  });
 });

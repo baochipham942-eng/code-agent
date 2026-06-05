@@ -1,12 +1,13 @@
 import type { RuntimeContext } from '../runtimeContext';
 import { getToolSearchService } from '../../../services/toolSearch';
+import { isCoreToolName, resolveToolAlias } from '../../../services/toolSearch/deferredTools';
 import { createLogger } from '../../../services/infra/logger';
 
 const logger = createLogger('ContextAssembly');
 
 type RuntimeForDeferredToolPreload = Pick<
   RuntimeContext,
-  'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode'
+  'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode' | 'skillToolBoundary'
 >;
 
 const COMPUTER_INTENT_RE =
@@ -74,6 +75,21 @@ export function getDeferredToolsToPreloadForTurn(
     tools.add('workflow');
   } else if (WORKFLOW_ORCHESTRATE_INTENT_RE.test(userText)) {
     tools.add('workflow_orchestrate');
+  }
+
+  // Active skill invocation：把本轮命中的 skill 的 allowedTools 里的非 core 工具预加载，
+  // 否则 deferred-loading 模式下这些 skill 专属工具（如 propose_role）对模型不可见，
+  // 模型会退而用 core 工具（如 Edit）绕过 skill 设计的流程（验收实证：edit-role 没出确认卡）。
+  // 边界内 core 工具本就常驻，无需预加载；模式前缀（Bash(git:*)）取括号前的工具名。
+  if (runtime.skillToolBoundary) {
+    for (const allowed of runtime.skillToolBoundary.allowedTools) {
+      const baseName = allowed.split('(')[0]?.trim();
+      if (!baseName) continue;
+      const canonical = resolveToolAlias(baseName);
+      if (!isCoreToolName(canonical)) {
+        tools.add(canonical);
+      }
+    }
   }
 
   return Array.from(tools);

@@ -607,6 +607,21 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   },
 
   // ============================================================================
+  // 角色创作（对话式建/改角色）
+  // ============================================================================
+  // 注：propose_role 只在 create-role / edit-role skill 上下文里用。它不是 core 工具
+  // （避免污染普通会话），但必须登记为 deferred 工具，否则 deferred-loading 模式下
+  // selectTool 查不到它 → skill allowedTools 声明了也无法加载 → 模型看不见 → 无确认卡。
+  // 进入对应 skill 时由 getDeferredToolsToPreloadForTurn 按 skillToolBoundary 预加载。
+  {
+    name: 'propose_role',
+    shortDescription: '对话式建/改角色：把起草好的角色定义入队为草稿，等用户确认落盘',
+    tags: ['planning'],
+    aliases: ['propose role', 'draft role', 'create role', 'edit role', '建角色', '改角色'],
+    source: 'builtin',
+  },
+
+  // ============================================================================
   // Gen 8: 自我进化
   // ============================================================================
   {

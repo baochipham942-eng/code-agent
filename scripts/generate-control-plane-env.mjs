@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 import crypto from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 function parseArgs(argv) {
   const args = {
@@ -148,11 +150,47 @@ function buildPayloads(version, now = new Date()) {
         },
       ],
     },
+    rendererBundleRollout: {
+      version,
+      channel: 'latest',
+      rolloutPercent: 100,
+    },
   };
 }
 
 function writeJson(file, value) {
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function buildPostApplyCommands(repoRoot = REPO_ROOT) {
+  return [
+    `cd ${shellQuote(repoRoot)}`,
+    'vercel deploy --prod --yes',
+    'npm run renderer:verify-production -- --skip-renderer-bundle --retry-attempts 12 --retry-delay-ms 30000',
+  ].join('\n');
+}
+
+function buildVercelEnvCommands({ targetDir, keyId, repoRoot = REPO_ROOT }) {
+  const keyIdFile = join(targetDir, 'control-plane-key-id.txt');
+  const ttlFile = join(targetDir, 'control-plane-ttl-seconds.txt');
+  return [
+    `cd ${shellQuote(repoRoot)}`,
+    `vercel env add CONTROL_PLANE_PRIVATE_KEY production --force --yes < ${shellQuote(join(targetDir, 'private.pem'))}`,
+    `vercel env add CONTROL_PLANE_KEY_ID production --force --yes < ${shellQuote(keyIdFile)}`,
+    `vercel env add CONTROL_PLANE_TTL_SECONDS production --force --yes < ${shellQuote(ttlFile)}`,
+    `vercel env add CONTROL_PLANE_CLOUD_CONFIG_JSON production --force --yes < ${shellQuote(join(targetDir, 'cloud-config.json'))}`,
+    `vercel env add CONTROL_PLANE_PROMPT_REGISTRY_JSON production --force --yes < ${shellQuote(join(targetDir, 'prompt-registry.json'))}`,
+    `vercel env add CONTROL_PLANE_CAPABILITY_REGISTRY_JSON production --force --yes < ${shellQuote(join(targetDir, 'capability-registry.json'))}`,
+    `vercel env add CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON production --force --yes < ${shellQuote(join(targetDir, 'agent-engine-model-catalog.json'))}`,
+    `vercel env add CONTROL_PLANE_RENDERER_BUNDLE_ROLLOUT_JSON production --force --yes < ${shellQuote(join(targetDir, 'renderer-bundle-rollout.json'))}`,
+    `vercel env add CODE_AGENT_CONTROL_PLANE_KEY_ID production --force --yes < ${shellQuote(keyIdFile)}`,
+    `vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY production --force --yes < ${shellQuote(join(targetDir, 'public.pem'))}`,
+    `vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS production --force --yes < ${shellQuote(join(targetDir, 'public-keys.json'))}`,
+  ].join('\n');
 }
 
 export function generateControlPlaneEnvBundle({
@@ -174,23 +212,16 @@ export function generateControlPlaneEnvBundle({
 
   writeFileSync(join(targetDir, 'private.pem'), privatePem, { mode: 0o600 });
   writeFileSync(join(targetDir, 'public.pem'), publicPem, { mode: 0o600 });
+  writeFileSync(join(targetDir, 'control-plane-key-id.txt'), `${keyId}\n`, { mode: 0o600 });
+  writeFileSync(join(targetDir, 'control-plane-ttl-seconds.txt'), '3600\n', { mode: 0o600 });
   writeJson(join(targetDir, 'public-keys.json'), { [keyId]: publicPem });
   writeJson(join(targetDir, 'cloud-config.json'), payloads.cloudConfig);
   writeJson(join(targetDir, 'prompt-registry.json'), payloads.promptRegistry);
   writeJson(join(targetDir, 'capability-registry.json'), payloads.capabilityRegistry);
   writeJson(join(targetDir, 'agent-engine-model-catalog.json'), payloads.agentEngineModelCatalog);
-  writeFileSync(join(targetDir, 'vercel-env-commands.txt'), [
-    `vercel env add CONTROL_PLANE_PRIVATE_KEY production --force --yes < ${targetDir}/private.pem`,
-    `vercel env add CONTROL_PLANE_KEY_ID production --value ${keyId} --force --yes`,
-    'vercel env add CONTROL_PLANE_TTL_SECONDS production --value 3600 --force --yes',
-    `vercel env add CONTROL_PLANE_CLOUD_CONFIG_JSON production --force --yes < ${targetDir}/cloud-config.json`,
-    `vercel env add CONTROL_PLANE_PROMPT_REGISTRY_JSON production --force --yes < ${targetDir}/prompt-registry.json`,
-    `vercel env add CONTROL_PLANE_CAPABILITY_REGISTRY_JSON production --force --yes < ${targetDir}/capability-registry.json`,
-    `vercel env add CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON production --force --yes < ${targetDir}/agent-engine-model-catalog.json`,
-    `vercel env add CODE_AGENT_CONTROL_PLANE_KEY_ID production --value ${keyId} --force --yes`,
-    `vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY production --force --yes < ${targetDir}/public.pem`,
-    `vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS production --force --yes < ${targetDir}/public-keys.json`,
-  ].join('\n'), { mode: 0o600 });
+  writeJson(join(targetDir, 'renderer-bundle-rollout.json'), payloads.rendererBundleRollout);
+  writeFileSync(join(targetDir, 'vercel-env-commands.txt'), buildVercelEnvCommands({ targetDir, keyId }), { mode: 0o600 });
+  writeFileSync(join(targetDir, 'post-apply-commands.txt'), buildPostApplyCommands(), { mode: 0o600 });
 
   return {
     targetDir,
@@ -199,12 +230,16 @@ export function generateControlPlaneEnvBundle({
     files: [
       'private.pem',
       'public.pem',
+      'control-plane-key-id.txt',
+      'control-plane-ttl-seconds.txt',
       'public-keys.json',
       'cloud-config.json',
       'prompt-registry.json',
       'capability-registry.json',
       'agent-engine-model-catalog.json',
+      'renderer-bundle-rollout.json',
       'vercel-env-commands.txt',
+      'post-apply-commands.txt',
     ].map((file) => join(targetDir, file)),
   };
 }
@@ -229,6 +264,7 @@ function main(argv) {
   });
   console.log(`[generate-control-plane-env] wrote ${result.files.length} file(s) to ${result.targetDir}`);
   console.log(`[generate-control-plane-env] review ${result.targetDir}/vercel-env-commands.txt before writing production env`);
+  console.log(`[generate-control-plane-env] after applying env, run ${result.targetDir}/post-apply-commands.txt`);
 }
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

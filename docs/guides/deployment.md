@@ -55,6 +55,13 @@
 curl -s "https://agentneo.vercel.app/api/update?action=health"
 ```
 
+`vercel-api/**` 或 control-plane 发布脚本合入 `main` 后，`.github/workflows/vercel-control-plane.yml`
+会用 `VERCEL_ORG_ID`、`VERCEL_PROJECT_ID`、`VERCEL_TOKEN` 三个 GitHub secret
+执行 `vercel build --prod` + `vercel deploy --prebuilt --prod`，并在部署后跑
+`node scripts/control-plane-smoke.mjs "https://agentneo.vercel.app"`。如果这条 workflow
+失败，前端热更发布必须暂停；只看到 macOS `Build and Release` 成功不能证明 Vercel
+control-plane 已经更新。
+
 ### API 端点列表
 
 > 注意：由于 Vercel Hobby 计划 12 函数限制，运维类 API 已整合
@@ -200,7 +207,7 @@ CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END P
 node scripts/generate-control-plane-env.mjs --out /tmp/code-agent-control-plane-env --key-id production-2026-05
 ```
 
-生成后先检查 `/tmp/code-agent-control-plane-env/vercel-env-commands.txt`，确认 payload 仍是 locked default，再由有权限的人执行里面的 `vercel env add ...` 命令。
+生成后先检查 `/tmp/code-agent-control-plane-env/vercel-env-commands.txt`，确认 payload 仍是 locked default，再由有权限的人执行里面的 `vercel env add ...` 命令。所有 Vercel env 值，包括 key id 和 TTL，都从生成文件重定向输入，避免 CLI 参数转义差异。`vercel-env-commands.txt` 和 `post-apply-commands.txt` 都会先 `cd` 回仓库根目录，确保 Vercel CLI 读取正确的 `.vercel/project.json`。写完 Vercel env 还没结束，必须继续执行 `/tmp/code-agent-control-plane-env/post-apply-commands.txt`：重新部署 production，并跑 `renderer:verify-production -- --skip-renderer-bundle` 确认 `renderer_bundle_rollout` 控制面真的上线。
 
 也可以用 JSON 一次配置多把公钥：
 
@@ -227,6 +234,12 @@ curl "https://agentneo.vercel.app/api/v1/control-plane?artifact=prompt_registry"
 # 获取签名 capability registry envelope
 curl "https://agentneo.vercel.app/api/v1/control-plane?artifact=capabilities"
 
+# 获取签名 Agent Engine 模型目录 envelope
+curl "https://agentneo.vercel.app/api/v1/control-plane?artifact=agent_engine_models"
+
+# 获取签名前端热更灰度策略 envelope
+curl "https://agentneo.vercel.app/api/v1/control-plane?artifact=renderer_bundle_rollout"
+
 # 版本更新检查，Vercel 端从 GitHub Releases 派生 metadata，可按 channel 叠加 release policy
 curl "https://agentneo.vercel.app/api/update?action=check&version=0.16.75&platform=darwin&channel=stable"
 ```
@@ -240,7 +253,50 @@ node scripts/control-plane-smoke.mjs "https://agentneo.vercel.app"
 node scripts/control-plane-smoke.mjs "https://agentneo.vercel.app" --token "$CONTROL_PLANE_SMOKE_TOKEN"
 ```
 
-这条 smoke 会请求 `/api/v1/config`、`/api/prompts?gen=all`、`/api/v1/control-plane?artifact=capabilities`，校验 HTTP status、`schemaVersion: 1`、`kind`、`payload`、`contentHash`、`keyId`、`signature`、`expiresAt`，并重新计算 `payload` 的 canonical `contentHash`。它不做本地验签；验签仍由客户端使用随包公钥完成。若接口返回 `503 control_plane_unconfigured`，代表 Vercel 缺签名私钥、key id 或对应 payload 环境变量，需要先补齐环境变量再重新部署。
+这条 smoke 会请求 `/api/v1/config`、`/api/prompts?gen=all`、`/api/v1/control-plane?artifact=capabilities`、`/api/v1/control-plane?artifact=agent_engine_models` 和 `/api/v1/control-plane?artifact=renderer_bundle_rollout`，校验 HTTP status、`schemaVersion: 1`、`kind`、`payload`、`contentHash`、`keyId`、`signature`、`expiresAt`，并重新计算 `payload` 的 canonical `contentHash`。它不做本地验签；验签仍由客户端使用随包公钥完成。若接口返回 `503 control_plane_unconfigured`，代表 Vercel 缺签名私钥、key id 或对应 payload 环境变量，需要先补齐环境变量再重新部署；若 `renderer_bundle_rollout` 返回 `unsupported_artifact`，代表 production 仍是旧 Vercel 代码，需要重新部署而不是只改 env。
+
+### 整包发布与前端热更发布
+
+`Build and Release` 的 `v*` tag 成功，只代表新的 macOS app 包、updater metadata 和 stable 下载入口已经发布。前端热更还要同时满足两件事：Vercel production 已经支持签名 `renderer_bundle_rollout`，OSS `renderer-bundle/<channel>/` 已经上传当前版本的 `manifest.json`、`bundle.tar.gz` 和 `release-record.json`。
+
+正式 tag 会触发 `Publish Renderer Bundle (hot update)` workflow；这条 workflow 在上传 OSS 前会先跑：
+
+```bash
+npm run renderer:verify-production -- --skip-renderer-bundle --retry-attempts 12 --retry-delay-ms 30000
+```
+
+`Build and Release` workflow 在上传 app 包、GitHub Release 和 stable metadata 之前，会通过 `renderer:verify-release-gate` 先等待同一个 `GITHUB_SHA` 的 `renderer-bundle.yml` workflow 成功，再跑完整生产验收，确认 renderer bundle workflow 已把同版本 latest 推上 OSS：
+
+```bash
+npm run renderer:verify-release-gate -- --expected-version <version> --expected-release-channel latest
+```
+
+这一步失败时不能继续覆盖 OSS latest。常见信号：
+
+- `unsupported_artifact`：Vercel production 还是旧代码，缺 `renderer_bundle_rollout` artifact。
+- `release-record.json` 404：OSS latest 还停在旧发布链，或者 renderer bundle workflow 没跑完。
+- `appUpdate.latestVersion` 高于 `rendererManifestExpectation.version` 且 `matchesLatestVersion: false`：整包 stable 已经发布，但 renderer latest 还没补到同版本。
+- manifest `expiresAt` 已过期或剩余有效期过短：manifest 用了动态控制面的短 TTL，必须重新签出静态 renderer manifest。
+
+一次完整的热更生产发布顺序是：
+
+1. 部署 Vercel production，确认 `renderer_bundle_rollout` 能返回签名 envelope。
+2. 跑 `Publish Renderer Bundle (hot update)`，发布目标 channel 的 renderer bundle 和 release record。
+3. 跑最终验收：
+
+```bash
+npm run renderer:verify-production -- --expected-version <version>
+```
+
+补发已经发布过的 stable 版本时，也可以让 verifier 直接从 `/api/update` 推导当前 stable 最新版本：
+
+```bash
+npm run renderer:verify-production -- --expected-version-from-app-update
+```
+
+历史 tag 不会因为 workflow 新增 tag 触发而补跑；已经发布过整包但热更面没跟上的版本，需要手动 dispatch 一次 renderer bundle workflow，或者再发一个包含相同热更代码的新 tag。新增上传前验收后，未来正式 `Build and Release` 会先确认热更生产面追上同版本，再发布整包入口。
+
+整包已经发布后补 renderer latest 时，先确认 dispatch 所在 ref 的 `package.json` 与 `package-lock.json` 版本就是要补的生产版本。不能从旧版本 worktree 或旧 main 快照手动上传 latest，否则会把 OSS `renderer-bundle/latest/manifest.json` 覆盖成旧版本。补发顺序是：先部署 Vercel control-plane 新代码，再从对应版本 ref 手动 dispatch `Publish Renderer Bundle (hot update)`，最后用 `renderer:verify-production -- --expected-version-from-app-update` 验生产面。
 
 Update policy 可通过 Vercel env 下发：`UPDATE_MIN_VERSION`、`UPDATE_LATEST_VERSION`、`UPDATE_FORCE_UPDATE`、`UPDATE_DOWNLOAD_URL`、`UPDATE_SHA256`。按 channel 覆盖时追加大写后缀，例如 `UPDATE_MIN_VERSION_BETA`。
 

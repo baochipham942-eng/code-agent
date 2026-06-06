@@ -24,6 +24,11 @@ export const CONTROL_PLANE_ARTIFACTS = [
     path: '/api/v1/control-plane?artifact=agent_engine_models',
     expectedKind: 'agent_engine_model_catalog',
   },
+  {
+    name: 'renderer bundle rollout policy',
+    path: '/api/v1/control-plane?artifact=renderer_bundle_rollout',
+    expectedKind: 'renderer_bundle_rollout',
+  },
 ];
 
 export class ControlPlaneSmokeError extends Error {
@@ -101,6 +106,18 @@ export function validateControlPlaneEnvelope({ artifact, endpoint, status, body,
       `${artifact.name} is not configured on the control plane: ${body.message ?? 'missing signing or payload env'}`,
       {
         code: 'control_plane_unconfigured',
+        endpoint,
+        status,
+        details: body,
+      },
+    );
+  }
+
+  if (status === 400 && isRecord(body) && body.error === 'unsupported_artifact') {
+    throw new ControlPlaneSmokeError(
+      `${artifact.name} is not supported by the deployed control-plane: ${body.message ?? 'unsupported artifact'}`,
+      {
+        code: 'unsupported_artifact',
         endpoint,
         status,
         details: body,

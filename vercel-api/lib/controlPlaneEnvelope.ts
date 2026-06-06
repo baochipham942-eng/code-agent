@@ -42,7 +42,9 @@ export type ControlPlaneArtifactKind =
   | 'agent_engine_model_catalog'
   | 'prompt_registry'
   | 'update_manifest'
-  | 'runtime_assets_manifest';
+  | 'runtime_assets_manifest'
+  | 'renderer_bundle'
+  | 'renderer_bundle_rollout';
 
 export interface ControlPlaneEnvelope<TPayload = unknown> {
   schemaVersion: 1;
@@ -193,6 +195,7 @@ export function createControlPlaneEnvelopeFromEnv<TPayload>(
   kind: ControlPlaneArtifactKind,
   payload: TPayload,
   env: NodeJS.ProcessEnv = process.env,
+  options: Pick<CreateControlPlaneEnvelopeOptions<TPayload>, 'expiresAt' | 'issuedAt' | 'now' | 'ttlSeconds'> = {},
 ): ControlPlaneEnvelope<TPayload> {
   const privateKey = readEnv(env, [
     'CONTROL_PLANE_PRIVATE_KEY',
@@ -215,7 +218,10 @@ export function createControlPlaneEnvelopeFromEnv<TPayload>(
     payload,
     keyId,
     privateKey,
-    ttlSeconds: parseTtlSeconds(env),
+    ...(options.issuedAt ? { issuedAt: options.issuedAt } : {}),
+    ...(options.expiresAt ? { expiresAt: options.expiresAt } : {}),
+    ...(options.now ? { now: options.now } : {}),
+    ttlSeconds: options.ttlSeconds ?? parseTtlSeconds(env),
   });
 }
 

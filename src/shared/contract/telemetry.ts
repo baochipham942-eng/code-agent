@@ -2,6 +2,8 @@
 // Telemetry Types - 会话遥测数据类型定义
 // ============================================================================
 
+import type { RendererBundleAttemptOutcome } from './update';
+
 // ----------------------------------------------------------------------------
 // Intent Classification
 // ----------------------------------------------------------------------------
@@ -257,6 +259,35 @@ export interface TelemetryFeedbackSubmitResult {
   success: boolean;
   feedbackId?: string;
   error?: string;
+}
+
+export interface TelemetryRendererBundleAttempt {
+  id: string;
+  checkedAt: number;
+  manifestUrl: string;
+  sourceChannel?: string | null;
+  sourceManifestUrlOverride: boolean;
+  sourceErrorReason?: string | null;
+  sourceErrorMessage?: string | null;
+  sourceErrorTarget?: string | null;
+  currentShellVersion: string;
+  activeVersion?: string | null;
+  activeContentHash?: string | null;
+  outcome: RendererBundleAttemptOutcome;
+  reason?: string | null;
+  manifestVersion?: string | null;
+  manifestContentHash?: string | null;
+  manifestMinShellVersion?: string | null;
+  manifestBundleUrl?: string | null;
+  requiredShellCapabilitiesCount: number;
+  rollbackToBuiltin: boolean;
+  rollbackReason?: string | null;
+  missingShellCapabilities: string[];
+  missingRuntimeAssets: string[];
+  missingResources: string[];
+  diagnostics: string[];
+  errorMessage?: string | null;
+  syncedAt?: number | null;
 }
 
 // ----------------------------------------------------------------------------

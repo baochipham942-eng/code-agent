@@ -21,6 +21,9 @@ const ARTIFACT_LABELS: Record<AdminControlPlaneAuditEventItem['artifactKind'], s
   agent_engine_model_catalog: 'Agent Engine 模型目录',
   prompt_registry: '提示词注册表',
   update_manifest: '更新清单',
+  runtime_assets_manifest: '运行时资产清单',
+  renderer_bundle: '前端热更包',
+  renderer_bundle_rollout: '前端热更灰度策略',
 };
 
 const OUTCOME_CLASSES: Record<AdminControlPlaneAuditEventItem['outcome'], string> = {

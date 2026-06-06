@@ -22,7 +22,7 @@ import { Disposable, getServiceRegistry } from '../services/serviceRegistry';
 import { app } from '../platform';
 import { getTelemetryStorage } from './telemetryStorage';
 import { scrubString } from '../../shared/observability/scrubEvent';
-import type { TelemetryFeedback, TelemetrySession, TelemetryTurn } from '../../shared/contract/telemetry';
+import type { TelemetryFeedback, TelemetryRendererBundleAttempt, TelemetrySession, TelemetryTurn } from '../../shared/contract/telemetry';
 
 const logger = createLogger('TelemetryUploader');
 
@@ -138,9 +138,26 @@ export class TelemetryUploaderService implements Disposable {
         }
       }
 
-      // 4) 会话和 turn 都写成功后再标记已同步；否则下轮继续补传
+      // 4) 系统级 renderer hot-update attempt。它不依赖 session/turn，表缺失或写失败
+      // 只影响这批事件的 retry，不反向阻塞 chat telemetry。
+      const rendererBundleAttempts = storage.getUnsyncedRendererBundleAttempts(BATCH_SIZE);
+      if (rendererBundleAttempts.length > 0) {
+        const { error: rendererBundleError } = await supabase
+          .from('telemetry_renderer_bundle_attempts')
+          .upsert(
+            rendererBundleAttempts.map((item) => this.toRendererBundleAttemptRow(item, user.id, appVersion)),
+            { onConflict: 'id' },
+          );
+        if (rendererBundleError) {
+          logger.error('Failed to push telemetry_renderer_bundle_attempts', { error: rendererBundleError });
+        } else {
+          storage.markRendererBundleAttemptsSynced(rendererBundleAttempts.map((item) => item.id));
+        }
+      }
+
+      // 5) 会话和 turn 都写成功后再标记已同步；否则下轮继续补传
       storage.markSessionsSynced(sessions.map((s) => s.id));
-      logger.info('Telemetry uploaded', { sessions: sessions.length, turns: turnRows.length, feedback: feedback.length });
+      logger.info('Telemetry uploaded', { sessions: sessions.length, turns: turnRows.length, feedback: feedback.length, rendererBundleAttempts: rendererBundleAttempts.length });
       return sessions.length;
     } catch (err) {
       logger.error('Telemetry upload error', err as Error);
@@ -223,6 +240,39 @@ export class TelemetryUploaderService implements Disposable {
       comment: f.comment ?? null,
       full_content: f.rating === -1 ? (f.fullContent ?? null) : null,
       created_at: f.createdAt,
+    };
+  }
+
+  private toRendererBundleAttemptRow(a: TelemetryRendererBundleAttempt, userId: string, appVersion: string | null) {
+    return {
+      id: a.id,
+      user_id: userId,
+      device_id: this.deviceId,
+      app_version: appVersion,
+      checked_at: a.checkedAt,
+      manifest_url: a.manifestUrl,
+      source_channel: a.sourceChannel ?? null,
+      source_manifest_url_override: a.sourceManifestUrlOverride,
+      source_error_reason: a.sourceErrorReason ?? null,
+      source_error_message: a.sourceErrorMessage ? scrubString(a.sourceErrorMessage, { homeDir: os.homedir() }) : null,
+      source_error_target: a.sourceErrorTarget ?? null,
+      current_shell_version: a.currentShellVersion,
+      active_version: a.activeVersion ?? null,
+      active_content_hash: a.activeContentHash ?? null,
+      outcome: a.outcome,
+      reason: a.reason ?? null,
+      manifest_version: a.manifestVersion ?? null,
+      manifest_content_hash: a.manifestContentHash ?? null,
+      manifest_min_shell_version: a.manifestMinShellVersion ?? null,
+      manifest_bundle_url: a.manifestBundleUrl ?? null,
+      required_shell_capabilities_count: a.requiredShellCapabilitiesCount,
+      rollback_to_builtin: a.rollbackToBuiltin,
+      rollback_reason: a.rollbackReason ?? null,
+      missing_shell_capabilities: a.missingShellCapabilities,
+      missing_runtime_assets: a.missingRuntimeAssets,
+      missing_resources: a.missingResources,
+      diagnostics: a.diagnostics,
+      error_message: a.errorMessage ? scrubString(a.errorMessage, { homeDir: os.homedir() }) : null,
     };
   }
 

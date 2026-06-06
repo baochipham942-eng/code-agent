@@ -37,8 +37,8 @@
 | `src/renderer/observability/posthogRenderer.ts` | renderer 侧 PostHog client |
 | `src/shared/observability/scrubEvent.ts` | 共用脱敏：递归扫描 `extra` / `contexts` / `tags` / `user`，剥密钥 / 家目录 / 信用卡 / Bearer token / SSN |
 | `src/shared/observability/posthog-events.ts` | 7 个 event key 常量（`app_opened` / `session_started` / `run_completed` / `run_failed` / `run_cancelled` / `tool_used` / `model_selected`）；`identify` 是 SDK 方法名（`identifyNode` / `identifyRenderer`），不是 event key |
-| `src/main/telemetry/telemetryUploaderService.ts` | LLM trace 上传器；turn 失败不标记 `synced_at`，防 partial-write 丢数据 |
-| `src/main/telemetry/telemetryStorage.ts` | 本地 SQLite 在 `telemetry_sessions` 表加 `synced_at` 列 + 迁移（turns / feedback 同步状态由 session 级 `markSessionsSynced` / `getUnsyncedSessions` 间接管理，不直接持有 `synced_at`） |
+| `src/main/telemetry/telemetryUploaderService.ts` | LLM trace + renderer hot-update attempt 上传器；turn 失败不标记 `synced_at`，热更 attempt 上传失败只保留该批 retry，不阻塞 session/turn |
+| `src/main/telemetry/telemetryStorage.ts` | 本地 SQLite 在 `telemetry_sessions` 表加 `synced_at` 列 + 迁移；另存 `telemetry_renderer_bundle_attempts` 作为系统级热更状态事件 |
 | `scripts/observability/posthog-dashboards.py` | 幂等创建 3 个 PostHog 看板并反查 8 个 insight；`npm run acceptance:posthog-dashboards:dry-run` 可离线输出规格，`npm run acceptance:posthog-dashboards:verify` 可只做线上核验 |
 | `scripts/acceptance/posthog-live-event-smoke.py` | 用 PostHog Project API Key 发无 PII smoke event；优先 HogQL 回读，缺 `query:read` 时 fallback 到临时 insight refresh 回读 |
 

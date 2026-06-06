@@ -1,0 +1,133 @@
+name: Vercel Control Plane Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'vercel-api/**'
+      - 'scripts/control-plane-*.mjs'
+      - 'scripts/generate-control-plane-env.mjs'
+      - 'scripts/verify-renderer-hot-update-production.mjs'
+      - '.github/workflows/vercel-control-plane.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vercel-control-plane-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy Vercel control-plane
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      CONTROL_PLANE_PRODUCTION_URL: https://agentneo.vercel.app
+      CONTROL_PLANE_SMOKE_TOKEN: ${{ secrets.CONTROL_PLANE_SMOKE_TOKEN }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Validate Vercel deploy secrets
+        run: |
+          missing=()
+          for name in VERCEL_ORG_ID VERCEL_PROJECT_ID VERCEL_TOKEN; do
+            if [ -z "${!name}" ]; then
+              missing+=("${name}")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing required Vercel deploy secret(s): ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Typecheck Vercel control-plane
+        run: |
+          npm ci --prefix vercel-api --ignore-scripts
+          npm --prefix vercel-api run typecheck
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel production environment
+        run: vercel pull --yes --environment=production --token="${VERCEL_TOKEN}"
+
+      - name: Assert Vercel project binding
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const project = JSON.parse(fs.readFileSync('.vercel/project.json', 'utf8'));
+          const failures = [];
+          if (project.orgId !== process.env.VERCEL_ORG_ID) {
+            failures.push(`orgId expected ${process.env.VERCEL_ORG_ID}, got ${project.orgId}`);
+          }
+          if (project.projectId !== process.env.VERCEL_PROJECT_ID) {
+            failures.push(`projectId expected ${process.env.VERCEL_PROJECT_ID}, got ${project.projectId}`);
+          }
+          if (project.settings?.rootDirectory && project.settings.rootDirectory !== 'vercel-api') {
+            failures.push(`rootDirectory expected vercel-api, got ${project.settings.rootDirectory}`);
+          }
+          if (failures.length > 0) {
+            console.error(`::error::Vercel project binding mismatch: ${failures.join('; ')}`);
+            process.exit(1);
+          }
+          console.log(`[vercel-control-plane] project binding ok: ${project.projectName ?? project.projectId}`);
+          NODE
+
+      - name: Build Vercel control-plane
+        run: vercel build --prod --token="${VERCEL_TOKEN}"
+
+      - name: Assert Vercel build output
+        run: |
+          required_functions=(
+            api/prompts
+            api/update
+            api/v1/agent-engine-models
+            api/v1/capabilities
+            api/v1/config
+            api/v1/control-plane
+          )
+          for function_path in "${required_functions[@]}"; do
+            config_path=".vercel/output/functions/${function_path}.func/.vc-config.json"
+            if [ ! -f "${config_path}" ]; then
+              echo "::error::Missing Vercel function output: ${config_path}"
+              exit 1
+            fi
+          done
+          if [ ! -f ".vercel/output/functions/api/v1/control-plane.func/vercel-api/lib/controlPlaneRendererRollout.js" ]; then
+            echo "::error::control-plane build output is missing renderer rollout support."
+            exit 1
+          fi
+          if [ ! -f ".vercel/output/functions/api/v1/control-plane.func/vercel-api/api/v1/control-plane.js" ]; then
+            echo "::error::control-plane build output is missing the routed handler file."
+            exit 1
+          fi
+          node <<'NODE'
+          const fs = require('fs');
+          const config = JSON.parse(fs.readFileSync('.vercel/output/functions/api/v1/control-plane.func/.vc-config.json', 'utf8'));
+          if (config.handler !== 'vercel-api/api/v1/control-plane.js') {
+            console.error(`::error::Unexpected control-plane handler: ${config.handler}`);
+            process.exit(1);
+          }
+          console.log('[vercel-control-plane] build output includes renderer rollout control-plane function');
+          NODE
+
+      - name: Deploy Vercel control-plane
+        run: vercel deploy --prebuilt --prod --token="${VERCEL_TOKEN}"
+
+      - name: Smoke production control-plane
+        run: |
+          if [ -n "${CONTROL_PLANE_SMOKE_TOKEN}" ]; then
+            node scripts/control-plane-smoke.mjs "${CONTROL_PLANE_PRODUCTION_URL}" --token "${CONTROL_PLANE_SMOKE_TOKEN}"
+          else
+            node scripts/control-plane-smoke.mjs "${CONTROL_PLANE_PRODUCTION_URL}"
+          fi

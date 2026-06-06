@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   resolveBundledPath,
   resolveExistingNodeModule,
+  resolveExistingResource,
   resolveHelperBinary,
   resolveNodeModule,
   resolveRuntimeRoot,
@@ -93,6 +94,24 @@ describe('runtimeAssetResolver', () => {
     expect(resolveBundledPath('dist/web', options)).toBe(path.join(bundledRoot, 'dist', 'web'));
     expect(resolveBundledPath('dist/renderer', options)).toBe(path.join(bundledRoot, 'dist', 'renderer'));
     expect(resolveBundledPath('dist/native', options)).toBe(path.join(bundledRoot, 'dist', 'native'));
+  });
+
+  it('resolves declared resource dependencies from runtime roots and resources folders', () => {
+    const bundledRoot = makeTempRoot();
+    const resourceDir = makeTempRoot();
+    const directResource = mkdirp(path.join(bundledRoot, 'resources', 'browser-relay-extension'));
+    const packagedResource = mkdirp(path.join(resourceDir, '_up_', 'resources', 'packaged-extension'));
+
+    const options = {
+      env: { AGENT_NEO_BUNDLED_RUNTIME_ROOT: bundledRoot },
+      cwd: makeTempRoot(),
+      dirname: path.join(makeTempRoot(), 'dist', 'web'),
+      resourcesPath: resourceDir,
+    };
+
+    expect(resolveExistingResource('browser-relay-extension', options)).toBe(directResource);
+    expect(resolveExistingResource('resources/packaged-extension', options)).toBe(packagedResource);
+    expect(resolveExistingResource('resources/missing-extension', options)).toBeNull();
   });
 
   it('returns the first existing node module candidate under the runtime root', () => {

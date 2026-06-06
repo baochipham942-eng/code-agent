@@ -513,6 +513,38 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
 
+  // Renderer bundle hot-update attempts - 系统级热更状态上报，不混入 chat turn
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telemetry_renderer_bundle_attempts (
+      id TEXT PRIMARY KEY,
+      checked_at INTEGER NOT NULL,
+      manifest_url TEXT NOT NULL,
+      source_channel TEXT,
+      source_manifest_url_override INTEGER NOT NULL DEFAULT 0,
+      source_error_reason TEXT,
+      source_error_message TEXT,
+      source_error_target TEXT,
+      current_shell_version TEXT NOT NULL,
+      active_version TEXT,
+      active_content_hash TEXT,
+      outcome TEXT NOT NULL,
+      reason TEXT,
+      manifest_version TEXT,
+      manifest_content_hash TEXT,
+      manifest_min_shell_version TEXT,
+      manifest_bundle_url TEXT,
+      required_shell_capabilities_count INTEGER NOT NULL DEFAULT 0,
+      rollback_to_builtin INTEGER NOT NULL DEFAULT 0,
+      rollback_reason TEXT,
+      missing_shell_capabilities TEXT NOT NULL DEFAULT '[]',
+      missing_runtime_assets TEXT NOT NULL DEFAULT '[]',
+      missing_resources TEXT NOT NULL DEFAULT '[]',
+      diagnostics TEXT NOT NULL DEFAULT '[]',
+      error_message TEXT,
+      synced_at INTEGER
+    )
+  `);
+
   // Captures 表 (知识库采集内容持久化)
   db.exec(`
     CREATE TABLE IF NOT EXISTS captures (

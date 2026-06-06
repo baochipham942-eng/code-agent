@@ -1,13 +1,44 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { load as loadYaml } from 'js-yaml';
 
 const repoRoot = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
+type WorkflowStep = {
+  name?: string;
+  if?: string;
+  env?: Record<string, string>;
+  run?: string;
+};
+
+type WorkflowJob = {
+  steps?: WorkflowStep[];
+};
+
+type WorkflowFile = {
+  on?: unknown;
+  jobs?: Record<string, WorkflowJob>;
+};
+
 function readRepoFile(path: string): string {
   return readFileSync(resolve(repoRoot, path), 'utf8');
+}
+
+function readWorkflow(path: string): WorkflowFile {
+  return loadYaml(readRepoFile(path)) as WorkflowFile;
+}
+
+function readWorkflowTriggers(path: string): Record<string, { paths?: string[]; tags?: string[] }> {
+  const workflow = readWorkflow(path) as Record<string, unknown>;
+  const triggers = (workflow.on ?? workflow['on']) as Record<string, { paths?: string[] }> | undefined;
+  if (!triggers) {
+    throw new Error(`${path} must define workflow triggers`);
+  }
+  return triggers;
 }
 
 function runReleaseBundle(env: NodeJS.ProcessEnv) {
@@ -104,12 +135,260 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).toContain('TAURI_UPDATER_PUBKEY');
     expect(workflow).toContain('TAURI_SIGNING_PRIVATE_KEY');
     expect(workflow).toContain('CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS');
+    expect(workflow).toContain('actions: read');
     expect(workflow).toContain('src-tauri/target/release/bundle/macos/*.app.tar.gz');
     expect(workflow).toContain('src-tauri/target/release/bundle/macos/*.app.tar.gz.sig');
     expect(workflow).toContain('npm run release:runtime-assets');
     expect(workflow).toContain('runtime-assets-manifest-darwin-arm64.json');
+    expect(workflow).toContain('scripts/verify-runtime-assets-publish.mjs');
+    expect(workflow).toContain('RUNTIME_ASSETS_MANIFEST_URL');
+    expect(workflow).toContain('RUNTIME_ASSETS_MANIFEST_SHA256');
+    expect(workflow).toContain('--runtime-assets-manifest-url');
+    expect(workflow).toContain('payload.runtimeAssets');
     expect(workflow).toContain('src-tauri/target/release/runtime-assets/*.sha256');
     expect(workflow).toContain('src-tauri/target/release/runtime-assets/*.tar.gz');
+    expect(workflow).toContain('Verify renderer hot-update release gate');
+    expect(workflow).toContain('npm run renderer:verify-release-gate --');
+    expect(workflow).toContain('--workflow renderer-bundle.yml');
+    expect(workflow).toContain('--head-sha "${GITHUB_SHA}"');
+    expect(workflow).toContain('--workflow-branch "${GITHUB_REF_NAME}"');
+    expect(workflow).toContain('--workflow-expected-conclusion success');
+    expect(workflow).toContain('--expected-version "${VERSION}"');
+    expect(workflow).toContain('--expected-release-channel latest');
+    expect(workflow).toContain('--retry-attempts 12');
+    expect(workflow).toContain('--retry-delay-ms 30000');
+    expect(workflow).not.toContain('\t');
+  });
+
+  it('keeps formal app releases fail-closed before app artifacts are published', () => {
+    const workflow = readWorkflow('.github/workflows/release.yml');
+    const steps = workflow.jobs?.['release-mac']?.steps ?? [];
+    const stepNames = steps.map((step) => step.name);
+    const verifierIndex = stepNames.indexOf('Verify renderer hot-update release gate');
+    const rendererProbeIndex = stepNames.indexOf('Smoke-probe renderer startup (block publish on ErrorBoundary crash)');
+    const repackIndex = stepNames.indexOf('Repack updater archive (clean AppleDouble + post-notarize state)');
+    const githubReleaseIndex = stepNames.indexOf('Create GitHub Release');
+    const verifier = steps[verifierIndex];
+
+    expect(verifierIndex).toBeGreaterThan(rendererProbeIndex);
+    expect(verifierIndex).toBeLessThan(repackIndex);
+    expect(verifierIndex).toBeLessThan(githubReleaseIndex);
+    expect(verifier?.if).toBe("${{ !contains(github.ref_name, '-') }}");
+    expect(verifier?.env).toMatchObject({
+      CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS: '${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS }}',
+      CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY: '${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY }}',
+      CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE: '${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE }}',
+      CONTROL_PLANE_SMOKE_TOKEN: '${{ secrets.CONTROL_PLANE_SMOKE_TOKEN }}',
+      GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}',
+    });
+    expect(verifier?.run).toContain('VERSION="${GITHUB_REF_NAME#v}"');
+    expect(verifier?.run).toContain('npm run renderer:verify-release-gate --');
+    expect(verifier?.run).toContain('--workflow renderer-bundle.yml');
+    expect(verifier?.run).toContain('--head-sha "${GITHUB_SHA}"');
+    expect(verifier?.run).toContain('--workflow-branch "${GITHUB_REF_NAME}"');
+    expect(verifier?.run).toContain('--workflow-expected-conclusion success');
+    expect(verifier?.run).toContain('--workflow-timeout-ms 1800000');
+    expect(verifier?.run).toContain('--expected-version "${VERSION}"');
+    expect(verifier?.run).toContain('--expected-release-channel latest');
+    expect(verifier?.run).toContain('--retry-attempts 12');
+    expect(verifier?.run).toContain('--retry-delay-ms 30000');
+  });
+
+  it('keeps renderer hot-update workflow able to publish signed rollback manifests', () => {
+    const workflow = readRepoFile('.github/workflows/renderer-bundle.yml');
+
+    expect(workflow).toContain('pull_request:');
+    expect(workflow).toContain('tag push 不评估 paths filter');
+    expect(workflow).toContain("tags:");
+    expect(workflow).toContain("'v*'");
+    expect(workflow).toContain('renderer-capability-diff:');
+    expect(workflow).toContain('renderer-hot-update-smoke:');
+    expect(workflow).toContain('git worktree add --detach');
+    expect(workflow).toContain('npm run renderer:capability-diff');
+    expect(workflow).toContain('--summary-output "${GITHUB_STEP_SUMMARY}"');
+    expect(workflow).toContain('--fail-on-unsupported');
+    expect(workflow).toContain("'src/main/services/renderer/**'");
+    expect(workflow).toContain("'src/main/services/cloud/controlPlaneTrust.ts'");
+    expect(workflow).toContain("'src/main/ipc/update.ipc.ts'");
+    expect(workflow).toContain("'src/web/routes/static.ts'");
+    expect(workflow).toContain("'vercel-api/api/v1/control-plane.ts'");
+    expect(workflow).toContain("'vercel-api/lib/controlPlanePayloads.ts'");
+    expect(workflow).toContain("'vercel-api/lib/controlPlaneRendererRollout.ts'");
+    expect(workflow).toContain("'scripts/control-plane-smoke.mjs'");
+    expect(workflow).toContain("'scripts/control-plane-release-bundle.mjs'");
+    expect(workflow).toContain("'scripts/generate-control-plane-env.mjs'");
+    expect(workflow).toContain('scripts/verify-renderer-hot-update-production.mjs');
+    expect(workflow).toContain('release_channel:');
+    expect(workflow).toContain('target_cohort:');
+    expect(workflow).toContain('控制面 rollout policy 可按 cohort 命中');
+    expect(workflow).toContain('rollout_percent:');
+    expect(workflow).toContain('dry_run:');
+    expect(workflow).toContain('RENDERER_BUNDLE_DRY_RUN:');
+    expect(workflow).toContain('CONTROL_PLANE_SMOKE_TOKEN:');
+    expect(workflow).toContain('TAG_VERSION="${GITHUB_REF_NAME#v}"');
+    expect(workflow).toContain('Renderer bundle version ${VERSION} does not match tag ${GITHUB_REF_NAME}.');
+    expect(workflow).toContain('ARGS+=(--dry-run)');
+    expect(workflow).toContain('Renderer bundle dry-run: generated candidate artifacts only');
+    expect(workflow).toContain('renderer-bundle/channels/${RELEASE_CHANNEL}');
+    expect(workflow).toContain('--channel "${RELEASE_CHANNEL}"');
+    expect(workflow).toContain('--cohort "${TARGET_COHORT}"');
+    expect(workflow).toContain('--rollout-percent "${ROLLOUT_PERCENT}"');
+    expect(workflow).toContain('Summarize renderer manifest diff');
+    expect(workflow).toContain('renderer-bundle-latest-manifest.json');
+    expect(workflow).toContain('npm run renderer:manifest-diff');
+    expect(workflow).toContain('Generate renderer release record');
+    expect(workflow).toContain('npm run renderer:release-record');
+    expect(workflow).toContain('release-record.json');
+    expect(workflow).toContain('release-record.md');
+    expect(workflow).toContain('Verify production renderer rollout control plane');
+    expect(workflow).toContain('npm run renderer:verify-production -- --skip-renderer-bundle --retry-attempts 12 --retry-delay-ms 30000');
+    expect(workflow).toContain('--release-record-url "${BUNDLE_BASE_URL}/release-record.json"');
+    expect(workflow).toContain('--expected-release-channel "${RELEASE_CHANNEL}"');
+    expect(workflow).toContain('--expected-cohort "${TARGET_COHORT}"');
+    expect(workflow).toContain('--expected-rollout-percent "${ROLLOUT_PERCENT}"');
+    expect(workflow).toContain('Verify production renderer hot-update surface');
+    expect(workflow).toContain('PROD_ARGS=(');
+    expect(workflow).toContain('--manifest-url "${BUNDLE_BASE_URL}/manifest.json"');
+    expect(workflow).toContain('--retry-attempts 12');
+    expect(workflow).toContain('--retry-delay-ms 30000');
+    expect(workflow).toContain('npm run renderer:verify-production -- "${PROD_ARGS[@]}"');
+    expect(workflow).toContain('rollback_to_builtin');
+    expect(workflow).toContain('--rollback-to-builtin');
+    expect(workflow).toContain('--rollback-reason');
+    expect(workflow).toContain('Published renderer rollback manifest');
+    expect(workflow).toContain('--allow-empty-required-shell-capabilities');
+    expect(workflow).toContain('Smoke renderer hot-update serving');
+    expect(workflow).toContain('npm run acceptance:renderer-hot-update');
+    expect(workflow).toContain("env.RENDERER_BUNDLE_DRY_RUN != 'true'");
+    expect(workflow).not.toContain('\t');
+  });
+
+  it('fails formal tag renderer publishes when signing material is incomplete', () => {
+    const workflow = readWorkflow('.github/workflows/renderer-bundle.yml');
+    const steps = workflow.jobs?.['publish-renderer-bundle']?.steps ?? [];
+    const stepByName = (name: string) => steps.find((step) => step.name === name);
+    const buildCondition = "${{ (env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '') || env.RENDERER_BUNDLE_DRY_RUN == 'true' }}";
+    const publishCondition = "${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' }}";
+
+    const guard = stepByName('Guard renderer signing material');
+    expect(guard?.if).toBe("${{ (env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY == '' || env.CODE_AGENT_CONTROL_PLANE_KEY_ID == '') && env.RENDERER_BUNDLE_DRY_RUN != 'true' }}");
+    expect(guard?.run).toContain('GITHUB_REF_TYPE');
+    expect(guard?.run).toContain('Formal tag renderer bundle publish requires CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY and CODE_AGENT_CONTROL_PLANE_KEY_ID');
+    expect(guard?.run).toContain('exit 1');
+    expect(guard?.run).toContain('renderer bundle publishing is disabled for this non-tag run');
+
+    for (const name of [
+      'Checkout code',
+      'Setup Node.js',
+      'Install dependencies',
+      'Build + sign renderer bundle',
+      'Summarize renderer manifest diff',
+      'Generate renderer release record',
+      'Smoke renderer hot-update serving',
+    ]) {
+      expect(stepByName(name)?.if).toBe(buildCondition);
+    }
+    for (const name of [
+      'Verify production renderer rollout control plane',
+      'Install ossutil (Aliyun OSS CLI)',
+      'Upload renderer bundle to Aliyun OSS',
+      'Verify published renderer bundle',
+      'Verify production renderer hot-update surface',
+    ]) {
+      expect(stepByName(name)?.if).toBe(publishCondition);
+    }
+  });
+
+  it('keeps renderer hot-update PR and push path filters in sync', () => {
+    const triggers = readWorkflowTriggers('.github/workflows/renderer-bundle.yml');
+    const pullRequestPaths = triggers.pull_request.paths ?? [];
+    const pushPaths = triggers.push.paths ?? [];
+    const pushTags = triggers.push.tags ?? [];
+    const onlyPullRequest = pullRequestPaths.filter((entry) => !pushPaths.includes(entry));
+    const onlyPush = pushPaths.filter((entry) => !pullRequestPaths.includes(entry));
+    const requiredProductionPaths = [
+      'scripts/control-plane-smoke.mjs',
+      'scripts/control-plane-release-bundle.mjs',
+      'scripts/generate-control-plane-env.mjs',
+      'vercel-api/api/v1/control-plane.ts',
+      'vercel-api/lib/controlPlaneEnvelope.ts',
+      'vercel-api/lib/controlPlanePayloads.ts',
+      'vercel-api/lib/controlPlaneRendererRollout.ts',
+      '.github/workflows/renderer-bundle.yml',
+    ];
+
+    expect(onlyPullRequest).toEqual([]);
+    expect(onlyPush).toEqual([]);
+    expect(pushTags).toContain('v*');
+    for (const path of requiredProductionPaths) {
+      expect(pullRequestPaths).toContain(path);
+      expect(pushPaths).toContain(path);
+    }
+  });
+
+  it('keeps control-plane and renderer hot-update scripts inside PR CI scope', () => {
+    const workflow = readRepoFile('.github/workflows/swarm-ci.yml');
+    const parsed = readWorkflow('.github/workflows/swarm-ci.yml');
+    const smokeSteps = parsed.jobs?.smoke?.steps ?? [];
+    const typecheckStep = smokeSteps.find((step) => step.name === 'Typecheck Vercel control-plane');
+
+    expect(workflow).toContain("'.github/workflows/release.yml'");
+    expect(workflow).toContain("'.github/workflows/renderer-bundle.yml'");
+    expect(workflow).toContain("'.github/workflows/vercel-control-plane.yml'");
+    expect(workflow).toContain("'vercel-api/**'");
+    expect(workflow).toContain("'scripts/control-plane-*.mjs'");
+    expect(workflow).toContain("'scripts/generate-control-plane-env.mjs'");
+    expect(workflow).toContain("'scripts/renderer-*.mjs'");
+    expect(workflow).toContain("'scripts/verify-github-workflow-run.mjs'");
+    expect(workflow).toContain("'scripts/verify-renderer-bundle-publish.mjs'");
+    expect(workflow).toContain("'scripts/verify-renderer-hot-update-production.mjs'");
+    expect(workflow).toContain("'scripts/verify-renderer-hot-update-release-gate.mjs'");
+    expect(workflow).toContain("'scripts/verify-runtime-assets-publish.mjs'");
+    expect(workflow).toContain("'supabase/migrations/**'");
+    expect(typecheckStep?.run).toContain('npm ci --prefix vercel-api --ignore-scripts');
+    expect(typecheckStep?.run).toContain('npm --prefix vercel-api run typecheck');
+    expect(workflow).not.toContain('\t');
+  });
+
+  it('keeps Vercel control-plane deployment automated and smoke-checked', () => {
+    const workflowText = readRepoFile('.github/workflows/vercel-control-plane.yml');
+    const workflow = readWorkflow('.github/workflows/vercel-control-plane.yml');
+    const triggers = readWorkflowTriggers('.github/workflows/vercel-control-plane.yml');
+    const steps = workflow.jobs?.deploy?.steps ?? [];
+    const stepByName = (name: string) => steps.find((step) => step.name === name);
+
+    expect(triggers.push.tags).toBeUndefined();
+    expect(triggers.push.paths).toEqual(expect.arrayContaining([
+      'vercel-api/**',
+      'scripts/control-plane-*.mjs',
+      'scripts/generate-control-plane-env.mjs',
+      'scripts/verify-renderer-hot-update-production.mjs',
+      '.github/workflows/vercel-control-plane.yml',
+    ]));
+    expect(triggers.workflow_dispatch).toBeDefined();
+
+    expect(workflowText).toContain('VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}');
+    expect(workflowText).toContain('VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}');
+    expect(workflowText).toContain('VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}');
+    expect(workflowText).toContain('CONTROL_PLANE_PRODUCTION_URL: https://agentneo.vercel.app');
+    expect(stepByName('Validate Vercel deploy secrets')?.run).toContain('Missing required Vercel deploy secret');
+    expect(stepByName('Typecheck Vercel control-plane')?.run).toContain('npm ci --prefix vercel-api --ignore-scripts');
+    expect(stepByName('Typecheck Vercel control-plane')?.run).toContain('npm --prefix vercel-api run typecheck');
+    expect(stepByName('Install Vercel CLI')?.run).toBe('npm install -g vercel@latest');
+    expect(stepByName('Pull Vercel production environment')?.run).toBe('vercel pull --yes --environment=production --token="${VERCEL_TOKEN}"');
+    expect(stepByName('Assert Vercel project binding')?.run).toContain(".vercel/project.json");
+    expect(stepByName('Assert Vercel project binding')?.run).toContain('project.orgId !== process.env.VERCEL_ORG_ID');
+    expect(stepByName('Assert Vercel project binding')?.run).toContain('project.projectId !== process.env.VERCEL_PROJECT_ID');
+    expect(stepByName('Assert Vercel project binding')?.run).toContain("project.settings.rootDirectory !== 'vercel-api'");
+    expect(stepByName('Build Vercel control-plane')?.run).toBe('vercel build --prod --token="${VERCEL_TOKEN}"');
+    expect(stepByName('Assert Vercel build output')?.run).toContain('api/v1/control-plane');
+    expect(stepByName('Assert Vercel build output')?.run).toContain('controlPlaneRendererRollout.js');
+    expect(stepByName('Assert Vercel build output')?.run).toContain('vercel-api/api/v1/control-plane.js');
+    expect(stepByName('Assert Vercel build output')?.run).toContain('routed handler file');
+    expect(stepByName('Assert Vercel build output')?.run).toContain("config.handler !== 'vercel-api/api/v1/control-plane.js'");
+    expect(stepByName('Deploy Vercel control-plane')?.run).toBe('vercel deploy --prebuilt --prod --token="${VERCEL_TOKEN}"');
+    expect(stepByName('Smoke production control-plane')?.run).toContain('node scripts/control-plane-smoke.mjs "${CONTROL_PLANE_PRODUCTION_URL}"');
+    expect(workflowText).not.toContain('\t');
   });
 
   it('keeps runtime asset archives free of unsupported link entries', () => {
@@ -122,16 +401,25 @@ describe('macOS release fail-closed gates', () => {
 
   it('wires package release scripts through notarize and verify gates', () => {
     const packageJson = JSON.parse(readRepoFile('package.json')) as {
+      version: string;
       scripts: Record<string, string>;
+    };
+    const packageLock = JSON.parse(readRepoFile('package-lock.json')) as {
+      version: string;
+      packages?: Record<string, { version?: string }>;
     };
     const prebuildCleanup = readRepoFile('scripts/tauri-prebuild-cleanup.sh');
     const releaseBundle = readRepoFile('scripts/tauri-release-bundle.sh');
 
+    expect(packageLock.version).toBe(packageJson.version);
+    expect(packageLock.packages?.['']?.version).toBe(packageJson.version);
     expect(packageJson.scripts['tauri:release:bundle']).toContain('bash scripts/tauri-release-bundle.sh');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('npm run release:notarize-macos');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('npm run release:verify-macos');
     expect(packageJson.scripts['release:notarize-macos']).toBe('bash scripts/tauri-notarize.sh');
     expect(packageJson.scripts['release:verify-macos']).toBe('bash scripts/verify-macos-release.sh');
+    expect(packageJson.scripts['renderer:verify-production']).toBe('npx tsx scripts/verify-renderer-hot-update-production.mjs');
+    expect(packageJson.scripts['renderer:verify-release-gate']).toBe('npx tsx scripts/verify-renderer-hot-update-release-gate.mjs');
     expect(prebuildCleanup).toContain('prepare-bundled-node.mjs');
     expect(releaseBundle).toContain('prepare-bundled-node.mjs');
     expect(releaseBundle).toContain('*/dist/bundled-node/bin/node');
@@ -173,6 +461,45 @@ describe('macOS release fail-closed gates', () => {
     expect(defaultAssets).toContain("'onnxruntime-vad'");
     expect(defaultAssets).toContain("'playwright-browser-runtime'");
     expect(defaultAssets).not.toContain('sharp-image-runtime');
+  });
+
+  it('writes runtime asset metadata into stable release JSON when publish URLs are provided', () => {
+    const output = resolve(mkdtempSync(`${tmpdir()}/stable-release-json-`), 'release.json');
+    const result = spawnSync('node', [
+      'scripts/build-stable-release-json.mjs',
+      '--version',
+      '0.16.93',
+      '--tag',
+      'v0.16.93',
+      '--dmg-url',
+      'https://oss.example/v0.16.93/Agent-Neo-0.16.93-arm64.dmg',
+      '--html-url',
+      'https://github.com/acme/code-agent/releases/tag/v0.16.93',
+      '--runtime-assets-manifest-url',
+      'https://oss.example/v0.16.93/runtime-assets/runtime-assets-manifest-darwin-arm64.json',
+      '--runtime-assets-manifest-sha-url',
+      'https://oss.example/v0.16.93/runtime-assets/runtime-assets-manifest-darwin-arm64.sha256',
+      '--output',
+      output,
+    ], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    });
+
+    expect(result.status).toBe(0);
+    const release = JSON.parse(readFileSync(output, 'utf8')) as {
+      assets: Array<{ name: string; browser_download_url: string }>;
+    };
+    expect(release.assets).toEqual(expect.arrayContaining([
+      {
+        name: 'runtime-assets-manifest-darwin-arm64.json',
+        browser_download_url: 'https://oss.example/v0.16.93/runtime-assets/runtime-assets-manifest-darwin-arm64.json',
+      },
+      {
+        name: 'runtime-assets-manifest-darwin-arm64.sha256',
+        browser_download_url: 'https://oss.example/v0.16.93/runtime-assets/runtime-assets-manifest-darwin-arm64.sha256',
+      },
+    ]));
   });
 
   it('keeps better-sqlite3 source and build inputs out of default Tauri resources', () => {

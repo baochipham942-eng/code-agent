@@ -66,6 +66,10 @@ describe('control-plane smoke script', () => {
         updatedAt: '2026-05-22T00:00:00.000Z',
         engines: [],
       })),
+      '/api/v1/control-plane?artifact=renderer_bundle_rollout': response(200, signedEnvelope('renderer_bundle_rollout', {
+        version: 'renderer-rollout-test',
+        channel: 'beta',
+      })),
     });
 
     const results = await runControlPlaneSmoke({
@@ -79,12 +83,14 @@ describe('control-plane smoke script', () => {
       'prompt_registry',
       'capability_registry',
       'agent_engine_model_catalog',
+      'renderer_bundle_rollout',
     ]);
     expect(calls.map((call) => new URL(call.url).pathname + new URL(call.url).search)).toEqual([
       '/api/v1/config',
       '/api/prompts?gen=all',
       '/api/v1/control-plane?artifact=capabilities',
       '/api/v1/control-plane?artifact=agent_engine_models',
+      '/api/v1/control-plane?artifact=renderer_bundle_rollout',
     ]);
     expect(calls.every((call) => call.init.headers?.Authorization === 'Bearer server-token')).toBe(true);
   });
@@ -104,6 +110,24 @@ describe('control-plane smoke script', () => {
     })).rejects.toMatchObject({
       code: 'control_plane_unconfigured',
       message: expect.stringContaining('CONTROL_PLANE_PRIVATE_KEY is not configured'),
+    });
+  });
+
+  it('reports unsupported artifacts from stale deployed control-plane code', async () => {
+    const { fetchImpl } = mockFetch({
+      '/api/v1/control-plane?artifact=renderer_bundle_rollout': response(400, {
+        error: 'unsupported_artifact',
+        message: 'Supported artifacts are cloud_config, capability_registry, agent_engine_model_catalog, and prompt_registry.',
+      }),
+    });
+
+    await expect(runControlPlaneSmoke({
+      baseUrl: 'https://control-plane.test',
+      fetchImpl,
+      artifacts: [CONTROL_PLANE_ARTIFACTS[4]],
+    })).rejects.toMatchObject({
+      code: 'unsupported_artifact',
+      message: expect.stringContaining('is not supported by the deployed control-plane'),
     });
   });
 

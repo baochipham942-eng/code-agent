@@ -1,0 +1,370 @@
+// ============================================================================
+// Shell Capability Manifest
+// ============================================================================
+
+import {
+  makeShellCapabilityId,
+  makeTauriCommandCapabilityId,
+  SHELL_CAPABILITY_DOMAINS,
+  shellCapabilityLayerForDomain,
+  type ShellCapability,
+  type ShellCapabilitiesManifest,
+  type ShellCapabilityRisk,
+} from '../shared/contract/shellCapabilities';
+import { IPC_DOMAINS, type IPCDomain } from '../shared/ipc/domains';
+
+const DEFAULT_SINCE_VERSION = '0.16.93';
+
+const NATIVE_TAURI_COMMANDS = [
+  'appshots_read_image_data_url',
+  'appshots_report_composer_slot',
+  'appshots_set_enabled',
+  'appshots_trigger',
+  'check_for_update',
+  'desktop_capture_screenshot',
+  'desktop_get_app_icon',
+  'desktop_get_capabilities',
+  'desktop_get_collector_status',
+  'desktop_get_frontmost_context',
+  'desktop_get_permission_status',
+  'desktop_list_recent_events',
+  'desktop_open_system_settings',
+  'desktop_request_microphone_permission',
+  'desktop_start_audio_rec',
+  'desktop_start_collector',
+  'desktop_stop_audio_rec',
+  'desktop_stop_collector',
+  'desktop_update_analyze_text',
+  'get_app_version',
+  'install_update',
+  'open_update_url',
+  'pip_frame',
+  'pip_hide',
+  'pip_show',
+] as const;
+
+const CAPABILITY_DOMAIN_ACTIONS = {
+  [IPC_DOMAINS.ACTIVITY]: [
+    'getCurrentContext',
+    'listProviders',
+  ],
+  [IPC_DOMAINS.ADMIN]: [
+    'createInviteCode',
+    'listControlPlaneAuditEvents',
+    'listControlPlaneRolloutSummary',
+    'listInviteCodes',
+    'listUsers',
+    'setSharedRelay',
+    'updateInviteCode',
+  ],
+  [IPC_DOMAINS.AGENT]: [
+    'cancel',
+    'interrupt',
+    'pause',
+    'permissionResponse',
+    'resume',
+    'send',
+    'setEffortLevel',
+    'setInteractionMode',
+    'setPermissionMode',
+    'setThinkingEnabled',
+  ],
+  [IPC_DOMAINS.AGENT_ENGINE]: [
+    'detect',
+    'get',
+    'list',
+    'listHistory',
+    'listModels',
+    'previewHistory',
+    'select',
+    'selectModel',
+  ],
+  [IPC_DOMAINS.AGENT_REGISTRY]: [
+    'list',
+  ],
+  [IPC_DOMAINS.AUTH]: [
+    'clearSavedCredentials',
+    'generateQuickToken',
+    'getSavedCredentials',
+    'getStatus',
+    'getUser',
+    'passwordResetCallback',
+    'resetPassword',
+    'saveCredentials',
+    'signInEmail',
+    'signInOAuth',
+    'signInToken',
+    'signOut',
+    'signUpEmail',
+    'updatePassword',
+    'updateProfile',
+  ],
+  [IPC_DOMAINS.CAPABILITY]: [
+    'installDraft',
+    'list',
+    'removeDraft',
+    'setEnabled',
+  ],
+  [IPC_DOMAINS.CAPTURE]: [
+    'capture',
+    'delete',
+    'get',
+    'importFiles',
+    'list',
+    'search',
+    'selectFiles',
+    'stats',
+    'wechatStatus',
+  ],
+  [IPC_DOMAINS.CONNECTOR]: [
+    'disconnect',
+    'listNativeInventory',
+    'listStatuses',
+    'openApp',
+    'probe',
+    'remove',
+    'repairPermission',
+    'retry',
+    'setNativeEnabled',
+  ],
+  [IPC_DOMAINS.DATA]: [
+    'clearSnapshots',
+    'clearToolCache',
+    'getSnapshotStats',
+    'getStats',
+    'setSnapshotRetention',
+  ],
+  [IPC_DOMAINS.DESKTOP]: [
+    'closeManagedBrowserSession',
+    'ensureManagedBrowserSession',
+    'getComputerSurfaceState',
+    'getManagedBrowserRecoverySnapshot',
+    'getManagedBrowserSession',
+    'listComputerSurfaceElements',
+    'observeComputerSurface',
+    'openBrowserRelayExtensionDirectory',
+    'openManagedBrowserUrl',
+    'refreshManagedBrowserAccountState',
+    'startBrowserRelay',
+    'stopBrowserRelay',
+  ],
+  [IPC_DOMAINS.LIVE_PREVIEW]: [
+    'applyTweak',
+    'detectFramework',
+    'getDevServerLogs',
+    'getDevServerSession',
+    'listDevServers',
+    'ping',
+    'resolveSourceLocation',
+    'startDevServer',
+    'stopDevServer',
+    'validateDevServerUrl',
+    'waitDevServerReady',
+  ],
+  [IPC_DOMAINS.MCP]: [
+    'addServer',
+    'getCatalog',
+    'getServerStates',
+    'getStatus',
+    'listResources',
+    'listTools',
+    'reconnectServer',
+    'refreshFromCloud',
+    'setServerEnabled',
+  ],
+  [IPC_DOMAINS.MEMORY]: [
+    'memoryAudit',
+    'memoryInboxResolve',
+  ],
+  [IPC_DOMAINS.NOTIFICATION]: [
+    'getRecent',
+    'reportClientDelivery',
+  ],
+  [IPC_DOMAINS.OPENCHRONICLE]: [
+    'getSettings',
+    'getStatus',
+    'setEnabled',
+    'updateSettings',
+  ],
+  [IPC_DOMAINS.PII]: [
+    'setup:cancel',
+    'setup:isReady',
+    'setup:start',
+    'setup:status',
+  ],
+  [IPC_DOMAINS.PLANNING]: [
+    'getErrors',
+    'getFindings',
+    'getPlan',
+    'getState',
+  ],
+  [IPC_DOMAINS.PROJECT]: [
+    'addGoal',
+    'addRole',
+    'artifacts',
+    'detail',
+    'list',
+    'removeRole',
+    'rename',
+    'setStatus',
+    'updateGoalStatus',
+  ],
+  [IPC_DOMAINS.PROVIDER]: [
+    'discover_models',
+    'getHealthStatus',
+    'run_diagnostics',
+    'run_doctor',
+    'test_connection',
+  ],
+  [IPC_DOMAINS.ROLES]: [
+    'confirmDraft',
+    'deleteMemory',
+    'detail',
+    'list',
+    'listDrafts',
+    'rejectDraft',
+    'setProactivity',
+    'updateMemory',
+  ],
+  [IPC_DOMAINS.SESSION]: [
+    'archive',
+    'clearModelOverride',
+    'create',
+    'delete',
+    'export',
+    'exportMarkdown',
+    'getMemoryContext',
+    'getMessages',
+    'getModelOverride',
+    'getSessionTasks',
+    'import',
+    'list',
+    'load',
+    'rewindToPrompt',
+    'search',
+    'switchModel',
+    'unarchive',
+    'update',
+  ],
+  [IPC_DOMAINS.SETTINGS]: [
+    'checkApiKeyConfigured',
+    'get',
+    'getAllServiceKeys',
+    'getDevMode',
+    'getServiceApiKey',
+    'set',
+    'setDevMode',
+    'setServiceApiKey',
+    'testApiKey',
+  ],
+  [IPC_DOMAINS.SOUL]: [
+    'getDefault',
+    'getProfile',
+    'getStatus',
+    'resetProfile',
+    'saveProfile',
+  ],
+  [IPC_DOMAINS.SYNC]: [
+    'forceFull',
+    'getStatus',
+    'start',
+    'stop',
+  ],
+  [IPC_DOMAINS.TASK]: [
+    'cancel',
+    'cleanup',
+    'getAllStates',
+    'getQueue',
+    'getState',
+    'getStats',
+    'interrupt',
+    'start',
+  ],
+  [IPC_DOMAINS.UPDATE]: [
+    'check',
+    'download',
+    'getInfo',
+    'openFile',
+    'openUrl',
+    'prepareRuntimeAssets',
+    'rendererBundleStatus',
+    'runtimeAssetsStatus',
+    'startAutoCheck',
+    'stopAutoCheck',
+  ],
+  [IPC_DOMAINS.WORKSPACE]: [
+    'createFile',
+    'createFolder',
+    'downloadFile',
+    'getConfigScope',
+    'getCurrent',
+    'getDesignMdSummary',
+    'listFiles',
+    'listRecent',
+    'openPath',
+    'readBinary',
+    'readFile',
+    'removeRecent',
+    'selectDirectory',
+    'setCurrent',
+    'showItemInFolder',
+    'writeFile',
+  ],
+} satisfies Partial<Record<IPCDomain, readonly string[]>>;
+
+const HIGH_RISK_CAPABILITIES = new Set([
+  makeShellCapabilityId(IPC_DOMAINS.AGENT, 'send'),
+  makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'ensureManagedBrowserSession'),
+  makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'observeComputerSurface'),
+  makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'openManagedBrowserUrl'),
+  makeShellCapabilityId(IPC_DOMAINS.WORKSPACE, 'writeFile'),
+  makeTauriCommandCapabilityId('install_update'),
+]);
+
+function inferRisk(domain: string, action: string): ShellCapabilityRisk {
+  const id = makeShellCapabilityId(domain, action);
+  if (HIGH_RISK_CAPABILITIES.has(id)) return 'high';
+  if (/^(add|archive|cancel|capture|clear|close|confirm|create|delete|disconnect|download|force|import|install|interrupt|open|pause|prepare|probe|refresh|reject|remove|rename|repair|reset|resume|retry|save|select|send|set|sign|start|stop|switch|unarchive|update|write)/i.test(action)) {
+    return 'medium';
+  }
+  return 'low';
+}
+
+export function getShellCapabilities(): ShellCapability[] {
+  const domainCapabilities = Object.entries(CAPABILITY_DOMAIN_ACTIONS)
+    .flatMap(([domain, actions]) => actions.map((action) => ({
+      id: makeShellCapabilityId(domain, action),
+      domain,
+      action,
+      layer: shellCapabilityLayerForDomain(domain),
+      since: DEFAULT_SINCE_VERSION,
+      risk: inferRisk(domain, action),
+    })));
+  const nativeCapabilities = NATIVE_TAURI_COMMANDS.map((command) => ({
+    id: makeTauriCommandCapabilityId(command),
+    domain: SHELL_CAPABILITY_DOMAINS.TAURI,
+    action: command,
+    layer: shellCapabilityLayerForDomain(SHELL_CAPABILITY_DOMAINS.TAURI),
+    since: DEFAULT_SINCE_VERSION,
+    risk: inferRisk(SHELL_CAPABILITY_DOMAINS.TAURI, command),
+  }));
+
+  return [...domainCapabilities, ...nativeCapabilities]
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+export function getShellCapabilityIds(): string[] {
+  return getShellCapabilities().map((capability) => capability.id);
+}
+
+export function getShellCapabilitiesManifest(
+  appVersion: string,
+  generatedAt = new Date().toISOString(),
+): ShellCapabilitiesManifest {
+  return {
+    schemaVersion: 1,
+    appVersion,
+    generatedAt,
+    capabilities: getShellCapabilities(),
+  };
+}

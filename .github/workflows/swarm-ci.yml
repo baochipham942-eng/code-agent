@@ -17,12 +17,26 @@ on:
     paths:
       - 'src/**'
       - 'tests/**'
+      - 'vercel-api/**'
       - 'package.json'
       - 'package-lock.json'
       - 'playwright.config.ts'
       - 'tests/e2e/playwright.e2e.config.ts'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/renderer-bundle.yml'
       - '.github/workflows/swarm-ci.yml'
+      - '.github/workflows/vercel-control-plane.yml'
       - 'scripts/ci/**'
+      - 'scripts/build-renderer-bundle.mjs'
+      - 'scripts/control-plane-*.mjs'
+      - 'scripts/generate-control-plane-env.mjs'
+      - 'scripts/renderer-*.mjs'
+      - 'scripts/verify-github-workflow-run.mjs'
+      - 'scripts/verify-renderer-bundle-publish.mjs'
+      - 'scripts/verify-renderer-hot-update-production.mjs'
+      - 'scripts/verify-renderer-hot-update-release-gate.mjs'
+      - 'scripts/verify-runtime-assets-publish.mjs'
+      - 'supabase/migrations/**'
   push:
     branches: [main]
   workflow_dispatch:
@@ -46,7 +60,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
 
       - name: Install dependencies
@@ -61,10 +75,17 @@ jobs:
         # --ignore-scripts 跳过了 better-sqlite3 的 install hook (prebuild-install)，
         # CI 上 Database 初始化会因找不到 .node 文件 fallback 到 in-memory，
         # 导致 swarm-trace / pending_approvals 持久化路径在 CI 测的不是真实路径。
-        # 用 prebuild-install 从 GitHub release 下 Node 20 ABI (NODE_MODULE_VERSION 115)
+        # 用 prebuild-install 从 GitHub release 下 Node 24 ABI (NODE_MODULE_VERSION 137)
         # 的 linux x64 预编译 binary，跳过 node-gyp 编译链路。
         working-directory: node_modules/better-sqlite3
         run: ../.bin/prebuild-install || true
+
+      - name: Typecheck Vercel control-plane
+        # vercel-api 是独立 package，不属于 root npm workspace；root npm ci 不会装它自己的依赖。
+        # 当前 renderer hot-update 的生产门正卡在 control-plane artifact，PR 阶段必须独立编译这层。
+        run: |
+          npm ci --prefix vercel-api --ignore-scripts
+          npm --prefix vercel-api run typecheck
 
       - name: Run swarm smoke suite
         run: npm run test:swarm:smoke -- --retry=1
@@ -102,7 +123,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
 
       - name: Install dependencies

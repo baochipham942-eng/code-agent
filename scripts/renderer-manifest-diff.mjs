@@ -227,8 +227,10 @@ function main() {
 
   const options = { allowRawPayload };
   const headManifest = readManifestFile(path.resolve(headManifestPath), options);
+  // base 是当前已发布、即将被替换的 manifest，只用于展示 diff。签名/contentHash/kind 仍严格校验，
+  // 但过期不能阻断本次重新签发——重新发布正是修复过期 manifest 的手段（now:1 关掉对 base 的过期判定）。
   const baseManifest = baseManifestPath
-    ? readManifestFile(path.resolve(baseManifestPath), options)
+    ? readManifestFile(path.resolve(baseManifestPath), { ...options, now: 1 })
     : null;
   const diff = buildRendererManifestDiff({ baseManifest, headManifest });
   const markdown = formatRendererManifestDiffMarkdown(diff);

@@ -31,8 +31,7 @@
   "bundle": {
     "active": true,
     "targets": [
-      "app",
-      "dmg"
+      "app"
     ],
     "createUpdaterArtifacts": false,
     "category": "Productivity",

@@ -41,12 +41,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
 
       - name: Install dependencies
@@ -61,8 +61,10 @@ jobs:
         # --ignore-scripts 跳过了 better-sqlite3 的 install hook (prebuild-install)，
         # CI 上 Database 初始化会因找不到 .node 文件 fallback 到 in-memory，
         # 导致 swarm-trace / pending_approvals 持久化路径在 CI 测的不是真实路径。
-        # 用 prebuild-install 从 GitHub release 下 Node 20 ABI (NODE_MODULE_VERSION 115)
-        # 的 linux x64 预编译 binary，跳过 node-gyp 编译链路。
+        # 用 prebuild-install 从 GitHub release 下当前 Node ABI（node24 = NODE_MODULE_VERSION 137）
+        # 的 linux x64 预编译 binary，跳过 node-gyp 编译链路。prebuild-install 按运行时 Node 自动
+        # 探测 ABI、不写死版本——若 better-sqlite3 该版本未提供 node24 预编译，此处会拉取失败（|| true
+        # 静默 fallback 到 in-memory），真实编译验证由下方 full job 的 --build-from-source 兜底。
         working-directory: node_modules/better-sqlite3
         run: ../.bin/prebuild-install || true
 
@@ -97,12 +99,12 @@ jobs:
       status: ${{ steps.result.outputs.status }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
 
       - name: Install dependencies

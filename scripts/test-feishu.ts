@@ -6,8 +6,13 @@
 
 import * as lark from '@larksuiteoapi/node-sdk';
 
-const APP_ID = 'cli_a9f01c4096f85bd6';
-const APP_SECRET = 'mFHKsRVjfBPQPrEkuX77sfojC5CktAou';
+const APP_ID = process.env.FEISHU_TEST_APP_ID;
+const APP_SECRET = process.env.FEISHU_TEST_APP_SECRET;
+
+if (!APP_ID || !APP_SECRET) {
+  console.error('请先设置环境变量 FEISHU_TEST_APP_ID 和 FEISHU_TEST_APP_SECRET');
+  process.exit(1);
+}
 
 async function testFeishuConnection() {
   console.log('='.repeat(60));

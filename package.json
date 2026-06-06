@@ -145,6 +145,8 @@
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2.5.4",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "@types/dagre": "^0.7.54",
     "@types/papaparse": "^5.5.2",
     "@ui-tars/sdk": "^1.2.3",

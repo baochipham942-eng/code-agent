@@ -4,6 +4,11 @@
 
 export interface UpdateInfo {
   hasUpdate: boolean;
+  /**
+   * true 表示这次检查本身失败了（native + cloud 都没拿到结果），而不是"已是最新"。
+   * 用来避免把网络/服务失败渲染成绿色"已是最新版本"误导用户。
+   */
+  checkFailed?: boolean;
   /** 是否强制更新 - true 时弹出不可关闭的更新弹窗 */
   forceUpdate?: boolean;
   currentVersion: string;
@@ -86,4 +91,92 @@ export interface RuntimeAssetsStatus {
     bundledFallback: number;
     missing: number;
   };
+}
+
+export type RendererBundleAttemptOutcome = 'applied' | 'rolled-back' | 'skipped' | 'failed';
+
+export interface RendererBundleActiveStatus {
+  version: string;
+  contentHash: string;
+}
+
+export interface RendererBundleManifestStatus {
+  version: string;
+  contentHash?: string;
+  minShellVersion: string;
+  bundleUrl?: string;
+  requiredShellCapabilitiesCount: number;
+  requiredRuntimeAssetsCount?: number;
+  requiredResourcesCount?: number;
+  rollbackToBuiltin?: boolean;
+  rollbackReason?: string;
+}
+
+export interface RendererBundleRolloutAttemptStatus {
+  policyUrl: string;
+  policyVersion?: string;
+  decision:
+    | 'use-manifest'
+    | 'rollback-to-builtin'
+    | 'skip'
+    | 'unavailable'
+    | 'untrusted';
+  rolloutApplied?: boolean;
+  rolloutBucket?: number;
+  rolloutPercent?: number;
+  fallbackReason?: string;
+  reason?: string;
+  rollbackReason?: string;
+  diagnostics?: string[];
+  errorMessage?: string;
+}
+
+export interface RendererBundleRuntimeAssetPreparationStatus {
+  attempted: true;
+  installed: Array<{
+    assetId: string;
+    reusedExistingInstall?: boolean;
+  }>;
+  skipped: Array<{
+    assetId: string;
+    reason: string;
+  }>;
+  errorMessage?: string;
+}
+
+export interface RendererBundleLastAttemptStatus {
+  checkedAt: string;
+  manifestUrl: string;
+  currentShellVersion: string;
+  outcome: RendererBundleAttemptOutcome;
+  reason?: string;
+  manifest?: RendererBundleManifestStatus;
+  rollout?: RendererBundleRolloutAttemptStatus;
+  runtimeAssetPreparation?: RendererBundleRuntimeAssetPreparationStatus;
+  diagnostics?: string[];
+  missingShellCapabilities?: string[];
+  missingRuntimeAssets?: string[];
+  missingResources?: string[];
+  errorMessage?: string;
+}
+
+export interface RendererBundleSourceStatus {
+  channel: string;
+  manifestUrl?: string;
+  manifestUrlOverride?: boolean;
+  rolloutPolicyUrl?: string;
+  rolloutPolicyUrlOverride?: boolean;
+  cohort?: string;
+  errorReason?: string;
+  errorMessage?: string;
+  errorTarget?: string;
+}
+
+export interface RendererBundleStatus {
+  schemaVersion: 1;
+  disabled?: boolean;
+  disabledReason?: string;
+  source?: RendererBundleSourceStatus;
+  activeBundle: RendererBundleActiveStatus | null;
+  lastAttempt: RendererBundleLastAttemptStatus | null;
 }

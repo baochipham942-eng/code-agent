@@ -10,6 +10,7 @@ import { SettingsPage } from '../SettingsLayout';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type {
   PrepareRuntimeAssetsResult,
+  RendererBundleStatus,
   RuntimeAssetsStatus,
   RuntimeAssetStatusEntry,
   UpdateInfo,
@@ -21,12 +22,32 @@ import {
   tauriGetCurrentVersion,
   tauriInstallUpdate,
   tauriOpenUpdateUrl,
+  type UpdateInstallProgress,
 } from '../../../../utils/tauriUpdater';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
+import { useAppStore } from '../../../../stores/appStore';
+import { useSessionStore } from '../../../../stores/sessionStore';
+import { useIsDeveloperMode } from '../../../../stores/modeStore';
+import {
+  getRendererBundleActivationText,
+  getRendererBundleReloadBlockedReason,
+  hasRendererBundlePendingActivation,
+  readLoadedRendererBundleStatus,
+} from '../../../../utils/rendererBundleActivation';
+
+export {
+  getRendererBundleActivationText,
+  getRendererBundleAutoReloadBlockedReason,
+  getRendererBundleReloadBlockedReason,
+  hasRendererBundlePendingActivation,
+  isRendererBundleTextEntryElement,
+  readLoadedRendererBundleStatus,
+  shouldAutoReloadRendererBundle,
+} from '../../../../utils/rendererBundleActivation';
 
 const logger = createLogger('UpdateSettings');
-const BUILD_APP_VERSION = import.meta.env.VITE_APP_VERSION;
+const BUILD_APP_VERSION = import.meta.env.VITE_APP_VERSION as string | undefined;
 
 // ============================================================================
 // Types
@@ -51,6 +72,34 @@ export function getVisibleUpdateInfo(
     return null;
   }
   return updateInfo;
+}
+
+/**
+ * 这次检查是否彻底失败。失败时不能渲染成"已是最新版本"，
+ * 必须显示"检查失败"以免误导用户停留在旧版本。
+ */
+export function isFailedUpdateCheck(info: UpdateInfo | null): boolean {
+  return Boolean(info?.checkFailed);
+}
+
+/** 安装进度百分比（0-100），总大小未知时返回 null（用不确定态展示） */
+export function getInstallProgressPercent(progress: UpdateInstallProgress | null): number | null {
+  if (progress?.phase !== 'download' || !progress.total) return null;
+  return Math.min(100, Math.round((progress.downloaded / progress.total) * 100));
+}
+
+/** 安装按钮文案：随阶段变化，下载阶段优先显示百分比，否则显示已下载 MB */
+export function getInstallButtonLabel(
+  isInstalling: boolean,
+  progress: UpdateInstallProgress | null,
+): string {
+  if (!isInstalling) return '立即更新';
+  if (!progress) return '准备中...';
+  if (progress.phase === 'install') return '正在安装...';
+  if (progress.phase === 'relaunch') return '正在重启...';
+  const percent = getInstallProgressPercent(progress);
+  if (percent !== null) return `下载中 ${percent}%`;
+  return `下载中 ${(progress.downloaded / 1024 / 1024).toFixed(1)} MB`;
 }
 
 export function getRuntimeAssetsSummaryText(status: RuntimeAssetsStatus | null): string | null {
@@ -93,9 +142,155 @@ export function getRuntimeAssetDisplayName(asset: RuntimeAssetStatusEntry): stri
   return asset.label;
 }
 
+export function getRendererBundleSummaryText(status: RendererBundleStatus | null): string | null {
+  if (!status) return null;
+  if (status.disabled) {
+    return '前端热更已停用，使用包内版本';
+  }
+  const attempt = status.lastAttempt;
+  if (!attempt) {
+    return status.activeBundle
+      ? `前端界面已应用 v${status.activeBundle.version}`
+      : '前端界面使用包内版本';
+  }
+  if (attempt.outcome === 'applied') {
+    return `前端界面已热更到 v${attempt.manifest?.version ?? status.activeBundle?.version ?? 'unknown'}`;
+  }
+  if (attempt.outcome === 'rolled-back') {
+    return '前端热更已回退到包内版本';
+  }
+  if (attempt.outcome === 'skipped') {
+    if (attempt.reason === 'already-current') {
+      return `前端界面已是最新热更 v${attempt.manifest?.version ?? status.activeBundle?.version ?? 'unknown'}`;
+    }
+    if (attempt.reason === 'shell-too-old') {
+      return `前端热更需要壳版本 v${attempt.manifest?.minShellVersion ?? 'unknown'}`;
+    }
+    if (attempt.reason === 'missing-shell-capability') {
+      return '前端热更需要新壳能力';
+    }
+    return `前端热更已跳过：${attempt.reason ?? 'unknown'}`;
+  }
+  return `前端热更检查失败：${attempt.reason ?? 'unknown'}`;
+}
+
+function shortContentHash(contentHash: string | undefined): string {
+  return contentHash ? contentHash.slice(0, 12) : 'unknown';
+}
+
+export function getRendererBundleDiagnosticRows(status: RendererBundleStatus | null): Array<{ label: string; value: string }> {
+  if (!status) return [];
+  const rows: Array<{ label: string; value: string }> = [];
+  rows.push({
+    label: '当前热更',
+    value: status.activeBundle
+      ? `v${status.activeBundle.version} · ${shortContentHash(status.activeBundle.contentHash)}`
+      : '包内版本',
+  });
+  if (status.disabledReason) {
+    rows.push({ label: '停用开关', value: status.disabledReason });
+  }
+  if (status.source) {
+    rows.push({
+      label: '配置入口',
+      value: [
+        status.source.manifestUrlOverride ? 'manifest override' : 'channel',
+        status.source.channel,
+      ].filter(Boolean).join(' · '),
+    });
+    if (status.source.errorReason) {
+      rows.push({
+        label: '入口配置错误',
+        value: [
+          status.source.errorReason,
+          status.source.errorTarget,
+        ].filter(Boolean).join(' · '),
+      });
+    } else if (status.source.manifestUrl) {
+      rows.push({ label: '配置 manifest', value: status.source.manifestUrl });
+    }
+    if (status.source.rolloutPolicyUrl) {
+      rows.push({ label: '策略入口', value: status.source.rolloutPolicyUrl });
+    }
+    if (status.source.cohort) {
+      rows.push({ label: '灰度 cohort', value: status.source.cohort });
+    }
+  }
+  const attempt = status.lastAttempt;
+  if (!attempt) return rows;
+  rows.push({
+    label: '最近检查',
+    value: [
+      attempt.outcome,
+      attempt.reason,
+      attempt.checkedAt,
+    ].filter(Boolean).join(' · '),
+  });
+  if (attempt.manifest) {
+    rows.push({
+      label: '候选版本',
+      value: [
+        `v${attempt.manifest.version}`,
+        `min shell v${attempt.manifest.minShellVersion}`,
+        `${attempt.manifest.requiredShellCapabilitiesCount} capabilities`,
+        attempt.manifest.requiredRuntimeAssetsCount
+          ? `${attempt.manifest.requiredRuntimeAssetsCount} runtime assets`
+          : null,
+        attempt.manifest.requiredResourcesCount
+          ? `${attempt.manifest.requiredResourcesCount} resources`
+          : null,
+        attempt.manifest.rollbackToBuiltin ? 'rollback' : null,
+      ].filter(Boolean).join(' · '),
+    });
+    if (attempt.manifest.contentHash) {
+      rows.push({
+        label: '候选 hash',
+        value: shortContentHash(attempt.manifest.contentHash),
+      });
+    }
+  }
+  if (attempt.manifestUrl) {
+    rows.push({ label: 'manifest', value: attempt.manifestUrl });
+  }
+  if (attempt.rollout) {
+    rows.push({
+      label: '策略决策',
+      value: [
+        attempt.rollout.decision,
+        attempt.rollout.policyVersion,
+        attempt.rollout.rolloutApplied === true ? 'target' : null,
+        attempt.rollout.rolloutApplied === false ? 'fallback' : null,
+        attempt.rollout.fallbackReason,
+        attempt.rollout.reason,
+      ].filter(Boolean).join(' · '),
+    });
+  }
+  if (attempt.runtimeAssetPreparation) {
+    rows.push({
+      label: '运行资源预备',
+      value: [
+        `${attempt.runtimeAssetPreparation.installed.length} installed`,
+        `${attempt.runtimeAssetPreparation.skipped.length} skipped`,
+        attempt.runtimeAssetPreparation.errorMessage,
+      ].filter(Boolean).join(' · '),
+    });
+  }
+  return rows;
+}
+
 function getRuntimeAssetTone(asset: RuntimeAssetStatusEntry): string {
   if (asset.state === 'installed') return 'text-green-300 bg-green-500/10 border-green-500/30';
   if (asset.state === 'bundledFallback') return 'text-amber-300 bg-amber-500/10 border-amber-500/30';
+  return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
+}
+
+function getRendererBundleTone(status: RendererBundleStatus): string {
+  if (status.disabled) return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
+  const outcome = status.lastAttempt?.outcome;
+  if (outcome === 'applied') return 'text-green-300 bg-green-500/10 border-green-500/30';
+  if (outcome === 'rolled-back') return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
+  if (outcome === 'skipped') return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
+  if (outcome === 'failed') return 'text-amber-300 bg-amber-500/10 border-amber-500/30';
   return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
 }
 
@@ -123,13 +318,22 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
   const { t } = useI18n();
   const [isChecking, setIsChecking] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
+  const [installProgress, setInstallProgress] = useState<UpdateInstallProgress | null>(null);
+  const [installedNeedsRestart, setInstalledNeedsRestart] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [localVersion, setLocalVersion] = useState<string | null>(null);
   const [runtimeAssetsStatus, setRuntimeAssetsStatus] = useState<RuntimeAssetsStatus | null>(null);
+  const [rendererBundleStatus, setRendererBundleStatus] = useState<RendererBundleStatus | null>(null);
   const [isPreparingRuntimeAssets, setIsPreparingRuntimeAssets] = useState(false);
   const [runtimeAssetsError, setRuntimeAssetsError] = useState<string | null>(null);
 
   const runningInTauri = isTauriMode();
+  // 本机功能 / 前端热更诊断属于开发者信息，普通用户不展示，避免压低更新提示并暴露 manifest/链路细节
+  const isDeveloperMode = useIsDeveloperMode();
+  const loadedRendererBundle = React.useMemo(() => readLoadedRendererBundleStatus(), []);
+  const runningSessionCount = useSessionStore((state) => state.runningSessionIds.size);
+  const processingSessionCount = useAppStore((state) => state.processingSessionIds.size);
+  const isProcessing = useAppStore((state) => state.isProcessing);
 
   // Load local version immediately on mount
   React.useEffect(() => {
@@ -162,8 +366,19 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
       .then((status) => {
         if (!cancelled) setRuntimeAssetsStatus(status);
       })
-      .catch((err) => {
-        logger.debug('Runtime assets status unavailable', err);
+      .catch((err: unknown) => {
+        logger.debug('Runtime assets status unavailable', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    ipcService.invokeDomain<RendererBundleStatus>(IPC_DOMAINS.UPDATE, 'rendererBundleStatus')
+      .then((status) => {
+        if (!cancelled) setRendererBundleStatus(status);
+      })
+      .catch((err: unknown) => {
+        logger.debug('Renderer bundle status unavailable', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       });
     return () => {
       cancelled = true;
@@ -181,6 +396,17 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     }
   };
 
+  const refreshRendererBundleStatus = async () => {
+    try {
+      const status = await ipcService.invokeDomain<RendererBundleStatus>(IPC_DOMAINS.UPDATE, 'rendererBundleStatus');
+      setRendererBundleStatus(status);
+      return status;
+    } catch (err) {
+      logger.debug('Renderer bundle status unavailable', { error: err instanceof Error ? err.message : String(err) });
+      return null;
+    }
+  };
+
   // Get current version: prefer updateInfo, then local version, then placeholder
   const currentVersion = updateInfo?.currentVersion || localVersion || BUILD_APP_VERSION || '...';
   const visibleUpdateInfo = getVisibleUpdateInfo(updateInfo, isChecking, error);
@@ -194,18 +420,25 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     try {
       if (runningInTauri) {
         const info = await tauriCheckForUpdate();
-        let runtimeAssets = info.runtimeAssets;
-        try {
-          const cloudInfo = await ipcService.invokeDomain<UpdateInfo>(IPC_DOMAINS.UPDATE, 'check');
-          runtimeAssets = cloudInfo?.runtimeAssets;
-        } catch (runtimeError) {
-          logger.debug('Runtime assets update check unavailable', {
-            error: runtimeError instanceof Error ? runtimeError.message : String(runtimeError),
-          });
-        }
-        onUpdateInfoChange({ ...info, runtimeAssets });
         if (!localVersion && info.currentVersion) {
           setLocalVersion(info.currentVersion);
+        }
+        // 检查彻底失败（native + cloud 都没结果）：报"检查失败"，绝不渲染成"已是最新"
+        if (isFailedUpdateCheck(info)) {
+          onUpdateInfoChange(null);
+          setError(t.update?.checkError || '检查更新失败，请稍后重试');
+          logger.error('Update check failed (native + cloud unavailable)');
+        } else {
+          let runtimeAssets = info.runtimeAssets;
+          try {
+            const cloudInfo = await ipcService.invokeDomain<UpdateInfo>(IPC_DOMAINS.UPDATE, 'check');
+            runtimeAssets = cloudInfo?.runtimeAssets;
+          } catch (runtimeError) {
+            logger.debug('Runtime assets update check unavailable', {
+              error: runtimeError instanceof Error ? runtimeError.message : String(runtimeError),
+            });
+          }
+          onUpdateInfoChange({ ...info, runtimeAssets });
         }
       } else {
         const info = await ipcService.invokeDomain<UpdateInfo>(IPC_DOMAINS.UPDATE, 'check');
@@ -214,17 +447,21 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         }
       }
     } catch (err) {
-      const fallback = fallbackNoUpdateInfo(updateInfo?.currentVersion, localVersion, BUILD_APP_VERSION);
-      if (fallback) {
-        onUpdateInfoChange(fallback);
-        setLocalVersion(fallback.currentVersion);
-        setError(null);
-        logger.error('Update check failed; using local version fallback', err);
-      } else {
-        setError(t.update?.checkError || '检查更新失败，请稍后重试');
-        logger.error('Update check failed', err);
+      // 检查抛错（如 IPC/桥不可用）也属于检查失败，记下当前版本但显示失败，
+      // 不再静默回退成"已是最新"。
+      const fallbackVersion = fallbackNoUpdateInfo(
+        updateInfo?.currentVersion,
+        localVersion,
+        BUILD_APP_VERSION,
+      )?.currentVersion;
+      if (fallbackVersion) {
+        setLocalVersion(fallbackVersion);
       }
+      onUpdateInfoChange(null);
+      setError(t.update?.checkError || '检查更新失败，请稍后重试');
+      logger.error('Update check failed', err);
     } finally {
+      await refreshRendererBundleStatus();
       setIsChecking(false);
     }
   };
@@ -252,10 +489,14 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
 
   const handleTauriInstall = async () => {
     setIsInstalling(true);
+    setInstallProgress(null);
     setError(null);
     try {
       try {
-        await tauriInstallUpdate();
+        // 下载（带进度回调）→ 安装 → 自动重启；正常情况 relaunch() 会重启 app 不再返回
+        await tauriInstallUpdate((progress) => setInstallProgress(progress));
+        // relaunch 未生效的兜底：提示用户手动重启
+        setInstalledNeedsRestart(true);
       } catch (installError) {
         if (!updateInfo?.downloadUrl) {
           throw installError;
@@ -266,10 +507,12 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         await tauriOpenUpdateUrl(updateInfo.downloadUrl);
       }
       setIsInstalling(false);
+      setInstallProgress(null);
     } catch (err) {
       setError('更新安装失败，请稍后重试');
       logger.error('Tauri update install failed', err);
       setIsInstalling(false);
+      setInstallProgress(null);
     }
   };
 
@@ -289,6 +532,11 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
 
   // Whether the check/update buttons should be disabled
   const isDisabled = shouldDisableUpdateActions(isWebMode(), hasNativeUpdateBridge());
+  const rendererBundlePendingActivation = hasRendererBundlePendingActivation(rendererBundleStatus, loadedRendererBundle);
+  const rendererBundleActivationText = getRendererBundleActivationText(rendererBundleStatus, loadedRendererBundle);
+  const rendererBundleReloadBlockedReason = rendererBundlePendingActivation
+    ? getRendererBundleReloadBlockedReason({ runningSessionCount, processingSessionCount, isProcessing })
+    : null;
 
   return (
     <SettingsPage
@@ -317,7 +565,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         </div>
       </div>
 
-      {runtimeAssetsStatus && (
+      {isDeveloperMode && runtimeAssetsStatus && (
         <div className="bg-zinc-800 rounded-lg p-4">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -358,6 +606,67 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
         </div>
       )}
 
+      {isDeveloperMode && rendererBundleStatus && (
+        <div className="bg-zinc-800 rounded-lg p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm text-zinc-400">前端界面</div>
+              <div className="text-sm font-medium text-zinc-200 mt-1">
+                {getRendererBundleSummaryText(rendererBundleStatus)}
+              </div>
+            </div>
+            <span className={`text-xs px-2 py-1 rounded border ${getRendererBundleTone(rendererBundleStatus)}`}>
+              {rendererBundleStatus.disabled ? 'disabled' : (rendererBundleStatus.lastAttempt?.outcome ?? 'builtin')}
+            </span>
+          </div>
+          {rendererBundleStatus.lastAttempt?.missingShellCapabilities?.length ? (
+            <div className="mt-3 text-xs text-zinc-500 truncate">
+              缺少能力: {rendererBundleStatus.lastAttempt.missingShellCapabilities.join(', ')}
+            </div>
+          ) : null}
+          {rendererBundleStatus.lastAttempt?.missingRuntimeAssets?.length ? (
+            <div className="mt-3 text-xs text-zinc-500 truncate">
+              缺少运行资源: {rendererBundleStatus.lastAttempt.missingRuntimeAssets.join(', ')}
+            </div>
+          ) : null}
+          {rendererBundleStatus.lastAttempt?.missingResources?.length ? (
+            <div className="mt-3 text-xs text-zinc-500 truncate">
+              缺少包内资源: {rendererBundleStatus.lastAttempt.missingResources.join(', ')}
+            </div>
+          ) : null}
+          {rendererBundlePendingActivation && (
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 text-xs">
+                {rendererBundleActivationText && (
+                  <div className="text-amber-300">{rendererBundleActivationText}</div>
+                )}
+                {rendererBundleReloadBlockedReason && (
+                  <div className="mt-1 text-zinc-500">{rendererBundleReloadBlockedReason}</div>
+                )}
+              </div>
+              <Button
+                disabled={isDisabled || Boolean(rendererBundleReloadBlockedReason)}
+                onClick={() => window.location.reload()}
+                variant="secondary"
+                size="sm"
+                leftIcon={<RefreshCw className="w-4 h-4" />}
+                className="shrink-0"
+              >
+                刷新界面生效
+              </Button>
+            </div>
+          )}
+          <div className="mt-3 grid gap-2 text-xs">
+            {getRendererBundleDiagnosticRows(rendererBundleStatus).map((row) => (
+              <div key={row.label} className="flex items-start justify-between gap-3">
+                <span className="shrink-0 text-zinc-500">{row.label}</span>
+                <span className="min-w-0 text-right text-zinc-400 break-all">{row.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Update Status */}
       {visibleUpdateInfo && (
         <div className={`rounded-lg p-4 ${
@@ -386,16 +695,30 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
 
               {/* Update Now Button — Tauri uses direct install, legacy desktop uses modal */}
               {runningInTauri ? (
-                <Button
-                  disabled={isDisabled || isInstalling}
-                  onClick={handleTauriInstall}
-                  variant="primary"
-                  fullWidth
-                  leftIcon={isInstalling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                  className="!bg-indigo-600 hover:!bg-indigo-500"
-                >
-                  {isInstalling ? '正在下载并安装...' : (t.update?.download || '立即更新')}
-                </Button>
+                <div className="space-y-2">
+                  <Button
+                    disabled={isDisabled || isInstalling}
+                    onClick={handleTauriInstall}
+                    variant="primary"
+                    fullWidth
+                    leftIcon={isInstalling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                    className="!bg-indigo-600 hover:!bg-indigo-500"
+                  >
+                    {getInstallButtonLabel(isInstalling, installProgress)}
+                  </Button>
+                  {isInstalling && installProgress?.phase === 'download' && (
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-700">
+                      <div
+                        className="h-full rounded-full bg-indigo-400 transition-all duration-200"
+                        style={
+                          getInstallProgressPercent(installProgress) !== null
+                            ? { width: `${getInstallProgressPercent(installProgress)}%` }
+                            : { width: '100%', opacity: 0.4 }
+                        }
+                      />
+                    </div>
+                  )}
+                </div>
               ) : (
                 <Button
                   disabled={isDisabled}
@@ -415,6 +738,14 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
               <span className="text-sm text-zinc-200">{t.update?.upToDate || '已是最新版本'}</span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Installed, needs restart */}
+      {installedNeedsRestart && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 text-green-400">
+          <CheckCircle className="w-4 h-4" />
+          <span className="text-sm">更新已下载安装完成，请重启 Agent Neo 生效</span>
         </div>
       )}
 

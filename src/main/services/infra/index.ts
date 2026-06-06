@@ -43,10 +43,15 @@ export {
 
 export {
   initSupabase,
+  initSupabaseFromSettings,
+  ensureSupabaseInitialized,
   getSupabase,
   isSupabaseInitialized,
   getSupabaseConfig,
+  resolveSupabaseInitConfig,
   type Database,
+  type ResolvedSupabaseInitConfig,
+  type SupabaseSettingsLike,
   type ProfileRow,
   type DeviceRow,
   type SessionRow,
@@ -85,4 +90,3 @@ export {
   getShutdownManager,
   setupDefaultSignalHandlers,
 } from './gracefulShutdown';
-

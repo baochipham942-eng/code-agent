@@ -92,6 +92,9 @@ const authState = {
     isAdmin: true,
   },
   isAuthenticated: true,
+  sessionTrustState: 'verified',
+  authBackendAvailable: true,
+  hasCachedAdminClaim: false,
   setShowAuthModal: vi.fn(),
   signOut: vi.fn(async () => {}),
 };
@@ -135,6 +138,9 @@ describe('Sidebar account menu entry planning', () => {
   beforeEach(() => {
     reactState.useStateCalls = 0;
     authState.user.isAdmin = true;
+    authState.sessionTrustState = 'verified';
+    authState.authBackendAvailable = true;
+    authState.hasCachedAdminClaim = false;
   });
 
   it('keeps common entries visible and groups advanced tools behind one disclosure', () => {
@@ -171,6 +177,21 @@ describe('Sidebar account menu entry planning', () => {
     expect(memberHtml).not.toContain('邀请码管理');
     expect(memberHtml).not.toContain('Computer Use');
     expect(memberHtml).not.toContain('In-App 验证');
+  });
+
+  it('shows a pending admin badge for cached admin sessions without granting admin menu entries', () => {
+    reactState.useStateCalls = 0;
+    authState.user.isAdmin = false;
+    authState.sessionTrustState = 'cached';
+    authState.authBackendAvailable = false;
+    authState.hasCachedAdminClaim = true;
+
+    const html = renderToStaticMarkup(React.createElement(Sidebar));
+
+    expect(html).toContain('管理员待验证');
+    expect(html).toContain('登录服务启动失败，管理员身份暂时不能验证');
+    expect(html).not.toContain('用户管理');
+    expect(html).not.toContain('邀请码管理');
   });
 
   it('detects outside targets for account menu dismissal', () => {

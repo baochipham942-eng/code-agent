@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { create } from 'zustand';
-import type { AuthStatus, AuthUser, SyncStatus } from '../../shared/contract';
+import type { AuthSessionTrustState, AuthStatus, AuthUser, SyncStatus } from '../../shared/contract';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../shared/ipc';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
@@ -26,6 +26,22 @@ interface AuthActionResult {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+export function formatAuthErrorMessage(message: string | null | undefined): string {
+  if (!message) return '操作失败';
+  if (/supabase not initialized|auth_backend_unavailable|invalid supabase url|missing supabase anon key/i.test(message)) {
+    return '登录服务启动失败，请重启应用或检查网络后重试。';
+  }
+  return message;
+}
+
+function getDisplayErrorMessage(error: unknown): string {
+  return formatAuthErrorMessage(getErrorMessage(error));
+}
+
+function getResultErrorMessage(result: AuthActionResult | null | undefined, fallback: string): string {
+  return formatAuthErrorMessage(result?.error || fallback);
 }
 
 let sessionReloadForAuthPromise: Promise<void> | null = null;
@@ -52,6 +68,9 @@ interface AuthState {
   user: AuthUser | null;
   isLoading: boolean;
   error: string | null;
+  sessionTrustState: AuthSessionTrustState;
+  authBackendAvailable: boolean | null;
+  hasCachedAdminClaim: boolean;
 
   // Sync state
   syncStatus: SyncStatus;
@@ -65,6 +84,7 @@ interface AuthState {
   setUser: (user: AuthUser | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  setAuthStatusMeta: (status: Pick<AuthStatus, 'sessionTrustState' | 'authBackendAvailable' | 'hasCachedAdminClaim'>) => void;
   setSyncStatus: (status: SyncStatus) => void;
   setShowAuthModal: (show: boolean) => void;
   setShowPasswordResetModal: (show: boolean) => void;
@@ -98,6 +118,9 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   user: null,
   isLoading: true,
   error: null,
+  sessionTrustState: 'none',
+  authBackendAvailable: null,
+  hasCachedAdminClaim: false,
   syncStatus: {
     isEnabled: false,
     isSyncing: false,
@@ -117,6 +140,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     }),
   setLoading: (isLoading) => set({ isLoading }),
   setError: (error) => set({ error }),
+  setAuthStatusMeta: (status) => set({
+    sessionTrustState: status.sessionTrustState ?? 'none',
+    authBackendAvailable: status.authBackendAvailable ?? null,
+    hasCachedAdminClaim: status.hasCachedAdminClaim ?? false,
+  }),
   setSyncStatus: (syncStatus) => set({ syncStatus }),
   setShowAuthModal: (showAuthModal) => set({ showAuthModal }),
   setShowPasswordResetModal: (showPasswordResetModal) => set({ showPasswordResetModal }),
@@ -133,14 +161,17 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           isAuthenticated: true,
           isLoading: false,
           showAuthModal: false,
+          sessionTrustState: 'verified',
+          authBackendAvailable: true,
+          hasCachedAdminClaim: false,
         });
         await reloadSessionsForAuthenticatedUser();
         return true;
       }
-      set({ error: result?.error || '登录失败', isLoading: false });
+      set({ error: getResultErrorMessage(result, '登录失败'), isLoading: false });
       return false;
     } catch (error) {
-      set({ error: getErrorMessage(error), isLoading: false });
+      set({ error: getDisplayErrorMessage(error), isLoading: false });
       return false;
     }
   },
@@ -155,14 +186,17 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           isAuthenticated: true,
           isLoading: false,
           showAuthModal: false,
+          sessionTrustState: 'verified',
+          authBackendAvailable: true,
+          hasCachedAdminClaim: false,
         });
         await reloadSessionsForAuthenticatedUser();
         return true;
       }
-      set({ error: result?.error || '注册失败', isLoading: false });
+      set({ error: getResultErrorMessage(result, '注册失败'), isLoading: false });
       return false;
     } catch (error) {
-      set({ error: getErrorMessage(error), isLoading: false });
+      set({ error: getDisplayErrorMessage(error), isLoading: false });
       return false;
     }
   },
@@ -173,7 +207,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       await invokeDomain(IPC_DOMAINS.AUTH, 'signInOAuth', { provider });
       // OAuth flow opens external browser, auth state will be updated via event
     } catch (error) {
-      set({ error: getErrorMessage(error), isLoading: false });
+      set({ error: getDisplayErrorMessage(error), isLoading: false });
     }
   },
 
@@ -187,14 +221,17 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           isAuthenticated: true,
           isLoading: false,
           showAuthModal: false,
+          sessionTrustState: 'verified',
+          authBackendAvailable: true,
+          hasCachedAdminClaim: false,
         });
         await reloadSessionsForAuthenticatedUser();
         return true;
       }
-      set({ error: result?.error || '快捷登录失败', isLoading: false });
+      set({ error: getResultErrorMessage(result, '快捷登录失败'), isLoading: false });
       return false;
     } catch (error) {
-      set({ error: getErrorMessage(error), isLoading: false });
+      set({ error: getDisplayErrorMessage(error), isLoading: false });
       return false;
     }
   },
@@ -205,6 +242,8 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       set({
         user: null,
         isAuthenticated: false,
+        sessionTrustState: 'none',
+        hasCachedAdminClaim: false,
         syncStatus: { ...get().syncStatus, isEnabled: false },
       });
       await reloadSessionsForAuthenticatedUser();
@@ -245,10 +284,10 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       if (result?.success) {
         return true;
       }
-      set({ error: result?.error || '发送重置邮件失败' });
+      set({ error: getResultErrorMessage(result, '发送重置邮件失败') });
       return false;
     } catch (error) {
-      set({ error: getErrorMessage(error), isLoading: false });
+      set({ error: getDisplayErrorMessage(error), isLoading: false });
       return false;
     }
   },
@@ -265,10 +304,10 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         });
         return true;
       }
-      set({ error: result?.error || '更新密码失败', isLoading: false });
+      set({ error: getResultErrorMessage(result, '更新密码失败'), isLoading: false });
       return false;
     } catch (error) {
-      set({ error: getErrorMessage(error), isLoading: false });
+      set({ error: getDisplayErrorMessage(error), isLoading: false });
       return false;
     }
   },
@@ -289,10 +328,10 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         });
         return true;
       }
-      set({ error: result?.error || '验证重置链接失败', isLoading: false });
+      set({ error: getResultErrorMessage(result, '验证重置链接失败'), isLoading: false });
       return false;
     } catch (error) {
-      set({ error: getErrorMessage(error), isLoading: false });
+      set({ error: getDisplayErrorMessage(error), isLoading: false });
       return false;
     }
   },
@@ -340,6 +379,7 @@ export async function initializeAuthStore(): Promise<void> {
     const status = await invokeDomain<AuthStatus>(IPC_DOMAINS.AUTH, 'getStatus');
     if (status) {
       store.setUser(status.user);
+      store.setAuthStatusMeta(status);
       if (status.user) {
         void reloadSessionsForAuthenticatedUser();
       }
@@ -366,9 +406,19 @@ export async function initializeAuthStore(): Promise<void> {
       store.setUser(event.user);
       store.setLoading(false);
       store.setShowAuthModal(false);
+      store.setAuthStatusMeta({
+        sessionTrustState: event.sessionTrustState ?? 'verified',
+        authBackendAvailable: event.authBackendAvailable ?? true,
+        hasCachedAdminClaim: event.hasCachedAdminClaim ?? false,
+      });
       void reloadSessionsForAuthenticatedUser();
     } else if (event.type === 'signed_out') {
       store.setUser(null);
+      store.setAuthStatusMeta({
+        sessionTrustState: 'none',
+        authBackendAvailable: event.authBackendAvailable,
+        hasCachedAdminClaim: false,
+      });
       void reloadSessionsForAuthenticatedUser();
     } else if (event.type === 'user_updated' && event.user) {
       store.setUser(event.user);

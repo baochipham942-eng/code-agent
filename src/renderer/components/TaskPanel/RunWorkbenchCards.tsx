@@ -201,14 +201,19 @@ export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?
         <TaskRecordRow task={sessionTask} run={run} primary />
       ) : (
         <div className="rounded-md border border-white/[0.05] bg-white/[0.015] px-2.5 py-2 text-[11px] text-zinc-600">
-          当前会话暂无任务
+          当前对话暂无任务
         </div>
       )}
 
       {backgroundTasks.length > 0 && (
         <div className="rounded-md border border-white/[0.05] bg-white/[0.015] px-2.5 py-2">
           <div className="mb-1.5 flex items-center justify-between gap-2">
-            <span className="text-[10px] tracking-wide text-zinc-500">其他运行</span>
+            <span
+              className="text-[10px] tracking-wide text-zinc-500"
+              title="来自其他对话、后台运行或定时任务"
+            >
+              后台任务
+            </span>
             <span className="text-[10px] text-zinc-600">{backgroundTasks.length}</span>
           </div>
           <div className="space-y-1.5">

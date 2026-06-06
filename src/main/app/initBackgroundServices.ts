@@ -8,7 +8,7 @@ import fs from 'fs';
 import { createLogger } from '../services/infra/logger';
 import {
   ConfigService,
-  initSupabase,
+  initSupabaseFromSettings,
   isSupabaseInitialized,
   getAuthService,
   getSyncService,
@@ -40,7 +40,7 @@ import { initCronService, getCronService, initHeartbeatService, getHeartbeatServ
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getSkillDiscoveryService, getSkillRepositoryService, initSkillWatcher } from '../services/skills';
 import { getMainWindow } from './window';
-import { SYNC, UPDATE, getCloudApiUrl, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY, MEMORY_CONSOLIDATION } from '../../shared/constants';
+import { SYNC, UPDATE, getCloudApiUrl, MEMORY_CONSOLIDATION } from '../../shared/constants';
 import { loadSoul, watchSoulFiles } from '../prompts/soulLoader';
 import { initEventBridge } from '../services/eventing';
 // Event channel constants (post-IPC_CHANNELS deprecation)
@@ -221,11 +221,14 @@ function initializeSupabaseServices(mainWindow: BrowserWindow | null): void {
 
   // Set up auth change callback
   const authService = getAuthService();
-  authService.addAuthChangeCallback((user) => {
+  authService.addAuthChangeCallback((user, status) => {
     if (mainWindow) {
       mainWindow.webContents.send(EVENT_CHANNELS.AUTH, {
         type: user ? 'signed_in' : 'signed_out',
         user,
+        sessionTrustState: status.sessionTrustState,
+        authBackendAvailable: status.authBackendAvailable,
+        hasCachedAdminClaim: status.hasCachedAdminClaim,
       });
     }
 
@@ -488,11 +491,15 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
     logger.warn('Failed to restore devModeAutoApprove from persistent storage', { error: String(error) });
   }
 
-  // Initialize Supabase (延迟初始化，从核心服务移到这里)
-  const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url || DEFAULT_SUPABASE_URL;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey || DEFAULT_SUPABASE_ANON_KEY;
-  initSupabase(supabaseUrl, supabaseAnonKey);
-  logger.info('Supabase initialized (background)');
+  try {
+    const { config } = initSupabaseFromSettings(settings);
+    logger.info('Supabase initialized (background)', {
+      urlSource: config.urlSource,
+      anonKeySource: config.anonKeySource,
+    });
+  } catch (error) {
+    logger.warn('Supabase initialization failed (will retry on auth action)', { error: String(error) });
+  }
 
   // CloudConfig → Skills → MCP (chained, non-blocking)
   initializeCloudAndMCP(configService, mainWindow)

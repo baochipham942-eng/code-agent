@@ -11,8 +11,13 @@ export interface AuthUser {
   isAdmin?: boolean;
 }
 
+export type AuthSessionTrustState = 'none' | 'cached' | 'verified';
+
 export interface AuthStatus {
   isAuthenticated: boolean;
   user: AuthUser | null;
   isLoading: boolean;
+  sessionTrustState?: AuthSessionTrustState;
+  authBackendAvailable?: boolean;
+  hasCachedAdminClaim?: boolean;
 }

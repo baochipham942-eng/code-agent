@@ -33,10 +33,11 @@ describe('buildGlobalTaskRecords', () => {
 });
 
 describe('buildLedgerTaskRecords', () => {
-  it('projects agent engine ledger status and output refs for TaskPanel', () => {
+  it('projects only current-session agent engine ledger status and output refs for TaskPanel', () => {
     const tasks = buildLedgerTaskRecords([
       makeLedgerTask({
         id: 'agent:codex:run-1',
+        sessionId: 'session-1',
         title: 'Codex CLI',
         status: 'stalled',
         progress: { label: 'Codex CLI slow start' },
@@ -44,6 +45,7 @@ describe('buildLedgerTaskRecords', () => {
       }),
       makeLedgerTask({
         id: 'agent:claude:run-2',
+        sessionId: 'session-1',
         title: 'Claude Code',
         status: 'completed',
         durationMs: 12_000,
@@ -68,16 +70,24 @@ describe('buildLedgerTaskRecords', () => {
       }),
       makeLedgerTask({
         id: 'agent:codex:run-3',
+        sessionId: 'session-1',
         title: 'Codex CLI',
         status: 'failed',
         failure: { message: 'Codex CLI exited with code 1', exitCode: 1, category: 'agent_engine' },
       }),
       makeLedgerTask({
         id: 'agent:codex:run-4',
+        sessionId: 'session-1',
         title: 'Codex CLI cancelled',
         status: 'cancelled',
       }),
-    ]);
+      makeLedgerTask({
+        id: 'agent:other:run-5',
+        sessionId: 'session-2',
+        title: 'Other session run',
+        status: 'completed',
+      }),
+    ], 'session-1');
 
     expect(tasks[0]).toMatchObject({
       id: 'background:agent:codex:run-1',
@@ -127,6 +137,17 @@ describe('buildLedgerTaskRecords', () => {
       status: 'cancelled',
     });
     expect(tasks[3].steps.map((step) => step.title)).toEqual(['已取消']);
+    expect(tasks).toHaveLength(4);
+    expect(tasks.map((task) => task.title)).not.toContain('Other session run');
+  });
+
+  it('does not show ledger tasks without a current session', () => {
+    expect(buildLedgerTaskRecords([
+      makeLedgerTask({
+        id: 'agent:codex:run-1',
+        sessionId: 'session-1',
+      }),
+    ], null)).toEqual([]);
   });
 });
 

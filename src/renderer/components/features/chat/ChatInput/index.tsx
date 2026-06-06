@@ -1162,7 +1162,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               onFileSelect={handleFileSelect}
             />
 
-            {/* 权限模式 chip — Default / Full Access（高频，保留独立位置） */}
+            {/* 运行权限模式 chip（高频，保留独立位置） */}
             <PermissionToggle disabled={disabled && !isProcessing} />
 
             {/* B+ 移除: AbilityMenu (Routing/Browser/Live Preview) — 挪到 Settings；

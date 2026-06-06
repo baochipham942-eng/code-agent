@@ -6,18 +6,20 @@
 import { shell } from '../../platform';
 import crypto from 'crypto';
 import {
+  ensureSupabaseInitialized,
   getSupabase,
   isSupabaseInitialized,
   type ProfileRow,
   type InviteCodeRow,
 } from '../infra/supabaseService';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
-import { getSecureStorage } from '../core';
+import { getConfigService, getSecureStorage } from '../core';
 import type { AuthUser, AuthStatus } from '../../../shared/contract';
 import { createLogger } from '../infra/logger';
 import { withTimeout } from '../infra/timeoutController';
 
 const logger = createLogger('AuthService');
+const AUTH_BACKEND_UNAVAILABLE_ERROR = 'AUTH_BACKEND_UNAVAILABLE';
 
 export interface AuthResult {
   success: boolean;
@@ -25,7 +27,7 @@ export interface AuthResult {
   error?: string;
 }
 
-type AuthChangeCallback = (user: AuthUser | null) => void;
+type AuthChangeCallback = (user: AuthUser | null, status: AuthStatus) => void;
 type SessionTrustState = 'none' | 'cached' | 'verified';
 
 function isUnknownRecord(value: unknown): value is Record<string, unknown> {
@@ -85,9 +87,10 @@ class AuthService {
 
   private notifyAuthChange(user: AuthUser | null): void {
     const publicUser = this.getPublicUserForCurrentTrust(user);
+    const status = this.buildStatus();
     this.onAuthChangeCallbacks.forEach((callback) => {
       try {
-        callback(publicUser);
+        callback(publicUser, status);
       } catch (err) {
         logger.error('Auth change callback error:', err);
       }
@@ -102,6 +105,24 @@ class AuthService {
       ...user,
       isAdmin: false,
     };
+  }
+
+  private ensureSupabaseReady(operation: string): boolean {
+    if (isSupabaseInitialized()) return true;
+
+    try {
+      const settings = getConfigService().getSettings();
+      ensureSupabaseInitialized(settings);
+      logger.info('Supabase initialized lazily for auth operation', { operation });
+      return true;
+    } catch (error) {
+      logger.error('Auth backend initialization failed', { operation, error: String(error) });
+      return false;
+    }
+  }
+
+  private authBackendUnavailable(): AuthResult {
+    return { success: false, error: AUTH_BACKEND_UNAVAILABLE_ERROR };
   }
 
   async initialize(): Promise<void> {
@@ -120,8 +141,8 @@ class AuthService {
       this.notifyAuthChange(cachedUser);
     }
 
-    if (!isSupabaseInitialized()) {
-      logger.info(' Supabase not ready, using cached user only');
+    if (!this.ensureSupabaseReady('initialize')) {
+      logger.info(' Supabase not ready, keeping cached user until auth action retries');
       this.initialized = true;
       return;
     }
@@ -233,19 +254,29 @@ class AuthService {
     }
   }
 
-  async getStatus(): Promise<AuthStatus> {
+  private buildStatus(): AuthStatus {
+    const authBackendAvailable = isSupabaseInitialized();
+    const hasCachedAdminClaim = this.currentUser?.isAdmin === true && !this.hasVerifiedSession();
+
     return {
       isAuthenticated: this.currentUser !== null,
       user: this.getPublicUserForCurrentTrust(this.currentUser),
       isLoading: false,
+      sessionTrustState: this.sessionTrustState,
+      authBackendAvailable,
+      hasCachedAdminClaim,
     };
+  }
+
+  async getStatus(): Promise<AuthStatus> {
+    return this.buildStatus();
   }
 
   /**
    * 获取当前 session 的 access token（用于云端 API 调用）
    */
   async getAccessToken(): Promise<string | null> {
-    if (!isSupabaseInitialized()) {
+    if (!this.ensureSupabaseReady('getAccessToken')) {
       return null;
     }
 
@@ -260,8 +291,8 @@ class AuthService {
   }
 
   async signInWithEmail(email: string, password: string): Promise<AuthResult> {
-    if (!isSupabaseInitialized()) {
-      return { success: false, error: 'Supabase not initialized' };
+    if (!this.ensureSupabaseReady('signInWithEmail')) {
+      return this.authBackendUnavailable();
     }
 
     const supabase = getSupabase();
@@ -290,8 +321,8 @@ class AuthService {
     password: string,
     inviteCode?: string
   ): Promise<AuthResult> {
-    if (!isSupabaseInitialized()) {
-      return { success: false, error: 'Supabase not initialized' };
+    if (!this.ensureSupabaseReady('signUpWithEmail')) {
+      return this.authBackendUnavailable();
     }
 
     const supabase = getSupabase();
@@ -362,8 +393,8 @@ class AuthService {
   }
 
   async signInWithOAuth(provider: 'github' | 'google'): Promise<void> {
-    if (!isSupabaseInitialized()) {
-      throw new Error('Supabase not initialized');
+    if (!this.ensureSupabaseReady('signInWithOAuth')) {
+      throw new Error(AUTH_BACKEND_UNAVAILABLE_ERROR);
     }
 
     const supabase = getSupabase();
@@ -385,8 +416,8 @@ class AuthService {
   }
 
   async handleOAuthCallback(code: string): Promise<AuthResult> {
-    if (!isSupabaseInitialized()) {
-      return { success: false, error: 'Supabase not initialized' };
+    if (!this.ensureSupabaseReady('handleOAuthCallback')) {
+      return this.authBackendUnavailable();
     }
 
     const supabase = getSupabase();
@@ -433,8 +464,8 @@ class AuthService {
   }
 
   async signInWithQuickToken(token: string): Promise<AuthResult> {
-    if (!isSupabaseInitialized()) {
-      return { success: false, error: 'Supabase not initialized' };
+    if (!this.ensureSupabaseReady('signInWithQuickToken')) {
+      return this.authBackendUnavailable();
     }
 
     const supabase = getSupabase();
@@ -510,8 +541,8 @@ class AuthService {
       return { success: false, error: '未登录' };
     }
 
-    if (!isSupabaseInitialized()) {
-      return { success: false, error: 'Supabase not initialized' };
+    if (!this.ensureSupabaseReady('updateProfile')) {
+      return this.authBackendUnavailable();
     }
 
     const supabase = getSupabase();
@@ -537,7 +568,7 @@ class AuthService {
       return null;
     }
 
-    if (!isSupabaseInitialized()) {
+    if (!this.ensureSupabaseReady('generateQuickLoginToken')) {
       return null;
     }
 
@@ -561,8 +592,8 @@ class AuthService {
    * 发送密码重置邮件
    */
   async resetPassword(email: string): Promise<AuthResult> {
-    if (!isSupabaseInitialized()) {
-      return { success: false, error: 'Supabase not initialized' };
+    if (!this.ensureSupabaseReady('resetPassword')) {
+      return this.authBackendUnavailable();
     }
 
     const supabase = getSupabase();
@@ -583,8 +614,8 @@ class AuthService {
    * 更新密码（用户点击重置链接后调用）
    */
   async updatePassword(newPassword: string): Promise<AuthResult> {
-    if (!isSupabaseInitialized()) {
-      return { success: false, error: 'Supabase not initialized' };
+    if (!this.ensureSupabaseReady('updatePassword')) {
+      return this.authBackendUnavailable();
     }
 
     const supabase = getSupabase();
@@ -606,8 +637,8 @@ class AuthService {
    * Supabase 的重置链接会带有 access_token 和 refresh_token
    */
   async handlePasswordResetCallback(accessToken: string, refreshToken: string): Promise<AuthResult> {
-    if (!isSupabaseInitialized()) {
-      return { success: false, error: 'Supabase not initialized' };
+    if (!this.ensureSupabaseReady('handlePasswordResetCallback')) {
+      return this.authBackendUnavailable();
     }
 
     const supabase = getSupabase();

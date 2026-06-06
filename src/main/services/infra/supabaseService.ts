@@ -588,7 +588,7 @@ export interface Database {
         Returns: {
           id: string;
           created_at: string;
-          artifact_kind: 'cloud_config' | 'capability_registry' | 'agent_engine_model_catalog' | 'prompt_registry' | 'update_manifest';
+          artifact_kind: 'cloud_config' | 'capability_registry' | 'agent_engine_model_catalog' | 'prompt_registry' | 'update_manifest' | 'runtime_assets_manifest' | 'renderer_bundle' | 'renderer_bundle_rollout';
           payload_version: string | null;
           release_channel: 'stable' | 'beta' | 'canary' | null;
           key_id: string | null;
@@ -606,7 +606,7 @@ export interface Database {
       admin_control_plane_rollout_summary: {
         Args: Record<string, never>;
         Returns: {
-          artifact_kind: 'cloud_config' | 'capability_registry' | 'agent_engine_model_catalog' | 'prompt_registry' | 'update_manifest';
+          artifact_kind: 'cloud_config' | 'capability_registry' | 'agent_engine_model_catalog' | 'prompt_registry' | 'update_manifest' | 'runtime_assets_manifest' | 'renderer_bundle' | 'renderer_bundle_rollout';
           payload_version: string | null;
           release_channel: 'stable' | 'beta' | 'canary' | null;
           key_id: string | null;

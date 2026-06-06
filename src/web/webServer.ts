@@ -1,3 +1,4 @@
+ 
 // ============================================================================
 // Web Server - 独立 HTTP API 服务器（无 Electron 依赖）
 // ============================================================================
@@ -30,7 +31,7 @@ import { loadShellEnvironment } from '../main/services/infra/shellEnvironment';
 import { initSentryNode } from '../main/observability/sentryNode';
 import { initCrashMarker } from '../main/observability/crashMarker';
 import { initPostHogNode } from '../main/observability/posthogNode';
-import { IPC_CHANNELS, IPC_DOMAINS } from '../shared/ipc';
+import { IPC_CHANNELS } from '../shared/ipc';
 import { resolveSessionDefaultModelConfig } from '../main/services/core/sessionDefaults';
 import { getModelSessionState } from '../main/session/modelSessionState';
 import type { AuthUser, ModelProvider, PermissionResponse, Session } from '../shared/contract';
@@ -309,6 +310,7 @@ import { createHealthRouter } from './routes/health';
 import { createSettingsRouter } from './routes/settings';
 import { createExtractRouter } from './routes/extract';
 import { createDomainRouter } from './routes/domain';
+import { createShellRouter } from './routes/shell';
 import { createStaticRouter } from './routes/static';
 import { applyRendererBundleUpdate } from '../main/services/renderer/rendererBundleFetcher';
 import { getAppVersion } from '../main/platform';
@@ -403,15 +405,15 @@ async function initializeServices(): Promise<void> {
 
   // 2. 初始化 Supabase（auth 等服务依赖）
   try {
-    const { initSupabase } = await import('../main/services/infra/supabaseService');
-    const { DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } = await import('../shared/constants');
+    const { initSupabaseFromSettings } = await import('../main/services/infra/supabaseService');
     const settings = configService.getSettings();
-    const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url || DEFAULT_SUPABASE_URL;
-    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey || DEFAULT_SUPABASE_ANON_KEY;
-    initSupabase(supabaseUrl, supabaseAnonKey);
-    logger.info('Supabase initialized');
+    const { config } = initSupabaseFromSettings(settings);
+    logger.info('Supabase initialized', {
+      urlSource: config.urlSource,
+      anonKeySource: config.anonKeySource,
+    });
   } catch (error) {
-    logger.warn('Supabase not available:', (error as Error).message);
+    logger.warn('Supabase initialization failed (will retry on auth action):', (error as Error).message);
   }
 
   // 3. 初始化 AuthService（依赖 Supabase，恢复登录态）
@@ -426,10 +428,13 @@ async function initializeServices(): Promise<void> {
       // Tauri 桌面那套 webContents.send 走 main/app/initBackgroundServices.ts，
       // web 模式（实际所有发行版都是 Tauri+webServer）根本没调那个 bootstrap，
       // 导致 fetchUserProfile 成功后没人推 SSE，renderer authStore isAdmin 永远 stale。
-      authService.addAuthChangeCallback((user) => {
+      authService.addAuthChangeCallback((user, status) => {
         broadcastSSE('auth:event', {
           type: user ? 'signed_in' : 'signed_out',
           user,
+          sessionTrustState: status.sessionTrustState,
+          authBackendAvailable: status.authBackendAvailable,
+          hasCachedAdminClaim: status.hasCachedAdminClaim,
         });
       });
       await authService.initialize();
@@ -1052,6 +1057,9 @@ function createApp(): express.Express {
   // ── Domain & Fallback (extracted to routes/domain.ts) ───────────────
   app.use('/api', createDomainRouter({ handlers, logger }));
 
+  // ── Shell capabilities (renderer hot-update ABI contract) ───────────
+  app.use('/api', createShellRouter({ getAppVersion }));
+
   // ── Static & SPA (extracted to routes/static.ts) ───────────────────
   // 传 dataDir → 运行时解析 serve 目录：云端 active bundle 健康则 serve 热更前端，
   // 否则回包内基线（builtinDir 由 static.ts 按 __dirname 解析）。
@@ -1171,7 +1179,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
 
   // ── 前端热更：启动后异步拉取（不阻塞 health，失败不影响启动）─────────
-  // 下次启动生效：本次后台拉取+验签+切换 active/，当前会话仍 serve 旧前端。
+  // 后台拉取+验签+切换 active/；当前页面保持旧前端，刷新或重新打开后按新 active serve。
   // 兜底铁律全在 applyRendererBundleUpdate 内，任何失败都保持当前前端。
   if (process.env.CODE_AGENT_RENDERER_HOT_UPDATE !== 'false') {
     void applyRendererBundleUpdate({

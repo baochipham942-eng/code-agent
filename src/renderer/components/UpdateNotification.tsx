@@ -109,12 +109,24 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
 
     try {
       setDownloadState('downloading');
-      setDownloadProgress(runningInTauri ? null : { percent: 0, transferred: 0, total: 0, bytesPerSecond: 0 });
+      // 从 0% 起步，避免初始用 w-1/2 的 indeterminate 占位让进度条先闪到 50% 再跳回 0
+      setDownloadProgress({ percent: 0, transferred: 0, total: 0, bytesPerSecond: 0 });
       setError(null);
 
       if (runningInTauri) {
         try {
-          await tauriInstallUpdate();
+          await tauriInstallUpdate((p) => {
+            if (p.phase === 'download' && p.total) {
+              setDownloadProgress({
+                percent: Math.min(100, (p.downloaded / p.total) * 100),
+                transferred: p.downloaded,
+                total: p.total,
+                bytesPerSecond: 0,
+              });
+            } else if (p.phase !== 'download') {
+              setDownloadProgress((prev) => (prev ? { ...prev, percent: 100 } : prev));
+            }
+          });
         } catch (installError) {
           if (!updateInfo?.downloadUrl) {
             throw installError;
@@ -177,14 +189,14 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div
-          className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-[720px] max-h-[88vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+          className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-[440px] max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-start justify-between gap-4 px-8 py-6 border-b border-zinc-800">
+          <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-zinc-800">
             <div>
-              <h2 className="text-2xl font-semibold text-zinc-100">软件更新</h2>
-              <p className="mt-2 text-lg font-medium text-zinc-400">发现新版本可用</p>
+              <h2 className="text-lg font-semibold text-zinc-100">软件更新</h2>
+              <p className="mt-1 text-sm font-medium text-zinc-400">发现新版本可用</p>
             </div>
             {canClose && (
               <button
@@ -198,20 +210,20 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
           </div>
 
           {/* Content */}
-          <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
             {/* Idle State - Ready to Download */}
             {downloadState === 'idle' && (
-              <div className="space-y-6">
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-2xl font-semibold text-zinc-200">
+              <div className="space-y-5">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-base font-semibold text-zinc-200">
                   <span className="text-zinc-500">{currentVersionLabel}</span>
                   <span className="text-zinc-600">→</span>
                   <span>{latestVersionLabel}</span>
                 </div>
 
                 <div>
-                  <p className="mb-3 text-sm font-semibold text-zinc-400">更新内容</p>
-                  <div className="max-h-[320px] overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950/45 p-4">
-                    <div className="whitespace-pre-wrap text-[15px] leading-7 text-zinc-300">
+                  <p className="mb-2 text-xs font-semibold text-zinc-400">更新内容</p>
+                  <div className="max-h-[160px] overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950/45 p-3">
+                    <div className="whitespace-pre-wrap text-[13px] leading-6 text-zinc-300">
                       {updateInfo.releaseNotes?.trim() || '暂无更新内容'}
                     </div>
                   </div>
@@ -319,7 +331,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-8 py-5 border-t border-zinc-800 bg-zinc-900">
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-800 bg-zinc-900">
             {downloadState === 'idle' && (
               <>
                 <button

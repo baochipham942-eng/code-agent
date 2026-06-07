@@ -462,6 +462,11 @@ fn install_signal_handler(app: &tauri::AppHandle) {
 #[derive(Serialize, Clone)]
 struct TauriUpdateInfo {
     has_update: bool,
+    /// true 表示这次检查本身失败了（native + cloud 两条路径都没拿到结果），
+    /// 用来和"权威确认已是最新"(has_update=false, check_failed=false)区分开，
+    /// 避免把网络/服务失败误报成"已是最新版本"。
+    #[serde(default)]
+    check_failed: bool,
     current_version: String,
     latest_version: Option<String>,
     release_notes: Option<String>,
@@ -628,6 +633,7 @@ fn cloud_update_info_from_response(
 
     TauriUpdateInfo {
         has_update,
+        check_failed: false,
         current_version,
         latest_version,
         release_notes: payload.release_notes,
@@ -642,6 +648,24 @@ fn cloud_update_info_from_response(
 fn no_update_info(current_version: String) -> TauriUpdateInfo {
     TauriUpdateInfo {
         has_update: false,
+        check_failed: false,
+        current_version,
+        latest_version: None,
+        release_notes: None,
+        date: None,
+        force_update: None,
+        download_url: None,
+        file_size: None,
+        sha256: None,
+    }
+}
+
+/// 这次检查彻底失败（native + cloud 都没拿到结果）时返回，
+/// has_update=false 但 check_failed=true，让 UI 显示"检查失败"而不是"已是最新"。
+fn check_failed_info(current_version: String) -> TauriUpdateInfo {
+    TauriUpdateInfo {
+        has_update: false,
+        check_failed: true,
         current_version,
         latest_version: None,
         release_notes: None,
@@ -701,6 +725,7 @@ async fn check_native_update(
     match update {
         Some(update) => Ok(TauriUpdateInfo {
             has_update: true,
+            check_failed: false,
             current_version,
             latest_version: Some(update.version.clone()),
             release_notes: update.body.clone(),
@@ -712,6 +737,7 @@ async fn check_native_update(
         }),
         None => Ok(TauriUpdateInfo {
             has_update: false,
+            check_failed: false,
             current_version,
             latest_version: None,
             release_notes: None,
@@ -724,30 +750,44 @@ async fn check_native_update(
     }
 }
 
+// NOTE: 渲染器是从 remote origin(localhost:8180) 加载的，Tauri 2 ACL 不会把 app 自定义命令
+// 授权给 remote，所以这个命令在打包态实际不被渲染器调用（更新走 tauri-updater 插件 JS API）。
+// 保留它用于本地(tauri://)模式 / CLI / 测试，逻辑仍区分"检查失败"与"已是最新"。
 #[tauri::command]
 async fn check_for_update(app: tauri::AppHandle) -> Result<TauriUpdateInfo, String> {
     let current_version = get_app_version(app.clone());
-    let native_no_update = match check_native_update(app, current_version.clone()).await {
-        Ok(info) if info.has_update => return Ok(info),
-        Ok(info) => Some(info),
-        Err(error) => {
-            eprintln!("Native update check failed, trying cloud update: {error}");
-            Some(no_update_info(current_version.clone()))
+    // native 成功且确认有更新 → 直接返回（权威）。
+    // native 成功但无更新 → 它已权威确认"已是最新"，即便后面 cloud 失败也不算检查失败。
+    // native 失败 → 记 native_failed，只有当 cloud 也失败时才报"检查失败"。
+    let (fallback_info, native_failed) =
+        match check_native_update(app, current_version.clone()).await {
+            Ok(info) if info.has_update => return Ok(info),
+            Ok(info) => (info, false),
+            Err(error) => {
+                eprintln!("Native update check failed, trying cloud update: {error}");
+                (no_update_info(current_version.clone()), true)
+            }
+        };
+
+    // 两条路径都没拿到结果时，返回 check_failed 而不是把失败伪装成"已是最新"。
+    let on_cloud_failure = || {
+        if native_failed {
+            check_failed_info(current_version.clone())
+        } else {
+            fallback_info.clone()
         }
     };
 
-    let fallback_info = native_no_update.unwrap_or_else(|| no_update_info(current_version.clone()));
-    let cloud_version = current_version;
+    let cloud_version = current_version.clone();
     match tauri::async_runtime::spawn_blocking(move || check_cloud_update(cloud_version)).await {
         Ok(Ok(info)) => Ok(info),
         Ok(Err(error)) => {
             eprintln!("Cloud update check failed: {error}");
-            Ok(fallback_info.clone())
+            Ok(on_cloud_failure())
         }
         Err(error) => {
-            let message = format!("Cloud update check task failed: {error}");
-            eprintln!("{message}");
-            Ok(fallback_info)
+            eprintln!("Cloud update check task failed: {error}");
+            Ok(on_cloud_failure())
         }
     }
 }
@@ -943,7 +983,7 @@ mod runtime_env_tests {
 #[cfg(test)]
 mod update_url_tests {
     use super::{
-        cloud_update_info_from_response, compare_update_versions,
+        check_failed_info, cloud_update_info_from_response, compare_update_versions,
         github_release_page_from_download_url, no_update_info, normalize_manual_update_url,
         sanitize_release_channel, validate_update_url, CloudUpdateResponse,
     };
@@ -1108,9 +1148,23 @@ mod update_url_tests {
         let info = no_update_info("0.16.82".to_string());
 
         assert!(!info.has_update);
+        assert!(!info.check_failed);
         assert_eq!(info.current_version, "0.16.82");
         assert_eq!(info.latest_version, None);
         assert_eq!(info.download_url, None);
+    }
+
+    #[test]
+    fn check_failed_info_is_distinct_from_up_to_date() {
+        let failed = check_failed_info("0.16.91".to_string());
+        assert!(!failed.has_update);
+        assert!(failed.check_failed);
+        assert_eq!(failed.current_version, "0.16.91");
+
+        // 权威确认"已是最新"必须 check_failed=false，不能和检查失败混淆。
+        let up_to_date = no_update_info("0.16.91".to_string());
+        assert!(!up_to_date.has_update);
+        assert!(!up_to_date.check_failed);
     }
 }
 
@@ -1189,6 +1243,7 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

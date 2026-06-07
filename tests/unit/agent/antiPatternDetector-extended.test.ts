@@ -116,6 +116,32 @@ describe('AntiPatternDetector - Extended', () => {
       expect(detector.hasWritten()).toBe(false);
     });
 
+    // 联网搜索/抓取属只读操作，应纳入连续只读循环计数 —— 否则模型反复 WebSearch
+    // 不收敛（拿到好结果仍自称"截断"重搜）时熔断不触发，会话停在空白"待处理"。
+    it('counts web research tools (WebSearch/web_search/WebFetch) as read ops', () => {
+      const researchTools = ['WebSearch', 'web_search', 'WebFetch'];
+      for (const tool of researchTools) {
+        detector.trackToolExecution(tool, true);
+      }
+      expect(detector.getConsecutiveReadCount()).toBe(3);
+    });
+
+    it('warns after 5 consecutive WebSearch calls (search loop guard)', () => {
+      for (let i = 0; i < 4; i++) {
+        expect(detector.trackToolExecution('WebSearch', true)).toBeNull();
+      }
+      const warning = detector.trackToolExecution('WebSearch', true);
+      expect(warning).not.toBeNull();
+      expect(warning).toContain('critical-warning');
+    });
+
+    it('hard-stops a runaway WebSearch loop at the hard limit', () => {
+      for (let i = 0; i < 14; i++) {
+        detector.trackToolExecution('WebSearch', true);
+      }
+      expect(detector.trackToolExecution('WebSearch', true)).toBe('HARD_LIMIT');
+    });
+
     it('should respect custom config thresholds', () => {
       const customDetector = new AntiPatternDetector({
         maxConsecutiveReadsBeforeWrite: 2,

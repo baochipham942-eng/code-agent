@@ -159,6 +159,28 @@ describe('vercel control-plane envelope', () => {
     expect(firstResponse.body).toBeUndefined();
   });
 
+  it('allows callers to override env TTL for static signed artifacts', () => {
+    const keys = createKeyPair();
+    const env: NodeJS.ProcessEnv = {
+      CONTROL_PLANE_PRIVATE_KEY: keys.privateKeyPem,
+      CONTROL_PLANE_KEY_ID: 'env-key',
+      CONTROL_PLANE_TTL_SECONDS: '3600',
+    };
+
+    const envelope = createControlPlaneEnvelopeFromEnv(
+      'renderer_bundle',
+      { version: '0.16.93', minShellVersion: '0.16.93', rollbackToBuiltin: true },
+      env,
+      {
+        now: new Date('2026-06-06T00:00:00.000Z'),
+        ttlSeconds: 365 * 24 * 60 * 60,
+      },
+    );
+
+    expect(envelope.issuedAt).toBe('2026-06-06T00:00:00.000Z');
+    expect(envelope.expiresAt).toBe('2027-06-06T00:00:00.000Z');
+  });
+
   it('fails closed when signing configuration is missing', () => {
     const response = makeResponse();
     const previousPrivateKey = process.env.CONTROL_PLANE_PRIVATE_KEY;

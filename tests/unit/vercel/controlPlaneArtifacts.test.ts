@@ -186,6 +186,70 @@ async function withCloudConfigEnv(options: {
   }
 }
 
+async function withRendererRolloutEnv(options: {
+  policy?: Record<string, unknown>;
+  autoRollback?: boolean;
+  supabase?: {
+    url: string;
+    key: string;
+  };
+  autoRollbackAction?: 'pause' | 'rollback';
+  minAttempts?: number;
+  failureRate?: number;
+}, fn: () => void | Promise<void>): Promise<void> {
+  const keys = [
+    'CONTROL_PLANE_PRIVATE_KEY',
+    'CONTROL_PLANE_KEY_ID',
+    'CONTROL_PLANE_RENDERER_BUNDLE_ROLLOUT_JSON',
+    'CONTROL_PLANE_RENDERER_BUNDLE_AUTO_ROLLBACK_ENABLED',
+    'CONTROL_PLANE_RENDERER_BUNDLE_AUTO_ROLLBACK_ACTION',
+    'CONTROL_PLANE_RENDERER_BUNDLE_AUTO_ROLLBACK_MIN_ATTEMPTS',
+    'CONTROL_PLANE_RENDERER_BUNDLE_AUTO_ROLLBACK_FAILURE_RATE',
+    'CONTROL_PLANE_SUPABASE_URL',
+    'CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY',
+  ];
+  const previous = new Map(keys.map((key) => [key, process.env[key]]));
+
+  try {
+    for (const key of keys) {
+      delete process.env[key];
+    }
+    process.env.CONTROL_PLANE_PRIVATE_KEY = createKeyPair();
+    process.env.CONTROL_PLANE_KEY_ID = 'rollout-test-key';
+    process.env.CONTROL_PLANE_RENDERER_BUNDLE_ROLLOUT_JSON = JSON.stringify(options.policy ?? {
+      version: 'rollout-policy-test',
+      channel: 'beta',
+      rolloutPercent: 25,
+    });
+    if (options.autoRollback !== undefined) {
+      process.env.CONTROL_PLANE_RENDERER_BUNDLE_AUTO_ROLLBACK_ENABLED = options.autoRollback ? 'true' : 'false';
+    }
+    if (options.autoRollbackAction) {
+      process.env.CONTROL_PLANE_RENDERER_BUNDLE_AUTO_ROLLBACK_ACTION = options.autoRollbackAction;
+    }
+    if (options.minAttempts !== undefined) {
+      process.env.CONTROL_PLANE_RENDERER_BUNDLE_AUTO_ROLLBACK_MIN_ATTEMPTS = String(options.minAttempts);
+    }
+    if (options.failureRate !== undefined) {
+      process.env.CONTROL_PLANE_RENDERER_BUNDLE_AUTO_ROLLBACK_FAILURE_RATE = String(options.failureRate);
+    }
+    if (options.supabase) {
+      process.env.CONTROL_PLANE_SUPABASE_URL = options.supabase.url;
+      process.env.CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY = options.supabase.key;
+    }
+    await fn();
+  } finally {
+    for (const key of keys) {
+      const value = previous.get(key);
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
 describe('vercel control-plane artifacts', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -256,6 +320,110 @@ describe('vercel control-plane artifacts', () => {
         },
       });
       expect(response.headers['ETag']).toMatch(/^"sha256:/);
+    });
+  });
+
+  it('serves renderer bundle rollout policy through the unified control-plane route', async () => {
+    await withRendererRolloutEnv({}, async () => {
+      const response = makeResponse();
+
+      await controlPlaneHandler({
+        method: 'GET',
+        query: { artifact: 'renderer_bundle_rollout' },
+        headers: {},
+      }, response);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toMatchObject({
+        schemaVersion: 1,
+        kind: 'renderer_bundle_rollout',
+        keyId: 'rollout-test-key',
+        payload: {
+          version: 'rollout-policy-test',
+          channel: 'beta',
+          rolloutPercent: 25,
+        },
+      });
+    });
+  });
+
+  it('auto-rolls back renderer rollout when recent telemetry crosses the failure threshold', async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toContain('/rest/v1/telemetry_renderer_bundle_attempts');
+      expect(init?.headers).toMatchObject({
+        Authorization: 'Bearer service-key',
+        apikey: 'service-key',
+      });
+      return {
+        ok: true,
+        json: async () => [
+          {
+            outcome: 'failed',
+            reason: 'integrity-mismatch',
+            source_channel: 'latest',
+            manifest_url: 'https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/renderer-bundle/channels/beta/manifest.json',
+          },
+          {
+            outcome: 'failed',
+            reason: 'extract-unhealthy',
+            source_channel: 'latest',
+            manifest_url: 'https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/renderer-bundle/channels/beta/manifest.json',
+          },
+          {
+            outcome: 'applied',
+            reason: null,
+            source_channel: 'latest',
+            manifest_url: 'https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/renderer-bundle/channels/beta/manifest.json',
+          },
+          {
+            outcome: 'failed',
+            reason: 'integrity-mismatch',
+            source_channel: 'latest',
+            manifest_url: 'https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/renderer-bundle/channels/alpha/manifest.json',
+          },
+        ],
+      } as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await withRendererRolloutEnv({
+      autoRollback: true,
+      autoRollbackAction: 'rollback',
+      minAttempts: 3,
+      failureRate: 0.5,
+      supabase: {
+        url: 'https://supabase.example',
+        key: 'service-key',
+      },
+      policy: {
+        version: 'rollout-policy-test',
+        channel: 'beta',
+        rolloutPercent: 100,
+      },
+    }, async () => {
+      const response = makeResponse();
+
+      await controlPlaneHandler({
+        method: 'GET',
+        query: { artifact: 'renderer_bundle_rollout' },
+        headers: {},
+      }, response);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toMatchObject({
+        kind: 'renderer_bundle_rollout',
+        payload: {
+          version: 'rollout-policy-test',
+          channel: 'beta',
+          rollbackToBuiltin: true,
+          rollbackReason: 'auto rollback guard: 2/3 failures',
+          autoRollback: {
+            attempts: 3,
+            failures: 2,
+            action: 'rollback',
+          },
+        },
+      });
     });
   });
 

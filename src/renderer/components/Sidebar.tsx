@@ -145,10 +145,25 @@ export const Sidebar: React.FC = () => {
     setWorkspaceExpanded,
   } = useSessionUIStore();
 
-  const { user, isAuthenticated, setShowAuthModal, signOut } = useAuthStore();
+  const {
+    user,
+    isAuthenticated,
+    setShowAuthModal,
+    signOut,
+    sessionTrustState,
+    authBackendAvailable,
+    hasCachedAdminClaim,
+  } = useAuthStore();
   const canOpenPromptManager = canAccessFeature('prompt.manager', user);
   const canOpenUserDashboard = canAccessFeature('settings.users', user);
   const canOpenInviteCodes = canAccessFeature('settings.invites', user);
+  const isVerifiedAdmin = user?.isAdmin === true;
+  const isAdminPendingVerification = !isVerifiedAdmin
+    && hasCachedAdminClaim
+    && sessionTrustState === 'cached';
+  const adminPendingTitle = authBackendAvailable === false
+    ? '登录服务启动失败，管理员身份暂时不能验证'
+    : '正在验证管理员身份';
   const sessionStates = useTaskStore((state) => state.sessionStates);
 
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
@@ -933,9 +948,16 @@ export const Sidebar: React.FC = () => {
               <span className="flex-1 text-left text-sm font-medium text-zinc-400 truncate">
                 {user.nickname || user.email?.split('@')[0]}
               </span>
-              {user.isAdmin ? (
+              {isVerifiedAdmin ? (
                 <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
                   管理员
+                </span>
+              ) : isAdminPendingVerification ? (
+                <span
+                  className="shrink-0 rounded border border-zinc-500/30 bg-zinc-500/10 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300"
+                  title={adminPendingTitle}
+                >
+                  管理员待验证
                 </span>
               ) : null}
               <ChevronDown className={`w-4 h-4 text-zinc-600 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />

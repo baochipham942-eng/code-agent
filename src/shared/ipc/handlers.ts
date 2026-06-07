@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { AgentsChangedEvent } from '../contract/agentRegistry';
-import type { Message, PermissionResponse, Session, SessionTask, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, MCPElicitationRequest, MCPElicitationResponse, AuthUser, AuthStatus, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
+import type { Message, PermissionResponse, Session, SessionTask, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, MCPElicitationRequest, MCPElicitationResponse, AuthUser, AuthStatus, AuthSessionTrustState, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
 
 import type { InAppValidationRequest, InAppValidationResultPayload } from '../contract/browserInteraction';
 
@@ -420,6 +420,9 @@ export type AuthEventType = 'signed_in' | 'signed_out' | 'token_refreshed' | 'us
 export interface AuthEvent {
   type: AuthEventType;
   user?: AuthUser;
+  sessionTrustState?: AuthSessionTrustState;
+  authBackendAvailable?: boolean;
+  hasCachedAdminClaim?: boolean;
 }
 
 export interface SessionUpdatedEvent {

@@ -65,6 +65,26 @@ curl --max-time 10 --proxy http://127.0.0.1:7897 https://token-plan-sgp.xiaomimi
 - standard: coverageThreshold=0.60, maxSearchCalls=12
 - deep: coverageThreshold=0.70, maxSearchCalls=20
 
+### 普通对话里反复 WebSearch 不收敛 → 空白"待处理"会话 (2026-06-07)
+
+**症状**: 弱模型（实测 xiaomi/mimo-v2.5-pro）收到"搜到符合条件为止"类指令后，连续调用 7+ 次 WebSearch，每次都自称"结果被截断/不够好"继续重搜，从不产出最终答复。run 最后被中断（status=`interrupted`），`messages` 表只有 user 消息、0 条 assistant → 侧栏显示红色"待处理"，看起来像"AI 没回复"。
+
+**排查（按此顺序，避免误判根因）**:
+1. 查会话真实状态：`sqlite3 ~/.code-agent/code-agent.db "SELECT status FROM sessions WHERE id='<sid>'"`（`interrupted`/`orphaned`/`error` 都映射成"待处理"，见 `sessionPresentation.ts`）
+2. 查 `telemetry_turns` 的 `thinking_content`，看是不是每轮都在"换关键词重搜"
+3. 查 audit 日志 `~/.code-agent/audit/<date>.jsonl` 拿**模型实际收到的工具输出**（注意 `telemetry_tool_calls.result_summary` 和 audit 都只存 ~500/1000 字预览，那个 `...[truncated]` 是**日志自己截的**，不是模型看到的——别被它误导成"WebSearch 截断了结果"）
+
+**根因**: 不是 WebSearch 截断（搜索结果其实是好的、带日期带链接）。真因是**只读循环熔断没覆盖联网搜索**——`loopTypes.ts` 的 `READ_ONLY_TOOLS` 只有 `web_fetch`，缺 `WebSearch`/`WebFetch`/`web_search`，所以 `AntiPatternDetector` 的连续只读计数（5 警告 / 15 硬停）对搜索循环完全不触发。普通对话又不进 goalMode，goalMode 自带的无进展检测也用不上。叠加用户"直到搜到为止"的指令拿掉了停止条件，模型就无限搜到被中断。
+
+**修复**:
+- `loopTypes.ts` `READ_ONLY_TOOLS` 补 `'WebFetch', 'web_search', 'WebSearch'`（PascalCase + snake_case 都要，模型实际发的是 PascalCase）→ 走通已有的 preflight 读循环计数：第 5 次注入 critical-warning，第 15 次 HARD_LIMIT 强制收尾（`generateHardLimitError()` 回灌"基于已有证据作答"逼模型产出答复，不再空白）
+- `antiPattern/detector.ts` 把警告文案从纯"文件读取"泛化成"文件读取 + 联网搜索"
+- 真机验证（mimo）：第 5 次 WebSearch 即触发警告，模型收敛作答，status=`completed`、assistant=6 条
+
+**泛化规则**: 任何**无界的只读工具**（联网搜索/抓取、未来的 API 查询类工具）都必须纳入 `READ_ONLY_TOOLS` 的连续只读熔断，且要按**模型实际发出的工具名**登记（PascalCase 与 snake_case 别名都加）。强模型自己会收尾、几乎到不了阈值，但多模型路由下不能假设模型自终止——护栏是给弱模型兜底的。
+
+**调试经验**: 归因"工具截断"前，先确认你看到的 `[truncated]` 是不是日志层的预览截断（`toolExecutor.truncateOutput` maxLength=1000，只在 `if(auditEnabled)` 块里）。模型实际收到的是完整 `result.result`。
+
 ---
 
 ## Vercel 部署问题

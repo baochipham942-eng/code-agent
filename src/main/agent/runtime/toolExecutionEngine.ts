@@ -27,7 +27,6 @@ import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
 import { validateToolArgs } from './toolArgsValidator';
 import { getToolDefinitionWithCloudMeta } from '../../tools/dispatch/toolDefinitions';
 import { MAX_PARALLEL_TOOLS } from '../../agent/loopTypes';
-import { getDiffTracker } from '../../services/diff/diffTracker';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
@@ -49,12 +48,12 @@ import {
   captureArtifactRepairRollbackSnapshot,
   enforceArtifactRepairGuard,
   enforceArtifactRepairRepeatedPatchGuard,
-  getModifiedFilePath,
-  isFileMutationTool,
 } from './toolArtifactRepairPolicy';
 import { maybeRepairArtifactContractEditAnchors } from './toolArtifactContractAnchors';
 import { handleModifiedArtifactValidation } from './toolArtifactValidationLifecycle';
 import { handleToolResultBookkeeping } from './toolResultLifecycle';
+import { trackFileMutationSideEffects } from './toolFileMutationTracking';
+import { handleToolExecutionError } from './toolExecutionErrorHandler';
 import { applySwarmBudgetClamp, recordSwarmSpend } from './swarmGoalIntegration';
 import {
   activateForceFinalResponse,
@@ -755,65 +754,13 @@ export class ToolExecutionEngine {
         }
       }
 
-      // P3 Nudge: Track modified files for completion checking
-      if (isFileMutationTool(toolCall.name) && normalizedResult.success) {
-        const filePath = getModifiedFilePath(toolCall);
-        if (filePath) {
-          this.ctx.nudgeManager.trackModifiedFile(filePath);
-
-          // Mark as agent-modified to avoid false external change alerts
-          try {
-            const { getFileWatcherService } = await import('../../services/git/fileWatcherService');
-            const path = await import('path');
-            const absolutePath = path.default.isAbsolute(filePath)
-              ? filePath
-              : path.default.resolve(this.ctx.workingDirectory || process.cwd(), filePath);
-            getFileWatcherService().markAsAgentModified(absolutePath);
-          } catch { /* ignore */ }
-
-          // E3: Diff tracking - compute and emit diff_computed event
-          if (this.ctx.sessionId) {
-            try {
-              const diffTracker = getDiffTracker();
-              const fs = await import('fs/promises');
-              const path = await import('path');
-              const absolutePath = path.default.isAbsolute(filePath)
-                ? filePath
-                : path.default.resolve(this.ctx.workingDirectory || process.cwd(), filePath);
-              // Read current file content (after write/edit)
-              let afterContent: string | null = null;
-              try {
-                afterContent = await fs.default.readFile(absolutePath, 'utf-8');
-              } catch {
-                // File may not exist after failed write
-              }
-              // before content is captured by FileCheckpointService - we use null here
-              // The diff shows the full file as "added" for new files
-              const messageId = toolCall.id;
-              const diff = diffTracker.computeAndStore(
-                this.ctx.sessionId,
-                messageId,
-                toolCall.id,
-                absolutePath,
-                null, // before state is in checkpoint
-                afterContent
-              );
-              this.ctx.onEvent({ type: 'diff_computed', data: diff });
-            } catch (error) {
-              logger.debug('Failed to compute diff:', error);
-            }
-          }
-
-          if (
-            this.ctx.artifactRepairGuard?.targetFile &&
-            isSameArtifactRepairPath(this.ctx, filePath, this.ctx.artifactRepairGuard.targetFile)
-          ) {
-            if (toolResult.success !== false) {
-              this.ctx.artifactRepairGuard.patched = true;
-            }
-          }
-        }
-      }
+      // P3 Nudge / E3 diff：文件改动副作用跟踪（已抽取为 trackFileMutationSideEffects，行为不变）
+      await trackFileMutationSideEffects({
+        ctx: this.ctx,
+        toolCall,
+        normalizedResult,
+        toolResult,
+      });
 
       await handleModifiedArtifactValidation({
         ctx: this.ctx,
@@ -1000,102 +947,17 @@ export class ToolExecutionEngine {
       return preservedToolResult;
     } catch (error) {
       clearInterval(progressInterval);
-      if (this.isRunCancelled()) {
-        const suppressedResult = this.buildSuppressedCancelledResult(toolCall, startTime);
-        langfuse.endSpan(toolSpanId, {
-          success: false,
-          error: suppressedResult.error,
-          duration: suppressedResult.duration,
-        }, 'WARNING', 'cancelled');
-        return suppressedResult;
-      }
-
-      logger.error(`Tool ${toolCall.name} threw exception:`, error);
-      const toolResult: ToolResult = {
-        toolCallId: toolCall.id,
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        duration: Date.now() - startTime,
-      };
-
-      logger.debug(` Tool ${toolCall.name} failed with error: ${toolResult.error}`);
-
-      // Circuit breaker tracking for exceptions
-      if (this.ctx.circuitBreaker.recordFailure(toolResult.error)) {
-        this.contextAssembly.injectSystemMessage(this.ctx.circuitBreaker.generateWarningMessage(toolResult.error));
-        this.ctx.onEvent({
-          type: 'error',
-          data: {
-            message: this.ctx.circuitBreaker.generateUserErrorMessage(toolResult.error),
-            code: 'CIRCUIT_BREAKER_TRIPPED',
-          },
-        });
-      }
-
-      // User-configurable Post-Tool Failure Hook
-      if (this.ctx.hookManager) {
-        try {
-          const toolInput = JSON.stringify(toolCall.arguments);
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          const userFailResult = await this.ctx.hookManager.triggerPostToolUseFailure(
-            toolCall.name,
-            toolInput,
-            errorMessage,
-            this.ctx.sessionId
-          );
-
-          if (userFailResult.message) {
-            this.contextAssembly.injectSystemMessage(`<post-tool-failure-hook>\n${userFailResult.message}\n</post-tool-failure-hook>`);
-          }
-        } catch (hookError) {
-          logger.error('[AgentLoop] User post-tool failure hook error:', hookError);
-        }
-      }
-
-      // Planning Error Hook
-      if (this.ctx.enableHooks && this.ctx.planningService) {
-        try {
-          const errorResult = await this.ctx.planningService.hooks.onError({
-            toolName: toolCall.name,
-            toolParams: toolCall.arguments,
-            error: error instanceof Error ? error : new Error('Unknown error'),
-          });
-
-          if (errorResult.injectContext) {
-            this.contextAssembly.injectSystemMessage(errorResult.injectContext);
-          }
-        } catch (hookError) {
-          logger.error('Error hook error:', hookError);
-        }
-      }
-
-      langfuse.endSpan(toolSpanId, {
-        success: false,
-        error: toolResult.error,
-        duration: toolResult.duration,
-      }, 'ERROR', toolResult.error);
-
-      logger.debug(` Emitting tool_call_end for ${toolCall.name} (error)`);
-      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined);
-      this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
-      // Tool execution logging (non-blocking)
-      if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
-        try {
-          const safeToolResult = sanitizeToolResultForObservation(toolCall, toolResult);
-          this.ctx.onToolExecutionLog({
-            sessionId: this.ctx.sessionId,
-            toolCallId: toolCall.id,
-            toolName: toolCall.name,
-            args: sanitizeToolArgumentsForObservation(toolCall) as Record<string, unknown>,
-            result: safeToolResult,
-          });
-        } catch {
-          // Never let logging break tool execution
-        }
-      }
-
-
-      return toolResult;
+      // catch 错误处理已抽取为 handleToolExecutionError（行为不变）。clearInterval
+      // 引用局部 progressInterval 故留在此处；其余逻辑全部委托给 helper。
+      return await handleToolExecutionError({
+        ctx: this.ctx,
+        contextAssembly: this.contextAssembly,
+        toolCall,
+        error,
+        startTime,
+        langfuse,
+        toolSpanId,
+      });
     }
   }
 

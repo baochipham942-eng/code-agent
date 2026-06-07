@@ -1,6 +1,7 @@
 import type { ControlPlaneArtifactKind } from './controlPlaneEnvelope.js';
 import type { ControlPlaneRequestLike } from './controlPlaneEnvelope.js';
 import { applyServerEntitlementGate, applyServerEntitlementGateAsync } from './controlPlaneEntitlements.js';
+import { applyRendererBundleAutoRollbackGuard } from './controlPlaneRendererRollout.js';
 import { loadSharedProvidersFromStore } from './controlPlaneSharedProviders.js';
 import { readJsonPayloadFromEnv } from './controlPlaneEnvelope.js';
 
@@ -119,6 +120,22 @@ export interface AgentEngineModelCatalogPayload {
   }>;
 }
 
+export interface RendererBundleRolloutPolicyPayload {
+  version: string;
+  paused?: boolean;
+  pauseReason?: string;
+  rollbackToBuiltin?: boolean;
+  rollbackReason?: string;
+  channel?: string;
+  manifestUrl?: string;
+  manifestContentHash?: string;
+  rolloutPercent?: number;
+  cohorts?: string[];
+  platforms?: string[];
+  minShellVersion?: string;
+  maxShellVersion?: string;
+}
+
 export function readCloudConfigPayload(env: NodeJS.ProcessEnv = process.env): CloudConfigPayload {
   return readJsonPayloadFromEnv<CloudConfigPayload>([
     'CONTROL_PLANE_CLOUD_CONFIG_JSON',
@@ -166,11 +183,27 @@ export function readAgentEngineModelCatalogPayload(env: NodeJS.ProcessEnv = proc
   ], env);
 }
 
+export function readRendererBundleRolloutPolicyPayload(
+  env: NodeJS.ProcessEnv = process.env,
+): RendererBundleRolloutPolicyPayload {
+  return readJsonPayloadFromEnv<RendererBundleRolloutPolicyPayload>([
+    'CONTROL_PLANE_RENDERER_BUNDLE_ROLLOUT_JSON',
+    'CODE_AGENT_RENDERER_BUNDLE_ROLLOUT_JSON',
+  ], env);
+}
+
+export async function readRendererBundleRolloutPolicyPayloadAsync(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<RendererBundleRolloutPolicyPayload> {
+  const policy = readRendererBundleRolloutPolicyPayload(env);
+  return applyRendererBundleAutoRollbackGuard(policy, { env });
+}
+
 export function readPayloadForKind(
   kind: ControlPlaneArtifactKind,
   req?: ControlPlaneRequestLike,
   env: NodeJS.ProcessEnv = process.env,
-): CloudConfigPayload | CapabilityRegistryPayload | AgentEngineModelCatalogPayload | PromptRegistryPayload {
+): CloudConfigPayload | CapabilityRegistryPayload | AgentEngineModelCatalogPayload | PromptRegistryPayload | RendererBundleRolloutPolicyPayload {
   if (kind === 'cloud_config') {
     return req ? readCloudConfigPayloadForRequest(req, env) : readCloudConfigPayload(env);
   }
@@ -182,6 +215,9 @@ export function readPayloadForKind(
   }
   if (kind === 'prompt_registry') {
     return readPromptRegistryPayload(env);
+  }
+  if (kind === 'renderer_bundle_rollout') {
+    return readRendererBundleRolloutPolicyPayload(env);
   }
   throw new Error(`Unsupported control-plane artifact: ${kind}`);
 }

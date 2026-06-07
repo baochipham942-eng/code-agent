@@ -15,6 +15,11 @@ import {
 import type { PermissionResponse } from '../../shared/contract';
 import type { AgentApplicationService, AppServiceRunOptions } from '../../shared/contract/appService';
 import type { ConversationEnvelope } from '../../shared/contract/conversationEnvelope';
+import {
+  MODE_CONFIGS,
+  setPermissionMode,
+  type PermissionMode,
+} from '../permissions/modes';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -91,6 +96,11 @@ async function handleInterrupt(
   await appService.interruptAndContinue(normalizeEnvelope(payload));
 }
 
+function normalizePermissionMode(value: unknown): PermissionMode | null {
+  if (typeof value !== 'string') return null;
+  return value in MODE_CONFIGS ? value as PermissionMode : null;
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -137,6 +147,17 @@ export function registerAgentHandlers(
           if (!appService) throw new Error('Agent not initialized');
           appService.setInteractionMode((payload as { mode: import('../../shared/contract/agent').InteractionMode }).mode);
           return { success: true, data: null };
+        }
+        case 'setPermissionMode': {
+          const mode = normalizePermissionMode((payload as { mode?: unknown } | undefined)?.mode);
+          if (!mode) {
+            return {
+              success: false,
+              error: { code: 'INVALID_PERMISSION_MODE', message: 'Unknown permission mode' },
+            };
+          }
+          const changed = setPermissionMode(mode, Boolean((payload as { approved?: boolean } | undefined)?.approved));
+          return { success: true, data: { changed, mode } };
         }
         case 'pause': {
           const appService = getAppService();

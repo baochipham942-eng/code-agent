@@ -320,7 +320,9 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
     totalOutputTokens: 0,
     consecutiveErrors: 0,
     recentToolFingerprints: [],
+    recentToolNames: [],
     stagnationWarningEmitted: false,
+    searchSpamWarningEmitted: false,
     antiScrapingHitsInRun: 0,
     effortLevel: 'medium' as never,
     thinkingStepCount: 0,
@@ -355,6 +357,9 @@ function makePendingGoalMode(): NonNullable<RuntimeContext['goalMode']> {
     getGoal: vi.fn().mockReturnValue('validate artifact'),
     markMet: vi.fn(),
     clearCompletionRequest: vi.fn(),
+    // 这些 hook 测试不测 swarm；返回 false 让 applySwarmBudgetClamp 等 swarm 路径直接 no-op
+    // （生产代码 swarmGoalIntegration 会调 goalMode.allowsSwarm()，mock 缺它会抛 TypeError）。
+    allowsSwarm: vi.fn().mockReturnValue(false),
   } as unknown as NonNullable<RuntimeContext['goalMode']>;
 }
 
@@ -750,6 +755,73 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         forceFinalResponseReason: expect.stringContaining('执行前阻止 Bash'),
       }),
     });
+  });
+
+  it('preflights a runaway WebSearch loop and forces the agent to answer at the hard limit', async () => {
+    // 回归：模型反复 WebSearch 不收敛（拿到好结果仍自称"截断"重搜）时，
+    // 之前因 WebSearch 不在 READ_ONLY_TOOLS，只读循环熔断从不触发，会话停在空白"待处理"。
+    // 现在 WebSearch 计入连续只读操作 → 第 15 次硬阈值 preflight 拦截 → 强制收尾。
+    const toolExecutor = {
+      execute: vi.fn(async (_toolName: string, args: Record<string, unknown>): Promise<ToolResult> => ({
+        toolCallId: '',
+        success: true,
+        output: `search ok: ${String(args.query)}`,
+      })),
+    };
+
+    const ctx = makeRuntimeContext({
+      toolExecutor: toolExecutor as never,
+      antiPatternDetector: new AntiPatternDetector(),
+    });
+    const contextAssembly = {
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      getCurrentAttachments: vi.fn().mockReturnValue([]),
+    };
+    const runFinalizer = { emitTaskProgress: vi.fn() };
+    const conversationRuntime = {
+      setPlanMode: vi.fn(),
+      isPlanMode: vi.fn().mockReturnValue(false),
+      generateAutoContinuationPrompt: vi.fn().mockReturnValue('continue'),
+    };
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules(contextAssembly as never, runFinalizer as never, conversationRuntime as never);
+
+    const calls = Array.from({ length: 16 }, (_, index) => {
+      const id = String(index + 1).padStart(2, '0');
+      return {
+        id: `websearch-${id}`,
+        name: 'WebSearch',
+        arguments: { query: `AI news June 2026 attempt ${id}`, recency: 'week' },
+      } as ToolCall;
+    });
+
+    const results = await engine.executeToolsWithHooks(calls);
+
+    // 前 14 次真正执行，第 15 次被 preflight 硬上限拦截（不再无限搜下去）
+    expect(toolExecutor.execute).toHaveBeenCalledTimes(14);
+    expect(results).toHaveLength(16);
+    expect(results.slice(0, 14).every((result) => result.success)).toBe(true);
+    expect(results[14]).toMatchObject({
+      toolCallId: 'websearch-15',
+      success: false,
+      metadata: expect.objectContaining({
+        hardLimitPreflight: true,
+        skipped: true,
+      }),
+    });
+    // 第 16 次被强制收尾跳过，理由指向只读硬阈值
+    expect(results[15]).toMatchObject({
+      toolCallId: 'websearch-16',
+      success: false,
+      metadata: expect.objectContaining({
+        skipped: true,
+        forceFinalResponseReason: expect.stringContaining('执行前阻止 WebSearch'),
+      }),
+    });
+    // 强制收尾标记已激活，HARD_LIMIT 错误把"基于已有证据作答"回灌给模型 → 不再空白会话
+    expect(ctx.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
+    expect(results[14].error).toContain('基于已经获取到的文件或搜索证据');
   });
 
   it('marks successful read_file output as preserved file evidence', async () => {

@@ -3,7 +3,6 @@ import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSwarmStore } from '../stores/swarmStore';
 import { useTaskStore } from '../stores/taskStore';
-import { useCronStore } from '../stores/cronStore';
 import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
 import { useWorkflowStore } from '../stores/workflowStore';
 import { useCurrentTurnExecutionProjection } from './useCurrentTurnExecutionProjection';
@@ -15,7 +14,6 @@ import type {
   TaskRecordOutputRef,
 } from '../types/runWorkbench';
 import type { ScriptRunAgentSnapshot, ScriptRunSnapshot } from '@shared/contract/scriptRun';
-import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
 import type { Task } from '@shared/contract/backgroundTask';
 import {
   getLongTaskStatusLabel,
@@ -61,52 +59,6 @@ export function buildGlobalTaskRecords(args: {
       sourceThreadId: sessionId,
       resumeHint: state.error,
     }));
-}
-
-function cronExecutionToTaskStatus(execution: CronJobExecution | null | undefined, enabled: boolean): TaskRecord['status'] {
-  if (execution?.status === 'running' || execution?.status === 'pending') return 'in_progress';
-  if (execution?.status === 'failed') return 'blocked';
-  if (execution?.status === 'cancelled') return 'cancelled';
-  return enabled ? 'pending' : 'completed';
-}
-
-function formatCronSchedule(job: CronJobDefinition): string {
-  if (job.schedule.type === 'at') {
-    return `一次性 · ${new Date(job.schedule.datetime).toLocaleString('zh-CN')}`;
-  }
-  if (job.schedule.type === 'every') {
-    return `每 ${job.schedule.interval} ${job.schedule.unit}`;
-  }
-  return job.schedule.timezone
-    ? `${job.schedule.expression} · ${job.schedule.timezone}`
-    : job.schedule.expression;
-}
-
-function buildScheduledTaskRecords(args: {
-  jobs: CronJobDefinition[];
-  latestExecutions: Record<string, CronJobExecution | null>;
-}): TaskRecord[] {
-  return args.jobs.slice(0, 8).map((job) => {
-    const latest = args.latestExecutions[job.id] ?? null;
-    const status = cronExecutionToTaskStatus(latest, job.enabled);
-    return {
-      id: `scheduled:${job.id}`,
-      scope: 'scheduled' as const,
-      title: job.name,
-      status,
-      steps: [
-        {
-          title: formatCronSchedule(job),
-          status: job.enabled ? 'pending' : 'completed',
-        },
-        ...(latest ? [{
-          title: latest.status,
-          status: cronExecutionToTaskStatus(latest, job.enabled),
-        }] : []),
-      ],
-      resumeHint: latest?.error || (job.enabled ? undefined : '已停用'),
-    };
-  });
 }
 
 function backgroundTaskStatusToTaskStatus(status: Task['status']): TaskRecord['status'] {
@@ -317,8 +269,11 @@ function backgroundTaskResumeHint(task: Task, outputRefs: TaskRecordOutputRef[])
   return task.summary;
 }
 
-export function buildLedgerTaskRecords(tasks: Task[]): TaskRecord[] {
+export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string | null): TaskRecord[] {
+  if (!currentSessionId) return [];
+
   return tasks
+    .filter((task) => task.sessionId === currentSessionId)
     .slice(0, 8)
     .map((task) => {
       const status = backgroundTaskStatusToTaskStatus(task.status);
@@ -382,8 +337,6 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
   const agents = useSwarmStore((state) => state.agents);
   const selectedSwarmAgentId = useAppStore((state) => state.selectedSwarmAgentId);
-  const cronJobs = useCronStore((state) => state.jobs);
-  const cronLatestExecutions = useCronStore((state) => state.latestExecutions);
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
   const workflowSnapshot = useWorkflowStore((state) => state.activeSnapshot(currentSessionId ?? undefined));
   const sessionTasks = useSessionStore((state) => state.sessionTasks);
@@ -411,15 +364,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
       todos: statusRail.todos.items,
       taskProgress,
     });
-    const globalTasks = buildGlobalTaskRecords({
-      currentSessionId,
-      sessionStates,
-    });
-    const scheduledTasks = buildScheduledTaskRecords({
-      jobs: cronJobs,
-      latestExecutions: cronLatestExecutions,
-    });
-    const ledgerTasks = buildLedgerTaskRecords(backgroundTasks);
+    const ledgerTasks = buildLedgerTaskRecords(backgroundTasks, currentSessionId);
     const workflowTask = buildWorkflowTaskRecord(workflowSnapshot);
     const workflowSubagents = buildWorkflowSubagentViews(workflowSnapshot);
 
@@ -430,9 +375,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
       tasks: [
         ...(sessionTask ? [sessionTask] : []),
         ...(workflowTask ? [workflowTask] : []),
-        ...globalTasks,
         ...ledgerTasks,
-        ...scheduledTasks,
       ],
       subagents: buildSubagentViews({
         runId: run.identity.runId,
@@ -445,8 +388,6 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
   }, [
     agents,
     backgroundTasks,
-    cronJobs,
-    cronLatestExecutions,
     currentSessionId,
     pendingApprovalId,
     projection,

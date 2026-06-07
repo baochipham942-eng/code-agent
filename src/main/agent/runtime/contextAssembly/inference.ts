@@ -511,48 +511,62 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
             needsVisionFallback = true;
           }
 
+          // 视觉预处理：用一个识图模型把图片转成文字摘要后，继续用主模型回答（不切换主模型）。
+          // 候选按「同 provider 视觉模型 → 其它已配置 Key 的视觉模型」排序，依次尝试，直到某个
+          // 成功读图——所以 mimo 自家的 omni 万一不能吃图，会自动切到用户配过 Key 的下一个识图
+          // 模型，而不是写死回退到某个固定 provider。这一步不越过用户显式选的主模型，所以即使
+          // adaptive=false（显式选模型）也必须跑——否则截图会被直接 strip、主模型（如
+          // mimo-v2.5-pro）完全看不到图（实证踩坑 2026-06-06）。
+          if (capability === 'vision' && !needsToolForImage) {
+            const visionCandidates = ctx.runtime.modelRouter.getVisionPreflightCandidates(ctx.runtime.modelConfig);
+            for (const visionConfig of visionCandidates) {
+              try {
+                const preflightMessages = await preflightImagesForMainModel(
+                  ctx,
+                  modelMessages,
+                  visionConfig,
+                  userRequestText,
+                  runEngineInference,
+                );
+                if (preflightMessages) {
+                  modelMessages = preflightMessages;
+                  visionFallbackSucceeded = true;
+                  logger.info(`[Fallback] 使用 ${visionConfig.provider}/${visionConfig.model} 预处理图片，继续使用主模型 ${ctx.runtime.modelConfig.model}`);
+                  ctx.runtime.onEvent({
+                    type: 'notification',
+                    data: {
+                      message: `已用视觉模型 ${visionConfig.model} 读取图片，继续由 ${ctx.runtime.modelConfig.model} 回答。`,
+                    },
+                  } as AgentEvent);
+                  break;
+                }
+              } catch (error) {
+                logger.warn(`[Fallback] 视觉预处理失败（${visionConfig.provider}/${visionConfig.model}），尝试下一个识图模型`, {
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              }
+            }
+            if (visionFallbackSucceeded) {
+              continue;
+            }
+            logger.warn('[Fallback] 所有已配置的识图模型预处理均失败或不可用');
+          }
+
+          // 整轮模型切换（用 fallback 模型替换用户选择的主模型）：仅在用户选"自动"
+          // (adaptive=true) 时才允许，避免越过用户对模型的明确选择。
           if (!allowCapabilityFallback) {
-            logger.info(`[Fallback] 显式模型 ${ctx.runtime.modelConfig.provider}/${ctx.runtime.modelConfig.model} 不启用 ${capability} fallback`);
+            logger.info(`[Fallback] 显式模型 ${ctx.runtime.modelConfig.provider}/${ctx.runtime.modelConfig.model} 不启用 ${capability} 整轮模型切换`);
             continue;
           }
 
           const fallbackConfig = ctx.runtime.modelRouter.getFallbackConfig(capability, ctx.runtime.modelConfig);
           if (fallbackConfig) {
             const configService = getConfigService();
-            const fallbackApiKey = configService.getApiKey(fallbackConfig.provider)
-              || fallbackConfig.apiKey;
+            const fallbackApiKey = configService.getApiKey(fallbackConfig.provider) || fallbackConfig.apiKey;
             logger.info(`[Fallback] provider=${fallbackConfig.provider}, model=${fallbackConfig.model}, hasLocalKey=${!!fallbackApiKey}`);
 
             if (fallbackApiKey) {
               fallbackConfig.apiKey = fallbackApiKey;
-              if (capability === 'vision' && !needsToolForImage) {
-                try {
-                  const preflightMessages = await preflightImagesForMainModel(
-                    ctx,
-                    modelMessages,
-                    fallbackConfig,
-                    userRequestText,
-                    runEngineInference,
-                  );
-                  if (preflightMessages) {
-                    modelMessages = preflightMessages;
-                    visionFallbackSucceeded = true;
-                    logger.info(`[Fallback] 使用 ${fallbackConfig.provider}/${fallbackConfig.model} 预处理图片，继续使用主模型 ${ctx.runtime.modelConfig.model}`);
-                    ctx.runtime.onEvent({
-                      type: 'notification',
-                      data: {
-                        message: `已用视觉模型 ${fallbackConfig.model} 读取图片，继续由 ${ctx.runtime.modelConfig.model} 回答。`,
-                      },
-                    } as AgentEvent);
-                    continue;
-                  }
-                } catch (error) {
-                  logger.warn('[Fallback] 视觉预处理失败，退回整轮视觉 fallback', {
-                    error: error instanceof Error ? error.message : String(error),
-                  });
-                }
-              }
-
               logger.info(`[Fallback] 使用本地 ${fallbackConfig.provider} Key 切换到 ${fallbackConfig.model}`);
               ctx.runtime.onEvent({
                 type: 'model_fallback',

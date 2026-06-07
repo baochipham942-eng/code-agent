@@ -312,7 +312,7 @@ export const MAX_PARALLEL_TOOLS = 4;
 /**
  * Read-only tools for anti-pattern tracking
  */
-export const READ_ONLY_TOOLS = ['read_file', 'Read', 'glob', 'Glob', 'grep', 'Grep', 'list_directory', 'web_fetch'];
+export const READ_ONLY_TOOLS = ['read_file', 'Read', 'glob', 'Glob', 'grep', 'Grep', 'list_directory', 'web_fetch', 'WebFetch', 'web_search', 'WebSearch'];
 
 /**
  * Write tools for anti-pattern tracking

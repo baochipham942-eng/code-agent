@@ -5,10 +5,16 @@
 import type { IpcMain } from '../platform';
 import { app } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { PrepareRuntimeAssetsResult, RuntimeAssetsStatus, UpdateInfo } from '../../shared/contract';
+import type {
+  PrepareRuntimeAssetsResult,
+  RendererBundleStatus,
+  RuntimeAssetsStatus,
+  UpdateInfo,
+} from '../../shared/contract';
 import { getUpdateService, isUpdateServiceInitialized } from '../services/cloud/updateService';
 import { getRuntimeAssetsStatus } from '../runtime/runtimeAssetStatus';
 import { createLogger } from '../services/infra/logger';
+import { readRendererBundleStatus } from '../services/renderer/rendererBundleCache';
 
 const logger = createLogger('UpdateIPC');
 
@@ -64,6 +70,10 @@ async function handleRuntimeAssetsStatus(): Promise<RuntimeAssetsStatus> {
   return getRuntimeAssetsStatus();
 }
 
+async function handleRendererBundleStatus(): Promise<RendererBundleStatus> {
+  return readRendererBundleStatus(app.getPath('userData'));
+}
+
 async function handlePrepareRuntimeAssets(): Promise<PrepareRuntimeAssetsResult> {
   if (!isUpdateServiceInitialized()) throw new Error('Update service not initialized');
   return getUpdateService().prepareRuntimeAssets();
@@ -112,6 +122,9 @@ export function registerUpdateHandlers(ipcMain: IpcMain): void {
           break;
         case 'runtimeAssetsStatus':
           data = await handleRuntimeAssetsStatus();
+          break;
+        case 'rendererBundleStatus':
+          data = await handleRendererBundleStatus();
           break;
         case 'prepareRuntimeAssets':
           data = await handlePrepareRuntimeAssets();

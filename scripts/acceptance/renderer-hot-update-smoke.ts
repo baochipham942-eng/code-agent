@@ -6,6 +6,7 @@
 //   1. active 健康   → serve 云端版（CLOUD marker）+ token 注入
 //   2. active 移除   → 重启后回包内基线（builtin dist/renderer，无 CLOUD marker）
 //   3. active 不健康 → 同样回包内基线（兜底铁律：绝不 serve 损坏前端）
+//   4. rendererBundleStatus → 暴露当前 source / channel 配置错误
 //
 // vitest pass ≠ 真实 webServer serve 正确（feedback_vitest_pass_does_not_imply_ui_mounted），
 // 故本 smoke 走真实 .cjs 路径。设 CODE_AGENT_RENDERER_HOT_UPDATE=false 关后台拉取避免联网。
@@ -66,7 +67,10 @@ function extractToken(output: string, port: number): string | null {
   return null;
 }
 
-async function startServer(dataDir: string): Promise<StartedServer> {
+async function startServer(
+  dataDir: string,
+  extraEnv: Record<string, string> = {},
+): Promise<StartedServer> {
   const port = await getFreePort();
   const chunks: string[] = [];
   const child = spawn(process.execPath, [path.join(repoRoot, 'dist/web/webServer.cjs')], {
@@ -77,6 +81,7 @@ async function startServer(dataDir: string): Promise<StartedServer> {
       CODE_AGENT_RENDERER_HOT_UPDATE: 'false', // 关后台拉取，避免联网
       WEB_HOST: '127.0.0.1',
       WEB_PORT: String(port),
+      ...extraEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -130,6 +135,37 @@ async function fetchRoot(server: StartedServer): Promise<string> {
   return res.text();
 }
 
+interface RendererBundleStatusSmoke {
+  source?: {
+    channel?: string;
+    manifestUrl?: string;
+    manifestUrlOverride?: boolean;
+    errorReason?: string;
+    errorTarget?: string;
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object');
+}
+
+async function fetchRendererBundleStatus(server: StartedServer): Promise<RendererBundleStatusSmoke> {
+  const res = await fetch(`${server.baseUrl}/api/domain/update/rendererBundleStatus`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${server.token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) throw new Error(`rendererBundleStatus HTTP ${res.status}: ${await res.text()}`);
+  const json: unknown = await res.json();
+  if (!isRecord(json) || json.success !== true || !isRecord(json.data)) {
+    throw new Error(`rendererBundleStatus returned invalid body: ${JSON.stringify(json)}`);
+  }
+  return json.data as RendererBundleStatusSmoke;
+}
+
 async function writeActive(dataDir: string, healthy: boolean): Promise<void> {
   const active = path.join(dataDir, 'renderer-cache', 'active');
   await mkdir(path.join(active, 'assets'), { recursive: true });
@@ -175,13 +211,22 @@ async function main(): Promise<void> {
   // ── 场景2：无 active → 回包内基线（builtin，无 CLOUD marker）───────
   {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), 'rb-e2e-builtin-'));
-    const server = await startServer(dataDir);
+    const server = await startServer(dataDir, {
+      CODE_AGENT_RENDERER_BUNDLE_CHANNEL: 'beta',
+    });
     try {
       const html = await fetchRoot(server);
       assert(!html.includes(CLOUD_MARKER), '场景2 不应含 CLOUD marker（应 serve builtin）');
       assert(html.includes('<div id="root">'), '场景2 builtin index 应含 #root 挂载点');
       assert(html.includes(`window.__CODE_AGENT_TOKEN__="${server.token}"`), '场景2 应注入 token');
-      results.push('✅ 场景2 无 active → 回包内基线 + token 注入');
+      const status = await fetchRendererBundleStatus(server);
+      assert(status.source?.channel === 'beta', '场景2 rendererBundleStatus 应暴露 beta channel');
+      assert(
+        status.source?.manifestUrl ===
+          'https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/renderer-bundle/channels/beta/manifest.json',
+        '场景2 rendererBundleStatus 应暴露 beta manifest URL',
+      );
+      results.push('✅ 场景2 无 active → 回包内基线 + token 注入 + beta source 状态');
     } finally {
       await stopServer(server);
       await rm(dataDir, { recursive: true, force: true });
@@ -198,6 +243,49 @@ async function main(): Promise<void> {
       assert(!html.includes(CLOUD_MARKER), '场景3 不应含 CLOUD marker');
       assert(html.includes('<div id="root">'), '场景3 应回 builtin（含 #root）');
       results.push('✅ 场景3 active 不健康 → 兜底回包内基线');
+    } finally {
+      await stopServer(server);
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  }
+
+  // ── 场景4：生产 kill switch → 即使 active 健康也回包内基线 ──────────
+  {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'rb-e2e-disabled-'));
+    await writeActive(dataDir, true);
+    const server = await startServer(dataDir, {
+      CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
+    });
+    try {
+      const html = await fetchRoot(server);
+      assert(!html.includes(CLOUD_MARKER), '场景4 kill switch 生效时不应 serve active');
+      assert(html.includes('<div id="root">'), '场景4 应回 builtin（含 #root）');
+      assert(html.includes(`window.__CODE_AGENT_TOKEN__="${server.token}"`), '场景4 应注入 token');
+      results.push('✅ 场景4 kill switch → 强制回包内基线');
+    } finally {
+      await stopServer(server);
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  }
+
+  // ── 场景5：非法 channel → status fail closed 暴露配置错误 ──────────
+  {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'rb-e2e-invalid-channel-'));
+    const server = await startServer(dataDir, {
+      CODE_AGENT_RENDERER_BUNDLE_CHANNEL: '../beta',
+    });
+    try {
+      const status = await fetchRendererBundleStatus(server);
+      assert(status.source?.channel === '../beta', '场景5 应保留非法 channel 供诊断');
+      assert(
+        status.source?.errorReason === 'invalid-renderer-bundle-channel',
+        '场景5 应暴露 invalid-renderer-bundle-channel',
+      );
+      assert(
+        status.source?.errorTarget === 'CODE_AGENT_RENDERER_BUNDLE_CHANNEL=../beta',
+        '场景5 应暴露错误配置目标',
+      );
+      results.push('✅ 场景5 rendererBundleStatus → 非法 channel fail closed 可诊断');
     } finally {
       await stopServer(server);
       await rm(dataDir, { recursive: true, force: true });

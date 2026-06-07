@@ -4,6 +4,7 @@
 
 import path from 'path';
 import fs from 'fs/promises';
+import { watch, type FSWatcher } from 'node:fs';
 import { app } from '../../platform';
 import type { AppSettings, ModelProvider } from '../../../shared/contract';
 import type { IReadConfigService, ServiceApiKey } from '../../../shared/contract/configService';
@@ -25,6 +26,12 @@ import {
 } from '../../../shared/constants';
 
 const logger = createLogger('ConfigService');
+
+// config.json 外部编辑热重载:与 soulLoader/skillWatcher 一致的去抖窗口
+const CONFIG_WATCH_DEBOUNCE_MS = 500;
+// save() 自身写盘后的静默窗口,避免本进程写入触发热重载回环
+const CONFIG_SELF_WRITE_WINDOW_MS = 1500;
+
 const moduleDir = typeof __dirname === 'string'
   ? __dirname
   : path.dirname(fileURLToPath(import.meta.url));
@@ -257,6 +264,9 @@ const DEFAULT_SETTINGS: AppSettings = {
 export class ConfigService implements IReadConfigService {
   private settings: AppSettings = DEFAULT_SETTINGS;
   private configPath: string;
+  private configWatcher: FSWatcher | null = null;
+  private configWatchTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastSelfWriteAt = 0;
 
   constructor() {
     const userDataPath = app?.getPath?.('userData') || process.cwd();
@@ -334,6 +344,78 @@ export class ConfigService implements IReadConfigService {
    */
   reloadUserPermissionRules(): void {
     this.applyUserPermissionRules();
+  }
+
+  /**
+   * 从磁盘重新加载 config.json 到内存,并重跑会注入全局状态的 apply 函数。
+   * 用于"外部直接编辑 config.json"后的热生效(API Key / 模型路由 / 权限 / 并发 / 代理
+   * 这些消费方都是现读,内存刷新后下次调用即生效)。
+   * 刻意不做 restoreFromKeychain / migrate / save —— 那些是启动一次性逻辑,
+   * 且 save 会写盘从而触发 watcher 回环。
+   */
+  async reloadFromDisk(): Promise<boolean> {
+    try {
+      const data = await fs.readFile(this.configPath, 'utf-8');
+      const loaded = parseJsonValue(data);
+      if (!isRecord(loaded)) {
+        logger.warn('Config reload skipped: file is not a JSON object');
+        return false;
+      }
+      this.settings = this.mergeSettings(DEFAULT_SETTINGS, loaded as Partial<AppSettings>);
+      // 与 initialize 末尾保持一致:重新注入需要全局状态的配置
+      this.applyUserPermissionRules();
+      this.applyProviderConcurrencyOverrides();
+      this.applyProviderProxyOverrides();
+      logger.info('Config hot-reloaded from disk');
+      return true;
+    } catch (error) {
+      const nodeError = error as NodeJS.ErrnoException;
+      if (nodeError.code === 'ENOENT') return false;
+      logger.error('Failed to reload config from disk:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 监听 config.json 的外部改动并热重载。app 内通过 updateSettings 的修改
+   * 会经 save() 标记 lastSelfWriteAt 被跳过,只响应外部编辑。
+   * @param onReloaded 热重载成功后的回调(供上层广播给 renderer 等)
+   */
+  startWatchingConfigFile(onReloaded?: () => void): void {
+    this.stopWatchingConfigFile();
+    const dir = path.dirname(this.configPath);
+    const base = path.basename(this.configPath);
+    try {
+      this.configWatcher = watch(dir, (_eventType, filename) => {
+        if (filename !== base) return;
+        // 跳过本进程 save() 触发的写入,避免热重载回环
+        if (Date.now() - this.lastSelfWriteAt < CONFIG_SELF_WRITE_WINDOW_MS) return;
+        if (this.configWatchTimer) clearTimeout(this.configWatchTimer);
+        this.configWatchTimer = setTimeout(() => {
+          void this.reloadFromDisk().then((ok) => {
+            if (ok && onReloaded) onReloaded();
+          });
+        }, CONFIG_WATCH_DEBOUNCE_MS);
+      });
+      logger.info('Watching config.json for external edits', { path: this.configPath });
+    } catch (error) {
+      logger.warn('Failed to watch config file', { error: String(error) });
+    }
+  }
+
+  stopWatchingConfigFile(): void {
+    if (this.configWatchTimer) {
+      clearTimeout(this.configWatchTimer);
+      this.configWatchTimer = null;
+    }
+    if (this.configWatcher) {
+      try {
+        this.configWatcher.close();
+      } catch {
+        // ignore
+      }
+      this.configWatcher = null;
+    }
   }
 
   /**
@@ -1014,6 +1096,8 @@ export class ConfigService implements IReadConfigService {
       const toSave = this.sanitizeSettingsForSave(this.settings);
 
       await fs.writeFile(this.configPath, JSON.stringify(toSave, null, 2));
+      // 标记本进程刚写过盘,让 config 热重载 watcher 忽略这次自身写入
+      this.lastSelfWriteAt = Date.now();
 
       // Also sync key settings to Keychain for persistence across reinstalls
       await this.syncToKeychain();

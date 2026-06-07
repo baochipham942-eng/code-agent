@@ -37,6 +37,9 @@ import {
   pushAndDetectStagnation,
   buildStagnationHint,
   buildStagnationStopMessage,
+  pushAndDetectToolSpam,
+  buildToolSpamHint,
+  TOOL_SPAM_WINDOW,
 } from './stagnationDetector';
 import { getArtifactRepairToolPolicy } from './artifactRepairGuard';
 import {
@@ -994,6 +997,26 @@ export class MessageProcessor {
           },
         });
         return 'break';
+      }
+    }
+
+    // === Search spam detection（语义重复搜索软提示）===
+    // fingerprint stagnation 抓不到"换词重搜同一意图"（args 变 → fingerprint 变）。
+    // 这里按"同一检索类工具在窗口内高频出现"检测，命中只软提示一次（不 break），
+    // 引导模型用现有结果作答或如实说明限制，避免弱模型反复重搜转圈。
+    if (toolCalls.length > 0) {
+      const toolNames = toolCalls.map((tc: ToolCall) => tc.name);
+      const spam = pushAndDetectToolSpam(this.ctx.recentToolNames, toolNames);
+      if (spam.detected && !this.ctx.searchSpamWarningEmitted) {
+        logger.warn(
+          `[ToolSpam] ${spam.toolName} called ${spam.count}× within last ${TOOL_SPAM_WINDOW} tool calls — injecting hint to model`,
+        );
+        logCollector.agent('WARN', `Search spam: ${spam.toolName} ${spam.count}× in window`, {
+          toolName: spam.toolName,
+          count: spam.count,
+        });
+        this.contextAssembly.injectSystemMessage(buildToolSpamHint(spam.toolName!, spam.count));
+        this.ctx.searchSpamWarningEmitted = true;
       }
     }
 

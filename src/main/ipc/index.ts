@@ -63,6 +63,7 @@ import { registerActivityHandlers } from './activity.ipc';
 import { registerInAppValidationHandlers } from './inAppValidation.ipc';
 import { registerPromptHandlers } from './prompt.ipc';
 import { registerHookHandlers } from './hook.ipc';
+import { registerDiagnosticsHandlers } from './diagnostics.ipc';
 import { registerAgentRegistryHandlers } from './agentRegistry.ipc';
 import { registerRolesHandlers } from './roles.ipc';
 import { registerProjectHandlers } from './project.ipc';
@@ -255,6 +256,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Hook handlers (Hook 列表 + 打开配置)
   registerHookHandlers(ipcMain, getAppService);
+
+  // Diagnostics handlers (exec policy / 决策历史 / budget / 压缩统计 — 供 GUI 命令查询)
+  registerDiagnosticsHandlers(ipcMain);
 
   // Agent Registry handlers (自定义 agent 列表 + 变更推送)
   registerAgentRegistryHandlers(ipcMain, () => {

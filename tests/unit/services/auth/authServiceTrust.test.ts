@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  ensureSupabaseInitialized: vi.fn(),
   isSupabaseInitialized: vi.fn(),
   getSupabase: vi.fn(),
   supabase: {
     auth: {
       onAuthStateChange: vi.fn(),
       getSession: vi.fn(),
+      signInWithPassword: vi.fn(),
     },
     from: vi.fn(),
   },
@@ -26,11 +28,15 @@ vi.mock('../../../../src/main/platform', () => ({
 }));
 
 vi.mock('../../../../src/main/services/infra/supabaseService', () => ({
+  ensureSupabaseInitialized: (settings?: unknown) => mocks.ensureSupabaseInitialized(settings),
   getSupabase: () => mocks.getSupabase(),
   isSupabaseInitialized: () => mocks.isSupabaseInitialized(),
 }));
 
 vi.mock('../../../../src/main/services/core', () => ({
+  getConfigService: () => ({
+    getSettings: () => ({}),
+  }),
   getSecureStorage: () => mocks.storage,
 }));
 
@@ -48,11 +54,15 @@ describe('authService session trust', () => {
     vi.clearAllMocks();
     vi.resetModules();
     mocks.isSupabaseInitialized.mockReturnValue(false);
+    mocks.ensureSupabaseInitialized.mockImplementation(() => {
+      throw new Error('init failed');
+    });
     mocks.getSupabase.mockReturnValue(mocks.supabase);
     mocks.supabase.auth.onAuthStateChange.mockReturnValue({
       data: { subscription: { unsubscribe: vi.fn() } },
     });
     mocks.supabase.auth.getSession.mockResolvedValue({ data: { session: null } });
+    mocks.supabase.auth.signInWithPassword.mockResolvedValue({ data: { user: null }, error: null });
     mocks.supabase.from.mockReturnValue({
       select: vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
@@ -80,6 +90,9 @@ describe('authService session trust', () => {
     });
     await expect(authService.getStatus()).resolves.toMatchObject({
       isAuthenticated: true,
+      sessionTrustState: 'cached',
+      authBackendAvailable: false,
+      hasCachedAdminClaim: true,
       user: {
         id: 'admin-1',
         isAdmin: false,
@@ -125,10 +138,60 @@ describe('authService session trust', () => {
     expect(authService.getSessionTrustState()).toBe('verified');
     await expect(authService.getStatus()).resolves.toMatchObject({
       isAuthenticated: true,
+      sessionTrustState: 'verified',
+      authBackendAvailable: true,
+      hasCachedAdminClaim: false,
       user: {
         id: 'admin-1',
         isAdmin: true,
       },
     });
+  });
+
+  it('initializes Supabase lazily when signing in after startup missed it', async () => {
+    const profileQuery = {
+      select: vi.fn().mockReturnThis(),
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: {
+          id: 'user-2',
+          username: 'user',
+          nickname: null,
+          avatar_url: null,
+          is_admin: false,
+        },
+      }),
+    };
+    mocks.storage.get.mockReturnValue(undefined);
+    mocks.ensureSupabaseInitialized.mockImplementation(() => {
+      mocks.isSupabaseInitialized.mockReturnValue(true);
+      return mocks.supabase;
+    });
+    mocks.supabase.from.mockReturnValue(profileQuery);
+    mocks.supabase.auth.signInWithPassword.mockResolvedValue({
+      data: {
+        user: {
+          id: 'user-2',
+          email: 'user@example.com',
+        },
+      },
+      error: null,
+    });
+
+    const { getAuthService } = await import('../../../../src/main/services/auth/authService');
+    const authService = getAuthService();
+
+    const result = await authService.signInWithEmail('user@example.com', 'password');
+
+    expect(mocks.ensureSupabaseInitialized).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      success: true,
+      user: {
+        id: 'user-2',
+        email: 'user@example.com',
+      },
+    });
+    expect(authService.getSessionTrustState()).toBe('verified');
   });
 });

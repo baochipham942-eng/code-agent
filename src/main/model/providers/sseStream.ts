@@ -245,6 +245,19 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
       }
     };
 
+    // 响应头看门狗：覆盖「连上 TCP 但响应头永远不来」的 accept-then-hang（实测 mimo
+    // token-plan-sgp 偶发）。阶段1的 firstByteTimer 只在 res 回调（HTTP 200 之后）才武装，
+    // 这个阶段挂死过去只能等 socket timeout（PROVIDER_TIMEOUT=300s）→ 表现为 4-5 分钟干等。
+    // 这里在请求发出到收到响应头之间用同样的 firstByteTimeout 兜底，复用 "first-byte timeout"
+    // 文案让 retryStrategy（TRANSIENT_PATTERNS）接住自动重试。
+    let headersTimer: NodeJS.Timeout | null = null;
+    const clearHeadersTimer = () => {
+      if (headersTimer) {
+        clearTimeout(headersTimer);
+        headersTimer = null;
+      }
+    };
+
     function emitSnapshot(isFinal: boolean) {
       if (!onSnapshot) return;
       onSnapshot({
@@ -273,6 +286,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
     };
 
     const req = httpModule.request(reqOptions, (res) => {
+      clearHeadersTimer(); // 响应头已到，交给阶段1 firstByteTimer 接管
       if (res.statusCode !== 200) {
         let errorData = '';
         res.on('data', (chunk) => { errorData += chunk; });
@@ -632,6 +646,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
     });
 
     req.on('error', (err) => {
+      clearHeadersTimer();
       const errCode = (err as NodeJS.ErrnoException).code;
       logger.warn(`[${providerName}] 请求错误: ${err.message} (code=${errCode})`);
       if (onStream) {
@@ -645,17 +660,26 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
     });
 
     req.on('timeout', () => {
+      clearHeadersTimer();
       logger.warn(`[${providerName}] 请求超时`);
       req.destroy(new Error(`${providerName} API 请求超时`));
     });
 
     if (signal) {
       signal.addEventListener('abort', () => {
+        clearHeadersTimer();
         clearInactivityTimer();
         req.destroy();
         reject(new Error('Request was cancelled'));
       }, { once: true });
     }
+
+    // 响应头看门狗武装：收到响应头（res 回调）前若超过 firstByteTimeout 仍无响应，
+    // 视为 accept-then-hang，主动 destroy → 转瞬态错误由 withTransientRetry 自动重试。
+    headersTimer = setTimeout(() => {
+      logger.warn(`[${providerName}] First-byte timeout: ${firstByteTimeout}ms 内未收到响应头（连上但无响应）`);
+      req.destroy(new Error(`${providerName} API first-byte timeout (${firstByteTimeout}ms)`));
+    }, firstByteTimeout);
 
     req.write(safeJsonStringify(requestBody));
     req.end();

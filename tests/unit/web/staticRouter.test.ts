@@ -61,7 +61,7 @@ describe('createStaticRouter', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/html');
-    expect(body).toContain('window.__CODE_AGENT_TOKEN__="test-token"');
+    expect(body).toContain('window.__CODE_AGENT_TOKEN__="test-token";window.__CODE_AGENT_RENDERER_BUNDLE__=null');
   });
 
   it('injects the auth token when the built index has a formatted head tag', async () => {
@@ -75,7 +75,9 @@ describe('createStaticRouter', () => {
     const body = await response.text();
 
     expect(response.status).toBe(200);
-    expect(body).toContain('<head data-vite="true"><script>window.__CODE_AGENT_TOKEN__="test-token";</script>');
+    expect(body).toContain(
+      '<head data-vite="true"><script>window.__CODE_AGENT_TOKEN__="test-token";window.__CODE_AGENT_RENDERER_BUNDLE__=null;</script>',
+    );
   });
 });
 
@@ -145,7 +147,7 @@ describe('createStaticRouter — runtime serve dir resolution', () => {
 
     expect(response.status).toBe(200);
     expect(body).toContain('BUILTIN');
-    expect(body).toContain('window.__CODE_AGENT_TOKEN__="rt-token"');
+    expect(body).toContain('window.__CODE_AGENT_TOKEN__="rt-token";window.__CODE_AGENT_RENDERER_BUNDLE__=null');
   });
 
   it('serves cloud active index when active bundle is healthy', async () => {
@@ -158,6 +160,7 @@ describe('createStaticRouter — runtime serve dir resolution', () => {
     expect(body).toContain('CLOUD');
     expect(body).not.toContain('BUILTIN');
     expect(body).toContain('window.__CODE_AGENT_TOKEN__="rt-token"');
+    expect(body).toContain('window.__CODE_AGENT_RENDERER_BUNDLE__={"version":"9.9.9","contentHash":"deadbeef"}');
   });
 
   it('serves static assets from the active bundle dir', async () => {
@@ -180,6 +183,20 @@ describe('createStaticRouter — runtime serve dir resolution', () => {
     const second = await (await fetch(`${rtBaseUrl}/`)).text();
     expect(second).toContain('CLOUD');
     expect(second).not.toContain('BUILTIN');
+  });
+
+  it('resets cached index.html when active bundle is removed and serve dir falls back', async () => {
+    writeActiveBundle();
+    await startServer();
+    const first = await (await fetch(`${rtBaseUrl}/`)).text();
+    expect(first).toContain('CLOUD');
+    expect(first).not.toContain('BUILTIN');
+
+    fs.rmSync(path.join(dataDir, 'renderer-cache', 'active'), { recursive: true, force: true });
+    const second = await (await fetch(`${rtBaseUrl}/`)).text();
+    expect(second).toContain('BUILTIN');
+    expect(second).not.toContain('CLOUD');
+    expect(second).toContain('window.__CODE_AGENT_TOKEN__="rt-token";window.__CODE_AGENT_RENDERER_BUNDLE__=null');
   });
 
   it('falls back to builtin when active bundle is unhealthy (missing index.html)', async () => {

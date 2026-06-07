@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- 热更 telemetry 落表逻辑使文件超 1000 行；拆分为后续重构项 */
 // ============================================================================
 // Telemetry Storage - SQLite 持久化层
 // ============================================================================
@@ -5,10 +6,11 @@
 import { randomUUID } from 'crypto';
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
-import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, QualitySignals, TelemetryFeedback, TelemetryFeedbackSubmitRequest } from '../../shared/contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, QualitySignals, TelemetryFeedback, TelemetryFeedbackSubmitRequest, TelemetryRendererBundleAttempt } from '../../shared/contract/telemetry';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 import type Database from 'better-sqlite3';
 import { guardSensitiveJsonText, guardSensitiveText, guardSensitiveValue } from '../security/sensitiveDataGuard';
+import type { RendererBundleStatus } from '../../shared/contract/update';
 
 const logger = createLogger('TelemetryStorage');
 const DEFAULT_QUALITY_SIGNALS: QualitySignals = {
@@ -64,6 +66,15 @@ function parseTelemetryJson(value: unknown): unknown {
   } catch {
     return undefined;
   }
+}
+
+function parseTelemetryTimestamp(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return Date.now();
 }
 
 const truncate = (value: string | undefined | null, limit: number): string | null => {
@@ -399,6 +410,121 @@ export class TelemetryStorage {
     }
   }
 
+  recordRendererBundleAttempt(status: RendererBundleStatus): TelemetryRendererBundleAttempt | null {
+    if (!this.isDbAvailable() || !status.lastAttempt) return null;
+    const attempt = status.lastAttempt;
+    const manifest = attempt.manifest;
+    const source = status.source;
+    const active = status.activeBundle;
+    const record: TelemetryRendererBundleAttempt = {
+      id: randomUUID(),
+      checkedAt: parseTelemetryTimestamp(attempt.checkedAt),
+      manifestUrl: attempt.manifestUrl,
+      sourceChannel: source?.channel ?? null,
+      sourceManifestUrlOverride: source?.manifestUrlOverride === true,
+      sourceErrorReason: source?.errorReason ?? null,
+      sourceErrorMessage: source?.errorMessage ?? null,
+      sourceErrorTarget: source?.errorTarget ?? null,
+      currentShellVersion: attempt.currentShellVersion,
+      activeVersion: active?.version ?? null,
+      activeContentHash: active?.contentHash ?? null,
+      outcome: attempt.outcome,
+      reason: attempt.reason ?? null,
+      manifestVersion: manifest?.version ?? null,
+      manifestContentHash: manifest?.contentHash ?? null,
+      manifestMinShellVersion: manifest?.minShellVersion ?? null,
+      manifestBundleUrl: manifest?.bundleUrl ?? null,
+      requiredShellCapabilitiesCount: manifest?.requiredShellCapabilitiesCount ?? 0,
+      rollbackToBuiltin: manifest?.rollbackToBuiltin === true,
+      rollbackReason: manifest?.rollbackReason ?? null,
+      missingShellCapabilities: attempt.missingShellCapabilities ?? [],
+      missingRuntimeAssets: attempt.missingRuntimeAssets ?? [],
+      missingResources: attempt.missingResources ?? [],
+      diagnostics: attempt.diagnostics ?? [],
+      errorMessage: attempt.errorMessage ?? null,
+      syncedAt: null,
+    };
+
+    try {
+      this.getStmt(
+        'insert_renderer_bundle_attempt',
+        `
+          INSERT INTO telemetry_renderer_bundle_attempts (
+            id, checked_at, manifest_url, source_channel, source_manifest_url_override,
+            source_error_reason, source_error_message, source_error_target,
+            current_shell_version, active_version, active_content_hash,
+            outcome, reason, manifest_version, manifest_content_hash,
+            manifest_min_shell_version, manifest_bundle_url,
+            required_shell_capabilities_count, rollback_to_builtin, rollback_reason,
+            missing_shell_capabilities, missing_runtime_assets, missing_resources,
+            diagnostics, error_message, synced_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        `,
+      ).run(
+        record.id,
+        record.checkedAt,
+        guardTelemetryText(record.manifestUrl, 4_000),
+        guardTelemetryText(record.sourceChannel, 200),
+        record.sourceManifestUrlOverride ? 1 : 0,
+        guardTelemetryText(record.sourceErrorReason, TELEMETRY_TRUNCATION.EVENT_SUMMARY),
+        guardTelemetryText(record.sourceErrorMessage, TELEMETRY_TRUNCATION.EVENT_SUMMARY),
+        guardTelemetryText(record.sourceErrorTarget, 4_000),
+        guardTelemetryText(record.currentShellVersion, 200),
+        guardTelemetryText(record.activeVersion, 200),
+        guardTelemetryText(record.activeContentHash, 200),
+        record.outcome,
+        guardTelemetryText(record.reason, TELEMETRY_TRUNCATION.EVENT_SUMMARY),
+        guardTelemetryText(record.manifestVersion, 200),
+        guardTelemetryText(record.manifestContentHash, 200),
+        guardTelemetryText(record.manifestMinShellVersion, 200),
+        guardTelemetryText(record.manifestBundleUrl, 4_000),
+        record.requiredShellCapabilitiesCount,
+        record.rollbackToBuiltin ? 1 : 0,
+        guardTelemetryText(record.rollbackReason, TELEMETRY_TRUNCATION.EVENT_SUMMARY),
+        stringifyGuardedTelemetry(record.missingShellCapabilities),
+        stringifyGuardedTelemetry(record.missingRuntimeAssets),
+        stringifyGuardedTelemetry(record.missingResources),
+        stringifyGuardedTelemetry(record.diagnostics),
+        guardTelemetryText(record.errorMessage, TELEMETRY_TRUNCATION.EVENT_SUMMARY),
+      );
+      return record;
+    } catch (error) {
+      logger.error('Failed to record renderer bundle telemetry attempt:', error);
+      return null;
+    }
+  }
+
+  getUnsyncedRendererBundleAttempts(limit = 50): TelemetryRendererBundleAttempt[] {
+    if (!this.isDbAvailable()) return [];
+    try {
+      const rows = this.getStmt(
+        'get_unsynced_renderer_bundle_attempts',
+        `
+          SELECT * FROM telemetry_renderer_bundle_attempts
+          WHERE synced_at IS NULL
+          ORDER BY checked_at ASC
+          LIMIT ?
+        `,
+      ).all(limit) as Record<string, unknown>[];
+      return rows.map((row) => this.rowToRendererBundleAttempt(row));
+    } catch (error) {
+      logger.error('Failed to get unsynced renderer bundle telemetry attempts:', error);
+      return [];
+    }
+  }
+
+  markRendererBundleAttemptsSynced(attemptIds: string[], syncedAt: number = Date.now()): void {
+    if (!this.isDbAvailable() || attemptIds.length === 0) return;
+    try {
+      const placeholders = attemptIds.map(() => '?').join(', ');
+      this.getDb()
+        .prepare(`UPDATE telemetry_renderer_bundle_attempts SET synced_at = ? WHERE id IN (${placeholders})`)
+        .run(syncedAt, ...attemptIds);
+    } catch (error) {
+      logger.error('Failed to mark renderer bundle telemetry attempts synced:', error);
+    }
+  }
+
   listSessions(options: TelemetrySessionListOptions = {}): TelemetrySessionListItem[] {
     if (!this.isDbAvailable()) return [];
     try {
@@ -489,7 +615,7 @@ export class TelemetryStorage {
   getStorageBytes(): number {
     if (!this.isDbAvailable()) return 0;
     const db = this.getDb();
-    const tables = ['telemetry_sessions', 'telemetry_turns', 'telemetry_model_calls', 'telemetry_tool_calls', 'telemetry_events', 'telemetry_feedback'];
+    const tables = ['telemetry_sessions', 'telemetry_turns', 'telemetry_model_calls', 'telemetry_tool_calls', 'telemetry_events', 'telemetry_feedback', 'telemetry_renderer_bundle_attempts'];
 
     // dbstat 是 SQLite 编译选项，better-sqlite3 默认未开启；先尝试
     try {
@@ -552,6 +678,8 @@ export class TelemetryStorage {
           SELECT MAX(end_time) AS ts FROM telemetry_turns
           UNION ALL
           SELECT MAX(start_time) AS ts FROM telemetry_sessions
+          UNION ALL
+          SELECT MAX(checked_at) AS ts FROM telemetry_renderer_bundle_attempts
         )
       `
         )
@@ -1122,6 +1250,37 @@ export class TelemetryStorage {
       comment: row.comment == null ? null : String(row.comment),
       fullContent: parseTelemetryJson(row.full_content),
       createdAt: row.created_at as number,
+      syncedAt: row.synced_at == null ? null : row.synced_at as number,
+    };
+  }
+
+  private rowToRendererBundleAttempt(row: Record<string, unknown>): TelemetryRendererBundleAttempt {
+    return {
+      id: row.id as string,
+      checkedAt: Number(row.checked_at ?? 0),
+      manifestUrl: row.manifest_url as string,
+      sourceChannel: row.source_channel == null ? null : String(row.source_channel),
+      sourceManifestUrlOverride: !!(row.source_manifest_url_override as number),
+      sourceErrorReason: row.source_error_reason == null ? null : String(row.source_error_reason),
+      sourceErrorMessage: row.source_error_message == null ? null : String(row.source_error_message),
+      sourceErrorTarget: row.source_error_target == null ? null : String(row.source_error_target),
+      currentShellVersion: row.current_shell_version as string,
+      activeVersion: row.active_version == null ? null : String(row.active_version),
+      activeContentHash: row.active_content_hash == null ? null : String(row.active_content_hash),
+      outcome: row.outcome as TelemetryRendererBundleAttempt['outcome'],
+      reason: row.reason == null ? null : String(row.reason),
+      manifestVersion: row.manifest_version == null ? null : String(row.manifest_version),
+      manifestContentHash: row.manifest_content_hash == null ? null : String(row.manifest_content_hash),
+      manifestMinShellVersion: row.manifest_min_shell_version == null ? null : String(row.manifest_min_shell_version),
+      manifestBundleUrl: row.manifest_bundle_url == null ? null : String(row.manifest_bundle_url),
+      requiredShellCapabilitiesCount: Number(row.required_shell_capabilities_count ?? 0),
+      rollbackToBuiltin: !!(row.rollback_to_builtin as number),
+      rollbackReason: row.rollback_reason == null ? null : String(row.rollback_reason),
+      missingShellCapabilities: parseStringArrayJson(row.missing_shell_capabilities),
+      missingRuntimeAssets: parseStringArrayJson(row.missing_runtime_assets),
+      missingResources: parseStringArrayJson(row.missing_resources),
+      diagnostics: parseStringArrayJson(row.diagnostics),
+      errorMessage: row.error_message == null ? null : String(row.error_message),
       syncedAt: row.synced_at == null ? null : row.synced_at as number,
     };
   }

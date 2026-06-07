@@ -1,19 +1,21 @@
 #!/usr/bin/env node
 import crypto from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const REQUIRED_PAYLOADS = [
   'cloud-config.json',
   'prompt-registry.json',
   'capability-registry.json',
   'agent-engine-model-catalog.json',
+  'renderer-bundle-rollout.json',
 ];
 const ALLOWED_CHANNELS = new Set(['stable', 'beta', 'canary']);
 const ALLOWED_PROMPT_KEYS = new Set(['policyAddon', 'publicSystemAddon']);
 const ALLOWED_CAPABILITY_KINDS = new Set(['mcp_template', 'channel_adapter', 'workflow_recipe']);
 const DEFAULT_TTL_SECONDS = 3600;
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 export class ControlPlaneReleaseBundleError extends Error {
   constructor(message, options = {}) {
@@ -353,6 +355,53 @@ function validateAgentEngineModelCatalog(payload, { version }) {
   return payload;
 }
 
+function validateRendererBundleRollout(payload, { version }) {
+  assertRecord(payload, 'renderer-bundle-rollout.json');
+  if (payload.version !== version) {
+    throw new ControlPlaneReleaseBundleError(
+      `renderer-bundle-rollout.json version must match --version (${version})`,
+      { code: 'renderer_rollout_version_mismatch' },
+    );
+  }
+  if (payload.channel !== undefined) {
+    if (typeof payload.channel !== 'string' || !/^[A-Za-z0-9._-]+$/.test(payload.channel)) {
+      throw new ControlPlaneReleaseBundleError('renderer-bundle-rollout.json channel is invalid', {
+        code: 'invalid_renderer_rollout_channel',
+      });
+    }
+  }
+  if (payload.manifestUrl !== undefined) {
+    if (typeof payload.manifestUrl !== 'string' || !/^https?:\/\//.test(payload.manifestUrl)) {
+      throw new ControlPlaneReleaseBundleError('renderer-bundle-rollout.json manifestUrl must be http(s)', {
+        code: 'invalid_renderer_rollout_manifest_url',
+      });
+    }
+  }
+  if (payload.rolloutPercent !== undefined) {
+    if (
+      typeof payload.rolloutPercent !== 'number' ||
+      !Number.isFinite(payload.rolloutPercent) ||
+      payload.rolloutPercent < 0 ||
+      payload.rolloutPercent > 100
+    ) {
+      throw new ControlPlaneReleaseBundleError('renderer-bundle-rollout.json rolloutPercent must be between 0 and 100', {
+        code: 'invalid_renderer_rollout_percent',
+      });
+    }
+  }
+  if (payload.paused !== undefined && typeof payload.paused !== 'boolean') {
+    throw new ControlPlaneReleaseBundleError('renderer-bundle-rollout.json paused must be boolean', {
+      code: 'invalid_renderer_rollout_paused',
+    });
+  }
+  if (payload.rollbackToBuiltin !== undefined && typeof payload.rollbackToBuiltin !== 'boolean') {
+    throw new ControlPlaneReleaseBundleError('renderer-bundle-rollout.json rollbackToBuiltin must be boolean', {
+      code: 'invalid_renderer_rollout_rollback',
+    });
+  }
+  return payload;
+}
+
 function validateCapabilityRegistryTrust(payload, now) {
   if (!isRecord(payload.source)) {
     throw new ControlPlaneReleaseBundleError('capability-registry.json source is required for installable MCP templates', {
@@ -417,11 +466,13 @@ function readAndValidatePayloads(sourceDir, options) {
   const promptRegistry = validatePromptRegistry(readJsonFile(join(sourceDir, 'prompt-registry.json')));
   const capabilityRegistry = validateCapabilityRegistry(readJsonFile(join(sourceDir, 'capability-registry.json')), options);
   const agentEngineModelCatalog = validateAgentEngineModelCatalog(readJsonFile(join(sourceDir, 'agent-engine-model-catalog.json')), options);
+  const rendererBundleRollout = validateRendererBundleRollout(readJsonFile(join(sourceDir, 'renderer-bundle-rollout.json')), options);
   return {
     'cloud-config.json': cloudConfig,
     'prompt-registry.json': promptRegistry,
     'capability-registry.json': capabilityRegistry,
     'agent-engine-model-catalog.json': agentEngineModelCatalog,
+    'renderer-bundle-rollout.json': rendererBundleRollout,
   };
 }
 
@@ -446,28 +497,48 @@ function discoverPublicKeyCommands(sourceDir, outDir, keyId) {
     .find((file) => existsSync(file));
 
   if (existsSync(publicPem)) {
-    commands.push(`vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY production --force --yes < ${publicPem}`);
+    commands.push(`vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY production --force --yes < ${shellQuote(publicPem)}`);
   }
   if (publicKeysJson) {
-    commands.push(`vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS production --force --yes < ${publicKeysJson}`);
+    commands.push(`vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS production --force --yes < ${shellQuote(publicKeysJson)}`);
   } else if (existsSync(publicPem)) {
     const publicKeysBundle = join(outDir, 'public-keys.json');
     writeFileSync(publicKeysBundle, stableJson({ [keyId]: readFileSync(publicPem, 'utf8') }), { mode: 0o600 });
-    commands.push(`vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS production --force --yes < ${publicKeysBundle}`);
+    commands.push(`vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS production --force --yes < ${shellQuote(publicKeysBundle)}`);
   }
   return commands;
 }
 
-function buildEnvCommands({ payloadDir, keyId, publicKeyCommands = [] }) {
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function writeTextArtifact(outDir, fileName, value) {
+  const file = join(outDir, fileName);
+  writeFileSync(file, `${value}\n`, { mode: 0o600 });
+  return file;
+}
+
+function buildEnvCommands({ payloadDir, keyIdFile, ttlFile, publicKeyCommands = [], repoRoot = REPO_ROOT }) {
   return [
-    `vercel env add CONTROL_PLANE_CLOUD_CONFIG_JSON production --force --yes < ${join(payloadDir, 'cloud-config.json')}`,
-    `vercel env add CONTROL_PLANE_PROMPT_REGISTRY_JSON production --force --yes < ${join(payloadDir, 'prompt-registry.json')}`,
-    `vercel env add CONTROL_PLANE_CAPABILITY_REGISTRY_JSON production --force --yes < ${join(payloadDir, 'capability-registry.json')}`,
-    `vercel env add CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON production --force --yes < ${join(payloadDir, 'agent-engine-model-catalog.json')}`,
-    `vercel env add CONTROL_PLANE_KEY_ID production --value ${keyId} --force --yes`,
-    `vercel env add CODE_AGENT_CONTROL_PLANE_KEY_ID production --value ${keyId} --force --yes`,
-    `vercel env add CONTROL_PLANE_TTL_SECONDS production --value ${DEFAULT_TTL_SECONDS} --force --yes`,
+    `cd ${shellQuote(repoRoot)}`,
+    `vercel env add CONTROL_PLANE_CLOUD_CONFIG_JSON production --force --yes < ${shellQuote(join(payloadDir, 'cloud-config.json'))}`,
+    `vercel env add CONTROL_PLANE_PROMPT_REGISTRY_JSON production --force --yes < ${shellQuote(join(payloadDir, 'prompt-registry.json'))}`,
+    `vercel env add CONTROL_PLANE_CAPABILITY_REGISTRY_JSON production --force --yes < ${shellQuote(join(payloadDir, 'capability-registry.json'))}`,
+    `vercel env add CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON production --force --yes < ${shellQuote(join(payloadDir, 'agent-engine-model-catalog.json'))}`,
+    `vercel env add CONTROL_PLANE_RENDERER_BUNDLE_ROLLOUT_JSON production --force --yes < ${shellQuote(join(payloadDir, 'renderer-bundle-rollout.json'))}`,
+    `vercel env add CONTROL_PLANE_KEY_ID production --force --yes < ${shellQuote(keyIdFile)}`,
+    `vercel env add CODE_AGENT_CONTROL_PLANE_KEY_ID production --force --yes < ${shellQuote(keyIdFile)}`,
+    `vercel env add CONTROL_PLANE_TTL_SECONDS production --force --yes < ${shellQuote(ttlFile)}`,
     ...publicKeyCommands,
+  ].join('\n');
+}
+
+function buildPostApplyCommands(repoRoot = REPO_ROOT) {
+  return [
+    `cd ${shellQuote(repoRoot)}`,
+    'vercel deploy --prod --yes',
+    'npm run renderer:verify-production -- --skip-renderer-bundle --retry-attempts 12 --retry-delay-ms 30000',
   ].join('\n');
 }
 
@@ -541,20 +612,28 @@ export function buildControlPlaneReleaseBundle({
   }
 
   const publicKeyCommands = discoverPublicKeyCommands(source, out, keyId);
-  const vercelCommands = buildEnvCommands({ payloadDir: out, keyId, publicKeyCommands });
+  const keyIdFile = writeTextArtifact(out, 'control-plane-key-id.txt', keyId);
+  const ttlFile = writeTextArtifact(out, 'control-plane-ttl-seconds.txt', DEFAULT_TTL_SECONDS);
+  const vercelCommands = buildEnvCommands({ payloadDir: out, keyIdFile, ttlFile, publicKeyCommands });
   const commandsFile = join(out, 'vercel-env-commands.txt');
   writeFileSync(commandsFile, `${vercelCommands}\n`, { mode: 0o600 });
+  const postApplyCommandsFile = join(out, 'post-apply-commands.txt');
+  writeFileSync(postApplyCommandsFile, `${buildPostApplyCommands()}\n`, { mode: 0o600 });
 
   let previousVersion = null;
   let rollbackCommandsFile = null;
+  const rollbackValueFiles = [];
   if (previous) {
     validatePreviousDir(previous);
     const previousMetadata = readPreviousMetadata(previous);
     previousVersion = previousMetadata.version;
     const rollbackKeyId = previousMetadata.keyId ?? keyId;
+    const rollbackKeyIdFile = writeTextArtifact(out, 'rollback-control-plane-key-id.txt', rollbackKeyId);
+    rollbackValueFiles.push(rollbackKeyIdFile);
     const rollbackCommands = buildEnvCommands({
       payloadDir: previous,
-      keyId: rollbackKeyId,
+      keyIdFile: rollbackKeyIdFile,
+      ttlFile,
       publicKeyCommands: discoverPublicKeyCommands(previous, out, rollbackKeyId),
     });
     rollbackCommandsFile = join(out, 'rollback-env-commands.txt');
@@ -584,8 +663,12 @@ export function buildControlPlaneReleaseBundle({
     artifacts: manifestArtifacts,
     files: [
       ...artifactFiles,
+      keyIdFile,
+      ttlFile,
+      ...rollbackValueFiles,
       join(out, 'manifest.json'),
       commandsFile,
+      postApplyCommandsFile,
       ...(rollbackCommandsFile ? [rollbackCommandsFile] : []),
     ],
   };
@@ -616,6 +699,7 @@ function main(argv) {
     });
     console.log(`[control-plane-release-bundle] wrote ${result.files.length} file(s) to ${result.outDir}`);
     console.log('[control-plane-release-bundle] review vercel-env-commands.txt before applying env changes');
+    console.log('[control-plane-release-bundle] after applying env, run post-apply-commands.txt');
   } catch (error) {
     console.error(`[control-plane-release-bundle] ${error.message}`);
     process.exit(1);

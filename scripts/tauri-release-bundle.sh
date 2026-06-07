@@ -168,7 +168,10 @@ if [[ "$(uname -s)" == "Darwin" && -n "${SIGNING_IDENTITY}" ]]; then
   done
 
   # Rebuild the .dmg from the freshly-signed .app so its contents match.
+  # tauri bundle.targets 现为 ["app"]（不再让 tauri 跑 bundle_dmg.sh 弹 Finder 安装窗），
+  # 所以这里必须自己 mkdir DMG_DIR：dmg 完全由本脚本从重签后的 .app 干净创建。
   DMG_DIR="${ROOT_DIR}/src-tauri/target/release/bundle/dmg"
+  mkdir -p "${DMG_DIR}"
   if [[ -d "${DMG_DIR}" ]]; then
     shopt -s nullglob
     APP_BUNDLES=("${ROOT_DIR}"/src-tauri/target/release/bundle/macos/*.app)

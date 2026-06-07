@@ -1,6 +1,6 @@
 // ============================================================================
-// PermissionToggle - 全局权限模式切换
-// Default (锁定) / Full Access (自动批准所有权限)
+// PermissionToggle - 全局运行权限模式切换
+// 逐次确认 / 全权限运行
 // ============================================================================
 
 import React, { useState, useCallback } from 'react';
@@ -52,7 +52,7 @@ export const PermissionToggle: React.FC<PermissionToggleProps> = ({ disabled }) 
         type="button"
         onClick={handleClick}
         disabled={disabled}
-        title={isFullAccess ? '全权限模式: 自动批准所有请求' : '默认模式: 逐个审批权限'}
+        title={isFullAccess ? '运行权限模式：自动批准敏感操作' : '运行权限模式：敏感操作前先确认'}
         className={`
           flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium
           transition-all duration-150
@@ -68,14 +68,14 @@ export const PermissionToggle: React.FC<PermissionToggleProps> = ({ disabled }) 
         ) : (
           <Lock className="w-3 h-3" />
         )}
-        <span>{isFullAccess ? 'Full Access' : 'Default'}</span>
+        <span className="whitespace-nowrap">{isFullAccess ? '全权限运行' : '逐次确认'}</span>
       </button>
 
       {/* Confirmation popover */}
       {showConfirm && (
         <div className="absolute bottom-full left-0 mb-2 w-56 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 p-3">
           <p className="text-xs text-zinc-300 mb-3">
-            将自动批准所有权限请求，包括文件写入和命令执行。
+            运行时会自动批准文件写入和命令执行，只适合可信工作区。
           </p>
           <div className="flex items-center justify-end gap-2">
             <button
@@ -90,7 +90,7 @@ export const PermissionToggle: React.FC<PermissionToggleProps> = ({ disabled }) 
               onClick={handleConfirm}
               className="px-2.5 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-500 rounded-md transition-colors"
             >
-              确认开启
+              开启
             </button>
           </div>
         </div>

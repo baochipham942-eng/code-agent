@@ -2,77 +2,349 @@ name: Publish Renderer Bundle (hot update)
 
 # 前端热更：构建 + 签名 + 传 OSS renderer bundle，独立于整包发版。
 # 这才是「改前端不发版」的省时点 —— 不跑 cargo build / 公证（~25min），只 ~1min。
-# 触发：改了前端源码 push 到 main，或手动 dispatch。
+# 触发：改了前端源码 push 到 main、正式 v* tag release，或手动 dispatch。
+# GitHub Actions 对 tag push 不评估 paths filter，所以正式 tag 一定会跑这条热更链。
 on:
-  push:
-    branches: [main]
+  pull_request:
     paths:
       - 'src/renderer/**'
       - 'src/shared/**'
       - 'index.html'
       - 'vite.config.ts'
       - 'scripts/build-renderer-bundle.mjs'
+      - 'scripts/renderer-capability-scanner.mjs'
+      - 'scripts/renderer-capability-diff.mjs'
+      - 'scripts/renderer-manifest-diff.mjs'
+      - 'scripts/renderer-release-record.mjs'
+      - 'scripts/verify-renderer-bundle-publish.mjs'
+      - 'scripts/verify-renderer-hot-update-production.mjs'
+      - 'scripts/control-plane-smoke.mjs'
+      - 'scripts/control-plane-release-bundle.mjs'
+      - 'scripts/generate-control-plane-env.mjs'
+      - 'src/main/ipc/update.ipc.ts'
+      - 'src/main/runtime/runtimeAssetResolver.ts'
+      - 'src/main/services/cloud/controlPlaneTrust.ts'
+      - 'src/main/services/renderer/**'
+      - 'src/main/shellCapabilities.ts'
+      - 'src/web/routes/static.ts'
+      - 'src/web/routes/shell.ts'
+      - 'src/web/webServer.ts'
+      - '.github/workflows/renderer-bundle.yml'
+      - 'vercel-api/api/v1/control-plane.ts'
+      - 'vercel-api/lib/controlPlaneEnvelope.ts'
+      - 'vercel-api/lib/controlPlanePayloads.ts'
+      - 'vercel-api/lib/controlPlaneRendererRollout.ts'
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+    paths:
+      - 'src/renderer/**'
+      - 'src/shared/**'
+      - 'index.html'
+      - 'vite.config.ts'
+      - 'scripts/build-renderer-bundle.mjs'
+      - 'scripts/renderer-capability-scanner.mjs'
+      - 'scripts/renderer-capability-diff.mjs'
+      - 'scripts/renderer-manifest-diff.mjs'
+      - 'scripts/renderer-release-record.mjs'
+      - 'scripts/verify-renderer-bundle-publish.mjs'
+      - 'scripts/verify-renderer-hot-update-production.mjs'
+      - 'scripts/control-plane-smoke.mjs'
+      - 'scripts/control-plane-release-bundle.mjs'
+      - 'scripts/generate-control-plane-env.mjs'
+      - 'src/main/ipc/update.ipc.ts'
+      - 'src/main/runtime/runtimeAssetResolver.ts'
+      - 'src/main/services/cloud/controlPlaneTrust.ts'
+      - 'src/main/services/renderer/**'
+      - 'src/main/shellCapabilities.ts'
+      - 'src/web/routes/static.ts'
+      - 'src/web/routes/shell.ts'
+      - 'src/web/webServer.ts'
+      - '.github/workflows/renderer-bundle.yml'
+      - 'vercel-api/api/v1/control-plane.ts'
+      - 'vercel-api/lib/controlPlaneEnvelope.ts'
+      - 'vercel-api/lib/controlPlanePayloads.ts'
+      - 'vercel-api/lib/controlPlaneRendererRollout.ts'
   workflow_dispatch:
     inputs:
       min_shell_version:
         description: '最低壳版本（前端用了需要新壳的 IPC 时手动调高；默认=当前 app 版本）'
         required: false
         default: ''
+      required_shell_capabilities:
+        description: '额外所需壳能力，逗号分隔；脚本会自动扫描 renderer 静态 domain/action'
+        required: false
+        default: ''
+      required_runtime_assets:
+        description: '前端运行依赖的 runtime asset ID，逗号分隔；仅写入 manifest/release-record'
+        required: false
+        default: ''
+      required_resources:
+        description: '前端运行依赖的包内资源路径或资源 ID，逗号分隔；仅写入 manifest/release-record'
+        required: false
+        default: ''
+      release_channel:
+        description: '发布通道：latest 会覆盖客户端默认入口；其他值发布到 renderer-bundle/channels/<channel>'
+        required: false
+        default: 'latest'
+      target_cohort:
+        description: '目标 cohort 标签，写入 release-record；控制面 rollout policy 可按 cohort 命中'
+        required: false
+        default: ''
+      rollout_percent:
+        description: '灰度百分比 0-100，仅写入 release-record，默认空'
+        required: false
+        default: ''
+      rollback_to_builtin:
+        description: '发布回包内基线 manifest：客户端清理 active renderer overlay，不上传 bundle.tar.gz'
+        required: false
+        type: boolean
+        default: false
+      rollback_reason:
+        description: '回滚原因，会写进 signed manifest'
+        required: false
+        default: ''
+      dry_run:
+        description: '只生成候选 manifest / diff / release-record / smoke，不上传 OSS，不验证远端发布'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
+  renderer-capability-diff:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Compare renderer shell capabilities
+        run: |
+          BASE_DIR="${RUNNER_TEMP}/code-agent-base"
+          git worktree add --detach "${BASE_DIR}" "${{ github.event.pull_request.base.sha }}"
+          npm run renderer:capability-diff -- \
+            --base-renderer-dir "${BASE_DIR}/src/renderer" \
+            --base-domains-path "${BASE_DIR}/src/shared/ipc/domains.ts" \
+            --base-repo-root "${BASE_DIR}" \
+            --head-renderer-dir "src/renderer" \
+            --head-domains-path "src/shared/ipc/domains.ts" \
+            --head-repo-root "." \
+            --summary-output "${GITHUB_STEP_SUMMARY}" \
+            --fail-on-unsupported
+
+  renderer-hot-update-smoke:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Smoke renderer hot-update serving
+        run: npm run acceptance:renderer-hot-update
+
   publish-renderer-bundle:
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     # 兜底：缺控制面签名 key 时整个 job 跳过（build-renderer-bundle 非 dry-run 会 fail closed）。
     # 与 release.yml runtime-assets 同样的「key 未配置即不发布」安全默认。
     env:
       CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY }}
       CODE_AGENT_CONTROL_PLANE_KEY_ID: ${{ secrets.CODE_AGENT_CONTROL_PLANE_KEY_ID }}
+      CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS }}
+      CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY }}
+      CONTROL_PLANE_SMOKE_TOKEN: ${{ secrets.CONTROL_PLANE_SMOKE_TOKEN }}
+      RENDERER_BUNDLE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true' }}
     steps:
-      - name: Skip if signing key not provisioned
-        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY == '' }}
+      - name: Guard renderer signing material
+        if: ${{ (env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY == '' || env.CODE_AGENT_CONTROL_PLANE_KEY_ID == '') && env.RENDERER_BUNDLE_DRY_RUN != 'true' }}
         run: |
-          echo "::notice::Control-plane signing key not configured — renderer bundle publishing is disabled."
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "::error::Formal tag renderer bundle publish requires CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY and CODE_AGENT_CONTROL_PLANE_KEY_ID."
+            exit 1
+          fi
+          echo "::notice::Control-plane signing material is incomplete — renderer bundle publishing is disabled for this non-tag run."
           echo "SKIP=true" >> "$GITHUB_ENV"
 
       - name: Checkout code
-        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' }}
+        if: ${{ (env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '') || env.RENDERER_BUNDLE_DRY_RUN == 'true' }}
         uses: actions/checkout@v5
 
       - name: Setup Node.js
-        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' }}
+        if: ${{ (env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '') || env.RENDERER_BUNDLE_DRY_RUN == 'true' }}
         uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
 
       - name: Install dependencies
-        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' }}
+        if: ${{ (env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '') || env.RENDERER_BUNDLE_DRY_RUN == 'true' }}
         run: npm ci
 
       - name: Build + sign renderer bundle
-        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' }}
+        if: ${{ (env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '') || env.RENDERER_BUNDLE_DRY_RUN == 'true' }}
         env:
           ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
           ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
         run: |
           VERSION="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "${TAG_VERSION}" != "${VERSION}" ]; then
+              echo "::error::Renderer bundle version ${VERSION} does not match tag ${GITHUB_REF_NAME}."
+              exit 1
+            fi
+          fi
+          DRY_RUN="${RENDERER_BUNDLE_DRY_RUN:-false}"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "RENDERER_BUNDLE_DRY_RUN=${DRY_RUN}" >> "$GITHUB_ENV"
+          RELEASE_CHANNEL="${{ github.event.inputs.release_channel }}"
+          TARGET_COHORT="${{ github.event.inputs.target_cohort }}"
+          ROLLOUT_PERCENT="${{ github.event.inputs.rollout_percent }}"
+          RELEASE_CHANNEL="${RELEASE_CHANNEL:-latest}"
+          if [[ ! "${RELEASE_CHANNEL}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::release_channel must match [A-Za-z0-9._-]+"
+            exit 1
+          fi
+          if [ -n "${TARGET_COHORT}" ] && [[ ! "${TARGET_COHORT}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::target_cohort must match [A-Za-z0-9._-]+"
+            exit 1
+          fi
+          if [ -n "${ROLLOUT_PERCENT}" ]; then
+            node -e "const n=Number(process.argv[1]); if (!Number.isFinite(n) || n < 0 || n > 100) process.exit(1)" "${ROLLOUT_PERCENT}" || {
+              echo "::error::rollout_percent must be a number between 0 and 100"
+              exit 1
+            }
+          fi
+          if [ "${RELEASE_CHANNEL}" = "latest" ]; then
+            BUNDLE_PATH="renderer-bundle/latest"
+            SNAPSHOT_PATH="renderer-bundle/v${VERSION}"
+          else
+            BUNDLE_PATH="renderer-bundle/channels/${RELEASE_CHANNEL}"
+            SNAPSHOT_PATH="renderer-bundle/channels/${RELEASE_CHANNEL}/v${VERSION}"
+          fi
+          if [ "${DRY_RUN}" != "true" ] && { [ -z "${ALIYUN_OSS_BUCKET}" ] || [ -z "${ALIYUN_OSS_REGION}" ]; }; then
+            echo "::error::ALIYUN_OSS_BUCKET and ALIYUN_OSS_REGION are required for non-dry-run renderer bundle publishing"
+            exit 1
+          fi
+          OSS_PUBLIC_BASE_URL="https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com"
+          if [ -n "${ALIYUN_OSS_BUCKET}" ] && [ -n "${ALIYUN_OSS_REGION}" ]; then
+            OSS_PUBLIC_BASE_URL="https://${ALIYUN_OSS_BUCKET}.oss-${ALIYUN_OSS_REGION}.aliyuncs.com"
+          fi
           # bundle.tar.gz 在 OSS 的最终落点（fetcher 据 manifest.bundleUrl 下载）
-          BUNDLE_BASE_URL="https://${ALIYUN_OSS_BUCKET}.oss-${ALIYUN_OSS_REGION}.aliyuncs.com/renderer-bundle/latest"
+          BUNDLE_BASE_URL="${OSS_PUBLIC_BASE_URL}/${BUNDLE_PATH}"
+          SNAPSHOT_BASE_URL="${OSS_PUBLIC_BASE_URL}/${SNAPSHOT_PATH}"
+          echo "BUNDLE_PATH=${BUNDLE_PATH}" >> "$GITHUB_ENV"
+          echo "SNAPSHOT_PATH=${SNAPSHOT_PATH}" >> "$GITHUB_ENV"
+          echo "BUNDLE_BASE_URL=${BUNDLE_BASE_URL}" >> "$GITHUB_ENV"
+          echo "SNAPSHOT_BASE_URL=${SNAPSHOT_BASE_URL}" >> "$GITHUB_ENV"
+          echo "RELEASE_CHANNEL=${RELEASE_CHANNEL}" >> "$GITHUB_ENV"
+          echo "TARGET_COHORT=${TARGET_COHORT}" >> "$GITHUB_ENV"
+          echo "ROLLOUT_PERCENT=${ROLLOUT_PERCENT}" >> "$GITHUB_ENV"
           MIN_SHELL_VERSION="${{ github.event.inputs.min_shell_version }}"
+          REQUIRED_SHELL_CAPABILITIES="${{ github.event.inputs.required_shell_capabilities }}"
+          REQUIRED_RUNTIME_ASSETS="${{ github.event.inputs.required_runtime_assets }}"
+          REQUIRED_RESOURCES="${{ github.event.inputs.required_resources }}"
+          ROLLBACK_TO_BUILTIN="${{ github.event.inputs.rollback_to_builtin }}"
+          ROLLBACK_REASON="${{ github.event.inputs.rollback_reason }}"
+          echo "ROLLBACK_TO_BUILTIN=${ROLLBACK_TO_BUILTIN}" >> "$GITHUB_ENV"
           ARGS=(--version "${VERSION}" --bundle-base-url "${BUNDLE_BASE_URL}")
+          if [ "${DRY_RUN}" = "true" ]; then
+            ARGS+=(--dry-run)
+          fi
           if [ -n "${MIN_SHELL_VERSION}" ]; then
             ARGS+=(--min-shell-version "${MIN_SHELL_VERSION}")
           fi
+          if [ -n "${REQUIRED_SHELL_CAPABILITIES}" ]; then
+            ARGS+=(--required-shell-capabilities "${REQUIRED_SHELL_CAPABILITIES}")
+          fi
+          if [ -n "${REQUIRED_RUNTIME_ASSETS}" ]; then
+            ARGS+=(--required-runtime-assets "${REQUIRED_RUNTIME_ASSETS}")
+          fi
+          if [ -n "${REQUIRED_RESOURCES}" ]; then
+            ARGS+=(--required-resources "${REQUIRED_RESOURCES}")
+          fi
+          if [ "${ROLLBACK_TO_BUILTIN}" = "true" ]; then
+            ARGS+=(--rollback-to-builtin)
+            if [ -n "${ROLLBACK_REASON}" ]; then
+              ARGS+=(--rollback-reason "${ROLLBACK_REASON}")
+            fi
+          fi
           npm run release:renderer-bundle -- "${ARGS[@]}"
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "::notice::Renderer bundle dry-run: generated candidate artifacts only; OSS upload and published verification will be skipped."
+          fi
           echo "--- manifest.json ---"
           cat dist/renderer-bundle/manifest.json
 
+      - name: Summarize renderer manifest diff
+        if: ${{ (env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '') || env.RENDERER_BUNDLE_DRY_RUN == 'true' }}
+        run: |
+          LATEST_MANIFEST="${RUNNER_TEMP}/renderer-bundle-latest-manifest.json"
+          MANIFEST_DIFF_JSON="${RUNNER_TEMP}/renderer-bundle-manifest-diff.json"
+          DIFF_ARGS=(--head-manifest-path dist/renderer-bundle/manifest.json --summary-output "${GITHUB_STEP_SUMMARY}" --json-output "${MANIFEST_DIFF_JSON}")
+          if curl -fsSL --retry 3 "${BUNDLE_BASE_URL}/manifest.json" -o "${LATEST_MANIFEST}"; then
+            DIFF_ARGS+=(--base-manifest-path "${LATEST_MANIFEST}")
+          else
+            echo "::notice::No current renderer latest manifest found at ${BUNDLE_BASE_URL}/manifest.json; manifest diff will treat this as a first publish."
+          fi
+          npm run renderer:manifest-diff -- "${DIFF_ARGS[@]}"
+          echo "MANIFEST_DIFF_JSON=${MANIFEST_DIFF_JSON}" >> "$GITHUB_ENV"
+
+      - name: Generate renderer release record
+        if: ${{ (env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '') || env.RENDERER_BUNDLE_DRY_RUN == 'true' }}
+        run: |
+          RECORD_ARGS=(
+            --manifest-path dist/renderer-bundle/manifest.json
+            --manifest-diff-json "${MANIFEST_DIFF_JSON}"
+            --bundle-base-url "${BUNDLE_BASE_URL}"
+            --snapshot-base-url "${SNAPSHOT_BASE_URL}"
+            --channel "${RELEASE_CHANNEL}"
+            --output-json dist/renderer-bundle/release-record.json
+            --output-markdown dist/renderer-bundle/release-record.md
+          )
+          if [ -n "${TARGET_COHORT}" ]; then
+            RECORD_ARGS+=(--cohort "${TARGET_COHORT}")
+          fi
+          if [ -n "${ROLLOUT_PERCENT}" ]; then
+            RECORD_ARGS+=(--rollout-percent "${ROLLOUT_PERCENT}")
+          fi
+          npm run renderer:release-record -- "${RECORD_ARGS[@]}"
+          cat dist/renderer-bundle/release-record.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Smoke renderer hot-update serving
+        if: ${{ (env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '') || env.RENDERER_BUNDLE_DRY_RUN == 'true' }}
+        run: npm run acceptance:renderer-hot-update
+
+      - name: Verify production renderer rollout control plane
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' }}
+        run: npm run renderer:verify-production -- --skip-renderer-bundle --retry-attempts 12 --retry-delay-ms 30000
+
       - name: Install ossutil (Aliyun OSS CLI)
-        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' }}
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' }}
         run: |
           curl -sL -o /tmp/ossutil.zip "https://gosspublic.alicdn.com/ossutil/v2/2.1.2/ossutil-2.1.2-linux-amd64.zip"
           unzip -o /tmp/ossutil.zip -d /tmp/ossutil
@@ -81,7 +353,7 @@ jobs:
           ossutil version
 
       - name: Upload renderer bundle to Aliyun OSS
-        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' }}
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' }}
         env:
           ALIYUN_OSS_ACCESS_KEY_ID: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_ID }}
           ALIYUN_OSS_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_SECRET }}
@@ -99,10 +371,70 @@ jobs:
 
           # 先传版本快照（不可变归档），再覆盖 latest/（客户端入口）。
           # 顺序保证 latest 指向的两个文件总是配套的（manifest 与 bundle 同时刷新）。
-          SNAP="oss://${ALIYUN_OSS_BUCKET}/renderer-bundle/v${VERSION}"
-          LATEST="oss://${ALIYUN_OSS_BUCKET}/renderer-bundle/latest"
-          ossutil cp -f dist/renderer-bundle/bundle.tar.gz "${SNAP}/bundle.tar.gz"
-          ossutil cp -f dist/renderer-bundle/manifest.json "${SNAP}/manifest.json"
-          ossutil cp -f dist/renderer-bundle/bundle.tar.gz "${LATEST}/bundle.tar.gz"
-          ossutil cp -f dist/renderer-bundle/manifest.json "${LATEST}/manifest.json"
-          echo "::notice::Published renderer bundle v${VERSION} to ${LATEST}"
+          SNAP="oss://${ALIYUN_OSS_BUCKET}/${SNAPSHOT_PATH}"
+          CHANNEL_TARGET="oss://${ALIYUN_OSS_BUCKET}/${BUNDLE_PATH}"
+          if [ "${ROLLBACK_TO_BUILTIN}" = "true" ]; then
+            ossutil cp -f dist/renderer-bundle/manifest.json "${SNAP}/manifest.json"
+            ossutil cp -f dist/renderer-bundle/release-record.json "${SNAP}/release-record.json"
+            ossutil cp -f dist/renderer-bundle/release-record.md "${SNAP}/release-record.md"
+            ossutil cp -f dist/renderer-bundle/manifest.json "${CHANNEL_TARGET}/manifest.json"
+            ossutil cp -f dist/renderer-bundle/release-record.json "${CHANNEL_TARGET}/release-record.json"
+            ossutil cp -f dist/renderer-bundle/release-record.md "${CHANNEL_TARGET}/release-record.md"
+            echo "::notice::Published renderer rollback manifest v${VERSION} to ${CHANNEL_TARGET}"
+          else
+            ossutil cp -f dist/renderer-bundle/bundle.tar.gz "${SNAP}/bundle.tar.gz"
+            ossutil cp -f dist/renderer-bundle/manifest.json "${SNAP}/manifest.json"
+            ossutil cp -f dist/renderer-bundle/release-record.json "${SNAP}/release-record.json"
+            ossutil cp -f dist/renderer-bundle/release-record.md "${SNAP}/release-record.md"
+            ossutil cp -f dist/renderer-bundle/bundle.tar.gz "${CHANNEL_TARGET}/bundle.tar.gz"
+            ossutil cp -f dist/renderer-bundle/manifest.json "${CHANNEL_TARGET}/manifest.json"
+            ossutil cp -f dist/renderer-bundle/release-record.json "${CHANNEL_TARGET}/release-record.json"
+            ossutil cp -f dist/renderer-bundle/release-record.md "${CHANNEL_TARGET}/release-record.md"
+            echo "::notice::Published renderer bundle v${VERSION} to ${CHANNEL_TARGET}"
+          fi
+
+      - name: Verify published renderer bundle
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' }}
+        run: |
+          VERIFY_ARGS=(
+            --manifest-url "${BUNDLE_BASE_URL}/manifest.json"
+            --release-record-url "${BUNDLE_BASE_URL}/release-record.json"
+            --expected-version "${VERSION}"
+            --expected-release-channel "${RELEASE_CHANNEL}"
+          )
+          if [ -n "${TARGET_COHORT}" ]; then
+            VERIFY_ARGS+=(--expected-cohort "${TARGET_COHORT}")
+          fi
+          if [ -n "${ROLLOUT_PERCENT}" ]; then
+            VERIFY_ARGS+=(--expected-rollout-percent "${ROLLOUT_PERCENT}")
+          fi
+          if [ "${ROLLBACK_TO_BUILTIN}" = "true" ]; then
+            VERIFY_ARGS+=(--allow-empty-required-shell-capabilities)
+          else
+            VERIFY_ARGS+=(--min-required-shell-capabilities 1)
+          fi
+          npx tsx scripts/verify-renderer-bundle-publish.mjs "${VERIFY_ARGS[@]}"
+
+      - name: Verify production renderer hot-update surface
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' }}
+        run: |
+          PROD_ARGS=(
+            --manifest-url "${BUNDLE_BASE_URL}/manifest.json"
+            --release-record-url "${BUNDLE_BASE_URL}/release-record.json"
+            --expected-version "${VERSION}"
+            --expected-release-channel "${RELEASE_CHANNEL}"
+            --retry-attempts 12
+            --retry-delay-ms 30000
+          )
+          if [ -n "${TARGET_COHORT}" ]; then
+            PROD_ARGS+=(--expected-cohort "${TARGET_COHORT}")
+          fi
+          if [ -n "${ROLLOUT_PERCENT}" ]; then
+            PROD_ARGS+=(--expected-rollout-percent "${ROLLOUT_PERCENT}")
+          fi
+          if [ "${ROLLBACK_TO_BUILTIN}" = "true" ]; then
+            PROD_ARGS+=(--allow-empty-required-shell-capabilities)
+          else
+            PROD_ARGS+=(--min-required-shell-capabilities 1)
+          fi
+          npm run renderer:verify-production -- "${PROD_ARGS[@]}"

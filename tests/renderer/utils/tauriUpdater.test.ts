@@ -6,82 +6,93 @@ import {
   tauriOpenUpdateUrl,
 } from '../../../src/renderer/utils/tauriUpdater';
 
-const originalWindow = (globalThis as { window?: Window }).window;
+const checkMock = vi.fn();
+const getVersionMock = vi.fn();
+const openUrlMock = vi.fn();
+const relaunchMock = vi.fn();
 
-function installTauriInvoke(invoke: ReturnType<typeof vi.fn>) {
-  Object.defineProperty(globalThis, 'window', {
-    configurable: true,
-    value: {
-      __TAURI_INTERNALS__: {
-        invoke,
-        metadata: {
-          currentWebview: { windowLabel: 'main', label: 'main' },
-          currentWindow: { label: 'main' },
-        },
-      },
-    },
-  });
-}
+vi.mock('@tauri-apps/plugin-updater', () => ({
+  check: (...args: unknown[]) => checkMock(...args),
+}));
+vi.mock('@tauri-apps/api/app', () => ({
+  getVersion: (...args: unknown[]) => getVersionMock(...args),
+}));
+vi.mock('@tauri-apps/plugin-opener', () => ({
+  openUrl: (...args: unknown[]) => openUrlMock(...args),
+}));
+vi.mock('@tauri-apps/plugin-process', () => ({
+  relaunch: (...args: unknown[]) => relaunchMock(...args),
+}));
 
 afterEach(() => {
-  vi.restoreAllMocks();
-  Object.defineProperty(globalThis, 'window', {
-    configurable: true,
-    value: originalWindow,
-  });
+  vi.clearAllMocks();
 });
 
-describe('tauriUpdater', () => {
-  it('reads current version without checking updates', async () => {
-    const invoke = vi.fn().mockResolvedValue('0.16.65');
-    installTauriInvoke(invoke);
-
-    await expect(tauriGetCurrentVersion()).resolves.toBe('0.16.65');
-    expect(invoke).toHaveBeenCalledWith('get_app_version', undefined);
+describe('tauriUpdater (plugin-based)', () => {
+  it('reads current version via core app API', async () => {
+    getVersionMock.mockResolvedValue('0.16.93');
+    await expect(tauriGetCurrentVersion()).resolves.toBe('0.16.93');
   });
 
-  it('maps Tauri update fields into shared UpdateInfo', async () => {
-    const invoke = vi.fn().mockResolvedValue({
-      has_update: true,
-      current_version: '0.16.65',
-      latest_version: '0.16.66',
-      release_notes: 'Release notes',
-      date: '2026-04-27T00:00:00.000Z',
-      force_update: false,
-      download_url: 'https://example.com/Code.Agent.dmg',
-      file_size: 136000000,
+  it('maps a plugin Update into shared UpdateInfo', async () => {
+    checkMock.mockResolvedValue({
+      currentVersion: '0.16.93',
+      version: '0.16.94',
+      body: 'Release notes',
+      date: '2026-06-06T01:24:49.062Z',
     });
-    installTauriInvoke(invoke);
 
     await expect(tauriCheckForUpdate()).resolves.toEqual({
       hasUpdate: true,
-      currentVersion: '0.16.65',
-      latestVersion: '0.16.66',
+      currentVersion: '0.16.93',
+      latestVersion: '0.16.94',
       releaseNotes: 'Release notes',
-      publishedAt: '2026-04-27T00:00:00.000Z',
-      forceUpdate: false,
-      downloadUrl: 'https://example.com/Code.Agent.dmg',
-      fileSize: 136000000,
+      publishedAt: '2026-06-06T01:24:49.062Z',
     });
   });
 
-  it('opens a cloud update download URL through Tauri', async () => {
-    const invoke = vi.fn().mockResolvedValue(undefined);
-    installTauriInvoke(invoke);
+  it('reports no update (not a failure) when plugin check returns null', async () => {
+    checkMock.mockResolvedValue(null);
+    getVersionMock.mockResolvedValue('0.16.94');
 
-    await tauriOpenUpdateUrl('https://example.com/Code.Agent.dmg');
-
-    expect(invoke).toHaveBeenCalledWith('open_update_url', {
-      url: 'https://example.com/Code.Agent.dmg',
-    });
+    const info = await tauriCheckForUpdate();
+    expect(info.hasUpdate).toBe(false);
+    expect(info.checkFailed).toBeUndefined();
   });
 
-  it('installs updates through the native Tauri updater command', async () => {
-    const invoke = vi.fn().mockResolvedValue(undefined);
-    installTauriInvoke(invoke);
+  it('downloads, installs, reports progress, then auto-relaunches', async () => {
+    const downloadAndInstall = vi.fn(async (onEvent?: (e: unknown) => void) => {
+      onEvent?.({ event: 'Started', data: { contentLength: 100 } });
+      onEvent?.({ event: 'Progress', data: { chunkLength: 40 } });
+      onEvent?.({ event: 'Progress', data: { chunkLength: 60 } });
+      onEvent?.({ event: 'Finished' });
+    });
+    checkMock.mockResolvedValue({ currentVersion: '0.16.93', version: '0.16.94', downloadAndInstall });
+    relaunchMock.mockResolvedValue(undefined);
 
-    await tauriInstallUpdate();
+    const phases: string[] = [];
+    let lastDownloaded = 0;
+    await tauriInstallUpdate((p) => {
+      phases.push(p.phase);
+      if (p.phase === 'download') lastDownloaded = p.downloaded;
+    });
 
-    expect(invoke).toHaveBeenCalledWith('install_update', undefined);
+    expect(downloadAndInstall).toHaveBeenCalledTimes(1);
+    expect(lastDownloaded).toBe(100);
+    expect(phases).toContain('download');
+    expect(phases).toContain('install');
+    expect(phases).toContain('relaunch');
+    expect(relaunchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws when asked to install with no update available', async () => {
+    checkMock.mockResolvedValue(null);
+    await expect(tauriInstallUpdate()).rejects.toThrow();
+  });
+
+  it('opens a manual download URL through the opener plugin', async () => {
+    openUrlMock.mockResolvedValue(undefined);
+    await tauriOpenUpdateUrl('https://example.com/Agent.Neo.dmg');
+    expect(openUrlMock).toHaveBeenCalledWith('https://example.com/Agent.Neo.dmg');
   });
 });

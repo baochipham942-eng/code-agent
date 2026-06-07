@@ -92,6 +92,9 @@ const AdminControlPlaneArtifactKindSchema = z.enum([
   'agent_engine_model_catalog',
   'prompt_registry',
   'update_manifest',
+  'runtime_assets_manifest',
+  'renderer_bundle',
+  'renderer_bundle_rollout',
 ]);
 
 const AdminControlPlaneReleaseChannelSchema = z.enum(['stable', 'beta', 'canary']);

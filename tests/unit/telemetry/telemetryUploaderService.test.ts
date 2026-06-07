@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => {
     getTurnCalls: vi.fn(),
     getUnsyncedFeedback: vi.fn(),
     markFeedbackSynced: vi.fn(),
+    getUnsyncedRendererBundleAttempts: vi.fn(),
+    markRendererBundleAttemptsSynced: vi.fn(),
     markSessionsSynced: vi.fn(),
   };
   return {
@@ -123,6 +125,7 @@ describe('TelemetryUploaderService', () => {
     mocks.storage.getTurnsBySession.mockReturnValue([turn]);
     mocks.storage.getTurnCalls.mockReturnValue({ modelCalls: [], toolCalls: [] });
     mocks.storage.getUnsyncedFeedback.mockReturnValue([]);
+    mocks.storage.getUnsyncedRendererBundleAttempts.mockReturnValue([]);
   });
 
   it('hydrates turn payload with model/tool call details so cloud traces can be drilled into', async () => {
@@ -251,5 +254,67 @@ describe('TelemetryUploaderService', () => {
         full_content: { assistantResponse: 'bad answer' },
       }),
     ]);
+  });
+
+  it('uploads renderer bundle hot-update attempts as metadata-only system events', async () => {
+    const upserts: Array<{ table: string; rows: Record<string, unknown>[] }> = [];
+    mocks.storage.getUnsyncedSessions.mockReturnValue([]);
+    mocks.storage.getUnsyncedRendererBundleAttempts.mockReturnValue([
+      {
+        id: 'attempt-1',
+        checkedAt: 1_780_000_000_000,
+        manifestUrl: 'https://oss.example/renderer-bundle/channels/beta/manifest.json',
+        sourceChannel: 'beta',
+        sourceManifestUrlOverride: false,
+        currentShellVersion: '0.16.93',
+        activeVersion: '0.16.92',
+        activeContentHash: 'a'.repeat(64),
+        outcome: 'skipped',
+        reason: 'missing-shell-capability',
+        manifestVersion: '0.17.0-beta.1',
+        manifestContentHash: 'b'.repeat(64),
+        manifestMinShellVersion: '0.16.93',
+        manifestBundleUrl: 'https://oss.example/renderer-bundle/channels/beta/bundle.tar.gz',
+        requiredShellCapabilitiesCount: 2,
+        rollbackToBuiltin: false,
+        missingShellCapabilities: ['domain:local/newAction'],
+        missingRuntimeAssets: ['playwright-browser-runtime'],
+        missingResources: ['resources/browser-relay-extension'],
+        diagnostics: ['missing-shell-capability'],
+        errorMessage: `missing local file ${os.homedir()}/secret.txt`,
+      },
+    ]);
+    mocks.from.mockImplementation((table: string) => ({
+      upsert: vi.fn(async (rows: Record<string, unknown>[]) => {
+        upserts.push({ table, rows });
+        return { error: null };
+      }),
+    }));
+
+    const { TelemetryUploaderService } = await import('../../../src/main/telemetry/telemetryUploaderService');
+    const service = new TelemetryUploaderService();
+
+    await expect(service.upload()).resolves.toBe(0);
+    const attemptUpsert = upserts.find((entry) => entry.table === 'telemetry_renderer_bundle_attempts');
+    expect(attemptUpsert?.rows).toEqual([
+      expect.objectContaining({
+        id: 'attempt-1',
+        user_id: 'user-1',
+        device_id: 'device-test',
+        app_version: '0.0.0-test',
+        checked_at: 1_780_000_000_000,
+        source_channel: 'beta',
+        current_shell_version: '0.16.93',
+        outcome: 'skipped',
+        reason: 'missing-shell-capability',
+        manifest_version: '0.17.0-beta.1',
+        required_shell_capabilities_count: 2,
+        missing_shell_capabilities: ['domain:local/newAction'],
+        missing_runtime_assets: ['playwright-browser-runtime'],
+        missing_resources: ['resources/browser-relay-extension'],
+      }),
+    ]);
+    expect(String(attemptUpsert?.rows[0]?.error_message)).not.toContain(os.homedir());
+    expect(mocks.storage.markRendererBundleAttemptsSynced).toHaveBeenCalledWith(['attempt-1']);
   });
 });

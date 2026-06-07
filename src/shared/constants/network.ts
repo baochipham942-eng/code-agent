@@ -185,11 +185,155 @@ export const JIRA_API_VERSION_PATH = '/rest/api/3';
 /** OSS 发布资源 bucket 基础 URL（阿里云上海，与整包发版同 bucket） */
 export const OSS_RELEASES_BASE_URL = 'https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com';
 
+/** 前端热更 channel 环境变量；空值/latest 走生产入口，非 latest 走 renderer-bundle/channels/<channel>/ */
+export const RENDERER_BUNDLE_CHANNEL_ENV = 'CODE_AGENT_RENDERER_BUNDLE_CHANNEL';
+
+/** 前端热更 manifest 完整 URL override；用于内部 canary 或临时验证，manifest 仍必须通过签名校验。 */
+export const RENDERER_BUNDLE_MANIFEST_URL_ENV = 'CODE_AGENT_RENDERER_BUNDLE_MANIFEST_URL';
+
+/** 前端热更灰度策略 URL；配置后先拉 signed renderer_bundle_rollout policy，再选择 manifest。 */
+export const RENDERER_BUNDLE_ROLLOUT_POLICY_URL_ENV = 'CODE_AGENT_RENDERER_BUNDLE_ROLLOUT_POLICY_URL';
+
+/** 前端热更 cohort 标签；配合 rollout policy 做内部灰度或员工环。 */
+export const RENDERER_BUNDLE_COHORT_ENV = 'CODE_AGENT_RENDERER_BUNDLE_COHORT';
+
+export type RendererBundleEndpointErrorCode =
+  | 'invalid-renderer-bundle-channel'
+  | 'invalid-renderer-bundle-manifest-url'
+  | 'invalid-renderer-bundle-rollout-policy-url';
+
+export class RendererBundleEndpointError extends Error {
+  readonly code: RendererBundleEndpointErrorCode;
+  readonly target: string;
+
+  constructor(code: RendererBundleEndpointErrorCode, message: string, target: string) {
+    super(message);
+    this.name = 'RendererBundleEndpointError';
+    this.code = code;
+    this.target = target;
+  }
+}
+
+const RENDERER_BUNDLE_DEFAULT_CHANNEL = 'latest';
+const RENDERER_BUNDLE_CHANNEL_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+type RendererBundleEndpointEnv = {
+  [RENDERER_BUNDLE_CHANNEL_ENV]?: string;
+  [RENDERER_BUNDLE_MANIFEST_URL_ENV]?: string;
+  [RENDERER_BUNDLE_ROLLOUT_POLICY_URL_ENV]?: string;
+  [RENDERER_BUNDLE_COHORT_ENV]?: string;
+};
+
+export interface RendererBundleEndpointResolution {
+  channel: string;
+  manifestUrl: string;
+  manifestUrlOverride?: boolean;
+  rolloutPolicyUrl?: string;
+  rolloutPolicyUrlOverride?: boolean;
+  cohort?: string;
+}
+
+function getRendererBundleEndpointEnv(): RendererBundleEndpointEnv {
+  return (typeof process !== 'undefined' && process.env) || {};
+}
+
+function rendererBundleManifestUrlForChannel(channel: string): string {
+  if (channel === RENDERER_BUNDLE_DEFAULT_CHANNEL) {
+    return `${OSS_RELEASES_BASE_URL}/renderer-bundle/latest/manifest.json`;
+  }
+  return `${OSS_RELEASES_BASE_URL}/renderer-bundle/channels/${encodeURIComponent(channel)}/manifest.json`;
+}
+
+function assertHttpUrl(value: string, code: RendererBundleEndpointErrorCode, envName: string): void {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:' || url.protocol === 'http:') return;
+  } catch {
+    // fall through to the typed endpoint error below
+  }
+  throw new RendererBundleEndpointError(
+    code,
+    `${envName} must be an http(s) URL`,
+    value,
+  );
+}
+
+function assertHttpManifestUrl(value: string): void {
+  assertHttpUrl(
+    value,
+    'invalid-renderer-bundle-manifest-url',
+    RENDERER_BUNDLE_MANIFEST_URL_ENV,
+  );
+}
+
+function assertHttpRolloutPolicyUrl(value: string): void {
+  assertHttpUrl(
+    value,
+    'invalid-renderer-bundle-rollout-policy-url',
+    RENDERER_BUNDLE_ROLLOUT_POLICY_URL_ENV,
+  );
+}
+
+export function getRendererBundleChannel(env: RendererBundleEndpointEnv = getRendererBundleEndpointEnv()): string {
+  const channel = env[RENDERER_BUNDLE_CHANNEL_ENV]?.trim() || RENDERER_BUNDLE_DEFAULT_CHANNEL;
+  if (channel === RENDERER_BUNDLE_DEFAULT_CHANNEL) return RENDERER_BUNDLE_DEFAULT_CHANNEL;
+  if (!RENDERER_BUNDLE_CHANNEL_PATTERN.test(channel)) {
+    throw new RendererBundleEndpointError(
+      'invalid-renderer-bundle-channel',
+      `${RENDERER_BUNDLE_CHANNEL_ENV} may only contain letters, numbers, dot, underscore, or dash`,
+      `${RENDERER_BUNDLE_CHANNEL_ENV}=${channel}`,
+    );
+  }
+  return channel;
+}
+
+export function resolveRendererBundleEndpoint(
+  env: RendererBundleEndpointEnv = getRendererBundleEndpointEnv(),
+): RendererBundleEndpointResolution {
+  const manifestUrlOverride = env[RENDERER_BUNDLE_MANIFEST_URL_ENV]?.trim();
+  const rolloutPolicyUrl = env[RENDERER_BUNDLE_ROLLOUT_POLICY_URL_ENV]?.trim();
+  const cohort = env[RENDERER_BUNDLE_COHORT_ENV]?.trim();
+  const sourcePatch = {
+    ...(rolloutPolicyUrl
+      ? (
+        assertHttpRolloutPolicyUrl(rolloutPolicyUrl),
+        { rolloutPolicyUrl, rolloutPolicyUrlOverride: true }
+      )
+      : {}),
+    ...(cohort ? { cohort } : {}),
+  };
+  if (manifestUrlOverride) {
+    assertHttpManifestUrl(manifestUrlOverride);
+    return {
+      channel: env[RENDERER_BUNDLE_CHANNEL_ENV]?.trim() || RENDERER_BUNDLE_DEFAULT_CHANNEL,
+      manifestUrl: manifestUrlOverride,
+      manifestUrlOverride: true,
+      ...sourcePatch,
+    };
+  }
+  const channel = getRendererBundleChannel(env);
+  return {
+    channel,
+    manifestUrl: rendererBundleManifestUrlForChannel(channel),
+    ...sourcePatch,
+  };
+}
+
+export function getRendererBundleManifestUrl(
+  env: RendererBundleEndpointEnv = getRendererBundleEndpointEnv(),
+): string {
+  return resolveRendererBundleEndpoint(env).manifestUrl;
+}
+
 /** 前端热更 bundle OSS 端点（manifest 为签名 envelope，bundle.tar.gz 地址在 manifest.payload 内） */
 export const RENDERER_BUNDLE_ENDPOINTS = {
   /** 最新前端 bundle 的签名 manifest（控制面入口） */
   get manifestUrl() {
-    return `${OSS_RELEASES_BASE_URL}/renderer-bundle/latest/manifest.json`;
+    return getRendererBundleManifestUrl();
+  },
+  /** 按传入环境变量解析 manifest URL，默认 latest，可指向 channel 或完整 URL override。 */
+  getManifestUrl(env?: RendererBundleEndpointEnv) {
+    return getRendererBundleManifestUrl(env);
   },
 } as const;
 
@@ -197,4 +341,4 @@ export const RENDERER_BUNDLE_ENDPOINTS = {
 export const DEFAULT_SUPABASE_URL = 'https://xepbunahzbmexsmmiqyq.supabase.co';
 
 /** 默认 Supabase Anonymous Key */
-export const DEFAULT_SUPABASE_ANON_KEY = (typeof process !== 'undefined' && process.env?.SUPABASE_ANON_KEY) || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcGJ1bmFoemJtZXhzbW1pcXlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODkyMTcsImV4cCI6MjA4NDA2NTIxN30.8swN1QdRX5vIjNyCLNhQTPAx-k2qxeS8EN4Ot2idY7w';
+export const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcGJ1bmFoemJtZXhzbW1pcXlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODkyMTcsImV4cCI6MjA4NDA2NTIxN30.8swN1QdRX5vIjNyCLNhQTPAx-k2qxeS8EN4Ot2idY7w';

@@ -2,6 +2,8 @@
 // Admin / Operations Management Types
 // ============================================================================
 
+import type { ControlPlaneArtifactKind } from './controlPlane';
+
 export interface AdminUserDashboardItem {
   id: string;
   email: string;
@@ -75,7 +77,7 @@ export interface AdminUpdateInviteCodeInput {
 export interface AdminControlPlaneAuditEventItem {
   id: string;
   createdAt: string;
-  artifactKind: 'cloud_config' | 'capability_registry' | 'agent_engine_model_catalog' | 'prompt_registry' | 'update_manifest';
+  artifactKind: ControlPlaneArtifactKind;
   payloadVersion?: string;
   releaseChannel?: 'stable' | 'beta' | 'canary';
   keyId?: string;

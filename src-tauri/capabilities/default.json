@@ -9,6 +9,9 @@
   "permissions": [
     "core:default",
     "updater:default",
+    "updater:allow-check",
+    "updater:allow-download-and-install",
+    "process:default",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
     "dialog:allow-open",

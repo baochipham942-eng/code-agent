@@ -208,6 +208,32 @@ export function resolveExistingNodeModule(
     .find((candidate) => resolvedOptions.existsSync(candidate)) ?? null;
 }
 
+function candidateResourcePaths(
+  resource: string,
+  resolvedOptions: Required<RuntimeAssetResolverOptions>,
+): string[] {
+  const trimmed = resource.trim();
+  if (!trimmed) return [];
+  if (path.isAbsolute(trimmed)) return [trimmed];
+
+  return unique([
+    resolveRuntimeRoot(resolvedOptions),
+    ...candidateRuntimeRoots(resolvedOptions),
+  ].flatMap((root) => [
+    path.join(root, trimmed),
+    path.join(root, 'resources', trimmed),
+  ]));
+}
+
+export function resolveExistingResource(
+  resource: string,
+  options: RuntimeAssetResolverOptions = {},
+): string | null {
+  const resolvedOptions = getRuntimeOptions(options);
+  return candidateResourcePaths(resource, resolvedOptions)
+    .find((candidate) => resolvedOptions.existsSync(candidate)) ?? null;
+}
+
 export function resolveHelperBinary(
   name: string,
   options: RuntimeAssetResolverOptions = {},

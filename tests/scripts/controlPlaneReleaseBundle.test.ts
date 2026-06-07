@@ -100,6 +100,11 @@ function writeSource(dir: string, options: {
     revokedIds: options.revokedIds ?? [],
   }));
   writeJson(join(dir, 'agent-engine-model-catalog.json'), agentEngineCatalog(options.version ?? '2026.05.17'));
+  writeJson(join(dir, 'renderer-bundle-rollout.json'), {
+    version: options.version ?? '2026.05.17',
+    channel: options.channel ?? 'stable',
+    rolloutPercent: 100,
+  });
   writeFileSync(join(dir, 'public.pem'), '-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n');
 }
 
@@ -148,18 +153,33 @@ describe('control-plane release bundle', () => {
       'prompt-registry.json',
       'capability-registry.json',
       'agent-engine-model-catalog.json',
+      'renderer-bundle-rollout.json',
     ]);
     expect(manifest.artifacts.every((artifact) => /^sha256:[a-f0-9]{64}$/.test(artifact.contentHash))).toBe(true);
 
     const commands = readFileSync(join(out, 'vercel-env-commands.txt'), 'utf8');
+    expect(commands).toContain(`cd '${process.cwd()}'`);
     expect(commands).toContain('CONTROL_PLANE_CLOUD_CONFIG_JSON');
     expect(commands).toContain('CONTROL_PLANE_PROMPT_REGISTRY_JSON');
     expect(commands).toContain('CONTROL_PLANE_CAPABILITY_REGISTRY_JSON');
     expect(commands).toContain('CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON');
+    expect(commands).toContain('CONTROL_PLANE_RENDERER_BUNDLE_ROLLOUT_JSON');
+    expect(commands).toContain(`CONTROL_PLANE_KEY_ID production --force --yes < '${out}/control-plane-key-id.txt'`);
+    expect(commands).toContain(`CODE_AGENT_CONTROL_PLANE_KEY_ID production --force --yes < '${out}/control-plane-key-id.txt'`);
+    expect(commands).toContain(`CONTROL_PLANE_TTL_SECONDS production --force --yes < '${out}/control-plane-ttl-seconds.txt'`);
     expect(commands).toContain('CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY');
     expect(commands).not.toContain('CONTROL_PLANE_PRIVATE_KEY');
     expect(commands).not.toContain('CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY');
+    expect(commands).not.toContain('--value');
     expect(commands).not.toContain('BEGIN PRIVATE KEY');
+    expect(readFileSync(join(out, 'control-plane-key-id.txt'), 'utf8')).toBe('production-2026-05-17\n');
+    expect(readFileSync(join(out, 'control-plane-ttl-seconds.txt'), 'utf8')).toBe('3600\n');
+
+    const postApplyCommands = readFileSync(join(out, 'post-apply-commands.txt'), 'utf8');
+    expect(postApplyCommands).toContain(`cd '${process.cwd()}'`);
+    expect(postApplyCommands).toContain('vercel deploy --prod --yes');
+    expect(postApplyCommands).toContain('npm run renderer:verify-production -- --skip-renderer-bundle --retry-attempts 12 --retry-delay-ms 30000');
+    expect(postApplyCommands).not.toContain('BEGIN PRIVATE KEY');
   });
 
   it('rejects dangerous prompt registry keys', () => {
@@ -229,6 +249,11 @@ describe('control-plane release bundle', () => {
       revokedIds: [],
     });
     writeJson(join(missingTrustSource, 'agent-engine-model-catalog.json'), agentEngineCatalog());
+    writeJson(join(missingTrustSource, 'renderer-bundle-rollout.json'), {
+      version: '2026.05.17',
+      channel: 'stable',
+      rolloutPercent: 100,
+    });
     writeFileSync(join(missingTrustSource, 'public.pem'), '-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n');
 
     expect(() => buildControlPlaneReleaseBundle({
@@ -260,6 +285,11 @@ describe('control-plane release bundle', () => {
       revokedIds: [],
     });
     writeJson(join(mismatchedTrustSource, 'agent-engine-model-catalog.json'), agentEngineCatalog());
+    writeJson(join(mismatchedTrustSource, 'renderer-bundle-rollout.json'), {
+      version: '2026.05.17',
+      channel: 'stable',
+      rolloutPercent: 100,
+    });
     writeFileSync(join(mismatchedTrustSource, 'public.pem'), '-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n');
 
     expect(() => buildControlPlaneReleaseBundle({
@@ -336,8 +366,13 @@ describe('control-plane release bundle', () => {
     expect(manifest.rollbackAvailable).toBe(true);
 
     const rollbackCommands = readFileSync(join(out, 'rollback-env-commands.txt'), 'utf8');
+    expect(rollbackCommands).toContain(`cd '${process.cwd()}'`);
     expect(rollbackCommands).toContain(`${previousOut}/cloud-config.json`);
-    expect(rollbackCommands).toContain('CONTROL_PLANE_KEY_ID production --value production-2026-05-16');
+    expect(rollbackCommands).toContain(`CONTROL_PLANE_KEY_ID production --force --yes < '${out}/rollback-control-plane-key-id.txt'`);
+    expect(rollbackCommands).toContain(`CODE_AGENT_CONTROL_PLANE_KEY_ID production --force --yes < '${out}/rollback-control-plane-key-id.txt'`);
+    expect(rollbackCommands).toContain(`CONTROL_PLANE_TTL_SECONDS production --force --yes < '${out}/control-plane-ttl-seconds.txt'`);
+    expect(rollbackCommands).not.toContain('--value');
     expect(rollbackCommands).not.toContain('PRIVATE_KEY');
+    expect(readFileSync(join(out, 'rollback-control-plane-key-id.txt'), 'utf8')).toBe('production-2026-05-16\n');
   });
 });

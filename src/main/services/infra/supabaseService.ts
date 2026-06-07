@@ -3,14 +3,23 @@
 // Singleton client for Supabase backend
 // ============================================================================
 
-import { createClient, SupabaseClient, User, Session } from '@supabase/supabase-js';
+import {
+  createClient,
+  SupabaseClient,
+  User,
+  Session,
+  type RealtimeClientOptions,
+} from '@supabase/supabase-js';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import WebSocket from 'ws';
 import https from 'https';
 import http from 'http';
 import { getSecureStorage } from '../core';
 import { createLogger } from './logger';
+import { DEFAULT_SUPABASE_ANON_KEY, DEFAULT_SUPABASE_URL } from '../../../shared/constants';
 
 const logger = createLogger('SupabaseService');
+const realtimeTransport = WebSocket as unknown as NonNullable<RealtimeClientOptions['transport']>;
 
 // Database types for type-safe queries
 export interface Database {
@@ -579,7 +588,7 @@ export interface Database {
         Returns: {
           id: string;
           created_at: string;
-          artifact_kind: 'cloud_config' | 'capability_registry' | 'agent_engine_model_catalog' | 'prompt_registry' | 'update_manifest';
+          artifact_kind: 'cloud_config' | 'capability_registry' | 'agent_engine_model_catalog' | 'prompt_registry' | 'update_manifest' | 'runtime_assets_manifest' | 'renderer_bundle' | 'renderer_bundle_rollout';
           payload_version: string | null;
           release_channel: 'stable' | 'beta' | 'canary' | null;
           key_id: string | null;
@@ -597,7 +606,7 @@ export interface Database {
       admin_control_plane_rollout_summary: {
         Args: Record<string, never>;
         Returns: {
-          artifact_kind: 'cloud_config' | 'capability_registry' | 'agent_engine_model_catalog' | 'prompt_registry' | 'update_manifest';
+          artifact_kind: 'cloud_config' | 'capability_registry' | 'agent_engine_model_catalog' | 'prompt_registry' | 'update_manifest' | 'runtime_assets_manifest' | 'renderer_bundle' | 'renderer_bundle_rollout';
           payload_version: string | null;
           release_channel: 'stable' | 'beta' | 'canary' | null;
           key_id: string | null;
@@ -633,6 +642,85 @@ export interface Database {
 
 let supabaseInstance: SupabaseClient<Database> | null = null;
 let supabaseConfig: { url: string; anonKey: string } | null = null;
+
+export type SupabaseConfigSource = 'env' | 'settings' | 'default';
+
+export interface SupabaseSettingsLike {
+  supabase?: {
+    url?: string | null;
+    anonKey?: string | null;
+  } | null;
+}
+
+export interface ResolvedSupabaseInitConfig {
+  url: string;
+  anonKey: string;
+  urlSource: SupabaseConfigSource;
+  anonKeySource: SupabaseConfigSource;
+  ignored: string[];
+}
+
+function trimConfigValue(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function isUsableSupabaseUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return (parsed.protocol === 'https:' || parsed.protocol === 'http:') && Boolean(parsed.host);
+  } catch {
+    return false;
+  }
+}
+
+export function resolveSupabaseInitConfig(
+  settings?: SupabaseSettingsLike,
+  env: Record<string, string | undefined> = process.env,
+): ResolvedSupabaseInitConfig {
+  const ignored: string[] = [];
+  const envUrl = trimConfigValue(env.SUPABASE_URL);
+  const settingsUrl = trimConfigValue(settings?.supabase?.url);
+  const envAnonKey = trimConfigValue(env.SUPABASE_ANON_KEY);
+  const settingsAnonKey = trimConfigValue(settings?.supabase?.anonKey);
+
+  let url = DEFAULT_SUPABASE_URL;
+  let urlSource: SupabaseConfigSource = 'default';
+
+  if (envUrl && isUsableSupabaseUrl(envUrl)) {
+    url = envUrl;
+    urlSource = 'env';
+  } else {
+    if (envUrl) {
+      ignored.push('SUPABASE_URL');
+    }
+    if (settingsUrl && isUsableSupabaseUrl(settingsUrl)) {
+      url = settingsUrl;
+      urlSource = 'settings';
+    } else if (settingsUrl) {
+      ignored.push('settings.supabase.url');
+    }
+  }
+
+  let anonKey = DEFAULT_SUPABASE_ANON_KEY;
+  let anonKeySource: SupabaseConfigSource = 'default';
+
+  if (envAnonKey) {
+    anonKey = envAnonKey;
+    anonKeySource = 'env';
+  } else if (settingsAnonKey) {
+    anonKey = settingsAnonKey;
+    anonKeySource = 'settings';
+  }
+
+  return {
+    url,
+    anonKey,
+    urlSource,
+    anonKeySource,
+    ignored,
+  };
+}
 
 /**
  * 创建带代理支持的 fetch —— Electron main 进程的 Node.js fetch 不走系统代理，
@@ -707,11 +795,20 @@ export function initSupabase(url: string, anonKey: string): SupabaseClient<Datab
     return supabaseInstance;
   }
 
-  supabaseConfig = { url, anonKey };
+  const normalizedUrl = url.trim();
+  const normalizedAnonKey = anonKey.trim();
+  if (!isUsableSupabaseUrl(normalizedUrl)) {
+    throw new Error('Invalid Supabase URL');
+  }
+  if (!normalizedAnonKey) {
+    throw new Error('Missing Supabase anon key');
+  }
+
+  supabaseConfig = { url: normalizedUrl, anonKey: normalizedAnonKey };
   const secureStorage = getSecureStorage();
   const proxyFetch = createProxyFetch();
 
-  supabaseInstance = createClient<Database>(url, anonKey, {
+  supabaseInstance = createClient<Database, 'public', 'public'>(normalizedUrl, normalizedAnonKey, {
     auth: {
       storage: {
         getItem: async (key) => {
@@ -745,6 +842,9 @@ export function initSupabase(url: string, anonKey: string): SupabaseClient<Datab
       persistSession: true,
       detectSessionInUrl: false, // We handle OAuth manually in Electron
     },
+    realtime: {
+      transport: realtimeTransport,
+    },
     global: {
       ...(proxyFetch ? { fetch: proxyFetch } : {}),
       headers: {
@@ -754,6 +854,29 @@ export function initSupabase(url: string, anonKey: string): SupabaseClient<Datab
   });
 
   return supabaseInstance;
+}
+
+export function initSupabaseFromSettings(
+  settings?: SupabaseSettingsLike,
+  env: Record<string, string | undefined> = process.env,
+): { client: SupabaseClient<Database>; config: ResolvedSupabaseInitConfig } {
+  const config = resolveSupabaseInitConfig(settings, env);
+  if (config.ignored.length > 0) {
+    logger.warn('Ignored invalid Supabase config values', { ignored: config.ignored });
+  }
+
+  const client = initSupabase(config.url, config.anonKey);
+  return { client, config };
+}
+
+export function ensureSupabaseInitialized(
+  settings?: SupabaseSettingsLike,
+  env: Record<string, string | undefined> = process.env,
+): SupabaseClient<Database> {
+  if (supabaseInstance) {
+    return supabaseInstance;
+  }
+  return initSupabaseFromSettings(settings, env).client;
 }
 
 export function getSupabase(): SupabaseClient<Database> {

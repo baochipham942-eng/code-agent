@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   release-mac:
@@ -114,6 +115,35 @@ jobs:
         # 或主壳未挂载就 fail —— 让 CI 绿真正等于"可装"，崩的版本绝不会被上传 OSS / 发 Release。
         # 放在公证之后、上传之前：拦住坏版本发布；后续可前移到 cargo build 之前以省公证时间。
         run: node scripts/release-renderer-probe.mjs 8182
+
+      - name: Verify renderer hot-update release gate
+        # A formal app release must not publish before the renderer hot-update
+        # surface has caught up to the same tag. The renderer-bundle workflow is
+        # also triggered by v* tags; this bounded retry waits for that publish
+        # chain and blocks app artifact upload if Vercel rollout policy or OSS
+        # latest/release-record are still stale.
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS }}
+          CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY }}
+          CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE }}
+          CONTROL_PLANE_SMOKE_TOKEN: ${{ secrets.CONTROL_PLANE_SMOKE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          npm run renderer:verify-release-gate -- \
+            --workflow renderer-bundle.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --head-sha "${GITHUB_SHA}" \
+            --workflow-event push \
+            --workflow-branch "${GITHUB_REF_NAME}" \
+            --workflow-expected-conclusion success \
+            --workflow-timeout-ms 1800000 \
+            --workflow-poll-ms 30000 \
+            --expected-version "${VERSION}" \
+            --expected-release-channel latest \
+            --retry-attempts 12 \
+            --retry-delay-ms 30000
 
       # 重打 .app.tar.gz：
       # 1) tauri-bundler 在 nested 签名前已先打过一份 tar.gz（stale）
@@ -224,6 +254,9 @@ jobs:
 
           shasum -a 256 "${MANIFEST_PATH}" | awk '{print $1}' > "${SHA_PATH}"
           cat "${SHA_PATH}"
+          RUNTIME_ASSETS_MANIFEST_URL="${ARTIFACT_BASE_URL}/runtime-assets/${MANIFEST_NAME}"
+          RUNTIME_ASSETS_MANIFEST_SHA_URL="${ARTIFACT_BASE_URL}/runtime-assets/$(basename "${SHA_PATH}")"
+          RUNTIME_ASSETS_MANIFEST_SHA256="$(cat "${SHA_PATH}")"
 
           ossutil cp -f "${MANIFEST_PATH}" \
             "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/runtime-assets/${MANIFEST_NAME}"
@@ -233,6 +266,25 @@ jobs:
             ossutil cp -f "${archive}" \
               "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/runtime-assets/$(basename "${archive}")"
           done
+
+          echo "RUNTIME_ASSETS_MANIFEST_URL=${RUNTIME_ASSETS_MANIFEST_URL}" >> "${GITHUB_ENV}"
+          echo "RUNTIME_ASSETS_MANIFEST_SHA_URL=${RUNTIME_ASSETS_MANIFEST_SHA_URL}" >> "${GITHUB_ENV}"
+          echo "RUNTIME_ASSETS_MANIFEST_SHA256=${RUNTIME_ASSETS_MANIFEST_SHA256}" >> "${GITHUB_ENV}"
+
+      - name: Verify published runtime assets
+        if: ${{ vars.ENABLE_RUNTIME_ASSETS_PUBLISH == 'true' }}
+        env:
+          CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS }}
+          CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY }}
+          CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          npx tsx scripts/verify-runtime-assets-publish.mjs \
+            --manifest-url "${RUNTIME_ASSETS_MANIFEST_URL}" \
+            --manifest-sha256-url "${RUNTIME_ASSETS_MANIFEST_SHA_URL}" \
+            --expected-version "${VERSION}" \
+            --expected-platform darwin-arm64 \
+            --min-assets 1
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
@@ -282,11 +334,17 @@ jobs:
             "oss://${ALIYUN_OSS_BUCKET}/stable/latest.json"
           # in-app updater：生成 GitHub-release 形状（dmg 指向 OSS）并提升为 stable
           DMG_URL="https://${ALIYUN_OSS_BUCKET}.oss-${ALIYUN_OSS_REGION}.aliyuncs.com/v${VERSION}/Agent-Neo-${VERSION}-arm64.dmg"
+          RUNTIME_ARGS=()
+          if [[ -n "${RUNTIME_ASSETS_MANIFEST_URL:-}" && -n "${RUNTIME_ASSETS_MANIFEST_SHA_URL:-}" ]]; then
+            RUNTIME_ARGS+=("--runtime-assets-manifest-url" "${RUNTIME_ASSETS_MANIFEST_URL}")
+            RUNTIME_ARGS+=("--runtime-assets-manifest-sha-url" "${RUNTIME_ASSETS_MANIFEST_SHA_URL}")
+          fi
           node scripts/build-stable-release-json.mjs \
             --version "${VERSION}" \
             --tag "${GITHUB_REF_NAME}" \
             --dmg-url "${DMG_URL}" \
             --html-url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}" \
+            "${RUNTIME_ARGS[@]}" \
             --output "${RUNNER_TEMP}/stable-release.json"
           ossutil cp -f "${RUNNER_TEMP}/stable-release.json" \
             "oss://${ALIYUN_OSS_BUCKET}/stable/release.json"
@@ -313,6 +371,15 @@ jobs:
             downloadUrl: `https://github.com/${process.env.REPO}/releases/tag/${process.env.TAG}`,
             releaseNotes: manifest.notes,
           };
+          const runtimeAssetsManifestUrl = process.env.RUNTIME_ASSETS_MANIFEST_URL;
+          const runtimeAssetsManifestSha256 =
+            process.env.RUNTIME_ASSETS_MANIFEST_SHA256?.match(/[a-f0-9]{64}/i)?.[0]?.toLowerCase();
+          if (runtimeAssetsManifestUrl && runtimeAssetsManifestSha256) {
+            payload.runtimeAssets = {
+              manifestUrl: runtimeAssetsManifestUrl,
+              manifestSha256: runtimeAssetsManifestSha256,
+            };
+          }
           fs.writeFileSync('/tmp/code-agent-update-payload.json', JSON.stringify(payload));
           NODE
 

@@ -3,7 +3,11 @@ import type { Request, RequestHandler, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import express from 'express';
-import { resolveRendererServeDir } from '../../main/services/renderer/rendererBundleCache';
+import {
+  activeBundleDir,
+  readActiveBundleMeta,
+  resolveRendererServeDir,
+} from '../../main/services/renderer/rendererBundleCache';
 
 interface StaticDeps {
   serverAuthToken: string;
@@ -33,6 +37,12 @@ export function createStaticRouter(deps: StaticDeps): Router {
     if (deps.staticDir) return deps.staticDir;
     if (deps.dataDir) return resolveRendererServeDir(deps.dataDir, builtinDir);
     return builtinDir;
+  }
+
+  function getLoadedRendererBundleMeta(serveDir: string) {
+    if (!deps.dataDir || deps.staticDir) return null;
+    if (path.resolve(serveDir) !== path.resolve(activeBundleDir(deps.dataDir))) return null;
+    return readActiveBundleMeta(deps.dataDir);
   }
 
   // ── Static file serving ──────────────────────────────────────────
@@ -79,9 +89,15 @@ export function createStaticRouter(deps: StaticDeps): Router {
         cachedIndexMtimeMs = stat.mtimeMs;
       }
       // Inject auth token into HTML so httpTransport can attach it to API requests.
+      const loadedRendererBundle = getLoadedRendererBundleMeta(serveDir);
       const injectedHtml = cachedIndexHtml.replace(
         /<head(\s[^>]*)?>/i,
-        (headTag) => `${headTag}<script>window.__CODE_AGENT_TOKEN__="${serverAuthToken}";</script>`
+        (headTag) => (
+          `${headTag}<script>` +
+          `window.__CODE_AGENT_TOKEN__=${toInlineScriptJson(serverAuthToken)};` +
+          `window.__CODE_AGENT_RENDERER_BUNDLE__=${toInlineScriptJson(loadedRendererBundle)};` +
+          '</script>'
+        )
       );
       res.type('html').send(injectedHtml);
     } catch {
@@ -90,4 +106,8 @@ export function createStaticRouter(deps: StaticDeps): Router {
   });
 
   return router;
+}
+
+function toInlineScriptJson(value: unknown): string {
+  return (JSON.stringify(value) ?? 'null').replace(/</g, '\\u003c');
 }

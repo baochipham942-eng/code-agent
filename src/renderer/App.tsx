@@ -61,6 +61,7 @@ import { FileExplorerPanel } from './components/features/explorer/FileExplorerPa
 import { MemoFloater } from './components/features/memo/MemoFloater';
 import { useAppshots } from './hooks/useAppshots';
 import { useComputerUsePip } from './hooks/useComputerUsePip';
+import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import { postOsNotification, registerNotificationClick, requestOsNotificationPermission } from './utils/osNotification';
 import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, UpdateInfo } from '@shared/contract';
@@ -177,6 +178,7 @@ export const App: React.FC = () => {
   useTaskSync({ pollInterval: 30_000 });
   useBackgroundTaskSync();
   useInAppValidationBridge();
+  useRendererBundleAutoReload();
 
   // 全局快捷键（含 ⌘⇧C compact 触发）
   useKeyboardShortcuts({

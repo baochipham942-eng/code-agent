@@ -27,6 +27,9 @@ export function getLocalWebAuthStatus(): AuthStatus {
     isAuthenticated: true,
     user: { ...LOCAL_WEB_AUTH_TEST_USER },
     isLoading: false,
+    sessionTrustState: 'verified',
+    authBackendAvailable: true,
+    hasCachedAdminClaim: false,
   };
 }
 

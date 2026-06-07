@@ -5,7 +5,11 @@ import {
   type ControlPlaneRequestLike,
   type ControlPlaneResponseLike,
 } from '../../lib/controlPlaneEnvelope.js';
-import { readCloudConfigPayloadForRequestAsync, readPayloadForKind } from '../../lib/controlPlanePayloads.js';
+import {
+  readCloudConfigPayloadForRequestAsync,
+  readPayloadForKind,
+  readRendererBundleRolloutPolicyPayloadAsync,
+} from '../../lib/controlPlanePayloads.js';
 
 function firstQueryValue(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) {
@@ -32,6 +36,9 @@ function resolveKind(req: ControlPlaneRequestLike): ControlPlaneArtifactKind | n
   ) {
     return 'agent_engine_model_catalog';
   }
+  if (raw === 'renderer_bundle_rollout' || raw === 'renderer_rollout') {
+    return 'renderer_bundle_rollout';
+  }
   return null;
 }
 
@@ -40,13 +47,18 @@ export default async function handler(req: ControlPlaneRequestLike, res: Control
   if (!kind) {
     res.status(400).json({
       error: 'unsupported_artifact',
-      message: 'Supported artifacts are cloud_config, capability_registry, agent_engine_model_catalog, and prompt_registry.',
+      message: 'Supported artifacts are cloud_config, capability_registry, agent_engine_model_catalog, prompt_registry, and renderer_bundle_rollout.',
     });
     return;
   }
 
   if (kind === 'cloud_config') {
     await sendControlPlaneEnvelopeAsync(req, res, kind, () => readCloudConfigPayloadForRequestAsync(req));
+    return;
+  }
+
+  if (kind === 'renderer_bundle_rollout') {
+    await sendControlPlaneEnvelopeAsync(req, res, kind, () => readRendererBundleRolloutPolicyPayloadAsync());
     return;
   }
 

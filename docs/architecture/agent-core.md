@@ -872,19 +872,25 @@ planning/
 
 **位置**: `src/main/agent/antiPattern/detector.ts`
 
-**功能**: 检测 AI 陷入无限读取循环的情况。
+**功能**: 检测 AI 陷入无限只读循环的情况，是[反循环防御三层](../ARCHITECTURE.md)（见「2026-06-06 ~ 06-07 新增模块」章节）中的 **L2**。
 
-**检测规则**:
+**检测规则**（连续**只读操作**计数，写工具 / Bash / `markSemanticProgress` 清零）：
 
-| 阶段 | 阈值 | 触发条件 | 警告内容 |
-|------|------|----------|----------|
-| **创建前** | 5 次 | 连续 5 次 read 操作 | "停止阅读，立即创建！" |
-| **创建后** | 10 次 | 写入后连续 10 次 read | "任务可能已完成，停止过度验证！" |
+| 阶段 | 阈值 | 触发条件 | 处置 |
+|------|------|----------|------|
+| **创建前警告** | 5 次 | 写入前连续 5 次只读 | 软提示 "停止重复阅读/搜索，用已有证据作答" |
+| **创建后警告** | 10 次 | 写入后连续 10 次只读 | 软提示 "任务可能已完成，停止过度验证" |
+| **HARD_LIMIT** | 15 次 | 连续 15 次只读 | preflight 阻断该工具 + `activateForceFinalResponse`，把"基于已有证据直接输出结论"作为工具结果回灌，强制模型收尾 |
+
+**只读工具范围**（`loopTypes.ts` 的 `READ_ONLY_TOOLS`）：`read_file`/`Read`、`glob`、`grep`、`list_directory`，以及联网读取 `web_fetch`/`WebFetch`/`web_search`/`WebSearch`。
+> ⚠️ 2026-06-07 修复：`WebSearch`/`WebFetch` 之前漏在集合外（模型实发 PascalCase），导致弱模型反复联网重搜时 L2 完全不计数，run 被中断后 0 条 assistant 落库 → 空白"待处理"会话。新增无界只读工具时务必同步登记（PascalCase + snake_case 别名都加）。详见 [troubleshooting.md「普通对话里反复 WebSearch 不收敛」](../guides/troubleshooting.md)。
+
+**L3 — 语义重搜检测**（`src/main/agent/runtime/stagnationDetector.ts` 的 `pushAndDetectToolSpam`）：L2 按"只读 op 数"计数抓不住"换关键词重搜同一意图"（args 变→旧 fingerprint 变），L3 改按**工具名**计数——同一检索类工具（WebSearch/WebFetch/ToolSearch）在 6 次窗口内 ≥4 次即注入一次软提示，引导用现有结果作答或如实说明限制。L2（防"读不停"）与 L3（防"换词重搜"）正交互补。
 
 **解决的问题**:
 - AI 创建文件后陷入无限验证循环
-- AI 在创建任务中过度研究而不动手
-- Stop Hook 过于激进导致的强制继续
+- AI 在创建/研究任务中过度读取或反复联网重搜而不收尾
+- 弱模型拿到可用结果仍自我怀疑、无限重搜成空白会话
 
 ---
 

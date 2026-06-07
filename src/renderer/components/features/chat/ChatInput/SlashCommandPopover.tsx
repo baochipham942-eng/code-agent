@@ -610,9 +610,17 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   const filtered = useMemo(() => {
     if (!filter) return allCommands;
     const lower = filter.toLowerCase();
-    return allCommands.filter(c =>
+    const matched = allCommands.filter(c =>
       c.id.includes(lower) || c.label.toLowerCase().includes(lower)
     );
+    // 精确 id 匹配排最前：否则键盘输入精确命令名时，会被更长命令的子串匹配抢선并默认选中
+    // （实测 /low 被 workflow 抢선——'workflow'.includes('low')，且 workflow 排在前，
+    //  selectedIndex=0 选中 workflow，回车执行了 workflow 而非 low）。稳定排序保留其余顺序。
+    return matched.sort((a, b) => {
+      const aExact = a.id.toLowerCase() === lower ? 0 : 1;
+      const bExact = b.id.toLowerCase() === lower ? 0 : 1;
+      return aExact - bExact;
+    });
   }, [filter, allCommands]);
 
   // Reset selection on filter change

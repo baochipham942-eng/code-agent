@@ -166,6 +166,34 @@ jobs:
       - name: Smoke renderer hot-update serving
         run: npm run acceptance:renderer-hot-update
 
+  # 左移发布期 capability 校验：PR 阶段以 dry-run 跑与 publish 完全相同的 buildRendererBundleManifest，
+  # 提前拦住 shellCapabilities.ts 白名单漏注册（2026-06-07 v0.16.96 连环失败根因：renderer 新增
+  # diagnostics/hook capability 未注册，PR 的 capability-diff 校验 domains.ts 而非 shellCapabilities.ts，
+  # 漏检直到 push/tag 才在「Build + sign」炸）。dry-run 无需控制面签名 key，不上传 OSS。
+  renderer-bundle-dry-run:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer bundle (dry-run capability gate)
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          npm run release:renderer-bundle -- \
+            --version "${VERSION}" \
+            --bundle-base-url "https://dry-run.invalid/renderer" \
+            --dry-run
+
   publish-renderer-bundle:
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest

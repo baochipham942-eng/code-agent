@@ -172,6 +172,15 @@ async function initializeCloudAndMCP(configService: ConfigService, mainWindow: B
     logger.warn('SkillDiscovery initialization failed (non-blocking)', { error: String(skillError) });
   }
 
+  // 监听 config.json 外部编辑并热重载(API Key/模型路由/权限/并发/代理 现读即生效,无需重启)
+  try {
+    configService.startWatchingConfigFile(() => {
+      logger.info('Settings hot-reloaded from external config.json edit');
+    });
+  } catch (cfgWatchError) {
+    logger.warn('Config file watcher failed (non-blocking)', { error: String(cfgWatchError) });
+  }
+
   const settings = configService.getSettings();
   const mcpConfigs: MCPServerConfig[] = settings.mcp?.servers || [];
 

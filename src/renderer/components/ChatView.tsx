@@ -64,6 +64,7 @@ export const ChatView: React.FC = () => {
   const {
     currentSessionId,
     hasOlderMessages,
+    isLoading: isSessionLoading,
     isLoadingOlder,
     loadOlderMessages,
     setMessages,
@@ -485,7 +486,14 @@ export const ChatView: React.FC = () => {
         {/* Messages - Turn-based trace view */}
         <div className="flex-1 min-h-0 overflow-hidden">
           {projection.turns.length === 0 ? (
-            <EmptyState onSend={handleSendMessage} />
+            // 仅在「已确定当前会话 + 非加载中」时才渲染空状态默认页。
+            // 冷启动初始化（currentSessionId 尚为 null）或会话切换异步加载期间
+            // 渲染空白占位，避免闪现"新会话"默认页（见 switchSession/initializeSessionStore）。
+            currentSessionId && !isSessionLoading ? (
+              <EmptyState onSend={handleSendMessage} />
+            ) : (
+              <div className="h-full" aria-hidden />
+            )
           ) : (
             <TurnBasedTraceView
               projection={projection}

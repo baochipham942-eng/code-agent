@@ -134,3 +134,71 @@ export function buildStagnationStopMessage(matchCount: number, fingerprint?: str
   const fingerprintText = fingerprint ? ` fingerprint=${fingerprint}` : '';
   return `Tool stagnation detected again after warning: ${matchCount} consecutive identical tool+args+result calls${fingerprintText}. Stopping the agent loop to avoid wasting tokens.`;
 }
+
+// ============================================================================
+// Search Spam Detection — 语义重复搜索检测
+//
+// fingerprint stagnation（上面）要求 name+args+result 完全相同才触发，抓的是
+// "同参数打同 URL 拿同响应" 的精确死循环。但还有一种弱模型常见失败模式它抓不到：
+// 模型换着关键词反复搜同一个意图（query 每次都不同 → fingerprint 不同 → 绕过），
+// 每次都嫌结果不满意，原地打转烧 token。
+//   实战 case：2026-06-06 用 mimo 搜 "2026年6月 AI 新闻"，6 次 WebSearch 换词重试，
+//   ~3 分钟才收敛，最后还把 2025 旧闻当最新交付。
+//
+// 这里按"同一检索类工具在滑动窗口内高频出现"（不论 args/result）来检测，命中只
+// 注入一次软提示（不 break loop），引导模型用现有结果作答或如实说明限制。
+// 只对检索类工具敏感，避免误判正常的多次 Edit/Read/Bash。
+// ============================================================================
+
+/** 检索/探索类工具：反复调用通常是"换参数原地打转"而非正常多步推进 */
+export const SEARCH_LIKE_TOOLS = new Set(['WebSearch', 'WebFetch', 'ToolSearch']);
+
+/** 滑动窗口大小（最近多少次 tool call） */
+export const TOOL_SPAM_WINDOW = 6;
+
+/** 同一检索类工具在窗口内出现多少次触发软提示 */
+export const TOOL_SPAM_THRESHOLD = 4;
+
+/**
+ * 把本轮工具名推进窗口，检测是否有检索类工具高频出现（语义重复搜索）。
+ * - recentNames 原地维护（与 recentToolFingerprints 平行）。
+ * - 只统计 SEARCH_LIKE_TOOLS，普通工具计入窗口但不计数（避免误判多次编辑/读取）。
+ */
+export function pushAndDetectToolSpam(
+  recentNames: string[],
+  newToolNames: string[],
+): { detected: boolean; toolName?: string; count: number } {
+  for (const name of newToolNames) {
+    recentNames.push(name);
+    while (recentNames.length > TOOL_SPAM_WINDOW) recentNames.shift();
+  }
+
+  const counts = new Map<string, number>();
+  for (const name of recentNames) {
+    if (SEARCH_LIKE_TOOLS.has(name)) {
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+  }
+
+  for (const [name, count] of counts) {
+    if (count >= TOOL_SPAM_THRESHOLD) {
+      return { detected: true, toolName: name, count };
+    }
+  }
+  return { detected: false, count: 0 };
+}
+
+/** 语义重复搜索的软提示（注入 conversation 让下一轮看见）。措辞温和：建议而非强制。 */
+export function buildToolSpamHint(toolName: string, count: number): string {
+  return (
+    `<repeated-search-detected>\n` +
+    `You have called ${toolName} ${count} times in the last few turns, refining the query each time. ` +
+    `When results keep falling short after several reformulations, it usually means the information is ` +
+    `sparse or doesn't exist as queried — not that the next variation will surface it.\n\n` +
+    `Prefer one of these over yet another search:\n` +
+    `- Answer with the best results you already have, noting any caveats (recency, exact match, source quality).\n` +
+    `- Broaden or simplify the query ONCE, rather than adding more constraints.\n` +
+    `- If the user asked for something that likely doesn't exist (e.g. a too-narrow or future-dated window), say so honestly instead of fabricating a plausible-looking answer.\n` +
+    `</repeated-search-detected>`
+  );
+}

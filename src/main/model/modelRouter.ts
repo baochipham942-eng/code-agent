@@ -83,6 +83,7 @@ import { buildE2ELocalAgentModelResponse, shouldUseE2ELocalAgentModelForMessages
 
 // Re-export PROVIDER_REGISTRY for external use
 export { PROVIDER_REGISTRY };
+import { findCapableModels } from './modelCapabilities';
 export { findCapableModels } from './modelCapabilities';
 export type { ModelCandidate } from './modelCapabilities';
 
@@ -247,6 +248,64 @@ export class ModelRouter {
       baseUrl: providerSettings?.baseUrl,
       maxTokens: fallbackModelInfo?.maxTokens || 1024,
     };
+  }
+
+  /**
+   * 视觉预处理候选模型列表（按优先级排序，无硬编码兜底）。
+   *
+   * 用于「主模型不支持视觉、但用户发了图」的预处理场景：用一个识图模型把图片转成
+   * 文字摘要后继续用主模型回答。候选只来自【用户已配置 API Key】的模型，排序：
+   *   1. 当前 provider 自己的视觉模型（同厂，省去额外配置，如 xiaomi → mimo-v2-omni）
+   *   2. 其它已配置 Key 的 provider 的视觉模型（findCapableModels 已按"有 Key 优先"排序）
+   *
+   * 调用方依次尝试，直到某个成功读图——所以 mimo 自家的 omni 万一不能吃图，会自动
+   * 切到用户配过 Key 的下一个识图模型，而不是写死回退到某个固定 provider。
+   */
+  getVisionPreflightCandidates(originalConfig: ModelConfig): ModelConfig[] {
+    const configService = getConfigService();
+    const seen = new Set<string>();
+    const candidates: ModelConfig[] = [];
+
+    const pushCandidate = (provider: string, modelId: string): void => {
+      const key = `${provider}/${modelId}`;
+      if (seen.has(key)) return;
+
+      const info = this.getModelInfo(provider, modelId);
+      if (!info?.supportsVision) return;
+      // 预处理发的是 base64 截图，排除明确不支持 base64 的视觉模型（如 glm-4.6v-flash）
+      if (info.visionCapabilities?.supportsBase64 === false) return;
+
+      const isSameProvider = provider === originalConfig.provider;
+      const apiKey = configService.getApiKey(provider as ModelProvider)
+        || (isSameProvider ? originalConfig.apiKey : undefined);
+      if (!apiKey) return;
+
+      seen.add(key);
+      candidates.push({
+        ...originalConfig,
+        provider: provider as ModelProvider,
+        model: modelId,
+        apiKey,
+        // 跨 provider 用对应 provider 的 baseUrl（未配置则 undefined，provider 自行回退默认端点）；
+        // 同 provider 沿用原始 baseUrl，避免误用别家端点。
+        baseUrl: isSameProvider
+          ? originalConfig.baseUrl
+          : this.getProviderSettings(provider as ModelProvider)?.baseUrl,
+        maxTokens: info.maxTokens || 1024,
+      });
+    };
+
+    // 1. 同 provider 视觉模型优先
+    const sameProvider = PROVIDER_REGISTRY[originalConfig.provider];
+    if (sameProvider) {
+      for (const model of sameProvider.models) pushCandidate(originalConfig.provider, model.id);
+    }
+    // 2. 其它已配置 Key 的 provider 视觉模型
+    for (const candidate of findCapableModels('vision')) {
+      pushCandidate(candidate.provider, candidate.model);
+    }
+
+    return candidates;
   }
 
   private getProviderSettings(provider: ModelProvider): ModelProviderSettings | undefined {

@@ -25,7 +25,12 @@ import {
   MODEL_API_ENDPOINTS,
   ZHIPU_VISION_MODEL,
   MODEL_MAX_TOKENS,
+  DEFAULT_PROVIDER,
+  DEFAULT_MODELS,
 } from '../../../../shared/constants';
+import { ModelRouter } from '../../../model/modelRouter';
+import type { ModelConfig, ModelProvider } from '../../../../shared/contract/model';
+import type { ModelMessage } from '../../../model/types';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { imageAnalyzeSchema as schema } from './imageAnalyze.schema';
 
@@ -161,18 +166,82 @@ async function callZhipuVision(
   return result.success ? result.data.choices[0]?.message?.content || '' : '';
 }
 
+/**
+ * 用「用户已配置 Key 的识图模型」分析图片（无硬编码）。
+ * 候选顺序由 ModelRouter.getVisionPreflightCandidates 决定：同 provider 视觉模型
+ * （如 xiaomi → mimo-v2-omni）优先，其次其它配过 Key 的视觉模型（claude / gpt-4o 等）。
+ * 依次尝试，第一个成功返回；全失败返回 null，由调用方退回 zhipu/openrouter 兜底。
+ */
+async function analyzeViaConfiguredVisionModels(
+  router: ModelRouter,
+  candidates: ModelConfig[],
+  base64Image: string,
+  mimeType: string,
+  prompt: string,
+  outerSignal: AbortSignal,
+  logger: ToolContext['logger'],
+): Promise<string | null> {
+  for (const cfg of candidates) {
+    if (outerSignal.aborted) throw new Error('aborted');
+    try {
+      const messages: ModelMessage[] = [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64Image } },
+          ],
+        },
+      ];
+      const resp = await router.inference(
+        messages,
+        [],
+        { ...cfg, adaptive: false, maxTokens: Math.min(cfg.maxTokens || 1024, 2048) },
+        undefined,
+        outerSignal,
+      );
+      const content = (resp.content || '').trim();
+      if (content) {
+        logger.info(`[image_analyze] 使用 ${cfg.provider}/${cfg.model} 完成图片分析`);
+        return content;
+      }
+    } catch (error: unknown) {
+      if (outerSignal.aborted) throw error;
+      logger.warn(`[image_analyze] 视觉模型 ${cfg.provider}/${cfg.model} 失败，尝试下一个`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return null;
+}
+
 async function analyzeImage(
   imagePath: string,
   prompt: string,
   detail: 'low' | 'high',
   outerSignal: AbortSignal,
   logger: ToolContext['logger'],
+  router: ModelRouter,
+  visionCandidates: ModelConfig[],
 ): Promise<string> {
   const imageData = await fsPromises.readFile(imagePath);
   const base64Image = imageData.toString('base64');
   const ext = path.extname(imagePath).toLowerCase();
   const mimeType = MIME_TYPES[ext] || 'image/jpeg';
 
+  // 1. 优先用用户已配置的识图模型（mimo-omni / claude 等），无硬编码
+  const viaConfigured = await analyzeViaConfiguredVisionModels(
+    router,
+    visionCandidates,
+    base64Image,
+    mimeType,
+    prompt,
+    outerSignal,
+    logger,
+  );
+  if (viaConfigured) return viaConfigured;
+
+  // 2. 兜底：zhipu GLM-4.6V → OpenRouter Gemini（仅当用户配了对应 Key）
   const configService = getConfigService();
 
   const zhipuApiKey = configService.getApiKey('zhipu');
@@ -228,7 +297,7 @@ async function analyzeImage(
     }
   }
 
-  throw new Error('所有视觉 API 均不可用。请在设置中配置智谱或 OpenRouter API Key。');
+  throw new Error('所有视觉模型均不可用。请在设置中配置任一支持视觉的模型（如小米 MiMo Omni、Claude、智谱 GLM-V 或 OpenRouter）的 API Key。');
 }
 
 async function checkImageMatch(
@@ -237,11 +306,13 @@ async function checkImageMatch(
   detail: 'low' | 'high',
   outerSignal: AbortSignal,
   logger: ToolContext['logger'],
+  router: ModelRouter,
+  visionCandidates: ModelConfig[],
 ): Promise<boolean> {
   const prompt = `判断这张图片是否符合以下条件：「${filter}」
 
 请只回答 YES 或 NO，不要其他内容。`;
-  const response = await analyzeImage(imagePath, prompt, detail, outerSignal, logger);
+  const response = await analyzeImage(imagePath, prompt, detail, outerSignal, logger, router, visionCandidates);
   return response.trim().toUpperCase().includes('YES');
 }
 
@@ -306,6 +377,14 @@ export async function executeImageAnalyze(
 
   const startTime = Date.now();
 
+  // 视觉模型候选（用户已配置 Key 的识图模型，同 provider 优先），整次调用复用一份
+  const router = new ModelRouter();
+  const ctxModelConfig = ctx.modelConfig as ModelConfig | undefined;
+  const visionBaseConfig: ModelConfig = ctxModelConfig?.provider
+    ? ctxModelConfig
+    : { provider: DEFAULT_PROVIDER as ModelProvider, model: DEFAULT_MODELS.chat, maxTokens: 2048 };
+  const visionCandidates = router.getVisionPreflightCandidates(visionBaseConfig);
+
   try {
     if (singlePath) {
       const absPath = path.isAbsolute(singlePath)
@@ -343,7 +422,7 @@ export async function executeImageAnalyze(
         message: `🔍 正在分析图片: ${path.basename(absPath)}`,
       } as never);
 
-      const content = await analyzeImage(absPath, prompt, detail, ctx.abortSignal, ctx.logger);
+      const content = await analyzeImage(absPath, prompt, detail, ctx.abortSignal, ctx.logger, router, visionCandidates);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
       onProgress?.({ stage: 'completing', percent: 100 });
@@ -401,6 +480,8 @@ export async function executeImageAnalyze(
               detail,
               ctx.abortSignal,
               ctx.logger,
+              router,
+              visionCandidates,
             );
             return { path: imgPath, success: true, matched };
           } catch (error: unknown) {

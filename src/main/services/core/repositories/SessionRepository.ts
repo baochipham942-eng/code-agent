@@ -197,6 +197,22 @@ export class SessionRepository {
     const now = Date.now();
     const createdAt = this.normalizeTimestamp(data.createdAt, now);
     const updatedAt = this.normalizeTimestamp(data.updatedAt, createdAt);
+    // 云端同步（syncOrigin='remote'）走幂等 upsert：本地可能已存在同 id 但 user_id 为
+    // NULL/不同（按 owner 过滤的 getSession 查不到 → 误判为不存在），纯 INSERT 会撞主键
+    // UNIQUE 报错且每轮同步刷屏，这些会话也永远认领不到当前用户 → 列表里不显示。
+    // 冲突时校准 user_id（认领归属）+ 云端元数据，保留 created_at 与本地专属字段。
+    // 非同步的本地新建仍走严格 INSERT（id 总是新生成，撞 id 视为真 bug 应暴露）。
+    const conflictClause = options?.syncOrigin === 'remote'
+      ? `ON CONFLICT(id) DO UPDATE SET
+            user_id = excluded.user_id,
+            title = excluded.title,
+            model_provider = excluded.model_provider,
+            model_name = excluded.model_name,
+            working_directory = excluded.working_directory,
+            updated_at = excluded.updated_at,
+            is_deleted = excluded.is_deleted,
+            synced_at = excluded.synced_at`
+      : '';
     const stmt = this.db.prepare(`
         INSERT INTO sessions (
           id, user_id, title, model_provider, model_name, working_directory,
@@ -204,6 +220,7 @@ export class SessionRepository {
           created_at, updated_at, is_deleted, synced_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ${conflictClause}
     `);
 
     stmt.run(id, data.userId ?? null, data.title, data.modelConfig.provider, data.modelConfig.model, data.workingDirectory || null, data.type || 'chat', data.origin ? JSON.stringify(data.origin) : null, data.parentSessionId || null, data.sourceRunId || null, data.engine ? JSON.stringify(normalizeAgentEngineSession(data.engine)) : null, data.readOnly ? 1 : 0, data.retryOfSessionId || null, createdAt, updatedAt, data.isDeleted ? 1 : 0, this.resolveSyncedAt(options));

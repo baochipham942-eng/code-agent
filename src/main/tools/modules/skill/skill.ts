@@ -215,6 +215,71 @@ async function handleForkExecution(
 }
 
 // ----------------------------------------------------------------------------
+// Skill 名称兜底解析
+//
+// 模型经常把 skill 名记串（例如调用并不存在的 "context"，本意是 context7 或
+// context-manifest-pattern）。精确匹配失败时：
+//   1. 先做大小写归一 + frontmatter alias 匹配，命中即直接复用，无需模型重试；
+//   2. 仍无命中则用编辑距离挑出最接近的候选，回传精简的 "did you mean" 而不是
+//      把全部 90+ skill 名甩回去（既省 token，又能引导模型下一轮自我纠正）。
+// ----------------------------------------------------------------------------
+
+function normalizeSkillName(name: string): string {
+  return name.trim().toLowerCase().replace(/^\/+/, '');
+}
+
+/** 编辑距离（Levenshtein），用于拼写近似建议 */
+function skillEditDistance(a: string, b: string): number {
+  const dp: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
+  );
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+/** 通过大小写归一或 frontmatter alias 精确解析 skill（命中即可安全复用）。导出供单测覆盖。 */
+export function resolveSkillByNameOrAlias(
+  command: string,
+  enabledSkills: ParsedSkill[],
+): ParsedSkill | undefined {
+  const target = normalizeSkillName(command);
+  if (!target) return undefined;
+  for (const skill of enabledSkills) {
+    if (normalizeSkillName(skill.name) === target) return skill;
+    const aliases = skill.aliases ?? [];
+    if (aliases.some((alias) => normalizeSkillName(alias) === target)) return skill;
+  }
+  return undefined;
+}
+
+/** 返回与 command 最接近的若干 skill 名（子串优先，其次编辑距离 ≤ 3）。导出供单测覆盖。 */
+export function suggestClosestSkills(
+  command: string,
+  enabledSkills: ParsedSkill[],
+  limit = 5,
+): string[] {
+  const target = normalizeSkillName(command);
+  if (!target) return [];
+  const scored = enabledSkills
+    .map((skill) => {
+      const name = normalizeSkillName(skill.name);
+      const contains = name.includes(target) || target.includes(name);
+      const distance = skillEditDistance(target, name);
+      // 子串匹配给最高优先级（rank 0），其余按编辑距离排序
+      return { name: skill.name, rank: contains ? 0 : distance };
+    })
+    .filter((s) => s.rank <= 3)
+    .sort((a, b) => a.rank - b.rank);
+  return scored.slice(0, limit).map((s) => s.name);
+}
+
+// ----------------------------------------------------------------------------
 // Native execute
 // ----------------------------------------------------------------------------
 
@@ -259,35 +324,46 @@ export async function executeSkill(
     };
   }
 
-  const skill = discoveryService.getSkill(command);
+  let skill = discoveryService.getSkill(command);
+  let resolvedCommand = command;
   if (!skill) {
-    const available = discoveryService
+    const enabledSkills = discoveryService
       .getAllSkills()
-      .filter((s) => discoveryService.isSkillEnabled(s.name))
-      .map((s) => s.name)
-      .join(', ');
-    return {
-      ok: false,
-      error: `Unknown skill: ${command}. Available skills: ${available || 'none'}`,
-      code: 'INVALID_ARGS',
-    };
+      .filter((s) => discoveryService.isSkillEnabled(s.name));
+    // 兜底解析：大小写归一 / alias 命中则直接复用，避免一次无谓的模型重试
+    const resolved = resolveSkillByNameOrAlias(command, enabledSkills);
+    if (resolved) {
+      ctx.logger.info('Skill 名称经兜底解析命中', { requested: command, resolved: resolved.name });
+      skill = resolved;
+      resolvedCommand = resolved.name;
+    } else {
+      const suggestions = suggestClosestSkills(command, enabledSkills);
+      const hint = suggestions.length
+        ? `最接近的可用 skill：${suggestions.join(', ')}`
+        : '当前没有可用 skill';
+      return {
+        ok: false,
+        error: `Unknown skill: ${command}。${hint}（完整列表见 设置 → Skills）`,
+        code: 'INVALID_ARGS',
+      };
+    }
   }
 
   // 全局禁用闸控：被禁用的 skill 对模型和用户都不可调用
-  if (!discoveryService.isSkillEnabled(command)) {
+  if (!discoveryService.isSkillEnabled(resolvedCommand)) {
     return {
       ok: false,
-      error: `Skill "${command}" 已在设置中被禁用。可在 设置 → Skills 中重新启用。`,
+      error: `Skill "${resolvedCommand}" 已在设置中被禁用。可在 设置 → Skills 中重新启用。`,
       code: 'SKILL_DISABLED',
     };
   }
 
-  if (!isSkillCommandAllowedByWorkbenchScope(command, ctx.toolScope)) {
+  if (!isSkillCommandAllowedByWorkbenchScope(resolvedCommand, ctx.toolScope)) {
     return {
       ok: false,
-      error: `Skill "${command}" is blocked by the current workbench scope.`,
+      error: `Skill "${resolvedCommand}" is blocked by the current workbench scope.`,
       code: 'WORKBENCH_SCOPE_DENIED',
-      meta: { blockedSkill: command },
+      meta: { blockedSkill: resolvedCommand },
     };
   }
 

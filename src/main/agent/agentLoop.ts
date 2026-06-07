@@ -262,6 +262,8 @@ export class AgentLoop {
       // Stagnation detection
       recentToolFingerprints: [],
       stagnationWarningEmitted: false,
+      recentToolNames: [],
+      searchSpamWarningEmitted: false,
 
       // Ground-truth gate
       antiScrapingHitsInRun: 0,

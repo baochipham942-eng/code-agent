@@ -184,6 +184,11 @@ export interface RuntimeContext {
   recentToolFingerprints: string[];
   stagnationWarningEmitted: boolean;
 
+  // 最近 N 次工具调用的工具名（与 recentToolFingerprints 平行）。
+  // 用于检测"语义重复搜索"：同一检索类工具高频出现（换词重搜同一意图）。
+  recentToolNames: string[];
+  searchSpamWarningEmitted: boolean;
+
   // --- Ground-truth gate ---
   // 本次 run 中 tool result 命中反爬指纹的次数。finalize 时如果用户消息含 URL
   // 且此计数 >= 阈值，给最终 assistant_response 加一个 disclaimer，避免幻觉伪造

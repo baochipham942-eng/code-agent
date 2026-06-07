@@ -17,6 +17,8 @@ import { useSkillStore } from '../../../../stores/skillStore';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useModeStore } from '../../../../stores/modeStore';
 import { usePermissionStore } from '../../../../stores/permissionStore';
+import { useStatusStore } from '../../../../stores/statusStore';
+import { MODEL_PRICING_PER_1M } from '@shared/constants';
 import { initializeCommands, getCommandRegistry } from '@shared/commands';
 import type { CommandDefinition } from '@shared/commands';
 import { generateMessageId } from '@shared/utils/id';
@@ -30,6 +32,27 @@ function ensureExtensionMutation(result: ExtensionMutationResult | undefined): v
   if (!result?.success) {
     throw new Error(result?.error || 'Extension operation failed');
   }
+}
+
+// 诊断命令格式化 helper（与 newCommands.ts 的 CLI 版对齐）
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+function fmtCost(n: number): string {
+  return `$${n.toFixed(3)}`;
+}
+// 把诊断命令的文本输出写进聊天流（assistant 消息）。运行时取 store，不增加 useMemo 依赖。
+// 用代码块包裹：诊断输出是等宽对齐文本，且含 $ 金额（会被 markdown 当 LaTeX 渲染）、
+// 路径等特殊字符——代码块既保证等宽对齐，又屏蔽 markdown/KaTeX 干扰。
+function writeAssistant(content: string): void {
+  useSessionStore.getState().addMessage({
+    id: generateMessageId(),
+    role: 'assistant',
+    content: '```\n' + content + '\n```',
+    timestamp: Date.now(),
+  });
 }
 
 interface SlashCommand {
@@ -300,6 +323,226 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       icon: <LockOpen className="w-4 h-4" />,
       action: () => setGlobalMode('full_access'),
     },
+    // --- 诊断命令（GUI 实现）---
+    // 这些命令的 CLI handler 依赖 main 进程模块/agent 实例，在 renderer 跑会报错或吐兜底。
+    // 这里用 renderer store + 现成 IPC + diagnostics domain 取真实数据重新实现。
+    {
+      id: 'context',
+      label: 'Context',
+      description: '查看上下文窗口使用情况',
+      icon: <BarChart2 className="w-4 h-4" />,
+      action: async () => {
+        const health = useAppStore.getState().contextHealth;
+        if (!health || health.currentTokens === 0) {
+          writeAssistant('Context data not yet available (send a message first)');
+          return;
+        }
+        const pct = (n: number) => health.currentTokens > 0 ? ((n / health.currentTokens) * 100).toFixed(1) : '0';
+        const lines = [
+          'Context',
+          `  Usage:    ${health.currentTokens.toLocaleString('en-US')} / ${health.maxTokens.toLocaleString('en-US')} tokens (${health.usagePercent.toFixed(1)}%)`,
+          `  System:   ${health.breakdown.systemPrompt.toLocaleString('en-US')} tokens (${pct(health.breakdown.systemPrompt)}%)`,
+          `  Messages: ${health.breakdown.messages.toLocaleString('en-US')} tokens (${pct(health.breakdown.messages)}%)`,
+          `  Tools:    ${health.breakdown.toolResults.toLocaleString('en-US')} tokens (${pct(health.breakdown.toolResults)}%)`,
+          `  Turns:    ~${health.estimatedTurnsRemaining} remaining`,
+        ];
+        try {
+          const c = await invokeDomain<{ compressionCount: number; totalSavedTokens: number }>(IPC_DOMAINS.DIAGNOSTICS, 'compression');
+          if (c.compressionCount > 0) {
+            lines.push(`  Compressed: ${c.compressionCount} times, saved ${c.totalSavedTokens.toLocaleString('en-US')} tokens`);
+          }
+        } catch { /* compression stats optional */ }
+        writeAssistant(lines.join('\n'));
+      },
+    },
+    {
+      id: 'status',
+      label: '状态',
+      description: '查看当前会话状态',
+      icon: <BarChart2 className="w-4 h-4" />,
+      action: () => {
+        const app = useAppStore.getState();
+        const status = useStatusStore.getState();
+        const sessionId = useSessionStore.getState().currentSessionId ?? 'N/A';
+        const total = status.inputTokens + status.outputTokens;
+        const health = app.contextHealth;
+        const contextLine = health && health.currentTokens > 0
+          ? `\n  Context:  ${health.usagePercent.toFixed(1)}% (~${health.estimatedTurnsRemaining} turns remaining)`
+          : '';
+        const costLine = status.sessionCost > 0 ? ` (${fmtCost(status.sessionCost)})` : '';
+        writeAssistant(
+          `Status\n` +
+          `  Model:    ${app.modelConfig.provider}/${app.modelConfig.model}\n` +
+          `  Session:  ${sessionId}\n` +
+          `  Tokens:   ${total > 0 ? fmtTokens(total) : 'N/A'}${costLine}${contextLine}`
+        );
+      },
+    },
+    {
+      id: 'cost',
+      label: 'Cost',
+      description: '查看当前会话的 token 用量和成本',
+      icon: <BarChart2 className="w-4 h-4" />,
+      action: async () => {
+        const app = useAppStore.getState();
+        const status = useStatusStore.getState();
+        const pricing = MODEL_PRICING_PER_1M[app.modelConfig.model] || MODEL_PRICING_PER_1M['default'];
+        const inputCost = (status.inputTokens * pricing.input) / 1_000_000;
+        const outputCost = (status.outputTokens * pricing.output) / 1_000_000;
+        const lines = [
+          'Cost (session)',
+          `  Model:    ${app.modelConfig.provider}/${app.modelConfig.model}`,
+          `  Input:    ${fmtTokens(status.inputTokens)} tokens (${fmtCost(inputCost)})`,
+          `  Output:   ${fmtTokens(status.outputTokens)} tokens (${fmtCost(outputCost)})`,
+          `  Total:    ${fmtCost(inputCost + outputCost)}`,
+        ];
+        try {
+          const b = await invokeDomain<{ currentCost: number; maxBudget: number; usagePercentage: number }>(IPC_DOMAINS.DIAGNOSTICS, 'budget');
+          if (b.maxBudget > 0) {
+            lines.push(`  Budget:   ${fmtCost(b.currentCost)} / ${fmtCost(b.maxBudget)} (${b.usagePercentage.toFixed(1)}%)`);
+          }
+        } catch { /* budget optional */ }
+        writeAssistant(lines.join('\n'));
+      },
+    },
+    {
+      id: 'agents',
+      label: 'Agent 列表',
+      description: '查看历史 Agent 记录',
+      icon: <Terminal className="w-4 h-4" />,
+      action: async () => {
+        const lines: string[] = ['最近完成'];
+        try {
+          const history = await invoke(IPC_CHANNELS.SWARM_GET_AGENT_HISTORY, { limit: 10 });
+          if (!history || history.length === 0) {
+            lines.push('  (无历史记录)');
+          } else {
+            for (const run of history) {
+              const icon = run.status === 'completed' ? '✓' : run.status === 'failed' ? '✗' : '○';
+              const duration = run.durationMs < 1000 ? `${run.durationMs}ms` : `${(run.durationMs / 1000).toFixed(1)}s`;
+              const tokens = run.tokenUsage.input + run.tokenUsage.output;
+              const tokenStr = tokens > 0 ? `  ${fmtTokens(tokens)} tok` : '';
+              lines.push(`  ${icon} ${run.name} (${run.role})  ${run.status}  ${duration}${tokenStr}`);
+            }
+          }
+        } catch (err) {
+          lines.push(`  (无法获取: ${err instanceof Error ? err.message : String(err)})`);
+        }
+        lines.push('', '运行中的实时状态见任务面板 / DAG 视图');
+        writeAssistant(lines.join('\n'));
+      },
+    },
+    {
+      id: 'hooks',
+      label: 'Hooks',
+      description: '查看 Hook 配置',
+      icon: <Zap className="w-4 h-4" />,
+      action: async () => {
+        try {
+          const summary = await invokeDomain<{
+            enabled: Array<{ event: string; sources: string[] }>;
+            unused: Array<{ event: string }>;
+          }>(IPC_DOMAINS.HOOK, 'list');
+          const lines: string[] = ['Hook Configurations:'];
+          if (!summary.enabled || summary.enabled.length === 0) {
+            lines.push('  (no hooks configured)');
+          } else {
+            for (const item of summary.enabled) {
+              lines.push(`  ${item.event}: ${item.sources.join(', ')}`);
+            }
+          }
+          writeAssistant(lines.join('\n'));
+        } catch (err) {
+          writeAssistant(`❌ Hooks 查询失败：${err instanceof Error ? err.message : String(err)}`);
+        }
+      },
+    },
+    {
+      id: 'permissions',
+      label: 'Permissions',
+      description: '查看安全决策链状态',
+      icon: <Lock className="w-4 h-4" />,
+      action: async () => {
+        const mode = usePermissionStore.getState().globalMode;
+        const lines: string[] = ['Permissions', `  Mode:     ${mode}`, ''];
+        try {
+          const ep = await invokeDomain<{ rules: Array<{ pattern: string[]; decision: string; source: string }> }>(IPC_DOMAINS.DIAGNOSTICS, 'execPolicy');
+          lines.push(`  Exec Policy (${ep.rules.length} rules):`);
+          if (ep.rules.length === 0) {
+            lines.push('    (no rules learned yet)');
+          } else {
+            for (const rule of ep.rules.slice(0, 15)) {
+              lines.push(`    ${(rule.pattern.join(' ') + ' *').padEnd(24)} → ${rule.decision}  (${rule.source})`);
+            }
+            if (ep.rules.length > 15) lines.push(`    ... and ${ep.rules.length - 15} more`);
+          }
+        } catch {
+          lines.push('  Exec Policy: (not available)');
+        }
+        lines.push('');
+        try {
+          const dh = await invokeDomain<{ total: number; recent: Array<{ toolName: string; summary: string; outcome: string; reason: string; durationMs: number }> }>(IPC_DOMAINS.DIAGNOSTICS, 'decisions');
+          lines.push(`  Recent Decisions (${dh.total} total, showing last ${dh.recent.length}):`);
+          if (dh.recent.length === 0) {
+            lines.push('    (no decisions yet)');
+          } else {
+            for (const e of dh.recent) {
+              lines.push(`    ${e.toolName}(${e.summary.substring(0, 40)}) → ${e.outcome}  (${e.reason}, ${e.durationMs}ms)`);
+            }
+          }
+        } catch {
+          lines.push('  Recent Decisions: (not available)');
+        }
+        writeAssistant(lines.join('\n'));
+      },
+    },
+    // --- 老 registry 命令的 GUI 实现（原 handler 依赖未注入的 ctx.agent，GUI 会报 "Agent not available"）---
+    {
+      id: 'model',
+      label: '模型',
+      description: '查看或切换当前模型',
+      icon: <Cpu className="w-4 h-4" />,
+      action: () => {
+        const mc = useAppStore.getState().modelConfig;
+        writeAssistant(`当前模型: ${mc.provider}/${mc.model}\n\n（切换模型用输入框下方的模型按钮）`);
+      },
+    },
+    {
+      id: 'compact',
+      label: '压缩上下文',
+      description: '手动触发上下文压缩',
+      icon: <Zap className="w-4 h-4" />,
+      action: () => {
+        const count = useSessionStore.getState().messages.length;
+        if (count < 4) {
+          writeAssistant('Too few messages to compact');
+          return;
+        }
+        const health = useAppStore.getState().contextHealth;
+        const ctxLine = health && health.currentTokens > 0
+          ? `\n当前上下文 ${health.usagePercent.toFixed(1)}%（${health.currentTokens.toLocaleString('en-US')} tokens）。`
+          : '';
+        writeAssistant(`当前会话 ${count} 条消息。${ctxLine}\n上下文压缩会在接近窗口上限时自动触发，无需手动干预。`);
+      },
+    },
+    {
+      id: 'config',
+      label: '配置',
+      description: '查看当前配置',
+      icon: <Settings className="w-4 h-4" />,
+      action: () => {
+        const mc = useAppStore.getState().modelConfig;
+        const wd = useStatusStore.getState().workingDirectory ?? 'N/A';
+        const sid = useSessionStore.getState().currentSessionId ?? '未创建';
+        writeAssistant(
+          `当前配置\n` +
+          `  工作目录: ${wd}\n` +
+          `  模型: ${mc.model}\n` +
+          `  提供商: ${mc.provider}\n` +
+          `  会话 ID: ${sid}`
+        );
+      },
+    },
   ], [
     createSession, clearCurrentSession, archiveSession, currentSessionId,
     setShowSettings, setShowDAGPanel, showDAGPanel,
@@ -399,24 +642,33 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
+    // 捕获阶段注册：抢在 textarea 的 React onKeyDown（委托到 root，冒泡阶段）之前
+    // 处理导航键，并 stopPropagation 阻止事件继续向下到达 textarea 的提交逻辑。
+    // 否则 Enter 会先被 handleSubmit 当普通消息发出（命令打字+回车失效，只能鼠标点）。
+    // 仅在命中导航键时拦截：无匹配命令（filtered[selectedIndex] 不存在）时 Enter 放行，
+    // 让 textarea 正常发送以 "/" 开头但非命令的消息。
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex(prev => (prev < filtered.length - 1 ? prev + 1 : 0));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex(prev => (prev > 0 ? prev - 1 : filtered.length - 1));
       } else if (e.key === 'Enter' && filtered[selectedIndex]) {
         e.preventDefault();
+        e.stopPropagation();
         onSelect(filtered[selectedIndex]);
       } else if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
         onClose();
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [isOpen, filtered, selectedIndex, onSelect, onClose]);
 
   // Scroll selected into view

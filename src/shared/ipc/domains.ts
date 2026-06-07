@@ -43,6 +43,7 @@ export const IPC_DOMAINS = {
   OPENCHRONICLE: 'domain:openchronicle', // 屏幕记忆（外部 OpenChronicle daemon 集成）
   PROMPT: 'domain:prompt', // 提示词管理（查看 + override）
   HOOK: 'domain:hook', // Hook 管理（列出已启用/未启用 + 打开配置）
+  DIAGNOSTICS: 'domain:diagnostics', // 诊断单例数据（exec policy / 决策历史 / budget / 压缩统计）供 GUI 命令查询
   AGENT_REGISTRY: 'domain:agents', // 自定义 Agent 注册中心（builtin + user + project）
   ROLES: 'domain:roles', // 持久化角色资产（角色面板：列表/详情/记忆删改）
   PROJECT: 'domain:project', // P0-2 项目空间容器（项目/目标/角色入驻/产物聚合）

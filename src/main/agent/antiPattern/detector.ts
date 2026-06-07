@@ -252,11 +252,11 @@ export class AntiPatternDetector {
 
     return (
       `<critical-warning>\n` +
-      `WARNING: You have performed ${this.state.consecutiveReadOps} read operations without creating any files!\n` +
-      `The likely issue is evidence drift: previously observed file content is being lost in context.\n` +
-      `1. STOP reading the same material again\n` +
-      `2. Use the already observed line-numbered evidence to answer or make the next concrete edit\n` +
-      `3. If a specific line range is missing, read only that narrow offset/limit range once\n` +
+      `WARNING: You have performed ${this.state.consecutiveReadOps} read/search operations without producing an answer!\n` +
+      `The likely issue is evidence drift: previously observed file or search content is being lost in context.\n` +
+      `1. STOP reading or re-searching the same material again\n` +
+      `2. Use the evidence you have ALREADY gathered to answer now, or make the next concrete edit\n` +
+      `3. If a specific detail is missing, fetch only that one narrow item once\n` +
       `</critical-warning>`
     );
   }
@@ -265,7 +265,7 @@ export class AntiPatternDetector {
    * Generate error message for hard limit reached
    */
   generateHardLimitError(): string {
-    return `操作已被系统中止：检测到无限循环（连续 ${this.state.consecutiveReadOps} 次只读操作）。请基于已经获取到的文件证据直接输出结论；如果关键证据缺失，明确说明缺失，不要继续换工具重读。`;
+    return `操作已被系统中止：检测到无限循环（连续 ${this.state.consecutiveReadOps} 次只读操作，含文件读取与联网搜索）。请基于已经获取到的文件或搜索证据直接输出结论；如果关键证据缺失，明确说明缺失，不要继续换关键词重搜或换工具重读。`;
   }
 
   // --------------------------------------------------------------------------

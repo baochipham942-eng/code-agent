@@ -1024,3 +1024,32 @@ node dist/cli/index.cjs list-tools > /dev/null; echo $?   # EXIT=0
 4. **副作用类工具的 shadow 设计未定**：Write/Edit 直接跑 shadow 会重复改文件。计划用 dry-run 模式（POC Write 只验证 args + 落 staging file，对比内容不写主路径），但需要先和 ctx.fileCache 的语义对齐再实现。
 
 **通用规则**：shadow compare 不要求 outputMatch=true，要求的是 legacy 和 shadow 都有结果落盘——`outputMatch=false` 是预期信号，告诉迁移时 POC 还差什么。把 `data/debug/tool-shadow-diff.jsonl` 当 migration backlog 看。
+
+---
+
+## Renderer Bundle 发布连环失败：capability 白名单双源漂移 (2026-06-07)
+
+**症状**: v0.16.96 发版当天，`Publish Renderer Bundle (hot update)` 和 `Build and Release` 在 main/tag 上连环失败 5+ 次（08:07→09:21），但所有 PR check 都是绿的。最终靠 commit `ef6d81f33` 补一行注册才修好，紧接着 bump v0.16.97 全绿发布成功。
+
+**根因**: capability 白名单**双真值源漂移**。
+- renderer 代码新增了 `domain:diagnostics/{budget,compression,decisions,execPolicy}`、`domain:hook/list` 几个 shell capability。
+- 发布期 `scripts/build-renderer-bundle.mjs` 的 `buildRendererBundleManifest` 把 detected capabilities 校验против `src/main/shellCapabilities.ts`（`getShellCapabilityIds()`），漏注册即抛 `unsupported shell capabilities`。
+- **但 PR 阶段的 `renderer-capability-diff` job 校验的是 `src/shared/ipc/domains.ts`，是另一份文件**。新 capability 进了 `domains.ts`（PR 绿灯）却漏了 `shellCapabilities.ts`（发布才炸）。
+- 失败信号又被同期的 Node20→24 + actions v5 升级噪音放大，难归因。
+
+**修复（已落地，方案2 左移）**: `.github/workflows/renderer-bundle.yml` 新增 PR-only job `renderer-bundle-dry-run`，用 `npm run release:renderer-bundle -- --dry-run` 跑与 publish **完全相同**的 `buildRendererBundleManifest` 校验。dry-run 无需控制面签名 key、不上传 OSS，但完整执行 vite build → 容量检测 → capability 校验。漏注册当场红灯，到不了 main。
+
+**验证（已做反向证明）**:
+```bash
+VERSION="$(node -p "require('./package.json').version")"
+# 正向：当前 HEAD 应 PASS → "182 required (182 detected)" + 生成 manifest
+npm run release:renderer-bundle -- --version "$VERSION" --bundle-base-url https://dry-run.invalid/renderer --dry-run
+# 反向：退回修复前的 shellCapabilities.ts，应 FAIL → unsupported shell capabilities: domain:diagnostics/budget,...
+git show 0a6d15c40:src/main/shellCapabilities.ts > src/main/shellCapabilities.ts && npm run release:renderer-bundle -- ... --dry-run  # 抛错；记得 git checkout 还原
+```
+
+**通用规则**:
+1. **同一约束有两份真值源时，CI 必须断言两份一致**，或单源派生。本例理想终态是 `shellCapabilities.ts` 与 `domains.ts` 的 capability 集合用一个 CI 断言锁死，新增漏同步即红灯。
+2. **PR 阶段必须跑发布期会跑的同款致命校验**（左移）。任何"只在 push/tag 暴露、PR 测不到"的 gate 都是事故温床——把它以 dry-run 形式搬到 PR。
+3. **基建升级（runtime/actions 版本）与功能发版分开 PR**，避免失败信号互相污染、归因困难。
+4. 后续可加：renderer-bundle / build workflow 的 `concurrency` group 自动取消被顶掉的旧 run，减少无效失败邮件。

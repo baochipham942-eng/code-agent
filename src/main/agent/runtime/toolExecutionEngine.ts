@@ -27,8 +27,6 @@ import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
 import { validateToolArgs } from './toolArgsValidator';
 import { getToolDefinitionWithCloudMeta } from '../../tools/dispatch/toolDefinitions';
 import { MAX_PARALLEL_TOOLS } from '../../agent/loopTypes';
-import { getDiffTracker } from '../../services/diff/diffTracker';
-import type { ToolExecutionResult } from '../../tools/types';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
@@ -50,12 +48,11 @@ import {
   captureArtifactRepairRollbackSnapshot,
   enforceArtifactRepairGuard,
   enforceArtifactRepairRepeatedPatchGuard,
-  getModifiedFilePath,
-  isFileMutationTool,
 } from './toolArtifactRepairPolicy';
 import { maybeRepairArtifactContractEditAnchors } from './toolArtifactContractAnchors';
 import { handleModifiedArtifactValidation } from './toolArtifactValidationLifecycle';
 import { handleToolResultBookkeeping } from './toolResultLifecycle';
+import { trackFileMutationSideEffects } from './toolFileMutationTracking';
 import { applySwarmBudgetClamp, recordSwarmSpend } from './swarmGoalIntegration';
 import {
   activateForceFinalResponse,
@@ -757,7 +754,12 @@ export class ToolExecutionEngine {
       }
 
       // P3 Nudge / E3 diff：文件改动副作用跟踪（已抽取为 trackFileMutationSideEffects，行为不变）
-      await this.trackFileMutationSideEffects(toolCall, normalizedResult, toolResult);
+      await trackFileMutationSideEffects({
+        ctx: this.ctx,
+        toolCall,
+        normalizedResult,
+        toolResult,
+      });
 
       await handleModifiedArtifactValidation({
         ctx: this.ctx,
@@ -1040,77 +1042,6 @@ export class ToolExecutionEngine {
 
 
       return toolResult;
-    }
-  }
-
-  // --------------------------------------------------------------------------
-  /**
-   * 工具执行成功后的文件改动副作用跟踪（P3 Nudge 完成度跟踪 + E3 diff 计算）。
-   * 纯副作用、不影响控制流；从 executeSingleTool 内联块抽取，行为保持不变。
-   */
-  private async trackFileMutationSideEffects(
-    toolCall: ToolCall,
-    normalizedResult: ToolExecutionResult,
-    toolResult: ToolResult,
-  ): Promise<void> {
-    // P3 Nudge: Track modified files for completion checking
-    if (isFileMutationTool(toolCall.name) && normalizedResult.success) {
-      const filePath = getModifiedFilePath(toolCall);
-      if (filePath) {
-        this.ctx.nudgeManager.trackModifiedFile(filePath);
-
-        // Mark as agent-modified to avoid false external change alerts
-        try {
-          const { getFileWatcherService } = await import('../../services/git/fileWatcherService');
-          const path = await import('path');
-          const absolutePath = path.default.isAbsolute(filePath)
-            ? filePath
-            : path.default.resolve(this.ctx.workingDirectory || process.cwd(), filePath);
-          getFileWatcherService().markAsAgentModified(absolutePath);
-        } catch { /* ignore */ }
-
-        // E3: Diff tracking - compute and emit diff_computed event
-        if (this.ctx.sessionId) {
-          try {
-            const diffTracker = getDiffTracker();
-            const fs = await import('fs/promises');
-            const path = await import('path');
-            const absolutePath = path.default.isAbsolute(filePath)
-              ? filePath
-              : path.default.resolve(this.ctx.workingDirectory || process.cwd(), filePath);
-            // Read current file content (after write/edit)
-            let afterContent: string | null = null;
-            try {
-              afterContent = await fs.default.readFile(absolutePath, 'utf-8');
-            } catch {
-              // File may not exist after failed write
-            }
-            // before content is captured by FileCheckpointService - we use null here
-            // The diff shows the full file as "added" for new files
-            const messageId = toolCall.id;
-            const diff = diffTracker.computeAndStore(
-              this.ctx.sessionId,
-              messageId,
-              toolCall.id,
-              absolutePath,
-              null, // before state is in checkpoint
-              afterContent
-            );
-            this.ctx.onEvent({ type: 'diff_computed', data: diff });
-          } catch (error) {
-            logger.debug('Failed to compute diff:', error);
-          }
-        }
-
-        if (
-          this.ctx.artifactRepairGuard?.targetFile &&
-          isSameArtifactRepairPath(this.ctx, filePath, this.ctx.artifactRepairGuard.targetFile)
-        ) {
-          if (toolResult.success !== false) {
-            this.ctx.artifactRepairGuard.patched = true;
-          }
-        }
-      }
     }
   }
 

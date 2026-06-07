@@ -148,6 +148,17 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'startBrowserRelay',
     'stopBrowserRelay',
   ],
+  [IPC_DOMAINS.DIAGNOSTICS]: [
+    'budget',
+    'compression',
+    'decisions',
+    'execPolicy',
+  ],
+  [IPC_DOMAINS.HOOK]: [
+    'list',
+    'openConfigFile',
+    'revealConfigFolder',
+  ],
   [IPC_DOMAINS.LIVE_PREVIEW]: [
     'applyTweak',
     'detectFramework',

@@ -40,6 +40,7 @@
 **Priority:** P1
 **Depends on:** 无
 **Progress:** 代码全部落地且 typecheck 通过（worktree 分支 `worktree-fleet-observability`，9 源文件 / +351 行）。新增 `shared/observability/scrubEvent.ts`（两端共用脱敏）+ `main/observability/sentryNode.ts` + `main/observability/crashMarker.ts`（脏标记，Node 实现，连 Rust shell 崩溃一起兜）+ `renderer/observability/sentryRenderer.ts`；接线 renderer 入口/ErrorBoundary/main 入口/webServer/lifecycle 两个 handler；settings 加 `crashReporting.enabled`。脏标记**改用 Node `process.on('exit')` 而非 Rust**（更优，见计划文档决策记录）。**DSN 已配**：`~/.code-agent/.env`(SENTRY_DSN) + worktree `.env`(SENTRY_DSN + VITE_SENTRY_DSN)。**发送侧已验证**：live 冒烟用真实 DSN 经代理发出一条带假密钥+家目录的事件，client/lastEventId/flush 三重确认送达。**剩余**：把本分支构建进 app，在真实 Tauri webview 里触发 renderer/node 崩溃做完整 in-app E2E（vitest/冒烟过 ≠ UI mount 过）；用户在 Sentry 看板确认收到且脱敏正确。
+**2026-06-07 P0 复查发现并修复一个静默失效 bug**：renderer 端 `VITE_SENTRY_DSN`/`VITE_POSTHOG_KEY` 随 `worktree-fleet-observability` 删除一起丢失，导致**打包后前端 Sentry/PostHog 静默 no-op（前端崩溃收不到）**，node 端因运行时读 `~/.code-agent/.env` 不受影响。已将 public 值补回**正确落点 `src/renderer/.env.local`**（实测 Vite `envDir=src/renderer`，非项目根；见 CLAUDE.md 打包章节新增条目）。`build:renderer` 后 grep 产物确认 DSN+key 已注入 `dist/renderer/assets/index-*.js`。**剩余仍是真机 E2E**：完整 `cargo tauri build` → 清 `~/.code-agent/renderer-cache/active` → 真实 webview 触发 renderer/node 崩溃 → Sentry 看板确认收到且脱敏正确。
 
 ### LLM trace 回传后端（Supabase 表 + admin-only RLS）
 

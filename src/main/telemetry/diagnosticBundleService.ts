@@ -15,6 +15,7 @@ import { promisify } from 'util';
 import { getTelemetryStorage, type TelemetryStorage } from './telemetryStorage';
 import { getAppVersion } from '../platform/appPaths';
 import { createLogger } from '../services/infra/logger';
+import { scrubString } from '../../shared/observability/scrubEvent';
 import type {
   DiagnosticBundle,
   DiagnosticBundleTurn,
@@ -97,5 +98,69 @@ export async function buildDiagnosticBundle(
     turns,
     events: storage.getEventsBySession(sessionId),
     rawPayloads: storage.getRawPayloadsForSession(sessionId),
+  };
+}
+
+/**
+ * 上传前脱敏:产出可外传的诊断包副本(不改原对象)。
+ *
+ * 用 scrubString(快速、依赖无关)对全部自由文本(含 raw 全量内容)做:
+ *   - 家目录前缀 → `~`(去用户名/磁盘布局)
+ *   - 密钥/token 正则红action
+ * raw 内容在 slice1 已仅密钥掩码;这里再叠加路径脱敏 + 二次密钥兜底。
+ *
+ * ⚠️ 刻意不在 raw 上跑 GLiNER 深度 PII:256KB×N 会触发 ~110s 的既有性能灾难;
+ * 而聚合表的 prompt/completion 落库时已过 GLiNER PII。深度 PII-on-raw 列推广前项
+ * (可加体积上限的 PII pass,或改服务端脱敏)。
+ */
+export function sanitizeDiagnosticBundle(
+  bundle: DiagnosticBundle,
+  opts?: { homeDir?: string },
+): DiagnosticBundle {
+  const homeDir = opts?.homeDir ?? os.homedir();
+  const scrub = <T extends string | undefined | null>(s: T): T =>
+    (typeof s === 'string' ? (scrubString(s, { homeDir }) as T) : s);
+
+  return {
+    ...bundle,
+    environment: {
+      ...bundle.environment,
+      workingDirectory: scrub(bundle.environment.workingDirectory),
+    },
+    session: {
+      ...bundle.session,
+      title: scrub(bundle.session.title),
+      workingDirectory: scrub(bundle.session.workingDirectory),
+    },
+    turns: bundle.turns.map((t) => ({
+      turn: {
+        ...t.turn,
+        userPrompt: scrub(t.turn.userPrompt),
+        assistantResponse: scrub(t.turn.assistantResponse),
+        thinkingContent: scrub(t.turn.thinkingContent),
+      },
+      modelCalls: t.modelCalls.map((m) => ({
+        ...m,
+        prompt: scrub(m.prompt),
+        completion: scrub(m.completion),
+        error: scrub(m.error),
+      })),
+      toolCalls: t.toolCalls.map((c) => ({
+        ...c,
+        arguments: scrub(c.arguments),
+        actualArguments: scrub(c.actualArguments),
+        resultSummary: scrub(c.resultSummary),
+        error: scrub(c.error),
+      })),
+    })),
+    events: bundle.events.map((e) => ({
+      ...e,
+      summary: scrub(e.summary),
+      data: typeof e.data === 'string' ? scrub(e.data) : e.data,
+    })),
+    rawPayloads: bundle.rawPayloads.map((p) => ({
+      ...p,
+      content: scrub(p.content),
+    })),
   };
 }

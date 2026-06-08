@@ -163,7 +163,18 @@ branch+head+dirty,打包时即时采集)+ 聚合 span 树(turn→modelCall/toolC
 `telemetry_raw_payloads`,但既有测试 `telemetryFeedbackStorage`/`computerSurfaceTelemetryStorage`
 的内存 DDL 没跟着更新 → insert 静默失败 → 测试挂。P1 提交时只 typecheck 没跑这些单测才漏掉。
 已补齐两处测试 DDL(加版本列 + raw 表)。**教训:改动 storage 落表逻辑后必须跑 telemetry 单测,
-不能只 typecheck。**
+不能只 typecheck。**(已写入 `docs/guides/troubleshooting.md` 错题本 2026-06-09 条)
+
+### P2 切片 2 实现记录(2026-06-09,3 测试通过)
+
+**产出**:`sanitizeDiagnosticBundle(bundle, {homeDir})` —— 产出可外传副本(不改原对象),用
+`scrubString`(快速、依赖无关)对全部自由文本(含 raw 全量内容)做:家目录前缀 → `~`(去
+用户名/磁盘布局)+ 密钥/token 正则打码。覆盖 environment/session/turn(prompt/response/
+thinking)/modelCall(prompt/completion/error)/toolCall(args/result/error)/event/rawPayload。
+
+**性能取舍(刻意)**:不在 raw 上跑 GLiNER 深度 PII —— 256KB×N 会重演切片1 发现的 ~110s 灾难;
+聚合表的 prompt/completion 落库时已过 GLiNER PII。深度 PII-on-raw 列**推广前项**(加体积上限
+的 PII pass,或服务端脱敏)。dogfood 上传到自己后台,密钥+路径脱敏已覆盖最高风险。
 
 ---
 

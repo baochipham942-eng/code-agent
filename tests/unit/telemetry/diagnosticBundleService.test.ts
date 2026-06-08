@@ -5,8 +5,8 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { getDatabase } from '../../../src/main/services/core/databaseService';
 import { TelemetryStorage } from '../../../src/main/telemetry/telemetryStorage';
-import { buildDiagnosticBundle } from '../../../src/main/telemetry/diagnosticBundleService';
-import type { TelemetrySession, TelemetryModelCall } from '../../../src/shared/contract/telemetry';
+import { buildDiagnosticBundle, sanitizeDiagnosticBundle } from '../../../src/main/telemetry/diagnosticBundleService';
+import type { DiagnosticBundle, TelemetrySession, TelemetryModelCall } from '../../../src/shared/contract/telemetry';
 
 const dbState = vi.hoisted(() => ({
   sqlite: null as import('better-sqlite3').Database | null,
@@ -114,5 +114,48 @@ describe('buildDiagnosticBundle', () => {
     const fields = bundle!.rawPayloads.map((p) => p.field).sort();
     expect(fields).toEqual(['completion', 'prompt']);
     expect(bundle!.rawPayloads.find((p) => p.field === 'prompt')!.content).toBe('hello world');
+  });
+});
+
+describe('sanitizeDiagnosticBundle', () => {
+  function bundle(): DiagnosticBundle {
+    return {
+      bundleVersion: 1, builtAt: 1, sessionId: 's1',
+      versions: { agentVersion: '1', promptVersion: 'p', toolSchemaVersion: 't' },
+      environment: {
+        os: 'darwin 25', arch: 'arm64', nodeVersion: 'v22', appVersion: '1.0',
+        workingDirectory: '/Users/tester/proj', git: { branch: 'main', head: 'abc', dirty: false },
+      },
+      session: { ...session('s1'), workingDirectory: '/Users/tester/proj', title: 'open /Users/tester/proj' },
+      turns: [{
+        turn: { userPrompt: 'see /Users/tester/notes.txt', assistantResponse: 'ok', thinkingContent: undefined } as never,
+        modelCalls: [], toolCalls: [],
+      }],
+      events: [],
+      rawPayloads: [{
+        turnId: 'turn-1', refKind: 'tool_call', refId: 't1', field: 'result',
+        content: 'token sk-abcd1234efgh at /Users/tester/secret.env',
+        byteLen: 49, truncated: false, createdAt: 1,
+      }],
+    };
+  }
+
+  it('scrubs home dir and secrets without mutating the original', () => {
+    const original = bundle();
+    const sanitized = sanitizeDiagnosticBundle(original, { homeDir: '/Users/tester' });
+
+    // raw 内容:密钥打码 + 家目录 → ~
+    const raw = sanitized.rawPayloads[0].content;
+    expect(raw).not.toContain('sk-abcd1234efgh');
+    expect(raw).toContain('[REDACTED]');
+    expect(raw).not.toContain('/Users/tester');
+    expect(raw).toContain('~/secret.env');
+    // 自由文本字段也脱敏
+    expect(sanitized.environment.workingDirectory).toBe('~/proj');
+    expect(sanitized.session.title).toBe('open ~/proj');
+    expect((sanitized.turns[0].turn as { userPrompt: string }).userPrompt).toBe('see ~/notes.txt');
+    // 原对象未被改动
+    expect(original.rawPayloads[0].content).toContain('sk-abcd1234efgh');
+    expect(original.environment.workingDirectory).toBe('/Users/tester/proj');
   });
 });

@@ -1053,3 +1053,14 @@ git show 0a6d15c40:src/main/shellCapabilities.ts > src/main/shellCapabilities.ts
 2. **PR 阶段必须跑发布期会跑的同款致命校验**（左移）。任何"只在 push/tag 暴露、PR 测不到"的 gate 都是事故温床——把它以 dry-run 形式搬到 PR。
 3. **基建升级（runtime/actions 版本）与功能发版分开 PR**，避免失败信号互相污染、归因困难。
 4. 后续可加：renderer-bundle / build workflow 的 `concurrency` group 自动取消被顶掉的旧 run，减少无效失败邮件。
+
+### 2026-06-09: 改 storage 落表逻辑只 typecheck 漏掉测试回归
+
+**问题**: P1/P2 telemetry 改造给 `insertSession` 加了版本列、给 `batchInsert` 加了对新表 `telemetry_raw_payloads` 的写入。生产 schema(schema.ts/migrations.ts)同步更新了,但**既有单测的内存 DDL 没跟着改** —— `telemetryFeedbackStorage` / `computerSurfaceTelemetryStorage` 这些测试在 `beforeEach` 里手写 `CREATE TABLE telemetry_sessions/...`,缺了新列/新表。`insertSession`/`batchInsert` 内部 try/catch 吞掉了 "no such column/table",insert 静默失败 → session/toolCall 没落库 → 下游断言挂。
+
+**为什么漏掉**: P1 提交时只跑了 `npm run typecheck`(过),没跑 telemetry 单测。typecheck 看不到运行时 SQL 与测试 DDL 的漂移。直到 P2 切片3 才暴露。
+
+**通用规则**:
+1. **改动任何 storage 的落表逻辑(新增表/列、改 INSERT/SELECT)后,必须跑对应模块的单测,不能只 typecheck。** 运行时 SQL 与测试内存 DDL 的漂移 typecheck 抓不到。
+2. **新增 schema(表/列)时,全仓 grep 测试里手写的同名 `CREATE TABLE`,同步更新**:`grep -rln "CREATE TABLE <table>" tests/`。手写 DDL 是第二份真值源,漂移即静默失败。
+3. **storage 方法里 try/catch 吞异常**是双刃剑:生产健壮但测试期掩盖 schema 错误。排查"insert 没生效"先看是不是被 catch 吞了 schema 异常。

@@ -501,6 +501,26 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
 
+  // Telemetry Raw Payloads - 诊断原始内容旁表（仅密钥掩码、不截断/不 PII）
+  // 用于脱离用户机器复现 agent 轨迹；与聚合表分离，独立滚动淘汰，避免本地无限膨胀。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telemetry_raw_payloads (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      turn_id TEXT,
+      ref_kind TEXT NOT NULL,
+      ref_id TEXT NOT NULL,
+      field TEXT NOT NULL,
+      content TEXT,
+      byte_len INTEGER NOT NULL,
+      truncated INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_raw_payloads_session ON telemetry_raw_payloads(session_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_raw_payloads_turn ON telemetry_raw_payloads(turn_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_raw_payloads_created ON telemetry_raw_payloads(created_at)');
+
   // Telemetry Feedback - 用户对某次回复/轮次的显式质量反馈，云端仅 admin 可读
   db.exec(`
     CREATE TABLE IF NOT EXISTS telemetry_feedback (

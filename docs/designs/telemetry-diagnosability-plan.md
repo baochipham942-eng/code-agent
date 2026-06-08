@@ -121,10 +121,32 @@
 - 默认**不自动外传内容**,只在用户点"上报"后发送。
 
 ### 验收
-- [ ] 不做任何设置,本地能查到最近一次 run 的完整 prompt/completion/工具入出参
+- [x] 不做任何设置,本地能查到最近一次 run 的完整 prompt/completion/工具入出参(切片1)
 - [ ] 一次失败 run 后,用户一键即可上报,无需复现
 - [ ] 上报内容经过脱敏且用户可预览
 - [ ] 诊断包能在后台还原出完整轨迹(版本+环境+span+内容)
+
+### P2 切片 1 实现记录(2026-06-09,4 测试通过)
+
+**决策落地**(见 AskUserQuestion):独立 raw 旁表 + 仅密钥掩码、去 PII/截断。
+
+- **新表 `telemetry_raw_payloads`**(schema.ts + migrations.ts):一行/(ref, field),存
+  model_call 的 prompt/completion、tool_call 的 arguments/actual_arguments/result。
+- **写入挂点 `telemetryStorage.batchInsert`**:在聚合表 `guardTelemetryText` 截断**之前**,
+  同一事务多写一份 raw,走 `prepareRawPayload`(`redactSecrets` 仅密钥掩码 + 单条 256KB
+  字节封顶记原长,不跑 PII/不截到 2000)。
+- **滚动淘汰 `pruneRawPayloads(now?)`**:三重封顶 14天 / 100turn / 500MB,谁先到谁先删;
+  挂在 `telemetryCollector.endSession`(每会话一次,便宜)。复用 dbstat/SUM(LENGTH) 算体积。
+- **读取**:`getRawPayloadsForSession`(供切片 3 诊断包用)、`getRawPayloadsBytes`。
+- 常量 `TELEMETRY_RAW`(ui.ts);测试 `tests/unit/telemetry/telemetryRawPayloads.test.ts`。
+
+**本地加密**:本切片先明文存(密钥已掩码,残留敏感度=代码/路径,与现有明文聚合列同级)。
+逐行加密会拖慢热路径。**整库加密(SQLCipher)列为推广前硬化项**,作用于整个 telemetry DB。
+
+**⚠️ 发现的既有性能问题(非本切片引入,记录待办)**:聚合路径 `guardTelemetryText`/
+`guardSensitiveText` 对**超大输入**(实测 263KB tool result)会先跑完整 PII 检测再截断,
+耗时 ~110s。生产里工具返回大结果(大文件 Read/长 Bash 输出)会拖慢 telemetry flush。
+建议:`guardSensitiveText` 在跑 SensitiveDetector 前先按 maxLength 预截断。**独立排期**。
 
 ---
 

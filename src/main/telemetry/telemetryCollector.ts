@@ -348,6 +348,14 @@ export class TelemetryCollector {
       sessionId,
       data: this.activeSession
     });
+
+    // 会话结束顺手做一次 raw 旁表滚动淘汰(便宜,每会话一次)
+    try {
+      getTelemetryStorage().pruneRawPayloads();
+    } catch {
+      /* non-critical */
+    }
+
     logger.info(`Telemetry session ended: ${sessionId}`);
     this.activeSession = null;
   }

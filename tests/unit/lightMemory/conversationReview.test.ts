@@ -26,6 +26,7 @@ vi.mock('../../../src/main/services/infra/timeoutController', () => ({
 
 import {
   toSkillName,
+  isLowValueSkillName,
   parseReviewedSkill,
   buildReviewSnippet,
   buildReviewPrompt,
@@ -50,6 +51,33 @@ describe('toSkillName', () => {
     const name = toSkillName('a'.repeat(80));
     expect(name.length).toBeLessThanOrEqual(48);
     expect(name.endsWith('-')).toBe(false);
+  });
+});
+
+// ── isLowValueSkillName ──
+
+describe('isLowValueSkillName', () => {
+  it('泛词 → 低价值', () => {
+    for (const n of ['helper', 'utils', 'tools', 'workflow', 'data', 'files', 'general', 'skill']) {
+      expect(isLowValueSkillName(n)).toBe(true);
+    }
+  });
+
+  it('纯工具名拼接 → 低价值', () => {
+    for (const n of ['bash-bash-bash', 'grep-read-edit', 'run-bash', 'read-write-edit', 'BASH-BASH-BASH-BASH']) {
+      expect(isLowValueSkillName(n)).toBe(true);
+    }
+  });
+
+  it('空名 → 低价值', () => {
+    expect(isLowValueSkillName('')).toBe(true);
+    expect(isLowValueSkillName('  !!  ')).toBe(true);
+  });
+
+  it('有意义的意图名 → 放行', () => {
+    for (const n of ['deploying-tauri-macos', 'extracting-pdf-tables', 'migrating-database-schema', 'read-pdf-tables', 'run-eval-suite']) {
+      expect(isLowValueSkillName(n)).toBe(false);
+    }
   });
 });
 
@@ -101,6 +129,12 @@ describe('parseReviewedSkill', () => {
 
   it('name 会被规整为 kebab-case', () => {
     expect(parseReviewedSkill(JSON.stringify({ ...valid, name: 'Deploy Tauri macOS' }))!.name).toBe('deploy-tauri-macos');
+  });
+
+  it('低价值名（泛词 / 纯工具名拼接）→ null', () => {
+    expect(parseReviewedSkill(JSON.stringify({ ...valid, name: 'bash-bash-bash' }))).toBeNull();
+    expect(parseReviewedSkill(JSON.stringify({ ...valid, name: 'helper' }))).toBeNull();
+    expect(parseReviewedSkill(JSON.stringify({ ...valid, name: 'tools' }))).toBeNull();
   });
 });
 

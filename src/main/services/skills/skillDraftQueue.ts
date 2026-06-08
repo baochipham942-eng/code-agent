@@ -11,6 +11,7 @@ import { getUserConfigDir, getSkillsDir } from '../../config/configPaths';
 import { LEARNING_PIPELINE } from '../../../shared/constants';
 import type { SkillDraftOrigin } from '../../../shared/contract/agent';
 import { scanSkillContent } from '../../security/skillContentGuard';
+import { isLowValueSkillName } from '../../lightMemory/conversationReview';
 import { createLogger } from '../infra/logger';
 
 export type { SkillDraftOrigin };
@@ -116,7 +117,7 @@ export function generateDraftSkillMd(input: {
   const frontmatter = fm.join('\n');
 
   // LLM 复盘草稿：正文 = 模型提炼的可复用指南
-  if (input.body && input.body.trim()) {
+  if (input.body?.trim()) {
     const body = ['', `# ${input.name}`, '', `> ${input.description}`, '', input.body.trim(), ''].join('\n');
     return `${frontmatter}\n${body}\n`;
   }
@@ -249,8 +250,15 @@ export async function enqueueSkillDraft(input: {
   const origin: SkillDraftOrigin = input.origin ?? 'telemetry-distilled';
 
   // 空 patternKey 无法去重（确认/拒绝后还会反复入队），直接拒绝入队
-  if (!input.patternKey || !input.patternKey.trim()) {
+  if (!input.patternKey?.trim()) {
     logger.warn('Skill draft rejected: empty patternKey', { name: input.name });
+    return null;
+  }
+
+  // 防御性命名闸：泛词 / 纯工具名拼接（bash-bash-bash 这类）一律不入队。
+  // 上游 conversationReview 已先过一道，这里兜底，杜绝低价值草稿落盘。
+  if (isLowValueSkillName(input.name)) {
+    logger.debug('Skill draft rejected: low-value name', { name: input.name });
     return null;
   }
 

@@ -46,6 +46,26 @@ export const SKILL_REVIEW = {
   MIN_USER_TURNS: 2,
   /** 自沉淀来源标记（写入草稿 meta.origin / SKILL.md frontmatter，可在设置页筛人建 vs 自沉淀） */
   ORIGIN: 'llm-review',
+  /**
+   * 命名禁用清单（精确匹配即判低价值）。照搬 Anthropic Agent Skills 的 avoid 列表：
+   * 取不出有意义任务名、只能落到这些泛词 → 说明根本不该成为 skill。
+   */
+  NAME_BLOCKLIST: [
+    'helper', 'helpers', 'util', 'utils', 'utility', 'utilities',
+    'tool', 'tools', 'toolkit', 'data', 'file', 'files', 'document', 'documents',
+    'stuff', 'misc', 'general', 'common', 'demo', 'temp', 'example', 'examples',
+    'workflow', 'distilled-workflow', 'skill', 'task', 'tasks',
+  ],
+  /**
+   * 工具/机械动作 token。若一个名字的每一段都落在这里（如 bash-bash-bash、grep-read-edit、
+   * run-bash），说明它是"拿工具名拼的"而非从任务意图命名 → 判低价值。
+   * 只要有一段是领域词（pdf/tauri/database…）就放行。
+   */
+  NAME_TOOL_TOKENS: [
+    'bash', 'sh', 'shell', 'zsh', 'cmd', 'command', 'commands',
+    'read', 'write', 'edit', 'multiedit', 'grep', 'glob', 'ls', 'cat', 'find',
+    'run', 'exec', 'execute', 'do', 'step', 'steps', 'action', 'actions',
+  ],
 } as const;
 
 /** 记忆 consolidation（cron 周期任务 → consolidation 模块） */

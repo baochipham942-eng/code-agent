@@ -50,6 +50,22 @@ export function toSkillName(raw: string): string {
     .replace(/-+$/g, '');
 }
 
+/**
+ * 判断一个 skill 名是否"低价值"——取不出有意义任务意图、纯泛词或纯工具名拼接。
+ * 命中即拒绝沉淀（对齐 Hermes/Anthropic：无法用意图命名 = 不该成为 skill）。
+ *   1) 精确命中泛词清单（helper/utils/tools/workflow…）
+ *   2) 每一段都是工具/机械 token（bash-bash-bash、grep-read-edit、run-bash…）
+ */
+export function isLowValueSkillName(name: string): boolean {
+  const kebab = toSkillName(name);
+  if (!kebab) return true;
+  if ((SKILL_REVIEW.NAME_BLOCKLIST as readonly string[]).includes(kebab)) return true;
+  const segments = kebab.split('-').filter(Boolean);
+  const toolTokens = SKILL_REVIEW.NAME_TOOL_TOKENS as readonly string[];
+  if (segments.every((seg) => toolTokens.includes(seg))) return true;
+  return false;
+}
+
 function truncate(text: string, max: number): string {
   const trimmed = text.trim();
   return trimmed.length > max ? trimmed.slice(0, max).trim() : trimmed;
@@ -59,22 +75,38 @@ function truncate(text: string, max: number): string {
 // 目标是 class-level umbrella skill（这一类任务怎么做），不是流水账式一次性记录。
 const REVIEW_PROMPT = `你是技能沉淀复盘器。阅读下面这段刚结束的会话，判断其中有没有"值得沉淀成一类可复用技能"的学习。
 
-要点：
-- 目标是 CLASS-LEVEL 技能：抽象出"这一类任务该怎么做"，而不是记录这次的具体实例（不要把具体文件名/具体数值写死成技能）。
-- 主动一点，但只在确实学到可复用东西时才建。闲聊、单纯问答、没有方法论沉淀的对话 → shouldCreate=false。
-- 触发信号（命中其一才考虑沉淀）：
+判断"值不值得"（对齐 Hermes / Anthropic Agent Skills）：
+- 目标是 CLASS-LEVEL 技能：抽象出"这一类任务该怎么做"，而不是记录这次的具体实例（别把具体文件名/数值写死成技能）。
+- 非平凡：必须是"换个新人需要被教"的程序性知识。闲聊、单纯问答、一两个命令就完成、模型本来就会的常识 → shouldCreate=false。
+- 主动但克制：只在确实学到可复用东西时才建。拿不准就 false。
+- 触发信号（命中其一才考虑）：
   - user_correction：用户纠正了你的做法 / 指出更好的方式
   - remember_request：用户明确说"记住""以后都这样""下次要这样"
-  - reusable_workflow：出现了一段清晰、可复用到同类任务的解法或工作流
-- body 写成针对这一类任务的可复用指南（步骤、判断要点、踩过的坑），用 Markdown，不超过 ${SKILL_REVIEW.MAX_BODY_CHARS} 字。
+  - reusable_workflow：出现一段清晰、可复用到同类任务的解法或工作流
+
+命名（关键，命不出好名字就说明不该沉淀）：
+- 用「动名词 + 领域宾语」的 kebab-case，从【任务意图】取名，例：deploying-tauri-macos、extracting-pdf-tables、migrating-database-schema。
+- 严禁用泛词：helper / utils / tools / data / files / documents / workflow / general / common。
+- 严禁拿工具名拼名字：bash-bash-bash、grep-read-edit、run-bash 这类一律不行——这说明你在记"点了哪几个工具"而不是"完成了什么任务"。
+- 如果只能想出上面这类名字 → 直接 shouldCreate=false。
+
+body 用 Markdown，针对这一类任务写【可复用指南】，按以下结构（没有的小节可省，但不要灌水），不超过 ${SKILL_REVIEW.MAX_BODY_CHARS} 字：
+## 何时使用
+（这个技能适用于哪一类任务 / 触发场景）
+## 步骤
+（有序步骤；命令/参数用占位符，别写死具体实例值）
+## 坑
+（这一类任务里踩过的坑、易错点）
+## 验证
+（怎么确认这一类任务真的做成了）
 
 只返回一个 JSON 对象，不要任何额外文字、不要 markdown 代码块：
 {
   "shouldCreate": true 或 false,
   "signal": "user_correction" | "remember_request" | "reusable_workflow" | "none",
-  "name": "kebab-case 的类级技能名，如 deploy-tauri-macos",
-  "description": "不超过${SKILL_REVIEW.MAX_DESCRIPTION_CHARS}字、说明这个技能覆盖哪一类任务",
-  "body": "Markdown 正文：这一类任务的可复用步骤/要点/坑"
+  "name": "动名词+领域宾语的 kebab-case 技能名，如 deploying-tauri-macos",
+  "description": "不超过${SKILL_REVIEW.MAX_DESCRIPTION_CHARS}字、第三人称说明这个技能覆盖哪一类任务、何时该用",
+  "body": "Markdown 正文：何时使用 / 步骤 / 坑 / 验证"
 }
 
 若没有任何可沉淀的学习，返回 {"shouldCreate": false, "signal": "none", "name": "", "description": "", "body": ""}。`;
@@ -88,7 +120,7 @@ export function buildReviewSnippet(input: {
     .filter((m) => m && m.trim().length > 0)
     .slice(-SKILL_REVIEW.RECENT_USER_TURNS);
   const lines = recent.map((msg, i) => `用户消息${i + 1}：${msg.trim()}`);
-  if (input.lastAssistant && input.lastAssistant.trim()) {
+  if (input.lastAssistant?.trim()) {
     lines.push(`助手最后回复：${truncate(input.lastAssistant, SKILL_REVIEW.ASSISTANT_SNIPPET_CHARS)}`);
   }
   return lines.join('\n');
@@ -126,6 +158,12 @@ export function parseReviewedSkill(raw: string): ReviewedSkill | null {
 
   // class-level skill 必须有可用的名字 + 描述 + 正文，缺一不可信
   if (!name || !description || !body) return null;
+
+  // 命名低价值（泛词 / 纯工具名拼接）→ 取不出真实意图，不该沉淀
+  if (isLowValueSkillName(name)) {
+    logger.debug('Skill review rejected: low-value name', { name });
+    return null;
+  }
 
   const signal: SkillReviewSignal =
     obj.signal === 'user_correction' ||

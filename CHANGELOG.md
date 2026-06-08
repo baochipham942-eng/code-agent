@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.99] - 2026-06-08
+
+### Fixed
+
+- 修复 notarized app 在慢启动环境下可能因 webServer 初始化超过 30 秒而被 Tauri healthcheck 杀掉的问题；启动等待窗口调整到 90 秒，覆盖 Supabase session timeout、旧库迁移和首次插件初始化的组合耗时。
+
 ## [0.16.98] - 2026-06-08
 
 ### Fixed

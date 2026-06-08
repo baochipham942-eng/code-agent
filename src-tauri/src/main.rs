@@ -37,7 +37,7 @@ use pip::{pip_frame, pip_hide, pip_show};
 
 const SERVER_URL: &str = "http://localhost:8180";
 const HEALTH_URL: &str = "http://localhost:8180/api/health";
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(30);
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(90);
 const HEALTH_INTERVAL: Duration = Duration::from_millis(500);
 const DEFAULT_CLOUD_API_URL: &str = "https://agentneo.vercel.app";
 const BUNDLED_RUNTIME_ROOT_ENV: &str = "AGENT_NEO_BUNDLED_RUNTIME_ROOT";

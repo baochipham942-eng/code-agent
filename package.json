@@ -1,6 +1,6 @@
 {
   "name": "code-agent",
-  "version": "0.16.97",
+  "version": "0.16.98",
   "description": "Local AI cowork workspace with multi-agent orchestration",
   "type": "module",
   "main": "dist/web/webServer.cjs",

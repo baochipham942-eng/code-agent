@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.98] - 2026-06-08
+
+### Fixed
+
+- 修复 Claude 连接测试仍使用废弃 `claude-3-haiku-20240307` 的问题，改为优先使用当前选择模型，并在缺省时使用 provider 当前默认模型。
+- 修复 AI SDK 流式工具调用可能被终态空 `tool-call.input` 覆盖已累积参数的问题，避免 Write 等工具在执行层收到空参数。
+- 修复默认 provider 未配置但其他 provider 已配置时仍放行发送的问题，避免 Claude 配好后默认配置残留到 MiMo 造成 `Invalid API Key`。
+- 增强模型决策与工具参数校验失败的本地 replay 和低敏远端上报，便于定位实际 provider/model、路由原因和 `tool_args_validation` 失败。
+
+### CI
+
+- PR 阶段左移 renderer bundle capability 校验，提前暴露热更新 manifest 能力差异。
+
 ### Added
 
 - 🎯 **Goal Mode（`/goal` 自治目标循环）**：用户给目标 + 完成条件，Agent 自己反复跑、每轮自判、达成才停。完成判定权落在**代码层**（模型只能"申请退出"），三层闸：闸1 确定性 `--verify` 命令退出码（`/bin/sh -c` 直接 exec，不经 LLM）、闸2 可选 `--review` 软条件（派强模型 Reviewer 子代理判 PASS/FAIL）、闸3 代码层兜底（token 预算 / max-turns / 连续无进展）。`--verify` 与 `--review` 二选一即可（支持纯软目标）。详见 [docs/designs/goal-mode.md](docs/designs/goal-mode.md)。

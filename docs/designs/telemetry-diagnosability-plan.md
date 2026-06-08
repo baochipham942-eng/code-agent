@@ -179,3 +179,20 @@
    - ⚠️ **推广前必须改回"知情同意 + 内联轻提示"**,不能带着静默全量上传上线。此条列为发布 gate。
 3. **合规弹窗**:现阶段不弹。P3 简化为"默认开 metadata 级遥测 + 设置里一个关闭开关",首启同意流程**推广前补做**。
 4. **版本快照存哪**:registry 拆两半 —— **客户端只带 `hash → promptVersion` 映射**(不含全文,避免 prompt 泄露到用户端);**全文 `snapshot` 只存后台**(Supabase/内部库),后台用 promptVersion 反查全文。
+
+---
+
+## P3 实现记录(2026-06-08 已落地,typecheck 通过)
+
+**关键发现**:`configService.getServiceApiKey('langfuse_public'/'langfuse_secret')` **已内置 env fallback**(`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`)。所以"env 下发项目默认 key → 自动初始化"链路本就存在,P3 无需新写 key 注入机制,只补两件:
+
+| 改动 | 文件 | 说明 |
+|------|------|------|
+| 默认开启 + opt-out | `src/main/app/initBackgroundServices.ts` | 原逻辑只看 key 在不在、**完全没读** `settings.langfuse.enabled`。改为:`enabled===false` 显式跳过;否则只要 key 可用(自配 > env 默认 > settings)就 init;无 key 时打日志提示"provision env 即可默认开" |
+| 设置开关 UI | `src/renderer/.../tabs/PrivacySettings.tsx` | 隐私页加"使用数据上报(Telemetry)"section,checkbox 绑 `settings.langfuse.enabled`,走 `IPC_DOMAINS.SETTINGS` get/set;写入时先 spread 现有 langfuse 配置(浅合并,避免抹掉 key);改后重启生效 |
+
+**key 提供 = 运维步骤(不写源码)**:把项目默认 `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` 放进打包的 `~/.code-agent/.env`,即对所有用户默认开。**secretKey 是真 secret,严禁硬编码进 TS 源码**。
+
+**待办(推广前)**:
+- ⚠️ 默认链路目前会把 `input: userMessage` 及 LLM generation 的 input/output 传给 Langfuse(含内容)。dogfood 期可接受(自己的 Langfuse 项目);**推广前要么收敛为 metadata-only、要么换服务端代理签发短期 token**,避免客户端持有 Langfuse secretKey + 内容外传。
+- 首启知情同意流程推广前补做(见决策记录 §3)。

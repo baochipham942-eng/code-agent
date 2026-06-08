@@ -150,6 +150,10 @@ export class AgentOrchestrator {
     messageMetadata?: MessageMetadata,
     clientMessageId?: string,
   ): Promise<void> {
+    // 新用户消息到达：任何仍挂起的权限请求都已过期。先 deny 解除，
+    // 否则上一轮被权限 Promise 卡住的 agentLoop 会冻结到 60s 超时（确认死锁）。
+    this.drainPendingPermissions('deny');
+
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
     const sessionId = await this.resolveSessionId();
@@ -269,6 +273,10 @@ export class AgentOrchestrator {
   async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
     logger.info('Cancel requested', { reason });
     const sessionId = this.sessionId ?? getSessionManager().getCurrentSessionId();
+
+    // 先解除挂起权限，否则 agentLoop 若正 await 在 requestPermission 上，
+    // cancel 会一直等到 60s 超时才能真正 unwind。
+    this.drainPendingPermissions('deny');
 
     this.isInterrupting = false;
     this.pendingSteerMessages = [];
@@ -411,6 +419,21 @@ export class AgentOrchestrator {
       pending.resolve(response);
       this.pendingPermissions.delete(requestId);
     }
+  }
+
+  /**
+   * 解除所有挂起的权限请求。新消息到达 / 取消时调用：挂起的权限 Promise 若一直无人
+   * resolve，会把 await 在 requestPermission 上的 agentLoop 冻结到 60s 超时（死锁）。
+   * 统一以 'deny' 解除——安全侧默认不放行；模型在被拒后会按指令重新发起调用、重新弹卡。
+   */
+  private drainPendingPermissions(response: PermissionResponse = 'deny'): void {
+    if (this.pendingPermissions.size === 0) return;
+    const count = this.pendingPermissions.size;
+    for (const { resolve } of this.pendingPermissions.values()) {
+      resolve(response);
+    }
+    this.pendingPermissions.clear();
+    logger.info(`Drained ${count} pending permission(s)`, { response });
   }
 
   setWorkingDirectory(path: string): void {

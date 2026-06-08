@@ -240,6 +240,48 @@ export interface TelemetrySession {
   toolSchemaVersion?: string; // 工具集 schema 内容短 hash
 }
 
+// ----------------------------------------------------------------------------
+// Diagnostic Bundle — 脱离用户机器复现 agent 轨迹的自包含诊断包
+// ----------------------------------------------------------------------------
+
+export interface DiagnosticEnvFingerprint {
+  os: string; // `${platform} ${release}`
+  arch: string;
+  nodeVersion: string;
+  appVersion: string;
+  workingDirectory: string;
+  git: { branch: string | null; head: string | null; dirty: boolean | null };
+}
+
+export interface DiagnosticBundleTurn {
+  turn: TelemetryTurn;
+  modelCalls: TelemetryModelCall[];
+  toolCalls: TelemetryToolCall[];
+}
+
+export interface DiagnosticRawPayload {
+  turnId: string | null;
+  refKind: string; // 'model_call' | 'tool_call'
+  refId: string;
+  field: string; // 'prompt' | 'completion' | 'arguments' | 'actual_arguments' | 'result'
+  content: string;
+  byteLen: number;
+  truncated: boolean;
+  createdAt: number;
+}
+
+export interface DiagnosticBundle {
+  bundleVersion: number;
+  builtAt: number;
+  sessionId: string;
+  versions: { agentVersion?: string; promptVersion?: string; toolSchemaVersion?: string };
+  environment: DiagnosticEnvFingerprint;
+  session: TelemetrySession;
+  turns: DiagnosticBundleTurn[];
+  events: TelemetryTimelineEvent[];
+  rawPayloads: DiagnosticRawPayload[];
+}
+
 export interface TelemetryFeedback {
   id: string;
   sessionId: string;

@@ -148,6 +148,23 @@
 耗时 ~110s。生产里工具返回大结果(大文件 Read/长 Bash 输出)会拖慢 telemetry flush。
 建议:`guardSensitiveText` 在跑 SensitiveDetector 前先按 maxLength 预截断。**独立排期**。
 
+### P2 切片 3 实现记录(2026-06-09,2 测试通过 + 修了 P1 漏测引入的回归)
+
+**产出**:`src/main/telemetry/diagnosticBundleService.ts` —— `buildDiagnosticBundle(sessionId)`
+组装自包含诊断包:版本指纹(P1,从 session 行)+ 环境指纹(os/arch/node/appVersion/cwd/git
+branch+head+dirty,打包时即时采集)+ 聚合 span 树(turn→modelCall/toolCall/event,复用现有
+读取 API)+ raw 全量内容(切片1 的 `getRawPayloadsForSession`)。类型 `DiagnosticBundle` 等入
+`shared/contract/telemetry.ts`。`buildDiagnosticBundle` 支持注入 storage(可测)。
+
+**env 限制**:git head/dirty 是「打包时」即时值,非 run-time 快照,可能有出入。run-time 环境
+快照(session start 落列)留待后续(可并入切片 4 或单独做)。
+
+**⚠️ 修了一个我自己引入的回归**:P1 给 `insertSession` 加版本列、P2 的 `batchInsert` 引用
+`telemetry_raw_payloads`,但既有测试 `telemetryFeedbackStorage`/`computerSurfaceTelemetryStorage`
+的内存 DDL 没跟着更新 → insert 静默失败 → 测试挂。P1 提交时只 typecheck 没跑这些单测才漏掉。
+已补齐两处测试 DDL(加版本列 + raw 表)。**教训:改动 storage 落表逻辑后必须跑 telemetry 单测,
+不能只 typecheck。**
+
 ---
 
 ## P3 — Langfuse 默认启用

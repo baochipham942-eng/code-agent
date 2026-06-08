@@ -677,16 +677,26 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
   // Supabase-dependent services
   initializeSupabaseServices(mainWindow);
 
-  // Langfuse (analytics)
+  // Langfuse (可观测性) — 默认开启
+  // key 解析优先级:用户自配(SecureStorage) > env 下发的项目默认 key(LANGFUSE_PUBLIC_KEY
+  // /LANGFUSE_SECRET_KEY,由 getServiceApiKey 兜底) > settings。只要 key 可用就初始化,
+  // 从而覆盖所有用户而非只覆盖手动配 key 的人。用户可通过 settings.langfuse.enabled=false
+  // 显式关闭(opt-out,改后需重启生效)。
+  const langfuseOptedOut = settings.langfuse?.enabled === false;
   const langfusePublicKey = configService.getServiceApiKey('langfuse_public') || settings.langfuse?.publicKey;
   const langfuseSecretKey = configService.getServiceApiKey('langfuse_secret') || settings.langfuse?.secretKey;
-  if (langfusePublicKey && langfuseSecretKey) {
+  if (langfuseOptedOut) {
+    logger.info('Langfuse skipped: user opted out (settings.langfuse.enabled=false)');
+  } else if (langfusePublicKey && langfuseSecretKey) {
     initLangfuse({
       publicKey: langfusePublicKey,
       secretKey: langfuseSecretKey,
       baseUrl: process.env.LANGFUSE_BASE_URL || settings.langfuse?.baseUrl || 'https://cloud.langfuse.com',
+      enabled: true,
     });
     logger.info('Langfuse initialized');
+  } else {
+    logger.info('Langfuse skipped: no keys available (provision LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY env to enable by default)');
   }
 
   // Update service

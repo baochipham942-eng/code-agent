@@ -13,8 +13,9 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ShieldCheck, Loader2, AlertTriangle, RefreshCw, XCircle } from 'lucide-react';
+import { ShieldCheck, Loader2, AlertTriangle, RefreshCw, XCircle, Activity } from 'lucide-react';
 import { IPC_DOMAINS, IPC_CHANNELS } from '@shared/ipc';
+import type { AppSettings } from '@shared/contract';
 import ipcService from '../../../../services/ipcService';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
@@ -68,6 +69,11 @@ const PrivacySettings: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const logEndRef = useRef<HTMLDivElement | null>(null);
 
+  // 遥测（Langfuse）opt-out 开关。默认开启;enabled === false 才算关闭。
+  const [telemetryEnabled, setTelemetryEnabled] = useState(true);
+  const [telemetrySaving, setTelemetrySaving] = useState(false);
+  const langfuseCfgRef = useRef<NonNullable<AppSettings['langfuse']> | undefined>(undefined);
+
   const refreshReady = useCallback(async () => {
     try {
       const r = await ipcService.invokeDomain<ReadyStatus>(IPC_DOMAINS.PII, 'setup:isReady');
@@ -102,6 +108,35 @@ const PrivacySettings: React.FC = () => {
     })();
     return () => { cancelled = true; };
   }, [refreshStatus, refreshReady]);
+
+  // 加载遥测开关状态（desktop only）
+  useEffect(() => {
+    if (isWebMode()) return;
+    (async () => {
+      try {
+        const s = await ipcService.invokeDomain<AppSettings | undefined>(IPC_DOMAINS.SETTINGS, 'get');
+        langfuseCfgRef.current = s?.langfuse;
+        setTelemetryEnabled(s?.langfuse?.enabled !== false);
+      } catch {
+        // ignore — 默认视为开启
+      }
+    })();
+  }, []);
+
+  const handleTelemetryToggle = useCallback(async (next: boolean) => {
+    setTelemetrySaving(true);
+    setTelemetryEnabled(next); // 乐观更新
+    try {
+      // 浅合并:先 spread 现有 langfuse 配置,避免把 publicKey/secretKey 抹掉
+      const nextCfg = { ...(langfuseCfgRef.current ?? {}), enabled: next } as NonNullable<AppSettings['langfuse']>;
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { langfuse: nextCfg } as Partial<AppSettings>);
+      langfuseCfgRef.current = nextCfg;
+    } catch {
+      setTelemetryEnabled(!next); // 回滚
+    } finally {
+      setTelemetrySaving(false);
+    }
+  }, []);
 
   // 订阅流式 push 事件
   useEffect(() => {
@@ -172,6 +207,32 @@ const PrivacySettings: React.FC = () => {
       title="隐私防线"
       description="本地 PII 防线（GLiNER ONNX）。启用后，协作内容进入云端 LLM 前自动识别并脱敏命名实体（姓名/地址/医疗 ID/银行账号等）。模型在本地运行，首次会下载约 190MB 的量化模型到 ~/.cache/code-agent/gliner-pii/。"
     >
+      <SettingsSection
+        title="使用数据上报（Telemetry）"
+        description="默认开启。上报运行轨迹（模型/工具调用、token、错误分类、版本指纹等）用于诊断与产品改进。关闭后本次设备不再向云端上报，改动重启后生效。"
+      >
+        <label className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-primary-600"
+            checked={telemetryEnabled}
+            disabled={telemetrySaving}
+            onChange={(e) => handleTelemetryToggle(e.target.checked)}
+          />
+          <div className="flex items-center gap-2 text-sm">
+            <Activity className="h-4 w-4 text-zinc-400" />
+            <div>
+              <div className="text-zinc-200 font-medium">
+                {telemetryEnabled ? '已开启遥测上报' : '已关闭遥测上报'}
+              </div>
+              <div className="text-xs text-zinc-400 mt-0.5">
+                取消勾选即可 opt-out。当前版本默认上报运行轨迹的元数据，不含完整 prompt/代码内容。
+              </div>
+            </div>
+          </div>
+        </label>
+      </SettingsSection>
+
       <SettingsSection
         title="状态"
         description="是否已配置完成 + 当前任务状态"

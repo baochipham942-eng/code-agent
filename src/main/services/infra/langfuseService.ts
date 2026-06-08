@@ -27,6 +27,10 @@ export interface TraceMetadata {
   modelProvider: string;
   modelName: string;
   workingDirectory?: string;
+  // 版本指纹：让云端 trace 能按版本归因（哪版构建/提示词/工具集）
+  agentVersion?: string;
+  promptVersion?: string;
+  toolSchemaVersion?: string;
 }
 
 export interface LlmCallInput {
@@ -164,6 +168,9 @@ class LangfuseService implements Disposable {
           modelProvider: metadata.modelProvider,
           modelName: metadata.modelName,
           workingDirectory: metadata.workingDirectory,
+          agentVersion: metadata.agentVersion,
+          promptVersion: metadata.promptVersion,
+          toolSchemaVersion: metadata.toolSchemaVersion,
         },
         tags: [metadata.modelProvider],
       });

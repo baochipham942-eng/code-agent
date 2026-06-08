@@ -1,3 +1,14 @@
+/**
+ * 系统提示词版本号（人读粗粒度标签，用于 telemetry 归因）。
+ *
+ * 何时 bump：每次对 system prompt 的静态内容（identity / base / constitution /
+ * rules / tools 描述等模块）做有意义的修改时，手动 +1 minor/patch。
+ * 用途：让 telemetry trace 标注"这是第几版提示词"，从而能按 promptVersion × errorType
+ * 聚合失败率。精确复现仍依赖 turn 级的 systemPromptHash（运行时拼装后的 SHA-256，
+ * 已落 system_prompt_cache 全文）—— promptVersion 只是粗标签，不替代 hash。
+ */
+export const PROMPT_VERSION = 'sys-v1' as const;
+
 /** Agent 配置 */
 export const AGENT = {
   /** 最大迭代次数 */

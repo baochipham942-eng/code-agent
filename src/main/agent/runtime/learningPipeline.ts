@@ -209,7 +209,12 @@ export class LearningPipeline {
 
     const passes: Promise<void>[] = [this.runConversationReviewDistillation()];
     if (toolCalls.length > 0) {
-      passes.push(this.runErrorPatternLearning(toolCalls), this.runSkillDistillation(toolCalls));
+      passes.push(this.runErrorPatternLearning(toolCalls));
+      // telemetry n-gram 成功蒸馏默认关：纯频次无语义，会产 `bash-bash-bash-bash` 垃圾草稿。
+      // 沉淀统一走上面的 conversationReview LLM 反思路。
+      if (LEARNING_PIPELINE.TELEMETRY_SKILL_DISTILLATION_ENABLED) {
+        passes.push(this.runSkillDistillation(toolCalls));
+      }
     }
 
     const results = await Promise.allSettled(passes);

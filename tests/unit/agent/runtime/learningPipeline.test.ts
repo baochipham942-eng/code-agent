@@ -82,11 +82,8 @@ vi.mock('../../../../src/main/lightMemory/conversationReview', () => ({
 import {
   LearningPipeline,
   extractFailurePatterns,
-  extractSuccessPatterns,
-  suggestSkillName,
 } from '../../../../src/main/agent/runtime/learningPipeline';
 import { onRendererPush } from '../../../../src/main/platform/windowBridge';
-import { LEARNING_PIPELINE } from '../../../../src/shared/constants';
 import type { AgentEvent } from '../../../../src/shared/contract';
 
 // ── Fixtures ──
@@ -186,72 +183,6 @@ describe('extractFailurePatterns', () => {
   });
 });
 
-describe('extractSuccessPatterns', () => {
-  beforeEach(() => {
-    callCounter = 0;
-  });
-
-  it('should return empty when no sequence repeats enough', () => {
-    const calls = [
-      makeToolCall({ name: 'Grep' }),
-      makeToolCall({ name: 'Read' }),
-      makeToolCall({ name: 'Edit' }),
-    ];
-    expect(extractSuccessPatterns(calls)).toEqual([]);
-  });
-
-  it('should extract repeated tool sequence (>= 3 occurrences)', () => {
-    const calls: TelemetryToolCall[] = [];
-    for (let i = 0; i < 3; i++) {
-      calls.push(makeToolCall({ name: 'Grep', arguments: '{"pattern":"foo"}' }));
-      calls.push(makeToolCall({ name: 'Read', arguments: '{"file_path":"/a.ts"}' }));
-      calls.push(makeToolCall({ name: 'Edit', arguments: '{"file_path":"/a.ts"}' }));
-    }
-    const patterns = extractSuccessPatterns(calls);
-    expect(patterns.length).toBeGreaterThan(0);
-
-    // 最长的合格序列应该是 Grep → Read → Edit ... 子序列被去重
-    const keys = patterns.map((pattern) => pattern.key);
-    expect(keys.some((key) => key.includes('Grep') && key.includes('Edit'))).toBe(true);
-    // 子序列 Grep → Read 不应该单独出现（被更长序列覆盖）
-    expect(keys).not.toContain('Grep → Read');
-  });
-
-  it('should break sequences at failed calls', () => {
-    const calls: TelemetryToolCall[] = [];
-    for (let i = 0; i < 3; i++) {
-      calls.push(makeToolCall({ name: 'Grep' }));
-      calls.push(makeFailedCall('Read', 'no such file'));
-      calls.push(makeToolCall({ name: 'Edit' }));
-    }
-    // Grep 和 Edit 之间被失败的 Read 隔断，不会形成 Grep → Edit 序列
-    const patterns = extractSuccessPatterns(calls);
-    expect(patterns.every((pattern) => !pattern.key.includes('Grep → Edit'))).toBe(true);
-  });
-
-  it('should record example args from first occurrence', () => {
-    const calls: TelemetryToolCall[] = [];
-    for (let i = 0; i < 3; i++) {
-      calls.push(makeToolCall({ name: 'Grep', arguments: '{"pattern":"first"}' }));
-      calls.push(makeToolCall({ name: 'Read', arguments: '{"file_path":"/first.ts"}' }));
-    }
-    const patterns = extractSuccessPatterns(calls);
-    const pattern = patterns.find((entry) => entry.key === 'Grep → Read');
-    expect(pattern).toBeDefined();
-    expect(pattern!.exampleSteps[0].args).toEqual({ pattern: 'first' });
-  });
-});
-
-describe('suggestSkillName', () => {
-  it('should build kebab-case name from tool sequence', () => {
-    expect(suggestSkillName(['Grep', 'Read', 'Edit'])).toBe('grep-read-edit');
-  });
-
-  it('should fall back for empty sequence', () => {
-    expect(suggestSkillName([])).toBe('distilled-workflow');
-  });
-});
-
 describe('LearningPipeline', () => {
   beforeEach(() => {
     callCounter = 0;
@@ -292,93 +223,27 @@ describe('LearningPipeline', () => {
     );
   });
 
-  it('runSkillDistillation should enqueue drafts and emit confirmation event (never auto-install)', async () => {
-    const calls: TelemetryToolCall[] = [];
-    for (let i = 0; i < LEARNING_PIPELINE.SUCCESS_PATTERN_THRESHOLD; i++) {
-      calls.push(makeToolCall({ name: 'Grep' }));
-      calls.push(makeToolCall({ name: 'Read' }));
-    }
-    telemetryMocks.getToolCallsBySession.mockReturnValue(calls);
-
-    const ctx = makeCtx('session-skill');
-    const pipeline = new LearningPipeline(ctx);
-    const { pushes, dispose } = captureRendererPushes();
-    try {
-      await pipeline.runSkillDistillation();
-    } finally {
-      dispose();
-    }
-
-    expect(draftMocks.enqueueSkillDraft).toHaveBeenCalled();
-    // run SSE 流仍能收到，兼容已有事件通路。
-    expect(ctx.onEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'skill_draft_pending',
-        data: expect.objectContaining({
-          sessionId: 'session-skill',
-          drafts: expect.arrayContaining([
-            expect.objectContaining({ name: expect.any(String), occurrences: expect.any(Number) }),
-          ]),
-        }),
-      }),
-    );
-    // session-end learning 是 fire-and-forget，可能发生在 run SSE 已结束之后；
-    // 因此必须同时推到全局 renderer 通道，聊天页才能弹确认卡。
-    expect(findSkillDraftPush(pushes)?.data).toEqual(
-      expect.objectContaining({
-        type: 'skill_draft_pending',
-        data: expect.objectContaining({
-          sessionId: 'session-skill',
-          drafts: expect.arrayContaining([
-            expect.objectContaining({ name: expect.any(String), occurrences: expect.any(Number) }),
-          ]),
-        }),
-      }),
-    );
-  });
-
-  it('runSkillDistillation should not emit event when all drafts are deduped', async () => {
-    const calls: TelemetryToolCall[] = [];
-    for (let i = 0; i < LEARNING_PIPELINE.SUCCESS_PATTERN_THRESHOLD; i++) {
-      calls.push(makeToolCall({ name: 'Grep' }));
-      calls.push(makeToolCall({ name: 'Read' }));
-    }
-    telemetryMocks.getToolCallsBySession.mockReturnValue(calls);
-    draftMocks.enqueueSkillDraft.mockResolvedValueOnce(null as never);
-
-    const ctx = makeCtx();
-    const pipeline = new LearningPipeline(ctx);
-    const { pushes, dispose } = captureRendererPushes();
-    try {
-      await pipeline.runSkillDistillation();
-    } finally {
-      dispose();
-    }
-
-    expect(ctx.onEvent).not.toHaveBeenCalled();
-    expect(findSkillDraftPush(pushes)).toBeUndefined();
-  });
-
-  it('runSessionEndLearning should run both passes from telemetry', async () => {
+  it('runSessionEndLearning should run failure pass from telemetry (telemetry n-gram 蒸馏已移除)', async () => {
     const calls: TelemetryToolCall[] = [
-      // 3 次相同失败
+      // 3 次相同失败 → failure journal
       makeFailedCall('Bash', 'timeout after 30s', 'timeout'),
       makeFailedCall('Bash', 'timeout after 60s', 'timeout'),
       makeFailedCall('Bash', 'timeout after 90s', 'timeout'),
     ];
-    // 3 次相同成功序列
+    // 3 次相同成功序列：曾会被 n-gram 蒸馏成草稿，移除后不再产出任何草稿
     for (let i = 0; i < 3; i++) {
       calls.push(makeToolCall({ name: 'Grep' }));
       calls.push(makeToolCall({ name: 'Read' }));
     }
     telemetryMocks.getToolCallsBySession.mockReturnValue(calls);
 
-    const ctx = makeCtx('session-both');
+    const ctx = makeCtx('session-both'); // 无对话消息 → conversationReview 也跳过
     const pipeline = new LearningPipeline(ctx);
     await pipeline.runSessionEndLearning();
 
     expect(journalMocks.recordFailurePatterns).toHaveBeenCalledTimes(1);
-    expect(draftMocks.enqueueSkillDraft).toHaveBeenCalled();
+    // telemetry 成功序列不再生成 skill 草稿
+    expect(draftMocks.enqueueSkillDraft).not.toHaveBeenCalled();
   });
 
   it('should survive telemetry storage errors gracefully', async () => {

@@ -155,21 +155,11 @@ export const ROLE_PROACTIVITY = {
 
 /** GAP-005: 经验沉淀管线（learningPipeline → failure journal / skill 草稿） */
 export const LEARNING_PIPELINE = {
-  /**
-   * telemetry n-gram 成功蒸馏总开关（默认关）。
-   * 该路只看工具调用频次、无语义判定，会把"连跑 3 次 bash"误提议成 `bash-bash-bash-bash`
-   * 这类垃圾草稿。已确认废弃，沉淀统一走 conversationReview 的 LLM 反思路（见
-   * docs/designs/experience-distillation-and-uninstall-fixes.md Part 1）。
-   * 暂以开关止血、保留可回滚；重做落地后整条 n-gram 路物理移除。
-   */
-  TELEMETRY_SKILL_DISTILLATION_ENABLED: false,
+  // 注：原 telemetry n-gram 成功蒸馏（SUCCESS_PATTERN_THRESHOLD / SUCCESS_SEQUENCE_*）已废弃移除，
+  // 纯频次无语义会产 bash-bash-bash 垃圾草稿；skill 沉淀统一走 conversationReview 的 LLM 反思路
+  // （SKILL_REVIEW），见 docs/designs/experience-distillation-and-uninstall-fixes.md Part 1。
   /** 同一失败模式累计出现次数达到该阈值才写入 failure journal */
   FAILURE_PATTERN_THRESHOLD: 3,
-  /** 同一成功工具序列出现次数达到该阈值才生成 skill 草稿 */
-  SUCCESS_PATTERN_THRESHOLD: 3,
-  /** 成功模式提取的工具序列长度范围（n-gram） */
-  SUCCESS_SEQUENCE_MIN_LENGTH: 2,
-  SUCCESS_SEQUENCE_MAX_LENGTH: 4,
   /** failure journal 最多保留的模式条数（超出按 lastSeen 淘汰最旧的） */
   JOURNAL_MAX_ENTRIES: 30,
   /** 每个模式最多保留的来源 session 数 */

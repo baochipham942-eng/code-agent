@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isKnownSafeCommand, classifyCommand } from '../../src/main/security/commandSafety';
+import { isKnownSafeCommand, classifyCommand, validateCommand } from '../../src/main/security/commandSafety';
 
 describe('isKnownSafeCommand', () => {
   // ========================================================================
@@ -377,5 +377,55 @@ describe('classifyCommand', () => {
   it('classifies unknown commands', () => {
     expect(classifyCommand('rm -rf /')).toBe('unknown');
     expect(classifyCommand('some-unknown-binary')).toBe('unknown');
+  });
+});
+
+describe('validateCommand — rm 删除分级', () => {
+  // 灾难性删除：仍必须硬毙（allowed=false / critical）
+  describe('灾难性删除仍硬毙', () => {
+    const catastrophic = [
+      'rm -rf /',
+      'rm -rf /*',
+      'rm -rf ~',
+      'rm -rf ~/',
+      'rm -rf ~/*',
+      'rm -rf $HOME',
+      'rm -rf /System',
+      'rm -rf /System/Library/Foo',
+      'rm -rf /usr/local/bin',
+      'rm -rf /etc',
+      'rm -rf /var/db',
+      'rm -rf /Library',
+      'rm -rf /Applications',       // 整个 Applications 目录
+      'rm -rf /Applications/*',
+      'rm -rf /Users',
+      'rm -rf /Volumes',
+      'sudo rm -rf /Applications/Foo.app', // sudo 删除维持硬毙
+    ];
+    for (const cmd of catastrophic) {
+      it(`blocks: ${cmd}`, () => {
+        const r = validateCommand(cmd);
+        expect(r.allowed).toBe(false);
+        expect(r.riskLevel).toBe('critical');
+      });
+    }
+  });
+
+  // 目标明确的删除：从硬毙降为"一次确认"(allowed=true / high)
+  describe('目标明确删除 → 一次确认（不硬毙）', () => {
+    const targeted = [
+      'rm -rf /Applications/Claude.app',
+      'rm -rf /Applications/Claude Code URL Handler.app',
+      'rm -rf ~/Library/Application Support/Claude',
+      'rm -rf ~/Downloads/tmp',
+      'rm -rf /tmp/build-cache',
+    ];
+    for (const cmd of targeted) {
+      it(`confirms (not blocks): ${cmd}`, () => {
+        const r = validateCommand(cmd);
+        expect(r.allowed).toBe(true);     // 不再硬毙，进确认流程
+        expect(r.riskLevel).toBe('high'); // 仍是危险操作，需一次确认
+      });
+    }
   });
 });

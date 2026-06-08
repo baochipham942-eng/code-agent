@@ -1,6 +1,6 @@
 # 经验沉淀重做 + 卸载/权限三层修复 设计
 
-> 状态：设计待评审（proposed），评审通过后分两批执行
+> 状态：已实现（implemented）。决策升格见 [ADR-020](../decisions/020-experience-distillation-redesign.md)
 > 日期：2026-06-08
 > 触发：一次 dogfood 会话暴露三个问题 —— ① 跑 3 次 bash 就被提议存成 `bash-bash-bash-bash` skill；② 全权限模式下"卸载 app"反复说"正在等你确认"却从不执行；③ 卸载目标（applet 等）没探索清楚。
 

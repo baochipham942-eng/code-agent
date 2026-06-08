@@ -389,7 +389,10 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       tool_success_rate REAL DEFAULT 0,
       total_errors INTEGER DEFAULT 0,
       session_type TEXT,
-      status TEXT DEFAULT 'recording'
+      status TEXT DEFAULT 'recording',
+      agent_version TEXT,
+      prompt_version TEXT,
+      tool_schema_version TEXT
     )
   `);
   safeAlter(db, `ALTER TABLE telemetry_sessions ADD COLUMN user_id TEXT`, logger);

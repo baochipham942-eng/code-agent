@@ -60,6 +60,10 @@ export function applyTelemetryTurnsMigrations(db: BetterSqlite3.Database, logger
 
   // Fleet observability: 标记会话遥测是否已回传到云端（NULL = 未上传），镜像 sessions.synced_at
   safeExec(db, 'ALTER TABLE telemetry_sessions ADD COLUMN synced_at INTEGER', logger);
+  // 诊断版本指纹：知道每条会话跑的是哪版构建/提示词/工具集（按版本归因，替代盲打补丁）
+  safeExec(db, 'ALTER TABLE telemetry_sessions ADD COLUMN agent_version TEXT', logger);
+  safeExec(db, 'ALTER TABLE telemetry_sessions ADD COLUMN prompt_version TEXT', logger);
+  safeExec(db, 'ALTER TABLE telemetry_sessions ADD COLUMN tool_schema_version TEXT', logger);
   // Runtime 会话分代已不再是会话维度；旧 telemetry 表里保留的列会让后续 insert 继续写假值。
   safeExec(db, 'ALTER TABLE telemetry_sessions DROP COLUMN generation_id', logger);
   safeExec(

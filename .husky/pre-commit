@@ -1,3 +1,4 @@
 bash scripts/check-hardcoded-models.sh
 bash scripts/check-provider-symmetry.sh --quiet
+bash scripts/check-prompt-version-bump.sh
 npx lint-staged

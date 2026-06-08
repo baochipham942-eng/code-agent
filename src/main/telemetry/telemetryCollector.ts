@@ -10,6 +10,7 @@ import { getAuthService } from '../services/auth/authService';
 import { trackNode } from '../observability/posthogNode';
 import { POSTHOG_EVENTS } from '../../shared/observability/posthog-events';
 import { getSystemPromptCache } from './systemPromptCache';
+import { getDiagnosticVersions } from './diagnosticVersions';
 import { classifyIntent, evaluateOutcome } from './intentClassifier';
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetryAdapter, QualitySignals, TelemetryPushEvent, ErrorCategory } from '../../shared/contract/telemetry';
 import type { AgentEvent } from '../../shared/contract';
@@ -98,6 +99,9 @@ interface SessionConfig {
   modelProvider: string;
   modelName: string;
   workingDirectory: string;
+  agentVersion?: string;
+  promptVersion?: string;
+  toolSchemaVersion?: string;
 }
 
 interface PendingToolCall {
@@ -269,6 +273,9 @@ export class TelemetryCollector {
   startSession(sessionId: string, config: SessionConfig): void {
     if (this.activeSession?.id === sessionId) return; // already tracking
 
+    // 版本指纹：调用方未显式传则用当前运行时版本兜底，保证每条会话都带齐
+    const versions = getDiagnosticVersions();
+
     const session: TelemetrySession = {
       id: sessionId,
       userId: config.userId ?? getAuthService().getCurrentUser()?.id ?? null,
@@ -285,7 +292,10 @@ export class TelemetryCollector {
       totalToolCalls: 0,
       toolSuccessRate: 0,
       totalErrors: 0,
-      status: 'recording'
+      status: 'recording',
+      agentVersion: config.agentVersion ?? versions.agentVersion,
+      promptVersion: config.promptVersion ?? versions.promptVersion,
+      toolSchemaVersion: config.toolSchemaVersion ?? versions.toolSchemaVersion
     };
 
     this.activeSession = session;

@@ -44,6 +44,7 @@ import { createHookManager } from '../../hooks';
 import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { getSystemPromptCache } from '../../telemetry/systemPromptCache';
+import { getDiagnosticVersions } from '../../telemetry/diagnosticVersions';
 import { DEFAULT_MODELS, MODEL_MAX_TOKENS, getContextWindow, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
 
 import { writeTurnSnapshot } from './turnSnapshotWriter';
@@ -759,6 +760,7 @@ export class ConversationRuntime {
       userId: this.ctx.userId,
       modelProvider: this.ctx.modelConfig.provider,
       modelName: this.ctx.modelConfig.model,
+      ...getDiagnosticVersions(),
     }, userMessage);
 
     await this.initializeUserHooks();

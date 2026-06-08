@@ -206,18 +206,18 @@ describe('skillModule (native)', () => {
       }
     });
 
-    it('returns INVALID_ARGS for unknown skill, listing available names', async () => {
+    it('returns INVALID_ARGS for unknown skill, suggesting close enabled names', async () => {
       getSkillMock.mockReturnValue(undefined);
       getAllSkillsMock.mockReturnValue([
-        makeSkill({ name: 'a' }),
-        makeSkill({ name: 'b' }),
+        makeSkill({ name: 'context7' }),
+        makeSkill({ name: 'browser' }),
       ]);
-      const result = await run({ command: 'missing' });
+      const result = await run({ command: 'context' });
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.code).toBe('INVALID_ARGS');
-        expect(result.error).toContain('Unknown skill: missing');
-        expect(result.error).toContain('a, b');
+        expect(result.error).toContain('Unknown skill: context');
+        expect(result.error).toContain('context7');
       }
     });
 
@@ -250,7 +250,7 @@ describe('skillModule (native)', () => {
         makeSkill({ name: 'hidden' }),
       ]);
       isSkillEnabledMock.mockImplementation((name) => name !== 'hidden');
-      const result = await run({ command: 'missing' });
+      const result = await run({ command: 'visibl' });
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toContain('visible');

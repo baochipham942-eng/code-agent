@@ -48,8 +48,11 @@ function createSchema(db: BetterSqlite3.Database): void {
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
       role TEXT NOT NULL,
+      content TEXT NOT NULL DEFAULT '',
+      timestamp INTEGER NOT NULL DEFAULT 0,
       is_meta INTEGER NOT NULL DEFAULT 0,
-      visibility TEXT NOT NULL DEFAULT 'active'
+      visibility TEXT NOT NULL DEFAULT 'active',
+      synced_at INTEGER
     );
   `);
 }

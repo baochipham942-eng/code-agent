@@ -98,6 +98,7 @@ describe('SettingsModal screen memory tab visibility', () => {
       'plugins',
       'mcp',
       'skills',
+      'roles',
       'channels',
       'hooks',
     ]);

@@ -954,6 +954,11 @@ export class MessageProcessor {
     }
 
     // === Stagnation detection ===
+    this.ctx.recentToolFingerprints ??= [];
+    this.ctx.recentToolNames ??= [];
+    this.ctx.stagnationWarningEmitted ??= false;
+    this.ctx.searchSpamWarningEmitted ??= false;
+
     // 计算本轮每个 tool call 的 fingerprint，push 到滑动窗口，连续 N 次相同
     // → 注入提示让模型换路径。不强制 break loop（给模型自我纠正机会），但
     // 已经发出过提示后再次命中就升级（这里用 stagnationWarningEmitted 标记 + 后续可在 finalizer break）

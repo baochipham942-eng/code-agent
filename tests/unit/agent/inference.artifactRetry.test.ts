@@ -91,6 +91,7 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
     detectRequiredCapabilities: vi.fn().mockReturnValue([]),
     getModelInfo: vi.fn().mockReturnValue({ supportsVision: true, supportsTool: true, capabilities: ['general'] }),
     getFallbackConfig: vi.fn().mockReturnValue(null),
+    getVisionPreflightCandidates: vi.fn().mockReturnValue([]),
   };
 
   const runtime = {
@@ -332,6 +333,12 @@ describe('contextAssembly inference artifact retry', () => {
       apiKey: 'current-xiaomi-key',
       maxTokens: 131072,
     });
+    ctx.runtime.modelRouter.getVisionPreflightCandidates = vi.fn().mockReturnValue([{
+      provider: 'xiaomi',
+      model: 'mimo-v2-omni',
+      apiKey: 'current-xiaomi-key',
+      maxTokens: 131072,
+    }]);
 
     await inference(ctx);
 

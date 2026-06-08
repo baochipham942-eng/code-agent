@@ -90,7 +90,7 @@ describe('内置 skill 分类回填（builtinSkills.ts SSoT）', () => {
       'docs-office': 2, // xlsx, meeting-summary
       'data-analysis': 2, // data-cleaning, data-analysis-helper
       research: 3, // literature-review, paper-distillation, research-monitor
-      automation: 4, // computer-housekeeper, contract-review, image-ocr-search, photo-archive
+      automation: 6, // computer-housekeeper, contract-review, image-ocr-search, photo-archive, create-role, edit-role
       development: 6, // commit, review, test, explain, refactor, docker
     });
   });

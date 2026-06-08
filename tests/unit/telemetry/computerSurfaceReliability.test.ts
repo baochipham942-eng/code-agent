@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { TelemetryPushEvent, TelemetryToolCall } from '../../../src/shared/contract/telemetry';
-import { TelemetryCollector } from '../../../src/main/telemetry/telemetryCollector';
+import { classifyError, TelemetryCollector } from '../../../src/main/telemetry/telemetryCollector';
 
 describe('TelemetryCollector computer surface reliability fields', () => {
   let collector: TelemetryCollector | null = null;
@@ -8,6 +8,11 @@ describe('TelemetryCollector computer surface reliability fields', () => {
   afterEach(async () => {
     await collector?.dispose();
     collector = null;
+  });
+
+  it('classifies tool args validation failures explicitly', () => {
+    expect(classifyError('<tool-args-validation-error>缺少必填参数 file_path</tool-args-validation-error>'))
+      .toBe('tool_args_validation');
   });
 
   it('extracts Computer Use failure taxonomy and AX quality from tool metadata', () => {

@@ -76,6 +76,7 @@ export function classifyError(errorMessage: string): ErrorCategory {
 
   // 5. 上下文/解析
   if (msg.includes('context length') || msg.includes('token limit') || msg.includes('maximum context')) return 'context_overflow';
+  if (msg.includes('tool-args-validation-error') || msg.includes('参数校验失败')) return 'tool_args_validation';
   if (msg.includes('syntaxerror') || msg.includes('parse error') || msg.includes('unexpected token')) return 'syntax_error';
 
   // 6. 时间/编辑/Shell
@@ -747,6 +748,17 @@ export class TelemetryCollector {
 
     if (!success) {
       this.turnErrorCount++;
+      const validationIssues = Array.isArray(metadata?.validationIssues)
+        ? metadata.validationIssues
+        : undefined;
+      trackNode(POSTHOG_EVENTS.TOOL_CALL_FAILED, {
+        sessionId: this.activeTurn.sessionId!,
+        tool: pending.name,
+        toolCallId,
+        errorCategory: errorCategory ?? 'unknown',
+        validationFailed: metadata?.validationFailed === true,
+        validationIssueCount: validationIssues?.length ?? 0,
+      });
     }
 
     this.pushEvent({
@@ -781,6 +793,19 @@ export class TelemetryCollector {
           this.turnNudgesInjected++;
         }
         break;
+    }
+
+    if (event.type === 'model_decision') {
+      const data = event.data as unknown as Record<string, unknown> | undefined;
+      trackNode(POSTHOG_EVENTS.MODEL_DECISION, {
+        sessionId,
+        requestedProvider: data?.requestedProvider,
+        requestedModel: data?.requestedModel,
+        resolvedProvider: data?.resolvedProvider,
+        resolvedModel: data?.resolvedModel,
+        reason: data?.reason,
+        billingMode: data?.billingMode,
+      });
     }
 
     // Record as timeline event
@@ -941,6 +966,8 @@ export class TelemetryCollector {
         return `Turn ended`;
       case 'tool_schema_snapshot':
         return `${Number(data?.toolCount ?? 0)} tool schemas available`;
+      case 'model_decision':
+        return `Model decision: ${String(data?.requestedProvider ?? '?')}/${String(data?.requestedModel ?? '?')} -> ${String(data?.resolvedProvider ?? '?')}/${String(data?.resolvedModel ?? '?')} (${String(data?.reason ?? 'unknown')})`;
       case 'tool_call_start':
         return `Tool: ${data?.name ?? 'unknown'} started`;
       case 'tool_call_end':
@@ -974,9 +1001,54 @@ export class TelemetryCollector {
       });
     }
 
+    if (event.type === 'model_decision') {
+      const extracted: Record<string, unknown> = {};
+      for (const key of [
+        'turnId',
+        'timestamp',
+        'requestedProvider',
+        'requestedModel',
+        'resolvedProvider',
+        'resolvedModel',
+        'reason',
+        'billingMode',
+        'fallbackFrom',
+        'role',
+      ]) {
+        if (key in data) {
+          extracted[key] = data[key];
+        }
+      }
+      return JSON.stringify(extracted);
+    }
+
+    if (event.type === 'tool_call_end') {
+      const metadata = data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
+        ? data.metadata as Record<string, unknown>
+        : undefined;
+      const extracted: Record<string, unknown> = {};
+      for (const key of ['toolCallId', 'success', 'error', 'duration']) {
+        if (key in data) {
+          const val = data[key];
+          extracted[key] = typeof val === 'string'
+            ? val.substring(0, TELEMETRY_TRUNCATION.EVENT_SUMMARY)
+            : val;
+        }
+      }
+      if (metadata?.validationFailed === true) {
+        extracted.metadata = {
+          validationFailed: true,
+          validationIssues: Array.isArray(metadata.validationIssues)
+            ? metadata.validationIssues
+            : undefined,
+        };
+      }
+      return Object.keys(extracted).length > 0 ? JSON.stringify(extracted) : undefined;
+    }
+
     // Extract only key fields, exclude large content
     const extracted: Record<string, unknown> = {};
-    const allowedKeys = ['turnId', 'iteration', 'name', 'success', 'error', 'code', 'message', 'duration'];
+    const allowedKeys = ['turnId', 'iteration', 'name', 'toolCallId', 'success', 'error', 'code', 'message', 'duration'];
     for (const key of allowedKeys) {
       if (key in data) {
         const val = data[key];

@@ -34,7 +34,7 @@ import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { useMessageActionStore } from '../stores/messageActionStore';
 import { isWebMode } from '../utils/platform';
 import { toast } from '../hooks/useToast';
-import { hasConfiguredRuntimeModels } from '@shared/modelRuntime';
+import { hasConfiguredDefaultRuntimeModel, hasConfiguredRuntimeModels } from '@shared/modelRuntime';
 
 // PlanPanel moved to inline display in TurnBasedTraceView
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
@@ -366,8 +366,13 @@ export const ChatView: React.FC = () => {
   const ensureModelConfigured = useCallback(async (): Promise<boolean> => {
     try {
       const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
-      if (hasConfiguredRuntimeModels(settings)) {
+      if (hasConfiguredDefaultRuntimeModel(settings)) {
         return true;
+      }
+      if (hasConfiguredRuntimeModels(settings)) {
+        toast.info('当前默认模型未配置 API Key，请切换到已配置的模型后再发送。');
+        openSettingsTab('model');
+        return false;
       }
       toast.info('先配置一个模型后再发送。');
       openSettingsTab('model');

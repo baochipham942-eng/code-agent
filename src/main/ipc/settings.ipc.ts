@@ -9,6 +9,7 @@ import type { AppSettings } from '../../shared/contract';
 import type { ConfigService } from '../services';
 import { MODEL_API_ENDPOINTS, API_VERSIONS } from '../../shared/constants';
 import { assertAdminAccess, getAdminAccessIpcError, isCurrentUserAdmin } from './adminGuard';
+import { resolveConnectionTestModel } from '../model/providerConnectionTest';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -115,7 +116,7 @@ async function handleTestApiKey(payload: { provider: string; apiKey: string }): 
     claude: {
       url: `${MODEL_API_ENDPOINTS.claude}/messages`,
       headers: { 'x-api-key': payload.apiKey, 'anthropic-version': API_VERSIONS.ANTHROPIC, 'content-type': 'application/json' },
-      body: { model: 'claude-3-haiku-20240307', max_tokens: 1, messages: [{ role: 'user', content: 'Hi' }] },
+      body: { model: resolveConnectionTestModel('claude'), max_tokens: 1, messages: [{ role: 'user', content: 'Hi' }] },
     },
     groq: { url: `${MODEL_API_ENDPOINTS.groq}/models`, headers: { Authorization: `Bearer ${payload.apiKey}` }, body: null },
   };

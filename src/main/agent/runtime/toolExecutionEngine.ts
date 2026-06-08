@@ -549,6 +549,7 @@ export class ToolExecutionEngine {
       logger.warn(`[AgentLoop] Tool ${toolCall.name} args failed schema validation`);
       logCollector.tool('WARN', `Tool ${toolCall.name} args failed schema validation`, {
         toolCallId: toolCall.id,
+        validationIssues: validation.issues,
       });
 
       const toolResult: ToolResult = {
@@ -556,12 +557,21 @@ export class ToolExecutionEngine {
         success: false,
         error: validation.message,
         duration: Date.now() - startTime,
+        metadata: {
+          validationFailed: true,
+          validationIssues: validation.issues.map((issue) => ({
+            field: issue.field,
+            reason: issue.reason,
+            expected: issue.expected,
+            actual: issue.actual,
+          })),
+        },
       };
 
       this.contextAssembly.injectSystemMessage(validation.message);
 
       emitToolCallStart();
-      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined);
+      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
       this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
 
       if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {

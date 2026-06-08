@@ -28,6 +28,10 @@ type ToolSchemaSnapshot = {
   timestamp: number;
   schemas: ReplayToolSchema[];
 };
+type ModelDecisionSnapshot = {
+  timestamp: number;
+  data: Record<string, unknown>;
+};
 
 class TelemetryQueryService {
   private getDb() {
@@ -238,6 +242,54 @@ class TelemetryQueryService {
       }
     }
     return snapshots.sort((left, right) => left.timestamp - right.timestamp);
+  }
+
+  private extractModelDecisionSnapshots(eventRows: SQLiteRow[]): ModelDecisionSnapshot[] {
+    const snapshots: ModelDecisionSnapshot[] = [];
+    for (const row of eventRows) {
+      if (row.event_type !== 'model_decision') continue;
+      const data = this.parseEventData(row.data);
+      if (!data || typeof data !== 'object' || Array.isArray(data)) continue;
+      snapshots.push({
+        timestamp: Number(row.timestamp) || 0,
+        data: data as Record<string, unknown>,
+      });
+    }
+    return snapshots.sort((left, right) => left.timestamp - right.timestamp);
+  }
+
+  private getModelDecisionAt(
+    snapshots: ModelDecisionSnapshot[],
+    timestamp: number,
+  ): Record<string, unknown> | undefined {
+    if (snapshots.length === 0) return undefined;
+    let selected: ModelDecisionSnapshot | undefined;
+    for (const snapshot of snapshots) {
+      if (snapshot.timestamp <= timestamp) {
+        selected = snapshot;
+        continue;
+      }
+      break;
+    }
+    return selected?.data ?? snapshots[0]?.data;
+  }
+
+  private getToolResultMetadata(
+    eventRows: SQLiteRow[],
+    toolCallId: string,
+  ): Record<string, unknown> | undefined {
+    for (const row of eventRows) {
+      if (row.event_type !== 'tool_call_end') continue;
+      const data = this.parseEventData(row.data);
+      if (!data || typeof data !== 'object' || Array.isArray(data)) continue;
+      const eventToolCallId = this.getToolTraceValue(data as Record<string, unknown>, ['toolCallId', 'tool_call_id', 'callId', 'id']);
+      if (eventToolCallId !== toolCallId) continue;
+      const metadata = (data as Record<string, unknown>).metadata;
+      if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+        return metadata as Record<string, unknown>;
+      }
+    }
+    return undefined;
   }
 
   private getToolSchemasAt(
@@ -674,6 +726,7 @@ class TelemetryQueryService {
         const turnEvents = data.eventRows.filter(ev => ev.turn_id === turnId);
         const turnToolNames = turnToolCalls.map(tc => tc.name as string);
         const toolSchemaSnapshots = this.extractToolSchemaSnapshots(turnEvents);
+        const modelDecisionSnapshots = this.extractModelDecisionSnapshots(turnEvents);
 
         if (row.user_prompt) {
           leadingBlocks.push({
@@ -693,6 +746,10 @@ class TelemetryQueryService {
         }
 
         for (const mc of turnModelCalls) {
+          const modelDecision = this.getModelDecisionAt(
+            modelDecisionSnapshots,
+            (mc.timestamp as number) || (row.start_time as number) || 0,
+          );
           const schemas = [
             ...this.getToolSchemaMapAt(
               toolSchemaSnapshots,
@@ -708,6 +765,13 @@ class TelemetryQueryService {
               id: mc.id as string,
               provider: mc.provider as string,
               model: mc.model as string,
+              requestedProvider: modelDecision?.requestedProvider as string | undefined,
+              requestedModel: modelDecision?.requestedModel as string | undefined,
+              resolvedProvider: modelDecision?.resolvedProvider as string | undefined,
+              resolvedModel: modelDecision?.resolvedModel as string | undefined,
+              reason: modelDecision?.reason as string | undefined,
+              billingMode: modelDecision?.billingMode as string | undefined,
+              fallbackFrom: modelDecision?.fallbackFrom as string | null | undefined,
               responseType: mc.response_type as string | undefined,
               toolCallCount: (mc.tool_call_count as number) || 0,
               inputTokens: (mc.input_tokens as number) || 0,
@@ -733,6 +797,10 @@ class TelemetryQueryService {
             tc.name as string,
             tc.tool_call_id as string,
           );
+          const resultMetadata = this.getToolResultMetadata(
+            turnEvents,
+            tc.tool_call_id as string,
+          );
           toolDistribution[category]++;
 
           timelineBlocks.push({
@@ -747,6 +815,7 @@ class TelemetryQueryService {
               toolSchema,
               permissionTrace,
               result: (tc.result_summary as string) || undefined,
+              resultMetadata,
               success: (tc.success as number) === 1,
               successKnown: true,
               duration: (tc.duration_ms as number) || 0,

@@ -493,6 +493,16 @@ export function hasConfiguredRuntimeModels(settings?: AppSettings | null): boole
   return buildRuntimeModelOptions(settings).length > 0;
 }
 
+export function hasConfiguredDefaultRuntimeModel(settings?: AppSettings | null): boolean {
+  if (!settings?.models) return false;
+  const providerId = settings.models.defaultProvider || settings.models.default;
+  if (!providerId) return false;
+  const providerConfig = settings.models.providers?.[providerId];
+  if (!providerConfig || providerConfig.enabled === false) return false;
+  if (providerId === 'local') return true;
+  return Boolean(providerConfig.apiKeyConfigured || providerConfig.apiKey);
+}
+
 function compareProviderOptionSource(
   left: RuntimeProviderOptionSource,
   right: RuntimeProviderOptionSource,

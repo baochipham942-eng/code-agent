@@ -87,6 +87,7 @@ export type ErrorCategory =
   | 'http_5xx' // HTTP 5xx
   | 'sandbox_denied' // 沙箱拒绝
   | 'auth_failed' // 401/403/认证失败
+  | 'tool_args_validation' // 工具参数 schema 校验失败
   | 'unknown';
 
 export interface TelemetryToolCall {

@@ -104,6 +104,28 @@ describe('inferenceViaAiSdk —— 流式映射', () => {
     expect(res.finishReason).toBe('tool-calls');
   });
 
+  it('终态 tool-call input 为空时保留已流式累积的参数', async () => {
+    vi.mocked(streamText).mockReturnValue(fakeStream([
+      { type: 'tool-input-start', id: 'call_write', toolName: 'Write' },
+      { type: 'tool-input-delta', id: 'call_write', delta: '{"file_path":"/tmp/demo.html",' },
+      { type: 'tool-input-delta', id: 'call_write', delta: '"content":"<h1>ok</h1>"}' },
+      { type: 'tool-call', toolCallId: 'call_write', toolName: 'Write', input: {} },
+      { type: 'finish', finishReason: 'tool-calls', totalUsage: { inputTokens: 12, outputTokens: 6 } },
+    ]));
+    const col = makeCollector();
+
+    const res = await inferenceViaAiSdk([{ role: 'user', content: 'make html' }], [], CONFIG, col.onStream);
+
+    expect(col.byType('tool_call_delta').map((c) => c.toolCall?.argumentsDelta).join('')).toBe(
+      '{"file_path":"/tmp/demo.html","content":"<h1>ok</h1>"}',
+    );
+    expect(res.toolCalls).toEqual([{
+      id: 'call_write',
+      name: 'Write',
+      arguments: { file_path: '/tmp/demo.html', content: '<h1>ok</h1>' },
+    }]);
+  });
+
   it('reasoning + text：thinking 累积、reasoning 实时回调', async () => {
     vi.mocked(streamText).mockReturnValue(fakeStream([
       { type: 'reasoning-delta', id: 'r', text: 'let me think' },

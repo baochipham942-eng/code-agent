@@ -357,6 +357,13 @@ export interface ReplayModelDecision {
   id: string;
   provider: string;
   model: string;
+  requestedProvider?: string;
+  requestedModel?: string;
+  resolvedProvider?: string;
+  resolvedModel?: string;
+  reason?: string;
+  billingMode?: string;
+  fallbackFrom?: string | null;
   responseType?: string;
   toolCallCount: number;
   inputTokens: number;
@@ -449,4 +456,3 @@ export interface StructuredReplay {
     failureAttribution?: ReplayFailureAttribution;
   };
 }
-

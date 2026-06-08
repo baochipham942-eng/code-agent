@@ -1,7 +1,9 @@
 import {
   API_VERSIONS,
+  getDefaultModelForProvider,
   getProviderEndpointForProtocol,
   normalizeProviderId,
+  normalizeModelId,
   MCP,
 } from '../../shared/constants';
 import type { ModelProvider, ModelProviderProtocol } from '../../shared/contract';
@@ -39,6 +41,19 @@ export function resolveConfiguredApiKey(provider: string, apiKey?: string): stri
   }
 }
 
+export function resolveConnectionTestModel(
+  provider: string,
+  protocol?: ModelProviderProtocol,
+  model?: string,
+): string {
+  const trimmed = model?.trim();
+  if (trimmed) return normalizeModelId(trimmed);
+
+  const normalizedProvider = normalizeProviderId(provider) ?? provider;
+  const providerForDefault = protocol === 'claude' ? 'claude' : normalizedProvider;
+  return normalizeModelId(getDefaultModelForProvider(providerForDefault));
+}
+
 function buildTestConfig(
   provider: string,
   apiKey: string,
@@ -61,7 +76,7 @@ function buildTestConfig(
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: model || 'claude-3-haiku-20240307',
+        model: resolveConnectionTestModel(provider, providerProtocol, model),
         max_tokens: 1,
         messages: [{ role: 'user', content: 'Hi' }],
       }),

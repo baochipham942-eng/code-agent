@@ -155,6 +155,14 @@ export function resolveMainChatModelDecision(
       timestamp: Date.now(),
     },
   });
+  logger.info('[AgentLoop] Model decision resolved', {
+    requestedProvider: emittedDecision.requestedProvider,
+    requestedModel: emittedDecision.requestedModel,
+    resolvedProvider: emittedDecision.resolvedProvider,
+    resolvedModel: emittedDecision.resolvedModel,
+    reason: emittedDecision.reason,
+    billingMode: emittedDecision.billingMode,
+  });
 
   return adapted;
 }

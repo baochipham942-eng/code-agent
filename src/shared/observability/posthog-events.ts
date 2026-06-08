@@ -9,7 +9,9 @@ export const POSTHOG_EVENTS = {
   RUN_ABORTED: 'run_aborted',
   RUN_GOAL_MET: 'run_goal_met',
   TOOL_USED: 'tool_used',
+  TOOL_CALL_FAILED: 'tool_call_failed',
   MODEL_SELECTED: 'model_selected',
+  MODEL_DECISION: 'model_decision',
 } as const;
 
 export type PostHogEvent = (typeof POSTHOG_EVENTS)[keyof typeof POSTHOG_EVENTS];

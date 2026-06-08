@@ -671,10 +671,10 @@ describe('TelemetryQueryService transcript replay fallback', () => {
       'session-replay-join',
       'tool-write-1',
       'write_file',
-      '{"file_path":"out.ts"}',
-      '{"file_path":"out.ts","content":"ok"}',
-      'written',
-      1,
+      '{}',
+      '{}',
+      '<tool-args-validation-error>missing file_path</tool-args-validation-error>',
+      0,
       7,
       125,
       1,
@@ -685,6 +685,16 @@ describe('TelemetryQueryService transcript replay fallback', () => {
         id, turn_id, session_id, timestamp, event_type, summary, data, duration_ms
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
+    insertEvent.run(
+      'event-0',
+      'turn-sub-1',
+      'session-replay-join',
+      105,
+      'model_decision',
+      'Model decision: claude/claude-opus-4-6 -> xiaomi/mimo-v2.5-pro (user-selected)',
+      '{"requestedProvider":"claude","requestedModel":"claude-opus-4-6","resolvedProvider":"xiaomi","resolvedModel":"mimo-v2.5-pro","reason":"user-selected","billingMode":"payg"}',
+      null,
+    );
     insertEvent.run(
       'event-1',
       'turn-sub-1',
@@ -715,6 +725,16 @@ describe('TelemetryQueryService transcript replay fallback', () => {
       '{"tools":[{"name":"read_file","inputSchema":{"type":"object"},"requiresPermission":false,"permissionLevel":"read"}]}',
       null,
     );
+    insertEvent.run(
+      'event-4',
+      'turn-sub-1',
+      'session-replay-join',
+      126,
+      'tool_call_end',
+      'Tool completed: failed',
+      '{"toolCallId":"tool-write-1","success":false,"metadata":{"validationFailed":true,"validationIssues":[{"field":"file_path","reason":"missing","expected":"string"},{"field":"content","reason":"missing","expected":"string"}]}}',
+      null,
+    );
 
     const replay = await getTelemetryQueryService().getStructuredReplay('session-replay-join');
     const blocks = replay?.turns[0]?.blocks || [];
@@ -735,6 +755,11 @@ describe('TelemetryQueryService transcript replay fallback', () => {
     const modelBlock = blocks.find(block => block.type === 'model_call');
     expect(modelBlock?.modelDecision).toMatchObject({
       id: 'mc-1',
+      requestedProvider: 'claude',
+      requestedModel: 'claude-opus-4-6',
+      resolvedProvider: 'xiaomi',
+      resolvedModel: 'mimo-v2.5-pro',
+      reason: 'user-selected',
       toolSchemas: [
         expect.objectContaining({
           name: 'read_file',
@@ -757,12 +782,19 @@ describe('TelemetryQueryService transcript replay fallback', () => {
       ],
     });
     expect(writeToolBlock?.toolCall?.permissionTrace).toBeUndefined();
+    expect(writeToolBlock?.toolCall?.resultMetadata).toEqual({
+      validationFailed: true,
+      validationIssues: [
+        { field: 'file_path', reason: 'missing', expected: 'string' },
+        { field: 'content', reason: 'missing', expected: 'string' },
+      ],
+    });
     expect(replay?.summary.telemetryCompleteness).toMatchObject({
       sessionId: 'session-replay-join',
       replayKey: 'session-replay-join',
       modelCallCount: 1,
       toolCallCount: 2,
-      eventCount: 3,
+      eventCount: 5,
       hasModelDecisions: true,
       hasToolSchemas: true,
       hasPermissionTrace: true,

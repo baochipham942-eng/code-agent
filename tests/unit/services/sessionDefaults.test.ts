@@ -6,6 +6,7 @@ const settingsState = vi.hoisted(() => ({
       defaultProvider: 'xiaomi',
       providers: {
         xiaomi: { enabled: true, model: 'mimo-v2.5-pro' },
+        claude: { enabled: true },
       },
       routing: {
         code: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
@@ -30,6 +31,7 @@ describe('resolveSessionDefaultModelConfig', () => {
   beforeEach(() => {
     settingsState.settings.models.defaultProvider = 'xiaomi';
     settingsState.settings.models.providers.xiaomi = { enabled: true, model: 'mimo-v2.5-pro' };
+    settingsState.settings.models.providers.claude = { enabled: true };
   });
 
   it('uses the model output limit when maxTokens is not explicitly configured', () => {
@@ -46,5 +48,15 @@ describe('resolveSessionDefaultModelConfig', () => {
     const config = resolveSessionDefaultModelConfig();
 
     expect(config.maxTokens).toBe(32768);
+  });
+
+  it('falls back to the selected provider default model when provider model is missing', () => {
+    settingsState.settings.models.defaultProvider = 'claude';
+    settingsState.settings.models.providers.claude = { enabled: true };
+
+    const config = resolveSessionDefaultModelConfig();
+
+    expect(config.provider).toBe('claude');
+    expect(config.model).toBe('claude-opus-4-7');
   });
 });

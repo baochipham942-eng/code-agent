@@ -13,6 +13,7 @@
 import {
   DEFAULT_PROVIDER,
   DEFAULT_MODELS,
+  getDefaultModelForProvider,
   getModelMaxOutputTokens,
 } from '../../../shared/constants';
 import type { ModelConfig, ModelProvider } from '../../../shared/contract';
@@ -42,7 +43,7 @@ export function resolveSessionDefaultModelConfig(args: SessionDefaultArgs = {}):
 
   const provider = (args.provider || settings.models?.defaultProvider || settings.models?.default || DEFAULT_PROVIDER) as ModelProvider;
   const providerCfg = settings.models?.providers?.[provider];
-  const model = args.model || providerCfg?.model || DEFAULT_MODELS.chat;
+  const model = args.model || providerCfg?.model || getDefaultModelForProvider(provider) || DEFAULT_MODELS.chat;
 
   return {
     provider,

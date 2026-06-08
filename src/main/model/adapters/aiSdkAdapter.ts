@@ -747,6 +747,20 @@ function stringifyArgs(input: Record<string, unknown> | undefined, fallback: str
   try { return JSON.stringify(input); } catch { return fallback; }
 }
 
+function finalToolInput(
+  input: unknown,
+  accumulatedArgsText: string,
+): Record<string, unknown> | undefined {
+  const hasAccumulatedArgs = accumulatedArgsText.trim().length > 0;
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    const record = input as Record<string, unknown>;
+    if (Object.keys(record).length > 0 || !hasAccumulatedArgs) {
+      return record;
+    }
+  }
+  return hasAccumulatedArgs ? undefined : {};
+}
+
 function buildStreamResponse(acc: StreamAccumulator, config: ModelConfig): ModelResponse {
   const toolCalls: ToolCall[] = [...acc.toolCalls.values()]
     .sort((a, b) => a.index - b.index)
@@ -907,7 +921,8 @@ async function streamViaAiSdk(params: {
               onStream({ type: 'tool_call_start', toolCall: { index: entry.index, id: part.toolCallId, name: part.toolName } });
             }
             entry.name = part.toolName || entry.name;
-            entry.input = (part.input ?? {}) as Record<string, unknown>;
+            const input = finalToolInput(part.input, entry.argsText);
+            if (input) entry.input = input;
             break;
           }
           case 'finish': {

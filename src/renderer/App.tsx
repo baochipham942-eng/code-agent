@@ -65,7 +65,7 @@ import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import { postOsNotification, registerNotificationClick, requestOsNotificationPermission } from './utils/osNotification';
 import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, UpdateInfo } from '@shared/contract';
-import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getProviderEndpointForProtocol } from '@shared/constants';
+import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getDefaultModelForProvider, getProviderEndpointForProtocol } from '@shared/constants';
 import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
 import { useSwarmStore } from './stores/swarmStore';
@@ -269,7 +269,7 @@ export const App: React.FC = () => {
       const defaultProvider = (settings.models.defaultProvider || settings.models.default || DEFAULT_PROVIDER) as ModelProvider;
       const providerConfig = settings.models.providers?.[defaultProvider];
       if (!providerConfig) return;
-      const model = providerConfig.model || DEFAULT_MODEL;
+      const model = providerConfig.model || getDefaultModelForProvider(defaultProvider) || DEFAULT_MODEL;
       const modelSettings = providerConfig.models?.[model];
       setModelConfig({
         provider: defaultProvider,
@@ -344,7 +344,7 @@ export const App: React.FC = () => {
           const providerConfig = settings.models.providers?.[defaultProvider];
 
           if (providerConfig) {
-            const model = providerConfig.model || DEFAULT_MODEL;
+            const model = providerConfig.model || getDefaultModelForProvider(defaultProvider) || DEFAULT_MODEL;
             const modelSettings = providerConfig.models?.[model];
             setModelConfig({
               provider: defaultProvider,

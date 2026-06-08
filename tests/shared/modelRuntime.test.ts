@@ -5,6 +5,7 @@ import {
   buildRuntimeModelOptions,
   getProviderRuntimeModels,
   groupRuntimeModelOptionsByProvider,
+  hasConfiguredDefaultRuntimeModel,
   hasConfiguredRuntimeModels,
   inferModelCapabilities,
 } from '../../src/shared/modelRuntime';
@@ -171,6 +172,22 @@ describe('modelRuntime', () => {
 
     expect(hasConfiguredRuntimeModels(keyedSettings)).toBe(true);
     expect(hasConfiguredRuntimeModels(localSettings)).toBe(true);
+  });
+
+  it('requires the active default provider to be configured before send', () => {
+    const settings = {
+      models: {
+        default: 'xiaomi',
+        defaultProvider: 'xiaomi',
+        providers: {
+          xiaomi: { enabled: true },
+          claude: { enabled: true, apiKeyConfigured: true, model: 'claude-sonnet-4-6' },
+        },
+      },
+    } as AppSettings;
+
+    expect(hasConfiguredRuntimeModels(settings)).toBe(true);
+    expect(hasConfiguredDefaultRuntimeModel(settings)).toBe(false);
   });
 
   it('uses neutral built-in model labels in the switcher catalog', () => {

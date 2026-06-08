@@ -20,6 +20,8 @@ export interface ValidationFailure {
   ok: false;
   /** 给模型看的人话错误，可直接拼到 system message */
   message: string;
+  /** 给日志/遥测看的字段级摘要，不包含参数值 */
+  issues: ValidationIssue[];
 }
 
 export interface ValidationSuccess {
@@ -28,7 +30,7 @@ export interface ValidationSuccess {
 
 export type ValidationResult = ValidationSuccess | ValidationFailure;
 
-interface FieldIssue {
+export interface ValidationIssue {
   field: string;
   reason: 'missing' | 'wrong_type';
   expected?: string;
@@ -61,7 +63,7 @@ export function validateToolArgs(
   }
 
   const safeArgs = args && typeof args === 'object' ? args : {};
-  const issues: FieldIssue[] = [];
+  const issues: ValidationIssue[] = [];
 
   // 1. missing required
   for (const key of required) {
@@ -99,6 +101,7 @@ export function validateToolArgs(
   return {
     ok: false,
     message: formatValidationError(toolName, issues, properties, required),
+    issues,
   };
 }
 
@@ -120,7 +123,7 @@ function isTypeCompatible(actual: string, expected: string): boolean {
 
 function formatValidationError(
   toolName: string,
-  issues: FieldIssue[],
+  issues: ValidationIssue[],
   properties: Record<string, JSONSchemaProperty>,
   required: string[],
 ): string {

@@ -20,8 +20,8 @@
 ## 非目标
 
 - **不改全权限默认值**：`bypassPermissions.dangerous` 维持 `'prompt'`。危险操作保留一次确认（用户拍板），本批只让"一次确认"真正能走通。
-- **不做 P2 本地全量录制 + 触发上报**：诊断包打包/脱敏/上报通道本批未落地，仅完成 P1（版本指纹）+ P3（Langfuse 默认开）。
 - **Telemetry 默认链路推广前未收敛为 metadata-only**：dogfood 期接受内容入 Langfuse generation，**推广前必须改回 metadata-only 或服务端代理签发短期 token**（列为发布 gate，见设计文档决策记录 §2/§3）。
+- **P2 上报形态推广前未改回知情同意**：现阶段为 dogfood 期**静默自动上传**（先跑脱敏再传），**推广前必须改回"知情同意 + 内联轻提示"**（发布 gate）。
 - **不保留 telemetry n-gram 召回**：物理移除，不做"加语义过滤保留双路"的折中。
 
 ## 变更映射
@@ -58,14 +58,22 @@
 | 命令分级硬毙误杀 | 正则把**任何删绝对路径的 rm 一律判 `critical`** → 删 `/Applications/Xxx.app` 永远到不了确认环节 | rm 删除分级：目标明确的单路径删除从 `critical 硬毙` 降为 `high → prompt 一次确认`；真正灾难性（`rm -rf /`、`~`、`/*`、通配删根/家）仍硬毙 | `306822e32` · `security/commandSafety.ts` + 单测正/负例 |
 | 确认请求死锁 | 权限请求挂 `pendingPermissions` 等 Promise，用户下一条消息开新 turn 无逻辑 resolve 旧挂起 → 干等 60s 超时 deny | 新消息/取消时 resolve 挂起 permission，不再冻结到超时 | `d0e0262b2` · `agent/agentOrchestrator.ts` |
 
-### 3. Telemetry 可诊断性增强（P1 + P3）
+### 3. Telemetry 可诊断性增强（P1 + P2 + P3 全部落地）
 
-把迭代从"打补丁"升级为"按版本归因"。**P1 落地（版本指纹）**，**P3 落地（Langfuse 默认开）**，P2（本地全量 + 触发上报）本批未做。
+把迭代从"打补丁"升级为"按版本归因 + 现场可复现"。P1（版本指纹）、P2（本地全量 + 触发上报）、P3（Langfuse 默认开）三阶段全部落地。
 
-| 主题 | 关键 commit | 关键文件 |
+> ⚠️ 分支说明：版本指纹（P1）与 Langfuse 默认开（P3）在 `fix/experience-distillation-and-uninstall`（`7ef56edc6`/`af4c9e3f7`）和 `feat/telemetry-diagnosability`（`c3220f27f`/`f7596546c`）上各独立提交过一次。合并时**以 telemetry 分支为准**（更新更全的实现），整条线随 merge commit `cd0ffb9d3` 进 main。下表 commit 取 telemetry 分支的 canonical 版本。
+
+| 阶段 | 关键 commit | 关键文件 |
 |------|-------------|----------|
-| P1 trace/session 版本指纹 | `7ef56edc6` | `telemetry/diagnosticVersions.ts`（新增）、`shared/constants/agent.ts`（`PROMPT_VERSION`）、`shared/contract/telemetry.ts`、`services/core/database/{schema,migrations}.ts`、`telemetry/{telemetryCollector,telemetryStorage}.ts`、`services/infra/langfuseService.ts`、`agent/runtime/conversationRuntime.ts` |
-| P3 Langfuse 默认开 + opt-out | `af4c9e3f7` | `app/initBackgroundServices.ts`、`renderer/.../settings/tabs/PrivacySettings.tsx` |
+| P1 trace/session 版本指纹 | `c3220f27f` | `telemetry/diagnosticVersions.ts`（新增）、`shared/constants/agent.ts`（`PROMPT_VERSION`）、`shared/contract/telemetry.ts`、`services/core/database/{schema,migrations}.ts`、`telemetry/{telemetryCollector,telemetryStorage}.ts`、`services/infra/langfuseService.ts`、`agent/runtime/conversationRuntime.ts` |
+| P2 本地全量诊断 raw 旁表 + 滚动淘汰 | `d46b8f0c5` | `telemetry/telemetryStorage.ts`（`telemetry_raw_payloads` 旁表 + 滚动淘汰）、`services/core/database/{schema,migrations}.ts` |
+| P2 诊断包组装 `buildDiagnosticBundle` | `52ea8a742` | `telemetry/diagnosticBundleService.ts`（新增） |
+| P2 上传前脱敏 `sanitizeDiagnosticBundle` | `a6db1e8fb` | `telemetry/diagnosticBundleService.ts` |
+| P2 失败 session 静默诊断包上报（P2 完成） | `f7cb19b0c` | `telemetry/telemetryCollector.ts`、`telemetry/telemetryUploaderService.ts`、`telemetry_diagnostic_bundles` 排队表 |
+| P2 诊断包上传整链路自检脚本 | `d3a3da253` | `scripts/`（自检） |
+| LogMasker 超大输入预截断（修 ~110s 卡顿） | `1f5755ae8` | `security/logMasker.ts` |
+| P3 Langfuse 默认开 + opt-out（含 P3 覆盖范围结论更正） | `f7596546c`、`73fc7f50c` | `app/initBackgroundServices.ts`、`renderer/.../settings/tabs/PrivacySettings.tsx` |
 
 核心合同：
 
@@ -77,6 +85,7 @@
 - **Supabase 上传 payload 暂不动**：加云端表没有的列会让 insert 报 `column does not exist` 把上传搞挂。待后台给 `telemetry_sessions` 加 `agent_version/prompt_version/tool_schema_version` 列后再补。
 - **P3 复用既有 env fallback**：`configService.getServiceApiKey('langfuse_public'/'langfuse_secret')` 已内置 `LANGFUSE_*_KEY` env fallback，P3 无需新写 key 注入，只补两件：① `initBackgroundServices` 原逻辑只看 key 在不在、完全没读 `settings.langfuse.enabled`，改为 `enabled===false` 显式跳过、否则只要 key 可用就 init；② 隐私设置页加 telemetry 开关（默认开，浅合并避免抹掉 key，改后重启生效）。
 - **key 提供 = 运维步骤**：项目默认 `LANGFUSE_*_KEY` 放进打包的 `~/.code-agent/.env`，即对所有用户默认开。**secretKey 严禁硬编码进 TS 源码**。
+- **P2 录制默认且无感（本地全量），上报是"同意上报已录好的现场"而非"开启录制"**：本地 `telemetry_raw_payloads` 旁表存全量（prompt/completion/工具入出参全文），三重封顶滚动淘汰（最近 N turn / 天数 / 库体积，单条超阈截断 + 记原长）；命中失败信号（`errorCategory`/`circuitBreaker`/`outcome=failure`/👎）打包诊断包，`sanitizeDiagnosticBundle` 跑密钥/token/PII 脱敏后入 `telemetry_diagnostic_bundles` 排队上传。**本地原文不动，只脱敏上传副本**。dogfood 期为静默自动上传（见风险与发布 gate）。
 
 ### 4. 06-07 下午稳定性收尾
 
@@ -106,4 +115,5 @@
 - **commandSafety 松绑是安全敏感改动**：必须保证"删根/家/通配"仍硬毙，已加单测覆盖；safety.ts 措辞改动可能影响其它破坏性操作的模型行为，需回归观察。
 - **Telemetry 默认链路目前会把内容传给 Langfuse**（含 userMessage 与 LLM generation input/output）。dogfood 期可接受（自己的 Langfuse 项目）；**推广前必须收敛为 metadata-only 或服务端代理短期 token，并补首启知情同意流程**——列为发布 gate。
 - **skill 召回单点依赖 quick model 复盘质量**：模型不可用时本轮不沉淀（静默降级）；需 eval 持续观察误报率。
-- **P2 未做**：偶发 bug 现场可复现能力（本地全量 + 触发上报）尚缺，仍需用户能复现才抓得到内容级现场。
+- **P2 静默上传是 dogfood 期临时形态**：失败 session 现为静默自动上传（已先脱敏），**推广前必须改回"知情同意 + 内联轻提示"并补首启同意流程**（与上方默认链路 gate 并列为发布 gate）。
+- **本地全量录制增加磁盘占用与加密面**：滚动淘汰阈值（turn 数/天数/库体积/单条截断）设为配置项，需按实际占用回调。

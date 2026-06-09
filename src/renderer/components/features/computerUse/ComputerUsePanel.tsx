@@ -23,6 +23,7 @@ import {
   listComputerSurfaceElements,
   listRecentNativeDesktopEvents,
   observeComputerSurface,
+  openNativeDesktopSystemSettings,
   readComputerSurfaceState,
   type ComputerSurfaceElementsResult,
   type ComputerSurfaceObservationResult,
@@ -377,6 +378,8 @@ export const ComputerUsePanel: React.FC = () => {
       selectedTargetApp,
       elementsError,
       observeError,
+      // cua 默认 capture_mode=ax，录屏可选（§11.1）
+      screenCaptureOptional: true,
     }),
     [
       capabilities,
@@ -492,26 +495,55 @@ export const ComputerUsePanel: React.FC = () => {
 
             <div className="mt-5 space-y-2">
               <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Permissions</div>
-              {[
-                {
-                  label: 'Screen Recording',
-                  permission: screenPermission,
-                  detail: screenPermission?.detail || '用于截图、窗口标题和视觉证据。',
-                },
-                {
-                  label: 'Accessibility',
-                  permission: accessibilityPermission,
-                  detail: accessibilityPermission?.detail || '用于 AX tree、后台元素定位和受控桌面动作。',
-                },
-              ].map((item) => (
-                <div key={item.label} className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-zinc-200">{item.label}</span>
-                    <StatusPill label={permissionLabel(item.permission)} tone={permissionTone(item.permission)} />
-                  </div>
-                  <p className="mt-1 text-xs leading-relaxed text-zinc-500">{item.detail}</p>
+
+              {/* Accessibility = 必需。cua 走 AX 树优先，授权弹窗显示重签后的「Agent Neo Computer Use」 */}
+              <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm text-zinc-200">Accessibility <span className="text-[10px] text-cyan-300">必需</span></span>
+                  <StatusPill label={permissionLabel(accessibilityPermission)} tone={permissionTone(accessibilityPermission)} />
                 </div>
-              ))}
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                  {accessibilityPermission?.detail || 'Agent Neo 通过辅助功能权限读取 AX 树并替你操作应用。'}
+                  {accessibilityPermission?.status !== 'granted' && (
+                    <span className="text-zinc-400">授权弹窗会显示 <span className="text-zinc-200">Agent Neo Computer Use</span>。</span>
+                  )}
+                </p>
+                {accessibilityPermission?.status !== 'granted' && nativeAvailable && (
+                  <button
+                    type="button"
+                    onClick={() => void openNativeDesktopSystemSettings('accessibility')}
+                    className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-md border border-cyan-700/60 bg-cyan-500/10 px-2.5 text-[11px] text-cyan-200 hover:bg-cyan-500/20"
+                  >
+                    <ShieldCheck className="h-3 w-3" />
+                    开启辅助功能权限
+                  </button>
+                )}
+              </div>
+
+              {/* Screen Recording = 可选。默认 capture_mode=ax 不需要录屏（§11.1） */}
+              <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm text-zinc-200">Screen Recording <span className="text-[10px] text-zinc-500">可选</span></span>
+                  <StatusPill
+                    label={screenPermission?.status === 'granted' ? '已授权' : '可选'}
+                    tone={screenPermission?.status === 'granted' ? 'ready' : 'neutral'}
+                  />
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                  默认 AX 树模式无需录屏；仅当需要截图做视觉消歧时再开启。
+                </p>
+                {screenPermission?.status !== 'granted' && nativeAvailable && (
+                  <button
+                    type="button"
+                    onClick={() => void openNativeDesktopSystemSettings('screenCapture')}
+                    className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800 px-2.5 text-[11px] text-zinc-300 hover:bg-zinc-700"
+                  >
+                    <Eye className="h-3 w-3" />
+                    开启录屏（可选）
+                  </button>
+                )}
+              </div>
+
               <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-zinc-200">Automation</span>

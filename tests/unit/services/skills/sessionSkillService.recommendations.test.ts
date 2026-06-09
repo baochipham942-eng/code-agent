@@ -94,6 +94,27 @@ describe('SessionSkillService recommendations', () => {
 
     expect(service.recommendSkills('session-1', '帮我整理这个 Word 文档')).toEqual([]);
   });
+
+  it('recommends OpenCLI for complex social/search tasks', async () => {
+    skills.push(skill({
+      name: 'opencli-search',
+      description: 'OpenCLI 复杂搜索 — 用本机 opencli 处理登录态网站、社交平台、反爬页面和站点专用 adapter 抓取。',
+      aliases: ['opencli', '复杂搜索', '小红书搜索', '登录态抓取', '反爬抓取'],
+      bins: ['opencli'],
+      source: 'builtin',
+    }));
+
+    const { getSessionSkillService } = await import('../../../../src/main/services/skills/sessionSkillService');
+    const recommendations = getSessionSkillService().recommendSkills(
+      'session-1',
+      '帮我做一个小红书和知乎的复杂搜索，最好复用登录态抓取帖子'
+    );
+
+    expect(recommendations[0]).toMatchObject({
+      skillName: 'opencli-search',
+      libraryId: 'builtin',
+    });
+  });
 });
 
 describe('SessionSkillService install recommendations (catalog 导购)', () => {

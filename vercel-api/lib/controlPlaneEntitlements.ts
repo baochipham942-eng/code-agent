@@ -175,14 +175,16 @@ function revokedEntitlement(reason: string): EntitlementPolicy {
 }
 
 type SharedProvider = NonNullable<CloudConfigPayload['sharedProviders']>[number];
+type SharedServiceKey = NonNullable<CloudConfigPayload['sharedServiceKeys']>[number];
+type CapabilityGatedSecret = SharedProvider | SharedServiceKey;
 
-/** 该 subject 的 entitlement 是否有权拿到这条共享 provider（含其 apiKey）。 */
-function isEntitledToSharedProvider(
-  provider: SharedProvider,
+/** 该 subject 的 entitlement 是否有权拿到这条共享密钥配置（含其 apiKey）。 */
+function isEntitledToSharedSecret(
+  item: CapabilityGatedSecret,
   entitlement: EntitlementPolicy | null,
 ): boolean {
   // team-wide：无 capability 门，所有「已通过鉴权」的 subject 都能拿到。
-  if (!provider.requiredCapability) {
+  if (!item.requiredCapability) {
     return true;
   }
   if (!entitlement) {
@@ -194,7 +196,7 @@ function isEntitledToSharedProvider(
   if (entitlement.capabilities.includes('*')) {
     return true;
   }
-  return entitlement.capabilities.includes(provider.requiredCapability);
+  return entitlement.capabilities.includes(item.requiredCapability);
 }
 
 /**
@@ -209,7 +211,7 @@ function filterSharedProviders(
   if (!shared || shared.length === 0) {
     return payload;
   }
-  const allowed = shared.filter((provider) => isEntitledToSharedProvider(provider, entitlement));
+  const allowed = shared.filter((provider) => isEntitledToSharedSecret(provider, entitlement));
   if (allowed.length === shared.length) {
     return payload;
   }
@@ -220,12 +222,42 @@ function filterSharedProviders(
   return { ...payload, sharedProviders: allowed };
 }
 
+/**
+ * 按 entitlement 过滤 sharedServiceKeys——无权的整条剥离（含 apiKey），密钥绝不下发给无权 subject。
+ * entitlement=null 表示「无可信 entitlement」（开放模式无 builtin / fail-closed），此时只保留 team-wide。
+ */
+function filterSharedServiceKeys(
+  payload: CloudConfigPayload,
+  entitlement: EntitlementPolicy | null,
+): CloudConfigPayload {
+  const shared = payload.sharedServiceKeys;
+  if (!shared || shared.length === 0) {
+    return payload;
+  }
+  const allowed = shared.filter((key) => isEntitledToSharedSecret(key, entitlement));
+  if (allowed.length === shared.length) {
+    return payload;
+  }
+  if (allowed.length === 0) {
+    const { sharedServiceKeys: _removed, ...rest } = payload;
+    return rest;
+  }
+  return { ...payload, sharedServiceKeys: allowed };
+}
+
+function filterSharedSecrets(
+  payload: CloudConfigPayload,
+  entitlement: EntitlementPolicy | null,
+): CloudConfigPayload {
+  return filterSharedServiceKeys(filterSharedProviders(payload, entitlement), entitlement);
+}
+
 function applySubjectEntitlement(
   payload: CloudConfigPayload,
   subject: ControlPlaneSubject,
   entitlement: EntitlementPolicy,
 ): CloudConfigPayload {
-  return filterSharedProviders(
+  return filterSharedSecrets(
     {
       ...payload,
       subject,
@@ -236,8 +268,12 @@ function applySubjectEntitlement(
 }
 
 function applyFailClosedEntitlement(payload: CloudConfigPayload, reason: string): CloudConfigPayload {
-  // 鉴权失败/缺主体：剥离所有 sharedProviders（含 team-wide），不向未验证客户端下发任何中转站 key。
-  const { sharedProviders: _removed, ...rest } = payload;
+  // 鉴权失败/缺主体：剥离所有共享密钥（含 team-wide），不向未验证客户端下发任何 key。
+  const {
+    sharedProviders: _removedProviders,
+    sharedServiceKeys: _removedServiceKeys,
+    ...rest
+  } = payload;
   return {
     ...rest,
     subject: undefined,

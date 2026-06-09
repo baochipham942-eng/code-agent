@@ -18,6 +18,9 @@ export {
   buildDomainQuerySuffix,
   getCircuitBreakerRemaining,
   tripCircuitBreaker,
+  getSearchErrorCircuitBreakerCooldown,
+  SEARCH_PROVIDER_SETUP_MESSAGE,
+  SEARCH_FAILURE_GUIDANCE,
   SEARCH_ENGINE_DOMAINS,
 } from './searchUtils';
 

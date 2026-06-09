@@ -33,6 +33,7 @@ export type ServiceApiKey =
   | 'langfuse_secret'
   | 'github'
   | 'openrouter'
+  | 'openai'
   | 'exa'
   | 'perplexity'
   | 'tavily'
@@ -61,7 +62,15 @@ export interface IReadConfigService {
   /**
    * 获取非模型类服务 API Key（Brave / Langfuse / GitHub 等）
    *
-   * 优先级：secureStorage > 环境变量
+   * 优先级：secureStorage > cloud managed fallback > 环境变量
    */
   getServiceApiKey(service: ServiceApiKey): string | undefined;
+
+  /**
+   * 获取非模型类服务的可选 API Base URL。
+   *
+   * 目前主要给 OpenAI-compatible 搜索源使用：团队共享 key 可能来自 NewAPI 这类
+   * 兼容端点，key 与 baseUrl 必须一起下发，不能误打官方 OpenAI 域名。
+   */
+  getServiceApiBaseUrl(service: ServiceApiKey): string | undefined;
 }

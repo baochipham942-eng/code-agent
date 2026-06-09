@@ -26,6 +26,7 @@ import { getConfigService } from '../../../services';
 import { DEFAULT_MODELS, MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { videoGenerateSchema as schema } from './videoGenerate.schema';
+import { TOOL_DEPENDENCY_HINTS } from '../../../tools/modules/_helpers/dependencyHints';
 import {
   isJsonRecord,
   readArrayField,
@@ -393,7 +394,7 @@ export async function executeVideoGenerate(
     if (!zhipuApiKey) {
       return {
         ok: false,
-        error: '视频生成需要配置智谱官方 API Key (ZHIPU_OFFICIAL_API_KEY)。0ki 代理不支持视频生成。',
+        error: TOOL_DEPENDENCY_HINTS.videoGenerateZhipuOfficial,
         code: 'NOT_INITIALIZED',
       };
     }

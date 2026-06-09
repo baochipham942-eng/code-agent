@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { YOUTUBE_TRANSCRIPT_ENDPOINTS } from '../../../../shared/constants';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { youtubeTranscriptSchema as schema } from './youtubeTranscript.schema';
+import { TOOL_DEPENDENCY_HINTS } from '../_helpers/dependencyHints';
 
 const {
   SUPADATA: SUPADATA_API_URL,
@@ -217,7 +218,7 @@ async function fetchTranscript(
     return { segments, lang: language || 'en' };
   } catch {
     ctx.logger.error('All transcript APIs failed', { videoId });
-    throw new Error('无法获取字幕。可能原因：1) 视频没有字幕 2) 字幕被禁用 3) API 限制');
+    throw new Error(`无法获取字幕。可能原因：1) 视频没有字幕 2) 字幕被禁用 3) 公共字幕 API 被限流或失效。\n\n${TOOL_DEPENDENCY_HINTS.youtubeTranscriptSupadata}`);
   }
 }
 

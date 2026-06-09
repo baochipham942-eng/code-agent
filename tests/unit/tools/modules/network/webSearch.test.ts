@@ -38,6 +38,12 @@ vi.mock('../../../../../src/main/tools/web/search', () => ({
   serialSearch: (...args: unknown[]) => serialSearchMock(...args),
   deduplicateResults: (...args: unknown[]) => deduplicateResultsMock(...args),
   formatAsTable: (...args: unknown[]) => formatAsTableMock(...args),
+  SEARCH_PROVIDER_SETUP_MESSAGE: [
+    '当前没有可用的联网搜索源。',
+    '模型 API Key 只负责模型推理；Claude、Gemini、Grok 等模型 key 不会自动启用 WebSearch。',
+    'Brave Search OpenAI EXA Tavily Perplexity',
+  ].join('\n'),
+  SEARCH_FAILURE_GUIDANCE: '联网搜索没有拿到可用结果。',
 }));
 
 const {
@@ -240,6 +246,13 @@ describe('webSearchModule (native)', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.code).toBe('NO_SEARCH_SOURCE');
+      expect(result.error).toContain('当前没有可用的联网搜索源');
+      expect(result.error).toContain('模型 API Key 只负责模型推理');
+      expect(result.error).toContain('Brave Search');
+      expect(result.error).toContain('OpenAI');
+      expect(result.error).toContain('EXA');
+      expect(result.error).toContain('Tavily');
+      expect(result.error).toContain('Perplexity');
     }
   });
 });

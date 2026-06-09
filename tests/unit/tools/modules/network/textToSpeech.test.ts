@@ -250,6 +250,10 @@ describe('text_to_speech — execute', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.code).toBe('NOT_INITIALIZED');
+      expect(result.error).toContain('text_to_speech');
+      expect(result.error).toContain('语音合成模型配置');
+      expect(result.error).toContain('当前版本可识别的配置');
+      expect(result.error).toContain('ZHIPU_API_KEY');
     }
   });
 

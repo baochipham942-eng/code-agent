@@ -9,6 +9,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import { createLogger } from '../../services/infra/logger';
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { TOOL_DEPENDENCY_HINTS } from '../modules/_helpers/dependencyHints';
 
 const execAsync = promisify(exec);
 const logger = createLogger('GUIAgent');
@@ -323,7 +324,7 @@ IMPORTANT:
     if (!apiKey) {
       return {
         success: false,
-        error: '未配置火山引擎 API Key。请在 .env 中设置 VOLCENGINE_API_KEY',
+        error: TOOL_DEPENDENCY_HINTS.guiAgentVolcengine,
       };
     }
 

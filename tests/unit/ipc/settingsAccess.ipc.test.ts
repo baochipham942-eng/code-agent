@@ -139,6 +139,54 @@ describe('settings.ipc access control', () => {
     expect(settings.permissions.deny).toBeUndefined();
   });
 
+  it('marks cloud-managed providers configured in sanitized settings reads', async () => {
+    const settings = makeSettings();
+    settings.models.providers['custom-cloud-gpt55'] = {
+      enabled: true,
+      managedByCloud: true,
+      displayName: 'Cloud GPT-5.5',
+      protocol: 'openai',
+      baseUrl: 'https://relay.example.com/openai',
+      model: 'gpt-5.5',
+      models: {
+        'gpt-5.5': { enabled: true, label: 'GPT-5.5' },
+      },
+    };
+    const ipc = makeFakeIpc();
+    registerSettingsHandlers(ipc as never, () => ({ getSettings: () => settings }) as never);
+
+    const response = await ipc.getHandler()({}, { action: 'get' });
+
+    expect(response.success).toBe(true);
+    const sanitized = response.data as AppSettings;
+    expect(sanitized.models.providers['custom-cloud-gpt55'].apiKey).toBeUndefined();
+    expect(sanitized.models.providers['custom-cloud-gpt55'].apiKeyConfigured).toBe(true);
+  });
+
+  it('treats cloud-managed providers as configured for onboarding checks', async () => {
+    const settings = makeSettings();
+    settings.models.default = 'custom-cloud-gpt55';
+    settings.models.defaultProvider = 'custom-cloud-gpt55';
+    settings.models.providers.openai = { enabled: false };
+    settings.models.providers['custom-cloud-gpt55'] = {
+      enabled: true,
+      managedByCloud: true,
+      displayName: 'Cloud GPT-5.5',
+      protocol: 'openai',
+      baseUrl: 'https://relay.example.com/openai',
+      model: 'gpt-5.5',
+      models: {
+        'gpt-5.5': { enabled: true, label: 'GPT-5.5' },
+      },
+    };
+    const ipc = makeFakeIpc();
+    registerSettingsHandlers(ipc as never, () => ({ getSettings: () => settings }) as never);
+
+    const response = await ipc.getHandler()({}, { action: 'checkApiKeyConfigured' });
+
+    expect(response).toMatchObject({ success: true, data: true });
+  });
+
   it('blocks non-admin writes to global security settings', async () => {
     const updateSettings = vi.fn();
     const ipc = makeFakeIpc();

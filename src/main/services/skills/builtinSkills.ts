@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Builtin skill catalog is intentionally table-shaped; split after catalog modularization. */
 // ============================================================================
 // Built-in Skills - 内置 Skill 定义
 // ============================================================================
@@ -767,6 +768,74 @@ qpdf --pages input.pdf 1-100 -- /tmp/paper.pdf
     loaded: true,
   },
   {
+    name: 'opencli-search',
+    description: 'OpenCLI 复杂搜索 — 用本机 opencli 处理登录态网站、社交平台、反爬页面和站点专用 adapter 抓取。触发词：复杂搜索、社媒搜索、小红书、知乎、微博、B站、YouTube、登录态抓取、反爬、站内搜索、opencli。',
+    aliases: [
+      'opencli',
+      '复杂搜索',
+      '社媒搜索',
+      '登录态抓取',
+      '反爬抓取',
+      '小红书搜索',
+      '知乎搜索',
+      '微博搜索',
+      'B站搜索',
+      'YouTube 搜索',
+    ],
+    promptContent: `# OpenCLI 复杂搜索工作流
+
+你负责在普通 web_search / web_fetch 不足时，用本机 \`opencli\` 做站点级搜索和登录态抓取。
+
+## 适用场景
+
+- 用户要查小红书、知乎、微博、B站、YouTube、X/Twitter、Reddit、HackerNews 等站点内容。
+- 普通网页读取遇到登录墙、反爬、403、动态渲染、空页面、内容缺失。
+- 任务需要站内搜索、多页翻页、评论/作者/发布时间等结构化字段。
+- 用户明确说 opencli、用 Chrome 登录态、复杂搜索、社媒搜索、抓帖子/笔记/视频/问答。
+
+## 工作方式
+
+1. 先确认本机是否有 opencli：
+   \`\`\`bash
+   command -v opencli
+   \`\`\`
+   如果不存在，告诉用户需要先安装/配置 OpenCLI，不要编造结果。
+
+2. 发现 adapter：
+   \`\`\`bash
+   opencli list
+   \`\`\`
+   选择最贴近目标网站的 adapter。不要假设顶层 \`opencli --help\` 会列出所有站点。
+
+3. 查看站点命令：
+   \`\`\`bash
+   opencli <site> --help
+   \`\`\`
+   例如小红书优先找 note/search/user 这类站点专用命令，不要默认用泛化网页读取。
+
+4. 执行最小可验证查询：
+   - 搜索类任务先跑 1-2 页，确认字段完整，再扩大范围。
+   - 内容读取优先用专用详情命令读取 URL/id。
+   - 需要登录态时，使用 opencli 复用本机 Chrome 登录态，不让用户重复粘 cookie。
+
+5. 输出时标明来源 URL、标题、作者/时间（如果可得），并说明哪些字段来自站点 adapter，哪些是模型整理。
+
+## 边界
+
+- 不绕过付费墙或权限控制；用户没有访问权的内容不抓。
+- 不批量高频请求；遇到限流就降频或停止。
+- 不把 token、cookie、手机号、邮箱、支付信息等敏感字段输出到最终结果。
+- opencli 命令失败两次后，先用 \`opencli <site> --help\` 或 \`opencli list\` 重新确认命令形态。`,
+    basePath: '',
+    allowedTools: ['bash', 'web_search', 'web_fetch', 'ask_user_question'],
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'builtin',
+    loaded: true,
+    bins: ['opencli'],
+  },
+  {
     name: 'image-ocr-search',
     description: '图片 OCR 与搜索 — 识别图片内文字、提取后入库，支持后续按文字搜索历史截图。触发词：OCR、识别图片、提取图片文字、图中文字、搜含 XX 文字的截图、读截图、读图。',
     promptContent: `你是图片 OCR 助手，识别图片内的文字、入库到记忆系统、支持后续按文字搜索。
@@ -1336,6 +1405,7 @@ const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
   'literature-review': 'research',
   'paper-distillation': 'research',
   'research-monitor': 'research',
+  'opencli-search': 'research',
   // 效率自动化
   'computer-housekeeper': 'automation',
   'contract-review': 'automation',

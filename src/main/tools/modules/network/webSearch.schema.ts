@@ -28,7 +28,7 @@ Do not repeatedly search or fetch when the current results already answer the qu
 Features:
 - Intelligent source routing: automatically picks 2-3 best-fit sources based on query characteristics
 - mode: "quick" (2 sources, fast) or "research" (3-4 sources, thorough)
-- Parallel search across multiple sources (Perplexity, EXA, Brave, Tavily)
+- Parallel search across multiple sources (OpenAI, Perplexity, EXA, Brave, Tavily)
 - Domain filtering with allowed_domains / blocked_domains
 - auto_extract: search + fetch + AI extraction in one call
 - recency: filter results by day/week/month
@@ -52,7 +52,7 @@ Features:
       sources: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Specific sources to use: cloud, perplexity, exa, brave (default: all available)',
+        description: 'Specific sources to use: cloud, openai, perplexity, exa, brave, tavily (default: all available)',
       },
       allowed_domains: {
         type: 'array',

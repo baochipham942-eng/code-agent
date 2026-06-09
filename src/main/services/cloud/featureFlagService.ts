@@ -5,6 +5,9 @@
 
 import { CloudConfigService, getCloudConfigService, type FeatureFlags } from './cloudConfigService';
 
+const DEFAULT_MAX_ITERATIONS = 50;
+const DEFAULT_MAX_MESSAGE_LENGTH = 100000;
+
 // ----------------------------------------------------------------------------
 // FeatureFlagService
 // ----------------------------------------------------------------------------
@@ -85,14 +88,20 @@ export class FeatureFlagService {
    * 获取最大迭代次数
    */
   getMaxIterations(): number {
-    return this.get('maxIterations');
+    const value = this.get('maxIterations');
+    return typeof value === 'number' && Number.isFinite(value) && value > 0
+      ? value
+      : DEFAULT_MAX_ITERATIONS;
   }
 
   /**
    * 获取最大消息长度
    */
   getMaxMessageLength(): number {
-    return this.get('maxMessageLength');
+    const value = this.get('maxMessageLength');
+    return typeof value === 'number' && Number.isFinite(value) && value > 0
+      ? value
+      : DEFAULT_MAX_MESSAGE_LENGTH;
   }
 
   /**

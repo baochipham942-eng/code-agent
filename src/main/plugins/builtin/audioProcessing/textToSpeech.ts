@@ -22,6 +22,7 @@ import { getConfigService } from '../../../services';
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { textToSpeechSchema as schema } from './textToSpeech.schema';
+import { TOOL_DEPENDENCY_HINTS } from '../../../tools/modules/_helpers/dependencyHints';
 
 const CONFIG = {
   API_URL: `${MODEL_API_ENDPOINTS.zhipuOfficial}/audio/speech`,
@@ -128,7 +129,7 @@ export async function executeTextToSpeech(
     if (!zhipuApiKey) {
       return {
         ok: false,
-        error: '语音合成需要配置智谱 API Key。请在设置中添加智谱 API Key。',
+        error: TOOL_DEPENDENCY_HINTS.textToSpeechZhipu,
         code: 'NOT_INITIALIZED',
       };
     }

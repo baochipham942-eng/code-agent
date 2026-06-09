@@ -101,8 +101,9 @@ function getDesktopBootstrapWorkingDirectory(configService?: ConfigService): str
 async function initializeCloudAndMCP(configService: ConfigService, mainWindow: BrowserWindow | null): Promise<void> {
   await initCloudConfigService({
     getAccessToken: () => getAuthService().getAccessToken(),
-    // 把控制面下发的团队共享 provider（中转站）reconcile 进本地 settings（web/main 路径都要接）。
+    // 把控制面下发的团队共享 provider / 服务 key reconcile 进本地配置（web/main 路径都要接）。
     onSharedProvidersResolved: (providers) => configService.reconcileManagedProviders(providers),
+    onSharedServiceKeysResolved: (keys) => configService.reconcileManagedServiceApiKeys(keys),
   });
 
   // 共享 provider 是 auth-gated：启动时的拉取还没登录拿不到，登录后必须重拉一次，否则共享模型要等

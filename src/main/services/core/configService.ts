@@ -16,7 +16,7 @@ import { getPolicyEngine } from '../../permissions/policyEngine';
 import { setProviderConcurrencyOverrides } from '../../model/concurrencyLimiter';
 import { setProviderProxyOverrides } from '../../model/providers/shared';
 import type { ProxyMode, ModelEntrySettings } from '../../../shared/contract/settings';
-import type { SharedProviderConfig } from '../cloud/builtinConfig';
+import type { SharedProviderConfig, SharedServiceKeyConfig } from '../cloud/builtinConfig';
 import { isDynamicCustomProviderId } from '../../../shared/modelRuntime';
 import {
   DEFAULT_PROVIDER,
@@ -31,6 +31,17 @@ const logger = createLogger('ConfigService');
 const CONFIG_WATCH_DEBOUNCE_MS = 500;
 // save() 自身写盘后的静默窗口,避免本进程写入触发热重载回环
 const CONFIG_SELF_WRITE_WINDOW_MS = 1500;
+const CLOUD_MANAGED_SERVICE_KEY_PREFIX = 'cloud-service-key:';
+const CLOUD_MANAGED_SERVICE_BASE_URL_PREFIX = 'serviceBaseUrl.cloud.';
+const SHARED_SEARCH_SERVICE_KEYS = ['brave', 'exa', 'openai', 'perplexity', 'tavily'] as const;
+
+function getCloudManagedServiceKeyId(service: ServiceApiKey): string {
+  return `${CLOUD_MANAGED_SERVICE_KEY_PREFIX}${service}`;
+}
+
+function getCloudManagedServiceBaseUrlId(service: ServiceApiKey): `serviceBaseUrl.${string}` {
+  return `${CLOUD_MANAGED_SERVICE_BASE_URL_PREFIX}${service}`;
+}
 
 const moduleDir = typeof __dirname === 'string'
   ? __dirname
@@ -128,6 +139,18 @@ function normalizeApiKey(value?: string): string | undefined {
     return trimmed.slice(1, -1);
   }
   return trimmed;
+}
+
+function normalizeBaseUrl(value?: string): string | undefined {
+  const normalized = normalizeApiKey(value);
+  if (!normalized) return undefined;
+  try {
+    const url = new URL(normalized);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+    return normalized.replace(/\/+$/, '');
+  } catch {
+    return undefined;
+  }
 }
 
 // Load .env file from project root or app resources
@@ -864,6 +887,58 @@ export class ConfigService implements IReadConfigService {
     }
   }
 
+  /**
+   * 协调控制面下发的团队共享服务 key 到本地 SecureStorage。
+   *
+   * 与模型 shared provider 不同，搜索服务 id（tavily/brave 等）是固定的，直接覆盖会误伤用户自己配的 key。
+   * 因此云端 key 存到独立前缀，只在 getServiceApiKey() 找不到用户 key 时作为 fallback。
+   */
+  async reconcileManagedServiceApiKeys(keys: SharedServiceKeyConfig[]): Promise<void> {
+    const storage = getSecureStorage();
+    const desired = new Map(
+      (keys ?? [])
+        .filter((entry) => (
+          entry
+          && SHARED_SEARCH_SERVICE_KEYS.includes(entry.service)
+          && typeof entry.apiKey === 'string'
+          && entry.apiKey.trim().length > 0
+        ))
+        .map((entry) => [entry.service, entry] as const),
+    );
+
+    let changed = false;
+    for (const service of SHARED_SEARCH_SERVICE_KEYS) {
+      const storageId = getCloudManagedServiceKeyId(service);
+      const baseUrlStorageId = getCloudManagedServiceBaseUrlId(service);
+      if (!desired.has(service) && storage.getApiKey(storageId)) {
+        storage.deleteApiKey(storageId);
+        changed = true;
+      }
+      if (!desired.has(service) && storage.get(baseUrlStorageId)) {
+        storage.delete(baseUrlStorageId);
+        changed = true;
+      }
+    }
+
+    for (const [service, entry] of desired) {
+      storage.setApiKey(getCloudManagedServiceKeyId(service), entry.apiKey);
+      const baseUrlStorageId = getCloudManagedServiceBaseUrlId(service);
+      const baseUrl = normalizeBaseUrl(entry.baseUrl);
+      if (baseUrl) {
+        storage.set(baseUrlStorageId, baseUrl);
+      } else if (storage.get(baseUrlStorageId)) {
+        storage.delete(baseUrlStorageId);
+      }
+      changed = true;
+    }
+
+    if (changed) {
+      logger.info('Reconciled managed shared service API keys', {
+        services: [...desired.keys()],
+      });
+    }
+  }
+
   getApiKey(provider: ModelProvider): string | undefined {
     // Priority: secure storage > environment variable
     const storage = getSecureStorage();
@@ -926,7 +1001,7 @@ export class ConfigService implements IReadConfigService {
 
   /**
    * Get API key for non-model services (Brave, Langfuse, EXA, Perplexity, SkillsMP, etc.)
-   * Priority: secure storage > environment variable
+   * Priority: user secure storage > cloud managed fallback > environment variable
    */
   getServiceApiKey(service: ServiceApiKey): string | undefined {
     const storage = getSecureStorage();
@@ -935,6 +1010,9 @@ export class ConfigService implements IReadConfigService {
     const secureKey = storage.getApiKey(service);
     if (secureKey) return secureKey;
 
+    const managedCloudKey = normalizeApiKey(storage.getApiKey(getCloudManagedServiceKeyId(service)));
+    if (managedCloudKey) return managedCloudKey;
+
     // Fallback to environment variable
     const envKeyMap: Record<string, string> = {
       brave: 'BRAVE_API_KEY',
@@ -942,6 +1020,7 @@ export class ConfigService implements IReadConfigService {
       langfuse_secret: 'LANGFUSE_SECRET_KEY',
       github: 'GITHUB_TOKEN',
       openrouter: 'OPENROUTER_API_KEY',
+      openai: 'OPENAI_API_KEY',
       exa: 'EXA_API_KEY',
       perplexity: 'PERPLEXITY_API_KEY',
       tavily: 'TAVILY_API_KEY',
@@ -950,6 +1029,22 @@ export class ConfigService implements IReadConfigService {
 
     const envKey = envKeyMap[service];
     return envKey ? process.env[envKey] : undefined;
+  }
+
+  getServiceApiBaseUrl(service: ServiceApiKey): string | undefined {
+    const storage = getSecureStorage();
+    const managedCloudBaseUrl = normalizeBaseUrl(storage.get(getCloudManagedServiceBaseUrlId(service)));
+    if (managedCloudBaseUrl) return managedCloudBaseUrl;
+
+    if (service === 'openai') {
+      return (
+        normalizeBaseUrl(process.env.OPENAI_SEARCH_BASE_URL)
+        || normalizeBaseUrl(process.env.OPENAI_API_BASE_URL)
+        || normalizeBaseUrl(process.env.OPENAI_BASE_URL)
+      );
+    }
+
+    return undefined;
   }
 
   /**

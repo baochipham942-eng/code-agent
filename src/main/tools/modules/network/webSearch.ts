@@ -26,6 +26,8 @@ import {
   serialSearch,
   deduplicateResults,
   formatAsTable,
+  SEARCH_PROVIDER_SETUP_MESSAGE,
+  SEARCH_FAILURE_GUIDANCE,
 } from '../../web/search';
 import {
   autoExtractFromResults,
@@ -186,7 +188,7 @@ class WebSearchHandler implements ToolHandler<Record<string, unknown>, string> {
     if (allAvailable.length === 0) {
       return {
         ok: false,
-        error: 'No search sources available. Please configure at least one API key (EXA, Perplexity, Tavily, or Brave) in Settings > Service API Keys.',
+        error: SEARCH_PROVIDER_SETUP_MESSAGE,
         code: 'NO_SEARCH_SOURCE',
       };
     }
@@ -238,7 +240,7 @@ class WebSearchHandler implements ToolHandler<Record<string, unknown>, string> {
     if (!searchResult.success) {
       return {
         ok: false,
-        error: searchResult.error || 'WebSearch failed',
+        error: `${searchResult.error || 'WebSearch failed'}\n\n${SEARCH_FAILURE_GUIDANCE}`,
         code: 'NETWORK_ERROR',
         meta: { routing: routingMeta },
       };

@@ -1,6 +1,6 @@
 // ============================================================================
 // Search Strategy Implementations
-// Cloud, Perplexity, EXA, Brave, Tavily
+// Cloud, OpenAI, Perplexity, EXA, Brave, Tavily
 // ============================================================================
 
 import type { getConfigService } from '../../../services/core/configService';
@@ -12,6 +12,7 @@ import type {
   CloudSearchResponse,
   BraveSearchResponse,
   ExaSearchResponse,
+  OpenAIResponsesResponse,
   PerplexityResponse,
   TavilySearchResponse,
 } from './searchTypes';
@@ -19,6 +20,7 @@ import {
   CLOUD_SEARCH_URL,
   BRAVE_SEARCH_URL,
   EXA_SEARCH_URL,
+  OPENAI_RESPONSES_URL,
   PERPLEXITY_API_URL,
   TAVILY_SEARCH_URL,
   buildDomainQuerySuffix,
@@ -35,6 +37,7 @@ import {
  *
  * Source strengths:
  * - perplexity: AI summary, best for Chinese queries, general knowledge
+ * - openai: model-native web_search tool, good zero-extra-vendor fallback
  * - exa: Semantic search, excels at technical/academic content
  * - brave: Real-time news, Twitter/social, broad web coverage
  * - tavily: Structured extraction, good AI answers, reliable fallback
@@ -116,20 +119,26 @@ export const SEARCH_SOURCES: SearchSource[] = [
     search: searchViaPerplexity,
   },
   {
-    name: 'exa',
+    name: 'openai',
     priority: 3,
+    isAvailable: (cs) => !!cs?.getServiceApiKey('openai'),
+    search: searchViaOpenAI,
+  },
+  {
+    name: 'exa',
+    priority: 4,
     isAvailable: (cs) => !!cs?.getServiceApiKey('exa'),
     search: searchViaExa,
   },
   {
     name: 'tavily',
-    priority: 4,
+    priority: 5,
     isAvailable: (cs) => !!cs?.getServiceApiKey('tavily') || !!process.env.TAVILY_API_KEY,
     search: searchViaTavily,
   },
   {
     name: 'brave',
-    priority: 5,
+    priority: 6,
     isAvailable: (cs) => !!cs?.getServiceApiKey('brave') || !!process.env.BRAVE_API_KEY,
     search: searchViaBrave,
   },
@@ -274,6 +283,176 @@ async function searchViaPerplexity(
     success: true,
     answer,
     citations: data.citations || [],
+  };
+}
+
+function buildOpenAIWebSearchInput(
+  query: string,
+  recency?: string,
+): string {
+  const hints: string[] = [];
+  if (recency) {
+    const label: Record<string, string> = {
+      day: 'the past 24 hours',
+      week: 'the past 7 days',
+      month: 'the past 30 days',
+    };
+    if (label[recency]) {
+      hints.push(`Prefer results from ${label[recency]}.`);
+    }
+  }
+  return hints.length > 0 ? `${query}\n\n${hints.join('\n')}` : query;
+}
+
+function normalizeOpenAIDomains(domains: string[] | undefined): string[] | undefined {
+  const normalized = (domains ?? [])
+    .map((domain) => domain.trim())
+    .filter(Boolean)
+    .map((domain) => domain.replace(/^https?:\/\//i, '').replace(/\/.*$/, ''))
+    .filter(Boolean);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function buildOpenAIWebSearchTool(domainFilter?: DomainFilter): Record<string, unknown> {
+  const tool: Record<string, unknown> = {
+    type: 'web_search',
+    search_context_size: 'low',
+  };
+  const allowedDomains = normalizeOpenAIDomains(domainFilter?.allowed);
+  const blockedDomains = normalizeOpenAIDomains(domainFilter?.blocked);
+  const filters: Record<string, string[]> = {};
+  if (allowedDomains) filters.allowed_domains = allowedDomains;
+  if (blockedDomains) filters.blocked_domains = blockedDomains;
+  if (Object.keys(filters).length > 0) {
+    tool.filters = filters;
+  }
+  return tool;
+}
+
+function resolveOpenAIResponsesUrl(configService: ReturnType<typeof getConfigService>): string {
+  const configuredBaseUrl = configService?.getServiceApiBaseUrl?.('openai');
+  if (!configuredBaseUrl) {
+    return OPENAI_RESPONSES_URL;
+  }
+  const baseUrl = configuredBaseUrl.replace(/\/+$/, '');
+  return baseUrl.endsWith('/responses') ? baseUrl : `${baseUrl}/responses`;
+}
+
+function extractOpenAITextAndCitations(data: OpenAIResponsesResponse): {
+  text: string;
+  citations: string[];
+  results: Array<{ title: string; url: string; snippet: string; source: string }>;
+} {
+  const textParts: string[] = [];
+  const citations: string[] = [];
+  const results: Array<{ title: string; url: string; snippet: string; source: string }> = [];
+  const seenUrls = new Set<string>();
+
+  if (typeof data.output_text === 'string' && data.output_text.trim()) {
+    textParts.push(data.output_text.trim());
+  }
+
+  for (const item of data.output ?? []) {
+    for (const source of item.action?.sources ?? []) {
+      const url = typeof source.url === 'string' ? source.url : '';
+      if (!url || seenUrls.has(url)) continue;
+      seenUrls.add(url);
+      const title = typeof source.title === 'string' && source.title.trim()
+        ? source.title.trim()
+        : url;
+      citations.push(url);
+      results.push({ title, url, snippet: '', source: 'openai' });
+    }
+
+    for (const content of item.content ?? []) {
+      if (typeof content.text === 'string' && content.text.trim() && textParts.length === 0) {
+        textParts.push(content.text.trim());
+      }
+      for (const annotation of content.annotations ?? []) {
+        const citation = annotation.url_citation;
+        const url = typeof annotation.url === 'string'
+          ? annotation.url
+          : typeof citation?.url === 'string'
+            ? citation.url
+            : '';
+        if (!url || seenUrls.has(url)) continue;
+        seenUrls.add(url);
+        const title = typeof annotation.title === 'string' && annotation.title.trim()
+          ? annotation.title.trim()
+          : typeof citation?.title === 'string' && citation.title.trim()
+            ? citation.title.trim()
+          : url;
+        citations.push(url);
+        results.push({
+          title,
+          url,
+          snippet: typeof content.text === 'string' ? content.text.slice(0, 500) : '',
+          source: 'openai',
+        });
+      }
+    }
+  }
+
+  return {
+    text: textParts.join('\n\n'),
+    citations,
+    results,
+  };
+}
+
+/**
+ * Search via OpenAI Responses API with the built-in web_search tool.
+ */
+async function searchViaOpenAI(
+  query: string,
+  _maxResults: number,
+  configService: ReturnType<typeof getConfigService>,
+  domainFilter?: DomainFilter,
+  recency?: string
+): Promise<SearchSourceResult> {
+  const apiKey = configService?.getServiceApiKey('openai');
+  if (!apiKey) {
+    return { source: 'openai', success: false, error: 'API key not configured' };
+  }
+
+  const body = {
+    model: process.env.OPENAI_SEARCH_MODEL || 'gpt-5.5',
+    input: buildOpenAIWebSearchInput(query, recency),
+    tools: [buildOpenAIWebSearchTool(domainFilter)],
+    tool_choice: 'auto',
+    include: ['web_search_call.action.sources'],
+  };
+
+  const response = await fetch(resolveOpenAIResponsesUrl(configService), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    return {
+      source: 'openai',
+      success: false,
+      error: `HTTP ${response.status}: ${errorText}`,
+    };
+  }
+
+  const data = await response.json() as OpenAIResponsesResponse;
+  const extracted = extractOpenAITextAndCitations(data);
+  if (!extracted.text) {
+    return { source: 'openai', success: false, error: 'Empty response' };
+  }
+
+  return {
+    source: 'openai',
+    success: true,
+    answer: extracted.text,
+    citations: extracted.citations,
+    results: extracted.results,
   };
 }
 

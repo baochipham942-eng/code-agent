@@ -9,6 +9,7 @@ import type { SearchResult, SearchSourceResult, SearchSource, DomainFilter } fro
 import {
   getCircuitBreakerRemaining,
   tripCircuitBreaker,
+  getSearchErrorCircuitBreakerCooldown,
   normalizeTitleForDedup,
 } from './searchUtils';
 import { createLogger } from '../../../services/infra/logger';
@@ -76,17 +77,18 @@ export async function parallelSearch(
       if (result.value.success) {
         successResults.push(result.value);
       } else {
-        // Check for 429 and trip circuit breaker
-        if (result.value.error?.includes('429')) {
-          tripCircuitBreaker(sourceName);
+        const cooldownMs = getSearchErrorCircuitBreakerCooldown(result.value.error);
+        if (cooldownMs !== null) {
+          tripCircuitBreaker(sourceName, cooldownMs);
         }
         failedSources.push(`${sourceName}: ${result.value.error}`);
         logger.warn(`Search source ${sourceName} failed:`, result.value.error);
       }
     } else {
       const reason = String(result.reason);
-      if (reason.includes('429')) {
-        tripCircuitBreaker(sourceName);
+      const cooldownMs = getSearchErrorCircuitBreakerCooldown(reason);
+      if (cooldownMs !== null) {
+        tripCircuitBreaker(sourceName, cooldownMs);
       }
       failedSources.push(`${sourceName}: ${result.reason}`);
       logger.warn(`Search source ${sourceName} rejected:`, result.reason);
@@ -143,15 +145,16 @@ export async function serialSearch(
         const duration = Date.now() - startTime;
         return formatSingleSourceResult(query, result, duration);
       }
-      // Check for 429 and trip circuit breaker
-      if (result.error?.includes('429')) {
-        tripCircuitBreaker(source.name);
+      const cooldownMs = getSearchErrorCircuitBreakerCooldown(result.error);
+      if (cooldownMs !== null) {
+        tripCircuitBreaker(source.name, cooldownMs);
       }
       errors.push(`${source.name}: ${result.error}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      if (message.includes('429')) {
-        tripCircuitBreaker(source.name);
+      const cooldownMs = getSearchErrorCircuitBreakerCooldown(message);
+      if (cooldownMs !== null) {
+        tripCircuitBreaker(source.name, cooldownMs);
       }
       errors.push(`${source.name}: ${message}`);
       logger.warn(`Search source ${source.name} failed:`, message);

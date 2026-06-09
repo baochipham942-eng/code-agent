@@ -61,6 +61,18 @@ export const MODEL_CAPABILITY_OPTIONS: Array<{ id: ModelCapability; label: strin
   { id: 'search', label: '搜索' },
 ];
 
+export function isRuntimeProviderConfigured(
+  providerId: ModelProvider,
+  providerConfig?: Partial<ModelProviderSettings> | null,
+): boolean {
+  if (providerId === 'local') return true;
+  return Boolean(
+    providerConfig?.managedByCloud
+    || providerConfig?.apiKeyConfigured
+    || providerConfig?.apiKey,
+  );
+}
+
 const DEFAULT_SWITCHER_PROVIDERS: ModelProvider[] = [
   'moonshot',
   'xiaomi',
@@ -405,9 +417,7 @@ export function buildRuntimeModelOptions(
     // apiKeyConfigured 由 configService.getSettings() 动态注入：SecureStorage / env 任一有 key 即 true，
     // 因此老配置（key 存在但 settings 文件里没该字段）也能被正确识别。
     // 当前会话 / 默认 provider 走 includeDisabledProviders 豁免，避免选中项凭空消失。
-    const missingApiKey = providerId !== 'local'
-      && !providerConfig?.apiKeyConfigured
-      && !providerConfig?.apiKey;
+    const missingApiKey = !isRuntimeProviderConfigured(providerId, providerConfig);
     if (settings && missingApiKey && !includedDisabledProviders.has(providerId)) return;
 
     const providerLabel = providerConfig?.displayName || getProviderDisplayName(providerId) || provider.name;
@@ -499,8 +509,7 @@ export function hasConfiguredDefaultRuntimeModel(settings?: AppSettings | null):
   if (!providerId) return false;
   const providerConfig = settings.models.providers?.[providerId];
   if (!providerConfig || providerConfig.enabled === false) return false;
-  if (providerId === 'local') return true;
-  return Boolean(providerConfig.apiKeyConfigured || providerConfig.apiKey);
+  return isRuntimeProviderConfigured(providerId, providerConfig);
 }
 
 function compareProviderOptionSource(

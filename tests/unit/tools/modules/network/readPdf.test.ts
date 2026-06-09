@@ -179,7 +179,11 @@ describe('readPdfModule (native)', () => {
       const result = await run({ file_path: '/abs/doc.pdf' });
       expect(result.ok).toBe(false);
       expect(fetchMock).not.toHaveBeenCalled();
-      if (!result.ok) expect(result.error).toContain('OpenRouter API Key');
+      if (!result.ok) {
+        expect(result.error).toContain('支持 PDF/文件输入的视觉模型配置');
+        expect(result.error).toContain('当前版本可识别的配置');
+        expect(result.error).toContain('OPENROUTER_API_KEY');
+      }
     });
 
     it('returns the direct OpenRouter failure instead of using a cloud proxy fallback', async () => {

@@ -65,6 +65,30 @@ export interface TavilySearchResponse {
   }>;
 }
 
+export interface OpenAIResponsesResponse {
+  output_text?: string;
+  output?: Array<{
+    action?: {
+      sources?: Array<{
+        title?: string;
+        url?: string;
+      }>;
+    };
+    content?: Array<{
+      text?: string;
+      annotations?: Array<{
+        type?: string;
+        title?: string;
+        url?: string;
+        url_citation?: {
+          title?: string;
+          url?: string;
+        };
+      }>;
+    }>;
+  }>;
+}
+
 export interface SearchSourceResult {
   source: string;
   success: boolean;

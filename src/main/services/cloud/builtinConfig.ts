@@ -96,6 +96,23 @@ export interface SharedProviderConfig {
   requiredCapability?: string;
 }
 
+export type SharedServiceKeyName = 'brave' | 'exa' | 'openai' | 'perplexity' | 'tavily';
+
+/**
+ * 团队共享服务 key（先用于联网搜索）。控制面已按 entitlement 过滤，客户端仅把 key
+ * 作为用户未自配该服务 key 时的 fallback，不覆盖用户自己的 SecureStorage key。
+ */
+export interface SharedServiceKeyConfig {
+  service: SharedServiceKeyName;
+  apiKey: string;
+  /** Stable non-secret id derived by control-plane for ops/quota state. */
+  keyId?: string;
+  /** Optional OpenAI-compatible base URL for services backed by a relay/NewAPI endpoint. */
+  baseUrl?: string;
+  displayName?: string;
+  requiredCapability?: string;
+}
+
 export interface CloudConfig {
   version: string;
   prompts: Record<string, string>;
@@ -119,6 +136,8 @@ export interface CloudConfig {
   mcpCatalog?: McpCatalogPayload;
   /** 团队共享 provider（中转站）；控制面已按 entitlement 过滤，客户端直接注入选择器。 */
   sharedProviders?: SharedProviderConfig[];
+  /** 团队共享服务 key（如 Tavily/Brave 搜索），按 entitlement 过滤后下发。 */
+  sharedServiceKeys?: SharedServiceKeyConfig[];
 }
 
 // ----------------------------------------------------------------------------

@@ -32,6 +32,44 @@ Vercel 控制面网关 applyServerEntitlementGate ── 按 subject 的 entitle
 | 管理台开关 | `admin-console/app/entitlements/`（page + actions）|
 | 授权存储 | `supabase` 表 `control_plane_entitlements`（已存在，无需新迁移）|
 
+## 共享搜索 Key
+
+搜索复用同一条 `cloud_config` 下发链路，但不走共享模型 provider。管理员把 Tavily/Brave/Perplexity/Exa 的 key 放在 Vercel env，只把服务名、展示名、`api_key_env` 和 capability 门存进 Supabase 表 `control_plane_shared_service_keys`。
+
+客户端收到后写入独立的 SecureStorage 前缀 `cloud-service-key:<service>`，读取顺序是：用户自己配置的服务 key → 云端下发的团队 key → 环境变量。这样同事零配置能搜索，但不会覆盖已经自己配置过的 key。
+
+**Vercel env（一次性，含机密）：**
+```
+CONTROL_PLANE_SHARED_SERVICE_KEYS_FROM_DB = 1
+TEAM_OPENAI_API_KEY                       = <OpenAI key，可选>
+TEAM_TAVILY_API_KEY                       = <Tavily key>
+```
+
+**Supabase 行示例：**
+```
+service             = tavily
+display_name        = 团队 Tavily
+api_key_env         = TEAM_TAVILY_API_KEY
+required_capability = shared_search
+enabled             = true
+```
+
+如果配 OpenAI：
+```
+service             = openai
+display_name        = 团队 OpenAI 搜索
+api_key_env         = TEAM_OPENAI_API_KEY
+base_url            = https://api.openai.com/v1  # 可选；NewAPI/relay 时填对应 OpenAI-compatible /v1
+required_capability = shared_search
+enabled             = true
+```
+
+支持的服务名先限制为 `openai`、`tavily`、`brave`、`perplexity`、`exa`，和当前 WebSearch 工具已实现的 source 对齐。OpenAI 会走 Responses API 的内置 web search 工具；如果 key 来自 NewAPI/relay，必须同时配置 `base_url`，否则客户端会按官方 OpenAI 域名请求。`claude`、`grok`、`gemini` 属于另一类搜索 adapter，需要单独接 API 返回结构，不能直接填进这张表冒充 Tavily/Brave。
+
+共享搜索源没额度时不要继续下发给客户端。把 `enabled=false`，并写 `disabled_reason` / `disabled_until`，例如 `quota_exhausted_2026_06`。客户端本地也会对 quota/rate-limit 错误做会话级熔断，但生产共享源应在控制面先关，避免每个用户都白试一次。
+
+用户本地自己配置的 OpenAI key 会优先于云端共享 key，可直接供 WebSearch 的 `openai` source 使用；用户本地 Claude key 只用于 Claude 模型推理，当前不会自动变成 WebSearch source。
+
 ## 生产激活步骤（需要 Vercel + Supabase 权限）
 
 ### 1. Vercel 控制面项目（`code-agent`，rootDir=`vercel-api`）设置 env

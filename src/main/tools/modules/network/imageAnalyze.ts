@@ -297,7 +297,14 @@ async function analyzeImage(
     }
   }
 
-  throw new Error('所有视觉模型均不可用。请在设置中配置任一支持视觉的模型（如小米 MiMo Omni、Claude、智谱 GLM-V 或 OpenRouter）的 API Key。');
+  throw new Error([
+    'image_analyze 现在还不能运行：没有可用的视觉模型。',
+    '普通文本模型 key 只能做推理；这个工具需要能接收图片输入的视觉模型。',
+    '',
+    '可以这样配置：',
+    '- 在模型设置里配置任一支持视觉的 provider：小米 MiMo Omni、Claude 视觉模型、智谱 GLM-V，或 OpenRouter 视觉模型。',
+    '- 配好后重新运行 image_analyze。',
+  ].join('\n'));
 }
 
 async function checkImageMatch(

@@ -11,6 +11,8 @@ const E2E_TASK_COMPLETE_SCOPE_CALL_ID = 'e2e-task-panel-complete-scope';
 const E2E_TASK_START_RETAINED_CALL_ID = 'e2e-task-panel-start-retained-path';
 const E2E_TASK_CANCEL_CALL_ID = 'e2e-task-panel-cancel-old-path';
 const E2E_TASK_COMPLETE_RETAINED_CALL_ID = 'e2e-task-panel-complete-retained-path';
+const E2E_WEB_SEARCH_MARKER = 'E2E_WEB_SEARCH_TOOL';
+const E2E_WEB_SEARCH_CALL_ID = 'e2e-web-search-cloud-key';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -52,6 +54,10 @@ function hasTool(tools: ToolDefinition[], name: string): boolean {
 
 function hasTaskPanelMarker(messages: ModelMessage[]): boolean {
   return messages.some((message) => getMessageText(message).includes(E2E_TASK_PANEL_MARKER));
+}
+
+function hasWebSearchMarker(messages: ModelMessage[]): boolean {
+  return messages.some((message) => getMessageText(message).includes(E2E_WEB_SEARCH_MARKER));
 }
 
 export function shouldUseE2ELocalAgentModelForMessages(
@@ -230,6 +236,76 @@ function buildTaskPanelE2EResponse(
   };
 }
 
+function buildWebSearchE2EResponse(
+  messages: ModelMessage[],
+  tools: ToolDefinition[],
+  onStream?: StreamCallback,
+): ModelResponse | null {
+  if (!hasWebSearchMarker(messages)) return null;
+
+  const actualProvider = 'acceptance';
+  const actualModel = 'e2e-local-agent-model';
+
+  const result = findToolResultContent(messages, E2E_WEB_SEARCH_CALL_ID);
+  if (result) {
+    const content = [
+      'E2E web search smoke completed.',
+      'WebSearch returned data through the real tool executor.',
+      result.includes('No search sources available') ? 'No sources were available.' : 'Search sources were available.',
+    ].join(' ');
+    onStream?.({ type: 'text', content });
+    onStream?.({ type: 'complete', finishReason: 'stop' });
+    return {
+      type: 'text',
+      content,
+      finishReason: 'stop',
+      actualProvider,
+      actualModel,
+      usage: { inputTokens: 180, outputTokens: 28 },
+    };
+  }
+
+  if (!hasTool(tools, 'WebSearch')) {
+    const content = 'E2E web search smoke could not find the WebSearch tool.';
+    onStream?.({ type: 'text', content });
+    onStream?.({ type: 'complete', finishReason: 'stop' });
+    return {
+      type: 'text',
+      content,
+      finishReason: 'stop',
+      actualProvider,
+      actualModel,
+      usage: { inputTokens: 120, outputTokens: 18 },
+    };
+  }
+
+  const toolCall = {
+    id: E2E_WEB_SEARCH_CALL_ID,
+    name: 'WebSearch',
+    arguments: {
+      query: 'OpenAI web search tool official documentation',
+      count: 3,
+      source: 'auto',
+      mode: 'quick',
+    },
+  };
+  onStream?.({
+    type: 'tool_call_start',
+    toolCall: { index: 0, id: toolCall.id, name: toolCall.name },
+  });
+  onStream?.({ type: 'complete', finishReason: 'tool_calls' });
+  return {
+    type: 'tool_use',
+    content: 'Searching the web through the real WebSearch tool executor.',
+    toolCalls: [toolCall],
+    finishReason: 'tool_calls',
+    actualProvider,
+    actualModel,
+    usage: { inputTokens: 160, outputTokens: 32 },
+    contentParts: [{ type: 'tool_call', toolCallId: toolCall.id }],
+  };
+}
+
 export function buildE2ELocalAgentModelResponse(
   messages: ModelMessage[],
   tools: ToolDefinition[],
@@ -237,6 +313,9 @@ export function buildE2ELocalAgentModelResponse(
   onStream?: StreamCallback,
   env: NodeJS.ProcessEnv = process.env,
 ): ModelResponse {
+  const webSearchResponse = buildWebSearchE2EResponse(messages, tools, onStream);
+  if (webSearchResponse) return webSearchResponse;
+
   const taskPanelResponse = buildTaskPanelE2EResponse(messages, tools, onStream);
   if (taskPanelResponse) return taskPanelResponse;
 

@@ -1,6 +1,6 @@
 // ============================================================================
 // Web Search Tool - Multi-source parallel web search
-// Supports: Cloud Proxy, Perplexity, EXA, Brave Search
+// Supports: Cloud Proxy, OpenAI Web Search, Perplexity, EXA, Brave Search
 // P1: Domain filtering (allowed_domains / blocked_domains)
 // P2: Auto-extract (search + fetch + AI extraction)
 // ============================================================================
@@ -13,6 +13,8 @@ import type { DomainFilter, SearchResult } from './search/searchTypes';
 import {
   formatAsTable,
   deduplicateResults,
+  SEARCH_PROVIDER_SETUP_MESSAGE,
+  SEARCH_FAILURE_GUIDANCE,
 } from './search/searchUtils';
 import {
   routeSources,
@@ -67,7 +69,7 @@ Do not repeatedly search or fetch when the current results already answer the qu
 Features:
 - Intelligent source routing: automatically picks 2-3 best-fit sources based on query characteristics
 - mode: "quick" (2 sources, fast) or "research" (3-4 sources, thorough)
-- Parallel search across multiple sources (Perplexity, EXA, Brave, Tavily)
+- Parallel search across multiple sources (OpenAI, Perplexity, EXA, Brave, Tavily)
 - Domain filtering with allowed_domains / blocked_domains
 - auto_extract: search + fetch + AI extraction in one call
 - recency: filter results by day/week/month
@@ -93,7 +95,7 @@ Features:
       sources: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Specific sources to use: cloud, perplexity, exa, brave (default: all available)',
+        description: 'Specific sources to use: cloud, openai, perplexity, exa, brave, tavily (default: all available)',
       },
       allowed_domains: {
         type: 'array',
@@ -179,7 +181,7 @@ Features:
     if (allAvailable.length === 0) {
       return {
         success: false,
-        error: 'No search sources available. Please configure at least one API key (EXA, Perplexity, or Brave) in Settings > Service API Keys.',
+        error: SEARCH_PROVIDER_SETUP_MESSAGE,
       };
     }
 
@@ -309,6 +311,13 @@ Features:
           logger.warn(`Translation failed, keeping original language:`, err instanceof Error ? err.message : err);
         }
       }
+    }
+
+    if (!searchResult.success) {
+      return {
+        ...searchResult,
+        error: `${searchResult.error || 'WebSearch failed'}\n\n${SEARCH_FAILURE_GUIDANCE}`,
+      };
     }
 
     // Save to file if requested (bypasses model — writes directly)

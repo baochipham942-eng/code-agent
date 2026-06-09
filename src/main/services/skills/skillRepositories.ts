@@ -91,6 +91,23 @@ export const SKILL_KEYWORDS: Record<string, string[]> = {
   pdf: ['pdf', '阅读', '提取'],
   design: ['前端', 'ui', '界面', '设计', 'frontend', 'react', 'css'],
   'data-cleaning': ['清洗', '数据清洗', 'clean', 'cleaning', '去重', '缺失值', '异常值'],
+  'opencli-search': [
+    'opencli',
+    '复杂搜索',
+    '社媒搜索',
+    '登录态抓取',
+    '反爬',
+    '小红书',
+    '知乎',
+    '微博',
+    'bilibili',
+    'b站',
+    'youtube',
+    'twitter',
+    'x.com',
+    'reddit',
+    '站内搜索',
+  ],
 };
 
 // ============================================================================

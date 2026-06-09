@@ -19,6 +19,7 @@ import { getConfigService } from '../../../services';
 import { MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readPdfSchema as schema } from './readPdf.schema';
+import { TOOL_DEPENDENCY_HINTS } from '../_helpers/dependencyHints';
 
 const VisionCompletionResponseSchema = z.object({
   choices: z.array(z.object({
@@ -56,7 +57,7 @@ async function processWithVisionModel(
   const configService = getConfigService();
   const apiKey = configService.getApiKey('openrouter');
   if (!apiKey) {
-    throw new Error('PDF 解析失败：未配置 OpenRouter API Key。请在设置中配置后重试。');
+    throw new Error(TOOL_DEPENDENCY_HINTS.readPdfOpenRouter);
   }
 
   // 读取 PDF 并转换为 base64

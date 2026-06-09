@@ -151,8 +151,9 @@ async function initializeWebSkillServices(configService: ConfigServiceForBootstr
     await initCloudConfigService({
       // 发行版跑的就是本 webServer 路径：必须带上 access token，capability 门控的共享 provider 才会被下发。
       getAccessToken: () => getAuthService().getAccessToken(),
-      // 把控制面下发的团队共享 provider（中转站）reconcile 进本地 settings（web/main 路径都要接，否则发行版不生效）。
+      // 把控制面下发的团队共享 provider / 服务 key reconcile 进本地配置（web/main 路径都要接，否则发行版不生效）。
       onSharedProvidersResolved: (providers) => getConfigService().reconcileManagedProviders(providers),
+      onSharedServiceKeysResolved: (keys) => getConfigService().reconcileManagedServiceApiKeys(keys),
     });
     const info = getCloudConfigService().getInfo();
     logger.info('CloudConfig initialized', {

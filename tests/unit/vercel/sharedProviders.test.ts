@@ -43,9 +43,18 @@ interface SharedProviderFixture {
   requiredCapability?: string;
 }
 
+interface SharedServiceKeyFixture {
+  service: 'brave' | 'exa' | 'openai' | 'perplexity' | 'tavily';
+  apiKey: string;
+  baseUrl?: string;
+  displayName?: string;
+  requiredCapability?: string;
+}
+
 async function withEnv(
   options: {
     sharedProviders: SharedProviderFixture[];
+    sharedServiceKeys?: SharedServiceKeyFixture[];
     builtinCapabilities?: string[];
     entitlementRequired?: boolean;
     tokenMap?: unknown;
@@ -58,11 +67,19 @@ async function withEnv(
     'CONTROL_PLANE_CLOUD_CONFIG_JSON',
     'CONTROL_PLANE_ENTITLEMENT_REQUIRED',
     'CONTROL_PLANE_ENTITLEMENT_TOKEN_MAP_JSON',
+    'CONTROL_PLANE_SHARED_PROVIDERS_FROM_DB',
+    'CONTROL_PLANE_SHARED_SERVICE_KEYS_FROM_DB',
+    'CONTROL_PLANE_SUPABASE_URL',
+    'CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY',
   ];
   const previous = new Map(keys.map((key) => [key, process.env[key]]));
   try {
     process.env.CONTROL_PLANE_PRIVATE_KEY = createKeyPair();
     process.env.CONTROL_PLANE_KEY_ID = 'shared-provider-test-key';
+    delete process.env.CONTROL_PLANE_SHARED_PROVIDERS_FROM_DB;
+    delete process.env.CONTROL_PLANE_SHARED_SERVICE_KEYS_FROM_DB;
+    delete process.env.CONTROL_PLANE_SUPABASE_URL;
+    delete process.env.CONTROL_PLANE_SUPABASE_SERVICE_ROLE_KEY;
     const cloudConfig: Record<string, unknown> = {
       version: 'shared-provider-test',
       prompts: {},
@@ -73,6 +90,7 @@ async function withEnv(
       rules: {},
       mcpServers: [],
       sharedProviders: options.sharedProviders,
+      ...(options.sharedServiceKeys ? { sharedServiceKeys: options.sharedServiceKeys } : {}),
     };
     if (options.builtinCapabilities) {
       cloudConfig.entitlement = {
@@ -102,8 +120,11 @@ async function withEnv(
   }
 }
 
-function payloadOf(body: unknown): { sharedProviders?: SharedProviderFixture[] } {
-  return (body as { payload: { sharedProviders?: SharedProviderFixture[] } }).payload;
+function payloadOf(body: unknown): {
+  sharedProviders?: SharedProviderFixture[];
+  sharedServiceKeys?: SharedServiceKeyFixture[];
+} {
+  return (body as { payload: { sharedProviders?: SharedProviderFixture[]; sharedServiceKeys?: SharedServiceKeyFixture[] } }).payload;
 }
 
 const teamWide: SharedProviderFixture = {
@@ -117,6 +138,17 @@ const teamWide: SharedProviderFixture = {
 const gated: SharedProviderFixture = {
   ...teamWide,
   requiredCapability: 'shared_relay',
+};
+
+const teamSearchKey: SharedServiceKeyFixture = {
+  service: 'tavily',
+  displayName: '团队 Tavily',
+  apiKey: 'tvly-test-search-secret',
+};
+
+const gatedSearchKey: SharedServiceKeyFixture = {
+  ...teamSearchKey,
+  requiredCapability: 'shared_search',
 };
 
 describe('control-plane sharedProviders 网关', () => {
@@ -189,6 +221,53 @@ describe('control-plane sharedProviders 网关', () => {
       await controlPlaneHandler({ method: 'GET', query: { artifact: 'cloud_config' }, headers: {} }, res);
       expect(payloadOf(res.body).sharedProviders).toBeUndefined();
       expect(JSON.stringify(res.body)).not.toContain(RELAY_KEY);
+    });
+  });
+
+  it('共享搜索 key：capability 命中才下发，未命中时 key 不下发', async () => {
+    await withEnv({
+      sharedProviders: [],
+      sharedServiceKeys: [gatedSearchKey],
+      entitlementRequired: true,
+      tokenMap: {
+        'good-token': {
+          subject: { id: 'user_ok' },
+          entitlement: { status: 'active', plan: 'team', capabilities: ['shared_search'] },
+        },
+        'plain-token': {
+          subject: { id: 'user_plain' },
+          entitlement: { status: 'active', plan: 'free', capabilities: ['memory'] },
+        },
+      },
+    }, async () => {
+      const good = makeResponse();
+      await controlPlaneHandler(
+        { method: 'GET', query: { artifact: 'cloud_config' }, headers: { authorization: 'Bearer good-token' } },
+        good,
+      );
+      expect(payloadOf(good.body).sharedServiceKeys).toHaveLength(1);
+      expect(JSON.stringify(good.body)).toContain(teamSearchKey.apiKey);
+
+      const plain = makeResponse();
+      await controlPlaneHandler(
+        { method: 'GET', query: { artifact: 'cloud_config' }, headers: { authorization: 'Bearer plain-token' } },
+        plain,
+      );
+      expect(payloadOf(plain.body).sharedServiceKeys).toBeUndefined();
+      expect(JSON.stringify(plain.body)).not.toContain(teamSearchKey.apiKey);
+    });
+  });
+
+  it('fail-closed（要求鉴权但无 token）：剥离所有共享搜索 key', async () => {
+    await withEnv({
+      sharedProviders: [],
+      sharedServiceKeys: [teamSearchKey, gatedSearchKey],
+      entitlementRequired: true,
+    }, async () => {
+      const res = makeResponse();
+      await controlPlaneHandler({ method: 'GET', query: { artifact: 'cloud_config' }, headers: {} }, res);
+      expect(payloadOf(res.body).sharedServiceKeys).toBeUndefined();
+      expect(JSON.stringify(res.body)).not.toContain(teamSearchKey.apiKey);
     });
   });
 });

@@ -174,6 +174,32 @@ describe('modelRuntime', () => {
     expect(hasConfiguredRuntimeModels(localSettings)).toBe(true);
   });
 
+  it('accepts cloud-managed providers as configured without exposing keys', () => {
+    const settings = {
+      models: {
+        default: 'custom-cloud-gpt55',
+        defaultProvider: 'custom-cloud-gpt55',
+        providers: {
+          'custom-cloud-gpt55': {
+            enabled: true,
+            managedByCloud: true,
+            displayName: 'Cloud GPT-5.5',
+            protocol: 'openai',
+            baseUrl: 'https://relay.example.com/openai',
+            model: 'gpt-5.5',
+            models: {
+              'gpt-5.5': { enabled: true, label: 'GPT-5.5' },
+            },
+          },
+        },
+      },
+    } as AppSettings;
+
+    expect(hasConfiguredRuntimeModels(settings)).toBe(true);
+    expect(hasConfiguredDefaultRuntimeModel(settings)).toBe(true);
+    expect(buildRuntimeModelOptions(settings).map((option) => option.model)).toContain('gpt-5.5');
+  });
+
   it('requires the active default provider to be configured before send', () => {
     const settings = {
       models: {

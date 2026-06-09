@@ -19,6 +19,23 @@ export const BRAVE_SEARCH_URL = SEARCH_API_ENDPOINTS.brave;
 export const EXA_SEARCH_URL = SEARCH_API_ENDPOINTS.exa;
 export const PERPLEXITY_API_URL = SEARCH_API_ENDPOINTS.perplexity;
 export const TAVILY_SEARCH_URL = SEARCH_API_ENDPOINTS.tavily;
+export const OPENAI_RESPONSES_URL = SEARCH_API_ENDPOINTS.openai;
+
+export const SEARCH_PROVIDER_SETUP_MESSAGE = [
+  '当前没有可用的联网搜索源。',
+  '模型 API Key 只负责模型推理；Claude、Gemini、Grok 等模型 key 不会自动启用 WebSearch。',
+  '要启用联网搜索，请在「设置 > Service API Keys」至少配置一个搜索服务 key：',
+  '- Brave Search：通用网页搜索，适合作默认共享源。',
+  '- OpenAI：Responses web_search；如果使用 NewAPI/relay，需要同时配置 baseUrl。',
+  '- EXA：技术文档和语义搜索。',
+  '- Tavily：结构化搜索和网页摘要。',
+  '- Perplexity：带 AI 摘要，但额度耗尽时会被临时跳过。',
+].join('\n');
+
+export const SEARCH_FAILURE_GUIDANCE = [
+  '联网搜索没有拿到可用结果。',
+  '如果错误里出现 quota / insufficient_quota / billing details，表示该搜索源额度已耗尽；请换一个搜索源，或在「设置 > Service API Keys」配置自己的 Brave、OpenAI、EXA、Tavily 或 Perplexity key。',
+].join('\n');
 
 // Domains to skip when auto-extracting (search engines themselves)
 export const SEARCH_ENGINE_DOMAINS = [
@@ -88,7 +105,12 @@ export const PREFERRED_EXTRACT_DOMAINS = [
 
 /** source name -> cooldown expiry timestamp (ms) */
 const circuitBreaker: Record<string, number> = {};
-const CIRCUIT_BREAKER_COOLDOWN = 10 * 60 * 1000; // 10 minutes
+const RATE_LIMIT_CIRCUIT_BREAKER_COOLDOWN = 10 * 60 * 1000; // 10 minutes
+const QUOTA_CIRCUIT_BREAKER_COOLDOWN = 24 * 60 * 60 * 1000; // 24 hours
+
+const QUOTA_ERROR_PATTERN =
+  /insufficient[_\s-]?quota|quota\s+(?:exceeded|exhausted)|exceeded\s+(?:your\s+)?current\s+quota|insufficient\s+(?:balance|credits?)|billing\s+details|HTTP\s+402|\b402\b/i;
+const RATE_LIMIT_ERROR_PATTERN = /HTTP\s+429|\b429\b|rate[_\s-]?limit|too many requests/i;
 
 /**
  * Check if a source is currently circuit-broken.
@@ -106,15 +128,22 @@ export function getCircuitBreakerRemaining(source: string): number {
 }
 
 /**
- * Trip the circuit breaker for a source after receiving 429.
+ * Trip the circuit breaker for a source after receiving a rate/quota failure.
  */
-export function tripCircuitBreaker(source: string): void {
-  circuitBreaker[source] = Date.now() + CIRCUIT_BREAKER_COOLDOWN;
+export function tripCircuitBreaker(source: string, cooldownMs = RATE_LIMIT_CIRCUIT_BREAKER_COOLDOWN): void {
+  circuitBreaker[source] = Date.now() + cooldownMs;
   logger.warn('Circuit breaker tripped for source', {
     source,
-    cooldownMs: CIRCUIT_BREAKER_COOLDOWN,
+    cooldownMs,
     resumeAt: new Date(circuitBreaker[source]).toISOString(),
   });
+}
+
+export function getSearchErrorCircuitBreakerCooldown(error: string | undefined): number | null {
+  if (!error) return null;
+  if (QUOTA_ERROR_PATTERN.test(error)) return QUOTA_CIRCUIT_BREAKER_COOLDOWN;
+  if (RATE_LIMIT_ERROR_PATTERN.test(error)) return RATE_LIMIT_CIRCUIT_BREAKER_COOLDOWN;
+  return null;
 }
 
 // ============================================================================

@@ -82,6 +82,9 @@ interface SecureStorageData {
   'apikey.github'?: string;
   'apikey.langfuse_public'?: string;
   'apikey.langfuse_secret'?: string;
+  // Service base URLs (non-secret, but kept with managed service metadata)
+  'serviceBaseUrl.openai'?: string;
+  [key: `serviceBaseUrl.${string}`]: string | undefined;
   // Integration configs (stored as JSON strings)
   'integration.jira'?: string;
   // Allow arbitrary integration keys
@@ -126,12 +129,13 @@ function loadPersistentEncryptionKey(): string {
  * 新写入永远使用 loadPersistentEncryptionKey()。
  */
 function deriveLegacyEncryptionKey(): string {
-  let userDataPath = '';
-  try {
-    userDataPath = app?.getPath?.('userData') || '';
-  } catch {
-    userDataPath = os.homedir();
-  }
+  const userDataPath = (() => {
+    try {
+      return app?.getPath?.('userData') || '';
+    } catch {
+      return os.homedir();
+    }
+  })();
   const machineId = `${os.hostname()}-${os.userInfo().username}-${userDataPath}`;
   return crypto.createHash('sha256').update(machineId).digest('hex').slice(0, 32);
 }

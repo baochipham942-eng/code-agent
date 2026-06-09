@@ -7,12 +7,18 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AppSettings } from '../../../../src/shared/contract';
-import type { SharedProviderConfig } from '../../../../src/main/services/cloud/builtinConfig';
+import type {
+  SharedProviderConfig,
+  SharedServiceKeyConfig,
+} from '../../../../src/main/services/cloud/builtinConfig';
 
 const keyStore = new Map<string, string>();
 const secureStorageMock = {
   getSettingsFromKeychain: vi.fn(async () => null),
   saveSettingsToKeychain: vi.fn(async () => undefined),
+  get: vi.fn((key: string) => keyStore.get(key)),
+  set: vi.fn((key: string, value: string) => { keyStore.set(key, value); }),
+  delete: vi.fn((key: string) => { keyStore.delete(key); }),
   getApiKey: vi.fn((provider: string) => keyStore.get(provider)),
   setApiKey: vi.fn((provider: string, key: string) => { keyStore.set(provider, key); }),
   deleteApiKey: vi.fn((provider: string) => { keyStore.delete(provider); }),
@@ -53,6 +59,21 @@ const relayProvider: SharedProviderConfig = {
   protocol: 'openai',
   billingMode: 'unknown',
   models: [{ id: 'gpt-5.3' }, { id: 'gpt-5.4', label: 'GPT-5.4' }],
+};
+
+const tavilyKey: SharedServiceKeyConfig = {
+  service: 'tavily',
+  displayName: '团队 Tavily',
+  apiKey: 'tvly-team-secret',
+  requiredCapability: 'shared_search',
+};
+
+const openaiRelayKey: SharedServiceKeyConfig = {
+  service: 'openai',
+  displayName: '团队 OpenAI 搜索',
+  apiKey: 'sk-openai-relay-secret',
+  baseUrl: 'https://free.example/v1/',
+  requiredCapability: 'shared_search',
 };
 
 describe('ConfigService.reconcileManagedProviders', () => {
@@ -159,5 +180,85 @@ describe('ConfigService.reconcileManagedProviders', () => {
 
     // 默认不被共享 provider 抢走
     expect(service.getSettings().models.default).toBe(currentDefault);
+  });
+});
+
+describe('ConfigService.reconcileManagedServiceApiKeys', () => {
+  afterEach(() => {
+    keyStore.clear();
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it('upsert：注入托管搜索服务 key，getServiceApiKey 可直接读到', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'cfg-shared-service-'));
+    const { ConfigService } = await loadConfigService(dataDir);
+    const service = new ConfigService();
+    await service.initialize();
+
+    await service.reconcileManagedServiceApiKeys([tavilyKey]);
+
+    expect(secureStorageMock.setApiKey).toHaveBeenCalledWith('cloud-service-key:tavily', 'tvly-team-secret');
+    expect(service.getServiceApiKey('tavily')).toBe('tvly-team-secret');
+
+    const saved = await readFile(join(dataDir, 'config.json'), 'utf-8');
+    expect(saved).not.toContain('tvly-team-secret');
+  });
+
+  it('upsert：注入托管 OpenAI-compatible baseUrl，搜索源可读取到规范化端点', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'cfg-shared-service-'));
+    const { ConfigService } = await loadConfigService(dataDir);
+    const service = new ConfigService();
+    await service.initialize();
+
+    await service.reconcileManagedServiceApiKeys([openaiRelayKey]);
+
+    expect(secureStorageMock.setApiKey).toHaveBeenCalledWith('cloud-service-key:openai', 'sk-openai-relay-secret');
+    expect(secureStorageMock.set).toHaveBeenCalledWith('serviceBaseUrl.cloud.openai', 'https://free.example/v1');
+    expect(service.getServiceApiKey('openai')).toBe('sk-openai-relay-secret');
+    expect(service.getServiceApiBaseUrl('openai')).toBe('https://free.example/v1');
+  });
+
+  it('本地用户 key 优先，不被云端服务 key 覆盖', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'cfg-shared-service-'));
+    const { ConfigService } = await loadConfigService(dataDir);
+    const service = new ConfigService();
+    await service.initialize();
+
+    keyStore.set('tavily', 'tvly-user-secret');
+    await service.reconcileManagedServiceApiKeys([tavilyKey]);
+
+    expect(service.getServiceApiKey('tavily')).toBe('tvly-user-secret');
+    expect(keyStore.get('cloud-service-key:tavily')).toBe('tvly-team-secret');
+  });
+
+  it('停发：删除托管搜索服务 key，但保留用户自己的 key', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'cfg-shared-service-'));
+    const { ConfigService } = await loadConfigService(dataDir);
+    const service = new ConfigService();
+    await service.initialize();
+
+    keyStore.set('tavily', 'tvly-user-secret');
+    await service.reconcileManagedServiceApiKeys([tavilyKey]);
+    await service.reconcileManagedServiceApiKeys([]);
+
+    expect(secureStorageMock.deleteApiKey).toHaveBeenCalledWith('cloud-service-key:tavily');
+    expect(keyStore.get('tavily')).toBe('tvly-user-secret');
+    expect(keyStore.has('cloud-service-key:tavily')).toBe(false);
+  });
+
+  it('停发：删除托管 OpenAI-compatible baseUrl', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'cfg-shared-service-'));
+    const { ConfigService } = await loadConfigService(dataDir);
+    const service = new ConfigService();
+    await service.initialize();
+
+    await service.reconcileManagedServiceApiKeys([openaiRelayKey]);
+    await service.reconcileManagedServiceApiKeys([]);
+
+    expect(secureStorageMock.deleteApiKey).toHaveBeenCalledWith('cloud-service-key:openai');
+    expect(secureStorageMock.delete).toHaveBeenCalledWith('serviceBaseUrl.cloud.openai');
+    expect(keyStore.has('cloud-service-key:openai')).toBe(false);
+    expect(keyStore.has('serviceBaseUrl.cloud.openai')).toBe(false);
   });
 });

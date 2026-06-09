@@ -208,7 +208,11 @@ describe('youtubeTranscriptModule (native)', () => {
 
       const result = await run({ url: VIDEO_URL });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('NETWORK_ERROR');
+      if (!result.ok) {
+        expect(result.code).toBe('NETWORK_ERROR');
+        expect(result.error).toContain('SUPADATA_API_KEY');
+        expect(result.error).toContain('youtube_transcript');
+      }
     });
   });
 

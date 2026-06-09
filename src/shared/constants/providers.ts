@@ -342,6 +342,8 @@ export const SEARCH_API_ENDPOINTS = {
   perplexity: 'https://api.perplexity.ai/chat/completions',
   /** Tavily */
   tavily: 'https://api.tavily.com/search',
+  /** OpenAI Responses API with web_search tool */
+  openai: 'https://api.openai.com/v1/responses',
 } as const;
 
 // ============================================================================

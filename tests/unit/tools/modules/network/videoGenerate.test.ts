@@ -260,6 +260,10 @@ describe('video_generate — execute', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.code).toBe('NOT_INITIALIZED');
+      expect(result.error).toContain('video_generate');
+      expect(result.error).toContain('视频生成模型配置');
+      expect(result.error).toContain('当前版本可识别的配置');
+      expect(result.error).toContain('ZHIPU_OFFICIAL_API_KEY');
     }
   });
 
@@ -276,6 +280,7 @@ describe('video_generate — execute', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.code).toBe('NOT_INITIALIZED');
+      expect(result.error).toContain('0ki/普通智谱代理不支持这个视频生成接口');
     }
   });
 

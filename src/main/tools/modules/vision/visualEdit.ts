@@ -42,6 +42,7 @@ function pickVisualEditModel(hasScreenshot: boolean): string {
 import { getConfigService } from '../../../services';
 import { atomicWriteFile } from '../../utils/atomicWrite';
 import { visualEditSchema as schema } from './visualEdit.schema';
+import { TOOL_DEPENDENCY_HINTS } from '../_helpers/dependencyHints';
 
 interface VisualEditArgs {
   file?: string;
@@ -322,7 +323,7 @@ class VisualEditHandler implements ToolHandler<VisualEditArgs, VisualEditOutput>
     if (!zhipuApiKey) {
       return {
         ok: false,
-        error: 'ZHIPU_API_KEY 未配置，visual_edit 无法调用视觉模型。请在设置中配置智谱 Key。',
+        error: TOOL_DEPENDENCY_HINTS.visualEditZhipu,
         code: 'MISSING_API_KEY',
       };
     }

@@ -91,6 +91,16 @@ describe('CloudConfigService', () => {
       expect(service.getModelRouting()).toBeUndefined();
     });
 
+    it('数值型 feature flag 缺失时回退到内置默认值', () => {
+      const service = new FeatureFlagService({
+        getFeatureFlag: () => undefined,
+        isFeatureDisabledByPolicy: () => false,
+      } as unknown as CloudConfigService);
+
+      expect(service.getMaxIterations()).toBe(50);
+      expect(service.getMaxMessageLength()).toBe(100000);
+    });
+
     it('getSkills 应该返回数组', () => {
       const service = getCloudConfigService();
       const skills = service.getSkills();

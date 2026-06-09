@@ -15,6 +15,7 @@ import {
   type ReleasePolicy,
   type ModelRoutingConfig,
   type SharedProviderConfig,
+  type SharedServiceKeyConfig,
 } from './builtinConfig';
 import { setModelRoutingOverride } from '../../model/modelRouterPolicy';
 import { createLogger } from '../infra/logger';
@@ -61,6 +62,8 @@ export interface CloudConfigServiceOptions {
   /** 成功拉取到可信 cloud config 后回调，用于把团队共享 provider（中转站）reconcile 进本地 settings。
    *  仅在真正拿到云端配置时触发；离线/降级 builtin 时不触发（避免误删本地已下发的）。 */
   onSharedProvidersResolved?: (providers: SharedProviderConfig[]) => void | Promise<void>;
+  /** 成功拉取到可信 cloud config 后回调，用于把团队共享服务 key reconcile 进 SecureStorage。 */
+  onSharedServiceKeysResolved?: (keys: SharedServiceKeyConfig[]) => void | Promise<void>;
 }
 
 // ----------------------------------------------------------------------------
@@ -277,6 +280,11 @@ export class CloudConfigService {
   /** 控制面下发的团队共享 provider（中转站）；已按本人 entitlement 在网关层过滤。 */
   getSharedProviders(): SharedProviderConfig[] {
     return this.getConfig().sharedProviders ?? [];
+  }
+
+  /** 控制面下发的团队共享服务 key（如搜索 key）；已按本人 entitlement 在网关层过滤。 */
+  getSharedServiceKeys(): SharedServiceKeyConfig[] {
+    return this.getConfig().sharedServiceKeys ?? [];
   }
 
   isGlobalKillSwitchActive(): boolean {
@@ -521,6 +529,15 @@ export class CloudConfigService {
           await this.options.onSharedProvidersResolved(config.sharedProviders ?? []);
         } catch (error) {
           logger.warn('Failed to reconcile shared providers', { error: String(error) });
+        }
+      }
+
+      // 同一条可信 cloud_config 链路下发搜索等服务 key；客户端只把它作为本地未配置时的 fallback。
+      if (this.options.onSharedServiceKeysResolved) {
+        try {
+          await this.options.onSharedServiceKeysResolved(config.sharedServiceKeys ?? []);
+        } catch (error) {
+          logger.warn('Failed to reconcile shared service keys', { error: String(error) });
         }
       }
 

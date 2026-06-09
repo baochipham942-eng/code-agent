@@ -5,11 +5,12 @@
 import type { IpcMain } from '../platform';
 import { app } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { AppSettings } from '../../shared/contract';
+import type { AppSettings, ModelProvider } from '../../shared/contract';
 import type { ConfigService } from '../services';
 import { MODEL_API_ENDPOINTS, API_VERSIONS } from '../../shared/constants';
 import { assertAdminAccess, getAdminAccessIpcError, isCurrentUserAdmin } from './adminGuard';
 import { resolveConnectionTestModel } from '../model/providerConnectionTest';
+import { isRuntimeProviderConfigured } from '../../shared/modelRuntime';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -30,7 +31,11 @@ function sanitizeSettingsForUser(settings: AppSettings): AppSettings {
 
   if (sanitized.models?.providers) {
     for (const providerConfig of Object.values(sanitized.models.providers)) {
-      providerConfig.apiKeyConfigured = Boolean(providerConfig.apiKey || providerConfig.apiKeyConfigured);
+      providerConfig.apiKeyConfigured = Boolean(
+        providerConfig.apiKey
+        || providerConfig.apiKeyConfigured
+        || providerConfig.managedByCloud,
+      );
       delete providerConfig.apiKey;
     }
   }
@@ -160,7 +165,17 @@ async function handleSetDevMode(
   }
 }
 
-async function handleCheckApiKeyConfigured(): Promise<boolean> {
+async function handleCheckApiKeyConfigured(getConfigService: () => ConfigService | null): Promise<boolean> {
+  const configService = getConfigService();
+  const settings = configService?.getSettings();
+  if (settings?.models?.providers) {
+    for (const [provider, providerConfig] of Object.entries(settings.models.providers)) {
+      if (providerConfig?.enabled !== false && isRuntimeProviderConfigured(provider as ModelProvider, providerConfig)) {
+        return true;
+      }
+    }
+  }
+
   // 1. 检查 secureStorage（Electron 模式）
   const { getSecureStorage } = await import('../services/core/secureStorage');
   if (getSecureStorage().getStoredApiKeyProviders().length > 0) {
@@ -285,7 +300,7 @@ export function registerSettingsHandlers(
           data = null;
           break;
         case 'checkApiKeyConfigured':
-          data = await handleCheckApiKeyConfigured();
+          data = await handleCheckApiKeyConfigured(getConfigService);
           break;
         case 'setServiceApiKey':
           await handleSetServiceApiKey(getConfigService, payload as { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter'; apiKey: string });

@@ -272,10 +272,12 @@ Update API 优先读取 `UPDATE_DOWNLOAD_URL_<CHANNEL>`；没有 override 时通
 
 **每个版本上传 5 个对象**：
 - `v${VER}/Agent-Neo-${VER}-arm64.dmg` — DMG 本体
-- `v${VER}/Agent Neo.app.tar.gz` — Tauri updater 增量包（key 带空格，latest.json URL 用 `%20`）
-- `v${VER}/Agent Neo.app.tar.gz.sig` — 签名
+- `v${VER}/Agent.Neo.app.tar.gz` — Tauri updater 增量包（key 不带空格，避免 updater URL 转义差异）
+- `v${VER}/Agent.Neo.app.tar.gz.sig` — 签名
 - `stable/latest.json` — Tauri updater manifest
 - `stable/release.json` — Vercel updateMetadata 读取的 GitHub-shaped manifest
+
+`stable/latest.json.notes` 与 `stable/release.json.body` 都必须来自同一份 `docs/releases/v${VER}.md`。前者会进入 Tauri 原生 updater 的 `update.body`，最终展示在可选更新弹窗和设置页；后者会进入 cloud update API 的 `releaseNotes`，用于 native updater 不可用或强制更新策略场景。
 
 **上传命令**：`~/bin/ossutil cp <local> oss://agent-neo-releases/<key> --acl public-read --force`
 

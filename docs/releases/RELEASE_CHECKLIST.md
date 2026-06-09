@@ -73,12 +73,15 @@ npm run test
 ### package.json
 ```bash
 # Update version
-npm version 0.9.0 --no-git-tag-version
+npm version <version> --no-git-tag-version
 ```
-- [ ] Version updated to 0.9.0
+- [ ] `package.json` and `package-lock.json` updated to `<version>`
+- [ ] `src-tauri/tauri.conf.json` version updated to `<version>`
 
 ### Update Metadata
-- [ ] GitHub Release tag and notes are the source of update metadata
+- [ ] `docs/releases/v<version>.md` contains the user-facing update notes
+- [ ] `stable/latest.json.notes` is generated from `docs/releases/v<version>.md`
+- [ ] `stable/release.json.body` is generated from `docs/releases/v<version>.md`
 - [ ] Release policy env is set only when needed: `UPDATE_MIN_VERSION[_CHANNEL]`, `UPDATE_FORCE_UPDATE[_CHANNEL]`, `UPDATE_SHA256[_CHANNEL]`
 - [ ] No manual version constant edit is needed in `vercel-api/api/update.ts`
 - [ ] Recommended remote skill repositories are not auto-downloaded unless `CODE_AGENT_ALLOW_RECOMMENDED_SKILL_AUTO_DOWNLOAD=1` is intentionally set
@@ -171,6 +174,7 @@ REQUIRE_NOTARIZATION=1 npm run tauri:release:bundle
 - [ ] DMG passes `spctl --assess --type open --context context:primary-signature`
 - [ ] Bundled `dist/web/control-plane-public-keys.json` exists and contains at least one key
 - [ ] Updater artifacts are present: `.app.tar.gz`, `.app.tar.gz.sig`, `latest.json`
+- [ ] Updater artifact names are normalized for remote hosting: `Agent.Neo.app.tar.gz` and `Agent.Neo.app.tar.gz.sig`
 
 ### Test Package
 
@@ -185,7 +189,7 @@ REQUIRE_NOTARIZATION=1 npm run tauri:release:bundle
 
 ```bash
 # 从已 staple 的 dmg 安装
-hdiutil attach "src-tauri/target/release/bundle/dmg/Agent Neo_<version>_aarch64.dmg"
+hdiutil attach "src-tauri/target/release/bundle/dmg/Agent Neo.dmg"
 cp -R "/Volumes/Agent Neo/Agent Neo.app" /Applications/
 hdiutil detach "/Volumes/Agent Neo"
 ```
@@ -204,6 +208,7 @@ spctl --assess --type execute -vv "/Applications/Agent Neo.app"
 - [ ] `/Applications/Agent Neo.app` 单独 `xcrun stapler staple` 通过
 - [ ] `xcrun stapler validate` 在装机版 app 上 pass（说明 ticket 写入成功）
 - [ ] App launches without errors
+- [ ] `http://127.0.0.1:8180/api/health` returns 200 within the Tauri healthcheck window
 - [ ] Basic functionality works (new session, send message)
 - [ ] Security features work (audit log created)
 - [ ] Hooks configuration loads
@@ -213,12 +218,14 @@ spctl --assess --type execute -vv "/Applications/Agent Neo.app"
 ## Documentation (D14)
 
 ### Release Notes
-- [ ] `docs/releases/v0.9.0.md` updated with final content
+- [ ] `docs/releases/v<version>.md` updated with final content
 - [ ] Bug fixes section populated
 - [ ] Known issues updated
+- [ ] GitHub Release body matches `docs/releases/v<version>.md`
+- [ ] Tauri updater manifest `latest.json.notes` shows the same release notes that should appear in the update modal
 
 ### CHANGELOG
-- [ ] `CHANGELOG.md` [Unreleased] section moved to [0.9.0]
+- [ ] `CHANGELOG.md` [Unreleased] section moved to `[<version>]`
 - [ ] Release date added
 
 ---
@@ -227,28 +234,36 @@ spctl --assess --type execute -vv "/Applications/Agent Neo.app"
 
 ### Commit Version Update
 ```bash
-git add package.json package-lock.json CHANGELOG.md
-git commit -m "chore: release v0.9.0"
+git add package.json package-lock.json src-tauri/tauri.conf.json CHANGELOG.md docs/releases/v<version>.md
+git commit -m "chore: release v<version>"
 ```
 
 ### Create Tag
 ```bash
-git tag -a v0.9.0 -m "Release v0.9.0 - Claude Code Alignment"
+git tag -a v<version> -m "Release v<version>"
 ```
 
 ### Push
 ```bash
 git push origin main
-git push origin v0.9.0
+git push origin v<version>
 ```
 
-### Deploy API
+### Publish GitHub and OSS Artifacts
+
+- [ ] GitHub Release `v<version>` exists and contains `Agent.Neo.dmg`, `Agent.Neo.app.tar.gz`, `Agent.Neo.app.tar.gz.sig`, and `latest.json`
+- [ ] OSS version directory contains `Agent-Neo-<version>-arm64.dmg`, `Agent.Neo.app.tar.gz`, and `Agent.Neo.app.tar.gz.sig`
+- [ ] OSS `stable/latest.json` points to `v<version>/Agent.Neo.app.tar.gz`
+- [ ] OSS `stable/release.json` points to `v<version>/Agent-Neo-<version>-arm64.dmg`
+
+### Verify API
 ```bash
-# Push triggers Vercel auto-deploy
-# Verify deployment:
-curl "https://agentneo.vercel.app/api/update?action=health"
+curl "https://agentneo.vercel.app/api/update?action=check&version=0.0.0&platform=darwin&channel=stable"
+curl -I "https://agentneo.vercel.app/api/update?action=download&version=0.0.0&platform=darwin&channel=stable"
 ```
-- [ ] API returns version 0.9.0
+- [ ] API returns latest version `<version>`
+- [ ] API returns non-empty `releaseNotes`
+- [ ] Download endpoint redirects to the OSS DMG for `<version>`
 
 ---
 
@@ -280,13 +295,6 @@ git branch -d feature/quality
 
 If critical issues are found:
 
-```bash
-# Revert the release commit
-git revert HEAD
-
-# Or reset to previous tag
-git reset --hard v0.8.x
-
-# Force push (requires admin)
-git push --force origin main
-```
+- Prefer a superseding hotfix release when users may already have seen the version.
+- If the bad version must be withdrawn from stable, republish `stable/latest.json` and `stable/release.json` from the last known-good version, then verify update check and download redirect again.
+- Do not rewrite public release history unless the repository owner explicitly approves it.

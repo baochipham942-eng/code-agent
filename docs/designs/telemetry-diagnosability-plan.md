@@ -277,6 +277,15 @@ span+raw 全量)上报云端,后台脱离用户机器即可复现。剩下的都
 
 **key 提供 = 运维步骤(不写源码)**:把项目默认 `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` 放进打包的 `~/.code-agent/.env`,即对所有用户默认开。**secretKey 是真 secret,严禁硬编码进 TS 源码**。
 
+**⚠️ 重要更正(2026-06-09 核查):P3 的"默认覆盖所有用户"目前并不成立,只覆盖 dev 本机。**
+核查结论:
+- `src-tauri/tauri.conf.json` 的 `resources` **不含 `.env`** —— `.env` 不进 app bundle(release 段说法正确,security.md "自动打包"那句是错的)。
+- 没有首启把 `LANGFUSE_*` 种进用户 `~/.code-agent/.env` 的逻辑;`services/cloud/` 也不下发 langfuse key。
+- 故 `LANGFUSE_*` 只在 **dev(林晨)本机** `~/.code-agent/.env`。其他用户全新安装 env 里没有 → `getServiceApiKey` 返回 undefined → Langfuse 不初始化 → **只有 dev 一个人在往 Langfuse 上报**。
+
+**但核心能力不受影响**:诊断包(P2)走 app 自己的 authed Supabase client,**覆盖所有登录用户**,不需要 Langfuse key。即"脱离用户机器复现"对全员生效;缺的只是 Langfuse 实时 dashboard 的全员覆盖(只 dev 有)。
+
 **待办(推广前)**:
+- ⚠️ **全员 Langfuse 覆盖 = gate #3 的服务端代理**:public key 走云端 config 下发(可轮换、不进二进制),secret 走服务端代理(客户端发 trace 到自有 endpoint,服务端补 secret 转发),客户端永不持有 Langfuse secretKey。**不要**用"打包 .env 塞 secret"的方式给全员(等于把 secret 发到每台机器)。dogfood 期维持现状(只 dev 上报 Langfuse)即可。
 - ⚠️ 默认链路目前会把 `input: userMessage` 及 LLM generation 的 input/output 传给 Langfuse(含内容)。dogfood 期可接受(自己的 Langfuse 项目);**推广前要么收敛为 metadata-only、要么换服务端代理签发短期 token**,避免客户端持有 Langfuse secretKey + 内容外传。
 - 首启知情同意流程推广前补做(见决策记录 §3)。

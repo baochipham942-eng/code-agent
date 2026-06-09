@@ -100,6 +100,8 @@ scripts/vision-tagger
 # Upstream sidecar binaries (run scripts/fetch-*.sh to regenerate)
 scripts/rtk
 scripts/uv
+# 重签后的 cua-driver computer-use 底座（run scripts/fetch-cua-driver.sh 重新生成）
+scripts/Agent Neo Computer Use.app/
 
 # P0-5 shadow compare debug output
 data/debug/

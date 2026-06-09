@@ -33,7 +33,8 @@ import type {
   MCPServerState,
   InProcessMCPServerInterface,
 } from './types';
-import { isStdioConfig, isInProcessConfig } from './types';
+import { isStdioConfig, isInProcessConfig, CUA_DRIVER_SERVER_NAME } from './types';
+import { recordCuaResult } from './cuaNarration';
 
 // Import sub-modules
 import { createTransport, createMCPSDKClient, connectWithTimeout } from './mcpTransport';
@@ -705,11 +706,17 @@ export class MCPClient extends EventEmitter {
     const startTime = Date.now();
 
     try {
-      return await this.registry.callExternalTool(toolCallId, serverName, toolName, args, client, {
+      const result = await this.registry.callExternalTool(toolCallId, serverName, toolName, args, client, {
         timeoutMs,
         abortSignal,
         sessionId,
       });
+      // cua-driver：观察 get_window_state/list_apps 等结果，喂本地 AX 树缓存，
+      // 供后续 click/type_text 调用反查人话文案（§10）。纯增强，不影响结果。
+      if (serverName === CUA_DRIVER_SERVER_NAME && result.success && typeof result.output === 'string') {
+        recordCuaResult(toolName, args, result.output);
+      }
+      return result;
     } catch (error: unknown) {
       if (isAbortError(error) || abortSignal?.aborted) {
         return {

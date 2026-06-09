@@ -22,6 +22,7 @@ export {
   type ElectronFetchResponse,
 } from './providerHttp';
 import { parseGeminiStreamChunk } from './wrappers/geminiWrapper';
+import { narrateCuaToolCall } from '../../mcp/cuaNarration';
 
 export { logger, safeJsonParse } from './providerRuntime';
 
@@ -787,6 +788,15 @@ export function buildToolCallFromAccumulator(tc: {
       }
       delete (args as { _meta?: unknown })._meta;
     }
+  }
+
+  // cua-driver computer-use 工具：模型几乎不 emit _meta，靠本地 AX 树缓存把
+  // element_index 反查成人话（「点击『7』」）并填 app 图标 targetContext（§10）。
+  // 仅在模型没给对应字段时兜底，不覆盖模型显式输出。
+  if (tc.name.includes('cua-driver')) {
+    const cua = narrateCuaToolCall(tc.name, args);
+    if (!shortDescription && cua.shortDescription) shortDescription = cua.shortDescription;
+    if (!targetContext && cua.targetContext) targetContext = cua.targetContext;
   }
 
   // Fallback：如果模型没 emit shortDescription（GLM/Kimi 实测覆盖率低），

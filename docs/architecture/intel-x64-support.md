@@ -135,6 +135,47 @@ arm64 构建（现状不动）          x64 构建（新增）
 - **签名公证**：x64 .app 走同一 Developer ID 链，理论无差异，需真机验 Gatekeeper 放行。
 - **Intel runner 长期**：`macos-15-intel` 支持到 2027.08，之后需自托管 Intel mac 或本地 x64 Mac 构建。
 
+## 7.5 实施进度（2026-06-09）
+
+已落地并验证（本地 typecheck + 单测通过，分支 `feat/intel-x64-support`）：
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| 阶段3 | `updateMetadata.ts` arch 感知选包 + `/api/update` 加 arch；`build-stable-release-json` 产双架构；分发页下载按钮按芯片选 dmg | ✅ 已提交（21 测试） |
+| 阶段1 | `fetch-rtk/uv.sh` arch + x64 真实 sha256；3 swift 脚本 `-target`（audio 实测 13.0）；`build-runtime-assets` arch 工厂 + x64 跳 VAD；`runtimeAssetRegistry` arch | ✅ 已提交（24 测试） |
+| 阶段2-构建 | `tauri-arch-config.mjs` 派生 x64 资源覆盖（`tauri-release-bundle.sh` 已透传 `--config`，零改动） | ✅ 已提交 |
+| 阶段2-CI | release.yml 矩阵 + updater 端点 arch 化 | ⏳ 见 §8（需预发布 tag 验证） |
+
+### 关键实测结论（写代码时发现）
+- **audio sidecar x64 最低 macOS 13.0**：`SCStream`(12.3)+`capturesAudio`(13.0)；macOS 26 Tahoe 已弃 Intel，13.0 是 Intel 可用区间地板。
+- **onnxruntime-node npm 仅 darwin/arm64**（实 `find` 确认）→ x64 跳 `onnxruntime-vad` runtime-asset，VAD 走现成 `missing-runtime` 降级。
+- **rtk/uv x64 真实 sha256 已实拉计算并锁定**（非伪造）。
+
+## 8. CI 矩阵 + updater 端点实施细则（待预发布 tag 验证）
+
+> ⚠️ release.yml 是生产发版管线，且改 updater 端点涉及**老客户端迁移**，不可盲发。
+> 安全验证路径：用预发布 tag（`v0.x.y-x64test1`，带 `-` 后缀）触发——管线现有闸门保证它**不提升 stable、不抢 latest**，可安全空跑。
+
+### 8.1 release.yml 矩阵化
+- `release-mac` 改 `strategy.matrix.include`：`{arch:arm64, sysarch:aarch64, runner:macos-latest, ossutil:mac-arm64}` 与 `{arch:x64, sysarch:x86_64, runner:macos-15-intel, ossutil:mac-amd64}`，`fail-fast:false`。
+- sidecar 步加 `env: SWIFT_BUILD_ARCH: ${{ matrix.sysarch }}`（x64 leg 强制 audio 13.0 地板；fetch-rtk/uv 原生 host arch 自动对）。
+- x64 bundle：`node scripts/tauri-arch-config.mjs x64 --out "$RUNNER_TEMP/tauri.x64.json"` → `bash scripts/tauri-release-bundle.sh --config "$RUNNER_TEMP/tauri.x64.json"`。
+- ossutil 安装：`mac-arm64.zip` → `mac-${{ matrix.ossutil }}`（按 leg）。
+- OSS dmg 名：`Agent-Neo-${VERSION}-${{ matrix.arch }}.dmg`（已与 build-stable-release-json 命名对齐）。
+- runtime-assets 步加 `if: matrix.arch == 'arm64'`（x64 无 onnxruntime，跳过；manifest 仍 `darwin-arm64`）。
+- GitHub Release 各 leg 追加自己 arch 的 dmg/app.tar.gz；`latest.json` 按 arch 命名上传避免覆盖。
+
+### 8.2 updater 端点 arch 化（含老客户端迁移）
+- `tauri.conf.json` updater endpoint：`stable/latest.json` → `stable/latest-{{arch}}.json`（Tauri 解析 `{{arch}}` 为 `aarch64`/`x86_64`）。
+- CI 各 leg 上传 `stable/latest-${{ matrix.sysarch }}.json`。
+- **迁移兜底**：继续发布 `stable/latest.json`（= arm64），老 arm64 客户端端点是旧路径，不能 404。即同时存在 `latest.json`(legacy=arm64) + `latest-aarch64.json` + `latest-x86_64.json`。
+- 改端点必须与 CI 发布同一版落地，否则新 arm64 包指向尚未发布的 `latest-aarch64.json`。
+
+### 8.3 stable 提升（合并双架构）
+- 新增 `promote-stable` job `needs: release-mac`（等两 leg 都完），仅非预发布 tag。
+- in-app updater 的 `stable/release.json`：`build-stable-release-json.mjs --dmg-url <arm64 OSS url> --dmg-url-x64 <x64 OSS url>`（两 URL 按 `v<ver>/Agent-Neo-<ver>-<arch>.dmg` 约定构造），单 manifest 含双架构，`updateMetadata.ts` 已能按 `?arch=` 选。
+- Vercel cloud publish 步（§ Publish ... Cloud API）payload 加 `arch`，或依赖 release.json 双 dmg（已支持）。
+
 ## 7. 交叉验证记录（艾克斯 / Codex，2026-06-09）
 
 独立 context 审查，核了 GitHub release API、npm pack、Tauri 文档、runner-images。改正了草案 v1 的 4 处硬错：

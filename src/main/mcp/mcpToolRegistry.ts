@@ -75,17 +75,20 @@ function mapMCPAnnotationsToPermission(
  * cua 工具多不携带 MCP annotations，若走通用映射会全部落到 network 档，粒度不准。
  * 这里按 DeepChat plugins/cua/policies 对齐：只读类自动放行，桌面动作类需审批。
  */
+// 工具名核对自实测 cua-driver v0.5.1 `list-tools`
 const CUA_READONLY_TOOLS = new Set<string>([
   'check_permissions',
+  'check_for_update',
   'list_apps',
   'list_windows',
   'get_screen_size',
   'get_window_state',
+  'get_accessibility_tree',
   'get_cursor_position',
   'get_config',
   'get_recording_state',
   'get_agent_cursor_state',
-  'screenshot',
+  'screenshot', // 仅 --claude-code-computer-use-compat 模式存在；普通模式截图走 get_window_state
 ]);
 
 function mapCuaToolPermission(

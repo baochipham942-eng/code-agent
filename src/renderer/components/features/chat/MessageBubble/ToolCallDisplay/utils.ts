@@ -136,6 +136,7 @@ const CUA_TOOL_ICONS: Record<string, React.ReactNode> = {
   // 应用生命周期
   launch_app: React.createElement(AppWindow, { size: 14 }),
   kill_app: React.createElement(AppWindow, { size: 14 }),
+  bring_to_front: React.createElement(AppWindow, { size: 14 }),
   // 媒体
   screenshot: React.createElement(Camera, { size: 14 }),
   zoom: React.createElement(ZoomIn, { size: 14 }),
@@ -143,6 +144,7 @@ const CUA_TOOL_ICONS: Record<string, React.ReactNode> = {
   list_apps: React.createElement(ScanLine, { size: 14 }),
   list_windows: React.createElement(ScanLine, { size: 14 }),
   get_window_state: React.createElement(ScanLine, { size: 14 }),
+  get_accessibility_tree: React.createElement(ScanLine, { size: 14 }),
   get_screen_size: React.createElement(ScanLine, { size: 14 }),
   get_cursor_position: React.createElement(ScanLine, { size: 14 }),
   check_permissions: React.createElement(ScanLine, { size: 14 }),

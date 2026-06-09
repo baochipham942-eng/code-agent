@@ -437,14 +437,17 @@ export class UpdateService implements Disposable {
   async checkForUpdates(): Promise<UpdateInfo> {
     const currentVersion = this.getCurrentVersion();
     const platform = this.getPlatform();
+    // arch 让服务端按架构选包/runtime-asset manifest（x64 拿 x64，缺省 arm64）。
+    // 服务端缺省即 arm64，故老客户端不传也兼容。
+    const arch = process.arch === 'x64' ? 'x64' : 'arm64';
     const releasePolicy = this.getReleasePolicy();
     const releaseChannel = releasePolicy?.channel ?? 'stable';
 
-    logger.info(` Checking for updates... Current: ${currentVersion}, Platform: ${platform}`);
+    logger.info(` Checking for updates... Current: ${currentVersion}, Platform: ${platform}, Arch: ${arch}`);
 
     try {
       // Try our Vercel API first (primary source)
-      const serverUrl = `${this.config.updateServerUrl}/api/update?action=check&version=${currentVersion}&platform=${platform}&channel=${encodeURIComponent(releaseChannel)}`;
+      const serverUrl = `${this.config.updateServerUrl}/api/update?action=check&version=${currentVersion}&platform=${platform}&arch=${arch}&channel=${encodeURIComponent(releaseChannel)}`;
       logger.info(` Checking Vercel API: ${serverUrl}`);
 
       try {

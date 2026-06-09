@@ -282,6 +282,28 @@ export interface DiagnosticBundle {
   rawPayloads: DiagnosticRawPayload[];
 }
 
+/** 触发诊断包上报的原因。 */
+export type DiagnosticTriggerReason =
+  | 'session_error' // 自动:会话内有失败(totalErrors > 0)
+  | 'circuit_breaker'
+  | 'feedback' // 用户 👎
+  | 'manual'; // 用户主动上报
+
+/** 本地排队表的一条诊断包记录(待上传/已上传)。bundle 为脱敏后整包的 JSON 串。 */
+export interface TelemetryDiagnosticBundleRecord {
+  id: string;
+  sessionId: string;
+  agentVersion?: string | null;
+  promptVersion?: string | null;
+  toolSchemaVersion?: string | null;
+  triggerReason: DiagnosticTriggerReason;
+  bundleVersion: number;
+  builtAt: number;
+  bundle: string; // sanitized DiagnosticBundle 的 JSON.stringify
+  createdAt: number;
+  syncedAt?: number | null;
+}
+
 export interface TelemetryFeedback {
   id: string;
   sessionId: string;

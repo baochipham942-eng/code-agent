@@ -11,8 +11,9 @@ import { trackNode } from '../observability/posthogNode';
 import { POSTHOG_EVENTS } from '../../shared/observability/posthog-events';
 import { getSystemPromptCache } from './systemPromptCache';
 import { getDiagnosticVersions } from './diagnosticVersions';
+import { buildDiagnosticBundle, sanitizeDiagnosticBundle } from './diagnosticBundleService';
 import { classifyIntent, evaluateOutcome } from './intentClassifier';
-import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetryAdapter, QualitySignals, TelemetryPushEvent, ErrorCategory } from '../../shared/contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetryAdapter, QualitySignals, TelemetryPushEvent, ErrorCategory, DiagnosticTriggerReason } from '../../shared/contract/telemetry';
 import type { AgentEvent } from '../../shared/contract';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 import { sanitizeBrowserComputerToolArguments, sanitizeBrowserComputerToolResult } from '../../shared/utils/browserComputerRedaction';
@@ -343,6 +344,8 @@ export class TelemetryCollector {
       totalErrors: this.activeSession.totalErrors
     });
 
+    const hadErrors = this.activeSession.totalErrors > 0;
+
     this.pushEvent({
       type: 'session_end',
       sessionId,
@@ -356,8 +359,42 @@ export class TelemetryCollector {
       /* non-critical */
     }
 
+    // 失败信号 → 静默构建+脱敏+入队诊断包(dogfood 期自动,不打扰用户;上传由 uploader 走)
+    if (hadErrors) {
+      void this.captureDiagnosticBundle(sessionId, 'session_error');
+    }
+
     logger.info(`Telemetry session ended: ${sessionId}`);
     this.activeSession = null;
+  }
+
+  /**
+   * 构建+脱敏+入队一条诊断包(失败 session 触发)。fire-and-forget,失败不影响主流程。
+   * 数据此时已 flush 到 storage,buildDiagnosticBundle 从持久层读取。
+   */
+  private async captureDiagnosticBundle(sessionId: string, reason: DiagnosticTriggerReason): Promise<void> {
+    try {
+      const bundle = await buildDiagnosticBundle(sessionId);
+      if (!bundle) return;
+      const sanitized = sanitizeDiagnosticBundle(bundle);
+      const now = Date.now();
+      getTelemetryStorage().insertDiagnosticBundle({
+        id: generateMessageId(),
+        sessionId,
+        agentVersion: sanitized.versions.agentVersion ?? null,
+        promptVersion: sanitized.versions.promptVersion ?? null,
+        toolSchemaVersion: sanitized.versions.toolSchemaVersion ?? null,
+        triggerReason: reason,
+        bundleVersion: sanitized.bundleVersion,
+        builtAt: sanitized.builtAt,
+        bundle: JSON.stringify(sanitized),
+        createdAt: now,
+        syncedAt: null,
+      });
+      logger.info(`Diagnostic bundle queued for ${sessionId} (${reason})`);
+    } catch (error) {
+      logger.warn('captureDiagnosticBundle failed:', error);
+    }
   }
 
   /**

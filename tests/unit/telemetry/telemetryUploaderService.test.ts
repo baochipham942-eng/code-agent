@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => {
     markFeedbackSynced: vi.fn(),
     getUnsyncedRendererBundleAttempts: vi.fn(),
     markRendererBundleAttemptsSynced: vi.fn(),
+    getUnsyncedDiagnosticBundles: vi.fn(() => []),
+    markDiagnosticBundlesSynced: vi.fn(),
     markSessionsSynced: vi.fn(),
   };
   return {

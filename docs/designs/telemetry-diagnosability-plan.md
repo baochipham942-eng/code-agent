@@ -176,6 +176,40 @@ thinking)/modelCall(prompt/completion/error)/toolCall(args/result/error)/event/r
 聚合表的 prompt/completion 落库时已过 GLiNER PII。深度 PII-on-raw 列**推广前项**(加体积上限
 的 PII pass,或服务端脱敏)。dogfood 上传到自己后台,密钥+路径脱敏已覆盖最高风险。
 
+### P2 切片 4 实现记录(2026-06-09,4 切片全部完成,telemetry 25 测试通过)
+
+**决策**:你拍板"你来建表,继续推进"。所以连云端表一起建了(走 migration,非甩锅)。
+
+- **云端表**:`supabase/migrations/20260609000000_telemetry_diagnostic_bundles.sql` —— 按
+  `renderer_bundle_attempt` 的 RLS/grant/索引惯例:`bundle JSONB`,用户只写自己行、admin 读全量,
+  版本指纹反范式化成列便于切片。**应用 = `supabase db push`(你的部署步骤)**。
+- **本地排队表** `telemetry_diagnostic_bundles`(schema.ts + migrations.ts):脱敏诊断包待上传,
+  `synced_at NULL = 未上传`。storage 加 `insertDiagnosticBundle`/`getUnsyncedDiagnosticBundles`/
+  `markDiagnosticBundlesSynced`。
+- **触发(静默,dogfood 期)**:`telemetryCollector.endSession` 检测 `totalErrors > 0` → fire-and-forget
+  `captureDiagnosticBundle`:`buildDiagnosticBundle` → `sanitizeDiagnosticBundle` → 入队。不打扰用户。
+- **上传通道**:`telemetryUploaderService.upload()` 加第 5 步,把未上传诊断包 upsert 到云表,
+  bundle JSON.parse 成对象写 JSONB,成功后 `markDiagnosticBundlesSynced`。auth-gated(未登录不传)。
+
+**⚠️ 推广前 gate(重申)**:① 静默上传必须改回"知情同意 + 内联轻提示"(决策记录 §2);
+② 深度 PII-on-raw;③ Langfuse 默认链路收敛 metadata-only / 服务端代理(P3 待办);④ 整库 SQLCipher。
+
+---
+
+## ✅ P2 全部完成(切片 1-4)+ P1 + P3
+
+| 阶段 | 状态 | 核心交付 |
+|------|------|---------|
+| P1 版本指纹 | ✅ | agent/prompt/toolSchema version 贯穿 trace,pre-commit 防漏 bump |
+| P3 Langfuse 默认开 | ✅ | 默认开 + opt-out 开关(env 下发 key) |
+| P2-1 本地全量 raw | ✅ | `telemetry_raw_payloads`,全量内容不再被砍 |
+| P2-2 上传前脱敏 | ✅ | `sanitizeDiagnosticBundle` |
+| P2-3 诊断包组装 | ✅ | `buildDiagnosticBundle` |
+| P2-4 静默上传+触发 | ✅ | 失败→入队→上传,云端表已建 |
+
+**"打补丁→按版本归因 + 现场可复现"的闭环已打通**:失败 session 自动生成脱敏诊断包(版本+环境+
+span+raw 全量)上报云端,后台脱离用户机器即可复现。剩下的都是推广前的隐私硬化项(上面 4 条 gate)。
+
 ---
 
 ## P3 — Langfuse 默认启用

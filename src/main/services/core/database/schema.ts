@@ -521,6 +521,25 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_raw_payloads_turn ON telemetry_raw_payloads(turn_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_raw_payloads_created ON telemetry_raw_payloads(created_at)');
 
+  // Telemetry Diagnostic Bundles - 本地排队表:失败 session 的脱敏诊断包,待上传
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telemetry_diagnostic_bundles (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      agent_version TEXT,
+      prompt_version TEXT,
+      tool_schema_version TEXT,
+      trigger_reason TEXT NOT NULL,
+      bundle_version INTEGER NOT NULL DEFAULT 1,
+      built_at INTEGER NOT NULL,
+      bundle TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      synced_at INTEGER
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_diag_bundles_synced ON telemetry_diagnostic_bundles(synced_at)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_diag_bundles_session ON telemetry_diagnostic_bundles(session_id)');
+
   // Telemetry Feedback - 用户对某次回复/轮次的显式质量反馈，云端仅 admin 可读
   db.exec(`
     CREATE TABLE IF NOT EXISTS telemetry_feedback (

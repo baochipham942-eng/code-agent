@@ -6,7 +6,7 @@
 import { randomUUID } from 'crypto';
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
-import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, QualitySignals, TelemetryFeedback, TelemetryFeedbackSubmitRequest, TelemetryRendererBundleAttempt } from '../../shared/contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, QualitySignals, TelemetryFeedback, TelemetryFeedbackSubmitRequest, TelemetryRendererBundleAttempt, TelemetryDiagnosticBundleRecord } from '../../shared/contract/telemetry';
 import { TELEMETRY_TRUNCATION, TELEMETRY_RAW } from '../../shared/constants';
 import type Database from 'better-sqlite3';
 import { guardSensitiveJsonText, guardSensitiveText, guardSensitiveValue } from '../security/sensitiveDataGuard';
@@ -649,6 +649,73 @@ export class TelemetryStorage {
     } catch (error) {
       logger.error('Failed to read raw payloads:', error);
       return [];
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // 诊断包本地排队表:入队 + 取未上传 + 标记已上传
+  // --------------------------------------------------------------------------
+
+  /** 把一条脱敏诊断包写入本地排队表(待上传)。 */
+  insertDiagnosticBundle(record: TelemetryDiagnosticBundleRecord): void {
+    if (!this.isDbAvailable()) return;
+    try {
+      this.getStmt(
+        'insert_diag_bundle',
+        `
+          INSERT OR REPLACE INTO telemetry_diagnostic_bundles (
+            id, session_id, agent_version, prompt_version, tool_schema_version,
+            trigger_reason, bundle_version, built_at, bundle, created_at, synced_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      ).run(
+        record.id, record.sessionId, record.agentVersion ?? null, record.promptVersion ?? null,
+        record.toolSchemaVersion ?? null, record.triggerReason, record.bundleVersion, record.builtAt,
+        record.bundle, record.createdAt, record.syncedAt ?? null,
+      );
+    } catch (error) {
+      logger.error('Failed to insert diagnostic bundle:', error);
+    }
+  }
+
+  /** 取尚未上传(synced_at IS NULL)的诊断包。 */
+  getUnsyncedDiagnosticBundles(limit = 20): TelemetryDiagnosticBundleRecord[] {
+    if (!this.isDbAvailable()) return [];
+    try {
+      const rows = this.getStmt(
+        'get_unsynced_diag_bundles',
+        'SELECT * FROM telemetry_diagnostic_bundles WHERE synced_at IS NULL ORDER BY created_at ASC LIMIT ?',
+      ).all(limit) as Array<Record<string, unknown>>;
+      return rows.map((r) => ({
+        id: r.id as string,
+        sessionId: r.session_id as string,
+        agentVersion: (r.agent_version as string | null) ?? null,
+        promptVersion: (r.prompt_version as string | null) ?? null,
+        toolSchemaVersion: (r.tool_schema_version as string | null) ?? null,
+        triggerReason: r.trigger_reason as TelemetryDiagnosticBundleRecord['triggerReason'],
+        bundleVersion: r.bundle_version as number,
+        builtAt: r.built_at as number,
+        bundle: r.bundle as string,
+        createdAt: r.created_at as number,
+        syncedAt: (r.synced_at as number | null) ?? null,
+      }));
+    } catch (error) {
+      logger.error('Failed to read unsynced diagnostic bundles:', error);
+      return [];
+    }
+  }
+
+  /** 标记一批诊断包已上传。 */
+  markDiagnosticBundlesSynced(ids: string[], syncedAt: number): void {
+    if (!this.isDbAvailable() || ids.length === 0) return;
+    try {
+      const db = this.getDb();
+      const stmt = db.prepare('UPDATE telemetry_diagnostic_bundles SET synced_at = ? WHERE id = ?');
+      db.transaction(() => {
+        for (const id of ids) stmt.run(syncedAt, id);
+      })();
+    } catch (error) {
+      logger.error('Failed to mark diagnostic bundles synced:', error);
     }
   }
 

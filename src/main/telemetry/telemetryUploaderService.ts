@@ -22,7 +22,7 @@ import { Disposable, getServiceRegistry } from '../services/serviceRegistry';
 import { app } from '../platform';
 import { getTelemetryStorage } from './telemetryStorage';
 import { scrubString } from '../../shared/observability/scrubEvent';
-import type { TelemetryFeedback, TelemetryRendererBundleAttempt, TelemetrySession, TelemetryTurn } from '../../shared/contract/telemetry';
+import type { TelemetryDiagnosticBundleRecord, TelemetryFeedback, TelemetryRendererBundleAttempt, TelemetrySession, TelemetryTurn } from '../../shared/contract/telemetry';
 
 const logger = createLogger('TelemetryUploader');
 
@@ -155,9 +155,25 @@ export class TelemetryUploaderService implements Disposable {
         }
       }
 
-      // 5) 会话和 turn 都写成功后再标记已同步；否则下轮继续补传
+      // 5) 诊断包(脱敏全量,失败 session 触发)。已在入队时脱敏,不依赖云端 session/turn 行,独立 retry。
+      const diagBundles = storage.getUnsyncedDiagnosticBundles(BATCH_SIZE);
+      if (diagBundles.length > 0) {
+        const { error: diagError } = await supabase
+          .from('telemetry_diagnostic_bundles')
+          .upsert(
+            diagBundles.map((b) => this.toDiagnosticBundleRow(b, user.id, appVersion)),
+            { onConflict: 'id' },
+          );
+        if (diagError) {
+          logger.error('Failed to push telemetry_diagnostic_bundles', { error: diagError });
+        } else {
+          storage.markDiagnosticBundlesSynced(diagBundles.map((b) => b.id), Date.now());
+        }
+      }
+
+      // 6) 会话和 turn 都写成功后再标记已同步；否则下轮继续补传
       storage.markSessionsSynced(sessions.map((s) => s.id));
-      logger.info('Telemetry uploaded', { sessions: sessions.length, turns: turnRows.length, feedback: feedback.length, rendererBundleAttempts: rendererBundleAttempts.length });
+      logger.info('Telemetry uploaded', { sessions: sessions.length, turns: turnRows.length, feedback: feedback.length, rendererBundleAttempts: rendererBundleAttempts.length, diagnosticBundles: diagBundles.length });
       return sessions.length;
     } catch (err) {
       logger.error('Telemetry upload error', err as Error);
@@ -188,6 +204,31 @@ export class TelemetryUploaderService implements Disposable {
       total_tool_calls: s.totalToolCalls,
       tool_success_rate: s.toolSuccessRate,
       total_errors: s.totalErrors,
+    };
+  }
+
+  private toDiagnosticBundleRow(b: TelemetryDiagnosticBundleRecord, userId: string, appVersion: string | null) {
+    // bundle 入队时已脱敏;JSON.parse 还原成对象写入 JSONB 列(而非引号串)
+    const bundle: unknown = ((): unknown => {
+      try {
+        return JSON.parse(b.bundle);
+      } catch {
+        return { _parseError: true, raw: b.bundle.slice(0, 2000) };
+      }
+    })();
+    return {
+      id: b.id,
+      user_id: userId,
+      device_id: this.deviceId,
+      app_version: appVersion,
+      session_id: b.sessionId,
+      agent_version: b.agentVersion ?? null,
+      prompt_version: b.promptVersion ?? null,
+      tool_schema_version: b.toolSchemaVersion ?? null,
+      trigger_reason: b.triggerReason,
+      bundle_version: b.bundleVersion,
+      built_at: b.builtAt,
+      bundle,
     };
   }
 

@@ -38,10 +38,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Tauri CLI
-        uses: taiki-e/install-action@v2
-        with:
-          tool: tauri-cli@2.10.1
+      - name: Install Tauri CLI (compiled for host arch)
+        # taiki-e 预编译包在 macos-15-intel 上装成了 arm64（Bad CPU type, os error 86），
+        # 改用 cargo install 从源码编 x86_64，对任意 runner arch 都正确（慢但稳）。
+        run: cargo install tauri-cli@2.10.1 --locked
 
       - name: Build native helpers + fetch sidecars (x86_64)
         # SWIFT_BUILD_ARCH=x86_64：强制 swift sidecar 编 x86_64 且 audio 取 macOS 13.0 地板

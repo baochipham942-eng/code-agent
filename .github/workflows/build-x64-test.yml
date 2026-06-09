@@ -1,0 +1,125 @@
+name: Build x64 Test Bundle (Intel)
+
+# 手动触发的 Intel (x86_64) 测试构建：在真 Intel runner 上把整条 x64 链路
+# （sidecar x64 + native rebuild + tauri-arch-config + 签名公证）跑通，产出一个
+# 签名+公证的 x64 dmg 作为 workflow artifact，给同事做 e2e dogfood。
+#
+# 设计：
+#   - 仅 workflow_dispatch（手动），绝不在 tag/push 触发，不碰生产 release.yml。
+#   - 只产 artifact，不上传 OSS、不提升 stable、不发 GitHub Release。
+#   - 验证通过后，再把 x64 折进生产 release.yml 矩阵（见 docs/architecture/intel-x64-support.md §8）。
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build-x64-test:
+    # macos-15-intel 是 GitHub 当前可用的 Intel runner（macos-13 已退役）。
+    runs-on: macos-15-intel
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # postinstall 跑 rebuild-native:system，在 Intel runner 上原生 rebuild
+      # better-sqlite3 / keytar 等 C++ native 模块为 x86_64（规避交叉编译坑）。
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Tauri CLI
+        uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli@2.10.1
+
+      - name: Build native helpers + fetch sidecars (x86_64)
+        # SWIFT_BUILD_ARCH=x86_64：强制 swift sidecar 编 x86_64 且 audio 取 macOS 13.0 地板
+        # （SCStream/capturesAudio 下限；macOS 26 已弃 Intel，13.0 是 Intel 可用区间）。
+        # fetch-rtk/uv 在 Intel host 上 uname -m=x86_64，自动拉 x86_64 资产。
+        env:
+          SWIFT_BUILD_ARCH: x86_64
+        run: |
+          bash scripts/build-audio-capture.sh
+          bash scripts/build-vision-ocr.sh
+          bash scripts/build-vision-tagger.sh
+          bash scripts/fetch-rtk.sh
+          bash scripts/fetch-uv.sh
+
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        run: |
+          if [[ -z "${APPLE_CERTIFICATE_P12_BASE64}" || -z "${APPLE_CERTIFICATE_PASSWORD}" || -z "${APPLE_KEYCHAIN_PASSWORD}" ]]; then
+            echo "APPLE_CERTIFICATE_P12_BASE64, APPLE_CERTIFICATE_PASSWORD, and APPLE_KEYCHAIN_PASSWORD are required"
+            exit 1
+          fi
+          CERTIFICATE_PATH="${RUNNER_TEMP}/developer-id-application.p12"
+          KEYCHAIN_PATH="${RUNNER_TEMP}/app-signing.keychain-db"
+          echo "${APPLE_CERTIFICATE_P12_BASE64}" | base64 --decode > "${CERTIFICATE_PATH}"
+          security create-keychain -p "${APPLE_KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          security set-keychain-settings -lut 21600 "${KEYCHAIN_PATH}"
+          security unlock-keychain -p "${APPLE_KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          security import "${CERTIFICATE_PATH}" -P "${APPLE_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${KEYCHAIN_PATH}"
+          security list-keychains -d user -s "${KEYCHAIN_PATH}"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "${APPLE_KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          security find-identity -v -p codesigning "${KEYCHAIN_PATH}"
+
+      - name: Build signed + notarized x64 bundle
+        timeout-minutes: 60
+        env:
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
+          CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS }}
+          CODE_AGENT_CONTROL_PLANE_KEY_ID: ${{ secrets.CODE_AGENT_CONTROL_PLANE_KEY_ID }}
+          CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY }}
+          CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE }}
+          REQUIRE_NOTARIZATION: '1'
+          NOTARYTOOL_WAIT_TIMEOUT: '30m'
+          NOTARYTOOL_NO_S3_ACCELERATION: '1'
+        run: |
+          # 派生 x64 资源覆盖（node-pty/sharp/libvips → darwin-x64），通过 $@ 透传给 cargo tauri build。
+          node scripts/tauri-arch-config.mjs x64 --out "${RUNNER_TEMP}/tauri.x64.json"
+          npm run rebuild-native:system
+          npm run build
+          npm run tauri:prebuild-cleanup
+          npm run release:security-scan
+          bash scripts/tauri-release-bundle.sh --config "${RUNNER_TEMP}/tauri.x64.json"
+          npm run release:notarize-macos
+          npm run release:verify-macos
+
+      - name: Rename dmg with x64 marker
+        run: |
+          DMG_SRC="$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -1)"
+          VERSION="$(node -p "require('./package.json').version")"
+          cp "${DMG_SRC}" "${RUNNER_TEMP}/Agent-Neo-${VERSION}-x64-TEST.dmg"
+          echo "产物: Agent-Neo-${VERSION}-x64-TEST.dmg"
+          file "${RUNNER_TEMP}/Agent-Neo-${VERSION}-x64-TEST.dmg"
+
+      - name: Upload x64 dmg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-neo-x64-test-dmg
+          path: ${{ runner.temp }}/Agent-Neo-*-x64-TEST.dmg
+          retention-days: 14

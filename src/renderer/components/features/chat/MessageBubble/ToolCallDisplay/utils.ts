@@ -30,6 +30,14 @@ import {
   Clipboard,
   Image,
   Presentation,
+  MousePointerClick,
+  TextCursorInput,
+  Keyboard,
+  MoveVertical,
+  Move,
+  AppWindow,
+  ScanLine,
+  ZoomIn,
 } from 'lucide-react';
 import type { ToolCall } from '@shared/contract';
 export { formatDuration } from '../../../../../../shared/utils/format';
@@ -91,6 +99,14 @@ export function getToolIcon(name: string): React.ReactNode {
     findings_write: React.createElement(FileText, { size: 14 }),
   };
 
+  // cua-driver computer-use 工具 — 按操作类型差异化图标（docs/proposals/computer-use-cua-migration.md §10）
+  // 点击=箭头光标，输入=文本光标，观察=扫描线（非眼睛），打开 app=窗口，等
+  if (name.includes('cua-driver')) {
+    const cuaTool = name.replace(/^mcp_+cua-driver_+/, '');
+    const cuaIcon = CUA_TOOL_ICONS[cuaTool];
+    if (cuaIcon) return cuaIcon;
+  }
+
   // MCP tools use Plug icon
   if (name.startsWith('mcp_') || name === 'mcp') {
     return React.createElement(Plug, { size: 14 });
@@ -98,6 +114,39 @@ export function getToolIcon(name: string): React.ReactNode {
 
   return iconMap[name] || React.createElement(Wrench, { size: 14 });
 }
+
+// cua-driver 工具图标映射（动作=动词图标，观察=扫描，打开 app=窗口图标）
+// 注：launch_app 的真实 app 图标走 TargetContextIcon（需 targetContext.kind='app'+iconHint=bundleId），
+//     此处图标是无 targetContext 时的兜底。
+const CUA_TOOL_ICONS: Record<string, React.ReactNode> = {
+  // 点击类 — 箭头光标
+  click: React.createElement(MousePointerClick, { size: 14 }),
+  double_click: React.createElement(MousePointerClick, { size: 14 }),
+  right_click: React.createElement(MousePointerClick, { size: 14 }),
+  // 输入类 — 文本光标
+  type_text: React.createElement(TextCursorInput, { size: 14 }),
+  set_value: React.createElement(TextCursorInput, { size: 14 }),
+  // 按键 — 键盘
+  press_key: React.createElement(Keyboard, { size: 14 }),
+  hotkey: React.createElement(Keyboard, { size: 14 }),
+  // 滚动/移动
+  scroll: React.createElement(MoveVertical, { size: 14 }),
+  move_cursor: React.createElement(MoveVertical, { size: 14 }),
+  drag: React.createElement(Move, { size: 14 }),
+  // 应用生命周期
+  launch_app: React.createElement(AppWindow, { size: 14 }),
+  kill_app: React.createElement(AppWindow, { size: 14 }),
+  // 媒体
+  screenshot: React.createElement(Camera, { size: 14 }),
+  zoom: React.createElement(ZoomIn, { size: 14 }),
+  // 观察/plumbing — 扫描线（替代眼睛，更克制）
+  list_apps: React.createElement(ScanLine, { size: 14 }),
+  list_windows: React.createElement(ScanLine, { size: 14 }),
+  get_window_state: React.createElement(ScanLine, { size: 14 }),
+  get_screen_size: React.createElement(ScanLine, { size: 14 }),
+  get_cursor_position: React.createElement(ScanLine, { size: 14 }),
+  check_permissions: React.createElement(ScanLine, { size: 14 }),
+};
 
 // ============================================================================
 // Parameter Formatting

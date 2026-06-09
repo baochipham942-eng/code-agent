@@ -5,6 +5,11 @@ name: Supabase Migrate
 # 实现：supabase CLI 维护 schema_migrations 元表自动跟踪已跑过的 version，
 # 只增量执行新文件，不会重复执行已应用的。
 #
+# 手动运维（workflow_dispatch）:
+#   mode=list   — 只读打印 local|remote 迁移对照表，不做任何写操作（默认）
+#   mode=repair — 把 repair_reverted 里列出的远端孤儿版本标记为 reverted（仅改
+#                 schema_migrations bookkeeping，不动 schema/数据），随后 db push
+#
 # 必需 secrets:
 #   SUPABASE_ACCESS_TOKEN  — `supabase login` 后从 ~/.supabase 拿的 sbp_... token
 #   SUPABASE_DB_PASSWORD   — Project Settings → Database → Connection string 里那个
@@ -16,6 +21,18 @@ on:
     paths:
       - 'supabase/migrations/**'
   workflow_dispatch:
+    inputs:
+      mode:
+        description: '运维模式'
+        type: choice
+        options:
+          - list
+          - repair
+        default: list
+      repair_reverted:
+        description: 'mode=repair 时，要标记为 reverted 的远端孤儿版本（空格分隔）'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -38,7 +55,30 @@ jobs:
         run: |
           supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
 
+      - name: Migration list (read-only 对照表)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          echo "::group::supabase migration list --linked"
+          supabase migration list --linked
+          echo "::endgroup::"
+
+      - name: Repair drift (mark orphans reverted)
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'repair' && inputs.repair_reverted != ''
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          echo "repair --status reverted: ${{ inputs.repair_reverted }}"
+          supabase migration repair --status reverted ${{ inputs.repair_reverted }}
+          echo "::group::after repair — migration list"
+          supabase migration list --linked
+          echo "::endgroup::"
+
       - name: Push migrations
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'repair')
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}

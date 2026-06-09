@@ -66,6 +66,12 @@ const HOME_PATH_PATTERN = /(?:\/Users\/|\/home\/)[a-zA-Z0-9_-]+/g;
  * Uses SensitiveDetector for secret detection and provides
  * additional masking options for paths, emails, and IPs.
  */
+/**
+ * 预扫描余量:在跑昂贵检测前,把超大输入截到 maxLength + 此余量。
+ * 余量保证跨在 maxLength 边界的 secret/PII(realistically < 几 KB)仍被完整捕获。
+ */
+const PRESCAN_MARGIN = 8192;
+
 export class LogMasker {
   private defaultOptions: MaskingOptions = {
     maskSecrets: true,
@@ -85,7 +91,19 @@ export class LogMasker {
    */
   mask(text: string, options: MaskingOptions = {}): MaskingResult {
     const opts = { ...this.defaultOptions, ...options };
-    let masked = text;
+
+    // 性能:超大输入先粗截断再跑昂贵的 SensitiveDetector/正则。最终输出无论如何会被
+    // 下方截断到 maxLength,(maxLength + PRESCAN_MARGIN) 之外的内容不会进结果——对它跑
+    // 检测纯属浪费(实测 263KB 输入耗时 ~110s)。留余量避免把跨在 maxLength 边界的
+    // secret 切断而漏掉。
+    let scanText = text;
+    let preTruncated = false;
+    if (opts.maxLength && text.length > opts.maxLength + PRESCAN_MARGIN) {
+      scanText = text.slice(0, opts.maxLength + PRESCAN_MARGIN);
+      preTruncated = true;
+    }
+
+    let masked = scanText;
     let maskCount = 0;
     const maskedTypes: string[] = [];
     let truncated = false;
@@ -93,10 +111,10 @@ export class LogMasker {
     // Mask secrets using SensitiveDetector
     if (opts.maskSecrets) {
       const detector = getSensitiveDetector();
-      const result = detector.detect(text);
+      const result = detector.detect(scanText);
 
       if (result.hasSensitive) {
-        masked = detector.maskAll(text);
+        masked = detector.maskAll(scanText);
         maskCount += result.count;
         maskedTypes.push(...new Set(result.matches.map(m => m.type)));
       }
@@ -191,6 +209,12 @@ export class LogMasker {
         masked = masked.substring(0, opts.maxLength) + '... [output truncated]';
         truncated = true;
       }
+    }
+
+    // 预截断也算 truncated(即使掩码后恰好 ≤ maxLength 没触发上面的二次截断)
+    if (preTruncated && !truncated) {
+      masked = masked + '... [output truncated]';
+      truncated = true;
     }
 
     logger.debug('Text masked', {

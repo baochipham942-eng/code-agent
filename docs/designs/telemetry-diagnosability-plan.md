@@ -143,10 +143,12 @@
 **本地加密**:本切片先明文存(密钥已掩码,残留敏感度=代码/路径,与现有明文聚合列同级)。
 逐行加密会拖慢热路径。**整库加密(SQLCipher)列为推广前硬化项**,作用于整个 telemetry DB。
 
-**⚠️ 发现的既有性能问题(非本切片引入,记录待办)**:聚合路径 `guardTelemetryText`/
-`guardSensitiveText` 对**超大输入**(实测 263KB tool result)会先跑完整 PII 检测再截断,
-耗时 ~110s。生产里工具返回大结果(大文件 Read/长 Bash 输出)会拖慢 telemetry flush。
-建议:`guardSensitiveText` 在跑 SensitiveDetector 前先按 maxLength 预截断。**独立排期**。
+**✅ 已修复的既有性能问题(非本切片引入,2026-06-09 修)**:聚合路径 `guardTelemetryText`/
+`guardSensitiveText` → `LogMasker.mask()` 对**超大输入**(实测 263KB tool result)先跑完整
+检测再截断,耗时 ~110s。已在 `LogMasker.mask()` 开头加预截断(`maxLength + 8KB 余量` 之外
+先 slice 掉再检测),600KB 输入从 ~110s 降到毫秒级。测试 `tests/unit/security/logMasker.test.ts`
+新增性能 + 边界 secret 用例;错题本 `docs/guides/troubleshooting.md` 2026-06-09 条记了通用规则
+(size-bounding 永远前置于昂贵处理)。
 
 ### P2 切片 3 实现记录(2026-06-09,2 测试通过 + 修了 P1 漏测引入的回归)
 

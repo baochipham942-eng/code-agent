@@ -1255,7 +1255,7 @@
                 装到本机，把浏览器、桌面、本地文件和长任务放进同一个工作环境。
               </p>
               <p class="download-footnote">
-                Windows / Linux / Intel mac 版本计划中。
+                Apple Silicon 与 Intel mac 均可用；Windows / Linux 版本计划中。
               </p>
             </div>
 
@@ -1264,9 +1264,10 @@
                 <div>
                   <div class="card-label">mac</div>
                   <h3>Agent Neo for mac</h3>
-                  <p class="meta">Apple Silicon（M 系列）· 已 Apple 公证</p>
+                  <p class="meta" id="download-chip-meta">Apple Silicon（M 系列）· 已 Apple 公证</p>
                 </div>
-                <a class="button primary" href="/api/update?action=download&amp;platform=darwin&amp;channel=stable">⬇ 下载 .dmg</a>
+                <a class="button primary" id="download-button" href="/api/update?action=download&amp;platform=darwin&amp;channel=stable">⬇ 下载 .dmg</a>
+                <p class="download-footnote" id="download-arch-switch" hidden></p>
               </article>
             </div>
           </div>
@@ -1277,5 +1278,51 @@
     <a href="#top" class="to-top" aria-label="回到顶部">↑</a>
 
     <footer>Agent Neo · 装在你电脑上的 AI 同事</footer>
+
+    <script>
+      // 下载按钮按芯片选包：Apple Silicon → arm64，Intel → x64。
+      // 浏览器无法可靠区分两者，用 WebGL renderer 字符串启发式判断；
+      // 判不出默认 arm64（新机主流），并始终给出手动切换链接兜底。
+      (function () {
+        var BASE = '/api/update?action=download&platform=darwin&channel=stable';
+        var btn = document.getElementById('download-button');
+        var meta = document.getElementById('download-chip-meta');
+        var sw = document.getElementById('download-arch-switch');
+        if (!btn) return;
+
+        function urlFor(arch) {
+          return arch === 'x64' ? BASE + '&arch=x64' : BASE;
+        }
+        function metaFor(arch) {
+          return arch === 'x64'
+            ? 'Intel 芯片 · 已 Apple 公证'
+            : 'Apple Silicon（M 系列）· 已 Apple 公证';
+        }
+        function apply(arch) {
+          btn.setAttribute('href', urlFor(arch));
+          if (meta) meta.textContent = metaFor(arch);
+          if (sw) {
+            var other = arch === 'x64' ? 'arm64' : 'x64';
+            var otherName = other === 'x64' ? 'Intel 芯片' : 'Apple Silicon';
+            sw.innerHTML = '芯片不对？<a href="' + urlFor(other) + '">下载 ' + otherName + ' 版</a>';
+            sw.hidden = false;
+          }
+        }
+        function detectArch() {
+          try {
+            var canvas = document.createElement('canvas');
+            var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (!gl) return 'arm64';
+            var ext = gl.getExtension('WEBGL_debug_renderer_info');
+            var renderer = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '') : '';
+            if (/apple/i.test(renderer)) return 'arm64';
+            if (/intel|amd|radeon|nvidia/i.test(renderer)) return 'x64';
+          } catch (e) { /* ignore, fall through to default */ }
+          return 'arm64';
+        }
+
+        apply(detectArch());
+      })();
+    </script>
   </body>
 </html>

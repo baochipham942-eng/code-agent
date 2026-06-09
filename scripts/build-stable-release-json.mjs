@@ -44,6 +44,11 @@ const htmlUrl = arg('html-url', '');
 const output = arg('output', 'stable-release.json');
 const runtimeAssetsManifestUrl = arg('runtime-assets-manifest-url');
 const runtimeAssetsManifestShaUrl = arg('runtime-assets-manifest-sha-url');
+// x64（Intel）侧资产：可选。提供后单个 release.json 同时含 arm64 + x64，
+// Vercel /api/update 按 ?arch= 选对应 dmg / runtime manifest（见 updateMetadata.ts selectAsset）。
+const dmgUrlX64 = arg('dmg-url-x64');
+const runtimeAssetsManifestUrlX64 = arg('runtime-assets-manifest-url-x64');
+const runtimeAssetsManifestShaUrlX64 = arg('runtime-assets-manifest-sha-url-x64');
 
 if (!version || !dmgUrl) {
   console.error('错误：--version 和 --dmg-url 必填。');
@@ -52,6 +57,11 @@ if (!version || !dmgUrl) {
 
 if (Boolean(runtimeAssetsManifestUrl) !== Boolean(runtimeAssetsManifestShaUrl)) {
   console.error('错误：--runtime-assets-manifest-url 和 --runtime-assets-manifest-sha-url 必须同时提供。');
+  process.exit(1);
+}
+
+if (Boolean(runtimeAssetsManifestUrlX64) !== Boolean(runtimeAssetsManifestShaUrlX64)) {
+  console.error('错误：--runtime-assets-manifest-url-x64 和 --runtime-assets-manifest-sha-url-x64 必须同时提供。');
   process.exit(1);
 }
 
@@ -71,6 +81,26 @@ if (runtimeAssetsManifestUrl && runtimeAssetsManifestShaUrl) {
     {
       name: assetNameFromUrl(runtimeAssetsManifestShaUrl, 'runtime-assets-manifest-darwin-arm64.sha256'),
       browser_download_url: runtimeAssetsManifestShaUrl,
+    },
+  );
+}
+
+if (dmgUrlX64) {
+  assets.push({
+    name: `Agent-Neo-${version}-x64.dmg`,
+    browser_download_url: dmgUrlX64,
+  });
+}
+
+if (runtimeAssetsManifestUrlX64 && runtimeAssetsManifestShaUrlX64) {
+  assets.push(
+    {
+      name: assetNameFromUrl(runtimeAssetsManifestUrlX64, 'runtime-assets-manifest-darwin-x64.json'),
+      browser_download_url: runtimeAssetsManifestUrlX64,
+    },
+    {
+      name: assetNameFromUrl(runtimeAssetsManifestShaUrlX64, 'runtime-assets-manifest-darwin-x64.sha256'),
+      browser_download_url: runtimeAssetsManifestShaUrlX64,
     },
   );
 }

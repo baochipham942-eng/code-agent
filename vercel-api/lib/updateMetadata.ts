@@ -91,28 +91,75 @@ function releasePageUrl(repo: string, tagName: string, htmlUrl?: string): string
   return htmlUrl || `https://github.com/${repo}/releases/tag/${tagName}`;
 }
 
-function selectAsset(assets: GitHubReleaseAsset[] | undefined, platform: string): GitHubReleaseAsset | null {
+export type NormalizedArch = 'arm64' | 'x64';
+
+// 归一化客户端架构入参。缺省/未知一律按 arm64（历史只发 arm64，保持向后兼容）。
+export function normalizeArch(value: string | null | undefined): NormalizedArch {
+  const v = (value ?? '').trim().toLowerCase();
+  if (v === 'x64' || v === 'x86_64' || v === 'x86-64' || v === 'amd64' || v === 'intel') {
+    return 'x64';
+  }
+  return 'arm64';
+}
+
+function archTokens(arch: NormalizedArch): string[] {
+  return arch === 'x64'
+    ? ['x64', 'x86_64', 'x86-64', 'amd64', 'intel']
+    : ['arm64', 'aarch64'];
+}
+
+const ALL_ARCH_TOKENS = ['x64', 'x86_64', 'x86-64', 'amd64', 'intel', 'arm64', 'aarch64'];
+
+function nameHasAnyArchToken(name: string): boolean {
+  return ALL_ARCH_TOKENS.some((token) => name.includes(token));
+}
+
+function assetMatchesPlatform(name: string, normalizedPlatform: string): boolean {
+  if (normalizedPlatform === 'darwin') {
+    return name.includes('mac') || name.includes('darwin') || name.endsWith('.dmg');
+  }
+  if (normalizedPlatform === 'win32') {
+    return name.includes('win') || name.endsWith('.exe') || name.endsWith('.msi');
+  }
+  if (normalizedPlatform === 'linux') {
+    return name.includes('linux') || name.endsWith('.appimage') || name.endsWith('.deb');
+  }
+  return false;
+}
+
+function selectAsset(
+  assets: GitHubReleaseAsset[] | undefined,
+  platform: string,
+  arch: NormalizedArch = 'arm64',
+): GitHubReleaseAsset | null {
   const normalized = platform.toLowerCase();
-  for (const asset of assets ?? []) {
-    const name = asset.name?.toLowerCase() ?? '';
-    if (normalized === 'darwin' && (name.includes('mac') || name.includes('darwin') || name.endsWith('.dmg'))) {
-      return asset;
-    }
-    if (normalized === 'win32' && (name.includes('win') || name.endsWith('.exe') || name.endsWith('.msi'))) {
-      return asset;
-    }
-    if (normalized === 'linux' && (name.includes('linux') || name.endsWith('.appimage') || name.endsWith('.deb'))) {
-      return asset;
-    }
+  const platformAssets = (assets ?? []).filter((asset) =>
+    assetMatchesPlatform(asset.name?.toLowerCase() ?? '', normalized),
+  );
+
+  // 优先匹配架构标记（x64 / arm64）。manifest 同时含两架构时按 arch 精确命中。
+  const tokens = archTokens(arch);
+  const archMatch = platformAssets.find((asset) =>
+    tokens.some((token) => (asset.name?.toLowerCase() ?? '').includes(token)),
+  );
+  if (archMatch) return archMatch;
+
+  // 未命中架构标记时：
+  // - arm64（默认）可回退到「无任何架构标记」的旧资产（向后兼容历史单 arm64 dmg）；
+  // - x64 绝不回退到 arm64 资产，找不到就返回 null → 上游回 404。
+  if (arch === 'arm64') {
+    return platformAssets.find((asset) => !nameHasAnyArchToken(asset.name?.toLowerCase() ?? '')) ?? null;
   }
   return null;
 }
 
-function runtimeManifestScore(assetName: string, platform: string): number {
+function runtimeManifestScore(assetName: string, platform: string, arch: NormalizedArch): number {
   const name = assetName.toLowerCase();
   const normalizedPlatform = platform.toLowerCase();
+  // darwin 下按 arch 排优先级：x64 → darwin-x64 优先；arm64 → darwin-arm64 优先。
+  // 末尾保留无 arch 后缀的 darwin / 通用 manifest 作兜底。
   const platformAliases = normalizedPlatform === 'darwin'
-    ? ['darwin-arm64', 'darwin']
+    ? (arch === 'x64' ? ['darwin-x64', 'darwin-x86_64', 'darwin'] : ['darwin-arm64', 'darwin'])
     : [normalizedPlatform];
 
   for (let index = 0; index < platformAliases.length; index += 1) {
@@ -127,10 +174,11 @@ function runtimeManifestScore(assetName: string, platform: string): number {
 function selectRuntimeManifestAsset(
   assets: GitHubReleaseAsset[] | undefined,
   platform: string,
+  arch: NormalizedArch,
 ): GitHubReleaseAsset | null {
   return [...(assets ?? [])]
     .filter((asset) => asset.name && asset.browser_download_url)
-    .map((asset) => ({ asset, score: runtimeManifestScore(asset.name!, platform) }))
+    .map((asset) => ({ asset, score: runtimeManifestScore(asset.name!, platform, arch) }))
     .filter((entry) => Number.isFinite(entry.score))
     .sort((left, right) => left.score - right.score || left.asset.name!.localeCompare(right.asset.name!))
     .at(0)?.asset ?? null;
@@ -175,6 +223,7 @@ export function buildUpdateResponseFromRelease(
     repo: string;
     currentVersion: string;
     platform: string;
+    arch?: NormalizedArch;
     channel?: string;
     minVersion?: string;
     latestVersion?: string;
@@ -203,7 +252,7 @@ export function buildUpdateResponseFromRelease(
   );
   const hasUpdate = releaseHasUpdate || minVersionRequired || policyHasNewerLatest;
   const forceUpdate = Boolean(hasUpdate && (options.forceUpdate === true || minVersionRequired));
-  const asset = selectAsset(release.assets, options.platform);
+  const asset = selectAsset(release.assets, options.platform, options.arch ?? 'arm64');
   const sha256 = normalizeSha256(options.sha256);
   const fallbackDownloadUrl = latestVersion
     ? releasePageUrl(
@@ -292,9 +341,10 @@ export function runtimeAssetsMetadataFromEnv(
 export async function runtimeAssetsMetadataFromRelease(
   release: GitHubReleaseResponse,
   platform: string,
+  arch: NormalizedArch = 'arm64',
   readText: (url: string) => Promise<string> = fetchText,
 ): Promise<RuntimeAssetsUpdateMetadata | undefined> {
-  const manifestAsset = selectRuntimeManifestAsset(release.assets, platform);
+  const manifestAsset = selectRuntimeManifestAsset(release.assets, platform, arch);
   if (!manifestAsset?.name || !manifestAsset.browser_download_url) {
     return undefined;
   }
@@ -350,13 +400,14 @@ function sendRedirect(res: ControlPlaneResponseLike, location: string): void {
 async function handleCheck(req: ControlPlaneRequestLike, res: ControlPlaneResponseLike): Promise<void> {
   const currentVersion = firstQueryValue(req.query?.version) ?? '0.0.0';
   const platform = firstQueryValue(req.query?.platform) ?? 'darwin';
+  const arch = normalizeArch(firstQueryValue(req.query?.arch));
   const channel = normalizeChannel(firstQueryValue(req.query?.channel) ?? process.env.UPDATE_RELEASE_CHANNEL);
   const repo = process.env.UPDATE_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || 'baochipham942-eng/code-agent';
   const release = await fetchLatestRelease(repo);
   let runtimeAssets = runtimeAssetsMetadataFromEnv(channel);
   if (!runtimeAssets) {
     try {
-      runtimeAssets = await runtimeAssetsMetadataFromRelease(release, platform);
+      runtimeAssets = await runtimeAssetsMetadataFromRelease(release, platform, arch);
     } catch (error) {
       console.warn('Failed to derive runtime assets metadata from release assets', error);
     }
@@ -365,6 +416,7 @@ async function handleCheck(req: ControlPlaneRequestLike, res: ControlPlaneRespon
     repo,
     currentVersion,
     platform,
+    arch,
     ...releasePolicyFromEnv(channel),
     runtimeAssets,
   }));
@@ -372,6 +424,7 @@ async function handleCheck(req: ControlPlaneRequestLike, res: ControlPlaneRespon
 
 async function handleDownload(req: ControlPlaneRequestLike, res: ControlPlaneResponseLike): Promise<void> {
   const platform = firstQueryValue(req.query?.platform) ?? 'darwin';
+  const arch = normalizeArch(firstQueryValue(req.query?.arch));
   const channel = normalizeChannel(firstQueryValue(req.query?.channel) ?? process.env.UPDATE_RELEASE_CHANNEL);
   const repo = process.env.UPDATE_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || 'baochipham942-eng/code-agent';
   const policy = releasePolicyFromEnv(channel);
@@ -382,13 +435,13 @@ async function handleDownload(req: ControlPlaneRequestLike, res: ControlPlaneRes
   }
 
   const release = await fetchLatestRelease(repo);
-  const asset = selectAsset(release.assets, platform);
+  const asset = selectAsset(release.assets, platform, arch);
 
   if (!asset?.browser_download_url) {
     sendJson(res, 404, {
       success: false,
       error: 'download_asset_not_found',
-      message: `No ${platform} download asset was found on the latest GitHub release.`,
+      message: `No ${platform} (${arch}) download asset was found on the latest GitHub release.`,
       releaseUrl: releasePageUrl(repo, release.tag_name ?? 'latest', release.html_url),
       source: 'github_releases',
     });

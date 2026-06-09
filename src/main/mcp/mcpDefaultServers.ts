@@ -11,6 +11,7 @@ import type {
   MCPSSEServerConfig,
   MCPHttpStreamableServerConfig,
 } from './types';
+import { CUA_DRIVER_SERVER_NAME } from './types';
 import { createMemoryKVServer } from './servers/memoryKVServer';
 import { createCodeIndexServer } from './servers/codeIndexServer';
 import { loadMcpConfigFiles } from './mcpConfigFile';
@@ -33,6 +34,11 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
   const braveApiKey = configService?.getServiceApiKey('brave') || process.env.BRAVE_API_KEY || '';
   const githubToken = configService?.getServiceApiKey('github') || process.env.GITHUB_TOKEN || '';
   const argusEnabled = process.env.CODE_AGENT_ENABLE_ARGUS_MCP === '1';
+  // cua-driver (trycua) — computer-use 新底座，逐步替代 argus（详见 docs/proposals/computer-use-cua-migration.md）
+  // 启用: CODE_AGENT_ENABLE_CUA=1；二进制路径可用 CODE_AGENT_CUA_DRIVER_PATH 覆盖，默认走 PATH 上的 `cua-driver`
+  const cuaEnabled = process.env.CODE_AGENT_ENABLE_CUA === '1';
+  const cuaDriverCommand = process.env.CODE_AGENT_CUA_DRIVER_PATH || 'cua-driver';
+  const cuaSupported = process.platform === 'darwin' || process.platform === 'win32';
 
   return [
     // ========== SSE 远程服务器 ==========
@@ -125,9 +131,10 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
       enabled: false, // 默认禁用，需要 Docker 环境
     },
 
-    // ========== Phase 4: Argus Computer Use ==========
+    // ========== Phase 4: Argus Computer Use（旧底座，迁移期保留作回退） ==========
     // 桌面自动化 — 24 工具 (截图/点击/输入/batch)，无安全限制版
     // 基于 Anthropic Chicago MCP 架构，使用 OSS 原生层 (screencapture + cliclick)
+    // 注：正被 cua-driver 替代，验证稳定后退役（docs/proposals/computer-use-cua-migration.md §7）
     {
       name: 'argus',
       command: 'node',
@@ -135,6 +142,17 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
         `${process.env.HOME}/Downloads/ai/argus-automation/dist/server-mcp.js`,
       ],
       enabled: argusEnabled,
+    },
+
+    // ========== Computer Use 新底座: cua-driver (trycua, MIT) ==========
+    // AX 树优先 + 后台不抢焦点 + mac/win 原生统一，stdio MCP。替代 argus。
+    // 工具: list_apps/get_window_state/click/type_text/set_value/screenshot/… (~30)
+    {
+      name: CUA_DRIVER_SERVER_NAME,
+      command: cuaDriverCommand,
+      args: ['mcp'],
+      env: { CUA_DRIVER_MCP_MODE: '1' },
+      enabled: cuaEnabled && cuaSupported,
     },
   ];
 }

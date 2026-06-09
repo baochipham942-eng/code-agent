@@ -28,13 +28,22 @@ jobs:
           node-version: 24
           cache: npm
 
+      # 缓存 cargo registry + src-tauri/target 的依赖编译产物，加速「Build signed Tauri
+      # updater bundle」步的 Rust 编译（首次跑是 cache-miss 不加速，后续 run 才生效）。
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
       - name: Install dependencies
         run: npm ci
 
+      # 用预编译二进制装 tauri-cli，避免 `cargo install` 从源码编译（实测 ~9m40s）。
+      # 版本与原来一致(2.10.1)；taiki-e/install-action 拉官方 release 预编译包，~20s。
       - name: Install Tauri CLI
-        env:
-          TAURI_CLI_VERSION: '2.10.1'
-        run: cargo install tauri-cli --version "${TAURI_CLI_VERSION}" --locked
+        uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli@2.10.1
 
       - name: Build native helpers + fetch sidecars (Tauri bundle resources)
         # tauri.conf.json bundles three Swift Mach-O helpers (system-audio-capture, vision-ocr,

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.100] - 2026-06-09
+
+### Added
+
+- 经验沉淀重做（ADR-020）：废弃 telemetry n-gram 频次蒸馏，skill 自动沉淀统一收口到 LLM 语义复盘（Hermes/Anthropic 规格），入口闸 + 反思门 + 命名禁用清单 + 结构化 SKILL.md。
+- Telemetry 可诊断性：trace/session 版本指纹（agentVersion/promptVersion/toolSchemaVersion），本地全量诊断旁表 + 失败 session 脱敏诊断包上报，Langfuse 默认开启 + opt-out 开关。
+
+### Changed
+
+- 删除/卸载操作直接调用工具，确认交给权限卡片；命令安全分级松绑误杀（目标明确单路径删除从硬毙降为一次确认，删根/家/通配仍硬毙）。
+
+### Fixed
+
+- 解除挂起权限请求死锁：新消息/取消时 resolve 挂起请求，不再冻结到 60 秒超时。
+- 强化 provider 选择与诊断；截图发非视觉模型不再丢图；云端同步会话改幂等 upsert 修 NULL-owner 主键冲突刷屏；sseStream 响应头首字节超时修 accept-then-hang；skill 名称容错 + did-you-mean。
+- LogMasker 超大输入预截断，修复脱敏 ~110s 卡顿。
+
 ## [0.16.99] - 2026-06-08
 
 ### Fixed

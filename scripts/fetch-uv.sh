@@ -10,27 +10,44 @@
 #   - 不 commit binary 进 git (跟 fetch-rtk 同模式)
 #   - 强制 sha256 验证 (上游每个 asset 提供 .sha256 文件)
 #   - 增量: 已存在且版本匹配则跳过
+#   - arch 感知: arm64 + x86_64 双架构，CI 可用 UV_ARCH_OVERRIDE 交叉拉取
 # ============================================================================
 
 set -euo pipefail
 
 UV_VERSION="0.11.16"
+# 上游每个 arch 的 tarball + binary sha256（本地实拉计算，供应链锁定，禁止伪造）。
 UV_SHA256_AARCH64_DARWIN_TAR="2b25be1af546be330b340b0a76b99f989daa6d92678fdffb87438e661e9d88fb"
 UV_BIN_SHA256_AARCH64_DARWIN="f63ec276fa13f8f392542a334c0f58f36833b24304831e5f4c221e2edf7a16f3"
+UV_SHA256_X86_64_DARWIN_TAR="6b91ae3de155f51bd1f5b74814821c79f016a176561f252cd9ddfb976939af2e"
+UV_BIN_SHA256_X86_64_DARWIN="51aad75fa6c40c5f1f3f2b2f2ce7ad49faf4723e333d94c820510cf2acf04f49"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT="$SCRIPT_DIR/uv"
 
 if [[ "$(uname)" != "Darwin" ]]; then
-  echo "❌ fetch-uv 仅支持 macOS (Neo Tauri 发行版本目前只发 arm64 macOS)" >&2
+  echo "❌ fetch-uv 仅支持 macOS" >&2
   exit 1
 fi
 
-ARCH="$(uname -m)"
-if [[ "$ARCH" != "arm64" ]]; then
-  echo "❌ 当前 arch=$ARCH,uv sidecar 目前仅打 arm64-apple-darwin" >&2
-  exit 1
-fi
+# arch 感知：arm64 → aarch64，Intel → x86_64。UV_ARCH_OVERRIDE 供 CI 交叉拉取。
+ARCH="${UV_ARCH_OVERRIDE:-$(uname -m)}"
+case "$ARCH" in
+  arm64|aarch64)
+    UV_ARCH="aarch64"
+    EXPECT_TAR_SHA="$UV_SHA256_AARCH64_DARWIN_TAR"
+    EXPECT_BIN_SHA="$UV_BIN_SHA256_AARCH64_DARWIN"
+    ;;
+  x86_64|x64)
+    UV_ARCH="x86_64"
+    EXPECT_TAR_SHA="$UV_SHA256_X86_64_DARWIN_TAR"
+    EXPECT_BIN_SHA="$UV_BIN_SHA256_X86_64_DARWIN"
+    ;;
+  *)
+    echo "❌ 不支持的 arch=$ARCH（仅 arm64 / x86_64）" >&2
+    exit 1
+    ;;
+esac
 
 # 增量检查
 if [[ -x "$OUTPUT" ]]; then
@@ -42,7 +59,7 @@ if [[ -x "$OUTPUT" ]]; then
   echo "→ 检测到旧版本 $EXISTING_VERSION,升级到 $UV_VERSION"
 fi
 
-ASSET="uv-aarch64-apple-darwin.tar.gz"
+ASSET="uv-${UV_ARCH}-apple-darwin.tar.gz"
 URL="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${ASSET}"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -54,27 +71,27 @@ if ! curl -fsSL -o "$TMP_DIR/$ASSET" "$URL"; then
 fi
 
 ACTUAL_TAR_SHA="$(shasum -a 256 "$TMP_DIR/$ASSET" | awk '{print $1}')"
-if [[ "$ACTUAL_TAR_SHA" != "$UV_SHA256_AARCH64_DARWIN_TAR" ]]; then
-  echo "❌ tarball sha256 不匹配" >&2
-  echo "   预期: $UV_SHA256_AARCH64_DARWIN_TAR" >&2
+if [[ "$ACTUAL_TAR_SHA" != "$EXPECT_TAR_SHA" ]]; then
+  echo "❌ tarball sha256 不匹配 (arch=$UV_ARCH)" >&2
+  echo "   预期: $EXPECT_TAR_SHA" >&2
   echo "   实际: $ACTUAL_TAR_SHA" >&2
   exit 1
 fi
 echo "✓ tarball sha256 验证通过"
 
 tar -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
-# uv tarball 结构: uv-aarch64-apple-darwin/{uv, uvx}
+# uv tarball 结构: uv-${UV_ARCH}-apple-darwin/{uv, uvx}
 # 只需要 uv (setup-gliner-pii 只用 uv venv + uv pip install,不用 uvx)
-EXTRACTED_BIN="$TMP_DIR/uv-aarch64-apple-darwin/uv"
+EXTRACTED_BIN="$TMP_DIR/uv-${UV_ARCH}-apple-darwin/uv"
 if [[ ! -f "$EXTRACTED_BIN" ]]; then
   echo "❌ 解压后找不到 uv binary 在预期路径 $EXTRACTED_BIN" >&2
   exit 1
 fi
 
 ACTUAL_BIN_SHA="$(shasum -a 256 "$EXTRACTED_BIN" | awk '{print $1}')"
-if [[ "$ACTUAL_BIN_SHA" != "$UV_BIN_SHA256_AARCH64_DARWIN" ]]; then
-  echo "❌ binary sha256 不匹配" >&2
-  echo "   预期: $UV_BIN_SHA256_AARCH64_DARWIN" >&2
+if [[ "$ACTUAL_BIN_SHA" != "$EXPECT_BIN_SHA" ]]; then
+  echo "❌ binary sha256 不匹配 (arch=$UV_ARCH)" >&2
+  echo "   预期: $EXPECT_BIN_SHA" >&2
   echo "   实际: $ACTUAL_BIN_SHA" >&2
   exit 1
 fi
@@ -82,4 +99,4 @@ echo "✓ binary sha256 验证通过"
 
 mv "$EXTRACTED_BIN" "$OUTPUT"
 chmod +x "$OUTPUT"
-echo "✓ uv $UV_VERSION → $OUTPUT"
+echo "✓ uv $UV_VERSION ($UV_ARCH) → $OUTPUT"

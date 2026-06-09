@@ -30,15 +30,26 @@ if [[ ! -f "$SOURCE" ]]; then
   exit 1
 fi
 
-# 增量检查：源文件未变且产物较新则跳过
-if [[ -f "$OUTPUT" && "$OUTPUT" -nt "$SOURCE" ]]; then
+# arch 感知交叉编译：SWIFT_BUILD_ARCH=x86_64|arm64 显式指定（CI 出 x64 包用）。
+# 不设则编当前架构（保持原行为）。最低系统版本对齐 tauri.conf 的 11.0。
+TARGET_ARGS=()
+case "${SWIFT_BUILD_ARCH:-}" in
+  x86_64|x64)    TARGET_ARGS=(-target x86_64-apple-macos11) ;;
+  arm64|aarch64) TARGET_ARGS=(-target arm64-apple-macos11) ;;
+  "") ;;
+  *) echo "❌ 不支持的 SWIFT_BUILD_ARCH=${SWIFT_BUILD_ARCH}（仅 x86_64 / arm64）" >&2; exit 1 ;;
+esac
+
+# 增量检查：源文件未变且产物较新则跳过（交叉编译指定 arch 时强制重编）
+if [[ -z "${SWIFT_BUILD_ARCH:-}" && -f "$OUTPUT" && "$OUTPUT" -nt "$SOURCE" ]]; then
   echo "✓ vision-ocr 已是最新（源文件未变）"
   exit 0
 fi
 
-echo "→ 编译 vision-ocr..."
+echo "→ 编译 vision-ocr${SWIFT_BUILD_ARCH:+ (target=$SWIFT_BUILD_ARCH)}..."
 swiftc \
   -O \
+  ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"} \
   -framework Vision \
   -framework AppKit \
   -o "$OUTPUT" \

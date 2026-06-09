@@ -12,54 +12,61 @@ const repoRoot = path.resolve(scriptDir, '..');
 const defaultRuntimeRoot = repoRoot;
 const defaultOutputDir = path.join(repoRoot, 'src-tauri', 'target', 'release', 'runtime-assets');
 
-const ASSET_GROUPS = {
-  'onnxruntime-vad': {
-    id: 'onnxruntime-vad',
-    description: 'ONNX Runtime plus Silero VAD model assets for desktop audio capture.',
-    entries: [
-      'node_modules/onnxruntime-node/package.json',
-      'node_modules/onnxruntime-node/dist',
-      'node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64',
-      'node_modules/onnxruntime-common/package.json',
-      'node_modules/onnxruntime-common/dist/cjs',
-      'node_modules/avr-vad/dist/silero_vad_v5.onnx',
-    ],
-    nodeModules: [
-      'onnxruntime-node',
-      'avr-vad',
-    ],
-  },
-  'playwright-browser-runtime': {
-    id: 'playwright-browser-runtime',
-    description: 'Playwright client runtime for browser automation and visual smoke checks.',
-    entries: [
-      'node_modules/playwright',
-      'node_modules/playwright-core',
-    ],
-    nodeModules: [
-      'playwright',
-      'playwright-core',
-    ],
-  },
-  'sharp-image-runtime': {
-    id: 'sharp-image-runtime',
-    description: 'Sharp native image processing runtime for screenshots and image tools.',
-    entries: [
-      'node_modules/sharp',
-      'node_modules/@img/colour',
-      'node_modules/@img/sharp-darwin-arm64',
-      'node_modules/@img/sharp-libvips-darwin-arm64',
-      'node_modules/detect-libc',
-    ],
-    nodeModules: [
-      'sharp',
-      '@img/colour',
-      '@img/sharp-darwin-arm64',
-      '@img/sharp-libvips-darwin-arm64',
-      'detect-libc',
-    ],
-  },
-};
+// 按目标架构生成 asset 组：sharp / onnxruntime 的 native 路径随 arch（darwin-arm64 / darwin-x64）。
+function buildAssetGroups(arch) {
+  return {
+    'onnxruntime-vad': {
+      id: 'onnxruntime-vad',
+      description: 'ONNX Runtime plus Silero VAD model assets for desktop audio capture.',
+      entries: [
+        'node_modules/onnxruntime-node/package.json',
+        'node_modules/onnxruntime-node/dist',
+        `node_modules/onnxruntime-node/bin/napi-v6/darwin/${arch}`,
+        'node_modules/onnxruntime-common/package.json',
+        'node_modules/onnxruntime-common/dist/cjs',
+        'node_modules/avr-vad/dist/silero_vad_v5.onnx',
+      ],
+      nodeModules: [
+        'onnxruntime-node',
+        'avr-vad',
+      ],
+    },
+    'playwright-browser-runtime': {
+      id: 'playwright-browser-runtime',
+      description: 'Playwright client runtime for browser automation and visual smoke checks.',
+      entries: [
+        'node_modules/playwright',
+        'node_modules/playwright-core',
+      ],
+      nodeModules: [
+        'playwright',
+        'playwright-core',
+      ],
+    },
+    'sharp-image-runtime': {
+      id: 'sharp-image-runtime',
+      description: 'Sharp native image processing runtime for screenshots and image tools.',
+      entries: [
+        'node_modules/sharp',
+        'node_modules/@img/colour',
+        `node_modules/@img/sharp-darwin-${arch}`,
+        `node_modules/@img/sharp-libvips-darwin-${arch}`,
+        'node_modules/detect-libc',
+      ],
+      nodeModules: [
+        'sharp',
+        '@img/colour',
+        `@img/sharp-darwin-${arch}`,
+        `@img/sharp-libvips-darwin-${arch}`,
+        'detect-libc',
+      ],
+    },
+  };
+}
+
+// x64（Intel）不适配的 asset：onnxruntime-vad 的 npm 包无 darwin/x64 二进制，
+// VAD 在 x64 走「缺 runtime 优雅降级」（见 docs/architecture/intel-x64-support.md）。
+const ARM64_ONLY_ASSET_IDS = new Set(['onnxruntime-vad']);
 
 const DEFAULT_RUNTIME_ASSET_IDS = [
   'onnxruntime-vad',
@@ -317,9 +324,23 @@ const requestedAssetIds = readRepeatedArg('--asset');
 const dryRun = hasFlag('--dry-run');
 const skipSecurityScan = hasFlag('--skip-security-scan');
 const flatOutput = hasFlag('--flat-output');
-const assetIds = requestedAssetIds.length > 0
+
+// 目标架构从 platform（darwin-arm64 / darwin-x64）推导，决定 native asset 路径与 x64 跳过。
+const targetArch = /(?:-x64|-x86_64)$/.test(platform) ? 'x64' : 'arm64';
+const ASSET_GROUPS = buildAssetGroups(targetArch);
+
+const selectedAssetIds = requestedAssetIds.length > 0
   ? requestedAssetIds
   : DEFAULT_RUNTIME_ASSET_IDS;
+
+// x64 跳过 arm64-only asset（onnxruntime-vad），并显式 log 出来（不静默截断）。
+const assetIds = selectedAssetIds.filter((assetId) => {
+  if (targetArch === 'x64' && ARM64_ONLY_ASSET_IDS.has(assetId)) {
+    console.log(`[build-runtime-assets] skip ${assetId} on x64 (arm64-only; VAD degrades to missing-runtime)`);
+    return false;
+  }
+  return true;
+});
 
 for (const assetId of assetIds) {
   if (!ASSET_GROUPS[assetId]) {

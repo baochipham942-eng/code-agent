@@ -3,6 +3,7 @@ import {
   buildUpdateResponseFromRelease,
   compareVersions,
   handleUpdateRequest,
+  normalizeArch,
   runtimeAssetsMetadataFromEnv,
   runtimeAssetsMetadataFromRelease,
 } from '../../../vercel-api/lib/updateMetadata';
@@ -169,7 +170,7 @@ describe('vercel update metadata', () => {
           browser_download_url: 'https://github.com/acme/code-agent/releases/download/v0.16.79/runtime-assets-manifest-darwin-arm64.sha256',
         },
       ],
-    }, 'darwin', async (url) => {
+    }, 'darwin', 'arm64', async (url) => {
       expect(url).toBe('https://github.com/acme/code-agent/releases/download/v0.16.79/runtime-assets-manifest-darwin-arm64.sha256');
       return `${'D'.repeat(64)}  runtime-assets-manifest-darwin-arm64.json\n`;
     });
@@ -451,6 +452,136 @@ describe('vercel update metadata', () => {
       runtimeAssets: {
         manifestUrl: 'https://cdn.example.com/runtime-assets/manifest.json',
         manifestSha256: 'c'.repeat(64),
+      },
+    });
+  });
+
+  it('normalizes arch aliases, defaulting unknown/empty to arm64', () => {
+    expect(normalizeArch('x64')).toBe('x64');
+    expect(normalizeArch('x86_64')).toBe('x64');
+    expect(normalizeArch('intel')).toBe('x64');
+    expect(normalizeArch('arm64')).toBe('arm64');
+    expect(normalizeArch('aarch64')).toBe('arm64');
+    expect(normalizeArch(undefined)).toBe('arm64');
+    expect(normalizeArch('')).toBe('arm64');
+  });
+
+  it('selects the arch-matching dmg from a mixed-arch release manifest', async () => {
+    const manifest = () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        tag_name: 'v0.17.0',
+        html_url: 'https://github.com/acme/code-agent/releases/tag/v0.17.0',
+        assets: [
+          {
+            name: 'Agent-Neo-0.17.0-arm64.dmg',
+            browser_download_url: 'https://oss.example.com/v0.17.0/Agent-Neo-0.17.0-arm64.dmg',
+          },
+          {
+            name: 'Agent-Neo-0.17.0-x64.dmg',
+            browser_download_url: 'https://oss.example.com/v0.17.0/Agent-Neo-0.17.0-x64.dmg',
+          },
+        ],
+      }),
+    } as Response);
+    process.env.UPDATE_GITHUB_REPOSITORY = 'acme/code-agent';
+
+    // x64 客户端拿到 x64 包
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(manifest());
+    const x64Res = makeResponse();
+    await handleUpdateRequest({
+      method: 'GET',
+      query: { action: 'download', platform: 'darwin', arch: 'x64' },
+    }, x64Res);
+    expect(x64Res.statusCode).toBe(302);
+    expect(x64Res.headers.Location).toBe('https://oss.example.com/v0.17.0/Agent-Neo-0.17.0-x64.dmg');
+
+    // 默认（无 arch）客户端拿到 arm64 包
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(manifest());
+    const armRes = makeResponse();
+    await handleUpdateRequest({
+      method: 'GET',
+      query: { action: 'download', platform: 'darwin' },
+    }, armRes);
+    expect(armRes.statusCode).toBe(302);
+    expect(armRes.headers.Location).toBe('https://oss.example.com/v0.17.0/Agent-Neo-0.17.0-arm64.dmg');
+  });
+
+  it('never serves an arm64 dmg to an x64 client (404 when x64 asset absent)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        tag_name: 'v0.17.0',
+        html_url: 'https://github.com/acme/code-agent/releases/tag/v0.17.0',
+        assets: [
+          {
+            name: 'Agent-Neo-0.17.0-arm64.dmg',
+            browser_download_url: 'https://oss.example.com/v0.17.0/Agent-Neo-0.17.0-arm64.dmg',
+          },
+        ],
+      }),
+    } as Response);
+    process.env.UPDATE_GITHUB_REPOSITORY = 'acme/code-agent';
+    const response = makeResponse();
+
+    await handleUpdateRequest({
+      method: 'GET',
+      query: { action: 'download', platform: 'darwin', arch: 'x64' },
+    }, response);
+
+    expect(response.statusCode).toBe(404);
+    expect(response.body).toMatchObject({ success: false, error: 'download_asset_not_found' });
+  });
+
+  it('derives the arch-specific runtime assets manifest during update checks', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tag_name: 'v0.17.0',
+          html_url: 'https://github.com/acme/code-agent/releases/tag/v0.17.0',
+          assets: [
+            {
+              name: 'runtime-assets-manifest-darwin-arm64.json',
+              browser_download_url: 'https://oss.example.com/v0.17.0/runtime-assets-manifest-darwin-arm64.json',
+            },
+            {
+              name: 'runtime-assets-manifest-darwin-arm64.sha256',
+              browser_download_url: 'https://oss.example.com/v0.17.0/runtime-assets-manifest-darwin-arm64.sha256',
+            },
+            {
+              name: 'runtime-assets-manifest-darwin-x64.json',
+              browser_download_url: 'https://oss.example.com/v0.17.0/runtime-assets-manifest-darwin-x64.json',
+            },
+            {
+              name: 'runtime-assets-manifest-darwin-x64.sha256',
+              browser_download_url: 'https://oss.example.com/v0.17.0/runtime-assets-manifest-darwin-x64.sha256',
+            },
+          ],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => 'f'.repeat(64),
+      } as Response);
+    process.env.UPDATE_GITHUB_REPOSITORY = 'acme/code-agent';
+    const response = makeResponse();
+
+    await handleUpdateRequest({
+      method: 'GET',
+      query: { action: 'check', version: '0.16.79', platform: 'darwin', arch: 'x64' },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      runtimeAssets: {
+        manifestUrl: 'https://oss.example.com/v0.17.0/runtime-assets-manifest-darwin-x64.json',
+        manifestSha256: 'f'.repeat(64),
       },
     });
   });

@@ -5,6 +5,11 @@ import {
   runWorkbenchCapabilityQuickAction,
 } from '../../../src/renderer/utils/workbenchQuickActions';
 
+const invalidMcpTokenError = [
+  'Streamable HTTP error: Error POSTing to endpoint:',
+  '{"error":"invalid_token","error_description":"Authentication failed. The provided bearer token is invalid, expired, or no longer recognized by the server."}',
+].join(' ');
+
 describe('workbenchQuickActions', () => {
   it('builds the shortest-path quick actions for blocked capabilities', () => {
     const skillActions = getWorkbenchCapabilityQuickActions({
@@ -95,6 +100,45 @@ describe('workbenchQuickActions', () => {
       'open_connector_settings',
     ]);
     expect(mcpActions.map((action) => action.kind)).toEqual(['retry_mcp', 'open_mcp_settings']);
+  });
+
+  it('routes MCP bearer-token failures to reauthorization instead of reconnect', () => {
+    const mcpActions = getWorkbenchCapabilityQuickActions({
+      kind: 'mcp',
+      key: 'mcp:tavily',
+      id: 'tavily',
+      label: 'tavily',
+      selected: true,
+      status: 'error',
+      enabled: true,
+      transport: 'stdio',
+      toolCount: 0,
+      resourceCount: 0,
+      error: invalidMcpTokenError,
+      available: false,
+      blocked: true,
+      visibleInWorkbench: true,
+      health: 'error',
+      lifecycle: {
+        installState: 'not_applicable',
+        mountState: 'not_applicable',
+        connectionState: 'error',
+      },
+      blockedReason: {
+        code: 'mcp_error',
+        detail: 'MCP tavily 当前状态为 error，本轮不会调用。',
+        hint: '去 MCP Settings 查看报错并修复后重试。',
+        severity: 'error',
+      },
+    });
+
+    expect(mcpActions).toEqual([
+      {
+        kind: 'open_mcp_settings',
+        label: '重新授权',
+        emphasis: 'primary',
+      },
+    ]);
   });
 
   it('separates native connector enable from explicit authorization check', () => {

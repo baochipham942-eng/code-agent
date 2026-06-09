@@ -220,9 +220,11 @@ export function buildComputerUseBlock(): string {
   if (process.env.CODE_AGENT_ENABLE_CUA !== '1') return '';
   return `\n\n<computer_use_protocol>
 You can drive native desktop apps via cua-driver tools (mcp__cua-driver__*). Follow this protocol exactly:
-- Snapshot before AND after every action: call get_window_state({pid, window_id}) to get fresh [element_index N], act by element_index, then re-snapshot to verify the change. An element_index is invalidated by the next snapshot — never reuse one across snapshots.
-- Prefer AX/element_index over pixel coordinates. Pass capture_mode:"ax" (AX tree only, no screenshot) by default; only use "som"/"vision" when you genuinely need visual disambiguation and Screen Recording is granted.
-- Background, no focus steal: launch_app runs apps in the background. Do not activate/foreground/bring_to_front an app unless the user explicitly asked.
+- Use cua-driver tools ONLY for desktop GUI control. Do NOT use legacy computer_use / Computer / gui_agent tools — they are disabled in this mode and conflict with cua-driver.
+- Snapshot before AND after every action: call get_window_state({pid, window_id, capture_mode:"ax"}) to get fresh [element_index N], act by element_index, then re-snapshot to verify the change. An element_index is invalidated by the next snapshot — never reuse one across snapshots.
+- VERIFY VIA AX, NOT SCREENSHOTS: to confirm a result (e.g. the calculator shows "12"), re-call get_window_state and read the AX tree_markdown text (AXStaticText values, etc.). Do NOT use the screenshot tool or image/vision analysis to verify — it is slower, can steal foreground, and may hit vision-model errors.
+- Prefer AX/element_index over pixel coordinates. Keep capture_mode:"ax" (AX tree only, no screenshot, no Screen Recording needed); only use "som"/"vision" if AX genuinely lacks the info AND Screen Recording is granted.
+- Background, no focus steal: launch_app runs apps in the background. Do NOT activate / foreground / bring_to_front an app unless the user explicitly asked — operate on the background window via element_index.
 - Web pages / browser tasks: use the browser_action tool (Playwright), NOT cua-driver — cua's background DOM clicks degrade on Chromium-based windows.
 - On error, the tool returns an actionable hint (e.g. stale index → re-snapshot; AXPress failed → try a menu/confirm equivalent). Follow it. If the post-action snapshot shows no change, treat it as a silent failure and retry rather than assuming success.
 </computer_use_protocol>`;

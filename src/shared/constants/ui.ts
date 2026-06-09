@@ -58,3 +58,19 @@ export const TELEMETRY_TRUNCATION = {
   TOOL_RESULT_SUMMARY: 2000,
   EVENT_SUMMARY: 500,
 } as const;
+
+/**
+ * 诊断原始内容旁表（telemetry_raw_payloads）的留存策略。
+ * 区别于上面的聚合截断:raw 表存"仅密钥掩码、不做 PII/截断"的全量内容,用于脱离用户
+ * 机器复现 agent 轨迹。三重封顶(谁先到谁先淘汰)+ 单条上限,避免本地无限膨胀。
+ */
+export const TELEMETRY_RAW = {
+  /** 单条 payload 字节上限,超出截断并记录原始长度 */
+  PER_PAYLOAD_MAX_BYTES: 256 * 1024,
+  /** 最多保留最近 N 个 turn 的 raw payload */
+  RETENTION_MAX_TURNS: 100,
+  /** 最长保留天数(毫秒) */
+  RETENTION_MAX_AGE_MS: 14 * 24 * 60 * 60 * 1000,
+  /** raw 表总体积上限(字节),超出从最旧 turn 开始淘汰 */
+  RETENTION_MAX_BYTES: 500 * 1024 * 1024,
+} as const;

@@ -63,6 +63,9 @@ describe('TelemetryStorage feedback', () => {
         total_errors INTEGER DEFAULT 0,
         session_type TEXT,
         status TEXT DEFAULT 'recording',
+        agent_version TEXT,
+        prompt_version TEXT,
+        tool_schema_version TEXT,
         synced_at INTEGER
       );
       CREATE TABLE telemetry_feedback (

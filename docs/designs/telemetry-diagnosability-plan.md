@@ -121,10 +121,96 @@
 - 默认**不自动外传内容**,只在用户点"上报"后发送。
 
 ### 验收
-- [ ] 不做任何设置,本地能查到最近一次 run 的完整 prompt/completion/工具入出参
+- [x] 不做任何设置,本地能查到最近一次 run 的完整 prompt/completion/工具入出参(切片1)
 - [ ] 一次失败 run 后,用户一键即可上报,无需复现
 - [ ] 上报内容经过脱敏且用户可预览
 - [ ] 诊断包能在后台还原出完整轨迹(版本+环境+span+内容)
+
+### P2 切片 1 实现记录(2026-06-09,4 测试通过)
+
+**决策落地**(见 AskUserQuestion):独立 raw 旁表 + 仅密钥掩码、去 PII/截断。
+
+- **新表 `telemetry_raw_payloads`**(schema.ts + migrations.ts):一行/(ref, field),存
+  model_call 的 prompt/completion、tool_call 的 arguments/actual_arguments/result。
+- **写入挂点 `telemetryStorage.batchInsert`**:在聚合表 `guardTelemetryText` 截断**之前**,
+  同一事务多写一份 raw,走 `prepareRawPayload`(`redactSecrets` 仅密钥掩码 + 单条 256KB
+  字节封顶记原长,不跑 PII/不截到 2000)。
+- **滚动淘汰 `pruneRawPayloads(now?)`**:三重封顶 14天 / 100turn / 500MB,谁先到谁先删;
+  挂在 `telemetryCollector.endSession`(每会话一次,便宜)。复用 dbstat/SUM(LENGTH) 算体积。
+- **读取**:`getRawPayloadsForSession`(供切片 3 诊断包用)、`getRawPayloadsBytes`。
+- 常量 `TELEMETRY_RAW`(ui.ts);测试 `tests/unit/telemetry/telemetryRawPayloads.test.ts`。
+
+**本地加密**:本切片先明文存(密钥已掩码,残留敏感度=代码/路径,与现有明文聚合列同级)。
+逐行加密会拖慢热路径。**整库加密(SQLCipher)列为推广前硬化项**,作用于整个 telemetry DB。
+
+**✅ 已修复的既有性能问题(非本切片引入,2026-06-09 修)**:聚合路径 `guardTelemetryText`/
+`guardSensitiveText` → `LogMasker.mask()` 对**超大输入**(实测 263KB tool result)先跑完整
+检测再截断,耗时 ~110s。已在 `LogMasker.mask()` 开头加预截断(`maxLength + 8KB 余量` 之外
+先 slice 掉再检测),600KB 输入从 ~110s 降到毫秒级。测试 `tests/unit/security/logMasker.test.ts`
+新增性能 + 边界 secret 用例;错题本 `docs/guides/troubleshooting.md` 2026-06-09 条记了通用规则
+(size-bounding 永远前置于昂贵处理)。
+
+### P2 切片 3 实现记录(2026-06-09,2 测试通过 + 修了 P1 漏测引入的回归)
+
+**产出**:`src/main/telemetry/diagnosticBundleService.ts` —— `buildDiagnosticBundle(sessionId)`
+组装自包含诊断包:版本指纹(P1,从 session 行)+ 环境指纹(os/arch/node/appVersion/cwd/git
+branch+head+dirty,打包时即时采集)+ 聚合 span 树(turn→modelCall/toolCall/event,复用现有
+读取 API)+ raw 全量内容(切片1 的 `getRawPayloadsForSession`)。类型 `DiagnosticBundle` 等入
+`shared/contract/telemetry.ts`。`buildDiagnosticBundle` 支持注入 storage(可测)。
+
+**env 限制**:git head/dirty 是「打包时」即时值,非 run-time 快照,可能有出入。run-time 环境
+快照(session start 落列)留待后续(可并入切片 4 或单独做)。
+
+**⚠️ 修了一个我自己引入的回归**:P1 给 `insertSession` 加版本列、P2 的 `batchInsert` 引用
+`telemetry_raw_payloads`,但既有测试 `telemetryFeedbackStorage`/`computerSurfaceTelemetryStorage`
+的内存 DDL 没跟着更新 → insert 静默失败 → 测试挂。P1 提交时只 typecheck 没跑这些单测才漏掉。
+已补齐两处测试 DDL(加版本列 + raw 表)。**教训:改动 storage 落表逻辑后必须跑 telemetry 单测,
+不能只 typecheck。**(已写入 `docs/guides/troubleshooting.md` 错题本 2026-06-09 条)
+
+### P2 切片 2 实现记录(2026-06-09,3 测试通过)
+
+**产出**:`sanitizeDiagnosticBundle(bundle, {homeDir})` —— 产出可外传副本(不改原对象),用
+`scrubString`(快速、依赖无关)对全部自由文本(含 raw 全量内容)做:家目录前缀 → `~`(去
+用户名/磁盘布局)+ 密钥/token 正则打码。覆盖 environment/session/turn(prompt/response/
+thinking)/modelCall(prompt/completion/error)/toolCall(args/result/error)/event/rawPayload。
+
+**性能取舍(刻意)**:不在 raw 上跑 GLiNER 深度 PII —— 256KB×N 会重演切片1 发现的 ~110s 灾难;
+聚合表的 prompt/completion 落库时已过 GLiNER PII。深度 PII-on-raw 列**推广前项**(加体积上限
+的 PII pass,或服务端脱敏)。dogfood 上传到自己后台,密钥+路径脱敏已覆盖最高风险。
+
+### P2 切片 4 实现记录(2026-06-09,4 切片全部完成,telemetry 25 测试通过)
+
+**决策**:你拍板"你来建表,继续推进"。所以连云端表一起建了(走 migration,非甩锅)。
+
+- **云端表**:`supabase/migrations/20260609000000_telemetry_diagnostic_bundles.sql` —— 按
+  `renderer_bundle_attempt` 的 RLS/grant/索引惯例:`bundle JSONB`,用户只写自己行、admin 读全量,
+  版本指纹反范式化成列便于切片。**应用 = `supabase db push`(你的部署步骤)**。
+- **本地排队表** `telemetry_diagnostic_bundles`(schema.ts + migrations.ts):脱敏诊断包待上传,
+  `synced_at NULL = 未上传`。storage 加 `insertDiagnosticBundle`/`getUnsyncedDiagnosticBundles`/
+  `markDiagnosticBundlesSynced`。
+- **触发(静默,dogfood 期)**:`telemetryCollector.endSession` 检测 `totalErrors > 0` → fire-and-forget
+  `captureDiagnosticBundle`:`buildDiagnosticBundle` → `sanitizeDiagnosticBundle` → 入队。不打扰用户。
+- **上传通道**:`telemetryUploaderService.upload()` 加第 5 步,把未上传诊断包 upsert 到云表,
+  bundle JSON.parse 成对象写 JSONB,成功后 `markDiagnosticBundlesSynced`。auth-gated(未登录不传)。
+
+**⚠️ 推广前 gate(重申)**:① 静默上传必须改回"知情同意 + 内联轻提示"(决策记录 §2);
+② 深度 PII-on-raw;③ Langfuse 默认链路收敛 metadata-only / 服务端代理(P3 待办);④ 整库 SQLCipher。
+
+---
+
+## ✅ P2 全部完成(切片 1-4)+ P1 + P3
+
+| 阶段 | 状态 | 核心交付 |
+|------|------|---------|
+| P1 版本指纹 | ✅ | agent/prompt/toolSchema version 贯穿 trace,pre-commit 防漏 bump |
+| P3 Langfuse 默认开 | ✅ | 默认开 + opt-out 开关(env 下发 key) |
+| P2-1 本地全量 raw | ✅ | `telemetry_raw_payloads`,全量内容不再被砍 |
+| P2-2 上传前脱敏 | ✅ | `sanitizeDiagnosticBundle` |
+| P2-3 诊断包组装 | ✅ | `buildDiagnosticBundle` |
+| P2-4 静默上传+触发 | ✅ | 失败→入队→上传,云端表已建 |
+
+**"打补丁→按版本归因 + 现场可复现"的闭环已打通**:失败 session 自动生成脱敏诊断包(版本+环境+
+span+raw 全量)上报云端,后台脱离用户机器即可复现。剩下的都是推广前的隐私硬化项(上面 4 条 gate)。
 
 ---
 
@@ -193,6 +279,15 @@
 
 **key 提供 = 运维步骤(不写源码)**:把项目默认 `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` 放进打包的 `~/.code-agent/.env`,即对所有用户默认开。**secretKey 是真 secret,严禁硬编码进 TS 源码**。
 
+**⚠️ 重要更正(2026-06-09 核查):P3 的"默认覆盖所有用户"目前并不成立,只覆盖 dev 本机。**
+核查结论:
+- `src-tauri/tauri.conf.json` 的 `resources` **不含 `.env`** —— `.env` 不进 app bundle(release 段说法正确,security.md "自动打包"那句是错的)。
+- 没有首启把 `LANGFUSE_*` 种进用户 `~/.code-agent/.env` 的逻辑;`services/cloud/` 也不下发 langfuse key。
+- 故 `LANGFUSE_*` 只在 **dev(林晨)本机** `~/.code-agent/.env`。其他用户全新安装 env 里没有 → `getServiceApiKey` 返回 undefined → Langfuse 不初始化 → **只有 dev 一个人在往 Langfuse 上报**。
+
+**但核心能力不受影响**:诊断包(P2)走 app 自己的 authed Supabase client,**覆盖所有登录用户**,不需要 Langfuse key。即"脱离用户机器复现"对全员生效;缺的只是 Langfuse 实时 dashboard 的全员覆盖(只 dev 有)。
+
 **待办(推广前)**:
+- ⚠️ **全员 Langfuse 覆盖 = gate #3 的服务端代理**:public key 走云端 config 下发(可轮换、不进二进制),secret 走服务端代理(客户端发 trace 到自有 endpoint,服务端补 secret 转发),客户端永不持有 Langfuse secretKey。**不要**用"打包 .env 塞 secret"的方式给全员(等于把 secret 发到每台机器)。dogfood 期维持现状(只 dev 上报 Langfuse)即可。
 - ⚠️ 默认链路目前会把 `input: userMessage` 及 LLM generation 的 input/output 传给 Langfuse(含内容)。dogfood 期可接受(自己的 Langfuse 项目);**推广前要么收敛为 metadata-only、要么换服务端代理签发短期 token**,避免客户端持有 Langfuse secretKey + 内容外传。
 - 首启知情同意流程推广前补做(见决策记录 §3)。

@@ -6,10 +6,11 @@
 import { randomUUID } from 'crypto';
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
-import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, QualitySignals, TelemetryFeedback, TelemetryFeedbackSubmitRequest, TelemetryRendererBundleAttempt } from '../../shared/contract/telemetry';
-import { TELEMETRY_TRUNCATION } from '../../shared/constants';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, QualitySignals, TelemetryFeedback, TelemetryFeedbackSubmitRequest, TelemetryRendererBundleAttempt, TelemetryDiagnosticBundleRecord } from '../../shared/contract/telemetry';
+import { TELEMETRY_TRUNCATION, TELEMETRY_RAW } from '../../shared/constants';
 import type Database from 'better-sqlite3';
 import { guardSensitiveJsonText, guardSensitiveText, guardSensitiveValue } from '../security/sensitiveDataGuard';
+import { redactSecrets } from '../security/secretRedaction';
 import type { RendererBundleStatus } from '../../shared/contract/update';
 
 const logger = createLogger('TelemetryStorage');
@@ -92,6 +93,25 @@ const guardTelemetryText = (value: string | undefined | null, limit: number): st
     }),
     limit
   );
+};
+
+/**
+ * raw 旁表用:仅做密钥掩码(不跑 PII/注入中和/聚合截断),保留诊断全量。
+ * 单条超 PER_PAYLOAD_MAX_BYTES 按字节截断并标记 truncated + 记原始字节长度。
+ */
+export const prepareRawPayload = (
+  value: string | undefined | null,
+): { content: string; byteLen: number; truncated: boolean } | null => {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  const masked = redactSecrets(value);
+  const fullBytes = Buffer.byteLength(masked, 'utf8');
+  const cap = TELEMETRY_RAW.PER_PAYLOAD_MAX_BYTES;
+  if (fullBytes <= cap) {
+    return { content: masked, byteLen: fullBytes, truncated: false };
+  }
+  // 按字节安全截断(避免切断多字节字符)
+  const content = Buffer.from(masked, 'utf8').subarray(0, cap).toString('utf8');
+  return { content, byteLen: fullBytes, truncated: true };
 };
 
 const guardTelemetryJsonText = (value: string | undefined | null, limit: number): string | null => {
@@ -592,6 +612,7 @@ export class TelemetryStorage {
     try {
       const db = this.getDb();
       db.transaction(() => {
+        db.prepare('DELETE FROM telemetry_raw_payloads WHERE session_id = ?').run(sessionId);
         db.prepare('DELETE FROM telemetry_feedback WHERE session_id = ?').run(sessionId);
         db.prepare('DELETE FROM telemetry_events WHERE session_id = ?').run(sessionId);
         db.prepare('DELETE FROM telemetry_tool_calls WHERE session_id = ?').run(sessionId);
@@ -601,6 +622,165 @@ export class TelemetryStorage {
       })();
     } catch (error) {
       logger.error('Failed to delete telemetry session:', error);
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // 诊断 raw payload 旁表:读取 + 滚动淘汰
+  // --------------------------------------------------------------------------
+
+  /** 取某会话的全部 raw payload(供诊断包打包用)。 */
+  getRawPayloadsForSession(sessionId: string): Array<{ turnId: string | null; refKind: string; refId: string; field: string; content: string; byteLen: number; truncated: boolean; createdAt: number }> {
+    if (!this.isDbAvailable()) return [];
+    try {
+      const rows = this.getDb()
+        .prepare('SELECT turn_id, ref_kind, ref_id, field, content, byte_len, truncated, created_at FROM telemetry_raw_payloads WHERE session_id = ? ORDER BY created_at ASC')
+        .all(sessionId) as Array<Record<string, unknown>>;
+      return rows.map((r) => ({
+        turnId: (r.turn_id as string | null) ?? null,
+        refKind: r.ref_kind as string,
+        refId: r.ref_id as string,
+        field: r.field as string,
+        content: (r.content as string | null) ?? '',
+        byteLen: r.byte_len as number,
+        truncated: r.truncated === 1,
+        createdAt: r.created_at as number,
+      }));
+    } catch (error) {
+      logger.error('Failed to read raw payloads:', error);
+      return [];
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // 诊断包本地排队表:入队 + 取未上传 + 标记已上传
+  // --------------------------------------------------------------------------
+
+  /** 把一条脱敏诊断包写入本地排队表(待上传)。 */
+  insertDiagnosticBundle(record: TelemetryDiagnosticBundleRecord): void {
+    if (!this.isDbAvailable()) return;
+    try {
+      this.getStmt(
+        'insert_diag_bundle',
+        `
+          INSERT OR REPLACE INTO telemetry_diagnostic_bundles (
+            id, session_id, agent_version, prompt_version, tool_schema_version,
+            trigger_reason, bundle_version, built_at, bundle, created_at, synced_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      ).run(
+        record.id, record.sessionId, record.agentVersion ?? null, record.promptVersion ?? null,
+        record.toolSchemaVersion ?? null, record.triggerReason, record.bundleVersion, record.builtAt,
+        record.bundle, record.createdAt, record.syncedAt ?? null,
+      );
+    } catch (error) {
+      logger.error('Failed to insert diagnostic bundle:', error);
+    }
+  }
+
+  /** 取尚未上传(synced_at IS NULL)的诊断包。 */
+  getUnsyncedDiagnosticBundles(limit = 20): TelemetryDiagnosticBundleRecord[] {
+    if (!this.isDbAvailable()) return [];
+    try {
+      const rows = this.getStmt(
+        'get_unsynced_diag_bundles',
+        'SELECT * FROM telemetry_diagnostic_bundles WHERE synced_at IS NULL ORDER BY created_at ASC LIMIT ?',
+      ).all(limit) as Array<Record<string, unknown>>;
+      return rows.map((r) => ({
+        id: r.id as string,
+        sessionId: r.session_id as string,
+        agentVersion: (r.agent_version as string | null) ?? null,
+        promptVersion: (r.prompt_version as string | null) ?? null,
+        toolSchemaVersion: (r.tool_schema_version as string | null) ?? null,
+        triggerReason: r.trigger_reason as TelemetryDiagnosticBundleRecord['triggerReason'],
+        bundleVersion: r.bundle_version as number,
+        builtAt: r.built_at as number,
+        bundle: r.bundle as string,
+        createdAt: r.created_at as number,
+        syncedAt: (r.synced_at as number | null) ?? null,
+      }));
+    } catch (error) {
+      logger.error('Failed to read unsynced diagnostic bundles:', error);
+      return [];
+    }
+  }
+
+  /** 标记一批诊断包已上传。 */
+  markDiagnosticBundlesSynced(ids: string[], syncedAt: number): void {
+    if (!this.isDbAvailable() || ids.length === 0) return;
+    try {
+      const db = this.getDb();
+      const stmt = db.prepare('UPDATE telemetry_diagnostic_bundles SET synced_at = ? WHERE id = ?');
+      db.transaction(() => {
+        for (const id of ids) stmt.run(syncedAt, id);
+      })();
+    } catch (error) {
+      logger.error('Failed to mark diagnostic bundles synced:', error);
+    }
+  }
+
+  /** raw 旁表当前总字节(dbstat 优先,降级 SUM(LENGTH))。 */
+  getRawPayloadsBytes(): number {
+    if (!this.isDbAvailable()) return 0;
+    const db = this.getDb();
+    try {
+      const row = db.prepare("SELECT COALESCE(SUM(pgsize), 0) AS bytes FROM dbstat WHERE name = 'telemetry_raw_payloads'").get() as { bytes?: number } | undefined;
+      if (typeof row?.bytes === 'number' && row.bytes > 0) return row.bytes;
+    } catch {
+      // dbstat 未启用,降级
+    }
+    try {
+      const row = db.prepare('SELECT COALESCE(SUM(LENGTH(content)), 0) AS bytes FROM telemetry_raw_payloads').get() as { bytes?: number } | undefined;
+      return row?.bytes ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * raw 旁表滚动淘汰:三重封顶,谁先到谁先淘汰。
+   * 1) 超 RETENTION_MAX_AGE_MS 的直接删
+   * 2) 只保留最近 RETENTION_MAX_TURNS 个 turn
+   * 3) 仍超 RETENTION_MAX_BYTES 则从最旧 turn 开始整 turn 删,直到达标
+   * now 可注入(测试用),默认 Date.now()。
+   */
+  pruneRawPayloads(now: number = Date.now()): void {
+    if (!this.isDbAvailable()) return;
+    try {
+      const db = this.getDb();
+      db.transaction(() => {
+        // 1) 按年龄
+        db.prepare('DELETE FROM telemetry_raw_payloads WHERE created_at < ?').run(now - TELEMETRY_RAW.RETENTION_MAX_AGE_MS);
+
+        // 2) 按 turn 数:保留最近 N 个 turn(以 turn 的最新 created_at 排序)
+        db.prepare(
+          `
+          DELETE FROM telemetry_raw_payloads
+          WHERE COALESCE(turn_id, id) NOT IN (
+            SELECT t FROM (
+              SELECT COALESCE(turn_id, id) AS t, MAX(created_at) AS mc
+              FROM telemetry_raw_payloads
+              GROUP BY COALESCE(turn_id, id)
+              ORDER BY mc DESC
+              LIMIT ?
+            )
+          )
+          `,
+        ).run(TELEMETRY_RAW.RETENTION_MAX_TURNS);
+      })();
+
+      // 3) 按体积:从最旧 turn 整组删,直到达标(每轮删一个 turn 组)
+      let guard = 0;
+      while (this.getRawPayloadsBytes() > TELEMETRY_RAW.RETENTION_MAX_BYTES && guard < 10000) {
+        guard += 1;
+        const oldest = db
+          .prepare('SELECT COALESCE(turn_id, id) AS t FROM telemetry_raw_payloads GROUP BY COALESCE(turn_id, id) ORDER BY MIN(created_at) ASC LIMIT 1')
+          .get() as { t?: string } | undefined;
+        if (!oldest?.t) break;
+        db.prepare('DELETE FROM telemetry_raw_payloads WHERE COALESCE(turn_id, id) = ?').run(oldest.t);
+      }
+    } catch (error) {
+      logger.error('Failed to prune raw payloads:', error);
     }
   }
 
@@ -902,6 +1082,35 @@ export class TelemetryStorage {
           for (const ev of data.events) {
             stmt.run(ev.id, ev.turnId, ev.sessionId, ev.timestamp, ev.eventType, guardTelemetryText(ev.summary, TELEMETRY_TRUNCATION.EVENT_SUMMARY), guardTelemetryJsonText(ev.data, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS), ev.durationMs ?? null);
           }
+        }
+
+        // 诊断 raw 旁表:在聚合截断之前,把原始全量内容(仅密钥掩码)另存一份
+        const rawStmt = db.prepare(`
+          INSERT OR IGNORE INTO telemetry_raw_payloads (
+            id, session_id, turn_id, ref_kind, ref_id, field, content, byte_len, truncated, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        const writeRaw = (
+          sessionId: string,
+          turnId: string,
+          refKind: 'model_call' | 'tool_call',
+          refId: string,
+          field: string,
+          value: string | undefined | null,
+          createdAt: number,
+        ): void => {
+          const prepared = prepareRawPayload(value);
+          if (!prepared) return;
+          rawStmt.run(randomUUID(), sessionId, turnId, refKind, refId, field, prepared.content, prepared.byteLen, prepared.truncated ? 1 : 0, createdAt);
+        };
+        for (const mc of data.modelCalls ?? []) {
+          writeRaw(mc.sessionId, mc.turnId, 'model_call', mc.id, 'prompt', mc.prompt, mc.timestamp);
+          writeRaw(mc.sessionId, mc.turnId, 'model_call', mc.id, 'completion', mc.completion, mc.timestamp);
+        }
+        for (const tc of data.toolCalls ?? []) {
+          writeRaw(tc.sessionId, tc.turnId, 'tool_call', tc.id, 'arguments', tc.arguments, tc.timestamp);
+          writeRaw(tc.sessionId, tc.turnId, 'tool_call', tc.id, 'actual_arguments', tc.actualArguments, tc.timestamp);
+          writeRaw(tc.sessionId, tc.turnId, 'tool_call', tc.id, 'result', tc.resultSummary, tc.timestamp);
         }
       })();
     } catch (error) {

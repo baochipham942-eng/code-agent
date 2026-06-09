@@ -240,6 +240,70 @@ export interface TelemetrySession {
   toolSchemaVersion?: string; // 工具集 schema 内容短 hash
 }
 
+// ----------------------------------------------------------------------------
+// Diagnostic Bundle — 脱离用户机器复现 agent 轨迹的自包含诊断包
+// ----------------------------------------------------------------------------
+
+export interface DiagnosticEnvFingerprint {
+  os: string; // `${platform} ${release}`
+  arch: string;
+  nodeVersion: string;
+  appVersion: string;
+  workingDirectory: string;
+  git: { branch: string | null; head: string | null; dirty: boolean | null };
+}
+
+export interface DiagnosticBundleTurn {
+  turn: TelemetryTurn;
+  modelCalls: TelemetryModelCall[];
+  toolCalls: TelemetryToolCall[];
+}
+
+export interface DiagnosticRawPayload {
+  turnId: string | null;
+  refKind: string; // 'model_call' | 'tool_call'
+  refId: string;
+  field: string; // 'prompt' | 'completion' | 'arguments' | 'actual_arguments' | 'result'
+  content: string;
+  byteLen: number;
+  truncated: boolean;
+  createdAt: number;
+}
+
+export interface DiagnosticBundle {
+  bundleVersion: number;
+  builtAt: number;
+  sessionId: string;
+  versions: { agentVersion?: string; promptVersion?: string; toolSchemaVersion?: string };
+  environment: DiagnosticEnvFingerprint;
+  session: TelemetrySession;
+  turns: DiagnosticBundleTurn[];
+  events: TelemetryTimelineEvent[];
+  rawPayloads: DiagnosticRawPayload[];
+}
+
+/** 触发诊断包上报的原因。 */
+export type DiagnosticTriggerReason =
+  | 'session_error' // 自动:会话内有失败(totalErrors > 0)
+  | 'circuit_breaker'
+  | 'feedback' // 用户 👎
+  | 'manual'; // 用户主动上报
+
+/** 本地排队表的一条诊断包记录(待上传/已上传)。bundle 为脱敏后整包的 JSON 串。 */
+export interface TelemetryDiagnosticBundleRecord {
+  id: string;
+  sessionId: string;
+  agentVersion?: string | null;
+  promptVersion?: string | null;
+  toolSchemaVersion?: string | null;
+  triggerReason: DiagnosticTriggerReason;
+  bundleVersion: number;
+  builtAt: number;
+  bundle: string; // sanitized DiagnosticBundle 的 JSON.stringify
+  createdAt: number;
+  syncedAt?: number | null;
+}
+
 export interface TelemetryFeedback {
   id: string;
   sessionId: string;

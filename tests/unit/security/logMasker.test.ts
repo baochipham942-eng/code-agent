@@ -58,6 +58,25 @@ describe('LogMasker', () => {
       expect(result.maskCount).toBe(0);
     });
 
+    it('pre-truncates huge input before detection (no ~110s stall)', () => {
+      // 600KB 输入,maxLength 2000:修复前会对全量跑检测耗时上百秒
+      const huge = 'X'.repeat(600_000);
+      const start = Date.now();
+      const result = masker.mask(huge, { maxLength: 2000 });
+      const elapsed = Date.now() - start;
+      expect(elapsed).toBeLessThan(2000); // 预截断后应在毫秒级
+      expect(result.truncated).toBe(true);
+      expect(result.masked.length).toBeLessThan(3000);
+    });
+
+    it('still masks secrets located within maxLength on huge input', () => {
+      const secret = 'sk-' + 'a'.repeat(40);
+      const huge = `head ${secret} ` + 'X'.repeat(600_000);
+      const result = masker.mask(huge, { maxLength: 2000 });
+      expect(result.maskCount).toBeGreaterThan(0);
+      expect(result.masked).not.toContain(secret);
+    });
+
     it('should return masking result structure', () => {
       const result = masker.mask('normal text');
       expect(result).toHaveProperty('masked');

@@ -85,7 +85,12 @@ describe('TelemetryStorage computer surface fields', () => {
         timestamp INTEGER NOT NULL,
         idx INTEGER DEFAULT 0,
         parallel INTEGER DEFAULT 0
-      )
+      );
+      CREATE TABLE telemetry_raw_payloads (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, turn_id TEXT, ref_kind TEXT NOT NULL,
+        ref_id TEXT NOT NULL, field TEXT NOT NULL, content TEXT, byte_len INTEGER NOT NULL,
+        truncated INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
+      );
     `);
     database = getDatabase();
     originalGetDb = database.getDb.bind(database);
@@ -125,7 +130,10 @@ describe('TelemetryStorage computer surface fields', () => {
           tool_success_rate REAL DEFAULT 0,
           total_errors INTEGER DEFAULT 0,
           session_type TEXT,
-          status TEXT DEFAULT 'recording'
+          status TEXT DEFAULT 'recording',
+          agent_version TEXT,
+          prompt_version TEXT,
+          tool_schema_version TEXT
         );
       `);
     dbState.sqlite!.prepare('INSERT INTO sessions (id, user_id) VALUES (?, ?)').run('session-inherited', 'user-1');

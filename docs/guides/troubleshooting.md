@@ -1053,3 +1053,25 @@ git show 0a6d15c40:src/main/shellCapabilities.ts > src/main/shellCapabilities.ts
 2. **PR 阶段必须跑发布期会跑的同款致命校验**（左移）。任何"只在 push/tag 暴露、PR 测不到"的 gate 都是事故温床——把它以 dry-run 形式搬到 PR。
 3. **基建升级（runtime/actions 版本）与功能发版分开 PR**，避免失败信号互相污染、归因困难。
 4. 后续可加：renderer-bundle / build workflow 的 `concurrency` group 自动取消被顶掉的旧 run，减少无效失败邮件。
+
+### 2026-06-09: 改 storage 落表逻辑只 typecheck 漏掉测试回归
+
+**问题**: P1/P2 telemetry 改造给 `insertSession` 加了版本列、给 `batchInsert` 加了对新表 `telemetry_raw_payloads` 的写入。生产 schema(schema.ts/migrations.ts)同步更新了,但**既有单测的内存 DDL 没跟着改** —— `telemetryFeedbackStorage` / `computerSurfaceTelemetryStorage` 这些测试在 `beforeEach` 里手写 `CREATE TABLE telemetry_sessions/...`,缺了新列/新表。`insertSession`/`batchInsert` 内部 try/catch 吞掉了 "no such column/table",insert 静默失败 → session/toolCall 没落库 → 下游断言挂。
+
+**为什么漏掉**: P1 提交时只跑了 `npm run typecheck`(过),没跑 telemetry 单测。typecheck 看不到运行时 SQL 与测试 DDL 的漂移。直到 P2 切片3 才暴露。
+
+**通用规则**:
+1. **改动任何 storage 的落表逻辑(新增表/列、改 INSERT/SELECT)后,必须跑对应模块的单测,不能只 typecheck。** 运行时 SQL 与测试内存 DDL 的漂移 typecheck 抓不到。
+2. **新增 schema(表/列)时,全仓 grep 测试里手写的同名 `CREATE TABLE`,同步更新**:`grep -rln "CREATE TABLE <table>" tests/`。手写 DDL 是第二份真值源,漂移即静默失败。
+3. **storage 方法里 try/catch 吞异常**是双刃剑:生产健壮但测试期掩盖 schema 错误。排查"insert 没生效"先看是不是被 catch 吞了 schema 异常。
+
+### 2026-06-09: 脱敏在截断之前跑,超大输入卡 ~110s
+
+**问题**: `LogMasker.mask()`(被 `guardSensitiveText`/`guardTelemetryText` 调用)先对**全量** `text` 跑 `SensitiveDetector.detect`/`maskAll` 和一串正则,**最后**才按 `maxLength` 截断输出。导致一个 263KB 的 tool result 进来,即使最终只保留 2000 字,也要先对 26 万字符跑完整检测——实测 ~110s,生产里工具返回大结果(大文件 Read / 长 Bash 输出)会卡住 telemetry flush,体感像 agent 卡死。
+
+**修复**: `mask()` 开头加预截断 —— `maxLength + PRESCAN_MARGIN(8KB)` 之外的内容反正会被下方截断丢弃,对它跑检测纯属浪费。在昂贵检测**之前**先 `slice(0, maxLength + margin)`。留 8KB 余量保证跨在 maxLength 边界的 secret 仍被完整捕获。600KB 输入从 ~110s 降到毫秒级。
+
+**通用规则**:
+1. **任何"先做 O(n) 昂贵处理、再按上限截断"的代码,都要把截断(或粗截断)提到昂贵处理之前。** 输出反正被 bound,处理 bound 之外的输入就是纯浪费。size-bounding 永远尽量前置。
+2. **脱敏/检测类函数对输入长度无上限 = 隐藏的 DoS/卡顿点。** 凡是 `detect(fullText)` 后再 truncate 的,都要查是否该先 truncate。
+3. **预截断要留余量**(本例 8KB),避免把跨边界的待匹配模式切断而漏检——但余量外的内容不进输出,所以余量只需覆盖单个 token 的最大长度。

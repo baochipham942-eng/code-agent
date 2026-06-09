@@ -93,6 +93,52 @@ export function applyTelemetryTurnsMigrations(db: BetterSqlite3.Database, logger
     safeExec(db, sql, logger);
   }
 
+  // 诊断原始内容旁表（仅密钥掩码、不截断/不 PII），与聚合表分离、独立滚动淘汰
+  safeExec(
+    db,
+    `
+      CREATE TABLE IF NOT EXISTS telemetry_raw_payloads (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        turn_id TEXT,
+        ref_kind TEXT NOT NULL,
+        ref_id TEXT NOT NULL,
+        field TEXT NOT NULL,
+        content TEXT,
+        byte_len INTEGER NOT NULL,
+        truncated INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      )
+    `,
+    logger,
+  );
+  safeExec(db, 'CREATE INDEX IF NOT EXISTS idx_raw_payloads_session ON telemetry_raw_payloads(session_id)', logger);
+  safeExec(db, 'CREATE INDEX IF NOT EXISTS idx_raw_payloads_turn ON telemetry_raw_payloads(turn_id)', logger);
+  safeExec(db, 'CREATE INDEX IF NOT EXISTS idx_raw_payloads_created ON telemetry_raw_payloads(created_at)', logger);
+
+  // 诊断包本地排队表:失败 session 的脱敏诊断包,待上传(synced_at NULL = 未上传)
+  safeExec(
+    db,
+    `
+      CREATE TABLE IF NOT EXISTS telemetry_diagnostic_bundles (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        agent_version TEXT,
+        prompt_version TEXT,
+        tool_schema_version TEXT,
+        trigger_reason TEXT NOT NULL,
+        bundle_version INTEGER NOT NULL DEFAULT 1,
+        built_at INTEGER NOT NULL,
+        bundle TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        synced_at INTEGER
+      )
+    `,
+    logger,
+  );
+  safeExec(db, 'CREATE INDEX IF NOT EXISTS idx_diag_bundles_synced ON telemetry_diagnostic_bundles(synced_at)', logger);
+  safeExec(db, 'CREATE INDEX IF NOT EXISTS idx_diag_bundles_session ON telemetry_diagnostic_bundles(session_id)', logger);
+
   // telemetry_tool_calls 新增错误分类与 Computer Surface 可靠性字段
   const toolCallMigrations = [
     'ALTER TABLE telemetry_tool_calls ADD COLUMN actual_arguments TEXT',

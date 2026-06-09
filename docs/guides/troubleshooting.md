@@ -1075,3 +1075,25 @@ git show 0a6d15c40:src/main/shellCapabilities.ts > src/main/shellCapabilities.ts
 1. **任何"先做 O(n) 昂贵处理、再按上限截断"的代码,都要把截断(或粗截断)提到昂贵处理之前。** 输出反正被 bound,处理 bound 之外的输入就是纯浪费。size-bounding 永远尽量前置。
 2. **脱敏/检测类函数对输入长度无上限 = 隐藏的 DoS/卡顿点。** 凡是 `detect(fullText)` 后再 truncate 的,都要查是否该先 truncate。
 3. **预截断要留余量**(本例 8KB),避免把跨边界的待匹配模式切断而漏检——但余量外的内容不进输出,所以余量只需覆盖单个 token 的最大长度。
+
+## Supabase 迁移历史漂移：`db push` 报 "Remote migration versions not found in local" (2026-06-09)
+
+**症状**: `supabase-migrate` CI（`supabase db push --linked --include-all`）在某次 push 后持续失败：`Remote migration versions not found in local migrations directory`，并提示 `supabase migration repair --status reverted <一串版本号>`。该 workflow 独立于发版线，失败不阻断发版，容易被忽视直到攒了新迁移推不上去。
+
+**根因**（2026-06-09 排查）：远端 `schema_migrations` 历史表里有 6 个**从未进过 git、本地无对应文件**的"孤儿版本"（带秒级时间戳如 `20260528020557`），是 `supabase migration new` 自动生成秒级时间戳的迁移被**直接 apply 到 prod**、之后本地又改名成整数时间戳（`20260528000000`）造成的——**破坏了"单一写入者"**。`db push` 检测到远端有本地没有的版本就拒绝执行。
+
+**修复**（已固化为 `supabase-migrate.yml` 的 `workflow_dispatch` 运维入口）：
+```bash
+# 1. 只读看 local|remote 对照，定位孤儿（远端有、本地无的行）
+gh workflow run supabase-migrate.yml -f mode=list           # 读 run 日志的对照表
+# 2. 把孤儿标 reverted（仅删 schema_migrations bookkeeping，不动 schema/数据），再 db push
+gh workflow run supabase-migrate.yml -f mode=repair -f repair_reverted="<孤儿版本空格分隔>"
+# 3. 再 mode=list 确认每行 Local==Remote
+```
+本次 push 满屏 `NOTICE: relation already exists, skipping` 是正常的——本地迁移幂等，重叠 schema no-op，只有真新的迁移落库。
+
+**通用规则**：
+1. **prod 迁移的唯一写入者是 supabase-migrate CI**，禁止开发机 ad-hoc `supabase db push`；规范文件名（整数时间戳）必须**先 commit 再上 prod**，不要先 apply 再改名。
+2. **所有迁移必须幂等**：`CREATE TABLE/INDEX ... IF NOT EXISTS`、`CREATE POLICY` 前置 `DROP POLICY IF EXISTS`、`DROP COLUMN IF EXISTS`、约束用守卫 DO 块。幂等是"敢在已存在 schema 上重跑 / 修漂移"的硬前提，不是可选项。
+3. **独立 CI workflow 的失败要可见**：supabase-migrate 与发版线分离、失败不阻断，差点被忽视。重要的独立 workflow 应配失败告警，或进发版前检查清单。
+4. 本机连不上远端 Supabase DB（`tls error EOF`，直连 IPv4 已弃用）且 DB 密码是 CI secret——**迁移运维走 CI（`workflow_dispatch`），不要试图从开发机直连 prod**。

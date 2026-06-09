@@ -2,6 +2,14 @@
 
 Use this checklist when all sessions have completed and the release is ready.
 
+> ## ⚡ 发版路径：推 tag 触发 CI，不要本地打包
+>
+> **正式发版 = 源码侧准备 + `git push origin v<version>`**。tag push 触发 `.github/workflows/release.yml`「Build and Release」，自动完成构建 / Developer ID 签名 / 公证 staple / OSS 上传（versioned + `stable/latest.json` + `stable/release.json`）/ GitHub Release / Vercel update API。
+>
+> 源码侧准备：`npm version <ver>` + 同步 `src-tauri/tauri.conf.json` + 写 `docs/releases/v<ver>.md`（= update API 的 releaseNotes）+ 更新 CHANGELOG + 跑只读门（`release:security-scan` / `verifyProductionEnv` / `releaseMacosGates` 测试）→ commit `chore: release v<ver>` → push main → tag → push tag。
+>
+> **本地 `npm run tauri:release:bundle` 只用于调试**，正式发版不需要（踩坑 2026-06-09：本地构建 20min 且会撞本机 syspolicyd EMFILE 导致 spctl 误报；CI 在干净 runner 上签名公证更可靠）。下面的手动 macOS gate 章节是 CI 内部逻辑的等价说明，供排查 CI 失败时参考，不是日常手动步骤。
+
 ## Pre-Release Verification
 
 ### Session Completion

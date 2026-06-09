@@ -119,7 +119,23 @@ grep -rn "Date.now()" src/main/services/core/repositories/ --include="*.ts"
 
 ## 快速参考
 
-### 打包发布
+### 发版（官方）= 只推 tag，CI 接管，别本地打包
+
+> ⚠️ **正式发版不需要本地 `cargo tauri build`**（踩坑 2026-06-09：白跑 20min 本地构建，还撞本地 syspolicyd EMFILE 把 spctl 卡住）。
+> `git push origin v<version>` 触发 GitHub Actions **「Build and Release」(`.github/workflows/release.yml`)**，自动完成：构建 → Developer ID 签名 → 公证 staple → OSS 上传（versioned + `stable/` 频道）→ GitHub Release → Vercel update API。签名/公证全在 CI，绕开本地签名环境问题。
+
+官方发版步骤（源码侧准备，其余 CI 做）：
+```bash
+npm run typecheck && npm version <version> --no-git-tag-version   # 同步 src-tauri/tauri.conf.json 的 version（注意：用字面量改，别用 $1/$2 反向引用脚本，会写坏 JSON）
+# 写 docs/releases/v<version>.md（CI 的 build-stable-release-json 会把它作为 update API 的 releaseNotes）+ 更新 CHANGELOG
+# 发版前只读门：npm run release:security-scan + npx vitest run tests/scripts/{verifyProductionEnv,releaseMacosGates}.test.ts
+git add package.json package-lock.json src-tauri/tauri.conf.json CHANGELOG.md docs/releases/v<version>.md
+git commit -m "chore: release v<version>" && git push origin main
+git tag -a v<version> -m "Release v<version>" && git push origin v<version>   # ← 触发 CI 全流程
+# 验证：curl "https://agentneo.vercel.app/api/update?action=check&version=0.0.0&platform=darwin&channel=stable"
+```
+
+### 本地 dogfood 打包（仅自测，非发版）
 ```bash
 bash scripts/build-audio-capture.sh   # 编译 Swift 音频采集工具（首次 clone 必跑）
 bash scripts/fetch-rtk.sh             # 拉取 rtk sidecar binary（首次 clone 必跑，需要 HTTPS_PROXY）

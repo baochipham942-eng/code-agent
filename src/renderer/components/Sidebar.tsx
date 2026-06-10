@@ -45,7 +45,7 @@ import {
   Download,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
-import { saveTextFile } from '../utils/saveTextFile';
+import { useUIStore } from '../stores/uiStore';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
 import { groupSessions } from '../utils/dateGrouping';
@@ -377,6 +377,25 @@ export const Sidebar: React.FC = () => {
     setContextMenu({ x: e.clientX, y: e.clientY, session });
   }, []);
 
+  const showToast = useUIStore((state) => state.showToast);
+
+  // 导出落盘统一走主进程写「下载」文件夹 + 访达定位（webview 另存为对话框在
+  // 打包态会静默失败，见 workspace.ipc handleSaveTextToDownloads 注释）
+  const saveExportToDownloads = useCallback(async (fileName: string, content: string) => {
+    const saved = await window.domainAPI?.invoke<{ filePath: string }>(
+      IPC_DOMAINS.WORKSPACE,
+      'saveTextToDownloads',
+      { fileName, content },
+    );
+    if (!saved?.success || !saved.data?.filePath) {
+      throw new Error(saved?.error?.message || 'Failed to save export');
+    }
+    showToast('success', `已导出到下载文件夹：${fileName}`);
+    void window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'showItemInFolder', {
+      filePath: saved.data.filePath,
+    });
+  }, [showToast]);
+
   const getContextMenuItems = useCallback((session: SessionWithMeta): ContextMenuItem[] => {
     const isPinned = pinnedSessionIds.has(session.id);
     const isArchived = !!session.isArchived;
@@ -537,14 +556,13 @@ export const Sidebar: React.FC = () => {
             if (!response?.success || !response.data?.markdown) {
               throw new Error(response?.error?.message || 'Failed to export markdown');
             }
-            await saveTextFile({
-              content: response.data.markdown,
-              fileName: response.data.suggestedFileName || `session-${session.id}.md`,
-              mimeType: 'text/markdown;charset=utf-8',
-              extensions: ['md'],
-            });
+            await saveExportToDownloads(
+              response.data.suggestedFileName || `session-${session.id}.md`,
+              response.data.markdown,
+            );
           } catch (error) {
             logger.error('Failed to export session markdown', error);
+            showToast('error', `导出 Markdown 失败：${error instanceof Error ? error.message : String(error)}`);
           }
         },
       },
@@ -561,14 +579,13 @@ export const Sidebar: React.FC = () => {
             if (!response?.success || !response.data?.content) {
               throw new Error(response?.error?.message || 'Failed to export session diagnostics');
             }
-            await saveTextFile({
-              content: response.data.content,
-              fileName: response.data.suggestedFileName || `session-log-${session.id}.json`,
-              mimeType: 'application/json;charset=utf-8',
-              extensions: ['json'],
-            });
+            await saveExportToDownloads(
+              response.data.suggestedFileName || `session-log-${session.id}.json`,
+              response.data.content,
+            );
           } catch (error) {
             logger.error('Failed to export session diagnostics', error);
+            showToast('error', `导出会话日志失败：${error instanceof Error ? error.message : String(error)}`);
           }
         },
       },
@@ -583,6 +600,8 @@ export const Sidebar: React.FC = () => {
     savedWorkbenchRecipes,
     setWorkingDirectory,
     saveWorkbenchPresetFromSession,
+    saveExportToDownloads,
+    showToast,
     softDelete,
     togglePin,
     unarchiveSession,

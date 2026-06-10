@@ -317,6 +317,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'readBinary',
     'readFile',
     'removeRecent',
+    'saveTextToDownloads',
     'selectDirectory',
     'setCurrent',
     'showItemInFolder',

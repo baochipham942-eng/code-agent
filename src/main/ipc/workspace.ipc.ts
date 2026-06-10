@@ -7,6 +7,7 @@ import path from 'path';
 import { app, dialog } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { IPC_CHANNELS } from '../../shared/ipc/legacy-channels';
+import { handleSaveTextToDownloads } from './workspaceSaveExport';
 import type { FileInfo } from '../../shared/contract';
 import type {
   ConfigSafetyRiskKind,
@@ -1063,6 +1064,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'writeFile':
           data = await handleWriteFile(payload as { filePath: string; content: string });
+          break;
+        case 'saveTextToDownloads':
+          data = await handleSaveTextToDownloads(payload as { fileName: string; content: string });
           break;
         case 'createFile':
           data = await handleCreateFile(payload as { filePath: string; content?: string });

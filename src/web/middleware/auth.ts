@@ -7,6 +7,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { Request, Response, NextFunction } from 'express';
+import { createLogger } from '../../main/services/infra/logger';
+
+const logger = createLogger('AuthMiddleware');
 
 // ── Server Auth Token ─────────────────────────────────────────────────────
 /**
@@ -196,10 +199,13 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
     token = queryToken;
   }
   if (!token) {
+    // 启动期连刷排查锚点：缓存的旧启动文档会带旧/缺 token 打 API，触发前端强制 reload
+    logger.warn(`401 missing token: ${req.method} ${req.path}`);
     res.status(401).json({ error: 'Missing or invalid Authorization header' });
     return;
   }
   if (!verifyToken(token)) {
+    logger.warn(`403 invalid token: ${req.method} ${req.path}`);
     res.status(403).json({ error: 'Invalid auth token' });
     return;
   }

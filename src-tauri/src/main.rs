@@ -396,6 +396,18 @@ fn start_web_server(app: &tauri::AppHandle) -> Result<Child, String> {
     Ok(child)
 }
 
+/// 每次启动唯一的 boot URL：HTTP 缓存按完整 URL（含 query）做 key，
+/// 全新 query 保证 WKWebView 永远不会用历史缓存的 index.html 当启动文档
+/// （旧页带旧 token / 旧资源引用 / 旧 bundle 元数据，会触发前端自愈 reload，
+/// 用户看到"启动连刷几下"）。服务端 SPA fallback 忽略 query，路由不受影响。
+fn boot_server_url() -> String {
+    let boot_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!("{SERVER_URL}/?boot={boot_ms}")
+}
+
 /// 僵尸实例自愈：主窗口已销毁时重建窗口并导航到 webServer；
 /// webServer 已死则先重新拉起。保证用户双击图标永远能得到一个窗口。
 fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
@@ -404,7 +416,7 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
         app.state::<AppState>().store_child(child);
     }
 
-    let url = SERVER_URL
+    let url = boot_server_url()
         .parse::<tauri::Url>()
         .map_err(|error| format!("Invalid server URL: {error}"))?;
 
@@ -1298,9 +1310,10 @@ fn main() {
             if let Some(window) = app.get_webview_window("main") {
                 // window 初始 url 是 about:blank（tauri.conf.json），避免启动竞赛下
                 // webServer 未起时页面加载失败白屏。healthcheck 通过后用
-                // webview.navigate() 跳到 SERVER_URL（比 eval+JS 更可靠，且走正常
-                // 导航而不是 cross-origin replace）。
-                if let Ok(url) = SERVER_URL.parse() {
+                // webview.navigate() 跳到 boot URL（比 eval+JS 更可靠，且走正常
+                // 导航而不是 cross-origin replace）。?boot= 每次唯一，绕开
+                // WKWebView 对启动文档的历史缓存（启动连刷根因）。
+                if let Ok(url) = boot_server_url().parse() {
                     let _ = window.navigate(url);
                 }
                 let _ = window.show();

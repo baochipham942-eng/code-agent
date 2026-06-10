@@ -8,6 +8,9 @@ import {
   readActiveBundleMeta,
   resolveRendererServeDir,
 } from '../../main/services/renderer/rendererBundleCache';
+import { createLogger } from '../../main/services/infra/logger';
+
+const logger = createLogger('StaticRouter');
 
 interface StaticDeps {
   serverAuthToken: string;
@@ -99,10 +102,13 @@ export function createStaticRouter(deps: StaticDeps): Router {
           '</script>'
         )
       );
-      // no-store：注入的 auth token 每次启动轮换，WebView 复用缓存页会拿旧 token
-      // → 全部 API 401 → httpTransport 强制 reload 一次（用户看到"启动刷两下"）。
-      // 带凭据的 HTML 本身也不该被缓存；hashed assets 不受影响仍可长缓存。
+      // no-store：启动文档注入了 auth token 与 bundle 元数据，被 WebView 缓存复用
+      // 会让旧页带旧 token/旧资源引用启动，触发前端各类自愈 reload（启动连刷）。
+      // hashed assets 不受影响仍可长缓存。配合 Tauri 侧每次启动唯一的 ?boot= 参数，
+      // 历史缓存条目（含 no-store 之前存入的）也永远不会再命中。
       res.setHeader('Cache-Control', 'no-store');
+      // 启动连刷排查锚点：同一次启动该日志出现 >1 次 = 页面被重载了
+      logger.info(`index.html served: ${req.originalUrl}`);
       res.type('html').send(injectedHtml);
     } catch {
       res.status(404).send('index.html not found');

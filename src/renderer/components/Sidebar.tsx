@@ -45,6 +45,7 @@ import {
   Download,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
+import { saveTextFile } from '../utils/saveTextFile';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
 import { groupSessions } from '../utils/dateGrouping';
@@ -536,13 +537,12 @@ export const Sidebar: React.FC = () => {
             if (!response?.success || !response.data?.markdown) {
               throw new Error(response?.error?.message || 'Failed to export markdown');
             }
-            const blob = new Blob([response.data.markdown], { type: 'text/markdown;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = response.data.suggestedFileName || `session-${session.id}.md`;
-            a.click();
-            URL.revokeObjectURL(url);
+            await saveTextFile({
+              content: response.data.markdown,
+              fileName: response.data.suggestedFileName || `session-${session.id}.md`,
+              mimeType: 'text/markdown;charset=utf-8',
+              extensions: ['md'],
+            });
           } catch (error) {
             logger.error('Failed to export session markdown', error);
           }
@@ -561,13 +561,12 @@ export const Sidebar: React.FC = () => {
             if (!response?.success || !response.data?.content) {
               throw new Error(response?.error?.message || 'Failed to export session diagnostics');
             }
-            const blob = new Blob([response.data.content], { type: 'application/json;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = response.data.suggestedFileName || `session-log-${session.id}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
+            await saveTextFile({
+              content: response.data.content,
+              fileName: response.data.suggestedFileName || `session-log-${session.id}.json`,
+              mimeType: 'application/json;charset=utf-8',
+              extensions: ['json'],
+            });
           } catch (error) {
             logger.error('Failed to export session diagnostics', error);
           }

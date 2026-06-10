@@ -869,6 +869,12 @@
         color: var(--ink);
       }
 
+      .download-arch-buttons {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
       .download-footnote {
         margin-top: 14px;
         color: var(--subtle);
@@ -1264,10 +1270,13 @@
                 <div>
                   <div class="card-label">mac</div>
                   <h3>Agent Neo for mac</h3>
-                  <p class="meta" id="download-chip-meta">Apple Silicon（M 系列）· 已 Apple 公证</p>
+                  <p class="meta" id="download-chip-meta">已 Apple 公证 · 按你的芯片选择</p>
                 </div>
-                <a class="button primary" id="download-button" href="/api/update?action=download&amp;platform=darwin&amp;channel=stable">⬇ 下载 .dmg</a>
-                <p class="download-footnote" id="download-arch-switch" hidden></p>
+                <div class="download-arch-buttons">
+                  <a class="button primary" id="download-arm64" href="/api/update?action=download&amp;platform=darwin&amp;channel=stable">⬇ Apple Silicon（M 系列）</a>
+                  <a class="button ghost" id="download-x64" href="/api/update?action=download&amp;platform=darwin&amp;channel=stable&amp;arch=x64">⬇ Intel 芯片</a>
+                </div>
+                <p class="download-footnote">不确定芯片？点屏幕左上角 <strong></strong> → 关于本机 查看</p>
               </article>
             </div>
           </div>
@@ -1280,33 +1289,20 @@
     <footer>Agent Neo · 装在你电脑上的 AI 同事</footer>
 
     <script>
-      // 下载按钮按芯片选包：Apple Silicon → arm64，Intel → x64。
-      // 浏览器无法可靠区分两者，用 WebGL renderer 字符串启发式判断；
-      // 判不出默认 arm64（新机主流），并始终给出手动切换链接兜底。
+      // 双下载按钮常驻（Apple Silicon / Intel），芯片启发式只决定哪个高亮为主推，
+      // 永不隐藏另一个。教训（2026-06-10）：Safari 反指纹把 WebGL renderer 统一伪装成
+      // "Apple GPU"，Intel Mac 也命中 apple 正则 → 单按钮方案给 Intel 用户下了 arm64 包，
+      // macOS 弹「不支持此类型的 Mac」。识别只能用于排序推荐，不能用于决定可见性。
       (function () {
-        var BASE = '/api/update?action=download&platform=darwin&channel=stable';
-        var btn = document.getElementById('download-button');
-        var meta = document.getElementById('download-chip-meta');
-        var sw = document.getElementById('download-arch-switch');
-        if (!btn) return;
+        var arm = document.getElementById('download-arm64');
+        var x64 = document.getElementById('download-x64');
+        if (!arm || !x64) return;
 
-        function urlFor(arch) {
-          return arch === 'x64' ? BASE + '&arch=x64' : BASE;
-        }
-        function metaFor(arch) {
-          return arch === 'x64'
-            ? 'Intel 芯片 · 已 Apple 公证'
-            : 'Apple Silicon（M 系列）· 已 Apple 公证';
-        }
-        function apply(arch) {
-          btn.setAttribute('href', urlFor(arch));
-          if (meta) meta.textContent = metaFor(arch);
-          if (sw) {
-            var other = arch === 'x64' ? 'arm64' : 'x64';
-            var otherName = other === 'x64' ? 'Intel 芯片' : 'Apple Silicon';
-            sw.innerHTML = '芯片不对？<a href="' + urlFor(other) + '">下载 ' + otherName + ' 版</a>';
-            sw.hidden = false;
-          }
+        function highlight(primaryBtn, ghostBtn) {
+          primaryBtn.classList.add('primary');
+          primaryBtn.classList.remove('ghost');
+          ghostBtn.classList.add('ghost');
+          ghostBtn.classList.remove('primary');
         }
         function detectArch() {
           try {
@@ -1315,13 +1311,16 @@
             if (!gl) return 'arm64';
             var ext = gl.getExtension('WEBGL_debug_renderer_info');
             var renderer = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '') : '';
-            if (/apple/i.test(renderer)) return 'arm64';
+            // 只信"明确报 Intel/AMD/NVIDIA"的信号切 x64；"Apple GPU" 可能是 Safari
+            // 伪装（Intel 机也报），保持默认 arm64 高亮但 Intel 按钮可见可点
             if (/intel|amd|radeon|nvidia/i.test(renderer)) return 'x64';
           } catch (e) { /* ignore, fall through to default */ }
           return 'arm64';
         }
 
-        apply(detectArch());
+        if (detectArch() === 'x64') {
+          highlight(x64, arm);
+        }
       })();
     </script>
   </body>

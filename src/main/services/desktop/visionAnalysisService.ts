@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
-import { ZHIPU_VISION_MODEL, VISION_IMAGE } from '../../../shared/constants';
+import { ZHIPU_VISION_MODEL, VISION_IMAGE, DEFAULT_PROVIDER, DEFAULT_MODELS } from '../../../shared/constants';
 import { ModelRouter } from '../../model/modelRouter';
 import type { ModelConfig, ModelProvider } from '../../../shared/contract/model';
 import { loadSharp } from '../../runtime/sharpRuntime';
@@ -193,6 +193,29 @@ function resolveVisionModelConfig(): ModelConfig | null {
   };
 }
 
+/**
+ * 构建视觉候选的 seed 配置：优先用户配置的 routing.vision；没配则退回 chat 路由，
+ * 让 getVisionPreflightCandidates 以"同 provider 视觉模型优先"挑候选（如 chat=xiaomi
+ * → 优先 mimo-omni）。getVisionPreflightCandidates 只用到 provider/apiKey/baseUrl/temp。
+ */
+function buildVisionBaseConfig(): ModelConfig {
+  const configured = resolveVisionModelConfig();
+  if (configured) return configured;
+
+  // 视觉未配置（或配的模型不支持视觉）时，用默认 provider 兜底 seed，
+  // 让 getVisionPreflightCandidates 以默认 provider 的视觉模型优先（如 xiaomi → mimo-omni）。
+  const configService = getConfigService();
+  const provider = DEFAULT_PROVIDER as ModelProvider;
+  return {
+    provider,
+    model: DEFAULT_MODELS.chat,
+    apiKey: configService.getApiKey(provider) || '',
+    baseUrl: configService.getSettings().models?.providers?.[provider]?.baseUrl,
+    temperature: 0.3,
+    maxTokens: 2048,
+  };
+}
+
 const MISSING_VISION_MODEL_MESSAGE =
   '复合视觉理解需要配置一个支持视觉的模型（如智谱 GLM-4.6V / GPT-4o / Claude 4.6+ / Gemini 2.5 / Qwen-VL / MiMo-VL / Doubao-VL / Kimi 视觉等）。请到设置→模型→视觉中选择后重试。OCR 不受影响，依然可通过 ocr_search 工具调用 macOS Vision Framework。';
 
@@ -204,11 +227,14 @@ export async function analyzeImageWithVisionDetailed(args: {
   /** 实测 backingScaleFactor（Phase 2 传入）；缺省用 VISION_IMAGE.FALLBACK_SCALE_FACTOR */
   scaleFactorHint?: number;
 }): Promise<VisionAnalysisResult> {
-  const visionConfig = resolveVisionModelConfig();
-  const reportedModel = visionConfig?.model || ZHIPU_VISION_MODEL;
+  // 智能候选路由：同 provider 视觉模型优先 + 逐个 try + 自动兜底（替代原来直连
+  // 单一 routing.vision 配置——那样一旦配的模型 403/无权限就直接失败不兜底）。
+  const router = getSharedRouter();
+  const candidates = router.getVisionPreflightCandidates(buildVisionBaseConfig());
+  const reportedModel = resolveVisionModelConfig()?.model || ZHIPU_VISION_MODEL;
 
-  if (!visionConfig) {
-    logger.info('Vision analysis skipped: vision provider not configured', { source: args.source });
+  if (candidates.length === 0) {
+    logger.info('Vision analysis skipped: no usable vision model (no configured key)', { source: args.source });
     return {
       ok: false,
       analysis: null,
@@ -243,76 +269,80 @@ export async function analyzeImageWithVisionDetailed(args: {
     };
   }
 
-  // 用 AbortController 实现 timeout（modelRouter 不直接支持 timeoutMs）
   const timeoutMs = args.timeoutMs || DEFAULT_TIMEOUT_MS;
-  const timeoutController = new AbortController();
-  const timeoutHandle = setTimeout(() => timeoutController.abort(), timeoutMs);
 
   try {
-    const router = getSharedRouter();
-    const response = await Promise.race([
-      router.inferenceWithVision(
-        [{ role: 'user', content: args.prompt }],
-        [{ data: prepared.base64, mediaType: 'image/png' }],
-        visionConfig,
-      ),
-      new Promise<never>((_, reject) => {
-        timeoutController.signal.addEventListener('abort', () => {
-          reject(new Error('vision_analysis_timeout'));
-        }, { once: true });
-      }),
-    ]);
+    let lastErr = '';
+    let lastAborted = false;
+    let lastModel = reportedModel;
 
-    const content = response.content?.trim() || '';
-    if (!content) {
-      logger.warn('Vision analysis returned empty content', { source: args.source });
-      return {
-        ok: false,
-        analysis: null,
-        reason: 'empty_response',
-        error: 'Vision analysis returned empty content',
-        model: response.actualModel || reportedModel,
-        retryable: true,
-        ...prepared.dims,
-      };
+    // 逐个候选尝试，首个成功即返回；全失败则带可执行引导返回
+    for (const cfg of candidates) {
+      lastModel = cfg.model;
+      const timeoutController = new AbortController();
+      const timeoutHandle = setTimeout(() => timeoutController.abort(), timeoutMs);
+      try {
+        const response = await Promise.race([
+          router.inferenceWithVision(
+            [{ role: 'user', content: args.prompt }],
+            [{ data: prepared.base64, mediaType: 'image/png' }],
+            { ...cfg, maxTokens: Math.min(cfg.maxTokens || 2048, 2048) },
+          ),
+          new Promise<never>((_, reject) => {
+            timeoutController.signal.addEventListener('abort', () => {
+              reject(new Error('vision_analysis_timeout'));
+            }, { once: true });
+          }),
+        ]);
+
+        const content = response.content?.trim() || '';
+        if (!content) {
+          lastErr = 'Vision analysis returned empty content';
+          lastAborted = false;
+          logger.warn('Vision analysis returned empty content, trying next candidate', {
+            source: args.source, provider: cfg.provider, model: cfg.model,
+          });
+          continue;
+        }
+
+        logger.info('Vision analysis completed', {
+          source: args.source,
+          provider: response.actualProvider || cfg.provider,
+          model: response.actualModel || cfg.model,
+          contentLength: content.length,
+          triedCandidates: candidates.indexOf(cfg) + 1,
+        });
+        return {
+          ok: true,
+          analysis: content,
+          model: response.actualModel || cfg.model,
+          ...prepared.dims,
+        };
+      } catch (error: unknown) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        lastErr = errMsg;
+        lastAborted = errMsg === 'vision_analysis_timeout' || isAbortError(error);
+        logger.warn(lastAborted ? 'Vision candidate timed out, trying next' : 'Vision candidate failed, trying next', {
+          source: args.source, provider: cfg.provider, model: cfg.model, error: errMsg,
+        });
+      } finally {
+        clearTimeout(timeoutHandle);
+      }
     }
 
-    logger.info('Vision analysis completed', {
-      source: args.source,
-      provider: response.actualProvider || visionConfig.provider,
-      model: response.actualModel || visionConfig.model,
-      contentLength: content.length,
-      analyzedWidth: prepared.dims.analyzedWidth,
-      analyzedHeight: prepared.dims.analyzedHeight,
-    });
-    return {
-      ok: true,
-      analysis: content,
-      model: response.actualModel || visionConfig.model,
-      ...prepared.dims,
-    };
-  } catch (error: unknown) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    const aborted = errMsg === 'vision_analysis_timeout' || isAbortError(error);
-    logger.warn(aborted ? 'Vision analysis timed out' : 'Vision analysis failed', {
-      source: args.source,
-      provider: visionConfig.provider,
-      model: visionConfig.model,
-      error: errMsg,
-    });
+    // 所有候选都失败 —— 附上可执行引导（去配置/换视觉模型），让模型/用户能自纠
     return {
       ok: false,
       analysis: null,
-      reason: aborted ? 'timeout' : 'exception',
-      error: aborted
-        ? `Vision analysis timed out after ${timeoutMs}ms`
-        : `Vision analysis failed: ${errMsg}`,
-      model: reportedModel,
+      reason: lastAborted ? 'timeout' : 'exception',
+      error: lastAborted
+        ? `Vision analysis timed out after ${timeoutMs}ms（已尝试 ${candidates.length} 个视觉模型）`
+        : `Vision analysis failed: ${lastErr}。已尝试 ${candidates.length} 个已配置的视觉模型均失败。${MISSING_VISION_MODEL_MESSAGE}`,
+      model: lastModel,
       retryable: true,
       ...prepared.dims,
     };
   } finally {
-    clearTimeout(timeoutHandle);
     if (prepared.tempPath) {
       await fs.promises.unlink(prepared.tempPath).catch(() => undefined);
     }

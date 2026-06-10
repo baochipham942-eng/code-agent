@@ -190,7 +190,9 @@ commandSafety.ts（框架层，保留）
 - [x] `build-windows-test.yml`（仅 workflow_dispatch；npm script-shell 必须切 Git Bash——仓内 scripts 的 env 前缀语法 cmd 下直接挂）
 - [x] `verify-windows-release.mjs`：pre（win32 资源逐项）+ post（NSIS/PE/体积/.sig）
 - [x] renderer probe 复用（CHROME_PATH 指 runner Chrome）
-- [ ] **build-windows-test 实跑绿**（待手动 dispatch 验证）
+- [x] **build-windows-test 实跑绿**（2026-06-10，run 27260731349，4 轮迭代修 3 个实跑坑：
+  runner Git Bash 无 shasum → sha256sum 兜底；GNU tar 把 C: 当远程主机 → 系统 bsdtar；
+  capture_frontmost_context_snapshot 缺非 mac cfg 变体——首个 Windows 编译暴露的存量洞）
 - [ ] 真机验证文件占用三场景：renderer 热更新 rename active / 日志 rotate / DB 打开时更新替换（朋友真机）
 
 **P2 分发链（惰性部分已就绪，矩阵折入待验收）**

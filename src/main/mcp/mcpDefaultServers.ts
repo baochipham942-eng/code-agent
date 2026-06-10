@@ -2,6 +2,8 @@
 // MCP Default Servers - 默认服务器配置 + 云端配置转换 + 初始化/刷新
 // ============================================================================
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getCloudConfigService, type MCPServerCloudConfig } from '../services/cloud/cloudConfigService';
 import { getConfigService } from '../services/core/configService';
@@ -11,12 +13,45 @@ import type {
   MCPSSEServerConfig,
   MCPHttpStreamableServerConfig,
 } from './types';
+import { CUA_DRIVER_SERVER_NAME } from './types';
 import { createMemoryKVServer } from './servers/memoryKVServer';
 import { createCodeIndexServer } from './servers/codeIndexServer';
 import { loadMcpConfigFiles } from './mcpConfigFile';
 import type { MCPClient } from './mcpClient';
 
 const logger = createLogger('MCPDefaultServers');
+
+// 重签后的 cua-driver 二进制（bundle 内）相对 scripts/ 的路径。
+// 由 scripts/fetch-cua-driver.sh 生成，进 tauri.conf.json bundle resources。
+const CUA_BUNDLED_BIN_REL = path.join('Agent Neo Computer Use.app', 'Contents', 'MacOS', 'cua-driver');
+
+/**
+ * 解析 cua-driver 二进制路径。优先级：
+ *   1. CODE_AGENT_CUA_DRIVER_PATH 显式覆盖
+ *   2. bundle 内重签后的 Agent Neo Computer Use.app（dev: scripts/，打包: Resources/…/scripts/）
+ *   3. 回退 PATH 上的 `cua-driver`（dev 未跑 fetch 脚本时）
+ * 探针顺序跟 rtkRewriter.findRtkBinary 同模式。
+ */
+function resolveCuaDriverPath(): string {
+  const override = process.env.CODE_AGENT_CUA_DRIVER_PATH;
+  if (override) return override;
+  const candidates = [
+    path.join(__dirname, '..', '..', '..', '..', 'scripts', CUA_BUNDLED_BIN_REL),
+    path.join(__dirname, '..', '..', '..', 'scripts', CUA_BUNDLED_BIN_REL),
+    path.join(__dirname, '..', '..', 'scripts', CUA_BUNDLED_BIN_REL),
+    path.join(__dirname, '..', 'scripts', CUA_BUNDLED_BIN_REL),
+    path.join(__dirname, 'scripts', CUA_BUNDLED_BIN_REL),
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+    } catch {
+      // ignore
+    }
+  }
+  return 'cua-driver';
+}
+
 const DEEPWIKI_LEGACY_SSE_URL = 'https://mcp.deepwiki.com/sse';
 const DEEPWIKI_STREAMABLE_HTTP_URL = 'https://mcp.deepwiki.com/mcp';
 
@@ -33,6 +68,12 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
   const braveApiKey = configService?.getServiceApiKey('brave') || process.env.BRAVE_API_KEY || '';
   const githubToken = configService?.getServiceApiKey('github') || process.env.GITHUB_TOKEN || '';
   const argusEnabled = process.env.CODE_AGENT_ENABLE_ARGUS_MCP === '1';
+  // cua-driver (trycua) — computer-use 新底座，逐步替代 argus（详见 docs/proposals/computer-use-cua-migration.md）
+  // 启用: CODE_AGENT_ENABLE_CUA=1；默认指向 bundle 内重签的 Agent Neo Computer Use.app，
+  // 可用 CODE_AGENT_CUA_DRIVER_PATH 覆盖，最终回退 PATH 上的 `cua-driver`。
+  const cuaEnabled = process.env.CODE_AGENT_ENABLE_CUA === '1';
+  const cuaDriverCommand = resolveCuaDriverPath();
+  const cuaSupported = process.platform === 'darwin' || process.platform === 'win32';
 
   return [
     // ========== SSE 远程服务器 ==========
@@ -125,9 +166,10 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
       enabled: false, // 默认禁用，需要 Docker 环境
     },
 
-    // ========== Phase 4: Argus Computer Use ==========
+    // ========== Phase 4: Argus Computer Use（旧底座，迁移期保留作回退） ==========
     // 桌面自动化 — 24 工具 (截图/点击/输入/batch)，无安全限制版
     // 基于 Anthropic Chicago MCP 架构，使用 OSS 原生层 (screencapture + cliclick)
+    // 注：正被 cua-driver 替代，验证稳定后退役（docs/proposals/computer-use-cua-migration.md §7）
     {
       name: 'argus',
       command: 'node',
@@ -135,6 +177,17 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
         `${process.env.HOME}/Downloads/ai/argus-automation/dist/server-mcp.js`,
       ],
       enabled: argusEnabled,
+    },
+
+    // ========== Computer Use 新底座: cua-driver (trycua, MIT) ==========
+    // AX 树优先 + 后台不抢焦点 + mac/win 原生统一，stdio MCP。替代 argus。
+    // 工具: list_apps/get_window_state/click/type_text/set_value/screenshot/… (~30)
+    {
+      name: CUA_DRIVER_SERVER_NAME,
+      command: cuaDriverCommand,
+      args: ['mcp'],
+      env: { CUA_DRIVER_MCP_MODE: '1' },
+      enabled: cuaEnabled && cuaSupported,
     },
   ];
 }

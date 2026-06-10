@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- 既有超限文件（接入「桌面操作」入口前已 ~1005 行 > 1000），拆分另议 */
 // ============================================================================
 // Sidebar - Linear-style session list with grouped cards and session management
 // ============================================================================
@@ -35,6 +36,7 @@ import {
   Clock3,
   CalendarDays,
   Monitor,
+  MousePointerClick,
   ScrollText,
   Activity,
   Brain,
@@ -98,6 +100,8 @@ export const Sidebar: React.FC = () => {
     setShowActivityPanel,
     showKnowledgeMemoryPanel,
     setShowKnowledgeMemoryPanel,
+    showComputerUsePanel,
+    setShowComputerUsePanel,
     pendingPermissionRequest,
     pendingPermissionSessionId,
     queuedPermissionRequests,
@@ -975,6 +979,11 @@ export const Sidebar: React.FC = () => {
                   onClick={() => { setShowKnowledgeMemoryPanel(true); setShowUserMenu(false); }}
                   icon={<Brain className={`w-4 h-4 ${showKnowledgeMemoryPanel ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
                   label="知识与记忆"
+                />
+                <AccountMenuItem
+                  onClick={() => { setShowComputerUsePanel(true); setShowUserMenu(false); }}
+                  icon={<MousePointerClick className={`w-4 h-4 ${showComputerUsePanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
+                  label="桌面操作"
                 />
                 <AccountMenuItem
                   onClick={() => { setShowCronCenter(!showCronCenter); setShowUserMenu(false); }}

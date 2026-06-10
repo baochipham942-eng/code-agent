@@ -6,6 +6,10 @@ import type {
   WorkbenchSkillRegistryItem,
 } from './workbenchCapabilityRegistry';
 import { getWorkbenchCapabilityBlockedState } from './workbenchCapabilityRegistry';
+import {
+  getMcpAuthenticationRecoveryMessage,
+  isMcpAuthenticationFailure,
+} from './mcpRecovery';
 
 export type WorkbenchQuickActionKind =
   | 'mount_skill'
@@ -162,10 +166,21 @@ function buildConnectorQuickActions(
 }
 
 function buildMcpQuickActions(
+  server: WorkbenchMcpRegistryItem,
   blockedReason: WorkbenchMcpRegistryItem['blockedReason'],
 ): WorkbenchQuickAction[] {
   if (blockedReason?.code !== 'mcp_disconnected' && blockedReason?.code !== 'mcp_error') {
     return [];
+  }
+
+  if (isMcpAuthenticationFailure(server, blockedReason)) {
+    return [
+      {
+        kind: 'open_mcp_settings',
+        label: '重新授权',
+        emphasis: 'primary',
+      },
+    ];
   }
 
   return [
@@ -202,7 +217,7 @@ export function getWorkbenchCapabilityQuickActions(
     case 'connector':
       return buildConnectorQuickActions(capability, blockedReason);
     case 'mcp':
-      return buildMcpQuickActions(blockedReason);
+      return buildMcpQuickActions(capability, blockedReason);
     default:
       return [];
   }
@@ -256,7 +271,9 @@ export function getWorkbenchCapabilityQuickActionFeedback(
     case 'open_mcp_settings':
       return {
         tone: 'info',
-        message: '已打开 MCP 设置，修好后重发这条消息。',
+        message: capability.kind === 'mcp' && isMcpAuthenticationFailure(capability)
+          ? getMcpAuthenticationRecoveryMessage(capability)
+          : '已打开 MCP 设置，修好后重发这条消息。',
       };
     case 'retry_connector':
       return {

@@ -49,6 +49,8 @@ export interface ComputerUseFailureInput {
   selectedTargetApp?: string | null;
   elementsError?: string | null;
   observeError?: string | null;
+  /** cua 走 capture_mode=ax 时置 true：把 Screen Recording 降为可选，不再当作阻断项。 */
+  screenCaptureOptional?: boolean;
 }
 
 function asNonEmptyString(value: unknown): string | null {
@@ -188,8 +190,20 @@ function explainPermission(
   items: ComputerUseFailureExplanation[],
   permission: NativePermissionStatus | null,
   kind: 'screenCapture' | 'accessibility',
+  optional = false,
 ): void {
   const label = getPermissionCopy(kind);
+  // cua 默认 capture_mode=ax（只读 AX 树，免录屏）。录屏是可选增强：未授权不阻断，
+  // 仅提示「需要视觉消歧时再开」。详见 docs/proposals/computer-use-cua-migration.md §11.1。
+  if (optional && (permission?.status !== 'granted')) {
+    addExplanation(items, {
+      id: `${kind}:optional`,
+      title: `${label} 可选`,
+      detail: '默认走 AX 树模式（capture_mode=ax），无需录屏权限。仅当需要截图做视觉消歧时再单独授权。',
+      tone: 'neutral',
+    });
+    return;
+  }
   if (!permission) {
     addExplanation(items, {
       id: `${kind}:unknown`,
@@ -374,7 +388,7 @@ export function describeComputerUseFailures(input: ComputerUseFailureInput): Com
     });
   }
 
-  explainPermission(items, getNativePermissionStatus(input.permissions, 'screenCapture'), 'screenCapture');
+  explainPermission(items, getNativePermissionStatus(input.permissions, 'screenCapture'), 'screenCapture', input.screenCaptureOptional);
   explainPermission(items, getNativePermissionStatus(input.permissions, 'accessibility'), 'accessibility');
 
   addExplanation(items, {

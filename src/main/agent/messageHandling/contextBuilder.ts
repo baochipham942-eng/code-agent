@@ -191,20 +191,43 @@ GUI features (screenshot, browser_action) are unavailable.${appIdentity}
 </runtime_mode>`;
   }
 
+  // Computer-use 操作协议：仅当 cua-driver 启用时注入，避免污染普通会话的上下文预算。
+  // 实现 docs/proposals/computer-use-cua-migration.md §3（任务分流）+ §11（快照不变量/错误自纠）。
+  const cuaBlock = buildComputerUseBlock();
+
   if (isWebMode) {
     return `\n\n<runtime_mode>
 You are running in the Agent Neo app-host web runtime.
 Users interact through a visual chat interface, not a terminal.
 CODE_AGENT_CLI_MODE may be true here for Node/native-module compatibility; do not infer from it that browser, screenshot, or Computer Use tools are unavailable.
 Browser and Computer Use capabilities depend on loaded tool definitions and runtime readiness.${appIdentity}
-</runtime_mode>`;
+</runtime_mode>${cuaBlock}`;
   }
 
   return `\n\n<runtime_mode>
 You are running inside a desktop GUI application.
 Users interact through a visual chat interface, not a terminal.
 When explaining solutions, frame them from the user's perspective — describe what you're doing, not internal tool names.${appIdentity}
-</runtime_mode>`;
+</runtime_mode>${cuaBlock}`;
+}
+
+/**
+ * cua-driver computer-use 操作协议块。
+ * 仅当 CODE_AGENT_ENABLE_CUA=1 时返回内容，否则空串（零上下文开销）。
+ * 内容对齐 docs/proposals/computer-use-cua-migration.md §3 / §11。
+ */
+export function buildComputerUseBlock(): string {
+  if (process.env.CODE_AGENT_ENABLE_CUA !== '1') return '';
+  return `\n\n<computer_use_protocol>
+You can drive native desktop apps via cua-driver tools (mcp__cua-driver__*). Follow this protocol exactly:
+- Use cua-driver tools ONLY for desktop GUI control. Do NOT use legacy computer_use / Computer / gui_agent tools — they are disabled in this mode and conflict with cua-driver.
+- Snapshot before AND after every action: call get_window_state({pid, window_id, capture_mode:"ax"}) to get fresh [element_index N], act by element_index, then re-snapshot to verify the change. An element_index is invalidated by the next snapshot — never reuse one across snapshots.
+- VERIFY VIA AX, NOT SCREENSHOTS: to confirm a result (e.g. the calculator shows "12"), re-call get_window_state and read the AX tree_markdown text (AXStaticText values, etc.). Do NOT use the screenshot tool or image/vision analysis to verify — it is slower, can steal foreground, and may hit vision-model errors.
+- Prefer AX/element_index over pixel coordinates. Keep capture_mode:"ax" (AX tree only, no screenshot, no Screen Recording needed); only use "som"/"vision" if AX genuinely lacks the info AND Screen Recording is granted.
+- Background, no focus steal: launch_app runs apps in the background. Do NOT activate / foreground / bring_to_front an app unless the user explicitly asked — operate on the background window via element_index.
+- Web pages / browser tasks: use the browser_action tool (Playwright), NOT cua-driver — cua's background DOM clicks degrade on Chromium-based windows.
+- On error, the tool returns an actionable hint (e.g. stale index → re-snapshot; AXPress failed → try a menu/confirm equivalent). Follow it. If the post-action snapshot shows no change, treat it as a silent failure and retry rather than assuming success.
+</computer_use_protocol>`;
 }
 
 /**

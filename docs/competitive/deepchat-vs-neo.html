@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>竞品分析卡片 · DeepChat vs Neo</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --line:#2d333b;
+    --txt:#e6edf3; --dim:#9da7b3; --faint:#6e7681;
+    --neo:#7c9eff; --dc:#ffb454; --good:#3fb950; --warn:#d29922; --bad:#f85149;
+    --neo-bg:rgba(124,158,255,.12); --dc-bg:rgba(255,180,84,.12);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font:15px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;padding:40px 20px;}
+  .wrap{max-width:980px;margin:0 auto;}
+  header{margin-bottom:8px;}
+  .eyebrow{color:var(--faint);font-size:12px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;}
+  h1{font-size:30px;font-weight:800;margin:6px 0 4px;letter-spacing:-.01em;}
+  h1 .vs{color:var(--faint);font-weight:400;margin:0 10px;}
+  h1 .neo{color:var(--neo)} h1 .dc{color:var(--dc)}
+  .sub{color:var(--dim);font-size:14px;}
+  .meta{color:var(--faint);font-size:12px;margin-top:6px;}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:26px 28px;margin-top:26px;}
+  h2{font-size:20px;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:10px;}
+  h2 .num{background:var(--panel2);color:var(--dim);font-size:13px;width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-weight:700;flex:none;}
+  .lead{color:var(--dim);font-size:13.5px;margin:6px 0 18px;}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top;}
+  th{color:var(--faint);font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:600;}
+  th.neo,td.cn{border-left:1px solid var(--line);}
+  thead th.neo{color:var(--neo)} thead th.dc{color:var(--dc)}
+  tr td:first-child{color:var(--txt);font-weight:600;width:23%;}
+  td.cn{background:var(--neo-bg)} td.cd{background:var(--dc-bg)}
+  .win{font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;}
+  .win.neo{background:var(--neo-bg);color:var(--neo)}
+  .win.dc{background:var(--dc-bg);color:var(--dc)}
+  .win.tie{background:var(--panel2);color:var(--dim)}
+  .chk{color:var(--good);font-weight:700} .no{color:var(--bad)} .pt{color:var(--warn)}
+  .verdict{background:var(--panel2);border-left:3px solid var(--neo);border-radius:8px;padding:14px 18px;margin-top:18px;font-size:14px;}
+  .verdict.dc{border-left-color:var(--dc)}
+  .verdict b{color:var(--txt)}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:6px;}
+  .pill{border:1px solid var(--line);border-radius:12px;padding:18px 20px;}
+  .pill h3{font-size:15px;margin-bottom:2px;}
+  .pill .tag{font-size:11px;color:var(--faint);letter-spacing:.04em;}
+  .pill ul{list-style:none;margin-top:12px;font-size:13px;}
+  .pill li{padding:5px 0 5px 20px;position:relative;color:var(--dim);}
+  .pill li::before{content:"";position:absolute;left:2px;top:12px;width:6px;height:6px;border-radius:2px;}
+  .pill li.p::before{background:var(--good)} .pill li.c::before{background:var(--bad)}
+  .pill.cu{border-color:rgba(248,81,73,.4)} .pill.bu{border-color:rgba(63,185,80,.4)}
+  .pill.cu h3{color:#ff8a80} .pill.bu h3{color:#7ee787}
+  .flow{font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-top:14px;color:var(--dim);white-space:pre;overflow-x:auto;}
+  .flow .a{color:var(--neo)} .flow .b{color:var(--good)}
+  .takeaway{margin-top:14px;font-size:13.5px;color:var(--dim);}
+  .takeaway b{color:var(--txt)}
+  footer{color:var(--faint);font-size:11.5px;margin-top:28px;text-align:center;line-height:1.8;}
+  @media(max-width:720px){.cols{grid-template-columns:1fr}body{padding:20px 12px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">竞品分析卡片 · AI Agent 桌面应用</div>
+    <h1><span class="neo">Neo</span><span class="vs">vs</span><span class="dc">DeepChat</span></h1>
+    <div class="sub">编程 Agent（复刻 Claude Code）vs 多模型对话客户端（5.9k★）— MCP · Computer Use · Browser Use 三项能力对位</div>
+    <div class="meta">数据来源：Neo 源码（@modelcontextprotocol/sdk ^1.29.0）· DeepChat 官方 README/dev 分支 · arXiv 2511.19477 · 整理于 2026-06-09</div>
+  </header>
+
+  <!-- ============ 定调 ============ -->
+  <section>
+    <h2><span class="num">0</span>一句话定调</h2>
+    <div class="lead">产品形态决定了 MCP 的用法：Neo 把 MCP 当<b>运行时内核</b>，DeepChat 把 MCP 当<b>插件系统</b>。</div>
+    <table>
+      <thead><tr><th></th><th class="neo">Neo（Code Agent）</th><th class="dc">DeepChat</th></tr></thead>
+      <tbody>
+        <tr><td>产品本体</td><td class="cn">桌面 AI 编程 Agent</td><td class="cd">桌面多模型对话客户端</td></tr>
+        <tr><td>MCP 角色</td><td class="cn">能力底座，连内置工具都跑在 MCP 上</td><td class="cd">给对话外挂工具，增强而非核心</td></tr>
+        <tr><td>协议野心</td><td class="cn">专注做 MCP client</td><td class="cd">MCP client + 自身暴露为 MCP server + ACP</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ============ MCP 对比 ============ -->
+  <section>
+    <h2><span class="num">1</span>MCP 能力对比</h2>
+    <div class="lead">协议合规度打平；分野在「深 vs 广」。</div>
+    <table>
+      <thead><tr><th>维度</th><th class="neo">Neo</th><th class="dc">DeepChat</th><th>胜</th></tr></thead>
+      <tbody>
+        <tr><td>三大能力 Tools/Resources/Prompts</td><td class="cn"><span class="chk">✓</span> 全支持</td><td class="cd"><span class="chk">✓</span> 全支持</td><td><span class="win tie">平</span></td></tr>
+        <tr><td>传输协议</td><td class="cn">Stdio / SSE / HTTP-Streamable / In-Process</td><td class="cd">Stdio / SSE / HTTP-Streamable / inMemory</td><td><span class="win tie">平</span></td></tr>
+        <tr><td>配置作用域</td><td class="cn"><b>6 层</b> scope（含 project/local 团队共享），兼容 Claude Code 格式</td><td class="cd">全局配置为主，无项目级分层</td><td><span class="win neo">Neo</span></td></tr>
+        <tr><td>权限 / 审批</td><td class="cn">注解分级 + 规则快路径 + LLM 分类器 + <code>mcp</code> 专属权限</td><td class="cd">无文件/命令级权限体系</td><td><span class="win neo">Neo</span></td></tr>
+        <tr><td>健壮性特性</td><td class="cn">Elicitation / listChanged / 懒加载 / 会话过期重连</td><td class="cd">README 未提及</td><td><span class="win neo">Neo</span></td></tr>
+        <tr><td>内置 server</td><td class="cn">13 个（deepwiki、code-index、memory-kv、argus…）</td><td class="cd">inMemory 工具集（代码执行、联网、网页访问，开箱即用）</td><td><span class="win tie">各有侧重</span></td></tr>
+        <tr><td>反向暴露为 MCP</td><td class="cn"><span class="pt">○</span> 有但非重点</td><td class="cd"><b>核心卖点</b>：能力包装成 MCP 供任意模型用</td><td><span class="win dc">DeepChat</span></td></tr>
+        <tr><td>协议生态广度</td><td class="cn">专注 MCP</td><td class="cd">MCP + <b>ACP</b> + Skills + 自定义搜索源</td><td><span class="win dc">DeepChat</span></td></tr>
+        <tr><td>工具结果呈现</td><td class="cn">进 agent loop</td><td class="cd">自定义 UI 卡片渲染，省 token</td><td><span class="win dc">DeepChat</span></td></tr>
+      </tbody>
+    </table>
+    <div class="verdict"><b>Neo 把 MCP 做「深」</b>：scope 分层、权限刹车、长时运行健壮性 —— 都是自动改文件/执行命令的编程 Agent 刚需。</div>
+    <div class="verdict dc"><b>DeepChat 把 MCP 做「广」</b>：反向暴露 + ACP + UI 渲染 —— 服务于「模型无关」通用客户端的生态野心。</div>
+  </section>
+
+  <!-- ============ Computer Use 对比 ============ -->
+  <section>
+    <h2><span class="num">2</span>Computer Use 能力对比</h2>
+    <div class="lead">桌面 GUI 自动化 —— 截图/坐标操控整台机器。两家都有，但取向不同。</div>
+    <table>
+      <thead><tr><th>维度</th><th class="neo">Neo</th><th class="dc">DeepChat</th><th>胜</th></tr></thead>
+      <tbody>
+        <tr><td>来源</td><td class="cn">argus（源自 Anthropic Chicago）+ 内置 <code>computer_use</code></td><td class="cd"><b>vendor 自 trycua / cua.ai</b> 开源驱动，非自研</td><td><span class="win tie">都靠整合</span></td></tr>
+        <tr><td>工具粒度</td><td class="cn">argus <b>27 工具</b>（click 5 种/拖拽/键盘/批量/teach 教学）</td><td class="cd"><b>~30 工具</b>（含 set_value/page/zoom/replay 轨迹回放/agent cursor）</td><td><span class="win tie">平</span></td></tr>
+        <tr><td>OS 支持</td><td class="cn"><b>macOS + Windows</b>（Linux 不支持）</td><td class="cd"><b>仅 macOS</b>（platforms:[darwin]）</td><td><span class="win neo">Neo</span></td></tr>
+        <tr><td>交互策略</td><td class="cn">以<b>像素坐标</b>为主 + <code>coordSpace=image</code> 缩放 + AX 路径（可选）</td><td class="cd"><b>AX 可访问性树优先</b>：get_window_state 取元素索引→操作；像素是最后兜底</td><td><span class="win dc">DeepChat 更先进</span></td></tr>
+        <tr><td>降级阶梯</td><td class="cn">坐标 / 截图 AI 分析</td><td class="cd">AX 树 → Electron AX 强启 → <b>CDP DOM(9222)</b> → 截图 → zoom → 像素</td><td><span class="win dc">DeepChat</span></td></tr>
+        <tr><td>后台操作</td><td class="cn">macOS CGEvent <b>可后台</b>（无需前台）</td><td class="cd">前台 + helper app（DeepChat Computer Use.app）</td><td><span class="win neo">Neo</span></td></tr>
+        <tr><td>权限粒度</td><td class="cn">注解分级 + 规则/LLM 分类器</td><td class="cd"><b>per-tool ask/allow</b> 写死 plugin.json（读 allow·动作 ask）</td><td><span class="win tie">各有体系</span></td></tr>
+        <tr><td>分发/产品化</td><td class="cn">env 开关（<code>CODE_AGENT_ENABLE_ARGUS_MCP=1</code>），默认关</td><td class="cd"><b>签名官方 .dcplugin</b> + agent cursor 浮层 + 遥测</td><td><span class="win dc">DeepChat</span></td></tr>
+      </tbody>
+    </table>
+    <div class="verdict"><b>Neo</b>：<b>双平台 + 后台 CGEvent + 工具粒度细</b>，覆盖与工程纵深更强；但点击仍以像素坐标为主。</div>
+    <div class="verdict dc"><b>DeepChat</b>：mac 单平台，但<b>「AX 树优先取元素索引、像素仅兜底」的策略明显更先进</b>，且对 Electron/浏览器走 CDP DOM，封装成签名插件、产品化最好。</div>
+  </section>
+
+  <!-- ============ Browser Use 对比 ============ -->
+  <section>
+    <h2><span class="num">3</span>Browser Use 能力对比</h2>
+    <div class="lead">浏览器自动化 —— 这一项 Neo 明显领先。</div>
+    <table>
+      <thead><tr><th>维度</th><th class="neo">Neo</th><th class="dc">DeepChat</th><th>胜</th></tr></thead>
+      <tbody>
+        <tr><td>有无</td><td class="cn"><span class="chk">✓</span> 内置 <code>browser_action</code>（<b>25 动作</b>）+ 可选 Playwright/Puppeteer MCP</td><td class="cd"><span class="pt">部分</span>：inMemory 网页检索 + 应用内 BrowserPanel</td><td><span class="win neo">Neo</span></td></tr>
+        <tr><td>引擎</td><td class="cn">Playwright（Chromium）· 托管浏览器池 · CDP 远程</td><td class="cd">内置 web 访问 + UI 浏览面板</td><td><span class="win neo">Neo</span></td></tr>
+        <tr><td>交互方式</td><td class="cn"><b>browser-use 式</b>：<code>get_dom_snapshot</code> / <code>get_a11y_snapshot</code> / targetRef / smart_click（+可选截图兜底）</td><td class="cd"><b>无独立浏览器引擎</b>；靠 CUA 把浏览器当 mac App，必要时开 CDP(9222) 够 DOM</td><td><span class="win neo">Neo</span></td></tr>
+        <tr><td>内容获取</td><td class="cn">DOM 抽取 + HTML + 可访问性树 + 截图</td><td class="cd">web information retrieval（抓取/检索式）</td><td><span class="win neo">Neo</span></td></tr>
+        <tr><td>会话隔离</td><td class="cn">多 Agent 独立浏览器会话池 + storageState 导入导出</td><td class="cd">多会话并行（对话层，非浏览器自动化）</td><td><span class="win neo">Neo</span></td></tr>
+        <tr><td>默认启用</td><td class="cn"><span class="chk">✓</span> browser_action 默认开</td><td class="cd">web 检索开箱即用；交互自动化缺位</td><td><span class="win neo">Neo</span></td></tr>
+      </tbody>
+    </table>
+    <div class="verdict"><b>Neo 在 Browser Use 上是降维优势</b>：有专门的 Playwright 工具集，走「抽 DOM/a11y → targetRef 按元素操作」的 browser-use 正路（快、准、省 token），另保留截图兜底。</div>
+    <div class="verdict dc"><b>DeepChat 此项偏弱</b>：网页能力主要是「检索/抓取 + 让 CUA 把浏览器当普通桌面 App 点」，没有结构化的交互式浏览器自动化层。<span style="color:var(--faint)">（注：基于公开 README/commit，未排除闭源插件中另有实现）</span></div>
+  </section>
+
+  <!-- ============ 总览 + 启发 ============ -->
+  <section>
+    <h2><span class="num">4</span>三项能力总览 & 给 Neo 的启发</h2>
+    <table>
+      <thead><tr><th>能力</th><th class="neo">Neo</th><th class="dc">DeepChat</th></tr></thead>
+      <tbody>
+        <tr><td>MCP</td><td class="cn">做「深」：6 层 scope + 权限刹车 + 健壮性</td><td class="cd">做「广」：反向暴露 + ACP + UI 渲染</td></tr>
+        <tr><td>Computer Use</td><td class="cn">双平台 · 27 工具 · 后台 CGEvent · 像素为主</td><td class="cd">mac · trycua 驱动 · <b>AX 树优先策略更先进</b> · 插件化</td></tr>
+        <tr><td>Browser Use</td><td class="cn"><b>专用 Playwright 层，browser-use 正路</b></td><td class="cd">无独立引擎，靠 CUA+CDP 够 DOM（mac）</td></tr>
+      </tbody>
+    </table>
+    <div class="takeaway" style="margin-top:18px"><b>一句话：</b>Neo 是<b>「双引擎全栈 + 双平台」</b>——computer use（覆盖整机）与 browser use（专用 Playwright，DOM 式）都齐，覆盖面与浏览器自动化领先；DeepChat <b>聚焦 mac computer use，靠整合 trycua 把「AX 树优先」策略做得比 Neo 更聪明、产品化更好，但浏览器自动化与跨平台是其短板</b>。</div>
+    <table style="margin-top:18px">
+      <thead><tr><th>给 Neo 的动作</th><th>来源</th><th>优先级</th></tr></thead>
+      <tbody>
+        <tr><td>CUA 引入「优先 element-index、稀疏 UI 才降级视觉」混合策略</td><td>抄 DeepChat 的点击策略，提准降本</td><td><span class="win neo">高</span></td></tr>
+        <tr><td>把 computer use 封装成签名插件、按需分发</td><td>抄 DeepChat 的产品化封装</td><td><span class="win dc">中</span></td></tr>
+        <tr><td>反向暴露 Neo 能力为 MCP server</td><td>抄 DeepChat 的「模型无关」杠杆</td><td><span class="win dc">中</span></td></tr>
+        <tr><td>守住 Browser Use + scope + 权限三大护城河</td><td>这是相对 DeepChat 的结构性优势</td><td><span class="win neo">守</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>
+    Neo = Code Agent（内部代号）· 本卡片用于竞品分析与产品决策，非对外发布<br>
+    MCP = Model Context Protocol · ACP = Agent Client Protocol · CUA = Computer-Use Agent
+  </footer>
+</div>
+</body>
+</html>

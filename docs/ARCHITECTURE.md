@@ -1,5 +1,6 @@
 # Agent Neo / Code Agent - 架构设计文档
 
+> 版本: 9.21 (9.20 + 2026-06-09 Computer Use 底座迁移 argus → trycua/cua-driver（ADR-021：stdio MCP 接入 + 桌面走 cua/浏览器走 Playwright 分流 + 重签名内嵌 Agent Neo Computer Use.app + cua 工具人话文案/真实 app 图标差异化渲染 + Accessibility 必需/录屏可选）)
 > 版本: 9.20 (9.19 + 2026-06-08 经验沉淀重做（ADR-020：废弃 telemetry n-gram，统一 LLM 反思路 + 命名禁用清单）、Telemetry 可诊断性 P1+P2+P3（版本指纹 + 本地全量诊断旁表/诊断包/脱敏/失败 session 上报 + Langfuse 默认开 opt-out）、卸载/权限三层修复（safety 措辞 + rm 分级松绑 + 挂起权限死锁）、06-07 下午 provider/session/vision 稳定性收尾)
 > 日期: 2026-06-08
 > 作者: Lin Chen
@@ -65,6 +66,8 @@
 | [017](./decisions/017-plugin-boundary-three-layers.md) | Plugin 边界三层划分 | accepted |
 | [018](./decisions/018-mastertask-sunset.md) | MasterTask sunset | accepted |
 | [019](./decisions/019-auto-mode-scope.md) | 自动模式（Auto Mode）的能力边界与取舍 | accepted |
+| [020](./decisions/020-experience-distillation-redesign.md) | 经验沉淀重做（废弃 telemetry n-gram，统一 LLM 反思路） | accepted |
+| [021](./decisions/021-computer-use-cua-driver.md) | Computer Use 底座 argus → cua-driver | accepted |
 
 ---
 
@@ -407,6 +410,7 @@ code-agent/
 | Chat-view 新会话首屏 | 新 session 首屏从"示例 prompt 卡"改为写邮件/排日程、做方案/文档/PPT、调研/对比、代码改动四类具体任务入口 | `src/renderer/components/ChatView.tsx` |
 | ~~Eval Center Review Queue~~（v0.16.79 移除）| `SessionListView` 把待评 session 集中分桶，标注 replay 完整度与异常 case；行点击进详情；fatal inference error 熔断；DB 去重 | 整套 evalCenter UI + `testRunner.ts` 已随 evaluation 子系统删除 |
 | Computer Surface `locate_role+targetApp` | 走 macOS background AX 直连指定 app 控件树，避免唤起前台；`type` / `key` 没有 background target 时降级前台键盘事件，bridge 显式 warn；文档 Computer / computer_use 别名映射 + 截图可见性规则 | `src/main/tools/computerUse.ts`、`src/main/tools/desktop.ts`、`docs/guides/computer-use.md` |
+| Computer Use 底座 = cua-driver（ADR-021） | **桌面 App 走 cua-driver（stdio MCP，AX 树优先 + 双平台后台），浏览器走 Playwright `browser_action`，按任务类型分流不做运行时 fallback**。`CODE_AGENT_ENABLE_CUA=1` 灰度开（默认关，argus 保留一周期回退）。bundle 内重签 `Agent Neo Computer Use.app`（`com.agentneo.computeruse`）；对话页人话文案+真实 app 图标由 `cuaNarration` 反查 AX 树；默认 `capture_mode=ax`（Accessibility 必需、录屏可选） | `src/main/mcp/mcpDefaultServers.ts`、`src/main/mcp/mcpToolRegistry.ts`、`src/main/tools/vision/cuaNarration.ts`、`src/renderer/utils/computerUseWorkbench.ts`、`scripts/fetch-cua-driver.sh`、`docs/proposals/computer-use-cua-migration.md` |
 | CLI config 单源 | `CLIConfigService` 与 `ConfigService` 统一为同一份 config source，避免 CLI 模式与 Tauri 模式读到不同默认值 | `src/cli/config.ts`、`src/main/config/*`（PR #88） |
 
 **架构边界澄清**：

@@ -4,6 +4,9 @@
 
 import type { ToolDefinition, ToolResult } from '../../shared/contract';
 
+/** cua-driver (trycua) computer-use server 标识。配置与权限映射共用，避免魔法字符串。 */
+export const CUA_DRIVER_SERVER_NAME = 'cua-driver';
+
 // ----------------------------------------------------------------------------
 // Server Configuration Types
 // ----------------------------------------------------------------------------

@@ -45,16 +45,27 @@ export const manifest: PluginManifest = {
 };
 
 export async function activate(api: PluginAPI): Promise<void> {
-  // opt-out 前缀：保留原工具名 `Computer` / `computer_use` / `screenshot` /
-  // `gui_agent` / `ocr_search`，与历史 prompt / cache / eval baseline 兼容
-  api.registerToolModule(computerModule, { prefixWithPluginId: false });
-  api.registerToolModule(computerUseModule, { prefixWithPluginId: false });
+  // cua-driver 启用时，桌面控制统一走 cua（AX 树优先 + 后台不抢焦点）。
+  // 旧的原生桌面控制工具（Computer / computer_use / gui_agent）此时**不注册**，
+  // 否则模型会把两套引擎混用：旧 computer_use 后台 AX 失败会降级抢前台、且其
+  // 截图验证走智谱视觉模型易 403。符合提案 §1.2「禁止两个 computer-use 引擎
+  // 运行时互切」。cua 关闭时保留旧工具作回退。
+  // screenshot / ocr_search 是通用视觉工具（非桌面控制冲突项），始终保留。
+  const cuaEnabled = process.env.CODE_AGENT_ENABLE_CUA === '1';
+
+  // opt-out 前缀：保留原工具名，与历史 prompt / cache / eval baseline 兼容
+  if (!cuaEnabled) {
+    api.registerToolModule(computerModule, { prefixWithPluginId: false });
+    api.registerToolModule(computerUseModule, { prefixWithPluginId: false });
+    api.registerToolModule(guiAgentModule, { prefixWithPluginId: false });
+  }
   api.registerToolModule(screenshotModule, { prefixWithPluginId: false });
-  api.registerToolModule(guiAgentModule, { prefixWithPluginId: false });
   api.registerToolModule(ocrSearchModule, { prefixWithPluginId: false });
   api.log(
     'info',
-    `builtin.computerUse activated (tools: ${computerModule.schema.name}, ${computerUseModule.schema.name}, ${screenshotModule.schema.name}, ${guiAgentModule.schema.name}, ${ocrSearchModule.schema.name})`,
+    cuaEnabled
+      ? `builtin.computerUse activated (cua mode: 仅 ${screenshotModule.schema.name} / ${ocrSearchModule.schema.name}，桌面控制让位 cua-driver)`
+      : `builtin.computerUse activated (tools: ${computerModule.schema.name}, ${computerUseModule.schema.name}, ${screenshotModule.schema.name}, ${guiAgentModule.schema.name}, ${ocrSearchModule.schema.name})`,
   );
 }
 

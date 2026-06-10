@@ -7,6 +7,7 @@ import {
   RefreshCw,
   CheckCircle,
   AlertCircle,
+  KeyRound,
   Loader2,
   Plug,
   PlugZap,
@@ -43,6 +44,11 @@ import {
   resolveWorkbenchCapabilityFromSources,
   type WorkbenchCapabilityTarget,
 } from '../../../../utils/workbenchCapabilitySheet';
+import {
+  getMcpAuthenticationRecoveryMessage,
+  getMcpAuthenticationRecoveryShortHint,
+  isMcpAuthenticationFailure,
+} from '../../../../utils/mcpRecovery';
 
 const logger = createLogger('MCPSettings');
 
@@ -65,7 +71,7 @@ export const MCPSettings: React.FC = () => {
     runQuickAction,
   } = useWorkbenchCapabilityQuickActionRunner();
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [reconnectingServer, setReconnectingServer] = useState<string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editorInitialConfig, setEditorInitialConfig] = useState<Partial<McpServerConfig> | undefined>(undefined);
@@ -189,6 +195,10 @@ export const MCPSettings: React.FC = () => {
       setReconnectingServer(null);
     }
   };
+
+  const handleReauthorize = useCallback((server: WorkbenchMcpRegistryItem) => {
+    setMessage({ type: 'info', text: getMcpAuthenticationRecoveryMessage(server) });
+  }, []);
 
   const handleAddServer = useCallback(async (config: McpServerConfig) => {
     if (!isAdmin) return;
@@ -400,11 +410,17 @@ export const MCPSettings: React.FC = () => {
           {message && (
             <div
               className={`mx-3 mt-3 flex items-center gap-2 rounded-md px-3 py-2 ${
-                message.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                message.type === 'success'
+                  ? 'bg-green-500/10 text-green-400'
+                  : message.type === 'info'
+                    ? 'bg-sky-500/10 text-sky-300'
+                    : 'bg-red-500/10 text-red-400'
               }`}
             >
               {message.type === 'success' ? (
                 <CheckCircle className="w-4 h-4" />
+              ) : message.type === 'info' ? (
+                <KeyRound className="w-4 h-4" />
               ) : (
                 <AlertCircle className="w-4 h-4" />
               )}
@@ -457,6 +473,7 @@ export const MCPSettings: React.FC = () => {
                   mcpServers.map((server) => {
                     const serverStatus = getWorkbenchCapabilityStatusPresentation(server, { locale: 'zh' });
                     const statusClass = getStatusBadgeClass(server.lifecycle.connectionState);
+                    const requiresReauthorization = isMcpAuthenticationFailure(server);
 
                     return (
                       <tr
@@ -490,13 +507,27 @@ export const MCPSettings: React.FC = () => {
                         </td>
                         <td className="max-w-[220px] px-3 py-3 align-middle">
                           {server.error && isAdmin ? (
-                            <span className="block truncate text-red-400" title={server.error}>
-                              {server.error}
-                            </span>
+                            <div>
+                              <span className="block truncate text-red-400" title={server.error}>
+                                {server.error}
+                              </span>
+                              {requiresReauthorization && (
+                                <span className="mt-1 block text-[11px] text-amber-300">
+                                  {getMcpAuthenticationRecoveryShortHint(server)}
+                                </span>
+                              )}
+                            </div>
                           ) : server.blockedReason && isAdmin ? (
-                            <span className="block truncate text-yellow-300" title={server.blockedReason.detail}>
-                              {server.blockedReason.detail}
-                            </span>
+                            <div>
+                              <span className="block truncate text-yellow-300" title={server.blockedReason.detail}>
+                                {server.blockedReason.detail}
+                              </span>
+                              {requiresReauthorization && (
+                                <span className="mt-1 block text-[11px] text-amber-300">
+                                  {getMcpAuthenticationRecoveryShortHint(server)}
+                                </span>
+                              )}
+                            </div>
                           ) : (server.error || server.blockedReason) ? (
                             <span className="text-zinc-500">管理员可查看</span>
                           ) : (
@@ -510,15 +541,26 @@ export const MCPSettings: React.FC = () => {
                               onClick={() => openCapabilitySheet(server)}
                             />
                             {isAdmin && server.enabled && !server.available && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleReconnect(server.id)}
-                                loading={reconnectingServer === server.id}
-                                leftIcon={<RefreshCw className="w-3 h-3" />}
-                              >
-                                重连
-                              </Button>
+                              requiresReauthorization ? (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => handleReauthorize(server)}
+                                  leftIcon={<KeyRound className="w-3 h-3" />}
+                                >
+                                  重新授权
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleReconnect(server.id)}
+                                  loading={reconnectingServer === server.id}
+                                  leftIcon={<RefreshCw className="w-3 h-3" />}
+                                >
+                                  重连
+                                </Button>
+                              )
                             )}
                             {isAdmin && (
                               <Button

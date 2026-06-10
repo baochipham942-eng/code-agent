@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Agent Neo Computer Use (重签后的 cua-driver) 的 entitlements。
+  关键项 disable-library-validation：cua-driver 是第三方 Rust 二进制，用 Neo 自有
+  Developer ID 重签后 team id 变了，hardened runtime 默认的 Library Validation 会
+  在运行时 SIGKILL（实测 exit 137）。关掉 LV 后正常运行。详见 fetch-cua-driver.sh。
+  注：computer-use 的 Accessibility/Screen Recording 是 TCC 运行时授权，不靠 entitlement。
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>

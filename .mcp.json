@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "code-agent": {
+      "command": "node",
+      "args": [
+        "/Users/linchen/.code-agent/bin/mcp-server.js"
+      ]
+    }
+  }
+}

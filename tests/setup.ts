@@ -9,6 +9,12 @@ import { vi } from 'vitest';
 // keytar 为 Electron headers 编译，在系统 Node.js 中 SIGSEGV (exit 139)
 process.env.CODE_AGENT_CLI_MODE = '1';
 
+// 浏览器冒烟（game-runtime / visual smoke）测试态强制走 Playwright bundled headless shell。
+// 'auto' 在装有 Chrome 的机器上解析为 system-chrome-cdp，而系统 Chrome 即使 --headless=new
+// 启动时仍会向 macOS Dock 短暂注册应用，跑测试批量 spawn 会让整排 Dock 图标反复跳动。
+// 显式设置 provider 的测试（如 gameArtifactValidator 的 skip 路径用例）自行覆写，不受影响。
+process.env.CODE_AGENT_BROWSER_PROVIDER ||= 'playwright-bundled';
+
 // electron: vitest 跑在纯 Node.js 环境，没有 Electron runtime
 // ToolRegistry 导入链中 5 个工具文件直接 import electron (app/BrowserWindow/ipcMain 等)
 // 必须在 setup 阶段提供完整 mock，否则 worker 进程直接崩

@@ -1,0 +1,89 @@
+#!/usr/bin/env node
+// ============================================================================
+// 从 src-tauri/tauri.conf.json 派生指定平台的 bundle 覆盖配置。
+// ============================================================================
+// 背景：base conf 是 macOS 形态（resources 含 Swift sidecar / CUA .app /
+//   darwin native 路径，targets=["app"]）。Windows 构建需要：
+//   - 剔除 macOS 专属资源（缺文件 tauri build 直接失败，x64 先例 v0.16.89）
+//   - native 路径换 win32（node-pty prebuilds / sharp，libvips 在 win32 静态
+//     打进 sharp 包无独立条目）
+//   - rtk/uv → .exe；targets → nsis（installMode=currentUser，否则每次自动
+//     更新弹 UAC，windows-support.md §3.3 决策）
+//
+// 用法：
+//   node scripts/tauri-platform-config.mjs win32-x64 [--out <path>]
+//   cargo tauri build --config <path>
+//
+// 说明：
+//   - Tauri --config 对数组是「替换」语义，覆盖给全量 resources，从 base 派生
+//     避免两份配置漂移（同 tauri-arch-config.mjs 先例）。
+//   - darwin 双架构走 scripts/tauri-arch-config.mjs（不动现有 CI）。
+// ============================================================================
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const target = process.argv[2];
+if (target !== 'win32-x64') {
+  console.error('用法: tauri-platform-config.mjs <win32-x64> [--out <path>]（darwin 用 tauri-arch-config.mjs）');
+  process.exit(1);
+}
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const confPath = path.join(root, 'src-tauri', 'tauri.conf.json');
+const conf = JSON.parse(fs.readFileSync(confPath, 'utf8'));
+const resources = Array.isArray(conf.bundle?.resources) ? conf.bundle.resources : [];
+
+// macOS 专属资源：Windows bundle 必须剔除（按"平台不支持→优雅降级"决策，
+// 对应能力的代码层降级见 windows-support.md §1.5）
+const MACOS_ONLY_PREFIXES = [
+  '../scripts/system-audio-capture',
+  '../scripts/vision-ocr',
+  '../scripts/vision-tagger',
+  '../scripts/Agent Neo Computer Use.app',
+  '../scripts/pii/setup-gliner-pii.sh', // PII 安装链 MVP 不带（.sh 无法在 win 执行）
+  '../node_modules/@img/sharp-libvips-darwin-arm64', // win32 libvips 静态打进 sharp 包
+];
+
+function mapEntry(entry) {
+  if (MACOS_ONLY_PREFIXES.some((prefix) => entry.startsWith(prefix))) return null;
+  return entry
+    .replaceAll('node-pty/prebuilds/darwin-arm64', 'node-pty/prebuilds/win32-x64')
+    .replaceAll('@img/sharp-darwin-arm64', '@img/sharp-win32-x64')
+    // win32 sharp 包的 lib/ 同时含 .node 与 libvips DLL，必须整目录打包
+    .replace('@img/sharp-win32-x64/lib/**/*.node', '@img/sharp-win32-x64/lib/**/*')
+    .replace(/^\.\.\/scripts\/rtk$/, '../scripts/rtk.exe')
+    .replace(/^\.\.\/scripts\/uv$/, '../scripts/uv.exe');
+}
+
+const overlay = {
+  bundle: {
+    targets: ['nsis'],
+    // updater 走 NSIS exe 本体 + minisign .sig（无需 Authenticode，
+    // windows-support.md §0 核验结论）
+    createUpdaterArtifacts: true,
+    icon: [
+      'icons/32x32.png',
+      'icons/128x128.png',
+      'icons/128x128@2x.png',
+      'icons/icon.ico',
+    ],
+    resources: resources.map(mapEntry).filter(Boolean),
+    windows: {
+      nsis: {
+        // perUser 安装：装到 %LOCALAPPDATA%，安装与每次自动更新都无 UAC
+        installMode: 'currentUser',
+      },
+    },
+  },
+};
+
+const json = `${JSON.stringify(overlay, null, 2)}\n`;
+const outIdx = process.argv.indexOf('--out');
+if (outIdx >= 0 && process.argv[outIdx + 1]) {
+  fs.writeFileSync(process.argv[outIdx + 1], json);
+  console.error(`wrote ${target} tauri config overlay → ${process.argv[outIdx + 1]}`);
+} else {
+  process.stdout.write(json);
+}

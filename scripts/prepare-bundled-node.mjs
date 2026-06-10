@@ -9,7 +9,11 @@ import { fileURLToPath } from 'node:url';
 
 const rootDir = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const outputRoot = path.join(rootDir, 'dist', 'bundled-node');
-const outputBin = path.join(outputRoot, 'bin', 'node');
+const targetPlatform = process.env.BUNDLED_NODE_PLATFORM || process.platform;
+// 官方 win 包是顶层 node.exe（无 bin/ 目录），darwin 是 bin/node + lib/*.dylib
+const outputBin = targetPlatform === 'win32'
+  ? path.join(outputRoot, 'node.exe')
+  : path.join(outputRoot, 'bin', 'node');
 const metadataPath = path.join(outputRoot, 'agent-neo-bundled-node.json');
 
 function normalizeVersion(value) {
@@ -21,8 +25,14 @@ function normalizeVersion(value) {
 }
 
 function targetTuple() {
-  const platform = process.env.BUNDLED_NODE_PLATFORM || process.platform;
+  const platform = targetPlatform;
   const arch = process.env.BUNDLED_NODE_ARCH || process.arch;
+  if (platform === 'win32') {
+    if (arch !== 'x64') {
+      throw new Error(`Unsupported bundled Node arch for Windows release: ${arch}`);
+    }
+    return { platform, arch };
+  }
   if (platform !== 'darwin') {
     return null;
   }
@@ -50,6 +60,7 @@ function runBundledNodeInfo(nodePath) {
 }
 
 async function ensureBundledNodePermissions() {
+  if (targetPlatform === 'win32') return; // NTFS 无可执行位，find 在 Windows 是另一个工具
   if (existsSync(outputBin)) {
     await chmod(outputBin, 0o755);
   }
@@ -158,31 +169,34 @@ async function copyProvidedNodeSharedLibraries(sourcePath) {
 }
 
 async function downloadOfficialNode(expected) {
-  const distName = `node-v${expected.version}-${expected.platform}-${expected.arch}`;
+  const isWindows = expected.platform === 'win32';
+  // 官方资产名：darwin → node-vX-darwin-<arch>.tar.gz，win32 → node-vX-win-x64.zip
+  const distName = `node-v${expected.version}-${isWindows ? 'win' : expected.platform}-${expected.arch}`;
+  const archiveExt = isWindows ? 'zip' : 'tar.gz';
   const url = process.env.BUNDLED_NODE_URL
-    || `https://nodejs.org/dist/v${expected.version}/${distName}.tar.gz`;
+    || `https://nodejs.org/dist/v${expected.version}/${distName}.${archiveExt}`;
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'agent-neo-node-'));
-  const archivePath = path.join(tempDir, `${distName}.tar.gz`);
+  const archivePath = path.join(tempDir, `${distName}.${archiveExt}`);
   const extractDir = path.join(tempDir, 'extract');
 
   try {
     mkdirSync(extractDir, { recursive: true });
     await download(url, archivePath);
-    const archiveEntries = execFileSync('tar', ['-tzf', archivePath], { encoding: 'utf8' })
+    // -tf/-xf 自动识别压缩格式：GNU tar 读 tar.gz，Windows 系统 tar（bsdtar）读 zip
+    const archiveEntries = execFileSync('tar', ['-tf', archivePath], { encoding: 'utf8' })
       .split('\n')
       .filter(Boolean);
-    const requiredEntries = new Set([
-      `${distName}/bin/node`,
-      `${distName}/LICENSE`,
-    ]);
+    const requiredEntries = new Set(isWindows
+      ? [`${distName}/node.exe`, `${distName}/LICENSE`]
+      : [`${distName}/bin/node`, `${distName}/LICENSE`]);
     for (const entry of archiveEntries) {
-      if (entry.startsWith(`${distName}/lib/`) && /\/libnode\.\d+\.dylib$/.test(entry)) {
+      if (!isWindows && entry.startsWith(`${distName}/lib/`) && /\/libnode\.\d+\.dylib$/.test(entry)) {
         requiredEntries.add(entry);
       }
     }
 
     execFileSync('tar', [
-      '-xzf',
+      '-xf',
       archivePath,
       '-C',
       extractDir,
@@ -190,18 +204,24 @@ async function downloadOfficialNode(expected) {
     ], { stdio: 'inherit' });
 
     rmSync(outputRoot, { recursive: true, force: true });
-    mkdirSync(path.join(outputRoot, 'bin'), { recursive: true });
-    await cp(path.join(extractDir, distName, 'bin', 'node'), outputBin, { force: true });
+    mkdirSync(path.dirname(outputBin), { recursive: true });
+    await cp(
+      path.join(extractDir, distName, isWindows ? 'node.exe' : path.join('bin', 'node')),
+      outputBin,
+      { force: true },
+    );
     await cp(path.join(extractDir, distName, 'LICENSE'), path.join(outputRoot, 'LICENSE'), { force: true });
     const extractedLibDir = path.join(extractDir, distName, 'lib');
-    if (existsSync(extractedLibDir)) {
+    if (!isWindows && existsSync(extractedLibDir)) {
       await cp(extractedLibDir, path.join(outputRoot, 'lib'), { recursive: true, force: true });
       const libDir = path.join(outputRoot, 'lib');
       for (const fileName of execFileSync('find', [libDir, '-type', 'f'], { encoding: 'utf8' }).split('\n').filter(Boolean)) {
         await chmod(fileName, 0o644);
       }
     }
-    await chmod(outputBin, 0o755);
+    if (!isWindows) {
+      await chmod(outputBin, 0o755);
+    }
     return runBundledNodeInfo(outputBin);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
@@ -211,7 +231,7 @@ async function downloadOfficialNode(expected) {
 async function main() {
   const target = targetTuple();
   if (!target) {
-    console.log('[prepare-bundled-node] skipped: bundled Node is only prepared for macOS app resources');
+    console.log('[prepare-bundled-node] skipped: bundled Node is only prepared for macOS/Windows app resources');
     return;
   }
 

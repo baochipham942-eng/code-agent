@@ -1195,6 +1195,14 @@ fn cleanup_native_desktop_storage(
     }
 }
 
+// 非 macOS：依赖的 frontmost_app_triplet/browser_context 等全是 macos cfg 函数，
+// 返回 Err 走调用方既有降级（IPC 报不支持 / 采集循环跳过），与本文件截图函数同风格
+#[cfg(not(target_os = "macos"))]
+fn capture_frontmost_context_snapshot() -> Result<FrontmostContextSnapshot, String> {
+    Err("Desktop activity capture is only implemented on macOS.".to_string())
+}
+
+#[cfg(target_os = "macos")]
 fn capture_frontmost_context_snapshot() -> Result<FrontmostContextSnapshot, String> {
     let (app_name, bundle_id, window_title) = frontmost_app_triplet()?;
     // Now that we have a stable signing certificate, per-app Automation permissions persist.

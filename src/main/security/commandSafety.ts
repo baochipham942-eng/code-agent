@@ -10,8 +10,38 @@
 // 原 CommandMonitor 的危险模式已合并到此文件。
 
 import { createLogger } from '../services/infra/logger';
+import {
+  checkWindowsBlockRules,
+  evaluateWindowsDanger,
+  isKnownSafeWindowsCommand,
+} from './shellRules/windowsRules';
 
 const logger = createLogger('CommandSafety');
+
+// ----------------------------------------------------------------------------
+// Shell 维度（windows-support.md §3.2：共享分级框架 + 平台规则包）
+// ----------------------------------------------------------------------------
+
+export type ShellKind = 'posix' | 'powershell';
+
+/** win32 上 bash 工具走 PowerShell（platformShell.ts），其余平台 POSIX shell */
+export function defaultShellKind(): ShellKind {
+  return process.platform === 'win32' ? 'powershell' : 'posix';
+}
+
+export type ShellSafetyMode = 'strict' | 'lenient';
+
+/**
+ * 安全模式（已决策 2026-06-10）：
+ * - strict：未识别命令走用户确认（fail-closed）
+ * - lenient：硬毙清单照拦，非硬毙放行（朋友测试包——当前唯一 win32 形态——默认）
+ * 正式 Windows 分发前把 win32 默认翻回 strict。
+ */
+export function getShellSafetyMode(): ShellSafetyMode {
+  const env = process.env.CODE_AGENT_SHELL_SAFETY_MODE;
+  if (env === 'strict' || env === 'lenient') return env;
+  return process.platform === 'win32' ? 'lenient' : 'strict';
+}
 
 // ----------------------------------------------------------------------------
 // 无条件安全的命令 — 只读操作，不修改任何状态
@@ -302,18 +332,26 @@ function hasOutputRedirection(command: string): boolean {
  *
  * 安全命令：不修改文件系统、不发起网络请求、不修改系统状态
  *
- * @param command - 完整的 bash 命令字符串
+ * @param command - 完整的 shell 命令字符串
+ * @param shell - 命令将运行的 shell（默认按平台推断）
  * @returns true 如果命令已知安全，可跳过用户审批
  */
-export function isKnownSafeCommand(command: string): boolean {
+export function isKnownSafeCommand(command: string, shell: ShellKind = defaultShellKind()): boolean {
   // 0. 空命令不安全
   if (!command?.trim()) {
     return false;
   }
 
-  // 1. 检查输出重定向 — 有重定向就不安全
+  // 1. 检查输出重定向 — 有重定向就不安全（'>' 语义 POSIX/PowerShell 一致）
   if (hasOutputRedirection(command)) {
     return false;
+  }
+
+  // PowerShell：白名单按规范 cmdlet 名判定（别名在 windowsRules 规范化层消化）；
+  // 子表达式 $() 可隐藏任意调用，安全分类一律视为不安全
+  if (shell === 'powershell') {
+    if (command.includes('$(') || command.includes('`')) return false;
+    return isKnownSafeWindowsCommand(command, UNCONDITIONALLY_SAFE);
   }
 
   // 2. 拆分复合命令
@@ -349,8 +387,8 @@ export function isKnownSafeCommand(command: string): boolean {
  *
  * @returns 'safe' | 'conditional' | 'unknown' | 'dangerous'
  */
-export function classifyCommand(command: string): 'safe' | 'conditional' | 'unknown' {
-  if (isKnownSafeCommand(command)) return 'safe';
+export function classifyCommand(command: string, shell: ShellKind = defaultShellKind()): 'safe' | 'conditional' | 'unknown' {
+  if (isKnownSafeCommand(command, shell)) return 'safe';
 
   // 检查是否可能是条件安全但参数不对
   const parsed = parseCommand(command.trim());
@@ -447,11 +485,30 @@ const SENSITIVE_ENV_PATTERNS = [
 /**
  * 验证命令安全性（危险命令检测）
  *
+ * posix 模式始终运行（Windows 上覆盖 Git-Bash / 显式 bash 场景）；
+ * shell=powershell 时叠加 Windows 规则包（硬毙 + 分级）。
+ *
  * @returns ValidationResult — critical 级别命令会被拦截（allowed=false）
  */
-export function validateCommand(command: string): ValidationResult {
+export function validateCommand(command: string, shell: ShellKind = defaultShellKind()): ValidationResult {
   if (!command?.trim()) {
     return { allowed: true, riskLevel: 'safe', securityFlags: [] };
+  }
+
+  // Windows 硬毙清单（任何安全模式下都拦）
+  if (shell === 'powershell') {
+    const winBlock = checkWindowsBlockRules(command);
+    if (winBlock.blocked) {
+      logger.warn('Blocked command detected (windows rules)', {
+        command: command.substring(0, 100), flag: winBlock.flag,
+      });
+      return {
+        allowed: false,
+        reason: winBlock.reason,
+        riskLevel: 'critical',
+        securityFlags: winBlock.flag ? [winBlock.flag] : [],
+      };
+    }
   }
 
   // 绝对拦截
@@ -476,6 +533,18 @@ export function validateCommand(command: string): ValidationResult {
         highestRisk = p.riskLevel;
         blockReason = p.reason;
         suggestion = p.suggestion;
+      }
+    }
+  }
+
+  // Windows 分级危险清单（与 posix 模式取最高风险合并）
+  if (shell === 'powershell') {
+    for (const finding of evaluateWindowsDanger(command)) {
+      securityFlags.push(finding.flag);
+      if (riskOrder.indexOf(finding.riskLevel) > riskOrder.indexOf(highestRisk)) {
+        highestRisk = finding.riskLevel;
+        blockReason = finding.reason;
+        suggestion = finding.suggestion;
       }
     }
   }

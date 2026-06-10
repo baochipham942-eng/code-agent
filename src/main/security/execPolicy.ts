@@ -42,6 +42,9 @@ interface ExecPolicyFile {
 const BANNED_PREFIXES = new Set([
   'python', 'python3', 'node', 'bash', 'sh', 'zsh',
   'sudo', 'su', 'eval', 'exec',
+  // Windows shell 入口与任意执行（windows-support.md §3.2）
+  'powershell', 'powershell.exe', 'pwsh', 'pwsh.exe',
+  'cmd', 'cmd.exe', 'iex', 'invoke-expression',
 ]);
 
 // ----------------------------------------------------------------------------

@@ -123,3 +123,38 @@ jobs:
           path: ${{ runner.temp }}/Agent-Neo-*-win-x64-TEST-setup.exe*
           retention-days: 14
           if-no-files-found: error
+
+      # 国内可达下载链接：测试机（如天翼云电脑）连不上 GitHub，但 Aliyun OSS
+      # （oss-cn-shanghai）国内直连。推到 wintest/ 测试路径（非 stable，不碰生产分发），
+      # 打印 https URL，云电脑 Chrome 直接下，免文件中转。
+      # 仅在配齐 OSS secrets 时执行；缺则跳过（仍有 GH artifact 兜底）。
+      - name: Upload installer to Aliyun OSS (China-reachable test URL)
+        env:
+          ALIYUN_OSS_ACCESS_KEY_ID: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_ID }}
+          ALIYUN_OSS_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_SECRET }}
+          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+          ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
+        run: |
+          if [[ -z "${ALIYUN_OSS_BUCKET}" ]]; then
+            echo "OSS secrets 未配置，跳过（用 GH artifact 兜底）"
+            exit 0
+          fi
+          curl -sL -o /tmp/ossutil.zip "https://gosspublic.alicdn.com/ossutil/v2/2.1.2/ossutil-2.1.2-windows-amd64.zip"
+          "${SYSTEMROOT}/System32/tar.exe" -xf "$(cygpath -w /tmp/ossutil.zip)" -C "$(cygpath -w /tmp)"
+          OSSUTIL="$(ls /tmp/ossutil-*/ossutil.exe | head -1)"
+          cat > ~/.ossutilconfig <<EOF
+          [default]
+          accessKeyID=${ALIYUN_OSS_ACCESS_KEY_ID}
+          accessKeySecret=${ALIYUN_OSS_ACCESS_KEY_SECRET}
+          region=${ALIYUN_OSS_REGION}
+          endpoint=oss-${ALIYUN_OSS_REGION}.aliyuncs.com
+          EOF
+          VERSION="$(node -p "require('./package.json').version")"
+          EXE="Agent-Neo-${VERSION}-win-x64-TEST-setup.exe"
+          KEY="wintest/${EXE}"
+          "$OSSUTIL" cp -f --acl public-read "${RUNNER_TEMP}/${EXE}" "oss://${ALIYUN_OSS_BUCKET}/${KEY}"
+          URL="https://${ALIYUN_OSS_BUCKET}.oss-${ALIYUN_OSS_REGION}.aliyuncs.com/${KEY}"
+          echo "国内可达下载链接: ${URL}"
+          echo "## Windows 测试包（国内直连）" >> "${GITHUB_STEP_SUMMARY}"
+          echo "" >> "${GITHUB_STEP_SUMMARY}"
+          echo "\`${URL}\`" >> "${GITHUB_STEP_SUMMARY}"

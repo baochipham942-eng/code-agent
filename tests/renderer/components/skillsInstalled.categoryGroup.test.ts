@@ -73,7 +73,7 @@ describe('groupBuiltinSkillsByCategory', () => {
 describe('内置 skill 分类回填（builtinSkills.ts SSoT）', () => {
   const builtins = getBuiltinSkills();
 
-  it('全部 17 个内置 skill 都有合法 category（无 SKILL_CATEGORIES 外的标签）', () => {
+  it('全部内置 skill 都有合法 category（无 SKILL_CATEGORIES 外的标签）', () => {
     const validIds = new Set(SKILL_CATEGORIES.map((c) => c.id));
     const missing = builtins.filter((s) => {
       const cat = s.metadata?.category;
@@ -89,7 +89,7 @@ describe('内置 skill 分类回填（builtinSkills.ts SSoT）', () => {
     expect(counts).toMatchObject({
       'docs-office': 2, // xlsx, meeting-summary
       'data-analysis': 2, // data-cleaning, data-analysis-helper
-      research: 3, // literature-review, paper-distillation, research-monitor
+      research: 4, // literature-review, paper-distillation, research-monitor, opencli-search
       automation: 6, // computer-housekeeper, contract-review, image-ocr-search, photo-archive, create-role, edit-role
       development: 6, // commit, review, test, explain, refactor, docker
     });

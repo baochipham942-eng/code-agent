@@ -1,5 +1,10 @@
 name: Build and Release
 
+# 双架构发版（2026-06-10 起）：arm64（macos-latest）+ x64（macos-15-intel）矩阵并行构建，
+# publish 任务合并两架构 updater manifest（darwin-aarch64 + darwin-x86_64 单 manifest，
+# 见 docs/architecture/intel-x64-support.md §3 方案 A），统一发 GitHub Release + 提升 stable。
+# 防覆盖：所有产物（tar.gz/sig/dmg/manifest）按架构命名，stable 提升只在 publish 做一次。
+
 on:
   push:
     tags:
@@ -10,8 +15,20 @@ permissions:
   actions: read
 
 jobs:
-  release-mac:
-    runs-on: macos-latest
+  build-mac:
+    strategy:
+      # 任一架构失败立即取消另一侧：publish 需要双产物，半套发布无意义
+      fail-fast: true
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+            swift_arch: arm64
+          - arch: x64
+            # macos-15-intel 是 GitHub 当前可用的 Intel runner（macos-13 已退役）
+            runner: macos-15-intel
+            swift_arch: x86_64
+    runs-on: ${{ matrix.runner }}
     env:
       # Gate for the runtime-assets publishing steps. Empty (no secret) => those steps
       # skip, which matches the safe default that managed runtime-asset publishing is not
@@ -34,33 +51,46 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          key: ${{ matrix.arch }}
 
+      # postinstall 跑 rebuild-native:system，在各自 runner 上原生 rebuild
+      # better-sqlite3 / keytar 等 C++ native 模块（规避交叉编译坑）。
       - name: Install dependencies
         run: npm ci
 
       # 用预编译二进制装 tauri-cli，避免 `cargo install` 从源码编译（实测 ~9m40s）。
       # 版本与原来一致(2.10.1)；taiki-e/install-action 拉官方 release 预编译包，~20s。
-      - name: Install Tauri CLI
+      - name: Install Tauri CLI (arm64, prebuilt)
+        if: matrix.arch == 'arm64'
         uses: taiki-e/install-action@v2
         with:
           tool: tauri-cli@2.10.1
 
+      - name: Install Tauri CLI (x64, from source)
+        # taiki-e 预编译包在 macos-15-intel 上装成了 arm64（Bad CPU type, os error 86），
+        # 改用 cargo install 从源码编 x86_64，对任意 runner arch 都正确（慢但稳）。
+        if: matrix.arch == 'x64'
+        run: cargo install tauri-cli@2.10.1 --locked
+
       - name: Build native helpers + fetch sidecars (Tauri bundle resources)
         # tauri.conf.json bundles three Swift Mach-O helpers (system-audio-capture, vision-ocr,
-        # vision-tagger) AND two fetched sidecar binaries (rtk, uv). All five are build artifacts
-        # NOT committed to the repo. A fresh CI checkout must produce every one or `tauri build`
-        # fails with "resource path doesn't exist" — this is exactly why v0.16.89 (2026-06-01)
-        # failed: rtk/uv were added to bundle resources after the last green run but this step
-        # was never updated to fetch them. fetch-rtk/fetch-uv pull from GitHub releases; the CI
-        # runner reaches GitHub directly so no proxy is needed (unlike local dev).
+        # vision-tagger) AND fetched sidecar binaries (rtk, uv) AND the resigned CUA app. All are
+        # build artifacts NOT committed to the repo. A fresh CI checkout must produce every one or
+        # `tauri build` fails with "resource path doesn't exist" — this is exactly why v0.16.89
+        # (2026-06-01) failed: rtk/uv were added to bundle resources after the last green run but
+        # this step was never updated to fetch them.
+        # SWIFT_BUILD_ARCH 按矩阵显式指定（x64 同时把 audio 地板降到 macOS 13.0，Intel 可用区间）；
+        # fetch-rtk/uv 按 runner 的 uname -m 自动拉对应架构资产。
+        env:
+          SWIFT_BUILD_ARCH: ${{ matrix.swift_arch }}
         run: |
           bash scripts/build-audio-capture.sh
           bash scripts/build-vision-ocr.sh
           bash scripts/build-vision-tagger.sh
           bash scripts/fetch-rtk.sh
           bash scripts/fetch-uv.sh
-          # CUA 重签产物（6ebdaec9a 进 bundle resources）：从发版 OSS 拉预构建 + sha256
-          # 锁定。源 app 上游无公开 release，CI 不依赖本机源（避免复刻 v0.16.89 rtk/uv 之坑）
+          # CUA 重签产物（universal）：从发版 OSS 拉预构建 + sha256 锁定。
+          # 源 app 上游无公开 release，CI 不依赖本机源（避免复刻 v0.16.89 rtk/uv 之坑）
           CUA_FETCH_PREBUILT=1 bash scripts/fetch-cua-driver.sh
 
       - name: Import Developer ID certificate
@@ -112,11 +142,17 @@ jobs:
         # needs the .app to rebuild a clean (no-AppleDouble) updater tarball. Cleanup is a local
         # convenience and is unnecessary on an ephemeral CI runner.
         run: |
+          BUNDLE_ARGS=()
+          if [[ "${{ matrix.arch }}" == "x64" ]]; then
+            # 派生 x64 资源覆盖（node-pty/sharp/libvips → darwin-x64），透传给 cargo tauri build
+            node scripts/tauri-arch-config.mjs x64 --out "${RUNNER_TEMP}/tauri.x64.json"
+            BUNDLE_ARGS+=(--config "${RUNNER_TEMP}/tauri.x64.json")
+          fi
           npm run rebuild-native:system
           npm run build
           npm run tauri:prebuild-cleanup
           npm run release:security-scan
-          bash scripts/tauri-release-bundle.sh
+          bash scripts/tauri-release-bundle.sh "${BUNDLE_ARGS[@]}"
           npm run release:notarize-macos
           npm run release:verify-macos
 
@@ -125,16 +161,14 @@ jobs:
         # 崩（命令重复注册），烧掉一轮 ~25min 公证才在装机时暴露。本 step 用 runner 预装的
         # Google Chrome + playwright-core headless 启动已构建的 webServer 首页，渲染出"出错了"
         # 或主壳未挂载就 fail —— 让 CI 绿真正等于"可装"，崩的版本绝不会被上传 OSS / 发 Release。
-        # 放在公证之后、上传之前：拦住坏版本发布；后续可前移到 cargo build 之前以省公证时间。
+        # 双架构都跑：x64 侧能拦住 native 模块（better-sqlite3/keytar）编错架构导致的启动崩。
         run: node scripts/release-renderer-probe.mjs 8182
 
       - name: Verify renderer hot-update release gate
         # A formal app release must not publish before the renderer hot-update
-        # surface has caught up to the same tag. The renderer-bundle workflow is
-        # also triggered by v* tags; this bounded retry waits for that publish
-        # chain and blocks app artifact upload if Vercel rollout policy or OSS
-        # latest/release-record are still stale.
-        if: ${{ !contains(github.ref_name, '-') }}
+        # surface has caught up to the same tag. Renderer bundle 是纯 JS、架构无关，
+        # 门禁只需跑一次 → 固定放 arm64 侧。
+        if: ${{ matrix.arch == 'arm64' && !contains(github.ref_name, '-') }}
         env:
           CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS }}
           CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY }}
@@ -162,18 +196,25 @@ jobs:
       # 2) BSD tar 默认含 ._AppleDouble metadata，Tauri updater unpack 时
       #    `iter().skip(1)` 把它当顶层 .app 处理 → Operation not permitted
       # 用 COPYFILE_DISABLE=1 + 全 nested 签名 + stapled 的 .app 重新打包。
+      # 文件名直接用最终 OSS key 名（arm64 不带后缀保持老客户端 manifest 兼容；x64 带 -x64），
+      # 这样 tauri-update-manifest 既按文件名推对架构、URL 也无需再 sed 修空格转义。
       - name: Repack updater archive (clean AppleDouble + post-notarize state)
         working-directory: src-tauri/target/release/bundle/macos
         run: |
-          rm -f "Agent Neo.app.tar.gz" "Agent Neo.app.tar.gz.sig"
-          COPYFILE_DISABLE=1 tar -czf "Agent Neo.app.tar.gz" "Agent Neo.app"
-          ls -la "Agent Neo.app.tar.gz"
+          ARCHIVE_NAME="Agent.Neo.app.tar.gz"
+          if [[ "${{ matrix.arch }}" == "x64" ]]; then
+            ARCHIVE_NAME="Agent.Neo-x64.app.tar.gz"
+          fi
+          rm -f "Agent Neo.app.tar.gz" "Agent Neo.app.tar.gz.sig" "${ARCHIVE_NAME}" "${ARCHIVE_NAME}.sig"
+          COPYFILE_DISABLE=1 tar -czf "${ARCHIVE_NAME}" "Agent Neo.app"
+          ls -la "${ARCHIVE_NAME}"
           # verify no AppleDouble dotfiles
-          if tar -tzf "Agent Neo.app.tar.gz" | grep -qE '(^|/)\._'; then
+          if tar -tzf "${ARCHIVE_NAME}" | grep -qE '(^|/)\._'; then
             echo "[FAIL] tar still contains AppleDouble (._) entries" >&2
-            tar -tzf "Agent Neo.app.tar.gz" | grep -E '(^|/)\._' >&2
+            tar -tzf "${ARCHIVE_NAME}" | grep -E '(^|/)\._' >&2
             exit 1
           fi
+          echo "ARCHIVE_NAME=${ARCHIVE_NAME}" >> "${GITHUB_ENV}"
 
       - name: Re-sign repacked tar.gz with Tauri updater key
         env:
@@ -190,18 +231,34 @@ jobs:
           chmod 600 "${PRIV_KEY_PATH}"
           cargo tauri signer sign \
             --private-key-path "${PRIV_KEY_PATH}" \
-            "src-tauri/target/release/bundle/macos/Agent Neo.app.tar.gz"
+            "src-tauri/target/release/bundle/macos/${ARCHIVE_NAME}"
           rm -f "${PRIV_KEY_PATH}"
 
-      - name: Install ossutil (Aliyun OSS CLI)
+      - name: Generate per-arch updater manifest (points to OSS)
+        env:
+          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+          ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
         run: |
-          curl -sL -o /tmp/ossutil.zip "https://gosspublic.alicdn.com/ossutil/v2/2.1.2/ossutil-2.1.2-mac-arm64.zip"
+          # latest.json url 走 OSS（国内秒下），不走 GitHub release（国内 9 KB/s）。
+          # 本步产出单架构 manifest 片段（latest-<arch>.json），publish 任务合并双架构。
+          ARTIFACT_BASE_URL="https://${ALIYUN_OSS_BUCKET}.oss-${ALIYUN_OSS_REGION}.aliyuncs.com/${GITHUB_REF_NAME}"
+          npm run tauri:update-manifest -- --base-url "${ARTIFACT_BASE_URL}"
+          mv src-tauri/target/release/bundle/latest.json \
+             "src-tauri/target/release/bundle/latest-${{ matrix.arch }}.json"
+          cat "src-tauri/target/release/bundle/latest-${{ matrix.arch }}.json" | head -20
+
+      - name: Install ossutil (Aliyun OSS CLI)
+        # zip 按 runner 架构选：arm64 → mac-arm64，Intel → mac-amd64（写死 arm64 会 Bad CPU type）
+        run: |
+          OSS_ARCH="mac-arm64"
+          if [[ "$(uname -m)" == "x86_64" ]]; then OSS_ARCH="mac-amd64"; fi
+          curl -sL -o /tmp/ossutil.zip "https://gosspublic.alicdn.com/ossutil/v2/2.1.2/ossutil-2.1.2-${OSS_ARCH}.zip"
           unzip -o /tmp/ossutil.zip -d /tmp/ossutil
           sudo mv /tmp/ossutil/ossutil-*/ossutil /usr/local/bin/ossutil
           chmod +x /usr/local/bin/ossutil
           ossutil version
 
-      - name: Upload tar.gz + sig to Aliyun OSS (Shanghai)
+      - name: Upload tar.gz + sig + dmg to Aliyun OSS (versioned, per-arch keys)
         env:
           ALIYUN_OSS_ACCESS_KEY_ID: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_ID }}
           ALIYUN_OSS_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_SECRET }}
@@ -218,24 +275,17 @@ jobs:
           chmod 600 ~/.ossutilconfig
 
           VERSION="${GITHUB_REF_NAME#v}"
-          ossutil cp -f "src-tauri/target/release/bundle/macos/Agent Neo.app.tar.gz" \
-            "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/Agent.Neo.app.tar.gz"
-          ossutil cp -f "src-tauri/target/release/bundle/macos/Agent Neo.app.tar.gz.sig" \
-            "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/Agent.Neo.app.tar.gz.sig"
+          ossutil cp -f "src-tauri/target/release/bundle/macos/${ARCHIVE_NAME}" \
+            "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/${ARCHIVE_NAME}"
+          ossutil cp -f "src-tauri/target/release/bundle/macos/${ARCHIVE_NAME}.sig" \
+            "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/${ARCHIVE_NAME}.sig"
 
-      - name: Generate updater manifest (points to OSS)
-        env:
-          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
-          ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
-        run: |
-          # latest.json url 走 OSS（国内秒下），不走 GitHub release（国内 9 KB/s）
-          ARTIFACT_BASE_URL="https://${ALIYUN_OSS_BUCKET}.oss-${ALIYUN_OSS_REGION}.aliyuncs.com/${GITHUB_REF_NAME}"
-          npm run tauri:update-manifest -- --base-url "${ARTIFACT_BASE_URL}"
-          # manifest 默认 url-encode 空格 (Agent%20Neo)，但我们 OSS key 用点号
-          # (Agent.Neo)，所以 fix 一下避免 404
-          sed -i '' 's|/Agent%20Neo.app.tar.gz|/Agent.Neo.app.tar.gz|g' \
-            src-tauri/target/release/bundle/latest.json
-          cat src-tauri/target/release/bundle/latest.json | head -20
+          # dmg 此前只进 GitHub Release；私有仓库匿名下不了，in-app updater 需从 OSS 取，故也传一份。
+          DMG_SRC="$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -1)"
+          DMG_NAME="Agent-Neo-${VERSION}-${{ matrix.arch }}.dmg"
+          cp "${DMG_SRC}" "${RUNNER_TEMP}/${DMG_NAME}"
+          ossutil cp -f "${RUNNER_TEMP}/${DMG_NAME}" \
+            "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/${DMG_NAME}"
 
       - name: Build and upload runtime assets
         # Managed runtime-asset publishing is OFF by default and must be opted into
@@ -245,7 +295,9 @@ jobs:
         # silently flip on a publish chain clients have never exercised). When the var
         # is true, build-runtime-assets.mjs signs the manifest (C1) and fails closed
         # without CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY.
-        if: ${{ vars.ENABLE_RUNTIME_ASSETS_PUBLISH == 'true' }}
+        # 仅 arm64：VAD onnxruntime 等 runtime assets x64 不适配（intel-x64-support.md 决策），
+        # x64 端依赖既有 missing-runtime 优雅降级。
+        if: ${{ matrix.arch == 'arm64' && vars.ENABLE_RUNTIME_ASSETS_PUBLISH == 'true' }}
         env:
           ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
           ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
@@ -284,7 +336,7 @@ jobs:
           echo "RUNTIME_ASSETS_MANIFEST_SHA256=${RUNTIME_ASSETS_MANIFEST_SHA256}" >> "${GITHUB_ENV}"
 
       - name: Verify published runtime assets
-        if: ${{ vars.ENABLE_RUNTIME_ASSETS_PUBLISH == 'true' }}
+        if: ${{ matrix.arch == 'arm64' && vars.ENABLE_RUNTIME_ASSETS_PUBLISH == 'true' }}
         env:
           CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS }}
           CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY }}
@@ -298,17 +350,75 @@ jobs:
             --expected-platform darwin-arm64 \
             --min-assets 1
 
+      - name: Stage release assets for publish job
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          STAGE="${RUNNER_TEMP}/release-assets"
+          mkdir -p "${STAGE}"
+          cp "src-tauri/target/release/bundle/macos/${ARCHIVE_NAME}" "${STAGE}/"
+          cp "src-tauri/target/release/bundle/macos/${ARCHIVE_NAME}.sig" "${STAGE}/"
+          cp "src-tauri/target/release/bundle/latest-${{ matrix.arch }}.json" "${STAGE}/"
+          cp "${RUNNER_TEMP}/Agent-Neo-${VERSION}-${{ matrix.arch }}.dmg" "${STAGE}/"
+          # runtime assets（仅 arm64 且开启发布时存在）
+          if [[ -d "src-tauri/target/release/runtime-assets" ]]; then
+            cp src-tauri/target/release/runtime-assets/*.json "${STAGE}/" 2>/dev/null || true
+            cp src-tauri/target/release/runtime-assets/*.sha256 "${STAGE}/" 2>/dev/null || true
+            cp src-tauri/target/release/runtime-assets/*.tar.gz "${STAGE}/" 2>/dev/null || true
+          fi
+          ls -la "${STAGE}"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-${{ matrix.arch }}
+          path: ${{ runner.temp }}/release-assets/
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    needs: build-mac
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Download build artifacts (both arches)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-assets-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Merge per-arch updater manifests (single latest.json, dual platforms)
+        # 方案 A（intel-x64-support.md §3）：单 manifest 同时含 darwin-aarch64 + darwin-x86_64，
+        # Tauri updater 客户端按自身架构选键。version/notes/pub_date 取 arm64 侧。
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const arm = JSON.parse(fs.readFileSync('release-assets/latest-arm64.json', 'utf8'));
+          const x64 = JSON.parse(fs.readFileSync('release-assets/latest-x64.json', 'utf8'));
+          const merged = { ...arm, platforms: { ...arm.platforms, ...x64.platforms } };
+          const required = ['darwin-aarch64', 'darwin-x86_64'];
+          for (const key of required) {
+            if (!merged.platforms[key]?.url || !merged.platforms[key]?.signature) {
+              console.error(`[FAIL] merged latest.json missing platform key: ${key}`);
+              process.exit(1);
+            }
+          }
+          fs.writeFileSync('release-assets/latest.json', JSON.stringify(merged, null, 2) + '\n');
+          console.log('merged platforms:', Object.keys(merged.platforms).join(', '));
+          NODE
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/*.app.tar.gz
-            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
-            src-tauri/target/release/bundle/latest.json
-            src-tauri/target/release/runtime-assets/*.json
-            src-tauri/target/release/runtime-assets/*.sha256
-            src-tauri/target/release/runtime-assets/*.tar.gz
+            release-assets/*.dmg
+            release-assets/*.app.tar.gz
+            release-assets/*.app.tar.gz.sig
+            release-assets/latest.json
+            release-assets/runtime-assets-manifest-*.json
+            release-assets/runtime-assets-manifest-*.sha256
           generate_release_notes: true
           draft: false
           # Tags with a pre-release suffix (e.g. v0.16.80-citest1) are marked prerelease and
@@ -319,16 +429,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload dmg to Aliyun OSS (versioned)
-        # dmg 此前只进 GitHub Release；私有仓库匿名下不了，in-app updater 需从 OSS 取，故也传一份。
-        # ~/.ossutilconfig 由前面 "Upload tar.gz + sig to OSS" 步骤写好，同 job 持久，无需重写。
-        env:
-          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+      - name: Install ossutil (Aliyun OSS CLI)
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          DMG_SRC="$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -1)"
-          ossutil cp -f "${DMG_SRC}" \
-            "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/Agent-Neo-${VERSION}-arm64.dmg"
+          curl -sL -o /tmp/ossutil.zip "https://gosspublic.alicdn.com/ossutil/v2/2.1.2/ossutil-2.1.2-mac-arm64.zip"
+          unzip -o /tmp/ossutil.zip -d /tmp/ossutil
+          sudo mv /tmp/ossutil/ossutil-*/ossutil /usr/local/bin/ossutil
+          chmod +x /usr/local/bin/ossutil
+          ossutil version
 
       - name: Promote to stable channel (latest.json + release.json)
         # 提升 stable = 把全体用户推到新版（Tauri updater 端点读 stable/latest.json；
@@ -337,24 +444,42 @@ jobs:
         # 与上面 make_latest/prerelease 同一道闸，替代历来手动 bump OSS stable 的人工确认。
         if: ${{ !contains(github.ref_name, '-') }}
         env:
+          ALIYUN_OSS_ACCESS_KEY_ID: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_ID }}
+          ALIYUN_OSS_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_SECRET }}
           ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
           ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
+          ENABLE_RUNTIME_ASSETS_PUBLISH: ${{ vars.ENABLE_RUNTIME_ASSETS_PUBLISH }}
         run: |
+          cat > ~/.ossutilconfig <<EOF
+          [default]
+          accessKeyID=${ALIYUN_OSS_ACCESS_KEY_ID}
+          accessKeySecret=${ALIYUN_OSS_ACCESS_KEY_SECRET}
+          region=${ALIYUN_OSS_REGION}
+          endpoint=oss-${ALIYUN_OSS_REGION}.aliyuncs.com
+          EOF
+          chmod 600 ~/.ossutilconfig
+
           VERSION="${GITHUB_REF_NAME#v}"
-          # Tauri 内置 updater：把已指向 OSS v<ver> 的 manifest 提升为 stable
-          ossutil cp -f src-tauri/target/release/bundle/latest.json \
+          BASE_URL="https://${ALIYUN_OSS_BUCKET}.oss-${ALIYUN_OSS_REGION}.aliyuncs.com"
+
+          # Tauri 内置 updater：合并后的双架构 manifest 提升为 stable
+          ossutil cp -f release-assets/latest.json \
             "oss://${ALIYUN_OSS_BUCKET}/stable/latest.json"
-          # in-app updater：生成 GitHub-release 形状（dmg 指向 OSS）并提升为 stable
-          DMG_URL="https://${ALIYUN_OSS_BUCKET}.oss-${ALIYUN_OSS_REGION}.aliyuncs.com/v${VERSION}/Agent-Neo-${VERSION}-arm64.dmg"
+
+          # in-app updater：生成 GitHub-release 形状（dmg 指向 OSS，arm64 + x64 双资产）
+          DMG_URL="${BASE_URL}/v${VERSION}/Agent-Neo-${VERSION}-arm64.dmg"
+          DMG_URL_X64="${BASE_URL}/v${VERSION}/Agent-Neo-${VERSION}-x64.dmg"
           RUNTIME_ARGS=()
-          if [[ -n "${RUNTIME_ASSETS_MANIFEST_URL:-}" && -n "${RUNTIME_ASSETS_MANIFEST_SHA_URL:-}" ]]; then
-            RUNTIME_ARGS+=("--runtime-assets-manifest-url" "${RUNTIME_ASSETS_MANIFEST_URL}")
-            RUNTIME_ARGS+=("--runtime-assets-manifest-sha-url" "${RUNTIME_ASSETS_MANIFEST_SHA_URL}")
+          if [[ "${ENABLE_RUNTIME_ASSETS_PUBLISH:-}" == "true" ]]; then
+            # URL 形状确定（arm64 build job 已上传并 verify 过），按约定重建，免跨 job 传输出
+            RUNTIME_ARGS+=("--runtime-assets-manifest-url" "${BASE_URL}/${GITHUB_REF_NAME}/runtime-assets/runtime-assets-manifest-darwin-arm64.json")
+            RUNTIME_ARGS+=("--runtime-assets-manifest-sha-url" "${BASE_URL}/${GITHUB_REF_NAME}/runtime-assets/runtime-assets-manifest-darwin-arm64.sha256")
           fi
           node scripts/build-stable-release-json.mjs \
             --version "${VERSION}" \
             --tag "${GITHUB_REF_NAME}" \
             --dmg-url "${DMG_URL}" \
+            --dmg-url-x64 "${DMG_URL_X64}" \
             --html-url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}" \
             "${RUNTIME_ARGS[@]}" \
             --output "${RUNNER_TEMP}/stable-release.json"
@@ -367,6 +492,8 @@ jobs:
           CI_PUBLISH_TOKEN: ${{ secrets.CI_PUBLISH_TOKEN }}
           REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
+          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+          ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
         run: |
           if [[ -z "${CLOUD_API_URL}" || -z "${CI_PUBLISH_TOKEN}" ]]; then
             echo "Cloud update publish skipped: CLOUD_API_URL or CI_PUBLISH_TOKEN is not set"
@@ -376,21 +503,23 @@ jobs:
           export VERSION="${TAG#v}"
           node - <<'NODE'
           const fs = require('node:fs');
-          const manifest = JSON.parse(fs.readFileSync('src-tauri/target/release/bundle/latest.json', 'utf8'));
+          const manifest = JSON.parse(fs.readFileSync('release-assets/latest.json', 'utf8'));
           const payload = {
             version: process.env.VERSION,
             platform: 'darwin',
             downloadUrl: `https://github.com/${process.env.REPO}/releases/tag/${process.env.TAG}`,
             releaseNotes: manifest.notes,
           };
-          const runtimeAssetsManifestUrl = process.env.RUNTIME_ASSETS_MANIFEST_URL;
-          const runtimeAssetsManifestSha256 =
-            process.env.RUNTIME_ASSETS_MANIFEST_SHA256?.match(/[a-f0-9]{64}/i)?.[0]?.toLowerCase();
-          if (runtimeAssetsManifestUrl && runtimeAssetsManifestSha256) {
-            payload.runtimeAssets = {
-              manifestUrl: runtimeAssetsManifestUrl,
-              manifestSha256: runtimeAssetsManifestSha256,
-            };
+          // runtime assets（arm64 build job 发布时其 manifest+sha 已随制品带过来）
+          const shaFile = 'release-assets/runtime-assets-manifest-darwin-arm64.sha256';
+          if (fs.existsSync(shaFile)) {
+            const sha = fs.readFileSync(shaFile, 'utf8').match(/[a-f0-9]{64}/i)?.[0]?.toLowerCase();
+            if (sha) {
+              payload.runtimeAssets = {
+                manifestUrl: `https://${process.env.ALIYUN_OSS_BUCKET}.oss-${process.env.ALIYUN_OSS_REGION}.aliyuncs.com/${process.env.TAG}/runtime-assets/runtime-assets-manifest-darwin-arm64.json`,
+                manifestSha256: sha,
+              };
+            }
           }
           fs.writeFileSync('/tmp/code-agent-update-payload.json', JSON.stringify(payload));
           NODE

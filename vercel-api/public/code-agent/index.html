@@ -1260,8 +1260,8 @@
               <p class="lead">
                 装到本机，把浏览器、桌面、本地文件和长任务放进同一个工作环境。
               </p>
-              <p class="download-footnote">
-                Apple Silicon 与 Intel mac 均可用；Windows / Linux 版本计划中。
+              <p class="download-footnote" id="download-platform-note">
+                Apple Silicon 与 Intel mac 均可用；Windows 测试版小范围放量中，Linux 计划中。
               </p>
             </div>
 
@@ -1277,6 +1277,20 @@
                   <a class="button ghost" id="download-x64" href="/api/update?action=download&amp;platform=darwin&amp;channel=stable&amp;arch=x64">⬇ Intel 芯片</a>
                 </div>
                 <p class="download-footnote">不确定芯片？点屏幕左上角 <strong></strong> → 关于本机 查看</p>
+              </article>
+
+              <!-- Windows 测试版卡片：默认隐藏，页面加载时探测 win32 资产是否已发布
+                   （未发布时 /api/update action=download 返回 404 → 保持隐藏，不出死链） -->
+              <article class="download-card" id="download-card-windows" hidden>
+                <div>
+                  <div class="card-label">windows</div>
+                  <h3>Agent Neo for Windows（测试版）</h3>
+                  <p class="meta">x64 · 未购买代码签名证书，安装时 SmartScreen 点「更多信息 → 仍要运行」</p>
+                </div>
+                <div class="download-arch-buttons">
+                  <a class="button ghost" id="download-win-x64" href="/api/update?action=download&amp;platform=win32&amp;channel=stable&amp;arch=x64">⬇ Windows x64</a>
+                </div>
+                <p class="download-footnote">若 Defender 拦截，选「允许在设备上」——小范围测试包的已知行为</p>
               </article>
             </div>
           </div>
@@ -1321,6 +1335,20 @@
         if (detectArch() === 'x64') {
           highlight(x64, arm);
         }
+      })();
+
+      // Windows 测试版卡片：探测 win32 资产是否已发布（manual redirect：302/opaqueredirect
+      // = 资产在 → 显示；404 = 未发布 → 保持隐藏）。探测失败一律保持隐藏，不出死链。
+      (function () {
+        var card = document.getElementById('download-card-windows');
+        if (!card || !window.fetch) return;
+        fetch('/api/update?action=download&platform=win32&channel=stable&arch=x64', { method: 'GET', redirect: 'manual' })
+          .then(function (res) {
+            if (res.status !== 404 && res.status !== 500) {
+              card.hidden = false;
+            }
+          })
+          .catch(function () { /* 保持隐藏 */ });
       })();
     </script>
   </body>

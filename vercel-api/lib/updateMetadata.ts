@@ -93,13 +93,18 @@ function releasePageUrl(repo: string, tagName: string, htmlUrl?: string): string
 
 export type NormalizedArch = 'arm64' | 'x64';
 
-// 归一化客户端架构入参。缺省/未知一律按 arm64（历史只发 arm64，保持向后兼容）。
-export function normalizeArch(value: string | null | undefined): NormalizedArch {
+// 归一化客户端架构入参。缺省/未知按平台取默认：
+// darwin → arm64（历史只发 arm64，保持老客户端向后兼容）；
+// win32 → x64（Windows 仅发 x64，且无不带 arch 的历史客户端）。
+export function normalizeArch(value: string | null | undefined, platform?: string): NormalizedArch {
   const v = (value ?? '').trim().toLowerCase();
   if (v === 'x64' || v === 'x86_64' || v === 'x86-64' || v === 'amd64' || v === 'intel') {
     return 'x64';
   }
-  return 'arm64';
+  if (v === 'arm64' || v === 'aarch64') {
+    return 'arm64';
+  }
+  return (platform ?? '').toLowerCase() === 'win32' ? 'x64' : 'arm64';
 }
 
 function archTokens(arch: NormalizedArch): string[] {
@@ -400,7 +405,7 @@ function sendRedirect(res: ControlPlaneResponseLike, location: string): void {
 async function handleCheck(req: ControlPlaneRequestLike, res: ControlPlaneResponseLike): Promise<void> {
   const currentVersion = firstQueryValue(req.query?.version) ?? '0.0.0';
   const platform = firstQueryValue(req.query?.platform) ?? 'darwin';
-  const arch = normalizeArch(firstQueryValue(req.query?.arch));
+  const arch = normalizeArch(firstQueryValue(req.query?.arch), platform);
   const channel = normalizeChannel(firstQueryValue(req.query?.channel) ?? process.env.UPDATE_RELEASE_CHANNEL);
   const repo = process.env.UPDATE_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || 'baochipham942-eng/code-agent';
   const release = await fetchLatestRelease(repo);
@@ -424,7 +429,7 @@ async function handleCheck(req: ControlPlaneRequestLike, res: ControlPlaneRespon
 
 async function handleDownload(req: ControlPlaneRequestLike, res: ControlPlaneResponseLike): Promise<void> {
   const platform = firstQueryValue(req.query?.platform) ?? 'darwin';
-  const arch = normalizeArch(firstQueryValue(req.query?.arch));
+  const arch = normalizeArch(firstQueryValue(req.query?.arch), platform);
   const channel = normalizeChannel(firstQueryValue(req.query?.channel) ?? process.env.UPDATE_RELEASE_CHANNEL);
   const repo = process.env.UPDATE_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || 'baochipham942-eng/code-agent';
   const policy = releasePolicyFromEnv(channel);

@@ -172,31 +172,33 @@ commandSafety.ts（框架层，保留）
 ## 4. 实施 checklist（按依赖排序）
 
 **P0 安全与路径地基（macOS 上即可完成，全部带单测）**
-- [ ] `permissionPresets.ts:152` 等 4 处路径归属判断改 `path.isAbsolute` + `path.relative` 体系（含大小写不敏感比较——NTFS 不区分大小写）
-- [ ] 7 处 `/tmp` → `os.tmpdir()`；5 处 `process.env.HOME` → `os.homedir()`
-- [ ] `backgroundTasks.ts:203` `spawn('bash')` → 平台 shell 常量；进程组 kill 加 win32 路径（taskkill /T 或 tree-kill）
-- [ ] commandSafety 平台规则包重构（§3.2）：框架 platforms 维度 + posixRules 搬入 + windowsRules 新写 + 归一化层 + strict/lenient 模式开关（朋友包默认 lenient）
-- [ ] `execPolicy.ts:40-44` BANNED_PREFIXES 补 powershell/pwsh/cmd/iex
-- [ ] `windowsCommandSafety.test.ts` + 现有 45+ 用例 shell 参数化回归 + eval set Windows 子集
+- [x] `permissionPresets.ts` 等路径归属判断改 `path.relative` 体系（含 NTFS 大小写不敏感）；附带堵了 `runtimeAssetInstaller` 归档反斜杠/盘符条目的 Windows 解压逃逸（盘点时漏的真实洞）
+- [x] 7 处 `/tmp` → `os.tmpdir()`；11 处 `process.env.HOME` → `os.homedir()`（实改比盘点多）
+- [x] `backgroundTasks` spawn('bash') → platformShell（win32 PowerShell）；killProcessTree（win32 taskkill /T，POSIX 原语义零改动）
+- [x] commandSafety 平台规则包（shellRules/windowsRules.ts：结构化解析+别名/参数归一+硬毙/分级）+ strict/lenient 开关（win32 默认 lenient，env 可覆盖）
+- [x] execPolicy BANNED_PREFIXES 补 powershell/pwsh/cmd/iex
+- [x] `windowsCommandSafety.test.ts` 51 用例（别名/缩写/cmd 形态/嵌套包裹变体爆破）；eval set Windows 子集后续随真实样本回填
 
 **P0 打包链（依赖地基完成）**
-- [ ] `prepare-bundled-node.mjs` 加 win32 分支（.zip 解压、node.exe 布局、元数据校验已泛化）
-- [ ] `fetch-rtk.sh` / `fetch-uv.sh` 加 windows-msvc 资产分支 + 实拉 sha256 锁定
-- [ ] `tauri-platform-config.mjs`（剔 mac 资源 + win32 路径替换）+ `tauri.conf.json` Windows/NSIS 段（installMode: currentUser）
-- [ ] `src-tauri/src/main.rs` node 解析 cfg(windows) 分支（node.exe、Program Files 候选路径）
-- [ ] ptyExecutor：pwsh 探测 + ConPTY 显式配置 + UTF-8 输出编码注入
+- [x] `prepare-bundled-node.mjs` win32 分支（.zip / node.exe 顶层布局）
+- [x] `fetch-rtk.sh` / `fetch-uv.sh` windows-msvc 分支 + sha256 实拉锁定（macOS 交叉实测通过，uv zip 与官方 .sha256 一致）
+- [x] `tauri-platform-config.mjs`（剔 mac 资源 + win32 路径 + NSIS currentUser + updater pubkey 注入；base tauri.conf.json 零改动）
+- [x] `src-tauri/src/main.rs` cfg(windows)（node.exe 候选 + Program Files + CREATE_NO_WINDOW），cargo check 通过
+- [x] ptyExecutor：pwsh 探测（platformShell 共享）+ useConpty 显式 + UTF-8 编码注入（5.1 地板决策）
 
 **P1 CI（先试验后生产，复刻 x64 节奏）**
-- [ ] `build-windows-test.yml`（仅 workflow_dispatch，windows-latest，产 unsigned NSIS artifact，不碰 OSS/Release）
-- [ ] `verify-windows-release.(sh|mjs)`：PE 架构检查 + bundle 资源齐全 + better-sqlite3/keytar/node-pty/sharp 加载冒烟
-- [ ] renderer 启动 smoke probe 复用（`release-renderer-probe.mjs`，平台无关应直接可跑，验证之）
-- [ ] 真机验证文件占用三场景：renderer 热更新 rename active / 日志 rotate / DB 打开时更新替换
+- [x] `build-windows-test.yml`（仅 workflow_dispatch；npm script-shell 必须切 Git Bash——仓内 scripts 的 env 前缀语法 cmd 下直接挂）
+- [x] `verify-windows-release.mjs`：pre（win32 资源逐项）+ post（NSIS/PE/体积/.sig）
+- [x] renderer probe 复用（CHROME_PATH 指 runner Chrome）
+- [ ] **build-windows-test 实跑绿**（待手动 dispatch 验证）
+- [ ] 真机验证文件占用三场景：renderer 热更新 rename active / 日志 rotate / DB 打开时更新替换（朋友真机）
 
-**P2 分发链（试验包验收通过后）**
-- [ ] `release.yml` 矩阵加 windows leg（产物 `Agent-Neo-<ver>-win-x64-setup.exe` + `latest-win-x64.json`，防覆盖命名）
-- [ ] `tauri-update-manifest.mjs` platform+arch 推断；publish merge required keys 加 `windows-x86_64`
-- [ ] `build-stable-release-json.mjs` 加 `--exe-url`；Vercel update API 联调确认（预计零改动）+ 分发页 platform=windows 路由
-- [ ] `releaseMacosGates.test.ts` 同步特征断言（CLAUDE.md 发版规范要求）
+**P2 分发链（惰性部分已就绪，矩阵折入待验收）**
+- [ ] `release.yml` 矩阵加 windows leg —— **刻意推迟**：fail-fast:true 下未实跑过的 windows leg 会把 mac 发版一起拖死，必须等 build-windows-test 实跑绿 + 朋友验收（§5）通过再折
+- [x] `tauri-update-manifest.mjs` platform+arch 推断（.exe → windows-x86_64，darwin 兼容键保留）
+- [x] `build-stable-release-json.mjs` 加 `--exe-url`；Vercel updateMetadata 复核完成（win32 平台/arch 路由就绪，**补了 win32 缺省 arch → x64**，否则无 arch 请求会 404）+ 分发页 Windows 卡片（探测式显示，资产未发布不出死链）
+- [ ] publish merge required keys 加 `windows-x86_64`（随矩阵折入一起做）
+- [ ] `releaseMacosGates.test.ts` 同步特征断言（随矩阵折入一起做）
 
 **P3 收尾**
 - [ ] ConnectorRegistry 平台过滤注册；PII setup 的 Windows 路径（PowerShell 版或 Node 化，可后置）

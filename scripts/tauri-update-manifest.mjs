@@ -40,11 +40,14 @@ async function walk(dir) {
   return files;
 }
 
-function inferDarwinArch(fileName) {
+function inferPlatformArch(fileName) {
   const lower = fileName.toLowerCase();
-  if (lower.includes('aarch64') || lower.includes('arm64')) return 'aarch64';
-  if (lower.includes('x86_64') || lower.includes('x64')) return 'x86_64';
-  return process.arch === 'arm64' ? 'aarch64' : 'x86_64';
+  // NSIS setup.exe → windows；.app.tar.gz → darwin
+  const platform = lower.endsWith('.exe') ? 'windows' : 'darwin';
+  if (lower.includes('aarch64') || lower.includes('arm64')) return { platform, arch: 'aarch64' };
+  if (lower.includes('x86_64') || lower.includes('x64')) return { platform, arch: 'x86_64' };
+  if (platform === 'windows') return { platform, arch: 'x86_64' }; // win 仅发 x64
+  return { platform, arch: process.arch === 'arm64' ? 'aarch64' : 'x86_64' };
 }
 
 const packageJson = JSON.parse(await readFile(path.join(rootDir, 'package.json'), 'utf8'));
@@ -61,8 +64,10 @@ if (!baseUrl) {
 }
 
 const bundleDir = path.join(rootDir, 'src-tauri', 'target', 'release', 'bundle');
+// darwin updater 产物是 .app.tar.gz；windows 是 NSIS setup.exe 本体（minisign .sig 同侧）
 const archiveFiles = (await walk(bundleDir))
-  .filter((filePath) => filePath.endsWith('.app.tar.gz'))
+  .filter((filePath) => filePath.endsWith('.app.tar.gz')
+    || (filePath.includes(`${path.sep}nsis${path.sep}`) && filePath.endsWith('.exe')))
   .sort();
 
 if (archiveFiles.length === 0) {
@@ -77,14 +82,16 @@ for (const archivePath of archiveFiles) {
   }
 
   const fileName = path.basename(archivePath);
-  const arch = inferDarwinArch(fileName);
+  const { platform, arch } = inferPlatformArch(fileName);
   const entry = {
     url: `${baseUrl}/${encodeFileName(fileName)}`,
     signature: (await readFile(signaturePath, 'utf8')).trim(),
   };
 
-  platforms[`darwin-${arch}`] = entry;
-  platforms[`darwin-${arch}-app`] = entry;
+  platforms[`${platform}-${arch}`] = entry;
+  if (platform === 'darwin') {
+    platforms[`darwin-${arch}-app`] = entry; // 老客户端兼容键
+  }
 }
 
 const outputPath = path.resolve(

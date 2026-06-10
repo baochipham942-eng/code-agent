@@ -66,6 +66,19 @@ else
   esac
 fi
 
+# sha256 工具可移植化：macOS 有 shasum（perl），GH windows runner 的 Git Bash
+# 只有 coreutils 的 sha256sum —— 按可用性选。
+sha256_of() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    echo "❌ 找不到 shasum / sha256sum" >&2
+    exit 1
+  fi
+}
+
 # Git Bash 默认无 unzip 时退回系统 bsdtar（Server 2019+ 自带，能解 zip）
 extract_zip() {
   local zip_path="$1" dest_dir="$2"
@@ -104,7 +117,7 @@ if ! curl -fsSL -o "$TMP_DIR/$ASSET" "$URL"; then
   exit 1
 fi
 
-ACTUAL_TAR_SHA="$(shasum -a 256 "$TMP_DIR/$ASSET" | awk '{print $1}')"
+ACTUAL_TAR_SHA="$(sha256_of "$TMP_DIR/$ASSET")"
 if [[ "$ACTUAL_TAR_SHA" != "$EXPECT_TAR_SHA" ]]; then
   echo "❌ tarball sha256 不匹配 (arch=$UV_ARCH)" >&2
   echo "   预期: $EXPECT_TAR_SHA" >&2
@@ -128,7 +141,7 @@ if [[ ! -f "$EXTRACTED_BIN" ]]; then
   exit 1
 fi
 
-ACTUAL_BIN_SHA="$(shasum -a 256 "$EXTRACTED_BIN" | awk '{print $1}')"
+ACTUAL_BIN_SHA="$(sha256_of "$EXTRACTED_BIN")"
 if [[ "$ACTUAL_BIN_SHA" != "$EXPECT_BIN_SHA" ]]; then
   echo "❌ binary sha256 不匹配 (arch=$UV_ARCH)" >&2
   echo "   预期: $EXPECT_BIN_SHA" >&2

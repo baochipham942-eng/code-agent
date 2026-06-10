@@ -203,10 +203,14 @@ export function applyToolResultBudget(
     const isToolResult = msg.role === 'tool' || msg.toolCallId !== undefined;
     if (!isToolResult) continue;
     if (cfg.protectedMessageIds?.has(msg.id)) continue;
-    if (alreadyBudgeted.has(msg.id)) continue;
 
     const originalTokens = estimateTokens(msg.content);
     if (originalTokens <= cfg.maxTokensPerResult) continue;
+
+    // 管线每轮拿到的是从原始 transcript 重建的全文副本，state 跨轮复用。
+    // 已 budgeted 的消息必须幂等重截断（否则次轮全文回流 API view），
+    // 只对 commit 去重，避免 commitLog 逐轮膨胀。
+    const wasBudgeted = alreadyBudgeted.has(msg.id);
 
     // GAP-009: 截断前落盘完整输出（已带落盘提示的内容会被 spillToolResult 跳过，防止二次落盘）
     const spillPath = cfg.spillSessionId !== undefined
@@ -224,7 +228,8 @@ export function applyToolResultBudget(
     // Mutate the message content
     msg.content = spillPath ? truncated + buildSpillNotice(spillPath) : truncated;
 
-    // Record the commit
+    // Record the commit (once per message — re-truncations reuse the original commit)
+    if (wasBudgeted) continue;
     state.applyCommit({
       layer: 'tool-result-budget',
       operation: 'truncate',

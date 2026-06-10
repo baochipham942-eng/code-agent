@@ -142,6 +142,40 @@ describe('applyToolResultBudget', () => {
   });
 
   // --------------------------------------------------------------------------
+  // Cross-evaluation idempotency — pipeline 每轮从原始 transcript 重建全文浅拷贝，
+  // state 跨轮复用。此前 alreadyBudgeted 命中即跳过，导致截断只对当轮生效，
+  // 次轮全文原样回流 API view。
+  // --------------------------------------------------------------------------
+  describe('cross-evaluation re-truncation', () => {
+    it('re-truncates a previously budgeted result when fresh full content reappears', () => {
+      const bigContent = makeText(3000);
+      const turn1Msg = makeToolMsg('t1', bigContent);
+      applyToolResultBudget([turn1Msg], state);
+      expect(estimateTokens(turn1Msg.content)).toBeLessThanOrEqual(2200);
+
+      // 下一轮：同 id、全文内容的新对象 + 复用同一 state
+      const turn2Msg = makeToolMsg('t1', bigContent);
+      applyToolResultBudget([turn2Msg], state);
+      expect(estimateTokens(turn2Msg.content)).toBeLessThanOrEqual(2200);
+    });
+
+    it('does not write duplicate commits for the same message across evaluations', () => {
+      const bigContent = makeText(3000);
+      applyToolResultBudget([makeToolMsg('t1', bigContent)], state);
+      applyToolResultBudget([makeToolMsg('t1', bigContent)], state);
+      expect(state.getCommitLog()).toHaveLength(1);
+    });
+
+    it('leaves already-truncated (under-budget) content untouched on re-evaluation', () => {
+      const msg = makeToolMsg('t1', makeText(3000));
+      applyToolResultBudget([msg], state);
+      const truncated = msg.content;
+      applyToolResultBudget([msg], state);
+      expect(msg.content).toBe(truncated);
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // Code block preservation
   // --------------------------------------------------------------------------
   describe('code block preservation', () => {

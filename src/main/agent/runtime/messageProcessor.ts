@@ -16,9 +16,6 @@ import {
   sanitizeToolCallsForHistory,
   sanitizeToolResultsForHistoryWithCalls,
 } from '../../agent/messageHandling/converter';
-import {
-  compressToolResult,
-} from '../../context/tokenOptimizer';
 import { classifyExecutionPhase } from '../../tools/executionPhase';
 import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector.js';
@@ -60,7 +57,6 @@ import {
   sanitizeToolArgumentsForObservation,
   sanitizeToolResultForObservation,
   shouldDeferForcedFinalToInference,
-  shouldPreserveToolObservation,
 } from './messageProcessorHelpers';
 import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
@@ -857,27 +853,18 @@ export class MessageProcessor {
         })
       : sanitizedResults;
 
-    // Compress tool results to save tokens
-    const compressedResults = artifactRepairResults.map((result: ToolResult) => {
-      if (shouldPreserveToolObservation(result)) {
-        return result;
-      }
-      if (result.output && typeof result.output === 'string') {
-        const { content, compressed, savedTokens } = compressToolResult(result.output);
-        if (compressed) {
-          logger.debug(`[AgentLoop] Tool result compressed, saved ${savedTokens} tokens`);
-          return { ...result, output: content };
-        }
-      }
-      return result;
-    });
-
+    // 工具结果原样落库：新鲜 observation 是模型下一轮推理的直接依据，
+    // 不得在零上下文压力时预先截断（此前 compressToolResult 300→200 token 的
+    // eager 压缩会把 image_analyze 等大结果砍成 "[truncated]" 存根且无落盘引用，
+    // 模型看不到完整结果 → 重复调用 + 自述"被截断"）。
+    // 超大文本结果统一由管线 L1 toolResultBudget（2000 token + GAP-009 落盘提示）
+    // 在 API view 投影时处理；bash/MCP 在工具层已有 30K/50K 字符上限。
     const toolMessage: Message = {
       id: this.contextAssembly.generateId(),
       role: 'tool',
-      content: JSON.stringify(compressedResults),
+      content: JSON.stringify(artifactRepairResults),
       timestamp: Date.now(),
-      toolResults: compressedResults,
+      toolResults: artifactRepairResults,
     };
     await this.contextAssembly.addAndPersistMessage(toolMessage);
     this.applyDeferredSkillActivations(toolResults);

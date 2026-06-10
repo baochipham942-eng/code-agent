@@ -930,6 +930,91 @@ describe('MessageProcessor persistence', () => {
     expect(toolMessage.toolResults[0].metadata.preserveObservation).toBe(true);
   });
 
+  it('persists fresh tool observations verbatim — no eager compression before the model sees them', async () => {
+    // 复现 image_analyze 场景：~2000 token 中文分析结果，无 preserveObservation。
+    // 此前落库即被 compressToolResult(300→200) 砍成带 "[N lines truncated]" 的存根，
+    // 模型看不到完整结果 → 重复调用 + 自述"被截断"。大结果统一交 L1(2000+落盘) 处理。
+    const largeAnalysis = [
+      '📷 图片分析结果',
+      '文件: screenshot.png',
+      '耗时: 19.2s',
+      '',
+      ...Array.from({ length: 60 }, (_, i) => `第${i + 1}行：屏幕上可以看到一个深色主题的代码编辑器窗口，顶部有标签栏与菜单。`),
+    ].join('\n');
+    const ctx = {
+      sessionId: 'runtime-session-1',
+      messages: [],
+      isCancelled: false,
+      isInterrupted: false,
+      runAbortController: { signal: { aborted: false } },
+      totalToolCallCount: 0,
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
+      effortLevel: 'medium',
+      currentTurnId: 'turn-1',
+      currentIterationSpanId: 'iteration-1',
+      currentSystemPromptHash: 'hash-1',
+      forceFinalResponseReason: undefined,
+      forceFinalResponsePrompt: undefined,
+      toolsUsedInTurn: [],
+      recentToolFingerprints: [],
+      stagnationWarningEmitted: false,
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      nudgeManager: {
+        getModifiedFiles: vi.fn(() => new Set()),
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn()
+        .mockReturnValueOnce('assistant-message-1')
+        .mockReturnValueOnce('tool-message-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [
+        {
+          toolCallId: 'tool-1',
+          success: true,
+          output: largeAnalysis,
+          metadata: { imagePath: '/tmp/screenshot.png', contentLength: largeAnalysis.length },
+        },
+      ]),
+    };
+    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '',
+        toolCalls: [{ id: 'tool-1', name: 'image_analyze', arguments: { path: '/tmp/screenshot.png' } }],
+      } as ModelResponse,
+      false,
+      1,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('continue');
+    const toolMessage = ctx.messages.find((message: any) => message.role === 'tool') as any;
+    expect(toolMessage.toolResults[0].output).toBe(largeAnalysis);
+    expect(toolMessage.toolResults[0].output).not.toContain('truncated');
+  });
+
   it('drops tool calls that are outside the currently visible tool schema and reinfers', async () => {
     const ctx = {
       sessionId: 'runtime-session-1',

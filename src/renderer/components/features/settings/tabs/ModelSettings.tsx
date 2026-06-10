@@ -52,6 +52,7 @@ import {
   orderProviderManagementRows,
   providerRequiresApiKey,
   resolveModelForProvider,
+  shouldPromoteProviderToDefault,
   type DiscoverModelsResult,
   type ProviderConfigMap,
   type ProviderDisplayInfo,
@@ -438,6 +439,25 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         ...prev,
         [config.provider]: providerConfigForSave,
       }));
+      // 默认模型指针与已配置 provider 解耦修复：出厂默认没 key 时，配好的 provider 自动接管默认，
+      // 否则发送被门禁拦下（"当前默认模型未配置 API Key"）。
+      try {
+        const latestSettings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
+        if (shouldPromoteProviderToDefault(config.provider, providerConfigForSave, latestSettings)) {
+          await ipcService.invokeDomain(
+            IPC_DOMAINS.SETTINGS,
+            'set',
+            buildDefaultModelSettingsUpdate(config.provider, providerConfigForSave)
+          );
+          const promotedModel = providerConfigForSave.model || config.model;
+          setDefaultSelection({ provider: config.provider, model: promotedModel });
+          toast.success(`原默认模型未配置 API Key，默认模型已自动切换到 ${providerConfigForSave.displayName || currentProviderInfo?.name || config.provider} / ${promotedModel}`);
+        }
+      } catch (promoteError) {
+        logger.warn('Failed to auto-promote default model after provider save', {
+          error: promoteError instanceof Error ? promoteError.message : String(promoteError),
+        });
+      }
       logger.info('Config saved', { provider: config.provider });
       setSaveStatus('success');
       setTimeout(() => setSaveStatus('idle'), UI.COPY_FEEDBACK_DURATION);

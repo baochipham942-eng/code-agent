@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ModelConfig, ModelProviderSettings } from '../../../src/shared/contract';
+import type { AppSettings, ModelConfig, ModelProviderSettings } from '../../../src/shared/contract';
 import type { ProviderInfo } from '../../../src/shared/constants';
 import {
   buildDefaultModelSettingsUpdate,
@@ -10,6 +10,7 @@ import {
   buildProviderSettingsUpdate,
   createCustomProviderId,
   describeKeylessReadiness,
+  shouldPromoteProviderToDefault,
   getModelLabel,
   hasCustomEndpointOverride,
   isModelMetadataLocked,
@@ -283,6 +284,43 @@ describe('ModelSettings management helpers', () => {
       state: 'unavailable',
       label: '服务未运行',
     });
+  });
+
+  it('promotes a freshly configured provider to default only when the current default model is unusable', () => {
+    const savedConfig: ModelProviderSettings = { enabled: true, apiKeyConfigured: true, model: 'gpt-5.5' };
+    // 出厂默认指针停在没 key 的 xiaomi → 配好 openai 后应自动接管默认
+    const settingsWithDeadDefault = {
+      models: {
+        default: 'xiaomi',
+        defaultProvider: 'xiaomi',
+        providers: { xiaomi: { enabled: true } },
+      },
+    } as unknown as AppSettings;
+    expect(shouldPromoteProviderToDefault('openai', savedConfig, settingsWithDeadDefault)).toBe(true);
+
+    // 当前默认模型已可用 → 不抢默认
+    const settingsWithLiveDefault = {
+      models: {
+        default: 'moonshot',
+        defaultProvider: 'moonshot',
+        providers: { moonshot: { enabled: true, apiKeyConfigured: true } },
+      },
+    } as unknown as AppSettings;
+    expect(shouldPromoteProviderToDefault('openai', savedConfig, settingsWithLiveDefault)).toBe(false);
+
+    // 刚保存的 provider 自己没配好 key / 被禁用 → 不 promote
+    expect(shouldPromoteProviderToDefault('openai', { enabled: true }, settingsWithDeadDefault)).toBe(false);
+    expect(shouldPromoteProviderToDefault('openai', { enabled: false, apiKeyConfigured: true }, settingsWithDeadDefault)).toBe(false);
+
+    // 默认指针就是刚保存的 provider：保存后 settings 已可用 → 无需再切
+    const settingsDefaultIsSelf = {
+      models: {
+        default: 'openai',
+        defaultProvider: 'openai',
+        providers: { openai: { enabled: true, apiKeyConfigured: true } },
+      },
+    } as unknown as AppSettings;
+    expect(shouldPromoteProviderToDefault('openai', savedConfig, settingsDefaultIsSelf)).toBe(false);
   });
 
   it('treats local models as keyless and locks only built-in catalog metadata', () => {

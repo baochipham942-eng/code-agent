@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.102] - 2026-06-10
+
+### Fixed
+
+- 会话导出（Markdown / 会话日志）打包态静默失败：改主进程直写「下载」文件夹 + 访达定位 + toast 反馈，废弃 webview 另存为对话框链路。
+- conversationRuntime 测试 mock 补 PROMPT_VERSION 导出（16 用例恢复）。
+
 ## [0.16.101] - 2026-06-10
 
 ### Added

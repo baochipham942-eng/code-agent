@@ -27,7 +27,7 @@ import { GoalNoticeMessage } from './MessageBubble/GoalNoticeMessage';
 import { FallbackBanner } from './MessageBubble/FallbackBanner';
 import { RouteTraceChip } from './RouteTraceChip';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
-import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, CircleDot, FileText, GitBranch, RotateCcw, Wrench, CornerDownRight, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, GitBranch, RotateCcw, Wrench, CornerDownRight, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { UI } from '@shared/constants';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
@@ -420,10 +420,7 @@ const AssistantTextNode: React.FC<{
       )}
 
       {progressSummary && (
-        <div className="mb-2 flex min-w-0 items-center gap-2 rounded-md border border-sky-500/15 bg-sky-500/[0.06] px-2.5 py-1.5 text-xs text-sky-200/90">
-          <CircleDot className="h-3.5 w-3.5 shrink-0 text-sky-300" />
-          <span className="min-w-0 truncate">{progressSummary}</span>
-        </div>
+        <div className="mb-2 text-xs leading-relaxed text-zinc-400">{progressSummary}</div>
       )}
 
       {node.modelDecision && (

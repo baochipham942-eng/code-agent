@@ -9,6 +9,7 @@ import {
   buildProviderManagementRows,
   buildProviderSettingsUpdate,
   createCustomProviderId,
+  describeKeylessReadiness,
   getModelLabel,
   hasCustomEndpointOverride,
   isModelMetadataLocked,
@@ -246,6 +247,42 @@ describe('ModelSettings management helpers', () => {
     expect(hasCustomEndpointOverride('longcat', 'https://relay.example.com/v1', 'claude')).toBe(true);
     expect(hasCustomEndpointOverride('custom', 'https://relay.example.com/v1')).toBe(false);
     expect(hasCustomEndpointOverride('custom-relay', 'https://relay.example.com/v1')).toBe(false);
+  });
+
+  it('marks keyless providers in management rows so the list can show service readiness instead of "key ready"', () => {
+    const localProvider = {
+      id: 'local',
+      name: 'Local (Ollama)',
+      description: '本地 Ollama 服务',
+      models: [{ id: 'qwen3:8b', label: 'Qwen3 8B' }],
+    } satisfies ProviderInfo;
+
+    const rows = buildProviderManagementRows({
+      providers: [openaiProvider, localProvider],
+      config,
+      providerConfigs: {},
+    });
+
+    expect(rows.find((row) => row.id === 'openai')?.keyless).toBe(false);
+    expect(rows.find((row) => row.id === 'local')?.keyless).toBe(true);
+  });
+
+  it('describes keyless provider readiness for the three probe states', () => {
+    // 未探测完成 → 检测中（不能展示成已可用）
+    expect(describeKeylessReadiness(undefined)).toEqual({
+      state: 'checking',
+      label: '检测本地服务…',
+    });
+    // 端点可达 → 真·已可用
+    expect(describeKeylessReadiness(true)).toEqual({
+      state: 'running',
+      label: '✓ 本地服务',
+    });
+    // 端点不可达 → 明确标注服务未运行，而不是假性"已可用"
+    expect(describeKeylessReadiness(false)).toEqual({
+      state: 'unavailable',
+      label: '服务未运行',
+    });
   });
 
   it('treats local models as keyless and locks only built-in catalog metadata', () => {

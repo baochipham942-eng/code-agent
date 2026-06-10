@@ -92,6 +92,9 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const [providerConfigs, setProviderConfigs] = useState<ProviderConfigMap>({});
   // 本地 Provider「打开即自动发现」的去重闸：每个 Provider 一个会话只自动发现一次
   const autoDiscoveredRef = useRef<Set<string>>(new Set());
+  // keyless provider（local/Ollama）端点探测结果：undefined=探测中，不能默认当已可用
+  const [keylessReachability, setKeylessReachability] = useState<Partial<Record<string, boolean>>>({});
+  const keylessProbedRef = useRef<Set<string>>(new Set());
   const [modelSearch, setModelSearch] = useState('');
   const [manualModelId, setManualModelId] = useState('');
   const [manualModelLabel, setManualModelLabel] = useState('');
@@ -490,6 +493,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         { provider: config.provider, apiKey: config.apiKey || '', baseUrl: effectiveBaseUrl, protocol: effectiveProtocol }
       );
 
+      // keyless provider 的发现结果同时就是端点可达性信号（启动 Ollama 后手动发现可翻正徽章）
+      if (!providerRequiresApiKey(config.provider)) {
+        setKeylessReachability((prev) => ({ ...prev, [config.provider]: Boolean(result?.success) }));
+      }
+
       if (!result?.success) {
         if (!silent) {
           const detail = result?.error?.suggestion ? `\n${result.error.suggestion}` : '';
@@ -567,6 +575,40 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     autoDiscoveredRef.current.add(config.provider);
     void handleDiscoverModels({ silent: true });
   }, [settingsLoaded, config.provider, effectiveBaseUrl, handleDiscoverModels]);
+
+  // keyless provider（local/Ollama）：列表展示前静默探测端点，没装/没起服务时
+  // 不能在左侧列表挂"已可用"（dogfood 实测：全新机器显示已可用，选了连不上）。
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    let cancelled = false;
+    providers
+      .filter((provider) => !providerRequiresApiKey(provider.id))
+      .forEach((provider) => {
+        if (keylessProbedRef.current.has(provider.id)) return;
+        keylessProbedRef.current.add(provider.id);
+        const baseUrl = providerConfigs[provider.id]?.baseUrl
+          || getProviderEndpointForProtocol(provider.id, 'openai')
+          || '';
+        ipcService.invokeDomain<DiscoverModelsResult>(
+          IPC_DOMAINS.PROVIDER,
+          'discover_models',
+          { provider: provider.id, apiKey: '', baseUrl },
+        )
+          .then((result) => {
+            if (!cancelled) {
+              setKeylessReachability((prev) => ({ ...prev, [provider.id]: Boolean(result?.success) }));
+            }
+          })
+          .catch(() => {
+            if (!cancelled) {
+              setKeylessReachability((prev) => ({ ...prev, [provider.id]: false }));
+            }
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsLoaded, providers, providerConfigs]);
 
   const handleAddProvider = useCallback(() => {
     const displayName = newProviderName.trim();
@@ -679,6 +721,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         <ProviderListPanel
           configuredRows={configuredRows}
           unconfiguredRows={unconfiguredRows}
+          keylessReachability={keylessReachability}
           selectedProviderId={config.provider}
           isAddingProvider={isAddingProvider}
           onSelect={handleSelectProvider}

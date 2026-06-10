@@ -37,6 +37,8 @@ export interface ProviderManagementRow {
   selected: boolean;
   selectedModelLabel: string;
   enabledModelCount: number;
+  /** true=无需 API Key 的本地 provider，可用性取决于本地服务是否在跑而非 Key */
+  keyless: boolean;
 }
 
 export type ProviderConfigMap = Partial<Record<string, ModelProviderSettings>>;
@@ -219,8 +221,20 @@ export function buildProviderManagementRows({
       selectedModelLabel: config.provider === provider.id
         ? getModelLabel(runtimeModels, config.model)
         : getModelLabel(runtimeModels, rowDefaultModel),
+      keyless: !providerRequiresApiKey(provider.id),
     };
   });
+}
+
+/** keyless provider（local/Ollama）的可用性展示：探测结果 → 状态 + 文案。
+ *  undefined=探测未完成，不能直接展示成已可用（假性可用是 dogfood 实测踩坑）。 */
+export function describeKeylessReadiness(reachable: boolean | undefined): {
+  state: 'checking' | 'running' | 'unavailable';
+  label: string;
+} {
+  if (reachable === true) return { state: 'running', label: '✓ 本地服务' };
+  if (reachable === false) return { state: 'unavailable', label: '服务未运行' };
+  return { state: 'checking', label: '检测本地服务…' };
 }
 
 export function getProtocolLabel(protocol: ModelProviderProtocol | undefined): string {

@@ -10,6 +10,7 @@ import type { ToolCall } from '@shared/contract';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
 import { summarizeTool } from './MessageBubble/ToolCallDisplay/summarizers';
 import { buildStepLabel, buildSingleToolLabel } from '../../../utils/toolStepGrouping';
+import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 import {
   formatToolDuration,
   summarizeToolLoopDecisionFromNodes,
@@ -20,11 +21,14 @@ interface ToolStepGroupProps {
   nodes: TraceNode[];
   /** Streaming turn: default expanded so user sees live progress */
   defaultExpanded?: boolean;
+  /** 被收纳的过渡轮 thinking（无正文的纯思考节点），在组内弱化展示 */
+  thinkingNodes?: TraceNode[];
 }
 
 export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   nodes,
   defaultExpanded = false,
+  thinkingNodes,
 }) => {
   const label = useMemo(() => {
     if (nodes.length === 1) {
@@ -169,6 +173,42 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
                 total={toolCalls.length}
                 compact
               />
+            </div>
+          ))}
+          <FoldedThinking thinkingNodes={thinkingNodes} />
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** 收纳的过渡轮 thinking：组展开时以一个弱化折叠行展示，默认收起 */
+const FoldedThinking: React.FC<{ thinkingNodes?: TraceNode[] }> = ({ thinkingNodes }) => {
+  const [open, setOpen] = useState(false);
+  const contents = useMemo(
+    () => (thinkingNodes ?? [])
+      .map((n) => sanitizeThinkingForDisplay(n.thinking || n.reasoning)?.trim())
+      .filter((t): t is string => Boolean(t)),
+    [thinkingNodes],
+  );
+  if (contents.length === 0) return null;
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 rounded-sm py-0.5 text-left text-[11px] text-zinc-600 transition-colors hover:text-zinc-400"
+      >
+        <span className="font-mono">{open ? '▼' : '▶'}</span>
+        <span>thinking{contents.length > 1 ? ` ×${contents.length}` : ''}</span>
+      </button>
+      {open && (
+        <div className="ml-4 space-y-2 border-l border-zinc-800/60 pl-3 py-1">
+          {contents.map((text, i) => (
+            <div key={i} className="whitespace-pre-wrap text-[11px] leading-relaxed text-zinc-500">
+              {text}
             </div>
           ))}
         </div>

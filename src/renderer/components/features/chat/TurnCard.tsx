@@ -212,6 +212,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                     key={d.key}
                     nodes={d.tools}
                     defaultExpanded={false}
+                    thinkingNodes={d.thinkingNodes}
                   />
                 );
               }

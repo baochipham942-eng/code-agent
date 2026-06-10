@@ -20,7 +20,8 @@ export type ReminderType =
   | 'IMAGE_GENERATION'
   | 'VIDEO_GENERATION'
   | 'CODE_REVIEW_DIAGNOSIS'
-  | 'SYSTEM_TROUBLESHOOTING';
+  | 'SYSTEM_TROUBLESHOOTING'
+  | 'SCREEN_CAPTURE';
 
 /**
  * 系统提醒内容
@@ -305,6 +306,16 @@ skill({
 </system-reminder>
 `,
 
+  SCREEN_CAPTURE: `
+<system-reminder>
+**截屏分析模式**：检测到截屏/查看屏幕请求。走最短路径，不要先 ToolSearch 找截屏工具：
+
+1. 截屏：直接用 Bash 运行 \`screencapture -x /tmp/screen.png\`（macOS 原生命令，无需加载额外工具）
+2. 分析：image_analyze 已预加载，直接传图片路径 + 分析要求，结果会完整返回，一次调用即可
+3. 拿到分析结果后直接总结回答，不要重复调用 image_analyze 或用其他方式（Python/sips）二次验证
+</system-reminder>
+`,
+
   SYSTEM_TROUBLESHOOTING: `
 <system-reminder>
 **系统排查诊断模式**：检测到故障排查指令。
@@ -342,6 +353,8 @@ export interface TaskFeatures {
   isVideoTask: boolean;
   isFuzzyCodeReview: boolean;
   isFuzzyTroubleshooting: boolean;
+  /** 截屏/查看当前屏幕意图（区别于分析已有截图文件） */
+  isScreenCaptureTask: boolean;
   dimensions: string[];
 }
 
@@ -457,6 +470,15 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     '动画', '视频片段',
   ];
 
+  // 截屏/查看当前屏幕关键词（刻意不含裸"截图"——"分析这张截图"是分析已有文件，
+  // 不是要去截屏；预载 image_analyze + 截屏 reminder 只对"现在去截"的意图生效）
+  const screenCaptureKeywords = [
+    '截屏', '截个屏', '屏幕截图', '截取屏幕', '截图屏幕',
+    '看看屏幕', '看下屏幕', '看一下屏幕', '当前屏幕', '屏幕上有',
+    'screenshot', 'screen capture', 'capture the screen', 'capture screen',
+    'on my screen',
+  ];
+
   // 模糊指令词（用于行为引导，不用于路由）
   const fuzzyWords = ['看看', '检查', '有啥问题', '有什么问题', '排查', '整理'];
   const hasFuzzyIntent = fuzzyWords.some(w => normalizedPrompt.includes(w));
@@ -487,6 +509,7 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     isVideoTask: hasVideoFile || videoKeywords.some((k) => normalizedPrompt.includes(k)),
     isFuzzyCodeReview: hasFuzzyIntent && hasCodeContext,
     isFuzzyTroubleshooting: hasFuzzyIntent && hasTroubleContext,
+    isScreenCaptureTask: screenCaptureKeywords.some((k) => normalizedPrompt.includes(k)),
     dimensions: matchedDimensions,
   };
 }
@@ -498,8 +521,11 @@ export function getSystemReminders(prompt: string, fileExtensions?: string[]): s
   const features = detectTaskFeatures(prompt, fileExtensions);
   const reminders: string[] = [];
 
-  // 内容生成任务（互斥，按优先级排列）
-  if (features.isPPTTask) {
+  // 截屏分析意图优先于内容生成链："分析下屏幕上有什么"含"分析"会误中
+  // isDataTask，但它不是数据处理任务
+  if (features.isScreenCaptureTask) {
+    reminders.push(REMINDERS.SCREEN_CAPTURE);
+  } else if (features.isPPTTask) {
     reminders.push(REMINDERS.PPT_FORMAT_SELECTION);
   } else if (features.isDataTask) {
     reminders.push(REMINDERS.DATA_PROCESSING);

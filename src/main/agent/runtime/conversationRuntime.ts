@@ -39,6 +39,7 @@ import { taskComplexityAnalyzer } from '../../planning/taskComplexityAnalyzer';
 import { classifyIntent } from '../../routing/intentClassifier';
 import { getTaskOrchestrator } from '../../planning/taskOrchestrator';
 import { getMaxIterations } from '../../services/cloud/featureFlagService';
+import { preloadToolsForIntent } from './intentToolPreload';
 import { createLogger } from '../../services/infra/logger';
 import { createHookManager } from '../../hooks';
 import type { BudgetEventData } from '../../../shared/contract';
@@ -785,6 +786,7 @@ export class ConversationRuntime {
       !startupTaskFeatures.isPlanningTask &&
       !startupTaskFeatures.isFuzzyCodeReview &&
       !startupTaskFeatures.isFuzzyTroubleshooting;
+    preloadToolsForIntent(startupTaskFeatures);
     try {
       const skillInvocation =
         await resolveSkillInvocation(userMessage, this.ctx.workingDirectory)

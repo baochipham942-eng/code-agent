@@ -304,4 +304,36 @@ describe('ToolSearchService loadable results', () => {
 
   // 注：legacy toolSearchTool.execute 的输出格式化测试已迁移到
   // tests/unit/tools/modules/search/toolSearch.test.ts（native 形态：ok/output/meta）。
+
+  // ── 意图预载：跳过模型的 ToolSearch 轮次，直接把工具标为已加载 ──────────
+  describe('preloadTools', () => {
+    it('preloads loadable builtin deferred tools and reports them', () => {
+      const service = new ToolSearchService();
+
+      const loaded = service.preloadTools(['Task']);
+
+      expect(loaded).toEqual(['Task']);
+      expect(service.isToolLoaded('Task')).toBe(true);
+      expect(service.getLoadedDeferredTools()).toContain('Task');
+    });
+
+    it('silently skips unknown and non-loadable tools', () => {
+      const service = new ToolSearchService();
+
+      const loaded = service.preloadTools(['desktop_context_now', 'no_such_tool', 'Task']);
+
+      expect(loaded).toEqual(['Task']);
+      expect(service.getLoadedDeferredTools()).not.toContain('desktop_context_now');
+    });
+
+    it('does not duplicate already-loaded tools', () => {
+      const service = new ToolSearchService();
+
+      service.preloadTools(['Task']);
+      const second = service.preloadTools(['Task']);
+
+      expect(second).toEqual([]);
+      expect(service.getLoadedDeferredTools().filter((n) => n === 'Task')).toHaveLength(1);
+    });
+  });
 });

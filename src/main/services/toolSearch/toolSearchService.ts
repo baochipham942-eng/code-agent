@@ -313,6 +313,28 @@ export class ToolSearchService {
   }
 
   /**
+   * 意图预载：把指定 deferred 工具直接标为已加载，跳过模型的 ToolSearch 轮次。
+   * 与 selectTool 同一套可加载性校验；未知/不可加载的名字静默跳过。
+   * 返回实际新加载的工具名。
+   */
+  preloadTools(names: string[]): string[] {
+    const loaded: string[] = [];
+    for (const name of names) {
+      const normalized = normalizeToolName(name);
+      if (isCoreToolName(normalized)) continue;
+      if (this.loadedDeferredTools.has(normalized)) continue;
+      const meta = this.deferredToolIndex.get(normalized) || this.mcpToolsMeta.get(normalized);
+      if (!meta || !this.canExposeLoadedTool(meta)) continue;
+      this.loadedDeferredTools.add(meta.name);
+      loaded.push(meta.name);
+    }
+    if (loaded.length > 0) {
+      logger.info(`Intent-preloaded deferred tools: ${loaded.join(', ')}`);
+    }
+    return loaded;
+  }
+
+  /**
    * 检查工具是否已加载
    */
   isToolLoaded(name: string): boolean {

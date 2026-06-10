@@ -223,6 +223,7 @@ vi.mock('../../../src/shared/constants', () => ({
   MODEL_MAX_TOKENS: {},
   CONTEXT_WINDOWS: {},
   DEFAULT_CONTEXT_WINDOW: 128000,
+  PROMPT_VERSION: 'sys-test',
   getContextWindow: vi.fn().mockReturnValue(128000),
   GOAL_MODE: {
     DEFAULT_TOKEN_BUDGET: 100_000,

@@ -64,6 +64,13 @@ describe('createStaticRouter', () => {
     expect(body).toContain('window.__CODE_AGENT_TOKEN__="test-token";window.__CODE_AGENT_RENDERER_BUNDLE__=null');
   });
 
+  it('serves index.html with Cache-Control: no-store (token rotates per boot, stale cache causes 401+reload loop)', async () => {
+    const response = await fetch(`${baseUrl}/`);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+
   it('injects the auth token when the built index has a formatted head tag', async () => {
     fs.writeFileSync(
       path.join(staticDir, 'index.html'),

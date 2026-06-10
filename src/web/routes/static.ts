@@ -99,6 +99,10 @@ export function createStaticRouter(deps: StaticDeps): Router {
           '</script>'
         )
       );
+      // no-store：注入的 auth token 每次启动轮换，WebView 复用缓存页会拿旧 token
+      // → 全部 API 401 → httpTransport 强制 reload 一次（用户看到"启动刷两下"）。
+      // 带凭据的 HTML 本身也不该被缓存；hashed assets 不受影响仍可长缓存。
+      res.setHeader('Cache-Control', 'no-store');
       res.type('html').send(injectedHtml);
     } catch {
       res.status(404).send('index.html not found');

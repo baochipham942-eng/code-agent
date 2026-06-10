@@ -79,6 +79,20 @@ const overlay = {
   },
 };
 
+// updater pubkey 注入（CI 提供 TAURI_UPDATER_PUBKEY；base conf 里是
+// DISABLED_LOCAL_BUILD 占位，本地预览不注入也能产 overlay）
+const updaterPubkey = process.env.TAURI_UPDATER_PUBKEY;
+if (updaterPubkey) {
+  overlay.plugins = {
+    updater: {
+      pubkey: updaterPubkey,
+      endpoints: process.env.TAURI_UPDATER_ENDPOINT
+        ? [process.env.TAURI_UPDATER_ENDPOINT]
+        : conf.plugins?.updater?.endpoints,
+    },
+  };
+}
+
 const json = `${JSON.stringify(overlay, null, 2)}\n`;
 const outIdx = process.argv.indexOf('--out');
 if (outIdx >= 0 && process.argv[outIdx + 1]) {

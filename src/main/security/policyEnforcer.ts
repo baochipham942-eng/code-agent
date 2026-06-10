@@ -6,6 +6,7 @@
 // before they reach user-defined hooks (cannot be overridden).
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { loadPolicy, hasPolicyFile } from './policyLoader';
@@ -355,7 +356,7 @@ export class PolicyEnforcer {
    * Normalize a path, expanding ~ to home directory
    */
   private normalizePath(p: string): string {
-    const home = process.env.HOME || process.env.USERPROFILE || '/tmp';
+    const home = os.homedir() || os.tmpdir();
     if (p.startsWith('~/') || p === '~') {
       return path.join(home, p.slice(2));
     }

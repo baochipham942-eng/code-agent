@@ -12,6 +12,7 @@
 // ============================================================================
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -30,7 +31,7 @@ const execFileAsync = promisify(execFile);
 
 const CONFIG = {
   WHISPER_PATHS: ['/opt/homebrew/bin/whisper-cpp', '/usr/local/bin/whisper-cpp'],
-  MODEL_DIR: path.join(process.env.HOME || '~', '.cache', 'whisper'),
+  MODEL_DIR: path.join(os.homedir(), '.cache', 'whisper'),
   DEFAULT_MODEL: 'ggml-large-v3-turbo.bin',
   DEFAULT_LANGUAGE: 'zh',
   DEFAULT_THREADS: 4,
@@ -88,7 +89,7 @@ async function convertToWav(
     } catch {
       throw new Error('ffmpeg 未安装。请运行: brew install ffmpeg');
     }
-    throw new Error(`音频转换失败: ${message}`);
+    throw new Error(`音频转换失败: ${message}`, { cause: error });
   }
 }
 

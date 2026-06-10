@@ -7,6 +7,7 @@
 // ============================================================================
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import type {
   ToolHandler,
@@ -38,8 +39,8 @@ import { webSearchSchema as schema } from './webSearch.schema';
 
 function resolveSavePath(input: string, workingDir: string): string {
   const expanded = input.startsWith('~/')
-    ? `${process.env.HOME || ''}/${input.slice(2)}`
-    : input.replace(/^~$/, process.env.HOME || '');
+    ? path.join(os.homedir(), input.slice(2))
+    : input.replace(/^~$/, os.homedir());
   return path.isAbsolute(expanded) ? expanded : path.join(workingDir, expanded);
 }
 

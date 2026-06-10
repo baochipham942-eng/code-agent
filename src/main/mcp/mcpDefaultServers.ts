@@ -3,6 +3,7 @@
 // ============================================================================
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getCloudConfigService, type MCPServerCloudConfig } from '../services/cloud/cloudConfigService';
@@ -94,7 +95,7 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
     {
       name: 'filesystem',
       command: 'npx',
-      args: ['-y', '@modelcontextprotocol/server-filesystem', process.env.HOME || '/'],
+      args: ['-y', '@modelcontextprotocol/server-filesystem', os.homedir()],
       enabled: false, // 默认禁用，避免与内置工具冲突
     },
     // Git 服务器 - 版本控制
@@ -174,7 +175,7 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
       name: 'argus',
       command: 'node',
       args: [
-        `${process.env.HOME}/Downloads/ai/argus-automation/dist/server-mcp.js`,
+        path.join(os.homedir(), 'Downloads', 'ai', 'argus-automation', 'dist', 'server-mcp.js'),
       ],
       enabled: argusEnabled,
     },
@@ -253,7 +254,7 @@ export function convertCloudConfigToInternal(cloudConfig: MCPServerCloudConfig):
       name: id,
       command: config.command!,
       args: config.args?.map(arg =>
-        arg === '~' ? (process.env.HOME || '/') : arg
+        arg === '~' ? os.homedir() : arg
       ),
       env: resolveEnvVars(config.env),
       enabled: shouldEnable,

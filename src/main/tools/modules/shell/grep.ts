@@ -24,6 +24,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { existsSync } from 'fs';
+import os from 'os';
 import path from 'path';
 import type {
   ToolHandler,
@@ -78,7 +79,7 @@ let rgBinaryPath: string | null | undefined;
 function findRgBinary(): string | null {
   if (rgBinaryPath !== undefined) return rgBinaryPath;
 
-  const home = process.env.HOME ?? '';
+  const home = os.homedir();
   const candidates = [
     // Homebrew
     '/opt/homebrew/bin/rg',

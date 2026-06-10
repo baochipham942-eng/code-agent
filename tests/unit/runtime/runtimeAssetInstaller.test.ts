@@ -209,6 +209,15 @@ describe('runtimeAssetInstaller', () => {
     expect(() => validateRuntimeArchiveEntries(['/tmp/evil'])).toThrow(/absolute path/);
   });
 
+  it('rejects windows-style traversal and absolute entries before extraction', () => {
+    // 反斜杠在 Windows 解压时是路径分隔符，按 '/' 分段的检查拦不住
+    expect(() => validateRuntimeArchiveEntries(['..\\evil'])).toThrow(/invalid path/);
+    expect(() => validateRuntimeArchiveEntries(['node_modules\\..\\..\\evil'])).toThrow(/invalid path/);
+    expect(() => validateRuntimeArchiveEntries(['C:/Windows/evil'])).toThrow(/invalid path/);
+    expect(() => validateRuntimeArchiveEntries(['c:\\evil'])).toThrow(/invalid path/);
+    expect(() => validateRuntimeArchiveEntries(['\\\\server\\share\\evil'])).toThrow(/invalid path/);
+  });
+
   it('rejects symlink entries before promotion', async () => {
     const root = makeTempRoot();
     const runtimeBaseDir = path.join(root, 'runtime');

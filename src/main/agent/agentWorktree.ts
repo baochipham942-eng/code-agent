@@ -9,6 +9,7 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import { createLogger } from '../services/infra/logger';
@@ -18,7 +19,7 @@ const execAsync = promisify(exec);
 const logger = createLogger('AgentWorktree');
 
 const WORKTREE_TIMEOUT = 30_000;
-const WORKTREE_BASE_DIR = '/tmp/code-agent-worktrees';
+const WORKTREE_BASE_DIR = path.join(os.tmpdir(), 'code-agent-worktrees');
 
 export interface WorktreeInfo {
   worktreePath: string;

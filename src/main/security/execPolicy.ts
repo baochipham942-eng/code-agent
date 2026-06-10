@@ -9,6 +9,7 @@
 // 格式: { rules: [{ pattern, decision, createdAt, source }] }
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getProjectConfigDir } from '../config/configPaths';
@@ -256,7 +257,7 @@ export function getExecPolicyStore(projectDir?: string): ExecPolicyStore {
   }
   if (!instance) {
     // Fallback: use home directory
-    instance = new ExecPolicyStore(process.env.HOME || '/tmp');
+    instance = new ExecPolicyStore(os.homedir() || os.tmpdir());
   }
   return instance;
 }

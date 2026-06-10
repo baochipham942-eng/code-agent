@@ -6,6 +6,7 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
+import * as os from 'os';
 import * as path from 'path';
 import type { BrowserArtifactSummary, BrowserTargetRef } from '../../services/infra/browserService.js';
 import { browserService, redactBrowserWorkbenchTraceParams } from '../../services/infra/browserService.js';
@@ -874,7 +875,8 @@ function isSensitiveUploadPath(filePath: string): boolean {
   if (/credential|secret|token|password|id_rsa|id_dsa|id_ecdsa|id_ed25519/i.test(basename)) {
     return true;
   }
-  const home = process.env.HOME ? pathResolve(process.env.HOME) : null;
+  const homeDir = os.homedir();
+  const home = homeDir ? pathResolve(homeDir) : null;
   if (!home) {
     return false;
   }

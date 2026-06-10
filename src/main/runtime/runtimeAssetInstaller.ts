@@ -138,6 +138,11 @@ function normalizeArchiveEntry(entryName: string): string | null {
   if (trimmed.includes('\0')) {
     throw new Error('Runtime asset archive contains an invalid NUL path');
   }
+  // 反斜杠在 Windows 解压时是路径分隔符：`..\evil` 能绕过下面按 '/' 分段的
+  // 遍历检查；盘符/UNC 前缀同理。自产资产无合法反斜杠文件名，直接拒。
+  if (trimmed.includes('\\') || /^[A-Za-z]:/.test(trimmed)) {
+    throw new Error(`Runtime asset archive contains an invalid path: ${entryName}`);
+  }
   if (trimmed.startsWith('/')) {
     throw new Error(`Runtime asset archive contains an absolute path: ${entryName}`);
   }

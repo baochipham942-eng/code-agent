@@ -291,7 +291,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
         let errorData = '';
         res.on('data', (chunk) => { errorData += chunk; });
         res.on('end', () => {
-          logger.warn(`[${providerName}] API 错误: ${res.statusCode}`, errorData);
+          logger.warn(`[${providerName}] API 错误: ${res.statusCode} POST ${url.toString()}`, errorData);
           let errorMessage = `${providerName} API 错误 (${res.statusCode})`;
           try {
             // OpenAI/兼容供应商的错误体结构基本一致：{ error: { message, type?, code? } }，
@@ -314,6 +314,10 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
             }
           } catch {
             errorMessage = `${providerName} API error: ${res.statusCode} - ${errorData.substring(0, 200)}`;
+          }
+          // 404 = 路径不存在（非业务错误），带上实际 URL 方便定位 Base URL 配错（缺 /v1、末尾多斜杠等）
+          if (res.statusCode === 404) {
+            errorMessage += `\n请求 URL: ${url.toString()} — 请检查 Base URL 是否完整（OpenAI 兼容通常以 /v1 结尾）`;
           }
           // Emit error event with diagnostic info
           if (onStream) {

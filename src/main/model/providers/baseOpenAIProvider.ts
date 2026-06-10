@@ -152,7 +152,8 @@ export abstract class BaseOpenAIProvider implements Provider {
 
       return withTransientRetry(
         async () => {
-          const response = await electronFetch(`${baseUrl}${this.getEndpoint() || '/chat/completions'}`, {
+          const requestUrl = `${baseUrl}${this.getEndpoint() || '/chat/completions'}`;
+          const response = await electronFetch(requestUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -167,7 +168,8 @@ export abstract class BaseOpenAIProvider implements Provider {
 
           if (!response.ok) {
             const error = await response.text();
-            throw new Error(`${this.name} API error: ${response.status} - ${error}`);
+            const urlHint = response.status === 404 ? `\n请求 URL: ${requestUrl} — 请检查 Base URL 是否完整（OpenAI 兼容通常以 /v1 结尾）` : '';
+            throw new Error(`${this.name} API error: ${response.status} - ${error}${urlHint}`);
           }
 
           return parseOpenAIResponse(await response.json());

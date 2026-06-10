@@ -27,9 +27,9 @@ export interface TestConnectionResult {
   };
 }
 
-export function trimTrailingSlash(value: string): string {
-  return value.replace(/\/+$/, '');
-}
+// 规范定义在解析层（providerResolution），这里转发导出维持 provider.ipc 等既有引用
+import { trimTrailingSlash } from './providers/providerResolution';
+export { trimTrailingSlash };
 
 export function resolveConfiguredApiKey(provider: string, apiKey?: string): string {
   const trimmed = apiKey?.trim();

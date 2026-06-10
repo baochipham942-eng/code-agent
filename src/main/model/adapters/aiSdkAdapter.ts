@@ -173,6 +173,11 @@ function makeAiSdkFetch(provider?: string): typeof globalThis.fetch {
     proxy: false,
   });
 
+  // HTTP 层错误在此落日志（带 URL）：AI SDK 上抛的 APICallError 往往只剩 statusText（如 "Not Found"），
+  // 没有这条日志就无法定位 Base URL 配错（缺 /v1、末尾多斜杠等）
+  if (response.status >= 400) {
+    logger.warn(`[AiSdkAdapter] HTTP ${response.status} ${method} ${url}`);
+  }
   return new Response(responseBodyForFetch(response.data, response.status), {
     status: response.status,
     statusText: response.statusText,

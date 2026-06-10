@@ -67,10 +67,20 @@ function isKimiK25(config: ModelConfig): boolean {
   return config.provider === 'moonshot' && config.model === 'kimi-k2.5';
 }
 
+/** 去掉 URL 末尾斜杠。chat 链路是 `${baseUrl}/chat/completions` 裸拼，残留斜杠会拼出 `//` 被中转站 404。 */
+export function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
 /**
  * 解析 provider 的 API base URL —— 各 provider 类 getBaseUrl 的单一事实来源。
+ * 出口统一 trim 末尾斜杠，与 discovery 链路（provider.ipc getDiscoveryUrl）对齐。
  */
 export function resolveProviderBaseUrl(config: ModelConfig): string {
+  return trimTrailingSlash(resolveBaseUrlRaw(config));
+}
+
+function resolveBaseUrlRaw(config: ModelConfig): string {
   const provider = config.provider;
   const { reg, model } = modelInfoOf(config);
 

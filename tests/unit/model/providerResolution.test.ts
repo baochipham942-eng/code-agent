@@ -83,6 +83,21 @@ describe('resolveProviderBaseUrl', () => {
       .toBe('https://other.test/v1');
   });
 
+  it('末尾斜杠统一 trim：chat 链路裸拼 /chat/completions，残留斜杠会拼出 // 导致 404', () => {
+    // config.baseUrl 带末尾斜杠（用户设置页手填的常见形态）
+    expect(resolveProviderBaseUrl(cfg('deepseek', 'deepseek-chat', { baseUrl: 'https://relay.test/v1/' })))
+      .toBe('https://relay.test/v1');
+    // 动态 custom provider 从 settings 兜底的 baseUrl 同样要 trim
+    mockGetSettings.mockReturnValue({
+      models: { providers: { 'custom-relay': { baseUrl: 'https://api.yumiai.art/openai/v1/' } } },
+    });
+    expect(resolveProviderBaseUrl(cfg('custom-relay', 'gpt-5.5')))
+      .toBe('https://api.yumiai.art/openai/v1');
+    // 多个斜杠也归一
+    expect(resolveProviderBaseUrl(cfg('openai', 'gpt-4o', { baseUrl: 'https://relay.test/v1//' })))
+      .toBe('https://relay.test/v1');
+  });
+
   it('动态 custom provider：settings 也没有 → 返回空串（调用方报错）', () => {
     expect(resolveProviderBaseUrl(cfg('custom-unknown-99', 'some-model'))).toBe('');
     // configService 抛异常也不致命

@@ -47,6 +47,10 @@ const BUNDLED_NODE_PATHS: &[&[&str]] = &[
     &["dist", "bundled-node", "node"],
     &["bundled-node", "bin", "node"],
     &["bundled-node", "node"],
+    // Windows 官方包是顶层 node.exe（prepare-bundled-node.mjs win32 布局）；
+    // 候选按存在性过滤，跨平台共用一张表即可
+    &["dist", "bundled-node", "node.exe"],
+    &["bundled-node", "node.exe"],
 ];
 
 #[derive(Default)]
@@ -250,6 +254,12 @@ fn resolve_bundled_node_binary(
 fn resolve_system_node_binary() -> PathBuf {
     // macOS GUI apps launched from Finder have a minimal PATH that excludes
     // common Node.js installation directories. Search them explicitly.
+    #[cfg(target_os = "windows")]
+    let candidates = [
+        "C:\\Program Files\\nodejs\\node.exe",
+        "C:\\Program Files (x86)\\nodejs\\node.exe",
+    ];
+    #[cfg(not(target_os = "windows"))]
     let candidates = [
         "/usr/local/bin/node",    // Homebrew (Intel Mac)
         "/opt/homebrew/bin/node", // Homebrew (Apple Silicon)
@@ -309,6 +319,13 @@ fn spawn_web_server(app: &tauri::AppHandle) -> Result<(Child, String), String> {
     // 显式继承父进程 env，让 launchctl setenv / shell 注入的 HTTPS_PROXY 等变量
     // 流到 webServer 的 Node 进程。Rust Command 默认就继承父 env，但写出来更明确。
     let mut command = Command::new(&node_binary);
+    // Windows GUI app 拉起 console 子进程默认弹出黑窗，CREATE_NO_WINDOW 抑制
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
     command
         .arg(&script_path)
         .current_dir(&working_dir)

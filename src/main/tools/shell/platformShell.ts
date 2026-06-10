@@ -3,18 +3,40 @@
 // POSIX 路径保持各调用点原有行为（bash -c / shell:true），本模块只收敛 win32 差异
 // ============================================================================
 
-import { spawn, type ChildProcess, type SpawnOptions } from 'child_process';
+import { spawn, spawnSync, type ChildProcess, type SpawnOptions } from 'child_process';
 
 /**
- * Windows 上把命令字符串交给 PowerShell 执行。
- * PowerShell 为 Windows 主 shell（windows-support.md §3.2 决策）；powershell.exe (5.1)
- * 是 Win10+ 保底存在，pwsh 7 的优先探测在 ptyExecutor 层做。
+ * UTF-8 编码注入（windows-support.md 决策：PowerShell 5.1 为兼容地板）。
+ * 中文 Windows 上 PS 5.1 默认用 OEM 代码页（GBK）写 stdout/管道，中文输出乱码；
+ * pwsh 7 默认 UTF-8，注入幂等无副作用。
  */
+export const WINDOWS_SHELL_ENCODING_PRELUDE =
+  '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8';
+
+let cachedWindowsShell: string | null = null;
+
+/**
+ * Windows 主 shell 解析：pwsh 7 优先（编码/性能更好），powershell.exe (5.1)
+ * 是 Win10+ 保底存在（windows-support.md §3.2 决策）。结果进程级缓存。
+ */
+export function resolveWindowsShell(): string {
+  if (cachedWindowsShell) return cachedWindowsShell;
+  try {
+    const probe = spawnSync('where.exe', ['pwsh.exe'], { stdio: 'ignore', windowsHide: true });
+    cachedWindowsShell = probe.status === 0 ? 'pwsh.exe' : 'powershell.exe';
+  } catch {
+    cachedWindowsShell = 'powershell.exe';
+  }
+  return cachedWindowsShell;
+}
+
+/** Windows 上把命令字符串交给 PowerShell 执行（含 UTF-8 编码注入）。 */
 export function spawnWindowsShell(
   command: string,
   options: Pick<SpawnOptions, 'cwd' | 'env'>,
 ): ChildProcess {
-  return spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+  const wrapped = `${WINDOWS_SHELL_ENCODING_PRELUDE}; ${command}`;
+  return spawn(resolveWindowsShell(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', wrapped], {
     cwd: options.cwd,
     env: options.env,
     stdio: ['ignore', 'pipe', 'pipe'],

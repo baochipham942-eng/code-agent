@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserConfigDir } from '../../config/configPaths';
+import { resolveWindowsShell, WINDOWS_SHELL_ENCODING_PRELUDE } from './platformShell';
 
 // ============================================================================
 // Constants
@@ -224,11 +225,17 @@ export function createPtySession(options: {
   } = options;
 
   try {
-    // Determine shell based on platform
-    const shell = process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/bash';
+    // Determine shell based on platform（win32：pwsh 优先 → powershell.exe 5.1 地板）
+    const isWindows = process.platform === 'win32';
+    const shell = isWindows ? resolveWindowsShell() : process.env.SHELL || '/bin/bash';
+    const fullCommand = `${command} ${args.join(' ')}`.trim();
+    // PowerShell 无 bash 的 -c；用 -Command + UTF-8 编码注入（5.1 中文系统默认 GBK）
+    const shellArgs = isWindows
+      ? ['-NoLogo', '-NoProfile', '-Command', `${WINDOWS_SHELL_ENCODING_PRELUDE}; ${fullCommand}`]
+      : ['-c', fullCommand];
 
-    // Create PTY process
-    const ptyProcess = pty.spawn(shell, ['-c', `${command} ${args.join(' ')}`].filter(Boolean), {
+    // Create PTY process（win32 显式走 ConPTY，winpty 仅作 node-pty 内部兜底）
+    const ptyProcess = pty.spawn(shell, shellArgs, {
       name: 'xterm-256color',
       cols,
       rows,
@@ -238,6 +245,7 @@ export function createPtySession(options: {
         ...env,
         TERM: 'xterm-256color',
       } as Record<string, string>,
+      ...(isWindows ? { useConpty: true } : {}),
     });
 
     // Create output file stream

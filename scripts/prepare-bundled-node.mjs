@@ -179,11 +179,17 @@ async function downloadOfficialNode(expected) {
   const archivePath = path.join(tempDir, `${distName}.${archiveExt}`);
   const extractDir = path.join(tempDir, 'extract');
 
+  // Windows 必须显式用系统 bsdtar：Git Bash 环境下 PATH 上的 tar 是 GNU tar，
+  // 会把路径里的 `C:` 当远程主机（Cannot connect to C:）且不识别 zip（CI 实跑坑）
+  const tarBin = isWindows
+    ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
+    : 'tar';
+
   try {
     mkdirSync(extractDir, { recursive: true });
     await download(url, archivePath);
-    // -tf/-xf 自动识别压缩格式：GNU tar 读 tar.gz，Windows 系统 tar（bsdtar）读 zip
-    const archiveEntries = execFileSync('tar', ['-tf', archivePath], { encoding: 'utf8' })
+    // -tf/-xf 自动识别压缩格式：GNU tar 读 tar.gz，bsdtar 读 zip
+    const archiveEntries = execFileSync(tarBin, ['-tf', archivePath], { encoding: 'utf8' })
       .split('\n')
       .filter(Boolean);
     const requiredEntries = new Set(isWindows
@@ -195,7 +201,7 @@ async function downloadOfficialNode(expected) {
       }
     }
 
-    execFileSync('tar', [
+    execFileSync(tarBin, [
       '-xf',
       archivePath,
       '-C',

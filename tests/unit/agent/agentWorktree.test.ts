@@ -5,6 +5,11 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
+
+// 与 agentWorktree.ts 同源：WORKTREE_BASE_DIR = path.join(os.tmpdir(), 'code-agent-worktrees')
+const WORKTREE_BASE = path.join(os.tmpdir(), 'code-agent-worktrees');
 
 vi.mock('../../../src/main/services/infra/logger', () => ({
   createLogger: () => ({
@@ -96,7 +101,7 @@ const fsState = vi.hoisted(() => {
 });
 
 vi.mock('fs', async () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const actual = await vi.importActual<typeof import('fs')>('fs');
   return {
     ...actual,
@@ -134,7 +139,7 @@ describe('AgentWorktree', () => {
       const info = await createAgentWorktree('agent-1', '/repo');
 
       expect(info.branchName).toBe('agent/agent-1');
-      expect(info.worktreePath).toBe('/tmp/code-agent-worktrees/agent-1');
+      expect(info.worktreePath).toBe(`${WORKTREE_BASE}/agent-1`);
       expect(execState.calls.some((c) => c.includes("git worktree add -b 'agent/agent-1'"))).toBe(
         true
       );
@@ -163,7 +168,7 @@ describe('AgentWorktree', () => {
 
       const info = await createAgentWorktree('task/xyz:1', '/repo');
 
-      expect(info.worktreePath).toBe('/tmp/code-agent-worktrees/task_xyz_1');
+      expect(info.worktreePath).toBe(`${WORKTREE_BASE}/task_xyz_1`);
       // 注意：branchName 使用原始 id（未 sanitize），这是源码当前行为
       expect(info.branchName).toBe('agent/task/xyz:1');
     });
@@ -256,11 +261,11 @@ describe('AgentWorktree', () => {
 
     it('识别并清理基目录下的过期 worktree', async () => {
       const now = Date.now();
-      fsState.setMtime('/tmp/code-agent-worktrees/old', now - 2 * 3600_000);
+      fsState.setMtime(`${WORKTREE_BASE}/old`, now - 2 * 3600_000);
 
       execState.when(/git worktree list/, () => ({
         stdout: makeWorktreeList([
-          'worktree /tmp/code-agent-worktrees/old\nbranch refs/heads/agent/old',
+          `worktree ${WORKTREE_BASE}/old\nbranch refs/heads/agent/old`,
         ]),
       }));
       execState.when(/git worktree remove --force/, () => ({ stdout: '' }));
@@ -271,7 +276,7 @@ describe('AgentWorktree', () => {
       expect(cleaned).toBe(1);
       expect(
         execState.calls.some((c) =>
-          c.includes("git worktree remove --force '/tmp/code-agent-worktrees/old'")
+          c.includes(`git worktree remove --force '${WORKTREE_BASE}/old'`)
         )
       ).toBe(true);
       expect(execState.calls.some((c) => c.includes("git branch -D 'agent/old'"))).toBe(true);
@@ -293,11 +298,11 @@ describe('AgentWorktree', () => {
 
     it('跳过 mtime 未超期的 worktree', async () => {
       const now = Date.now();
-      fsState.setMtime('/tmp/code-agent-worktrees/fresh', now - 60_000);
+      fsState.setMtime(`${WORKTREE_BASE}/fresh`, now - 60_000);
 
       execState.when(/git worktree list/, () => ({
         stdout: makeWorktreeList([
-          'worktree /tmp/code-agent-worktrees/fresh\nbranch refs/heads/agent/fresh',
+          `worktree ${WORKTREE_BASE}/fresh\nbranch refs/heads/agent/fresh`,
         ]),
       }));
 
@@ -310,7 +315,7 @@ describe('AgentWorktree', () => {
       // 不 setMtime — statSync 会抛
       execState.when(/git worktree list/, () => ({
         stdout: makeWorktreeList([
-          'worktree /tmp/code-agent-worktrees/ghost\nbranch refs/heads/agent/ghost',
+          `worktree ${WORKTREE_BASE}/ghost\nbranch refs/heads/agent/ghost`,
         ]),
       }));
       execState.when(/git worktree remove --force/, () => ({ stdout: '' }));
@@ -323,11 +328,11 @@ describe('AgentWorktree', () => {
 
     it('非 agent/* 分支不会被 branch -D', async () => {
       const now = Date.now();
-      fsState.setMtime('/tmp/code-agent-worktrees/manual', now - 2 * 3600_000);
+      fsState.setMtime(`${WORKTREE_BASE}/manual`, now - 2 * 3600_000);
 
       execState.when(/git worktree list/, () => ({
         stdout: makeWorktreeList([
-          'worktree /tmp/code-agent-worktrees/manual\nbranch refs/heads/manual-branch',
+          `worktree ${WORKTREE_BASE}/manual\nbranch refs/heads/manual-branch`,
         ]),
       }));
       execState.when(/git worktree remove --force/, () => ({ stdout: '' }));

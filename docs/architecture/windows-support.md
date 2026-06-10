@@ -1,10 +1,16 @@
 # Windows (win32-x64) 支持方案
 
-> 状态：v1.1（代码盘点 + 上游资产实查完成，开放决策已拍板，待真机验证）｜创建 2026-06-10｜linchen
+> 状态：v1.2（**真机验证：核心打通**——天翼云电脑 Windows Server 2019 实测，窗口渲染 + 后端全活）｜创建 2026-06-10｜linchen
 > 背景：macOS 双架构（v0.16.101，arm64 + x64）已发；现探索 Windows 支持，目标小范围朋友测试。
-> 结构对齐先例 `docs/architecture/intel-x64-support.md`。
+> 结构对齐先例 `docs/architecture/intel-x64-support.md`。实施记录见 §7、§8。
 
 ## 0. 结论先行
+
+> **v1.2 真机验证结论（2026-06-10，天翼云电脑 Windows Server 2019 / GBK 936 / PowerShell 5.1）**：
+> **Windows 版核心已打通**——unsigned NSIS perUser 安装（无 UAC）→ 窗口完整渲染主界面 → webServer / better-sqlite3 / 23 skills / 13 MCP server 全部正常。
+> 从"窗口秒退"到"完整可交互"，连修 5 个实现期 bug（见 §7），全是静态盘点照不到、只有 CI 实跑 + 真机才能暴露的。
+> 已上 `feat/windows-support` 分支（CI `build-windows-test.yml` 实跑绿、产物 OSS 国内可下）。
+> **剩余 = 朋友消费版真机验收（§5）+ release.yml 矩阵折入（§4 P2）**。dogfooding 顺带发现的几个**平台无关产品 bug**（Ollama 假性可用 / 配 provider 默认模型不自动切 / 会话导出静默失败 / MiMo 托管 key）已分流到独立分支 `fix/model-config-and-export`，不混入本线。
 
 - **能做，建议做，但工作量显著大于 x64**：x64 是同平台换架构（2–4 天），Windows 是换平台。**MVP（对话/工具执行/会话持久化/自动更新）估 2–3 周**：纯工程 8–12 天 + 朋友真机回归。大头不在打包链（~3–5 天，x64 先例可大量复用），而在**安全与工具层重设计（~4–6 天，不可压缩）**。
 - **已定决策（执行确认）**：
@@ -210,21 +216,24 @@ commandSafety.ts（框架层，保留）
 ## 5. 朋友真机验收清单（非开发可照做）
 
 > 在 Windows 10/11 x64 上装包逐项点，回报编号 + 截图。任意一项失败即可定位对应模块。
+> **状态列**：✅=云电脑(Server 2019)已验证；⏳=待消费版真机；🔑=需先配 API key。
 
-| # | 验收项 | 通过标准 | 对应模块 |
-|---|--------|---------|---------|
-| 1 | 安装 | SmartScreen 出现「更多信息→仍要运行」可绕过，安装**无管理员/UAC 弹窗**，装到用户目录 | NSIS perUser + 指引有效性 |
-| 2 | 启动 | 正常进主界面，无白屏/闪退/报毒拦死 | Tauri/Rust + bundled-node + Defender |
-| 3 | 对话 | 发消息正常回复 | webServer + bundled-node |
-| 4 | 会话持久化 | 历史会话保存、重启还在 | better-sqlite3 win32 |
-| 5 | API Key | 存 key、重启还在 | keytar（Windows 凭据管理器） |
-| 6 | 终端工具 | 让 Agent 跑 `Get-ChildItem` 之类命令能看到输出，**中文输出不乱码** | node-pty ConPTY + 编码 |
-| 7 | **危险命令拦截** | 让 Agent 执行「递归删除我的文档目录」类请求，确认被拦截或要求确认（**不是直接执行**） | windowsRules 安全包 |
-| 8 | 中文路径 | 在含中文名的目录里让 Agent 读写文件正常 | 路径/编码链 |
-| 9 | 图像 | 触发任意图片处理功能正常 | sharp win32-x64 |
-| 10 | 文件占用 | App 开着的状态下完成一次自动更新，无「文件被占用」报错 | 文件锁风险面 |
-| 11 | 自动更新 | 设置里检查更新能拉到 win 包，下载→重装→重启全程无 UAC/SmartScreen | latest.json windows 键 + minisign + NSIS |
-| 12 | 降级确认 | 语音输入/OCR/日历邮件等显示「平台不支持」而非报错崩溃（**预期不可用，属正常**） | §1.5 降级面 |
+| # | 验收项 | 通过标准 | 对应模块 | 状态 |
+|---|--------|---------|---------|------|
+| 1 | 安装 | SmartScreen 出现「更多信息→仍要运行」可绕过，安装**无管理员/UAC 弹窗**，装到用户目录 | NSIS perUser + 指引有效性 | ✅ perUser 无 UAC 已验（SmartScreen 待浏览器下载真机） |
+| 2 | 启动 | 正常进主界面，无白屏/闪退/报毒拦死 | Tauri/Rust + bundled-node + WebView2 | ✅ 窗口完整渲染（需 WebView2，见 §7） |
+| 3 | 对话 | 发消息正常回复 | webServer + bundled-node | 🔑 后端已起，发消息需配 key |
+| 4 | 会话持久化 | 历史会话保存、重启还在 | better-sqlite3 win32 | ✅ code-agent.db + WAL 已建 |
+| 5 | API Key | 存 key、重启还在 | keytar（Windows 凭据管理器） | ✅ secure-storage.json 已建（持久性待复验） |
+| 6 | 终端工具 | 让 Agent 跑 `Get-ChildItem` 之类命令能看到输出，**中文输出不乱码** | node-pty ConPTY + 编码 | ⏳🔑 |
+| 7 | **危险命令拦截** | 让 Agent 执行「递归删除我的文档目录」类请求，确认被拦截或要求确认（**不是直接执行**） | windowsRules 安全包 | ⏳🔑 |
+| 8 | 中文路径 | 在含中文名的目录里让 Agent 读写文件正常 | 路径/编码链 | ⏳🔑 |
+| 9 | 图像 | 触发任意图片处理功能正常 | sharp win32-x64 | ⏳🔑 |
+| 10 | 文件占用 | App 开着的状态下完成一次自动更新，无「文件被占用」报错 | 文件锁风险面 | ⏳ |
+| 11 | 自动更新 | 设置里检查更新能拉到 win 包，下载→重装→重启全程无 UAC/SmartScreen | latest.json windows 键 + minisign + NSIS | ⏳（需 P2 矩阵折入后） |
+| 12 | 降级确认 | 语音输入/OCR/日历邮件等显示「平台不支持」而非报错崩溃（**预期不可用，属正常**） | §1.5 降级面 | ⏳ |
+
+> §3/§6-9 标 🔑：云电脑后端已证明健康，但发消息/工具执行需先配一个 API key（key 每台机存 SecureStorage、不打包，全新机为空——这是设计而非 bug）。这几项留给配好 key 的真机验。
 
 ## 6. 风险与未决
 
@@ -232,8 +241,38 @@ commandSafety.ts（框架层，保留）
 - **Defender 误报**：unsigned NSIS + 解包 node.exe 子进程 + 本地 8180 webServer 的组合是启发式重点关照对象，**误报概率中等偏高**。缓解：朋友指引含「允许在设备上」步骤；若被标记，向 Microsoft 提交误报申诉（免费，1–3 天）；这是不买证书的已知代价，朋友规模可接受。
 - **文件占用是 Windows 真实差异**，不是理论风险：renderer 热更新 rename、日志 rotate、更新替换 DB 三个场景必须真机验（§5 #10）。可能需要 retry-on-EBUSY 或重启时清理两种兜底。
 - **PowerShell 版本碎片**：Win10 默认只有 5.1（GBK 编码坑），pwsh 7 需自装。MVP 以 5.1 为兼容地板 + 编码注入，探测到 pwsh 优先用。
-- **conpty 真机未验**：prebuild 在，但 resize/挂起/中文渲染要真机过一遍。**无自有 Windows 验证机**（九州 VPS 已过期），所有真机项（conpty / 文件占用三场景 / Defender 实测）合并进朋友验收（§5 #6/#10），回归节奏受朋友时间约束。
+- **WebView2 依赖**（真机新增，已解决）：Win11/新 Win10 自带，但**旧 Win10/Server 2019 不带**，缺了窗口创建失败秒退。已用 `embedBootstrapper` 内嵌引导器（§7 bug #4）；朋友若在很旧的离线机上装失败，退路是 `offlineInstaller`（+150MB）。
+- **conpty 真机未验**：prebuild 在、窗口与后端已真机验证，但 conpty 的 resize/挂起/**GBK 中文输出**仍需配好 key 后真机过一遍（§5 #6）。**无自有持久 Windows 验证机**（天翼云电脑按量、九州 VPS 已过期），文件占用三场景 / Defender 实测 / 终端编码合并进朋友验收。
 - **PII Windows 链路**（已决策）：uv 二进制随包带上（成本近零），PII 安装链 MVP 标记不可用（setup 脚本是 .sh），P3 出 Windows 版再开。onnxruntime win_amd64 wheel 链路理论通，届时真机验。
 - **lenient 模式的安全敞口**（已决策接受）：朋友测试包非硬毙命令不 confirm，依赖硬毙清单兜底——清单完备性靠别名变体爆破测试 + codex 对抗审计保证，测试期收集的真实命令样本回填后再切 strict。
 - **CI runner**：windows-latest 长期供应无虞（对比 macos-15-intel 2027.08 限期），无平台续命风险。
 - **工期主要不确定性**：安全规则包的评测打磨轮次（估 3–4 天可能滑到 5–6 天）+ 朋友真机回归节奏受对方时间约束（x64 同款依赖）。
+
+## 7. 实施 + 真机调试记录（2026-06-10）
+
+静态盘点（§1）之外，CI 实跑（6 轮）+ 天翼云电脑真机连挖 **5 个实现期 bug**，全部已在 `feat/windows-support` 修复。这些是规划阶段照不到的——只有真实 Windows 工具链 / runtime 才会触发：
+
+| # | bug | 暴露环节 | 根因 | 修复 |
+|---|-----|---------|------|------|
+| 1 | `shasum: command not found` | CI fetch 脚本 | GH windows runner 的 Git Bash 无 perl shasum，只有 coreutils sha256sum | `fetch-rtk/uv.sh` 加 `sha256_of` 按可用性选 shasum/sha256sum |
+| 2 | `tar: Cannot connect to C: resolve failed` | CI prepare-bundled-node | Git Bash PATH 上的 GNU tar 把 `C:\` 当远程主机、且不识别 zip | win32 显式用系统 `System32\tar.exe`（bsdtar） |
+| 3 | `cannot find frontmost_app_triplet` / E0308 | CI 首次 Windows 编译 | `capture_frontmost_context_snapshot` 调 macos-cfg 函数但自身无 cfg 门——**项目史上首次非 mac 编译才暴露的存量洞** | 补 `#[cfg(not(target_os="macos"))]` 变体返回 Err 走降级；并审计全部 macos-cfg 调用面确认是唯一缺口 |
+| 4 | 窗口弹出秒退 | 真机启动 | **Windows Server 2019 不自带 WebView2 Runtime**，缺了 Tauri 窗口创建失败 | `tauri-platform-config.mjs` 加 `webviewInstallMode: embedBootstrapper`（嵌 ~2MB 引导器装机时拉运行时，微软 CDN 已实测国内可达） |
+| 5 | `EISDIR: lstat 'C:'`，webServer 启动即崩 | 真机启动（WebView2 装上后） | **Tauri `resource_dir()`/`current_exe()` 在 Windows 返回 `\\?\C:\...` verbatim 路径**，传给 bundled node 当主脚本时 node 模块解析把盘符 `C:` 抠出来 lstat 崩溃 | main.rs `strip_verbatim_prefix` 规整路径（candidate_roots + spawn_web_server 三处）；非 Windows 恒等 |
+
+**真机已确认正常**：node v24 / better-sqlite3（DB+WAL 建出）/ 23 skills / 13 MCP（memory-kv/code-index/context7/deepwiki 全连上）/ webServer HTTP 起来 / 窗口完整渲染 + 可交互。
+
+**真机发现的非 Windows 问题**（平台无关，分流 `fix/model-config-and-export`，不混入本线）：
+- Local(Ollama) provider `requiresApiKey:false` → 未探测端点就显"3/3 已可用"（`providerRegistryBase.ts:273`）
+- 配好新 provider 后默认/活动模型不自动切，发送报"默认模型未配置 key"（`ChatView.tsx:373`）
+- 右键会话「导出会话日志/Markdown」静默失败（`Sidebar.tsx:552` → `saveTextFile.ts`，catch 只 log 无 toast）
+- MiMo 托管 key 全员可用机制在全新机未生效（需补设计上下文）
+
+**已知低优先级（不阻断）**：webServer 启动 banner 的框线字符在 GBK 936 控制台乱码（`鈺?鈥?`），纯装饰、生产态用户看不到控制台。
+
+## 8. CI 与产物现状
+
+- `build-windows-test.yml`（手动 dispatch）实跑绿：windows-msvc sidecar（sha256 锁定）→ bundled node.exe → 全量 build → 资源验证 → renderer 探针 → NSIS unsigned 打包 → minisign 签名 → 产物上传 GH artifact **+ Aliyun OSS**（`wintest/` 路径，国内测试机直连下载，免文件中转）。
+- Rust 依赖缓存命中后 NSIS 编译 ~7min（冷编译 ~20min）。
+- 产物：`Agent-Neo-<ver>-win-x64-TEST-setup.exe`（~62MB，含 WebView2 引导器后体积基本不变）。
+- 朋友安装指引：`docs/guides/windows-test-install.md`。

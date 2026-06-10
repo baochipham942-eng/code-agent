@@ -20,8 +20,10 @@ export const DEFAULT_MODELS = {
   chat: 'mimo-v2.5-pro',
   /** 推理模型 - DeepSeek V4 Pro (按需付费，替代 R1) */
   reasoning: 'deepseek-v4-pro',
-  /** 视觉理解模型 - 智谱包年 */
-  vision: 'glm-4.6v',
+  /** 视觉理解模型 - 小米 MiMo Omni 包月（多模态，与 chat 同 provider，免费额度内）。
+   *  原默认 glm-4.6v 与 ZHIPU_VISION_MODEL('glm-4.1v-thinking-flash') 不一致，且很多
+   *  智谱套餐不含 glm-4.6v 导致截图分析 403；改用 xiaomi omni 与默认 provider 对齐。 */
+  vision: 'mimo-v2-omni',
   /** 视觉快速模型（不支持 base64） */
   visionFast: 'glm-4.6v-flash',
   /** 代码模型 - 小米 MiMo v2.5 Pro 包月旗舰（thinking + tool call） */

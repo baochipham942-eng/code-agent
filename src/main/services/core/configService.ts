@@ -219,7 +219,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     // 按用途路由模型 — 引用 DEFAULT_MODELS 常量
     routing: {
       code: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.code },
-      vision: { provider: 'zhipu', model: DEFAULT_MODELS.vision },
+      vision: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.vision },
       fast: { provider: 'zhipu', model: DEFAULT_MODELS.quick },
       gui: { provider: 'zhipu', model: DEFAULT_MODELS.visionFast },
     },

@@ -122,7 +122,7 @@ grep -rn "Date.now()" src/main/services/core/repositories/ --include="*.ts"
 ### 发版（官方）= 只推 tag，CI 接管，别本地打包
 
 > ⚠️ **正式发版不需要本地 `cargo tauri build`**（踩坑 2026-06-09：白跑 20min 本地构建，还撞本地 syspolicyd EMFILE 把 spctl 卡住）。
-> `git push origin v<version>` 触发 GitHub Actions **「Build and Release」(`.github/workflows/release.yml`)**，自动完成：构建 → Developer ID 签名 → 公证 staple → OSS 上传（versioned + `stable/` 频道）→ GitHub Release → Vercel update API。签名/公证全在 CI，绕开本地签名环境问题。
+> `git push origin v<version>` 触发 GitHub Actions **「Build and Release」(`.github/workflows/release.yml`)**，自动完成：**双架构矩阵构建（arm64 + x64，v0.16.101 起）** → Developer ID 签名 → 公证 staple → OSS 上传（versioned + `stable/` 频道，产物按架构命名）→ publish 任务合并双平台 latest.json（darwin-aarch64 + darwin-x86_64）→ GitHub Release → Vercel update API。签名/公证全在 CI，绕开本地签名环境问题。x64 侧改动需同步 `build-x64-test.yml`（手动测试构建）与 `releaseMacosGates.test.ts` 特征断言。
 
 官方发版步骤（源码侧准备，其余 CI 做）：
 ```bash

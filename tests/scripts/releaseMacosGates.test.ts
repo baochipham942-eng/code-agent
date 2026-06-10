@@ -136,8 +136,14 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).toContain('TAURI_SIGNING_PRIVATE_KEY');
     expect(workflow).toContain('CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS');
     expect(workflow).toContain('actions: read');
-    expect(workflow).toContain('src-tauri/target/release/bundle/macos/*.app.tar.gz');
-    expect(workflow).toContain('src-tauri/target/release/bundle/macos/*.app.tar.gz.sig');
+    // 双架构（2026-06-10 起）：updater 归档 + 签名经 release-assets 制品发布，
+    // 按架构命名防覆盖；合并后的 latest.json 必须同时含两个平台键（缺键 fail-fast）
+    expect(workflow).toContain('release-assets/*.app.tar.gz');
+    expect(workflow).toContain('release-assets/*.app.tar.gz.sig');
+    expect(workflow).toContain('Agent.Neo-x64.app.tar.gz');
+    expect(workflow).toContain('macos-15-intel');
+    expect(workflow).toContain("'darwin-aarch64', 'darwin-x86_64'");
+    expect(workflow).toContain('--dmg-url-x64');
     expect(workflow).toContain('npm run release:runtime-assets');
     expect(workflow).toContain('runtime-assets-manifest-darwin-arm64.json');
     expect(workflow).toContain('scripts/verify-runtime-assets-publish.mjs');
@@ -145,8 +151,8 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).toContain('RUNTIME_ASSETS_MANIFEST_SHA256');
     expect(workflow).toContain('--runtime-assets-manifest-url');
     expect(workflow).toContain('payload.runtimeAssets');
-    expect(workflow).toContain('src-tauri/target/release/runtime-assets/*.sha256');
-    expect(workflow).toContain('src-tauri/target/release/runtime-assets/*.tar.gz');
+    expect(workflow).toContain('release-assets/runtime-assets-manifest-*.sha256');
+    expect(workflow).toContain('release-assets/*.tar.gz');
     expect(workflow).toContain('Verify renderer hot-update release gate');
     expect(workflow).toContain('npm run renderer:verify-release-gate --');
     expect(workflow).toContain('--workflow renderer-bundle.yml');
@@ -162,18 +168,27 @@ describe('macOS release fail-closed gates', () => {
 
   it('keeps formal app releases fail-closed before app artifacts are published', () => {
     const workflow = readWorkflow('.github/workflows/release.yml');
-    const steps = workflow.jobs?.['release-mac']?.steps ?? [];
+    // 双架构（2026-06-10 起）：构建在 build-mac 矩阵，发布收口在 publish 任务。
+    // fail-closed 链 = build-mac 内（probe → 门禁 → repack）+ publish needs build-mac
+    // （任一架构失败则 GitHub Release / stable 提升不会执行）。
+    const steps = workflow.jobs?.['build-mac']?.steps ?? [];
     const stepNames = steps.map((step) => step.name);
     const verifierIndex = stepNames.indexOf('Verify renderer hot-update release gate');
     const rendererProbeIndex = stepNames.indexOf('Smoke-probe renderer startup (block publish on ErrorBoundary crash)');
     const repackIndex = stepNames.indexOf('Repack updater archive (clean AppleDouble + post-notarize state)');
-    const githubReleaseIndex = stepNames.indexOf('Create GitHub Release');
     const verifier = steps[verifierIndex];
 
     expect(verifierIndex).toBeGreaterThan(rendererProbeIndex);
     expect(verifierIndex).toBeLessThan(repackIndex);
-    expect(verifierIndex).toBeLessThan(githubReleaseIndex);
-    expect(verifier?.if).toBe("${{ !contains(github.ref_name, '-') }}");
+
+    const publishJob = workflow.jobs?.['publish'];
+    expect(publishJob?.needs).toBe('build-mac');
+    const publishStepNames = (publishJob?.steps ?? []).map((step) => step.name);
+    expect(publishStepNames).toContain('Create GitHub Release');
+    expect(publishStepNames.indexOf('Merge per-arch updater manifests (single latest.json, dual platforms)'))
+      .toBeLessThan(publishStepNames.indexOf('Create GitHub Release'));
+
+    expect(verifier?.if).toBe("${{ matrix.arch == 'arm64' && !contains(github.ref_name, '-') }}");
     expect(verifier?.env).toMatchObject({
       CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS: '${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS }}',
       CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY: '${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY }}',

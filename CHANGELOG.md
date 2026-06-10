@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.101] - 2026-06-10
+
+### Added
+
+- **Intel Mac (x64) 双架构首发**：发版矩阵 arm64 + x64（macos-15-intel 原生构建），单 manifest 双平台键（darwin-aarch64 + darwin-x86_64），分发页按芯片选包，`/api/update` 按 arch 路由。x64 限制：VAD 不适配（onnxruntime-node 无 darwin-x64），静默降级。
+- Computer Use 新底座（CUA，默认关闭）：cua-driver 重签为「Agent Neo Computer Use.app」，stdio MCP 接入，权限 UI（Accessibility 必需 + 一键授权），重签产物走 OSS 预构建分发（sha256 锁定）。
+- 会话右键「导出会话日志」：脱敏诊断包 + 当天日志尾部，未登录可导；会话导出改原生「另存为」对话框。
+
+### Fixed
+
+- 中转站「测试连接成功但会话 404」：baseUrl 末尾斜杠解析层统一 trim；404 错误带实际请求 URL + /v1 提示；aiSdk 路径 HTTP≥400 落带 URL 日志。
+- 工具结果落库前 eager 压缩导致模型重试循环：observation 原样可见，L1 投影层跨轮幂等重截断。
+- WKWebView 启动连刷：启动 URL 唯一 `?boot=` 参数 + index.html `Cache-Control: no-store`。
+- 视觉分析智能候选路由；默认视觉模型对齐默认 provider；MCP 认证失败路由到重新授权。
+
 ## [0.16.100] - 2026-06-09
 
 ### Added

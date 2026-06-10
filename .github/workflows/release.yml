@@ -417,6 +417,7 @@ jobs:
             release-assets/*.app.tar.gz
             release-assets/*.app.tar.gz.sig
             release-assets/latest.json
+            release-assets/*.tar.gz
             release-assets/runtime-assets-manifest-*.json
             release-assets/runtime-assets-manifest-*.sha256
           generate_release_notes: true

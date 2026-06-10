@@ -40,6 +40,46 @@ if [[ "$(uname)" != "Darwin" ]]; then
   exit 1
 fi
 
+# ── CI / 无源 app 环境：拉取 OSS 预构建（CUA_FETCH_PREBUILT=1）──────
+# 上游 trycua/cua 公开 release 只到 v0.2.0，CI 拿不到 0.5.1 源 app。
+# 预构建 = 本机重签产物（universal，Developer ID + hardened runtime + timestamp），
+# 打 tar 上传发版 OSS，sha256 锁定（对齐 fetch-rtk 供应链规则）。更新方法：
+#   COPYFILE_DISABLE=1 tar -czf agent-neo-computer-use-<ver>-universal.tar.gz "Agent Neo Computer Use.app"
+#   ossutil cp -f <tar> oss://agent-neo-releases/assets/cua-driver/
+#   然后更新下方 CUA_PREBUILT_SHA256。
+CUA_PREBUILT_URL="https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/assets/cua-driver/agent-neo-computer-use-${CUA_DRIVER_VERSION}-universal.tar.gz"
+CUA_PREBUILT_SHA256="1b0d0138b0cb8ef0dcdeed1677473ed5bc4e1c3e99bae0e85a5fa945ac50323e"
+
+dest_app_ready() {
+  [[ -d "$DEST_APP" ]] || return 1
+  local exist_id
+  exist_id="$(codesign -dv "$DEST_APP" 2>&1 | awk -F= '/^Identifier=/{print $2}')" || return 1
+  [[ "$exist_id" == "$CUA_BUNDLE_ID" ]] && codesign --verify --strict "$DEST_APP" 2>/dev/null
+}
+
+if [[ "${CUA_FETCH_PREBUILT:-}" == "1" ]]; then
+  if dest_app_ready; then
+    echo "✓ $CUA_APP_NAME.app ($CUA_BUNDLE_ID) 已就绪且签名有效（跳过下载）"
+    exit 0
+  fi
+  TMP_TAR="$(mktemp -d)/cua-prebuilt.tar.gz"
+  echo "→ 下载预构建: $CUA_PREBUILT_URL"
+  curl -fL --retry 3 -o "$TMP_TAR" "$CUA_PREBUILT_URL"
+  ACTUAL_SHA="$(shasum -a 256 "$TMP_TAR" | awk '{print $1}')"
+  if [[ "$ACTUAL_SHA" != "$CUA_PREBUILT_SHA256" ]]; then
+    echo "❌ sha256 不匹配: 实际=$ACTUAL_SHA 期望=$CUA_PREBUILT_SHA256（供应链锁定，拒绝使用）" >&2
+    exit 1
+  fi
+  rm -rf "$DEST_APP"
+  tar -xzf "$TMP_TAR" -C "$SCRIPT_DIR"
+  if ! dest_app_ready; then
+    echo "❌ 预构建解包后签名/bundle id 校验失败" >&2
+    exit 1
+  fi
+  echo "✓ $CUA_APP_NAME.app ($CUA_DRIVER_VERSION) 预构建就位（重签产物，无需本机源 app）"
+  exit 0
+fi
+
 # ── 定位源 app ──────────────────────────────────────────────
 SOURCE_APP="${CUA_DRIVER_SOURCE_APP:-/Applications/CuaDriver.app}"
 if [[ ! -d "$SOURCE_APP" ]]; then

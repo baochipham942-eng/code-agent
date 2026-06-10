@@ -87,6 +87,28 @@ fn unique_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     result
 }
 
+// Windows 的 resource_dir()/current_exe() 常返回 `\\?\C:\...` 扩展长度（verbatim）路径。
+// 这种前缀传给 bundled node.exe 当主脚本/cwd 时，node 的模块解析会把盘符 `C:`
+// 抠出来 lstat → `EISDIR: illegal operation on a directory, lstat 'C:'`，webServer
+// 启动即崩、app 秒退（真机实测，Windows Server 2019 + node v24）。把它规整成普通
+// `C:\...` 路径再交给 node。非 Windows 为恒等（macOS 路径无此前缀，零影响）。
+#[cfg(target_os = "windows")]
+fn strip_verbatim_prefix(p: PathBuf) -> PathBuf {
+    let s = p.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        return PathBuf::from(rest);
+    }
+    p
+}
+
+#[cfg(not(target_os = "windows"))]
+fn strip_verbatim_prefix(p: PathBuf) -> PathBuf {
+    p
+}
+
 fn candidate_roots(app: &tauri::AppHandle) -> Vec<PathBuf> {
     let mut dev_roots = Vec::new();
     let mut packaged_roots = Vec::new();
@@ -106,6 +128,8 @@ fn candidate_roots(app: &tauri::AppHandle) -> Vec<PathBuf> {
     if let Ok(resource_dir) = app.path().resource_dir() {
         // Tauri preserves resources declared as "../dist/..." under
         // Contents/Resources/_up_/dist/... inside the macOS app bundle.
+        // strip_verbatim_prefix: Windows 上去掉 `\\?\` 前缀（见函数注释）。
+        let resource_dir = strip_verbatim_prefix(resource_dir);
         packaged_roots.push(resource_dir.join("_up_"));
         packaged_roots.push(resource_dir.clone());
 
@@ -115,6 +139,7 @@ fn candidate_roots(app: &tauri::AppHandle) -> Vec<PathBuf> {
     }
 
     if let Ok(exe_path) = env::current_exe() {
+        let exe_path = strip_verbatim_prefix(exe_path);
         if let Some(exe_dir) = exe_path.parent() {
             packaged_roots.push(exe_dir.to_path_buf());
 
@@ -313,7 +338,9 @@ fn resolve_node_binary(bundled_runtime_root: &Path, resource_dir: Option<&Path>)
 fn spawn_web_server(app: &tauri::AppHandle) -> Result<(Child, String), String> {
     let (script_path, working_dir) = resolve_server_script(app)?;
     let boot_token = make_boot_token();
-    let resource_dir = app.path().resource_dir().ok();
+    // Windows: 去掉 `\\?\` 前缀，否则 node 解析脚本路径崩在 lstat 'C:'（见 strip_verbatim_prefix）。
+    // script_path/working_dir 来自 candidate_roots（已规整）；此处规整 node 解析另用的 resource_dir。
+    let resource_dir = app.path().resource_dir().ok().map(strip_verbatim_prefix);
     let node_binary = resolve_node_binary(&working_dir, resource_dir.as_deref());
 
     // 显式继承父进程 env，让 launchctl setenv / shell 注入的 HTTPS_PROXY 等变量

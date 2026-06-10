@@ -1,0 +1,125 @@
+name: Build Windows Test Bundle (x64)
+
+# 手动触发的 Windows (win32-x64) 测试构建：在 windows-latest 上把整条链路
+# （windows-msvc sidecar + native rebuild + tauri-platform-config + NSIS unsigned）
+# 跑通，产出 unsigned NSIS 安装包作为 workflow artifact，给朋友做真机验收
+# （docs/architecture/windows-support.md §5）。
+#
+# 设计（复刻 build-x64-test.yml 模式）：
+#   - 仅 workflow_dispatch（手动），绝不在 tag/push 触发，不碰生产 release.yml。
+#   - 只产 artifact，不上传 OSS、不提升 stable、不发 GitHub Release。
+#   - 不买 Authenticode 证书（已决策）：包是 unsigned 的，朋友安装走
+#     SmartScreen「更多信息→仍要运行」；updater 完整性走 minisign .sig。
+#   - 验证通过后，再把 windows 折进生产 release.yml 矩阵（windows-support.md §4 P2）。
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-test:
+    runs-on: windows-latest
+    defaults:
+      run:
+        # 统一 Git Bash：fetch-*.sh 按 MINGW uname 走 windows-msvc 分支
+        shell: bash
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: win32-x64
+
+      # npm 在 Windows 默认用 cmd.exe 跑 scripts，而本仓 scripts 大量使用
+      # `ENV=value cmd` 前缀与 `bash scripts/*.sh`（如 build:web 的 npm_config_cache
+      # 前缀、postinstall 的 rebuild-native-system.sh）——必须切到 Git Bash，
+      # 且要在 npm ci 之前设置（postinstall 已经依赖它）。
+      - name: Use Git Bash as npm script shell
+        run: npm config set script-shell "C:\\Program Files\\Git\\bin\\bash.exe"
+
+      # postinstall 跑 rebuild-native:system，在 Windows runner 上为系统 Node
+      # 重编 better-sqlite3（MSVC 工具链 runner 自带）；keytar/sharp/node-pty
+      # 走 prebuild-install / optionalDependencies 自动拉 win32-x64 预编译。
+      - name: Install dependencies
+        run: npm ci
+
+      # taiki-e 预编译包按 host 选：windows-latest 是 x64，预编译对位没有
+      # macos-15-intel 上"装成 arm64"的坑（x64 先例）；若实跑出现架构/兼容问题，
+      # 退路是 `cargo install tauri-cli@2.10.1 --locked`（慢但稳）。
+      - name: Install Tauri CLI (prebuilt)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli@2.10.1
+
+      - name: Fetch sidecars (windows-msvc, sha256 锁定)
+        run: |
+          bash scripts/fetch-rtk.sh
+          bash scripts/fetch-uv.sh
+
+      - name: Prepare bundled Node (win-x64 zip, node.exe 布局)
+        run: node scripts/prepare-bundled-node.mjs
+
+      - name: Build (worker + web + cli + renderer)
+        env:
+          CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS }}
+          CODE_AGENT_CONTROL_PLANE_KEY_ID: ${{ secrets.CODE_AGENT_CONTROL_PLANE_KEY_ID }}
+          CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY }}
+          CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE }}
+        run: |
+          npm run build
+          npm run release:security-scan
+
+      - name: Verify bundle resources (pre)
+        # 缺资源 tauri build 直接 fail（x64 先例 v0.16.89）——提前给可读报错
+        run: node scripts/verify-windows-release.mjs --stage pre
+
+      - name: Smoke-probe renderer startup
+        # typecheck/vitest 全过 ≠ renderer 真能 mount（v0.16.89 教训，双平台都拦）。
+        # Windows 侧还能拦住 native 模块（better-sqlite3/keytar）编错 ABI 的启动崩。
+        env:
+          CHROME_PATH: C:\Program Files\Google\Chrome\Application\chrome.exe
+        run: node scripts/release-renderer-probe.mjs 8182
+
+      - name: Build NSIS bundle (unsigned, minisign updater artifacts)
+        timeout-minutes: 45
+        env:
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          node scripts/tauri-platform-config.mjs win32-x64 --out "${RUNNER_TEMP}/tauri.win32.json"
+          cargo tauri build --config "${RUNNER_TEMP}/tauri.win32.json"
+
+      - name: Verify NSIS artifact (post)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: node scripts/verify-windows-release.mjs --stage post
+
+      - name: Rename installer with TEST marker
+        run: |
+          SETUP_SRC="$(ls src-tauri/target/release/bundle/nsis/*.exe | head -1)"
+          VERSION="$(node -p "require('./package.json').version")"
+          cp "${SETUP_SRC}" "${RUNNER_TEMP}/Agent-Neo-${VERSION}-win-x64-TEST-setup.exe"
+          if ls src-tauri/target/release/bundle/nsis/*.sig >/dev/null 2>&1; then
+            cp "$(ls src-tauri/target/release/bundle/nsis/*.sig | head -1)" \
+               "${RUNNER_TEMP}/Agent-Neo-${VERSION}-win-x64-TEST-setup.exe.sig"
+          fi
+          echo "产物: Agent-Neo-${VERSION}-win-x64-TEST-setup.exe"
+
+      - name: Upload windows installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-neo-win-x64-test-setup
+          path: ${{ runner.temp }}/Agent-Neo-*-win-x64-TEST-setup.exe*
+          retention-days: 14
+          if-no-files-found: error

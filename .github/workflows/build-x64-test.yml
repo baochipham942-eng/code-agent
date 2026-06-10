@@ -56,6 +56,29 @@ jobs:
           bash scripts/fetch-rtk.sh
           bash scripts/fetch-uv.sh
 
+      - name: Strip CUA resource (test bundle ships without computer-use driver)
+        # 「Agent Neo Computer Use.app」由 fetch-cua-driver.sh 在本机重签生成
+        # （源 = /Applications/CuaDriver.app v0.5.1），上游 trycua/cua 公开 release
+        # 只到 v0.2.0，CI 上拿不到 0.5.1 源 app。测试包先从 bundle resources 里
+        # 剔除该资源（computer-use 功能缺位，不影响 provider/chat 链路 dogfood）。
+        # CUA 资产接入 CI（OSS 托管或上游公开 0.5.x）后删除本步。
+        run: |
+          python3 - <<'PY'
+          import json
+          p = 'src-tauri/tauri.conf.json'
+          conf = json.load(open(p))
+          res = conf['bundle']['resources']
+          target = '../scripts/Agent Neo Computer Use.app/**/*'
+          if target in res:
+              res.remove(target)
+              with open(p, 'w') as f:
+                  json.dump(conf, f, indent=2, ensure_ascii=False)
+                  f.write('\n')
+              print(f'removed {target} from bundle resources')
+          else:
+              print('CUA resource not present, nothing to strip')
+          PY
+
       - name: Import Developer ID certificate
         env:
           APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}

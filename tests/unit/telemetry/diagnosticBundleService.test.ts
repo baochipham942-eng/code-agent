@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import os from 'os';
+import fs from 'fs';
+import path from 'path';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { getDatabase } from '../../../src/main/services/core/databaseService';
 import { TelemetryStorage } from '../../../src/main/telemetry/telemetryStorage';
-import { buildDiagnosticBundle, sanitizeDiagnosticBundle } from '../../../src/main/telemetry/diagnosticBundleService';
+import { buildDiagnosticBundle, buildSessionLogExport, sanitizeDiagnosticBundle } from '../../../src/main/telemetry/diagnosticBundleService';
 import type { DiagnosticBundle, TelemetrySession, TelemetryModelCall } from '../../../src/shared/contract/telemetry';
 
 const dbState = vi.hoisted(() => ({
@@ -114,6 +116,33 @@ describe('buildDiagnosticBundle', () => {
     const fields = bundle!.rawPayloads.map((p) => p.field).sort();
     expect(fields).toEqual(['completion', 'prompt']);
     expect(bundle!.rawPayloads.find((p) => p.field === 'prompt')!.content).toBe('hello world');
+  });
+
+  it('buildSessionLogExport: 脱敏 bundle + 日志尾部；会话不存在时 bundle 为 null 仍可导出', async () => {
+    const storage = new TelemetryStorage();
+    storage.insertSession(session('sess-2'));
+    const logFile = path.join(os.tmpdir(), `neo-log-export-test-${process.pid}.log`);
+    fs.writeFileSync(logFile, `{"level":"WARN","message":"[openai] API 错误: 404","data":"key sk-abcd1234efgh"}\n`);
+    try {
+      const result = await buildSessionLogExport('sess-2', {
+        storage, exportedAt: 1718000000000, logFilePath: logFile,
+      });
+      const parsed = JSON.parse(result.content) as { sessionId: string; bundle: { session: { id: string } } | null; logTail: string | null };
+      expect(parsed.sessionId).toBe('sess-2');
+      expect(parsed.bundle!.session.id).toBe('sess-2');
+      // 日志尾部进包且过脱敏（密钥打码）
+      expect(parsed.logTail).toContain('API 错误: 404');
+      expect(parsed.logTail).not.toContain('sk-abcd1234efgh');
+      expect(result.suggestedFileName).toMatch(/^neo-session-log-sess-2-\d{4}-\d{2}-\d{2}\.json$/);
+
+      // 会话不在 telemetry 存储（telemetry 关闭/历史会话）→ bundle null，日志尾部仍在
+      const missing = await buildSessionLogExport('nope', { storage, logFilePath: logFile });
+      const missingParsed = JSON.parse(missing.content) as { bundle: unknown; logTail: string | null };
+      expect(missingParsed.bundle).toBeNull();
+      expect(missingParsed.logTail).toContain('API 错误');
+    } finally {
+      fs.unlinkSync(logFile);
+    }
   });
 });
 

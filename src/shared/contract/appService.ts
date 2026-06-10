@@ -111,6 +111,12 @@ export interface SessionMarkdownExport {
   };
 }
 
+/** 会话诊断日志导出（脱敏诊断包 + 当天本地日志尾部，JSON 串） */
+export interface SessionLogExport {
+  content: string;
+  suggestedFileName: string;
+}
+
 export interface PromptRewindDraft {
   content: string;
   attachments?: MessageAttachment[];
@@ -161,6 +167,7 @@ export interface AgentApplicationService {
   loadOlderMessages(sessionId: string, beforeTimestamp: number, limit: number): Promise<{ messages: Message[]; hasMore: boolean }>;
   exportSession(sessionId: string): Promise<unknown>;
   exportSessionMarkdown(sessionId: string): Promise<SessionMarkdownExport>;
+  exportSessionDiagnostics(sessionId: string): Promise<SessionLogExport>;
   importSession(data: unknown): Promise<string>;
 
   // === Session State ===

@@ -548,6 +548,31 @@ export const Sidebar: React.FC = () => {
           }
         },
       },
+      {
+        label: '导出会话日志',
+        icon: '🧾',
+        onClick: async () => {
+          try {
+            const response = await window.domainAPI?.invoke<{ content: string; suggestedFileName: string }>(
+              IPC_DOMAINS.SESSION,
+              'exportDiagnostics',
+              { sessionId: session.id },
+            );
+            if (!response?.success || !response.data?.content) {
+              throw new Error(response?.error?.message || 'Failed to export session diagnostics');
+            }
+            const blob = new Blob([response.data.content], { type: 'application/json;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = response.data.suggestedFileName || `session-log-${session.id}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+          } catch (error) {
+            logger.error('Failed to export session diagnostics', error);
+          }
+        },
+      },
     ];
   }, [
     applySessionWorkbenchPreset,

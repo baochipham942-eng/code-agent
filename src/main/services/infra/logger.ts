@@ -29,6 +29,11 @@ function getDateString(date: Date = new Date()): string {
   return date.toISOString().split('T')[0]; // YYYY-MM-DD
 }
 
+/** 当天日志文件路径（诊断导出读取用；文件可能尚未创建） */
+export function getCurrentLogFilePath(): string {
+  return path.join(getLogDir(), `code-agent-${getDateString()}.log`);
+}
+
 let fileSinkInitialized = false;
 let fileSinkEnabled = true;
 let logDir = '';

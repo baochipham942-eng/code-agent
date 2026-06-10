@@ -243,6 +243,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'create',
     'delete',
     'export',
+    'exportDiagnostics',
     'exportMarkdown',
     'getMemoryContext',
     'getMessages',

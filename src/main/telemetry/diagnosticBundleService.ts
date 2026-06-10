@@ -10,17 +10,19 @@
 // ============================================================================
 
 import os from 'os';
+import fs from 'fs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { getTelemetryStorage, type TelemetryStorage } from './telemetryStorage';
 import { getAppVersion } from '../platform/appPaths';
-import { createLogger } from '../services/infra/logger';
+import { createLogger, getCurrentLogFilePath } from '../services/infra/logger';
 import { scrubString } from '../../shared/observability/scrubEvent';
 import type {
   DiagnosticBundle,
   DiagnosticBundleTurn,
   DiagnosticEnvFingerprint,
 } from '../../shared/contract/telemetry';
+import type { SessionLogExport } from '../../shared/contract/appService';
 
 const execAsync = promisify(exec);
 const logger = createLogger('DiagnosticBundle');
@@ -162,5 +164,61 @@ export function sanitizeDiagnosticBundle(
       ...p,
       content: scrub(p.content),
     })),
+  };
+}
+
+// ----------------------------------------------------------------------------
+// 会话日志导出（用户侧手动触发，区别于 telemetry 自动上传）
+// ----------------------------------------------------------------------------
+
+const LOG_TAIL_MAX_BYTES = 512 * 1024;
+
+/** 读日志文件尾部（最多 LOG_TAIL_MAX_BYTES），失败降级 null —— 日志不可用不阻塞导出。 */
+function readLogTail(filePath: string): string | null {
+  try {
+    const stat = fs.statSync(filePath);
+    const start = Math.max(0, stat.size - LOG_TAIL_MAX_BYTES);
+    const fd = fs.openSync(filePath, 'r');
+    try {
+      const buf = Buffer.alloc(stat.size - start);
+      fs.readSync(fd, buf, 0, buf.length, start);
+      return buf.toString('utf8');
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 导出会话诊断日志：脱敏诊断包 + 当天本地日志尾部（同样过 scrubString）。
+ * 未登录/telemetry 自动上传不可用时，用户可右键会话手动导出发给开发者。
+ * 会话不在 telemetry 存储（telemetry 关闭/历史会话）时 bundle 为 null，仍导出日志尾部。
+ */
+export async function buildSessionLogExport(
+  sessionId: string,
+  opts?: { storage?: TelemetryStorage; exportedAt?: number; logFilePath?: string; homeDir?: string },
+): Promise<SessionLogExport> {
+  const bundle = await buildDiagnosticBundle(sessionId, { storage: opts?.storage });
+  const sanitized = bundle ? sanitizeDiagnosticBundle(bundle, { homeDir: opts?.homeDir }) : null;
+  const homeDir = opts?.homeDir ?? os.homedir();
+  const rawTail = readLogTail(opts?.logFilePath ?? getCurrentLogFilePath());
+  const exportedAt = opts?.exportedAt ?? Date.now();
+  const content = JSON.stringify(
+    {
+      exportVersion: 1,
+      exportedAt,
+      sessionId,
+      bundle: sanitized,
+      logTail: rawTail === null ? null : scrubString(rawTail, { homeDir }),
+    },
+    null,
+    2,
+  );
+  const date = new Date(exportedAt).toISOString().split('T')[0];
+  return {
+    content,
+    suggestedFileName: `neo-session-log-${sessionId.slice(0, 8)}-${date}.json`,
   };
 }

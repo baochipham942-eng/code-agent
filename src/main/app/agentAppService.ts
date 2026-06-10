@@ -12,6 +12,7 @@ import type {
   SwitchModelParams,
   ModelOverride,
   SessionMarkdownExport,
+  SessionLogExport,
   PromptRewindResult,
 } from '../../shared/contract/appService';
 import type {
@@ -44,6 +45,7 @@ import {
   exportSessionToMarkdown,
   suggestExportFilename,
 } from '../session/exportMarkdown';
+import { buildSessionLogExport } from '../telemetry/diagnosticBundleService';
 import type { CachedMessage, CachedSession } from '../session/localCache';
 import { loadStreamSnapshot } from '../session/streamSnapshot';
 import { getSwarmServices, hasSwarmServices } from '../agent/swarmServices';
@@ -651,6 +653,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   async importSession(data: unknown): Promise<string> {
     return getSessionManager().importSession(data as SessionWithMessages);
+  }
+
+  async exportSessionDiagnostics(sessionId: string): Promise<SessionLogExport> {
+    return buildSessionLogExport(sessionId);
   }
 
   // === Session State ===

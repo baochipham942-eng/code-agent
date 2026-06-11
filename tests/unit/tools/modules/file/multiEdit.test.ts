@@ -115,6 +115,95 @@ describe('multiEditModule evidence metadata', () => {
     }
   });
 
+  it('falls back to the flexible replacer chain on whitespace-only mismatch (roadmap 1.1)', async () => {
+    const file = path.join(tmpDir, 'code.ts');
+    await fs.writeFile(file, 'function foo() {\n    return 1;  \n}\n', 'utf-8');
+    await fileReadTracker.recordReadWithStats(file);
+
+    const handler = await editModule.createHandler();
+    const result = await handler.execute(
+      {
+        file_path: file,
+        // old_text 行内空白与文件不一致：精确匹配失败 → LineTrimmedReplacer 回退命中
+        edits: [{ old_text: 'function foo() {\nreturn 1;\n}', new_text: 'function foo() {\n    return 2;\n}' }],
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(await fs.readFile(file, 'utf-8')).toBe('function foo() {\n    return 2;\n}\n');
+    if (result.ok) {
+      expect(result.output).toContain('fuzzy');
+    }
+  });
+
+  it('falls back to indentation-flexible matching for uniformly shifted blocks (roadmap 1.1)', async () => {
+    const file = path.join(tmpDir, 'indent.ts');
+    await fs.writeFile(
+      file,
+      ['class A {', '    method() {', '        return 1;', '    }', '}', ''].join('\n'),
+      'utf-8',
+    );
+    await fileReadTracker.recordReadWithStats(file);
+
+    const handler = await editModule.createHandler();
+    const result = await handler.execute(
+      {
+        file_path: file,
+        edits: [{
+          old_text: ['method() {', '    return 1;', '}'].join('\n'),
+          new_text: ['method() {', '    return 42;', '}'].join('\n'),
+        }],
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    const after = await fs.readFile(file, 'utf-8');
+    expect(after).toContain('return 42;');
+    // 注意：替换文本按原样写入（与 MiMo 行为一致，新文本缩进由模型负责）
+  });
+
+  it('still reports NOT_FOUND when the flexible chain has no match', async () => {
+    const file = path.join(tmpDir, 'none.ts');
+    await fs.writeFile(file, 'const a = 1;\n', 'utf-8');
+    await fileReadTracker.recordReadWithStats(file);
+
+    const handler = await editModule.createHandler();
+    const result = await handler.execute(
+      {
+        file_path: file,
+        edits: [{ old_text: 'const totally_different = 9;', new_text: 'x' }],
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('NOT_FOUND');
+  });
+
+  it('reports AMBIGUOUS_MATCH when the fuzzy match occurs multiple times without replace_all', async () => {
+    const file = path.join(tmpDir, 'dup.ts');
+    await fs.writeFile(file, 'x\n  a();\ny\n  a();\n', 'utf-8');
+    await fileReadTracker.recordReadWithStats(file);
+
+    const handler = await editModule.createHandler();
+    const result = await handler.execute(
+      {
+        file_path: file,
+        edits: [{ old_text: 'a();', new_text: 'b();' }],
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('AMBIGUOUS_MATCH');
+  });
+
   it('confines eval absolute repo paths to the sandbox', async () => {
     const realRoot = path.join(tmpDir, 'repo');
     const sandbox = path.join(tmpDir, 'sandbox');

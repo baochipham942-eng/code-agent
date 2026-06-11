@@ -35,6 +35,7 @@ import {
 } from '../../utils/quoteNormalizer';
 import { atomicWriteFile } from '../../utils/atomicWrite';
 import { buildNearestAnchorHint } from '../../utils/anchorHint';
+import { findFlexibleMatch } from '../../utils/editReplacers';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
 import { getPostEditDiagnostics } from '../../lsp/diagnosticsHelper';
 import { multiEditSchema as schema } from './multiEdit.schema';
@@ -166,12 +167,26 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
 
         let exactMatch = content.includes(oldString);
         let useNormalization = false;
+        // 多级 replacer 链回退（roadmap 1.1，借鉴 MiMoCode tool/edit.ts）：
+        // 精确匹配与智能引号都未命中时，按 LineTrimmed → BlockAnchor →
+        // IndentationFlexible 找内容中实际存在的等价子串，用它做替换。
+        let effectiveOld = oldString;
+        let usedFlexibleMatch = false;
 
         if (!exactMatch && containsSmartChars(oldString)) {
           const normalizedMatch = findMatchingString(content, oldString);
           if (normalizedMatch) {
             exactMatch = true;
             useNormalization = true;
+          }
+        }
+
+        if (!exactMatch) {
+          const flexible = findFlexibleMatch(content, oldString, replaceAll);
+          if (flexible) {
+            exactMatch = true;
+            usedFlexibleMatch = true;
+            effectiveOld = flexible.match;
           }
         }
 
@@ -192,7 +207,7 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
 
         const occurrences = useNormalization
           ? countMatchesWithNormalization(content, oldString)
-          : content.split(oldString).length - 1;
+          : content.split(effectiveOld).length - 1;
 
         if (!replaceAll && occurrences > 1) {
           let errorMsg = `Edit #${i + 1}/${edits.length} failed: found ${occurrences} occurrences. Use replace_all: true or provide more context.`;
@@ -214,13 +229,17 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
           );
         } else {
           if (replaceAll) {
-            content = content.split(oldString).join(newString);
+            content = content.split(effectiveOld).join(newString);
             replacedCount = occurrences;
           } else {
-            content = content.replace(oldString, newString);
+            content = content.replace(effectiveOld, newString);
             replacedCount = 1;
           }
-          editResults.push(`#${i + 1}: replaced ${replacedCount}`);
+          editResults.push(
+            usedFlexibleMatch
+              ? `#${i + 1}: replaced ${replacedCount} (fuzzy matched: whitespace/indentation-tolerant)`
+              : `#${i + 1}: replaced ${replacedCount}`,
+          );
         }
 
         totalReplacements += replacedCount;

@@ -72,6 +72,11 @@ export interface AgentLoopConfig {
   goalContract?: GoalContract;
   /** GAP-013: 启用 Generator-Critic 交付前自动验证（默认读 CODE_AGENT_DELIVERY_CRITIC 环境变量） */
   enableDeliveryCritic?: boolean;
+  /** Max Mode（best-of-N，roadmap 3.3）显式开关，默认关（缺省读 CODE_AGENT_MAX_MODE=1 环境变量）。
+   *  开 = 每步 N 并发 propose-only 候选 → judge 选索引 → 赢家 replay；N 倍调用成本。 */
+  maxMode?: boolean;
+  /** Max Mode 并发候选数（默认 MAX_MODE.DEFAULT_CANDIDATES = 5） */
+  maxModeCandidates?: number;
 }
 
 /**
@@ -140,6 +145,16 @@ export interface ModelResponse {
     };
     artifactValidationAttemptCompletion?: {
       targetFile: string;
+    };
+    /** Max Mode（best-of-N）本步诊断：候选/幸存/赢家索引/是否降级/judge 是否解析成功 */
+    maxMode?: {
+      candidates: number;
+      survivors: number;
+      winner: number;
+      degraded: boolean;
+      judgeParsed: boolean;
+      overheadInputTokens: number;
+      overheadOutputTokens: number;
     };
   };
 }

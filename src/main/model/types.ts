@@ -90,6 +90,16 @@ export interface ModelResponse {
     artifactValidationAttemptCompletion?: {
       targetFile: string;
     };
+    /** Max Mode（best-of-N）本步诊断：候选/幸存/赢家索引/是否降级/judge 是否解析成功 */
+    maxMode?: {
+      candidates: number;
+      survivors: number;
+      winner: number;
+      degraded: boolean;
+      judgeParsed: boolean;
+      overheadInputTokens: number;
+      overheadOutputTokens: number;
+    };
   };
 }
 
@@ -145,6 +155,11 @@ export interface InferenceOptions {
    * 形状对齐 AI SDK 的 ToolChoice，透传时直接映射。
    */
   toolChoice?: 'auto' | 'none' | 'required' | { type: 'tool'; toolName: string };
+  /**
+   * 抑制 model_decision 事件发射（Max Mode 候选/judge 的静默调用用，Codex R1-M1）：
+   * 路由决策行为不变，只是不把 N 条 propose-only 调用的决策事件混进 UI/遥测。
+   */
+  suppressModelDecisionEvent?: boolean;
 }
 
 // ----------------------------------------------------------------------------

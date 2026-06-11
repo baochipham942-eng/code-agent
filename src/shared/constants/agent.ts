@@ -184,6 +184,16 @@ export const DELIVERY_CRITIC = {
   OUTPUT_MAX_CHARS: 4_000,
 } as const;
 
+/** Max Mode（best-of-N）配置 — roadmap 3.3，三段式：propose-only 并发 → judge 选索引 → 赢家 replay */
+export const MAX_MODE = {
+  /** 并发候选数（每步 N 倍模型调用成本，显式开关默认关） */
+  DEFAULT_CANDIDATES: 5,
+  /** 候选数硬上限（防错误配置导致海量并发扇出，Codex R1-M3） */
+  MAX_CANDIDATES: 10,
+  /** judge 渲染单个候选的最大字符数（控 judge 输入 token） */
+  CANDIDATE_RENDER_MAX_CHARS: 4_000,
+} as const;
+
 /** 规划配置 */
 export const PLANNING = {
   /** 最大 TODO 数量 */

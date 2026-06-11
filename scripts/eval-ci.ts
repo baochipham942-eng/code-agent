@@ -618,6 +618,19 @@ async function main() {
   console.log('');
   const summary = await runEvals(workingDir, effectiveScope, { real: effectiveReal, model, provider, concurrency, tags, ids });
 
+  // Real 模式：打印本进程实际 token 消耗与成本（budgetService 进程内累计，
+  // 含 Max Mode 的 overhead 记账）—— roadmap 3.3 开关对照需要"成本比"数据
+  if (effectiveReal) {
+    const { getBudgetService } = await import('../src/main/services');
+    const usage = getBudgetService().getUsageHistory();
+    const totalIn = usage.reduce((s, u) => s + u.inputTokens, 0);
+    const totalOut = usage.reduce((s, u) => s + u.outputTokens, 0);
+    console.log(chalk.cyan(
+      `  Actual usage: ${totalIn.toLocaleString()} in / ${totalOut.toLocaleString()} out tokens, ` +
+      `cost $${getBudgetService().getCurrentCost().toFixed(4)} (maxMode=${process.env.CODE_AGENT_MAX_MODE === '1' ? 'on' : 'off'})`
+    ));
+  }
+
   // Compare to baseline
   const delta = await manager.compare(summary);
   console.log(generateDeltaConsole(summary, delta));

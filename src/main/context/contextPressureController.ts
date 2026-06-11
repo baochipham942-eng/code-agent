@@ -23,7 +23,7 @@ export type PressureTrigger =
   | 'pipeline-signal';
 
 export interface CompressionDecision {
-  action: 'none' | 'execute';
+  action: 'none' | 'execute' | 'checkpoint-rebuild';
   trigger: PressureTrigger;
   reason: string;
 }
@@ -39,6 +39,10 @@ export interface PressureInput {
   warningThreshold: number;
   /** 本 turn 内 CompressionPipeline 是否报告了 autocompact-needed（投影使用率 ≥ 85%） */
   pipelineAutocompactNeeded?: boolean;
+  /** Roadmap 3.4: when true, pressure should prefer checkpoint rebuild over pure summary compression. */
+  checkpointRebuildAvailable?: boolean;
+  checkpointRebuildAlreadyInserted?: boolean;
+  isMainAgent?: boolean;
   /**
    * AutoContextCompressor 是否启用。**只 gate 百分比 warning 触发** —— 绝对 token
    * 硬阈值和 pipeline 信号属于"必须压"语义（再不压就要溢出 / 已溢出），不受此开关
@@ -52,10 +56,18 @@ export interface PressureInput {
  * 优先级：pipeline 信号 > 绝对 token 阈值 > 百分比 warning 阈值。
  */
 export function assessContextPressure(input: PressureInput): CompressionDecision {
+  const pressureAction = (): CompressionDecision['action'] => (
+    input.checkpointRebuildAvailable
+    && !input.checkpointRebuildAlreadyInserted
+    && input.isMainAgent !== false
+      ? 'checkpoint-rebuild'
+      : 'execute'
+  );
+
   // 1. Pipeline 已投影出 ≥85% 压力 —— 此前这个信号只被 log/trace（G12），现在真正进入决策。
   if (input.pipelineAutocompactNeeded) {
     return {
-      action: 'execute',
+      action: pressureAction(),
       trigger: 'pipeline-signal',
       reason: 'CompressionPipeline reported autocompact-needed (projected usage ≥ 85%)',
     };
@@ -63,7 +75,7 @@ export function assessContextPressure(input: PressureInput): CompressionDecision
   // 2. 绝对 token 阈值（Claude Code 风格）—— 必须压，不受 compressionEnabled 影响。
   if (input.tokenThresholdHit) {
     return {
-      action: 'execute',
+      action: pressureAction(),
       trigger: 'token-threshold',
       reason: `absolute token threshold reached (${input.currentTokens} tokens)`,
     };
@@ -75,7 +87,7 @@ export function assessContextPressure(input: PressureInput): CompressionDecision
     && input.usageRatio >= input.warningThreshold
   ) {
     return {
-      action: 'execute',
+      action: pressureAction(),
       trigger: 'usage-percent',
       reason: `usage at ${(input.usageRatio * 100).toFixed(1)}% (warning threshold ${(input.warningThreshold * 100).toFixed(0)}%)`,
     };

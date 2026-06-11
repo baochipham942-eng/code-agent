@@ -70,4 +70,38 @@ describe('assessContextPressure', () => {
     const d = assessContextPressure({ ...BASE, tokenThresholdHit: true, usageRatio: 0.9 });
     expect(d.trigger).toBe('token-threshold');
   });
+
+  it('prefers checkpoint rebuild over pure compaction when a checkpoint is available', () => {
+    const d = assessContextPressure({
+      ...BASE,
+      pipelineAutocompactNeeded: true,
+      checkpointRebuildAvailable: true,
+      isMainAgent: true,
+    });
+    expect(d.action).toBe('checkpoint-rebuild');
+    expect(d.trigger).toBe('pipeline-signal');
+  });
+
+  it('falls back to pure compaction when checkpoint rebuild already ran for the watermark', () => {
+    const d = assessContextPressure({
+      ...BASE,
+      tokenThresholdHit: true,
+      checkpointRebuildAvailable: true,
+      checkpointRebuildAlreadyInserted: true,
+      isMainAgent: true,
+    });
+    expect(d.action).toBe('execute');
+    expect(d.trigger).toBe('token-threshold');
+  });
+
+  it('does not choose checkpoint rebuild for subagent runtimes', () => {
+    const d = assessContextPressure({
+      ...BASE,
+      usageRatio: 0.9,
+      checkpointRebuildAvailable: true,
+      isMainAgent: false,
+    });
+    expect(d.action).toBe('execute');
+    expect(d.trigger).toBe('usage-percent');
+  });
 });

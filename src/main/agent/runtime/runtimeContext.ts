@@ -242,4 +242,8 @@ export interface RuntimeContext {
   /** G12/P2-full: 本 turn CompressionPipeline 是否报了 autocompact-needed。
    *  由 messageBuild 写入，checkAndAutoCompress 经 ContextPressureController 消费后清零。 */
   pipelineAutocompactNeeded: boolean;
+  /** Roadmap 3.4: last message watermark that already received a checkpoint rebuild boundary. */
+  checkpointRebuildLastWatermarkId?: string;
+  /** Test/host override for checkpoint artifact storage. Defaults to app user data. */
+  checkpointRootDir?: string;
 }

@@ -5,8 +5,19 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
+import type { Message } from '../../shared/contract';
+import {
+  readExistingCheckpointStore,
+  resolveCheckpointStorePaths,
+  renderCheckpointRebuildContext,
+  validateCheckpointDocument,
+} from '../context/checkpoint';
 
 const logger = createLogger('SessionRecovery');
+
+interface SessionRecoveryServiceOptions {
+  checkpointRootDir?: string;
+}
 
 /** 上一次会话的摘要 */
 interface SessionSummary {
@@ -18,6 +29,7 @@ interface SessionSummary {
   messageCount: number;
   lastActivityAgo: number; // ms since last activity
   appearsComplete: boolean;
+  tailMessages: Message[];
 }
 
 /**
@@ -28,6 +40,8 @@ interface SessionSummary {
  */
 export class SessionRecoveryService {
   private static instance: SessionRecoveryService;
+
+  constructor(private readonly options: SessionRecoveryServiceOptions = {}) {}
 
   /**
    * 检查是否有可恢复的前序会话
@@ -41,6 +55,9 @@ export class SessionRecoveryService {
       const summary = await this.getLastSessionSummary(currentSessionId, workingDirectory);
       if (!summary) return null;
       if (summary.appearsComplete) return null;
+
+      const checkpointRecovery = await this.buildCheckpointRecoverySummary(summary, workingDirectory);
+      if (checkpointRecovery) return checkpointRecovery;
 
       return this.buildRecoverySummary(summary);
     } catch (error) {
@@ -126,6 +143,7 @@ export class SessionRecoveryService {
           messageCount: messages.length,
           lastActivityAgo: age,
           appearsComplete,
+          tailMessages: messages.slice(-12) as Message[],
         };
       }
 
@@ -159,6 +177,29 @@ export class SessionRecoveryService {
       `如果用户的请求与上次相关，请考虑延续之前的工作。\n` +
       `</session-recovery>`
     );
+  }
+
+  private async buildCheckpointRecoverySummary(
+    summary: SessionSummary,
+    workingDirectory: string,
+  ): Promise<string | null> {
+    const paths = resolveCheckpointStorePaths({
+      sessionId: summary.sessionId,
+      workingDirectory,
+      rootDir: this.options.checkpointRootDir,
+    });
+    const artifacts = await readExistingCheckpointStore(paths);
+    if (!artifacts) return null;
+    const validation = validateCheckpointDocument(artifacts.checkpoint);
+    if (!validation.activeIntentHasVerbatimQuote) return null;
+
+    return renderCheckpointRebuildContext({
+      checkpoint: artifacts.checkpoint,
+      memory: artifacts.memory,
+      notes: artifacts.notes,
+      tailMessages: summary.tailMessages,
+      maxTokens: 24_000,
+    });
   }
 
   static getInstance(): SessionRecoveryService {

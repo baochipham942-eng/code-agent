@@ -108,6 +108,27 @@ describe('ToolSearchService loadable results', () => {
     expect(service.isToolLoaded('SessionManager')).toBe(true);
   });
 
+  it('loads History as a deferred builtin callable (roadmap 2.1)', () => {
+    const service = new ToolSearchService();
+
+    const result = service.selectTool('History');
+
+    expect(result.loadedTools).toEqual(['History']);
+    expect(result.tools[0]?.loadable).toBe(true);
+    expect(service.isToolLoaded('History')).toBe(true);
+  });
+
+  it('surfaces History for transcript-recall keyword searches', async () => {
+    const service = new ToolSearchService();
+
+    const result = await service.searchTools('search past session transcript', {
+      maxResults: 5,
+      includeMCP: false,
+    });
+
+    expect(result.tools.map((tool) => tool.name)).toContain('History');
+  });
+
   it('does not load a selected builtin search result without protocol schema', () => {
     const service = new ToolSearchService();
 

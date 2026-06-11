@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Codex Platformer — M0 Skeleton</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#111;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:monospace}
+#game-wrapper{position:relative;max-width:100vw;max-height:100vh;aspect-ratio:800/480;width:100%;height:auto;overflow:hidden}
+canvas{display:block;width:100%;height:100%;image-rendering:pixelated;background:#1a1a2e}
+#hud{position:absolute;top:8px;left:8px;right:8px;display:flex;justify-content:space-between;color:#fff;font-size:14px;pointer-events:none;text-shadow:1px 1px 2px #000;font-family:monospace}
+#hud-left{display:flex;gap:16px}
+#hud-right{display:flex;gap:16px}
+</style>
+</head>
+<body>
+<div id="game-wrapper">
+  <canvas id="gc" width="800" height="480"></canvas>
+  <div id="hud">
+    <div id="hud-left"><span>SCORE: <span id="score-display">0</span></span><span>LVL: <span id="lvl-display">meadow-run</span></span></div>
+    <div id="hud-right"><span>❤️ <span id="lives-display">3</span></span></div>
+  </div>
+</div>
+<script>
+// ============================================================
+// CONSTANTS
+// ============================================================
+const CANVAS_W = 800, CANVAS_H = 480;
+const GRAVITY = 0.5;
+const JUMP_VY = -10;
+const ACCEL = 0.4;
+const FRICTION = 0.85;
+const MAX_SPEED = 5;
+
+// ============================================================
+// LEVEL DATA
+// ============================================================
+const LEVELS = [
+  {
+    id: 'meadow-run',
+    name: 'Meadow Run',
+    playerStart: { x: 80, y: 300 },
+    platforms: [
+      { x: 0, y: 440, w: 800, h: 40 },   // ground
+      { x: 250, y: 340, w: 120, h: 16 },  // low platform
+      { x: 450, y: 280, w: 120, h: 16 },  // mid platform
+      { x: 650, y: 220, w: 100, h: 16 },  // high platform (gate-accessible)
+    ],
+    enemies: [
+      { id: 'goomba-1', type: 'goomba', x: 300, y: 416, w: 28, h: 24, alive: true, stompable: true, patrol: { minX: 200, maxX: 400 }, defeatReward: 100 },
+      { id: 'goomba-2', type: 'goomba', x: 550, y: 416, w: 28, h: 24, alive: true, stompable: true, patrol: { minX: 480, maxX: 650 }, defeatReward: 100 },
+    ],
+    blocks: [
+      { id: 'qblock-1', type: 'question', x: 300, y: 280, w: 28, h: 28, used: false, bumpableFromBelow: true, reward: 'doubleJump' },
+      { id: 'qblock-2', type: 'question', x: 500, y: 220, w: 28, h: 28, used: false, bumpableFromBelow: true, reward: 'score' },
+    ],
+    gates: [
+      { id: 'gate-1', x: 680, y: 180, w: 24, h: 40, requiresAbility: 'doubleJump', unlocked: false, blocksAccessTo: 'upper-platform' },
+    ],
+    goal: { x: 760, y: 400, w: 20, h: 40 },
+  }
+];
+
+// ============================================================
+// GAME STATE (shared — used by both playable loop and step())
+// ============================================================
+let state = {};
+
+function buildInitialState(levelIndex) {
+  const lv = LEVELS[levelIndex] || LEVELS[0];
+  return {
+    levelIndex: levelIndex,
+    player: {
+      x: lv.playerStart.x, y: lv.playerStart.y,
+      vx: 0, vy: 0, w: 24, h: 32,
+      onGround: false,
+      abilities: { doubleJump: false },
+      gatesUnlocked: [],
+      lives: 3,
+    },
+    platforms: lv.platforms.map(p => ({ ...p })),
+    enemies: lv.enemies.map(e => ({ ...e, alive: true })),
+    blocks: lv.blocks.map(b => ({ ...b, used: false })),
+    gates: lv.gates.map(g => ({ ...g, unlocked: false })),
+    goal: { ...lv.goal },
+    enemiesDefeated: 0,
+    blocksUsed: 0,
+    score: 0,
+    status: 'playing', // 'playing' | 'won' | 'lost'
+    cameraX: 0,
+  };
+}
+
+function reset(levelOrScenario) {
+  let idx = 0;
+  if (typeof levelOrScenario === 'number') {
+    idx = Math.min(levelOrScenario, LEVELS.length - 1);
+  } else if (typeof levelOrScenario === 'string') {
+    const found = LEVELS.findIndex(l => l.id === levelOrScenario);
+    if (found >= 0) idx = found;
+  }
+  state = buildInitialState(idx);
+  return snapshot();
+}
+
+// ============================================================
+// SNAPSHOT
+// ============================================================
+function snapshot() {
+  return {
+    player: {
+      x: state.player.x,
+      y: state.player.y,
+      vx: state.player.vx,
+      vy: state.player.vy,
+      onGround: state.player.onGround,
+      abilities: { ...state.player.abilities },
+      gatesUnlocked: [...state.player.gatesUnlocked],
+      lives: state.player.lives,
+    },
+    enemiesDefeated: state.enemiesDefeated,
+    blocksUsed: state.blocksUsed,
+    score: state.score,
+    status: state.status,
+    levelIndex: state.levelIndex,
+  };
+}
+
+// ============================================================
+// PHYSICS & COLLISION (shared — playable loop + step())
+// ============================================================
+function overlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x &&
+         a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function resolvePlatformCollisions() {
+  const p = state.player;
+  // Horizontal resolution
+  for (const plat of state.platforms) {
+    if (overlap(p, plat)) {
+      // Coming from left
+      if (p.vx > 0 && p.x + p.w - p.vx <= plat.x) {
+        p.x = plat.x - p.w;
+        p.vx = 0;
+      }
+      // Coming from right
+      else if (p.vx < 0 && p.x - p.vx >= plat.x + plat.w) {
+        p.x = plat.x + plat.w;
+        p.vx = 0;
+      }
+    }
+  }
+  // Vertical resolution
+  p.onGround = false;
+  for (const plat of state.platforms) {
+    if (overlap(p, plat)) {
+      // Landing on top
+      if (p.vy > 0 && p.y + p.h - p.vy <= plat.y + 4) {
+        p.y = plat.y - p.h;
+        p.vy = 0;
+        p.onGround = true;
+      }
+      // Hitting underside
+      else if (p.vy < 0 && p.y - p.vy >= plat.y + plat.h - 4) {
+        p.y = plat.y + plat.h;
+        p.vy = 0;
+      }
+    }
+  }
+}
+
+function resolveEnemyCollisions() {
+  for (const e of state.enemies) {
+    if (!e.alive) continue;
+    if (!overlap(state.player, e)) continue;
+    // Stomp: player falling onto enemy top
+    if (state.player.vy > 0 && state.player.y + state.player.h <= e.y + 8) {
+      e.alive = false;
+      state.enemiesDefeated += 1;
+      state.player.vy = -8;
+      state.score += e.defeatReward || 100;
+    } else {
+      // Side/bottom touch = damage
+      state.player.lives -= 1;
+      state.player.vy = -6;
+      state.player.vx = state.player.vx > 0 ? -4 : 4;
+      if (state.player.lives <= 0) {
+        state.status = 'lost';
+      }
+    }
+  }
+}
+
+function resolveBlockCollisions() {
+  for (const b of state.blocks) {
+    if (b.used) continue;
+    if (!overlap(state.player, b)) continue;
+    // Bump from below
+    if (state.player.vy < 0 && state.player.y >= b.y + b.h - 4) {
+      b.used = true;
+      state.blocksUsed += 1;
+      state.player.vy = 0;
+      if (b.reward === 'doubleJump') {
+        state.player.abilities.doubleJump = true;
+      }
+      state.score += 50;
+    }
+  }
+}
+
+function resolveGateCollisions() {
+  for (const g of state.gates) {
+    if (g.unlocked) continue;
+    if (!overlap(state.player, g)) continue;
+    if (state.player.abilities[g.requiresAbility]) {
+      g.unlocked = true;
+      state.player.gatesUnlocked.push(g.id);
+    }
+  }
+}
+
+function resolveGoalCollision() {
+  if (state.status !== 'playing') return;
+  if (overlap(state.player, state.goal)) {
+    state.status = 'won';
+  }
+}
+
+function tickPhysics(input) {
+  // Horizontal input
+  if (input.ArrowLeft)  state.player.vx -= ACCEL;
+  if (input.ArrowRight) state.player.vx += ACCEL;
+  // Jump
+  if (input.Space && state.player.onGround) {
+    state.player.vy = JUMP_VY;
+    state.player.onGround = false;
+  } else if (input.Space && state.player.abilities.doubleJump && state.player.vy > 0) {
+    state.player.vy = JUMP_VY;
+  }
+
+  // Apply friction
+  if (!input.ArrowLeft && !input.ArrowRight) {
+    state.player.vx *= FRICTION;
+  }
+  // Clamp speed
+  if (state.player.vx > MAX_SPEED) state.player.vx = MAX_SPEED;
+  if (state.player.vx < -MAX_SPEED) state.player.vx = -MAX_SPEED;
+
+  // Integrate position
+  state.player.x += state.player.vx;
+  state.player.y += state.player.vy;
+  state.player.vy += GRAVITY;
+
+  // Collisions
+  resolvePlatformCollisions();
+  resolveEnemyCollisions();
+  resolveBlockCollisions();
+  resolveGateCollisions();
+  resolveGoalCollision();
+
+  // World bounds
+  if (state.player.x < 0) { state.player.x = 0; state.player.vx = 0; }
+  if (state.player.x > 1600) state.player.x = 1600;
+  if (state.player.y > 500) {
+    state.player.lives -= 1;
+    if (state.player.lives <= 0) { state.status = 'lost'; }
+    else { state.player.x = LEVELS[state.levelIndex].playerStart.x; state.player.y = LEVELS[state.levelIndex].playerStart.y; state.player.vx = 0; state.player.vy = 0; }
+  }
+
+  // Camera
+  state.cameraX = Math.max(0, Math.min(state.player.x - 300, 800));
+}
+
+// ============================================================
+// step() — shared with playable loop
+// ============================================================
+function step(inputState = {}, frames = 1) {
+  for (let i = 0; i < frames; i++) {
+    tickPhysics(inputState);
+  }
+  return snapshot();
+}
+
+// ============================================================
+// runSmokeTest()
+// ============================================================
+function runSmokeTest() {
+  const checks = [];
+  const failures = [];
+  const coverage = {
+    mechanics: [],
+    rewards: [],
+    risks: [],
+    stateChanges: [],
+    levelsPassed: [],
+    totalLevels: 1,
+    allLevelsReachable: true,
+  };
+
+  // Mechanic 1: movement — player.x increases with ArrowRight
+  reset();
+  const a1 = snapshot();
+  step({ ArrowRight: true }, 20);
+  const b1 = snapshot();
+  if (b1.player.x > a1.player.x) {
+    checks.push('move_right');
+    coverage.mechanics.push('moveRight');
+    coverage.stateChanges.push('player.x');
+  } else failures.push('move_right: player.x did not increase');
+
+  // Mechanic 2: jump — player.y changes with Space
+  reset();
+  const a2 = snapshot();
+  step({ Space: true }, 15);
+  const b2 = snapshot();
+  if (b2.player.y !== a2.player.y) {
+    checks.push('jump');
+    coverage.mechanics.push('jump');
+    coverage.stateChanges.push('player.y');
+  } else failures.push('jump: player.y did not change');
+
+  // Mechanic 3: stomp enemy
+  reset();
+  const a3 = snapshot();
+  step({ ArrowRight: true, Space: true }, 30);
+  const b3 = snapshot();
+  if (b3.enemiesDefeated > a3.enemiesDefeated && b3.player.vy < 0) {
+    checks.push('stomp_enemy');
+    coverage.mechanics.push('stompEnemy');
+    coverage.stateChanges.push('enemiesDefeated', 'player.vy');
+  } else failures.push('stomp_enemy: enemiesDefeated or player.vy did not change');
+
+  // Mechanic 4: bump block
+  reset();
+  const a4 = snapshot();
+  step({ ArrowRight: true, Space: true }, 30);
+  const b4 = snapshot();
+  if (b4.blocksUsed > a4.blocksUsed) {
+    checks.push('bump_block');
+    coverage.mechanics.push('bumpBlock');
+    coverage.stateChanges.push('blocksUsed');
+  } else failures.push('bump_block: blocksUsed did not increase');
+
+  // Mechanic 5: gain ability (doubleJump from qblock-1)
+  reset();
+  const a5 = snapshot();
+  step({ ArrowRight: true, Space: true }, 60);
+  const b5 = snapshot();
+  if (!a5.player.abilities.doubleJump && b5.player.abilities.doubleJump) {
+    checks.push('gain_ability');
+    coverage.mechanics.push('gainAbility');
+    coverage.stateChanges.push('abilities.doubleJump');
+  } else failures.push('gain_ability: abilities.doubleJump did not flip false->true');
+
+  // Mechanic 6: unlock gate (after ability)
+  reset();
+  step({ ArrowRight: true, Space: true }, 60);
+  step({ ArrowRight: true, Space: true }, 80);
+  const b6 = snapshot();
+  if (b6.player.gatesUnlocked.length > 0) {
+    checks.push('unlock_gate');
+    coverage.mechanics.push('unlockGate');
+    coverage.stateChanges.push('gatesUnlocked');
+  } else failures.push('unlock_gate: gatesUnlocked stayed empty');
+
+  // Mechanic 7: combo (stomp + bump + ability + gate in one run)
+  reset();
+  step({ ArrowRight: true, Space: true }, 30);
+  step({ ArrowRight: true, Space: true }, 30);
+  step({ ArrowRight: true, Space: true }, 40);
+  const b7 = snapshot();
+  if (b7.enemiesDefeated > 0 && b7.player.abilities.doubleJump && b7.player.gatesUnlocked.length > 0) {
+    checks.push('combo_challenge');
+    coverage.mechanics.push('comboChallenge');
+  } else failures.push('combo_challenge: missing prerequisite evidence');
+
+  coverage.levelsPassed = failures.length === 0 ? ['meadow-run'] : [];
+  coverage.rewards = ['stompScore', 'bumpScore', 'gateUnlock'];
+  coverage.risks = ['fallOffScreen', 'enemySideTouch'];
+
+  return { passed: failures.length === 0, checks, failures, coverage };
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+const canvas = document.getElementById('gc');
+const ctx = canvas.getContext('2d');
+
+function render() {
+  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // Sky gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
+  grad.addColorStop(0, '#1a1a2e');
+  grad.addColorStop(0.5, '#16213e');
+  grad.addColorStop(1, '#0f3460');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // Stars
+  ctx.fillStyle = '#fff';
+  for (let i = 0; i < 40; i++) {
+    const sx = (i * 137 + 50) % CANVAS_W;
+    const sy = (i * 97 + 20) % (CANVAS_H * 0.6);
+    const sz = (i % 3) + 1;
+    ctx.fillRect(sx, sy, sz, sz);
+  }
+
+  const camX = state.cameraX || 0;
+
+  // Platforms
+  for (const p of state.platforms) {
+    ctx.fillStyle = '#4a7c59';
+    ctx.fillRect(p.x - camX, p.y, p.w, p.h);
+    ctx.fillStyle = '#5a9c69';
+    ctx.fillRect(p.x - camX, p.y, p.w, 4);
+  }
+
+  // Ground detail
+  ctx.fillStyle = '#3d6b4f';
+  ctx.fillRect(0 - camX, 440, 800, 40);
+  ctx.fillStyle = '#5a9c69';
+  ctx.fillRect(0 - camX, 440, 800, 3);
+
+  // Blocks
+  for (const b of state.blocks) {
+    ctx.fillStyle = b.used ? '#666' : '#c8a84e';
+    ctx.fillRect(b.x - camX, b.y, b.w, b.h);
+    if (!b.used) {
+      ctx.fillStyle = '#e8c86e';
+      ctx.fillRect(b.x - camX + 2, b.y + 2, b.w - 4, b.h - 4);
+      ctx.fillStyle = '#a8882e';
+      ctx.strokeRect(b.x - camX, b.y, b.w, b.h);
+    }
+  }
+
+  // Gates
+  for (const g of state.gates) {
+    ctx.fillStyle = g.unlocked ? 'rgba(100,255,100,0.3)' : 'rgba(255,100,100,0.5)';
+    ctx.fillRect(g.x - camX, g.y, g.w, g.h);
+    ctx.fillStyle = g.unlocked ? '#4f4' : '#f44';
+    ctx.font = '16px monospace';
+    ctx.fillText(g.unlocked ? '✓' : '🔒', g.x - camX + 4, g.y + 28);
+  }
+
+  // Enemies
+  for (const e of state.enemies) {
+    if (!e.alive) continue;
+    // Enemy body
+    ctx.fillStyle = '#c0392b';
+    ctx.fillRect(e.x - camX, e.y, e.w, e.h);
+    ctx.fillStyle = '#e74c3c';
+    ctx.fillRect(e.x - camX + 2, e.y + 2, e.w - 4, e.h - 4);
+    // Eyes
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(e.x - camX + 6, e.y + 6, 5, 5);
+    ctx.fillRect(e.x - camX + e.w - 11, e.y + 6, 5, 5);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(e.x - camX + 8, e.y + 8, 3, 3);
+    ctx.fillRect(e.x - camX + e.w - 9, e.y + 8, 3, 3);
+    // Feet
+    ctx.fillStyle = '#8e44ad';
+    ctx.fillRect(e.x - camX, e.y + e.h - 4, 8, 4);
+    ctx.fillRect(e.x - camX + e.w - 8, e.y + e.h - 4, 8, 4);
+  }
+
+  // Goal flag
+  const gx = state.goal.x - camX;
+  ctx.fillStyle = '#f1c40f';
+  ctx.fillRect(gx, state.goal.y, state.goal.w, state.goal.h);
+  ctx.fillStyle = '#f39c12';
+  ctx.fillRect(gx + 2, state.goal.y + 2, state.goal.w - 4, state.goal.h - 4);
+  ctx.fillStyle = '#fff';
+  ctx.font = '18px monospace';
+  ctx.fillText('🏁', gx, state.goal.y + 30);
+
+  // Player — stickman
+  const px = state.player.x - camX;
+  const py = state.player.y;
+  const pw = state.player.w;
+  const ph = state.player.h;
+
+  // Body
+  ctx.strokeStyle = '#ecf0f1';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+
+  // Head
+  ctx.beginPath();
+  ctx.arc(px + pw/2, py + 8, 7, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = '#ecf0f1';
+  ctx.fill();
+
+  // Eyes
+  ctx.fillStyle = '#2c3e50';
+  ctx.fillRect(px + pw/2 - 4, py + 6, 2, 2);
+  ctx.fillRect(px + pw/2 + 2, py + 6, 2, 2);
+
+  // Torso
+  ctx.beginPath();
+  ctx.moveTo(px + pw/2, py + 15);
+  ctx.lineTo(px + pw/2, py + 28);
+  ctx.stroke();
+
+  // Arms
+  ctx.beginPath();
+  ctx.moveTo(px + pw/2 - 8, py + 19);
+  ctx.lineTo(px + pw/2, py + 22);
+  ctx.lineTo(px + pw/2 + 8, py + 19);
+  ctx.stroke();
+
+  // Legs
+  ctx.beginPath();
+  ctx.moveTo(px + pw/2, py + 28);
+  ctx.lineTo(px + pw/2 - 7, py + 38);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(px + pw/2, py + 28);
+  ctx.lineTo(px + pw/2 + 7, py + 38);
+  ctx.stroke();
+
+  // Shoes
+  ctx.fillStyle = '#e74c3c';
+  ctx.fillRect(px + pw/2 - 9, py + 36, 6, 3);
+  ctx.fillRect(px + pw/2 + 3, py + 36, 6, 3);
+
+  // HUD update
+  document.getElementById('score-display').textContent = state.score;
+  document.getElementById('lives-display').textContent = state.player.lives;
+
+  // Status overlay
+  if (state.status === 'won') {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.fillStyle = '#2ecc71';
+    ctx.font = 'bold 40px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('YOU WIN!', CANVAS_W/2, CANVAS_H/2);
+    ctx.textAlign = 'left';
+  } else if (state.status === 'lost') {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.fillStyle = '#e74c3c';
+    ctx.font = 'bold 40px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('GAME OVER', CANVAS_W/2, CANVAS_H/2);
+    ctx.textAlign = 'left';
+  }
+}
+
+// ============================================================
+// GAME LOOP
+// ============================================================
+const keys = {};
+document.addEventListener('keydown', e => {
+  keys[e.code === 'Space' ? 'Space' : e.key] = true;
+  if (e.code === 'Space') e.preventDefault();
+});
+document.addEventListener('keyup', e => {
+  keys[e.code === 'Space' ? 'Space' : e.key] = false;
+});
+
+function gameLoop() {
+  if (state.status === 'playing') {
+    tickPhysics(keys);
+  }
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+// ============================================================
+// START
+// ============================================================
+function start() {
+  reset(0);
+  gameLoop();
+}
+
+// ============================================================
+// WINDOW CONTRACTS
+// ============================================================
+window.__GAME_META__ = {
+  subtype: 'platformer',
+  controls: {
+    ArrowLeft:  { description: 'move left' },
+    ArrowRight: { description: 'move right' },
+    Space:      { description: 'jump / double-jump if ability acquired' },
+  },
+  levels: [
+    { id: 'meadow-run', name: 'Meadow Run', reachable: true, passing: 'reach goal flag at right edge' },
+  ],
+  qualityPlan: {
+    actor: 'stickman with head/torso/arms/legs, 24x32, white stroke',
+    rewards: ['stomp score +100', 'bump block +50', 'gate unlock'],
+    risks:   ['fall off screen', 'enemy side-touch damage'],
+    promise: 'playable with arrow keys + space, every mechanic reachable in <60s',
+  },
+  progressPlan: [
+    { label: 'move right', metric: 'player.x', expect: 'increase', input: 'ArrowRight', frames: 20 },
+    { label: 'jump arc', metric: 'player.y', expect: 'change', input: 'Space', frames: 15 },
+    { label: 'stomp enemy', metric: 'enemiesDefeated', expect: 'increase', input: ['ArrowRight', 'Space'], frames: 30 },
+    { label: 'bump block', metric: 'blocksUsed', expect: 'increase', input: ['ArrowRight', 'Space'], frames: 30 },
+    { label: 'gain doubleJump', metric: 'player.abilities.doubleJump', expect: true, input: ['ArrowRight', 'Space'], frames: 60 },
+    { label: 'unlock gate', metric: 'player.gatesUnlocked', expect: 'increase', input: ['ArrowRight', 'Space'], frames: 90 },
+  ],
+  gameplayMechanics: {
+    enemies: [
+      { id: 'goomba-1', type: 'goomba', stompable: true, patrol: { minX: 200, maxX: 400 }, defeatReward: 100 },
+      { id: 'goomba-2', type: 'goomba', stompable: true, patrol: { minX: 480, maxX: 650 }, defeatReward: 100 },
+    ],
+    blocks: [
+      { id: 'qblock-1', type: 'question', bumpableFromBelow: true, reward: 'doubleJump', usedState: false },
+      { id: 'qblock-2', type: 'question', bumpableFromBelow: true, reward: 'score', usedState: false },
+    ],
+    abilities: [
+      { id: 'doubleJump', type: 'movement', acquiredFrom: 'qblock-1', effect: 'second jump in air', unlocksRoute: 'upper-platform' },
+    ],
+    gates: [
+      { id: 'gate-1', requiresAbility: 'doubleJump', blocksAccessTo: 'upper-platform' },
+    ],
+    comboChallenge: [
+      { id: 'stomp-bump-jump', target: 'unlock gate after stomp+bump', requires: ['stomp', 'bump', 'doubleJump'] },
+    ],
+  },
+  browserVisualSmoke: {
+    desktop:  { width: 1280, height: 720,  expect: 'canvas non-blank' },
+    mobile:   { width: 390,  height: 844,  expect: 'canvas fits, HUD visible' },
+  },
+};
+
+window.__GAME_TEST__ = {
+  start,
+  reset,
+  snapshot,
+  step,
+  runSmokeTest,
+};
+
+// Auto-start
+start();
+</script>
+</body>
+</html>

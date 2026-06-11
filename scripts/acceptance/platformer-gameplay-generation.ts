@@ -19,6 +19,7 @@ import {
   ACCEPTANCE_DEFAULTS,
   type AcceptanceMonotonicMode,
 } from '../../src/shared/constants/acceptance.ts';
+import type { MilestoneId } from './platformerCodexStrategy.ts';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, '../..');
@@ -36,6 +37,16 @@ const PROVIDER_KEY_CANDIDATES: Record<string, string[]> = {
   qwen: ['QWEN_API_KEY', 'DASHSCOPE_API_KEY'],
   zhipu: ['ZHIPU_API_KEY'],
 };
+
+const CODEX_LOGIC_MILESTONES = new Set<MilestoneId>(['M0', 'M1', 'M2']);
+const CODEX_MIMO_MILESTONES = new Set<MilestoneId>(['M3', 'M4']);
+const CODEX_HEAVY_TIMEOUT_MILESTONES = new Set<MilestoneId>(['M2', 'M3']);
+const DEFAULT_CODEX_LOGIC_PROVIDER = 'deepseek';
+const DEFAULT_CODEX_LOGIC_MODEL = 'deepseek-v4-flash';
+const DEFAULT_CODEX_KIMI_MODEL = 'kimi-k2.6';
+const DEFAULT_CODEX_MIMO_PROVIDER = 'xiaomi';
+const DEFAULT_CODEX_MIMO_MODEL = 'mimo-v2.5-pro';
+const DEFAULT_CODEX_HEAVY_MILESTONE_TIMEOUT_MS = 480_000;
 
 export type ValidationSummary = {
   artifactPath: string;
@@ -69,6 +80,32 @@ export type GenerationOutcome = {
   responses: string[];
   toolCount: number;
   errors: string[];
+  /** Codex milestone strategy only: per-milestone probe outcomes (W1-W3). */
+  milestones?: Array<{
+    milestoneId: string;
+    attempts: number;
+    passed: boolean;
+    blockingFailures: string[];
+  }>;
+};
+
+export type GenerationStrategy = 'single' | 'codex';
+
+export type CodexMilestoneRouteConfig = {
+  logicProvider: string;
+  logicModel: string;
+  mimoProvider: string;
+  mimoModel: string;
+  generationTimeoutMs: number;
+  heavyMilestoneTimeoutMs: number;
+};
+
+export type CodexMilestoneModelRoute = {
+  milestoneId: MilestoneId;
+  role: 'logic' | 'mimo';
+  provider: string;
+  model: string;
+  timeoutMs: number;
 };
 
 export type CandidateResult = {
@@ -112,6 +149,8 @@ type AcceptanceCliOutput = {
   mode: 'validate-only' | 'generate-and-validate';
   provider?: string;
   model?: string;
+  strategy?: GenerationStrategy;
+  codexRoutes?: CodexMilestoneRouteConfig;
   bonN: number;
   repairCap: number;
   monotonicMode: AcceptanceMonotonicMode;
@@ -133,6 +172,17 @@ Options:
   --validate-only        Do not call a model; validate an existing artifact.
   --provider <id>        Model provider. Default: PLATFORMER_GAMEPLAY_PROVIDER or openrouter.
   --model <id>           Model id. Default: PLATFORMER_GAMEPLAY_MODEL or google/gemini-3-flash-preview.
+  --strategy <id>        Generation strategy: single (one-shot, default) or codex
+                       (GAMEPLAN + milestone-incremental with probe self-checks and
+                       a .logs/ casebook — see docs/designs/game-gen-codex-workflow.md).
+                       env: PLATFORMER_GAMEPLAY_STRATEGY.
+  --milestone-retry <n>  codex strategy: in-milestone retries after a failed probe. Default: 1.
+  --logic-provider <id>  codex strategy: M0-M2 provider. Default: PLATFORMER_GAMEPLAY_LOGIC_PROVIDER or deepseek.
+  --logic-model <id>     codex strategy: M0-M2 model. Default: PLATFORMER_GAMEPLAY_LOGIC_MODEL or deepseek-v4-flash (kimi-k2.6 when provider is moonshot).
+  --mimo-provider <id>   codex strategy: M3-M4 provider. Default: PLATFORMER_GAMEPLAY_MIMO_PROVIDER or xiaomi.
+  --mimo-model <id>      codex strategy: M3-M4 model. Default: PLATFORMER_GAMEPLAY_MIMO_MODEL or mimo-v2.5-pro.
+  --heavy-milestone-timeout <ms>
+                       codex strategy: M2/M3 single-segment timeout floor. Default: 480000.
   --generation-timeout <ms>
                        Max time to wait for one agent generation. Default: 120000.
   --timeout <ms>         Runtime smoke timeout. Default: 10000.
@@ -170,6 +220,55 @@ function apiKeyForProvider(provider: string): string | undefined {
     if (value) return value;
   }
   return undefined;
+}
+
+/**
+ * Resolve the provider key the same way the app does: env first, then the
+ * app's SecureStorage (in-memory only — the key is never written to disk or
+ * echoed). Lets the harness run against any provider the user already
+ * configured in-app without copying secrets into .env.
+ */
+async function resolveApiKey(provider: string): Promise<string | undefined> {
+  const envKey = apiKeyForProvider(provider);
+  if (envKey) return envKey;
+  try {
+    const { getSecureStorage } = await import('../../src/main/services/core/secureStorage.ts');
+    return getSecureStorage().getApiKey(provider) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function missingApiKeyMessage(provider: string): string {
+  const keys = PROVIDER_KEY_CANDIDATES[provider] || [`${provider.toUpperCase()}_API_KEY`];
+  return `Missing API key for provider ${provider}. Set one of ${keys.join(', ')}, configure the provider in-app, or run with --validate-only.`;
+}
+
+function defaultLogicProvider(): string {
+  return DEFAULT_CODEX_LOGIC_PROVIDER;
+}
+
+function defaultLogicModel(provider: string): string {
+  return provider === 'moonshot' ? DEFAULT_CODEX_KIMI_MODEL : DEFAULT_CODEX_LOGIC_MODEL;
+}
+
+export function selectCodexMilestoneModelRoute(
+  config: CodexMilestoneRouteConfig,
+  milestoneId: MilestoneId,
+): CodexMilestoneModelRoute {
+  const role = CODEX_LOGIC_MILESTONES.has(milestoneId) ? 'logic' : 'mimo';
+  if (!CODEX_LOGIC_MILESTONES.has(milestoneId) && !CODEX_MIMO_MILESTONES.has(milestoneId)) {
+    throw new Error(`Unknown codex milestone "${milestoneId}"`);
+  }
+  return {
+    milestoneId,
+    role,
+    provider: role === 'logic' ? config.logicProvider : config.mimoProvider,
+    model: role === 'logic' ? config.logicModel : config.mimoModel,
+    timeoutMs: CODEX_HEAVY_TIMEOUT_MILESTONES.has(milestoneId)
+      ? Math.max(config.generationTimeoutMs, config.heavyMilestoneTimeoutMs)
+      : config.generationTimeoutMs,
+  };
 }
 
 function resolveArtifactPath(rawPath: string | undefined): string {
@@ -255,6 +354,31 @@ export function prioritizeFailures(failures: string[]): string[] {
   return [...failures].sort((a, b) => score(a) - score(b));
 }
 
+/** One agent session, one prompt — the unit both strategies are built from. */
+async function sendAgentPrompt(options: {
+  provider: string;
+  model: string;
+  apiKey: string;
+  prompt: string;
+}): Promise<GenerationOutcome> {
+  const agent = new StandaloneAgentAdapter({
+    workingDirectory: projectRoot,
+    modelConfig: {
+      provider: options.provider,
+      model: options.model,
+      apiKey: options.apiKey,
+    },
+    toolMode: 'deferred',
+  });
+  const result = await agent.sendMessage(options.prompt);
+  await agent.finalizeSession();
+  return {
+    responses: result.responses,
+    toolCount: result.toolExecutions.length,
+    errors: result.errors,
+  };
+}
+
 async function runAgentGeneration(options: {
   artifactPath: string;
   provider: string;
@@ -267,6 +391,8 @@ async function runAgentGeneration(options: {
    * fresh "create from scratch" prompt.
    */
   previousFailures?: string[];
+  /** Codex strategy (W4): casebook tail prepended to repair prompts. */
+  casebookPreamble?: string;
 }): Promise<GenerationOutcome> {
   await fs.mkdir(path.dirname(options.artifactPath), { recursive: true });
   const isRepairRound = Array.isArray(options.previousFailures) && options.previousFailures.length > 0;
@@ -276,25 +402,145 @@ async function runAgentGeneration(options: {
     await fs.rm(options.artifactPath, { force: true });
   }
 
-  const agent = new StandaloneAgentAdapter({
-    workingDirectory: projectRoot,
-    modelConfig: {
-      provider: options.provider,
-      model: options.model,
-      apiKey: options.apiKey,
-    },
-    toolMode: 'deferred',
-  });
-
   const prompt = isRepairRound
-    ? buildRepairPrompt(options.artifactPath, options.previousFailures!)
+    ? (options.casebookPreamble ?? '') + buildRepairPrompt(options.artifactPath, options.previousFailures!)
     : buildGenerationPrompt(options.artifactPath);
-  const result = await agent.sendMessage(prompt);
-  await agent.finalizeSession();
-  return {
-    responses: result.responses,
-    toolCount: result.toolExecutions.length,
-    errors: result.errors,
+  return sendAgentPrompt({
+    provider: options.provider,
+    model: options.model,
+    apiKey: options.apiKey,
+    prompt,
+  });
+}
+
+/**
+ * Codex strategy (docs/designs/game-gen-codex-workflow.md): round-0 candidates
+ * come from the GAMEPLAN → M0..M4 milestone pipeline with runtime-smoke probes
+ * between milestones; repair rounds reuse the single-strategy minimal-edit
+ * repair but with the .logs/ casebook prepended so repairs are not blind.
+ */
+async function buildCodexGenerate(options: {
+  artifactPath: string;
+  provider: string;
+  model: string;
+  apiKey?: string;
+  generationTimeoutMs: number;
+  runtimeTimeoutMs: number;
+  milestoneRetryCap: number;
+  routeConfig: CodexMilestoneRouteConfig;
+}): Promise<GenerateCandidateFn> {
+  const strategy = await import('./platformerCodexStrategy.ts');
+
+  const probe = async (artifactPath: string): Promise<ValidationSummary> => {
+    const validation = await validateGameArtifact(artifactPath, {
+      runRuntimeSmoke: true,
+      runtimeSmokeTimeoutMs: options.runtimeTimeoutMs,
+      runBrowserVisualSmoke: false,
+    });
+    return {
+      artifactPath,
+      passed: validation.passed,
+      failures: validation.failures,
+      runtimePassed: validation.runtimeSmoke?.passed,
+      runtimeFailures: validation.runtimeSmoke?.failures,
+      runtimeChecks: validation.runtimeSmoke?.checks,
+    };
+  };
+
+  return async ({ candidateIndex, round, previousFailures }) => {
+    const isRepairRound = Array.isArray(previousFailures) && previousFailures.length > 0;
+
+    if (isRepairRound) {
+      try {
+        const tail = await strategy.readCasebookTail(options.artifactPath);
+        const apiKey = options.apiKey ?? await resolveApiKey(options.provider);
+        if (!apiKey) {
+          throw new Error(missingApiKeyMessage(options.provider));
+        }
+        const result = await withTimeout(
+          runAgentGeneration({
+            artifactPath: options.artifactPath,
+            provider: options.provider,
+            model: options.model,
+            apiKey,
+            previousFailures,
+            casebookPreamble: strategy.buildCasebookPreamble(tail),
+          }),
+          options.generationTimeoutMs,
+          `Agent generation timed out after ${options.generationTimeoutMs}ms`,
+        );
+        await strategy.appendCasebook(options.artifactPath, {
+          stage: `repair round ${round} (r${round}c${candidateIndex})`,
+          goal: 'fix acceptance failures with minimal edits (casebook-aware)',
+          action: `targeted top failures: ${previousFailures!.slice(0, 3).join(' | ')}`,
+          probeResult: result.errors.length > 0 ? 'ERROR' : 'DISPATCHED',
+          details: result.errors,
+          conclusion: 'validation outcome recorded by acceptance loop report',
+        });
+        const generationError = result.errors.length > 0
+          ? `Agent generation reported errors: ${result.errors.join('; ')}`
+          : undefined;
+        return { generation: result, generationError, artifactPath: options.artifactPath };
+      } catch (error) {
+        return {
+          generation: null,
+          generationError: error instanceof Error ? error.message : String(error),
+          artifactPath: options.artifactPath,
+        };
+      }
+    }
+
+    // Fresh candidate: wipe stale artifact, run the milestone pipeline.
+    await fs.rm(options.artifactPath, { force: true });
+    try {
+      const result = await strategy.runCodexMilestonePipeline(options.artifactPath, {
+        generateMilestone: async (prompt, context) => {
+          const route = selectCodexMilestoneModelRoute(options.routeConfig, context.milestone.id);
+          const apiKey = await resolveApiKey(route.provider);
+          if (!apiKey) {
+            throw new Error(missingApiKeyMessage(route.provider));
+          }
+          console.error(
+            `[codex] ${context.milestone.id} attempt ${context.attempt} route: ${route.provider}/${route.model} timeout=${route.timeoutMs}ms`,
+          );
+          return withTimeout(
+            sendAgentPrompt({
+              provider: route.provider,
+              model: route.model,
+              apiKey,
+              prompt,
+            }),
+            route.timeoutMs,
+            `Milestone ${context.milestone.id} generation timed out after ${route.timeoutMs}ms (${route.provider}/${route.model})`,
+          );
+        },
+        probe,
+        readArtifact: async (p) => {
+          try {
+            return await fs.readFile(p, 'utf-8');
+          } catch {
+            return null;
+          }
+        },
+        log: (message) => console.error(message),
+        appendLog: (entry) =>
+          strategy.appendCasebook(options.artifactPath, {
+            ...entry,
+            stage: `r${round}c${candidateIndex} ${entry.stage}`,
+          }),
+        milestoneRetryCap: options.milestoneRetryCap,
+      });
+      const generationError = result.errors.length > 0
+        ? `Codex milestone pipeline reported errors: ${result.errors.join('; ')}`
+        : undefined;
+      return { generation: result, generationError, artifactPath: options.artifactPath };
+    } catch (error) {
+      return {
+        generation: null,
+        generationError: error instanceof Error ? error.message : String(error),
+        artifactPath: options.artifactPath,
+      };
+    }
   };
 }
 
@@ -543,6 +789,28 @@ export async function runAcceptanceLoop(params: {
   const log = params.log ?? ((msg) => console.error(msg));
   const rounds: RoundResult[] = [];
 
+  // Artifact retention: the monotonicity gate protects the SCORE accounting, but
+  // a regressing repair round still overwrites the artifact FILE in place — so
+  // without this, an escalated run leaves the WORST version on disk and reports
+  // the LAST round, not the best (verified 2026-06-11 deepseek: round0 35/6 got
+  // clobbered by repair rounds down to 18/26). We snapshot the best artifact and
+  // restore it on regression, so repairs always patch the best baseline and the
+  // delivered file is the best one.
+  const bestSnapshot = `${params.baseArtifactPath}.best`;
+  const snapshotArtifact = async (): Promise<void> => {
+    if (await fileExists(params.baseArtifactPath)) {
+      await fs.copyFile(params.baseArtifactPath, bestSnapshot).catch(() => {});
+    }
+  };
+  const restoreArtifact = async (): Promise<void> => {
+    if (await fileExists(bestSnapshot)) {
+      await fs.copyFile(bestSnapshot, params.baseArtifactPath).catch(() => {});
+    }
+  };
+  const cleanupSnapshot = async (): Promise<void> => {
+    await fs.rm(bestSnapshot, { force: true }).catch(() => {});
+  };
+
   // Round 0: initial BoN
   const round0 = await runBestOfN({
     bonN: params.bonN,
@@ -567,8 +835,9 @@ export async function runAcceptanceLoop(params: {
     };
   }
 
-  // Repair rounds
+  // Repair rounds. round0 is the initial best — snapshot it.
   let baselineRound = round0;
+  await snapshotArtifact();
   for (let attempt = 1; attempt <= params.repairCap; attempt += 1) {
     // P3 monotonic repair: hand the baseline's failure list to the next round
     // so generate() can do a minimal-edit patch instead of a fresh rewrite.
@@ -609,9 +878,12 @@ export async function runAcceptanceLoop(params: {
       const reason = formatRegressionMessage(baselineRound, round, regressed);
       log(`[acceptance] STRICT monotonic regression detected at round ${attempt}:\n${reason}`);
       log(formatRoundLine(round, params.bonN));
+      // Deliver the best (pre-regression) artifact, not the regressed one.
+      await restoreArtifact();
+      await cleanupSnapshot();
       return {
         rounds,
-        finalResult: round,
+        finalResult: baselineRound,
         bonN: params.bonN,
         repairCap: params.repairCap,
         monotonicMode: params.monotonicMode,
@@ -621,16 +893,20 @@ export async function runAcceptanceLoop(params: {
     }
 
     if (regressed.length > 0) {
-      // warn-mode: log but do NOT advance baseline; next iteration is compared against the same baseline.
-      log(formatRoundLine(round, params.bonN, ' [REGRESSED — discarded, retaining baseline]'));
+      // warn-mode: log but do NOT advance baseline; restore the artifact FILE to
+      // the best baseline so the next repair round patches the good version (not
+      // the regressed one) and the delivered file stays the best.
+      log(formatRoundLine(round, params.bonN, ' [REGRESSED — discarded, restoring best artifact]'));
       log(`[acceptance] WARN monotonic regression at round ${attempt}: ${regressed.join(', ')}`);
-      // Do NOT update baselineRound, so subsequent rounds are still compared against the last good state.
+      await restoreArtifact();
     } else {
       log(formatRoundLine(round, params.bonN));
       baselineRound = round;
+      await snapshotArtifact();
     }
 
     if (round.fullyPassed) {
+      await cleanupSnapshot();
       return {
         rounds,
         finalResult: round,
@@ -643,14 +919,16 @@ export async function runAcceptanceLoop(params: {
     }
   }
 
-  // Repair cap reached without PASS — escalate.
-  const finalRound = rounds[rounds.length - 1];
+  // Repair cap reached without full PASS — escalate, but deliver the BEST round's
+  // artifact (baselineRound), not the last (possibly regressed) one.
+  await restoreArtifact();
+  await cleanupSnapshot();
   const reason =
     'repair cap reached, escalate to architecture review (do not retry blindly — see docs/audits/2026-05-07-game-acceptance-architecture.md §7)';
   log(`[acceptance] ${reason}`);
   return {
     rounds,
-    finalResult: finalRound,
+    finalResult: baselineRound,
     bonN: params.bonN,
     repairCap: params.repairCap,
     monotonicMode: params.monotonicMode,
@@ -860,6 +1138,23 @@ async function writeMarkdownReport(reportPath: string, output: AcceptanceCliOutp
   const generationSummary = output.loop?.finalResult.selected.generation ?? null;
   const generationError = output.loop?.finalResult.selected.generationError;
 
+  const milestoneRows: string[] = [];
+  const roundZero = output.loop?.rounds.find((r) => r.round === 0);
+  const milestoneSource = roundZero?.selected.generation?.milestones
+    ?? generationSummary?.milestones;
+  if (milestoneSource && milestoneSource.length > 0) {
+    milestoneRows.push('## Codex Milestones (round 0)', '');
+    milestoneRows.push('| milestone | attempts | passed | blocking failures |');
+    milestoneRows.push('| --- | --- | --- | --- |');
+    for (const m of milestoneSource) {
+      const blocking = m.blockingFailures.length > 0
+        ? m.blockingFailures.slice(0, 2).join('; ').replace(/\|/g, '\\|')
+        : 'none';
+      milestoneRows.push(`| ${m.milestoneId} | ${m.attempts} | ${m.passed} | ${blocking} |`);
+    }
+    milestoneRows.push('');
+  }
+
   const body = [
     '# Platformer Gameplay Acceptance Report',
     '',
@@ -870,6 +1165,14 @@ async function writeMarkdownReport(reportPath: string, output: AcceptanceCliOutp
     `- artifactPath: ${validation.artifactPath}`,
     `- provider: ${output.provider ?? 'N/A'}`,
     `- model: ${output.model ?? 'N/A'}`,
+    `- strategy: ${output.strategy ?? 'N/A'}`,
+    ...(output.codexRoutes
+      ? [
+          `- codexLogicRoute: ${output.codexRoutes.logicProvider}/${output.codexRoutes.logicModel}`,
+          `- codexMimoRoute: ${output.codexRoutes.mimoProvider}/${output.codexRoutes.mimoModel}`,
+          `- codexHeavyMilestoneTimeoutMs: ${output.codexRoutes.heavyMilestoneTimeoutMs}`,
+        ]
+      : []),
     `- passed: ${validation.passed}`,
     `- runtimePassed: ${validation.runtimePassed ?? 'N/A'}`,
     `- browserPassed: ${validation.browserPassed ?? 'N/A'}`,
@@ -877,6 +1180,7 @@ async function writeMarkdownReport(reportPath: string, output: AcceptanceCliOutp
     formatProductStatusMarkdown(validation),
     '',
     ...loopRows,
+    ...milestoneRows,
     '## Generation (selected candidate)',
     '',
     formatGenerationResult(generationSummary, generationError),
@@ -953,22 +1257,61 @@ async function main(): Promise<void> {
     : null;
   const validateOnly = hasFlag(args, 'validate-only');
   const jsonOnly = hasFlag(args, 'json');
+  const strategyRaw =
+    getStringOption(args, 'strategy') || envValue('PLATFORMER_GAMEPLAY_STRATEGY') || 'single';
+  if (strategyRaw !== 'single' && strategyRaw !== 'codex') {
+    throw new Error(`Unknown --strategy "${strategyRaw}" — expected "single" or "codex".`);
+  }
+  const strategy: GenerationStrategy = strategyRaw;
+
+  const defaultProvider = strategy === 'codex' ? DEFAULT_CODEX_MIMO_PROVIDER : 'openrouter';
+  const defaultModel = strategy === 'codex'
+    ? DEFAULT_CODEX_MIMO_MODEL
+    : envValue('OPENROUTER_CHAT_MODEL') || 'google/gemini-3-flash-preview';
   const provider =
-    getStringOption(args, 'provider') || envValue('PLATFORMER_GAMEPLAY_PROVIDER') || 'openrouter';
+    getStringOption(args, 'provider') || envValue('PLATFORMER_GAMEPLAY_PROVIDER') || defaultProvider;
   const model =
     getStringOption(args, 'model') ||
     envValue('PLATFORMER_GAMEPLAY_MODEL') ||
-    envValue('OPENROUTER_CHAT_MODEL') ||
-    'google/gemini-3-flash-preview';
+    defaultModel;
   const timeoutMs = getNumberOption(args, 'timeout') || ACCEPTANCE_DEFAULTS.CANDIDATE_RUNTIME_TIMEOUT_MS;
   const generationTimeoutMs =
     getNumberOption(args, 'generation-timeout') ||
     Number(envValue('PLATFORMER_GAMEPLAY_GENERATION_TIMEOUT_MS') || 0) ||
     ACCEPTANCE_DEFAULTS.CANDIDATE_GENERATION_TIMEOUT_MS;
+  const logicProvider =
+    getStringOption(args, 'logic-provider') ||
+    envValue('PLATFORMER_GAMEPLAY_LOGIC_PROVIDER') ||
+    defaultLogicProvider();
+  const logicModel =
+    getStringOption(args, 'logic-model') ||
+    envValue('PLATFORMER_GAMEPLAY_LOGIC_MODEL') ||
+    defaultLogicModel(logicProvider);
+  const mimoProvider =
+    getStringOption(args, 'mimo-provider') ||
+    envValue('PLATFORMER_GAMEPLAY_MIMO_PROVIDER') ||
+    DEFAULT_CODEX_MIMO_PROVIDER;
+  const mimoModel =
+    getStringOption(args, 'mimo-model') ||
+    envValue('PLATFORMER_GAMEPLAY_MIMO_MODEL') ||
+    DEFAULT_CODEX_MIMO_MODEL;
+  const heavyMilestoneTimeoutMs =
+    getNumberOption(args, 'heavy-milestone-timeout') ||
+    Number(envValue('PLATFORMER_GAMEPLAY_HEAVY_MILESTONE_TIMEOUT_MS') || 0) ||
+    DEFAULT_CODEX_HEAVY_MILESTONE_TIMEOUT_MS;
+  const codexRouteConfig: CodexMilestoneRouteConfig = {
+    logicProvider,
+    logicModel,
+    mimoProvider,
+    mimoModel,
+    generationTimeoutMs,
+    heavyMilestoneTimeoutMs,
+  };
 
   const bonN = resolveBonN(args);
   const repairCap = resolveRepairCap(args);
   const monotonicMode: AcceptanceMonotonicMode = hasFlag(args, 'strict-monotonic') ? 'strict' : 'warn';
+  const milestoneRetryCap = Math.max(0, Math.floor(getNumberOption(args, 'milestone-retry') ?? 1));
 
   let loop: AcceptanceLoopOutput | undefined;
   let validationSummary: ValidationSummary;
@@ -985,32 +1328,42 @@ async function main(): Promise<void> {
       validationSummary = await validateArtifact(artifactPath, timeoutMs);
     }
   } else {
-    const apiKey = apiKeyForProvider(provider);
-    if (!apiKey) {
-      throw new Error(
-        `Missing API key for provider ${provider}. Set one of ${(PROVIDER_KEY_CANDIDATES[provider] || [`${provider.toUpperCase()}_API_KEY`]).join(', ')} or run with --validate-only.`,
-      );
+    const apiKey = await resolveApiKey(provider);
+    if (!apiKey && strategy !== 'codex') {
+      throw new Error(missingApiKeyMessage(provider));
     }
 
-    const generate: GenerateCandidateFn = async ({ previousFailures }) => {
-      try {
-        const result = await withTimeout(
-          runAgentGeneration({ artifactPath, provider, model, apiKey, previousFailures }),
-          generationTimeoutMs,
-          `Agent generation timed out after ${generationTimeoutMs}ms`,
-        );
-        const generationError = result.errors.length > 0
-          ? `Agent generation reported errors: ${result.errors.join('; ')}`
-          : undefined;
-        return { generation: result, generationError, artifactPath };
-      } catch (error) {
-        return {
-          generation: null,
-          generationError: error instanceof Error ? error.message : String(error),
-          artifactPath,
-        };
-      }
-    };
+    const generate: GenerateCandidateFn =
+      strategy === 'codex'
+        ? await buildCodexGenerate({
+            artifactPath,
+            provider,
+            model,
+            apiKey,
+            generationTimeoutMs,
+            runtimeTimeoutMs: timeoutMs,
+            milestoneRetryCap,
+            routeConfig: codexRouteConfig,
+          })
+        : async ({ previousFailures }) => {
+            try {
+              const result = await withTimeout(
+                runAgentGeneration({ artifactPath, provider, model, apiKey: apiKey!, previousFailures }),
+                generationTimeoutMs,
+                `Agent generation timed out after ${generationTimeoutMs}ms`,
+              );
+              const generationError = result.errors.length > 0
+                ? `Agent generation reported errors: ${result.errors.join('; ')}`
+                : undefined;
+              return { generation: result, generationError, artifactPath };
+            } catch (error) {
+              return {
+                generation: null,
+                generationError: error instanceof Error ? error.message : String(error),
+                artifactPath,
+              };
+            }
+          };
 
     loop = await runAcceptanceLoop({
       bonN,
@@ -1028,6 +1381,8 @@ async function main(): Promise<void> {
     mode: validateOnly ? 'validate-only' : 'generate-and-validate',
     provider: validateOnly ? undefined : provider,
     model: validateOnly ? undefined : model,
+    strategy: validateOnly ? undefined : strategy,
+    codexRoutes: !validateOnly && strategy === 'codex' ? codexRouteConfig : undefined,
     bonN,
     repairCap,
     monotonicMode,
@@ -1050,6 +1405,14 @@ async function main(): Promise<void> {
       ['artifactPath', artifactPath],
       ['provider', output.provider],
       ['model', output.model],
+      ['strategy', output.strategy],
+      ['codexLogicRoute', output.codexRoutes
+        ? `${output.codexRoutes.logicProvider}/${output.codexRoutes.logicModel}`
+        : undefined],
+      ['codexMimoRoute', output.codexRoutes
+        ? `${output.codexRoutes.mimoProvider}/${output.codexRoutes.mimoModel}`
+        : undefined],
+      ['codexHeavyMilestoneTimeoutMs', output.codexRoutes?.heavyMilestoneTimeoutMs],
       ['bonN', bonN],
       ['repairCap', repairCap],
       ['monotonicMode', monotonicMode],

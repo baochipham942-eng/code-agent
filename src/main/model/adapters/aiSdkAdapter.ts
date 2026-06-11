@@ -147,13 +147,29 @@ function responseBodyForFetch(data: unknown, status: number): BodyInit | null {
 
 // 按 provider 生成 fetch：闭包绑定 provider，使 getHttpsAgent 能按 provider 身份决定走代理/直连
 // （而非只看 url host）。修复 mimo 等「国内厂商海外节点」被全局代理打偏的问题。
-function makeAiSdkFetch(provider?: string): typeof globalThis.fetch {
+function makeAiSdkFetch(
+  provider?: string,
+  transformRequestBody?: (body: Record<string, unknown>) => Record<string, unknown>,
+): typeof globalThis.fetch {
   return async (input, init) => {
   const request = input instanceof Request ? input : undefined;
   const url = input instanceof URL ? input.toString() : request?.url ?? String(input);
   const method = init?.method ?? request?.method ?? 'GET';
   const headers = headersToRecord(init?.headers ?? request?.headers);
-  const body = requestBodyForAxios(init?.body ?? request?.body);
+  let body = requestBodyForAxios(init?.body ?? request?.body);
+  // Vendor body quirks (e.g. mimo thinking:{type:'disabled'}, moonshot sampling)
+  // are NOT a standard createOpenAICompatible option, so they must be applied to
+  // the serialized JSON body here. Without this, transformRequestBody is dead
+  // code and mimo defaults to thinking-ON → runaway reasoning (verified 2026-06-11:
+  // full-content generation never starts, 65K reasoning tokens, finish=length).
+  if (transformRequestBody && typeof body === 'string') {
+    try {
+      const parsed = JSON.parse(body) as Record<string, unknown>;
+      body = JSON.stringify(transformRequestBody(parsed));
+    } catch {
+      // Non-JSON or unparsable body: leave untouched.
+    }
+  }
   const signal = init?.signal ?? request?.signal;
   const agent = getHttpsAgent(url, provider);
 
@@ -287,7 +303,9 @@ function resolveModel(config: ModelConfig, req: ProviderRequest): LanguageModel 
         name: config.provider,
         baseURL: req.baseURL,
         apiKey: req.apiKey,
-        fetch: makeAiSdkFetch(config.provider),
+        // transformRequestBody is applied inside the fetch wrapper (it is not a
+        // native createOpenAICompatible option); includeUsage/headers are native.
+        fetch: makeAiSdkFetch(config.provider, vendor.transformRequestBody),
         ...vendor,
       })(config.model);
     }

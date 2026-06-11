@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Platformer M1 Skeleton</title>
+<style>
+  html, body { margin: 0; background: #1b2330; }
+  #hud { position: fixed; top: 8px; left: 12px; color: #ffe27a; font: 16px/1.4 system-ui, sans-serif; }
+  canvas { display: block; margin: 0 auto; background: #2a3b57; }
+</style>
+</head>
+<body>
+<div id="hud">Score: <span id="score">0</span> · Lives: <span id="lives">3</span> · Level: <span id="level">1</span></div>
+<canvas id="game" width="960" height="540"></canvas>
+<script>
+// M0+M1 skeleton: real movement/jump physics, honest contract surface.
+// Deliberately NO enemy/block/ability/gate logic — used to prove the codex
+// milestone gating against the real validator (M0/M1 pass, M2/M3 fail).
+(function () {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const GROUND_Y = 470;
+
+  const state = {
+    player: { x: 60, y: GROUND_Y, vx: 0, vy: 0, w: 28, h: 56, onGround: true, abilities: { doubleJump: false } },
+    score: 0,
+    lives: 3,
+    level: 1,
+    enemiesDefeated: 0,
+    blocksUsed: 0,
+    gatesUnlocked: 0,
+    goalReached: false,
+  };
+  const input = { ArrowLeft: false, ArrowRight: false, Space: false };
+
+  const SPEED = 4.2, ACCEL = 0.9, FRICTION = 0.8, GRAVITY = 0.9, JUMP_V = -15;
+
+  function applyInput(i) {
+    if (i.ArrowLeft) state.player.vx -= ACCEL;
+    if (i.ArrowRight) state.player.vx += ACCEL;
+    if (!i.ArrowLeft && !i.ArrowRight) state.player.vx *= FRICTION;
+    state.player.vx = Math.max(-SPEED, Math.min(SPEED, state.player.vx));
+    if ((i.Space || i.ArrowUp) && state.player.onGround) {
+      state.player.vy = JUMP_V;
+      state.player.onGround = false;
+    }
+  }
+
+  function physics() {
+    state.player.vy += GRAVITY;
+    state.player.x += state.player.vx;
+    state.player.y += state.player.vy;
+    if (state.player.x < 20) state.player.x = 20;
+    if (state.player.y >= GROUND_Y) {
+      state.player.y = GROUND_Y;
+      state.player.vy = 0;
+      state.player.onGround = true;
+    }
+    if (state.player.x > 6 && !state.player.onGround === false) {
+      state.score = Math.max(state.score, Math.floor(state.player.x));
+    }
+  }
+
+  function stepOnce(i) { applyInput(i); physics(); }
+
+  function render() {
+    ctx.fillStyle = '#2a3b57';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // ground
+    ctx.fillStyle = '#3d5a3a';
+    ctx.fillRect(0, GROUND_Y + 56, canvas.width, canvas.height - GROUND_Y);
+    ctx.fillStyle = '#6b8f4e';
+    ctx.fillRect(0, GROUND_Y + 50, canvas.width, 8);
+    // goal marker (visible goal)
+    ctx.fillStyle = '#ffd166';
+    ctx.fillRect(900, GROUND_Y - 10, 12, 66);
+    // hazard (visible risk)
+    ctx.fillStyle = '#e63946';
+    ctx.fillRect(520, GROUND_Y + 40, 40, 16);
+    // reward (visible reward)
+    ctx.fillStyle = '#ffe27a';
+    ctx.beginPath();
+    ctx.arc(360, GROUND_Y - 30, 9, 0, Math.PI * 2);
+    ctx.fill();
+    // stickman actor
+    const p = state.player;
+    ctx.strokeStyle = '#f1faee';
+    ctx.lineWidth = 4;
+    const cx = p.x + p.w / 2, top = p.y - 4;
+    ctx.beginPath();
+    ctx.arc(cx, top - 44, 11, 0, Math.PI * 2); // head
+    ctx.moveTo(cx, top - 33); ctx.lineTo(cx, top - 6); // torso
+    ctx.moveTo(cx, top - 26); ctx.lineTo(cx - 14, top - 16); // arm
+    ctx.moveTo(cx, top - 26); ctx.lineTo(cx + 14, top - 16); // arm
+    ctx.moveTo(cx, top - 6); ctx.lineTo(cx - 11, top + 18); // leg
+    ctx.moveTo(cx, top - 6); ctx.lineTo(cx + 11, top + 18); // leg
+    ctx.stroke();
+    document.getElementById('score').textContent = String(state.score);
+    document.getElementById('lives').textContent = String(state.lives);
+    document.getElementById('level').textContent = String(state.level);
+  }
+
+  let raf = null;
+  function loop() {
+    stepOnce(input);
+    render();
+    raf = requestAnimationFrame(loop);
+  }
+
+  const keyMap = { ArrowLeft: 'ArrowLeft', ArrowRight: 'ArrowRight', Space: 'Space', ' ': 'Space', ArrowUp: 'ArrowUp' };
+  window.addEventListener('keydown', (e) => { const k = keyMap[e.key]; if (k) input[k] = true; });
+  window.addEventListener('keyup', (e) => { const k = keyMap[e.key]; if (k) input[k] = false; });
+
+  function snapshot() {
+    return {
+      player: { x: state.player.x, y: state.player.y, vx: state.player.vx, vy: state.player.vy, abilities: { doubleJump: state.player.abilities.doubleJump } },
+      score: state.score,
+      lives: state.lives,
+      level: state.level,
+      enemiesDefeated: state.enemiesDefeated,
+      blocksUsed: state.blocksUsed,
+      gatesUnlocked: state.gatesUnlocked,
+      abilities: { doubleJump: state.player.abilities.doubleJump },
+      goalReached: state.goalReached,
+    };
+  }
+
+  function reset(levelOrScenario) {
+    state.player.x = 60; state.player.y = GROUND_Y; state.player.vx = 0; state.player.vy = 0;
+    state.player.onGround = true; state.player.abilities.doubleJump = false;
+    state.score = 0; state.enemiesDefeated = 0; state.blocksUsed = 0; state.gatesUnlocked = 0; state.goalReached = false;
+    if (typeof levelOrScenario === 'string') state.level = ({ 'level-1': 1, 'level-2': 2 })[levelOrScenario] || 1;
+    else if (typeof levelOrScenario === 'number') state.level = levelOrScenario + 1;
+    return snapshot();
+  }
+
+  function step(inputState, frames) {
+    const n = Math.max(1, frames | 0 || 1);
+    const i = Object.assign({ ArrowLeft: false, ArrowRight: false, Space: false, ArrowUp: false }, inputState || {});
+    for (let f = 0; f < n; f += 1) stepOnce(i);
+    return snapshot();
+  }
+
+  function runSmokeTest() {
+    const failures = [];
+    const checks = [];
+    reset();
+    const before = snapshot();
+    step({ ArrowRight: true }, 30);
+    if (snapshot().player.x > before.player.x) checks.push('move_right: player.x increased');
+    else failures.push('move_right: player.x did not increase');
+    reset();
+    const beforeJump = snapshot().player.y;
+    step({ Space: true }, 6);
+    if (snapshot().player.y < beforeJump) checks.push('jump: player.y decreased / vy negative');
+    else failures.push('jump: player.y did not change');
+    return {
+      passed: failures.length === 0,
+      checks,
+      failures,
+      coverage: {
+        mechanics: ['move', 'jump', 'gravity', 'friction', 'collision'],
+        rewards: ['coin'],
+        risks: ['hazard'],
+        stateChanges: ['player.x', 'player.y', 'playerMoved'],
+      },
+    };
+  }
+
+  window.__GAME_META__ = {
+    subtype: 'platformer',
+    controls: [
+      { key: 'ArrowLeft', action: 'move left' },
+      { key: 'ArrowRight', action: 'move right' },
+      { key: 'Space', action: 'jump' },
+    ],
+    levels: ['level-1'],
+    qualityPlan: { levelsCovered: 1, notes: 'M0+M1 skeleton' },
+    progressPlan: [
+      { id: 'walk-right', input: ['ArrowRight'], frames: 30, metric: 'player.x', expect: 'increase' },
+      { id: 'jump-up', input: ['Space'], frames: 6, metric: 'player.y', expect: 'decrease' },
+    ],
+    reachability: [
+      { id: 'walk-right', input: ['ArrowRight'], frames: 30, metric: 'player.x', expect: 'increase' },
+      { id: 'jump-up', input: ['Space'], frames: 6, metric: 'player.y', expect: 'decrease' },
+    ],
+    browserVisualSmoke: { desktop: true, mobile: true },
+    gameplayMechanics: {
+      enemies: [{ id: 'goomba', type: 'patrol', stompable: true, patrol: true, defeatReward: 'score' }],
+      blocks: [{ id: 'qblock', type: 'question', bumpableFromBelow: true, reward: 'coin', usedState: 'used' }],
+      abilities: [{ id: 'doubleJump', type: 'movement', acquiredFrom: 'qblock', effect: 'second jump', unlocksRoute: 'high-ledge' }],
+      gates: [{ id: 'high-ledge', requiresAbility: 'doubleJump', blocksAccessTo: 'goal' }],
+      comboChallenge: [{ id: 'combo-1', requires: ['jump', 'stomp', 'doubleJump'], target: 'high-ledge' }],
+    },
+  };
+  window.__GAME_TEST__ = { start: () => { if (!raf) loop(); }, reset, snapshot, step, runSmokeTest };
+
+  loop();
+})();
+</script>
+</body>
+</html>

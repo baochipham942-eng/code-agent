@@ -24,10 +24,12 @@ import {
   buildRepairPrompt,
   formatProductStatusMarkdown,
   prioritizeFailures,
+  selectCodexMilestoneModelRoute,
   summarizeValidationStatus,
   type ValidationSummary,
   type GenerateCandidateFn,
   type RoundResult,
+  type CodexMilestoneRouteConfig,
 } from '../../../../scripts/acceptance/platformer-gameplay-generation';
 
 function makeSummary(opts: {
@@ -62,6 +64,46 @@ async function makeArtifactStub(): Promise<string> {
 }
 
 const noopLog = () => {};
+
+describe('codex milestone model routing', () => {
+  const routeConfig: CodexMilestoneRouteConfig = {
+    logicProvider: 'deepseek',
+    logicModel: 'deepseek-v4-flash',
+    mimoProvider: 'xiaomi',
+    mimoModel: 'mimo-v2.5-pro',
+    generationTimeoutMs: 120_000,
+    heavyMilestoneTimeoutMs: 480_000,
+  };
+
+  it('routes M0-M2 to the strong code model and M3-M4 to mimo', () => {
+    const routes = ['M0', 'M1', 'M2', 'M3', 'M4'].map((id) =>
+      selectCodexMilestoneModelRoute(routeConfig, id as 'M0' | 'M1' | 'M2' | 'M3' | 'M4'),
+    );
+
+    expect(routes.map((route) => `${route.milestoneId}:${route.provider}/${route.model}`)).toEqual([
+      'M0:deepseek/deepseek-v4-flash',
+      'M1:deepseek/deepseek-v4-flash',
+      'M2:deepseek/deepseek-v4-flash',
+      'M3:xiaomi/mimo-v2.5-pro',
+      'M4:xiaomi/mimo-v2.5-pro',
+    ]);
+  });
+
+  it('raises M2/M3 single-segment timeout to at least 480s', () => {
+    expect(selectCodexMilestoneModelRoute(routeConfig, 'M1').timeoutMs).toBe(120_000);
+    expect(selectCodexMilestoneModelRoute(routeConfig, 'M2').timeoutMs).toBe(480_000);
+    expect(selectCodexMilestoneModelRoute(routeConfig, 'M3').timeoutMs).toBe(480_000);
+    expect(selectCodexMilestoneModelRoute(routeConfig, 'M4').timeoutMs).toBe(120_000);
+  });
+
+  it('honors a higher global generation timeout for heavy milestones', () => {
+    const route = selectCodexMilestoneModelRoute(
+      { ...routeConfig, generationTimeoutMs: 600_000 },
+      'M2',
+    );
+    expect(route.timeoutMs).toBe(600_000);
+  });
+});
 
 describe('scoreCandidate', () => {
   it('ranks fully-passing candidate above runtime-only above static-only', () => {
@@ -402,6 +444,54 @@ describe('runAcceptanceLoop — Guard 3: monotonicity gate', () => {
     // Round 2's regression diff is compared against the *unchanged* baseline (round 0),
     // because warn mode does not advance the baseline through a regressed round.
     expect(result.rounds[2].regressionAgainstPrevious?.regressedChecks).toContain('runtime:stomp');
+  });
+});
+
+describe('artifact retention on regression (deepseek 35/6 → clobbered regression)', () => {
+  it('escalates with finalResult = best round AND restores the best artifact file', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'acceptance-retain-'));
+    const artifactPath = path.join(dir, 'game.html');
+    await fs.writeFile(artifactPath, 'GOOD round0', 'utf-8');
+
+    // round0 writes GOOD (3 passing checks); every repair round writes BAD (regresses to 1).
+    let round = 0;
+    const generate: GenerateCandidateFn = vi.fn(async () => {
+      if (round > 0) await fs.writeFile(artifactPath, 'BAD repair', 'utf-8');
+      round += 1;
+      return { generation: { responses: [], toolCount: 1, errors: [] }, artifactPath };
+    });
+    const validate = async (p: string): Promise<ValidationSummary> => {
+      const content = await fs.readFile(p, 'utf-8');
+      const good = content.startsWith('GOOD');
+      return makeSummary({
+        artifactPath: p,
+        runtimePassed: false,
+        browserPassed: true,
+        runtimeChecks: ['stomp', 'bump', 'ability'],
+        runtimeFailures: good ? [] : ['stomp', 'bump'], // BAD regresses stomp+bump
+        browserChecks: ['desktop'],
+      });
+    };
+
+    const result = await runAcceptanceLoop({
+      bonN: 1,
+      repairCap: 2,
+      monotonicMode: 'warn',
+      baseArtifactPath: artifactPath,
+      runtimeTimeoutMs: 1000,
+      generate,
+      validate,
+      log: noopLog,
+    });
+
+    expect(result.escalated).toBe(true);
+    // finalResult must be the BEST round (round 0), not the last regressed round.
+    expect(result.finalResult.round).toBe(0);
+    expect(result.finalResult.passCount).toBeGreaterThan(result.rounds[result.rounds.length - 1].passCount);
+    // The delivered artifact file must be restored to the best (round 0) version.
+    expect(await fs.readFile(artifactPath, 'utf-8')).toBe('GOOD round0');
+    // The .best snapshot is cleaned up.
+    expect(await fs.access(`${artifactPath}.best`).then(() => true, () => false)).toBe(false);
   });
 });
 

@@ -383,7 +383,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
     const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
+    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
     // Route A: repair mode is always write-priority — the goal is to patch.
     expect(options).toMatchObject({ artifactRepairActive: true, artifactRepairWritePriority: true });
   });
@@ -433,7 +433,7 @@ describe('contextAssembly inference artifact retry', () => {
     });
     const [, tools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
+    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
   });
 
   it('does not seed artifact repair guard for fresh generation requests that mention the test contract', async () => {
@@ -527,7 +527,7 @@ describe('contextAssembly inference artifact retry', () => {
       activeIssueCodes: ['coverage_without_runtime_evidence'],
     });
     const [, tools, config, , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
-    expect(tools.map((tool: { name: string }) => tool.name)).toEqual(['Read', 'Edit', 'Write', 'Append']);
+    expect(tools.map((tool: { name: string }) => tool.name)).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
     expect(config.maxTokens).toBe(4096);
     expect(options?.artifactRepairActive).toBe(true);
     // Route A: repair mode is always write-priority.
@@ -574,7 +574,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
     const [, tools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
+    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
   });
 
   it('keeps the full repair tool set available regardless of attempt count (Route A)', async () => {
@@ -591,7 +591,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
     const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
+    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
     expect(options).toMatchObject({
       artifactRepairActive: true,
       artifactRepairWritePriority: true,
@@ -640,7 +640,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
     const [, tools, , , , options] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const toolNames = tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
+    expect(toolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
     expect(options).toMatchObject({
       artifactRepairActive: true,
       artifactRepairWritePriority: true,
@@ -721,7 +721,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(2);
     const [, retryTools, retryConfig, retryStream, , retryOptions] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[1];
     // Route A: the repair tool set stays full (Read/Edit/Write/Append) on the retry too.
-    expect(retryTools.map((tool: { name: string }) => tool.name)).toEqual(['Read', 'Edit', 'Write', 'Append']);
+    expect(retryTools.map((tool: { name: string }) => tool.name)).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
     expect(retryConfig.maxTokens).toBe(8192);
     expect(retryStream).toBeUndefined();
     expect(retryOptions).toMatchObject({

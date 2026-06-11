@@ -37,6 +37,36 @@ describe('agentsDiscovery', () => {
     ]);
   });
 
+  it('also loads CLAUDE.md when AGENTS.md is sparse (< 500 chars, roadmap 1.10)', async () => {
+    await writeFile(join(rootDir, 'AGENTS.md'), '# Thin\nSee CLAUDE.md');
+    await writeFile(join(rootDir, 'CLAUDE.md'), '# Full project guidance\n' + 'rule\n'.repeat(50));
+
+    const result = await discoverAgentFilesCached(rootDir, { maxDepth: 1, maxFiles: 10 });
+
+    expect(result.files.map((file) => file.relativePath)).toEqual([
+      'AGENTS.md',
+      'CLAUDE.md',
+    ]);
+    expect(result.combinedInstructions).toContain('Full project guidance');
+  });
+
+  it('does not load CLAUDE.md when AGENTS.md is substantial', async () => {
+    await writeFile(join(rootDir, 'AGENTS.md'), '# Rich\n' + 'a detailed project rule line\n'.repeat(30));
+    await writeFile(join(rootDir, 'CLAUDE.md'), '# Legacy guidance');
+
+    const result = await discoverAgentFilesCached(rootDir, { maxDepth: 1, maxFiles: 10 });
+
+    expect(result.files.map((file) => file.relativePath)).toEqual(['AGENTS.md']);
+  });
+
+  it('keeps single-file behavior when sparse AGENTS.md has no CLAUDE.md sibling', async () => {
+    await writeFile(join(rootDir, 'AGENTS.md'), '# Thin');
+
+    const result = await discoverAgentFilesCached(rootDir, { maxDepth: 1, maxFiles: 10 });
+
+    expect(result.files.map((file) => file.relativePath)).toEqual(['AGENTS.md']);
+  });
+
   it('stops at maxFiles and reports truncation', async () => {
     await writeFile(join(rootDir, 'AGENTS.md'), '# Root');
     await mkdir(join(rootDir, 'one'), { recursive: true });

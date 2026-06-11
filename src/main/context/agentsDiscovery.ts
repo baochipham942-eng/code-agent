@@ -100,6 +100,13 @@ const MAX_DEPTH = 5;
 const MAX_FILES = 32;
 const MAX_DIRECTORIES = 1500;
 
+/**
+ * 稀疏回退阈值（借鉴 MiMoCode session/instruction.ts）：
+ * AGENTS.md trim 后少于该字符数视为"太薄"，很可能不含完整项目指引，
+ * 迁移期补充加载同目录的 CLAUDE.md，避免 first-match-wins 把指引丢掉。
+ */
+const SPARSE_AGENTS_FALLBACK_CHARS = 500;
+
 export interface AgentsDiscoveryOptions {
   maxDepth?: number;
   maxFiles?: number;
@@ -157,26 +164,39 @@ export async function discoverAgentFiles(
       const entries = await fs.readdir(dir, { withFileTypes: true });
 
       // First, check for agent files in current directory
-      for (const fileName of AGENT_FILES) {
+      async function loadAgentFile(fileName: string): Promise<string | null> {
         const filePath = path.join(dir, fileName);
         try {
           const stat = await fs.stat(filePath);
-          if (stat.isFile()) {
-            const content = await fs.readFile(filePath, 'utf-8');
-            files.push({
-              relativePath: path.relative(workingDirectory, filePath),
-              absolutePath: filePath,
-              directory: path.relative(workingDirectory, dir) || '.',
-              content,
-              modifiedAt: stat.mtimeMs,
-              sections: parseAgentSections(content),
-            });
-            // Only load one file per directory (prefer AGENTS.md over CLAUDE.md)
-            break;
-          }
+          if (!stat.isFile()) return null;
+          const content = await fs.readFile(filePath, 'utf-8');
+          files.push({
+            relativePath: path.relative(workingDirectory, filePath),
+            absolutePath: filePath,
+            directory: path.relative(workingDirectory, dir) || '.',
+            content,
+            modifiedAt: stat.mtimeMs,
+            sections: parseAgentSections(content),
+          });
+          return content;
         } catch {
-          // File doesn't exist, continue
+          return null; // File doesn't exist
         }
+      }
+
+      for (const fileName of AGENT_FILES) {
+        const content = await loadAgentFile(fileName);
+        if (content === null) continue;
+        // 稀疏回退：AGENTS.md 太薄时补充加载同目录 CLAUDE.md（roadmap 1.10）
+        if (
+          fileName === 'AGENTS.md'
+          && content.trim().length < SPARSE_AGENTS_FALLBACK_CHARS
+          && files.length < maxFiles
+        ) {
+          await loadAgentFile('CLAUDE.md');
+        }
+        // Only load one file per directory (prefer AGENTS.md over CLAUDE.md)
+        break;
       }
 
       // Then recursively search subdirectories

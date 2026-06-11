@@ -31,7 +31,7 @@ import { HookManager, createHookManager } from '../hooks';
 import type { BudgetEventData } from '../../shared/contract';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getSystemPromptCache } from '../telemetry/systemPromptCache';
-import { DEFAULT_MODELS, MODEL_MAX_TOKENS, getContextWindow, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../shared/constants';
+import { DEFAULT_MODELS, MAX_MODE, MODEL_MAX_TOKENS, getContextWindow, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../shared/constants';
 
 // Import refactored modules
 import type {
@@ -213,6 +213,9 @@ export class AgentLoop {
       maxStopHookRetries: 3,
       userStopHookBlockCount: 0,
       enableDeliveryCritic: config.enableDeliveryCritic ?? process.env.CODE_AGENT_DELIVERY_CRITIC === '1',
+      // Max Mode（best-of-N）显式开关，默认关——eval 对照前提 + 出问题的回滚通道
+      maxMode: config.maxMode ?? process.env.CODE_AGENT_MAX_MODE === '1',
+      maxModeCandidates: config.maxModeCandidates ?? MAX_MODE.DEFAULT_CANDIDATES,
       deliveryCriticRan: false,
 
       // Tool execution

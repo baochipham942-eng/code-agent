@@ -116,6 +116,12 @@ export interface RuntimeContext {
   skillModelOverride?: string;
   enableToolDeferredLoading: boolean;
 
+  // --- Max Mode（best-of-N，roadmap 3.3）---
+  /** 显式开关（默认关）：开 = 每步 N 并发 propose-only 候选 → judge 选索引 → 赢家 replay */
+  maxMode: boolean;
+  /** 并发候选数（默认 MAX_MODE.DEFAULT_CANDIDATES） */
+  maxModeCandidates: number;
+
   // --- Structured output ---
   structuredOutput?: StructuredOutputConfig;
   structuredOutputRetryCount: number;

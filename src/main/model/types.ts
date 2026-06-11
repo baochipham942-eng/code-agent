@@ -90,6 +90,16 @@ export interface ModelResponse {
     artifactValidationAttemptCompletion?: {
       targetFile: string;
     };
+    /** Max Mode（best-of-N）本步诊断：候选/幸存/赢家索引/是否降级/judge 是否解析成功 */
+    maxMode?: {
+      candidates: number;
+      survivors: number;
+      winner: number;
+      degraded: boolean;
+      judgeParsed: boolean;
+      overheadInputTokens: number;
+      overheadOutputTokens: number;
+    };
   };
 }
 

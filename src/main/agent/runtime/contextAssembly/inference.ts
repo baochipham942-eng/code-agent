@@ -38,6 +38,7 @@ import {
   seedArtifactRepairGuardFromContext,
 } from '../artifactRepairGuard';
 import { preloadDeferredToolsForTurn } from './deferredToolPreload';
+import { runMaxModeStep } from '../maxMode';
 import { createHandoffTailStreamFilter } from '../../../handoff/handoffStream';
 import { applyEffortControls } from './effortControls';
 import { buildCompactArtifactRepairWriteRetryMessages } from './artifactRepairRetryMessages';
@@ -389,6 +390,60 @@ function capArtifactRepairMaxTokens(
     ...config,
     maxTokens: cap,
   };
+}
+
+/**
+ * Max Mode（best-of-N，roadmap 3.3）分支：N 并发 propose-only 候选 → judge 选索引 →
+ * 赢家 replay（由主链路下游正常执行其工具调用）。
+ *
+ * 副作用隔离：候选与 judge 走无流式回调、无快照（onSnapshot 剥离）的静默引擎调用——
+ * 不发 UI 流事件、不写 stream snapshot、不执行任何工具。全候选失败时降级为带
+ * streamCallback 的正常单次调用，用户无感。
+ *
+ * 成本约束（roadmap 3.3.d）：落选候选 + judge 的 usage 作为 overhead 记入成本统计
+ * （ctx.recordTokenUsage → budgetService），但不进上下文长度估算——上下文路径
+ * （streamHandler 累计 ctx.totalInputTokens/totalOutputTokens、line ~820 的赢家估算）
+ * 只见到赢家的 response.usage。
+ */
+async function runMaxModeInference(
+  ctx: ContextAssemblyCtx,
+  messages: ModelMessage[],
+  tools: ToolDefinition[],
+  requestConfig: ModelConfig,
+  streamCallback: StreamCallback,
+  engineOptions: InferenceOptions,
+): Promise<ModelResponse> {
+  const { onSnapshot: _onSnapshot, ...silentOptions } = engineOptions;
+  const signal = ctx.runtime.abortController?.signal;
+  const candidates = ctx.runtime.maxModeCandidates;
+  ctx.taskProgress.emitTaskProgress('thinking', `Max Mode：${candidates} 个候选并行起草中...`);
+
+  const { response, stats } = await runMaxModeStep(
+    {
+      silentEngine: (msgs, tls) =>
+        runEngineInference(ctx, msgs, tls, requestConfig, undefined, signal, silentOptions),
+      streamingEngine: (msgs, tls) =>
+        runEngineInference(ctx, msgs, tls, requestConfig, streamCallback, signal, engineOptions),
+    },
+    { messages, tools, candidates },
+  );
+
+  if (stats.overhead.inputTokens > 0 || stats.overhead.outputTokens > 0) {
+    ctx.recordTokenUsage(stats.overhead.inputTokens, stats.overhead.outputTokens);
+  }
+  response.runtimeDiagnostics = {
+    ...response.runtimeDiagnostics,
+    maxMode: {
+      candidates: stats.candidates,
+      survivors: stats.survivors,
+      winner: stats.winner,
+      degraded: stats.degraded,
+      judgeParsed: stats.judgeParsed,
+      overheadInputTokens: stats.overhead.inputTokens,
+      overheadOutputTokens: stats.overhead.outputTokens,
+    },
+  };
+  return response;
 }
 
 export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse> {
@@ -764,25 +819,37 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
     });
     let response: ModelResponse;
     try {
-      response = await runEngineInference(
-        ctx,
-        modelMessages,
-        effectiveTools,
-        requestConfig,
-        streamCallback,
-        ctx.runtime.abortController.signal,
-          {
-            ...ctx.runtime.inferenceOptions,
-            onSnapshot: createSnapshotHandler(
-            ctx.runtime.sessionId,
-            ctx.runtime.currentTurnId,
-            ctx.runtime.workingDirectory,
-          ),
-          artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
-          artifactRepairWritePriority,
-          artifactRepairFullRewritePriority,
-        },
-      );
+      const engineOptions: InferenceOptions = {
+        ...ctx.runtime.inferenceOptions,
+        onSnapshot: createSnapshotHandler(
+          ctx.runtime.sessionId,
+          ctx.runtime.currentTurnId,
+          ctx.runtime.workingDirectory,
+        ),
+        artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
+        artifactRepairWritePriority,
+        artifactRepairFullRewritePriority,
+      };
+      if (ctx.runtime.maxMode) {
+        response = await runMaxModeInference(
+          ctx,
+          modelMessages,
+          effectiveTools,
+          requestConfig,
+          streamCallback,
+          engineOptions,
+        );
+      } else {
+        response = await runEngineInference(
+          ctx,
+          modelMessages,
+          effectiveTools,
+          requestConfig,
+          streamCallback,
+          ctx.runtime.abortController.signal,
+          engineOptions,
+        );
+      }
     } finally {
       stopArtifactProgress();
     }

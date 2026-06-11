@@ -1,7 +1,27 @@
 # 游戏生成 Codex 式工作流改造（Game-Gen Codex Workflow）
 
-> Status: 📝 Draft（方案评审中）· Owner: 林晨 · Created: 2026-06-11 · Branch: `worktree-game-gen-codex-style`
+> Status: 🟡 P0-P2 已实现并验证 · Owner: 林晨 · Created: 2026-06-11 · Updated: 2026-06-11 · Branch: `worktree-game-gen-codex-style`
 > 本文是游戏生成**生成侧工作流**的改造方案。与 `docs/audits/2026-05-07-game-acceptance-architecture.md`（验收侧架构审计，已定 Phase 0-4 迁移计划）互补：审计解决"怎么判卷"，本方案解决"怎么答题"。验收侧的硬规则（§7 Hard Rules：repair 硬上限 2 轮、monotonicity gate、BoN=3、minimum-diff prompt 等）本方案全部继承，不重新发明。
+
+## 0. 实现现状（as-built，2026-06-11 校准）
+
+| Work Item | 落地实现 | 状态 |
+|---|---|---|
+| W1 GAMEPLAN + 里程碑增量 | `scripts/acceptance/platformerCodexStrategy.ts`：`buildGameplan()`（机制清单从契约词汇生成）+ `PLATFORMER_MILESTONES`（M0-M4）+ `buildMilestonePrompt()`（接口签名 echo） | ✅ 已实现 |
+| W2 契约前置（M0） | M0 milestone 只做契约骨架 + snapshot 路径，`evaluateMilestone()` 用 `GLOBAL_BLOCKING_PATTERNS` 在 M0 拦截契约/路径错误 | ✅ 已实现 |
+| W3 探针自验 | `runCodexMilestonePipeline()` 每里程碑调真实 `validateGameArtifact` runtime smoke，FAIL 就地重试（`milestoneRetryCap`） | ✅ 已实现 |
+| W4 `.logs` 病历 | `appendCasebook()` / `readCasebookTail()` / `buildCasebookPreamble()`，修复轮 prompt 注入病历 | ✅ 已实现 |
+| W5 goal-mode 编排 + 模型路由 | harness `--strategy codex` 接入验收循环；goal-mode 打包与里程碑级模型路由 | ⏳ 未做（P3） |
+| harness 接入 | `platformer-gameplay-generation.ts` 新增 `--strategy single\|codex`、`--milestone-retry`、报告里程碑表、SecureStorage 内存内 key 回退 | ✅ 已实现 |
+
+**测试覆盖**：
+- 单测 43 个（`tests/unit/scripts/acceptance/platformerCodexStrategy.test.ts` + 原 harness 测试）全过：GAMEPLAN/prompt/接口抽取/里程碑过滤（用 gen8 真实失败字符串）/病历/pipeline 编排。
+- 集成测试 6 个（`tests/integration/codexMilestoneGating.test.ts`）对**真实 validator**（Playwright runtime smoke）全过：契约正确的移动骨架过 M0/M1、机制缺失的 M2/M3 被拦、blocking 失败集单调递增。这验证了核心断言"契约错误在 M0 被拦、后续机制缺失不阻塞 M0"对真实判卷器成立。
+- `tsc --noEmit` 干净。
+
+**遗留（阻塞 P1/P3 实跑）**：mimo 端到端 pass-rate 实测**未完成**。harness 在 CLI 模式下取不到 xiaomi key——keytar 按 Electron headers 编译，CLI 下加载会 segfault，是 app 的有意护栏（`secureStorage.ts:13-25`），不是 bug。在 CLI 跑 mimo 只有两条路：(1) `XIAOMI_API_KEY` 环境变量；(2) 用户在 app 里把 key 存入 electron-store 备份。命令见 §4 P1 行。这是工程就绪、待真实运行验证的状态。
+
+---
 
 ## 0. 问题陈述（为什么现在的生成方式不行）
 

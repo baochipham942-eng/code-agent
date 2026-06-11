@@ -104,3 +104,25 @@ describe('environment block git context (GAP-010)', () => {
     expect(fresh).toContain('commit inside ttl window');
   });
 });
+
+// ============================================================================
+// CUA 协议块：set_value/type_text 后的验证必须基于独立信号，不能只回读
+// 同一元素的 AXValue（同通道写+读会假阳性——参照 argus GBK 剪贴板事故：
+// 对称的错误转换让内部回读全程通过，而真实终态已损坏）
+// ============================================================================
+
+describe('buildComputerUseBlock — 验证信号独立性', () => {
+  it('协议要求 set_value/type_text 后用独立信号验证，禁止只回读同元素 AXValue', async () => {
+    process.env.CODE_AGENT_ENABLE_CUA = '1';
+    try {
+      const { buildComputerUseBlock } = await import(
+        '../../../src/main/agent/messageHandling/contextBuilder'
+      );
+      const block = buildComputerUseBlock();
+      expect(block).toContain('independent signal');
+      expect(block).toContain('AXValue');
+    } finally {
+      delete process.env.CODE_AGENT_ENABLE_CUA;
+    }
+  });
+});

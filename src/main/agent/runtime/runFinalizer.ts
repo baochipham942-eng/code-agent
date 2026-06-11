@@ -358,6 +358,12 @@ export class RunFinalizer {
       }
     }
 
+    // CU 跨会话锁：run 结束即释放（锁的临界区是一次活跃轨迹，不是整个会话；
+    // 不释放会让其他会话/工具的 computer use 阻塞到 TTL）。未持有时是 no-op。
+    import('../../mcp/cuaSessionLock')
+      .then(({ releaseCuaLock }) => releaseCuaLock(this.ctx.sessionId))
+      .catch(() => { /* non-critical */ });
+
     // Light Memory: Record session stats + conversation summary
     const messageCount = this.ctx.messages.length;
     recordSessionEnd(messageCount, this.ctx.modelConfig.model, this.ctx.sessionId)

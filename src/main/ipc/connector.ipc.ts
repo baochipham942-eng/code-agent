@@ -138,7 +138,8 @@ function handleListNativeInventory(
   getConfigService: () => ConfigService | null,
 ): NativeConnectorInventoryItem[] {
   const enabled = new Set(readEnabledNative(getConfigService));
-  return NATIVE_CONNECTOR_IDS.map((id) => ({
+  // 经 registry 取平台可用集（非 macOS 为空），settings 不展示开了也无效的开关
+  return getConnectorRegistry().listAvailableNativeIds().map((id) => ({
     id,
     label: NATIVE_CONNECTOR_LABELS[id],
     enabled: enabled.has(id),

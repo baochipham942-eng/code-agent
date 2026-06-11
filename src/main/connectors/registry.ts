@@ -34,8 +34,15 @@ function resetNativeConnectorReadiness(id: string): void {
   }
 }
 
+/** 原生 connector 全部走 AppleScript，仅 macOS 可用；其它平台不注册，工具列表不出现注定 unavailable 的项 */
+function nativeConnectorsSupported(platform: NodeJS.Platform): boolean {
+  return platform === 'darwin';
+}
+
 export class ConnectorRegistry {
   private connectors = new Map<string, Connector>();
+
+  constructor(private readonly platform: NodeJS.Platform = process.platform) {}
 
   register(connector: Connector): void {
     this.connectors.set(connector.id, connector);
@@ -56,7 +63,7 @@ export class ConnectorRegistry {
 
   /** 返回 registry 感知到的所有可启用的原生连接器 id（不代表已激活）*/
   listAvailableNativeIds(): readonly NativeConnectorId[] {
-    return NATIVE_CONNECTOR_IDS;
+    return nativeConnectorsSupported(this.platform) ? NATIVE_CONNECTOR_IDS : [];
   }
 
   /**
@@ -67,9 +74,11 @@ export class ConnectorRegistry {
    */
   configure(enabledIds: readonly string[]): void {
     const nextIds = new Set<string>();
-    for (const id of enabledIds) {
-      if (id in NATIVE_FACTORIES) {
-        nextIds.add(id);
+    if (nativeConnectorsSupported(this.platform)) {
+      for (const id of enabledIds) {
+        if (id in NATIVE_FACTORIES) {
+          nextIds.add(id);
+        }
       }
     }
 

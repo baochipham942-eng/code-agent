@@ -110,9 +110,10 @@ describe('native office connector lazy status', () => {
     osascriptMocks.runAppleScript.mockClear();
 
     if (process.platform !== 'darwin') {
+      // 平台过滤注册：非 macOS 上 configure 不注册原生 connector（windows-support.md §1.5）
       const registry = new ConnectorRegistry();
       registry.configure(['mail']);
-      expect(await registry.get('mail')?.getStatus()).toMatchObject({ readiness: 'unavailable' });
+      expect(registry.get('mail')).toBeUndefined();
       return;
     }
 

@@ -7,6 +7,8 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { createLogger } from '../../services/infra/logger';
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 import { TOOL_DEPENDENCY_HINTS } from '../modules/_helpers/dependencyHints';
@@ -14,7 +16,7 @@ import { TOOL_DEPENDENCY_HINTS } from '../modules/_helpers/dependencyHints';
 const execAsync = promisify(exec);
 const logger = createLogger('GUIAgent');
 
-const SCREENSHOT_PATH = '/tmp/gui_agent_screenshot.png';
+const SCREENSHOT_PATH = path.join(os.tmpdir(), 'gui_agent_screenshot.png');
 
 // ============================================================================
 // macOS Operator - 使用 screencapture + AppleScript 实现桌面操作

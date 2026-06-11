@@ -2,6 +2,7 @@
 import type { Message, ToolCall, ToolResult } from '../../../../shared/contract';
 import { getToolSearchService } from '../../../services/toolSearch';
 import { CONFIG_DIR_NEW } from '../../../config/configPaths';
+import { homedir } from 'os';
 import { join } from 'path';
 import type { ContextAssemblyCtx } from './shared';
 import { cachedReadFileSync, logger } from './shared';
@@ -11,7 +12,7 @@ export function loadResearchSkillPrompt(ctx: ContextAssemblyCtx): string | null 
   // Try project-level skill first, then user-level
   const candidates = [
     join(ctx.runtime.workingDirectory || process.cwd(), CONFIG_DIR_NEW, 'skills', 'research', 'SKILL.md'),
-    join(process.env.HOME || '~', CONFIG_DIR_NEW, 'skills', 'research', 'SKILL.md'),
+    join(homedir(), CONFIG_DIR_NEW, 'skills', 'research', 'SKILL.md'),
   ];
 
   for (const skillPath of candidates) {

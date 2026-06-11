@@ -1,14 +1,16 @@
 // ============================================================================
 // PII 防线 IPC Handlers (domain:pii) — B3 一键启用本地 PII 防线
 //
-// 流程: renderer 调 setup:start → spawn scripts/pii/setup-gliner-pii.sh
+// 流程: renderer 调 setup:start → 用 process.execPath（bundled node）spawn
+//   scripts/pii/setup-gliner-pii.mjs（Node 版，macOS/Windows 双平台一份实现）
 //   → 流式 stdout/stderr 通过 IPC_CHANNELS.PII_SETUP_EVENT 推 renderer
 //   → 脚本完成后写入 ~/.code-agent/.env (脚本自己做的)
 //   → renderer 调 setup:isReady 校验配置已生效
 //
 // bundle 路径解析跟 rtkRewriter/ocrSearch 同模式: dev 走 scripts/, packaged
 // 走 Resources/_up_/scripts/。bundled uv 通过 CODE_AGENT_BUNDLED_UV env
-// 传给脚本,脚本不再依赖 system uv/Python。
+// 传给脚本,脚本不再依赖 system uv/Python。Windows 的 uv 资源名是 uv.exe
+// （tauri-platform-config 映射），按平台取名。
 // ============================================================================
 
 import * as fs from 'fs';
@@ -150,12 +152,12 @@ function startSetup(): { started: boolean; error?: string } {
     return { started: false, error: '已有 setup 任务在跑,等它完成或先 cancel' };
   }
 
-  const setupScript = findBundledFile(path.join('pii', 'setup-gliner-pii.sh'));
-  const uvBinary = findBundledFile('uv');
+  const setupScript = findBundledFile(path.join('pii', 'setup-gliner-pii.mjs'));
+  const uvBinary = findBundledFile(process.platform === 'win32' ? 'uv.exe' : 'uv');
   const runnerScript = findBundledFile(path.join('pii', 'gliner_onnx_runner.py'));
 
   if (!setupScript) {
-    return { started: false, error: 'setup-gliner-pii.sh 未找到 (检查 bundle resources)' };
+    return { started: false, error: 'setup-gliner-pii.mjs 未找到 (检查 bundle resources)' };
   }
   if (!uvBinary) {
     return { started: false, error: 'uv binary 未找到 (运行 bash scripts/fetch-uv.sh)' };
@@ -174,7 +176,9 @@ function startSetup(): { started: boolean; error?: string } {
     CODE_AGENT_BUNDLED_RUNNER: runnerScript,
   };
 
-  const child = spawn('bash', [setupScript], {
+  // process.execPath = 当前 Node 本体（dev 是系统 node，packaged 是 bundled node），
+  // 双平台可用；不再依赖 bash（Windows 没有）
+  const child = spawn(process.execPath, [setupScript], {
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });

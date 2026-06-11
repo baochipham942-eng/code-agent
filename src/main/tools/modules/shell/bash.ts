@@ -33,6 +33,7 @@ import type {
 import { bashSchema as schema } from './bash.schema';
 import { BASH, OS_SANDBOX } from '../../../../shared/constants';
 import { startBackgroundTask } from '../../shell/backgroundTasks';
+import { spawnWindowsShell, killProcessTree } from '../../shell/platformShell';
 import { createPtySession, getPtySessionOutput } from '../../shell/ptyExecutor';
 import { generateBashDescription } from '../../shell/dynamicDescription';
 import { getShellPathDiagnostics } from '../../../services/infra/shellEnvironment';
@@ -215,13 +216,16 @@ function runForegroundCommand(options: {
 
     // detached: 让 shell 成为独立进程组组长(pgid === pid)，超时/abort 时可整组 kill，
     // 回收命令里被 `&` 后台化的子/孙进程；否则只杀直接子进程，孤儿后台进程会泄漏。
-    const child = spawn(command, {
-      cwd,
-      env,
-      shell: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
-    });
+    // win32 无进程组/bash，PowerShell 执行 + taskkill /T 收树（platformShell）。
+    const child = process.platform === 'win32'
+      ? spawnWindowsShell(command, { cwd, env })
+      : spawn(command, {
+          cwd,
+          env,
+          shell: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          detached: true,
+        });
     // 被后台化、存活更久的子进程不应钉住本进程事件循环(settle 时还会 destroy 管道)。
     child.unref();
 
@@ -242,16 +246,10 @@ function runForegroundCommand(options: {
       abortSignal.removeEventListener('abort', abortHandler);
     };
 
-    // 整组发信号：detached 下 child.pid 即组长，-pid 命中组内全部(含被后台化的孙进程)。
-    // 组不存在(进程已退)时回退到直接子进程，兜底不抛。
+    // 整组发信号：POSIX detached 下 child.pid 即组长，-pid 命中组内全部(含被后台化的
+    // 孙进程)，组不存在(进程已退)时回退到直接子进程；win32 走 taskkill /T 收树。
     const killGroup = (signal: NodeJS.Signals) => {
-      const pid = child.pid;
-      if (pid === undefined) return;
-      try {
-        process.kill(-pid, signal);
-      } catch {
-        try { child.kill(signal); } catch { /* already exited */ }
-      }
+      killProcessTree(child, signal, { posixGroupKill: true });
     };
 
     const killChild = () => {

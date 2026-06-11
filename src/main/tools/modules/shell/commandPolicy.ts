@@ -11,6 +11,8 @@
 //   src/main/agent/confirmationGate.ts 的 HIGH_RISK_PATTERNS 处理，不重复造轮子
 // ============================================================================
 
+import { checkWindowsBlockRules } from '../../../security/shellRules/windowsRules';
+
 export interface PolicyDecision {
   allowed: boolean;
   reason?: string;
@@ -127,6 +129,15 @@ export function checkCommandPolicy(command: string): PolicyDecision {
   for (const rule of BLOCK_RULES) {
     if (rule.pattern.test(trimmed)) {
       return { allowed: false, reason: rule.reason };
+    }
+  }
+
+  // win32 下 bash 工具走 PowerShell（platformShell.ts）：叠加 Windows 硬毙清单。
+  // POSIX 规则在上面照常跑（覆盖 Git-Bash / 显式 bash 场景），两包叠加。
+  if (process.platform === 'win32') {
+    const winBlock = checkWindowsBlockRules(trimmed);
+    if (winBlock.blocked) {
+      return { allowed: false, reason: winBlock.reason };
     }
   }
 

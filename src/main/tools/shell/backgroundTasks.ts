@@ -4,6 +4,7 @@
 
 import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
+import { spawnWindowsShell, killProcessTree } from './platformShell';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -200,12 +201,15 @@ export function startBackgroundTask(
   const taskId = uuidv4();
   const outputFile = getTaskOutputPath(taskId);
 
-  const proc = spawn('bash', ['-c', command], {
-    cwd,
-    env: { ...process.env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-    detached: false,
-  });
+  // win32 无 bash，走 PowerShell；POSIX 保持 bash -c 原语义
+  const proc = process.platform === 'win32'
+    ? spawnWindowsShell(command, { cwd, env: { ...process.env } })
+    : spawn('bash', ['-c', command], {
+        cwd,
+        env: { ...process.env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: false,
+      });
 
   // Create output file stream
   const outputStream = fs.createWriteStream(outputFile, { flags: 'w' });
@@ -232,11 +236,11 @@ export function startBackgroundTask(
     if (taskState.status === 'running') {
       console.warn(`[BackgroundTasks] Task ${taskId} exceeded max runtime, terminating...`);
       try {
-        proc.kill('SIGTERM');
+        killProcessTree(proc, 'SIGTERM');
         // 追踪内部 SIGKILL 定时器
         taskState.killTimeout = setTimeout(() => {
           if (taskState.status === 'running') {
-            proc.kill('SIGKILL');
+            killProcessTree(proc, 'SIGKILL');
           }
         }, 1000);
       } catch (err) {
@@ -350,14 +354,14 @@ export function killBackgroundTask(taskId: string): { success: boolean; error?: 
     }
 
     // Send SIGTERM first
-    task.process.kill('SIGTERM');
+    killProcessTree(task.process, 'SIGTERM');
     task.outputStream?.end();
 
     // Wait 1 second, then force kill if still running
     // 追踪这个内部定时器
     task.killTimeout = setTimeout(() => {
       if (task.status === 'running') {
-        task.process.kill('SIGKILL');
+        killProcessTree(task.process, 'SIGKILL');
       }
     }, 1000);
 

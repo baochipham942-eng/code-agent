@@ -84,7 +84,7 @@ arm64 构建（现状不动）          x64 构建（新增）
 **P0 native（在 Intel runner 上做）**
 - [ ] 原生 rebuild `better-sqlite3` / `keytar`
 - [ ] sharp 按架构选 `@img/sharp-darwin-x64` + libvips-x64（lock 已有条目）
-- [ ] PII：确认 x64 上 `setup-gliner-pii.sh` 用 x64 uv 建 venv、装 Python `onnxruntime` x64 wheel 正常
+- [ ] PII：确认 x64 上 `setup-gliner-pii.mjs`（2026-06-11 Node 化，原 .sh）用 x64 uv 建 venv、装 Python `onnxruntime` x64 wheel 正常
 - [ ] VAD：x64 构建跳过 `onnxruntime-vad` runtime-asset（`build-runtime-assets.mjs` 的 darwin/arm64 路径 x64 不产），依赖现成 missing-runtime 降级，无需改 VAD 代码
 
 **P1 配置 / 资源**

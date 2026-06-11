@@ -4,6 +4,7 @@
 // ============================================================================
 
 import fs from 'fs/promises';
+import os from 'os';
 import path from 'path';
 import { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY } from '../config/configPaths';
 import type { HookEvent } from '../protocol/events';
@@ -391,7 +392,7 @@ export function getHooksConfigPaths(workingDirectory: string): {
   global: ConfigPath[];
   project: ConfigPath[];
 } {
-  const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+  const homeDir = os.homedir();
 
   return {
     global: [

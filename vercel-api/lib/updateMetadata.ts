@@ -93,13 +93,18 @@ function releasePageUrl(repo: string, tagName: string, htmlUrl?: string): string
 
 export type NormalizedArch = 'arm64' | 'x64';
 
-// 归一化客户端架构入参。缺省/未知一律按 arm64（历史只发 arm64，保持向后兼容）。
-export function normalizeArch(value: string | null | undefined): NormalizedArch {
+// 归一化客户端架构入参。缺省/未知按平台取默认：
+// darwin → arm64（历史只发 arm64，保持老客户端向后兼容）；
+// win32 → x64（Windows 仅发 x64，且无不带 arch 的历史客户端）。
+export function normalizeArch(value: string | null | undefined, platform?: string): NormalizedArch {
   const v = (value ?? '').trim().toLowerCase();
   if (v === 'x64' || v === 'x86_64' || v === 'x86-64' || v === 'amd64' || v === 'intel') {
     return 'x64';
   }
-  return 'arm64';
+  if (v === 'arm64' || v === 'aarch64') {
+    return 'arm64';
+  }
+  return (platform ?? '').toLowerCase() === 'win32' ? 'x64' : 'arm64';
 }
 
 function archTokens(arch: NormalizedArch): string[] {
@@ -119,12 +124,20 @@ function assetMatchesPlatform(name: string, normalizedPlatform: string): boolean
     return name.includes('mac') || name.includes('darwin') || name.endsWith('.dmg');
   }
   if (normalizedPlatform === 'win32') {
-    return name.includes('win') || name.endsWith('.exe') || name.endsWith('.msi');
+    // 'darwin' 含子串 'win'：必须显式排除，否则 darwin 命名的资产会被当成 Windows 资产
+    return (name.includes('win') && !name.includes('darwin')) || name.endsWith('.exe') || name.endsWith('.msi');
   }
   if (normalizedPlatform === 'linux') {
     return name.includes('linux') || name.endsWith('.appimage') || name.endsWith('.deb');
   }
   return false;
+}
+
+// 下载资产只能是安装包本体；manifest/sha/签名等 sidecar 永不作为 download 重定向目标
+// （runtime-assets-manifest-darwin-x64.json 同时含 'win'(darwin) 与 'x64' token，
+// 不排除的话会依赖资产数组顺序才不被选中——顺序脆弱性，2026-06-11 复核发现）
+function isSidecarAsset(name: string): boolean {
+  return /\.(json|sha256|sig|txt|yml|yaml)$/.test(name);
 }
 
 function selectAsset(
@@ -133,9 +146,10 @@ function selectAsset(
   arch: NormalizedArch = 'arm64',
 ): GitHubReleaseAsset | null {
   const normalized = platform.toLowerCase();
-  const platformAssets = (assets ?? []).filter((asset) =>
-    assetMatchesPlatform(asset.name?.toLowerCase() ?? '', normalized),
-  );
+  const platformAssets = (assets ?? []).filter((asset) => {
+    const name = asset.name?.toLowerCase() ?? '';
+    return !isSidecarAsset(name) && assetMatchesPlatform(name, normalized);
+  });
 
   // 优先匹配架构标记（x64 / arm64）。manifest 同时含两架构时按 arch 精确命中。
   const tokens = archTokens(arch);
@@ -400,7 +414,7 @@ function sendRedirect(res: ControlPlaneResponseLike, location: string): void {
 async function handleCheck(req: ControlPlaneRequestLike, res: ControlPlaneResponseLike): Promise<void> {
   const currentVersion = firstQueryValue(req.query?.version) ?? '0.0.0';
   const platform = firstQueryValue(req.query?.platform) ?? 'darwin';
-  const arch = normalizeArch(firstQueryValue(req.query?.arch));
+  const arch = normalizeArch(firstQueryValue(req.query?.arch), platform);
   const channel = normalizeChannel(firstQueryValue(req.query?.channel) ?? process.env.UPDATE_RELEASE_CHANNEL);
   const repo = process.env.UPDATE_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || 'baochipham942-eng/code-agent';
   const release = await fetchLatestRelease(repo);
@@ -424,7 +438,7 @@ async function handleCheck(req: ControlPlaneRequestLike, res: ControlPlaneRespon
 
 async function handleDownload(req: ControlPlaneRequestLike, res: ControlPlaneResponseLike): Promise<void> {
   const platform = firstQueryValue(req.query?.platform) ?? 'darwin';
-  const arch = normalizeArch(firstQueryValue(req.query?.arch));
+  const arch = normalizeArch(firstQueryValue(req.query?.arch), platform);
   const channel = normalizeChannel(firstQueryValue(req.query?.channel) ?? process.env.UPDATE_RELEASE_CHANNEL);
   const repo = process.env.UPDATE_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || 'baochipham942-eng/code-agent';
   const policy = releasePolicyFromEnv(channel);

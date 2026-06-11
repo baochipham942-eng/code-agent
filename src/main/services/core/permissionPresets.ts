@@ -2,6 +2,7 @@
 // Permission Presets - 权限预设配置
 // ============================================================================
 
+import * as nodePath from 'path';
 import type { PermissionLevel, PermissionPreset } from '@shared/contract';
 
 // PermissionPreset 类型已移至 shared/contract/permission.ts
@@ -138,18 +139,37 @@ export function getPresetConfig(
  * @param trustedDirectories 可信目录列表
  * @returns 是否可信
  */
-export function isPathTrusted(path: string, trustedDirectories: string[]): boolean {
-  if (!path || trustedDirectories.length === 0) {
+export function isPathTrusted(
+  targetPath: string,
+  trustedDirectories: string[],
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (!targetPath || trustedDirectories.length === 0) {
     return false;
   }
 
-  // 规范化路径（移除尾部斜杠）
-  const normalizedPath = path.replace(/\/+$/, '');
+  // 按平台选 path 实现：win32 路径（C:\、反斜杠、大小写不敏感）用字符串前缀
+  // 拼 '/' 判断会失效，导致信任目录匹配错误（漏判或 /foo 误匹配 /foobar）
+  const p = platform === 'win32' ? nodePath.win32 : nodePath.posix;
+  const fold = (input: string): string => (platform === 'win32' ? input.toLowerCase() : input);
+
+  const normalize = (input: string): string => {
+    let normalized = p.normalize(input);
+    while (normalized.length > 1 && normalized.endsWith(p.sep)) {
+      normalized = normalized.slice(0, -1);
+    }
+    return fold(normalized);
+  };
+
+  const normalizedTarget = normalize(targetPath);
 
   return trustedDirectories.some((dir) => {
-    const normalizedDir = dir.replace(/\/+$/, '');
-    // 路径必须完全匹配或是子目录
-    return normalizedPath === normalizedDir || normalizedPath.startsWith(normalizedDir + '/');
+    const normalizedDir = normalize(dir);
+    if (normalizedTarget === normalizedDir) return true;
+    const rel = p.relative(normalizedDir, normalizedTarget);
+    // rel 为空=同路径；以 .. 段开头=在目录外；绝对路径=跨盘符（win32）
+    if (rel === '' || rel === '..' || rel.startsWith('..' + p.sep)) return false;
+    return !p.isAbsolute(rel);
   });
 }
 

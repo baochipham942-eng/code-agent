@@ -375,8 +375,164 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  # Windows (win32-x64) 发版构建：复刻 build-windows-test.yml 验证过的链路
+  # （windows-latest + Git Bash + windows-msvc sidecar + bundled node.exe +
+  # tauri-platform-config + NSIS unsigned + minisign），产出最终命名的
+  # setup.exe + .sig + latest-win-x64.json 交给 publish 合并。
+  # 独立 job（不进 build-mac 矩阵）：mac 矩阵有 codesign/notarize/staple 等
+  # macOS 专属步；且 publish 对 windows 失败降级（mac-only 发版），windows
+  # 永远不拖死 mac 发版（见 publish.if 与 merge 步骤）。
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        # 统一 Git Bash：fetch-*.sh 按 MINGW uname 走 windows-msvc 分支
+        shell: bash
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: win32-x64-release
+
+      # npm 在 Windows 默认用 cmd.exe 跑 scripts，本仓 scripts 大量使用
+      # `ENV=value cmd` 前缀与 `bash scripts/*.sh`——必须在 npm ci 之前切 Git Bash
+      # （postinstall 已经依赖它）。
+      - name: Use Git Bash as npm script shell
+        run: npm config set script-shell "C:\\Program Files\\Git\\bin\\bash.exe"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Tauri CLI (prebuilt)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli@2.10.1
+
+      - name: Fetch sidecars (windows-msvc, sha256 锁定)
+        run: |
+          bash scripts/fetch-rtk.sh
+          bash scripts/fetch-uv.sh
+
+      - name: Prepare bundled Node (win-x64 zip, node.exe 布局)
+        run: node scripts/prepare-bundled-node.mjs
+
+      - name: Build (worker + web + cli + renderer)
+        env:
+          CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS }}
+          CODE_AGENT_CONTROL_PLANE_KEY_ID: ${{ secrets.CODE_AGENT_CONTROL_PLANE_KEY_ID }}
+          CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY }}
+          CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE: ${{ secrets.CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE }}
+        run: |
+          npm run build
+          npm run release:security-scan
+
+      - name: Verify bundle resources (pre)
+        run: node scripts/verify-windows-release.mjs --stage pre
+
+      - name: Smoke-probe renderer startup
+        # typecheck/vitest 全过 ≠ renderer 真能 mount（v0.16.89 教训）。
+        # Windows 侧还能拦住 native 模块编错 ABI 的启动崩。
+        env:
+          CHROME_PATH: C:\Program Files\Google\Chrome\Application\chrome.exe
+        run: node scripts/release-renderer-probe.mjs 8182
+
+      - name: Build NSIS bundle (unsigned, minisign updater artifacts)
+        timeout-minutes: 45
+        env:
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          node scripts/tauri-platform-config.mjs win32-x64 --out "${RUNNER_TEMP}/tauri.win32.json"
+          cargo tauri build --config "${RUNNER_TEMP}/tauri.win32.json"
+
+      - name: Verify NSIS artifact (post)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: node scripts/verify-windows-release.mjs --stage post
+
+      # 重命名为最终 OSS key 名后再生成 manifest（mac 侧同款做法）：
+      # tauri-update-manifest 按 nsis 目录里的文件名推 windows-x86_64 键 + 拼 URL，
+      # 先命名后生成，URL 与 OSS 实际对象名天然一致，无需 sed 修正。
+      - name: Rename installer to final OSS key name
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          NSIS_DIR="src-tauri/target/release/bundle/nsis"
+          EXE_NAME="Agent-Neo-${VERSION}-win-x64-setup.exe"
+          EXE_SRC="$(ls "${NSIS_DIR}"/*.exe | head -1)"
+          mv "${EXE_SRC}" "${NSIS_DIR}/${EXE_NAME}"
+          mv "${EXE_SRC}.sig" "${NSIS_DIR}/${EXE_NAME}.sig"
+          echo "EXE_NAME=${EXE_NAME}" >> "${GITHUB_ENV}"
+
+      - name: Generate per-platform updater manifest (points to OSS)
+        env:
+          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+          ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
+        run: |
+          ARTIFACT_BASE_URL="https://${ALIYUN_OSS_BUCKET}.oss-${ALIYUN_OSS_REGION}.aliyuncs.com/${GITHUB_REF_NAME}"
+          npm run tauri:update-manifest -- --base-url "${ARTIFACT_BASE_URL}"
+          mv src-tauri/target/release/bundle/latest.json \
+             src-tauri/target/release/bundle/latest-win-x64.json
+          cat src-tauri/target/release/bundle/latest-win-x64.json | head -20
+
+      - name: Upload setup.exe + sig to Aliyun OSS (versioned)
+        env:
+          ALIYUN_OSS_ACCESS_KEY_ID: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_ID }}
+          ALIYUN_OSS_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_SECRET }}
+          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+          ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
+        run: |
+          curl -sL -o /tmp/ossutil.zip "https://gosspublic.alicdn.com/ossutil/v2/2.1.2/ossutil-2.1.2-windows-amd64.zip"
+          "${SYSTEMROOT}/System32/tar.exe" -xf "$(cygpath -w /tmp/ossutil.zip)" -C "$(cygpath -w /tmp)"
+          OSSUTIL="$(ls /tmp/ossutil-*/ossutil.exe | head -1)"
+          cat > ~/.ossutilconfig <<EOF
+          [default]
+          accessKeyID=${ALIYUN_OSS_ACCESS_KEY_ID}
+          accessKeySecret=${ALIYUN_OSS_ACCESS_KEY_SECRET}
+          region=${ALIYUN_OSS_REGION}
+          endpoint=oss-${ALIYUN_OSS_REGION}.aliyuncs.com
+          EOF
+          chmod 600 ~/.ossutilconfig
+
+          VERSION="${GITHUB_REF_NAME#v}"
+          NSIS_DIR="src-tauri/target/release/bundle/nsis"
+          "$OSSUTIL" cp -f "${NSIS_DIR}/${EXE_NAME}" \
+            "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/${EXE_NAME}"
+          "$OSSUTIL" cp -f "${NSIS_DIR}/${EXE_NAME}.sig" \
+            "oss://${ALIYUN_OSS_BUCKET}/v${VERSION}/${EXE_NAME}.sig"
+
+      - name: Stage release assets for publish job
+        run: |
+          STAGE="${RUNNER_TEMP}/release-assets"
+          mkdir -p "${STAGE}"
+          cp "src-tauri/target/release/bundle/nsis/${EXE_NAME}" "${STAGE}/"
+          cp "src-tauri/target/release/bundle/nsis/${EXE_NAME}.sig" "${STAGE}/"
+          cp src-tauri/target/release/bundle/latest-win-x64.json "${STAGE}/"
+          ls -la "${STAGE}"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-win-x64
+          path: ${{ runner.temp }}/release-assets/
+          retention-days: 7
+          if-no-files-found: error
+
   publish:
-    needs: build-mac
+    needs: [build-mac, build-windows]
+    # windows leg 失败不拖死 mac 发版：build-mac 成功即发布（merge 步骤对缺席的
+    # windows manifest 降级为 mac-only，required keys 不含 windows-x86_64）。
+    if: ${{ always() && needs.build-mac.result == 'success' }}
     runs-on: macos-latest
     steps:
       - name: Checkout code
@@ -389,9 +545,12 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: Merge per-arch updater manifests (single latest.json, dual platforms)
-        # 方案 A（intel-x64-support.md §3）：单 manifest 同时含 darwin-aarch64 + darwin-x86_64，
-        # Tauri updater 客户端按自身架构选键。version/notes/pub_date 取 arm64 侧。
+      - name: Merge per-arch updater manifests (single latest.json, all platforms)
+        # 方案 A（intel-x64-support.md §3）：单 manifest 同时含 darwin-aarch64 + darwin-x86_64
+        # （+ windows-x86_64，windows-support.md §4 P2），Tauri updater 客户端按自身平台+架构
+        # 选键。version/notes/pub_date 取 arm64 侧。
+        # windows manifest 缺席（windows leg 失败）时降级 mac-only：不把 windows-x86_64
+        # 列入 required keys，mac 发版照常走。
         run: |
           node - <<'NODE'
           const fs = require('node:fs');
@@ -399,6 +558,13 @@ jobs:
           const x64 = JSON.parse(fs.readFileSync('release-assets/latest-x64.json', 'utf8'));
           const merged = { ...arm, platforms: { ...arm.platforms, ...x64.platforms } };
           const required = ['darwin-aarch64', 'darwin-x86_64'];
+          if (fs.existsSync('release-assets/latest-win-x64.json')) {
+            const win = JSON.parse(fs.readFileSync('release-assets/latest-win-x64.json', 'utf8'));
+            merged.platforms = { ...merged.platforms, ...win.platforms };
+            required.push('windows-x86_64');
+          } else {
+            console.warn('[WARN] latest-win-x64.json missing — publishing mac-only release (windows leg failed or skipped)');
+          }
           for (const key of required) {
             if (!merged.platforms[key]?.url || !merged.platforms[key]?.signature) {
               console.error(`[FAIL] merged latest.json missing platform key: ${key}`);
@@ -416,6 +582,8 @@ jobs:
             release-assets/*.dmg
             release-assets/*.app.tar.gz
             release-assets/*.app.tar.gz.sig
+            release-assets/*-setup.exe
+            release-assets/*-setup.exe.sig
             release-assets/latest.json
             release-assets/*.tar.gz
             release-assets/runtime-assets-manifest-*.json
@@ -467,7 +635,7 @@ jobs:
           ossutil cp -f release-assets/latest.json \
             "oss://${ALIYUN_OSS_BUCKET}/stable/latest.json"
 
-          # in-app updater：生成 GitHub-release 形状（dmg 指向 OSS，arm64 + x64 双资产）
+          # in-app updater：生成 GitHub-release 形状（dmg/exe 指向 OSS，arm64 + x64 + win-x64）
           DMG_URL="${BASE_URL}/v${VERSION}/Agent-Neo-${VERSION}-arm64.dmg"
           DMG_URL_X64="${BASE_URL}/v${VERSION}/Agent-Neo-${VERSION}-x64.dmg"
           RUNTIME_ARGS=()
@@ -476,6 +644,14 @@ jobs:
             RUNTIME_ARGS+=("--runtime-assets-manifest-url" "${BASE_URL}/${GITHUB_REF_NAME}/runtime-assets/runtime-assets-manifest-darwin-arm64.json")
             RUNTIME_ARGS+=("--runtime-assets-manifest-sha-url" "${BASE_URL}/${GITHUB_REF_NAME}/runtime-assets/runtime-assets-manifest-darwin-arm64.sha256")
           fi
+          # Windows exe：制品在场才写入 stable/release.json（windows leg 失败时 mac-only 降级）
+          EXE_ARGS=()
+          if ls release-assets/*-setup.exe >/dev/null 2>&1; then
+            EXE_NAME="$(basename "$(ls release-assets/*-setup.exe | head -1)")"
+            EXE_ARGS+=("--exe-url" "${BASE_URL}/v${VERSION}/${EXE_NAME}")
+          else
+            echo "[WARN] windows setup.exe missing — stable/release.json 不含 windows 资产"
+          fi
           node scripts/build-stable-release-json.mjs \
             --version "${VERSION}" \
             --tag "${GITHUB_REF_NAME}" \
@@ -483,6 +659,7 @@ jobs:
             --dmg-url-x64 "${DMG_URL_X64}" \
             --html-url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}" \
             "${RUNTIME_ARGS[@]}" \
+            "${EXE_ARGS[@]}" \
             --output "${RUNNER_TEMP}/stable-release.json"
           ossutil cp -f "${RUNNER_TEMP}/stable-release.json" \
             "oss://${ALIYUN_OSS_BUCKET}/stable/release.json"

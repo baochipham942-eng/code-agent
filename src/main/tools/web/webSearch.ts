@@ -326,7 +326,8 @@ Features:
       try {
         const fs = await import('fs');
         const path = await import('path');
-        const resolvedPath = saveTo.replace(/^~/, process.env.HOME || '');
+        const os = await import('os');
+        const resolvedPath = saveTo.replace(/^~/, os.homedir());
         const dir = path.dirname(resolvedPath);
         if (!fs.existsSync(dir)) {
           fs.mkdirSync(dir, { recursive: true });

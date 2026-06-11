@@ -49,6 +49,8 @@ const runtimeAssetsManifestShaUrl = arg('runtime-assets-manifest-sha-url');
 const dmgUrlX64 = arg('dmg-url-x64');
 const runtimeAssetsManifestUrlX64 = arg('runtime-assets-manifest-url-x64');
 const runtimeAssetsManifestShaUrlX64 = arg('runtime-assets-manifest-sha-url-x64');
+// Windows（NSIS setup.exe）侧资产：可选。updateMetadata 按 platform=win32 选 .exe 资产。
+const exeUrl = arg('exe-url');
 
 if (!version || !dmgUrl) {
   console.error('错误：--version 和 --dmg-url 必填。');
@@ -89,6 +91,13 @@ if (dmgUrlX64) {
   assets.push({
     name: `Agent-Neo-${version}-x64.dmg`,
     browser_download_url: dmgUrlX64,
+  });
+}
+
+if (exeUrl) {
+  assets.push({
+    name: assetNameFromUrl(exeUrl, `Agent-Neo-${version}-win-x64-setup.exe`),
+    browser_download_url: exeUrl,
   });
 }
 

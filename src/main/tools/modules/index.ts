@@ -147,7 +147,10 @@ import { exploreSchema } from './planning/explore.schema';
 import { recommendCapabilitySchema } from './planning/recommendCapability.schema';
 import { attemptCompletionSchema } from './planning/attemptCompletion.schema';
 
-export function registerMigratedTools(registry: ToolRegistry): void {
+export function registerMigratedTools(
+  registry: ToolRegistry,
+  platform: NodeJS.Platform = process.platform,
+): void {
   // ── file/ batch 1 ─────────────────────────────────────────────────────
   registry.register(
     listDirectorySchema,
@@ -238,50 +241,54 @@ export function registerMigratedTools(registry: ToolRegistry): void {
   );
 
   // ── connectors（mail / reminders / calendar）— 全部 native ─────────────
-  registry.register(
-    mailSchema,
-    async () => (await import('./connectors/mail')).mailModule,
-  );
-  registry.register(
-    mailSendSchema,
-    async () => (await import('./connectors/mailSend')).mailSendModule,
-  );
-  registry.register(
-    mailDraftSchema,
-    async () => (await import('./connectors/mailDraft')).mailDraftModule,
-  );
-  registry.register(
-    remindersSchema,
-    async () => (await import('./connectors/reminders')).remindersModule,
-  );
-  registry.register(
-    remindersCreateSchema,
-    async () => (await import('./connectors/remindersCreate')).remindersCreateModule,
-  );
-  registry.register(
-    remindersUpdateSchema,
-    async () => (await import('./connectors/remindersUpdate')).remindersUpdateModule,
-  );
-  registry.register(
-    remindersDeleteSchema,
-    async () => (await import('./connectors/remindersDelete')).remindersDeleteModule,
-  );
-  registry.register(
-    calendarSchema,
-    async () => (await import('./connectors/calendar')).calendarModule,
-  );
-  registry.register(
-    calendarCreateEventSchema,
-    async () => (await import('./connectors/calendarCreateEvent')).calendarCreateEventModule,
-  );
-  registry.register(
-    calendarUpdateEventSchema,
-    async () => (await import('./connectors/calendarUpdateEvent')).calendarUpdateEventModule,
-  );
-  registry.register(
-    calendarDeleteEventSchema,
-    async () => (await import('./connectors/calendarDeleteEvent')).calendarDeleteEventModule,
-  );
+  // 全组走 AppleScript，仅 macOS 注册；Windows 工具列表不出现注定 unavailable 的项，
+  // 省 LLM 无效调用轮次（windows-support.md §1.5 降级面决策）。
+  if (platform === 'darwin') {
+    registry.register(
+      mailSchema,
+      async () => (await import('./connectors/mail')).mailModule,
+    );
+    registry.register(
+      mailSendSchema,
+      async () => (await import('./connectors/mailSend')).mailSendModule,
+    );
+    registry.register(
+      mailDraftSchema,
+      async () => (await import('./connectors/mailDraft')).mailDraftModule,
+    );
+    registry.register(
+      remindersSchema,
+      async () => (await import('./connectors/reminders')).remindersModule,
+    );
+    registry.register(
+      remindersCreateSchema,
+      async () => (await import('./connectors/remindersCreate')).remindersCreateModule,
+    );
+    registry.register(
+      remindersUpdateSchema,
+      async () => (await import('./connectors/remindersUpdate')).remindersUpdateModule,
+    );
+    registry.register(
+      remindersDeleteSchema,
+      async () => (await import('./connectors/remindersDelete')).remindersDeleteModule,
+    );
+    registry.register(
+      calendarSchema,
+      async () => (await import('./connectors/calendar')).calendarModule,
+    );
+    registry.register(
+      calendarCreateEventSchema,
+      async () => (await import('./connectors/calendarCreateEvent')).calendarCreateEventModule,
+    );
+    registry.register(
+      calendarUpdateEventSchema,
+      async () => (await import('./connectors/calendarUpdateEvent')).calendarUpdateEventModule,
+    );
+    registry.register(
+      calendarDeleteEventSchema,
+      async () => (await import('./connectors/calendarDeleteEvent')).calendarDeleteEventModule,
+    );
+  }
 
   // ── batch 6: multiagent/ — 9 工具全部 native（Wave 3 完成，wrappers.ts 已删除）─
   registry.register(

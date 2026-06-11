@@ -130,7 +130,7 @@ Removed: `audioProcessing/speechToText.ts(+.schema.ts)`, `toolSearch/deferredToo
 Bundle now ships the local PII detection chain so cowork installs can enable it without `brew install uv` or any external commands:
 
 - `scripts/uv` — uv 0.11.16 arm64 (aarch64-apple-darwin) sidecar (~45MB unpacked binary; ~20MB tarball pre-extract), pulled by `scripts/fetch-uv.sh` (incremental + sha256 dual-verify), bundled via `tauri.conf.json` `bundle.resources`
-- `scripts/pii/setup-gliner-pii.sh` — provisioning script (will be reworked to call bundled uv + write `.env` directly)
+- `scripts/pii/setup-gliner-pii.mjs` — provisioning script（2026-06-11 Node 化取代原 .sh：macOS/Windows 双平台一份实现，调 bundled uv 建 venv + 系统 curl 下模型（保留 HTTPS_PROXY 行为）+ 原子写 `.env`；由 pii.ipc 用 `process.execPath` spawn）
 - `scripts/pii/gliner_onnx_runner.py` — the runner that `CODE_AGENT_GLINER_PII_COMMAND` points at
 
 Follow-up steps (already planned, not yet committed): IPC handler + `PrivacySettings` React tab so users can flip GLiNER on from the UI without touching env vars.

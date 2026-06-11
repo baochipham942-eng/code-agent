@@ -461,11 +461,16 @@ export class PermissionClassifier {
       };
     }
 
-    // W2: 写入 /tmp → approve (no traceStep)
-    if (resolved.startsWith('/tmp/') || resolved.startsWith('/tmp')) {
+    // W2: 写入临时目录 → approve (no traceStep)
+    const tmpRoot = os.tmpdir();
+    if (
+      resolved === tmpRoot ||
+      resolved.startsWith(tmpRoot + path.sep) ||
+      (process.platform !== 'win32' && (resolved === '/tmp' || resolved.startsWith('/tmp/')))
+    ) {
       return {
         decision: 'approve',
-        reason: '写入 /tmp 目录',
+        reason: '写入临时目录',
         confidence: 0.95,
         cached: false,
       };

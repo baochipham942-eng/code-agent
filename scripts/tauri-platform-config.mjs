@@ -42,7 +42,7 @@ const MACOS_ONLY_PREFIXES = [
   '../scripts/vision-ocr',
   '../scripts/vision-tagger',
   '../scripts/Agent Neo Computer Use.app',
-  '../scripts/pii/setup-gliner-pii.sh', // PII 安装链 MVP 不带（.sh 无法在 win 执行）
+  // PII 安装链已 Node 化（setup-gliner-pii.mjs，2026-06-11），win32 照常带上
   '../node_modules/@img/sharp-libvips-darwin-arm64', // win32 libvips 静态打进 sharp 包
 ];
 
@@ -71,6 +71,11 @@ const overlay = {
     ],
     resources: resources.map(mapEntry).filter(Boolean),
     windows: {
+      // WebView2 运行时：Win11/新 Win10 自带，但旧 Win10/Server 2019 不带，缺了 app
+      // 窗口创建失败秒退（真机实测 Server 2019）。embedBootstrapper 在安装包里嵌 ~2MB
+      // 引导器，装机时从微软 CDN 拉运行时（已实测国内可达）；只大 ~2MB，不选
+      // offlineInstaller（+150MB）。已装 WebView2 的机器此步秒过。
+      webviewInstallMode: { type: 'embedBootstrapper' },
       nsis: {
         // perUser 安装：装到 %LOCALAPPDATA%，安装与每次自动更新都无 UAC
         installMode: 'currentUser',

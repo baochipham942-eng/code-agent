@@ -1,3 +1,4 @@
+import * as path from 'path';
 import type { ToolResult, ToolContext } from '../../../protocol/tools';
 import type { ToolExecutionResult } from '../../types';
 import type { ToolArtifact, ToolArtifactKind } from '../../../../shared/contract/artifactBlob';
@@ -242,7 +243,7 @@ async function addBrowserArtifactSummary(
   if (!isRecord(summary)) return;
 
   const artifactPath = stringFrom(summary.artifactPath);
-  if (artifactPath?.startsWith('/')) {
+  if (artifactPath && path.isAbsolute(artifactPath)) {
     const artifact = await createFileArtifact(artifactPath, tool, ctx, {
       artifactId: stringFrom(summary.artifactId),
       name: stringFrom(summary.name),

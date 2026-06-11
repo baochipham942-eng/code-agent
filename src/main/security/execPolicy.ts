@@ -9,6 +9,7 @@
 // 格式: { rules: [{ pattern, decision, createdAt, source }] }
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getProjectConfigDir } from '../config/configPaths';
@@ -41,6 +42,9 @@ interface ExecPolicyFile {
 const BANNED_PREFIXES = new Set([
   'python', 'python3', 'node', 'bash', 'sh', 'zsh',
   'sudo', 'su', 'eval', 'exec',
+  // Windows shell 入口与任意执行（windows-support.md §3.2）
+  'powershell', 'powershell.exe', 'pwsh', 'pwsh.exe',
+  'cmd', 'cmd.exe', 'iex', 'invoke-expression',
 ]);
 
 // ----------------------------------------------------------------------------
@@ -256,7 +260,7 @@ export function getExecPolicyStore(projectDir?: string): ExecPolicyStore {
   }
   if (!instance) {
     // Fallback: use home directory
-    instance = new ExecPolicyStore(process.env.HOME || '/tmp');
+    instance = new ExecPolicyStore(os.homedir() || os.tmpdir());
   }
   return instance;
 }

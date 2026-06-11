@@ -7,6 +7,10 @@ export {
   isKnownSafeCommand,
   classifyCommand,
   validateCommand,
+  defaultShellKind,
+  getShellSafetyMode,
+  type ShellKind,
+  type ShellSafetyMode,
   type ValidationResult,
   type RiskLevel,
 } from './commandSafety';

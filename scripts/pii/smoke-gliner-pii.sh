@@ -10,13 +10,13 @@ RUNNER="$ROOT_DIR/scripts/pii/gliner_onnx_runner.py"
 
 if [[ ! -x "$PYTHON_BIN" ]]; then
   echo "Missing GLiNER Python environment: $PYTHON_BIN" >&2
-  echo "Run: $ROOT_DIR/scripts/pii/setup-gliner-pii.sh" >&2
+  echo "Run: node $ROOT_DIR/scripts/pii/setup-gliner-pii.mjs" >&2
   exit 1
 fi
 
 if [[ ! -s "$MODEL_DIR/$ONNX_FILE" ]]; then
   echo "Missing GLiNER ONNX model: $MODEL_DIR/$ONNX_FILE" >&2
-  echo "Run: $ROOT_DIR/scripts/pii/setup-gliner-pii.sh" >&2
+  echo "Run: node $ROOT_DIR/scripts/pii/setup-gliner-pii.mjs" >&2
   exit 1
 fi
 

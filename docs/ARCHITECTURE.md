@@ -1,8 +1,9 @@
 # Agent Neo / Code Agent - 架构设计文档
 
+> 版本: 9.22 (9.21 + 2026-06-10~11 Windows (win32-x64) 移植与发版链折入：P0 安全/路径地基（权限路径旁路修复 + commandSafety 平台规则包）+ NSIS unsigned 打包链 + 天翼云真机打通（5 个实现期 bug）+ release.yml 独立 build-windows job（三平台 latest.json，windows 失败降级 mac-only，预发布 tag 空跑全绿）+ 全入口设备感知下载/更新（修资产选择两处真 bug）+ ConnectorRegistry 平台过滤 + PII 安装链 Node 化)
 > 版本: 9.21 (9.20 + 2026-06-09 Computer Use 底座迁移 argus → trycua/cua-driver（ADR-021：stdio MCP 接入 + 桌面走 cua/浏览器走 Playwright 分流 + 重签名内嵌 Agent Neo Computer Use.app + cua 工具人话文案/真实 app 图标差异化渲染 + Accessibility 必需/录屏可选）)
 > 版本: 9.20 (9.19 + 2026-06-08 经验沉淀重做（ADR-020：废弃 telemetry n-gram，统一 LLM 反思路 + 命名禁用清单）、Telemetry 可诊断性 P1+P2+P3（版本指纹 + 本地全量诊断旁表/诊断包/脱敏/失败 session 上报 + Langfuse 默认开 opt-out）、卸载/权限三层修复（safety 措辞 + rm 分级松绑 + 挂起权限死锁）、06-07 下午 provider/session/vision 稳定性收尾)
-> 日期: 2026-06-08
+> 日期: 2026-06-11
 > 作者: Lin Chen
 
 本文档是 Agent Neo（代码仓库仍名为 Code Agent）的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -30,11 +31,14 @@
 | [Activity Providers](./architecture/activity-providers.md) | OpenChronicle / Tauri Native Desktop / audio / screenshot-analysis 统一上下文 provider 边界 |
 | [Native App 集成](./architecture/native-app-integration.md) | Skill / Tool / Service / Connector / MCP 边界与调用链路；为什么 macOS 原生应用走 connector 不走 MCP |
 | [CLI 架构](./architecture/cli.md) | 5 种运行模式、CLIAgent 适配层、输出格式化、命令系统 |
+| [Windows 支持](./architecture/windows-support.md) | win32-x64 移植：安全与路径地基、PowerShell 命令安全规则包、NSIS unsigned + minisign 发版链、真机调试记录、朋友验收清单 |
+| [Intel x64 支持](./architecture/intel-x64-support.md) | darwin 双架构（arm64 + x64）矩阵构建、资源覆盖机制、updater manifest 合并先例 |
 
 ### 近期规格
 
 | Spec | 覆盖 |
 |------|------|
+| [Windows 移植与发版链折入](./specs/2026-06-11-windows-support-port.md) | 两天 as-built：P0 安全/路径地基（权限旁路修复 + commandSafety 平台规则包 51 用例）、NSIS 打包链 + CI 实跑绿、天翼云真机打通（5 个实现期 bug）、release.yml 矩阵折入（windows 失败降级 mac-only + 预发布 tag 空跑全绿）、全入口设备感知（修资产选择两处真 bug）、ConnectorRegistry 平台过滤、PII 安装链 Node 化 |
 | [经验沉淀重做 + Telemetry 可诊断性 + 稳定性收尾](./specs/2026-06-08-experience-distillation-telemetry-and-robustness.md) | 经验沉淀重做（[ADR-020](./decisions/020-experience-distillation-redesign.md)：物理移除 telemetry n-gram 频次蒸馏，统一收口 conversationReview LLM 反思路，入口闸+反思门+命名禁用清单+结构化 SKILL.md）、卸载/权限三层修复（safety 措辞改"直接调工具"/rm 目标明确删除从硬毙降为一次确认/挂起权限死锁随新消息 resolve）、Telemetry 可诊断性 P1+P3（agentVersion/promptVersion/toolSchemaVersion 版本指纹进 trace+session、Langfuse 默认开+opt-out）、06-07 下午 provider/session/vision 稳定性收尾 |
 | [对话式角色 + 会话自动化 + 模型设置收口](./specs/2026-06-05-conversational-roles-automation-settings.md) | `/schedule` 空参模板创建、`/loop` 后台化 + meta turns + task ledger 通知、定时 agent 完成通知、原生通知 renderer 投递、对话式新建/修改持久化角色（roleDraftQueue + propose_role + strict skill toolset）、模型设置 provider 保存与默认模型拆分 |
 | [多 Agent 协作层 + 项目空间 + 角色产品化批次](./specs/2026-06-04-swarm-project-space-and-capability-batch.md) | swarm goal（P4 allowSwarm + advance 合流）、swarm 护栏（结构化失败码/深度截断/孤儿回收/Inbox 桥接）、swarm 协作可见性（讨论流）、角色主动性（cadence+event 双触发，出厂 silent）、项目空间三表 + 隐式归桶 + 跨 session 产物聚合、定点反馈两层分离、能力产品化（角色/技能 icon+分类）、只读任务状态 MCP（P3-A 三工具） |

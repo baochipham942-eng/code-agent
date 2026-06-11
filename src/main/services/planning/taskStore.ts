@@ -8,6 +8,8 @@ import type {
   SessionTaskPriority,
   CreateTaskInput,
   UpdateTaskInput,
+  SessionTaskEvent,
+  SessionTaskEventKind,
 } from '../../../shared/contract/planning';
 import { createLogger } from '../infra/logger';
 import { getDatabase } from '../core/databaseService';
@@ -26,7 +28,8 @@ const sessionTaskCounters: Map<string, number> = new Map();
 const hydratedSessions: Set<string> = new Set();
 
 function getReadyDatabase():
-  | Pick<import('../core/databaseService').DatabaseService, 'isReady' | 'saveSessionTasks' | 'getSessionTasks'>
+  | (Pick<import('../core/databaseService').DatabaseService, 'isReady' | 'saveSessionTasks' | 'getSessionTasks'>
+      & { appendSessionTaskEvents?: (events: SessionTaskEvent[]) => void })
   | null {
   try {
     const db = getDatabase();
@@ -34,6 +37,33 @@ function getReadyDatabase():
   } catch (err) {
     logger.debug('[TaskStore] Database unavailable for task persistence', err);
     return null;
+  }
+}
+
+/**
+ * 事件日志追加（roadmap 2.6）。失败只记日志，绝不阻塞任务变更本体。
+ */
+function recordTaskEvent(
+  sessionId: string,
+  taskId: string,
+  kind: SessionTaskEventKind,
+  extra?: { summary?: string; actor?: string }
+): void {
+  try {
+    const db = getReadyDatabase();
+    if (!db?.appendSessionTaskEvents) return;
+    db.appendSessionTaskEvents([
+      {
+        sessionId,
+        taskId,
+        at: Date.now(),
+        kind,
+        ...(extra?.summary ? { summary: extra.summary } : {}),
+        ...(extra?.actor ? { actor: extra.actor } : {}),
+      },
+    ]);
+  } catch (err) {
+    logger.warn(`[TaskStore] Failed to record task event ${kind} for ${taskId}`, err);
   }
 }
 
@@ -83,12 +113,30 @@ function persistTasks(sessionId: string): void {
 }
 
 /**
- * 生成唯一任务 ID
+ * 生成唯一任务 ID。
+ * 顶层任务走会话级自增计数；子任务派生父 id（"1" → "1.1" → "1.1.2"，
+ * roadmap 2.6 树状结构），不消耗顶层计数器。
  */
-function generateTaskId(sessionId: string): string {
-  const counter = (sessionTaskCounters.get(sessionId) || 0) + 1;
-  sessionTaskCounters.set(sessionId, counter);
-  return String(counter);
+function generateTaskId(sessionId: string, parentTaskId?: string): string {
+  if (!parentTaskId) {
+    const counter = (sessionTaskCounters.get(sessionId) || 0) + 1;
+    sessionTaskCounters.set(sessionId, counter);
+    return String(counter);
+  }
+
+  const taskMap = sessionTasks.get(sessionId);
+  const prefix = `${parentTaskId}.`;
+  let maxChild = 0;
+  if (taskMap) {
+    for (const id of taskMap.keys()) {
+      if (!id.startsWith(prefix)) continue;
+      const tail = id.slice(prefix.length);
+      if (/^\d+$/.test(tail)) {
+        maxChild = Math.max(maxChild, Number(tail));
+      }
+    }
+  }
+  return `${prefix}${maxChild + 1}`;
 }
 
 /**
@@ -109,8 +157,12 @@ export function createTask(sessionId: string, input: CreateTaskInput): SessionTa
   const taskMap = getSessionTaskMap(sessionId);
   const now = Date.now();
 
+  if (input.parentTaskId && !taskMap.has(input.parentTaskId)) {
+    throw new Error(`parent task not found: ${input.parentTaskId}`);
+  }
+
   const task: SessionTask = {
-    id: generateTaskId(sessionId),
+    id: generateTaskId(sessionId, input.parentTaskId),
     subject: input.subject,
     description: input.description,
     activeForm: input.activeForm || generateActiveForm(input.subject),
@@ -118,6 +170,8 @@ export function createTask(sessionId: string, input: CreateTaskInput): SessionTa
     priority: input.priority || 'normal',
     blocks: [],
     blockedBy: [],
+    ...(input.parentTaskId ? { parentTaskId: input.parentTaskId } : {}),
+    ...(input.owner ? { owner: input.owner } : {}),
     metadata: input.metadata || {},
     createdAt: now,
     updatedAt: now,
@@ -125,6 +179,10 @@ export function createTask(sessionId: string, input: CreateTaskInput): SessionTa
 
   taskMap.set(task.id, task);
   persistTasks(sessionId);
+  recordTaskEvent(sessionId, task.id, 'created', {
+    summary: task.subject,
+    ...(task.owner ? { actor: task.owner } : {}),
+  });
   return task;
 }
 
@@ -151,14 +209,37 @@ export function updateTask(
 
   // Handle deletion
   if (updates.status === 'deleted') {
-    // Remove from other tasks' blockedBy/blocks lists
+    // Remove from other tasks' blockedBy/blocks lists；解除阻塞的任务记 unblocked
     for (const otherTask of taskMap.values()) {
+      const wasBlocked = otherTask.blockedBy.includes(taskId);
       otherTask.blockedBy = otherTask.blockedBy.filter((id) => id !== taskId);
       otherTask.blocks = otherTask.blocks.filter((id) => id !== taskId);
+      if (wasBlocked) {
+        recordTaskEvent(sessionId, otherTask.id, 'unblocked', { summary: `blocker ${taskId} deleted` });
+      }
     }
     taskMap.delete(taskId);
     persistTasks(sessionId);
+    recordTaskEvent(sessionId, taskId, 'deleted');
     return task;
+  }
+
+  // 事件日志（roadmap 2.6）：先比对变更，统一在持久化后追加
+  const events: Array<{ kind: SessionTaskEventKind; summary?: string }> = [];
+  if (updates.status && updates.status !== task.status) {
+    if (updates.status === 'in_progress') events.push({ kind: 'started' });
+    else if (updates.status === 'pending' && task.status === 'in_progress') events.push({ kind: 'unstarted' });
+    else if (updates.status === 'completed') events.push({ kind: 'done' });
+    else if (updates.status === 'cancelled') events.push({ kind: 'abandoned' });
+  }
+  if (updates.subject && updates.subject !== task.subject) {
+    events.push({ kind: 'renamed', summary: updates.subject });
+  }
+  if (updates.owner !== undefined && updates.owner !== task.owner) {
+    events.push({ kind: 'owner_changed', summary: updates.owner || '(released)' });
+  }
+  if (updates.addBlockedBy?.some((id) => !task.blockedBy.includes(id) && id !== taskId)) {
+    events.push({ kind: 'blocked', summary: updates.addBlockedBy.join(', ') });
   }
 
   // Update fields
@@ -208,7 +289,35 @@ export function updateTask(
 
   task.updatedAt = Date.now();
   persistTasks(sessionId);
+  for (const event of events) {
+    recordTaskEvent(sessionId, taskId, event.kind, event.summary ? { summary: event.summary } : undefined);
+  }
   return task;
+}
+
+/**
+ * Orphan 接管（roadmap 2.6）：subagent 结束时，名下未收口任务释放回主会话
+ * （owner 清空），主循环 taskGate 据此继续督办。返回被接管的任务。
+ */
+export function adoptOrphanTasks(sessionId: string, owner: string): SessionTask[] {
+  if (!owner) return [];
+  const taskMap = getSessionTaskMap(sessionId);
+  const adopted: SessionTask[] = [];
+  for (const task of taskMap.values()) {
+    if (task.owner === owner && !isClosedTaskStatus(task.status)) {
+      task.owner = undefined;
+      task.updatedAt = Date.now();
+      adopted.push(task);
+    }
+  }
+  if (adopted.length > 0) {
+    persistTasks(sessionId);
+    for (const task of adopted) {
+      recordTaskEvent(sessionId, task.id, 'orphan_adopted', { summary: `from ${owner}`, actor: owner });
+    }
+    logger.info(`[TaskStore] Adopted ${adopted.length} orphan task(s) from ${owner} in ${sessionId}`);
+  }
+  return adopted;
 }
 
 /**

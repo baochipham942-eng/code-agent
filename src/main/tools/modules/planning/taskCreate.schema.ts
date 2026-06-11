@@ -37,6 +37,14 @@ export const taskCreateSchema: ToolSchema = {
         type: 'object',
         description: 'Arbitrary metadata to attach to the task',
       },
+      parentTaskId: {
+        type: 'string',
+        description: 'Parent task id for hierarchical breakdown (child ids become "1.1", "1.2", ...). Parent must exist.',
+      },
+      owner: {
+        type: 'string',
+        description: 'Task owner (agent id). Defaults to the creating subagent when called inside one.',
+      },
     },
     required: ['subject', 'description'],
   },

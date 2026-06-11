@@ -77,6 +77,23 @@ export async function executeTaskGet(
       ? `  Metadata: ${JSON.stringify(task.metadata)}`
       : '';
 
+  // 事件日志（roadmap 2.6）：最近生命周期事件，可审计
+  let eventsInfo = '';
+  try {
+    const { getDatabase } = await import('../../../services/core/databaseService');
+    const db = getDatabase();
+    if (db.isReady) {
+      const events = db.getSessionTaskEvents(sessionId, { taskId, limit: 10 });
+      if (events.length > 0) {
+        eventsInfo = '  History:\n' + events
+          .map((e) => `    ${new Date(e.at).toISOString()} ${e.kind}${e.summary ? ` — ${e.summary}` : ''}`)
+          .join('\n');
+      }
+    }
+  } catch {
+    // 事件读取失败不影响任务详情输出
+  }
+
   onProgress?.({ stage: 'completing', percent: 100 });
   ctx.logger.debug('task_get done', { taskId });
 
@@ -89,10 +106,12 @@ export async function executeTaskGet(
       `  Status: ${task.status}\n` +
       `  Priority: ${task.priority}\n` +
       `  Active Form: ${task.activeForm}\n` +
+      (task.parentTaskId ? `  Parent: #${task.parentTaskId}\n` : '') +
       (task.owner ? `  Owner: ${task.owner}\n` : '') +
       (blockedByInfo ? `${blockedByInfo}\n` : '') +
       (blocksInfo ? `${blocksInfo}\n` : '') +
-      (metadataInfo ? `${metadataInfo}\n` : ''),
+      (metadataInfo ? `${metadataInfo}\n` : '') +
+      (eventsInfo ? `${eventsInfo}\n` : ''),
     meta: { task },
   };
 }

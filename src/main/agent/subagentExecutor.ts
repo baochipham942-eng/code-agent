@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- 既有贴线文件（taskGate/orphan 接管接入前已 ~990 行），拆分见 docs/audits/god-file-split-roadmap.md */
 // ============================================================================
 // Subagent Executor - Executes subtasks with limited tool access
 // Enhanced with unified pipeline (T4)
@@ -72,6 +73,7 @@ import { buildSubagentSkillsBlock } from '../services/skills/subagentSkillInject
 import { buildRoleContextBlock, runRoleWriteBack, recordRoleParticipation } from '../services/roleAssets';
 import { resolveModelDecision } from '../model/modelDecision';
 import type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
+import { getIncompleteTasks, adoptOrphanTasks } from '../services/planning/taskStore';
 
 export type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
 
@@ -430,6 +432,8 @@ export class SubagentExecutor {
       if (!budgetCheck.allowed) {
         pipeline.completeContext(pipelineContext.agentId, false, budgetCheck.reason);
         agentTask.fail(budgetCheck.reason || 'budget exceeded');
+        // orphan 接管（roadmap 2.6）：subagent 名下未收口任务释放回主会话
+        adoptOrphanTasks(sessionId, pipelineContext.agentId);
         // Fire SubagentStop on early budget failure
         context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId, agentTask.id).catch(silence(logger, 'triggerSubagentStop:budget', 'warn'));
         return {
@@ -446,6 +450,11 @@ export class SubagentExecutor {
           cancellationReason: 'child-max-tokens',
         };
       }
+
+      // subagent taskGate（roadmap 2.6，衔接 1.3）：想收口但名下还有未收口任务时
+      // 注入重入消息督办，上限 2 次（MiMo subagent 上限），防跑飞
+      let taskGateReentries = 0;
+      const SUBAGENT_TASK_GATE_MAX_REENTRIES = 2;
 
       while (iterations < maxIterations) {
         iterations++;
@@ -532,6 +541,8 @@ export class SubagentExecutor {
               ? `子代理 ${Math.round(getSubagentIdleTimeout(timeout) / 1000)}s 无 stream/progress, 已自动取消 (idle-timeout)`
               : `任务已取消 (${cancellationReason})`;
           agentTask.fail(errorMsg);
+          // orphan 接管（roadmap 2.6）
+          adoptOrphanTasks(sessionId, pipelineContext.agentId);
           // Fire SubagentStop on abort/timeout
           context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId, agentTask.id).catch(silence(logger, 'triggerSubagentStop:abort', 'warn'));
           return {
@@ -714,6 +725,22 @@ export class SubagentExecutor {
 
         // Handle text response - subagent is done
         if (response.type === 'text' && response.content) {
+          // taskGate（roadmap 2.6）：收口前检查名下未收口任务，重入督办（上限 2）
+          const ownedOpenTasks = getIncompleteTasks(sessionId).filter(
+            (t) => t.owner === pipelineContext.agentId,
+          );
+          if (ownedOpenTasks.length > 0 && taskGateReentries < SUBAGENT_TASK_GATE_MAX_REENTRIES) {
+            taskGateReentries++;
+            const taskLines = ownedOpenTasks.map((t) => `- #${t.id} [${t.status}] ${t.subject}`).join('\n');
+            logger.info(`[${config.name}] taskGate re-entry ${taskGateReentries}/${SUBAGENT_TASK_GATE_MAX_REENTRIES}: ${ownedOpenTasks.length} open task(s)`);
+            messages.push(createRuntimeMessage({
+              role: 'user',
+              content:
+                `[taskGate] 你名下还有 ${ownedOpenTasks.length} 个未收口任务：\n${taskLines}\n` +
+                `请先用 TaskManager 把它们置为 completed（已完成）或 cancelled（说明原因），再给出最终总结。`,
+            }));
+            continue;
+          }
           finalOutput = response.content;
           messages.push(createRuntimeMessage({
             role: 'assistant',
@@ -1070,6 +1097,9 @@ export class SubagentExecutor {
       });
       agentTask.stop();
 
+      // orphan 接管（roadmap 2.6）：正常结束时名下未收口任务回归主会话
+      adoptOrphanTasks(sessionId, pipelineContext.agentId);
+
       // Fire SubagentStop hook (fire-and-forget)
       // GAP-012: 带上 agentId 作为 swarm trace 查询入口
       if (context.hookManager) {
@@ -1117,6 +1147,9 @@ export class SubagentExecutor {
       );
 
       agentTask.fail(error instanceof Error ? error.message : String(error));
+
+      // orphan 接管（roadmap 2.6）
+      adoptOrphanTasks(sessionId, pipelineContext.agentId);
 
       // Fire SubagentStop hook on failure (fire-and-forget)
       // GAP-012: 带上 agentId 作为 swarm trace 查询入口

@@ -177,6 +177,22 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `);
+  // 树状结构（roadmap 2.6）：子任务 id 形如 "1.1"，parent_task_id 指向父
+  safeAlter(db, `ALTER TABLE session_tasks ADD COLUMN parent_task_id TEXT`, logger);
+
+  // Session Task 事件日志（roadmap 2.6）— append-only 审计表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_task_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      at INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      summary TEXT,
+      actor TEXT
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_task_events_task ON session_task_events (session_id, task_id, at)`);
 
   // Master Tasks 表 (用户级工作单元，跨 session 持久化；P0-c2)
   // status 列保留 TEXT 不加 CHECK，枚举校验由应用层 (src/shared/contract/task.ts) 负责

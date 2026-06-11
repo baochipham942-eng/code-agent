@@ -52,6 +52,11 @@ Examples:
         enum: ['low', 'normal', 'high'],
         description: '[create] Task priority (default: normal)',
       },
+      parentTaskId: {
+        type: 'string',
+        description:
+          '[create] Parent task id for hierarchical breakdown (child ids become "1.1", "1.2", ...). Parent must exist.',
+      },
       // --- update only ---
       status: {
         type: 'string',
@@ -62,7 +67,7 @@ Examples:
       },
       owner: {
         type: 'string',
-        description: '[update] New owner for the task (agent name)',
+        description: '[create, update] Task owner (agent id). Tasks created inside a subagent default to that subagent; open tasks are handed back to the main session when the subagent finishes.',
       },
       addBlockedBy: {
         type: 'array',

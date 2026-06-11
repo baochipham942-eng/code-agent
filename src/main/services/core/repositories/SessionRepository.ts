@@ -1106,12 +1106,12 @@ export class SessionRepository {
       const stmt = this.db.prepare(`
         INSERT INTO session_tasks (
           session_id, task_id, subject, description, active_form, status, priority, owner,
-          blocks_json, blocked_by_json, metadata_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          parent_task_id, blocks_json, blocked_by_json, metadata_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const task of tasks) {
-        stmt.run(sessionId, task.id, task.subject, task.description, task.activeForm, task.status, task.priority, task.owner ?? null, safeJsonStringify(task.blocks ?? []), safeJsonStringify(task.blockedBy ?? []), safeJsonStringify(task.metadata ?? {}), task.createdAt, task.updatedAt || now);
+        stmt.run(sessionId, task.id, task.subject, task.description, task.activeForm, task.status, task.priority, task.owner ?? null, task.parentTaskId ?? null, safeJsonStringify(task.blocks ?? []), safeJsonStringify(task.blockedBy ?? []), safeJsonStringify(task.metadata ?? {}), task.createdAt, task.updatedAt || now);
       }
     });
 
@@ -1121,7 +1121,7 @@ export class SessionRepository {
   getSessionTasks(sessionId: string): SessionTask[] {
     const stmt = this.db.prepare(`
       SELECT task_id, subject, description, active_form, status, priority, owner,
-             blocks_json, blocked_by_json, metadata_json, created_at, updated_at
+             parent_task_id, blocks_json, blocked_by_json, metadata_json, created_at, updated_at
       FROM session_tasks
       WHERE session_id = ?
       ORDER BY created_at ASC, task_id ASC
@@ -1138,6 +1138,7 @@ export class SessionRepository {
         status: row.status as SessionTask['status'],
         priority: row.priority as SessionTask['priority'],
         owner: row.owner == null ? undefined : String(row.owner),
+        parentTaskId: row.parent_task_id == null ? undefined : String(row.parent_task_id),
         blocks: parseJsonArray(row.blocks_json),
         blockedBy: parseJsonArray(row.blocked_by_json),
         metadata: parseJsonObject(row.metadata_json),
@@ -1145,6 +1146,44 @@ export class SessionRepository {
         updatedAt: Number(row.updated_at) || 0
       })
     );
+  }
+
+  /**
+   * Session Task 事件日志追加（roadmap 2.6，append-only 审计）。
+   */
+  appendSessionTaskEvents(events: Array<{ sessionId: string; taskId: string; at: number; kind: string; summary?: string; actor?: string }>): void {
+    if (events.length === 0) return;
+    const stmt = this.db.prepare(`
+      INSERT INTO session_task_events (session_id, task_id, at, kind, summary, actor)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    for (const event of events) {
+      stmt.run(event.sessionId, event.taskId, event.at, event.kind, event.summary ?? null, event.actor ?? null);
+    }
+  }
+
+  getSessionTaskEvents(sessionId: string, options: { taskId?: string; limit?: number } = {}): Array<{ taskId: string; at: number; kind: string; summary?: string; actor?: string }> {
+    const limit = Math.max(1, Math.min(options.limit ?? 50, 200));
+    const params: unknown[] = [sessionId];
+    let where = 'session_id = ?';
+    if (options.taskId) {
+      where += ' AND task_id = ?';
+      params.push(options.taskId);
+    }
+    params.push(limit);
+    const rows = this.db.prepare(`
+      SELECT task_id, at, kind, summary, actor FROM session_task_events
+      WHERE ${where}
+      ORDER BY at DESC, id DESC
+      LIMIT ?
+    `).all(...params) as SQLiteRow[];
+    return rows.reverse().map((row) => ({
+      taskId: String(row.task_id),
+      at: Number(row.at),
+      kind: String(row.kind),
+      ...(row.summary != null ? { summary: String(row.summary) } : {}),
+      ...(row.actor != null ? { actor: String(row.actor) } : {}),
+    }));
   }
 
   // --------------------------------------------------------------------------

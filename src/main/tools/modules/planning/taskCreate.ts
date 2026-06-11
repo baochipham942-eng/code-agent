@@ -33,6 +33,11 @@ export async function executeTaskCreate(
   const activeForm = args.activeForm as string | undefined;
   const priority = (args.priority as SessionTaskPriority | undefined) || 'normal';
   const metadata = (args.metadata as Record<string, unknown> | undefined) || {};
+  const parentTaskId = typeof args.parentTaskId === 'string' && args.parentTaskId ? args.parentTaskId : undefined;
+  // owner 语义（roadmap 2.6）：显式传入优先；subagent 内创建的任务默认归该
+  // subagent，subagent 结束时未收口任务由 orphan 接管回主会话
+  const explicitOwner = typeof args.owner === 'string' && args.owner ? args.owner : undefined;
+  const owner = explicitOwner ?? (ctx.agentId?.startsWith('subagent_') ? ctx.agentId : undefined);
 
   if (!subject || typeof subject !== 'string') {
     return { ok: false, error: 'subject is required and must be a string', code: 'INVALID_ARGS' };
@@ -56,13 +61,25 @@ export async function executeTaskCreate(
   onProgress?.({ stage: 'starting', detail: schema.name });
 
   const sessionId = ctx.sessionId || 'default';
-  const task = createTask(sessionId, {
-    subject,
-    description,
-    activeForm,
-    priority,
-    metadata,
-  });
+  let task;
+  try {
+    task = createTask(sessionId, {
+      subject,
+      description,
+      activeForm,
+      priority,
+      metadata,
+      parentTaskId,
+      owner,
+    });
+  } catch (err) {
+    // 树状结构（roadmap 2.6）：父任务必须存在
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      code: 'INVALID_ARGS',
+    };
+  }
 
   // 行为保真：legacy 通过 context.emit?.('task_update', ...)
   (ctx.emit as unknown as ((event: string, payload: unknown) => void) | undefined)?.(

@@ -572,6 +572,17 @@ export class DatabaseService {
     this.ensureDb();
     return this.sessionRepo.getSessionTasks(sessionId);
   }
+  appendSessionTaskEvents(events: Parameters<import('./repositories').SessionRepository['appendSessionTaskEvents']>[0]): void {
+    this.ensureDb();
+    this.sessionRepo.appendSessionTaskEvents(events);
+  }
+  getSessionTaskEvents(
+    sessionId: string,
+    options?: Parameters<import('./repositories').SessionRepository['getSessionTaskEvents']>[1]
+  ): ReturnType<import('./repositories').SessionRepository['getSessionTaskEvents']> {
+    this.ensureDb();
+    return this.sessionRepo.getSessionTaskEvents(sessionId, options);
+  }
   saveContextIntervention(sessionId: string, agentId: string | null | undefined, messageId: string, action: ContextInterventionAction | null, updatedAt?: number): void {
     this.ensureDb();
     this.sessionRepo.saveContextIntervention(sessionId, agentId, messageId, action, updatedAt);

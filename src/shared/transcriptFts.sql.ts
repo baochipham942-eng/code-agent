@@ -174,10 +174,30 @@ export const TRANSCRIPT_FTS_BODY_COLUMN_INDEX = 4;
 export const TRANSCRIPT_FTS_BACKFILL_STATEMENTS: readonly string[] = buildInsertSelects('m', true);
 
 /**
+ * trigger / 查询引用的 messages 列守卫。CLI 自建库与旧库可能缺这些列；
+ * trigger 创建本身不校验列存在，缺列会让之后所有 INSERT 在运行期报错，
+ * 所以必须在建 trigger 前补齐（已存在时 ALTER 报错被吞掉，幂等）。
+ */
+const REQUIRED_MESSAGE_COLUMNS = [
+  `ALTER TABLE messages ADD COLUMN thinking TEXT`,
+  `ALTER TABLE messages ADD COLUMN tool_results TEXT`,
+  `ALTER TABLE messages ADD COLUMN is_meta INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE messages ADD COLUMN visibility TEXT NOT NULL DEFAULT 'active'`,
+] as const;
+
+/**
  * 应用 transcript_fts 表 + 同步 triggers。幂等；insert/update trigger 走
  * drop + recreate，已有库升级时能拿到最新的分解规则。
  */
 export function applyTranscriptFtsSchema(db: { exec(sql: string): unknown }): void {
+  for (const alter of REQUIRED_MESSAGE_COLUMNS) {
+    try {
+      db.exec(alter);
+    } catch {
+      // 列已存在（duplicate column）— 预期路径
+    }
+  }
+
   db.exec(TRANSCRIPT_FTS_TABLE_SQL);
 
   const inserts = buildInsertSelects('new', false)

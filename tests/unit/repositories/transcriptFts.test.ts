@@ -481,3 +481,63 @@ describe('SessionRepository — Transcript FTS5 (kind-decomposed)', () => {
     expect(ctxResult!.messages.map((m) => m.message.id)).toEqual(['a1', 'a2']);
   });
 });
+
+// ----------------------------------------------------------------------------
+// 裸 schema 兼容 — CLI 自建库 / 旧库可能缺 thinking / visibility / is_meta 列。
+// applyTranscriptFtsSchema 必须自带列守卫，否则 trigger 引用缺失列会让
+// 之后所有 messages INSERT 在运行期报错（trigger 创建本身不校验列存在）。
+// ----------------------------------------------------------------------------
+
+describe('applyTranscriptFtsSchema — bare schema compatibility', () => {
+  let db: BetterSqlite3.Database;
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    // 复制 CLI database.ts 的最小 messages 表（无 thinking/visibility/metadata 等列）
+    db.exec(`
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        tool_calls TEXT,
+        tool_results TEXT,
+        attachments TEXT,
+        is_meta INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('message inserts still work after applying the schema on a bare messages table', () => {
+    applyTranscriptFtsSchema(db);
+
+    // trigger 引用 thinking 列 — 若 schema 守卫缺失，这条 INSERT 运行期抛错
+    db.prepare(
+      `INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run('m1', 's1', 'assistant', 'bare schema echidna message', 1000, JSON.stringify([
+      { id: 'tc1', name: 'Bash', arguments: { command: 'echo echidna' }, result: { toolCallId: 'tc1', success: true, output: 'echidna out' } },
+    ]));
+
+    const kinds = (db.prepare('SELECT kind FROM transcript_fts ORDER BY kind').all() as Array<{ kind: string }>).map((r) => r.kind);
+    expect(kinds).toEqual(['assistant_text', 'tool_input', 'tool_output']);
+  });
+
+  it('repository search works against a bare-schema db (visibility column absent before apply)', () => {
+    applyTranscriptFtsSchema(db);
+    const repo = new SessionRepository(db);
+    db.prepare(
+      `INSERT INTO messages (id, session_id, role, content, timestamp)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run('m1', 's1', 'user', 'bare schema numbat question', 1000);
+
+    const hits = repo.searchTranscriptFts('numbat question');
+    expect(hits.length).toBe(1);
+    expect(hits[0].messageId).toBe('m1');
+  });
+});

@@ -34,6 +34,12 @@ const NON_RETRYABLE_PATTERNS = [
   'model deprecated',         // 模型已弃用，需切换
   'model decommissioned',     // 模型已下线
   'model retired',            // 模型已退役
+  // context overflow（roadmap 1.9）：重试不可能成功，必须走压缩/降级
+  'context_length_exceeded',
+  'maximum context length',
+  'context length',
+  'prompt is too long',
+  'input is too long',
 ];
 
 /** 瞬态错误匹配模式（检查 message + code） */
@@ -102,12 +108,55 @@ export function isNonRetryableError(msg: string): boolean {
   return includesAnyPattern(msg, NON_RETRYABLE_PATTERNS);
 }
 
+/** retry-after 提示的上限，防止上游返回超长等待挂死调用方 */
+const RETRY_AFTER_CAP_MS = 60_000;
+
+/**
+ * 从错误对象提取 retry-after 提示（毫秒）。三个来源按优先级：
+ * 1. 结构化字段 err.retryAfterMs
+ * 2. err.headers['retry-after']（秒）
+ * 3. 错误消息文本（"try again in 20s" / "retry after 3 seconds" 等）
+ * 提取不到返回 null。
+ */
+export function extractRetryAfterMs(err: unknown): number | null {
+  const cap = (ms: number) => Math.min(Math.max(0, Math.round(ms)), RETRY_AFTER_CAP_MS);
+
+  if (err && typeof err === 'object') {
+    const structured = (err as { retryAfterMs?: unknown }).retryAfterMs;
+    if (typeof structured === 'number' && Number.isFinite(structured) && structured > 0) {
+      return cap(structured);
+    }
+    const headers = (err as { headers?: Record<string, unknown> }).headers;
+    const headerValue = headers?.['retry-after'] ?? headers?.['Retry-After'];
+    if (headerValue !== undefined) {
+      const seconds = Number(headerValue);
+      if (Number.isFinite(seconds) && seconds > 0) {
+        return cap(seconds * 1000);
+      }
+    }
+  }
+
+  const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  const match = msg.match(
+    /(?:retry[- ]?after|try again in)[:\s]*(\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|secs?|seconds?)?/i,
+  );
+  if (match) {
+    const value = Number(match[1]);
+    const unit = (match[2] || 's').toLowerCase();
+    if (Number.isFinite(value) && value > 0) {
+      const ms = unit.startsWith('ms') || unit.startsWith('millisecond') ? value : value * 1000;
+      return cap(ms);
+    }
+  }
+  return null;
+}
+
 export interface RetryOptions {
   /** Provider 名称，用于日志 */
   providerName: string;
   /** 最大重试次数（不含首次） */
   maxRetries?: number;
-  /** 基础延迟 ms，实际延迟 = baseDelay * (attempt + 1) */
+  /** 基础延迟 ms，实际延迟 = baseDelay * 2^attempt（指数退避），retry-after 提示优先 */
   baseDelay?: number;
   /** AbortSignal，取消时不重试 */
   signal?: AbortSignal;
@@ -168,8 +217,10 @@ export async function withTransientRetry<T>(
       const msg = err instanceof Error ? err.message : String(err);
       const errCode = (err as NodeJS.ErrnoException).code;
       if (isTransientError(msg, errCode) && attempt < maxRetries && !signal?.aborted) {
-        const delay = baseDelay * (attempt + 1);
-        logger.warn(`[${providerName}] 瞬态错误 "${msg}" (code=${errCode}), ${delay}ms 后重试 (${attempt + 1}/${maxRetries})`);
+        // 优先尊重上游的 retry-after 提示，否则指数退避（roadmap 1.9）
+        const retryAfterMs = extractRetryAfterMs(err);
+        const delay = retryAfterMs ?? baseDelay * 2 ** attempt;
+        logger.warn(`[${providerName}] 瞬态错误 "${msg}" (code=${errCode}), ${delay}ms 后重试 (${attempt + 1}/${maxRetries})${retryAfterMs != null ? ' [retry-after]' : ''}`);
         // Notify caller about retry (for CLI visibility)
         const retryInfo = { provider: providerName, attempt: attempt + 1, maxRetries, delay, error: msg };
         onRetry?.(retryInfo);

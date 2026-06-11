@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  extractRetryAfterMs,
   isFallbackEligible,
   isTransientError,
   withTransientRetry,
@@ -310,6 +311,93 @@ describe('Retry Strategy', () => {
         baseDelay: 1,
       });
       expect(result).toBe('ok');
+    });
+
+    it('uses exponential backoff (baseDelay * 2^attempt)', async () => {
+      const delays: number[] = [];
+      const fn = vi.fn()
+        .mockRejectedValueOnce(new Error('socket hang up'))
+        .mockRejectedValueOnce(new Error('socket hang up'))
+        .mockResolvedValue('ok');
+
+      await withTransientRetry(fn, {
+        providerName: 'test',
+        maxRetries: 2,
+        baseDelay: 4,
+        onRetry: (info) => delays.push(info.delay),
+      });
+      expect(delays).toEqual([4, 8]);
+    });
+
+    it('prefers retry-after hint from the error over backoff', async () => {
+      const delays: number[] = [];
+      const err = new Error('429 rate limited') as Error & { retryAfterMs?: number };
+      err.retryAfterMs = 37;
+      const fn = vi.fn()
+        .mockRejectedValueOnce(err)
+        .mockResolvedValue('ok');
+
+      await withTransientRetry(fn, {
+        providerName: 'test',
+        maxRetries: 1,
+        baseDelay: 1,
+        onRetry: (info) => delays.push(info.delay),
+      });
+      expect(delays).toEqual([37]);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // extractRetryAfterMs
+  // --------------------------------------------------------------------------
+  describe('extractRetryAfterMs', () => {
+    it('reads structured retryAfterMs field', () => {
+      const err = new Error('429') as Error & { retryAfterMs?: number };
+      err.retryAfterMs = 1234;
+      expect(extractRetryAfterMs(err)).toBe(1234);
+    });
+
+    it('reads retry-after header in seconds', () => {
+      const err = new Error('429') as Error & { headers?: Record<string, string> };
+      err.headers = { 'retry-after': '5' };
+      expect(extractRetryAfterMs(err)).toBe(5000);
+    });
+
+    it('parses "try again in Ns" from message', () => {
+      expect(extractRetryAfterMs(new Error('Rate limit reached. Please try again in 20s.'))).toBe(20_000);
+    });
+
+    it('parses "retry after N seconds" from message', () => {
+      expect(extractRetryAfterMs(new Error('429 Too Many Requests, retry after 3 seconds'))).toBe(3000);
+    });
+
+    it('parses milliseconds unit from message', () => {
+      expect(extractRetryAfterMs(new Error('Please try again in 500ms'))).toBe(500);
+    });
+
+    it('caps the hint at 60s', () => {
+      const err = new Error('429') as Error & { headers?: Record<string, string> };
+      err.headers = { 'retry-after': '600' };
+      expect(extractRetryAfterMs(err)).toBe(60_000);
+    });
+
+    it('returns null when no hint present', () => {
+      expect(extractRetryAfterMs(new Error('socket hang up'))).toBeNull();
+      expect(extractRetryAfterMs('plain string error')).toBeNull();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // context overflow 不重试（roadmap 1.9：4xx/context overflow 收敛到不可重试）
+  // --------------------------------------------------------------------------
+  describe('context overflow classification', () => {
+    it.each([
+      'context_length_exceeded',
+      "This model's maximum context length is 8192 tokens",
+      'prompt is too long: 210000 tokens > 200000 maximum',
+      'input is too long for requested model',
+    ])('treats "%s" as non-retryable', (msg) => {
+      expect(isTransientError(msg)).toBe(false);
     });
   });
 });

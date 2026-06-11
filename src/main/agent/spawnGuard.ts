@@ -57,6 +57,7 @@ export function createAgentMessage(
 export interface ManagedAgent {
   id: string;
   role: string;
+  treeId: string;
   status: ManagedAgentStatus;
   task: string;
   /** The promise that resolves when execution completes */
@@ -71,6 +72,7 @@ export interface ManagedAgent {
   messageQueue: AgentMessage[];
   createdAt: number;
   completedAt?: number;
+  slotReleased?: boolean;
 }
 
 export type ManagedAgentStatus =
@@ -91,6 +93,7 @@ interface PersistedSpawnGuardState {
   agents: Array<{
     id: string;
     role: string;
+    treeId?: string;
     status: ManagedAgentStatus;
     task: string;
     messageQueue: AgentMessage[];
@@ -103,6 +106,17 @@ interface PersistedSpawnGuardState {
   persistedAt: number;
 }
 
+export interface SpawnSlotLease {
+  treeId: string;
+  release: () => void;
+}
+
+interface SlotWaiter {
+  resolve: (lease: SpawnSlotLease) => void;
+  reject: (err: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 // ============================================================================
 // SpawnGuard
 // ============================================================================
@@ -110,11 +124,15 @@ interface PersistedSpawnGuardState {
 const DEFAULT_MAX_AGENTS = SPAWN_GUARD.MAX_TREE_AGENTS;
 const DEFAULT_MAX_DEPTH = SPAWN_GUARD.DEFAULT_SPAWN_DEPTH;
 const HARD_MAX_DEPTH = SPAWN_GUARD.HARD_MAX_SPAWN_DEPTH;
+const DEFAULT_QUEUE_TIMEOUT_MS = SPAWN_GUARD.QUEUE_WAIT_TIMEOUT_MS;
+const DEFAULT_TREE_ID = 'default';
 
 export type OnAgentCompleteCallback = (agent: ManagedAgent) => void;
 
 class SpawnGuard {
   private agents: Map<string, ManagedAgent> = new Map();
+  private treeSlotCounts: Map<string, number> = new Map();
+  private slotQueues: Map<string, SlotWaiter[]> = new Map();
   private maxAgents: number;
   private maxDepth: number;
   private onCompleteCallbacks: OnAgentCompleteCallback[] = [];
@@ -130,9 +148,40 @@ class SpawnGuard {
    * Try to reserve a slot for a new agent.
    * Returns false if at capacity.
    */
-  canSpawn(): boolean {
-    const running = this.getRunningCount();
-    return running < this.maxAgents;
+  canSpawn(treeId: string = DEFAULT_TREE_ID): boolean {
+    return this.getReservedCount(treeId) < this.maxAgents;
+  }
+
+  /**
+   * Acquire a slot in the root tree pool. Over-capacity callers wait FIFO.
+   */
+  async acquireSlot(options: {
+    treeId?: string;
+    timeoutMs?: number;
+  } = {}): Promise<SpawnSlotLease> {
+    const treeId = this.normalizeTreeId(options.treeId);
+    if (this.canSpawn(treeId)) {
+      this.incrementSlot(treeId);
+      return this.createLease(treeId);
+    }
+
+    const timeoutMs = Math.max(1, Math.floor(options.timeoutMs ?? DEFAULT_QUEUE_TIMEOUT_MS));
+    return new Promise<SpawnSlotLease>((resolve, reject) => {
+      const waiter: SlotWaiter = {
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          this.removeWaiter(treeId, waiter);
+          reject(new Error(`Spawn slot wait timed out for tree ${treeId} after ${timeoutMs}ms (running ${this.getReservedCount(treeId)}, max ${this.maxAgents})`));
+        }, timeoutMs),
+      };
+      this.getQueue(treeId).push(waiter);
+      logger.info(`[${treeId}] Spawn queued (${this.getReservedCount(treeId)}/${this.maxAgents}, queue: ${this.getQueue(treeId).length})`);
+    });
+  }
+
+  getReservedCount(treeId: string = DEFAULT_TREE_ID): number {
+    return this.treeSlotCounts.get(this.normalizeTreeId(treeId)) ?? 0;
   }
 
   /**
@@ -154,6 +203,73 @@ class SpawnGuard {
     return Math.min(Math.max(1, Math.floor(depth)), HARD_MAX_DEPTH);
   }
 
+  private normalizeTreeId(treeId: string | undefined): string {
+    return treeId?.trim() || DEFAULT_TREE_ID;
+  }
+
+  private incrementSlot(treeId: string): void {
+    this.treeSlotCounts.set(treeId, this.getReservedCount(treeId) + 1);
+  }
+
+  private decrementSlot(treeId: string): void {
+    const current = this.getReservedCount(treeId);
+    if (current <= 1) {
+      this.treeSlotCounts.delete(treeId);
+    } else {
+      this.treeSlotCounts.set(treeId, current - 1);
+    }
+    this.drainQueue(treeId);
+  }
+
+  private createLease(treeId: string): SpawnSlotLease {
+    let released = false;
+    return {
+      treeId,
+      release: () => {
+        if (released) return;
+        released = true;
+        this.decrementSlot(treeId);
+      },
+    };
+  }
+
+  private getQueue(treeId: string): SlotWaiter[] {
+    let queue = this.slotQueues.get(treeId);
+    if (!queue) {
+      queue = [];
+      this.slotQueues.set(treeId, queue);
+    }
+    return queue;
+  }
+
+  private removeWaiter(treeId: string, waiter: SlotWaiter): void {
+    const queue = this.slotQueues.get(treeId);
+    if (!queue) return;
+    const index = queue.indexOf(waiter);
+    if (index >= 0) queue.splice(index, 1);
+    if (queue.length === 0) this.slotQueues.delete(treeId);
+  }
+
+  private drainQueue(treeId: string): void {
+    const queue = this.slotQueues.get(treeId);
+    if (!queue || queue.length === 0) return;
+
+    while (queue.length > 0 && this.canSpawn(treeId)) {
+      const waiter = queue.shift()!;
+      clearTimeout(waiter.timer);
+      this.incrementSlot(treeId);
+      waiter.resolve(this.createLease(treeId));
+    }
+
+    if (queue.length === 0) this.slotQueues.delete(treeId);
+  }
+
+  private releaseAgentSlot(agent: ManagedAgent): void {
+    if (agent.slotReleased) return;
+    agent.slotReleased = true;
+    this.decrementSlot(agent.treeId);
+  }
+
   /**
    * Register a running agent. Call this after spawning.
    */
@@ -162,11 +278,18 @@ class SpawnGuard {
     role: string,
     task: string,
     promise: Promise<SubagentResult>,
-    abortController: AbortController
+    abortController: AbortController,
+    options: { treeId?: string; slotAcquired?: boolean } = {},
   ): void {
+    const treeId = this.normalizeTreeId(options.treeId);
+    if (!options.slotAcquired) {
+      this.incrementSlot(treeId);
+    }
+
     const agent: ManagedAgent = {
       id,
       role,
+      treeId,
       status: 'running',
       task,
       promise,
@@ -188,6 +311,7 @@ class SpawnGuard {
           a.completedAt = Date.now();
           logger.info(`[${id}] Agent completed (${a.status}) in ${a.completedAt - a.createdAt}ms`);
           this.fireOnComplete(a);
+          this.releaseAgentSlot(a);
         }
       },
       (err) => {
@@ -198,11 +322,12 @@ class SpawnGuard {
           a.completedAt = Date.now();
           logger.warn(`[${id}] Agent failed: ${a.error}`);
           this.fireOnComplete(a);
+          this.releaseAgentSlot(a);
         }
       }
     );
 
-    logger.info(`[${id}] Registered (${role}), running: ${this.getRunningCount()}/${this.maxAgents}`);
+    logger.info(`[${id}] Registered (${role}), tree: ${treeId}, running: ${this.getRunningCount()}/${this.maxAgents}`);
   }
 
   /**
@@ -247,6 +372,7 @@ class SpawnGuard {
     agent.abortController.abort('cancelled');
     agent.status = 'cancelled';
     agent.completedAt = Date.now();
+    this.releaseAgentSlot(agent);
     logger.info(`[${id}] Cancelled`);
     return true;
   }
@@ -270,6 +396,7 @@ class SpawnGuard {
         agent.status = 'cancelled';
         agent.completedAt = Date.now();
         agent.error = agent.error ?? reason;
+        this.releaseAgentSlot(agent);
         cancelled += 1;
       }
     }
@@ -503,6 +630,7 @@ class SpawnGuard {
       agents: Array.from(this.agents.entries()).map(([id, agent]) => ({
         id,
         role: agent.role,
+        treeId: agent.treeId,
         status: agent.status,
         task: agent.task,
         messageQueue: agent.messageQueue,
@@ -546,6 +674,7 @@ class SpawnGuard {
         const agent: ManagedAgent = {
           id: entry.id,
           role: entry.role,
+          treeId: entry.treeId ?? DEFAULT_TREE_ID,
           status,
           task: entry.task,
           promise: Promise.resolve(entry.result ?? { success: false, output: '', error: 'Interrupted by restart', iterations: 0, toolsUsed: [], cost: 0 }),

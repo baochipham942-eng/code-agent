@@ -85,6 +85,8 @@ export function buildLegacyCtxFromProtocol(
     agentRole: ctx.subagent?.agentRole,
     spawnDepth: ctx.spawnDepth,
     spawnMaxDepth: ctx.spawnMaxDepth,
+    spawnTreeId: ctx.spawnTreeId,
+    spawnQueueTimeoutMs: ctx.spawnQueueTimeoutMs,
     messages: ctx.subagent?.messages as LegacyToolContext['messages'],
     modifiedFiles: ctx.subagent?.modifiedFiles as LegacyToolContext['modifiedFiles'],
     todos: ctx.subagent?.todos as LegacyToolContext['todos'],

@@ -77,6 +77,10 @@ export interface ToolContext {
    * 会话级 spawn 深度覆盖。SpawnGuard 会 clamp 到硬上限，未设置时使用默认深度。
    */
   spawnMaxDepth?: number;
+  /** 根 agent / 根 session 的 spawn tree id，整棵树共享同一并发槽位池。 */
+  spawnTreeId?: string;
+  /** 超额 spawn 等待 tree 槽位的超时时间。 */
+  spawnQueueTimeoutMs?: number;
 
   // ============================================================================
   // 模型回调支持（工具内二次调用模型）

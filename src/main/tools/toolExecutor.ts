@@ -138,6 +138,10 @@ export interface ExecuteOptions {
   spawnDepth?: number;
   // 会话级 spawn 深度覆盖，执行层会 clamp 到硬上限。
   spawnMaxDepth?: number;
+  // 根 agent / 根 session 的 spawn tree id，整棵树共享同一并发槽位池。
+  spawnTreeId?: string;
+  // 超额 spawn 等待 tree 槽位的超时时间。
+  spawnQueueTimeoutMs?: number;
   // 持久化角色 ID（agent 注册 id）。subagent 执行时由 subagentExecutor 灌入，
   // MemoryWrite/Read 的 scope='role' 路由按这个 id 定位 roles/<id>/ 目录。
   agentRole?: string;
@@ -333,6 +337,8 @@ export class ToolExecutor {
       agentId: options.agentId,
       spawnDepth: options.spawnDepth,
       spawnMaxDepth: options.spawnMaxDepth,
+      spawnTreeId: options.spawnTreeId,
+      spawnQueueTimeoutMs: options.spawnQueueTimeoutMs,
       // 持久化角色 ID（MemoryWrite/Read scope='role' 路由用）
       agentRole: options.agentRole,
       // Current message attachments for multi-agent workflows

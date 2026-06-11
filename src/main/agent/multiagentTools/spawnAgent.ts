@@ -107,6 +107,7 @@ export async function executeSpawnAgent(
         },
       };
     }
+    const treeId = context.spawnTreeId || context.sessionId || 'default';
 
     // Handle parallel execution mode
     if (parallel && agents && agents.length > 0) {
@@ -114,6 +115,8 @@ export async function executeSpawnAgent(
         ...context,
         spawnDepth: childDepth,
         spawnMaxDepth: context.spawnMaxDepth,
+        spawnTreeId: treeId,
+        spawnQueueTimeoutMs: context.spawnQueueTimeoutMs,
       });
     }
 
@@ -263,13 +266,6 @@ export async function executeSpawnAgent(
       };
     }
 
-    if (!guard.canSpawn()) {
-      return {
-        success: false,
-        error: `Cannot spawn agent: at capacity (${guard.getRunningCount()} running). Wait for existing agents to complete or use close_agent to free slots.`,
-      };
-    }
-
     // 过滤子代理禁用工具（子不启子、不问用户等）
     // P3: explorer/reviewer 额外禁用写工具（工具层面强制 readonly）
     const READONLY_ROLES = ['explorer', 'explore', 'reviewer'];
@@ -279,7 +275,14 @@ export async function executeSpawnAgent(
       : guard.getDisabledTools();
     tools = tools.filter(t => !disabledTools.includes(t));
 
+    let slotLease: { release: () => void } | undefined;
+    let registeredWithGuard = false;
+
     try {
+      slotLease = await guard.acquireSlot({
+        treeId,
+        timeoutMs: context.spawnQueueTimeoutMs,
+      });
       const executor = getSubagentExecutor();
 
       // Determine permission preset based on agent config
@@ -307,6 +310,8 @@ export async function executeSpawnAgent(
           cwd = worktreeInfo.worktreePath;
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : 'Unknown error';
+          slotLease?.release();
+          slotLease = undefined;
           return {
             success: false,
             error: `Failed to create worktree for agent: ${errMsg}. Ensure you are in a git repository.`,
@@ -381,6 +386,8 @@ export async function executeSpawnAgent(
           agentId,
           spawnDepth: childDepth,
           spawnMaxDepth: context.spawnMaxDepth,
+          spawnTreeId: treeId,
+          spawnQueueTimeoutMs: context.spawnQueueTimeoutMs,
         },
         parentToolUseId: context.currentToolCallId,
         abortSignal: abortController.signal,
@@ -412,7 +419,12 @@ export async function executeSpawnAgent(
         const promise = executor.execute(enrichedTask, executorConfig, executorContext);
 
         // Register with SpawnGuard
-        guard.register(agentId, role || 'dynamic', task, promise, abortController);
+        guard.register(agentId, role || 'dynamic', task, promise, abortController, {
+          treeId,
+          slotAcquired: true,
+        });
+        registeredWithGuard = true;
+        slotLease = undefined;
 
         const result = await promise;
 
@@ -456,7 +468,12 @@ Stats:
         const promise = executor.execute(enrichedTask, executorConfig, executorContext);
 
         // Register with SpawnGuard (auto-tracks completion)
-        guard.register(agentId, role || 'dynamic', task, promise, abortController);
+        guard.register(agentId, role || 'dynamic', task, promise, abortController, {
+          treeId,
+          slotAcquired: true,
+        });
+        registeredWithGuard = true;
+        slotLease = undefined;
 
         // Background worktree cleanup: register onComplete callback
         if (worktreeInfo) {
@@ -486,6 +503,9 @@ Use wait_agent to block until done, or close_agent to cancel.`,
         };
       }
     } catch (error) {
+      if (!registeredWithGuard) {
+        slotLease?.release();
+      }
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       return {
         success: false,
@@ -557,17 +577,6 @@ async function executeParallelAgents(
   const coordinator = getParallelAgentCoordinator();
   const emitter = getSwarmEventEmitter();
   const guard = getSpawnGuard();
-
-  // SpawnGuard: check capacity for all requested agents
-  const runningCount = guard.getRunningCount();
-  const maxAgents = guard.getMaxAgents();
-  const requestedCount = agents.length;
-  if (runningCount + requestedCount > maxAgents) {
-    return {
-      success: false,
-      error: `Cannot spawn ${requestedCount} agents: capacity exceeded (${runningCount} running, max ${maxAgents}). Use close_agent to free slots.`,
-    };
-  }
 
   // ========================================================================
   // Task DAG: 依赖环检测（在 spawn 之前验证）

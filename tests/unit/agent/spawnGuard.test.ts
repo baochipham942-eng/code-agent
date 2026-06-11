@@ -132,6 +132,76 @@ describe('SpawnGuard', () => {
       expect(defaultGuard.checkDepth(SPAWN_GUARD.HARD_MAX_SPAWN_DEPTH, 99)).toBe(true);
       expect(defaultGuard.checkDepth(SPAWN_GUARD.HARD_MAX_SPAWN_DEPTH + 1, 99)).toBe(false);
     });
+
+    it('按 root tree 维护独立槽位池', async () => {
+      resetSpawnGuard();
+      const treeGuard = getSpawnGuard({ maxAgents: 1 });
+      const lease = await treeGuard.acquireSlot({ treeId: 'root-a', timeoutMs: 1000 });
+
+      expect(treeGuard.canSpawn('root-a')).toBe(false);
+      expect(treeGuard.canSpawn('root-b')).toBe(true);
+      expect(treeGuard.getReservedCount('root-a')).toBe(1);
+      expect(treeGuard.getReservedCount('root-b')).toBe(0);
+
+      lease.release();
+      expect(treeGuard.canSpawn('root-a')).toBe(true);
+    });
+
+    it('超额 spawn 请求 FIFO 排队，释放槽位后按顺序获批', async () => {
+      resetSpawnGuard();
+      const queueGuard = getSpawnGuard({ maxAgents: 1 });
+      const firstLease = await queueGuard.acquireSlot({ treeId: 'root', timeoutMs: 1000 });
+      const grants: string[] = [];
+      let secondLease: { release: () => void } | undefined;
+      let thirdLease: { release: () => void } | undefined;
+
+      const second = queueGuard.acquireSlot({ treeId: 'root', timeoutMs: 1000 }).then((lease) => {
+        grants.push('second');
+        secondLease = lease;
+      });
+      const third = queueGuard.acquireSlot({ treeId: 'root', timeoutMs: 1000 }).then((lease) => {
+        grants.push('third');
+        thirdLease = lease;
+      });
+
+      await Promise.resolve();
+      expect(grants).toEqual([]);
+
+      firstLease.release();
+      await vi.waitFor(() => expect(grants).toEqual(['second']));
+      expect(queueGuard.getReservedCount('root')).toBe(1);
+
+      secondLease?.release();
+      await vi.waitFor(() => expect(grants).toEqual(['second', 'third']));
+
+      thirdLease?.release();
+      await Promise.all([second, third]);
+      expect(queueGuard.getReservedCount('root')).toBe(0);
+    });
+
+    it('排队等待超时后返回明确错误', async () => {
+      resetSpawnGuard();
+      const queueGuard = getSpawnGuard({ maxAgents: 1 });
+      const lease = await queueGuard.acquireSlot({ treeId: 'root', timeoutMs: 1000 });
+
+      await expect(
+        queueGuard.acquireSlot({ treeId: 'root', timeoutMs: 5 }),
+      ).rejects.toThrow(/timed out.*root.*max 1/i);
+
+      lease.release();
+    });
+
+    it('cancel 运行中 agent 会释放 tree 槽位', () => {
+      resetSpawnGuard();
+      const cancelGuard = getSpawnGuard({ maxAgents: 1 });
+      const pending = new Promise<SubagentResult>(() => {});
+      cancelGuard.register('a1', 'coder', 't1', pending, new AbortController(), { treeId: 'root' });
+
+      expect(cancelGuard.canSpawn('root')).toBe(false);
+      expect(cancelGuard.cancel('a1')).toBe(true);
+      expect(cancelGuard.canSpawn('root')).toBe(true);
+      expect(cancelGuard.getReservedCount('root')).toBe(0);
+    });
   });
 
   // ==========================================================================

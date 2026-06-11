@@ -126,6 +126,8 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     currentToolCallId: legacy?.currentToolCallId as string | undefined,
     spawnDepth: legacy?.spawnDepth as number | undefined,
     spawnMaxDepth: legacy?.spawnMaxDepth as number | undefined,
+    spawnTreeId: legacy?.spawnTreeId as string | undefined,
+    spawnQueueTimeoutMs: legacy?.spawnQueueTimeoutMs as number | undefined,
     planMode,
     subagent,
     hookManager: legacy?.hookManager,

@@ -31,6 +31,8 @@ export const SPAWN_GUARD = {
   DEFAULT_SPAWN_DEPTH: 3,
   /** spawn 嵌套硬上限。会话级覆盖必须 clamp 到此值，避免 5 层以上失控。 */
   HARD_MAX_SPAWN_DEPTH: 5,
+  /** 超额 spawn 在全树槽位池里等待的默认时长。 */
+  QUEUE_WAIT_TIMEOUT_MS: 30_000,
 } as const;
 
 /** Agent 超时配置 (按角色) */

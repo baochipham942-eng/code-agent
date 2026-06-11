@@ -168,6 +168,7 @@ export async function executeTask(
   const parentDepth = ctx.spawnDepth ?? 0;
   const childDepth = parentDepth + 1;
   const maxDepth = guard.getMaxDepth(ctx.spawnMaxDepth);
+  const treeId = ctx.spawnTreeId || ctx.sessionId || 'default';
   if (!guard.checkDepth(childDepth, ctx.spawnMaxDepth)) {
     return {
       ok: false,
@@ -282,7 +283,13 @@ export async function executeTask(
     subagentRole: subagentType,
   });
 
+  let slotLease: { release: () => void } | undefined;
+
   try {
+    slotLease = await guard.acquireSlot({
+      treeId,
+      timeoutMs: ctx.spawnQueueTimeoutMs,
+    });
     const executor = getSubagentExecutor();
 
     // Cross-cat 桥接：SubagentExecutor 接 legacy ToolContext，用 helper 桥
@@ -291,6 +298,8 @@ export async function executeTask(
       ...buildLegacyCtxFromProtocol(ctx, canUseTool),
       spawnDepth: childDepth,
       spawnMaxDepth: ctx.spawnMaxDepth,
+      spawnTreeId: treeId,
+      spawnQueueTimeoutMs: ctx.spawnQueueTimeoutMs,
     };
 
     const result = await executor.execute(
@@ -418,6 +427,8 @@ Stats:
       error: `Task execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       code: 'DOMAIN_ERROR',
     };
+  } finally {
+    slotLease?.release();
   }
 }
 

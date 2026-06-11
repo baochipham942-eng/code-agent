@@ -73,6 +73,7 @@ import {
   type AgentTask,
   type CoordinatorEvent,
 } from '../../../src/main/agent/parallelAgentCoordinator';
+import { getSpawnGuard, resetSpawnGuard } from '../../../src/main/agent/spawnGuard';
 import { aggregateTeamResults } from '../../../src/main/agent/resultAggregator';
 
 function makeFakeContext() {
@@ -106,6 +107,7 @@ describe('ParallelAgentCoordinator', () => {
   let coordinator: ParallelAgentCoordinator;
 
   beforeEach(() => {
+    resetSpawnGuard();
     executorState.executeMock.mockReset();
     schedulerState.executeMock.mockReset();
     schedulerState.capturedDAG = null;
@@ -401,6 +403,56 @@ describe('ParallelAgentCoordinator', () => {
       const pending = result.results.find((entry) => entry.taskId === 'b');
       expect(pending?.cancelled).toBe(true);
       expect(pending?.error).toContain('Cancelled before start');
+    });
+
+    it('通过 SpawnGuard tree quota 排队执行，不丢弃超额 ready task', async () => {
+      resetSpawnGuard();
+      getSpawnGuard({ maxAgents: 2 });
+      coordinator = new ParallelAgentCoordinator({
+        maxParallelTasks: 4,
+        taskTimeout: 5000,
+        enableSharedContext: false,
+        aggregateResults: false,
+      });
+      coordinator.initialize({
+        ...makeFakeContext(),
+        toolContext: {
+          sessionId: 'root-session',
+          currentToolCallId: 'call-1',
+          spawnTreeId: 'root-session',
+        } as never,
+      });
+
+      let active = 0;
+      let peak = 0;
+      executorState.executeMock.mockImplementation(
+        async (_t: string, spec: { name: string }) => {
+          active++;
+          peak = Math.max(peak, active);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          active--;
+          return {
+            success: true,
+            output: `ok:${spec.name}`,
+            iterations: 1,
+            toolsUsed: [],
+            cost: 0,
+          };
+        },
+      );
+
+      const result = await coordinator.executeParallel([
+        makeTask('a', { role: 'coder' }),
+        makeTask('b', { role: 'tester' }),
+        makeTask('c', { role: 'reviewer' }),
+        makeTask('d', { role: 'architect' }),
+      ]);
+
+      expect(result.success).toBe(true);
+      expect(result.results).toHaveLength(4);
+      expect(executorState.executeMock).toHaveBeenCalledTimes(4);
+      expect(peak).toBeLessThanOrEqual(2);
+      expect(getSpawnGuard().getReservedCount('root-session')).toBe(0);
     });
 
   });

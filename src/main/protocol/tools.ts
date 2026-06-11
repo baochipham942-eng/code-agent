@@ -103,6 +103,10 @@ export interface ToolContext {
   readonly spawnDepth?: number;
   /** 会话级 spawn 深度覆盖；执行层会 clamp 到硬上限。 */
   readonly spawnMaxDepth?: number;
+  /** 根 agent / 根 session 的 spawn tree id，整棵树共享同一并发槽位池。 */
+  readonly spawnTreeId?: string;
+  /** 超额 spawn 等待 tree 槽位的超时时间。 */
+  readonly spawnQueueTimeoutMs?: number;
 
   // --- 文件读取缓存（CC readFileState 对应）---
   readonly fileCache?: FileReadCache;

@@ -45,7 +45,7 @@ import type { ToolContext } from '../tools/types';
 import type { ToolResolver } from '../tools/dispatch/toolResolver';
 import type { SubagentResult } from './subagentExecutorTypes';
 import type { SubagentExecutorPort } from './subagentExecutorPort';
-import { createTextMessage, type AgentMessage } from './spawnGuard';
+import { createTextMessage, getSpawnGuard, type AgentMessage } from './spawnGuard';
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
 import { TaskDAG, getDAGScheduler, type SchedulerResult } from '../scheduler';
@@ -403,14 +403,21 @@ export class ParallelAgentCoordinator extends EventEmitter {
     }
 
     const startTime = Date.now();
-
-    this.emit('task:start', { taskId: task.id, role: task.role });
-
-    // Create per-task AbortController for graceful shutdown
-    const taskAbortController = new AbortController();
-    this.abortControllers.set(task.id, taskAbortController);
+    let slotLease: { release: () => void } | undefined;
 
     try {
+      const treeId = toolContext.spawnTreeId || toolContext.sessionId || 'default';
+      slotLease = await getSpawnGuard().acquireSlot({
+        treeId,
+        timeoutMs: toolContext.spawnQueueTimeoutMs,
+      });
+
+      this.emit('task:start', { taskId: task.id, role: task.role });
+
+      // Create per-task AbortController for graceful shutdown
+      const taskAbortController = new AbortController();
+      this.abortControllers.set(task.id, taskAbortController);
+
       // Execute task
       const executor = await this.getSubagentExecutor();
 
@@ -513,6 +520,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
       this.schedulePersist();
 
       return failedResult;
+    } finally {
+      slotLease?.release();
     }
   }
 

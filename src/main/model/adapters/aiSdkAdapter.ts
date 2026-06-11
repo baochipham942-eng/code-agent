@@ -41,7 +41,7 @@ import { MODEL_API_ENDPOINTS, PROVIDER_TIMEOUT, SSE_FIRST_BYTE_TIMEOUT, SSE_INAC
 import { createLogger } from '../../services/infra/logger';
 import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/providerResolution';
-import { withTransientRetry, isTransientError } from '../providers/retryStrategy';
+import { withTransientRetry, isTransientError, abortableSleep } from '../providers/retryStrategy';
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
 import { getProviderLimiter } from '../concurrencyLimiter';
 import { convertToolsToOpenAI, getHttpsAgent } from '../providers/shared';
@@ -975,8 +975,9 @@ async function streamViaAiSdk(params: {
       // delta 之前的瞬态失败才重试，复用项目 isTransientError 策略（与旧路径同一套护栏）。
       if (!emittedOutput && attempt < maxRetries && !signal?.aborted && isTransientError(msg, code)) {
         logger.warn(`[AiSdkAdapter] 流式瞬态错误 "${msg}" (code=${code})，首字节前重试 (${attempt + 1}/${maxRetries})`);
-        await new Promise((r) => setTimeout(r, STREAM_RETRY_BASE_DELAY_MS * (attempt + 1)));
-        continue;
+        // 可中断退避（codex audit R2 对称应用）：abort 立即醒来，醒后已 abort 则不再重试
+        await abortableSleep(STREAM_RETRY_BASE_DELAY_MS * (attempt + 1), signal);
+        if (!signal?.aborted) continue;
       }
       healthMonitor.recordFailure(config.provider);
       if (!signal?.aborted) {

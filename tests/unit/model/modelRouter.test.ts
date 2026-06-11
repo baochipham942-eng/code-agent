@@ -106,10 +106,11 @@ vi.mock('../../../src/main/platform/windowBridge', () => ({
   broadcastToRenderer: broadcastToRendererMock,
 }));
 
-// Mock retryStrategy
-vi.mock('../../../src/main/model/providers/retryStrategy', () => ({
-  isFallbackEligible: vi.fn().mockReturnValue(true),
-}));
+// Mock retryStrategy（保留 abortableSleep 等真实实现，只桩 isFallbackEligible）
+vi.mock('../../../src/main/model/providers/retryStrategy', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/main/model/providers/retryStrategy')>();
+  return { ...actual, isFallbackEligible: vi.fn().mockReturnValue(true) };
+});
 
 describe('ModelRouter', () => {
   let router: ModelRouter;

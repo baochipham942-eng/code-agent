@@ -214,7 +214,7 @@ export class FallbackEligibleError extends Error {
 }
 
 /** 可被 AbortSignal 立即唤醒的 sleep（唤醒后由调用方检查 aborted 决定去留） */
-function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (signal?.aborted) {
       resolve();

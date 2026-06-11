@@ -12,7 +12,7 @@ import type {
 } from '../../shared/contract';
 import { PROVIDER_REGISTRY } from './providerRegistry';
 import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS } from '../../shared/constants';
-import { isFallbackEligible } from './providers/retryStrategy';
+import { isFallbackEligible, abortableSleep } from './providers/retryStrategy';
 import { getModelMaxOutputTokens } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import { getInferenceCache } from './inferenceCache';
@@ -852,7 +852,8 @@ export class ModelRouter {
         `[ModelRouter] Retrying selected artifact provider ${config.provider}/${config.model} after transient ${fallbackCategory} (${attempt + 1}/${ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS.length}, firstByteTimeout=${retryOptions.firstByteTimeoutMs}ms)`
       );
 
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      // 可中断退避（codex audit R2 对称应用）：abort 立即醒来，醒后已 abort 则放弃重试
+      await abortableSleep(delay, signal);
       if (signal?.aborted) return null;
 
       try {

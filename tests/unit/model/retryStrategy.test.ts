@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  abortableSleep,
   extractRetryAfterMs,
   isFallbackEligible,
   isTransientError,
@@ -433,6 +434,47 @@ describe('Retry Strategy', () => {
       'input is too long for requested model',
     ])('treats "%s" as non-retryable', (msg) => {
       expect(isTransientError(msg)).toBe(false);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // abortableSleep（codex audit R2 对称应用：导出供 aiSdkAdapter/modelRouter 复用）
+  // --------------------------------------------------------------------------
+  describe('abortableSleep', () => {
+    it('abort 时立即醒来，不等满延迟', async () => {
+      vi.useFakeTimers();
+      try {
+        const controller = new AbortController();
+        let resolved = false;
+        const sleep = abortableSleep(60_000, controller.signal).then(() => { resolved = true; });
+        controller.abort();
+        // fake timers 下不推时间：只有 abort 监听能唤醒它
+        await sleep;
+        expect(resolved).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('未 abort 时按延迟正常醒来', async () => {
+      vi.useFakeTimers();
+      try {
+        let resolved = false;
+        const sleep = abortableSleep(1_000).then(() => { resolved = true; });
+        await vi.advanceTimersByTimeAsync(999);
+        expect(resolved).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        await sleep;
+        expect(resolved).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('signal 已 aborted 时同步直通', async () => {
+      const controller = new AbortController();
+      controller.abort();
+      await expect(abortableSleep(60_000, controller.signal)).resolves.toBeUndefined();
     });
   });
 });

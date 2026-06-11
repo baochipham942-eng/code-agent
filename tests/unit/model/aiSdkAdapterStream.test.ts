@@ -216,6 +216,25 @@ describe('inferenceViaAiSdk —— emittedOutput 闸门重试', () => {
     ).rejects.toThrow(/ECONNRESET/);
     expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
   });
+
+  it('退避等待期间 abort：立即醒来抛原错误，不再等满延迟或重试（codex audit R2 对称应用）', async () => {
+    // 每次调用都失败：若错误地重试，第二次调用会被计数捕获
+    vi.mocked(streamText).mockImplementation(() =>
+      fakeStream([{ type: 'error', error: new Error('ECONNRESET') }]),
+    );
+    const col = makeCollector();
+    const controller = new AbortController();
+    // 首次失败后进入 1000ms 退避：25ms 时 abort，应立即醒来
+    setTimeout(() => controller.abort(), 25);
+
+    const start = Date.now();
+    await expect(
+      inferenceViaAiSdk([{ role: 'user', content: 'x' }], [], CONFIG, col.onStream, controller.signal),
+    ).rejects.toThrow(/ECONNRESET/);
+
+    expect(Date.now() - start).toBeLessThan(500); // 没等满 1000ms 退避
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1); // abort 后没有再重试
+  });
 });
 
 describe('inferenceViaAiSdk —— 路径选择', () => {

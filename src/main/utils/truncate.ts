@@ -23,6 +23,14 @@ export function truncateMiddle(
   if (text.length <= maxLength) return text;
 
   const reserveForMarker = 60; // "[N characters truncated]" 标记预留
+  // 预算 <= 0（maxLength <= 预留）时头尾 substring 全空，只剩可能超长的纯标记
+  // → 降级走头部截断（保留行边界偏好），codex audit LOW 修订
+  if (maxLength <= reserveForMarker) {
+    const headPart = text.substring(0, maxLength);
+    const headEnd = headPart.lastIndexOf('\n');
+    const cleanHead = headEnd > maxLength * 0.5 ? headPart.substring(0, headEnd) : headPart;
+    return `${cleanHead}\n... (output truncated)`;
+  }
   const budget = maxLength - reserveForMarker;
   const headBudget = Math.floor(budget * headRatio);
   const tailBudget = budget - headBudget;

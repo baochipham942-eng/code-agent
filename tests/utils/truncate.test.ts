@@ -67,6 +67,34 @@ describe('truncateMiddle', () => {
     expect(truncateMiddle(text, 10)).toBe(text);
   });
 
+  // codex audit LOW：maxLength <= 60（reserveForMarker）时预算为负，
+  // 头尾 substring 全空，输出只剩纯标记且可能超过 maxLength → 降级走头部截断
+  it('degrades to head truncation when maxLength <= marker reserve (60)', () => {
+    const text = Array.from({ length: 50 }, (_, i) => `line ${i + 1} content`).join('\n');
+    const result = truncateMiddle(text, 50);
+
+    // 头部内容必须保住（负预算下现状是全丢，只剩标记）
+    expect(result).toContain('line 1');
+    expect(result).toContain('truncated');
+    // 输出不随 removed 数字膨胀：最多 maxLength + 头部截断标记余量
+    expect(result.length).toBeLessThanOrEqual(50 + 23);
+  });
+
+  it('tiny maxLength does not emit oversized marker-only output', () => {
+    const text = 'x'.repeat(10_000);
+    const result = truncateMiddle(text, 10);
+    expect(result.length).toBeLessThanOrEqual(10 + 23);
+  });
+
+  it('degraded head truncation still prefers line boundaries', () => {
+    const text = 'Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10';
+    const result = truncateMiddle(text, 40);
+    const lines = result.split('\n').filter(l => l.trim() && !l.includes('truncated'));
+    for (const line of lines) {
+      expect(line).toMatch(/^Line \d+$/);
+    }
+  });
+
   it('preserves error message at start and status at end', () => {
     // Simulate typical command output: error at top, summary at bottom
     const lines = [

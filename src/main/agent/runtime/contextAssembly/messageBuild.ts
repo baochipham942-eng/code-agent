@@ -35,6 +35,7 @@ import {
 } from '../../../prompts/artifactGeneration';
 import { buildActiveAgentContext, drainCompletionNotifications } from '../../../agent/activeAgentContext';
 import { getDeferredToolsSummary } from '../../../tools/dispatch/toolDefinitions';
+import { getCheckpointWriterService } from '../../checkpointWriterService';
 import { estimateModelMessageTokens, estimateTokens } from '../../../context/tokenOptimizer';
 import { CompressionState } from '../../../context/compressionState';
 import { getContextInterventionState } from '../../../context/contextInterventionState';
@@ -990,6 +991,19 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   } catch (error) {
     logger.error('[ContextAssembly] Compression pipeline evaluation failed, falling back to uncompressed transcript:', error);
     ctx.runtime.compressionState = new CompressionState();
+  }
+
+  if (!ctx.runtime.agentId) {
+    try {
+      getCheckpointWriterService().maybeTriggerPeriodic({
+        sessionId: ctx.runtime.sessionId,
+        workingDirectory: ctx.runtime.workingDirectory,
+        messages: ctx.runtime.messages,
+        rootDir: ctx.runtime.checkpointRootDir,
+      });
+    } catch (error) {
+      logger.debug('[ContextAssembly] checkpoint writer periodic trigger skipped:', error);
+    }
   }
 
   // Allowlist 在循环内不变（只取决于 artifactRepairGuard），提到外面避免重复计算

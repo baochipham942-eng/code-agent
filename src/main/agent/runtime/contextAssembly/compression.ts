@@ -7,6 +7,9 @@ import { getContextEventLedger } from '../../../context/contextEventLedger';
 import { compactMessagesWithSummary } from '../../../context/compactionService';
 import { estimateTokens } from '../../../context/tokenOptimizer';
 import { assessContextPressure } from '../../../context/contextPressureController';
+import { tryInsertCheckpointRebuildBoundary } from '../../../context/checkpoint/runtimeBoundary';
+import { readExistingCheckpointStore, resolveCheckpointStorePaths } from '../../../context/checkpoint/store';
+import { validateCheckpointDocument } from '../../../context/checkpoint/validator';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { fileReadTracker } from '../../../tools/fileReadTracker';
 import { dataFingerprintStore } from '../../../tools/dataFingerprint';
@@ -20,6 +23,7 @@ import { getSessionTodos } from '../../../agent/todoParser';
 import type { ContextAssemblyCtx } from './shared';
 import { cachedReaddirSync, logger } from './shared';
 import { persistRuntimeState } from '../runtimeStatePersistence';
+import { getCheckpointWriterService } from '../../checkpointWriterService';
 
 let toolDefTokensCache: { signature: string; tokens: number } | null = null;
 
@@ -280,6 +284,19 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
 
     const compressorConfig = ctx.runtime.autoCompressor.getConfig();
     const health = getContextHealthService().get(ctx.runtime.sessionId);
+    const paths = resolveCheckpointStorePaths({
+      sessionId: ctx.runtime.sessionId,
+      workingDirectory: ctx.runtime.workingDirectory,
+      rootDir: ctx.runtime.checkpointRootDir,
+    });
+    const existingCheckpoint = !ctx.runtime.agentId
+      ? await readExistingCheckpointStore(paths)
+      : null;
+    const checkpointRebuildAvailable = Boolean(
+      existingCheckpoint
+      && validateCheckpointDocument(existingCheckpoint.checkpoint).activeIntentHasVerbatimQuote,
+    );
+    const checkpointWatermark = ctx.runtime.messages.at(-1)?.id;
 
     // P2-full/G11: 单一压力决策点 —— 绝对 token 阈值、百分比 warning、Pipeline 的
     // autocompact-needed 信号，三者统一在 ContextPressureController 里裁定，不再各自内联。
@@ -290,6 +307,10 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
       usageRatio: health ? health.usagePercent / 100 : undefined,
       warningThreshold: compressorConfig.warningThreshold,
       pipelineAutocompactNeeded: ctx.runtime.pipelineAutocompactNeeded,
+      checkpointRebuildAvailable,
+      checkpointRebuildAlreadyInserted: checkpointWatermark !== undefined
+        && ctx.runtime.checkpointRebuildLastWatermarkId === checkpointWatermark,
+      isMainAgent: !ctx.runtime.agentId,
       compressionEnabled: compressorConfig.enabled,
     });
     // one-shot 信号：评估后立即清零，避免跨 turn 残留
@@ -297,7 +318,7 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
 
     if (decision.action === 'none') return;
 
-    logger.info(`[AgentLoop] Context pressure (${decision.trigger}): ${decision.reason} — triggering compaction`);
+    logger.info(`[AgentLoop] Context pressure (${decision.trigger}): ${decision.reason} — triggering ${decision.action}`);
 
     // Emit context_compacting event (Claude Code style) — 现在所有触发路径统一发，
     // 不再只有 token-threshold 路径发。
@@ -309,6 +330,30 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
         messagesCount: ctx.runtime.messages.length,
       },
     } as AgentEvent);
+
+    if (decision.action === 'checkpoint-rebuild') {
+      getCheckpointWriterService().trigger({
+        sessionId: ctx.runtime.sessionId,
+        workingDirectory: ctx.runtime.workingDirectory,
+        messages: ctx.runtime.messages,
+        reason: 'pressure',
+        rootDir: ctx.runtime.checkpointRootDir,
+      });
+      const boundary = await tryInsertCheckpointRebuildBoundary(ctx.runtime);
+      if (boundary.inserted) {
+        persistRuntimeState(ctx.runtime, { compressionState: true, persistentSystemContext: false });
+        logger.info('[AgentLoop] Checkpoint rebuild boundary inserted before pure compaction', {
+          sessionId: ctx.runtime.sessionId,
+          compactedMessageCount: boundary.compactedMessageCount,
+          boundaryMessageId: boundary.boundaryMessageId,
+        });
+        return;
+      }
+      logger.warn('[AgentLoop] Checkpoint rebuild boundary unavailable, falling back to summary compaction', {
+        sessionId: ctx.runtime.sessionId,
+        reason: boundary.reason,
+      });
+    }
 
     const preserveCount = compressorConfig.preserveRecentCount;
     const compactionResult = await compactMessagesWithSummary({

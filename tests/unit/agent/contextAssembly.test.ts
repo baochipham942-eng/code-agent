@@ -3,10 +3,20 @@
 // Verifies runtime model input honors context interventions.
 // ============================================================================
 
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import path from 'path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import { CompressionPipeline } from '../../../src/main/context/compressionPipeline';
 import { CompressionState } from '../../../src/main/context/compressionState';
+import {
+  createCheckpointTemplate,
+  ensureCheckpointStore,
+  replaceSectionBody,
+  resolveCheckpointStorePaths,
+  writeCheckpointFile,
+} from '../../../src/main/context/checkpoint';
 import { getContextInterventionState } from '../../../src/main/context/contextInterventionState';
 import { getContextHealthService } from '../../../src/main/context/contextHealthService';
 
@@ -1727,6 +1737,87 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     expect(ctx.messages[0].role).toBe('system');
     expect(ctx.messages[1].id).toBe('m4');
     expect(ctx.messages[2].id).toBe('m5');
+  });
+
+  it('prefers checkpoint rebuild boundary over pure summary compaction when a checkpoint exists', async () => {
+    const sessionId = `session-checkpoint-rebuild-${Date.now()}`;
+    const checkpointRootDir = mkdtempSync(path.join(tmpdir(), 'context-assembly-checkpoint-'));
+    const checkpointPaths = resolveCheckpointStorePaths({
+      sessionId,
+      workingDirectory: process.cwd(),
+      rootDir: checkpointRootDir,
+    });
+    await ensureCheckpointStore(checkpointPaths);
+    await writeCheckpointFile(
+      checkpointPaths.checkpointPath,
+      replaceSectionBody(createCheckpointTemplate(), 1, '> "implement checkpoint rebuild"'),
+    );
+    const messages = [
+      buildMessage('old-u1', 'user', 'old request'),
+      buildMessage('old-a1', 'assistant', 'old answer'),
+      buildMessage('old-u2', 'user', 'middle request'),
+      buildMessage('old-a2', 'assistant', 'middle answer'),
+      buildMessage('tail-u1', 'user', 'recent request'),
+      buildMessage('tail-a1', 'assistant', 'recent answer '.repeat(50_000)),
+      buildMessage('tail-u2', 'user', 'next request'),
+    ];
+    vi.mocked(getContextHealthService).mockReturnValue({
+      get: vi.fn().mockReturnValue({
+        usagePercent: 91,
+        currentTokens: 116000,
+        maxTokens: 128000,
+      }),
+      update: vi.fn(),
+    } as never);
+
+    const ctx = {
+      sessionId,
+      agentId: undefined,
+      messages,
+      hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
+      onEvent: vi.fn(),
+      modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
+      toolRegistry: {
+        getDeferredToolsSummary: vi.fn().mockReturnValue(''),
+      },
+      workingDirectory: process.cwd(),
+      isDefaultWorkingDirectory: true,
+      persistentSystemContext: [],
+      isSimpleTaskMode: false,
+      compressionPipeline: new CompressionPipeline(),
+      compressionState: new CompressionState(),
+      checkpointRootDir,
+      pipelineAutocompactNeeded: true,
+      autoCompressor: {
+        shouldTriggerByTokens: vi.fn().mockReturnValue(false),
+        getConfig: vi.fn().mockReturnValue({
+          enabled: true,
+          warningThreshold: 0.75,
+          preserveRecentCount: 2,
+        }),
+        shouldWrapUp: vi.fn().mockReturnValue(false),
+        getCompactionCount: vi.fn().mockReturnValue(0),
+        getStats: vi.fn().mockReturnValue({ compressionCount: 0, totalSavedTokens: 0 }),
+        recordCompaction: vi.fn(),
+      },
+      systemPrompt: '',
+      hookManager: undefined,
+    };
+
+    const assembly = new ContextAssembly(ctx as never);
+    await assembly.checkAndAutoCompress();
+
+    expect(ctx.autoCompressor.recordCompaction).not.toHaveBeenCalled();
+    expect(ctx.messages[0]).toEqual(expect.objectContaining({
+      role: 'system',
+      isMeta: true,
+      content: expect.stringContaining('<checkpoint-rebuild>'),
+    }));
+    expect(ctx.messages.map((message: Message) => message.id).slice(1)).toEqual(['tail-u1', 'tail-a1', 'tail-u2']);
+    expect(ctx.onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'context_compressed',
+      data: expect.objectContaining({ strategy: 'checkpoint_rebuild_boundary' }),
+    }));
   });
 
   it('uses unified compaction service for percentage fallback instead of legacy autoCompressor', async () => {

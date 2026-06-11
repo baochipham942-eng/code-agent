@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- 既有超限文件（transcript FTS 接入前已 ~1199 行），拆分见 docs/audits/god-file-split-roadmap.md */
 // ============================================================================
 // SessionRepository - 会话 CRUD（sessions 表 + messages 表 + todos 表）
 // ============================================================================
@@ -12,6 +13,11 @@ import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '
 import { extractArtifacts } from '../../../agent/artifactExtractor';
 import { createLogger } from '../../infra/logger';
 import { generateFallbackShortDescription } from '../../../model/providers/shared';
+import {
+  TRANSCRIPT_FTS_BACKFILL_STATEMENTS,
+  TRANSCRIPT_FTS_BODY_COLUMN_INDEX,
+  type TranscriptKind,
+} from '../../../../shared/transcriptFts.sql';
 import type { StoredSession, StoredMessage } from '../../../protocol/types';
 
 export type { StoredSession, StoredMessage };
@@ -679,6 +685,187 @@ export class SessionRepository {
       logger.warn('[EpisodicFts] Backfill failed (non-blocking)', {
         error: err
       });
+      return 0;
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Transcript FTS（kind 分解索引，roadmap 2.1）— History 工具底层
+  // --------------------------------------------------------------------------
+
+  /**
+   * 按 kind 分解的转录全文检索（transcript_fts，BM25 排序）。
+   * 与 searchSessionMessagesFts 的差异：覆盖 tool_input/tool_output/reasoning，
+   * 支持 kind / toolName / 时间窗过滤。FTS 语法错误向上抛（调用方提示模型修正）。
+   */
+  searchTranscriptFts(
+    query: string,
+    options: {
+      limit?: number;
+      sessionId?: string;
+      kinds?: TranscriptKind[];
+      toolName?: string;
+      timeAfter?: number;
+      timeBefore?: number;
+      includeRewound?: boolean;
+    } = {}
+  ): Array<{
+    messageId: string;
+    sessionId: string;
+    kind: TranscriptKind;
+    toolName: string | null;
+    snippet: string;
+    timestamp: number;
+  }> {
+    const trimmed = query.trim();
+    if (trimmed.length < 3) {
+      return [];
+    }
+
+    const ftsQuery = normalizeFtsQuery(trimmed);
+    const limit = Math.max(1, Math.min(options.limit ?? 10, 50));
+    const conditions: string[] = [];
+    const params: unknown[] = [ftsQuery];
+
+    if (options.sessionId) {
+      conditions.push('f.session_id = ?');
+      params.push(options.sessionId);
+    }
+    if (options.kinds && options.kinds.length > 0) {
+      conditions.push(`f.kind IN (${options.kinds.map(() => '?').join(', ')})`);
+      params.push(...options.kinds);
+    }
+    if (options.toolName) {
+      conditions.push('f.tool_name = ?');
+      params.push(options.toolName);
+    }
+    if (options.timeAfter !== undefined) {
+      conditions.push('f.timestamp >= ?');
+      params.push(options.timeAfter);
+    }
+    if (options.timeBefore !== undefined) {
+      conditions.push('f.timestamp <= ?');
+      params.push(options.timeBefore);
+    }
+    params.push(limit);
+
+    const extra = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
+    const snippetExpr = `snippet(transcript_fts, ${TRANSCRIPT_FTS_BODY_COLUMN_INDEX}, '«', '»', ' … ', 24)`;
+    // meta/loop 已在 trigger 期排除；查询期只需补 rewound 可见性过滤
+    const sql = options.includeRewound
+      ? `
+        SELECT f.message_id, f.session_id, f.kind, f.tool_name, f.timestamp, ${snippetExpr} AS snip
+        FROM transcript_fts f
+        WHERE f.body MATCH ? ${extra}
+        ORDER BY rank, f.timestamp DESC
+        LIMIT ?
+        `
+      : `
+        SELECT f.message_id, f.session_id, f.kind, f.tool_name, f.timestamp, ${snippetExpr} AS snip
+        FROM transcript_fts f
+        JOIN messages m ON m.id = f.message_id
+        WHERE f.body MATCH ? ${extra}
+          AND ${activeMessageWhere('m')}
+        ORDER BY rank, f.timestamp DESC
+        LIMIT ?
+        `;
+
+    const rows = this.db.prepare(sql).all(...params) as SQLiteRow[];
+    return rows.map((row) => ({
+      messageId: String(row.message_id ?? ''),
+      sessionId: String(row.session_id ?? ''),
+      kind: String(row.kind ?? '') as TranscriptKind,
+      toolName: row.tool_name ? String(row.tool_name) : null,
+      snippet: String(row.snip ?? ''),
+      timestamp: Number(row.timestamp ?? 0)
+    }));
+  }
+
+  /**
+   * 取锚点消息 ±N 条上下文（同 session，按 timestamp + rowid 稳定排序）。
+   * 邻居过滤 meta/loop/rewound；锚点本身即使被隐藏也返回（matched=true）。
+   * 锚点不存在返回 null。
+   */
+  getTranscriptAround(
+    messageId: string,
+    options: { before?: number; after?: number } = {}
+  ): { sessionId: string; messages: Array<{ message: Message; matched: boolean }> } | null {
+    const clampWindow = (value: number | undefined, fallback: number): number => {
+      if (value === undefined || !Number.isFinite(value)) return fallback;
+      return Math.max(0, Math.min(Math.floor(value), 50));
+    };
+    const before = clampWindow(options.before, 5);
+    const after = clampWindow(options.after, 5);
+
+    const anchor = this.db
+      .prepare('SELECT rowid AS rid, session_id, timestamp FROM messages WHERE id = ?')
+      .get(messageId) as { rid: number; session_id: string; timestamp: number } | undefined;
+    if (!anchor) {
+      return null;
+    }
+
+    const visible = `${visibleHistoryMessageWhere('m')}`;
+    const beforeRows = this.db
+      .prepare(
+        `
+        SELECT m.* FROM messages m
+        WHERE m.session_id = ?
+          AND (m.timestamp < ? OR (m.timestamp = ? AND m.rowid <= ?))
+          AND (${visible} OR m.id = ?)
+        ORDER BY m.timestamp DESC, m.rowid DESC
+        LIMIT ?
+        `
+      )
+      .all(anchor.session_id, anchor.timestamp, anchor.timestamp, anchor.rid, messageId, before + 1) as SQLiteRow[];
+
+    const afterRows = this.db
+      .prepare(
+        `
+        SELECT m.* FROM messages m
+        WHERE m.session_id = ?
+          AND (m.timestamp > ? OR (m.timestamp = ? AND m.rowid > ?))
+          AND ${visible}
+        ORDER BY m.timestamp ASC, m.rowid ASC
+        LIMIT ?
+        `
+      )
+      .all(anchor.session_id, anchor.timestamp, anchor.timestamp, anchor.rid, after) as SQLiteRow[];
+
+    const ordered = [...beforeRows.reverse(), ...afterRows];
+    return {
+      sessionId: anchor.session_id,
+      messages: ordered.map((row) => ({
+        message: this.rowToMessage(row),
+        matched: String(row.id) === messageId
+      }))
+    };
+  }
+
+  /**
+   * Backfill transcript_fts from existing messages（升级后首次启动）。
+   * 只在 transcript_fts 为空且 messages 非空时执行；幂等。
+   */
+  backfillTranscriptFts(): number {
+    try {
+      const ftsRow = this.db.prepare('SELECT COUNT(*) as c FROM transcript_fts').get() as { c: number } | undefined;
+      const msgRow = this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number } | undefined;
+      if (Number(ftsRow?.c ?? 0) > 0 || Number(msgRow?.c ?? 0) === 0) {
+        return 0;
+      }
+
+      logger.info(`[TranscriptFts] Backfilling from ${Number(msgRow?.c ?? 0)} messages...`);
+      let inserted = 0;
+      const run = this.db.transaction(() => {
+        for (const stmt of TRANSCRIPT_FTS_BACKFILL_STATEMENTS) {
+          const result = this.db.prepare(stmt).run();
+          inserted += Number(result.changes ?? 0);
+        }
+      });
+      run();
+      logger.info(`[TranscriptFts] Backfill complete: ${inserted} rows`);
+      return inserted;
+    } catch (err) {
+      logger.warn('[TranscriptFts] Backfill failed (non-blocking)', { error: err });
       return 0;
     }
   }

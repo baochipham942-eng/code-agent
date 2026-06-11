@@ -125,6 +125,7 @@ import { visualEditSchema } from './vision/visualEdit.schema';
 import { memoryReadSchema } from './lightMemory/memoryRead.schema';
 import { memoryWriteSchema } from './lightMemory/memoryWrite.schema';
 import { episodicRecallSchema } from './lightMemory/episodicRecall.schema';
+import { historySchema } from './lightMemory/history.schema';
 import { proposeRoleSchema } from './roleAuthoring/proposeRole.schema';
 
 // planning/
@@ -612,6 +613,10 @@ export function registerMigratedTools(
   registry.register(
     episodicRecallSchema,
     async () => (await import('./lightMemory/episodicRecall')).episodicRecallModule,
+  );
+  registry.register(
+    historySchema,
+    async () => (await import('./lightMemory/history')).historyModule,
   );
 
   // roleAuthoring (1): propose_role —— 对话式建角色起草

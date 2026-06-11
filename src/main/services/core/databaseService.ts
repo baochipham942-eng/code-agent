@@ -201,6 +201,8 @@ export class DatabaseService {
 
       // 首次升级后：从已有 messages 表 backfill episodic FTS 索引（幂等）
       this.sessionRepo.backfillSessionMessagesFts();
+      // 同理：transcript FTS（kind 分解索引，roadmap 2.1）
+      this.sessionRepo.backfillTranscriptFts();
     } catch (err) {
       // 初始化失败时回退状态，避免 this.db 已赋值但 Repository 未初始化
       logger.error('Database initialization failed, resetting state:', err);
@@ -618,6 +620,20 @@ export class DatabaseService {
   }> {
     this.ensureDb();
     return this.sessionRepo.searchSessionMessagesFts(query, options);
+  }
+  searchTranscriptFts(
+    query: string,
+    options?: Parameters<import('./repositories').SessionRepository['searchTranscriptFts']>[1]
+  ): ReturnType<import('./repositories').SessionRepository['searchTranscriptFts']> {
+    this.ensureDb();
+    return this.sessionRepo.searchTranscriptFts(query, options);
+  }
+  getTranscriptAround(
+    messageId: string,
+    options?: Parameters<import('./repositories').SessionRepository['getTranscriptAround']>[1]
+  ): ReturnType<import('./repositories').SessionRepository['getTranscriptAround']> {
+    this.ensureDb();
+    return this.sessionRepo.getTranscriptAround(messageId, options);
   }
 
   // --- MemoryRepository ---

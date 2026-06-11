@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- 既有贴线文件（transcript FTS 对齐前已 ~1250 行），拆分另议 */
 // ============================================================================
 // CLI Database Service - 独立于 Electron 的数据库层
 // ============================================================================
@@ -16,6 +17,12 @@ import type {
   TokenUsage,
   PRLink,
 } from '../shared/contract';
+import {
+  applyTranscriptFtsSchema,
+  TRANSCRIPT_FTS_BACKFILL_STATEMENTS,
+  TRANSCRIPT_FTS_BODY_COLUMN_INDEX,
+  type TranscriptKind,
+} from '../shared/transcriptFts.sql';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -384,6 +391,20 @@ export class CLIDatabaseService {
           WHERE COALESCE(is_meta, 0) = 0
             AND ${loopInternalMessageWhere('messages')}
         `);
+      }
+    } catch {
+      // backfill 失败不阻塞 CLI 启动
+    }
+
+    // Transcript FTS5 — 按 kind 分解的转录索引（roadmap 2.1），DDL 与 Electron 共用
+    applyTranscriptFtsSchema(this.db);
+    try {
+      const tFtsCount = (this.db.prepare('SELECT COUNT(*) as c FROM transcript_fts').get() as { c: number } | undefined)?.c ?? 0;
+      const tMsgCount = (this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number } | undefined)?.c ?? 0;
+      if (tFtsCount === 0 && tMsgCount > 0) {
+        for (const stmt of TRANSCRIPT_FTS_BACKFILL_STATEMENTS) {
+          this.db.prepare(stmt).run();
+        }
       }
     } catch {
       // backfill 失败不阻塞 CLI 启动
@@ -1075,6 +1096,154 @@ export class CLIDatabaseService {
       // FTS 表不存在或查询失败 — 返回空，不阻塞调用方
       return [];
     }
+  }
+
+  /**
+   * Transcript FTS（kind 分解索引，roadmap 2.1）— 与 Electron
+   * SessionRepository.searchTranscriptFts 对齐，History 工具 CLI 模式底层。
+   */
+  searchTranscriptFts(
+    query: string,
+    options: {
+      limit?: number;
+      sessionId?: string;
+      kinds?: TranscriptKind[];
+      toolName?: string;
+      timeAfter?: number;
+      timeBefore?: number;
+    } = {},
+  ): Array<{
+    messageId: string;
+    sessionId: string;
+    kind: TranscriptKind;
+    toolName: string | null;
+    snippet: string;
+    timestamp: number;
+  }> {
+    if (!this.db) return [];
+    const trimmed = query.trim();
+    if (trimmed.length < 3) return [];
+
+    const ftsQuery = trimmed.startsWith('"')
+      ? trimmed
+      : '"' + trimmed.replace(/"/g, '""') + '"';
+    const limit = Math.max(1, Math.min(options.limit ?? 10, 50));
+    const conditions: string[] = [];
+    const params: unknown[] = [ftsQuery];
+
+    if (options.sessionId) {
+      conditions.push('f.session_id = ?');
+      params.push(options.sessionId);
+    }
+    if (options.kinds && options.kinds.length > 0) {
+      conditions.push(`f.kind IN (${options.kinds.map(() => '?').join(', ')})`);
+      params.push(...options.kinds);
+    }
+    if (options.toolName) {
+      conditions.push('f.tool_name = ?');
+      params.push(options.toolName);
+    }
+    if (options.timeAfter !== undefined) {
+      conditions.push('f.timestamp >= ?');
+      params.push(options.timeAfter);
+    }
+    if (options.timeBefore !== undefined) {
+      conditions.push('f.timestamp <= ?');
+      params.push(options.timeBefore);
+    }
+    params.push(limit);
+
+    const extra = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
+    const rows = this.db
+      .prepare(
+        `
+        SELECT f.message_id, f.session_id, f.kind, f.tool_name, f.timestamp,
+               snippet(transcript_fts, ${TRANSCRIPT_FTS_BODY_COLUMN_INDEX}, '«', '»', ' … ', 24) AS snip
+        FROM transcript_fts f
+        JOIN messages m ON m.id = f.message_id
+        WHERE f.body MATCH ? ${extra}
+          AND COALESCE(m.visibility, 'active') = 'active'
+        ORDER BY rank, f.timestamp DESC
+        LIMIT ?
+        `,
+      )
+      .all(...params) as SQLiteRow[];
+
+    return rows.map((row) => ({
+      messageId: String(row.message_id ?? ''),
+      sessionId: String(row.session_id ?? ''),
+      kind: String(row.kind ?? '') as TranscriptKind,
+      toolName: row.tool_name ? String(row.tool_name) : null,
+      snippet: String(row.snip ?? ''),
+      timestamp: Number(row.timestamp ?? 0),
+    }));
+  }
+
+  /**
+   * 锚点 ±N 条消息上下文（与 Electron SessionRepository.getTranscriptAround 对齐）。
+   */
+  getTranscriptAround(
+    messageId: string,
+    options: { before?: number; after?: number } = {},
+  ): { sessionId: string; messages: Array<{ message: Message; matched: boolean }> } | null {
+    if (!this.db) return null;
+    const clampWindow = (value: number | undefined, fallback: number): number => {
+      if (value === undefined || !Number.isFinite(value)) return fallback;
+      return Math.max(0, Math.min(Math.floor(value), 50));
+    };
+    const before = clampWindow(options.before, 5);
+    const after = clampWindow(options.after, 5);
+
+    const anchor = this.db
+      .prepare('SELECT rowid AS rid, session_id, timestamp FROM messages WHERE id = ?')
+      .get(messageId) as { rid: number; session_id: string; timestamp: number } | undefined;
+    if (!anchor) return null;
+
+    const visible = visibleHistoryMessageWhere('m');
+    const beforeRows = this.db
+      .prepare(
+        `
+        SELECT m.* FROM messages m
+        WHERE m.session_id = ?
+          AND (m.timestamp < ? OR (m.timestamp = ? AND m.rowid <= ?))
+          AND (${visible} OR m.id = ?)
+        ORDER BY m.timestamp DESC, m.rowid DESC
+        LIMIT ?
+        `,
+      )
+      .all(anchor.session_id, anchor.timestamp, anchor.timestamp, anchor.rid, messageId, before + 1) as SQLiteRow[];
+    const afterRows = this.db
+      .prepare(
+        `
+        SELECT m.* FROM messages m
+        WHERE m.session_id = ?
+          AND (m.timestamp > ? OR (m.timestamp = ? AND m.rowid > ?))
+          AND ${visible}
+        ORDER BY m.timestamp ASC, m.rowid ASC
+        LIMIT ?
+        `,
+      )
+      .all(anchor.session_id, anchor.timestamp, anchor.timestamp, anchor.rid, after) as SQLiteRow[];
+
+    const toMessage = (row: SQLiteRow): Message => ({
+      id: row.id as string,
+      role: row.role as Message['role'],
+      content: (row.content as string) || '',
+      timestamp: row.timestamp as number,
+      toolCalls: row.tool_calls ? parseJson<NonNullable<Message['toolCalls']>>(String(row.tool_calls)) : undefined,
+      toolResults: row.tool_results ? parseJson<NonNullable<Message['toolResults']>>(String(row.tool_results)) : undefined,
+      thinking: (row.thinking as string) || undefined,
+      ...(row.is_meta ? { isMeta: true } : {}),
+    });
+
+    const ordered = [...beforeRows.reverse(), ...afterRows];
+    return {
+      sessionId: anchor.session_id,
+      messages: ordered.map((row) => ({
+        message: toMessage(row),
+        matched: String(row.id) === messageId,
+      })),
+    };
   }
 
   // --------------------------------------------------------------------------

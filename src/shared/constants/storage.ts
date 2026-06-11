@@ -36,6 +36,16 @@ export const MEMORY = {
   EPISODIC_RECALL_MAX_LIMIT: 10,
   /** EpisodicRecall 单条消息片段最大字符数 */
   EPISODIC_SNIPPET_MAX_CHARS: 300,
+  /** History 工具 search 默认返回条数 */
+  HISTORY_SEARCH_DEFAULT_LIMIT: 10,
+  /** History 工具 search 最大返回条数 */
+  HISTORY_SEARCH_MAX_LIMIT: 50,
+  /** History 工具 around 默认前后窗口（±N 条） */
+  HISTORY_AROUND_DEFAULT_WINDOW: 5,
+  /** History 工具 around 最大前后窗口 */
+  HISTORY_AROUND_MAX_WINDOW: 20,
+  /** History around 单段文本（content/thinking/tool output）最大字符数 */
+  HISTORY_PART_TEXT_MAX_CHARS: 1500,
   /** Skill injection: 会话启动时最多注入多少条 skill 记忆 */
   SKILL_MAX_INJECTION_COUNT: 3,
   /** Skill injection: 所有 skill 拼起来的字符上限（~token 预算，粗估 4 chars/token）。

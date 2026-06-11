@@ -1,4 +1,5 @@
 import type BetterSqlite3 from 'better-sqlite3';
+import { applyTranscriptFtsSchema } from '../../../../shared/transcriptFts.sql';
 import type { createLogger } from '../../infra/logger';
 
 type Logger = ReturnType<typeof createLogger>;
@@ -871,6 +872,10 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
         OR COALESCE(content, '') LIKE '%[[LOOP_WAIT]]%'
     )
   `);
+
+  // Transcript FTS5 — 按 kind 分解的转录全文索引（roadmap 2.1，History 工具底层）
+  // 表 + triggers 的 DDL 在 src/shared/transcriptFts.sql.ts（与 CLI / 单测共用）
+  applyTranscriptFtsSchema(db);
 
   // Turn Snapshots — 调试快照（与 CLIDatabaseService 共用同一张表）
   db.exec(`

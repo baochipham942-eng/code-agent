@@ -11,10 +11,14 @@
 export type Replacer = (content: string, find: string) => Generator<string, void, unknown>;
 
 // Similarity thresholds for block anchor fallback matching
-// 注：MiMo 原值单候选为 0.0（锚点命中即接受）。codex audit R1 HIGH 证明这会把
-// 嵌套错误块（首行 + 最近的 '}'）当成匹配并腐蚀源码，故单候选同样收紧到 0.3。
-const SINGLE_CANDIDATE_SIMILARITY_THRESHOLD = 0.3;
-const MULTIPLE_CANDIDATES_SIMILARITY_THRESHOLD = 0.3;
+// 注：相对 MiMo 上游有两处加固（codex audit R1/R2 各一例 HIGH 实证）：
+// 1. 单候选阈值 0.0 → 0.3：锚点命中即接受会把嵌套错误块当成匹配腐蚀源码；
+// 2. tail anchor 收集不再止于首个命中 + 相似度按完整 search 中间行数归一
+//    （缺失行计 0 分）：否则嵌套 '}' 形成的截断候选会以"部分行全等"胜出，
+//    multiEdit 拼接后留下原块残尾。
+const BLOCK_ANCHOR_SIMILARITY_THRESHOLD = 0.3;
+// 防御 brace 密集文件的候选爆炸（每个 start anchor × 每个 tail anchor）
+const MAX_BLOCK_ANCHOR_CANDIDATES = 64;
 
 export function levenshtein(a: string, b: string): number {
   // Handle empty strings
@@ -74,6 +78,41 @@ export const LineTrimmedReplacer: Replacer = function* (content, find) {
   }
 };
 
+/**
+ * 候选块相似度：search 中间行逐行与候选中间行比对（Levenshtein），
+ * 按 search 中间行总数归一——候选比 search 短时缺失行计 0 分，
+ * 截断候选（嵌套 '}' 误闭合）不再以"部分行全等"胜出。
+ */
+function scoreBlockCandidate(
+  originalLines: string[],
+  searchLines: string[],
+  startLine: number,
+  endLine: number,
+): number {
+  const searchBlockSize = searchLines.length;
+  const searchMiddleCount = searchBlockSize - 2;
+  if (searchMiddleCount <= 0) {
+    // No middle lines to compare, just accept based on anchors
+    return 1.0;
+  }
+
+  let similarity = 0;
+  for (let j = 1; j < searchBlockSize - 1; j++) {
+    const lineIdx = startLine + j;
+    if (lineIdx >= endLine) break; // 候选中间行耗尽，其余 search 行计 0 分
+    const originalLine = originalLines[lineIdx].trim();
+    const searchLine = searchLines[j].trim();
+    const maxLen = Math.max(originalLine.length, searchLine.length);
+    if (maxLen === 0) {
+      similarity += 1 / searchMiddleCount; // 双空行视为全等
+      continue;
+    }
+    const distance = levenshtein(originalLine, searchLine);
+    similarity += (1 - distance / maxLen) / searchMiddleCount;
+  }
+  return similarity;
+}
+
 export const BlockAnchorReplacer: Replacer = function* (content, find) {
   const originalLines = content.split('\n');
   const searchLines = find.split('\n');
@@ -88,111 +127,42 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
 
   const firstLineSearch = searchLines[0].trim();
   const lastLineSearch = searchLines[searchLines.length - 1].trim();
-  const searchBlockSize = searchLines.length;
 
-  // Collect all candidate positions where both anchors match
+  // Collect ALL candidate (start, end) anchor pairs — 不止于首个 tail anchor，
+  // 嵌套结构里首个 '}' 往往是内层闭合（codex audit R2 HIGH）
   const candidates: Array<{ startLine: number; endLine: number }> = [];
-  for (let i = 0; i < originalLines.length; i++) {
+  outer: for (let i = 0; i < originalLines.length; i++) {
     if (originalLines[i].trim() !== firstLineSearch) {
       continue;
     }
-
-    // Look for the matching last line after this first line
     for (let j = i + 2; j < originalLines.length; j++) {
       if (originalLines[j].trim() === lastLineSearch) {
         candidates.push({ startLine: i, endLine: j });
-        break; // Only match the first occurrence of the last line
+        if (candidates.length >= MAX_BLOCK_ANCHOR_CANDIDATES) break outer;
       }
     }
   }
 
-  // Return immediately if no candidates
   if (candidates.length === 0) {
     return;
   }
 
-  // Handle single candidate scenario (using relaxed threshold)
-  if (candidates.length === 1) {
-    const { startLine, endLine } = candidates[0];
-    const actualBlockSize = endLine - startLine + 1;
-
-    let similarity = 0;
-    const linesToCheck = Math.min(searchBlockSize - 2, actualBlockSize - 2); // Middle lines only
-
-    if (linesToCheck > 0) {
-      for (let j = 1; j < searchBlockSize - 1 && j < actualBlockSize - 1; j++) {
-        const originalLine = originalLines[startLine + j].trim();
-        const searchLine = searchLines[j].trim();
-        const maxLen = Math.max(originalLine.length, searchLine.length);
-        if (maxLen === 0) {
-          continue;
-        }
-        const distance = levenshtein(originalLine, searchLine);
-        similarity += (1 - distance / maxLen) / linesToCheck;
-
-        // Exit early when threshold is reached
-        if (similarity >= SINGLE_CANDIDATE_SIMILARITY_THRESHOLD) {
-          break;
-        }
-      }
-    } else {
-      // No middle lines to compare, just accept based on anchors
-      similarity = 1.0;
-    }
-
-    if (similarity >= SINGLE_CANDIDATE_SIMILARITY_THRESHOLD) {
-      let matchStartIndex = 0;
-      for (let k = 0; k < startLine; k++) {
-        matchStartIndex += originalLines[k].length + 1;
-      }
-      let matchEndIndex = matchStartIndex;
-      for (let k = startLine; k <= endLine; k++) {
-        matchEndIndex += originalLines[k].length;
-        if (k < endLine) {
-          matchEndIndex += 1; // Add newline character except for the last line
-        }
-      }
-      yield content.substring(matchStartIndex, matchEndIndex);
-    }
-    return;
-  }
-
-  // Calculate similarity for multiple candidates
   let bestMatch: { startLine: number; endLine: number } | null = null;
   let maxSimilarity = -1;
-
   for (const candidate of candidates) {
-    const { startLine, endLine } = candidate;
-    const actualBlockSize = endLine - startLine + 1;
-
-    let similarity = 0;
-    const linesToCheck = Math.min(searchBlockSize - 2, actualBlockSize - 2); // Middle lines only
-
-    if (linesToCheck > 0) {
-      for (let j = 1; j < searchBlockSize - 1 && j < actualBlockSize - 1; j++) {
-        const originalLine = originalLines[startLine + j].trim();
-        const searchLine = searchLines[j].trim();
-        const maxLen = Math.max(originalLine.length, searchLine.length);
-        if (maxLen === 0) {
-          continue;
-        }
-        const distance = levenshtein(originalLine, searchLine);
-        similarity += 1 - distance / maxLen;
-      }
-      similarity /= linesToCheck; // Average similarity
-    } else {
-      // No middle lines to compare, just accept based on anchors
-      similarity = 1.0;
-    }
-
+    const similarity = scoreBlockCandidate(
+      originalLines,
+      searchLines,
+      candidate.startLine,
+      candidate.endLine,
+    );
     if (similarity > maxSimilarity) {
       maxSimilarity = similarity;
       bestMatch = candidate;
     }
   }
 
-  // Threshold judgment
-  if (maxSimilarity >= MULTIPLE_CANDIDATES_SIMILARITY_THRESHOLD && bestMatch) {
+  if (maxSimilarity >= BLOCK_ANCHOR_SIMILARITY_THRESHOLD && bestMatch) {
     const { startLine, endLine } = bestMatch;
     let matchStartIndex = 0;
     for (let k = 0; k < startLine; k++) {
@@ -202,7 +172,7 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
     for (let k = startLine; k <= endLine; k++) {
       matchEndIndex += originalLines[k].length;
       if (k < endLine) {
-        matchEndIndex += 1;
+        matchEndIndex += 1; // Add newline character except for the last line
       }
     }
     yield content.substring(matchStartIndex, matchEndIndex);

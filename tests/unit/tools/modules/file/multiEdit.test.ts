@@ -204,6 +204,59 @@ describe('multiEditModule evidence metadata', () => {
     if (!result.ok) expect(result.code).toBe('AMBIGUOUS_MATCH');
   });
 
+  it('replaces the full nested-brace block, never splicing into a truncated range (codex audit R2)', async () => {
+    const original = [
+      'function foo() {',
+      '  if (ok) {',
+      '    return value;',
+      '  }',
+      '  return fallback;',
+      '}',
+      '',
+    ].join('\n');
+    const file = path.join(tmpDir, 'nested.ts');
+    await fs.writeFile(file, original, 'utf-8');
+    await fileReadTracker.recordReadWithStats(file);
+
+    const handler = await editModule.createHandler();
+    const result = await handler.execute(
+      {
+        file_path: file,
+        edits: [{
+          // old_text 与文件仅最后一个语句不同（模型记错了标识符），整块模糊匹配
+          old_text: [
+            'function foo() {',
+            '  if (ok) {',
+            '    return value;',
+            '  }',
+            '  return fallbackValue;',
+            '}',
+          ].join('\n'),
+          new_text: [
+            'function foo() {',
+            '  return value;',
+            '}',
+          ].join('\n'),
+        }],
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    const after = await fs.readFile(file, 'utf-8');
+    if (result.ok) {
+      // 若模糊命中，必须替换整个外层块——不允许把 new_text 拼进截断范围留下残尾
+      expect(after).toBe(['function foo() {', '  return value;', '}', ''].join('\n'));
+    } else {
+      // 拒绝匹配也可接受（NOT_FOUND），但文件绝不能被破坏
+      expect(after).toBe(original);
+    }
+    // 无论哪种结果，都不允许出现"残留的原尾部"腐蚀形态
+    expect(after).not.toContain('return fallback;\n}\n  return');
+    const closeBraces = (after.match(/^}/gm) || []).length;
+    expect(closeBraces).toBeLessThanOrEqual(1);
+  });
+
   it('does not use fuzzy fallback with replace_all (prevents indentation corruption, codex audit R1)', async () => {
     // Codex repro：candidate '  a();' 是 '    a();' 的子串，split/join 全量替换会腐蚀缩进。
     // 防护：fuzzy 回退仅限单点替换，replace_all 时直接 NOT_FOUND。

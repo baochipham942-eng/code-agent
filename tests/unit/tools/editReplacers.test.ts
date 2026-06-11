@@ -125,6 +125,54 @@ describe('BlockAnchorReplacer — 单候选误匹配防护 (codex audit R1 HIGH)
     const matches = [...BlockAnchorReplacer(content, find)];
     expect(matches).toHaveLength(1);
   });
+
+  it('picks the full outer block over a truncated inner-brace candidate (codex audit R2 HIGH)', () => {
+    // Codex repro：首个 '}' 是嵌套 if 的闭合，截断候选的前两行中间行完全相同，
+    // 必须考虑所有 tail anchor 并按完整 search 块长度打分，选外层完整块
+    const content = [
+      'function foo() {',
+      '  if (ok) {',
+      '    return value;',
+      '  }',
+      '  return fallback;',
+      '}',
+    ].join('\n');
+    const find = [
+      'function foo() {',
+      '  if (ok) {',
+      '    return value;',
+      '  }',
+      '  return fallbackValue;',
+      '}',
+    ].join('\n');
+    const matches = [...BlockAnchorReplacer(content, find)];
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toBe(content); // 完整外层块，而非截断到 line3
+  });
+
+  it('rejects a lone truncated candidate when the search block is much longer', () => {
+    // 只有截断候选可选时（外层 '}' 不存在），按完整块长打分应低于阈值被拒
+    const content = [
+      'function foo() {',
+      '  if (ok) {',
+      '    return value;',
+      '  }',
+      '  return fallback;',
+    ].join('\n');
+    const find = [
+      'function foo() {',
+      '  if (ok) {',
+      '    return value;',
+      '  }',
+      '  doA();',
+      '  doB();',
+      '  doC();',
+      '  doD();',
+      '}',
+    ].join('\n');
+    const matches = [...BlockAnchorReplacer(content, find)];
+    expect(matches).toHaveLength(0);
+  });
 });
 
 describe('findFlexibleMatch（链式回退）', () => {

@@ -740,6 +740,11 @@ export class ConversationRuntime {
       runError = error;
       await this.persistFailedRunContinuationContext(userMessage, iterations, error);
     } finally {
+      // forced-final 是 per-run 语义：正常路径由 handleTextResponse 在产出最终
+      // 文本后清理，但空输出/异常/cancel 等退出路径会绕过它——若不在此兜底清理，
+      // flag 泄漏到下一次用户输入会让 inference 持续禁用全部工具（codex audit R2）。
+      this.ctx.forceFinalResponseReason = undefined;
+      this.ctx.forceFinalResponsePrompt = undefined;
       // G20: 先同步 flush turn trace —— 必须排在 await finalizeRun 之前。
       // finalizeRun 会发出 agent_complete 事件，CLI/host 收到后可能立即 process.exit，
       // 进程在那个 await 让出点被杀，排在其后的同步代码就永远执行不到。

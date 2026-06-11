@@ -1138,9 +1138,9 @@ describe('ConversationRuntime', () => {
       await runtime.run('long task');
 
       expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(2);
-      // 兜底激活后走 forceFinalResponse 通道（真实 MessageProcessor 在 forced-final
-      // 文本收尾后清理标志，此处 MessageProcessor 为 mock，不验证清理）
-      expect(ctx.forceFinalResponseReason).toBe('max-steps-reached');
+      // run 退出时 finally 兜底清理 forced-final 标志（codex audit R2），
+      // 激活本身已在第二次 inference 的 mock 内断言
+      expect(ctx.forceFinalResponseReason).toBeUndefined();
       expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
         expect.any(Number),
         'long task',
@@ -1148,6 +1148,30 @@ describe('ConversationRuntime', () => {
         expect.any(Number),
         expect.objectContaining({ status: 'completed' }),
       );
+    });
+
+    it('clears forced-final flags on run exit even when the final inference returns empty (codex audit R2)', async () => {
+      ctx.maxIterations = 2;
+      const mp = (runtime as unknown as {
+        messageProcessor: { detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn> };
+      }).messageProcessor;
+      mp.detectAndForceExecuteTextToolCall.mockImplementation((response: unknown) => ({
+        shouldContinue: false,
+        response,
+        wasForceExecuted: false,
+      }));
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          ctx.needsReinference = true;
+          return { type: 'text', content: 'partial' };
+        })
+        // 最后一轮 forced-final 推理返回空文本：flag 不能泄漏到下一次用户输入
+        .mockImplementationOnce(async () => ({ type: 'text', content: '' }));
+
+      await runtime.run('long task');
+
+      expect(ctx.forceFinalResponseReason).toBeUndefined();
+      expect(ctx.forceFinalResponsePrompt).toBeUndefined();
     });
 
     it('does not force a summary when the run completes before max iterations', async () => {

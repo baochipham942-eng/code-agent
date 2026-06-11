@@ -24,10 +24,12 @@ import {
   buildRepairPrompt,
   formatProductStatusMarkdown,
   prioritizeFailures,
+  selectCodexMilestoneModelRoute,
   summarizeValidationStatus,
   type ValidationSummary,
   type GenerateCandidateFn,
   type RoundResult,
+  type CodexMilestoneRouteConfig,
 } from '../../../../scripts/acceptance/platformer-gameplay-generation';
 
 function makeSummary(opts: {
@@ -62,6 +64,46 @@ async function makeArtifactStub(): Promise<string> {
 }
 
 const noopLog = () => {};
+
+describe('codex milestone model routing', () => {
+  const routeConfig: CodexMilestoneRouteConfig = {
+    logicProvider: 'deepseek',
+    logicModel: 'deepseek-v4-flash',
+    mimoProvider: 'xiaomi',
+    mimoModel: 'mimo-v2.5-pro',
+    generationTimeoutMs: 120_000,
+    heavyMilestoneTimeoutMs: 480_000,
+  };
+
+  it('routes M0-M2 to the strong code model and M3-M4 to mimo', () => {
+    const routes = ['M0', 'M1', 'M2', 'M3', 'M4'].map((id) =>
+      selectCodexMilestoneModelRoute(routeConfig, id as 'M0' | 'M1' | 'M2' | 'M3' | 'M4'),
+    );
+
+    expect(routes.map((route) => `${route.milestoneId}:${route.provider}/${route.model}`)).toEqual([
+      'M0:deepseek/deepseek-v4-flash',
+      'M1:deepseek/deepseek-v4-flash',
+      'M2:deepseek/deepseek-v4-flash',
+      'M3:xiaomi/mimo-v2.5-pro',
+      'M4:xiaomi/mimo-v2.5-pro',
+    ]);
+  });
+
+  it('raises M2/M3 single-segment timeout to at least 480s', () => {
+    expect(selectCodexMilestoneModelRoute(routeConfig, 'M1').timeoutMs).toBe(120_000);
+    expect(selectCodexMilestoneModelRoute(routeConfig, 'M2').timeoutMs).toBe(480_000);
+    expect(selectCodexMilestoneModelRoute(routeConfig, 'M3').timeoutMs).toBe(480_000);
+    expect(selectCodexMilestoneModelRoute(routeConfig, 'M4').timeoutMs).toBe(120_000);
+  });
+
+  it('honors a higher global generation timeout for heavy milestones', () => {
+    const route = selectCodexMilestoneModelRoute(
+      { ...routeConfig, generationTimeoutMs: 600_000 },
+      'M2',
+    );
+    expect(route.timeoutMs).toBe(600_000);
+  });
+});
 
 describe('scoreCandidate', () => {
   it('ranks fully-passing candidate above runtime-only above static-only', () => {

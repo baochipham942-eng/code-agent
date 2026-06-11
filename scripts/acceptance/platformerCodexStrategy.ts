@@ -393,9 +393,15 @@ export interface CodexGenerationResult extends GenerationOutcome {
   completed: boolean;
 }
 
+export interface MilestoneGenerationContext {
+  milestone: MilestoneSpec;
+  attempt: number;
+  retryFailures?: string[];
+}
+
 export interface CodexPipelineDeps {
   /** One model call delivering one milestone (or one in-milestone retry). */
-  generateMilestone: (prompt: string) => Promise<GenerationOutcome>;
+  generateMilestone: (prompt: string, context: MilestoneGenerationContext) => Promise<GenerationOutcome>;
   /** Runtime-smoke probe (browser smoke not required for M0-M3). */
   probe: (artifactPath: string) => Promise<ValidationSummary>;
   readArtifact: (artifactPath: string) => Promise<string | null>;
@@ -455,7 +461,11 @@ export async function runCodexMilestonePipeline(
 
       let probeResult: 'PASS' | 'FAIL' | 'ERROR' = 'ERROR';
       try {
-        const generation = await deps.generateMilestone(prompt);
+        const generation = await deps.generateMilestone(prompt, {
+          milestone,
+          attempt: attempts,
+          retryFailures,
+        });
         responses.push(...generation.responses);
         toolCount += generation.toolCount;
         if (generation.errors.length > 0) {

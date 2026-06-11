@@ -410,10 +410,16 @@ describe('runCodexMilestonePipeline', () => {
 
   it('retries inside a milestone with probe feedback, then advances', async () => {
     const prompts: string[] = [];
+    const contexts: Array<{ milestoneId: string; attempt: number; retryFailures?: string[] }> = [];
     let m1Probes = 0;
     const result = await runCodexMilestonePipeline('/tmp/game.html', {
-      generateMilestone: vi.fn(async (prompt: string) => {
+      generateMilestone: vi.fn(async (prompt: string, context) => {
         prompts.push(prompt);
+        contexts.push({
+          milestoneId: context.milestone.id,
+          attempt: context.attempt,
+          retryFailures: context.retryFailures,
+        });
         return { responses: ['ok'], toolCount: 1, errors: [] };
       }),
       probe: vi.fn(async () => {
@@ -432,6 +438,8 @@ describe('runCodexMilestonePipeline', () => {
     // The retry prompt carries the probe failure.
     expect(prompts[2]).toContain('movement-broken: jump missing');
     expect(prompts[2]).toContain('FAILED its probe');
+    expect(contexts.map((c) => `${c.milestoneId}:${c.attempt}`)).toEqual(['M0:1', 'M1:1', 'M1:2']);
+    expect(contexts[2].retryFailures).toEqual(['movement-broken: jump missing']);
   });
 
   it('stops the pipeline when a milestone fails after retries; later milestones never run', async () => {

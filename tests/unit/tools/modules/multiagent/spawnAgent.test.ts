@@ -69,6 +69,16 @@ describe('spawn_agent / AgentSpawn schemas', () => {
     expect(agentSpawnModule.schema.description).toContain('Advanced agent creation');
   });
 
+  it('description 明确嵌套路由、并行路由和不派 agent 的边界', () => {
+    expect(spawnAgentModule.schema.description).toContain('tree-shaped');
+    expect(spawnAgentModule.schema.description).toContain('nested spawn');
+    expect(spawnAgentModule.schema.description).toContain('parallel multi-agent');
+    expect(spawnAgentModule.schema.description).toContain('single fact lookup');
+    expect(spawnAgentModule.schema.description).toContain('known file location');
+    expect(spawnAgentModule.schema.description).toContain('context offload');
+    expect(spawnAgentModule.schema.description).toContain('2-3 layers');
+  });
+
   it('inputSchema 含 role/task/agents/parallel/forkContext/isolation', () => {
     const props = spawnAgentModule.schema.inputSchema.properties as Record<string, unknown>;
     expect(props).toHaveProperty('role');

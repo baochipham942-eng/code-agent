@@ -91,6 +91,16 @@ describe('Task schema', () => {
     expect(taskModule.schema.category).toBe('multiagent');
     expect(taskModule.schema.permissionLevel).toBe('execute');
   });
+
+  it('description 明确嵌套、并行和不派 agent 的路由边界', () => {
+    expect(taskModule.schema.description).toContain('tree-shaped');
+    expect(taskModule.schema.description).toContain('nested spawn');
+    expect(taskModule.schema.description).toContain('parallel multi-agent');
+    expect(taskModule.schema.description).toContain('single fact lookup');
+    expect(taskModule.schema.description).toContain('known file location');
+    expect(taskModule.schema.description).toContain('context offload');
+    expect(taskModule.schema.description).toContain('2-3 layers');
+  });
 });
 
 describe('Task validation', () => {

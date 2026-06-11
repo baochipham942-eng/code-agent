@@ -11,6 +11,11 @@ Consider spawning sub-agents when:
 - Refactoring with multiple independent change points
 - Broad exploration that would consume your context window
 
+## Routing rules for nested vs parallel vs no spawn
+- tree-shaped tasks such as investigation → implementation → review, staged refactors, recursive codebase research, and parent-level synthesis should use nested spawn. Nested spawn is for context offload, not parallel speedup; prefer 2-3 layers and keep each child output distilled.
+- Independent work with no dependency between branches should use parallel multi-agent mode with parallel=true and an agents array.
+- A single fact lookup, known file location, direct symbol search, or a small known edit should not spawn an agent. Use the local read/search/edit tools directly.
+
 When NOT to spawn:
 - Simple single-file reads — use read_file directly
 - Searching for a specific definition — use glob/grep directly

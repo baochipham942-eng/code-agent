@@ -234,6 +234,16 @@ export function buildModelCompletionSummary(response: Awaited<ReturnType<ModelRo
   return completion.slice(0, 4000);
 }
 
+export const SUBAGENT_DISTILLATION_CONTRACT = `# Parent Return Contract
+你的最终输出是返回给父 agent 的数据，只返回结论、关键文件路径和必要证据，不要转发原始文件内容。`;
+
+export function appendSubagentDistillationContract(systemPrompt: string): string {
+  if (systemPrompt.includes('你的最终输出是返回给父 agent 的数据')) {
+    return systemPrompt;
+  }
+  return `${systemPrompt}\n\n${SUBAGENT_DISTILLATION_CONTRACT}`;
+}
+
 export function buildInitialSubagentMessages(options: {
   agentName: string;
   systemPrompt: string;
@@ -242,11 +252,12 @@ export function buildInitialSubagentMessages(options: {
   logger?: ProjectionLogger;
 }): RuntimeMessage[] {
   const { agentName, systemPrompt, prompt, attachments, logger } = options;
-  const isDependencySystemPrompt = /fork context|shared discoveries|shared context|dependency|carry-over/i.test(systemPrompt);
+  const effectiveSystemPrompt = appendSubagentDistillationContract(systemPrompt);
+  const isDependencySystemPrompt = /fork context|shared discoveries|shared context|dependency|carry-over/i.test(effectiveSystemPrompt);
   const messages: RuntimeMessage[] = [
     createRuntimeMessage({
       role: 'system',
-      content: systemPrompt,
+      content: effectiveSystemPrompt,
       observation: buildObservation(
         isDependencySystemPrompt ? 'dependency_carry_over' : 'system_anchor',
         'system_prompt',

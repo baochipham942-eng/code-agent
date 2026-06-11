@@ -26,7 +26,6 @@ describe('subagentExecutor helper extraction', () => {
     expect(messages).toHaveLength(2);
     expect(messages[0]).toMatchObject({
       role: 'system',
-      content: 'Use shared context from parent.',
       observation: {
         category: 'dependency_carry_over',
         sourceDetail: 'system_prompt',
@@ -34,6 +33,10 @@ describe('subagentExecutor helper extraction', () => {
         layer: 'system_prompt',
       },
     });
+    expect(messages[0].content).toContain('Use shared context from parent.');
+    expect(messages[0].content).toContain('你的最终输出是返回给父 agent 的数据');
+    expect(messages[0].content).toContain('只返回结论、关键文件路径和必要证据');
+    expect(messages[0].content).toContain('不要转发原始文件内容');
     expect(messages[1]).toMatchObject({
       role: 'user',
       content: 'Inspect this file',

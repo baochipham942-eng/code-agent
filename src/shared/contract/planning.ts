@@ -70,6 +70,7 @@ export type SessionTaskEventKind =
   | 'unblocked'      // 阻塞任务被删除/收口导致依赖解除
   | 'owner_changed'  // owner 显式变更
   | 'orphan_adopted' // subagent 结束，未收口任务回归主会话
+  | 'parent_detached' // 父任务被删除，子任务脱挂为顶层
   | 'deleted';       // 物理删除
 
 export interface SessionTaskEvent {

@@ -177,6 +177,9 @@ export const runCommand = new Command('run')
         if (resolution) {
           if (!isJson) {
             terminalOutput.info(`/命令展开: ${resolution.name} (${resolution.source})`);
+            if (resolution.agent) {
+              terminalOutput.warning(`frontmatter agent: ${resolution.agent} 仅桌面端支持路由，CLI 忽略`);
+            }
           }
           fullPrompt = resolution.prompt;
         }

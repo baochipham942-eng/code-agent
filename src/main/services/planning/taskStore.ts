@@ -29,7 +29,10 @@ const hydratedSessions: Set<string> = new Set();
 
 function getReadyDatabase():
   | (Pick<import('../core/databaseService').DatabaseService, 'isReady' | 'saveSessionTasks' | 'getSessionTasks'>
-      & { appendSessionTaskEvents?: (events: SessionTaskEvent[]) => void })
+      & {
+        appendSessionTaskEvents?: (events: SessionTaskEvent[]) => void;
+        getSessionTaskEvents?: (sessionId: string, options?: { taskId?: string; limit?: number }) => Array<{ taskId: string }>;
+      })
   | null {
   try {
     const db = getDatabase();
@@ -94,7 +97,21 @@ function hydrateTasks(sessionId: string): void {
       }
     }
     sessionTasks.set(sessionId, taskMap);
-    sessionTaskCounters.set(sessionId, inferCounter(Array.from(taskMap.values())));
+    // 顶层计数器：现存任务之外还参考事件历史里出现过的 id（已删任务不复用，
+    // 防新任务继承旧事件历史，Codex R1 HIGH）
+    let counter = inferCounter(Array.from(taskMap.values()));
+    try {
+      const events = db.getSessionTaskEvents?.(sessionId, { limit: 200 }) ?? [];
+      for (const event of events) {
+        const top = String(event.taskId).split('.')[0];
+        if (/^\d+$/.test(top)) {
+          counter = Math.max(counter, Number(top));
+        }
+      }
+    } catch {
+      // 事件读取失败不影响 hydrate
+    }
+    sessionTaskCounters.set(sessionId, counter);
     hydratedSessions.add(sessionId);
   } catch (err) {
     logger.warn(`[TaskStore] Failed to hydrate tasks for session ${sessionId}`, err);
@@ -117,6 +134,8 @@ function persistTasks(sessionId: string): void {
  * 顶层任务走会话级自增计数；子任务派生父 id（"1" → "1.1" → "1.1.2"，
  * roadmap 2.6 树状结构），不消耗顶层计数器。
  */
+const CHILD_COUNTER_META_KEY = '__childIdCounter';
+
 function generateTaskId(sessionId: string, parentTaskId?: string): string {
   if (!parentTaskId) {
     const counter = (sessionTaskCounters.get(sessionId) || 0) + 1;
@@ -125,8 +144,12 @@ function generateTaskId(sessionId: string, parentTaskId?: string): string {
   }
 
   const taskMap = sessionTasks.get(sessionId);
+  const parent = taskMap?.get(parentTaskId);
   const prefix = `${parentTaskId}.`;
-  let maxChild = 0;
+  // 已删子任务的 id 不复用（避免继承 session_task_events 里旧任务的历史，
+  // Codex R1 HIGH）：取「现存子任务最大序号」与「父 metadata 持久化计数器」
+  // 的较大者，计数器随父任务持久化、重启可恢复
+  let maxChild = Number(parent?.metadata?.[CHILD_COUNTER_META_KEY] ?? 0) || 0;
   if (taskMap) {
     for (const id of taskMap.keys()) {
       if (!id.startsWith(prefix)) continue;
@@ -136,7 +159,11 @@ function generateTaskId(sessionId: string, parentTaskId?: string): string {
       }
     }
   }
-  return `${prefix}${maxChild + 1}`;
+  const next = maxChild + 1;
+  if (parent) {
+    parent.metadata = { ...parent.metadata, [CHILD_COUNTER_META_KEY]: next };
+  }
+  return `${prefix}${next}`;
 }
 
 /**
@@ -209,13 +236,19 @@ export function updateTask(
 
   // Handle deletion
   if (updates.status === 'deleted') {
-    // Remove from other tasks' blockedBy/blocks lists；解除阻塞的任务记 unblocked
+    // Remove from other tasks' blockedBy/blocks lists；解除阻塞的任务记 unblocked；
+    // 子任务 detach（清 parentTaskId）防悬空引用（Codex R1 MED）
     for (const otherTask of taskMap.values()) {
       const wasBlocked = otherTask.blockedBy.includes(taskId);
       otherTask.blockedBy = otherTask.blockedBy.filter((id) => id !== taskId);
       otherTask.blocks = otherTask.blocks.filter((id) => id !== taskId);
       if (wasBlocked) {
         recordTaskEvent(sessionId, otherTask.id, 'unblocked', { summary: `blocker ${taskId} deleted` });
+      }
+      if (otherTask.parentTaskId === taskId) {
+        otherTask.parentTaskId = undefined;
+        otherTask.updatedAt = Date.now();
+        recordTaskEvent(sessionId, otherTask.id, 'parent_detached', { summary: `parent ${taskId} deleted` });
       }
     }
     taskMap.delete(taskId);

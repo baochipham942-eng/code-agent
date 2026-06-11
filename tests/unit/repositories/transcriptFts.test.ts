@@ -248,6 +248,24 @@ describe('SessionRepository — Transcript FTS5 (kind-decomposed)', () => {
     expect(hit[0].toolName).toBe('Grep');
   });
 
+  it('survives valid-JSON-but-not-array tool_calls without aborting the insert', () => {
+    // json_valid 通过但非数组：单对象 / 字符串 / 标量数组元素。
+    // trigger 内 json_extract(标量, '$.name') 会抛 malformed JSON 拖垮宿主 INSERT
+    const stmt = db.prepare(
+      `INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    );
+    stmt.run('m1', 'sess-A', 'assistant', 'object payload wallaby text', 1000, '{"id":"tc1","name":"Bash"}', null);
+    stmt.run('m2', 'sess-A', 'assistant', 'string payload wallaby text', 2000, '"plain-string"', null);
+    stmt.run('m3', 'sess-A', 'assistant', 'scalar array wallaby text', 3000, '["just-a-string", 42]', null);
+    stmt.run('m4', 'sess-A', 'assistant', 'scalar results wallaby text', 4000, null, '{"toolCallId":"x"}');
+
+    const rows = allFtsRows(db);
+    expect(rows.filter((r) => r.kind === 'assistant_text').length).toBe(4);
+    expect(rows.filter((r) => r.kind === 'tool_input')).toEqual([]);
+    expect(rows.filter((r) => r.kind === 'tool_output')).toEqual([]);
+  });
+
   it('survives malformed tool_calls JSON without aborting the insert', () => {
     db.prepare(
       `INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results)

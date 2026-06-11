@@ -40,6 +40,8 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
     dbState.db.getSessionTasks.mockReset();
     dbState.db.getSessionTasks.mockReturnValue([]);
     dbState.db.appendSessionTaskEvents.mockReset();
+    // 单测互染防护：getSessionTaskEvents 只在个别用例显式挂上
+    delete (dbState.db as Record<string, unknown>).getSessionTaskEvents;
   });
 
   it('creates hierarchical child ids without consuming the top-level counter', async () => {
@@ -137,6 +139,64 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
 
     const kinds = recordedEvents().map((e) => e.kind);
     expect(kinds).toContain('orphan_adopted');
+  });
+
+  it('does not reuse a deleted child id (no event-history inheritance)', async () => {
+    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const s = 'tree-no-reuse';
+    const parent = taskStore.createTask(s, { subject: 'P', description: 'p' });
+    taskStore.createTask(s, { subject: 'C1', description: 'c', parentTaskId: parent.id });
+    const c2 = taskStore.createTask(s, { subject: 'C2', description: 'c', parentTaskId: parent.id });
+    expect(c2.id).toBe('1.2');
+
+    taskStore.deleteTask(s, c2.id);
+    const c3 = taskStore.createTask(s, { subject: 'C3', description: 'c', parentTaskId: parent.id });
+    expect(c3.id).toBe('1.3'); // 不复用 1.2，避免继承已删任务的事件历史
+  });
+
+  it('child counter survives module reload via parent persistence', async () => {
+    const taskStore1 = await import('../../../src/main/services/planning/taskStore');
+    const s = 'tree-counter-reload';
+    const parent = taskStore1.createTask(s, { subject: 'P', description: 'p' });
+    const c1 = taskStore1.createTask(s, { subject: 'C1', description: 'c', parentTaskId: parent.id });
+    taskStore1.deleteTask(s, c1.id);
+    const saved = dbState.db.saveSessionTasks.mock.calls.at(-1)?.[1];
+
+    vi.resetModules();
+    dbState.db.getSessionTasks.mockReturnValue(saved);
+    const taskStore2 = await import('../../../src/main/services/planning/taskStore');
+    const c2 = taskStore2.createTask(s, { subject: 'C2', description: 'c', parentTaskId: '1' });
+    expect(c2.id).toBe('1.2'); // 已删 1.1 不复用
+  });
+
+  it('deleting a parent detaches children instead of leaving dangling parentTaskId', async () => {
+    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const s = 'tree-detach';
+    const parent = taskStore.createTask(s, { subject: 'P', description: 'p' });
+    const child = taskStore.createTask(s, { subject: 'C', description: 'c', parentTaskId: parent.id });
+
+    taskStore.deleteTask(s, parent.id);
+    const orphan = taskStore.getTask(s, child.id);
+    expect(orphan).not.toBeNull();
+    expect(orphan!.parentTaskId).toBeUndefined();
+    expect(recordedEvents().map((e) => e.kind)).toContain('parent_detached');
+  });
+
+  it('top-level ids are not reused after reload when events record deleted tasks', async () => {
+    const taskStore1 = await import('../../../src/main/services/planning/taskStore');
+    const s = 'top-no-reuse';
+    taskStore1.createTask(s, { subject: 'T1', description: 't' });
+    const t2 = taskStore1.createTask(s, { subject: 'T2', description: 't' });
+    taskStore1.deleteTask(s, t2.id);
+    const saved = dbState.db.saveSessionTasks.mock.calls.at(-1)?.[1];
+    const events = recordedEvents().filter((e) => e.sessionId === s);
+
+    vi.resetModules();
+    dbState.db.getSessionTasks.mockReturnValue(saved);
+    dbState.db.getSessionTaskEvents = vi.fn(() => events.map((e) => ({ taskId: e.taskId, at: e.at, kind: e.kind })));
+    const taskStore2 = await import('../../../src/main/services/planning/taskStore');
+    const t3 = taskStore2.createTask(s, { subject: 'T3', description: 't' });
+    expect(t3.id).toBe('3'); // 不复用已删的 2
   });
 
   it('event persistence failure never blocks task mutation', async () => {

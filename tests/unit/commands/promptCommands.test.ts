@@ -85,6 +85,11 @@ describe('expandPromptTemplate', () => {
     expect(expandPromptTemplate('$10|$1', args)).toBe('j|a');
   });
 
+  it('does not re-expand placeholder-like text inside user args (single pass)', () => {
+    expect(expandPromptTemplate('echo $ARGUMENTS', 'literal $1 and $2')).toBe('echo literal $1 and $2');
+    expect(expandPromptTemplate('a=$1 b=$2', '"$2" tail')).toBe('a=$2 b=tail');
+  });
+
   it('appends args when template has no placeholders but args given', () => {
     const out = expandPromptTemplate('fixed instructions', 'extra context');
     expect(out).toContain('fixed instructions');

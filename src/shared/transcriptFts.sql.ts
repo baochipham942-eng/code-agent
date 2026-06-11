@@ -44,9 +44,13 @@ function baseFilter(ref: string): string {
   );
 }
 
-/** malformed / NULL JSON 降级为空数组，防止 json_each 抛错中断宿主语句 */
+/**
+ * malformed / NULL / 非数组 JSON 一律降级为空数组，防止 json_each 抛错或
+ * 对非对象元素 json_extract 抛 malformed JSON 中断宿主语句。
+ * （Codex R1 HIGH：json_valid 只保证合法 JSON，单对象/字符串也能通过。）
+ */
 function safeJsonArray(expr: string): string {
-  return `CASE WHEN json_valid(${expr}) THEN ${expr} ELSE '[]' END`;
+  return `CASE WHEN json_valid(${expr}) AND json_type(${expr}) = 'array' THEN ${expr} ELSE '[]' END`;
 }
 
 const INSERT_COLUMNS =
@@ -101,7 +105,8 @@ function buildInsertSelects(ref: string, fromMessages: boolean): string[] {
              1, ${cap}),
            ${ref}.timestamp
     ${msgFromJoin(`json_each(${toolCallsJson}) AS tc`)}
-    WHERE ${base}`;
+    WHERE ${base}
+      AND tc.type = 'object'`;
 
   // tool 结果的主路径：result 内嵌在 tool_calls[*].result（tool_call_end 回填）
   const toolOutputInline = `
@@ -118,6 +123,7 @@ function buildInsertSelects(ref: string, fromMessages: boolean): string[] {
            ${ref}.timestamp
     ${msgFromJoin(`json_each(${toolCallsJson}) AS tc`)}
     WHERE ${base}
+      AND tc.type = 'object'
       AND json_extract(tc.value, '$.result') IS NOT NULL
       AND (COALESCE(json_extract(tc.value, '$.result.output'), '') <> ''
            OR COALESCE(json_extract(tc.value, '$.result.error'), '') <> '')`;
@@ -129,7 +135,8 @@ function buildInsertSelects(ref: string, fromMessages: boolean): string[] {
     SELECT ${ref}.id, ${ref}.session_id, 'tool_output',
            COALESCE((SELECT json_extract(tc.value, '$.name')
                      FROM json_each(${toolCallsJson}) AS tc
-                     WHERE json_extract(tc.value, '$.id') = json_extract(tr.value, '$.toolCallId')
+                     WHERE tc.type = 'object'
+                       AND json_extract(tc.value, '$.id') = json_extract(tr.value, '$.toolCallId')
                      LIMIT 1), ''),
            substr(
              COALESCE(json_extract(tr.value, '$.output'), '')
@@ -140,11 +147,13 @@ function buildInsertSelects(ref: string, fromMessages: boolean): string[] {
            ${ref}.timestamp
     ${msgFromJoin(`json_each(${toolResultsJson}) AS tr`)}
     WHERE ${base}
+      AND tr.type = 'object'
       AND (COALESCE(json_extract(tr.value, '$.output'), '') <> ''
            OR COALESCE(json_extract(tr.value, '$.error'), '') <> '')
       AND NOT EXISTS (
         SELECT 1 FROM json_each(${toolCallsJson}) AS tc2
-        WHERE json_extract(tc2.value, '$.id') = json_extract(tr.value, '$.toolCallId')
+        WHERE tc2.type = 'object'
+          AND json_extract(tc2.value, '$.id') = json_extract(tr.value, '$.toolCallId')
           AND json_extract(tc2.value, '$.result') IS NOT NULL
       )`;
 

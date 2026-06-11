@@ -96,9 +96,10 @@ export function expandPromptTemplate(template: string, args: string): string {
   }
 
   const tokens = tokenizeArgs(args);
-  return template
-    .replace(/\$ARGUMENTS/g, args)
-    .replace(/\$(\d+)/g, (_whole, index: string) => tokens[Number(index) - 1] ?? '');
+  // 单遍替换：只展开模板自带的占位符，用户参数里的 $1/$ARGUMENTS 字面量
+  // 不会被二次展开（Codex R1 MED）
+  return template.replace(/\$(ARGUMENTS|\d+)/g, (_whole, key: string) =>
+    key === 'ARGUMENTS' ? args : tokens[Number(key) - 1] ?? '');
 }
 
 /**

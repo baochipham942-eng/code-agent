@@ -784,6 +784,9 @@ async function handleCommand(
         .resolveInvocation(input, process.cwd())
         .catch(() => null);
       if (resolution) {
+        if (resolution.agent) {
+          terminalOutput.warning(`frontmatter agent: ${resolution.agent} 仅桌面端支持路由，CLI 忽略`);
+        }
         const result = await agent.run(resolution.prompt);
         if (!result.success && result.error) {
           terminalOutput.error(result.error);

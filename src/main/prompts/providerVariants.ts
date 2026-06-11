@@ -14,8 +14,12 @@
 
 export type ProviderFamily = 'claude' | 'autonomous' | 'default';
 
-/** 变体段落标记：幂等守卫 + telemetry 肉眼可辨 */
-export const PROVIDER_VARIANT_MARKER = '## Provider-family discipline';
+/**
+ * 变体段落标记：幂等守卫 + telemetry 肉眼可辨。
+ * 用不透明 HTML 注释哨兵而非可见标题——避免 custom/base prompt 恰好包含
+ * 同名标题时变体被整体禁用（Codex R1 MED）。
+ */
+export const PROVIDER_VARIANT_MARKER = '<!-- code-agent-provider-variant:v1 -->';
 
 const CLAUDE_PROVIDERS = new Set(['anthropic', 'claude']);
 const AUTONOMOUS_PROVIDERS = new Set([
@@ -45,9 +49,18 @@ export function resolveProviderFamily(provider?: string, model?: string): Provid
   if (CLAUDE_PROVIDERS.has(p)) return 'claude';
   if (AUTONOMOUS_PROVIDERS.has(p)) return 'autonomous';
 
-  const m = (model || '').toLowerCase();
+  // owner 前缀模型 id（openrouter 等中转格式 "anthropic/claude-x"、"openai/gpt-x"）：
+  // 取最后一段再匹配（Codex R1 MED）
+  const rawModel = (model || '').toLowerCase();
+  const m = rawModel.includes('/') ? rawModel.slice(rawModel.lastIndexOf('/') + 1) : rawModel;
   if (m.startsWith('claude')) return 'claude';
   if (/^(gpt|o\d|kimi|deepseek|glm|qwen|mimo|minimax|ernie|doubao|longcat)/.test(m)) {
+    return 'autonomous';
+  }
+
+  // 自定义中转 provider（custom-*）按关键词识别家族
+  if (p.includes('claude') || p.includes('anthropic')) return 'claude';
+  if (/(openai|gpt|kimi|moonshot|deepseek|zhipu|xiaomi|qwen|minimax|baidu|doubao|longcat)/.test(p)) {
     return 'autonomous';
   }
   return 'default';
@@ -56,7 +69,8 @@ export function resolveProviderFamily(provider?: string, model?: string): Provid
 // Git 安全纪律（Claude 系）— adapted from MiMoCode anthropic.txt
 const CLAUDE_VARIANT_SECTION = `
 
-${PROVIDER_VARIANT_MARKER} (claude family)
+${PROVIDER_VARIANT_MARKER}
+## Provider-family discipline (claude family)
 
 # Git safety
 - NEVER update the git config
@@ -72,7 +86,8 @@ ${PROVIDER_VARIANT_MARKER} (claude family)
 // 自治与坚持纪律（GPT/国产系）— adapted from MiMoCode gpt.txt
 const AUTONOMOUS_VARIANT_SECTION = `
 
-${PROVIDER_VARIANT_MARKER} (autonomous family)
+${PROVIDER_VARIANT_MARKER}
+## Provider-family discipline (autonomous family)
 
 # Autonomy and persistence
 - Unless the user explicitly asks for a plan, asks a question about the code, or is brainstorming, assume the user wants you to make code changes or run tools to solve the problem. It's bad to only output a proposed solution in a message — go ahead and actually implement the change. If you encounter challenges or blockers, attempt to resolve them yourself.

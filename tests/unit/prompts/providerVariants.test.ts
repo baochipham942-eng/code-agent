@@ -26,6 +26,13 @@ describe('resolveProviderFamily', () => {
     expect(resolveProviderFamily(undefined, 'gpt-5.4')).toBe('autonomous');
   });
 
+  it('handles owner-prefixed model ids and relay providers (openrouter/custom-*)', () => {
+    expect(resolveProviderFamily('openrouter', 'openai/gpt-5.2')).toBe('autonomous');
+    expect(resolveProviderFamily('openrouter', 'anthropic/claude-opus-4-8')).toBe('claude');
+    expect(resolveProviderFamily('custom-commonstack-claude', undefined)).toBe('claude');
+    expect(resolveProviderFamily('custom-xiaomi-ultraspeed', 'mimo-v2.5-pro-ultraspeed')).toBe('autonomous');
+  });
+
   it('returns default for unknown providers without model hints', () => {
     expect(resolveProviderFamily('mystery-provider')).toBe('default');
     expect(resolveProviderFamily(undefined, undefined)).toBe('default');
@@ -52,6 +59,12 @@ describe('applyProviderVariant', () => {
 
   it('returns the base prompt unchanged for unknown families', () => {
     expect(applyProviderVariant(base, 'mystery', undefined)).toBe(base);
+  });
+
+  it('does not get disabled by heading-like text in the base prompt (opaque sentinel)', () => {
+    const trap = 'x\n## Provider-family discipline\ny';
+    const out = applyProviderVariant(trap, 'deepseek', 'deepseek-v4-flash');
+    expect(out).toMatch(/Persist until the task is fully handled/i);
   });
 
   it('is idempotent — never double-appends the variant section', () => {

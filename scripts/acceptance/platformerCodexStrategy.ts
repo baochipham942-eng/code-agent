@@ -59,7 +59,9 @@ export const PLATFORMER_MILESTONES: MilestoneSpec[] = [
       'Define window.__GAME_TEST__ with start(), reset(levelOrScenario?), snapshot(), step(inputState, frames?), and runSmokeTest(). They must be wired to ONE shared live game state object from day one — never a parallel test-only state.',
       'snapshot() must already expose every metric path that progressPlan/reachability and gameplayMechanics will reference later (player.x, player.y, score, enemiesDefeated, blocksUsed, abilities.*, gatesUnlocked). Initialize them to honest zero/false values.',
       'reset(levelOrScenario?) must accept both the string level ids declared in __GAME_META__.levels and numeric indexes.',
+      'Each progressPlan/reachability step uses the field name "expect" (not "expectation") with value increase/decrease/change; metric must be a real snapshot() path. runSmokeTest() must return { passed, checks: string[], failures: string[], coverage } — checks is a STRING ARRAY, never numbers.',
       'Order progressPlan/reachability steps by mechanic: movement/jump steps first, then enemy, block, ability, gate, combo. An early step must never require a later mechanic to succeed (e.g. do not target an end-of-level player.x that needs gates open).',
+      'Declare exactly one level for the skeleton unless every declared level can already be driven to completion by runSmokeTest — coverage must prove all authored levels reachable.',
       'Game mechanics behavior (enemy AI, stomp, blocks, abilities, gates) is NOT required yet — declare them in metadata, expose their state in snapshot(), but the world may be static.',
     ],
     blockingFailurePatterns: [

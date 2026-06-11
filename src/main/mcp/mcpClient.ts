@@ -35,6 +35,8 @@ import type {
 } from './types';
 import { isStdioConfig, isInProcessConfig, CUA_DRIVER_SERVER_NAME } from './types';
 import { gateCuaToolCall } from './cuaSessionLock';
+import { gateCuaBudget } from './cuaTrajectoryBudget';
+import { recordCuaFailure } from './cuaFailureStats';
 import { recordCuaResult } from './cuaNarration';
 
 // Import sub-modules
@@ -671,12 +673,19 @@ export class MCPClient extends EventEmitter {
       return buildCancelledToolResult(toolCallId);
     }
 
-    // cua-driver：跨会话互斥（上游无锁，两个会话同时操作桌面会抢鼠标键盘）。
-    // 只读观察类工具放行，操控类工具需持有 ~/.claude/computer-use.lock。
+    // cua-driver：跨会话互斥（上游无锁，两个会话同时操作桌面会抢鼠标键盘）
+    // + 轨迹预算软停（操控动作超限后拒绝并提示收尾）。只读观察类两者都放行。
     if (serverName === CUA_DRIVER_SERVER_NAME) {
-      const blocked = await gateCuaToolCall(toolName, sessionId ?? `pid:${process.pid}`);
+      const cuaSessionId = sessionId ?? `pid:${process.pid}`;
+      const blocked = await gateCuaToolCall(toolName, cuaSessionId);
       if (blocked) {
+        void recordCuaFailure(toolName, cuaSessionId, blocked);
         return { toolCallId, success: false, error: blocked };
+      }
+      const overBudget = gateCuaBudget(toolName, cuaSessionId);
+      if (overBudget) {
+        void recordCuaFailure(toolName, cuaSessionId, overBudget);
+        return { toolCallId, success: false, error: overBudget };
       }
     }
 
@@ -725,6 +734,10 @@ export class MCPClient extends EventEmitter {
       // 供后续 click/type_text 调用反查人话文案（§10）。纯增强，不影响结果。
       if (serverName === CUA_DRIVER_SERVER_NAME && result.success && typeof result.output === 'string') {
         recordCuaResult(toolName, args, result.output);
+      }
+      // 失败侧对称采集：进灰度统计（分类见 cuaFailureStats）
+      if (serverName === CUA_DRIVER_SERVER_NAME && !result.success && result.error) {
+        void recordCuaFailure(toolName, sessionId ?? `pid:${process.pid}`, result.error);
       }
       return result;
     } catch (error: unknown) {

@@ -363,6 +363,10 @@ export class RunFinalizer {
     import('../../mcp/cuaSessionLock')
       .then(({ releaseCuaLock }) => releaseCuaLock(this.ctx.sessionId))
       .catch(() => { /* non-critical */ });
+    // CUA 轨迹预算：同一临界区，run 结束重置计数
+    import('../../mcp/cuaTrajectoryBudget')
+      .then(({ resetCuaBudget }) => resetCuaBudget(this.ctx.sessionId))
+      .catch(() => { /* non-critical */ });
 
     // Light Memory: Record session stats + conversation summary
     const messageCount = this.ctx.messages.length;

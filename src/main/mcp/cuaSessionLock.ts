@@ -124,7 +124,7 @@ export async function tryAcquireCuaLock(sessionId: string): Promise<CuaAcquireRe
  * start_session/end_session 只声明 run 身份/清理 agent cursor，不碰桌面：
  * end_session 尤其必须放行，否则被锁挡住的 run 无法善后自己的 cursor。
  */
-const CUA_READONLY_TOOLS = new Set([
+export const CUA_READONLY_TOOLS = new Set([
   'screenshot',
   'list_apps',
   'list_windows',

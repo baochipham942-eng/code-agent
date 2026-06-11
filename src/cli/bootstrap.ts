@@ -32,6 +32,7 @@ import type { ModelConfig, Message, AgentEvent } from '../shared/contract';
 import type { TelemetryAdapter } from '../shared/contract/telemetry';
 import type { PlanningService } from '../main/planning';
 import { SYSTEM_PROMPT } from '../main/prompts/builder';
+import { applyProviderVariant } from '../main/prompts/providerVariants';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER, getModelMaxOutputTokens } from '../shared/constants';
 import { SWARM_TRACE } from '../shared/constants/storage';
 import { composeTelemetryAdapters } from '../main/agent/metricsCollector';
@@ -367,9 +368,16 @@ export function createAgentLoop(
   }
 
   // System prompt (allow config-level override/append)
+  // provider 变体（roadmap 2.4）：按 provider 家族追加纪律段落，与桌面侧
+  // agentOrchestrator 行为对齐
+  const variantBase = applyProviderVariant(
+    SYSTEM_PROMPT,
+    config.modelConfig.provider,
+    config.modelConfig.model,
+  );
   const systemPrompt = config.systemPrompt
-    ? SYSTEM_PROMPT + "\n\n" + config.systemPrompt
-    : SYSTEM_PROMPT;
+    ? variantBase + "\n\n" + config.systemPrompt
+    : variantBase;
 
   // 统一使用传入的 sessionId，或生成一个临时 ID
   const explicitSessionId = typeof sessionId === 'string' && sessionId.trim().length > 0

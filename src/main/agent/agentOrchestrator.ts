@@ -16,6 +16,7 @@ import type { AgentRunOptions, ResearchUserSettings } from '../research/types';
 import { AgentLoop } from './agentLoop';
 import { buildGoalContract } from './goalModeController';
 import { SYSTEM_PROMPT } from '../prompts/builder';
+import { applyProviderVariant } from '../prompts/providerVariants';
 import { ToolExecutor } from '../tools/toolExecutor';
 import { getConfirmationGate } from './confirmationGate';
 import type { ConfigService } from '../services/core/configService';
@@ -896,7 +897,10 @@ export class AgentOrchestrator {
     }
 
     this.agentLoop = new AgentLoop({
-      systemPrompt: routingResolution?.agent?.systemPrompt || SYSTEM_PROMPT,
+      // provider 变体（roadmap 2.4）：默认主提示词按 provider 家族追加纪律段落
+      // （Claude 系 Git 安全 / GPT 国产系自治坚持）；agent 路由自带 prompt 时不动
+      systemPrompt: routingResolution?.agent?.systemPrompt
+        || applyProviderVariant(SYSTEM_PROMPT, effectiveModelConfig.provider, effectiveModelConfig.model),
       modelConfig: effectiveModelConfig,
       toolExecutor: this.toolExecutor,
       messages: this.messages,

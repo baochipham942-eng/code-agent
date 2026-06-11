@@ -41,6 +41,7 @@ import { getContextInterventionState } from '../../../context/contextInterventio
 import { applyInterventionsToMessages } from '../../../context/contextInterventionHelpers';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
 import { getSystemPromptCache } from '../../../telemetry/systemPromptCache';
+import { applyProviderVariant } from '../../../prompts/providerVariants';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { countTraceEntries, recordMemoryInjectionTrace } from '../../../memory/memoryInjectionTrace';
 import { createHash } from 'crypto';
@@ -348,6 +349,15 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   } else {
     systemPrompt = getPromptForTask();
   }
+
+  // provider 变体（roadmap 2.4）：按 provider 家族追加纪律段落
+  // （Claude 系 Git 安全 / GPT 国产系自治坚持）。幂等；default 家族零改动。
+  systemPrompt = applyProviderVariant(
+    systemPrompt,
+    ctx.runtime.modelConfig?.provider,
+    ctx.runtime.modelConfig?.model,
+  );
+
   const appendedBlocks = new Map<string, string>();
   const shouldInjectArtifactBrief = artifactRepairMode || (typeof userQuery === 'string' && needsArtifactTaskBrief(userQuery));
   const shouldInjectGameContract =

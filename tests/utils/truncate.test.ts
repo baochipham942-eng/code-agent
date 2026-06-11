@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { truncateMiddle, truncateHead } from '../../src/main/utils/truncate';
+import { truncateMiddle, truncateHead, truncateMiddleErrorAware } from '../../src/main/utils/truncate';
 
 describe('truncateMiddle', () => {
   it('returns original text if within limit', () => {
@@ -83,6 +83,79 @@ describe('truncateMiddle', () => {
     expect(result).toContain('Exit code: 1');
     expect(result).toContain('truncated');
   });
+});
+
+describe('truncateMiddleErrorAware', () => {
+  it('returns original text if within limit', () => {
+    const text = 'error: something failed';
+    expect(truncateMiddleErrorAware(text, 100)).toBe(text);
+  });
+
+  it('allocates 70/30 head/tail when tail contains error pattern', () => {
+    // 头部是正常日志，尾部带报错
+    const lines = [
+      ...Array.from({ length: 200 }, (_, i) => `processing item ${i} with some payload data`),
+      'Traceback (most recent call last):',
+      '  File "main.py", line 42, in <module>',
+      'ValueError: bad input',
+    ];
+    const text = lines.join('\n');
+    const result = truncateMiddleErrorAware(text, 1000);
+
+    expect(result).toContain('ValueError: bad input');
+    expect(result).toContain('truncated');
+    // 头部预算应大于尾部（70/30）
+    const markerIdx = result.indexOf('characters truncated');
+    const head = result.slice(0, markerIdx);
+    const tail = result.slice(markerIdx);
+    expect(head.length).toBeGreaterThan(tail.length * 1.5);
+  });
+
+  it('uses default 50/50 split when no error pattern in tail', () => {
+    const lines = Array.from({ length: 200 }, (_, i) => `line ${i} normal output content here`);
+    const text = lines.join('\n');
+    const result = truncateMiddleErrorAware(text, 1000);
+
+    expect(result).toContain('truncated');
+    // 50/50：头尾长度接近
+    const markerIdx = result.indexOf('characters truncated');
+    const head = result.slice(0, markerIdx);
+    const tail = result.slice(markerIdx);
+    expect(head.length).toBeLessThan(tail.length * 1.5);
+    expect(tail.length).toBeLessThan(head.length * 1.5);
+  });
+
+  it('only scans the last 2048 chars for error patterns', () => {
+    // 错误只出现在开头（超出尾部扫描窗口），不应触发 70/30
+    const lines = [
+      'ERROR: early failure',
+      ...Array.from({ length: 300 }, (_, i) => `line ${i} normal output content here padding`),
+    ];
+    const text = lines.join('\n');
+    const result = truncateMiddleErrorAware(text, 1000);
+
+    const markerIdx = result.indexOf('characters truncated');
+    const head = result.slice(0, markerIdx);
+    const tail = result.slice(markerIdx);
+    // 未命中错误 → 50/50
+    expect(head.length).toBeLessThan(tail.length * 1.5);
+  });
+
+  it.each(['error', 'Exception', 'FAILED', 'fatal', 'Traceback', 'panic', 'exit code'])(
+    'detects "%s" pattern in tail',
+    (keyword) => {
+      const lines = [
+        ...Array.from({ length: 200 }, (_, i) => `processing item ${i} with payload`),
+        `something ${keyword} happened`,
+      ];
+      const text = lines.join('\n');
+      const result = truncateMiddleErrorAware(text, 1000);
+      const markerIdx = result.indexOf('characters truncated');
+      const head = result.slice(0, markerIdx);
+      const tail = result.slice(markerIdx);
+      expect(head.length).toBeGreaterThan(tail.length * 1.5);
+    }
+  );
 });
 
 describe('truncateHead', () => {

@@ -14,7 +14,7 @@
 //   * 后台任务（run_in_background: startBackgroundTask，返回 task_id）
 //   * Codex 沙箱路由（启用且非安全命令则委托）
 //   * 前台 spawn：spawn + getShellPath + sanitizedEnv
-//   * 输出截断（MAX_OUTPUT_LENGTH truncateMiddle + guidance 文本）
+//   * 输出截断（MAX_OUTPUT_LENGTH truncateMiddleErrorAware + guidance 文本）
 //   * stderr 合并 + dataFingerprintStore 指纹提取
 //   * cwd 前缀 + dynamicDescription metadata
 //   * 超时 / 非零退出 / spawn error 分类错误
@@ -40,7 +40,7 @@ import { getShellPathDiagnostics } from '../../../services/infra/shellEnvironmen
 import { extractBashFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { createSanitizedEnv } from '../../../utils/sanitizeEnv';
-import { truncateMiddle } from '../../../utils/truncate';
+import { truncateMiddleErrorAware } from '../../../utils/truncate';
 import { spillToolResult, buildSpillNotice } from '../../../utils/toolResultSpill';
 import { checkCommandPolicy } from './commandPolicy';
 import { rewriteBashCommand } from './rtkRewriter';
@@ -129,7 +129,7 @@ function truncateOutput(
     sessionId: spillCtx?.sessionId,
     toolCallId: spillCtx?.toolCallId,
   });
-  const truncated = truncateMiddle(output, BASH.MAX_OUTPUT_LENGTH);
+  const truncated = truncateMiddleErrorAware(output, BASH.MAX_OUTPUT_LENGTH);
   return (
     truncated +
     `\n\n[Guidance: Output was ${originalLength} chars, truncated to ${BASH.MAX_OUTPUT_LENGTH}. ` +

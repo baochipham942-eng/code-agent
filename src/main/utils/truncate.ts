@@ -47,6 +47,27 @@ export function truncateMiddle(
   return `${cleanHead}\n\n... [${removed} characters truncated] ...\n\n${cleanTail}`;
 }
 
+// 错误感知截断（借鉴 MiMoCode tool/truncate.ts 的设计）：
+// 截断前扫描输出尾部找错误模式，命中则头 70%/尾 30% 分配预算保住报错信息。
+const ERROR_PATTERN = /error|exception|failed|fatal|traceback|panic|exit code/i;
+const TAIL_SCAN_CHARS = 2048;
+const ERROR_AWARE_HEAD_RATIO = 0.7;
+
+/**
+ * 错误感知的中间截断 — 尾部含错误模式时偏向保留头部预算（70/30），
+ * 否则退回默认 50/50 的 truncateMiddle 行为。
+ *
+ * @param text - 原始文本
+ * @param maxLength - 最大字符数
+ * @returns 截断后的文本，如果未超限则返回原文
+ */
+export function truncateMiddleErrorAware(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  const tailScan = text.length > TAIL_SCAN_CHARS ? text.slice(-TAIL_SCAN_CHARS) : text;
+  const headRatio = ERROR_PATTERN.test(tailScan) ? ERROR_AWARE_HEAD_RATIO : 0.5;
+  return truncateMiddle(text, maxLength, headRatio);
+}
+
 /**
  * 头部截断（旧行为兼容）— 只保留开头
  *

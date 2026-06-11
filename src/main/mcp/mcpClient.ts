@@ -34,6 +34,7 @@ import type {
   InProcessMCPServerInterface,
 } from './types';
 import { isStdioConfig, isInProcessConfig, CUA_DRIVER_SERVER_NAME } from './types';
+import { gateCuaToolCall } from './cuaSessionLock';
 import { recordCuaResult } from './cuaNarration';
 
 // Import sub-modules
@@ -668,6 +669,15 @@ export class MCPClient extends EventEmitter {
     const sessionId = typeof options === 'number' ? undefined : options.sessionId;
     if (abortSignal?.aborted) {
       return buildCancelledToolResult(toolCallId);
+    }
+
+    // cua-driver：跨会话互斥（上游无锁，两个会话同时操作桌面会抢鼠标键盘）。
+    // 只读观察类工具放行，操控类工具需持有 ~/.claude/computer-use.lock。
+    if (serverName === CUA_DRIVER_SERVER_NAME) {
+      const blocked = await gateCuaToolCall(toolName, sessionId ?? `pid:${process.pid}`);
+      if (blocked) {
+        return { toolCallId, success: false, error: blocked };
+      }
     }
 
     // 优先检查进程内服务器

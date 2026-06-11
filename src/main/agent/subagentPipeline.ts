@@ -22,6 +22,12 @@ import type { AgentDefinition, DynamicAgentConfig } from './agentDefinition';
 
 const logger = createLogger('SubagentPipeline');
 
+const DELEGATION_TOOLS = new Set(['Task', 'spawn_agent', 'AgentSpawn']);
+
+function isDelegationTool(toolName: string): boolean {
+  return DELEGATION_TOOLS.has(toolName);
+}
+
 // ----------------------------------------------------------------------------
 // Types
 // ----------------------------------------------------------------------------
@@ -344,6 +350,13 @@ export class SubagentPipeline {
       if (permissionConfig.confirmDangerousCommands) {
         warnings.push(`Dangerous command detected: ${request.command}`);
       }
+    }
+
+    // Multi-agent delegation is an internal orchestration action. The child
+    // agent it creates still gets its own tool allowlist, depth guard, budget,
+    // and command/file/network checks before doing any real work.
+    if (isDelegationTool(request.toolName)) {
+      return { allowed: true, warnings };
     }
 
     // 3. Check auto-approve by permission level

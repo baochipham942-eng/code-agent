@@ -440,6 +440,33 @@ describe('SubagentPipeline', () => {
       expect(result.allowed).toBe(true);
     });
 
+    it('allows nested delegation tools while keeping ordinary no-path execute denied', () => {
+      const agentDef: AgentDefinition = {
+        id: 'strict-agent',
+        name: 'Strict',
+        description: 'Strict',
+        prompt: 'Strict',
+        tools: ['Task', 'spawn_agent', 'AgentSpawn', 'bash'],
+        permissionPreset: 'strict',
+      };
+
+      const context = pipeline.createContext(agentDef, '/test');
+
+      for (const toolName of ['Task', 'spawn_agent', 'AgentSpawn']) {
+        const result = pipeline.checkToolExecution(context, {
+          toolName,
+          permissionLevel: 'execute',
+        });
+        expect(result.allowed).toBe(true);
+      }
+
+      const ordinaryExecute = pipeline.checkToolExecution(context, {
+        toolName: 'bash',
+        permissionLevel: 'execute',
+      });
+      expect(ordinaryExecute.allowed).toBe(false);
+    });
+
     it('should warn on dangerous commands', () => {
       const agentDef: AgentDefinition = {
         id: 'dev-agent',

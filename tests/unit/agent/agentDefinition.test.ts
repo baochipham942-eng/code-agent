@@ -12,6 +12,7 @@ import {
   listPredefinedAgents,
   isPredefinedAgent,
   getAgentsByTag,
+  getAgentTools,
   isCoreAgent,
   type CoreAgentId,
 } from '../../../src/main/agent/agentDefinition';
@@ -203,6 +204,14 @@ describe('AgentDefinition - Hybrid Architecture', () => {
 
       it('should throw for invalid ID', () => {
         expect(() => getPredefinedAgent('nonexistent')).toThrow();
+      });
+
+      it('exposes nested delegation tools to core subagents that may offload context', () => {
+        for (const id of ['coder', 'reviewer', 'explore', 'plan'] as const) {
+          const tools = getAgentTools(getPredefinedAgent(id));
+          expect(tools).toContain('Task');
+          expect(tools).toContain('spawn_agent');
+        }
       });
     });
 

@@ -56,7 +56,7 @@ const TOPOLOGY_RULES: Record<string, Partial<Record<ExecutionTopology, GuardVerd
   bash: { async_agent: 'deny', coordinator: 'deny' },
   write: { coordinator: 'deny' },
   edit: { coordinator: 'deny' },
-  spawn_agent: { async_agent: 'deny', teammate: 'deny' },
+  spawn_agent: { teammate: 'deny' },
 };
 
 // ----------------------------------------------------------------------------

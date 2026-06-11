@@ -49,8 +49,18 @@ const FILE_WRITE_TOOLS = new Set([
   'replace_file',
 ]);
 
+const DELEGATION_TOOLS = new Set([
+  'task',
+  'spawn_agent',
+  'agentspawn',
+]);
+
 function normalizedToolName(toolName: string): string {
   return toolName.trim().toLowerCase();
+}
+
+function isDelegationTool(toolName: string): boolean {
+  return DELEGATION_TOOLS.has(normalizedToolName(toolName));
 }
 
 function isExecuteTool(toolName: string, permissionLevel?: string): boolean {
@@ -101,6 +111,12 @@ export function getWriteIsolationScope(
   permissionLevel?: string,
 ): WriteIsolationScope | null {
   const root = normalizeTargetPath(workingDirectory, '.');
+
+  // Delegation itself does not mutate the workspace. Child agents still acquire
+  // write isolation for their own file writes and command execution.
+  if (isDelegationTool(toolName)) {
+    return null;
+  }
 
   if (isExecuteTool(toolName, permissionLevel)) {
     return {

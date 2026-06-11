@@ -181,12 +181,16 @@ export const CORE_AGENTS: Record<CoreAgentId, CoreAgentConfig> = {
 - Use TaskManager({ action: "list" }) to check available tasks before starting work
 - Use TaskManager({ action: "update", ... }) to claim tasks (set owner to your name) and mark completed
 - After completing a task, call TaskManager({ action: "list" }) to find next available work
-- Create sub-tasks with TaskManager({ action: "create", ... }) if you discover additional work needed`,
+- Create sub-tasks with TaskManager({ action: "create", ... }) if you discover additional work needed
+
+## Nested Delegation
+- Use \`Task\` or \`spawn_agent\` when you need another isolated sub-agent.
+- TaskManager creates panel tasks only; it does not create another agent.`,
     ),
     tools: [
       'Bash', 'Read', 'Write', 'Edit',
       'Glob', 'Grep', 'ListDirectory',
-      'TaskManager',
+      'TaskManager', 'Task', 'spawn_agent',
     ],
     model: 'powerful',
     maxIterations: 20,
@@ -239,12 +243,16 @@ Be constructive and specific. Focus on actionable feedback.
 - Use TaskManager({ action: "list" }) to check available tasks before starting work
 - Use TaskManager({ action: "update", ... }) to claim tasks (set owner to your name) and mark completed
 - After completing a task, call TaskManager({ action: "list" }) to find next available work
-- Create sub-tasks with TaskManager({ action: "create", ... }) if you discover additional work needed`,
+- Create sub-tasks with TaskManager({ action: "create", ... }) if you discover additional work needed
+
+## Nested Delegation
+- Use \`Task\` or \`spawn_agent\` when review needs another isolated sub-agent.
+- TaskManager creates panel tasks only; it does not create another agent.`,
     ),
     tools: [
       'Bash', 'Read', 'Write', 'Edit',
       'Glob', 'Grep', 'ListDirectory',
-      'TaskManager',
+      'TaskManager', 'Task', 'spawn_agent',
     ],
     model: 'balanced',
     maxIterations: 15,
@@ -290,6 +298,10 @@ Be constructive and specific. Focus on actionable feedback.
 - Use TaskManager({ action: "list" }) to see available tasks and overall progress
 - Use TaskManager({ action: "get", taskId }) to read task details before starting
 
+## Nested Delegation
+- Use \`Task\` or \`spawn_agent\` when exploration becomes tree-shaped and needs a deeper isolated sub-agent.
+- TaskManager creates panel tasks only; it does not create another agent.
+
 ## Output Format
 For code exploration:
 \`\`\`
@@ -310,7 +322,7 @@ Suggested actions:
       'Glob', 'Grep', 'Read', 'ListDirectory',
       'WebSearch', 'WebFetch',
       'ReadDocument', 'ExcelAutomate',
-      'TaskManager',
+      'TaskManager', 'Task', 'spawn_agent',
     ],
     model: 'fast',
     maxIterations: 15,
@@ -376,12 +388,16 @@ Suggested actions:
 - Use TaskManager({ action: "list" }) to check available tasks before starting work
 - Use TaskManager({ action: "update", ... }) to claim tasks (set owner to your name) and mark completed
 - After completing a task, call TaskManager({ action: "list" }) to find next available work
-- Create sub-tasks with TaskManager({ action: "create", ... }) to break down complex plans`,
+- Create sub-tasks with TaskManager({ action: "create", ... }) to break down complex plans
+
+## Nested Delegation
+- Use \`Task\` or \`spawn_agent\` when planning needs another isolated sub-agent to investigate a branch.
+- TaskManager creates panel tasks only; it does not create another agent.`,
     ),
     tools: [
       'Glob', 'Grep', 'Read', 'ListDirectory',
       'Write',
-      'TaskManager',
+      'TaskManager', 'Task', 'spawn_agent',
     ],
     model: 'balanced',
     maxIterations: 12,

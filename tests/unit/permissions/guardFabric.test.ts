@@ -117,10 +117,11 @@ describe('GuardFabric', () => {
       expect(decision.source).toBe('s1');
     });
 
-    it('async_agent + spawn_agent → deny', () => {
+    it('async_agent + spawn_agent → no topology override (falls through to sources)', () => {
+      fabric.registerSource(makeSource('s1', { verdict: 'allow', confidence: 1, source: 's1', reason: 'nested spawn ok' }));
       const decision = fabric.evaluate(makeRequest({ tool: 'spawn_agent', topology: 'async_agent' }));
-      expect(decision.verdict).toBe('deny');
-      expect(decision.source).toBe('topology');
+      expect(decision.verdict).toBe('allow');
+      expect(decision.source).toBe('s1');
     });
 
     it('teammate + spawn_agent → deny', () => {

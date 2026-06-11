@@ -84,6 +84,12 @@ const NETWORK_READ_TOOLS = new Set([
   'WebSearch',
 ]);
 
+const DELEGATION_TOOLS = new Set([
+  'Task',
+  'spawn_agent',
+  'AgentSpawn',
+]);
+
 // MCP 工具前缀 — 默认 ask（未知副作用）
 const MCP_TOOL_PREFIXES = ['mcp_', 'mcp:', 'MCPUnified'];
 
@@ -287,17 +293,27 @@ export class PermissionClassifier {
       };
     }
 
-    // R4: Bash 命令分类
+    // R4: 内部多代理委派工具 → approve
+    if (DELEGATION_TOOLS.has(toolName)) {
+      return {
+        decision: 'approve',
+        reason: `内部委派工具 ${toolName}`,
+        confidence: 1.0,
+        cached: false,
+      };
+    }
+
+    // R5: Bash 命令分类
     if (isBashToolName(toolName) && typeof args.command === 'string') {
       return this.classifyBashCommand(args.command, context, startTime);
     }
 
-    // R5: 文件写入工具 — 按路径判断
+    // R6: 文件写入工具 — 按路径判断
     if (WRITE_TOOLS.has(toolName)) {
       return this.classifyFileWrite(args, context, startTime);
     }
 
-    // R6: MCP 工具 → ask（未知副作用）
+    // R7: MCP 工具 → ask（未知副作用）
     if (this.isMcpTool(toolName)) {
       const reason = `MCP 工具 ${toolName} 可能有副作用`;
       return {

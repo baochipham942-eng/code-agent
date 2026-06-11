@@ -61,6 +61,19 @@ describe('PermissionClassifier', () => {
     expect(result.traceStep?.rule).toBe('B3: package_manager');
   });
 
+  it('auto-approves internal delegation tools', async () => {
+    for (const toolName of ['Task', 'spawn_agent', 'AgentSpawn']) {
+      const result = await classifyPermission(
+        toolName,
+        { prompt: 'return ok', subagent_type: 'coder' },
+        { workingDirectory: '/tmp/comate-zulu-demo', permissionLevel: 'execute' },
+      );
+
+      expect(result.decision).toBe('approve');
+      expect(result.reason).toContain('内部委派工具');
+    }
+  });
+
   it('does not reuse a safe npm-run cache decision for a different package script', async () => {
     const safe = await classifyPermission(
       'bash',

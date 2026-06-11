@@ -167,4 +167,43 @@ describe('ToolExecutor write isolation', () => {
     writeRun.resolve({ success: true, result: 'write' });
     await expect(secondRun).resolves.toMatchObject({ success: true });
   });
+
+  it('does not hold a workspace lock for internal delegation tools', async () => {
+    resolverState.getDefinition.mockImplementation((toolName: string) => {
+      if (['Task', 'spawn_agent', 'AgentSpawn'].includes(toolName)) {
+        return {
+          name: toolName,
+          description: 'delegation test tool',
+          inputSchema: { type: 'object', properties: {}, required: [] },
+          requiresPermission: false,
+          permissionLevel: 'execute',
+        };
+      }
+      return writeToolDefinition(toolName);
+    });
+
+    const delegationRun = deferred<ToolExecutionResult>();
+    const writeRun = deferred<ToolExecutionResult>();
+    resolverState.execute
+      .mockImplementationOnce(() => delegationRun.promise)
+      .mockImplementationOnce(() => writeRun.promise);
+
+    const executor = createExecutor();
+    const firstRun = executor.execute('Task', { subagent_type: 'coder', prompt: 'nested' }, {});
+    await nextTick();
+    const secondRun = executor.execute('Write', { file_path: 'a.md', content: 'a' }, {});
+    await nextTick();
+
+    expect(resolverState.execute).toHaveBeenCalledTimes(2);
+
+    delegationRun.resolve({ success: true, result: 'delegated' });
+    writeRun.resolve({ success: true, result: 'write' });
+    const [delegationResult, writeResult] = await Promise.all([firstRun, secondRun]);
+
+    expect(delegationResult.metadata?.writeIsolation).toBeUndefined();
+    expect(writeResult.metadata?.writeIsolation).toMatchObject({
+      kind: 'file',
+      lockKey: 'file:/tmp/code-agent-write-isolation/a.md',
+    });
+  });
 });

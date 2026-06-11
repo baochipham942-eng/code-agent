@@ -73,6 +73,10 @@ export interface ToolContext {
    * 注入子 toolContext，让深度沿链路流转（swarm 护栏 P1-2 #2）。
    */
   spawnDepth?: number;
+  /**
+   * 会话级 spawn 深度覆盖。SpawnGuard 会 clamp 到硬上限，未设置时使用默认深度。
+   */
+  spawnMaxDepth?: number;
 
   // ============================================================================
   // 模型回调支持（工具内二次调用模型）

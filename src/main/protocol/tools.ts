@@ -99,6 +99,10 @@ export interface ToolContext {
   // --- Agent/Subagent 身份（CC agentId/agentType 对应）---
   readonly agentId?: string;
   readonly agentType?: string;
+  /** 当前 agent 在 spawn 链路中的嵌套深度（主 agent = 0）。 */
+  readonly spawnDepth?: number;
+  /** 会话级 spawn 深度覆盖；执行层会 clamp 到硬上限。 */
+  readonly spawnMaxDepth?: number;
 
   // --- 文件读取缓存（CC readFileState 对应）---
   readonly fileCache?: FileReadCache;

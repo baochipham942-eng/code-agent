@@ -134,6 +134,10 @@ export interface ExecuteOptions {
   // Agent ID for per-agent BrowserPool / ComputerSurface isolation。子 agent 派活
   // 时由 subagent pipeline 灌入；主 agent 留 undefined → default agent。
   agentId?: string;
+  // 当前 agent 在 spawn 链路中的嵌套深度（主 agent = 0）。
+  spawnDepth?: number;
+  // 会话级 spawn 深度覆盖，执行层会 clamp 到硬上限。
+  spawnMaxDepth?: number;
   // 持久化角色 ID（agent 注册 id）。subagent 执行时由 subagentExecutor 灌入，
   // MemoryWrite/Read 的 scope='role' 路由按这个 id 定位 roles/<id>/ 目录。
   agentRole?: string;
@@ -327,6 +331,8 @@ export class ToolExecutor {
       sessionId: options.sessionId,
       // Per-agent BrowserPool / ComputerSurface isolation
       agentId: options.agentId,
+      spawnDepth: options.spawnDepth,
+      spawnMaxDepth: options.spawnMaxDepth,
       // 持久化角色 ID（MemoryWrite/Read scope='role' 路由用）
       agentRole: options.agentRole,
       // Current message attachments for multi-agent workflows

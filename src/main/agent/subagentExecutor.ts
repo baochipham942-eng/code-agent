@@ -928,6 +928,8 @@ export class SubagentExecutor {
                 {
                   sessionId: (context.toolContext as { sessionId?: string }).sessionId,
                   agentId: pipelineContext.agentId,
+                  spawnDepth: context.toolContext.spawnDepth,
+                  spawnMaxDepth: context.toolContext.spawnMaxDepth,
                   // 持久化角色 ID → 透传给工具层（MemoryWrite/Read scope='role' 路由用）
                   agentRole: config.roleId,
                   hookManager: context.hookManager,

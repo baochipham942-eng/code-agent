@@ -124,6 +124,8 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     emit: wrapEmit,
     modelCallback: legacy?.modelCallback as ((prompt: string) => Promise<string>) | undefined,
     currentToolCallId: legacy?.currentToolCallId as string | undefined,
+    spawnDepth: legacy?.spawnDepth as number | undefined,
+    spawnMaxDepth: legacy?.spawnMaxDepth as number | undefined,
     planMode,
     subagent,
     hookManager: legacy?.hookManager,

@@ -25,14 +25,12 @@ export const AGENT = {
 
 /** SpawnGuard 子代理守卫（spawn 并发 + 嵌套深度） */
 export const SPAWN_GUARD = {
-  /** 最大并发子代理数 */
-  MAX_AGENTS: 6,
-  /**
-   * 最大 spawn 嵌套深度。1 = 主→子一层，子代理不再向下 spawn。
-   * 与工具黑名单（SUBAGENT_DISABLED_TOOLS 屏蔽 spawn_agent）互为双保险：
-   * 黑名单是 prompt/工具层，本值是执行层的第二道防线。
-   */
-  MAX_DEPTH: 1,
+  /** 整棵 spawn 树共享的最大并发 agent 数 */
+  MAX_TREE_AGENTS: 8,
+  /** 默认 spawn 嵌套深度。3 = 主→子→孙→曾孙，适合上下文卸载默认路径。 */
+  DEFAULT_SPAWN_DEPTH: 3,
+  /** spawn 嵌套硬上限。会话级覆盖必须 clamp 到此值，避免 5 层以上失控。 */
+  HARD_MAX_SPAWN_DEPTH: 5,
 } as const;
 
 /** Agent 超时配置 (按角色) */

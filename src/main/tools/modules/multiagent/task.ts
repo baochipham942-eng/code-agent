@@ -55,6 +55,8 @@ import { taskSchema as schema } from './task.schema';
 import { withMultiagentMeta } from './resultMeta';
 import { getContextHealthService } from '../../../context/contextHealthService';
 import { estimateTokens } from '../../../context/tokenEstimator';
+import { getSpawnGuard } from '../../../agent/spawnGuard';
+import { routeFailureCode } from '../../../../shared/contract/cancellation';
 
 // ----------------------------------------------------------------------------
 // 参数验证（与 legacy parseAndValidateTaskParams 对齐）
@@ -162,6 +164,24 @@ export async function executeTask(
     return { ok: false, error: 'aborted', code: 'ABORTED' };
   }
 
+  const guard = getSpawnGuard();
+  const parentDepth = ctx.spawnDepth ?? 0;
+  const childDepth = parentDepth + 1;
+  const maxDepth = guard.getMaxDepth(ctx.spawnMaxDepth);
+  if (!guard.checkDepth(childDepth, ctx.spawnMaxDepth)) {
+    return {
+      ok: false,
+      error: `DEPTH_LIMIT: Task spawn 嵌套深度超限（current depth ${childDepth} exceeds maxDepth ${maxDepth}）。请改用本层已有上下文继续汇总，或让父 agent 重新拆分任务。`,
+      code: 'DOMAIN_ERROR',
+      meta: {
+        cancellationReason: 'depth-limit',
+        failureRouting: routeFailureCode('depth-limit'),
+        childDepth,
+        maxDepth,
+      },
+    };
+  }
+
   onProgress?.({ stage: 'starting', detail: schema.name });
 
   const { subagent_type: subagentType, prompt, description } = validation.params;
@@ -267,7 +287,11 @@ export async function executeTask(
 
     // Cross-cat 桥接：SubagentExecutor 接 legacy ToolContext，用 helper 桥
     // TODO Wave 4: SubagentExecutor 升 ProtocolToolContext 后移除 legacyAdapter
-    const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
+    const legacyCtx = {
+      ...buildLegacyCtxFromProtocol(ctx, canUseTool),
+      spawnDepth: childDepth,
+      spawnMaxDepth: ctx.spawnMaxDepth,
+    };
 
     const result = await executor.execute(
       prompt,

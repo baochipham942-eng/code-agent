@@ -29,6 +29,22 @@ const TOOL_TYPES_PATH = path.resolve(
   __dirname,
   '../../../src/main/tools/types.ts',
 );
+const PROTOCOL_TYPES_PATH = path.resolve(
+  __dirname,
+  '../../../src/main/protocol/tools.ts',
+);
+const LEGACY_ADAPTER_PATH = path.resolve(
+  __dirname,
+  '../../../src/main/tools/modules/_helpers/legacyAdapter.ts',
+);
+const SHADOW_ADAPTER_PATH = path.resolve(
+  __dirname,
+  '../../../src/main/tools/dispatch/shadowAdapter.ts',
+);
+const TASK_PATH = path.resolve(
+  __dirname,
+  '../../../src/main/tools/modules/multiagent/task.ts',
+);
 
 describe('executeSpawnAgent 深度截断接线', () => {
   const source = readFileSync(SPAWN_AGENT_PATH, 'utf8');
@@ -36,6 +52,11 @@ describe('executeSpawnAgent 深度截断接线', () => {
   it('ToolContext 暴露 spawnDepth 字段', () => {
     const types = readFileSync(TOOL_TYPES_PATH, 'utf8');
     expect(types).toMatch(/spawnDepth\?:\s*number/);
+    expect(types).toMatch(/spawnMaxDepth\?:\s*number/);
+
+    const protocolTypes = readFileSync(PROTOCOL_TYPES_PATH, 'utf8');
+    expect(protocolTypes).toMatch(/spawnDepth\?:\s*number/);
+    expect(protocolTypes).toMatch(/spawnMaxDepth\?:\s*number/);
   });
 
   it('按 context.spawnDepth + 1 算 childDepth 并调 guard.checkDepth', () => {
@@ -47,8 +68,10 @@ describe('executeSpawnAgent 深度截断接线', () => {
   it('深度超限返回 depth-limit 失败码', () => {
     const idx = source.indexOf('checkDepth(');
     expect(idx).toBeGreaterThan(-1);
-    const block = source.slice(idx, idx + 600);
+    const block = source.slice(idx, idx + 900);
     expect(block).toMatch(/cancellationReason:\s*['"]depth-limit['"]/);
+    expect(block).toMatch(/childDepth/);
+    expect(block).toMatch(/maxDepth/);
   });
 
   it('子 toolContext 注入递增后的 spawnDepth（深度沿链路流转）', () => {
@@ -65,5 +88,42 @@ describe('executeSpawnAgent 深度截断接线', () => {
 
   it('spawn 时失败码带上 routeFailureCode 算出的消费策略', () => {
     expect(source).toMatch(/routeFailureCode\(/);
+  });
+});
+
+describe('Task 深度截断接线', () => {
+  const source = readFileSync(TASK_PATH, 'utf8');
+
+  it('Task 也按 ctx.spawnDepth + 1 检查深度', () => {
+    expect(source).toMatch(/ctx\.spawnDepth\s*\?\?\s*0/);
+    expect(source).toMatch(/checkDepth\(\s*childDepth/);
+  });
+
+  it('Task 深度超限返回 depth-limit，错误包含当前深度和上限', () => {
+    const idx = source.indexOf('checkDepth(');
+    expect(idx).toBeGreaterThan(-1);
+    const block = source.slice(idx, idx + 900);
+    expect(block).toMatch(/code:\s*['"]DOMAIN_ERROR['"]/);
+    expect(block).toMatch(/cancellationReason:\s*['"]depth-limit['"]/);
+    expect(block).toMatch(/childDepth/);
+    expect(block).toMatch(/maxDepth/);
+  });
+
+  it('Task 子 toolContext 注入递增后的 spawnDepth', () => {
+    expect(source).toMatch(/spawnDepth:\s*childDepth/);
+  });
+});
+
+describe('protocol/legacy adapter 深度字段桥接', () => {
+  it('buildLegacyCtxFromProtocol 把 spawnDepth / spawnMaxDepth 映射回 legacy ctx', () => {
+    const source = readFileSync(LEGACY_ADAPTER_PATH, 'utf8');
+    expect(source).toMatch(/spawnDepth:\s*ctx\.spawnDepth/);
+    expect(source).toMatch(/spawnMaxDepth:\s*ctx\.spawnMaxDepth/);
+  });
+
+  it('buildProtocolContext 从 legacy ctx 带上 spawnDepth / spawnMaxDepth', () => {
+    const source = readFileSync(SHADOW_ADAPTER_PATH, 'utf8');
+    expect(source).toMatch(/spawnDepth:\s*legacy\?\.spawnDepth/);
+    expect(source).toMatch(/spawnMaxDepth:\s*legacy\?\.spawnMaxDepth/);
   });
 });

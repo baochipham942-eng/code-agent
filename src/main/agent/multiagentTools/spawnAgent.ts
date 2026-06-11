@@ -87,9 +87,34 @@ export async function executeSpawnAgent(
       };
     }
 
+    const guard = getSpawnGuard();
+
+    // ========================================================================
+    // spawn 嵌套深度截断（执行层防线）
+    // ========================================================================
+    const parentDepth = context.spawnDepth ?? 0;
+    const childDepth = parentDepth + 1;
+    const maxDepth = guard.getMaxDepth(context.spawnMaxDepth);
+    if (!guard.checkDepth(childDepth, context.spawnMaxDepth)) {
+      return {
+        success: false,
+        error: `DEPTH_LIMIT: spawn 嵌套深度超限（current depth ${childDepth} exceeds maxDepth ${maxDepth}）。请改用本层已有上下文继续汇总，或让父 agent 重新拆分任务。`,
+        metadata: {
+          cancellationReason: 'depth-limit',
+          failureRouting: routeFailureCode('depth-limit'),
+          childDepth,
+          maxDepth,
+        },
+      };
+    }
+
     // Handle parallel execution mode
     if (parallel && agents && agents.length > 0) {
-      return executeParallelAgents(agents, context);
+      return executeParallelAgents(agents, {
+        ...context,
+        spawnDepth: childDepth,
+        spawnMaxDepth: context.spawnMaxDepth,
+      });
     }
 
     // Single agent mode
@@ -215,8 +240,6 @@ export async function executeSpawnAgent(
     // ========================================================================
     // SpawnGuard: 并发检查 + 工具过滤
     // ========================================================================
-    const guard = getSpawnGuard();
-
     // ========================================================================
     // P3: 场景 D 兜底 — readonly 父 role 禁止 spawn writer 子 agent
     // 这是 hard topology rule，不受 inheritance 配置影响（即便用户选 independent
@@ -236,25 +259,6 @@ export async function executeSpawnAgent(
         metadata: {
           cancellationReason: 'child-refusal',
           failureRouting: routeFailureCode('child-refusal'),
-        },
-      };
-    }
-
-    // ========================================================================
-    // swarm 护栏 P1-2 #2：spawn 嵌套深度截断（执行层第二道防线）
-    // 工具黑名单（SUBAGENT_DISABLED_TOOLS）已在 prompt/工具层屏蔽子代理 spawn；
-    // 这里按 depth 流转再确定性兜底——子代理若经非工具路径走到这里也防爆栈。
-    // ========================================================================
-    const parentDepth = context.spawnDepth ?? 0;
-    const childDepth = parentDepth + 1;
-    if (!guard.checkDepth(childDepth)) {
-      return {
-        success: false,
-        error: `DEPTH_LIMIT: spawn 嵌套深度超限（child depth ${childDepth} 超过 maxDepth）。子代理不应再向下 spawn——确定性失败，重试无意义。`,
-        metadata: {
-          cancellationReason: 'depth-limit',
-          failureRouting: routeFailureCode('depth-limit'),
-          childDepth,
         },
       };
     }
@@ -372,7 +376,12 @@ export async function executeSpawnAgent(
         modelConfig: context.modelConfig as ModelConfig,
         toolResolver: context.resolver as ToolResolver,
         // swarm 护栏 P1-2 #2：把递增后的深度注入子 toolContext，让深度沿 spawn 链路流转
-        toolContext: { ...context, agentId, spawnDepth: childDepth },
+        toolContext: {
+          ...context,
+          agentId,
+          spawnDepth: childDepth,
+          spawnMaxDepth: context.spawnMaxDepth,
+        },
         parentToolUseId: context.currentToolCallId,
         abortSignal: abortController.signal,
         spawnGuardId: agentId,

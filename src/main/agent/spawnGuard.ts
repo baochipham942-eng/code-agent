@@ -3,7 +3,7 @@
 // ============================================================================
 //
 // 借鉴 Codex CLI 的 guards.rs：
-// - 并发限制（MAX_AGENTS / MAX_DEPTH）
+// - 并发限制（MAX_TREE_AGENTS / DEFAULT_SPAWN_DEPTH / HARD_MAX_SPAWN_DEPTH）
 // - 持有 executor promise + AbortController 引用
 // - RAII 风格 reserve/release
 // ============================================================================
@@ -80,9 +80,9 @@ export type ManagedAgentStatus =
   | 'cancelled';
 
 export interface SpawnGuardConfig {
-  /** Maximum concurrent agents (default 6) */
+  /** Maximum concurrent agents across the whole spawn tree (default 8) */
   maxAgents?: number;
-  /** Maximum nesting depth (default 1 — sub-agents cannot spawn sub-agents) */
+  /** Maximum nesting depth (default 3; clamped to hard max 5) */
   maxDepth?: number;
 }
 
@@ -107,8 +107,9 @@ interface PersistedSpawnGuardState {
 // SpawnGuard
 // ============================================================================
 
-const DEFAULT_MAX_AGENTS = SPAWN_GUARD.MAX_AGENTS;
-const DEFAULT_MAX_DEPTH = SPAWN_GUARD.MAX_DEPTH;
+const DEFAULT_MAX_AGENTS = SPAWN_GUARD.MAX_TREE_AGENTS;
+const DEFAULT_MAX_DEPTH = SPAWN_GUARD.DEFAULT_SPAWN_DEPTH;
+const HARD_MAX_DEPTH = SPAWN_GUARD.HARD_MAX_SPAWN_DEPTH;
 
 export type OnAgentCompleteCallback = (agent: ManagedAgent) => void;
 
@@ -122,7 +123,7 @@ class SpawnGuard {
 
   constructor(config: SpawnGuardConfig = {}) {
     this.maxAgents = config.maxAgents ?? DEFAULT_MAX_AGENTS;
-    this.maxDepth = config.maxDepth ?? DEFAULT_MAX_DEPTH;
+    this.maxDepth = this.clampDepth(config.maxDepth ?? DEFAULT_MAX_DEPTH);
   }
 
   /**
@@ -137,8 +138,20 @@ class SpawnGuard {
   /**
    * Check if spawning is allowed at the given depth.
    */
-  checkDepth(depth: number): boolean {
-    return depth <= this.maxDepth;
+  checkDepth(depth: number, overrideMaxDepth?: number): boolean {
+    return depth <= this.getMaxDepth(overrideMaxDepth);
+  }
+
+  /**
+   * Get configured nesting depth, optionally applying a session override.
+   */
+  getMaxDepth(overrideMaxDepth?: number): number {
+    return this.clampDepth(overrideMaxDepth ?? this.maxDepth);
+  }
+
+  private clampDepth(depth: number): number {
+    if (!Number.isFinite(depth)) return DEFAULT_MAX_DEPTH;
+    return Math.min(Math.max(1, Math.floor(depth)), HARD_MAX_DEPTH);
   }
 
   /**
@@ -560,11 +573,14 @@ class SpawnGuard {
 }
 
 /**
- * Tools disabled for all subagents (three-way consensus: CC + Codex + Cline)
+ * Tools disabled for all subagents.
+ *
+ * Nested spawning is intentionally allowed through spawn_agent / AgentSpawn / Task.
+ * User-interactive, workflow orchestration, and agent-control tools stay disabled:
+ * subagents should return distilled results to their parent, not ask the user,
+ * manage siblings, drive teams, or mutate the parent orchestration state.
  */
 const SUBAGENT_DISABLED_TOOLS = [
-  'spawn_agent',        // 子不启子（max_depth=1）
-  'AgentSpawn',         // PascalCase alias
   'agent_message',      // 子代理不能操控其他 agent
   'AgentMessage',
   'wait_agent',         // Phase 2 新增工具也禁用
@@ -581,7 +597,6 @@ const SUBAGENT_DISABLED_TOOLS = [
   'WorkflowOrchestrate',
   'teammate',
   'Teammate',
-  'Task',               // SDK Task 工具（可间接 spawn agent）
   'plan_review',        // 跨 agent 审批（子代理不应自审）
   'PlanReview',
 ];

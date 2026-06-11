@@ -120,9 +120,17 @@ describe('SpawnGuard', () => {
     it('未配置时默认 maxDepth / maxAgents 取自 SPAWN_GUARD 常量（不硬编码）', () => {
       resetSpawnGuard();
       const defaultGuard = getSpawnGuard();
-      expect(defaultGuard.getMaxAgents()).toBe(SPAWN_GUARD.MAX_AGENTS);
-      expect(defaultGuard.checkDepth(SPAWN_GUARD.MAX_DEPTH)).toBe(true);
-      expect(defaultGuard.checkDepth(SPAWN_GUARD.MAX_DEPTH + 1)).toBe(false);
+      expect(defaultGuard.getMaxAgents()).toBe(SPAWN_GUARD.MAX_TREE_AGENTS);
+      expect(defaultGuard.checkDepth(SPAWN_GUARD.DEFAULT_SPAWN_DEPTH)).toBe(true);
+      expect(defaultGuard.checkDepth(SPAWN_GUARD.DEFAULT_SPAWN_DEPTH + 1)).toBe(false);
+    });
+
+    it('会话级 maxDepth override 会 clamp 到硬上限', () => {
+      resetSpawnGuard();
+      const defaultGuard = getSpawnGuard();
+      expect(defaultGuard.getMaxDepth(99)).toBe(SPAWN_GUARD.HARD_MAX_SPAWN_DEPTH);
+      expect(defaultGuard.checkDepth(SPAWN_GUARD.HARD_MAX_SPAWN_DEPTH, 99)).toBe(true);
+      expect(defaultGuard.checkDepth(SPAWN_GUARD.HARD_MAX_SPAWN_DEPTH + 1, 99)).toBe(false);
     });
   });
 
@@ -336,14 +344,21 @@ describe('SpawnGuard', () => {
       expect(guard.get('a1')).toBeDefined();
     });
 
-    it('getDisabledTools 包含 spawn_agent 禁用项', () => {
+    it('getDisabledTools 放行 spawn 入口，但保留交互/编排控制禁用项', () => {
       const disabled = guard.getDisabledTools();
-      expect(disabled).toContain('spawn_agent');
-      expect(disabled).toContain('AgentSpawn');
-      expect(disabled).toContain('Task');
+      expect(disabled).not.toContain('spawn_agent');
+      expect(disabled).not.toContain('AgentSpawn');
+      expect(disabled).not.toContain('Task');
       expect(disabled).toContain('workflow');
       expect(disabled).toContain('DynamicWorkflow');
       expect(disabled).toContain('workflow_orchestrate');
+      expect(disabled).toContain('ask_user_question');
+      expect(disabled).toContain('agent_message');
+      expect(disabled).toContain('wait_agent');
+      expect(disabled).toContain('close_agent');
+      expect(disabled).toContain('send_input');
+      expect(disabled).toContain('teammate');
+      expect(disabled).toContain('plan_review');
     });
 
     it('getReadonlyDisabledTools 额外包含写入类工具', () => {
@@ -351,7 +366,8 @@ describe('SpawnGuard', () => {
       expect(readonly).toContain('Write');
       expect(readonly).toContain('Edit');
       // 仍然包含基础黑名单
-      expect(readonly).toContain('spawn_agent');
+      expect(readonly).toContain('workflow');
+      expect(readonly).not.toContain('spawn_agent');
     });
   });
 

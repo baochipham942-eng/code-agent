@@ -3,8 +3,11 @@ import type { RuntimeContext } from './runtimeContext';
 import { inferArtifactRepairIssueCodesFromText } from './artifactRepairSpec';
 
 // Route A: the repair tool set never narrows by read/block counters.
-// Pre-patch the model can Read/Edit/Write/Append the target artifact freely;
-// post-patch Bash is added so it can run validator/verification commands.
+// Pre-patch the model can Read/Edit/Write/Append AND Bash the target artifact:
+// strong code models (e.g. deepseek) often want to inspect/build/test before
+// editing, and blocking Bash pre-patch made them loop on the unavailable tool
+// until the milestone retry was aborted (verified 2026-06-11 deepseek run).
+// Bash here is the same workspace-scoped tool already allowed post-patch.
 const ARTIFACT_REPAIR_PRE_PATCH_ALLOWLIST = new Set([
   'Read',
   'read_file',
@@ -14,6 +17,8 @@ const ARTIFACT_REPAIR_PRE_PATCH_ALLOWLIST = new Set([
   'write_file',
   'Append',
   'append_file',
+  'Bash',
+  'bash',
 ]);
 
 const ARTIFACT_REPAIR_POST_PATCH_ALLOWLIST = new Set([

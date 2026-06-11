@@ -110,9 +110,10 @@ describe('artifactRepairGuard', () => {
     });
 
     // Route A: issue-code detection is kept, but the tool set never collapses to a
-    // targeted/mutation-only subset — pre-patch always exposes Read/Edit/Write/Append.
+    // targeted/mutation-only subset. Bash is now allowed pre-patch too (relaxed
+    // 2026-06-11: strong code models loop on the unavailable tool otherwise).
     const policy = getArtifactRepairToolPolicy(ctx.artifactRepairGuard);
-    expect(policy?.allowedToolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
+    expect(policy?.allowedToolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
     expect(policy?.writeAllowed).toBe(true);
   });
 
@@ -122,18 +123,20 @@ describe('artifactRepairGuard', () => {
     seedArtifactRepairGuardFromContext(ctx);
 
     const policy = getArtifactRepairToolPolicy(ctx.artifactRepairGuard);
-    expect(policy?.allowedToolNames).toEqual(['Read', 'Edit', 'Write', 'Append']);
+    expect(policy?.allowedToolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
     expect(policy?.writeAllowed).toBe(true);
   });
 
-  it('adds Bash to the repair tool set once the artifact is patched', () => {
+  it('keeps Bash available in the repair tool set both pre- and post-patch', () => {
     const ctx = makeRuntimeContext('Artifact validation failed for /tmp/code-agent/games/game.html. Please fix runSmokeTest.');
 
     seedArtifactRepairGuardFromContext(ctx);
-    ctx.artifactRepairGuard.patched = true;
+    const prePatch = getArtifactRepairToolPolicy(ctx.artifactRepairGuard);
+    expect(prePatch?.bashAllowed).toBe(true);
 
-    const policy = getArtifactRepairToolPolicy(ctx.artifactRepairGuard);
-    expect(policy?.allowedToolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
-    expect(policy?.bashAllowed).toBe(true);
+    ctx.artifactRepairGuard.patched = true;
+    const postPatch = getArtifactRepairToolPolicy(ctx.artifactRepairGuard);
+    expect(postPatch?.allowedToolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
+    expect(postPatch?.bashAllowed).toBe(true);
   });
 });

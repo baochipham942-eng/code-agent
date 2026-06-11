@@ -124,6 +124,27 @@ describe('cuaSessionLock — 跨会话 computer-use 文件锁', () => {
     expect(await gateCuaToolCall('check_permissions', 'session-a')).toBeNull();
   });
 
+  it('gate：会话声明与观察类工具放行（实测 cua-driver 0.5.1 的 35 工具清单）', async () => {
+    writeFileSync(
+      lockPath,
+      JSON.stringify({ sessionId: 'other-session', pid: 1, acquiredAt: Date.now() }),
+    );
+    // end_session 必须放行：占锁会话之外的 run 也要能善后自己的 agent cursor
+    expect(await gateCuaToolCall('end_session', 'session-a')).toBeNull();
+    // start_session 只声明 run 身份不碰桌面，纯观察 run 也需要它
+    expect(await gateCuaToolCall('start_session', 'session-a')).toBeNull();
+    for (const tool of [
+      'get_screen_size',
+      'get_cursor_position',
+      'get_config',
+      'get_agent_cursor_state',
+      'get_recording_state',
+      'check_for_update',
+    ]) {
+      expect(await gateCuaToolCall(tool, 'session-a'), tool).toBeNull();
+    }
+  });
+
   it('gate：操控类工具空闲时放行并占锁', async () => {
     expect(await gateCuaToolCall('click', 'session-a')).toBeNull();
     const lock = JSON.parse(readFileSync(lockPath, 'utf8'));

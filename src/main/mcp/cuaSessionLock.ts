@@ -118,7 +118,12 @@ export async function tryAcquireCuaLock(sessionId: string): Promise<CuaAcquireRe
   return { kind: 'blocked', by: existing.sessionId };
 }
 
-/** 不动鼠标键盘、不改桌面状态的工具，无需互斥。未列出的一律按操控类处理。 */
+/**
+ * 不动鼠标键盘、不改桌面状态的工具，无需互斥。未列出的一律按操控类处理。
+ * 清单对照 cua-driver 0.5.1 实测 tools/list（35 个）。
+ * start_session/end_session 只声明 run 身份/清理 agent cursor，不碰桌面：
+ * end_session 尤其必须放行，否则被锁挡住的 run 无法善后自己的 cursor。
+ */
 const CUA_READONLY_TOOLS = new Set([
   'screenshot',
   'list_apps',
@@ -126,6 +131,14 @@ const CUA_READONLY_TOOLS = new Set([
   'get_window_state',
   'get_accessibility_tree',
   'check_permissions',
+  'get_screen_size',
+  'get_cursor_position',
+  'get_config',
+  'get_agent_cursor_state',
+  'get_recording_state',
+  'check_for_update',
+  'start_session',
+  'end_session',
 ]);
 
 /**

@@ -23,6 +23,7 @@ const applyWorkbenchRecipeMock = vi.hoisted(() => vi.fn());
 const saveWorkbenchPresetFromSessionMock = vi.hoisted(() => vi.fn());
 const promptMock = vi.hoisted(() => vi.fn());
 const clipboardWriteTextMock = vi.hoisted(() => vi.fn());
+const showToastMock = vi.hoisted(() => vi.fn());
 const workbenchPresetState = vi.hoisted(() => ({
   presets: [] as any[],
   recipes: [] as any[],
@@ -186,6 +187,11 @@ vi.mock('../../../src/renderer/stores/taskStore', () => ({
     selector ? selector({ sessionStates: {} }) : { sessionStates: {} },
 }));
 
+vi.mock('../../../src/renderer/stores/uiStore', () => ({
+  useUIStore: (selector?: (state: { showToast: typeof showToastMock }) => unknown) =>
+    selector ? selector({ showToast: showToastMock }) : { showToast: showToastMock },
+}));
+
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
     invoke: invokeMock,
@@ -200,7 +206,7 @@ vi.mock('../../../src/renderer/components/features/sidebar/SessionContextMenu', 
   },
 }));
 
-import { Sidebar } from '../../../src/renderer/components/Sidebar';
+import { Sidebar, resolveRuntimeLogsDir } from '../../../src/renderer/components/Sidebar';
 
 function renderSidebarWithContextMenu() {
   reactState.useStateCalls = 0;
@@ -226,6 +232,7 @@ describe('Sidebar review actions', () => {
     saveWorkbenchPresetFromSessionMock.mockReset();
     promptMock.mockReset();
     clipboardWriteTextMock.mockReset();
+    showToastMock.mockReset();
     clipboardWriteTextMock.mockResolvedValue(undefined);
     workbenchPresetState.presets = [];
     workbenchPresetState.recipes = [];
@@ -262,6 +269,123 @@ describe('Sidebar review actions', () => {
     expect(menuState.items.some((item) => item.label === '加入 Review')).toBe(false);
     expect(menuState.items.some((item) => item.label === '打开 Replay')).toBe(false);
     expect(menuState.items.some((item) => item.label === '导出 JSON')).toBe(false);
+  });
+
+  it('resolves the runtime logs directory from config scope', () => {
+    expect(resolveRuntimeLogsDir({
+      workingDirectory: null,
+      generatedAt: 1,
+      layers: [
+        {
+          id: 'runtime',
+          label: 'Runtime',
+          description: '',
+          pathLabel: '',
+          presentCount: 1,
+          activeCount: 1,
+          warningCount: 0,
+          items: [
+            {
+              id: 'runtime-app-settings',
+              label: '应用 settings',
+              description: '',
+              path: '/Users/alice/.code-agent/config.json',
+              kind: 'file',
+              exists: true,
+              active: true,
+              private: true,
+              status: 'active',
+            },
+          ],
+        },
+      ],
+      writeRecommendations: [],
+      safetyScan: {
+        status: 'clear',
+        scannedAt: 1,
+        workingDirectory: null,
+        totalFindings: 0,
+        criticalCount: 0,
+        warningCount: 0,
+        infoCount: 0,
+        targets: [],
+        findings: [],
+      },
+    })).toBe('/Users/alice/.code-agent/logs');
+  });
+
+  it('opens the runtime logs folder when session diagnostics export fails', async () => {
+    domainInvokeMock.mockImplementation(async (domain: string, action: string) => {
+      if (domain === IPC_DOMAINS.SESSION && action === 'exportDiagnostics') {
+        return { success: false, error: { message: 'diagnostic build failed' } };
+      }
+      if (domain === IPC_DOMAINS.WORKSPACE && action === 'getConfigScope') {
+        return {
+          success: true,
+          data: {
+            workingDirectory: null,
+            generatedAt: 1,
+            layers: [
+              {
+                id: 'runtime',
+                label: 'Runtime',
+                description: '',
+                pathLabel: '',
+                presentCount: 1,
+                activeCount: 1,
+                warningCount: 0,
+                items: [
+                  {
+                    id: 'runtime-app-settings',
+                    label: '应用 settings',
+                    description: '',
+                    path: '/Users/alice/.code-agent/config.json',
+                    kind: 'file',
+                    exists: true,
+                    active: true,
+                    private: true,
+                    status: 'active',
+                  },
+                ],
+              },
+            ],
+            writeRecommendations: [],
+            safetyScan: {
+              status: 'clear',
+              scannedAt: 1,
+              workingDirectory: null,
+              totalFindings: 0,
+              criticalCount: 0,
+              warningCount: 0,
+              infoCount: 0,
+              targets: [],
+              findings: [],
+            },
+          },
+        };
+      }
+      if (domain === IPC_DOMAINS.WORKSPACE && action === 'openPath') {
+        return { success: true, data: '' };
+      }
+      return { success: true, data: null };
+    });
+    renderSidebarWithContextMenu();
+
+    const exportLogsAction = menuState.items.find((item) => item.label === '导出会话日志');
+    expect(exportLogsAction).toBeTruthy();
+
+    await exportLogsAction?.onClick();
+
+    expect(domainInvokeMock).toHaveBeenCalledWith(IPC_DOMAINS.SESSION, 'exportDiagnostics', {
+      sessionId: 'session-1',
+    });
+    expect(domainInvokeMock).toHaveBeenCalledWith(IPC_DOMAINS.WORKSPACE, 'openPath', {
+      filePath: '/Users/alice/.code-agent/logs',
+    });
+    expect(showToastMock).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('已打开日志目录'),
+    );
   });
 
   it('reuses the selected session workbench in the current session from context menu', async () => {

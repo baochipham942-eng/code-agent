@@ -45,6 +45,7 @@ import {
   Download,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
+import type { ConfigScopeSummary } from '@shared/contract/configScope';
 import { useUIStore } from '../stores/uiStore';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
@@ -73,6 +74,37 @@ import {
 } from '@shared/contract/workbenchPreset';
 
 const logger = createLogger('Sidebar');
+const SESSION_DIAGNOSTICS_EXPORT_TIMEOUT_MS = 12_000;
+
+function rejectAfter<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label}超时`)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+function dirname(filePath: string): string | null {
+  const index = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+  if (index <= 0) return null;
+  return filePath.slice(0, index);
+}
+
+function joinChildPath(basePath: string, childName: string): string {
+  const separator = basePath.includes('\\') && !basePath.includes('/') ? '\\' : '/';
+  return `${basePath.replace(/[\\/]+$/, '')}${separator}${childName}`;
+}
+
+export function resolveRuntimeLogsDir(configScope: ConfigScopeSummary | null | undefined): string | null {
+  const runtimeLayer = configScope?.layers.find((layer) => layer.id === 'runtime');
+  const runtimeFilePath = runtimeLayer?.items.find((item) => item.id === 'runtime-app-settings')?.path
+    ?? runtimeLayer?.items.find((item) => item.id === 'runtime-db')?.path;
+  if (!runtimeFilePath || runtimeFilePath === 'app bundle') return null;
+  const runtimeDir = dirname(runtimeFilePath);
+  return runtimeDir ? joinChildPath(runtimeDir, 'logs') : null;
+}
 
 export function isAccountMenuEventOutside(
   accountMenuElement: { contains: (node: Node) => boolean } | null,
@@ -396,6 +428,36 @@ export const Sidebar: React.FC = () => {
     });
   }, [showToast]);
 
+  const openRuntimeLogsFolder = useCallback(async (): Promise<boolean> => {
+    try {
+      const scope = await window.domainAPI?.invoke<ConfigScopeSummary>(
+        IPC_DOMAINS.WORKSPACE,
+        'getConfigScope',
+      );
+      if (!scope?.success) {
+        throw new Error(scope?.error?.message || 'Failed to resolve app data directory');
+      }
+      const logsDir = resolveRuntimeLogsDir(scope.data);
+      if (!logsDir) {
+        throw new Error('Failed to resolve logs directory');
+      }
+      const opened = await window.domainAPI?.invoke(
+        IPC_DOMAINS.WORKSPACE,
+        'openPath',
+        { filePath: logsDir },
+      );
+      if (opened && !opened.success) {
+        throw new Error(opened.error?.message || 'Failed to open logs directory');
+      }
+      return true;
+    } catch (error) {
+      logger.warn('Failed to open runtime logs folder', {
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }, []);
+
   const getContextMenuItems = useCallback((session: SessionWithMeta): ContextMenuItem[] => {
     const isPinned = pinnedSessionIds.has(session.id);
     const isArchived = !!session.isArchived;
@@ -571,10 +633,14 @@ export const Sidebar: React.FC = () => {
         icon: '🧾',
         onClick: async () => {
           try {
-            const response = await window.domainAPI?.invoke<{ content: string; suggestedFileName: string }>(
-              IPC_DOMAINS.SESSION,
-              'exportDiagnostics',
-              { sessionId: session.id },
+            const response = await rejectAfter(
+              window.domainAPI?.invoke<{ content: string; suggestedFileName: string }>(
+                IPC_DOMAINS.SESSION,
+                'exportDiagnostics',
+                { sessionId: session.id },
+              ) ?? Promise.resolve(undefined),
+              SESSION_DIAGNOSTICS_EXPORT_TIMEOUT_MS,
+              '导出会话日志',
             );
             if (!response?.success || !response.data?.content) {
               throw new Error(response?.error?.message || 'Failed to export session diagnostics');
@@ -585,7 +651,11 @@ export const Sidebar: React.FC = () => {
             );
           } catch (error) {
             logger.error('Failed to export session diagnostics', error);
-            showToast('error', `导出会话日志失败：${error instanceof Error ? error.message : String(error)}`);
+            const openedLogs = await openRuntimeLogsFolder();
+            const recoveryHint = openedLogs
+              ? '已打开日志目录，请发送当天 code-agent 日志。'
+              : '请发送 ~/.code-agent/logs 里的当天 code-agent 日志。';
+            showToast('error', `导出会话日志失败：${error instanceof Error ? error.message : String(error)}。${recoveryHint}`);
           }
         },
       },
@@ -601,6 +671,7 @@ export const Sidebar: React.FC = () => {
     setWorkingDirectory,
     saveWorkbenchPresetFromSession,
     saveExportToDownloads,
+    openRuntimeLogsFolder,
     showToast,
     softDelete,
     togglePin,

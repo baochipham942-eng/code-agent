@@ -17,6 +17,8 @@ type WorkflowStep = {
 
 type WorkflowJob = {
   steps?: WorkflowStep[];
+  needs?: string | string[];
+  if?: string;
 };
 
 type WorkflowFile = {
@@ -144,6 +146,20 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).toContain('macos-15-intel');
     expect(workflow).toContain("'darwin-aarch64', 'darwin-x86_64'");
     expect(workflow).toContain('--dmg-url-x64');
+    // Windows leg（windows-support.md §4 P2 矩阵折入，2026-06-11）：独立 build-windows job
+    // 产 NSIS unsigned + minisign，publish 合并 windows-x86_64 键 + stable exe；
+    // windows 失败降级 mac-only（required keys 不含 windows 键、EXE_ARGS 留空）
+    expect(workflow).toContain('build-windows:');
+    expect(workflow).toContain('windows-latest');
+    expect(workflow).toContain('tauri-platform-config.mjs win32-x64');
+    expect(workflow).toContain('scripts/verify-windows-release.mjs --stage pre');
+    expect(workflow).toContain('scripts/verify-windows-release.mjs --stage post');
+    expect(workflow).toContain('latest-win-x64.json');
+    expect(workflow).toContain("required.push('windows-x86_64')");
+    expect(workflow).toContain('release-assets/*-setup.exe');
+    expect(workflow).toContain('release-assets/*-setup.exe.sig');
+    expect(workflow).toContain('--exe-url');
+    expect(workflow).toContain('win-x64-setup.exe');
     expect(workflow).toContain('npm run release:runtime-assets');
     expect(workflow).toContain('runtime-assets-manifest-darwin-arm64.json');
     expect(workflow).toContain('scripts/verify-runtime-assets-publish.mjs');
@@ -182,11 +198,30 @@ describe('macOS release fail-closed gates', () => {
     expect(verifierIndex).toBeLessThan(repackIndex);
 
     const publishJob = workflow.jobs?.['publish'];
-    expect(publishJob?.needs).toBe('build-mac');
+    // 三平台折入后 publish 同时依赖 mac + windows，但 windows 失败不拖死 mac 发版：
+    // if 条件只要求 build-mac 成功（windows 缺席由 merge/stable 步骤降级处理）
+    expect(publishJob?.needs).toEqual(['build-mac', 'build-windows']);
+    expect(publishJob?.if).toBe("${{ always() && needs.build-mac.result == 'success' }}");
     const publishStepNames = (publishJob?.steps ?? []).map((step) => step.name);
     expect(publishStepNames).toContain('Create GitHub Release');
-    expect(publishStepNames.indexOf('Merge per-arch updater manifests (single latest.json, dual platforms)'))
+    expect(publishStepNames.indexOf('Merge per-arch updater manifests (single latest.json, all platforms)'))
       .toBeLessThan(publishStepNames.indexOf('Create GitHub Release'));
+
+    // windows job 自身的 fail-closed 链：资源验证 → renderer 探针 → NSIS 构建 → 产物验证 →
+    // 重命名（最终 OSS key 名）→ manifest 生成（URL 与对象名一致的前提）
+    const windowsSteps = (workflow.jobs?.['build-windows']?.steps ?? []).map((step) => step.name);
+    const winPreIndex = windowsSteps.indexOf('Verify bundle resources (pre)');
+    const winProbeIndex = windowsSteps.indexOf('Smoke-probe renderer startup');
+    const winBuildIndex = windowsSteps.indexOf('Build NSIS bundle (unsigned, minisign updater artifacts)');
+    const winPostIndex = windowsSteps.indexOf('Verify NSIS artifact (post)');
+    const winRenameIndex = windowsSteps.indexOf('Rename installer to final OSS key name');
+    const winManifestIndex = windowsSteps.indexOf('Generate per-platform updater manifest (points to OSS)');
+    expect(winPreIndex).toBeGreaterThanOrEqual(0);
+    expect(winProbeIndex).toBeGreaterThan(winPreIndex);
+    expect(winBuildIndex).toBeGreaterThan(winProbeIndex);
+    expect(winPostIndex).toBeGreaterThan(winBuildIndex);
+    expect(winRenameIndex).toBeGreaterThan(winPostIndex);
+    expect(winManifestIndex).toBeGreaterThan(winRenameIndex);
 
     expect(verifier?.if).toBe("${{ matrix.arch == 'arm64' && !contains(github.ref_name, '-') }}");
     expect(verifier?.env).toMatchObject({

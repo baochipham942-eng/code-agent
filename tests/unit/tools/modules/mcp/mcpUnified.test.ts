@@ -616,6 +616,31 @@ describe('mcpUnifiedModule (native)', () => {
         });
       }
     });
+
+    it('HTTP Streamable happy path through unified', async () => {
+      const client = makeMockClient({
+        getServerState: vi.fn()
+          .mockReturnValueOnce(undefined)
+          .mockReturnValueOnce({ status: 'connected', toolCount: 2 }),
+      });
+      getMCPClientMock.mockReturnValue(client);
+      const result = await run({
+        action: 'add_server',
+        name: 'jira',
+        type: 'http-streamable',
+        serverUrl: 'https://mcp.example.com/mcp',
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('Type: http-streamable');
+        expect(result.meta).toMatchObject({
+          server: 'jira',
+          action: 'add_server',
+          type: 'http-streamable',
+          count: 2,
+        });
+      }
+    });
   });
 
   describe('progress', () => {

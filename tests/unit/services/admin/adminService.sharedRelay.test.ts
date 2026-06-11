@@ -5,15 +5,23 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const state: { existing: { capabilities: string[]; plan?: string } | null; upsertArg: { capabilities: string[]; status: string; plan: string } | null } = {
+const state: {
+  existing: { capabilities: string[]; plan?: string } | null;
+  upsertArg: { capabilities: string[]; status: string; plan: string } | null;
+  rpcCalls: Array<{ name: string; args: unknown }>;
+} = {
   existing: null,
   upsertArg: null,
+  rpcCalls: [],
 };
 
 vi.mock('../../../../src/main/services/infra/supabaseService', () => ({
   isSupabaseInitialized: () => true,
   getSupabase: () => ({
-    rpc: vi.fn(async () => ({ data: [], error: null })), // admin_list_users（末尾刷新用）
+    rpc: vi.fn(async (name: string, args?: unknown) => {
+      state.rpcCalls.push({ name, args });
+      return { data: [], error: null };
+    }),
     from: vi.fn(() => ({
       select: vi.fn(() => ({
         // setUserSharedRelay: .select().eq().maybeSingle()
@@ -35,6 +43,7 @@ describe('adminService.setUserSharedRelay', () => {
   beforeEach(() => {
     state.existing = null;
     state.upsertArg = null;
+    state.rpcCalls = [];
   });
 
   it('授予新用户（无 entitlement 行）：写入基础功能 + shared_relay，status active', async () => {
@@ -63,5 +72,14 @@ describe('adminService.setUserSharedRelay', () => {
     const caps = state.upsertArg!.capabilities;
     expect(caps.filter((c) => c === 'cloud_agent')).toHaveLength(1);
     expect(caps).toContain('shared_relay');
+  });
+
+  it('管理员角色开关走 SECURITY DEFINER RPC，不直接写 profiles', async () => {
+    await getAdminService().setUserAdmin({ userId: 'u1', enabled: true });
+
+    expect(state.rpcCalls).toContainEqual({
+      name: 'admin_set_user_admin',
+      args: { p_user_id: 'u1', p_is_admin: true },
+    });
   });
 });

@@ -17,6 +17,7 @@ import type {
   AdminInviteCodeItem,
   AdminInviteCodeListResult,
   AdminSetSharedRelayInput,
+  AdminSetUserAdminInput,
   AdminUpdateInviteCodeInput,
   AdminUserDashboardItem,
   AdminUserDashboardResult,
@@ -190,6 +191,23 @@ class AdminService {
         plan: existing?.plan && existing.plan !== 'free' ? existing.plan : 'team',
         capabilities: Array.from(caps),
       }, { onConflict: 'user_id' });
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return this.listUsers();
+  }
+
+  /** 给某用户开/关管理员角色。实际写入由数据库 SECURITY DEFINER RPC 执行，避免客户端绕过 RLS。 */
+  async setUserAdmin(input: AdminSetUserAdminInput): Promise<AdminUserDashboardResult> {
+    if (!isSupabaseInitialized()) {
+      return { users: [], unavailableReason: 'Supabase not initialized' };
+    }
+
+    const { error } = await getSupabase().rpc('admin_set_user_admin', {
+      p_user_id: input.userId,
+      p_is_admin: input.enabled,
+    });
     if (error) {
       throw new Error(error.message);
     }

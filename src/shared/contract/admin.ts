@@ -38,6 +38,12 @@ export interface AdminSetSharedRelayInput {
   enabled: boolean;
 }
 
+/** 给某用户开/关管理员角色。 */
+export interface AdminSetUserAdminInput {
+  userId: string;
+  enabled: boolean;
+}
+
 export interface AdminInviteCodeItem {
   id: string;
   code: string;

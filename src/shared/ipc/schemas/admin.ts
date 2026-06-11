@@ -8,6 +8,7 @@ import type {
   AdminInviteCodeItem,
   AdminInviteCodeListResult,
   AdminSetSharedRelayInput,
+  AdminSetUserAdminInput,
   AdminUpdateInviteCodeInput,
   AdminUserDashboardItem,
   AdminUserDashboardResult,
@@ -82,6 +83,11 @@ const AdminUpdateInviteCodeInputSchema: z.ZodType<AdminUpdateInviteCodeInput> = 
 });
 
 const AdminSetSharedRelayInputSchema: z.ZodType<AdminSetSharedRelayInput> = z.object({
+  userId: z.string(),
+  enabled: z.boolean(),
+});
+
+const AdminSetUserAdminInputSchema: z.ZodType<AdminSetUserAdminInput> = z.object({
   userId: z.string(),
   enabled: z.boolean(),
 });
@@ -183,6 +189,12 @@ const SetSharedRelayRequestSchema = z.object({
   requestId: z.string().optional(),
 });
 
+const SetUserAdminRequestSchema = z.object({
+  action: z.literal('setUserAdmin'),
+  payload: AdminSetUserAdminInputSchema,
+  requestId: z.string().optional(),
+});
+
 const AdminRequestSchema = z.discriminatedUnion('action', [
   ListUsersRequestSchema,
   ListInviteCodesRequestSchema,
@@ -191,6 +203,7 @@ const AdminRequestSchema = z.discriminatedUnion('action', [
   ListControlPlaneAuditEventsRequestSchema,
   ListControlPlaneRolloutSummaryRequestSchema,
   SetSharedRelayRequestSchema,
+  SetUserAdminRequestSchema,
 ]);
 
 const AdminResultDataSchema = z.union([
@@ -242,6 +255,11 @@ export const AdminSchemas = {
   SET_SHARED_RELAY: channelSchema({
     channel: IPC_DOMAINS.ADMIN,
     payload: SetSharedRelayRequestSchema,
+    response: IPCResponseSchema(AdminUserDashboardResultSchema),
+  }),
+  SET_USER_ADMIN: channelSchema({
+    channel: IPC_DOMAINS.ADMIN,
+    payload: SetUserAdminRequestSchema,
     response: IPCResponseSchema(AdminUserDashboardResultSchema),
   }),
 } as const;

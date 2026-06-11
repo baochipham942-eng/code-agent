@@ -25,6 +25,9 @@ const DYNAMIC_WORKFLOW_INTENT_RE =
 const WORKFLOW_ORCHESTRATE_INTENT_RE =
   /\bworkflow_orchestrate\b|\bWorkflowOrchestrate\b|\blegacy[-\s]?workflow\b|\bdeclarative[-\s]?workflow\b|\bcowork\b|\bco[-\s]?work\b|\bmulti[-\s]?agent\b|\bdag\b|多\s*agent|多代理|多智能体|子代理|子\s*agent|子阶段|协作(?:任务|流程|模式|审查)|工作流(?:编排|子阶段)?/i;
 
+const MCP_MANAGEMENT_INTENT_RE =
+  /\bMCPUnified\b|\bmcp[_\s-]*(?:add|server|config|configure|setup|connect|status|tool|resource)\b|\badd\s+(?:an?\s+)?mcp\b|\bconfigure\s+(?:an?\s+)?mcp\b|配置\s*mcp|添加\s*mcp|新增\s*mcp|连接\s*mcp|管理\s*mcp|mcp\s*(?:配置|服务器|工具|资源|状态)/i;
+
 function getLatestUserText(runtime: RuntimeForDeferredToolPreload): string {
   for (let index = runtime.messages.length - 1; index >= 0; index -= 1) {
     const message = runtime.messages[index];
@@ -75,6 +78,10 @@ export function getDeferredToolsToPreloadForTurn(
     tools.add('workflow');
   } else if (WORKFLOW_ORCHESTRATE_INTENT_RE.test(userText)) {
     tools.add('workflow_orchestrate');
+  }
+
+  if (MCP_MANAGEMENT_INTENT_RE.test(userText)) {
+    tools.add('MCPUnified');
   }
 
   // Active skill invocation：把本轮命中的 skill 的 allowedTools 里的非 core 工具预加载，

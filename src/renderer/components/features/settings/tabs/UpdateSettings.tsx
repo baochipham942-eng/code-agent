@@ -686,7 +686,10 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
                     </p>
                   )}
                   {visibleUpdateInfo.releaseNotes && (
-                    <div className="mt-2 p-2 bg-zinc-800 rounded text-xs text-zinc-400 max-h-24 overflow-y-auto whitespace-pre-line">
+                    <div
+                      className="mt-3 overflow-y-auto rounded-md bg-zinc-800 p-4 text-sm leading-6 text-zinc-300 whitespace-pre-line break-words"
+                      style={{ maxHeight: 'min(50vh, 520px)' }}
+                    >
                       {visibleUpdateInfo.releaseNotes}
                     </div>
                   )}

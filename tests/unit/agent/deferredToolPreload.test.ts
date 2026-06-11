@@ -4,12 +4,17 @@ vi.mock('../../../src/main/tools/protocolRegistry', async () => {
   const actual = await vi.importActual<typeof import('../../../src/main/tools/protocolRegistry')>(
     '../../../src/main/tools/protocolRegistry',
   );
-  return {
-    ...actual,
-    isProtocolToolName: (name: string) =>
-      name === 'Browser' || name === 'Computer' || name === 'workflow' || name === 'workflow_orchestrate' || actual.isProtocolToolName(name),
-  };
-});
+    return {
+      ...actual,
+      isProtocolToolName: (name: string) =>
+        name === 'Browser'
+        || name === 'Computer'
+        || name === 'workflow'
+        || name === 'workflow_orchestrate'
+        || name === 'MCPUnified'
+        || actual.isProtocolToolName(name),
+    };
+  });
 
 import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
 import type { ToolModule, ToolSchema } from '../../../src/main/protocol/tools';
@@ -46,7 +51,7 @@ function runtime(
   };
 }
 
-function registerProtocolToolForPreload(name: 'Browser' | 'Computer' | 'workflow' | 'workflow_orchestrate'): void {
+function registerProtocolToolForPreload(name: 'Browser' | 'Computer' | 'workflow' | 'workflow_orchestrate' | 'MCPUnified'): void {
   const schema: ToolSchema = {
     name,
     description: `${name} test schema`,
@@ -54,7 +59,11 @@ function registerProtocolToolForPreload(name: 'Browser' | 'Computer' | 'workflow
       type: 'object',
       properties: {},
     },
-    category: name === 'workflow' || name === 'workflow_orchestrate' ? 'multiagent' : 'vision',
+    category: name === 'workflow' || name === 'workflow_orchestrate'
+      ? 'multiagent'
+      : name === 'MCPUnified'
+        ? 'mcp'
+        : 'vision',
     permissionLevel: 'execute',
     readOnly: false,
   };
@@ -77,6 +86,7 @@ describe('deferred tool preload', () => {
     registerProtocolToolForPreload('Computer');
     registerProtocolToolForPreload('workflow');
     registerProtocolToolForPreload('workflow_orchestrate');
+    registerProtocolToolForPreload('MCPUnified');
     resetToolSearchService();
   });
 
@@ -218,6 +228,20 @@ describe('deferred tool preload', () => {
         timestamp: 1,
       }],
     }))).toEqual(['workflow_orchestrate']);
+  });
+
+  it('preloads MCPUnified for explicit MCP management requests', () => {
+    const loaded = preloadDeferredToolsForTurn(runtime({
+      messages: [{
+        id: 'm1',
+        role: 'user',
+        content: '帮我配置一个 jira 的 http-streamable MCP server',
+        timestamp: 1,
+      }],
+    }));
+
+    expect(loaded).toEqual(['MCPUnified']);
+    expect(getToolSearchService().isToolLoaded('MCPUnified')).toBe(true);
   });
 
   // role-edit-flow 根因 #2 回归护栏：active skill 的 allowedTools 里的非 core 工具

@@ -285,6 +285,19 @@ Update API 优先读取 `UPDATE_DOWNLOAD_URL_<CHANNEL>`；没有 override 时通
 
 **已知边界**：旧版本（v0.16.80 及之前）仍指向 GitHub 端点，无法自动更新到 OSS 链路，需用户手动重装一次新版本完成切换。
 
+### Renderer active bundle serve safety（2026-06-12）
+
+Renderer hot-update 的 active bundle 不能压过更新后的 shell 修复。`resolveRendererServeDir()` 现在接受当前 shell version：如果 `.bundle-meta.json.version` 低于 shell version，即使 active bundle 有 `index.html`，web static router 也回退 serve 包内 builtin renderer。
+
+| 场景 | Serve 目录 |
+|------|------------|
+| hot-update kill switch 打开 | builtin renderer |
+| active bundle 缺 meta 或缺 `index.html` | builtin renderer |
+| active bundle version < current shell version | builtin renderer |
+| active bundle version >= current shell version 且健康 | active renderer cache |
+
+这条只保证"旧前端不能遮住新壳修复"；它不代表远端 renderer latest 已经发布成功。生产补发仍要继续核 `renderer-bundle/latest/manifest.json`、`release-record.json` 和 app update latestVersion 是否对位。
+
 ---
 
 ## 更新流程

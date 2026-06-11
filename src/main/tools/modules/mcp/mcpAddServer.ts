@@ -36,6 +36,7 @@ import {
   type MCPServerConfig,
   type MCPStdioServerConfig,
   type MCPSSEServerConfig,
+  type MCPHttpStreamableServerConfig,
 } from '../../../mcp/mcpClient';
 import { getMcpConfigPath, ensureConfigDir, pathExists } from '../../../config';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
@@ -61,6 +62,14 @@ const BLOCKED_COMMANDS = [
   'mount',
   'umount',
 ];
+
+type MCPAddServerTransport = 'http-streamable' | 'sse' | 'stdio';
+
+function normalizeServerType(type: unknown): MCPAddServerTransport | null {
+  if (type === 'http' || type === 'http-streamable') return 'http-streamable';
+  if (type === 'sse' || type === 'stdio') return type;
+  return null;
+}
 
 function validateStdioCommand(command: string): { valid: boolean; error?: string } {
   const normalizedCmd = command.toLowerCase().trim();
@@ -108,7 +117,7 @@ function buildMcpAddServerErrorMeta(input: {
 
 function buildMcpAddServerSuccessMeta(input: {
   name: string;
-  type: 'sse' | 'stdio';
+  type: MCPAddServerTransport;
   output: string;
   persisted: boolean;
   connected: boolean;
@@ -262,13 +271,13 @@ export async function executeMcpAddServer(
       meta: buildMcpAddServerErrorMeta({ name, type: args.type, errorCode: 'INVALID_ARGS' }),
     };
   }
-  const type = args.type;
-  if (type !== 'sse' && type !== 'stdio') {
+  const type = normalizeServerType(args.type);
+  if (!type) {
     return {
       ok: false,
-      error: `Invalid server type: ${String(type)}. Use 'sse' or 'stdio'.`,
+      error: `Invalid server type: ${String(args.type)}. Use 'http-streamable', 'http', 'sse', or 'stdio'.`,
       code: 'INVALID_ARGS',
-      meta: buildMcpAddServerErrorMeta({ name, type, errorCode: 'INVALID_ARGS' }),
+      meta: buildMcpAddServerErrorMeta({ name, type: args.type, errorCode: 'INVALID_ARGS' }),
     };
   }
 
@@ -293,12 +302,20 @@ export async function executeMcpAddServer(
 
   onProgress?.({ stage: 'starting', detail: `mcp_add_server ${name} (${type})` });
 
-  const serverUrl = typeof args.serverUrl === 'string' ? args.serverUrl : undefined;
+  const serverUrl = typeof args.serverUrl === 'string'
+    ? args.serverUrl
+    : typeof args.url === 'string'
+      ? args.url
+      : undefined;
   const command = typeof args.command === 'string' ? args.command : undefined;
   const argsList = Array.isArray(args.args) ? (args.args as string[]) : undefined;
   const env =
     args.env && typeof args.env === 'object' && !Array.isArray(args.env)
       ? (args.env as Record<string, string>)
+      : undefined;
+  const headers =
+    args.headers && typeof args.headers === 'object' && !Array.isArray(args.headers)
+      ? (args.headers as Record<string, string>)
       : undefined;
   const autoConnect = typeof args.auto_connect === 'boolean' ? args.auto_connect : true;
 
@@ -318,11 +335,11 @@ export async function executeMcpAddServer(
   // ── Build & validate config based on type ─────────────
   let serverConfig: MCPServerConfig;
 
-  if (type === 'sse') {
+  if (type === 'sse' || type === 'http-streamable') {
     if (!serverUrl) {
       return {
         ok: false,
-        error: 'serverUrl is required for SSE type',
+        error: 'serverUrl is required for remote MCP server types',
         code: 'INVALID_ARGS',
         meta: buildMcpAddServerErrorMeta({ name, type, errorCode: 'INVALID_ARGS' }),
       };
@@ -336,12 +353,23 @@ export async function executeMcpAddServer(
         meta: buildMcpAddServerErrorMeta({ name, type, errorCode: 'INVALID_ARGS' }),
       };
     }
-    serverConfig = {
-      name,
-      type: 'sse',
-      serverUrl,
-      enabled: true,
-    } as MCPSSEServerConfig;
+    if (type === 'sse') {
+      serverConfig = {
+        name,
+        type: 'sse',
+        serverUrl,
+        headers,
+        enabled: true,
+      } as MCPSSEServerConfig;
+    } else {
+      serverConfig = {
+        name,
+        type: 'http-streamable',
+        serverUrl,
+        headers,
+        enabled: true,
+      } as MCPHttpStreamableServerConfig;
+    }
   } else {
     if (!command) {
       return {
@@ -363,6 +391,7 @@ export async function executeMcpAddServer(
     }
     serverConfig = {
       name,
+      type: 'stdio',
       command,
       args: argsList || [],
       env: env || {},
@@ -416,7 +445,7 @@ export async function executeMcpAddServer(
   // ── Build output（行为保真：legacy outputParts 拼接顺序与措辞） ──
   const outputParts: string[] = [`# MCP Server Added: ${name}`, '', `Type: ${type}`];
 
-  if (type === 'sse') {
+  if (type === 'sse' || type === 'http-streamable') {
     outputParts.push(`URL: ${serverUrl}`);
   } else {
     const cmdDisplay = [command, ...(argsList || [])].join(' ');

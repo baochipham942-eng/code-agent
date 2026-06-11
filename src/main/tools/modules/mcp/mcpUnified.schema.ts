@@ -19,6 +19,7 @@ Examples:
 - List tools for a server: { "action": "list_tools", "server": "github" }
 - Read resource: { "action": "read_resource", "server": "myserver", "uri": "file:///data.json" }
 - Get status: { "action": "status" }
+- Add HTTP Streamable server: { "action": "add_server", "name": "jira", "type": "http-streamable", "serverUrl": "https://mcp.example.com/mcp" }
 - Add SSE server: { "action": "add_server", "name": "my-server", "type": "sse", "serverUrl": "https://mcp.example.com/sse" }
 - Add stdio server: { "action": "add_server", "name": "fs", "type": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"] }`,
   inputSchema: {
@@ -52,12 +53,21 @@ Examples:
       },
       type: {
         type: 'string',
-        enum: ['sse', 'stdio'],
-        description: '[add_server] Server type: sse (remote) or stdio (local)',
+        enum: ['http-streamable', 'http', 'sse', 'stdio'],
+        description: '[add_server] Server type: http-streamable/http (remote), sse (legacy remote), or stdio (local)',
       },
       serverUrl: {
         type: 'string',
-        description: '[add_server] Server URL (required for SSE type)',
+        description: '[add_server] Server URL (required for remote types)',
+      },
+      url: {
+        type: 'string',
+        description: '[add_server] Alias for serverUrl (accepted for Settings JSON compatibility)',
+      },
+      headers: {
+        type: 'object',
+        description: '[add_server] HTTP headers (remote types only)',
+        additionalProperties: true,
       },
       command: {
         type: 'string',

@@ -134,7 +134,7 @@ describe('mcpAddServerModule (native)', () => {
       expect(mcpAddServerModule.schema.permissionLevel).toBe('write');
       expect(mcpAddServerModule.schema.inputSchema.required).toEqual(['name', 'type']);
       const typeProp = (mcpAddServerModule.schema.inputSchema.properties as Record<string, { enum?: string[] }>).type;
-      expect(typeProp.enum).toEqual(['sse', 'stdio']);
+      expect(typeProp.enum).toEqual(['http-streamable', 'http', 'sse', 'stdio']);
     });
   });
 
@@ -157,7 +157,7 @@ describe('mcpAddServerModule (native)', () => {
     });
 
     it('rejects unknown type', async () => {
-      const result = await run({ name: 'foo', type: 'http' });
+      const result = await run({ name: 'foo', type: 'websocket' });
       if (!result.ok) {
         expect(result.code).toBe('INVALID_ARGS');
         expect(result.error).toContain('Invalid server type');
@@ -355,6 +355,44 @@ describe('mcpAddServerModule (native)', () => {
       expect(client.addServer).toHaveBeenCalled();
       expect(client.connect).toHaveBeenCalled();
       expect(fsWriteFileMock).toHaveBeenCalled();
+    });
+  });
+
+  describe('HTTP Streamable happy path', () => {
+    it('accepts Settings-style http + url, persists as http-streamable, and connects', async () => {
+      const client = makeMockClient({
+        getServerState: vi.fn()
+          .mockReturnValueOnce(undefined)
+          .mockReturnValueOnce({ status: 'connected', toolCount: 3 }),
+      });
+      getMCPClientMock.mockReturnValue(client);
+
+      const result = await run({
+        name: 'jira',
+        type: 'http',
+        url: 'https://mcp.example.com/mcp',
+        headers: { Authorization: 'Bearer token' },
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('Type: http-streamable');
+        expect(result.output).toContain('URL: https://mcp.example.com/mcp');
+        expect(result.output).toContain('Available tools: 3');
+        expect(result.meta).toMatchObject({
+          type: 'http-streamable',
+          server: 'jira',
+          connected: true,
+          count: 3,
+        });
+      }
+      expect(client.addServer).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'jira',
+        type: 'http-streamable',
+        serverUrl: 'https://mcp.example.com/mcp',
+        headers: { Authorization: 'Bearer token' },
+        enabled: true,
+      }));
     });
   });
 

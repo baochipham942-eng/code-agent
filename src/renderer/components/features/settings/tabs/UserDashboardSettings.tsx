@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, RefreshCw, Search, Shield, Users } from 'lucide-react';
+import { AlertCircle, RefreshCw, Search, Shield, ShieldCheck, Users } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type {
   AdminUserDashboardItem,
@@ -12,6 +12,7 @@ import type {
 import { Button } from '../../../primitives';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
+import { useAuthStore } from '../../../../stores/authStore';
 
 type UserStatusFilter = 'all' | AdminUserDashboardItem['status'];
 
@@ -86,6 +87,7 @@ const SummaryTile: React.FC<{
 };
 
 export const UserDashboardSettings: React.FC = () => {
+  const currentUserId = useAuthStore((state) => state.user?.id);
   const [users, setUsers] = useState<AdminUserDashboardItem[]>([]);
   const [unavailableReason, setUnavailableReason] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -124,6 +126,24 @@ export const UserDashboardSettings: React.FC = () => {
         IPC_DOMAINS.ADMIN,
         'setSharedRelay',
         { userId: user.id, enabled: !user.hasSharedRelay },
+      );
+      setUsers(result.users);
+      setUnavailableReason(result.unavailableReason || null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyUserId(null);
+    }
+  }, []);
+
+  const toggleUserAdmin = useCallback(async (user: AdminUserDashboardItem) => {
+    setBusyUserId(user.id);
+    setError(null);
+    try {
+      const result = await ipcService.invokeDomain<AdminUserDashboardResult>(
+        IPC_DOMAINS.ADMIN,
+        'setUserAdmin',
+        { userId: user.id, enabled: !user.isAdmin },
       );
       setUsers(result.users);
       setUnavailableReason(result.unavailableReason || null);
@@ -274,13 +294,39 @@ export const UserDashboardSettings: React.FC = () => {
                       <div className="mt-1 truncate text-zinc-500" title={user.email}>{user.email}</div>
                     </td>
                     <td className="px-3 py-3">
-                      {user.isAdmin ? (
-                        <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
-                          Admin
-                        </span>
-                      ) : (
-                        <span className="text-zinc-500">用户</span>
-                      )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {user.isAdmin ? (
+                          <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
+                            Admin
+                          </span>
+                        ) : (
+                          <span className="text-zinc-500">用户</span>
+                        )}
+                        <button
+                          type="button"
+                          disabled={busyUserId === user.id || (user.isAdmin && user.id === currentUserId)}
+                          onClick={() => void toggleUserAdmin(user)}
+                          title={
+                            user.isAdmin
+                              ? user.id === currentUserId
+                                ? '不能撤销自己的管理员角色'
+                                : '点击撤销管理员角色'
+                              : '点击设为管理员'
+                          }
+                          className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                            user.isAdmin
+                              ? 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+                              : 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                          }`}
+                        >
+                          <ShieldCheck className="h-3 w-3" />
+                          {busyUserId === user.id
+                            ? '…'
+                            : user.isAdmin
+                              ? user.id === currentUserId ? '本人' : '撤销'
+                              : '设为 Admin'}
+                        </button>
+                      </div>
                     </td>
                     <td className="px-3 py-3">
                       <span className={`rounded-md border px-2 py-1 text-[11px] ${STATUS_CLASSES[user.status]}`}>

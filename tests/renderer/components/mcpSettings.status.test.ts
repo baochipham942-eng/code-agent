@@ -33,6 +33,7 @@ const connectedGithubServer: WorkbenchMcpRegistryItem = {
 let mcpServers: WorkbenchMcpRegistryItem[] = [
   connectedGithubServer,
 ];
+let authIsAdmin = true;
 
 const authErrorTavilyServer: WorkbenchMcpRegistryItem = {
   kind: 'mcp' as const,
@@ -160,7 +161,7 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityQuickActionRunner', (
 
 vi.mock('../../../src/renderer/stores/authStore', () => ({
   useAuthStore: (selector: (state: { user: { isAdmin: boolean } }) => unknown) => selector({
-    user: { isAdmin: true },
+    user: { isAdmin: authIsAdmin },
   }),
 }));
 
@@ -191,6 +192,7 @@ import { MCPSettings } from '../../../src/renderer/components/features/settings/
 describe('MCPSettings status', () => {
   beforeEach(() => {
     mcpServers = [connectedGithubServer];
+    authIsAdmin = true;
   });
 
   it('renders overall MCP status and server list from the shared MCP hook', () => {
@@ -227,5 +229,18 @@ describe('MCPSettings status', () => {
 
     expect(html).toContain('重连');
     expect(html).not.toContain('重新授权');
+  });
+
+  it('lets non-admin users manage MCP servers while hiding bridge diagnostics', () => {
+    authIsAdmin = false;
+
+    const html = renderToStaticMarkup(
+      React.createElement(MCPSettings),
+    );
+
+    expect(html).toContain('从云端刷新 MCP 配置');
+    expect(html).toContain('添加服务器');
+    expect(html).toContain('禁用');
+    expect(html).not.toContain('LocalBridge');
   });
 });

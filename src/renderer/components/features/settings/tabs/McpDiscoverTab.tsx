@@ -16,8 +16,8 @@ export interface McpDiscoverTabProps {
   existingServerIds: Set<string>;
   /** 已启用的 server ID 集合 */
   enabledServerIds: Set<string>;
-  /** 是否管理员（非管理员只读） */
-  isAdmin: boolean;
+  /** 是否允许管理 MCP 配置。普通登录用户也可以自助管理。 */
+  canManageMcp: boolean;
   actionLoading: string | null;
   /** 免配置 server 一键连接 */
   onQuickConnect: (entry: RecommendedMcpServerEntry) => void;
@@ -45,7 +45,7 @@ export function getEntryAction(
 interface McpServerCardProps {
   entry: RecommendedMcpServerEntry;
   action: ReturnType<typeof getEntryAction>;
-  isAdmin: boolean;
+  canManageMcp: boolean;
   isLoading: boolean;
   onQuickConnect: (entry: RecommendedMcpServerEntry) => void;
   onConnectWithConfig: (entry: RecommendedMcpServerEntry) => void;
@@ -55,7 +55,7 @@ interface McpServerCardProps {
 const McpServerCard: React.FC<McpServerCardProps> = ({
   entry,
   action,
-  isAdmin,
+  canManageMcp,
   isLoading,
   onQuickConnect,
   onConnectWithConfig,
@@ -95,7 +95,7 @@ const McpServerCard: React.FC<McpServerCardProps> = ({
           variant="secondary"
           onClick={() => onEnableBuiltin(entry.id)}
           loading={isLoading}
-          disabled={isWebMode() || !isAdmin}
+          disabled={isWebMode() || !canManageMcp}
           leftIcon={!isLoading ? <Plug className="w-3 h-3" /> : undefined}
         >
           启用
@@ -106,7 +106,7 @@ const McpServerCard: React.FC<McpServerCardProps> = ({
           variant="primary"
           onClick={() => onQuickConnect(entry)}
           loading={isLoading}
-          disabled={isWebMode() || !isAdmin}
+          disabled={isWebMode() || !canManageMcp}
           leftIcon={!isLoading ? <Plus className="w-3 h-3" /> : undefined}
         >
           一键连接
@@ -117,7 +117,7 @@ const McpServerCard: React.FC<McpServerCardProps> = ({
           variant="secondary"
           onClick={() => onConnectWithConfig(entry)}
           loading={isLoading}
-          disabled={isWebMode() || !isAdmin}
+          disabled={isWebMode() || !canManageMcp}
           leftIcon={!isLoading ? <Plus className="w-3 h-3" /> : undefined}
         >
           连接
@@ -131,7 +131,7 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
   catalog,
   existingServerIds,
   enabledServerIds,
-  isAdmin,
+  canManageMcp,
   actionLoading,
   onQuickConnect,
   onConnectWithConfig,
@@ -159,7 +159,7 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
                 key={entry.id}
                 entry={entry}
                 action={getEntryAction(entry, existingServerIds, enabledServerIds)}
-                isAdmin={isAdmin}
+                canManageMcp={canManageMcp}
                 isLoading={actionLoading === entry.id}
                 onQuickConnect={onQuickConnect}
                 onConnectWithConfig={onConnectWithConfig}

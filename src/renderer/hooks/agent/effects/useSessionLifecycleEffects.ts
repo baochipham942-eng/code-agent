@@ -48,6 +48,62 @@ export function isTerminalAgentError(data: unknown): boolean {
     && payload.severity !== 'warning';
 }
 
+function isGenericRunFailure(payload: AgentErrorPayload): boolean {
+  return payload.code === 'RUN_FAILED' || typeof payload.code !== 'string';
+}
+
+function formatFriendlyRunFailureContent(payload: AgentErrorPayload, message: string): string | null {
+  if (!isGenericRunFailure(payload)) return null;
+
+  const normalized = message.trim().toLowerCase();
+  const hasStatus = (status: number) => new RegExp(`\\b${status}\\b`).test(message);
+
+  if (normalized.includes('concurrency limit exceeded')) {
+    return (
+      '⚠️ **模型账号并发已满**\n\n' +
+      '当前模型服务返回并发限制。请稍后重试，或先切换到其他可用模型。'
+    );
+  }
+
+  if (normalized === 'forbidden' || normalized === 'ai_apicallerror: forbidden' || hasStatus(403)) {
+    return (
+      '⚠️ **模型服务拒绝了这次请求**\n\n' +
+      '当前模型供应商返回 403/Forbidden。请检查 API Key 是否有效、账号是否有该模型权限、额度是否可用；也可以先切换到其他模型后重试。'
+    );
+  }
+
+  if (normalized === 'not found' || normalized === 'ai_apicallerror: not found' || hasStatus(404)) {
+    return (
+      '⚠️ **模型接口或模型名称不匹配**\n\n' +
+      '当前模型供应商返回 404/Not Found。请检查自定义模型的 Base URL、路径是否包含 /v1、模型 ID 是否正确；也可以先切换到其他模型后重试。'
+    );
+  }
+
+  if (normalized.includes('rate limit') || normalized.includes('too many requests') || hasStatus(429)) {
+    return (
+      '⚠️ **模型服务暂时限流**\n\n' +
+      '当前模型供应商返回限流。请稍后重试，或先切换到其他可用模型。'
+    );
+  }
+
+  if (
+    normalized.includes('timeout') ||
+    normalized.includes('timed out') ||
+    normalized.includes('network') ||
+    normalized.includes('fetch failed') ||
+    normalized.includes('econnrefused') ||
+    normalized.includes('econnreset') ||
+    normalized.includes('enotfound')
+  ) {
+    return (
+      '⚠️ **暂时连不上模型服务**\n\n' +
+      '当前模型请求没有成功到达供应商。请检查网络、代理或自定义模型 Base URL，稍后再重试。'
+    );
+  }
+
+  return null;
+}
+
 export function formatAgentErrorContent(data: unknown): string | null {
   const payload = normalizeAgentErrorPayload(data);
   const message = getAgentErrorMessage(payload);
@@ -68,6 +124,9 @@ export function formatAgentErrorContent(data: unknown): string | null {
       `${suggestion}`
     );
   }
+
+  const friendlyContent = formatFriendlyRunFailureContent(payload, message);
+  if (friendlyContent) return friendlyContent;
 
   return `Error: ${message}`;
 }

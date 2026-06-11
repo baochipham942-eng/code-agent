@@ -120,6 +120,21 @@
 | **AI 模型** | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / Claude / Ollama | 多模型路由，本地 API Key 优先 |
 | **Agent Engine** | Native Agent Neo / Codex CLI / Claude Code | read-only 外部 engine、workspace-only cwd、task ledger 输出回带 |
 
+## 2026-06-12 架构增量（Agent Runtime / MiMoCode / Ops）
+
+这一轮把竞品研究里验证过的 runtime 机制、嵌套子代理和运营面修补合并进当前架构。完整合同见 [2026-06-12 as-built spec](../specs/2026-06-12-agent-runtime-mimocode-and-ops-batch.md)。
+
+| 能力域 | 当前形态 | 详细文档 |
+|------|----------|----------|
+| Runtime hardening | 多级 Edit replacer、doom-loop guard、taskGate、goal impossible 止损、max-step 三段式兜底、retry 分类、abortable retry sleep、provider 失败友好提示进入主链路 | [agent-core.md](./agent-core.md) |
+| History / memory / dream | transcript FTS 按 kind 索引工具输入输出、用户文本、assistant 文本和 reasoning；History 工具可被 deferred preload 发现；memory packing 增加 BM25；dream consolidation 以原始轨迹为证据 | [agent-core.md](./agent-core.md)、[data-storage.md](./data-storage.md) |
+| Commands / skills / provider prompts | slash 命令注册表、frontmatter、自定义命令文件和 MCP prompts 入表；superpowers 方法论 skill 内置；provider-family prompt variants 支持 A/B eval | [tool-system.md](./tool-system.md)、[agent-core.md](./agent-core.md) |
+| Nested subagent | 默认 3 层、硬上限 5 层；整棵 spawn tree 共享并发配额、预算和超时；取消和孤儿回收按子树传播；子 agent 输出按父 agent 消费场景蒸馏 | [multiagent-system.md](./multiagent-system.md) |
+| Max Mode | propose-only 并发候选 + judge 选赢家 + winner replay；候选和 judge 成本单独记账，取消/解析失败显式降级 | [agent-core.md](./agent-core.md) |
+| CUA governance | CUA driver 桌面/CLI 注册链路补齐，跨会话文件锁、轨迹软停、失败分类统计进入灰度治理面 | [native-app-integration.md](./native-app-integration.md) |
+| MCP self-service | 普通登录用户可添加/启停/重连 MCP server；桥接和 native connector 诊断仍只给 admin；HTTP Streamable MCP、`url` alias、headers 进入 `mcp_add_server` / `MCPUnified` | [tool-system.md](./tool-system.md) |
+| Admin / renderer ops | Admin role toggle 走 Supabase `SECURITY DEFINER` RPC；active renderer bundle 低于 shell 版本时回 builtin；会话日志导出失败会打开 runtime logs 兜底 | [data-storage.md](./data-storage.md)、[hot-update.md](./hot-update.md) |
+
 ## 2026-06-05 架构增量（对话式角色 / 会话自动化 / 设置保存语义）
 
 这一轮的主线是把聊天入口里的长期任务和角色资产变成显式可确认的产品链路，同时修正模型设置页的默认模型写入边界。详细合同见 [2026-06-05 as-built spec](../specs/2026-06-05-conversational-roles-automation-settings.md)。

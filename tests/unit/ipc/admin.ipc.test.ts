@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     updateInviteCode: vi.fn(),
     listControlPlaneAuditEvents: vi.fn(),
     listControlPlaneRolloutSummary: vi.fn(),
+    setUserAdmin: vi.fn(),
   },
 }));
 
@@ -141,6 +142,27 @@ describe('admin.ipc access control', () => {
     expect(mocks.adminService.listControlPlaneAuditEvents).toHaveBeenCalledWith(25);
   });
 
+  it('allows admin users to toggle another user admin role', async () => {
+    mocks.currentUser = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
+    mocks.sessionVerified = true;
+    mocks.adminService.setUserAdmin.mockResolvedValue({
+      users: [{ id: 'user-1', email: 'user@example.com', isAdmin: true }],
+    });
+    const ipc = makeFakeIpc();
+    registerAdminHandlers(ipc as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'setUserAdmin',
+      payload: { userId: 'user-1', enabled: true },
+    });
+
+    expect(response).toMatchObject({
+      success: true,
+      data: { users: [{ id: 'user-1', email: 'user@example.com', isAdmin: true }] },
+    });
+    expect(mocks.adminService.setUserAdmin).toHaveBeenCalledWith({ userId: 'user-1', enabled: true });
+  });
+
   it('treats explicit local web test mode as an admin environment', async () => {
     vi.stubEnv('CODE_AGENT_WEB_MODE', 'true');
     vi.stubEnv('CODE_AGENT_E2E', '1');
@@ -211,5 +233,23 @@ describe('admin.ipc access control', () => {
       error: { code: 'INVALID_PAYLOAD' },
     });
     expect(mocks.adminService.listControlPlaneAuditEvents).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed set user admin payloads before calling admin services', async () => {
+    mocks.currentUser = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
+    mocks.sessionVerified = true;
+    const ipc = makeFakeIpc();
+    registerAdminHandlers(ipc as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'setUserAdmin',
+      payload: { userId: 42, enabled: true },
+    });
+
+    expect(response).toMatchObject({
+      success: false,
+      error: { code: 'INVALID_PAYLOAD' },
+    });
+    expect(mocks.adminService.setUserAdmin).not.toHaveBeenCalled();
   });
 });

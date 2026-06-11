@@ -158,6 +158,19 @@ ToolSearch("github search")
 - `tests/unit/protocol/toolResolver.mcpDirect.test.ts`
 - `tests/unit/tools/toolExecutor.mcpDirect.test.ts`
 
+### 2026-06-12 MCP self-service and HTTP Streamable setup
+
+MCP 管理从"管理员代配"调整为"普通登录用户可自助管理 server"，但低层运行诊断仍保留 admin 边界：
+
+| 能力 | 当前合同 | 关键文件 |
+|------|----------|----------|
+| 自助管理 | Settings 里的已连接/发现页允许普通用户添加、启停、重连、从云端刷新 MCP server；LocalBridge / Native connector 运行状态只对 admin 展示 | `MCPSettings.tsx`、`McpDiscoverTab.tsx` |
+| HTTP Streamable | `mcp_add_server` 与 `MCPUnified({ action:"add_server" })` 接受 `http-streamable` 和兼容别名 `http`，持久化为 `type:"http-streamable"` | `mcpAddServer.ts`、`mcpAddServer.schema.ts`、`mcpUnified.schema.ts` |
+| Settings JSON 兼容 | 远端 server 可传 `serverUrl` 或 `url`，可带 headers；SSE 仍作为 legacy remote type 保留，stdio 继续走本地命令校验 | 同上 |
+| Intent preload | 用户明确说配置/添加/连接/管理 MCP 时，本轮预加载 `MCPUnified`，减少模型看不见管理工具而绕路的概率 | `deferredToolPreload.ts` |
+
+这层只改变用户能否管理自己的 MCP 配置，不改变 MCP dynamic direct execute 的权限模型：具体 MCP tool 调用仍走 `ToolExecutor` / resolver / MCP client 统一执行链。
+
 ### MCP 工具名索引（GAP-008，PR #194）
 
 MCP 工具不再把全量 schema 注入每轮请求。deferred-tools summary 只注入名字索引（`mcp__<server>__<tool>` 格式），完整 schema 通过 `ToolSearch` 按需加载，再走上面的 dynamic direct execute 链路调用。这样模型既能"看见"所有 MCP 工具的存在并主动检索，又不会被大量 MCP schema 撑爆上下文。

@@ -583,6 +583,13 @@ export interface Database {
         };
         Returns: void;
       };
+      admin_set_user_admin: {
+        Args: {
+          p_user_id: string;
+          p_is_admin: boolean;
+        };
+        Returns: void;
+      };
       admin_list_control_plane_audit_events: {
         Args: { p_limit?: number };
         Returns: {

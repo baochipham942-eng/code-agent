@@ -20,6 +20,8 @@ interface StaticDeps {
   dataDir?: string;
   /** 包内基线 renderer 目录（兜底）。 */
   builtinDir?: string;
+  /** 当前 shell 版本；active renderer 低于它时回包内基线，避免旧前端压过新壳修复。 */
+  currentShellVersion?: string;
 }
 
 export function createStaticRouter(deps: StaticDeps): Router {
@@ -38,7 +40,11 @@ export function createStaticRouter(deps: StaticDeps): Router {
   // 兜底铁律：active 不健康 → resolveRendererServeDir 自动回 builtin，绝不 serve 损坏前端。
   function resolveServeDir(): string {
     if (deps.staticDir) return deps.staticDir;
-    if (deps.dataDir) return resolveRendererServeDir(deps.dataDir, builtinDir);
+    if (deps.dataDir) {
+      return resolveRendererServeDir(deps.dataDir, builtinDir, process.env, {
+        currentShellVersion: deps.currentShellVersion,
+      });
+    }
     return builtinDir;
   }
 

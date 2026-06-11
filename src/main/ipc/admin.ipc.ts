@@ -46,6 +46,8 @@ export function registerAdminHandlers(ipcMain: IpcMain): void {
           return { success: true, data: await adminService.listControlPlaneRolloutSummary() };
         case 'setSharedRelay':
           return { success: true, data: await adminService.setUserSharedRelay(request.payload) };
+        case 'setUserAdmin':
+          return { success: true, data: await adminService.setUserAdmin(request.payload) };
       }
 
       const _exhaustive: never = request;

@@ -19,6 +19,7 @@ import {
   RendererBundleEndpointError,
   resolveRendererBundleEndpoint,
 } from '../../../shared/constants/network';
+import { compareUpdateVersions } from '../cloud/updateService';
 
 export const RENDERER_HOT_UPDATE_DISABLE_ENV = 'CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE';
 export const RENDERER_BUNDLE_DISABLED_ENV = 'CODE_AGENT_RENDERER_BUNDLE_DISABLED';
@@ -58,6 +59,10 @@ export function rendererBundleStatusPath(dataDir: string): string {
 export interface ActiveBundleMeta {
   version: string;
   contentHash: string;
+}
+
+export interface ResolveRendererServeDirOptions {
+  currentShellVersion?: string;
 }
 
 function isValidMeta(value: unknown): value is ActiveBundleMeta {
@@ -250,12 +255,17 @@ export function resolveRendererServeDir(
   dataDir: string,
   builtinDir: string,
   env: NodeJS.ProcessEnv = process.env,
+  options: ResolveRendererServeDirOptions = {},
 ): string {
   if (isRendererHotUpdateDisabled(env)) {
     return builtinDir;
   }
   const active = activeBundleDir(dataDir);
-  if (readActiveBundleMeta(dataDir) && existsSync(join(active, 'index.html'))) {
+  const activeMeta = readActiveBundleMeta(dataDir);
+  const activeIsOlderThanShell = activeMeta && options.currentShellVersion
+    ? compareUpdateVersions(activeMeta.version, options.currentShellVersion) < 0
+    : false;
+  if (activeMeta && !activeIsOlderThanShell && existsSync(join(active, 'index.html'))) {
     return active;
   }
   return builtinDir;

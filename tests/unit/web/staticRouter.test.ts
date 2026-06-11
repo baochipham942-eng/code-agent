@@ -103,7 +103,7 @@ describe('createStaticRouter — runtime serve dir resolution', () => {
     );
   }
 
-  function writeActiveBundle(): void {
+  function writeActiveBundle(version = '9.9.9'): void {
     const active = path.join(dataDir, 'renderer-cache', 'active');
     fs.mkdirSync(path.join(active, 'assets'), { recursive: true });
     fs.writeFileSync(
@@ -114,14 +114,19 @@ describe('createStaticRouter — runtime serve dir resolution', () => {
     fs.writeFileSync(path.join(active, 'assets', 'app.js'), 'console.log("cloud-asset")', 'utf-8');
     fs.writeFileSync(
       path.join(active, '.bundle-meta.json'),
-      JSON.stringify({ version: '9.9.9', contentHash: 'deadbeef' }),
+      JSON.stringify({ version, contentHash: 'deadbeef' }),
       'utf-8',
     );
   }
 
-  async function startServer(): Promise<void> {
+  async function startServer(options: { currentShellVersion?: string } = {}): Promise<void> {
     const app = express();
-    app.use(createStaticRouter({ serverAuthToken: 'rt-token', dataDir, builtinDir }));
+    app.use(createStaticRouter({
+      serverAuthToken: 'rt-token',
+      dataDir,
+      builtinDir,
+      currentShellVersion: options.currentShellVersion,
+    }));
     rtServer = await new Promise<http.Server>((resolve) => {
       const next = app.listen(0, '127.0.0.1', () => resolve(next));
     });
@@ -168,6 +173,18 @@ describe('createStaticRouter — runtime serve dir resolution', () => {
     expect(body).not.toContain('BUILTIN');
     expect(body).toContain('window.__CODE_AGENT_TOKEN__="rt-token"');
     expect(body).toContain('window.__CODE_AGENT_RENDERER_BUNDLE__={"version":"9.9.9","contentHash":"deadbeef"}');
+  });
+
+  it('serves builtin index when active bundle is older than the current shell', async () => {
+    writeActiveBundle('0.16.101');
+    await startServer({ currentShellVersion: '0.16.102' });
+    const response = await fetch(`${rtBaseUrl}/`);
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('BUILTIN');
+    expect(body).not.toContain('CLOUD');
+    expect(body).toContain('window.__CODE_AGENT_RENDERER_BUNDLE__=null');
   });
 
   it('serves static assets from the active bundle dir', async () => {

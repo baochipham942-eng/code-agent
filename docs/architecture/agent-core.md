@@ -179,6 +179,36 @@ class AgentLoop {
 
 ---
 
+## 2026-06-12 Runtime hardening / learning loop / Max Mode
+
+MiMoCode 对照之后，Agent runtime 增加了一批不依赖 UI 的运行时合同。它们的共同目标是把"模型应该自觉完成"改成"运行时能发现偏航并收口"。
+
+| 能力 | 当前合同 | 关键文件 |
+|------|----------|----------|
+| 多级 Edit replacer | `MultiEdit` 的模糊替换先走 line-trimmed，再走 block anchor，再走 indentation-flexible；replace_all 不走高风险 fuzzy fallback，block anchor 对短锚点、截断块和超多候选 fail-closed | `src/main/tools/utils/editReplacers.ts`、`multiEdit.ts` |
+| Doom loop guard | 同参重复、行动签名重复和空输出分别计数；重复到阈值后先注入 nudge，再在无法恢复时终止 run，避免无意义工具循环 | `src/main/agent/runtime/doomLoopGuard.ts` |
+| Task gate | 模型准备停止前检查 Task/TaskManager mutation 后的未完成任务，按 owner 限制 main/subagent 重入次数，把"先收任务状态"变成运行时闸 | `src/main/agent/nudgeManager.ts`、`src/main/services/planning/taskStore.ts` |
+| Goal impossible | `goal_complete` 的 impossible/aborted 不再被当成完成；强制最终解释走禁工具 final response，事件带真实 turns/tokensUsed | `src/main/agent/runtime/goalCompletionGate.ts`、`goalReviewGate.ts` |
+| Retry and abort | 429/5xx/网络可重试，4xx/context overflow 不重试；`retry-after` 支持秒和 HTTP-date；sleep 可被 abort 打断 | `src/main/model/providers/retryStrategy.ts` |
+| Max-step fallback | 步数耗尽时禁用工具，要求输出已完成/未完成/建议下一步三段式总结 | `src/main/agent/runtime/maxStepsFallback.ts` |
+| Provider failure copy | `RUN_FAILED` 的 403/404/429/网络/并发限制被格式化成用户能操作的错误信息，不再只显示原始 provider 异常 | `src/renderer/hooks/agent/effects/useSessionLifecycleEffects.ts` |
+
+### History, memory and dream
+
+`transcriptHistoryService` 为完整转录建立 FTS5 索引，索引粒度包括 `tool_input`、`tool_output`、`user_text`、`assistant_text` 和 `reasoning`。它和原有 `session_messages_fts` 分工不同：前者服务 agent 复盘和证据回查，后者服务普通会话搜索。
+
+`History` 工具已经进入 deferred tool metadata，模型在需要"查以前怎么做过"时能被 ToolSearch/预加载路径发现。Memory packing 则用 SQLite FTS/BM25 补强本地召回，避免只靠最近窗口和应用层 token scoring。Dream consolidation 以 transcript FTS 的原始轨迹为证据，先验证再写 durable memory。
+
+### Commands and provider variants
+
+Slash command 现在有 `promptCommandService` 注册表，支持 frontmatter、`$ARGUMENTS`/位置参数模板、`.code-agent/commands/*.md` 文件式自定义命令和 MCP prompts 自动入表。主 prompt 不再只有单一通用版本，provider-family addendum 可以针对 Claude 系、GPT/国产系等失败模式做差异化约束，并通过 prompt A/B eval 验证。
+
+### Max Mode
+
+Max Mode 是显式开关：同一步先并发生成多个 propose-only 候选，再由 judge 选择赢家，最后只 replay 赢家的真实工具调用。候选与 judge 的 token/cost 作为 overhead 单独记账；取消会结算已发生 overhead 后退出；judge 输出只接受尾部锚定裁决，防止候选文本注入劫持赢家。
+
+---
+
 ## 2026-05-15~17 Agent Engine 与接力运行
 
 Agent Neo 现在把"谁来跑这一轮"拆成 engine 层。Native engine 继续走现有 `ConversationRuntime`；Codex CLI 和 Claude Code 通过受控 adapter 运行，并把输出归一回 session、TaskPanel 和 review 链路。

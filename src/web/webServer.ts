@@ -1068,6 +1068,7 @@ function createApp(): express.Express {
   app.use(createStaticRouter({
     serverAuthToken: SERVER_AUTH_TOKEN,
     dataDir: resolveCodeAgentDataDir(),
+    currentShellVersion: getAppVersion(),
   }));
 
   return app;

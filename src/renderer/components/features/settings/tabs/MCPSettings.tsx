@@ -56,6 +56,7 @@ type McpViewTab = 'connected' | 'discover';
 
 export const MCPSettings: React.FC = () => {
   const isAdmin = useAuthStore((s) => s.user?.isAdmin === true);
+  const canManageMcp = true;
   const [activeTab, setActiveTab] = useState<McpViewTab>('connected');
   const {
     status: mcpStatus,
@@ -140,7 +141,7 @@ export const MCPSettings: React.FC = () => {
   }, [message]);
 
   const handleRefreshFromCloud = async () => {
-    if (!isAdmin) return;
+    if (!canManageMcp) return;
     setIsRefreshing(true);
     setMessage(null);
     try {
@@ -159,7 +160,7 @@ export const MCPSettings: React.FC = () => {
   };
 
   const handleToggleServer = async (serverName: string, enabled: boolean) => {
-    if (!isAdmin) return;
+    if (!canManageMcp) return;
     try {
       const result = await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'setServerEnabled', {
         serverName,
@@ -174,7 +175,7 @@ export const MCPSettings: React.FC = () => {
   };
 
   const handleReconnect = async (serverName: string) => {
-    if (!isAdmin) return;
+    if (!canManageMcp) return;
     setReconnectingServer(serverName);
     try {
       const result = await window.domainAPI?.invoke<{ success: boolean; error?: string }>(
@@ -201,7 +202,7 @@ export const MCPSettings: React.FC = () => {
   }, []);
 
   const handleAddServer = useCallback(async (config: McpServerConfig) => {
-    if (!isAdmin) return;
+    if (!canManageMcp) return;
     try {
       const result = await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'addServer', { config });
       if (result?.success) {
@@ -214,13 +215,13 @@ export const MCPSettings: React.FC = () => {
       logger.error('Failed to add MCP server', error);
       setMessage({ type: 'error', text: '添加服务器失败' });
     }
-  }, [isAdmin, reloadMcpStatus]);
+  }, [reloadMcpStatus]);
 
   // ---- 发现连接：推荐 MCP 的三类动作 ----
 
   /** 免配置 server 一键连接 */
   const handleQuickConnect = useCallback(async (entry: RecommendedMcpServerEntry) => {
-    if (!isAdmin || !entry.connection) return;
+    if (!canManageMcp || !entry.connection) return;
     setDiscoverActionLoading(entry.id);
     try {
       await handleAddServer({
@@ -236,11 +237,11 @@ export const MCPSettings: React.FC = () => {
     } finally {
       setDiscoverActionLoading(null);
     }
-  }, [isAdmin, handleAddServer, reloadMcpStatus]);
+  }, [handleAddServer, reloadMcpStatus]);
 
   /** 需要凭证的 server：打开预填编辑器让用户补凭证 */
   const handleConnectWithConfig = useCallback((entry: RecommendedMcpServerEntry) => {
-    if (!isAdmin || !entry.connection) return;
+    if (!canManageMcp || !entry.connection) return;
     setEditorInitialConfig({
       name: entry.id,
       type: entry.connection.type,
@@ -251,18 +252,18 @@ export const MCPSettings: React.FC = () => {
       headers: entry.connection.headers,
     });
     setIsEditorOpen(true);
-  }, [isAdmin]);
+  }, []);
 
   /** 内置 server 启用 */
   const handleEnableBuiltin = useCallback(async (serverId: string) => {
-    if (!isAdmin) return;
+    if (!canManageMcp) return;
     setDiscoverActionLoading(serverId);
     try {
       await handleToggleServer(serverId, true);
     } finally {
       setDiscoverActionLoading(null);
     }
-  }, [isAdmin, handleToggleServer]);
+  }, [handleToggleServer]);
 
   const openCapabilitySheet = useCallback((server: WorkbenchMcpRegistryItem) => {
     setActiveSheetTarget({
@@ -342,7 +343,7 @@ export const MCPSettings: React.FC = () => {
           catalog={mcpCatalog}
           existingServerIds={new Set(mcpServers.map((server) => server.id))}
           enabledServerIds={new Set(mcpServers.filter((server) => server.enabled).map((server) => server.id))}
-          isAdmin={isAdmin}
+          canManageMcp={canManageMcp}
           actionLoading={discoverActionLoading}
           onQuickConnect={handleQuickConnect}
           onConnectWithConfig={handleConnectWithConfig}
@@ -365,7 +366,7 @@ export const MCPSettings: React.FC = () => {
                   : '还没有配置任何 MCP 服务器'}
               </div>
             </div>
-            {isAdmin && (
+            {canManageMcp && (
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
@@ -451,12 +452,12 @@ export const MCPSettings: React.FC = () => {
                         <div>
                           <div className="text-sm font-medium text-zinc-200">没有配置任何 MCP 服务器</div>
                           <div className="mt-1 text-xs text-zinc-500">
-                            {isAdmin
+                            {canManageMcp
                               ? '添加 server 后会在这里显示连接状态、工具数量和可用操作。'
-                              : '管理员配置 MCP 后，这里会显示可用状态。'}
+                              : '配置 MCP 后，这里会显示可用状态。'}
                           </div>
                         </div>
-                        {isAdmin && (
+                        {canManageMcp && (
                           <Button
                             size="sm"
                             variant="primary"
@@ -506,7 +507,7 @@ export const MCPSettings: React.FC = () => {
                           <span>{server.resourceCount} 资源</span>
                         </td>
                         <td className="max-w-[220px] px-3 py-3 align-middle">
-                          {server.error && isAdmin ? (
+                          {server.error ? (
                             <div>
                               <span className="block truncate text-red-400" title={server.error}>
                                 {server.error}
@@ -517,7 +518,7 @@ export const MCPSettings: React.FC = () => {
                                 </span>
                               )}
                             </div>
-                          ) : server.blockedReason && isAdmin ? (
+                          ) : server.blockedReason ? (
                             <div>
                               <span className="block truncate text-yellow-300" title={server.blockedReason.detail}>
                                 {server.blockedReason.detail}
@@ -528,8 +529,6 @@ export const MCPSettings: React.FC = () => {
                                 </span>
                               )}
                             </div>
-                          ) : (server.error || server.blockedReason) ? (
-                            <span className="text-zinc-500">管理员可查看</span>
                           ) : (
                             <span className="text-zinc-600">-</span>
                           )}
@@ -540,7 +539,7 @@ export const MCPSettings: React.FC = () => {
                               label={server.label}
                               onClick={() => openCapabilitySheet(server)}
                             />
-                            {isAdmin && server.enabled && !server.available && (
+                            {canManageMcp && server.enabled && !server.available && (
                               requiresReauthorization ? (
                                 <Button
                                   size="sm"
@@ -562,7 +561,7 @@ export const MCPSettings: React.FC = () => {
                                 </Button>
                               )
                             )}
-                            {isAdmin && (
+                            {canManageMcp && (
                               <Button
                                 size="sm"
                                 variant={server.enabled ? 'ghost' : 'primary'}
@@ -590,36 +589,38 @@ export const MCPSettings: React.FC = () => {
         </div>
       </SettingsSection>
 
-      <SettingsDetails
-        title="运行状态与本地桥接"
-        description="这里用于排查连接、桥接和本地 connector 状态，默认收起。"
-      >
-        <div className="space-y-4">
-          <LocalBridgeSection />
-          <NativeConnectorsSection />
-          {mcpStatus && (
-            <div className="rounded-lg bg-zinc-800 p-4">
-              <h4 className="text-sm font-medium text-zinc-200 mb-3">总览</h4>
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div>
-                  <div className="text-2xl font-semibold text-zinc-200">
-                    {mcpStatus.connectedServers.length}
+      {isAdmin && (
+        <SettingsDetails
+          title="运行状态与本地桥接"
+          description="这里用于排查连接、桥接和本地 connector 状态，默认收起。"
+        >
+          <div className="space-y-4">
+            <LocalBridgeSection />
+            <NativeConnectorsSection />
+            {mcpStatus && (
+              <div className="rounded-lg bg-zinc-800 p-4">
+                <h4 className="text-sm font-medium text-zinc-200 mb-3">总览</h4>
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <div className="text-2xl font-semibold text-zinc-200">
+                      {mcpStatus.connectedServers.length}
+                    </div>
+                    <div className="text-xs text-zinc-400">已连接服务器</div>
                   </div>
-                  <div className="text-xs text-zinc-400">已连接服务器</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-semibold text-indigo-400">{mcpStatus.toolCount}</div>
-                  <div className="text-xs text-zinc-400">可用工具</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-semibold text-cyan-400">{mcpStatus.resourceCount}</div>
-                  <div className="text-xs text-zinc-400">可用资源</div>
+                  <div>
+                    <div className="text-2xl font-semibold text-indigo-400">{mcpStatus.toolCount}</div>
+                    <div className="text-xs text-zinc-400">可用工具</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold text-cyan-400">{mcpStatus.resourceCount}</div>
+                    <div className="text-xs text-zinc-400">可用资源</div>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
-      </SettingsDetails>
+            )}
+          </div>
+        </SettingsDetails>
+      )}
 
       <SettingsDetails
         title="协议说明"
@@ -633,17 +634,15 @@ export const MCPSettings: React.FC = () => {
       </>)}
 
       {/* Add Server Editor Modal */}
-      {isAdmin && (
-        <McpServerEditor
-          isOpen={isEditorOpen}
-          onClose={() => {
-            setIsEditorOpen(false);
-            setEditorInitialConfig(undefined);
-          }}
-          onSave={handleAddServer}
-          initialConfig={editorInitialConfig}
-        />
-      )}
+      <McpServerEditor
+        isOpen={isEditorOpen}
+        onClose={() => {
+          setIsEditorOpen(false);
+          setEditorInitialConfig(undefined);
+        }}
+        onSave={handleAddServer}
+        initialConfig={editorInitialConfig}
+      />
 
       <WorkbenchCapabilitySheetLite
         isOpen={Boolean(activeSheetCapability)}

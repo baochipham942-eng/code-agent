@@ -235,6 +235,21 @@ goal 模式接入 swarm 并行执行，并把角色主动性的 advance 收进 g
 
 范围自限：只查角色自己参与的产物历史（P0-2 项目空间落地后升项目维度）；不接外部渠道（飞书等），只走 session 消息 + history append + （realtime）Electron Notification。
 
+## 0.0.12 2026-06-11 嵌套子 Agent（context offload）
+
+子 agent 现在可以继续派生子 agent，用于递归调查、跨系统 bug 追踪和大规模重构的上下文卸载。默认深度是 3，硬上限是 5；这不是无界并行能力，整棵 spawn tree 共享同一个并发、超时和预算边界。
+
+| 能力 | 当前口径 | 关键文件 |
+|------|----------|----------|
+| 深度限制 | 默认允许主→子→孙，配置值会 clamp 到硬上限 5；超限错误包含当前深度与上限，方便模型改路由 | `src/shared/constants/agent.ts`、`src/main/agent/spawnGuard.ts` |
+| 工具放行边界 | 子 agent 内只放行 `Task` / `spawn_agent` 等内部 delegation 工具；`workflow`、`ask_user_question`、agent 间自由通信和 plan review 仍禁用 | `spawnGuard.ts`、`src/main/tools/permissionClassifier.ts` |
+| 全树配额 | 不再按每层 `MAX_AGENTS` 乘法扩张；根 run 拥有 tree quota，超额请求 FIFO 等待并可超时 | `spawnGuard.ts`、`parallelAgentCoordinator.ts` |
+| 超时与 token | 子层超时取角色默认值和父剩余时间的较小值；`parentRemainingBudget` 多层传递，tokens/cost 逐层回灌到根 | `subagentPipeline.ts`、`subagentUsageAccounting.ts` |
+| 取消与孤儿 | 用户取消/会话切换向整棵树穿透；中间层超时或失败只清理对应子树；父 run 消失时 DFS 回收后代 | `subagentExecutorCancellation.ts`、`orphanLiveness.ts` |
+| 输出蒸馏 | 子 agent 的最终输出面向父 agent 消费，只返回结论、关键路径和必要证据，不转发大量原始文件内容 | `subagentExecutor.ts`、`spawnAgent.schema.ts`、`task.schema.ts` |
+
+验收口径：multi-agent 相关 23 个 test file / 306 tests 通过，`npm run build:web` 通过；浏览器实跑中 root `Task` 派生一层 coder，再由一层 coder 派生二层 coder，最终根会话可见孙 agent 输出。
+
 ## 0.1 节点级 Checkpoint（断点恢复）
 
 多 agent DAG 执行中，网络中断或 token 耗尽会导致已完成节点工作白费。

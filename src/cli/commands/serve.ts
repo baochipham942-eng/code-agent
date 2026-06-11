@@ -200,7 +200,24 @@ async function handleRun(
       }
     );
 
-    await agentLoop.run(request.prompt);
+    // prompt 命令展开（/命令协议层，roadmap 2.2）：与 run/chat 入口对齐
+    let effectivePrompt = request.prompt;
+    if (effectivePrompt.startsWith('/')) {
+      const { getPromptCommandService } = await import('../../main/services/commands/promptCommandService');
+      const resolution = await getPromptCommandService()
+        .resolveInvocation(effectivePrompt, process.cwd())
+        .catch(() => null);
+      if (resolution) {
+        if (resolution.agent) {
+          sendSSE(res, 'notification', {
+            message: `frontmatter agent: ${resolution.agent} 仅桌面端支持路由，serve 模式忽略`,
+          });
+        }
+        effectivePrompt = resolution.prompt;
+      }
+    }
+
+    await agentLoop.run(effectivePrompt);
 
     // 发送完成事件
     sendSSE(res, 'task_complete', {

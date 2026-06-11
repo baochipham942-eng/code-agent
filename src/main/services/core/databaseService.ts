@@ -583,6 +583,10 @@ export class DatabaseService {
     this.ensureDb();
     return this.sessionRepo.getSessionTaskEvents(sessionId, options);
   }
+  getMaxTopLevelTaskIdFromEvents(sessionId: string): number {
+    this.ensureDb();
+    return this.sessionRepo.getMaxTopLevelTaskIdFromEvents(sessionId);
+  }
   saveContextIntervention(sessionId: string, agentId: string | null | undefined, messageId: string, action: ContextInterventionAction | null, updatedAt?: number): void {
     this.ensureDb();
     this.sessionRepo.saveContextIntervention(sessionId, agentId, messageId, action, updatedAt);

@@ -1186,6 +1186,27 @@ export class SessionRepository {
     }));
   }
 
+  /**
+   * 事件历史里出现过的最大顶层任务 id（含已删任务）。
+   * 单条 SQL 全量聚合——避免 getSessionTaskEvents 的 limit 钳制在长会话里
+   * 漏掉早期已删 id 导致复用（Codex R2 MED）。
+   */
+  getMaxTopLevelTaskIdFromEvents(sessionId: string): number {
+    try {
+      const row = this.db.prepare(`
+        SELECT MAX(CAST(
+          CASE WHEN instr(task_id, '.') > 0
+               THEN substr(task_id, 1, instr(task_id, '.') - 1)
+               ELSE task_id END AS INTEGER)) AS max_top
+        FROM session_task_events
+        WHERE session_id = ?
+      `).get(sessionId) as { max_top: number | null } | undefined;
+      return Number(row?.max_top ?? 0) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
   // --------------------------------------------------------------------------
   // Context Interventions
   // --------------------------------------------------------------------------

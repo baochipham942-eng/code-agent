@@ -41,7 +41,7 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
     dbState.db.getSessionTasks.mockReturnValue([]);
     dbState.db.appendSessionTaskEvents.mockReset();
     // 单测互染防护：getSessionTaskEvents 只在个别用例显式挂上
-    delete (dbState.db as Record<string, unknown>).getSessionTaskEvents;
+    delete (dbState.db as Record<string, unknown>).getMaxTopLevelTaskIdFromEvents;
   });
 
   it('creates hierarchical child ids without consuming the top-level counter', async () => {
@@ -193,10 +193,41 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
 
     vi.resetModules();
     dbState.db.getSessionTasks.mockReturnValue(saved);
-    dbState.db.getSessionTaskEvents = vi.fn(() => events.map((e) => ({ taskId: e.taskId, at: e.at, kind: e.kind })));
+    const maxTop = Math.max(...events.map((e) => Number(String(e.taskId).split('.')[0]) || 0));
+    (dbState.db as Record<string, unknown>).getMaxTopLevelTaskIdFromEvents = vi.fn(() => maxTop);
     const taskStore2 = await import('../../../src/main/services/planning/taskStore');
     const t3 = taskStore2.createTask(s, { subject: 'T3', description: 't' });
     expect(t3.id).toBe('3'); // 不复用已删的 2
+  });
+
+  it('top-level counter uses unbounded max-id query, not a capped event scan', async () => {
+    const taskStore1 = await import('../../../src/main/services/planning/taskStore');
+    const s = 'top-max-id';
+    taskStore1.createTask(s, { subject: 'T1', description: 't' });
+    const saved = dbState.db.saveSessionTasks.mock.calls.at(-1)?.[1];
+
+    vi.resetModules();
+    dbState.db.getSessionTasks.mockReturnValue(saved);
+    // 已删的最高顶层 id 是 7（长会话场景：早已滚出最近 200 条事件窗口）
+    (dbState.db as Record<string, unknown>).getMaxTopLevelTaskIdFromEvents = vi.fn(() => 7);
+    const taskStore2 = await import('../../../src/main/services/planning/taskStore');
+    const t = taskStore2.createTask(s, { subject: 'T8', description: 't' });
+    expect(t.id).toBe('8');
+  });
+
+  it('reserved __childIdCounter cannot be wiped through public metadata merge', async () => {
+    const taskStore = await import('../../../src/main/services/planning/taskStore');
+    const s = 'meta-guard';
+    const parent = taskStore.createTask(s, { subject: 'P', description: 'p' });
+    const c1 = taskStore.createTask(s, { subject: 'C1', description: 'c', parentTaskId: parent.id });
+    taskStore.deleteTask(s, c1.id);
+
+    // 模型/外部调用尝试清掉保留键
+    taskStore.updateTask(s, parent.id, { metadata: { __childIdCounter: null, note: 'x' } });
+
+    const c2 = taskStore.createTask(s, { subject: 'C2', description: 'c', parentTaskId: parent.id });
+    expect(c2.id).toBe('1.2'); // 计数器不被打穿，已删 1.1 不复用
+    expect(taskStore.getTask(s, parent.id)?.metadata.note).toBe('x');
   });
 
   it('event persistence failure never blocks task mutation', async () => {

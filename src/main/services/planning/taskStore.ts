@@ -31,7 +31,7 @@ function getReadyDatabase():
   | (Pick<import('../core/databaseService').DatabaseService, 'isReady' | 'saveSessionTasks' | 'getSessionTasks'>
       & {
         appendSessionTaskEvents?: (events: SessionTaskEvent[]) => void;
-        getSessionTaskEvents?: (sessionId: string, options?: { taskId?: string; limit?: number }) => Array<{ taskId: string }>;
+        getMaxTopLevelTaskIdFromEvents?: (sessionId: string) => number;
       })
   | null {
   try {
@@ -97,17 +97,12 @@ function hydrateTasks(sessionId: string): void {
       }
     }
     sessionTasks.set(sessionId, taskMap);
-    // 顶层计数器：现存任务之外还参考事件历史里出现过的 id（已删任务不复用，
-    // 防新任务继承旧事件历史，Codex R1 HIGH）
+    // 顶层计数器：现存任务之外还参考事件历史里出现过的最大 id（含已删任务，
+    // 无 limit 全量聚合——防长会话里早期已删 id 滚出窗口后被复用，
+    // Codex R1 HIGH / R2 MED）
     let counter = inferCounter(Array.from(taskMap.values()));
     try {
-      const events = db.getSessionTaskEvents?.(sessionId, { limit: 200 }) ?? [];
-      for (const event of events) {
-        const top = String(event.taskId).split('.')[0];
-        if (/^\d+$/.test(top)) {
-          counter = Math.max(counter, Number(top));
-        }
-      }
+      counter = Math.max(counter, db.getMaxTopLevelTaskIdFromEvents?.(sessionId) ?? 0);
     } catch {
       // 事件读取失败不影响 hydrate
     }
@@ -309,9 +304,11 @@ export function updateTask(
     }
   }
 
-  // Merge metadata (null values remove keys)
+  // Merge metadata (null values remove keys)；__ 前缀为 taskStore 内部保留键
+  // （如 __childIdCounter），外部 merge 不可改写/删除（Codex R2 MED）
   if (updates.metadata) {
     for (const [key, value] of Object.entries(updates.metadata)) {
+      if (key.startsWith('__')) continue;
       if (value === null) {
         delete task.metadata[key];
       } else {

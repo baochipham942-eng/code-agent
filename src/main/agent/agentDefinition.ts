@@ -4,7 +4,7 @@
 //
 // 本文件是 hybrid/ 模块的适配层。
 // 核心逻辑在 hybrid/ 模块：
-// - coreAgents.ts: 4 个核心角色定义
+// - coreAgents.ts: 核心角色定义
 // - dynamicFactory.ts: 动态 Agent 生成
 // - taskRouter.ts: 智能路由
 // - agentSwarm.ts: 并行执行引擎
@@ -101,13 +101,13 @@ function toFullAgentConfig(core: CoreAgentConfig): FullAgentConfig {
 }
 
 // ============================================================================
-// 预定义 Agents（4 个核心角色）
+// 预定义 Agents（核心角色）
 // ============================================================================
 
 /**
  * 预定义 Agents
  *
- * 混合架构只有 4 个核心角色：coder, reviewer, explore, plan
+ * 混合架构核心角色：coder, reviewer, explore, plan, awaiter, dream
  * 复杂任务通过 TaskRouter 路由到动态 Agent 或 Agent Swarm
  */
 export const PREDEFINED_AGENTS: Record<string, FullAgentConfig> = Object.fromEntries(
@@ -207,7 +207,7 @@ export function getAgentsByLayer(layer: 'exploration' | 'planning' | 'execution'
 
 /**
  * 获取 Agent 的系统提示词。
- * 核心 5 个 subagent（coder / reviewer / explore / plan / awaiter）的 prompt
+ * 核心 subagent（coder / reviewer / explore / plan / awaiter / dream）的 prompt
  * 已通过 applyOverride 包成 Proxy，访问时自动反映用户 override —— 直接返回
  * agent.prompt 即可。自定义 agent（agentMd 加载的）没接 registry，原样返回。
  */
@@ -403,4 +403,3 @@ export {
   recommendCoreAgent,
   getModelConfig,
 } from './hybrid';
-

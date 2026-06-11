@@ -6,9 +6,9 @@
 import type { RoleProactivityConfig } from '../../../shared/contract/roleAssets';
 
 /**
- * 核心角色 ID（4 个）
+ * 核心角色 ID
  */
-export type CoreAgentId = 'coder' | 'reviewer' | 'explore' | 'plan' | 'awaiter';
+export type CoreAgentId = 'coder' | 'reviewer' | 'explore' | 'plan' | 'awaiter' | 'dream';
 
 /**
  * 模型层级（3 级）

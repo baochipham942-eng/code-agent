@@ -39,6 +39,28 @@ describe('skillInvocationResolver', () => {
     expect(resolved?.skill.name).toBe('edit-role');
   });
 
+  it('/dream 确定性命中 dream 内置 skill，并收缩到 History + Memory 工具', async () => {
+    const dream = BUILTIN_SKILLS.find((s) => s.name === 'dream');
+    expect(dream, 'dream 内置 skill 应存在').toBeTruthy();
+    expect(dream!.userInvocable).toBe(true);
+    expect(dream!.agent).toBe('dream');
+    expect(dream!.allowedTools).toEqual(expect.arrayContaining(['History', 'MemoryRead', 'MemoryWrite']));
+
+    const resolved = resolveSkillInvocationFromSkills('/dream --auto', [dream!]);
+    expect(resolved).toMatchObject({
+      matchKind: 'slash',
+      args: '--auto',
+      confidence: 1,
+    });
+    expect(resolved?.skill.name).toBe('dream');
+
+    const context = await buildSkillInvocationContext(resolved!, '/repo');
+    expect(context.contextModifier.toolBoundary?.skillName).toBe('dream');
+    expect(context.contextModifier.toolBoundary?.allowedTools).toEqual(expect.arrayContaining(['History', 'MemoryRead', 'MemoryWrite']));
+    expect(context.block).toContain('轨迹库为权威');
+    expect(context.block).toContain('不要直接查询 SQLite');
+  });
+
   it('resolves a leading slash command before model intent classification', () => {
     const lobster = skill({
       name: 'lobster',

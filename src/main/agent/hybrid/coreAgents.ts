@@ -1,10 +1,10 @@
 // ============================================================================
-// Core Agents - 4 个核心角色定义（混合架构 Layer 1）
+// Core Agents - 核心角色定义（混合架构 Layer 1）
 // ============================================================================
 //
 // 设计原则：
 // 1. 边界清晰：每个角色职责明确，无重叠
-// 2. 覆盖 80%：4 个核心角色覆盖大部分编程场景
+// 2. 覆盖 80%：核心角色覆盖大部分编程场景
 // 3. 配置简单：扁平化配置，无多层嵌套
 //
 // 参考：
@@ -18,6 +18,7 @@ import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../../shared
 import { loadAgentMdFiles } from './agentMdLoader';
 import { getAgentsMdDir } from '../../config/configPaths';
 import { applyOverride } from '../../prompts/registry';
+import { DREAM_AGENT_PROMPT } from '../dreamPrompt';
 
 // Re-export types from canonical source for backward compatibility
 export type { CoreAgentId, ModelTier, CoreAgentConfig } from './types';
@@ -61,7 +62,7 @@ export function getModelConfig(tier: ModelTier): { provider: ModelProvider; mode
 /**
  * 核心角色列表
  */
-export const CORE_AGENT_IDS: CoreAgentId[] = ['coder', 'reviewer', 'explore', 'plan', 'awaiter'];
+export const CORE_AGENT_IDS: CoreAgentId[] = ['coder', 'reviewer', 'explore', 'plan', 'awaiter', 'dream'];
 
 /**
  * 检查是否为核心角色
@@ -123,6 +124,14 @@ Use long timeouts. Increase exponentially if needed.
 Do not modify the task. Do not interpret the output beyond success/failure.
 Only exit when the command completes, fails, or you receive an explicit stop instruction.`;
 
+const DREAM_SUFFIX = `
+
+# Sub-agent Execution Mode
+You are running as a memory consolidation sub-agent.
+Use History to verify raw trajectory evidence before writing memory.
+Do not query SQLite directly and do not use Bash.
+Only write durable, evidence-backed memory entries.`;
+
 /**
  * Subagent suffix 映射表
  */
@@ -132,6 +141,7 @@ export const SUBAGENT_SUFFIXES: Record<CoreAgentId, string> = {
   reviewer: REVIEWER_SUFFIX,
   plan: PLANNER_SUFFIX,
   awaiter: AWAITER_SUFFIX,
+  dream: DREAM_SUFFIX,
 };
 
 // ============================================================================
@@ -447,6 +457,23 @@ Output (last 200 lines):
     model: 'fast',
     maxIterations: 30,
     readonly: false,  // 需要执行命令
+  },
+
+  // =========================================================================
+  // Dream - session 复盘 → 记忆
+  // =========================================================================
+  dream: {
+    id: 'dream',
+    name: 'Dream',
+    description: 'Reviews recent sessions and writes durable memory only after History verification.',
+    prompt: applyOverride(
+      { id: 'subagent.dream', category: 'Subagent', name: 'Dream 记忆复盘子代理', description: 'session 复盘 → 记忆 子代理主 prompt' },
+      DREAM_AGENT_PROMPT,
+    ),
+    tools: ['MemoryRead', 'History', 'MemoryWrite', 'Read', 'Glob', 'Grep'],
+    model: 'balanced',
+    maxIterations: 20,
+    readonly: false,
   },
 };
 

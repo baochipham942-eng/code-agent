@@ -5,6 +5,7 @@
 
 import type { ParsedSkill } from '../../../shared/contract/agentSkill';
 import type { SkillCategory } from '../../../shared/contract/skillRepository';
+import { DREAM_SKILL_PROMPT } from '../../agent/dreamPrompt';
 
 /**
  * 内置 Skill 定义列表
@@ -94,6 +95,20 @@ Commit message 格式：
     disableModelInvocation: false,
     userInvocable: true,
     executionContext: 'inline',
+    source: 'builtin',
+    loaded: true,
+  },
+  {
+    name: 'dream',
+    description: 'session 复盘到记忆：当用户输入 /dream、要求复盘近期会话、沉淀记忆或自动 dream consolidation 时使用。',
+    promptContent: DREAM_SKILL_PROMPT,
+    basePath: '',
+    allowedTools: ['MemoryRead', 'History', 'MemoryWrite', 'Read', 'Glob', 'Grep'],
+    disableModelInvocation: false,
+    userInvocable: true,
+    strictToolset: true,
+    executionContext: 'inline',
+    agent: 'dream',
     source: 'builtin',
     loaded: true,
   },
@@ -2817,7 +2832,7 @@ See template at: \`<work-review>/code-reviewer.md\``,
 //
 // 单一真理源：分类写在这里（skill 自带分类），renderer 的"已安装"页据此把内置组
 // 二次分组成产物分类。与 skillCatalog.ts 的 RECOMMENDED_SKILLS（安装推荐层）解耦——
-// 这里覆盖全部 18 个内置 skill（含未进推荐目录的 dev 类 commit/review/test/...）。
+// 这里覆盖全部内置 skill（含未进推荐目录的 dev 类 commit/review/test/...）。
 // 新增内置 skill 时在此补一行；缺映射的 skill 前端归入"其他"。
 const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
   // 开发工程
@@ -2827,6 +2842,7 @@ const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
   explain: 'development',
   refactor: 'development',
   docker: 'development',
+  dream: 'development',
   // 数据分析
   'data-cleaning': 'data-analysis',
   'data-analysis-helper': 'data-analysis',

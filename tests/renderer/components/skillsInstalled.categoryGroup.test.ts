@@ -91,7 +91,7 @@ describe('内置 skill 分类回填（builtinSkills.ts SSoT）', () => {
       'data-analysis': 2, // data-cleaning, data-analysis-helper
       research: 4, // literature-review, paper-distillation, research-monitor, opencli-search
       automation: 6, // computer-housekeeper, contract-review, image-ocr-search, photo-archive, create-role, edit-role
-      development: 12, // commit, review, test, explain, refactor, docker + 方法论 6（brainstorm/tdd/debug/verify/merge/work-review，roadmap 2.3）
+      development: 13, // commit, review, test, explain, refactor, docker, dream + 方法论 6（brainstorm/tdd/debug/verify/merge/work-review，roadmap 2.3）
     });
   });
 });

@@ -19,7 +19,11 @@
 - 集成测试 6 个（`tests/integration/codexMilestoneGating.test.ts`）对**真实 validator**（Playwright runtime smoke）全过：契约正确的移动骨架过 M0/M1、机制缺失的 M2/M3 被拦、blocking 失败集单调递增。这验证了核心断言"契约错误在 M0 被拦、后续机制缺失不阻塞 M0"对真实判卷器成立。
 - `tsc --noEmit` 干净。
 
-**遗留（阻塞 P1/P3 实跑）**：mimo 端到端 pass-rate 实测**未完成**。harness 在 CLI 模式下取不到 xiaomi key——keytar 按 Electron headers 编译，CLI 下加载会 segfault，是 app 的有意护栏（`secureStorage.ts:13-25`），不是 bug。在 CLI 跑 mimo 只有两条路：(1) `XIAOMI_API_KEY` 环境变量；(2) 用户在 app 里把 key 存入 electron-store 备份。命令见 §4 P1 行。这是工程就绪、待真实运行验证的状态。
+**P1 mimo 实跑（已完成，2026-06-11）**：完整实跑报告见 `docs/audits/2026-06-11-codex-mimo-acceptance-run.md`。要点：
+- **dogfood 抓出根因 bug**：ai-sdk 路径的 `transformRequestBody` 死代码 → mimo `thinking:disabled` 从未发出 → thinking 失控（同 prompt 313s/0 正文 → 修复后 183s/32K 正文）。已修 + 回归测试。
+- **新旧对比（均带 thinking 修复）**：codex 流程通过率 42.5% vs 单次 34.1%、失败 23 vs 54、round0 即产出 vs 零产出、545 行 vs 1163 行、零退化 vs 旧基线退化 28。**codex 流程显著更可靠**。
+- **mimo 天花板**：产物是移动+胜负循环可玩壳（17 项过），跳跃坏、5 类机制无证据；repair 轮零改进、自修不收敛。通过完整契约需 W5/D6 模型路由（强逻辑里程碑路由给 Kimi/DeepSeek）。
+- harness key：CLI 下经 `XIAOMI_API_KEY` 环境变量注入（keytar 在 CLI segfault 是 app 有意护栏，非 bug）。
 
 ---
 

@@ -10,7 +10,7 @@
 > **Windows 版核心已打通**——unsigned NSIS perUser 安装（无 UAC）→ 窗口完整渲染主界面 → webServer / better-sqlite3 / 23 skills / 13 MCP server 全部正常。
 > 从"窗口秒退"到"完整可交互"，连修 5 个实现期 bug（见 §7），全是静态盘点照不到、只有 CI 实跑 + 真机才能暴露的。
 > 已上 `feat/windows-support` 分支（CI `build-windows-test.yml` 实跑绿、产物 OSS 国内可下）。
-> **剩余 = 朋友消费版真机验收（§5）+ release.yml 矩阵折入（§4 P2）**。dogfooding 顺带发现的几个**平台无关产品 bug**（Ollama 假性可用 / 配 provider 默认模型不自动切 / 会话导出静默失败 / MiMo 托管 key）已分流到独立分支 `fix/model-config-and-export`，不混入本线。
+> **2026-06-11 更新：release.yml 矩阵已折入（§4 P2 全勾）+ 全入口设备感知 + ConnectorRegistry 平台过滤完成。剩余 = 朋友消费版真机验收（§5，尤其 #13 WebView2 干净机自动装）+ PII setup Windows 化（P3 可后置）**。dogfooding 顺带发现的几个**平台无关产品 bug**（Ollama 假性可用 / 配 provider 默认模型不自动切 / 会话导出静默失败 / MiMo 托管 key）已分流到独立分支 `fix/model-config-and-export`，不混入本线。
 
 - **能做，建议做，但工作量显著大于 x64**：x64 是同平台换架构（2–4 天），Windows 是换平台。**MVP（对话/工具执行/会话持久化/自动更新）估 2–3 周**：纯工程 8–12 天 + 朋友真机回归。大头不在打包链（~3–5 天，x64 先例可大量复用），而在**安全与工具层重设计（~4–6 天，不可压缩）**。
 - **已定决策（执行确认）**：
@@ -201,17 +201,20 @@ commandSafety.ts（框架层，保留）
   capture_frontmost_context_snapshot 缺非 mac cfg 变体——首个 Windows 编译暴露的存量洞）
 - [ ] 真机验证文件占用三场景：renderer 热更新 rename active / 日志 rotate / DB 打开时更新替换（朋友真机）
 
-**P2 分发链（惰性部分已就绪，矩阵折入待验收）**
-- [ ] `release.yml` 矩阵加 windows leg —— **刻意推迟**：fail-fast:true 下未实跑过的 windows leg 会把 mac 发版一起拖死，必须等 build-windows-test 实跑绿 + 朋友验收（§5）通过再折
+**P2 分发链（2026-06-11 矩阵折入完成，预发布 tag 空跑验证中）**
+- [x] `release.yml` 加独立 build-windows job（不进 build-mac 矩阵——mac 有 codesign/notarize 专属步；复刻 build-windows-test.yml 链路；产物先重命名最终 OSS key 名再生成 manifest）。**fail-fast 策略**：publish `needs: [build-mac, build-windows]` + `if: always() && build-mac 成功`——windows 失败降级 mac-only 发版，绝不拖死 mac。预发布 tag `v0.16.101-wintest1` 空跑验证（run 27319024947）
 - [x] `tauri-update-manifest.mjs` platform+arch 推断（.exe → windows-x86_64，darwin 兼容键保留）
 - [x] `build-stable-release-json.mjs` 加 `--exe-url`；Vercel updateMetadata 复核完成（win32 平台/arch 路由就绪，**补了 win32 缺省 arch → x64**，否则无 arch 请求会 404）+ 分发页 Windows 卡片（探测式显示，资产未发布不出死链）
-- [ ] publish merge required keys 加 `windows-x86_64`（随矩阵折入一起做）
-- [ ] `releaseMacosGates.test.ts` 同步特征断言（随矩阵折入一起做）
+- [x] publish merge 合并 `windows-x86_64` 第三键 + required keys 校验（windows manifest 缺席时降级 mac-only，不列入 required）；stable/release.json 经 `--exe-url` 写入 exe（OSS versioned 路径，同 dmg，不走 wintest/）
+- [x] `releaseMacosGates.test.ts` 同步特征断言（windows leg 存在性 + fail-closed 步骤顺序 + publish 降级条件）
+- [x] **全入口设备感知（2026-06-11）**：分发页 OS 识别（userAgentData→platform→UA，mac 先于 win 判防 'darwin' 误判）只决定推荐排序——Windows 访客在资产已发布时置顶 Windows 卡片+主推+hero CTA 切换，**所有平台入口仍可见可点**（与芯片检测同一条铁律）。顺带修两个资产选择隐患：① updateMetadata selectAsset 的 sidecar 抢位（runtime-assets-manifest-darwin-x64.json 同时含 'win'+'x64' token，靠数组顺序才没选错）→ sidecar 永不作为下载目标 + win32 匹配排除 darwin；② updateService OSS fallback 同源 bug + 补 arch 感知（Intel mac fallback 此前拿 arm64 dmg），抽 selectReleaseAssetForPlatform 与服务端同语义
 
 **P3 收尾**
-- [ ] ConnectorRegistry 平台过滤注册；PII setup 的 Windows 路径（PowerShell 版或 Node 化，可后置）
-- [ ] 朋友安装指引文档（SmartScreen 话术 + 截图）
-- [ ] 朋友真机验收（§5）；CLAUDE.md 发版章节补 Windows 流程
+- [x] ConnectorRegistry 平台过滤注册（2026-06-11：registry configure/listAvailableNativeIds + registerMigratedTools 11 个 connector 工具 schema + settings 开关清单，三层全过滤，带单测）
+- [ ] PII setup 的 Windows 路径（PowerShell 版或 Node 化，可后置）
+- [ ] 朋友安装指引文档补截图（`docs/guides/windows-test-install.md` 正文已写好）
+- [ ] 朋友真机验收（§5）
+- [x] CLAUDE.md 发版章节补 Windows 流程（2026-06-11：三平台链路 + windows leg 要点 + 预发布 tag 验证法）
 
 ## 5. 朋友真机验收清单（非开发可照做）
 
@@ -230,8 +233,10 @@ commandSafety.ts（框架层，保留）
 | 8 | 中文路径 | 在含中文名的目录里让 Agent 读写文件正常 | 路径/编码链 | ⏳🔑 |
 | 9 | 图像 | 触发任意图片处理功能正常 | sharp win32-x64 | ⏳🔑 |
 | 10 | 文件占用 | App 开着的状态下完成一次自动更新，无「文件被占用」报错 | 文件锁风险面 | ⏳ |
-| 11 | 自动更新 | 设置里检查更新能拉到 win 包，下载→重装→重启全程无 UAC/SmartScreen | latest.json windows 键 + minisign + NSIS | ⏳（需 P2 矩阵折入后） |
-| 12 | 降级确认 | 语音输入/OCR/日历邮件等显示「平台不支持」而非报错崩溃（**预期不可用，属正常**） | §1.5 降级面 | ⏳ |
+| 11 | 自动更新 | 设置里检查更新能拉到 win 包，下载→重装→重启全程无 UAC/SmartScreen | latest.json windows 键 + minisign + NSIS | ⏳（P2 矩阵已折入，待正式发版后端到端验） |
+| 12 | 降级确认 | 语音输入/OCR/日历邮件等显示「平台不支持」而非报错崩溃（**预期不可用，属正常**）；连接器设置页不出现 mac 专属开关 | §1.5 降级面 + ConnectorRegistry 平台过滤 | ⏳ |
+| 13 | **WebView2 干净机自动装** | 在**从未装过 WebView2** 的干净 Win10/11 上直接跑安装包：embedBootstrapper 自动拉运行时 → 装完正常进主界面（**之前真机是先手动装的 WebView2，这条自动链路从未验证过——"安装包自给自足"的命门，正式发版前必验**） | tauri-platform-config `webviewInstallMode: embedBootstrapper` | ⏳⚠️ 最高优先 |
+| 14 | 分发页设备感知 | Windows 上打开分发页：Windows 卡片置顶且为主推按钮，mac 双按钮仍可见可点；mac 上打开则 mac 卡片在前 | index.html OS 识别 + 推荐排序 | ⏳ |
 
 > §3/§6-9 标 🔑：云电脑后端已证明健康，但发消息/工具执行需先配一个 API key（key 每台机存 SecureStorage、不打包，全新机为空——这是设计而非 bug）。这几项留给配好 key 的真机验。
 
@@ -276,3 +281,4 @@ commandSafety.ts（框架层，保留）
 - Rust 依赖缓存命中后 NSIS 编译 ~7min（冷编译 ~20min）。
 - 产物：`Agent-Neo-<ver>-win-x64-TEST-setup.exe`（~62MB，含 WebView2 引导器后体积基本不变）。
 - 朋友安装指引：`docs/guides/windows-test-install.md`。
+- **release.yml 矩阵折入（2026-06-11）**：独立 `build-windows` job 进生产发版链（步骤同 test workflow，产物走正式命名 + OSS versioned 路径），publish 合并三平台 latest.json + stable/release.json 含 exe。windows 失败降级 mac-only（见 §4 P2）。预发布 tag `v0.16.101-wintest1` 空跑验证（run 27319024947）——prerelease 闸门保证不提升 stable、不抢 latest。正式 Windows 发版前置条件：§5 #13 WebView2 干净机自动装验收通过。

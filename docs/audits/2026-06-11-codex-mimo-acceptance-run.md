@@ -71,3 +71,36 @@
 - `fix(model)`: ai-sdk 路径真正发送 vendor transformRequestBody（mimo thinking:disabled）。
 - `feat(acceptance)`: codex 里程碑增量生成策略（`--strategy codex`）+ lean prompt 模式。
 - `test`: 49 单测 + 6 集成测试（真实 validator 里程碑门控）+ 6 vendor body 回归测试。
+
+---
+
+## 6. 追加实验：DeepSeek 对照 + 又修两个真 bug（2026-06-11 续）
+
+用户提供 DeepSeek key 后，跑 codex×deepseek-chat 验证"换强代码模型能否收敛"，过程中又暴露并修复两个 acceptance-loop 真 bug。
+
+### 6.1 又修的两个 bug
+
+- **M0 门控过严**（`platformerCodexStrategy.ts`）：M0 因"coverage 没有覆盖 qualityPlan 承诺的奖励/风险"被拦，但这些要靠 M2/M3 机制实现才能覆盖，M0 明确说机制行为暂不要求 → **里程碑永远卡 M0、到不了 M1-M4、无法收敛**。修复：M0 只拦静态骨架能满足的结构/形状/契约存在性，coverage 完整性移到 M4。
+- **产物保留缺失**（`platformer-gameplay-generation.ts`）：单调门只护"分数账本"不护"产物文件"。repair 轮原地覆写文件，round0 的好产物被退化版清掉；escalate 时 `finalResult` 返回最后一轮而非最优轮，盘上留坏版本。修复：快照最优产物、退化轮恢复文件、escalate 返回 `baselineRound`。
+
+### 6.2 DeepSeek 实跑数据（高方差）
+
+| run | 里程碑推进 | round0 | repair 走势 | 备注 |
+|---|---|---|---|---|
+| cap1（M0 修复前） | M0✗ | 10/34 | round1 改进到 15/22 | repair **改进**（≠mimo 的 flat） |
+| cap3（M0 修复前） | M0✗ | **35/6（85%）** | repair 退化到 18/26 | round0 全实验最佳，但被 repair 搞坏 |
+| cap3（全修复后） | **M0✓ M1✓ M2✗** | 10/38 | 10→10→8→10，最优轮被保留 | 里程碑真正推进 |
+
+**关键观察**：
+1. **M0 门控修复让里程碑真正推进**：DeepSeek 跑到 M0✓→M1✓（契约+移动验证通过）→M2✗（敌人踩踏够不到）。修复前永远卡 M0。
+2. **DeepSeek 生成质量高方差**：round0 在 10/38 ~ 35/6 之间波动。最好的一把（35/6）远超 mimo（17/23），但不稳定。
+3. **自修对两个模型都不收敛**：DeepSeek repair 与 mimo 一样会退化（10→8、35→18）。强模型把生成侧天花板抬高了，但 repair 收敛仍是共性难题。
+4. **产物保留修复生效**：全修复跑里 round2 退化 3 项被挡，最终交付最优轮而非退化版。
+5. **复发小毛病**：DeepSeek 在 repair 轮反复请求不可用的 Bash 工具被中止（`artifactRepairGuard` 工具集不含 Bash），浪费 milestone retry——后续可单独放宽或显式告知模型工具边界。
+
+### 6.3 最终结论
+
+- **"借鉴 codex 能让生成更可靠吗"——能，且已量化**：里程碑拆分 + 契约前置 + 探针自验 + 产物保留，让产出更稳、不退化、能逐级推进、交付最优版本。codex 流程在所有维度优于单次。
+- **"模型自己能修好吗"——不能**：mimo / DeepSeek 的 repair 都不收敛到完整通过，高级机制（踩敌/顶砖/能力/门/组合）是两个模型在 repair 预算内的共同天花板。强模型抬高了生成侧起点（最佳 85%），但收敛仍需人或更强模型介入。
+- **基础设施是真正的产出**：本轮修的 4 个 bug（thinking 死代码、里程碑空过、M0 过严、产物保留）才是让"codex 式生成"在 Neo 里真正可靠的前提——它们都是 dogfood 实跑才暴露的，模型自身永远发现不了。
+- **下一步建议**：把 codex 策略 + 4 个修复并入主干；落地 W5 模型路由（M0-M2 强逻辑路由 DeepSeek/Kimi、M3-M4 留 mimo）；放宽 repair 工具集或显式约束 Bash 使用；BoN≥3 吸收 DeepSeek 的高方差（多采几个 round0 取最优）。

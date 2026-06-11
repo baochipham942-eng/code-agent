@@ -27,6 +27,17 @@ vi.mock('../../../src/main/model/modelRouterTimeouts', async (importActual) => {
   return { ...actual, ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS: [60_000, 60_000] };
 });
 
+vi.mock('../../../src/main/services/core/configService', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/main/services/core/configService')>();
+  return {
+    ...actual,
+    getConfigService: () => ({
+      getSettings: () => ({}),
+      getApiKey: () => 'sk-fallback-key', // fallback 链有 key 可走 → 暴露"带 abort 信号继续 fallback"的 bug
+    }),
+  };
+});
+
 describe('ModelRouter — retrySelectedProviderForArtifactTransient 退避可中断', () => {
   it('退避等待期间 abort：立即返回 null，不再调 provider 重试', async () => {
     const router = new ModelRouter();
@@ -59,5 +70,42 @@ describe('ModelRouter — retrySelectedProviderForArtifactTransient 退避可中
 
     expect(result).toBeNull();
     expect(callMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('ModelRouter — 公共 inference() 的取消形态（codex re-audit MED）', () => {
+  it('artifact 重试退避中 abort：以取消错误上抛，不带 abort 信号跑 fallback 链', async () => {
+    const router = new ModelRouter();
+    const callMock = vi.fn().mockRejectedValue(new Error('502 Bad Gateway'));
+    (router as unknown as { _callProviderWithArtifactFallback: typeof callMock })
+      ._callProviderWithArtifactFallback = callMock;
+
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 25);
+
+    // artifact-like（带 repair 上下文标记）+ adaptive=true（允许跨 provider fallback）
+    // + artifactRepairActive：主调用 502 → 选定 provider 重试 → 60s 退避中 abort
+    const inferencePromise = router.inference(
+      [{ role: 'user', content: '<artifact-repair-context> fix the game artifact, full html required.' }],
+      [],
+      { provider: 'xiaomi', model: 'mimo-v2.5-pro', apiKey: 'sk-test', adaptive: true } as ModelConfig,
+      undefined,
+      controller.signal,
+      { artifactRepairActive: true },
+    );
+
+    const result = await Promise.race([
+      inferencePromise.then(
+        () => 'RESOLVED_UNEXPECTEDLY',
+        (err: Error) => err,
+      ),
+      new Promise((resolve) => setTimeout(() => resolve('STILL_SLEEPING_AFTER_ABORT'), 2_000)),
+    ]);
+
+    // 取消必须以取消形态上抛——不是原始 502，也不是默默跑完 fallback 链
+    expect(result).toBeInstanceOf(Error);
+    expect((result as Error).message).toMatch(/cancel/i);
+    // 主调用 1 次后即取消：不允许再向任何 provider（重试或 fallback）发请求
+    expect(callMock).toHaveBeenCalledTimes(1);
   });
 });

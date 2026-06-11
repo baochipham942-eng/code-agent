@@ -618,6 +618,13 @@ export class ModelRouter {
           return selectedProviderRetry;
         }
 
+        // 取消不能折叠成"重试耗尽"（codex re-audit MED）：abort 唤醒后 retry 返回
+        // null，若不在此拦截会带着已 abort 的 signal 跑完整条 fallback 链，最终
+        // 把取消错报成原始 provider 错误
+        if (signal?.aborted) {
+          throw new Error('Request was cancelled during artifact provider retry', { cause: primaryErr });
+        }
+
         if (!shouldAllowArtifactFallbackAfterSelectedRetry(fallbackCategory, normalizedOptions)) {
           logger.warn(
             `[ModelRouter] Provider ${effectiveConfig.provider} hit artifact transient error; keeping selected provider/model instead of cross-provider fallback: ${fallbackReason}`
@@ -647,6 +654,10 @@ export class ModelRouter {
       );
 
       for (const fallback of chain) {
+        // 取消优先于继续降级：fallback 链途中 abort 即停（codex re-audit MED 对称）
+        if (signal?.aborted) {
+          throw new Error('Request was cancelled during provider fallback', { cause: primaryErr });
+        }
         // Skip providers that are known to be unavailable
         const fallbackHealth = getProviderHealthMonitor().getHealth(fallback.provider);
         if (fallbackHealth?.status === 'unavailable') {
@@ -701,6 +712,10 @@ export class ModelRouter {
 
           return result;
         } catch (fallbackErr) {
+          // 取消形态原样上抛，不再 continue 吞掉（codex re-audit MED 对称）
+          if (signal?.aborted) {
+            throw fallbackErr;
+          }
           const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
           if (PERSISTENT_PROVIDER_ERROR_PATTERN.test(fbMsg) || ARTIFACT_UNUSABLE_RESPONSE_PATTERN.test(fbMsg)) {
             this.recordProviderHardFailure(fallback.provider);

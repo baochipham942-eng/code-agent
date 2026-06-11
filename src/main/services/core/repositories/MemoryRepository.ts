@@ -4,6 +4,7 @@
 
 import type BetterSqlite3 from 'better-sqlite3';
 import { MEMORY } from '../../../../shared/constants';
+import { normalizeFtsMatchQuery, runMemoriesFtsBackfill } from '../../../../shared/memoriesFts.sql';
 import type {
   MemoryRecord,
   RelationQueryOptions,
@@ -206,28 +207,19 @@ export class MemoryRepository {
     return result.changes;
   }
 
+  /**
+   * 关键词检索。BM25（memories_fts）召回优先——相关性排序、零外部依赖；
+   * 以下情形退回 LIKE 全扫（保持旧行为）：查询 <3 字符（trigram 下限）、
+   * raw FTS 语法错误、FTS 零命中（历史数据缺口兜底）。
+   * 读时 decay 在两条通道之上统一应用。
+   */
   searchMemories(query: string, options: { type?: string; category?: string; limit?: number; applyDecay?: boolean } = {}): MemoryRecord[] {
-    const conditions: string[] = ['(content LIKE ? OR summary LIKE ?)'];
-    const params: unknown[] = [`%${query}%`, `%${query}%`];
-
-    if (options.type) {
-      conditions.push('type = ?');
-      params.push(options.type);
-    }
-    if (options.category) {
-      conditions.push('category = ?');
-      params.push(options.category);
-    }
-
     // Fetch more rows than needed so decay filtering still returns enough
     const requestedLimit = options.limit || 20;
     const fetchLimit = (options.applyDecay !== false) ? requestedLimit * 3 : requestedLimit;
 
-    const rows = this.db.prepare(`
-      SELECT * FROM memories WHERE ${conditions.join(' AND ')}
-      ORDER BY access_count DESC, updated_at DESC
-      LIMIT ?
-    `).all(...params, fetchLimit) as SQLiteRow[];
+    const rows = this.searchMemoriesFtsRows(query, options, fetchLimit)
+      ?? this.searchMemoriesLikeRows(query, options, fetchLimit);
 
     let records = rows.map(row => this.rowToMemoryRecord(row));
 
@@ -249,6 +241,87 @@ export class MemoryRepository {
     }
 
     return records.slice(0, requestedLimit);
+  }
+
+  /** BM25 召回；不可用/不适用时返回 null 让调用方走 LIKE 兜底 */
+  private searchMemoriesFtsRows(
+    query: string,
+    options: { type?: string; category?: string },
+    fetchLimit: number
+  ): SQLiteRow[] | null {
+    const trimmed = query.trim();
+    if (trimmed.length < 3) {
+      return null;
+    }
+
+    const conditions: string[] = [];
+    const params: unknown[] = [normalizeFtsMatchQuery(trimmed)];
+    if (options.type) {
+      conditions.push('memories_fts.type = ?');
+      params.push(options.type);
+    }
+    if (options.category) {
+      conditions.push('memories_fts.category = ?');
+      params.push(options.category);
+    }
+    const extra = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
+
+    try {
+      const rows = this.db.prepare(`
+        SELECT m.* FROM memories_fts
+        JOIN memories m ON m.id = memories_fts.memory_id
+        WHERE memories_fts MATCH ? ${extra}
+        ORDER BY rank
+        LIMIT ?
+      `).all(...params, fetchLimit) as SQLiteRow[];
+      return rows.length > 0 ? rows : null;
+    } catch {
+      // FTS 表缺失或 raw 语法错误 → LIKE 兜底
+      return null;
+    }
+  }
+
+  /** 旧 LIKE 全扫通道（兜底） */
+  private searchMemoriesLikeRows(
+    query: string,
+    options: { type?: string; category?: string },
+    fetchLimit: number
+  ): SQLiteRow[] {
+    const conditions: string[] = ['(content LIKE ? OR summary LIKE ?)'];
+    const params: unknown[] = [`%${query}%`, `%${query}%`];
+
+    if (options.type) {
+      conditions.push('type = ?');
+      params.push(options.type);
+    }
+    if (options.category) {
+      conditions.push('category = ?');
+      params.push(options.category);
+    }
+
+    return this.db.prepare(`
+      SELECT * FROM memories WHERE ${conditions.join(' AND ')}
+      ORDER BY access_count DESC, updated_at DESC
+      LIMIT ?
+    `).all(...params, fetchLimit) as SQLiteRow[];
+  }
+
+  /**
+   * Backfill memories_fts from existing memories（升级后首次启动）。
+   * 只在 FTS 空且 memories 非空时执行；幂等。
+   */
+  backfillMemoriesFts(): number {
+    try {
+      const ftsRow = this.db.prepare('SELECT COUNT(*) as c FROM memories_fts').get() as { c: number } | undefined;
+      const memRow = this.db.prepare('SELECT COUNT(*) as c FROM memories').get() as { c: number } | undefined;
+      if (Number(ftsRow?.c ?? 0) > 0 || Number(memRow?.c ?? 0) === 0) {
+        return 0;
+      }
+      return runMemoriesFtsBackfill(this.db);
+    } catch {
+      // backfill 失败不阻塞启动；下次启动重试（原子回滚保证 FTS 仍为空）
+      return 0;
+    }
   }
 
   getMemoryStats(): {

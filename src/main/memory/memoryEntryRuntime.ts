@@ -29,6 +29,7 @@ import {
 } from '../lightMemory/lightMemoryIpc';
 import { hashInboxContent } from './knowledgeInboxDecision';
 import { sanitizeMemoryContent } from '../utils/sanitizeMemoryContent';
+import { MEMORY } from '../../shared/constants';
 
 interface MemoryEntryDatabase {
   listMemories(options?: {
@@ -45,6 +46,8 @@ interface MemoryEntryDatabase {
   createMemory(data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): MemoryRecord;
   updateMemory(id: string, updates: Partial<MemoryRecord>): MemoryRecord | null;
   deleteMemory?(id: string): boolean;
+  /** BM25/FTS 关键词召回（roadmap 2.5）；缺省实现时混合召回静默跳过 */
+  searchMemories?(query: string, options?: { limit?: number; applyDecay?: boolean }): MemoryRecord[];
 }
 
 export interface BuildActiveMemoryEntryInput {
@@ -563,6 +566,24 @@ export async function packMemoryEntries(
   const tokens = tokenizeQuery(query);
   const entries = (await listUnifiedMemoryEntries(db)).entries;
 
+  // 混合召回（roadmap 2.5）：listUnifiedMemoryEntries 的 DB 侧只取最近窗口，
+  // 有 query 时用 BM25 通道把窗口外的相关旧记忆补进候选（按 entry.id 去重）。
+  if (query && typeof db?.searchMemories === 'function') {
+    try {
+      const known = new Set(entries.map((entry) => entry.id));
+      const recalled = db.searchMemories(query, { limit: MEMORY.PACK_BM25_RECALL_LIMIT });
+      for (const record of recalled) {
+        const entry = storedMemoryToEntry(record);
+        if (!known.has(entry.id)) {
+          known.add(entry.id);
+          entries.push(entry);
+        }
+      }
+    } catch {
+      // 召回失败不阻塞 packing，最近窗口候选仍然可用
+    }
+  }
+
   const candidates = entries
     .filter((entry) => statuses.has(entry.status))
     .filter((entry) => !kinds || kinds.has(entry.kind))
@@ -619,7 +640,7 @@ export async function packMemoryEntries(
 
 export async function exportMemoryBundleV2(db?: MemoryEntryDatabase): Promise<MemoryExportV2Bundle> {
   const listed = await listUnifiedMemoryEntries(db);
-  let indexContent: string | null = null;
+  let indexContent: string | null;
   const indexPath = getMemoryIndexPath();
   try {
     indexContent = await fs.readFile(indexPath, 'utf-8');

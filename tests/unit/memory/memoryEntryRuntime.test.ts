@@ -401,6 +401,72 @@ The left menu should keep common daily actions visible.
     expect(packed.totalChars).toBeLessThanOrEqual(180);
   });
 
+  it('merges BM25 recall beyond the recent-window into pack candidates (roadmap 2.5)', async () => {
+    // listMemories（最近窗口）只返回不相关条目；相关的老条目只能靠
+    // searchMemories 的 FTS/BM25 通道召回 → 必须进入 pack 候选
+    const oldRelevant = record({
+      id: 'mem-old-relevant',
+      content: 'Cassowary incident: the deploy pipeline failed on missing proxy env.',
+      summary: 'cassowary deploy fix',
+      metadata: {},
+    });
+    const db = {
+      listMemories: vi.fn(() => [
+        record({ id: 'mem-recent-noise', content: 'Unrelated recent note.', metadata: {} }),
+      ] as MemoryRecord[]),
+      searchMemories: vi.fn(() => [oldRelevant] as MemoryRecord[]),
+      createMemory: vi.fn(),
+      updateMemory: vi.fn(),
+    };
+
+    const packed = await packMemoryEntries({
+      query: 'cassowary deploy',
+      maxItems: 5,
+      perItemCharLimit: 200,
+      totalCharBudget: 600,
+    }, db);
+
+    expect(db.searchMemories).toHaveBeenCalled();
+    expect(packed.items.map((item) => item.entryId)).toContain('db:mem-old-relevant');
+  });
+
+  it('does not duplicate pack candidates already present in the recent window', async () => {
+    const shared = record({
+      id: 'mem-shared',
+      content: 'Numbat caching strategy details for repeated lookups.',
+      summary: 'numbat caching',
+      metadata: {},
+    });
+    const db = {
+      listMemories: vi.fn(() => [shared] as MemoryRecord[]),
+      searchMemories: vi.fn(() => [shared] as MemoryRecord[]),
+      createMemory: vi.fn(),
+      updateMemory: vi.fn(),
+    };
+
+    const packed = await packMemoryEntries({
+      query: 'numbat caching',
+      maxItems: 5,
+      perItemCharLimit: 200,
+      totalCharBudget: 600,
+    }, db);
+
+    const ids = packed.items.map((item) => item.entryId);
+    expect(ids.filter((id) => id === 'db:mem-shared').length).toBe(1);
+  });
+
+  it('skips BM25 recall when there is no query', async () => {
+    const db = {
+      listMemories: vi.fn(() => [] as MemoryRecord[]),
+      searchMemories: vi.fn(() => [] as MemoryRecord[]),
+      createMemory: vi.fn(),
+      updateMemory: vi.fn(),
+    };
+
+    await packMemoryEntries({ maxItems: 3 }, db);
+    expect(db.searchMemories).not.toHaveBeenCalled();
+  });
+
   it('exports v2 bundles and dry-runs import diffs before writing anything', async () => {
     await fs.writeFile(path.join(memDir, 'project-rule.md'), `---
 name: Project Rule

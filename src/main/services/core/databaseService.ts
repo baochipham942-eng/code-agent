@@ -203,6 +203,8 @@ export class DatabaseService {
       this.sessionRepo.backfillSessionMessagesFts();
       // 同理：transcript FTS（kind 分解索引，roadmap 2.1）
       this.sessionRepo.backfillTranscriptFts();
+      // 同理：memories FTS（BM25 检索通道，roadmap 2.5）
+      this.memoryRepo.backfillMemoriesFts();
     } catch (err) {
       // 初始化失败时回退状态，避免 this.db 已赋值但 Repository 未初始化
       logger.error('Database initialization failed, resetting state:', err);

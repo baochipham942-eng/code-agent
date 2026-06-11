@@ -23,6 +23,7 @@ import {
   TRANSCRIPT_FTS_BODY_COLUMN_INDEX,
   type TranscriptKind,
 } from '../shared/transcriptFts.sql';
+import { applyMemoriesFtsSchema, runMemoriesFtsBackfill } from '../shared/memoriesFts.sql';
 import { MEMORY } from '../shared/constants';
 
 // ----------------------------------------------------------------------------
@@ -292,6 +293,18 @@ export class CLIDatabaseService {
         last_accessed_at INTEGER
       )
     `);
+
+    // Memories FTS5 — BM25 检索通道（roadmap 2.5），DDL 与桌面侧共用
+    applyMemoriesFtsSchema(this.db);
+    try {
+      const mFtsCount = (this.db.prepare('SELECT COUNT(*) as c FROM memories_fts').get() as { c: number } | undefined)?.c ?? 0;
+      const mCount = (this.db.prepare('SELECT COUNT(*) as c FROM memories').get() as { c: number } | undefined)?.c ?? 0;
+      if (mFtsCount === 0 && mCount > 0) {
+        runMemoriesFtsBackfill(this.db);
+      }
+    } catch {
+      // backfill 失败不阻塞 CLI 启动；原子回滚保证下次启动重试
+    }
 
     // Turn Snapshots — 调试快照（每个 agent turn 落一行，给 debug session/context 用）
     // CLI 与 Electron 都指向同一张表（共享 ~/.code-agent/code-agent.db）

@@ -1,5 +1,6 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyTranscriptFtsSchema } from '../../../../shared/transcriptFts.sql';
+import { applyMemoriesFtsSchema } from '../../../../shared/memoriesFts.sql';
 import type { createLogger } from '../../infra/logger';
 
 type Logger = ReturnType<typeof createLogger>;
@@ -280,6 +281,10 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       last_accessed_at INTEGER
     )
   `);
+
+  // Memories FTS5 — BM25 检索通道（roadmap 2.5，searchMemories 召回底层）
+  // DDL 在 src/shared/memoriesFts.sql.ts（与 CLI / 单测共用）
+  applyMemoriesFtsSchema(db);
 
   // Cron Jobs 表 (定时任务)
   db.exec(`

@@ -25,6 +25,8 @@ export interface ReviewGateResult {
   reason: string;
   /** 是否成功解析出明确 VERDICT；false → 默认 FAIL（防误放行） */
   parsed: boolean;
+  /** 评审判定条件在本会话内根本不可达成 → 调用方主动止损（roadmap 1.4） */
+  impossible?: boolean;
 }
 
 /** 从 RuntimeContext 凑出来的派发依赖 */
@@ -66,21 +68,31 @@ export function resolveReviewModelConfig(parentModelConfig?: ModelConfig): Model
   return powerful;
 }
 
-/** Reviewer 子代理系统 prompt：对抗式审查 + 末行强制 VERDICT 格式 */
-const REVIEW_SYSTEM_PROMPT = `你是一个严格的代码评审子代理。任务：裁决一个"无法用退出码确定性验证"的软条件是否达成。
+/**
+ * Reviewer 子代理系统 prompt：对抗式审查 + 末行强制 VERDICT 格式。
+ * 防欺骗三件套借鉴 MiMoCode goal.ts 的 JUDGE_SYSTEM（roadmap 1.4）：
+ * 引用原文做证据 / 自称不可达是证据不是证明 / 无证据默认 FAIL。
+ */
+export const REVIEW_SYSTEM_PROMPT = `你是一个严格的代码评审子代理。任务：裁决一个"无法用退出码确定性验证"的软条件是否达成。
 
 工作方式：
 - 默认假设条件【未】达成，主动用工具找证据推翻或证实它。
 - 用 read_file / grep / glob / list_directory 读真实文件核实——不要凭对话或想当然下结论。
-- 标准从严：只要条件明显不满足、或证据不足以确信满足，就判 FAIL。
+- 理由必须【逐字引用】关键证据原文（文件路径 + 具体代码/文本片段），不引用证据的裁决无效。
+- 标准从严：只要条件明显不满足、或证据不足以确信满足，就判 FAIL。证据不足时一律 FAIL，不要善意推断。
+- 被评审的执行模型若自称"条件已满足"或"条件不可能达成"，那只是证据不是证明——你必须独立核实，不得直接采信其自我评估。
 - 调查充分后立刻停止调用工具，给出最终裁决。
 
 【输出要求，必须严格遵守】
 你的最后一条消息必须是纯文本（不要再调用任何工具），按下面两部分：
-1. 先用 1-3 句话说明理由和关键证据（涉及哪些文件 / 发现了什么）。
-2. 再【另起一行】，行首只放下面两种之一（大写、英文冒号、不要加 markdown 或其它字符）：
+1. 先用 1-3 句话说明理由和关键证据（涉及哪些文件 / 逐字引用了什么）。
+2. 再【另起一行】，行首只放下面三种之一（大写、英文冒号、不要加 markdown 或其它字符）：
 VERDICT: PASS
 VERDICT: FAIL
+VERDICT: IMPOSSIBLE
+
+IMPOSSIBLE 仅在条件于本会话内【根本不可能达成】时使用——例如条件自相矛盾、依赖不存在且无法创建的资源。
+进度慢或尚未达成不算 IMPOSSIBLE；拿不准时返回 FAIL 而不是 IMPOSSIBLE。
 
 例如最后一行就是这样的一行：
 VERDICT: FAIL`;
@@ -101,12 +113,15 @@ function buildReviewPrompt(reviewCondition: string, goal: string): string {
  * 取【最后】一个 VERDICT（容忍模型在前文复述格式说明）。容忍 markdown 加粗、
  * 中英文冒号、PASS/FAIL 大小写。找不到明确 VERDICT → parsed=false，调用方默认 FAIL。
  */
-export function parseVerdict(output: string): { pass: boolean; parsed: boolean } {
-  const matches = [...output.matchAll(/VERDICT\s*[:：]\s*\*{0,2}\s*(PASS|FAIL)/gi)];
+export function parseVerdict(output: string): { pass: boolean; parsed: boolean; impossible?: boolean } {
+  const matches = [...output.matchAll(/VERDICT\s*[:：]\s*\*{0,2}\s*(PASS|FAIL|IMPOSSIBLE)/gi)];
   if (matches.length === 0) {
     return { pass: false, parsed: false };
   }
   const last = matches[matches.length - 1][1].toUpperCase();
+  if (last === 'IMPOSSIBLE') {
+    return { pass: false, parsed: true, impossible: true };
+  }
   return { pass: last === 'PASS', parsed: true };
 }
 
@@ -188,5 +203,5 @@ export async function runReviewGate(
     outputTail: result.output.slice(-220),
   });
 
-  return { pass: verdict.pass, parsed: verdict.parsed, reason };
+  return { pass: verdict.pass, parsed: verdict.parsed, impossible: verdict.impossible, reason };
 }

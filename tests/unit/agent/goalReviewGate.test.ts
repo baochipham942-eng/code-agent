@@ -38,7 +38,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
   }),
 }));
 
-import { parseVerdict, resolveReviewModelConfig, runReviewGate } from '../../../src/main/agent/goalReviewGate';
+import { parseVerdict, resolveReviewModelConfig, runReviewGate, REVIEW_SYSTEM_PROMPT } from '../../../src/main/agent/goalReviewGate';
 import type { ModelConfig } from '../../../src/shared/contract';
 
 const parentModelConfig: ModelConfig = { provider: 'zhipu', model: 'glm-5' } as ModelConfig;
@@ -157,5 +157,30 @@ describe('parseVerdict', () => {
 
   it('无 VERDICT → parsed=false 默认 FAIL', () => {
     expect(parseVerdict('我觉得还行。')).toEqual({ pass: false, parsed: false });
+  });
+
+  it('解析 IMPOSSIBLE 裁决（目标不可达主动止损，roadmap 1.4）', () => {
+    expect(parseVerdict('条件自相矛盾，本会话内不可能达成。\nVERDICT: IMPOSSIBLE')).toEqual({
+      pass: false,
+      parsed: true,
+      impossible: true,
+    });
+  });
+
+  it('IMPOSSIBLE 同样取最后一个 VERDICT', () => {
+    expect(parseVerdict('VERDICT: PASS 是格式示例。\nVERDICT: IMPOSSIBLE')).toEqual({
+      pass: false,
+      parsed: true,
+      impossible: true,
+    });
+  });
+});
+
+describe('REVIEW_SYSTEM_PROMPT 防欺骗三件套 (roadmap 1.4)', () => {
+  it('包含：引用原文证据 / 自称不可达是证据不是证明 / 无证据默认 FAIL / IMPOSSIBLE 出口', () => {
+    expect(REVIEW_SYSTEM_PROMPT).toContain('逐字引用');
+    expect(REVIEW_SYSTEM_PROMPT).toContain('证据不是证明');
+    expect(REVIEW_SYSTEM_PROMPT).toContain('证据不足');
+    expect(REVIEW_SYSTEM_PROMPT).toContain('VERDICT: IMPOSSIBLE');
   });
 });

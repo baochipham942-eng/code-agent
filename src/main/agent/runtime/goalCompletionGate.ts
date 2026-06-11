@@ -75,6 +75,28 @@ export async function handleGoalCompletionGate(
       type: 'goal_gate',
       data: { gate: 2, pass: review.pass, reason: review.reason },
     });
+    // IMPOSSIBLE 主动止损（roadmap 1.4）：评审独立核实后判定条件在本会话内
+    // 根本不可达成 → 直接 markAborted 结束，不再让模型空转烧轮次/预算。
+    if (review.impossible) {
+      const reason = `评审判定目标不可达成：${review.reason}`;
+      ctx.goalMode.markAborted(reason);
+      ctx.onEvent({
+        type: 'goal_complete',
+        data: { status: 'aborted', reason, turns: 0, tokensUsed: 0 },
+      });
+      contextAssembly.injectSystemMessage(
+        [
+          '<goal-impossible>',
+          `软评审判定该目标在本会话内不可达成：${reviewCondition}`,
+          '--- 评审意见（截断）---',
+          review.reason,
+          '本次 goal 已主动止损结束。请向用户说明不可达成的原因和可行的替代方案。',
+          '</goal-impossible>',
+        ].join('\n'),
+      );
+      return 'break';
+    }
+
     if (!review.pass) {
       ctx.goalMode.clearCompletionRequest();
       contextAssembly.injectSystemMessage(

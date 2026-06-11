@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.103] - 2026-06-11
+
+### Added
+
+- **Windows (win32-x64) 测试版首次随版发布**：NSIS unsigned perUser 安装包（无 UAC），release.yml 独立 build-windows job 进正式发版链，三平台 latest.json（darwin-aarch64 / darwin-x86_64 / windows-x86_64）；windows leg 失败自动降级 mac-only 发版。
+- 分发页设备感知：按访问者 OS/芯片推荐对应安装包（只决定排序与高亮，所有平台入口保持可见可点）。
+- PII 安装链 Node 化（setup-gliner-pii.mjs 双平台一份实现），Windows 包可启用本地 PII 防线。
+
+### Fixed
+
+- Local(Ollama) 假性"已可用"：列表展示前先探测本地服务，未装 Ollama 不再显示本地模型可用。
+- 配好 provider 后默认模型自动接管，消除"明明配置了还说没配置"。
+- MiMo 托管 key 登录后下发（sharedProviderKeys 控制面到客户端全链路）。
+- 更新分发资产选择两处隐患：服务端/客户端均不再可能把 runtime manifest（JSON）当安装包下发；Intel mac OSS 降级路径不再误取 arm64 dmg。
+- 权限路径白名单 Windows 语义旁路（path.relative 体系 + NTFS 大小写不敏感）+ 归档解压反斜杠/盘符条目逃逸。
+- ConnectorRegistry 平台过滤：非 macOS 不再注册 AppleScript connector 组（11 个工具不进 LLM 工具列表）。
+
 ## [0.16.102] - 2026-06-10
 
 ### Fixed

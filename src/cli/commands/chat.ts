@@ -24,6 +24,7 @@ import type { ModelProvider } from '../../shared/contract';
 import { getPRLinkService } from '../../main/services/github/prLinkService';
 import { initializeCommands, getCommandRegistry } from '../../shared/commands';
 import type { CommandContext, CommandOutput } from '../../shared/commands';
+import { getPromptCommandService } from '../../main/services/commands/promptCommandService';
 
 /** Provider → env var name mapping */
 const PROVIDER_ENV_KEYS: Record<string, string> = {
@@ -776,9 +777,22 @@ async function handleCommand(
       rl?.close();
       return true;
 
-    default:
+    default: {
+      // prompt 命令（/命令协议层，roadmap 2.2）：文件式 .code-agent/commands/<name>.md
+      // 与 MCP prompts。命中则展开模板交给 agent；未命中保持未知命令提示
+      const resolution = await getPromptCommandService()
+        .resolveInvocation(input, process.cwd())
+        .catch(() => null);
+      if (resolution) {
+        const result = await agent.run(resolution.prompt);
+        if (!result.success && result.error) {
+          terminalOutput.error(result.error);
+        }
+        return false;
+      }
       terminalOutput.warn(`未知命令: /${cmd}`);
       return false;
+    }
   }
 }
 

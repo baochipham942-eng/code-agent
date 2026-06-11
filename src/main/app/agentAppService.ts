@@ -29,6 +29,7 @@ import { getSessionManager, type SessionWithMessages } from '../services';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
 import { getFileCheckpointService } from '../services/checkpoint';
+import { applyPromptCommandExpansion } from '../services/commands/promptCommandService';
 import { normalizeAgentEffortLevel } from '../../shared/effortLevels';
 import type { AgentRunOptions } from '../research/types';
 
@@ -250,6 +251,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       resolvedSessionId,
       envelope.context?.workingDirectory,
     );
+    // /命令协议层（roadmap 2.2）：命中注册命令时把 content 展开成模板 prompt；
+    // 非命令消息零开销直通（startsWith 守卫在函数内）
+    envelope = await applyPromptCommandExpansion(envelope, effectiveWorkingDirectory);
     if (engine.kind === 'codex_cli') {
       const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
       orchestrator?.setWorkingDirectory(launch.cwd);

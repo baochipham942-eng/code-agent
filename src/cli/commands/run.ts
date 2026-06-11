@@ -11,6 +11,7 @@ import { cleanup, initializeCLIServices, getDatabaseService } from '../bootstrap
 import type { CLIGlobalOptions } from '../types';
 import { extractJSON } from '../utils/jsonExtractor';
 import { validateSchema, formatValidationErrors, type JSONSchema } from '../utils/schemaValidator';
+import { getPromptCommandService } from '../../main/services/commands/promptCommandService';
 
 /**
  * Read stdin when piped (non-TTY)
@@ -165,6 +166,19 @@ export const runCommand = new Command('run')
           } else {
             terminalOutput.warning(`无法恢复会话: ${options.session}，创建新会话`);
           }
+        }
+      }
+
+      // prompt 命令展开（/命令协议层，roadmap 2.2）：run "/name args" → 模板 prompt
+      if (fullPrompt.startsWith('/')) {
+        const resolution = await getPromptCommandService()
+          .resolveInvocation(fullPrompt, process.cwd())
+          .catch(() => null);
+        if (resolution) {
+          if (!isJson) {
+            terminalOutput.info(`/命令展开: ${resolution.name} (${resolution.source})`);
+          }
+          fullPrompt = resolution.prompt;
         }
       }
 

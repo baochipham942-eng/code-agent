@@ -52,6 +52,7 @@ import {
   orderProviderManagementRows,
   providerRequiresApiKey,
   resolveModelForProvider,
+  shouldPromoteProviderToDefault,
   type DiscoverModelsResult,
   type ProviderConfigMap,
   type ProviderDisplayInfo,
@@ -92,6 +93,9 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const [providerConfigs, setProviderConfigs] = useState<ProviderConfigMap>({});
   // 本地 Provider「打开即自动发现」的去重闸：每个 Provider 一个会话只自动发现一次
   const autoDiscoveredRef = useRef<Set<string>>(new Set());
+  // keyless provider（local/Ollama）端点探测结果：undefined=探测中，不能默认当已可用
+  const [keylessReachability, setKeylessReachability] = useState<Partial<Record<string, boolean>>>({});
+  const keylessProbedRef = useRef<Set<string>>(new Set());
   const [modelSearch, setModelSearch] = useState('');
   const [manualModelId, setManualModelId] = useState('');
   const [manualModelLabel, setManualModelLabel] = useState('');
@@ -435,6 +439,25 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         ...prev,
         [config.provider]: providerConfigForSave,
       }));
+      // 默认模型指针与已配置 provider 解耦修复：出厂默认没 key 时，配好的 provider 自动接管默认，
+      // 否则发送被门禁拦下（"当前默认模型未配置 API Key"）。
+      try {
+        const latestSettings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
+        if (shouldPromoteProviderToDefault(config.provider, providerConfigForSave, latestSettings)) {
+          await ipcService.invokeDomain(
+            IPC_DOMAINS.SETTINGS,
+            'set',
+            buildDefaultModelSettingsUpdate(config.provider, providerConfigForSave)
+          );
+          const promotedModel = providerConfigForSave.model || config.model;
+          setDefaultSelection({ provider: config.provider, model: promotedModel });
+          toast.success(`原默认模型未配置 API Key，默认模型已自动切换到 ${providerConfigForSave.displayName || currentProviderInfo?.name || config.provider} / ${promotedModel}`);
+        }
+      } catch (promoteError) {
+        logger.warn('Failed to auto-promote default model after provider save', {
+          error: promoteError instanceof Error ? promoteError.message : String(promoteError),
+        });
+      }
       logger.info('Config saved', { provider: config.provider });
       setSaveStatus('success');
       setTimeout(() => setSaveStatus('idle'), UI.COPY_FEEDBACK_DURATION);
@@ -489,6 +512,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         'discover_models',
         { provider: config.provider, apiKey: config.apiKey || '', baseUrl: effectiveBaseUrl, protocol: effectiveProtocol }
       );
+
+      // keyless provider 的发现结果同时就是端点可达性信号（启动 Ollama 后手动发现可翻正徽章）
+      if (!providerRequiresApiKey(config.provider)) {
+        setKeylessReachability((prev) => ({ ...prev, [config.provider]: Boolean(result?.success) }));
+      }
 
       if (!result?.success) {
         if (!silent) {
@@ -567,6 +595,40 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     autoDiscoveredRef.current.add(config.provider);
     void handleDiscoverModels({ silent: true });
   }, [settingsLoaded, config.provider, effectiveBaseUrl, handleDiscoverModels]);
+
+  // keyless provider（local/Ollama）：列表展示前静默探测端点，没装/没起服务时
+  // 不能在左侧列表挂"已可用"（dogfood 实测：全新机器显示已可用，选了连不上）。
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    let cancelled = false;
+    providers
+      .filter((provider) => !providerRequiresApiKey(provider.id))
+      .forEach((provider) => {
+        if (keylessProbedRef.current.has(provider.id)) return;
+        keylessProbedRef.current.add(provider.id);
+        const baseUrl = providerConfigs[provider.id]?.baseUrl
+          || getProviderEndpointForProtocol(provider.id, 'openai')
+          || '';
+        ipcService.invokeDomain<DiscoverModelsResult>(
+          IPC_DOMAINS.PROVIDER,
+          'discover_models',
+          { provider: provider.id, apiKey: '', baseUrl },
+        )
+          .then((result) => {
+            if (!cancelled) {
+              setKeylessReachability((prev) => ({ ...prev, [provider.id]: Boolean(result?.success) }));
+            }
+          })
+          .catch(() => {
+            if (!cancelled) {
+              setKeylessReachability((prev) => ({ ...prev, [provider.id]: false }));
+            }
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsLoaded, providers, providerConfigs]);
 
   const handleAddProvider = useCallback(() => {
     const displayName = newProviderName.trim();
@@ -679,6 +741,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         <ProviderListPanel
           configuredRows={configuredRows}
           unconfiguredRows={unconfiguredRows}
+          keylessReachability={keylessReachability}
           selectedProviderId={config.provider}
           isAddingProvider={isAddingProvider}
           onSelect={handleSelectProvider}

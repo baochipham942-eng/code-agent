@@ -154,6 +154,7 @@ async function initializeWebSkillServices(configService: ConfigServiceForBootstr
       // 把控制面下发的团队共享 provider / 服务 key reconcile 进本地配置（web/main 路径都要接，否则发行版不生效）。
       onSharedProvidersResolved: (providers) => getConfigService().reconcileManagedProviders(providers),
       onSharedServiceKeysResolved: (keys) => getConfigService().reconcileManagedServiceApiKeys(keys),
+      onSharedProviderKeysResolved: (keys) => getConfigService().reconcileManagedProviderApiKeys(keys),
     });
     const info = getCloudConfigService().getInfo();
     logger.info('CloudConfig initialized', {

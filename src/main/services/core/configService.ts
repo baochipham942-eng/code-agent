@@ -16,7 +16,7 @@ import { getPolicyEngine } from '../../permissions/policyEngine';
 import { setProviderConcurrencyOverrides } from '../../model/concurrencyLimiter';
 import { setProviderProxyOverrides } from '../../model/providers/shared';
 import type { ProxyMode, ModelEntrySettings } from '../../../shared/contract/settings';
-import type { SharedProviderConfig, SharedServiceKeyConfig } from '../cloud/builtinConfig';
+import type { SharedProviderConfig, SharedProviderKeyConfig, SharedServiceKeyConfig } from '../cloud/builtinConfig';
 import { isDynamicCustomProviderId } from '../../../shared/modelRuntime';
 import {
   DEFAULT_PROVIDER,
@@ -41,6 +41,16 @@ function getCloudManagedServiceKeyId(service: ServiceApiKey): string {
 
 function getCloudManagedServiceBaseUrlId(service: ServiceApiKey): `serviceBaseUrl.${string}` {
   return `${CLOUD_MANAGED_SERVICE_BASE_URL_PREFIX}${service}`;
+}
+
+// 内置 provider 托管 key（控制面登录后下发）。前缀必须与服务 key 区分：
+// 'openai' 既是 provider 又是 service，共用前缀会串台。
+const CLOUD_MANAGED_PROVIDER_KEY_PREFIX = 'cloud-provider-key:';
+// 接受托管 key 的内置 provider 白名单（先开 xiaomi/MiMo；控制面下发清单之外的一律拒收）
+const SHARED_MODEL_PROVIDER_KEYS = ['xiaomi'] as const;
+
+function getCloudManagedProviderKeyId(provider: string): string {
+  return `${CLOUD_MANAGED_PROVIDER_KEY_PREFIX}${provider}`;
 }
 
 const moduleDir = typeof __dirname === 'string'
@@ -939,6 +949,47 @@ export class ConfigService implements IReadConfigService {
     }
   }
 
+  /**
+   * 协调控制面下发的内置 provider 托管 key（如 xiaomi/MiMo）到本地 SecureStorage。
+   *
+   * 与 sharedProviders（custom-xxx 中转站）不同：不新增 provider 条目，只给内置 provider
+   * 注入团队共享 key，让全新机器登录后开箱即用。云端 key 存独立前缀，getApiKey() 在
+   * 用户未自配 key 时兜底；停发（管理员关闭/吊销）即删除。白名单之外的 provider 拒收。
+   */
+  async reconcileManagedProviderApiKeys(keys: SharedProviderKeyConfig[]): Promise<void> {
+    const storage = getSecureStorage();
+    const desired = new Map(
+      (keys ?? [])
+        .filter((entry) => (
+          entry
+          && (SHARED_MODEL_PROVIDER_KEYS as readonly string[]).includes(entry.provider)
+          && typeof entry.apiKey === 'string'
+          && entry.apiKey.trim().length > 0
+        ))
+        .map((entry) => [entry.provider, entry] as const),
+    );
+
+    let changed = false;
+    for (const provider of SHARED_MODEL_PROVIDER_KEYS) {
+      const storageId = getCloudManagedProviderKeyId(provider);
+      if (!desired.has(provider) && storage.getApiKey(storageId)) {
+        storage.deleteApiKey(storageId);
+        changed = true;
+      }
+    }
+
+    for (const [provider, entry] of desired) {
+      storage.setApiKey(getCloudManagedProviderKeyId(provider), entry.apiKey);
+      changed = true;
+    }
+
+    if (changed) {
+      logger.info('Reconciled managed provider API keys', {
+        providers: [...desired.keys()],
+      });
+    }
+  }
+
   getApiKey(provider: ModelProvider): string | undefined {
     // Priority: secure storage > environment variable
     const storage = getSecureStorage();
@@ -954,6 +1005,11 @@ export class ConfigService implements IReadConfigService {
       delete this.settings.models.providers[provider]?.apiKey;
       return configKey;
     }
+
+    // 控制面托管 key 兜底（登录后下发，用户自配 key 优先；与 getServiceApiKey 的
+    // 「user > cloud managed > env」次序一致）
+    const managedCloudKey = normalizeApiKey(storage.getApiKey(getCloudManagedProviderKeyId(provider)));
+    if (managedCloudKey) return managedCloudKey;
 
     // Fallback to environment variable
     const envKeyMap: Record<string, string> = {

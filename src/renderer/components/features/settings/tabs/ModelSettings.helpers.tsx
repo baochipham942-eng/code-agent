@@ -13,9 +13,11 @@ import type { ProviderInfo, ProviderModelEntry } from '@shared/constants';
 import {
   getEnabledProviderModels,
   getProviderRuntimeModels,
+  hasConfiguredDefaultRuntimeModel,
   inferModelCapabilities,
   inferSupportsTool,
   isDynamicCustomProviderId,
+  isRuntimeProviderConfigured,
   type RuntimeProviderModel,
 } from '@shared/modelRuntime';
 
@@ -37,6 +39,8 @@ export interface ProviderManagementRow {
   selected: boolean;
   selectedModelLabel: string;
   enabledModelCount: number;
+  /** true=无需 API Key 的本地 provider，可用性取决于本地服务是否在跑而非 Key */
+  keyless: boolean;
 }
 
 export type ProviderConfigMap = Partial<Record<string, ModelProviderSettings>>;
@@ -122,6 +126,20 @@ export function buildProviderSettingsUpdate(
       },
     },
   } as Partial<AppSettings>;
+}
+
+/** 保存 provider 配置后，是否应把全局默认模型自动切到该 provider。
+ *  默认指针与"已配置 provider"是两份状态：出厂默认（xiaomi/mimo）没 key 时，
+ *  用户配好别家 key 后默认指针不会自己动，发送被门禁拦下（"明明配置了还说没配置"）。
+ *  仅当刚保存的 provider 可用、且当前默认模型不可用时才接管，不抢用户已生效的默认。 */
+export function shouldPromoteProviderToDefault(
+  provider: ModelProvider,
+  providerConfig: ModelProviderSettings,
+  settings: AppSettings | null | undefined,
+): boolean {
+  if (providerConfig.enabled === false) return false;
+  if (!isRuntimeProviderConfigured(provider, providerConfig)) return false;
+  return !hasConfiguredDefaultRuntimeModel(settings);
 }
 
 export function buildDefaultModelSettingsUpdate(
@@ -219,8 +237,20 @@ export function buildProviderManagementRows({
       selectedModelLabel: config.provider === provider.id
         ? getModelLabel(runtimeModels, config.model)
         : getModelLabel(runtimeModels, rowDefaultModel),
+      keyless: !providerRequiresApiKey(provider.id),
     };
   });
+}
+
+/** keyless provider（local/Ollama）的可用性展示：探测结果 → 状态 + 文案。
+ *  undefined=探测未完成，不能直接展示成已可用（假性可用是 dogfood 实测踩坑）。 */
+export function describeKeylessReadiness(reachable: boolean | undefined): {
+  state: 'checking' | 'running' | 'unavailable';
+  label: string;
+} {
+  if (reachable === true) return { state: 'running', label: '✓ 本地服务' };
+  if (reachable === false) return { state: 'unavailable', label: '服务未运行' };
+  return { state: 'checking', label: '检测本地服务…' };
 }
 
 export function getProtocolLabel(protocol: ModelProviderProtocol | undefined): string {

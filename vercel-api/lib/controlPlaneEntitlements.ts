@@ -176,7 +176,8 @@ function revokedEntitlement(reason: string): EntitlementPolicy {
 
 type SharedProvider = NonNullable<CloudConfigPayload['sharedProviders']>[number];
 type SharedServiceKey = NonNullable<CloudConfigPayload['sharedServiceKeys']>[number];
-type CapabilityGatedSecret = SharedProvider | SharedServiceKey;
+type SharedProviderKey = NonNullable<CloudConfigPayload['sharedProviderKeys']>[number];
+type CapabilityGatedSecret = SharedProvider | SharedServiceKey | SharedProviderKey;
 
 /** 该 subject 的 entitlement 是否有权拿到这条共享密钥配置（含其 apiKey）。 */
 function isEntitledToSharedSecret(
@@ -245,11 +246,36 @@ function filterSharedServiceKeys(
   return { ...payload, sharedServiceKeys: allowed };
 }
 
+/**
+ * 按 entitlement 过滤 sharedProviderKeys（内置 provider 托管 key）——无权的整条剥离（含 apiKey）。
+ */
+function filterSharedProviderKeys(
+  payload: CloudConfigPayload,
+  entitlement: EntitlementPolicy | null,
+): CloudConfigPayload {
+  const shared = payload.sharedProviderKeys;
+  if (!shared || shared.length === 0) {
+    return payload;
+  }
+  const allowed = shared.filter((key) => isEntitledToSharedSecret(key, entitlement));
+  if (allowed.length === shared.length) {
+    return payload;
+  }
+  if (allowed.length === 0) {
+    const { sharedProviderKeys: _removed, ...rest } = payload;
+    return rest;
+  }
+  return { ...payload, sharedProviderKeys: allowed };
+}
+
 function filterSharedSecrets(
   payload: CloudConfigPayload,
   entitlement: EntitlementPolicy | null,
 ): CloudConfigPayload {
-  return filterSharedServiceKeys(filterSharedProviders(payload, entitlement), entitlement);
+  return filterSharedProviderKeys(
+    filterSharedServiceKeys(filterSharedProviders(payload, entitlement), entitlement),
+    entitlement,
+  );
 }
 
 function applySubjectEntitlement(
@@ -272,6 +298,7 @@ function applyFailClosedEntitlement(payload: CloudConfigPayload, reason: string)
   const {
     sharedProviders: _removedProviders,
     sharedServiceKeys: _removedServiceKeys,
+    sharedProviderKeys: _removedProviderKeys,
     ...rest
   } = payload;
   return {

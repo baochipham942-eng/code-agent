@@ -35,6 +35,23 @@ export interface SharedProviderConfig {
   requiredCapability?: string;
 }
 
+/**
+ * 内置 provider 的托管 key（先用于 xiaomi/MiMo）。与 sharedProviders（custom-xxx 中转站）
+ * 不同：不新增 provider 条目，而是给客户端内置 provider 注入团队共享 key，登录后开箱即用。
+ * - `requiredCapability` 缺省 → team-wide：所有「通过鉴权」的用户都能拿到。
+ * - fail-closed：未鉴权请求整条剥离（含 apiKey），密钥绝不下发。
+ */
+export interface SharedProviderKeyConfig {
+  /** 客户端内置 provider id（如 'xiaomi'）；客户端按白名单 reconcile。 */
+  provider: string;
+  /** 托管 key（机密）。仅下发给通过鉴权/命中 capability 的 subject。 */
+  apiKey: string;
+  /** Stable non-secret id derived from the key; used for ops/quota state, never for auth. */
+  keyId?: string;
+  /** entitlement 能力门；缺省=team-wide（所有鉴权用户）。 */
+  requiredCapability?: string;
+}
+
 export type SharedServiceKeyName = 'brave' | 'exa' | 'openai' | 'perplexity' | 'tavily';
 
 /**
@@ -84,6 +101,8 @@ export interface CloudConfigPayload {
   sharedProviders?: SharedProviderConfig[];
   /** 团队共享服务 key（如 Tavily/Brave 搜索），按 subject 的 entitlement 过滤后下发。 */
   sharedServiceKeys?: SharedServiceKeyConfig[];
+  /** 内置 provider 托管 key（如 xiaomi/MiMo），按 subject 的 entitlement 过滤后下发（登录后）。 */
+  sharedProviderKeys?: SharedProviderKeyConfig[];
   entitlement?: {
     status: 'active' | 'trial' | 'expired' | 'revoked';
     plan: string;

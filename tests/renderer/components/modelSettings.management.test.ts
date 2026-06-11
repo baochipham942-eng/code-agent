@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ModelConfig, ModelProviderSettings } from '../../../src/shared/contract';
+import type { AppSettings, ModelConfig, ModelProviderSettings } from '../../../src/shared/contract';
 import type { ProviderInfo } from '../../../src/shared/constants';
 import {
   buildDefaultModelSettingsUpdate,
@@ -9,6 +9,8 @@ import {
   buildProviderManagementRows,
   buildProviderSettingsUpdate,
   createCustomProviderId,
+  describeKeylessReadiness,
+  shouldPromoteProviderToDefault,
   getModelLabel,
   hasCustomEndpointOverride,
   isModelMetadataLocked,
@@ -246,6 +248,79 @@ describe('ModelSettings management helpers', () => {
     expect(hasCustomEndpointOverride('longcat', 'https://relay.example.com/v1', 'claude')).toBe(true);
     expect(hasCustomEndpointOverride('custom', 'https://relay.example.com/v1')).toBe(false);
     expect(hasCustomEndpointOverride('custom-relay', 'https://relay.example.com/v1')).toBe(false);
+  });
+
+  it('marks keyless providers in management rows so the list can show service readiness instead of "key ready"', () => {
+    const localProvider = {
+      id: 'local',
+      name: 'Local (Ollama)',
+      description: '本地 Ollama 服务',
+      models: [{ id: 'qwen3:8b', label: 'Qwen3 8B' }],
+    } satisfies ProviderInfo;
+
+    const rows = buildProviderManagementRows({
+      providers: [openaiProvider, localProvider],
+      config,
+      providerConfigs: {},
+    });
+
+    expect(rows.find((row) => row.id === 'openai')?.keyless).toBe(false);
+    expect(rows.find((row) => row.id === 'local')?.keyless).toBe(true);
+  });
+
+  it('describes keyless provider readiness for the three probe states', () => {
+    // 未探测完成 → 检测中（不能展示成已可用）
+    expect(describeKeylessReadiness(undefined)).toEqual({
+      state: 'checking',
+      label: '检测本地服务…',
+    });
+    // 端点可达 → 真·已可用
+    expect(describeKeylessReadiness(true)).toEqual({
+      state: 'running',
+      label: '✓ 本地服务',
+    });
+    // 端点不可达 → 明确标注服务未运行，而不是假性"已可用"
+    expect(describeKeylessReadiness(false)).toEqual({
+      state: 'unavailable',
+      label: '服务未运行',
+    });
+  });
+
+  it('promotes a freshly configured provider to default only when the current default model is unusable', () => {
+    const savedConfig: ModelProviderSettings = { enabled: true, apiKeyConfigured: true, model: 'gpt-5.5' };
+    // 出厂默认指针停在没 key 的 xiaomi → 配好 openai 后应自动接管默认
+    const settingsWithDeadDefault = {
+      models: {
+        default: 'xiaomi',
+        defaultProvider: 'xiaomi',
+        providers: { xiaomi: { enabled: true } },
+      },
+    } as unknown as AppSettings;
+    expect(shouldPromoteProviderToDefault('openai', savedConfig, settingsWithDeadDefault)).toBe(true);
+
+    // 当前默认模型已可用 → 不抢默认
+    const settingsWithLiveDefault = {
+      models: {
+        default: 'moonshot',
+        defaultProvider: 'moonshot',
+        providers: { moonshot: { enabled: true, apiKeyConfigured: true } },
+      },
+    } as unknown as AppSettings;
+    expect(shouldPromoteProviderToDefault('openai', savedConfig, settingsWithLiveDefault)).toBe(false);
+
+    // 刚保存的 provider 自己没配好 key / 被禁用 → 不 promote
+    expect(shouldPromoteProviderToDefault('openai', { enabled: true }, settingsWithDeadDefault)).toBe(false);
+    expect(shouldPromoteProviderToDefault('openai', { enabled: false, apiKeyConfigured: true }, settingsWithDeadDefault)).toBe(false);
+
+    // 默认指针就是刚保存的 provider：保存后 settings 已可用 → 无需再切
+    const settingsDefaultIsSelf = {
+      models: {
+        default: 'openai',
+        defaultProvider: 'openai',
+        providers: { openai: { enabled: true, apiKeyConfigured: true } },
+      },
+    } as unknown as AppSettings;
+    expect(shouldPromoteProviderToDefault('openai', savedConfig, settingsDefaultIsSelf)).toBe(false);
   });
 
   it('treats local models as keyless and locks only built-in catalog metadata', () => {

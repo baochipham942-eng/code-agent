@@ -11,11 +11,13 @@ import { CheckCircle, ChevronDown, ChevronRight, Plus, Search, Stethoscope } fro
 import type { ModelProvider } from '@shared/contract';
 import { Button, Input } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
-import type { ProviderManagementRow } from './ModelSettings.helpers';
+import { describeKeylessReadiness, type ProviderManagementRow } from './ModelSettings.helpers';
 
 interface ProviderListPanelProps {
   configuredRows: ProviderManagementRow[];
   unconfiguredRows: ProviderManagementRow[];
+  /** keyless provider（local/Ollama）端点探测结果：undefined=探测中 */
+  keylessReachability?: Partial<Record<string, boolean>>;
   selectedProviderId: string;
   isAddingProvider: boolean;
   onSelect: (providerId: ModelProvider) => void;
@@ -31,11 +33,39 @@ function matchRow(row: ProviderManagementRow, query: string): boolean {
   );
 }
 
+const KEYLESS_READINESS_TONE: Record<ReturnType<typeof describeKeylessReadiness>['state'], string> = {
+  running: 'text-emerald-300',
+  unavailable: 'text-amber-300',
+  checking: 'text-zinc-500',
+};
+
+const ConfiguredRowStatus: React.FC<{
+  row: ProviderManagementRow;
+  reachable?: boolean;
+}> = ({ row, reachable }) => {
+  if (!row.keyless) {
+    return (
+      <>
+        <span className="text-emerald-300">✓ Key</span> · {row.enabledModelCount}/{row.modelCount} 模型
+      </>
+    );
+  }
+  const readiness = describeKeylessReadiness(reachable);
+  return (
+    <>
+      <span className={KEYLESS_READINESS_TONE[readiness.state]}>{readiness.label}</span>
+      {readiness.state === 'running' && <> · {row.enabledModelCount}/{row.modelCount} 模型</>}
+      {readiness.state === 'unavailable' && <> · 启动 Ollama 后可用</>}
+    </>
+  );
+};
+
 const ConfiguredRow: React.FC<{
   row: ProviderManagementRow;
   selected: boolean;
+  reachable?: boolean;
   onSelect: () => void;
-}> = ({ row, selected, onSelect }) => (
+}> = ({ row, selected, reachable, onSelect }) => (
   <button
     type="button"
     onClick={onSelect}
@@ -51,7 +81,7 @@ const ConfiguredRow: React.FC<{
     <span className="min-w-0 flex-1">
       <span className="block truncate text-[13px] text-zinc-100">{row.name}</span>
       <span className="block truncate text-[11px] text-zinc-500">
-        <span className="text-emerald-300">✓ Key</span> · {row.enabledModelCount}/{row.modelCount} 模型
+        <ConfiguredRowStatus row={row} reachable={reachable} />
       </span>
     </span>
     {selected && (
@@ -90,6 +120,7 @@ const UnconfiguredRow: React.FC<{
 export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
   configuredRows,
   unconfiguredRows,
+  keylessReachability,
   selectedProviderId,
   isAddingProvider,
   onSelect,
@@ -155,6 +186,7 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
             key={row.id}
             row={row}
             selected={!isAddingProvider && row.id === selectedProviderId}
+            reachable={row.keyless ? keylessReachability?.[row.id] : undefined}
             onSelect={() => onSelect(row.id)}
           />
         ))}

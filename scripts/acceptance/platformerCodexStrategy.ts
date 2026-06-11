@@ -55,7 +55,7 @@ export const PLATFORMER_MILESTONES: MilestoneSpec[] = [
     title: 'Contract skeleton（契约骨架）',
     goals: [
       'Create the single-file HTML skeleton: canvas, HUD placeholders, requestAnimationFrame loop that renders a visibly non-blank scene (background, ground, a readable stickman actor standing idle with head/torso/arms/legs).',
-      'Define the COMPLETE window.__GAME_META__ now: subtype "platformer", controls, levels, qualityPlan, progressPlan, browserVisualSmoke, and gameplayMechanics with enemies/blocks/abilities/gates/comboChallenge as ARRAYS (never object maps), using the exact field shape from the GAMEPLAN.',
+      'Define the COMPLETE window.__GAME_META__ now: subtype "platformer", controls, levels, qualityPlan, progressPlan, browserVisualSmoke, and gameplayMechanics as ARRAYS (never object maps) with this exact shape: enemies:[{id,type,stompable,patrol,defeatReward}], blocks:[{id,type,bumpableFromBelow,reward,usedState}], abilities:[{id,type,acquiredFrom,effect,unlocksRoute}], gates:[{id,requiresAbility,blocksAccessTo}], comboChallenge:[{id,requires,target}].',
       'Define window.__GAME_TEST__ with start(), reset(levelOrScenario?), snapshot(), step(inputState, frames?), and runSmokeTest(). They must be wired to ONE shared live game state object from day one — never a parallel test-only state.',
       'snapshot() must already expose every metric path that progressPlan/reachability and gameplayMechanics will reference later (player.x, player.y, score, enemiesDefeated, blocksUsed, abilities.*, gatesUnlocked). Initialize them to honest zero/false values.',
       'reset(levelOrScenario?) must accept both the string level ids declared in __GAME_META__.levels and numeric indexes.',
@@ -199,6 +199,15 @@ export function buildMilestonePrompt(params: {
   interfaceSignatures: string[];
   /** Set on in-milestone retry: blocking failures from this milestone's probe. */
   retryFailures?: string[];
+  /**
+   * Lean mode for thinking-prone models (e.g. mimo): drop the verbose inline
+   * GAMEPLAN so the prompt stays well under ~1K tokens. Empirically (2026-06-11)
+   * mimo-v2.5-pro runs away into reasoning at ~1.1K-token prompts (313s, 0
+   * content) but completes cleanly at ~200-token prompts (25s, clean stop) —
+   * the milestone goals already carry the full contract spec, so GAMEPLAN is
+   * redundant context that only pushes the prompt over the threshold.
+   */
+  lean?: boolean;
 }): string {
   const { milestone } = params;
   const lines: string[] = [];
@@ -227,10 +236,12 @@ export function buildMilestonePrompt(params: {
     );
   }
 
+  if (params.lean) {
+    lines.push('Build a side-scrolling single-file HTML platformer, one milestone at a time. Output raw HTML only, no prose.', '');
+  } else {
+    lines.push('=== GAMEPLAN (the plan of record — follow it) ===', params.gameplan, '');
+  }
   lines.push(
-    '=== GAMEPLAN (the plan of record — follow it) ===',
-    params.gameplan,
-    '',
     `=== CURRENT MILESTONE: ${milestone.id} — ${milestone.title} ===`,
     ...milestone.goals.map((g) => `- ${g}`),
   );
@@ -383,6 +394,11 @@ export interface CodexPipelineDeps {
   milestones?: MilestoneSpec[];
   /** In-milestone retries after a failed probe. Default 1 (audit §7: self-repair stays small). */
   milestoneRetryCap?: number;
+  /**
+   * Lean prompts (drop inline GAMEPLAN). Default true — required for thinking-prone
+   * models like mimo and strictly cheaper for everyone. See buildMilestonePrompt.
+   */
+  lean?: boolean;
 }
 
 /**
@@ -424,6 +440,7 @@ export async function runCodexMilestonePipeline(
         isFirstMilestone: i === 0 && attempts === 1,
         interfaceSignatures,
         retryFailures,
+        lean: deps.lean ?? true,
       });
 
       let probeResult: 'PASS' | 'FAIL' | 'ERROR' = 'ERROR';

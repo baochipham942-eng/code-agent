@@ -104,3 +104,41 @@
 - **"模型自己能修好吗"——不能**：mimo / DeepSeek 的 repair 都不收敛到完整通过，高级机制（踩敌/顶砖/能力/门/组合）是两个模型在 repair 预算内的共同天花板。强模型抬高了生成侧起点（最佳 85%），但收敛仍需人或更强模型介入。
 - **基础设施是真正的产出**：本轮修的 4 个 bug（thinking 死代码、里程碑空过、M0 过严、产物保留）才是让"codex 式生成"在 Neo 里真正可靠的前提——它们都是 dogfood 实跑才暴露的，模型自身永远发现不了。
 - **下一步建议**：把 codex 策略 + 4 个修复并入主干；落地 W5 模型路由（M0-M2 强逻辑路由 DeepSeek/Kimi、M3-M4 留 mimo）；放宽 repair 工具集或显式约束 Bash 使用；BoN≥3 吸收 DeepSeek 的高方差（多采几个 round0 取最优）。
+
+---
+
+## 7. 收尾实验：Bash 放宽 + BoN=3（2026-06-11 再续）
+
+按"放宽 repair 工具集 + 多采吸收方差"再修一处、再跑一次。
+
+### 7.1 第 5 个修复：pre-patch 允许集加入 Bash
+
+`artifactRepairGuard.ts` 旧策略 pre-patch 不给 Bash（只 post-patch 给）。DeepSeek 等强模型习惯"先检视/测试再编辑"，pre-patch 拿不到 Bash 就反复请求 → 撞 `ARTIFACT_REPAIR_MAX_ATTEMPTS` 死循环逃生门、中止 milestone retry。放宽后（pre/post 都给 Bash，同 workspace 作用域）：**"反复请求不可用工具 Bash" 中止归零**，DeepSeek 修复轮能成功调 Bash。更新 9 处相关断言。
+
+### 7.2 BoN=3 实跑（deepseek，全 5 修复）
+
+| round | 候选 | 选中 | PASS/FAIL | 退化 |
+|---|---|---|---|---|
+| 0 | 3 | r0c0 | 13/28 | 0 |
+| 1 | 3 | r1c0 | 10/32 | 退化 7（已挡） |
+| 2 | 3 | r2c0 | 10/32 | 退化 7（已挡） |
+
+里程碑（3 候选）：r0c0/r0c1 都 **M0✓ M1✓**，卡在 **M2 超时**；r0c2 M0 两次 ERROR。
+
+**关键观察**：
+1. **M2 瓶颈变成"超时"而非"能力不够"**：Bash 放宽后 DeepSeek 在 M2 做得更彻底（检视+测试+编辑敌人/踩踏碰撞状态机），单段超 240s timeout。**这是调参杠杆，不是天花板**——M2/M3 这类重逻辑里程碑应给更长超时（如 480s）。
+2. **BoN=3 没捞出 85% 离群值**：round0 best-of-3 = 13/28，未复现单跑那次的 35/6。DeepSeek 方差太宽，3 个样本不足以稳定命中峰值。要稳定捞峰需更大 N 或更强模型。
+3. **产物保留 + 单调门再次生效**：round1/2 各退化 7 项被挡，finalResult 交付 round0（13/28，browserPassed=true），非退化版。
+4. **里程碑推进稳定**：两次全修复跑都是 M0✓ M1✓ → M2 卡（先 FAIL 后超时）。M0/M1 已可靠通过，M2（敌人踩踏）是当前一致瓶颈。
+
+### 7.3 全 5 修复总览
+
+| # | bug | 文件 | 状态 |
+|---|---|---|---|
+| 1 | ai-sdk thinking 死代码 | `aiSdkAdapter.ts` | ✅ 修+测试 |
+| 2 | 里程碑空过 | `platformerCodexStrategy.ts` | ✅ 修+测试 |
+| 3 | M0 门控过严 | `platformerCodexStrategy.ts` | ✅ 修+测试 |
+| 4 | 产物保留缺失 | `platformer-gameplay-generation.ts` | ✅ 修+测试 |
+| 5 | pre-patch 无 Bash | `artifactRepairGuard.ts` | ✅ 修+测试 |
+
+**最终判断**：codex 式工作流 + 这 5 个基础设施修复，让 mimo/DeepSeek 的游戏生成显著更可靠、可逐级推进、稳定交付最优版本、不被自修搞坏。但"全自动通过完整契约"仍未达成——M2/M3 重逻辑里程碑需 (a) 更长单段超时，(b) 更强模型或 (c) 更大 BoN 吸收方差。基础设施已就位，剩下是参数与模型路由的工程调优。

@@ -401,7 +401,7 @@ describe('runCodexMilestonePipeline', () => {
         m1Probes += 1;
         return m1Probes === 1 ? summary([], ['movement-broken: jump missing']) : summary([]);
       }),
-      readArtifact: async () => '',
+      readArtifact: async () => '<html><script>class G {}</script></html>',
       milestones: TWO_MILESTONES,
       milestoneRetryCap: 1,
     });
@@ -419,7 +419,7 @@ describe('runCodexMilestonePipeline', () => {
     const result = await runCodexMilestonePipeline('/tmp/game.html', {
       generateMilestone,
       probe: vi.fn(async () => summary([], ['contract-broken: no snapshot'])),
-      readArtifact: async () => '',
+      readArtifact: async () => '<html><script>class G {}</script></html>',
       milestones: TWO_MILESTONES,
       milestoneRetryCap: 1,
       appendLog: async (entry) => {
@@ -433,6 +433,43 @@ describe('runCodexMilestonePipeline', () => {
     // attempt 1 + 1 retry = 2 generation calls, M1 never generated.
     expect(generateMilestone).toHaveBeenCalledTimes(2);
     expect(entries).toEqual(['M0 attempt 1: FAIL', 'M0 attempt 2: FAIL']);
+  });
+
+  it('does NOT vacuously pass when generation reports errors but probe would pass (invalid-key regression)', async () => {
+    // Repro of the 2026-06-11 mimo run: API returned "Invalid API Key", the
+    // adapter captured it in errors (no throw, empty response, no artifact),
+    // and a missing-artifact probe is non-blocking → milestone falsely PASSED.
+    const result = await runCodexMilestonePipeline('/tmp/game.html', {
+      generateMilestone: vi.fn(async () => ({
+        responses: [],
+        toolCount: 0,
+        errors: ['Invalid API Key'],
+      })),
+      // Probe would say "all clear" (simulating the validator treating a missing
+      // artifact as non-blocking) — the pipeline must still NOT trust it.
+      probe: vi.fn(async () => summary([])),
+      readArtifact: async () => '',
+      milestones: TWO_MILESTONES,
+      milestoneRetryCap: 0,
+    });
+
+    expect(result.completed).toBe(false);
+    expect(result.milestones[0].passed).toBe(false);
+    expect(result.errors.join(' ')).toContain('Invalid API Key');
+  });
+
+  it('does NOT vacuously pass when no artifact is written even with no errors', async () => {
+    const result = await runCodexMilestonePipeline('/tmp/game.html', {
+      generateMilestone: vi.fn(async () => ({ responses: ['ok'], toolCount: 1, errors: [] })),
+      probe: vi.fn(async () => summary([])),
+      readArtifact: async () => '', // nothing written
+      milestones: TWO_MILESTONES,
+      milestoneRetryCap: 0,
+    });
+
+    expect(result.completed).toBe(false);
+    expect(result.milestones[0].passed).toBe(false);
+    expect(result.milestones[0].blockingFailures.join(' ')).toMatch(/no artifact/i);
   });
 
   it('records a generation error (e.g. timeout) and stops without throwing', async () => {
@@ -456,7 +493,7 @@ describe('runCodexMilestonePipeline', () => {
     await runCodexMilestonePipeline('/tmp/game.html', {
       generateMilestone: vi.fn(async () => ({ responses: [], toolCount: 0, errors: [] })),
       probe: vi.fn(async () => summary([])),
-      readArtifact: async () => '',
+      readArtifact: async () => '<html><script>class G {}</script></html>',
       milestones: TWO_MILESTONES,
       appendLog: async (entry) => {
         entries.push({

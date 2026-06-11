@@ -435,9 +435,28 @@ export async function runCodexMilestonePipeline(
           generationErrors.push(...generation.errors);
         }
 
-        const summary = await deps.probe(artifactPath);
-        evaluation = evaluateMilestone(milestone, summary, milestones);
-        probeResult = evaluation.passed ? 'PASS' : 'FAIL';
+        // A failed/empty generation (API error, timeout captured as errors, or
+        // no artifact written) must NOT vacuously pass: the validator treats a
+        // missing/non-game artifact as non-blocking, so probing it would falsely
+        // report PASS. Gate on real output before trusting the probe.
+        const writtenHtml = (await deps.readArtifact(artifactPath)) ?? '';
+        if (generation.errors.length > 0) {
+          evaluation = {
+            passed: false,
+            blockingFailures: generation.errors.map((e) => `${milestone.id} generation error: ${e}`),
+          };
+          probeResult = 'ERROR';
+        } else if (writtenHtml.trim().length === 0) {
+          evaluation = {
+            passed: false,
+            blockingFailures: [`${milestone.id}: no artifact was written by the generation step.`],
+          };
+          probeResult = 'ERROR';
+        } else {
+          const summary = await deps.probe(artifactPath);
+          evaluation = evaluateMilestone(milestone, summary, milestones);
+          probeResult = evaluation.passed ? 'PASS' : 'FAIL';
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         generationErrors.push(`${milestone.id} attempt ${attempts}: ${message}`);

@@ -124,12 +124,20 @@ function assetMatchesPlatform(name: string, normalizedPlatform: string): boolean
     return name.includes('mac') || name.includes('darwin') || name.endsWith('.dmg');
   }
   if (normalizedPlatform === 'win32') {
-    return name.includes('win') || name.endsWith('.exe') || name.endsWith('.msi');
+    // 'darwin' 含子串 'win'：必须显式排除，否则 darwin 命名的资产会被当成 Windows 资产
+    return (name.includes('win') && !name.includes('darwin')) || name.endsWith('.exe') || name.endsWith('.msi');
   }
   if (normalizedPlatform === 'linux') {
     return name.includes('linux') || name.endsWith('.appimage') || name.endsWith('.deb');
   }
   return false;
+}
+
+// 下载资产只能是安装包本体；manifest/sha/签名等 sidecar 永不作为 download 重定向目标
+// （runtime-assets-manifest-darwin-x64.json 同时含 'win'(darwin) 与 'x64' token，
+// 不排除的话会依赖资产数组顺序才不被选中——顺序脆弱性，2026-06-11 复核发现）
+function isSidecarAsset(name: string): boolean {
+  return /\.(json|sha256|sig|txt|yml|yaml)$/.test(name);
 }
 
 function selectAsset(
@@ -138,9 +146,10 @@ function selectAsset(
   arch: NormalizedArch = 'arm64',
 ): GitHubReleaseAsset | null {
   const normalized = platform.toLowerCase();
-  const platformAssets = (assets ?? []).filter((asset) =>
-    assetMatchesPlatform(asset.name?.toLowerCase() ?? '', normalized),
-  );
+  const platformAssets = (assets ?? []).filter((asset) => {
+    const name = asset.name?.toLowerCase() ?? '';
+    return !isSidecarAsset(name) && assetMatchesPlatform(name, normalized);
+  });
 
   // 优先匹配架构标记（x64 / arm64）。manifest 同时含两架构时按 arch 精确命中。
   const tokens = archTokens(arch);

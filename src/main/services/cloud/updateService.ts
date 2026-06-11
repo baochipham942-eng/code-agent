@@ -186,6 +186,49 @@ interface GitHubReleaseResponse {
   assets: GitHubReleaseAsset[];
 }
 
+// 与 vercel-api/lib/updateMetadata.ts selectAsset 同语义（fallback 直读 OSS release.json，
+// 选错包的后果与服务端一致，必须一起改）：
+//  - sidecar（manifest json/sha/sig）永不作为下载目标
+//  - win32 匹配需排除 'darwin'（含子串 'win'）
+//  - 按 arch token 精确命中；x64/win32 找不到不回退 arm64（错架构包装不上）
+export function selectReleaseAssetForPlatform(
+  assets: readonly GitHubReleaseAsset[],
+  platform: string,
+  arch: string,
+): GitHubReleaseAsset | null {
+  const isSidecar = (name: string) => /\.(json|sha256|sig|txt|yml|yaml)$/.test(name);
+  const matchesPlatform = (name: string): boolean => {
+    if (platform === 'darwin') return name.includes('mac') || name.includes('darwin') || name.endsWith('.dmg');
+    if (platform === 'win32') {
+      return (name.includes('win') && !name.includes('darwin')) || name.endsWith('.exe') || name.endsWith('.msi');
+    }
+    if (platform === 'linux') return name.includes('linux') || name.endsWith('.appimage') || name.endsWith('.deb');
+    return false;
+  };
+  const platformAssets = assets.filter((asset) => {
+    const name = asset.name.toLowerCase();
+    return !isSidecar(name) && matchesPlatform(name);
+  });
+
+  const archTokens = arch === 'x64'
+    ? ['x64', 'x86_64', 'x86-64', 'amd64', 'intel']
+    : ['arm64', 'aarch64'];
+  const allArchTokens = ['x64', 'x86_64', 'x86-64', 'amd64', 'intel', 'arm64', 'aarch64'];
+
+  const archMatch = platformAssets.find((asset) =>
+    archTokens.some((token) => asset.name.toLowerCase().includes(token)),
+  );
+  if (archMatch) return archMatch;
+
+  // arm64 可回退「无任何架构标记」的历史单架构资产；x64/win32 找不到就返回 null
+  if (arch === 'arm64') {
+    return platformAssets.find((asset) =>
+      !allArchTokens.some((token) => asset.name.toLowerCase().includes(token)),
+    ) ?? null;
+  }
+  return null;
+}
+
 function parseGitHubReleaseResponse(value: unknown): GitHubReleaseResponse {
   if (!isRecord(value)) {
     return { assets: [] };
@@ -509,27 +552,10 @@ export class UpdateService implements Disposable {
         const latestVersion = data.tagName.replace(/^v/, '');
         const hasUpdate = this.compareVersions(latestVersion, currentVersion) > 0;
 
-        // Find the appropriate asset for the platform
-        let downloadUrl: string | undefined;
-        let fileSize: number | undefined;
-        const assets = data.assets;
-
-        for (const asset of assets) {
-          const name = asset.name.toLowerCase();
-          if (platform === 'darwin' && (name.includes('mac') || name.includes('darwin') || name.endsWith('.dmg'))) {
-            downloadUrl = asset.browserDownloadUrl;
-            fileSize = asset.size;
-            break;
-          } else if (platform === 'win32' && (name.includes('win') || name.endsWith('.exe') || name.endsWith('.msi'))) {
-            downloadUrl = asset.browserDownloadUrl;
-            fileSize = asset.size;
-            break;
-          } else if (platform === 'linux' && (name.includes('linux') || name.endsWith('.AppImage') || name.endsWith('.deb'))) {
-            downloadUrl = asset.browserDownloadUrl;
-            fileSize = asset.size;
-            break;
-          }
-        }
+        // Find the appropriate asset for the platform + arch（与服务端 selectAsset 同语义）
+        const matchedAsset = selectReleaseAssetForPlatform(data.assets, platform, arch);
+        const downloadUrl = matchedAsset?.browserDownloadUrl;
+        const fileSize = matchedAsset?.size;
 
         const updateInfo = this.applyReleasePolicy({
           hasUpdate,

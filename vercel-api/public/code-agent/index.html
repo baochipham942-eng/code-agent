@@ -826,7 +826,9 @@
 
       .download-card-shell {
         display: flex;
+        flex-direction: column;
         align-items: stretch;
+        gap: 12px;
         padding: 18px;
       }
 
@@ -984,7 +986,7 @@
             文件不上云，断网也能跑。
           </p>
           <div class="hero-actions" aria-label="主要操作">
-            <a class="button primary" href="#download">⬇ 下载 mac 版</a>
+            <a class="button primary" id="hero-download-cta" href="#download">⬇ 下载 mac 版</a>
             <a class="button ghost" href="#flow">看它能干什么 →</a>
           </div>
         </div>
@@ -1266,7 +1268,7 @@
             </div>
 
             <div class="download-card-shell">
-              <article class="download-card">
+              <article class="download-card" id="download-card-mac">
                 <div>
                   <div class="card-label">mac</div>
                   <h3>Agent Neo for mac</h3>
@@ -1339,13 +1341,53 @@
 
       // Windows 测试版卡片：探测 win32 资产是否已发布（manual redirect：302/opaqueredirect
       // = 资产在 → 显示；404 = 未发布 → 保持隐藏）。探测失败一律保持隐藏，不出死链。
+      //
+      // 设备感知推荐（与上面芯片启发式同一条铁律）：OS 识别只决定推荐排序
+      // （置顶 + primary 高亮 + hero CTA 文案），绝不据此隐藏任何平台入口——
+      // UA 可伪装、userAgentData 非全浏览器支持，识别错了用户还能自己点对的包。
+      // Windows 卡片可见性仍只由"资产是否已发布"（上方探测）决定，与 OS 识别无关。
       (function () {
         var card = document.getElementById('download-card-windows');
         if (!card || !window.fetch) return;
+
+        function detectOS() {
+          try {
+            var probe = String(
+              (navigator.userAgentData && navigator.userAgentData.platform) ||
+              navigator.platform ||
+              navigator.userAgent ||
+              ''
+            );
+            // mac 先于 win 判断："darwin" 含 "win"，顺序反了会把 mac 误判成 Windows
+            if (/mac|darwin|iphone|ipad/i.test(probe)) return 'mac';
+            if (/win/i.test(probe)) return 'windows';
+          } catch (e) { /* ignore */ }
+          return 'other';
+        }
+
+        function promoteWindowsCard() {
+          var macCard = document.getElementById('download-card-mac');
+          var winBtn = document.getElementById('download-win-x64');
+          var arm = document.getElementById('download-arm64');
+          var x64 = document.getElementById('download-x64');
+          var heroCta = document.getElementById('hero-download-cta');
+          // 置顶 Windows 卡片，主推按钮换成 Windows；mac 双按钮降为 ghost 但保持可点
+          if (macCard && macCard.parentNode && card.parentNode === macCard.parentNode) {
+            macCard.parentNode.insertBefore(card, macCard);
+          }
+          if (winBtn) { winBtn.classList.add('primary'); winBtn.classList.remove('ghost'); }
+          if (arm) { arm.classList.add('ghost'); arm.classList.remove('primary'); }
+          if (x64) { x64.classList.add('ghost'); x64.classList.remove('primary'); }
+          if (heroCta) { heroCta.textContent = '⬇ 下载 Windows 版'; }
+        }
+
         fetch('/api/update?action=download&platform=win32&channel=stable&arch=x64', { method: 'GET', redirect: 'manual' })
           .then(function (res) {
             if (res.status !== 404 && res.status !== 500) {
               card.hidden = false;
+              if (detectOS() === 'windows') {
+                promoteWindowsCard();
+              }
             }
           })
           .catch(function () { /* 保持隐藏 */ });

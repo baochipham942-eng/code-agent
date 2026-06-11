@@ -584,6 +584,61 @@ describe('vercel update metadata', () => {
     expect(response.body).toMatchObject({ success: false, error: 'download_asset_not_found' });
   });
 
+  it('never serves sidecar assets (runtime manifest json/sha) as download targets, regardless of asset order', async () => {
+    // 对抗性排序：runtime manifest 排在安装包之前。
+    // 'runtime-assets-manifest-darwin-x64.json' 同时含 'win'(darwin) 与 'x64' token，
+    // 不排除 sidecar 的话 win32/x64 下载会被重定向到一个 JSON。
+    const manifest = () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        tag_name: 'v0.17.0',
+        html_url: 'https://github.com/acme/code-agent/releases/tag/v0.17.0',
+        assets: [
+          {
+            name: 'runtime-assets-manifest-darwin-x64.json',
+            browser_download_url: 'https://oss.example.com/v0.17.0/runtime-assets-manifest-darwin-x64.json',
+          },
+          {
+            name: 'runtime-assets-manifest-darwin-arm64.json',
+            browser_download_url: 'https://oss.example.com/v0.17.0/runtime-assets-manifest-darwin-arm64.json',
+          },
+          {
+            name: 'runtime-assets-manifest-darwin-arm64.sha256',
+            browser_download_url: 'https://oss.example.com/v0.17.0/runtime-assets-manifest-darwin-arm64.sha256',
+          },
+          {
+            name: 'Agent-Neo-0.17.0-arm64.dmg',
+            browser_download_url: 'https://oss.example.com/v0.17.0/Agent-Neo-0.17.0-arm64.dmg',
+          },
+          {
+            name: 'Agent-Neo-0.17.0-win-x64-setup.exe',
+            browser_download_url: 'https://oss.example.com/v0.17.0/Agent-Neo-0.17.0-win-x64-setup.exe',
+          },
+        ],
+      }),
+    } as Response);
+    process.env.UPDATE_GITHUB_REPOSITORY = 'acme/code-agent';
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(manifest());
+    const winRes = makeResponse();
+    await handleUpdateRequest({
+      method: 'GET',
+      query: { action: 'download', platform: 'win32', arch: 'x64' },
+    }, winRes);
+    expect(winRes.statusCode).toBe(302);
+    expect(winRes.headers.Location).toBe('https://oss.example.com/v0.17.0/Agent-Neo-0.17.0-win-x64-setup.exe');
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(manifest());
+    const macRes = makeResponse();
+    await handleUpdateRequest({
+      method: 'GET',
+      query: { action: 'download', platform: 'darwin' },
+    }, macRes);
+    expect(macRes.statusCode).toBe(302);
+    expect(macRes.headers.Location).toBe('https://oss.example.com/v0.17.0/Agent-Neo-0.17.0-arm64.dmg');
+  });
+
   it('derives the arch-specific runtime assets manifest during update checks', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce({

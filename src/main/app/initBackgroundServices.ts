@@ -619,6 +619,19 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
     })
     .catch((error) => logger.warn('Light Memory consolidation job registration failed (non-blocking)', { error: String(error) }));
 
+  // Register the built-in Dream memory consolidation job (idempotent by tag).
+  initCronService()
+    .then(async () => {
+      const { syncDreamCronJob, DREAM_CRON_JOB_TAG } = await import('../services/memory/dreamScheduler');
+      const workingDirectory = getDesktopBootstrapWorkingDirectory(configService);
+      const result = await syncDreamCronJob(getCronService(), { workingDirectory });
+      logger.info('Dream memory consolidation job synced', {
+        tag: DREAM_CRON_JOB_TAG,
+        created: result.created,
+      });
+    })
+    .catch((error) => logger.warn('Dream memory consolidation job registration failed (non-blocking)', { error: String(error) }));
+
   // 角色主动性：按主动性配置同步 cadence cron job（幂等，每个持久化角色一个 job）
   // docs/designs/role-proactivity.md §2.1
   initCronService()

@@ -69,11 +69,17 @@ export const runCommand = new Command('run')
   .option('--output-schema <json>', '用 JSON Schema 验证输出结构')
   .option('--output-schema-file <path>', '从文件读取 JSON Schema')
   .option('--max-retries <n>', '结构化输出验证失败时的最大重试次数', '3')
+  .option(
+    '--dangerously-skip-permissions',
+    '自动批准所有权限（含危险操作）。默认非交互模式会自动拒绝需人工确认的操作',
+    false,
+  )
   .action(async (prompt: string, options: {
     session?: string;
     outputSchema?: string;
     outputSchemaFile?: string;
     maxRetries?: string;
+    dangerouslySkipPermissions?: boolean;
   }, command: Command) => {
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;
     const isJson = globalOpts?.json || globalOpts?.outputFormat === 'json' || globalOpts?.outputFormat === 'stream-json';
@@ -115,7 +121,9 @@ export const runCommand = new Command('run')
 
     try {
       // 初始化服务
-      await initializeCLIServices();
+      await initializeCLIServices({
+        dangerouslySkipPermissions: options.dangerouslySkipPermissions,
+      });
 
       // 显示数据库状态
       const db = getDatabaseService();

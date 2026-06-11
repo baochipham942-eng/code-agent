@@ -25,6 +25,7 @@ import './config'; // 副作用：加载 .env（保持原有行为）
 import type { CLIConfigService } from './config';
 import { initConfigService as initMainConfigService } from '../main/services/core/configService';
 import { initCLIDatabase, type CLIDatabaseService } from './database';
+import { createCLIPermissionHandler } from './permissionPolicy';
 import { getCLISessionManager, type CLISessionManager } from './session';
 import type { CLIConfig, CLIEventHandler } from './types';
 import type { ModelConfig, Message, AgentEvent } from '../shared/contract';
@@ -111,10 +112,15 @@ export function installCLISwarmTraceWriterIfNeeded(): boolean {
   return true;
 }
 
+export interface InitializeCLIServicesOptions {
+  /** 显式逃生门：恢复全自动批准（含危险操作），默认 false（安全默认） */
+  dangerouslySkipPermissions?: boolean;
+}
+
 /**
  * 初始化 CLI 核心服务
  */
-export async function initializeCLIServices(): Promise<void> {
+export async function initializeCLIServices(options: InitializeCLIServicesOptions = {}): Promise<void> {
   if (initialized) return;
 
   const isDebug = process.env.DEBUG === 'true' || process.argv.includes('--debug');
@@ -171,9 +177,12 @@ export async function initializeCLIServices(): Promise<void> {
     throw error;
   }
 
-  // 初始化工具执行器（CLI 模式下自动批准所有工具）
+  // 初始化工具执行器（非交互安全默认：危险/需人工确认的权限自动拒绝，
+  // --dangerously-skip-permissions 显式恢复全自动批准）
   toolExecutor = new ToolExecutor({
-    requestPermission: async () => true, // CLI 模式自动批准
+    requestPermission: createCLIPermissionHandler({
+      dangerouslySkipPermissions: options.dangerouslySkipPermissions,
+    }),
     workingDirectory: process.cwd(),
   });
   cliLog('ToolExecutor initialized');

@@ -5,12 +5,16 @@
 // 变体为主提示词追加家族段落（additive，不改 base，控 eval 回退面）。
 // ============================================================================
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import {
   resolveProviderFamily,
   applyProviderVariant,
   PROVIDER_VARIANT_MARKER,
 } from '../../../src/main/prompts/providerVariants';
+
+afterEach(() => {
+  delete process.env.CODE_AGENT_DISABLE_PROVIDER_VARIANT;
+});
 
 describe('resolveProviderFamily', () => {
   it('maps anthropic/claude to the claude family', () => {
@@ -20,10 +24,27 @@ describe('resolveProviderFamily', () => {
   });
 
   it('maps gpt and domestic providers to the autonomous family', () => {
-    for (const p of ['openai', 'moonshot', 'deepseek', 'zhipu', 'xiaomi', 'qwen', 'minimax']) {
+    for (const p of [
+      'openai',
+      'azure-openai',
+      'moonshot',
+      'deepseek',
+      'zhipu',
+      'xiaomi',
+      'qwen',
+      'alibaba',
+      'minimax',
+      'baidu',
+      'volcengine',
+      'longcat',
+      'groq',
+    ]) {
       expect(resolveProviderFamily(p), p).toBe('autonomous');
     }
     expect(resolveProviderFamily(undefined, 'gpt-5.4')).toBe('autonomous');
+    expect(resolveProviderFamily(undefined, 'glm-5')).toBe('autonomous');
+    expect(resolveProviderFamily(undefined, 'doubao-seed-1.6')).toBe('autonomous');
+    expect(resolveProviderFamily(undefined, 'ernie-x1')).toBe('autonomous');
   });
 
   it('handles owner-prefixed model ids and relay providers (openrouter/custom-*)', () => {
@@ -59,6 +80,13 @@ describe('applyProviderVariant', () => {
 
   it('returns the base prompt unchanged for unknown families', () => {
     expect(applyProviderVariant(base, 'mystery', undefined)).toBe(base);
+  });
+
+  it('can disable provider variants for same-model eval A/B runs', () => {
+    process.env.CODE_AGENT_DISABLE_PROVIDER_VARIANT = '1';
+
+    expect(applyProviderVariant(base, 'anthropic', 'claude-sonnet-4-6')).toBe(base);
+    expect(applyProviderVariant(base, 'deepseek', 'deepseek-v4-flash')).toBe(base);
   });
 
   it('does not get disabled by heading-like text in the base prompt (opaque sentinel)', () => {

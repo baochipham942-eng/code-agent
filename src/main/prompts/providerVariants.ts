@@ -40,6 +40,11 @@ const AUTONOMOUS_PROVIDERS = new Set([
   'groq',
 ]);
 
+function isProviderVariantDisabled(): boolean {
+  const flag = process.env.CODE_AGENT_DISABLE_PROVIDER_VARIANT?.trim().toLowerCase();
+  return flag === '1' || flag === 'true' || flag === 'yes';
+}
+
 /**
  * 解析 provider 家族。provider 名优先；自定义中转（custom-*）等未知 provider
  * 回退看 model 名前缀。两者都认不出 → 'default'（不加变体段落）。
@@ -100,6 +105,9 @@ ${PROVIDER_VARIANT_MARKER}
  * 'default' 家族不追加。
  */
 export function applyProviderVariant(systemPrompt: string, provider?: string, model?: string): string {
+  if (isProviderVariantDisabled()) {
+    return systemPrompt;
+  }
   if (systemPrompt.includes(PROVIDER_VARIANT_MARKER)) {
     return systemPrompt;
   }

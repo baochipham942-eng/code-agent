@@ -296,6 +296,54 @@ describe('SubagentPipeline', () => {
       // Should inherit parent's remaining budget
       expect(context.maxBudget).toBe(3);
     });
+
+    it('should pass shrinking remaining budget through a 3-level chain', () => {
+      const parentConfig = {
+        name: 'Parent Agent',
+        prompt: 'parent',
+        tools: [],
+        permissionPreset: 'development',
+        maxBudget: 10,
+      } as DynamicAgentConfig;
+      const childConfig = {
+        name: 'Child Agent',
+        prompt: 'child',
+        tools: [],
+        permissionPreset: 'development',
+        maxBudget: 8,
+      } as DynamicAgentConfig;
+      const grandchildConfig = {
+        name: 'Grandchild Agent',
+        prompt: 'grandchild',
+        tools: [],
+        permissionPreset: 'development',
+        maxBudget: 10,
+      } as DynamicAgentConfig;
+
+      const parent = pipeline.createContext(parentConfig, '/test');
+      pipeline.recordTokenUsage(parent, {
+        inputTokens: 1_000_000,
+        outputTokens: 1_500_000,
+        model: 'test-model',
+      });
+
+      const child = pipeline.createContext(childConfig, '/test', parent.agentId, {
+        parentRemainingBudget: pipeline.getRemainingBudget(parent),
+      });
+      expect(child.maxBudget).toBeCloseTo(6, 6);
+
+      pipeline.recordTokenUsage(child, {
+        inputTokens: 500_000,
+        outputTokens: 500_000,
+        model: 'test-model',
+      });
+
+      const grandchild = pipeline.createContext(grandchildConfig, '/test', child.agentId, {
+        parentRemainingBudget: pipeline.getRemainingBudget(child),
+      });
+      expect(grandchild.maxBudget).toBeCloseTo(4.5, 6);
+      expect(grandchild.inheritedMaxBudget).toBeCloseTo(4.5, 6);
+    });
   });
 
   // --------------------------------------------------------------------------

@@ -81,6 +81,12 @@ export interface ToolContext {
   spawnTreeId?: string;
   /** 超额 spawn 等待 tree 槽位的超时时间。 */
   spawnQueueTimeoutMs?: number;
+  /** 父 agent 启动时间，用于按父剩余时间收紧子 agent 执行窗口。 */
+  spawnParentStartedAt?: number;
+  /** 父 agent 执行超时时间，用于计算子 agent 可用剩余窗口。 */
+  spawnParentTimeoutMs?: number;
+  /** 父 agent 当前剩余预算，作为子 agent 的预算上限。 */
+  parentRemainingBudget?: number;
 
   // ============================================================================
   // 模型回调支持（工具内二次调用模型）

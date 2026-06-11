@@ -442,7 +442,13 @@ export class ParallelAgentCoordinator extends EventEmitter {
           toolResolver,
           // 注入 task.id 到 toolContext，让 BrowserPool / ComputerSurface 按 agentId 隔离。
           // 共享 toolContext 不能直接 mutate（其他 task 也用），clone 后注入。
-          toolContext: { ...toolContext, agentId: task.id },
+          toolContext: {
+            ...toolContext,
+            agentId: task.id,
+            spawnParentStartedAt: toolContext.spawnParentStartedAt,
+            spawnParentTimeoutMs: toolContext.spawnParentTimeoutMs,
+            parentRemainingBudget: toolContext.parentRemainingBudget,
+          },
           parentToolUseId: toolContext.currentToolCallId,
           executionAgentId: task.id,
           abortSignal: taskAbortController.signal,
@@ -455,6 +461,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
             } satisfies TaskProgressEvent);
           },
           hookManager: toolContext.hookManager,
+          parentRemainingBudget: toolContext.parentRemainingBudget,
         }
       );
 

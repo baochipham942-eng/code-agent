@@ -88,6 +88,8 @@ export interface SubagentContext {
   executionAgentId?: string;
   /** Parent context for child context inheritance */
   parentContext?: ParentContext;
+  /** Parent agent remaining budget used to cap this subagent budget. */
+  parentRemainingBudget?: number;
   /** Worktree path if agent is running in an isolated git worktree */
   worktreePath?: string;
   /** Optional callback for lightweight context updates */

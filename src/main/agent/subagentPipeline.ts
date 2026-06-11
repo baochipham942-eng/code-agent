@@ -509,6 +509,18 @@ export class SubagentPipeline {
   }
 
   /**
+   * Get the remaining budget that can be handed to a nested subagent.
+   */
+  getRemainingBudget(context: SubagentExecutionContext): number | undefined {
+    if (context.maxBudget === undefined) {
+      return undefined;
+    }
+
+    const subagentCost = this.calculateTotalCost(context.tokenUsage);
+    return Math.max(0, context.maxBudget - subagentCost);
+  }
+
+  /**
    * Calculate total cost from token usage
    */
   private calculateTotalCost(usages: TokenUsage[]): number {

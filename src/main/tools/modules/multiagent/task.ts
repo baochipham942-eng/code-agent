@@ -300,6 +300,9 @@ export async function executeTask(
       spawnMaxDepth: ctx.spawnMaxDepth,
       spawnTreeId: treeId,
       spawnQueueTimeoutMs: ctx.spawnQueueTimeoutMs,
+      spawnParentStartedAt: ctx.spawnParentStartedAt,
+      spawnParentTimeoutMs: ctx.spawnParentTimeoutMs,
+      parentRemainingBudget: ctx.parentRemainingBudget,
     };
 
     const result = await executor.execute(
@@ -323,6 +326,7 @@ export async function executeTask(
         toolContext: legacyCtx,
         parentToolUseId: ctx.currentToolCallId,
         hookManager: ctx.hookManager as Parameters<typeof executor.execute>[2]['hookManager'],
+        parentRemainingBudget: ctx.parentRemainingBudget,
       },
     );
 
@@ -372,6 +376,7 @@ Stats:
             iterations: result.iterations,
             toolsUsed: result.toolsUsed,
             cost: result.cost,
+            tokensUsed: result.tokensUsed,
           },
         },
         {
@@ -406,6 +411,7 @@ Stats:
         iterations: result.iterations,
         toolsUsed: result.toolsUsed,
         cost: result.cost,
+        tokensUsed: result.tokensUsed,
       },
     }, {
       requestArgs: args,

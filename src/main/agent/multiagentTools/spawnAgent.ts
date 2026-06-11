@@ -117,6 +117,9 @@ export async function executeSpawnAgent(
         spawnMaxDepth: context.spawnMaxDepth,
         spawnTreeId: treeId,
         spawnQueueTimeoutMs: context.spawnQueueTimeoutMs,
+        spawnParentStartedAt: context.spawnParentStartedAt,
+        spawnParentTimeoutMs: context.spawnParentTimeoutMs,
+        parentRemainingBudget: context.parentRemainingBudget,
       });
     }
 
@@ -388,6 +391,9 @@ export async function executeSpawnAgent(
           spawnMaxDepth: context.spawnMaxDepth,
           spawnTreeId: treeId,
           spawnQueueTimeoutMs: context.spawnQueueTimeoutMs,
+          spawnParentStartedAt: context.spawnParentStartedAt,
+          spawnParentTimeoutMs: context.spawnParentTimeoutMs,
+          parentRemainingBudget: context.parentRemainingBudget,
         },
         parentToolUseId: context.currentToolCallId,
         abortSignal: abortController.signal,
@@ -396,6 +402,7 @@ export async function executeSpawnAgent(
         worktreePath: worktreeInfo?.worktreePath,
         hookManager: context.hookManager,
         parentContext,
+        parentRemainingBudget: context.parentRemainingBudget,
         // 后台 detached 子代理的父探活（仅 !waitForCompletion 时非 undefined）
         isParentAlive,
       };
@@ -455,12 +462,23 @@ Stats:
 - Tools used: ${result.toolsUsed.join(', ') || 'none'}
 - Agent ID: ${agentId}
 - Pipeline ID: ${result.agentId || 'N/A'}${result.cost !== undefined ? `\n- Cost: $${result.cost.toFixed(4)}` : ''}${worktreeNote}`,
+            metadata: {
+              agentId,
+              cost: result.cost,
+              tokensUsed: result.tokensUsed,
+            },
           };
         } else {
           return {
             success: false,
             error: `Agent [${agentName}] failed: ${result.error}${worktreeNote}`,
             output: result.output,
+            metadata: {
+              agentId,
+              cost: result.cost,
+              tokensUsed: result.tokensUsed,
+              cancellationReason: result.cancellationReason,
+            },
           };
         }
       } else {
@@ -863,6 +881,7 @@ async function executeParallelAgents(
 
     // Aggregate results
     const aggregation = aggregateTeamResults(result.results, result.totalDuration);
+    const totalTokensUsed = result.results.reduce((sum, taskResult) => sum + (taskResult.tokensUsed ?? 0), 0);
     const resultByTaskId = new Map(result.results.map((taskResult) => [taskResult.taskId, taskResult]));
     const wasCancelled = Boolean(context.abortSignal?.aborted)
       || result.results.some((taskResult) => taskResult.cancelled || isCancelledTaskError(taskResult.error))
@@ -892,6 +911,10 @@ async function executeParallelAgents(
             : entry.status;
           return `[${entry.role}] ${status}\n${entry.resultPreview || taskResult?.error || ''}`;
         }).join('\n\n---\n\n') : undefined,
+        metadata: {
+          cost: aggregation.totalCost,
+          tokensUsed: totalTokensUsed,
+        },
       };
     }
 
@@ -946,6 +969,10 @@ ${filesNote}
 
 Agent Results:
 ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''}`,
+        metadata: {
+          cost: aggregation.totalCost,
+          tokensUsed: totalTokensUsed,
+        },
       };
     } else {
       const failedTaskIds = new Set(result.errors.map((entry) => entry.taskId));
@@ -982,6 +1009,10 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
         success: false,
         error: `Parallel execution failed: ${result.errors.length} errors. ${aggregation.summary}`,
         output: agentSummaries + (coordSession ? '\n\n' + coordSession.synthesize() : ''),
+        metadata: {
+          cost: aggregation.totalCost,
+          tokensUsed: totalTokensUsed,
+        },
       };
     }
   } catch (error) {

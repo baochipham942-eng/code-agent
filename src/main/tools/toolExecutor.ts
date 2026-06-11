@@ -142,6 +142,12 @@ export interface ExecuteOptions {
   spawnTreeId?: string;
   // 超额 spawn 等待 tree 槽位的超时时间。
   spawnQueueTimeoutMs?: number;
+  // 父 agent 启动时间，用于按父剩余时间收紧子 agent 执行窗口。
+  spawnParentStartedAt?: number;
+  // 父 agent 执行超时时间，用于计算子 agent 可用剩余窗口。
+  spawnParentTimeoutMs?: number;
+  // 父 agent 当前剩余预算，作为子 agent 的预算上限。
+  parentRemainingBudget?: number;
   // 持久化角色 ID（agent 注册 id）。subagent 执行时由 subagentExecutor 灌入，
   // MemoryWrite/Read 的 scope='role' 路由按这个 id 定位 roles/<id>/ 目录。
   agentRole?: string;
@@ -339,6 +345,9 @@ export class ToolExecutor {
       spawnMaxDepth: options.spawnMaxDepth,
       spawnTreeId: options.spawnTreeId,
       spawnQueueTimeoutMs: options.spawnQueueTimeoutMs,
+      spawnParentStartedAt: options.spawnParentStartedAt,
+      spawnParentTimeoutMs: options.spawnParentTimeoutMs,
+      parentRemainingBudget: options.parentRemainingBudget,
       // 持久化角色 ID（MemoryWrite/Read scope='role' 路由用）
       agentRole: options.agentRole,
       // Current message attachments for multi-agent workflows

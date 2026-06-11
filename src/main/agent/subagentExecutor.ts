@@ -62,7 +62,7 @@ import {
 } from './subagentExecutorProjection';
 import {
   createSubagentCancellationLifecycle,
-  getSubagentExecutionTimeout,
+  getChildSubagentExecutionTimeout,
   getSubagentIdleTimeout,
 } from './subagentExecutorCancellation';
 import {
@@ -74,6 +74,10 @@ import { buildRoleContextBlock, runRoleWriteBack, recordRoleParticipation } from
 import { resolveModelDecision } from '../model/modelDecision';
 import type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
 import { getIncompleteTasks, adoptOrphanTasks } from '../services/planning/taskStore';
+import {
+  addSubagentUsage,
+  type SubagentUsage,
+} from './subagentUsageAccounting';
 
 export type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
 
@@ -171,9 +175,13 @@ export class SubagentExecutor {
     let finalOutput = '';
     // 跨迭代累加 outputTokens，供 dynamic-workflow 的 BudgetTracker 计费（每次推理后累加）。
     let outputTokensUsed = 0;
+    let descendantUsage: SubagentUsage = { cost: 0, tokensUsed: 0 };
 
     // P3: 计算执行超时时间
-    const timeout = getSubagentExecutionTimeout(config.name, config.maxExecutionTimeMs);
+    const timeout = getChildSubagentExecutionTimeout(config.name, config.maxExecutionTimeMs, {
+      parentStartedAt: context.toolContext.spawnParentStartedAt,
+      parentTimeoutMs: context.toolContext.spawnParentTimeoutMs,
+    });
     const startTime = Date.now();
 
     const {
@@ -234,8 +242,22 @@ export class SubagentExecutor {
     };
     const pipelineContext = pipeline.createContext(
       dynamicConfig,
-      context.toolContext.workingDirectory
+      context.toolContext.workingDirectory,
+      undefined,
+      { parentRemainingBudget: context.parentRemainingBudget },
     );
+    const getTotalCost = (): number => {
+      const ownCost = pipeline.getBudgetStatus(pipelineContext).subagentCost ?? 0;
+      return ownCost + descendantUsage.cost;
+    };
+    const getTotalTokens = (): number => outputTokensUsed + descendantUsage.tokensUsed;
+    const getRemainingTreeBudget = (): number | undefined => {
+      const ownRemainingBudget = pipeline.getRemainingBudget(pipelineContext);
+      if (ownRemainingBudget === undefined) {
+        return undefined;
+      }
+      return Math.max(0, ownRemainingBudget - descendantUsage.cost);
+    };
 
     // Filter tools to only those allowed for this subagent（下方 if/else 两档必赋值）
     let effectiveToolNames: string[];
@@ -442,7 +464,8 @@ export class SubagentExecutor {
           error: budgetCheck.reason,
           toolsUsed: [],
           iterations: 0,
-          tokensUsed: outputTokensUsed,
+          tokensUsed: getTotalTokens(),
+          cost: getTotalCost(),
           agentId: agentTask.id,
           contextSnapshot: latestContextSnapshot,
           // swarm 护栏 P1-2 #1：子代理触顶自身预算 → 结构化失败码，
@@ -551,7 +574,8 @@ export class SubagentExecutor {
             error: errorMsg,
             toolsUsed: [...new Set(toolsUsed)],
             iterations,
-            tokensUsed: outputTokensUsed,
+            tokensUsed: getTotalTokens(),
+            cost: getTotalCost(),
             agentId: agentTask.id,
             contextSnapshot: latestContextSnapshot,
             cancellationReason,
@@ -692,6 +716,13 @@ export class SubagentExecutor {
           completion: buildModelCompletionSummary(response),
         };
         outputTokensUsed += modelCall.outputTokens;
+        pipeline.recordTokenUsage(pipelineContext, {
+          inputTokens: modelCall.inputTokens,
+          outputTokens: modelCall.outputTokens,
+          model: context.modelConfig.model,
+          provider: context.modelConfig.provider,
+          timestamp: Date.now(),
+        });
 
         const persistTelemetryTurn = (assistantResponse: string, thinking?: string): void => {
           telemetryCollector.recordDetachedTurn({
@@ -932,6 +963,9 @@ export class SubagentExecutor {
                   spawnMaxDepth: context.toolContext.spawnMaxDepth,
                   spawnTreeId: context.toolContext.spawnTreeId,
                   spawnQueueTimeoutMs: context.toolContext.spawnQueueTimeoutMs,
+                  spawnParentStartedAt: startTime,
+                  spawnParentTimeoutMs: timeout,
+                  parentRemainingBudget: getRemainingTreeBudget(),
                   // 持久化角色 ID → 透传给工具层（MemoryWrite/Read scope='role' 路由用）
                   agentRole: config.roleId,
                   hookManager: context.hookManager,
@@ -943,6 +977,7 @@ export class SubagentExecutor {
                   subagentPolicy,
                 },
               );
+              descendantUsage = addSubagentUsage(descendantUsage, result.metadata);
               const toolDuration = Date.now() - toolStartTime;
               toolResults.push(
                 `Tool ${toolCall.name}: ${result.success ? 'Success' : 'Failed'}\n${result.output || result.error || ''}`
@@ -1090,7 +1125,6 @@ export class SubagentExecutor {
       // Get final cost
       cleanupTimer();
       stopIdleWatchdog();
-      const budgetStatus = pipeline.getBudgetStatus(pipelineContext);
       pipeline.completeContext(pipelineContext.agentId, true);
 
       // Record final output in transcript and close AgentTask lifecycle
@@ -1136,8 +1170,8 @@ export class SubagentExecutor {
         output: finalOutput || 'Subagent completed without output',
         toolsUsed: [...new Set(toolsUsed)],
         iterations,
-        cost: budgetStatus.subagentCost,
-        tokensUsed: outputTokensUsed,
+        tokensUsed: getTotalTokens(),
+        cost: getTotalCost(),
         agentId: agentTask.id,
         contextSnapshot: latestContextSnapshot,
       };
@@ -1169,7 +1203,10 @@ export class SubagentExecutor {
       // 把已消耗的 outputTokens 挂到 error 上，让 dynamic-workflow 的 BudgetTracker 在抛出路径
       // 也能记账（provider 产出部分 output 后崩的场景，Codex R2 MED#4）。不影响既有错误处理。
       if (error && typeof error === 'object') {
-        try { (error as { tokensUsed?: number }).tokensUsed = outputTokensUsed; } catch { /* frozen error, ignore */ }
+        try {
+          (error as { tokensUsed?: number; cost?: number }).tokensUsed = getTotalTokens();
+          (error as { tokensUsed?: number; cost?: number }).cost = getTotalCost();
+        } catch { /* frozen error, ignore */ }
       }
       throw error; // re-throw to preserve existing error handling
     }

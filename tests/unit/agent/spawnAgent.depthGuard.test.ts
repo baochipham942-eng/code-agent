@@ -57,6 +57,13 @@ describe('executeSpawnAgent 深度截断接线', () => {
     const protocolTypes = readFileSync(PROTOCOL_TYPES_PATH, 'utf8');
     expect(protocolTypes).toMatch(/spawnDepth\?:\s*number/);
     expect(protocolTypes).toMatch(/spawnMaxDepth\?:\s*number/);
+    expect(types).toMatch(/spawnParentStartedAt\?:\s*number/);
+    expect(types).toMatch(/spawnParentTimeoutMs\?:\s*number/);
+    expect(types).toMatch(/parentRemainingBudget\?:\s*number/);
+
+    expect(protocolTypes).toMatch(/spawnParentStartedAt\?:\s*number/);
+    expect(protocolTypes).toMatch(/spawnParentTimeoutMs\?:\s*number/);
+    expect(protocolTypes).toMatch(/parentRemainingBudget\?:\s*number/);
   });
 
   it('按 context.spawnDepth + 1 算 childDepth 并调 guard.checkDepth', () => {
@@ -77,6 +84,12 @@ describe('executeSpawnAgent 深度截断接线', () => {
   it('子 toolContext 注入递增后的 spawnDepth（深度沿链路流转）', () => {
     // executorContext.toolContext = { ...context, agentId, spawnDepth: childDepth }
     expect(source).toMatch(/spawnDepth:\s*childDepth/);
+  });
+
+  it('子执行器收到父时间窗与父剩余预算', () => {
+    expect(source).toMatch(/parentRemainingBudget:\s*context\.parentRemainingBudget/);
+    expect(source).toMatch(/spawnParentStartedAt:\s*context\.spawnParentStartedAt/);
+    expect(source).toMatch(/spawnParentTimeoutMs:\s*context\.spawnParentTimeoutMs/);
   });
 
   it('readonly 父拒启 writer 子 → child-refusal 失败码', () => {
@@ -112,6 +125,12 @@ describe('Task 深度截断接线', () => {
   it('Task 子 toolContext 注入递增后的 spawnDepth', () => {
     expect(source).toMatch(/spawnDepth:\s*childDepth/);
   });
+
+  it('Task 子执行器收到父时间窗与父剩余预算', () => {
+    expect(source).toMatch(/parentRemainingBudget:\s*ctx\.parentRemainingBudget/);
+    expect(source).toMatch(/spawnParentStartedAt:\s*ctx\.spawnParentStartedAt/);
+    expect(source).toMatch(/spawnParentTimeoutMs:\s*ctx\.spawnParentTimeoutMs/);
+  });
 });
 
 describe('protocol/legacy adapter 深度字段桥接', () => {
@@ -119,6 +138,9 @@ describe('protocol/legacy adapter 深度字段桥接', () => {
     const source = readFileSync(LEGACY_ADAPTER_PATH, 'utf8');
     expect(source).toMatch(/spawnDepth:\s*ctx\.spawnDepth/);
     expect(source).toMatch(/spawnMaxDepth:\s*ctx\.spawnMaxDepth/);
+    expect(source).toMatch(/spawnParentStartedAt:\s*ctx\.spawnParentStartedAt/);
+    expect(source).toMatch(/spawnParentTimeoutMs:\s*ctx\.spawnParentTimeoutMs/);
+    expect(source).toMatch(/parentRemainingBudget:\s*ctx\.parentRemainingBudget/);
   });
 
   it('buildProtocolContext 从 legacy ctx 带上 spawnDepth / spawnMaxDepth', () => {

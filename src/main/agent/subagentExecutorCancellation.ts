@@ -39,6 +39,32 @@ export function getSubagentExecutionTimeout(agentName: string, overrideMs?: numb
   return overrideMs || DEFAULT_EXECUTION_TIMEOUT.get(agentName) || DEFAULT_TIMEOUT_MS;
 }
 
+export function getChildSubagentExecutionTimeout(
+  agentName: string,
+  overrideMs?: number,
+  parentWindow?: {
+    parentStartedAt?: number;
+    parentTimeoutMs?: number;
+    now?: number;
+  },
+): number {
+  const roleTimeout = getSubagentExecutionTimeout(agentName, overrideMs);
+  if (
+    !parentWindow
+    || typeof parentWindow.parentStartedAt !== 'number'
+    || typeof parentWindow.parentTimeoutMs !== 'number'
+  ) {
+    return roleTimeout;
+  }
+
+  const now = parentWindow.now ?? Date.now();
+  const parentRemainingMs = Math.max(
+    0,
+    parentWindow.parentStartedAt + parentWindow.parentTimeoutMs - now,
+  );
+  return Math.min(roleTimeout, Math.floor(parentRemainingMs * 0.8));
+}
+
 // idle 阈值必须 < 总执行预算，否则 idle 看门狗永远来不及在总超时前触发（旧 bug：IDLE_TIMEOUT=120s >
 // 默认子代理预算 90s = 死配置，一次推理挂死必跑满总预算）。取 min(IDLE_TIMEOUT, budget*0.9)：既低于
 // 总预算成为有意义的"长时间无进展"兜底，又给 per-request 超时+重试（约 budget/2 + 一次重发）留出完成空间。

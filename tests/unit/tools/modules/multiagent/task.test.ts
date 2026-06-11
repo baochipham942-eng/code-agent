@@ -186,6 +186,7 @@ describe('Task happy / failure', () => {
       iterations: 5,
       toolsUsed: ['read', 'edit'],
       cost: 0.0123,
+      tokensUsed: 345,
     });
     const handler = await taskModule.createHandler();
     const onProgress = vi.fn();
@@ -227,6 +228,7 @@ describe('Task happy / failure', () => {
           iterations: 5,
           toolsUsed: ['read', 'edit'],
           cost: 0.0123,
+          tokensUsed: 345,
         },
         artifact: expect.objectContaining({ kind: 'text', sourceTool: 'Task' }),
         artifacts: [expect.objectContaining({ kind: 'text', sourceTool: 'Task' })],
@@ -243,6 +245,35 @@ describe('Task happy / failure', () => {
     }
     expect(taskDedupMock.completeTask).toHaveBeenCalledWith('hash-1', 'all done');
     expect(onProgress).toHaveBeenCalledWith({ stage: 'starting', detail: 'Task' });
+  });
+
+  it('passes parent timeout and remaining budget to the child executor', async () => {
+    executorExecuteMock.mockResolvedValue({
+      success: true,
+      output: 'ok',
+      iterations: 1,
+      toolsUsed: [],
+      cost: 0.01,
+      tokensUsed: 12,
+    });
+    const handler = await taskModule.createHandler();
+    const result = await handler.execute(
+      { prompt: 'do thing', subagent_type: 'coder' },
+      makeCtx({
+        parentRemainingBudget: 0.42,
+        spawnParentStartedAt: 1_000,
+        spawnParentTimeoutMs: 10_000,
+      } as never),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    const executorCtx = executorExecuteMock.mock.calls[0][2];
+    expect(executorCtx.parentRemainingBudget).toBe(0.42);
+    expect(executorCtx.toolContext).toMatchObject({
+      spawnParentStartedAt: 1_000,
+      spawnParentTimeoutMs: 10_000,
+    });
   });
 
   it('SubagentExecutor failure → DOMAIN_ERROR + dedup failTask', async () => {

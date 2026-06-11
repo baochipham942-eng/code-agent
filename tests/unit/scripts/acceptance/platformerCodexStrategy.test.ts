@@ -302,6 +302,17 @@ describe('evaluateMilestone', () => {
     }
   });
 
+  it('every milestone is blocked when runtime smoke cannot execute', () => {
+    for (const m of PLATFORMER_MILESTONES) {
+      expect(
+        evaluateMilestone(
+          m,
+          summary([], ['无法运行交互 smoke 验收: browserType.launch: Executable does not exist']),
+        ).passed,
+      ).toBe(false);
+    }
+  });
+
   it('a clean summary passes every milestone', () => {
     for (const m of PLATFORMER_MILESTONES) {
       expect(evaluateMilestone(m, summary([])).passed).toBe(true);

@@ -35,7 +35,21 @@ const M2 = PLATFORMER_MILESTONES[2];
 const M3 = PLATFORMER_MILESTONES[3];
 
 let chromiumAvailable = false;
+let runtimeSmokeUsable = false;
+let runtimeSmokeUnavailableReason: string | undefined;
 let summary: ValidationSummary;
+
+function skipWhenBrowserRuntimeUnavailable() {
+  if (!chromiumAvailable) {
+    console.error('[codex-gating] SKIP - Playwright chromium unavailable');
+    return true;
+  }
+  if (!runtimeSmokeUsable && runtimeSmokeUnavailableReason) {
+    console.error(`[codex-gating] SKIP - ${runtimeSmokeUnavailableReason}`);
+    return true;
+  }
+  return false;
+}
 
 describe('codex milestone gating against real validator', () => {
   beforeAll(async () => {
@@ -56,25 +70,27 @@ describe('codex milestone gating against real validator', () => {
       runtimeFailures: validation.runtimeSmoke?.failures,
       runtimeChecks: validation.runtimeSmoke?.checks,
     };
+    runtimeSmokeUsable = (summary.runtimeChecks?.length ?? 0) > 0;
+    const firstRuntimeFailure = summary.runtimeFailures?.[0];
+    if (!runtimeSmokeUsable && firstRuntimeFailure && /无法运行交互 smoke 验收/i.test(firstRuntimeFailure)) {
+      runtimeSmokeUnavailableReason = firstRuntimeFailure;
+    }
     // Visibility into what the real validator reported, for debugging drift.
-     
+
     console.error(
-      `[codex-gating] runtimePassed=${summary.runtimePassed} checks=${summary.runtimeChecks?.length} failures=${summary.runtimeFailures?.length}`,
+      `[codex-gating] runtimePassed=${summary.runtimePassed} checks=${summary.runtimeChecks?.length} failures=${summary.runtimeFailures?.length} firstFailure=${firstRuntimeFailure ?? 'none'}`,
     );
   }, 60000);
 
   it('skeleton exposes a working interactive contract (step/reset/snapshot)', () => {
-    if (!chromiumAvailable) {
-      console.error('[codex-gating] SKIP — Playwright chromium unavailable');
-      return;
-    }
+    if (skipWhenBrowserRuntimeUnavailable()) return;
     const checks = (summary.runtimeChecks ?? []).join('\n');
     expect(checks).toContain('interactive contract exposes step(inputState, frames)');
     expect(checks).toContain('interactive contract exposes reset(levelOrScenario)');
   });
 
   it('M0 probe PASSES — contract/snapshot paths intact (no metadata or snapshot-path failures)', () => {
-    if (!chromiumAvailable) return;
+    if (skipWhenBrowserRuntimeUnavailable()) return;
     const result = evaluateMilestone(M0, summary);
     if (!result.passed) {
       console.error('[codex-gating] M0 unexpectedly blocked by:', result.blockingFailures);
@@ -83,7 +99,7 @@ describe('codex milestone gating against real validator', () => {
   });
 
   it('M1 probe PASSES — movement & jump driven by real step() input', () => {
-    if (!chromiumAvailable) return;
+    if (skipWhenBrowserRuntimeUnavailable()) return;
     const result = evaluateMilestone(M1, summary);
     if (!result.passed) {
       console.error('[codex-gating] M1 unexpectedly blocked by:', result.blockingFailures);
@@ -92,21 +108,21 @@ describe('codex milestone gating against real validator', () => {
   });
 
   it('M2 probe FAILS — stompable enemy has no runtime evidence', () => {
-    if (!chromiumAvailable) return;
+    if (skipWhenBrowserRuntimeUnavailable()) return;
     const result = evaluateMilestone(M2, summary);
     expect(result.passed).toBe(false);
     expect(result.blockingFailures.join('\n')).toMatch(/stomp|enemiesDefeated|stompable/i);
   });
 
   it('M3 probe FAILS — block/ability/gate/combo have no runtime evidence', () => {
-    if (!chromiumAvailable) return;
+    if (skipWhenBrowserRuntimeUnavailable()) return;
     const result = evaluateMilestone(M3, summary);
     expect(result.passed).toBe(false);
     expect(result.blockingFailures.join('\n')).toMatch(/bump|block|ability|gate|combo/i);
   });
 
   it('gating is monotonic: the set of blocking failures only grows M0 ⊆ M1 ⊆ M2 ⊆ M3', () => {
-    if (!chromiumAvailable) return;
+    if (skipWhenBrowserRuntimeUnavailable()) return;
     const counts = [M0, M1, M2, M3].map((m) => evaluateMilestone(m, summary).blockingFailures.length);
     for (let i = 1; i < counts.length; i += 1) {
       expect(counts[i]).toBeGreaterThanOrEqual(counts[i - 1]);

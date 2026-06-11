@@ -45,6 +45,7 @@ export interface MilestoneSpec {
 export const GLOBAL_BLOCKING_PATTERNS: RegExp[] = [
   /Artifact was not written|Artifact does not exist|unparsable|文档结构不完整|incomplete html/i,
   /pageerror|TypeError|ReferenceError|Cannot read properties|页面崩溃/i,
+  /无法运行交互 smoke 验收|运行时没有找到 runSmokeTest|运行时测试合约缺少 start 或 snapshot|runSmokeTest 抛出异常|runSmokeTest 超过 \d+ms/i,
   /不在 snapshot\(\) 结果里|__GAME_META__|__GAME_TEST__/,
   /step\(inputState|reset\(levelOrScenario/,
 ];

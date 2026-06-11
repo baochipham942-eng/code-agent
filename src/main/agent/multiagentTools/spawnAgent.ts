@@ -120,6 +120,7 @@ export async function executeSpawnAgent(
         spawnParentStartedAt: context.spawnParentStartedAt,
         spawnParentTimeoutMs: context.spawnParentTimeoutMs,
         parentRemainingBudget: context.parentRemainingBudget,
+        spawnParentAgentId: context.spawnParentAgentId,
       });
     }
 
@@ -394,6 +395,7 @@ export async function executeSpawnAgent(
           spawnParentStartedAt: context.spawnParentStartedAt,
           spawnParentTimeoutMs: context.spawnParentTimeoutMs,
           parentRemainingBudget: context.parentRemainingBudget,
+          spawnParentAgentId: context.spawnParentAgentId,
         },
         parentToolUseId: context.currentToolCallId,
         abortSignal: abortController.signal,
@@ -428,6 +430,7 @@ export async function executeSpawnAgent(
         // Register with SpawnGuard
         guard.register(agentId, role || 'dynamic', task, promise, abortController, {
           treeId,
+          parentId: context.spawnParentAgentId,
           slotAcquired: true,
         });
         registeredWithGuard = true;
@@ -488,6 +491,7 @@ Stats:
         // Register with SpawnGuard (auto-tracks completion)
         guard.register(agentId, role || 'dynamic', task, promise, abortController, {
           treeId,
+          parentId: context.spawnParentAgentId,
           slotAcquired: true,
         });
         registeredWithGuard = true;

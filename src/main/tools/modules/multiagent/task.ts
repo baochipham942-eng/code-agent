@@ -291,6 +291,17 @@ export async function executeTask(
       timeoutMs: ctx.spawnQueueTimeoutMs,
     });
     const executor = getSubagentExecutor();
+    const agentId = `task_${subagentType}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const abortController = new AbortController();
+    if (ctx.abortSignal.aborted) {
+      abortController.abort(ctx.abortSignal.reason ?? 'parent-cancel');
+    } else {
+      ctx.abortSignal.addEventListener('abort', () => {
+        if (!abortController.signal.aborted) {
+          abortController.abort(ctx.abortSignal.reason ?? 'parent-cancel');
+        }
+      }, { once: true });
+    }
 
     // Cross-cat 桥接：SubagentExecutor 接 legacy ToolContext，用 helper 桥
     // TODO Wave 4: SubagentExecutor 升 ProtocolToolContext 后移除 legacyAdapter
@@ -303,9 +314,10 @@ export async function executeTask(
       spawnParentStartedAt: ctx.spawnParentStartedAt,
       spawnParentTimeoutMs: ctx.spawnParentTimeoutMs,
       parentRemainingBudget: ctx.parentRemainingBudget,
+      spawnParentAgentId: ctx.spawnParentAgentId,
     };
 
-    const result = await executor.execute(
+    const executionPromise = executor.execute(
       prompt,
       {
         name: agentName,
@@ -327,8 +339,18 @@ export async function executeTask(
         parentToolUseId: ctx.currentToolCallId,
         hookManager: ctx.hookManager as Parameters<typeof executor.execute>[2]['hookManager'],
         parentRemainingBudget: ctx.parentRemainingBudget,
+        abortSignal: abortController.signal,
+        spawnGuardId: agentId,
+        executionAgentId: agentId,
       },
     );
+    guard.register(agentId, subagentType, prompt, executionPromise, abortController, {
+      treeId,
+      parentId: ctx.spawnParentAgentId,
+      slotAcquired: true,
+    });
+    slotLease = undefined;
+    const result = await executionPromise;
 
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug('task done', { subagentType, ok: result.success });

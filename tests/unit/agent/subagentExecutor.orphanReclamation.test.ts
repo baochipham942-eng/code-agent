@@ -50,6 +50,14 @@ describe('subagentExecutor 主循环探活', () => {
     const block = source.slice(idx, idx + 400);
     expect(block).toMatch(/effectiveController\.abort\(\s*['"]parent-gone['"]\s*\)/);
   });
+
+  it('调用子 spawn 工具时把自己的 spawnGuardId 作为 parentId 透传', () => {
+    expect(source).toMatch(/spawnParentAgentId:\s*context\.spawnGuardId/);
+  });
+
+  it('自身取消或异常时只清理自己的后代子树', () => {
+    expect(source).toMatch(/cancelDescendants\(\s*context\.spawnGuardId/);
+  });
 });
 
 describe('executeSpawnAgent 只给后台 detached 子注入探活', () => {

@@ -36,3 +36,55 @@ export function isParentRunAlive(
     state.startTime === spawnStartTime
   );
 }
+
+export interface AgentTreeNode {
+  id: string;
+  parentId?: string;
+  status: string;
+}
+
+export function collectDescendantAgentIds(
+  nodes: readonly AgentTreeNode[],
+  parentId: string,
+): string[] {
+  const childrenByParent = new Map<string, AgentTreeNode[]>();
+  for (const node of nodes) {
+    if (!node.parentId) continue;
+    const children = childrenByParent.get(node.parentId) ?? [];
+    children.push(node);
+    childrenByParent.set(node.parentId, children);
+  }
+
+  const result: string[] = [];
+  const visit = (id: string): void => {
+    const children = childrenByParent.get(id) ?? [];
+    for (const child of children) {
+      result.push(child.id);
+      visit(child.id);
+    }
+  };
+
+  visit(parentId);
+  return result;
+}
+
+export function collectRunningOrphanAgentIds(
+  nodes: readonly AgentTreeNode[],
+): string[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const result: string[] = [];
+  const seen = new Set<string>();
+
+  for (const node of nodes) {
+    if (node.status === 'running') continue;
+    for (const descendantId of collectDescendantAgentIds(nodes, node.id)) {
+      if (seen.has(descendantId)) continue;
+      const descendant = byId.get(descendantId);
+      if (descendant?.status !== 'running') continue;
+      seen.add(descendantId);
+      result.push(descendantId);
+    }
+  }
+
+  return result;
+}

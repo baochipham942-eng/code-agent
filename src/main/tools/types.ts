@@ -87,6 +87,8 @@ export interface ToolContext {
   spawnParentTimeoutMs?: number;
   /** 父 agent 当前剩余预算，作为子 agent 的预算上限。 */
   parentRemainingBudget?: number;
+  /** SpawnGuard tree parent id; separate from agentId, which is used by tool isolation. */
+  spawnParentAgentId?: string;
 
   // ============================================================================
   // 模型回调支持（工具内二次调用模型）

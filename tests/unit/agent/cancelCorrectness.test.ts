@@ -50,6 +50,7 @@ vi.mock('../../../src/main/platform', () => ({
 import { PlanApprovalGate } from '../../../src/main/agent/planApproval';
 import { SwarmLaunchApprovalGate } from '../../../src/main/agent/swarmLaunchApproval';
 import { getSpawnGuard, resetSpawnGuard } from '../../../src/main/agent/spawnGuard';
+import { createChildAbortController } from '../../../src/main/agent/shutdownProtocol';
 
 // ---------------------------------------------------------------------------
 // PlanApprovalGate.cancelAll
@@ -261,6 +262,88 @@ describe('SpawnGuard.cancelAll — ADR-010 #6', () => {
   it('cancelAll 在无 running agent 时 no-op', () => {
     const guard = getSpawnGuard();
     expect(guard.cancelAll('whatever')).toBe(0);
+  });
+
+  it('cancelDescendants 只取消指定节点的后代，不误杀兄弟子树', () => {
+    const guard = getSpawnGuard({ maxAgents: 8 });
+    const controllers = new Map<string, AbortController>();
+
+    for (const id of ['root', 'child-a', 'grandchild-a', 'child-b']) {
+      controllers.set(id, new AbortController());
+    }
+
+    const never = new Promise<never>(() => {}) as unknown as Promise<import('../../../src/main/agent/subagentExecutor').SubagentResult>;
+    guard.register('root', 'root', 'root task', never, controllers.get('root')!, { treeId: 'tree' });
+    guard.register('child-a', 'worker', 'child a', never, controllers.get('child-a')!, { treeId: 'tree', parentId: 'root' });
+    guard.register('grandchild-a', 'worker', 'grandchild a', never, controllers.get('grandchild-a')!, { treeId: 'tree', parentId: 'child-a' });
+    guard.register('child-b', 'worker', 'child b', never, controllers.get('child-b')!, { treeId: 'tree', parentId: 'root' });
+
+    const cancelled = guard.cancelDescendants('child-a', 'parent-cancel');
+
+    expect(cancelled).toBe(1);
+    expect(controllers.get('grandchild-a')!.signal.aborted).toBe(true);
+    expect(controllers.get('grandchild-a')!.signal.reason).toBe('parent-cancel');
+    expect(controllers.get('root')!.signal.aborted).toBe(false);
+    expect(controllers.get('child-a')!.signal.aborted).toBe(false);
+    expect(controllers.get('child-b')!.signal.aborted).toBe(false);
+  });
+
+  it('reapOrphanedDescendants 回收父已完成但仍在跑的整棵后代树', async () => {
+    const guard = getSpawnGuard({ maxAgents: 8 });
+    const rootController = new AbortController();
+    const childController = new AbortController();
+    const grandchildController = new AbortController();
+    const finished: import('../../../src/main/agent/subagentExecutor').SubagentResult = {
+      success: true,
+      output: 'done',
+      iterations: 1,
+      toolsUsed: [],
+      cost: 0,
+    };
+    const never = new Promise<never>(() => {}) as unknown as Promise<import('../../../src/main/agent/subagentExecutor').SubagentResult>;
+
+    guard.register('root', 'root', 'root task', Promise.resolve(finished), rootController, { treeId: 'tree' });
+    guard.register('child', 'worker', 'child task', never, childController, { treeId: 'tree', parentId: 'root' });
+    guard.register('grandchild', 'worker', 'grandchild task', never, grandchildController, { treeId: 'tree', parentId: 'child' });
+
+    await Promise.resolve();
+
+    const cancelled = guard.reapOrphanedDescendants('parent-gone');
+
+    expect(cancelled).toBe(2);
+    expect(childController.signal.aborted).toBe(true);
+    expect(grandchildController.signal.aborted).toBe(true);
+    expect(childController.signal.reason).toBe('parent-gone');
+    expect(grandchildController.signal.reason).toBe('parent-gone');
+  });
+});
+
+describe('createChildAbortController — N-level cascade semantics', () => {
+  it('user cancel/session switch cascade through three levels', () => {
+    const root = new AbortController();
+    const child = createChildAbortController(root);
+    const grandchild = createChildAbortController(child);
+
+    root.abort('session-switch');
+
+    expect(child.signal.aborted).toBe(true);
+    expect(grandchild.signal.aborted).toBe(true);
+    expect(child.signal.reason).toBe('session-switch');
+    expect(grandchild.signal.reason).toBe('session-switch');
+  });
+
+  it('intermediate timeout only aborts that subtree, sibling branch keeps running', () => {
+    const root = new AbortController();
+    const child = createChildAbortController(root);
+    const grandchild = createChildAbortController(child);
+    const sibling = createChildAbortController(root);
+
+    child.abort('timeout');
+
+    expect(root.signal.aborted).toBe(false);
+    expect(sibling.signal.aborted).toBe(false);
+    expect(grandchild.signal.aborted).toBe(true);
+    expect(grandchild.signal.reason).toBe('timeout');
   });
 });
 

@@ -60,10 +60,12 @@ describe('executeSpawnAgent 深度截断接线', () => {
     expect(types).toMatch(/spawnParentStartedAt\?:\s*number/);
     expect(types).toMatch(/spawnParentTimeoutMs\?:\s*number/);
     expect(types).toMatch(/parentRemainingBudget\?:\s*number/);
+    expect(types).toMatch(/spawnParentAgentId\?:\s*string/);
 
     expect(protocolTypes).toMatch(/spawnParentStartedAt\?:\s*number/);
     expect(protocolTypes).toMatch(/spawnParentTimeoutMs\?:\s*number/);
     expect(protocolTypes).toMatch(/parentRemainingBudget\?:\s*number/);
+    expect(protocolTypes).toMatch(/spawnParentAgentId\?:\s*string/);
   });
 
   it('按 context.spawnDepth + 1 算 childDepth 并调 guard.checkDepth', () => {
@@ -90,6 +92,10 @@ describe('executeSpawnAgent 深度截断接线', () => {
     expect(source).toMatch(/parentRemainingBudget:\s*context\.parentRemainingBudget/);
     expect(source).toMatch(/spawnParentStartedAt:\s*context\.spawnParentStartedAt/);
     expect(source).toMatch(/spawnParentTimeoutMs:\s*context\.spawnParentTimeoutMs/);
+  });
+
+  it('注册到 SpawnGuard 时记录 parentId，供 N 层取消和孤儿回收 DFS 使用', () => {
+    expect(source).toMatch(/parentId:\s*context\.spawnParentAgentId/);
   });
 
   it('readonly 父拒启 writer 子 → child-refusal 失败码', () => {
@@ -141,6 +147,7 @@ describe('protocol/legacy adapter 深度字段桥接', () => {
     expect(source).toMatch(/spawnParentStartedAt:\s*ctx\.spawnParentStartedAt/);
     expect(source).toMatch(/spawnParentTimeoutMs:\s*ctx\.spawnParentTimeoutMs/);
     expect(source).toMatch(/parentRemainingBudget:\s*ctx\.parentRemainingBudget/);
+    expect(source).toMatch(/spawnParentAgentId:\s*ctx\.spawnParentAgentId/);
   });
 
   it('buildProtocolContext 从 legacy ctx 带上 spawnDepth / spawnMaxDepth', () => {

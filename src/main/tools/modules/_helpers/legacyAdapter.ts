@@ -90,6 +90,7 @@ export function buildLegacyCtxFromProtocol(
     spawnParentStartedAt: ctx.spawnParentStartedAt,
     spawnParentTimeoutMs: ctx.spawnParentTimeoutMs,
     parentRemainingBudget: ctx.parentRemainingBudget,
+    spawnParentAgentId: ctx.spawnParentAgentId,
     messages: ctx.subagent?.messages as LegacyToolContext['messages'],
     modifiedFiles: ctx.subagent?.modifiedFiles as LegacyToolContext['modifiedFiles'],
     todos: ctx.subagent?.todos as LegacyToolContext['todos'],

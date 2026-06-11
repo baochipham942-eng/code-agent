@@ -131,6 +131,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     spawnParentStartedAt: legacy?.spawnParentStartedAt as number | undefined,
     spawnParentTimeoutMs: legacy?.spawnParentTimeoutMs as number | undefined,
     parentRemainingBudget: legacy?.parentRemainingBudget as number | undefined,
+    spawnParentAgentId: legacy?.spawnParentAgentId as string | undefined,
     planMode,
     subagent,
     hookManager: legacy?.hookManager,

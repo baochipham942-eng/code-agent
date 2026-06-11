@@ -14,6 +14,10 @@ import { join } from 'path';
 import { createLogger } from '../services/infra/logger';
 import { SPAWN_GUARD } from '../../shared/constants/agent';
 import type { SubagentResult } from './subagentExecutorTypes';
+import {
+  collectDescendantAgentIds,
+  collectRunningOrphanAgentIds,
+} from './orphanLiveness';
 
 const logger = createLogger('SpawnGuard');
 
@@ -58,6 +62,7 @@ export interface ManagedAgent {
   id: string;
   role: string;
   treeId: string;
+  parentId?: string;
   status: ManagedAgentStatus;
   task: string;
   /** The promise that resolves when execution completes */
@@ -88,12 +93,19 @@ export interface SpawnGuardConfig {
   maxDepth?: number;
 }
 
+interface RegisterOptions {
+  treeId?: string;
+  parentId?: string;
+  slotAcquired?: boolean;
+}
+
 /** Serializable snapshot of SpawnGuard state for crash recovery */
 interface PersistedSpawnGuardState {
   agents: Array<{
     id: string;
     role: string;
     treeId?: string;
+    parentId?: string;
     status: ManagedAgentStatus;
     task: string;
     messageQueue: AgentMessage[];
@@ -279,9 +291,10 @@ class SpawnGuard {
     task: string,
     promise: Promise<SubagentResult>,
     abortController: AbortController,
-    options: { treeId?: string; slotAcquired?: boolean } = {},
+    options: RegisterOptions = {},
   ): void {
     const treeId = this.normalizeTreeId(options.treeId);
+    const parentId = options.parentId?.trim() || undefined;
     if (!options.slotAcquired) {
       this.incrementSlot(treeId);
     }
@@ -290,6 +303,7 @@ class SpawnGuard {
       id,
       role,
       treeId,
+      parentId,
       status: 'running',
       task,
       promise,
@@ -327,7 +341,7 @@ class SpawnGuard {
       }
     );
 
-    logger.info(`[${id}] Registered (${role}), tree: ${treeId}, running: ${this.getRunningCount()}/${this.maxAgents}`);
+    logger.info(`[${id}] Registered (${role}), tree: ${treeId}, parent: ${parentId ?? 'none'}, running: ${this.getRunningCount()}/${this.maxAgents}`);
   }
 
   /**
@@ -369,12 +383,40 @@ class SpawnGuard {
     const agent = this.agents.get(id);
     if (agent?.status !== 'running') return false;
 
-    agent.abortController.abort('cancelled');
-    agent.status = 'cancelled';
-    agent.completedAt = Date.now();
-    this.releaseAgentSlot(agent);
-    logger.info(`[${id}] Cancelled`);
+    this.cancelAgent(agent, 'cancelled');
+    this.cancelDescendants(id, 'parent-cancel');
+    logger.info(`[${id}] Cancelled with descendants`);
     return true;
+  }
+
+  cancelDescendants(parentId: string, reason: string = 'parent-cancel'): number {
+    const descendantIds = collectDescendantAgentIds(this.list(), parentId);
+    let cancelled = 0;
+    for (const descendantId of descendantIds) {
+      const agent = this.agents.get(descendantId);
+      if (agent?.status !== 'running') continue;
+      this.cancelAgent(agent, reason);
+      cancelled += 1;
+    }
+    if (cancelled > 0) {
+      logger.info(`[${parentId}] cancelDescendants: cancelled ${cancelled} descendant agent(s) (${reason})`);
+    }
+    return cancelled;
+  }
+
+  reapOrphanedDescendants(reason: string = 'parent-gone'): number {
+    const orphanIds = collectRunningOrphanAgentIds(this.list());
+    let cancelled = 0;
+    for (const orphanId of orphanIds) {
+      const agent = this.agents.get(orphanId);
+      if (agent?.status !== 'running') continue;
+      this.cancelAgent(agent, reason);
+      cancelled += 1;
+    }
+    if (cancelled > 0) {
+      logger.info(`reapOrphanedDescendants: cancelled ${cancelled} orphaned descendant agent(s) (${reason})`);
+    }
+    return cancelled;
   }
 
   /**
@@ -388,15 +430,7 @@ class SpawnGuard {
     let cancelled = 0;
     for (const [id, agent] of this.agents) {
       if (agent.status === 'running') {
-        try {
-          agent.abortController.abort(reason);
-        } catch (err) {
-          logger.warn(`[${id}] Abort controller threw during cancelAll`, err);
-        }
-        agent.status = 'cancelled';
-        agent.completedAt = Date.now();
-        agent.error = agent.error ?? reason;
-        this.releaseAgentSlot(agent);
+        this.cancelAgent(agent, reason);
         cancelled += 1;
       }
     }
@@ -404,6 +438,18 @@ class SpawnGuard {
       logger.info(`cancelAll: cancelled ${cancelled} running agents (${reason})`);
     }
     return cancelled;
+  }
+
+  private cancelAgent(agent: ManagedAgent, reason: string): void {
+    try {
+      agent.abortController.abort(reason);
+    } catch (err) {
+      logger.warn(`[${agent.id}] Abort controller threw during cancel`, err);
+    }
+    agent.status = 'cancelled';
+    agent.completedAt = Date.now();
+    agent.error = agent.error ?? reason;
+    this.releaseAgentSlot(agent);
   }
 
   /**
@@ -631,6 +677,7 @@ class SpawnGuard {
         id,
         role: agent.role,
         treeId: agent.treeId,
+        parentId: agent.parentId,
         status: agent.status,
         task: agent.task,
         messageQueue: agent.messageQueue,
@@ -675,6 +722,7 @@ class SpawnGuard {
           id: entry.id,
           role: entry.role,
           treeId: entry.treeId ?? DEFAULT_TREE_ID,
+          parentId: entry.parentId,
           status,
           task: entry.task,
           promise: Promise.resolve(entry.result ?? { success: false, output: '', error: 'Interrupted by restart', iterations: 0, toolsUsed: [], cost: 0 }),

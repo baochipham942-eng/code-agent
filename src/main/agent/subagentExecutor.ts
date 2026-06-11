@@ -566,6 +566,9 @@ export class SubagentExecutor {
           agentTask.fail(errorMsg);
           // orphan 接管（roadmap 2.6）
           adoptOrphanTasks(sessionId, pipelineContext.agentId);
+          if (context.spawnGuardId) {
+            getSpawnGuard().cancelDescendants(context.spawnGuardId, 'parent-cancel');
+          }
           // Fire SubagentStop on abort/timeout
           context.hookManager?.triggerSubagentStop(config.name, undefined, sessionId, agentTask.id).catch(silence(logger, 'triggerSubagentStop:abort', 'warn'));
           return {
@@ -966,10 +969,11 @@ export class SubagentExecutor {
                   spawnParentStartedAt: startTime,
                   spawnParentTimeoutMs: timeout,
                   parentRemainingBudget: getRemainingTreeBudget(),
+                  spawnParentAgentId: context.spawnGuardId,
                   // 持久化角色 ID → 透传给工具层（MemoryWrite/Read scope='role' 路由用）
                   agentRole: config.roleId,
                   hookManager: context.hookManager,
-                  abortSignal: context.abortSignal,
+                  abortSignal: effectiveSignal,
                   currentToolCallId: toolCall.id,
                   toolScope: context.toolContext.toolScope,
                   emitEvent: context.toolContext.emit,
@@ -1137,6 +1141,9 @@ export class SubagentExecutor {
 
       // orphan 接管（roadmap 2.6）：正常结束时名下未收口任务回归主会话
       adoptOrphanTasks(sessionId, pipelineContext.agentId);
+      if (context.spawnGuardId) {
+        getSpawnGuard().cancelDescendants(context.spawnGuardId, 'parent-gone');
+      }
 
       // Fire SubagentStop hook (fire-and-forget)
       // GAP-012: 带上 agentId 作为 swarm trace 查询入口
@@ -1188,6 +1195,9 @@ export class SubagentExecutor {
 
       // orphan 接管（roadmap 2.6）
       adoptOrphanTasks(sessionId, pipelineContext.agentId);
+      if (context.spawnGuardId) {
+        getSpawnGuard().cancelDescendants(context.spawnGuardId, 'parent-cancel');
+      }
 
       // Fire SubagentStop hook on failure (fire-and-forget)
       // GAP-012: 带上 agentId 作为 swarm trace 查询入口

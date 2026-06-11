@@ -148,6 +148,8 @@ export interface ExecuteOptions {
   spawnParentTimeoutMs?: number;
   // 父 agent 当前剩余预算，作为子 agent 的预算上限。
   parentRemainingBudget?: number;
+  // SpawnGuard tree parent id；不同于 agentId，后者用于工具隔离。
+  spawnParentAgentId?: string;
   // 持久化角色 ID（agent 注册 id）。subagent 执行时由 subagentExecutor 灌入，
   // MemoryWrite/Read 的 scope='role' 路由按这个 id 定位 roles/<id>/ 目录。
   agentRole?: string;
@@ -348,6 +350,7 @@ export class ToolExecutor {
       spawnParentStartedAt: options.spawnParentStartedAt,
       spawnParentTimeoutMs: options.spawnParentTimeoutMs,
       parentRemainingBudget: options.parentRemainingBudget,
+      spawnParentAgentId: options.spawnParentAgentId,
       // 持久化角色 ID（MemoryWrite/Read scope='role' 路由用）
       agentRole: options.agentRole,
       // Current message attachments for multi-agent workflows

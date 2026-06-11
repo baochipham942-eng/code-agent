@@ -6,7 +6,11 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { isParentRunAlive } from '../../../src/main/agent/orphanLiveness';
+import {
+  collectDescendantAgentIds,
+  collectRunningOrphanAgentIds,
+  isParentRunAlive,
+} from '../../../src/main/agent/orphanLiveness';
 
 describe('isParentRunAlive', () => {
   const SPAWN_TS = 1000;
@@ -30,5 +34,37 @@ describe('isParentRunAlive', () => {
   it('startTime 缺失时只在两边都 undefined 才算同一 run', () => {
     expect(isParentRunAlive({ status: 'running', startTime: undefined }, undefined)).toBe(true);
     expect(isParentRunAlive({ status: 'running', startTime: 2000 }, undefined)).toBe(false);
+  });
+});
+
+describe('orphan tree traversal', () => {
+  const nodes = [
+    { id: 'root', status: 'running' },
+    { id: 'child-a', parentId: 'root', status: 'running' },
+    { id: 'grandchild-a', parentId: 'child-a', status: 'running' },
+    { id: 'child-b', parentId: 'root', status: 'running' },
+    { id: 'detached', status: 'running' },
+  ] as const;
+
+  it('按 parent→children DFS 收集全部后代，不包含兄弟与自身', () => {
+    expect(collectDescendantAgentIds(nodes, 'root')).toEqual([
+      'child-a',
+      'grandchild-a',
+      'child-b',
+    ]);
+    expect(collectDescendantAgentIds(nodes, 'child-a')).toEqual(['grandchild-a']);
+  });
+
+  it('父节点已死但子仍在跑时，标出整棵孤儿子树', () => {
+    const orphaned = collectRunningOrphanAgentIds([
+      { id: 'root', status: 'completed' },
+      { id: 'child-a', parentId: 'root', status: 'running' },
+      { id: 'grandchild-a', parentId: 'child-a', status: 'running' },
+      { id: 'child-b', parentId: 'root', status: 'completed' },
+      { id: 'grandchild-b', parentId: 'child-b', status: 'running' },
+      { id: 'sibling-root', status: 'running' },
+    ]);
+
+    expect(orphaned).toEqual(['child-a', 'grandchild-a', 'grandchild-b']);
   });
 });

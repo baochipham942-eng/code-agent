@@ -404,10 +404,12 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
     const startTime = Date.now();
     let slotLease: { release: () => void } | undefined;
+    const treeId = toolContext.spawnTreeId || toolContext.sessionId || 'default';
+    const guard = getSpawnGuard();
+    const taskAbortController = new AbortController();
 
     try {
-      const treeId = toolContext.spawnTreeId || toolContext.sessionId || 'default';
-      slotLease = await getSpawnGuard().acquireSlot({
+      slotLease = await guard.acquireSlot({
         treeId,
         timeoutMs: toolContext.spawnQueueTimeoutMs,
       });
@@ -415,7 +417,6 @@ export class ParallelAgentCoordinator extends EventEmitter {
       this.emit('task:start', { taskId: task.id, role: task.role });
 
       // Create per-task AbortController for graceful shutdown
-      const taskAbortController = new AbortController();
       this.abortControllers.set(task.id, taskAbortController);
 
       // Execute task
@@ -448,9 +449,11 @@ export class ParallelAgentCoordinator extends EventEmitter {
             spawnParentStartedAt: toolContext.spawnParentStartedAt,
             spawnParentTimeoutMs: toolContext.spawnParentTimeoutMs,
             parentRemainingBudget: toolContext.parentRemainingBudget,
+            spawnParentAgentId: toolContext.spawnParentAgentId,
           },
           parentToolUseId: toolContext.currentToolCallId,
           executionAgentId: task.id,
+          spawnGuardId: task.id,
           abortSignal: taskAbortController.signal,
           messageDrain: () => this.drainMessages(task.id),
           onContextSnapshot: (snapshot) => {
@@ -464,6 +467,12 @@ export class ParallelAgentCoordinator extends EventEmitter {
           parentRemainingBudget: toolContext.parentRemainingBudget,
         }
       );
+      guard.register(task.id, task.role, task.task, executionPromise, taskAbortController, {
+        treeId,
+        parentId: toolContext.spawnParentAgentId,
+        slotAcquired: true,
+      });
+      slotLease = undefined;
 
       // Execute with timeout (auto-cleanup of timer)
       this.runningTasks.set(task.id, executionPromise.then((result) => ({
@@ -504,6 +513,10 @@ export class ParallelAgentCoordinator extends EventEmitter {
     } catch (error) {
       const endTime = Date.now();
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      if (!taskAbortController.signal.aborted) {
+        taskAbortController.abort(errorMessage.includes('timeout') ? 'timeout' : 'child-error');
+      }
+      guard.cancelDescendants(task.id, 'parent-cancel');
 
       this.emit('task:error', { taskId: task.id, error: errorMessage });
       this.abortControllers.delete(task.id);

@@ -118,6 +118,17 @@ export interface InitializeCLIServicesOptions {
 }
 
 /**
+ * CLI 是否需要初始化 MCP 客户端。
+ * 默认不初始化（普通 run/exec 不该为 MCP 连接付启动延迟），
+ * 仅 computer-use 底座显式开启时接入——否则 CODE_AGENT_ENABLE_CUA=1
+ * 下 CLI 拿不到 cua-driver 工具，模型只能退回 Bash+AppleScript
+ * 前台抢焦点（2026-06-11 真机验证实测）。
+ */
+export function cliShouldInitMcp(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.CODE_AGENT_ENABLE_CUA === '1' || env.CODE_AGENT_ENABLE_ARGUS_MCP === '1';
+}
+
+/**
  * 初始化 CLI 核心服务
  */
 export async function initializeCLIServices(options: InitializeCLIServicesOptions = {}): Promise<void> {
@@ -175,6 +186,19 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
   } catch (error) {
     console.error('Fatal: Failed to import core modules:', error);
     throw error;
+  }
+
+  // MCP（按需）：computer-use 底座开启时接入 cua-driver / argus 等默认服务器，
+  // 与桌面端同一条 initMCPClient 链路。失败不阻塞 CLI（与数据库初始化同策略）。
+  if (cliShouldInitMcp()) {
+    try {
+      const { initMCPClient } = await import('../main/mcp/mcpClient');
+      await initMCPClient(undefined, process.cwd());
+      cliLog('MCP client initialized (computer-use enabled)');
+    } catch (error) {
+      const msg = error instanceof Error ? error.message.split('\n')[0] : String(error);
+      cliLog('MCP not available (CLI mode):', msg);
+    }
   }
 
   // 初始化工具执行器（非交互安全默认：危险/需人工确认的权限自动拒绝，
@@ -462,6 +486,16 @@ export async function cleanup(): Promise<void> {
   // cleanup 时不依赖 cliLog（可能在 close 之后调用），保留 console.error 但用 debug 守卫
   const isDebugCleanup = process.env.DEBUG === 'true' || process.argv.includes('--debug');
   if (isDebugCleanup) console.error('Cleaning up CLI services...');
+
+  // MCP：断开外部 server 子进程（cua-driver 等），避免 CLI 退出后残留孤儿进程
+  if (cliShouldInitMcp()) {
+    try {
+      const { getMCPClient } = await import('../main/mcp/mcpClient');
+      await getMCPClient().disconnectAll();
+    } catch {
+      // 未初始化或已断开，忽略
+    }
+  }
 
   // Telemetry: 结束会话并同步 token 使用到 sessions 表
   if (currentTelemetrySessionId && getTelemetryCollector) {

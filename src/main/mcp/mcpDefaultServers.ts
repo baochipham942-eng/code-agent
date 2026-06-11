@@ -61,6 +61,26 @@ const DEEPWIKI_STREAMABLE_HTTP_URL = 'https://mcp.deepwiki.com/mcp';
 // ----------------------------------------------------------------------------
 
 /**
+ * 从默认清单中挑出「环境变量门控的 computer-use 底座」（cua-driver / argus）。
+ * 这类 server 是本机能力，不该被云端 MCP 清单的存在与否左右：
+ * initMCPClient 的云端清单与本地默认清单是二选一，云端清单存在时本地
+ * 默认清单整体被跳过，曾导致 CODE_AGENT_ENABLE_CUA=1 在有云端配置的
+ * 机器上永远注册不上 cua-driver（2026-06-11 真机验证实测）。
+ * 已注册同名 server（如云端清单显式下发）时不重复。
+ */
+export function pickEnvGatedComputerUseServers(
+  defaults: MCPServerConfig[],
+  alreadyRegistered: ReadonlySet<string>,
+): MCPServerConfig[] {
+  return defaults.filter(
+    (s) =>
+      (s.name === CUA_DRIVER_SERVER_NAME || s.name === 'argus') &&
+      s.enabled &&
+      !alreadyRegistered.has(s.name),
+  );
+}
+
+/**
  * Get default MCP server configurations
  * Uses configService for API keys (secure storage > env variable)
  */
@@ -189,6 +209,9 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
       args: ['mcp'],
       env: { CUA_DRIVER_MCP_MODE: '1' },
       enabled: cuaEnabled && cuaSupported,
+      // 显式 env 开启的本机底座必须 eager 连接：lazy 的 stdio server
+      // 不拉工具定义，模型在 ToolSearch/注册表里都看不见它
+      lazyLoad: false,
     },
   ];
 }
@@ -319,6 +342,16 @@ export async function initMCPClient(
       config.scope = 'builtin';
       client.addServer(config);
     }
+  }
+
+  // computer-use 底座（cua-driver / argus）：本机能力 + 环境变量门控，
+  // 独立于云端清单补注册——否则云端清单存在时上面 else 分支不走，
+  // CODE_AGENT_ENABLE_CUA=1 永远注册不上（2026-06-11 真机验证实测）。
+  const registeredNames = new Set(client.getServerStates().map((s) => s.config.name));
+  for (const config of pickEnvGatedComputerUseServers(getDefaultMCPServers(), registeredNames)) {
+    config.scope = 'builtin';
+    client.addServer(config);
+    logger.info(`Registered env-gated computer-use server: ${config.name}`);
   }
 
   // .mcp.json 配置文件：user → project → local 三档 scope

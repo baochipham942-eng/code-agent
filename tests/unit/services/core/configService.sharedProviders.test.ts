@@ -5,10 +5,11 @@
 import { mkdtemp, readFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppSettings } from '../../../../src/shared/contract';
 import type {
   SharedProviderConfig,
+  SharedProviderKeyConfig,
   SharedServiceKeyConfig,
 } from '../../../../src/main/services/cloud/builtinConfig';
 
@@ -260,5 +261,92 @@ describe('ConfigService.reconcileManagedServiceApiKeys', () => {
     expect(secureStorageMock.delete).toHaveBeenCalledWith('serviceBaseUrl.cloud.openai');
     expect(keyStore.has('cloud-service-key:openai')).toBe(false);
     expect(keyStore.has('serviceBaseUrl.cloud.openai')).toBe(false);
+  });
+});
+
+describe('ConfigService.reconcileManagedProviderApiKeys', () => {
+  const xiaomiManagedKey: SharedProviderKeyConfig = {
+    provider: 'xiaomi',
+    apiKey: 'sk-mimo-team-secret',
+    keyId: 'mimo-key-1',
+  };
+  let envBackup: string | undefined;
+
+  beforeEach(() => {
+    // 模拟全新机器：开发机 env 里的 XIAOMI_API_KEY 会干扰兜底链断言
+    envBackup = process.env.XIAOMI_API_KEY;
+    delete process.env.XIAOMI_API_KEY;
+  });
+
+  afterEach(() => {
+    if (envBackup === undefined) delete process.env.XIAOMI_API_KEY;
+    else process.env.XIAOMI_API_KEY = envBackup;
+    keyStore.clear();
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it('upsert：托管 key 进 SecureStorage 独立前缀，getApiKey 兜底可读，UI 标记已配置', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'cfg-shared-pk-'));
+    const { ConfigService } = await loadConfigService(dataDir);
+    const service = new ConfigService();
+    await service.initialize();
+
+    await service.reconcileManagedProviderApiKeys([xiaomiManagedKey]);
+
+    expect(secureStorageMock.setApiKey).toHaveBeenCalledWith('cloud-provider-key:xiaomi', 'sk-mimo-team-secret');
+    // 模型主链路：modelRouter 经 getApiKey 注入 → 托管 key 兜底生效
+    expect(service.getApiKey('xiaomi')).toBe('sk-mimo-team-secret');
+    // UI 就绪：getSettings 注入 apiKeyConfigured → 模型设置/切换面板显示已可用
+    expect(service.getSettings().models.providers.xiaomi?.apiKeyConfigured).toBe(true);
+
+    // 持久化文件里不得出现明文 key
+    const saved = await readFile(join(dataDir, 'config.json'), 'utf-8');
+    expect(saved).not.toContain('sk-mimo-team-secret');
+  });
+
+  it('用户自配 key 优先于托管 key', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'cfg-shared-pk-'));
+    const { ConfigService } = await loadConfigService(dataDir);
+    const service = new ConfigService();
+    await service.initialize();
+
+    keyStore.set('xiaomi', 'sk-my-own-mimo');
+    await service.reconcileManagedProviderApiKeys([xiaomiManagedKey]);
+
+    expect(service.getApiKey('xiaomi')).toBe('sk-my-own-mimo');
+    expect(keyStore.get('cloud-provider-key:xiaomi')).toBe('sk-mimo-team-secret');
+  });
+
+  it('停发吊销：托管 key 被删，用户自己的 key 保留', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'cfg-shared-pk-'));
+    const { ConfigService } = await loadConfigService(dataDir);
+    const service = new ConfigService();
+    await service.initialize();
+
+    await service.reconcileManagedProviderApiKeys([xiaomiManagedKey]);
+    expect(service.getApiKey('xiaomi')).toBe('sk-mimo-team-secret');
+
+    await service.reconcileManagedProviderApiKeys([]);
+
+    expect(secureStorageMock.deleteApiKey).toHaveBeenCalledWith('cloud-provider-key:xiaomi');
+    expect(keyStore.has('cloud-provider-key:xiaomi')).toBe(false);
+    expect(service.getApiKey('xiaomi')).toBeUndefined();
+  });
+
+  it('白名单外 provider 的托管 key 不接受', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'cfg-shared-pk-'));
+    const { ConfigService } = await loadConfigService(dataDir);
+    const service = new ConfigService();
+    await service.initialize();
+
+    await service.reconcileManagedProviderApiKeys([
+      { provider: 'custom-evil', apiKey: 'sk-evil' },
+      { provider: 'openai', apiKey: 'sk-not-whitelisted' },
+    ]);
+
+    expect(keyStore.has('cloud-provider-key:custom-evil')).toBe(false);
+    expect(keyStore.has('cloud-provider-key:openai')).toBe(false);
+    expect(secureStorageMock.setApiKey).not.toHaveBeenCalled();
   });
 });

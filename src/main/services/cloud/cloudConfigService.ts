@@ -15,6 +15,7 @@ import {
   type ReleasePolicy,
   type ModelRoutingConfig,
   type SharedProviderConfig,
+  type SharedProviderKeyConfig,
   type SharedServiceKeyConfig,
 } from './builtinConfig';
 import { setModelRoutingOverride } from '../../model/modelRouterPolicy';
@@ -64,6 +65,8 @@ export interface CloudConfigServiceOptions {
   onSharedProvidersResolved?: (providers: SharedProviderConfig[]) => void | Promise<void>;
   /** 成功拉取到可信 cloud config 后回调，用于把团队共享服务 key reconcile 进 SecureStorage。 */
   onSharedServiceKeysResolved?: (keys: SharedServiceKeyConfig[]) => void | Promise<void>;
+  /** 成功拉取到可信 cloud config 后回调，用于把内置 provider 托管 key（如 xiaomi/MiMo）reconcile 进 SecureStorage。 */
+  onSharedProviderKeysResolved?: (keys: SharedProviderKeyConfig[]) => void | Promise<void>;
 }
 
 // ----------------------------------------------------------------------------
@@ -538,6 +541,15 @@ export class CloudConfigService {
           await this.options.onSharedServiceKeysResolved(config.sharedServiceKeys ?? []);
         } catch (error) {
           logger.warn('Failed to reconcile shared service keys', { error: String(error) });
+        }
+      }
+
+      // 内置 provider 托管 key（如 xiaomi/MiMo）：登录后下发，缺省 → 传 [] 即吊销本地托管 key。
+      if (this.options.onSharedProviderKeysResolved) {
+        try {
+          await this.options.onSharedProviderKeysResolved(config.sharedProviderKeys ?? []);
+        } catch (error) {
+          logger.warn('Failed to reconcile shared provider keys', { error: String(error) });
         }
       }
 

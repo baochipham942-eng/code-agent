@@ -51,10 +51,17 @@ interface SharedServiceKeyFixture {
   requiredCapability?: string;
 }
 
+interface SharedProviderKeyFixture {
+  provider: string;
+  apiKey: string;
+  requiredCapability?: string;
+}
+
 async function withEnv(
   options: {
     sharedProviders: SharedProviderFixture[];
     sharedServiceKeys?: SharedServiceKeyFixture[];
+    sharedProviderKeys?: SharedProviderKeyFixture[];
     builtinCapabilities?: string[];
     entitlementRequired?: boolean;
     tokenMap?: unknown;
@@ -91,6 +98,7 @@ async function withEnv(
       mcpServers: [],
       sharedProviders: options.sharedProviders,
       ...(options.sharedServiceKeys ? { sharedServiceKeys: options.sharedServiceKeys } : {}),
+      ...(options.sharedProviderKeys ? { sharedProviderKeys: options.sharedProviderKeys } : {}),
     };
     if (options.builtinCapabilities) {
       cloudConfig.entitlement = {
@@ -123,8 +131,13 @@ async function withEnv(
 function payloadOf(body: unknown): {
   sharedProviders?: SharedProviderFixture[];
   sharedServiceKeys?: SharedServiceKeyFixture[];
+  sharedProviderKeys?: SharedProviderKeyFixture[];
 } {
-  return (body as { payload: { sharedProviders?: SharedProviderFixture[]; sharedServiceKeys?: SharedServiceKeyFixture[] } }).payload;
+  return (body as { payload: {
+    sharedProviders?: SharedProviderFixture[];
+    sharedServiceKeys?: SharedServiceKeyFixture[];
+    sharedProviderKeys?: SharedProviderKeyFixture[];
+  } }).payload;
 }
 
 const teamWide: SharedProviderFixture = {
@@ -268,6 +281,62 @@ describe('control-plane sharedProviders 网关', () => {
       await controlPlaneHandler({ method: 'GET', query: { artifact: 'cloud_config' }, headers: {} }, res);
       expect(payloadOf(res.body).sharedServiceKeys).toBeUndefined();
       expect(JSON.stringify(res.body)).not.toContain(teamSearchKey.apiKey);
+    });
+  });
+  it('内置 provider 托管 key（MiMo）：登录 subject 即下发（team-wide 登录后可用）', async () => {
+    await withEnv({
+      sharedProviders: [],
+      sharedProviderKeys: [{ provider: 'xiaomi', apiKey: 'sk-mimo-team-secret' }],
+      entitlementRequired: true,
+      tokenMap: {
+        'good-token': {
+          subject: { id: 'user_ok' },
+          entitlement: { status: 'active', plan: 'free', capabilities: [] },
+        },
+      },
+    }, async () => {
+      const res = makeResponse();
+      await controlPlaneHandler(
+        { method: 'GET', query: { artifact: 'cloud_config' }, headers: { authorization: 'Bearer good-token' } },
+        res,
+      );
+      expect(payloadOf(res.body).sharedProviderKeys).toHaveLength(1);
+      expect(JSON.stringify(res.body)).toContain('sk-mimo-team-secret');
+    });
+  });
+
+  it('内置 provider 托管 key：fail-closed 未登录绝不下发', async () => {
+    await withEnv({
+      sharedProviders: [],
+      sharedProviderKeys: [{ provider: 'xiaomi', apiKey: 'sk-mimo-team-secret' }],
+      entitlementRequired: true,
+    }, async () => {
+      const res = makeResponse();
+      await controlPlaneHandler({ method: 'GET', query: { artifact: 'cloud_config' }, headers: {} }, res);
+      expect(payloadOf(res.body).sharedProviderKeys).toBeUndefined();
+      expect(JSON.stringify(res.body)).not.toContain('sk-mimo-team-secret');
+    });
+  });
+
+  it('内置 provider 托管 key：capability 门控未命中被剥离', async () => {
+    await withEnv({
+      sharedProviders: [],
+      sharedProviderKeys: [{ provider: 'xiaomi', apiKey: 'sk-mimo-team-secret', requiredCapability: 'shared_mimo' }],
+      entitlementRequired: true,
+      tokenMap: {
+        'plain-token': {
+          subject: { id: 'user_plain' },
+          entitlement: { status: 'active', plan: 'free', capabilities: ['memory'] },
+        },
+      },
+    }, async () => {
+      const res = makeResponse();
+      await controlPlaneHandler(
+        { method: 'GET', query: { artifact: 'cloud_config' }, headers: { authorization: 'Bearer plain-token' } },
+        res,
+      );
+      expect(payloadOf(res.body).sharedProviderKeys).toBeUndefined();
+      expect(JSON.stringify(res.body)).not.toContain('sk-mimo-team-secret');
     });
   });
 });

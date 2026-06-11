@@ -113,6 +113,21 @@ export interface SharedServiceKeyConfig {
   requiredCapability?: string;
 }
 
+/**
+ * 内置 provider 的托管 key（先用于 xiaomi/MiMo）。与 sharedProviders（custom-xxx 中转站）
+ * 不同：不新增 provider 条目，而是给内置 provider 注入团队共享 key，让全新机器登录后
+ * 开箱即用。控制面已按 entitlement 过滤（登录后下发）；客户端仅作用户未自配 key 时的
+ * fallback，并按白名单 reconcile，停发即吊销。
+ */
+export interface SharedProviderKeyConfig {
+  /** 内置 provider id（如 'xiaomi'）；客户端按白名单接受。 */
+  provider: string;
+  apiKey: string;
+  /** Stable non-secret id derived by control-plane for ops/quota state. */
+  keyId?: string;
+  requiredCapability?: string;
+}
+
 export interface CloudConfig {
   version: string;
   prompts: Record<string, string>;
@@ -138,6 +153,8 @@ export interface CloudConfig {
   sharedProviders?: SharedProviderConfig[];
   /** 团队共享服务 key（如 Tavily/Brave 搜索），按 entitlement 过滤后下发。 */
   sharedServiceKeys?: SharedServiceKeyConfig[];
+  /** 内置 provider 托管 key（如 xiaomi/MiMo），按 entitlement 过滤后下发（登录后）。 */
+  sharedProviderKeys?: SharedProviderKeyConfig[];
 }
 
 // ----------------------------------------------------------------------------

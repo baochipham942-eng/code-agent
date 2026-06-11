@@ -42,7 +42,7 @@ const MACOS_ONLY_PREFIXES = [
   '../scripts/vision-ocr',
   '../scripts/vision-tagger',
   '../scripts/Agent Neo Computer Use.app',
-  '../scripts/pii/setup-gliner-pii.sh', // PII 安装链 MVP 不带（.sh 无法在 win 执行）
+  // PII 安装链已 Node 化（setup-gliner-pii.mjs，2026-06-11），win32 照常带上
   '../node_modules/@img/sharp-libvips-darwin-arm64', // win32 libvips 静态打进 sharp 包
 ];
 

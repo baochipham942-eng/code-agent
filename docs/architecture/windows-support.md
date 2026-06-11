@@ -10,7 +10,7 @@
 > **Windows 版核心已打通**——unsigned NSIS perUser 安装（无 UAC）→ 窗口完整渲染主界面 → webServer / better-sqlite3 / 23 skills / 13 MCP server 全部正常。
 > 从"窗口秒退"到"完整可交互"，连修 5 个实现期 bug（见 §7），全是静态盘点照不到、只有 CI 实跑 + 真机才能暴露的。
 > 已上 `feat/windows-support` 分支（CI `build-windows-test.yml` 实跑绿、产物 OSS 国内可下）。
-> **2026-06-11 更新：release.yml 矩阵已折入（§4 P2 全勾）+ 全入口设备感知 + ConnectorRegistry 平台过滤完成。剩余 = 朋友消费版真机验收（§5，尤其 #13 WebView2 干净机自动装）+ PII setup Windows 化（P3 可后置）**。dogfooding 顺带发现的几个**平台无关产品 bug**（Ollama 假性可用 / 配 provider 默认模型不自动切 / 会话导出静默失败 / MiMo 托管 key）已分流到独立分支 `fix/model-config-and-export`，不混入本线。
+> **2026-06-11 更新：release.yml 矩阵已折入（§4 P2 全勾）+ 全入口设备感知 + ConnectorRegistry 平台过滤 + PII setup Node 化完成（P3 工程项全清）。剩余 = 朋友消费版真机验收（§5，尤其 #13 WebView2 干净机自动装）**。dogfooding 顺带发现的几个**平台无关产品 bug**（Ollama 假性可用 / 配 provider 默认模型不自动切 / 会话导出静默失败 / MiMo 托管 key）已分流到独立分支 `fix/model-config-and-export`，不混入本线。
 
 - **能做，建议做，但工作量显著大于 x64**：x64 是同平台换架构（2–4 天），Windows 是换平台。**MVP（对话/工具执行/会话持久化/自动更新）估 2–3 周**：纯工程 8–12 天 + 朋友真机回归。大头不在打包链（~3–5 天，x64 先例可大量复用），而在**安全与工具层重设计（~4–6 天，不可压缩）**。
 - **已定决策（执行确认）**：
@@ -56,7 +56,7 @@
 | 11 | /tmp 硬编码 | 7 处（worktree 基目录、GUI 截图、exec-policy/policyEnforcer 的 fallback…），Windows 无 /tmp | `agentWorktree.ts:21`、`guiAgent.ts:17`、`execPolicy.ts:259`、`policyEnforcer.ts:358`、`permissionClassifier.ts:465` 等 | P0 阻断 |
 | 12 | HOME 环境变量 | 5 处直接读 `process.env.HOME`（Windows 只有 USERPROFILE），降级成 `'~'` 字面量或空串 | `localSpeechToText.ts:33`、`modeInjection.ts:14`、`mcpDefaultServers.ts:97,177`、`webSearch.ts:329` 等 | P0 阻断 |
 | 13 | 文件占用（真实风险） | rename/unlink 打开中的文件 POSIX 可行、Windows 报 EBUSY/EPERM：renderer 热更新替换 `active` 目录、日志 rotate（renameSync）、原子写 rename | `rendererBundleFetcher.ts:538`、`logCollector.ts:153`、`atomicWrite.ts:48,82,125`、4 处常开 append 日志流 | P0（需真机验证场景） |
-| 14 | .sh 脚本被 spawn | PII 安装走 `setup-gliner-pii.sh`（bundle 内资源），Windows 跑不了 | `pii.ipc.ts:153`、`tauri.conf.json:89-90` | P1（PII 改造点） |
+| 14 | .sh 脚本被 spawn | ~~PII 安装走 `setup-gliner-pii.sh`，Windows 跑不了~~ **已 Node 化（2026-06-11）**：`setup-gliner-pii.mjs` 双平台一份实现，pii.ipc 用 `process.execPath`（bundled node）spawn，下载走系统 curl（双平台自带，保留 HTTPS_PROXY 行为） | `pii.ipc.ts`、`scripts/pii/setup-gliner-pii.mjs` | ✅ 已修 |
 | 15 | chmod / 可执行位 | 下载脚本后 `fs.chmod`（Windows no-op 不报错，无功能依赖）；`chmod 777` 检测规则本身平台无关 | `gitDownloader.ts:332` | P2 |
 | 16 | 中文路径 | path.join 体系基本正确；风险在子进程编码（§1.1 #8）与个别硬编码英文路径 | `voicePaste.ipc.ts:122` | P2 |
 
@@ -106,7 +106,7 @@
 | uv | 上游 `uv-x86_64-pc-windows-msvc.zip`（0.11.16 release 实查，含官方 .sha256） | ✅ 上游就绪 | 易 |
 | rtk | 上游 `rtk-x86_64-pc-windows-msvc.zip`（v0.39.0 release 实查） | ✅ 上游就绪 | 易 |
 | CUA driver | `cuaSupported` 代码已含 win32（`mcpDefaultServers.ts:76`）；macOS 走重签 .app，**Windows 走官方 install.ps1**（`fetch-cua-driver.sh:39` 注释已预留此路线）；或仿 macOS 模式预构建上传 OSS + sha256 锁定 | 代码就绪，分发方式待选 | 中 |
-| PII（gliner） | Python `onnxruntime` PyPI 有 win_amd64 wheel + uv win 资产 → 链路理论可用；`setup-gliner-pii.sh` 需出 PowerShell 版或 Node 化 | 待真机验 | 中 |
+| PII（gliner） | Python `onnxruntime` PyPI 有 win_amd64 wheel + uv win 资产；安装链已 Node 化（`setup-gliner-pii.mjs`，2026-06-11，mac 全链路回归过：venv/增量下载/.env 重写/ONNX 推理） | 代码就绪，待 win 真机验 | 中 |
 | Swift ×3 / AppleScript / VAD | **不做**，降级路径已核（§1.5） | 决策 | 免 |
 
 ## 3. 推荐策略
@@ -168,7 +168,7 @@ commandSafety.ts（框架层，保留）
 ### 3.3 打包与分发（方向 B 方案）
 
 - **NSIS unsigned + perUser**：`tauri.conf.json` 加 Windows 段：targets 含 `nsis`、`installMode: "currentUser"`（**锁定 perUser**：装到 %LOCALAPPDATA%，安装与每次自动更新都无 UAC 弹窗；perMachine 会让每次静默更新弹 UAC，体验不可接受）。
-- **资源覆盖**：扩 `tauri-arch-config.mjs` 为 `tauri-platform-config.mjs`（机制复用：派生配置 + `--config` 透传，`tauri-release-bundle.sh` 已支持）——win32 派生时剔除 Swift ×3 / CUA .app / PII .sh / VAD，替换 node-pty→`win32-x64`、sharp→`@img/sharp-win32-x64`（单条，无 libvips）、rtk/uv→windows-msvc 产物、bundled-node→node.exe 布局。
+- **资源覆盖**：扩 `tauri-arch-config.mjs` 为 `tauri-platform-config.mjs`（机制复用：派生配置 + `--config` 透传，`tauri-release-bundle.sh` 已支持）——win32 派生时剔除 Swift ×3 / CUA .app / VAD（PII 安装链 2026-06-11 Node 化后 win32 恢复带上），替换 node-pty→`win32-x64`、sharp→`@img/sharp-win32-x64`（单条，无 libvips）、rtk/uv→windows-msvc 产物、bundled-node→node.exe 布局。
 - **更新链**：updater 端点/客户端零改动（§1 #26-27）；`tauri-update-manifest.mjs` 的 `inferDarwinArch` 扩成 platform+arch 推断（.exe→`windows-x86_64`）；publish merge 校验列表加第三键；`build-stable-release-json.mjs` 加 `--exe-url`。NSIS 更新体验：updater 下载 .exe（minisign 验签）→ 退出应用 → 静默重装 → 重启，perUser 全程无 UAC、无 SmartScreen（程序内下载无 MOTW）。
 - **fetch 脚本**：Windows runner 上 GitHub Actions 用 `shell: bash`（Git Bash 预装）跑现有 .sh 体系，**不重写为 PowerShell**——只需给 fetch-rtk/uv 加 windows-msvc 资产分支（.zip 用 `unzip`/bsdtar 解，Git Bash 都有）+ 实拉计算 sha256 锁定（x64 先例做法）。
 - **CUA**：MVP 先不 bundle——`cuaSupported` 已含 win32，首版让用户按需跑官方 install.ps1（设置页给指引）；验证通过后再仿 macOS 模式预构建上 OSS。
@@ -211,7 +211,7 @@ commandSafety.ts（框架层，保留）
 
 **P3 收尾**
 - [x] ConnectorRegistry 平台过滤注册（2026-06-11：registry configure/listAvailableNativeIds + registerMigratedTools 11 个 connector 工具 schema + settings 开关清单，三层全过滤，带单测）
-- [ ] PII setup 的 Windows 路径（PowerShell 版或 Node 化，可后置）
+- [x] PII setup Node 化（2026-06-11：`setup-gliner-pii.mjs` 双平台一份实现替代 .sh，win32 bundle 恢复带 PII 资源 + uv.exe；mac 全链路回归 + smoke 推理过；**win 真机验证项 → §5 #15**）
 - [ ] 朋友安装指引文档补截图（`docs/guides/windows-test-install.md` 正文已写好）
 - [ ] 朋友真机验收（§5）
 - [x] CLAUDE.md 发版章节补 Windows 流程（2026-06-11：三平台链路 + windows leg 要点 + 预发布 tag 验证法）
@@ -237,6 +237,7 @@ commandSafety.ts（框架层，保留）
 | 12 | 降级确认 | 语音输入/OCR/日历邮件等显示「平台不支持」而非报错崩溃（**预期不可用，属正常**）；连接器设置页不出现 mac 专属开关 | §1.5 降级面 + ConnectorRegistry 平台过滤 | ⏳ |
 | 13 | **WebView2 干净机自动装** | 在**从未装过 WebView2** 的干净 Win10/11 上直接跑安装包：embedBootstrapper 自动拉运行时 → 装完正常进主界面（**之前真机是先手动装的 WebView2，这条自动链路从未验证过——"安装包自给自足"的命门，正式发版前必验**） | tauri-platform-config `webviewInstallMode: embedBootstrapper` | ⏳⚠️ 最高优先 |
 | 14 | 分发页设备感知 | Windows 上打开分发页：Windows 卡片置顶且为主推按钮，mac 双按钮仍可见可点；mac 上打开则 mac 卡片在前 | index.html OS 识别 + 推荐排序 | ⏳ |
+| 15 | PII 安装链 | 隐私设置里点「启用本地 PII 防线」：uv 建 venv → 装依赖 → 下模型（~190MB）→ 写 .env，全程进度可见、无报错；重启后让 Agent 处理一段含姓名/电话的文本确认脱敏生效 | setup-gliner-pii.mjs（Node 化）+ uv.exe + onnxruntime win_amd64 | ⏳🔑 |
 
 > §3/§6-9 标 🔑：云电脑后端已证明健康，但发消息/工具执行需先配一个 API key（key 每台机存 SecureStorage、不打包，全新机为空——这是设计而非 bug）。这几项留给配好 key 的真机验。
 

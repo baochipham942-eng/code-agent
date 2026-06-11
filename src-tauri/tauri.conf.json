@@ -86,7 +86,7 @@
       "../scripts/rtk",
       "../scripts/uv",
       "../scripts/Agent Neo Computer Use.app/**/*",
-      "../scripts/pii/setup-gliner-pii.sh",
+      "../scripts/pii/setup-gliner-pii.mjs",
       "../scripts/pii/gliner_onnx_runner.py"
     ],
     "macOS": {

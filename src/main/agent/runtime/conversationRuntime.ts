@@ -730,6 +730,10 @@ export class ConversationRuntime {
           },
         });
         terminal = { status: 'goal_met' };
+      } else if (this.ctx.goalMode?.getStatus() === 'aborted' && terminal.status === 'completed') {
+        // 闸内主动止损（如 IMPOSSIBLE）后 loop 自然退出：映射 aborted，
+        // 不能让用户拿到一个看似 completed 的 run（goal_complete 事件已在闸内发出）
+        terminal = { status: 'aborted' };
       }
     } catch (error) {
       terminal = { status: 'failed', error };

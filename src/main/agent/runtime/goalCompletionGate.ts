@@ -76,7 +76,9 @@ export async function handleGoalCompletionGate(
       data: { gate: 2, pass: review.pass, reason: review.reason },
     });
     // IMPOSSIBLE 主动止损（roadmap 1.4）：评审独立核实后判定条件在本会话内
-    // 根本不可达成 → 直接 markAborted 结束，不再让模型空转烧轮次/预算。
+    // 根本不可达成 → markAborted 结束 goal，并通过 forceFinalResponse 通道
+    // （禁工具）让下一轮推理向用户解释原因——直接 break 会让用户拿到一个
+    // 看似 completed 却没有任何解释的 run（codex audit R1 修订）。
     if (review.impossible) {
       const reason = `评审判定目标不可达成：${review.reason}`;
       ctx.goalMode.markAborted(reason);
@@ -84,17 +86,21 @@ export async function handleGoalCompletionGate(
         type: 'goal_complete',
         data: { status: 'aborted', reason, turns: 0, tokensUsed: 0 },
       });
-      contextAssembly.injectSystemMessage(
-        [
-          '<goal-impossible>',
+      if (!ctx.forceFinalResponseReason) {
+        ctx.forceFinalResponseReason = 'goal-impossible';
+        ctx.forceFinalResponsePrompt = [
+          '<force-final-response reason="goal-impossible">',
           `软评审判定该目标在本会话内不可达成：${reviewCondition}`,
           '--- 评审意见（截断）---',
           review.reason,
-          '本次 goal 已主动止损结束。请向用户说明不可达成的原因和可行的替代方案。',
-          '</goal-impossible>',
-        ].join('\n'),
-      );
-      return 'break';
+          '本次 goal 已主动止损结束。工具已禁用，请用纯文本向用户说明：',
+          '1. 不可达成的具体原因（引用评审证据）',
+          '2. 已完成的工作',
+          '3. 可行的替代方案或需要用户提供的前置条件',
+          '</force-final-response>',
+        ].join('\n');
+      }
+      return 'continue';
     }
 
     if (!review.pass) {

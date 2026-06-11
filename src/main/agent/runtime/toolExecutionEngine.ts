@@ -53,6 +53,7 @@ import { maybeRepairArtifactContractEditAnchors } from './toolArtifactContractAn
 import { handleModifiedArtifactValidation } from './toolArtifactValidationLifecycle';
 import { handleToolResultBookkeeping } from './toolResultLifecycle';
 import { trackFileMutationSideEffects } from './toolFileMutationTracking';
+import { isTaskMutationToolCall } from '../nudgeManager';
 import { handleToolExecutionError } from './toolExecutionErrorHandler';
 import { applySwarmBudgetClamp, recordSwarmSpend } from './swarmGoalIntegration';
 import {
@@ -772,9 +773,10 @@ export class ToolExecutionEngine {
         toolResult,
       });
 
-      // taskGate（roadmap 1.3）：模型主动写过任务（task_create/task_update）→
-      // 收尾前强制任务收口检查（task_list 等只读调用刻意不触发，防旧任务劫持）
-      if (normalizedResult.success && (toolCall.name === 'task_create' || toolCall.name === 'task_update')) {
+      // taskGate（roadmap 1.3）：模型主动写过任务（task_create/task_update 或
+      // TaskManager facade 的 create/update）→ 收尾前强制任务收口检查
+      // （只读调用刻意不触发，防旧任务劫持）
+      if (normalizedResult.success && isTaskMutationToolCall(toolCall.name, toolCall.arguments)) {
         this.ctx.nudgeManager.recordTaskManagerUse();
       }
 

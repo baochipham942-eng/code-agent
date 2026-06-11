@@ -49,7 +49,7 @@ describe('handleGoalCompletionGate — IMPOSSIBLE 主动止损 (roadmap 1.4)', (
     mockRunReviewGate.mockReset();
   });
 
-  it('评审判定 IMPOSSIBLE → markAborted 止损并 break，不再让模型空转', async () => {
+  it('评审判定 IMPOSSIBLE → markAborted 止损 + 强制无工具收尾解释（codex audit R1 修订）', async () => {
     mockRunReviewGate.mockResolvedValue({
       pass: false,
       parsed: true,
@@ -60,7 +60,10 @@ describe('handleGoalCompletionGate — IMPOSSIBLE 主动止损 (roadmap 1.4)', (
 
     const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall]);
 
-    expect(result).toBe('break');
+    // 返回 continue：让下一轮走 forceFinalResponse 无工具推理，向用户解释不可达原因
+    expect(result).toBe('continue');
+    expect(ctx.forceFinalResponseReason).toBeTruthy();
+    expect(ctx.forceFinalResponsePrompt).toContain('不可达成');
     expect(goalMode.markAborted).toHaveBeenCalledWith(expect.stringContaining('不可达成'));
     expect(goalMode.markMet).not.toHaveBeenCalled();
     expect(ctx.onEvent).toHaveBeenCalledWith(

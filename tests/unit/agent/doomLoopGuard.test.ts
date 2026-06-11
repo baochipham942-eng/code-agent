@@ -83,6 +83,14 @@ describe('DoomLoopGuard L2 — 行动签名重复', () => {
     expect(check.nudge).toContain('repeating');
   });
 
+  it('treats swapped-order parallel calls as the same step (multiset signature, codex audit R1)', () => {
+    const guard = new DoomLoopGuard();
+    guard.recordStep([call('Grep', { pattern: 'a' }), call('Read', { path: 'x.ts' })]);
+    guard.recordStep([call('Read', { path: 'x.ts' }), call('Grep', { pattern: 'a' })]);
+    const check = guard.recordStep([call('Grep', { pattern: 'a' }), call('Read', { path: 'x.ts' })]);
+    expect(check.level).toBe('repeated-step');
+  });
+
   it('does not nudge for different steps', () => {
     const guard = new DoomLoopGuard();
     guard.recordStep([call('Grep', { pattern: 'a' })]);

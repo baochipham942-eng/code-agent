@@ -126,12 +126,25 @@ export function extractRetryAfterMs(err: unknown): number | null {
     if (typeof structured === 'number' && Number.isFinite(structured) && structured > 0) {
       return cap(structured);
     }
-    const headers = (err as { headers?: Record<string, unknown> }).headers;
-    const headerValue = headers?.['retry-after'] ?? headers?.['Retry-After'];
-    if (headerValue !== undefined) {
+    const headers = (err as { headers?: unknown }).headers;
+    let headerValue: unknown;
+    if (headers && typeof (headers as { get?: unknown }).get === 'function') {
+      // fetch Headers / SDK Headers-like 对象
+      headerValue = (headers as { get: (k: string) => string | null }).get('retry-after');
+    } else if (headers && typeof headers === 'object') {
+      const record = headers as Record<string, unknown>;
+      headerValue = record['retry-after'] ?? record['Retry-After'];
+    }
+    if (headerValue !== undefined && headerValue !== null) {
       const seconds = Number(headerValue);
       if (Number.isFinite(seconds) && seconds > 0) {
         return cap(seconds * 1000);
+      }
+      // HTTP-date 形式（RFC 7231 允许）：换算成相对延迟
+      const dateMs = Date.parse(String(headerValue));
+      if (Number.isFinite(dateMs)) {
+        const delta = dateMs - Date.now();
+        if (delta > 0) return cap(delta);
       }
     }
   }
@@ -200,6 +213,25 @@ export class FallbackEligibleError extends Error {
   }
 }
 
+/** 可被 AbortSignal 立即唤醒的 sleep（唤醒后由调用方检查 aborted 决定去留） */
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 export async function withTransientRetry<T>(
   fn: () => Promise<T>,
   options: RetryOptions
@@ -225,7 +257,12 @@ export async function withTransientRetry<T>(
         const retryInfo = { provider: providerName, attempt: attempt + 1, maxRetries, delay, error: msg };
         onRetry?.(retryInfo);
         retryEvents.emit('retry', retryInfo);
-        await new Promise(r => setTimeout(r, delay));
+        // 可中断 sleep（codex audit R1）：abort 时立即醒来，不等满 retry-after
+        await abortableSleep(delay, signal);
+        if (signal?.aborted) {
+          healthMonitor.recordFailure(providerName);
+          throw err;
+        }
         continue;
       }
       healthMonitor.recordFailure(providerName);

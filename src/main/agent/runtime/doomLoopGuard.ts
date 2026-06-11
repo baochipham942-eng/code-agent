@@ -106,8 +106,9 @@ export class DoomLoopGuard {
       return { level: 'doom-loop', nudge: DOOM_LOOP_NUDGE };
     }
 
-    // L2：整步签名重复检测（排除单调用场景 — 已由 L1 更早覆盖）
-    const stepSig = toolCalls.map(callSignature).join('\n');
+    // L2：整步签名重复检测（排除单调用场景 — 已由 L1 更早覆盖）。
+    // 签名按 multiset 处理（排序后拼接），并行调用换序不应绕过检测。
+    const stepSig = toolCalls.map(callSignature).sort().join('\n');
     this.recentStepSignatures.push(stepSig);
     if (this.recentStepSignatures.length > REPEATED_STEP_THRESHOLD) {
       this.recentStepSignatures.shift();

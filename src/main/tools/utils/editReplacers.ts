@@ -11,7 +11,9 @@
 export type Replacer = (content: string, find: string) => Generator<string, void, unknown>;
 
 // Similarity thresholds for block anchor fallback matching
-const SINGLE_CANDIDATE_SIMILARITY_THRESHOLD = 0.0;
+// 注：MiMo 原值单候选为 0.0（锚点命中即接受）。codex audit R1 HIGH 证明这会把
+// 嵌套错误块（首行 + 最近的 '}'）当成匹配并腐蚀源码，故单候选同样收紧到 0.3。
+const SINGLE_CANDIDATE_SIMILARITY_THRESHOLD = 0.3;
 const MULTIPLE_CANDIDATES_SIMILARITY_THRESHOLD = 0.3;
 
 export function levenshtein(a: string, b: string): number {
@@ -250,15 +252,15 @@ export interface FlexibleMatchResult {
 }
 
 /**
- * 按序遍历回退链找模糊匹配。
+ * 按序遍历回退链找模糊匹配（仅供单点替换使用——replace_all 不走 fuzzy，
+ * 见 codex audit R1：split/join 全量替换会命中其它缩进行的子串腐蚀源码）。
  * - 唯一出现的候选立即返回；
- * - 多次出现的候选在 replaceAll 时返回，否则先跳过继续找唯一候选，
- *   全部歧义时返回首个歧义候选（调用方据 occurrences 报 AMBIGUOUS_MATCH）。
+ * - 多次出现的候选先跳过继续找唯一候选，全部歧义时返回首个歧义候选
+ *   （调用方据 occurrences > 1 报 AMBIGUOUS_MATCH）。
  */
 export function findFlexibleMatch(
   content: string,
   find: string,
-  replaceAll: boolean,
 ): FlexibleMatchResult | null {
   if (!find.trim()) return null;
   let ambiguous: FlexibleMatchResult | null = null;
@@ -268,7 +270,7 @@ export function findFlexibleMatch(
       const index = content.indexOf(candidate);
       if (index === -1) continue;
       const occurrences = content.split(candidate).length - 1;
-      if (replaceAll || occurrences === 1) {
+      if (occurrences === 1) {
         return { match: candidate, occurrences };
       }
       ambiguous = ambiguous ?? { match: candidate, occurrences };

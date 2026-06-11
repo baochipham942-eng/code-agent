@@ -181,8 +181,10 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
           }
         }
 
-        if (!exactMatch) {
-          const flexible = findFlexibleMatch(content, oldString, replaceAll);
+        // replace_all 不走 fuzzy（codex audit R1：候选可能是其它缩进行的子串，
+        // split/join 全量替换会产生缩进腐蚀），仅单点替换允许模糊回退
+        if (!exactMatch && !replaceAll) {
+          const flexible = findFlexibleMatch(content, oldString);
           if (flexible) {
             exactMatch = true;
             usedFlexibleMatch = true;

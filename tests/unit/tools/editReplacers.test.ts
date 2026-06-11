@@ -102,10 +102,35 @@ describe('IndentationFlexibleReplacer', () => {
   });
 });
 
+describe('BlockAnchorReplacer — 单候选误匹配防护 (codex audit R1 HIGH)', () => {
+  it('rejects a single candidate whose body is unrelated (nested wrong block)', () => {
+    // Codex repro：首行锚点 + 最近的 '}' 形成错误的嵌套块候选，
+    // 中间行 'if(x){' 与 'return x;' 相似度极低，必须被阈值挡掉
+    const content = [
+      'function foo(){',
+      '  if(x){',
+      '    doThing();',
+      '  }',
+      '  return x;',
+      '}',
+    ].join('\n');
+    const find = ['function foo(){', '  return x;', '}'].join('\n');
+    const matches = [...BlockAnchorReplacer(content, find)];
+    expect(matches).toHaveLength(0);
+  });
+
+  it('still accepts a single candidate with genuinely similar middle lines', () => {
+    const content = ['function foo(){', '  return x; // ok', '}'].join('\n');
+    const find = ['function foo(){', '  return x;', '}'].join('\n');
+    const matches = [...BlockAnchorReplacer(content, find)];
+    expect(matches).toHaveLength(1);
+  });
+});
+
 describe('findFlexibleMatch（链式回退）', () => {
   it('returns the in-content substring for a line-trim difference', () => {
     const content = 'foo() {\n   bar();   \n}\n';
-    const result = findFlexibleMatch(content, 'foo() {\nbar();\n}', false);
+    const result = findFlexibleMatch(content, 'foo() {\nbar();\n}');
     expect(result).not.toBeNull();
     expect(result!.match).toBe('foo() {\n   bar();   \n}');
     expect(result!.occurrences).toBe(1);
@@ -113,25 +138,20 @@ describe('findFlexibleMatch（链式回退）', () => {
   });
 
   it('returns null when nothing matches', () => {
-    expect(findFlexibleMatch('hello world', 'goodbye', false)).toBeNull();
+    expect(findFlexibleMatch('hello world', 'goodbye')).toBeNull();
   });
 
-  it('skips ambiguous candidates unless replaceAll', () => {
+  it('marks ambiguous candidates with occurrences > 1 (caller reports AMBIGUOUS)', () => {
     const content = 'x\n  a();\nx\n  a();\nx\n';
-    // LineTrimmed 会对 'a();' 产出两个相同 candidate（两处出现）→ 非 replaceAll 标记歧义
-    const single = findFlexibleMatch(content, 'a();', false);
+    const single = findFlexibleMatch(content, 'a();');
     expect(single).not.toBeNull();
     expect(single!.occurrences).toBeGreaterThan(1);
-
-    const all = findFlexibleMatch(content, 'a();', true);
-    expect(all).not.toBeNull();
-    expect(all!.occurrences).toBe(2);
   });
 
   it('does not fire on exact-match content (caller handles exact first)', () => {
     // 防御性：即使调用方传了精确可匹配的串，返回的 match 也等价
     const content = 'const a = 1;\n';
-    const result = findFlexibleMatch(content, 'const a = 1;', false);
+    const result = findFlexibleMatch(content, 'const a = 1;');
     expect(result?.match).toBe('const a = 1;');
   });
 });

@@ -43,7 +43,7 @@ vi.mock('fs', async (importOriginal) => {
   };
 });
 
-import { NudgeManager } from '../../../src/main/agent/nudgeManager';
+import { NudgeManager, isTaskMutationToolCall } from '../../../src/main/agent/nudgeManager';
 import type { NudgeCheckContext } from '../../../src/main/agent/nudgeManager';
 import { GoalTracker } from '../../../src/main/agent/goalTracker';
 
@@ -311,6 +311,22 @@ describe('NudgeManager', () => {
       expect(manager.runNudgeChecks(ctx)).toBe(false);
     });
 
+    it('reports the task-gate cap (3) in the notification denominator, not the todo cap (codex audit R1 LOW)', () => {
+      manager.reset([], '把这些任务完成并更新 task 状态', '/tmp/test', []);
+      mockGetIncompleteTasks.mockReturnValue([{ id: 't1', subject: 'open', status: 'pending' }]);
+      const ctx = createMockContext({ isSimpleTaskMode: false, toolsUsedInTurn: ['write_file'] });
+
+      manager.runNudgeChecks(ctx);
+      manager.runNudgeChecks(ctx);
+      manager.runNudgeChecks(ctx);
+
+      const lastNotify = (ctx.onEvent as ReturnType<typeof vi.fn>).mock.calls
+        .map((c) => c[0])
+        .filter((e) => e.type === 'notification')
+        .pop();
+      expect(lastNotify.data.message).toContain('(3/3)');
+    });
+
     it('allows up to 3 reentries for open tasks then lets the model stop (MiMo main cap)', () => {
       manager.reset([], '把这些任务完成并更新 task 状态', '/tmp/test', []);
       mockGetIncompleteTasks.mockReturnValue([{ id: 't1', subject: 'never done', status: 'pending' }]);
@@ -325,6 +341,27 @@ describe('NudgeManager', () => {
       expect(manager.runNudgeChecks(ctx)).toBe(true);
       // 第 4 次：达到 main 上限 3，放行停止
       expect(manager.runNudgeChecks(ctx)).toBe(false);
+    });
+  });
+
+  describe('isTaskMutationToolCall (codex audit R1: TaskManager facade 也要触发 taskGate)', () => {
+    it('matches task_create / task_update tool names', () => {
+      expect(isTaskMutationToolCall('task_create', {})).toBe(true);
+      expect(isTaskMutationToolCall('task_update', {})).toBe(true);
+    });
+
+    it('matches TaskManager facade with create/update actions', () => {
+      expect(isTaskMutationToolCall('TaskManager', { action: 'create' })).toBe(true);
+      expect(isTaskMutationToolCall('TaskManager', { action: 'update' })).toBe(true);
+    });
+
+    it('does not match read-only task calls (防旧任务劫持)', () => {
+      expect(isTaskMutationToolCall('task_list', {})).toBe(false);
+      expect(isTaskMutationToolCall('task_get', {})).toBe(false);
+      expect(isTaskMutationToolCall('TaskManager', { action: 'list' })).toBe(false);
+      expect(isTaskMutationToolCall('TaskManager', { action: 'get' })).toBe(false);
+      expect(isTaskMutationToolCall('TaskManager', {})).toBe(false);
+      expect(isTaskMutationToolCall('Read', {})).toBe(false);
     });
   });
 

@@ -41,6 +41,24 @@ export interface NudgeCheckContext {
 }
 
 /**
+ * taskGate 触发判定（roadmap 1.3 / codex audit R1）：模型主动写任务的工具调用。
+ * 覆盖独立工具名（task_create/task_update）和 TaskManager facade 的
+ * create/update action；只读调用（task_list/task_get/list/get）刻意不算，
+ * 防 subagent 被无关旧任务劫持。
+ */
+export function isTaskMutationToolCall(
+  toolName: string,
+  args: Record<string, unknown> | undefined,
+): boolean {
+  if (toolName === 'task_create' || toolName === 'task_update') return true;
+  if (toolName === 'TaskManager') {
+    const action = args?.action;
+    return action === 'create' || action === 'update';
+  }
+  return false;
+}
+
+/**
  * NudgeManager encapsulates all nudge-related state and check logic
  * previously embedded in AgentLoop.
  */
@@ -284,7 +302,7 @@ export class NudgeManager {
         }
         const combinedList = itemList.join('\n');
 
-        logger.debug(`[NudgeManager] Incomplete items detected, nudge ${this.todoNudgeCount}/${this.maxTodoNudges}`);
+        logger.debug(`[NudgeManager] Incomplete items detected, nudge ${this.todoNudgeCount}/${reentryCap}`);
         logCollector.agent('INFO', `Incomplete items detected: ${totalIncomplete} items`, {
           nudgeCount: this.todoNudgeCount,
           incompleteTodos: incompleteTodos.map(t => t.content),
@@ -301,7 +319,7 @@ export class NudgeManager {
         );
         ctx.onEvent({
           type: 'notification',
-          data: { message: `检测到 ${totalIncomplete} 个未完成的任务，提示继续执行 (${this.todoNudgeCount}/${this.maxTodoNudges})...` },
+          data: { message: `检测到 ${totalIncomplete} 个未完成的任务，提示继续执行 (${this.todoNudgeCount}/${reentryCap})...` },
         });
         return true;
       }

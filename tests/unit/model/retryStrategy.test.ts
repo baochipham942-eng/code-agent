@@ -347,10 +347,45 @@ describe('Retry Strategy', () => {
     });
   });
 
+    it('aborts the retry-after sleep when the signal fires (codex audit R1)', async () => {
+      const controller = new AbortController();
+      const err = new Error('429 rate limited') as Error & { retryAfterMs?: number };
+      err.retryAfterMs = 60_000;
+      const fn = vi.fn().mockRejectedValue(err);
+
+      const start = Date.now();
+      await expect(
+        withTransientRetry(fn, {
+          providerName: 'test',
+          maxRetries: 2,
+          baseDelay: 1,
+          signal: controller.signal,
+          onRetry: () => controller.abort(),
+        }),
+      ).rejects.toThrow('429 rate limited');
+      // 不应等满 60s 的 retry-after
+      expect(Date.now() - start).toBeLessThan(2000);
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
   // --------------------------------------------------------------------------
   // extractRetryAfterMs
   // --------------------------------------------------------------------------
   describe('extractRetryAfterMs', () => {
+    it('reads Headers-like objects with a get() method (codex audit R1)', () => {
+      const err = new Error('429') as Error & { headers?: { get: (k: string) => string | null } };
+      err.headers = { get: (k: string) => (k.toLowerCase() === 'retry-after' ? '7' : null) };
+      expect(extractRetryAfterMs(err)).toBe(7000);
+    });
+
+    it('parses HTTP-date retry-after values (codex audit R1)', () => {
+      const err = new Error('429') as Error & { headers?: Record<string, string> };
+      err.headers = { 'retry-after': new Date(Date.now() + 5000).toUTCString() };
+      const ms = extractRetryAfterMs(err);
+      expect(ms).not.toBeNull();
+      expect(ms!).toBeGreaterThan(0);
+      expect(ms!).toBeLessThanOrEqual(6000);
+    });
     it('reads structured retryAfterMs field', () => {
       const err = new Error('429') as Error & { retryAfterMs?: number };
       err.retryAfterMs = 1234;

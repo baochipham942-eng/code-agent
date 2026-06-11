@@ -1219,6 +1219,26 @@ describe('ConversationRuntime', () => {
       );
     });
 
+    it('maps goal aborted status to aborted terminal when loop exits normally (codex audit R1)', async () => {
+      // goal 在闸内被判 impossible → markAborted；loop 随后自然退出，
+      // 收尾必须映射 aborted 而不是默认 completed
+      ctx.goalMode = {
+        isPending: vi.fn().mockReturnValue(false),
+        getStatus: vi.fn().mockReturnValue('aborted'),
+      } as any;
+      modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'Explained why impossible.' });
+
+      await runtime.run('impossible goal');
+
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'impossible goal',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'aborted' }),
+      );
+    });
+
     it('continues goal mode after a plain text response and lets the fallback gate stop it', async () => {
       ctx.goalMode = new GoalModeController({
         goal: 'finish',

@@ -204,6 +204,31 @@ describe('multiEditModule evidence metadata', () => {
     if (!result.ok) expect(result.code).toBe('AMBIGUOUS_MATCH');
   });
 
+  it('does not use fuzzy fallback with replace_all (prevents indentation corruption, codex audit R1)', async () => {
+    // Codex repro：candidate '  a();' 是 '    a();' 的子串，split/join 全量替换会腐蚀缩进。
+    // 防护：fuzzy 回退仅限单点替换，replace_all 时直接 NOT_FOUND。
+    const file = path.join(tmpDir, 'fuzzy-all.ts');
+    await fs.writeFile(file, '  a();\n    a();\n', 'utf-8');
+    await fileReadTracker.recordReadWithStats(file);
+
+    const handler = await editModule.createHandler();
+    const result = await handler.execute(
+      {
+        file_path: file,
+        // 'a();' 精确匹配两处 → 不走 fuzzy（AMBIGUOUS 由精确路径处理）；
+        // 这里用带不同缩进的多行块强制 fuzzy 路径
+        edits: [{ old_text: 'a();\n  a();', new_text: 'b();', replace_all: true }],
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('NOT_FOUND');
+    // 文件未被破坏
+    expect(await fs.readFile(file, 'utf-8')).toBe('  a();\n    a();\n');
+  });
+
   it('confines eval absolute repo paths to the sandbox', async () => {
     const realRoot = path.join(tmpDir, 'repo');
     const sandbox = path.join(tmpDir, 'sandbox');

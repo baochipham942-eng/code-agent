@@ -150,6 +150,31 @@ describe('BlockAnchorReplacer — 单候选误匹配防护 (codex audit R1 HIGH)
     expect(matches[0]).toBe(content); // 完整外层块，而非截断到 line3
   });
 
+  it('finds the outer block even when 64+ inner tail anchors precede it (codex audit R3 MED)', () => {
+    // 巨型块：70 个嵌套 if 的 '}' 都排在外层 '}' 之前。
+    // 候选选择必须按块长接近度取 tail，而不是按出现序取前 64 个。
+    const innerBlocks = Array.from({ length: 70 }, (_, i) => [
+      `  if (cond${i}) {`,
+      `    work${i}();`,
+      '  }',
+    ].join('\n'));
+    const content = ['function giant() {', ...innerBlocks, '  finalStatement();', '}'].join('\n');
+    const find = ['function giant() {', ...innerBlocks, '  finalStatementRenamed();', '}'].join('\n');
+
+    const matches = [...BlockAnchorReplacer(content, find)];
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toBe(content); // 完整外层块
+  });
+
+  it('fails closed when start anchors exceed the safety cap (ambiguity too high)', () => {
+    const repeated = Array.from({ length: 70 }, (_, i) => ['dup {', `  v${i};`, '}'].join('\n'));
+    const content = repeated.join('\n');
+    const find = ['dup {', '  something;', '}'].join('\n');
+    // 70 个同名 start anchor：歧义过高，宁可不出候选也不能选错
+    const matches = [...BlockAnchorReplacer(content, find)];
+    expect(matches).toHaveLength(0);
+  });
+
   it('rejects a lone truncated candidate when the search block is much longer', () => {
     // 只有截断候选可选时（外层 '}' 不存在），按完整块长打分应低于阈值被拒
     const content = [

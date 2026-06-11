@@ -11,14 +11,19 @@
 export type Replacer = (content: string, find: string) => Generator<string, void, unknown>;
 
 // Similarity thresholds for block anchor fallback matching
-// 注：相对 MiMo 上游有两处加固（codex audit R1/R2 各一例 HIGH 实证）：
+// 注：相对 MiMo 上游有三处加固（codex audit R1/R2 HIGH、R3 MED 各一例实证）：
 // 1. 单候选阈值 0.0 → 0.3：锚点命中即接受会把嵌套错误块当成匹配腐蚀源码；
 // 2. tail anchor 收集不再止于首个命中 + 相似度按完整 search 中间行数归一
 //    （缺失行计 0 分）：否则嵌套 '}' 形成的截断候选会以"部分行全等"胜出，
-//    multiEdit 拼接后留下原块残尾。
+//    multiEdit 拼接后留下原块残尾；
+// 3. 候选护栏不做出现序硬截断（前缀偏置会让巨型块的真实外层 '}' 永远不被
+//    打分）：每个 start anchor 按"块长最接近 search 块长"取前 K 个 tail，
+//    start anchor 数超上限则 fail-closed（歧义过高，宁缺勿错）。
 const BLOCK_ANCHOR_SIMILARITY_THRESHOLD = 0.3;
-// 防御 brace 密集文件的候选爆炸（每个 start anchor × 每个 tail anchor）
-const MAX_BLOCK_ANCHOR_CANDIDATES = 64;
+/** 每个 start anchor 参与打分的 tail anchor 数（按块长接近度选取） */
+const MAX_TAILS_PER_START_ANCHOR = 8;
+/** start anchor 总数上限：超过即 fail-closed 不出候选 */
+const MAX_START_ANCHORS = 64;
 
 export function levenshtein(a: string, b: string): number {
   // Handle empty strings
@@ -127,19 +132,35 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
 
   const firstLineSearch = searchLines[0].trim();
   const lastLineSearch = searchLines[searchLines.length - 1].trim();
+  const searchBlockSize = searchLines.length;
 
-  // Collect ALL candidate (start, end) anchor pairs — 不止于首个 tail anchor，
-  // 嵌套结构里首个 '}' 往往是内层闭合（codex audit R2 HIGH）
-  const candidates: Array<{ startLine: number; endLine: number }> = [];
-  outer: for (let i = 0; i < originalLines.length; i++) {
-    if (originalLines[i].trim() !== firstLineSearch) {
-      continue;
+  // 预收集锚点行号。start anchor 超上限直接 fail-closed：同名首行过多时
+  // 歧义太高，模糊匹配选错的代价（腐蚀源码）远大于不匹配（模型重试）。
+  const startAnchors: number[] = [];
+  const tailAnchors: number[] = [];
+  for (let i = 0; i < originalLines.length; i++) {
+    const trimmed = originalLines[i].trim();
+    if (trimmed === firstLineSearch) {
+      startAnchors.push(i);
+      if (startAnchors.length > MAX_START_ANCHORS) return;
     }
-    for (let j = i + 2; j < originalLines.length; j++) {
-      if (originalLines[j].trim() === lastLineSearch) {
-        candidates.push({ startLine: i, endLine: j });
-        if (candidates.length >= MAX_BLOCK_ANCHOR_CANDIDATES) break outer;
-      }
+    if (trimmed === lastLineSearch) {
+      tailAnchors.push(i);
+    }
+  }
+
+  // 每个 start anchor 按"块长最接近 search 块长"选前 K 个 tail——真实外层
+  // 闭合的块长与 search 几乎一致，无论它前面排了多少内层闭合（R3 MED）
+  const candidates: Array<{ startLine: number; endLine: number }> = [];
+  for (const startLine of startAnchors) {
+    const viableTails = tailAnchors.filter((j) => j >= startLine + 2);
+    viableTails.sort((a, b) => {
+      const sizeDiffA = Math.abs(a - startLine + 1 - searchBlockSize);
+      const sizeDiffB = Math.abs(b - startLine + 1 - searchBlockSize);
+      return sizeDiffA - sizeDiffB || a - b;
+    });
+    for (const endLine of viableTails.slice(0, MAX_TAILS_PER_START_ANCHOR)) {
+      candidates.push({ startLine, endLine });
     }
   }
 

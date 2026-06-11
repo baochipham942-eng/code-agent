@@ -772,6 +772,12 @@ export class ToolExecutionEngine {
         toolResult,
       });
 
+      // taskGate（roadmap 1.3）：模型主动写过任务（task_create/task_update）→
+      // 收尾前强制任务收口检查（task_list 等只读调用刻意不触发，防旧任务劫持）
+      if (normalizedResult.success && (toolCall.name === 'task_create' || toolCall.name === 'task_update')) {
+        this.ctx.nudgeManager.recordTaskManagerUse();
+      }
+
       await handleModifiedArtifactValidation({
         ctx: this.ctx,
         contextAssembly: this.contextAssembly,

@@ -49,9 +49,13 @@ export class NudgeManager {
   private readOnlyNudgeCount: number = 0;
   private maxReadOnlyNudges: number = 3;
 
-  // ── P2 Nudge: Todo completion ──
+  // ── P2 Nudge: Todo completion / taskGate ──
   private todoNudgeCount: number = 0;
   private maxTodoNudges: number = 2;
+  /** taskGate（roadmap 1.3，借鉴 MiMoCode task/gate.ts）：存在未收口 task 时的重入上限（main） */
+  private maxTaskGateReentries: number = 3;
+  /** 本 run 内模型是否主动用过 task 写工具（task_create/task_update）→ 触发 taskGate */
+  private _taskManagerUsedInRun: boolean = false;
 
   // ── P3 Nudge: File completion tracking ──
   private fileNudgeCount: number = 0;
@@ -136,6 +140,7 @@ export class NudgeManager {
       targetFiles.length > 0 ||
       this.hasExplicitMutationIntent(userMessage);
     this._enforceTaskCompletion = /任务|待办|todo|task|plan|计划|分工|TaskManager|task_create|task_update|task_list/i.test(userMessage);
+    this._taskManagerUsedInRun = false;
     this._readOnlyTaskIntent = this.inferReadOnlyTaskIntent(userMessage, targetFiles, expectedOutputFiles);
 
     // P5-3: snapshot initial data files
@@ -165,6 +170,16 @@ export class NudgeManager {
     const normalizedPath = filePath.replace(/^\.\//, '').replace(/^\//, '');
     this.modifiedFiles.add(normalizedPath);
     logger.debug(`[NudgeManager] P3 Nudge: Tracked modified file: ${normalizedPath}`);
+  }
+
+  /**
+   * taskGate（roadmap 1.3）：记录本 run 内模型主动使用了 task 写工具。
+   * 触发后即使用户消息没有 task 关键词，收尾前也会检查未收口任务。
+   * 刻意只在写操作（task_create/task_update）时记录——task_list 等只读调用
+   * 不触发，避免 subagent 因 prompt 内附带 task_list 被无关旧任务劫持。
+   */
+  recordTaskManagerUse(): void {
+    this._taskManagerUsedInRun = true;
   }
 
   /** Get the set of modified files (read-only snapshot). */
@@ -246,14 +261,18 @@ export class NudgeManager {
     // Keep this tied to explicit task-management turns. Otherwise unrelated
     // stale planning items can hijack a completed answer, as seen in UI smoke
     // sessions where a subagent called task_list only as part of its own prompt.
-    if (!ctx.isSimpleTaskMode && this._enforceTaskCompletion && this.todoNudgeCount < this.maxTodoNudges) {
+    if (!ctx.isSimpleTaskMode && (this._enforceTaskCompletion || this._taskManagerUsedInRun)) {
       const todos = getCurrentTodos(ctx.sessionId);
       const incompleteTodos = todos.filter(t => t.status !== 'completed');
       const incompleteTasks = getIncompleteTasks(ctx.sessionId);
 
       const totalIncomplete = incompleteTodos.length + incompleteTasks.length;
 
-      if (totalIncomplete > 0) {
+      // taskGate（roadmap 1.3）：存在未收口 task 时重入上限 3（MiMo main 上限）；
+      // 仅 todo 未完成时维持原上限 2
+      const reentryCap = incompleteTasks.length > 0 ? this.maxTaskGateReentries : this.maxTodoNudges;
+
+      if (totalIncomplete > 0 && this.todoNudgeCount < reentryCap) {
         this.todoNudgeCount++;
 
         const itemList: string[] = [];

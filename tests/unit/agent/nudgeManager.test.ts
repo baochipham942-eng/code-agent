@@ -274,6 +274,60 @@ describe('NudgeManager', () => {
     });
   });
 
+  // ────────────────────────────────────────────────────────────────────────
+  // P2 升级: taskGate (roadmap 1.3)
+  // ────────────────────────────────────────────────────────────────────────
+
+  describe('P2: taskGate (roadmap 1.3)', () => {
+    it('gates stop when the model used task tools this run, even without task keywords', () => {
+      manager.reset([], 'do the thing', '/tmp/test', []);
+      manager.recordTaskManagerUse();
+      mockGetIncompleteTasks.mockReturnValue([{ id: 't1', subject: 'open item', status: 'pending' }]);
+
+      const ctx = createMockContext({
+        isSimpleTaskMode: false,
+        toolsUsedInTurn: ['write_file'],
+      });
+
+      const result = manager.runNudgeChecks(ctx);
+
+      expect(result).toBe(true);
+      const injectedMessage = (ctx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(injectedMessage).toContain('task-completion-check');
+      expect(injectedMessage).toContain('open item');
+    });
+
+    it('resets the task-tool trigger on each new user input', () => {
+      manager.reset([], 'first run', '/tmp/test', []);
+      manager.recordTaskManagerUse();
+      manager.reset([], 'second run unrelated work', '/tmp/test', []);
+      mockGetIncompleteTasks.mockReturnValue([{ id: 't1', subject: 'stale', status: 'pending' }]);
+
+      const ctx = createMockContext({
+        isSimpleTaskMode: false,
+        toolsUsedInTurn: ['write_file'],
+      });
+
+      expect(manager.runNudgeChecks(ctx)).toBe(false);
+    });
+
+    it('allows up to 3 reentries for open tasks then lets the model stop (MiMo main cap)', () => {
+      manager.reset([], '把这些任务完成并更新 task 状态', '/tmp/test', []);
+      mockGetIncompleteTasks.mockReturnValue([{ id: 't1', subject: 'never done', status: 'pending' }]);
+
+      const ctx = createMockContext({
+        isSimpleTaskMode: false,
+        toolsUsedInTurn: ['write_file'],
+      });
+
+      expect(manager.runNudgeChecks(ctx)).toBe(true);
+      expect(manager.runNudgeChecks(ctx)).toBe(true);
+      expect(manager.runNudgeChecks(ctx)).toBe(true);
+      // 第 4 次：达到 main 上限 3，放行停止
+      expect(manager.runNudgeChecks(ctx)).toBe(false);
+    });
+  });
+
   describe('F4: Goal completion verification', () => {
     it('does not require write actions for appshot analysis prompts', () => {
       manager.reset([], '<appshot app="com.apple.finder" name="Finder">Downloads</appshot> What is in this screenshot?', '/tmp/test', []);

@@ -63,6 +63,12 @@ describe('BlockAnchorReplacer', () => {
     expect([...BlockAnchorReplacer('a\nb', 'a\nb')]).toHaveLength(0);
   });
 
+  it('rejects a two-line search block with trailing newline (codex audit R4 MED)', () => {
+    // 'a\nb\n'.split 后长度为 3 会骗过行数门，去尾空行后只剩两行纯锚点，
+    // 不允许把 'a\nx\nb' 当成锚点全匹配吞掉中间行
+    expect([...BlockAnchorReplacer('a\nx\nb', 'a\nb\n')]).toHaveLength(0);
+  });
+
   it('picks the most similar candidate among multiple anchor matches (0.3 threshold)', () => {
     const content = [
       'if (x) {',

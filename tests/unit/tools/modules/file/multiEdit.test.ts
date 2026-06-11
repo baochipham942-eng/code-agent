@@ -166,6 +166,26 @@ describe('multiEditModule evidence metadata', () => {
     // 注意：替换文本按原样写入（与 MiMo 行为一致，新文本缩进由模型负责）
   });
 
+  it('does not swallow middle lines for a trailing-newline two-line old_text (codex audit R4)', async () => {
+    const file = path.join(tmpDir, 'two-line.txt');
+    await fs.writeFile(file, 'a\nx\nb', 'utf-8');
+    await fileReadTracker.recordReadWithStats(file);
+
+    const handler = await editModule.createHandler();
+    const result = await handler.execute(
+      {
+        file_path: file,
+        edits: [{ old_text: 'a\nb\n', new_text: 'z' }],
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('NOT_FOUND');
+    expect(await fs.readFile(file, 'utf-8')).toBe('a\nx\nb');
+  });
+
   it('still reports NOT_FOUND when the flexible chain has no match', async () => {
     const file = path.join(tmpDir, 'none.ts');
     await fs.writeFile(file, 'const a = 1;\n', 'utf-8');

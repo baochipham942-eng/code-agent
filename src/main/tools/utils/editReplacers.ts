@@ -97,8 +97,9 @@ function scoreBlockCandidate(
   const searchBlockSize = searchLines.length;
   const searchMiddleCount = searchBlockSize - 2;
   if (searchMiddleCount <= 0) {
-    // No middle lines to compare, just accept based on anchors
-    return 1.0;
+    // 防御（codex audit R4）：纯锚点块不应到达此处（调用方已挡 < 3 行），
+    // 万一到达也 fail-closed——仅凭首尾锚点全等就接受会吞掉中间行
+    return 0;
   }
 
   let similarity = 0;
@@ -122,12 +123,14 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
   const originalLines = content.split('\n');
   const searchLines = find.split('\n');
 
-  if (searchLines.length < 3) {
-    return;
-  }
-
+  // 先去尾空行再做行数门（codex audit R4）：'a\nb\n' split 后长度 3 会骗过
+  // 行数检查，去尾后只剩两行纯锚点，锚点全等即接受会吞掉中间行
   if (searchLines[searchLines.length - 1] === '') {
     searchLines.pop();
+  }
+
+  if (searchLines.length < 3) {
+    return;
   }
 
   const firstLineSearch = searchLines[0].trim();

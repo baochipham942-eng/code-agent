@@ -318,6 +318,16 @@ export type AgentEvent =
           repairTurnsWithoutProgress?: number;
           activeIssueCodes?: string[];
         };
+        /** Max Mode（best-of-N）本步诊断（Codex R1-LOW：补齐事件契约类型） */
+        maxMode?: {
+          candidates: number;
+          survivors: number;
+          winner: number;
+          degraded: boolean;
+          judgeParsed: boolean;
+          overheadInputTokens: number;
+          overheadOutputTokens: number;
+        };
       };
     } }
   // Model capability fallback event (能力补充)

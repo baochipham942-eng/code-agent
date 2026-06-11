@@ -3,7 +3,7 @@
 import type { AgentEvent, ToolCall, ToolDefinition } from '../../../../shared/contract';
 import type { ModelResponse } from '../../../agent/loopTypes';
 import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../../../model/adapters/aiSdkAdapter';
-import { getConfigService, getLangfuseService } from '../../../services';
+import { getConfigService, getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../../services';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { ContextLengthExceededError } from '../../../model/modelRouter';
 import { createSnapshotHandler } from '../../../session/streamSnapshot';
@@ -69,7 +69,9 @@ function runEngineInference(
   signal?: AbortSignal,
   options?: InferenceOptions,
 ): Promise<RouterModelResponse> {
-  const adaptedConfig = resolveMainChatModelDecision(ctx, messages, config);
+  const adaptedConfig = resolveMainChatModelDecision(ctx, messages, config, {
+    suppressDecisionEvent: options?.suppressModelDecisionEvent === true,
+  });
   const effectiveConfig = adaptedConfig ?? config;
 
   if (shouldUseE2ELocalAgentModelForMessages(messages)) {
@@ -110,6 +112,7 @@ export function resolveMainChatModelDecision(
   ctx: ContextAssemblyCtx,
   messages: ModelMessage[],
   config: ModelConfig,
+  opts?: { suppressDecisionEvent?: boolean },
 ): ModelConfig | null {
   // 计费方式：用户配置 > 类型默认值（settings 不可用时缺省 payg）
   let billingMode: BillingMode | undefined;
@@ -148,14 +151,17 @@ export function resolveMainChatModelDecision(
     }
   }
 
-  ctx.runtime.onEvent({
-    type: 'model_decision',
-    data: {
-      ...emittedDecision,
-      turnId: ctx.runtime.currentTurnId,
-      timestamp: Date.now(),
-    },
-  });
+  // Max Mode 候选/judge 的静默调用抑制事件发射（路由行为不变，Codex R1-M1）
+  if (!opts?.suppressDecisionEvent) {
+    ctx.runtime.onEvent({
+      type: 'model_decision',
+      data: {
+        ...emittedDecision,
+        turnId: ctx.runtime.currentTurnId,
+        timestamp: Date.now(),
+      },
+    });
+  }
   logger.info('[AgentLoop] Model decision resolved', {
     requestedProvider: emittedDecision.requestedProvider,
     requestedModel: emittedDecision.requestedModel,
@@ -405,6 +411,25 @@ function capArtifactRepairMaxTokens(
  * （streamHandler 累计 ctx.totalInputTokens/totalOutputTokens、line ~820 的赢家估算）
  * 只见到赢家的 response.usage。
  */
+/**
+ * 预算头寸闸（Codex R1-H3）：预算已到 WARNING/BLOCKED 时不做 N 倍并发扇出——
+ * budgetService 的事后记账拦不住一次 step 内并发花出去的 N+1 笔调用，
+ * 临界状态下直接退回正常单次调用（行为与开关关一致）。
+ */
+function maxModeBudgetHeadroomOk(): boolean {
+  try {
+    const { alertLevel } = getBudgetService().checkBudget();
+    const ok = alertLevel !== BudgetAlertLevel.WARNING && alertLevel !== BudgetAlertLevel.BLOCKED;
+    if (!ok) {
+      logger.warn(`[MaxMode] budget alertLevel=${alertLevel}; skipping best-of-N fanout for this step`);
+    }
+    return ok;
+  } catch {
+    // 测试/CLI 环境无 budget 服务 → 不拦
+    return true;
+  }
+}
+
 async function runMaxModeInference(
   ctx: ContextAssemblyCtx,
   messages: ModelMessage[],
@@ -413,7 +438,8 @@ async function runMaxModeInference(
   streamCallback: StreamCallback,
   engineOptions: InferenceOptions,
 ): Promise<ModelResponse> {
-  const { onSnapshot: _onSnapshot, ...silentOptions } = engineOptions;
+  const { onSnapshot: _onSnapshot, ...restOptions } = engineOptions;
+  const silentOptions: InferenceOptions = { ...restOptions, suppressModelDecisionEvent: true };
   const signal = ctx.runtime.abortController?.signal;
   const candidates = ctx.runtime.maxModeCandidates;
   ctx.taskProgress.emitTaskProgress('thinking', `Max Mode：${candidates} 个候选并行起草中...`);
@@ -424,12 +450,23 @@ async function runMaxModeInference(
         runEngineInference(ctx, msgs, tls, requestConfig, undefined, signal, silentOptions),
       streamingEngine: (msgs, tls) =>
         runEngineInference(ctx, msgs, tls, requestConfig, streamCallback, signal, engineOptions),
+      // 取消/转向/中断时丢弃整个 step（含已完成的部分赢家），走外层既有取消语义
+      isAborted: () =>
+        Boolean(ctx.runtime.isCancelled || ctx.runtime.isInterrupted || ctx.runtime.needsReinference),
     },
     { messages, tools, candidates },
   );
 
-  if (stats.overhead.inputTokens > 0 || stats.overhead.outputTokens > 0) {
-    ctx.recordTokenUsage(stats.overhead.inputTokens, stats.overhead.outputTokens);
+  // overhead 逐条按实际路由模型分账（adaptive 路由后可能 ≠ 请求模型，Codex R1-M2）；
+  // 不走 ctx.recordTokenUsage——那条路径固定记在请求模型名下
+  for (const entry of stats.overheadEntries) {
+    getBudgetService().recordUsage({
+      inputTokens: entry.inputTokens,
+      outputTokens: entry.outputTokens,
+      model: entry.actualModel ?? requestConfig.model,
+      provider: entry.actualProvider ?? requestConfig.provider,
+      timestamp: Date.now(),
+    });
   }
   response.runtimeDiagnostics = {
     ...response.runtimeDiagnostics,
@@ -830,7 +867,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
         artifactRepairWritePriority,
         artifactRepairFullRewritePriority,
       };
-      if (ctx.runtime.maxMode) {
+      if (ctx.runtime.maxMode && maxModeBudgetHeadroomOk()) {
         response = await runMaxModeInference(
           ctx,
           modelMessages,

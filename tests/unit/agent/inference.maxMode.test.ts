@@ -10,8 +10,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContextAssemblyCtx } from '../../../src/main/agent/runtime/contextAssembly';
 import { inference } from '../../../src/main/agent/runtime/contextAssembly/inference';
 
-const { mockGetApiKey } = vi.hoisted(() => ({
+const { mockGetApiKey, mockRecordUsage, mockCheckBudget } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
+  mockRecordUsage: vi.fn(),
+  mockCheckBudget: vi.fn(() => ({ alertLevel: 'none', usagePercentage: 0 })),
 }));
 
 vi.mock('../../../src/main/services/infra/logger', () => ({
@@ -36,6 +38,11 @@ vi.mock('../../../src/main/services', () => ({
     startGenerationInSpan: vi.fn(),
     endGeneration: vi.fn(),
   }),
+  getBudgetService: () => ({
+    recordUsage: mockRecordUsage,
+    checkBudget: mockCheckBudget,
+  }),
+  BudgetAlertLevel: { NONE: 'none', SILENT: 'silent', WARNING: 'warning', BLOCKED: 'blocked' },
 }));
 
 vi.mock('../../../src/main/mcp/logCollector.js', () => ({
@@ -164,6 +171,11 @@ describe('inference Max Mode wiring', () => {
     expect(typeof onStream).toBe('function');
     expect(response.content).toBe('single');
     expect(response.runtimeDiagnostics?.maxMode).toBeUndefined();
+    // 关闭态 model_decision 事件照常发出（行为与 main 一致）
+    const decisionEvents = vi.mocked(ctx.runtime.onEvent).mock.calls.filter(
+      (c) => (c[0] as { type: string }).type === 'model_decision',
+    );
+    expect(decisionEvents).toHaveLength(1);
   });
 
   it('开关开 → N 候选（无流式回调）+ judge（无工具），返回赢家并附 maxMode 诊断', async () => {
@@ -216,10 +228,25 @@ describe('inference Max Mode wiring', () => {
       judgeParsed: true,
     });
 
-    // overhead：落选候选(100+10, 100+30) + judge(200+8) 计入成本统计；
-    // 赢家自己的估算照常单独记录（mock 估算恒 12）
-    expect(ctx.recordTokenUsage).toHaveBeenCalledWith(400, 48);
+    // overhead：落选候选(100+10, 100+30) + judge(200+8) 逐条进 budgetService
+    // （Codex R1-M2：按实际路由模型分账；mock 响应无 actualModel → 回落请求模型）；
+    // 赢家自己的估算照常走 ctx.recordTokenUsage（mock 估算恒 12）
+    const overheadRecorded = mockRecordUsage.mock.calls.map((c) => c[0]);
+    expect(overheadRecorded).toHaveLength(3);
+    expect(overheadRecorded.reduce((s, u) => s + u.inputTokens, 0)).toBe(400);
+    expect(overheadRecorded.reduce((s, u) => s + u.outputTokens, 0)).toBe(48);
+    for (const entry of overheadRecorded) {
+      expect(entry.model).toBe('test-model');
+      expect(entry.provider).toBe('mock');
+    }
     expect(ctx.recordTokenUsage).toHaveBeenCalledWith(12, 12);
+    expect(ctx.recordTokenUsage).toHaveBeenCalledTimes(1);
+
+    // Codex R1-M1：候选/judge 的静默调用不发 model_decision 事件
+    const decisionEvents = vi.mocked(ctx.runtime.onEvent).mock.calls.filter(
+      (c) => (c[0] as { type: string }).type === 'model_decision',
+    );
+    expect(decisionEvents).toHaveLength(0);
   });
 
   it('全候选失败 → 降级单次流式调用，用户无感、无 overhead', async () => {
@@ -243,5 +270,59 @@ describe('inference Max Mode wiring', () => {
     // 降级调用是正常主链路，无 overhead 记账（只有赢家估算那一笔）
     expect(ctx.recordTokenUsage).toHaveBeenCalledTimes(1);
     expect(ctx.recordTokenUsage).toHaveBeenCalledWith(12, 12);
+    expect(mockRecordUsage).not.toHaveBeenCalled();
+  });
+
+  // Codex R1-H3：预算告警/封锁时不做 N 倍扇出，直接走正常单次调用
+  it('budget 处于 warning/blocked → 跳过 Max Mode，按正常单次流式调用执行', async () => {
+    mockCheckBudget.mockReturnValueOnce({ alertLevel: 'warning', usagePercentage: 0.9 });
+    const ctx = buildCtx({ maxMode: true, maxModeCandidates: 5 } as any);
+
+    const response = await inference(ctx);
+
+    expect(ctx.runtime.modelRouter.inference).toHaveBeenCalledTimes(1);
+    const [, , , onStream] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
+    expect(typeof onStream).toBe('function');
+    expect(response.content).toBe('single');
+    expect(response.runtimeDiagnostics?.maxMode).toBeUndefined();
+  });
+
+  // Codex R1-H2：候选期间取消 → 不放出部分赢家，走既有取消语义（空文本响应）
+  it('候选期间用户取消 → 不返回部分赢家，返回空文本（与正常路径取消语义一致）', async () => {
+    const ctx = buildCtx({ maxMode: true, maxModeCandidates: 2 } as any);
+    ctx.runtime.modelRouter.inference = vi.fn().mockImplementation(async () => {
+      ctx.runtime.isCancelled = true; // 候选返回前用户取消
+      return { type: 'tool_use', toolCalls: [{ id: 'x', name: 'Edit', arguments: {} }], finishReason: 'tool_calls', usage: { inputTokens: 10, outputTokens: 1 } };
+    });
+
+    const response = await inference(ctx);
+
+    expect(response.type).toBe('text');
+    expect(response.content ?? '').toBe('');
+    expect(response.toolCalls ?? []).toHaveLength(0);
+  });
+
+  // Codex R1-M2：adaptive 路由后的 overhead 按实际模型分账
+  it('候选被路由到不同模型 → overhead 以 actualProvider/actualModel 记账', async () => {
+    const ctx = buildCtx({ maxMode: true, maxModeCandidates: 2 } as any);
+    let n = 0;
+    ctx.runtime.modelRouter.inference = vi.fn().mockImplementation(
+      async (_messages: unknown, tools: unknown[]) => {
+        if (tools.length === 0) {
+          return { type: 'text', content: 'WINNER: 0', finishReason: 'stop', usage: { inputTokens: 50, outputTokens: 2 }, actualProvider: 'zhipu', actualModel: 'glm-free' };
+        }
+        n++;
+        return { type: 'text', content: `c${n}`, finishReason: 'stop', usage: { inputTokens: 100, outputTokens: 10 }, actualProvider: 'zhipu', actualModel: 'glm-free' };
+      },
+    );
+
+    await inference(ctx);
+
+    const entries = mockRecordUsage.mock.calls.map((c) => c[0]);
+    expect(entries).toHaveLength(2); // 落选 c2 + judge
+    for (const entry of entries) {
+      expect(entry.provider).toBe('zhipu');
+      expect(entry.model).toBe('glm-free');
+    }
   });
 });

@@ -32,6 +32,12 @@ export interface MaxModeDeps {
   silentEngine: MaxModeEngine;
   /** 流式引擎：全候选失败时的降级路径，行为与未开 Max Mode 的单次调用一致 */
   streamingEngine: MaxModeEngine;
+  /**
+   * 取消/转向探针（Codex R1-H2）：候选与 judge 各阶段完成后检查；为真则抛出
+   * 中止错误而不是放出部分赢家——单个候选在取消前完成时，其 tool call 绝不能
+   * 流入下游执行。调用方 catch 后走既有取消语义（空文本响应）。
+   */
+  isAborted?: () => boolean;
 }
 
 export interface MaxModeStepInput {
@@ -53,6 +59,17 @@ export interface MaxModeStats {
   judgeParsed: boolean;
   /** 落选候选 + judge 的 token 之和：计成本，不进上下文估算 */
   overhead: { inputTokens: number; outputTokens: number };
+  /**
+   * 落选候选 + judge 的逐条 usage（Codex R1-M2）：携带实际路由到的
+   * provider/model（adaptive 路由/降级后可能 ≠ 请求配置），调用方按实际模型分账。
+   * 无 usage 的条目不收录。
+   */
+  overheadEntries: Array<{
+    inputTokens: number;
+    outputTokens: number;
+    actualProvider?: string;
+    actualModel?: string;
+  }>;
 }
 
 export interface MaxModeStepResult {
@@ -94,19 +111,32 @@ WINNER: <候选编号>
 WINNER: 0`;
 
 /**
- * 从 judge 输出解析获胜索引。取【最后】一个 WINNER（容忍模型在前文复述格式说明），
- * 容忍 markdown 加粗与中英文冒号。无匹配或越界 → fail-open 选 0（parsed=false）。
+ * 从 judge 输出解析获胜索引。只认【最后一个非空行】且必须整行锚定为 WINNER 行
+ * （容忍 markdown 加粗与中英文冒号）——防 spoof（Codex R1-H1）：候选内容或 judge
+ * 行文中引用的 "WINNER: x" 字样不得劫持裁决，赢家的 tool call 会被下游真实执行。
+ * 无匹配或越界 → fail-open 选 0（parsed=false）。
  */
 export function parseJudgeWinner(output: string, count: number): { index: number; parsed: boolean } {
-  const matches = [...output.matchAll(/WINNER\s*[:：]\s*\*{0,2}\s*(\d+)/gi)];
-  if (matches.length === 0) {
+  const lines = output.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+  const lastLine = lines[lines.length - 1] ?? '';
+  const match = lastLine.match(/^(?:\*{1,2})?WINNER\s*[:：]\s*(\d+)(?:\*{1,2})?$/i);
+  if (!match) {
     return { index: 0, parsed: false };
   }
-  const picked = parseInt(matches[matches.length - 1][1], 10);
+  const picked = parseInt(match[1], 10);
   if (Number.isNaN(picked) || picked < 0 || picked >= count) {
     return { index: 0, parsed: false };
   }
   return { index: picked, parsed: true };
+}
+
+/**
+ * 归一化候选数（Codex R1-M3）：非安全整数（NaN/Infinity/小数）回落 1，
+ * 合法整数钳到 [1, MAX_CANDIDATES]——防错误配置触发海量并发扇出。
+ */
+function normalizeCandidateCount(candidates: number): number {
+  if (!Number.isSafeInteger(candidates)) return 1;
+  return Math.min(Math.max(1, candidates), MAX_MODE.MAX_CANDIDATES);
 }
 
 /** 渲染单个候选给 judge（截断控 token） */
@@ -150,8 +180,15 @@ export async function runMaxModeStep(
   deps: MaxModeDeps,
   input: MaxModeStepInput,
 ): Promise<MaxModeStepResult> {
-  const n = Math.max(1, input.candidates);
+  const n = normalizeCandidateCount(input.candidates);
   const schemaOnlyTools = toSchemaOnlyTools(input.tools);
+  const assertNotAborted = () => {
+    if (deps.isAborted?.()) {
+      // 不能区分"取消前已完成"与"被取消打断"的候选——一律丢弃，
+      // 由调用方的既有取消语义接管（部分赢家的 tool call 绝不流入下游）
+      throw new Error('[MaxMode] step aborted (cancel/steer during candidates)');
+    }
+  };
 
   const results = await Promise.all(
     Array.from({ length: n }, (_, index) =>
@@ -163,6 +200,7 @@ export async function runMaxModeStep(
       }),
     ),
   );
+  assertNotAborted();
   const survivors = results.filter((r): r is ModelResponse => r !== null);
 
   if (survivors.length === 0) {
@@ -177,17 +215,17 @@ export async function runMaxModeStep(
         degraded: true,
         judgeParsed: false,
         overhead: { inputTokens: 0, outputTokens: 0 },
+        overheadEntries: [],
       },
     };
   }
 
   let winner = 0;
   let judgeParsed = true;
-  let judgeUsage: ModelResponse['usage'];
+  let judgeResponse: ModelResponse | undefined;
   if (survivors.length > 1) {
     try {
-      const judgeResponse = await deps.silentEngine(buildJudgeMessages(survivors), []);
-      judgeUsage = judgeResponse.usage;
+      judgeResponse = await deps.silentEngine(buildJudgeMessages(survivors), []);
       const verdict = parseJudgeWinner(judgeResponse.content ?? '', survivors.length);
       winner = verdict.index;
       judgeParsed = verdict.parsed;
@@ -202,19 +240,35 @@ export async function runMaxModeStep(
       });
     }
   }
+  assertNotAborted();
 
-  // overhead = 落选候选 + judge（赢家的 usage 留在 response 上走正常上下文/统计路径）
-  const overhead = survivors.reduce(
-    (acc, candidate, index) => {
-      if (index === winner) return acc;
-      acc.inputTokens += candidate.usage?.inputTokens ?? 0;
-      acc.outputTokens += candidate.usage?.outputTokens ?? 0;
+  // overhead = 落选候选 + judge（赢家的 usage 留在 response 上走正常上下文/统计路径）。
+  // 逐条携带实际路由模型，调用方按实际模型分账（Codex R1-M2）。
+  const overheadEntries: MaxModeStats['overheadEntries'] = [];
+  survivors.forEach((candidate, index) => {
+    if (index === winner || !candidate.usage) return;
+    overheadEntries.push({
+      inputTokens: candidate.usage.inputTokens,
+      outputTokens: candidate.usage.outputTokens,
+      actualProvider: candidate.actualProvider,
+      actualModel: candidate.actualModel,
+    });
+  });
+  if (judgeResponse?.usage) {
+    overheadEntries.push({
+      inputTokens: judgeResponse.usage.inputTokens,
+      outputTokens: judgeResponse.usage.outputTokens,
+      actualProvider: judgeResponse.actualProvider,
+      actualModel: judgeResponse.actualModel,
+    });
+  }
+  const overhead = overheadEntries.reduce(
+    (acc, entry) => {
+      acc.inputTokens += entry.inputTokens;
+      acc.outputTokens += entry.outputTokens;
       return acc;
     },
-    {
-      inputTokens: judgeUsage?.inputTokens ?? 0,
-      outputTokens: judgeUsage?.outputTokens ?? 0,
-    },
+    { inputTokens: 0, outputTokens: 0 },
   );
 
   logger.info('[MaxMode] step complete', {
@@ -227,6 +281,6 @@ export async function runMaxModeStep(
 
   return {
     response: survivors[winner],
-    stats: { candidates: n, survivors: survivors.length, winner, degraded: false, judgeParsed, overhead },
+    stats: { candidates: n, survivors: survivors.length, winner, degraded: false, judgeParsed, overhead, overheadEntries },
   };
 }

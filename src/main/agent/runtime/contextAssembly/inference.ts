@@ -38,7 +38,7 @@ import {
   seedArtifactRepairGuardFromContext,
 } from '../artifactRepairGuard';
 import { preloadDeferredToolsForTurn } from './deferredToolPreload';
-import { runMaxModeStep } from '../maxMode';
+import { runMaxModeStep, MaxModeAbortError } from '../maxMode';
 import { createHandoffTailStreamFilter } from '../../../handoff/handoffStream';
 import { applyEffortControls } from './effortControls';
 import { buildCompactArtifactRepairWriteRetryMessages } from './artifactRepairRetryMessages';
@@ -444,30 +444,44 @@ async function runMaxModeInference(
   const candidates = ctx.runtime.maxModeCandidates;
   ctx.taskProgress.emitTaskProgress('thinking', `Max Mode：${candidates} 个候选并行起草中...`);
 
-  const { response, stats } = await runMaxModeStep(
-    {
-      silentEngine: (msgs, tls) =>
-        runEngineInference(ctx, msgs, tls, requestConfig, undefined, signal, silentOptions),
-      streamingEngine: (msgs, tls) =>
-        runEngineInference(ctx, msgs, tls, requestConfig, streamCallback, signal, engineOptions),
-      // 取消/转向/中断时丢弃整个 step（含已完成的部分赢家），走外层既有取消语义
-      isAborted: () =>
-        Boolean(ctx.runtime.isCancelled || ctx.runtime.isInterrupted || ctx.runtime.needsReinference),
-    },
-    { messages, tools, candidates },
-  );
-
   // overhead 逐条按实际路由模型分账（adaptive 路由后可能 ≠ 请求模型，Codex R1-M2）；
   // 不走 ctx.recordTokenUsage——那条路径固定记在请求模型名下
-  for (const entry of stats.overheadEntries) {
-    getBudgetService().recordUsage({
-      inputTokens: entry.inputTokens,
-      outputTokens: entry.outputTokens,
-      model: entry.actualModel ?? requestConfig.model,
-      provider: entry.actualProvider ?? requestConfig.provider,
-      timestamp: Date.now(),
-    });
+  const recordOverheadEntries = (entries: Array<{ inputTokens: number; outputTokens: number; actualProvider?: string; actualModel?: string }>) => {
+    for (const entry of entries) {
+      getBudgetService().recordUsage({
+        inputTokens: entry.inputTokens,
+        outputTokens: entry.outputTokens,
+        model: entry.actualModel ?? requestConfig.model,
+        provider: entry.actualProvider ?? requestConfig.provider,
+        timestamp: Date.now(),
+      });
+    }
+  };
+
+  let stepResult;
+  try {
+    stepResult = await runMaxModeStep(
+      {
+        silentEngine: (msgs, tls) =>
+          runEngineInference(ctx, msgs, tls, requestConfig, undefined, signal, silentOptions),
+        streamingEngine: (msgs, tls) =>
+          runEngineInference(ctx, msgs, tls, requestConfig, streamCallback, signal, engineOptions),
+        // 取消/转向/中断时丢弃整个 step（含已完成的部分赢家），走外层既有取消语义
+        isAborted: () =>
+          Boolean(ctx.runtime.isCancelled || ctx.runtime.isInterrupted || ctx.runtime.needsReinference),
+      },
+      { messages, tools, candidates },
+    );
+  } catch (error) {
+    // 中止丢弃整个 step，但已完成候选/judge 的 token 是真实花费——
+    // 先记沉没成本再重抛，由外层取消语义接管（Codex R2-M1）
+    if (error instanceof MaxModeAbortError) {
+      recordOverheadEntries(error.overheadEntries);
+    }
+    throw error;
   }
+  const { response, stats } = stepResult;
+  recordOverheadEntries(stats.overheadEntries);
   response.runtimeDiagnostics = {
     ...response.runtimeDiagnostics,
     maxMode: {

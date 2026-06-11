@@ -78,6 +78,32 @@ export interface MaxModeStepResult {
 }
 
 /**
+ * 中止错误（Codex R2-M1）：取消/转向丢弃整个 step 时，已完成候选与 judge 的
+ * token 是真实发生的沉没成本，随错误带出供调用方记账——中止不能让预算被低估。
+ */
+export class MaxModeAbortError extends Error {
+  constructor(readonly overheadEntries: MaxModeStats['overheadEntries']) {
+    super('[MaxMode] step aborted (cancel/steer); discarding candidates');
+    this.name = 'MaxModeAbortError';
+  }
+}
+
+/** 把一组响应的 usage 折成 overhead 条目（无 usage 的响应跳过） */
+function toOverheadEntries(responses: Array<ModelResponse | undefined>): MaxModeStats['overheadEntries'] {
+  const entries: MaxModeStats['overheadEntries'] = [];
+  for (const response of responses) {
+    if (!response?.usage) continue;
+    entries.push({
+      inputTokens: response.usage.inputTokens,
+      outputTokens: response.usage.outputTokens,
+      actualProvider: response.actualProvider,
+      actualModel: response.actualModel,
+    });
+  }
+  return entries;
+}
+
+/**
  * 防御性剥离工具定义上的 execute 闭包（候选绝不能拿到可执行工具）。
  * Neo 的 ToolDefinition 本就不带 execute，此处兜底防未来工具形状变化。
  */
@@ -111,15 +137,22 @@ WINNER: <候选编号>
 WINNER: 0`;
 
 /**
- * 从 judge 输出解析获胜索引。只认【最后一个非空行】且必须整行锚定为 WINNER 行
- * （容忍 markdown 加粗与中英文冒号）——防 spoof（Codex R1-H1）：候选内容或 judge
- * 行文中引用的 "WINNER: x" 字样不得劫持裁决，赢家的 tool call 会被下游真实执行。
+ * 从 judge 输出解析获胜索引。只认【最后一个实际内容行】且必须整行锚定为 WINNER 行
+ * （容忍 markdown 加粗、中英文冒号、轻微尾随标点；倒序跳过空行与纯代码 fence 行，
+ * Codex R2-M2）——防 spoof（Codex R1-H1）：候选内容或 judge 行文中引用的
+ * "WINNER: x" 字样不得劫持裁决，赢家的 tool call 会被下游真实执行。
  * 无匹配或越界 → fail-open 选 0（parsed=false）。
  */
 export function parseJudgeWinner(output: string, count: number): { index: number; parsed: boolean } {
-  const lines = output.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
-  const lastLine = lines[lines.length - 1] ?? '';
-  const match = lastLine.match(/^(?:\*{1,2})?WINNER\s*[:：]\s*(\d+)(?:\*{1,2})?$/i);
+  // 只从尾部倒序跳过空行与纯 fence 行（```/~~~，可带语言标记）；含其它内容的行不跳过。
+  // 不做全文过滤——中段 fence 过滤会把"裁决后又出现的 fenced 注入"重新暴露出来。
+  const rawLines = output.split('\n').map((l) => l.trim());
+  let i = rawLines.length - 1;
+  while (i >= 0 && (rawLines[i].length === 0 || /^(?:`{3,}|~{3,})[\w-]*$/.test(rawLines[i]))) {
+    i--;
+  }
+  const lastLine = i >= 0 ? rawLines[i] : '';
+  const match = lastLine.match(/^(?:\*{1,2})?WINNER\s*[:：]\s*(\d+)(?:\*{1,2})?\s*[.。!！]?$/i);
   if (!match) {
     return { index: 0, parsed: false };
   }
@@ -182,13 +215,6 @@ export async function runMaxModeStep(
 ): Promise<MaxModeStepResult> {
   const n = normalizeCandidateCount(input.candidates);
   const schemaOnlyTools = toSchemaOnlyTools(input.tools);
-  const assertNotAborted = () => {
-    if (deps.isAborted?.()) {
-      // 不能区分"取消前已完成"与"被取消打断"的候选——一律丢弃，
-      // 由调用方的既有取消语义接管（部分赢家的 tool call 绝不流入下游）
-      throw new Error('[MaxMode] step aborted (cancel/steer during candidates)');
-    }
-  };
 
   const results = await Promise.all(
     Array.from({ length: n }, (_, index) =>
@@ -200,8 +226,12 @@ export async function runMaxModeStep(
       }),
     ),
   );
-  assertNotAborted();
   const survivors = results.filter((r): r is ModelResponse => r !== null);
+  if (deps.isAborted?.()) {
+    // 不能区分"取消前已完成"与"被取消打断"的候选——一律丢弃（部分赢家的 tool call
+    // 绝不流入下游），但已完成候选的 usage 是沉没成本，随错误带出记账（R2-M1）
+    throw new MaxModeAbortError(toOverheadEntries(survivors));
+  }
 
   if (survivors.length === 0) {
     logger.warn('[MaxMode] all candidates failed; degrading to single streaming call');
@@ -240,28 +270,17 @@ export async function runMaxModeStep(
       });
     }
   }
-  assertNotAborted();
+  if (deps.isAborted?.()) {
+    // judge 后中止：无赢家 replay，全部候选 + judge 都是沉没成本
+    throw new MaxModeAbortError(toOverheadEntries([...survivors, judgeResponse]));
+  }
 
   // overhead = 落选候选 + judge（赢家的 usage 留在 response 上走正常上下文/统计路径）。
   // 逐条携带实际路由模型，调用方按实际模型分账（Codex R1-M2）。
-  const overheadEntries: MaxModeStats['overheadEntries'] = [];
-  survivors.forEach((candidate, index) => {
-    if (index === winner || !candidate.usage) return;
-    overheadEntries.push({
-      inputTokens: candidate.usage.inputTokens,
-      outputTokens: candidate.usage.outputTokens,
-      actualProvider: candidate.actualProvider,
-      actualModel: candidate.actualModel,
-    });
-  });
-  if (judgeResponse?.usage) {
-    overheadEntries.push({
-      inputTokens: judgeResponse.usage.inputTokens,
-      outputTokens: judgeResponse.usage.outputTokens,
-      actualProvider: judgeResponse.actualProvider,
-      actualModel: judgeResponse.actualModel,
-    });
-  }
+  const overheadEntries = toOverheadEntries([
+    ...survivors.filter((_, index) => index !== winner),
+    judgeResponse,
+  ]);
   const overhead = overheadEntries.reduce(
     (acc, entry) => {
       acc.inputTokens += entry.inputTokens;

@@ -14,6 +14,7 @@ import {
   parseJudgeWinner,
   runMaxModeStep,
   JUDGE_SYSTEM_PROMPT,
+  MaxModeAbortError,
   type MaxModeEngine,
 } from '../../../../src/main/agent/runtime/maxMode';
 import type { ModelResponse, ModelMessage } from '../../../../src/main/agent/loopTypes';
@@ -102,6 +103,20 @@ describe('parseJudgeWinner', () => {
 
   it('最后非空行不是纯 WINNER 行 → fail-open 0（即使前面有合法 WINNER 行）', () => {
     expect(parseJudgeWinner('WINNER: 1\n但我补充一句说明', 2)).toEqual({ index: 0, parsed: false });
+  });
+
+  // Codex audit R2-M2：锚定不能过死——尾随代码 fence / 轻微标点不应打回 fail-open
+  it('WINNER 行被代码 fence 包裹 → 跳过纯 fence 行后仍解析成功', () => {
+    expect(parseJudgeWinner('理由\n```text\nWINNER: 1\n```', 2)).toEqual({ index: 1, parsed: true });
+  });
+
+  it('WINNER 行带句号等轻微尾随标点 → 解析成功', () => {
+    expect(parseJudgeWinner('理由\nWINNER: 1.', 2)).toEqual({ index: 1, parsed: true });
+    expect(parseJudgeWinner('理由\nWINNER: 0。', 2)).toEqual({ index: 0, parsed: true });
+  });
+
+  it('fence 行本身含注入字样不被误读（只跳过纯 fence 行）', () => {
+    expect(parseJudgeWinner('理由\nWINNER: 1\n``` WINNER: 0 ```', 2)).toEqual({ index: 0, parsed: false });
   });
 
   it('索引越界 → fail-open 选 0', () => {
@@ -354,6 +369,51 @@ describe('runMaxModeStep', () => {
         { messages: MESSAGES, tools: TOOLS, candidates: 2 },
       ),
     ).rejects.toThrow(/abort/i);
+  });
+
+  // Codex audit R2-M1：中止不丢沉没成本——已完成候选/judge 的 usage 随中止错误带出
+  it('中止错误携带已完成候选的 usage（全部候选都是沉没成本，无赢家豁免）', async () => {
+    let aborted = false;
+    let n = 0;
+    const silentEngine: MaxModeEngine = vi.fn(async () => {
+      n++;
+      const r = { ...textResponse(`c${n}`, { inputTokens: 100, outputTokens: n }), actualModel: 'glm-free', actualProvider: 'zhipu' };
+      if (n === 2) aborted = true;
+      return r;
+    });
+    const error = await runMaxModeStep(
+      { silentEngine, streamingEngine: vi.fn(), isAborted: () => aborted },
+      { messages: MESSAGES, tools: TOOLS, candidates: 2 },
+    ).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(MaxModeAbortError);
+    const entries = (error as MaxModeAbortError).overheadEntries;
+    expect(entries).toHaveLength(2);
+    expect(entries.reduce((s, e) => s + e.inputTokens, 0)).toBe(200);
+    expect(entries[0].actualModel).toBe('glm-free');
+  });
+
+  it('judge 后中止 → 沉没成本含全部候选 + judge', async () => {
+    let judgeRan = false;
+    const silentEngine: MaxModeEngine = vi.fn(async (_m, tools) => {
+      if (tools.length === 0) {
+        judgeRan = true;
+        return textResponse('WINNER: 1', { inputTokens: 50, outputTokens: 5 });
+      }
+      return textResponse('c', { inputTokens: 100, outputTokens: 10 });
+    });
+    const error = await runMaxModeStep(
+      { silentEngine, streamingEngine: vi.fn(), isAborted: () => judgeRan },
+      { messages: MESSAGES, tools: TOOLS, candidates: 2 },
+    ).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(MaxModeAbortError);
+    const entries = (error as MaxModeAbortError).overheadEntries;
+    expect(entries.reduce((s, e) => s + e.inputTokens, 0)).toBe(250); // 2×100 候选 + 50 judge
   });
 
   // Codex audit R1-M2：overhead 按实际路由模型分账

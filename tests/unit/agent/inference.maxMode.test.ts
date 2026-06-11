@@ -300,6 +300,11 @@ describe('inference Max Mode wiring', () => {
     expect(response.type).toBe('text');
     expect(response.content ?? '').toBe('');
     expect(response.toolCalls ?? []).toHaveLength(0);
+
+    // Codex R2-M1：中止时已完成候选的沉没成本仍要记账（2 候选 × 10 in/1 out）
+    const sunk = mockRecordUsage.mock.calls.map((c) => c[0]);
+    expect(sunk.reduce((s, u) => s + u.inputTokens, 0)).toBe(20);
+    expect(sunk.reduce((s, u) => s + u.outputTokens, 0)).toBe(2);
   });
 
   // Codex R1-M2：adaptive 路由后的 overhead 按实际模型分账

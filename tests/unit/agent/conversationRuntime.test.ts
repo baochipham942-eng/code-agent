@@ -1120,6 +1120,46 @@ describe('ConversationRuntime', () => {
       expect(ctx.goalTracker.initialize).toHaveBeenCalledWith('hello');
     });
 
+    it('forces a tool-free three-part summary when max iterations is reached (roadmap 1.6)', async () => {
+      ctx.maxIterations = 2;
+      // 第一轮：steer 触发 re-inference，让循环进入第二轮（最后一轮）
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          ctx.needsReinference = true;
+          return { type: 'text', content: 'partial' };
+        })
+        .mockImplementationOnce(async () => {
+          // 最后一轮：max-steps 兜底应已激活（禁用工具走 forceFinalResponseReason 通道）
+          expect(ctx.forceFinalResponseReason).toBeTruthy();
+          expect(ctx.forceFinalResponsePrompt).toContain('MAXIMUM STEPS REACHED');
+          return { type: 'text', content: 'Maximum steps reached. Summary of work done.' };
+        });
+
+      await runtime.run('long task');
+
+      expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(2);
+      // 兜底激活后走 forceFinalResponse 通道（真实 MessageProcessor 在 forced-final
+      // 文本收尾后清理标志，此处 MessageProcessor 为 mock，不验证清理）
+      expect(ctx.forceFinalResponseReason).toBe('max-steps-reached');
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'long task',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'completed' }),
+      );
+    });
+
+    it('does not force a summary when the run completes before max iterations', async () => {
+      ctx.maxIterations = 5;
+      modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: 'Done!' });
+
+      await runtime.run('quick task');
+
+      expect(ctx.forceFinalResponsePrompt).toBeUndefined();
+      expect(ctx.forceFinalResponseReason).toBeUndefined();
+    });
+
     it('continues goal mode after a plain text response and lets the fallback gate stop it', async () => {
       ctx.goalMode = new GoalModeController({
         goal: 'finish',

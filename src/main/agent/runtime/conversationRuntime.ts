@@ -50,6 +50,7 @@ import { DEFAULT_MODELS, MODEL_MAX_TOKENS, getContextWindow, TOOL_PROGRESS, TOOL
 
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
+import { activateMaxStepsFinalResponse } from './maxStepsFallback';
 import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
 
 // Import refactored modules
@@ -459,6 +460,16 @@ export class ConversationRuntime {
             data: { message: 'Budget exceeded. Please increase budget or wait for reset.', code: 'BUDGET_EXCEEDED' },
           });
           break;
+        }
+
+        // Max-steps 兜底（借鉴 MiMoCode max-steps.txt）：进入最后一轮时禁用工具，
+        // 强制纯文本三段式总结（已完成/未完成/建议下一步），避免步数耗尽无收尾直接断流。
+        if (iterations >= this.ctx.maxIterations && this.ctx.maxIterations > 1) {
+          activateMaxStepsFinalResponse(this.ctx);
+          logger.warn('[AgentLoop] Max iterations reached; forcing tool-free final summary', {
+            iterations,
+            maxIterations: this.ctx.maxIterations,
+          });
         }
 
         // Goal mode 闸3（兜底，每轮先跑）：轮次/预算/无进展任一触发即标 aborted 收尾。

@@ -708,6 +708,28 @@ export async function runAcceptanceLoop(params: {
   const log = params.log ?? ((msg) => console.error(msg));
   const rounds: RoundResult[] = [];
 
+  // Artifact retention: the monotonicity gate protects the SCORE accounting, but
+  // a regressing repair round still overwrites the artifact FILE in place — so
+  // without this, an escalated run leaves the WORST version on disk and reports
+  // the LAST round, not the best (verified 2026-06-11 deepseek: round0 35/6 got
+  // clobbered by repair rounds down to 18/26). We snapshot the best artifact and
+  // restore it on regression, so repairs always patch the best baseline and the
+  // delivered file is the best one.
+  const bestSnapshot = `${params.baseArtifactPath}.best`;
+  const snapshotArtifact = async (): Promise<void> => {
+    if (await fileExists(params.baseArtifactPath)) {
+      await fs.copyFile(params.baseArtifactPath, bestSnapshot).catch(() => {});
+    }
+  };
+  const restoreArtifact = async (): Promise<void> => {
+    if (await fileExists(bestSnapshot)) {
+      await fs.copyFile(bestSnapshot, params.baseArtifactPath).catch(() => {});
+    }
+  };
+  const cleanupSnapshot = async (): Promise<void> => {
+    await fs.rm(bestSnapshot, { force: true }).catch(() => {});
+  };
+
   // Round 0: initial BoN
   const round0 = await runBestOfN({
     bonN: params.bonN,
@@ -732,8 +754,9 @@ export async function runAcceptanceLoop(params: {
     };
   }
 
-  // Repair rounds
+  // Repair rounds. round0 is the initial best — snapshot it.
   let baselineRound = round0;
+  await snapshotArtifact();
   for (let attempt = 1; attempt <= params.repairCap; attempt += 1) {
     // P3 monotonic repair: hand the baseline's failure list to the next round
     // so generate() can do a minimal-edit patch instead of a fresh rewrite.
@@ -774,9 +797,12 @@ export async function runAcceptanceLoop(params: {
       const reason = formatRegressionMessage(baselineRound, round, regressed);
       log(`[acceptance] STRICT monotonic regression detected at round ${attempt}:\n${reason}`);
       log(formatRoundLine(round, params.bonN));
+      // Deliver the best (pre-regression) artifact, not the regressed one.
+      await restoreArtifact();
+      await cleanupSnapshot();
       return {
         rounds,
-        finalResult: round,
+        finalResult: baselineRound,
         bonN: params.bonN,
         repairCap: params.repairCap,
         monotonicMode: params.monotonicMode,
@@ -786,16 +812,20 @@ export async function runAcceptanceLoop(params: {
     }
 
     if (regressed.length > 0) {
-      // warn-mode: log but do NOT advance baseline; next iteration is compared against the same baseline.
-      log(formatRoundLine(round, params.bonN, ' [REGRESSED — discarded, retaining baseline]'));
+      // warn-mode: log but do NOT advance baseline; restore the artifact FILE to
+      // the best baseline so the next repair round patches the good version (not
+      // the regressed one) and the delivered file stays the best.
+      log(formatRoundLine(round, params.bonN, ' [REGRESSED — discarded, restoring best artifact]'));
       log(`[acceptance] WARN monotonic regression at round ${attempt}: ${regressed.join(', ')}`);
-      // Do NOT update baselineRound, so subsequent rounds are still compared against the last good state.
+      await restoreArtifact();
     } else {
       log(formatRoundLine(round, params.bonN));
       baselineRound = round;
+      await snapshotArtifact();
     }
 
     if (round.fullyPassed) {
+      await cleanupSnapshot();
       return {
         rounds,
         finalResult: round,
@@ -808,14 +838,16 @@ export async function runAcceptanceLoop(params: {
     }
   }
 
-  // Repair cap reached without PASS — escalate.
-  const finalRound = rounds[rounds.length - 1];
+  // Repair cap reached without full PASS — escalate, but deliver the BEST round's
+  // artifact (baselineRound), not the last (possibly regressed) one.
+  await restoreArtifact();
+  await cleanupSnapshot();
   const reason =
     'repair cap reached, escalate to architecture review (do not retry blindly — see docs/audits/2026-05-07-game-acceptance-architecture.md §7)';
   log(`[acceptance] ${reason}`);
   return {
     rounds,
-    finalResult: finalRound,
+    finalResult: baselineRound,
     bonN: params.bonN,
     repairCap: params.repairCap,
     monotonicMode: params.monotonicMode,

@@ -405,6 +405,54 @@ describe('runAcceptanceLoop — Guard 3: monotonicity gate', () => {
   });
 });
 
+describe('artifact retention on regression (deepseek 35/6 → clobbered regression)', () => {
+  it('escalates with finalResult = best round AND restores the best artifact file', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'acceptance-retain-'));
+    const artifactPath = path.join(dir, 'game.html');
+    await fs.writeFile(artifactPath, 'GOOD round0', 'utf-8');
+
+    // round0 writes GOOD (3 passing checks); every repair round writes BAD (regresses to 1).
+    let round = 0;
+    const generate: GenerateCandidateFn = vi.fn(async () => {
+      if (round > 0) await fs.writeFile(artifactPath, 'BAD repair', 'utf-8');
+      round += 1;
+      return { generation: { responses: [], toolCount: 1, errors: [] }, artifactPath };
+    });
+    const validate = async (p: string): Promise<ValidationSummary> => {
+      const content = await fs.readFile(p, 'utf-8');
+      const good = content.startsWith('GOOD');
+      return makeSummary({
+        artifactPath: p,
+        runtimePassed: false,
+        browserPassed: true,
+        runtimeChecks: ['stomp', 'bump', 'ability'],
+        runtimeFailures: good ? [] : ['stomp', 'bump'], // BAD regresses stomp+bump
+        browserChecks: ['desktop'],
+      });
+    };
+
+    const result = await runAcceptanceLoop({
+      bonN: 1,
+      repairCap: 2,
+      monotonicMode: 'warn',
+      baseArtifactPath: artifactPath,
+      runtimeTimeoutMs: 1000,
+      generate,
+      validate,
+      log: noopLog,
+    });
+
+    expect(result.escalated).toBe(true);
+    // finalResult must be the BEST round (round 0), not the last regressed round.
+    expect(result.finalResult.round).toBe(0);
+    expect(result.finalResult.passCount).toBeGreaterThan(result.rounds[result.rounds.length - 1].passCount);
+    // The delivered artifact file must be restored to the best (round 0) version.
+    expect(await fs.readFile(artifactPath, 'utf-8')).toBe('GOOD round0');
+    // The .best snapshot is cleaned up.
+    expect(await fs.access(`${artifactPath}.best`).then(() => true, () => false)).toBe(false);
+  });
+});
+
 describe('diffRegressedChecks', () => {
   it('returns the set of runtime/browser checks that were passing before but now fail', () => {
     const previous: RoundResult = {

@@ -1160,6 +1160,65 @@ describe('ConversationRuntime', () => {
       expect(ctx.forceFinalResponseReason).toBeUndefined();
     });
 
+    it('aborts the run when the model keeps repeating the same tool call (doom loop, roadmap 1.2)', async () => {
+      // mock 的 detectAndForceExecuteTextToolCall 默认会替换 response，这里改为透传
+      const mp = (runtime as unknown as {
+        messageProcessor: { detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn> };
+      }).messageProcessor;
+      mp.detectAndForceExecuteTextToolCall.mockImplementation((response: unknown) => ({
+        shouldContinue: false,
+        response,
+        wasForceExecuted: false,
+      }));
+      // 每轮都返回完全相同的 tool_use；mock MessageProcessor.handleToolResponse 返回 'continue'
+      modules.contextAssembly.inference.mockResolvedValue({
+        type: 'tool_use',
+        toolCalls: [{ id: 't1', name: 'Read', arguments: { path: 'a.ts' } }],
+      });
+
+      await runtime.run('loop forever');
+
+      // ×3 触发 nudge，×4 升级 abort：共 4 次 inference
+      expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(4);
+      expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+        expect.stringContaining('<doom-loop-guard>'),
+      );
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'loop forever',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'aborted' }),
+      );
+    });
+
+    it('auto-continues empty text output with a nudge, capped (roadmap 1.2 L3)', async () => {
+      const mp = (runtime as unknown as {
+        messageProcessor: { detectAndForceExecuteTextToolCall: ReturnType<typeof vi.fn> };
+      }).messageProcessor;
+      mp.detectAndForceExecuteTextToolCall.mockImplementation((response: unknown) => ({
+        shouldContinue: false,
+        response,
+        wasForceExecuted: false,
+      }));
+      modules.contextAssembly.inference.mockResolvedValue({ type: 'text', content: '' });
+
+      await runtime.run('empty answers');
+
+      // 3 次续接 + 第 4 次达上限停止
+      expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(4);
+      expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+        expect.stringContaining('no usable answer'),
+      );
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'empty answers',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'completed' }),
+      );
+    });
+
     it('continues goal mode after a plain text response and lets the fallback gate stop it', async () => {
       ctx.goalMode = new GoalModeController({
         goal: 'finish',

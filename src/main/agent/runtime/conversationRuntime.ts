@@ -51,6 +51,7 @@ import { DEFAULT_MODELS, MODEL_MAX_TOKENS, getContextWindow, TOOL_PROGRESS, TOOL
 import { writeTurnSnapshot } from './turnSnapshotWriter';
 import { maybePauseForStep } from './stepPause';
 import { activateMaxStepsFinalResponse } from './maxStepsFallback';
+import { DoomLoopGuard } from './doomLoopGuard';
 import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
 
 // Import refactored modules
@@ -430,6 +431,8 @@ export class ConversationRuntime {
     let userTurnId: string | undefined;
     let terminal: RunTerminalInfo = { status: 'completed' };
     let runError: unknown;
+    // Doom loop 三层防护（roadmap 1.2）：per-run 实例化 = 计数器每轮用户输入重置
+    const doomLoopGuard = new DoomLoopGuard();
 
     try {
       while (!this.ctx.isCancelled && !this.ctx.isInterrupted && !this.ctx.circuitBreaker.isTripped() && iterations < this.ctx.maxIterations) {
@@ -643,6 +646,22 @@ export class ConversationRuntime {
         response = forceExecResult.response;
         const wasForceExecuted = forceExecResult.wasForceExecuted;
 
+        // 2a-2. L3 空输出自动续接（doom loop 防护，带上限）：空文本既不该收尾也不该
+        // 静默断流，注入续接提示让模型给出可用回答；连续超限则放行自然退出。
+        if (
+          response.type === 'text'
+          && !response.content?.trim()
+          && !this.ctx.forceFinalResponseReason
+        ) {
+          const emptyCheck = doomLoopGuard.recordEmptyOutput();
+          if (emptyCheck.action === 'continue' && emptyCheck.nudge) {
+            logger.warn('[DoomLoopGuard] Empty text output; auto-continuing with nudge');
+            this.contextAssembly.injectSystemMessage(emptyCheck.nudge);
+            continue;
+          }
+          logger.warn('[DoomLoopGuard] Empty output continuation limit reached; stopping');
+        }
+
         // 2b. Handle actual text response
         if (response.type === 'text' && response.content) {
           const textAction = await this.messageProcessor.handleTextResponse(response, isSimpleTask, iterations, true, langfuse);
@@ -656,6 +675,25 @@ export class ConversationRuntime {
 
         // 3. Handle tool calls
         if (response.type === 'tool_use' && response.toolCalls) {
+          // Doom loop 防护：L1 同名同参 ×3 → 强警告；警告后仍重复 → 中止交还用户；
+          // L2 整步行动签名 ×3 → nudge（不拒绝，让模型自己换策略）
+          const doomCheck = doomLoopGuard.recordStep(
+            response.toolCalls.map((tc) => ({ name: tc.name, arguments: tc.arguments })),
+          );
+          if (doomCheck.level === 'doom-loop-abort') {
+            logger.warn('[DoomLoopGuard] Identical tool call repeated after warning; aborting run');
+            logCollector.agent('WARN', 'Doom loop abort: identical tool call repeated after warning');
+            this.ctx.onEvent({
+              type: 'notification',
+              data: { message: 'Doom loop 防护：模型连续重复同一工具调用且警告无效，已中止本次执行' },
+            });
+            terminal = { status: 'aborted' };
+            break;
+          }
+          if (doomCheck.nudge) {
+            logger.warn(`[DoomLoopGuard] ${doomCheck.level} detected; injecting nudge`);
+            this.contextAssembly.injectSystemMessage(doomCheck.nudge);
+          }
           const toolAction = await this.messageProcessor.handleToolResponse(response, wasForceExecuted, iterations, langfuse);
           if (toolAction === 'continue') continue;
         }

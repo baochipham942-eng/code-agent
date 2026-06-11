@@ -15,7 +15,8 @@ export const historySchema: ToolSchema = {
     'reasoning/tool_input/tool_output), tool_name and time range; returns snippets with message ids. ' +
     'around — given a message id from a search hit, pull the ±N surrounding messages for full context. ' +
     'Typical flow: search → pick a hit → around(message_id). Query must be ≥ 3 characters ' +
-    '(trigram). Plain queries match literally; prefix with `"` for raw FTS5 syntax.',
+    '(trigram). Plain queries match literally; prefix with `"` for raw FTS5 syntax. ' +
+    'Note: system-role messages are not indexed.',
   inputSchema: {
     type: 'object',
     properties: {

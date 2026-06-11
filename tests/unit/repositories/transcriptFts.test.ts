@@ -18,8 +18,10 @@ import type BetterSqlite3 from 'better-sqlite3';
 
 import {
   applyTranscriptFtsSchema,
+  runTranscriptFtsBackfill,
   TRANSCRIPT_FTS_BODY_CAP,
 } from '../../../src/shared/transcriptFts.sql';
+import { MEMORY } from '../../../src/shared/constants';
 import { SessionRepository } from '../../../src/main/services/core/repositories/SessionRepository';
 import type { Message, ToolCall, ToolResult } from '../../../src/shared/contract';
 
@@ -473,6 +475,15 @@ describe('SessionRepository — Transcript FTS5 (kind-decomposed)', () => {
     expect(repo.getTranscriptAround('nope', {})).toBeNull();
   });
 
+  it('clamps the around window to MEMORY.HISTORY_AROUND_MAX_WINDOW at the repository level', () => {
+    for (let i = 1; i <= 30; i++) {
+      repo.addMessage('sess-A', makeMessage(`w${i}`, `window message ${i}`, { timestamp: i * 1000 }));
+    }
+    const ctxResult = repo.getTranscriptAround('w30', { before: 500, after: 0 });
+    // 30 条候选里最多取 MAX_WINDOW 条 before + 锚点自身
+    expect(ctxResult!.messages.length).toBeLessThanOrEqual(MEMORY.HISTORY_AROUND_MAX_WINDOW + 1);
+  });
+
   it('does not cross session boundaries', () => {
     repo.addMessage('sess-A', makeMessage('a1', 'in A', { timestamp: 1000 }));
     repo.addMessage('sess-B', makeMessage('b1', 'in B', { timestamp: 1500 }));
@@ -526,6 +537,27 @@ describe('applyTranscriptFtsSchema — bare schema compatibility', () => {
 
     const kinds = (db.prepare('SELECT kind FROM transcript_fts ORDER BY kind').all() as Array<{ kind: string }>).map((r) => r.kind);
     expect(kinds).toEqual(['assistant_text', 'tool_input', 'tool_output']);
+  });
+
+  it('backfill helper is atomic — a mid-way failure leaves zero rows and surfaces the error', () => {
+    // 用带 CHECK 约束的普通表顶替 FTS 虚拟表：reasoning 行插入必失败，
+    // 用来验证前面已成功的 user_text 插入会被回滚（防"半截索引被幂等检查永久跳过"）
+    db.exec(`ALTER TABLE messages ADD COLUMN thinking TEXT`);
+    db.exec(`ALTER TABLE messages ADD COLUMN visibility TEXT NOT NULL DEFAULT 'active'`);
+    db.exec(`
+      CREATE TABLE transcript_fts (
+        message_id TEXT, session_id TEXT, kind TEXT CHECK (kind <> 'reasoning'),
+        tool_name TEXT, body TEXT, timestamp INTEGER
+      );
+    `);
+    db.prepare(
+      `INSERT INTO messages (id, session_id, role, content, timestamp, thinking)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run('m1', 's1', 'assistant', 'atomic pangolin text', 1000, 'pangolin reasoning');
+
+    expect(() => runTranscriptFtsBackfill(db)).toThrow(/CHECK|constraint/i);
+    const count = (db.prepare('SELECT COUNT(*) c FROM transcript_fts').get() as { c: number }).c;
+    expect(count).toBe(0);
   });
 
   it('repository search works against a bare-schema db (visibility column absent before apply)', () => {

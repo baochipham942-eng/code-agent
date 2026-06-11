@@ -174,6 +174,34 @@ export const TRANSCRIPT_FTS_BODY_COLUMN_INDEX = 4;
 export const TRANSCRIPT_FTS_BACKFILL_STATEMENTS: readonly string[] = buildInsertSelects('m', true);
 
 /**
+ * 原子执行全量 backfill。5 条语句包在单事务里：任何一条失败整体回滚并抛错。
+ * 没有事务时，部分成功会让 transcript_fts 非空，下次启动被幂等检查
+ * （count > 0 即跳过）永久跳过，留下半截索引。
+ * 调用方负责幂等前置检查（FTS 空 + messages 非空）与错误兜底。
+ */
+export function runTranscriptFtsBackfill(db: {
+  exec(sql: string): unknown;
+  prepare(sql: string): { run(): { changes?: number | bigint } };
+}): number {
+  let inserted = 0;
+  db.exec('BEGIN');
+  try {
+    for (const stmt of TRANSCRIPT_FTS_BACKFILL_STATEMENTS) {
+      inserted += Number(db.prepare(stmt).run().changes ?? 0);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      // 事务已被 SQLite 自动回滚时 ROLLBACK 会报错，忽略
+    }
+    throw err;
+  }
+  return inserted;
+}
+
+/**
  * trigger / 查询引用的 messages 列守卫。CLI 自建库与旧库可能缺这些列；
  * trigger 创建本身不校验列存在，缺列会让之后所有 INSERT 在运行期报错，
  * 所以必须在建 trigger 前补齐（已存在时 ALTER 报错被吞掉，幂等）。
@@ -221,7 +249,9 @@ export function applyTranscriptFtsSchema(db: { exec(sql: string): unknown }): vo
     END
   `);
 
-  // visibility 变化不触发重建：rewound 过滤在查询期 join messages 完成
+  // visibility 变化不触发重建：rewound 过滤在查询期 join messages 完成。
+  // ⚠️ 若未来给 messages 新增需要进 FTS 的文本列，必须同步扩充这里的 OF 子句
+  // 和 buildInsertSelects 的分解语句，否则该列的更新不会触发重索引。
   db.exec(`
     CREATE TRIGGER IF NOT EXISTS transcript_au_fts
     AFTER UPDATE OF content, thinking, tool_calls, tool_results, is_meta ON messages BEGIN

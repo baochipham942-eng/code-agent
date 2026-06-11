@@ -14,10 +14,11 @@ import { extractArtifacts } from '../../../agent/artifactExtractor';
 import { createLogger } from '../../infra/logger';
 import { generateFallbackShortDescription } from '../../../model/providers/shared';
 import {
-  TRANSCRIPT_FTS_BACKFILL_STATEMENTS,
+  runTranscriptFtsBackfill,
   TRANSCRIPT_FTS_BODY_COLUMN_INDEX,
   type TranscriptKind,
 } from '../../../../shared/transcriptFts.sql';
+import { MEMORY } from '../../../../shared/constants';
 import type { StoredSession, StoredMessage } from '../../../protocol/types';
 
 export type { StoredSession, StoredMessage };
@@ -792,10 +793,10 @@ export class SessionRepository {
   ): { sessionId: string; messages: Array<{ message: Message; matched: boolean }> } | null {
     const clampWindow = (value: number | undefined, fallback: number): number => {
       if (value === undefined || !Number.isFinite(value)) return fallback;
-      return Math.max(0, Math.min(Math.floor(value), 50));
+      return Math.max(0, Math.min(Math.floor(value), MEMORY.HISTORY_AROUND_MAX_WINDOW));
     };
-    const before = clampWindow(options.before, 5);
-    const after = clampWindow(options.after, 5);
+    const before = clampWindow(options.before, MEMORY.HISTORY_AROUND_DEFAULT_WINDOW);
+    const after = clampWindow(options.after, MEMORY.HISTORY_AROUND_DEFAULT_WINDOW);
 
     const anchor = this.db
       .prepare('SELECT rowid AS rid, session_id, timestamp FROM messages WHERE id = ?')
@@ -854,14 +855,7 @@ export class SessionRepository {
       }
 
       logger.info(`[TranscriptFts] Backfilling from ${Number(msgRow?.c ?? 0)} messages...`);
-      let inserted = 0;
-      const run = this.db.transaction(() => {
-        for (const stmt of TRANSCRIPT_FTS_BACKFILL_STATEMENTS) {
-          const result = this.db.prepare(stmt).run();
-          inserted += Number(result.changes ?? 0);
-        }
-      });
-      run();
+      const inserted = runTranscriptFtsBackfill(this.db);
       logger.info(`[TranscriptFts] Backfill complete: ${inserted} rows`);
       return inserted;
     } catch (err) {

@@ -19,10 +19,11 @@ import type {
 } from '../shared/contract';
 import {
   applyTranscriptFtsSchema,
-  TRANSCRIPT_FTS_BACKFILL_STATEMENTS,
+  runTranscriptFtsBackfill,
   TRANSCRIPT_FTS_BODY_COLUMN_INDEX,
   type TranscriptKind,
 } from '../shared/transcriptFts.sql';
+import { MEMORY } from '../shared/constants';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -402,9 +403,8 @@ export class CLIDatabaseService {
       const tFtsCount = (this.db.prepare('SELECT COUNT(*) as c FROM transcript_fts').get() as { c: number } | undefined)?.c ?? 0;
       const tMsgCount = (this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number } | undefined)?.c ?? 0;
       if (tFtsCount === 0 && tMsgCount > 0) {
-        for (const stmt of TRANSCRIPT_FTS_BACKFILL_STATEMENTS) {
-          this.db.prepare(stmt).run();
-        }
+        // 原子 backfill：中途失败整体回滚，避免半截索引被幂等检查永久跳过
+        runTranscriptFtsBackfill(this.db);
       }
     } catch {
       // backfill 失败不阻塞 CLI 启动
@@ -1189,10 +1189,10 @@ export class CLIDatabaseService {
     if (!this.db) return null;
     const clampWindow = (value: number | undefined, fallback: number): number => {
       if (value === undefined || !Number.isFinite(value)) return fallback;
-      return Math.max(0, Math.min(Math.floor(value), 50));
+      return Math.max(0, Math.min(Math.floor(value), MEMORY.HISTORY_AROUND_MAX_WINDOW));
     };
-    const before = clampWindow(options.before, 5);
-    const after = clampWindow(options.after, 5);
+    const before = clampWindow(options.before, MEMORY.HISTORY_AROUND_DEFAULT_WINDOW);
+    const after = clampWindow(options.after, MEMORY.HISTORY_AROUND_DEFAULT_WINDOW);
 
     const anchor = this.db
       .prepare('SELECT rowid AS rid, session_id, timestamp FROM messages WHERE id = ?')

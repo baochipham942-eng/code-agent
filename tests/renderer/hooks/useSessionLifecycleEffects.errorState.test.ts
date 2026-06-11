@@ -44,4 +44,46 @@ describe('agent lifecycle error helpers', () => {
     expect(content).toContain('4000K tokens');
     expect(content).toContain('新开会话继续。');
   });
+
+  it('explains model provider forbidden failures with next actions', () => {
+    const content = formatAgentErrorContent({
+      code: 'RUN_FAILED',
+      message: 'Forbidden',
+    });
+
+    expect(content).toContain('模型服务拒绝了这次请求');
+    expect(content).toContain('API Key');
+    expect(content).toContain('模型权限');
+    expect(content).toContain('切换到其他模型');
+  });
+
+  it('explains custom model not found failures with configuration hints', () => {
+    const content = formatAgentErrorContent({
+      code: 'RUN_FAILED',
+      message: 'Not Found',
+    });
+
+    expect(content).toContain('模型接口或模型名称不匹配');
+    expect(content).toContain('Base URL');
+    expect(content).toContain('/v1');
+    expect(content).toContain('模型 ID');
+  });
+
+  it('explains provider concurrency limits with retry guidance', () => {
+    const content = formatAgentErrorContent({
+      code: 'RUN_FAILED',
+      message: 'Concurrency limit exceeded for account, please retry later',
+    });
+
+    expect(content).toContain('模型账号并发已满');
+    expect(content).toContain('稍后重试');
+    expect(content).toContain('切换到其他可用模型');
+  });
+
+  it('keeps unknown failures in the raw error format', () => {
+    expect(formatAgentErrorContent({
+      code: 'RUN_FAILED',
+      message: 'Something unexpected happened',
+    })).toBe('Error: Something unexpected happened');
+  });
 });

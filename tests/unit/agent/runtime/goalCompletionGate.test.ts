@@ -22,6 +22,7 @@ function makeCtx(goalModeOverrides: Record<string, unknown> = {}) {
     getVerifyCommand: vi.fn().mockReturnValue(undefined),
     getReviewCondition: vi.fn().mockReturnValue('代码无重复逻辑'),
     getGoal: vi.fn().mockReturnValue('重构 utils'),
+    getSwarmTokensUsed: vi.fn().mockReturnValue(500),
     markMet: vi.fn(),
     markAborted: vi.fn(),
     ...goalModeOverrides,
@@ -33,6 +34,8 @@ function makeCtx(goalModeOverrides: Record<string, unknown> = {}) {
     runAbortController: null,
     hookManager: undefined,
     modelConfig: { provider: 'zhipu', model: 'glm-5' },
+    totalInputTokens: 1200,
+    totalOutputTokens: 300,
     onEvent: vi.fn(),
   } as unknown as RuntimeContext;
   const contextAssembly = {
@@ -58,7 +61,7 @@ describe('handleGoalCompletionGate — IMPOSSIBLE 主动止损 (roadmap 1.4)', (
     });
     const { ctx, goalMode, contextAssembly } = makeCtx();
 
-    const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall]);
+    const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 7);
 
     // 返回 continue：让下一轮走 forceFinalResponse 无工具推理，向用户解释不可达原因
     expect(result).toBe('continue');
@@ -74,11 +77,31 @@ describe('handleGoalCompletionGate — IMPOSSIBLE 主动止损 (roadmap 1.4)', (
     );
   });
 
+  it('IMPOSSIBLE 的 goal_complete 事件带真实 turns 与 tokensUsed（含 swarm 记账，codex audit R2 deferred）', async () => {
+    mockRunReviewGate.mockResolvedValue({
+      pass: false,
+      parsed: true,
+      impossible: true,
+      reason: '条件依赖不存在且无法创建的资源。',
+    });
+    const { ctx, contextAssembly } = makeCtx();
+
+    await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 7);
+
+    expect(ctx.onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'goal_complete',
+        // turns = 当前轮次；tokensUsed = 主 agent 1200+300 + swarm 500
+        data: expect.objectContaining({ status: 'aborted', turns: 7, tokensUsed: 2000 }),
+      }),
+    );
+  });
+
   it('普通 FAIL 仍走 continue 重入路径', async () => {
     mockRunReviewGate.mockResolvedValue({ pass: false, parsed: true, reason: '还有重复' });
     const { ctx, goalMode, contextAssembly } = makeCtx();
 
-    const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall]);
+    const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 3);
 
     expect(result).toBe('continue');
     expect(goalMode.markAborted).not.toHaveBeenCalled();
@@ -89,7 +112,7 @@ describe('handleGoalCompletionGate — IMPOSSIBLE 主动止损 (roadmap 1.4)', (
     mockRunReviewGate.mockResolvedValue({ pass: true, parsed: true, reason: 'ok' });
     const { ctx, goalMode, contextAssembly } = makeCtx();
 
-    const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall]);
+    const result = await handleGoalCompletionGate(ctx, contextAssembly, [completionCall], 3);
 
     expect(result).toBe('break');
     expect(goalMode.markMet).toHaveBeenCalled();

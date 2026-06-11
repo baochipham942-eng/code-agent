@@ -606,7 +606,7 @@ export class MessageProcessor {
 
     // Goal mode：拦截 attempt_completion → 双闸验证（闸1 确定性 verifyCommand + 闸2 软评审 reviewCondition）。
     // 完成判定权在代码层，模型无法靠"自称完成"绕过（拒绝 Ralph）。详见 goalCompletionGate。
-    const goalGateResult = await handleGoalCompletionGate(this.ctx, this.contextAssembly, toolCalls);
+    const goalGateResult = await handleGoalCompletionGate(this.ctx, this.contextAssembly, toolCalls, iterations);
     if (goalGateResult) return goalGateResult;
 
     const activeRepairGuard = this.ctx.artifactRepairGuard;

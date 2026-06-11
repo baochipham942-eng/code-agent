@@ -11,6 +11,7 @@ import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import { runVerifyGate } from '../goalVerifyGate';
 import { runReviewGate } from '../goalReviewGate';
+import { goalTokensUsedWithSwarm } from './swarmGoalIntegration';
 
 /**
  * 拦截 goal 模式下的 attempt_completion，跑双闸验证。
@@ -24,6 +25,7 @@ export async function handleGoalCompletionGate(
   ctx: RuntimeContext,
   contextAssembly: ContextAssembly,
   toolCalls: ToolCall[],
+  iterations: number,
 ): Promise<'continue' | 'break' | null> {
   if (!ctx.goalMode?.isPending()) return null;
   const completionCall = toolCalls.find((tc) => tc.name === 'attempt_completion');
@@ -84,7 +86,7 @@ export async function handleGoalCompletionGate(
       ctx.goalMode.markAborted(reason);
       ctx.onEvent({
         type: 'goal_complete',
-        data: { status: 'aborted', reason, turns: 0, tokensUsed: 0 },
+        data: { status: 'aborted', reason, turns: iterations, tokensUsed: goalTokensUsedWithSwarm(ctx) },
       });
       if (!ctx.forceFinalResponseReason) {
         ctx.forceFinalResponseReason = 'goal-impossible';

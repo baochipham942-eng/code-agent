@@ -214,6 +214,27 @@ describe('evaluateMilestone', () => {
     expect(result.passed).toBe(true);
   });
 
+  it('M0 is NOT blocked by coverage-completeness of promised rewards/risks (deepseek regression)', () => {
+    // These require mechanics to be IMPLEMENTED (M2/M3), so a static M0 skeleton
+    // must not be blocked by them — else the pipeline never leaves M0.
+    const result = evaluateMilestone(
+      M0,
+      summary([
+        'coverage 没有覆盖 qualityPlan 承诺的奖励、增强或收集物。',
+        'coverage 没有覆盖 qualityPlan 承诺的风险、敌人或失败约束。',
+      ]),
+    );
+    expect(result.passed).toBe(true);
+  });
+
+  it('M4 (final pass) DOES block on coverage-completeness of promised content', () => {
+    const result = evaluateMilestone(
+      M4,
+      summary(['coverage 没有覆盖 qualityPlan 承诺的奖励、增强或收集物。']),
+    );
+    expect(result.passed).toBe(false);
+  });
+
   it('M1 is blocked by movement failures but not by enemy/block failures', () => {
     const movementFailure = evaluateMilestone(
       M1,

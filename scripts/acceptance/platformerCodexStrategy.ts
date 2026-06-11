@@ -64,10 +64,16 @@ export const PLATFORMER_MILESTONES: MilestoneSpec[] = [
       'Declare exactly one level for the skeleton unless every declared level can already be driven to completion by runSmokeTest — coverage must prove all authored levels reachable.',
       'Game mechanics behavior (enemy AI, stomp, blocks, abilities, gates) is NOT required yet — declare them in metadata, expose their state in snapshot(), but the world may be static.',
     ],
+    // M0 blocks ONLY on structure/shape/contract-existence a STATIC skeleton can
+    // satisfy. Coverage/completeness failures ("coverage 没有覆盖 qualityPlan 承诺的
+    // 奖励/风险") require mechanics to be IMPLEMENTED — they belong to M3/M4, not
+    // M0. Keeping them here over-blocked M0 so the pipeline could never progress
+    // to M1-M4 (verified 2026-06-11 deepseek run: M0 stuck on coverage-of-rewards).
     blockingFailurePatterns: [
-      /metadata|contract|progressPlan|qualityPlan|coverage\.|metric/i,
-      /gameplayMechanics 必须|object maps|缺少 gameplayMechanics|comboChallenge 必须组合/,
-      /input: "none"|acceptance: \[/,
+      /不在 snapshot\(\) 结果里/,                                          // snapshot path missing
+      /gameplayMechanics 必须|object maps|缺少 gameplayMechanics|comboChallenge 必须组合/,  // mechanics META shape (arrays not maps)
+      /runSmokeTest\.checks 必须|必须是字符串数组|不能返回数字/,            // runSmokeTest return shape
+      /input: "none"|acceptance: \[|缺少可执行输入|没有暴露可执行的 reachability/, // plan field validity
     ],
   },
   {
@@ -121,6 +127,10 @@ export const PLATFORMER_MILESTONES: MilestoneSpec[] = [
     ],
     blockingFailurePatterns: [
       /visual smoke|canvas|viewport|nonblank|crop|首屏|actor|HUD/i,
+      // Coverage/completeness of promised qualityPlan content (rewards/risks) and
+      // all-levels-reachable are FINAL-PASS concerns — they require mechanics built
+      // in M2/M3, so they gate here (the last milestone), not M0.
+      /coverage 没有覆盖 qualityPlan|coverage 没有证明.*levels|可推进通关/,
     ],
   },
 ];

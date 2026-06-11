@@ -69,7 +69,16 @@ export type GenerationOutcome = {
   responses: string[];
   toolCount: number;
   errors: string[];
+  /** Codex milestone strategy only: per-milestone probe outcomes (W1-W3). */
+  milestones?: Array<{
+    milestoneId: string;
+    attempts: number;
+    passed: boolean;
+    blockingFailures: string[];
+  }>;
 };
+
+export type GenerationStrategy = 'single' | 'codex';
 
 export type CandidateResult = {
   candidateId: string;
@@ -112,6 +121,7 @@ type AcceptanceCliOutput = {
   mode: 'validate-only' | 'generate-and-validate';
   provider?: string;
   model?: string;
+  strategy?: GenerationStrategy;
   bonN: number;
   repairCap: number;
   monotonicMode: AcceptanceMonotonicMode;
@@ -133,6 +143,11 @@ Options:
   --validate-only        Do not call a model; validate an existing artifact.
   --provider <id>        Model provider. Default: PLATFORMER_GAMEPLAY_PROVIDER or openrouter.
   --model <id>           Model id. Default: PLATFORMER_GAMEPLAY_MODEL or google/gemini-3-flash-preview.
+  --strategy <id>        Generation strategy: single (one-shot, default) or codex
+                       (GAMEPLAN + milestone-incremental with probe self-checks and
+                       a .logs/ casebook — see docs/designs/game-gen-codex-workflow.md).
+                       env: PLATFORMER_GAMEPLAY_STRATEGY.
+  --milestone-retry <n>  codex strategy: in-milestone retries after a failed probe. Default: 1.
   --generation-timeout <ms>
                        Max time to wait for one agent generation. Default: 120000.
   --timeout <ms>         Runtime smoke timeout. Default: 10000.
@@ -170,6 +185,23 @@ function apiKeyForProvider(provider: string): string | undefined {
     if (value) return value;
   }
   return undefined;
+}
+
+/**
+ * Resolve the provider key the same way the app does: env first, then the
+ * app's SecureStorage (in-memory only — the key is never written to disk or
+ * echoed). Lets the harness run against any provider the user already
+ * configured in-app without copying secrets into .env.
+ */
+async function resolveApiKey(provider: string): Promise<string | undefined> {
+  const envKey = apiKeyForProvider(provider);
+  if (envKey) return envKey;
+  try {
+    const { getSecureStorage } = await import('../../src/main/services/core/secureStorage.ts');
+    return getSecureStorage().getApiKey(provider) || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function resolveArtifactPath(rawPath: string | undefined): string {
@@ -255,6 +287,31 @@ export function prioritizeFailures(failures: string[]): string[] {
   return [...failures].sort((a, b) => score(a) - score(b));
 }
 
+/** One agent session, one prompt — the unit both strategies are built from. */
+async function sendAgentPrompt(options: {
+  provider: string;
+  model: string;
+  apiKey: string;
+  prompt: string;
+}): Promise<GenerationOutcome> {
+  const agent = new StandaloneAgentAdapter({
+    workingDirectory: projectRoot,
+    modelConfig: {
+      provider: options.provider,
+      model: options.model,
+      apiKey: options.apiKey,
+    },
+    toolMode: 'deferred',
+  });
+  const result = await agent.sendMessage(options.prompt);
+  await agent.finalizeSession();
+  return {
+    responses: result.responses,
+    toolCount: result.toolExecutions.length,
+    errors: result.errors,
+  };
+}
+
 async function runAgentGeneration(options: {
   artifactPath: string;
   provider: string;
@@ -267,6 +324,8 @@ async function runAgentGeneration(options: {
    * fresh "create from scratch" prompt.
    */
   previousFailures?: string[];
+  /** Codex strategy (W4): casebook tail prepended to repair prompts. */
+  casebookPreamble?: string;
 }): Promise<GenerationOutcome> {
   await fs.mkdir(path.dirname(options.artifactPath), { recursive: true });
   const isRepairRound = Array.isArray(options.previousFailures) && options.previousFailures.length > 0;
@@ -276,25 +335,131 @@ async function runAgentGeneration(options: {
     await fs.rm(options.artifactPath, { force: true });
   }
 
-  const agent = new StandaloneAgentAdapter({
-    workingDirectory: projectRoot,
-    modelConfig: {
-      provider: options.provider,
-      model: options.model,
-      apiKey: options.apiKey,
-    },
-    toolMode: 'deferred',
-  });
-
   const prompt = isRepairRound
-    ? buildRepairPrompt(options.artifactPath, options.previousFailures!)
+    ? (options.casebookPreamble ?? '') + buildRepairPrompt(options.artifactPath, options.previousFailures!)
     : buildGenerationPrompt(options.artifactPath);
-  const result = await agent.sendMessage(prompt);
-  await agent.finalizeSession();
-  return {
-    responses: result.responses,
-    toolCount: result.toolExecutions.length,
-    errors: result.errors,
+  return sendAgentPrompt({
+    provider: options.provider,
+    model: options.model,
+    apiKey: options.apiKey,
+    prompt,
+  });
+}
+
+/**
+ * Codex strategy (docs/designs/game-gen-codex-workflow.md): round-0 candidates
+ * come from the GAMEPLAN → M0..M4 milestone pipeline with runtime-smoke probes
+ * between milestones; repair rounds reuse the single-strategy minimal-edit
+ * repair but with the .logs/ casebook prepended so repairs are not blind.
+ */
+async function buildCodexGenerate(options: {
+  artifactPath: string;
+  provider: string;
+  model: string;
+  apiKey: string;
+  generationTimeoutMs: number;
+  runtimeTimeoutMs: number;
+  milestoneRetryCap: number;
+}): Promise<GenerateCandidateFn> {
+  const strategy = await import('./platformerCodexStrategy.ts');
+
+  const probe = async (artifactPath: string): Promise<ValidationSummary> => {
+    const validation = await validateGameArtifact(artifactPath, {
+      runRuntimeSmoke: true,
+      runtimeSmokeTimeoutMs: options.runtimeTimeoutMs,
+      runBrowserVisualSmoke: false,
+    });
+    return {
+      artifactPath,
+      passed: validation.passed,
+      failures: validation.failures,
+      runtimePassed: validation.runtimeSmoke?.passed,
+      runtimeFailures: validation.runtimeSmoke?.failures,
+      runtimeChecks: validation.runtimeSmoke?.checks,
+    };
+  };
+
+  return async ({ candidateIndex, round, previousFailures }) => {
+    const isRepairRound = Array.isArray(previousFailures) && previousFailures.length > 0;
+
+    if (isRepairRound) {
+      try {
+        const tail = await strategy.readCasebookTail(options.artifactPath);
+        const result = await withTimeout(
+          runAgentGeneration({
+            artifactPath: options.artifactPath,
+            provider: options.provider,
+            model: options.model,
+            apiKey: options.apiKey,
+            previousFailures,
+            casebookPreamble: strategy.buildCasebookPreamble(tail),
+          }),
+          options.generationTimeoutMs,
+          `Agent generation timed out after ${options.generationTimeoutMs}ms`,
+        );
+        await strategy.appendCasebook(options.artifactPath, {
+          stage: `repair round ${round} (r${round}c${candidateIndex})`,
+          goal: 'fix acceptance failures with minimal edits (casebook-aware)',
+          action: `targeted top failures: ${previousFailures!.slice(0, 3).join(' | ')}`,
+          probeResult: result.errors.length > 0 ? 'ERROR' : 'DISPATCHED',
+          details: result.errors,
+          conclusion: 'validation outcome recorded by acceptance loop report',
+        });
+        const generationError = result.errors.length > 0
+          ? `Agent generation reported errors: ${result.errors.join('; ')}`
+          : undefined;
+        return { generation: result, generationError, artifactPath: options.artifactPath };
+      } catch (error) {
+        return {
+          generation: null,
+          generationError: error instanceof Error ? error.message : String(error),
+          artifactPath: options.artifactPath,
+        };
+      }
+    }
+
+    // Fresh candidate: wipe stale artifact, run the milestone pipeline.
+    await fs.rm(options.artifactPath, { force: true });
+    try {
+      const result = await strategy.runCodexMilestonePipeline(options.artifactPath, {
+        generateMilestone: (prompt) =>
+          withTimeout(
+            sendAgentPrompt({
+              provider: options.provider,
+              model: options.model,
+              apiKey: options.apiKey,
+              prompt,
+            }),
+            options.generationTimeoutMs,
+            `Milestone generation timed out after ${options.generationTimeoutMs}ms`,
+          ),
+        probe,
+        readArtifact: async (p) => {
+          try {
+            return await fs.readFile(p, 'utf-8');
+          } catch {
+            return null;
+          }
+        },
+        log: (message) => console.error(message),
+        appendLog: (entry) =>
+          strategy.appendCasebook(options.artifactPath, {
+            ...entry,
+            stage: `r${round}c${candidateIndex} ${entry.stage}`,
+          }),
+        milestoneRetryCap: options.milestoneRetryCap,
+      });
+      const generationError = result.errors.length > 0
+        ? `Codex milestone pipeline reported errors: ${result.errors.join('; ')}`
+        : undefined;
+      return { generation: result, generationError, artifactPath: options.artifactPath };
+    } catch (error) {
+      return {
+        generation: null,
+        generationError: error instanceof Error ? error.message : String(error),
+        artifactPath: options.artifactPath,
+      };
+    }
   };
 }
 
@@ -860,6 +1025,23 @@ async function writeMarkdownReport(reportPath: string, output: AcceptanceCliOutp
   const generationSummary = output.loop?.finalResult.selected.generation ?? null;
   const generationError = output.loop?.finalResult.selected.generationError;
 
+  const milestoneRows: string[] = [];
+  const roundZero = output.loop?.rounds.find((r) => r.round === 0);
+  const milestoneSource = roundZero?.selected.generation?.milestones
+    ?? generationSummary?.milestones;
+  if (milestoneSource && milestoneSource.length > 0) {
+    milestoneRows.push('## Codex Milestones (round 0)', '');
+    milestoneRows.push('| milestone | attempts | passed | blocking failures |');
+    milestoneRows.push('| --- | --- | --- | --- |');
+    for (const m of milestoneSource) {
+      const blocking = m.blockingFailures.length > 0
+        ? m.blockingFailures.slice(0, 2).join('; ').replace(/\|/g, '\\|')
+        : 'none';
+      milestoneRows.push(`| ${m.milestoneId} | ${m.attempts} | ${m.passed} | ${blocking} |`);
+    }
+    milestoneRows.push('');
+  }
+
   const body = [
     '# Platformer Gameplay Acceptance Report',
     '',
@@ -870,6 +1052,7 @@ async function writeMarkdownReport(reportPath: string, output: AcceptanceCliOutp
     `- artifactPath: ${validation.artifactPath}`,
     `- provider: ${output.provider ?? 'N/A'}`,
     `- model: ${output.model ?? 'N/A'}`,
+    `- strategy: ${output.strategy ?? 'N/A'}`,
     `- passed: ${validation.passed}`,
     `- runtimePassed: ${validation.runtimePassed ?? 'N/A'}`,
     `- browserPassed: ${validation.browserPassed ?? 'N/A'}`,
@@ -877,6 +1060,7 @@ async function writeMarkdownReport(reportPath: string, output: AcceptanceCliOutp
     formatProductStatusMarkdown(validation),
     '',
     ...loopRows,
+    ...milestoneRows,
     '## Generation (selected candidate)',
     '',
     formatGenerationResult(generationSummary, generationError),
@@ -969,6 +1153,13 @@ async function main(): Promise<void> {
   const bonN = resolveBonN(args);
   const repairCap = resolveRepairCap(args);
   const monotonicMode: AcceptanceMonotonicMode = hasFlag(args, 'strict-monotonic') ? 'strict' : 'warn';
+  const strategyRaw =
+    getStringOption(args, 'strategy') || envValue('PLATFORMER_GAMEPLAY_STRATEGY') || 'single';
+  if (strategyRaw !== 'single' && strategyRaw !== 'codex') {
+    throw new Error(`Unknown --strategy "${strategyRaw}" — expected "single" or "codex".`);
+  }
+  const strategy: GenerationStrategy = strategyRaw;
+  const milestoneRetryCap = Math.max(0, Math.floor(getNumberOption(args, 'milestone-retry') ?? 1));
 
   let loop: AcceptanceLoopOutput | undefined;
   let validationSummary: ValidationSummary;
@@ -985,32 +1176,43 @@ async function main(): Promise<void> {
       validationSummary = await validateArtifact(artifactPath, timeoutMs);
     }
   } else {
-    const apiKey = apiKeyForProvider(provider);
+    const apiKey = await resolveApiKey(provider);
     if (!apiKey) {
       throw new Error(
-        `Missing API key for provider ${provider}. Set one of ${(PROVIDER_KEY_CANDIDATES[provider] || [`${provider.toUpperCase()}_API_KEY`]).join(', ')} or run with --validate-only.`,
+        `Missing API key for provider ${provider}. Set one of ${(PROVIDER_KEY_CANDIDATES[provider] || [`${provider.toUpperCase()}_API_KEY`]).join(', ')}, configure the provider in-app, or run with --validate-only.`,
       );
     }
 
-    const generate: GenerateCandidateFn = async ({ previousFailures }) => {
-      try {
-        const result = await withTimeout(
-          runAgentGeneration({ artifactPath, provider, model, apiKey, previousFailures }),
-          generationTimeoutMs,
-          `Agent generation timed out after ${generationTimeoutMs}ms`,
-        );
-        const generationError = result.errors.length > 0
-          ? `Agent generation reported errors: ${result.errors.join('; ')}`
-          : undefined;
-        return { generation: result, generationError, artifactPath };
-      } catch (error) {
-        return {
-          generation: null,
-          generationError: error instanceof Error ? error.message : String(error),
-          artifactPath,
-        };
-      }
-    };
+    const generate: GenerateCandidateFn =
+      strategy === 'codex'
+        ? await buildCodexGenerate({
+            artifactPath,
+            provider,
+            model,
+            apiKey,
+            generationTimeoutMs,
+            runtimeTimeoutMs: timeoutMs,
+            milestoneRetryCap,
+          })
+        : async ({ previousFailures }) => {
+            try {
+              const result = await withTimeout(
+                runAgentGeneration({ artifactPath, provider, model, apiKey, previousFailures }),
+                generationTimeoutMs,
+                `Agent generation timed out after ${generationTimeoutMs}ms`,
+              );
+              const generationError = result.errors.length > 0
+                ? `Agent generation reported errors: ${result.errors.join('; ')}`
+                : undefined;
+              return { generation: result, generationError, artifactPath };
+            } catch (error) {
+              return {
+                generation: null,
+                generationError: error instanceof Error ? error.message : String(error),
+                artifactPath,
+              };
+            }
+          };
 
     loop = await runAcceptanceLoop({
       bonN,
@@ -1028,6 +1230,7 @@ async function main(): Promise<void> {
     mode: validateOnly ? 'validate-only' : 'generate-and-validate',
     provider: validateOnly ? undefined : provider,
     model: validateOnly ? undefined : model,
+    strategy: validateOnly ? undefined : strategy,
     bonN,
     repairCap,
     monotonicMode,
@@ -1050,6 +1253,7 @@ async function main(): Promise<void> {
       ['artifactPath', artifactPath],
       ['provider', output.provider],
       ['model', output.model],
+      ['strategy', output.strategy],
       ['bonN', bonN],
       ['repairCap', repairCap],
       ['monotonicMode', monotonicMode],

@@ -40,6 +40,17 @@ describe('prompt regressions', () => {
     expect(prompt).not.toContain('new_string');
   });
 
+  it('states the completion requirements (代码改动 + RUN 验证 + 最小化, roadmap 1.8)', () => {
+    const prompt = buildPrompt();
+
+    expect(prompt).toContain('You are NOT done until ALL of the following are true');
+    expect(prompt).toContain('RUN verification');
+    expect(prompt).toContain('minimal');
+    // 禁止 should/probably/seems to 措辞声明完成
+    expect(prompt).toContain('"Should be fixed" without evidence is NOT completion');
+    expect(prompt).toMatch(/should|probably|seems to/);
+  });
+
   it('does not nudge the model to commit after ordinary file edits', () => {
     const prompt = buildPrompt();
     const result = buildDynamicPromptV2('Fix the failing unit test', {

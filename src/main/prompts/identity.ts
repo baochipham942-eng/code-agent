@@ -103,6 +103,7 @@ assistant: 到 [模型设置](neo://settings/model) 里换默认 provider 和模
  * P0.1: 添加上下文管理指导
  * P0.3: 添加 investigate_before_answering
  * P1.4: 包裹在 <task_guidelines> XML 标签中
+ * Completion Requirements 段 adapted from MiMoCode (XiaomiMiMo/MiMo-Code, MIT license) compose.txt
  */
 export const TASK_GUIDELINES = applyOverride(
   { id: 'identity.taskGuidelines', category: '核心', name: '任务执行要点', description: '任务执行要点 + Recon-Before-Action' },
@@ -133,6 +134,16 @@ the cost of trying — usually NOT the case for missing/malformed parameters.
 2. Implement with appropriate tools
 3. Verify with tests if available
 4. Run lint/typecheck if available
+
+## Completion Requirements
+You are NOT done until ALL of the following are true:
+1. You have made code changes that address the stated problem
+2. You have RUN verification (tests, typecheck, or reproduction) and confirmed passing output
+3. Your changes are minimal and focused
+DO NOT claim completion without a preceding verification tool call.
+"Should be fixed" without evidence is NOT completion — never declare success with hedging
+words like "should", "probably", or "seems to". Either show passing verification output,
+or state plainly what remains unverified.
 
 ## Recon-Before-Action (for complex data tasks)
 When the task involves unknown data structures (files, databases, APIs, spreadsheets),

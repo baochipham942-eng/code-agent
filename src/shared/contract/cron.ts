@@ -14,6 +14,10 @@ export type CronJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'ca
 
 /**
  * Time unit for interval-based scheduling
+ *
+ * `weeks` is retained as a legacy/UI compatibility value. CronService runtime
+ * rejects it for `every` schedules because cron cannot represent "every N weeks"
+ * without an anchored calendar policy.
  */
 export type TimeUnit = 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks';
 
@@ -77,7 +81,7 @@ export interface EveryScheduleConfig {
   type: 'every';
   /** Interval value */
   interval: number;
-  /** Time unit */
+  /** Time unit. Runtime supports seconds/minutes/hours/days; weeks is legacy compatibility only. */
   unit: TimeUnit;
   /** Optional start time */
   startAt?: string | number;

@@ -71,7 +71,8 @@ const CRON_JOB_STATUSES: readonly CronJobStatus[] = [
   'paused',
 ];
 
-const TIME_UNITS: readonly TimeUnit[] = ['seconds', 'minutes', 'hours', 'days', 'weeks'];
+const SUPPORTED_EVERY_TIME_UNITS = ['seconds', 'minutes', 'hours', 'days'] as const;
+type SupportedEveryTimeUnit = typeof SUPPORTED_EVERY_TIME_UNITS[number];
 
 function isCronAgentActionResult(value: unknown): value is CronAgentActionResult {
   return isRecord(value) && typeof value.sessionId === 'string';
@@ -127,8 +128,8 @@ function isCronJobStatus(value: unknown): value is CronJobStatus {
   return CRON_JOB_STATUSES.includes(value as CronJobStatus);
 }
 
-function isTimeUnit(value: unknown): value is TimeUnit {
-  return TIME_UNITS.includes(value as TimeUnit);
+function isTimeUnit(value: unknown): value is SupportedEveryTimeUnit {
+  return SUPPORTED_EVERY_TIME_UNITS.includes(value as SupportedEveryTimeUnit);
 }
 
 function isFiniteScheduleTimestamp(value: unknown): value is string | number {
@@ -209,6 +210,13 @@ function normalizeSchedule(value: unknown): CronScheduleConfig | null {
     default:
       return null;
   }
+}
+
+function assertSupportedEveryScheduleUnit(schedule: CronScheduleConfig): void {
+  if (schedule.type !== 'every' || isTimeUnit(schedule.unit)) return;
+  throw new Error(
+    `Unsupported interval unit "${schedule.unit}". CronService supports seconds, minutes, hours, and days; use a cron expression for weekly calendar schedules.`,
+  );
 }
 
 function normalizeAction(value: unknown): CronJobAction | null {
@@ -460,6 +468,7 @@ export class CronService implements Disposable {
         );
       }
     }
+    assertSupportedEveryScheduleUnit(definition.schedule);
 
     const job: CronJobDefinition = {
       ...definition,
@@ -501,6 +510,7 @@ export class CronService implements Disposable {
       ...updates,
       updatedAt: Date.now(),
     };
+    assertSupportedEveryScheduleUnit(updatedJob.schedule);
 
     // Save to database
     await this.saveJobToDatabase(updatedJob);
@@ -622,7 +632,7 @@ export class CronService implements Disposable {
    */
   async scheduleEvery(
     interval: number,
-    unit: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks',
+    unit: SupportedEveryTimeUnit,
     action: CronJobAction,
     options?: { name?: string; description?: string; startAt?: Date | number }
   ): Promise<CronJobDefinition> {
@@ -805,7 +815,7 @@ export class CronService implements Disposable {
       case 'days':
         return `0 0 0 */${interval} * *`;
       case 'weeks':
-        return `0 0 0 * * ${interval}`;
+        throw new Error('Unsupported interval unit "weeks"; cron day-of-week syntax cannot express every N weeks.');
       default:
         return `0 */${interval} * * * *`; // Default to minutes
     }

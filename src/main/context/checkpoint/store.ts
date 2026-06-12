@@ -94,5 +94,15 @@ export async function writeCheckpointFile(filePath: string, content: string): Pr
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   await fs.writeFile(tmpPath, content, 'utf-8');
-  await fs.rename(tmpPath, filePath);
+  try {
+    await fs.rename(tmpPath, filePath);
+  } catch (error) {
+    // 跨挂载点 rename 失败时降级 copy+unlink（audit C-M4），丢失原子性但保住写入
+    if ((error as NodeJS.ErrnoException).code !== 'EXDEV') {
+      await fs.unlink(tmpPath).catch(() => {});
+      throw error;
+    }
+    await fs.copyFile(tmpPath, filePath);
+    await fs.unlink(tmpPath).catch(() => {});
+  }
 }

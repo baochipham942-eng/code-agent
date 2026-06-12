@@ -30,6 +30,7 @@ import type { ReplayBlock, StructuredReplay } from '../../shared/contract/evalua
 // TrajectoryBuilder loaded dynamically — excluded from production bundle
 import { EvalCritic } from './evalCritic';
 import { loadAllTestSuites as loadSuitesForCritic } from './testCaseLoader';
+import { isProviderVariantDisabled } from '../prompts/providerVariants';
 
 const execAsync = promisify(exec);
 const logger = createLogger('TestRunner');
@@ -376,6 +377,8 @@ export class TestRunner {
         model: genInfo.model,
         provider: genInfo.provider,
         workingDirectory: this.config.workingDirectory,
+        // roadmap 2.4 A/B 归因（audit D-R3）：记录 variant 臂，两臂结果可对比
+        providerVariantArm: isProviderVariantDisabled() ? 'variant-off' : 'variant-on',
       },
       performance: this.calculatePerformanceStats(results),
       gitCommit: (() => { try { return execSync('git rev-parse HEAD', { encoding: 'utf8', timeout: 5000 }).trim(); } catch { return 'unknown'; } })(),

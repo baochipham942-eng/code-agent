@@ -20,6 +20,8 @@ while [[ $# -gt 0 ]]; do
     --model) MODEL="$2"; shift 2 ;;
     --real) REAL_MODE="--real"; shift ;;
     --concurrency) CONCURRENCY="--concurrency $2"; shift 2 ;;
+    # roadmap 2.4 A/B：关闭 provider 变体（对照臂）。臂别会记录进 run metadata
+    --variant-off) export CODE_AGENT_DISABLE_PROVIDER_VARIANT=1; shift ;;
     --promote) cd "$PROJECT_DIR" && npx tsx "$SCRIPT_DIR/eval-ci.ts" --promote; exit 0 ;;
     --trend) cd "$PROJECT_DIR" && npx tsx "$SCRIPT_DIR/eval-ci.ts" --trend; exit 0 ;;
     --help|-h)
@@ -30,6 +32,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --model <model-name>       指定模型"
       echo "  --real                     使用真实模型 (默认: mock)"
       echo "  --concurrency <n>          并发数"
+      echo "  --variant-off              关闭 provider 变体 (A/B 对照臂)"
       echo "  --promote                  提升当前结果为基线"
       echo "  --trend                    显示趋势"
       echo "  --help                     显示帮助"
@@ -44,6 +47,7 @@ cd "$PROJECT_DIR"
 echo "=== 评测配置 ==="
 echo "范围: $SCOPE"
 echo "模式: ${REAL_MODE:-mock}"
+echo "变体臂: $([ -n "${CODE_AGENT_DISABLE_PROVIDER_VARIANT:-}" ] && echo variant-off || echo variant-on)"
 [[ -n "$MODEL" ]] && echo "模型: $MODEL"
 echo ""
 

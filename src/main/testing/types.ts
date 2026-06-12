@@ -291,6 +291,9 @@ export interface TestRunSummary {
     model: string;
     provider: string;
     workingDirectory: string;
+    /** roadmap 2.4 A/B 归因（audit D-R3）：provider 变体臂，
+     *  由 CODE_AGENT_DISABLE_PROVIDER_VARIANT 决定 */
+    providerVariantArm?: 'variant-on' | 'variant-off';
   };
   /** Performance stats */
   performance: {
@@ -756,4 +759,6 @@ export interface TrendDataPoint {
   duration: number;
   newFailures: number;
   newPasses: number;
+  /** roadmap 2.4 A/B 归因（audit D-R3）：同 commit 两臂在 trend 里靠它区分 */
+  providerVariantArm?: 'variant-on' | 'variant-off';
 }

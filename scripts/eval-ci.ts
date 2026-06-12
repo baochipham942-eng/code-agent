@@ -35,6 +35,12 @@ import {
 import type { AgentInterface } from '../src/main/testing/testRunner';
 import type { TestRunSummary, TrendDataPoint } from '../src/main/testing/types';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../src/shared/constants';
+import { isProviderVariantDisabled } from '../src/main/prompts/providerVariants';
+
+/** roadmap 2.4 A/B 归因（audit D-R3）：当前 run 的 provider 变体臂 */
+function providerVariantArm(): 'variant-on' | 'variant-off' {
+  return isProviderVariantDisabled() ? 'variant-off' : 'variant-on';
+}
 
 const PROVIDER_KEY_CANDIDATES: Record<string, string[]> = {
   moonshot: ['KIMI_K25_API_KEY', 'MOONSHOT_API_KEY'],
@@ -560,6 +566,7 @@ async function main() {
   console.log(chalk.dim('  ' + '─'.repeat(50)));
   console.log(`  Scope:        ${chalk.cyan(effectiveScope)}`);
   console.log(`  Mode:         ${effectiveReal ? chalk.yellow('real') : chalk.dim('mock')}`);
+  console.log(`  Variant arm:  ${chalk.cyan(providerVariantArm())} (CODE_AGENT_DISABLE_PROVIDER_VARIANT=${process.env.CODE_AGENT_DISABLE_PROVIDER_VARIANT ?? 'unset'})`);
   console.log(`  Should run:   ${detection.shouldRunEval ? chalk.green('yes') : chalk.dim('no')}`);
   console.log(`  Trigger:      ${detection.triggerReason}`);
 
@@ -648,6 +655,7 @@ async function main() {
     duration: summary.duration,
     newFailures: delta.newFailures.length,
     newPasses: delta.newPasses.length,
+    providerVariantArm: providerVariantArm(),
   };
   await tracker.append(trendPoint);
   console.log(chalk.dim(`  Trend data recorded (commit: ${commitSha.slice(0, 7)})`));

@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.104] - 2026-06-12
+
+### Added
+
+- **Agent runtime hardening**: MiMoCode 对照后的多级 Edit replacer、doom-loop guard、Task gate、goal impossible 止损、max-step 三段式兜底、retry 分类和 provider 失败友好提示进入主链路。
+- **History / memory / dream**: transcript FTS 按 kind 索引工具输入输出、用户文本、assistant 文本和 reasoning；History 工具进入 deferred tools；memory packing 增加 BM25；dream consolidation 以原始轨迹为证据。
+- **Experience distillation**: `/distill`、skill executor registry、六阶段 pipeline、LLM 提案生成器和 30 天自动调度落地；生成 skill 仍先入草稿，需用户确认后才安装。
+- **Nested subagent and Max Mode**: 子代理可递归委派，整棵 spawn tree 共享深度、配额、超时和 token budget；Max Mode 支持 propose-only best-of-N、judge 选优和 winner replay。
+- **MCP / admin ops**: 普通登录用户可自助添加、启停、重连 MCP server；HTTP Streamable MCP、`url` alias 和 headers 进入 `mcp_add_server` / `MCPUnified`；管理员可通过 Supabase RPC 授予或撤销他人 admin。
+
+### Changed
+
+- checkpoint writer 保持后台 LLM 子代理路径，但前台重建边界只短等窗口，超时或无明确成功结果时 fail-closed 回 summary 压缩。
+- renderer production verifier 给 control-plane/app update/manifest/release-record metadata 和 renderer bundle hash 下载设置超时，并输出 stage diagnostics，避免发版验收无限等待。
+- skill distillation 草稿拒绝 `grep-read-edit`、`bash-bash-bash` 这类低价值工具序列名，防止把机械操作串误沉淀为方法论。
+
+### Fixed
+
+- renderer active bundle 版本低于当前 shell version 时回退 builtin renderer，避免旧前端遮住新壳修复。
+- dream 防幻觉门收紧，避免弱证据候选写入长期记忆；无近 7 天会话时不再降级全历史。
+- prompt provider variant A/B 结果写入 eval metadata；`PROMPT_VERSION` 回退到真实内容版本，避免无内容 bump 污染归因。
+- unsupported weekly cron interval 在主进程拒绝，前端不再展示不可用 weekly interval 选项。
+- vision analysis 现在保留最后失败原因，空响应会报告为 `empty_response`，不再被误归为 generic exception。
+- `session_tasks.parent_task_id` 进入 runtime recovery state，恢复时保留任务树父子关系。
+
 ## [0.16.103] - 2026-06-11
 
 ### Added

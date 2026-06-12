@@ -173,3 +173,39 @@ export const LEARNING_PIPELINE = {
   /** skill 草稿队列目录名（位于 ~/.code-agent/ 下，与 skills/ 平级，避免被 discovery 扫描） */
   DRAFTS_DIR_NAME: 'skill-drafts',
 } as const;
+
+/**
+ * Roadmap 3.2: distill 重复工作流蒸馏（盘点→扫信号→频率验证→打分→产出→注册）。
+ * 与已废弃的 telemetry n-gram 蒸馏不同：信号来自会话/记忆中的显式重复表述，
+ * 经 History/FTS5 频率硬门（≥MIN_OCCURRENCES）验证后才进 LLM 提案。
+ */
+export const DISTILL = {
+  /** 信号回看窗口（天），对齐上游 distill.txt 的 30 天默认 */
+  WINDOW_DAYS: 30,
+  /** 自动调度间隔（天） */
+  INTERVAL_DAYS: 30,
+  /** 频率硬门：信号在轨迹中可验证的 distinct 出现次数下限 */
+  MIN_OCCURRENCES: 2,
+  /** 单次 run 进入频率验证的信号数上限 */
+  MAX_SIGNALS: 12,
+  /** 打分后进入 LLM 提案阶段的入围候选数上限 */
+  SHORTLIST_MAX: 5,
+  /** 单次 run 落盘的提案数上限 */
+  MAX_PROPOSALS: 5,
+  /** 信号正文截断长度（字符） */
+  SIGNAL_CONTENT_MAX_CHARS: 600,
+  /** 产出资产名长度上限（与 SkillCreate 校验一致） */
+  NAME_MAX_LENGTH: 64,
+  /** 产出资产描述长度上限（超出截断） */
+  DESCRIPTION_MAX_LENGTH: 200,
+  /** 产出资产正文长度上限（超出拒绝——截断会破坏模板结构） */
+  BODY_MAX_LENGTH: 8000,
+  /** 单条信号频率验证的 FTS 命中评估上限 */
+  MAX_HITS_PER_QUERY: 10,
+  /** 单候选保留的证据条数上限 */
+  MAX_EVIDENCE_PER_CANDIDATE: 5,
+  /** skill executor 执行超时（六阶段含 LLM 提案调用，挂住不能拖死消息链路） */
+  EXECUTOR_TIMEOUT_MS: 120_000,
+  /** command 草稿目录名（位于 ~/.code-agent/ 下，与 commands/ 平级，不被 promptCommandService 扫描） */
+  COMMAND_DRAFTS_DIR_NAME: 'command-drafts',
+} as const;

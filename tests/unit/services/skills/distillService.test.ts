@@ -309,7 +309,15 @@ describe('distillService', () => {
       return { report, calls };
     }
 
-    it('非法 name（大写/空格/下划线）→ invalid-name 拒绝', async () => {
+    it('大写合法 name → 规范化为小写并通过', async () => {
+      const { report, calls } = await runWithProposals((cid) => [
+        { candidateId: cid, form: 'command', name: 'Weekly-Report', description: 'd', body: 'b' },
+      ]);
+      expect(report.skippedProposals).toEqual([]);
+      expect(calls).toEqual([expect.objectContaining({ kind: 'command', name: 'weekly-report' })]);
+    });
+
+    it('非法 name（空格/下划线/标点）→ invalid-name 拒绝', async () => {
       const { report, calls } = await runWithProposals((cid) => [
         { candidateId: cid, form: 'command', name: 'Bad Name_!', description: 'd', body: 'b' },
       ]);

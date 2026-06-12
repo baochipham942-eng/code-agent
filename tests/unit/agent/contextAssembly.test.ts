@@ -3,7 +3,7 @@
 // Verifies runtime model input honors context interventions.
 // ============================================================================
 
-import { mkdtempSync } from 'fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,6 +19,7 @@ import {
 } from '../../../src/main/context/checkpoint';
 import { getContextInterventionState } from '../../../src/main/context/contextInterventionState';
 import { getContextHealthService } from '../../../src/main/context/contextHealthService';
+import { PROVIDER_VARIANT_MARKER } from '../../../src/main/prompts/providerVariants';
 
 const serviceMocks = vi.hoisted(() => ({
   sessionManager: {
@@ -1668,6 +1669,59 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(getRepoMap).toHaveBeenCalledTimes(1);
     expect(buildRecentConversationsBlock).toHaveBeenCalledTimes(1);
     expect(evaluate).toHaveBeenCalledTimes(2);
+  });
+});
+
+// audit D-Y2 统一语义：provider 变体只注在默认主提示词上；
+// 用户自带 SYSTEM.md（替换 identity base）时不注 —— 与 orchestrator
+// 对 agent 路由自带 prompt 的跳过语义、FULL_SYSTEM.md 短路语义对齐。
+describe('ContextAssembly provider variant injection semantics (audit D-Y2)', () => {
+  it('injects the family variant on the default system prompt', async () => {
+    const workdir = mkdtempSync(path.join(tmpdir(), 'ca-variant-default-'));
+    const ctx = buildRuntimeContext({
+      sessionId: `session-variant-default-${Date.now()}`,
+      workingDirectory: workdir,
+      isDefaultWorkingDirectory: false,
+      modelConfig: {
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+        apiKey: 'mock-key',
+        temperature: 0,
+        maxTokens: 4096,
+      },
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+    const systemContent = String(modelMessages[0].content);
+
+    expect(systemContent).toContain(PROVIDER_VARIANT_MARKER);
+  });
+
+  it('does not inject the variant when a project SYSTEM.md provides the base prompt', async () => {
+    const workdir = mkdtempSync(path.join(tmpdir(), 'ca-variant-custom-'));
+    mkdirSync(path.join(workdir, '.code-agent'), { recursive: true });
+    writeFileSync(path.join(workdir, '.code-agent', 'SYSTEM.md'), 'CUSTOM IDENTITY BASE');
+
+    const ctx = buildRuntimeContext({
+      sessionId: `session-variant-custom-${Date.now()}`,
+      workingDirectory: workdir,
+      isDefaultWorkingDirectory: false,
+      modelConfig: {
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+        apiKey: 'mock-key',
+        temperature: 0,
+        maxTokens: 4096,
+      },
+    });
+
+    const assembly = new ContextAssembly(ctx as never);
+    const modelMessages = await assembly.buildModelMessages();
+    const systemContent = String(modelMessages[0].content);
+
+    expect(systemContent).toContain('CUSTOM IDENTITY BASE');
+    expect(systemContent).not.toContain(PROVIDER_VARIANT_MARKER);
   });
 });
 

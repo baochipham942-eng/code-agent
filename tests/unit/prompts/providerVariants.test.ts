@@ -9,6 +9,7 @@ import { afterEach, describe, it, expect } from 'vitest';
 import {
   resolveProviderFamily,
   applyProviderVariant,
+  isProviderVariantDisabled,
   PROVIDER_VARIANT_MARKER,
 } from '../../../src/main/prompts/providerVariants';
 
@@ -99,5 +100,26 @@ describe('applyProviderVariant', () => {
     const once = applyProviderVariant(base, 'deepseek', 'deepseek-v4-flash');
     const twice = applyProviderVariant(once, 'deepseek', 'deepseek-v4-flash');
     expect(twice).toBe(once);
+  });
+
+  // audit D-Y2 统一语义：用户自带 prompt（项目 SYSTEM.md / agent 路由自带）不注变体，
+  // 与 orchestrator 的跳过语义对齐——变体纪律是针对默认主提示词失败模式调的，
+  // 注到用户自定义 base 上既可能冲突也破坏 A/B 归因前提
+  it('skips injection when the base prompt is user-provided (customBase)', () => {
+    expect(applyProviderVariant(base, 'deepseek', 'deepseek-v4-flash', { customBase: true })).toBe(base);
+    expect(applyProviderVariant(base, 'anthropic', 'claude-sonnet-4-6', { customBase: true })).toBe(base);
+  });
+});
+
+describe('isProviderVariantDisabled', () => {
+  it('reflects the CODE_AGENT_DISABLE_PROVIDER_VARIANT env flag (eval A/B arm attribution)', () => {
+    delete process.env.CODE_AGENT_DISABLE_PROVIDER_VARIANT;
+    expect(isProviderVariantDisabled()).toBe(false);
+
+    process.env.CODE_AGENT_DISABLE_PROVIDER_VARIANT = '1';
+    expect(isProviderVariantDisabled()).toBe(true);
+
+    process.env.CODE_AGENT_DISABLE_PROVIDER_VARIANT = 'false';
+    expect(isProviderVariantDisabled()).toBe(false);
   });
 });

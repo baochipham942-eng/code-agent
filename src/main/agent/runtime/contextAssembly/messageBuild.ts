@@ -353,10 +353,13 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
 
   // provider 变体（roadmap 2.4）：按 provider 家族追加纪律段落
   // （Claude 系 Git 安全 / GPT 国产系自治坚持）。幂等；default 家族零改动。
+  // 统一语义（audit D-Y2）：用户自带 SYSTEM.md 替换 identity base 时不注变体，
+  // 与 orchestrator 对 agent 路由自带 prompt 的跳过、FULL_SYSTEM.md 短路对齐。
   systemPrompt = applyProviderVariant(
     systemPrompt,
     ctx.runtime.modelConfig?.provider,
     ctx.runtime.modelConfig?.model,
+    { customBase: projectSystemPrompt.custom !== null },
   );
 
   const appendedBlocks = new Map<string, string>();

@@ -40,7 +40,11 @@ const AUTONOMOUS_PROVIDERS = new Set([
   'groq',
 ]);
 
-function isProviderVariantDisabled(): boolean {
+/**
+ * eval A/B 对照开关（audit D-R3）：除控制注入外，eval run metadata 也用它
+ * 记录 variant 臂（environment.providerVariantArm），两臂结果才可归因。
+ */
+export function isProviderVariantDisabled(): boolean {
   const flag = process.env.CODE_AGENT_DISABLE_PROVIDER_VARIANT?.trim().toLowerCase();
   return flag === '1' || flag === 'true' || flag === 'yes';
 }
@@ -100,11 +104,29 @@ ${PROVIDER_VARIANT_MARKER}
 - Do not end your turn with a question you can answer yourself by reading code or running a tool.
 - If you notice unexpected changes in the worktree that you did not make, continue with your task. NEVER revert, undo, or modify changes you did not make unless the user explicitly asks — multiple agents or the user may be working in the same codebase concurrently.`;
 
+export interface ApplyProviderVariantOptions {
+  /**
+   * base 是用户自带 prompt（项目 SYSTEM.md / agent 路由自带）时为 true，跳过注入。
+   * 统一语义（audit D-Y2）：变体纪律针对默认主提示词的失败模式调校，
+   * 注到用户自定义 base 上既可能与其指令冲突，也破坏 A/B 归因前提——
+   * 与 orchestrator 对 agent 自带 prompt 的跳过、FULL_SYSTEM.md 短路保持一致。
+   */
+  customBase?: boolean;
+}
+
 /**
  * 给系统提示词追加家族变体段落。幂等（已含标记则原样返回）；
- * 'default' 家族不追加。
+ * 'default' 家族不追加；用户自带 base（opts.customBase）不追加。
  */
-export function applyProviderVariant(systemPrompt: string, provider?: string, model?: string): string {
+export function applyProviderVariant(
+  systemPrompt: string,
+  provider?: string,
+  model?: string,
+  opts?: ApplyProviderVariantOptions,
+): string {
+  if (opts?.customBase) {
+    return systemPrompt;
+  }
   if (isProviderVariantDisabled()) {
     return systemPrompt;
   }

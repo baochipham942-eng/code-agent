@@ -10,9 +10,11 @@ import {
 import { unregisterSkillExecutor } from '../../../../src/main/services/skills/skillExecutorRegistry';
 import {
   DREAM_SKILL_NAME,
+  executeDreamRun,
   registerDreamSkillExecutor,
   type DreamExecutorOverrides,
 } from '../../../../src/main/services/memory/dreamExecutor';
+import type { SkillExecutionRequest } from '../../../../src/main/services/skills/skillExecutorRegistry';
 import type { DreamCandidate } from '../../../../src/main/services/memory/dreamMemoryService';
 
 const NOW = Date.UTC(2026, 5, 11, 9, 0, 0);
@@ -157,5 +159,23 @@ describe('dreamExecutor', () => {
     expect(context.block).toContain('Verified: 0/1');
     expect(context.block).toContain('Skipped: cand-source-of-truth:no-fts-evidence');
     expect(memoryIO.writeEntry).not.toHaveBeenCalled();
+  });
+
+  it('解析 --auto 并在报告标注 auto-triggered（audit 复核：cron flag 不再静默丢弃）', async () => {
+    const report = await executeDreamRun(
+      { workingDirectory: '/repo', args: '--auto' } as SkillExecutionRequest,
+      { db: makeDb(), now: NOW, memoryIO: makeMemoryIO(), candidateExtractor: async () => [] },
+    );
+    expect(report).toContain('auto-triggered');
+    expect(report).not.toContain('(manual)');
+  });
+
+  it('手动触发（无 --auto）标注 manual', async () => {
+    const report = await executeDreamRun(
+      { workingDirectory: '/repo', args: undefined } as SkillExecutionRequest,
+      { db: makeDb(), now: NOW, memoryIO: makeMemoryIO(), candidateExtractor: async () => [] },
+    );
+    expect(report).toContain('manual');
+    expect(report).not.toContain('auto-triggered');
   });
 });

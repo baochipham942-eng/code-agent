@@ -632,11 +632,13 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
     })
     .catch((error) => logger.warn('Dream memory consolidation job registration failed (non-blocking)', { error: String(error) }));
 
-  // Distill（roadmap 3.2）：注册 /distill 的 service 层 executor（executor 桥）
-  // + 每 30 天自动 distill cron job（幂等 by tag）。
+  // Dream（roadmap 3.1）：注册 /dream 的 service 层 executor（executor 桥），
+  // 让 /dream 走确定性 runDreamMemoryConsolidation（FTS 防幻觉门生效）。
   import('../services/memory/dreamExecutor')
     .then(({ registerDreamSkillExecutor }) => registerDreamSkillExecutor())
     .catch((error) => logger.warn('Dream skill executor registration failed (non-blocking)', { error: String(error) }));
+  // Distill（roadmap 3.2）：注册 /distill 的 service 层 executor（executor 桥）
+  // + 每 30 天自动 distill cron job（幂等 by tag，下方 initCronService）。
   import('../services/skills/distillExecutor')
     .then(({ registerDistillSkillExecutor }) => registerDistillSkillExecutor())
     .catch((error) => logger.warn('Distill skill executor registration failed (non-blocking)', { error: String(error) }));

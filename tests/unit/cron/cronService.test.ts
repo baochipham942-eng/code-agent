@@ -22,11 +22,13 @@ import { CronService } from '../../../src/main/cron/cronService';
 
 const NOW = Date.UTC(2026, 5, 12, 9, 0, 0);
 
+// unit 用 string：weeks 已从 TimeUnit 移除（audit 复核 HIGH-2），但运行时仍需测
+// "传入非法 weeks → 拒绝"的防御路径，故此处刻意放宽类型构造非法输入。
 function shellJob(unit: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks') {
   return {
     name: `Every 3 ${unit}`,
     scheduleType: 'every' as const,
-    schedule: { type: 'every' as const, interval: 3, unit },
+    schedule: { type: 'every' as const, interval: 3, unit: unit as 'seconds' },
     action: { type: 'shell' as const, command: 'echo ok' },
     enabled: true,
   };
@@ -38,6 +40,12 @@ afterEach(() => {
 });
 
 describe('CronService every schedule units', () => {
+  it('rejects weeks at the type layer — createJob cannot be called with unit:weeks (audit HIGH-2)', () => {
+    // @ts-expect-error weeks 已从 TimeUnit 移除：合法 API 调用编译期即拒绝，不再类型说谎
+    const bad: import('../../../src/shared/contract/cron').EveryScheduleConfig = { type: 'every', interval: 1, unit: 'weeks' };
+    void bad;
+  });
+
   it('rejects weeks at runtime instead of misreading it as day-of-week cron syntax', async () => {
     const service = new CronService();
 

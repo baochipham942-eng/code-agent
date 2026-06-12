@@ -23,11 +23,19 @@ export type DreamExecutorOverrides = Partial<
   Pick<DreamRunOptions, 'db' | 'candidateExtractor' | 'memoryIO' | 'now' | 'windowDays' | 'sessionLimit' | 'pruneOlderThanDays'>
 >;
 
+/** cron 的 '/dream --auto'（人不在场）vs 手动 /dream。dream 写的是经 FTS 门验证的
+ * memory（被动数据、可删除、轨迹库为权威），非可执行资产，故 auto 仍直写不走草稿；
+ * 但 flag 必须解析并在报告/日志标注，便于审计与回滚 auto 写入（audit 复核）。 */
+function isAutoTriggered(args: string | undefined): boolean {
+  return /(^|\s)--auto(\s|$)/.test(args ?? '');
+}
+
 export async function executeDreamRun(
   request: SkillExecutionRequest,
   overrides: DreamExecutorOverrides = {},
 ): Promise<string> {
-  logger.info('Dream run starting', { workingDirectory: request.workingDirectory });
+  const auto = isAutoTriggered(request.args);
+  logger.info('Dream run starting', { workingDirectory: request.workingDirectory, auto });
   const report = await runDreamMemoryConsolidation({
     db: overrides.db ?? getDatabase(),
     projectPath: request.workingDirectory || null,
@@ -46,7 +54,7 @@ export async function executeDreamRun(
     pruned: report.pruned.length,
   });
   return [
-    'Dream executor: runDreamMemoryConsolidation',
+    `Dream executor: runDreamMemoryConsolidation (${auto ? 'auto-triggered' : 'manual'})`,
     formatDreamRunReport(report),
   ].join('\n');
 }

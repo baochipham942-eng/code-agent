@@ -13,13 +13,14 @@ export type CronScheduleType = 'at' | 'every' | 'cron';
 export type CronJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused';
 
 /**
- * Time unit for interval-based scheduling
+ * Time unit for interval-based scheduling.
  *
- * `weeks` is retained as a legacy/UI compatibility value. CronService runtime
- * rejects it for `every` schedules because cron cannot represent "every N weeks"
- * without an anchored calendar policy.
+ * `weeks` is intentionally excluded (audit 复核 HIGH-2): cron cannot represent
+ * "every N weeks" without an anchored calendar policy, so it is rejected at the
+ * type layer here AND at the CronService runtime/DB-load layer. UI dropdown also
+ * omits it. Use a cron expression for weekly calendar schedules.
  */
-export type TimeUnit = 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks';
+export type TimeUnit = 'seconds' | 'minutes' | 'hours' | 'days';
 
 /**
  * Cron job definition

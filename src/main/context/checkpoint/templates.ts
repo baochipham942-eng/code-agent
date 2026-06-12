@@ -126,7 +126,8 @@ export function getSectionHeading(sectionNumber: number): string {
 export function getSectionBody(markdown: string, sectionNumber: number): string | null {
   const heading = getSectionHeading(sectionNumber);
   const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = new RegExp(`${escapedHeading}\\n[^\\n]*\\n([\\s\\S]*?)(?=\\n## §\\d+ |\\s*$)`, 'm').exec(markdown);
+  // 不用 m 标志：m 模式下 \s*$ 在每个行尾命中，多行 body 会被截断成首行
+  const match = new RegExp(`${escapedHeading}\\n[^\\n]*\\n([\\s\\S]*?)(?=\\n## §\\d+ |\\s*$)`).exec(markdown);
   return match ? match[1].trim() : null;
 }
 
@@ -137,7 +138,7 @@ export function replaceSectionBody(
 ): string {
   const heading = getSectionHeading(sectionNumber);
   const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = new RegExp(`(${escapedHeading}\\n[^\\n]*\\n)([\\s\\S]*?)(?=\\n## §\\d+ |\\s*$)`, 'm');
+  const pattern = new RegExp(`(${escapedHeading}\\n[^\\n]*\\n)([\\s\\S]*?)(?=\\n## §\\d+ |\\s*$)`);
   if (!pattern.test(markdown)) {
     throw new Error(`Cannot replace missing checkpoint section §${sectionNumber}`);
   }

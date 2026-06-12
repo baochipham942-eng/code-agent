@@ -13,6 +13,7 @@ import type { ToolResult } from '../../protocol/tools';
 import { enqueueSkillDraft, getSkillDraftsDir } from './skillDraftQueue';
 import { executeSkillCreate } from '../../tools/modules/skill/skillCreate';
 import { createLogger } from '../infra/logger';
+import { getSkillDiscoveryService } from './skillDiscoveryService';
 
 const logger = createLogger('DistillSkillEmitter');
 
@@ -91,6 +92,14 @@ export async function emitSkillAsset(input: SkillEmitInput, options: SkillEmitOp
   );
   if (!result.ok) {
     throw new Error(result.error || 'SkillCreate 通道写入失败');
+  }
+  try {
+    await getSkillDiscoveryService().initialize(options.workingDirectory ?? process.cwd());
+  } catch (error) {
+    logger.warn('Skill discovery refresh after distill skill emit failed', {
+      name: input.name,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
   const meta = (result.meta ?? {}) as { path?: string };
   return { location: meta.path ?? input.name, activated: true };

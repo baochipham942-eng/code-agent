@@ -5,6 +5,7 @@ const {
   getModelForCapabilityMock,
   getSettingsMock,
   getModelInfoMock,
+  getVisionPreflightCandidatesMock,
   inferenceWithVisionMock,
   readFileSyncMock,
   loggerMock,
@@ -13,6 +14,7 @@ const {
   getModelForCapabilityMock: vi.fn(),
   getSettingsMock: vi.fn(),
   getModelInfoMock: vi.fn(),
+  getVisionPreflightCandidatesMock: vi.fn(),
   inferenceWithVisionMock: vi.fn(),
   readFileSyncMock: vi.fn().mockReturnValue(Buffer.from('png-data')),
   loggerMock: {
@@ -36,6 +38,9 @@ vi.mock('../../../../src/main/model/modelRouter', () => ({
   ModelRouter: class {
     getModelInfo(provider: string, model: string) {
       return getModelInfoMock(provider, model);
+    }
+    getVisionPreflightCandidates(...args: unknown[]) {
+      return getVisionPreflightCandidatesMock(...args);
     }
     inferenceWithVision(...args: unknown[]) {
       return inferenceWithVisionMock(...args);
@@ -78,11 +83,21 @@ describe('visionAnalysisService', () => {
     getModelForCapabilityMock.mockReturnValue(HAPPY_VISION_ROUTING);
     getSettingsMock.mockReturnValue({ models: { providers: {} } });
     getModelInfoMock.mockReturnValue(HAPPY_MODEL_INFO);
+    getVisionPreflightCandidatesMock.mockReturnValue([
+      {
+        provider: HAPPY_VISION_ROUTING.provider,
+        model: HAPPY_VISION_ROUTING.model,
+        apiKey: 'test-vision-key',
+        temperature: 0.3,
+        maxTokens: 2048,
+      },
+    ]);
     readFileSyncMock.mockReturnValue(Buffer.from('png-data'));
   });
 
-  it('returns missing_api_key when vision routing model does not support vision', async () => {
+  it('returns missing_api_key when no configured candidate supports vision', async () => {
     getModelInfoMock.mockReturnValue({ supportsVision: false });
+    getVisionPreflightCandidatesMock.mockReturnValue([]);
 
     const result = await analyzeImageWithVisionDetailed({
       imagePath: '/tmp/screen.png',
@@ -99,8 +114,9 @@ describe('visionAnalysisService', () => {
     expect(inferenceWithVisionMock).not.toHaveBeenCalled();
   });
 
-  it('returns missing_api_key when vision routing config is undefined', async () => {
+  it('returns missing_api_key when preflight finds no usable candidate', async () => {
     getModelForCapabilityMock.mockReturnValue(undefined);
+    getVisionPreflightCandidatesMock.mockReturnValue([]);
 
     const result = await analyzeImageWithVisionDetailed({
       imagePath: '/tmp/screen.png',

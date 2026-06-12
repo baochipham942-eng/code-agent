@@ -1,16 +1,17 @@
 // ============================================================================
 // Checkpoint Writer 真实触发证据 harness（audit C-H1/C-H2 返工验收）
 // ============================================================================
-// 用法: npx tsx tests/manual/checkpointWriterLive.ts
+// 用法: npx tsx tests/manual/checkpointWriterLive.ts [--output-dir /tmp/checkpoint-live-evidence]
 // 真实 LLM: 小米 MiMo (mimo-v2.5-pro, XIAOMI_API_URL)，key 来自 ~/.code-agent/.env
 // 产出:
 //   Part 1 — 真实会话 + 真实 taskStore 触发 writer，打印 checkpoint.md 全文
 //   Part 2 — 模拟中断：同 session 走 tryInsertCheckpointRebuildBoundary 重建，
 //            新 LLM 调用基于重建上下文续作，打印运行输出
+//   report.md — 独立证据报告（git SHA、checkpoint、MEMORY、boundary、续作输出）
 // ============================================================================
 
-import { readFileSync } from 'fs';
-import { rmSync } from 'fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { execSync } from 'child_process';
 import os from 'os';
 import path from 'path';
 import axios from 'axios';
@@ -75,7 +76,34 @@ async function mimoLlm(prompt: string): Promise<string> {
 // ---------------------------------------------------------------------------
 const SESSION_ID = `live-evidence-${Date.now()}`;
 const WORKING_DIR = path.resolve(new URL('.', import.meta.url).pathname, '../..');
-const ROOT_DIR = path.join(os.tmpdir(), 'checkpoint-live-evidence');
+const DEFAULT_OUTPUT_PARENT_DIR = path.join(os.tmpdir(), 'checkpoint-live-evidence');
+
+function readArg(name: string): string | undefined {
+  const args = process.argv.slice(2);
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === name) return args[index + 1];
+    if (arg.startsWith(`${name}=`)) return arg.slice(name.length + 1);
+  }
+  return undefined;
+}
+
+function safeGitSha(): string {
+  try {
+    return execSync('git rev-parse --short HEAD', {
+      cwd: WORKING_DIR,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      encoding: 'utf-8',
+    }).trim();
+  } catch {
+    return 'unknown';
+  }
+}
+
+const OUTPUT_PARENT_DIR = readArg('--output-dir') ?? DEFAULT_OUTPUT_PARENT_DIR;
+const OUTPUT_DIR = path.join(OUTPUT_PARENT_DIR, SESSION_ID);
+const ROOT_DIR = path.join(OUTPUT_DIR, 'checkpoint-store');
+const REPORT_PATH = path.join(OUTPUT_DIR, 'report.md');
 
 let messageSeq = 0;
 function msg(role: 'user' | 'assistant', content: string, toolCalls?: Message['toolCalls']): Message {
@@ -120,7 +148,7 @@ function buildConversation(): Message[] {
     msg('user', '验证策略你怎么定的？'),
     msg('assistant', '设计决策：与上游 MiMo 不同，上游 writer 用 Edit 工具直接改文件、事后由 splitover 插件校验；我们让子代理产出完整文档，runner 先用强化版 validator 验证再原子写入。理由是生产者与落盘之间要有独立闸门，LLM 输出不合格不污染旧 checkpoint。遗留一个开放问题：notes.md 是否要在每轮 writer 后重置为模板，目前没有生产者往里写，先不做。'),
     msg('user', '可以。重建边界那边的超时记得调，writer 现在是真 LLM 了。'),
-    msg('assistant', 'REBUILD_WAIT_TIMEOUT_MS 从 5s 调到 90s（src/shared/constants/agent.ts）。超时或写失败仍然 fail-closed 跳过边界、落回 summary 压缩，边界协调机制本身不动。'),
+    msg('assistant', 'CHECKPOINT_WRITER 保留后台 90s writer 上限，但主循环插重建边界只短等 5s。超时或写失败仍然 fail-closed 跳过边界、落回 summary 压缩，边界协调机制本身不动。'),
   ];
 }
 
@@ -136,9 +164,19 @@ function seedTaskStore(): void {
 
 async function main(): Promise<void> {
   loadEnv();
-  rmSync(ROOT_DIR, { recursive: true, force: true });
+  rmSync(OUTPUT_DIR, { recursive: true, force: true });
+  mkdirSync(OUTPUT_DIR, { recursive: true });
   seedTaskStore();
   const conversation = buildConversation();
+  const report: string[] = [
+    '# Checkpoint Writer Live Evidence',
+    '',
+    `- sessionId: ${SESSION_ID}`,
+    `- gitSha: ${safeGitSha()}`,
+    `- workingDirectory: ${WORKING_DIR}`,
+    `- outputDir: ${OUTPUT_DIR}`,
+    `- checkpointStore: ${ROOT_DIR}`,
+  ];
 
   console.log('='.repeat(76));
   console.log(`PART 1 — 真实触发 checkpoint writer (session=${SESSION_ID})`);
@@ -162,6 +200,26 @@ async function main(): Promise<void> {
   console.log('----- checkpoint.md 结束 -----\n');
   const memory = readFileSync(result.memoryPath, 'utf-8');
   console.log(`----- MEMORY.md 全文 (${result.memoryPath}) -----\n${memory}\n----- MEMORY.md 结束 -----`);
+  report.push(
+    '',
+    '## Part 1 Writer Result',
+    '',
+    `- success: ${result.success}`,
+    `- checkpointPath: ${result.checkpointPath}`,
+    `- memoryPath: ${result.memoryPath}`,
+    '',
+    '### checkpoint.md',
+    '',
+    '```md',
+    checkpoint,
+    '```',
+    '',
+    '### MEMORY.md',
+    '',
+    '```md',
+    memory,
+    '```',
+  );
 
   console.log('\n' + '='.repeat(76));
   console.log('PART 2 — 模拟中断后续作：插入重建边界 + 新 LLM 调用从 checkpoint 续作');
@@ -200,6 +258,31 @@ async function main(): Promise<void> {
   console.log(continuation);
   console.log('\n----- 续作输出结束 -----');
   console.log(`\n共 ${llmCalls} 次真实 LLM 调用`);
+  report.push(
+    '',
+    '## Part 2 Rebuild Boundary',
+    '',
+    `- inserted: ${boundary.inserted}`,
+    `- reason: ${boundary.reason}`,
+    `- compactedMessageCount: ${boundary.compactedMessageCount ?? 0}`,
+    `- messagesAfterBoundary: ${runtime.messages.length}`,
+    '',
+    '### Boundary Marker',
+    '',
+    '```md',
+    String(marker.content ?? ''),
+    '```',
+    '',
+    '### Continuation Output',
+    '',
+    '```md',
+    continuation,
+    '```',
+    '',
+    `LLM calls: ${llmCalls}`,
+  );
+  writeFileSync(REPORT_PATH, `${report.join('\n')}\n`, 'utf-8');
+  console.log(`\n证据报告: ${REPORT_PATH}`);
 }
 
 main().catch((error) => {

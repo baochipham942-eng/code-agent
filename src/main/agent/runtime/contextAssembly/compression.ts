@@ -340,12 +340,12 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
         reason: 'pressure',
         rootDir: ctx.runtime.checkpointRootDir,
       });
-      // 等本轮 checkpoint 写完再插重建边界（audit C-H3）：trigger 是后台任务，
-      // 不等就会读到上一版 stale checkpoint；本轮写入失败时 fail-closed 跳过
-      // 边界插入，落回 summary 压缩，避免用过期意图重建会话。
+      // 短等本轮 checkpoint 写完再插重建边界（audit C-H3）：不等会读到上一版
+      // stale checkpoint；但 writer 是真 LLM 子代理，前台只等短窗口，超时则
+      // fail-closed 落回 summary 压缩，后台 writer 继续完成供下一轮使用。
       const writerIdle = await writerService.waitForIdle(
         ctx.runtime.sessionId,
-        CHECKPOINT_WRITER.REBUILD_WAIT_TIMEOUT_MS,
+        CHECKPOINT_WRITER.REBUILD_FOREGROUND_WAIT_TIMEOUT_MS,
       );
       const writerResult = writerService.getLastResult(ctx.runtime.sessionId);
       // fail-closed（audit FAIL-2）：必须有明确成功记录才放行；undefined（无记录/

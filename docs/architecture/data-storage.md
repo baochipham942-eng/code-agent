@@ -55,7 +55,7 @@ CREATE TABLE messages (
 | `messages.is_meta` | 后台自动化和内部运行轮次标记；普通会话列表、FTS、同步和 summary 默认过滤 | `SessionRepository.addMessage()`、`LoopController` meta turns |
 | `messages.compaction` | manual compact / autocompact 的 compaction survivor 信息 | `contextHealth.ipc.ts` / `contextAssembly/compression.ts` |
 | `todos` | auto todo 与 finalizer 消费的 session-scoped todo 状态 | `src/main/agent/todoParser.ts` |
-| `session_tasks` | Task tool / planning taskStore 的 durable task graph | `src/main/services/planning/taskStore.ts` |
+| `session_tasks` | Task tool / planning taskStore 的 durable task graph；`parent_task_id` 保留树状任务父子关系，runtime state 恢复时能还原 owner / blocks / parent link | `src/main/services/planning/taskStore.ts`、`SessionRepository` |
 | `context_interventions` | pin / exclude / retain 等手动上下文干预，按 session + agent 持久化 | `src/main/context/contextInterventionState.ts` |
 | `session_runtime_state` | `compression_state_json` 与 `persistent_system_context_json`，供 reload 后恢复 ContextAssembly 状态 | `src/main/agent/runtime/runtimeStatePersistence.ts` |
 | `pending_approvals.kind` | plan approval 与 swarm launch approval 共用表但按 kind hydrate/orphan，避免互相抢状态 | `PendingApprovalRepository` |

@@ -66,6 +66,8 @@ describe('architecture debt report', () => {
     expect(report.maxLines.effectiveOverLimitNotWhitelisted).toEqual([
       'src/cli/database.ts',
       'src/main/agent/runtime/conversationRuntime.ts',
+      'src/main/agent/subagentExecutor.ts',
+      'src/main/services/core/repositories/SessionRepository.ts',
       'src/main/services/skills/builtinSkills.ts',
       'src/main/telemetry/telemetryStorage.ts',
       'src/renderer/components/Sidebar.tsx',

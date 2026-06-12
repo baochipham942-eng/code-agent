@@ -43,8 +43,8 @@ import { LEARNING_PIPELINE } from '../../../../src/shared/constants';
 
 function makeDraftInput(overrides: Record<string, unknown> = {}) {
   return {
-    name: 'grep-read-edit',
-    description: '自动蒸馏的工作流：Grep → Read → Edit（成功 3 次）',
+    name: 'source-change-workflow',
+    description: '自动蒸馏的源码变更工作流：定位 → 阅读 → 修改（成功 3 次）',
     patternKey: 'Grep → Read → Edit',
     toolSequence: ['Grep', 'Read', 'Edit'],
     occurrences: 3,
@@ -88,7 +88,7 @@ describe('skillDraftQueue', () => {
         createdAt: input.timestamp,
       });
 
-      expect(md).toContain('name: grep-read-edit');
+      expect(md).toContain('name: source-change-workflow');
       expect(md).toContain('source: telemetry-distilled');
       expect(md).toContain('allowed-tools: "Grep,Read,Edit"');
       expect(md).toContain('1. `Grep`');
@@ -108,7 +108,7 @@ describe('skillDraftQueue', () => {
 
       const drafts = await listSkillDrafts();
       expect(drafts).toHaveLength(1);
-      expect(drafts[0].name).toBe('grep-read-edit');
+      expect(drafts[0].name).toBe('source-change-workflow');
 
       // SKILL.md 写在草稿目录里，不在 skills 目录（严禁自动入库）
       const draftSkillMd = path.join(getSkillDraftsDir(), meta!.id, 'SKILL.md');
@@ -120,6 +120,13 @@ describe('skillDraftQueue', () => {
       const draftsDir = getSkillDraftsDir();
       expect(draftsDir).toBe(path.join(tmpDir, LEARNING_PIPELINE.DRAFTS_DIR_NAME));
       expect(draftsDir.startsWith(path.join(tmpDir, 'skills'))).toBe(false);
+    });
+
+    it('should reject low-value tool-sequence names before writing a draft', async () => {
+      const meta = await enqueueSkillDraft(makeDraftInput({ name: 'grep-read-edit' }));
+
+      expect(meta).toBeNull();
+      expect(await listSkillDrafts()).toEqual([]);
     });
 
     it('should skip enqueue for duplicate patternKey already pending', async () => {
@@ -147,10 +154,10 @@ describe('skillDraftQueue', () => {
       const result = await confirmSkillDraft(meta!.id);
 
       expect(result.success).toBe(true);
-      expect(result.skillPath).toBe(path.join(tmpDir, 'skills', 'grep-read-edit', 'SKILL.md'));
+      expect(result.skillPath).toBe(path.join(tmpDir, 'skills', 'source-change-workflow', 'SKILL.md'));
 
       const installed = await fs.readFile(result.skillPath!, 'utf-8');
-      expect(installed).toContain('name: grep-read-edit');
+      expect(installed).toContain('name: source-change-workflow');
 
       // 草稿目录被清掉
       const drafts = await listSkillDrafts();

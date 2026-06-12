@@ -102,7 +102,6 @@ vi.mock('../../../src/main/config', () => ({
 import { registerCapabilityHandlers } from '../../../src/main/ipc/capability.ipc';
 import { registerHookHandlers } from '../../../src/main/ipc/hook.ipc';
 import { registerMarketplaceHandlers } from '../../../src/main/ipc/marketplace.ipc';
-import { registerMcpHandlers } from '../../../src/main/ipc/mcp.ipc';
 
 type HandlerFn = (_: unknown, request?: IPCRequest, ...args: unknown[]) => Promise<unknown>;
 
@@ -175,24 +174,4 @@ describe('admin-only IPC surfaces', () => {
     expect(mocks.listMarketplaces).not.toHaveBeenCalled();
   });
 
-  it('blocks non-admin MCP writes before touching server config', async () => {
-    const ipc = makeFakeIpc();
-    registerMcpHandlers(ipc as never, { getWorkingDirectory: () => '/tmp/work' });
-
-    const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.MCP, {
-      action: 'addServer',
-      payload: {
-        config: {
-          name: 'filesystem',
-          type: 'stdio',
-          command: 'npx',
-        },
-      },
-    });
-
-    expect(response).toMatchObject({
-      success: false,
-      error: { code: 'FORBIDDEN' },
-    });
-  });
 });

@@ -54,6 +54,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'listControlPlaneRolloutSummary',
     'listInviteCodes',
     'listUsers',
+    'setUserAdmin',
     'setSharedRelay',
     'updateInviteCode',
   ],

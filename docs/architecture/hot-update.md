@@ -298,6 +298,19 @@ Renderer hot-update 的 active bundle 不能压过更新后的 shell 修复。`r
 
 这条只保证"旧前端不能遮住新壳修复"；它不代表远端 renderer latest 已经发布成功。生产补发仍要继续核 `renderer-bundle/latest/manifest.json`、`release-record.json` 和 app update latestVersion 是否对位。
 
+### Renderer production verifier bounded fetches（2026-06-12）
+
+`scripts/verify-renderer-hot-update-production.mjs` 的生产验收现在给所有远端读取加边界，避免 control-plane、app update 或 OSS bundle 下载接受连接后长时间不返回，导致发版 gate 卡死。
+
+| 读取阶段 | 默认上限 | 配置 |
+|----------|----------|------|
+| control-plane / app update / manifest / release-record metadata | 15s | `--network-timeout-ms`、`RENDERER_HOT_UPDATE_NETWORK_TIMEOUT_MS` 或 `RENDERER_BUNDLE_NETWORK_TIMEOUT_MS` |
+| renderer bundle 下载与 hash | 30s | `--bundle-timeout-ms`、`RENDERER_HOT_UPDATE_BUNDLE_TIMEOUT_MS` 或 `RENDERER_BUNDLE_DOWNLOAD_TIMEOUT_MS` |
+
+超时错误会带 `code:"fetch_timeout"`、`endpoint`、`stage` 和 `timeoutMs`。CLI 入口会输出阶段日志，例如 `control-plane: verifying renderer_bundle_rollout envelope`、`renderer-bundle: verifying manifest, bundle, and release-record`，失败时能直接看到卡在哪个远端面。
+
+这层只解决"验收不能无限等"；正式发版仍必须用 live evidence 证明 control-plane、`renderer-bundle/latest/manifest.json`、`release-record.json` 和 `/api/update` 的 latestVersion 全部对齐目标版本。
+
 ---
 
 ## 更新流程

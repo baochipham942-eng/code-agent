@@ -196,7 +196,9 @@ export const MAX_MODE = {
 
 /** Checkpoint writer 配置（roadmap 3.4） */
 export const CHECKPOINT_WRITER = {
-  /** 重建边界插入前等待本轮 checkpoint 写完的上限（writer 是真 LLM 子代理，一轮 10~60s；超时则 fail-closed 落回 summary 压缩） */
+  /** 主循环插入重建边界前的短等待窗口；超时即 fail-closed 落回 summary 压缩，避免前台卡住。 */
+  REBUILD_FOREGROUND_WAIT_TIMEOUT_MS: 5_000,
+  /** writer 后台等待上限；保留给手工/后台证据路径，主循环不再用它阻塞用户。 */
   REBUILD_WAIT_TIMEOUT_MS: 90_000,
   /** writer 子代理单次输出 token 上限（完整 11 段 checkpoint + memory） */
   LLM_MAX_OUTPUT_TOKENS: 8_192,

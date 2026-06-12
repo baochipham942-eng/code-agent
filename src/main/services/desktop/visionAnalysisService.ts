@@ -274,6 +274,7 @@ export async function analyzeImageWithVisionDetailed(args: {
   try {
     let lastErr = '';
     let lastAborted = false;
+    let lastFailureReason: VisionAnalysisFailureReason = 'exception';
     let lastModel = reportedModel;
 
     // 逐个候选尝试，首个成功即返回；全失败则带可执行引导返回
@@ -299,6 +300,7 @@ export async function analyzeImageWithVisionDetailed(args: {
         if (!content) {
           lastErr = 'Vision analysis returned empty content';
           lastAborted = false;
+          lastFailureReason = 'empty_response';
           logger.warn('Vision analysis returned empty content, trying next candidate', {
             source: args.source, provider: cfg.provider, model: cfg.model,
           });
@@ -322,6 +324,7 @@ export async function analyzeImageWithVisionDetailed(args: {
         const errMsg = error instanceof Error ? error.message : String(error);
         lastErr = errMsg;
         lastAborted = errMsg === 'vision_analysis_timeout' || isAbortError(error);
+        lastFailureReason = lastAborted ? 'timeout' : 'exception';
         logger.warn(lastAborted ? 'Vision candidate timed out, trying next' : 'Vision candidate failed, trying next', {
           source: args.source, provider: cfg.provider, model: cfg.model, error: errMsg,
         });
@@ -334,7 +337,7 @@ export async function analyzeImageWithVisionDetailed(args: {
     return {
       ok: false,
       analysis: null,
-      reason: lastAborted ? 'timeout' : 'exception',
+      reason: lastFailureReason,
       error: lastAborted
         ? `Vision analysis timed out after ${timeoutMs}ms（已尝试 ${candidates.length} 个视觉模型）`
         : `Vision analysis failed: ${lastErr}。已尝试 ${candidates.length} 个已配置的视觉模型均失败。${MISSING_VISION_MODEL_MESSAGE}`,

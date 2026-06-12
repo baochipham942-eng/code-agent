@@ -50,10 +50,12 @@ describe('verifyRendererHotUpdateProduction', () => {
       baseUrl: PRODUCTION_CLOUD_API_URL,
       token: undefined,
       artifacts: RENDERER_HOT_UPDATE_CONTROL_PLANE_ARTIFACTS,
+      fetchImpl: expect.any(Function),
     }]);
     expect(rendererCalls).toEqual([{
       manifestUrl: 'https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/renderer-bundle/latest/manifest.json',
       releaseRecordUrl: 'https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/renderer-bundle/latest/release-record.json',
+      fetchImpl: expect.any(Function),
       expectedVersion: undefined,
       minRequiredShellCapabilities: 1,
       minManifestValiditySeconds: DEFAULT_MIN_MANIFEST_VALIDITY_SECONDS,
@@ -305,6 +307,65 @@ describe('verifyRendererHotUpdateProduction', () => {
       '--retry-delay-ms',
       '-1',
     ], {})).toThrowError(RendererHotUpdateProductionVerificationError);
+  });
+
+  it('parses bounded network timeouts for production verification', () => {
+    expect(parseRendererHotUpdateProductionArgs([
+      '--network-timeout-ms',
+      '1234',
+      '--bundle-timeout-ms',
+      '5678',
+    ], {})).toMatchObject({
+      networkTimeoutMs: 1234,
+      bundleTimeoutMs: 5678,
+    });
+    expect(parseRendererHotUpdateProductionArgs([], {
+      RENDERER_HOT_UPDATE_NETWORK_TIMEOUT_MS: '2222',
+      RENDERER_HOT_UPDATE_BUNDLE_TIMEOUT_MS: '3333',
+    })).toMatchObject({
+      networkTimeoutMs: 2222,
+      bundleTimeoutMs: 3333,
+    });
+    expect(() => parseRendererHotUpdateProductionArgs([
+      '--network-timeout-ms',
+      '-1',
+    ], {})).toThrowError(RendererHotUpdateProductionVerificationError);
+    expect(() => parseRendererHotUpdateProductionArgs([
+      '--bundle-timeout-ms',
+      '-1',
+    ], {})).toThrowError(RendererHotUpdateProductionVerificationError);
+  });
+
+  it('bounds control-plane fetches with stage diagnostics', async () => {
+    const hangingFetch = async () => new Promise<Response>(() => {
+      // Intentionally never settles; production verification must bound it.
+    });
+    const endpoint = 'https://control-plane.example/api/v1/control-plane?artifact=renderer_bundle_rollout';
+
+    await expect(verifyRendererHotUpdateProduction({
+      controlPlaneBaseUrl: 'https://control-plane.example',
+      skipRendererBundle: true,
+      networkTimeoutMs: 5,
+      fetchImpl: hangingFetch,
+      runControlPlaneSmokeImpl: async (options: unknown) => {
+        const { fetchImpl: controlPlaneFetch } = options as {
+          fetchImpl: (url: string) => Promise<Response>;
+        };
+        await controlPlaneFetch(endpoint);
+        return [];
+      },
+    })).rejects.toMatchObject({
+      code: 'fetch_timeout',
+      failures: [{
+        target: 'control-plane',
+        code: 'fetch_timeout',
+        endpoint,
+        details: {
+          stage: 'control-plane:metadata',
+          timeoutMs: 5,
+        },
+      }],
+    });
   });
 
   it('requires a release-record URL when a custom manifest URL cannot derive one', () => {
@@ -652,6 +713,26 @@ describe('inspectRendererHotUpdateRemoteArtifacts', () => {
       bundle: {
         ok: true,
         matchesManifestPayload: true,
+      },
+    });
+  });
+
+  it('fails fast with stage details when a remote artifact fetch hangs', async () => {
+    const fetchImpl = async () => new Promise<Response>(() => {
+      // Intentionally never settles; verifier timeout must bound it.
+    });
+
+    await expect(inspectRendererHotUpdateRemoteArtifacts({
+      manifestUrl: 'https://oss.example/renderer-bundle/latest/manifest.json',
+      fetchImpl,
+      networkTimeoutMs: 5,
+      bundleTimeoutMs: 5,
+    })).rejects.toMatchObject({
+      code: 'fetch_timeout',
+      endpoint: 'https://oss.example/renderer-bundle/latest/manifest.json',
+      details: {
+        stage: 'remote-snapshot:manifest',
+        timeoutMs: 5,
       },
     });
   });

@@ -199,7 +199,7 @@ vi.mock('../../../src/shared/constants', () => ({
   // GAP-023: system prompt 预算动态化依赖
   SYSTEM_PROMPT_BUDGET: { MIN_TOKENS: 6000, WINDOW_RATIO: 0.1 },
   // audit C-H3: 重建边界前等待 writer 写完的上限
-  CHECKPOINT_WRITER: { REBUILD_WAIT_TIMEOUT_MS: 5_000 },
+  CHECKPOINT_WRITER: { REBUILD_FOREGROUND_WAIT_TIMEOUT_MS: 50, REBUILD_WAIT_TIMEOUT_MS: 5_000 },
   // tokenOptimizer 依赖（pre-existing 缺失：GAP-009 引入 TOOL_RESULT_SPILL 后 mock 未同步，导致整个 suite 加载失败）
   OBSERVATION_MASKING: {
     PRESERVE_RECENT_COUNT: 10,

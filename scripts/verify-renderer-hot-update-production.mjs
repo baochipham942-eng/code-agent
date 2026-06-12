@@ -26,8 +26,13 @@ export class RendererHotUpdateProductionVerificationError extends Error {
     this.code = options.code ?? 'renderer_hot_update_production_verification_failed';
     this.failures = options.failures;
     this.details = options.details;
+    this.endpoint = options.endpoint;
+    this.status = options.status;
   }
 }
+
+export const DEFAULT_RENDERER_HOT_UPDATE_NETWORK_TIMEOUT_MS = 15_000;
+export const DEFAULT_RENDERER_HOT_UPDATE_BUNDLE_TIMEOUT_MS = 30_000;
 
 export const RENDERER_HOT_UPDATE_CONTROL_PLANE_ARTIFACTS = CONTROL_PLANE_ARTIFACTS.filter(
   (artifact) => artifact.expectedKind === 'renderer_bundle_rollout',
@@ -81,6 +86,58 @@ function normalizeVersionForMatch(value) {
   return normalizeOptionalString(value)?.replace(/^v/, '');
 }
 
+function createFetchTimeoutError(url, timeoutMs, stage) {
+  return new RendererHotUpdateProductionVerificationError(
+    `${stage} timed out after ${timeoutMs}ms`,
+    {
+      code: 'fetch_timeout',
+      endpoint: url,
+      details: { stage, timeoutMs },
+    },
+  );
+}
+
+async function fetchWithTimeout(fetchImpl, url, init = {}, {
+  timeoutMs = DEFAULT_RENDERER_HOT_UPDATE_NETWORK_TIMEOUT_MS,
+  stage = 'fetch',
+} = {}) {
+  if (!timeoutMs || timeoutMs <= 0) {
+    return fetchImpl(url, init);
+  }
+
+  const controller = new AbortController();
+  let timer;
+  const timedOut = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(createFetchTimeoutError(url, timeoutMs, stage));
+    }, timeoutMs);
+  });
+  const request = Promise.resolve()
+    .then(() => fetchImpl(url, { ...init, signal: controller.signal }));
+
+  try {
+    return await Promise.race([request, timedOut]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function buildTimedFetch(fetchImpl, {
+  networkTimeoutMs = DEFAULT_RENDERER_HOT_UPDATE_NETWORK_TIMEOUT_MS,
+  bundleTimeoutMs = DEFAULT_RENDERER_HOT_UPDATE_BUNDLE_TIMEOUT_MS,
+  stagePrefix = 'renderer-bundle',
+} = {}) {
+  return (url, init = {}) => {
+    const href = String(url);
+    const isBundle = href.endsWith('/bundle.tar.gz') || href.includes('bundle.tar.gz');
+    return fetchWithTimeout(fetchImpl, url, init, {
+      timeoutMs: isBundle ? bundleTimeoutMs : networkTimeoutMs,
+      stage: `${stagePrefix}:${isBundle ? 'bundle' : 'metadata'}`,
+    });
+  };
+}
+
 function expectedStringMatchSummary(actual, expected) {
   const normalizedExpected = normalizeOptionalString(expected);
   if (!normalizedExpected) return {};
@@ -110,8 +167,13 @@ function buildAppUpdateSnapshotUrl(baseUrl) {
   return url.toString();
 }
 
-async function fetchAppUpdateSnapshot(fetchImpl, appUpdateUrl, rendererManifestVersion) {
-  const response = await fetchJsonSnapshot(fetchImpl, appUpdateUrl);
+async function fetchAppUpdateSnapshot(fetchImpl, appUpdateUrl, rendererManifestVersion, {
+  networkTimeoutMs = DEFAULT_RENDERER_HOT_UPDATE_NETWORK_TIMEOUT_MS,
+} = {}) {
+  const response = await fetchJsonSnapshot(fetchImpl, appUpdateUrl, {
+    timeoutMs: networkTimeoutMs,
+    stage: 'app-update',
+  });
   return summarizeAppUpdateSnapshot({
     url: appUpdateUrl,
     response,
@@ -165,8 +227,9 @@ async function resolveExpectedVersionFromAppUpdate({
   fetchImpl,
   appUpdateUrl,
   explicitExpectedVersion,
+  networkTimeoutMs,
 }) {
-  const snapshot = await fetchAppUpdateSnapshot(fetchImpl, appUpdateUrl);
+  const snapshot = await fetchAppUpdateSnapshot(fetchImpl, appUpdateUrl, undefined, { networkTimeoutMs });
   const latestVersion = latestVersionFromAppUpdateSnapshot(snapshot);
   if (!snapshot.ok) {
     throw new RendererHotUpdateProductionVerificationError(
@@ -254,10 +317,16 @@ function summarizeBundleManifestEnvelope(envelope, {
   };
 }
 
-async function fetchText(fetchImpl, url) {
-  const response = await fetchImpl(url, {
+async function fetchText(fetchImpl, url, {
+  timeoutMs = DEFAULT_RENDERER_HOT_UPDATE_NETWORK_TIMEOUT_MS,
+  stage = 'fetch-json',
+} = {}) {
+  const response = await fetchWithTimeout(fetchImpl, url, {
     method: 'GET',
     headers: { Accept: 'application/json' },
+  }, {
+    timeoutMs,
+    stage,
   });
   const text = await response.text();
   return {
@@ -268,8 +337,8 @@ async function fetchText(fetchImpl, url) {
   };
 }
 
-async function fetchJsonSnapshot(fetchImpl, url) {
-  const response = await fetchText(fetchImpl, url);
+async function fetchJsonSnapshot(fetchImpl, url, options) {
+  const response = await fetchText(fetchImpl, url, options);
   if (!response.text.trim()) {
     return {
       ok: response.ok,
@@ -296,8 +365,13 @@ async function fetchJsonSnapshot(fetchImpl, url) {
   }
 }
 
-async function fetchBundleHashSnapshot(fetchImpl, bundleUrl, expectedHash) {
-  const response = await fetchImpl(bundleUrl);
+async function fetchBundleHashSnapshot(fetchImpl, bundleUrl, expectedHash, {
+  timeoutMs = DEFAULT_RENDERER_HOT_UPDATE_BUNDLE_TIMEOUT_MS,
+} = {}) {
+  const response = await fetchWithTimeout(fetchImpl, bundleUrl, {}, {
+    timeoutMs,
+    stage: 'renderer-bundle:bundle-hash',
+  });
   const bytes = new Uint8Array(await response.arrayBuffer());
   const actualHash = response.ok ? sha256Hex(bytes) : undefined;
   return {
@@ -318,6 +392,9 @@ export async function inspectRendererHotUpdateRemoteArtifacts({
   expectedReleaseChannel,
   fetchImpl = globalThis.fetch,
   includeBundleHash = true,
+  networkTimeoutMs = DEFAULT_RENDERER_HOT_UPDATE_NETWORK_TIMEOUT_MS,
+  bundleTimeoutMs = DEFAULT_RENDERER_HOT_UPDATE_BUNDLE_TIMEOUT_MS,
+  progressLog,
   now = Date.now(),
 } = {}) {
   if (typeof fetchImpl !== 'function') {
@@ -331,7 +408,11 @@ export async function inspectRendererHotUpdateRemoteArtifacts({
     });
   }
 
-  const manifestResponse = await fetchJsonSnapshot(fetchImpl, manifestUrl);
+  progressLog?.(`remote-snapshot: manifest ${manifestUrl}`);
+  const manifestResponse = await fetchJsonSnapshot(fetchImpl, manifestUrl, {
+    timeoutMs: networkTimeoutMs,
+    stage: 'remote-snapshot:manifest',
+  });
   const manifestSummary = {
     url: manifestUrl,
     ok: manifestResponse.ok,
@@ -350,7 +431,11 @@ export async function inspectRendererHotUpdateRemoteArtifacts({
 
   const releaseRecordSummary = releaseRecordUrl
     ? await (async () => {
-      const response = await fetchJsonSnapshot(fetchImpl, releaseRecordUrl);
+      progressLog?.(`remote-snapshot: release-record ${releaseRecordUrl}`);
+      const response = await fetchJsonSnapshot(fetchImpl, releaseRecordUrl, {
+        timeoutMs: networkTimeoutMs,
+        stage: 'remote-snapshot:release-record',
+      });
       return {
         url: releaseRecordUrl,
         ok: response.ok,
@@ -380,10 +465,18 @@ export async function inspectRendererHotUpdateRemoteArtifacts({
   const bundleUrl = normalizeOptionalString(payload.bundleUrl);
   const rollbackToBuiltin = payload.rollbackToBuiltin === true;
   const bundleSummary = includeBundleHash && bundleUrl && !rollbackToBuiltin
-    ? await fetchBundleHashSnapshot(fetchImpl, bundleUrl, normalizeOptionalString(payload.contentHash))
+    ? await (async () => {
+      progressLog?.(`remote-snapshot: bundle hash ${bundleUrl}`);
+      return fetchBundleHashSnapshot(fetchImpl, bundleUrl, normalizeOptionalString(payload.contentHash), {
+        timeoutMs: bundleTimeoutMs,
+      });
+    })()
     : null;
   const appUpdateSummary = appUpdateUrl
-    ? await fetchAppUpdateSnapshot(fetchImpl, appUpdateUrl, manifestVersion)
+    ? await (async () => {
+      progressLog?.(`remote-snapshot: app-update ${appUpdateUrl}`);
+      return fetchAppUpdateSnapshot(fetchImpl, appUpdateUrl, manifestVersion, { networkTimeoutMs });
+    })()
     : null;
 
   return {
@@ -611,6 +704,8 @@ function usage() {
     '  --public-key-id <id> --public-key <pem>  Single control-plane public key',
     '  --include-remote-snapshot         Include unsigned remote artifact diagnostics on failure',
     '  --skip-bundle-hash-snapshot       Do not download bundle bytes for remote diagnostics',
+    '  --network-timeout-ms <n>          Timeout for metadata/control-plane HTTP fetches; default: 15000',
+    '  --bundle-timeout-ms <n>           Timeout for renderer bundle download/hash fetches; default: 30000',
     '  --full-control-plane-smoke           Check all control-plane artifacts, not only renderer_bundle_rollout',
     '  --skip-control-plane                 Only verify published renderer bundle',
     '  --skip-renderer-bundle               Only verify control-plane envelopes',
@@ -644,6 +739,8 @@ export function parseRendererHotUpdateProductionArgs(argv, env = process.env) {
     '--min-manifest-validity-seconds',
     '--retry-attempts',
     '--retry-delay-ms',
+    '--network-timeout-ms',
+    '--bundle-timeout-ms',
     '--public-keys-file',
     '--public-keys-json',
     '--public-key-id',
@@ -775,6 +872,22 @@ export function parseRendererHotUpdateProductionArgs(argv, env = process.env) {
     publicKeys: readPublicKeysFromArgs(argv),
     includeRemoteSnapshot: hasFlag(argv, '--include-remote-snapshot'),
     includeBundleHashSnapshot: !hasFlag(argv, '--skip-bundle-hash-snapshot'),
+    networkTimeoutMs: parseNonNegativeIntegerArg(argv, env, {
+      argName: '--network-timeout-ms',
+      envNames: [
+        'RENDERER_HOT_UPDATE_NETWORK_TIMEOUT_MS',
+        'RENDERER_BUNDLE_NETWORK_TIMEOUT_MS',
+      ],
+      defaultValue: DEFAULT_RENDERER_HOT_UPDATE_NETWORK_TIMEOUT_MS,
+    }),
+    bundleTimeoutMs: parseNonNegativeIntegerArg(argv, env, {
+      argName: '--bundle-timeout-ms',
+      envNames: [
+        'RENDERER_HOT_UPDATE_BUNDLE_TIMEOUT_MS',
+        'RENDERER_BUNDLE_DOWNLOAD_TIMEOUT_MS',
+      ],
+      defaultValue: DEFAULT_RENDERER_HOT_UPDATE_BUNDLE_TIMEOUT_MS,
+    }),
     controlPlaneArtifacts: hasFlag(argv, '--full-control-plane-smoke')
       ? CONTROL_PLANE_ARTIFACTS
       : RENDERER_HOT_UPDATE_CONTROL_PLANE_ARTIFACTS,
@@ -831,6 +944,9 @@ export async function verifyRendererHotUpdateProduction({
   skipControlPlane = false,
   skipRendererBundle = false,
   fetchImpl = globalThis.fetch,
+  networkTimeoutMs = DEFAULT_RENDERER_HOT_UPDATE_NETWORK_TIMEOUT_MS,
+  bundleTimeoutMs = DEFAULT_RENDERER_HOT_UPDATE_BUNDLE_TIMEOUT_MS,
+  progressLog,
   runControlPlaneSmokeImpl = runControlPlaneSmoke,
   verifyRendererBundlePublishImpl = verifyRendererBundlePublish,
 } = {}) {
@@ -844,13 +960,25 @@ export async function verifyRendererHotUpdateProduction({
   const summary = {};
   const failures = [];
   let resolvedExpectedVersion = expectedVersion;
+  const controlPlaneFetchImpl = buildTimedFetch(fetchImpl, {
+    networkTimeoutMs,
+    bundleTimeoutMs,
+    stagePrefix: 'control-plane',
+  });
+  const rendererBundleFetchImpl = buildTimedFetch(fetchImpl, {
+    networkTimeoutMs,
+    bundleTimeoutMs,
+    stagePrefix: 'renderer-bundle',
+  });
 
   if (expectedVersionFromAppUpdate) {
     try {
+      progressLog?.('app-update: resolving expected renderer version');
       const appUpdate = await resolveExpectedVersionFromAppUpdate({
         fetchImpl,
         appUpdateUrl: appUpdateUrl ?? buildAppUpdateSnapshotUrl(controlPlaneBaseUrl ?? PRODUCTION_CLOUD_API_URL),
         explicitExpectedVersion: expectedVersion,
+        networkTimeoutMs,
       });
       resolvedExpectedVersion = appUpdate.expectedVersion;
       summary.appUpdate = {
@@ -869,10 +997,12 @@ export async function verifyRendererHotUpdateProduction({
     summary.controlPlane = { skipped: true };
   } else {
     try {
+      progressLog?.('control-plane: verifying renderer_bundle_rollout envelope');
       const results = await runControlPlaneSmokeImpl({
         baseUrl: controlPlaneBaseUrl ?? PRODUCTION_CLOUD_API_URL,
         token: controlPlaneToken,
         artifacts: controlPlaneArtifacts,
+        fetchImpl: controlPlaneFetchImpl,
       });
       summary.controlPlane = {
         skipped: false,
@@ -889,9 +1019,11 @@ export async function verifyRendererHotUpdateProduction({
     summary.rendererBundle = { skipped: true };
   } else {
     try {
+      progressLog?.('renderer-bundle: verifying manifest, bundle, and release-record');
       const result = await verifyRendererBundlePublishImpl({
         manifestUrl,
         releaseRecordUrl,
+        fetchImpl: rendererBundleFetchImpl,
         expectedVersion: resolvedExpectedVersion,
         minRequiredShellCapabilities,
         minManifestValiditySeconds,
@@ -922,6 +1054,9 @@ export async function verifyRendererHotUpdateProduction({
           expectedReleaseChannel,
           fetchImpl,
           includeBundleHash: includeBundleHashSnapshot,
+          networkTimeoutMs,
+          bundleTimeoutMs,
+          progressLog,
         });
       } catch (error) {
         remoteSnapshot = {
@@ -1007,6 +1142,9 @@ async function main(argv) {
 
   const summary = await verifyRendererHotUpdateProductionWithRetry({
     ...args,
+    progressLog: (message) => {
+      process.stdout.write(`[verify-renderer-hot-update-production] ${message}\n`);
+    },
     retryLog: ({ attempt, attempts, retryDelayMs, error }) => {
       const message = error instanceof Error ? error.message : String(error);
       process.stderr.write(

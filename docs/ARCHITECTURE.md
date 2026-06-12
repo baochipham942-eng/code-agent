@@ -1,5 +1,6 @@
 # Agent Neo / Code Agent - 架构设计文档
 
+> 版本: 9.24 (9.23 + 2026-06-12 release-prep hardening：renderer production verifier metadata/bundle timeout + stage diagnostics、checkpoint rebuild foreground short wait + fail-closed、vision empty-response failure reason、skill draft 低价值工具序列名拒绝、session task tree parent recovery)
 > 版本: 9.23 (9.22 + 2026-06-11~12 Agent runtime / MiMoCode / Ops 批次：MiMoCode 快赢与两轮 Codex audit、transcript FTS + History 工具、命令协议层、provider prompt variants、memory BM25、dream consolidation、Max Mode best-of-N、嵌套 subagent 默认 3 层/硬上限 5 层、CUA 锁与轨迹治理、MCP self-service + HTTP Streamable、Admin role RPC、renderer active bundle 低于 shell 版本回退 builtin、诊断导出失败打开 runtime logs)
 > 版本: 9.22 (9.21 + 2026-06-10~11 Windows (win32-x64) 移植与发版链折入：P0 安全/路径地基（权限路径旁路修复 + commandSafety 平台规则包）+ NSIS unsigned 打包链 + 天翼云真机打通（5 个实现期 bug）+ release.yml 独立 build-windows job（三平台 latest.json，windows 失败降级 mac-only，预发布 tag 空跑全绿）+ 全入口设备感知下载/更新（修资产选择两处真 bug）+ ConnectorRegistry 平台过滤 + PII 安装链 Node 化)
 > 版本: 9.21 (9.20 + 2026-06-09 Computer Use 底座迁移 argus → trycua/cua-driver（ADR-021：stdio MCP 接入 + 桌面走 cua/浏览器走 Playwright 分流 + 重签名内嵌 Agent Neo Computer Use.app + cua 工具人话文案/真实 app 图标差异化渲染 + Accessibility 必需/录屏可选）)
@@ -39,7 +40,7 @@
 
 | Spec | 覆盖 |
 |------|------|
-| [Agent Runtime / MiMoCode / Ops Batch](./specs/2026-06-12-agent-runtime-mimocode-and-ops-batch.md) | MiMoCode 快赢与 hardening、transcript FTS + History、命令协议层、superpowers 方法论 skill、provider prompt variants、memory BM25、dream consolidation、Max Mode、嵌套 subagent、CUA 治理、MCP self-service + HTTP Streamable、Admin role RPC、renderer stale active bundle fallback、诊断导出失败日志兜底 |
+| [Agent Runtime / MiMoCode / Ops Batch](./specs/2026-06-12-agent-runtime-mimocode-and-ops-batch.md) | MiMoCode 快赢与 hardening、transcript FTS + History、命令协议层、superpowers 方法论 skill、provider prompt variants、memory BM25、dream consolidation、Max Mode、嵌套 subagent、CUA 治理、MCP self-service + HTTP Streamable、Admin role RPC、renderer stale active bundle fallback、renderer production verifier timeout、checkpoint 前台短等、skill draft 名称质量闸、vision failure reason、诊断导出失败日志兜底 |
 | [Windows 移植与发版链折入](./specs/2026-06-11-windows-support-port.md) | 两天 as-built：P0 安全/路径地基（权限旁路修复 + commandSafety 平台规则包 51 用例）、NSIS 打包链 + CI 实跑绿、天翼云真机打通（5 个实现期 bug）、release.yml 矩阵折入（windows 失败降级 mac-only + 预发布 tag 空跑全绿）、全入口设备感知（修资产选择两处真 bug）、ConnectorRegistry 平台过滤、PII 安装链 Node 化 |
 | [经验沉淀重做 + Telemetry 可诊断性 + 稳定性收尾](./specs/2026-06-08-experience-distillation-telemetry-and-robustness.md) | 经验沉淀重做（[ADR-020](./decisions/020-experience-distillation-redesign.md)：物理移除 telemetry n-gram 频次蒸馏，统一收口 conversationReview LLM 反思路，入口闸+反思门+命名禁用清单+结构化 SKILL.md）、卸载/权限三层修复（safety 措辞改"直接调工具"/rm 目标明确删除从硬毙降为一次确认/挂起权限死锁随新消息 resolve）、Telemetry 可诊断性 P1+P3（agentVersion/promptVersion/toolSchemaVersion 版本指纹进 trace+session、Langfuse 默认开+opt-out）、06-07 下午 provider/session/vision 稳定性收尾 |
 | [对话式角色 + 会话自动化 + 模型设置收口](./specs/2026-06-05-conversational-roles-automation-settings.md) | `/schedule` 空参模板创建、`/loop` 后台化 + meta turns + task ledger 通知、定时 agent 完成通知、原生通知 renderer 投递、对话式新建/修改持久化角色（roleDraftQueue + propose_role + strict skill toolset）、模型设置 provider 保存与默认模型拆分 |

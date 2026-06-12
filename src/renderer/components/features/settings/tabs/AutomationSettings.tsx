@@ -40,12 +40,14 @@ function describeSchedule(job: CronJobDefinition): string {
   const schedule = job.schedule;
   if (!schedule) return '—';
   if (schedule.type === 'every') {
+    if (schedule.unit === 'weeks') {
+      return `不支持的周间隔 · ${schedule.interval} weeks`;
+    }
     const unitLabel: Record<string, string> = {
       seconds: '秒',
       minutes: '分钟',
       hours: '小时',
       days: '天',
-      weeks: '周',
     };
     return `每 ${schedule.interval} ${unitLabel[schedule.unit] ?? schedule.unit}`;
   }

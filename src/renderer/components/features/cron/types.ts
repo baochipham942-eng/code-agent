@@ -215,6 +215,9 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     if (!interval || interval <= 0) {
       throw new Error('间隔必须大于 0');
     }
+    if (draft.everyUnit === 'weeks') {
+      throw new Error('周间隔不受支持，请改用 Cron 表达式配置每周日历任务');
+    }
     schedule = {
       type: 'every',
       interval,
@@ -322,6 +325,9 @@ export function formatScheduleSummary(job: CronJobDefinition): string {
     case 'at':
       return `一次性 · ${formatDateTime(job.schedule.datetime)}`;
     case 'every': {
+      if (job.schedule.unit === 'weeks') {
+        return `不支持的周间隔 · ${job.schedule.interval} weeks`;
+      }
       const unit = UNIT_LABELS[job.schedule.unit] || job.schedule.unit;
       return `每 ${job.schedule.interval} ${unit}`;
     }

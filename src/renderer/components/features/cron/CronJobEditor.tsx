@@ -398,7 +398,6 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
                           { value: 'minutes', label: '分钟' },
                           { value: 'hours', label: '小时' },
                           { value: 'days', label: '天' },
-                          { value: 'weeks', label: '周' },
                         ]}
                       />
                     </FormField>

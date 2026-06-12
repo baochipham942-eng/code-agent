@@ -28,6 +28,11 @@ import {
   type CheckpointStorePaths,
 } from '../context/checkpoint/store';
 import {
+  CHECKPOINT_SECTIONS,
+  createCheckpointTemplate,
+  replaceSectionBody,
+} from '../context/checkpoint/templates';
+import {
   buildCheckpointWriterPrompt,
   parseCheckpointWriterResponse,
 } from './checkpointWriterPrompt';
@@ -77,6 +82,35 @@ const MEMORY_REQUIRED_HEADINGS = [
 
 function isStructurallyValidMemory(memory: string): boolean {
   return MEMORY_REQUIRED_HEADINGS.every((heading) => memory.includes(heading));
+}
+
+/**
+ * 结构修复（live-run 加固）：LLM 经常 paraphrase 或漏掉斜体 instruction 行。
+ * 结构归代码、内容归 LLM——按 11 个规范头提取 LLM 产出的 body，重组到规范
+ * 模板上；标题缺失或乱序时返回 null，交给验证反馈重试。
+ */
+export function normalizeCheckpointStructure(llmDocument: string): string | null {
+  const positions = CHECKPOINT_SECTIONS.map((section) => ({
+    section,
+    index: llmDocument.indexOf(section.heading),
+  }));
+  if (positions.some((entry) => entry.index < 0)) return null;
+  for (let i = 1; i < positions.length; i += 1) {
+    if (positions[i].index <= positions[i - 1].index) return null;
+  }
+
+  let document = createCheckpointTemplate();
+  for (let i = 0; i < positions.length; i += 1) {
+    const start = positions[i].index + positions[i].section.heading.length;
+    const end = i + 1 < positions.length ? positions[i + 1].index : llmDocument.length;
+    const lines = llmDocument.slice(start, end).trim().split('\n');
+    const first = lines[0]?.trim() ?? '';
+    if (first.startsWith('_') && first.endsWith('_') && first.length > 1) {
+      lines.shift();
+    }
+    document = replaceSectionBody(document, positions[i].section.number, lines.join('\n').trim());
+  }
+  return document;
 }
 
 function summarizeValidation(validation: CheckpointValidationResult): string {
@@ -195,7 +229,16 @@ export async function runCheckpointWriterAgent(
         });
         continue;
       }
-      const validation = validateCheckpointDocument(parsed.checkpoint, {
+      const normalized = normalizeCheckpointStructure(parsed.checkpoint);
+      if (!normalized) {
+        lastFailure = 'checkpoint is missing one of the 11 "## §N <title>" headers, or they are out of order — copy them verbatim from CURRENT CHECKPOINT';
+        logger.warn('[CheckpointWriterAgent] checkpoint structure unrecoverable', {
+          sessionId: job.sessionId,
+          attempt,
+        });
+        continue;
+      }
+      const validation = validateCheckpointDocument(normalized, {
         requiredExactLiterals,
         pathTable: table,
         tasks: tasks.map((task) => ({ id: task.id, status: task.status })),
@@ -210,7 +253,7 @@ export async function runCheckpointWriterAgent(
         continue;
       }
 
-      await writeCheckpointFile(paths.checkpointPath, parsed.checkpoint);
+      await writeCheckpointFile(paths.checkpointPath, normalized);
       if (parsed.memory) {
         if (isStructurallyValidMemory(parsed.memory)) {
           await writeCheckpointFile(paths.memoryPath, parsed.memory);

@@ -58,6 +58,8 @@ export function validatePathDiscipline(
 
   for (const match of content.matchAll(/(?:^|[\s("'`])((?:\/[A-Za-z0-9._@%+,:=-]+)+\/?)/g)) {
     const raw = match[1].replace(/[.,;:!?]+$/, '');
+    // 单段 token（如正则标志 /m、/s）不构成跨会话路径泄漏，只查 ≥2 段的绝对路径
+    if (raw.indexOf('/', 1) === -1) continue;
     const start = (match.index ?? 0) + match[0].indexOf(match[1]);
     if (isInRanges(start, exactRanges)) continue;
     const normalized = normalizePath(raw);

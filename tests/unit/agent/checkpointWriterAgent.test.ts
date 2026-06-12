@@ -115,6 +115,29 @@ describe('runCheckpointWriterAgent LLM subagent (audit C-H1/C-H2)', () => {
     expect(written).toContain('🔄 1.1 write writer tests');
   });
 
+  it('repairs paraphrased or omitted instruction lines instead of rejecting (live-run hardening)', async () => {
+    // LLM 常见劣化：§1 instruction 行被改写、§5 instruction 行被整行删掉
+    const degraded = validLlmCheckpoint()
+      .replace(
+        '_Verbatim current user intent. Must include at least one block quote with exact user words._',
+        '_The user intent, quoted verbatim below._',
+      )
+      .replace('_What was being done immediately before this checkpoint._\n', '');
+    const result = await runCheckpointWriterAgent(job(), {
+      llm: async () => wrap(degraded),
+      listSessionTasks: () => TASKS,
+    });
+
+    expect(result.success).toBe(true);
+    const written = await readFile(result.checkpointPath, 'utf-8');
+    // 结构归代码：落盘文件恢复规范 instruction 行
+    expect(written).toContain('_Verbatim current user intent. Must include at least one block quote with exact user words._');
+    expect(written).toContain('_What was being done immediately before this checkpoint._');
+    // 内容归 LLM：body 不丢
+    expect(written).toContain('Was wiring the LLM writer runner.');
+    expect(written).not.toContain('_The user intent, quoted verbatim below._');
+  });
+
   it('fails closed on invalid LLM output and preserves the previous checkpoint', async () => {
     const paths = resolveCheckpointStorePaths({
       sessionId: 'session-llm-writer',

@@ -45,6 +45,18 @@ describe('checkpoint path discipline', () => {
     expect(result.valid).toBe(true);
   });
 
+  it('does not flag single-segment tokens like regex flags as absolute paths (live-run false positive)', () => {
+    const checkpoint = replaceSectionBody(
+      createCheckpointTemplate(),
+      1,
+      '> "fix the regex"\n\n正则带 /m 标志导致多行截断；另一个例子是 /s 标志。',
+    );
+
+    const result = validateCheckpointDocument(checkpoint, { pathTable: PATH_TABLE });
+    expect(result.pathViolations).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
   it('does not reject user exact-form path literals while still rejecting stray paths', () => {
     const exactPath = '`/data/runs/2026-06-09/output.tsv`';
     const checkpoint = replaceSectionBody(

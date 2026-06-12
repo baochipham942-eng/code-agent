@@ -17,6 +17,20 @@ function renderTailMessage(message: Message): string {
   return `### ${label}\n${content}`;
 }
 
+const TRUNCATION_MARKER = '\n[truncated by checkpoint rebuild token cap]';
+
+function truncateToTokenBudget(text: string, budgetTokens: number): string {
+  if (budgetTokens <= 0) return TRUNCATION_MARKER.trim();
+  // 估算 4 字符/token 起步，超预算则按比例继续收缩
+  let candidate = text.slice(0, budgetTokens * 4);
+  let tokens = estimateTokens(candidate);
+  while (tokens > budgetTokens && candidate.length > 0) {
+    candidate = candidate.slice(0, Math.floor(candidate.length * (budgetTokens / tokens) * 0.95));
+    tokens = estimateTokens(candidate);
+  }
+  return `${candidate}${TRUNCATION_MARKER}`;
+}
+
 export function renderCheckpointRebuildContext(input: RebuildContextInput): string {
   const maxTokens = input.maxTokens ?? 24_000;
   const sections = [
@@ -37,9 +51,14 @@ export function renderCheckpointRebuildContext(input: RebuildContextInput): stri
   const tailBlocks: string[] = [];
   let tailTokens = estimateTokens(sections.join('\n\n'));
   for (const message of input.tailMessages) {
-    const rendered = renderTailMessage(message);
-    const nextTokens = estimateTokens(rendered);
-    if (tailBlocks.length > 0 && tailTokens + nextTokens > maxTokens) break;
+    let rendered = renderTailMessage(message);
+    let nextTokens = estimateTokens(rendered);
+    if (tailTokens + nextTokens > maxTokens) {
+      // 首条消息也要进 cap（audit C-M3）：超预算时截断而非无条件放行
+      if (tailBlocks.length > 0) break;
+      rendered = truncateToTokenBudget(rendered, Math.max(maxTokens - tailTokens, 0));
+      nextTokens = estimateTokens(rendered);
+    }
     tailBlocks.push(rendered);
     tailTokens += nextTokens;
   }

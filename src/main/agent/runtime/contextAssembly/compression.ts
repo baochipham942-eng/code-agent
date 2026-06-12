@@ -1,6 +1,6 @@
 // ContextAssembly - Context health tracking and hard-threshold compression.
 import type { AgentEvent, Message } from '../../../../shared/contract';
-import { DEFAULT_MODELS } from '../../../../shared/constants';
+import { CHECKPOINT_WRITER, DEFAULT_MODELS } from '../../../../shared/constants';
 import { getContextHealthService } from '../../../context/contextHealthService';
 import { CompressionState } from '../../../context/compressionState';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
@@ -332,27 +332,44 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
     } as AgentEvent);
 
     if (decision.action === 'checkpoint-rebuild') {
-      getCheckpointWriterService().trigger({
+      const writerService = getCheckpointWriterService();
+      writerService.trigger({
         sessionId: ctx.runtime.sessionId,
         workingDirectory: ctx.runtime.workingDirectory,
         messages: ctx.runtime.messages,
         reason: 'pressure',
         rootDir: ctx.runtime.checkpointRootDir,
       });
-      const boundary = await tryInsertCheckpointRebuildBoundary(ctx.runtime);
-      if (boundary.inserted) {
-        persistRuntimeState(ctx.runtime, { compressionState: true, persistentSystemContext: false });
-        logger.info('[AgentLoop] Checkpoint rebuild boundary inserted before pure compaction', {
+      // 等本轮 checkpoint 写完再插重建边界（audit C-H3）：trigger 是后台任务，
+      // 不等就会读到上一版 stale checkpoint；本轮写入失败时 fail-closed 跳过
+      // 边界插入，落回 summary 压缩，避免用过期意图重建会话。
+      const writerIdle = await writerService.waitForIdle(
+        ctx.runtime.sessionId,
+        CHECKPOINT_WRITER.REBUILD_WAIT_TIMEOUT_MS,
+      );
+      const writerResult = writerService.getLastResult(ctx.runtime.sessionId);
+      if (!writerIdle || (writerResult && !writerResult.success)) {
+        logger.warn('[AgentLoop] Checkpoint write incomplete or failed; skipping rebuild boundary', {
           sessionId: ctx.runtime.sessionId,
-          compactedMessageCount: boundary.compactedMessageCount,
-          boundaryMessageId: boundary.boundaryMessageId,
+          writerIdle,
+          writerError: writerResult?.error,
         });
-        return;
+      } else {
+        const boundary = await tryInsertCheckpointRebuildBoundary(ctx.runtime);
+        if (boundary.inserted) {
+          persistRuntimeState(ctx.runtime, { compressionState: true, persistentSystemContext: false });
+          logger.info('[AgentLoop] Checkpoint rebuild boundary inserted before pure compaction', {
+            sessionId: ctx.runtime.sessionId,
+            compactedMessageCount: boundary.compactedMessageCount,
+            boundaryMessageId: boundary.boundaryMessageId,
+          });
+          return;
+        }
+        logger.warn('[AgentLoop] Checkpoint rebuild boundary unavailable, falling back to summary compaction', {
+          sessionId: ctx.runtime.sessionId,
+          reason: boundary.reason,
+        });
       }
-      logger.warn('[AgentLoop] Checkpoint rebuild boundary unavailable, falling back to summary compaction', {
-        sessionId: ctx.runtime.sessionId,
-        reason: boundary.reason,
-      });
     }
 
     const preserveCount = compressorConfig.preserveRecentCount;

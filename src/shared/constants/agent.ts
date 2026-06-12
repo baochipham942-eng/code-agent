@@ -194,6 +194,12 @@ export const MAX_MODE = {
   CANDIDATE_RENDER_MAX_CHARS: 4_000,
 } as const;
 
+/** Checkpoint writer 配置（roadmap 3.4） */
+export const CHECKPOINT_WRITER = {
+  /** 重建边界插入前等待本轮 checkpoint 写完的上限（writer 为本地函数，正常毫秒级） */
+  REBUILD_WAIT_TIMEOUT_MS: 5_000,
+} as const;
+
 /** 规划配置 */
 export const PLANNING = {
   /** 最大 TODO 数量 */

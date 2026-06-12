@@ -28,6 +28,19 @@ const serviceMocks = vi.hoisted(() => ({
   },
 }));
 
+// checkpointWriterService 的可注入 holder（audit C-H3 测试用）：默认透传真实单例，
+// 单个测试可临时替换实例，afterEach 清空
+const checkpointWriterHolder = vi.hoisted(() => ({ instance: undefined as unknown }));
+vi.mock('../../../src/main/agent/checkpointWriterService', async (importActual) => {
+  const actual = await importActual<typeof import('../../../src/main/agent/checkpointWriterService')>();
+  return {
+    ...actual,
+    getCheckpointWriterService: () =>
+      (checkpointWriterHolder.instance as ReturnType<typeof actual.getCheckpointWriterService>)
+      ?? actual.getCheckpointWriterService(),
+  };
+});
+
 vi.mock('../../../src/main/services/infra/logger', () => ({
   logger: {
     info: vi.fn(),
@@ -184,6 +197,8 @@ vi.mock('../../../src/shared/constants', () => ({
   TOOL_TIMEOUT_THRESHOLDS: {},
   // GAP-023: system prompt 预算动态化依赖
   SYSTEM_PROMPT_BUDGET: { MIN_TOKENS: 6000, WINDOW_RATIO: 0.1 },
+  // audit C-H3: 重建边界前等待 writer 写完的上限
+  CHECKPOINT_WRITER: { REBUILD_WAIT_TIMEOUT_MS: 5_000 },
   // tokenOptimizer 依赖（pre-existing 缺失：GAP-009 引入 TOOL_RESULT_SPILL 后 mock 未同步，导致整个 suite 加载失败）
   OBSERVATION_MASKING: {
     PRESERVE_RECENT_COUNT: 10,
@@ -1740,6 +1755,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
   });
 
   it('prefers checkpoint rebuild boundary over pure summary compaction when a checkpoint exists', async () => {
+    const { CheckpointWriterService } = await import('../../../src/main/agent/checkpointWriterService');
     const sessionId = `session-checkpoint-rebuild-${Date.now()}`;
     const checkpointRootDir = mkdtempSync(path.join(tmpdir(), 'context-assembly-checkpoint-'));
     const checkpointPaths = resolveCheckpointStorePaths({
@@ -1752,6 +1768,16 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       checkpointPaths.checkpointPath,
       replaceSectionBody(createCheckpointTemplate(), 1, '> "implement checkpoint rebuild"'),
     );
+    // audit C-H3 修订后边界插入会等待本轮 writer 并校验结果：注入"成功且不覆写
+    // 预写 checkpoint"的 runner（原测试隐式依赖了 trigger 与读文件之间的竞态）
+    checkpointWriterHolder.instance = new CheckpointWriterService({
+      runner: async () => ({
+        success: true,
+        checkpointPath: checkpointPaths.checkpointPath,
+        memoryPath: checkpointPaths.memoryPath,
+        writtenAt: Date.now(),
+      }),
+    });
     const messages = [
       buildMessage('old-u1', 'user', 'old request'),
       buildMessage('old-a1', 'assistant', 'old answer'),
@@ -1818,6 +1844,95 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       type: 'context_compressed',
       data: expect.objectContaining({ strategy: 'checkpoint_rebuild_boundary' }),
     }));
+    checkpointWriterHolder.instance = undefined;
+  });
+
+  it('skips rebuild boundary when this round checkpoint write fails (audit C-H3, fail-closed on stale)', async () => {
+    const { CheckpointWriterService } = await import('../../../src/main/agent/checkpointWriterService');
+    const sessionId = `session-checkpoint-stale-${Date.now()}`;
+    const checkpointRootDir = mkdtempSync(path.join(tmpdir(), 'context-assembly-checkpoint-stale-'));
+    const checkpointPaths = resolveCheckpointStorePaths({
+      sessionId,
+      workingDirectory: process.cwd(),
+      rootDir: checkpointRootDir,
+    });
+    await ensureCheckpointStore(checkpointPaths);
+    // 磁盘上有"上一版"可用 checkpoint —— 修复前会被 stale 复用
+    await writeCheckpointFile(
+      checkpointPaths.checkpointPath,
+      replaceSectionBody(createCheckpointTemplate(), 1, '> "stale intent from previous round"'),
+    );
+    // 本轮 writer 显式失败（如纪律校验不通过）
+    checkpointWriterHolder.instance = new CheckpointWriterService({
+      runner: async () => ({
+        success: false,
+        checkpointPath: checkpointPaths.checkpointPath,
+        memoryPath: checkpointPaths.memoryPath,
+        error: 'validation failed (test)',
+        writtenAt: Date.now(),
+      }),
+    });
+    try {
+      const messages = [
+        buildMessage('old-u1', 'user', 'old request'),
+        buildMessage('old-a1', 'assistant', 'old answer'),
+        buildMessage('tail-u1', 'user', 'recent request'),
+        buildMessage('tail-a1', 'assistant', 'recent answer '.repeat(50_000)),
+        buildMessage('tail-u2', 'user', 'next request'),
+      ];
+      vi.mocked(getContextHealthService).mockReturnValue({
+        get: vi.fn().mockReturnValue({
+          usagePercent: 91,
+          currentTokens: 116000,
+          maxTokens: 128000,
+        }),
+        update: vi.fn(),
+      } as never);
+
+      const ctx = {
+        sessionId,
+        agentId: undefined,
+        messages,
+        hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
+        onEvent: vi.fn(),
+        modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
+        toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
+        workingDirectory: process.cwd(),
+        isDefaultWorkingDirectory: true,
+        persistentSystemContext: [],
+        isSimpleTaskMode: false,
+        compressionPipeline: new CompressionPipeline(),
+        compressionState: new CompressionState(),
+        checkpointRootDir,
+        pipelineAutocompactNeeded: true,
+        autoCompressor: {
+          shouldTriggerByTokens: vi.fn().mockReturnValue(false),
+          getConfig: vi.fn().mockReturnValue({
+            enabled: true,
+            warningThreshold: 0.75,
+            preserveRecentCount: 2,
+          }),
+          shouldWrapUp: vi.fn().mockReturnValue(false),
+          getCompactionCount: vi.fn().mockReturnValue(0),
+          getStats: vi.fn().mockReturnValue({ compressionCount: 0, totalSavedTokens: 0 }),
+          recordCompaction: vi.fn(),
+        },
+        systemPrompt: '',
+        hookManager: undefined,
+      };
+
+      const assembly = new ContextAssembly(ctx as never);
+      await assembly.checkAndAutoCompress();
+
+      // 本轮写入失败 → 不得用上一版 stale checkpoint 插重建边界
+      expect(ctx.messages[0]?.content ?? '').not.toContain('<checkpoint-rebuild>');
+      expect(ctx.onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
+        type: 'context_compressed',
+        data: expect.objectContaining({ strategy: 'checkpoint_rebuild_boundary' }),
+      }));
+    } finally {
+      checkpointWriterHolder.instance = undefined;
+    }
   });
 
   it('uses unified compaction service for percentage fallback instead of legacy autoCompressor', async () => {

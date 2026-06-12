@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ParsedSkill } from '../../../../src/shared/contract/agentSkill';
 import {
   buildSkillInvocationContext,
@@ -83,6 +83,70 @@ describe('skillInvocationResolver', () => {
     const context = await buildSkillInvocationContext(resolved!, '/repo');
     expect(context.contextModifier.toolBoundary?.skillName).toBe('distill');
     expect(context.contextModifier.toolBoundary?.strict).toBe(true);
+  });
+
+  describe('executor 注册表桥（buildSkillInvocationContext 的执行副作用）', () => {
+    const EXEC_SKILL = 'exec-bridge-test';
+
+    function execSkill(): ParsedSkill {
+      return skill({ name: EXEC_SKILL, description: 'executor bridge test skill', promptContent: 'present the report', loaded: true });
+    }
+
+    it('注册了 executor 的 skill 显式触发 → 运行报告注入上下文块', async () => {
+      const { registerSkillExecutor, unregisterSkillExecutor } = await import(
+        '../../../../src/main/services/skills/skillExecutorRegistry'
+      );
+      registerSkillExecutor(EXEC_SKILL, async (req) => `EXECUTED with args=${req.args ?? ''}`);
+      try {
+        const resolved = resolveSkillInvocationFromSkills(`/${EXEC_SKILL} --auto`, [execSkill()]);
+        const context = await buildSkillInvocationContext(resolved!, '/repo');
+        expect(context.block).toContain('<skill-execution-report status="completed">');
+        expect(context.block).toContain('EXECUTED with args=--auto');
+      } finally {
+        unregisterSkillExecutor(EXEC_SKILL);
+      }
+    });
+
+    it('executor 抛错 → 降级为失败说明块，不打断上下文构建', async () => {
+      const { registerSkillExecutor, unregisterSkillExecutor } = await import(
+        '../../../../src/main/services/skills/skillExecutorRegistry'
+      );
+      registerSkillExecutor(EXEC_SKILL, async () => {
+        throw new Error('service down');
+      });
+      try {
+        const resolved = resolveSkillInvocationFromSkills(`/${EXEC_SKILL}`, [execSkill()]);
+        const context = await buildSkillInvocationContext(resolved!, '/repo');
+        expect(context.block).toContain('<skill-execution-report status="failed">');
+        expect(context.block).toContain('service down');
+      } finally {
+        unregisterSkillExecutor(EXEC_SKILL);
+      }
+    });
+
+    it('alias 模糊匹配不执行 executor，块中无执行报告', async () => {
+      const { registerSkillExecutor, unregisterSkillExecutor } = await import(
+        '../../../../src/main/services/skills/skillExecutorRegistry'
+      );
+      const executor = vi.fn(async () => 'should not run');
+      registerSkillExecutor(EXEC_SKILL, executor);
+      try {
+        const resolved = resolveSkillInvocationFromSkills(`/${EXEC_SKILL}`, [execSkill()]);
+        const aliasInvocation = { ...resolved!, matchKind: 'alias' as const };
+        const context = await buildSkillInvocationContext(aliasInvocation, '/repo');
+        expect(executor).not.toHaveBeenCalled();
+        expect(context.block).not.toContain('skill-execution-report');
+      } finally {
+        unregisterSkillExecutor(EXEC_SKILL);
+      }
+    });
+
+    it('未注册 executor 的 skill 行为不变（无执行报告块）', async () => {
+      const plain = skill({ name: 'plain-skill', description: 'no executor', promptContent: 'plain', loaded: true });
+      const resolved = resolveSkillInvocationFromSkills('/plain-skill', [plain]);
+      const context = await buildSkillInvocationContext(resolved!, '/repo');
+      expect(context.block).not.toContain('skill-execution-report');
+    });
   });
 
   it('resolves a leading slash command before model intent classification', () => {

@@ -5,6 +5,7 @@ import type {
 import { getSkillDiscoveryService } from './skillDiscoveryService';
 import { loadSkillContent } from './skillLoader';
 import { renderSkillContent } from './skillRenderer';
+import { hasSkillExecutor, runRegisteredSkillExecutor } from './skillExecutorRegistry';
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('SkillInvocationResolver');
@@ -294,6 +295,15 @@ function formatSkillLocation(skill: ParsedSkill): string {
   return `Skill source: ${skill.source} inline skill`;
 }
 
+/**
+ * 构建 skill 调用的上下文块与 contextModifier。
+ *
+ * ⚠️ Contract 变化（roadmap 3.2）：对在 skillExecutorRegistry 注册了 executor 的
+ * skill，本函数会**执行该 executor（产生副作用）**，并把运行报告作为
+ * <skill-execution-report> 块并入上下文——代码持有执行权，模型只负责呈现。
+ * 守护由注册表统一执行：仅显式 slash/inline-slash 触发、失败/超时降级为说明
+ * 块（绝不打断聊天 turn）、并发互斥。未注册 executor 的 skill 行为完全不变。
+ */
 export async function buildSkillInvocationContext(
   invocation: ResolvedSkillInvocation,
   workingDirectory: string,
@@ -333,6 +343,25 @@ export async function buildSkillInvocationContext(
     contextModifier.modelOverride = skill.model;
   }
 
+  // Executor 桥：注册了 service 层 executor 的 skill，先由代码执行（含全部硬门），
+  // 报告回注上下文。运行结果永远是降级安全的（registry 承诺不抛异常）。
+  let executionReportBlock = '';
+  if (hasSkillExecutor(skill.name)) {
+    const outcome = await runRegisteredSkillExecutor({
+      skillName: skill.name,
+      args: invocation.args,
+      workingDirectory,
+      matchKind: invocation.matchKind,
+    });
+    if (outcome && outcome.status !== 'skipped-not-explicit') {
+      executionReportBlock = [
+        `<skill-execution-report status="${outcome.status}">`,
+        outcome.report,
+        '</skill-execution-report>',
+      ].join('\n');
+    }
+  }
+
   const block = [
     `<required-skill-invocation name="${skill.name}" match="${invocation.matchKind}" source="${skill.source}">`,
     `The user explicitly invoked or clearly targeted this user-invocable skill. Treat these skill instructions as required for this turn, even if the skill has disable-model-invocation enabled.`,
@@ -342,6 +371,7 @@ export async function buildSkillInvocationContext(
     '<skill-instructions>',
     promptContent,
     '</skill-instructions>',
+    executionReportBlock,
     '</required-skill-invocation>',
   ].filter(Boolean).join('\n');
 

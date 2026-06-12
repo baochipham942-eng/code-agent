@@ -632,6 +632,23 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
     })
     .catch((error) => logger.warn('Dream memory consolidation job registration failed (non-blocking)', { error: String(error) }));
 
+  // Distill（roadmap 3.2）：注册 /distill 的 service 层 executor（executor 桥）
+  // + 每 30 天自动 distill cron job（幂等 by tag）。
+  import('../services/skills/distillExecutor')
+    .then(({ registerDistillSkillExecutor }) => registerDistillSkillExecutor())
+    .catch((error) => logger.warn('Distill skill executor registration failed (non-blocking)', { error: String(error) }));
+  initCronService()
+    .then(async () => {
+      const { syncDistillCronJob, DISTILL_CRON_JOB_TAG } = await import('../services/skills/distillScheduler');
+      const workingDirectory = getDesktopBootstrapWorkingDirectory(configService);
+      const result = await syncDistillCronJob(getCronService(), { workingDirectory });
+      logger.info('Distill workflow packaging job synced', {
+        tag: DISTILL_CRON_JOB_TAG,
+        created: result.created,
+      });
+    })
+    .catch((error) => logger.warn('Distill workflow packaging job registration failed (non-blocking)', { error: String(error) }));
+
   // 角色主动性：按主动性配置同步 cadence cron job（幂等，每个持久化角色一个 job）
   // docs/designs/role-proactivity.md §2.1
   initCronService()

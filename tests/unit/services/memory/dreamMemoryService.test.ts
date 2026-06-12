@@ -7,6 +7,7 @@ import { resolveSkillInvocationFromSkills } from '../../../../src/main/services/
 import {
   DREAM_MEMORY_SOURCE,
   runDreamMemoryConsolidation,
+  supportsCandidate,
   type DreamCandidate,
 } from '../../../../src/main/services/memory/dreamMemoryService';
 
@@ -110,6 +111,112 @@ const verifiedCandidate: DreamCandidate = {
   kind: 'project',
   queries: ['轨迹库 权威 memory 缓存', 'History FTS 验证'],
 };
+
+describe('supportsCandidate — 防幻觉门强度（audit fix A-H1）', () => {
+  const hit = (snippet: string) =>
+    ({ sessionId: 'sess-1', messageId: 'msg-1', snippet, timestamp: NOW }) as never;
+  const cand = (overrides: Partial<DreamCandidate>): DreamCandidate =>
+    ({ id: 'c', title: '', summary: '', content: '', ...overrides }) as DreamCandidate;
+
+  it('单 token 候选不能凭 1 个 token 命中放行（阈值下限 2）', () => {
+    const candidate = cand({ title: '决定', content: 'a b c 1 2 3 x!' });
+    expect(supportsCandidate(candidate, hit('我们今天决定先去吃饭'), null)).toBe(false);
+  });
+
+  it('多 token 候选仅命中 2 个泛词不放行（阈值随 token 数缩放）', () => {
+    const candidate = cand({
+      title: 'memory consolidation principle',
+      content: 'transcript authority verification gateway threshold scaling adversarial fabricated detail',
+    });
+    expect(supportsCandidate(candidate, hit('we discussed memory consolidation today'), null)).toBe(false);
+  });
+
+  it('命中比例足够时仍放行（回归守护）', () => {
+    const candidate = cand({
+      title: 'history verification gate',
+      content: 'history verification gate required before write',
+    });
+    expect(
+      supportsCandidate(candidate, hit('agreed: history verification gate required before write'), null),
+    ).toBe(true);
+  });
+
+  it('短 title 子串命中不再短路放行（逐字短路最短 12 字符）', () => {
+    const candidate = cand({
+      title: '记住这个修复原因',
+      content: 'fabricated payload tokens nowhere appearing matched anywhere transcript',
+    });
+    expect(supportsCandidate(candidate, hit('上次说过记住这个修复原因'), null)).toBe(false);
+  });
+
+  it('长 summary 逐字命中仍放行（≥12 字符的逐字证据有效）', () => {
+    const candidate = cand({
+      title: '原则',
+      summary: '轨迹库为权威而长期记忆只是缓存层',
+      content: '轨迹库为权威而长期记忆只是缓存层。',
+    });
+    expect(
+      supportsCandidate(candidate, hit('结论：轨迹库为权威而长期记忆只是缓存层，没有异议'), null),
+    ).toBe(true);
+  });
+});
+
+describe('runDreamMemoryConsolidation — audit fixes A-M2/A-L1', () => {
+  it('窗口内无会话时不降级全历史，直接报告无可整理（A-M2）', async () => {
+    const db = makeDb();
+    // 唯一会话是 30 天前的——超出默认 7 天窗口
+    db.listSessions.mockReturnValue([
+      {
+        id: 'sess-old',
+        title: 'Stale session',
+        workingDirectory: '/repo',
+        createdAt: NOW - 30 * 24 * 60 * 60 * 1000,
+        updatedAt: NOW - 30 * 24 * 60 * 60 * 1000,
+      },
+    ]);
+    const memoryIO = makeMemoryIO();
+
+    await runDreamMemoryConsolidation({
+      db: db as never,
+      projectPath: '/repo',
+      now: NOW,
+      memoryIO: memoryIO as never,
+    });
+
+    expect(memoryIO.writeEntry).not.toHaveBeenCalled();
+    expect(db.searchTranscriptFts).not.toHaveBeenCalled();
+  });
+
+  it('候选 confidence 越界时 clamp 到 [0,1]（A-L1）', async () => {
+    const db = makeDb();
+    db.searchTranscriptFts.mockReturnValue([
+      { sessionId: 'sess-1', messageId: 'msg-user', snippet: '决定：轨迹库为权威，memory 是缓存。', timestamp: NOW },
+    ]);
+    db.getTranscriptAround.mockReturnValue({ messages: [] });
+    const memoryIO = makeMemoryIO();
+
+    await runDreamMemoryConsolidation({
+      db: db as never,
+      projectPath: '/repo',
+      now: NOW,
+      memoryIO: memoryIO as never,
+      candidateExtractor: async () => [{
+        ...verifiedCandidate,
+        confidence: 9999,
+      }],
+    });
+
+    expect(memoryIO.writeEntry).toHaveBeenCalledTimes(1);
+    const written = memoryIO.writeEntry.mock.calls[0][1] ?? memoryIO.writeEntry.mock.calls[0][0];
+    const entry = (written && typeof written === 'object' && 'confidence' in (written as object))
+      ? written as { confidence: number }
+      : memoryIO.writeEntry.mock.calls[0].find(
+          (arg: unknown) => arg && typeof arg === 'object' && 'confidence' in (arg as object),
+        ) as { confidence: number };
+    expect(entry.confidence).toBeLessThanOrEqual(1);
+    expect(entry.confidence).toBeGreaterThanOrEqual(0);
+  });
+});
 
 describe('runDreamMemoryConsolidation', () => {
   it('demonstrates the /dream manual trigger path into a verified memory write', async () => {

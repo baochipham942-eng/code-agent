@@ -150,8 +150,9 @@ function pickSessions(sessions: SessionLike[], projectPath: string | null | unde
   const scoped = projectPath
     ? sessions.filter((session) => !session.workingDirectory || session.workingDirectory === projectPath)
     : sessions;
-  const recent = scoped.filter((session) => isRecentSession(session, windowStart));
-  return recent.length > 0 ? recent : scoped;
+  // 窗口内无会话 → 返回空（上游 dream.txt 的语义是"报告 nothing 并停止"），
+  // 不降级全历史——否则数年前的会话会被当作"最近 7 天"处理（audit A-M2）
+  return scoped.filter((session) => isRecentSession(session, windowStart));
 }
 
 function extractMessageText(message: Message): string {
@@ -195,16 +196,24 @@ function contextText(around: TranscriptAroundResult | null): string {
     .join('\n');
 }
 
-function supportsCandidate(candidate: DreamCandidate, hit: TranscriptSearchHit, around: TranscriptAroundResult | null): boolean {
+// 防幻觉门参数（audit fix A-H1）：逐字短路需要足够长的证据；token 路径阈值
+// 随候选 token 数缩放且下限 2——原实现阈值封顶 2，长候选命中 2 个泛词即放行。
+const VERBATIM_MATCH_MIN_CHARS = 12;
+const TOKEN_MATCH_MIN = 2;
+const TOKEN_MATCH_RATIO = 0.5;
+
+export function supportsCandidate(candidate: DreamCandidate, hit: TranscriptSearchHit, around: TranscriptAroundResult | null): boolean {
   const haystack = normalizeText([hit.snippet, contextText(around)].join('\n'));
   if (!haystack) return false;
   const summary = normalizeText(candidate.summary || '');
-  if (summary.length >= 6 && haystack.includes(summary)) return true;
+  if (summary.length >= VERBATIM_MATCH_MIN_CHARS && haystack.includes(summary)) return true;
   const title = normalizeText(candidate.title);
-  if (title.length >= 6 && haystack.includes(title)) return true;
+  if (title.length >= VERBATIM_MATCH_MIN_CHARS && haystack.includes(title)) return true;
   const tokens = queryTokens([candidate.title, candidate.summary, candidate.content].join('\n'));
+  if (tokens.length === 0) return false;
   const matched = tokens.filter((token) => haystack.includes(normalizeText(token)));
-  return matched.length >= Math.min(2, Math.max(1, tokens.length));
+  const threshold = Math.max(TOKEN_MATCH_MIN, Math.ceil(tokens.length * TOKEN_MATCH_RATIO));
+  return matched.length >= threshold;
 }
 
 async function verifyCandidate(
@@ -251,12 +260,20 @@ function buildDreamEntry(
 ): MemoryEntry {
   const id = memoryEntryId(candidate);
   const kind = candidate.kind || 'project';
+  let scope: MemoryEntry['scope'];
+  if (candidate.sessionId) {
+    scope = 'session';
+  } else if (projectPath || kind === 'project' || kind === 'pattern') {
+    scope = 'project';
+  } else {
+    scope = 'global';
+  }
   return {
     id,
     schemaVersion: 2,
     status: 'active',
     kind,
-    scope: candidate.sessionId ? 'session' : projectPath || kind === 'project' || kind === 'pattern' ? 'project' : 'global',
+    scope,
     title: compact(candidate.title, 120) || id,
     summary: compact(candidate.summary || candidate.content, 180),
     content: candidate.content.trim(),
@@ -274,7 +291,7 @@ function buildDreamEntry(
     }],
     projectPath: candidate.projectPath ?? projectPath ?? null,
     sessionId: candidate.sessionId ?? null,
-    confidence: candidate.confidence ?? 0.9,
+    confidence: Math.max(0, Math.min(1, candidate.confidence ?? 0.9)),
     createdAt: now,
     updatedAt: now,
   };

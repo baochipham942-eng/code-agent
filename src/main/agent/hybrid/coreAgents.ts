@@ -19,6 +19,7 @@ import { loadAgentMdFiles } from './agentMdLoader';
 import { getAgentsMdDir } from '../../config/configPaths';
 import { applyOverride } from '../../prompts/registry';
 import { DREAM_AGENT_PROMPT } from '../dreamPrompt';
+import { DISTILL_AGENT_PROMPT } from '../distillPrompt';
 
 // Re-export types from canonical source for backward compatibility
 export type { CoreAgentId, ModelTier, CoreAgentConfig } from './types';
@@ -62,7 +63,7 @@ export function getModelConfig(tier: ModelTier): { provider: ModelProvider; mode
 /**
  * 核心角色列表
  */
-export const CORE_AGENT_IDS: CoreAgentId[] = ['coder', 'reviewer', 'explore', 'plan', 'awaiter', 'dream'];
+export const CORE_AGENT_IDS: CoreAgentId[] = ['coder', 'reviewer', 'explore', 'plan', 'awaiter', 'dream', 'distill'];
 
 /**
  * 检查是否为核心角色
@@ -124,6 +125,14 @@ Use long timeouts. Increase exponentially if needed.
 Do not modify the task. Do not interpret the output beyond success/failure.
 Only exit when the command completes, fails, or you receive an explicit stop instruction.`;
 
+const DISTILL_SUFFIX = `
+
+# Sub-agent Execution Mode
+You are running as a workflow distillation sub-agent.
+Use History to verify repeated-workflow evidence; do not query SQLite directly and do not use Bash.
+You only produce structured proposals; you never create or modify files.
+Proposals must reference verified candidate ids supplied by the caller.`;
+
 const DREAM_SUFFIX = `
 
 # Sub-agent Execution Mode
@@ -142,6 +151,7 @@ export const SUBAGENT_SUFFIXES: Record<CoreAgentId, string> = {
   plan: PLANNER_SUFFIX,
   awaiter: AWAITER_SUFFIX,
   dream: DREAM_SUFFIX,
+  distill: DISTILL_SUFFIX,
 };
 
 // ============================================================================
@@ -474,6 +484,23 @@ Output (last 200 lines):
     model: 'balanced',
     maxIterations: 20,
     readonly: false,
+  },
+
+  // =========================================================================
+  // Distill - 重复工作流 → 结构化提案（落盘由确定性 service 层执行）
+  // =========================================================================
+  distill: {
+    id: 'distill',
+    name: 'Distill',
+    description: 'Investigates repeated workflows and drafts structured asset proposals; emission happens in the deterministic service layer.',
+    prompt: applyOverride(
+      { id: 'subagent.distill', category: 'Subagent', name: 'Distill 工作流蒸馏子代理', description: '重复工作流 → 结构化提案 子代理主 prompt' },
+      DISTILL_AGENT_PROMPT,
+    ),
+    tools: ['MemoryRead', 'History', 'Read', 'Glob', 'Grep'],
+    model: 'balanced',
+    maxIterations: 20,
+    readonly: true,
   },
 };
 

@@ -6,6 +6,7 @@
 import type { ParsedSkill } from '../../../shared/contract/agentSkill';
 import type { SkillCategory } from '../../../shared/contract/skillRepository';
 import { DREAM_SKILL_PROMPT } from '../../agent/dreamPrompt';
+import { DISTILL_SKILL_PROMPT } from '../../agent/distillPrompt';
 
 /**
  * 内置 Skill 定义列表
@@ -109,6 +110,22 @@ Commit message 格式：
     strictToolset: true,
     executionContext: 'inline',
     agent: 'dream',
+    source: 'builtin',
+    loaded: true,
+  },
+  {
+    name: 'distill',
+    description: '重复工作流固化：当用户输入 /distill、要求把重复流程沉淀成 command/skill 或自动 distill 工作流蒸馏时使用。',
+    promptContent: DISTILL_SKILL_PROMPT,
+    basePath: '',
+    // 六阶段蒸馏与落盘在 service 层 executor 完成（见 skillExecutorRegistry），
+    // 本 turn 模型只负责呈现运行报告，因此收缩为只读最小工具面。
+    allowedTools: ['Read'],
+    disableModelInvocation: false,
+    userInvocable: true,
+    strictToolset: true,
+    executionContext: 'inline',
+    agent: 'distill',
     source: 'builtin',
     loaded: true,
   },
@@ -2843,6 +2860,7 @@ const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
   refactor: 'development',
   docker: 'development',
   dream: 'development',
+  distill: 'development',
   // 数据分析
   'data-cleaning': 'data-analysis',
   'data-analysis-helper': 'data-analysis',

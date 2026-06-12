@@ -8,7 +8,7 @@ import type { RoleProactivityConfig } from '../../../shared/contract/roleAssets'
 /**
  * 核心角色 ID
  */
-export type CoreAgentId = 'coder' | 'reviewer' | 'explore' | 'plan' | 'awaiter' | 'dream';
+export type CoreAgentId = 'coder' | 'reviewer' | 'explore' | 'plan' | 'awaiter' | 'dream' | 'distill';
 
 /**
  * 模型层级（3 级）

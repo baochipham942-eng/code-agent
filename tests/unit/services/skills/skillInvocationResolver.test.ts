@@ -61,6 +61,30 @@ describe('skillInvocationResolver', () => {
     expect(context.block).toContain('不要直接查询 SQLite');
   });
 
+  it('/distill 确定性命中 distill 内置 skill，并把 turn 收缩到只读呈现工具', async () => {
+    const distill = BUILTIN_SKILLS.find((s) => s.name === 'distill');
+    expect(distill, 'distill 内置 skill 应存在').toBeTruthy();
+    expect(distill!.userInvocable).toBe(true);
+    expect(distill!.agent).toBe('distill');
+    expect(distill!.strictToolset).toBe(true);
+    // 落盘发生在 service 层 executor，turn 内模型不需要任何写工具
+    expect(distill!.allowedTools).not.toContain('Write');
+    expect(distill!.allowedTools).not.toContain('SkillCreate');
+    expect(distill!.allowedTools).not.toContain('Bash');
+
+    const resolved = resolveSkillInvocationFromSkills('/distill --auto', [distill!]);
+    expect(resolved).toMatchObject({
+      matchKind: 'slash',
+      args: '--auto',
+      confidence: 1,
+    });
+    expect(resolved?.skill.name).toBe('distill');
+
+    const context = await buildSkillInvocationContext(resolved!, '/repo');
+    expect(context.contextModifier.toolBoundary?.skillName).toBe('distill');
+    expect(context.contextModifier.toolBoundary?.strict).toBe(true);
+  });
+
   it('resolves a leading slash command before model intent classification', () => {
     const lobster = skill({
       name: 'lobster',

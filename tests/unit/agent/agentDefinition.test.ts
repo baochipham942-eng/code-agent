@@ -22,21 +22,22 @@ describe('AgentDefinition - Hybrid Architecture', () => {
   // Core Agents Structure
   // --------------------------------------------------------------------------
   describe('PREDEFINED_AGENTS structure', () => {
-    it('should have exactly 6 core agents', () => {
-      expect(Object.keys(PREDEFINED_AGENTS)).toHaveLength(6);
+    it('should have exactly 7 core agents', () => {
+      expect(Object.keys(PREDEFINED_AGENTS)).toHaveLength(7);
     });
 
-    it('should have all 6 core agents defined', () => {
+    it('should have all 7 core agents defined', () => {
       expect(PREDEFINED_AGENTS['coder']).toBeDefined();
       expect(PREDEFINED_AGENTS['reviewer']).toBeDefined();
       expect(PREDEFINED_AGENTS['explore']).toBeDefined();
       expect(PREDEFINED_AGENTS['plan']).toBeDefined();
       expect(PREDEFINED_AGENTS['awaiter']).toBeDefined();
       expect(PREDEFINED_AGENTS['dream']).toBeDefined();
+      expect(PREDEFINED_AGENTS['distill']).toBeDefined();
     });
 
     it('CORE_AGENT_IDS should match PREDEFINED_AGENTS keys', () => {
-      expect(CORE_AGENT_IDS).toHaveLength(6);
+      expect(CORE_AGENT_IDS).toHaveLength(7);
       for (const id of CORE_AGENT_IDS) {
         expect(PREDEFINED_AGENTS[id]).toBeDefined();
       }
@@ -194,6 +195,27 @@ describe('AgentDefinition - Hybrid Architecture', () => {
         expect(agent.coordination?.layer).toBe('execution');
       });
     });
+
+    describe('distill agent', () => {
+      const agent = PREDEFINED_AGENTS['distill'];
+
+      it('should constrain proposal investigation to read-only evidence tools', () => {
+        const prompt = String(agent.prompt);
+        expect(agent.tools).toEqual(expect.arrayContaining(['History', 'MemoryRead', 'Read', 'Glob', 'Grep']));
+        expect(agent.tools).not.toContain('Bash');
+        expect(agent.tools).not.toContain('Write');
+        expect(agent.tools).not.toContain('MemoryWrite');
+        expect(agent.tools).not.toContain('SkillCreate');
+        expect(prompt).toContain('结构化提案');
+        expect(prompt).toContain('至少出现 2 次');
+        expect(prompt).toContain('不要直接查询 SQLite');
+      });
+
+      it('should be readonly because emission happens in the deterministic service layer', () => {
+        expect(agent.coordination?.readonly).toBe(true);
+        expect(agent.coordination?.layer).toBe('exploration');
+      });
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -207,6 +229,7 @@ describe('AgentDefinition - Hybrid Architecture', () => {
         expect(isCoreAgent('explore')).toBe(true);
         expect(isCoreAgent('plan')).toBe(true);
         expect(isCoreAgent('dream')).toBe(true);
+        expect(isCoreAgent('distill')).toBe(true);
       });
 
       it('should return false for non-core agent IDs', () => {
@@ -237,16 +260,17 @@ describe('AgentDefinition - Hybrid Architecture', () => {
     });
 
     describe('listPredefinedAgentIds', () => {
-      it('should return array of 6 core agent IDs', () => {
+      it('should return array of 7 core agent IDs', () => {
         const ids = listPredefinedAgentIds();
         expect(Array.isArray(ids)).toBe(true);
-        expect(ids).toHaveLength(6);
+        expect(ids).toHaveLength(7);
         expect(ids).toContain('coder');
         expect(ids).toContain('reviewer');
         expect(ids).toContain('explore');
         expect(ids).toContain('plan');
         expect(ids).toContain('awaiter');
         expect(ids).toContain('dream');
+        expect(ids).toContain('distill');
       });
     });
 
@@ -254,7 +278,7 @@ describe('AgentDefinition - Hybrid Architecture', () => {
       it('should return array of agent summaries', () => {
         const agents = listPredefinedAgents();
         expect(Array.isArray(agents)).toBe(true);
-        expect(agents).toHaveLength(6);
+        expect(agents).toHaveLength(7);
 
         const coder = agents.find((a) => a.id === 'coder');
         expect(coder).toBeDefined();

@@ -1989,6 +1989,73 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     }
   });
 
+  it('fail-closes when writer leaves no success result (undefined lastResult, audit FAIL-2)', async () => {
+    const { CheckpointWriterService } = await import('../../../src/main/agent/checkpointWriterService');
+    const sessionId = `session-checkpoint-undef-${Date.now()}`;
+    const checkpointRootDir = mkdtempSync(path.join(tmpdir(), 'context-assembly-checkpoint-undef-'));
+    const checkpointPaths = resolveCheckpointStorePaths({
+      sessionId,
+      workingDirectory: process.cwd(),
+      rootDir: checkpointRootDir,
+    });
+    await ensureCheckpointStore(checkpointPaths);
+    await writeCheckpointFile(
+      checkpointPaths.checkpointPath,
+      replaceSectionBody(createCheckpointTemplate(), 1, '> "stale intent"'),
+    );
+    // runner resolve undefined → state.lastResult = undefined（waitForIdle 仍返回 true）。
+    // 修复前 `(writerResult && !writerResult.success)` 对 undefined 为 false → 误放行
+    checkpointWriterHolder.instance = new CheckpointWriterService({
+      runner: async () => undefined as never,
+    });
+    try {
+      const messages = [
+        buildMessage('old-u1', 'user', 'old request'),
+        buildMessage('old-a1', 'assistant', 'old answer'),
+        buildMessage('tail-u1', 'user', 'recent request'),
+        buildMessage('tail-a1', 'assistant', 'recent answer '.repeat(50_000)),
+        buildMessage('tail-u2', 'user', 'next request'),
+      ];
+      vi.mocked(getContextHealthService).mockReturnValue({
+        get: vi.fn().mockReturnValue({ usagePercent: 91, currentTokens: 116000, maxTokens: 128000 }),
+        update: vi.fn(),
+      } as never);
+      const ctx = {
+        sessionId,
+        agentId: undefined,
+        messages,
+        hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
+        onEvent: vi.fn(),
+        modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
+        toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
+        workingDirectory: process.cwd(),
+        isDefaultWorkingDirectory: true,
+        persistentSystemContext: [],
+        isSimpleTaskMode: false,
+        compressionPipeline: new CompressionPipeline(),
+        compressionState: new CompressionState(),
+        checkpointRootDir,
+        pipelineAutocompactNeeded: true,
+        autoCompressor: {
+          shouldTriggerByTokens: vi.fn().mockReturnValue(false),
+          getConfig: vi.fn().mockReturnValue({ enabled: true, warningThreshold: 0.75, preserveRecentCount: 2 }),
+          shouldWrapUp: vi.fn().mockReturnValue(false),
+          getCompactionCount: vi.fn().mockReturnValue(0),
+          getStats: vi.fn().mockReturnValue({ compressionCount: 0, totalSavedTokens: 0 }),
+          recordCompaction: vi.fn(),
+        },
+        systemPrompt: '',
+        hookManager: undefined,
+      };
+      const assembly = new ContextAssembly(ctx as never);
+      await assembly.checkAndAutoCompress();
+
+      expect(ctx.messages[0]?.content ?? '').not.toContain('<checkpoint-rebuild>');
+    } finally {
+      checkpointWriterHolder.instance = undefined;
+    }
+  });
+
   it('uses unified compaction service for percentage fallback instead of legacy autoCompressor', async () => {
     const sessionId = `session-fallback-${Date.now()}`;
     const checkAndCompress = vi.fn().mockRejectedValue(new Error('legacy checkAndCompress should not be called'));

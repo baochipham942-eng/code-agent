@@ -90,6 +90,36 @@ describe('CheckpointWriterService', () => {
     expect(runner.mock.calls[1][0].messages.map((item) => item.id)).toEqual(['m1', 'm2', 'm3']);
   });
 
+  it('returns false within the deadline when the writer never settles (audit re-FAIL-1)', async () => {
+    // runner 永不 resolve：当前 `await state.inFlight` 会挂死，超时形同虚设
+    const runner = vi.fn<CheckpointWriterRunner>(() => new Promise(() => {}));
+    const service = new CheckpointWriterService({ runner });
+    service.trigger({ sessionId: 's1', workingDirectory: '/repo', messages: [message('m1')], reason: 'pressure' });
+
+    const start = Date.now();
+    const idle = await service.waitForIdle('s1', 80);
+    const elapsed = Date.now() - start;
+
+    expect(idle).toBe(false);
+    // 严格不超过 deadline（留宽裕量），证明不再无界挂起
+    expect(elapsed).toBeLessThan(1_000);
+  });
+
+  it('does not follow the pending chain past the deadline (audit FAIL-1)', async () => {
+    const first = deferred<Awaited<ReturnType<CheckpointWriterRunner>>>();
+    const runner = vi.fn<CheckpointWriterRunner>(() => first.promise);
+    const service = new CheckpointWriterService({ runner });
+    service.trigger({ sessionId: 's1', workingDirectory: '/repo', messages: [message('m1')], reason: 'pressure' });
+    // 排一个 pending，使 first 完成后立刻又 running
+    service.trigger({ sessionId: 's1', workingDirectory: '/repo', messages: [message('m2')], reason: 'pressure' });
+
+    const start = Date.now();
+    const idle = await service.waitForIdle('s1', 60);
+    expect(idle).toBe(false);
+    expect(Date.now() - start).toBeLessThan(1_000);
+    first.resolve({ success: true, checkpointPath: '/tmp/c.md', memoryPath: '/tmp/M.md', writtenAt: 1 });
+  });
+
   it('does not retrigger periodic writes before the message watermark advances enough', () => {
     const runner = vi.fn<CheckpointWriterRunner>().mockResolvedValue({
       success: true,

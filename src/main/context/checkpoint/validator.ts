@@ -25,9 +25,31 @@ export interface CheckpointValidationResult {
   pathViolations: PathDisciplineViolation[];
   tamperedInstructionSections: number[];
   taskTreeViolations: string[];
+  injectionViolations: string[];
 }
 
 const TASK_LINE_PATTERN = /(?:🔵|🔄|🟡|✅|❌)\s+(\S+)/gu;
+
+// 提示注入纵深防御（audit FAIL-4）：会话内容经 LLM writer 落盘成 checkpoint，
+// 重建时注入下一 session 的 system 上下文，构成跨 session 持久化注入通道。
+// 这是止血层（拒绝带明显越狱/指令覆盖痕迹的 checkpoint），不替代"把会话内容
+// 当 inert data"的根治。模式从严但要求祈使式指令上下文，避免误伤技术叙述。
+const INJECTION_PATTERNS: RegExp[] = [
+  /\b(?:ignore|disregard|forget)\s+(?:all\s+|any\s+)?(?:previous|prior|above|earlier)\s+instructions?\b/i,
+  /\bsystem[_\s-]?override\b/i,
+  /<\/?\s*system\s*>/i,
+  /\byou\s+are\s+now\s+(?:an?\s+)?(?:unrestricted|jailbroken|dan)\b/i,
+  /\bact\s+as\s+(?:an?\s+)?(?:unrestricted|root|admin|jailbroken)\b/i,
+];
+
+function findInjectionViolations(checkpoint: string): string[] {
+  const violations: string[] = [];
+  for (const pattern of INJECTION_PATTERNS) {
+    const match = checkpoint.match(pattern);
+    if (match) violations.push(match[0].trim());
+  }
+  return violations;
+}
 
 function findTamperedInstructionSections(checkpoint: string): number[] {
   const tampered: number[] = [];
@@ -88,6 +110,7 @@ export function validateCheckpointDocument(
   const taskTreeViolations = options.tasks
     ? validateTaskTree(checkpoint, options.tasks)
     : [];
+  const injectionViolations = findInjectionViolations(checkpoint);
 
   return {
     valid: missingSections.length === 0
@@ -95,12 +118,14 @@ export function validateCheckpointDocument(
       && exact.valid
       && pathResult.valid
       && tamperedInstructionSections.length === 0
-      && taskTreeViolations.length === 0,
+      && taskTreeViolations.length === 0
+      && injectionViolations.length === 0,
     missingSections,
     activeIntentHasVerbatimQuote,
     missingExactLiterals: exact.missing,
     pathViolations: pathResult.violations,
     tamperedInstructionSections,
     taskTreeViolations,
+    injectionViolations,
   };
 }

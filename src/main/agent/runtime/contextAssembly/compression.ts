@@ -348,7 +348,9 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
         CHECKPOINT_WRITER.REBUILD_WAIT_TIMEOUT_MS,
       );
       const writerResult = writerService.getLastResult(ctx.runtime.sessionId);
-      if (!writerIdle || (writerResult && !writerResult.success)) {
+      // fail-closed（audit FAIL-2）：必须有明确成功记录才放行；undefined（无记录/
+      // runner 异常 resolve）一律视为失败，避免读到上一版 stale checkpoint
+      if (!writerIdle || !writerResult?.success) {
         logger.warn('[AgentLoop] Checkpoint write incomplete or failed; skipping rebuild boundary', {
           sessionId: ctx.runtime.sessionId,
           writerIdle,

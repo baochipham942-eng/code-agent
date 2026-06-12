@@ -98,11 +98,22 @@ export class CheckpointWriterService {
   }
 
   async waitForIdle(sessionId: string, timeoutMs = 1_000): Promise<boolean> {
-    const started = Date.now();
-    while (Date.now() - started < timeoutMs) {
-      const state = this.states.get(sessionId);
-      if (!state?.running) return true;
-      await state.inFlight;
+    // 严格不超过 deadline（audit FAIL-1）：原实现 `await state.inFlight` 对
+    // 永不 settle 的 runner 会无界挂起、超时形同虚设；且跟随 pending 链会累计
+    // 等待超过 timeoutMs。改为 race(当前 inFlight 快照, deadline 定时器)，
+    // 每轮重新读 state——超时即返回当前是否已 idle。
+    const deadline = Date.now() + timeoutMs;
+    let state = this.states.get(sessionId);
+    while (state?.running && Date.now() < deadline) {
+      const snapshot = state.inFlight ?? Promise.resolve();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const remaining = Math.max(0, deadline - Date.now());
+      await Promise.race([
+        snapshot,
+        new Promise<void>((resolve) => { timer = setTimeout(resolve, remaining); }),
+      ]);
+      if (timer) clearTimeout(timer);
+      state = this.states.get(sessionId);
     }
     return !this.states.get(sessionId)?.running;
   }

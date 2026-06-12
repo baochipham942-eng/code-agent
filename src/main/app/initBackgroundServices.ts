@@ -634,6 +634,9 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
 
   // Distill（roadmap 3.2）：注册 /distill 的 service 层 executor（executor 桥）
   // + 每 30 天自动 distill cron job（幂等 by tag）。
+  import('../services/memory/dreamExecutor')
+    .then(({ registerDreamSkillExecutor }) => registerDreamSkillExecutor())
+    .catch((error) => logger.warn('Dream skill executor registration failed (non-blocking)', { error: String(error) }));
   import('../services/skills/distillExecutor')
     .then(({ registerDistillSkillExecutor }) => registerDistillSkillExecutor())
     .catch((error) => logger.warn('Distill skill executor registration failed (non-blocking)', { error: String(error) }));

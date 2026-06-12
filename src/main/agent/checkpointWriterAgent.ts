@@ -1,13 +1,24 @@
-import type { Message } from '../../shared/contract';
+// ============================================================================
+// Checkpoint Writer Agent - 真 LLM 后台子代理（audit C-H1/C-H2 返工）
+// ============================================================================
+// 参照 MiMo actor.spawn({background, agentType:"checkpoint-writer"}) 模式：
+// CheckpointWriterService.start 把本 runner 作为后台 actor 运行（fire-and-forget），
+// runner 内部组装会话上下文 → 调 LLM 产出完整 11 段文档 → 强化版 validator
+// 独立把关 → 原子写入。验证失败不落盘，上游 fail-closed 跳过重建边界。
+// ============================================================================
+
+import type { Message, ModelConfig, ModelProvider } from '../../shared/contract';
+import type { SessionTask } from '../../shared/contract/planning';
+import { CHECKPOINT_WRITER, DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
+import { ModelRouter } from '../model/modelRouter';
+import { getConfigService } from '../services';
+import { listTasks } from '../services/planning/taskStore';
 import {
   collectExactFormLiterals,
-  createCheckpointTemplate,
-  renderVerbatimBlockQuote,
-  replaceSectionBody,
-  shouldUpdateActiveIntent,
   validateCheckpointDocument,
   type CheckpointPathTable,
+  type CheckpointValidationResult,
 } from '../context/checkpoint';
 import {
   ensureCheckpointStore,
@@ -16,6 +27,10 @@ import {
   writeCheckpointFile,
   type CheckpointStorePaths,
 } from '../context/checkpoint/store';
+import {
+  buildCheckpointWriterPrompt,
+  parseCheckpointWriterResponse,
+} from './checkpointWriterPrompt';
 
 const logger = createLogger('CheckpointWriterAgent');
 
@@ -36,44 +51,12 @@ export interface CheckpointWriterResult {
   writtenAt: number;
 }
 
-function lastUserMessage(messages: readonly Message[]): Message | undefined {
-  return [...messages].reverse().find((message) => message.role === 'user' && message.content.trim());
-}
+/** writer 子代理的 LLM 调用：输入完整 prompt，返回原始文本（测试可注入假实现） */
+export type CheckpointWriterLlm = (prompt: string) => Promise<string>;
 
-function lastAssistantMessage(messages: readonly Message[]): Message | undefined {
-  return [...messages].reverse().find((message) => message.role === 'assistant' && message.content.trim());
-}
-
-function firstUserMessage(messages: readonly Message[]): Message | undefined {
-  return messages.find((message) => message.role === 'user' && message.content.trim());
-}
-
-function extractToolFiles(messages: readonly Message[]): string[] {
-  const files = new Set<string>();
-  for (const message of messages) {
-    for (const call of message.toolCalls ?? []) {
-      const args = call.arguments as Record<string, unknown> | undefined;
-      const pathValue = args?.file_path ?? args?.path ?? args?.cwd;
-      if (typeof pathValue === 'string' && pathValue.trim()) {
-        files.add(pathValue.trim());
-      }
-    }
-  }
-  return [...files].slice(0, 20);
-}
-
-function relativeOrLabel(filePath: string, workingDirectory: string): string {
-  if (!filePath.startsWith('/')) return filePath;
-  if (filePath.startsWith(`${workingDirectory}/`)) {
-    return filePath.slice(workingDirectory.length + 1);
-  }
-  return '[absolute path withheld by checkpoint path discipline]';
-}
-
-function summarizeText(text: string, maxChars = 700): string {
-  const cleaned = text.trim();
-  if (!cleaned) return '(none)';
-  return cleaned.length <= maxChars ? cleaned : `${cleaned.slice(0, maxChars)}...`;
+export interface CheckpointWriterDeps {
+  llm?: CheckpointWriterLlm;
+  listSessionTasks?: (sessionId: string) => SessionTask[];
 }
 
 function pathTable(paths: CheckpointStorePaths): CheckpointPathTable {
@@ -85,92 +68,173 @@ function pathTable(paths: CheckpointStorePaths): CheckpointPathTable {
   };
 }
 
-function renderExactDirectives(messages: readonly Message[]): string {
-  const exact = messages
-    .filter((message) => message.role === 'user')
-    .flatMap((message) => collectExactFormLiterals(message.content));
-  if (exact.length === 0) return '(none)';
-  return exact
-    .map((item) => `- Preserve exact ${item.kind}: ${item.literal}`)
-    .join('\n');
+const MEMORY_REQUIRED_HEADINGS = [
+  '## Project context',
+  '## Rules',
+  '## Architecture decisions',
+  '## Discovered durable knowledge',
+];
+
+function isStructurallyValidMemory(memory: string): boolean {
+  return MEMORY_REQUIRED_HEADINGS.every((heading) => memory.includes(heading));
 }
 
-function buildCheckpoint(job: CheckpointWriterJob, previousCheckpoint: string): string {
-  const latestUser = lastUserMessage(job.messages);
-  const firstUser = firstUserMessage(job.messages);
-  const activeIntentSource = latestUser && shouldUpdateActiveIntent(latestUser.content)
-    ? latestUser
-    : firstUser;
-  const activeIntent = activeIntentSource
-    ? renderVerbatimBlockQuote(activeIntentSource.content)
-    : '(none)';
-  const nextAction = latestUser && shouldUpdateActiveIntent(latestUser.content)
-    ? [
-      'Continue the active requested implementation.',
-      renderVerbatimBlockQuote(latestUser.content),
-    ].join('\n')
-    : '(none)';
-  const lastAssistant = lastAssistantMessage(job.messages);
-  const files = extractToolFiles(job.messages)
-    .map((filePath) => `- ${relativeOrLabel(filePath, job.workingDirectory)} - referenced by tool trajectory`)
-    .join('\n') || '(none)';
-  const checkpoint = previousCheckpoint.trim()
-    ? previousCheckpoint
-    : createCheckpointTemplate();
-
-  let next = checkpoint;
-  next = replaceSectionBody(next, 1, activeIntent);
-  next = replaceSectionBody(next, 2, nextAction);
-  next = replaceSectionBody(next, 3, renderExactDirectives(job.messages));
-  next = replaceSectionBody(next, 4, '(none)');
-  next = replaceSectionBody(
-    next,
-    5,
-    lastAssistant
-      ? `Last assistant work before checkpoint:\n${summarizeText(lastAssistant.content)}`
-      : '(none)',
-  );
-  next = replaceSectionBody(next, 6, files);
-  next = replaceSectionBody(next, 7, '(none)');
-  next = replaceSectionBody(next, 8, '(none)');
-  next = replaceSectionBody(
-    next,
-    9,
-    [
-      `- sessionId: ${job.sessionId}`,
-      `- reason: ${job.reason}`,
-      `- writtenAt: ${job.now ?? Date.now()}`,
-    ].join('\n'),
-  );
-  next = replaceSectionBody(next, 10, '(none)');
-  next = replaceSectionBody(next, 11, '(none)');
-  return next;
+function summarizeValidation(validation: CheckpointValidationResult): string {
+  const failures: string[] = [];
+  if (validation.missingSections.length > 0) {
+    failures.push(`missing sections: ${validation.missingSections.map((n) => `§${n}`).join(', ')}`);
+  }
+  if (!validation.activeIntentHasVerbatimQuote) {
+    failures.push('§1 lacks a block-quoted verbatim user request (> "...")');
+  }
+  if (validation.missingExactLiterals.length > 0) {
+    failures.push(`missing exact-form literals: ${validation.missingExactLiterals.join(' | ')}`);
+  }
+  if (validation.pathViolations.length > 0) {
+    failures.push(`absolute paths outside path table: ${validation.pathViolations.map((v) => v.path).join(', ')}`);
+  }
+  if (validation.tamperedInstructionSections.length > 0) {
+    failures.push(`italic instruction lines modified in: ${validation.tamperedInstructionSections.map((n) => `§${n}`).join(', ')}`);
+  }
+  if (validation.taskTreeViolations.length > 0) {
+    failures.push(validation.taskTreeViolations.join('; '));
+  }
+  return failures.join('\n');
 }
 
-export async function runCheckpointWriterAgent(job: CheckpointWriterJob): Promise<CheckpointWriterResult> {
+// ----------------------------------------------------------------------------
+// 默认 LLM：主模型直调（模型解析仿 compactModel.initializeMainModel）
+// ----------------------------------------------------------------------------
+
+let writerModelRouter: ModelRouter | null = null;
+
+function resolveWriterModelConfig(): ModelConfig {
+  const configService = getConfigService();
+  const settings = configService.getSettings();
+  const provider = (settings.model?.provider || DEFAULT_PROVIDER) as ModelProvider;
+  const model = settings.model?.model || DEFAULT_MODELS.chat;
+  const apiKey = configService.getApiKey(provider)
+    || (provider === 'moonshot' ? process.env.KIMI_K25_API_KEY : undefined);
+  if (!apiKey) {
+    throw new Error(`checkpoint writer: no API key available for provider ${provider}`);
+  }
+  return {
+    provider,
+    model,
+    apiKey,
+    baseUrl: settings.models?.providers?.[provider]?.baseUrl,
+    temperature: CHECKPOINT_WRITER.LLM_TEMPERATURE,
+    maxTokens: CHECKPOINT_WRITER.LLM_MAX_OUTPUT_TOKENS,
+  };
+}
+
+async function defaultCheckpointWriterLlm(prompt: string): Promise<string> {
+  const config = resolveWriterModelConfig();
+  if (!writerModelRouter) {
+    writerModelRouter = new ModelRouter();
+  }
+  const response = await writerModelRouter.inference(
+    [{ role: 'user', content: prompt }],
+    [],
+    config,
+  );
+  if (!response.content) {
+    throw new Error('checkpoint writer: empty LLM response');
+  }
+  return response.content;
+}
+
+// ----------------------------------------------------------------------------
+// Runner
+// ----------------------------------------------------------------------------
+
+export async function runCheckpointWriterAgent(
+  job: CheckpointWriterJob,
+  deps: CheckpointWriterDeps = {},
+): Promise<CheckpointWriterResult> {
   const writtenAt = job.now ?? Date.now();
   const paths = resolveCheckpointStorePaths(job);
+  const llm = deps.llm ?? defaultCheckpointWriterLlm;
+  const listSessionTasks = deps.listSessionTasks ?? listTasks;
+
   try {
     await ensureCheckpointStore(paths);
     const current = await readCheckpointStore(paths);
-    const checkpoint = buildCheckpoint({ ...job, now: writtenAt }, current.checkpoint);
-    const exactLiterals = job.messages
+    const tasks = listSessionTasks(job.sessionId);
+    const requiredExactLiterals = job.messages
       .filter((message) => message.role === 'user')
       .flatMap((message) => collectExactFormLiterals(message.content));
-    const validation = validateCheckpointDocument(checkpoint, {
-      requiredExactLiterals: exactLiterals,
-      pathTable: pathTable(paths),
-    });
-    if (!validation.valid) {
-      throw new Error(`checkpoint validation failed: ${JSON.stringify(validation)}`);
-    }
-    await writeCheckpointFile(paths.checkpointPath, checkpoint);
-    return {
-      success: true,
-      checkpointPath: paths.checkpointPath,
-      memoryPath: paths.memoryPath,
+    const table = pathTable(paths);
+    const basePrompt = buildCheckpointWriterPrompt({
+      pathTable: table,
+      currentCheckpoint: current.checkpoint,
+      currentMemory: current.memory,
+      currentNotes: current.notes,
+      tasks,
+      messages: job.messages,
+      requiredExactLiterals,
+      sessionId: job.sessionId,
+      workingDirectory: job.workingDirectory,
+      reason: job.reason,
       writtenAt,
-    };
+      conversationMaxTokens: CHECKPOINT_WRITER.PROMPT_CONVERSATION_MAX_TOKENS,
+    });
+
+    let lastFailure = 'writer produced no output';
+    for (let attempt = 1; attempt <= CHECKPOINT_WRITER.LLM_MAX_ATTEMPTS; attempt += 1) {
+      const prompt = attempt === 1
+        ? basePrompt
+        : `${basePrompt}\n\nVALIDATION FAILURES of your previous attempt — fix ALL of them:\n${lastFailure}`;
+      const raw = await llm(prompt);
+      const parsed = parseCheckpointWriterResponse(raw);
+      if (!parsed.checkpoint) {
+        lastFailure = 'response did not contain a <checkpoint>...</checkpoint> block';
+        logger.warn('[CheckpointWriterAgent] unparseable writer response', {
+          sessionId: job.sessionId,
+          attempt,
+        });
+        continue;
+      }
+      const validation = validateCheckpointDocument(parsed.checkpoint, {
+        requiredExactLiterals,
+        pathTable: table,
+        tasks: tasks.map((task) => ({ id: task.id, status: task.status })),
+      });
+      if (!validation.valid) {
+        lastFailure = summarizeValidation(validation);
+        logger.warn('[CheckpointWriterAgent] checkpoint validation failed', {
+          sessionId: job.sessionId,
+          attempt,
+          failures: lastFailure,
+        });
+        continue;
+      }
+
+      await writeCheckpointFile(paths.checkpointPath, parsed.checkpoint);
+      if (parsed.memory) {
+        if (isStructurallyValidMemory(parsed.memory)) {
+          await writeCheckpointFile(paths.memoryPath, parsed.memory);
+        } else {
+          // memory 是次要产物：结构残缺时跳过写入，不拖垮 checkpoint 本身
+          logger.warn('[CheckpointWriterAgent] memory block missing required headings; skipped', {
+            sessionId: job.sessionId,
+          });
+        }
+      }
+      logger.info('[CheckpointWriterAgent] checkpoint written by LLM subagent', {
+        sessionId: job.sessionId,
+        reason: job.reason,
+        attempt,
+        taskCount: tasks.length,
+      });
+      return {
+        success: true,
+        checkpointPath: paths.checkpointPath,
+        memoryPath: paths.memoryPath,
+        writtenAt,
+      };
+    }
+    throw new Error(`checkpoint validation failed after ${CHECKPOINT_WRITER.LLM_MAX_ATTEMPTS} attempts: ${lastFailure}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('[CheckpointWriterAgent] checkpoint write failed', {
@@ -187,4 +251,3 @@ export async function runCheckpointWriterAgent(job: CheckpointWriterJob): Promis
     };
   }
 }
-

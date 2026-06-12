@@ -196,8 +196,16 @@ export const MAX_MODE = {
 
 /** Checkpoint writer 配置（roadmap 3.4） */
 export const CHECKPOINT_WRITER = {
-  /** 重建边界插入前等待本轮 checkpoint 写完的上限（writer 为本地函数，正常毫秒级） */
-  REBUILD_WAIT_TIMEOUT_MS: 5_000,
+  /** 重建边界插入前等待本轮 checkpoint 写完的上限（writer 是真 LLM 子代理，一轮 10~60s；超时则 fail-closed 落回 summary 压缩） */
+  REBUILD_WAIT_TIMEOUT_MS: 90_000,
+  /** writer 子代理单次输出 token 上限（完整 11 段 checkpoint + memory） */
+  LLM_MAX_OUTPUT_TOKENS: 8_192,
+  /** 验证失败时的最大尝试次数（首次 + 带违规反馈重试） */
+  LLM_MAX_ATTEMPTS: 2,
+  /** writer 子代理温度（结构化输出要求稳定） */
+  LLM_TEMPERATURE: 0.2,
+  /** 注入 writer prompt 的会话内容 token 预算 */
+  PROMPT_CONVERSATION_MAX_TOKENS: 24_000,
 } as const;
 
 /** 规划配置 */

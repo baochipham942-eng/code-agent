@@ -162,6 +162,20 @@ vi.mock('../../src/main/services/cloud/cloudConfigService', () => ({
 
 import { AgentOrchestrator } from '../../src/main/agent/agentOrchestrator';
 import type { ConfigService } from '../../src/main/services/core/configService';
+import type { Message } from '../../src/shared/contract';
+
+// 部分目标是 private 方法 / 内部状态，特征测试经类型逃逸访问（测试专用）
+interface OrchestratorInternals {
+  applyHistoryVisibility(message: Message, options?: { historyVisibility?: 'meta' | 'normal' }): Message;
+  resolveExplicitAgentRouting(agentId: string): { agent: unknown; score: number; reason: string } | null;
+  pendingPermissions: Map<string, { resolve: (r: string) => void }>;
+}
+function internals(o: AgentOrchestrator): OrchestratorInternals {
+  return o as unknown as OrchestratorInternals;
+}
+function makeMessage(id: string, role: Message['role'], content: string): Message {
+  return { id, role, content, timestamp: 0 };
+}
 
 describe('AgentOrchestrator', () => {
   let orchestrator: AgentOrchestrator;
@@ -258,6 +272,131 @@ describe('AgentOrchestrator', () => {
       expect(() => {
         orchestrator.setPlanningService(mockPlanningService as never);
       }).not.toThrow();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Delegate 模式 / Plan 审批开关
+  // --------------------------------------------------------------------------
+  describe('委托模式与计划审批开关', () => {
+    it('delegate 模式默认关闭，可切换', () => {
+      expect(orchestrator.isDelegateMode()).toBe(false);
+      orchestrator.setDelegateMode(true);
+      expect(orchestrator.isDelegateMode()).toBe(true);
+      orchestrator.setDelegateMode(false);
+      expect(orchestrator.isDelegateMode()).toBe(false);
+    });
+
+    it('计划审批默认不要求，可切换', () => {
+      expect(orchestrator.isRequirePlanApproval()).toBe(false);
+      orchestrator.setRequirePlanApproval(true);
+      expect(orchestrator.isRequirePlanApproval()).toBe(true);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // isProcessing
+  // --------------------------------------------------------------------------
+  describe('isProcessing', () => {
+    it('无活动 agentLoop / research 时返回 false', () => {
+      expect(orchestrator.isProcessing()).toBe(false);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // 默认工作目录标记
+  // --------------------------------------------------------------------------
+  describe('默认工作目录标记', () => {
+    it('初始使用默认目录，setWorkingDirectory 后翻转为 false', () => {
+      expect(orchestrator.isUsingDefaultWorkingDirectory()).toBe(true);
+      orchestrator.setWorkingDirectory('/test/explicit/dir');
+      expect(orchestrator.isUsingDefaultWorkingDirectory()).toBe(false);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // 调研用户设置（部分合并）
+  // --------------------------------------------------------------------------
+  describe('调研用户设置', () => {
+    it('setResearchUserSettings 浅合并，不覆盖未传字段', () => {
+      orchestrator.setResearchUserSettings({ searchEngine: 'tavily' } as never);
+      orchestrator.setResearchUserSettings({ maxResults: 5 } as never);
+      const settings = orchestrator.getResearchUserSettings() as Record<string, unknown>;
+      expect(settings.searchEngine).toBe('tavily'); // 第一次的值保留
+      expect(settings.maxResults).toBe(5);
+    });
+
+    it('getResearchUserSettings 返回副本，外部修改不污染内部', () => {
+      orchestrator.setResearchUserSettings({ searchEngine: 'tavily' } as never);
+      const snapshot = orchestrator.getResearchUserSettings() as Record<string, unknown>;
+      snapshot.searchEngine = 'mutated';
+      expect((orchestrator.getResearchUserSettings() as Record<string, unknown>).searchEngine).toBe('tavily');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // 消息状态防御性拷贝
+  // --------------------------------------------------------------------------
+  describe('消息状态防御性拷贝', () => {
+    it('setMessages 存入副本，外部修改源数组不影响内部', () => {
+      const source = [makeMessage('m1', 'user', 'hello')];
+      orchestrator.setMessages(source);
+      source.push(makeMessage('m2', 'user', 'injected'));
+      expect(orchestrator.getMessages()).toHaveLength(1);
+    });
+
+    it('getMessages 返回副本，修改返回值不影响内部', () => {
+      orchestrator.setMessages([makeMessage('m1', 'user', 'hello')]);
+      const returned = orchestrator.getMessages();
+      returned.push(makeMessage('m2', 'user', 'injected'));
+      expect(orchestrator.getMessages()).toHaveLength(1);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // 权限响应：resolve 并清除挂起项
+  // --------------------------------------------------------------------------
+  describe('权限响应解除挂起', () => {
+    it('handlePermissionResponse 对已登记的挂起项 resolve 并从队列移除', () => {
+      const resolve = vi.fn();
+      internals(orchestrator).pendingPermissions.set('req-1', { resolve });
+      orchestrator.handlePermissionResponse('req-1', 'allow');
+      expect(resolve).toHaveBeenCalledWith('allow');
+      expect(internals(orchestrator).pendingPermissions.has('req-1')).toBe(false);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // applyHistoryVisibility（private）
+  // --------------------------------------------------------------------------
+  describe('applyHistoryVisibility', () => {
+    it('historyVisibility=meta 时标记 isMeta 并兜底 source=system', () => {
+      const message = makeMessage('m1', 'user', 'x');
+      const out = internals(orchestrator).applyHistoryVisibility(message, { historyVisibility: 'meta' });
+      expect(out.isMeta).toBe(true);
+      expect(out.source).toBe('system');
+    });
+
+    it('meta 时已有 source 不被覆盖', () => {
+      const message: Message = { ...makeMessage('m1', 'user', 'x'), source: 'user' };
+      const out = internals(orchestrator).applyHistoryVisibility(message, { historyVisibility: 'meta' });
+      expect(out.source).toBe('user');
+    });
+
+    it('非 meta 时消息原样返回，不加 isMeta', () => {
+      const message = makeMessage('m1', 'user', 'x');
+      const out = internals(orchestrator).applyHistoryVisibility(message, { historyVisibility: 'normal' });
+      expect(out.isMeta).toBeUndefined();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // resolveExplicitAgentRouting（private）—— 未知 id 优雅兜底
+  // --------------------------------------------------------------------------
+  describe('resolveExplicitAgentRouting', () => {
+    it('未知 agentId 不抛错，返回 null（回落到自动路由）', () => {
+      const result = internals(orchestrator).resolveExplicitAgentRouting('__nonexistent_agent_xyz__');
+      expect(result).toBeNull();
     });
   });
 });

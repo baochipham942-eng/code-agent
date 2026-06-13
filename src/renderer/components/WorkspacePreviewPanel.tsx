@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Archive,
   Calendar,
   Check,
   Clipboard,
@@ -7,13 +8,17 @@ import {
   Copy,
   File,
   FileText,
+  GitCompare,
   Image,
   LayoutGrid,
   Mail,
   MessageSquare,
+  Music,
   Presentation,
+  RotateCcw,
   Table2,
   Terminal,
+  Video,
 } from 'lucide-react';
 import type {
   WorkspacePreviewItem,
@@ -26,7 +31,7 @@ import {
   type WorkbenchPreset,
   type WorkbenchRecipe,
 } from '@shared/contract/workbenchPreset';
-import { IPC_DOMAINS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { directionTokens, type DirectionTokens } from '@/design/direction-tokens';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
 import { useAppStore } from '../stores/appStore';
@@ -38,6 +43,10 @@ import {
   buildWorkspacePreviewHtmlSrcdoc,
   type WorkspacePreviewRuntimeStatus,
 } from '../utils/workspacePreview';
+import {
+  buildWorkspaceRevisionComparison,
+  buildWorkspaceRevisionHistory,
+} from '../utils/workspaceRevisions';
 import { DiffView } from './DiffView';
 import { LocalityFeedbackBar } from './LivePreview/LocalityFeedbackBar';
 import { ChartBlock } from './features/chat/MessageBubble/ChartBlock';
@@ -68,6 +77,10 @@ function kindLabel(kind: WorkspacePreviewKind): string {
     case 'calendar_event': return 'Calendar';
     case 'reminder': return 'Reminder';
     case 'web_snapshot': return 'Web';
+    case 'image': return 'Image';
+    case 'audio': return 'Audio';
+    case 'video': return 'Video';
+    case 'archive': return 'Archive';
     case 'diff': return 'Diff';
     case 'terminal': return 'Terminal';
     case 'trace': return 'Trace';
@@ -76,6 +89,7 @@ function kindLabel(kind: WorkspacePreviewKind): string {
     case 'chart': return 'Chart';
     case 'diagram': return 'Diagram';
     case 'question_form': return 'Brief';
+    case 'presentation': return 'Presentation';
     case 'design_ppt': return 'Design PPT';
     default: return 'File';
   }
@@ -95,7 +109,14 @@ function KindIcon({ kind }: { kind: WorkspacePreviewKind }) {
     case 'reminder':
       return <Calendar className={`${cls} text-violet-300`} />;
     case 'web_snapshot':
+    case 'image':
       return <Image className={`${cls} text-cyan-300`} />;
+    case 'audio':
+      return <Music className={`${cls} text-emerald-300`} />;
+    case 'video':
+      return <Video className={`${cls} text-fuchsia-300`} />;
+    case 'archive':
+      return <Archive className={`${cls} text-amber-300`} />;
     case 'diff':
     case 'generic_html':
     case 'chart':
@@ -106,6 +127,7 @@ function KindIcon({ kind }: { kind: WorkspacePreviewKind }) {
     case 'question_form':
       return <MessageSquare className={`${cls} text-cyan-300`} />;
     case 'design_ppt':
+    case 'presentation':
       return <Presentation className={`${cls} text-fuchsia-300`} />;
     default:
       return <File className={`${cls} text-zinc-400`} />;
@@ -459,6 +481,119 @@ function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
   );
 }
 
+function revisionLabel(item: WorkspacePreviewItem, index: number): string {
+  const version = item.revision?.version;
+  return version ? `v${version}` : `rev ${index + 1}`;
+}
+
+function RevisionPanel({
+  items,
+  selected,
+  currentSessionId,
+  isRestoring,
+  actionError,
+  actionMessage,
+  onSelect,
+  onRestore,
+}: {
+  items: WorkspacePreviewItem[];
+  selected: WorkspacePreviewItem;
+  currentSessionId?: string | null;
+  isRestoring: boolean;
+  actionError?: string | null;
+  actionMessage?: string | null;
+  onSelect: (itemId: string) => void;
+  onRestore: () => void;
+}) {
+  const history = useMemo(() => buildWorkspaceRevisionHistory(items, selected), [items, selected]);
+  const comparison = useMemo(() => buildWorkspaceRevisionComparison(items, selected), [items, selected]);
+  const canRestoreCheckpoint = Boolean(selected.file?.path && selected.source.messageId && currentSessionId);
+  const hasRevision = Boolean(selected.revision?.artifactId || history.length > 1 || canRestoreCheckpoint);
+  if (!hasRevision) return null;
+
+  return (
+    <div className="space-y-2 rounded-lg border border-white/[0.08] bg-black/20 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <GitCompare className="h-3.5 w-3.5 shrink-0 text-cyan-300" />
+          <div className="truncate text-xs font-medium text-zinc-200">Versions</div>
+          {selected.revision?.sha256 && (
+            <div className="truncate font-mono text-[10px] text-zinc-600">
+              {selected.revision.sha256.slice(0, 12)}
+            </div>
+          )}
+        </div>
+        {selected.file?.path && (
+          <button
+            type="button"
+            onClick={onRestore}
+            disabled={!canRestoreCheckpoint || isRestoring}
+            className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-zinc-800 px-2 py-1 text-[11px] text-zinc-200 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+            title={
+              canRestoreCheckpoint
+                ? 'Restore files to this message checkpoint'
+                : 'No checkpoint anchor is available for this artifact'
+            }
+          >
+            <RotateCcw className={`h-3.5 w-3.5 ${isRestoring ? 'animate-spin' : ''}`} />
+            Restore checkpoint
+          </button>
+        )}
+      </div>
+
+      {history.length > 1 && (
+        <div className="flex flex-wrap gap-1.5">
+          {history.map((item, index) => (
+            <button
+              type="button"
+              key={item.id}
+              onClick={() => onSelect(item.id)}
+              className={`rounded-md border px-2 py-1 text-[11px] ${
+                item.id === selected.id
+                  ? 'border-cyan-500/35 bg-cyan-500/[0.08] text-cyan-200'
+                  : 'border-white/[0.08] bg-zinc-900 text-zinc-400 hover:bg-zinc-800'
+              }`}
+              title={item.title}
+            >
+              {revisionLabel(item, index)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {comparison ? (
+        <div className="space-y-1">
+          <div className="text-[10px] text-zinc-500">
+            Compare {comparison.beforeLabel} {revisionLabel(comparison.previous, Math.max(0, history.indexOf(comparison.previous)))} to {comparison.afterLabel} {revisionLabel(comparison.current, Math.max(0, history.indexOf(comparison.current)))}
+          </div>
+          <div className="max-h-[360px] overflow-auto rounded border border-white/[0.06]">
+            <DiffView
+              oldText={comparison.before}
+              newText={comparison.after}
+              fileName={comparison.fileName}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="rounded border border-white/[0.06] bg-zinc-950/60 px-2 py-1.5 text-[11px] text-zinc-500">
+          {history.length > 1 ? 'No inline comparable content for this revision.' : 'No previous revision found in this session.'}
+        </div>
+      )}
+
+      {actionError && (
+        <div className="rounded border border-rose-500/20 bg-rose-500/10 px-2 py-1.5 text-[11px] text-rose-200">
+          {actionError}
+        </div>
+      )}
+      {actionMessage && (
+        <div className="rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-emerald-200">
+          {actionMessage}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PreviewBody({ item }: { item: WorkspacePreviewItem }) {
   if (item.kind === 'question_form') {
     return <QuestionFormPreview item={item} />;
@@ -510,6 +645,9 @@ export const WorkspacePreviewPanel: React.FC = () => {
   const [activeDrawer, setActiveDrawer] = useState<WorkspaceAssetDrawer | null>(null);
   const [copied, setCopied] = useState(false);
   const [assetActionError, setAssetActionError] = useState<string | null>(null);
+  const [isRestoringRevision, setIsRestoringRevision] = useState(false);
+  const [revisionActionError, setRevisionActionError] = useState<string | null>(null);
+  const [revisionActionMessage, setRevisionActionMessage] = useState<string | null>(null);
   const galleryItems = useMemo(() => items.filter(isGalleryItem), [items]);
   const appAssetCount = presets.length + recipes.length;
 
@@ -543,6 +681,33 @@ export const WorkspacePreviewPanel: React.FC = () => {
       setSelectedId(selected.id);
     }
   }, [selected, selectedId, setSelectedId]);
+
+  useEffect(() => {
+    setRevisionActionError(null);
+    setRevisionActionMessage(null);
+  }, [selected?.id]);
+
+  const handleRestoreSelectedCheckpoint = useCallback(async () => {
+    if (!selected?.source.messageId || !currentSessionId || isRestoringRevision) return;
+    setIsRestoringRevision(true);
+    setRevisionActionError(null);
+    setRevisionActionMessage(null);
+    try {
+      const result = await ipcService.invoke(
+        IPC_CHANNELS.CHECKPOINT_REWIND,
+        currentSessionId,
+        selected.source.messageId,
+      ) as { success: boolean; filesRestored: number; error?: string } | undefined;
+      if (!result?.success) {
+        throw new Error(result?.error || 'Checkpoint restore failed');
+      }
+      setRevisionActionMessage(`Restored ${result.filesRestored} file${result.filesRestored === 1 ? '' : 's'}.`);
+    } catch (error) {
+      setRevisionActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRestoringRevision(false);
+    }
+  }, [currentSessionId, isRestoringRevision, selected?.source.messageId]);
 
   const syncWorkspaceDirectory = useCallback(async (dir?: string | null) => {
     const trimmed = dir?.trim();
@@ -592,6 +757,45 @@ export const WorkspacePreviewPanel: React.FC = () => {
     setTimeout(() => setCopied(false), 1200);
   };
 
+  const exportSelectedBundle = async () => {
+    if (!selected?.file?.path) return;
+    setAssetActionError(null);
+    try {
+      const response = await window.domainAPI?.invoke<{ filePath: string }>(
+        IPC_DOMAINS.WORKSPACE,
+        'exportBundle',
+        {
+          bundleName: `${selected.title || selected.file.name || 'deliverable'}-bundle.zip`,
+          files: [{
+            path: selected.file.path,
+            name: selected.file.name || selected.title,
+            role: 'primary',
+            mimeType: selected.file.mimeType,
+            sha256: selected.file.sha256,
+          }],
+          manifest: {
+            source: 'workspace-preview',
+            itemId: selected.id,
+            title: selected.title,
+            kind: selected.kind,
+            status: selected.status,
+            previewSource: selected.source,
+            revision: selected.revision,
+            quality: selected.quality,
+          },
+        },
+      );
+      if (response && !response.success) {
+        throw new Error(response.error?.message || 'Export bundle failed');
+      }
+      const bundlePath = response?.data?.filePath;
+      if (!bundlePath) return;
+      await window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'showItemInFolder', { filePath: bundlePath });
+    } catch (error) {
+      setAssetActionError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900">
       {/* P0-2 项目空间 header：项目维度的目标/状态/入驻角色/跨 session 聚合产物 */}
@@ -627,6 +831,12 @@ export const WorkspacePreviewPanel: React.FC = () => {
             icon={copied ? <Check className="h-4 w-4 text-emerald-300" /> : <Copy className="h-4 w-4" />}
             disabled={!selected}
             onClick={copySelected}
+          />
+          <AssetToolbarButton
+            label="Export bundle"
+            icon={<Archive className="h-4 w-4" />}
+            disabled={!selected?.file?.path}
+            onClick={exportSelectedBundle}
           />
         </div>
       </div>
@@ -684,6 +894,16 @@ export const WorkspacePreviewPanel: React.FC = () => {
                     )}
                   </div>
                 </div>
+                <RevisionPanel
+                  items={items}
+                  selected={selected}
+                  currentSessionId={currentSessionId}
+                  isRestoring={isRestoringRevision}
+                  actionError={revisionActionError}
+                  actionMessage={revisionActionMessage}
+                  onSelect={setSelectedId}
+                  onRestore={handleRestoreSelectedCheckpoint}
+                />
                 <PreviewBody item={selected} />
               </div>
             )}

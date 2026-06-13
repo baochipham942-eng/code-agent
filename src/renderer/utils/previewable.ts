@@ -10,21 +10,29 @@
 // Keep in sync with PreviewPanel's supported renderers:
 //   - markdown: md / mdx / markdown                         (preview + edit)
 //   - table:    csv / tsv                                    (parsed table view)
+//   - office:   docx / xlsx / xls / pptx                       (structured document/table/slide outline view)
 //   - html:     html / htm                                   (srcDoc iframe)
 //   - code:     ts / tsx / js / jsx / json / yaml / yml     (CodeMirror, edit-only)
 //   - image:    jpg / jpeg / png / gif / webp / svg         (<img> via data URL)
 //   - pdf:      pdf                                          (<embed> via data URL)
+//   - audio:    mp3 / wav / m4a / aac / flac / ogg           (<audio> via data URL)
+//   - video:    mp4 / webm / mov / mkv / avi                 (<video> via data URL)
+//   - archive:  zip                                          (entry inspector via IPC)
 //   - text fallthrough (iframe srcDoc): txt
 // ============================================================================
 
 export const PREVIEWABLE_EXTENSIONS: ReadonlySet<string> = new Set([
   'md', 'mdx', 'markdown',
   'csv', 'tsv',
+  'docx', 'xlsx', 'xls', 'pptx',
   'html', 'htm',
   'txt',
   'ts', 'tsx', 'js', 'jsx', 'json', 'yaml', 'yml',
   'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg',
   'pdf',
+  'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg',
+  'mp4', 'webm', 'mov', 'mkv', 'avi',
+  'zip',
 ]);
 
 export function getFileExtension(filePath: string): string {

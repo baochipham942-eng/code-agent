@@ -2,7 +2,7 @@
 // image_generate (P1 Wave 4 D2c — network/media: native ToolModule)
 //
 // CogView-4（智谱中文原生）+ FLUX.2（OpenRouter）双引擎 routing；
-// prompt 双策略扩写；URL → base64 下载；文件保存可选；CLI 模式自动 open。
+// prompt 双策略扩写；URL → base64 下载；默认保存为文件 artifact；CLI 模式自动 open。
 // 需要本地配置智谱或 OpenRouter API Key。
 // ============================================================================
 
@@ -46,6 +46,8 @@ const STYLE_SUFFIXES: Record<string, string> = {
   '3d': ', 3D render, octane render, realistic lighting, detailed textures, volumetric',
   anime: ', anime style, detailed anime artwork, vibrant colors, studio quality',
 };
+
+const DEFAULT_IMAGE_ARTIFACT_DIR = path.join('.code-agent', 'artifacts', 'images');
 
 const COGVIEW4_EXPAND_PROMPT = `你是专业的 AI 图片提示词工程师，专门为 CogView4 图像生成模型优化提示词。将用户的简短描述扩展为高质量的图片生成提示词。
 
@@ -99,6 +101,11 @@ function addStyleSuffix(prompt: string, style: string): string {
 function getDataUrlMimeType(data: string): string | undefined {
   const match = data.match(/^data:([^;,]+)[;,]/);
   return match?.[1];
+}
+
+function defaultImageOutputPath(workingDir: string): string {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23);
+  return path.join(workingDir, DEFAULT_IMAGE_ARTIFACT_DIR, `generated-${timestamp}.png`);
 }
 
 // expandPromptWithLLM 还需要一个带超时的 fetch helper，独立于 service。
@@ -237,12 +244,8 @@ export async function executeImageGenerate(
   const aspectRatio = params.aspect_ratio || '1:1';
   const expandPrompt = params.expand_prompt ?? false;
   const style = params.style;
-  let outputPath = params.output_path;
-
-  if (!outputPath && process.env.CODE_AGENT_CLI_MODE === 'true') {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    outputPath = path.join(ctx.workingDir, `generated-${timestamp}.png`);
-  }
+  const outputPath = params.output_path || defaultImageOutputPath(ctx.workingDir);
+  const isDefaultOutputPath = !params.output_path;
 
   try {
     const engine = determineImageEngine();
@@ -310,7 +313,7 @@ export async function executeImageGenerate(
 
     let imagePath: string | undefined;
     let savedImageSizeBytes: number | undefined;
-    if (outputPath) {
+    if (!isImageUrl(imageBase64)) {
       const resolvedPath = path.isAbsolute(outputPath)
         ? outputPath
         : path.join(ctx.workingDir, outputPath);
@@ -353,6 +356,7 @@ export async function executeImageGenerate(
               aspectRatio,
               generationTimeMs: generationTime,
               isAdmin,
+              autoPersisted: isDefaultOutputPath,
             },
           })
           : createVirtualArtifact({
@@ -377,6 +381,7 @@ export async function executeImageGenerate(
         originalPrompt: params.prompt,
         expandedPrompt: expandPrompt ? finalPrompt : undefined,
         imagePath,
+        outputPath: imagePath,
         imageBase64: imagePath ? undefined : imageBase64,
         aspectRatio,
         generationTimeMs: generationTime,

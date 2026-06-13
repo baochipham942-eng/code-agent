@@ -6,6 +6,9 @@ import {
   buildConfigScopeSummary,
   handleCreateFile,
   handleCreateFolder,
+  handleExportBundle,
+  handleInspectArchive,
+  handleInspectPresentation,
   handleWriteFile,
 } from '../../../src/main/ipc/workspace.ipc';
 
@@ -89,6 +92,128 @@ describe('workspace.ipc create handlers', () => {
       const result = await handleWriteFile({ filePath, content: 'new' });
       expect(result.size).toBe(3);
       expect(await readFile(filePath, 'utf-8')).toBe('new');
+    });
+  });
+
+  describe('handleExportBundle', () => {
+    it('exports files with a manifest into a zip bundle', async () => {
+      const filePath = join(workDir, 'report.md');
+      await writeFile(filePath, '# Report\n');
+
+      const result = await handleExportBundle({
+        outputDir: workDir,
+        bundleName: 'delivery.zip',
+        files: [{
+          path: filePath,
+          name: 'report.md',
+          role: 'primary',
+          mimeType: 'text/markdown',
+          sha256: 'a'.repeat(64),
+        }],
+        manifest: {
+          title: 'Delivery',
+          source: 'test',
+        },
+      });
+
+      expect(result).toMatchObject({
+        filePath: join(workDir, 'delivery.zip'),
+        fileCount: 1,
+        skippedCount: 0,
+      });
+
+      const JSZip = await import('jszip');
+      const zip = await JSZip.default.loadAsync(await readFile(result.filePath));
+      expect(await zip.file('files/report.md')?.async('string')).toBe('# Report\n');
+      const manifest = JSON.parse(await zip.file('manifest.json')!.async('string')) as Record<string, unknown>;
+      expect(manifest).toMatchObject({
+        title: 'Delivery',
+        source: 'test',
+        files: [
+          expect.objectContaining({
+            entry: 'files/report.md',
+            path: filePath,
+            role: 'primary',
+            mimeType: 'text/markdown',
+            sha256: 'a'.repeat(64),
+          }),
+        ],
+        skipped: [],
+      });
+    });
+  });
+
+  describe('handleInspectArchive', () => {
+    it('lists zip archive entries without extracting files', async () => {
+      const JSZip = await import('jszip');
+      const zip = new JSZip.default();
+      zip.file('docs/readme.md', '# readme\n');
+      zip.file('assets/logo.png', Buffer.from([1, 2, 3]));
+      const archivePath = join(workDir, 'bundle.zip');
+      await writeFile(archivePath, await zip.generateAsync({ type: 'nodebuffer' }));
+
+      const inspection = await handleInspectArchive({ filePath: archivePath, limit: 10 });
+
+      expect(inspection).toMatchObject({
+        filePath: archivePath,
+        format: 'zip',
+        entryCount: 4,
+        shownCount: 4,
+        truncated: false,
+      });
+      expect(inspection.entries).toEqual([
+        expect.objectContaining({ name: 'assets/', isDirectory: true }),
+        expect.objectContaining({ name: 'docs/', isDirectory: true }),
+        expect.objectContaining({ name: 'assets/logo.png', isDirectory: false, extension: 'png' }),
+        expect.objectContaining({ name: 'docs/readme.md', isDirectory: false, extension: 'md' }),
+      ]);
+    });
+  });
+
+  describe('handleInspectPresentation', () => {
+    it('extracts slide text from a pptx without rendering externally', async () => {
+      const JSZip = await import('jszip');
+      const zip = new JSZip.default();
+      zip.file('ppt/slides/slide1.xml', [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">',
+        '<p:cSld><p:spTree>',
+        '<a:t>Quarterly Review</a:t>',
+        '<a:t>Revenue &amp; retention</a:t>',
+        '</p:spTree></p:cSld>',
+        '</p:sld>',
+      ].join(''));
+      zip.file('ppt/slides/slide2.xml', [
+        '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">',
+        '<a:t>Next steps</a:t>',
+        '</p:sld>',
+      ].join(''));
+      const pptxPath = join(workDir, 'deck.pptx');
+      await writeFile(pptxPath, await zip.generateAsync({ type: 'nodebuffer' }));
+
+      const inspection = await handleInspectPresentation({ filePath: pptxPath, limit: 10 });
+
+      expect(inspection).toMatchObject({
+        filePath: pptxPath,
+        format: 'pptx',
+        slideCount: 2,
+        shownCount: 2,
+        truncated: false,
+        slides: [
+          {
+            index: 1,
+            name: 'ppt/slides/slide1.xml',
+            title: 'Quarterly Review',
+            text: ['Quarterly Review', 'Revenue & retention'],
+          },
+          {
+            index: 2,
+            name: 'ppt/slides/slide2.xml',
+            title: 'Next steps',
+            text: ['Next steps'],
+          },
+        ],
+      });
     });
   });
 });

@@ -71,6 +71,8 @@ export * from './contract/cron';
 
 // ToolSearch types (工具延迟加载)
 export * from './contract/toolSearch';
+export * from './contract/artifactBlob';
+export * from './contract/deliverable';
 
 // Swarm types (Agent Swarm 监控)
 export * from './contract/swarm';

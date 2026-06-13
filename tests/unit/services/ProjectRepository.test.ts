@@ -180,6 +180,52 @@ describe('buildProjectArtifacts（跨 session 产物聚合）', () => {
     expect(items[0].title).toBe('助手出的');
   });
 
+  it('聚合 tool artifact metadata 里的文件产物', () => {
+    const items = buildProjectArtifacts([{ id: 's1', title: '设计会话' }], () => [
+      {
+        role: 'assistant',
+        content: '',
+        timestamp: 10,
+        toolCalls: [
+          {
+            id: 'tool-image',
+            name: 'image_generate',
+            result: {
+              success: true,
+              metadata: {
+                artifact: {
+                  artifactId: 'artifact-hero',
+                  kind: 'image',
+                  sourceTool: 'image_generate',
+                  name: 'Hero image',
+                  path: '/repo/out/hero.png',
+                  mimeType: 'image/png',
+                  sizeBytes: 2048,
+                  sha256: 'e'.repeat(64),
+                },
+              },
+            },
+          },
+        ],
+      },
+    ]);
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        id: 'artifact-hero',
+        sessionId: 's1',
+        sessionTitle: '设计会话',
+        kind: 'image',
+        title: 'Hero image',
+        path: '/repo/out/hero.png',
+        mimeType: 'image/png',
+        sizeBytes: 2048,
+        sha256: 'e'.repeat(64),
+        sourceTool: 'image_generate',
+      }),
+    ]);
+  });
+
   it('limit 截断', () => {
     const msgs = Array.from({ length: 5 }, (_, i) => ({ role: 'assistant', content: chartBlock(`图${i}`), timestamp: i }));
     const items = buildProjectArtifacts([{ id: 's1', title: 'a' }], () => msgs, 3);

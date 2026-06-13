@@ -13,14 +13,18 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  File,
   FileText,
   FolderKanban,
+  Image as ImageIcon,
   LayoutGrid,
   Pencil,
   Plus,
+  Search,
   Table2,
   Target,
   UserPlus,
+  Video,
   X,
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -46,13 +50,22 @@ const logger = createLogger('ProjectHeaderBar');
 const STATUS_LABEL: Record<string, string> = { active: '进行中', idle: '空闲', archived: '已归档' };
 const GOAL_STATUS_LABEL: Record<string, string> = { active: '进行中', met: '已达成', aborted: '已终止', archived: '已归档' };
 
-const ARTIFACT_ICON: Record<ProjectArtifact['kind'], React.ComponentType<{ className?: string }>> = {
+const ARTIFACT_ICON: Partial<Record<ProjectArtifact['kind'], React.ComponentType<{ className?: string }>>> = {
   chart: BarChart3,
   spreadsheet: Table2,
   document: FileText,
   generative_ui: LayoutGrid,
   mermaid: LayoutGrid,
   question_form: FileText,
+  text: FileText,
+  binary: File,
+  image: ImageIcon,
+  audio: File,
+  video: Video,
+  web: LayoutGrid,
+  search: Search,
+  'process-output': FileText,
+  'process-log': FileText,
 };
 
 export const ProjectHeaderBar: React.FC = () => {

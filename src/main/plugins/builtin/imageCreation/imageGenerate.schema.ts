@@ -13,7 +13,7 @@ export const imageGenerateSchema: ToolSchema = {
 - prompt: 图片描述（支持中英文）
 - expand_prompt: 是否使用 LLM 扩展优化 prompt（默认 false）
 - aspect_ratio: 宽高比 "1:1" | "16:9" | "9:16" | "4:3" | "3:4"
-- output_path: 保存路径（不填则在聊天中直接展示）
+- output_path: 保存路径（不填则自动保存到 .code-agent/artifacts/images）
 - style: 风格 "photo" | "illustration" | "3d" | "anime"
 
 示例：
@@ -41,7 +41,7 @@ image_generate { "prompt": "产品展示图", "output_path": "./product.png", "s
       },
       output_path: {
         type: 'string',
-        description: '保存路径（不填则返回 base64）',
+        description: '保存路径（不填则自动保存到 .code-agent/artifacts/images）',
       },
       style: {
         type: 'string',

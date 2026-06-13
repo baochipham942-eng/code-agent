@@ -45,6 +45,7 @@ import type {
   WorkbenchToolScope,
 } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName, sameToolName } from './toolNames';
+import { persistBase64ImageMetadata } from './artifacts/base64ImageArtifacts';
 
 const logger = createLogger('ToolExecutor');
 
@@ -801,15 +802,20 @@ export class ToolExecutor {
       };
       logger.debug('Dispatching to protocol resolver', { toolName: executionToolName, requestedToolName });
       const rawResult = await resolver.execute(executionToolName, params, context);
+      const resultWithArtifacts = await persistBase64ImageMetadata(rawResult, {
+        sourceTool: executionToolName,
+        workingDirectory: this.workingDirectory,
+        sessionId: options.sessionId,
+      });
       const result = writeIsolationMetadata
         ? {
-          ...rawResult,
+          ...resultWithArtifacts,
           metadata: {
-            ...(rawResult.metadata ?? {}),
+            ...(resultWithArtifacts.metadata ?? {}),
             writeIsolation: writeIsolationMetadata,
           },
         }
-        : rawResult;
+        : resultWithArtifacts;
       const duration = Date.now() - startTime;
 
       logger.debug('Tool result', { toolName: executionToolName, success: result.success, error: result.error });

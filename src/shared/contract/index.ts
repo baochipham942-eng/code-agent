@@ -74,6 +74,7 @@ export * from './checkpoint';
 // ToolSearch types (工具延迟加载)
 export * from './toolSearch';
 export * from './artifactBlob';
+export * from './deliverable';
 
 // Swarm types (Agent Swarm 监控)
 export * from './swarm';

@@ -1,0 +1,61 @@
+name: Capability Evidence Gate
+
+# 能力"运行证据硬门"：声称做扎实的能力必须交付物存在、含真实现标记、有可复跑运行证据。
+# 设计与背景：scripts/check-capability-evidence.ts 头部注释 + docs/audits/2026-06-12-*。
+#
+# 触发条件：仅在四个受锁能力的交付物 / 运行证据 / 门脚本本身改动的 PR / push 上跑，
+# 否则全量绿灯通过 — 把这个 guardrail 当独立短路径，不串到 swarm-ci 里（同 provider-symmetry）。
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/main/agent/checkpointWriterAgent.ts'
+      - 'src/main/agent/runtime/maxMode.ts'
+      - 'src/main/agent/runtime/learningPipeline.ts'
+      - 'src/main/services/memory/dreamMemoryService.ts'
+      - 'tests/unit/agent/checkpointWriterAgent.test.ts'
+      - 'tests/manual/checkpointWriterLive.ts'
+      - 'tests/unit/agent/runtime/maxMode.test.ts'
+      - 'tests/integration/distillRealRun.test.ts'
+      - 'tests/unit/services/memory/dreamMemoryService.test.ts'
+      - 'scripts/check-capability-evidence.ts'
+      - '.github/workflows/capability-evidence.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/main/agent/checkpointWriterAgent.ts'
+      - 'src/main/agent/runtime/maxMode.ts'
+      - 'src/main/agent/runtime/learningPipeline.ts'
+      - 'src/main/services/memory/dreamMemoryService.ts'
+      - 'tests/unit/agent/checkpointWriterAgent.test.ts'
+      - 'tests/manual/checkpointWriterLive.ts'
+      - 'tests/unit/agent/runtime/maxMode.test.ts'
+      - 'tests/integration/distillRealRun.test.ts'
+      - 'tests/unit/services/memory/dreamMemoryService.test.ts'
+      - 'scripts/check-capability-evidence.ts'
+      - '.github/workflows/capability-evidence.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: capability-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evidence:
+    name: 能力交付物 / 运行证据完整性
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # 门脚本只依赖 node 内置模块（fs/path/url），无需 npm ci，
+      # 用 npx tsx 直接跑，绕开沉重的 postinstall native 构建。
+      - name: Run capability evidence gate
+        run: npx --yes tsx scripts/check-capability-evidence.ts

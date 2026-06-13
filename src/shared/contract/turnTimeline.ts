@@ -34,6 +34,10 @@ export interface TurnWorkbenchSnapshot {
   routingMode?: ConversationRoutingMode;
   targetAgentIds?: string[];
   targetAgentNames?: string[];
+  preferredAgentId?: string | null;
+  preferredAgentName?: string | null;
+  selectedAgent?: WorkbenchMessageMetadata['selectedAgent'];
+  selectedPromptCommand?: WorkbenchMessageMetadata['selectedPromptCommand'];
   selectedSkillIds?: string[];
   selectedConnectorIds?: string[];
   selectedMcpServerIds?: string[];
@@ -178,6 +182,21 @@ export function snapshotFromWorkbenchMetadata(
   }
   if (metadata.routingMode) {
     snapshot.routingMode = metadata.routingMode;
+  }
+  if (metadata.preferredAgentId !== undefined) {
+    snapshot.preferredAgentId = metadata.preferredAgentId;
+  }
+  if (metadata.preferredAgentName !== undefined) {
+    snapshot.preferredAgentName = metadata.preferredAgentName;
+  }
+  if (metadata.selectedAgent) {
+    snapshot.selectedAgent = { ...metadata.selectedAgent };
+  }
+  if (metadata.selectedPromptCommand) {
+    snapshot.selectedPromptCommand = {
+      ...metadata.selectedPromptCommand,
+      hints: metadata.selectedPromptCommand.hints ? [...metadata.selectedPromptCommand.hints] : undefined,
+    };
   }
   if (metadata.targetAgentIds?.length) {
     snapshot.targetAgentIds = [...metadata.targetAgentIds];

@@ -136,6 +136,12 @@ const WorkbenchSummary: React.FC<{ metadata?: WorkbenchMessageMetadata }> = ({ m
   const selectedConnectors = metadata.selectedConnectorIds || [];
   const selectedMcpServers = metadata.selectedMcpServerIds || [];
   const browserSessionMode = metadata.executionIntent?.browserSessionMode;
+  const selectedPrompt = metadata.selectedPromptCommand;
+  const selectedAgentLabel =
+    metadata.selectedAgent?.name ||
+    metadata.preferredAgentName ||
+    metadata.selectedAgent?.id ||
+    metadata.preferredAgentId;
 
   return (
     <div className="mb-2 flex flex-wrap items-center gap-1.5">
@@ -155,6 +161,16 @@ const WorkbenchSummary: React.FC<{ metadata?: WorkbenchMessageMetadata }> = ({ m
           @{target}
         </WorkbenchPill>
       ))}
+      {selectedAgentLabel && (
+        <WorkbenchPill tone="agent">
+          Agent {selectedAgentLabel}
+        </WorkbenchPill>
+      )}
+      {selectedPrompt && (
+        <WorkbenchPill tone="info">
+          Prompt /{selectedPrompt.name}
+        </WorkbenchPill>
+      )}
       {selectedSkills.map((skillId) => (
         <WorkbenchPill
           key={`skill-${skillId}`}

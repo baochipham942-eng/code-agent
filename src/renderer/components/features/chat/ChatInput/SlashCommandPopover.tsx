@@ -9,7 +9,7 @@ import {
   BarChart2, Settings, Keyboard, HelpCircle,
   Terminal, Cpu, Plug, Zap, ClipboardList,
   MessageCircleQuestion, ZapOff, Flame,
-  Lock, LockOpen, Bot, Sparkles, Server, Target, GitBranch, UserPlus,
+  Lock, LockOpen, Bot, Sparkles, Server, Target, GitBranch, UserPlus, Clock3, Repeat,
 } from 'lucide-react';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
@@ -24,7 +24,22 @@ import type { CommandDefinition } from '@shared/commands';
 import { generateMessageId } from '@shared/utils/id';
 import { IPC_CHANNELS, IPC_DOMAINS, COMMAND_CHANNELS } from '@shared/ipc';
 import type { ExtensionValidationResult } from '@shared/contract/extension';
+import type { AgentListEntry } from '@shared/contract/agentRegistry';
 import { invoke, invokeDomain, unsafeInvoke } from '../../../../services/ipcService';
+import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
+import type { SkillRecommendationView } from './CapabilitySuggestionStrip';
+import {
+  createAgentCandidates,
+  createCommandCandidate,
+  createPromptCandidate,
+  createSkillCandidates,
+  createWorkbenchCapabilityCandidates,
+  filterAndRankSlashCandidates,
+  groupSlashCandidates,
+  type PromptCommandCandidateInput,
+  type SlashCandidateAction,
+  type SlashPickerCandidate,
+} from './slashPickerModel';
 
 type ExtensionMutationResult = { success: boolean; error?: string };
 
@@ -55,18 +70,48 @@ function writeAssistant(content: string): void {
   });
 }
 
-interface SlashCommand {
+export type SlashCommand = SlashPickerCandidate & {
+  icon: React.ReactNode;
+  action: () => void;
+};
+
+interface SlashCommandSeed {
   id: string;
   label: string;
   description: string;
   icon: React.ReactNode;
   shortcut?: string;
+  actionKind?: SlashCandidateAction;
+  emptyQueryVisible?: boolean;
+  emptyQueryRank?: number;
+  effectLabel?: string;
   action: () => void;
 }
+
+function makeCommand(seed: SlashCommandSeed): SlashCommand {
+  return {
+    ...createCommandCandidate(seed),
+    icon: seed.icon,
+    action: seed.action,
+  };
+}
+
+const slashKindLabel: Record<SlashCommand['kind'], string> = {
+  command: 'Command',
+  prompt: 'Prompt',
+  agent: 'Agent',
+  skill: 'Skill',
+  connector: 'Connector',
+  mcp: 'MCP',
+};
 
 interface SlashCommandPopoverProps {
   isOpen: boolean;
   filter: string;
+  agents: AgentListEntry[];
+  skillRecommendations: SkillRecommendationView[];
+  capabilityItems: WorkbenchCapabilityRegistryItem[];
+  capabilitySuggestions: WorkbenchCapabilityRegistryItem[];
   onClose: () => void;
   onSelect: (command: SlashCommand) => void;
 }
@@ -74,6 +119,10 @@ interface SlashCommandPopoverProps {
 export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   isOpen,
   filter,
+  agents,
+  skillRecommendations,
+  capabilityItems,
+  capabilitySuggestions,
   onClose,
   onSelect,
 }) => {
@@ -82,13 +131,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
 
   // Prompt commands（/命令协议层，roadmap 2.2）：文件式自定义 + MCP prompts，
   // 由 main 侧注册表提供；选中后父级预填 "/name "，发送时 main 展开模板
-  interface PromptCommandItem {
-    name: string;
-    description?: string;
-    source: 'file' | 'mcp';
-    hints: string[];
-  }
-  const [promptCommands, setPromptCommands] = useState<PromptCommandItem[]>([]);
+  const [promptCommands, setPromptCommands] = useState<PromptCommandCandidateInput[]>([]);
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
@@ -96,7 +139,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     void Promise.resolve(unsafeInvoke(COMMAND_CHANNELS.PROMPT_LIST, {}))
       .then((commands: unknown) => {
         if (!cancelled && Array.isArray(commands)) {
-          setPromptCommands(commands as PromptCommandItem[]);
+          setPromptCommands(commands as PromptCommandCandidateInput[]);
         }
       })
       .catch(() => {
@@ -127,6 +170,21 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   const setInteractionMode = useModeStore((s) => s.setInteractionMode);
   const setEffortLevel = useModeStore((s) => s.setEffortLevel);
   const setGlobalMode = usePermissionStore((s) => s.setGlobalMode);
+  const availableSkills = useSkillStore((s) => s.availableSkills);
+  const mountedSkills = useSkillStore((s) => s.mountedSkills);
+  const fetchAvailableSkills = useSkillStore((s) => s.fetchAvailableSkills);
+  const fetchMountedSkills = useSkillStore((s) => s.fetchMountedSkills);
+  const setSkillCurrentSession = useSkillStore((s) => s.setCurrentSession);
+  const selectedSkillIds = useComposerStore((s) => s.selectedSkillIds);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    void fetchAvailableSkills();
+    if (currentSessionId) {
+      setSkillCurrentSession(currentSessionId);
+      void fetchMountedSkills();
+    }
+  }, [currentSessionId, fetchAvailableSkills, fetchMountedSkills, isOpen, setSkillCurrentSession]);
   // Icon mapping for registry commands
   const registryIconMap: Record<string, React.ReactNode> = useMemo(() => ({
     clear: <Trash2 className="w-4 h-4" />,
@@ -195,13 +253,15 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   }), []);
 
   // GUI-only commands (operate on store/UI directly, not in registry)
-  const guiOnlyCommands: SlashCommand[] = useMemo(() => [
+  const guiOnlyCommands: SlashCommand[] = useMemo(() => ([
     {
       id: 'new',
       label: '新建会话',
       description: '创建新对话',
       icon: <Plus className="w-4 h-4" />,
       shortcut: '⌘N',
+      emptyQueryVisible: true,
+      emptyQueryRank: 10,
       action: () => createSession(),
     },
     {
@@ -271,6 +331,10 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: '选择 Agent',
       description: '输入 /agent coder 切换本轮 agent',
       icon: <Bot className="w-4 h-4" />,
+      actionKind: 'open-agent-command',
+      emptyQueryVisible: true,
+      emptyQueryRank: 20,
+      effectLabel: '打开 agent 选择',
       action: () => {},
     },
     {
@@ -278,6 +342,10 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: '新建角色',
       description: '对话式创建一个新的持久化角色（专家 Agent）',
       icon: <UserPlus className="w-4 h-4" />,
+      actionKind: 'create-role',
+      emptyQueryVisible: true,
+      emptyQueryRank: 25,
+      effectLabel: '开始角色创建',
       action: () => {},
     },
     {
@@ -285,6 +353,29 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: '设定目标',
       description: '直接输入目标，可选 --verify 或 --review',
       icon: <Target className="w-4 h-4" />,
+      actionKind: 'prefill-leading-command',
+      emptyQueryVisible: true,
+      emptyQueryRank: 30,
+      action: () => {},
+    },
+    {
+      id: 'schedule',
+      label: '定时任务',
+      description: '自然语言创建提醒、巡检或周期任务',
+      icon: <Clock3 className="w-4 h-4" />,
+      actionKind: 'prefill-leading-command',
+      emptyQueryVisible: true,
+      emptyQueryRank: 35,
+      action: () => {},
+    },
+    {
+      id: 'loop',
+      label: '会话循环',
+      description: '在当前会话反复执行同一任务直到完成或喊停',
+      icon: <Repeat className="w-4 h-4" />,
+      actionKind: 'prefill-leading-command',
+      emptyQueryVisible: true,
+      emptyQueryRank: 40,
       action: () => {},
     },
     {
@@ -292,6 +383,9 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: '编排工作流',
       description: '输入目标，让模型写 JS 脚本编排多个子 agent（循环/扇出/流水线）',
       icon: <GitBranch className="w-4 h-4" />,
+      actionKind: 'prefill-leading-command',
+      emptyQueryVisible: true,
+      emptyQueryRank: 45,
       action: () => {},
     },
     {
@@ -570,7 +664,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         );
       },
     },
-  ], [
+  ] as SlashCommandSeed[]).map(makeCommand), [
     createSession, clearCurrentSession, archiveSession, currentSessionId,
     setShowSettings, setShowDAGPanel, showDAGPanel,
     setShowWorkspace, showWorkspace, setSidebarCollapsed, sidebarCollapsed,
@@ -587,7 +681,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     // Convert registry commands to SlashCommand format (skip those already in GUI-only)
     const fromRegistry: SlashCommand[] = registryDefs
       .filter((def: CommandDefinition) => !guiOnlyIds.has(def.id))
-      .map((def: CommandDefinition) => ({
+      .map((def: CommandDefinition) => makeCommand({
         id: def.id,
         label: def.name,
         description: def.description,
@@ -635,34 +729,59 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     const fromPrompts: SlashCommand[] = promptCommands
       .filter((pc) => !takenIds.has(pc.name))
       .map((pc) => ({
-        id: `prompt:${pc.name}`,
-        label: pc.name,
-        description:
-          (pc.description || (pc.source === 'mcp' ? 'MCP prompt 命令' : '自定义命令'))
-          + (pc.hints.length > 0 ? `（参数: ${pc.hints.join(' ')}）` : ''),
+        ...createPromptCandidate(pc),
         icon: <Terminal className="w-4 h-4" />,
         action: () => {},
       }));
 
-    // GUI-only first, then registry commands, then prompt commands
-    return [...guiOnlyCommands, ...fromRegistry, ...fromPrompts];
-  }, [connectorOps, extensionOps, guiOnlyCommands, mcpOps, promptCommands, registryIconMap, skillOps]);
+    const fromAgents: SlashCommand[] = createAgentCandidates(agents).map((candidate) => ({
+      ...candidate,
+      icon: <Bot className="w-4 h-4" />,
+      action: () => {},
+    }));
+    const fromSkills: SlashCommand[] = createSkillCandidates({
+      availableSkills,
+      mountedSkills,
+      selectedSkillIds,
+      recommendations: skillRecommendations,
+    }).map((candidate) => ({
+      ...candidate,
+      icon: <Sparkles className="w-4 h-4" />,
+      action: () => {},
+    }));
+    const suggestedCapabilityKeys = capabilitySuggestions.map((capability) => capability.key);
+    const fromWorkbenchCapabilities: SlashCommand[] = createWorkbenchCapabilityCandidates(
+      capabilityItems,
+      suggestedCapabilityKeys,
+    ).map((candidate) => ({
+      ...candidate,
+      icon: candidate.kind === 'connector' ? <Plug className="w-4 h-4" /> : <Server className="w-4 h-4" />,
+      action: () => {},
+    }));
 
-  const filtered = useMemo(() => {
-    if (!filter) return allCommands;
-    const lower = filter.toLowerCase();
-    const matched = allCommands.filter(c =>
-      c.id.includes(lower) || c.label.toLowerCase().includes(lower)
-    );
-    // 精确 id 匹配排最前：否则键盘输入精确命令名时，会被更长命令的子串匹配抢선并默认选中
-    // （实测 /low 被 workflow 抢선——'workflow'.includes('low')，且 workflow 排在前，
-    //  selectedIndex=0 选中 workflow，回车执行了 workflow 而非 low）。稳定排序保留其余顺序。
-    return matched.sort((a, b) => {
-      const aExact = a.id.toLowerCase() === lower ? 0 : 1;
-      const bExact = b.id.toLowerCase() === lower ? 0 : 1;
-      return aExact - bExact;
-    });
-  }, [filter, allCommands]);
+    return [...guiOnlyCommands, ...fromRegistry, ...fromPrompts, ...fromAgents, ...fromSkills, ...fromWorkbenchCapabilities];
+  }, [
+    agents,
+    availableSkills,
+    capabilityItems,
+    capabilitySuggestions,
+    connectorOps,
+    extensionOps,
+    guiOnlyCommands,
+    mcpOps,
+    mountedSkills,
+    promptCommands,
+    registryIconMap,
+    selectedSkillIds,
+    skillRecommendations,
+    skillOps,
+  ]);
+
+  const filtered = useMemo(
+    () => filterAndRankSlashCandidates(allCommands, filter),
+    [filter, allCommands],
+  );
+  const grouped = useMemo(() => groupSlashCandidates(filtered), [filtered]);
 
   // Reset selection on filter change
   useEffect(() => {
@@ -731,35 +850,76 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   return (
     <div
       ref={listRef}
+      data-slash-command-popover
       className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl z-20 max-h-[280px] overflow-y-auto animate-fade-in"
     >
       <div className="py-1">
-        {filtered.map((cmd, i) => (
-          <button
-            key={cmd.id}
-            type="button"
-            data-selected={i === selectedIndex}
-            onClick={() => onSelect(cmd)}
-            className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
-              i === selectedIndex
-                ? 'bg-zinc-800 text-zinc-200'
-                : 'text-zinc-400 hover:bg-zinc-800/50'
-            }`}
-          >
-            <span className={i === selectedIndex ? 'text-primary-400' : 'text-zinc-500'}>
-              {cmd.icon}
-            </span>
-            <div className="flex-1 min-w-0">
-              <span className="text-sm">{cmd.label}</span>
-              <span className="text-[10px] font-mono text-zinc-600 ml-2">/{cmd.id}</span>
-              <span className="text-xs text-zinc-500 ml-2">{cmd.description}</span>
+        {grouped.map((group) => (
+          <div key={group.group}>
+            <div className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-zinc-600 first:pt-1">
+              {group.label}
             </div>
-            {cmd.shortcut && (
-              <kbd className="px-1.5 py-0.5 text-[10px] bg-zinc-800 rounded text-zinc-500 border border-zinc-700">
-                {cmd.shortcut}
-              </kbd>
-            )}
-          </button>
+            {group.items.map((cmd) => {
+              const i = filtered.indexOf(cmd);
+              const skillStatus = cmd.kind === 'skill'
+                ? cmd.skillSelected ? '已选' : cmd.skillMounted ? '已挂载' : '可挂载'
+                : null;
+              const connectorStatus = cmd.kind === 'connector'
+                ? cmd.connectorConnected ? '已连接' : '未连接'
+                : null;
+              const mcpStatus = cmd.kind === 'mcp'
+                ? cmd.mcpConnected ? '可用' : '未连接'
+                : null;
+              return (
+                <button
+                  key={cmd.id}
+                  type="button"
+                  data-slash-command-id={cmd.id}
+                  data-selected={i === selectedIndex}
+                  onClick={() => onSelect(cmd)}
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
+                    i === selectedIndex
+                      ? 'bg-zinc-800 text-zinc-200'
+                      : 'text-zinc-400 hover:bg-zinc-800/50'
+                  }`}
+                >
+                  <span className={i === selectedIndex ? 'text-primary-400' : 'text-zinc-500'}>
+                    {cmd.icon}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-sm">{cmd.label}</span>
+                      <span className="shrink-0 rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono text-zinc-500">
+                        {cmd.slashText}
+                      </span>
+                      <span className="shrink-0 text-[10px] uppercase tracking-wide text-zinc-600">
+                        {slashKindLabel[cmd.kind]}
+                      </span>
+                      {skillStatus ? (
+                        <span className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
+                          {skillStatus}
+                        </span>
+                      ) : null}
+                      {connectorStatus || mcpStatus ? (
+                        <span className="shrink-0 rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-300">
+                          {connectorStatus || mcpStatus}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-zinc-500">
+                      <span className="truncate">{cmd.description}</span>
+                      <span className="shrink-0 text-zinc-600">{cmd.effectLabel}</span>
+                    </div>
+                  </div>
+                  {cmd.shortcut && (
+                    <kbd className="px-1.5 py-0.5 text-[10px] bg-zinc-800 rounded text-zinc-500 border border-zinc-700">
+                      {cmd.shortcut}
+                    </kbd>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         ))}
       </div>
     </div>

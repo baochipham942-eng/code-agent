@@ -8,7 +8,12 @@
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
 import { AlertTriangle, Image, FileText, Clock3, CornerDownRight, X, UserPlus } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
-import type { ConversationEnvelope, RuntimeInputMode } from '@shared/contract/conversationEnvelope';
+import type {
+  ComposerAgentSelection,
+  ComposerPromptCommandSelection,
+  ConversationEnvelope,
+  RuntimeInputMode,
+} from '@shared/contract/conversationEnvelope';
 import { getModelDisplayLabel, MODEL_FEATURES, UI } from '@shared/constants';
 
 import { InputArea, InputAreaRef } from './InputArea';
@@ -22,7 +27,7 @@ import { ContextUsagePill } from '../ContextUsagePill';
 import { CostDisplay } from '../../../StatusBar/CostDisplay';
 import { useStatusStore } from '../../../../stores/statusStore';
 import { CommandPalette } from '../../../CommandPalette';
-import { SlashCommandPopover } from './SlashCommandPopover';
+import { SlashCommandPopover, type SlashCommand } from './SlashCommandPopover';
 import { useFileUpload } from './useFileUpload';
 import { useChatInputSessionScope } from './useChatInputSessionScope';
 import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
@@ -30,6 +35,7 @@ import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowse
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useComposerStore } from '../../../../stores/composerStore';
+import { useSkillStore } from '../../../../stores/skillStore';
 import { useSwarmStore } from '../../../../stores/swarmStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { ComboSkillCard } from './ComboSkillCard';
@@ -37,9 +43,18 @@ import { SkillDraftNotifications } from './SkillDraftCard';
 import { RoleDraftNotifications } from './RoleDraftCard';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import { CapabilitySuggestionStrip } from './CapabilitySuggestionStrip';
+import {
+  buildCapabilitySemanticSuggestions,
+  type SkillRecommendationView,
+} from './CapabilitySuggestionStrip';
 import { useSkillRecommendations } from './useSkillRecommendations';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
+import { useWorkbenchCapabilities } from '../../../../hooks/useWorkbenchCapabilities';
+import {
+  buildWorkbenchCapabilityRegistryFromCapabilities,
+  type WorkbenchCapabilityRegistryItem,
+} from '../../../../utils/workbenchCapabilityRegistry';
 import { AppshotChip } from './AppshotChip';
 import { buildAppshotXml, buildAppshotAttachment } from '@shared/contract/appshot';
 import {
@@ -70,6 +85,7 @@ import {
 } from './agentMentionRouting';
 import {
   applyAgentCommandOption,
+  getAgentCommandToken,
   getAgentCommandOptions,
   getAgentSlashCommandQuery,
   parseAgentSlashCommand,
@@ -81,6 +97,13 @@ import {
   clearDebugDraftParamsFromCurrentUrl,
   readDebugDraftFromLocation,
 } from './debugDraftUrl';
+import {
+  buildInlineSkillTokenValue,
+  buildLeadingSlashCommandValue,
+  getTrailingSlashToken,
+  removeTrailingSlashToken,
+} from './slashPickerModel';
+import { AgentChip } from './AgentChip';
 
 // ============================================================================
 // 类型定义
@@ -148,6 +171,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
   const [showSlashPopover, setShowSlashPopover] = useState(false);
+  const [pendingPromptCommand, setPendingPromptCommand] = useState<ComposerPromptCommandSelection | null>(null);
+  const [pendingAgentSelection, setPendingAgentSelection] = useState<ComposerAgentSelection | null>(null);
   const [selectedAgentMentionIndex, setSelectedAgentMentionIndex] = useState(0);
   const [selectedAgentCommandIndex, setSelectedAgentCommandIndex] = useState(0);
   const [dismissedAgentAutocompleteValue, setDismissedAgentAutocompleteValue] = useState<string | null>(null);
@@ -182,13 +207,28 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   } = useSkillRecommendations(currentSessionId, value);
   const browserSession = useWorkbenchBrowserSession();
   const buildContext = useComposerStore((state) => state.buildContext);
+  const setSelectedSkillIds = useComposerStore((state) => state.setSelectedSkillIds);
+  const setSelectedConnectorIds = useComposerStore((state) => state.setSelectedConnectorIds);
+  const setSelectedMcpServerIds = useComposerStore((state) => state.setSelectedMcpServerIds);
+  const mountSkill = useSkillStore((state) => state.mountSkill);
+  const setSkillCurrentSession = useSkillStore((state) => state.setCurrentSession);
   const routingMode = useComposerStore((state) => state.routingMode);
   const targetAgentIds = useComposerStore((state) => state.targetAgentIds);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
   const activeAgentId = useAppStore((state) => state.activeAgentId);
   const setActiveAgentId = useAppStore((state) => state.setActiveAgentId);
+  const createSession = useSessionStore((state) => state.createSession);
   const hasMessages = useSessionStore((state) => state.messages.length > 0);
   const swarmAgents = useSwarmStore((state) => state.agents);
+  const workbenchCapabilities = useWorkbenchCapabilities();
+  const capabilityRegistry = useMemo(
+    () => buildWorkbenchCapabilityRegistryFromCapabilities(workbenchCapabilities),
+    [workbenchCapabilities],
+  );
+  const capabilitySuggestions = useMemo(
+    () => buildCapabilitySemanticSuggestions(value, capabilityRegistry.items),
+    [capabilityRegistry.items, value],
+  );
   const agentMentionAutocomplete = useMemo(
     () => getLeadingAgentMentionAutocomplete(value, swarmAgents),
     [swarmAgents, value],
@@ -220,15 +260,41 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     nextAttachments?: MessageAttachment[],
     nextRuntimeInputMode?: RuntimeInputMode,
     preferredAgentIdOverride?: string | null,
+    selectedAgentOverride?: ComposerAgentSelection | null,
   ): ConversationEnvelope => {
     const parsedMentions = parseLeadingAgentMentions(rawContent, swarmAgents);
     const content = parsedMentions ? parsedMentions.content : rawContent.trim();
     const baseContext = buildContext();
     const preferredAgentId = preferredAgentIdOverride === undefined ? activeAgentId : preferredAgentIdOverride;
+    const hasExplicitAgentSelection = preferredAgentIdOverride !== undefined || activeAgentId !== null;
+    const preferredAgent = preferredAgentId
+      ? agentEntries.find((entry) => entry.id === preferredAgentId) ?? null
+      : null;
+    const promptCommand = pendingPromptCommand && content.startsWith(`/${pendingPromptCommand.name}`)
+      ? pendingPromptCommand
+      : undefined;
+    let selectedAgent: ComposerAgentSelection | undefined;
+    if (selectedAgentOverride !== undefined) {
+      selectedAgent = selectedAgentOverride ?? undefined;
+    } else if (hasExplicitAgentSelection && pendingAgentSelection?.id === preferredAgentId) {
+      selectedAgent = pendingAgentSelection;
+    } else if (hasExplicitAgentSelection && preferredAgent) {
+      selectedAgent = {
+        id: preferredAgent.id,
+        name: preferredAgent.name,
+        token: preferredAgent.name || preferredAgent.id,
+        via: 'agent_chip',
+      };
+    } else if (hasExplicitAgentSelection && preferredAgentId === null) {
+      selectedAgent = { id: null, name: 'Default', token: 'default', via: 'agent_command' };
+    }
     const nextContext = parsedMentions
       ? {
           ...baseContext,
           ...(preferredAgentId ? { preferredAgentId } : {}),
+          ...(preferredAgent?.name ? { preferredAgentName: preferredAgent.name } : {}),
+          ...(selectedAgent ? { selectedAgent } : {}),
+          ...(promptCommand ? { selectedPromptCommand: promptCommand } : {}),
           routing: {
             mode: 'direct' as const,
             targetAgentIds: parsedMentions.targetAgentIds,
@@ -237,6 +303,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       : {
           ...baseContext,
           ...(preferredAgentId ? { preferredAgentId } : {}),
+          ...(preferredAgent?.name ? { preferredAgentName: preferredAgent.name } : {}),
+          ...(selectedAgent ? { selectedAgent } : {}),
+          ...(promptCommand ? { selectedPromptCommand: promptCommand } : {}),
         };
     const browserSessionMode = nextContext?.executionIntent?.browserSessionMode;
     const context = browserSessionMode
@@ -265,7 +334,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       attachments: nextAttachments && nextAttachments.length > 0 ? nextAttachments : undefined,
       context: runtimeScopedContext,
     };
-  }, [activeAgentId, browserSession, buildContext, swarmAgents]);
+  }, [activeAgentId, agentEntries, browserSession, buildContext, pendingAgentSelection, pendingPromptCommand, swarmAgents]);
 
   // 上报 composer 槽位给 Rust，作为 Appshot 飞入动画的落点（屏幕逻辑坐标）
   useEffect(() => {
@@ -399,26 +468,30 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // Track input changes for @ autocomplete and / command palette
   const handleValueChange = useCallback((newValue: string) => {
     setValue(newValue);
+    if (pendingPromptCommand && !newValue.trimStart().startsWith(`/${pendingPromptCommand.name}`)) {
+      setPendingPromptCommand(null);
+    }
     if (newValue.toLowerCase().startsWith('/agent ')) {
       setShowSlashPopover(false);
       dismissAutocomplete();
       return;
     }
-    // Detect / prefix to show inline slash command popover
-    if (newValue.startsWith('/')) {
+    const slashToken = getTrailingSlashToken(newValue);
+    // Composer-native slash picker: supports leading "/" and tail tokens like "帮我整理 /sum".
+    if (slashToken) {
       setShowSlashPopover(true);
-      setSlashFilter(newValue.slice(1));
+      setSlashFilter(slashToken.query);
+      dismissAutocomplete();
       return;
-    } else {
-      setShowSlashPopover(false);
     }
+    setShowSlashPopover(false);
     if (isLeadingAgentMentionInput(newValue, swarmAgents)) {
       dismissAutocomplete();
       return;
     }
     // Check for @ pattern at cursor position (approximate: end of string)
     searchFiles(newValue, newValue.length);
-  }, [dismissAutocomplete, searchFiles, swarmAgents]);
+  }, [dismissAutocomplete, pendingPromptCommand, searchFiles, swarmAgents]);
 
   // Handle @ file selection
   const handleFileSelectAutocomplete = useCallback((filePath: string) => {
@@ -437,13 +510,205 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     inputAreaRef.current?.focus();
   }, [swarmAgents]);
 
+  const focusComposer = useCallback(() => {
+    requestAnimationFrame(() => inputAreaRef.current?.focus());
+  }, []);
+
   const openAgentCommand = useCallback(() => {
     setValue('/agent ');
     setShowSlashPopover(false);
     setSlashFilter('');
     setDismissedAgentAutocompleteValue(null);
-    requestAnimationFrame(() => inputAreaRef.current?.focus());
-  }, []);
+    focusComposer();
+  }, [focusComposer]);
+
+  const markSkillSelected = useCallback((skillName: string) => {
+    const currentSelectedSkillIds = useComposerStore.getState().selectedSkillIds;
+    setSelectedSkillIds([...new Set([...currentSelectedSkillIds, skillName])]);
+    setValue((prev) => buildInlineSkillTokenValue(prev, skillName));
+    focusComposer();
+  }, [focusComposer, setSelectedSkillIds]);
+
+  const ensureSessionForSkill = useCallback(async (): Promise<string | null> => {
+    if (currentSessionId) return currentSessionId;
+    const session = await createSession('新对话');
+    return session?.id ?? null;
+  }, [createSession, currentSessionId]);
+
+  const selectSkillForCurrentTurn = useCallback(async (input: {
+    skillName: string;
+    libraryId: string;
+    mounted?: boolean;
+    recommendation?: SkillRecommendationView;
+    recommendationAction?: 'mount' | 'install';
+  }): Promise<boolean> => {
+    if (!input.mounted) {
+      const targetSessionId = await ensureSessionForSkill();
+      if (!targetSessionId) {
+        toast.error(`挂载 Skill 失败：无法创建会话`);
+        focusComposer();
+        return false;
+      }
+
+      let mounted = false;
+      if (input.recommendation && input.recommendationAction === 'install') {
+        mounted = await installRecommendedSkill(input.recommendation, targetSessionId);
+      } else if (input.recommendation) {
+        mounted = await mountRecommendedSkill(input.recommendation, targetSessionId);
+      } else {
+        setSkillCurrentSession(targetSessionId);
+        mounted = await mountSkill(input.skillName, input.libraryId);
+      }
+
+      if (!mounted) {
+        toast.error(`挂载 Skill 失败：${input.skillName}`);
+        focusComposer();
+        return false;
+      }
+    }
+
+    markSkillSelected(input.skillName);
+    return true;
+  }, [
+    ensureSessionForSkill,
+    focusComposer,
+    installRecommendedSkill,
+    markSkillSelected,
+    mountRecommendedSkill,
+    mountSkill,
+    setSkillCurrentSession,
+  ]);
+
+  const selectWorkbenchCapabilityForCurrentTurn = useCallback((capability: WorkbenchCapabilityRegistryItem) => {
+    if (capability.kind === 'skill') {
+      void selectSkillForCurrentTurn({
+        skillName: capability.id,
+        libraryId: capability.libraryId || capability.source || 'unknown',
+        mounted: capability.mounted,
+      });
+      return;
+    }
+
+    if (capability.kind === 'connector') {
+      if (!capability.connected) {
+        toast.warning(`请先连接 ${capability.label}`);
+        focusComposer();
+        return;
+      }
+      const currentSelectedConnectorIds = useComposerStore.getState().selectedConnectorIds;
+      setSelectedConnectorIds([...new Set([...currentSelectedConnectorIds, capability.id])]);
+      setValue((prev) => removeTrailingSlashToken(prev));
+      focusComposer();
+      return;
+    }
+
+    if (capability.status !== 'connected' && capability.status !== 'lazy') {
+      toast.warning(`请先连接 MCP：${capability.label}`);
+      focusComposer();
+      return;
+    }
+    const currentSelectedMcpServerIds = useComposerStore.getState().selectedMcpServerIds;
+    setSelectedMcpServerIds([...new Set([...currentSelectedMcpServerIds, capability.id])]);
+    setValue((prev) => removeTrailingSlashToken(prev));
+    focusComposer();
+  }, [
+    focusComposer,
+    selectSkillForCurrentTurn,
+    setSelectedConnectorIds,
+    setSelectedMcpServerIds,
+  ]);
+
+  const handleSlashCommandSelect = useCallback((cmd: SlashCommand) => {
+    setShowSlashPopover(false);
+    setSlashFilter('');
+    if (cmd.actionKind !== 'prefill-prompt') {
+      setPendingPromptCommand(null);
+    }
+
+    if (cmd.actionKind === 'open-agent-command') {
+      openAgentCommand();
+      return;
+    }
+
+    if (cmd.actionKind === 'create-role') {
+      setValue('');
+      void startCreateRoleChat();
+      return;
+    }
+
+    if (cmd.actionKind === 'select-agent' && cmd.agentToken) {
+      if (cmd.agentId) {
+        setActiveAgentId(cmd.agentId);
+        setPendingAgentSelection({
+          id: cmd.agentId,
+          name: cmd.label,
+          token: cmd.agentToken,
+          via: 'slash_picker',
+        });
+      } else {
+        setActiveAgentId(null);
+        setPendingAgentSelection({ id: null, name: 'Default', token: cmd.agentToken, via: 'slash_picker' });
+      }
+      setValue(removeTrailingSlashToken(value));
+      focusComposer();
+      return;
+    }
+
+    if (cmd.actionKind === 'prefill-prompt' && cmd.promptName) {
+      setPendingPromptCommand({
+        name: cmd.promptName,
+        source: cmd.promptSource,
+        hints: cmd.promptHints,
+        via: 'slash_picker',
+      });
+      setValue(buildLeadingSlashCommandValue(value, cmd.promptName));
+      focusComposer();
+      return;
+    }
+
+    if (cmd.actionKind === 'prefill-leading-command' && cmd.commandId) {
+      setValue(buildLeadingSlashCommandValue(value, cmd.commandId));
+      focusComposer();
+      return;
+    }
+
+    if (cmd.actionKind === 'select-skill' && cmd.skillName) {
+      const recommendation = skillRecommendations.find((item) => item.skillName === cmd.skillName);
+      void selectSkillForCurrentTurn({
+        skillName: cmd.skillName,
+        libraryId: cmd.skillLibraryId || 'unknown',
+        mounted: cmd.skillMounted,
+        recommendation,
+        recommendationAction: cmd.skillRecommendationAction,
+      });
+      return;
+    }
+
+    if (cmd.actionKind === 'select-connector' && cmd.connectorId) {
+      const capability = capabilityRegistry.items.find((item) => item.kind === 'connector' && item.id === cmd.connectorId);
+      if (capability) selectWorkbenchCapabilityForCurrentTurn(capability);
+      return;
+    }
+
+    if (cmd.actionKind === 'select-mcp' && cmd.mcpServerId) {
+      const capability = capabilityRegistry.items.find((item) => item.kind === 'mcp' && item.id === cmd.mcpServerId);
+      if (capability) selectWorkbenchCapabilityForCurrentTurn(capability);
+      return;
+    }
+
+    setValue(removeTrailingSlashToken(value));
+    cmd.action();
+    focusComposer();
+  }, [
+    capabilityRegistry.items,
+    focusComposer,
+    openAgentCommand,
+    selectSkillForCurrentTurn,
+    selectWorkbenchCapabilityForCurrentTurn,
+    setActiveAgentId,
+    skillRecommendations,
+    value,
+  ]);
 
   const handleAgentCommandOptionSelect = useCallback((index: number) => {
     const option = agentCommandOptions[index];
@@ -564,6 +829,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     const trimmedValue = value.trim();
     let contentToSend = trimmedValue;
     let preferredAgentIdOverride: string | null | undefined;
+    let selectedAgentOverride: ComposerAgentSelection | null | undefined;
 
     // /schedule：自然语言 → 定时任务。复用 cron:generateFromPrompt（LLM 出配置）+ createJob。
     if (isScheduleCommand(trimmedValue)) {
@@ -670,7 +936,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
     if (agentCommand.kind === 'clear') {
       setActiveAgentId(null);
+      setPendingAgentSelection({ id: null, name: 'Default', token: 'default', via: 'agent_command' });
       preferredAgentIdOverride = null;
+      selectedAgentOverride = { id: null, name: 'Default', token: 'default', via: 'agent_command' };
       contentToSend = agentCommand.content;
       if (!contentToSend && attachments.length === 0) {
         setValue('');
@@ -679,8 +947,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       }
     }
     if (agentCommand.kind === 'select') {
+      const agentToken = getAgentCommandToken(agentCommand.agent);
       setActiveAgentId(agentCommand.agent.id);
+      setPendingAgentSelection({
+        id: agentCommand.agent.id,
+        name: agentCommand.agent.name,
+        token: agentToken,
+        via: 'agent_command',
+      });
       preferredAgentIdOverride = agentCommand.agent.id;
+      selectedAgentOverride = {
+        id: agentCommand.agent.id,
+        name: agentCommand.agent.name,
+        token: agentToken,
+        via: 'agent_command',
+      };
       contentToSend = agentCommand.content;
       if (!contentToSend && attachments.length === 0) {
         setValue('');
@@ -699,6 +980,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       effectiveAttachments,
       activeRuntimeInputMode,
       preferredAgentIdOverride,
+      selectedAgentOverride,
     );
     // XML 在 envelope 构建后注入 content，避开 buildEnvelope 内的 @mention 解析。
     const nextEnvelope = appshotXml
@@ -713,10 +995,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         value,
         attachments,
         appshot: pendingAppshot,
+        pendingPromptCommand,
+        pendingAgentSelection,
       };
       const restoreDraft = () => {
         setValue(draftSnapshot.value);
         setAttachments(draftSnapshot.attachments);
+        setPendingPromptCommand(draftSnapshot.pendingPromptCommand);
+        setPendingAgentSelection(draftSnapshot.pendingAgentSelection);
         if (draftSnapshot.appshot) {
           useAppshotsStore.getState().setPending(draftSnapshot.appshot, currentSessionId);
         }
@@ -728,6 +1014,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       }
       setValue('');
       setAttachments([]);
+      setPendingPromptCommand(null);
+      setPendingAgentSelection(null);
       clearAppshot();
 
       // P3-18: Shell shortcut - ! prefix sends command to agent as bash request
@@ -967,11 +1255,27 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
         {/* Skill 推荐条 - 输入命中技能关键词时显示（挂载已安装 / 安装未安装） */}
         <CapabilitySuggestionStrip
-          skillRecommendations={skillRecommendations}
-          capabilitySuggestions={[]}
-          onSkillMount={mountRecommendedSkill}
-          onSkillInstall={installRecommendedSkill}
-          onCapabilitySelect={() => {}}
+          skillRecommendations={showSlashPopover ? [] : skillRecommendations}
+          capabilitySuggestions={showSlashPopover ? [] : capabilitySuggestions}
+          onSkillMount={(recommendation) => {
+            void selectSkillForCurrentTurn({
+              skillName: recommendation.skillName,
+              libraryId: recommendation.libraryId,
+              mounted: false,
+              recommendation,
+              recommendationAction: recommendation.action ?? 'mount',
+            });
+          }}
+          onSkillInstall={(recommendation) => {
+            void selectSkillForCurrentTurn({
+              skillName: recommendation.skillName,
+              libraryId: recommendation.libraryId,
+              mounted: false,
+              recommendation,
+              recommendationAction: 'install',
+            });
+          }}
+          onCapabilitySelect={selectWorkbenchCapabilityForCurrentTurn}
           installingSkillName={installingSkillName}
         />
 
@@ -981,39 +1285,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <SlashCommandPopover
             isOpen={showSlashPopover}
             filter={slashFilter}
-            onClose={() => { setShowSlashPopover(false); setValue(''); }}
-            onSelect={(cmd) => {
+            agents={agentEntries}
+            skillRecommendations={skillRecommendations}
+            capabilityItems={capabilityRegistry.items}
+            capabilitySuggestions={capabilitySuggestions}
+            onClose={() => {
               setShowSlashPopover(false);
-              if (cmd.id === 'agent') {
-                openAgentCommand();
-                return;
-              }
-              if (cmd.id === 'create-role') {
-                // 对话式建角色：起新会话 + 发种子消息触发 create-role skill
-                setValue('');
-                void startCreateRoleChat();
-                return;
-              }
-              if (cmd.id === 'goal') {
-                setValue('/goal ');
-                requestAnimationFrame(() => inputAreaRef.current?.focus());
-                return;
-              }
-              if (cmd.id.startsWith('prompt:')) {
-                // prompt 命令（文件式/MCP）：预填 "/name "，发送后由 main 侧展开模板
-                setValue(`/${cmd.id.slice('prompt:'.length)} `);
-                requestAnimationFrame(() => inputAreaRef.current?.focus());
-                return;
-              }
-              if (cmd.id === 'workflow') {
-                // 预填 /workflow 前缀，用户补目标；发送后模型经 gen8 carve-out 调 workflow 工具写脚本。
-                setValue('/workflow ');
-                requestAnimationFrame(() => inputAreaRef.current?.focus());
-                return;
-              }
-              setValue('');
-              cmd.action();
+              setSlashFilter('');
             }}
+            onSelect={handleSlashCommandSelect}
           />
           {isAgentCommandAutocompleteOpen && (
             <div className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-[240px] overflow-y-auto rounded-lg border border-zinc-700/70 bg-zinc-900 shadow-xl">
@@ -1171,6 +1451,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
             {/* 运行权限模式 chip（高频，保留独立位置） */}
             <PermissionToggle disabled={disabled && !isProcessing} />
+
+            <AgentChip onOpenAgentCommand={openAgentCommand} />
 
             {/* B+ 移除: AbilityMenu (Routing/Browser/Live Preview) — 挪到 Settings；
                 Live Preview 后续挪到 SessionWorkspaceBar 顶栏 */}

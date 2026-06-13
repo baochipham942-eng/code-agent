@@ -50,6 +50,20 @@ export interface ConversationExecutionIntent {
   browserSessionSnapshot?: BrowserSessionIntentSnapshot;
 }
 
+export interface ComposerPromptCommandSelection {
+  name: string;
+  source?: 'file' | 'mcp';
+  hints?: string[];
+  via?: 'slash_picker' | 'typed_slash';
+}
+
+export interface ComposerAgentSelection {
+  id: string | null;
+  name?: string;
+  token?: string;
+  via?: 'slash_picker' | 'agent_command' | 'agent_chip';
+}
+
 export interface RuntimeInputIntent {
   mode: RuntimeInputMode;
   delivery?: RuntimeInputDelivery;
@@ -64,6 +78,9 @@ export interface DirectRoutingDeliverySnapshot {
 export interface ConversationEnvelopeContext {
   workingDirectory?: string | null;
   preferredAgentId?: string | null;
+  preferredAgentName?: string | null;
+  selectedAgent?: ComposerAgentSelection;
+  selectedPromptCommand?: ComposerPromptCommandSelection;
   routing?: ConversationRouting;
   selectedSkillIds?: string[];
   selectedConnectorIds?: string[];
@@ -90,6 +107,8 @@ export interface WorkbenchMessageMetadata {
   workingDirectory?: string | null;
   preferredAgentId?: string | null;
   preferredAgentName?: string | null;
+  selectedAgent?: ComposerAgentSelection;
+  selectedPromptCommand?: ComposerPromptCommandSelection;
   routingMode?: ConversationRoutingMode;
   targetAgentIds?: string[];
   targetAgentNames?: string[];

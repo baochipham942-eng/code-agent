@@ -111,6 +111,7 @@ export default defineConfig({
           if (/[\\/]node_modules[\\/](katex|remark-math|rehype-katex)[\\/]/.test(id)) return 'vendor-katex';
           if (/[\\/]node_modules[\\/]recharts[\\/]/.test(id)) return 'vendor-charts';
           if (/[\\/]node_modules[\\/]zustand[\\/]/.test(id)) return 'vendor-zustand';
+          if (/[\\/]node_modules[\\/]lucide-react[\\/]/.test(id)) return 'vendor-lucide';
           if (/[\\/]node_modules[\\/](react-markdown|remark-gfm)[\\/]/.test(id)) return 'vendor-markdown';
           if (/[\\/]node_modules[\\/]@xyflow[\\/]react[\\/]/.test(id)) return 'vendor-reactflow';
           if (/[\\/]node_modules[\\/]mermaid[\\/]/.test(id)) return 'vendor-mermaid';

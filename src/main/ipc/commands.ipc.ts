@@ -9,6 +9,12 @@ import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('CommandIPC');
 
+function compactPreview(value: string | undefined, limit: number): string | undefined {
+  const normalized = value?.replace(/\s+/g, ' ').trim();
+  if (!normalized) return undefined;
+  return normalized.length > limit ? `${normalized.slice(0, limit - 1)}…` : normalized;
+}
+
 export function registerPromptCommandHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(
     COMMAND_CHANNELS.PROMPT_LIST,
@@ -24,7 +30,10 @@ export function registerPromptCommandHandlers(ipcMain: IpcMain): void {
           description: command.description,
           source: command.source,
           scope: command.scope,
+          serverName: command.serverName,
           hints: command.hints,
+          contentPreview: compactPreview(command.template, 180),
+          contentSearchText: compactPreview(command.template, 1600),
         }));
       } catch (err) {
         logger.warn('PROMPT_LIST failed', { error: String(err) });

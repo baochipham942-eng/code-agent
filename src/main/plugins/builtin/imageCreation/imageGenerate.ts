@@ -21,6 +21,7 @@ import { getConfigService } from '../../../services';
 import { getAuthService } from '../../../services/auth/authService';
 import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../../shared/constants';
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
+import { buildMediaArtifactMetadata } from '../../../tools/artifacts/mediaArtifactMetadata';
 import { imageGenerateSchema as schema } from './imageGenerate.schema';
 import {
   determineImageEngine,
@@ -335,6 +336,12 @@ export async function executeImageGenerate(
     }
 
     const generationTime = Date.now() - startTime;
+    const mediaArtifactMetadata = buildMediaArtifactMetadata(ctx, {
+      kind: 'generated-image',
+      operation: 'generate',
+      sourcePrompt: params.prompt,
+      fallbackStrategy: imagePath ? 'file-artifact' : 'embedded-base64-artifact',
+    });
 
     onProgress?.({ stage: 'completing', percent: 100 });
 
@@ -353,6 +360,7 @@ export async function executeImageGenerate(
               aspectRatio,
               generationTimeMs: generationTime,
               isAdmin,
+              ...mediaArtifactMetadata,
             },
           })
           : createVirtualArtifact({
@@ -370,6 +378,7 @@ export async function executeImageGenerate(
               generationTimeMs: generationTime,
               isAdmin,
               embeddedBase64: !isImageUrl(imageBase64),
+              ...mediaArtifactMetadata,
             },
           }),
         model: actualModel,

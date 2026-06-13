@@ -9,7 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Session, SessionStatus, TokenUsage, Message, ModelProvider, TodoItem, SessionTask, ToolCall } from '../../../../shared/contract';
 import { normalizeAgentEngineSession } from '../../../../shared/contract/agentEngine';
 import type { ContextInterventionAction, ContextInterventionSnapshot } from '../../../../shared/contract/contextView';
-import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../../../shared/utils/messageAttachments';
+import { collectAttachmentPersistenceMetrics, sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../../../shared/utils/messageAttachments';
 import { extractArtifacts } from '../../../agent/artifactExtractor';
 import { createLogger } from '../../infra/logger';
 import { generateFallbackShortDescription } from '../../../model/providers/shared';
@@ -75,7 +75,12 @@ function ensureToolCallShortDescription(toolCalls: ToolCall[] | undefined): Tool
 }
 
 function buildAttachmentMetadata(attachments: Message['attachments']): Message['attachments'] | undefined {
-  return sanitizeAttachmentsForPersistence(attachments);
+  const sanitized = sanitizeAttachmentsForPersistence(attachments);
+  const metrics = collectAttachmentPersistenceMetrics(attachments, sanitized);
+  if (metrics.strippedDataUrlCount > 0 || metrics.persistedDataUrlChars > 0) {
+    logger.debug('Attachment persistence media profile', metrics);
+  }
+  return sanitized;
 }
 
 function safeJsonStringify(value: unknown): string {

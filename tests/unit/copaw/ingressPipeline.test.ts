@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { IngressPipeline, type IngressMessage } from '../../../src/main/channels/ingressPipeline';
+import type { ChannelAttachment } from '../../../src/shared/contract/channel';
 
 // Mock logger
 vi.mock('../../../src/main/services/infra/logger', () => ({
@@ -51,6 +52,43 @@ describe('IngressPipeline', () => {
     // Should be merged into one message
     expect(processMessage).toHaveBeenCalledTimes(1);
     expect(processedMessages[0]!.content).toBe('hello\nworld');
+  });
+
+  it('keeps per-message parts and attachments when debounced', async () => {
+    pipeline = new IngressPipeline({
+      debounceMs: 100,
+      processMessage,
+    });
+
+    const imageAttachment: ChannelAttachment = {
+      id: 'img-1',
+      type: 'image',
+      name: 'photo.png',
+      mimeType: 'image/png',
+      localPath: '/tmp/photo.png',
+    };
+
+    pipeline.enqueue({
+      sessionKey: 'user:1',
+      content: 'hello',
+      timestamp: 1,
+      metadata: { messageId: 'm1', attachments: [] },
+    });
+    pipeline.enqueue({
+      sessionKey: 'user:1',
+      content: 'see image',
+      timestamp: 2,
+      metadata: { messageId: 'm2', attachments: [imageAttachment] },
+    });
+
+    await vi.advanceTimersByTimeAsync(150);
+
+    expect(processMessage).toHaveBeenCalledTimes(1);
+    expect(processedMessages[0]!.content).toBe('hello\nsee image');
+    expect(processedMessages[0]!.parts).toHaveLength(2);
+    expect(processedMessages[0]!.parts?.[0]?.messageId).toBe('m1');
+    expect(processedMessages[0]!.parts?.[1]?.messageId).toBe('m2');
+    expect(processedMessages[0]!.parts?.[1]?.metadata?.attachments).toEqual([imageAttachment]);
   });
 
   it('should process messages from different sessions independently', async () => {

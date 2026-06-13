@@ -151,6 +151,14 @@ describe('image_annotate — execute', () => {
           ocrMethod: 'baidu',
           regionCount: 2,
           mediaKind: 'image',
+          mediaLifecycle: {
+            kind: 'annotated-image',
+            operation: 'annotate',
+            ownerSessionId: 'test-session',
+            sourceImages: ['/abs/p.png'],
+            fallbackStrategy: 'baidu-ocr-to-vision-llm',
+            fallbackUsed: false,
+          },
         },
       });
       expect(result.meta?.mediaKind).toBe('image');
@@ -191,6 +199,15 @@ describe('image_annotate — execute', () => {
           query: '描述图片',
           ocrMethod: 'vision_llm',
           mediaKind: 'image',
+          mediaLifecycle: {
+            kind: 'image-analysis',
+            operation: 'annotate',
+            ownerSessionId: 'test-session',
+            sourceImages: ['/abs/p.png'],
+            fallbackStrategy: 'baidu-ocr-to-vision-llm',
+            fallbackUsed: true,
+            fallbackReason: 'baidu-ocr-unavailable-or-failed',
+          },
         },
       });
       expect(result.meta?.contentLength).toBe('这是一段中文截图'.length);

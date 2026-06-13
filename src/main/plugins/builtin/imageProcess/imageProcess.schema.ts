@@ -28,6 +28,8 @@ image_process { "input_path": "photo.png", "action": "convert", "format": "webp"
 image_process { "input_path": "photo.jpg", "action": "compress", "quality": 80 }
 \`\`\`
 
+省略 input_path 时，会尝试使用当前消息里最近一张图片附件；找不到图片时返回短错误，不跨会话猜测来源。
+
 缩放图片：
 \`\`\`
 image_process { "input_path": "photo.png", "action": "resize", "width": 800, "height": 600 }
@@ -42,7 +44,7 @@ image_process { "input_path": "icon.png", "action": "upscale", "scale": 2 }
     properties: {
       input_path: {
         type: 'string',
-        description: '输入图片路径',
+        description: '输入图片路径；不填时会尝试使用当前消息里最近一张图片附件',
       },
       action: {
         type: 'string',
@@ -77,7 +79,7 @@ image_process { "input_path": "icon.png", "action": "upscale", "scale": 2 }
         default: 2,
       },
     },
-    required: ['input_path', 'action'],
+    required: ['action'],
   },
   category: 'network',
   permissionLevel: 'write',

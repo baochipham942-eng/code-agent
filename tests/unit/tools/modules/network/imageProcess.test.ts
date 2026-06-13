@@ -77,8 +77,8 @@ describe('image_process — schema', () => {
     expect(imageProcessModule.schema.permissionLevel).toBe('write');
   });
 
-  it('requires input_path and action', () => {
-    expect(imageProcessModule.schema.inputSchema.required).toEqual(['input_path', 'action']);
+  it('requires action and can fallback input_path from current image attachments', () => {
+    expect(imageProcessModule.schema.inputSchema.required).toEqual(['action']);
   });
 
   it('declares 4 actions', () => {
@@ -117,12 +117,74 @@ describe('image_process — execute', () => {
           width: 800,
           height: 600,
           format: 'webp',
+          mediaLifecycle: {
+            kind: 'edited-image',
+            operation: 'convert',
+            ownerSessionId: 'test-session',
+            sourceImages: ['/abs/photo.png'],
+            fallbackStrategy: 'source-and-output-paths-retained',
+          },
         },
       });
       expect(result.meta?.format).toBe('webp');
       expect(result.meta?.action).toBe('convert');
       expect((result.meta?.attachment as Record<string, unknown>)?.category).toBe('image');
       expect((result.meta?.attachment as Record<string, unknown>)?.mimeType).toBe('image/webp');
+    }
+  });
+
+  it('falls back to the current image attachment when input_path is omitted', async () => {
+    const result = await executeImageProcess(
+      { action: 'compress', quality: 70 },
+      makeCtx({
+        subagent: {
+          attachments: [
+            { type: 'file', path: '/abs/readme.txt', mimeType: 'text/plain' },
+            { type: 'image', path: '/abs/fallback.png', mimeType: 'image/png' },
+          ],
+        },
+      }),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.meta?.artifact).toMatchObject({
+        path: '/tmp/work/fallback_compress.png',
+        metadata: {
+          inputPath: '/abs/fallback.png',
+          mediaLifecycle: {
+            kind: 'edited-image',
+            operation: 'compress',
+            ownerSessionId: 'test-session',
+            sourceImages: ['/abs/fallback.png'],
+            fallbackStrategy: 'current-image-attachment',
+            fallbackUsed: true,
+          },
+        },
+      });
+    }
+  });
+
+  it('returns a short failure when image_process has no input image', async () => {
+    const result = await executeImageProcess(
+      { action: 'compress' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('INVALID_ARGS');
+      expect(result.error).toBe('缺少输入图片路径。请提供 input_path，或先在当前消息附加一张图片。');
+      expect(result.meta).toMatchObject({
+        mediaLifecycle: {
+          kind: 'edited-image',
+          state: 'failed',
+          fallbackStrategy: 'current-image-attachment',
+          fallbackReason: 'no-input-image',
+        },
+      });
     }
   });
 

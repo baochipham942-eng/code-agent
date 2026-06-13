@@ -1,4 +1,5 @@
 import { IPC_CHANNELS, type IpcInvokeHandlers, type IpcEventHandlers } from '@shared/ipc';
+import type { SpeechTranscribeOptions, SpeechTranscribeResult } from '@shared/contract';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 
 type AgentEventEnvelope = Parameters<IpcEventHandlers[typeof IPC_CHANNELS.AGENT_EVENT]>[0];
@@ -132,13 +133,15 @@ export function extractDocxHtml(filePath: string) {
   return commandApi()?.extractDocxHtml(filePath);
 }
 
-export function transcribeSpeech(audioData: string, mimeType: string): Promise<{
-  success: boolean;
-  text?: string;
-  error?: string;
-  hallucination?: boolean;
-}> | undefined {
-  return commandApi()?.transcribeSpeech(audioData, mimeType);
+export function transcribeSpeech(
+  audioData: string,
+  mimeType: string,
+  options?: SpeechTranscribeOptions,
+): Promise<SpeechTranscribeResult> | undefined {
+  const api = commandApi();
+  return options === undefined
+    ? api?.transcribeSpeech(audioData, mimeType)
+    : api?.transcribeSpeech(audioData, mimeType, options);
 }
 
 export function isAvailable(): boolean {

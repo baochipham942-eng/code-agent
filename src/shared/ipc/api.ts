@@ -5,6 +5,7 @@
 import type { IpcInvokeHandlers } from './handlers';
 import type { IpcEventHandlers } from './handlers';
 import type { IPCResponse } from './domains';
+import type { SpeechTranscribeOptions, SpeechTranscribeResult } from '../contract/speech';
 
 // ----------------------------------------------------------------------------
 // Preload API exposed to renderer
@@ -52,13 +53,12 @@ export interface ElectronAPI {
     wordCount: number;
   } | null>;
 
-  // 语音转写（使用 Groq Whisper API）
-  transcribeSpeech: (audioData: string, mimeType: string) => Promise<{
-    success: boolean;
-    text?: string;
-    error?: string;
-    hallucination?: boolean;
-  }>;
+  // 语音转写（桌面 voice input：按设置选择本地 whisper-cpp / 云端 fallback）
+  transcribeSpeech: (
+    audioData: string,
+    mimeType: string,
+    options?: SpeechTranscribeOptions,
+  ) => Promise<SpeechTranscribeResult>;
 }
 
 /**

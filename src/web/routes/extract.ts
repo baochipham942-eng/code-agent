@@ -24,9 +24,19 @@ function readFilePathBody(body: unknown): { filePath?: string } {
   return parsed.success ? parsed.data : {};
 }
 
-function readSpeechTranscribeBody(body: unknown): { audioData?: string; mimeType?: string } {
+function readSpeechTranscribeBody(body: unknown): {
+  audioData?: string;
+  mimeType?: string;
+  options?: Record<string, unknown>;
+} {
   const parsed = SpeechTranscribeBodySchema.safeParse(body);
-  return parsed.success ? parsed.data : {};
+  if (!parsed.success) return {};
+  const { audioData, mimeType, ...options } = parsed.data as Record<string, unknown>;
+  return {
+    audioData: typeof audioData === 'string' ? audioData : undefined,
+    mimeType: typeof mimeType === 'string' ? mimeType : undefined,
+    options,
+  };
 }
 
 export function createExtractRouter(deps: ExtractDeps): Router {
@@ -151,7 +161,7 @@ export function createExtractRouter(deps: ExtractDeps): Router {
 
   router.post('/speech/transcribe', async (req: Request, res: Response) => {
     try {
-      const { audioData, mimeType } = readSpeechTranscribeBody(req.body as unknown);
+      const { audioData, mimeType, options } = readSpeechTranscribeBody(req.body as unknown);
       if (!audioData || typeof audioData !== 'string') {
         res.status(400).json({ error: 'Missing or invalid audioData (base64 string)' });
         return;
@@ -163,7 +173,7 @@ export function createExtractRouter(deps: ExtractDeps): Router {
 
       const handler = handlers.get('speech:transcribe');
       if (handler) {
-        const result: unknown = await handler(null, { audioData, mimeType });
+        const result: unknown = await handler(null, { audioData, mimeType, ...options });
         res.json(result);
       } else {
         res.status(501).json({ error: 'speech:transcribe handler not registered' });

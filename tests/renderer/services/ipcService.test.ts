@@ -290,4 +290,22 @@ describe('ipcService.transcribeSpeech', () => {
     expect(result).toEqual(expected);
     expect(mockTranscribeSpeech).toHaveBeenCalledWith('base64data', 'audio/webm');
   });
+
+  it('should pass speech transcription options through to the bridge API', async () => {
+    const expected = { success: false, error: 'retry later', recoverable: true };
+    mockTranscribeSpeech.mockResolvedValue(expected);
+    const options = {
+      mode: 'local-only' as const,
+      language: 'en',
+      model: 'ggml-small.bin',
+      threads: 2,
+      source: 'composer' as const,
+      keepAudioOnFailure: true,
+    };
+
+    const result = await ipcService.transcribeSpeech('base64data', 'audio/webm', options);
+
+    expect(result).toEqual(expected);
+    expect(mockTranscribeSpeech).toHaveBeenCalledWith('base64data', 'audio/webm', options);
+  });
 });

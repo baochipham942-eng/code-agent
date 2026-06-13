@@ -8,7 +8,8 @@
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
 import { AlertTriangle, Image, FileText, Clock3, CornerDownRight, X, UserPlus } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
-import type { ConversationEnvelope, RuntimeInputMode } from '@shared/contract/conversationEnvelope';
+import type { ConversationEnvelope, ConversationVoiceInputMetadata, RuntimeInputMode } from '@shared/contract/conversationEnvelope';
+import type { SpeechTranscribeResult } from '@shared/contract';
 import { getModelDisplayLabel, MODEL_FEATURES, UI } from '@shared/constants';
 
 import { InputArea, InputAreaRef } from './InputArea';
@@ -134,6 +135,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   onPlanClick,
 }, ref) => {
   const [value, setValue] = useState('');
+  const [voiceInputContext, setVoiceInputContext] = useState<{
+    anchor: string;
+    metadata: ConversationVoiceInputMetadata;
+  } | null>(null);
   const [isFocused, setIsFocused] = useState(false);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   // 会话作用域：currentSessionId / engine 类型 / 切换会话时清空草稿
@@ -224,11 +229,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     const parsedMentions = parseLeadingAgentMentions(rawContent, swarmAgents);
     const content = parsedMentions ? parsedMentions.content : rawContent.trim();
     const baseContext = buildContext();
+    const voiceInput = voiceInputContext && rawContent.includes(voiceInputContext.anchor)
+      ? voiceInputContext.metadata
+      : undefined;
     const preferredAgentId = preferredAgentIdOverride === undefined ? activeAgentId : preferredAgentIdOverride;
     const nextContext = parsedMentions
       ? {
           ...baseContext,
           ...(preferredAgentId ? { preferredAgentId } : {}),
+          ...(voiceInput ? { voiceInput } : {}),
           routing: {
             mode: 'direct' as const,
             targetAgentIds: parsedMentions.targetAgentIds,
@@ -237,6 +246,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       : {
           ...baseContext,
           ...(preferredAgentId ? { preferredAgentId } : {}),
+          ...(voiceInput ? { voiceInput } : {}),
         };
     const browserSessionMode = nextContext?.executionIntent?.browserSessionMode;
     const context = browserSessionMode
@@ -265,7 +275,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       attachments: nextAttachments && nextAttachments.length > 0 ? nextAttachments : undefined,
       context: runtimeScopedContext,
     };
-  }, [activeAgentId, browserSession, buildContext, swarmAgents]);
+  }, [activeAgentId, browserSession, buildContext, swarmAgents, voiceInputContext]);
 
   // 上报 composer 槽位给 Rust，作为 Appshot 飞入动画的落点（屏幕逻辑坐标）
   useEffect(() => {
@@ -300,12 +310,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setDraft: (draft) => {
       setValue(draft.content);
       setAttachments((draft.attachments ?? []).slice(0, UI.MAX_ATTACHMENTS_DROP));
+      setVoiceInputContext(null);
       inputAreaRef.current?.focus();
     },
     focus: () => {
       inputAreaRef.current?.focus();
     },
   }), []);
+
+  useEffect(() => {
+    setVoiceInputContext(null);
+  }, [currentSessionId]);
 
   useEffect(() => {
     if (debugDraftAppliedRef.current) return;
@@ -315,6 +330,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     debugDraftAppliedRef.current = true;
     setValue(draft.content);
     setAttachments([]);
+    setVoiceInputContext(null);
     clearDebugDraftParamsFromCurrentUrl(window);
     window.setTimeout(() => {
       inputAreaRef.current?.focus();
@@ -576,6 +592,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       }
       addToInputHistory(trimmedValue);
       setValue('');
+      setVoiceInputContext(null);
       await runScheduleCreation(parsed.description);
       return;
     }
@@ -595,6 +612,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       }
       addToInputHistory(trimmedValue);
       setValue('');
+      setVoiceInputContext(null);
       try {
         const state = await loopClient.start({
           sessionId: currentSessionId,
@@ -674,6 +692,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       contentToSend = agentCommand.content;
       if (!contentToSend && attachments.length === 0) {
         setValue('');
+        setVoiceInputContext(null);
         toast.info('已恢复自动 agent');
         return;
       }
@@ -684,6 +703,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       contentToSend = agentCommand.content;
       if (!contentToSend && attachments.length === 0) {
         setValue('');
+        setVoiceInputContext(null);
         toast.info(`已切到 ${agentCommand.agent.name || agentCommand.agent.id}`);
         return;
       }
@@ -712,11 +732,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       const draftSnapshot = {
         value,
         attachments,
+        voiceInputContext,
         appshot: pendingAppshot,
       };
       const restoreDraft = () => {
         setValue(draftSnapshot.value);
         setAttachments(draftSnapshot.attachments);
+        setVoiceInputContext(draftSnapshot.voiceInputContext);
         if (draftSnapshot.appshot) {
           useAppshotsStore.getState().setPending(draftSnapshot.appshot, currentSessionId);
         }
@@ -727,6 +749,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         addToInputHistory(contentToSend);
       }
       setValue('');
+      setVoiceInputContext(null);
       setAttachments([]);
       clearAppshot();
 
@@ -803,9 +826,31 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   };
 
   // 语音输入回调 - 追加到现有文本
-  const handleVoiceTranscript = useCallback((text: string) => {
-    if (text.trim()) {
-      setValue(prev => prev.trim() ? `${prev} ${text}` : text);
+  const handleVoiceTranscript = useCallback((text: string, result?: SpeechTranscribeResult) => {
+    const transcript = text.trim();
+    if (transcript) {
+      const rawTranscript = result?.rawText?.trim();
+      setValue(prev => {
+        const current = prev.trimEnd();
+        if (!current) return transcript;
+        return `${current}\n\n${transcript}`;
+      });
+      setVoiceInputContext({
+        anchor: transcript.slice(0, 64),
+        metadata: {
+          inputSource: 'voice',
+          asrEngine: result?.engine,
+          language: result?.language,
+          model: result?.model,
+          durationMs: result?.durationMs,
+          audioDurationSeconds: result?.audioDurationSeconds,
+          transcriptionMode: result?.engine === 'groq' ? 'cloud' : result?.engine === 'local-whisper' ? 'local' : undefined,
+          transcriptChars: transcript.length,
+          rawTranscriptChars: rawTranscript?.length,
+          postProcessed: Boolean(rawTranscript && rawTranscript !== transcript),
+          chunkCount: result?.chunkCount,
+        },
+      });
       // 聚焦输入框
       inputAreaRef.current?.focus();
     }

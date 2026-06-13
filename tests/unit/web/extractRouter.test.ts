@@ -133,14 +133,24 @@ describe('createExtractRouter', () => {
       status: 400,
       body: { error: 'Missing or invalid mimeType' },
     });
-    await expect(postJson('/api/speech/transcribe', { audioData: 'abc', mimeType: 'audio/webm' })).resolves.toEqual({
+    await expect(postJson('/api/speech/transcribe', {
+      audioData: 'abc',
+      mimeType: 'audio/webm',
+      language: 'en',
+      mode: 'local-only',
+    })).resolves.toEqual({
       status: 200,
       body: {
         text: 'hello',
-        payload: { audioData: 'abc', mimeType: 'audio/webm' },
+        payload: { audioData: 'abc', mimeType: 'audio/webm', language: 'en', mode: 'local-only' },
       },
     });
-    expect(handler).toHaveBeenCalledWith(null, { audioData: 'abc', mimeType: 'audio/webm' });
+    expect(handler).toHaveBeenCalledWith(null, {
+      audioData: 'abc',
+      mimeType: 'audio/webm',
+      language: 'en',
+      mode: 'local-only',
+    });
   });
 
   it('returns formatted handler errors as HTTP 500 responses', async () => {

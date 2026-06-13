@@ -32,6 +32,7 @@ import {
   ShieldCheck,
   Terminal,
   UserCircle,
+  Mic,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -80,6 +81,7 @@ const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
 // Tab Components
 import { GeneralSettings } from './tabs/GeneralSettings';
 import { ConversationSettings } from './tabs/ConversationSettings';
+import { VoiceInputSettings } from './tabs/VoiceInputSettings';
 import { WorkspaceSettings } from './tabs/WorkspaceSettings';
 import { AutomationSettings } from './tabs/AutomationSettings';
 import { AppshotsSettings } from './tabs/AppshotsSettings';
@@ -137,6 +139,7 @@ export function buildSettingsTabGroups({
   const tabs: SettingsTabConfig[] = [
     { id: 'general', label: '权限与安全', icon: <Shield className="w-4 h-4" /> },
     { id: 'conversation', label: '对话', icon: <GitBranch className="w-4 h-4" /> },
+    { id: 'voiceInput', label: '语音输入', icon: <Mic className="w-4 h-4" /> },
     { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
     { id: 'agentEngine', label: 'Agent 引擎', icon: <Terminal className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
@@ -382,6 +385,7 @@ export const SettingsModal: React.FC = () => {
 
             {activeTab === 'general' && <GeneralSettings />}
             {activeTab === 'conversation' && <ConversationSettings />}
+            {activeTab === 'voiceInput' && <VoiceInputSettings />}
             {activeTab === 'workspace' && <WorkspaceSettings />}
             {activeTab === 'automation' && <AutomationSettings />}
             {activeTab === 'appshots' && <AppshotsSettings />}

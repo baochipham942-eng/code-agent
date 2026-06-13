@@ -55,6 +55,20 @@ export interface RuntimeInputIntent {
   delivery?: RuntimeInputDelivery;
 }
 
+export interface ConversationVoiceInputMetadata {
+  inputSource: 'voice';
+  asrEngine?: string;
+  language?: string;
+  model?: string;
+  durationMs?: number;
+  audioDurationSeconds?: number;
+  transcriptionMode?: string;
+  transcriptChars?: number;
+  rawTranscriptChars?: number;
+  postProcessed?: boolean;
+  chunkCount?: number;
+}
+
 export interface DirectRoutingDeliverySnapshot {
   deliveredTargetIds: string[];
   deliveredTargetNames?: string[];
@@ -71,6 +85,7 @@ export interface ConversationEnvelopeContext {
   designBrief?: DesignBrief;
   executionIntent?: ConversationExecutionIntent;
   runtimeInput?: RuntimeInputIntent;
+  voiceInput?: ConversationVoiceInputMetadata;
   // Live Preview 选中的 DOM 元素（iframe 点击写入 appStore 的活动 tab），
   // 用于下游 visual_edit 等工具的 grounding。main 侧消费链路分步接入；
   // 本字段非空仅表示 composer 侧已把当前 selection 随 envelope 带出。
@@ -100,6 +115,7 @@ export interface WorkbenchMessageMetadata {
   executionIntent?: ConversationExecutionIntent;
   runtimeInputMode?: RuntimeInputMode;
   runtimeInputDelivery?: RuntimeInputDelivery;
+  voiceInput?: ConversationVoiceInputMetadata;
   directRoutingDelivery?: DirectRoutingDeliverySnapshot;
   runCancellation?: {
     status: 'cancelled';

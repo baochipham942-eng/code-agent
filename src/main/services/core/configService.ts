@@ -24,6 +24,7 @@ import {
   DEFAULT_MODELS,
   MODEL_API_ENDPOINTS,
 } from '../../../shared/constants';
+import { DEFAULT_SPEECH_INPUT_SETTINGS } from '../../../shared/contract/speech';
 
 const logger = createLogger('ConfigService');
 
@@ -292,6 +293,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     enabled: true,
     targetSession: 'current',
   },
+  speech: DEFAULT_SPEECH_INPUT_SETTINGS,
 };
 
 export class ConfigService implements IReadConfigService {

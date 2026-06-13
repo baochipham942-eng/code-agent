@@ -27,6 +27,11 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   // Conversation
   { tab: 'conversation', tabLabel: '对话', label: '模型路由策略', keywords: ['routing', 'route', '模型路由', '路由', 'auto', 'direct', 'parallel'] },
 
+  // Voice Input
+  { tab: 'voiceInput', tabLabel: '语音输入', label: '语音输入', keywords: ['voice', 'speech', 'mic', 'microphone', '语音', '麦克风', '录音', '转写'] },
+  { tab: 'voiceInput', tabLabel: '语音输入', label: 'Whisper 模型', keywords: ['whisper', 'model', 'asr', 'speech to text', '模型', '本地模型', '转写模型'] },
+  { tab: 'voiceInput', tabLabel: '语音输入', label: '转写语言', keywords: ['language', 'locale', '语言', '多语言', '中文', '英文'] },
+
   // Workspace
   { tab: 'workspace', tabLabel: '工作区', label: '当前工作目录', keywords: ['workspace', '工作区', 'cwd', 'working directory', '目录', '当前'] },
   { tab: 'workspace', tabLabel: '工作区', label: '配置作用域', keywords: ['personalization', 'config scope', 'scope', '配置作用域', '全局配置', '项目配置', '本地配置', '个性化', 'user config', 'project config', 'local config'] },

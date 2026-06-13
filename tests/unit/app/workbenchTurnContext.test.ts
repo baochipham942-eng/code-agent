@@ -161,6 +161,50 @@ describe('workbenchTurnContext', () => {
     });
   });
 
+  it('injects voice input language and ASR metadata into the hidden turn context', () => {
+    const blocks = buildWorkbenchTurnSystemContext({
+      voiceInput: {
+        inputSource: 'voice',
+        asrEngine: 'local-whisper',
+        language: 'en',
+        model: 'ggml-large-v3-turbo.bin',
+        transcriptionMode: 'local',
+        transcriptChars: 42,
+        rawTranscriptChars: 48,
+        postProcessed: true,
+        audioDurationSeconds: 121,
+        chunkCount: 3,
+      },
+    });
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toContain('<voice_input_context>');
+    expect(blocks[0]).toContain('ASR 识别语言：en');
+    expect(blocks[0]).toContain('local / local-whisper');
+    expect(blocks[0]).toContain('ggml-large-v3-turbo.bin');
+    expect(blocks[0]).toContain('语音时长：121s');
+    expect(blocks[0]).toContain('长语音已分段转写：3 段');
+    expect(blocks[0]).toContain('优先沿用 ASR 识别语言');
+  });
+
+  it('carries voice-input-only context through withWorkbenchTurnSystemContext', () => {
+    const merged = withWorkbenchTurnSystemContext(
+      { mode: 'normal' },
+      {
+        voiceInput: {
+          inputSource: 'voice',
+          language: 'ja',
+          asrEngine: 'groq',
+          transcriptionMode: 'cloud',
+        },
+      },
+    );
+
+    expect(merged).not.toBe(undefined);
+    expect(merged?.turnSystemContext?.[0]).toContain('<voice_input_context>');
+    expect(merged?.turnSystemContext?.[0]).toContain('ASR 识别语言：ja');
+  });
+
   it('builds tool scope from selected skills, connectors, and MCP servers', () => {
     registerConnector('mail', { connected: true, readiness: 'ready' });
     registerConnector('calendar', { connected: true, readiness: 'ready' });

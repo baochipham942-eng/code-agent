@@ -3,14 +3,8 @@ import { spawn, ChildProcess, execFile } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { promisify } from 'util';
-import { getConfigService } from '../services/core/configService';
 import { DEFAULT_MODELS } from '../../shared/constants';
-import Groq from 'groq-sdk';
-
-const execFileAsync = promisify(execFile);
-
-// --- Inline ASR functions (extracted from removed meeting.ipc.ts) ---
+import { getSpeechTranscriptionService } from '../services/speech/speechTranscriptionService';
 
 type VoicePasteStatusPayload = {
   status: 'recording' | 'transcribing' | 'processing' | 'idle';
@@ -25,13 +19,6 @@ function isUnknownArray(value: unknown): value is unknown[] {
   return Array.isArray(value);
 }
 
-function getTextFromTranscriptionResult(result: unknown): string {
-  if (typeof result === 'string') return result;
-  if (!isRecord(result)) return '';
-  const text = result.text;
-  return typeof text === 'string' ? text : '';
-}
-
 function getModelResponseContent(result: unknown): string | undefined {
   if (!isRecord(result) || !isUnknownArray(result.choices)) return undefined;
   const firstChoice = result.choices[0];
@@ -40,65 +27,17 @@ function getModelResponseContent(result: unknown): string | undefined {
   return typeof content === 'string' ? content.trim() : undefined;
 }
 
-async function findWhisperCpp(): Promise<string | null> {
-  const candidates = ['/opt/homebrew/bin/whisper-cpp'];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
-  try {
-    const { stdout } = await execFileAsync('which', ['whisper-cpp']);
-    const trimmed = stdout.trim();
-    if (trimmed && fs.existsSync(trimmed)) return trimmed;
-  } catch { /* not found */ }
-  return null;
-}
-
-async function convertToWav(inputPath: string): Promise<string> {
-  const wavPath = inputPath.replace(/\.[^.]+$/, '.wav');
-  if (inputPath.endsWith('.wav')) return inputPath;
-  await execFileAsync('ffmpeg', ['-i', inputPath, '-ar', '16000', '-ac', '1', '-y', wavPath]);
-  return wavPath;
-}
-
-async function transcribeWithWhisperCpp(filePath: string, language: string): Promise<string> {
-  const whisperPath = await findWhisperCpp();
-  if (!whisperPath) throw new Error('WHISPER_NOT_AVAILABLE');
-  const modelPath = path.join(os.homedir(), '.cache', 'whisper', 'ggml-large-v3-turbo.bin');
-  if (!fs.existsSync(modelPath)) throw new Error('WHISPER_NOT_AVAILABLE');
-  const wavPath = await convertToWav(filePath);
-  try {
-    const { stdout } = await execFileAsync(whisperPath, ['-m', modelPath, '-l', language, '-f', wavPath], { timeout: 300000 });
-    return stdout.trim();
-  } finally {
-    if (wavPath !== filePath && fs.existsSync(wavPath)) {
-      fs.promises.unlink(wavPath).catch(() => {});
-    }
-  }
-}
-
-async function transcribeWithGroq(filePath: string, language: string): Promise<string> {
-  const configService = getConfigService();
-  const apiKey = configService.getApiKey('groq');
-  if (!apiKey) throw new Error('未配置 Groq API Key');
-  const groq = new Groq({ apiKey });
-  const fileStream = fs.createReadStream(filePath);
-  const transcription: unknown = await groq.audio.transcriptions.create({
-    file: fileStream,
-    model: 'whisper-large-v3-turbo',
-    language,
-    response_format: 'text',
+async function transcribeAudio(wavPath: string): Promise<string> {
+  const result = await getSpeechTranscriptionService().transcribe({
+    audioBuffer: fs.readFileSync(wavPath),
+    mimeType: 'audio/wav',
+    source: 'voice-paste',
+    keepAudioOnFailure: false,
   });
-  return getTextFromTranscriptionResult(transcription);
-}
-
-async function transcribeAudio(wavPath: string, language: string = 'zh'): Promise<string> {
-  // Try whisper-cpp first
-  try {
-    const text = await transcribeWithWhisperCpp(wavPath, language);
-    return text;
-  } catch { /* fall through */ }
-  // Fall back to Groq
-  return await transcribeWithGroq(wavPath, language);
+  if (result.success && result.text) {
+    return result.text;
+  }
+  throw new Error(result.error || '语音转写失败');
 }
 
 // Model API config - read from environment or config

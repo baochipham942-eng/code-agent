@@ -813,9 +813,8 @@ Generate the handoff summary:`;
     messages: CompressedMessage[],
     systemPrompt: string,
   ): Promise<{ success: boolean; compactedCount: number; messages: CompressedMessage[] }> {
-    // Find the message index by checking id field
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): CompressedMessage 类型上没声明 id 字段，但在 hydrate 阶段附加；应该把 id?: string 加进 CompressedMessage 接口
-    const index = messages.findIndex(m => (m as any).id === messageId);
+    // Find the message index by checking id field (id 在 hydrate 阶段附加，CompressedMessage 未声明，显式收窄)
+    const index = messages.findIndex(m => (m as { id?: string }).id === messageId);
     if (index <= 0) {
       return { success: false, compactedCount: 0, messages };
     }

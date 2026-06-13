@@ -24,10 +24,9 @@ const SKILL_CHANNELS = {
 
 const logger = createLogger('SkillStore');
 
-// 类型安全的 IPC 调用辅助函数（绕过未注册的通道类型检查）
-const invokeSkillChannel = async <T>(channel: string, ...args: unknown[]): Promise<T | undefined> => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): ipcService.invoke 的 channel 联合类型不包含 skill:* 通道，应该把 SKILL_CHANNELS 加进 IpcChannel 联合或提供 unsafeInvoke 入口
-  return (ipcService.invoke as any)(channel, ...args) as T | undefined;
+// skill:* 通道尚未进 IpcInvokeHandlers 联合类型，走 ipcService 的具名逃生入口
+const invokeSkillChannel = <T>(channel: string, ...args: unknown[]): Promise<T | undefined> => {
+  return ipcService.unsafeInvoke<T | undefined>(channel, ...args) ?? Promise.resolve(undefined);
 };
 
 // ----------------------------------------------------------------------------

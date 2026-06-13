@@ -753,9 +753,9 @@ export class AgentOrchestrator {
                 inputTokens: sessionData.totalInputTokens,
                 outputTokens: sessionData.totalOutputTokens,
                 totalTokens: sessionData.totalTokens,
+                timestamp: Date.now(),
               },
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): SessionManager.updateSession 第二个参数 SessionUpdate 没有 lastTokenUsage 字段，应该把 lastTokenUsage 加进 SessionUpdate（同 cli/bootstrap.ts:430）
-            } as any);
+            });
           }
         } catch { /* ignore - token sync is best effort */ }
         getTelemetryCollector().endSession(sessionId);

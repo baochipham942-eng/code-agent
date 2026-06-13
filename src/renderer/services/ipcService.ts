@@ -18,6 +18,18 @@ export function invoke<K extends keyof IpcInvokeHandlers>(
   return commandApi()?.invoke(channel, ...args) as ReturnType<IpcInvokeHandlers[K]>;
 }
 
+/**
+ * 逃生入口：调用尚未进 IpcInvokeHandlers 联合类型的合法通道（如 skill:* / command:*）。
+ * channel/args 显式 string/unknown，把"通道注册表未覆盖"这一事实收口到一个具名边界，
+ * 避免在各 store/组件里散落 `as any`。通道补进注册表后即可改回类型安全的 invoke。
+ */
+export function unsafeInvoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T> | undefined {
+  const raw = commandApi()?.invoke as
+    | ((channel: string, ...args: unknown[]) => Promise<T>)
+    | undefined;
+  return raw?.(channel, ...args);
+}
+
 function getStringField(data: unknown, field: string): string | undefined {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return undefined;
@@ -147,6 +159,7 @@ export async function invokeDomain<T = unknown>(
 
 export const ipcService = {
   invoke,
+  unsafeInvoke,
   invokeDomain,
   on,
   off,

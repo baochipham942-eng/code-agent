@@ -424,8 +424,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             turnCount: session.turnCount || session.messages?.filter((message) => isVisibleHistoryMessage(message) && message.role === 'user').length || 0,
           });
           const loadedMessages = hydrateToolCallResults(session.messages || []);
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): session 类型上没声明 messageCount，但 normalizeSession 已确保它存在，应在 Session/SessionWithMeta 类型中加上 messageCount?: number
-          const totalCount = (session as any).messageCount ?? loadedMessages.length;
+          const totalCount = (session as SessionWithMeta).messageCount ?? loadedMessages.length;
           useAppStore.getState().setWorkingDirectory(session.workingDirectory ?? null);
           set({
             currentSessionId: sessionId,

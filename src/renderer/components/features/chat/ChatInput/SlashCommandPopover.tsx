@@ -24,7 +24,7 @@ import type { CommandDefinition } from '@shared/commands';
 import { generateMessageId } from '@shared/utils/id';
 import { IPC_CHANNELS, IPC_DOMAINS, COMMAND_CHANNELS } from '@shared/ipc';
 import type { ExtensionValidationResult } from '@shared/contract/extension';
-import { invoke, invokeDomain } from '../../../../services/ipcService';
+import { invoke, invokeDomain, unsafeInvoke } from '../../../../services/ipcService';
 
 type ExtensionMutationResult = { success: boolean; error?: string };
 
@@ -92,8 +92,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- command:* 通道未进 IpcChannel 联合类型（同 skillStore 的处理）
-    void Promise.resolve((invoke as any)(COMMAND_CHANNELS.PROMPT_LIST, {}))
+    // command:* 通道未进 IpcInvokeHandlers 联合类型，走具名逃生入口（同 skillStore 的处理）
+    void Promise.resolve(unsafeInvoke(COMMAND_CHANNELS.PROMPT_LIST, {}))
       .then((commands: unknown) => {
         if (!cancelled && Array.isArray(commands)) {
           setPromptCommands(commands as PromptCommandItem[]);

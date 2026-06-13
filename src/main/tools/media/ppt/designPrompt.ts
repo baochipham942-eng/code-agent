@@ -142,8 +142,7 @@ ${researchSection}
     const x = MX + i * (cardW + 0.2);
     addCard(s, x, 1.5, cardW, 3.8);
     // 色带
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TODO(types): pptxgenjs.SHAPE_NAME 是字符串字面量联合，'rect' 不在该联合里（SDK 类型字面量大写，运行时小写也接受）；应该 import { ShapeType } from 'pptxgenjs' 后用枚举
-    s.addShape('rect' as any, { x, y: 1.5, w: cardW, h: 0.12, fill: { color: m.color } });
+    s.addShape('rect', { x, y: 1.5, w: cardW, h: 0.12, fill: { color: m.color } });
     // 大数字
     s.addText(m.value, {
       x: x + 0.3, y: 2.2, w: cardW - 0.6, h: 1.0,

@@ -36,6 +36,12 @@ vi.mock('../../../../src/main/services/skills/skillRepositoryService', () => ({
   }),
 }));
 
+const marketplaceSkillDirs = vi.hoisted(() => new Set<string>());
+
+vi.mock('../../../../src/main/skills/marketplace/installService', () => ({
+  getEnabledSkillDirs: async () => [...marketplaceSkillDirs],
+}));
+
 import { SkillDiscoveryService } from '../../../../src/main/services/skills/skillDiscoveryService';
 
 async function writeSkill(baseDir: string, name: string): Promise<void> {
@@ -62,6 +68,7 @@ describe('SkillDiscoveryService Claude legacy discovery', () => {
   let projectDir: string;
 
   beforeEach(async () => {
+    marketplaceSkillDirs.clear();
     tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'skill-discovery-'));
     homeDir = path.join(tmpRoot, 'home');
     projectDir = path.join(tmpRoot, 'project');
@@ -125,6 +132,18 @@ describe('SkillDiscoveryService Claude legacy discovery', () => {
     await service.initialize(projectDir);
 
     expect(service.getAllSkills().map((skill) => skill.name).sort()).toEqual(['user-code-agent']);
+  });
+
+  it('loads only enabled marketplace plugin skill directories as plugin skills', async () => {
+    await writeSkill(path.join(homeDir, '.code-agent', 'plugins', 'enabled-demo', 'skills'), 'plugin-demo');
+    await writeSkill(path.join(homeDir, '.code-agent', 'plugins', 'disabled-demo', 'skills'), 'hidden-demo');
+    marketplaceSkillDirs.add(path.join(homeDir, '.code-agent', 'plugins', 'enabled-demo', 'skills', 'plugin-demo'));
+
+    const service = new SkillDiscoveryService();
+    await service.initialize(projectDir);
+
+    expect(service.getSkill('plugin-demo')?.source).toBe('plugin');
+    expect(service.getSkill('hidden-demo')).toBeUndefined();
   });
 
   it('reuses cached metadata on the next initialize without rereading unchanged SKILL.md files', async () => {

@@ -30,6 +30,7 @@ describe('extractCurrentTurnCapabilityScope', () => {
                 timestamp: 120,
                 tone: 'success',
                 capabilityScope: {
+                  mode: 'auto',
                   selected: [],
                   allowed: [],
                   blocked: [],
@@ -65,6 +66,7 @@ describe('extractCurrentTurnCapabilityScope', () => {
                 timestamp: 205,
                 tone: 'warning',
                 capabilityScope: {
+                  mode: 'manual',
                   selected: [
                     {
                       kind: 'skill',
@@ -98,6 +100,7 @@ describe('extractCurrentTurnCapabilityScope', () => {
       turnNumber: 2,
       tone: 'warning',
       scope: {
+        mode: 'manual',
         selected: [
           {
             kind: 'skill',
@@ -132,6 +135,7 @@ describe('extractCurrentTurnCapabilityScope', () => {
                 timestamp: 120,
                 tone: 'success',
                 capabilityScope: {
+                  mode: 'auto',
                   selected: [],
                   allowed: [],
                   blocked: [],
@@ -202,6 +206,7 @@ describe('extractCurrentTurnCapabilityScope', () => {
                 timestamp: 100,
                 tone: 'warning',
                 capabilityScope: {
+                  mode: 'manual',
                   selected: [],
                   allowed: [],
                   blocked: [],

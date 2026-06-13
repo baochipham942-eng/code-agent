@@ -92,6 +92,8 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
   const setSelectedConnectorIds = useComposerStore((state) => state.setSelectedConnectorIds);
   const selectedMcpServerIds = useComposerStore((state) => state.selectedMcpServerIds);
   const setSelectedMcpServerIds = useComposerStore((state) => state.setSelectedMcpServerIds);
+  const turnCapabilityScopeMode = useComposerStore((state) => state.turnCapabilityScopeMode);
+  const setTurnCapabilityScopeMode = useComposerStore((state) => state.setTurnCapabilityScopeMode);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const gapNotice = useCapabilityGapStore((state) =>
     currentSessionId ? state.noticesBySession[currentSessionId] : null,
@@ -120,6 +122,11 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
     () => registryItems.filter((capability) => capability.selected),
     [registryItems],
   );
+  const selectedPreviewCapabilities = useMemo(
+    () => sortCapabilities(selectedCapabilities).slice(0, 8),
+    [selectedCapabilities],
+  );
+  const selectedPreviewOverflowCount = Math.max(0, selectedCapabilities.length - selectedPreviewCapabilities.length);
   const blockedCapabilities = selectedCapabilities
     .map((capability) => ({
       capability,
@@ -149,16 +156,29 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
   );
 
   const toggleSkill = useCallback((skillId: string) => {
+    setTurnCapabilityScopeMode('manual');
     setSelectedSkillIds(toggleId(selectedSkillIds, skillId));
-  }, [selectedSkillIds, setSelectedSkillIds]);
+  }, [selectedSkillIds, setSelectedSkillIds, setTurnCapabilityScopeMode]);
 
   const toggleConnector = useCallback((connectorId: string) => {
+    setTurnCapabilityScopeMode('manual');
     setSelectedConnectorIds(toggleId(selectedConnectorIds, connectorId));
-  }, [selectedConnectorIds, setSelectedConnectorIds]);
+  }, [selectedConnectorIds, setSelectedConnectorIds, setTurnCapabilityScopeMode]);
 
   const toggleMcpServer = useCallback((serverId: string) => {
+    setTurnCapabilityScopeMode('manual');
     setSelectedMcpServerIds(toggleId(selectedMcpServerIds, serverId));
-  }, [selectedMcpServerIds, setSelectedMcpServerIds]);
+  }, [selectedMcpServerIds, setSelectedMcpServerIds, setTurnCapabilityScopeMode]);
+
+  const toggleCapability = useCallback((capability: WorkbenchCapabilityRegistryItem) => {
+    if (capability.kind === 'skill') {
+      toggleSkill(capability.id);
+    } else if (capability.kind === 'connector') {
+      toggleConnector(capability.id);
+    } else if (capability.kind === 'mcp') {
+      toggleMcpServer(capability.id);
+    }
+  }, [toggleConnector, toggleMcpServer, toggleSkill]);
 
   const openCapabilitySheet = useCallback((capability: WorkbenchCapabilityRegistryItem) => {
     setActiveSheetTarget({
@@ -205,17 +225,65 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
     <div className="mb-2 rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-1.5">
       {(shouldShowSkills || shouldShowConnectors || shouldShowMcpServers) && (
         <>
-          <button
-            type="button"
-            onClick={() => setGridExpanded((v) => !v)}
-            className="flex w-full items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
-            aria-expanded={gridExpanded}
-          >
-            {gridExpanded
-              ? <ChevronDown className="h-3 w-3" />
-              : <ChevronRight className="h-3 w-3" />}
-            <span>{summaryText || 'Capabilities'}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setGridExpanded((v) => !v)}
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+              aria-expanded={gridExpanded}
+            >
+              {gridExpanded
+                ? <ChevronDown className="h-3 w-3 shrink-0" />
+                : <ChevronRight className="h-3 w-3 shrink-0" />}
+              <span className="truncate">{summaryText || 'Capabilities'}</span>
+            </button>
+            <div className="inline-flex shrink-0 overflow-hidden rounded-md border border-white/[0.08] bg-zinc-950/40">
+              <button
+                type="button"
+                onClick={() => setTurnCapabilityScopeMode('auto')}
+                className={`px-2 py-0.5 text-[10px] transition-colors ${
+                  turnCapabilityScopeMode === 'auto'
+                    ? 'bg-zinc-700 text-zinc-100'
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+                title="系统自动选择可用能力"
+              >
+                Auto
+              </button>
+              <button
+                type="button"
+                onClick={() => setTurnCapabilityScopeMode('manual')}
+                className={`border-l border-white/[0.08] px-2 py-0.5 text-[10px] transition-colors ${
+                  turnCapabilityScopeMode === 'manual'
+                    ? 'bg-zinc-700 text-zinc-100'
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+                title="手动限定本轮能力范围"
+              >
+                Manual
+              </button>
+            </div>
+          </div>
+
+          {selectedPreviewCapabilities.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {selectedPreviewCapabilities.map((capability) => (
+                <WorkbenchSelectablePill
+                  key={`selected:${capability.key}`}
+                  onClick={() => toggleCapability(capability)}
+                  tone={getCapabilityTone(capability)}
+                  selected
+                  dimmed={!capability.available}
+                  title={`${getWorkbenchCapabilityTitle(capability, { locale: 'zh' })}\n点击移出本轮范围`}
+                >
+                  {capability.label}
+                </WorkbenchSelectablePill>
+              ))}
+              {selectedPreviewOverflowCount > 0 && (
+                <span className="text-[11px] text-zinc-500">+{selectedPreviewOverflowCount}</span>
+              )}
+            </div>
+          )}
 
           {gridExpanded && (
             <div className="mt-2 space-y-2">

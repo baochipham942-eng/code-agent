@@ -36,11 +36,17 @@ import { ComboSkillCard } from './ComboSkillCard';
 import { SkillDraftNotifications } from './SkillDraftCard';
 import { RoleDraftNotifications } from './RoleDraftCard';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
-import { CapabilitySuggestionStrip } from './CapabilitySuggestionStrip';
+import {
+  buildCapabilitySemanticSuggestions,
+  CapabilitySuggestionStrip,
+} from './CapabilitySuggestionStrip';
 import { useSkillRecommendations } from './useSkillRecommendations';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { AppshotChip } from './AppshotChip';
+import { InlineWorkbenchBar } from '../InlineWorkbenchBar';
+import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
+import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import { buildAppshotXml, buildAppshotAttachment } from '@shared/contract/appshot';
 import {
   ModelSwitcher,
@@ -117,6 +123,10 @@ export interface ChatInputHandle {
   focus: () => void;
 }
 
+function appendUniqueId(ids: string[], id: string): string[] {
+  return ids.includes(id) ? ids : [...ids, id];
+}
+
 // ============================================================================
 // 主组件
 // ============================================================================
@@ -180,6 +190,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     mountRecommendedSkill,
     installRecommendedSkill,
   } = useSkillRecommendations(currentSessionId, value);
+  const capabilityRegistry = useWorkbenchCapabilityRegistry();
+  const selectedSkillIds = useComposerStore((state) => state.selectedSkillIds);
+  const setSelectedSkillIds = useComposerStore((state) => state.setSelectedSkillIds);
+  const selectedConnectorIds = useComposerStore((state) => state.selectedConnectorIds);
+  const setSelectedConnectorIds = useComposerStore((state) => state.setSelectedConnectorIds);
+  const selectedMcpServerIds = useComposerStore((state) => state.selectedMcpServerIds);
+  const setSelectedMcpServerIds = useComposerStore((state) => state.setSelectedMcpServerIds);
+  const setTurnCapabilityScopeMode = useComposerStore((state) => state.setTurnCapabilityScopeMode);
+  const openCapabilitySettingsTarget = useAppStore((state) => state.openCapabilitySettingsTarget);
+  const capabilitySuggestions = useMemo(
+    () => buildCapabilitySemanticSuggestions(value, capabilityRegistry.items),
+    [capabilityRegistry.items, value],
+  );
   const browserSession = useWorkbenchBrowserSession();
   const buildContext = useComposerStore((state) => state.buildContext);
   const routingMode = useComposerStore((state) => state.routingMode);
@@ -392,6 +415,40 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setValue(text);
     inputAreaRef.current?.focus();
   }, []);
+
+  const handleCapabilitySelect = useCallback((capability: WorkbenchCapabilityRegistryItem) => {
+    setTurnCapabilityScopeMode('manual');
+    switch (capability.kind) {
+      case 'skill':
+        setSelectedSkillIds(appendUniqueId(selectedSkillIds, capability.id));
+        break;
+      case 'connector':
+        setSelectedConnectorIds(appendUniqueId(selectedConnectorIds, capability.id));
+        break;
+      case 'mcp':
+        setSelectedMcpServerIds(appendUniqueId(selectedMcpServerIds, capability.id));
+        break;
+      default:
+        break;
+    }
+
+    if (capability.available && !capability.blocked) {
+      toast.success(`已加入本轮：${capability.label}`);
+      return;
+    }
+
+    toast.warning(capability.blockedReason?.detail || `${capability.label} 需要先完成配置或连接`);
+    openCapabilitySettingsTarget({ kind: capability.kind, id: capability.id });
+  }, [
+    openCapabilitySettingsTarget,
+    selectedConnectorIds,
+    selectedMcpServerIds,
+    selectedSkillIds,
+    setSelectedConnectorIds,
+    setSelectedMcpServerIds,
+    setSelectedSkillIds,
+    setTurnCapabilityScopeMode,
+  ]);
 
   // @ file autocomplete
   const { matches: fileMatches, isOpen: isAutocompleteOpen, query: atQuery, search: searchFiles, dismiss: dismissAutocomplete } = useFileAutocomplete();
@@ -965,13 +1022,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <SuggestionBar suggestions={suggestions} onSelect={handleSuggestionSelect} />
         )}
 
-        {/* Skill 推荐条 - 输入命中技能关键词时显示（挂载已安装 / 安装未安装） */}
+        <InlineWorkbenchBar />
+
+        {/* Skill / MCP / Connector 推荐条 - 输入命中关键词时显示 */}
         <CapabilitySuggestionStrip
           skillRecommendations={skillRecommendations}
-          capabilitySuggestions={[]}
+          capabilitySuggestions={capabilitySuggestions}
           onSkillMount={mountRecommendedSkill}
           onSkillInstall={installRecommendedSkill}
-          onCapabilitySelect={() => {}}
+          onCapabilitySelect={handleCapabilitySelect}
           installingSkillName={installingSkillName}
         />
 

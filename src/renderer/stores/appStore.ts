@@ -98,6 +98,8 @@ let _previewTabTick = 0;
 const nextPreviewTabTick = () => ++_previewTabTick;
 let _settingsMemoryFocusTick = 0;
 const nextSettingsMemoryFocusNonce = () => ++_settingsMemoryFocusTick;
+let _settingsCapabilityFocusTick = 0;
+const nextSettingsCapabilityFocusNonce = () => ++_settingsCapabilityFocusTick;
 
 // Unified right-workbench tab identity.
 // Preview tabs embed their file path after the 'preview:' prefix.
@@ -115,6 +117,12 @@ export interface WorkbenchHighlight {
 export interface SettingsMemoryFocus {
   filename?: string;
   query?: string;
+  nonce: number;
+}
+
+export interface SettingsCapabilityFocus {
+  kind: 'skill' | 'mcp' | 'connector';
+  id: string;
   nonce: number;
 }
 
@@ -152,6 +160,7 @@ interface AppState {
   showSettings: boolean;
   settingsInitialTab: SettingsTab | null; // 打开设置时默认选中的 Tab
   settingsMemoryFocus: SettingsMemoryFocus | null;
+  settingsCapabilityFocus: SettingsCapabilityFocus | null;
   // 对话式建角色：待发送的种子消息（入口触发，ChatView 在新会话就绪后自动发出）
   pendingRoleChatSeed: string | null;
   showPromptManager: boolean;
@@ -253,8 +262,10 @@ interface AppState {
   setPendingRoleChatSeed: (seed: string | null) => void;
   openSettingsTab: (tab: SettingsTab) => void; // 打开设置并跳转到指定 Tab
   openMemorySettings: (focus?: Omit<SettingsMemoryFocus, 'nonce'>) => void;
+  openCapabilitySettingsTarget: (focus: Omit<SettingsCapabilityFocus, 'nonce'>) => void;
   clearSettingsInitialTab: () => void; // 清除初始 Tab（设置页使用后调用）
   clearSettingsMemoryFocus: () => void;
+  clearSettingsCapabilityFocus: () => void;
   setShowPromptManager: (show: boolean) => void;
   setShowWorkspace: (show: boolean) => void;
   setTaskPanelTab: (tab: TaskPanelTab) => void;
@@ -368,6 +379,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showSettings: false,
   settingsInitialTab: null,
   settingsMemoryFocus: null,
+  settingsCapabilityFocus: null,
   pendingRoleChatSeed: null,
   showPromptManager: false,
   showWorkspace: false,
@@ -453,16 +465,32 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowSettings: (show) => set({ showSettings: show }),
   setPendingRoleChatSeed: (seed) => set({ pendingRoleChatSeed: seed }),
   setShowPromptManager: (show) => set({ showPromptManager: show }),
-  openSettingsTab: (tab) => set({ showSettings: true, settingsInitialTab: tab, settingsMemoryFocus: null }),
+  openSettingsTab: (tab) => set({
+    showSettings: true,
+    settingsInitialTab: tab,
+    settingsMemoryFocus: null,
+    settingsCapabilityFocus: null,
+  }),
   openMemorySettings: (focus) => set({
     showSettings: true,
     settingsInitialTab: 'memory',
     settingsMemoryFocus: focus
       ? { ...focus, nonce: nextSettingsMemoryFocusNonce() }
       : null,
+    settingsCapabilityFocus: null,
+  }),
+  openCapabilitySettingsTarget: (focus) => set({
+    showSettings: true,
+    settingsInitialTab: focus.kind === 'skill' ? 'skills' : 'mcp',
+    settingsMemoryFocus: null,
+    settingsCapabilityFocus: {
+      ...focus,
+      nonce: nextSettingsCapabilityFocusNonce(),
+    },
   }),
   clearSettingsInitialTab: () => set({ settingsInitialTab: null }),
   clearSettingsMemoryFocus: () => set({ settingsMemoryFocus: null }),
+  clearSettingsCapabilityFocus: () => set({ settingsCapabilityFocus: null }),
   setShowWorkspace: (show) => set({ showWorkspace: show }),
   setTaskPanelTab: (tab) => set({ taskPanelTab: tab }),
   setShowAgentTeamPanel: (show) => set({ showAgentTeamPanel: show }),

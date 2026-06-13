@@ -7,10 +7,14 @@
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
+import { exec } from 'child_process';
+import { randomUUID } from 'crypto';
+import { promisify } from 'util';
 import { getUserConfigDir as getBaseConfigDir, getProjectConfigDir as getBaseProjectConfigDir } from '../../config/configPaths';
 import { createLogger } from '../../services/infra/logger';
 import { getMarketplaceInfo, listMarketplaces } from './marketplaceService';
 import type {
+  PluginEntryKind,
   InstalledPluginRecord,
   InstalledPluginsFile,
   InstallResult,
@@ -26,6 +30,7 @@ const logger = createLogger('PluginInstallService');
 // ----------------------------------------------------------------------------
 
 const INSTALLED_PLUGINS_FILE = 'installed-plugins.json';
+const execAsync = promisify(exec);
 
 // ----------------------------------------------------------------------------
 // Path Utilities
@@ -47,6 +52,14 @@ function getScopeBaseDir(scope: PluginScope, projectPath?: string): string {
 
 function getSkillsDir(scope: PluginScope, projectPath?: string): string {
   return path.join(getScopeBaseDir(scope, projectPath), 'skills');
+}
+
+function getCommandsDir(scope: PluginScope, projectPath?: string): string {
+  return path.join(getScopeBaseDir(scope, projectPath), 'commands');
+}
+
+function getPluginAssetsDir(scope: PluginScope, projectPath?: string): string {
+  return path.join(getScopeBaseDir(scope, projectPath), 'plugins');
 }
 
 function getInstalledPluginsPath(): string {
@@ -206,6 +219,330 @@ async function copyDirectory(src: string, dest: string): Promise<void> {
   }
 }
 
+function normalizePluginKind(value: unknown): PluginEntryKind | null {
+  switch (typeof value === 'string' ? value.trim().toLowerCase() : '') {
+    case 'skill':
+      return 'skill';
+    case 'command':
+    case 'commands':
+      return 'command';
+    case 'ui':
+      return 'ui';
+    case 'theme':
+      return 'theme';
+    case 'provider':
+      return 'provider';
+    case 'tool':
+      return 'tool';
+    case 'transform':
+      return 'transform';
+    default:
+      return null;
+  }
+}
+
+function getPluginEntryTypes(entry: PluginEntry): PluginEntryKind[] {
+  const rawTypes = [
+    ...(entry.types ?? []),
+    ...(Array.isArray(entry.type) ? entry.type : entry.type ? [entry.type] : []),
+  ];
+  const types = rawTypes
+    .map(normalizePluginKind)
+    .filter((value): value is PluginEntryKind => Boolean(value));
+
+  if ((entry.skills ?? []).length > 0) {
+    types.push('skill');
+  }
+  if ((entry.commands ?? []).length > 0) {
+    types.push('command');
+  }
+  if (types.length === 0) {
+    types.push('skill');
+  }
+  return Array.from(new Set(types));
+}
+
+function getPluginAssetDirName(pluginSpec: string): string {
+  return pluginSpec
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9@._-]+/g, '-')
+    .replace(/@/g, '__')
+    .replace(/^-+|-+$/g, '') || 'plugin';
+}
+
+function getPluginAssetDestination(scope: PluginScope, projectPath: string | undefined, pluginSpec: string): string {
+  return path.join(getPluginAssetsDir(scope, projectPath), getPluginAssetDirName(pluginSpec));
+}
+
+function parseGitHubRepository(repository?: string): { owner: string; repo: string } | null {
+  if (!repository) {
+    return null;
+  }
+  const trimmed = repository.trim().replace(/\.git$/, '');
+  const match = trimmed.match(/^https:\/\/github\.com\/([^/\s]+)\/([^/\s#?]+)$/)
+    ?? trimmed.match(/^github:([^/\s]+)\/([^/\s#?]+)$/)
+    ?? trimmed.match(/^([^/\s]+)\/([^/\s#?]+)$/);
+  if (!match) {
+    return null;
+  }
+  return { owner: match[1]!, repo: match[2]! };
+}
+
+async function downloadGitHubRepository(owner: string, repo: string, destDir: string): Promise<void> {
+  const refs = ['main', 'master'];
+  let archive: Buffer | null = null;
+  let lastError: Error | null = null;
+
+  for (const ref of refs) {
+    const url = `https://codeload.github.com/${owner}/${repo}/zip/refs/heads/${ref}`;
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        archive = Buffer.from(await response.arrayBuffer());
+        break;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  if (!archive) {
+    throw lastError ?? new Error(`Failed to download GitHub repository ${owner}/${repo}`);
+  }
+
+  await ensureDir(destDir);
+  const tempZip = path.join(path.dirname(destDir), `repo-${randomUUID()}.zip`);
+  await fs.writeFile(tempZip, archive);
+  try {
+    await execAsync(`unzip -q "${tempZip}" -d "${destDir}"`);
+    const entries = await fs.readdir(destDir);
+    if (entries.length === 1) {
+      const nested = path.join(destDir, entries[0]!);
+      const stat = await fs.stat(nested);
+      if (stat.isDirectory()) {
+        const nestedEntries = await fs.readdir(nested);
+        for (const entry of nestedEntries) {
+          await fs.rename(path.join(nested, entry), path.join(destDir, entry));
+        }
+        await fs.rm(nested, { recursive: true, force: true });
+      }
+    }
+  } finally {
+    await fs.unlink(tempZip).catch(() => {});
+  }
+}
+
+async function resolveEntrySourceBase(args: {
+  rootDir: string;
+  entry: PluginEntry;
+  pluginSpec: string;
+}): Promise<{ sourceBase: string; cleanup?: () => Promise<void> }> {
+  const sourcePath = args.entry.source || args.entry.path || './';
+  const localSourceBase = path.resolve(args.rootDir, sourcePath);
+  if (fsSync.existsSync(localSourceBase)) {
+    return { sourceBase: localSourceBase };
+  }
+
+  const github = parseGitHubRepository(args.entry.repository);
+  if (!github) {
+    return { sourceBase: localSourceBase };
+  }
+
+  const tempDir = path.join(getUserConfigDir(), 'marketplace-plugin-cache', `tmp-${getPluginAssetDirName(args.pluginSpec)}-${randomUUID()}`);
+  await downloadGitHubRepository(github.owner, github.repo, tempDir);
+  const remoteSourceBase = path.resolve(tempDir, args.entry.path || args.entry.source || './');
+  if (!fsSync.existsSync(remoteSourceBase)) {
+    await fs.rm(tempDir, { recursive: true, force: true });
+    throw new Error(`Plugin path not found in repository: ${args.entry.path || args.entry.source || './'}`);
+  }
+  return {
+    sourceBase: remoteSourceBase,
+    cleanup: async () => {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    },
+  };
+}
+
+async function installPluginAssets(args: {
+  entrySourceBase: string;
+  scope: PluginScope;
+  projectPath?: string;
+  pluginSpec: string;
+  force?: boolean;
+}): Promise<string> {
+  const stat = await fs.stat(args.entrySourceBase);
+  if (!stat.isDirectory()) {
+    throw new Error(`Plugin source must be a directory: ${args.entrySourceBase}`);
+  }
+
+  const pluginRoot = getPluginAssetDestination(args.scope, args.projectPath, args.pluginSpec);
+  if (fsSync.existsSync(pluginRoot) && !args.force) {
+    throw new Error(`Plugin asset destination already exists: ${pluginRoot}`);
+  }
+  if (fsSync.existsSync(pluginRoot)) {
+    await fs.rm(pluginRoot, { recursive: true, force: true });
+  }
+  await copyDirectory(args.entrySourceBase, pluginRoot);
+  return pluginRoot;
+}
+
+function getCommandNameFromFile(filePath: string): string {
+  const basename = path.basename(filePath);
+  if (!basename.endsWith('.md')) {
+    throw new Error(`Command file must be a .md file: ${filePath}`);
+  }
+  const commandName = basename.slice(0, -3).trim();
+  if (!/^[a-z]([a-z0-9-]*[a-z0-9])?$/.test(commandName)) {
+    throw new Error(`Invalid command file name: ${basename}`);
+  }
+  return commandName;
+}
+
+function resolveInside(baseDir: string, candidatePath: string): string {
+  const resolvedBase = path.resolve(baseDir);
+  const resolvedCandidate = path.resolve(baseDir, candidatePath);
+  const relative = path.relative(resolvedBase, resolvedCandidate);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`Command path must stay inside plugin source: ${candidatePath}`);
+  }
+  return resolvedCandidate;
+}
+
+function assertInside(baseDir: string, candidatePath: string, label: string): void {
+  const relative = path.relative(path.resolve(baseDir), path.resolve(candidatePath));
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`${label} must stay inside marketplace root: ${candidatePath}`);
+  }
+}
+
+async function resolveCommandFiles(args: {
+  rootDir: string;
+  entrySourceBase: string;
+  commandPaths: string[];
+}): Promise<Array<{ name: string; sourcePath: string; relativeSourcePath: string }>> {
+  const commands: Array<{ name: string; sourcePath: string; relativeSourcePath: string }> = [];
+
+  for (const relPath of args.commandPaths) {
+    const sourcePath = resolveInside(args.entrySourceBase, relPath);
+    assertInside(args.rootDir, sourcePath, 'Command file');
+    if (!fsSync.existsSync(sourcePath)) {
+      throw new Error(`Command file not found: ${sourcePath}`);
+    }
+    const stat = await fs.stat(sourcePath);
+    if (!stat.isFile()) {
+      throw new Error(`Command path must be a file: ${sourcePath}`);
+    }
+    commands.push({
+      name: getCommandNameFromFile(sourcePath),
+      sourcePath,
+      relativeSourcePath: path.relative(args.rootDir, sourcePath),
+    });
+  }
+
+  const names = commands.map((command) => command.name);
+  if (new Set(names).size !== names.length) {
+    throw new Error(`Duplicate command names in plugin: ${names.join(', ')}`);
+  }
+
+  return commands;
+}
+
+async function activatePluginCommands(args: {
+  rootDir: string;
+  scope: PluginScope;
+  projectPath?: string;
+  commandPaths: string[];
+}): Promise<string[]> {
+  if (args.commandPaths.length === 0) {
+    return [];
+  }
+
+  const commandsDir = getCommandsDir(args.scope, args.projectPath);
+  await ensureDir(commandsDir);
+  const copied: string[] = [];
+
+  try {
+    for (const relativeSourcePath of args.commandPaths) {
+      const sourcePath = resolveInside(args.rootDir, relativeSourcePath);
+      if (!fsSync.existsSync(sourcePath)) {
+        throw new Error(`Command file not found: ${sourcePath}`);
+      }
+      const commandName = getCommandNameFromFile(sourcePath);
+      const destination = path.join(commandsDir, `${commandName}.md`);
+      if (fsSync.existsSync(destination)) {
+        throw new Error(`Command destination already exists: ${destination}`);
+      }
+      await fs.copyFile(sourcePath, destination);
+      copied.push(commandName);
+    }
+  } catch (error) {
+    for (const commandName of copied) {
+      await fs.rm(path.join(commandsDir, `${commandName}.md`), { force: true }).catch(() => {});
+    }
+    throw error;
+  }
+
+  return copied;
+}
+
+async function deactivatePluginCommands(args: {
+  scope: PluginScope;
+  projectPath?: string;
+  commandNames: string[];
+}): Promise<string[]> {
+  if (args.commandNames.length === 0) {
+    return [];
+  }
+
+  const commandsDir = getCommandsDir(args.scope, args.projectPath);
+  const removed: string[] = [];
+  for (const commandName of args.commandNames) {
+    const destination = path.join(commandsDir, `${commandName}.md`);
+    if (fsSync.existsSync(destination)) {
+      await fs.rm(destination, { force: true });
+      removed.push(commandName);
+    }
+  }
+  return removed;
+}
+
+async function resolveSkillDirs(args: {
+  rootDir: string;
+  entrySourceBase: string;
+  skillPaths: string[];
+}): Promise<Array<{ name: string; sourcePath: string; relativeSourcePath: string }>> {
+  const skills: Array<{ name: string; sourcePath: string; relativeSourcePath: string }> = [];
+
+  for (const relPath of args.skillPaths) {
+    const sourcePath = resolveInside(args.entrySourceBase, relPath);
+    assertInside(args.rootDir, sourcePath, 'Skill path');
+    if (!fsSync.existsSync(sourcePath)) {
+      throw new Error(`Skill path not found: ${sourcePath}`);
+    }
+
+    const stat = await fs.stat(sourcePath);
+    const skillDir = stat.isDirectory() ? sourcePath : path.dirname(sourcePath);
+    const skillMd = stat.isDirectory() ? path.join(sourcePath, 'SKILL.md') : sourcePath;
+    if (!fsSync.existsSync(skillMd) || path.basename(skillMd) !== 'SKILL.md') {
+      throw new Error(`Skill path must be a skill directory or SKILL.md file: ${sourcePath}`);
+    }
+
+    skills.push({
+      name: path.basename(skillDir),
+      sourcePath: skillDir,
+      relativeSourcePath: path.relative(args.rootDir, skillDir),
+    });
+  }
+
+  const names = skills.map((skill) => skill.name);
+  if (new Set(names).size !== names.length) {
+    throw new Error(`Duplicate skill names in plugin: ${names.join(', ')}`);
+  }
+
+  return skills;
+}
+
 // ----------------------------------------------------------------------------
 // Public API
 // ----------------------------------------------------------------------------
@@ -237,68 +574,93 @@ export async function installPlugin(
       `Plugin '${pluginSpec}' is already installed. Use --force to reinstall.`
     );
   }
-
-  // Get source directory
-  const entrySourceBase = path.resolve(rootDir, entry.source || './');
-
-  // Setup destination directories
-  const skillsDestBase = getSkillsDir(scope, projectPath);
-
-  await ensureDir(skillsDestBase);
-
-  const installedSkills: string[] = [];
-
-  // Install skills
-  const skillPaths = entry.skills || [];
-  for (const relPath of skillPaths) {
-    const src = path.join(entrySourceBase, relPath);
-    if (!fsSync.existsSync(src)) {
-      throw new Error(`Skill path not found: ${src}`);
+  if (existing && options.force) {
+    await deactivatePluginCommands({
+      scope: existing.scope,
+      projectPath: existing.projectPath,
+      commandNames: existing.commands || [],
+    });
+    if (existing.pluginRoot && fsSync.existsSync(existing.pluginRoot)) {
+      await fs.rm(existing.pluginRoot, { recursive: true, force: true });
     }
-
-    const skillName = path.basename(src);
-    const dest = path.join(skillsDestBase, skillName);
-
-    if (fsSync.existsSync(dest) && !options.force) {
-      throw new Error(`Skill destination already exists: ${dest}`);
-    }
-
-    if (fsSync.existsSync(dest)) {
-      await fs.rm(dest, { recursive: true, force: true });
-    }
-
-    const stat = await fs.stat(src);
-    if (stat.isDirectory()) {
-      await copyDirectory(src, dest);
-    } else {
-      await ensureDir(path.dirname(dest));
-      await fs.copyFile(src, dest);
-    }
-
-    installedSkills.push(skillName);
   }
 
-  // Update state
-  state[pluginSpec] = {
-    plugin,
-    marketplace,
-    scope,
-    isEnabled: options.enableAfterInstall === true,
-    projectPath,
-    installedAt: new Date().toISOString(),
-    skills: installedSkills,
-    sourceMarketplacePath: rootDir,
-  };
-
-  await saveInstalledPlugins(state);
-
-  logger.info('Plugin installed', {
+  const entrySource = await resolveEntrySourceBase({
+    rootDir,
+    entry,
     pluginSpec,
-    isEnabled: state[pluginSpec].isEnabled,
-    skills: installedSkills.length,
   });
 
-  return { pluginSpec, installedSkills };
+  let installedAssetRoot: string | undefined;
+  try {
+    const pluginRoot = await installPluginAssets({
+      entrySourceBase: entrySource.sourceBase,
+      scope,
+      projectPath,
+      pluginSpec,
+      force: options.force,
+    });
+    installedAssetRoot = pluginRoot;
+    const pluginTypes = getPluginEntryTypes(entry);
+
+    const skillDirs = await resolveSkillDirs({
+      rootDir: pluginRoot,
+      entrySourceBase: pluginRoot,
+      skillPaths: entry.skills || [],
+    });
+    const installedSkills = skillDirs.map((skill) => skill.name);
+    const commandFiles = await resolveCommandFiles({
+      rootDir: pluginRoot,
+      entrySourceBase: pluginRoot,
+      commandPaths: entry.commands || [],
+    });
+    const installedCommands = commandFiles.map((command) => command.name);
+
+    if (options.enableAfterInstall === true) {
+      await activatePluginCommands({
+        rootDir: pluginRoot,
+        scope,
+        projectPath,
+        commandPaths: commandFiles.map((command) => command.relativeSourcePath),
+      });
+    }
+
+    // Update state
+    state[pluginSpec] = {
+      plugin,
+      marketplace,
+      scope,
+      isEnabled: options.enableAfterInstall === true,
+      projectPath,
+      installedAt: new Date().toISOString(),
+      pluginRoot,
+      types: pluginTypes,
+      skills: installedSkills,
+      skillPaths: skillDirs.map((skill) => skill.relativeSourcePath),
+      commands: installedCommands,
+      commandPaths: commandFiles.map((command) => command.relativeSourcePath),
+      sourceMarketplacePath: pluginRoot,
+    };
+
+    await saveInstalledPlugins(state);
+
+    logger.info('Plugin installed', {
+      pluginSpec,
+      isEnabled: state[pluginSpec].isEnabled,
+      types: pluginTypes,
+      skills: installedSkills.length,
+      commands: installedCommands.length,
+    });
+
+    return { pluginSpec, installedSkills, installedCommands, installedPluginRoot: pluginRoot };
+  } catch (error) {
+    if (installedAssetRoot) {
+      await fs.rm(installedAssetRoot, { recursive: true, force: true }).catch(() => {});
+    }
+    throw error;
+  } finally {
+    await entrySource.cleanup?.();
+  }
 }
 
 /**
@@ -312,7 +674,6 @@ export async function uninstallPlugin(
   } = {}
 ): Promise<UninstallResult> {
   const scope = options.scope || 'user';
-  const projectPath = scope === 'project' ? options.projectPath || process.cwd() : undefined;
 
   const state = await loadInstalledPlugins();
   const { plugin, marketplace } = parsePluginSpec(pluginInput);
@@ -346,8 +707,10 @@ export async function uninstallPlugin(
     );
   }
 
-  // Remove skills
-  const skillsDir = getSkillsDir(scope, projectPath);
+  // Remove legacy copied skills if this record came from an older build.
+  const effectiveScope = record.scope;
+  const effectiveProjectPath = record.projectPath;
+  const skillsDir = getSkillsDir(effectiveScope, effectiveProjectPath);
   const removedSkills: string[] = [];
   for (const skillName of record.skills) {
     const skillPath = path.join(skillsDir, skillName);
@@ -356,6 +719,16 @@ export async function uninstallPlugin(
       removedSkills.push(skillName);
     }
   }
+  const removedCommands = await deactivatePluginCommands({
+    scope: effectiveScope,
+    projectPath: effectiveProjectPath,
+    commandNames: record.commands || [],
+  });
+  let removedPluginRoot: string | undefined;
+  if (record.pluginRoot && fsSync.existsSync(record.pluginRoot)) {
+    await fs.rm(record.pluginRoot, { recursive: true, force: true });
+    removedPluginRoot = record.pluginRoot;
+  }
 
   // Update state
   delete state[pluginSpec];
@@ -363,7 +736,7 @@ export async function uninstallPlugin(
 
   logger.info('Plugin uninstalled', { pluginSpec });
 
-  return { pluginSpec, removedSkills };
+  return { pluginSpec, removedSkills, removedCommands, removedPluginRoot };
 }
 
 /**
@@ -389,6 +762,17 @@ export async function enablePlugin(pluginInput: string): Promise<void> {
     throw new Error(`Plugin '${pluginSpec || pluginInput}' is not installed`);
   }
 
+  if (record.isEnabled) {
+    logger.info('Plugin already enabled', { pluginSpec });
+    return;
+  }
+
+  await activatePluginCommands({
+    rootDir: record.sourceMarketplacePath,
+    scope: record.scope,
+    projectPath: record.projectPath,
+    commandPaths: record.commandPaths || [],
+  });
   record.isEnabled = true;
   state[pluginSpec] = record;
   await saveInstalledPlugins(state);
@@ -419,6 +803,11 @@ export async function disablePlugin(pluginInput: string): Promise<void> {
     throw new Error(`Plugin '${pluginSpec || pluginInput}' is not installed`);
   }
 
+  await deactivatePluginCommands({
+    scope: record.scope,
+    projectPath: record.projectPath,
+    commandNames: record.commands || [],
+  });
   record.isEnabled = false;
   state[pluginSpec] = record;
   await saveInstalledPlugins(state);
@@ -443,11 +832,24 @@ export async function getEnabledSkillDirs(): Promise<string[]> {
   for (const record of Object.values(state)) {
     if (!record.isEnabled) continue;
 
+    const pluginRoot = record.pluginRoot || record.sourceMarketplacePath;
+    if (pluginRoot && record.skillPaths?.length) {
+      for (const relPath of record.skillPaths) {
+        const skillDir = resolveInside(pluginRoot, relPath);
+        if (fsSync.existsSync(skillDir)) {
+          dirs.push(skillDir);
+        }
+      }
+      continue;
+    }
+
+    // Backward compatibility for records created before managed plugin roots
+    // owned skill exposure.
     const skillsDir = getSkillsDir(record.scope, record.projectPath);
-    for (const skillName of record.skills) {
-      const skillDir = path.join(skillsDir, skillName);
-      if (fsSync.existsSync(skillDir)) {
-        dirs.push(skillDir);
+    for (const skillName of record.skills || []) {
+      const legacySkillDir = path.join(skillsDir, skillName);
+      if (fsSync.existsSync(legacySkillDir)) {
+        dirs.push(legacySkillDir);
       }
     }
   }

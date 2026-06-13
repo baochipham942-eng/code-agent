@@ -21,6 +21,7 @@ import { useWorkbenchInsights } from '../../../../hooks/useWorkbenchInsights';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import { useWorkbenchCapabilityQuickActionRunner } from '../../../../hooks/useWorkbenchCapabilityQuickActionRunner';
 import { useAuthStore } from '../../../../stores/authStore';
+import { useAppStore } from '../../../../stores/appStore';
 import { Button } from '../../../primitives';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { createLogger } from '../../../../utils/logger';
@@ -30,8 +31,12 @@ import { LocalBridgeSection } from '../sections/localBridge';
 import { NativeConnectorsSection } from '../sections';
 import { McpServerEditor, type McpServerConfig } from '../McpServerEditor';
 import { McpDiscoverTab } from './McpDiscoverTab';
+import { AlmaRegistryAuditPanel } from './AlmaRegistryAuditPanel';
 import type { McpCatalogPayload, RecommendedMcpServerEntry } from '@shared/contract/mcpCatalog';
-import { getBuiltinMcpCatalogPayload } from '@shared/constants/mcpCatalog';
+import {
+  getBuiltinMcpCatalogPayload,
+  mergeMcpCatalogWithBuiltinOfficialFeatured,
+} from '@shared/constants/mcpCatalog';
 import { WorkbenchCapabilityDetailButton } from '../../../workbench/WorkbenchPrimitives';
 import { WorkbenchCapabilitySheetLite } from '../../../workbench/WorkbenchCapabilitySheetLite';
 import {
@@ -56,6 +61,9 @@ type McpViewTab = 'connected' | 'discover';
 
 export const MCPSettings: React.FC = () => {
   const isAdmin = useAuthStore((s) => s.user?.isAdmin === true);
+  const setShowComputerUsePanel = useAppStore((s) => s.setShowComputerUsePanel);
+  const settingsCapabilityFocus = useAppStore((s) => s.settingsCapabilityFocus);
+  const clearSettingsCapabilityFocus = useAppStore((s) => s.clearSettingsCapabilityFocus);
   const canManageMcp = true;
   const [activeTab, setActiveTab] = useState<McpViewTab>('connected');
   const {
@@ -81,6 +89,12 @@ export const MCPSettings: React.FC = () => {
   // 推荐目录：内置数据为初始值，云端下发到达后覆盖
   const [mcpCatalog, setMcpCatalog] = useState<McpCatalogPayload>(getBuiltinMcpCatalogPayload);
 
+  useEffect(() => {
+    if (settingsCapabilityFocus?.kind === 'mcp' || settingsCapabilityFocus?.kind === 'connector') {
+      setActiveTab('connected');
+    }
+  }, [settingsCapabilityFocus?.kind, settingsCapabilityFocus?.nonce]);
+
   // 加载云端 MCP 推荐目录（失败时保持内置兜底）
   useEffect(() => {
     let cancelled = false;
@@ -88,7 +102,7 @@ export const MCPSettings: React.FC = () => {
       try {
         const result = await window.domainAPI?.invoke<McpCatalogPayload>(IPC_DOMAINS.MCP, 'getCatalog');
         if (!cancelled && result?.success && result.data) {
-          setMcpCatalog(result.data);
+          setMcpCatalog(mergeMcpCatalogWithBuiltinOfficialFeatured(result.data));
         }
       } catch (error) {
         logger.warn('Failed to load MCP catalog from cloud, using builtin fallback', { error });
@@ -317,6 +331,23 @@ export const MCPSettings: React.FC = () => {
     >
       <WebModeBanner />
 
+      {(settingsCapabilityFocus?.kind === 'mcp' || settingsCapabilityFocus?.kind === 'connector') && (
+        <div className="flex flex-col gap-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-sky-100 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            来自会话页：正在处理 {settingsCapabilityFocus.kind === 'mcp' ? 'MCP' : 'Connector'} <span className="font-mono">{settingsCapabilityFocus.id}</span>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={clearSettingsCapabilityFocus}
+          >
+            关闭提示
+          </Button>
+        </div>
+      )}
+
+      <AlmaRegistryAuditPanel />
+
       {/* Tab 切换：已连接 / 发现连接 */}
       <div className="flex w-fit items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
         {([
@@ -348,6 +379,7 @@ export const MCPSettings: React.FC = () => {
           onQuickConnect={handleQuickConnect}
           onConnectWithConfig={handleConnectWithConfig}
           onEnableBuiltin={handleEnableBuiltin}
+          onOpenComputerUsePanel={() => setShowComputerUsePanel(true)}
         />
       )}
 

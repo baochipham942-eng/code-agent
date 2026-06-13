@@ -56,6 +56,10 @@ export function buildWorkbenchTurnSystemContext(
     lines.push(`优先考虑这些已挂载 skills（仅在相关时使用）：${context.selectedSkillIds.join('、')}`);
   }
 
+  if (context.turnCapabilityScopeMode === 'manual') {
+    lines.push('本轮能力范围由用户手动选择；只在相关时使用已选能力，不要因为处于 Manual 就强行调用。');
+  }
+
   const readyConnectorIds = getReadySelectedConnectorIds(context.selectedConnectorIds);
   if (readyConnectorIds.length) {
     lines.push(`优先使用这些本地 connectors（仅在相关时使用）：${readyConnectorIds.join('、')}`);

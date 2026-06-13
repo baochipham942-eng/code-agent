@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React from 'react';
-import { AlertCircle, Plus, Search, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, CircleDashed, Info, Plus, Search, ShieldAlert, X } from 'lucide-react';
 import type {
   RecommendedSkillEntry,
   SkillCatalogPayload,
@@ -13,9 +13,16 @@ import type {
 } from '@shared/contract/skillRepository';
 import { BUILTIN_REPO_ID } from '@shared/contract/skillRepository';
 import {
+  ALMA_BUNDLED_SKILL_MAPPINGS,
+  type AlmaBundledSkillMapping,
+  type AlmaBundledSkillRecommendation,
   findRecommendedRepository,
   groupRecommendedSkillsByCategory,
 } from '@shared/constants/skillCatalog';
+import {
+  getAlmaSkillRecommendationPolicy,
+  type AlmaRecommendationPolicyTier,
+} from '@shared/constants/almaRecommendationPolicy';
 import { Button, Input } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
 import {
@@ -71,6 +78,70 @@ export function getBundleMissingRepoIds(
   return [...new Set(missing)];
 }
 
+const ALMA_MAPPING_LABELS: Record<AlmaBundledSkillRecommendation, string> = {
+  covered: '已覆盖',
+  default_visible: '默认可见',
+  conditional: '条件推荐',
+  unsupported: '暂不支持',
+};
+
+function getAlmaMappingClasses(
+  tier: AlmaRecommendationPolicyTier,
+  recommendation: AlmaBundledSkillRecommendation,
+): string {
+  if (recommendation === 'covered') {
+    return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
+  }
+  switch (recommendation) {
+    case 'default_visible':
+      return 'border-blue-500/20 bg-blue-500/10 text-blue-300';
+    case 'conditional':
+      return 'border-amber-500/20 bg-amber-500/10 text-amber-300';
+    default:
+      return tier === 'unsupported'
+        ? 'border-red-500/10 bg-red-500/10 text-red-300'
+        : 'border-zinc-700 bg-zinc-800 text-zinc-400';
+  }
+}
+
+function getAlmaMappingIcon(recommendation: AlmaBundledSkillRecommendation): React.ReactNode {
+  switch (recommendation) {
+    case 'covered':
+      return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />;
+    case 'default_visible':
+      return <Info className="h-3.5 w-3.5 text-blue-300" />;
+    case 'conditional':
+      return <ShieldAlert className="h-3.5 w-3.5 text-amber-300" />;
+    default:
+      return <CircleDashed className="h-3.5 w-3.5 text-zinc-500" />;
+  }
+}
+
+const AlmaBundledSkillCard: React.FC<{ mapping: AlmaBundledSkillMapping }> = ({ mapping }) => {
+  const policy = getAlmaSkillRecommendationPolicy(mapping);
+
+  return (
+    <div className="rounded-lg border border-zinc-700 bg-zinc-800 p-3">
+      <div className="flex items-start gap-2">
+        <div className="mt-0.5">{getAlmaMappingIcon(mapping.recommendation)}</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h5 className="truncate text-sm font-medium text-zinc-200">{mapping.displayName}</h5>
+            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${getAlmaMappingClasses(policy.tier, mapping.recommendation)}`}>
+              {policy.label || ALMA_MAPPING_LABELS[mapping.recommendation]}
+            </span>
+          </div>
+          <div className="mt-0.5 truncate text-[11px] font-mono text-zinc-500">{mapping.name}</div>
+          <p className="mt-1 text-xs leading-relaxed text-zinc-400">{policy.reason}</p>
+          <div className="mt-2 rounded border border-white/[0.06] bg-white/[0.03] px-2 py-1 text-[11px] text-zinc-500">
+            {mapping.codeAgentSurface}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
   catalog,
   recommendedRepos,
@@ -104,6 +175,21 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Alma bundled skills 对标 */}
+      <div className="space-y-3">
+        <div>
+          <h4 className="text-sm font-medium text-zinc-200">Alma bundled skills 对标</h4>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            Alma 没有 skill featured 排序；这里把 33 个 bundled skills 映射到 code-agent 当前能力面。
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {ALMA_BUNDLED_SKILL_MAPPINGS.map((mapping) => (
+            <AlmaBundledSkillCard key={mapping.name} mapping={mapping} />
+          ))}
+        </div>
+      </div>
+
       {/* 角色场景包 */}
       <div className="space-y-3">
         <div>

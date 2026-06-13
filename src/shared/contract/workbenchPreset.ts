@@ -2,6 +2,7 @@ import type {
   BrowserSessionMode,
   ConversationExecutionIntent,
   ConversationRoutingMode,
+  TurnCapabilityScopeMode,
 } from './conversationEnvelope';
 import type {
   SessionWorkbenchProvenance,
@@ -27,6 +28,7 @@ export interface WorkbenchPresetContext {
   selectedSkillIds: string[];
   selectedConnectorIds: string[];
   selectedMcpServerIds: string[];
+  turnCapabilityScopeMode?: TurnCapabilityScopeMode;
   executionIntent?: ConversationExecutionIntent;
   snapshot?: SessionWorkbenchSnapshot;
 }
@@ -149,15 +151,24 @@ export function normalizeWorkbenchPresetContext(
     context.browserSessionMode === 'none'
       ? context.executionIntent?.browserSessionMode ?? 'none'
       : context.browserSessionMode;
+  const selectedSkillIds = dedupeWorkbenchIds(context.selectedSkillIds);
+  const selectedConnectorIds = dedupeWorkbenchIds(context.selectedConnectorIds);
+  const selectedMcpServerIds = dedupeWorkbenchIds(context.selectedMcpServerIds);
+  const turnCapabilityScopeMode = context.turnCapabilityScopeMode ?? (
+    selectedSkillIds.length > 0 || selectedConnectorIds.length > 0 || selectedMcpServerIds.length > 0
+      ? 'manual'
+      : 'auto'
+  );
 
   return {
     workingDirectory,
     routingMode,
     targetAgentIds: routingMode === 'direct' ? targetAgentIds : [],
     browserSessionMode,
-    selectedSkillIds: dedupeWorkbenchIds(context.selectedSkillIds),
-    selectedConnectorIds: dedupeWorkbenchIds(context.selectedConnectorIds),
-    selectedMcpServerIds: dedupeWorkbenchIds(context.selectedMcpServerIds),
+    selectedSkillIds,
+    selectedConnectorIds,
+    selectedMcpServerIds,
+    turnCapabilityScopeMode,
     executionIntent: cloneExecutionIntent(context.executionIntent, browserSessionMode),
     snapshot: context.snapshot
       ? {
@@ -197,6 +208,7 @@ export function createWorkbenchPresetContextFromSession(
     selectedMcpServerIds: dedupeWorkbenchIds(
       provenance?.selectedMcpServerIds ?? snapshot?.mcpServerIds,
     ),
+    turnCapabilityScopeMode: provenance?.turnCapabilityScopeMode,
     executionIntent: provenance?.executionIntent,
     snapshot,
   });
@@ -212,7 +224,8 @@ export function hasWorkbenchPresetContext(
       context.browserSessionMode !== 'none' ||
       context.selectedSkillIds.length > 0 ||
       context.selectedConnectorIds.length > 0 ||
-      context.selectedMcpServerIds.length > 0,
+      context.selectedMcpServerIds.length > 0 ||
+      context.turnCapabilityScopeMode === 'manual',
   );
 }
 
@@ -383,6 +396,7 @@ export function createWorkbenchRecipeMergedContext(
     selectedSkillIds: [],
     selectedConnectorIds: [],
     selectedMcpServerIds: [],
+    turnCapabilityScopeMode: 'auto',
   };
 
   for (const step of normalizedRecipe.steps) {
@@ -403,6 +417,9 @@ export function createWorkbenchRecipeMergedContext(
     }
     if (context.snapshot) {
       merged.snapshot = context.snapshot;
+    }
+    if (context.turnCapabilityScopeMode === 'manual') {
+      merged.turnCapabilityScopeMode = 'manual';
     }
 
     merged.targetAgentIds = dedupeWorkbenchIds([

@@ -93,6 +93,8 @@ describe('buildWorkbenchCapabilityRegistry', () => {
 
     expect(registry.skills.find((skill) => skill.id === 'review-skill')).toMatchObject({
       available: true,
+      turnReadiness: 'ready',
+      autoAllowed: true,
       blocked: false,
       health: 'healthy',
       visibleInWorkbench: true,
@@ -106,6 +108,8 @@ describe('buildWorkbenchCapabilityRegistry', () => {
     expect(registry.skills.find((skill) => skill.id === 'draft-skill')).toMatchObject({
       selected: true,
       available: false,
+      turnReadiness: 'needs_config',
+      autoAllowed: false,
       blocked: true,
       health: 'inactive',
       visibleInWorkbench: true,
@@ -118,6 +122,8 @@ describe('buildWorkbenchCapabilityRegistry', () => {
     expect(registry.skills.find((skill) => skill.id === 'missing-skill')).toMatchObject({
       selected: true,
       available: false,
+      turnReadiness: 'unsupported',
+      autoAllowed: false,
       blocked: true,
       health: 'error',
       blockedReason: {
@@ -129,6 +135,8 @@ describe('buildWorkbenchCapabilityRegistry', () => {
     expect(registry.connectors.find((connector) => connector.id === 'calendar')).toMatchObject({
       selected: true,
       available: false,
+      turnReadiness: 'needs_permission',
+      autoAllowed: false,
       blocked: true,
       health: 'degraded',
       visibleInWorkbench: true,
@@ -146,6 +154,8 @@ describe('buildWorkbenchCapabilityRegistry', () => {
     expect(registry.mcpServers.find((server) => server.id === 'slack')).toMatchObject({
       selected: true,
       available: false,
+      turnReadiness: 'needs_config',
+      autoAllowed: false,
       blocked: true,
       health: 'inactive',
       blockedReason: {
@@ -156,6 +166,8 @@ describe('buildWorkbenchCapabilityRegistry', () => {
     expect(registry.mcpServers.find((server) => server.id === 'docs')).toMatchObject({
       selected: false,
       available: false,
+      turnReadiness: 'needs_config',
+      autoAllowed: false,
       blocked: false,
       health: 'degraded',
       lifecycle: {
@@ -163,6 +175,35 @@ describe('buildWorkbenchCapabilityRegistry', () => {
         mountState: 'not_applicable',
         connectionState: 'connecting',
       },
+    });
+  });
+
+  it('keeps high-risk MCP servers out of auto-allowed readiness even when connected', () => {
+    const registry = buildWorkbenchCapabilityRegistry({
+      mountedSkills: [],
+      availableSkills: [],
+      selectedSkillIds: [],
+      connectorStatuses: [],
+      selectedConnectorIds: [],
+      mcpServerStates: [
+        {
+          config: {
+            name: 'cua-driver',
+            type: 'stdio',
+            enabled: true,
+          },
+          status: 'connected',
+          toolCount: 3,
+          resourceCount: 0,
+        },
+      ],
+      selectedMcpServerIds: [],
+    });
+
+    expect(registry.mcpServers.find((server) => server.id === 'cua-driver')).toMatchObject({
+      available: true,
+      turnReadiness: 'blocked_high_risk',
+      autoAllowed: false,
     });
   });
 });

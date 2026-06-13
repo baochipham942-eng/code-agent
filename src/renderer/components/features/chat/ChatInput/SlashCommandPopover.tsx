@@ -20,7 +20,7 @@ import { usePermissionStore } from '../../../../stores/permissionStore';
 import { useStatusStore } from '../../../../stores/statusStore';
 import { MODEL_PRICING_PER_1M } from '@shared/constants';
 import { initializeCommands, getCommandRegistry } from '@shared/commands';
-import type { CommandDefinition } from '@shared/commands';
+import type { CommandCategory, CommandDefinition } from '@shared/commands';
 import { generateMessageId } from '@shared/utils/id';
 import { IPC_CHANNELS, IPC_DOMAINS, COMMAND_CHANNELS } from '@shared/ipc';
 import type { ExtensionValidationResult } from '@shared/contract/extension';
@@ -55,13 +55,173 @@ function writeAssistant(content: string): void {
   });
 }
 
+type SlashCommandGroupId =
+  | CommandCategory
+  | 'ui'
+  | 'agent'
+  | 'mode'
+  | 'prompt_file'
+  | 'prompt_mcp';
+
 interface SlashCommand {
   id: string;
   label: string;
   description: string;
   icon: React.ReactNode;
+  group: SlashCommandGroupId;
+  sourceLabel?: string;
   shortcut?: string;
   action: () => void;
+}
+
+interface SlashCommandGroup {
+  id: SlashCommandGroupId;
+  label: string;
+  description: string;
+  commands: SlashCommand[];
+}
+
+interface PromptCommandItem {
+  name: string;
+  description?: string;
+  source: 'file' | 'mcp';
+  hints: string[];
+  scope?: 'user' | 'project';
+  serverName?: string;
+}
+
+const SLASH_COMMAND_GROUP_ORDER: SlashCommandGroupId[] = [
+  'session',
+  'agent',
+  'tools',
+  'prompt_file',
+  'prompt_mcp',
+  'mode',
+  'model',
+  'context',
+  'status',
+  'ui',
+  'system',
+];
+
+const SLASH_COMMAND_GROUP_META: Record<SlashCommandGroupId, Omit<SlashCommandGroup, 'id' | 'commands'>> = {
+  session: { label: '会话', description: '创建、清理、归档和恢复会话' },
+  agent: { label: 'Agent 与编排', description: '选择 Agent、创建角色、设定目标和工作流' },
+  tools: { label: '工具与能力', description: 'Skills、MCP、Connectors、Plugins 等能力面' },
+  prompt_file: { label: '自定义命令', description: '用户、项目和插件安装的文件式 prompt command' },
+  prompt_mcp: { label: 'MCP Prompts', description: '来自 MCP server 的 prompt 命令' },
+  mode: { label: '模式与权限', description: '交互模式、推理强度和权限模式' },
+  model: { label: '模型', description: '查看或切换模型配置' },
+  context: { label: '上下文', description: '查看和管理上下文窗口' },
+  status: { label: '状态与诊断', description: '状态、成本、Hooks、权限和诊断信息' },
+  ui: { label: '界面', description: '打开设置、工作区、DAG 和侧边栏' },
+  system: { label: '系统', description: '帮助、配置和系统命令' },
+};
+
+function getGuiOnlyCommandGroup(id: string): SlashCommandGroupId {
+  switch (id) {
+    case 'new':
+    case 'clear':
+    case 'archive':
+      return 'session';
+    case 'agent':
+    case 'create-role':
+    case 'goal':
+    case 'workflow':
+      return 'agent';
+    case 'code':
+    case 'plan':
+    case 'ask':
+    case 'low':
+    case 'med':
+    case 'high':
+    case 'default':
+    case 'fullaccess':
+      return 'mode';
+    case 'model':
+      return 'model';
+    case 'compact':
+    case 'context':
+      return 'context';
+    case 'status':
+    case 'cost':
+    case 'agents':
+    case 'hooks':
+    case 'permissions':
+      return 'status';
+    case 'sidebar':
+    case 'dag':
+    case 'workspace':
+    case 'settings':
+    case 'shortcuts':
+      return 'ui';
+    case 'help':
+    case 'config':
+      return 'system';
+    default:
+      return 'system';
+  }
+}
+
+function getPromptCommandGroup(command: PromptCommandItem): SlashCommandGroupId {
+  return command.source === 'mcp' ? 'prompt_mcp' : 'prompt_file';
+}
+
+function getPromptCommandSourceLabel(command: PromptCommandItem): string {
+  if (command.source === 'mcp') {
+    return command.serverName ? `MCP · ${command.serverName}` : 'MCP prompt';
+  }
+  if (command.scope === 'project') {
+    return 'Project command';
+  }
+  if (command.scope === 'user') {
+    return 'User command';
+  }
+  return 'File command';
+}
+
+export function buildSlashCommandGroups(commands: SlashCommand[]): SlashCommandGroup[] {
+  const grouped = new Map<SlashCommandGroupId, SlashCommand[]>();
+  const groupOrder: SlashCommandGroupId[] = [];
+  for (const command of commands) {
+    if (!grouped.has(command.group)) {
+      groupOrder.push(command.group);
+    }
+    const existing = grouped.get(command.group) ?? [];
+    existing.push(command);
+    grouped.set(command.group, existing);
+  }
+
+  return groupOrder
+    .map((id) => ({
+      id,
+      ...SLASH_COMMAND_GROUP_META[id],
+      commands: grouped.get(id) ?? [],
+    }));
+}
+
+function getSlashCommandGroupRank(group: SlashCommandGroupId, preferredGroup?: SlashCommandGroupId): number {
+  if (preferredGroup && group === preferredGroup) {
+    return -1;
+  }
+  const index = SLASH_COMMAND_GROUP_ORDER.indexOf(group);
+  return index === -1 ? SLASH_COMMAND_GROUP_ORDER.length : index;
+}
+
+export function orderSlashCommandsForDisplay(
+  commands: SlashCommand[],
+  options: { preferredGroup?: SlashCommandGroupId; exactId?: string } = {},
+): SlashCommand[] {
+  return [...commands].sort((a, b) => {
+    const rankDelta = getSlashCommandGroupRank(a.group, options.preferredGroup) - getSlashCommandGroupRank(b.group, options.preferredGroup);
+    if (rankDelta !== 0) return rankDelta;
+    if (options.exactId) {
+      const aExact = a.id.toLowerCase() === options.exactId ? 0 : 1;
+      const bExact = b.id.toLowerCase() === options.exactId ? 0 : 1;
+      if (aExact !== bExact) return aExact - bExact;
+    }
+    return a.label.localeCompare(b.label, 'zh-CN');
+  });
 }
 
 interface SlashCommandPopoverProps {
@@ -82,12 +242,6 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
 
   // Prompt commands（/命令协议层，roadmap 2.2）：文件式自定义 + MCP prompts，
   // 由 main 侧注册表提供；选中后父级预填 "/name "，发送时 main 展开模板
-  interface PromptCommandItem {
-    name: string;
-    description?: string;
-    source: 'file' | 'mcp';
-    hints: string[];
-  }
   const [promptCommands, setPromptCommands] = useState<PromptCommandItem[]>([]);
   useEffect(() => {
     if (!isOpen) return;
@@ -195,8 +349,9 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   }), []);
 
   // GUI-only commands (operate on store/UI directly, not in registry)
-  const guiOnlyCommands: SlashCommand[] = useMemo(() => [
-    {
+  const guiOnlyCommands: SlashCommand[] = useMemo(() => {
+    const commands: Array<Omit<SlashCommand, 'group' | 'sourceLabel'>> = [
+      {
       id: 'new',
       label: '新建会话',
       description: '创建新对话',
@@ -570,7 +725,13 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         );
       },
     },
-  ], [
+    ];
+    return commands.map((command) => ({
+      ...command,
+      group: getGuiOnlyCommandGroup(command.id),
+      sourceLabel: 'Built-in',
+    }));
+  }, [
     createSession, clearCurrentSession, archiveSession, currentSessionId,
     setShowSettings, setShowDAGPanel, showDAGPanel,
     setShowWorkspace, showWorkspace, setSidebarCollapsed, sidebarCollapsed,
@@ -592,6 +753,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         label: def.name,
         description: def.description,
         icon: registryIconMap[def.id] || <Terminal className="w-4 h-4" />,
+        group: def.category,
+        sourceLabel: 'Command',
         action: () => {
           // 调真实 handler，output 路由到 sessionStore.addMessage 写进 chat 流
           // (#139 follow-up: 之前是 console.log placeholder，导致 /doctor 等 registry
@@ -641,6 +804,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
           (pc.description || (pc.source === 'mcp' ? 'MCP prompt 命令' : '自定义命令'))
           + (pc.hints.length > 0 ? `（参数: ${pc.hints.join(' ')}）` : ''),
         icon: <Terminal className="w-4 h-4" />,
+        group: getPromptCommandGroup(pc),
+        sourceLabel: getPromptCommandSourceLabel(pc),
         action: () => {},
       }));
 
@@ -649,20 +814,29 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   }, [connectorOps, extensionOps, guiOnlyCommands, mcpOps, promptCommands, registryIconMap, skillOps]);
 
   const filtered = useMemo(() => {
-    if (!filter) return allCommands;
+    if (!filter) return orderSlashCommandsForDisplay(allCommands);
     const lower = filter.toLowerCase();
     const matched = allCommands.filter(c =>
-      c.id.includes(lower) || c.label.toLowerCase().includes(lower)
+      c.id.includes(lower) ||
+      c.label.toLowerCase().includes(lower) ||
+      c.description.toLowerCase().includes(lower) ||
+      c.group.toLowerCase().includes(lower) ||
+      (c.sourceLabel?.toLowerCase().includes(lower) ?? false)
     );
     // 精确 id 匹配排最前：否则键盘输入精确命令名时，会被更长命令的子串匹配抢선并默认选中
     // （实测 /low 被 workflow 抢선——'workflow'.includes('low')，且 workflow 排在前，
     //  selectedIndex=0 选中 workflow，回车执行了 workflow 而非 low）。稳定排序保留其余顺序。
-    return matched.sort((a, b) => {
-      const aExact = a.id.toLowerCase() === lower ? 0 : 1;
-      const bExact = b.id.toLowerCase() === lower ? 0 : 1;
-      return aExact - bExact;
+    const exact = matched.find((command) => command.id.toLowerCase() === lower);
+    return orderSlashCommandsForDisplay(matched, {
+      preferredGroup: exact?.group,
+      exactId: lower,
     });
   }, [filter, allCommands]);
+
+  const filteredGroups = useMemo(
+    () => buildSlashCommandGroups(filtered),
+    [filtered],
+  );
 
   // Reset selection on filter change
   useEffect(() => {
@@ -734,33 +908,59 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl z-20 max-h-[280px] overflow-y-auto animate-fade-in"
     >
       <div className="py-1">
-        {filtered.map((cmd, i) => (
-          <button
-            key={cmd.id}
-            type="button"
-            data-selected={i === selectedIndex}
-            onClick={() => onSelect(cmd)}
-            className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
-              i === selectedIndex
-                ? 'bg-zinc-800 text-zinc-200'
-                : 'text-zinc-400 hover:bg-zinc-800/50'
-            }`}
-          >
-            <span className={i === selectedIndex ? 'text-primary-400' : 'text-zinc-500'}>
-              {cmd.icon}
-            </span>
-            <div className="flex-1 min-w-0">
-              <span className="text-sm">{cmd.label}</span>
-              <span className="text-[10px] font-mono text-zinc-600 ml-2">/{cmd.id}</span>
-              <span className="text-xs text-zinc-500 ml-2">{cmd.description}</span>
+        {filteredGroups.map((group) => {
+          const groupStartIndex = filtered.findIndex((command) => command.id === group.commands[0]?.id);
+          return (
+            <div key={group.id} className="border-b border-zinc-800/70 last:border-b-0">
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-zinc-900/95 px-3 py-1.5 backdrop-blur">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-medium text-zinc-300">{group.label}</div>
+                  <div className="truncate text-[10px] text-zinc-600">{group.description}</div>
+                </div>
+                <span className="shrink-0 rounded border border-zinc-800 bg-zinc-950 px-1.5 py-0.5 text-[10px] text-zinc-500">
+                  {group.commands.length}
+                </span>
+              </div>
+              {group.commands.map((cmd, groupIndex) => {
+                const i = groupStartIndex + groupIndex;
+                return (
+                  <button
+                    key={cmd.id}
+                    type="button"
+                    data-selected={i === selectedIndex}
+                    onClick={() => onSelect(cmd)}
+                    className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
+                      i === selectedIndex
+                        ? 'bg-zinc-800 text-zinc-200'
+                        : 'text-zinc-400 hover:bg-zinc-800/50'
+                    }`}
+                  >
+                    <span className={i === selectedIndex ? 'text-primary-400' : 'text-zinc-500'}>
+                      {cmd.icon}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-sm">{cmd.label}</span>
+                        <span className="font-mono text-[10px] text-zinc-600">/{cmd.id}</span>
+                        {cmd.sourceLabel && (
+                          <span className="rounded border border-zinc-800 bg-zinc-950 px-1.5 py-0.5 text-[10px] text-zinc-500">
+                            {cmd.sourceLabel}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 truncate text-xs text-zinc-500">{cmd.description}</div>
+                    </div>
+                    {cmd.shortcut && (
+                      <kbd className="px-1.5 py-0.5 text-[10px] bg-zinc-800 rounded text-zinc-500 border border-zinc-700">
+                        {cmd.shortcut}
+                      </kbd>
+                    )}
+                  </button>
+                );
+              })}
             </div>
-            {cmd.shortcut && (
-              <kbd className="px-1.5 py-0.5 text-[10px] bg-zinc-800 rounded text-zinc-500 border border-zinc-700">
-                {cmd.shortcut}
-              </kbd>
-            )}
-          </button>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

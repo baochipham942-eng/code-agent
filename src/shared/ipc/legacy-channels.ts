@@ -181,6 +181,9 @@ export const IPC_CHANNELS = {
   MARKETPLACE_ENABLE_PLUGIN: 'marketplace:enable-plugin',
   MARKETPLACE_DISABLE_PLUGIN: 'marketplace:disable-plugin',
 
+  // Alma registry audit
+  ALMA_REGISTRY_AUDIT_REFRESH: 'alma-registry:audit-refresh',
+
   // Unified extension operations (plugin + marketplace skill + MCP summary)
   EXTENSION_LIST: 'extension:list',
   EXTENSION_INSTALL: 'extension:install',

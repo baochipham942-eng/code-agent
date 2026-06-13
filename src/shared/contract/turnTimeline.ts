@@ -1,6 +1,7 @@
 import type {
   ConversationExecutionIntent,
   ConversationRoutingMode,
+  TurnCapabilityScopeMode,
   WorkbenchMessageMetadata,
 } from './conversationEnvelope';
 
@@ -16,6 +17,14 @@ export type TurnTimelineNodeKind =
 export type TurnTimelineTone = 'neutral' | 'info' | 'warning' | 'success' | 'error';
 
 export type BlockedCapabilityKind = 'skill' | 'connector' | 'mcp';
+
+export type TurnCapabilityReadiness =
+  | 'ready'
+  | 'needs_config'
+  | 'needs_permission'
+  | 'offline'
+  | 'unsupported'
+  | 'blocked_high_risk';
 
 export type BlockedCapabilityReasonCode =
   | 'skill_not_mounted'
@@ -37,6 +46,7 @@ export interface TurnWorkbenchSnapshot {
   selectedSkillIds?: string[];
   selectedConnectorIds?: string[];
   selectedMcpServerIds?: string[];
+  turnCapabilityScopeMode?: TurnCapabilityScopeMode;
   executionIntent?: ConversationExecutionIntent;
 }
 
@@ -54,6 +64,7 @@ export interface TurnCapabilityScopeItem {
   kind: BlockedCapabilityKind;
   id: string;
   label: string;
+  readiness?: TurnCapabilityReadiness;
 }
 
 export interface TurnCapabilityInvocationAction {
@@ -67,10 +78,23 @@ export interface TurnCapabilityInvocationItem extends TurnCapabilityScopeItem {
 }
 
 export interface TurnCapabilityScope {
+  mode: TurnCapabilityScopeMode;
   selected: TurnCapabilityScopeItem[];
   allowed: TurnCapabilityScopeItem[];
   blocked: BlockedCapabilityReason[];
   invoked: TurnCapabilityInvocationItem[];
+}
+
+export function createEmptyTurnCapabilityScope(
+  mode: TurnCapabilityScopeMode = 'auto',
+): TurnCapabilityScope {
+  return {
+    mode,
+    selected: [],
+    allowed: [],
+    blocked: [],
+    invoked: [],
+  };
 }
 
 export type RoutingEvidenceStepStatus =
@@ -193,6 +217,9 @@ export function snapshotFromWorkbenchMetadata(
   }
   if (metadata.selectedMcpServerIds?.length) {
     snapshot.selectedMcpServerIds = [...metadata.selectedMcpServerIds];
+  }
+  if (metadata.turnCapabilityScopeMode) {
+    snapshot.turnCapabilityScopeMode = metadata.turnCapabilityScopeMode;
   }
   if (metadata.executionIntent) {
     snapshot.executionIntent = {

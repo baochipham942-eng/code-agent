@@ -4,6 +4,7 @@ import type { ParsedSkill } from '@shared/contract/agentSkill';
 import type { CapabilityAssessmentInfo } from '@shared/contract/capability';
 import type {
   BlockedCapabilityReason,
+  TurnCapabilityReadiness,
   TurnWorkbenchSnapshot,
 } from '@shared/contract/turnTimeline';
 import {
@@ -38,6 +39,8 @@ interface WorkbenchCapabilityRegistryBase {
   key: string;
   selected: boolean;
   available: boolean;
+  turnReadiness: TurnCapabilityReadiness;
+  autoAllowed: boolean;
   blocked: boolean;
   visibleInWorkbench: boolean;
   health: WorkbenchCapabilityHealth;
@@ -212,6 +215,42 @@ function buildMcpBlockedReason(server: WorkbenchMcpCapability): WorkbenchCapabil
   };
 }
 
+function isHighRiskCapability(capability: Pick<WorkbenchCapabilityRegistryItem, 'kind' | 'id'>): boolean {
+  if (capability.kind !== 'mcp') {
+    return false;
+  }
+
+  return ['cua-driver', 'computer-use', 'filesystem', 'docker'].includes(capability.id);
+}
+
+export function getWorkbenchCapabilityReadiness(
+  capability: WorkbenchCapabilityRegistryItem,
+): TurnCapabilityReadiness {
+  if (capability.available) {
+    return isHighRiskCapability(capability) ? 'blocked_high_risk' : 'ready';
+  }
+
+  switch (capability.kind) {
+    case 'skill':
+      return capability.installState === 'available' ? 'needs_config' : 'unsupported';
+    case 'connector':
+      if (capability.readiness === 'unchecked' || capability.readiness === 'failed') {
+        return 'needs_permission';
+      }
+      return 'needs_config';
+    case 'mcp':
+      return capability.status === 'error' ? 'offline' : 'needs_config';
+    default:
+      return 'unsupported';
+  }
+}
+
+export function isWorkbenchCapabilityAutoAllowed(
+  capability: WorkbenchCapabilityRegistryItem,
+): boolean {
+  return getWorkbenchCapabilityReadiness(capability) === 'ready';
+}
+
 export function getWorkbenchCapabilityBlockedState(
   capability: WorkbenchCapabilityRegistryItem,
 ): WorkbenchCapabilityBlockedState | undefined {
@@ -234,11 +273,14 @@ export function getWorkbenchCapabilityBlockedState(
 export function buildWorkbenchSkillRegistryItem(skill: WorkbenchSkillCapability): WorkbenchSkillRegistryItem {
   const blockedReason = skill.selected ? buildSkillBlockedReason(skill) : undefined;
   const available = skill.mounted;
+  const readiness: TurnCapabilityReadiness = available ? 'ready' : skill.installState === 'available' ? 'needs_config' : 'unsupported';
 
   return {
     ...skill,
     key: `skill:${skill.id}`,
     available,
+    turnReadiness: readiness,
+    autoAllowed: readiness === 'ready',
     blocked: skill.selected && !available,
     visibleInWorkbench: available || skill.selected,
     health: skill.mounted ? 'healthy' : skill.installState === 'available' ? 'inactive' : 'error',
@@ -277,11 +319,18 @@ export function buildWorkbenchConnectorRegistryItem(
       : connector.readiness === 'unchecked'
         ? 'degraded'
         : 'inactive';
+  const readiness: TurnCapabilityReadiness = available
+    ? 'ready'
+    : connector.readiness === 'unchecked' || connector.readiness === 'failed'
+      ? 'needs_permission'
+      : 'needs_config';
 
   return {
     ...connector,
     key: `connector:${connector.id}`,
     available,
+    turnReadiness: readiness,
+    autoAllowed: readiness === 'ready',
     blocked: connector.selected && !available,
     visibleInWorkbench: available || connector.selected,
     health,
@@ -312,11 +361,19 @@ export function buildWorkbenchMcpRegistryItem(server: WorkbenchMcpCapability): W
         : server.status === 'connecting' || server.status === 'lazy'
           ? 'degraded'
           : 'inactive';
+  const highRisk = ['cua-driver', 'computer-use', 'filesystem', 'docker'].includes(server.id);
+  const readiness: TurnCapabilityReadiness = available
+    ? highRisk ? 'blocked_high_risk' : 'ready'
+    : server.status === 'error'
+      ? 'offline'
+      : 'needs_config';
 
   return {
     ...server,
     key: `mcp:${server.id}`,
     available,
+    turnReadiness: readiness,
+    autoAllowed: readiness === 'ready',
     blocked: server.selected && !available,
     visibleInWorkbench: available || server.selected,
     health,

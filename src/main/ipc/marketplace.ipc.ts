@@ -45,6 +45,17 @@ function errorResult<T>(error: unknown): MarketplaceResult<T> {
   };
 }
 
+function formatPluginAuthor(author: unknown): string | undefined {
+  if (typeof author === 'string') {
+    return author;
+  }
+  if (author && typeof author === 'object' && 'name' in author) {
+    const name = (author as { name?: unknown }).name;
+    return typeof name === 'string' ? name : undefined;
+  }
+  return undefined;
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -218,11 +229,13 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
             name: plugin.name,
             description: plugin.description,
             marketplace,
-            source: plugin.source,
+            source: plugin.source || './',
+            types: plugin.types,
             skills: plugin.skills,
+            commands: plugin.commands,
             tags: plugin.tags,
             version: plugin.version,
-            author: plugin.author,
+            author: formatPluginAuthor(plugin.author),
             isInstalled: !!installedRecord,
             isEnabled: installedRecord?.isEnabled,
           };
@@ -250,11 +263,13 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
             name: plugin.name,
             description: plugin.description,
             marketplace,
-            source: plugin.source,
+            source: plugin.source || './',
+            types: plugin.types,
             skills: plugin.skills,
+            commands: plugin.commands,
             tags: plugin.tags,
             version: plugin.version,
-            author: plugin.author,
+            author: formatPluginAuthor(plugin.author),
             isInstalled: !!installedRecord,
             isEnabled: installedRecord?.isEnabled,
           };
@@ -287,9 +302,13 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
             projectPath: record.projectPath,
             installedAt: record.installedAt,
             pluginRoot: record.pluginRoot,
+            types: record.types,
             skills: record.skills,
+            commands: record.commands,
           } : undefined,
           installedSkills: result.installedSkills,
+          installedCommands: result.installedCommands,
+          installedPluginRoot: result.installedPluginRoot,
         };
       } catch (error) {
         logger.error('Failed to install plugin', { pluginSpec, error });
@@ -337,7 +356,9 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
             projectPath: record.projectPath,
             installedAt: record.installedAt,
             pluginRoot: record.pluginRoot,
+            types: record.types,
             skills: record.skills,
+            commands: record.commands,
           });
         }
 

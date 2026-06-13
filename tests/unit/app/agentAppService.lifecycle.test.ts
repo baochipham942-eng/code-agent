@@ -107,6 +107,7 @@ describe('AgentAppService lifecycle routing', () => {
       context: {
         workingDirectory: '/tmp/project',
         selectedSkillIds: ['docx'],
+        turnCapabilityScopeMode: 'manual',
       },
       options: { researchMode: false },
     } as any);
@@ -125,7 +126,11 @@ describe('AgentAppService lifecycle routing', () => {
         toolScope: expect.objectContaining({ allowedSkillIds: ['docx'] }),
       }),
       expect.objectContaining({
-        workbench: expect.objectContaining({ workingDirectory: '/tmp/project', selectedSkillIds: ['docx'] }),
+        workbench: expect.objectContaining({
+          workingDirectory: '/tmp/project',
+          selectedSkillIds: ['docx'],
+          turnCapabilityScopeMode: 'manual',
+        }),
       }),
       'client-msg-send-1',
     );

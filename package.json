@@ -84,6 +84,7 @@
     "docs": "typedoc",
     "rebuild-native:system": "bash scripts/rebuild-native-system.sh",
     "check:hardcoded": "bash scripts/check-hardcoded-models.sh --all",
+    "check:capability-evidence": "npx tsx scripts/check-capability-evidence.ts",
     "postinstall": "npm run rebuild-native:system",
     "eval": "npx tsx scripts/eval-ci.ts",
     "regression": "npx tsx scripts/regression-cli.ts",

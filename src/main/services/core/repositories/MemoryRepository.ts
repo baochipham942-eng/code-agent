@@ -1,18 +1,14 @@
 // ============================================================================
-// MemoryRepository - 记忆存储/检索 + entity_relations 表
+// MemoryRepository - 记忆存储/检索
 // ============================================================================
 
 import type BetterSqlite3 from 'better-sqlite3';
 import { MEMORY } from '../../../../shared/constants';
 import { normalizeFtsMatchQuery, runMemoriesFtsBackfill } from '../../../../shared/memoriesFts.sql';
-import type {
-  MemoryRecord,
-  RelationQueryOptions,
-  EntityRelation,
-} from '../../../protocol/types';
+import type { MemoryRecord } from '../../../protocol/types';
 import { guardSensitiveText, guardSensitiveValue } from '../../../security/sensitiveDataGuard';
 
-export type { MemoryRecord, RelationQueryOptions, EntityRelation };
+export type { MemoryRecord };
 
 // SQLite 行类型
 type SQLiteRow = Record<string, unknown>;
@@ -358,81 +354,6 @@ export class MemoryRepository {
     this.db.prepare(`
       UPDATE memories SET access_count = access_count + 1, last_accessed_at = ? WHERE id = ?
     `).run(Date.now(), id);
-  }
-
-  // --------------------------------------------------------------------------
-  // Entity Relations
-  // --------------------------------------------------------------------------
-
-  addRelation(params: {
-    sourceId: string;
-    targetId: string;
-    relationType: 'calls' | 'imports' | 'similar_to' | 'solves' | 'depends_on' | 'modifies' | 'references';
-    confidence: number;
-    evidence: string;
-    sessionId: string;
-  }): void {
-    const id = `rel_${params.sessionId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    this.db.prepare(`
-      INSERT INTO entity_relations (id, source_id, target_id, relation_type, confidence, evidence, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      params.sourceId,
-      params.targetId,
-      params.relationType,
-      params.confidence,
-      params.evidence,
-      Date.now(),
-    );
-  }
-
-  getRelationsFor(
-    entityId: string,
-    direction: 'source' | 'target' | 'both' = 'both',
-    options: RelationQueryOptions = {}
-  ): EntityRelation[] {
-    const { decayDays = MEMORY.RELATION_DECAY_DAYS, minConfidence = MEMORY.RELATION_MIN_CONFIDENCE } = options;
-
-    let sql: string;
-    if (direction === 'source') {
-      sql = 'SELECT * FROM entity_relations WHERE source_id = ?';
-    } else if (direction === 'target') {
-      sql = 'SELECT * FROM entity_relations WHERE target_id = ?';
-    } else {
-      sql = 'SELECT * FROM entity_relations WHERE source_id = ? OR target_id = ?';
-    }
-
-    const params = direction === 'both' ? [entityId, entityId] : [entityId];
-    const rows = this.db.prepare(sql).all(...params) as SQLiteRow[];
-
-    const now = Date.now();
-    const halfLifeMs = decayDays * 24 * 60 * 60 * 1000;
-
-    const rawRelations = rows.map(row => ({
-      id: row.id as string,
-      sourceId: row.source_id as string,
-      targetId: row.target_id as string,
-      relationType: row.relation_type as string,
-      confidence: row.confidence as number,
-      evidence: row.evidence as string,
-      createdAt: row.created_at as number,
-    }));
-
-    return rawRelations
-      .map(r => {
-        const ageMs = now - (typeof r.createdAt === 'number' ? r.createdAt : new Date(r.createdAt).getTime());
-        const decayFactor = Math.pow(0.5, ageMs / halfLifeMs);
-        return { ...r, confidence: (r.confidence ?? 1.0) * decayFactor };
-      })
-      .filter(r => r.confidence >= minConfidence)
-      .sort((a, b) => b.confidence - a.confidence);
-  }
-
-  updateRelationConfidence(id: string, confidence: number, evidence?: string): void {
-    this.db.prepare(
-      'UPDATE entity_relations SET confidence = ?, evidence = COALESCE(?, evidence) WHERE id = ?'
-    ).run(confidence, evidence ?? null, id);
   }
 
   // --------------------------------------------------------------------------

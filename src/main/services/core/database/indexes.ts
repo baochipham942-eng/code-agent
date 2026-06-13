@@ -22,13 +22,6 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
     CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id);
   `);
 
-  // Entity relations indexes
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_entity_relations_source ON entity_relations(source_id);
-    CREATE INDEX IF NOT EXISTS idx_entity_relations_target ON entity_relations(target_id);
-    CREATE INDEX IF NOT EXISTS idx_entity_relations_type ON entity_relations(relation_type);
-  `);
-
   // Experiment indexes
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_experiments_timestamp ON experiments(timestamp DESC);

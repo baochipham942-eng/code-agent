@@ -6,7 +6,7 @@
 //
 // Moved from:
 //   - services/core/repositories/SessionRepository.ts  (StoredSession, StoredMessage)
-//   - services/core/repositories/MemoryRepository.ts   (MemoryRecord, RelationQueryOptions, EntityRelation)
+//   - services/core/repositories/MemoryRepository.ts   (MemoryRecord)
 //   - services/core/repositories/ConfigRepository.ts   (UserPreference, ProjectKnowledge, ToolExecution)
 // as part of P0-5 phase B (services type sinkdown).
 // ============================================================================
@@ -51,23 +51,6 @@ export interface MemoryRecord {
   createdAt: number;
   updatedAt: number;
   lastAccessedAt?: number;
-}
-
-export interface RelationQueryOptions {
-  /** Half-life in days for confidence decay (default: MEMORY.RELATION_DECAY_DAYS) */
-  decayDays?: number;
-  /** Minimum confidence threshold after decay (default: MEMORY.RELATION_MIN_CONFIDENCE) */
-  minConfidence?: number;
-}
-
-export interface EntityRelation {
-  id: string;
-  sourceId: string;
-  targetId: string;
-  relationType: string;
-  confidence: number;
-  evidence: string;
-  createdAt: number;
 }
 
 // ---- ConfigRepository ----

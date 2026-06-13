@@ -625,19 +625,6 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
 
-  // Entity relations table (for proactive context)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS entity_relations (
-      id TEXT PRIMARY KEY,
-      source_id TEXT NOT NULL,
-      target_id TEXT NOT NULL,
-      relation_type TEXT NOT NULL,
-      confidence REAL NOT NULL DEFAULT 1.0,
-      evidence TEXT DEFAULT '',
-      created_at INTEGER NOT NULL
-    )
-  `);
-
   // Experiments 表 (统一评测数据)
   db.exec(`
     CREATE TABLE IF NOT EXISTS experiments (

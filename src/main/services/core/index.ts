@@ -21,8 +21,6 @@ export {
   type UserPreference,
   type ProjectKnowledge,
   type MemoryRecord,
-  type RelationQueryOptions,
-  type EntityRelation,
 } from './databaseService';
 
 export {

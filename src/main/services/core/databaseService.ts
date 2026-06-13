@@ -22,7 +22,7 @@ import type { ContextInterventionAction, ContextInterventionSnapshot } from '../
 import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/contract/capture';
 
 // Re-export types from repositories（保持外部调用方零修改）
-export type { StoredSession, StoredMessage, MemoryRecord, RelationQueryOptions, EntityRelation, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
+export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
 import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository } from './repositories';
 import { createSwarmTraceRepo } from './repositories/swarmTraceFactory';
@@ -702,18 +702,6 @@ export class DatabaseService {
   recordMemoryAccess(id: string): void {
     this.ensureDb();
     this.memoryRepo.recordMemoryAccess(id);
-  }
-  addRelation(params: { sourceId: string; targetId: string; relationType: 'calls' | 'imports' | 'similar_to' | 'solves' | 'depends_on' | 'modifies' | 'references'; confidence: number; evidence: string; sessionId: string }): void {
-    if (!this.db) return;
-    this.memoryRepo.addRelation(params);
-  }
-  getRelationsFor(entityId: string, direction?: 'source' | 'target' | 'both', options?: import('./repositories').RelationQueryOptions): import('./repositories').EntityRelation[] {
-    if (!this.db) return [];
-    return this.memoryRepo.getRelationsFor(entityId, direction, options);
-  }
-  updateRelationConfidence(id: string, confidence: number, evidence?: string): void {
-    if (!this.db) return;
-    this.memoryRepo.updateRelationConfidence(id, confidence, evidence);
   }
 
   // --- ConfigRepository ---

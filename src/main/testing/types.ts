@@ -718,10 +718,15 @@ export interface EvalHistory {
 
 // === P5: CI / EDD Types ===
 
+/** eval 运行来源：mock adapter（确定性桩，秒级）vs real 模型执行（分钟级） */
+export type EvalRunMode = 'mock' | 'real';
+
 export interface EvalBaseline {
   version: number;
   updatedAt: number;
   updatedBy: string;
+  /** 晋升此 baseline 的运行来源。缺省视为历史遗留（来源不明，可能是 mock） */
+  mode?: EvalRunMode;
   globalMetrics: {
     passRate: number;
     averageScore: number;
@@ -759,6 +764,8 @@ export interface TrendDataPoint {
   duration: number;
   newFailures: number;
   newPasses: number;
+  /** 运行来源。缺省视为历史遗留条目（mock/real 不明），在 real-only 视图中被排除 */
+  mode?: EvalRunMode;
   /** roadmap 2.4 A/B 归因（audit D-R3）：同 commit 两臂在 trend 里靠它区分 */
   providerVariantArm?: 'variant-on' | 'variant-off';
 }

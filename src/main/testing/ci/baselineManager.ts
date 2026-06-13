@@ -5,7 +5,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { CONFIG_DIR_NEW } from '../../config/configPaths';
-import type { EvalBaseline, BaselineDelta, TestRunSummary } from '../types';
+import type { EvalBaseline, BaselineDelta, TestRunSummary, EvalRunMode } from '../types';
 
 const DEFAULT_THRESHOLDS: EvalBaseline['thresholds'] = {
   minPassRate: 0.7,
@@ -117,7 +117,16 @@ export class BaselineManager {
     };
   }
 
-  async promote(summary: TestRunSummary, commitSha: string): Promise<void> {
+  async promote(summary: TestRunSummary, commitSha: string, mode: EvalRunMode = 'real'): Promise<void> {
+    // 来源护栏：mock 跑出来的通过率是 adapter 桩的产物，不代表 agent 真实能力，
+    // 绝不允许晋升为回归基线。历史上线上 baseline 正是被一次 mock 跑污染过。
+    if (mode !== 'real') {
+      throw new Error(
+        `拒绝将 ${mode} 运行晋升为 baseline：基线必须来自 --real 真实模型执行。` +
+        `mock 通过率是确定性桩的产物，不是 agent 能力。`,
+      );
+    }
+
     const passRate = summary.total > 0 ? summary.passed / summary.total : 0;
 
     const caseResults: EvalBaseline['caseResults'] = {};
@@ -133,6 +142,7 @@ export class BaselineManager {
       version: 1,
       updatedAt: Date.now(),
       updatedBy: commitSha,
+      mode,
       globalMetrics: {
         passRate,
         averageScore: summary.averageScore,

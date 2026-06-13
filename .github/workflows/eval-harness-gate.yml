@@ -1,0 +1,72 @@
+name: Eval Harness Gate
+
+# 评测基础设施完整性门禁。
+#
+# 设计边界（重要）：real-mode eval（--real，真实模型执行）依赖用户本地代理
+# （mimo Token Plan 走 token-plan-sgp 海外端点，需 HTTPS_PROXY=127.0.0.1:7897）
+# 与本地 SecureStorage key，GitHub runner 环境无法触达，故**不在 PR 上跑真实
+# 评测**。本门禁只守确定性的 harness 逻辑：类型检查 + 评测/测试框架单测
+# （断言引擎、baseline/trend 来源护栏、judge 校准计算）。agent 真实能力的
+# 评测靠本地 `npx tsx scripts/eval-ci.ts --real`（详见 docs/guides/evaluation-system.md）。
+#
+# 触发条件：仅在评测基础设施文件改动时跑，其余 PR 直接绿灯，不串进 swarm-ci。
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/main/testing/**'
+      - 'src/main/evaluation/**'
+      - 'scripts/eval-ci.ts'
+      - '.claude/test-cases/**'
+      - 'tests/unit/testing/**'
+      - 'tests/unit/evaluation/**'
+      - '.github/workflows/eval-harness-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/main/testing/**'
+      - 'src/main/evaluation/**'
+      - 'scripts/eval-ci.ts'
+      - 'tests/unit/testing/**'
+      - 'tests/unit/evaluation/**'
+      - '.github/workflows/eval-harness-gate.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: eval-harness-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harness:
+    name: 评测 harness 完整性（typecheck + 单测）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        # 同 swarm-ci：lockfile 在 macOS 生成只记 darwin rollup binary，补装 linux binary
+        run: |
+          npm ci --ignore-scripts
+          npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
+
+      - name: Install better-sqlite3 native binding
+        # evaluation 单测（telemetryQueryService 等）走真实 DB，需预编译 binding，
+        # 否则 fallback in-memory 测的不是真实路径
+        working-directory: node_modules/better-sqlite3
+        run: ../.bin/prebuild-install || true
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Eval harness 单测
+        # 断言引擎 + baseline/trend 来源护栏 + judge 校准计算 + replay gate
+        run: npx vitest run tests/unit/testing tests/unit/evaluation

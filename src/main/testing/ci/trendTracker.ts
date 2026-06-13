@@ -5,7 +5,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { CONFIG_DIR_NEW } from '../../config/configPaths';
-import type { TrendDataPoint } from '../types';
+import type { TrendDataPoint, EvalRunMode } from '../types';
 
 const MAX_ENTRIES = 100;
 
@@ -28,9 +28,12 @@ export class TrendTracker {
     await fs.writeFile(this.trendPath, JSON.stringify(trimmed, null, 2), 'utf-8');
   }
 
-  async getRecent(count: number): Promise<TrendDataPoint[]> {
+  async getRecent(count: number, mode?: EvalRunMode): Promise<TrendDataPoint[]> {
     const all = await this.loadAll();
-    return all.slice(-count);
+    // 按 mode 过滤时，无 mode 的历史遗留条目（来源不明）一律排除 —— real-only
+    // 视图必须只含确证的真实运行，否则又把 mock 数字混进趋势判断。
+    const filtered = mode ? all.filter((p) => p.mode === mode) : all;
+    return filtered.slice(-count);
   }
 
   generateAsciiChart(points: TrendDataPoint[]): string {
@@ -51,8 +54,9 @@ export class TrendTracker {
       const barLen = Math.round(point.passRate * BAR_MAX_WIDTH);
       const bar = '█'.repeat(barLen) + '░'.repeat(BAR_MAX_WIDTH - barLen);
       const scopeTag = point.scope === 'full' ? 'F' : 'S';
+      const modeTag = point.mode ?? '?unknown';
 
-      lines.push(`  ${date} ${sha} [${scopeTag}] ${bar} ${pct}%`);
+      lines.push(`  ${date} ${sha} [${scopeTag}·${modeTag}] ${bar} ${pct}%`);
     }
 
     lines.push('─'.repeat(60));

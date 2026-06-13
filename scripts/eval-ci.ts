@@ -188,6 +188,11 @@ async function showBaselineInfo(manager: BaselineManager) {
   console.log(chalk.dim('  ' + '─'.repeat(50)));
   console.log(`  Updated:     ${new Date(baseline.updatedAt).toISOString()}`);
   console.log(`  Commit:      ${baseline.updatedBy}`);
+  const baselineMode = baseline.mode ?? 'unknown';
+  const modeLabel = baselineMode === 'real'
+    ? chalk.green('real')
+    : chalk.red(`${baselineMode} ⚠️ 非真实运行，数字不可信，请用 --real --promote 重建`);
+  console.log(`  Mode:        ${modeLabel}`);
   console.log(`  Pass Rate:   ${(baseline.globalMetrics.passRate * 100).toFixed(1)}%`);
   console.log(`  Avg Score:   ${(baseline.globalMetrics.averageScore * 100).toFixed(1)}%`);
   console.log(`  Total Cases: ${baseline.globalMetrics.totalCases}`);
@@ -517,6 +522,16 @@ async function main() {
 
   // --promote: run evals then promote results to baseline
   if (promote) {
+    // 来源护栏：mock 跑出的通过率是 adapter 桩的产物，禁止晋升为基线。
+    // 在跑 eval 前就拦下，避免白跑（且 mock 跑也没有晋升价值）。
+    if (!effectiveReal) {
+      console.error(chalk.red(
+        '  Error: 拒绝晋升 mock 运行为 baseline。基线必须来自真实模型执行，' +
+        '请加 --real（或 --model <name>）。'
+      ));
+      process.exit(1);
+    }
+
     // --real mode safety guards for promote
     if (effectiveReal) {
       const testCaseDir_ = createDefaultConfig(workingDir).testCaseDir;
@@ -547,7 +562,7 @@ async function main() {
     console.log('');
     const summary = await runEvals(workingDir, 'full', { real: effectiveReal, model, provider, concurrency, tags, ids });
     const commitSha = getCommitSha();
-    await manager.promote(summary, commitSha);
+    await manager.promote(summary, commitSha, 'real');
     console.log(chalk.green(`  Baseline promoted (commit: ${commitSha.slice(0, 7)})`));
     console.log(`  Pass rate: ${(summary.total > 0 ? (summary.passed / summary.total) * 100 : 0).toFixed(1)}%`);
     console.log(`  Avg score: ${(summary.averageScore * 100).toFixed(1)}%`);
@@ -655,6 +670,7 @@ async function main() {
     duration: summary.duration,
     newFailures: delta.newFailures.length,
     newPasses: delta.newPasses.length,
+    mode: effectiveReal ? 'real' : 'mock',
     providerVariantArm: providerVariantArm(),
   };
   await tracker.append(trendPoint);

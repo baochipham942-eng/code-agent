@@ -3,6 +3,11 @@
 // ============================================================================
 
 import type { UnifiedTraceIdentity, UnifiedTraceSource } from './reviewQueue';
+import type {
+  AgentQualityScorecard,
+  TurnQualityMemorySummary,
+  TurnQualityScoreSummary,
+} from './turnQuality';
 
 /**
  * 评测维度 (v3: 7 计分 + 3 信息)
@@ -374,6 +379,15 @@ export interface ReplayModelDecision {
   toolSchemas?: ReplayToolSchema[];
 }
 
+export interface ReplayMemoryAudit {
+  mode: TurnQualityMemorySummary['mode'];
+  blocks: TurnQualityMemorySummary['blocks'];
+  suppressedEntryIds?: string[];
+  offReason?: string;
+  score?: TurnQualityScoreSummary;
+  agentScorecard?: AgentQualityScorecard;
+}
+
 export interface ReplayTimelineEvent {
   eventType: string;
   summary: string;
@@ -398,10 +412,11 @@ export interface ReplayToolCall {
 }
 
 export interface ReplayBlock {
-  type: 'user' | 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'error' | 'model_call' | 'event' | 'context_event';
+  type: 'user' | 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'error' | 'model_call' | 'memory_audit' | 'event' | 'context_event';
   content: string;
   toolCall?: ReplayToolCall;
   modelDecision?: ReplayModelDecision;
+  memoryAudit?: ReplayMemoryAudit;
   event?: ReplayTimelineEvent;
   timestamp: number;
 }
@@ -444,6 +459,8 @@ export interface StructuredReplay {
     thinkingRatio: number;
     selfRepairChains: number;
     totalDurationMs: number;
+    qualityScore?: TurnQualityScoreSummary;
+    agentScorecards?: AgentQualityScorecard[];
     metricAvailability?: ReplayMetricAvailability;
     telemetryCompleteness?: TelemetryCompleteness;
     deviations?: Array<{

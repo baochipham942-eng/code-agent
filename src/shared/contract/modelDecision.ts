@@ -11,6 +11,10 @@ export type ModelDecisionReason =
   | 'role-tier'
   | 'simple-task-free'
   | 'billing-gate-skip'
+  | 'strategy-fast'
+  | 'strategy-main'
+  | 'strategy-deep'
+  | 'strategy-vision'
   | 'capability-vision'
   | 'fallback-availability';
 
@@ -26,6 +30,17 @@ export interface ModelDecision {
   billingMode: BillingMode;
   /** 可用性降级时记录降级前的模型，其余为 null */
   fallbackFrom: string | null;
+  /** 任务策略 profile。为空表示沿用 legacy 用户选择 / 角色档位路径。 */
+  strategyProfile?: 'fast' | 'main' | 'deep' | 'vision';
+  /** 命中的任务策略规则 ID。 */
+  strategyRuleId?: string;
+  /** 给 UI/Replay 展示的策略解释。 */
+  strategyReason?: string;
+  taskComplexity?: {
+    level: 'simple' | 'moderate' | 'complex';
+    score: number;
+    signals: string[];
+  };
 }
 
 export interface ModelDecisionEventData extends ModelDecision {

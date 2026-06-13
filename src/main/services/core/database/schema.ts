@@ -38,6 +38,8 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       parent_session_id TEXT,
       source_run_id TEXT,
       agent_engine TEXT,
+      memory_mode TEXT NOT NULL DEFAULT 'auto',
+      suppressed_memory_entry_ids TEXT NOT NULL DEFAULT '[]',
       read_only INTEGER NOT NULL DEFAULT 0,
       retry_of_session_id TEXT,
       created_at INTEGER NOT NULL,
@@ -48,6 +50,8 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN user_id TEXT`, logger);
+  safeAlter(db, `ALTER TABLE sessions ADD COLUMN memory_mode TEXT NOT NULL DEFAULT 'auto'`, logger);
+  safeAlter(db, `ALTER TABLE sessions ADD COLUMN suppressed_memory_entry_ids TEXT NOT NULL DEFAULT '[]'`, logger);
 
   // Messages 表
   db.exec(`

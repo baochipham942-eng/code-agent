@@ -562,6 +562,7 @@ export async function packMemoryEntries(
   const totalCharBudget = clampNumber(request.totalCharBudget, 4_000, 500, 30_000);
   const statuses = new Set<MemoryEntryStatus>(request.statuses?.length ? request.statuses : ['active']);
   const kinds = request.kinds?.length ? new Set<MemoryEntryKind>(request.kinds) : null;
+  const excludedEntryIds = new Set(request.excludeEntryIds || []);
   const query = (request.query || '').trim();
   const tokens = tokenizeQuery(query);
   const entries = (await listUnifiedMemoryEntries(db)).entries;
@@ -586,6 +587,7 @@ export async function packMemoryEntries(
 
   const candidates = entries
     .filter((entry) => statuses.has(entry.status))
+    .filter((entry) => !excludedEntryIds.has(entry.id))
     .filter((entry) => !kinds || kinds.has(entry.kind))
     .filter((entry) => scopeMatches(entry, request))
     .map((entry) => {

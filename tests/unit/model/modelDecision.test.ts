@@ -5,7 +5,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { resolveModelDecision } from '../../../src/main/model/modelDecision';
 import type { ModelDecisionInput } from '../../../src/main/model/modelDecision';
-import type { ModelConfig } from '../../../src/shared/contract';
+import type { ModelConfig, TaskModelStrategySettings } from '../../../src/shared/contract';
 import { DEFAULT_MODELS } from '../../../src/shared/constants';
 
 // --------------------------------------------------------------------------
@@ -50,6 +50,28 @@ const COMPLEX_MESSAGE = [{
   content: '帮我重构这个项目的认证模块，需要考虑架构设计和向后兼容，涉及 auth.ts、session.ts、middleware.ts 三个文件的迁移，' +
     '```typescript\nexport function login() {}\n```\n```typescript\nexport function logout() {}\n```',
 }];
+
+const taskStrategy: TaskModelStrategySettings = {
+  mode: 'auto',
+  defaultProfile: 'main',
+  profiles: {
+    fast: { provider: 'zhipu', model: DEFAULT_MODELS.quick, reasoningEffort: 'low', maxTokens: 4096 },
+    main: { provider: 'xiaomi', model: DEFAULT_MODELS.chat, reasoningEffort: 'medium', maxTokens: 16384 },
+    deep: { provider: 'deepseek', model: DEFAULT_MODELS.reasoning, reasoningEffort: 'high', maxTokens: 32768 },
+    vision: { provider: 'xiaomi', model: DEFAULT_MODELS.vision, reasoningEffort: 'medium', maxTokens: 4096 },
+  },
+  fallback: {
+    enabled: true,
+    preferSameProvider: true,
+    allowCrossProvider: true,
+  },
+  rules: [
+    { id: 'simple-chat-fast', label: '短问答', intent: 'simple_chat', enabled: true, profile: 'fast', reason: '短输入使用快速模型' },
+    { id: 'code-main', label: '代码任务', intent: 'coding', enabled: true, profile: 'main', reason: '代码使用主模型' },
+    { id: 'research-deep', label: '研究任务', intent: 'research', enabled: true, profile: 'deep', reason: '研究使用深度模型' },
+    { id: 'vision-route', label: '视觉任务', intent: 'vision', enabled: true, profile: 'vision', reason: '图片使用视觉模型' },
+  ],
+};
 
 // --------------------------------------------------------------------------
 // 1. subagent 路径：adaptive 永远被剥离（泄漏修复）
@@ -190,7 +212,62 @@ describe('resolveModelDecision — simple 路由（计费门控）', () => {
 });
 
 // --------------------------------------------------------------------------
-// 4. 计费方式判定（ADR-019 批 2：用户配置 > 类型默认值）
+// 4. 主聊天：任务策略 settings 接管自动路由
+// --------------------------------------------------------------------------
+
+describe('resolveModelDecision — task strategy routing', () => {
+  it('routes simple chat through configured fast profile', () => {
+    const { config, decision } = resolveModelDecision(makeInput({
+      requestedConfig: makeConfig({ adaptive: true }),
+      messages: SIMPLE_MESSAGE,
+      billingMode: 'plan',
+      taskStrategy,
+    }));
+
+    expect(decision.reason).toBe('strategy-fast');
+    expect(decision.strategyProfile).toBe('fast');
+    expect(decision.strategyRuleId).toBe('simple-chat-fast');
+    expect(decision.strategyReason).toBe('短输入使用快速模型');
+    expect(config.provider).toBe('zhipu');
+    expect(config.model).toBe(DEFAULT_MODELS.quick);
+  });
+
+  it('routes complex research through configured deep profile with effort and max tokens', () => {
+    const { config, decision } = resolveModelDecision(makeInput({
+      requestedConfig: makeConfig({ adaptive: true }),
+      messages: COMPLEX_MESSAGE,
+      taskStrategy,
+    }));
+
+    expect(decision.reason).toBe('strategy-deep');
+    expect(decision.strategyProfile).toBe('deep');
+    expect(decision.taskComplexity?.level).toBe('complex');
+    expect(config.provider).toBe('deepseek');
+    expect(config.model).toBe(DEFAULT_MODELS.reasoning);
+    expect(config.reasoningEffort).toBe('high');
+    expect(config.maxTokens).toBe(32768);
+  });
+
+  it('turns off adaptive fallback when strategy forbids cross-provider fallback', () => {
+    const { config } = resolveModelDecision(makeInput({
+      requestedConfig: makeConfig({ adaptive: true }),
+      messages: SIMPLE_MESSAGE,
+      taskStrategy: {
+        ...taskStrategy,
+        fallback: {
+          enabled: true,
+          preferSameProvider: true,
+          allowCrossProvider: false,
+        },
+      },
+    }));
+
+    expect(config.adaptive).toBe(false);
+  });
+});
+
+// --------------------------------------------------------------------------
+// 5. 计费方式判定（ADR-019 批 2：用户配置 > 类型默认值）
 // --------------------------------------------------------------------------
 
 describe('resolveProviderBillingMode — 计费方式判定', () => {

@@ -25,6 +25,14 @@ describe('appStore workbench tabs', () => {
     expect(state.activeWorkbenchTab).toBe('skills');
   });
 
+  it('openWorkbenchTab supports the replay audit tab', () => {
+    useAppStore.getState().openWorkbenchTab('audit');
+
+    const state = useAppStore.getState();
+    expect(state.workbenchTabs).toEqual(['task', 'audit']);
+    expect(state.activeWorkbenchTab).toBe('audit');
+  });
+
   it('openWorkbenchTab on an already-open tab only re-activates (no duplicate)', () => {
     const { openWorkbenchTab, setActiveWorkbenchTab } = useAppStore.getState();
     openWorkbenchTab('skills');

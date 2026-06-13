@@ -8,6 +8,7 @@
 import { getDatabase } from '../services/core/databaseService';
 import { buildSessionTraceIdentity } from '../../shared/contract/reviewQueue';
 import type { Message, ToolCall, ToolResult } from '../../shared/contract';
+import type { TurnQualitySummary } from '../../shared/contract/turnQuality';
 import type {
   ReplayBlock,
   ReplayMetricAvailability,
@@ -16,6 +17,7 @@ import type {
   StructuredReplay,
   TelemetryCompleteness,
 } from '../../shared/contract/evaluation';
+import { attachSessionQualityScoring } from './sessionQualityScoring';
 
 export type ReplayToolDistribution = Record<ReplayToolCategory, number>;
 
@@ -146,6 +148,26 @@ function buildTranscriptToolCallBlock(
   };
 }
 
+export function buildMemoryAuditBlock(summary: TurnQualitySummary, timestamp: number): ReplayBlock {
+  const memoryCount = summary.memory.blocks.reduce((sum, block) => (
+    sum + (block.items?.length || block.count || 0)
+  ), 0);
+  const model = `${summary.strategy.provider}/${summary.strategy.model}`;
+  return {
+    type: 'memory_audit',
+    content: `Memory ${summary.memory.mode}; ${memoryCount} memories; ${model}; score ${summary.score?.score ?? 0}/${summary.score?.max ?? 100}`,
+    timestamp,
+    memoryAudit: {
+      mode: summary.memory.mode,
+      blocks: summary.memory.blocks,
+      suppressedEntryIds: summary.memory.suppressedEntryIds,
+      offReason: summary.memory.offReason,
+      score: summary.score,
+      agentScorecard: summary.agentScorecard,
+    },
+  };
+}
+
 function toTranscriptReplayBlocks(
   message: Message,
   resultByCallId: Map<string, ToolResult>,
@@ -217,6 +239,10 @@ function toTranscriptReplayBlocks(
         category: normalizeToolCategory(matchingCall?.name || 'unknown'),
       },
     });
+  }
+
+  if (message.metadata?.turnQuality) {
+    blocks.push(buildMemoryAuditBlock(message.metadata.turnQuality, message.timestamp));
   }
 
   return blocks;
@@ -342,7 +368,7 @@ export function buildTranscriptReplay(
     sum + turn.blocks.filter(block => block.type === 'tool_call' && block.toolCall?.successKnown).length
   ), 0);
 
-  return {
+  const replay: StructuredReplay = {
     sessionId,
     traceIdentity: buildSessionTraceIdentity(sessionId),
     traceSource: 'session_replay',
@@ -364,4 +390,5 @@ export function buildTranscriptReplay(
       telemetryCompleteness: buildCompleteness(sessionId, turns, transcriptToolCallCount),
     },
   };
+  return attachSessionQualityScoring(replay);
 }

@@ -6,7 +6,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { AlertTriangle, Image, FileText, Clock3, CornerDownRight, X, UserPlus } from 'lucide-react';
+import { AlertTriangle, Image, FileText, Clock3, CornerDownRight, X, UserPlus, Brain } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import type { ConversationEnvelope, RuntimeInputMode } from '@shared/contract/conversationEnvelope';
 import { getModelDisplayLabel, MODEL_FEATURES, UI } from '@shared/constants';
@@ -188,6 +188,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const activeAgentId = useAppStore((state) => state.activeAgentId);
   const setActiveAgentId = useAppStore((state) => state.setActiveAgentId);
   const hasMessages = useSessionStore((state) => state.messages.length > 0);
+  const currentSessionMemoryMode = useSessionStore((state) =>
+    currentSessionId
+      ? state.sessions.find((session) => session.id === currentSessionId)?.memoryMode || 'auto'
+      : 'auto'
+  );
+  const updateSessionMemoryMode = useSessionStore((state) => state.updateSessionMemoryMode);
   const swarmAgents = useSwarmStore((state) => state.agents);
   const agentMentionAutocomplete = useMemo(
     () => getLeadingAgentMentionAutocomplete(value, swarmAgents),
@@ -811,6 +817,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
   }, []);
 
+  const handleMemoryModeToggle = useCallback(async () => {
+    if (!currentSessionId) return;
+    const nextMode = currentSessionMemoryMode === 'off' ? 'auto' : 'off';
+    try {
+      await updateSessionMemoryMode(currentSessionId, nextMode);
+      toast.success(nextMode === 'off' ? '本会话记忆已关闭' : '本会话记忆已开启');
+    } catch (error) {
+      toast.error(`更新记忆设置失败：${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  }, [currentSessionId, currentSessionMemoryMode, updateSessionMemoryMode]);
+
   const modelConfig = useAppStore((s) => s.modelConfig);
   const [sessionModelOverride, setSessionModelOverride] = useState<ModelOverrideChangeDetail['override']>(null);
   const sessionCost = useStatusStore((s) => s.sessionCost);
@@ -1171,6 +1188,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
             {/* 运行权限模式 chip（高频，保留独立位置） */}
             <PermissionToggle disabled={disabled && !isProcessing} />
+
+            <button
+              type="button"
+              onClick={handleMemoryModeToggle}
+              disabled={!currentSessionId}
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                currentSessionMemoryMode === 'off'
+                  ? 'border-zinc-700 bg-zinc-900/70 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
+                  : 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/15'
+              }`}
+              title={currentSessionMemoryMode === 'off' ? '本会话记忆已关闭，点击开启' : '本会话记忆已开启，点击关闭'}
+              aria-label={currentSessionMemoryMode === 'off' ? '开启本会话记忆' : '关闭本会话记忆'}
+              aria-pressed={currentSessionMemoryMode !== 'off'}
+            >
+              <Brain className="h-4 w-4" />
+            </button>
 
             {/* B+ 移除: AbilityMenu (Routing/Browser/Live Preview) — 挪到 Settings；
                 Live Preview 后续挪到 SessionWorkspaceBar 顶栏 */}

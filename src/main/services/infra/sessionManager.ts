@@ -277,6 +277,8 @@ export class SessionManager implements Disposable {
       parentSessionId: options.parentSessionId,
       sourceRunId: options.sourceRunId,
       engine: normalizeAgentEngineSession(options.engine),
+      memoryMode: 'auto',
+      suppressedMemoryEntryIds: [],
       readOnly: options.readOnly,
       retryOfSessionId: options.retryOfSessionId,
       createdAt: now,

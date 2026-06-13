@@ -8,12 +8,18 @@
 
 import { createLogger } from '../services/infra/logger';
 import type { ModelConfig, ModelProvider } from '../../shared/contract';
-import type { ModelProviderSettings } from '../../shared/contract/settings';
+import type {
+  ModelProviderSettings,
+  TaskModelStrategySettings,
+  TaskStrategyProfileId,
+  TaskStrategyRuleIntent,
+  TaskStrategyRuleSettings,
+} from '../../shared/contract/settings';
 import type { BillingMode, ModelDecision, ModelDecisionReason } from '../../shared/contract/modelDecision';
 import type { ModelMessage } from './types';
 import { DEFAULT_MODELS } from '../../shared/constants';
 import { isDynamicCustomProviderId } from '../../shared/modelRuntime';
-import { getAdaptiveRouter } from './adaptiveRouter';
+import { getAdaptiveRouter, type TaskComplexity } from './adaptiveRouter';
 
 const logger = createLogger('ModelDecision');
 
@@ -30,6 +36,8 @@ export interface ModelDecisionInput {
   subagentRole?: string;
   /** 默认模型所属 provider 的计费方式（批 2 接 settings；缺省 payg 保持现有行为） */
   billingMode?: BillingMode;
+  /** 全局任务策略。传入后，main-chat adaptive 会按策略 profile 路由。 */
+  taskStrategy?: TaskModelStrategySettings;
 }
 
 export interface ModelDecisionResult {
@@ -44,6 +52,83 @@ const FREE_MODEL = {
   provider: 'zhipu' as ModelProvider,
   model: DEFAULT_MODELS.quick,
 };
+
+const STRATEGY_REASON_BY_PROFILE: Record<TaskStrategyProfileId, ModelDecisionReason> = {
+  fast: 'strategy-fast',
+  main: 'strategy-main',
+  deep: 'strategy-deep',
+  vision: 'strategy-vision',
+};
+
+function hasVisionInput(messages: ModelMessage[]): boolean {
+  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+  return Array.isArray(lastUserMsg?.content) && lastUserMsg.content.some(c => c.type === 'image');
+}
+
+function messageText(messages: ModelMessage[]): string {
+  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+  if (!lastUserMsg) return '';
+  if (typeof lastUserMsg.content === 'string') return lastUserMsg.content;
+  if (Array.isArray(lastUserMsg.content)) {
+    return lastUserMsg.content
+      .filter(c => c.type === 'text')
+      .map(c => c.text || '')
+      .join(' ');
+  }
+  return '';
+}
+
+function inferStrategyIntent(
+  messages: ModelMessage[],
+  complexity: TaskComplexity,
+): TaskStrategyRuleIntent {
+  if (hasVisionInput(messages)) return 'vision';
+
+  const text = messageText(messages).toLowerCase();
+  if (complexity.level === 'complex' || /研究|规划|方案|重构|架构|对标|分析|audit|review|refactor|architect|migrate|benchmark/.test(text)) {
+    return 'research';
+  }
+  if (/```|\.tsx?|\.jsx?|\.py|\.go|\.rs|\.java|\.css|\.html|package\.json|tsconfig|readme|代码|文件|修复|实现|测试|改/.test(text)) {
+    return 'coding';
+  }
+  if (complexity.level === 'simple') return 'simple_chat';
+  return 'coding';
+}
+
+function findEnabledStrategyRule(
+  strategy: TaskModelStrategySettings,
+  intent: TaskStrategyRuleIntent,
+): TaskStrategyRuleSettings | undefined {
+  return strategy.rules.find((rule) => rule.enabled && rule.intent === intent);
+}
+
+function resolveStrategyProfile(
+  strategy: TaskModelStrategySettings,
+  intent: TaskStrategyRuleIntent,
+): { profile: TaskStrategyProfileId; rule?: TaskStrategyRuleSettings } {
+  const rule = findEnabledStrategyRule(strategy, intent);
+  if (rule) return { profile: rule.profile, rule };
+  return { profile: strategy.defaultProfile || 'main' };
+}
+
+function applyStrategySlot(
+  requestedConfig: ModelConfig,
+  strategy: TaskModelStrategySettings,
+  profile: TaskStrategyProfileId,
+): ModelConfig {
+  const slot = strategy.profiles?.[profile] || strategy.profiles?.main;
+  if (!slot) return requestedConfig;
+  return {
+    ...requestedConfig,
+    provider: slot.provider,
+    model: slot.model,
+    reasoningEffort: slot.reasoningEffort ?? requestedConfig.reasoningEffort,
+    maxTokens: slot.maxTokens ?? requestedConfig.maxTokens,
+    adaptive: strategy.fallback.enabled && strategy.fallback.allowCrossProvider
+      ? requestedConfig.adaptive
+      : false,
+  };
+}
 
 /**
  * 判定 provider 的计费方式（ADR-019 决策 4 + 6.2）。
@@ -136,7 +221,7 @@ export function resolveTierModelConfig(
  * 3. 永不向上：本函数所有切换只会切到免费档，不会切到更贵的模型
  */
 export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionResult {
-  const { requestedConfig, messages, context, subagentRole } = input;
+  const { requestedConfig, messages, context, subagentRole, taskStrategy } = input;
   const billingMode: BillingMode = input.billingMode ?? 'payg';
 
   const base: Omit<ModelDecision, 'reason' | 'resolvedProvider' | 'resolvedModel'> = {
@@ -173,8 +258,33 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
     };
   }
 
-  // ---- 3. 主聊天 + adaptive：简单任务 → 免费档（计费门控） ----
   const complexity = getAdaptiveRouter().estimateComplexity(messages);
+
+  if (taskStrategy) {
+    const intent = taskStrategy.mode === 'manual'
+      ? 'coding'
+      : inferStrategyIntent(messages, complexity);
+    const { profile, rule } = taskStrategy.mode === 'manual'
+      ? { profile: (taskStrategy.defaultProfile || 'main') as TaskStrategyProfileId, rule: undefined }
+      : resolveStrategyProfile(taskStrategy, intent);
+    const decidedConfig = applyStrategySlot(requestedConfig, taskStrategy, profile);
+    const reason = STRATEGY_REASON_BY_PROFILE[profile] || 'strategy-main';
+    return {
+      config: decidedConfig,
+      decision: {
+        ...base,
+        resolvedProvider: decidedConfig.provider,
+        resolvedModel: decidedConfig.model,
+        reason,
+        strategyProfile: profile,
+        strategyRuleId: rule?.id,
+        strategyReason: rule?.reason || `使用 ${profile} 任务策略`,
+        taskComplexity: complexity,
+      },
+    };
+  }
+
+  // ---- 3. 主聊天 + adaptive：简单任务 → 免费档（计费门控） ----
   const alreadyFree = requestedConfig.provider === FREE_MODEL.provider
     && requestedConfig.model === FREE_MODEL.model;
 
@@ -189,6 +299,7 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
           resolvedProvider: requestedConfig.provider,
           resolvedModel: requestedConfig.model,
           reason: 'billing-gate-skip',
+          taskComplexity: complexity,
         },
       };
     }
@@ -201,6 +312,10 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
         resolvedProvider: FREE_MODEL.provider,
         resolvedModel: FREE_MODEL.model,
         reason: 'simple-task-free',
+        strategyProfile: 'fast',
+        strategyRuleId: 'legacy-simple-task-free',
+        strategyReason: '简单任务使用快速免费模型',
+        taskComplexity: complexity,
       },
     };
   }
@@ -213,6 +328,7 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
       resolvedProvider: requestedConfig.provider,
       resolvedModel: requestedConfig.model,
       reason: 'user-selected',
+      taskComplexity: complexity,
     },
   };
 }

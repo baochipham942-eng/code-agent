@@ -137,6 +137,7 @@ export interface MemoryPackRequest {
   query?: string;
   projectPath?: string | null;
   sessionId?: string | null;
+  excludeEntryIds?: string[];
   kinds?: MemoryEntryKind[];
   statuses?: MemoryEntryStatus[];
   maxItems?: number;

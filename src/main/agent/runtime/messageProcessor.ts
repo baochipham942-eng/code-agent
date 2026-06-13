@@ -62,6 +62,7 @@ import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
 import { generateTruncationWarning } from './truncationPrompts';
 import { isToolDeniedForRun } from './toolRunPolicy';
+import { attachTurnQualityMetadata } from './turnQuality';
 
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
@@ -170,6 +171,7 @@ export class MessageProcessor {
       effortLevel: this.ctx.effortLevel,
       inputTokens: response.usage?.inputTokens,
       outputTokens: response.usage?.outputTokens,
+      metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
       contentParts: response.contentParts?.map((part) =>
         part.type === 'text'
           ? { type: 'text' as const, text: this.contextAssembly.stripInternalFormatMimicry(part.text) }
@@ -590,6 +592,7 @@ export class MessageProcessor {
           content: `本轮请求了后台运行禁用的交互工具（${deniedNames}），已停止继续调用工具。`,
           timestamp: Date.now(),
           effortLevel: this.ctx.effortLevel,
+          metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
           ...(this.ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
         };
         await this.contextAssembly.addAndPersistMessage(finalMessage);
@@ -697,6 +700,7 @@ export class MessageProcessor {
             effortLevel: this.ctx.effortLevel,
             inputTokens: response.usage?.inputTokens,
             outputTokens: response.usage?.outputTokens,
+            metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
           };
           await this.contextAssembly.addAndPersistMessage(truncAssistantMsg);
           this.ctx.onEvent({ type: 'message', data: truncAssistantMsg });
@@ -761,6 +765,7 @@ export class MessageProcessor {
       effortLevel: this.ctx.effortLevel,
       inputTokens: response.usage?.inputTokens,
       outputTokens: response.usage?.outputTokens,
+      metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
       contentParts: response.contentParts?.map(p =>
         p.type === 'text' ? { type: 'text' as const, text: this.contextAssembly.stripInternalFormatMimicry(p.text) } : p
       ),
@@ -915,6 +920,7 @@ export class MessageProcessor {
         content: buildForcedFinalAssistantContent(this.ctx.forceFinalResponseReason),
         timestamp: Date.now(),
         effortLevel: this.ctx.effortLevel,
+        metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
       };
       await this.contextAssembly.addAndPersistMessage(finalMessage);
       this.ctx.onEvent({ type: 'message', data: finalMessage });

@@ -28,6 +28,7 @@ export const SessionActionsMenu: React.FC = () => {
   const appWorkingDirectory = useAppStore((s) => s.workingDirectory);
   const setAppWorkingDirectory = useAppStore((s) => s.setWorkingDirectory);
   const openDevServerLauncher = useAppStore((s) => s.openDevServerLauncher);
+  const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
   const pendingPermissionRequest = useAppStore((s) => s.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore((s) => s.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore((s) => s.queuedPermissionRequests);
@@ -165,6 +166,12 @@ export const SessionActionsMenu: React.FC = () => {
     label: 'Live Preview…',
     icon: <Play className="h-3.5 w-3.5" />,
     onClick: () => { close(); openDevServerLauncher(); },
+  });
+  items.push({
+    key: 'audit',
+    label: '打开 Replay/Audit',
+    icon: <ClipboardList className="h-3.5 w-3.5" />,
+    onClick: () => { close(); openWorkbenchTab('audit'); },
   });
   items.push({
     key: 'export',

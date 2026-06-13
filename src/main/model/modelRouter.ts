@@ -10,6 +10,7 @@ import type {
   ModelProvider,
   ModelProviderSettings
 } from '../../shared/contract';
+import type { TaskModelStrategySettings } from '../../shared/contract/settings';
 import { PROVIDER_REGISTRY } from './providerRegistry';
 import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS } from '../../shared/constants';
 import { isFallbackEligible, abortableSleep } from './providers/retryStrategy';
@@ -505,55 +506,65 @@ export class ModelRouter {
     const adaptiveRouter = getAdaptiveRouter();
     const complexity = adaptiveRouter.estimateComplexity(messages);
     let simpleTaskBillingMode: BillingMode | undefined;
+    let taskStrategy: TaskModelStrategySettings | undefined;
     try {
+      const settings = getConfigService().getSettings();
       simpleTaskBillingMode = resolveProviderBillingMode(
         config.provider,
-        getConfigService().getSettings().models?.providers,
+        settings.models?.providers,
       );
+      taskStrategy = settings.models?.taskStrategy;
     } catch { /* settings 不可用 → 决策入口内部缺省 payg */ }
     const simpleTaskDecision = resolveModelDecision({
       requestedConfig: config,
       messages,
       context: 'main-chat',
       billingMode: simpleTaskBillingMode,
+      taskStrategy,
     });
-    if (simpleTaskDecision.decision.reason === 'simple-task-free') {
+    if (
+      simpleTaskDecision.decision.reason === 'simple-task-free'
+      || simpleTaskDecision.decision.reason === 'strategy-fast'
+      || simpleTaskDecision.decision.reason === 'strategy-main'
+      || simpleTaskDecision.decision.reason === 'strategy-deep'
+      || simpleTaskDecision.decision.reason === 'strategy-vision'
+    ) {
       const adaptedConfig = { ...simpleTaskDecision.config };
-      if (adaptedConfig.provider !== config.provider || adaptedConfig.model !== config.model) {
-        // 切换 provider 时需要获取对应的 apiKey
-        let canUseFreeModel = true;
-        if (adaptedConfig.provider !== config.provider) {
-          const adaptedApiKey = getConfigService().getApiKey(adaptedConfig.provider);
-          if (!adaptedApiKey) {
+      // 切换 provider 时需要获取对应的 apiKey；同 provider/model 也要保留策略 maxTokens / effort。
+      let canUseAdaptedModel = true;
+      if (adaptedConfig.provider !== config.provider) {
+        const adaptedApiKey = getConfigService().getApiKey(adaptedConfig.provider);
+        if (!adaptedApiKey) {
+          if (simpleTaskDecision.decision.reason === 'simple-task-free') {
             adaptiveRouter.disableFreeModel(`no API key for ${adaptedConfig.provider}`);
-            canUseFreeModel = false;
-          } else {
-            adaptedConfig.apiKey = adaptedApiKey;
           }
+          canUseAdaptedModel = false;
+        } else {
+          adaptedConfig.apiKey = adaptedApiKey;
         }
-        if (canUseFreeModel) {
-          try {
-            const result = await this._callProviderWithArtifactFallback(messages, tools, adaptedConfig, onStream, signal, normalizedOptions);
-            this.assertUsableArtifactResponse(messages, result, adaptedConfig);
-            adaptiveRouter.recordOutcome(complexity, adaptedConfig.provider, true, 0);
-            // Cache non-streaming text responses
-            if (!onStream && result.type === 'text') {
-              const cache = getInferenceCache();
-              const cacheKey = cache.computeKey(messages, config);
-              cache.set(cacheKey, result);
-            }
-            return result;
-          } catch (err) {
-            const errMsg = err instanceof Error ? err.message : String(err);
-            // 401/403 是持久性错误（key 过期/无效），禁用 free model 避免重复失败
-            if (/401|403|unauthorized|forbidden/i.test(errMsg)) {
-              adaptiveRouter.disableFreeModel(errMsg.split('\n')[0]);
-            } else {
-              logger.warn(`[AdaptiveRouter] Free model failed, falling back to default: ${errMsg.split('\n')[0]}`);
-            }
-            adaptiveRouter.recordOutcome(complexity, adaptedConfig.provider, false, 0);
-            // Fall through to default provider
+      }
+      if (canUseAdaptedModel) {
+        try {
+          const result = await this._callProviderWithArtifactFallback(messages, tools, adaptedConfig, onStream, signal, normalizedOptions);
+          this.assertUsableArtifactResponse(messages, result, adaptedConfig);
+          adaptiveRouter.recordOutcome(complexity, adaptedConfig.provider, true, 0);
+          // Cache non-streaming text responses
+          if (!onStream && result.type === 'text') {
+            const cache = getInferenceCache();
+            const cacheKey = cache.computeKey(messages, config);
+            cache.set(cacheKey, result);
           }
+          return result;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          // 401/403 是持久性错误（key 过期/无效），禁用 free model 避免重复失败
+          if (simpleTaskDecision.decision.reason === 'simple-task-free' && /401|403|unauthorized|forbidden/i.test(errMsg)) {
+            adaptiveRouter.disableFreeModel(errMsg.split('\n')[0]);
+          } else {
+            logger.warn(`[AdaptiveRouter] Strategy model failed, falling back to default: ${errMsg.split('\n')[0]}`);
+          }
+          adaptiveRouter.recordOutcome(complexity, adaptedConfig.provider, false, 0);
+          // Fall through to default provider
         }
       }
     }

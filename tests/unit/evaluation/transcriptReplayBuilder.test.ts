@@ -6,11 +6,13 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  buildMemoryAuditBlock,
   createEmptyToolDistribution,
   normalizeToolCategory,
   getToolResultContent,
 } from '../../../src/main/evaluation/transcriptReplayBuilder';
 import type { ToolResult } from '../../../src/shared/contract';
+import type { TurnQualitySummary } from '../../../src/shared/contract/turnQuality';
 
 describe('createEmptyToolDistribution', () => {
   it('返回所有 ReplayToolCategory 的零计数对象', () => {
@@ -99,5 +101,66 @@ describe('getToolResultContent', () => {
   it('完全空时返回空串', () => {
     const r: ToolResult = { toolCallId: 'x', success: true } as ToolResult;
     expect(getToolResultContent(r)).toBe('');
+  });
+});
+
+describe('buildMemoryAuditBlock', () => {
+  it('turns turnQuality metadata into replay memory audit evidence', () => {
+    const summary: TurnQualitySummary = {
+      memory: {
+        mode: 'auto',
+        blocks: [{
+          blockType: 'seed-memory',
+          trigger: 'session_start',
+          source: 'memory-packer',
+          injected: true,
+          chars: 64,
+          count: 1,
+        }],
+      },
+      strategy: {
+        provider: 'deepseek',
+        model: 'deepseek-v4-pro',
+        requestedProvider: 'openai',
+        requestedModel: 'gpt-4.1',
+        profile: 'deep',
+      },
+      score: {
+        score: 86,
+        max: 100,
+        grade: 'good',
+        breakdown: [{
+          dimension: 'memory',
+          score: 18,
+          max: 20,
+          status: 'good',
+          reasons: ['注入 1 个记忆块'],
+        }],
+      },
+      agentScorecard: {
+        agentId: 'coder',
+        agentName: 'Coder',
+        model: 'deepseek/deepseek-v4-pro',
+        strategyProfile: 'deep',
+        memoryUsed: 1,
+        toolsUsed: 2,
+        warnings: 0,
+        score: {
+          score: 86,
+          max: 100,
+          grade: 'good',
+          breakdown: [],
+        },
+      },
+    };
+
+    const block = buildMemoryAuditBlock(summary, 123);
+
+    expect(block.type).toBe('memory_audit');
+    expect(block.memoryAudit?.mode).toBe('auto');
+    expect(block.memoryAudit?.blocks[0].blockType).toBe('seed-memory');
+    expect(block.memoryAudit?.score?.score).toBe(86);
+    expect(block.memoryAudit?.agentScorecard?.agentId).toBe('coder');
+    expect(block.content).toContain('deepseek/deepseek-v4-pro');
   });
 });

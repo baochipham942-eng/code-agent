@@ -3,13 +3,16 @@ import { createLogger } from '../services/infra/logger';
 import { buildSessionTraceIdentity } from '../../shared/contract/reviewQueue';
 import { classifyError } from '../telemetry/telemetryCollector';
 import { getToolDefinitionWithCloudMeta } from '../tools/dispatch/toolDefinitions';
+import type { Message } from '../../shared/contract';
 import type { ObjectiveMetrics } from '../../shared/contract/sessionAnalytics';
 import { getReplayCompletenessReasons } from '../../shared/contract/evaluation';
 import {
+  buildMemoryAuditBlock,
   buildTranscriptReplay,
   createEmptyToolDistribution,
   normalizeToolCategory,
 } from './transcriptReplayBuilder';
+import { attachSessionQualityScoring } from './sessionQualityScoring';
 import type {
   ReplayBlock,
   ReplayMetricAvailability,
@@ -715,12 +718,24 @@ class TelemetryQueryService {
       let totalThinkingTokens = 0;
       let totalAllTokens = 0;
       let totalDurationMs = 0;
+      let memoryAuditMessages: Message[] = [];
+      try {
+        memoryAuditMessages = getDatabase()
+          .getMessages(sessionId)
+          .filter((message) => Boolean(message.metadata?.turnQuality))
+          .sort((left, right) => left.timestamp - right.timestamp);
+      } catch {
+        memoryAuditMessages = [];
+      }
 
-      const turns = data.turnRows.map(row => {
+      const turns = data.turnRows.map((row, rowIndex) => {
         const leadingBlocks: ReplayBlock[] = [];
         const timelineBlocks: ReplayBlock[] = [];
         const trailingBlocks: ReplayBlock[] = [];
         const turnId = row.id as string;
+        const turnStart = (row.start_time as number) || 0;
+        const nextTurnStart = data.turnRows[rowIndex + 1]?.start_time as number | undefined;
+        const turnEnd = (row.end_time as number) || nextTurnStart || turnStart;
         const turnModelCalls = data.modelCallRows.filter(mc => mc.turn_id === turnId);
         const turnToolCalls = data.toolCallRows.filter(tc => tc.turn_id === turnId);
         const turnEvents = data.eventRows.filter(ev => ev.turn_id === turnId);
@@ -848,6 +863,13 @@ class TelemetryQueryService {
           });
         }
 
+        for (const message of memoryAuditMessages) {
+          if (message.timestamp < turnStart || message.timestamp > turnEnd) continue;
+          if (message.metadata?.turnQuality) {
+            timelineBlocks.push(buildMemoryAuditBlock(message.metadata.turnQuality, message.timestamp));
+          }
+        }
+
         if (row.compaction_occurred && !turnEvents.some(ev => ev.event_type === 'context_compressed')) {
           timelineBlocks.push({
             type: 'context_event',
@@ -875,6 +897,7 @@ class TelemetryQueryService {
           user: 0,
           thinking: 1,
           model_call: 2,
+          memory_audit: 3,
           event: 3,
           context_event: 3,
           tool_call: 4,
@@ -1014,7 +1037,7 @@ class TelemetryQueryService {
         || block.type === 'model_call' && Boolean(block.modelDecision?.toolSchemas?.length)
       )));
 
-      return {
+      const replay: StructuredReplay = {
         sessionId,
         traceIdentity: buildSessionTraceIdentity(sessionId),
         traceSource: 'session_replay',
@@ -1045,6 +1068,7 @@ class TelemetryQueryService {
           failureAttribution,
         },
       };
+      return attachSessionQualityScoring(replay);
     } catch (error) {
       logger.warn('Failed to build structured replay from telemetry', { error, sessionId });
       return null;

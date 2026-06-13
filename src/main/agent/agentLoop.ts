@@ -159,7 +159,10 @@ export class AgentLoop {
       isDefaultWorkingDirectory: config.isDefaultWorkingDirectory ?? true,
       sessionId: resolvedSessionId,
       agentId: config.agentId,
+      agentName: config.agentName,
       userId: config.userId,
+      memoryMode: config.memoryMode ?? 'auto',
+      suppressedMemoryEntryIds: config.suppressedMemoryEntryIds,
       persistMessage: config.persistMessage,
       onToolExecutionLog: config.onToolExecutionLog,
       toolScope: config.toolScope,
@@ -236,6 +239,7 @@ export class AgentLoop {
       // Tracing
       traceId: '',
       turnTrace: new TurnTraceRecorder(resolvedSessionId),
+      turnQualityMemory: undefined,
       currentIterationSpanId: '',
       currentTurnId: '',
       messageDeltaSeq: 0,

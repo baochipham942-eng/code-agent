@@ -486,7 +486,7 @@ type HookEvent =
 | ID | 任务 | 文件路径 | 工作量 | 依赖 |
 |----|------|---------|--------|------|
 | D6 | API 文档更新 | `docs/api/` | 4h | All |
-| D7 | 迁移指南 | `docs/migration/v0.9-upgrade.md` | 3h | All |
+| D7 | 迁移指南 | `docs/migrations/v0.9-upgrade.md` | 3h | All |
 | D8 | CHANGELOG 更新 | `CHANGELOG.md` | 2h | All |
 | D9 | CLAUDE.md 更新 | `CLAUDE.md` | 2h | All |
 | D10 | 示例代码更新 | `examples/` | 3h | All |

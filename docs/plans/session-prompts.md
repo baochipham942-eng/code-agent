@@ -796,7 +796,7 @@ git checkout -b feature/quality
 - Hooks API
 
 ### D7: 迁移指南
-创建 `docs/migration/v0.9-upgrade.md`:
+创建 `docs/migrations/v0.9-upgrade.md`:
 - 配置文件变更
 - API 变更
 - 破坏性改动

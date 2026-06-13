@@ -515,7 +515,7 @@ npm run typecheck && npx vitest run && npm run build && npm run build:cli
 ```
 
 如果 1-5 全过，恭喜，迁移完结。删掉 `tools/LEGACY.md`、本 SOP 文件移到
-`docs/archived/`，ESLint patterns 是否保留由父会话决定。
+`docs/archive/`，ESLint patterns 是否保留由父会话决定。
 
 ---
 

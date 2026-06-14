@@ -16,6 +16,7 @@ import type {
   ProjectRoleLink,
   ProjectStatus,
 } from '@shared/contract/project';
+import type { ArtifactIssue, ArtifactIssueStatus } from '@shared/contract/productClosure';
 import ipcService from './ipcService';
 
 export async function listProjects(includeArchived = false): Promise<Project[]> {
@@ -28,6 +29,18 @@ export async function getProjectDetail(projectId: string): Promise<ProjectDetail
 
 export async function getProjectArtifacts(projectId: string, limit?: number): Promise<ProjectArtifact[]> {
   return ipcService.invokeDomain<ProjectArtifact[]>(IPC_DOMAINS.PROJECT, 'artifacts', { projectId, limit });
+}
+
+export async function getArtifactIssuesByArtifactId(
+  artifactIds: string[],
+  opts: { status?: ArtifactIssueStatus; limit?: number } = {},
+): Promise<Record<string, ArtifactIssue[]>> {
+  if (artifactIds.length === 0) return {};
+  return ipcService.invokeDomain<Record<string, ArtifactIssue[]>>(IPC_DOMAINS.PROJECT, 'artifactIssues', {
+    artifactIds,
+    status: opts.status,
+    limit: opts.limit,
+  });
 }
 
 export async function renameProject(projectId: string, name: string): Promise<Project> {

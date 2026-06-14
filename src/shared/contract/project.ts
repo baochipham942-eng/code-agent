@@ -54,6 +54,23 @@ export interface ProjectDetail {
   sessionIds: string[];
 }
 
+export type ProjectArtifactKind =
+  | 'chart'
+  | 'spreadsheet'
+  | 'document'
+  | 'generative_ui'
+  | 'mermaid'
+  | 'question_form'
+  | 'text'
+  | 'binary'
+  | 'image'
+  | 'audio'
+  | 'video'
+  | 'web'
+  | 'search'
+  | 'process-output'
+  | 'process-log';
+
 /** 项目维度聚合的产物条目（跨该项目所有 session 抽取，中心视图"产物列表"数据源） */
 export interface ProjectArtifact {
   /** 内容哈希派生的稳定 ID，用于跨 session 去重 */
@@ -61,9 +78,15 @@ export interface ProjectArtifact {
   sessionId: string;
   /** 产出该产物的 session 标题（便于在产物列表标注来源） */
   sessionTitle?: string;
-  kind: 'chart' | 'spreadsheet' | 'document' | 'generative_ui' | 'mermaid' | 'question_form';
+  kind: ProjectArtifactKind;
   title?: string;
   createdAt: number;
+  path?: string;
+  url?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  sha256?: string;
+  sourceTool?: string;
 }
 
 /** 保留项目 ID：无 workspace 的存量会话归入此项目 */

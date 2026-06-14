@@ -142,6 +142,255 @@ describe('buildWorkspacePreviewItems', () => {
     });
   });
 
+  it('preserves rich tool artifact metadata for preview evidence', () => {
+    const messages: Message[] = [
+      {
+        id: 'msg-image',
+        role: 'assistant',
+        content: '',
+        timestamp: 320,
+        toolCalls: [
+          {
+            id: 'tool-image',
+            name: 'image_generate',
+            arguments: {},
+            result: {
+              toolCallId: 'tool-image',
+              success: true,
+              metadata: {
+                artifacts: [
+                  {
+                    artifactId: 'artifact-hero',
+                    kind: 'image',
+                    sourceTool: 'image_generate',
+                    name: 'Hero preview',
+                    path: 'out/hero.png',
+                    mimeType: 'image/png',
+                    sizeBytes: 2048,
+                    sha256: 'b'.repeat(64),
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    ];
+
+    const items = buildWorkspacePreviewItems({
+      messages,
+      workingDirectory: '/repo/app',
+    });
+
+    expect(items[0]).toMatchObject({
+      id: 'file:/repo/app/out/hero.png',
+      kind: 'image',
+      title: 'Hero preview',
+      subtitle: 'image_generate',
+      file: {
+        path: '/repo/app/out/hero.png',
+        name: 'Hero preview',
+        mimeType: 'image/png',
+        size: 2048,
+        sha256: 'b'.repeat(64),
+      },
+    });
+  });
+
+  it('projects artifact revision and quality metadata onto workspace preview items', () => {
+    const messages: Message[] = [
+      {
+        id: 'msg-quality',
+        role: 'assistant',
+        content: '',
+        timestamp: 330,
+        toolCalls: [
+          {
+            id: 'tool-quality',
+            name: 'Write',
+            arguments: {},
+            result: {
+              toolCallId: 'tool-quality',
+              success: true,
+              metadata: {
+                artifacts: [
+                  {
+                    artifactId: 'artifact-html-v3',
+                    kind: 'text',
+                    sourceTool: 'Write',
+                    name: 'index.html',
+                    path: 'dist/index.html',
+                    mimeType: 'text/html',
+                    sha256: 'c'.repeat(64),
+                    metadata: {
+                      version: 3,
+                      parentArtifactId: 'artifact-html-v2',
+                      changeSummary: 'Reworked hero layout',
+                      artifactIssues: [
+                        {
+                          issueId: 'issue-1',
+                          status: 'open',
+                          severity: 'high',
+                          title: 'Mobile smoke failed',
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    ];
+
+    const items = buildWorkspacePreviewItems({
+      messages,
+      workingDirectory: '/repo/app',
+    });
+
+    expect(items[0]).toMatchObject({
+      id: 'file:/repo/app/dist/index.html:artifact-html-v3',
+      revision: {
+        artifactId: 'artifact-html-v3',
+        version: 3,
+        parentId: 'artifact-html-v2',
+        parentRef: 'artifact:artifact-html-v2',
+        filePath: '/repo/app/dist/index.html',
+        sha256: 'c'.repeat(64),
+        sourceTool: 'Write',
+        changeSummary: 'Reworked hero layout',
+      },
+      quality: {
+        status: 'failed',
+        summary: 'Mobile smoke failed',
+        issueCount: 1,
+        blocking: true,
+      },
+    });
+  });
+
+  it('keeps versioned file artifacts with the same path as separate revision items', () => {
+    const messages: Message[] = [
+      {
+        id: 'msg-v1',
+        role: 'assistant',
+        content: '',
+        timestamp: 100,
+        toolCalls: [
+          {
+            id: 'tool-v1',
+            name: 'Write',
+            arguments: {},
+            result: {
+              toolCallId: 'tool-v1',
+              success: true,
+              metadata: {
+                artifacts: [
+                  {
+                    artifactId: 'report-v1',
+                    kind: 'document',
+                    sourceTool: 'Write',
+                    path: 'reports/final.md',
+                    metadata: { version: 1 },
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+      {
+        id: 'msg-v2',
+        role: 'assistant',
+        content: '',
+        timestamp: 200,
+        toolCalls: [
+          {
+            id: 'tool-v2',
+            name: 'Edit',
+            arguments: {},
+            result: {
+              toolCallId: 'tool-v2',
+              success: true,
+              metadata: {
+                artifacts: [
+                  {
+                    artifactId: 'report-v2',
+                    kind: 'document',
+                    sourceTool: 'Edit',
+                    path: 'reports/final.md',
+                    metadata: {
+                      version: 2,
+                      parentArtifactId: 'report-v1',
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    ];
+
+    const items = buildWorkspacePreviewItems({
+      messages,
+      workingDirectory: '/repo/app',
+    });
+
+    expect(items.filter((item) => item.file?.path === '/repo/app/reports/final.md')).toHaveLength(2);
+    expect(items.map((item) => item.id)).toContain('file:/repo/app/reports/final.md:report-v1');
+    expect(items.map((item) => item.id)).toContain('file:/repo/app/reports/final.md:report-v2');
+  });
+
+  it('classifies media, office, and archive file artifacts for the preview matrix', () => {
+    const messages: Message[] = [
+      {
+        id: 'msg-matrix',
+        role: 'assistant',
+        content: '',
+        timestamp: 340,
+        toolCalls: [
+          {
+            id: 'tool-matrix',
+            name: 'asset_tool',
+            arguments: {},
+            result: {
+              toolCallId: 'tool-matrix',
+              success: true,
+              metadata: {
+                artifacts: [
+                  { artifactId: 'a-image', kind: 'image', sourceTool: 'asset_tool', path: 'assets/hero.png' },
+                  { artifactId: 'a-audio', kind: 'audio', sourceTool: 'asset_tool', path: 'assets/voice.mp3' },
+                  { artifactId: 'a-video', kind: 'video', sourceTool: 'asset_tool', path: 'assets/demo.mp4' },
+                  { artifactId: 'a-docx', kind: 'document', sourceTool: 'asset_tool', path: 'docs/brief.docx' },
+                  { artifactId: 'a-xlsx', kind: 'spreadsheet', sourceTool: 'asset_tool', path: 'data/model.xlsx' },
+                  { artifactId: 'a-deck', kind: 'document', sourceTool: 'asset_tool', path: 'deck/pitch.pptx' },
+                  { artifactId: 'a-zip', kind: 'binary', sourceTool: 'asset_tool', path: 'bundle/site.zip' },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    ];
+
+    const items = buildWorkspacePreviewItems({
+      messages,
+      workingDirectory: '/repo/app',
+    });
+
+    expect(items.map((item) => [item.title, item.kind, item.actions?.[0]?.label])).toEqual([
+      ['hero.png', 'image', 'Preview'],
+      ['voice.mp3', 'audio', 'Preview'],
+      ['demo.mp4', 'video', 'Preview'],
+      ['brief.docx', 'document', 'Preview'],
+      ['model.xlsx', 'spreadsheet', 'Preview'],
+      ['pitch.pptx', 'presentation', 'Preview'],
+      ['site.zip', 'archive', 'Preview'],
+    ]);
+  });
+
   it('surfaces permission diffs as draft preview items', () => {
     const request: PermissionRequest = {
       id: 'permission-1',

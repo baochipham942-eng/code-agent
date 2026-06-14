@@ -43,6 +43,9 @@ export interface NormalizedToolArtifactMeta {
   path?: string;
   url?: string;
   mimeType?: string;
+  sizeBytes?: number;
+  sha256?: string;
+  preview?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -53,6 +56,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function stringField(record: Record<string, unknown> | undefined, key: string): string | undefined {
   const value = record?.[key];
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function numberField(record: Record<string, unknown> | undefined, key: string): number | undefined {
+  const value = record?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function basename(value: string): string {
@@ -81,6 +89,9 @@ function normalizeToolArtifactCandidate(value: unknown): NormalizedToolArtifactM
   const path = stringField(value, 'path');
   const url = stringField(value, 'url');
   const mimeType = stringField(value, 'mimeType');
+  const sizeBytes = numberField(value, 'sizeBytes');
+  const sha256 = stringField(value, 'sha256');
+  const preview = stringField(value, 'preview');
   const name = stringField(value, 'name')
     || stringField(value, 'title')
     || stringField(metadata, 'filename')
@@ -105,6 +116,9 @@ function normalizeToolArtifactCandidate(value: unknown): NormalizedToolArtifactM
     path,
     url,
     mimeType,
+    sizeBytes,
+    sha256,
+    preview,
     metadata,
   };
 }

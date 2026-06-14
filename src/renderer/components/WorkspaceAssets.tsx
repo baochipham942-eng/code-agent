@@ -17,6 +17,8 @@ const VISUAL_ASSET_KINDS = new Set<WorkspacePreviewKind>([
   'diagram',
   'design_ppt',
   'generic_html',
+  'image',
+  'video',
   'web_snapshot',
 ]);
 

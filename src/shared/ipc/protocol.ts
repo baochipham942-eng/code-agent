@@ -58,6 +58,9 @@ export type WorkspaceAction =
   | 'openPath'
   | 'showItemInFolder'
   | 'downloadFile'
+  | 'exportBundle'
+  | 'inspectArchive'
+  | 'inspectPresentation'
   | 'getDesignMdSummary';
 
 /**

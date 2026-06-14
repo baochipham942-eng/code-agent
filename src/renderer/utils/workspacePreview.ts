@@ -4,8 +4,11 @@ import type {
   WorkspacePreviewAction,
   WorkspacePreviewItem,
   WorkspacePreviewKind,
+  WorkspacePreviewQuality,
+  WorkspacePreviewRevision,
   WorkspacePreviewStatus,
 } from '@shared/contract';
+import { collectToolArtifactsFromMetadata } from '@shared/contract/artifactBlob';
 import { normalizeDesignBrief } from '@shared/contract/designBrief';
 import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import { getFileExtension, isPreviewable } from './previewable';
@@ -245,10 +248,14 @@ function resolvePath(filePath: string, workingDirectory?: string | null): string
 
 function fileKindForPath(filePath: string): WorkspacePreviewKind {
   const ext = getFileExtension(filePath);
-  if (['md', 'mdx', 'markdown', 'docx', 'pdf', 'txt'].includes(ext)) return 'document';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return 'image';
+  if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'].includes(ext)) return 'audio';
+  if (['mp4', 'webm', 'mov', 'mkv', 'avi'].includes(ext)) return 'video';
+  if (['zip', 'tar', 'gz', 'tgz', '7z', 'rar'].includes(ext)) return 'archive';
+  if (['ppt', 'pptx'].includes(ext)) return 'presentation';
+  if (['md', 'mdx', 'markdown', 'docx', 'doc', 'pdf', 'txt'].includes(ext)) return 'document';
   if (['csv', 'tsv', 'xlsx', 'xls'].includes(ext)) return 'spreadsheet';
   if (['html', 'htm'].includes(ext)) return 'generic_html';
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return 'web_snapshot';
   return 'file';
 }
 
@@ -267,6 +274,171 @@ function statusFromSuccess(success?: boolean): WorkspacePreviewStatus {
   return 'ready';
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringField(record: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = record?.[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function numberField(record: Record<string, unknown> | undefined, key: string): number | undefined {
+  const value = record?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function booleanField(record: Record<string, unknown> | undefined, key: string): boolean | undefined {
+  const value = record?.[key];
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function severityRank(value: unknown): number {
+  switch (value) {
+    case 'critical':
+      return 5;
+    case 'high':
+      return 4;
+    case 'medium':
+      return 3;
+    case 'low':
+      return 2;
+    case 'info':
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function isActiveIssueStatus(value: unknown): boolean {
+  return value === 'open' || value === 'accepted' || value === 'in_progress';
+}
+
+function normalizeQualityStatus(value: unknown): WorkspacePreviewQuality['status'] {
+  switch (value) {
+    case 'passed':
+    case 'failed':
+    case 'degraded':
+    case 'needs_review':
+      return value;
+    default:
+      return 'unknown';
+  }
+}
+
+function firstString(values: unknown[]): string | undefined {
+  return values.find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim();
+}
+
+function qualityFromMetadata(
+  artifactMetadata?: Record<string, unknown>,
+  resultMetadata?: Record<string, unknown>,
+  success?: boolean,
+): WorkspacePreviewQuality | undefined {
+  const artifactValidation = isRecord(artifactMetadata?.artifactValidation)
+    ? artifactMetadata.artifactValidation
+    : isRecord(resultMetadata?.artifactValidation)
+      ? resultMetadata.artifactValidation
+      : undefined;
+
+  if (artifactValidation) {
+    const failures = Array.isArray(artifactValidation.failures)
+      ? artifactValidation.failures.filter((failure): failure is string => typeof failure === 'string')
+      : [];
+    if (booleanField(artifactValidation, 'failed')) {
+      return {
+        status: 'failed',
+        summary: failures[0] || 'Artifact validation failed',
+        issueCount: Math.max(failures.length, 1),
+        blocking: true,
+      };
+    }
+    if (booleanField(artifactValidation, 'passed') === true) {
+      return {
+        status: 'passed',
+        summary: 'Artifact validation passed',
+      };
+    }
+  }
+
+  const qualityReport = isRecord(artifactMetadata?.qualityReport)
+    ? artifactMetadata.qualityReport
+    : isRecord(resultMetadata?.qualityReport)
+      ? resultMetadata.qualityReport
+      : undefined;
+  if (qualityReport) {
+    const status = normalizeQualityStatus(stringField(qualityReport, 'status'));
+    if (status !== 'unknown') {
+      return {
+        status,
+        summary: stringField(qualityReport, 'summary') || `Quality report: ${status}`,
+      };
+    }
+  }
+
+  const issueCandidates = [
+    ...(Array.isArray(artifactMetadata?.artifactIssues) ? artifactMetadata.artifactIssues : []),
+    ...(Array.isArray(resultMetadata?.artifactIssues) ? resultMetadata.artifactIssues : []),
+  ].filter(isRecord);
+
+  if (issueCandidates.length > 0) {
+    const active = issueCandidates.filter((issue) => isActiveIssueStatus(issue.status));
+    const blocking = active.some((issue) => severityRank(issue.severity) >= 4);
+    const title = firstString(active.map((issue) => issue.title));
+    if (active.length > 0) {
+      return {
+        status: blocking ? 'failed' : 'needs_review',
+        summary: title || `${active.length} active artifact issue(s)`,
+        issueCount: active.length,
+        blocking,
+      };
+    }
+    return {
+      status: 'passed',
+      summary: 'Tracked artifact issues are resolved',
+      issueCount: issueCandidates.length,
+    };
+  }
+
+  if (success === false) {
+    return {
+      status: 'failed',
+      summary: 'Tool result failed',
+      blocking: true,
+    };
+  }
+
+  return undefined;
+}
+
+function revisionFromArtifact(
+  artifact: ReturnType<typeof collectToolArtifactsFromMetadata>[number],
+  filePath?: string,
+): WorkspacePreviewRevision | undefined {
+  const metadata = artifact.metadata;
+  const parentId = stringField(metadata, 'parentId') || stringField(metadata, 'parentArtifactId');
+  const version = numberField(metadata, 'version');
+  if (!artifact.artifactId && !artifact.sha256 && !parentId && version === undefined && !filePath) {
+    return undefined;
+  }
+
+  return {
+    artifactId: artifact.artifactId,
+    version,
+    parentId,
+    parentRef: parentId ? `artifact:${parentId}` : undefined,
+    filePath,
+    sha256: artifact.sha256,
+    sourceTool: artifact.sourceTool,
+    changeSummary: stringField(metadata, 'changeSummary') || stringField(metadata, 'editPrompt'),
+  };
+}
+
+function revisionIdentity(revision: WorkspacePreviewRevision | undefined): string | undefined {
+  if (!revision?.artifactId) return undefined;
+  return revision.parentId || revision.version !== undefined ? revision.artifactId : undefined;
+}
+
 function artifactKind(type: string): WorkspacePreviewKind {
   switch (type) {
     case 'spreadsheet':
@@ -281,6 +453,12 @@ function artifactKind(type: string): WorkspacePreviewKind {
       return 'diagram';
     case 'question_form':
       return 'question_form';
+    case 'image':
+      return 'image';
+    case 'audio':
+      return 'audio';
+    case 'video':
+      return 'video';
     default:
       return 'file';
   }
@@ -307,6 +485,8 @@ function coercePreviewItem(
     priority: raw.priority ?? 50,
     currentTurn: raw.currentTurn,
     designBrief: normalizeDesignBrief(raw.designBrief),
+    quality: raw.quality,
+    revision: raw.revision,
   };
 }
 
@@ -352,6 +532,13 @@ function collectMessageArtifacts(
         actions: isQuestionForm ? [] : [
           { kind: 'copy', label: 'Copy' },
         ],
+        revision: {
+          artifactId: artifact.id,
+          version: artifact.version,
+          parentId: artifact.parentId,
+          parentRef: artifact.parentId ? `artifact:${artifact.parentId}` : undefined,
+          changeSummary: artifact.parentId ? `Updated from ${artifact.parentId}` : undefined,
+        },
         priority: isQuestionForm ? 85 : 40,
         currentTurn: isQuestionForm ? true : undefined,
       }, `artifact:${artifact.id}`);
@@ -387,6 +574,66 @@ function collectToolOutputs(
       const previewItem = coercePreviewItem(result.metadata?.previewItem, fallback);
       if (previewItem) {
         addItem(items, seen, previewItem, `previewItem:${previewItem.id}`);
+      }
+
+      for (const artifact of collectToolArtifactsFromMetadata(result.metadata)) {
+        if (artifact.path) {
+          const path = resolvePath(artifact.path, workingDirectory);
+          if (!path) continue;
+          const title = artifact.label || basename(path);
+          const quality = qualityFromMetadata(artifact.metadata, result.metadata, result.success);
+          const revision = revisionFromArtifact(artifact, path);
+          const revisionId = revisionIdentity(revision);
+          const itemId = revisionId ? `file:${path}:${revisionId}` : `file:${path}`;
+          addItem(items, seen, {
+            id: itemId,
+            kind: fileKindForPath(path),
+            title,
+            subtitle: artifact.sourceTool || toolCall.name,
+            status: statusFromSuccess(result.success),
+            createdAt: message.timestamp,
+            source,
+            file: {
+              path,
+              name: artifact.name || basename(path),
+              mimeType: artifact.mimeType,
+              size: artifact.sizeBytes,
+              sha256: artifact.sha256,
+            },
+            content: artifact.preview ? { summary: artifact.preview } : undefined,
+            actions: actionsForFile(path),
+            quality,
+            revision,
+            priority: 35,
+          }, revisionId ? `file-revision:${revisionId}` : `file:${path}`);
+          continue;
+        }
+
+        if (artifact.url) {
+          const quality = qualityFromMetadata(artifact.metadata, result.metadata, result.success);
+          const revision = revisionFromArtifact(artifact);
+          const revisionId = revisionIdentity(revision);
+          const itemId = revisionId ? `url:${artifact.url}:${revisionId}` : `url:${artifact.url}`;
+          addItem(items, seen, {
+            id: itemId,
+            kind: artifact.kind === 'web' ? 'web_snapshot' : 'file',
+            title: artifact.label,
+            subtitle: artifact.sourceTool || toolCall.name,
+            status: statusFromSuccess(result.success),
+            createdAt: message.timestamp,
+            source,
+            content: {
+              summary: artifact.preview || artifact.url,
+            },
+            actions: [
+              { kind: 'open', label: 'Open' },
+              { kind: 'copy', label: 'Copy' },
+            ],
+            quality,
+            revision,
+            priority: 25,
+          }, revisionId ? `url-revision:${revisionId}` : `url:${artifact.url}`);
+        }
       }
 
       const paths = new Set<string>();

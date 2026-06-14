@@ -11,6 +11,10 @@ export type WorkspacePreviewKind =
   | 'calendar_event'
   | 'reminder'
   | 'web_snapshot'
+  | 'image'
+  | 'audio'
+  | 'video'
+  | 'archive'
   | 'file'
   | 'diff'
   | 'terminal'
@@ -20,6 +24,7 @@ export type WorkspacePreviewKind =
   | 'chart'
   | 'diagram'
   | 'question_form'
+  | 'presentation'
   | 'design_ppt';
 
 export type WorkspacePreviewStatus = 'draft' | 'ready' | 'applied' | 'sent' | 'failed';
@@ -46,12 +51,33 @@ export interface WorkspacePreviewFileRef {
   name?: string;
   mimeType?: string;
   size?: number;
+  sha256?: string;
 }
 
 export interface WorkspacePreviewAction {
   kind: 'open' | 'edit' | 'copy' | 'download' | 'confirm' | 'apply' | 'send';
   label: string;
   disabled?: boolean;
+}
+
+export type WorkspacePreviewQualityStatus = 'passed' | 'needs_review' | 'failed' | 'degraded' | 'unknown';
+
+export interface WorkspacePreviewQuality {
+  status: WorkspacePreviewQualityStatus;
+  summary: string;
+  issueCount?: number;
+  blocking?: boolean;
+}
+
+export interface WorkspacePreviewRevision {
+  artifactId?: string;
+  version?: number;
+  parentId?: string;
+  parentRef?: string;
+  filePath?: string;
+  sha256?: string;
+  sourceTool?: string;
+  changeSummary?: string;
 }
 
 export interface WorkspacePreviewContent {
@@ -79,4 +105,6 @@ export interface WorkspacePreviewItem {
   priority?: number;
   currentTurn?: boolean;
   designBrief?: DesignBrief;
+  quality?: WorkspacePreviewQuality;
+  revision?: WorkspacePreviewRevision;
 }

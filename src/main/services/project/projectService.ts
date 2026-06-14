@@ -8,13 +8,14 @@
 // ============================================================================
 
 import * as path from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { getDatabase } from '../core/databaseService';
 import type { ProjectRepository } from '../core/repositories';
 import { getProjectKey } from '../roleAssets/roleAssetPaths';
 import { linkProjectIdToMeta } from '../roleAssets/roleAssetService';
 import { createLogger } from '../infra/logger';
 import { extractArtifacts } from '../../agent/artifactExtractor';
+import { collectToolArtifactsFromMetadata } from '../../../shared/contract/artifactBlob';
 import type { GoalRunInput } from '../../../shared/contract/appService';
 import {
   UNSORTED_PROJECT_ID,
@@ -29,34 +30,103 @@ import {
   type ProjectStatus,
 } from '../../../shared/contract/project';
 
+type ProjectArtifactMessage = {
+  role: string;
+  content?: string;
+  timestamp: number;
+  artifacts?: Array<{
+    id: string;
+    type: ProjectArtifact['kind'];
+    title?: string;
+    content?: string;
+  }>;
+  toolCalls?: Array<{
+    id?: string;
+    name: string;
+    result?: {
+      success?: boolean;
+      metadata?: Record<string, unknown>;
+    };
+  }>;
+};
+
 const logger = createLogger('ProjectService');
 
 function shortId(prefix: string): string {
   return `${prefix}_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
 }
 
+function stableProjectArtifactId(input: string): string {
+  return `part_${createHash('sha1').update(input).digest('hex').slice(0, 16)}`;
+}
+
+function pathBaseName(value: string): string {
+  const withoutQuery = value.split(/[?#]/, 1)[0] || value;
+  return withoutQuery.split('/').filter(Boolean).pop() || value;
+}
+
 /** 跨 session 抽取 artifact 并按内容哈希去重、时间倒序、取前 limit（纯函数，便于单测）。 */
 export function buildProjectArtifacts(
   sessions: Array<{ id: string; title: string }>,
-  loadMessages: (sessionId: string) => Array<{ role: string; content: string; timestamp: number }>,
+  loadMessages: (sessionId: string) => ProjectArtifactMessage[],
   limit = 60,
 ): ProjectArtifact[] {
   const seen = new Set<string>();
   const items: ProjectArtifact[] = [];
   for (const session of sessions) {
     for (const msg of loadMessages(session.id)) {
-      if (msg.role !== 'assistant' || !msg.content) continue;
-      for (const art of extractArtifacts(msg.content)) {
-        if (seen.has(art.id)) continue;
-        seen.add(art.id);
+      if (msg.role !== 'assistant') continue;
+
+      for (const art of msg.artifacts ?? []) {
+        const id = stableProjectArtifactId(`message-artifact:${art.id}:${art.type}:${art.content ?? art.title ?? ''}`);
+        if (seen.has(id)) continue;
+        seen.add(id);
         items.push({
-          id: art.id,
+          id,
           sessionId: session.id,
           sessionTitle: session.title || undefined,
           kind: art.type,
           title: art.title,
           createdAt: msg.timestamp,
         });
+      }
+
+      if (msg.content) {
+        for (const art of extractArtifacts(msg.content)) {
+          if (seen.has(art.id)) continue;
+          seen.add(art.id);
+          items.push({
+            id: art.id,
+            sessionId: session.id,
+            sessionTitle: session.title || undefined,
+            kind: art.type,
+            title: art.title,
+            createdAt: msg.timestamp,
+          });
+        }
+      }
+
+      for (const toolCall of msg.toolCalls ?? []) {
+        for (const artifact of collectToolArtifactsFromMetadata(toolCall.result?.metadata)) {
+          const id = artifact.artifactId
+            || stableProjectArtifactId(`tool-artifact:${artifact.sha256 ?? artifact.path ?? artifact.url ?? artifact.label}`);
+          if (seen.has(id)) continue;
+          seen.add(id);
+          items.push({
+            id,
+            sessionId: session.id,
+            sessionTitle: session.title || undefined,
+            kind: artifact.kind as ProjectArtifact['kind'],
+            title: artifact.label || artifact.name || artifact.path && pathBaseName(artifact.path) || artifact.url,
+            createdAt: msg.timestamp,
+            path: artifact.path,
+            url: artifact.url,
+            mimeType: artifact.mimeType,
+            sizeBytes: artifact.sizeBytes,
+            sha256: artifact.sha256,
+            sourceTool: artifact.sourceTool || toolCall.name,
+          });
+        }
       }
     }
   }

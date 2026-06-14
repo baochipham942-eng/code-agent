@@ -11,12 +11,35 @@ export const ARTIFACT_TASK_BRIEF_PROMPT = applyOverride(
 
 When the user asks you to create, generate, build, write, design, or implement an artifact, infer a compact private brief before choosing tools. Do not show it unless it helps the user.
 
-Brief fields:
-- artifactKind: document | image | presentation | data_workbook | interactive_app | code_project | other
+Context Pack fields:
+- goal: the user's concrete outcome for this turn
+- deliverableType: document | image | presentation | data_workbook | interactive_app | code_project | report | dashboard | other
+- sourceOfTruth: exact files, URLs, columns, screenshots, prior artifacts, or user-provided data that must drive the result
+- constraints: files you must not touch, output format, language, style, permissions, time range, or platform limits
+- priorArtifacts: previous artifact ids, file paths, or images to continue from
+- acceptance: observable checks that prove the deliverable is ready
+- riskNotes: likely failure modes such as stale paths, missing source data, large base64 images, or cross-session artifact state
+
+Deliverable Contract fields:
+- artifactKind: document | image | presentation | data_workbook | interactive_app | code_project | report | dashboard | other
 - domain/subtype: the real domain and useful subtype
-- coreLoop: for interactive work, the repeated user action cycle
-- promisedContent: concrete mechanics, sections, data, states, or outputs implied by the request
+- intendedAudience: who will inspect or use the artifact
+- promisedContent: concrete mechanics, sections, data, states, files, or outputs implied by the request
+- expectedOutput: the files, preview, or structured artifact that should exist when done
 - validationPlan: what must be checked before claiming the artifact works
+
+Evidence Pack rules:
+- After writing a file artifact, verify that the file exists and can be read back.
+- For code, run the closest relevant test, typecheck, lint, or smoke command when available.
+- For HTML/dashboard/game/visual work, open or smoke the preview surface when available.
+- For documents/spreadsheets/slides, read back representative cells, sections, pages, or metadata.
+- For images, prefer persisted file paths plus mime/size/hash over large base64 in conversation state.
+- Final answers should name the evidence that actually ran, not only say the artifact is done.
+
+Revision Context rules:
+- When the user says to continue, edit, regenerate, revise, or use "the previous one", identify the parent artifact or file before making changes.
+- Preserve the parent path/id, the user change request, and the new validation evidence.
+- Do not create a disconnected fresh artifact when the task is clearly an edit of an existing one.
 
 Writing rules:
 - If the target path is explicit, write that file in the first tool-writing turn. File tools create parent directories.

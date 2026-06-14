@@ -2,6 +2,8 @@
 // Channel Types - Multi-channel messaging abstraction
 // ============================================================================
 
+import type { AttachmentMediaState } from './message';
+
 /**
  * 通道标识符
  */
@@ -10,7 +12,7 @@ export type ChannelId = string;
 /**
  * 通道类型
  */
-export type ChannelType = 'http-api' | 'feishu' | 'slack' | 'discord' | 'telegram' | 'wechat';
+export type ChannelType = 'http-api' | 'feishu' | 'lark' | 'slack' | 'discord' | 'telegram' | 'wechat';
 
 /**
  * 通道能力定义
@@ -85,6 +87,14 @@ export interface ChannelAttachment {
   data?: string;
   /** 缩略图 URL */
   thumbnailUrl?: string;
+  /** 本地物化路径，适用于连接器下载后的媒体文件 */
+  localPath?: string;
+  /** 平台侧文件标识，如 Feishu image_key/file_key */
+  platformFileKey?: string;
+  /** 附件处理元数据，如语音转写结果或下载状态 */
+  metadata?: Record<string, unknown>;
+  /** 媒体处理状态 */
+  mediaState?: AttachmentMediaState;
 }
 
 /**
@@ -234,6 +244,29 @@ export interface FeishuChannelConfig extends ChannelPrivacyConfig {
 }
 
 /**
+ * Lark International 通道配置
+ */
+export interface LarkChannelConfig extends ChannelPrivacyConfig {
+  type: 'lark';
+  /** 应用 App ID */
+  appId: string;
+  /** 应用 App Secret */
+  appSecret: string;
+  /** Encrypt Key (用于消息解密) */
+  encryptKey?: string;
+  /** Verification Token */
+  verificationToken?: string;
+  /** 是否使用 WebSocket (默认 false，改用 Webhook) */
+  useWebSocket?: boolean;
+  /** Webhook 监听端口 (默认 3200) */
+  webhookPort?: number;
+  /** Webhook 监听地址 (默认 0.0.0.0) */
+  webhookHost?: string;
+  /** 外部 Webhook URL (用于显示配置提示) */
+  webhookUrl?: string;
+}
+
+/**
  * Telegram 通道配置
  */
 export interface TelegramChannelConfig extends ChannelPrivacyConfig {
@@ -257,7 +290,11 @@ export interface TelegramChannelConfig extends ChannelPrivacyConfig {
 /**
  * 通道账号配置联合类型
  */
-export type ChannelAccountConfig = HttpApiChannelConfig | FeishuChannelConfig | TelegramChannelConfig;
+export type ChannelAccountConfig =
+  | HttpApiChannelConfig
+  | FeishuChannelConfig
+  | LarkChannelConfig
+  | TelegramChannelConfig;
 
 /**
  * 通道账号
@@ -317,6 +354,17 @@ export interface ChannelInboxItem {
   sessionId?: string;
   error?: string;
   outboxDraft?: ChannelOutboxDraft;
+}
+
+export interface RetryChannelMediaAttachmentRequest {
+  accountId: string;
+  attachment: ChannelAttachment;
+}
+
+export interface RetryChannelMediaAttachmentResult {
+  success: boolean;
+  attachment?: ChannelAttachment;
+  error?: string;
 }
 
 // ============================================================================

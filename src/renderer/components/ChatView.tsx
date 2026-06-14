@@ -56,13 +56,40 @@ import {
   Image,
   Search,
   AlertTriangle,
+  MessageSquare,
 } from 'lucide-react';
+
+function formatChannelSessionSource(session: ReturnType<typeof useSessionStore.getState>['sessions'][number] | undefined): string | null {
+  if (session?.origin?.kind !== 'channel') return null;
+  const metadata = session.origin.metadata || {};
+  const channelType = typeof metadata.channelType === 'string'
+    ? metadata.channelType
+    : typeof metadata.channelId === 'string'
+      ? metadata.channelId
+      : 'channel';
+  const platform = channelType === 'feishu'
+    ? 'Feishu'
+    : channelType === 'lark'
+      ? 'Lark'
+      : channelType === 'telegram'
+        ? 'Telegram'
+        : channelType;
+  const accountName = typeof metadata.accountName === 'string' ? metadata.accountName : undefined;
+  const chatName = typeof metadata.chatName === 'string'
+    ? metadata.chatName
+    : typeof metadata.chatId === 'string'
+      ? metadata.chatId
+      : session.origin.name;
+  return [platform, accountName, chatName].filter(Boolean).join(' · ');
+}
+
 export const ChatView: React.FC = () => {
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
   const setTaskPlan = useAppStore((state) => state.setTaskPlan);
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
   const {
     currentSessionId,
+    sessions,
     hasOlderMessages,
     isLoading: isSessionLoading,
     isLoadingOlder,
@@ -70,6 +97,8 @@ export const ChatView: React.FC = () => {
     setMessages,
     streamSnapshot,
   } = useSessionStore();
+  const currentSession = sessions.find((session) => session.id === currentSessionId);
+  const channelSessionSource = formatChannelSessionSource(currentSession);
   const launchRequests = useSwarmStore((state) => state.launchRequests);
   const streamingMessageEntries = useStreamingMessageAccumulatorStore((state) => state.entries);
   const {
@@ -486,6 +515,13 @@ export const ChatView: React.FC = () => {
 
         {streamSnapshot && (
           <StreamRecoveryBanner snapshot={streamSnapshot} />
+        )}
+
+        {channelSessionSource && (
+          <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/70 px-3 py-2 text-xs text-zinc-400">
+            <MessageSquare className="h-3.5 w-3.5 text-zinc-500" />
+            <span className="truncate">{channelSessionSource}</span>
+          </div>
         )}
 
         {/* Messages - Turn-based trace view */}

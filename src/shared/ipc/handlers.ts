@@ -21,7 +21,7 @@ import { DAG_CHANNELS } from './channels';
 
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryPushEvent, TelemetryHealth, ComputerSurfaceReliabilitySummary, TelemetryFeedbackSubmitRequest, TelemetryFeedbackSubmitResult } from '../contract/telemetry';
 
-import type { ChannelAccount, ChannelInboxItem, ChannelType, AddChannelAccountRequest, UpdateChannelAccountRequest } from '../contract/channel';
+import type { ChannelAccount, ChannelInboxItem, ChannelType, AddChannelAccountRequest, UpdateChannelAccountRequest, RetryChannelMediaAttachmentRequest, RetryChannelMediaAttachmentResult } from '../contract/channel';
 
 import type { LabProjectType, LabProjectStatus, PythonEnvStatus, TrainingProgressEvent, DownloadProjectRequest, DownloadProjectResponse, UploadDataRequest, UploadDataResponse, StartTrainingRequest, StartTrainingResponse, InferenceRequest, InferenceResult } from '../contract/lab';
 
@@ -259,6 +259,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.CHANNEL_DISCONNECT_ACCOUNT]: (accountId: string) => Promise<{ success: boolean; error?: string }>;
   [IPC_CHANNELS.CHANNEL_LIST_INBOX]: () => Promise<ChannelInboxItem[]>;
   [IPC_CHANNELS.CHANNEL_DISMISS_INBOX_ITEM]: (itemId: string) => Promise<boolean>;
+  [IPC_CHANNELS.CHANNEL_RETRY_MEDIA_ATTACHMENT]: (request: RetryChannelMediaAttachmentRequest) => Promise<RetryChannelMediaAttachmentResult>;
 
   // Handoff proposals
   [IPC_CHANNELS.HANDOFF_LIST]: (payload?: ListHandoffProposalsInput) => Promise<HandoffProposal[]>;

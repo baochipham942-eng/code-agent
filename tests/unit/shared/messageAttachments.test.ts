@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { MessageAttachment } from '../../../src/shared/contract';
 import {
+  collectAttachmentPersistenceMetrics,
   sanitizeAttachmentForPersistence,
+  sanitizeAttachmentsForPersistence,
   stripInlineAttachmentBlocks,
 } from '../../../src/shared/utils/messageAttachments';
 
@@ -55,5 +57,80 @@ describe('message attachment persistence helpers', () => {
     expect(stored.data).toBeUndefined();
     expect(stored.path).toBeUndefined();
     expect(stored.thumbnail).toBe('data:image/png;base64,thumb');
+  });
+
+  it('drops large image data urls from persisted attachments while preserving the file path', () => {
+    const largeDataUrl = `data:image/png;base64,${'A'.repeat(600 * 1024)}`;
+    const attachment: MessageAttachment = {
+      id: 'image-large-1',
+      type: 'image',
+      category: 'image',
+      name: 'large.png',
+      size: 10 * 1024 * 1024,
+      mimeType: 'image/png',
+      data: largeDataUrl,
+      path: '/tmp/large.png',
+    };
+
+    const stored = sanitizeAttachmentForPersistence(attachment);
+
+    expect(stored.data).toBeUndefined();
+    expect(stored.thumbnail).toBeUndefined();
+    expect(stored.path).toBe('/tmp/large.png');
+  });
+
+  it('drops large audio data urls from persisted attachments while preserving media state', () => {
+    const attachment: MessageAttachment = {
+      id: 'voice-large-1',
+      type: 'file',
+      category: 'audio',
+      name: 'voice.wav',
+      size: 10 * 1024 * 1024,
+      mimeType: 'audio/wav',
+      data: `data:audio/wav;base64,${'A'.repeat(600 * 1024)}`,
+      path: '/tmp/voice.wav',
+      mediaState: 'ready',
+    };
+
+    const stored = sanitizeAttachmentForPersistence(attachment);
+
+    expect(stored.data).toBeUndefined();
+    expect(stored.path).toBe('/tmp/voice.wav');
+    expect(stored.mediaState).toBe('ready');
+  });
+
+  it('reports data-url persistence metrics after sanitizing attachments', () => {
+    const largeDataUrl = `data:image/png;base64,${'A'.repeat(600 * 1024)}`;
+    const smallDataUrl = 'data:image/png;base64,small';
+    const attachments: MessageAttachment[] = [
+      {
+        id: 'large',
+        type: 'image',
+        category: 'image',
+        name: 'large.png',
+        size: 1024,
+        mimeType: 'image/png',
+        data: largeDataUrl,
+        path: '/tmp/large.png',
+      },
+      {
+        id: 'small',
+        type: 'image',
+        category: 'image',
+        name: 'small.png',
+        size: 32,
+        mimeType: 'image/png',
+        data: smallDataUrl,
+      },
+    ];
+
+    const persisted = sanitizeAttachmentsForPersistence(attachments);
+    const metrics = collectAttachmentPersistenceMetrics(attachments, persisted);
+
+    expect(metrics.attachmentCount).toBe(2);
+    expect(metrics.originalDataUrlCount).toBe(2);
+    expect(metrics.persistedDataUrlCount).toBe(1);
+    expect(metrics.strippedDataUrlCount).toBe(1);
+    expect(metrics.strippedDataUrlChars).toBeGreaterThan(500 * 1024);
   });
 });

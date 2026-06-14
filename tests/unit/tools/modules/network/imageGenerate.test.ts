@@ -171,6 +171,13 @@ describe('image_generate — execute', () => {
           engine: 'cogview',
           aspectRatio: '1:1',
           autoPersisted: true,
+          mediaLifecycle: {
+            kind: 'generated-image',
+            operation: 'generate',
+            ownerSessionId: 'test-session',
+            sourcePrompt: '一只猫',
+            fallbackStrategy: 'file-artifact',
+          },
         },
       });
       expect(writeFileSyncMock).toHaveBeenCalled();
@@ -218,6 +225,13 @@ describe('image_generate — execute', () => {
           model: 'cogview-4-250304',
           engine: 'cogview',
           aspectRatio: '1:1',
+          mediaLifecycle: {
+            kind: 'generated-image',
+            operation: 'generate',
+            ownerSessionId: 'test-session',
+            sourcePrompt: 'cat',
+            fallbackStrategy: 'file-artifact',
+          },
         },
       });
       expect(result.meta?.imagePath).toBe('/tmp/work/out.png');

@@ -192,6 +192,8 @@ export const CHANNEL_CHANNELS = {
   LIST_INBOX: 'channel:list-inbox',
   /** 忽略一条外部消息 */
   DISMISS_INBOX_ITEM: 'channel:dismiss-inbox-item',
+  /** 重新物化外部渠道媒体附件 */
+  RETRY_MEDIA_ATTACHMENT: 'channel:retry-media-attachment',
   /** 账号状态变化事件 */
   ACCOUNT_STATUS_CHANGED: 'channel:account-status-changed',
   /** 账号列表变化事件 */

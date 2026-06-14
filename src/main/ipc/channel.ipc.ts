@@ -13,6 +13,8 @@ import type {
   ChannelInboxItem,
   AddChannelAccountRequest,
   UpdateChannelAccountRequest,
+  RetryChannelMediaAttachmentRequest,
+  RetryChannelMediaAttachmentResult,
 } from '../../shared/contract/channel';
 import { createLogger } from '../services/infra/logger';
 
@@ -108,6 +110,20 @@ export function registerChannelHandlers(
       } catch (error) {
         logger.error('DISMISS_INBOX_ITEM failed', { error: String(error) });
         return false;
+      }
+    }
+  );
+
+  // 重新物化外部渠道媒体附件
+  ipcMain.handle(
+    CHANNEL_CHANNELS.RETRY_MEDIA_ATTACHMENT,
+    async (_, request: RetryChannelMediaAttachmentRequest): Promise<RetryChannelMediaAttachmentResult> => {
+      try {
+        return await channelManager.retryMediaAttachment(request);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error('RETRY_MEDIA_ATTACHMENT failed', { error: message });
+        return { success: false, error: message };
       }
     }
   );

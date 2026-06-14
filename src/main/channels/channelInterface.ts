@@ -181,6 +181,10 @@ export type ChannelMessageHandler = (
  * Agent 处理完成后调用此回调发送响应
  */
 export interface ChannelResponseCallback {
+  /** 开始展示 typing/presence 轻状态 */
+  startTyping?(): Promise<void> | void;
+  /** 停止 typing/presence 轻状态 */
+  stopTyping?(): Promise<void> | void;
   /** 发送文本响应 */
   sendText(content: string): Promise<SendMessageResult>;
   /** 流式发送 (如果支持) */

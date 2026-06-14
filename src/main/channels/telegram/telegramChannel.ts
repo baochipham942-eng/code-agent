@@ -343,10 +343,13 @@ export class TelegramChannel extends BaseChannelPlugin {
   getResponseCallback(chatId: string, replyToMessageId?: string): ChannelResponseCallback {
     const throttleMs = this.telegramConfig?.streamEditIntervalMs || 1000;
 
-    // 开始 typing 状态（收到消息后立刻显示，每 4 秒续期）
-    this.startTyping(chatId);
-
     return {
+      startTyping: () => {
+        this.startTyping(chatId);
+      },
+      stopTyping: () => {
+        this.stopTyping(chatId);
+      },
       sendText: async (content: string) => {
         // 停止 typing（即将发送真正的回复）
         this.stopTyping(chatId);

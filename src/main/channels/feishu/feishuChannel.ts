@@ -3,7 +3,6 @@
 // ============================================================================
 
 import * as lark from '@larksuiteoapi/node-sdk';
-import { v4 as uuidv4 } from 'uuid';
 import express, { type Express, type Request, type Response } from 'express';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
@@ -17,6 +16,7 @@ import type {
   ChannelAccountConfig,
   ChannelPrivacyMode,
   FeishuChannelConfig,
+  LarkChannelConfig,
   SendMessageOptions,
   SendMessageResult,
   ChannelCapabilities,
@@ -27,8 +27,13 @@ import {
   sanitizeFeishuInboundMessage,
   resolveFeishuPrivacyMode,
 } from './feishuPrivacy';
+import {
+  materializeFeishuMedia,
+  type FeishuMediaMessageType,
+} from './feishuMedia';
 
 const logger = createLogger('FeishuChannel');
+type FeishuPlatform = 'feishu' | 'lark';
 
 /**
  * 飞书通道能力
@@ -49,7 +54,7 @@ const FEISHU_CHANNEL_CAPABILITIES: ChannelCapabilities = {
 /**
  * 飞书消息类型
  */
-type FeishuMessageType = 'text' | 'post' | 'image' | 'interactive';
+type FeishuMessageType = 'text' | 'post' | 'image' | 'file' | 'audio' | 'media' | 'interactive';
 type FeishuCardTextTag = 'lark_md' | 'plain_text';
 type FeishuCardButtonType = 'primary';
 
@@ -144,7 +149,22 @@ function parseJsonRecord(raw: string): Record<string, unknown> {
 }
 
 function normalizeFeishuMessageType(value: unknown): FeishuMessageType | undefined {
-  if (value === 'text' || value === 'post' || value === 'image' || value === 'interactive') {
+  if (
+    value === 'text' ||
+    value === 'post' ||
+    value === 'image' ||
+    value === 'file' ||
+    value === 'audio' ||
+    value === 'media' ||
+    value === 'interactive'
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function normalizeFeishuMediaMessageType(value: unknown): FeishuMediaMessageType | undefined {
+  if (value === 'image' || value === 'file' || value === 'audio' || value === 'media') {
     return value;
   }
   return undefined;
@@ -223,7 +243,8 @@ function normalizeFeishuMessageEvent(payload: unknown): FeishuMessageEvent | und
  */
 export class FeishuChannel extends BaseChannelPlugin {
   readonly meta: ChannelMeta;
-  private feishuConfig: FeishuChannelConfig | null = null;
+  private readonly platform: FeishuPlatform;
+  private feishuConfig: FeishuChannelConfig | LarkChannelConfig | null = null;
   private privacyMode: ChannelPrivacyMode = 'local-redact';
   private client: lark.Client | null = null;
   private wsClient: lark.WSClient | null = null;
@@ -241,41 +262,49 @@ export class FeishuChannel extends BaseChannelPlugin {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private readonly maxReconnectAttempts = 10;
 
-  constructor(accountId: string) {
+  constructor(accountId: string, platform: FeishuPlatform = 'feishu') {
     super(accountId);
+    this.platform = platform;
     this.meta = {
       id: accountId,
-      type: 'feishu',
-      name: '飞书',
-      description: '飞书机器人通道，支持 P2P 和群聊',
+      type: platform,
+      name: platform === 'lark' ? 'Lark' : '飞书',
+      description: platform === 'lark'
+        ? 'Lark International Bot 通道，支持 P2P 和群聊'
+        : '飞书机器人通道，支持 P2P 和群聊',
       capabilities: FEISHU_CHANNEL_CAPABILITIES,
     };
   }
 
   async initialize(config: ChannelAccountConfig): Promise<void> {
-    if (config.type !== 'feishu') {
-      throw new Error('Invalid config type for FeishuChannel');
+    if (config.type !== this.platform) {
+      throw new Error(`Invalid config type for ${this.meta.name}Channel`);
     }
-    this.feishuConfig = config as FeishuChannelConfig;
+    this.feishuConfig = config as FeishuChannelConfig | LarkChannelConfig;
     this.privacyMode = resolveFeishuPrivacyMode(this.feishuConfig.privacyMode);
     this.config = config;
 
-    // 初始化飞书客户端
+    const sdkDomain = this.getSdkDomain();
+
+    // 初始化飞书/Lark 客户端
     this.client = new lark.Client({
       appId: this.feishuConfig.appId,
       appSecret: this.feishuConfig.appSecret,
+      domain: sdkDomain,
       disableTokenCache: false,
     });
 
-    logger.info('FeishuChannel initialized', {
+    logger.info(`${this.meta.name}Channel initialized`, {
       appId: this.feishuConfig.appId,
+      platform: this.platform,
+      sdkDomain: this.platform,
       privacyMode: this.privacyMode,
     });
   }
 
   async connect(): Promise<void> {
     if (!this.feishuConfig || !this.client) {
-      throw new Error('FeishuChannel not initialized');
+      throw new Error(`${this.meta.name}Channel not initialized`);
     }
 
     this.setStatus('connecting');
@@ -292,7 +321,7 @@ export class FeishuChannel extends BaseChannelPlugin {
       this.setStatus('connected');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      logger.error('Failed to connect FeishuChannel', { error: message });
+      logger.error(`Failed to connect ${this.meta.name}Channel`, { error: message });
       this.setStatus('error', message);
       throw error;
     }
@@ -318,11 +347,11 @@ export class FeishuChannel extends BaseChannelPlugin {
       });
       this.webhookServer = null;
       this.webhookApp = null;
-      logger.info('Feishu webhook server stopped');
+      logger.info(`${this.meta.name} webhook server stopped`);
     }
 
     this.setStatus('disconnected');
-    logger.info('FeishuChannel disconnected');
+    logger.info(`${this.meta.name}Channel disconnected`);
   }
 
   async destroy(): Promise<void> {
@@ -332,7 +361,7 @@ export class FeishuChannel extends BaseChannelPlugin {
   }
 
   async sendMessage(options: SendMessageOptions): Promise<SendMessageResult> {
-    logger.info('FeishuChannel.sendMessage called', {
+    logger.info(`${this.meta.name}Channel.sendMessage called`, {
       chatId: options.chatId,
       contentLength: options.content?.length || 0,
     });
@@ -345,7 +374,7 @@ export class FeishuChannel extends BaseChannelPlugin {
     try {
       // 确定接收方类型
       const receiveIdType = this.getReceiveIdType(options.chatId);
-      logger.info('Sending to Feishu API', { receiveIdType, chatId: options.chatId });
+      logger.info(`Sending to ${this.meta.name} API`, { receiveIdType, chatId: options.chatId });
 
       // 构建消息内容
       const content = this.buildMessageContent(options.content);
@@ -362,7 +391,7 @@ export class FeishuChannel extends BaseChannelPlugin {
         },
       });
 
-      logger.info('Feishu API response', { code: response.code, msg: response.msg, messageId: response.data?.message_id });
+      logger.info(`${this.meta.name} API response`, { code: response.code, msg: response.msg, messageId: response.data?.message_id });
 
       if (response.code === 0 && response.data?.message_id) {
         const messageId = response.data.message_id;
@@ -374,9 +403,68 @@ export class FeishuChannel extends BaseChannelPlugin {
       return { success: false, error: response.msg || 'Failed to send message' };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      logger.error('Failed to send Feishu message', { error: message });
+      logger.error(`Failed to send ${this.meta.name} message`, { error: message });
       return { success: false, error: message };
     }
+  }
+
+  async retryMediaAttachment(attachment: ChannelAttachment, cacheRoot?: string): Promise<ChannelAttachment> {
+    if (!this.client) {
+      throw new Error(`${this.meta.name}Channel not initialized`);
+    }
+
+    const metadata = isRecord(attachment.metadata) ? attachment.metadata : {};
+    const messageId = readStringField(metadata, 'messageId');
+    const resourceType =
+      normalizeFeishuMediaMessageType(metadata.resourceType)
+      ?? normalizeFeishuMediaMessageType(attachment.type)
+      ?? 'file';
+    const fileKey = attachment.platformFileKey || attachment.url || readStringField(metadata, 'platformFileKey');
+
+    if (!messageId || !fileKey) {
+      return {
+        ...attachment,
+        mediaState: 'failed',
+        metadata: {
+          ...metadata,
+          materializationState: 'failed',
+          retryError: 'missing-message-or-file-key',
+        },
+      };
+    }
+
+    const content = JSON.stringify({
+      [resourceType === 'image'
+        ? 'image_key'
+        : resourceType === 'audio'
+          ? 'file_key'
+          : resourceType === 'media'
+            ? 'media_key'
+            : 'file_key']: fileKey,
+      file_name: attachment.name,
+      mime_type: attachment.mimeType,
+      file_size: attachment.size,
+    });
+
+    const materialized = await materializeFeishuMedia({
+      accountId: this._accountId,
+      platform: this.platform,
+      messageId,
+      messageType: resourceType,
+      content,
+      client: this.client,
+      cacheRoot,
+    });
+
+    return {
+      ...attachment,
+      ...(materialized?.attachments[0] ?? {}),
+      metadata: {
+        ...metadata,
+        ...(materialized?.attachments[0]?.metadata ?? {}),
+        retryAt: Date.now(),
+      },
+    };
   }
 
   async editMessage(messageId: string, newContent: string): Promise<SendMessageResult> {
@@ -403,7 +491,7 @@ export class FeishuChannel extends BaseChannelPlugin {
       return { success: false, error: response.msg || 'Failed to edit message' };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      logger.error('Failed to edit Feishu message', { error: message });
+      logger.error(`Failed to edit ${this.meta.name} message`, { error: message });
       return { success: false, error: message };
     }
   }
@@ -422,7 +510,7 @@ export class FeishuChannel extends BaseChannelPlugin {
 
       return response.code === 0;
     } catch (error) {
-      logger.error('Failed to delete Feishu message', { error });
+      logger.error(`Failed to delete ${this.meta.name} message`, { error });
       return false;
     }
   }
@@ -446,7 +534,7 @@ export class FeishuChannel extends BaseChannelPlugin {
 
       return response.code === 0;
     } catch (error) {
-      logger.error('Failed to add Feishu reaction', { error });
+      logger.error(`Failed to add ${this.meta.name} reaction`, { error });
       return false;
     }
   }
@@ -456,6 +544,11 @@ export class FeishuChannel extends BaseChannelPlugin {
    */
   getResponseCallback(chatId: string, replyToMessageId?: string): ChannelResponseCallback {
     return {
+      startTyping: async () => {
+        if (!replyToMessageId) return;
+        await this.addReaction(replyToMessageId, 'eyes');
+      },
+      stopTyping: async () => {},
       sendText: async (content: string) => {
         return this.sendMessage({
           chatId,
@@ -500,7 +593,7 @@ export class FeishuChannel extends BaseChannelPlugin {
       return { success: false, error: response.msg || 'Failed to send card' };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      logger.error('Failed to send Feishu card', { error: message });
+      logger.error(`Failed to send ${this.meta.name} card`, { error: message });
       return { success: false, error: message };
     }
   }
@@ -565,6 +658,14 @@ export class FeishuChannel extends BaseChannelPlugin {
 
   // ========== Private Methods ==========
 
+  private getSdkDomain(): lark.Domain {
+    return this.platform === 'lark' ? lark.Domain.Lark : lark.Domain.Feishu;
+  }
+
+  private getWebhookPath(): string {
+    return `/webhook/${this.platform}`;
+  }
+
   /**
    * 启动 Webhook 服务器
    */
@@ -592,7 +693,8 @@ export class FeishuChannel extends BaseChannelPlugin {
     this.webhookApp.use(express.urlencoded({ extended: true }));
 
     // Webhook 端点
-    this.webhookApp.post('/webhook/feishu', async (req: Request, res: Response) => {
+    const webhookPath = this.getWebhookPath();
+    this.webhookApp.post(webhookPath, async (req: Request, res: Response) => {
       try {
         const body: unknown = req.body;
         const bodyRecord = isRecord(body) ? body : {};
@@ -601,11 +703,11 @@ export class FeishuChannel extends BaseChannelPlugin {
         const header = readRecordField(bodyRecord, 'header');
         const eventPayload = readRecordField(bodyRecord, 'event');
         const eventType = header ? readStringField(header, 'event_type') : undefined;
-        logger.debug('Received Feishu webhook', { type: bodyType, challenge: !!challenge });
+        logger.debug(`Received ${this.meta.name} webhook`, { type: bodyType, challenge: !!challenge });
 
         // 处理 URL 验证请求
         if (bodyType === 'url_verification' || challenge) {
-          logger.info('Feishu URL verification', { challenge });
+          logger.info(`${this.meta.name} URL verification`, { challenge });
           res.json({ challenge });
           return;
         }
@@ -613,7 +715,7 @@ export class FeishuChannel extends BaseChannelPlugin {
         // 处理事件 (schema 2.0 格式)
         if (eventType === 'im.message.receive_v1' && eventPayload) {
           const event = normalizeFeishuMessageEvent(eventPayload);
-          logger.info('Received Feishu message event', {
+          logger.info(`Received ${this.meta.name} message event`, {
             eventId: header ? readStringField(header, 'event_id') : undefined,
             messageId: event?.message.message_id,
             contentLength: event?.message.content.length ?? 0,
@@ -624,7 +726,7 @@ export class FeishuChannel extends BaseChannelPlugin {
             await this.handleMessageEvent(event);
             logger.info('handleMessageEvent completed');
           } else {
-            logger.warn('Malformed Feishu message event payload');
+            logger.warn(`Malformed ${this.meta.name} message event payload`);
           }
         } else {
           logger.warn('Unhandled webhook event', {
@@ -637,16 +739,16 @@ export class FeishuChannel extends BaseChannelPlugin {
         res.json({ code: 0, msg: 'success' });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
-        logger.error('Error handling Feishu webhook', { error: message });
+        logger.error(`Error handling ${this.meta.name} webhook`, { error: message });
         res.status(500).json({ code: -1, msg: message });
       }
     });
 
     // 健康检查端点
-    this.webhookApp.get('/webhook/feishu', (_req: Request, res: Response) => {
+    this.webhookApp.get(webhookPath, (_req: Request, res: Response) => {
       res.json({
         status: 'ok',
-        channel: 'feishu',
+        channel: this.platform,
         appId: this.feishuConfig?.appId,
         timestamp: Date.now(),
       });
@@ -661,13 +763,13 @@ export class FeishuChannel extends BaseChannelPlugin {
             ? (address as AddressInfo).port
             : port;
           const displayHost = host === '0.0.0.0' ? 'localhost' : host;
-          logger.info('Feishu webhook server started', {
+          logger.info(`${this.meta.name} webhook server started`, {
             host,
             port: actualPort,
-            endpoint: `http://${displayHost}:${actualPort}/webhook/feishu`,
+            endpoint: `http://${displayHost}:${actualPort}${webhookPath}`,
           });
-          logger.info('Configure this URL in Feishu developer console (use ngrok for public access):');
-          logger.info(`  Local: http://${displayHost}:${actualPort}/webhook/feishu`);
+          logger.info(`Configure this URL in ${this.meta.name} developer console (use ngrok for public access):`);
+          logger.info(`  Local: http://${displayHost}:${actualPort}${webhookPath}`);
           logger.info(`  Example with ngrok: ngrok http ${actualPort}`);
           resolve();
         });
@@ -691,6 +793,7 @@ export class FeishuChannel extends BaseChannelPlugin {
     this.wsClient = new lark.WSClient({
       appId: this.feishuConfig.appId,
       appSecret: this.feishuConfig.appSecret,
+      domain: this.getSdkDomain(),
     });
 
     // 注册消息事件处理器
@@ -705,7 +808,7 @@ export class FeishuChannel extends BaseChannelPlugin {
       }),
     });
 
-    logger.info('Feishu WebSocket connected');
+    logger.info(`${this.meta.name} WebSocket connected`);
     this.reconnectAttempts = 0; // Reset on successful connect
   }
 
@@ -765,17 +868,22 @@ export class FeishuChannel extends BaseChannelPlugin {
         // 富文本消息，提取纯文本
         const parsed = parseJsonRecord(msg.content);
         content = this.extractTextFromPost(parsed);
-      } else if (msg.message_type === 'image') {
-        // 图片消息
-        const parsed = parseJsonRecord(msg.content);
-        const imageKey = readStringField(parsed, 'image_key') || '';
-        content = '[图片]';
-        attachments = [{
-          id: imageKey,
-          type: 'image',
-          name: 'image.png',
-          url: imageKey, // 需要通过 API 获取真实 URL
-        }];
+      } else if (
+        msg.message_type === 'image' ||
+        msg.message_type === 'file' ||
+        msg.message_type === 'audio' ||
+        msg.message_type === 'media'
+      ) {
+        const materialized = await materializeFeishuMedia({
+          accountId: this._accountId,
+          messageId: msg.message_id,
+          messageType: msg.message_type as FeishuMediaMessageType,
+          content: msg.content,
+          client: this.client,
+          platform: this.platform,
+        });
+        content = materialized?.content || `[${msg.message_type}]`;
+        attachments = materialized?.attachments;
       }
 
       // 构建统一消息格式
@@ -809,7 +917,7 @@ export class FeishuChannel extends BaseChannelPlugin {
       this.emit('message', channelMessage);
       logger.info('Message event emitted');
     } catch (error) {
-      logger.error('Error handling Feishu message event', { error });
+      logger.error(`Error handling ${this.meta.name} message event`, { error });
       this.emit('error', error instanceof Error ? error : new Error('Unknown error'));
     }
   }
@@ -859,4 +967,11 @@ export class FeishuChannel extends BaseChannelPlugin {
  */
 export function createFeishuChannelFactory() {
   return (accountId: string) => new FeishuChannel(accountId);
+}
+
+/**
+ * 创建 Lark International 通道工厂
+ */
+export function createLarkChannelFactory() {
+  return (accountId: string) => new FeishuChannel(accountId, 'lark');
 }

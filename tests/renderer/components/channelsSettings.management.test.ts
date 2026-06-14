@@ -3,6 +3,7 @@ import type {
   ChannelAccount,
   FeishuChannelConfig,
   HttpApiChannelConfig,
+  LarkChannelConfig,
   TelegramChannelConfig,
 } from '../../../src/shared/contract/channel';
 import {
@@ -18,6 +19,7 @@ import {
 const channelTypes: ChannelTypeInfo[] = [
   { type: 'http-api', name: 'HTTP API' },
   { type: 'feishu', name: '飞书' },
+  { type: 'lark', name: 'Lark' },
   { type: 'telegram', name: 'Telegram' },
 ];
 
@@ -63,13 +65,27 @@ const accounts: ChannelAccount[] = [
       allowedUserIds: [1, 2],
     } satisfies TelegramChannelConfig,
   },
+  {
+    id: 'lark-global',
+    name: '海外 Lark',
+    type: 'lark',
+    status: 'connected',
+    enabled: true,
+    createdAt: 4,
+    config: {
+      type: 'lark',
+      appId: 'cli_lark',
+      appSecret: 'secret',
+      webhookPort: 3301,
+    } satisfies LarkChannelConfig,
+  },
 ];
 
 describe('ChannelsSettings management helpers', () => {
   it('summarizes channel account states for the management surface', () => {
     expect(getChannelStatusSummary(accounts)).toEqual({
-      total: 3,
-      connected: 1,
+      total: 4,
+      connected: 2,
       connecting: 0,
       error: 1,
       disconnected: 1,
@@ -97,6 +113,13 @@ describe('ChannelsSettings management helpers', () => {
       statusFilter: 'connected',
       query: 'api',
     }).map((account) => account.id)).toEqual(['api-local']);
+
+    expect(filterChannelAccounts({
+      accounts,
+      channelTypes,
+      statusFilter: 'all',
+      query: 'lark',
+    }).map((account) => account.id)).toEqual(['lark-global']);
   });
 
   it('keeps compact config summaries stable for table rows', () => {
@@ -104,6 +127,8 @@ describe('ChannelsSettings management helpers', () => {
     expect(getChannelConfigSummary(accounts[0])).toBe('端口 8080');
     expect(getChannelConfigSummary(accounts[1])).toBe('Webhook 3201');
     expect(getChannelConfigSummary(accounts[2])).toBe('2 个白名单用户');
+    expect(getChannelTypeLabel('lark', channelTypes)).toBe('Lark');
+    expect(getChannelConfigSummary(accounts[3])).toBe('Webhook 3301');
   });
 
   it('uses readable privacy copy instead of raw enum labels', () => {

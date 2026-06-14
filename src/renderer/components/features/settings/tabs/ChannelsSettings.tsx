@@ -29,6 +29,7 @@ import type {
   ChannelPrivacyMode,
   HttpApiChannelConfig,
   FeishuChannelConfig,
+  LarkChannelConfig,
   TelegramChannelConfig,
 } from '@shared/contract/channel';
 import { isWebMode } from '../../../../utils/platform';
@@ -99,6 +100,11 @@ export function getChannelConfigSummary(account: ChannelAccount): string {
 
   if (account.type === 'feishu') {
     const config = account.config as FeishuChannelConfig;
+    return `Webhook ${config.webhookPort || 3200}`;
+  }
+
+  if (account.type === 'lark') {
+    const config = account.config as LarkChannelConfig;
     return `Webhook ${config.webhookPort || 3200}`;
   }
 
@@ -228,21 +234,12 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
   );
 
   // 飞书配置
-  const [appId, setAppId] = useState(
-    (account?.config as FeishuChannelConfig)?.appId || ''
-  );
-  const [appSecret, setAppSecret] = useState(
-    (account?.config as FeishuChannelConfig)?.appSecret || ''
-  );
-  const [encryptKey, setEncryptKey] = useState(
-    (account?.config as FeishuChannelConfig)?.encryptKey || ''
-  );
-  const [verificationToken, setVerificationToken] = useState(
-    (account?.config as FeishuChannelConfig)?.verificationToken || ''
-  );
-  const [webhookPort, setWebhookPort] = useState(
-    (account?.config as FeishuChannelConfig)?.webhookPort?.toString() || '3200'
-  );
+  const larkLikeConfig = account?.config as FeishuChannelConfig | LarkChannelConfig | undefined;
+  const [appId, setAppId] = useState(larkLikeConfig?.appId || '');
+  const [appSecret, setAppSecret] = useState(larkLikeConfig?.appSecret || '');
+  const [encryptKey, setEncryptKey] = useState(larkLikeConfig?.encryptKey || '');
+  const [verificationToken, setVerificationToken] = useState(larkLikeConfig?.verificationToken || '');
+  const [webhookPort, setWebhookPort] = useState(larkLikeConfig?.webhookPort?.toString() || '3200');
 
   // Telegram 配置
   const [botToken, setBotToken] = useState(
@@ -271,9 +268,9 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
         enableCors,
         privacyMode,
       };
-    } else if (type === 'feishu') {
+    } else if (type === 'feishu' || type === 'lark') {
       config = {
-        type: 'feishu',
+        type,
         appId,
         appSecret,
         encryptKey: encryptKey || undefined,
@@ -410,8 +407,8 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
             </>
           )}
 
-          {/* 飞书配置 */}
-          {type === 'feishu' && (
+          {/* 飞书 / Lark 配置 */}
+          {(type === 'feishu' || type === 'lark') && (
             <>
               <div>
                 <label className="block text-sm text-zinc-400 mb-1">App ID</label>
@@ -480,7 +477,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                 <ol className="text-xs text-zinc-500 mt-1 space-y-1 list-decimal list-inside">
                   <li>连接后本地 Webhook 地址：<code className="text-indigo-400">http://localhost:{webhookPort}/webhook/feishu</code></li>
                   <li>使用 ngrok 暴露公网：<code className="text-indigo-400">ngrok http {webhookPort}</code></li>
-                  <li>将 ngrok URL 填入飞书开放平台「事件与回调」→「请求地址配置」</li>
+                  <li>将 ngrok URL 填入{type === 'lark' ? ' Lark Developer Console' : '飞书开放平台'}「事件与回调」请求地址配置</li>
                 </ol>
               </div>
             </>
@@ -724,6 +721,8 @@ export const ChannelsSettings: React.FC = () => {
         return <Globe className="w-4 h-4 text-indigo-400" />;
       case 'feishu':
         return <MessageSquare className="w-4 h-4 text-blue-400" />;
+      case 'lark':
+        return <MessageSquare className="w-4 h-4 text-emerald-400" />;
       case 'telegram':
         return <MessageSquare className="w-4 h-4 text-sky-400" />;
       default:
@@ -750,7 +749,7 @@ export const ChannelsSettings: React.FC = () => {
   return (
     <SettingsPage
       title="通道"
-      description="配置外部入口，让 HTTP API、飞书或 Telegram 可以和 Agent 交互。连接说明默认收起。"
+      description="配置外部入口，让 HTTP API、飞书、Lark 或 Telegram 可以和 Agent 交互。连接说明默认收起。"
     >
       <WebModeBanner />
 
@@ -822,7 +821,7 @@ export const ChannelsSettings: React.FC = () => {
               </div>
               <div className="mt-3 text-sm font-medium text-zinc-200">还没有通道账号</div>
               <div className="mt-1 text-xs text-zinc-500">
-                添加 HTTP API、飞书或 Telegram 账号后，可以在这里统一查看连接状态和执行启停操作。
+                添加 HTTP API、飞书、Lark 或 Telegram 账号后，可以在这里统一查看连接状态和执行启停操作。
               </div>
               <Button
                 className="mt-4"
@@ -977,6 +976,10 @@ export const ChannelsSettings: React.FC = () => {
           <p>
             <strong>飞书:</strong> 连接飞书机器人，支持私聊和群聊消息。
             需要在飞书开放平台创建应用并获取凭证。
+          </p>
+          <p>
+            <strong>Lark:</strong> 连接 Lark International Bot，使用独立账号和来源标识。
+            需要在 Lark Developer Console 创建应用并配置事件回调。
           </p>
           <p>
             <strong>Telegram:</strong> 连接 Telegram Bot，支持私聊和群组。

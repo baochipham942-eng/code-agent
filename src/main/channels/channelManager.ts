@@ -21,13 +21,16 @@ import type {
   ChannelEvent,
   ChannelOutboxDraft,
   SendMessageResult,
+  RetryChannelMediaAttachmentRequest,
+  RetryChannelMediaAttachmentResult,
 } from '../../shared/contract/channel';
 import { ApiChannel, createApiChannelFactory } from './api/apiChannel';
-import { FeishuChannel, createFeishuChannelFactory } from './feishu/feishuChannel';
+import { FeishuChannel, createFeishuChannelFactory, createLarkChannelFactory } from './feishu/feishuChannel';
 import { TelegramChannel, createTelegramChannelFactory } from './telegram/telegramChannel';
 import { getSecureStorage } from '../services/core/secureStorage';
 import { createLogger } from '../services/infra/logger';
 import { summarizeUserFacingError } from '../security/userFacingError';
+import { summarizeChannelError } from './channelErrorSummary';
 
 const logger = createLogger('ChannelManager');
 
@@ -503,6 +506,7 @@ export class ChannelManager extends EventEmitter {
     errorMessage: string
   ): Promise<void> {
     const { summary, retryHint } = summarizeUserFacingError(errorMessage, { surface: 'channel_reply' });
+    const channelSummary = summarizeChannelError(errorMessage).message;
     const channel = this.activeChannels.get(accountId);
     if (!channel) {
       throw new Error(`Account not connected: ${accountId}`);
@@ -515,9 +519,62 @@ export class ChannelManager extends EventEmitter {
 
     await channel.sendMessage({
       chatId: message.context.chatId,
-      content: `错误: ${summary}\n${retryHint}`,
+      content: `错误: ${summary || channelSummary}${retryHint ? `\n${retryHint}` : ''}`,
       replyToMessageId: message.id,
     });
+  }
+
+  async retryMediaAttachment(
+    request: RetryChannelMediaAttachmentRequest,
+  ): Promise<RetryChannelMediaAttachmentResult> {
+    const account = this.accounts.get(request.accountId);
+    if (!account) {
+      return { success: false, error: 'Channel account not found' };
+    }
+
+    if (account.type !== 'feishu' && account.type !== 'lark') {
+      return { success: false, error: 'Media retry is only supported for Feishu/Lark attachments' };
+    }
+
+    let channel = this.activeChannels.get(request.accountId);
+    let transientChannel: IChannelPlugin | null = null;
+
+    try {
+      if (!channel) {
+        const registration = this.pluginRegistry.get(account.type);
+        if (!registration) {
+          return { success: false, error: `Unknown channel type: ${account.type}` };
+        }
+        transientChannel = registration.factory(request.accountId);
+        await transientChannel.initialize(account.config);
+        channel = transientChannel;
+      }
+
+      if (!(channel instanceof FeishuChannel)) {
+        return { success: false, error: 'Channel does not support media retry' };
+      }
+
+      const attachment = await channel.retryMediaAttachment(request.attachment);
+      return {
+        success: attachment.mediaState !== 'failed',
+        attachment,
+        error: attachment.mediaState === 'failed'
+          ? typeof attachment.metadata?.retryError === 'string'
+            ? attachment.metadata.retryError
+            : 'Media retry failed'
+          : undefined,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Channel media retry failed', {
+        accountId: request.accountId,
+        attachmentId: request.attachment.id,
+        error: message,
+      });
+      return { success: false, error: message };
+    } finally {
+      await transientChannel?.destroy().catch(() => undefined);
+    }
   }
 
   // ========== Private Methods ==========
@@ -567,6 +624,29 @@ export class ChannelManager extends EventEmitter {
         },
       },
       factory: createFeishuChannelFactory(),
+    });
+
+    // 注册 Lark International 通道
+    this.registerPlugin({
+      type: 'lark',
+      meta: {
+        type: 'lark',
+        name: 'Lark',
+        description: 'Lark International Bot 通道，支持 P2P 和群聊',
+        capabilities: {
+          streaming: false,
+          editMessage: true,
+          deleteMessage: true,
+          addReaction: true,
+          richText: true,
+          attachments: true,
+          images: true,
+          mentions: true,
+          threads: true,
+          maxMessageLength: 30000,
+        },
+      },
+      factory: createLarkChannelFactory(),
     });
 
     // 注册 Telegram 通道

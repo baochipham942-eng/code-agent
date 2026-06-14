@@ -26,6 +26,14 @@ export type AttachmentCategory =
   | 'folder'     // 文件夹
   | 'other';     // 其他
 
+export type AttachmentMediaState =
+  | 'pending'
+  | 'downloading'
+  | 'embedded'
+  | 'transcribing'
+  | 'ready'
+  | 'failed';
+
 export interface PresentationSlideSummary {
   index: number;
   title?: string;
@@ -96,6 +104,10 @@ export interface MessageAttachment {
   // 文件夹特有：文件列表和统计
   files?: Array<{ path: string; content: string; size: number }>;
   folderStats?: { totalFiles: number; totalSize: number; byType: Record<string, number> };
+  // 媒体处理状态，用于展示下载、嵌入、转写、失败等生命周期
+  mediaState?: AttachmentMediaState;
+  // 来源和处理元数据，例如渠道消息 ID、转写结果、下载状态
+  metadata?: Record<string, unknown>;
 }
 
 // 消息来源类型
@@ -186,9 +198,20 @@ export interface SkillMessageMetadata {
   phase: 'status' | 'instructions';
 }
 
+export interface ChannelMessageMetadata {
+  platform: string;
+  accountId: string;
+  accountName?: string;
+  chatId: string;
+  chatType?: string;
+  chatName?: string;
+  messageId?: string;
+}
+
 export interface MessageMetadata {
   workbench?: WorkbenchMessageMetadata;
   skill?: SkillMessageMetadata;
+  channel?: ChannelMessageMetadata;
 }
 
 export interface Message {

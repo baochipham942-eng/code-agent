@@ -25,13 +25,14 @@ import type {
 } from '../../../protocol/tools';
 import { formatFileSize } from '../../../tools/utils/fileSize';
 import { createFileArtifact } from '../../../tools/artifacts/artifactMeta';
+import { buildMediaArtifactMetadata } from '../../../tools/artifacts/mediaArtifactMetadata';
 import { imageProcessSchema as schema } from './imageProcess.schema';
 import { requireSharp } from '../../../runtime/sharpRuntime';
 
 const SUPPORTED_FORMATS = ['png', 'jpg', 'jpeg', 'webp', 'avif', 'gif', 'tiff'];
 
 interface ImageProcessParams {
-  input_path: string;
+  input_path?: string;
   action: 'convert' | 'compress' | 'resize' | 'upscale';
   output_path?: string;
   format?: 'png' | 'jpg' | 'webp' | 'avif' | 'gif';
@@ -39,6 +40,32 @@ interface ImageProcessParams {
   width?: number;
   height?: number;
   scale?: number;
+}
+
+function readStringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function resolveFallbackImagePath(ctx: ToolContext): string | undefined {
+  const attachments = ctx.subagent?.attachments;
+  if (!attachments?.length) return undefined;
+
+  for (let index = attachments.length - 1; index >= 0; index--) {
+    const attachment = attachments[index];
+    if (!attachment || typeof attachment !== 'object' || Array.isArray(attachment)) continue;
+    const record = attachment as Record<string, unknown>;
+    const candidatePath = readStringField(record, 'path') ?? readStringField(record, 'localPath');
+    if (!candidatePath) continue;
+    const type = readStringField(record, 'type');
+    const category = readStringField(record, 'category');
+    const mimeType = readStringField(record, 'mimeType');
+    if (type === 'image' || category === 'image' || mimeType?.startsWith('image/')) {
+      return candidatePath;
+    }
+  }
+
+  return undefined;
 }
 
 function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -85,10 +112,32 @@ export async function executeImageProcess(
   onProgress?.({ stage: 'starting', detail: schema.name });
 
   const params = args as unknown as ImageProcessParams;
-  const { input_path, action } = params;
+  const { action } = params;
+  const inputPathFromArgs = typeof params.input_path === 'string' && params.input_path.trim()
+    ? params.input_path
+    : undefined;
+  const fallbackInputPath = inputPathFromArgs ? undefined : resolveFallbackImagePath(ctx);
+  const input_path = inputPathFromArgs ?? fallbackInputPath;
+  const usedInputFallback = Boolean(!inputPathFromArgs && fallbackInputPath);
 
-  if (typeof input_path !== 'string' || input_path.length === 0) {
-    return { ok: false, error: 'input_path is required and must be a string', code: 'INVALID_ARGS' };
+  if (!input_path) {
+    return {
+      ok: false,
+      error: '缺少输入图片路径。请提供 input_path，或先在当前消息附加一张图片。',
+      code: 'INVALID_ARGS',
+      meta: {
+        mediaLifecycle: {
+          kind: 'edited-image',
+          state: 'failed',
+          operation: action,
+          ownerSessionId: ctx.sessionId,
+          ownerToolCallId: ctx.currentToolCallId ?? ctx.subagent?.currentToolCallId,
+          fallbackStrategy: 'current-image-attachment',
+          fallbackUsed: false,
+          fallbackReason: 'no-input-image',
+        },
+      },
+    };
   }
   if (!['convert', 'compress', 'resize', 'upscale'].includes(action)) {
     return { ok: false, error: `Invalid action: ${action}`, code: 'INVALID_ARGS' };
@@ -212,6 +261,14 @@ export async function executeImageProcess(
       newSize: outputStats.size,
     });
 
+    const mediaArtifactMetadata = buildMediaArtifactMetadata(ctx, {
+      kind: 'edited-image',
+      operation: action,
+      sourceImages: [absInputPath],
+      fallbackStrategy: usedInputFallback ? 'current-image-attachment' : 'source-and-output-paths-retained',
+      fallbackUsed: usedInputFallback,
+    });
+
     return {
       ok: true,
       output: `✅ 图片处理完成！
@@ -237,6 +294,7 @@ export async function executeImageProcess(
             height: outputMetadata.height,
             format: outputFormat,
             compressionRatio: Number(compressionRatio),
+            ...mediaArtifactMetadata,
           },
         }),
         filePath: finalPath,

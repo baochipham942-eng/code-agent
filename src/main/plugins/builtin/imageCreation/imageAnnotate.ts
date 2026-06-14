@@ -25,6 +25,7 @@ import type {
 import { getConfigService } from '../../../services';
 import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS, BAIDU_OCR_ENDPOINTS } from '../../../../shared/constants';
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
+import { buildMediaArtifactMetadata } from '../../../tools/artifacts/mediaArtifactMetadata';
 import { imageAnnotateSchema as schema } from './imageAnnotate.schema';
 import {
   isJsonRecord,
@@ -547,6 +548,14 @@ export async function executeImageAnnotate(
       ocrMethod = 'vision_llm';
 
       onProgress?.({ stage: 'completing', percent: 100 });
+      const mediaArtifactMetadata = buildMediaArtifactMetadata(ctx, {
+        kind: 'image-analysis',
+        operation: 'annotate',
+        sourceImages: [imagePath],
+        fallbackStrategy: 'baidu-ocr-to-vision-llm',
+        fallbackUsed: true,
+        fallbackReason: 'baidu-ocr-unavailable-or-failed',
+      });
 
       return {
         ok: true,
@@ -565,6 +574,7 @@ export async function executeImageAnnotate(
               query: params.query,
               ocrMethod,
               mediaKind: 'image',
+              ...mediaArtifactMetadata,
             },
           }),
           imagePath,
@@ -623,6 +633,13 @@ export async function executeImageAnnotate(
 
     const processingTime = Date.now() - startTime;
     onProgress?.({ stage: 'completing', percent: 100 });
+    const mediaArtifactMetadata = buildMediaArtifactMetadata(ctx, {
+      kind: annotatedPath ? 'annotated-image' : 'image-analysis',
+      operation: 'annotate',
+      sourceImages: [imagePath],
+      fallbackStrategy: 'baidu-ocr-to-vision-llm',
+      fallbackUsed: false,
+    });
     const artifact = annotatedPath
       ? await createFileArtifact(annotatedPath, schema.name, ctx, {
           kind: 'image',
@@ -633,6 +650,7 @@ export async function executeImageAnnotate(
             ocrMethod,
             regionCount: regions.length,
             mediaKind: 'image',
+            ...mediaArtifactMetadata,
           },
         })
       : createVirtualArtifact({
@@ -649,6 +667,7 @@ export async function executeImageAnnotate(
             ocrMethod,
             regionCount: regions.length,
             mediaKind: 'image',
+            ...mediaArtifactMetadata,
           },
         });
 

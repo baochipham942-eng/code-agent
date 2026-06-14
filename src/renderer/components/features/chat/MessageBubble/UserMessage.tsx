@@ -10,11 +10,26 @@ import { MessageContent } from './MessageContent';
 import { AttachmentDisplay } from './AttachmentPreview';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
 
+function formatChannelSource(message: UserMessageProps['message']): string | null {
+  const channel = message.metadata?.channel;
+  if (!channel) return null;
+  const platform = channel.platform === 'feishu'
+    ? 'Feishu'
+    : channel.platform === 'lark'
+      ? 'Lark'
+      : channel.platform === 'telegram'
+        ? 'Telegram'
+        : channel.platform;
+  const chat = channel.chatName || channel.chatId;
+  return [platform, channel.accountName, chat].filter(Boolean).join(' · ');
+}
+
 export const UserMessage: React.FC<UserMessageProps> = ({ message, onEdit }) => {
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
   // 用户可见正文剥掉 appshot 隐藏 XML（模型已通过该 XML 拿到窗口文本）
   const displayContent = stripAppshotBlocks(message.content || '');
+  const channelSource = formatChannelSource(message);
   const [editContent, setEditContent] = useState(displayContent);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -60,6 +75,12 @@ export const UserMessage: React.FC<UserMessageProps> = ({ message, onEdit }) => 
         >
           <Pencil className="w-3.5 h-3.5" />
         </button>
+      )}
+
+      {channelSource && (
+        <div className="mb-2 inline-flex max-w-full items-center rounded-md border border-zinc-700 bg-zinc-800/70 px-2 py-1 text-[11px] text-zinc-400">
+          <span className="truncate">{channelSource}</span>
+        </div>
       )}
 
       {/* Attachments above text */}

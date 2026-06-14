@@ -8,13 +8,16 @@ import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
 import { getChannelManager } from './channelManager';
 import type { ChannelMessage, ChannelAttachment, ChannelContext, ChannelSender } from '../../shared/contract/channel';
-import type { AttachmentCategory, MessageAttachment, Message, AgentEvent, ModelConfig } from '../../shared/contract';
+import type { AttachmentCategory, MessageAttachment, Message, AgentEvent, ModelConfig, MessageMetadata } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { logCollector } from '../mcp/logCollector';
 import { v4 as uuidv4 } from 'uuid';
-import { IngressPipeline, type IngressMessage } from './ingressPipeline';
+import { IngressPipeline, type IngressMessage, type IngressMessagePart } from './ingressPipeline';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { summarizeUserFacingError } from '../security/userFacingError';
+import type { ChannelResponseCallback } from './channelInterface';
+import { summarizeChannelError } from './channelErrorSummary';
+import { transcribeAudioFile } from '../services/media/audioTranscriptionService';
 
 const logger = createLogger('ChannelAgentBridge');
 
@@ -81,6 +84,8 @@ export class ChannelAgentBridge {
 
   // 暂存入队消息的原始 ChannelMessage（供 pipeline 回调时使用）
   private pendingChannelMessages: Map<string, { accountId: string; message: ChannelMessage }> = new Map();
+  private processedMessages: Map<string, { status: 'processing' | 'completed' | 'failed'; timestamp: number }> = new Map();
+  private readonly processedMessageTtlMs = 24 * 60 * 60 * 1000;
 
   constructor(config: ChannelAgentBridgeConfig) {
     this.config = config;
@@ -129,6 +134,7 @@ export class ChannelAgentBridge {
     this.pendingChannelMessages.clear();
     await this.channelManager.disconnectAll();
     this.processingMessages.clear();
+    this.processedMessages.clear();
     logger.info('ChannelAgentBridge shutdown');
   }
 
@@ -153,6 +159,14 @@ export class ChannelAgentBridge {
     });
 
     const sessionKey = this.getSessionKey(accountId, message);
+    if (!this.markMessageProcessing(accountId, message.id)) {
+      logger.info('Ignoring duplicate channel message', {
+        accountId,
+        messageId: message.id,
+        sessionKey,
+      });
+      return;
+    }
 
     // 流式请求直接处理，不走 pipeline（需要保持 HTTP 连接）
     const isStreamingRequest = message.raw &&
@@ -163,10 +177,17 @@ export class ChannelAgentBridge {
       const orchestrator = await this.getOrCreateChannelOrchestrator(sessionKey, accountId, message);
       if (!orchestrator) {
         await this.sendErrorResponse(accountId, message, 'Agent not available');
+        this.markMessageFailed(accountId, message.id);
         return;
       }
       const attachments = this.convertAttachments(message.attachments);
-      await this.handleStreamingMessage(accountId, message, orchestrator, attachments);
+      try {
+        await this.handleStreamingMessage(accountId, message, orchestrator, attachments);
+        this.markMessageCompleted(accountId, message.id);
+      } catch (error) {
+        this.markMessageFailed(accountId, message.id);
+        throw error;
+      }
       return;
     }
 
@@ -199,38 +220,56 @@ export class ChannelAgentBridge {
     const meta = msg.metadata as Record<string, unknown>;
     const accountId = meta.accountId as string;
     const ingressKey = meta.ingressKey as string;
+    const parts = this.getIngressParts(msg);
 
     // 恢复原始 ChannelMessage 或构造合成消息
-    const pending = this.pendingChannelMessages.get(ingressKey);
+    const firstPart = parts[0];
+    const firstMeta = firstPart?.metadata ?? meta;
+    const firstIngressKey = typeof firstMeta.ingressKey === 'string' ? firstMeta.ingressKey : ingressKey;
+    const pending = this.pendingChannelMessages.get(firstIngressKey);
     const message: ChannelMessage = pending?.message ?? {
-      id: (meta.messageId as string) || uuidv4(),
+      id: (firstMeta.messageId as string) || uuidv4(),
       channelId: 'api',
-      sender: toChannelSender(meta.sender),
-      context: toChannelContext(meta.context),
+      sender: toChannelSender(firstMeta.sender),
+      context: toChannelContext(firstMeta.context),
       content: msg.content,
-      attachments: meta.attachments as ChannelAttachment[] | undefined,
+      attachments: this.collectPartAttachments(parts),
       timestamp: msg.timestamp,
-      raw: meta.raw,
+      raw: firstMeta.raw,
     };
 
     // 清理暂存
-    this.pendingChannelMessages.delete(ingressKey);
+    for (const part of parts) {
+      const partIngressKey = part.metadata?.ingressKey;
+      if (typeof partIngressKey === 'string') {
+        this.pendingChannelMessages.delete(partIngressKey);
+      }
+    }
 
     // 使用合并后的内容（可能是多条消息 debounce 合并的）
-    const processMessage: ChannelMessage = { ...message, content: msg.content };
+    const processMessage: ChannelMessage = {
+      ...message,
+      content: msg.content,
+      attachments: this.collectPartAttachments(parts) ?? message.attachments,
+      timestamp: msg.timestamp,
+    };
 
     const sessionKey = this.getSessionKey(accountId, processMessage);
     const orchestrator = await this.getOrCreateChannelOrchestrator(sessionKey, accountId, processMessage);
     if (!orchestrator) {
       logger.error('Orchestrator not available');
       await this.sendErrorResponse(accountId, processMessage, 'Agent not available');
+      this.markPartsFailed(accountId, parts);
       return;
     }
 
     const messageKey = `${accountId}:${processMessage.id}`;
 
     try {
-      const attachments = this.convertAttachments(processMessage.attachments);
+      const enrichment = await this.enrichChannelMessage(processMessage);
+      const attachments = this.convertAttachments(enrichment.attachments);
+      processMessage.content = enrichment.content;
+      processMessage.attachments = enrichment.attachments;
 
       this.processingMessages.set(messageKey, {
         accountId,
@@ -244,11 +283,13 @@ export class ChannelAgentBridge {
       }
 
       await this.handleSyncMessage(accountId, processMessage, orchestrator, attachments, responseCallback);
+      this.markPartsCompleted(accountId, parts);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const { summary } = summarizeUserFacingError(error, { surface: 'channel_reply' });
       logger.error('Error processing ingress message', { accountId, messageId: processMessage.id, error: errorMessage });
       await this.sendErrorResponse(accountId, processMessage, summary);
+      this.markPartsFailed(accountId, parts);
     } finally {
       this.processingMessages.delete(messageKey);
     }
@@ -262,7 +303,7 @@ export class ChannelAgentBridge {
     message: ChannelMessage,
     orchestrator: AgentOrchestrator,
     attachments: MessageAttachment[] | undefined,
-    responseCallback: { sendText: (content: string) => Promise<{ success: boolean; messageId?: string; error?: string }> }
+    responseCallback: ChannelResponseCallback
   ): Promise<void> {
     // 收集响应
     let fullResponse = '';
@@ -283,12 +324,18 @@ export class ChannelAgentBridge {
     // 这里使用一个简化的方案：直接调用 sendMessage 并等待完成
 
     try {
+      await this.startTyping(responseCallback);
       // 记录发送前的消息数量，用于识别新的回复
       const messagesBefore = orchestrator.getMessages();
       const messageCountBefore = messagesBefore.length;
       logCollector.log('agent', 'INFO', `[Channel] Processing message, count before: ${messageCountBefore}`);
 
-      await orchestrator.sendMessage(message.content, attachments);
+      await orchestrator.sendMessage(
+        message.content,
+        attachments,
+        undefined,
+        this.buildChannelMessageMetadata(accountId, message),
+      );
       logCollector.log('agent', 'INFO', '[Channel] orchestrator.sendMessage completed');
 
       // 获取新增的 assistant 消息作为响应
@@ -310,6 +357,7 @@ export class ChannelAgentBridge {
 
       // 发送响应
       logCollector.log('agent', 'INFO', `[Channel] Sending response (length: ${fullResponse.length})`);
+      await this.stopTyping(responseCallback);
       if (fullResponse) {
         const result = await responseCallback.sendText(fullResponse);
         logCollector.log('agent', 'INFO', `[Channel] Response sent: success=${result.success}, error=${result.error || 'none'}`);
@@ -320,8 +368,11 @@ export class ChannelAgentBridge {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       const { summary, retryHint } = summarizeUserFacingError(error, { surface: 'channel_reply' });
+      const channelSummary = summarizeChannelError(error).message;
       logCollector.log('agent', 'ERROR', `[Channel] Error: ${errorMsg}`);
-      await responseCallback.sendText(`处理失败: ${summary}\n${retryHint}`);
+      await responseCallback.sendText(`处理失败: ${summary || channelSummary}${retryHint ? `\n${retryHint}` : ''}`);
+    } finally {
+      await this.stopTyping(responseCallback);
     }
   }
 
@@ -465,6 +516,80 @@ export class ChannelAgentBridge {
     }
   }
 
+  private getIngressParts(msg: IngressMessage): IngressMessagePart[] {
+    if (msg.parts?.length) return msg.parts;
+    return [{
+      messageId: typeof msg.metadata?.messageId === 'string' ? msg.metadata.messageId : undefined,
+      content: msg.content,
+      timestamp: msg.timestamp,
+      metadata: msg.metadata,
+    }];
+  }
+
+  private collectPartAttachments(parts: IngressMessagePart[]): ChannelAttachment[] | undefined {
+    const attachments: ChannelAttachment[] = [];
+    for (const part of parts) {
+      const partAttachments = part.metadata?.attachments;
+      if (Array.isArray(partAttachments)) {
+        attachments.push(...(partAttachments as ChannelAttachment[]));
+      }
+    }
+    return attachments.length ? attachments : undefined;
+  }
+
+  private async enrichChannelMessage(message: ChannelMessage): Promise<{
+    content: string;
+    attachments?: ChannelAttachment[];
+  }> {
+    const attachments = message.attachments ? [...message.attachments] : undefined;
+    if (!attachments?.length) {
+      return { content: message.content, attachments };
+    }
+
+    const transcriptBlocks: string[] = [];
+    for (const attachment of attachments) {
+      if (attachment.type !== 'audio') continue;
+      const localPath = attachment.localPath ?? this.pathFromAttachmentUrl(attachment.url);
+      const existingTranscript = attachment.metadata?.transcript;
+      if (!localPath || typeof existingTranscript === 'string') continue;
+
+      attachment.metadata = {
+        ...attachment.metadata,
+        transcriptionState: 'transcribing',
+      };
+      attachment.mediaState = 'transcribing';
+
+      const result = await transcribeAudioFile({
+        filePath: localPath,
+        sessionId: message.context.chatId,
+      });
+
+      if (result.ok && result.text?.trim()) {
+        attachment.metadata = {
+          ...attachment.metadata,
+          transcriptionState: 'ready',
+          transcript: result.text,
+          transcriptionEngine: result.engine,
+        };
+        attachment.mediaState = 'ready';
+        transcriptBlocks.push(`[语音转写: ${attachment.name}]\n${result.text.trim()}`);
+      } else {
+        attachment.metadata = {
+          ...attachment.metadata,
+          transcriptionState: 'failed',
+          transcriptionError: result.error,
+        };
+        attachment.mediaState = 'failed';
+        transcriptBlocks.push(`[语音转写失败: ${attachment.name}]`);
+      }
+    }
+
+    const content = transcriptBlocks.length
+      ? [message.content, ...transcriptBlocks].filter(Boolean).join('\n\n')
+      : message.content;
+    return { content, attachments };
+  }
+
   private getSessionKey(accountId: string, message: ChannelMessage): string {
     return `${accountId}:${message.context.chatId}`;
   }
@@ -485,6 +610,7 @@ export class ChannelAgentBridge {
       this.channelSessions.delete(sessionKey);
     }
 
+    const account = this.channelManager.getAccount(accountId);
     const session = await sessionManager.createSession({
       title: this.buildChannelSessionTitle(accountId, message),
       modelConfig: this.getChannelModelConfig(),
@@ -495,6 +621,11 @@ export class ChannelAgentBridge {
         metadata: {
           chatId: message.context.chatId,
           channelId: message.channelId,
+          channelType: account?.type,
+          accountId,
+          accountName: account?.name,
+          chatType: message.context.chatType,
+          chatName: message.context.chatName,
         },
       },
     });
@@ -563,6 +694,21 @@ export class ChannelAgentBridge {
     });
   }
 
+  private buildChannelMessageMetadata(accountId: string, message: ChannelMessage): MessageMetadata {
+    const account = this.channelManager.getAccount(accountId);
+    return {
+      channel: {
+        platform: account?.type || message.channelId || 'channel',
+        accountId,
+        accountName: account?.name,
+        chatId: message.context.chatId,
+        chatType: message.context.chatType,
+        chatName: message.context.chatName,
+        messageId: message.id,
+      },
+    };
+  }
+
   /**
    * 转换附件格式
    */
@@ -581,8 +727,18 @@ export class ChannelAgentBridge {
       size: att.size || 0,
       mimeType: att.mimeType || 'application/octet-stream',
       data: att.data,
-      path: att.url,
+      path: att.localPath ?? this.pathFromAttachmentUrl(att.url),
+      mediaState: att.mediaState,
+      metadata: att.metadata,
     }));
+  }
+
+  private pathFromAttachmentUrl(url: string | undefined): string | undefined {
+    if (!url) return undefined;
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/')) {
+      return url;
+    }
+    return undefined;
   }
 
   /**
@@ -598,6 +754,73 @@ export class ChannelAgentBridge {
     if (att.mimeType?.includes('text')) return 'text';
     if (att.mimeType?.includes('json') || att.mimeType?.includes('csv')) return 'data';
     return 'other';
+  }
+
+  private markMessageProcessing(accountId: string, messageId: string): boolean {
+    this.pruneProcessedMessages();
+    const key = this.getMessageProcessKey(accountId, messageId);
+    if (this.processedMessages.has(key)) {
+      return false;
+    }
+    this.processedMessages.set(key, { status: 'processing', timestamp: Date.now() });
+    return true;
+  }
+
+  private markMessageCompleted(accountId: string, messageId: string | undefined): void {
+    if (!messageId) return;
+    this.processedMessages.set(this.getMessageProcessKey(accountId, messageId), {
+      status: 'completed',
+      timestamp: Date.now(),
+    });
+  }
+
+  private markMessageFailed(accountId: string, messageId: string | undefined): void {
+    if (!messageId) return;
+    this.processedMessages.set(this.getMessageProcessKey(accountId, messageId), {
+      status: 'failed',
+      timestamp: Date.now(),
+    });
+  }
+
+  private markPartsCompleted(accountId: string, parts: IngressMessagePart[]): void {
+    for (const part of parts) {
+      this.markMessageCompleted(accountId, part.messageId);
+    }
+  }
+
+  private markPartsFailed(accountId: string, parts: IngressMessagePart[]): void {
+    for (const part of parts) {
+      this.markMessageFailed(accountId, part.messageId);
+    }
+  }
+
+  private getMessageProcessKey(accountId: string, messageId: string): string {
+    return `${accountId}:${messageId}`;
+  }
+
+  private pruneProcessedMessages(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.processedMessages) {
+      if (now - entry.timestamp > this.processedMessageTtlMs) {
+        this.processedMessages.delete(key);
+      }
+    }
+  }
+
+  private async startTyping(callback: ChannelResponseCallback): Promise<void> {
+    try {
+      await callback.startTyping?.();
+    } catch (error) {
+      logger.debug('Channel typing start failed', { error });
+    }
+  }
+
+  private async stopTyping(callback: ChannelResponseCallback): Promise<void> {
+    try {
+      await callback.stopTyping?.();
+    } catch (error) {
+      logger.debug('Channel typing stop failed', { error });
+    }
   }
 }
 

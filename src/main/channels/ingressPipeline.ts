@@ -22,6 +22,19 @@ export interface IngressMessage {
   timestamp: number;
   /** 透传的元数据 */
   metadata?: Record<string, unknown>;
+  /** debounce 合并后的原始消息分片 */
+  parts?: IngressMessagePart[];
+}
+
+export interface IngressMessagePart {
+  /** 平台消息 ID */
+  messageId?: string;
+  /** 消息内容 */
+  content: string;
+  /** 原始时间戳 */
+  timestamp: number;
+  /** 透传的元数据 */
+  metadata?: Record<string, unknown>;
 }
 
 export interface IngressConfig {
@@ -79,19 +92,24 @@ export class IngressPipeline {
    * 消息入队（带 debounce）
    */
   enqueue(msg: IngressMessage): void {
+    const incoming = this.normalizeMessage(msg);
     const existing = this.debounceBuffer.get(msg.sessionKey);
 
     if (existing) {
       // 合并内容
       clearTimeout(existing.timer);
-      existing.msg.content += '\n' + msg.content;
-      existing.msg.timestamp = msg.timestamp;
+      existing.msg.content = this.mergeContent(existing.msg.content, incoming.content);
+      existing.msg.timestamp = incoming.timestamp;
+      existing.msg.parts = [
+        ...(existing.msg.parts ?? [this.toPart(existing.msg)]),
+        ...(incoming.parts ?? [this.toPart(incoming)]),
+      ];
       existing.timer = setTimeout(() => this.flushDebounce(msg.sessionKey), this.config.debounceMs);
       logger.debug('Debounce merged message', { sessionKey: msg.sessionKey });
     } else {
       // 新消息，设置 debounce 定时器
       const timer = setTimeout(() => this.flushDebounce(msg.sessionKey), this.config.debounceMs);
-      this.debounceBuffer.set(msg.sessionKey, { msg: { ...msg }, timer });
+      this.debounceBuffer.set(msg.sessionKey, { msg: incoming, timer });
       logger.debug('Debounce started', { sessionKey: msg.sessionKey });
     }
   }
@@ -217,5 +235,29 @@ export class IngressPipeline {
       clearTimeout(timer);
       this.lockTimers.delete(sessionKey);
     }
+  }
+
+  private normalizeMessage(msg: IngressMessage): IngressMessage {
+    const copy: IngressMessage = {
+      ...msg,
+      parts: msg.parts?.length ? [...msg.parts] : [this.toPart(msg)],
+    };
+    return copy;
+  }
+
+  private toPart(msg: IngressMessage): IngressMessagePart {
+    const metadata = msg.metadata ? { ...msg.metadata } : undefined;
+    return {
+      messageId: typeof metadata?.messageId === 'string' ? metadata.messageId : undefined,
+      content: msg.content,
+      timestamp: msg.timestamp,
+      metadata,
+    };
+  }
+
+  private mergeContent(current: string, next: string): string {
+    if (!current) return next;
+    if (!next) return current;
+    return `${current}\n${next}`;
   }
 }

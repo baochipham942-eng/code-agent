@@ -59,7 +59,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
 
   // Model
   { tab: 'model', tabLabel: '模型', label: '模型供应商', keywords: ['provider', '供应商', 'API', 'deepseek', 'claude', 'kimi', 'openai', '智谱', 'moonshot'] },
-  { tab: 'model', tabLabel: '模型', label: 'API Key', keywords: ['apikey', '密钥', 'key', '认证'] },
+  { tab: 'model', tabLabel: '模型', label: 'API Key', keywords: ['apikey', 'api key', '密钥', 'key', '认证', 'provider key', '模型凭证'] },
   { tab: 'model', tabLabel: '模型', label: '模型选择', keywords: ['model', '模型', '选择', '切换'] },
   { tab: 'model', tabLabel: '模型', label: '温度', keywords: ['temperature', '温度', '创造性', '精确'] },
   { tab: 'model', tabLabel: '模型', label: '测试连接', keywords: ['test', 'connection', '测试', '连接'] },
@@ -87,10 +87,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   // Plugins
   { tab: 'plugins', tabLabel: '插件管理', label: '插件市场', keywords: ['plugin', 'plugins', '插件', 'marketplace', '市场', '安装', '卸载', '启用', '禁用'] },
   { tab: 'plugins', tabLabel: '插件管理', label: '插件可见性', keywords: ['visibility', 'admin', 'user', '普通用户', '管理员', '仅管理员可见', '普通用户可见', '权限'] },
+  { tab: 'plugins', tabLabel: '插件管理', label: '插件权限', keywords: ['plugin permission', '插件权限', '插件风险', 'external service', '外部服务', 'hook 权限'] },
   { tab: 'plugins', tabLabel: '插件管理', label: 'Marketplace 源', keywords: ['marketplace source', 'github', 'npm', 'url', 'dir', '源', '刷新'] },
 
   // MCP
   { tab: 'mcp', tabLabel: 'MCP', label: 'MCP 服务器', keywords: ['mcp', 'server', '服务器', 'protocol', '工具', '资源'] },
+  { tab: 'mcp', tabLabel: 'MCP', label: 'MCP OAuth', keywords: ['mcp oauth', 'oauth', '重新授权', 'reauthorize', 'revoke', 'token', '授权'] },
+  { tab: 'mcp', tabLabel: 'MCP', label: 'MCP 凭证边界', keywords: ['mcp env', 'mcp header', 'header auth', 'env secret', 'authorization', 'bearer', '凭证', '密钥'] },
   { tab: 'mcp', tabLabel: 'MCP', label: 'Codex CLI', keywords: ['codex', 'sandbox', '沙箱', '交叉验证', 'cross verify'] },
   { tab: 'mcp', tabLabel: 'MCP', label: '本地桥接', keywords: ['bridge', 'local', '桥接', '本地'] },
   { tab: 'mcp', tabLabel: 'MCP', label: '云端刷新', keywords: ['cloud', 'refresh', '云端', '刷新', '配置'] },
@@ -102,6 +105,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
 
   // Channels
   { tab: 'channels', tabLabel: '通道', label: '多通道接入', keywords: ['channel', '通道', '接入', 'http', 'api'] },
+  { tab: 'channels', tabLabel: '通道', label: '通道隐私策略', keywords: ['channel privacy', '隐私策略', '默认脱敏', 'local-redact', 'allow-raw', 'channel token', '通道 token', 'app secret', 'bot token'] },
+  { tab: 'channels', tabLabel: '通道', label: '低打扰通知', keywords: ['notification', '通知', '低打扰', 'typing', 'progress spam', 'desktop reply notification', 'channel reply'] },
   { tab: 'channels', tabLabel: '通道', label: '飞书', keywords: ['feishu', '飞书', 'lark', 'webhook', 'bot'] },
   { tab: 'channels', tabLabel: '通道', label: 'Telegram', keywords: ['telegram', 'bot', 'tg'] },
   { tab: 'channels', tabLabel: '通道', label: 'HTTP API', keywords: ['http', 'api', 'rest', '端口', 'port', 'cors'] },
@@ -114,6 +119,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   // Screen Memory
   { tab: 'openchronicle', tabLabel: '屏幕记忆', label: '自动屏幕记忆', keywords: ['screen memory', '屏幕记忆', 'openchronicle', 'daemon', '桌面活动'] },
   { tab: 'openchronicle', tabLabel: '屏幕记忆', label: '手动桌面活动', keywords: ['native desktop', 'tauri', 'desktop', '桌面活动', '截图', '录音'] },
+
+  // Privacy
+  { tab: 'privacy', tabLabel: '隐私防线', label: '权限与数据边界', keywords: ['privacy boundary', '权限边界', '数据边界', '本地优先', '云端例外', 'local first', '诊断例外'] },
+  { tab: 'privacy', tabLabel: '隐私防线', label: '语音转写', keywords: ['语音转写', 'transcription', 'voice paste', 'whisper', 'groq', '麦克风', 'desktop audio', 'channel audio'] },
+  { tab: 'privacy', tabLabel: '隐私防线', label: '诊断包', keywords: ['diagnostic bundle', '诊断包', 'trace', 'stack trace', 'scrub', '脱敏', '遥测', 'telemetry'] },
+  { tab: 'privacy', tabLabel: '隐私防线', label: '凭证库存', keywords: ['auth inventory', '凭证库存', 'api key', 'oauth', 'channel token', 'browser relay', 'mcp header'] },
+  { tab: 'privacy', tabLabel: '隐私防线', label: 'Browser Relay', keywords: ['browser relay', '浏览器 relay', 'chrome extension', 'debugger', 'tabs', 'activeTab', 'host permissions'] },
 
   // Update
   { tab: 'update', tabLabel: '更新', label: '版本更新', keywords: ['update', 'version', '更新', '版本', '升级', '下载'] },

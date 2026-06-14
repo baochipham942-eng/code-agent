@@ -36,11 +36,7 @@ async function ensureTauriPermission(mod: NotifModule): Promise<boolean> {
   return granted;
 }
 
-/**
- * 主动请求系统通知授权。应在 app 启动时调用一次——让用户在权限"未决"时看到 macOS
- * 授权弹窗，而不是等第一条通知静默被拦、再让用户自己去系统设置开（普通用户不会）。
- * 已授权/已拒绝时系统不再弹（plugin 行为）。返回最终是否已授权。
- */
+/** 主动请求系统通知授权。用于设置页或测试通知这类明确用户动作，不在 app 启动时预先弹权限。 */
 export async function requestOsNotificationPermission(): Promise<boolean> {
   if (!isTauriMode()) return false;
   try {
@@ -78,7 +74,7 @@ export async function postOsNotification(opts: { title: string; body: string }):
       await Notification.requestPermission();
     }
     if (Notification.permission === 'granted') {
-      // eslint-disable-next-line no-new
+
       new Notification(opts.title, { body: opts.body });
     }
   } catch {

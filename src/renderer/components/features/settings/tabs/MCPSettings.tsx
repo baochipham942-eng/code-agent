@@ -59,6 +59,13 @@ const logger = createLogger('MCPSettings');
 
 type McpViewTab = 'connected' | 'discover';
 
+export function getMcpTrustSummary(server: WorkbenchMcpRegistryItem): string {
+  const authHint = isMcpAuthenticationFailure(server)
+    ? 'OAuth/token 需要重新授权'
+    : '凭证默认 masked，不在列表明文展示';
+  return `${server.transport} · ${server.toolCount} 工具 / ${server.resourceCount} 资源 · destructive/openWorld 调用前仍需审批 · ${authHint}`;
+}
+
 export const MCPSettings: React.FC = () => {
   const isAdmin = useAuthStore((s) => s.user?.isAdmin === true);
   const setShowComputerUsePanel = useAppStore((s) => s.setShowComputerUsePanel);
@@ -537,6 +544,9 @@ export const MCPSettings: React.FC = () => {
                           <span>{server.toolCount} 工具</span>
                           <span className="mx-2 text-zinc-600">/</span>
                           <span>{server.resourceCount} 资源</span>
+                          <div className="mt-1 max-w-[260px] text-[11px] leading-snug text-zinc-500">
+                            {getMcpTrustSummary(server)}
+                          </div>
                         </td>
                         <td className="max-w-[220px] px-3 py-3 align-middle">
                           {server.error ? (

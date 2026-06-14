@@ -14,6 +14,7 @@ import { logCollector } from '../mcp/logCollector';
 import { v4 as uuidv4 } from 'uuid';
 import { IngressPipeline, type IngressMessage } from './ingressPipeline';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
+import { summarizeUserFacingError } from '../security/userFacingError';
 
 const logger = createLogger('ChannelAgentBridge');
 
@@ -148,7 +149,7 @@ export class ChannelAgentBridge {
     logger.info('handleChannelMessage called', {
       accountId,
       messageId: message.id,
-      content: message.content.substring(0, 50),
+      contentLength: message.content.length,
     });
 
     const sessionKey = this.getSessionKey(accountId, message);
@@ -245,8 +246,9 @@ export class ChannelAgentBridge {
       await this.handleSyncMessage(accountId, processMessage, orchestrator, attachments, responseCallback);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const { summary } = summarizeUserFacingError(error, { surface: 'channel_reply' });
       logger.error('Error processing ingress message', { accountId, messageId: processMessage.id, error: errorMessage });
-      await this.sendErrorResponse(accountId, processMessage, errorMessage);
+      await this.sendErrorResponse(accountId, processMessage, summary);
     } finally {
       this.processingMessages.delete(messageKey);
     }
@@ -317,8 +319,9 @@ export class ChannelAgentBridge {
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      const { summary, retryHint } = summarizeUserFacingError(error, { surface: 'channel_reply' });
       logCollector.log('agent', 'ERROR', `[Channel] Error: ${errorMsg}`);
-      await responseCallback.sendText(`处理失败: ${errorMsg}`);
+      await responseCallback.sendText(`处理失败: ${summary}\n${retryHint}`);
     }
   }
 
@@ -430,8 +433,10 @@ export class ChannelAgentBridge {
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      const { summary } = summarizeUserFacingError(error, { surface: 'http_api' });
+      logCollector.log('agent', 'ERROR', `[Channel] Streaming error: ${errorMsg}`);
       if (!res.writableEnded && !clientDisconnected) {
-        await safeWrite(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`);
+        await safeWrite(`data: ${JSON.stringify({ type: 'error', error: summary })}\n\n`);
         await safeWrite('data: [DONE]\n\n');
         res.end();
       }

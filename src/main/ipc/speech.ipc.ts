@@ -13,6 +13,7 @@ import {
   clearRetainedSpeechAudio,
   getSpeechTranscriptionService,
 } from '../services/speech/speechTranscriptionService';
+import { summarizeUserFacingError } from '../security/userFacingError';
 
 const logger = createLogger('Speech');
 
@@ -38,12 +39,13 @@ export function registerSpeechHandlers(ipcMain: IpcMain): void {
           source: request.source || 'composer',
         });
       } catch (error) {
+        const { summary } = summarizeUserFacingError(error, { surface: 'renderer_toast' });
         logger.error('Speech transcription handler failed', {
           error: error instanceof Error ? error.message : String(error),
         });
         return {
           success: false,
-          error: error instanceof Error ? error.message : '转写失败',
+          error: summary || (error instanceof Error ? error.message : '转写失败'),
           code: 'TRANSCRIPTION_FAILED',
           recoverable: true,
         };

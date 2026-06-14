@@ -11,6 +11,10 @@ export * from './contract/modelDecision';
 export * from './contract/message';
 export * from './contract/tool';
 export * from './contract/permission';
+export * from './contract/permissionBoundary';
+export * from './contract/privacyBoundaryIndex';
+export * from './contract/voiceTranscription';
+export * from './contract/authInventory';
 
 // Domain types
 export * from './contract/session';

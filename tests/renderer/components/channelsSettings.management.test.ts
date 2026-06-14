@@ -6,8 +6,10 @@ import type {
   TelegramChannelConfig,
 } from '../../../src/shared/contract/channel';
 import {
+  CHANNEL_PRIVACY_MODE_OPTIONS,
   filterChannelAccounts,
   getChannelConfigSummary,
+  getChannelPrivacyModeCopy,
   getChannelStatusSummary,
   getChannelTypeLabel,
   type ChannelTypeInfo,
@@ -102,5 +104,16 @@ describe('ChannelsSettings management helpers', () => {
     expect(getChannelConfigSummary(accounts[0])).toBe('端口 8080');
     expect(getChannelConfigSummary(accounts[1])).toBe('Webhook 3201');
     expect(getChannelConfigSummary(accounts[2])).toBe('2 个白名单用户');
+  });
+
+  it('uses readable privacy copy instead of raw enum labels', () => {
+    expect(CHANNEL_PRIVACY_MODE_OPTIONS.map((option) => option.label)).toEqual([
+      '默认脱敏',
+      '保留 raw 调试',
+      '关闭通道脱敏',
+    ]);
+    expect(getChannelPrivacyModeCopy('local-redact').description).toContain('脱敏');
+    expect(getChannelPrivacyModeCopy('allow-raw').description).toContain('受控连接器排障');
+    expect(getChannelPrivacyModeCopy('off').description).toContain('受控本地调试');
   });
 });

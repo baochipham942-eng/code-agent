@@ -14,6 +14,7 @@ import {
   getPluginRuntimeReadiness,
   getPluginSpec,
   isPluginRuntimeVisible,
+  getPluginTrustSummary,
   PLUGIN_COMPLETENESS_ROWS,
 } from '../../../src/renderer/components/features/settings/tabs/PluginsSettings';
 
@@ -270,5 +271,12 @@ describe('PluginsSettings helpers', () => {
       canExposeInSlash: true,
       requiredRuntimeCapabilities: ['marketplace-plugin-assets', 'command-manifest', 'plugin-permissions:command'],
     });
+  });
+
+  it('summarizes plugin trust fields and treats missing declarations as unknown risk', () => {
+    expect(getPluginTrustSummary(catalog[0]!)).toContain('1 skills');
+    expect(getPluginTrustSummary(catalog[0]!)).toContain('1 commands');
+    expect(getPluginTrustSummary(catalog[1]!)).toContain('未声明 permissions');
+    expect(getPluginTrustSummary(catalog[1]!)).toContain('未知风险');
   });
 });

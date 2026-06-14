@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { DEFAULT_MODELS } from '../../shared/constants';
 import { getSpeechTranscriptionService } from '../services/speech/speechTranscriptionService';
+import { summarizeUserFacingError } from '../security/userFacingError';
 
 type VoicePasteStatusPayload = {
   status: 'recording' | 'transcribing' | 'processing' | 'idle';
@@ -249,10 +250,11 @@ async function toggleVoicePasteRecording(): Promise<{ isRecording: boolean }> {
     console.log('[VoicePaste] Pasted:', cleanText.substring(0, 50) + '...');
     notifyRenderer('voice-paste:status', { status: 'idle' });
   } catch (error) {
+    const { summary } = summarizeUserFacingError(error, { surface: 'renderer_toast' });
     console.error('[VoicePaste] Error:', (error as Error).message);
     notifyRenderer('voice-paste:status', {
       status: 'idle',
-      error: (error as Error).message
+      error: summary || (error as Error).message
     });
   } finally {
     if (currentTempFile && fs.existsSync(currentTempFile)) {

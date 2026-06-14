@@ -86,6 +86,18 @@ export function getPluginSpec(plugin: Pick<MarketplacePluginEntry | InstalledPlu
   return `${plugin.name}@${plugin.marketplace}`;
 }
 
+export function getPluginTrustSummary(plugin: Pick<MarketplacePluginEntry | InstalledPlugin, 'skills'> & {
+  commands?: string[];
+  permissions?: string[];
+  hooks?: string[];
+}): string {
+  const skills = normalizeList(plugin.skills).length;
+  const commands = normalizeList(plugin.commands).length;
+  const permissions = normalizeList(plugin.permissions).length;
+  const hooks = normalizeList(plugin.hooks).length;
+  return `Trust: ${skills} skills · ${commands} commands · ${permissions || '未声明'} permissions · ${hooks || '未声明'} hooks · 外部服务未声明时按未知风险处理`;
+}
+
 function normalizeList(values?: string[]): string[] {
   return values?.filter(Boolean) ?? [];
 }
@@ -714,6 +726,10 @@ export const PluginsSettings: React.FC = () => {
                       <span className="text-zinc-300">Plugin asset</span>
                       <span className="ml-2 break-all">{plugin.pluginRoot || '无'}</span>
                     </div>
+                    <div className="rounded-md bg-zinc-950/60 p-2 text-xs leading-5 text-zinc-500">
+                      <span className="text-zinc-300">Trust</span>
+                      <span className="ml-2">{getPluginTrustSummary(plugin)}</span>
+                    </div>
                   </div>
                 </div>
               );
@@ -828,6 +844,10 @@ export const PluginsSettings: React.FC = () => {
                     {(plugin.types ?? []).length > 0 && <Pill>{plugin.types?.join(' · ')}</Pill>}
                     {(plugin.skills ?? []).length > 0 && <Pill>{plugin.skills?.length} skills</Pill>}
                     {(plugin.commands ?? []).length > 0 && <Pill>{plugin.commands?.length} commands</Pill>}
+                  </div>
+                  <div className="mt-3 rounded-md bg-zinc-950/60 p-2 text-xs leading-5 text-zinc-500">
+                    <span className="text-zinc-300">Trust</span>
+                    <span className="ml-2">{getPluginTrustSummary(plugin)}</span>
                   </div>
                 </div>
               );

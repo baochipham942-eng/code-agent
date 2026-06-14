@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { AlertCircle, Loader2, Mic, RotateCcw, X } from 'lucide-react';
-import type { SpeechTranscribeResult } from '@shared/contract';
+import { DEFAULT_SPEECH_INPUT_SETTINGS, type SpeechTranscribeResult } from '@shared/contract';
 import { useVoiceInput } from '../../../../hooks/useVoiceInput';
 import { openNativeDesktopSystemSettings } from '../../../../services/nativeDesktop';
 
@@ -90,10 +90,11 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
   const isRecording = status === 'recording';
   const isTranscribing = status === 'transcribing';
   const canOpenMicrophoneSettings = errorCode === 'MICROPHONE_PERMISSION_DENIED';
+  const effectiveSettings = settings ?? DEFAULT_SPEECH_INPUT_SETTINGS;
 
   React.useEffect(() => {
     if (!isSupported || !isEnabled) return;
-    const shortcut = settings.shortcut?.trim();
+    const shortcut = effectiveSettings.shortcut?.trim();
     if (!shortcut) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -107,7 +108,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [disabled, isEnabled, isSupported, isTranscribing, settings.shortcut, toggle]);
+  }, [disabled, effectiveSettings.shortcut, isEnabled, isSupported, isTranscribing, toggle]);
 
   // 不支持语音输入时不渲染
   if (!isSupported || !isEnabled) {
@@ -119,7 +120,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
     if (isTranscribing) return '正在识别...';
     if (isRecording && silenceWarning) return '未检测到明显语音，请检查麦克风输入';
     if (isRecording) return `录音中 ${formatDuration(duration)}，点击停止`;
-    return '语音输入';
+    return '开始语音输入，首次使用会请求麦克风';
   };
 
   return (
@@ -129,7 +130,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
         onClick={toggle}
         disabled={disabled || isTranscribing}
         title={getTitle()}
-        aria-label={isRecording ? '停止录音' : '开始语音输入'}
+        aria-label={isRecording ? '停止录音并转写' : '开始语音输入，首次使用会请求麦克风'}
         className={`relative flex-shrink-0 w-9 h-9 overflow-hidden rounded-xl flex items-center justify-center transition-all duration-300 ${
           isRecording
             ? silenceWarning
@@ -167,9 +168,9 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
             <div className="min-w-0 flex-1">
               <p className="break-words text-xs leading-5 text-zinc-200">{error}</p>
               <p className="mt-1 text-2xs text-zinc-500">
-                {settings.mode === 'local-first' ? '本地优先' : settings.mode === 'local-only' ? '仅本地' : '仅云端'}
+                {effectiveSettings.mode === 'local-first' ? '本地优先' : effectiveSettings.mode === 'local-only' ? '仅本地' : '仅云端'}
                 {' · '}
-                {settings.language === 'auto' ? '自动语言' : settings.language}
+                {effectiveSettings.language === 'auto' ? '自动语言' : effectiveSettings.language}
               </p>
             </div>
           </div>

@@ -415,7 +415,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'hooks' && <HooksSettings />}
             {activeTab === 'memory' && <MemoryTab />}
             {activeTab === 'openchronicle' && <ScreenMemorySettings />}
-            {activeTab === 'privacy' && <PrivacySettings />}
+            {activeTab === 'privacy' && <PrivacySettings onNavigateSettings={handleSearchNavigate} />}
             {showUpdateTab && activeTab === 'update' && (
               <UpdateSettings
                 updateInfo={optionalUpdateInfo}

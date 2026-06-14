@@ -57,6 +57,8 @@ export interface PermissionRequest {
     };
   };
   reason?: string;
+  /** User-facing data boundary shown in permission and privacy surfaces. */
+  boundary?: import('./permissionBoundary').PermissionBoundaryRef;
   timestamp: number;
   dangerLevel?: 'normal' | 'warning' | 'danger';
   /** Decision trace: why this permission was requested (populated on deny/ask) */

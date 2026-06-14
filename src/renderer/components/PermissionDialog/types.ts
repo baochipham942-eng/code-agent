@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { ReactNode } from 'react';
+import type { PermissionBoundaryRef } from '@shared/contract';
 
 // 权限类型
 export type PermissionType =
@@ -55,6 +56,7 @@ export interface PermissionRequest {
   tool: string;
   type: PermissionType;
   reason?: string;
+  boundary?: PermissionBoundaryRef;
   details: PermissionRequestDetails;
   dangerLevel?: DangerLevel;
   timestamp?: number;

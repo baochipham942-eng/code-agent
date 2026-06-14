@@ -1,7 +1,34 @@
 // useAgentConversationStreamEffects - turn_start, message_delta, message_snapshot, stream_chunk, stream_reasoning, turn_end, message, model_decision, routing_resolved, hook_trigger
 import { useEffect, useRef } from 'react';
 import { generateMessageId } from '@shared/utils/id';
-import type { BillingMode, HookTriggerEventData, Message, ModelDecisionEventData, ModelDecisionReason, ToolCall } from '@shared/contract';
+import type {
+  BillingMode,
+  AgentEngineCapability,
+  AgentEngineFailureCategory,
+  AgentEngineFailureDiagnostics,
+  AgentEngineReliability,
+  HookTriggerEventData,
+  Message,
+  ModelCapabilityNeed,
+  ModelCostPolicy,
+  ModelDecisionEventData,
+  ModelDecisionReason,
+  ModelExternalEngineSnapshot,
+  ModelFallbackStrategy,
+  ModelFallbackToolPolicy,
+  ModelFallbackTraceStep,
+  ModelProviderHealthSnapshot,
+  ModelProviderHealthStatus,
+  ModelProviderIdentity,
+  ModelProviderProtocol,
+  ModelSpeedPolicy,
+  ModelTaskClass,
+  ModelToolPolicy,
+  ModelToolStrategyDiagnostics,
+  ProgrammaticToolCallingStatus,
+  ToolTokenSavingsStatus,
+  ToolCall,
+} from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
@@ -48,6 +75,7 @@ interface AssistantMessagePayload extends TurnIdPayload {
   toolCalls?: ToolCall[];
   contentParts?: Message['contentParts'];
   artifacts?: Message['artifacts'];
+  modelDecision?: ModelDecisionEventData;
 }
 
 interface RoutingResolvedPayload {
@@ -64,6 +92,13 @@ interface ModelFallbackPayload {
   reason: string;
   from: string;
   to: string;
+  category?: string;
+  strategy?: ModelFallbackStrategy;
+  tried?: ModelFallbackTraceStep[];
+  skipped?: ModelFallbackTraceStep[];
+  toolPolicy?: ModelFallbackToolPolicy;
+  fromIdentity?: ModelProviderIdentity;
+  toIdentity?: ModelProviderIdentity;
 }
 
 const MODEL_DECISION_REASONS = new Set<ModelDecisionReason>([
@@ -80,6 +115,181 @@ const BILLING_MODES = new Set<BillingMode>([
   'plan',
   'payg',
   'unknown',
+]);
+
+const MODEL_TASK_CLASSES = new Set<ModelTaskClass>([
+  'simple',
+  'coding',
+  'vision',
+  'search',
+  'artifact',
+  'long-context',
+  'multi-tool',
+  'unknown',
+]);
+
+const MODEL_COST_POLICIES = new Set<ModelCostPolicy>([
+  'save-cost',
+  'plan-no-savings',
+  'unknown-conservative',
+  'user-locked',
+  'neutral',
+]);
+
+const MODEL_SPEED_POLICIES = new Set<ModelSpeedPolicy>([
+  'fast-path',
+  'normal',
+  'provider-degraded',
+  'fallback-recovery',
+]);
+
+const MODEL_TOOL_POLICIES = new Set<ModelToolPolicy>([
+  'runtime-checked',
+  'disabled-by-model',
+  'unknown',
+]);
+
+const PROGRAMMATIC_TOOL_CALLING_STATUSES = new Set<ProgrammaticToolCallingStatus>([
+  'available',
+  'unavailable',
+]);
+
+const TOOL_TOKEN_SAVINGS_STATUSES = new Set<ToolTokenSavingsStatus>([
+  'not-measured',
+  'estimated',
+  'provider-reported',
+]);
+
+type NormalizedToolTokenSavingsMeasurementSource = 'tool-spec-local-estimate' | 'provider-reported' | 'not-measured';
+type NormalizedToolTokenSavingsUsageSource = 'model-response-usage' | 'unavailable';
+
+const TOOL_TOKEN_SAVINGS_MEASUREMENT_SOURCES = new Set<NormalizedToolTokenSavingsMeasurementSource>([
+  'tool-spec-local-estimate',
+  'provider-reported',
+  'not-measured',
+]);
+
+const TOOL_TOKEN_SAVINGS_USAGE_SOURCES = new Set<NormalizedToolTokenSavingsUsageSource>([
+  'model-response-usage',
+  'unavailable',
+]);
+
+const MODEL_CAPABILITY_NEEDS = new Set<ModelCapabilityNeed>([
+  'vision',
+  'code',
+  'search',
+  'artifact',
+  'long-context',
+  'tool-use',
+]);
+
+const MODEL_PROVIDER_HEALTH_STATUSES = new Set<ModelProviderHealthStatus>([
+  'healthy',
+  'degraded',
+  'unavailable',
+  'recovering',
+  'unknown',
+]);
+
+const MODEL_PROVIDER_PROTOCOLS = new Set<ModelProviderProtocol>([
+  'openai',
+  'claude',
+]);
+
+const EXTERNAL_AGENT_ENGINE_KINDS = new Set<ModelExternalEngineSnapshot['kind']>([
+  'codex_cli',
+  'claude_code',
+]);
+
+const AGENT_ENGINE_INSTALL_STATES = new Set<ModelExternalEngineSnapshot['installState']>([
+  'builtin',
+  'installed',
+  'missing',
+]);
+
+const AGENT_ENGINE_RUNTIME_STATES = new Set<ModelExternalEngineSnapshot['runtimeState']>([
+  'ready',
+  'not_configured',
+  'blocked',
+  'error',
+  'unknown',
+]);
+
+const AGENT_ENGINE_CAPABILITIES = new Set<AgentEngineCapability>([
+  'execute',
+  'stream_events',
+  'import_sessions',
+  'resume',
+  'review',
+]);
+
+const AGENT_ENGINE_CLI_STATUSES = new Set<AgentEngineReliability['cliStatus']>([
+  'available',
+  'missing',
+  'error',
+  'not_checked',
+]);
+
+const AGENT_ENGINE_AUTH_STATES = new Set<AgentEngineReliability['authState']>([
+  'authenticated',
+  'needs_login',
+  'not_checked',
+  'unknown',
+]);
+
+const AGENT_ENGINE_QUOTA_STATES = new Set<AgentEngineReliability['quotaState']>([
+  'available',
+  'limited',
+  'exhausted',
+  'not_checked',
+  'unknown',
+]);
+
+const AGENT_ENGINE_STREAMING_MODES = new Set<AgentEngineReliability['streamingMode']>([
+  'stream_json',
+  'json',
+  'text',
+  'none',
+  'unknown',
+]);
+
+const AGENT_ENGINE_TOOL_SUPPORT = new Set<AgentEngineReliability['toolSupport']>([
+  'none',
+  'read_only_cli_tools',
+  'workspace_tools',
+  'mcp_bridge',
+  'unknown',
+]);
+
+const AGENT_ENGINE_TRANSCRIPT_MODES = new Set<AgentEngineReliability['transcriptMode']>([
+  'clean_stream_json',
+  'raw_terminal',
+  'session_import',
+  'unknown',
+]);
+
+const AGENT_ENGINE_FAILURE_CATEGORIES = new Set<AgentEngineFailureCategory>([
+  'auth',
+  'quota',
+  'timeout',
+  'network',
+  'permission',
+  'missing_cli',
+  'runtime',
+  'unknown',
+]);
+
+const MODEL_FALLBACK_TRACE_STATUSES = new Set<ModelFallbackTraceStep['status']>([
+  'tried',
+  'skipped',
+  'selected',
+  'exhausted',
+]);
+
+const MODEL_FALLBACK_STRATEGIES = new Set<ModelFallbackStrategy>([
+  'adaptive-provider-fallback',
+  'adaptive-capability-fallback',
+  'adaptive-main-task-recovery',
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -99,6 +309,349 @@ function getNumberField(record: Record<string, unknown>, field: string): number 
 function getBooleanField(record: Record<string, unknown>, field: string): boolean | undefined {
   const value = record[field];
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function getEnumField<T extends string>(
+  record: Record<string, unknown>,
+  field: string,
+  allowed: ReadonlySet<T>,
+): T | undefined {
+  const value = getStringField(record, field);
+  return value && allowed.has(value as T) ? value as T : undefined;
+}
+
+function getEnumArrayField<T extends string>(
+  record: Record<string, unknown>,
+  field: string,
+  allowed: ReadonlySet<T>,
+): T[] | undefined {
+  const value = record[field];
+  if (!Array.isArray(value)) return undefined;
+  const entries = value.filter((item): item is T => typeof item === 'string' && allowed.has(item as T));
+  return entries.length > 0 ? entries : undefined;
+}
+
+function normalizeProviderHealthSnapshot(value: unknown): ModelProviderHealthSnapshot | undefined {
+  if (!isRecord(value)) return undefined;
+  const provider = getStringField(value, 'provider');
+  const status = getEnumField(value, 'status', MODEL_PROVIDER_HEALTH_STATUSES);
+  const sampledAt = getNumberField(value, 'sampledAt');
+  if (!provider || !status || sampledAt === undefined) return undefined;
+
+  const latencyP50 = getNumberField(value, 'latencyP50');
+  const latencyP95 = getNumberField(value, 'latencyP95');
+  const errorRate = getNumberField(value, 'errorRate');
+  const lastSuccessAt = getNumberField(value, 'lastSuccessAt');
+  const lastErrorAt = getNumberField(value, 'lastErrorAt');
+  const consecutiveErrors = getNumberField(value, 'consecutiveErrors');
+
+  return {
+    provider,
+    status,
+    sampledAt,
+    ...(latencyP50 !== undefined ? { latencyP50 } : {}),
+    ...(latencyP95 !== undefined ? { latencyP95 } : {}),
+	    ...(errorRate !== undefined ? { errorRate } : {}),
+	    ...(lastSuccessAt !== undefined ? { lastSuccessAt } : {}),
+	    ...(lastErrorAt !== undefined ? { lastErrorAt } : {}),
+	    ...(consecutiveErrors !== undefined ? { consecutiveErrors } : {}),
+  };
+}
+
+function normalizeModelProviderIdentity(value: unknown): ModelProviderIdentity | undefined {
+  if (!isRecord(value)) return undefined;
+  const provider = getStringField(value, 'provider');
+  if (!provider) return undefined;
+
+  const displayName = getStringField(value, 'displayName');
+  const sourceLabel = getStringField(value, 'sourceLabel');
+  const protocol = getEnumField(value, 'protocol', MODEL_PROVIDER_PROTOCOLS);
+  const transportLabel = getStringField(value, 'transportLabel');
+  const endpoint = getStringField(value, 'endpoint');
+
+  return {
+    provider,
+    ...(displayName ? { displayName } : {}),
+    ...(sourceLabel ? { sourceLabel } : {}),
+    ...(protocol ? { protocol } : {}),
+    ...(transportLabel ? { transportLabel } : {}),
+    ...(endpoint ? { endpoint } : {}),
+  };
+}
+
+function normalizeExternalEngineReliability(value: unknown): AgentEngineReliability | undefined {
+  if (!isRecord(value)) return undefined;
+  const cliStatus = getEnumField(value, 'cliStatus', AGENT_ENGINE_CLI_STATUSES);
+  const authState = getEnumField(value, 'authState', AGENT_ENGINE_AUTH_STATES);
+  const quotaState = getEnumField(value, 'quotaState', AGENT_ENGINE_QUOTA_STATES);
+  const streamingMode = getEnumField(value, 'streamingMode', AGENT_ENGINE_STREAMING_MODES);
+  const toolSupport = getEnumField(value, 'toolSupport', AGENT_ENGINE_TOOL_SUPPORT);
+  const transcriptMode = getEnumField(value, 'transcriptMode', AGENT_ENGINE_TRANSCRIPT_MODES);
+  if (!cliStatus || !authState || !quotaState || !streamingMode || !toolSupport || !transcriptMode) {
+    return undefined;
+  }
+  const partialMessages = getBooleanField(value, 'partialMessages');
+  const mcpBridge = getBooleanField(value, 'mcpBridge');
+  const notes = Array.isArray(value.notes)
+    ? value.notes.filter((item): item is string => typeof item === 'string' && item.length > 0)
+    : undefined;
+
+  return {
+    cliStatus,
+    authState,
+    quotaState,
+    streamingMode,
+    toolSupport,
+    transcriptMode,
+    ...(partialMessages !== undefined ? { partialMessages } : {}),
+    ...(mcpBridge !== undefined ? { mcpBridge } : {}),
+    ...(notes && notes.length > 0 ? { notes } : {}),
+  };
+}
+
+function normalizeExternalEngineFailureReliability(
+  value: unknown,
+): AgentEngineFailureDiagnostics['reliability'] | undefined {
+  if (!isRecord(value)) return undefined;
+  const authState = getEnumField(value, 'authState', AGENT_ENGINE_AUTH_STATES);
+  const quotaState = getEnumField(value, 'quotaState', AGENT_ENGINE_QUOTA_STATES);
+  const cliStatus = getEnumField(value, 'cliStatus', AGENT_ENGINE_CLI_STATUSES);
+  if (!authState && !quotaState && !cliStatus) return undefined;
+  return {
+    ...(authState ? { authState } : {}),
+    ...(quotaState ? { quotaState } : {}),
+    ...(cliStatus ? { cliStatus } : {}),
+  };
+}
+
+function normalizeExternalEngineFailure(value: unknown): AgentEngineFailureDiagnostics | undefined {
+  if (!isRecord(value)) return undefined;
+  const category = getEnumField(value, 'category', AGENT_ENGINE_FAILURE_CATEGORIES);
+  const reason = getStringField(value, 'reason');
+  const message = getStringField(value, 'message');
+  const suggestion = getStringField(value, 'suggestion');
+  if (!category || !reason || !message || !suggestion) return undefined;
+  const occurredAt = getNumberField(value, 'occurredAt');
+  const statusCode = getNumberField(value, 'statusCode');
+  const exitCodeValue = value.exitCode;
+  const exitCode = typeof exitCodeValue === 'number' || exitCodeValue === null ? exitCodeValue : undefined;
+  const reliability = normalizeExternalEngineFailureReliability(value.reliability);
+
+  return {
+    category,
+    reason,
+    message,
+    suggestion,
+    retryable: getBooleanField(value, 'retryable') ?? false,
+    ...(occurredAt !== undefined ? { occurredAt } : {}),
+    ...(statusCode !== undefined ? { statusCode } : {}),
+    ...(exitCode !== undefined ? { exitCode } : {}),
+    ...(reliability ? { reliability } : {}),
+  };
+}
+
+function normalizeExternalEngineSnapshot(value: unknown): ModelExternalEngineSnapshot | undefined {
+  if (!isRecord(value)) return undefined;
+  const kind = getEnumField(value, 'kind', EXTERNAL_AGENT_ENGINE_KINDS);
+  const label = getStringField(value, 'label');
+  const installState = getEnumField(value, 'installState', AGENT_ENGINE_INSTALL_STATES);
+  const runtimeState = getEnumField(value, 'runtimeState', AGENT_ENGINE_RUNTIME_STATES);
+  const executable = getBooleanField(value, 'executable');
+  const rawCapabilities = value.capabilities;
+  const capabilities = Array.isArray(rawCapabilities)
+    ? rawCapabilities.filter((item): item is AgentEngineCapability =>
+        typeof item === 'string' && AGENT_ENGINE_CAPABILITIES.has(item as AgentEngineCapability))
+    : undefined;
+  if (!kind || !label || !installState || !runtimeState || executable === undefined || !capabilities) {
+    return undefined;
+  }
+  const model = getStringField(value, 'model');
+  const reliability = normalizeExternalEngineReliability(value.reliability);
+  const failure = normalizeExternalEngineFailure(value.failure);
+  const command = getStringField(value, 'command');
+  const version = getStringField(value, 'version');
+
+  return {
+    kind,
+    label,
+    installState,
+    runtimeState,
+    executable,
+    capabilities,
+    ...(model ? { model } : {}),
+    ...(reliability ? { reliability } : {}),
+    ...(failure ? { failure } : {}),
+    ...(command ? { command } : {}),
+    ...(version ? { version } : {}),
+  };
+}
+
+function normalizeModelFallbackTraceSteps(value: unknown): ModelFallbackTraceStep[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const steps = value
+    .map((item): ModelFallbackTraceStep | null => {
+      if (!isRecord(item)) return null;
+      const provider = getStringField(item, 'provider');
+      const status = getEnumField(item, 'status', MODEL_FALLBACK_TRACE_STATUSES);
+      const reason = getStringField(item, 'reason');
+      if (!provider || !status || !reason) return null;
+	      const model = getStringField(item, 'model');
+	      const category = getStringField(item, 'category');
+	      const detail = getStringField(item, 'detail');
+	      const providerIdentity = normalizeModelProviderIdentity(item.providerIdentity);
+	      return {
+	        provider,
+	        status,
+	        reason,
+	        ...(model ? { model } : {}),
+	        ...(providerIdentity ? { providerIdentity } : {}),
+	        ...(category ? { category } : {}),
+        ...(detail ? { detail } : {}),
+      };
+    })
+    .filter((step): step is ModelFallbackTraceStep => step !== null);
+  return steps.length > 0 ? steps : undefined;
+}
+
+function normalizeModelFallbackToolPolicy(value: unknown): ModelFallbackToolPolicy | undefined {
+  if (!isRecord(value)) return undefined;
+  if (value.status !== 'disabled') return undefined;
+  if (value.reason !== 'fallback_model_without_tool_support') return undefined;
+  const originalToolCount = getNumberField(value, 'originalToolCount');
+  const effectiveToolCount = getNumberField(value, 'effectiveToolCount');
+  if (originalToolCount === undefined || effectiveToolCount === undefined) return undefined;
+  const disabledToolNames = Array.isArray(value.disabledToolNames)
+    ? value.disabledToolNames.filter((item): item is string => typeof item === 'string' && item.length > 0)
+    : undefined;
+  const detail = getStringField(value, 'detail');
+  return {
+    status: 'disabled',
+    reason: 'fallback_model_without_tool_support',
+    originalToolCount,
+    effectiveToolCount,
+    ...(disabledToolNames && disabledToolNames.length > 0 ? { disabledToolNames } : {}),
+    ...(detail ? { detail } : {}),
+  };
+}
+
+function normalizeToolStrategyDiagnostics(value: unknown): ModelToolStrategyDiagnostics | undefined {
+  if (!isRecord(value)) return undefined;
+  const visibleToolCount = getNumberField(value, 'visibleToolCount');
+  const mcpToolCount = getNumberField(value, 'mcpToolCount');
+  const programmaticToolCalling = getEnumField(value, 'programmaticToolCalling', PROGRAMMATIC_TOOL_CALLING_STATUSES);
+  const programmaticToolCount = getNumberField(value, 'programmaticToolCount');
+  if (
+    visibleToolCount === undefined
+    || mcpToolCount === undefined
+    || !programmaticToolCalling
+    || programmaticToolCount === undefined
+  ) {
+    return undefined;
+  }
+  const toolNamesPreview = Array.isArray(value.toolNamesPreview)
+    ? value.toolNamesPreview.filter((item): item is string => typeof item === 'string' && item.length > 0)
+    : undefined;
+  const mcpServerIds = Array.isArray(value.mcpServerIds)
+    ? value.mcpServerIds.filter((item): item is string => typeof item === 'string' && item.length > 0)
+    : undefined;
+  const tokenSavings = isRecord(value.tokenSavings)
+    ? (() => {
+      const status = getEnumField(value.tokenSavings, 'status', TOOL_TOKEN_SAVINGS_STATUSES);
+      if (!status) return undefined;
+      const savedTokens = getNumberField(value.tokenSavings, 'savedTokens');
+      const detail = getStringField(value.tokenSavings, 'detail');
+      const measurement = isRecord(value.tokenSavings.measurement)
+        ? (() => {
+          const savingsSource = getEnumField(
+            value.tokenSavings.measurement,
+            'savingsSource',
+            TOOL_TOKEN_SAVINGS_MEASUREMENT_SOURCES,
+          );
+          const usageSource = getEnumField(
+            value.tokenSavings.measurement,
+            'usageSource',
+            TOOL_TOKEN_SAVINGS_USAGE_SOURCES,
+          );
+          const providerReportedSavings = getBooleanField(value.tokenSavings.measurement, 'providerReportedSavings');
+          if (!savingsSource || !usageSource || providerReportedSavings === undefined) return undefined;
+          return {
+            savingsSource,
+            usageSource,
+            providerReportedSavings,
+          };
+        })()
+        : undefined;
+      const providerUsage = isRecord(value.tokenSavings.providerUsage)
+        ? (() => {
+          const source = value.tokenSavings.providerUsage.source === 'model-response-usage'
+            ? 'model-response-usage' as const
+            : null;
+          const inputTokens = getNumberField(value.tokenSavings.providerUsage, 'inputTokens');
+          const outputTokens = getNumberField(value.tokenSavings.providerUsage, 'outputTokens');
+          const totalTokens = getNumberField(value.tokenSavings.providerUsage, 'totalTokens');
+          if (!source || inputTokens === undefined || outputTokens === undefined) return undefined;
+          return {
+            source,
+            inputTokens,
+            outputTokens,
+            ...(totalTokens !== undefined ? { totalTokens } : {}),
+          };
+        })()
+        : undefined;
+      const basis = isRecord(value.tokenSavings.basis)
+        ? (() => {
+          const source = value.tokenSavings.basis.source === 'tool-spec-local-estimate'
+            ? 'tool-spec-local-estimate' as const
+            : null;
+          const toolCount = getNumberField(value.tokenSavings.basis, 'toolCount');
+          const previewToolCount = getNumberField(value.tokenSavings.basis, 'previewToolCount');
+          const fields = Array.isArray(value.tokenSavings.basis.fields)
+            ? value.tokenSavings.basis.fields.filter((field): field is 'name' | 'description' | 'inputSchema' => (
+              field === 'name' || field === 'description' || field === 'inputSchema'
+            ))
+            : [];
+          if (!source || toolCount === undefined || fields.length === 0) return undefined;
+          return {
+            source,
+            toolCount,
+            ...(previewToolCount !== undefined ? { previewToolCount } : {}),
+            fields,
+          };
+        })()
+        : undefined;
+      const providerReport = isRecord(value.tokenSavings.providerReport)
+        ? (() => {
+          const source = value.tokenSavings.providerReport.source === 'provider-reported'
+            ? 'provider-reported' as const
+            : null;
+          const reportSavedTokens = getNumberField(value.tokenSavings.providerReport, 'savedTokens');
+          if (!source || reportSavedTokens === undefined) return undefined;
+          return {
+            source,
+            savedTokens: reportSavedTokens,
+          };
+        })()
+        : undefined;
+      return {
+        status,
+        ...(savedTokens !== undefined ? { savedTokens } : {}),
+        ...(detail ? { detail } : {}),
+        ...(measurement ? { measurement } : {}),
+        ...(basis ? { basis } : {}),
+        ...(providerReport ? { providerReport } : {}),
+        ...(providerUsage ? { providerUsage } : {}),
+      };
+    })()
+    : undefined;
+  return {
+    visibleToolCount,
+    ...(toolNamesPreview && toolNamesPreview.length > 0 ? { toolNamesPreview } : {}),
+    mcpToolCount,
+    ...(mcpServerIds && mcpServerIds.length > 0 ? { mcpServerIds } : {}),
+    programmaticToolCalling,
+    programmaticToolCount,
+    ...(tokenSavings ? { tokenSavings } : {}),
+  };
 }
 
 function normalizeTurnIdPayload(data: unknown): TurnIdPayload {
@@ -209,6 +762,7 @@ function normalizeAssistantMessagePayload(data: unknown): AssistantMessagePayloa
   const toolCalls = normalizeToolCalls(data.toolCalls);
   const artifacts = normalizeArtifacts(data.artifacts);
   const contentParts = normalizeContentParts(data.contentParts);
+  const modelDecision = normalizeModelDecisionPayload(data.modelDecision);
   return {
     ...(getStringField(data, 'id') ? { id: getStringField(data, 'id') } : {}),
     ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
@@ -219,6 +773,7 @@ function normalizeAssistantMessagePayload(data: unknown): AssistantMessagePayloa
     ...(toolCalls ? { toolCalls } : {}),
     ...(contentParts ? { contentParts } : {}),
     ...(artifacts ? { artifacts } : {}),
+    ...(modelDecision ? { modelDecision } : {}),
   };
 }
 
@@ -262,6 +817,18 @@ function normalizeModelDecisionPayload(data: unknown): ModelDecisionEventData | 
     return null;
   }
 
+  const strategySummary = getStringField(data, 'strategySummary');
+  const complexityScore = getNumberField(data, 'complexityScore');
+  const taskClass = getEnumField(data, 'taskClass', MODEL_TASK_CLASSES);
+  const costPolicy = getEnumField(data, 'costPolicy', MODEL_COST_POLICIES);
+  const speedPolicy = getEnumField(data, 'speedPolicy', MODEL_SPEED_POLICIES);
+  const toolPolicy = getEnumField(data, 'toolPolicy', MODEL_TOOL_POLICIES);
+  const toolStrategy = normalizeToolStrategyDiagnostics(data.toolStrategy);
+  const capabilityNeeds = getEnumArrayField(data, 'capabilityNeeds', MODEL_CAPABILITY_NEEDS);
+  const providerHealthSnapshot = normalizeProviderHealthSnapshot(data.providerHealthSnapshot);
+  const providerIdentity = normalizeModelProviderIdentity(data.providerIdentity);
+  const externalEngine = normalizeExternalEngineSnapshot(data.externalEngine);
+
   return {
     requestedProvider,
     requestedModel,
@@ -273,6 +840,17 @@ function normalizeModelDecisionPayload(data: unknown): ModelDecisionEventData | 
     fallbackFrom: getStringField(data, 'fallbackFrom') ?? null,
     ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
     ...(getNumberField(data, 'timestamp') !== undefined ? { timestamp: getNumberField(data, 'timestamp') } : {}),
+    ...(strategySummary ? { strategySummary } : {}),
+    ...(complexityScore !== undefined ? { complexityScore } : {}),
+    ...(taskClass ? { taskClass } : {}),
+    ...(costPolicy ? { costPolicy } : {}),
+    ...(speedPolicy ? { speedPolicy } : {}),
+    ...(toolPolicy ? { toolPolicy } : {}),
+    ...(toolStrategy ? { toolStrategy } : {}),
+    ...(capabilityNeeds ? { capabilityNeeds } : {}),
+    ...(providerHealthSnapshot ? { providerHealthSnapshot } : {}),
+    ...(providerIdentity ? { providerIdentity } : {}),
+    ...(externalEngine ? { externalEngine } : {}),
   };
 }
 
@@ -282,7 +860,27 @@ function normalizeModelFallbackPayload(data: unknown): ModelFallbackPayload | nu
   const from = getStringField(data, 'from');
   const to = getStringField(data, 'to');
   if (!reason || !from || !to) return null;
-  return { reason, from, to };
+  const category = getStringField(data, 'category');
+  const strategy = getStringField(data, 'strategy');
+  const tried = normalizeModelFallbackTraceSteps(data.tried);
+  const skipped = normalizeModelFallbackTraceSteps(data.skipped);
+  const toolPolicy = normalizeModelFallbackToolPolicy(data.toolPolicy);
+  const fromIdentity = normalizeModelProviderIdentity(data.fromIdentity);
+  const toIdentity = normalizeModelProviderIdentity(data.toIdentity);
+  return {
+    reason,
+    from,
+    to,
+    ...(category ? { category } : {}),
+    ...(strategy && MODEL_FALLBACK_STRATEGIES.has(strategy as ModelFallbackStrategy)
+      ? { strategy: strategy as ModelFallbackStrategy }
+      : {}),
+    ...(tried ? { tried } : {}),
+    ...(skipped ? { skipped } : {}),
+    ...(toolPolicy ? { toolPolicy } : {}),
+    ...(fromIdentity ? { fromIdentity } : {}),
+    ...(toIdentity ? { toIdentity } : {}),
+  };
 }
 
 function normalizeHookTriggerData(data: unknown): HookTriggerEventData | null {
@@ -538,6 +1136,14 @@ export function applyConversationStreamEvent(
       }
       break;
 
+    case 'model_fallback':
+      {
+        const fallbackData = normalizeModelFallbackPayload(event.data);
+        if (!fallbackData) break;
+        actions.addMessage(buildModelFallbackNoticeMessage(fallbackData));
+      }
+      break;
+
     case 'message':
       {
         const messageData = normalizeAssistantMessagePayload(event.data);
@@ -607,6 +1213,7 @@ export function applyConversationStreamEvent(
             ...(messageData.isMeta !== undefined ? { isMeta: messageData.isMeta } : {}),
             ...(messageData.contentParts ? { contentParts: messageData.contentParts } : {}),
             ...(messageData.artifacts ? { artifacts: messageData.artifacts } : {}),
+            ...(messageData.modelDecision ? { modelDecision: messageData.modelDecision } : {}),
           });
         }
       }
@@ -852,12 +1459,26 @@ export const useConversationStreamEffects = ({
           if (!isCurrentSessionEvent) {
             break;
           }
-          {
-            const fallbackData = normalizeModelFallbackPayload(event.data);
-            if (fallbackData) {
-              addMessage(buildModelFallbackNoticeMessage(fallbackData));
-            }
-          }
+          applyConversationStreamEvent(
+            event,
+            {
+              get currentTurnMessageId() {
+                return currentTurnMessageIdRef.current;
+              },
+              set currentTurnMessageId(value) {
+                currentTurnMessageIdRef.current = value;
+              },
+              committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+            },
+            {
+              addMessage,
+              appendStreamingMessageDelta,
+              updateMessage,
+              setMessages: (messages) => useSessionStore.getState().setMessages(messages),
+              getMessages: getFreshMessages,
+              queueUpdate,
+            },
+          );
           break;
 
         case 'hook_trigger':

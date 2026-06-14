@@ -18,6 +18,8 @@ import {
   inferSupportsTool,
   isDynamicCustomProviderId,
   isRuntimeProviderConfigured,
+  normalizeProviderIcon,
+  type ProviderIconValidationResult,
   type RuntimeProviderModel,
 } from '@shared/modelRuntime';
 
@@ -31,6 +33,8 @@ export interface ProviderDisplayInfo {
 export interface ProviderManagementRow {
   id: ModelProvider;
   name: string;
+  icon?: string;
+  favorite: boolean;
   description: string;
   modelCount: number;
   evalEligibleCount: number;
@@ -65,6 +69,8 @@ export interface BuildProviderConfigForSaveOptions {
   baseUrl: string;
   protocol?: ModelProviderProtocol;
   displayName?: string;
+  icon?: string;
+  favorite?: boolean;
   model: string;
   temperature?: number;
   maxTokens?: number;
@@ -75,11 +81,31 @@ export interface BuildProviderConfigForSaveOptions {
   updatedAt?: number;
 }
 
+export function describeProviderIconValidationError(result: ProviderIconValidationResult): string | null {
+  if (result.valid) return null;
+  if (result.reason === 'image-too-large') {
+    const sizeDetail = result.imageBytes !== undefined
+      ? `当前约 ${(result.imageBytes / 1024).toFixed(1)} KB，`
+      : '';
+    return `${sizeDetail}Provider 图标不能超过 96 KB。`;
+  }
+  if (result.reason === 'unsupported-asset-ref') {
+    return 'Provider 图标资产引用无效，请重新上传图片。';
+  }
+  return '只支持短文本标识，或 PNG、JPG、WebP、GIF、SVG 的 base64 data:image 图标。';
+}
+
+export function isProviderIdentityManaged(providerConfig?: Pick<ModelProviderSettings, 'managedByCloud'> | null): boolean {
+  return providerConfig?.managedByCloud === true;
+}
+
 export function buildProviderConfigForSave({
   currentProviderConfig,
   baseUrl,
   protocol,
   displayName,
+  icon = currentProviderConfig?.icon,
+  favorite = currentProviderConfig?.favorite,
   model,
   temperature,
   maxTokens,
@@ -89,6 +115,7 @@ export function buildProviderConfigForSave({
   hasStoredApiKey,
   updatedAt = Date.now(),
 }: BuildProviderConfigForSaveOptions): ModelProviderSettings {
+  const providerIdentityManaged = isProviderIdentityManaged(currentProviderConfig);
   const providerConfigWithoutKey: ModelProviderSettings = {
     ...(currentProviderConfig ?? { enabled: true }),
   };
@@ -99,7 +126,9 @@ export function buildProviderConfigForSave({
     enabled: true,
     baseUrl,
     protocol,
-    displayName,
+    displayName: providerIdentityManaged ? currentProviderConfig?.displayName : displayName,
+    icon: normalizeProviderIcon(providerIdentityManaged ? currentProviderConfig?.icon : icon),
+    favorite,
     model,
     temperature,
     maxTokens,
@@ -227,6 +256,8 @@ export function buildProviderManagementRows({
     return {
       id: provider.id,
       name: providerConfig?.displayName || provider.name,
+      ...(normalizeProviderIcon(providerConfig?.icon) ? { icon: normalizeProviderIcon(providerConfig?.icon) } : {}),
+      favorite: providerConfig?.favorite === true,
       description: `${provider.description}${providerConfig?.protocol === 'claude' ? ' · Claude 协议' : ''}`,
       modelCount: runtimeModels.length,
       evalEligibleCount: provider.models.filter((model) => model.evalEligible !== false).length,
@@ -359,8 +390,9 @@ export function hasCustomEndpointOverride(
 
 export function orderProviderManagementRows(rows: ProviderManagementRow[]): ProviderManagementRow[] {
   const selected = rows.filter((row) => row.selected);
-  const rest = rows.filter((row) => !row.selected);
-  return [...selected, ...rest];
+  const favorites = rows.filter((row) => !row.selected && row.favorite);
+  const rest = rows.filter((row) => !row.selected && !row.favorite);
+  return [...selected, ...favorites, ...rest];
 }
 
 export function buildManualModelSettings(

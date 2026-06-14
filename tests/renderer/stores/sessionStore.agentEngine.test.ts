@@ -171,4 +171,60 @@ describe('sessionStore Agent Engine metadata', () => {
     });
     expect(updated.modelConfig).toEqual(existing.modelConfig);
   });
+
+  it('clears stale external failure when switching back to native engine', async () => {
+    const existing = makeSession({
+      id: 'session-1',
+      engine: {
+        kind: 'claude_code',
+        model: 'sonnet',
+        cwd: '/repo/code-agent',
+        permissionProfile: 'read_only',
+        origin: 'manual',
+        updatedAt: 100,
+        failure: {
+          category: 'auth',
+          reason: 'auth_failed',
+          message: 'Failed to authenticate',
+          suggestion: 'Claude Code 认证失败。请完成 Claude CLI 登录或检查订阅/API 凭据后重试。',
+          retryable: false,
+          occurredAt: 60_000,
+          reliability: { authState: 'needs_login' },
+        },
+      },
+    });
+    useSessionStore.setState({
+      sessions: [existing],
+      currentSessionId: 'session-1',
+    });
+    mockDomainInvoke.mockResolvedValueOnce({
+      success: true,
+      data: {
+        kind: 'native',
+        permissionProfile: 'default',
+        origin: 'manual',
+        updatedAt: 200,
+      },
+    });
+
+    await useSessionStore.getState().updateSessionEngine('session-1', {
+      kind: 'native',
+      permissionProfile: 'default',
+    });
+
+    expect(mockDomainInvoke).toHaveBeenCalledWith(IPC_DOMAINS.AGENT_ENGINE, 'select', {
+      sessionId: 'session-1',
+      kind: 'native',
+      permissionProfile: 'default',
+    });
+    const updated = useSessionStore.getState().sessions[0];
+    expect(updated.engine).toEqual({
+      kind: 'native',
+      permissionProfile: 'default',
+      origin: 'manual',
+      updatedAt: 200,
+    });
+    expect(updated.engine?.failure).toBeUndefined();
+    expect(updated.modelConfig).toEqual(existing.modelConfig);
+  });
 });

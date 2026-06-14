@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContextAssemblyCtx } from '../../../src/main/agent/runtime/contextAssembly';
 import { inference } from '../../../src/main/agent/runtime/contextAssembly/inference';
 
-const { mockGetApiKey } = vi.hoisted(() => ({
+const { mockGetApiKey, mockGetSettings } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
+  mockGetSettings: vi.fn(() => ({ models: { providers: {} } })),
 }));
 
 vi.mock('../../../src/main/services/infra/logger', () => ({
@@ -22,7 +23,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 }));
 
 vi.mock('../../../src/main/services', () => ({
-  getConfigService: () => ({ getApiKey: mockGetApiKey }),
+  getConfigService: () => ({ getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
   getAuthService: () => ({ getCurrentUser: vi.fn().mockReturnValue({ isAdmin: false }) }),
   getLangfuseService: () => ({
     startGenerationInSpan: vi.fn(),
@@ -149,11 +150,12 @@ describe('contextAssembly inference artifact retry', () => {
   // 走真实 inferenceViaAiSdk —— 'mock' 是测试夹具 provider，AI SDK 适配器解析不出 baseURL 直接崩，
   // 18 个用例齐挂。强制 legacy 引擎让 mock 重新生效；aisdk 派发本身由 aiSdkAdapter*.test.ts 覆盖。
   const prevEngine = process.env.CODE_AGENT_MODEL_ENGINE;
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetApiKey.mockReturnValue('mock-key');
-    process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
-  });
+	  beforeEach(() => {
+	    vi.clearAllMocks();
+	    mockGetApiKey.mockReturnValue('mock-key');
+	    mockGetSettings.mockReturnValue({ models: { providers: {} } });
+	    process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
+	  });
   afterEach(() => {
     if (prevEngine === undefined) delete process.env.CODE_AGENT_MODEL_ENGINE;
     else process.env.CODE_AGENT_MODEL_ENGINE = prevEngine;
@@ -173,6 +175,298 @@ describe('contextAssembly inference artifact retry', () => {
       'generating',
       '正在生成 artifact 内容...',
     );
+  });
+
+  it('attaches tool strategy diagnostics with MCP selection to the model decision', async () => {
+    const originalLength = mockToolDefinitions.length;
+    mockToolDefinitions.push({
+      name: 'mcp__github__search_code',
+      description: 'search GitHub code',
+      inputSchema: {},
+      source: 'mcp',
+      mcpServer: 'github',
+    });
+    try {
+      const ctx = buildCtx();
+      ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+        type: 'text',
+        content: 'ok',
+        finishReason: 'stop',
+        usage: { inputTokens: 90, outputTokens: 12 },
+      });
+
+      const response = await inference(ctx);
+
+      expect(response.runtimeDiagnostics?.toolStrategy).toMatchObject({
+        visibleToolCount: 7,
+        mcpToolCount: 1,
+        mcpServerIds: ['github'],
+        programmaticToolCalling: 'available',
+        programmaticToolCount: 7,
+        tokenSavings: {
+          status: 'estimated',
+          savedTokens: 35,
+          detail: expect.stringContaining('真实账单以 provider usage 为准'),
+          measurement: {
+            savingsSource: 'tool-spec-local-estimate',
+            usageSource: 'model-response-usage',
+            providerReportedSavings: false,
+          },
+          basis: {
+            source: 'tool-spec-local-estimate',
+            toolCount: 7,
+            previewToolCount: 7,
+            fields: ['name', 'description', 'inputSchema'],
+          },
+          providerUsage: {
+            source: 'model-response-usage',
+            inputTokens: 90,
+            outputTokens: 12,
+            totalTokens: 102,
+          },
+        },
+      });
+      expect(response.runtimeDiagnostics?.modelDecision?.toolStrategy).toMatchObject({
+        visibleToolCount: 7,
+        mcpToolCount: 1,
+        mcpServerIds: ['github'],
+        tokenSavings: {
+          status: 'estimated',
+          savedTokens: 35,
+          measurement: {
+            savingsSource: 'tool-spec-local-estimate',
+            usageSource: 'model-response-usage',
+            providerReportedSavings: false,
+          },
+          basis: {
+            source: 'tool-spec-local-estimate',
+            toolCount: 7,
+            previewToolCount: 7,
+            fields: ['name', 'description', 'inputSchema'],
+          },
+          providerUsage: {
+            source: 'model-response-usage',
+            inputTokens: 90,
+            outputTokens: 12,
+            totalTokens: 102,
+          },
+        },
+      });
+    } finally {
+      mockToolDefinitions.splice(originalLength);
+    }
+  });
+
+  it('upgrades tool token savings when provider usage reports saved tokens', async () => {
+    const ctx = buildCtx();
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'ok',
+      finishReason: 'stop',
+      usage: {
+        inputTokens: 90,
+        outputTokens: 12,
+        providerReportedSavedTokens: 17,
+      },
+    });
+
+    const response = await inference(ctx);
+
+    expect(response.runtimeDiagnostics?.toolStrategy?.tokenSavings).toMatchObject({
+      status: 'provider-reported',
+      savedTokens: 17,
+      detail: expect.stringContaining('provider 已回传 programmatic tool saved tokens'),
+      measurement: {
+        savingsSource: 'provider-reported',
+        usageSource: 'model-response-usage',
+        providerReportedSavings: true,
+      },
+      providerReport: {
+        source: 'provider-reported',
+        savedTokens: 17,
+      },
+      providerUsage: {
+        source: 'model-response-usage',
+        inputTokens: 90,
+        outputTokens: 12,
+        totalTokens: 102,
+      },
+    });
+    expect(response.runtimeDiagnostics?.toolStrategy?.tokenSavings?.basis).toBeUndefined();
+    expect(response.runtimeDiagnostics?.modelDecision?.toolStrategy?.tokenSavings).toMatchObject({
+      status: 'provider-reported',
+      savedTokens: 17,
+      measurement: {
+        savingsSource: 'provider-reported',
+        usageSource: 'model-response-usage',
+        providerReportedSavings: true,
+      },
+      providerReport: {
+        source: 'provider-reported',
+        savedTokens: 17,
+      },
+    });
+  });
+
+  it('aligns the final message model decision with the selected provider fallback', async () => {
+    const ctx = buildCtx({
+      modelConfig: {
+        provider: 'moonshot',
+        model: 'kimi-k2.5',
+        apiKey: 'main-key',
+        temperature: 0,
+        maxTokens: 4096,
+        adaptive: true,
+      },
+    });
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'fallback ok',
+      finishReason: 'stop',
+      actualProvider: 'deepseek',
+      actualModel: 'deepseek-v4-flash',
+      fallback: {
+        from: { provider: 'moonshot', model: 'kimi-k2.5' },
+        to: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      reason: 'Moonshot API error: 503 service unavailable',
+      category: 'provider_unavailable',
+      strategy: 'adaptive-provider-fallback',
+      tried: [
+          {
+            provider: 'moonshot',
+            model: 'kimi-k2.5',
+            status: 'tried',
+            reason: 'primary_failed',
+            category: 'provider_unavailable',
+          },
+          {
+            provider: 'deepseek',
+            model: 'deepseek-v4-flash',
+            status: 'selected',
+            reason: 'fallback_selected',
+            category: 'provider_unavailable',
+          },
+        ],
+      },
+    });
+
+    const response = await inference(ctx);
+
+    expect(response.runtimeDiagnostics?.modelDecision).toMatchObject({
+      requestedProvider: 'moonshot',
+      requestedModel: 'kimi-k2.5',
+      resolvedProvider: 'deepseek',
+      resolvedModel: 'deepseek-v4-flash',
+      reason: 'fallback-availability',
+      fallbackFrom: 'moonshot/kimi-k2.5',
+      speedPolicy: 'fallback-recovery',
+      strategySummary: '原模型 moonshot/kimi-k2.5 不可用，切到 deepseek/deepseek-v4-flash 完成当前任务。',
+      providerHealthSnapshot: {
+        provider: 'deepseek',
+        status: 'unknown',
+      },
+    });
+  });
+
+	  it('emits tool policy when capability fallback disables tools', async () => {
+	    mockGetSettings.mockReturnValue({
+	      models: {
+	        providers: {
+	          zhipu: {
+	            enabled: true,
+	            displayName: 'Zhipu Relay',
+	            protocol: 'openai',
+	            baseUrl: 'https://relay.example.com/zhipu/v1',
+	          },
+	        },
+	      },
+	    });
+	    const ctx = buildCtx({
+      modelConfig: {
+        provider: 'mock',
+        model: 'text-only',
+        apiKey: 'mock-key',
+        temperature: 0,
+        maxTokens: 4096,
+        adaptive: true,
+      },
+    });
+    ctx.runtime.modelRouter.detectRequiredCapabilities.mockReturnValue(['vision']);
+    ctx.runtime.modelRouter.getFallbackConfig.mockReturnValue({
+      provider: 'zhipu',
+      model: 'glm-4.5v',
+      apiKey: 'fallback-key',
+      maxTokens: 2048,
+    });
+    ctx.runtime.modelRouter.getModelInfo.mockImplementation((provider: string) => {
+      if (provider === 'zhipu') {
+        return { supportsVision: true, supportsTool: false, capabilities: ['vision'] };
+      }
+      return { supportsVision: false, supportsTool: true, capabilities: [] };
+    });
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'vision answer',
+      finishReason: 'stop',
+    });
+    ctx.buildModelMessages = vi.fn().mockResolvedValue([
+      { role: 'system', content: 'system' },
+      { role: 'user', content: '请分析这张图片里的内容' },
+    ]);
+
+    const response = await inference(ctx);
+
+    const fallbackEvents = ctx.runtime.onEvent.mock.calls
+      .map(([event]: [{ type: string; data?: Record<string, unknown> }]) => event)
+      .filter((event) => event.type === 'model_fallback');
+    expect(fallbackEvents).toHaveLength(1);
+    const fallbackEvent = fallbackEvents[fallbackEvents.length - 1];
+    expect(fallbackEvent?.data).toMatchObject({
+      reason: 'vision',
+      from: 'mock/text-only',
+      to: 'zhipu/glm-4.5v',
+	      strategy: 'adaptive-capability-fallback',
+	      toIdentity: {
+	        provider: 'zhipu',
+	        displayName: 'Zhipu Relay',
+	        protocol: 'openai',
+	        transportLabel: 'OpenAI-compatible',
+	        endpoint: 'https://relay.example.com/zhipu/v1',
+	      },
+	      toolPolicy: {
+        status: 'disabled',
+        reason: 'fallback_model_without_tool_support',
+        originalToolCount: 6,
+        effectiveToolCount: 0,
+        disabledToolNames: ['Read', 'Edit', 'Write', 'Append', 'Bash', 'Task'],
+      },
+    });
+    const [, effectiveTools] = ctx.runtime.modelRouter.inference.mock.calls[0];
+    expect(effectiveTools).toEqual([]);
+    expect(response).toMatchObject({
+      actualProvider: 'zhipu',
+      actualModel: 'glm-4.5v',
+      fallback: {
+        from: { provider: 'mock', model: 'text-only' },
+        to: { provider: 'zhipu', model: 'glm-4.5v' },
+        category: 'capability',
+        strategy: 'adaptive-capability-fallback',
+      },
+    });
+    expect(response.runtimeDiagnostics?.modelDecision).toMatchObject({
+      requestedProvider: 'mock',
+      requestedModel: 'text-only',
+      resolvedProvider: 'zhipu',
+      resolvedModel: 'glm-4.5v',
+      reason: 'capability-vision',
+      fallbackFrom: 'mock/text-only',
+      strategySummary: '原模型 mock/text-only 缺少 vision 能力，切到 zhipu/glm-4.5v 完成当前任务。',
+      providerHealthSnapshot: {
+        provider: 'zhipu',
+        status: 'unknown',
+      },
+      toolPolicy: 'disabled-by-model',
+    });
   });
 
   it('caps main inference output tokens with per-run inferenceOptions', async () => {

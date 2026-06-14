@@ -1,4 +1,4 @@
-import type { AppSettings, ModelCapability, ModelProvider, ModelProviderProtocol, ModelProviderSettings } from './contract';
+import type { AppSettings, BillingMode, ModelCapability, ModelProvider, ModelProviderProtocol, ModelProviderSettings } from './contract';
 import {
   MODEL_FEATURES,
   PROVIDER_MODELS,
@@ -27,18 +27,30 @@ export interface RuntimeModelOption {
   model: string;
   label: string;
   providerLabel: string;
+  providerIcon?: string;
+  providerFavorite?: boolean;
+  providerBillingMode?: BillingMode;
   providerGroup?: ModelProvider;
   providerGroupLabel?: string;
   providerSourceLabel?: string;
+  providerProtocol?: ModelProviderProtocol;
+  providerTransportLabel?: string;
+  providerEndpoint?: string;
   features: RuntimeModelFeature[];
 }
 
 interface RuntimeProviderOptionSource {
   providerId: ModelProvider;
   providerLabel: string;
+  providerIcon?: string;
+  providerFavorite?: boolean;
+  providerBillingMode?: BillingMode;
   providerGroup: ModelProvider;
   providerGroupLabel: string;
   providerSourceLabel?: string;
+  providerProtocol?: ModelProviderProtocol;
+  providerTransportLabel?: string;
+  providerEndpoint?: string;
   providerConfig?: Partial<ModelProviderSettings>;
   models: RuntimeProviderModel[];
   order: number;
@@ -47,9 +59,113 @@ interface RuntimeProviderOptionSource {
 export interface RuntimeModelOptionGroup {
   provider: ModelProvider;
   providerLabel: string;
+  providerIcon?: string;
+  providerFavorite?: boolean;
+  providerBillingMode?: BillingMode;
   providerSourceLabel?: string;
+  providerProtocol?: ModelProviderProtocol;
+  providerTransportLabel?: string;
+  providerEndpoint?: string;
   options: RuntimeModelOption[];
 }
+
+export interface ProviderIconPreset {
+  icon: string;
+  label: string;
+}
+
+export type ProviderIconValidationReason = 'unsupported-data-url' | 'unsupported-asset-ref' | 'image-too-large';
+
+export type ProviderIconValidationResult =
+  | { valid: true; kind: 'empty'; normalized?: undefined }
+  | { valid: true; kind: 'text'; normalized: string; truncated: boolean }
+  | { valid: true; kind: 'image'; normalized: string; imageBytes: number }
+  | { valid: true; kind: 'asset'; normalized: string; filename: string }
+  | { valid: false; kind: 'invalid'; reason: ProviderIconValidationReason; imageBytes?: number };
+
+export const PROVIDER_ICON_IMAGE_MAX_BYTES = 96 * 1024;
+export const PROVIDER_ICON_TEXT_MAX_GRAPHEMES = 2;
+export const PROVIDER_ICON_ASSET_URI_PREFIX = 'provider-icon://local/';
+const PROVIDER_ICON_IMAGE_MAX_DATA_URL_LENGTH = Math.ceil(PROVIDER_ICON_IMAGE_MAX_BYTES * 4 / 3) + 128;
+const PROVIDER_ICON_IMAGE_MIME_PATTERN = /^data:image\/(?:png|jpe?g|webp|gif|svg\+xml);base64,([a-z0-9+/=\s]+)$/i;
+const PROVIDER_ICON_ASSET_URI_PATTERN = /^provider-icon:\/\/local\/([a-z0-9][a-z0-9._-]{0,127})$/i;
+
+const COMMON_PROVIDER_ICON_PRESETS: ProviderIconPreset[] = [
+  { icon: 'AI', label: 'AI' },
+  { icon: 'API', label: 'API' },
+];
+
+const PROVIDER_ICON_PRESETS: Record<string, ProviderIconPreset[]> = {
+  openai: [
+    { icon: 'AI', label: 'AI' },
+    { icon: 'GPT', label: 'GPT' },
+    { icon: 'OA', label: 'OpenAI' },
+  ],
+  claude: [
+    { icon: 'CL', label: 'Claude' },
+    { icon: 'AN', label: 'Anthropic' },
+  ],
+  anthropic: [
+    { icon: 'CL', label: 'Claude' },
+    { icon: 'AN', label: 'Anthropic' },
+  ],
+  gemini: [
+    { icon: 'GM', label: 'Gemini' },
+    { icon: 'GG', label: 'Google' },
+  ],
+  deepseek: [
+    { icon: 'DS', label: 'DeepSeek' },
+  ],
+  zhipu: [
+    { icon: 'GL', label: 'GLM' },
+    { icon: 'ZP', label: 'Zhipu' },
+  ],
+  moonshot: [
+    { icon: 'KM', label: 'Kimi' },
+    { icon: 'MS', label: 'Moonshot' },
+  ],
+  qwen: [
+    { icon: 'QW', label: 'Qwen' },
+    { icon: 'TY', label: 'Tongyi' },
+  ],
+  xiaomi: [
+    { icon: 'MI', label: 'MiMo' },
+    { icon: 'XM', label: 'Xiaomi' },
+  ],
+  longcat: [
+    { icon: 'LC', label: 'LongCat' },
+  ],
+  openrouter: [
+    { icon: 'OR', label: 'OpenRouter' },
+    { icon: 'RT', label: 'Router' },
+  ],
+  minimax: [
+    { icon: 'MM', label: 'MiniMax' },
+  ],
+  perplexity: [
+    { icon: 'PX', label: 'Perplexity' },
+    { icon: 'SR', label: 'Search' },
+  ],
+  grok: [
+    { icon: 'GK', label: 'Grok' },
+  ],
+  groq: [
+    { icon: 'GQ', label: 'Groq' },
+  ],
+  volcengine: [
+    { icon: 'DB', label: 'Doubao' },
+    { icon: 'VC', label: 'Volcengine' },
+  ],
+  local: [
+    { icon: 'LO', label: 'Local' },
+    { icon: 'OL', label: 'Ollama' },
+  ],
+  custom: [
+    { icon: 'CU', label: 'Custom' },
+    { icon: 'API', label: 'API' },
+    { icon: 'AI', label: 'AI' },
+  ],
+};
 
 export const MODEL_CAPABILITY_OPTIONS: Array<{ id: ModelCapability; label: string }> = [
   { id: 'general', label: '通用' },
@@ -96,6 +212,21 @@ export function isDynamicCustomProviderId(providerId: string): boolean {
   return /^custom-[a-z0-9][a-z0-9-]*$/i.test(providerId);
 }
 
+export function resolveRuntimeProviderBillingMode(
+  providerId: ModelProvider,
+  providerConfig?: Partial<ModelProviderSettings> | null,
+): BillingMode {
+  switch (providerConfig?.billingMode) {
+    case 'free':
+    case 'plan':
+    case 'payg':
+    case 'unknown':
+      return providerConfig.billingMode;
+    default:
+      return isDynamicCustomProviderId(providerId) ? 'unknown' : 'payg';
+  }
+}
+
 export function resolveProviderProtocol(
   providerId: string,
   providerConfig?: Partial<ModelProviderSettings>,
@@ -103,6 +234,124 @@ export function resolveProviderProtocol(
   if (providerConfig?.protocol) return providerConfig.protocol;
   if (providerId === 'claude' || providerId === 'anthropic') return 'claude';
   return 'openai';
+}
+
+export function formatProviderProtocolLabel(protocol: ModelProviderProtocol): string {
+  return protocol === 'claude' ? 'Claude-compatible' : 'OpenAI-compatible';
+}
+
+function normalizeProviderEndpoint(baseUrl?: string): string | undefined {
+  const endpoint = baseUrl?.trim();
+  return endpoint ? endpoint : undefined;
+}
+
+function shouldExposeProviderTransportIdentity(
+  providerId: ModelProvider,
+  providerConfig?: Partial<ModelProviderSettings>,
+): boolean {
+  return providerId === 'custom' || isDynamicCustomProviderId(providerId) || Boolean(normalizeProviderEndpoint(providerConfig?.baseUrl));
+}
+
+function estimateBase64ImageBytes(base64: string): number {
+  const compact = base64.replace(/\s+/g, '');
+  if (!compact) return 0;
+  const padding = compact.endsWith('==') ? 2 : compact.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor(compact.length * 3 / 4) - padding);
+}
+
+export function parseProviderIconImageDataUrl(value?: string): {
+  normalized: string;
+  mimeType: string;
+  base64: string;
+  imageBytes: number;
+} | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  const match = /^data:(image\/(?:png|jpe?g|webp|gif|svg\+xml));base64,([a-z0-9+/=\s]+)$/i.exec(trimmed);
+  if (!match) return null;
+  const base64 = (match[2] ?? '').replace(/\s+/g, '');
+  return {
+    normalized: `data:${match[1]};base64,${base64}`,
+    mimeType: match[1] ?? 'image/png',
+    base64,
+    imageBytes: estimateBase64ImageBytes(base64),
+  };
+}
+
+export function getProviderIconAssetFilename(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const match = PROVIDER_ICON_ASSET_URI_PATTERN.exec(trimmed);
+  return match?.[1];
+}
+
+export function isProviderIconAssetRef(value?: string): boolean {
+  return Boolean(getProviderIconAssetFilename(value));
+}
+
+export function validateProviderIcon(value?: string): ProviderIconValidationResult {
+  const trimmed = value?.trim();
+  if (!trimmed) return { valid: true, kind: 'empty' };
+
+  if (trimmed.startsWith(PROVIDER_ICON_ASSET_URI_PREFIX)) {
+    const filename = getProviderIconAssetFilename(trimmed);
+    if (!filename) {
+      return { valid: false, kind: 'invalid', reason: 'unsupported-asset-ref' };
+    }
+    return { valid: true, kind: 'asset', normalized: `${PROVIDER_ICON_ASSET_URI_PREFIX}${filename}`, filename };
+  }
+
+  if (trimmed.startsWith('data:')) {
+    const parsed = parseProviderIconImageDataUrl(trimmed);
+    if (!parsed || !PROVIDER_ICON_IMAGE_MIME_PATTERN.test(trimmed)) {
+      return { valid: false, kind: 'invalid', reason: 'unsupported-data-url' };
+    }
+
+    if (parsed.imageBytes > PROVIDER_ICON_IMAGE_MAX_BYTES || parsed.normalized.length > PROVIDER_ICON_IMAGE_MAX_DATA_URL_LENGTH) {
+      return { valid: false, kind: 'invalid', reason: 'image-too-large', imageBytes: parsed.imageBytes };
+    }
+
+    return { valid: true, kind: 'image', normalized: parsed.normalized, imageBytes: parsed.imageBytes };
+  }
+
+  const iconChars = Array.from(trimmed);
+  return {
+    valid: true,
+    kind: 'text',
+    normalized: iconChars.slice(0, PROVIDER_ICON_TEXT_MAX_GRAPHEMES).join(''),
+    truncated: iconChars.length > PROVIDER_ICON_TEXT_MAX_GRAPHEMES,
+  };
+}
+
+export function estimateProviderIconImageBytes(value?: string): number | undefined {
+  const result = validateProviderIcon(value);
+  return result.valid && result.kind === 'image' ? result.imageBytes : undefined;
+}
+
+export function isProviderImageIcon(value?: string): boolean {
+  const result = validateProviderIcon(value);
+  return result.valid && (result.kind === 'image' || result.kind === 'asset');
+}
+
+export function normalizeProviderIcon(value?: string): string | undefined {
+  const result = validateProviderIcon(value);
+  return result.valid ? result.normalized : undefined;
+}
+
+export function getProviderIconPresets(providerId: string): ProviderIconPreset[] {
+  const normalizedProvider = isDynamicCustomProviderId(providerId) ? 'custom' : providerId;
+  const presets = PROVIDER_ICON_PRESETS[normalizedProvider] ?? COMMON_PROVIDER_ICON_PRESETS;
+  const seen = new Set<string>();
+  return presets
+    .map((preset) => ({
+      ...preset,
+      icon: normalizeProviderIcon(preset.icon) ?? preset.icon,
+    }))
+    .filter((preset) => {
+      if (!preset.icon || seen.has(preset.icon)) return false;
+      seen.add(preset.icon);
+      return true;
+    });
 }
 
 function looksLikeClaudeModelId(modelId?: string): boolean {
@@ -442,13 +691,24 @@ export function buildRuntimeModelOptions(
     const providerSourceLabel = providerGroup !== providerId
       ? buildProviderSourceLabel(providerLabel, canonicalGroupLabel, providerGroup)
       : undefined;
+    const providerEndpoint = normalizeProviderEndpoint(providerConfig?.baseUrl);
+    const exposeProviderTransportIdentity = shouldExposeProviderTransportIdentity(providerId, providerConfig);
+    const providerTransportLabel = exposeProviderTransportIdentity
+      ? formatProviderProtocolLabel(protocol)
+      : undefined;
 
     sources.push({
       providerId,
       providerLabel,
+      ...(normalizeProviderIcon(providerConfig?.icon) ? { providerIcon: normalizeProviderIcon(providerConfig?.icon) } : {}),
+      ...(providerConfig?.favorite ? { providerFavorite: true } : {}),
+      providerBillingMode: resolveRuntimeProviderBillingMode(providerId, providerConfig),
       providerGroup,
       providerGroupLabel,
       ...(providerSourceLabel ? { providerSourceLabel } : {}),
+      ...(exposeProviderTransportIdentity ? { providerProtocol: protocol } : {}),
+      ...(providerTransportLabel ? { providerTransportLabel } : {}),
+      ...(providerEndpoint ? { providerEndpoint } : {}),
       providerConfig,
       models,
       order,
@@ -470,17 +730,23 @@ export function buildRuntimeModelOptions(
       options.push({
         provider: source.providerId,
         model: model.id,
-        label: model.label || getModelDisplayLabel(model.id),
-        providerLabel: source.providerLabel,
-        providerGroup: source.providerGroup,
-        providerGroupLabel: source.providerGroupLabel,
-        ...(source.providerSourceLabel ? { providerSourceLabel: source.providerSourceLabel } : {}),
-        features: featuresFromModelMetadata({
-          modelId: model.id,
-          capabilities: model.capabilities,
-          supportsTool: model.supportsTool,
-          supportsVision: model.supportsVision,
-        }),
+	        label: model.label || getModelDisplayLabel(model.id),
+	        providerLabel: source.providerLabel,
+	        ...(source.providerIcon ? { providerIcon: source.providerIcon } : {}),
+	        ...(source.providerFavorite ? { providerFavorite: true } : {}),
+	        providerBillingMode: source.providerBillingMode,
+	        providerGroup: source.providerGroup,
+	        providerGroupLabel: source.providerGroupLabel,
+	        ...(source.providerSourceLabel ? { providerSourceLabel: source.providerSourceLabel } : {}),
+	        ...(source.providerProtocol ? { providerProtocol: source.providerProtocol } : {}),
+	        ...(source.providerTransportLabel ? { providerTransportLabel: source.providerTransportLabel } : {}),
+	        ...(source.providerEndpoint ? { providerEndpoint: source.providerEndpoint } : {}),
+	        features: featuresFromModelMetadata({
+	          modelId: model.id,
+	          capabilities: model.capabilities,
+	          supportsTool: model.supportsTool,
+	          supportsVision: model.supportsVision,
+	        }),
       });
     }
   }
@@ -493,6 +759,7 @@ export function buildRuntimeModelOptions(
       model: model.id,
       label: getModelDisplayLabel(model.id),
       providerLabel: getProviderInfo(provider.id)?.displayName || provider.name,
+      providerBillingMode: resolveRuntimeProviderBillingMode(provider.id),
       features: featuresFromModelMetadata({ modelId: model.id }),
     }))
   );
@@ -539,14 +806,20 @@ export function groupRuntimeModelOptionsByProvider(options: RuntimeModelOption[]
       group = {
         provider,
         providerLabel: option.providerGroupLabel ?? option.providerLabel,
-        ...(option.providerSourceLabel ? { providerSourceLabel: option.providerSourceLabel } : {}),
-        options: [],
-      };
+	        ...(option.providerIcon ? { providerIcon: option.providerIcon } : {}),
+	        ...(option.providerFavorite ? { providerFavorite: true } : {}),
+	        ...(option.providerBillingMode ? { providerBillingMode: option.providerBillingMode } : {}),
+	        ...(option.providerSourceLabel ? { providerSourceLabel: option.providerSourceLabel } : {}),
+	        ...(option.providerProtocol ? { providerProtocol: option.providerProtocol } : {}),
+	        ...(option.providerTransportLabel ? { providerTransportLabel: option.providerTransportLabel } : {}),
+	        ...(option.providerEndpoint ? { providerEndpoint: option.providerEndpoint } : {}),
+	        options: [],
+	      };
       byProvider.set(provider, group);
       groups.push(group);
     }
     group.options.push(option);
   }
 
-  return groups;
+  return groups.sort((a, b) => Number(b.providerFavorite === true) - Number(a.providerFavorite === true));
 }

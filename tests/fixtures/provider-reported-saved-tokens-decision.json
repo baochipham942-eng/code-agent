@@ -1,0 +1,43 @@
+{
+  "requestedProvider": "moonshot",
+  "requestedModel": "kimi-k2.5",
+  "resolvedProvider": "moonshot",
+  "resolvedModel": "kimi-k2.5",
+  "role": null,
+  "reason": "user-selected",
+  "billingMode": "payg",
+  "fallbackFrom": null,
+  "strategySummary": "按用户指定主任务模型执行；provider 明确回传 programmatic tool saved tokens。",
+  "taskClass": "multi-tool",
+  "costPolicy": "user-locked",
+  "speedPolicy": "normal",
+  "toolPolicy": "runtime-checked",
+  "toolStrategy": {
+    "visibleToolCount": 2,
+    "toolNamesPreview": ["Read", "Edit"],
+    "mcpToolCount": 0,
+    "programmaticToolCalling": "available",
+    "programmaticToolCount": 2,
+    "tokenSavings": {
+      "status": "provider-reported",
+      "savedTokens": 42,
+      "detail": "provider 已回传 programmatic tool saved tokens：42 tokens；本轮 provider usage 已回传：输入 500 / 输出 50 tokens。",
+      "measurement": {
+        "savingsSource": "provider-reported",
+        "usageSource": "model-response-usage",
+        "providerReportedSavings": true
+      },
+      "providerReport": {
+        "source": "provider-reported",
+        "savedTokens": 42
+      },
+      "providerUsage": {
+        "source": "model-response-usage",
+        "inputTokens": 500,
+        "outputTokens": 50,
+        "totalTokens": 550
+      }
+    }
+  },
+  "createdAt": 1781425200000
+}

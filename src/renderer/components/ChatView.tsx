@@ -370,7 +370,7 @@ export const ChatView: React.FC = () => {
         return true;
       }
       if (hasConfiguredRuntimeModels(settings)) {
-        toast.info('当前默认模型未配置 API Key，请切换到已配置的模型后再发送。');
+        toast.info('当前主任务模型未配置 API Key，请切换到已配置的模型后再发送。');
         openSettingsTab('model');
         return false;
       }

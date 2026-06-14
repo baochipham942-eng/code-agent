@@ -8,12 +8,21 @@
 // ============================================================================
 
 import React from 'react';
-import { Key } from 'lucide-react';
+import { ImagePlus, Key, X } from 'lucide-react';
 import type { ModelProviderProtocol, ProxyMode } from '@shared/contract';
 import { useI18n } from '../../../../hooks/useI18n';
 import { isWebMode } from '../../../../utils/platform';
-import { Button, Input, Select } from '../../../primitives';
-import { getProtocolLabel } from './ModelSettings.helpers';
+import { Button, Input, Select, Toggle } from '../../../primitives';
+import { describeProviderIconValidationError, getProtocolLabel } from './ModelSettings.helpers';
+import {
+  PROVIDER_ICON_IMAGE_MAX_BYTES,
+  estimateProviderIconImageBytes,
+  isProviderIconAssetRef,
+  isProviderImageIcon,
+  validateProviderIcon,
+  type ProviderIconPreset,
+} from '@shared/modelRuntime';
+import { useProviderIconImageSource } from '../../../../utils/providerIconAssets';
 
 // ── 区块外壳：编号 + 标题 + 右侧动作 ──
 export const ProviderDetailCard: React.FC<{
@@ -44,6 +53,10 @@ export const ProviderDetailCard: React.FC<{
 
 interface ProviderConnectionSectionProps {
   providerDisplayName: string;
+  providerIcon: string;
+  providerIconPresets: ProviderIconPreset[];
+  providerFavorite: boolean;
+  providerIdentityManaged?: boolean;
   providerNamePlaceholder: string;
   effectiveProtocol: ModelProviderProtocol;
   isCustomProviderProtocolEditable: boolean;
@@ -56,6 +69,10 @@ interface ProviderConnectionSectionProps {
   isTesting: boolean;
   canTestConnection: boolean;
   onDisplayNameChange: (value: string) => void;
+  onProviderIconChange: (value: string) => void;
+  onProviderIconImageUpload?: (dataUrl: string) => Promise<string | undefined>;
+  onProviderIconUploadError?: (message: string) => void;
+  onProviderFavoriteChange: (value: boolean) => void;
   onProviderProtocolChange: (protocol: ModelProviderProtocol) => void;
   onResetOfficialEndpoint: () => void;
   onBaseUrlChange: (value: string) => void;
@@ -65,6 +82,10 @@ interface ProviderConnectionSectionProps {
 
 export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps> = ({
   providerDisplayName,
+  providerIcon,
+  providerIconPresets,
+  providerFavorite,
+  providerIdentityManaged = false,
   providerNamePlaceholder,
   effectiveProtocol,
   isCustomProviderProtocolEditable,
@@ -77,6 +98,10 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
   isTesting,
   canTestConnection,
   onDisplayNameChange,
+  onProviderIconChange,
+  onProviderIconImageUpload,
+  onProviderIconUploadError,
+  onProviderFavoriteChange,
   onProviderProtocolChange,
   onResetOfficialEndpoint,
   onBaseUrlChange,
@@ -84,18 +109,162 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
   onTestConnection,
 }) => {
   const { t } = useI18n();
+  const iconFileInputRef = React.useRef<HTMLInputElement>(null);
+  const providerIconIsImage = isProviderImageIcon(providerIcon);
+  const providerIconIsAsset = isProviderIconAssetRef(providerIcon);
+  const providerIconImageSource = useProviderIconImageSource(providerIcon);
+  const providerIconImageBytes = estimateProviderIconImageBytes(providerIcon);
+  const fallbackIconText = providerNamePlaceholder.slice(0, 2).toUpperCase();
+
+  const reportIconUploadError = React.useCallback((message: string) => {
+    onProviderIconUploadError?.(message);
+  }, [onProviderIconUploadError]);
+
+  const handleProviderIconFileChange = React.useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const supportedTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml']);
+    if (!supportedTypes.has(file.type)) {
+      reportIconUploadError('只支持 PNG、JPG、WebP、GIF 或 SVG 图标。');
+      return;
+    }
+    if (file.size > PROVIDER_ICON_IMAGE_MAX_BYTES) {
+      reportIconUploadError('Provider 图标不能超过 96 KB。');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      const validation = validateProviderIcon(result);
+      if (!validation.valid) {
+        reportIconUploadError(describeProviderIconValidationError(validation) ?? '图片图标读取失败，请换一张更小的图片。');
+        return;
+      }
+      if (validation.kind !== 'image') {
+        reportIconUploadError('图片图标读取失败，请换一张更小的图片。');
+        return;
+      }
+      void (async () => {
+        try {
+          const storedIcon = await onProviderIconImageUpload?.(validation.normalized);
+          onProviderIconChange(storedIcon || validation.normalized);
+        } catch {
+          reportIconUploadError('本机图标资产目录不可用，已改用内联 data URL 保存。');
+          onProviderIconChange(validation.normalized);
+        }
+      })();
+    };
+    reader.onerror = () => {
+      reportIconUploadError('图片图标读取失败，请重试。');
+    };
+    reader.readAsDataURL(file);
+  }, [onProviderIconChange, onProviderIconImageUpload, reportIconUploadError]);
 
   return (
     <ProviderDetailCard step="1" title="连接">
       <div className="space-y-4">
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_8rem_minmax(0,1fr)]">
           <div>
             <label className="mb-2 block text-sm font-medium text-zinc-200">显示名称</label>
             <Input
               value={providerDisplayName}
               onChange={(event) => onDisplayNameChange(event.target.value)}
               placeholder={providerNamePlaceholder}
+              disabled={providerIdentityManaged}
             />
+            {providerIdentityManaged && (
+              <p className="mt-2 text-xs text-zinc-500">
+                团队托管 Provider 的名称由控制面下发，本机只保留收藏偏好。
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-zinc-200">图标标识</label>
+            <div className="flex items-center gap-2">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-zinc-700 bg-zinc-800 text-xs font-semibold text-zinc-200">
+                {providerIconIsImage ? (
+                  providerIconImageSource ? (
+                    <img src={providerIconImageSource} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    fallbackIconText
+                  )
+                ) : (
+                  providerIcon || fallbackIconText
+                )}
+              </span>
+              <Input
+                value={providerIconIsImage ? '' : providerIcon}
+                onChange={(event) => onProviderIconChange(event.target.value)}
+                placeholder={fallbackIconText}
+                maxLength={4}
+                disabled={providerIconIsImage || providerIdentityManaged}
+              />
+            </div>
+            {providerIconPresets.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5" aria-label="内置 Provider 图标">
+                {providerIconPresets.map((preset) => (
+                  <button
+                    key={`${preset.icon}-${preset.label}`}
+                    type="button"
+                    className={`flex h-7 min-w-7 items-center justify-center rounded-md border px-2 text-[11px] font-semibold transition-colors ${
+                      providerIdentityManaged
+                        ? 'cursor-not-allowed border-zinc-800 bg-zinc-950 text-zinc-600'
+                        : providerIcon === preset.icon
+                        ? 'border-cyan-400/70 bg-cyan-400/10 text-cyan-100'
+                        : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800'
+                    }`}
+                    disabled={providerIdentityManaged}
+                    title={preset.label}
+                    aria-label={`使用 ${preset.label} 图标`}
+                    onClick={() => onProviderIconChange(preset.icon)}
+                  >
+                    {preset.icon}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <input
+                ref={iconFileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                className="hidden"
+                onChange={handleProviderIconFileChange}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                leftIcon={<ImagePlus className="h-3.5 w-3.5" />}
+                onClick={() => iconFileInputRef.current?.click()}
+                disabled={providerIdentityManaged}
+              >
+                上传图片
+              </Button>
+              {providerIconIsImage && !providerIdentityManaged && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  leftIcon={<X className="h-3.5 w-3.5" />}
+                  onClick={() => onProviderIconChange('')}
+                >
+                  清除
+                </Button>
+              )}
+            </div>
+            <p className="mt-2 text-xs text-zinc-500">
+              {providerIdentityManaged
+                ? '团队托管 Provider 的图标由控制面下发，避免本机标识掩盖共享链路身份。'
+                : providerIconIsAsset
+                ? '图片图标保存在本机 assets/provider-icons，settings 只保存引用。Provider 身份仍以显示名称、来源和接口地址为准。'
+                : providerIconIsImage
+                ? `图片图标以内联 data URL 保存在本机 settings 中${providerIconImageBytes !== undefined ? `，约 ${(providerIconImageBytes / 1024).toFixed(1)} KB` : ''}。Provider 身份仍以显示名称、来源和接口地址为准。`
+                : '短标识只影响列表和模型菜单识别；Provider 身份仍以显示名称、来源和接口地址为准。'}
+            </p>
           </div>
           <div>
             <label className="mb-2 block text-sm font-medium text-zinc-200">协议</label>
@@ -114,6 +283,18 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
             )}
           </div>
         </div>
+
+        <label className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-zinc-200">收藏 Provider</span>
+            <span className="block truncate text-xs text-zinc-500">收藏后在 Provider 列表和模型菜单里前置显示。</span>
+          </span>
+          <Toggle
+            checked={providerFavorite}
+            onChange={onProviderFavoriteChange}
+            aria-label="收藏 Provider"
+          />
+        </label>
 
         <div>
           <div className="mb-2 flex items-center justify-between gap-3">

@@ -16,7 +16,10 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import './styles/global.css';
 import { useAppStore } from './stores/appStore';
+import { useSessionStore } from './stores/sessionStore';
 import { IPC_DOMAINS } from '@shared/ipc';
+import type { AgentEngineFailureDiagnostics, AgentEngineSessionMetadata } from '@shared/contract/agentEngine';
+import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { invokeDomain } from './services/ipcService';
 
 // 全局调试入口：DevTools Console 执行 __openLivePreview('http://localhost:5175/')
@@ -31,6 +34,10 @@ declare global {
     __stopDevServer?: (sessionId: string) => Promise<void>;
     /** D3: 弹出 DevServerLauncher 模态（带 UI 选目录） */
     __openDevServerLauncher?: () => void;
+    __modelStrategyE2E?: {
+      injectExternalEngineFailure: (sessionId: string, failure: AgentEngineFailureDiagnostics) => void;
+      getSessionEngine: (sessionId: string) => AgentEngineSessionMetadata | null;
+    };
   }
 }
 window.__openLivePreview = async (url: string) => {
@@ -90,6 +97,35 @@ window.__stopDevServer = async (sessionId: string) => {
 window.__openDevServerLauncher = () => {
   useAppStore.getState().openDevServerLauncher();
 };
+
+if (new URLSearchParams(window.location.search).get('e2e') === '1') {
+  window.__modelStrategyE2E = {
+    injectExternalEngineFailure(sessionId, failure) {
+      const now = Date.now();
+      useSessionStore.setState((state) => ({
+        sessions: state.sessions.map((session) => (
+          session.id === sessionId
+            ? {
+                ...session,
+                engine: normalizeAgentEngineSession({
+                  kind: 'claude_code',
+                  origin: 'manual',
+                  permissionProfile: 'read_only',
+                  model: 'sonnet',
+                  failure,
+                  updatedAt: now,
+                }),
+                updatedAt: now,
+              }
+            : session
+        )),
+      }));
+    },
+    getSessionEngine(sessionId) {
+      return useSessionStore.getState().sessions.find((session) => session.id === sessionId)?.engine ?? null;
+    },
+  };
+}
 
 const container = document.getElementById('root');
 if (!container) {

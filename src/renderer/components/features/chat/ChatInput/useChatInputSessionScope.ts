@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { AgentEngineKind } from '@shared/contract/agentEngine';
+import type { AgentEngineFailureDiagnostics, AgentEngineKind } from '@shared/contract/agentEngine';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import { useSessionStore } from '../../../../stores/sessionStore';
 
@@ -7,6 +7,8 @@ interface ChatInputSessionScope {
   currentSessionId: string | null;
   /** 当前会话的 Agent Engine 类型（native / codex_cli / claude_code） */
   sessionEngineKind: AgentEngineKind;
+  /** 外部 Agent Engine 最近一次失败，用于发送前可靠性提示。 */
+  sessionEngineFailure?: AgentEngineFailureDiagnostics;
 }
 
 /**
@@ -23,6 +25,12 @@ export function useChatInputSessionScope(
     const session = state.sessions.find((s) => s.id === state.currentSessionId);
     return session?.engine?.kind ?? 'native';
   });
+  const sessionEngineFailure = useSessionStore((state) => {
+    const session = state.sessions.find((s) => s.id === state.currentSessionId);
+    return session?.engine?.kind && session.engine.kind !== 'native'
+      ? session.engine.failure
+      : undefined;
+  });
 
   // ref 防止首次挂载误清（只在 session id 实际变化时清空）
   const lastSessionIdRef = useRef(currentSessionId);
@@ -33,5 +41,5 @@ export function useChatInputSessionScope(
     setAttachments([]);
   }, [currentSessionId, setValue, setAttachments]);
 
-  return { currentSessionId, sessionEngineKind };
+  return { currentSessionId, sessionEngineKind, sessionEngineFailure };
 }

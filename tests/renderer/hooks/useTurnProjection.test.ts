@@ -93,6 +93,144 @@ describe('projectTurns', () => {
     expect(assistantNode?.modelDecision?.resolvedModel).toBe('glm-4.5-flash');
   });
 
+  it('deduplicates identical model decisions but keeps changed strategy diagnostics', () => {
+    const baseDecision = {
+      requestedProvider: 'claude_code',
+      requestedModel: 'sonnet',
+      resolvedProvider: 'claude_code',
+      resolvedModel: 'sonnet',
+      reason: 'user-selected' as const,
+      role: null,
+      billingMode: 'unknown' as const,
+      fallbackFrom: null,
+      strategySummary: 'Claude Code 使用 sonnet 执行本轮任务。',
+      taskClass: 'coding' as const,
+      costPolicy: 'user-locked' as const,
+      speedPolicy: 'normal' as const,
+    };
+    const messages: Message[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        content: '继续写代码',
+        timestamp: 100,
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '我先检查。',
+        timestamp: 150,
+        modelDecision: baseDecision,
+      },
+      {
+        id: 'assistant-2',
+        role: 'assistant',
+        content: '继续检查。',
+        timestamp: 160,
+        modelDecision: baseDecision,
+      },
+      {
+        id: 'assistant-3',
+        role: 'assistant',
+        content: 'Claude Code 认证失败。',
+        timestamp: 170,
+        modelDecision: {
+          ...baseDecision,
+          externalEngine: {
+            kind: 'claude_code',
+            label: 'Claude Code',
+            model: 'sonnet',
+            installState: 'installed',
+            runtimeState: 'ready',
+            executable: true,
+            capabilities: ['execute', 'stream_events'],
+            reliability: {
+              cliStatus: 'available',
+              authState: 'not_checked',
+              quotaState: 'not_checked',
+              streamingMode: 'stream_json',
+              toolSupport: 'read_only_cli_tools',
+              transcriptMode: 'clean_stream_json',
+            },
+            failure: {
+              category: 'auth',
+              reason: 'auth_failed',
+              message: 'Failed to authenticate',
+              suggestion: 'Claude Code 认证失败。请完成 Claude CLI 登录或检查订阅/API 凭据后重试。',
+              retryable: false,
+              occurredAt: 60_000,
+              statusCode: 401,
+              exitCode: 1,
+            },
+          },
+        },
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-1', false, []);
+    const assistantNodes = projection.turns[0].nodes.filter((node) => node.type === 'assistant_text');
+
+    expect(assistantNodes).toHaveLength(3);
+    expect(assistantNodes[0]?.modelDecision?.reason).toBe('user-selected');
+    expect(assistantNodes[1]?.modelDecision).toBeUndefined();
+    expect(assistantNodes[2]?.modelDecision?.externalEngine?.failure?.statusCode).toBe(401);
+  });
+
+  it('keeps model decisions when provider identity changes under the same route', () => {
+    const baseDecision = {
+      requestedProvider: 'custom-commonstack',
+      requestedModel: 'anthropic/claude-opus-4-8',
+      resolvedProvider: 'custom-commonstack',
+      resolvedModel: 'anthropic/claude-opus-4-8',
+      reason: 'user-selected' as const,
+      role: null,
+      billingMode: 'unknown' as const,
+      fallbackFrom: null,
+    };
+    const messages: Message[] = [
+      { id: 'user-1', role: 'user', content: '继续写代码', timestamp: 100 },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '第一轮。',
+        timestamp: 150,
+        modelDecision: {
+          ...baseDecision,
+          providerIdentity: {
+            provider: 'custom-commonstack',
+            sourceLabel: 'CommonStack',
+            protocol: 'openai',
+            transportLabel: 'OpenAI-compatible',
+            endpoint: 'https://commonstack.example/v1',
+          },
+        },
+      },
+      {
+        id: 'assistant-2',
+        role: 'assistant',
+        content: '第二轮。',
+        timestamp: 160,
+        modelDecision: {
+          ...baseDecision,
+          providerIdentity: {
+            provider: 'custom-commonstack',
+            sourceLabel: 'CommonStack',
+            protocol: 'openai',
+            transportLabel: 'OpenAI-compatible',
+            endpoint: 'https://commonstack-backup.example/v1',
+          },
+        },
+      },
+    ];
+
+    const projection = projectTurns(messages, 'session-1', false, []);
+    const assistantNodes = projection.turns[0].nodes.filter((node) => node.type === 'assistant_text');
+
+    expect(assistantNodes).toHaveLength(2);
+    expect(assistantNodes[0]?.modelDecision?.providerIdentity?.endpoint).toBe('https://commonstack.example/v1');
+    expect(assistantNodes[1]?.modelDecision?.providerIdentity?.endpoint).toBe('https://commonstack-backup.example/v1');
+  });
+
   it('projects model fallback notices as system nodes in the current turn', () => {
     const messages: Message[] = [
       {

@@ -7,7 +7,7 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { Brain, Code2, Eye, Gauge, Key, Plus, RefreshCw, Search, Wrench } from 'lucide-react';
+import { Brain, Code2, Eye, Gauge, Key, Plus, RefreshCw, Search, Star, Wrench } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -17,13 +17,18 @@ import {
   MODEL_CAPABILITY_OPTIONS,
   buildProviderInfoFromSettings,
   featuresFromModelMetadata,
+  getProviderIconPresets,
   getProviderRuntimeModels,
+  isProviderImageIcon,
   isDynamicCustomProviderId,
+  normalizeProviderIcon,
   resolveProviderProtocol,
+  validateProviderIcon,
   type RuntimeProviderModel,
 } from '@shared/modelRuntime';
 import { createLogger } from '../../../../utils/logger';
 import { toast } from '../../../../hooks/useToast';
+import { saveProviderIconAssetFromDataUrl, useProviderIconImageSource } from '../../../../utils/providerIconAssets';
 
 const logger = createLogger('ModelSettings');
 
@@ -46,9 +51,11 @@ import {
   buildProviderManagementRows,
   buildProviderSettingsUpdate,
   createCustomProviderId,
+  describeProviderIconValidationError,
   getProtocolLabel,
   hasCustomEndpointOverride,
   isModelMetadataLocked,
+  isProviderIdentityManaged,
   orderProviderManagementRows,
   providerRequiresApiKey,
   resolveModelForProvider,
@@ -313,7 +320,34 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   }, [config, onChange, patchCurrentProviderConfig, registryEndpoint]);
 
   const handleDisplayNameChange = useCallback((value: string) => {
+    if (isProviderIdentityManaged(currentProviderConfig)) {
+      toast.warning('团队托管 Provider 的名称由控制面下发。');
+      return;
+    }
     patchCurrentProviderConfig({ displayName: value });
+  }, [currentProviderConfig, patchCurrentProviderConfig]);
+  const handleProviderIconChange = useCallback((value: string) => {
+    if (isProviderIdentityManaged(currentProviderConfig)) {
+      toast.warning('团队托管 Provider 的图标由控制面下发。');
+      return;
+    }
+    const result = validateProviderIcon(value);
+    if (!result.valid) {
+      toast.warning(describeProviderIconValidationError(result) ?? 'Provider 图标无效。');
+      return;
+    }
+    patchCurrentProviderConfig({ icon: result.normalized });
+  }, [currentProviderConfig, patchCurrentProviderConfig]);
+  const handleProviderIconImageUpload = useCallback(async (dataUrl: string) => {
+    const result = await saveProviderIconAssetFromDataUrl({
+      provider: config.provider,
+      dataUrl,
+    });
+    toast.success('Provider 图标已保存到本机资产目录');
+    return result.icon;
+  }, [config.provider]);
+  const handleProviderFavoriteChange = useCallback((favorite: boolean) => {
+    patchCurrentProviderConfig({ favorite });
   }, [patchCurrentProviderConfig]);
 
   const handleProviderProtocolChange = useCallback((protocol: ModelProviderProtocol) => {
@@ -332,6 +366,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     baseUrl: effectiveBaseUrl,
     protocol: effectiveProtocol,
     displayName: currentProviderConfig?.displayName,
+    icon: currentProviderConfig?.icon,
+    favorite: currentProviderConfig?.favorite,
     model: modelId,
     temperature: config.temperature,
     maxTokens: config.maxTokens,
@@ -374,10 +410,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         [config.provider]: providerConfigForSave,
       }));
       setDefaultSelection({ provider: config.provider, model: modelId });
-      toast.success('默认模型已更新');
+      toast.success('主任务模型已更新');
     } catch (error) {
       logger.error('Failed to set default model', error);
-      toast.error('默认模型保存失败: ' + (error instanceof Error ? error.message : '未知错误'));
+      toast.error('主任务模型保存失败: ' + (error instanceof Error ? error.message : '未知错误'));
     } finally {
       setSettingDefaultModelId(null);
     }
@@ -439,8 +475,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         ...prev,
         [config.provider]: providerConfigForSave,
       }));
-      // 默认模型指针与已配置 provider 解耦修复：出厂默认没 key 时，配好的 provider 自动接管默认，
-      // 否则发送被门禁拦下（"当前默认模型未配置 API Key"）。
+      // 主任务模型指针与已配置 provider 解耦修复：出厂默认没 key 时，配好的 provider 自动接管主任务模型，
+      // 否则发送被门禁拦下（"当前主任务模型未配置 API Key"）。
       try {
         const latestSettings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
         if (shouldPromoteProviderToDefault(config.provider, providerConfigForSave, latestSettings)) {
@@ -451,7 +487,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           );
           const promotedModel = providerConfigForSave.model || config.model;
           setDefaultSelection({ provider: config.provider, model: promotedModel });
-          toast.success(`原默认模型未配置 API Key，默认模型已自动切换到 ${providerConfigForSave.displayName || currentProviderInfo?.name || config.provider} / ${promotedModel}`);
+          toast.success(`原主任务模型未配置 API Key，主任务模型已自动切换到 ${providerConfigForSave.displayName || currentProviderInfo?.name || config.provider} / ${promotedModel}`);
         }
       } catch (promoteError) {
         logger.warn('Failed to auto-promote default model after provider save', {
@@ -728,6 +764,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   }, [config, effectiveBaseUrl, effectiveProtocol, hasStoredApiKey, manualModelId, manualModelLabel, onChange]);
 
   const providerTitle = currentProviderConfig?.displayName || selectedProviderRow?.name || config.provider;
+  const providerIcon = normalizeProviderIcon(currentProviderConfig?.icon) || providerTitle.slice(0, 1).toUpperCase();
+  const providerIconIsImage = isProviderImageIcon(providerIcon);
+  const providerIconImageSource = useProviderIconImageSource(providerIcon);
+  const providerIconPresets = getProviderIconPresets(config.provider);
+  const providerIdentityManaged = isProviderIdentityManaged(currentProviderConfig);
 
   return (
     <SettingsPage
@@ -811,8 +852,19 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
               {/* ── 详情 Header ── */}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800 text-base font-bold text-zinc-200">
-                    {providerTitle.slice(0, 1).toUpperCase()}
+                  <span className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800 text-base font-bold text-zinc-200">
+                    {providerIconIsImage ? (
+                      providerIconImageSource ? (
+                        <img src={providerIconImageSource} alt="" className="h-full w-full rounded-lg object-cover" />
+                      ) : (
+                        providerTitle.slice(0, 1).toUpperCase()
+                      )
+                    ) : (
+                      providerIcon
+                    )}
+                    {currentProviderConfig?.favorite && (
+                      <Star className="absolute -right-1 -top-1 h-3.5 w-3.5 fill-amber-300 text-amber-300" />
+                    )}
                   </span>
                   <div>
                     <h4 className="text-base font-semibold text-zinc-100">{providerTitle}</h4>
@@ -829,6 +881,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
               {/* ── ① 连接 ── */}
               <ProviderConnectionSection
                 providerDisplayName={currentProviderConfig?.displayName ?? ''}
+                providerIcon={normalizeProviderIcon(currentProviderConfig?.icon) ?? ''}
+                providerIconPresets={providerIconPresets}
+                providerFavorite={currentProviderConfig?.favorite === true}
+                providerIdentityManaged={providerIdentityManaged}
                 providerNamePlaceholder={currentProviderInfo?.name || config.provider}
                 effectiveProtocol={effectiveProtocol}
                 isCustomProviderProtocolEditable={isCustomProviderProtocolEditable}
@@ -841,6 +897,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                 isTesting={isTesting}
                 canTestConnection={!needsApiKey || Boolean(config.apiKey) || hasStoredApiKey}
                 onDisplayNameChange={handleDisplayNameChange}
+                onProviderIconChange={handleProviderIconChange}
+                onProviderIconImageUpload={handleProviderIconImageUpload}
+                onProviderIconUploadError={(message) => toast.warning(message)}
+                onProviderFavoriteChange={handleProviderFavoriteChange}
                 onProviderProtocolChange={handleProviderProtocolChange}
                 onResetOfficialEndpoint={handleResetOfficialEndpoint}
                 onBaseUrlChange={handleBaseUrlChange}
@@ -908,6 +968,9 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                       添加
                     </Button>
                   </div>
+                  <p className="mb-3 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-xs leading-relaxed text-zinc-400">
+                    主任务模型会影响每一轮交付质量：复杂任务和长上下文适合能力更强的模型，日常小任务避免长期锁定慢模型或按量昂贵模型；自动模式会按任务、成本、速度和能力尝试切换。
+                  </p>
 
                   {/* 模型列表 */}
                   <div className="max-h-[420px] overflow-y-auto rounded-lg border border-zinc-800">
@@ -958,10 +1021,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                               </div>
 
                               <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
-                                {/* 设为默认 */}
+                                {/* 设为主任务 */}
                                 {defaultSelection.provider === config.provider && defaultSelection.model === model.id ? (
                                   <span className="inline-flex h-7 items-center gap-1 rounded border border-blue-400/50 bg-blue-500/15 px-2 text-[11px] text-blue-200">
-                                    ★ 默认
+                                    ★ 主任务
                                   </span>
                                 ) : model.enabled ? (
                                   <button
@@ -970,7 +1033,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                                     disabled={settingDefaultModelId !== null}
                                     className="inline-flex h-7 items-center rounded border border-zinc-700 bg-zinc-800 px-2 text-[11px] text-zinc-500 transition hover:text-zinc-300"
                                   >
-                                    {settingDefaultModelId === model.id ? '保存中...' : '设为默认'}
+                                    {settingDefaultModelId === model.id ? '保存中...' : '设为主任务'}
                                   </button>
                                 ) : null}
                                 <button

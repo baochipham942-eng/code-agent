@@ -93,6 +93,19 @@ export class AgentEngineRegistry {
         'P0 execution uses read-only sandbox by default.',
         'Launch cwd, command summary, and log path are written to the background task ledger.',
       ],
+      reliability: {
+        cliStatus: installed ? 'available' : probe.binaryPath ? 'error' : 'missing',
+        authState: 'not_checked',
+        quotaState: 'not_checked',
+        streamingMode: 'stream_json',
+        toolSupport: 'workspace_tools',
+        transcriptMode: 'clean_stream_json',
+        partialMessages: false,
+        mcpBridge: false,
+        notes: [
+          'Registry detection checks CLI availability only; auth and quota are validated by the CLI run.',
+        ],
+      },
     };
   }
 
@@ -108,7 +121,7 @@ export class AgentEngineRegistry {
       installState: installed ? 'installed' : 'missing',
       runtimeState,
       executable: installed,
-      command: 'claude -p --output-format stream-json --permission-mode plan',
+      command: 'claude -p --output-format stream-json --input-format text --include-partial-messages --permission-mode plan',
       binaryPath: probe.binaryPath,
       version: probe.version,
       capabilities: installed ? ['execute', 'stream_events', 'import_sessions', 'review'] : ['import_sessions'],
@@ -120,7 +133,22 @@ export class AgentEngineRegistry {
       auditNotes: [
         'Execution uses plan permission mode and Read/Glob/Grep/LS tools by default.',
         'The registry intentionally avoids interactive login probes.',
+        'Runs with stream-json, partial messages, strict MCP config, and a bounded read-only tool allowlist.',
       ],
+      reliability: {
+        cliStatus: installed ? 'available' : probe.binaryPath ? 'error' : 'missing',
+        authState: 'not_checked',
+        quotaState: 'not_checked',
+        streamingMode: 'stream_json',
+        toolSupport: 'read_only_cli_tools',
+        transcriptMode: 'clean_stream_json',
+        partialMessages: true,
+        mcpBridge: false,
+        notes: [
+          'Registry detection checks CLI availability only; auth and quota are validated by the CLI run.',
+          'Claude Code adapter ignores terminal clutter and prefers the final result text when present.',
+        ],
+      },
     };
   }
 

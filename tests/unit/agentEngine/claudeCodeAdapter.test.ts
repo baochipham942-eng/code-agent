@@ -91,6 +91,8 @@ describe('Claude Code adapter helpers', () => {
     expect(args).toContain('Read,Glob,Grep,LS');
     expect(args).toContain('--no-chrome');
     expect(args).toContain('--strict-mcp-config');
+    expect(args).toContain('--include-partial-messages');
+    expect(args).toContain('--no-session-persistence');
     expect(args).not.toContain('--dangerously-skip-permissions');
     expect(args).not.toContain('--allow-dangerously-skip-permissions');
     expect(args).not.toContain('bypassPermissions');
@@ -132,6 +134,20 @@ describe('Claude Code adapter helpers', () => {
     }))).toMatchObject({
       finalText: 'final answer',
       externalSessionId: 'claude-session',
+      status: 'Claude Code result: success',
+    });
+
+    expect(parseClaudeCodeJsonLine(JSON.stringify({
+      type: 'result',
+      subtype: 'success',
+      is_error: true,
+      api_error_status: 401,
+      result: 'Failed to authenticate. API Error: 401 Invalid authentication credentials',
+      session_id: 'claude-session',
+    }))).toMatchObject({
+      finalText: 'Failed to authenticate. API Error: 401 Invalid authentication credentials',
+      error: 'Failed to authenticate. API Error: 401 Invalid authentication credentials',
+      statusCode: 401,
       status: 'Claude Code result: success',
     });
   });
@@ -261,6 +277,8 @@ describe('ClaudeCodeAdapter.run', () => {
     expect(firstTask.command).toContain('--setting-sources local');
     expect(firstTask.command).toContain('--disable-slash-commands');
     expect(firstTask.command).toContain('--tools Read,Glob,Grep,LS');
+    expect(firstTask.command).toContain('--strict-mcp-config');
+    expect(firstTask.command).toContain('--include-partial-messages');
     expect(firstTask.metadata.model).toBe('sonnet');
     expect(firstTask.metadata.env.redacted).toEqual(expect.arrayContaining([
       'ANTHROPIC_API_KEY',
@@ -279,6 +297,71 @@ describe('ClaudeCodeAdapter.run', () => {
     expect(logPath).toContain(path.join('agent-engines', 'claude-code'));
     await expect(fs.readFile(logPath, 'utf8')).resolves.toContain('final text');
     await expect(fs.readFile(logPath.replace(/\.log$/, '.last.md'), 'utf8')).resolves.toBe('final text');
+
+    const assistantMessage = mocks.addMessageToSession.mock.calls
+      .map((call) => call[1])
+      .find((message) => message?.role === 'assistant');
+    expect(assistantMessage?.modelDecision).toMatchObject({
+      requestedProvider: 'claude_code',
+      requestedModel: 'sonnet',
+      resolvedProvider: 'claude_code',
+      resolvedModel: 'sonnet',
+      reason: 'user-selected',
+      externalEngine: {
+        kind: 'claude_code',
+        model: 'sonnet',
+        runtimeState: 'ready',
+      },
+    });
+  });
+
+  it('reconstructs partial stream-json text without duplicating assistant snapshots or terminal clutter', async () => {
+    mocks.spawn.mockImplementation(() => createMockChild([
+      'Claude Code v9.9.9 terminal footer should stay out of transcript',
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'claude-session' }),
+      JSON.stringify({
+        type: 'stream_event',
+        event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'long ' } },
+        session_id: 'claude-session',
+      }),
+      JSON.stringify({
+        type: 'stream_event',
+        event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'reply' } },
+        session_id: 'claude-session',
+      }),
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'long reply' }],
+        },
+      }),
+      'tokens used: 9999',
+    ], 0));
+
+    const result = await new ClaudeCodeAdapter().run({
+      sessionId: 'session-1',
+      prompt: 'write a long reply',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      timeoutMs: 20_000,
+      stallWarningMs: 10_000,
+    });
+
+    expect(result).toMatchObject({
+      engine: 'claude_code',
+      status: 'completed',
+      outputText: 'long reply',
+      exitCode: 0,
+    });
+    const textDeltas = mocks.webContentsSend.mock.calls
+      .map((call) => call[1])
+      .filter((event) => event?.type === 'message_delta')
+      .map((event) => event.data.text);
+    expect(textDeltas).toEqual(['long ', 'reply']);
+    const logPath = result.logPath || '';
+    await expect(fs.readFile(logPath, 'utf8')).resolves.toContain('tokens used: 9999');
+    await expect(fs.readFile(logPath.replace(/\.log$/, '.last.md'), 'utf8')).resolves.toBe('long reply');
   });
 
   it('records failure when Claude Code exits non-zero', async () => {
@@ -304,6 +387,97 @@ describe('ClaudeCodeAdapter.run', () => {
       'session-1',
       expect.objectContaining({ status: 'error' }),
       { allowEngineUpdate: true },
+    );
+  });
+
+  it('uses Claude stream-json error text as the failure reason when stderr is empty', async () => {
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'claude-session' }),
+      JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        is_error: true,
+        api_error_status: 401,
+        result: 'authentication_failed',
+        session_id: 'claude-session',
+      }),
+    ], 1));
+
+    const result = await new ClaudeCodeAdapter().run({
+      sessionId: 'session-1',
+      prompt: 'inspect only',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      timeoutMs: 20_000,
+      stallWarningMs: 10_000,
+    });
+
+    expect(result).toMatchObject({
+      engine: 'claude_code',
+      status: 'failed',
+      error: 'authentication_failed',
+      outputText: 'authentication_failed',
+      exitCode: 1,
+      failure: {
+        category: 'auth',
+        reason: 'auth_failed',
+        statusCode: 401,
+        reliability: { authState: 'needs_login' },
+      },
+    });
+    expect(mocks.updateSession).toHaveBeenLastCalledWith(
+      'session-1',
+      expect.objectContaining({
+        status: 'error',
+        engine: expect.objectContaining({
+          kind: 'claude_code',
+          failure: expect.objectContaining({
+            category: 'auth',
+            reason: 'auth_failed',
+            statusCode: 401,
+            reliability: { authState: 'needs_login' },
+          }),
+        }),
+      }),
+      { allowEngineUpdate: true },
+    );
+    expect(mocks.upsertTask).toHaveBeenLastCalledWith(expect.objectContaining({
+      failure: expect.objectContaining({
+        message: 'authentication_failed',
+        reason: 'auth_failed',
+      }),
+    }));
+    expect(mocks.appendEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'agent_engine.failed',
+      data: expect.objectContaining({
+        failure: expect.objectContaining({
+          category: 'auth',
+          reason: 'auth_failed',
+        }),
+      }),
+    }));
+    const assistantMessage = mocks.addMessageToSession.mock.calls
+      .map((call) => call[1])
+      .find((message) => message?.role === 'assistant');
+    expect(assistantMessage).toMatchObject({
+      role: 'assistant',
+      content: expect.stringContaining('Claude Code 认证失败'),
+      modelDecision: expect.objectContaining({
+        externalEngine: expect.objectContaining({
+          kind: 'claude_code',
+          failure: expect.objectContaining({
+            category: 'auth',
+            reason: 'auth_failed',
+          }),
+        }),
+      }),
+    });
+    expect(mocks.webContentsSend).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        type: 'message',
+        data: expect.objectContaining({ role: 'assistant' }),
+      }),
     );
   });
 

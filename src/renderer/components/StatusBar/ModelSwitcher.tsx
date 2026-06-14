@@ -25,28 +25,52 @@ import {
   type RuntimeModelOption,
 } from '@shared/modelRuntime';
 import { toast } from '../../hooks/useToast';
-import { Brain, Sparkles, Zap, Cpu, Code2, Settings } from 'lucide-react';
+import { Brain, Sparkles, Zap, Cpu, Code2, Settings, Star } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
 import { trackRenderer } from '../../observability/posthogRenderer';
 import { POSTHOG_EVENTS } from '@shared/observability/posthog-events';
 import {
+  buildEngineReliabilitySummary,
+  buildProviderBillingSummary,
+  buildProviderHealthSummary,
   buildModelSwitcherEngineSelection,
   CAPABILITY_CONFIG,
   ENGINE_ICON,
   ENGINE_SHORT_LABEL,
+  formatExternalModelSwitcherTooltip,
   formatEngineTooltip,
+  formatNativeModelSwitcherTooltip,
   getEngineEffortOptions,
   getEngineUnavailableReason,
   getProviderEffortOptions,
   getSelectedEffortOption,
-  HEALTH_DOT_COLOR,
   isExternalEngineKind,
+  type ProviderHealthSnapshot,
+  ProviderBillingBadge,
+  ProviderHealthBadge,
   ProviderLogo,
+  ProviderSourceBadge,
+  ProviderTransportBadge,
   QUICK_SWITCH_PROVIDERS,
+  sortProviderGroupsByModelStrategy,
 } from './modelSwitcherHelpers';
 
 export { buildModelSwitcherEngineSelection } from './modelSwitcherHelpers';
+
+const ENGINE_RELIABILITY_TONE_CLASS: Record<string, string> = {
+  ready: 'border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-200',
+  warning: 'border-amber-500/20 bg-amber-500/[0.08] text-amber-200',
+  error: 'border-red-500/20 bg-red-500/[0.08] text-red-200',
+  info: 'border-sky-500/20 bg-sky-500/[0.08] text-sky-200',
+};
+
+const ENGINE_RELIABILITY_DOT_CLASS: Record<string, string> = {
+  ready: 'bg-emerald-300',
+  warning: 'bg-amber-300',
+  error: 'bg-red-300',
+  info: 'bg-sky-300',
+};
 
 interface ModelSwitcherProps {
   currentModel: string;
@@ -88,7 +112,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [overrideAdaptive, setOverrideAdaptive] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeOptionIndex, setActiveOptionIndex] = useState(0);
-  const [healthMap, setHealthMap] = useState<Record<string, { status: string; latencyP50: number; errorRate: number }>>({});
+  const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthSnapshot>>({});
   const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
   const [engineCatalogResult, setEngineCatalogResult] = useState<AgentEngineModelCatalogResult | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -111,7 +135,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const thinkingEnabled = useModeStore((s) => s.thinkingEnabled);
   const setThinkingEnabled = useModeStore((s) => s.setThinkingEnabled);
   // Engine adapter（Native/Codex/Claude）— 从 AgentEngineSelector 合并进来，
-  // 让"Engine · Model · Effort"在一个 trigger 里统一展示和切换。
+  // 让"Engine · 主任务模型 · Effort"在一个 trigger 里统一展示和切换。
   const engine = normalizeAgentEngineSession(session?.engine);
   const effectiveWorkingDirectory = session?.workingDirectory || appWorkingDirectory || null;
   const [engineDescriptors, setEngineDescriptors] = useState<AgentEngineDescriptor[]>([]);
@@ -164,14 +188,23 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
 
   const groupedFilteredOptions = useMemo(() => {
     let nextIndex = 1;
-    return groupRuntimeModelOptionsByProvider(filteredOptions).map((group) => ({
+    const groupProviderHealth = (group: ReturnType<typeof groupRuntimeModelOptionsByProvider>[number]) => {
+      const provider = group.options[0]?.provider ?? group.provider;
+      return healthMap[provider];
+    };
+    return sortProviderGroupsByModelStrategy(
+      groupRuntimeModelOptionsByProvider(filteredOptions),
+      healthMap,
+    ).map((group) => ({
       ...group,
+      billingSummary: buildProviderBillingSummary(group.providerBillingMode),
+      healthSummary: buildProviderHealthSummary(groupProviderHealth(group)),
       options: group.options.map((option) => ({
         option,
         index: nextIndex++,
       })),
     }));
-  }, [filteredOptions]);
+  }, [filteredOptions, healthMap]);
 
   const filteredEngineModels = useMemo(() => {
     if (!selectedEngineCatalog) return [];
@@ -223,7 +256,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   // 打开时拉取 provider 健康状态
   useEffect(() => {
     if (open) {
-      window.domainAPI?.invoke<Record<string, { status: string; latencyP50: number; errorRate: number }>>(
+      window.domainAPI?.invoke<Record<string, ProviderHealthSnapshot>>(
         IPC_DOMAINS.PROVIDER,
         'getHealthStatus',
         {}
@@ -566,6 +599,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     [displayModel, displayProvider, modelOptions],
   );
   const selectedCatalogModel = selectedEngineCatalog?.models.find((model) => model.id === engine.model);
+  const selectedEngineReliability = useMemo(() => buildEngineReliabilitySummary({
+    descriptor: selectedEngineDescriptor,
+    needsWorkspace: engine.kind !== 'native' && !effectiveWorkingDirectory,
+    selectedModel: selectedCatalogModel,
+    sessionFailure: engine.failure,
+  }), [effectiveWorkingDirectory, engine.failure, engine.kind, selectedCatalogModel, selectedEngineDescriptor]);
   const externalModelUnavailable = Boolean(
     isExternalEngineKind(engine.kind) &&
     selectedEngineCatalog &&
@@ -578,7 +617,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       ?? selectedEngineCatalog?.models.find((model) => model.id === selectedEngineCatalog.defaultModel)?.label
       ?? engine.model
       ?? selectedEngineCatalog?.defaultModel
-      ?? '默认模型';
+      ?? '主任务模型';
   const displayLabel = engine.kind === 'native'
     ? showModelSettingsPrompt ? '配置模型' : nativeDisplayLabel
     : externalDisplayLabel;
@@ -598,6 +637,33 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const thinkingShortLabel = supportsThinkingControls
     ? thinkingEnabled ? 'Think' : 'NoThink'
     : null;
+  const selectedNativeBillingSummary = engine.kind === 'native'
+    ? buildProviderBillingSummary(selectedNativeOption?.providerBillingMode)
+    : null;
+  const selectedNativeHealthSummary = engine.kind === 'native'
+    ? buildProviderHealthSummary(healthMap[displayProvider])
+    : null;
+  const triggerTitle = engine.kind !== 'native'
+    ? formatExternalModelSwitcherTooltip({
+      engineLabel: ENGINE_SHORT_LABEL[engine.kind],
+      model: engine.model ?? selectedEngineCatalog?.defaultModel ?? '主任务模型',
+      effort: selectedEffort,
+      reliabilityLabel: selectedEngineReliability?.label,
+    })
+    : showModelSettingsPrompt
+      ? '还没有可用模型'
+      : formatNativeModelSwitcherTooltip({
+        engineLabel: ENGINE_SHORT_LABEL[engine.kind],
+        currentModel,
+        displayProvider,
+        displayModel,
+        adaptive: overrideAdaptive,
+        overridden: isOverridden,
+        billingSummary: selectedNativeBillingSummary,
+        healthSummary: selectedNativeHealthSummary,
+        effort: selectedEffort,
+        thinkingLabel: thinkingShortLabel,
+      });
 
   useEffect(() => {
     if (effortOptions.some((option) => option.value === effortLevel)) return;
@@ -660,11 +726,35 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             </div>
           )}
 
+          {selectedEngineReliability && (
+            <div className="border-b border-zinc-700/50 px-2 py-1.5">
+              <div
+                className={`rounded-md border px-2 py-1.5 text-[11px] leading-relaxed ${ENGINE_RELIABILITY_TONE_CLASS[selectedEngineReliability.tone] ?? ENGINE_RELIABILITY_TONE_CLASS.info}`}
+                data-testid="engine-reliability-summary"
+              >
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${ENGINE_RELIABILITY_DOT_CLASS[selectedEngineReliability.tone] ?? ENGINE_RELIABILITY_DOT_CLASS.info}`}
+                  />
+                  <span className="shrink-0 font-medium">{selectedEngineReliability.label}</span>
+                  <span className="min-w-0 truncate text-zinc-200/90" title={selectedEngineReliability.summary}>
+                    {selectedEngineReliability.summary}
+                  </span>
+                </div>
+                {(selectedEngineReliability.capabilityLine || selectedEngineReliability.detail) && (
+                  <div className="mt-0.5 truncate text-[10px] text-zinc-300/70" title={selectedEngineReliability.capabilityLine || selectedEngineReliability.detail}>
+                    {selectedEngineReliability.capabilityLine || selectedEngineReliability.detail}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="border-b border-zinc-700/50">
             <div className="flex items-center gap-1 px-3 pt-1.5 pb-1 text-[10px] text-zinc-500">
               <span className="text-[9px] text-zinc-600">2</span>
               <Code2 className="w-3 h-3" />
-              <span>Model</span>
+              <span>主任务模型</span>
             </div>
             <div className="px-2 pb-1.5">
               <input
@@ -673,7 +763,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={handleMenuKeyDown}
-                placeholder="搜索模型..."
+                placeholder="搜索主任务模型..."
                 data-model-search-input
                 className="
                   w-full px-2 py-1 text-xs
@@ -692,14 +782,14 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                     </div>
                     <div className="text-xs font-medium text-zinc-200">还没有可用模型</div>
                     <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">
-                      配好 Provider 和 API Key 后再发送消息。
+                      配好 Provider 和 API Key 后再选择主任务模型。
                     </div>
                     <button
                       type="button"
                       onClick={handleOpenModelSettings}
                       className="mt-3 inline-flex h-7 items-center justify-center rounded bg-zinc-700 px-3 text-xs font-medium text-zinc-100 transition-colors hover:bg-zinc-600"
                     >
-                      去模型配置
+                      去模型设置
                     </button>
                   </div>
                 ) : (
@@ -719,7 +809,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                     <div className="flex items-center gap-1.5">
                       <Sparkles className="w-3 h-3 text-primary-400" />
                       <span className="font-medium">自动</span>
-                      <span className="text-gray-500 text-[10px] ml-auto">按任务复杂度切换</span>
+                      <span className="text-gray-500 text-[10px] ml-auto">按任务、成本和能力切换</span>
                     </div>
                   </button>
                   {filteredOptions.length === 0 ? (
@@ -733,19 +823,28 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                           <ProviderLogo
                             provider={group.provider}
                             label={group.providerLabel || getProviderDisplayName(group.provider) || group.provider}
+                            icon={group.providerIcon}
                           />
                           <span>{group.providerLabel || getProviderDisplayName(group.provider) || group.provider}</span>
-                          {group.providerSourceLabel && (
-                            <span
-                              className="ml-auto normal-case tracking-normal text-[10px] font-medium text-zinc-500"
-                              title={`来源: ${group.providerSourceLabel}`}
-                            >
-                              来源 {group.providerSourceLabel}
-                            </span>
-                          )}
+                          {group.providerFavorite && (
+                            <Star className="h-3 w-3 fill-amber-300 text-amber-300" />
+	                          )}
+	                          <div className="ml-auto flex items-center gap-1 normal-case tracking-normal">
+	                            <ProviderHealthBadge summary={group.healthSummary} />
+	                            <ProviderBillingBadge summary={group.billingSummary} />
+	                            <ProviderSourceBadge sourceLabel={group.providerSourceLabel} />
+	                            <ProviderTransportBadge
+	                              protocol={group.providerProtocol}
+	                              transportLabel={group.providerTransportLabel}
+	                              endpoint={group.providerEndpoint}
+	                            />
+	                          </div>
                         </div>
                         {group.options.map(({ option: opt, index }) => {
                           const selected = displayModel === opt.model && displayProvider === opt.provider;
+                          const rowHealthSummary = healthMap[opt.provider]
+                            ? buildProviderHealthSummary(healthMap[opt.provider])
+                            : null;
                           return (
                             <button
                               key={`${opt.provider}/${opt.model}`}
@@ -776,10 +875,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                                 })}
                               </div>
                               <span className="text-gray-500 text-[10px] inline-flex items-center gap-1">
-                                {healthMap[opt.provider] && (
+                                {rowHealthSummary && (
                                   <span
-                                    className={`inline-block w-1.5 h-1.5 rounded-full ${HEALTH_DOT_COLOR[healthMap[opt.provider].status] ?? 'bg-gray-400'}`}
-                                    title={`${healthMap[opt.provider].status} | P50: ${healthMap[opt.provider].latencyP50}ms | Error: ${(healthMap[opt.provider].errorRate * 100).toFixed(0)}%`}
+                                    className={`inline-block w-1.5 h-1.5 rounded-full ${rowHealthSummary.dotClass}`}
+                                    title={`${rowHealthSummary.label} · ${rowHealthSummary.detail}`}
                                   />
                                 )}
                                 {opt.model}
@@ -919,7 +1018,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             onClick={handleClear}
             className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 hover:bg-zinc-700"
           >
-            恢复默认模型
+            恢复主任务模型
           </button>
         </>
       )}
@@ -939,17 +1038,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           hover:text-white transition-colors
           ${isOverridden ? 'text-amber-400' : 'text-zinc-100'}
         `}
-        title={
-          engine.kind !== 'native'
-            ? `Engine: ${ENGINE_SHORT_LABEL[engine.kind]} · Model: ${engine.model ?? selectedEngineCatalog?.defaultModel ?? '默认模型'}`
-            : showModelSettingsPrompt
-              ? '还没有可用模型'
-            : overrideAdaptive
-            ? `自动路由（按任务复杂度切换，当前默认 ${currentModel}）`
-            : isOverridden
-              ? `已覆盖: ${displayProvider}/${overrideModel} (原: ${currentModel}) · Engine: ${ENGINE_SHORT_LABEL[engine.kind]}`
-              : `当前: ${currentModel} · Engine: ${ENGINE_SHORT_LABEL[engine.kind]}`
-        }
+        title={triggerTitle}
       >
         <span className="text-zinc-400">{ENGINE_SHORT_LABEL[engine.kind] ?? 'Neo'}</span>
         <span className="text-zinc-500 mx-1">·</span>

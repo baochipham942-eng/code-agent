@@ -1,0 +1,11 @@
+Claude Code terminal footer should stay out of transcript
+{"type":"system","subtype":"init","session_id":"claude-session-mcp"}
+{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","id":"toolu_read_1","name":"mcp__workspace__read_file","input":{"path":"README.md"}}},"session_id":"claude-session-mcp"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_read_1","name":"mcp__workspace__read_file","input":{"path":"README.md"}}]},"session_id":"claude-session-mcp"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_read_1","content":"README fixture content"}]},"session_id":"claude-session-mcp"}
+{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"ALMA_MODEL_"}},"session_id":"claude-session-mcp"}
+{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"STRATEGY_CLAUDE_"}},"session_id":"claude-session-mcp"}
+{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"SMOKE_OK MCP tool bridge replay preserved tool events."}},"session_id":"claude-session-mcp"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ALMA_MODEL_STRATEGY_CLAUDE_SMOKE_OK MCP tool bridge replay preserved tool events."}]},"session_id":"claude-session-mcp"}
+{"type":"result","subtype":"success","session_id":"claude-session-mcp"}
+tokens used: 777

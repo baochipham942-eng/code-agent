@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AppSettings, ModelConfig, ModelProviderSettings } from '../../../src/shared/contract';
 import type { ProviderInfo } from '../../../src/shared/constants';
+import { PROVIDER_ICON_ASSET_URI_PREFIX } from '../../../src/shared/modelRuntime';
 import {
   buildDefaultModelSettingsUpdate,
   buildManualModelSettings,
@@ -9,11 +10,13 @@ import {
   buildProviderManagementRows,
   buildProviderSettingsUpdate,
   createCustomProviderId,
+  describeProviderIconValidationError,
   describeKeylessReadiness,
   shouldPromoteProviderToDefault,
   getModelLabel,
   hasCustomEndpointOverride,
   isModelMetadataLocked,
+  isProviderIdentityManaged,
   isLegacyLongCatProviderConfig,
   normalizeLongCatModelId,
   orderProviderManagementRows,
@@ -47,6 +50,8 @@ const config = {
   apiKey: 'sk-test',
   temperature: 0.7,
 } satisfies ModelConfig;
+const tinyPngIcon = 'data:image/png;base64,aGVsbG8=';
+const localIconAsset = `${PROVIDER_ICON_ASSET_URI_PREFIX}relay-abcd1234.png`;
 
 describe('ModelSettings management helpers', () => {
   it('resolves provider default model when switching providers', () => {
@@ -113,6 +118,26 @@ describe('ModelSettings management helpers', () => {
       providerConfigs: {},
     });
 
+    expect(orderProviderManagementRows(rows).map((row) => row.id)).toEqual(['openai', 'moonshot']);
+  });
+
+  it('keeps favorite providers ahead of regular rows without displacing the selected provider', () => {
+    const rows = buildProviderManagementRows({
+      providers: [moonshotProvider, openaiProvider],
+      config,
+      providerConfigs: {
+        moonshot: {
+          enabled: true,
+          favorite: true,
+          icon: 'KM',
+        },
+      },
+    });
+
+    expect(rows.find((row) => row.id === 'moonshot')).toMatchObject({
+      favorite: true,
+      icon: 'KM',
+    });
     expect(orderProviderManagementRows(rows).map((row) => row.id)).toEqual(['openai', 'moonshot']);
   });
 
@@ -209,6 +234,146 @@ describe('ModelSettings management helpers', () => {
     expect(update.models).toHaveProperty('providers.openai');
     expect(update.models).not.toHaveProperty('default');
     expect(update.models).not.toHaveProperty('defaultProvider');
+  });
+
+  it('persists provider icon and favorite without changing the global default model', () => {
+    const providerConfig = buildProviderConfigForSave({
+      currentProviderConfig: { enabled: true },
+      baseUrl: 'https://api.openai.com/v1',
+      protocol: 'openai',
+      displayName: 'OpenAI',
+      icon: 'GPT',
+      favorite: true,
+      model: 'gpt-5.5',
+      apiKey: '',
+      needsApiKey: true,
+      hasStoredApiKey: true,
+      updatedAt: 12345,
+    });
+
+    expect(providerConfig).toMatchObject({
+      icon: 'GP',
+      favorite: true,
+      model: 'gpt-5.5',
+    });
+    expect(buildProviderSettingsUpdate('openai', providerConfig).models).not.toHaveProperty('defaultProvider');
+  });
+
+  it('preserves cloud-managed provider identity while allowing local favorite state', () => {
+    const providerConfig = buildProviderConfigForSave({
+      currentProviderConfig: {
+        enabled: true,
+        managedByCloud: true,
+        displayName: 'Team OpenAI Relay',
+        icon: 'TO',
+        favorite: false,
+      },
+      baseUrl: 'https://team-relay.example.com/v1',
+      protocol: 'openai',
+      displayName: 'Personal Alias',
+      icon: 'PA',
+      favorite: true,
+      model: 'gpt-5.5',
+      apiKey: '',
+      needsApiKey: true,
+      hasStoredApiKey: true,
+      updatedAt: 12345,
+    });
+
+    expect(isProviderIdentityManaged(providerConfig)).toBe(true);
+    expect(providerConfig).toMatchObject({
+      managedByCloud: true,
+      displayName: 'Team OpenAI Relay',
+      icon: 'TO',
+      favorite: true,
+      model: 'gpt-5.5',
+    });
+  });
+
+  it('persists provider image icons without truncating the data URL', () => {
+    const providerConfig = buildProviderConfigForSave({
+      currentProviderConfig: { enabled: true },
+      baseUrl: 'https://relay.example.com/v1',
+      protocol: 'openai',
+      displayName: 'Relay',
+      icon: tinyPngIcon,
+      favorite: true,
+      model: 'custom-model',
+      apiKey: '',
+      needsApiKey: true,
+      hasStoredApiKey: true,
+      updatedAt: 12345,
+    });
+
+    expect(providerConfig).toMatchObject({
+      icon: tinyPngIcon,
+      favorite: true,
+      model: 'custom-model',
+    });
+    const [row] = buildProviderManagementRows({
+      providers: [{
+        id: 'custom',
+        name: 'Custom Provider',
+        description: 'OpenAI compatible',
+        models: [{ id: 'custom-model', label: 'Custom Model' }],
+      }],
+      config: { ...config, provider: 'custom', model: 'custom-model' },
+      providerConfigs: { custom: providerConfig },
+    });
+    expect(row).toMatchObject({
+      icon: tinyPngIcon,
+      favorite: true,
+      name: 'Relay',
+    });
+  });
+
+  it('persists provider icon asset references without truncating them as text', () => {
+    const providerConfig = buildProviderConfigForSave({
+      currentProviderConfig: { enabled: true },
+      baseUrl: 'https://relay.example.com/v1',
+      protocol: 'openai',
+      displayName: 'Relay',
+      icon: localIconAsset,
+      favorite: true,
+      model: 'custom-model',
+      apiKey: '',
+      needsApiKey: true,
+      hasStoredApiKey: true,
+      updatedAt: 12345,
+    });
+
+    expect(providerConfig).toMatchObject({
+      icon: localIconAsset,
+      favorite: true,
+      model: 'custom-model',
+    });
+  });
+
+  it('keeps invalid provider image data URLs out of saved settings with a readable warning', () => {
+    const providerConfig = buildProviderConfigForSave({
+      currentProviderConfig: { enabled: true },
+      baseUrl: 'https://relay.example.com/v1',
+      protocol: 'openai',
+      displayName: 'Relay',
+      icon: 'data:text/html;base64,PGgxPk5vPC9oMT4=',
+      favorite: true,
+      model: 'custom-model',
+      apiKey: '',
+      needsApiKey: true,
+      hasStoredApiKey: true,
+      updatedAt: 12345,
+    });
+
+    expect(providerConfig).toMatchObject({
+      favorite: true,
+      model: 'custom-model',
+    });
+    expect(providerConfig.icon).toBeUndefined();
+    expect(describeProviderIconValidationError({
+      valid: false,
+      kind: 'invalid',
+      reason: 'unsupported-data-url',
+    })).toContain('base64 data:image');
   });
 
   it('builds explicit default model updates only for the set-default action', () => {

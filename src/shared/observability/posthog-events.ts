@@ -12,6 +12,7 @@ export const POSTHOG_EVENTS = {
   TOOL_CALL_FAILED: 'tool_call_failed',
   MODEL_SELECTED: 'model_selected',
   MODEL_DECISION: 'model_decision',
+  MODEL_STRATEGY_RECOMMENDATION_FEEDBACK: 'model_strategy_recommendation_feedback',
 } as const;
 
 export type PostHogEvent = (typeof POSTHOG_EVENTS)[keyof typeof POSTHOG_EVENTS];

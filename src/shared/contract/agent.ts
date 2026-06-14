@@ -8,7 +8,7 @@ import type { ToolCall, ToolResult } from './tool';
 import type { PermissionRequest } from './permission';
 import type { SessionTask, TodoItem } from './planning';
 import type { FileDiff } from './diff';
-import type { ModelDecisionEventData } from './modelDecision';
+import type { ModelDecisionEventData, ModelFallbackInfo, ModelFallbackStrategy, ModelFallbackToolPolicy, ModelFallbackTraceStep, ModelProviderIdentity, ModelToolStrategyDiagnostics } from './modelDecision';
 
 // Adaptive Thinking: 思考深度级别
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra_code';
@@ -307,9 +307,11 @@ export type AgentEvent =
       outputTokens?: number;
       requestedModel?: string;
       requestedProvider?: string;
-      fallback?: { from: { provider: string; model?: string }; to: { provider: string; model?: string }; reason: string; category: string };
+      fallback?: ModelFallbackInfo;
       runtimeDiagnostics?: {
         visibleToolNames?: string[];
+        toolStrategy?: ModelToolStrategyDiagnostics;
+        modelDecision?: ModelDecisionEventData;
         artifactRepairGuard?: {
           targetFile?: string;
           attempts?: number;
@@ -331,7 +333,7 @@ export type AgentEvent =
       };
     } }
   // Model capability fallback event (能力补充)
-  | { type: 'model_fallback'; data: { reason: string; from: string; to: string } }
+  | { type: 'model_fallback'; data: { reason: string; from: string; to: string; category?: string; strategy?: ModelFallbackStrategy; tried?: ModelFallbackTraceStep[]; skipped?: ModelFallbackTraceStep[]; toolPolicy?: ModelFallbackToolPolicy; fromIdentity?: ModelProviderIdentity; toIdentity?: ModelProviderIdentity; turnId?: string } }
   // API Key 缺失提示
   | { type: 'api_key_required'; data: { provider: string; capability: string; message: string } }
   // 长时任务进度追踪（P0 新增）

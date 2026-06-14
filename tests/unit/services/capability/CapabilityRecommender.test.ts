@@ -257,6 +257,30 @@ describe('CapabilityRecommender', () => {
       expect(gaps.some((g) => g.type === 'plugin' && g.missing === 'vision')).toBe(true);
     });
 
+    it('web_search 失败 → 推导 search capability，走 scanForCapability', async () => {
+      setExtensionsFromPlugins([]);
+      findCapableModelsMock.mockReturnValue([
+        { provider: 'perplexity', model: 'sonar-pro' },
+      ]);
+      hasConfiguredKeyMock.mockReturnValue(true);
+
+      const { getCapabilityRecommender } = await import(
+        '../../../../src/main/services/capability/CapabilityRecommender'
+      );
+      const gaps = getCapabilityRecommender().recommendForToolError(
+        'web_search',
+        new Error('model does not support web search'),
+      );
+
+      expect(gaps.find((g) => g.type === 'model' && g.missing === 'search')).toEqual({
+        type: 'model',
+        missing: 'search',
+        candidates: [
+          { provider: 'perplexity', model: 'sonar-pro' },
+        ],
+      });
+    });
+
     it('无关键词匹配 → 返回空数组', async () => {
       setExtensionsFromPlugins([]);
       findCapableModelsMock.mockReturnValue([]);
@@ -334,6 +358,31 @@ describe('findCapableModels (real PROVIDER_REGISTRY)', () => {
     if (claudeIdx >= 0 && openaiIdx >= 0) {
       expect(claudeIdx).toBeLessThan(openaiIdx);
     }
+  });
+
+  it('search capability returns search-specialized model candidates', async () => {
+    vi.resetModules();
+    vi.doUnmock('../../../../src/main/model/modelRouter');
+    vi.doMock('../../../../src/main/services/core/configService', () => ({
+      getConfigService: () => ({
+        hasConfiguredKey: () => false,
+        getApiKey: () => undefined,
+      }),
+    }));
+    vi.doMock('../../../../src/main/services/infra/logger', () => ({
+      createLogger: () => ({
+        debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),
+      }),
+    }));
+
+    const { findCapableModels } = await import(
+      '../../../../src/main/model/modelRouter'
+    );
+    const candidates = findCapableModels('search');
+    expect(candidates.length).toBeGreaterThan(0);
+    expect(candidates.some((candidate) =>
+      candidate.provider === 'perplexity' || /sonar|search|perplexity/i.test(candidate.model)
+    )).toBe(true);
   });
 });
 

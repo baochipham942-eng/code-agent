@@ -1,10 +1,13 @@
 /**
  * 小米 MiMo Provider 冒烟测试
  * 用法: npx tsx scripts/acceptance/xiaomi-smoke.ts
+ * 可选: --provider-response-out <path> 输出 tool-calling 响应 artifact，
+ *       供 acceptance:provider-saved-tokens 的 --live-response 手动门控验证。
  */
 import * as path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import * as dotenv from 'dotenv';
+import { writeFile } from 'fs/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,13 +17,22 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 import { XiaomiProvider } from '../../src/main/model/providers/xiaomiProvider';
 import type { ModelMessage } from '../../src/main/model/types';
 import type { ToolDefinition } from '../../src/shared/contract';
+import { buildXiaomiProviderResponseArtifact } from './xiaomi-provider-response-artifact.ts';
 
-async function main() {
+function getStringArg(name: string): string | undefined {
+  const index = process.argv.indexOf(name);
+  if (index === -1) return undefined;
+  const value = process.argv[index + 1];
+  return value && !value.startsWith('--') ? value : undefined;
+}
+
+export async function main() {
   const apiKey = process.env.XIAOMI_API_KEY;
   if (!apiKey) {
     console.error('❌ XIAOMI_API_KEY 未设置');
     process.exit(1);
   }
+  const providerResponseOut = getStringArg('--provider-response-out');
 
   const provider = new XiaomiProvider();
 
@@ -69,6 +81,18 @@ async function main() {
     console.log('   tool args:', JSON.stringify(r2.toolCalls[0].arguments));
   }
   console.log('   usage:', r2.usage);
+  if (providerResponseOut) {
+    const artifactPath = path.resolve(providerResponseOut);
+    await writeFile(
+      artifactPath,
+      JSON.stringify(buildXiaomiProviderResponseArtifact({
+        model: 'mimo-v2.5-pro',
+        response: r2,
+      }), null, 2),
+      'utf8',
+    );
+    console.log('   provider response artifact:', artifactPath);
+  }
 
   // ── 测试 3: 标准模型 mimo-v2.5 ─────────────────────
   console.log('\n=== 测试 3: 标准模型 (mimo-v2.5) ===');
@@ -84,7 +108,9 @@ async function main() {
   console.log('\n🎉 所有冒烟测试通过');
 }
 
-main().catch((err) => {
-  console.error('❌ 冒烟测试失败:', err);
-  process.exit(1);
-});
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+  main().catch((err) => {
+    console.error('❌ 冒烟测试失败:', err);
+    process.exit(1);
+  });
+}

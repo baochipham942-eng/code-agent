@@ -7,6 +7,7 @@ import { resolveModelDecision } from '../../../src/main/model/modelDecision';
 import type { ModelDecisionInput } from '../../../src/main/model/modelDecision';
 import type { ModelConfig } from '../../../src/shared/contract';
 import { DEFAULT_MODELS } from '../../../src/shared/constants';
+import { getProviderHealthMonitor } from '../../../src/main/model/providerHealthMonitor';
 
 // --------------------------------------------------------------------------
 // Mocks
@@ -96,6 +97,9 @@ describe('resolveModelDecision — 主聊天 adaptive 关闭', () => {
 
     expect(decision.reason).toBe('user-selected');
     expect(decision.resolvedModel).toBe('kimi-k2.5');
+    expect(decision.costPolicy).toBe('user-locked');
+    expect(decision.speedPolicy).toBe('normal');
+    expect(decision.strategySummary).toContain('用户选定');
     expect(config.model).toBe('kimi-k2.5');
   });
 
@@ -124,6 +128,11 @@ describe('resolveModelDecision — simple 路由（计费门控）', () => {
     expect(decision.reason).toBe('simple-task-free');
     expect(decision.resolvedModel).toBe(DEFAULT_MODELS.quick);
     expect(decision.requestedModel).toBe('kimi-k2.5');
+    expect(decision.taskClass).toBe('simple');
+    expect(decision.costPolicy).toBe('save-cost');
+    expect(decision.speedPolicy).toBe('fast-path');
+    expect(decision.complexityScore).toEqual(expect.any(Number));
+    expect(decision.strategySummary).toContain('降低成本');
     expect(config.model).toBe(DEFAULT_MODELS.quick);
     expect(config.provider).toBe('zhipu');
   });
@@ -137,6 +146,9 @@ describe('resolveModelDecision — simple 路由（计费门控）', () => {
 
     expect(decision.reason).toBe('billing-gate-skip');
     expect(decision.resolvedModel).toBe('kimi-k2.5');
+    expect(decision.taskClass).toBe('simple');
+    expect(decision.costPolicy).toBe('plan-no-savings');
+    expect(decision.strategySummary).toContain('没有实际节省');
     expect(config.model).toBe('kimi-k2.5');
   });
 
@@ -149,6 +161,8 @@ describe('resolveModelDecision — simple 路由（计费门控）', () => {
 
     expect(decision.reason).toBe('billing-gate-skip');
     expect(decision.resolvedModel).toBe('kimi-k2.5');
+    expect(decision.costPolicy).toBe('unknown-conservative');
+    expect(decision.strategySummary).toContain('计费方式未知');
   });
 
   it('defaults billing mode to payg when not provided (兼容批 2 之前的行为)', () => {
@@ -169,6 +183,10 @@ describe('resolveModelDecision — simple 路由（计费门控）', () => {
     }));
 
     expect(decision.reason).toBe('user-selected');
+    expect(decision.taskClass).toBe('coding');
+    expect(decision.capabilityNeeds).toContain('code');
+    expect(decision.toolPolicy).toBe('runtime-checked');
+    expect(decision.strategySummary).toContain('保证输出质量');
     expect(config.model).toBe('kimi-k2.5');
   });
 
@@ -338,6 +356,15 @@ describe('resolveModelDecision — 决策对象契约', () => {
     expect(decision.resolvedProvider).toBe('zhipu');
     expect(decision.resolvedModel).toBe(DEFAULT_MODELS.quick);
     expect(decision.fallbackFrom).toBeNull();
+    expect(decision.taskClass).toBe('simple');
+    expect(decision.costPolicy).toBe('save-cost');
+    expect(decision.speedPolicy).toBe('fast-path');
+    expect(decision.strategySummary).toBeTruthy();
+    expect(decision.providerHealthSnapshot).toMatchObject({
+      provider: 'zhipu',
+      status: expect.any(String),
+      sampledAt: expect.any(Number),
+    });
   });
 
   it('preserves non-routing config fields (apiKey, temperature, maxTokens)', () => {
@@ -349,5 +376,56 @@ describe('resolveModelDecision — 决策对象契约', () => {
     expect(config.apiKey).toBe('sk-test');
     expect(config.temperature).toBe(0.3);
     expect(config.maxTokens).toBe(8192);
+  });
+
+  it('captures the resolved provider health window when monitor data exists', () => {
+    const provider = 'custom-health-snapshot-test' as ModelConfig['provider'];
+    const monitor = getProviderHealthMonitor();
+    monitor.recordFailure(provider);
+    monitor.recordFailure(provider);
+
+    const { decision } = resolveModelDecision(makeInput({
+      requestedConfig: makeConfig({ provider, model: 'relay-model', adaptive: false }),
+      messages: SIMPLE_MESSAGE,
+    }));
+
+    expect(decision.providerHealthSnapshot).toMatchObject({
+      provider,
+      status: 'unavailable',
+      errorRate: 1,
+      consecutiveErrors: 2,
+      sampledAt: expect.any(Number),
+    });
+    expect(decision.speedPolicy).toBe('provider-degraded');
+  });
+
+  it('carries resolved provider identity for custom relay chains', () => {
+    const { decision } = resolveModelDecision(makeInput({
+      requestedConfig: makeConfig({
+        provider: 'custom-commonstack' as ModelConfig['provider'],
+        model: 'anthropic/claude-opus-4-8',
+        adaptive: false,
+      }),
+      messages: COMPLEX_MESSAGE,
+      billingMode: 'unknown',
+      providerSettings: {
+        'custom-commonstack': {
+          enabled: true,
+          billingMode: 'unknown',
+          displayName: 'CommonStack',
+          protocol: 'openai',
+          baseUrl: 'https://commonstack.example/v1',
+        },
+      },
+    }));
+
+    expect(decision.providerIdentity).toEqual({
+      provider: 'custom-commonstack',
+      displayName: 'CommonStack',
+      sourceLabel: 'CommonStack',
+      protocol: 'openai',
+      transportLabel: 'OpenAI-compatible',
+      endpoint: 'https://commonstack.example/v1',
+    });
   });
 });

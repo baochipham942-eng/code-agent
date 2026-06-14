@@ -4,6 +4,8 @@ import type { AppSettings } from '../../../src/shared/contract';
 
 const mocks = vi.hoisted(() => ({
   currentUser: null as null | { id: string; email: string; isAdmin?: boolean },
+  saveProviderIconAsset: vi.fn(),
+  resolveProviderIconAsset: vi.fn(),
 }));
 
 vi.mock('../../../src/main/services/auth', () => ({
@@ -16,6 +18,11 @@ vi.mock('../../../src/main/platform', () => ({
   app: {
     getVersion: vi.fn(() => '0.0.0-test'),
   },
+}));
+
+vi.mock('../../../src/main/services/providerIconAssets', () => ({
+  saveProviderIconAsset: mocks.saveProviderIconAsset,
+  resolveProviderIconAsset: mocks.resolveProviderIconAsset,
 }));
 
 import { registerSettingsHandlers } from '../../../src/main/ipc/settings.ipc';
@@ -118,6 +125,14 @@ describe('settings.ipc access control', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.currentUser = null;
+    mocks.saveProviderIconAsset.mockResolvedValue({
+      icon: 'provider-icon://local/openai-relay-1234.png',
+      imageBytes: 5,
+    });
+    mocks.resolveProviderIconAsset.mockResolvedValue({
+      icon: 'provider-icon://local/openai-relay-1234.png',
+      dataUrl: 'data:image/png;base64,aGVsbG8=',
+    });
   });
 
   it('sanitizes raw secrets and policies for non-admin settings reads', async () => {
@@ -257,6 +272,29 @@ describe('settings.ipc access control', () => {
           },
         },
       },
+    });
+  });
+
+  it('does not let settings IPC mark local provider icon uploads as team synced assets', async () => {
+    const ipc = makeFakeIpc();
+    registerSettingsHandlers(ipc as never, () => ({ getSettings: () => makeSettings() }) as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'saveProviderIconAsset',
+      payload: {
+        provider: 'OpenAI Relay',
+        dataUrl: 'data:image/png;base64,aGVsbG8=',
+        ownership: 'team',
+        source: 'cloud-control-plane',
+        syncState: 'synced',
+        remoteId: 'remote-team-icon',
+      },
+    });
+
+    expect(response.success).toBe(true);
+    expect(mocks.saveProviderIconAsset).toHaveBeenCalledWith({
+      provider: 'OpenAI Relay',
+      dataUrl: 'data:image/png;base64,aGVsbG8=',
     });
   });
 });

@@ -8,7 +8,8 @@ import type {
   ModelCapability,
   ModelInfo,
   ModelProvider,
-  ModelProviderSettings
+  ModelProviderSettings,
+  ModelFallbackTraceStep
 } from '../../shared/contract';
 import { PROVIDER_REGISTRY } from './providerRegistry';
 import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS } from '../../shared/constants';
@@ -17,7 +18,7 @@ import { getModelMaxOutputTokens } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import { getInferenceCache } from './inferenceCache';
 import { getAdaptiveRouter } from './adaptiveRouter';
-import { resolveModelDecision, resolveProviderBillingMode, type BillingMode } from './modelDecision';
+import { buildModelProviderIdentity, resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from './modelDecision';
 import { getConfigService } from '../services/core/configService';
 import { getProviderHealthMonitor } from './providerHealthMonitor';
 import { combineAbortSignals, createTimedAbortController } from '../agent/shutdownProtocol';
@@ -61,6 +62,37 @@ import {
 const logger = createLogger('ModelRouter');
 import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, MessageContent } from './types';
 export { ContextLengthExceededError } from './types';
+
+function fallbackTargetLabel(provider: string, model?: string): string {
+  return model ? `${provider}/${model}` : provider;
+}
+
+function getFallbackProviderIdentity(provider: string): ModelFallbackTraceStep['providerIdentity'] {
+  try {
+    return buildModelProviderIdentity(provider, getConfigService().getSettings().models?.providers);
+  } catch {
+    return undefined;
+  }
+}
+
+function fallbackTraceStep(
+  provider: string,
+  model: string | undefined,
+  status: ModelFallbackTraceStep['status'],
+  reason: string,
+  category?: string,
+  detail?: string,
+): ModelFallbackTraceStep {
+	return {
+	  provider,
+	  ...(model ? { model } : {}),
+	  ...(getFallbackProviderIdentity(provider) ? { providerIdentity: getFallbackProviderIdentity(provider) } : {}),
+	  status,
+    reason,
+    ...(category ? { category } : {}),
+    ...(detail ? { detail: formatFallbackReason(detail) } : {}),
+  };
+}
 
 // Import provider implementations
 import type { Provider } from './types';
@@ -502,21 +534,24 @@ export class ModelRouter {
     // Adaptive routing for simple tasks — 仅在用户选了"自动"时启用
     // ADR-019 批 2：决策交给单一入口（含计费门控——包月/未知 provider 不做省钱路由），
     // 本路径只负责执行（API key 解析 + 调用 + 失败回退）
-    const adaptiveRouter = getAdaptiveRouter();
-    const complexity = adaptiveRouter.estimateComplexity(messages);
-    let simpleTaskBillingMode: BillingMode | undefined;
-    try {
-      simpleTaskBillingMode = resolveProviderBillingMode(
-        config.provider,
-        getConfigService().getSettings().models?.providers,
-      );
-    } catch { /* settings 不可用 → 决策入口内部缺省 payg */ }
-    const simpleTaskDecision = resolveModelDecision({
-      requestedConfig: config,
-      messages,
-      context: 'main-chat',
-      billingMode: simpleTaskBillingMode,
-    });
+	    const adaptiveRouter = getAdaptiveRouter();
+	    const complexity = adaptiveRouter.estimateComplexity(messages);
+	    let simpleTaskBillingMode: BillingMode | undefined;
+	    let providerSettings: Record<string, ModelDecisionProviderSettings> | undefined;
+	    try {
+	      providerSettings = getConfigService().getSettings().models?.providers;
+	      simpleTaskBillingMode = resolveProviderBillingMode(
+	        config.provider,
+	        providerSettings,
+	      );
+	    } catch { /* settings 不可用 → 决策入口内部缺省 payg */ }
+	    const simpleTaskDecision = resolveModelDecision({
+	      requestedConfig: config,
+	      messages,
+	      context: 'main-chat',
+	      billingMode: simpleTaskBillingMode,
+	      providerSettings,
+	    });
     if (simpleTaskDecision.decision.reason === 'simple-task-free') {
       const adaptedConfig = { ...simpleTaskDecision.config };
       if (adaptedConfig.provider !== config.provider || adaptedConfig.model !== config.model) {
@@ -648,6 +683,17 @@ export class ModelRouter {
       if (!chain || chain.length === 0) {
         throw primaryErr;
       }
+      const fallbackTried: ModelFallbackTraceStep[] = [
+        fallbackTraceStep(
+          effectiveConfig.provider,
+          effectiveConfig.model,
+          'tried',
+          'primary_failed',
+          fallbackCategory,
+          fallbackReason,
+        ),
+      ];
+      const fallbackSkipped: ModelFallbackTraceStep[] = [];
 
       logger.warn(
         `[ModelRouter] Provider ${effectiveConfig.provider} fallback triggered (${fallbackCategory}): ${fallbackReason}`
@@ -662,11 +708,29 @@ export class ModelRouter {
         const fallbackHealth = getProviderHealthMonitor().getHealth(fallback.provider);
         if (fallbackHealth?.status === 'unavailable') {
           logger.warn(`[ModelRouter] Skipping unavailable fallback: ${fallback.provider}`);
+          fallbackSkipped.push(fallbackTraceStep(
+            fallback.provider,
+            fallback.model,
+            'skipped',
+            'provider_unavailable',
+            fallbackCategory,
+            `${fallbackTargetLabel(fallback.provider, fallback.model)} is marked unavailable by provider health monitor`,
+          ));
           continue;
         }
 
         const fallbackApiKey = getConfigService().getApiKey(fallback.provider as ModelProvider);
-        if (!fallbackApiKey) continue;
+        if (!fallbackApiKey) {
+          fallbackSkipped.push(fallbackTraceStep(
+            fallback.provider,
+            fallback.model,
+            'skipped',
+            'missing_api_key',
+            fallbackCategory,
+            `${fallback.provider} API key is not configured`,
+          ));
+          continue;
+        }
 
         const fallbackConfig: ModelConfig = {
           ...effectiveConfig,
@@ -682,11 +746,24 @@ export class ModelRouter {
           );
           const result = await this._callProviderWithArtifactFallback(messages, tools, fallbackConfig, onStream, signal, normalizedOptions);
           this.assertUsableArtifactResponse(messages, result, fallbackConfig);
-          const fallbackMetadata = {
-            from: { provider: effectiveConfig.provider, model: effectiveConfig.model },
-            to: { provider: fallback.provider, model: fallback.model },
-            reason: fallbackReason,
+          const selectedStep = fallbackTraceStep(
+            fallback.provider,
+            fallback.model,
+            'selected',
+            'fallback_selected',
+            fallbackCategory,
+            fallbackReason,
+          );
+	          const fallbackMetadata = {
+	            from: { provider: effectiveConfig.provider, model: effectiveConfig.model },
+	            to: { provider: fallback.provider, model: fallback.model },
+	            ...(getFallbackProviderIdentity(effectiveConfig.provider) ? { fromIdentity: getFallbackProviderIdentity(effectiveConfig.provider) } : {}),
+	            ...(getFallbackProviderIdentity(fallback.provider) ? { toIdentity: getFallbackProviderIdentity(fallback.provider) } : {}),
+	            reason: fallbackReason,
             category: fallbackCategory,
+            strategy: 'adaptive-provider-fallback' as const,
+            tried: [...fallbackTried, selectedStep],
+            ...(fallbackSkipped.length > 0 ? { skipped: [...fallbackSkipped] } : {}),
           };
           result.actualProvider = fallback.provider;
           result.actualModel = fallback.model;
@@ -705,9 +782,12 @@ export class ModelRouter {
             broadcastToRenderer?.('provider:fallback', {
               from: { provider: effectiveConfig.provider, model: effectiveConfig.model },
               to: { provider: fallback.provider, model: fallback.model },
-              reason: fallbackReason,
-              category: fallbackCategory,
-            });
+            reason: fallbackReason,
+            category: fallbackCategory,
+            strategy: fallbackMetadata.strategy,
+            tried: fallbackMetadata.tried,
+            skipped: fallbackMetadata.skipped,
+          });
           } catch { /* push failure must not affect main flow */ }
 
           return result;
@@ -720,13 +800,45 @@ export class ModelRouter {
           if (PERSISTENT_PROVIDER_ERROR_PATTERN.test(fbMsg) || ARTIFACT_UNUSABLE_RESPONSE_PATTERN.test(fbMsg)) {
             this.recordProviderHardFailure(fallback.provider);
           }
+          fallbackTried.push(fallbackTraceStep(
+            fallback.provider,
+            fallback.model,
+            'tried',
+            'fallback_failed',
+            classifyProviderFallbackReason(fbMsg, (fallbackErr as NodeJS.ErrnoException).code),
+            fbMsg,
+          ));
           logger.warn(`[ModelRouter] Fallback ${fallback.provider} failed: ${fbMsg.split('\n')[0]}`);
           continue;
         }
       }
 
       // All fallbacks exhausted
-      throw primaryErr;
+      const exhaustedStep = fallbackTraceStep(
+        effectiveConfig.provider,
+        effectiveConfig.model,
+        'exhausted',
+        'fallback_chain_exhausted',
+        fallbackCategory,
+        'All configured fallback providers failed or were skipped',
+      );
+	      const exhaustedFallback = {
+	        from: { provider: effectiveConfig.provider, model: effectiveConfig.model },
+	        to: { provider: effectiveConfig.provider, model: effectiveConfig.model },
+	        ...(getFallbackProviderIdentity(effectiveConfig.provider) ? { fromIdentity: getFallbackProviderIdentity(effectiveConfig.provider) } : {}),
+	        reason: fallbackReason,
+        category: fallbackCategory,
+        strategy: 'adaptive-provider-fallback' as const,
+        tried: [...fallbackTried, exhaustedStep],
+        ...(fallbackSkipped.length > 0 ? { skipped: [...fallbackSkipped] } : {}),
+      };
+      if (primaryErr instanceof Error) {
+        (primaryErr as Error & { modelFallback?: typeof exhaustedFallback }).modelFallback = exhaustedFallback;
+        throw primaryErr;
+      }
+      const exhaustedError = new Error(String(primaryErr));
+      (exhaustedError as Error & { modelFallback?: typeof exhaustedFallback }).modelFallback = exhaustedFallback;
+      throw exhaustedError;
     }
   }
 

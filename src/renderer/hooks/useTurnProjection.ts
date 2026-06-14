@@ -11,6 +11,107 @@ import { isSkillStatusContent } from '../components/features/chat/MessageBubble/
 import { isGoalNoticeContent } from '../components/features/chat/goalNotice';
 import { isModelFallbackNoticeContent } from '../components/features/chat/fallbackNotice';
 
+type MessageModelDecision = NonNullable<Message['modelDecision']>;
+
+function buildModelDecisionProjectionKey(decision: MessageModelDecision): string {
+  const health = decision.providerHealthSnapshot;
+  const tools = decision.toolStrategy;
+  const savings = tools?.tokenSavings;
+  const measurement = savings?.measurement;
+  const providerIdentity = decision.providerIdentity;
+  const engine = decision.externalEngine;
+  const reliability = engine?.reliability;
+  const failure = engine?.failure;
+
+  return JSON.stringify({
+    route: [
+      decision.reason,
+      decision.requestedProvider,
+      decision.requestedModel,
+      decision.resolvedProvider,
+      decision.resolvedModel,
+      decision.billingMode,
+      decision.fallbackFrom,
+    ],
+    strategy: [
+      decision.strategySummary,
+      decision.taskClass,
+      decision.costPolicy,
+      decision.speedPolicy,
+      decision.toolPolicy,
+      decision.capabilityNeeds,
+    ],
+	    health: health
+	      ? [
+	          health.provider,
+          health.status,
+          health.sampledAt,
+          health.latencyP50,
+          health.latencyP95,
+          health.errorRate,
+          health.consecutiveErrors,
+	        ]
+	      : null,
+	    providerIdentity: providerIdentity
+	      ? [
+	          providerIdentity.provider,
+	          providerIdentity.displayName,
+	          providerIdentity.sourceLabel,
+	          providerIdentity.protocol,
+	          providerIdentity.transportLabel,
+	          providerIdentity.endpoint,
+	        ]
+	      : null,
+	    tools: tools
+      ? [
+          tools.visibleToolCount,
+          tools.mcpToolCount,
+          tools.mcpServerIds,
+          tools.programmaticToolCalling,
+          tools.programmaticToolCount,
+          savings?.status,
+          savings?.savedTokens,
+          measurement?.savingsSource,
+          measurement?.usageSource,
+          measurement?.providerReportedSavings,
+          savings?.providerReport?.source,
+          savings?.providerReport?.savedTokens,
+          savings?.providerUsage?.inputTokens,
+          savings?.providerUsage?.outputTokens,
+          savings?.providerUsage?.totalTokens,
+        ]
+      : null,
+    engine: engine
+      ? [
+          engine.kind,
+          engine.installState,
+          engine.runtimeState,
+          engine.executable,
+          engine.model,
+          engine.version,
+          engine.capabilities,
+          reliability?.cliStatus,
+          reliability?.authState,
+          reliability?.quotaState,
+          reliability?.streamingMode,
+          reliability?.toolSupport,
+          reliability?.transcriptMode,
+          reliability?.partialMessages,
+          reliability?.mcpBridge,
+          failure?.category,
+          failure?.reason,
+          failure?.retryable,
+          failure?.occurredAt,
+          failure?.statusCode,
+          failure?.exitCode,
+          failure?.reliability?.authState,
+          failure?.reliability?.quotaState,
+          failure?.reliability?.cliStatus,
+        ]
+      : null,
+  });
+}
+
 export function projectTurns(
   messages: Message[],
   sessionId: string | null,
@@ -221,9 +322,10 @@ export function projectTurns(
 
       const pushAssistantTextNode = (content: string, index?: number) => {
         // 去重：连续相同的模型决策只在首个节点显示，避免每条消息都刷"用户选择 mimo"
+        // 但策略解释字段变化时必须保留，否则 external engine / billing / fallback 诊断会被压掉。
         let modelDecision = msg.modelDecision;
         if (modelDecision) {
-          const key = `${modelDecision.reason}|${modelDecision.requestedProvider}/${modelDecision.requestedModel}->${modelDecision.resolvedProvider}/${modelDecision.resolvedModel}`;
+          const key = buildModelDecisionProjectionKey(modelDecision);
           if (key === lastModelDecisionKey) {
             modelDecision = undefined;
           } else {

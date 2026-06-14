@@ -3,6 +3,7 @@ import type {
   BrowserSessionMode,
   ConversationExecutionIntent,
   ConversationRoutingMode,
+  TurnCapabilityScopeMode,
 } from '@shared/contract/conversationEnvelope';
 import {
   WORKBENCH_PRESET_CONTRACT_VERSION,
@@ -76,6 +77,10 @@ function toBrowserSessionMode(value: unknown): BrowserSessionMode {
   return value === 'managed' || value === 'desktop' ? value : 'none';
 }
 
+function toTurnCapabilityScopeMode(value: unknown): TurnCapabilityScopeMode | undefined {
+  return value === 'manual' || value === 'auto' ? value : undefined;
+}
+
 function coerceSnapshot(value: unknown): WorkbenchPresetContext['snapshot'] | undefined {
   if (!isRecord(value) || typeof value.summary !== 'string') {
     return undefined;
@@ -119,6 +124,7 @@ function coerceContext(value: unknown): WorkbenchPresetContext | null {
     selectedSkillIds: toStringArray(value.selectedSkillIds),
     selectedConnectorIds: toStringArray(value.selectedConnectorIds),
     selectedMcpServerIds: toStringArray(value.selectedMcpServerIds),
+    turnCapabilityScopeMode: toTurnCapabilityScopeMode(value.turnCapabilityScopeMode),
     executionIntent: isRecord(value.executionIntent)
       ? value.executionIntent as ConversationExecutionIntent
       : undefined,

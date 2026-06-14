@@ -25,6 +25,7 @@ import type { ChannelAccount, ChannelInboxItem, ChannelType, AddChannelAccountRe
 import type { LabProjectType, LabProjectStatus, PythonEnvStatus, TrainingProgressEvent, DownloadProjectRequest, DownloadProjectResponse, UploadDataRequest, UploadDataResponse, StartTrainingRequest, StartTrainingResponse, InferenceRequest, InferenceResult } from '../contract/lab';
 
 import type { MarketplaceInfo, MarketplacePluginEntry, InstalledPlugin, MarketplaceResult, PluginInstallResult } from '../contract/marketplace';
+import type { AlmaRegistryAuditRefreshResult } from '../constants/almaRegistryAudit';
 
 import type { ExtensionInfo, ExtensionValidationResult } from '../contract/extension';
 
@@ -227,6 +228,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED]: (scope?: 'user' | 'project' | 'all') => Promise<MarketplaceResult<InstalledPlugin[]>>;
   [IPC_CHANNELS.MARKETPLACE_ENABLE_PLUGIN]: (pluginId: string) => Promise<MarketplaceResult<void>>;
   [IPC_CHANNELS.MARKETPLACE_DISABLE_PLUGIN]: (pluginId: string) => Promise<MarketplaceResult<void>>;
+  [IPC_CHANNELS.ALMA_REGISTRY_AUDIT_REFRESH]: () => Promise<{ success: boolean; data?: AlmaRegistryAuditRefreshResult; error?: string }>;
 
   // Unified extensions
   [IPC_CHANNELS.EXTENSION_LIST]: () => Promise<ExtensionInfo[]>;

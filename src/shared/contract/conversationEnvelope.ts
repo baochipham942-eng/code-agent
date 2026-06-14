@@ -8,6 +8,7 @@ export type ConversationRoutingMode = 'auto' | 'direct' | 'parallel';
 export type BrowserSessionMode = 'none' | 'managed' | 'desktop';
 export type RuntimeInputMode = 'supplement' | 'redirect';
 export type RuntimeInputDelivery = 'in_flight' | 'queued_next_turn';
+export type TurnCapabilityScopeMode = 'auto' | 'manual';
 
 export interface BrowserSessionIntentPreview {
   url?: string | null;
@@ -85,6 +86,7 @@ export interface ConversationEnvelopeContext {
   selectedSkillIds?: string[];
   selectedConnectorIds?: string[];
   selectedMcpServerIds?: string[];
+  turnCapabilityScopeMode?: TurnCapabilityScopeMode;
   designBrief?: DesignBrief;
   executionIntent?: ConversationExecutionIntent;
   runtimeInput?: RuntimeInputIntent;
@@ -115,6 +117,7 @@ export interface WorkbenchMessageMetadata {
   selectedSkillIds?: string[];
   selectedConnectorIds?: string[];
   selectedMcpServerIds?: string[];
+  turnCapabilityScopeMode?: TurnCapabilityScopeMode;
   designBrief?: DesignBrief;
   executionIntent?: ConversationExecutionIntent;
   runtimeInputMode?: RuntimeInputMode;

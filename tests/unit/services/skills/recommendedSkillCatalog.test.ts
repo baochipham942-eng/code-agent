@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ALMA_BUNDLED_SKILL_MAPPINGS,
   RECOMMENDED_REPOSITORIES,
   RECOMMENDED_SKILLS,
   SKILL_CATEGORIES,
@@ -103,6 +104,48 @@ describe('recommended skill catalog integrity', () => {
       expect(findRecommendedRepository(repo.id)).toEqual(repo);
     }
     expect(findRecommendedRepository('nonexistent')).toBeUndefined();
+  });
+
+  it('maps every Alma bundled skill to a code-agent recommendation outcome', () => {
+    const names = ALMA_BUNDLED_SKILL_MAPPINGS.map((mapping) => mapping.name);
+
+    expect(names).toEqual([
+      'browser',
+      'computer-use',
+      'daily-report',
+      'discord',
+      'file-manager',
+      'image-gen',
+      'memory-management',
+      'music-gen',
+      'music-listener',
+      'notebook',
+      'plan-mode',
+      'programmatic-tools',
+      'reactions',
+      'scheduler',
+      'screenshot',
+      'self-management',
+      'self-reflection',
+      'selfie',
+      'send-file',
+      'skill-hub',
+      'skill-search',
+      'system-info',
+      'tasks',
+      'telegram',
+      'thread-management',
+      'todo',
+      'travel',
+      'twitter-media',
+      'video-reader',
+      'voice',
+      'web-fetch',
+      'web-search',
+      'xiaohongshu-cli',
+    ]);
+    expect(new Set(names).size).toBe(33);
+    expect(ALMA_BUNDLED_SKILL_MAPPINGS.every((mapping) => mapping.codeAgentSurface && mapping.rationale)).toBe(true);
   });
 });
 

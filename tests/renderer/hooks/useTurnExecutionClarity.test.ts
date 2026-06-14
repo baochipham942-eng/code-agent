@@ -161,6 +161,7 @@ describe('buildTurnExecutionClarityProjection', () => {
     });
     expect(enriched.turns[0]?.nodes[2]?.turnTimeline?.kind).toBe('capability_scope');
     expect(enriched.turns[0]?.nodes[2]?.turnTimeline?.capabilityScope).toMatchObject({
+      mode: 'manual',
       selected: [
         { kind: 'skill', id: 'draft-skill', label: 'draft-skill' },
         { kind: 'connector', id: 'mail', label: 'Mail' },

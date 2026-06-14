@@ -55,6 +55,7 @@ describe('workbenchTurnContext', () => {
       selectedSkillIds: ['review-skill', 'ship-skill'],
       selectedConnectorIds: ['mail'],
       selectedMcpServerIds: ['github'],
+      turnCapabilityScopeMode: 'manual',
     });
 
     expect(blocks).toHaveLength(1);
@@ -62,6 +63,7 @@ describe('workbenchTurnContext', () => {
     expect(blocks[0]).toContain('ship-skill');
     expect(blocks[0]).toContain('mail');
     expect(blocks[0]).toContain('github');
+    expect(blocks[0]).toContain('本轮能力范围由用户手动选择');
     expect(blocks[0]).toContain('当前这一条消息');
   });
 

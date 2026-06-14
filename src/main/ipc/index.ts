@@ -72,6 +72,7 @@ import { registerAgentEngineHandlers } from './agentEngine.ipc';
 import { registerCapabilityHandlers } from './capability.ipc';
 import { registerHandoffHandlers } from './handoff.ipc';
 import { registerPiiHandlers } from './pii.ipc';
+import { registerAlmaRegistryHandlers } from './almaRegistry.ipc';
 
 /**
  * IPC handler 注册所需的依赖
@@ -251,6 +252,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Provider handlers (连接测试)
   registerProviderHandlers(ipcMain);
+
+  // Alma registry audit refresh
+  registerAlmaRegistryHandlers(ipcMain);
 
   // Live Preview handlers (click-to-source bridge 配合)
   registerLivePreviewHandlers(ipcMain);

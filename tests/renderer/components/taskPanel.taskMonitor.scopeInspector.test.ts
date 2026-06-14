@@ -99,6 +99,7 @@ const currentTurnScopeState = {
     },
   ],
   scope: {
+    mode: 'manual',
     selected: [
       {
         kind: 'skill',

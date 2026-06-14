@@ -22,3 +22,7 @@ export * from './memory';
 export * from './scriptRuntime';
 export * from './skillCatalog';
 export * from './mcpCatalog';
+export * from './almaPluginRegistry';
+export * from './almaMcpRegistry';
+export * from './almaRecommendationPolicy';
+export * from './almaRegistryAudit';

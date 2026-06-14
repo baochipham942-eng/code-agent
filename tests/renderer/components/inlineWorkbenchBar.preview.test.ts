@@ -10,6 +10,7 @@ const composerState = {
   selectedSkillIds: [] as string[],
   selectedConnectorIds: [] as string[],
   selectedMcpServerIds: [] as string[],
+  turnCapabilityScopeMode: 'auto' as 'auto' | 'manual',
   setWorkingDirectory: vi.fn(),
   setRoutingMode: vi.fn(),
   setTargetAgentIds: vi.fn(),
@@ -17,6 +18,7 @@ const composerState = {
   setSelectedSkillIds: vi.fn(),
   setSelectedConnectorIds: vi.fn(),
   setSelectedMcpServerIds: vi.fn(),
+  setTurnCapabilityScopeMode: vi.fn(),
 };
 
 const appState = {
@@ -148,6 +150,8 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
         source: 'library',
         libraryId: 'core',
         available: true,
+        turnReadiness: 'ready',
+        autoAllowed: true,
         blocked: false,
         visibleInWorkbench: true,
         health: 'healthy',
@@ -169,6 +173,8 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
         source: 'community',
         libraryId: 'community',
         available: false,
+        turnReadiness: 'needs_config',
+        autoAllowed: false,
         blocked: composerState.selectedSkillIds.includes('draft-skill'),
         visibleInWorkbench: composerState.selectedSkillIds.includes('draft-skill'),
         health: 'inactive',
@@ -196,8 +202,11 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
         selected: composerState.selectedConnectorIds.includes('mail'),
         connected: true,
         detail: 'ready',
+        readiness: 'ready',
         capabilities: ['list_messages'],
         available: true,
+        turnReadiness: 'ready',
+        autoAllowed: true,
         blocked: false,
         visibleInWorkbench: true,
         health: 'healthy',
@@ -218,6 +227,9 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
           detail: 'offline',
           capabilities: ['list_events'],
           available: false,
+          readiness: 'unchecked' as const,
+          turnReadiness: 'needs_config' as const,
+          autoAllowed: false,
           blocked: true,
           visibleInWorkbench: true,
           health: 'inactive',
@@ -248,6 +260,8 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
         toolCount: 2,
         resourceCount: 1,
         available: true,
+        turnReadiness: 'ready',
+        autoAllowed: true,
         blocked: false,
         visibleInWorkbench: true,
         health: 'healthy',
@@ -271,6 +285,8 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityRegistry', () => ({
           resourceCount: 0,
           error: 'handshake failed',
           available: false,
+          turnReadiness: 'offline' as const,
+          autoAllowed: false,
           blocked: true,
           visibleInWorkbench: true,
           health: 'error' as const,
@@ -325,6 +341,7 @@ describe('InlineWorkbenchBar mention preview', () => {
     composerState.selectedSkillIds = [];
     composerState.selectedConnectorIds = [];
     composerState.selectedMcpServerIds = [];
+    composerState.turnCapabilityScopeMode = 'auto';
     quickActionState.runningActionKey = null;
     quickActionState.actionErrors = {};
     quickActionState.completedActions = {};
@@ -359,6 +376,8 @@ describe('InlineWorkbenchBar mention preview', () => {
     expect(html).toContain('Skills 1/2');
     expect(html).toContain('Connectors 0/1');
     expect(html).toContain('MCP 0/1');
+    expect(html).toContain('Auto');
+    expect(html).toContain('Manual');
   });
 
   // Connectors 选择器已从 InlineWorkbenchBar 移除（#2），测试删除。

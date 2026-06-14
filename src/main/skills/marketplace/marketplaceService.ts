@@ -17,6 +17,7 @@ import type {
   KnownMarketplacesConfig,
   KnownMarketplaceEntry,
   PluginEntry,
+  PluginEntryKind,
 } from './types';
 import {
   MarketplaceManifestSchema,
@@ -76,6 +77,75 @@ async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
 // Marketplace Manifest Reading
 // ----------------------------------------------------------------------------
 
+function normalizePluginEntryKind(value: unknown): PluginEntryKind | null {
+  switch (typeof value === 'string' ? value.trim().toLowerCase() : '') {
+    case 'skill':
+      return 'skill';
+    case 'command':
+    case 'commands':
+      return 'command';
+    case 'ui':
+      return 'ui';
+    case 'theme':
+      return 'theme';
+    case 'provider':
+      return 'provider';
+    case 'tool':
+      return 'tool';
+    case 'transform':
+      return 'transform';
+    default:
+      return null;
+  }
+}
+
+function normalizePluginEntryTypes(plugin: PluginEntry): PluginEntryKind[] {
+  const rawTypes = [
+    ...(plugin.types ?? []),
+    ...(Array.isArray(plugin.type) ? plugin.type : plugin.type ? [plugin.type] : []),
+  ];
+  const types = rawTypes
+    .map(normalizePluginEntryKind)
+    .filter((value): value is PluginEntryKind => Boolean(value));
+
+  if ((plugin.skills ?? []).length > 0) {
+    types.push('skill');
+  }
+  if ((plugin.commands ?? []).length > 0) {
+    types.push('command');
+  }
+  return Array.from(new Set(types));
+}
+
+function normalizePluginAuthor(author: PluginEntry['author']): string | undefined {
+  if (typeof author === 'string') {
+    return author;
+  }
+  return author?.name;
+}
+
+function normalizePluginEntry(plugin: PluginEntry): PluginEntry {
+  const types = normalizePluginEntryTypes(plugin);
+  return {
+    ...plugin,
+    name: plugin.id || plugin.name,
+    source: plugin.source || plugin.path || './',
+    types,
+    author: normalizePluginAuthor(plugin.author),
+  };
+}
+
+function normalizeMarketplaceManifest(manifest: MarketplaceManifest, rootDir: string): MarketplaceManifest {
+  const isAlmaPluginRegistry = manifest.plugins.some((plugin) =>
+    typeof plugin.repository === 'string' && plugin.repository.includes('yetone/alma-plugins')
+  );
+  return {
+    ...manifest,
+    name: manifest.name || (isAlmaPluginRegistry ? 'alma-plugins' : path.basename(rootDir) || 'marketplace'),
+    plugins: manifest.plugins.map(normalizePluginEntry),
+  };
+}
+
 async function readMarketplaceManifest(rootDir: string): Promise<MarketplaceManifest> {
   const primaryPath = path.join(rootDir, '.code-agent-plugin', 'marketplace.json');
   const alternatePath = path.join(rootDir, '.claude-plugin', 'marketplace.json');
@@ -105,7 +175,7 @@ async function readMarketplaceManifest(rootDir: string): Promise<MarketplaceMani
     );
   }
 
-  return parsed.data;
+  return normalizeMarketplaceManifest(parsed.data, rootDir);
 }
 
 // ----------------------------------------------------------------------------
@@ -375,7 +445,7 @@ export async function addMarketplace(sourceInput: string): Promise<{ name: strin
   try {
     await cacheMarketplaceToDir(validated.data, tempDir);
     const manifest = await readMarketplaceManifest(tempDir);
-    const marketplaceName = manifest.name;
+    const marketplaceName = manifest.name || 'marketplace';
 
     if (config[marketplaceName]) {
       throw new Error(
@@ -456,10 +526,11 @@ export async function refreshMarketplace(name: string): Promise<void> {
   try {
     await cacheMarketplaceToDir(entry.source, tempDir);
     const manifest = await readMarketplaceManifest(tempDir);
+    const manifestName = manifest.name || trimmed;
 
-    if (manifest.name !== trimmed) {
+    if (manifestName !== trimmed) {
       throw new Error(
-        `Marketplace name mismatch: expected ${trimmed}, got ${manifest.name}`
+        `Marketplace name mismatch: expected ${trimmed}, got ${manifestName}`
       );
     }
 
@@ -542,6 +613,9 @@ export async function searchPlugins(
     ({ plugin }) =>
       plugin.name.toLowerCase().includes(lowerQuery) ||
       plugin.description?.toLowerCase().includes(lowerQuery) ||
-      plugin.tags?.some(tag => tag.toLowerCase().includes(lowerQuery))
+      plugin.types?.some(type => type.toLowerCase().includes(lowerQuery)) ||
+      plugin.tags?.some(tag => tag.toLowerCase().includes(lowerQuery)) ||
+      plugin.skills?.some(skill => skill.toLowerCase().includes(lowerQuery)) ||
+      plugin.commands?.some(command => command.toLowerCase().includes(lowerQuery))
   );
 }

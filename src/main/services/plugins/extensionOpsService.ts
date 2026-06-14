@@ -65,15 +65,15 @@ class ExtensionOpsService {
       );
       const installed = await listInstalledPlugins();
       for (const [spec, record] of Object.entries(installed)) {
-        // A marketplace plugin can provide skills AND commands.
-        // Represent the whole install as type 'skill' (its primary purpose).
+        // A marketplace plugin can provide skills, commands, UI slots, themes, or providers.
+        // Keep the primary type visible so /plugins does not hide provider/theme/UI installs.
         if (seen.has(spec)) continue;
 
         const info: ExtensionInfo = {
           id: spec,
           name: record.plugin,
-          type: 'skill',
-          status: record.isEnabled ? 'active' : 'disabled',
+          type: getMarketplaceExtensionType(record.types),
+          status: getMarketplaceExtensionStatus(record),
           source: 'marketplace',
           marketplace: record.marketplace,
         };
@@ -307,6 +307,34 @@ function mapPluginState(
     default:
       return 'inactive';
   }
+}
+
+function getMarketplaceExtensionType(types?: readonly string[]): ExtensionType {
+  if (types?.includes('provider')) return 'provider';
+  if (types?.includes('theme')) return 'theme';
+  if (types?.includes('ui')) return 'ui';
+  if (types?.includes('command')) return 'command';
+  return 'skill';
+}
+
+export function getMarketplaceExtensionStatus(record: {
+  isEnabled: boolean;
+  types?: readonly string[];
+  skills?: readonly string[];
+  commands?: readonly string[];
+}): ExtensionStatus {
+  if (!record.isEnabled) return 'disabled';
+  if ((record.skills?.length ?? 0) > 0 || (record.commands?.length ?? 0) > 0) {
+    return 'active';
+  }
+  if (
+    record.types?.includes('provider')
+    || record.types?.includes('theme')
+    || record.types?.includes('ui')
+  ) {
+    return 'inactive';
+  }
+  return 'inactive';
 }
 
 // ----------------------------------------------------------------------------

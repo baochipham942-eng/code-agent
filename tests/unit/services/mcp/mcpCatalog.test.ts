@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ALMA_MCP_FEATURED_FALLBACK,
+  normalizeAlmaMcpFeaturedServers,
+} from '../../../../src/shared/constants/almaMcpRegistry';
+import {
   MCP_CATEGORIES,
   RECOMMENDED_MCP_SERVERS,
   findRecommendedMcpServer,
+  getAlmaFeaturedMcpServers,
   groupRecommendedMcpServersByCategory,
+  mergeMcpCatalogWithBuiltinOfficialFeatured,
 } from '../../../../src/shared/constants/mcpCatalog';
 import { getBuiltinConfig } from '../../../../src/main/services/cloud/builtinConfig';
 import { getEntryAction } from '../../../../src/renderer/components/features/settings/tabs/McpDiscoverTab';
@@ -82,6 +88,92 @@ describe('recommended MCP catalog integrity', () => {
       expect(findRecommendedMcpServer(server.id)).toEqual(server);
     }
     expect(findRecommendedMcpServer('nonexistent')).toBeUndefined();
+  });
+
+  it('marks Alma registry featured MCP servers without treating them as defaults', () => {
+    const featuredIds = getAlmaFeaturedMcpServers().map((server) => server.id);
+
+    expect(featuredIds).toEqual([
+      'fetch',
+      'firecrawl',
+      'playwright',
+      'github',
+      'context7',
+      'task_master',
+    ]);
+    expect(getAlmaFeaturedMcpServers().every((server) => server.recommendationTier !== undefined)).toBe(true);
+  });
+
+  it('normalizes raw Alma MCP registry featured servers and falls back to the reviewed snapshot', () => {
+    expect(normalizeAlmaMcpFeaturedServers().map((server) => server.id)).toEqual(
+      ALMA_MCP_FEATURED_FALLBACK.map((server) => server.id),
+    );
+
+    expect(normalizeAlmaMcpFeaturedServers({
+      version: '1.0.0',
+      servers: [
+        {
+          id: 'context7',
+          name: 'Context7',
+          category: 'development',
+          featured: true,
+          verified: true,
+          installations: [{ type: 'npx' }, { type: 'remote' }],
+        },
+        {
+          id: 'not-featured',
+          name: 'Not Featured',
+          featured: false,
+        },
+        {
+          id: 'github',
+          name: 'GitHub',
+          featured: true,
+          requiredCredentials: ['GITHUB_TOKEN'],
+        },
+      ],
+    })).toEqual([
+      {
+        id: 'context7',
+        name: 'Context7',
+        category: 'development',
+        verified: true,
+        installTypes: ['npx', 'remote'],
+        requiredCredentials: [],
+      },
+      {
+        id: 'github',
+        name: 'GitHub',
+        installTypes: [],
+        requiredCredentials: ['GITHUB_TOKEN'],
+      },
+    ]);
+  });
+
+  it('keeps builtin featured servers when a cloud catalog omits them', () => {
+    const merged = mergeMcpCatalogWithBuiltinOfficialFeatured({
+      categories: MCP_CATEGORIES,
+      servers: [
+        {
+          id: 'cloud-only',
+          name: 'Cloud Only',
+          description: 'cloud',
+          category: 'dev-tools',
+          builtin: false,
+          connection: { type: 'http', url: 'https://example.com/mcp' },
+        },
+      ],
+    });
+
+    expect(merged.servers.map((server) => server.id)).toContain('cloud-only');
+    expect(getAlmaFeaturedMcpServers(merged).map((server) => server.id)).toEqual([
+      'fetch',
+      'firecrawl',
+      'playwright',
+      'github',
+      'context7',
+      'task_master',
+    ]);
   });
 });
 

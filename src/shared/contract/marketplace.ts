@@ -12,6 +12,15 @@ export type MarketplaceSource =
 
 export type PluginScope = 'user' | 'project';
 
+export type MarketplacePluginKind =
+  | 'skill'
+  | 'command'
+  | 'ui'
+  | 'theme'
+  | 'provider'
+  | 'tool'
+  | 'transform';
+
 export interface MarketplaceInfo {
   name: string;
   description?: string;
@@ -27,7 +36,9 @@ export interface MarketplacePluginEntry {
   description?: string;
   marketplace: string;
   source: string;
+  types?: MarketplacePluginKind[];
   skills?: string[];
+  commands?: string[];
   tags?: string[];
   version?: string;
   author?: string;
@@ -43,7 +54,9 @@ export interface InstalledPlugin {
   projectPath?: string;
   installedAt: string;
   pluginRoot?: string;
+  types?: MarketplacePluginKind[];
   skills: string[];
+  commands?: string[];
 }
 
 export interface MarketplaceResult<T> {
@@ -56,5 +69,7 @@ export interface PluginInstallResult {
   success: boolean;
   plugin?: InstalledPlugin;
   installedSkills?: string[];
+  installedCommands?: string[];
+  installedPluginRoot?: string;
   error?: string;
 }

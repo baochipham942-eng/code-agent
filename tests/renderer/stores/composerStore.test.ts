@@ -12,6 +12,7 @@ describe('composerStore', () => {
       selectedSkillIds: [],
       selectedConnectorIds: [],
       selectedMcpServerIds: [],
+      turnCapabilityScopeMode: 'auto',
       hydratedSessionId: null,
     });
     useAppStore.setState({ previewTabs: [], activePreviewTabId: null });
@@ -72,6 +73,7 @@ describe('composerStore', () => {
       selectedSkillIds: ['review-skill'],
       selectedConnectorIds: ['mail'],
       selectedMcpServerIds: ['github'],
+      turnCapabilityScopeMode: 'manual',
     });
   });
 
@@ -119,6 +121,7 @@ describe('composerStore', () => {
       routingMode: 'direct',
       targetAgentIds: ['agent-1'],
       browserSessionMode: 'managed',
+      turnCapabilityScopeMode: 'manual',
       selectedSkillIds: ['review-skill'],
       selectedConnectorIds: ['mail'],
       selectedMcpServerIds: ['github'],
@@ -150,6 +153,7 @@ describe('composerStore', () => {
       routingMode: 'auto',
       targetAgentIds: [],
       browserSessionMode: 'none',
+      turnCapabilityScopeMode: 'manual',
       selectedSkillIds: ['snapshot-skill'],
       selectedConnectorIds: ['mail'],
       selectedMcpServerIds: ['github'],
@@ -188,6 +192,7 @@ describe('composerStore', () => {
       routingMode: 'direct',
       targetAgentIds: ['agent-1'],
       browserSessionMode: 'desktop',
+      turnCapabilityScopeMode: 'manual',
       selectedSkillIds: ['review-skill'],
       selectedConnectorIds: ['mail'],
       selectedMcpServerIds: ['github'],
@@ -210,7 +215,34 @@ describe('composerStore', () => {
     expect(useComposerStore.getState()).toMatchObject({
       workingDirectory: '/tmp/current',
       routingMode: 'auto',
+      turnCapabilityScopeMode: 'manual',
       selectedSkillIds: ['review-skill'],
+    });
+  });
+
+  it('tracks manual capability scope mode and clears selections when returning to auto', () => {
+    useComposerStore.getState().setSelectedSkillIds(['review-skill']);
+    useComposerStore.getState().setSelectedConnectorIds(['mail']);
+    useComposerStore.getState().setSelectedMcpServerIds(['github']);
+    useComposerStore.getState().setTurnCapabilityScopeMode('manual');
+
+    expect(useComposerStore.getState()).toMatchObject({
+      turnCapabilityScopeMode: 'manual',
+      selectedSkillIds: ['review-skill'],
+      selectedConnectorIds: ['mail'],
+      selectedMcpServerIds: ['github'],
+    });
+
+    useComposerStore.getState().setTurnCapabilityScopeMode('auto');
+
+    expect(useComposerStore.getState()).toMatchObject({
+      turnCapabilityScopeMode: 'auto',
+      selectedSkillIds: [],
+      selectedConnectorIds: [],
+      selectedMcpServerIds: [],
+    });
+    expect(useComposerStore.getState().buildContext()).toMatchObject({
+      turnCapabilityScopeMode: 'auto',
     });
   });
 

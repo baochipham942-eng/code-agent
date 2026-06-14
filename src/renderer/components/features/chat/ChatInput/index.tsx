@@ -42,20 +42,18 @@ import { ComboSkillCard } from './ComboSkillCard';
 import { SkillDraftNotifications } from './SkillDraftCard';
 import { RoleDraftNotifications } from './RoleDraftCard';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
-import { CapabilitySuggestionStrip } from './CapabilitySuggestionStrip';
 import {
   buildCapabilitySemanticSuggestions,
+  CapabilitySuggestionStrip,
   type SkillRecommendationView,
 } from './CapabilitySuggestionStrip';
 import { useSkillRecommendations } from './useSkillRecommendations';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
-import { useWorkbenchCapabilities } from '../../../../hooks/useWorkbenchCapabilities';
-import {
-  buildWorkbenchCapabilityRegistryFromCapabilities,
-  type WorkbenchCapabilityRegistryItem,
-} from '../../../../utils/workbenchCapabilityRegistry';
 import { AppshotChip } from './AppshotChip';
+import { InlineWorkbenchBar } from '../InlineWorkbenchBar';
+import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
+import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import { buildAppshotXml, buildAppshotAttachment } from '@shared/contract/appshot';
 import {
   ModelSwitcher,
@@ -215,11 +213,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     mountRecommendedSkill,
     installRecommendedSkill,
   } = useSkillRecommendations(currentSessionId, value);
-  const browserSession = useWorkbenchBrowserSession();
-  const buildContext = useComposerStore((state) => state.buildContext);
+  const capabilityRegistry = useWorkbenchCapabilityRegistry();
   const setSelectedSkillIds = useComposerStore((state) => state.setSelectedSkillIds);
   const setSelectedConnectorIds = useComposerStore((state) => state.setSelectedConnectorIds);
   const setSelectedMcpServerIds = useComposerStore((state) => state.setSelectedMcpServerIds);
+  const setTurnCapabilityScopeMode = useComposerStore((state) => state.setTurnCapabilityScopeMode);
+  const openCapabilitySettingsTarget = useAppStore((state) => state.openCapabilitySettingsTarget);
+  const capabilitySuggestions = useMemo(
+    () => buildCapabilitySemanticSuggestions(value, capabilityRegistry.items),
+    [capabilityRegistry.items, value],
+  );
+  const browserSession = useWorkbenchBrowserSession();
+  const buildContext = useComposerStore((state) => state.buildContext);
   const mountSkill = useSkillStore((state) => state.mountSkill);
   const setSkillCurrentSession = useSkillStore((state) => state.setCurrentSession);
   const routingMode = useComposerStore((state) => state.routingMode);
@@ -230,15 +235,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const createSession = useSessionStore((state) => state.createSession);
   const hasMessages = useSessionStore((state) => state.messages.length > 0);
   const swarmAgents = useSwarmStore((state) => state.agents);
-  const workbenchCapabilities = useWorkbenchCapabilities();
-  const capabilityRegistry = useMemo(
-    () => buildWorkbenchCapabilityRegistryFromCapabilities(workbenchCapabilities),
-    [workbenchCapabilities],
-  );
-  const capabilitySuggestions = useMemo(
-    () => buildCapabilitySemanticSuggestions(value, capabilityRegistry.items),
-    [capabilityRegistry.items, value],
-  );
   const agentMentionAutocomplete = useMemo(
     () => getLeadingAgentMentionAutocomplete(value, swarmAgents),
     [swarmAgents, value],
@@ -590,6 +586,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   ]);
 
   const selectWorkbenchCapabilityForCurrentTurn = useCallback((capability: WorkbenchCapabilityRegistryItem) => {
+    setTurnCapabilityScopeMode('manual');
+
     if (capability.kind === 'skill') {
       void selectSkillForCurrentTurn({
         skillName: capability.id,
@@ -601,7 +599,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
     if (capability.kind === 'connector') {
       if (!capability.connected) {
-        toast.warning(`请先连接 ${capability.label}`);
+        toast.warning(capability.blockedReason?.detail || `请先连接 ${capability.label}`);
+        openCapabilitySettingsTarget({ kind: capability.kind, id: capability.id });
         focusComposer();
         return;
       }
@@ -613,7 +612,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
 
     if (capability.status !== 'connected' && capability.status !== 'lazy') {
-      toast.warning(`请先连接 MCP：${capability.label}`);
+      toast.warning(capability.blockedReason?.detail || `请先连接 MCP：${capability.label}`);
+      openCapabilitySettingsTarget({ kind: capability.kind, id: capability.id });
       focusComposer();
       return;
     }
@@ -623,9 +623,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     focusComposer();
   }, [
     focusComposer,
+    openCapabilitySettingsTarget,
     selectSkillForCurrentTurn,
     setSelectedConnectorIds,
     setSelectedMcpServerIds,
+    setTurnCapabilityScopeMode,
   ]);
 
   const handleSlashCommandSelect = useCallback((cmd: SlashCommand) => {
@@ -1300,7 +1302,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <SuggestionBar suggestions={suggestions} onSelect={handleSuggestionSelect} />
         )}
 
-        {/* Skill 推荐条 - 输入命中技能关键词时显示（挂载已安装 / 安装未安装） */}
+        <InlineWorkbenchBar />
+
+        {/* Skill / MCP / Connector 推荐条 - 输入命中关键词时显示 */}
         <CapabilitySuggestionStrip
           skillRecommendations={showSlashPopover ? [] : skillRecommendations}
           capabilitySuggestions={showSlashPopover ? [] : capabilitySuggestions}

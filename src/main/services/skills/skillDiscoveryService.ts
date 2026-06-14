@@ -147,7 +147,10 @@ class SkillDiscoveryService {
     // 3. 加载远程库 Skills
     await this.loadFromLibraries();
 
-    // 4. 加载项目级 Skills（最高优先级）
+    // 4. 加载已启用 marketplace 插件提供的 Skills
+    await this.loadFromEnabledMarketplacePlugins();
+
+    // 5. 加载项目级 Skills（最高优先级）
     if (skillsDirs.project) {
       if (this.includeClaudeLegacySkills) {
         await this.scanDirectory(skillsDirs.project.legacy, 'project');
@@ -292,28 +295,31 @@ class SkillDiscoveryService {
 
         const skillDir = path.join(dir, entry.name);
 
-        // 检查是否包含 SKILL.md
-        if (!(await hasSkillMd(skillDir))) {
-          continue;
-        }
-
-        try {
-          const skill = await this.readSkillMetadata(skillDir, source);
-          this.skills.set(skill.name, skill);
-          logger.debug('Loaded skill', {
-            name: skill.name,
-            source,
-            path: skillDir,
-          });
-        } catch (error) {
-          logger.warn('Failed to parse skill', {
-            dir: skillDir,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
-        }
+        await this.loadSkillDirectory(skillDir, source);
       }
     } catch (error) {
       logger.error('Failed to scan skills directory', { dir, error });
+    }
+  }
+
+  private async loadSkillDirectory(skillDir: string, source: SkillSource): Promise<void> {
+    if (!(await hasSkillMd(skillDir))) {
+      return;
+    }
+
+    try {
+      const skill = await this.readSkillMetadata(skillDir, source);
+      this.skills.set(skill.name, skill);
+      logger.debug('Loaded skill', {
+        name: skill.name,
+        source,
+        path: skillDir,
+      });
+    } catch (error) {
+      logger.warn('Failed to parse skill', {
+        dir: skillDir,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
     }
   }
 
@@ -367,6 +373,21 @@ class SkillDiscoveryService {
       });
     } catch (error) {
       logger.error('Failed to load from libraries', { error });
+    }
+  }
+
+  private async loadFromEnabledMarketplacePlugins(): Promise<void> {
+    try {
+      const { getEnabledSkillDirs } = await import('../../skills/marketplace/installService');
+      const skillDirs = await getEnabledSkillDirs();
+      for (const skillDir of skillDirs) {
+        await this.loadSkillDirectory(skillDir, 'plugin');
+      }
+      logger.debug('Loaded skills from enabled marketplace plugins', {
+        count: skillDirs.length,
+      });
+    } catch (error) {
+      logger.warn('Failed to load enabled marketplace plugin skills', { error });
     }
   }
 

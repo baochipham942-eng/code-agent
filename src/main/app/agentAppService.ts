@@ -151,6 +151,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (context.selectedMcpServerIds?.length) {
       metadata.selectedMcpServerIds = [...context.selectedMcpServerIds];
     }
+    if (context.turnCapabilityScopeMode) {
+      metadata.turnCapabilityScopeMode = context.turnCapabilityScopeMode;
+    }
     if (context.designBrief) {
       metadata.designBrief = context.designBrief;
     }

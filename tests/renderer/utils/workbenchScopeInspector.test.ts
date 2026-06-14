@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { buildWorkbenchCapabilityScope } from '../../../src/renderer/utils/workbenchScopeInspector';
+import {
+  buildDefaultWorkbenchCapabilityScope,
+  buildWorkbenchCapabilityScope,
+} from '../../../src/renderer/utils/workbenchScopeInspector';
 
 describe('buildWorkbenchCapabilityScope', () => {
   it('projects selected, allowed, blocked, and invoked capability layers from one turn', () => {
     const scope = buildWorkbenchCapabilityScope({
       snapshot: {
+        turnCapabilityScopeMode: 'manual',
         selectedSkillIds: ['review-skill', 'draft-skill'],
         selectedConnectorIds: ['mail'],
         selectedMcpServerIds: ['github'],
@@ -84,6 +88,7 @@ describe('buildWorkbenchCapabilityScope', () => {
     });
 
     expect(scope).toBeDefined();
+    expect(scope?.mode).toBe('manual');
     expect(scope?.selected.map((item) => `${item.kind}:${item.id}`)).toEqual([
       'skill:review-skill',
       'skill:draft-skill',
@@ -93,6 +98,12 @@ describe('buildWorkbenchCapabilityScope', () => {
     expect(scope?.allowed.map((item) => `${item.kind}:${item.id}`)).toEqual([
       'skill:review-skill',
       'connector:mail',
+    ]);
+    expect(scope?.selected.map((item) => `${item.id}:${item.readiness}`)).toEqual([
+      'review-skill:ready',
+      'draft-skill:needs_config',
+      'mail:ready',
+      'github:needs_config',
     ]);
     expect(scope?.blocked.map((item) => `${item.kind}:${item.id}:${item.code}`)).toEqual([
       'skill:draft-skill:skill_not_mounted',
@@ -114,5 +125,15 @@ describe('buildWorkbenchCapabilityScope', () => {
         topActions: [],
       },
     ]);
+  });
+
+  it('exposes a stable empty auto scope fixture without UI state', () => {
+    expect(buildDefaultWorkbenchCapabilityScope()).toEqual({
+      mode: 'auto',
+      selected: [],
+      allowed: [],
+      blocked: [],
+      invoked: [],
+    });
   });
 });

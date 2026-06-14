@@ -19,6 +19,7 @@ import {
 } from '@shared/constants/skillCatalog';
 import type { ParsedSkill } from '@shared/contract/agentSkill';
 import { createLogger } from '../../../../utils/logger';
+import { useAppStore } from '../../../../stores/appStore';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 import { SkillsInstalledTab } from './SkillsInstalledTab';
@@ -70,6 +71,8 @@ const invokeSkillIPC = async <T = unknown>(channel: string, ...args: unknown[]):
 // ============================================================================
 
 export const SkillsSettings: React.FC = () => {
+  const settingsCapabilityFocus = useAppStore((state) => state.settingsCapabilityFocus);
+  const clearSettingsCapabilityFocus = useAppStore((state) => state.clearSettingsCapabilityFocus);
   // 视图状态
   const [activeTab, setActiveTab] = useState<SkillsViewTab>('installed');
 
@@ -90,6 +93,12 @@ export const SkillsSettings: React.FC = () => {
   const [searchTotal, setSearchTotal] = useState<number | undefined>();
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (settingsCapabilityFocus?.kind === 'skill') {
+      setActiveTab('installed');
+    }
+  }, [settingsCapabilityFocus?.kind, settingsCapabilityFocus?.nonce]);
 
   // 加载数据
   const loadData = useCallback(async () => {
@@ -389,6 +398,21 @@ export const SkillsSettings: React.FC = () => {
     // 弹窗头部已展示「Skills / 能力与连接」标题，内容区直接从 Tab 开始，不再叠标题
     <div className="space-y-6">
       <WebModeBanner />
+
+      {settingsCapabilityFocus?.kind === 'skill' && (
+        <div className="flex flex-col gap-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-sky-100 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            来自会话页：正在处理 Skill <span className="font-mono">{settingsCapabilityFocus.id}</span>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={clearSettingsCapabilityFocus}
+          >
+            关闭提示
+          </Button>
+        </div>
+      )}
 
       {/* 操作结果消息 */}
       {message && (

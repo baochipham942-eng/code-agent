@@ -37,14 +37,47 @@ export type MarketplaceSource = z.infer<typeof MarketplaceSourceSchema>;
 // Plugin Entry
 // ----------------------------------------------------------------------------
 
+export const PluginEntryKindSchema = z.enum([
+  'skill',
+  'command',
+  'ui',
+  'theme',
+  'provider',
+  'tool',
+  'transform',
+]);
+
+export type PluginEntryKind = z.infer<typeof PluginEntryKindSchema>;
+
+export const PluginEntryTypeFieldSchema = z.union([
+  PluginEntryKindSchema,
+  z.array(PluginEntryKindSchema),
+]).optional();
+
+export const PluginAuthorSchema = z.union([
+  z.string(),
+  z.object({
+    name: z.string().optional(),
+    email: z.string().optional(),
+    url: z.string().optional(),
+  }),
+]).optional();
+
 export const PluginEntrySchema = z.object({
+  id: z.string().optional(),
   name: z.string().min(1),
   description: z.string().optional(),
-  source: z.string().default('./'),
+  source: z.string().optional(),
+  path: z.string().optional(),
+  type: PluginEntryTypeFieldSchema,
+  types: z.array(PluginEntryKindSchema).optional(),
+  repository: z.string().optional(),
+  homepage: z.string().optional(),
   skills: z.array(z.string()).optional(),
+  commands: z.array(z.string()).optional(),
   tags: z.array(z.string()).optional(),
   version: z.string().optional(),
-  author: z.string().optional(),
+  author: PluginAuthorSchema,
 });
 
 export type PluginEntry = z.infer<typeof PluginEntrySchema>;
@@ -55,8 +88,10 @@ export type PluginEntry = z.infer<typeof PluginEntrySchema>;
 
 export const MarketplaceManifestSchema = z.object({
   $schema: z.string().optional(),
-  name: z.string().min(1),
+  name: z.string().min(1).optional(),
   description: z.string().optional(),
+  version: z.string().optional(),
+  lastUpdated: z.string().optional(),
   owner: z.object({
     name: z.string().optional(),
     email: z.string().optional(),
@@ -111,8 +146,16 @@ export interface InstalledPluginRecord {
   installedAt: string;
   /** Plugin root directory (for plugin-pack type) */
   pluginRoot?: string;
+  /** Marketplace plugin type(s): skill, command, ui, theme, provider... */
+  types?: PluginEntryKind[];
   /** Installed skill names */
   skills: string[];
+  /** Relative skill directory paths under pluginRoot/sourceMarketplacePath */
+  skillPaths?: string[];
+  /** Installed prompt command names */
+  commands?: string[];
+  /** Relative command paths from marketplace entry source */
+  commandPaths?: string[];
   /** Original marketplace source path */
   sourceMarketplacePath: string;
 }
@@ -126,11 +169,15 @@ export type InstalledPluginsFile = Record<string, InstalledPluginRecord>;
 export interface InstallResult {
   pluginSpec: string;
   installedSkills: string[];
+  installedCommands?: string[];
+  installedPluginRoot?: string;
 }
 
 export interface UninstallResult {
   pluginSpec: string;
   removedSkills: string[];
+  removedCommands?: string[];
+  removedPluginRoot?: string;
 }
 
 // ----------------------------------------------------------------------------

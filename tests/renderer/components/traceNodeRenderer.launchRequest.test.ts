@@ -311,6 +311,7 @@ describe('TraceNodeRenderer launch request', () => {
       timestamp: 400,
       tone: 'warning',
       capabilityScope: {
+        mode: 'manual',
         selected: [
           {
             kind: 'skill',
@@ -414,6 +415,7 @@ describe('TraceNodeRenderer launch request', () => {
       timestamp: 400,
       tone: 'info',
       capabilityScope: {
+        mode: 'auto',
         selected: [],
         allowed: [],
         blocked: [],

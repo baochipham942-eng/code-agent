@@ -104,24 +104,25 @@ describe('AgentAppService lifecycle routing', () => {
       content: 'hello',
       clientMessageId: 'client-msg-send-1',
       attachments: [{ name: 'a.txt' }],
-	      context: {
-	        workingDirectory: '/tmp/project',
-	        preferredAgentId: 'reviewer',
-	        preferredAgentName: 'Reviewer',
-	        selectedAgent: {
-	          id: 'reviewer',
-	          name: 'Reviewer',
-	          token: 'reviewer',
-	          via: 'slash_picker',
-	        },
-	        selectedPromptCommand: {
-	          name: 'review',
-	          source: 'file',
-	          hints: ['$ARGUMENTS'],
-	          via: 'slash_picker',
-	        },
-	        selectedSkillIds: ['docx'],
-	      },
+      context: {
+        workingDirectory: '/tmp/project',
+        preferredAgentId: 'reviewer',
+        preferredAgentName: 'Reviewer',
+        selectedAgent: {
+          id: 'reviewer',
+          name: 'Reviewer',
+          token: 'reviewer',
+          via: 'slash_picker',
+        },
+        selectedPromptCommand: {
+          name: 'review',
+          source: 'file',
+          hints: ['$ARGUMENTS'],
+          via: 'slash_picker',
+        },
+        selectedSkillIds: ['docx'],
+        turnCapabilityScopeMode: 'manual',
+      },
       options: { researchMode: false },
     } as any);
 
@@ -138,26 +139,27 @@ describe('AgentAppService lifecycle routing', () => {
         researchMode: false,
         toolScope: expect.objectContaining({ allowedSkillIds: ['docx'] }),
       }),
-	      expect.objectContaining({
-	        workbench: expect.objectContaining({
-	          workingDirectory: '/tmp/project',
-	          preferredAgentId: 'reviewer',
-	          preferredAgentName: 'Reviewer',
-	          selectedAgent: {
-	            id: 'reviewer',
-	            name: 'Reviewer',
-	            token: 'reviewer',
-	            via: 'slash_picker',
-	          },
-	          selectedPromptCommand: {
-	            name: 'review',
-	            source: 'file',
-	            hints: ['$ARGUMENTS'],
-	            via: 'slash_picker',
-	          },
-	          selectedSkillIds: ['docx'],
-	        }),
-	      }),
+      expect.objectContaining({
+        workbench: expect.objectContaining({
+          workingDirectory: '/tmp/project',
+          preferredAgentId: 'reviewer',
+          preferredAgentName: 'Reviewer',
+          selectedAgent: {
+            id: 'reviewer',
+            name: 'Reviewer',
+            token: 'reviewer',
+            via: 'slash_picker',
+          },
+          selectedPromptCommand: {
+            name: 'review',
+            source: 'file',
+            hints: ['$ARGUMENTS'],
+            via: 'slash_picker',
+          },
+          selectedSkillIds: ['docx'],
+          turnCapabilityScopeMode: 'manual',
+        }),
+      }),
       'client-msg-send-1',
     );
   });

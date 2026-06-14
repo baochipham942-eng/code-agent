@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { InstalledPlugin, MarketplacePluginEntry } from '../../../src/shared/contract/marketplace';
 import {
+  ALMA_FEATURED_PLUGIN_REGISTRY,
+  adaptAlmaPluginToCodeAgentSpec,
+  getAlmaFeaturedPlugins,
+  getAlmaPluginAdapterSpecs,
+  getAlmaPluginSlashCommandCandidates,
+  normalizeAlmaPluginRegistryFeatured,
+} from '../../../src/shared/constants/almaPluginRegistry';
+import {
   buildPluginVisibilityAssessment,
   filterMarketplacePlugins,
+  getPluginRuntimeReadiness,
   getPluginSpec,
+  isPluginRuntimeVisible,
   PLUGIN_COMPLETENESS_ROWS,
 } from '../../../src/renderer/components/features/settings/tabs/PluginsSettings';
 
@@ -59,6 +69,16 @@ const installed: InstalledPlugin[] = [
     skills: ['ops'],
     commands: [],
   },
+  {
+    name: 'codex-auth',
+    marketplace: 'core',
+    scope: 'user',
+    isEnabled: true,
+    installedAt: '2026-05-19T00:00:00.000Z',
+    types: ['provider'],
+    skills: [],
+    commands: [],
+  },
 ];
 
 describe('PluginsSettings helpers', () => {
@@ -69,15 +89,28 @@ describe('PluginsSettings helpers', () => {
   it('splits enabled runtime plugins from admin-only plugin records', () => {
     const visibility = buildPluginVisibilityAssessment({ catalog, installed });
 
-    expect(visibility.installedTotal).toBe(2);
-    expect(visibility.enabledTotal).toBe(1);
+    expect(visibility.installedTotal).toBe(3);
+    expect(visibility.enabledTotal).toBe(2);
     expect(visibility.catalogTotal).toBe(3);
     expect(visibility.userVisible.map((item) => item.spec)).toEqual(['browser-tools@core']);
     expect(visibility.adminOnly.map((item) => item.spec)).toEqual([
       'ops-tools@core',
+      'codex-auth@core',
       'design-tools@community',
     ]);
-    expect(visibility.adminOnly.map((item) => item.kind)).toEqual(['installed', 'available']);
+    expect(visibility.adminOnly.map((item) => item.kind)).toEqual(['installed', 'installed', 'available']);
+    expect(visibility.adminOnly.find((item) => item.spec === 'codex-auth@core')?.reason).toContain('adapter');
+  });
+
+  it('separates plugin lifecycle enablement from runtime visibility', () => {
+    expect(getPluginRuntimeReadiness(installed[0]!)).toBe('runtime_ready');
+    expect(isPluginRuntimeVisible(installed[0]!)).toBe(true);
+
+    expect(getPluginRuntimeReadiness(installed[1]!)).toBe('disabled');
+    expect(isPluginRuntimeVisible(installed[1]!)).toBe(false);
+
+    expect(getPluginRuntimeReadiness(installed[2]!)).toBe('adapter_pending');
+    expect(isPluginRuntimeVisible(installed[2]!)).toBe(false);
   });
 
   it('filters catalog plugins by marketplace and searchable metadata', () => {
@@ -85,6 +118,9 @@ describe('PluginsSettings helpers', () => {
       'design-tools',
     ]);
     expect(filterMarketplacePlugins({ plugins: catalog, marketplace: 'all', query: 'desktop' }).map((item) => item.name)).toEqual([
+      'browser-tools',
+    ]);
+    expect(filterMarketplacePlugins({ plugins: catalog, marketplace: 'all', query: 'inspect' }).map((item) => item.name)).toEqual([
       'browser-tools',
     ]);
     expect(filterMarketplacePlugins({ plugins: catalog, marketplace: 'all', query: 'ops' }).map((item) => item.name)).toEqual([
@@ -101,5 +137,138 @@ describe('PluginsSettings helpers', () => {
       '权限',
     ]);
     expect(PLUGIN_COMPLETENESS_ROWS.find((row) => row.area === '治理')?.status).toBe('partial');
+  });
+
+  it('keeps Alma featured plugins as installable managed assets instead of skill plugins', () => {
+    expect(getAlmaFeaturedPlugins().map((plugin) => plugin.id)).toEqual([
+      'token-counter',
+      'catppuccin-theme',
+      'openai-codex-auth',
+      'cursor-auth',
+    ]);
+    expect(ALMA_FEATURED_PLUGIN_REGISTRY.map((plugin) => plugin.kind)).toEqual([
+      'ui',
+      'theme',
+      'provider',
+      'provider',
+    ]);
+    expect(ALMA_FEATURED_PLUGIN_REGISTRY.every((plugin) => plugin.riskNote.length > 0)).toBe(true);
+  });
+
+  it('normalizes Alma featured plugin registry items while preserving the reviewed fallback', () => {
+    expect(normalizeAlmaPluginRegistryFeatured().map((plugin) => plugin.id)).toEqual([
+      'token-counter',
+      'catppuccin-theme',
+      'openai-codex-auth',
+      'cursor-auth',
+    ]);
+
+    expect(normalizeAlmaPluginRegistryFeatured({
+      version: '1.0.0',
+      plugins: [
+        {
+          id: 'token-counter',
+          name: 'Token Counter',
+          type: ['ui'],
+          author: { name: 'Alma Team' },
+          featured: true,
+        },
+        {
+          id: 'codex-auth',
+          name: 'Codex Auth',
+          type: 'provider',
+          featured: true,
+        },
+        {
+          id: 'slash-tools',
+          name: 'Slash Tools',
+          type: 'command',
+          featured: true,
+          commands: ['inspect'],
+        },
+        {
+          id: 'unlisted-command',
+          name: 'Unlisted Command',
+          type: 'command',
+          featured: false,
+          commands: ['hidden'],
+        },
+        {
+          id: 'legacy',
+          name: 'Legacy',
+          type: 'legacy',
+          featured: true,
+        },
+      ],
+    }).map((plugin) => ({ id: plugin.id, kind: plugin.kind }))).toEqual([
+      { id: 'token-counter', kind: 'ui' },
+      { id: 'codex-auth', kind: 'provider' },
+      { id: 'slash-tools', kind: 'command' },
+    ]);
+  });
+
+  it('only exposes command-type Alma plugins as slash command candidates', () => {
+    expect(getAlmaPluginSlashCommandCandidates({
+      version: '1.0.0',
+      plugins: [
+        {
+          id: 'token-counter',
+          name: 'Token Counter',
+          type: 'ui',
+          featured: true,
+        },
+        {
+          id: 'openai-codex-auth',
+          name: 'OpenAI Codex Auth',
+          type: 'provider',
+          featured: true,
+        },
+      ],
+    })).toEqual([]);
+
+    expect(getAlmaPluginSlashCommandCandidates({
+      version: '1.0.0',
+      plugins: [
+        {
+          id: 'slash-tools',
+          name: 'Slash Tools',
+          type: 'commands',
+          featured: true,
+          commands: ['inspect', 'inspect', 'repair'],
+        },
+      ],
+    })).toEqual([
+      {
+        id: 'slash-tools',
+        name: 'Slash Tools',
+        commands: ['inspect', 'repair'],
+      },
+    ]);
+  });
+
+  it('adapts Alma plugin types into explicit code-agent safety surfaces', () => {
+    expect(getAlmaPluginAdapterSpecs().map((spec) => ({
+      id: spec.id,
+      surface: spec.surface,
+      canInstall: spec.canInstall,
+      canExposeInSlash: spec.canExposeInSlash,
+    }))).toEqual([
+      { id: 'token-counter', surface: 'status_bar', canInstall: true, canExposeInSlash: false },
+      { id: 'catppuccin-theme', surface: 'theme', canInstall: true, canExposeInSlash: false },
+      { id: 'openai-codex-auth', surface: 'provider', canInstall: true, canExposeInSlash: false },
+      { id: 'cursor-auth', surface: 'provider', canInstall: true, canExposeInSlash: false },
+    ]);
+
+    expect(adaptAlmaPluginToCodeAgentSpec({
+      id: 'slash-tools',
+      name: 'Slash Tools',
+      kind: 'command',
+    })).toMatchObject({
+      surface: 'slash_command',
+      installability: 'managed_command_asset',
+      canInstall: true,
+      canExposeInSlash: true,
+      requiredRuntimeCapabilities: ['marketplace-plugin-assets', 'command-manifest', 'plugin-permissions:command'],
+    });
   });
 });

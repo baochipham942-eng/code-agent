@@ -15,6 +15,7 @@ describe('appStore', () => {
       showSettings: false,
       settingsInitialTab: null,
       settingsMemoryFocus: null,
+      settingsCapabilityFocus: null,
       showKnowledgeMemoryPanel: false,
       optionalUpdateInfo: null,
       showOptionalUpdateModal: false,
@@ -60,6 +61,34 @@ describe('appStore', () => {
       showSettings: true,
       settingsInitialTab: 'general',
       settingsMemoryFocus: null,
+      settingsCapabilityFocus: null,
+    });
+  });
+
+  it('opens capability settings with a typed focus target', () => {
+    useAppStore.getState().openCapabilitySettingsTarget({ kind: 'mcp', id: 'github' });
+
+    expect(useAppStore.getState()).toMatchObject({
+      showSettings: true,
+      settingsInitialTab: 'mcp',
+      settingsMemoryFocus: null,
+      settingsCapabilityFocus: {
+        kind: 'mcp',
+        id: 'github',
+        nonce: expect.any(Number),
+      },
+    });
+
+    useAppStore.getState().openCapabilitySettingsTarget({ kind: 'skill', id: 'review-skill' });
+
+    expect(useAppStore.getState()).toMatchObject({
+      showSettings: true,
+      settingsInitialTab: 'skills',
+      settingsCapabilityFocus: {
+        kind: 'skill',
+        id: 'review-skill',
+        nonce: expect.any(Number),
+      },
     });
   });
 

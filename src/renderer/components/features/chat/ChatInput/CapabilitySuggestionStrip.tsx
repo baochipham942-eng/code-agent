@@ -35,7 +35,27 @@ function getCapabilitySuggestionHaystack(capability: WorkbenchCapabilityRegistry
   if (capability.kind === 'mcp') {
     parts.push(capability.status, capability.transport || '', capability.error || '');
   }
+  parts.push(...getCapabilitySuggestionAliases(capability));
   return parts.map(normalizeCapabilityText).filter(Boolean).join(' ');
+}
+
+function getCapabilitySuggestionAliases(capability: WorkbenchCapabilityRegistryItem): string[] {
+  const byId: Record<string, string[]> = {
+    calendar: ['日历', '日程', '会议', '排期', 'calendar', 'schedule', 'meeting', 'event'],
+    mail: ['邮件', '邮箱', '收件箱', '发邮件', 'mail', 'email', 'inbox'],
+    reminders: ['提醒', '提醒事项', '待办', 'todo', 'reminder', 'reminders'],
+    photos: ['照片', '相册', '图片', 'photo', 'photos', 'image'],
+    github: ['github', 'git', 'repo', '仓库', '代码仓库', 'issue', 'issues', 'pr', 'pull request', 'pull requests'],
+    context7: ['文档', '框架文档', '库文档', 'api docs', 'docs', 'documentation', 'latest docs'],
+    playwright: ['浏览器', '网页', '页面', '点击', '表单', '截图', '验收', 'e2e', 'browser', 'web', 'test', 'screenshot'],
+    fetch: ['抓取', '网页读取', '读取网页', 'fetch', 'url', 'website'],
+    firecrawl: ['批量抓取', '站点抓取', 'crawl', 'crawler', 'scrape', 'scraping', 'website'],
+    'brave-search': ['搜索', '网页搜索', '新闻', 'search', 'web search', 'news'],
+    tavily: ['搜索', '网页搜索', '新闻', 'search', 'web search', 'news'],
+    exa: ['搜索', '语义搜索', '代码搜索', 'search', 'semantic search', 'code search'],
+  };
+
+  return byId[capability.id] || [];
 }
 
 export function buildCapabilitySemanticSuggestions(
@@ -52,16 +72,19 @@ export function buildCapabilitySemanticSuggestions(
   }
 
   return capabilities
-    .filter((capability) => !capability.selected && capability.kind !== 'mcp')
+    .filter((capability) => !capability.selected)
     .map((capability) => {
       const haystack = getCapabilitySuggestionHaystack(capability);
       const matchedTokens = tokens.filter((token) => haystack.includes(token));
       const labelHit = haystack.includes(query) ? 2 : 0;
-      const hasTextMatch = matchedTokens.length > 0 || labelHit > 0;
+      const containedAliasHit = haystack
+        .split(/\s+/)
+        .some((part) => part.length >= 2 && query.includes(part)) ? 1.5 : 0;
+      const hasTextMatch = matchedTokens.length > 0 || labelHit > 0 || containedAliasHit > 0;
       const availabilityBoost = capability.available ? 0.25 : 0;
       return {
         capability,
-        score: hasTextMatch ? matchedTokens.length + labelHit + availabilityBoost : 0,
+        score: hasTextMatch ? matchedTokens.length + labelHit + containedAliasHit + availabilityBoost : 0,
       };
     })
     .filter((item) => item.score > 0)

@@ -89,4 +89,12 @@ export interface RecommendedMcpServerEntry {
   badge?: string;
   /** 国内可直连（不需要代理） */
   chinaDirect?: boolean;
+  /** 是否来自官方/上游 registry 的 featured 推荐 */
+  officialFeatured?: boolean;
+  /** featured 来源说明，用于 UI 区分“官方精选”和本地 curated */
+  featuredSource?: 'alma-mcp-registry' | 'code-agent-curated';
+  /** code-agent 对该推荐项的默认策略 */
+  recommendationTier?: 'default_visible' | 'conditional' | 'not_default';
+  /** 展示给用户的风险或重复能力提示 */
+  riskNote?: string;
 }

@@ -102,6 +102,56 @@ export const SKILL_CATEGORIES: SkillCategoryMeta[] = [
   { id: 'development', label: '开发工程', description: '调试、测试、代码审查、MCP 构建' },
 ];
 
+export type AlmaBundledSkillRecommendation =
+  | 'covered'
+  | 'default_visible'
+  | 'conditional'
+  | 'unsupported';
+
+export interface AlmaBundledSkillMapping {
+  name: string;
+  displayName: string;
+  recommendation: AlmaBundledSkillRecommendation;
+  codeAgentSurface: string;
+  rationale: string;
+}
+
+export const ALMA_BUNDLED_SKILL_MAPPINGS: AlmaBundledSkillMapping[] = [
+  { name: 'browser', displayName: 'Browser', recommendation: 'covered', codeAgentSurface: 'Browser / Playwright / Live Preview', rationale: '网页读取、验证和浏览器自动化已由原生能力覆盖。' },
+  { name: 'computer-use', displayName: 'Computer Use', recommendation: 'default_visible', codeAgentSurface: 'cua-driver / Computer Use Panel', rationale: '高价值本机能力，默认可见，保持显式启用和权限门。' },
+  { name: 'daily-report', displayName: 'Daily Report', recommendation: 'conditional', codeAgentSurface: 'Cron / Summary workflow', rationale: '适合固定汇报场景，按用户启用定时工作流后推荐。' },
+  { name: 'discord', displayName: 'Discord', recommendation: 'conditional', codeAgentSurface: 'Plugin / connector backlog', rationale: '社交平台能力，等对应 connector 或 plugin 权限边界明确后推荐。' },
+  { name: 'file-manager', displayName: 'File Manager', recommendation: 'covered', codeAgentSurface: 'Workspace files / native file tools', rationale: '文件读取、搜索、编辑和附件处理已是主路径能力。' },
+  { name: 'image-gen', displayName: 'Image Gen', recommendation: 'conditional', codeAgentSurface: 'Media generation service', rationale: '适合设计和内容生成场景，按任务意图推荐。' },
+  { name: 'memory-management', displayName: 'Memory Management', recommendation: 'default_visible', codeAgentSurface: 'Memory settings / context memory', rationale: '和长期记忆、会话记忆强相关，建议默认可见。' },
+  { name: 'music-gen', displayName: 'Music Gen', recommendation: 'conditional', codeAgentSurface: 'Media plugin backlog', rationale: '偏创意媒体，脱离 coding 主路径，按明确需求出现。' },
+  { name: 'music-listener', displayName: 'Music Listener', recommendation: 'conditional', codeAgentSurface: 'Media plugin backlog', rationale: '需要音频输入与版权边界，暂放条件推荐。' },
+  { name: 'notebook', displayName: 'Notebook', recommendation: 'default_visible', codeAgentSurface: 'Workspace / notes / docs', rationale: '适合研究和工作记录，可作为已有 workspace 能力入口。' },
+  { name: 'plan-mode', displayName: 'Plan Mode', recommendation: 'default_visible', codeAgentSurface: 'Plan mode / todos', rationale: '和 code-agent 计划、todo、goal 流程直接相关。' },
+  { name: 'programmatic-tools', displayName: 'Programmatic Tools', recommendation: 'covered', codeAgentSurface: 'Tool runtime / MCP / shell', rationale: '工具调用和程序化能力已在运行时内建。' },
+  { name: 'reactions', displayName: 'Reactions', recommendation: 'unsupported', codeAgentSurface: 'No primary surface', rationale: '偏聊天社交反馈，暂不进入 code-agent 主工作流。' },
+  { name: 'scheduler', displayName: 'Scheduler', recommendation: 'default_visible', codeAgentSurface: 'Cron / /schedule', rationale: '已有定时任务主路径，适合默认可见。' },
+  { name: 'screenshot', displayName: 'Screenshot', recommendation: 'covered', codeAgentSurface: 'Appshots / desktop capture', rationale: '截图、Appshot 和桌面观察已有产品入口。' },
+  { name: 'self-management', displayName: 'Self Management', recommendation: 'unsupported', codeAgentSurface: 'No primary surface', rationale: '偏个人助理和人格化管理，不进入默认 coding 工作面。' },
+  { name: 'self-reflection', displayName: 'Self Reflection', recommendation: 'unsupported', codeAgentSurface: 'No primary surface', rationale: '偏个人助理反思，不进入默认 coding 工作面。' },
+  { name: 'selfie', displayName: 'Selfie', recommendation: 'unsupported', codeAgentSurface: 'No primary surface', rationale: '偏社交表达，不进入 code-agent 主路径。' },
+  { name: 'send-file', displayName: 'Send File', recommendation: 'covered', codeAgentSurface: 'Attachments / file sharing', rationale: '附件和文件发送已有 composer 能力。' },
+  { name: 'skill-hub', displayName: 'Skill Hub', recommendation: 'covered', codeAgentSurface: 'Skills settings / discover', rationale: 'Skills 安装与发现页已承担这个入口。' },
+  { name: 'skill-search', displayName: 'Skill Search', recommendation: 'covered', codeAgentSurface: 'SkillsMP search / skill catalog', rationale: '社区搜索和推荐目录已存在。' },
+  { name: 'system-info', displayName: 'System Info', recommendation: 'covered', codeAgentSurface: 'Diagnostics / shell / native status', rationale: '系统诊断可由内置工具和诊断面板覆盖。' },
+  { name: 'tasks', displayName: 'Tasks', recommendation: 'covered', codeAgentSurface: 'Todos / Task panel / Goal mode', rationale: '任务、todo 和 goal 已是产品主路径。' },
+  { name: 'telegram', displayName: 'Telegram', recommendation: 'conditional', codeAgentSurface: 'Channel connector', rationale: '需要账号、消息权限和隐私边界，按用户启用后推荐。' },
+  { name: 'thread-management', displayName: 'Thread Management', recommendation: 'covered', codeAgentSurface: 'Session / thread commands', rationale: '会话和线程管理已有原生入口。' },
+  { name: 'todo', displayName: 'Todo', recommendation: 'covered', codeAgentSurface: 'Todos / task panel', rationale: '待办能力已在会话和任务面板中内建。' },
+  { name: 'travel', displayName: 'Travel', recommendation: 'conditional', codeAgentSurface: 'Research / calendar / map MCP', rationale: '偏生活场景，可由搜索、日历、地图组合支持。' },
+  { name: 'twitter-media', displayName: 'Twitter Media', recommendation: 'conditional', codeAgentSurface: 'OpenCLI / social connector', rationale: '需要登录态和平台边界，按社媒任务推荐。' },
+  { name: 'video-reader', displayName: 'Video Reader', recommendation: 'conditional', codeAgentSurface: 'Media analysis backlog', rationale: '视频理解依赖媒体管线，按内容分析场景推荐。' },
+  { name: 'voice', displayName: 'Voice', recommendation: 'conditional', codeAgentSurface: 'Voice input / audio services', rationale: '语音输入已有入口，更多语音能力按任务场景扩展。' },
+  { name: 'web-fetch', displayName: 'Web Fetch', recommendation: 'covered', codeAgentSurface: 'Native web fetch / browser tools', rationale: '网页读取已有内置路径。' },
+  { name: 'web-search', displayName: 'Web Search', recommendation: 'covered', codeAgentSurface: 'Search tools / MCP search catalog', rationale: '搜索可由内置搜索和 MCP 搜索目录覆盖。' },
+  { name: 'xiaohongshu-cli', displayName: 'Xiaohongshu CLI', recommendation: 'conditional', codeAgentSurface: 'OpenCLI / social connector', rationale: '中文社媒场景高价值，但需要登录态和平台边界。' },
+];
+
 // ----------------------------------------------------------------------------
 // 推荐 Skill 条目（skill 粒度，按产物分类）
 // ----------------------------------------------------------------------------

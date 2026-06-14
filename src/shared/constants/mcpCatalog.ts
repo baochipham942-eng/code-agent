@@ -50,12 +50,33 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
     requiredCredentials: ['TAVILY_API_KEY'],
   },
   {
+    id: 'fetch',
+    name: 'Fetch',
+    description: '标准 MCP 网页读取与内容提取',
+    category: 'search-scrape',
+    builtin: false,
+    connection: {
+      type: 'stdio',
+      command: 'uvx',
+      args: ['mcp-server-fetch'],
+    },
+    badge: 'Alma 官方精选·免配置',
+    officialFeatured: true,
+    featuredSource: 'alma-mcp-registry',
+    recommendationTier: 'conditional',
+    riskNote: '普通网页读取已由内置 web fetch 覆盖；需要标准 MCP workflow 时再连接。',
+  },
+  {
     id: 'firecrawl',
     name: 'Firecrawl 抓取',
     description: '批量网页抓取与结构化数据提取',
     category: 'search-scrape',
     builtin: true,
     requiredCredentials: ['FIRECRAWL_API_KEY'],
+    officialFeatured: true,
+    featuredSource: 'alma-mcp-registry',
+    recommendationTier: 'conditional',
+    riskNote: '适合站点 crawl 和批量抓取；需要 Firecrawl API key。',
   },
   {
     id: 'brave-search',
@@ -147,6 +168,10 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
     },
     badge: '微软官方·免配置',
     chinaDirect: true,
+    officialFeatured: true,
+    featuredSource: 'alma-mcp-registry',
+    recommendationTier: 'default_visible',
+    riskNote: '和内置 Browser/Computer Use 有重叠；适合标准 MCP 浏览器自动化工作流。',
   },
   {
     id: 'puppeteer',
@@ -179,6 +204,10 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
     category: 'dev-tools',
     builtin: true,
     requiredCredentials: ['GITHUB_TOKEN'],
+    officialFeatured: true,
+    featuredSource: 'alma-mcp-registry',
+    recommendationTier: 'conditional',
+    riskNote: '涉及仓库 token 和写权限；建议优先配置只读或最小权限 token。',
   },
   {
     id: 'context7',
@@ -187,6 +216,10 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
     category: 'dev-tools',
     builtin: true,
     badge: '免配置',
+    officialFeatured: true,
+    featuredSource: 'alma-mcp-registry',
+    recommendationTier: 'default_visible',
+    riskNote: '适合框架文档和 API 示例查询，凭证负担低。',
   },
   {
     id: 'deepwiki',
@@ -230,6 +263,27 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
     badge: '高德官方',
     chinaDirect: true,
   },
+  {
+    id: 'task_master',
+    name: 'Task Master',
+    description: '项目内任务拆解、计划和执行状态管理',
+    category: 'dev-tools',
+    builtin: false,
+    connection: {
+      type: 'stdio',
+      command: 'npx',
+      args: ['-y', 'task-master-ai'],
+      env: {
+        ANTHROPIC_API_KEY: '',
+      },
+    },
+    requiredCredentials: ['ANTHROPIC_API_KEY'],
+    badge: 'Alma 官方精选',
+    officialFeatured: true,
+    featuredSource: 'alma-mcp-registry',
+    recommendationTier: 'not_default',
+    riskNote: '和 code-agent 的计划/任务体系重叠；只建议已有 Task Master 项目的用户连接。',
+  },
 ];
 
 // ----------------------------------------------------------------------------
@@ -263,4 +317,30 @@ export function findRecommendedMcpServer(
   servers: RecommendedMcpServerEntry[] = RECOMMENDED_MCP_SERVERS
 ): RecommendedMcpServerEntry | undefined {
   return servers.find((server) => server.id === id);
+}
+
+export function getAlmaFeaturedMcpServers(
+  catalog: McpCatalogPayload = getBuiltinMcpCatalogPayload()
+): RecommendedMcpServerEntry[] {
+  return catalog.servers.filter((server) => server.officialFeatured && server.featuredSource === 'alma-mcp-registry');
+}
+
+export function mergeMcpCatalogWithBuiltinOfficialFeatured(
+  catalog: McpCatalogPayload,
+): McpCatalogPayload {
+  const existingIds = new Set(catalog.servers.map((server) => server.id));
+  const missingFeatured = getAlmaFeaturedMcpServers(getBuiltinMcpCatalogPayload())
+    .filter((server) => !existingIds.has(server.id));
+
+  if (missingFeatured.length === 0) {
+    return catalog;
+  }
+
+  return {
+    ...catalog,
+    servers: [
+      ...catalog.servers,
+      ...missingFeatured,
+    ],
+  };
 }

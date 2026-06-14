@@ -36,6 +36,7 @@ const projection: TraceProjection = {
             timestamp: 110,
             tone: 'warning',
             capabilityScope: {
+              mode: 'manual',
               selected: [{ kind: 'skill', id: 'memory-management', label: 'memory-management' }],
               allowed: [],
               invoked: [],

@@ -3,6 +3,7 @@ import type {
   BrowserSessionMode,
   ConversationEnvelopeContext,
   ConversationRoutingMode,
+  TurnCapabilityScopeMode,
 } from '@shared/contract/conversationEnvelope';
 import type { SelectedElementInfo } from '@shared/livePreview/protocol';
 import {
@@ -47,6 +48,7 @@ interface ComposerState {
   selectedSkillIds: string[];
   selectedConnectorIds: string[];
   selectedMcpServerIds: string[];
+  turnCapabilityScopeMode: TurnCapabilityScopeMode;
   hydratedSessionId: string | null;
   hydrateFromSession: (sessionId: string | null, workingDirectory: string | null) => void;
   applySessionWorkbenchPreset: (source: WorkbenchPresetSessionSource) => void;
@@ -59,6 +61,7 @@ interface ComposerState {
   setSelectedSkillIds: (ids: string[]) => void;
   setSelectedConnectorIds: (ids: string[]) => void;
   setSelectedMcpServerIds: (ids: string[]) => void;
+  setTurnCapabilityScopeMode: (mode: TurnCapabilityScopeMode) => void;
   resetForSuccessfulSend: () => void;
   buildContext: () => ConversationEnvelopeContext | undefined;
 }
@@ -71,6 +74,7 @@ const initialComposerState = {
   selectedSkillIds: [],
   selectedConnectorIds: [],
   selectedMcpServerIds: [],
+  turnCapabilityScopeMode: 'auto' as const,
   hydratedSessionId: null,
 };
 
@@ -92,6 +96,11 @@ function applyWorkbenchPresetContext(
     selectedSkillIds: context.selectedSkillIds,
     selectedConnectorIds: context.selectedConnectorIds,
     selectedMcpServerIds: context.selectedMcpServerIds,
+    turnCapabilityScopeMode: context.turnCapabilityScopeMode ?? (
+      context.selectedSkillIds.length || context.selectedConnectorIds.length || context.selectedMcpServerIds.length
+        ? 'manual'
+        : 'auto'
+    ),
   };
 }
 
@@ -111,6 +120,7 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
           selectedSkillIds: [],
           selectedConnectorIds: [],
           selectedMcpServerIds: [],
+          turnCapabilityScopeMode: 'auto',
         };
       }
 
@@ -166,17 +176,36 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
   setSelectedSkillIds: (ids) =>
     set({
       selectedSkillIds: dedupeWorkbenchIds(ids),
+      turnCapabilityScopeMode: 'manual',
     }),
 
   setSelectedConnectorIds: (ids) =>
     set({
       selectedConnectorIds: dedupeWorkbenchIds(ids),
+      turnCapabilityScopeMode: 'manual',
     }),
 
   setSelectedMcpServerIds: (ids) =>
     set({
       selectedMcpServerIds: dedupeWorkbenchIds(ids),
+      turnCapabilityScopeMode: 'manual',
     }),
+
+  setTurnCapabilityScopeMode: (mode) =>
+    set((state) => ({
+      turnCapabilityScopeMode: mode,
+      ...(mode === 'auto'
+        ? {
+            selectedSkillIds: [],
+            selectedConnectorIds: [],
+            selectedMcpServerIds: [],
+          }
+        : {
+            selectedSkillIds: state.selectedSkillIds,
+            selectedConnectorIds: state.selectedConnectorIds,
+            selectedMcpServerIds: state.selectedMcpServerIds,
+          }),
+    })),
 
   resetForSuccessfulSend: () =>
     set((state) => ({
@@ -209,6 +238,7 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
     if (state.selectedMcpServerIds.length > 0) {
       context.selectedMcpServerIds = [...state.selectedMcpServerIds];
     }
+    context.turnCapabilityScopeMode = state.turnCapabilityScopeMode;
     if (state.browserSessionMode === 'managed') {
       context.executionIntent = {
         browserSessionMode: 'managed',

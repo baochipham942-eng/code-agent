@@ -6,6 +6,7 @@ import type {
   TurnCapabilityScopeItem,
   TurnWorkbenchSnapshot,
 } from '@shared/contract/turnTimeline';
+import { createEmptyTurnCapabilityScope } from '@shared/contract/turnTimeline';
 import {
   buildWorkbenchHistory,
   type WorkbenchCapabilities,
@@ -23,7 +24,16 @@ function toScopeItem(
     kind: capability.kind,
     id: capability.id,
     label: capability.label,
+    readiness: capability.turnReadiness,
   };
+}
+
+function hasManualScopeSelection(snapshot?: TurnWorkbenchSnapshot): boolean {
+  return Boolean(
+    snapshot?.selectedSkillIds?.length
+    || snapshot?.selectedConnectorIds?.length
+    || snapshot?.selectedMcpServerIds?.length,
+  );
 }
 
 export function buildWorkbenchCapabilityScope(args: {
@@ -64,14 +74,21 @@ export function buildWorkbenchCapabilityScope(args: {
     topActions: item.topActions,
   }));
 
+  const mode = args.snapshot?.turnCapabilityScopeMode || (hasManualScopeSelection(args.snapshot) ? 'manual' : 'auto');
+
   if (selected.length === 0 && allowed.length === 0 && blocked.length === 0 && invoked.length === 0) {
     return undefined;
   }
 
   return {
+    mode,
     selected,
     allowed,
     blocked,
     invoked,
   };
+}
+
+export function buildDefaultWorkbenchCapabilityScope(): TurnCapabilityScope {
+  return createEmptyTurnCapabilityScope('auto');
 }

@@ -12,6 +12,7 @@ import {
 export const SETTINGS_TAB_IDS = [
   'general',
   'conversation',
+  'keybindings',
   'model',
   'agentEngine',
   'appearance',
@@ -70,6 +71,7 @@ export const SETTINGS_TAB_GROUP_ORDER: SettingsTabGroupId[] = [
 export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> = {
   general: 'basics',
   conversation: 'basics',
+  keybindings: 'basics',
   model: 'basics',
   agentEngine: 'basics',
   appearance: 'basics',

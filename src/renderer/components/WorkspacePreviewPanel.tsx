@@ -81,6 +81,53 @@ function kindLabel(kind: WorkspacePreviewKind): string {
   }
 }
 
+function serializePreviewValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value == null) return '';
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function getPreviewItemText(item: WorkspacePreviewItem): string {
+  return serializePreviewValue(
+    item.content?.text
+    ?? item.content?.summary
+    ?? item.content?.html
+    ?? item.content?.json
+    ?? item.file?.path
+    ?? item.title
+  );
+}
+
+function getPreviewExportFilename(item: WorkspacePreviewItem): string {
+  const baseName = (item.title || item.id || 'artifact')
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, '-')
+    .slice(0, 80) || 'artifact';
+  const extension = item.content?.html
+    ? 'html'
+    : item.content?.json
+      ? 'json'
+      : 'txt';
+  return `${baseName}.${extension}`;
+}
+
+function downloadPreviewItem(item: WorkspacePreviewItem): void {
+  const content = getPreviewItemText(item);
+  const blob = new Blob([content], { type: item.content?.html ? 'text/html;charset=utf-8' : 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = getPreviewExportFilename(item);
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 function KindIcon({ kind }: { kind: WorkspacePreviewKind }) {
   const cls = 'h-4 w-4 shrink-0';
   switch (kind) {
@@ -579,18 +626,63 @@ export const WorkspacePreviewPanel: React.FC = () => {
     });
   }, [applyWorkbenchRecipe, syncWorkspaceDirectory]);
 
-  const copySelected = async () => {
+  const copySelected = useCallback(async () => {
     if (!selected) return;
-    const value = selected.content?.text
-      || selected.content?.summary
-      || selected.content?.html
-      || selected.content?.json
-      || selected.file?.path
-      || selected.title;
-    await navigator.clipboard.writeText(value);
+    await navigator.clipboard.writeText(getPreviewItemText(selected));
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
-  };
+  }, [selected]);
+
+  const exportSelected = useCallback(() => {
+    if (!selected) return;
+    downloadPreviewItem(selected);
+  }, [selected]);
+
+  const selectByOffset = useCallback((offset: number) => {
+    if (items.length === 0) return;
+    const selectedIndex = selected ? items.findIndex((item) => item.id === selected.id) : -1;
+    const currentIndex = selectedIndex >= 0 ? selectedIndex : 0;
+    const nextIndex = (currentIndex + offset + items.length) % items.length;
+    setSelectedId(items[nextIndex].id);
+  }, [items, selected, setSelectedId]);
+
+  useEffect(() => {
+    const handleArtifactShortcut = (event: Event) => {
+      switch (event.type) {
+        case 'app:artifacts.copy':
+          void copySelected();
+          break;
+        case 'app:artifacts.export':
+          exportSelected();
+          break;
+        case 'app:artifacts.previousVersion':
+          selectByOffset(-1);
+          break;
+        case 'app:artifacts.nextVersion':
+          selectByOffset(1);
+          break;
+        default:
+          break;
+      }
+    };
+
+    const events = [
+      'app:artifacts.copy',
+      'app:artifacts.export',
+      'app:artifacts.previousVersion',
+      'app:artifacts.nextVersion',
+      'app:artifacts.open',
+      'app:artifacts.preview',
+    ];
+    for (const eventName of events) {
+      window.addEventListener(eventName, handleArtifactShortcut);
+    }
+    return () => {
+      for (const eventName of events) {
+        window.removeEventListener(eventName, handleArtifactShortcut);
+      }
+    };
+  }, [copySelected, exportSelected, selectByOffset]);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900">

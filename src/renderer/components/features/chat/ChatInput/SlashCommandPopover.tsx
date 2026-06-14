@@ -23,8 +23,14 @@ import { initializeCommands, getCommandRegistry } from '@shared/commands';
 import type { CommandDefinition } from '@shared/commands';
 import { generateMessageId } from '@shared/utils/id';
 import { IPC_CHANNELS, IPC_DOMAINS, COMMAND_CHANNELS } from '@shared/ipc';
+import {
+  formatShortcutForDisplay,
+  getKeybindingAccelerator,
+  type KeybindingActionId,
+} from '@shared/keybindings';
 import type { ExtensionValidationResult } from '@shared/contract/extension';
 import { invoke, invokeDomain, unsafeInvoke } from '../../../../services/ipcService';
+import { useKeybindingsSettings } from '../../../../hooks/useKeybindingsSettings';
 
 type ExtensionMutationResult = { success: boolean; error?: string };
 
@@ -79,6 +85,11 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const { keybindings, platform } = useKeybindingsSettings();
+  const getShortcutLabel = useMemo(() => (actionId: KeybindingActionId): string | undefined => {
+    const accelerator = getKeybindingAccelerator(keybindings, actionId, platform);
+    return accelerator ? formatShortcutForDisplay(accelerator, platform) : undefined;
+  }, [keybindings, platform]);
 
   // Prompt commands（/命令协议层，roadmap 2.2）：文件式自定义 + MCP prompts，
   // 由 main 侧注册表提供；选中后父级预填 "/name "，发送时 main 展开模板
@@ -109,6 +120,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
 
   const {
     setShowSettings,
+    openSettingsTab,
     setShowDAGPanel,
     showDAGPanel,
     setShowWorkspace,
@@ -201,7 +213,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: '新建会话',
       description: '创建新对话',
       icon: <Plus className="w-4 h-4" />,
-      shortcut: '⌘N',
+      shortcut: getShortcutLabel('session.new'),
       action: () => createSession(),
     },
     {
@@ -209,7 +221,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: '清空对话',
       description: '清除当前会话消息',
       icon: <Trash2 className="w-4 h-4" />,
-      shortcut: '⌘K',
+      shortcut: getShortcutLabel('session.clear'),
       action: () => clearCurrentSession(),
     },
     {
@@ -233,7 +245,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: sidebarCollapsed ? '显示侧边栏' : '隐藏侧边栏',
       description: '切换侧边栏',
       icon: <FileText className="w-4 h-4" />,
-      shortcut: '⌘/',
+      shortcut: getShortcutLabel('sidebar.toggle'),
       action: () => setSidebarCollapsed(!sidebarCollapsed),
     },
     {
@@ -255,7 +267,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: '设置',
       description: '打开应用设置',
       icon: <Settings className="w-4 h-4" />,
-      shortcut: '⌘,',
+      shortcut: getShortcutLabel('settings.open'),
       action: () => setShowSettings(true),
     },
     {
@@ -263,7 +275,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: '快捷键',
       description: '查看键盘快捷键',
       icon: <Keyboard className="w-4 h-4" />,
-      action: () => setShowSettings(true),
+      action: () => openSettingsTab('keybindings'),
     },
     // --- 模式 / 强度 / 权限命令 ---
     {
@@ -572,7 +584,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     },
   ], [
     createSession, clearCurrentSession, archiveSession, currentSessionId,
-    setShowSettings, setShowDAGPanel, showDAGPanel,
+    getShortcutLabel,
+    setShowSettings, openSettingsTab, setShowDAGPanel, showDAGPanel,
     setShowWorkspace, showWorkspace, setSidebarCollapsed, sidebarCollapsed,
     setInteractionMode, setEffortLevel, setGlobalMode,
   ]);

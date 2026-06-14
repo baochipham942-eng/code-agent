@@ -4,15 +4,28 @@
 // 自包含：通过 iact:send 事件发送消息，通过 sessionStore 创建新对话
 // ============================================================================
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Send, X, Clipboard, MessageSquarePlus } from 'lucide-react';
+import { formatShortcutForDisplay, getKeybindingAccelerator } from '@shared/keybindings';
 import { isTauriMode } from '../../../utils/platform';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useKeybindingsSettings } from '../../../hooks/useKeybindingsSettings';
 
 export const MemoFloater: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const { keybindings, platform } = useKeybindingsSettings();
+
+  const quickAskShortcut = useMemo(() => {
+    const accelerator = getKeybindingAccelerator(keybindings, 'app.quickAsk', platform);
+    return formatShortcutForDisplay(accelerator, platform);
+  }, [keybindings, platform]);
+
+  const showMemo = useCallback(() => {
+    setIsVisible(true);
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, []);
 
   const handleNewChat = useCallback(async () => {
     await useSessionStore.getState().createSession('新对话');
@@ -23,14 +36,14 @@ export const MemoFloater: React.FC = () => {
     window.dispatchEvent(new CustomEvent('iact:send', { detail: text }));
   }, []);
 
+  useEffect(() => {
+    window.addEventListener('app:quickAsk', showMemo);
+    return () => window.removeEventListener('app:quickAsk', showMemo);
+  }, [showMemo]);
+
   // Listen for Tauri tray/shortcut events
   useEffect(() => {
     if (!isTauriMode()) return;
-
-    const handleActivate = () => {
-      setIsVisible(true);
-      setTimeout(() => inputRef.current?.focus(), 100);
-    };
 
     const handleNewChatEvent = () => {
       handleNewChat();
@@ -52,7 +65,7 @@ export const MemoFloater: React.FC = () => {
     const listen = async () => {
       try {
         const { listen: tauriListen } = await import('@tauri-apps/api/event');
-        const unlisten1 = await tauriListen('memo:activate', handleActivate);
+        const unlisten1 = await tauriListen('memo:activate', showMemo);
         const unlisten2 = await tauriListen('memo:new_chat', handleNewChatEvent);
         const unlisten3 = await tauriListen('memo:paste_context', handlePasteContext);
         return () => {
@@ -68,7 +81,7 @@ export const MemoFloater: React.FC = () => {
     let cleanup: (() => void) | undefined;
     listen().then((fn) => { cleanup = fn; });
     return () => { cleanup?.(); };
-  }, [handleNewChat]);
+  }, [handleNewChat, showMemo]);
 
   const handleSubmit = useCallback(() => {
     const trimmed = value.trim();
@@ -103,7 +116,7 @@ export const MemoFloater: React.FC = () => {
       <div className="relative w-full max-w-lg mx-4 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl animate-fadeIn">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800">
-          <span className="text-xs text-zinc-500">Memo · Cmd+Shift+A</span>
+          <span className="text-xs text-zinc-500">Memo · {quickAskShortcut}</span>
           <div className="flex items-center gap-1">
             <button
               onClick={handleNewChat}

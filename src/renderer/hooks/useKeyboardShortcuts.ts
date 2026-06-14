@@ -7,6 +7,18 @@ import { useEffect, useCallback, useMemo } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
 import { useAppStore } from '../stores/appStore';
 import { createLogger } from '../utils/logger';
+import {
+  KEYBINDING_DEFINITIONS,
+  KEYBINDING_DEFINITION_BY_ID,
+  eventToAccelerator,
+  formatShortcutForDisplay,
+  normalizeAccelerator,
+  type KeybindingActionId,
+  type KeybindingCategory,
+} from '@shared/keybindings';
+import { IPC_CHANNELS } from '@shared/ipc';
+import ipcService from '../services/ipcService';
+import { useKeybindingsSettings } from './useKeybindingsSettings';
 
 const logger = createLogger('KeyboardShortcuts');
 
@@ -38,7 +50,7 @@ export interface KeyboardShortcutsConfig {
   enableNewSession?: boolean;
   /** 是否启用设置快捷键 (Ctrl/Cmd+,) */
   enableSettings?: boolean;
-  /** 是否启用清空对话快捷键 (Ctrl/Cmd+K) */
+  /** 兼容旧配置字段：清空对话不再默认绑定 Ctrl/Cmd+K */
   enableClearChat?: boolean;
   /** 是否启用聚焦输入快捷键 (Ctrl/Cmd+L) */
   enableFocusInput?: boolean;
@@ -56,146 +68,73 @@ export interface KeyboardShortcutsConfig {
   customHandlers?: Record<string, () => void | Promise<void>>;
 }
 
+const SHORTCUT_CATEGORY_BY_KEYBINDING_CATEGORY: Record<KeybindingCategory, KeyboardShortcut['category']> = {
+  global: 'navigation',
+  sessionEditing: 'editing',
+  delivery: 'view',
+  workbench: 'view',
+  settings: 'navigation',
+};
+
+const COMMAND_PALETTE_COMPAT_ACCELERATORS = {
+  darwin: ['Cmd+Shift+P'],
+  win32: ['Ctrl+Shift+P'],
+  linux: ['Ctrl+Shift+P'],
+} as const;
+
+const TAURI_UNSUPPORTED_GLOBAL_ACCELERATORS = new Set(['Cmd+Cmd']);
+
+interface GlobalHotkeyBindingPayload {
+  actionId: KeybindingActionId;
+  accelerator: string;
+}
+
+interface GlobalHotkeyEventPayload {
+  actionId: KeybindingActionId;
+  accelerator: string;
+}
+
+interface GlobalHotkeyRegistrationResult {
+  actionId: KeybindingActionId;
+  accelerator: string;
+  registered: boolean;
+  error?: string | null;
+}
+
+function isInputTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  return Boolean(
+    element?.tagName === 'INPUT'
+    || element?.tagName === 'TEXTAREA'
+    || element?.isContentEditable
+  );
+}
+
+async function invokeTauriCommand<T = unknown>(command: string, args?: Record<string, unknown>): Promise<T | null> {
+  const internals = (window as unknown as {
+    __TAURI_INTERNALS__?: { invoke<R>(cmd: string, args?: Record<string, unknown>): Promise<R> };
+  }).__TAURI_INTERNALS__;
+  if (!internals) return null;
+  return internals.invoke<T>(command, args);
+}
+
+function isTauriRuntime(): boolean {
+  return Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+}
+
 // ============================================================================
 // Default Shortcuts
 // ============================================================================
 
-export const DEFAULT_SHORTCUTS: KeyboardShortcut[] = [
-  // Session
-  {
-    id: 'newSession',
-    label: '新建会话',
-    keyMac: '⌘N',
-    keyWin: 'Ctrl+N',
-    description: '创建一个新的对话会话',
-    category: 'session',
-    enabled: true,
-  },
-  {
-    id: 'moveToBackground',
-    label: '移至后台',
-    keyMac: '⌘B',
-    keyWin: 'Ctrl+B',
-    description: '将当前运行中的会话移至后台',
-    category: 'session',
-    enabled: true,
-  },
-  {
-    id: 'clearChat',
-    label: '清空对话',
-    keyMac: '⌘K',
-    keyWin: 'Ctrl+K',
-    description: '清空当前会话的消息历史',
-    category: 'session',
-    enabled: true,
-  },
-  {
-    id: 'prevSession',
-    label: '上一个会话',
-    keyMac: '⌘[',
-    keyWin: 'Ctrl+[',
-    description: '切换到上一个会话',
-    category: 'session',
-    enabled: true,
-  },
-  {
-    id: 'nextSession',
-    label: '下一个会话',
-    keyMac: '⌘]',
-    keyWin: 'Ctrl+]',
-    description: '切换到下一个会话',
-    category: 'session',
-    enabled: true,
-  },
-
-  // Navigation
-  {
-    id: 'focusInput',
-    label: '聚焦输入框',
-    keyMac: '⌘L',
-    keyWin: 'Ctrl+L',
-    description: '将焦点移至消息输入框',
-    category: 'navigation',
-    enabled: true,
-  },
-  {
-    id: 'openSettings',
-    label: '打开设置',
-    keyMac: '⌘,',
-    keyWin: 'Ctrl+,',
-    description: '打开应用设置',
-    category: 'navigation',
-    enabled: true,
-  },
-  {
-    id: 'commandPalette',
-    label: '命令面板',
-    keyMac: '⌘⇧P',
-    keyWin: 'Ctrl+Shift+P',
-    description: '打开命令面板',
-    category: 'navigation',
-    enabled: true,
-  },
-
-  // View
-  {
-    id: 'toggleSidebar',
-    label: '切换侧边栏',
-    keyMac: '⌘/',
-    keyWin: 'Ctrl+/',
-    description: '显示或隐藏侧边栏',
-    category: 'view',
-    enabled: true,
-  },
-  {
-    id: 'toggleDAG',
-    label: '切换 DAG 面板',
-    keyMac: '⌘D',
-    keyWin: 'Ctrl+D',
-    description: '显示或隐藏任务 DAG 可视化面板',
-    category: 'view',
-    enabled: true,
-  },
-  {
-    id: 'toggleWorkspace',
-    label: '切换工作区',
-    keyMac: '⌘E',
-    keyWin: 'Ctrl+E',
-    description: '显示或隐藏工作区面板',
-    category: 'view',
-    enabled: true,
-  },
-
-  {
-    id: 'toggleStatusRail',
-    label: '切换状态栏',
-    keyMac: '⌘J',
-    keyWin: 'Ctrl+J',
-    description: '显示或隐藏右侧状态面板',
-    category: 'view',
-    enabled: true,
-  },
-  {
-    id: 'triggerCompact',
-    label: '压缩上下文',
-    keyMac: '⌘⇧C',
-    keyWin: 'Ctrl+Shift+C',
-    description: '主动压缩当前会话的上下文',
-    category: 'editing',
-    enabled: true,
-  },
-
-  // Editing
-  {
-    id: 'cancel',
-    label: '取消',
-    keyMac: 'Esc',
-    keyWin: 'Esc',
-    description: '取消当前操作或关闭对话框',
-    category: 'editing',
-    enabled: true,
-  },
-];
+export const DEFAULT_SHORTCUTS: KeyboardShortcut[] = KEYBINDING_DEFINITIONS.map((definition) => ({
+  id: definition.id,
+  label: definition.label,
+  keyMac: formatShortcutForDisplay(definition.defaultHotkeys.darwin, 'darwin'),
+  keyWin: formatShortcutForDisplay(definition.defaultHotkeys.win32, 'win32'),
+  description: definition.description,
+  category: SHORTCUT_CATEGORY_BY_KEYBINDING_CATEGORY[definition.category],
+  enabled: definition.enabledByDefault,
+}));
 
 // ============================================================================
 // Hook
@@ -207,7 +146,7 @@ export const DEFAULT_SHORTCUTS: KeyboardShortcut[] = [
  * 支持以下快捷键：
  * - Cmd/Ctrl+N: 新建会话
  * - Cmd/Ctrl+B: 移至后台
- * - Cmd/Ctrl+K: 清空对话
+ * - Cmd/Ctrl+K: 命令面板
  * - Cmd/Ctrl+L: 聚焦输入框
  * - Cmd/Ctrl+,: 打开设置
  * - Cmd/Ctrl+/: 切换侧边栏
@@ -215,7 +154,7 @@ export const DEFAULT_SHORTCUTS: KeyboardShortcut[] = [
  * - Cmd/Ctrl+E: 切换工作区
  * - Cmd/Ctrl+[: 上一个会话
  * - Cmd/Ctrl+]: 下一个会话
- * - Cmd/Ctrl+Shift+P: 命令面板
+ * - Cmd/Ctrl+Shift+P: 命令面板（兼容旧入口）
  * - Escape: 取消操作
  */
 export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void {
@@ -223,7 +162,6 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     enableBackground = true,
     enableNewSession = true,
     enableSettings = true,
-    enableClearChat = true,
     enableFocusInput = true,
     enableToggleSidebar = true,
     enableToggleDAG = true,
@@ -245,6 +183,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
 
   const {
     setShowSettings,
+    openSettingsTab,
     setSidebarCollapsed,
     sidebarCollapsed,
     setShowDAGPanel,
@@ -254,10 +193,57 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     workbenchTabs,
     openWorkbenchTab,
     closeWorkbenchTab,
+    setTaskPanelTab,
+    setShowCapturePanel,
+    setShowBrowserSurfacePanel,
+    setShowComputerUsePanel,
+    setShowFileExplorer,
+    openWorkspacePreview,
     pendingPermissionRequest,
     setPendingPermissionRequest,
-    isProcessing,
   } = useAppStore();
+  const { keybindings, platform } = useKeybindingsSettings();
+
+  const actionByAccelerator = useMemo(() => {
+    const map = new Map<string, KeybindingActionId[]>();
+    const add = (accelerator: string | null | undefined, actionId: KeybindingActionId) => {
+      const normalized = normalizeAccelerator(accelerator, platform);
+      if (!normalized) return;
+      const existing = map.get(normalized) || [];
+      if (!existing.includes(actionId)) existing.push(actionId);
+      map.set(normalized, existing);
+    };
+
+    for (const definition of KEYBINDING_DEFINITIONS) {
+      const binding = keybindings.bindings[definition.id];
+      if (!binding?.enabled || !binding.accelerator) continue;
+      add(binding.accelerator, definition.id);
+    }
+
+    const commandPaletteBinding = keybindings.bindings['commandPalette.open'];
+    if (commandPaletteBinding?.enabled) {
+      for (const accelerator of COMMAND_PALETTE_COMPAT_ACCELERATORS[platform]) {
+        add(accelerator, 'commandPalette.open');
+      }
+    }
+
+    return map;
+  }, [keybindings, platform]);
+
+  const globalHotkeyBindings = useMemo<GlobalHotkeyBindingPayload[]>(() => {
+    if (keybindings.globalHotkeysEnabled === false) return [];
+
+    const bindings: GlobalHotkeyBindingPayload[] = [];
+    for (const definition of KEYBINDING_DEFINITIONS) {
+      if (definition.scope !== 'global') continue;
+      const binding = keybindings.bindings[definition.id];
+      if (!binding?.enabled || !binding.accelerator) continue;
+      const accelerator = normalizeAccelerator(binding.accelerator, platform);
+      if (!accelerator || TAURI_UNSUPPORTED_GLOBAL_ACCELERATORS.has(accelerator)) continue;
+      bindings.push({ actionId: definition.id, accelerator });
+    }
+    return bindings;
+  }, [keybindings, platform]);
 
   // 获取当前会话在列表中的索引
   const currentSessionIndex = useMemo(() => {
@@ -265,184 +251,197 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     return sessions.findIndex(s => s.id === currentSessionId);
   }, [currentSessionId, sessions]);
 
-  const handleKeyDown = useCallback(
-    async (event: KeyboardEvent) => {
-      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-      const modifier = isMac ? event.metaKey : event.ctrlKey;
+  const runAction = useCallback(
+    async (actionId: KeybindingActionId, event?: KeyboardEvent): Promise<boolean> => {
+      const isInputField = event ? isInputTarget(event.target) : false;
 
-      // 检查是否在输入框中
-      const target = event.target as HTMLElement;
-      const isInputField = target.tagName === 'INPUT' ||
-                          target.tagName === 'TEXTAREA' ||
-                          target.isContentEditable;
-
-      // Escape 总是生效（关闭对话框、取消操作）
-      if (event.key === 'Escape' && enableCancel) {
-        // 如果有权限请求，关闭它
-        if (pendingPermissionRequest) {
-          event.preventDefault();
-          setPendingPermissionRequest(null);
-          return;
-        }
-
-        // 如果设置打开，关闭它
-        if (useAppStore.getState().showSettings) {
-          event.preventDefault();
-          setShowSettings(false);
-          return;
-        }
-
-        // 触发自定义取消处理
-        if (customHandlers.cancel) {
-          event.preventDefault();
-          customHandlers.cancel();
-          return;
-        }
-      }
-
-      // 其他快捷键需要 modifier
-      if (!modifier) return;
-
-      // Shift 组合键
-      if (event.shiftKey) {
-        switch (event.key.toLowerCase()) {
-          case 'p':
-            // Cmd/Ctrl+Shift+P: 命令面板
-            event.preventDefault();
-            logger.info('Shortcut: Command palette');
-            if (customHandlers.commandPalette) {
-              customHandlers.commandPalette();
-            }
-            return;
-
-          case 'c':
-            // Cmd/Ctrl+Shift+C: 触发 Compact
-            if (!isInputField) {
-              event.preventDefault();
-              logger.info('Shortcut: Trigger compact');
-              if (customHandlers.triggerCompact) {
-                customHandlers.triggerCompact();
-              }
-            }
-            return;
-        }
-        return;
-      }
-
-      switch (event.key.toLowerCase()) {
-        case 'b':
-          // Cmd/Ctrl+B: 移至后台
-          if (enableBackground && currentSessionId && isSessionRunning(currentSessionId)) {
-            event.preventDefault();
-            logger.info('Shortcut: Move to background', { sessionId: currentSessionId });
-            const success = await moveToBackground(currentSessionId);
-            if (success) {
-              await createSession('新对话');
-            }
+      switch (actionId) {
+        case 'session.stop':
+          if (!enableCancel) return false;
+          if (pendingPermissionRequest) {
+            setPendingPermissionRequest(null);
+            return true;
           }
-          break;
+          if (useAppStore.getState().showSettings) {
+            setShowSettings(false);
+            return true;
+          }
+          if (customHandlers.cancel) {
+            await customHandlers.cancel();
+            return true;
+          }
+          return false;
 
-        case 'n':
-          // Cmd/Ctrl+N: 新会话
-          if (enableNewSession) {
-            event.preventDefault();
-            logger.info('Shortcut: New session');
+        case 'commandPalette.open':
+          logger.info('Shortcut: Command palette');
+          if (customHandlers.commandPalette) {
+            await customHandlers.commandPalette();
+          } else {
+            window.dispatchEvent(new CustomEvent('app:openCommandPalette'));
+          }
+          return true;
+
+        case 'session.new':
+          if (!enableNewSession) return false;
+          logger.info('Shortcut: New session');
+          await createSession('新对话');
+          return true;
+
+        case 'session.moveToBackground':
+          if (!enableBackground || !currentSessionId || !isSessionRunning(currentSessionId)) return false;
+          logger.info('Shortcut: Move to background', { sessionId: currentSessionId });
+          if (await moveToBackground(currentSessionId)) {
             await createSession('新对话');
           }
-          break;
+          return true;
 
-        case ',':
-          // Cmd/Ctrl+,: 设置
-          if (enableSettings) {
-            event.preventDefault();
-            logger.info('Shortcut: Open settings');
-            setShowSettings(true);
-          }
-          break;
+        case 'settings.open':
+          if (!enableSettings) return false;
+          logger.info('Shortcut: Open settings');
+          setShowSettings(true);
+          return true;
 
-        case 'k':
-          // Cmd/Ctrl+K: 清空对话（不在输入框中时）
-          if (enableClearChat && !isInputField && !isProcessing) {
-            event.preventDefault();
-            logger.info('Shortcut: Clear chat');
-            clearCurrentSession();
-          }
-          break;
+        case 'settings.keybindings':
+          openSettingsTab('keybindings');
+          return true;
 
-        case 'l':
-          // Cmd/Ctrl+L: 聚焦输入框
-          if (enableFocusInput) {
-            event.preventDefault();
-            logger.info('Shortcut: Focus input');
-            const inputEl = document.querySelector('[data-chat-input]') as HTMLTextAreaElement;
-            inputEl?.focus();
-          }
-          break;
+        case 'settings.mcp':
+          openSettingsTab('mcp');
+          return true;
 
-        case '/':
-          // Cmd/Ctrl+/: 切换侧边栏
-          if (enableToggleSidebar) {
-            event.preventDefault();
-            logger.info('Shortcut: Toggle sidebar');
-            setSidebarCollapsed(!sidebarCollapsed);
-          }
-          break;
+        case 'settings.skills':
+          openSettingsTab('skills');
+          return true;
 
-        case 'd':
-          // Cmd/Ctrl+D: 切换 DAG 面板（不在输入框中时，避免与书签冲突）
-          if (enableToggleDAG && !isInputField) {
-            event.preventDefault();
-            logger.info('Shortcut: Toggle DAG panel');
-            setShowDAGPanel(!showDAGPanel);
-          }
-          break;
+        case 'settings.plugins':
+          openSettingsTab('plugins');
+          return true;
 
-        case 'e':
-          // Cmd/Ctrl+E: 切换工作区（不在输入框中时）
-          if (enableToggleWorkspace && !isInputField) {
-            event.preventDefault();
-            logger.info('Shortcut: Toggle workspace');
-            setShowWorkspace(!showWorkspace);
-          }
-          break;
+        case 'settings.usage':
+          openSettingsTab('memory');
+          return true;
 
-        case 'j':
-          // Cmd/Ctrl+J: 切换 StatusRail（右侧状态面板）
-          event.preventDefault();
+        case 'composer.focus': {
+          if (!enableFocusInput) return false;
+          logger.info('Shortcut: Focus input');
+          const inputEl = document.querySelector('[data-chat-input]') as HTMLTextAreaElement | null;
+          inputEl?.focus();
+          return true;
+        }
+
+        case 'composer.slashMenu':
+          window.dispatchEvent(new CustomEvent('app:openSlashMenu'));
+          return true;
+
+        case 'sidebar.toggle':
+          if (!enableToggleSidebar) return false;
+          logger.info('Shortcut: Toggle sidebar');
+          setSidebarCollapsed(!sidebarCollapsed);
+          return true;
+
+        case 'dag.toggle':
+          if (!enableToggleDAG || isInputField) return false;
+          logger.info('Shortcut: Toggle DAG panel');
+          setShowDAGPanel(!showDAGPanel);
+          return true;
+
+        case 'workspace.toggle':
+          if (!enableToggleWorkspace || isInputField) return false;
+          logger.info('Shortcut: Toggle workspace');
+          setShowWorkspace(!showWorkspace);
+          return true;
+
+        case 'statusRail.toggle':
           logger.info('Shortcut: Toggle StatusRail');
           if (workbenchTabs.includes('task')) {
             closeWorkbenchTab('task');
           } else {
             openWorkbenchTab('task');
+            setTaskPanelTab('monitor');
           }
-          break;
+          return true;
 
-        case '[':
-          // Cmd/Ctrl+[: 上一个会话
-          if (enableSwitchSession && sessions.length > 1) {
-            event.preventDefault();
-            const prevIndex = currentSessionIndex > 0 ? currentSessionIndex - 1 : sessions.length - 1;
-            logger.info('Shortcut: Previous session', { index: prevIndex });
-            await switchSession(sessions[prevIndex].id);
-          }
-          break;
+        case 'session.previous':
+          if (!enableSwitchSession || sessions.length <= 1) return false;
+          await switchSession(sessions[currentSessionIndex > 0 ? currentSessionIndex - 1 : sessions.length - 1].id);
+          return true;
 
-        case ']':
-          // Cmd/Ctrl+]: 下一个会话
-          if (enableSwitchSession && sessions.length > 1) {
-            event.preventDefault();
-            const nextIndex = currentSessionIndex < sessions.length - 1 ? currentSessionIndex + 1 : 0;
-            logger.info('Shortcut: Next session', { index: nextIndex });
-            await switchSession(sessions[nextIndex].id);
+        case 'session.next':
+          if (!enableSwitchSession || sessions.length <= 1) return false;
+          await switchSession(sessions[currentSessionIndex < sessions.length - 1 ? currentSessionIndex + 1 : 0].id);
+          return true;
+
+        case 'session.clear':
+          if (useAppStore.getState().isProcessing) return false;
+          if (window.confirm('清空当前会话消息？')) {
+            clearCurrentSession();
           }
-          break;
+          return true;
+
+        case 'session.compact':
+          if (isInputField || !customHandlers.triggerCompact) return false;
+          await customHandlers.triggerCompact();
+          return true;
+
+        case 'voice.toggle':
+          await ipcService.unsafeInvoke(IPC_CHANNELS.VOICE_PASTE_TOGGLE);
+          return true;
+
+        case 'appshot.capture':
+          if (await invokeTauriCommand('appshots_trigger')) return true;
+          setShowCapturePanel(true);
+          return true;
+
+        case 'browser.open':
+          setShowBrowserSurfacePanel(true);
+          return true;
+
+        case 'computerUse.open':
+          setShowComputerUsePanel(true);
+          return true;
+
+        case 'replay.open':
+          openWorkbenchTab('task');
+          setTaskPanelTab('monitor');
+          return true;
+
+        case 'reviewQueue.open':
+          openWorkbenchTab('task');
+          setTaskPanelTab('orchestration');
+          return true;
+
+        case 'files.attach':
+          setShowFileExplorer(true);
+          return true;
+
+        case 'artifacts.open':
+        case 'artifacts.preview':
+        case 'artifacts.export':
+        case 'artifacts.copy':
+        case 'artifacts.previousVersion':
+        case 'artifacts.nextVersion':
+          openWorkspacePreview();
+          requestAnimationFrame(() => {
+            window.dispatchEvent(new CustomEvent(`app:${actionId}`));
+          });
+          return true;
+
+        case 'app.quickAsk':
+          window.dispatchEvent(new CustomEvent('app:quickAsk'));
+          return true;
+
+        case 'app.toggle':
+        case 'composer.send':
+        case 'composer.newline':
+        case 'session.continue':
+        case 'session.retry':
+          return false;
       }
     },
     [
       enableBackground,
       enableNewSession,
       enableSettings,
-      enableClearChat,
       enableFocusInput,
       enableToggleSidebar,
       enableToggleDAG,
@@ -459,6 +458,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
       switchSession,
       clearCurrentSession,
       setShowSettings,
+      openSettingsTab,
       setSidebarCollapsed,
       sidebarCollapsed,
       setShowDAGPanel,
@@ -468,11 +468,89 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
       workbenchTabs,
       openWorkbenchTab,
       closeWorkbenchTab,
+      setTaskPanelTab,
+      setShowCapturePanel,
+      setShowBrowserSurfacePanel,
+      setShowComputerUsePanel,
+      setShowFileExplorer,
+      openWorkspacePreview,
       pendingPermissionRequest,
       setPendingPermissionRequest,
-      isProcessing,
     ]
   );
+
+  const handleKeyDown = useCallback(
+    async (event: KeyboardEvent) => {
+      const accelerator = eventToAccelerator(event, platform);
+      if (!accelerator) return;
+      const actionIds = actionByAccelerator.get(accelerator);
+      if (!actionIds?.length) return;
+      if (actionIds.length > 1) {
+        logger.warn('Shortcut ignored because multiple actions share the same accelerator', {
+          accelerator,
+          actionIds,
+        });
+        return;
+      }
+
+      const definition = KEYBINDING_DEFINITION_BY_ID.get(actionIds[0]);
+      if (
+        definition?.scope === 'global'
+        && keybindings.globalHotkeysEnabled !== false
+        && isTauriRuntime()
+      ) {
+        return;
+      }
+      const handled = await runAction(actionIds[0], event);
+      if (handled) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    },
+    [actionByAccelerator, keybindings.globalHotkeysEnabled, platform, runAction]
+  );
+
+  useEffect(() => {
+    void (async () => {
+      const results = await invokeTauriCommand<GlobalHotkeyRegistrationResult[]>(
+        'keybindings_set_global_hotkeys',
+        { bindings: globalHotkeyBindings }
+      );
+      for (const result of results || []) {
+        if (!result.registered) {
+          logger.warn('Failed to register global hotkey', {
+            actionId: result.actionId,
+            accelerator: result.accelerator,
+            error: result.error,
+          });
+        }
+      }
+    })();
+  }, [globalHotkeyBindings]);
+
+  useEffect(() => {
+    let cleanup: (() => void) | undefined;
+    let cancelled = false;
+
+    void (async () => {
+      if (!isTauriRuntime()) return;
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        const unlisten = await listen<GlobalHotkeyEventPayload>('keybindings:global_hotkey', (event) => {
+          if (cancelled) return;
+          void runAction(event.payload.actionId);
+        });
+        cleanup = unlisten;
+      } catch (error) {
+        logger.warn('Failed to listen for global hotkey events', { error });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, [runAction]);
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);

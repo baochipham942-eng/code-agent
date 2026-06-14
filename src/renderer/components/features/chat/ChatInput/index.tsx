@@ -165,6 +165,28 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const inputAreaRef = useRef<InputAreaRef>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const debugDraftAppliedRef = useRef(false);
+
+  useEffect(() => {
+    const handleOpenCommandPalette = () => setShowCommandPalette(true);
+    window.addEventListener('app:openCommandPalette', handleOpenCommandPalette);
+    return () => {
+      window.removeEventListener('app:openCommandPalette', handleOpenCommandPalette);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleOpenSlashMenu = () => {
+      setValue((current) => current.startsWith('/') ? current : '/');
+      setSlashFilter('');
+      setShowSlashPopover(true);
+      requestAnimationFrame(() => inputAreaRef.current?.focus());
+    };
+    window.addEventListener('app:openSlashMenu', handleOpenSlashMenu);
+    return () => {
+      window.removeEventListener('app:openSlashMenu', handleOpenSlashMenu);
+    };
+  }, []);
+
   const { processFile, processFolderEntry } = useFileUpload();
   // 拖放附件处理（高亮状态 + 文件/文件夹拖入转附件）
   const { isDragOver, handleDragOver, handleDragLeave, handleDrop } = useDragAndDrop({

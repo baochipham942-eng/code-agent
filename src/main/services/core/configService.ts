@@ -24,6 +24,10 @@ import {
   DEFAULT_MODELS,
   MODEL_API_ENDPOINTS,
 } from '../../../shared/constants';
+import {
+  createDefaultKeybindingsSettings,
+  getKeybindingPlatformFromNodePlatform,
+} from '../../../shared/keybindings';
 
 const logger = createLogger('ConfigService');
 
@@ -292,6 +296,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     enabled: true,
     targetSession: 'current',
   },
+  keybindings: createDefaultKeybindingsSettings(getKeybindingPlatformFromNodePlatform(process.platform)),
 };
 
 export class ConfigService implements IReadConfigService {

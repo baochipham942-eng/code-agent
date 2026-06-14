@@ -271,6 +271,60 @@ function notifyRenderer(event: 'voice-paste:status', data?: VoicePasteStatusPayl
   });
 }
 
+async function toggleVoicePasteRecording(): Promise<{ isRecording: boolean }> {
+  if (!isRecording) {
+    isRecording = true;
+    const tempFile = startRecording();
+    console.log('[VoicePaste] Recording started:', tempFile);
+    notifyRenderer('voice-paste:status', { status: 'recording' });
+    return { isRecording };
+  }
+
+  isRecording = false;
+  stopRecording();
+  console.log('[VoicePaste] Recording stopped, processing...');
+  notifyRenderer('voice-paste:status', { status: 'transcribing' });
+
+  try {
+    if (!currentTempFile || !fs.existsSync(currentTempFile)) {
+      throw new Error('No recording file found');
+    }
+
+    const stats = fs.statSync(currentTempFile);
+    if (stats.size < 1000) {
+      console.log('[VoicePaste] Recording too short, skipping');
+      notifyRenderer('voice-paste:status', { status: 'idle', error: '录音太短' });
+      return { isRecording };
+    }
+
+    const rawText = await transcribeAudio(currentTempFile);
+    if (!rawText || rawText.trim().length === 0) {
+      notifyRenderer('voice-paste:status', { status: 'idle', error: '未识别到语音' });
+      return { isRecording };
+    }
+
+    notifyRenderer('voice-paste:status', { status: 'processing' });
+    const cleanText = await postProcessTranscript(rawText);
+
+    await pasteText(cleanText);
+    console.log('[VoicePaste] Pasted:', cleanText.substring(0, 50) + '...');
+    notifyRenderer('voice-paste:status', { status: 'idle' });
+  } catch (error) {
+    console.error('[VoicePaste] Error:', (error as Error).message);
+    notifyRenderer('voice-paste:status', {
+      status: 'idle',
+      error: (error as Error).message
+    });
+  } finally {
+    if (currentTempFile && fs.existsSync(currentTempFile)) {
+      fs.unlinkSync(currentTempFile);
+      currentTempFile = null;
+    }
+  }
+
+  return { isRecording };
+}
+
 export function registerVoicePasteHandlers(voicePasteIpcMain: typeof ipcMain): void {
   const isWebMode = process.env.CODE_AGENT_WEB_MODE === 'true' || !process.versions.electron;
 
@@ -278,63 +332,8 @@ export function registerVoicePasteHandlers(voicePasteIpcMain: typeof ipcMain): v
   if (isWebMode) {
     console.log('[VoicePaste] Global shortcut registration skipped in web mode');
   }
-  const registered = isWebMode ? false : globalShortcut.register('CommandOrControl+`', async () => {
-    if (!isRecording) {
-      // Start recording
-      isRecording = true;
-      const tempFile = startRecording();
-      console.log('[VoicePaste] Recording started:', tempFile);
-      notifyRenderer('voice-paste:status', { status: 'recording' });
-    } else {
-      // Stop recording and process
-      isRecording = false;
-      stopRecording();
-      console.log('[VoicePaste] Recording stopped, processing...');
-      notifyRenderer('voice-paste:status', { status: 'transcribing' });
-
-      try {
-        if (!currentTempFile || !fs.existsSync(currentTempFile)) {
-          throw new Error('No recording file found');
-        }
-
-        // Check file size (skip if too small)
-        const stats = fs.statSync(currentTempFile);
-        if (stats.size < 1000) {
-          console.log('[VoicePaste] Recording too short, skipping');
-          notifyRenderer('voice-paste:status', { status: 'idle', error: '录音太短' });
-          return;
-        }
-
-        // Transcribe
-        const rawText = await transcribeAudio(currentTempFile);
-        if (!rawText || rawText.trim().length === 0) {
-          notifyRenderer('voice-paste:status', { status: 'idle', error: '未识别到语音' });
-          return;
-        }
-
-        // Post-process
-        notifyRenderer('voice-paste:status', { status: 'processing' });
-        const cleanText = await postProcessTranscript(rawText);
-
-        // Paste
-        await pasteText(cleanText);
-        console.log('[VoicePaste] Pasted:', cleanText.substring(0, 50) + '...');
-        notifyRenderer('voice-paste:status', { status: 'idle' });
-
-      } catch (error) {
-        console.error('[VoicePaste] Error:', (error as Error).message);
-        notifyRenderer('voice-paste:status', {
-          status: 'idle',
-          error: (error as Error).message
-        });
-      } finally {
-        // Cleanup temp file
-        if (currentTempFile && fs.existsSync(currentTempFile)) {
-          fs.unlinkSync(currentTempFile);
-          currentTempFile = null;
-        }
-      }
-    }
+  const registered = isWebMode ? false : globalShortcut.register('CommandOrControl+`', () => {
+    void toggleVoicePasteRecording();
   });
 
   if (!registered && !isWebMode) {
@@ -349,16 +348,7 @@ export function registerVoicePasteHandlers(voicePasteIpcMain: typeof ipcMain): v
   });
 
   voicePasteIpcMain.handle('voice-paste:toggle', async () => {
-    // Allow renderer to trigger toggle programmatically
-    if (globalShortcut.isRegistered('CommandOrControl+`')) {
-      // Simulate the shortcut callback
-      if (isRecording) {
-        stopRecording();
-      } else {
-        startRecording();
-      }
-    }
-    return { isRecording };
+    return toggleVoicePasteRecording();
   });
 }
 

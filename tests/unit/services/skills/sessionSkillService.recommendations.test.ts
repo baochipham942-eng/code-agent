@@ -115,6 +115,45 @@ describe('SessionSkillService recommendations', () => {
       libraryId: 'builtin',
     });
   });
+
+  it('recommends builtin task-routing skills for research, implementation, and delivery intents', async () => {
+    skills.push(
+      skill({
+        name: 'research-brief-and-split',
+        description: '研究拆题：用于产品、竞品、版本、能力、模型、语音、工具链等对标研究。',
+        aliases: ['研究拆题', '竞品对标', '版本对比'],
+        source: 'builtin',
+      }),
+      skill({
+        name: 'implementation-closure',
+        description: '实现闭环：用于已进入代码实现、修 bug、迁移、收尾、测试补齐或回归验证的任务。',
+        aliases: ['实现闭环', '修复并验证', '最小改动'],
+        source: 'builtin',
+      }),
+      skill({
+        name: 'reviewer-facing-delivery',
+        description: '面向 reviewer 的交付材料：用于 Excel 审批表、PR 摘要、handoff、发布说明。',
+        aliases: ['交付材料', '审批表', 'PR 摘要'],
+        source: 'builtin',
+      }),
+    );
+
+    const { getSessionSkillService } = await import('../../../../src/main/services/skills/sessionSkillService');
+    const service = getSessionSkillService();
+
+    expect(service.recommendSkills('session-1', '帮我做一下竞品对标研究')[0]).toMatchObject({
+      skillName: 'research-brief-and-split',
+      libraryId: 'builtin',
+    });
+    expect(service.recommendSkills('session-2', '这个 bug 帮我修复并验证')[0]).toMatchObject({
+      skillName: 'implementation-closure',
+      libraryId: 'builtin',
+    });
+    expect(service.recommendSkills('session-3', '把这个审批表改得更可读')[0]).toMatchObject({
+      skillName: 'reviewer-facing-delivery',
+      libraryId: 'builtin',
+    });
+  });
 });
 
 describe('SessionSkillService install recommendations (catalog 导购)', () => {

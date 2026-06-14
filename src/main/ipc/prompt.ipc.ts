@@ -10,6 +10,7 @@ import {
   setPromptOverride,
   resetPromptOverride,
 } from '../prompts/registry';
+import { getCurrentPromptStackSummary } from '../services/promptStack';
 import { getAdminAccessIpcError } from './adminGuard';
 // 副作用 import：强制加载所有接入 registry 的 prompt 模块（包括没被 builder 直接引用的）
 import '../prompts/promptIndex';
@@ -89,6 +90,9 @@ export function registerPromptHandlers(ipcMain: IpcMain): void {
           data = { length: text.length, preview: text.slice(0, 600), text };
           break;
         }
+        case 'stackSummary':
+          data = await getCurrentPromptStackSummary();
+          break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
       }

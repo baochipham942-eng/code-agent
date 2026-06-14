@@ -167,6 +167,14 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     badge: '官方',
     keywords: ['周报', '公告', '状态报告', 'faq', '内部沟通'],
   },
+  {
+    name: 'reviewer-facing-delivery',
+    displayName: '面向评审的交付',
+    description: '把表格、PR、handoff、审批材料整理成一眼可审的产物',
+    category: 'docs-office',
+    repoId: BUILTIN_REPO_ID,
+    keywords: ['审批', '申请表', '交付材料', 'PR 摘要', 'handoff', '可读性'],
+  },
 
   // ---- 数据分析 ----
   {
@@ -342,6 +350,14 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     keywords: ['研究监控', '追踪论文', '监控竞品', 'release notes', '定时调研'],
   },
   {
+    name: 'research-brief-and-split',
+    displayName: '研究拆题',
+    description: '把竞品、版本、模型、能力对标拆成可审阅研究 brief',
+    category: 'research',
+    repoId: BUILTIN_REPO_ID,
+    keywords: ['研究', '调研', '竞品', '对标', '版本对比', 'release note', '借鉴'],
+  },
+  {
     name: 'opencli-search',
     displayName: 'OpenCLI 复杂搜索',
     description: '用本机 OpenCLI 处理登录态网站、社交平台、反爬页面和站点专用抓取',
@@ -435,6 +451,14 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     repoId: 'pm-claude-skills',
     keywords: ['项目报告', '进展汇报', '状态报告'],
   },
+  {
+    name: 'task-brief-builder',
+    displayName: '任务简报',
+    description: '先明确目标、现场、边界和验收，再选择研究或实现路线',
+    category: 'automation',
+    repoId: BUILTIN_REPO_ID,
+    keywords: ['任务简报', 'brief', '边界', '验收', 'scope', 'definition of done'],
+  },
 
   // ---- 开发工程 ----
   {
@@ -451,6 +475,14 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     description: 'TDD 工作流：先写测试再写实现',
     category: 'development',
     repoId: 'superpowers',
+  },
+  {
+    name: 'implementation-closure',
+    displayName: '实现闭环',
+    description: '读代码、最小改动、跑验证，避免停在方案或未证实的修复',
+    category: 'development',
+    repoId: BUILTIN_REPO_ID,
+    keywords: ['实现', '修复', '验证', 'typecheck', '测试', 'build', '闭环'],
   },
   {
     name: 'brainstorming',

@@ -201,6 +201,128 @@ Commit message 格式：
     loaded: true,
     bins: ['docker'],
   },
+  {
+    name: 'task-brief-builder',
+    description: '任务简报构建：当用户的需求较大、含糊、跨文件/跨工具，或需要先明确目标、现场、边界和验收标准时使用。适合把自然语言请求整理成可执行 brief，再决定研究、实现、交付或诊断路线。',
+    aliases: ['任务简报', 'brief', '验收标准', '边界', 'scope', 'definition of done'],
+    promptContent: `# 任务简报构建
+
+先把请求整理成可执行 brief，再动手。
+
+## 工作流
+
+1. 绑定现场：repo、文件、链接、数据源、分支、运行环境、用户点名对象。
+2. 判断任务类型：研究、实现、交付材料、诊断、直接回答。
+3. 写出四项 brief：
+   - 目标：用户真正要达成什么。
+   - 现场：当前对象和已知事实。
+   - 边界：不碰什么、暂不做什么、哪些假设要显式说明。
+   - 验收：测试、回读、截图、数据核对、来源引用或 reviewer 能直接判断的证据。
+4. brief 足够清楚时继续执行；关键输入缺失且无法低风险推断时先问用户。
+
+## 交付
+
+输出应短，优先给判断和下一步行动。不要把 brief 写成冗长计划书。`,
+    basePath: '',
+    allowedTools: ['Read', 'Glob', 'Grep', 'AskUserQuestion', 'TaskManager'],
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'builtin',
+    loaded: true,
+  },
+  {
+    name: 'research-brief-and-split',
+    description: '研究拆题：用于产品、竞品、版本、能力、模型、语音、工具链等对标研究。用户说 explore、研究、对标、借鉴、比较版本、再开方向、新会话时，先拆 topic、找证据、产出可审阅研究 brief，不急着实现。',
+    aliases: ['研究拆题', '竞品对标', '版本对比', '能力对标', 'research split', 'competitive research'],
+    promptContent: `# 研究拆题
+
+把研究做成可审阅的决策材料，而不是一次性混在聊天里。
+
+## 工作流
+
+1. 绑定对象：产品、版本、release note、源码路径、链接或本地应用。
+2. 分类：Spike、广度研究、深度研究、实现准备、独立新方向。
+3. 对每个方向写清问题、证据来源、产品含义、风险和下一步。
+4. 用户追加新方向时，默认拆成独立 topic；用户要求新会话时，使用可见线程或独立产物，不用隐藏后台替代。
+5. 只在研究已经形成明确切片后再进入实现。
+
+## 证据优先级
+
+本地代码和运行行为 > 官方文档/release note > 原始链接/论文 > 二手报道/评论。
+
+## 交付
+
+输出包含：判断、证据、差距、建议切片。标记每个 topic 的状态。`,
+    basePath: '',
+    allowedTools: ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'TaskManager', 'MemoryRead'],
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'builtin',
+    loaded: true,
+  },
+  {
+    name: 'implementation-closure',
+    description: '实现闭环：用于已进入代码实现、修 bug、迁移、收尾、测试补齐或回归验证的任务。强调读代码后再改、保护脏 worktree、最小必要改动、跑测试/类型检查/构建/回读验证，不停在方案。',
+    aliases: ['实现闭环', '修复并验证', '最小改动', 'typecheck', 'regression', 'smoke test'],
+    promptContent: `# 实现闭环
+
+目标是完成一个可验证的小闭环。
+
+## 工作流
+
+1. 看 git status，识别已有用户改动并避开无关文件。
+2. 搜索和读取相关代码，不凭记忆改文件。
+3. 设定最小成功标准和验证方式。
+4. 只改必要文件，不做顺手重构。
+5. 风险真实存在时补测试或 smoke。
+6. 跑验证：定向测试、typecheck、build、回读、截图或运行检查。
+7. 结束前再次看状态，说明未验证项和剩余风险。
+
+## 禁止
+
+- 用户没要求时不 commit、不 push。
+- 不用“应该好了”替代证据。
+- 连续失败两次后改用假设驱动调试，查文档或 issue，不继续猜。`,
+    basePath: '',
+    allowedTools: ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash', 'TaskManager'],
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'builtin',
+    loaded: true,
+  },
+  {
+    name: 'reviewer-facing-delivery',
+    description: '面向 reviewer 的交付材料：用于 Excel 审批表、角色申请表、PR 摘要、handoff、发布说明、状态汇报、审计材料等需要别人快速理解和判断的产物。强调 source of truth、自解释字段、可读性和回读验证。',
+    aliases: ['交付材料', '审批表', 'PR 摘要', 'handoff', 'reviewer readable', '可读性'],
+    promptContent: `# 面向 Reviewer 的交付材料
+
+让 reviewer 一眼读懂、能判断、能追溯来源。
+
+## 工作流
+
+1. 先绑定 source of truth：文件、sheet、列、PR diff、ticket、文档段落或用户原话。
+2. 判断 reviewer 要做的决定：批准、比较、理解风险、继续执行或确认口径。
+3. 把必要上下文放进主阅读路径，不让 reviewer 跨列、跨文件自行拼。
+4. 用自解释字段和 multiline 内容承载原始信息、映射结果、说明。
+5. 删除已被合并进主字段的草稿列或辅助列。
+6. 生成后回读：维度、表头、样例行、合并单元格、文件大小或关键段落。
+
+## 原则
+
+- 少列但每列信息完整。
+- 贴近业务语义，不用内部实现名堆砌。
+- 不从目标表猜 source；用户点名哪份文件哪列，就以那里为准。`,
+    basePath: '',
+    allowedTools: ['Read', 'Glob', 'Grep', 'Write', 'Edit', 'Bash', 'TaskManager'],
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'builtin',
+    loaded: true,
+  },
   // ppt builtin skill 已移除 — 使用项目级 frontend-slides / ppt skills 替代
   {
     name: 'data-cleaning',
@@ -2861,6 +2983,10 @@ const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
   docker: 'development',
   dream: 'development',
   distill: 'development',
+  'task-brief-builder': 'automation',
+  'research-brief-and-split': 'research',
+  'implementation-closure': 'development',
+  'reviewer-facing-delivery': 'docs-office',
   // 数据分析
   'data-cleaning': 'data-analysis',
   'data-analysis-helper': 'data-analysis',

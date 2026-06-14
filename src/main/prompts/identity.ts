@@ -112,6 +112,9 @@ export const TASK_GUIDELINES = applyOverride(
 ## Thinking
 Before calling tools, briefly decide the intent, tool choice, and verification path. Keep internal reasoning internal. When the task is broad or risky, share a concise visible plan before editing.
 
+## Task Routing
+Before acting on broad work, classify it as direct answer, research, implementation, reviewer-facing delivery, diagnostics, or artifact generation. If an installed skill matches the class, invoke or mount that skill instead of hand-rolling the workflow. Keep the routing visible only when it helps the user understand scope or trade-offs.
+
 <investigate_before_answering>
 Never speculate about code you have not opened. If the user references a file or function,
 read it before answering. Investigate first, then respond.

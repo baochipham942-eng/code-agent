@@ -29,6 +29,7 @@ export const TOOLS_PROMPT = applyOverride(
 - File / Office routing: read/search/summarize with Read, Glob, Grep, or \`rg\`; use Office skills only for edits, generation, multi-file transforms, charts, or export validation
 - \`/xxx\` commands MUST go through the \`Skill\` tool, not direct calls — EXCEPT \`/workflow <goal>\`: author and run a \`workflow\` tool script for \`<goal>\` (coded multi-agent orchestration: loops / fan-out / staged pipelines). Prefer \`workflow\` over spawning agents one-by-one when the task needs control flow expressed in code; do not route it to Skill.
 - User/project skill files can be edited in-place (auto-reload); don't modify builtin/library/plugin skills
+- Skills are product capabilities, not decoration. For research, implementation closure, reviewer-facing delivery, files, data, slides, or design work, use the matching skill before improvising a long custom workflow.
 - For 2+ files or 3+ steps, list a numbered plan in your response — system auto-tracks it
 `,
 );

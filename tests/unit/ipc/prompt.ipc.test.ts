@@ -154,4 +154,20 @@ describe('prompt.ipc access control', () => {
       },
     });
   });
+
+  it('returns prompt stack metadata without exposing system prompt text', async () => {
+    mocks.currentUser = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
+    mocks.sessionVerified = true;
+    const ipc = makeFakeIpc();
+    registerPromptHandlers(ipc as never);
+
+    const response = await ipc.invoke({ action: 'stackSummary' });
+
+    expect(response.success).toBe(true);
+    expect(response.data).toMatchObject({
+      totalChars: 18,
+      hasDynamicBoundary: false,
+    });
+    expect(JSON.stringify(response.data)).not.toContain('FULL SYSTEM PROMPT');
+  });
 });

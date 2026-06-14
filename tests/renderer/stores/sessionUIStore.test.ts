@@ -44,9 +44,35 @@ describe('sessionUIStore - input history', () => {
       filter: 'active',
       searchQuery: '',
       sessionStatusFilter: 'all',
+      pendingSearchJump: null,
       inputHistory: [],
       inputHistoryIndex: -1,
       inputHistoryDraft: '',
+    });
+  });
+
+  describe('pendingSearchJump', () => {
+    it('stores and clears a pending search jump target', () => {
+      useSessionUIStore.getState().setPendingSearchJump({
+        sessionId: 'session-1',
+        messageId: 'message-1',
+        turnNumber: 3,
+        matchOffset: 12,
+        query: 'project context',
+        createdAt: 123,
+      });
+
+      expect(useSessionUIStore.getState().pendingSearchJump).toMatchObject({
+        sessionId: 'session-1',
+        messageId: 'message-1',
+        turnNumber: 3,
+        matchOffset: 12,
+        query: 'project context',
+      });
+
+      useSessionUIStore.getState().setPendingSearchJump(null);
+
+      expect(useSessionUIStore.getState().pendingSearchJump).toBeNull();
     });
   });
 
@@ -223,6 +249,13 @@ describe('sessionUIStore - input history', () => {
     it('should update the local session status filter', () => {
       useSessionUIStore.getState().setSessionStatusFilter('background');
       expect(useSessionUIStore.getState().sessionStatusFilter).toBe('background');
+    });
+
+    it('should accept task recovery status filters', () => {
+      for (const filter of ['unfinished', 'approval', 'running', 'attention', 'artifact', 'review'] as const) {
+        useSessionUIStore.getState().setSessionStatusFilter(filter);
+        expect(useSessionUIStore.getState().sessionStatusFilter).toBe(filter);
+      }
     });
   });
 });

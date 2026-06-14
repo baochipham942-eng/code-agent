@@ -107,6 +107,12 @@ export class ProjectRepository {
     this.db.prepare('UPDATE projects SET name = ?, updated_at = ? WHERE id = ?').run(name, updatedAt, id);
   }
 
+  setProjectDescription(id: string, description: string | null, updatedAt: number): void {
+    this.db
+      .prepare('UPDATE projects SET description = ?, updated_at = ? WHERE id = ?')
+      .run(description, updatedAt, id);
+  }
+
   touchProject(id: string, updatedAt: number): void {
     this.db.prepare('UPDATE projects SET updated_at = ? WHERE id = ?').run(updatedAt, id);
   }
@@ -201,11 +207,16 @@ export class ProjectRepository {
   }
 
   /** 项目下的 session（含标题，用于产物列表标注来源），按更新时间倒序 */
-  listProjectSessions(projectId: string): Array<{ id: string; title: string; updatedAt: number }> {
+  listProjectSessions(projectId: string): Array<{ id: string; title: string; updatedAt: number; workingDirectory?: string | null }> {
     const rows = this.db
-      .prepare('SELECT id, title, updated_at FROM sessions WHERE project_id = ? AND is_deleted = 0 ORDER BY updated_at DESC')
+      .prepare('SELECT id, title, updated_at, working_directory FROM sessions WHERE project_id = ? AND is_deleted = 0 ORDER BY updated_at DESC')
       .all(projectId) as SQLiteRow[];
-    return rows.map((r) => ({ id: r.id as string, title: (r.title as string) || '', updatedAt: r.updated_at as number }));
+    return rows.map((r) => ({
+      id: r.id as string,
+      title: (r.title as string) || '',
+      updatedAt: r.updated_at as number,
+      workingDirectory: (r.working_directory as string | null) || undefined,
+    }));
   }
 
   /**

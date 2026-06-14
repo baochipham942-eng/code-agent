@@ -141,6 +141,17 @@ describe('ProjectRepository', () => {
     expect(repo.listProjects(false).find((x) => x.id === p.id)).toBeUndefined();
     expect(repo.listProjects(true).find((x) => x.id === p.id)).toBeDefined();
   });
+
+  it('更新项目描述：可写入也可清空', () => {
+    const p = makeRow('/work/alpha', getProjectKey('/work/alpha'), NOW);
+    repo.upsertProject(p);
+    repo.setProjectDescription(p.id, 'Alma 对标项目', NOW + 1);
+    expect(repo.getProject(p.id)?.description).toBe('Alma 对标项目');
+    expect(repo.getProject(p.id)?.updatedAt).toBe(NOW + 1);
+    repo.setProjectDescription(p.id, null, NOW + 2);
+    expect(repo.getProject(p.id)?.description).toBeUndefined();
+    expect(repo.getProject(p.id)?.updatedAt).toBe(NOW + 2);
+  });
 });
 
 describe('buildProjectArtifacts（跨 session 产物聚合）', () => {
@@ -152,15 +163,17 @@ describe('buildProjectArtifacts（跨 session 产物聚合）', () => {
       { id: 's1', title: '会话一' },
       { id: 's2', title: '会话二' },
     ];
-    const messages: Record<string, Array<{ role: string; content: string; timestamp: number }>> = {
-      s1: [{ role: 'assistant', content: chartBlock('图A'), timestamp: 100 }],
-      s2: [{ role: 'assistant', content: htmlBlock, timestamp: 200 }],
+    const messages: Record<string, Array<{ id: string; role: string; content: string; timestamp: number }>> = {
+      s1: [{ id: 'msg-s1-chart', role: 'assistant', content: chartBlock('图A'), timestamp: 100 }],
+      s2: [{ id: 'msg-s2-html', role: 'assistant', content: htmlBlock, timestamp: 200 }],
     };
     const items = buildProjectArtifacts(sessions, (id) => messages[id] ?? []);
     expect(items).toHaveLength(2);
     expect(items[0].sessionId).toBe('s2'); // 时间倒序：200 在前
+    expect(items[0].messageId).toBe('msg-s2-html');
     expect(items[0].kind).toBe('generative_ui');
     expect(items[1].sessionId).toBe('s1');
+    expect(items[1].messageId).toBe('msg-s1-chart');
     expect(items[1].sessionTitle).toBe('会话一');
   });
 
@@ -230,5 +243,60 @@ describe('buildProjectArtifacts（跨 session 产物聚合）', () => {
     const msgs = Array.from({ length: 5 }, (_, i) => ({ role: 'assistant', content: chartBlock(`图${i}`), timestamp: i }));
     const items = buildProjectArtifacts([{ id: 's1', title: 'a' }], () => msgs, 3);
     expect(items).toHaveLength(3);
+  });
+
+  it('聚合工具 preview、文件输出和 URL artifact，并生成 Workspace Preview item id', () => {
+    const items = buildProjectArtifacts([
+      { id: 's1', title: '工具会话', workingDirectory: '/repo/app' },
+    ], () => [{
+      id: 'msg-tool',
+      role: 'assistant',
+      content: '',
+      timestamp: 10,
+      toolCalls: [{
+        id: 'tool-write',
+        name: 'Write',
+        arguments: {},
+        result: {
+          toolCallId: 'tool-write',
+          success: true,
+          outputPath: 'dist/report.html',
+          metadata: {
+            previewItem: {
+              id: 'mail-preview-1',
+              kind: 'message_draft',
+              title: '跟进邮件',
+            },
+            artifact: {
+              artifactId: 'site-url',
+              kind: 'web',
+              sourceTool: 'Deploy',
+              name: 'Preview URL',
+              url: 'https://example.com/report',
+            },
+          },
+        },
+      }],
+    }]);
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        title: '跟进邮件',
+        previewItemId: 'mail-preview-1',
+        toolCallId: 'tool-write',
+      }),
+      expect.objectContaining({
+        title: 'report.html',
+        kind: 'generic_html',
+        path: '/repo/app/dist/report.html',
+        previewItemId: 'file:/repo/app/dist/report.html',
+      }),
+      expect.objectContaining({
+        title: 'Preview URL',
+        kind: 'link',
+        url: 'https://example.com/report',
+        previewItemId: 'tool-artifact:tool-write:site-url',
+      }),
+    ]);
   });
 });

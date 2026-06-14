@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { getSessionStatusPresentation } from '../../../src/renderer/utils/sessionPresentation';
+import {
+  getSessionStatusPresentation,
+  matchesSessionStatusFilter,
+} from '../../../src/renderer/utils/sessionPresentation';
 
 describe('getSessionStatusPresentation', () => {
   describe('P1: live in-memory signals win first', () => {
@@ -179,5 +182,49 @@ describe('getSessionStatusPresentation', () => {
         }).kind,
       ).toBe('live');
     });
+  });
+});
+
+describe('matchesSessionStatusFilter', () => {
+  it('keeps all sessions in the all filter', () => {
+    expect(matchesSessionStatusFilter('all', 'done')).toBe(true);
+    expect(matchesSessionStatusFilter('all', 'approval')).toBe(true);
+  });
+
+  it('groups actionable sessions under unfinished', () => {
+    for (const kind of ['approval', 'background', 'live', 'paused', 'error', 'incomplete'] as const) {
+      expect(matchesSessionStatusFilter('unfinished', kind)).toBe(true);
+    }
+
+    expect(matchesSessionStatusFilter('unfinished', 'done')).toBe(false);
+    expect(matchesSessionStatusFilter('unfinished', 'idle')).toBe(false);
+  });
+
+  it('separates approval, running, and attention filters', () => {
+    expect(matchesSessionStatusFilter('approval', 'approval')).toBe(true);
+    expect(matchesSessionStatusFilter('approval', 'live')).toBe(false);
+
+    expect(matchesSessionStatusFilter('running', 'background')).toBe(true);
+    expect(matchesSessionStatusFilter('running', 'live')).toBe(true);
+    expect(matchesSessionStatusFilter('running', 'paused')).toBe(false);
+
+    expect(matchesSessionStatusFilter('attention', 'paused')).toBe(true);
+    expect(matchesSessionStatusFilter('attention', 'error')).toBe(true);
+    expect(matchesSessionStatusFilter('attention', 'incomplete')).toBe(true);
+    expect(matchesSessionStatusFilter('attention', 'approval')).toBe(false);
+  });
+
+  it('filters pending review sessions from review evidence instead of runtime status', () => {
+    expect(matchesSessionStatusFilter('review', 'done', { hasPendingReview: true })).toBe(true);
+    expect(matchesSessionStatusFilter('review', 'approval', { hasPendingReview: true })).toBe(true);
+    expect(matchesSessionStatusFilter('review', 'approval', { hasPendingReview: false })).toBe(false);
+    expect(matchesSessionStatusFilter('review', 'done')).toBe(false);
+  });
+
+  it('filters delivery-signal sessions from recovery evidence instead of runtime status', () => {
+    expect(matchesSessionStatusFilter('artifact', 'done', { hasDeliverySignals: true })).toBe(true);
+    expect(matchesSessionStatusFilter('artifact', 'approval', { hasDeliverySignals: true })).toBe(true);
+    expect(matchesSessionStatusFilter('artifact', 'approval', { hasDeliverySignals: false })).toBe(false);
+    expect(matchesSessionStatusFilter('artifact', 'done')).toBe(false);
   });
 });

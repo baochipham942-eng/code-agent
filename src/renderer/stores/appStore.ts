@@ -14,6 +14,7 @@ import type {
   UpdateInfo,
 } from '@shared/contract';
 import type { ContextHealthState } from '@shared/contract/contextHealth';
+import type { GoalRunInput } from '@shared/contract/appService';
 import { defaultLanguage, type Language } from '../i18n';
 import {
   DEFAULT_PROVIDER,
@@ -155,6 +156,12 @@ export interface GoalRunState {
   lastGate?: { gate: number; pass: boolean; reason?: string };
 }
 
+export interface PendingProjectGoalChatSeed {
+  sessionId: string;
+  content: string;
+  goal: GoalRunInput;
+}
+
 interface AppState {
   // UI State
   showSettings: boolean;
@@ -163,6 +170,8 @@ interface AppState {
   settingsCapabilityFocus: SettingsCapabilityFocus | null;
   // 对话式建角色：待发送的种子消息（入口触发，ChatView 在新会话就绪后自动发出）
   pendingRoleChatSeed: string | null;
+  // 项目目标：从 Project 详情/控制台启动后，等目标 session 成为当前会话再自动发出 /goal envelope
+  pendingProjectGoalChatSeed: PendingProjectGoalChatSeed | null;
   showPromptManager: boolean;
   showWorkspace: boolean;
   taskPanelTab: TaskPanelTab;
@@ -338,6 +347,7 @@ interface AppState {
   setSessionTaskComplete: (sessionId: string, complete: TaskCompleteData | null) => void;
 
   // /goal 运行态 actions
+  setPendingProjectGoalChatSeed: (seed: PendingProjectGoalChatSeed | null) => void;
   startGoalRun: (sessionId: string, init: { goal: string; maxTurns?: number; tokenBudget?: number }) => void;
   updateGoalProgress: (sessionId: string, data: { turn?: number; maxTurns?: number; tokensUsed?: number; tokenBudget?: number }) => void;
   recordGoalGate: (sessionId: string, gate: { gate: number; pass: boolean; reason?: string }) => void;
@@ -381,6 +391,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   settingsMemoryFocus: null,
   settingsCapabilityFocus: null,
   pendingRoleChatSeed: null,
+  pendingProjectGoalChatSeed: null,
   showPromptManager: false,
   showWorkspace: false,
   taskPanelTab: 'monitor',
@@ -464,6 +475,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // Actions
   setShowSettings: (show) => set({ showSettings: show }),
   setPendingRoleChatSeed: (seed) => set({ pendingRoleChatSeed: seed }),
+  setPendingProjectGoalChatSeed: (seed) => set({ pendingProjectGoalChatSeed: seed }),
   setShowPromptManager: (show) => set({ showPromptManager: show }),
   openSettingsTab: (tab) => set({
     showSettings: true,

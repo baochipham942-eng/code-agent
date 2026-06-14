@@ -1,10 +1,12 @@
 // ============================================================================
-// workspaceGrouping - Group sessions by their workingDirectory (workspace).
+// workspaceGrouping - Group sessions by project first, workspace as fallback.
 // ============================================================================
-// Sessions are bucketed by full path so different workspaces with the same
-// basename (e.g. two ".../projects/foo" under different parents) stay separate.
-// A separate "Chats" bucket collects sessions that have no workingDirectory.
+// Sessions with a persisted projectId are bucketed by that Project. Sessions
+// without project metadata fall back to full workingDirectory path so same-name
+// folders under different parents stay separate. A separate uncategorized
+// bucket collects sessions that have no project/workspace context.
 
+import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import type { SessionWithMeta } from '../stores/sessionStore';
 
 // Key used for sessions with no workingDirectory; reserved so it can't
@@ -12,19 +14,30 @@ import type { SessionWithMeta } from '../stores/sessionStore';
 export const UNCATEGORIZED_WORKSPACE_KEY = '__chats__';
 
 export interface WorkspaceGroup {
-  /** Stable identifier. For categorized groups this is the full workspace path;
-   *  for the fallback bucket this is UNCATEGORIZED_WORKSPACE_KEY. */
+  /** Stable identifier. Project groups use project:<id>, workspace fallback
+   *  groups use the full workspace path, and the fallback bucket uses
+   *  UNCATEGORIZED_WORKSPACE_KEY. */
   key: string;
-  /** Display name — basename of the path, or 'Chats' for the fallback. */
+  /** Display name — project groups use their primary workspace basename until
+   *  Project metadata loads; fallback bucket uses '未分类'. */
   name: string;
-  /** Full path (undefined for the uncategorized bucket). */
+  /** Primary workspace path, usually the most recently active session's path. */
   path?: string;
-  /** true iff this is the Chats bucket for sessions with no workingDirectory. */
+  /** All workspace paths represented by the group, newest activity first. */
+  paths: string[];
+  /** Project id for this group, when known. */
+  projectId?: string;
+  /** true iff this is the bucket for sessions with no project/workspace. */
   isUncategorized: boolean;
-  /** Sessions in this workspace, ordered most-recently-updated first. */
+  /** Sessions in this group, ordered most-recently-updated first. */
   sessions: SessionWithMeta[];
-  /** Max updatedAt across sessions; drives workspace ordering. */
+  /** Max updatedAt across sessions; drives group ordering. */
   latestActivityAt: number;
+}
+
+interface SidebarGroupKeySource {
+  projectId?: string | null;
+  workingDirectory?: string | null;
 }
 
 function basenameOf(path: string): string {
@@ -34,53 +47,96 @@ function basenameOf(path: string): string {
   return segments[segments.length - 1] || trimmed;
 }
 
-/**
- * Partition sessions into workspace groups.
- *
- * - Categorized groups (sessions with a workingDirectory) are sorted by
- *   their latest activity, most recent first.
- * - The "Chats" bucket (if non-empty) is always appended at the end.
- */
-export function groupByWorkspace(sessions: SessionWithMeta[]): WorkspaceGroup[] {
-  const buckets = new Map<string, SessionWithMeta[]>();
+interface SessionBucket {
+  sessions: SessionWithMeta[];
+  projectId?: string;
+}
 
+function projectGroupKey(projectId: string): string {
+  return `project:${projectId}`;
+}
+
+function getSessionProjectId(session: SidebarGroupKeySource): string | undefined {
+  const projectId = session.projectId?.trim();
+  if (!projectId || projectId === UNSORTED_PROJECT_ID) {
+    return undefined;
+  }
+  return projectId;
+}
+
+export function getSidebarGroupKeyForSession(session: SidebarGroupKeySource): string {
+  const projectId = getSessionProjectId(session);
+  if (projectId) {
+    return projectGroupKey(projectId);
+  }
+
+  const path = session.workingDirectory?.trim();
+  return path || UNCATEGORIZED_WORKSPACE_KEY;
+}
+
+function getGroupPaths(sessions: SessionWithMeta[]): string[] {
+  const paths: string[] = [];
   for (const session of sessions) {
     const path = session.workingDirectory?.trim();
-    const key = path ? path : UNCATEGORIZED_WORKSPACE_KEY;
+    if (path && !paths.includes(path)) {
+      paths.push(path);
+    }
+  }
+  return paths;
+}
+
+/**
+ * Partition sessions into project/workspace groups.
+ *
+ * - Project groups are keyed by persisted projectId.
+ * - Sessions without project metadata fall back to full workingDirectory path.
+ * - The uncategorized bucket (if non-empty) is always appended at the end.
+ */
+export function groupByWorkspace(sessions: SessionWithMeta[]): WorkspaceGroup[] {
+  const buckets = new Map<string, SessionBucket>();
+
+  for (const session of sessions) {
+    const key = getSidebarGroupKeyForSession(session);
+    const projectId = getSessionProjectId(session);
     const bucket = buckets.get(key);
     if (bucket) {
-      bucket.push(session);
+      bucket.sessions.push(session);
     } else {
-      buckets.set(key, [session]);
+      buckets.set(key, { sessions: [session], projectId });
     }
   }
 
   const categorized: WorkspaceGroup[] = [];
   let uncategorized: WorkspaceGroup | null = null;
 
-  for (const [key, groupSessions] of buckets.entries()) {
-    const sortedSessions = [...groupSessions].sort(
+  for (const [key, bucket] of buckets.entries()) {
+    const sortedSessions = [...bucket.sessions].sort(
       (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0),
     );
     const latestActivityAt = sortedSessions.reduce(
       (max, s) => Math.max(max, s.updatedAt || 0),
       0,
     );
+    const paths = getGroupPaths(sortedSessions);
+    const primaryPath = paths[0];
 
     if (key === UNCATEGORIZED_WORKSPACE_KEY) {
       uncategorized = {
         key,
-        name: 'Chats',
+        name: '未分类',
         isUncategorized: true,
+        paths,
         sessions: sortedSessions,
         latestActivityAt,
       };
     } else {
       categorized.push({
         key,
-        name: basenameOf(key),
-        path: key,
+        name: primaryPath ? basenameOf(primaryPath) : 'Project',
+        path: primaryPath,
+        paths,
         isUncategorized: false,
+        projectId: bucket.projectId,
         sessions: sortedSessions,
         latestActivityAt,
       });

@@ -439,6 +439,10 @@ function revisionIdentity(revision: WorkspacePreviewRevision | undefined): strin
   return revision.parentId || revision.version !== undefined ? revision.artifactId : undefined;
 }
 
+function toolArtifactPreviewItemId(toolCallId: string, artifactId?: string, url?: string): string {
+  return `tool-artifact:${toolCallId}:${artifactId || url || 'artifact'}`;
+}
+
 function artifactKind(type: string): WorkspacePreviewKind {
   switch (type) {
     case 'spreadsheet':
@@ -613,7 +617,9 @@ function collectToolOutputs(
           const quality = qualityFromMetadata(artifact.metadata, result.metadata, result.success);
           const revision = revisionFromArtifact(artifact);
           const revisionId = revisionIdentity(revision);
-          const itemId = revisionId ? `url:${artifact.url}:${revisionId}` : `url:${artifact.url}`;
+          const itemId = revisionId
+            ? `url:${artifact.url}:${revisionId}`
+            : toolArtifactPreviewItemId(toolCall.id, artifact.artifactId, artifact.url);
           addItem(items, seen, {
             id: itemId,
             kind: artifact.kind === 'web' ? 'web_snapshot' : 'file',
@@ -666,6 +672,7 @@ function collectToolOutputs(
           priority: 30,
         }, `file:${path}`);
       }
+
     }
   }
 }

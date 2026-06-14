@@ -53,6 +53,8 @@ const sessionUiState = {
   setSearchQuery: vi.fn(),
   sessionStatusFilter: 'all',
   setSessionStatusFilter: vi.fn(),
+  pendingSearchJump: null,
+  setPendingSearchJump: vi.fn(),
   softDelete: vi.fn(),
   undoDelete: vi.fn(),
   pendingDelete: null,

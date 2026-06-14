@@ -6,12 +6,14 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useSessionStore, initializeSessionStore, type SessionWithMeta } from '../stores/sessionStore';
 import { useSelectionStore } from '../stores/selectionStore';
-import { useSessionUIStore } from '../stores/sessionUIStore';
+import { useSessionUIStore, type SessionStatusFilter } from '../stores/sessionUIStore';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useWorkbenchPresetStore } from '../stores/workbenchPresetStore';
 import { useAuthStore } from '../stores/authStore';
 import { useTaskStore } from '../stores/taskStore';
+import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
+import { useWorkflowStore } from '../stores/workflowStore';
 import {
   MessageSquare,
   Plus,
@@ -43,15 +45,29 @@ import {
   Users,
   Ticket,
   Download,
+  ListChecks,
+  Eye,
+  ShieldAlert,
+  PanelRightOpen,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { ConfigScopeSummary } from '@shared/contract/configScope';
 import { useUIStore } from '../stores/uiStore';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
-import { groupSessions } from '../utils/dateGrouping';
-import { groupByWorkspace, isWorkspaceExpanded } from '../utils/workspaceGrouping';
+import { getSidebarGroupKeyForSession, groupByWorkspace, isWorkspaceExpanded } from '../utils/workspaceGrouping';
+import {
+  buildSidebarProjectSummary,
+  formatSidebarProjectSummaryLine,
+  type SidebarProjectArtifactMeta,
+  type SidebarProjectGoalMeta,
+  type SidebarProjectMeta,
+} from '../utils/sidebarProjectSummary';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
+import { SidebarProjectDetail } from './features/sidebar/SidebarProjectDetail';
+import { SidebarProjectDrawer, type SidebarProjectDrawerSession } from './features/sidebar/SidebarProjectDrawer';
+import { SidebarMessageHitList } from './features/sidebar/SidebarMessageHitList';
+import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
 import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
 import {
   AccountMenuItem,
@@ -62,8 +78,40 @@ import {
   getReusableWorkbenchDirectory,
 } from './features/sidebar/sidebarPresentation';
 import ipcService from '../services/ipcService';
-import { buildSessionSearchText, getDisplaySessionTitle, getSessionStatusPresentation } from '../utils/sessionPresentation';
-import { copyPathToClipboard } from '../utils/platform';
+import {
+  getProjectArtifacts,
+  getProjectDetail,
+  renameProject,
+  setProjectDescription,
+  setProjectStatus,
+  updateProjectGoalStatus,
+} from '../services/projectClient';
+import {
+  buildSessionSearchText,
+  getDisplaySessionTitle,
+  getSessionStatusPresentation,
+  matchesSessionStatusFilter,
+} from '../utils/sessionPresentation';
+import { buildSessionAssetsNavigation } from '../utils/sessionAssetsNavigation';
+import { sortSidebarSessionsForRecovery } from '../utils/sidebarSessionOrdering';
+import { buildSessionRecoveryHints, hasSessionDeliverySignals } from '../utils/sessionRecoveryHints';
+import {
+  resolveSidebarGroupExpansionView,
+  type SidebarGroupExpansionView,
+} from '../utils/sidebarGroupExpansion';
+import {
+  buildSidebarMessageSearchHitGroups,
+  formatSidebarMessageSearchHitLabel,
+  formatSidebarMessageSearchHitMeta,
+  getCurrentProjectSearchSessionIds,
+  resolveSidebarSearchScope,
+  type SidebarMessageSearchHit,
+  type SidebarMessageSearchHitGroup,
+  type SidebarSearchScope,
+} from '../utils/sidebarMessageSearch';
+import { buildSessionReplayEvidenceMap, type SessionReplayEvidence } from '../utils/sessionReplayEvidence';
+import { openSessionReplayEvidenceTarget } from '../utils/openSessionReplayEvidence';
+import { copyPathToClipboard, openExternalLink } from '../utils/platform';
 import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
 import { canAccessFeature } from '../utils/accessControl';
 import {
@@ -72,9 +120,51 @@ import {
   type WorkbenchPreset,
   type WorkbenchRecipe,
 } from '@shared/contract/workbenchPreset';
+import type { StructuredReplay } from '@shared/contract/evaluation';
+import type { AdminReviewQueueItem } from '@shared/contract/productClosure';
+import type { ProjectStatus } from '@shared/contract/project';
+import type { CrossSessionSearchResults, SessionReviewItemsRequest } from '@shared/ipc/types';
 
 const logger = createLogger('Sidebar');
 const SESSION_DIAGNOSTICS_EXPORT_TIMEOUT_MS = 12_000;
+const SIDEBAR_MESSAGE_SEARCH_DEBOUNCE_MS = 250;
+const SIDEBAR_GROUP_COLLAPSE_DELAY_MS = 160;
+const SESSION_STATUS_FILTER_OPTIONS: Array<{ id: SessionStatusFilter; label: string; adminOnly?: boolean }> = [
+  { id: 'all', label: '全部' },
+  { id: 'unfinished', label: '未完成' },
+  { id: 'approval', label: '待确认' },
+  { id: 'running', label: '执行中' },
+  { id: 'attention', label: '待处理' },
+  { id: 'artifact', label: '交付线索' },
+  { id: 'review', label: '待审', adminOnly: true },
+];
+const SESSION_STATUS_FILTER_LABELS: Record<SessionStatusFilter, string> = {
+  all: '全部',
+  unfinished: '未完成',
+  approval: '待确认',
+  running: '执行中',
+  attention: '待处理',
+  artifact: '交付线索',
+  review: '待审',
+  background: '后台执行中',
+};
+
+function formatReplayEvidenceOverflowTitle(evidence: SessionReplayEvidence[]): string {
+  return evidence
+    .slice(2)
+    .map((item) => `${item.type === 'trace' ? 'Trace' : 'Replay'} · ${item.label}`)
+    .join('\n');
+}
+
+function formatReplayEvidenceButtonTitle(
+  evidence: SessionReplayEvidence,
+  canOpenSessionReplay: boolean,
+): string {
+  if (evidence.actionKind !== 'sessionReplay' || canOpenSessionReplay) {
+    return evidence.title;
+  }
+  return `${evidence.title}\n结构化 Replay 仅管理员可打开`;
+}
 
 function rejectAfter<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -140,6 +230,7 @@ export const Sidebar: React.FC = () => {
     queuedPermissionRequests,
     optionalUpdateInfo,
     setShowOptionalUpdateModal,
+    openWorkspacePreview,
   } = useAppStore();
   const applySessionWorkbenchPreset = useComposerStore((state) => state.applySessionWorkbenchPreset);
   const applyWorkbenchPreset = useComposerStore((state) => state.applyWorkbenchPreset);
@@ -147,6 +238,8 @@ export const Sidebar: React.FC = () => {
   const savedWorkbenchPresets = useWorkbenchPresetStore((state) => state.presets);
   const savedWorkbenchRecipes = useWorkbenchPresetStore((state) => state.recipes);
   const saveWorkbenchPresetFromSession = useWorkbenchPresetStore((state) => state.savePresetFromSession);
+  const durableBackgroundTasks = useBackgroundTaskStore((state) => state.tasks);
+  const workflowRuns = useWorkflowStore((state) => state.runs);
   const {
     sessions,
     currentSessionId,
@@ -175,6 +268,8 @@ export const Sidebar: React.FC = () => {
     searchQuery,
     setSearchQuery,
     sessionStatusFilter,
+    setSessionStatusFilter,
+    setPendingSearchJump,
     softDelete,
     undoDelete,
     pendingDelete,
@@ -194,6 +289,7 @@ export const Sidebar: React.FC = () => {
   const canOpenPromptManager = canAccessFeature('prompt.manager', user);
   const canOpenUserDashboard = canAccessFeature('settings.users', user);
   const canOpenInviteCodes = canAccessFeature('settings.invites', user);
+  const canOpenSessionReplay = canAccessFeature('eval.replay', user);
   const isVerifiedAdmin = user?.isAdmin === true;
   const isAdminPendingVerification = !isVerifiedAdmin
     && hasCachedAdminClaim
@@ -207,9 +303,10 @@ export const Sidebar: React.FC = () => {
   const [, setAppVersion] = useState<string>('');
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showAccountAdvancedTools, setShowAccountAdvancedTools] = useState(false);
-  const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [creatingSessionMode, setCreatingSessionMode] = useState<'current' | 'blank' | null>(null);
   const [creatingWorkspaceKey, setCreatingWorkspaceKey] = useState<string | null>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
+  const isCreatingSession = creatingSessionMode !== null;
   const hasActiveAdvancedTool = Boolean(
     showLab ||
       showTimeCapabilityCenter ||
@@ -254,6 +351,15 @@ export const Sidebar: React.FC = () => {
     y: number;
     session: SessionWithMeta;
   } | null>(null);
+  const [searchScope, setSearchScope] = useState<SidebarSearchScope>('current-project');
+  const [messageSearchHitsBySessionId, setMessageSearchHitsBySessionId] = useState<Record<string, SidebarMessageSearchHitGroup>>({});
+  const [messageSearchLoading, setMessageSearchLoading] = useState(false);
+  const [reviewItemsBySessionId, setReviewItemsBySessionId] = useState<Record<string, AdminReviewQueueItem[]>>({});
+  const [replayDialog, setReplayDialog] = useState<{
+    sessionId: string;
+    sessionTitle: string;
+    replay: StructuredReplay;
+  } | null>(null);
 
   // 内联重命名状态
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -293,6 +399,11 @@ export const Sidebar: React.FC = () => {
     [backgroundTasks],
   );
 
+  const replayEvidenceBySessionId = useMemo(
+    () => buildSessionReplayEvidenceMap(workflowRuns, durableBackgroundTasks),
+    [durableBackgroundTasks, workflowRuns],
+  );
+
   const hasPendingApprovalForSession = useCallback(
     (sessionId: string) => Boolean(
       (pendingPermissionRequest && pendingPermissionSessionId === sessionId) ||
@@ -301,7 +412,61 @@ export const Sidebar: React.FC = () => {
     [pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests],
   );
 
-  // Apply local search + minimal session-native status filter
+  const currentProjectSearchSessionIds = useMemo(
+    () => getCurrentProjectSearchSessionIds(sessions, currentSessionId),
+    [currentSessionId, sessions],
+  );
+  const effectiveSearchScope = resolveSidebarSearchScope(searchScope, currentProjectSearchSessionIds);
+  const allowedSearchSessionIds = useMemo(
+    () => effectiveSearchScope === 'current-project'
+      ? currentProjectSearchSessionIds
+      : new Set(sessions.map((session) => session.id)),
+    [currentProjectSearchSessionIds, effectiveSearchScope, sessions],
+  );
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setMessageSearchHitsBySessionId({});
+      setMessageSearchLoading(false);
+      return undefined;
+    }
+
+    const allowedSessionIds = allowedSearchSessionIds;
+    const sessionIds = Array.from(allowedSessionIds);
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setMessageSearchLoading(true);
+      void ipcService.invoke(IPC_CHANNELS.SESSION_SEARCH, {
+        query,
+        options: { limit: 80, sessionIds },
+      }).then((results) => {
+        if (cancelled) return;
+        const typedResults = results as CrossSessionSearchResults | null | undefined;
+        setMessageSearchHitsBySessionId(buildSidebarMessageSearchHitGroups(
+          typedResults?.results ?? [],
+          allowedSessionIds,
+        ));
+      }).catch((error) => {
+        if (cancelled) return;
+        logger.warn('Sidebar message search failed', {
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+        setMessageSearchHitsBySessionId({});
+      }).finally(() => {
+        if (!cancelled) {
+          setMessageSearchLoading(false);
+        }
+      });
+    }, SIDEBAR_MESSAGE_SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [allowedSearchSessionIds, searchQuery]);
+
+  // Apply local metadata search, message-content hits, and session-native status filter.
   const filteredSessions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return sessions.filter((session) => {
@@ -314,11 +479,26 @@ export const Sidebar: React.FC = () => {
         sessionStatus: session.status,
         hasPendingApproval: hasPendingApprovalForSession(session.id),
       });
-      if (sessionStatusFilter === 'background' && status.kind !== 'background') {
+      const hasPendingReview = (reviewItemsBySessionId[session.id] ?? [])
+        .some((item) => item.reviewStatus === 'pending');
+      if (!matchesSessionStatusFilter(sessionStatusFilter, status.kind, {
+        hasDeliverySignals: hasSessionDeliverySignals(session, {
+          hasReplay: replayEvidenceBySessionId.has(session.id),
+        }),
+        hasPendingReview,
+      })) {
         return false;
       }
 
       if (!q) {
+        return true;
+      }
+
+      if (!allowedSearchSessionIds.has(session.id)) {
+        return false;
+      }
+
+      if (messageSearchHitsBySessionId[session.id]) {
         return true;
       }
 
@@ -328,43 +508,245 @@ export const Sidebar: React.FC = () => {
         status,
       }).includes(q);
     });
-  }, [backgroundTaskMap, hasPendingApprovalForSession, searchQuery, sessionRuntimes, sessionStatusFilter, sessions, sessionStates]);
+  }, [
+    backgroundTaskMap,
+    hasPendingApprovalForSession,
+    allowedSearchSessionIds,
+    messageSearchHitsBySessionId,
+    replayEvidenceBySessionId,
+    reviewItemsBySessionId,
+    searchQuery,
+    sessionRuntimes,
+    sessionStatusFilter,
+    sessions,
+    sessionStates,
+  ]);
 
   // Pure workspace grouping (Codex-style): one bucket per workingDirectory,
   // sorted by latest activity; sessions without a workingDirectory go into a
-  // trailing "Chats" bucket. No time sub-groups inside workspaces.
+  // trailing uncategorized bucket. No time sub-groups inside workspaces.
   const workspaceGroupedSessions = useMemo(
-    () => groupByWorkspace(filteredSessions),
-    [filteredSessions],
+    () => groupByWorkspace(filteredSessions).map((group) => ({
+      ...group,
+      sessions: sortSidebarSessionsForRecovery(
+        group.sessions,
+        (session) => getSessionStatusPresentation({
+          backgroundTask: backgroundTaskMap.get(session.id),
+          runtime: sessionRuntimes.get(session.id),
+          taskState: sessionStates[session.id],
+          messageCount: session.messageCount,
+          turnCount: session.turnCount,
+          sessionStatus: session.status,
+          hasPendingApproval: hasPendingApprovalForSession(session.id),
+        }).kind,
+        (session) => Math.max(
+          session.updatedAt || 0,
+          sessionRuntimes.get(session.id)?.lastActivityAt || 0,
+          backgroundTaskMap.get(session.id)?.backgroundedAt || 0,
+        ),
+      ),
+    })),
+    [backgroundTaskMap, filteredSessions, hasPendingApprovalForSession, sessionRuntimes, sessionStates],
   );
+  const visibleProjectIds = useMemo(
+    () => Array.from(new Set(
+      workspaceGroupedSessions
+        .filter((group) => !group.isUncategorized)
+        .map((group) => group.projectId?.trim())
+        .filter((projectId): projectId is string => Boolean(projectId)),
+    )).sort(),
+    [workspaceGroupedSessions],
+  );
+  const [projectMetaById, setProjectMetaById] = useState<Record<string, SidebarProjectMeta>>({});
+  const [expandedProjectDetails, setExpandedProjectDetails] = useState<Record<string, boolean>>({});
+  const [projectDrawerKey, setProjectDrawerKey] = useState<string | null>(null);
+  const [collapsingWorkspaces, setCollapsingWorkspaces] = useState<Record<string, boolean>>({});
+  const collapseTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const visibleSessionIds = useMemo(
+    () => workspaceGroupedSessions.flatMap((group) => group.sessions.map((session) => session.id)),
+    [workspaceGroupedSessions],
+  );
+  const visibleSessionIdsKey = visibleSessionIds.join('\n');
 
-  // 按日期分组 (used when search is active — flat list)
-  const groupedSessions = useMemo(() => {
-    return groupSessions(filteredSessions, pinnedSessionIds);
-  }, [filteredSessions, pinnedSessionIds]);
+  useEffect(() => {
+    if (visibleProjectIds.length === 0) {
+      setProjectMetaById({});
+      return undefined;
+    }
+
+    let cancelled = false;
+    void Promise.all(visibleProjectIds.map(async (projectId): Promise<[string, SidebarProjectMeta] | null> => {
+      try {
+        const [detail, artifacts] = await Promise.all([
+          getProjectDetail(projectId),
+          getProjectArtifacts(projectId),
+        ]);
+        const visibleGoals = detail.goals.filter((goal) => goal.status !== 'archived');
+        const activeGoals = visibleGoals.filter((goal) => goal.status === 'active');
+        const sortedGoals = [...visibleGoals].sort((left, right) => {
+          const statusRank = (status: typeof left.status) => status === 'active' ? 0 : status === 'aborted' ? 1 : 2;
+          const rankDiff = statusRank(left.status) - statusRank(right.status);
+          if (rankDiff !== 0) return rankDiff;
+          return (right.updatedAt || 0) - (left.updatedAt || 0);
+        });
+        return [projectId, {
+          name: detail.project.name,
+          status: detail.project.status,
+          description: detail.project.description,
+          goalCount: visibleGoals.length,
+          activeGoalTitles: activeGoals.map((goal) => goal.goal),
+          goals: sortedGoals.slice(0, 5).map((goal) => ({
+            id: goal.id,
+            title: goal.goal,
+            verify: goal.verify,
+            review: goal.review,
+            status: goal.status,
+            updatedAt: goal.updatedAt,
+            lastRunSessionId: goal.lastRunSessionId,
+          })),
+          roleCount: detail.roles.length,
+          roleIds: detail.roles.map((role) => role.roleId),
+          artifactCount: artifacts.length,
+          recentArtifactTitles: artifacts.map((artifact) => artifact.title || artifact.kind),
+          recentArtifacts: artifacts.slice(0, 5).map((artifact) => ({
+            id: artifact.id,
+            sessionId: artifact.sessionId,
+            messageId: artifact.messageId,
+            title: artifact.title || artifact.kind,
+            kind: artifact.kind,
+            sessionTitle: artifact.sessionTitle,
+            createdAt: artifact.createdAt,
+            path: artifact.path,
+            url: artifact.url,
+            toolCallId: artifact.toolCallId,
+            toolName: artifact.toolName,
+            previewItemId: artifact.previewItemId,
+          })),
+          sessionCount: detail.sessionIds.length,
+          updatedAt: detail.project.updatedAt,
+        }];
+      } catch (error) {
+        logger.warn('Failed to load sidebar project summary', {
+          projectId,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      }
+    })).then((entries) => {
+      if (cancelled) return;
+      setProjectMetaById(Object.fromEntries(entries.filter((entry): entry is [string, SidebarProjectMeta] => entry !== null)));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [visibleProjectIds]);
+
+  useEffect(() => {
+    if (!canOpenSessionReplay || visibleSessionIds.length === 0) {
+      setReviewItemsBySessionId({});
+      return undefined;
+    }
+
+    let cancelled = false;
+    const request: SessionReviewItemsRequest = {
+      sessionIds: visibleSessionIds,
+      limitPerSession: 3,
+    };
+    void ipcService.invoke(IPC_CHANNELS.SESSION_LIST_REVIEW_ITEMS, request)
+      .then((itemsBySessionId) => {
+        if (cancelled) return;
+        setReviewItemsBySessionId(itemsBySessionId ?? {});
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        logger.warn('Failed to load sidebar review items', {
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+        setReviewItemsBySessionId({});
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canOpenSessionReplay, visibleSessionIdsKey]);
+
+  useEffect(() => () => {
+    Object.values(collapseTimersRef.current).forEach(clearTimeout);
+    collapseTimersRef.current = {};
+  }, []);
+
+  const handleToggleWorkspaceGroup = useCallback((workspaceKey: string, view: SidebarGroupExpansionView) => {
+    if (view.forceExpanded) {
+      return;
+    }
+
+    const existingTimer = collapseTimersRef.current[workspaceKey];
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      delete collapseTimersRef.current[workspaceKey];
+    }
+
+    if (view.isVisibleExpanded) {
+      setCollapsingWorkspaces((previous) => ({ ...previous, [workspaceKey]: true }));
+      collapseTimersRef.current[workspaceKey] = setTimeout(() => {
+        setWorkspaceExpanded(workspaceKey, false);
+        setCollapsingWorkspaces((previous) => {
+          const next = { ...previous };
+          delete next[workspaceKey];
+          return next;
+        });
+        delete collapseTimersRef.current[workspaceKey];
+      }, SIDEBAR_GROUP_COLLAPSE_DELAY_MS);
+      return;
+    }
+
+    setCollapsingWorkspaces((previous) => {
+      if (!previous[workspaceKey]) {
+        return previous;
+      }
+      const next = { ...previous };
+      delete next[workspaceKey];
+      return next;
+    });
+    setWorkspaceExpanded(workspaceKey, true);
+  }, [setWorkspaceExpanded]);
 
   const handleNewChat = async () => {
     if (isCreatingSession || creatingWorkspaceKey) {
       return;
     }
 
-    setIsCreatingSession(true);
+    setCreatingSessionMode('current');
+    try {
+      const session = await createSession('新对话');
+      if (session) {
+        setWorkspaceExpanded(getSidebarGroupKeyForSession(session), true);
+      }
+      clearPlanningState();
+    } finally {
+      setCreatingSessionMode(null);
+    }
+  };
+
+  const handleNewBlankChat = async () => {
+    if (isCreatingSession || creatingWorkspaceKey) {
+      return;
+    }
+
+    setCreatingSessionMode('blank');
     try {
       await createSession('新对话', { workingDirectory: null });
       clearPlanningState();
     } finally {
-      setIsCreatingSession(false);
+      setCreatingSessionMode(null);
     }
   };
 
-  const handleNewWorkspaceChat = async (
-    e: React.MouseEvent,
+  const createWorkspaceChat = useCallback(async (
     workspaceKey: string,
     workingDirectory?: string,
   ) => {
-    e.preventDefault();
-    e.stopPropagation();
-
     const directory = workingDirectory?.trim();
     if (!directory || isCreatingSession || creatingWorkspaceKey) {
       return;
@@ -381,12 +763,41 @@ export const Sidebar: React.FC = () => {
     } finally {
       setCreatingWorkspaceKey(null);
     }
+  }, [
+    clearPlanningState,
+    createSession,
+    creatingWorkspaceKey,
+    isCreatingSession,
+    setWorkspaceExpanded,
+    setWorkingDirectory,
+  ]);
+
+  const handleNewWorkspaceChat = async (
+    e: React.MouseEvent,
+    workspaceKey: string,
+    workingDirectory?: string,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    await createWorkspaceChat(workspaceKey, workingDirectory);
   };
 
   const handleSelectSession = async (sessionId: string) => {
     if (multiSelectMode) {
       toggleSelection(sessionId);
       return;
+    }
+    const messageSearchHitGroup = searchQuery.trim() ? messageSearchHitsBySessionId[sessionId] : undefined;
+    if (messageSearchHitGroup?.bestHit) {
+      setPendingSearchJump({
+        sessionId,
+        messageId: messageSearchHitGroup.bestHit.messageId,
+        messageIndex: messageSearchHitGroup.bestHit.messageIndex,
+        turnNumber: messageSearchHitGroup.bestHit.turnNumber,
+        matchOffset: messageSearchHitGroup.bestHit.matchOffset,
+        query: searchQuery.trim(),
+        createdAt: Date.now(),
+      });
     }
     if (sessionId !== currentSessionId) {
       await switchSession(sessionId);
@@ -401,6 +812,171 @@ export const Sidebar: React.FC = () => {
       await archiveSession(id);
     }
   };
+
+  const handleOpenWorkspaceAssets = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openWorkspacePreview();
+  }, [openWorkspacePreview]);
+
+  const handleOpenSessionAssets = useCallback(async (e: React.MouseEvent, session: SessionWithMeta) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const navigation = buildSessionAssetsNavigation(currentSessionId, session.id);
+    if (!navigation) {
+      return;
+    }
+    if (navigation.shouldSwitchSession) {
+      await switchSession(navigation.targetSessionId);
+    }
+    openWorkspacePreview();
+  }, [currentSessionId, openWorkspacePreview, switchSession]);
+
+  const handleOpenProjectArtifactSession = useCallback(async (artifact: SidebarProjectArtifactMeta) => {
+    if (!artifact.sessionId) {
+      return;
+    }
+    const navigation = buildSessionAssetsNavigation(currentSessionId, artifact.sessionId, {
+      artifactId: artifact.id,
+      messageId: artifact.messageId,
+      path: artifact.path,
+      previewItemId: artifact.previewItemId,
+    });
+    if (!navigation) {
+      return;
+    }
+    if (navigation.shouldSwitchSession) {
+      await switchSession(navigation.targetSessionId);
+    }
+    openWorkspacePreview(navigation.workspacePreviewItemId);
+  }, [currentSessionId, openWorkspacePreview, switchSession]);
+
+  const handleStartProjectGoal = useCallback(async (
+    goal: SidebarProjectGoalMeta,
+    workspaceKey: string,
+    workingDirectory?: string,
+  ) => {
+    const directory = workingDirectory?.trim() || null;
+    const title = goal.title.length > 42 ? `目标：${goal.title.slice(0, 39)}...` : `目标：${goal.title}`;
+    const session = await createSession(title, { workingDirectory: directory });
+    if (!session) {
+      return;
+    }
+    useAppStore.getState().setPendingProjectGoalChatSeed({
+      sessionId: session.id,
+      content: goal.title,
+      goal: {
+        goal: goal.title,
+        verify: goal.verify ?? undefined,
+        review: goal.review ?? undefined,
+      },
+    });
+    if (directory) {
+      setWorkingDirectory(directory);
+    }
+    setWorkspaceExpanded(getSidebarGroupKeyForSession(session) || workspaceKey, true);
+    await updateProjectGoalStatus(goal.id, goal.status, { lastRunSessionId: session.id });
+    setProjectMetaById((previous) => {
+      const next = { ...previous };
+      for (const [projectId, meta] of Object.entries(next)) {
+        if (!meta.goals?.some((item) => item.id === goal.id)) continue;
+        next[projectId] = {
+          ...meta,
+          goals: meta.goals.map((item) =>
+            item.id === goal.id
+              ? { ...item, lastRunSessionId: session.id }
+              : item
+          ),
+        };
+      }
+      return next;
+    });
+    clearPlanningState();
+  }, [clearPlanningState, createSession, setWorkspaceExpanded, setWorkingDirectory]);
+
+  const handleRenameSidebarProject = useCallback(async (projectId: string, name: string) => {
+    const updated = await renameProject(projectId, name);
+    setProjectMetaById((previous) => {
+      const current = previous[projectId];
+      if (!current) {
+        return previous;
+      }
+      return {
+        ...previous,
+        [projectId]: {
+          ...current,
+          name: updated.name,
+          status: updated.status,
+          description: updated.description,
+          updatedAt: updated.updatedAt,
+        },
+      };
+    });
+  }, []);
+
+  const handleSetSidebarProjectStatus = useCallback(async (projectId: string, status: ProjectStatus) => {
+    const updated = await setProjectStatus(projectId, status);
+    setProjectMetaById((previous) => {
+      const current = previous[projectId];
+      if (!current) {
+        return previous;
+      }
+      return {
+        ...previous,
+        [projectId]: {
+          ...current,
+          name: updated.name,
+          status: updated.status,
+          description: updated.description,
+          updatedAt: updated.updatedAt,
+        },
+      };
+    });
+  }, []);
+
+  const handleSetSidebarProjectDescription = useCallback(async (
+    projectId: string,
+    description: string | null,
+  ) => {
+    const updated = await setProjectDescription(projectId, description);
+    setProjectMetaById((previous) => {
+      const current = previous[projectId];
+      if (!current) {
+        return previous;
+      }
+      return {
+        ...previous,
+        [projectId]: {
+          ...current,
+          name: updated.name,
+          status: updated.status,
+          description: updated.description,
+          updatedAt: updated.updatedAt,
+        },
+      };
+    });
+  }, []);
+
+  const handleSelectMessageSearchHit = useCallback(async (
+    e: React.MouseEvent,
+    sessionId: string,
+    hit: SidebarMessageSearchHit,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setPendingSearchJump({
+      sessionId,
+      messageId: hit.messageId,
+      messageIndex: hit.messageIndex,
+      turnNumber: hit.turnNumber,
+      matchOffset: hit.matchOffset,
+      query: searchQuery.trim(),
+      createdAt: Date.now(),
+    });
+    if (sessionId !== currentSessionId) {
+      await switchSession(sessionId);
+    }
+  }, [currentSessionId, searchQuery, setPendingSearchJump, switchSession]);
 
   // 右键菜单
   const handleContextMenu = useCallback((e: React.MouseEvent, session: SessionWithMeta) => {
@@ -457,6 +1033,51 @@ export const Sidebar: React.FC = () => {
       return false;
     }
   }, []);
+
+  const handleOpenSessionReplay = useCallback(async (session: SessionWithMeta) => {
+    if (!canOpenSessionReplay) {
+      showToast('warning', 'Replay 目前仅管理员可用');
+      return;
+    }
+
+    try {
+      const replay = await ipcService.invoke(IPC_CHANNELS.REPLAY_GET_STRUCTURED_DATA, session.id) as StructuredReplay | null;
+      if (!replay) {
+        showToast('warning', '当前会话还没有可用 Replay 数据');
+        return;
+      }
+      setReplayDialog({
+        sessionId: session.id,
+        sessionTitle: getDisplaySessionTitle(session.title),
+        replay,
+      });
+    } catch (error) {
+      logger.error('Failed to open session replay', error);
+      showToast('error', `打开 Replay 失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [canOpenSessionReplay, showToast]);
+
+  const handleOpenReplayEvidence = useCallback(async (
+    session: SessionWithMeta,
+    evidence: SessionReplayEvidence,
+  ) => {
+    await openSessionReplayEvidenceTarget(evidence, {
+      openSessionReplay: () => handleOpenSessionReplay(session),
+      openPath: async (filePath) => {
+        const opened = await window.domainAPI?.invoke(
+          IPC_DOMAINS.WORKSPACE,
+          'openPath',
+          { filePath },
+        );
+        if (opened && !opened.success) {
+          throw new Error(opened.error?.message || 'Failed to open evidence file');
+        }
+      },
+      openExternal: openExternalLink,
+      copyText: copyPathToClipboard,
+      notify: showToast,
+    });
+  }, [handleOpenSessionReplay, showToast]);
 
   const getContextMenuItems = useCallback((session: SessionWithMeta): ContextMenuItem[] => {
     const isPinned = pinnedSessionIds.has(session.id);
@@ -539,6 +1160,14 @@ export const Sidebar: React.FC = () => {
           } catch (error) {
             logger.error('Failed to copy session id', error);
           }
+        },
+      },
+      {
+        label: canOpenSessionReplay ? '打开 Replay' : 'Replay 仅管理员可用',
+        icon: '↩',
+        disabled: !canOpenSessionReplay,
+        onClick: async () => {
+          await handleOpenSessionReplay(session);
         },
       },
       {
@@ -671,6 +1300,8 @@ export const Sidebar: React.FC = () => {
     setWorkingDirectory,
     saveWorkbenchPresetFromSession,
     saveExportToDownloads,
+    canOpenSessionReplay,
+    handleOpenSessionReplay,
     openRuntimeLogsFolder,
     showToast,
     softDelete,
@@ -707,11 +1338,69 @@ export const Sidebar: React.FC = () => {
 
   const hasAnySessions = sessions.length > 0;
   const hasSearchFilters = Boolean(searchQuery.trim()) || sessionStatusFilter !== 'all';
-  const isBackgroundOnly = sessionStatusFilter === 'background';
+  const canSearchCurrentProject = currentProjectSearchSessionIds.size > 0;
+  const showSearchScopeControls = Boolean(searchQuery.trim()) && canSearchCurrentProject;
+  const activeStatusFilterLabel = SESSION_STATUS_FILTER_LABELS[sessionStatusFilter] ?? '匹配';
+  const visibleStatusFilterOptions = SESSION_STATUS_FILTER_OPTIONS
+    .filter((option) => !option.adminOnly || canOpenSessionReplay);
   const showOptionalUpdateButton = isOptionalUpdateAvailable(optionalUpdateInfo);
   const optionalUpdateLabel = optionalUpdateInfo?.latestVersion
     ? `v${optionalUpdateInfo.latestVersion}`
     : '新版本';
+  const buildProjectDrawerSessions = useCallback((groupSessions: SessionWithMeta[]): SidebarProjectDrawerSession[] => (
+    groupSessions.map((session) => {
+      const sessionRuntime = sessionRuntimes.get(session.id);
+      const backgroundTask = backgroundTaskMap.get(session.id);
+      const status = getSessionStatusPresentation({
+        backgroundTask,
+        runtime: sessionRuntime,
+        taskState: sessionStates[session.id],
+        messageCount: session.messageCount,
+        turnCount: session.turnCount,
+        sessionStatus: session.status,
+        hasPendingApproval: hasPendingApprovalForSession(session.id),
+      });
+      const latestActivityAt = Math.max(
+        session.updatedAt || 0,
+        sessionRuntime?.lastActivityAt || 0,
+        backgroundTask?.backgroundedAt || 0,
+      );
+      const replayEvidenceCount = replayEvidenceBySessionId.get(session.id)?.length ?? 0;
+      const pendingReviewCount = (reviewItemsBySessionId[session.id] ?? [])
+        .filter((item) => item.reviewStatus === 'pending')
+        .length;
+      const snapshotSummary = session.workbenchSnapshot?.summary?.trim();
+      const hasMeaningfulSummary = Boolean(snapshotSummary && snapshotSummary !== '纯对话');
+
+      return {
+        id: session.id,
+        title: getDisplaySessionTitle(session.title),
+        statusLabel: status.label,
+        statusToneClassName: status.toneClassName,
+        showStatusBadge: status.showBadge,
+        typeLabel: getSessionTypeLabel(session.type),
+        summary: hasMeaningfulSummary ? snapshotSummary : undefined,
+        lastActiveLabel: getRelativeTime(latestActivityAt, true),
+        workingDirectory: session.workingDirectory,
+        gitBranch: session.gitBranch,
+        prLabel: session.prLink ? `PR #${session.prLink.number}` : undefined,
+        isCurrent: session.id === currentSessionId,
+        turnCount: session.turnCount,
+        messageCount: session.messageCount,
+        hasDeliverySignals: hasSessionDeliverySignals(session, { hasReplay: replayEvidenceCount > 0 }),
+        replayEvidenceCount,
+        pendingReviewCount,
+      };
+    })
+  ), [
+    backgroundTaskMap,
+    currentSessionId,
+    hasPendingApprovalForSession,
+    replayEvidenceBySessionId,
+    reviewItemsBySessionId,
+    sessionRuntimes,
+    sessionStates,
+  ]);
 
   // 渲染单个会话项
   const renderSessionItem = (session: SessionWithMeta) => {
@@ -738,9 +1427,21 @@ export const Sidebar: React.FC = () => {
     );
     const snapshotSummary = session.workbenchSnapshot?.summary?.trim() || '';
     const hasMeaningfulSummary = snapshotSummary && snapshotSummary !== '纯对话';
+    const messageSearchHitGroup = searchQuery.trim() ? messageSearchHitsBySessionId[session.id] : undefined;
+    const messageSearchHit = messageSearchHitGroup?.bestHit;
     const lastActiveLabel = getRelativeTime(latestActivityAt, true);
     const typeLabel = getSessionTypeLabel(session.type);
     const displayTitle = getDisplaySessionTitle(session.title);
+    const canOpenSessionAssets = canReuseSessionWorkbench(session);
+    const replayEvidence = replayEvidenceBySessionId.get(session.id) ?? [];
+    const hasReplaySignal = replayEvidence.length > 0;
+    const recoveryHints = buildSessionRecoveryHints(session, {
+      hasReplay: hasReplaySignal,
+      canOpenReplay: canOpenSessionReplay,
+    });
+    const pendingReviewItems = (reviewItemsBySessionId[session.id] ?? [])
+      .filter((item) => item.reviewStatus === 'pending');
+    const topReviewItem = pendingReviewItems[0];
 
     return (
       <div
@@ -810,6 +1511,51 @@ export const Sidebar: React.FC = () => {
 
           {!multiSelectMode && !isRenaming && (
             <>
+              <button
+                type="button"
+                aria-label={canOpenSessionReplay
+                  ? `打开 ${displayTitle} Replay`
+                  : `Replay 仅管理员可用：${displayTitle}`}
+                title={canOpenSessionReplay
+                  ? `打开 ${displayTitle} Replay`
+                  : 'Replay 仅管理员可用'}
+                disabled={!canOpenSessionReplay}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void handleOpenSessionReplay(session);
+                }}
+                className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-500"
+              >
+                <Eye className="h-3.5 w-3.5" />
+              </button>
+              {topReviewItem && (
+                <button
+                  type="button"
+                  aria-label={`打开 ${displayTitle} 的 Review 证据`}
+                  title={`${pendingReviewItems.length} 个待审 issue · ${topReviewItem.title}`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void handleOpenSessionReplay(session);
+                  }}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300 transition-colors hover:border-amber-400/30 hover:bg-amber-500/15 hover:text-amber-200 focus:outline-hidden"
+                >
+                  <ShieldAlert className="h-3 w-3" />
+                  <span>{pendingReviewItems.length} 待审</span>
+                </button>
+              )}
+              {canOpenSessionAssets && (
+                <button
+                  type="button"
+                  aria-label={`打开 ${displayTitle} 的产物与资产`}
+                  title={`打开 ${displayTitle} 的产物与资产`}
+                  onClick={(event) => { void handleOpenSessionAssets(event, session); }}
+                  className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
+                >
+                  <ScrollText className="h-3.5 w-3.5" />
+                </button>
+              )}
               {typeLabel && (
                 <span className="shrink-0 rounded-full border border-zinc-700 bg-zinc-900/70 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 transition-opacity duration-150 group-hover:opacity-0">
                   {typeLabel}
@@ -826,14 +1572,80 @@ export const Sidebar: React.FC = () => {
 
         {/* Line 2: summary + recent activity */}
         {!isRenaming && (
-          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-600">
-            <span className="truncate flex-1 text-zinc-500">
-              {hasMeaningfulSummary ? snapshotSummary : ''}
+          <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-zinc-600">
+            <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+              {messageSearchHit ? (
+                <span className="truncate text-zinc-400">
+                  <span className="text-zinc-500">
+                    {formatSidebarMessageSearchHitMeta(messageSearchHit)}
+                  </span>
+                  <span> · {formatSidebarMessageSearchHitLabel(messageSearchHit)}</span>
+                </span>
+              ) : hasMeaningfulSummary && (
+                <span className="truncate text-zinc-500">
+                  {snapshotSummary}
+                </span>
+              )}
+              {recoveryHints.map((hint) => (
+                <span
+                  key={`${session.id}:${hint.kind}:${hint.label}`}
+                  title={hint.title}
+                  className="shrink-0 rounded border border-zinc-700/60 bg-zinc-900/70 px-1 py-0.5 text-[10px] font-medium text-zinc-500"
+                >
+                  {hint.label}
+                </span>
+              ))}
             </span>
             <span className="text-[10px] text-zinc-600 shrink-0">
               {lastActiveLabel}
             </span>
           </div>
+        )}
+
+        {!isRenaming && replayEvidence.length > 0 && (
+          <div className="mt-1 flex min-w-0 items-center gap-1 overflow-hidden text-[10px] text-zinc-500">
+            {replayEvidence.slice(0, 2).map((evidence) => (
+              <button
+                key={evidence.id}
+                type="button"
+                aria-label={canOpenSessionReplay
+                  || evidence.actionKind !== 'sessionReplay'
+                  ? `打开 ${displayTitle} 的 ${evidence.label}`
+                  : `Replay 仅管理员可用：${displayTitle} 的 ${evidence.label}`}
+                title={formatReplayEvidenceButtonTitle(evidence, canOpenSessionReplay)}
+                disabled={evidence.actionKind === 'sessionReplay' && !canOpenSessionReplay}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void handleOpenReplayEvidence(session, evidence);
+                }}
+                className="inline-flex min-w-0 shrink items-center gap-1 rounded border border-zinc-700/60 bg-zinc-900/50 px-1.5 py-0.5 text-zinc-500 transition-colors hover:border-zinc-600 hover:bg-zinc-800/80 hover:text-zinc-300 focus:outline-hidden disabled:cursor-not-allowed disabled:hover:border-zinc-700/60 disabled:hover:bg-zinc-900/50 disabled:hover:text-zinc-500"
+              >
+                <span className="shrink-0 text-zinc-600">
+                  {evidence.type === 'trace' ? 'Trace' : 'Replay'}
+                </span>
+                <span className="truncate">
+                  {evidence.label}
+                </span>
+              </button>
+            ))}
+            {replayEvidence.length > 2 && (
+              <span
+                title={formatReplayEvidenceOverflowTitle(replayEvidence)}
+                className="shrink-0 rounded border border-zinc-700/60 bg-zinc-900/50 px-1.5 py-0.5 text-zinc-600"
+              >
+                +{replayEvidence.length - 2}
+              </span>
+            )}
+          </div>
+        )}
+
+        {!isRenaming && messageSearchHitGroup && (
+          <SidebarMessageHitList
+            sessionId={session.id}
+            hits={messageSearchHitGroup.hits}
+            onSelectHit={handleSelectMessageSearchHit}
+          />
         )}
 
         {/* Hover actions — absolute positioned top-right */}
@@ -862,21 +1674,37 @@ export const Sidebar: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col bg-transparent overflow-hidden">
       {/* Header: h-12 to align with TitleBar on the right */}
-      <div className="h-12 px-3 flex items-center justify-between flex-shrink-0 window-drag">
+      <div className="h-12 px-3 flex items-center justify-between gap-2 flex-shrink-0 window-drag">
         {/* New Chat */}
         <button
           onClick={handleNewChat}
           disabled={isCreatingSession || creatingWorkspaceKey !== null}
-          className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50 window-no-drag"
+          title="新建当前项目会话"
+          className="flex min-w-0 flex-1 items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50 window-no-drag"
         >
           <span className="w-6 h-6 rounded-full bg-zinc-600 flex items-center justify-center">
-            {isCreatingSession ? (
+            {creatingSessionMode === 'current' ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Plus className="w-3.5 h-3.5 stroke-[2]" />
             )}
           </span>
           <span className="text-sm font-normal">新会话</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleNewBlankChat}
+          disabled={isCreatingSession || creatingWorkspaceKey !== null}
+          aria-label="新建空白会话，不继承项目上下文"
+          title="新建空白会话，不继承项目上下文"
+          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-zinc-700 px-2 text-[11px] font-medium text-zinc-500 transition-colors hover:border-zinc-600 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50 window-no-drag"
+        >
+          {creatingSessionMode === 'blank' ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <MessageSquareText className="h-3.5 w-3.5" />
+          )}
+          <span>空白</span>
         </button>
       </div>
 
@@ -900,6 +1728,53 @@ export const Sidebar: React.FC = () => {
             </button>
           )}
         </div>
+        <div className="mt-1 flex items-center gap-1 overflow-x-auto scrollbar-none">
+          {showSearchScopeControls && (
+            <>
+              {[
+                { id: 'current-project' as const, label: '当前项目' },
+                { id: 'all' as const, label: '全部' },
+              ].map((option) => {
+                const active = effectiveSearchScope === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setSearchScope(option.id)}
+                    className={`shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                      active
+                        ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200'
+                        : 'border-zinc-800 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/60 hover:text-zinc-300'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+              <span className="h-4 w-px shrink-0 bg-zinc-800" />
+            </>
+          )}
+          {visibleStatusFilterOptions.map((option) => {
+            const active = sessionStatusFilter === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setSessionStatusFilter(option.id)}
+                className={`shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                  active
+                    ? 'border-zinc-500 bg-zinc-700/70 text-zinc-100'
+                    : 'border-zinc-800 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/60 hover:text-zinc-300'
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+          {messageSearchLoading && searchQuery.trim() && (
+            <span className="shrink-0 px-1 text-[11px] text-zinc-600">搜消息中...</span>
+          )}
+        </div>
       </div>
 
       {/* Session List - Project Grouped */}
@@ -921,57 +1796,147 @@ export const Sidebar: React.FC = () => {
           <div className="flex flex-col items-center justify-center py-12 text-center px-4">
             <Search className="w-6 h-6 text-zinc-600 mb-2" />
             <p className="text-sm text-zinc-500">
-              {isBackgroundOnly && !searchQuery ? '当前没有后台中的会话' : '未找到匹配的会话'}
+              {messageSearchLoading
+                ? '搜索消息内容中...'
+                : !searchQuery && sessionStatusFilter !== 'all'
+                ? `当前没有${activeStatusFilterLabel}会话`
+                : '未找到匹配的会话'}
             </p>
           </div>
-        ) : hasSearchFilters ? (
-          /* When searching, show flat date-grouped list */
-          <div className="py-2">
-            {groupedSessions.map(({ group, label, sessions: groupSessions }) => (
-              <div key={group} className="mb-2">
-                <div className="sticky top-0 z-10 px-3 py-1.5 text-xs font-medium text-zinc-500 bg-zinc-900 backdrop-blur-sm">
-                  {label}
-                </div>
-                <div className="space-y-0.5">
-                  {groupSessions.map((session) => renderSessionItem(session as SessionWithMeta))}
-                </div>
-              </div>
-            ))}
-          </div>
         ) : (
-          /* Default: workspace-grouped view (Codex-style). No time sub-groups. */
+          /* Workspace/project grouped view, including search and status-filtered results. */
           <div className="py-2">
             {workspaceGroupedSessions.map((group) => {
-              const expanded = isWorkspaceExpanded(expandedWorkspaces, group.key);
               const IconComponent = group.isUncategorized ? MessageSquareText : Folder;
+              const projectMeta = group.projectId ? projectMetaById[group.projectId] : undefined;
+              const summary = buildSidebarProjectSummary({
+                group,
+                backgroundTaskMap,
+                sessionRuntimes,
+                sessionStates,
+                hasPendingApprovalForSession,
+                reviewItemsBySessionId,
+                projectMeta: hasSearchFilters && projectMeta
+                  ? { ...projectMeta, sessionCount: group.sessions.length }
+                  : projectMeta,
+              });
+              const groupHasCurrentSession = group.sessions.some((session) => session.id === currentSessionId);
+              const groupExpansionSignals = {
+                hasCurrentSession: groupHasCurrentSession,
+                hasSearchFilters,
+                unfinishedCount: summary.unfinishedCount,
+              };
+              const expansionView = resolveSidebarGroupExpansionView({
+                persistedExpanded: isWorkspaceExpanded(expandedWorkspaces, group.key),
+                signals: groupExpansionSignals,
+                isCollapsing: Boolean(collapsingWorkspaces[group.key]),
+                displayName: summary.displayName,
+              });
+              const expanded = expansionView.isVisibleExpanded;
+              const summaryLine = formatSidebarProjectSummaryLine({
+                summary,
+                isUncategorized: group.isUncategorized,
+                isFiltered: hasSearchFilters,
+                workspacePaths: group.paths,
+              });
+              const title = group.isUncategorized
+                ? '空白会话，不继承项目上下文'
+                : `${summary.displayName}${group.paths.length > 0 ? ` · ${group.paths.join(' · ')}` : ''}`;
+              const detailsExpanded = Boolean(expandedProjectDetails[group.key]);
+              const drawerOpen = projectDrawerKey === group.key;
+              const drawerSessions = drawerOpen ? buildProjectDrawerSessions(group.sessions as SessionWithMeta[]) : [];
               return (
-                <div key={group.key} className="mb-2">
+                <div
+                  key={group.key}
+                  className="mb-2"
+                  data-sidebar-group-phase={expansionView.phase}
+                >
                   <div
                     className="group sticky top-0 z-20 flex items-center gap-1.5 w-full px-3 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors"
-                    title={group.path ?? group.name}
+                    title={title}
                   >
                     <button
                       type="button"
-                      onClick={() => setWorkspaceExpanded(group.key, !expanded)}
-                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                      title={expansionView.toggleTitle}
+                      aria-label={expansionView.toggleAriaLabel}
+                      aria-disabled={expansionView.forceExpanded ? 'true' : undefined}
+                      onClick={() => handleToggleWorkspaceGroup(group.key, expansionView)}
+                      className="flex min-w-0 flex-1 items-start gap-1.5 text-left"
                     >
                       <ChevronRight
-                        className={`w-3 h-3 text-zinc-500 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                        className={`mt-0.5 w-3 h-3 text-zinc-500 transition-transform ${
+                          expanded ? 'rotate-90' : ''
+                        } ${expansionView.phase === 'collapsing' ? 'opacity-70' : ''}`}
                       />
-                      <IconComponent className="w-3 h-3 text-zinc-500" />
-                      <span className="text-xs font-medium text-zinc-400 truncate">{group.name}</span>
+                      <IconComponent className="mt-0.5 w-3 h-3 text-zinc-500" />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate text-xs font-medium text-zinc-400">{summary.displayName}</span>
+                          {summary.unfinishedCount > 0 && (
+                            <span className="shrink-0 rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+                              {summary.unfinishedCount} 未完成
+                            </span>
+                          )}
+                          {expansionView.protectionLabel && (
+                            <span className="shrink-0 rounded-full border border-zinc-700 bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400">
+                              {expansionView.protectionLabel}
+                            </span>
+                          )}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[10px] text-zinc-600">
+                          {summaryLine}
+                        </span>
+                      </span>
                     </button>
                     {!group.isUncategorized && (
                       <button
                         type="button"
-                        aria-label={`在 ${group.name} 新建会话`}
-                        title={`在 ${group.name} 新建会话`}
+                        aria-label={`打开 ${summary.displayName} 项目控制台`}
+                        title={`打开 ${summary.displayName} 项目控制台`}
+                        aria-pressed={drawerOpen ? 'true' : 'false'}
+                        onClick={() => {
+                          setProjectDrawerKey(group.key);
+                        }}
+                        className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
+                      >
+                        <PanelRightOpen className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {!group.isUncategorized && (
+                      <button
+                        type="button"
+                        aria-label={detailsExpanded ? `收起 ${summary.displayName} 项目详情` : `展开 ${summary.displayName} 项目详情`}
+                        title={detailsExpanded ? `收起 ${summary.displayName} 项目详情` : `展开 ${summary.displayName} 项目详情`}
+                        onClick={() => {
+                          setExpandedProjectDetails((previous) => ({
+                            ...previous,
+                            [group.key]: !previous[group.key],
+                          }));
+                        }}
+                        className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
+                      >
+                        <ListChecks className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {!group.isUncategorized && (
+                      <button
+                        type="button"
+                        aria-label={`打开 ${summary.displayName} 产物与资产`}
+                        title={`打开 ${summary.displayName} 产物与资产`}
+                        onClick={handleOpenWorkspaceAssets}
+                        className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
+                      >
+                        <ScrollText className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {!group.isUncategorized && (
+                      <button
+                        type="button"
+                        aria-label={`在 ${summary.displayName} 新建会话`}
+                        title={`在 ${summary.displayName} 新建会话`}
                         onClick={(e) => handleNewWorkspaceChat(e, group.key, group.path)}
-                        className={`ml-1 inline-flex h-5 w-5 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden ${
-                          creatingWorkspaceKey === group.key
-                            ? 'opacity-100'
-                            : 'opacity-0 group-hover:opacity-100 focus:opacity-100'
-                        }`}
+                        disabled={isCreatingSession || (creatingWorkspaceKey !== null && creatingWorkspaceKey !== group.key)}
+                        className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden disabled:opacity-50"
                       >
                         {creatingWorkspaceKey === group.key ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -981,14 +1946,78 @@ export const Sidebar: React.FC = () => {
                       </button>
                     )}
                   </div>
+                  {detailsExpanded && !group.isUncategorized && (
+                    <SidebarProjectDetail
+                      meta={projectMeta}
+                      fallbackSessionCount={group.sessions.length}
+                      onOpenArtifactSession={handleOpenProjectArtifactSession}
+                      onStartGoal={(goal) => { void handleStartProjectGoal(goal, group.key, group.path); }}
+                    />
+                  )}
+                  {drawerOpen && !group.isUncategorized && (
+                    <SidebarProjectDrawer
+                      title={summary.displayName}
+                      summaryLine={summaryLine}
+                      paths={group.paths}
+                      meta={projectMeta}
+                      summary={summary}
+                      sessions={drawerSessions}
+                      filtered={hasSearchFilters}
+                      onClose={() => setProjectDrawerKey(null)}
+                      onOpenSession={async (sessionId) => {
+                        await handleSelectSession(sessionId);
+                        setProjectDrawerKey(null);
+                      }}
+                      onOpenArtifactSession={async (artifact) => {
+                        await handleOpenProjectArtifactSession(artifact);
+                        setProjectDrawerKey(null);
+                      }}
+                      onStartGoal={async (goal) => {
+                        await handleStartProjectGoal(goal, group.key, group.path);
+                        setProjectDrawerKey(null);
+                      }}
+                      onOpenGoalSession={async (sessionId) => {
+                        await handleSelectSession(sessionId);
+                        setProjectDrawerKey(null);
+                      }}
+                      onOpenWorkspaceAssets={() => {
+                        openWorkspacePreview();
+                        setProjectDrawerKey(null);
+                      }}
+                      onNewSession={async () => {
+                        await createWorkspaceChat(group.key, group.path);
+                        setProjectDrawerKey(null);
+                      }}
+                      onRenameProject={group.projectId
+                        ? async (name) => { await handleRenameSidebarProject(group.projectId!, name); }
+                        : undefined}
+                      onSetProjectDescription={group.projectId
+                        ? async (description) => { await handleSetSidebarProjectDescription(group.projectId!, description); }
+                        : undefined}
+                      onSetProjectStatus={group.projectId
+                        ? async (status) => { await handleSetSidebarProjectStatus(group.projectId!, status); }
+                        : undefined}
+                    />
+                  )}
                   {expanded && (
-                    <div className="space-y-0.5">
+                    <div
+                      className={expansionView.rowsClassName}
+                      data-sidebar-group-rows={group.key}
+                    >
                       {group.sessions.length === 0 ? (
                         <div className="px-3 py-1 text-xs text-zinc-600">No chats</div>
                       ) : (
-                        group.sessions.map((session) =>
-                          renderSessionItem(session as SessionWithMeta),
-                        )
+                        group.sessions.map((session, index) => (
+                          <div
+                            key={session.id}
+                            className="sidebar-project-row"
+                            style={{
+                              '--sidebar-row-delay': `${Math.min(index * 24, 160)}ms`,
+                            } as React.CSSProperties}
+                          >
+                            {renderSessionItem(session as SessionWithMeta)}
+                          </div>
+                        ))
                       )}
                     </div>
                   )}
@@ -1184,6 +2213,24 @@ export const Sidebar: React.FC = () => {
           </button>
         )}
       </div>
+
+      {/* Replay 摘要 */}
+      {replayDialog && (
+        <SessionReplaySummaryDialog
+          sessionTitle={replayDialog.sessionTitle}
+          replay={replayDialog.replay}
+          workflowRuns={Object.values(workflowRuns).filter((run) => run.sessionId === replayDialog.sessionId)}
+          backgroundTasks={durableBackgroundTasks.filter((task) => task.sessionId === replayDialog.sessionId)}
+          evidence={replayEvidenceBySessionId.get(replayDialog.sessionId) ?? []}
+          onOpenEvidence={(evidence) => {
+            const session = sessions.find((item) => item.id === replayDialog.sessionId);
+            if (session) {
+              void handleOpenReplayEvidence(session, evidence);
+            }
+          }}
+          onClose={() => setReplayDialog(null)}
+        />
+      )}
 
       {/* 右键菜单 */}
       {contextMenu && (

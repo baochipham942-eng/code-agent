@@ -47,6 +47,10 @@ export async function renameProject(projectId: string, name: string): Promise<Pr
   return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'rename', { projectId, name });
 }
 
+export async function setProjectDescription(projectId: string, description: string | null): Promise<Project> {
+  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'setDescription', { projectId, description });
+}
+
 export async function setProjectStatus(projectId: string, status: ProjectStatus): Promise<Project> {
   return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'setStatus', { projectId, status });
 }
@@ -64,8 +68,16 @@ export async function addProjectGoal(
   });
 }
 
-export async function updateProjectGoalStatus(goalId: string, status: ProjectGoalStatus): Promise<ProjectGoal> {
-  return ipcService.invokeDomain<ProjectGoal>(IPC_DOMAINS.PROJECT, 'updateGoalStatus', { goalId, status });
+export async function updateProjectGoalStatus(
+  goalId: string,
+  status: ProjectGoalStatus,
+  opts?: { lastRunSessionId?: string | null },
+): Promise<ProjectGoal> {
+  return ipcService.invokeDomain<ProjectGoal>(IPC_DOMAINS.PROJECT, 'updateGoalStatus', {
+    goalId,
+    status,
+    lastRunSessionId: opts?.lastRunSessionId,
+  });
 }
 
 export async function addProjectRole(projectId: string, roleId: string): Promise<ProjectRoleLink> {

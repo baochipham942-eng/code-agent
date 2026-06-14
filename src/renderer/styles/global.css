@@ -319,7 +319,18 @@ pre code {
   }
   to {
     opacity: 1;
-    transform: scale(1);
+  transform: scale(1);
+  }
+}
+
+@keyframes sidebarProjectRowEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -395,6 +406,39 @@ pre code {
   overflow: hidden;
 }
 
+.sidebar-project-rows {
+  overflow: hidden;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.sidebar-project-rows--expanded,
+.sidebar-project-rows--forced {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.sidebar-project-rows--forced {
+  box-shadow: inset 2px 0 0 rgba(245, 158, 11, 0.12);
+}
+
+.sidebar-project-rows--collapsing {
+  opacity: 0.42;
+  transform: translateY(-3px);
+}
+
+.sidebar-project-rows--collapsed {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+}
+
+.sidebar-project-row {
+  animation: sidebarProjectRowEnter var(--duration-fast) var(--ease-out) both;
+  animation-delay: var(--sidebar-row-delay, 0ms);
+}
+
 .animate-shimmer {
   background: linear-gradient(
     90deg,
@@ -409,6 +453,16 @@ pre code {
 /* Typing indicator dots */
 .typing-dot {
   animation: typing 1.4s infinite ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-project-rows {
+    transition: none;
+  }
+
+  .sidebar-project-row {
+    animation: none;
+  }
 }
 
 .typing-dot:nth-child(1) { animation-delay: 0s; }

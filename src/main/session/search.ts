@@ -73,6 +73,8 @@ export interface SearchResult {
   message: CachedMessage;
   /** Message index in session */
   messageIndex: number;
+  /** Conversation turn number containing this message, when inferable */
+  turnNumber?: number;
   /** Matches found in this message */
   matches: SearchMatch[];
   /** Relevance score (0-1) */
@@ -278,6 +280,49 @@ function passesDateFilter(message: CachedMessage, options: SearchOptions): boole
   return true;
 }
 
+function getWorkbenchMetadata(message: CachedMessage): Record<string, unknown> | undefined {
+  const workbench = message.metadata?.workbench;
+  return workbench && typeof workbench === 'object'
+    ? workbench as Record<string, unknown>
+    : undefined;
+}
+
+function isRuntimeSupplementMessage(message: CachedMessage): boolean {
+  if (message.role !== 'user') return false;
+  const workbench = getWorkbenchMetadata(message);
+  return workbench?.runtimeInputMode === 'supplement'
+    && workbench.runtimeInputDelivery !== 'queued_next_turn';
+}
+
+export function inferConversationTurnNumbers(messages: CachedMessage[]): Array<number | undefined> {
+  const turnNumbers: Array<number | undefined> = [];
+  let currentTurnNumber = 0;
+
+  for (const message of messages) {
+    if (message.role === 'user') {
+      if (isRuntimeSupplementMessage(message) && currentTurnNumber > 0) {
+        turnNumbers.push(currentTurnNumber);
+        continue;
+      }
+      currentTurnNumber += 1;
+      turnNumbers.push(currentTurnNumber);
+      continue;
+    }
+
+    if (message.role === 'assistant') {
+      if (currentTurnNumber === 0) {
+        currentTurnNumber = 1;
+      }
+      turnNumbers.push(currentTurnNumber);
+      continue;
+    }
+
+    turnNumbers.push(currentTurnNumber > 0 ? currentTurnNumber : undefined);
+  }
+
+  return turnNumbers;
+}
+
 /**
  * Search sessions for a query
  */
@@ -311,6 +356,7 @@ export function searchSessions(
   for (const sessionId of searchSessionIds) {
     const session = cache.getSession(sessionId);
     if (!session) continue;
+    const turnNumbers = inferConversationTurnNumbers(session.messages);
 
     // Search messages
     for (let i = 0; i < session.messages.length; i++) {
@@ -342,6 +388,7 @@ export function searchSessions(
         sessionId,
         message,
         messageIndex: i,
+        turnNumber: turnNumbers[i],
         matches,
         relevance,
         snippet,

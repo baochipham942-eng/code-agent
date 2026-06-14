@@ -32,13 +32,25 @@ function createService(taskManager: unknown, currentSessionId = 'session-1'): Ag
   );
 }
 
+function createServiceWithConfig(taskManager: unknown, configService: unknown, currentSessionId = 'session-1'): AgentAppServiceImpl {
+  return new AgentAppServiceImpl(
+    () => taskManager as never,
+    () => configService as never,
+    () => currentSessionId,
+    vi.fn(),
+  );
+}
+
 describe('AgentAppService lifecycle routing', () => {
   let orchestrator: {
     cancel: ReturnType<typeof vi.fn>;
+    getWorkingDirectory: ReturnType<typeof vi.fn>;
     setWorkingDirectory: ReturnType<typeof vi.fn>;
   };
 	  let sessionManager: {
 	    getSession: ReturnType<typeof vi.fn>;
+	    createSession: ReturnType<typeof vi.fn>;
+	    setCurrentSession: ReturnType<typeof vi.fn>;
 	    updateSession: ReturnType<typeof vi.fn>;
 	    restoreSession: ReturnType<typeof vi.fn>;
 	    applyPromptRewind: ReturnType<typeof vi.fn>;
@@ -54,6 +66,7 @@ describe('AgentAppService lifecycle routing', () => {
     getSessionState: ReturnType<typeof vi.fn>;
     startTask: ReturnType<typeof vi.fn>;
     interruptAndContinue: ReturnType<typeof vi.fn>;
+    cleanup: ReturnType<typeof vi.fn>;
     cancelTask: ReturnType<typeof vi.fn>;
     getOrCreateCurrentOrchestrator: ReturnType<typeof vi.fn>;
     setCurrentSessionId: ReturnType<typeof vi.fn>;
@@ -63,10 +76,20 @@ describe('AgentAppService lifecycle routing', () => {
   beforeEach(() => {
     orchestrator = {
       cancel: vi.fn().mockResolvedValue(undefined),
+      getWorkingDirectory: vi.fn(() => '/current/project'),
       setWorkingDirectory: vi.fn(),
     };
 	    sessionManager = {
 	      getSession: vi.fn().mockResolvedValue({ id: 'session-1', workingDirectory: '/old/project' }),
+	      createSession: vi.fn(async (options) => ({
+	        id: 'created-session',
+	        title: options.title,
+	        modelConfig: options.modelConfig,
+	        workingDirectory: options.workingDirectory,
+	        createdAt: 1,
+	        updatedAt: 1,
+	      })),
+	      setCurrentSession: vi.fn(),
 	      updateSession: vi.fn().mockResolvedValue(undefined),
 	      restoreSession: vi.fn(),
 	      applyPromptRewind: vi.fn(),
@@ -82,6 +105,7 @@ describe('AgentAppService lifecycle routing', () => {
       getSessionState: vi.fn(),
       startTask: vi.fn().mockResolvedValue(undefined),
       interruptAndContinue: vi.fn().mockResolvedValue(undefined),
+      cleanup: vi.fn(),
       cancelTask: vi.fn().mockResolvedValue(undefined),
       getOrCreateCurrentOrchestrator: vi.fn(() => orchestrator),
       setCurrentSessionId: vi.fn(),
@@ -95,6 +119,39 @@ describe('AgentAppService lifecycle routing', () => {
     vi.mocked(getFileCheckpointService).mockReset();
     vi.mocked(getFileCheckpointService).mockReturnValue(checkpointService as any);
 	  });
+
+  it('keeps a new blank session out of the current project when workingDirectory is null', async () => {
+    const service = createServiceWithConfig(taskManager, {
+      getSettings: () => ({ model: { provider: 'openai', model: 'gpt-5.4' } }),
+    });
+
+    const session = await service.createSession({
+      title: '空白会话',
+      workingDirectory: null,
+    });
+
+    expect(session.workingDirectory).toBeUndefined();
+    expect(sessionManager.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      title: '空白会话',
+      workingDirectory: undefined,
+    }));
+    expect(orchestrator.setWorkingDirectory).not.toHaveBeenCalledWith('/current/project');
+  });
+
+  it('inherits the current project when a new session omits workingDirectory', async () => {
+    const service = createServiceWithConfig(taskManager, {
+      getSettings: () => ({ model: { provider: 'openai', model: 'gpt-5.4' } }),
+    });
+
+    const session = await service.createSession({ title: '新对话' });
+
+    expect(session.workingDirectory).toBe('/current/project');
+    expect(sessionManager.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      title: '新对话',
+      workingDirectory: '/current/project',
+    }));
+    expect(orchestrator.setWorkingDirectory).toHaveBeenCalledWith('/current/project');
+  });
 
   it('routes chat send through TaskManager with run options and workbench metadata', async () => {
     const service = createService(taskManager);

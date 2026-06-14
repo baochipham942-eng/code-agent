@@ -40,6 +40,7 @@ export const IPC_CHANNELS = {
   SESSION_LOAD_OLDER_MESSAGES: 'session:load-older-messages',
   SESSION_SEARCH: 'session:search',
   SESSION_GET_PLAN_TITLE: 'session:get-plan-title',
+  SESSION_LIST_REVIEW_ITEMS: 'session:list-review-items',
 
   // Memory channels
   MEMORY: 'memory:manage',

@@ -8,21 +8,35 @@
 //
 // ============================================================================
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  MoreHorizontal, RotateCcw, TimerReset, Eye, ClipboardList, Download, FolderOpen, Play,
+  MoreHorizontal, RotateCcw, TimerReset, Eye, Download, FolderOpen, Play,
 } from 'lucide-react';
+import type { StructuredReplay } from '@shared/contract/evaluation';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { useAuthStore } from '../stores/authStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useTaskStore } from '../stores/taskStore';
+import { useUIStore } from '../stores/uiStore';
+import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
+import { useWorkflowStore } from '../stores/workflowStore';
 import { getSessionStatusPresentation } from '../utils/sessionPresentation';
 import { canAccessFeature } from '../utils/accessControl';
-import { IPC_DOMAINS } from '@shared/ipc';
+import { buildSessionReplayContext } from '../utils/sessionReplayContext';
+import { openSessionReplayEvidenceTarget } from '../utils/openSessionReplayEvidence';
+import { copyPathToClipboard, openExternalLink } from '../utils/platform';
+import ipcService from '../services/ipcService';
 import { IconButton } from './primitives';
+import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
 
 export const SessionActionsMenu: React.FC = () => {
   const [open, setOpen] = useState(false);
+  const [replayDialog, setReplayDialog] = useState<{
+    sessionId: string;
+    sessionTitle: string;
+    replay: StructuredReplay;
+  } | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   const appWorkingDirectory = useAppStore((s) => s.workingDirectory);
@@ -39,8 +53,13 @@ export const SessionActionsMenu: React.FC = () => {
   const moveToBackground = useSessionStore((s) => s.moveToBackground);
 
   const sessionStates = useTaskStore((s) => s.sessionStates);
+  const workflowRuns = useWorkflowStore((s) => s.runs);
+  const durableBackgroundTasks = useBackgroundTaskStore((s) => s.tasks);
+  const user = useAuthStore((s) => s.user);
+  const showToast = useUIStore((s) => s.showToast);
 
   const currentSession = sessions.find((s) => s.id === currentSessionId) || null;
+  const canOpenReplay = canAccessFeature('eval.replay', user);
 
   useEffect(() => {
     if (!open) return;
@@ -85,6 +104,10 @@ export const SessionActionsMenu: React.FC = () => {
   const sessionWorkingDirectory = currentSession?.workingDirectory?.trim() || null;
   const showReopenWorkspace = Boolean(sessionWorkingDirectory)
     && sessionWorkingDirectory !== appWorkingDirectory;
+  const replayDialogContext = useMemo(
+    () => buildSessionReplayContext(replayDialog?.sessionId, workflowRuns, durableBackgroundTasks),
+    [durableBackgroundTasks, replayDialog?.sessionId, workflowRuns],
+  );
 
   const handleResume = useCallback(async () => {
     if (!currentSessionId) return;
@@ -132,6 +155,51 @@ export const SessionActionsMenu: React.FC = () => {
     setAppWorkingDirectory(response.data || sessionWorkingDirectory);
   }, [sessionWorkingDirectory, setAppWorkingDirectory, close]);
 
+  const handleOpenReplay = useCallback(async () => {
+    if (!currentSessionId || !currentSession) return;
+    if (!canOpenReplay) {
+      showToast('warning', 'Replay 目前仅管理员可用');
+      return;
+    }
+
+    close();
+    try {
+      const replay = await ipcService.invoke(IPC_CHANNELS.REPLAY_GET_STRUCTURED_DATA, currentSessionId) as StructuredReplay | null;
+      if (!replay) {
+        showToast('warning', '当前会话还没有可用 Replay 数据');
+        return;
+      }
+      setReplayDialog({
+        sessionId: currentSessionId,
+        sessionTitle: currentSession.title || '未命名会话',
+        replay,
+      });
+    } catch (error) {
+      showToast('error', `打开 Replay 失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [canOpenReplay, close, currentSession, currentSessionId, showToast]);
+
+  const handleOpenReplayEvidence = useCallback(async (
+    evidence: typeof replayDialogContext.evidence[number],
+  ) => {
+    await openSessionReplayEvidenceTarget(evidence, {
+      openSessionReplay: () => handleOpenReplay(),
+      openPath: async (filePath) => {
+        const opened = await window.domainAPI?.invoke(
+          IPC_DOMAINS.WORKSPACE,
+          'openPath',
+          { filePath },
+        );
+        if (opened && !opened.success) {
+          throw new Error(opened.error?.message || 'Failed to open evidence file');
+        }
+      },
+      openExternal: openExternalLink,
+      copyText: copyPathToClipboard,
+      notify: showToast,
+    });
+  }, [handleOpenReplay, showToast]);
+
   // 无会话或无可用动作时不渲染
   if (!currentSession) return null;
 
@@ -165,6 +233,13 @@ export const SessionActionsMenu: React.FC = () => {
     label: 'Live Preview…',
     icon: <Play className="h-3.5 w-3.5" />,
     onClick: () => { close(); openDevServerLauncher(); },
+  });
+  items.push({
+    key: 'replay',
+    label: canOpenReplay ? '打开 Replay' : 'Replay 仅管理员可用',
+    icon: <Eye className="h-3.5 w-3.5" />,
+    disabled: !canOpenReplay,
+    onClick: () => { void handleOpenReplay(); },
   });
   items.push({
     key: 'export',
@@ -215,6 +290,17 @@ export const SessionActionsMenu: React.FC = () => {
             </button>
           ))}
         </div>
+      )}
+      {replayDialog && (
+        <SessionReplaySummaryDialog
+          sessionTitle={replayDialog.sessionTitle}
+          replay={replayDialog.replay}
+          workflowRuns={replayDialogContext.workflowRuns}
+          backgroundTasks={replayDialogContext.backgroundTasks}
+          evidence={replayDialogContext.evidence}
+          onOpenEvidence={(evidence) => { void handleOpenReplayEvidence(evidence); }}
+          onClose={() => setReplayDialog(null)}
+        />
       )}
     </div>
   );

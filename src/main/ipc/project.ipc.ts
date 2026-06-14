@@ -9,6 +9,7 @@
 // - list            -> 项目列表（{ includeArchived? }）
 // - detail          -> 项目详情（project + goals + roles + sessionIds）
 // - rename          -> 改名（{ projectId, name }）
+// - setDescription  -> 改描述（{ projectId, description? }）
 // - setStatus       -> 改状态（{ projectId, status }）
 // - addGoal         -> 新增目标（{ projectId, goal, verify?, review? }）
 // - updateGoalStatus-> 更新目标状态（{ goalId, status, lastRunSessionId? }）
@@ -42,6 +43,10 @@ interface DetailPayload {
 interface RenamePayload {
   projectId?: string;
   name?: string;
+}
+interface SetDescriptionPayload {
+  projectId?: string;
+  description?: string | null;
 }
 interface SetStatusPayload {
   projectId?: string;
@@ -122,6 +127,17 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
           const { projectId, name } = (payload ?? {}) as RenamePayload;
           if (!projectId || !name?.trim()) return invalid('projectId and name are required');
           const updated = svc.renameProject(projectId, name.trim(), now);
+          return updated ? { success: true, data: updated } : notFound('project not found');
+        }
+
+        case 'setDescription': {
+          const { projectId, description } = (payload ?? {}) as SetDescriptionPayload;
+          if (!projectId) return invalid('projectId is required');
+          const updated = svc.setProjectDescription(
+            projectId,
+            typeof description === 'string' ? description : null,
+            now,
+          );
           return updated ? { success: true, data: updated } : notFound('project not found');
         }
 

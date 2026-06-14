@@ -4,6 +4,7 @@ import type { SessionRuntimeSummary } from '@shared/ipc';
 import type { BackgroundTaskInfo } from '@shared/contract/sessionState';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
 import type { SessionWithMeta } from '../stores/sessionStore';
+import type { SessionStatusFilter } from '../stores/sessionUIStore';
 import type { SessionState as TaskSessionState } from '../stores/taskStore';
 
 export type SessionStatusKind = 'background' | 'live' | 'approval' | 'paused' | 'error' | 'done' | 'incomplete' | 'idle';
@@ -25,6 +26,48 @@ const PRESENTATION: Record<SessionStatusKind, SessionStatusPresentation> = {
   incomplete: { kind: 'incomplete', label: '待处理', toneClassName: 'text-amber-300 bg-amber-500/10 border-amber-500/20', showBadge: true },
   idle:       { kind: 'idle',       label: '就绪',   toneClassName: 'text-zinc-400 bg-zinc-700/30 border-zinc-600/40', showBadge: false },
 };
+
+const UNFINISHED_STATUS_KINDS: ReadonlySet<SessionStatusKind> = new Set([
+  'approval',
+  'background',
+  'live',
+  'paused',
+  'error',
+  'incomplete',
+]);
+
+const ATTENTION_STATUS_KINDS: ReadonlySet<SessionStatusKind> = new Set([
+  'paused',
+  'error',
+  'incomplete',
+]);
+
+export function matchesSessionStatusFilter(
+  filter: SessionStatusFilter,
+  kind: SessionStatusKind,
+  options: { hasDeliverySignals?: boolean; hasPendingReview?: boolean } = {},
+): boolean {
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'unfinished':
+      return UNFINISHED_STATUS_KINDS.has(kind);
+    case 'approval':
+      return kind === 'approval';
+    case 'running':
+      return kind === 'background' || kind === 'live';
+    case 'attention':
+      return ATTENTION_STATUS_KINDS.has(kind);
+    case 'artifact':
+      return options.hasDeliverySignals === true;
+    case 'review':
+      return options.hasPendingReview === true;
+    case 'background':
+      return kind === 'background';
+    default:
+      return true;
+  }
+}
 
 export function getDisplaySessionTitle(title?: string | null): string {
   const rawTitle = title?.trim() ?? '';

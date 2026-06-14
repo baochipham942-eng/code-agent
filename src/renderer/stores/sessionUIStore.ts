@@ -15,11 +15,21 @@ async function deleteSession(id: string): Promise<void> {
 
 export type { SessionFilter };
 
-export type SessionStatusFilter = 'all' | 'background';
+export type SessionStatusFilter = 'all' | 'unfinished' | 'approval' | 'running' | 'attention' | 'artifact' | 'review' | 'background';
 
 export interface PendingDelete {
   ids: string[];
   timer: ReturnType<typeof setTimeout> | null;
+}
+
+export interface PendingSessionSearchJump {
+  sessionId: string;
+  messageId?: string;
+  messageIndex?: number;
+  turnNumber?: number;
+  matchOffset?: number;
+  query: string;
+  createdAt: number;
 }
 
 // Persisted fold state for workspace groups in the sidebar.
@@ -54,6 +64,7 @@ interface SessionUIState {
   filter: SessionFilter;
   searchQuery: string;
   sessionStatusFilter: SessionStatusFilter;
+  pendingSearchJump: PendingSessionSearchJump | null;
   inputHistory: string[];
   inputHistoryIndex: number;
   inputHistoryDraft: string;
@@ -64,6 +75,7 @@ interface SessionUIActions {
   setFilter: (filter: SessionFilter) => void;
   setSearchQuery: (query: string) => void;
   setSessionStatusFilter: (filter: SessionStatusFilter) => void;
+  setPendingSearchJump: (jump: PendingSessionSearchJump | null) => void;
   softDelete: (ids: string[]) => void;
   undoDelete: () => void;
   confirmDelete: () => Promise<void>;
@@ -81,6 +93,7 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
   filter: 'active' as SessionFilter,
   searchQuery: '',
   sessionStatusFilter: 'all',
+  pendingSearchJump: null,
   inputHistory: [],
   inputHistoryIndex: -1,
   inputHistoryDraft: '',
@@ -97,6 +110,10 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
 
   setSessionStatusFilter: (sessionStatusFilter: SessionStatusFilter) => {
     set({ sessionStatusFilter });
+  },
+
+  setPendingSearchJump: (pendingSearchJump: PendingSessionSearchJump | null) => {
+    set({ pendingSearchJump });
   },
 
   softDelete: (ids: string[]) => {

@@ -50,7 +50,13 @@ import {
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
-import { parseGoalCommand, isGoalCommand, normalizeGoalCommand } from './parseGoalCommand';
+import {
+  goalComposerDraftToParsed,
+  parseGoalCommand,
+  isGoalCommand,
+  normalizeGoalCommand,
+  type ParsedGoalCommand,
+} from './parseGoalCommand';
 import { parseScheduleCommand, isScheduleCommand } from './parseScheduleCommand';
 import { parseLoopCommand, isLoopCommand } from './parseLoopCommand';
 import { cronClient, type CreateCronJobInput } from '../../../../services/cronClient';
@@ -58,6 +64,7 @@ import { loopClient } from '../../../../services/loopClient';
 import { useLoopStore } from '../../../../stores/loopStore';
 import { LoopStatusBar } from './LoopStatusBar';
 import { ScheduleComposerCard } from './ScheduleComposerCard';
+import { GoalComposerCard } from './GoalComposerCard';
 import { buildGoalNoticeMessage } from '../goalNotice';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 import {
@@ -162,6 +169,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // /schedule 不带参数时的对话式创建卡片
   const [scheduleComposerOpen, setScheduleComposerOpen] = useState(false);
   const [creatingSchedule, setCreatingSchedule] = useState(false);
+  // /goal 不带参数时的目标合同创建卡片
+  const [goalComposerOpen, setGoalComposerOpen] = useState(false);
+  const [submittingGoal, setSubmittingGoal] = useState(false);
   const inputAreaRef = useRef<InputAreaRef>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const debugDraftAppliedRef = useRef(false);
@@ -556,6 +566,50 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
   }, []);
 
+  const startGoalRun = useCallback(async (
+    parsed: ParsedGoalCommand,
+    historyEntry: string,
+  ): Promise<boolean> => {
+    const base = buildEnvelope(parsed.goal, attachments);
+    const goalEnvelope: ConversationEnvelope = {
+      ...base,
+      options: {
+        ...(base.options ?? {}),
+        goal: {
+          goal: parsed.goal,
+          verify: parsed.verify,
+          review: parsed.review,
+          budget: parsed.budget,
+          maxTurns: parsed.maxTurns,
+        },
+      },
+    };
+    if (currentSessionId) {
+      useAppStore.getState().startGoalRun(currentSessionId, {
+        goal: parsed.goal,
+        maxTurns: parsed.maxTurns,
+        tokenBudget: parsed.budget,
+      });
+      useSessionStore.getState().setTodos(buildGoalSeedTodos(parsed.goal));
+    }
+    useSessionStore.getState().addMessage(buildGoalNoticeMessage({ kind: 'start', goal: parsed.goal }));
+    addToInputHistory(historyEntry);
+    setValue('');
+    setAttachments([]);
+    setGoalComposerOpen(false);
+    try {
+      const sent = await onSend(goalEnvelope);
+      if (sent === false) {
+        if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
+        return false;
+      }
+      return true;
+    } catch {
+      if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
+      return false;
+    }
+  }, [addToInputHistory, attachments, buildEnvelope, currentSessionId, onSend]);
+
   // 处理提交
   // 运行中允许提交，把新输入排到当前回复结束后发送。
   // P3-18: ! prefix executes shell command directly
@@ -571,6 +625,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       if (!parsed?.description) {
         // 不带描述 → 打开对话式创建卡片（解释怎么运作 + 模板/自定义），而非直接报错
         setValue('');
+        setGoalComposerOpen(false);
         setScheduleComposerOpen(true);
         return;
       }
@@ -619,42 +674,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     if (isGoalCommand(trimmedValue)) {
       const rawParsed = parseGoalCommand(trimmedValue);
       if (!rawParsed?.goal) {
-        toast.warning('用法：/goal <目标>（可选 --verify "<命令>" 或 --review "<软条件>"）');
-        inputAreaRef.current?.focus();
+        setValue('');
+        setScheduleComposerOpen(false);
+        setGoalComposerOpen(true);
         return;
       }
       const parsed = normalizeGoalCommand(rawParsed);
-      const base = buildEnvelope(parsed.goal, attachments);
-      const goalEnvelope: ConversationEnvelope = {
-        ...base,
-        options: {
-          ...(base.options ?? {}),
-          goal: {
-            goal: parsed.goal,
-            verify: parsed.verify,
-            review: parsed.review,
-            budget: parsed.budget,
-            maxTurns: parsed.maxTurns,
-          },
-        },
-      };
-      if (currentSessionId) {
-        useAppStore.getState().startGoalRun(currentSessionId, {
-          goal: parsed.goal,
-          maxTurns: parsed.maxTurns,
-          tokenBudget: parsed.budget,
-        });
-        useSessionStore.getState().setTodos(buildGoalSeedTodos(parsed.goal));
-      }
-      useSessionStore.getState().addMessage(buildGoalNoticeMessage({ kind: 'start', goal: parsed.goal }));
-      addToInputHistory(trimmedValue);
-      setValue('');
-      setAttachments([]);
-      try {
-        await onSend(goalEnvelope);
-      } catch {
-        if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
-      }
+      await startGoalRun(parsed, trimmedValue);
       return;
     }
 
@@ -892,6 +918,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onDismiss={() => setScheduleComposerOpen(false)}
           />
         )}
+        {goalComposerOpen && (
+          <GoalComposerCard
+            submitting={submittingGoal}
+            onSubmit={async (draft) => {
+              setSubmittingGoal(true);
+              const parsed = goalComposerDraftToParsed(draft);
+              const ok = await startGoalRun(parsed, `/goal ${parsed.goal}`);
+              setSubmittingGoal(false);
+              if (!ok) setGoalComposerOpen(true);
+            }}
+            onDismiss={() => setGoalComposerOpen(false)}
+          />
+        )}
         {/* Plan 入口按钮 - 仅当有 Plan 时显示 */}
         {hasPlan && onPlanClick && (
           <button
@@ -995,8 +1034,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 return;
               }
               if (cmd.id === 'goal') {
-                setValue('/goal ');
-                requestAnimationFrame(() => inputAreaRef.current?.focus());
+                setValue('');
+                setScheduleComposerOpen(false);
+                setGoalComposerOpen(true);
                 return;
               }
               if (cmd.id.startsWith('prompt:')) {

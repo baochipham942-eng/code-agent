@@ -13,10 +13,10 @@
 | 完成判定权 | `attempt_completion` 工具（goal-mode 才暴露）→ `messageProcessor` 拦截触发三层闸 | 与原设计一致 |
 | `--verify` 必填性 | **verify 与 review 二选一即可**（`buildGoalContract` 校验 verify\|\|review；`GoalBodySchema` verify optional + refine）。无 verify 时跳闸1 直接进闸2 | ⚠️ 原 D1 写"verify 强制必填"，as-built **放开为软目标支持**（commit 6ab11b55），对齐自然语言目标的产品设想 |
 | 终态事件 | SSE `goal_complete { status:'met'\|'aborted', reason, turns, tokensUsed }` | ⚠️ 原 §6 写 `goal_met`，as-built 统一为 `goal_complete` 带 status |
-| UI | `/goal` 斜杠命令解析 + ChatInput 上方 `GoalStatusBar` 实时状态条 + `GoalNoticeMessage` 生命周期卡片；桌面 IPC + headless REST 双链路 | P3 已落地（原列为后续阶段） |
+| UI | `/goal` 斜杠命令解析 + 空 `/goal` / slash 选择打开 `GoalComposerCard` 生成目标合同 + ChatInput 上方 `GoalStatusBar` 实时状态条 + `GoalNoticeMessage` 生命周期卡片；桌面 IPC + headless REST 双链路 | P3 已落地；2026-06-14 补 Goal Composer，把目标/验收/边界/暂停条件写入 review 合同 |
 | 审计 nudge | `goalModeController.buildAuditNudge()`，每 `CHECKPOINT_INTERVAL=3` 轮注入"先假设未达成、逐项找证据反驳" | 抄 pi-goal，已落地（原列为 P2 可选增强） |
 
-**核心模块**：`goalModeController.ts`（契约 / 闸3 / nudge / 进度）· `goalVerifyGate.ts`（闸1）· `goalReviewGate.ts`（闸2）· `messageProcessor.ts`（attempt_completion 拦截 + 闸编排）· `conversationRuntime.ts`（break→continue + loop-top 闸3）· 契约 `src/shared/contract/agent.ts`（`goal_iteration` / `goal_gate` / `goal_complete` 事件）。
+**核心模块**：`goalModeController.ts`（契约 / 闸3 / nudge / 进度）· `goalVerifyGate.ts`（闸1）· `goalReviewGate.ts`（闸2）· `messageProcessor.ts`（attempt_completion 拦截 + 闸编排）· `conversationRuntime.ts`（break→continue + loop-top 闸3）· `ChatInput/GoalComposerCard.tsx`（目标合同入口）· 契约 `src/shared/contract/agent.ts`（`goal_iteration` / `goal_gate` / `goal_complete` 事件）。
 
 **遗留（非阻塞）**：P4 swarm goal 未做。
 ~~闸2 powerful tier 生产路径~~（已修，2026-06-03）：powerful tier 指向的 provider（默认 xiaomi/mimo）没配 key 时，闸2 经 `resolveReviewModelConfig` 可用性降级链回落到主 run 模型，软目标不再因 `Invalid API Key` 永远 FAIL。

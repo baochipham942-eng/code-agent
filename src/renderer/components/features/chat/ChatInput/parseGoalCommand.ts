@@ -14,6 +14,16 @@ export interface ParsedGoalCommand {
   budget?: number;
 }
 
+export interface GoalComposerDraft {
+  goal: string;
+  verify?: string;
+  acceptance?: string;
+  boundaries?: string;
+  pauseConditions?: string;
+  maxTurns?: number;
+  budget?: number;
+}
+
 /** 是否是 /goal 命令（用于 handleSubmit 提前拦截判断）。 */
 export function isGoalCommand(raw: string): boolean {
   return /^\/goal\b/.test(raw.trim());
@@ -64,6 +74,43 @@ export function parseGoalCommand(raw: string): ParsedGoalCommand | null {
 
 export function buildDefaultGoalReview(goal: string): string {
   return `结果满足目标描述中的全部要求，且没有明显未完成项：${goal}`;
+}
+
+function cleanDraftField(value: string | undefined): string | undefined {
+  const cleaned = value?.trim();
+  return cleaned ? cleaned : undefined;
+}
+
+export function buildGoalContractReview(draft: GoalComposerDraft): string {
+  const goal = draft.goal.trim();
+  const acceptance = cleanDraftField(draft.acceptance) ?? buildDefaultGoalReview(goal);
+  const boundaries = cleanDraftField(draft.boundaries) ?? '只修改与目标直接相关的文件和配置，避免无关重构、无关功能和破坏性操作。';
+  const pauseConditions = cleanDraftField(draft.pauseConditions) ?? '需要凭证、付费、生产数据、破坏性操作、范围扩大，或连续 2 轮验证失败且没有新证据时暂停。';
+
+  return [
+    '目标合同：',
+    `目标：${goal}`,
+    `验收：${acceptance}`,
+    `边界：${boundaries}`,
+    '证据：完成前说明运行过的命令、检查过的文件、截图或日志证据；没有证据的要求按未完成处理。',
+    `暂停条件：${pauseConditions}`,
+  ].join('\n');
+}
+
+export function goalComposerDraftToParsed(draft: GoalComposerDraft): ParsedGoalCommand {
+  const parsed: ParsedGoalCommand = {
+    goal: draft.goal.trim(),
+    review: buildGoalContractReview(draft),
+  };
+  const verify = cleanDraftField(draft.verify);
+  if (verify) parsed.verify = verify;
+  if (draft.maxTurns && Number.isFinite(draft.maxTurns) && draft.maxTurns > 0) {
+    parsed.maxTurns = Math.floor(draft.maxTurns);
+  }
+  if (draft.budget && Number.isFinite(draft.budget) && draft.budget > 0) {
+    parsed.budget = Math.floor(draft.budget);
+  }
+  return parsed;
 }
 
 export function normalizeGoalCommand(parsed: ParsedGoalCommand): ParsedGoalCommand {

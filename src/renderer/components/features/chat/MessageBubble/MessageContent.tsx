@@ -30,6 +30,15 @@ import { SpreadsheetBlock } from './SpreadsheetBlock';
 import { DocumentBlock } from './DocumentBlock';
 import { shouldRenderStreamingContentAsMarkdown, useThrottledStreamingContent } from '../../../../hooks/useThrottledStreamingContent';
 import { recordStreamingPerformanceCounter } from '../../../../utils/streamingPerformanceMetrics';
+import {
+  buildMarkdownMediaAsset,
+  type SessionMediaContext,
+} from '@shared/utils/sessionMediaAssets';
+import {
+  getRenderableMediaSrc,
+  MediaAssetActionBar,
+  MediaAssetLightbox,
+} from './MediaAssetControls';
 
 // Language display names and colors
 const languageConfig: Record<string, { color: string; name: string }> = {
@@ -577,8 +586,85 @@ const MarkdownRenderer = memo(function markdownRenderer({
   );
 });
 
+const MarkdownMediaImage = memo(function MarkdownMediaImage({
+  src,
+  alt,
+  messageId,
+  mediaContext,
+}: {
+  src?: string;
+  alt?: string;
+  messageId?: string;
+  mediaContext?: SessionMediaContext;
+}) {
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const asset = useMemo(
+    () => buildMarkdownMediaAsset(src, alt, {
+      ...mediaContext,
+      messageId: mediaContext?.messageId || messageId,
+    }),
+    [src, alt, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId],
+  );
+
+  if (!asset) {
+    return (
+      <img
+        src={src}
+        alt={alt || ''}
+        className="max-w-full h-auto rounded-lg my-2"
+        loading="lazy"
+      />
+    );
+  }
+
+  const renderSrc = getRenderableMediaSrc(asset);
+  if (!renderSrc) {
+    return (
+      <span className="my-2 inline-block max-w-full overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/60 align-top">
+        <span className="block px-3 py-2 text-xs text-zinc-500">
+          图片过大，已跳过内联预览
+        </span>
+        <span className="flex items-center justify-end border-t border-zinc-800 bg-zinc-950/70 px-2 py-1">
+          <MediaAssetActionBar asset={asset} compact />
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <span className="my-2 inline-block max-w-full overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/60 align-top">
+      <button
+        type="button"
+        className="block max-w-full cursor-zoom-in bg-transparent p-0"
+        onClick={() => setLightboxOpen(true)}
+        title="放大查看"
+      >
+        <img
+          src={renderSrc}
+          alt={alt || ''}
+          className="max-h-[420px] max-w-full object-contain"
+          loading="lazy"
+        />
+      </button>
+      <span className="flex items-center justify-end border-t border-zinc-800 bg-zinc-950/70 px-2 py-1">
+        <MediaAssetActionBar
+          asset={asset}
+          compact
+          onOpenLightbox={() => setLightboxOpen(true)}
+        />
+      </span>
+      {lightboxOpen && (
+        <MediaAssetLightbox
+          asset={asset}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
+    </span>
+  );
+});
+
 // Main message content component
-export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false }) {
+export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext }) {
   const openPreview = useAppStore((state) => state.openPreview);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const streamingNeedsMarkdown = !isUser && isStreaming && shouldRenderStreamingContentAsMarkdown(content);
@@ -931,16 +1017,16 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       // Images
       img({ src, alt }) {
         return (
-          <img
+          <MarkdownMediaImage
             src={src}
-            alt={alt || ''}
-            className="max-w-full h-auto rounded-lg my-2"
-            loading="lazy"
+            alt={alt}
+            messageId={messageId}
+            mediaContext={mediaContext}
           />
         );
       },
     }),
-    [handleOpenFile, handlePreviewHtml]
+    [handleOpenFile, handlePreviewHtml, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
   );
 
   // Filter out system tags, auto-link ticket IDs, wrap file paths,

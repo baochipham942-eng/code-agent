@@ -5,6 +5,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { ToolCall } from '@shared/contract';
+import type { SessionMediaContext } from '@shared/utils/sessionMediaAssets';
 import { useAppStore } from '../../../../../stores/appStore';
 import { useSessionStore } from '../../../../../stores/sessionStore';
 import { ToolHeader } from './ToolHeader';
@@ -84,6 +85,7 @@ interface ToolCallDisplayProps {
   total: number;
   /** Compact mode for Cowork display - simplified view */
   compact?: boolean;
+  mediaContext?: SessionMediaContext;
 }
 
 export function ToolCallDisplay({
@@ -91,6 +93,7 @@ export function ToolCallDisplay({
   index,
   total: _total,
   compact = false,
+  mediaContext,
 }: ToolCallDisplayProps) {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const processingSessionIds = useAppStore(
@@ -182,7 +185,14 @@ export function ToolCallDisplay({
       {/* Expanded details - indented under tool name */}
       {expanded && (
         <div className="ml-6 animate-fadeIn">
-          <ToolDetails toolCall={toolCall} compact={compact} />
+          <ToolDetails
+            toolCall={toolCall}
+            compact={compact}
+            mediaContext={{
+              ...mediaContext,
+              sessionId: mediaContext?.sessionId || currentSessionId || undefined,
+            }}
+          />
         </div>
       )}
     </div>

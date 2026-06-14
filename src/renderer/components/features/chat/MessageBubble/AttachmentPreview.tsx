@@ -26,10 +26,20 @@ import type {
   MessageAttachment,
   PresentationSummary,
 } from '@shared/contract';
+import {
+  buildAttachmentMediaAsset,
+  type SessionMediaAsset,
+  type SessionMediaContext,
+} from '@shared/utils/sessionMediaAssets';
 import { formatFileSize, FOLDER_SUMMARY_THRESHOLD, categoryLabels } from './utils';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { SpreadsheetBlock } from './SpreadsheetBlock';
 import { DocumentBlock } from './DocumentBlock';
+import {
+  getRenderableMediaSrc,
+  MediaAssetActionBar,
+  MediaAssetLightbox,
+} from './MediaAssetControls';
 
 // Get attachment icon config based on category
 function getAttachmentIconConfig(category: AttachmentCategory | undefined): AttachmentIconConfig {
@@ -72,60 +82,118 @@ function parseJson<T>(value: string | undefined): T | undefined {
 // Single attachment item
 const AttachmentItem: React.FC<{
   attachment: MessageAttachment;
-  onImageClick: (src: string) => void;
-}> = ({ attachment, onImageClick }) => {
+  mediaContext?: SessionMediaContext;
+  onMediaOpen: (asset: SessionMediaAsset) => void;
+}> = ({ attachment, mediaContext, onMediaOpen }) => {
   const category = attachment.category || (attachment.type === 'image' ? 'image' : 'other');
   const presentationSummary = useMemo(
     () => parseJson<PresentationSummary>(attachment.pptJson),
     [attachment.pptJson],
   );
   const archiveManifest = attachment.archiveManifest as ArchiveManifest | undefined;
+  const mediaAsset = useMemo(
+    () => buildAttachmentMediaAsset(attachment, mediaContext),
+    [attachment, mediaContext],
+  );
 
   if (category === 'image') {
-    // 优先使用 data/thumbnail，否则回退到本地文件路径
-    const imageSrc = attachment.thumbnail || attachment.data || (attachment.path ? resolveFileUrl(attachment.path) : '');
+    // 统一走 MediaAsset 的安全 src 判断，避免超大 dataUrl 直接进入 DOM。
+    const imageSrc = mediaAsset
+      ? getRenderableMediaSrc(mediaAsset)
+      : attachment.thumbnail || attachment.data || (attachment.path ? resolveFileUrl(attachment.path) : '');
     return (
-      <div
-        className="relative group cursor-pointer"
-        onClick={() => onImageClick(imageSrc)}
-      >
-        <img
-          src={imageSrc}
-          alt={attachment.name}
-          className="max-w-[200px] max-h-[150px] rounded-xl border border-zinc-700 shadow-lg object-cover hover:border-primary-500/50 transition-colors"
-        />
-        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
-          <ImageIcon className="w-6 h-6 text-white" />
-        </div>
+      <div className="group max-w-[220px] overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900/80 shadow-lg">
+        {imageSrc ? (
+          <div
+            className="relative cursor-pointer"
+            onClick={() => mediaAsset && onMediaOpen(mediaAsset)}
+          >
+            <img
+              src={imageSrc}
+              alt={attachment.name}
+              className="max-h-[150px] w-full object-cover transition-colors group-hover:border-primary-500/50"
+            />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+              <ImageIcon className="w-6 h-6 text-white" />
+            </div>
+          </div>
+        ) : (
+          <div className="flex min-h-[84px] items-center justify-center px-3 py-4 text-center text-xs text-zinc-500">
+            图片过大，已跳过内联预览
+          </div>
+        )}
+        {mediaAsset && (
+          <div className="flex items-center justify-end border-t border-zinc-800 bg-zinc-950/60 px-2 py-1">
+            <MediaAssetActionBar
+              asset={mediaAsset}
+              compact
+              onOpenLightbox={() => onMediaOpen(mediaAsset)}
+            />
+          </div>
+        )}
       </div>
     );
   }
 
   if (category === 'audio') {
-    const mediaSrc = attachment.data || (attachment.path ? resolveFileUrl(attachment.path) : '');
+    const mediaSrc = mediaAsset
+      ? getRenderableMediaSrc(mediaAsset)
+      : attachment.data || (attachment.path ? resolveFileUrl(attachment.path) : '');
     return (
       <div className="max-w-[260px] rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
         <div className="mb-2 flex items-center gap-2 text-xs text-zinc-300">
           <Music className="h-4 w-4 text-fuchsia-400" />
           <span className="truncate" title={attachment.name}>{attachment.name}</span>
         </div>
-        <audio controls src={mediaSrc} className="w-full" />
+        {mediaSrc ? (
+          <audio controls src={mediaSrc} className="w-full" />
+        ) : (
+          <div className="rounded-md border border-zinc-700/70 bg-zinc-900/50 px-3 py-2 text-xs text-zinc-500">
+            音频过大，已跳过内联预览
+          </div>
+        )}
+        {mediaAsset && (
+          <div className="mt-2 flex justify-end">
+            <MediaAssetActionBar
+              asset={mediaAsset}
+              compact
+              onOpenLightbox={() => onMediaOpen(mediaAsset)}
+            />
+          </div>
+        )}
       </div>
     );
   }
 
   if (category === 'video') {
-    const mediaSrc = attachment.data || (attachment.path ? resolveFileUrl(attachment.path) : '');
+    const mediaSrc = mediaAsset
+      ? getRenderableMediaSrc(mediaAsset)
+      : attachment.data || (attachment.path ? resolveFileUrl(attachment.path) : '');
     return (
       <div className="max-w-[320px] overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900/80">
-        <video
-          controls
-          src={mediaSrc}
-          className="max-h-[220px] w-full bg-black object-contain"
-        />
+        {mediaSrc ? (
+          <video
+            controls
+            src={mediaSrc}
+            className="max-h-[220px] w-full bg-black object-contain"
+          />
+        ) : (
+          <div className="flex min-h-[120px] items-center justify-center bg-black/30 px-3 py-4 text-center text-xs text-zinc-500">
+            视频过大，已跳过内联预览
+          </div>
+        )}
         <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-300">
           <Video className="h-4 w-4 shrink-0 text-cyan-400" />
           <span className="truncate" title={attachment.name}>{attachment.name}</span>
+          {mediaAsset && (
+            <div className="ml-auto">
+              <MediaAssetActionBar
+                asset={mediaAsset}
+                compact
+                onOpenLightbox={() => onMediaOpen(mediaAsset)}
+              />
+            </div>
+          )}
         </div>
       </div>
     );
@@ -226,8 +294,8 @@ const AttachmentItem: React.FC<{
 };
 
 // Main attachment display component
-export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachments }) => {
-  const [expandedImage, setExpandedImage] = useState<string | null>(null);
+export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachments, mediaContext }) => {
+  const [expandedMedia, setExpandedMedia] = useState<SessionMediaAsset | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Calculate stats
@@ -302,23 +370,18 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachment
           <AttachmentItem
             key={attachment.id}
             attachment={attachment}
-            onImageClick={setExpandedImage}
+            mediaContext={mediaContext}
+            onMediaOpen={setExpandedMedia}
           />
         ))}
       </div>
 
-      {/* Image lightbox */}
-      {expandedImage && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8"
-          onClick={() => setExpandedImage(null)}
-        >
-          <img
-            src={expandedImage}
-            alt="Expanded"
-            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-          />
-        </div>
+      {/* Media lightbox */}
+      {expandedMedia && (
+        <MediaAssetLightbox
+          asset={expandedMedia}
+          onClose={() => setExpandedMedia(null)}
+        />
       )}
     </div>
   );

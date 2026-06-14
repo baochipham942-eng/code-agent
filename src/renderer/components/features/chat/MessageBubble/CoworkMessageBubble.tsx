@@ -120,6 +120,7 @@ export const CoworkMessageBubble: React.FC<CoworkMessageBubbleProps> = ({ messag
                   index={index}
                   total={message.toolCalls!.length}
                   compact
+                  mediaContext={{ messageId: message.id }}
                 />
               ))}
             </div>

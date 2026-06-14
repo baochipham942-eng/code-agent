@@ -4,12 +4,22 @@
 // 输入直接用 TurnArtifactOwnershipItem，复用既有数据层
 // ============================================================================
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   FileText, Code, Image as ImageIcon, FileSpreadsheet, Eye, File,
 } from 'lucide-react';
 import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
+import {
+  buildArtifactOwnershipMediaAsset,
+  type SessionMediaAsset,
+  type SessionMediaContext,
+} from '@shared/utils/sessionMediaAssets';
 import { useAppStore } from '../../../../stores/appStore';
+import {
+  getRenderableMediaSrc,
+  MediaAssetActionBar,
+  MediaAssetLightbox,
+} from './MediaAssetControls';
 
 const PREVIEWABLE_EXTENSIONS = new Set([
   'md', 'mdx', 'html', 'htm', 'jsx', 'tsx', 'csv', 'tsv', 'txt',
@@ -17,6 +27,7 @@ const PREVIEWABLE_EXTENSIONS = new Set([
 
 interface Props {
   items: TurnArtifactOwnershipItem[];
+  mediaContext?: SessionMediaContext;
 }
 
 function getExt(fileName: string): string {
@@ -40,28 +51,87 @@ function pickIcon(ext: string): React.ReactNode {
   return <File className={`${cls} text-zinc-500`} />;
 }
 
-export const FileArtifactCard: React.FC<Props> = ({ items }) => {
+export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
   const openPreview = useAppStore((s) => s.openPreview);
+  const [expandedMedia, setExpandedMedia] = useState<SessionMediaAsset | null>(null);
 
   if (items.length === 0) return null;
 
   const entries = items.map((item) => {
     const ext = getExt(item.label);
     const toolName = extractToolName(item.ownerLabel);
+    const mediaAsset = buildArtifactOwnershipMediaAsset(item, mediaContext);
     return {
       item,
       ext,
       toolName,
       status: toolName === 'Write' ? ('created' as const) : ('modified' as const),
       previewable: PREVIEWABLE_EXTENSIONS.has(ext),
+      mediaAsset,
     };
   });
 
-  const previewable = entries.filter((e) => e.previewable);
-  const others = entries.filter((e) => !e.previewable);
+  const mediaEntries = entries.filter((e) => e.mediaAsset);
+  const previewable = entries.filter((e) => !e.mediaAsset && e.previewable);
+  const others = entries.filter((e) => !e.mediaAsset && !e.previewable);
 
   return (
     <div className="space-y-1.5">
+      {mediaEntries.map(({ item, ext, status, mediaAsset }) => {
+        if (!mediaAsset) return null;
+        const mediaSrc = getRenderableMediaSrc(mediaAsset);
+        return (
+          <div
+            key={`${item.sourceNodeId || ''}:${mediaAsset.path || mediaAsset.url || item.label}`}
+            className="overflow-hidden rounded-md border border-white/[0.06] bg-white/[0.018] transition-colors hover:border-white/[0.1] hover:bg-white/[0.03]"
+            title={mediaAsset.path || mediaAsset.url || item.label}
+          >
+            <div className="flex items-center gap-2 px-2.5 py-1.5">
+              {pickIcon(ext)}
+
+              <span className="text-xs text-zinc-200 font-medium truncate flex-1 min-w-0">
+                {item.label}
+              </span>
+
+              <span
+                className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${
+                  status === 'created'
+                    ? 'bg-emerald-500/15 text-emerald-400'
+                    : 'bg-amber-500/15 text-amber-400'
+                }`}
+              >
+                {status === 'created' ? 'Created' : 'Modified'}
+              </span>
+            </div>
+
+            {mediaAsset.kind === 'image' && mediaSrc && (
+              <button
+                type="button"
+                className="block w-full cursor-zoom-in bg-black/20"
+                onClick={() => setExpandedMedia(mediaAsset)}
+                title="放大查看"
+              >
+                <img
+                  src={mediaSrc}
+                  alt={item.label}
+                  className="max-h-44 w-full object-contain"
+                  loading="lazy"
+                />
+              </button>
+            )}
+
+            <div className="flex items-center justify-between gap-2 border-t border-white/[0.05] bg-black/10 px-2.5 py-1.5">
+              <span className="truncate text-[11px] text-zinc-500">{extractToolName(item.ownerLabel)}</span>
+              <MediaAssetActionBar
+                asset={mediaAsset}
+                compact
+                onOpenLightbox={() => setExpandedMedia(mediaAsset)}
+              />
+            </div>
+          </div>
+        );
+      })}
+
       {previewable.map(({ item, ext, status }) => {
         const previewPath = item.path;
         return (
@@ -113,6 +183,13 @@ export const FileArtifactCard: React.FC<Props> = ({ items }) => {
           <span className="text-zinc-600">Also modified:</span>{' '}
           {others.map((e) => e.item.label).join(', ')}
         </div>
+      )}
+
+      {expandedMedia && (
+        <MediaAssetLightbox
+          asset={expandedMedia}
+          onClose={() => setExpandedMedia(null)}
+        />
       )}
     </div>
   );

@@ -19,6 +19,7 @@ import {
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
+  sessionId?: string;
   /** Streaming turn: default expanded so user sees live progress */
   defaultExpanded?: boolean;
   /** 被收纳的过渡轮 thinking（无正文的纯思考节点），在组内弱化展示 */
@@ -27,6 +28,7 @@ interface ToolStepGroupProps {
 
 export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   nodes,
+  sessionId,
   defaultExpanded = false,
   thinkingNodes,
 }) => {
@@ -172,6 +174,10 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
                 index={i}
                 total={toolCalls.length}
                 compact
+                mediaContext={{
+                  sessionId,
+                  messageId: nodes.find((node) => node.toolCall?.id === tc.id)?.messageId || tc.id,
+                }}
               />
             </div>
           ))}

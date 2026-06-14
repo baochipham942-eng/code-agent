@@ -41,6 +41,7 @@ import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnershi
 
 interface TurnCardProps {
   turn: TraceTurn;
+  sessionId?: string;
   defaultExpanded?: boolean;
   /** Force expand for search matches */
   forceExpanded?: boolean;
@@ -61,6 +62,7 @@ const FOLD_THRESHOLD = 5;
 
 export const TurnCard: React.FC<TurnCardProps> = ({
   turn,
+  sessionId,
   defaultExpanded,
   forceExpanded,
   highlightActive,
@@ -168,6 +170,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {foldedView?.userNode && (
           <TraceNodeRenderer
             node={foldedView.userNode}
+            sessionId={sessionId}
             attachments={foldedView.userNode.attachments}
             onRewindUserPrompt={onRewindUserPrompt}
             rewindDisabled={Boolean(isSessionProcessing)}
@@ -211,6 +214,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   <ToolStepGroup
                     key={d.key}
                     nodes={d.tools}
+                    sessionId={sessionId}
                     defaultExpanded={false}
                     thinkingNodes={d.thinkingNodes}
                   />
@@ -242,6 +246,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 <TraceNodeRenderer
                   key={node.id}
                   node={node}
+                  sessionId={sessionId}
                   attachments={node.attachments}
                   isStreaming={isNodeStreaming}
                   onStreamingDisplayUpdate={shouldReportDisplayUpdate ? onStreamingDisplayUpdate : undefined}
@@ -267,6 +272,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {canFold && foldedView?.finalTextNode && (
           <TraceNodeRenderer
             node={foldedView.finalTextNode}
+            sessionId={sessionId}
             attachments={foldedView.finalTextNode.attachments}
             onStreamingDisplayUpdate={onStreamingDisplayUpdate}
           />

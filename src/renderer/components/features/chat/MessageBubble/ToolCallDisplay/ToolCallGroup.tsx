@@ -5,6 +5,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { ToolCall } from '@shared/contract';
+import type { SessionMediaContext } from '@shared/utils/sessionMediaAssets';
 import { useAppStore } from '../../../../../stores/appStore';
 import { useSessionStore } from '../../../../../stores/sessionStore';
 import { ToolCallDisplay } from './index';
@@ -20,11 +21,12 @@ const SPINNER_FRAME_INTERVAL_MS = 240;
 interface ToolCallGroupProps {
   toolCalls: ToolCall[];
   startIndex: number;
+  mediaContext?: SessionMediaContext;
 }
 
 type GroupStatus = 'pending' | 'success' | 'error';
 
-export function ToolCallGroup({ toolCalls, startIndex }: ToolCallGroupProps) {
+export function ToolCallGroup({ toolCalls, startIndex, mediaContext }: ToolCallGroupProps) {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const processingSessionIds = useAppStore((state) => state.processingSessionIds);
 
@@ -143,6 +145,7 @@ export function ToolCallGroup({ toolCalls, startIndex }: ToolCallGroupProps) {
             toolCall={toolCall}
             index={startIndex + index}
             total={startIndex + toolCalls.length}
+            mediaContext={mediaContext}
           />
         ))}
       </div>
@@ -185,9 +188,10 @@ interface SmartGroupProps {
   group: ToolGroup;
   startIndex: number;
   totalTools: number;
+  mediaContext?: SessionMediaContext;
 }
 
-function SmartGroupBlock({ group, startIndex, totalTools }: SmartGroupProps) {
+function SmartGroupBlock({ group, startIndex, totalTools, mediaContext }: SmartGroupProps) {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const processingSessionIds = useAppStore((state) => state.processingSessionIds);
 
@@ -294,6 +298,7 @@ function SmartGroupBlock({ group, startIndex, totalTools }: SmartGroupProps) {
             toolCall={toolCall}
             index={startIndex + idx}
             total={totalTools}
+            mediaContext={mediaContext}
           />
         ))}
       </div>
@@ -331,9 +336,10 @@ function SmartGroupBlock({ group, startIndex, totalTools }: SmartGroupProps) {
 
 interface ToolCallGroupListProps {
   groups: ToolGroup[];
+  mediaContext?: SessionMediaContext;
 }
 
-export function ToolCallGroupList({ groups }: ToolCallGroupListProps) {
+export function ToolCallGroupList({ groups, mediaContext }: ToolCallGroupListProps) {
   let globalIndex = 0;
   const totalTools = groups.reduce((sum, g) => sum + g.toolCalls.length, 0);
 
@@ -351,6 +357,7 @@ export function ToolCallGroupList({ groups }: ToolCallGroupListProps) {
               toolCall={tc}
               index={startIndex}
               total={totalTools}
+              mediaContext={mediaContext}
             />
           );
         }
@@ -361,6 +368,7 @@ export function ToolCallGroupList({ groups }: ToolCallGroupListProps) {
             group={group}
             startIndex={startIndex}
             totalTools={totalTools}
+            mediaContext={mediaContext}
           />
         );
       })}

@@ -128,7 +128,7 @@ describe('image_generate — execute', () => {
     process.env = { ...origEnv };
   });
 
-  it('happy path cogview returns base64', async () => {
+  it('happy path cogview caches generated base64 instead of returning inline image data', async () => {
     process.env.ZHIPU_OFFICIAL_API_KEY = 'official-key';
     getConfigServiceMock.mockReturnValue({
       getApiKey: vi.fn().mockReturnValue(undefined),
@@ -159,24 +159,71 @@ describe('image_generate — execute', () => {
     );
 
     expect(result.ok).toBe(true);
+    expect(writeFileSyncMock).toHaveBeenCalled();
     if (result.ok) {
-      const imageBase64 = result.meta?.imageBase64 as string;
+      const imagePath = result.meta?.imagePath as string;
       expect(result.meta?.artifact).toMatchObject({
         kind: 'image',
         sourceTool: 'image_generate',
+        path: imagePath,
         mimeType: 'image/png',
-        contentLength: imageBase64.length,
+        sizeBytes: 3,
         metadata: {
           model: 'cogview-4-250304',
           engine: 'cogview',
           aspectRatio: '1:1',
-          embeddedBase64: true,
+          cachedInlineImage: true,
         },
       });
       expect(result.meta?.engine).toBe('cogview');
       expect(result.meta?.model).toBe('cogview-4-250304');
-      expect(result.meta?.imageBase64).toContain('data:image/png;base64,');
+      expect(result.meta?.imageBase64).toBeUndefined();
+      expect(imagePath).toContain('/tmp/work/.code-agent/media/generated-');
+      expect(imagePath).toMatch(/\.png$/);
+      expect(result.output).toBe('图片生成成功。');
+    }
+  });
+
+  it('keeps remote image URL when download fallback fails instead of forcing it through cache', async () => {
+    process.env.ZHIPU_OFFICIAL_API_KEY = 'official-key';
+    getConfigServiceMock.mockReturnValue({
+      getApiKey: vi.fn().mockReturnValue(undefined),
+    });
+
+    let callCount = 0;
+    global.fetch = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ data: [{ url: 'https://cdn.example.com/generated.png' }] }),
+        });
+      }
+      return Promise.reject(new Error('download blocked'));
+    });
+
+    const result = await executeImageGenerate(
+      { prompt: '远端图片' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(writeFileSyncMock).not.toHaveBeenCalled();
+    if (result.ok) {
+      expect(result.output).toBe('图片生成成功。');
       expect(result.meta?.imagePath).toBeUndefined();
+      expect(result.meta?.imageBase64).toBe('https://cdn.example.com/generated.png');
+      expect(result.meta?.cachedInlineImage).toBe(false);
+      expect(result.meta?.artifact).toMatchObject({
+        kind: 'image',
+        sourceTool: 'image_generate',
+        url: 'https://cdn.example.com/generated.png',
+        metadata: expect.objectContaining({
+          engine: 'cogview',
+          embeddedBase64: false,
+        }),
+      });
     }
   });
 

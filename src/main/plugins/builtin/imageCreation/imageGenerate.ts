@@ -8,6 +8,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import type {
   ToolHandler,
   ToolModule,
@@ -32,6 +33,7 @@ import {
 import { readChatCompletionText } from '../typedResponseGuards';
 
 const PROMPT_EXPAND_TIMEOUT_MS = 15000;
+const GENERATED_MEDIA_CACHE_DIR = '.code-agent/media';
 
 const FLUX_MODELS = {
   pro: 'black-forest-labs/flux.2-pro',
@@ -99,6 +101,27 @@ function addStyleSuffix(prompt: string, style: string): string {
 function getDataUrlMimeType(data: string): string | undefined {
   const match = data.match(/^data:([^;,]+)[;,]/);
   return match?.[1];
+}
+
+function getImageExtension(imageData: string): string {
+  const mimeMatch = imageData.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,/);
+  const ext = mimeMatch?.[1]?.toLowerCase();
+  if (!ext) return 'png';
+  if (ext === 'jpeg') return 'jpg';
+  if (ext === 'svg+xml') return 'svg';
+  return ext.replace(/[^a-z0-9.-]/g, '') || 'png';
+}
+
+function imageBufferFromBase64(imageData: string): Buffer {
+  const base64Data = imageData.replace(/^data:image\/[\w+.-]+;base64,/, '');
+  return Buffer.from(base64Data, 'base64');
+}
+
+function buildGeneratedMediaCachePath(workingDir: string, imageData: string, timestampMs: number): string {
+  const timestamp = new Date(timestampMs).toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const hash = createHash('sha1').update(imageData).digest('hex').slice(0, 10);
+  const ext = getImageExtension(imageData);
+  return path.join(workingDir, GENERATED_MEDIA_CACHE_DIR, `generated-${timestamp}-${hash}.${ext}`);
 }
 
 // expandPromptWithLLM 还需要一个带超时的 fetch helper，独立于 service。
@@ -310,23 +333,28 @@ export async function executeImageGenerate(
 
     let imagePath: string | undefined;
     let savedImageSizeBytes: number | undefined;
-    if (outputPath) {
-      const resolvedPath = path.isAbsolute(outputPath)
-        ? outputPath
-        : path.join(ctx.workingDir, outputPath);
+    const cachePath = !outputPath && !isImageUrl(imageBase64)
+      ? buildGeneratedMediaCachePath(ctx.workingDir, imageBase64, startTime)
+      : undefined;
+    const targetPath = outputPath || cachePath;
+    const cachedInlineImage = Boolean(cachePath && !outputPath);
+
+    if (targetPath) {
+      const resolvedPath = path.isAbsolute(targetPath)
+        ? targetPath
+        : path.join(ctx.workingDir, targetPath);
 
       const dir = path.dirname(resolvedPath);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
 
-      const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-      const imageBuffer = Buffer.from(base64Data, 'base64');
+      const imageBuffer = imageBufferFromBase64(imageBase64);
       fs.writeFileSync(resolvedPath, imageBuffer);
       imagePath = resolvedPath;
       savedImageSizeBytes = imageBuffer.length;
 
-      if (process.env.CODE_AGENT_CLI_MODE === 'true' && fs.existsSync(resolvedPath)) {
+      if (outputPath && process.env.CODE_AGENT_CLI_MODE === 'true' && fs.existsSync(resolvedPath)) {
         const openCmd = process.platform === 'darwin' ? 'open' : 'xdg-open';
         safeExecDetached(openCmd, [resolvedPath], (err: Error) => {
           ctx.logger.warn('image_generate auto-open failed', { error: err.message });
@@ -340,7 +368,7 @@ export async function executeImageGenerate(
 
     return {
       ok: true,
-      output: imagePath ? `图片生成成功。Saved to: ${imagePath}` : '图片生成成功。',
+      output: outputPath && imagePath ? `图片生成成功。Saved to: ${imagePath}` : '图片生成成功。',
       meta: {
         artifact: imagePath
           ? await createFileArtifact(imagePath, schema.name, ctx, {
@@ -353,6 +381,7 @@ export async function executeImageGenerate(
               aspectRatio,
               generationTimeMs: generationTime,
               isAdmin,
+              cachedInlineImage,
             },
           })
           : createVirtualArtifact({
@@ -378,6 +407,7 @@ export async function executeImageGenerate(
         expandedPrompt: expandPrompt ? finalPrompt : undefined,
         imagePath,
         imageBase64: imagePath ? undefined : imageBase64,
+        cachedInlineImage,
         aspectRatio,
         generationTimeMs: generationTime,
         isAdmin,

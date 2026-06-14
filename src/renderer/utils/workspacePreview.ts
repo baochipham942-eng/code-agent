@@ -7,6 +7,7 @@ import type {
   WorkspacePreviewStatus,
 } from '@shared/contract';
 import { normalizeDesignBrief } from '@shared/contract/designBrief';
+import { collectToolArtifactsFromMetadata } from '@shared/contract/artifactBlob';
 import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import { getFileExtension, isPreviewable } from './previewable';
 import { isReadOnlyArtifactTool } from './artifactOwnership';
@@ -267,6 +268,10 @@ function statusFromSuccess(success?: boolean): WorkspacePreviewStatus {
   return 'ready';
 }
 
+function toolArtifactPreviewItemId(toolCallId: string, artifactId?: string, url?: string): string {
+  return `tool-artifact:${toolCallId}:${artifactId || url || 'artifact'}`;
+}
+
 function artifactKind(type: string): WorkspacePreviewKind {
   switch (type) {
     case 'spreadsheet':
@@ -418,6 +423,50 @@ function collectToolOutputs(
           actions: actionsForFile(path),
           priority: 30,
         }, `file:${path}`);
+      }
+
+      for (const artifact of collectToolArtifactsFromMetadata(result.metadata)) {
+        if (artifact.kind === 'process-output' || artifact.kind === 'process-log') {
+          continue;
+        }
+        if (artifact.path) {
+          const path = resolvePath(artifact.path, workingDirectory);
+          if (!path) continue;
+          const title = basename(path);
+          addItem(items, seen, {
+            id: `file:${path}`,
+            kind: fileKindForPath(path),
+            title,
+            subtitle: artifact.sourceTool || toolCall.name,
+            status: statusFromSuccess(result.success),
+            createdAt: message.timestamp,
+            source,
+            file: {
+              path,
+              name: title,
+            },
+            actions: actionsForFile(path),
+            priority: 30,
+          }, `file:${path}`);
+          continue;
+        }
+
+        if (artifact.url) {
+          const id = toolArtifactPreviewItemId(toolCall.id, artifact.artifactId, artifact.url);
+          addItem(items, seen, {
+            id,
+            kind: 'web_snapshot',
+            title: artifact.label,
+            subtitle: artifact.sourceTool || toolCall.name,
+            status: statusFromSuccess(result.success),
+            createdAt: message.timestamp,
+            source,
+            content: {
+              summary: artifact.url,
+            },
+            priority: 25,
+          }, `url:${artifact.url}`);
+        }
       }
     }
   }

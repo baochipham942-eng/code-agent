@@ -432,8 +432,13 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
     const sessionManager = getSessionManager();
     const settings = configService.getSettings();
-    const requestedWorkingDirectory = config?.workingDirectory?.trim();
-    const workingDirectory = requestedWorkingDirectory || this.getWorkingDirectory();
+    const hasExplicitWorkingDirectory = Object.prototype.hasOwnProperty.call(config ?? {}, 'workingDirectory');
+    const requestedWorkingDirectory = typeof config?.workingDirectory === 'string'
+      ? config.workingDirectory.trim()
+      : undefined;
+    const workingDirectory = hasExplicitWorkingDirectory
+      ? requestedWorkingDirectory
+      : this.getWorkingDirectory();
 
     const requestedEngine = normalizeAgentEngineSession(config?.engine);
     if (config?.engine && isExternalAgentEngine(requestedEngine.kind)) {

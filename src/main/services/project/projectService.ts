@@ -15,7 +15,9 @@ import { getProjectKey } from '../roleAssets/roleAssetPaths';
 import { linkProjectIdToMeta } from '../roleAssets/roleAssetService';
 import { createLogger } from '../infra/logger';
 import { extractArtifacts } from '../../agent/artifactExtractor';
+import { collectToolArtifactsFromMetadata } from '../../../shared/contract/artifactBlob';
 import type { GoalRunInput } from '../../../shared/contract/appService';
+import type { ToolCall } from '../../../shared/contract/tool';
 import {
   UNSORTED_PROJECT_ID,
   UNSORTED_PROJECT_NAME,
@@ -31,32 +33,232 @@ import {
 
 const logger = createLogger('ProjectService');
 
+const FILE_METADATA_KEYS = [
+  'filePath',
+  'imagePath',
+  'videoPath',
+  'outputPath',
+  'pptxPath',
+  'pdfPath',
+];
+
+const READ_ONLY_ARTIFACT_TOOL_NAMES = new Set([
+  'read',
+  'read_file',
+  'file_read',
+  'glob',
+  'grep',
+  'listdirectory',
+  'directory_list',
+  'ls',
+  'readclipboard',
+  'clipboard_read',
+  'memoryread',
+  'memory_read',
+  'episodicrecall',
+  'episodic_recall',
+]);
+
+type ProjectArtifactMessage = {
+  id?: string;
+  role: string;
+  content: string;
+  timestamp: number;
+  toolCalls?: ToolCall[];
+};
+
+type ProjectArtifactSession = {
+  id: string;
+  title: string;
+  workingDirectory?: string | null;
+};
+
 function shortId(prefix: string): string {
   return `${prefix}_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
 }
 
+function isReadOnlyArtifactTool(toolName: string | undefined): boolean {
+  if (!toolName) return false;
+  const normalized = toolName.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return READ_ONLY_ARTIFACT_TOOL_NAMES.has(normalized);
+}
+
+function resolveArtifactPath(rawPath: string | undefined, workingDirectory?: string | null): string | undefined {
+  const trimmed = rawPath?.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.startsWith('/') || trimmed.startsWith('~') || /^[a-z]+:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  const directory = workingDirectory?.trim();
+  return directory ? path.join(directory, trimmed) : trimmed;
+}
+
+function basenameForArtifact(value: string): string {
+  const withoutQuery = value.split(/[?#]/, 1)[0] || value;
+  return withoutQuery.split('/').filter(Boolean).pop() || value;
+}
+
+function projectArtifactKindForPath(filePath: string): ProjectArtifact['kind'] {
+  const ext = path.extname(filePath).replace(/^\./, '').toLowerCase();
+  if (['md', 'mdx', 'markdown', 'docx', 'pdf', 'txt'].includes(ext)) return 'document';
+  if (['csv', 'tsv', 'xlsx', 'xls'].includes(ext)) return 'spreadsheet';
+  if (['html', 'htm'].includes(ext)) return 'generic_html';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return 'web_snapshot';
+  return 'file';
+}
+
+function projectArtifactKindForToolArtifact(kind: string, artifactPath?: string, url?: string): ProjectArtifact['kind'] {
+  if (artifactPath) return projectArtifactKindForPath(artifactPath);
+  if (url) return 'link';
+  if (kind === 'spreadsheet') return 'spreadsheet';
+  if (kind === 'document') return 'document';
+  if (kind === 'image' || kind === 'web') return 'web_snapshot';
+  return 'file';
+}
+
+function projectArtifactKindForPreviewKind(kind: unknown): ProjectArtifact['kind'] {
+  switch (kind) {
+    case 'spreadsheet':
+      return 'spreadsheet';
+    case 'document':
+    case 'question_form':
+      return kind;
+    case 'generic_html':
+      return 'generic_html';
+    case 'chart':
+      return 'chart';
+    case 'diagram':
+      return 'mermaid';
+    case 'web_snapshot':
+      return 'web_snapshot';
+    default:
+      return 'file';
+  }
+}
+
+function previewItemIdFromMetadataPreview(toolCallId: string, previewItem: unknown): string | undefined {
+  if (!previewItem || typeof previewItem !== 'object') return undefined;
+  const raw = previewItem as { id?: unknown; kind?: unknown; title?: unknown };
+  if (!raw.kind || !raw.title) return undefined;
+  return typeof raw.id === 'string' && raw.id.trim()
+    ? raw.id.trim()
+    : `tool-preview:${toolCallId}`;
+}
+
+function collectPathMetadata(metadata?: Record<string, unknown>): string[] {
+  if (!metadata) return [];
+  const paths: string[] = [];
+  for (const key of FILE_METADATA_KEYS) {
+    const value = metadata[key];
+    if (typeof value === 'string' && value.trim()) {
+      paths.push(value.trim());
+    }
+  }
+  return paths;
+}
+
+function addProjectArtifact(items: ProjectArtifact[], seen: Set<string>, item: ProjectArtifact, dedupeKey: string): void {
+  if (seen.has(dedupeKey)) return;
+  seen.add(dedupeKey);
+  items.push(item);
+}
+
 /** 跨 session 抽取 artifact 并按内容哈希去重、时间倒序、取前 limit（纯函数，便于单测）。 */
 export function buildProjectArtifacts(
-  sessions: Array<{ id: string; title: string }>,
-  loadMessages: (sessionId: string) => Array<{ role: string; content: string; timestamp: number }>,
+  sessions: ProjectArtifactSession[],
+  loadMessages: (sessionId: string) => ProjectArtifactMessage[],
   limit = 60,
 ): ProjectArtifact[] {
   const seen = new Set<string>();
   const items: ProjectArtifact[] = [];
   for (const session of sessions) {
     for (const msg of loadMessages(session.id)) {
-      if (msg.role !== 'assistant' || !msg.content) continue;
-      for (const art of extractArtifacts(msg.content)) {
-        if (seen.has(art.id)) continue;
-        seen.add(art.id);
-        items.push({
-          id: art.id,
-          sessionId: session.id,
-          sessionTitle: session.title || undefined,
-          kind: art.type,
-          title: art.title,
-          createdAt: msg.timestamp,
-        });
+      if (msg.role !== 'assistant') continue;
+      if (msg.content) {
+        for (const art of extractArtifacts(msg.content)) {
+          addProjectArtifact(items, seen, {
+            id: art.id,
+            sessionId: session.id,
+            messageId: msg.id,
+            sessionTitle: session.title || undefined,
+            kind: art.type,
+            title: art.title,
+            createdAt: msg.timestamp,
+            previewItemId: msg.id ? `artifact:${msg.id}:${art.id}` : undefined,
+          }, `assistant-artifact:${art.id}`);
+        }
+      }
+
+      for (const toolCall of msg.toolCalls ?? []) {
+        const result = toolCall.result;
+        if (!result || isReadOnlyArtifactTool(toolCall.name)) continue;
+
+        const previewItemId = previewItemIdFromMetadataPreview(toolCall.id, result.metadata?.previewItem);
+        if (previewItemId) {
+          const rawPreview = result.metadata?.previewItem as { kind?: unknown; title?: unknown };
+          addProjectArtifact(items, seen, {
+            id: `tool-preview:${previewItemId}`,
+            sessionId: session.id,
+            messageId: msg.id,
+            sessionTitle: session.title || undefined,
+            kind: projectArtifactKindForPreviewKind(rawPreview.kind),
+            title: typeof rawPreview.title === 'string' ? rawPreview.title : toolCall.name,
+            createdAt: msg.timestamp,
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            previewItemId,
+          }, `previewItem:${previewItemId}`);
+        }
+
+        const rawPaths = new Set<string>();
+        if (result.outputPath) rawPaths.add(result.outputPath);
+        for (const metadataPath of collectPathMetadata(result.metadata)) {
+          rawPaths.add(metadataPath);
+        }
+        for (const rawPath of rawPaths) {
+          const artifactPath = resolveArtifactPath(rawPath, session.workingDirectory);
+          if (!artifactPath) continue;
+          addProjectArtifact(items, seen, {
+            id: `file:${artifactPath}`,
+            sessionId: session.id,
+            messageId: msg.id,
+            sessionTitle: session.title || undefined,
+            kind: projectArtifactKindForPath(artifactPath),
+            title: basenameForArtifact(artifactPath),
+            createdAt: msg.timestamp,
+            path: artifactPath,
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            previewItemId: `file:${artifactPath}`,
+          }, `file:${artifactPath}`);
+        }
+
+        for (const artifact of collectToolArtifactsFromMetadata(result.metadata)) {
+          if (artifact.kind === 'process-output' || artifact.kind === 'process-log') continue;
+          const artifactPath = resolveArtifactPath(artifact.path, session.workingDirectory);
+          const artifactUrl = artifact.url?.trim();
+          if (!artifactPath && !artifactUrl) continue;
+          const artifactKey = artifactPath
+            ? `file:${artifactPath}`
+            : `url:${artifactUrl}`;
+          const artifactPreviewItemId = artifactPath
+            ? `file:${artifactPath}`
+            : `tool-artifact:${toolCall.id}:${artifact.artifactId || artifactUrl}`;
+          addProjectArtifact(items, seen, {
+            id: artifact.artifactId ? `tool-artifact:${artifact.artifactId}` : artifactKey,
+            sessionId: session.id,
+            messageId: msg.id,
+            sessionTitle: session.title || undefined,
+            kind: projectArtifactKindForToolArtifact(artifact.kind, artifactPath, artifactUrl),
+            title: artifact.label || (artifactPath ? basenameForArtifact(artifactPath) : artifactUrl),
+            createdAt: msg.timestamp,
+            path: artifactPath,
+            url: artifactUrl,
+            toolCallId: toolCall.id,
+            toolName: artifact.sourceTool || toolCall.name,
+            previewItemId: artifactPreviewItemId,
+          }, artifactKey);
+        }
       }
     }
   }
@@ -146,7 +348,7 @@ export class ProjectService {
 
   /**
    * 中心视图"产物列表"数据源：跨该项目所有 session 抽取 artifact，按内容哈希去重、时间倒序、取前 limit。
-   * 产物 = assistant 消息内 chart/spreadsheet/mermaid/generative_ui/question-form 代码块（extractArtifacts）。
+   * 产物 = assistant artifact 代码块 + 工具 previewItem / outputPath / metadata.artifact。
    */
   getProjectArtifacts(projectId: string, limit = 60): ProjectArtifact[] {
     const db = getDatabase();
@@ -160,6 +362,13 @@ export class ProjectService {
     const repo = this.repo();
     if (!repo.getProject(projectId)) return undefined;
     repo.renameProject(projectId, name, now);
+    return repo.getProject(projectId);
+  }
+
+  setProjectDescription(projectId: string, description: string | null, now: number): Project | undefined {
+    const repo = this.repo();
+    if (!repo.getProject(projectId)) return undefined;
+    repo.setProjectDescription(projectId, description?.trim() || null, now);
     return repo.getProject(projectId);
   }
 

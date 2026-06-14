@@ -5,8 +5,19 @@
 import type { IpcMain } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { AgentApplicationService, SwitchModelParams } from '../../shared/contract/appService';
-import type { CrossSessionSearchOptions, CrossSessionSearchResults, CrossSessionSearchResultItem } from '../../shared/ipc/types';
+import type {
+  CrossSessionSearchOptions,
+  CrossSessionSearchResults,
+  CrossSessionSearchResultItem,
+  SessionReviewItemsRequest,
+} from '../../shared/ipc/types';
+import {
+  listAdminReviewQueueItems,
+  type AdminReviewQueueItem,
+} from '../../shared/contract/productClosure';
 import { getDefaultSearchManager } from '../session/search';
+import { assertAdminAccess } from './adminGuard';
+import { getArtifactIssueRepository } from '../services/core/repositories/ArtifactIssueRepository';
 
 /** Inline stub — old memoryTriggerService removed */
 type SessionMemoryContext = unknown;
@@ -145,6 +156,11 @@ export function registerSessionHandlers(
     return performCrossSessionSearch(payload.query, payload.options, requireAppService);
   });
 
+  ipcMain.handle(IPC_CHANNELS.SESSION_LIST_REVIEW_ITEMS, async (_, payload: SessionReviewItemsRequest): Promise<Record<string, AdminReviewQueueItem[]>> => {
+    assertAdminAccess('Review Queue');
+    return listReviewItemsBySession(payload);
+  });
+
   // Plan title — agent 用 ## Plan: ... 在 markdown 里声明的会话标题，UI 顶部大字号显示
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_PLAN_TITLE, async (_, sessionId: string): Promise<string | null> => {
     try {
@@ -159,6 +175,36 @@ export function registerSessionHandlers(
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_TASKS, async (_, sessionId: string) => {
     return requireAppService().getSessionTasks(sessionId);
   });
+}
+
+function listReviewItemsBySession(payload: SessionReviewItemsRequest): Record<string, AdminReviewQueueItem[]> {
+  const repo = getArtifactIssueRepository();
+  if (!repo) {
+    return {};
+  }
+
+  const requestedSessionIds = Array.from(new Set(
+    (payload.sessionIds ?? [])
+      .map((sessionId) => sessionId.trim())
+      .filter(Boolean),
+  ));
+  if (requestedSessionIds.length === 0) {
+    return {};
+  }
+
+  const requestedSet = new Set(requestedSessionIds);
+  const limitPerSession = Math.max(1, Math.min(payload.limitPerSession ?? 3, 10));
+  const grouped: Record<string, AdminReviewQueueItem[]> = {};
+  for (const sessionId of requestedSet) {
+    const items = listAdminReviewQueueItems(
+      repo.listIssues({ sessionId, limit: Math.max(limitPerSession * 4, 10) }),
+      { includeReviewed: payload.includeReviewed },
+    ).slice(0, limitPerSession);
+    if (items.length > 0) {
+      grouped[sessionId] = items;
+    }
+  }
+  return grouped;
 }
 
 // ----------------------------------------------------------------------------
@@ -177,6 +223,7 @@ async function performCrossSessionSearch(
   const searchManager = getDefaultSearchManager();
   const searchResults = searchManager.search(query, {
     limit: options?.limit ?? 30,
+    sessionIds: options?.sessionIds,
     role: options?.role,
     caseSensitive: options?.caseSensitive ?? false,
     sortBy: 'relevance',
@@ -198,8 +245,12 @@ async function performCrossSessionSearch(
   const results: CrossSessionSearchResultItem[] = searchResults.results.map((r) => ({
     sessionId: r.sessionId,
     sessionTitle: sessionTitleMap.get(r.sessionId),
+    messageId: r.message.id,
+    messageIndex: r.messageIndex,
+    turnNumber: r.turnNumber,
     role: r.message.role,
     timestamp: r.message.timestamp,
+    matchOffset: r.matches[0]?.start,
     relevance: r.relevance,
     snippet: r.snippet,
     matchCount: r.matches.length,

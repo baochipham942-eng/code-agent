@@ -152,6 +152,12 @@ export interface MemoryStats {
   projectKnowledgeCount: number;
 }
 
+export interface SessionReviewItemsRequest {
+  sessionIds: string[];
+  includeReviewed?: boolean;
+  limitPerSession?: number;
+}
+
 /**
  * Memory Record - 记忆可视化
  */
@@ -397,6 +403,8 @@ export interface AxialCodingEntryIpc {
 export interface CrossSessionSearchOptions {
   /** Maximum results to return */
   limit?: number;
+  /** Search only in specific sessions */
+  sessionIds?: string[];
   /** Filter by message role */
   role?: 'user' | 'assistant' | 'system';
   /** Case-sensitive search */
@@ -408,10 +416,18 @@ export interface CrossSessionSearchResultItem {
   sessionId: string;
   /** Session title (for display) */
   sessionTitle?: string;
+  /** Message id for in-session jump/highlight */
+  messageId?: string;
+  /** Message index in the searched session */
+  messageIndex?: number;
+  /** Conversation turn number containing the matched message */
+  turnNumber?: number;
   /** Message role */
   role: 'user' | 'assistant' | 'system';
   /** Message timestamp */
   timestamp: number;
+  /** First match character offset within message content */
+  matchOffset?: number;
   /** Relevance score (0-1) */
   relevance: number;
   /** Highlighted content snippet */

@@ -15,6 +15,7 @@ import {
   ChevronRight,
   FileText,
   FolderKanban,
+  Globe,
   LayoutGrid,
   Pencil,
   Plus,
@@ -53,6 +54,10 @@ const ARTIFACT_ICON: Record<ProjectArtifact['kind'], React.ComponentType<{ class
   generative_ui: LayoutGrid,
   mermaid: LayoutGrid,
   question_form: FileText,
+  file: FileText,
+  generic_html: LayoutGrid,
+  web_snapshot: Globe,
+  link: Globe,
 };
 
 export const ProjectHeaderBar: React.FC = () => {

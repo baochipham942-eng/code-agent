@@ -9,6 +9,8 @@ import type { CrossSessionSearchResultItem, CrossSessionSearchResults } from '@s
 import { IPC_CHANNELS } from '@shared/ipc/legacy-channels';
 import { ipcService } from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useSessionUIStore } from '../../../stores/sessionUIStore';
+import { createPendingSearchJumpFromCrossSessionResult } from '../../../utils/sessionSearchJump';
 
 export interface SearchMatch {
   turnIndex: number;
@@ -48,6 +50,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
   const crossDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const switchSession = useSessionStore((s) => s.switchSession);
+  const setPendingSearchJump = useSessionUIStore((s) => s.setPendingSearchJump);
 
   // Focus input when opened
   useEffect(() => {
@@ -162,10 +165,11 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
     }
   }, [onMatchesChange]);
 
-  const handleJumpToSession = useCallback(async (sessionId: string) => {
-    await switchSession(sessionId);
+  const handleJumpToSession = useCallback(async (item: CrossSessionSearchResultItem) => {
+    setPendingSearchJump(createPendingSearchJumpFromCrossSessionResult(item, query));
+    await switchSession(item.sessionId);
     onClose();
-  }, [switchSession, onClose]);
+  }, [query, setPendingSearchJump, switchSession, onClose]);
 
   if (!visible) return null;
 
@@ -280,17 +284,20 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
 
 const CrossSessionResultRow: React.FC<{
   item: CrossSessionSearchResultItem;
-  onJump: (sessionId: string) => void;
+  onJump: (item: CrossSessionSearchResultItem) => void;
 }> = ({ item, onJump }) => {
   const timeStr = formatRelativeTime(item.timestamp);
   const roleLabel = item.role === 'user' ? '用户' : item.role === 'assistant' ? '助手' : '系统';
+  const turnLabel = typeof item.turnNumber === 'number' && item.turnNumber > 0
+    ? `第 ${item.turnNumber} 轮`
+    : null;
 
   // Strip markdown bold markers from snippet for display
   const cleanSnippet = item.snippet.replace(/\*\*/g, '');
 
   return (
     <button
-      onClick={() => onJump(item.sessionId)}
+      onClick={() => onJump(item)}
       className="w-full text-left px-4 py-2.5 hover:bg-zinc-800/60 transition-colors group border-b border-zinc-800/50 last:border-b-0"
     >
       <div className="flex items-center gap-2 mb-1">
@@ -302,6 +309,9 @@ const CrossSessionResultRow: React.FC<{
         }`}>
           {roleLabel}
         </span>
+        {turnLabel && (
+          <span className="text-[10px] text-zinc-600">{turnLabel}</span>
+        )}
         <span className="text-[10px] text-zinc-600">{timeStr}</span>
         <ExternalLink className="w-3 h-3 text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
       </div>

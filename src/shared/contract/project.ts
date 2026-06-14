@@ -59,11 +59,18 @@ export interface ProjectArtifact {
   /** 内容哈希派生的稳定 ID，用于跨 session 去重 */
   id: string;
   sessionId: string;
+  /** 产出该产物的 assistant message；用于 Workspace Preview 精确选中同一 artifact item */
+  messageId?: string;
   /** 产出该产物的 session 标题（便于在产物列表标注来源） */
   sessionTitle?: string;
-  kind: 'chart' | 'spreadsheet' | 'document' | 'generative_ui' | 'mermaid' | 'question_form';
+  kind: 'chart' | 'spreadsheet' | 'document' | 'generative_ui' | 'mermaid' | 'question_form' | 'file' | 'generic_html' | 'web_snapshot' | 'link';
   title?: string;
   createdAt: number;
+  path?: string;
+  url?: string;
+  toolCallId?: string;
+  toolName?: string;
+  previewItemId?: string;
 }
 
 /** 保留项目 ID：无 workspace 的存量会话归入此项目 */

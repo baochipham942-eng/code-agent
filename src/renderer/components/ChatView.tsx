@@ -6,6 +6,7 @@ import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { useSessionUIStore } from '../stores/sessionUIStore';
 import { useStreamingMessageAccumulatorStore } from '../stores/streamingMessageAccumulatorStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useSwarmStore } from '../stores/swarmStore';
@@ -17,6 +18,7 @@ import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { ChatInput } from './features/chat/ChatInput';
 import { GoalStatusBar } from './features/chat/GoalStatusBar';
+import { buildGoalNoticeMessage } from './features/chat/goalNotice';
 import type { ChatInputHandle } from './features/chat/ChatInput';
 import { useFileUpload } from './features/chat/ChatInput/useFileUpload';
 import { SwarmInlineMonitor } from './features/swarm/SwarmInlineMonitor';
@@ -35,6 +37,7 @@ import { useMessageActionStore } from '../stores/messageActionStore';
 import { isWebMode } from '../utils/platform';
 import { toast } from '../hooks/useToast';
 import { hasConfiguredDefaultRuntimeModel, hasConfiguredRuntimeModels } from '@shared/modelRuntime';
+import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 
 // PlanPanel moved to inline display in TurnBasedTraceView
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
@@ -43,11 +46,14 @@ import { RewindPanel } from './RewindPanel';
 import type { AppSettings, MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
 import type { PromptRewindResult } from '@shared/contract/appService';
 import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
+import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import { collectDroppedAttachments } from './features/chat/ChatInput/utils';
 import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProjectionOverlay';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
+import { findSearchMatchForPendingJump } from '../utils/sessionSearchJump';
+import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
 import {
   ArrowRight,
   BarChart3,
@@ -57,12 +63,14 @@ import {
   Search,
   AlertTriangle,
 } from 'lucide-react';
+
 export const ChatView: React.FC = () => {
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
   const setTaskPlan = useAppStore((state) => state.setTaskPlan);
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
   const {
     currentSessionId,
+    sessions,
     hasOlderMessages,
     isLoading: isSessionLoading,
     isLoadingOlder,
@@ -85,6 +93,12 @@ export const ChatView: React.FC = () => {
   } = useAgent();
   const buildComposerContext = useComposerStore((state) => state.buildContext);
   const hydrateComposer = useComposerStore((state) => state.hydrateFromSession);
+  const currentSession = currentSessionId
+    ? sessions.find((session) => session.id === currentSessionId) ?? null
+    : null;
+  const currentSessionWorkingDirectory = currentSession
+    ? currentSession.workingDirectory ?? null
+    : appWorkingDirectory ?? null;
 
   useEffect(() => {
     hydrateComposer(currentSessionId, appWorkingDirectory);
@@ -121,6 +135,8 @@ export const ChatView: React.FC = () => {
   const [showSearch, setShowSearch] = useState(false);
   const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
   const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+  const pendingSearchJump = useSessionUIStore((state) => state.pendingSearchJump);
+  const setPendingSearchJump = useSessionUIStore((state) => state.setPendingSearchJump);
   const [pendingPromptRewind, setPendingPromptRewind] = useState<{
     messageId: string;
     content: string;
@@ -306,6 +322,26 @@ export const ChatView: React.FC = () => {
     recordStreamingPerformanceCounter('stream.projection.overlay_commit');
   }, [projection, streamingMessageEntries]);
 
+  useEffect(() => {
+    if (!pendingSearchJump || pendingSearchJump.sessionId !== currentSessionId) {
+      return;
+    }
+
+    const match = findSearchMatchForPendingJump(projection, pendingSearchJump);
+    if (match) {
+      setShowSearch(true);
+      setSearchMatches([match]);
+      setActiveMatchIndex(0);
+      setPendingSearchJump(null);
+      return;
+    }
+
+    if (projection.turns.length > 0 && Date.now() - pendingSearchJump.createdAt > 3000) {
+      setShowSearch(true);
+      setPendingSearchJump(null);
+    }
+  }, [currentSessionId, pendingSearchJump, projection, setPendingSearchJump]);
+
   // Global drop zone state
   const chatInputRef = useRef<ChatInputHandle>(null);
   const [isGlobalDragOver, setIsGlobalDragOver] = useState(false);
@@ -407,6 +443,29 @@ export const ChatView: React.FC = () => {
     void handleSendMessage(seed);
   }, [pendingRoleChatSeed, currentSessionId, effectiveIsProcessing, handleSendMessage]);
 
+  const pendingProjectGoalChatSeed = useAppStore((state) => state.pendingProjectGoalChatSeed);
+  useEffect(() => {
+    if (!pendingProjectGoalChatSeed || !currentSessionId || effectiveIsProcessing) return;
+    if (pendingProjectGoalChatSeed.sessionId !== currentSessionId) return;
+
+    const seed = pendingProjectGoalChatSeed;
+    useAppStore.getState().setPendingProjectGoalChatSeed(null);
+    const start = buildProjectGoalChatStart(seed, buildEnvelope(seed.content));
+    useAppStore.getState().startGoalRun(currentSessionId, start.runInit);
+    useSessionStore.getState().setTodos(buildGoalSeedTodos(start.goalText));
+    useSessionStore.getState().addMessage(buildGoalNoticeMessage({
+      kind: 'start',
+      goal: start.goalText,
+    }));
+    void handleSendEnvelope(start.envelope).then((sent) => {
+      if (!sent) {
+        useAppStore.getState().clearGoalRun(currentSessionId);
+      }
+    }).catch(() => {
+      useAppStore.getState().clearGoalRun(currentSessionId);
+    });
+  }, [pendingProjectGoalChatSeed, currentSessionId, effectiveIsProcessing, buildEnvelope, handleSendEnvelope]);
+
   const handleRequestPromptRewind = useCallback((messageId: string, content: string) => {
     if (!currentSessionId) return;
     if (effectiveIsProcessing) {
@@ -495,7 +554,11 @@ export const ChatView: React.FC = () => {
             // 冷启动初始化（currentSessionId 尚为 null）或会话切换异步加载期间
             // 渲染空白占位，避免闪现"新会话"默认页（见 switchSession/initializeSessionStore）。
             currentSessionId && !isSessionLoading ? (
-              <EmptyState onSend={handleSendMessage} />
+              <EmptyState
+                onSend={handleSendMessage}
+                workingDirectory={currentSessionWorkingDirectory}
+                workbenchSnapshot={currentSession?.workbenchSnapshot}
+              />
             ) : (
               <div className="h-full" aria-hidden />
             )
@@ -697,10 +760,21 @@ const StreamRecoveryBanner: React.FC<{ snapshot: StreamRecoverySnapshot }> = ({ 
 // Empty state component with enhanced design
 const EmptyState: React.FC<{
   onSend: (message: string) => void;
+  workingDirectory?: string | null;
+  workbenchSnapshot?: SessionWorkbenchSnapshot | null;
 }> = ({
   onSend,
+  workingDirectory,
+  workbenchSnapshot,
 }) => {
   const suggestions = defaultSuggestions;
+  const contextLabel = formatNewSessionContextLabel(workingDirectory);
+  const contextTitle = workingDirectory?.trim()
+    ? `继承工作区：${workingDirectory.trim()}`
+    : '不继承项目或工作区上下文';
+  const contextDetails = workingDirectory?.trim()
+    ? buildNewSessionContextDetails(workbenchSnapshot)
+    : null;
 
   return (
     <div className="h-full flex flex-col items-center justify-center px-6 py-12">
@@ -712,7 +786,18 @@ const EmptyState: React.FC<{
               选一个示例，或者直接输入你想完成的事。
             </p>
           </div>
+          <span
+            title={contextTitle}
+            className="shrink-0 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-zinc-400"
+          >
+            {contextLabel}
+          </span>
         </div>
+        {contextDetails && (
+          <div className="mb-4 truncate text-[11px] text-zinc-500">
+            {contextDetails}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           {suggestions.map((suggestion, index) => (
@@ -728,6 +813,46 @@ const EmptyState: React.FC<{
     </div>
   );
 };
+
+function formatNewSessionContextLabel(workingDirectory?: string | null): string {
+  const trimmed = workingDirectory?.trim();
+  if (!trimmed) {
+    return '空白会话';
+  }
+  const parts = trimmed.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean);
+  const name = parts[parts.length - 1] || trimmed;
+  return `项目会话 · ${name}`;
+}
+
+function buildNewSessionContextDetails(snapshot?: SessionWorkbenchSnapshot | null): string | null {
+  if (!snapshot) {
+    return null;
+  }
+
+  const parts: string[] = [];
+  const summary = snapshot.summary?.trim();
+  if (summary && summary !== '纯对话') {
+    parts.push(summary);
+  }
+
+  const recentTools = (snapshot.recentToolNames ?? [])
+    .map((toolName) => toolName.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+  if (recentTools.length > 0) {
+    const remaining = Math.max(0, (snapshot.recentToolNames?.length ?? 0) - recentTools.length);
+    parts.push(`最近工具 ${recentTools.join(', ')}${remaining > 0 ? ` +${remaining}` : ''}`);
+  }
+
+  const skillCount = snapshot.skillIds?.length ?? 0;
+  const connectorCount = snapshot.connectorIds?.length ?? 0;
+  const mcpCount = snapshot.mcpServerIds?.length ?? 0;
+  if (skillCount > 0) parts.push(`${skillCount} Skill`);
+  if (connectorCount > 0) parts.push(`${connectorCount} Connector`);
+  if (mcpCount > 0) parts.push(`${mcpCount} MCP`);
+
+  return parts.length > 0 ? `继承：${parts.join(' · ')}` : null;
+}
 
 // Suggestion card component
 interface SuggestionCardProps {

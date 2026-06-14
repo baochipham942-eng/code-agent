@@ -2,10 +2,11 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { IPC_DOMAINS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 
 const reactState = vi.hoisted(() => ({
   forcedContextMenuSession: null as any,
+  forcedReviewItemsBySessionId: null as Record<string, Array<{ reviewStatus: string; title: string }>> | null,
   useStateCalls: 0,
 }));
 
@@ -39,6 +40,12 @@ vi.mock('react', async () => {
       if (reactState.forcedContextMenuSession && reactState.useStateCalls === 7) {
         return [
           { x: 24, y: 24, session: reactState.forcedContextMenuSession },
+          vi.fn(),
+        ] as const;
+      }
+      if (reactState.forcedReviewItemsBySessionId && reactState.useStateCalls === 11) {
+        return [
+          reactState.forcedReviewItemsBySessionId,
           vi.fn(),
         ] as const;
       }
@@ -113,8 +120,10 @@ const sessionUiState = {
   setFilter: vi.fn(),
   searchQuery: '',
   setSearchQuery: vi.fn(),
-  sessionStatusFilter: 'all' as 'all' | 'background',
+  sessionStatusFilter: 'all' as 'all' | 'unfinished' | 'approval' | 'running' | 'attention' | 'artifact' | 'review' | 'background',
   setSessionStatusFilter: vi.fn(),
+  pendingSearchJump: null,
+  setPendingSearchJump: vi.fn(),
   softDelete: vi.fn(),
   undoDelete: vi.fn(),
   pendingDelete: null,
@@ -131,7 +140,7 @@ const appState = {
 };
 
 const authState = {
-  user: null,
+  user: null as { isAdmin?: boolean } | null,
   isAuthenticated: false,
   setShowAuthModal: vi.fn(),
   signOut: vi.fn(async () => {}),
@@ -212,14 +221,16 @@ function renderSidebarWithContextMenu() {
   reactState.useStateCalls = 0;
   reactState.forcedContextMenuSession = sessionState.sessions[0];
   menuState.items = [];
-  renderToStaticMarkup(React.createElement(Sidebar));
+  const html = renderToStaticMarkup(React.createElement(Sidebar));
   expect(menuState.items.length).toBeGreaterThan(0);
+  return html;
 }
 
 describe('Sidebar review actions', () => {
   beforeEach(() => {
     reactState.useStateCalls = 0;
     reactState.forcedContextMenuSession = null;
+    reactState.forcedReviewItemsBySessionId = null;
     menuState.items = [];
     invokeMock.mockReset();
     domainInvokeMock.mockReset();
@@ -236,6 +247,9 @@ describe('Sidebar review actions', () => {
     clipboardWriteTextMock.mockResolvedValue(undefined);
     workbenchPresetState.presets = [];
     workbenchPresetState.recipes = [];
+    sessionUiState.sessionStatusFilter = 'all';
+    sessionUiState.searchQuery = '';
+    authState.user = null;
     Reflect.set(globalThis, 'window', {
       domainAPI: {
         invoke: domainInvokeMock,
@@ -263,12 +277,143 @@ describe('Sidebar review actions', () => {
     expect(clipboardWriteTextMock).toHaveBeenCalledWith('session-1');
   });
 
-  it('keeps internal review and raw export actions out of the session context menu', () => {
-    renderSidebarWithContextMenu();
+  it('keeps review queue out while showing replay as an admin-gated recovery action', () => {
+    const html = renderSidebarWithContextMenu();
 
     expect(menuState.items.some((item) => item.label === '加入 Review')).toBe(false);
     expect(menuState.items.some((item) => item.label === '打开 Replay')).toBe(false);
+    const replayAction = menuState.items.find((item) => item.label === 'Replay 仅管理员可用');
+    expect(replayAction).toBeTruthy();
+    expect(replayAction?.disabled).toBe(true);
+    expect(html).toContain('aria-label="Replay 仅管理员可用：Reviewable Session"');
     expect(menuState.items.some((item) => item.label === '导出 JSON')).toBe(false);
+  });
+
+  it('requests structured replay from the selected session context menu for admins', async () => {
+    authState.user = { isAdmin: true };
+    invokeMock.mockResolvedValue({
+      sessionId: 'session-1',
+      traceSource: 'session_replay',
+      traceIdentity: {
+        traceId: 'session:session-1',
+        traceSource: 'session_replay',
+        source: 'session_replay',
+        sessionId: 'session-1',
+        replayKey: 'session-1',
+      },
+      dataSource: 'telemetry',
+      turns: [],
+      summary: {
+        totalTurns: 2,
+        toolDistribution: {},
+        thinkingRatio: 0,
+        selfRepairChains: 0,
+        totalDurationMs: 1000,
+      },
+    });
+
+    const html = renderSidebarWithContextMenu();
+
+    const replayAction = menuState.items.find((item) => item.label === '打开 Replay');
+    expect(replayAction).toBeTruthy();
+    expect(replayAction?.disabled).not.toBe(true);
+    expect(html).toContain('aria-label="打开 Reviewable Session Replay"');
+
+    await replayAction?.onClick();
+
+    expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.REPLAY_GET_STRUCTURED_DATA, 'session-1');
+    expect(showToastMock).not.toHaveBeenCalledWith('error', expect.any(String));
+  });
+
+  it('surfaces pending review evidence on the session row for admins', () => {
+    authState.user = { isAdmin: true };
+    reactState.forcedReviewItemsBySessionId = {
+      'session-1': [
+        { reviewStatus: 'pending', title: 'Missing artifact proof' },
+        { reviewStatus: 'approved', title: 'Already reviewed' },
+        { reviewStatus: 'pending', title: 'Replay incomplete' },
+      ],
+    };
+
+    const html = renderToStaticMarkup(React.createElement(Sidebar));
+
+    expect(html).toContain('aria-label="打开 Reviewable Session 的 Review 证据"');
+    expect(html).toContain('2 待审');
+    expect(html).toContain('2 个待审 issue · Missing artifact proof');
+  });
+
+  it('filters the sidebar to sessions with pending review evidence for admins', () => {
+    const originalSessions = sessionState.sessions;
+    authState.user = { isAdmin: true };
+    sessionUiState.sessionStatusFilter = 'review';
+    reactState.forcedReviewItemsBySessionId = {
+      'session-1': [
+        { reviewStatus: 'pending', title: 'Needs review' },
+      ],
+      'session-2': [
+        { reviewStatus: 'approved', title: 'Already reviewed' },
+      ],
+    };
+    sessionState.sessions = [
+      ...originalSessions,
+      {
+        ...originalSessions[0],
+        id: 'session-2',
+        title: 'Reviewed Session',
+        updatedAt: Date.now() - 20_000,
+      },
+    ];
+
+    try {
+      const html = renderToStaticMarkup(React.createElement(Sidebar));
+
+      expect(html).toContain('Reviewable Session');
+      expect(html).toContain('1 待审');
+      expect(html).not.toContain('Reviewed Session');
+    } finally {
+      sessionState.sessions = originalSessions;
+      sessionUiState.sessionStatusFilter = 'all';
+    }
+  });
+
+  it('filters the sidebar to sessions with delivery recovery signals', () => {
+    const originalSessions = sessionState.sessions;
+    sessionUiState.sessionStatusFilter = 'artifact';
+    sessionState.sessions = [
+      {
+        ...originalSessions[0],
+        id: 'artifact-session',
+        title: 'Artifact Session',
+        workbenchSnapshot: {
+          summary: 'Workspace output',
+          labels: ['工作区'],
+          primarySurface: 'workspace',
+          recentToolNames: ['Write'],
+        },
+      },
+      {
+        ...originalSessions[0],
+        id: 'research-session',
+        title: 'Research Session',
+        workbenchSnapshot: {
+          summary: 'Browser research',
+          labels: ['Browser'],
+          primarySurface: 'browser',
+          recentToolNames: ['browser_action'],
+        },
+      },
+    ];
+
+    try {
+      const html = renderToStaticMarkup(React.createElement(Sidebar));
+
+      expect(html).toContain('Artifact Session');
+      expect(html).toContain('交付线索');
+      expect(html).not.toContain('Research Session');
+    } finally {
+      sessionState.sessions = originalSessions;
+      sessionUiState.sessionStatusFilter = 'all';
+    }
   });
 
   it('resolves the runtime logs directory from config scope', () => {

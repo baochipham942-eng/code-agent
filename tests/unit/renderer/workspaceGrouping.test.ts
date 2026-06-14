@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getSidebarGroupKeyForSession,
   groupByWorkspace,
   isWorkspaceExpanded,
   UNCATEGORIZED_WORKSPACE_KEY,
@@ -14,6 +15,7 @@ type SessionOverrides = {
   workingDirectory?: string;
   messageCount?: number;
   turnCount?: number;
+  projectId?: string;
 };
 
 function makeSession(overrides: SessionOverrides = {}): SessionWithMeta {
@@ -30,7 +32,7 @@ function makeSession(overrides: SessionOverrides = {}): SessionWithMeta {
 }
 
 describe('groupByWorkspace', () => {
-  it('buckets sessions by full workingDirectory path, using basename for display', () => {
+  it('buckets sessions without project metadata by full workingDirectory path, using basename for display', () => {
     const sessions = [
       makeSession({ id: 's1', workingDirectory: '/Users/me/Downloads/ai/code-agent', updatedAt: 100 }),
       makeSession({ id: 's2', workingDirectory: '/Users/me/Downloads/ai/code-agent', updatedAt: 200 }),
@@ -43,6 +45,7 @@ describe('groupByWorkspace', () => {
     const codeAgent = groups.find((g) => g.name === 'code-agent')!;
     const downloads = groups.find((g) => g.name === 'Downloads')!;
     expect(codeAgent.path).toBe('/Users/me/Downloads/ai/code-agent');
+    expect(codeAgent.paths).toEqual(['/Users/me/Downloads/ai/code-agent']);
     expect(codeAgent.sessions.map((s) => s.id)).toEqual(['s2', 's1']); // LRU
     expect(downloads.sessions.map((s) => s.id)).toEqual(['s3']);
   });
@@ -74,7 +77,7 @@ describe('groupByWorkspace', () => {
     expect(groups.map((g) => g.name)).toEqual(['new-proj', 'mid-proj', 'old-proj']);
   });
 
-  it("puts sessions without workingDirectory into a 'Chats' bucket at the end", () => {
+  it("puts sessions without workingDirectory into an uncategorized bucket at the end", () => {
     const sessions = [
       makeSession({ id: 'chat1', workingDirectory: undefined, updatedAt: 500 }),
       makeSession({ id: 'proj1', workingDirectory: '/some-proj', updatedAt: 100 }),
@@ -88,11 +91,12 @@ describe('groupByWorkspace', () => {
     expect(groups[0].name).toBe('some-proj');
     expect(groups[1].isUncategorized).toBe(true);
     expect(groups[1].key).toBe(UNCATEGORIZED_WORKSPACE_KEY);
-    expect(groups[1].name).toBe('Chats');
+    expect(groups[1].name).toBe('未分类');
+    expect(groups[1].paths).toEqual([]);
     expect(groups[1].sessions.map((s) => s.id)).toEqual(['chat1', 'chat2']);
   });
 
-  it('even with zero recent activity, Chats bucket stays pinned to the bottom', () => {
+  it('even with zero recent activity, the uncategorized bucket stays pinned to the bottom', () => {
     const sessions = [
       makeSession({ id: 'chat-ancient', workingDirectory: undefined, updatedAt: 1 }),
       makeSession({ id: 'proj-old', workingDirectory: '/old', updatedAt: 100 }),
@@ -115,6 +119,83 @@ describe('groupByWorkspace', () => {
 
   it('returns empty array for empty input', () => {
     expect(groupByWorkspace([])).toEqual([]);
+  });
+
+  it('surfaces a shared project id when every session in a workspace agrees', () => {
+    const sessions = [
+      makeSession({ id: 'a', workingDirectory: '/repo/code-agent', projectId: 'proj-code-agent' }),
+      makeSession({ id: 'b', workingDirectory: '/repo/code-agent', projectId: 'proj-code-agent' }),
+    ];
+
+    const groups = groupByWorkspace(sessions);
+
+    expect(groups[0].projectId).toBe('proj-code-agent');
+    expect(groups[0].key).toBe('project:proj-code-agent');
+  });
+
+  it('groups sessions by project id before workspace path', () => {
+    const sessions = [
+      makeSession({ id: 'main', workingDirectory: '/repo/code-agent', projectId: 'proj-code-agent', updatedAt: 100 }),
+      makeSession({ id: 'worktree', workingDirectory: '/repo/code-agent-worktree', projectId: 'proj-code-agent', updatedAt: 300 }),
+    ];
+
+    const groups = groupByWorkspace(sessions);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].key).toBe('project:proj-code-agent');
+    expect(groups[0].projectId).toBe('proj-code-agent');
+    expect(groups[0].path).toBe('/repo/code-agent-worktree');
+    expect(groups[0].paths).toEqual(['/repo/code-agent-worktree', '/repo/code-agent']);
+    expect(groups[0].sessions.map((session) => session.id)).toEqual(['worktree', 'main']);
+  });
+
+  it('separates sessions with different project ids even when workspace path matches', () => {
+    const sessions = [
+      makeSession({ id: 'a', workingDirectory: '/repo/code-agent', projectId: 'proj-a' }),
+      makeSession({ id: 'b', workingDirectory: '/repo/code-agent', projectId: 'proj-b' }),
+    ];
+
+    const groups = groupByWorkspace(sessions);
+
+    expect(groups).toHaveLength(2);
+    expect(groups.map((group) => group.projectId).sort()).toEqual(['proj-a', 'proj-b']);
+    expect(new Set(groups.map((group) => group.key)).size).toBe(2);
+  });
+
+  it('keeps project-backed and workspace-only sessions in separate groups', () => {
+    const sessions = [
+      makeSession({ id: 'a', workingDirectory: '/repo/code-agent', projectId: 'proj-code-agent' }),
+      makeSession({ id: 'b', workingDirectory: '/repo/code-agent' }),
+    ];
+
+    const groups = groupByWorkspace(sessions);
+
+    expect(groups).toHaveLength(2);
+    expect(groups.find((group) => group.projectId === 'proj-code-agent')?.key).toBe('project:proj-code-agent');
+    expect(groups.find((group) => !group.projectId)?.key).toBe('/repo/code-agent');
+  });
+});
+
+describe('getSidebarGroupKeyForSession', () => {
+  it('uses project id before workingDirectory for sidebar expansion state', () => {
+    const session = makeSession({
+      workingDirectory: '/repo/code-agent',
+      projectId: 'proj-code-agent',
+    });
+
+    expect(getSidebarGroupKeyForSession(session)).toBe('project:proj-code-agent');
+  });
+
+  it('falls back to full workspace path when the session has no project metadata', () => {
+    const session = makeSession({ workingDirectory: '/repo/code-agent' });
+
+    expect(getSidebarGroupKeyForSession(session)).toBe('/repo/code-agent');
+  });
+
+  it('keeps blank sessions in the uncategorized group', () => {
+    const session = makeSession({ workingDirectory: undefined });
+
+    expect(getSidebarGroupKeyForSession(session)).toBe(UNCATEGORIZED_WORKSPACE_KEY);
   });
 });
 

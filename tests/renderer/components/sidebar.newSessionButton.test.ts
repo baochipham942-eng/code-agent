@@ -36,9 +36,13 @@ const sessionUiState = {
   setSearchQuery: vi.fn(),
   sessionStatusFilter: 'all',
   setSessionStatusFilter: vi.fn(),
+  pendingSearchJump: null,
+  setPendingSearchJump: vi.fn(),
   softDelete: vi.fn(),
   undoDelete: vi.fn(),
   pendingDelete: null,
+  expandedWorkspaces: {},
+  setWorkspaceExpanded: vi.fn(),
 };
 
 const appState = {
@@ -103,6 +107,8 @@ describe('Sidebar new session button', () => {
     const newSessionButtonHtml = html.match(/<button[^>]*>.*?新会话<\/span><\/button>/)?.[0] ?? '';
 
     expect(html).toContain('新会话');
+    expect(html).toContain('新建当前项目会话');
+    expect(html).toContain('新建空白会话，不继承项目上下文');
     expect(newSessionButtonHtml).toContain('lucide-plus');
     expect(newSessionButtonHtml).not.toContain('lucide-loader-circle');
   });

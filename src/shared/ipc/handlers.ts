@@ -38,7 +38,8 @@ import type { CompletedAgentRun } from '../contract/agentHistory';
 
 import { IPC_CHANNELS } from './legacy-channels';
 
-import type { AgentMessageRequest, AgentCancelRequest, SessionExport, SearchResult, MemoryContextResult, MemoryStats, MCPStatus, MCPTool, MCPResource, ConnectorStatusSummary, CacheStats, DataStats, SessionAnalysisResult, TestReportListItem, TestRunReport, EvalAnnotationPayload, AxialCodingEntryIpc, TaskItemIpc, TaskListStateIpc, TaskListEventIpc, CrossSessionSearchOptions, CrossSessionSearchResults } from './types';
+import type { AgentMessageRequest, AgentCancelRequest, SessionExport, SearchResult, MemoryContextResult, MemoryStats, MCPStatus, MCPTool, MCPResource, ConnectorStatusSummary, CacheStats, DataStats, SessionAnalysisResult, TestReportListItem, TestRunReport, EvalAnnotationPayload, AxialCodingEntryIpc, TaskItemIpc, TaskListStateIpc, TaskListEventIpc, CrossSessionSearchOptions, CrossSessionSearchResults, SessionReviewItemsRequest } from './types';
+import type { AdminReviewQueueItem } from '../contract/productClosure';
 
 // ----------------------------------------------------------------------------
 // Renderer -> Main: Invoke handlers (request/response)
@@ -67,6 +68,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SESSION_LOAD_OLDER_MESSAGES]: (payload: { sessionId: string; beforeTimestamp: number; limit?: number }) => Promise<{ messages: Message[]; hasMore: boolean }>;
   [IPC_CHANNELS.SESSION_SEARCH]: (payload: { query: string; options?: CrossSessionSearchOptions }) => Promise<CrossSessionSearchResults>;
   [IPC_CHANNELS.SESSION_GET_PLAN_TITLE]: (sessionId: string) => Promise<string | null>;
+  [IPC_CHANNELS.SESSION_LIST_REVIEW_ITEMS]: (payload: SessionReviewItemsRequest) => Promise<Record<string, AdminReviewQueueItem[]>>;
 
   // Memory (legacy - kept for compatibility)
   [IPC_CHANNELS.MEMORY_GET_CONTEXT]: (query: string) => Promise<MemoryContextResult>;

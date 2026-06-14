@@ -142,6 +142,48 @@ describe('buildWorkspacePreviewItems', () => {
     });
   });
 
+  it('projects historical structured tool URL artifacts into Workspace Preview items', () => {
+    const messages: Message[] = [
+      {
+        id: 'msg-url',
+        role: 'assistant',
+        content: '',
+        timestamp: 320,
+        toolCalls: [
+          {
+            id: 'tool-deploy',
+            name: 'Deploy',
+            arguments: {},
+            result: {
+              toolCallId: 'tool-deploy',
+              success: true,
+              metadata: {
+                artifact: {
+                  artifactId: 'preview-url',
+                  kind: 'web',
+                  sourceTool: 'Deploy',
+                  name: 'Preview URL',
+                  url: 'https://example.com/app',
+                },
+              },
+            },
+          },
+        ],
+      },
+    ];
+
+    const items = buildWorkspacePreviewItems({ messages });
+
+    expect(items).toContainEqual(expect.objectContaining({
+      id: 'tool-artifact:tool-deploy:preview-url',
+      kind: 'web_snapshot',
+      title: 'Preview URL',
+      content: {
+        summary: 'https://example.com/app',
+      },
+    }));
+  });
+
   it('surfaces permission diffs as draft preview items', () => {
     const request: PermissionRequest = {
       id: 'permission-1',

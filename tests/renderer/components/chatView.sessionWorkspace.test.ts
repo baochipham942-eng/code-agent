@@ -194,7 +194,30 @@ describe('ChatView session shell', () => {
     expect(html).toContain('搜一份最新行业简报');
     expect(html).toContain('梳理磁盘空间占用');
     expect(html).not.toContain('继续推进 Phase 5');
+    expect(html).toContain('项目会话 · code-agent');
+    expect(html).toContain('继承工作区：/repo/code-agent');
+    expect(html).toContain('继承：工作区 · Browser · 最近工具 browser_action');
     expect(html).not.toContain('/repo/other');
+  });
+
+  it('labels blank new sessions without falling back to stale app workspace', () => {
+    const originalSessions = sessionState.sessions;
+    sessionState.sessions = [{
+      ...(originalSessions[0] as Record<string, unknown>),
+      workingDirectory: undefined,
+    }];
+
+    try {
+      const html = renderToStaticMarkup(React.createElement(ChatView));
+
+      expect(html).toContain('空白会话');
+      expect(html).toContain('不继承项目或工作区上下文');
+      expect(html).not.toContain('继承：工作区 · Browser');
+      expect(html).not.toContain('项目会话 · other');
+      expect(html).not.toContain('/repo/other');
+    } finally {
+      sessionState.sessions = originalSessions;
+    }
   });
 
   it('keeps starter prompts concrete enough for a first-turn deliverable', () => {

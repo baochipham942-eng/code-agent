@@ -251,9 +251,9 @@ export const ConversationTabs: React.FC = () => {
     tabId: null,
   });
 
-  // 创建新会话（默认落入 Chats 工作区，不继承当前 workingDirectory）
+  // 创建新会话，沿用当前项目/工作区上下文。
   const handleNewTab = useCallback(async () => {
-    const session = await createSession('新对话', { workingDirectory: null });
+    const session = await createSession('新对话');
     if (session) {
       addTab(session.id, session.title);
     }

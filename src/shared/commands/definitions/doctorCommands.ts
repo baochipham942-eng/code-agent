@@ -122,10 +122,9 @@ async function runViaCliSurface(): Promise<DoctorReport> {
 }
 
 async function runViaGuiSurface(): Promise<DoctorReport> {
-  // 通过 IPC 调到 main 进程
-  const { default: ipcService } = await import('../../../renderer/services/ipcService');
-  const { IPC_DOMAINS } = await import('@shared/ipc');
-  return ipcService.invokeDomain<DoctorReport>(IPC_DOMAINS.PROVIDER, 'run_doctor');
+  // 通过 renderer-only 包装模块走 IPC，避免把 ipcService 作为无效 dynamic import 打进主包。
+  const { runDoctorViaGuiSurface } = await import('../../../renderer/services/doctorGuiSurface');
+  return runDoctorViaGuiSurface<DoctorReport>();
 }
 
 // ----------------------------------------------------------------------------

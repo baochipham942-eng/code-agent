@@ -65,6 +65,24 @@ test('PoC: 点击新会话按钮, 出现 active session 和 chat 输入框', asy
   await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
 });
 
+test('PoC: 新会话空 composer 输入 slash 能打开统一 picker', async ({ page }) => {
+  await waitForAppReady(page);
+
+  const newSessionBtn = page.getByRole('button', { name: '新会话' });
+  await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
+  await newSessionBtn.click();
+
+  const input = page.locator('[data-chat-input]');
+  await expect(input).toBeVisible({ timeout: 10_000 });
+  await input.fill('/');
+
+  const picker = page.locator('[data-slash-command-popover]');
+  await expect(picker).toBeVisible({ timeout: 10_000 });
+  await expect(picker.locator('[data-slash-command-id="new"]')).toBeVisible();
+  await expect(picker.locator('[data-slash-command-id="agent"]')).toBeVisible();
+  await expect(picker.locator('[data-slash-command-id="workflow"]')).toBeVisible();
+});
+
 // ----------------------------------------------------------------------------
 // Test 2: window 注入的 auth token 存在 + SSE 通道存活
 // 验证: SSE 订阅基础设施 + token 注入链路 (拦 wiring bug #2 前置)

@@ -161,6 +161,21 @@ describe('workbenchTurnContext', () => {
     });
   });
 
+  it('turns an explicit skill selection into model priority instructions and tool scope', () => {
+    const merged = withWorkbenchTurnSystemContext(
+      { mode: 'normal' },
+      {
+        selectedSkillIds: ['docx'],
+      },
+    );
+
+    expect(merged.turnSystemContext?.[0]).toContain('优先考虑这些已挂载 skills');
+    expect(merged.turnSystemContext?.[0]).toContain('docx');
+    expect(merged.toolScope).toEqual({
+      allowedSkillIds: ['docx'],
+    });
+  });
+
   it('builds tool scope from selected skills, connectors, and MCP servers', () => {
     registerConnector('mail', { connected: true, readiness: 'ready' });
     registerConnector('calendar', { connected: true, readiness: 'ready' });

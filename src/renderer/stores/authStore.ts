@@ -7,6 +7,7 @@ import type { AuthSessionTrustState, AuthStatus, AuthUser, SyncStatus } from '..
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../shared/ipc';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
+import { reloadSessionsForAuthChange } from './sessionStore';
 
 const logger = createLogger('AuthStore');
 
@@ -50,7 +51,6 @@ async function reloadSessionsForAuthenticatedUser(): Promise<void> {
   if (!sessionReloadForAuthPromise) {
     sessionReloadForAuthPromise = (async () => {
       try {
-        const { reloadSessionsForAuthChange } = await import('./sessionStore');
         await reloadSessionsForAuthChange();
       } catch (error) {
         logger.warn('Failed to reload sessions after auth change', { error: getErrorMessage(error) });

@@ -12,7 +12,6 @@ import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { TitleBar } from './components/TitleBar';
-import { SettingsModal } from './components/SettingsModal';
 import { UserQuestionModal } from './components/UserQuestionModal';
 import { MCPElicitationModal } from './components/MCPElicitationModal';
 import { AuthModal } from './components/AuthModal';
@@ -28,19 +27,8 @@ import { WorkspacePreviewPanel } from './components/WorkspacePreviewPanel';
 import { ContextPanel } from './components/ContextPanel';
 import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { WorkbenchTabs } from './components/WorkbenchTabs';
-import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
-import { LabPage } from './components/features/lab/LabPage';
 import { PromptManagerModal } from './components/features/prompts/PromptManagerModal';
 import { BackgroundTaskPanel } from './components/features/background';
-import { CapturePanel } from './components/features/capture';
-import { KnowledgeMemoryPanel } from './components/features/knowledge/KnowledgeMemoryPanel';
-import { CronCenterPanel } from './components/features/cron/CronCenterPanel';
-import TimeCapabilityPanel from './components/features/timeCapability/TimeCapabilityPanel';
-import { AgentTeamPanel } from './components/features/agentTeam';
-import { ActivityPanel } from './components/features/activity/ActivityPanel';
-import { BrowserSurfacePanel } from './components/features/browser/BrowserSurfacePanel';
-import { ComputerUsePanel } from './components/features/computerUse/ComputerUsePanel';
-import { InAppValidationPanel } from './components/features/inAppValidation/InAppValidationPanel';
 import { FullScreenPage } from './components/features/shared/FullScreenPage';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
 import { ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
@@ -76,6 +64,41 @@ import { setSentryRendererContext } from './observability/sentryRenderer';
 const logger = createLogger('App');
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1180;
 const WORKBENCH_MIN_VISIBLE_WIDTH = 900;
+
+const SettingsModal = React.lazy(() => import('./components/SettingsModal').then((module) => ({
+  default: module.SettingsModal,
+})));
+const WorkflowPanel = React.lazy(() => import('./components/features/workflow/WorkflowPanel').then((module) => ({
+  default: module.WorkflowPanel,
+})));
+const LabPage = React.lazy(() => import('./components/features/lab/LabPage').then((module) => ({
+  default: module.LabPage,
+})));
+const CapturePanel = React.lazy(() => import('./components/features/capture').then((module) => ({
+  default: module.CapturePanel,
+})));
+const KnowledgeMemoryPanel = React.lazy(() => import('./components/features/knowledge/KnowledgeMemoryPanel').then((module) => ({
+  default: module.KnowledgeMemoryPanel,
+})));
+const CronCenterPanel = React.lazy(() => import('./components/features/cron/CronCenterPanel').then((module) => ({
+  default: module.CronCenterPanel,
+})));
+const TimeCapabilityPanel = React.lazy(() => import('./components/features/timeCapability/TimeCapabilityPanel'));
+const AgentTeamPanel = React.lazy(() => import('./components/features/agentTeam').then((module) => ({
+  default: module.AgentTeamPanel,
+})));
+const ActivityPanel = React.lazy(() => import('./components/features/activity/ActivityPanel').then((module) => ({
+  default: module.ActivityPanel,
+})));
+const BrowserSurfacePanel = React.lazy(() => import('./components/features/browser/BrowserSurfacePanel').then((module) => ({
+  default: module.BrowserSurfacePanel,
+})));
+const ComputerUsePanel = React.lazy(() => import('./components/features/computerUse/ComputerUsePanel').then((module) => ({
+  default: module.ComputerUsePanel,
+})));
+const InAppValidationPanel = React.lazy(() => import('./components/features/inAppValidation/InAppValidationPanel').then((module) => ({
+  default: module.InAppValidationPanel,
+})));
 
 async function invokeDomain<T>(domain: string, action: string, payload?: unknown): Promise<T> {
   return ipcService.invokeDomain<T>(domain, action, payload);
@@ -608,11 +631,17 @@ export const App: React.FC = () => {
             {/* Content Area */}
             <div className="flex-1 min-h-0 flex overflow-hidden">
               {showKnowledgeMemoryPanel ? (
-                <KnowledgeMemoryPanel />
+                <React.Suspense fallback={null}>
+                  <KnowledgeMemoryPanel />
+                </React.Suspense>
               ) : showComputerUsePanel ? (
-                <ComputerUsePanel />
+                <React.Suspense fallback={null}>
+                  <ComputerUsePanel />
+                </React.Suspense>
               ) : showInAppValidationPanel ? (
-                <InAppValidationPanel />
+                <React.Suspense fallback={null}>
+                  <InAppValidationPanel />
+                </React.Suspense>
               ) : (
                 <PanelGroup orientation="horizontal" className="flex-1 min-h-0" id="main-layout">
                   <Panel minSize="30" id="chat">
@@ -633,10 +662,14 @@ export const App: React.FC = () => {
               )}
             </div>
           </div>
-        </div>
+      </div>
 
       {/* Settings Modal */}
-      {showSettings && <SettingsModal />}
+      {showSettings && (
+        <React.Suspense fallback={null}>
+          <SettingsModal />
+        </React.Suspense>
+      )}
 
       {/* Prompt Manager Modal */}
       <PromptManagerModal />
@@ -645,11 +678,17 @@ export const App: React.FC = () => {
       <DevServerLauncher />
 
       {/* Lab Page */}
-      {showLab && <LabPage />}
+      {showLab && (
+        <React.Suspense fallback={null}>
+          <LabPage />
+        </React.Suspense>
+      )}
 
       {/* Workflow Page - 全屏工作流可视化 */}
       {dagPanelEnabled && showDAGPanel && (
-        <WorkflowPanel onClose={() => setShowDAGPanel(false)} />
+        <React.Suspense fallback={null}>
+          <WorkflowPanel onClose={() => setShowDAGPanel(false)} />
+        </React.Suspense>
       )}
 
 
@@ -753,23 +792,35 @@ export const App: React.FC = () => {
       <BackgroundTaskPanel />
 
       {/* Capture Panel - 知识库采集面板 */}
-      {useAppStore((s) => s.showCapturePanel) && <CapturePanel />}
+      {useAppStore((s) => s.showCapturePanel) && (
+        <React.Suspense fallback={null}>
+          <CapturePanel />
+        </React.Suspense>
+      )}
 
       {/* Cron Center - 定时任务中心 */}
       {showCronCenter && (
-        <CronCenterPanel onClose={() => useAppStore.getState().setShowCronCenter(false)} />
+        <React.Suspense fallback={null}>
+          <CronCenterPanel onClose={() => useAppStore.getState().setShowCronCenter(false)} />
+        </React.Suspense>
       )}
 
       {showTimeCapabilityCenter && (
-        <TimeCapabilityPanel onClose={() => useAppStore.getState().setShowTimeCapabilityCenter(false)} />
+        <React.Suspense fallback={null}>
+          <TimeCapabilityPanel onClose={() => useAppStore.getState().setShowTimeCapabilityCenter(false)} />
+        </React.Suspense>
       )}
 
       {showActivityPanel && (
-        <ActivityPanel onClose={() => setShowActivityPanel(false)} />
+        <React.Suspense fallback={null}>
+          <ActivityPanel onClose={() => setShowActivityPanel(false)} />
+        </React.Suspense>
       )}
 
       {showBrowserSurfacePanel && (
-        <BrowserSurfacePanel onClose={() => setShowBrowserSurfacePanel(false)} />
+        <React.Suspense fallback={null}>
+          <BrowserSurfacePanel onClose={() => setShowBrowserSurfacePanel(false)} />
+        </React.Suspense>
       )}
 
       {showAgentTeamPanel && (
@@ -779,10 +830,12 @@ export const App: React.FC = () => {
             onClick={() => setShowAgentTeamPanel(false)}
           />
           <div className="relative h-full">
-            <AgentTeamPanel
-              initialAgentId={selectedSwarmAgentId ?? undefined}
-              onClose={() => setShowAgentTeamPanel(false)}
-            />
+            <React.Suspense fallback={null}>
+              <AgentTeamPanel
+                initialAgentId={selectedSwarmAgentId ?? undefined}
+                onClose={() => setShowAgentTeamPanel(false)}
+              />
+            </React.Suspense>
           </div>
         </div>
       )}

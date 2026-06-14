@@ -222,6 +222,18 @@ function toWorkbenchMetadata(
   if (context.preferredAgentId !== undefined) {
     metadata.preferredAgentId = context.preferredAgentId;
   }
+  if (context.preferredAgentName !== undefined) {
+    metadata.preferredAgentName = context.preferredAgentName;
+  }
+  if (context.selectedAgent) {
+    metadata.selectedAgent = { ...context.selectedAgent };
+  }
+  if (context.selectedPromptCommand) {
+    metadata.selectedPromptCommand = {
+      ...context.selectedPromptCommand,
+      hints: context.selectedPromptCommand.hints ? [...context.selectedPromptCommand.hints] : undefined,
+    };
+  }
   if (context.routing) {
     metadata.routingMode = context.routing.mode;
     if (context.routing.targetAgentIds?.length) {

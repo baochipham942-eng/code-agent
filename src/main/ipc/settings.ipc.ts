@@ -11,6 +11,7 @@ import { MODEL_API_ENDPOINTS, API_VERSIONS } from '../../shared/constants';
 import { assertAdminAccess, getAdminAccessIpcError, isCurrentUserAdmin } from './adminGuard';
 import { resolveConnectionTestModel } from '../model/providerConnectionTest';
 import { isRuntimeProviderConfigured } from '../../shared/modelRuntime';
+import { resolveProviderIconAsset, saveProviderIconAsset } from '../services/providerIconAssets';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -301,6 +302,18 @@ export function registerSettingsHandlers(
           break;
         case 'checkApiKeyConfigured':
           data = await handleCheckApiKeyConfigured(getConfigService);
+          break;
+        case 'saveProviderIconAsset':
+          {
+            const iconPayload = payload as { provider?: string; dataUrl?: string };
+            data = await saveProviderIconAsset({
+              provider: iconPayload.provider ?? '',
+              dataUrl: iconPayload.dataUrl ?? '',
+            });
+          }
+          break;
+        case 'resolveProviderIconAsset':
+          data = await resolveProviderIconAsset((payload as { icon?: string })?.icon ?? '');
           break;
         case 'setServiceApiKey':
           await handleSetServiceApiKey(getConfigService, payload as { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter'; apiKey: string });

@@ -10,6 +10,7 @@ import type { InAppValidationRequest, InAppValidationResultPayload } from '../co
 import type { MemoryItem, MemoryCategory, MemoryStats as MemoryStatsNew, MemoryExport, MemoryLearnedEvent, MemoryConfirmRequest, MemoryExportV2Bundle, MemoryEntryDeleteResult, MemoryEntryListResult, MemoryEntryUpdateResult, MemoryImportV2ApplyResult, MemoryImportV2DryRunResult, MemoryMirrorRebuildResult, MemoryPackRequest, MemoryPackResult } from '../contract/memory';
 
 import type { ContextCompressionChannelState, ContextCompressionConfigPatch, ContextHealthState, ContextHealthUpdateEvent } from '../contract/contextHealth';
+import type { ModelFallbackStrategy, ModelFallbackTraceStep } from '../contract/modelDecision';
 
 import type { ContextInterventionRequest, ContextInterventionSetRequest, ContextInterventionSnapshot, ContextViewRequest, ContextViewResponse } from '../contract/contextView';
 import type { ManagedBrowserSessionState } from '../contract/desktop';
@@ -568,4 +569,8 @@ export interface ProviderFallbackEvent {
   from: { provider: string; model: string };
   to: { provider: string; model: string };
   reason: string;
+  category?: string;
+  strategy?: ModelFallbackStrategy;
+  tried?: ModelFallbackTraceStep[];
+  skipped?: ModelFallbackTraceStep[];
 }

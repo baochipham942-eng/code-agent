@@ -6,6 +6,7 @@ import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../../../model/adapter
 import { getConfigService, getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../../services';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { ContextLengthExceededError } from '../../../model/modelRouter';
+import { getModelMaxOutputTokens } from '../../../../shared/constants';
 import { createSnapshotHandler } from '../../../session/streamSnapshot';
 import {
   getCoreToolDefinitions,
@@ -26,9 +27,13 @@ import {
 } from '../../../context/tokenOptimizer';
 import type { ModelMessage } from '../../../agent/loopTypes';
 import type { StreamCallback, InferenceOptions, ModelResponse as RouterModelResponse } from '../../../model/types';
-import type { ModelConfig } from '../../../../shared/contract/model';
+import type { ModelConfig, ModelProvider } from '../../../../shared/contract/model';
+import type { ModelDecisionEventData, ModelFallbackInfo, ModelFallbackTraceStep, ModelProviderHealthSnapshot, ModelToolStrategyDiagnostics, ModelToolTokenSavingsProviderReport, ModelToolTokenSavingsProviderUsage } from '../../../../shared/contract/modelDecision';
 import { getAdaptiveRouter } from '../../../model/adaptiveRouter';
-import { resolveModelDecision, resolveProviderBillingMode, type BillingMode } from '../../../model/modelDecision';
+import { buildModelProviderIdentity, resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from '../../../model/modelDecision';
+import { classifyProviderFallbackReason, formatFallbackReason, getFallbackChainForRequest } from '../../../model/modelRouterPolicy';
+import { getProviderHealthMonitor } from '../../../model/providerHealthMonitor';
+import { isFallbackEligible } from '../../../model/providers/retryStrategy';
 import { buildE2ELocalAgentModelResponse, shouldUseE2ELocalAgentModelForMessages } from '../../../model/e2eLocalAgentModel';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
@@ -84,20 +89,569 @@ function runEngineInference(
     if (adaptedConfig) {
       logger.info(`[AgentLoop] inference engine = aisdk (adaptive: ${config.provider}/${config.model} → ${adaptedConfig.provider}/${adaptedConfig.model})`);
       return inferenceViaAiSdk(messages, tools, adaptedConfig, onStream, signal, options).catch((err: unknown) => {
-        const errMsg = err instanceof Error ? err.message : String(err);
+        const errMsg = getErrorMessage(err);
         // 401/403 是持久性错误（key 过期/无效），禁用 free model 避免重复失败
         if (/401|403|unauthorized|forbidden/i.test(errMsg)) {
           getAdaptiveRouter().disableFreeModel(errMsg.split('\n')[0]);
         } else {
           logger.warn(`[AdaptiveRouter] Free model failed on aisdk path, falling back to default: ${errMsg.split('\n')[0]}`);
         }
-        return inferenceViaAiSdk(messages, tools, config, onStream, signal, options);
+        return inferenceViaAiSdk(messages, tools, config, onStream, signal, options)
+          .then((response) => {
+            response.actualProvider = config.provider;
+            response.actualModel = config.model;
+            response.fallback = buildAiSdkAdaptiveFallbackInfo(adaptedConfig, config, err, 'selected');
+            return response;
+          })
+          .catch((fallbackErr: unknown) => {
+            if (fallbackErr instanceof Error) {
+              (fallbackErr as Error & { modelFallback?: ModelFallbackInfo }).modelFallback =
+                buildAiSdkAdaptiveFallbackInfo(adaptedConfig, config, err, 'exhausted', fallbackErr);
+            }
+            throw fallbackErr;
+          });
       });
     }
     logger.debug('[AgentLoop] inference engine = aisdk', { provider: effectiveConfig.provider, model: effectiveConfig.model, streaming: typeof onStream === 'function' && options?.forceNonStreaming !== true });
-    return inferenceViaAiSdk(messages, tools, effectiveConfig, onStream, signal, options);
+    return runAiSdkInferenceWithProviderFallback(messages, tools, effectiveConfig, onStream, signal, options);
   }
   return ctx.runtime.modelRouter.inference(messages, tools, effectiveConfig, onStream, signal, options);
+}
+
+function formatFallbackEndpoint(target: { provider: string; model?: string }): string {
+  return target.model ? `${target.provider}/${target.model}` : target.provider;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function getErrorCode(error: unknown): string | undefined {
+  return typeof (error as NodeJS.ErrnoException | null)?.code === 'string'
+    ? (error as NodeJS.ErrnoException).code
+    : undefined;
+}
+
+function getModelFallbackFromError(error: unknown): ModelFallbackInfo | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const fallback = (error as { modelFallback?: unknown }).modelFallback;
+  if (!fallback || typeof fallback !== 'object') return undefined;
+  const candidate = fallback as Partial<ModelFallbackInfo>;
+  if (
+    candidate.from
+    && typeof candidate.from.provider === 'string'
+    && candidate.to
+    && typeof candidate.to.provider === 'string'
+    && typeof candidate.reason === 'string'
+    && typeof candidate.category === 'string'
+  ) {
+    return candidate as ModelFallbackInfo;
+  }
+  return undefined;
+}
+
+function getFallbackProviderIdentity(provider: string): ModelDecisionEventData['providerIdentity'] {
+  try {
+    return buildModelProviderIdentity(provider, getConfigService().getSettings().models?.providers);
+  } catch {
+    return undefined;
+  }
+}
+
+export function buildAiSdkAdaptiveFallbackInfo(
+  fromConfig: ModelConfig,
+  toConfig: ModelConfig,
+  error: unknown,
+  outcome: 'selected' | 'exhausted',
+  finalError?: unknown,
+): ModelFallbackInfo {
+  const adaptiveMessage = getErrorMessage(error);
+  const adaptiveCategory = classifyProviderFallbackReason(adaptiveMessage, getErrorCode(error));
+  const adaptiveReason = formatFallbackReason(adaptiveMessage);
+  const finalMessage = finalError ? getErrorMessage(finalError) : adaptiveMessage;
+  const finalCategory = finalError ? classifyProviderFallbackReason(finalMessage, getErrorCode(finalError)) : adaptiveCategory;
+  const finalReason = formatFallbackReason(finalMessage);
+  const topCategory = outcome === 'selected' ? adaptiveCategory : finalCategory;
+  const topReason = outcome === 'selected' ? adaptiveReason : finalReason;
+	  return {
+	    from: { provider: fromConfig.provider, model: fromConfig.model },
+	    to: { provider: toConfig.provider, model: toConfig.model },
+	    ...(getFallbackProviderIdentity(fromConfig.provider) ? { fromIdentity: getFallbackProviderIdentity(fromConfig.provider) } : {}),
+	    ...(getFallbackProviderIdentity(toConfig.provider) ? { toIdentity: getFallbackProviderIdentity(toConfig.provider) } : {}),
+	    reason: topReason,
+    category: topCategory,
+    strategy: 'adaptive-main-task-recovery',
+    tried: [
+      {
+        provider: fromConfig.provider,
+        model: fromConfig.model,
+        status: 'tried',
+        reason: 'adaptive_candidate_failed',
+        category: adaptiveCategory,
+        detail: adaptiveReason,
+      },
+      {
+        provider: toConfig.provider,
+        model: toConfig.model,
+        status: outcome === 'selected' ? 'selected' : 'exhausted',
+        reason: outcome === 'selected' ? 'main_task_model_selected' : 'main_task_model_failed',
+        category: topCategory,
+        detail: outcome === 'selected'
+          ? '回到主任务模型继续本轮任务'
+          : finalReason,
+      },
+    ],
+  };
+}
+
+function fallbackTraceStep(
+  provider: string,
+  model: string | undefined,
+  status: ModelFallbackTraceStep['status'],
+  reason: string,
+  category?: string,
+  detail?: string,
+): ModelFallbackTraceStep {
+	return {
+	  provider,
+	  ...(model ? { model } : {}),
+	  ...(getFallbackProviderIdentity(provider) ? { providerIdentity: getFallbackProviderIdentity(provider) } : {}),
+	  status,
+    reason,
+    ...(category ? { category } : {}),
+    ...(detail ? { detail: formatFallbackReason(detail) } : {}),
+  };
+}
+
+function getProviderSettingsForFallback(provider: ModelProvider): { baseUrl?: string; protocol?: ModelConfig['protocol'] } | undefined {
+  try {
+    return getConfigService().getSettings().models?.providers?.[provider];
+  } catch {
+    return undefined;
+  }
+}
+
+function attachModelFallbackToError(error: unknown, fallback: ModelFallbackInfo): never {
+  if (error instanceof Error) {
+    (error as Error & { modelFallback?: ModelFallbackInfo }).modelFallback = fallback;
+    throw error;
+  }
+  const wrapped = new Error(String(error));
+  (wrapped as Error & { modelFallback?: ModelFallbackInfo }).modelFallback = fallback;
+  throw wrapped;
+}
+
+async function broadcastAiSdkProviderFallback(fallback: ModelFallbackInfo): Promise<void> {
+  try {
+    const { broadcastToRenderer } = await import('../../../platform/windowBridge');
+    broadcastToRenderer?.('provider:fallback', {
+      from: fallback.from,
+      to: fallback.to,
+      reason: fallback.reason,
+      category: fallback.category,
+      tried: fallback.tried,
+      skipped: fallback.skipped,
+    });
+  } catch {
+    /* renderer broadcast is best-effort; response.fallback still drives the chat notice */
+  }
+}
+
+export async function runAiSdkInferenceWithProviderFallback(
+  messages: ModelMessage[],
+  tools: ToolDefinition[],
+  config: ModelConfig,
+  onStream?: StreamCallback,
+  signal?: AbortSignal,
+  options?: InferenceOptions,
+): Promise<RouterModelResponse> {
+  try {
+    return await inferenceViaAiSdk(messages, tools, config, onStream, signal, options);
+  } catch (primaryErr) {
+    if (signal?.aborted || config.adaptive !== true) {
+      throw primaryErr;
+    }
+
+    const errMsg = getErrorMessage(primaryErr);
+    const errCode = getErrorCode(primaryErr);
+    if (!isFallbackEligible(errMsg, errCode)) {
+      throw primaryErr;
+    }
+
+    const chain = getFallbackChainForRequest(messages, config.provider);
+    if (!chain || chain.length === 0) {
+      throw primaryErr;
+    }
+
+    const fallbackCategory = classifyProviderFallbackReason(errMsg, errCode);
+    const fallbackReason = formatFallbackReason(errMsg);
+    const fallbackTried: ModelFallbackTraceStep[] = [
+      fallbackTraceStep(
+        config.provider,
+        config.model,
+        'tried',
+        'primary_failed',
+        fallbackCategory,
+        fallbackReason,
+      ),
+    ];
+    const fallbackSkipped: ModelFallbackTraceStep[] = [];
+
+    logger.warn(`[AgentLoop] AI SDK provider fallback triggered (${fallbackCategory}): ${config.provider}/${config.model} ${fallbackReason}`);
+
+    for (const fallback of chain) {
+      if (signal?.aborted) {
+        throw new Error('Request was cancelled during AI SDK provider fallback', { cause: primaryErr });
+      }
+
+      const fallbackProvider = fallback.provider as ModelProvider;
+      if (!aiSdkSupportsProvider(fallback.provider)) {
+        fallbackSkipped.push(fallbackTraceStep(
+          fallback.provider,
+          fallback.model,
+          'skipped',
+          'unsupported_ai_sdk_provider',
+          fallbackCategory,
+          `${fallback.provider} is not available on the AI SDK path`,
+        ));
+        continue;
+      }
+
+      const fallbackHealth = getProviderHealthMonitor().getHealth(fallback.provider);
+      if (fallbackHealth?.status === 'unavailable') {
+        fallbackSkipped.push(fallbackTraceStep(
+          fallback.provider,
+          fallback.model,
+          'skipped',
+          'provider_unavailable',
+          fallbackCategory,
+          `${fallback.provider} is marked unavailable by provider health monitor`,
+        ));
+        continue;
+      }
+
+      const fallbackApiKey = getConfigService().getApiKey(fallbackProvider);
+      if (!fallbackApiKey) {
+        fallbackSkipped.push(fallbackTraceStep(
+          fallback.provider,
+          fallback.model,
+          'skipped',
+          'missing_api_key',
+          fallbackCategory,
+          `${fallback.provider} API key is not configured`,
+        ));
+        continue;
+      }
+
+      const fallbackSettings = getProviderSettingsForFallback(fallbackProvider);
+      const fallbackConfig: ModelConfig = {
+        ...config,
+        provider: fallbackProvider,
+        model: fallback.model,
+        apiKey: fallbackApiKey,
+        baseUrl: fallbackSettings?.baseUrl,
+        protocol: fallbackSettings?.protocol,
+        maxTokens: getModelMaxOutputTokens(fallback.model),
+      };
+
+      try {
+        logger.warn(`[AgentLoop] AI SDK fallback -> ${fallback.provider}/${fallback.model} (reason=${fallbackCategory})`);
+        const result = await inferenceViaAiSdk(messages, tools, fallbackConfig, onStream, signal, options);
+        const selectedStep = fallbackTraceStep(
+          fallback.provider,
+          fallback.model,
+          'selected',
+          'fallback_selected',
+          fallbackCategory,
+          fallbackReason,
+        );
+	        const fallbackMetadata: ModelFallbackInfo = {
+	          from: { provider: config.provider, model: config.model },
+	          to: { provider: fallback.provider, model: fallback.model },
+	          ...(getFallbackProviderIdentity(config.provider) ? { fromIdentity: getFallbackProviderIdentity(config.provider) } : {}),
+	          ...(getFallbackProviderIdentity(fallback.provider) ? { toIdentity: getFallbackProviderIdentity(fallback.provider) } : {}),
+	          reason: fallbackReason,
+          category: fallbackCategory,
+          strategy: 'adaptive-provider-fallback',
+          tried: [...fallbackTried, selectedStep],
+          ...(fallbackSkipped.length > 0 ? { skipped: [...fallbackSkipped] } : {}),
+        };
+        result.actualProvider = fallback.provider;
+        result.actualModel = fallback.model;
+        result.fallback = fallbackMetadata;
+        void broadcastAiSdkProviderFallback(fallbackMetadata);
+        return result;
+      } catch (fallbackErr) {
+        if (signal?.aborted) {
+          throw fallbackErr;
+        }
+        const fallbackMsg = getErrorMessage(fallbackErr);
+        fallbackTried.push(fallbackTraceStep(
+          fallback.provider,
+          fallback.model,
+          'tried',
+          'fallback_failed',
+          classifyProviderFallbackReason(fallbackMsg, getErrorCode(fallbackErr)),
+          fallbackMsg,
+        ));
+        logger.warn(`[AgentLoop] AI SDK fallback ${fallback.provider}/${fallback.model} failed: ${fallbackMsg.split('\n')[0]}`);
+      }
+    }
+
+    const exhaustedStep = fallbackTraceStep(
+      config.provider,
+      config.model,
+      'exhausted',
+      'fallback_chain_exhausted',
+      fallbackCategory,
+      'All configured AI SDK fallback providers failed or were skipped',
+    );
+	    const exhaustedFallback: ModelFallbackInfo = {
+	      from: { provider: config.provider, model: config.model },
+	      to: { provider: config.provider, model: config.model },
+	      ...(getFallbackProviderIdentity(config.provider) ? { fromIdentity: getFallbackProviderIdentity(config.provider) } : {}),
+	      reason: fallbackReason,
+      category: fallbackCategory,
+      strategy: 'adaptive-provider-fallback',
+      tried: [...fallbackTried, exhaustedStep],
+      ...(fallbackSkipped.length > 0 ? { skipped: [...fallbackSkipped] } : {}),
+    };
+    attachModelFallbackToError(primaryErr, exhaustedFallback);
+  }
+}
+
+function emitModelFallbackNoticeFromResponse(
+  ctx: ContextAssemblyCtx,
+  fallback: ModelFallbackInfo | undefined,
+): void {
+  if (!fallback) return;
+  const exhausted = fallback.tried?.some((step) => step.status === 'exhausted') === true;
+  let fromIdentity: ModelDecisionEventData['providerIdentity'];
+  let toIdentity: ModelDecisionEventData['providerIdentity'];
+  try {
+    const providerSettings = getConfigService().getSettings().models?.providers;
+    fromIdentity = buildModelProviderIdentity(fallback.from.provider, providerSettings);
+    toIdentity = buildModelProviderIdentity(fallback.to.provider, providerSettings);
+  } catch {
+    fromIdentity = undefined;
+    toIdentity = undefined;
+  }
+  ctx.runtime.onEvent({
+    type: 'model_fallback',
+	      data: {
+	        reason: fallback.reason,
+	        category: fallback.category,
+	        ...(fallback.strategy ? { strategy: fallback.strategy } : {}),
+	        from: formatFallbackEndpoint(fallback.from),
+	        to: exhausted ? '未切换' : formatFallbackEndpoint(fallback.to),
+	        ...(fallback.fromIdentity ? { fromIdentity: fallback.fromIdentity } : {}),
+	        ...(!exhausted && fallback.toIdentity ? { toIdentity: fallback.toIdentity } : {}),
+	        ...(fallback.tried ? { tried: fallback.tried } : {}),
+      ...(fallback.skipped ? { skipped: fallback.skipped } : {}),
+      ...(fallback.toolPolicy ? { toolPolicy: fallback.toolPolicy } : {}),
+      ...(fromIdentity ? { fromIdentity } : {}),
+      ...(!exhausted && toIdentity ? { toIdentity } : {}),
+      turnId: ctx.runtime.currentTurnId,
+    },
+  });
+}
+
+function extractMcpServerId(tool: ToolDefinition): string | undefined {
+  if (tool.mcpServer) return tool.mcpServer;
+  const doubleUnderscore = /^mcp__(.+?)__/.exec(tool.name)?.[1];
+  if (doubleUnderscore) return doubleUnderscore;
+  return /^mcp_([^_]+)_/.exec(tool.name)?.[1];
+}
+
+function buildProviderUsageSnapshot(usage: ModelResponse['usage'] | undefined): ModelToolTokenSavingsProviderUsage | undefined {
+  if (!usage) return undefined;
+  if (!Number.isFinite(usage.inputTokens) || !Number.isFinite(usage.outputTokens)) return undefined;
+  const inputTokens = Math.max(0, Math.trunc(usage.inputTokens));
+  const outputTokens = Math.max(0, Math.trunc(usage.outputTokens));
+  return {
+    source: 'model-response-usage',
+    inputTokens,
+    outputTokens,
+    totalTokens: inputTokens + outputTokens,
+  };
+}
+
+function buildProviderReportedSavingsSnapshot(usage: ModelResponse['usage'] | undefined): ModelToolTokenSavingsProviderReport | undefined {
+  const savedTokens = usage?.providerReportedSavedTokens;
+  if (typeof savedTokens !== 'number' || !Number.isFinite(savedTokens) || savedTokens < 0) return undefined;
+  return {
+    source: 'provider-reported',
+    savedTokens: Math.trunc(savedTokens),
+  };
+}
+
+function formatProviderUsageDetail(providerUsage: ModelToolTokenSavingsProviderUsage | undefined): string {
+  if (!providerUsage) return '真实账单以 provider usage 为准。';
+  return `本轮 provider usage 已回传：输入 ${providerUsage.inputTokens} / 输出 ${providerUsage.outputTokens} tokens；真实账单以 provider usage 为准。`;
+}
+
+function formatProviderReportedSavingsDetail(
+  providerReport: ModelToolTokenSavingsProviderReport,
+  providerUsage: ModelToolTokenSavingsProviderUsage | undefined,
+): string {
+  const usageDetail = providerUsage
+    ? `本轮 provider usage 已回传：输入 ${providerUsage.inputTokens} / 输出 ${providerUsage.outputTokens} tokens。`
+    : '本轮 provider usage 未回传。';
+  return `provider 已回传 programmatic tool saved tokens：${providerReport.savedTokens} tokens；${usageDetail}`;
+}
+
+function buildRuntimeProviderHealthSnapshot(provider: string): ModelProviderHealthSnapshot {
+  const health = getProviderHealthMonitor().getHealth(provider);
+  const sampledAt = Date.now();
+  if (!health) {
+    return {
+      provider,
+      status: 'unknown',
+      sampledAt,
+    };
+  }
+  return {
+    provider: health.provider,
+    status: health.status,
+    sampledAt,
+    latencyP50: health.latencyP50,
+    latencyP95: health.latencyP95,
+    errorRate: health.errorRate,
+    lastSuccessAt: health.lastSuccessAt,
+    lastErrorAt: health.lastErrorAt,
+    consecutiveErrors: health.consecutiveErrors,
+  };
+}
+
+function applyFallbackResultToModelDecision(
+  decision: ModelDecisionEventData,
+  response: ModelResponse,
+): ModelDecisionEventData {
+  const fallback = response.fallback;
+  const finalProvider = response.actualProvider ?? fallback?.to.provider;
+  const finalModel = response.actualModel ?? fallback?.to.model;
+  if (!fallback || !finalProvider || !finalModel) return decision;
+  const from = formatFallbackEndpoint(fallback.from);
+  const to = formatFallbackEndpoint({ provider: finalProvider, model: finalModel });
+  const isCapabilityFallback = fallback.category === 'capability';
+  const capability = fallback.reason;
+  let providerIdentity: ModelDecisionEventData['providerIdentity'];
+  try {
+    providerIdentity = buildModelProviderIdentity(finalProvider, getConfigService().getSettings().models?.providers);
+  } catch {
+    providerIdentity = undefined;
+  }
+  const { providerIdentity: _previousProviderIdentity, ...decisionWithoutProviderIdentity } = decision;
+  return {
+    ...decisionWithoutProviderIdentity,
+    ...(isCapabilityFallback
+      ? {
+          requestedProvider: fallback.from.provider,
+          ...(fallback.from.model ? { requestedModel: fallback.from.model } : {}),
+        }
+      : {}),
+    resolvedProvider: finalProvider,
+    resolvedModel: finalModel,
+    reason: isCapabilityFallback && capability === 'vision' ? 'capability-vision' : 'fallback-availability',
+    fallbackFrom: from,
+    strategySummary: isCapabilityFallback
+      ? `原模型 ${from} 缺少 ${capability} 能力，切到 ${to} 完成当前任务。`
+      : `原模型 ${from} 不可用，切到 ${to} 完成当前任务。`,
+    speedPolicy: isCapabilityFallback ? decision.speedPolicy : 'fallback-recovery',
+    providerHealthSnapshot: buildRuntimeProviderHealthSnapshot(finalProvider),
+    ...(providerIdentity ? { providerIdentity } : {}),
+  };
+}
+
+function buildToolStrategyDiagnostics(
+  tools: ToolDefinition[],
+  usage?: ModelResponse['usage'],
+): ModelToolStrategyDiagnostics {
+  const toolNames = tools.map((tool) => tool.name);
+  const toolNamesPreview = toolNames.slice(0, 8);
+  const mcpServerIds = Array.from(new Set(
+    tools
+      .map(extractMcpServerId)
+      .filter((serverId): serverId is string => Boolean(serverId)),
+  )).sort();
+  const mcpToolCount = tools.filter((tool) => tool.source === 'mcp' || Boolean(extractMcpServerId(tool))).length;
+  const estimatedToolSpecTokens = tools.reduce((sum, tool) => {
+    const schemaText = JSON.stringify({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    });
+    return sum + estimateTokens(schemaText);
+  }, 0);
+  const providerUsage = buildProviderUsageSnapshot(usage);
+  const providerReport = buildProviderReportedSavingsSnapshot(usage);
+  return {
+    visibleToolCount: tools.length,
+    ...(toolNames.length > 0 ? { toolNamesPreview } : {}),
+    mcpToolCount,
+    ...(mcpServerIds.length > 0 ? { mcpServerIds } : {}),
+    programmaticToolCalling: tools.length > 0 ? 'available' : 'unavailable',
+    programmaticToolCount: tools.length,
+    tokenSavings: tools.length > 0
+      ? providerReport
+        ? {
+            status: 'provider-reported',
+            savedTokens: providerReport.savedTokens,
+            detail: formatProviderReportedSavingsDetail(providerReport, providerUsage),
+            measurement: {
+              savingsSource: 'provider-reported',
+              usageSource: providerUsage ? 'model-response-usage' : 'unavailable',
+              providerReportedSavings: true,
+            },
+            providerReport,
+            ...(providerUsage ? { providerUsage } : {}),
+          }
+        : {
+          status: 'estimated',
+          savedTokens: estimatedToolSpecTokens,
+          detail: `估算值：${tools.length} 个工具的 name/description/inputSchema 若写入普通消息上下文，约占 ${estimatedToolSpecTokens} tokens；${formatProviderUsageDetail(providerUsage)}`,
+          measurement: {
+            savingsSource: 'tool-spec-local-estimate',
+            usageSource: providerUsage ? 'model-response-usage' : 'unavailable',
+            providerReportedSavings: false,
+          },
+          basis: {
+            source: 'tool-spec-local-estimate',
+            toolCount: tools.length,
+            previewToolCount: toolNamesPreview.length,
+            fields: ['name', 'description', 'inputSchema'],
+          },
+          ...(providerUsage ? { providerUsage } : {}),
+        }
+      : {
+          status: 'not-measured',
+          detail: providerUsage
+            ? `本轮没有可见程序化工具，token saved 不计量；本轮 provider usage 已回传：输入 ${providerUsage.inputTokens} / 输出 ${providerUsage.outputTokens} tokens。`
+            : '本轮没有可见程序化工具，token saved 不计量。',
+          measurement: {
+            savingsSource: 'not-measured',
+            usageSource: providerUsage ? 'model-response-usage' : 'unavailable',
+            providerReportedSavings: false,
+          },
+          ...(providerUsage ? { providerUsage } : {}),
+        },
+  };
+}
+
+function buildModelDecisionWithToolStrategy(
+  decision: ModelDecisionEventData | undefined,
+  tools: ToolDefinition[],
+  usage?: ModelResponse['usage'],
+  response?: ModelResponse,
+): ModelDecisionEventData | undefined {
+  if (!decision) return undefined;
+  const toolStrategy = buildToolStrategyDiagnostics(tools, usage);
+  const decisionWithTools = {
+    ...decision,
+    toolPolicy: tools.length > 0 ? decision.toolPolicy ?? 'runtime-checked' : 'disabled-by-model',
+    toolStrategy,
+  };
+  return response ? applyFallbackResultToModelDecision(decisionWithTools, response) : decisionWithTools;
 }
 
 /**
@@ -116,9 +670,11 @@ export function resolveMainChatModelDecision(
 ): ModelConfig | null {
   // 计费方式：用户配置 > 类型默认值（settings 不可用时缺省 payg）
   let billingMode: BillingMode | undefined;
+  let providerSettings: Record<string, ModelDecisionProviderSettings> | undefined;
   try {
     const settings = getConfigService().getSettings();
-    billingMode = resolveProviderBillingMode(config.provider, settings.models?.providers);
+    providerSettings = settings.models?.providers;
+    billingMode = resolveProviderBillingMode(config.provider, providerSettings);
   } catch { /* 测试/CLI 环境无 settings → resolveModelDecision 内部缺省 payg */ }
 
   const { decision, config: decided } = resolveModelDecision({
@@ -126,6 +682,7 @@ export function resolveMainChatModelDecision(
     messages,
     context: 'main-chat',
     billingMode,
+    providerSettings,
   });
   let emittedDecision = decision;
   let adapted: ModelConfig | null = null;
@@ -153,13 +710,15 @@ export function resolveMainChatModelDecision(
 
   // Max Mode 候选/judge 的静默调用抑制事件发射（路由行为不变，Codex R1-M1）
   if (!opts?.suppressDecisionEvent) {
+    const decisionEventData: ModelDecisionEventData = {
+      ...emittedDecision,
+      turnId: ctx.runtime.currentTurnId,
+      timestamp: Date.now(),
+    };
+    ctx.runtime.currentModelDecision = decisionEventData;
     ctx.runtime.onEvent({
       type: 'model_decision',
-      data: {
-        ...emittedDecision,
-        turnId: ctx.runtime.currentTurnId,
-        timestamp: Date.now(),
-      },
+      data: decisionEventData,
     });
   }
   logger.info('[AgentLoop] Model decision resolved', {
@@ -540,6 +1099,7 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
   let effectiveTools = tools;
   let effectiveConfig = ctx.runtime.modelConfig;
   let artifactRequest = false;
+  let pendingCapabilityFallback: ModelFallbackInfo | null = null;
 
   let modelMessages: ModelMessage[] = await ctx.buildModelMessages();
   if (ctx.runtime.forceFinalResponsePrompt) {
@@ -682,14 +1242,31 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
             if (fallbackApiKey) {
               fallbackConfig.apiKey = fallbackApiKey;
               logger.info(`[Fallback] 使用本地 ${fallbackConfig.provider} Key 切换到 ${fallbackConfig.model}`);
-              ctx.runtime.onEvent({
-                type: 'model_fallback',
-                data: {
-                  reason: capability,
-                  from: ctx.runtime.modelConfig.model,
-                  to: fallbackConfig.model,
-                },
-              });
+              pendingCapabilityFallback = {
+                reason: capability,
+                category: 'capability',
+                strategy: 'adaptive-capability-fallback',
+                from: { provider: ctx.runtime.modelConfig.provider, model: ctx.runtime.modelConfig.model },
+                to: { provider: fallbackConfig.provider, model: fallbackConfig.model },
+                tried: [
+                  {
+                    provider: ctx.runtime.modelConfig.provider,
+                    model: ctx.runtime.modelConfig.model,
+                    status: 'tried',
+                    reason: 'missing_capability',
+                    category: capability,
+                    detail: `需要 ${capability} 能力`,
+                  },
+                  {
+                    provider: fallbackConfig.provider,
+                    model: fallbackConfig.model,
+                    status: 'selected',
+                    reason: 'capability_fallback_selected',
+                    category: capability,
+                    detail: `具备 ${capability} 能力`,
+                  },
+                ],
+              };
               effectiveConfig = fallbackConfig;
               if (capability === 'vision') {
                 visionFallbackSucceeded = true;
@@ -744,6 +1321,20 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       );
       if (fallbackModelInfo && !fallbackModelInfo.supportsTool) {
         logger.warn(`[AgentLoop] Fallback 模型 ${effectiveConfig.model} 不支持 tool calls，清空工具列表`);
+        const disabledToolNames = effectiveTools.map((tool) => tool.name);
+        if (pendingCapabilityFallback) {
+          pendingCapabilityFallback = {
+            ...pendingCapabilityFallback,
+            toolPolicy: {
+              status: 'disabled',
+              reason: 'fallback_model_without_tool_support',
+              originalToolCount: disabledToolNames.length,
+              effectiveToolCount: 0,
+              ...(disabledToolNames.length > 0 ? { disabledToolNames } : {}),
+              detail: `Fallback 模型 ${effectiveConfig.provider}/${effectiveConfig.model} 不支持工具调用，本轮改为纯文本回复。`,
+            },
+          };
+        }
         effectiveTools = [];
 
         const simplifiedPrompt = `你是一个图片理解助手。请仔细观察图片内容，按照用户的要求进行分析。
@@ -766,6 +1357,9 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
           },
         });
       }
+    }
+    if (pendingCapabilityFallback) {
+      emitModelFallbackNoticeFromResponse(ctx, pendingCapabilityFallback);
     }
 
     effectiveConfig = applyEffortControls(
@@ -905,9 +1499,18 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       stopArtifactProgress();
     }
     contentStreamFilter.flush();
+    if (pendingCapabilityFallback && !response.fallback) {
+      response.actualProvider = pendingCapabilityFallback.to.provider;
+      response.actualModel = pendingCapabilityFallback.to.model;
+      response.fallback = pendingCapabilityFallback;
+    }
+    const toolStrategy = buildToolStrategyDiagnostics(effectiveTools, response.usage);
+    const modelDecision = buildModelDecisionWithToolStrategy(ctx.runtime.currentModelDecision, effectiveTools, response.usage, response);
     response.runtimeDiagnostics = {
       ...response.runtimeDiagnostics,
       visibleToolNames: effectiveTools.map((tool) => tool.name),
+      toolStrategy,
+      ...(modelDecision ? { modelDecision } : {}),
       artifactRepairGuard: ctx.runtime.artifactRepairGuard
         ? {
             targetFile: ctx.runtime.artifactRepairGuard.targetFile,
@@ -919,6 +1522,11 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
         }
         : undefined,
     };
+    const fallbackNoticeAlreadyEmitted =
+      pendingCapabilityFallback !== null && response.fallback === pendingCapabilityFallback;
+    if (!fallbackNoticeAlreadyEmitted) {
+      emitModelFallbackNoticeFromResponse(ctx, response.fallback);
+    }
 
     ctx.runtime.abortController = null;
     logger.debug('[AgentLoop] Model response received:', response.type);
@@ -952,6 +1560,8 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
       logger.info('[AgentLoop] Inference aborted due to steer/interrupt/cancel');
       return { type: 'text', content: '' };
     }
+
+    emitModelFallbackNoticeFromResponse(ctx, getModelFallbackFromError(error));
 
     logger.error('[AgentLoop] Model inference error:', error);
 
@@ -1093,9 +1703,18 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
         );
         ctx.runtime.abortController = null;
         ctx.runtime._artifactRepairCompactWriteRetried = false;
+        if (pendingCapabilityFallback && !retryResult.fallback) {
+          retryResult.actualProvider = pendingCapabilityFallback.to.provider;
+          retryResult.actualModel = pendingCapabilityFallback.to.model;
+          retryResult.fallback = pendingCapabilityFallback;
+        }
+        const retryToolStrategy = buildToolStrategyDiagnostics(effectiveTools, retryResult.usage);
+        const retryModelDecision = buildModelDecisionWithToolStrategy(ctx.runtime.currentModelDecision, effectiveTools, retryResult.usage, retryResult);
         retryResult.runtimeDiagnostics = {
           ...retryResult.runtimeDiagnostics,
           visibleToolNames: effectiveTools.map((tool) => tool.name),
+          toolStrategy: retryToolStrategy,
+          ...(retryModelDecision ? { modelDecision: retryModelDecision } : {}),
           artifactRepairCompactWriteRetry: true,
           artifactRepairGuard: ctx.runtime.artifactRepairGuard
             ? {

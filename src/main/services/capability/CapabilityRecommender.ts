@@ -34,6 +34,7 @@ const MODEL_CAPABILITIES: ReadonlySet<ModelDomainCapability> = new Set([
   'vision',
   'reasoning',
   'long-context',
+  'search',
 ]);
 
 function isModelCapability(tag: string): tag is ModelDomainCapability {
@@ -54,6 +55,7 @@ const TOOL_ERROR_HINT_RULES: ReadonlyArray<{
   { keywords: ['image_analyze', 'image-analyze', 'vision', '截图分析', 'ocr'], capability: 'vision' },
   { keywords: ['think_step', 'reasoning', '推理', 'deep_think'], capability: 'reasoning' },
   { keywords: ['long_context', 'long-context', '长上下文', '长文本'], capability: 'long-context' },
+  { keywords: ['web_search', 'search', 'browse', '联网', '搜索'], capability: 'search' },
 ];
 
 function buildPluginCandidateScan(requiredCapability: string): {
@@ -160,7 +162,9 @@ export class CapabilityRecommender {
    * 从 tool 失败信号反推 capability 缺口。
    *
    * 规则：先匹配 tool 名 / error message 的关键词，命中 capability tag 后走
-   * scanForCapability。不命中返回空数组（让 ToolSearch 兜底文案不变化）。
+   * scanForCapability；如果系统里已有可用候选模型，再额外返回当前模型缺
+   * capability 的 ModelGap，方便 UI 引导用户切换主任务模型。
+   * 不命中返回空数组（让 ToolSearch 兜底文案不变化）。
    */
   recommendForToolError(toolName: string, error: Error): CapabilityGap[] {
     const haystack = `${toolName} ${error.message}`.toLowerCase();
@@ -173,7 +177,33 @@ export class CapabilityRecommender {
       });
       return [];
     }
-    return this.scanForCapability(matched.capability);
+    const gaps = this.scanForCapability(matched.capability);
+
+    if (!isModelCapability(matched.capability)) {
+      return gaps;
+    }
+    const hasModelOrApiKeyGap = gaps.some((gap) =>
+      (gap.type === 'model' || gap.type === 'apikey') && gap.missing === matched.capability,
+    );
+    if (hasModelOrApiKeyGap) {
+      return gaps;
+    }
+
+    const cfg = getConfigService();
+    const configuredCandidates = findCapableModels(matched.capability)
+      .filter((candidate) => cfg.hasConfiguredKey(candidate.provider));
+    if (configuredCandidates.length === 0) {
+      return gaps;
+    }
+
+    return [
+      ...gaps,
+      {
+        type: 'model',
+        missing: matched.capability,
+        candidates: configuredCandidates,
+      },
+    ];
   }
 }
 

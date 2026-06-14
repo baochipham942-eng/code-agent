@@ -175,6 +175,22 @@ describe('CodexCliAdapter.run', () => {
       'OPENAI_API_KEY',
     ]));
     expect(JSON.stringify(firstTask)).not.toContain('secret-value');
+
+    const assistantMessage = mocks.addMessageToSession.mock.calls
+      .map((call) => call[1])
+      .find((message) => message?.role === 'assistant');
+    expect(assistantMessage?.modelDecision).toMatchObject({
+      requestedProvider: 'codex_cli',
+      requestedModel: 'gpt-5',
+      resolvedProvider: 'codex_cli',
+      resolvedModel: 'gpt-5',
+      reason: 'user-selected',
+      externalEngine: {
+        kind: 'codex_cli',
+        model: 'gpt-5',
+        runtimeState: 'ready',
+      },
+    });
   });
 
   it('rejects workspace-write permission profile before spawning Codex CLI', async () => {
@@ -187,6 +203,86 @@ describe('CodexCliAdapter.run', () => {
     })).rejects.toThrow(/read-only/);
 
     expect(mocks.spawn).not.toHaveBeenCalled();
+  });
+
+  it('classifies Codex CLI quota failures for task ledger and result diagnostics', async () => {
+    mocks.spawn.mockImplementation(() => createMockChild([], 1, 'API Error: 429 quota exhausted'));
+
+    const result = await new CodexCliAdapter().run({
+      sessionId: 'session-1',
+      prompt: 'inspect only',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      model: 'gpt-5',
+      timeoutMs: 20_000,
+      stallWarningMs: 10_000,
+    });
+
+    expect(result).toMatchObject({
+      engine: 'codex_cli',
+      status: 'failed',
+      error: 'API Error: 429 quota exhausted',
+      exitCode: 1,
+      failure: {
+        category: 'quota',
+        reason: 'quota_exhausted',
+        statusCode: 429,
+        reliability: { quotaState: 'exhausted' },
+      },
+    });
+    expect(mocks.updateSession).toHaveBeenLastCalledWith(
+      'session-1',
+      expect.objectContaining({
+        status: 'error',
+        engine: expect.objectContaining({
+          kind: 'codex_cli',
+          failure: expect.objectContaining({
+            category: 'quota',
+            reason: 'quota_exhausted',
+            reliability: { quotaState: 'exhausted' },
+          }),
+        }),
+      }),
+      { allowEngineUpdate: true },
+    );
+    expect(mocks.upsertTask).toHaveBeenLastCalledWith(expect.objectContaining({
+      failure: expect.objectContaining({
+        message: 'API Error: 429 quota exhausted',
+        reason: 'quota_exhausted',
+      }),
+    }));
+    expect(mocks.appendEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'agent_engine.failed',
+      data: expect.objectContaining({
+        failure: expect.objectContaining({
+          category: 'quota',
+          reason: 'quota_exhausted',
+        }),
+      }),
+    }));
+    const assistantMessage = mocks.addMessageToSession.mock.calls
+      .map((call) => call[1])
+      .find((message) => message?.role === 'assistant');
+    expect(assistantMessage).toMatchObject({
+      role: 'assistant',
+      content: expect.stringContaining('额度或账单状态不可用'),
+      modelDecision: expect.objectContaining({
+        externalEngine: expect.objectContaining({
+          kind: 'codex_cli',
+          failure: expect.objectContaining({
+            category: 'quota',
+            reason: 'quota_exhausted',
+          }),
+        }),
+      }),
+    });
+    expect(mocks.webContentsSend).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        type: 'message',
+        data: expect.objectContaining({ role: 'assistant' }),
+      }),
+    );
   });
 
   it('rejects cwd outside workspace before spawning Codex CLI', async () => {

@@ -24,9 +24,12 @@ const ROOT = path.resolve(__dirname, '../../..');
 // Mocks（与 inference.artifactRetry.test.ts 同一套，保证 inference.ts 可导入）
 // --------------------------------------------------------------------------
 
-const { mockGetApiKey, mockGetSettings } = vi.hoisted(() => ({
+const { mockAiSdkSupportsProvider, mockGetApiKey, mockGetProviderHealth, mockGetSettings, mockInferenceViaAiSdk } = vi.hoisted(() => ({
+  mockAiSdkSupportsProvider: vi.fn((_provider: string) => true),
   mockGetApiKey: vi.fn<(provider: string) => string | null>(() => 'mock-key'),
+  mockGetProviderHealth: vi.fn((_provider: string) => null),
   mockGetSettings: vi.fn(() => ({} as Record<string, unknown>)),
+  mockInferenceViaAiSdk: vi.fn(),
 }));
 
 vi.mock('../../../src/main/services/infra/logger', () => ({
@@ -92,11 +95,26 @@ vi.mock('../../../src/main/model/modelRouter', () => ({
   },
 }));
 
+vi.mock('../../../src/main/model/adapters/aiSdkAdapter', () => ({
+  aiSdkSupportsProvider: mockAiSdkSupportsProvider,
+  inferenceViaAiSdk: mockInferenceViaAiSdk,
+}));
+
+vi.mock('../../../src/main/model/providerHealthMonitor', () => ({
+  getProviderHealthMonitor: () => ({
+    getHealth: mockGetProviderHealth,
+  }),
+}));
+
 vi.mock('../../../src/main/prompts/builder', () => ({
   needsArtifactTaskBrief: vi.fn(() => false),
 }));
 
-import { resolveMainChatModelDecision } from '../../../src/main/agent/runtime/contextAssembly/inference';
+import {
+  buildAiSdkAdaptiveFallbackInfo,
+  resolveMainChatModelDecision,
+  runAiSdkInferenceWithProviderFallback,
+} from '../../../src/main/agent/runtime/contextAssembly/inference';
 
 // --------------------------------------------------------------------------
 // Helpers
@@ -139,10 +157,15 @@ function getDecisionEvents(ctx: ContextAssemblyCtx) {
 }
 
 beforeEach(() => {
+  mockAiSdkSupportsProvider.mockReset();
+  mockAiSdkSupportsProvider.mockReturnValue(true);
   mockGetApiKey.mockReset();
   mockGetApiKey.mockReturnValue('mock-key');
+  mockGetProviderHealth.mockReset();
+  mockGetProviderHealth.mockReturnValue(null);
   mockGetSettings.mockReset();
   mockGetSettings.mockReturnValue({});
+  mockInferenceViaAiSdk.mockReset();
 });
 
 // --------------------------------------------------------------------------
@@ -240,6 +263,192 @@ describe('resolveMainChatModelDecision — model_decision 事件发射（ADR-019
       billingMode: 'plan',
       resolvedModel: 'kimi-k2.5',
     });
+  });
+});
+
+describe('buildAiSdkAdaptiveFallbackInfo — AI SDK adaptive fallback trace', () => {
+  it('records selected main task model when the adaptive candidate fails', () => {
+    const info = buildAiSdkAdaptiveFallbackInfo(
+      { provider: 'zhipu', model: DEFAULT_MODELS.quick, apiKey: 'zhipu-key' } as ModelConfig,
+      makeConfig(),
+      new Error('Zhipu API error: 429 rate limit exceeded'),
+      'selected',
+    );
+
+    expect(info).toMatchObject({
+      from: { provider: 'zhipu', model: DEFAULT_MODELS.quick },
+      to: { provider: 'moonshot', model: 'kimi-k2.5' },
+      category: 'rate_limit',
+      strategy: 'adaptive-main-task-recovery',
+      tried: [
+        {
+          provider: 'zhipu',
+          status: 'tried',
+          reason: 'adaptive_candidate_failed',
+          category: 'rate_limit',
+        },
+        {
+          provider: 'moonshot',
+          status: 'selected',
+          reason: 'main_task_model_selected',
+          category: 'rate_limit',
+        },
+      ],
+    });
+  });
+
+  it('records exhausted when the main task model also fails', () => {
+    const info = buildAiSdkAdaptiveFallbackInfo(
+      { provider: 'zhipu', model: DEFAULT_MODELS.quick, apiKey: 'zhipu-key' } as ModelConfig,
+      makeConfig(),
+      new Error('Zhipu API error: 429 rate limit exceeded'),
+      'exhausted',
+      new Error('Moonshot API error: 503 service unavailable'),
+    );
+
+    expect(info).toMatchObject({
+      category: 'provider_unavailable',
+      reason: expect.stringContaining('503'),
+      strategy: 'adaptive-main-task-recovery',
+      tried: [
+        {
+          provider: 'zhipu',
+          status: 'tried',
+          reason: 'adaptive_candidate_failed',
+          category: 'rate_limit',
+        },
+        {
+          provider: 'moonshot',
+          status: 'exhausted',
+          reason: 'main_task_model_failed',
+          category: 'provider_unavailable',
+          detail: expect.stringContaining('503'),
+        },
+      ],
+    });
+  });
+});
+
+describe('runAiSdkInferenceWithProviderFallback — AI SDK 普通 provider fallback trace', () => {
+  it('adaptive 普通 AI SDK 调用失败时切到 fallback provider，并记录 selected trace', async () => {
+    mockGetApiKey.mockImplementation((provider: string) => (provider === 'deepseek' ? 'deepseek-key' : 'main-key'));
+    mockGetSettings.mockReturnValue({
+      models: {
+        providers: {
+          deepseek: {
+            enabled: true,
+            baseUrl: 'https://deepseek.test/v1',
+            protocol: 'openai',
+          },
+        },
+      },
+    });
+    mockInferenceViaAiSdk
+      .mockRejectedValueOnce(new Error('Moonshot API error: 503 service unavailable'))
+      .mockResolvedValueOnce({
+        type: 'text',
+        content: 'fallback ok',
+        usage: { inputTokens: 1, outputTokens: 2 },
+      });
+
+    const response = await runAiSdkInferenceWithProviderFallback(
+      SIMPLE_MESSAGES,
+      [],
+      makeConfig({ adaptive: true }),
+    );
+
+    expect(mockInferenceViaAiSdk).toHaveBeenCalledTimes(2);
+    expect(mockInferenceViaAiSdk.mock.calls[1][2]).toMatchObject({
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://deepseek.test/v1',
+      protocol: 'openai',
+      maxTokens: expect.any(Number),
+    });
+    expect(response).toMatchObject({
+      actualProvider: 'deepseek',
+      actualModel: 'deepseek-v4-flash',
+      fallback: {
+        from: { provider: 'moonshot', model: 'kimi-k2.5' },
+        to: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+        category: 'provider_unavailable',
+        strategy: 'adaptive-provider-fallback',
+        tried: [
+          {
+            provider: 'moonshot',
+            status: 'tried',
+            reason: 'primary_failed',
+            category: 'provider_unavailable',
+          },
+          {
+            provider: 'deepseek',
+            status: 'selected',
+            reason: 'fallback_selected',
+            category: 'provider_unavailable',
+          },
+        ],
+      },
+    });
+  });
+
+  it('显式模型选择失败时不跨 provider fallback', async () => {
+    const primaryError = new Error('Moonshot API error: 503 service unavailable');
+    mockInferenceViaAiSdk.mockRejectedValueOnce(primaryError);
+
+    await expect(runAiSdkInferenceWithProviderFallback(
+      SIMPLE_MESSAGES,
+      [],
+      makeConfig({ adaptive: false }),
+    )).rejects.toBe(primaryError);
+
+    expect(mockInferenceViaAiSdk).toHaveBeenCalledTimes(1);
+  });
+
+  it('fallback 候选缺 key 时把 skipped/exhausted trace 挂到原始错误上', async () => {
+    const primaryError = new Error('Moonshot API error: 429 rate limit exceeded');
+    mockInferenceViaAiSdk.mockRejectedValueOnce(primaryError);
+    mockGetApiKey.mockImplementation((provider: string) => (provider === 'deepseek' ? null : 'main-key'));
+
+    let caught: unknown;
+    try {
+      await runAiSdkInferenceWithProviderFallback(
+        SIMPLE_MESSAGES,
+        [],
+        makeConfig({ adaptive: true }),
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBe(primaryError);
+    expect((caught as { modelFallback?: unknown }).modelFallback).toMatchObject({
+      from: { provider: 'moonshot', model: 'kimi-k2.5' },
+      to: { provider: 'moonshot', model: 'kimi-k2.5' },
+      category: 'rate_limit',
+      strategy: 'adaptive-provider-fallback',
+      skipped: [
+        {
+          provider: 'deepseek',
+          model: 'deepseek-v4-flash',
+          status: 'skipped',
+          reason: 'missing_api_key',
+        },
+      ],
+      tried: [
+        {
+          provider: 'moonshot',
+          status: 'tried',
+          reason: 'primary_failed',
+        },
+        {
+          provider: 'moonshot',
+          status: 'exhausted',
+          reason: 'fallback_chain_exhausted',
+        },
+      ],
+    });
+    expect(mockInferenceViaAiSdk).toHaveBeenCalledTimes(1);
   });
 });
 

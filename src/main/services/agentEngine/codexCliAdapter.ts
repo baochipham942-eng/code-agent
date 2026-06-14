@@ -24,6 +24,8 @@ import { getBackgroundTaskLedger } from '../../tasks/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
 import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
+import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
+import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
 
 const logger = createLogger('CodexCliAdapter');
 
@@ -307,6 +309,14 @@ export class CodexCliAdapter {
 
     if (failed) {
       const message = timeoutMessage || spawnErrorMessage || stderrText.trim() || `Codex CLI exited with code ${exitCode}`;
+      const failureDiagnostics = classifyAgentEngineFailure({
+        engine: 'codex_cli',
+        message,
+        exitCode,
+        occurredAt: completedAt,
+        timeout: Boolean(timeoutMessage),
+        spawnError: Boolean(spawnErrorMessage),
+      });
       ledger.upsertTask({
         id: taskId,
         status: 'failed',
@@ -316,6 +326,7 @@ export class CodexCliAdapter {
           message,
           exitCode: exitCode ?? undefined,
           category: 'agent_engine',
+          reason: failureDiagnostics.reason,
         },
       });
       ledger.appendEvent({
@@ -323,7 +334,7 @@ export class CodexCliAdapter {
         type: 'agent_engine.failed',
         status: 'failed',
         message,
-        data: { exitCode, logPath },
+        data: { exitCode, logPath, failure: failureDiagnostics },
       });
       ledger.queueNotification({
         taskId,
@@ -331,11 +342,32 @@ export class CodexCliAdapter {
         type: 'task_failed',
         title: 'Codex CLI failed',
         message,
-        payload: { runId, logPath },
+        payload: { runId, logPath, failure: failureDiagnostics },
       });
       emit({
         type: 'error',
-        data: { message, code: 'CODEX_CLI_FAILED', details: { runId, logPath, exitCode } },
+        data: { message, code: 'CODEX_CLI_FAILED', suggestion: failureDiagnostics.suggestion, details: { runId, logPath, exitCode, failure: failureDiagnostics } },
+      });
+      const assistantMessage: Message = {
+        id: turnId,
+        role: 'assistant',
+        content: formatAgentEngineFailureContent(descriptor.label, failureDiagnostics, logPath),
+        timestamp: completedAt,
+        modelDecision: buildAgentEngineModelDecision(descriptor, model, completedAt, failureDiagnostics),
+        metadata: {
+          workbench: {
+            workingDirectory: cwd,
+          },
+        },
+      };
+      await sessionManager.addMessageToSession(request.sessionId, assistantMessage);
+      emit({
+        type: 'message',
+        data: assistantMessage,
+      });
+      emit({
+        type: 'turn_end',
+        data: { turnId },
       });
       await sessionManager.updateSession(request.sessionId, {
         status: 'error',
@@ -348,6 +380,7 @@ export class CodexCliAdapter {
           permissionProfile,
           origin: 'manual',
           updatedAt: completedAt,
+          failure: failureDiagnostics,
         }),
         updatedAt: completedAt,
       }, { allowEngineUpdate: true });
@@ -361,6 +394,7 @@ export class CodexCliAdapter {
         logPath,
         exitCode,
         error: message,
+        failure: failureDiagnostics,
       };
     }
 
@@ -369,6 +403,7 @@ export class CodexCliAdapter {
       role: 'assistant',
       content: finalText || 'Codex CLI completed without text output.',
       timestamp: completedAt,
+      modelDecision: buildAgentEngineModelDecision(descriptor, model, completedAt),
       metadata: {
         workbench: {
           workingDirectory: cwd,

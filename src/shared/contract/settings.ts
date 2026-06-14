@@ -31,6 +31,10 @@ export interface ModelProviderSettings {
   model?: string;
   baseUrl?: string;
   displayName?: string;
+  /** Provider 图标：短文本标识（最多两个可见字符）、受限 data:image，或 provider-icon://local 本机资产引用，用于设置页和会话页快速识别 provider。 */
+  icon?: string;
+  /** 常用 provider 标记；仅影响 UI 排序和标识，不改变路由策略。 */
+  favorite?: boolean;
   temperature?: number;
   maxTokens?: number;
   updatedAt?: number;

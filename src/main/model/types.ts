@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { ToolCall } from '../../shared/contract';
+import type { ModelDecisionEventData, ModelFallbackInfo, ModelToolStrategyDiagnostics } from '../../shared/contract/modelDecision';
 
 // ----------------------------------------------------------------------------
 // Message Types
@@ -64,20 +65,17 @@ export interface ModelResponse {
   finishReason?: string;
   actualProvider?: string;
   actualModel?: string;
-  fallback?: {
-    from: { provider: string; model?: string };
-    to: { provider: string; model?: string };
-    reason: string;
-    category: string;
-  };
+  fallback?: ModelFallbackInfo;
   // Adaptive Thinking: 思考过程
   thinking?: string;
   // Token usage from API response
-  usage?: { inputTokens: number; outputTokens: number };
+  usage?: { inputTokens: number; outputTokens: number; providerReportedSavedTokens?: number };
   // 内容块顺序（text 和 tool_call 的交错顺序，用于前端渲染）
   contentParts?: ResponseContentPart[];
   runtimeDiagnostics?: {
     visibleToolNames?: string[];
+    toolStrategy?: ModelToolStrategyDiagnostics;
+    modelDecision?: ModelDecisionEventData;
     artifactRepairCompactWriteRetry?: boolean;
     artifactRepairGuard?: {
       targetFile?: string;
@@ -119,6 +117,7 @@ export interface StreamChunk {
   // Real-time token estimation (type: 'token_estimate')
   inputTokens?: number;
   outputTokens?: number;
+  providerReportedSavedTokens?: number;
   // complete event
   finishReason?: string;
   // error event

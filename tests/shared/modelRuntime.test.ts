@@ -1,17 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import type { AppSettings } from '../../src/shared/contract';
 import {
+  PROVIDER_ICON_ASSET_URI_PREFIX,
+  PROVIDER_ICON_IMAGE_MAX_BYTES,
   buildProviderInfoFromSettings,
   buildRuntimeModelOptions,
+  estimateProviderIconImageBytes,
+  getProviderIconAssetFilename,
+  getProviderIconPresets,
   getProviderRuntimeModels,
   groupRuntimeModelOptionsByProvider,
   hasConfiguredDefaultRuntimeModel,
   hasConfiguredRuntimeModels,
   inferModelCapabilities,
+  isProviderIconAssetRef,
+  isProviderImageIcon,
+  normalizeProviderIcon,
+  resolveRuntimeProviderBillingMode,
+  validateProviderIcon,
 } from '../../src/shared/modelRuntime';
 import { getModelDisplayLabel, getProviderInfo, PROVIDER_MODELS_MAP } from '../../src/shared/constants';
 
 describe('modelRuntime', () => {
+  const tinyPngIcon = 'data:image/png;base64,aGVsbG8=';
+
   it('infers useful default capabilities from discovered model ids', () => {
     expect(inferModelCapabilities('mimo-v2.5-pro-1m')).toEqual(
       expect.arrayContaining(['general', 'longContext'])
@@ -197,7 +209,12 @@ describe('modelRuntime', () => {
 
     expect(hasConfiguredRuntimeModels(settings)).toBe(true);
     expect(hasConfiguredDefaultRuntimeModel(settings)).toBe(true);
-    expect(buildRuntimeModelOptions(settings).map((option) => option.model)).toContain('gpt-5.5');
+    expect(buildRuntimeModelOptions(settings)).toContainEqual(expect.objectContaining({
+      model: 'gpt-5.5',
+      providerProtocol: 'openai',
+      providerTransportLabel: 'OpenAI-compatible',
+      providerEndpoint: 'https://relay.example.com/openai',
+    }));
   });
 
   it('requires the active default provider to be configured before send', () => {
@@ -297,6 +314,9 @@ describe('modelRuntime', () => {
         providerGroup: 'claude',
         providerGroupLabel: 'Anthropic Claude',
         providerSourceLabel: 'CommonStack',
+        providerProtocol: 'openai',
+        providerTransportLabel: 'OpenAI-compatible',
+        providerEndpoint: 'https://commonstack.example/v1',
         model: 'anthropic/claude-opus-4-8',
       }),
     ]);
@@ -477,6 +497,9 @@ describe('modelRuntime', () => {
         providerGroup: 'claude',
         providerGroupLabel: 'Claude',
         providerSourceLabel: 'Relay',
+        providerProtocol: 'openai',
+        providerTransportLabel: 'OpenAI-compatible',
+        providerEndpoint: 'https://relay.example.com/v1',
         model: 'anthropic/claude-opus-4-8',
         label: 'Claude Opus 4 8',
         providerLabel: 'Relay',
@@ -501,14 +524,160 @@ describe('modelRuntime', () => {
       expect.objectContaining({
         provider: 'claude',
         providerLabel: 'Claude',
+        providerSourceLabel: 'Relay',
+        providerProtocol: 'openai',
+        providerTransportLabel: 'OpenAI-compatible',
+        providerEndpoint: 'https://relay.example.com/v1',
         options: [
           expect.objectContaining({
             provider: 'custom-claude-relay',
             providerSourceLabel: 'Relay',
+            providerProtocol: 'openai',
+            providerTransportLabel: 'OpenAI-compatible',
+            providerEndpoint: 'https://relay.example.com/v1',
             model: 'anthropic/claude-opus-4-8',
           }),
         ],
       }),
+    ]);
+  });
+
+  it('carries provider icon and favorite state into switcher groups', () => {
+    const groups = groupRuntimeModelOptionsByProvider([
+      { provider: 'deepseek', model: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', providerLabel: 'DeepSeek', features: [] },
+      {
+        provider: 'moonshot',
+        model: 'kimi-k2.5',
+        label: 'Kimi K2.5',
+        providerLabel: 'Kimi',
+        providerIcon: 'KM',
+        providerFavorite: true,
+        features: [],
+      },
+    ]);
+
+    expect(groups[0]).toMatchObject({
+      provider: 'moonshot',
+      providerIcon: 'KM',
+      providerFavorite: true,
+      options: [expect.objectContaining({ providerFavorite: true, providerIcon: 'KM' })],
+    });
+  });
+
+  it('carries provider billing mode into switcher options and groups', () => {
+    const settings = {
+      models: {
+        default: 'moonshot',
+        defaultProvider: 'moonshot',
+        providers: {
+          moonshot: {
+            enabled: true,
+            apiKeyConfigured: true,
+            billingMode: 'plan',
+          },
+          'custom-payg-relay': {
+            enabled: true,
+            apiKeyConfigured: true,
+            billingMode: 'payg',
+            displayName: 'Payg Relay',
+            model: 'gpt-5.4-mini',
+            models: {
+              'gpt-5.4-mini': { enabled: true, label: 'GPT 5.4 mini' },
+            },
+          },
+        },
+      },
+    } as AppSettings;
+
+    const options = buildRuntimeModelOptions(settings, ['moonshot']);
+    expect(options).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        provider: 'moonshot',
+        providerBillingMode: 'plan',
+      }),
+      expect.objectContaining({
+        provider: 'custom-payg-relay',
+        providerBillingMode: 'payg',
+      }),
+    ]));
+
+    const groups = groupRuntimeModelOptionsByProvider(options);
+    expect(groups).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        provider: 'moonshot',
+        providerBillingMode: 'plan',
+      }),
+      expect.objectContaining({
+        provider: 'openai',
+        providerBillingMode: 'payg',
+        providerSourceLabel: 'Payg Relay',
+      }),
+    ]));
+  });
+
+  it('defaults dynamic custom provider billing to unknown for conservative routing copy', () => {
+    expect(resolveRuntimeProviderBillingMode('custom-commonstack')).toBe('unknown');
+    expect(resolveRuntimeProviderBillingMode('deepseek')).toBe('payg');
+  });
+
+  it('keeps provider image data URL icons while rejecting unsupported data URLs', () => {
+    expect(isProviderImageIcon(tinyPngIcon)).toBe(true);
+    expect(isProviderImageIcon(`${PROVIDER_ICON_ASSET_URI_PREFIX}openai-abcd1234.png`)).toBe(true);
+    expect(normalizeProviderIcon(tinyPngIcon)).toBe(tinyPngIcon);
+    expect(normalizeProviderIcon(`${PROVIDER_ICON_ASSET_URI_PREFIX}openai-abcd1234.png`)).toBe(`${PROVIDER_ICON_ASSET_URI_PREFIX}openai-abcd1234.png`);
+    expect(estimateProviderIconImageBytes(tinyPngIcon)).toBe(5);
+    expect(normalizeProviderIcon('data:text/html;base64,PGgxPk5vPC9oMT4=')).toBeUndefined();
+    expect(estimateProviderIconImageBytes('data:text/html;base64,PGgxPk5vPC9oMT4=')).toBeUndefined();
+    expect(normalizeProviderIcon('GPT')).toBe('GP');
+    expect(estimateProviderIconImageBytes('GPT')).toBeUndefined();
+  });
+
+  it('explains provider icon validation boundaries for text, unsupported data URLs, and oversized images', () => {
+    expect(validateProviderIcon('GPT')).toEqual({
+      valid: true,
+      kind: 'text',
+      normalized: 'GP',
+      truncated: true,
+    });
+    expect(validateProviderIcon('data:text/html;base64,PGgxPk5vPC9oMT4=')).toEqual({
+      valid: false,
+      kind: 'invalid',
+      reason: 'unsupported-data-url',
+    });
+
+    const oversizedIcon = `data:image/png;base64,${'a'.repeat(Math.ceil((PROVIDER_ICON_IMAGE_MAX_BYTES + 1) * 4 / 3))}`;
+    expect(validateProviderIcon(oversizedIcon)).toMatchObject({
+      valid: false,
+      kind: 'invalid',
+      reason: 'image-too-large',
+    });
+    expect(normalizeProviderIcon(oversizedIcon)).toBeUndefined();
+
+    expect(validateProviderIcon(`${PROVIDER_ICON_ASSET_URI_PREFIX}openai-abcd1234.png`)).toEqual({
+      valid: true,
+      kind: 'asset',
+      normalized: `${PROVIDER_ICON_ASSET_URI_PREFIX}openai-abcd1234.png`,
+      filename: 'openai-abcd1234.png',
+    });
+    expect(isProviderIconAssetRef(`${PROVIDER_ICON_ASSET_URI_PREFIX}openai-abcd1234.png`)).toBe(true);
+    expect(getProviderIconAssetFilename(`${PROVIDER_ICON_ASSET_URI_PREFIX}openai-abcd1234.png`)).toBe('openai-abcd1234.png');
+    expect(validateProviderIcon(`${PROVIDER_ICON_ASSET_URI_PREFIX}../secret.png`)).toEqual({
+      valid: false,
+      kind: 'invalid',
+      reason: 'unsupported-asset-ref',
+    });
+  });
+
+  it('offers built-in provider icon presets and normalizes them to visible short marks', () => {
+    expect(getProviderIconPresets('moonshot')).toEqual([
+      { icon: 'KM', label: 'Kimi' },
+      { icon: 'MS', label: 'Moonshot' },
+    ]);
+
+    expect(getProviderIconPresets('custom-relay')).toEqual([
+      { icon: 'CU', label: 'Custom' },
+      { icon: 'AP', label: 'API' },
+      { icon: 'AI', label: 'AI' },
     ]);
   });
 });

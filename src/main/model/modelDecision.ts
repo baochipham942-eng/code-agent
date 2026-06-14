@@ -9,15 +9,32 @@
 import { createLogger } from '../services/infra/logger';
 import type { ModelConfig, ModelProvider } from '../../shared/contract';
 import type { ModelProviderSettings } from '../../shared/contract/settings';
-import type { BillingMode, ModelDecision, ModelDecisionReason } from '../../shared/contract/modelDecision';
+import type {
+  BillingMode,
+  ModelCapabilityNeed,
+  ModelCostPolicy,
+  ModelDecision,
+  ModelDecisionReason,
+  ModelProviderHealthSnapshot,
+  ModelProviderIdentity,
+  ModelSpeedPolicy,
+  ModelTaskClass,
+  ModelToolPolicy,
+} from '../../shared/contract/modelDecision';
 import type { ModelMessage } from './types';
 import { DEFAULT_MODELS } from '../../shared/constants';
-import { isDynamicCustomProviderId } from '../../shared/modelRuntime';
+import {
+  formatProviderProtocolLabel,
+  isDynamicCustomProviderId,
+  resolveProviderProtocol,
+} from '../../shared/modelRuntime';
 import { getAdaptiveRouter } from './adaptiveRouter';
+import { getProviderHealthMonitor } from './providerHealthMonitor';
 
 const logger = createLogger('ModelDecision');
 
 export type { BillingMode, ModelDecision, ModelDecisionReason } from '../../shared/contract/modelDecision';
+export type ModelDecisionProviderSettings = Pick<ModelProviderSettings, 'enabled' | 'billingMode' | 'displayName' | 'baseUrl' | 'protocol'>;
 
 export interface ModelDecisionInput {
   /** 请求的模型配置（会话默认或 override） */
@@ -30,6 +47,8 @@ export interface ModelDecisionInput {
   subagentRole?: string;
   /** 默认模型所属 provider 的计费方式（批 2 接 settings；缺省 payg 保持现有行为） */
   billingMode?: BillingMode;
+  /** provider 身份配置切片，用于会话页解释来源、协议和 endpoint */
+  providerSettings?: Record<string, ModelDecisionProviderSettings>;
 }
 
 export interface ModelDecisionResult {
@@ -44,6 +63,157 @@ const FREE_MODEL = {
   provider: 'zhipu' as ModelProvider,
   model: DEFAULT_MODELS.quick,
 };
+
+function extractMessageText(message: ModelMessage): string {
+  if (typeof message.content === 'string') {
+    return message.content;
+  }
+
+  return message.content
+    .map((part) => {
+      if (part.type === 'text') return part.text ?? '';
+      if (part.type === 'compaction') return part.compaction ?? '';
+      return '';
+    })
+    .join('\n');
+}
+
+function hasImageContent(message: ModelMessage): boolean {
+  return Array.isArray(message.content) && message.content.some((part) => part.type === 'image');
+}
+
+function detectCapabilityNeeds(messages: ModelMessage[]): ModelCapabilityNeed[] {
+  const needs = new Set<ModelCapabilityNeed>();
+  const text = messages.map(extractMessageText).join('\n').toLowerCase();
+
+  if (messages.some(hasImageContent)) {
+    needs.add('vision');
+  }
+
+  if (messages.some((message) => (message.toolCalls?.length ?? 0) > 0 || Boolean(message.toolCallId || message.toolCallText))) {
+    needs.add('tool-use');
+  }
+
+  if (/```|重构|修复|实现|代码|测试|函数|组件|\b(hook|api|repo|typescript|javascript|python|bug|diff)\b/.test(text)) {
+    needs.add('code');
+  }
+
+  if (/搜索|查找|联网|最新|官网|release note|news|price|weather|search|browse|web/.test(text)) {
+    needs.add('search');
+  }
+
+  if (/artifact|图表|表格|文档|报告|ppt|excel|dashboard|生成文件|导出/.test(text)) {
+    needs.add('artifact');
+  }
+
+  if (/长上下文|大文件|整个项目|全仓|多文件|大量文件|long context|large context/.test(text)) {
+    needs.add('long-context');
+  }
+
+  return Array.from(needs);
+}
+
+function inferTaskClass(needs: ModelCapabilityNeed[], complexityLevel?: string): ModelTaskClass {
+  if (needs.includes('vision')) return 'vision';
+  if (needs.includes('artifact')) return 'artifact';
+  if (needs.includes('long-context')) return 'long-context';
+  if (needs.includes('code')) return 'coding';
+  if (needs.includes('search')) return 'search';
+  if (needs.includes('tool-use')) return 'multi-tool';
+  if (complexityLevel === 'simple') return 'simple';
+  return 'unknown';
+}
+
+function resolveCostPolicy(
+  reason: ModelDecisionReason,
+  billingMode: BillingMode,
+  adaptiveEnabled: boolean,
+): ModelCostPolicy {
+  if (reason === 'simple-task-free') return 'save-cost';
+  if (reason === 'billing-gate-skip') {
+    return billingMode === 'unknown' ? 'unknown-conservative' : 'plan-no-savings';
+  }
+  if (reason === 'user-selected' && !adaptiveEnabled) return 'user-locked';
+  return 'neutral';
+}
+
+function resolveSpeedPolicy(
+  reason: ModelDecisionReason,
+  providerHealthSnapshot: ModelProviderHealthSnapshot,
+): ModelSpeedPolicy {
+  if (reason === 'simple-task-free') return 'fast-path';
+  if (reason === 'fallback-availability') return 'fallback-recovery';
+  if (
+    providerHealthSnapshot.status === 'degraded'
+    || providerHealthSnapshot.status === 'unavailable'
+    || providerHealthSnapshot.status === 'recovering'
+  ) {
+    return 'provider-degraded';
+  }
+  return 'normal';
+}
+
+function resolveToolPolicy(needs: ModelCapabilityNeed[]): ModelToolPolicy | undefined {
+  return needs.length > 0 ? 'runtime-checked' : undefined;
+}
+
+function buildStrategySummary(params: {
+  reason: ModelDecisionReason;
+  billingMode: BillingMode;
+  role: string | null;
+  adaptiveEnabled: boolean;
+  taskClass: ModelTaskClass;
+}): string {
+  const { reason, billingMode, role, adaptiveEnabled, taskClass } = params;
+  switch (reason) {
+    case 'role-tier':
+      return `按 ${role ?? 'subagent'} 角色档位选择主任务模型。`;
+    case 'simple-task-free':
+      return '识别为简单任务，按量计费下切到快模型降低成本和延迟。';
+    case 'billing-gate-skip':
+      if (billingMode === 'unknown') {
+        return '识别为简单任务，但 provider 计费方式未知，保守沿用主任务模型。';
+      }
+      return '识别为简单任务，但当前计费方式切换快模型没有实际节省，沿用主任务模型。';
+    case 'capability-vision':
+      return '识别到视觉输入，选择具备视觉能力的主任务模型。';
+    case 'fallback-availability':
+      return '原模型不可用，切到可用模型完成当前任务。';
+    case 'user-selected':
+    default:
+      if (!adaptiveEnabled) {
+        return '使用用户选定的主任务模型，未做自动切换。';
+      }
+      if (taskClass !== 'simple' && taskClass !== 'unknown') {
+        return '当前任务需要更完整的能力，沿用主任务模型保证输出质量。';
+      }
+      return '当前轮沿用主任务模型。';
+  }
+}
+
+function buildProviderHealthSnapshot(provider: string): ModelProviderHealthSnapshot {
+  const health = getProviderHealthMonitor().getHealth(provider);
+  const sampledAt = Date.now();
+  if (!health) {
+    return {
+      provider,
+      status: 'unknown',
+      sampledAt,
+    };
+  }
+
+  return {
+    provider: health.provider,
+    status: health.status,
+    sampledAt,
+    latencyP50: health.latencyP50,
+    latencyP95: health.latencyP95,
+    errorRate: health.errorRate,
+    lastSuccessAt: health.lastSuccessAt,
+    lastErrorAt: health.lastErrorAt,
+    consecutiveErrors: health.consecutiveErrors,
+  };
+}
 
 /**
  * 判定 provider 的计费方式（ADR-019 决策 4 + 6.2）。
@@ -60,6 +230,29 @@ export function resolveProviderBillingMode(
   const configured = providers?.[provider]?.billingMode;
   if (configured) return configured;
   return isDynamicCustomProviderId(provider) ? 'unknown' : 'payg';
+}
+
+export function buildModelProviderIdentity(
+  provider: string,
+  providers: Record<string, ModelDecisionProviderSettings> | undefined,
+): ModelProviderIdentity | undefined {
+  const providerConfig = providers?.[provider];
+  const endpoint = providerConfig?.baseUrl?.trim();
+  const displayName = providerConfig?.displayName?.trim();
+  const isCustomProvider = provider === 'custom' || isDynamicCustomProviderId(provider);
+  const shouldExposeIdentity = isCustomProvider || Boolean(endpoint) || Boolean(displayName && displayName !== provider);
+  if (!shouldExposeIdentity) return undefined;
+
+  const protocol = resolveProviderProtocol(provider, providerConfig);
+  const sourceLabel = isCustomProvider ? displayName || provider : undefined;
+  return {
+    provider,
+    ...(displayName ? { displayName } : {}),
+    ...(sourceLabel ? { sourceLabel } : {}),
+    protocol,
+    transportLabel: formatProviderProtocolLabel(protocol),
+    ...(endpoint ? { endpoint } : {}),
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -138,6 +331,9 @@ export function resolveTierModelConfig(
 export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionResult {
   const { requestedConfig, messages, context, subagentRole } = input;
   const billingMode: BillingMode = input.billingMode ?? 'payg';
+  const capabilityNeeds = detectCapabilityNeeds(messages);
+  const toolPolicy = resolveToolPolicy(capabilityNeeds);
+  const adaptiveEnabled = requestedConfig.adaptive === true;
 
   const base: Omit<ModelDecision, 'reason' | 'resolvedProvider' | 'resolvedModel'> = {
     requestedProvider: requestedConfig.provider,
@@ -146,17 +342,43 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
     billingMode,
     fallbackFrom: null,
   };
+  const buildDecision = (
+    reason: ModelDecisionReason,
+    resolvedProvider: string,
+    resolvedModel: string,
+    complexity?: { level: string; score: number },
+  ): ModelDecision => {
+    const taskClass = inferTaskClass(capabilityNeeds, complexity?.level);
+    const providerHealthSnapshot = buildProviderHealthSnapshot(resolvedProvider);
+    const providerIdentity = buildModelProviderIdentity(resolvedProvider, input.providerSettings);
+    return {
+      ...base,
+      resolvedProvider,
+      resolvedModel,
+      reason,
+      strategySummary: buildStrategySummary({
+        reason,
+        billingMode,
+        role: base.role,
+        adaptiveEnabled,
+        taskClass,
+      }),
+      taskClass,
+      costPolicy: resolveCostPolicy(reason, billingMode, adaptiveEnabled),
+      speedPolicy: resolveSpeedPolicy(reason, providerHealthSnapshot),
+      providerHealthSnapshot,
+      ...(providerIdentity ? { providerIdentity } : {}),
+      ...(complexity ? { complexityScore: complexity.score } : {}),
+      ...(toolPolicy ? { toolPolicy } : {}),
+      ...(capabilityNeeds.length > 0 ? { capabilityNeeds } : {}),
+    };
+  };
 
   // ---- 1. subagent 路径：剥离 adaptive，角色分层即最终决策 ----
   if (context === 'subagent') {
     return {
       config: { ...requestedConfig, adaptive: false },
-      decision: {
-        ...base,
-        resolvedProvider: requestedConfig.provider,
-        resolvedModel: requestedConfig.model,
-        reason: 'role-tier',
-      },
+      decision: buildDecision('role-tier', requestedConfig.provider, requestedConfig.model),
     };
   }
 
@@ -164,12 +386,7 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
   if (requestedConfig.adaptive !== true) {
     return {
       config: requestedConfig,
-      decision: {
-        ...base,
-        resolvedProvider: requestedConfig.provider,
-        resolvedModel: requestedConfig.model,
-        reason: 'user-selected',
-      },
+      decision: buildDecision('user-selected', requestedConfig.provider, requestedConfig.model),
     };
   }
 
@@ -184,35 +401,20 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
       logger.info(`[ModelDecision] simple task but billing=${billingMode}, skip free routing`);
       return {
         config: requestedConfig,
-        decision: {
-          ...base,
-          resolvedProvider: requestedConfig.provider,
-          resolvedModel: requestedConfig.model,
-          reason: 'billing-gate-skip',
-        },
+        decision: buildDecision('billing-gate-skip', requestedConfig.provider, requestedConfig.model, complexity),
       };
     }
 
     logger.info(`[ModelDecision] simple task → ${FREE_MODEL.provider}/${FREE_MODEL.model} (score=${complexity.score})`);
     return {
       config: { ...requestedConfig, provider: FREE_MODEL.provider, model: FREE_MODEL.model },
-      decision: {
-        ...base,
-        resolvedProvider: FREE_MODEL.provider,
-        resolvedModel: FREE_MODEL.model,
-        reason: 'simple-task-free',
-      },
+      decision: buildDecision('simple-task-free', FREE_MODEL.provider, FREE_MODEL.model, complexity),
     };
   }
 
   // ---- 4. 其余情况：保持用户指定 ----
   return {
     config: requestedConfig,
-    decision: {
-      ...base,
-      resolvedProvider: requestedConfig.provider,
-      resolvedModel: requestedConfig.model,
-      reason: 'user-selected',
-    },
+    decision: buildDecision('user-selected', requestedConfig.provider, requestedConfig.model, complexity),
   };
 }

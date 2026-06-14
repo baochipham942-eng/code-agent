@@ -170,6 +170,7 @@ export class MessageProcessor {
       effortLevel: this.ctx.effortLevel,
       inputTokens: response.usage?.inputTokens,
       outputTokens: response.usage?.outputTokens,
+      modelDecision: response.runtimeDiagnostics?.modelDecision,
       contentParts: response.contentParts?.map((part) =>
         part.type === 'text'
           ? { type: 'text' as const, text: this.contextAssembly.stripInternalFormatMimicry(part.text) }
@@ -761,6 +762,7 @@ export class MessageProcessor {
       effortLevel: this.ctx.effortLevel,
       inputTokens: response.usage?.inputTokens,
       outputTokens: response.usage?.outputTokens,
+      modelDecision: response.runtimeDiagnostics?.modelDecision,
       contentParts: response.contentParts?.map(p =>
         p.type === 'text' ? { type: 'text' as const, text: this.contextAssembly.stripInternalFormatMimicry(p.text) } : p
       ),

@@ -6,15 +6,16 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { AlertTriangle, Image, FileText, Clock3, CornerDownRight, X, UserPlus } from 'lucide-react';
+import { Image, FileText, Clock3, CornerDownRight, X, UserPlus } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
+import type { AppSettings } from '@shared/contract/settings';
 import type {
   ComposerAgentSelection,
   ComposerPromptCommandSelection,
   ConversationEnvelope,
   RuntimeInputMode,
 } from '@shared/contract/conversationEnvelope';
-import { getModelDisplayLabel, MODEL_FEATURES, UI } from '@shared/constants';
+import { getModelCapabilities, getModelDisplayLabel, getProviderDisplayName, UI } from '@shared/constants';
 
 import { InputArea, InputAreaRef } from './InputArea';
 import { InputAddMenu } from './InputAddMenu';
@@ -60,9 +61,12 @@ import {
   MODEL_OVERRIDE_CHANGE_EVENT,
   type ModelOverrideChangeDetail,
 } from '../../../StatusBar/ModelSwitcher';
+import { buildRuntimeModelOptions, isDynamicCustomProviderId } from '@shared/modelRuntime';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
+import { trackRenderer } from '../../../../observability/posthogRenderer';
+import { POSTHOG_EVENTS } from '@shared/observability/posthog-events';
 import {
   goalComposerDraftToParsed,
   parseGoalCommand,
@@ -109,6 +113,15 @@ import {
   removeTrailingSlashToken,
 } from './slashPickerModel';
 import { AgentChip } from './AgentChip';
+import {
+  applyModelStrategyRecommendationAction,
+  buildModelStrategyRecommendationFeedback,
+  buildModelStrategyRecommendation,
+  type ModelStrategyCandidate,
+  type ModelStrategyRecommendationFeedbackEvent,
+  type ModelStrategyProviderHealthSnapshot,
+} from './modelStrategyRecommendation';
+import { ModelStrategyRecommendationStrip } from './ModelStrategyRecommendationStrip';
 
 // ============================================================================
 // 类型定义
@@ -165,7 +178,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [isFocused, setIsFocused] = useState(false);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   // 会话作用域：currentSessionId / engine 类型 / 切换会话时清空草稿
-  const { currentSessionId, sessionEngineKind } = useChatInputSessionScope(setValue, setAttachments);
+  const { currentSessionId, sessionEngineKind, sessionEngineFailure } = useChatInputSessionScope(setValue, setAttachments);
   const pendingAppshot = useAppshotsStore((s) =>
     s.pendingSessionId === currentSessionId ? s.pending : null
   );
@@ -181,6 +194,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [selectedAgentMentionIndex, setSelectedAgentMentionIndex] = useState(0);
   const [selectedAgentCommandIndex, setSelectedAgentCommandIndex] = useState(0);
   const [dismissedAgentAutocompleteValue, setDismissedAgentAutocompleteValue] = useState<string | null>(null);
+  const [providerHealthMap, setProviderHealthMap] = useState<Record<string, ModelStrategyProviderHealthSnapshot>>({});
   const [comboSuggestion, setComboSuggestion] = useState<{
     sessionId: string;
     suggestedName: string;
@@ -233,6 +247,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const activeAgentId = useAppStore((state) => state.activeAgentId);
   const setActiveAgentId = useAppStore((state) => state.setActiveAgentId);
   const createSession = useSessionStore((state) => state.createSession);
+  const updateSessionEngine = useSessionStore((state) => state.updateSessionEngine);
   const hasMessages = useSessionStore((state) => state.messages.length > 0);
   const swarmAgents = useSwarmStore((state) => state.agents);
   const agentMentionAutocomplete = useMemo(
@@ -1137,6 +1152,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   const modelConfig = useAppStore((s) => s.modelConfig);
   const [sessionModelOverride, setSessionModelOverride] = useState<ModelOverrideChangeDetail['override']>(null);
+  const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
+  const [dismissedModelStrategyKey, setDismissedModelStrategyKey] = useState<string | null>(null);
   const sessionCost = useStatusStore((s) => s.sessionCost);
   const statusStreaming = useStatusStore((s) => s.isStreaming);
 
@@ -1183,13 +1200,142 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const hasImageAttachments = attachments.some((attachment) => (
     attachment.type === 'image' || attachment.category === 'image'
   ));
+  const effectiveProviderId = sessionModelOverride?.provider ?? modelConfig.provider;
   const effectiveModelId = sessionModelOverride?.model ?? modelConfig.model;
-  const effectiveModelFeatures = MODEL_FEATURES[effectiveModelId] ?? [];
-  const selectedModelHasVision =
-    effectiveModelFeatures.includes('vision') ||
-    (effectiveModelId === modelConfig.model && (modelConfig.capabilities ?? []).includes('vision'));
-  // 外部引擎（Codex/Claude CLI）自行处理图片，这条针对 Neo 原生模型的提示不适用
-  const showVisionModelNotice = hasImageAttachments && !selectedModelHasVision && sessionEngineKind === 'native';
+  useEffect(() => {
+    let cancelled = false;
+    const request = window.domainAPI?.invoke<AppSettings>(IPC_DOMAINS.SETTINGS, 'get', {});
+    if (!request) return;
+    request.then((res) => {
+      if (!cancelled && res?.success && res.data) {
+        setModelSettings(res.data);
+      }
+    })
+      .catch(() => {
+        if (!cancelled) setModelSettings(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    if (sessionEngineKind !== 'native') return;
+    let cancelled = false;
+    const request = window.domainAPI?.invoke<Record<string, ModelStrategyProviderHealthSnapshot>>(
+      IPC_DOMAINS.PROVIDER,
+      'getHealthStatus',
+      {},
+    );
+    if (!request) return;
+    request.then((res) => {
+      if (!cancelled && res?.success && res.data) {
+        setProviderHealthMap(res.data);
+      }
+    })
+      .catch(() => {
+        if (!cancelled) setProviderHealthMap({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveProviderId, sessionEngineKind]);
+  const effectiveModelCapabilities = useMemo(() => {
+    const capabilities = new Set(getModelCapabilities(effectiveModelId));
+    if (effectiveModelId === modelConfig.model) {
+      for (const capability of modelConfig.capabilities ?? []) {
+        if (capability === 'vision') capabilities.add('vision');
+        if (capability === 'longContext') capabilities.add('long-context');
+      }
+    }
+    return Array.from(capabilities);
+  }, [effectiveModelId, modelConfig.capabilities, modelConfig.model]);
+  const modelStrategyCandidates = useMemo<ModelStrategyCandidate[]>(() => {
+    if (!modelSettings) return [];
+    return buildRuntimeModelOptions(modelSettings).map((option) => ({
+      provider: option.provider,
+      providerLabel: option.providerLabel,
+      model: option.model,
+      modelLabel: option.label,
+      capabilities: Array.from(new Set([
+        ...option.features,
+        ...getModelCapabilities(option.model),
+      ])),
+      providerHealth: providerHealthMap[option.provider],
+    }));
+  }, [modelSettings, providerHealthMap]);
+  const effectiveProviderBillingMode = useMemo(() => {
+    const configured = modelSettings?.models.providers?.[effectiveProviderId]?.billingMode;
+    if (configured) return configured;
+    return isDynamicCustomProviderId(effectiveProviderId) ? 'unknown' : 'payg';
+  }, [effectiveProviderId, modelSettings]);
+  const modelStrategyRecommendation = useMemo(() => buildModelStrategyRecommendation({
+    inputValue: value,
+    hasImageAttachments,
+    engineKind: sessionEngineKind,
+    modelLabel: getModelDisplayLabel(effectiveModelId),
+    modelCapabilities: effectiveModelCapabilities,
+    adaptiveEnabled: Boolean(sessionModelOverride?.adaptive || modelConfig.adaptive),
+    currentProvider: effectiveProviderId,
+    currentModel: effectiveModelId,
+    providerLabel: getProviderDisplayName(effectiveProviderId),
+    providerHealth: providerHealthMap[effectiveProviderId],
+    billingMode: effectiveProviderBillingMode,
+    externalEngineFailure: sessionEngineFailure,
+    candidates: modelStrategyCandidates,
+  }), [
+    effectiveModelCapabilities,
+    effectiveModelId,
+    effectiveProviderId,
+    effectiveProviderBillingMode,
+    hasImageAttachments,
+    modelStrategyCandidates,
+    modelConfig.adaptive,
+    providerHealthMap,
+    sessionEngineFailure,
+    sessionEngineKind,
+    sessionModelOverride?.adaptive,
+    value,
+  ]);
+  const visibleModelStrategyRecommendation =
+    modelStrategyRecommendation?.key === dismissedModelStrategyKey ? null : modelStrategyRecommendation;
+
+  const applyModelStrategyOverride = useCallback((override: ModelOverrideChangeDetail['override']) => {
+    setSessionModelOverride(override);
+    if (!currentSessionId) return;
+    window.dispatchEvent(new CustomEvent<ModelOverrideChangeDetail>(MODEL_OVERRIDE_CHANGE_EVENT, {
+      detail: { sessionId: currentSessionId, override },
+    }));
+  }, [currentSessionId]);
+
+  const recordModelStrategyFeedback = useCallback((feedback: ModelStrategyRecommendationFeedbackEvent) => {
+    trackRenderer(POSTHOG_EVENTS.MODEL_STRATEGY_RECOMMENDATION_FEEDBACK, { ...feedback });
+  }, []);
+
+  const handleApplyModelStrategyRecommendation = useCallback(async () => {
+    await applyModelStrategyRecommendationAction({
+      currentSessionId,
+      recommendation: visibleModelStrategyRecommendation,
+      currentProvider: effectiveProviderId,
+      currentModel: effectiveModelId,
+      switchModel: async (request) => {
+        const res = await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'switchModel', request);
+        return res as { success?: boolean; error?: { message?: string } } | undefined;
+      },
+      updateSessionEngine,
+      applyOverride: applyModelStrategyOverride,
+      dismiss: setDismissedModelStrategyKey,
+      recordFeedback: recordModelStrategyFeedback,
+      notifySuccess: toast.success,
+      notifyError: toast.error,
+    });
+  }, [applyModelStrategyOverride, currentSessionId, effectiveModelId, effectiveProviderId, recordModelStrategyFeedback, updateSessionEngine, visibleModelStrategyRecommendation]);
+
+  const handleDismissModelStrategyRecommendation = useCallback(() => {
+    if (!visibleModelStrategyRecommendation) return;
+    const feedback = buildModelStrategyRecommendationFeedback(visibleModelStrategyRecommendation, 'dismissed');
+    if (feedback) recordModelStrategyFeedback(feedback);
+    setDismissedModelStrategyKey(visibleModelStrategyRecommendation.key);
+  }, [recordModelStrategyFeedback, visibleModelStrategyRecommendation]);
 
   return (
     <div
@@ -1266,13 +1412,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           </div>
         )}
 
-        {showVisionModelNotice && (
-          <div className="mb-2 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-            <span className="min-w-0 truncate">
-              当前 {getModelDisplayLabel(effectiveModelId)} 不直接读图，图片会走视觉模型或图片分析工具。
-            </span>
-          </div>
+        {visibleModelStrategyRecommendation && (
+          <ModelStrategyRecommendationStrip
+            recommendation={visibleModelStrategyRecommendation}
+            onApply={handleApplyModelStrategyRecommendation}
+            onDismiss={handleDismissModelStrategyRecommendation}
+          />
         )}
 
         {/* 拖放提示 */}

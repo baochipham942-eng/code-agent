@@ -343,8 +343,8 @@ export const DEFAULT_TOKENIZER = 'cl100k_base' as const;
 // 与 UI 维度的 `ModelCapability` (shared/contract/model.ts, camelCase) 分离：
 // 这里的 ModelDomainCapability 是 kebab-case 标签，喂给 CapabilityRecommender
 // 做模型↔plugin 标签匹配用。`'tool'/'vision'/'reasoning'` 取自 MODEL_FEATURES
-// 的字面量值；`'long-context'` 不回填到 MODEL_FEATURES，运行时按
-// CONTEXT_WINDOWS > 100K 派生（避免双源不一致）。
+// 的字面量值；`'long-context'` 和 `'search'` 不回填到 MODEL_FEATURES，运行时按
+// 上下文窗口或模型 id 派生（避免双源不一致）。
 // ============================================================================
 
 /**
@@ -353,10 +353,14 @@ export const DEFAULT_TOKENIZER = 'cl100k_base' as const;
  * 与 UI 的 `ModelCapability` (camelCase, 'longContext' / 'fast' / 'search' 等)
  * 受众不同——后者是给用户看的 chip，前者是给 recommender 做语义匹配的标签。
  */
-export type ModelDomainCapability = 'tool' | 'vision' | 'reasoning' | 'long-context';
+export type ModelDomainCapability = 'tool' | 'vision' | 'reasoning' | 'long-context' | 'search';
 
 /** `'long-context'` 判定阈值 — context window 超过该值即视为长上下文。 */
 export const LONG_CONTEXT_THRESHOLD = 100_000;
+
+function modelIdLooksSearchCapable(modelId: string): boolean {
+  return /sonar|search|perplexity/i.test(modelId);
+}
 
 /**
  * 查询 model 的领域能力标签集合。
@@ -364,6 +368,7 @@ export const LONG_CONTEXT_THRESHOLD = 100_000;
  * 数据合成：
  * - `MODEL_FEATURES[modelId]` 的 `'tool'/'vision'/'reasoning'` 字面量直接采用
  * - `'long-context'` 按 `getContextWindow(modelId) > LONG_CONTEXT_THRESHOLD` 派生
+ * - `'search'` 按搜索特化 model id 派生
  *
  * 未知 model id 返回空数组（不抛错），由调用方决定 fallback。
  */
@@ -372,6 +377,9 @@ export function getModelCapabilities(modelId: string): ModelDomainCapability[] {
   const caps: ModelDomainCapability[] = [...features];
   if (getContextWindow(modelId) > LONG_CONTEXT_THRESHOLD) {
     caps.push('long-context');
+  }
+  if (modelIdLooksSearchCapable(modelId)) {
+    caps.push('search');
   }
   return caps;
 }
@@ -388,6 +396,9 @@ export function modelHasCapability(
 ): boolean {
   if (cap === 'long-context') {
     return getContextWindow(modelId) > LONG_CONTEXT_THRESHOLD;
+  }
+  if (cap === 'search') {
+    return modelIdLooksSearchCapable(modelId);
   }
   const features = MODEL_FEATURES[modelId];
   return features !== undefined && features.includes(cap);

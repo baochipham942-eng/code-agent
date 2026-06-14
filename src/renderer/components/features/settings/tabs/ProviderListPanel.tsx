@@ -7,11 +7,13 @@
 // ============================================================================
 
 import React, { useMemo, useState } from 'react';
-import { CheckCircle, ChevronDown, ChevronRight, Plus, Search, Stethoscope } from 'lucide-react';
+import { CheckCircle, ChevronDown, ChevronRight, Plus, Search, Star, Stethoscope } from 'lucide-react';
 import type { ModelProvider } from '@shared/contract';
+import { isProviderImageIcon } from '@shared/modelRuntime';
 import { Button, Input } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
 import { describeKeylessReadiness, type ProviderManagementRow } from './ModelSettings.helpers';
+import { useProviderIconImageSource } from '../../../../utils/providerIconAssets';
 
 interface ProviderListPanelProps {
   configuredRows: ProviderManagementRow[];
@@ -29,9 +31,29 @@ function matchRow(row: ProviderManagementRow, query: string): boolean {
   return (
     row.name.toLowerCase().includes(query) ||
     row.id.toLowerCase().includes(query) ||
+    (!isProviderImageIcon(row.icon) && (row.icon?.toLowerCase().includes(query) ?? false)) ||
     row.defaultModel.toLowerCase().includes(query)
   );
 }
+
+const ProviderMark: React.FC<{ row: ProviderManagementRow; size: 'sm' | 'md' }> = ({ row, size }) => {
+  const label = row.icon || row.name.slice(0, 1).toUpperCase();
+  const sizeClass = size === 'md' ? 'h-7 w-7 text-xs' : 'h-5 w-5 text-[10px]';
+  const imageIcon = isProviderImageIcon(row.icon);
+  const imageSource = useProviderIconImageSource(row.icon);
+  return (
+    <span className={`relative flex shrink-0 items-center justify-center overflow-hidden rounded-md border border-zinc-700 bg-zinc-800 font-semibold text-zinc-300 ${sizeClass}`}>
+      {imageIcon && imageSource ? (
+        <img src={imageSource} alt="" className="h-full w-full object-cover" />
+      ) : (
+        label
+      )}
+      {row.favorite && (
+        <Star className="absolute -right-1 -top-1 h-3 w-3 fill-amber-300 text-amber-300" />
+      )}
+    </span>
+  );
+};
 
 const KEYLESS_READINESS_TONE: Record<ReturnType<typeof describeKeylessReadiness>['state'], string> = {
   running: 'text-emerald-300',
@@ -75,9 +97,7 @@ const ConfiguredRow: React.FC<{
         : 'border-transparent hover:bg-zinc-800/60'
     }`}
   >
-    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-zinc-700 bg-zinc-800 text-xs font-semibold text-zinc-300">
-      {row.name.slice(0, 1).toUpperCase()}
-    </span>
+    <ProviderMark row={row} size="md" />
     <span className="min-w-0 flex-1">
       <span className="block truncate text-[13px] text-zinc-100">{row.name}</span>
       <span className="block truncate text-[11px] text-zinc-500">
@@ -107,9 +127,7 @@ const UnconfiguredRow: React.FC<{
         : 'border-transparent hover:bg-zinc-800/60'
     }`}
   >
-    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-zinc-700/70 bg-zinc-800/70 text-[10px] font-medium text-zinc-500">
-      {row.name.slice(0, 1).toUpperCase()}
-    </span>
+    <ProviderMark row={row} size="sm" />
     <span className="min-w-0 flex-1 truncate text-xs text-zinc-400">{row.name}</span>
     <span className={`shrink-0 text-[11px] ${selected ? 'text-blue-400' : 'text-zinc-600 group-hover:text-blue-400'}`}>
       添加 Key

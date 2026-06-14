@@ -24,6 +24,8 @@ import { getBackgroundTaskLedger } from '../../tasks/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
 import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
+import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
+import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
 
 const logger = createLogger('ClaudeCodeAdapter');
 
@@ -43,6 +45,7 @@ interface ClaudeParsedEvent {
   toolName?: string;
   status?: string;
   error?: string;
+  statusCode?: number;
   externalSessionId?: string;
 }
 
@@ -79,11 +82,15 @@ export class ClaudeCodeAdapter {
       '--verbose',
       ...(model ? [`--model ${model}`] : []),
       '--output-format stream-json',
+      '--input-format text',
       `--permission-mode ${permissionMode}`,
       '--setting-sources local',
       '--disable-slash-commands',
       '--tools Read,Glob,Grep,LS',
       '--allowedTools Read,Glob,Grep,LS',
+      '--strict-mcp-config',
+      '--include-partial-messages',
+      '--no-session-persistence',
       '<prompt:redacted>',
     ].join(' ');
     const timing = normalizeCodexCliRunTiming({
@@ -166,6 +173,8 @@ export class ClaudeCodeAdapter {
     let stderrText = '';
     let streamedText = '';
     let resultText = '';
+    let cliErrorText = '';
+    let cliErrorStatusCode: number | undefined;
     let externalSessionId: string | undefined;
     let spawnErrorMessage: string | undefined;
     let timeoutMessage: string | undefined;
@@ -250,6 +259,10 @@ export class ClaudeCodeAdapter {
         });
       }
       if (parsed.error) {
+        cliErrorText = parsed.error;
+        if (typeof parsed.statusCode === 'number') {
+          cliErrorStatusCode = parsed.statusCode;
+        }
         ledger.appendEvent({
           taskId,
           type: 'agent_engine.error',
@@ -332,7 +345,26 @@ export class ClaudeCodeAdapter {
     });
 
     if (failed) {
-      const message = timeoutMessage || spawnErrorMessage || stderrText.trim() || `Claude Code exited with code ${exitCode}`;
+      const message = timeoutMessage
+        || spawnErrorMessage
+        || cliErrorText
+        || stderrText.trim()
+        || finalText
+        || `Claude Code exited with code ${exitCode}`;
+      const failureDiagnostics = classifyAgentEngineFailure({
+        engine: 'claude_code',
+        message,
+        exitCode,
+        statusCode: cliErrorStatusCode,
+        occurredAt: completedAt,
+        timeout: Boolean(timeoutMessage),
+        spawnError: Boolean(spawnErrorMessage),
+      });
+      const failedSessionEngine = normalizeAgentEngineSession({
+        ...sessionEngine,
+        failure: failureDiagnostics,
+        updatedAt: completedAt,
+      });
       ledger.upsertTask({
         id: taskId,
         status: 'failed',
@@ -342,6 +374,7 @@ export class ClaudeCodeAdapter {
           message,
           exitCode: exitCode ?? undefined,
           category: 'agent_engine',
+          reason: failureDiagnostics.reason,
         },
       });
       ledger.appendEvent({
@@ -349,7 +382,7 @@ export class ClaudeCodeAdapter {
         type: 'agent_engine.failed',
         status: 'failed',
         message,
-        data: { exitCode, logPath },
+        data: { exitCode, logPath, failure: failureDiagnostics },
       });
       ledger.queueNotification({
         taskId,
@@ -357,15 +390,36 @@ export class ClaudeCodeAdapter {
         type: 'task_failed',
         title: 'Claude Code failed',
         message,
-        payload: { runId, logPath },
+        payload: { runId, logPath, failure: failureDiagnostics },
       });
       emit({
         type: 'error',
-        data: { message, code: 'CLAUDE_CODE_FAILED', details: { runId, logPath, exitCode } },
+        data: { message, code: 'CLAUDE_CODE_FAILED', suggestion: failureDiagnostics.suggestion, details: { runId, logPath, exitCode, failure: failureDiagnostics } },
+      });
+      const assistantMessage: Message = {
+        id: turnId,
+        role: 'assistant',
+        content: formatAgentEngineFailureContent(descriptor.label, failureDiagnostics, logPath),
+        timestamp: completedAt,
+        modelDecision: buildAgentEngineModelDecision(descriptor, model, completedAt, failureDiagnostics),
+        metadata: {
+          workbench: {
+            workingDirectory: cwd,
+          },
+        },
+      };
+      await sessionManager.addMessageToSession(request.sessionId, assistantMessage);
+      emit({
+        type: 'message',
+        data: assistantMessage,
+      });
+      emit({
+        type: 'turn_end',
+        data: { turnId },
       });
       await sessionManager.updateSession(request.sessionId, {
         status: 'error',
-        engine: sessionEngine,
+        engine: failedSessionEngine,
         updatedAt: completedAt,
       }, { allowEngineUpdate: true });
       emit({ type: 'agent_complete', data: null });
@@ -378,6 +432,7 @@ export class ClaudeCodeAdapter {
         logPath,
         exitCode,
         error: message,
+        failure: failureDiagnostics,
       };
     }
 
@@ -386,6 +441,7 @@ export class ClaudeCodeAdapter {
       role: 'assistant',
       content: finalText || 'Claude Code completed without text output.',
       timestamp: completedAt,
+      modelDecision: buildAgentEngineModelDecision(descriptor, model, completedAt),
       metadata: {
         workbench: {
           workingDirectory: cwd,
@@ -559,7 +615,19 @@ function extractClaudeEvent(event: Record<string, unknown>): ClaudeParsedEvent {
     : undefined;
   const toolName = firstString(payload.name, contentBlock?.name, extractToolName(content));
   const status = statusFromClaudeEvent(type, subtype, payload);
-  const error = firstString(payload.error, isRecord(payload.error) ? payload.error.message : undefined);
+  const statusCode = firstNumber(
+    payload.api_error_status,
+    event.api_error_status,
+    payload.statusCode,
+    event.statusCode,
+    isRecord(payload.error) ? payload.error.status : undefined,
+    isRecord(payload.error) ? payload.error.statusCode : undefined,
+  );
+  const error = firstString(
+    payload.error,
+    isRecord(payload.error) ? payload.error.message : undefined,
+    payload.is_error === true ? finalText : undefined,
+  );
   const externalSessionId = firstString(
     event.session_id,
     event.sessionId,
@@ -576,6 +644,7 @@ function extractClaudeEvent(event: Record<string, unknown>): ClaudeParsedEvent {
     ...(toolName ? { toolName } : {}),
     ...(status ? { status } : {}),
     ...(error ? { error } : {}),
+    ...(typeof statusCode === 'number' ? { statusCode } : {}),
     ...(externalSessionId ? { externalSessionId } : {}),
   };
 }
@@ -617,6 +686,18 @@ function extractToolName(content?: unknown[]): string | undefined {
 function firstString(...values: unknown[]): string | undefined {
   for (const value of values) {
     if (typeof value === 'string' && value.length > 0) return value;
+  }
+  return undefined;
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const parsed = typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+        ? Number(value)
+        : NaN;
+    if (Number.isFinite(parsed)) return parsed;
   }
   return undefined;
 }

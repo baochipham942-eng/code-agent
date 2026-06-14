@@ -441,7 +441,10 @@ const AssistantTextNode: React.FC<{
 
       {node.modelDecision && (
         <div className="mb-2 flex min-w-0">
-          <RouteTraceChip decision={node.modelDecision} />
+          <RouteTraceChip
+            decision={node.modelDecision}
+            defaultExpanded={Boolean(node.modelDecision.externalEngine?.failure)}
+          />
         </div>
       )}
 

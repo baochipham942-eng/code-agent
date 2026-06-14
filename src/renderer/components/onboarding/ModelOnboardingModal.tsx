@@ -121,7 +121,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
       }
 
       setStatus('saving');
-      setMessage(discoveredModels.length > 0 ? '正在保存默认模型...' : '正在保存内置推荐模型...');
+      setMessage(discoveredModels.length > 0 ? '正在保存主任务模型...' : '正在保存内置推荐模型...');
 
       const selection = buildOnboardingModelSelection({
         provider: selectedProvider,

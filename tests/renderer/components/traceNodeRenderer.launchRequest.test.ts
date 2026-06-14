@@ -187,6 +187,72 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('glm-4.5-flash');
   });
 
+  it('expands external engine failure details on assistant text', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(180_000);
+
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'assistant-engine-failure-1',
+          messageId: 'turn-engine-failure',
+          type: 'assistant_text',
+          content: 'Claude Code 认证失败。',
+          timestamp: 520,
+          modelDecision: {
+            turnId: 'turn-engine-failure',
+            requestedProvider: 'claude_code',
+            requestedModel: 'sonnet',
+            resolvedProvider: 'claude_code',
+            resolvedModel: 'sonnet',
+            reason: 'user-selected',
+            role: null,
+            billingMode: 'unknown',
+            fallbackFrom: null,
+            strategySummary: 'Claude Code 订阅链路失败，本轮未能完成请求。',
+            taskClass: 'coding',
+            costPolicy: 'user-locked',
+            speedPolicy: 'normal',
+            toolPolicy: 'runtime-checked',
+            externalEngine: {
+              kind: 'claude_code',
+              label: 'Claude Code',
+              model: 'sonnet',
+              installState: 'installed',
+              runtimeState: 'ready',
+              executable: true,
+              capabilities: ['execute', 'stream_events'],
+              reliability: {
+                cliStatus: 'available',
+                authState: 'not_checked',
+                quotaState: 'not_checked',
+                streamingMode: 'stream_json',
+                toolSupport: 'read_only_cli_tools',
+                transcriptMode: 'clean_stream_json',
+              },
+              failure: {
+                category: 'auth',
+                reason: 'auth_failed',
+                message: 'Failed to authenticate. API Error: 401',
+                suggestion: 'Claude Code 认证失败。请完成 Claude CLI 登录或检查订阅/API 凭据后重试。',
+                retryable: false,
+                occurredAt: 60_000,
+                statusCode: 401,
+                exitCode: 1,
+                reliability: { authState: 'needs_login' },
+              },
+            },
+          },
+        } satisfies TraceNode,
+      }),
+    );
+
+    expect(html).toContain('Claude Code 订阅链路失败');
+    expect(html).toContain('auth · auth_failed · 2 分钟前失败 · HTTP 401 · exit 1 · 需处理');
+    expect(html).toContain('Claude Code 认证失败。请完成 Claude CLI 登录或检查订阅/API 凭据后重试。');
+    vi.useRealTimers();
+  });
+
   it('renders model fallback banner inline', () => {
     const html = renderToStaticMarkup(
       React.createElement(TraceNodeRenderer, {
@@ -195,8 +261,40 @@ describe('TraceNodeRenderer launch request', () => {
           type: 'system',
           content: encodeModelFallbackNotice({
             reason: 'vision',
-            from: 'kimi-k2.5',
-            to: 'glm-4.5v',
+            from: 'moonshot/kimi-k2.5',
+            to: 'zhipu/glm-4.5v',
+            tried: [
+              {
+                provider: 'moonshot',
+                model: 'kimi-k2.5',
+                status: 'tried',
+                reason: 'missing_capability',
+                category: 'vision',
+              },
+              {
+                provider: 'zhipu',
+                model: 'glm-4.5v',
+                status: 'selected',
+                reason: 'capability_fallback_selected',
+                category: 'vision',
+              },
+            ],
+            skipped: [
+              {
+                provider: 'openai',
+                model: 'gpt-5.4-mini',
+                status: 'skipped',
+                reason: 'missing_api_key',
+                category: 'vision',
+              },
+            ],
+            toolPolicy: {
+              status: 'disabled',
+              reason: 'fallback_model_without_tool_support',
+              originalToolCount: 3,
+              effectiveToolCount: 0,
+              disabledToolNames: ['Read', 'Edit', 'Bash'],
+            },
           }),
           timestamp: 520,
           subtype: 'model_fallback',
@@ -207,6 +305,52 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('模型已降级');
     expect(html).toContain('kimi-k2.5');
     expect(html).toContain('glm-4.5v');
+    expect(html).toContain('已尝试');
+    expect(html).toContain('已跳过');
+    expect(html).toContain('已选用');
+    expect(html).toContain('gpt-5.4-mini');
+    expect(html).toContain('工具已关闭');
+    expect(html).toContain('3');
+  });
+
+  it('renders exhausted fallback traces inline', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'fallback-exhausted-1',
+          type: 'system',
+          content: encodeModelFallbackNotice({
+            reason: 'Moonshot API error: 503 service unavailable',
+            category: 'provider_unavailable',
+            from: 'zhipu/glm-4.7-flash',
+            to: '未切换',
+            tried: [
+              {
+                provider: 'zhipu',
+                model: 'glm-4.7-flash',
+                status: 'tried',
+                reason: 'adaptive_candidate_failed',
+                category: 'rate_limit',
+              },
+              {
+                provider: 'moonshot',
+                model: 'kimi-k2.5',
+                status: 'exhausted',
+                reason: 'main_task_model_failed',
+                category: 'provider_unavailable',
+              },
+            ],
+          }),
+          timestamp: 540,
+          subtype: 'model_fallback',
+        } satisfies TraceNode,
+      }),
+    );
+
+    expect(html).toContain('模型已降级');
+    expect(html).toContain('未切换');
+    expect(html).toContain('已耗尽');
+    expect(html).toContain('kimi-k2.5');
   });
 
   it('renders a prompt rewind action beside user prompts', () => {

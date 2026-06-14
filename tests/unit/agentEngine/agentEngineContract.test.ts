@@ -66,6 +66,60 @@ describe('Agent Engine contract', () => {
       updatedAt: 123,
     });
   });
+
+  it('preserves structured external engine failure diagnostics', () => {
+    expect(normalizeAgentEngineSession({
+      kind: 'claude_code',
+      failure: {
+        category: 'auth',
+        reason: 'auth_failed',
+        message: 'Failed to authenticate. API Error: 401',
+        suggestion: 'Claude Code 认证失败。请完成 Claude CLI 登录后重试。',
+        retryable: false,
+        occurredAt: 123456,
+        statusCode: 401,
+        exitCode: 1,
+        reliability: {
+          authState: 'needs_login',
+          quotaState: 'available',
+          cliStatus: 'available',
+          toolSupport: 'workspace_tools',
+        },
+      },
+    })).toMatchObject({
+      kind: 'claude_code',
+      failure: {
+        category: 'auth',
+        reason: 'auth_failed',
+        message: 'Failed to authenticate. API Error: 401',
+        suggestion: 'Claude Code 认证失败。请完成 Claude CLI 登录后重试。',
+        retryable: false,
+        occurredAt: 123456,
+        statusCode: 401,
+        exitCode: 1,
+        reliability: {
+          authState: 'needs_login',
+          quotaState: 'available',
+          cliStatus: 'available',
+        },
+      },
+    });
+  });
+
+  it('drops malformed external engine failure diagnostics', () => {
+    expect(normalizeAgentEngineSession({
+      kind: 'codex_cli',
+      failure: {
+        category: 'auth',
+        reason: '',
+        message: 'missing suggestion',
+      },
+    })).toEqual({
+      kind: 'codex_cli',
+      permissionProfile: 'read_only',
+      origin: 'manual',
+    });
+  });
 });
 
 describe('Agent Engine registry helpers', () => {

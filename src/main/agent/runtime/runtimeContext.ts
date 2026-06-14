@@ -10,6 +10,7 @@ import type {
 import type { StructuredOutputConfig } from '../structuredOutput';
 import type { EffortLevel, InteractionMode } from '../../../shared/contract/agent';
 import type { ModelConfig } from '../../../shared/contract/model';
+import type { ModelDecisionEventData } from '../../../shared/contract/modelDecision';
 import type { ToolExecutor } from '../../tools/toolExecutor';
 import type { ModelRouter } from '../../model/modelRouter';
 import type { CircuitBreaker } from '../toolExecution/circuitBreaker';
@@ -73,6 +74,7 @@ export interface RuntimeContext {
   compressionPipeline: CompressionPipeline;
   telemetryAdapter?: TelemetryAdapter;
   inferenceOptions?: InferenceOptions;
+  currentModelDecision?: ModelDecisionEventData;
   historyVisibility?: 'visible' | 'meta';
   deniedToolNames?: string[];
 

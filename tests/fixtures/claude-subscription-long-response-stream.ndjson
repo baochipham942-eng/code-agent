@@ -1,0 +1,8 @@
+Claude Code terminal footer should stay out of transcript
+{"type":"system","subtype":"init","session_id":"claude-session-long"}
+{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"ALMA_MODEL_"}},"session_id":"claude-session-long"}
+{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"STRATEGY_CLAUDE_"}},"session_id":"claude-session-long"}
+{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"SMOKE_OK long response reconstructed from partial chunks."}},"session_id":"claude-session-long"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ALMA_MODEL_STRATEGY_CLAUDE_SMOKE_OK long response reconstructed from partial chunks."}]},"session_id":"claude-session-long"}
+{"type":"result","subtype":"success","session_id":"claude-session-long"}
+tokens used: 9999

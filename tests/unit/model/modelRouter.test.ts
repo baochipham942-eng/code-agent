@@ -1372,6 +1372,7 @@ describe('ModelRouter', () => {
         content: 'fallback repair recovery',
         fallback: {
           category: 'provider_unavailable',
+          strategy: 'adaptive-provider-fallback',
           to: { provider: 'zhipu', model: 'glm-4.7-flash' },
         },
       });
@@ -1379,7 +1380,7 @@ describe('ModelRouter', () => {
       expect(zhipuProvider.inference).toHaveBeenCalledTimes(1);
       expect(broadcastToRendererMock).toHaveBeenCalledWith(
         'provider:fallback',
-        expect.objectContaining({ category: 'provider_unavailable' }),
+        expect.objectContaining({ category: 'provider_unavailable', strategy: 'adaptive-provider-fallback' }),
       );
     });
 
@@ -1418,6 +1419,7 @@ describe('ModelRouter', () => {
         content: 'fallback repair recovery',
         fallback: {
           category: 'timeout',
+          strategy: 'adaptive-provider-fallback',
           to: { provider: 'zhipu', model: 'glm-4.7-flash' },
         },
       });
@@ -1425,7 +1427,7 @@ describe('ModelRouter', () => {
       expect(zhipuProvider.inference).toHaveBeenCalledTimes(1);
       expect(broadcastToRendererMock).toHaveBeenCalledWith(
         'provider:fallback',
-        expect.objectContaining({ category: 'timeout' }),
+        expect.objectContaining({ category: 'timeout', strategy: 'adaptive-provider-fallback' }),
       );
     });
 
@@ -1547,12 +1549,32 @@ describe('ModelRouter', () => {
       expect(result.fallback).toMatchObject({
         category: 'quota',
         to: { provider: 'zhipu', model: 'glm-4.7-flash' },
+        tried: [
+          {
+            provider: 'xiaomi',
+            model: 'mimo-v2.5-pro',
+            status: 'tried',
+            reason: 'primary_failed',
+            category: 'quota',
+          },
+          {
+            provider: 'zhipu',
+            model: 'glm-4.7-flash',
+            status: 'selected',
+            reason: 'fallback_selected',
+            category: 'quota',
+          },
+        ],
       });
       expect(broadcastToRendererMock).toHaveBeenCalledWith(
         'provider:fallback',
         expect.objectContaining({
           category: 'quota',
           reason: expect.stringContaining('insufficient balance'),
+          tried: expect.arrayContaining([
+            expect.objectContaining({ provider: 'xiaomi', status: 'tried', reason: 'primary_failed' }),
+            expect.objectContaining({ provider: 'zhipu', status: 'selected', reason: 'fallback_selected' }),
+          ]),
         }),
       );
     });
@@ -1584,6 +1606,136 @@ describe('ModelRouter', () => {
       ).rejects.toThrow('insufficient balance');
 
       expect(zhipuProvider.inference).not.toHaveBeenCalled();
+      expect(broadcastToRendererMock).not.toHaveBeenCalled();
+    });
+
+    it('records unavailable fallback candidates as skipped before selecting the next provider', async () => {
+      healthMonitorMock.getHealth.mockImplementation((provider: string) =>
+        provider === 'zhipu'
+          ? {
+              provider: 'zhipu',
+              status: 'unavailable',
+              latencyP50: 0,
+              latencyP95: 0,
+              errorRate: 1,
+              lastSuccessAt: 0,
+              lastErrorAt: Date.now(),
+              consecutiveErrors: 5,
+            }
+          : null,
+      );
+      const primaryProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('Xiaomi API error: 402 - insufficient balance')),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'should skip', finishReason: 'stop' }),
+      } as any;
+      const openaiProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'openai fallback ok', finishReason: 'stop' }),
+      } as any;
+
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+      (router as any).providers.set('openai', openaiProvider);
+
+      const result = await router.inference(
+        [{ role: 'user', content: '生成一个 HTML 游戏' }],
+        [],
+        {
+          provider: 'xiaomi',
+          model: 'mimo-v2.5-pro',
+          apiKey: 'test-key',
+          maxTokens: 1000,
+          adaptive: true,
+        },
+        vi.fn(),
+      );
+
+      expect(result).toMatchObject({
+        type: 'text',
+        content: 'openai fallback ok',
+        fallback: {
+          strategy: 'adaptive-provider-fallback',
+          to: { provider: 'openai', model: 'gpt-5.4-mini' },
+          skipped: [
+            {
+              provider: 'zhipu',
+              model: 'glm-4.7-flash',
+              status: 'skipped',
+              reason: 'provider_unavailable',
+            },
+          ],
+        },
+      });
+      expect(zhipuProvider.inference).not.toHaveBeenCalled();
+      expect(openaiProvider.inference).toHaveBeenCalledTimes(1);
+      expect(broadcastToRendererMock).toHaveBeenCalledWith(
+        'provider:fallback',
+        expect.objectContaining({
+          strategy: 'adaptive-provider-fallback',
+          skipped: expect.arrayContaining([
+            expect.objectContaining({ provider: 'zhipu', status: 'skipped', reason: 'provider_unavailable' }),
+          ]),
+        }),
+      );
+    });
+
+    it('attaches exhausted fallback trace when every fallback candidate fails', async () => {
+      const primaryProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('Xiaomi API error: 402 - insufficient balance')),
+      } as any;
+      const zhipuProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('Zhipu API error: 503 service unavailable')),
+      } as any;
+      const openaiProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('OpenAI API error: 503 service unavailable')),
+      } as any;
+      const moonshotProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('Moonshot API error: 503 service unavailable')),
+      } as any;
+      const deepseekProvider = {
+        inference: vi.fn().mockRejectedValue(new Error('DeepSeek API error: 503 service unavailable')),
+      } as any;
+
+      (router as any).providers.set('xiaomi', primaryProvider);
+      (router as any).providers.set('zhipu', zhipuProvider);
+      (router as any).providers.set('openai', openaiProvider);
+      (router as any).providers.set('moonshot', moonshotProvider);
+      (router as any).providers.set('deepseek', deepseekProvider);
+
+      let thrown: unknown;
+      try {
+        await router.inference(
+          [{ role: 'user', content: '生成一个 HTML 游戏' }],
+          [],
+          {
+            provider: 'xiaomi',
+            model: 'mimo-v2.5-pro',
+            apiKey: 'test-key',
+            maxTokens: 1000,
+            adaptive: true,
+          },
+          vi.fn(),
+        );
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(Error);
+      expect((thrown as Error & { modelFallback?: unknown }).modelFallback).toMatchObject({
+        from: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+        to: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+        category: 'quota',
+        strategy: 'adaptive-provider-fallback',
+        tried: expect.arrayContaining([
+          expect.objectContaining({ provider: 'xiaomi', status: 'tried', reason: 'primary_failed' }),
+          expect.objectContaining({ provider: 'zhipu', status: 'tried', reason: 'fallback_failed' }),
+          expect.objectContaining({ provider: 'openai', status: 'tried', reason: 'fallback_failed' }),
+          expect.objectContaining({ provider: 'moonshot', status: 'tried', reason: 'fallback_failed' }),
+          expect.objectContaining({ provider: 'deepseek', status: 'tried', reason: 'fallback_failed' }),
+          expect.objectContaining({ provider: 'xiaomi', status: 'exhausted', reason: 'fallback_chain_exhausted' }),
+        ]),
+      });
       expect(broadcastToRendererMock).not.toHaveBeenCalled();
     });
 

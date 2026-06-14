@@ -9,6 +9,7 @@ import type { UserMessageProps } from './types';
 import { MessageContent } from './MessageContent';
 import { AttachmentDisplay } from './AttachmentPreview';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
+import { useSessionStore } from '../../../../stores/sessionStore';
 
 function formatChannelSource(message: UserMessageProps['message']): string | null {
   const channel = message.metadata?.channel;
@@ -25,6 +26,7 @@ function formatChannelSource(message: UserMessageProps['message']): string | nul
 }
 
 export const UserMessage: React.FC<UserMessageProps> = ({ message, onEdit }) => {
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
   // 用户可见正文剥掉 appshot 隐藏 XML（模型已通过该 XML 拿到窗口文本）
@@ -86,7 +88,10 @@ export const UserMessage: React.FC<UserMessageProps> = ({ message, onEdit }) => 
       {/* Attachments above text */}
       {message.attachments && message.attachments.length > 0 && (
         <div className="mb-2">
-          <AttachmentDisplay attachments={message.attachments} />
+          <AttachmentDisplay
+            attachments={message.attachments}
+            mediaContext={{ sessionId: currentSessionId || undefined, messageId: message.id }}
+          />
         </div>
       )}
 
@@ -126,7 +131,12 @@ export const UserMessage: React.FC<UserMessageProps> = ({ message, onEdit }) => 
             </div>
           ) : (
             <div className="text-zinc-200 leading-relaxed">
-              <MessageContent content={displayContent} isUser={true} />
+              <MessageContent
+                content={displayContent}
+                isUser={true}
+                messageId={message.id}
+                mediaContext={{ sessionId: currentSessionId || undefined, messageId: message.id }}
+              />
             </div>
           )}
         </div>

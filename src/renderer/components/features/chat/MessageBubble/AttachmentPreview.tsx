@@ -2,26 +2,26 @@
 // AttachmentPreview - Display attachments in messages
 // ============================================================================
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  AlertCircle,
+  Archive,
+  CheckCircle,
   ChevronDown,
   ChevronRight,
-  FolderSearch,
-  Image as ImageIcon,
-  File,
-  FileText,
-  FileCode,
   Database,
+  File,
+  FileCode,
+  FileText,
+  FolderSearch,
   Globe,
-  Archive,
+  Image as ImageIcon,
+  Loader2,
   Music,
   Presentation,
+  RotateCcw,
   Sheet,
   Video,
-  Loader2,
-  CheckCircle,
-  AlertCircle,
-  RotateCcw,
 } from 'lucide-react';
 import type { AttachmentDisplayProps, AttachmentIconConfig } from './types';
 import type {
@@ -32,15 +32,24 @@ import type {
 } from '@shared/contract';
 import type { ChannelAttachment, RetryChannelMediaAttachmentResult } from '@shared/contract/channel';
 import { IPC_CHANNELS } from '@shared/ipc';
+import {
+  buildAttachmentMediaAsset,
+  type SessionMediaAsset,
+  type SessionMediaContext,
+} from '@shared/utils/sessionMediaAssets';
 import ipcService from '../../../../services/ipcService';
 import { formatFileSize, FOLDER_SUMMARY_THRESHOLD, categoryLabels } from './utils';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { SpreadsheetBlock } from './SpreadsheetBlock';
 import { DocumentBlock } from './DocumentBlock';
+import {
+  getRenderableMediaSrc,
+  MediaAssetActionBar,
+  MediaAssetLightbox,
+} from './MediaAssetControls';
 
-// Get attachment icon config based on category
 function getAttachmentIconConfig(category: AttachmentCategory | undefined): AttachmentIconConfig {
-  const iconClass = "w-5 h-5 shrink-0";
+  const iconClass = 'w-5 h-5 shrink-0';
   switch (category) {
     case 'pdf':
       return { icon: <FileText className={iconClass} />, color: 'text-red-400', label: 'PDF' };
@@ -106,11 +115,7 @@ export function getAttachmentMediaState(attachment: MessageAttachment): {
   }
 }
 
-const AttachmentStateBadge: React.FC<{ attachment: MessageAttachment }> = ({ attachment }) => {
-  return <AttachmentStateBadgeInner attachment={attachment} />;
-};
-
-const AttachmentStateBadgeInner: React.FC<{
+const AttachmentStateBadge: React.FC<{
   attachment: MessageAttachment;
   onRetry?: () => void;
   retrying?: boolean;
@@ -205,14 +210,25 @@ function mergeRetriedAttachment(
   };
 }
 
-// Single attachment item
 const AttachmentItem: React.FC<{
   attachment: MessageAttachment;
-  onImageClick: (src: string) => void;
-}> = ({ attachment, onImageClick }) => {
+  mediaContext?: SessionMediaContext;
+  onMediaOpen: (asset: SessionMediaAsset) => void;
+}> = ({ attachment, mediaContext, onMediaOpen }) => {
   const [displayAttachment, setDisplayAttachment] = useState(attachment);
   const [retrying, setRetrying] = useState(false);
   useEffect(() => setDisplayAttachment(attachment), [attachment]);
+
+  const category = displayAttachment.category || (displayAttachment.type === 'image' ? 'image' : 'other');
+  const presentationSummary = useMemo(
+    () => parseJson<PresentationSummary>(displayAttachment.pptJson),
+    [displayAttachment.pptJson],
+  );
+  const archiveManifest = displayAttachment.archiveManifest as ArchiveManifest | undefined;
+  const mediaAsset = useMemo(
+    () => buildAttachmentMediaAsset(displayAttachment, mediaContext),
+    [displayAttachment, mediaContext],
+  );
 
   const handleRetry = async () => {
     const accountId = getRetryAccountId(displayAttachment);
@@ -255,83 +271,127 @@ const AttachmentItem: React.FC<{
   const retryAccountId = getRetryAccountId(displayAttachment);
   const showRetry = getAttachmentMediaState(displayAttachment)?.tone === 'danger' && Boolean(retryAccountId);
   const stateBadge = (
-    <AttachmentStateBadgeInner
+    <AttachmentStateBadge
       attachment={displayAttachment}
       retrying={retrying}
       onRetry={showRetry ? handleRetry : undefined}
     />
   );
-  const attachmentView = displayAttachment;
-  const category = attachmentView.category || (attachmentView.type === 'image' ? 'image' : 'other');
-  const presentationSummary = useMemo(
-    () => parseJson<PresentationSummary>(attachmentView.pptJson),
-    [attachmentView.pptJson],
-  );
-  const archiveManifest = attachmentView.archiveManifest as ArchiveManifest | undefined;
 
   if (category === 'image') {
-    // 优先使用 data/thumbnail，否则回退到本地文件路径
-    const imageSrc = attachmentView.thumbnail || attachmentView.data || (attachmentView.path ? resolveFileUrl(attachmentView.path) : '');
+    const imageSrc = mediaAsset
+      ? getRenderableMediaSrc(mediaAsset)
+      : displayAttachment.thumbnail || displayAttachment.data || (displayAttachment.path ? resolveFileUrl(displayAttachment.path) : '');
     return (
-      <div
-        className="relative group cursor-pointer"
-        onClick={() => onImageClick(imageSrc)}
-      >
-        <img
-          src={imageSrc}
-          alt={attachmentView.name}
-          className="max-w-[200px] max-h-[150px] rounded-xl border border-zinc-700 shadow-lg object-cover hover:border-primary-500/50 transition-colors"
-        />
-        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
-          <ImageIcon className="w-6 h-6 text-white" />
-        </div>
-        <div className="absolute bottom-1 left-1">
-          {stateBadge}
-        </div>
+      <div className="group max-w-[220px] overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900/80 shadow-lg">
+        {imageSrc ? (
+          <div
+            className="relative cursor-pointer"
+            onClick={() => mediaAsset && onMediaOpen(mediaAsset)}
+          >
+            <img
+              src={imageSrc}
+              alt={displayAttachment.name}
+              className="max-h-[150px] w-full object-cover transition-colors group-hover:border-primary-500/50"
+            />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+              <ImageIcon className="w-6 h-6 text-white" />
+            </div>
+            <div className="absolute bottom-1 left-1">{stateBadge}</div>
+          </div>
+        ) : (
+          <div className="flex min-h-[84px] items-center justify-center px-3 py-4 text-center text-xs text-zinc-500">
+            图片过大，已跳过内联预览
+          </div>
+        )}
+        {(mediaAsset || stateBadge) && (
+          <div className="flex items-center justify-between gap-2 border-t border-zinc-800 bg-zinc-950/60 px-2 py-1">
+            <div>{stateBadge}</div>
+            {mediaAsset && (
+              <MediaAssetActionBar
+                asset={mediaAsset}
+                compact
+                onOpenLightbox={() => onMediaOpen(mediaAsset)}
+              />
+            )}
+          </div>
+        )}
       </div>
     );
   }
 
   if (category === 'audio') {
-    const mediaSrc = attachmentView.data || (attachmentView.path ? resolveFileUrl(attachmentView.path) : '');
+    const mediaSrc = mediaAsset
+      ? getRenderableMediaSrc(mediaAsset)
+      : displayAttachment.data || (displayAttachment.path ? resolveFileUrl(displayAttachment.path) : '');
     return (
       <div className="max-w-[260px] rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
         <div className="mb-2 flex items-center gap-2 text-xs text-zinc-300">
           <Music className="h-4 w-4 text-fuchsia-400" />
-          <span className="truncate" title={attachmentView.name}>{attachmentView.name}</span>
+          <span className="truncate" title={displayAttachment.name}>{displayAttachment.name}</span>
           {stateBadge}
         </div>
-        <audio controls src={mediaSrc} className="w-full" />
+        {mediaSrc ? (
+          <audio controls src={mediaSrc} className="w-full" />
+        ) : (
+          <div className="rounded-md border border-zinc-700/70 bg-zinc-900/50 px-3 py-2 text-xs text-zinc-500">
+            音频过大，已跳过内联预览
+          </div>
+        )}
+        {mediaAsset && (
+          <div className="mt-2 flex justify-end">
+            <MediaAssetActionBar
+              asset={mediaAsset}
+              compact
+              onOpenLightbox={() => onMediaOpen(mediaAsset)}
+            />
+          </div>
+        )}
       </div>
     );
   }
 
   if (category === 'video') {
-    const mediaSrc = attachmentView.data || (attachmentView.path ? resolveFileUrl(attachmentView.path) : '');
+    const mediaSrc = mediaAsset
+      ? getRenderableMediaSrc(mediaAsset)
+      : displayAttachment.data || (displayAttachment.path ? resolveFileUrl(displayAttachment.path) : '');
     return (
       <div className="max-w-[320px] overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900/80">
-        <video
-          controls
-          src={mediaSrc}
-          className="max-h-[220px] w-full bg-black object-contain"
-        />
+        {mediaSrc ? (
+          <video
+            controls
+            src={mediaSrc}
+            className="max-h-[220px] w-full bg-black object-contain"
+          />
+        ) : (
+          <div className="flex min-h-[120px] items-center justify-center bg-black/30 px-3 py-4 text-center text-xs text-zinc-500">
+            视频过大，已跳过内联预览
+          </div>
+        )}
         <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-300">
           <Video className="h-4 w-4 shrink-0 text-cyan-400" />
-          <span className="truncate" title={attachmentView.name}>{attachmentView.name}</span>
+          <span className="truncate" title={displayAttachment.name}>{displayAttachment.name}</span>
           {stateBadge}
+          {mediaAsset && (
+            <div className="ml-auto">
+              <MediaAssetActionBar
+                asset={mediaAsset}
+                compact
+                onOpenLightbox={() => onMediaOpen(mediaAsset)}
+              />
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
-  // Excel with JSON data → interactive SpreadsheetBlock
-  if (category === 'excel' && attachmentView.sheetsJson) {
-    return <SpreadsheetBlock spec={attachmentView.sheetsJson} />;
+  if (category === 'excel' && displayAttachment.sheetsJson) {
+    return <SpreadsheetBlock spec={displayAttachment.sheetsJson} />;
   }
 
-  // Word (.docx) with JSON data → interactive DocumentBlock
-  if (category === 'document' && attachmentView.docxJson) {
-    return <DocumentBlock spec={attachmentView.docxJson} />;
+  if (category === 'document' && displayAttachment.docxJson) {
+    return <DocumentBlock spec={displayAttachment.docxJson} />;
   }
 
   if (category === 'presentation') {
@@ -341,11 +401,11 @@ const AttachmentItem: React.FC<{
       <div className="flex max-w-[260px] items-start gap-2 rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
         <Presentation className="mt-0.5 h-5 w-5 shrink-0 text-violet-400" />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm text-zinc-200" title={attachmentView.name}>
-            {attachmentView.name}
+          <div className="truncate text-sm text-zinc-200" title={displayAttachment.name}>
+            {displayAttachment.name}
           </div>
           <div className="text-xs text-zinc-500">
-            {slideCount !== undefined ? `${slideCount} 页` : formatFileSize(attachmentView.size)}
+            {slideCount !== undefined ? `${slideCount} 页` : formatFileSize(displayAttachment.size)}
           </div>
           {stateBadge}
           {firstSlides.length > 0 && (
@@ -368,13 +428,13 @@ const AttachmentItem: React.FC<{
       <div className="flex max-w-[240px] items-start gap-2 rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
         <Archive className="mt-0.5 h-5 w-5 shrink-0 text-yellow-400" />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm text-zinc-200" title={attachmentView.name}>
-            {attachmentView.name}
+          <div className="truncate text-sm text-zinc-200" title={displayAttachment.name}>
+            {displayAttachment.name}
           </div>
           <div className="text-xs text-zinc-500">
             {archiveManifest
               ? `${archiveManifest.format} · ${archiveManifest.totalFiles} 文件`
-              : formatFileSize(attachmentView.size)}
+              : formatFileSize(displayAttachment.size)}
           </div>
           {stateBadge}
           {archiveManifest && (
@@ -391,28 +451,27 @@ const AttachmentItem: React.FC<{
   }
 
   const { icon, color, label } = getAttachmentIconConfig(category);
-  // Only show file name without folder path
-  const displayName = attachmentView.name.includes('/')
-    ? attachmentView.name.split('/').pop() || attachmentView.name
-    : attachmentView.name;
+  const displayName = displayAttachment.name.includes('/')
+    ? displayAttachment.name.split('/').pop() || displayAttachment.name
+    : displayAttachment.name;
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-700/60 border border-zinc-700 max-w-[200px]">
+    <div className="flex max-w-[200px] items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
       <span className={color}>{icon}</span>
       <div className="min-w-0 flex-1">
-        <div className="text-sm text-zinc-200 truncate" title={attachmentView.name}>
+        <div className="truncate text-sm text-zinc-200" title={displayAttachment.name}>
           {displayName}
         </div>
-        <div className="text-xs text-zinc-500 flex items-center gap-1">
+        <div className="flex items-center gap-1 text-xs text-zinc-500">
           <span className={`${color} text-2xs`}>{label}</span>
           <span>·</span>
-          {category === 'pdf' && attachmentView.pageCount
-            ? <span>{attachmentView.pageCount} 页</span>
-            : category === 'excel' && attachmentView.sheetCount
-              ? <span>{attachmentView.sheetCount} 表 · {attachmentView.rowCount} 行</span>
-              : attachmentView.language
-                ? <span>{attachmentView.language}</span>
-                : <span>{formatFileSize(attachmentView.size)}</span>
+          {category === 'pdf' && displayAttachment.pageCount
+            ? <span>{displayAttachment.pageCount} 页</span>
+            : category === 'excel' && displayAttachment.sheetCount
+              ? <span>{displayAttachment.sheetCount} 表 · {displayAttachment.rowCount} 行</span>
+              : displayAttachment.language
+                ? <span>{displayAttachment.language}</span>
+                : <span>{formatFileSize(displayAttachment.size)}</span>
           }
         </div>
         {stateBadge}
@@ -421,12 +480,10 @@ const AttachmentItem: React.FC<{
   );
 };
 
-// Main attachment display component
-export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachments }) => {
-  const [expandedImage, setExpandedImage] = useState<string | null>(null);
+export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachments, mediaContext }) => {
+  const [expandedMedia, setExpandedMedia] = useState<SessionMediaAsset | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // Calculate stats
   const stats = useMemo(() => {
     const byCategory: Record<string, number> = {};
     let totalSize = 0;
@@ -437,18 +494,15 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachment
       totalSize += att.size;
     }
 
-    // Check if from same folder
     const firstSlash = attachments[0]?.name.indexOf('/');
     const folderName = firstSlash > 0 ? attachments[0].name.substring(0, firstSlash) : null;
-    const isFromFolder = folderName && attachments.every((a) => a.name.startsWith(folderName + '/'));
+    const isFromFolder = folderName && attachments.every((a) => a.name.startsWith(`${folderName}/`));
 
     return { byCategory, totalSize, folderName: isFromFolder ? folderName : null };
   }, [attachments]);
 
-  // Show summary if file count exceeds threshold
   const showSummary = attachments.length > FOLDER_SUMMARY_THRESHOLD;
 
-  // Summary view
   if (showSummary && !isExpanded) {
     const summaryParts = Object.entries(stats.byCategory)
       .map(([cat, count]) => `${count} ${categoryLabels[cat] || cat}`)
@@ -457,21 +511,21 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachment
     return (
       <div className="mb-2 flex justify-end">
         <div
-          className="flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-700/60 border border-zinc-700 cursor-pointer hover:bg-zinc-700 transition-colors"
+          className="flex cursor-pointer items-center gap-3 rounded-xl border border-zinc-700 bg-zinc-700/60 px-4 py-3 transition-colors hover:bg-zinc-700"
           onClick={() => setIsExpanded(true)}
         >
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary-500/20 to-accent-purple/20 flex items-center justify-center">
-            <FolderSearch className="w-5 h-5 text-primary-400" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500/20 to-accent-purple/20">
+            <FolderSearch className="h-5 w-5 text-primary-400" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-sm text-zinc-200 font-medium">
+            <div className="text-sm font-medium text-zinc-200">
               {stats.folderName ? `📁 ${stats.folderName}` : `📎 ${attachments.length} 个文件`}
             </div>
             <div className="text-xs text-zinc-500">
               {summaryParts} · {formatFileSize(stats.totalSize)}
             </div>
           </div>
-          <ChevronRight className="w-4 h-4 text-zinc-500" />
+          <ChevronRight className="h-4 w-4 text-zinc-500" />
         </div>
       </div>
     );
@@ -479,42 +533,34 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachment
 
   return (
     <div className="mb-2">
-      {/* Collapse button when expanded */}
       {showSummary && isExpanded && (
-        <div className="flex justify-end mb-2">
+        <div className="mb-2 flex justify-end">
           <button
             onClick={() => setIsExpanded(false)}
-            className="text-xs text-zinc-500 hover:text-zinc-400 flex items-center gap-1"
+            className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-400"
           >
-            <ChevronDown className="w-3 h-3" />
+            <ChevronDown className="h-3 w-3" />
             收起 {attachments.length} 个文件
           </button>
         </div>
       )}
 
-      {/* File list */}
-      <div className="flex flex-wrap gap-2 justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
         {attachments.map((attachment) => (
           <AttachmentItem
             key={attachment.id}
             attachment={attachment}
-            onImageClick={setExpandedImage}
+            mediaContext={mediaContext}
+            onMediaOpen={setExpandedMedia}
           />
         ))}
       </div>
 
-      {/* Image lightbox */}
-      {expandedImage && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8"
-          onClick={() => setExpandedImage(null)}
-        >
-          <img
-            src={expandedImage}
-            alt="Expanded"
-            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-          />
-        </div>
+      {expandedMedia && (
+        <MediaAssetLightbox
+          asset={expandedMedia}
+          onClose={() => setExpandedMedia(null)}
+        />
       )}
     </div>
   );

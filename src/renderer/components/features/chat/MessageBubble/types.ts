@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { Message, ToolCall, MessageAttachment, AttachmentCategory } from '@shared/contract';
+import type { SessionMediaContext } from '@shared/utils/sessionMediaAssets';
 
 // Props types
 export interface MessageBubbleProps {
@@ -24,6 +25,8 @@ export interface MessageContentProps {
   content: string;
   isUser?: boolean;
   isStreaming?: boolean;
+  messageId?: string;
+  mediaContext?: SessionMediaContext;
 }
 
 export interface ToolCallDisplayProps {
@@ -36,6 +39,7 @@ export interface ToolCallDisplayProps {
 
 export interface AttachmentDisplayProps {
   attachments: MessageAttachment[];
+  mediaContext?: SessionMediaContext;
 }
 
 export interface CodeBlockProps {

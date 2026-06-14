@@ -259,14 +259,22 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
           {/* Text content */}
           {message.content && (
             <div className="text-zinc-200 leading-relaxed select-text">
-              <MessageContent content={message.content} isUser={false} />
+              <MessageContent
+                content={message.content}
+                isUser={false}
+                messageId={message.id}
+                mediaContext={{ sessionId: currentSessionId || undefined, messageId: message.id }}
+              />
             </div>
           )}
 
           {/* Tool calls - smart grouping with auto-collapse */}
           {message.toolCalls && message.toolCalls.length > 0 && (
             <div className="mt-2 space-y-0">
-              <ToolCallGroupList groups={toolGroups} />
+              <ToolCallGroupList
+                groups={toolGroups}
+                mediaContext={{ sessionId: currentSessionId || undefined, messageId: message.id }}
+              />
             </div>
           )}
         </>
@@ -330,6 +338,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
 import type { Message, ToolCall } from './types';
 
 function ContentPartsRenderer({ message }: { message: Message }) {
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const parts = message.contentParts!;
   const toolCalls = message.toolCalls;
 
@@ -385,14 +394,22 @@ function ContentPartsRenderer({ message }: { message: Message }) {
         if (segment.type === 'text') {
           return (
             <div key={segment.key} className="text-zinc-200 leading-relaxed select-text">
-              <MessageContent content={segment.text} isUser={false} />
+              <MessageContent
+                content={segment.text}
+                isUser={false}
+                messageId={message.id}
+                mediaContext={{ sessionId: currentSessionId || undefined, messageId: message.id }}
+              />
             </div>
           );
         }
 
         return (
           <div key={segment.key} className="space-y-0">
-            <ToolCallGroupList groups={segment.groups} />
+            <ToolCallGroupList
+              groups={segment.groups}
+              mediaContext={{ sessionId: currentSessionId || undefined, messageId: message.id }}
+            />
           </div>
         );
       })}

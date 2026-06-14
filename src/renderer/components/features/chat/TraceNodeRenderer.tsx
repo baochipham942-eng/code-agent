@@ -35,6 +35,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 
 interface TraceNodeRendererProps {
   node: TraceNode;
+  sessionId?: string;
   /** Message attachments for user nodes */
   attachments?: import('@shared/contract').MessageAttachment[];
   /** Whether this node is in a currently streaming turn */
@@ -46,6 +47,7 @@ interface TraceNodeRendererProps {
 
 export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   node,
+  sessionId,
   attachments,
   isStreaming,
   onStreamingDisplayUpdate,
@@ -59,6 +61,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       content = (
         <UserNode
           messageId={node.id}
+          sessionId={sessionId}
           content={node.content}
           attachments={attachments}
           metadata={node.metadata?.workbench}
@@ -71,13 +74,14 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       content = (
         <AssistantTextNode
           node={node}
+          sessionId={sessionId}
           isStreaming={isStreaming}
           onStreamingDisplayUpdate={onStreamingDisplayUpdate}
         />
       );
       break;
     case 'tool_call':
-      content = <ToolCallNode node={node} />;
+      content = <ToolCallNode node={node} sessionId={sessionId} />;
       break;
     case 'system':
       content = <SystemNode node={node} />;
@@ -93,7 +97,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       ) {
         return null;
       }
-      content = <TurnTimelineNodeRenderer node={node} />;
+      content = <TurnTimelineNodeRenderer node={node} sessionId={sessionId} />;
       break;
     default:
       return null;
@@ -206,12 +210,13 @@ const WorkbenchSummary: React.FC<{ metadata?: WorkbenchMessageMetadata }> = ({ m
 
 const UserNode: React.FC<{
   messageId: string;
+  sessionId?: string;
   content: string;
   attachments?: import('@shared/contract').MessageAttachment[];
   metadata?: WorkbenchMessageMetadata;
   onRewind?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
-}> = ({ messageId, content, attachments, metadata, onRewind, rewindDisabled }) => {
+}> = ({ messageId, sessionId, content, attachments, metadata, onRewind, rewindDisabled }) => {
   const isGuidedTurn = metadata?.runtimeInputDelivery === 'queued_next_turn';
   const displayContent = stripAppshotBlocks(content || '');
 
@@ -220,7 +225,10 @@ const UserNode: React.FC<{
       <WorkbenchSummary metadata={metadata} />
       {attachments && attachments.length > 0 && (
         <div className="mb-2">
-          <AttachmentDisplay attachments={attachments} />
+          <AttachmentDisplay
+            attachments={attachments}
+            mediaContext={{ sessionId, messageId }}
+          />
         </div>
       )}
       {displayContent && (
@@ -247,7 +255,12 @@ const UserNode: React.FC<{
               )}
               <div className="rounded-2xl px-4 py-2.5 bg-zinc-800/60 border border-white/[0.06]">
                 <div className="text-zinc-200 leading-relaxed select-text">
-                  <MessageContent content={displayContent} isUser={true} />
+                  <MessageContent
+                    content={displayContent}
+                    isUser={true}
+                    messageId={messageId}
+                    mediaContext={{ sessionId, messageId }}
+                  />
                 </div>
               </div>
             </div>
@@ -305,9 +318,10 @@ function getSelectionCopyState(root: HTMLElement | null, content: HTMLElement | 
 
 const AssistantTextNode: React.FC<{
   node: TraceNode;
+  sessionId?: string;
   isStreaming?: boolean;
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
-}> = ({ node, isStreaming: turnStreaming, onStreamingDisplayUpdate }) => {
+}> = ({ node, sessionId, isStreaming: turnStreaming, onStreamingDisplayUpdate }) => {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const [showReasoning, setShowReasoning] = useState(false);
   const reasoningRef = useRef<HTMLDivElement>(null);
@@ -485,6 +499,11 @@ const AssistantTextNode: React.FC<{
             content={displayContent}
             isUser={false}
             isStreaming={Boolean(turnStreaming || isAnimating)}
+            messageId={messageId}
+            mediaContext={{
+              sessionId,
+              messageId,
+            }}
           />
           {(turnStreaming || isAnimating) && (
             <span className="sr-only">正在生成</span>
@@ -531,7 +550,7 @@ const AssistantTextNode: React.FC<{
 };
 
 // ---- Tool Call Node ----
-const ToolCallNode: React.FC<{ node: TraceNode }> = ({ node }) => {
+const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
   if (!node.toolCall) return null;
 
   // Reconstruct ToolCall object for ToolCallDisplay
@@ -562,6 +581,7 @@ const ToolCallNode: React.FC<{ node: TraceNode }> = ({ node }) => {
       toolCall={toolCall}
       index={0}
       total={1}
+      mediaContext={{ sessionId, messageId: node.messageId || node.id }}
     />
   );
 };
@@ -576,7 +596,7 @@ const LaunchRequestNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   );
 };
 
-const TurnTimelineNodeRenderer: React.FC<{ node: TraceNode }> = ({ node }) => {
+const TurnTimelineNodeRenderer: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
   if (!node.turnTimeline) return null;
 
   switch (node.turnTimeline.kind) {
@@ -596,7 +616,7 @@ const TurnTimelineNodeRenderer: React.FC<{ node: TraceNode }> = ({ node }) => {
     case 'skill_activity':
       return <SkillActivityNode timeline={node.turnTimeline} />;
     case 'artifact_ownership':
-      return <ArtifactOwnershipNode timeline={node.turnTimeline} />;
+      return <ArtifactOwnershipNode timeline={node.turnTimeline} sessionId={sessionId} />;
     default:
       return null;
   }
@@ -805,7 +825,7 @@ const SkillActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeli
   );
 };
 
-const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
+const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId?: string }> = ({ timeline, sessionId }) => {
   const items = (timeline.artifactOwnership || [])
     .filter((item) => !isReadOnlyArtifactOwnershipItem(item));
   if (items.length === 0) return null;
@@ -813,6 +833,12 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ ti
   const fileItems = items.filter((i) => i.kind === 'file');
   const nonFileItems = items.filter((i) => i.kind !== 'file');
   const hasOnlyFiles = fileItems.length > 0 && nonFileItems.length === 0;
+  const turnId = timeline.id.endsWith('-artifact-ownership')
+    ? timeline.id.slice(0, -'-artifact-ownership'.length)
+    : undefined;
+  const mediaContext = sessionId || turnId
+    ? { sessionId, turnId }
+    : undefined;
 
   // 纯文件输出保持一行入口，不再额外挂"本轮输出"标题。
   // 混合/纯非文件：保留 tone 容器，维持原来的视觉层级。
@@ -824,14 +850,14 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ ti
   );
 
   if (hasOnlyFiles) {
-    return <FileArtifactCard items={fileItems} />;
+    return <FileArtifactCard items={fileItems} mediaContext={mediaContext} />;
   }
 
   return (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
       {header}
 
-      {fileItems.length > 0 && <FileArtifactCard items={fileItems} />}
+      {fileItems.length > 0 && <FileArtifactCard items={fileItems} mediaContext={mediaContext} />}
 
       {nonFileItems.length > 0 && (
         <div className={`space-y-1.5 ${fileItems.length > 0 ? 'mt-1.5' : ''}`}>

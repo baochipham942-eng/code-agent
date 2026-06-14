@@ -6,14 +6,17 @@ import React, { useState } from 'react';
 import {
   ExternalLink,
   Folder,
-  Copy,
   Image as ImageIcon,
   FileText,
   Play,
   Video,
-  Download,
 } from 'lucide-react';
 import type { ToolCall } from '@shared/contract';
+import {
+  buildToolResultMediaAssets,
+  type SessionMediaAsset,
+  type SessionMediaContext,
+} from '@shared/utils/sessionMediaAssets';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { DiffView } from '../../../../DiffView';
 import { useAppStore } from '../../../../../stores/appStore';
@@ -29,6 +32,13 @@ import { redactBrowserComputerInputPayloadsInValue } from '@shared/utils/browser
 import { getBrowserComputerActionCatalogEntry } from '@shared/utils/browserComputerActionCatalog';
 import { MemoryCitationGroup } from '../../../../citations/MemoryCitationGroup';
 import type { Citation } from '@shared/contract/citation';
+import {
+  getMediaAssetFileName,
+  getMediaAssetSourceSummary,
+  getRenderableMediaSrc,
+  MediaAssetActionBar,
+  MediaAssetLightbox,
+} from '../MediaAssetControls';
 
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);
@@ -53,9 +63,10 @@ function stripAnsiCodes(str: string): string {
 interface Props {
   toolCall: ToolCall;
   compact?: boolean;
+  mediaContext?: SessionMediaContext;
 }
 
-export function ToolDetails({ toolCall, compact }: Props) {
+export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
   const { name, arguments: args, result } = toolCall;
   const [showDiff, setShowDiff] = useState(true);
   const openPreview = useAppStore((state) => state.openPreview);
@@ -78,6 +89,14 @@ export function ToolDetails({ toolCall, compact }: Props) {
   const createdFilePath = extractCreatedFilePath(toolCall);
   const imageResult = extractImageResult(toolCall);
   const videoResult = extractVideoResult(toolCall);
+  const mediaAssets = buildToolResultMediaAssets(toolCall, mediaContext);
+  const imageAsset = mediaAssets.find((asset) => asset.kind === 'image' && asset.role === 'output')
+    || mediaAssets.find((asset) => asset.kind === 'image');
+  const videoAsset = mediaAssets.find((asset) => asset.kind === 'video' && asset.role === 'output')
+    || mediaAssets.find((asset) => asset.kind === 'video');
+  const genericMediaAsset = !imageResult && !videoResult
+    ? mediaAssets.find((asset) => asset.role === 'output') || mediaAssets[0]
+    : undefined;
   const generatedFileResult = extractGeneratedFile(toolCall);
   const safeBrowserComputerResult = formatBrowserComputerActionResultDetails(toolCall);
   const browserComputerNextSteps = getBrowserComputerNextSteps(toolCall);
@@ -139,12 +158,17 @@ export function ToolDetails({ toolCall, compact }: Props) {
         </div>
       )}
 
-      {!result && <LiveToolOutput toolCall={toolCall} />}
+      {!result && (
+        <>
+          {genericMediaAsset && <GenericMediaResultDisplay asset={genericMediaAsset} />}
+          <LiveToolOutput toolCall={toolCall} />
+        </>
+      )}
 
       {/* Result section */}
       {result && (
         <div className="animate-fadeIn">
-          {!imageResult && !videoResult && !generatedFileResult && !createdFilePath && (
+          {!imageResult && !videoResult && !genericMediaAsset && !generatedFileResult && !createdFilePath && (
             <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-2">
               <span>{result.success ? 'Result' : 'Error'}</span>
               <div className="flex-1 h-px bg-gray-700/50" />
@@ -156,6 +180,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
             <ImageResultDisplay
               imagePath={imageResult.imagePath}
               imageBase64={imageResult.imageBase64}
+              asset={imageAsset}
             />
           )}
 
@@ -167,7 +192,12 @@ export function ToolDetails({ toolCall, compact }: Props) {
               videoPath={videoResult.videoPath}
               duration={videoResult.duration}
               aspectRatio={videoResult.aspectRatio}
+              asset={videoAsset}
             />
+          )}
+
+          {genericMediaAsset && (result.success || genericMediaAsset.state === 'failed') && (
+            <GenericMediaResultDisplay asset={genericMediaAsset} />
           )}
 
           {/* Generated file display (ppt_generate, etc.) */}
@@ -189,7 +219,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
           )}
 
           {/* Standard result output */}
-          {!imageResult && !videoResult && !generatedFileResult && !createdFilePath && (
+          {!imageResult && !videoResult && !genericMediaAsset && !generatedFileResult && !createdFilePath && (
             <>
               {browserComputerNextSteps.length > 0 && (
                 <BrowserComputerNextStepActions actions={browserComputerNextSteps} />
@@ -720,13 +750,17 @@ function extractVideoResult(toolCall: {
 interface ImageResultDisplayProps {
   imagePath?: string;
   imageBase64?: string;
+  asset?: SessionMediaAsset;
 }
 
-function ImageResultDisplay({ imagePath, imageBase64 }: ImageResultDisplayProps) {
+function ImageResultDisplay({ imagePath, imageBase64, asset }: ImageResultDisplayProps) {
   const [imageError, setImageError] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [lightboxAsset, setLightboxAsset] = useState<SessionMediaAsset | null>(null);
 
-  const imageSrc = imagePath
+  const imageSrc = asset
+    ? getRenderableMediaSrc(asset)
+    : imagePath
     ? resolveFileUrl(imagePath)
     : imageBase64
       ? imageBase64.startsWith('data:')
@@ -736,7 +770,7 @@ function ImageResultDisplay({ imagePath, imageBase64 }: ImageResultDisplayProps)
           : `data:image/png;base64,${imageBase64}`
       : '';
 
-  const fileName = imagePath?.split('/').pop() || 'generated-image.png';
+  const fileName = asset ? getMediaAssetFileName(asset) : imagePath?.split('/').pop() || 'generated-image.png';
 
   const handleOpenFile = async () => {
     if (imagePath) {
@@ -765,27 +799,43 @@ function ImageResultDisplay({ imagePath, imageBase64 }: ImageResultDisplayProps)
   };
 
   if (imageError || !imageSrc) {
-    if (imagePath) {
+    if (imagePath || asset) {
       return (
-        <div className="flex items-center gap-3 p-3 rounded-lg border bg-purple-500/10 border-purple-500/30">
-          <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400">
-            <ImageIcon className="w-4 h-4" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium truncate text-purple-400">
-              {fileName}
+        <>
+          <div className="flex items-center gap-3 p-3 rounded-lg border bg-purple-500/10 border-purple-500/30">
+            <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400">
+              <ImageIcon className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium truncate text-purple-400">
+                {fileName}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {asset ? (
+                <MediaAssetActionBar
+                  asset={asset}
+                  compact
+                  onOpenLightbox={() => setLightboxAsset(asset)}
+                />
+              ) : (
+                <button
+                  onClick={handleOpenFile}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 text-xs"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  Open
+                </button>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={handleOpenFile}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 text-xs"
-            >
-              <ExternalLink className="w-3 h-3" />
-              Open
-            </button>
-          </div>
-        </div>
+          {lightboxAsset && (
+            <MediaAssetLightbox
+              asset={lightboxAsset}
+              onClose={() => setLightboxAsset(null)}
+            />
+          )}
+        </>
       );
     }
     return null;
@@ -813,7 +863,13 @@ function ImageResultDisplay({ imagePath, imageBase64 }: ImageResultDisplayProps)
         <div className="flex-1 min-w-0">
           <div className="text-xs text-purple-400 truncate">{fileName}</div>
         </div>
-        {imagePath && (
+        {asset ? (
+          <MediaAssetActionBar
+            asset={asset}
+            compact
+            onOpenLightbox={() => setLightboxAsset(asset)}
+          />
+        ) : imagePath && (
           <>
             <button
               onClick={handleOpenFile}
@@ -832,6 +888,83 @@ function ImageResultDisplay({ imagePath, imageBase64 }: ImageResultDisplayProps)
           </>
         )}
       </div>
+      {lightboxAsset && (
+        <MediaAssetLightbox
+          asset={lightboxAsset}
+          onClose={() => setLightboxAsset(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function GenericMediaResultDisplay({ asset }: { asset: SessionMediaAsset }) {
+  const [lightboxAsset, setLightboxAsset] = useState<SessionMediaAsset | null>(null);
+  const mediaSrc = getRenderableMediaSrc(asset);
+  const fileName = getMediaAssetFileName(asset);
+  const sourceText = getMediaAssetSourceSummary(asset);
+  const placeholderText = asset.state === 'failed'
+    ? '媒体生成失败'
+    : asset.state === 'pending'
+      ? '媒体生成中'
+      : '媒体预览不可用';
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-zinc-700/70 bg-zinc-900/60">
+      {asset.kind === 'image' && mediaSrc && (
+        <button
+          type="button"
+          className="block w-full cursor-zoom-in bg-black/20"
+          onClick={() => setLightboxAsset(asset)}
+          title="放大查看"
+        >
+          <img
+            src={mediaSrc}
+            alt={fileName}
+            className="max-h-64 w-full object-contain"
+            loading="lazy"
+          />
+        </button>
+      )}
+      {asset.kind === 'video' && mediaSrc && (
+        <video
+          src={mediaSrc}
+          controls
+          className="max-h-64 w-full bg-black object-contain"
+        />
+      )}
+      {asset.kind === 'audio' && mediaSrc && (
+        <div className="p-3">
+          <audio src={mediaSrc} controls className="w-full" />
+        </div>
+      )}
+      {!mediaSrc && (
+        <div className="flex min-h-[92px] items-center justify-center bg-black/20 px-3 py-4 text-center text-xs text-zinc-500">
+          {placeholderText}
+        </div>
+      )}
+      <div className="flex items-center gap-2 border-t border-zinc-800 bg-zinc-950/50 p-2">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs font-medium text-zinc-200">{fileName}</div>
+          <div className="truncate text-[11px] text-zinc-500">{sourceText}</div>
+          {asset.error && (
+            <div className="mt-0.5 truncate text-[11px] text-red-300" title={asset.error}>
+              {asset.error}
+            </div>
+          )}
+        </div>
+        <MediaAssetActionBar
+          asset={asset}
+          compact
+          onOpenLightbox={() => setLightboxAsset(asset)}
+        />
+      </div>
+      {lightboxAsset && (
+        <MediaAssetLightbox
+          asset={lightboxAsset}
+          onClose={() => setLightboxAsset(null)}
+        />
+      )}
     </div>
   );
 }
@@ -938,6 +1071,7 @@ interface VideoResultDisplayProps {
   videoPath?: string;
   duration?: number;
   aspectRatio?: string;
+  asset?: SessionMediaAsset;
 }
 
 function VideoResultDisplay({
@@ -946,10 +1080,11 @@ function VideoResultDisplay({
   videoPath,
   duration,
   aspectRatio,
+  asset,
 }: VideoResultDisplayProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [showCover, setShowCover] = useState(true);
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [lightboxAsset, setLightboxAsset] = useState<SessionMediaAsset | null>(null);
 
   const handleOpenFile = async () => {
     if (videoPath) {
@@ -977,39 +1112,14 @@ function VideoResultDisplay({
     }
   };
 
-  const handleDownload = async () => {
-    if (!videoUrl || isDownloading) return;
-
-    try {
-      setIsDownloading(true);
-      // 调用主进程下载视频到用户下载目录
-      const response = await window.domainAPI?.invoke('workspace', 'downloadFile', {
-        url: videoUrl,
-        filename: `video_${Date.now()}.mp4`,
-      });
-      const downloadResult = response?.data as { filePath?: string } | undefined;
-      if (downloadResult?.filePath) {
-        // 下载成功，在 Finder 中显示
-        if (isWebMode() && downloadResult?.filePath) { await copyPathToClipboard(downloadResult.filePath); return; }
-        await window.domainAPI?.invoke('workspace', 'showItemInFolder', {
-          filePath: downloadResult.filePath,
-        });
-      }
-    } catch (error) {
-      console.error('Failed to download video:', error);
-      // 下载失败时回退到浏览器打开
-      window.open(videoUrl, '_blank');
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
   const handlePlayInline = () => {
     setShowCover(false);
     setIsPlaying(true);
   };
 
-  const fileName = videoPath?.split('/').pop() || 'video.mp4';
+  const fileName = asset ? getMediaAssetFileName(asset) : videoPath?.split('/').pop() || 'video.mp4';
+  const videoSrc = asset ? getRenderableMediaSrc(asset) : videoUrl;
+  const coverSrc = asset?.thumbnailUrl || coverUrl;
   const infoText = [duration ? `${duration}s` : null, aspectRatio]
     .filter(Boolean)
     .join(' · ');
@@ -1018,10 +1128,10 @@ function VideoResultDisplay({
     <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 overflow-hidden">
       {/* Video preview area */}
       <div className="relative aspect-video bg-gray-900/50">
-        {showCover && coverUrl ? (
+        {showCover && coverSrc ? (
           <>
             <img
-              src={coverUrl}
+              src={coverSrc}
               alt="Video cover"
               className="w-full h-full object-cover"
             />
@@ -1034,9 +1144,9 @@ function VideoResultDisplay({
               </div>
             </button>
           </>
-        ) : videoUrl ? (
+        ) : videoSrc ? (
           <video
-            src={videoUrl}
+            src={videoSrc}
             controls
             autoPlay={isPlaying}
             className="w-full h-full"
@@ -1062,22 +1172,13 @@ function VideoResultDisplay({
           )}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          {videoUrl && (
-            <button
-              onClick={handleDownload}
-              disabled={isDownloading}
-              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs ${
-                isDownloading
-                  ? 'bg-cyan-500/10 text-cyan-400/50 cursor-wait'
-                  : 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30'
-              }`}
-              title="下载到本地"
-            >
-              <Download className={`w-3 h-3 ${isDownloading ? 'animate-pulse' : ''}`} />
-              {isDownloading ? '下载中...' : '下载'}
-            </button>
-          )}
-          {videoPath && (
+          {asset ? (
+            <MediaAssetActionBar
+              asset={asset}
+              compact
+              onOpenLightbox={() => setLightboxAsset(asset)}
+            />
+          ) : videoPath && (
             <>
               <button
                 onClick={handleOpenFile}
@@ -1098,6 +1199,12 @@ function VideoResultDisplay({
           )}
         </div>
       </div>
+      {lightboxAsset && (
+        <MediaAssetLightbox
+          asset={lightboxAsset}
+          onClose={() => setLightboxAsset(null)}
+        />
+      )}
     </div>
   );
 }

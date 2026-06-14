@@ -656,6 +656,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
             <TurnCard
               key={turn.turnId}
               turn={turn}
+              sessionId={projection.sessionId}
               defaultExpanded={isLast || isStreaming}
               forceExpanded={hasSearchMatch}
               highlightActive={isActiveMatchTurn}
@@ -673,7 +674,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         </div>
       );
     },
-    [activeMatchIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus],
+    [activeMatchIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus],
   );
 
   // Header: load-older indicator

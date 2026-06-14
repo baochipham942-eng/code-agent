@@ -19,6 +19,8 @@ export type SessionStatus = 'idle' | 'running' | 'queued' | 'paused' | 'cancelli
  */
 export type SessionType = 'chat' | 'schedule' | 'heartbeat' | 'subagent';
 
+export type SessionMemoryMode = 'auto' | 'off';
+
 export type SessionOriginKind =
   | 'manual'
   | 'cron'
@@ -89,6 +91,8 @@ export interface Session {
   parentSessionId?: string; // 子 session 或派生 session 的父级
   sourceRunId?: string; // 外部执行记录 ID，如 CronJobExecution.id
   engine?: AgentEngineSessionMetadata; // Agent Engine metadata; old sessions default to native
+  memoryMode?: SessionMemoryMode; // 会话级记忆注入策略
+  suppressedMemoryEntryIds?: string[]; // 本会话不再注入的记忆条目
   readOnly?: boolean; // 生成型 session 默认只读，由 UI 决定是否允许继续输入
   retryOfSessionId?: string; // 重试链路
   createdAt: number;

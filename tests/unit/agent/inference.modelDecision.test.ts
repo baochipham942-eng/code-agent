@@ -221,7 +221,7 @@ describe('resolveMainChatModelDecision — model_decision 事件发射（ADR-019
     });
   });
 
-  it('adaptive + 简单任务但免费模型 key 缺失 → 决策回落 user-selected（诚实反映实际执行），返回 null', () => {
+  it('adaptive + 简单任务但免费模型 key 缺失 → 决策标记可用性降级并返回 null', () => {
     mockGetApiKey.mockImplementation((provider: string) => (provider === 'zhipu' ? null : 'main-key'));
     const ctx = makeCtx();
     const result = resolveMainChatModelDecision(ctx, SIMPLE_MESSAGES, makeConfig({ adaptive: true }));
@@ -232,7 +232,8 @@ describe('resolveMainChatModelDecision — model_decision 事件发射（ADR-019
     expect(events[0].data).toMatchObject({
       resolvedProvider: 'moonshot',
       resolvedModel: 'kimi-k2.5',
-      reason: 'user-selected',
+      reason: 'fallback-availability',
+      fallbackFrom: 'zhipu/glm-4-flash',
     });
   });
 

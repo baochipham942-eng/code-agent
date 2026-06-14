@@ -25,6 +25,7 @@ import { SkillsPanel } from './components/SkillsPanel';
 import { PreviewPanel } from './components/PreviewPanel';
 import { WorkspacePreviewPanel } from './components/WorkspacePreviewPanel';
 import { ContextPanel } from './components/ContextPanel';
+import { ReplayAuditPanel } from './components/features/audit/ReplayAuditPanel';
 import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { PromptManagerModal } from './components/features/prompts/PromptManagerModal';
@@ -158,7 +159,7 @@ export const App: React.FC = () => {
   const showNarrowWorkbench =
     !showWorkbench &&
     workbenchTabs.length > 0 &&
-    (isPreviewActive || activeWorkbenchTab === 'workspace-preview');
+    (isPreviewActive || activeWorkbenchTab === 'workspace-preview' || activeWorkbenchTab === 'audit');
   const appliedNarrowSidebarDefaultRef = useRef(false);
 
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
@@ -601,6 +602,7 @@ export const App: React.FC = () => {
         )}
         {activeWorkbenchTab === 'workspace-preview' && <WorkspacePreviewPanel />}
         {activeWorkbenchTab === 'context' && <ContextPanel />}
+        {activeWorkbenchTab === 'audit' && <ReplayAuditPanel />}
         {isPreviewActive && <PreviewPanel />}
       </div>
     </div>

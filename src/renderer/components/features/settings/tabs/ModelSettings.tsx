@@ -11,7 +11,7 @@ import { Brain, Code2, Eye, Gauge, Key, Plus, RefreshCw, Search, Star, Wrench } 
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { AppSettings, ModelCapability, ModelEntrySettings, ModelProvider, ModelProviderProtocol, ModelProviderSettings } from '@shared/contract';
+import type { AppSettings, ModelCapability, ModelEntrySettings, ModelProvider, ModelProviderProtocol, ModelProviderSettings, TaskModelStrategySettings } from '@shared/contract';
 import { MODEL, UI, PROVIDER_MODELS, getProviderEndpointForProtocol, PROVIDER_CONCURRENCY_LIMITS } from '@shared/constants';
 import {
   MODEL_CAPABILITY_OPTIONS,
@@ -70,6 +70,7 @@ import {
   ProviderConnectionSection,
   ProviderDetailCard,
 } from './ProviderDetailSections';
+import { TaskStrategySettingsPanel } from './TaskStrategySettingsPanel';
 export type { ModelConfig };
 
 export interface ModelSettingsProps {
@@ -92,12 +93,15 @@ interface DefaultModelSelection {
 export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }) => {
   const { t } = useI18n();
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingTaskStrategy, setIsSavingTaskStrategy] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isTesting, setIsTesting] = useState(false);
   const [isDoctorOpen, setIsDoctorOpen] = useState(false);
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [providerConfigs, setProviderConfigs] = useState<ProviderConfigMap>({});
+  const [taskStrategy, setTaskStrategy] = useState<TaskModelStrategySettings | null>(null);
   // 本地 Provider「打开即自动发现」的去重闸：每个 Provider 一个会话只自动发现一次
   const autoDiscoveredRef = useRef<Set<string>>(new Set());
   // keyless provider（local/Ollama）端点探测结果：undefined=探测中，不能默认当已可用
@@ -140,6 +144,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       .then((settings) => {
         if (!cancelled) {
           setProviderConfigs(settings?.models?.providers ?? {});
+          setAppSettings(settings ?? null);
+          setTaskStrategy(settings?.models?.taskStrategy ?? null);
           const defaultProvider = (settings?.models?.defaultProvider || settings?.models?.default || config.provider) as ModelProvider;
           const defaultProviderConfig = settings?.models?.providers?.[defaultProvider];
           setDefaultSelection({
@@ -409,6 +415,18 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         ...prev,
         [config.provider]: providerConfigForSave,
       }));
+      setAppSettings((prev) => prev ? {
+        ...prev,
+        models: {
+          ...prev.models,
+          default: config.provider,
+          defaultProvider: config.provider,
+          providers: {
+            ...prev.models.providers,
+            [config.provider]: providerConfigForSave,
+          },
+        },
+      } : prev);
       setDefaultSelection({ provider: config.provider, model: modelId });
       toast.success('主任务模型已更新');
     } catch (error) {
@@ -477,6 +495,16 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       }));
       // 主任务模型指针与已配置 provider 解耦修复：出厂默认没 key 时，配好的 provider 自动接管主任务模型，
       // 否则发送被门禁拦下（"当前主任务模型未配置 API Key"）。
+      setAppSettings((prev) => prev ? {
+        ...prev,
+        models: {
+          ...prev.models,
+          providers: {
+            ...prev.models.providers,
+            [config.provider]: providerConfigForSave,
+          },
+        },
+      } : prev);
       try {
         const latestSettings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
         if (shouldPromoteProviderToDefault(config.provider, providerConfigForSave, latestSettings)) {
@@ -504,6 +532,36 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       setIsSaving(false);
     }
   };
+
+  const handleSaveTaskStrategy = useCallback(async () => {
+    if (!taskStrategy) return;
+    setIsSavingTaskStrategy(true);
+    const nextStrategy: TaskModelStrategySettings = {
+      ...taskStrategy,
+      updatedAt: Date.now(),
+    };
+    try {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
+        models: {
+          taskStrategy: nextStrategy,
+        },
+      });
+      setTaskStrategy(nextStrategy);
+      setAppSettings((prev) => prev ? {
+        ...prev,
+        models: {
+          ...prev.models,
+          taskStrategy: nextStrategy,
+        },
+      } : prev);
+      toast.success('任务策略已保存');
+    } catch (error) {
+      logger.error('Failed to save task strategy', error);
+      toast.error('任务策略保存失败: ' + (error instanceof Error ? error.message : '未知错误'));
+    } finally {
+      setIsSavingTaskStrategy(false);
+    }
+  }, [taskStrategy]);
 
   const handleTestConnection = async () => {
     if (needsApiKey && !config.apiKey && !hasStoredApiKey) {
@@ -773,9 +831,20 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   return (
     <SettingsPage
       title={t.model.title}
-      description="左侧选择或新增 Provider，右侧完成连接、模型与高级配置。"
+      description="先配置任务策略，再维护 Provider、模型和连接。"
     >
       <WebModeBanner />
+
+      <TaskStrategySettingsPanel
+        settings={appSettings}
+        providerConfigs={providerConfigs}
+        config={config}
+        strategy={taskStrategy}
+        disabled={isWebMode()}
+        saving={isSavingTaskStrategy}
+        onChange={setTaskStrategy}
+        onSave={handleSaveTaskStrategy}
+      />
 
       {/* ── Master-Detail：左 Provider 列表 + 右详情 ── */}
       <div className="grid gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:items-start">

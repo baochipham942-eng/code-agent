@@ -86,6 +86,59 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('已引导对话');
   });
 
+  it('renders turn quality memory and strategy indicators on assistant messages', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'assistant-quality-1',
+          type: 'assistant_text',
+          content: '完成',
+          timestamp: 100,
+          metadata: {
+            turnQuality: {
+              memory: {
+                mode: 'auto',
+                blocks: [{
+                  blockType: 'seed-memory',
+                  trigger: 'session_start',
+                  source: 'memory-packer',
+                  injected: true,
+                  chars: 120,
+                  count: 1,
+                  items: [{
+                    entryId: 'mem-entry-1',
+                    title: 'Memory Rule',
+                    kind: 'project',
+                    scope: 'project',
+                    status: 'active',
+                    preview: 'Keep retrieval visible.',
+                  }],
+                }],
+              },
+              strategy: {
+                provider: 'openai',
+                model: 'gpt-4.1',
+              },
+              capabilities: {
+                agentName: 'coder',
+              },
+              score: {
+                score: 88,
+                max: 100,
+                grade: 'good',
+                breakdown: [],
+              },
+            },
+          },
+        } satisfies TraceNode,
+      }),
+    );
+
+    expect(html).toContain('记忆 1');
+    expect(html).toContain('openai/gpt-4.1');
+    expect(html).toContain('coder');
+  });
+
   it('renders pending launch request as an inline approval card', () => {
     const html = renderToStaticMarkup(
       React.createElement(TraceNodeRenderer, {

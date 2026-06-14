@@ -8,7 +8,13 @@
 
 import { createLogger } from '../services/infra/logger';
 import type { ModelConfig, ModelProvider } from '../../shared/contract';
-import type { ModelProviderSettings } from '../../shared/contract/settings';
+import type {
+  ModelProviderSettings,
+  TaskModelStrategySettings,
+  TaskStrategyProfileId,
+  TaskStrategyRuleIntent,
+  TaskStrategyRuleSettings,
+} from '../../shared/contract/settings';
 import type {
   BillingMode,
   ModelCapabilityNeed,
@@ -28,7 +34,7 @@ import {
   isDynamicCustomProviderId,
   resolveProviderProtocol,
 } from '../../shared/modelRuntime';
-import { getAdaptiveRouter } from './adaptiveRouter';
+import { getAdaptiveRouter, type TaskComplexity } from './adaptiveRouter';
 import { getProviderHealthMonitor } from './providerHealthMonitor';
 
 const logger = createLogger('ModelDecision');
@@ -49,6 +55,8 @@ export interface ModelDecisionInput {
   billingMode?: BillingMode;
   /** provider 身份配置切片，用于会话页解释来源、协议和 endpoint */
   providerSettings?: Record<string, ModelDecisionProviderSettings>;
+  /** 全局任务策略。传入后，main-chat adaptive 会按策略 profile 路由。 */
+  taskStrategy?: TaskModelStrategySettings;
 }
 
 export interface ModelDecisionResult {
@@ -179,6 +187,14 @@ function buildStrategySummary(params: {
       return '识别到视觉输入，选择具备视觉能力的主任务模型。';
     case 'fallback-availability':
       return '原模型不可用，切到可用模型完成当前任务。';
+    case 'strategy-fast':
+      return '任务策略选择快速模型，优先降低等待时间。';
+    case 'strategy-main':
+      return '任务策略选择主模型，平衡速度和质量。';
+    case 'strategy-deep':
+      return '任务策略选择深度模型，优先保证复杂任务质量。';
+    case 'strategy-vision':
+      return '任务策略选择视觉模型，处理图片或多模态输入。';
     case 'user-selected':
     default:
       if (!adaptiveEnabled) {
@@ -212,6 +228,83 @@ function buildProviderHealthSnapshot(provider: string): ModelProviderHealthSnaps
     lastSuccessAt: health.lastSuccessAt,
     lastErrorAt: health.lastErrorAt,
     consecutiveErrors: health.consecutiveErrors,
+  };
+}
+
+const STRATEGY_REASON_BY_PROFILE: Record<TaskStrategyProfileId, ModelDecisionReason> = {
+  fast: 'strategy-fast',
+  main: 'strategy-main',
+  deep: 'strategy-deep',
+  vision: 'strategy-vision',
+};
+
+function hasVisionInput(messages: ModelMessage[]): boolean {
+  const lastUserMsg = [...messages].reverse().find((message) => message.role === 'user');
+  return Array.isArray(lastUserMsg?.content) && lastUserMsg.content.some((part) => part.type === 'image');
+}
+
+function messageText(messages: ModelMessage[]): string {
+  const lastUserMsg = [...messages].reverse().find((message) => message.role === 'user');
+  if (!lastUserMsg) return '';
+  if (typeof lastUserMsg.content === 'string') return lastUserMsg.content;
+  if (Array.isArray(lastUserMsg.content)) {
+    return lastUserMsg.content
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text || '')
+      .join(' ');
+  }
+  return '';
+}
+
+function inferStrategyIntent(
+  messages: ModelMessage[],
+  complexity: TaskComplexity,
+): TaskStrategyRuleIntent {
+  if (hasVisionInput(messages)) return 'vision';
+
+  const text = messageText(messages).toLowerCase();
+  if (complexity.level === 'complex' || /研究|规划|方案|重构|架构|对标|分析|audit|review|refactor|architect|migrate|benchmark/.test(text)) {
+    return 'research';
+  }
+  if (/```|\.tsx?|\.jsx?|\.py|\.go|\.rs|\.java|\.css|\.html|package\.json|tsconfig|readme|代码|文件|修复|实现|测试|改/.test(text)) {
+    return 'coding';
+  }
+  if (complexity.level === 'simple') return 'simple_chat';
+  return 'coding';
+}
+
+function findEnabledStrategyRule(
+  strategy: TaskModelStrategySettings,
+  intent: TaskStrategyRuleIntent,
+): TaskStrategyRuleSettings | undefined {
+  return strategy.rules.find((rule) => rule.enabled && rule.intent === intent);
+}
+
+function resolveStrategyProfile(
+  strategy: TaskModelStrategySettings,
+  intent: TaskStrategyRuleIntent,
+): { profile: TaskStrategyProfileId; rule?: TaskStrategyRuleSettings } {
+  const rule = findEnabledStrategyRule(strategy, intent);
+  if (rule) return { profile: rule.profile, rule };
+  return { profile: strategy.defaultProfile || 'main' };
+}
+
+function applyStrategySlot(
+  requestedConfig: ModelConfig,
+  strategy: TaskModelStrategySettings,
+  profile: TaskStrategyProfileId,
+): ModelConfig {
+  const slot = strategy.profiles?.[profile] || strategy.profiles?.main;
+  if (!slot) return requestedConfig;
+  return {
+    ...requestedConfig,
+    provider: slot.provider,
+    model: slot.model,
+    reasoningEffort: slot.reasoningEffort ?? requestedConfig.reasoningEffort,
+    maxTokens: slot.maxTokens ?? requestedConfig.maxTokens,
+    adaptive: strategy.fallback.enabled && strategy.fallback.allowCrossProvider
+      ? requestedConfig.adaptive
+      : false,
   };
 }
 
@@ -329,7 +422,7 @@ export function resolveTierModelConfig(
  * 3. 永不向上：本函数所有切换只会切到免费档，不会切到更贵的模型
  */
 export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionResult {
-  const { requestedConfig, messages, context, subagentRole } = input;
+  const { requestedConfig, messages, context, subagentRole, taskStrategy } = input;
   const billingMode: BillingMode = input.billingMode ?? 'payg';
   const capabilityNeeds = detectCapabilityNeeds(messages);
   const toolPolicy = resolveToolPolicy(capabilityNeeds);
@@ -346,7 +439,12 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
     reason: ModelDecisionReason,
     resolvedProvider: string,
     resolvedModel: string,
-    complexity?: { level: string; score: number },
+    complexity?: TaskComplexity,
+    strategy?: {
+      profile?: TaskStrategyProfileId;
+      ruleId?: string;
+      reason?: string;
+    },
   ): ModelDecision => {
     const taskClass = inferTaskClass(capabilityNeeds, complexity?.level);
     const providerHealthSnapshot = buildProviderHealthSnapshot(resolvedProvider);
@@ -368,7 +466,10 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
       speedPolicy: resolveSpeedPolicy(reason, providerHealthSnapshot),
       providerHealthSnapshot,
       ...(providerIdentity ? { providerIdentity } : {}),
-      ...(complexity ? { complexityScore: complexity.score } : {}),
+      ...(complexity ? { complexityScore: complexity.score, taskComplexity: complexity } : {}),
+      ...(strategy?.profile ? { strategyProfile: strategy.profile } : {}),
+      ...(strategy?.ruleId ? { strategyRuleId: strategy.ruleId } : {}),
+      ...(strategy?.reason ? { strategyReason: strategy.reason } : {}),
       ...(toolPolicy ? { toolPolicy } : {}),
       ...(capabilityNeeds.length > 0 ? { capabilityNeeds } : {}),
     };
@@ -390,8 +491,28 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
     };
   }
 
-  // ---- 3. 主聊天 + adaptive：简单任务 → 免费档（计费门控） ----
   const complexity = getAdaptiveRouter().estimateComplexity(messages);
+
+  if (taskStrategy) {
+    const intent = taskStrategy.mode === 'manual'
+      ? 'coding'
+      : inferStrategyIntent(messages, complexity);
+    const { profile, rule } = taskStrategy.mode === 'manual'
+      ? { profile: (taskStrategy.defaultProfile || 'main') as TaskStrategyProfileId, rule: undefined }
+      : resolveStrategyProfile(taskStrategy, intent);
+    const decidedConfig = applyStrategySlot(requestedConfig, taskStrategy, profile);
+    const reason = STRATEGY_REASON_BY_PROFILE[profile] || 'strategy-main';
+    return {
+      config: decidedConfig,
+      decision: buildDecision(reason, decidedConfig.provider, decidedConfig.model, complexity, {
+        profile,
+        ruleId: rule?.id,
+        reason: rule?.reason || `使用 ${profile} 任务策略`,
+      }),
+    };
+  }
+
+  // ---- 3. 主聊天 + adaptive：简单任务 → 免费档（计费门控） ----
   const alreadyFree = requestedConfig.provider === FREE_MODEL.provider
     && requestedConfig.model === FREE_MODEL.model;
 
@@ -408,7 +529,11 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
     logger.info(`[ModelDecision] simple task → ${FREE_MODEL.provider}/${FREE_MODEL.model} (score=${complexity.score})`);
     return {
       config: { ...requestedConfig, provider: FREE_MODEL.provider, model: FREE_MODEL.model },
-      decision: buildDecision('simple-task-free', FREE_MODEL.provider, FREE_MODEL.model, complexity),
+      decision: buildDecision('simple-task-free', FREE_MODEL.provider, FREE_MODEL.model, complexity, {
+        profile: 'fast',
+        ruleId: 'legacy-simple-task-free',
+        reason: '简单任务使用快速免费模型',
+      }),
     };
   }
 

@@ -18,6 +18,10 @@ const REASON_LABELS: Record<ModelDecisionReason, string> = {
   'role-tier': '角色档位',
   'simple-task-free': '简单任务',
   'billing-gate-skip': '计费跳过',
+  'strategy-fast': '快速策略',
+  'strategy-main': '主任务策略',
+  'strategy-deep': '深度策略',
+  'strategy-vision': '视觉策略',
   'capability-vision': '视觉能力',
   'fallback-availability': '可用性降级',
 };
@@ -145,7 +149,14 @@ const ENGINE_TRANSCRIPT_LABELS: Record<NonNullable<ModelExternalEngineSnapshot['
 function getToneClass(reason: ModelDecisionReason): string {
   switch (reason) {
     case 'simple-task-free':
+    case 'strategy-fast':
       return 'border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-200';
+    case 'strategy-main':
+      return 'border-blue-500/20 bg-blue-500/[0.08] text-blue-200';
+    case 'strategy-deep':
+      return 'border-violet-500/20 bg-violet-500/[0.08] text-violet-200';
+    case 'strategy-vision':
+      return 'border-cyan-500/20 bg-cyan-500/[0.08] text-cyan-200';
     case 'billing-gate-skip':
       return 'border-amber-500/20 bg-amber-500/[0.08] text-amber-200';
     case 'capability-vision':

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { ExternalAgentEngineKind } from './agentEngine';
-import type { ModelProvider, ModelProviderProtocol } from './model';
+import type { ModelConfig, ModelProvider, ModelProviderProtocol } from './model';
 import type { ModelCapability } from './model';
 import type { PermissionLevel } from './tool';
 import type { ContextCompressionConfig } from './contextHealth';
@@ -62,6 +62,39 @@ export interface AgentEngineModelPreferenceSettings {
   updatedAt?: number;
 }
 
+export type TaskStrategyMode = 'auto' | 'manual';
+export type TaskStrategyProfileId = 'fast' | 'main' | 'deep' | 'vision';
+export type TaskStrategyRuleIntent = 'simple_chat' | 'coding' | 'research' | 'vision' | 'artifact';
+
+export interface TaskStrategyModelSlot {
+  provider: ModelProvider;
+  model: string;
+  reasoningEffort?: ModelConfig['reasoningEffort'];
+  maxTokens?: number;
+}
+
+export interface TaskStrategyRuleSettings {
+  id: string;
+  label: string;
+  intent: TaskStrategyRuleIntent;
+  enabled: boolean;
+  profile: TaskStrategyProfileId;
+  reason: string;
+}
+
+export interface TaskModelStrategySettings {
+  mode: TaskStrategyMode;
+  defaultProfile: TaskStrategyProfileId;
+  profiles: Record<TaskStrategyProfileId, TaskStrategyModelSlot>;
+  fallback: {
+    enabled: boolean;
+    preferSameProvider: boolean;
+    allowCrossProvider: boolean;
+  };
+  rules: TaskStrategyRuleSettings[];
+  updatedAt?: number;
+}
+
 export interface AppSettings {
   models: {
     default: string;
@@ -75,6 +108,7 @@ export interface AppSettings {
       fast: { provider: ModelProvider; model: string };
       gui: { provider: ModelProvider; model: string };
     };
+    taskStrategy?: TaskModelStrategySettings;
   };
   // API 超时配置
   timeouts?: {

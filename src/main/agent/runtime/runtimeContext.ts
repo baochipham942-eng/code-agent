@@ -10,7 +10,7 @@ import type {
 import type { StructuredOutputConfig } from '../structuredOutput';
 import type { EffortLevel, InteractionMode } from '../../../shared/contract/agent';
 import type { ModelConfig } from '../../../shared/contract/model';
-import type { ModelDecisionEventData } from '../../../shared/contract/modelDecision';
+import type { ModelDecision, ModelDecisionEventData } from '../../../shared/contract/modelDecision';
 import type { ToolExecutor } from '../../tools/toolExecutor';
 import type { ModelRouter } from '../../model/modelRouter';
 import type { CircuitBreaker } from '../toolExecution/circuitBreaker';
@@ -33,6 +33,8 @@ import type {
 import type { SkillInvocationMatchKind } from '../../services/skills/skillInvocationResolver';
 import type { SkillToolBoundary } from '../../../shared/contract/agentSkill';
 import type { TurnTraceRecorder } from './turnTrace';
+import type { SessionMemoryMode } from '../../../shared/contract/session';
+import type { TurnQualityMemorySummary } from '../../../shared/contract/turnQuality';
 
 /**
  * Mutable shared state. Single object, all modules share the same reference.
@@ -51,7 +53,10 @@ export interface RuntimeContext {
   isDefaultWorkingDirectory: boolean;
   sessionId: string;
   agentId?: string;
+  agentName?: string;
   userId?: string;
+  memoryMode?: SessionMemoryMode;
+  suppressedMemoryEntryIds?: string[];
   persistMessage?: (message: Message) => Promise<void>;
   onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: ToolResult }) => void;
   toolScope?: WorkbenchToolScope;
@@ -140,6 +145,8 @@ export interface RuntimeContext {
   currentSystemPromptHash?: string;
   /** G20: per-run 结构化 turn trace（决策 / dispatch / compaction） */
   turnTrace: TurnTraceRecorder;
+  turnQualityMemory?: TurnQualityMemorySummary;
+  turnModelDecision?: ModelDecision;
   pendingRuntimeDiagnostics: string[];
   /** GAP-023: 当前生效 system prompt 构建时被预算丢弃/裁剪的块（可见化到 context health） */
   droppedPromptBlocks?: string[];

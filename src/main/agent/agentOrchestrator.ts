@@ -863,6 +863,22 @@ export class AgentOrchestrator {
     const telemetryAdapter = sessionId
       ? getTelemetryCollector().createAdapter(sessionId, 'main')
       : undefined;
+    let sessionMemoryMode: import('../../shared/contract/session').SessionMemoryMode = 'auto';
+    let suppressedMemoryEntryIds: string[] | undefined;
+    if (sessionId) {
+      try {
+        const session = await getSessionManager().getSession(sessionId);
+        sessionMemoryMode = session?.memoryMode ?? 'auto';
+        suppressedMemoryEntryIds = session?.suppressedMemoryEntryIds?.length
+          ? [...session.suppressedMemoryEntryIds]
+          : undefined;
+      } catch (error) {
+        logger.warn('Failed to read session memory preferences; using defaults', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     // /goal 自治模式：options.goal 存在则建 goalContract → AgentLoop 据此建 ctx.goalMode
     // + maxIterations=maxTurns + 预加载 attempt_completion（与 web /api/run 路径同源逻辑）。
@@ -896,6 +912,16 @@ export class AgentOrchestrator {
       });
     }
 
+    const deniedToolNames = sessionMemoryMode === 'off'
+      ? Array.from(new Set([
+          ...(options?.deniedToolNames || []),
+          'MemoryRead',
+          'MemoryWrite',
+          'History',
+          'EpisodicRecall',
+        ]))
+      : options?.deniedToolNames;
+
     this.agentLoop = new AgentLoop({
       // provider 变体（roadmap 2.4）：默认主提示词按 provider 家族追加纪律段落
       // （Claude 系 Git 安全 / GPT 国产系自治坚持）；agent 路由自带 prompt 时不动
@@ -907,6 +933,10 @@ export class AgentOrchestrator {
       onEvent: dagAwareOnEvent,
       planningService: this.planningService,
       sessionId,
+      agentId: routingResolution?.agent?.id ?? 'default',
+      agentName: routingResolution?.agent?.name ?? 'default',
+      memoryMode: sessionMemoryMode,
+      suppressedMemoryEntryIds,
       workingDirectory: this.workingDirectory,
       isDefaultWorkingDirectory: this.isDefaultWorkingDirectory,
       toolScope,
@@ -915,7 +945,7 @@ export class AgentOrchestrator {
       // 迭代数硬上限（角色主动性醒来等预算受限场景，docs/designs/role-proactivity.md §6）
       maxIterations: options?.maxIterations,
       historyVisibility: options?.historyVisibility,
-      deniedToolNames: options?.deniedToolNames,
+      deniedToolNames,
       telemetryAdapter,
       persistMessage: sessionId
         ? async (message: Message) => {

@@ -176,14 +176,15 @@ export class SessionRepository {
     const stmt = this.db.prepare(`
         INSERT INTO sessions (
           id, user_id, title, model_provider, model_name, working_directory,
-          session_type, origin, parent_session_id, source_run_id, agent_engine, read_only, retry_of_session_id,
+          session_type, origin, parent_session_id, source_run_id, agent_engine, memory_mode,
+          suppressed_memory_entry_ids, read_only, retry_of_session_id,
           created_at, updated_at, workspace, workbench_provenance, status, last_token_usage,
           is_deleted, synced_at, git_branch
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
     `);
 
-    stmt.run(session.id, session.userId ?? null, session.title, session.modelConfig.provider, session.modelConfig.model, session.workingDirectory || null, session.type || 'chat', session.origin ? JSON.stringify(session.origin) : null, session.parentSessionId || null, session.sourceRunId || null, session.engine ? JSON.stringify(normalizeAgentEngineSession(session.engine)) : null, session.readOnly ? 1 : 0, session.retryOfSessionId || null, session.createdAt, session.updatedAt, session.workspace || null, session.workbenchProvenance ? JSON.stringify(session.workbenchProvenance) : null, session.status || 'idle', session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null, session.gitBranch || null);
+    stmt.run(session.id, session.userId ?? null, session.title, session.modelConfig.provider, session.modelConfig.model, session.workingDirectory || null, session.type || 'chat', session.origin ? JSON.stringify(session.origin) : null, session.parentSessionId || null, session.sourceRunId || null, session.engine ? JSON.stringify(normalizeAgentEngineSession(session.engine)) : null, session.memoryMode || 'auto', JSON.stringify(session.suppressedMemoryEntryIds || []), session.readOnly ? 1 : 0, session.retryOfSessionId || null, session.createdAt, session.updatedAt, session.workspace || null, session.workbenchProvenance ? JSON.stringify(session.workbenchProvenance) : null, session.status || 'idle', session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null, session.gitBranch || null);
   }
 
   createSessionWithId(
@@ -293,6 +294,8 @@ export class SessionRepository {
           model_name = COALESCE(?, model_name),
           working_directory = COALESCE(?, working_directory),
           agent_engine = COALESCE(?, agent_engine),
+          memory_mode = COALESCE(?, memory_mode),
+          suppressed_memory_entry_ids = COALESCE(?, suppressed_memory_entry_ids),
           updated_at = COALESCE(?, updated_at),
           workspace = COALESCE(?, workspace),
           workbench_provenance = COALESCE(?, workbench_provenance),
@@ -306,8 +309,9 @@ export class SessionRepository {
     const lastTokenUsage = updates.lastTokenUsage !== undefined ? JSON.stringify(updates.lastTokenUsage) : null; // null means keep existing via COALESCE
     const workbenchProvenance = updates.workbenchProvenance !== undefined ? JSON.stringify(updates.workbenchProvenance) : null;
     const agentEngine = updates.engine !== undefined ? JSON.stringify(normalizeAgentEngineSession(updates.engine)) : null;
+    const suppressedMemoryEntryIds = updates.suppressedMemoryEntryIds !== undefined ? JSON.stringify(updates.suppressedMemoryEntryIds) : null;
 
-    const result = stmt.run(updates.title ?? null, updates.userId !== undefined ? updates.userId : null, updates.modelConfig?.provider ?? null, updates.modelConfig?.model ?? null, updates.workingDirectory ?? null, agentEngine, updates.updatedAt ?? Date.now(), updates.workspace !== undefined ? updates.workspace : null, workbenchProvenance, updates.status ?? null, lastTokenUsage, options?.isDeleted !== undefined ? (options.isDeleted ? 1 : 0) : null, this.resolveSyncedAt(options) ?? null, sessionId);
+    const result = stmt.run(updates.title ?? null, updates.userId !== undefined ? updates.userId : null, updates.modelConfig?.provider ?? null, updates.modelConfig?.model ?? null, updates.workingDirectory ?? null, agentEngine, updates.memoryMode ?? null, suppressedMemoryEntryIds, updates.updatedAt ?? Date.now(), updates.workspace !== undefined ? updates.workspace : null, workbenchProvenance, updates.status ?? null, lastTokenUsage, options?.isDeleted !== undefined ? (options.isDeleted ? 1 : 0) : null, this.resolveSyncedAt(options) ?? null, sessionId);
 
     if (result.changes === 0) throw new Error(`Session not found: ${sessionId}`);
   }
@@ -1405,6 +1409,8 @@ export class SessionRepository {
       parentSessionId: row.parent_session_id as string | undefined,
       sourceRunId: row.source_run_id as string | undefined,
       engine,
+      memoryMode: row.memory_mode === 'off' ? 'off' : 'auto',
+      suppressedMemoryEntryIds: parseJsonArray(row.suppressed_memory_entry_ids),
       readOnly: Boolean(row.read_only),
       retryOfSessionId: row.retry_of_session_id as string | undefined,
       createdAt: row.created_at as number,

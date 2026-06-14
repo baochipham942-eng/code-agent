@@ -455,6 +455,38 @@ The left menu should keep common daily actions visible.
     expect(ids.filter((id) => id === 'db:mem-shared').length).toBe(1);
   });
 
+  it('excludes session-suppressed memory entries from pack candidates', async () => {
+    const db = {
+      listMemories: vi.fn(() => [
+        record({
+          id: 'mem-visible',
+          content: 'Release memory should stay visible for this query.',
+          summary: 'release visible',
+          metadata: {},
+        }),
+        record({
+          id: 'mem-suppressed',
+          content: 'Release memory should be hidden for this session.',
+          summary: 'release hidden',
+          metadata: {},
+        }),
+      ] as MemoryRecord[]),
+      createMemory: vi.fn(),
+      updateMemory: vi.fn(),
+    };
+
+    const packed = await packMemoryEntries({
+      query: 'release memory',
+      excludeEntryIds: ['db:mem-suppressed'],
+      maxItems: 5,
+      perItemCharLimit: 200,
+      totalCharBudget: 600,
+    }, db);
+
+    expect(packed.items.map((item) => item.entryId)).toContain('db:mem-visible');
+    expect(packed.items.map((item) => item.entryId)).not.toContain('db:mem-suppressed');
+  });
+
   it('skips BM25 recall when there is no query', async () => {
     const db = {
       listMemories: vi.fn(() => [] as MemoryRecord[]),

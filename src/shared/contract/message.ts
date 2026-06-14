@@ -5,6 +5,7 @@
 import type { ToolCall, ToolResult } from './tool';
 import type { WorkbenchMessageMetadata } from './conversationEnvelope';
 import type { ModelDecisionEventData } from './modelDecision';
+import type { TurnQualitySummary } from './turnQuality';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageVisibility = 'active' | 'rewound';
@@ -212,6 +213,7 @@ export interface MessageMetadata {
   workbench?: WorkbenchMessageMetadata;
   skill?: SkillMessageMetadata;
   channel?: ChannelMessageMetadata;
+  turnQuality?: TurnQualitySummary;
 }
 
 export interface Message {

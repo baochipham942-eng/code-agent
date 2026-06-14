@@ -16,6 +16,7 @@ import {
   type KnowledgeInboxDecisionRecord,
 } from '../memory/knowledgeInboxDecision';
 import { packMemoryEntries } from '../memory/memoryEntryRuntime';
+import type { MemoryPackResult } from '../../shared/contract/memory';
 
 const logger = createLogger('SeedMemoryInjector');
 
@@ -150,7 +151,18 @@ export async function buildPackedSeedMemoryBlock(options: {
   projectPath?: string;
   sessionId?: string;
   query?: string;
+  excludeEntryIds?: string[];
 }): Promise<string | null> {
+  const packed = await buildPackedSeedMemory(options);
+  return packed?.block ?? null;
+}
+
+export async function buildPackedSeedMemory(options: {
+  projectPath?: string;
+  sessionId?: string;
+  query?: string;
+  excludeEntryIds?: string[];
+}): Promise<{ block: string; packed: MemoryPackResult } | null> {
   try {
     const db = getDatabase();
     if (!db?.isReady) {
@@ -161,6 +173,7 @@ export async function buildPackedSeedMemoryBlock(options: {
       query: options.query,
       projectPath: options.projectPath,
       sessionId: options.sessionId,
+      excludeEntryIds: options.excludeEntryIds,
       statuses: ['active'],
       maxItems: MAX_SEED_MEMORIES,
       perItemCharLimit: MAX_ENTRY_CHARS,
@@ -172,7 +185,10 @@ export async function buildPackedSeedMemoryBlock(options: {
     }
 
     logger.info(`[SeedMemory] Injecting ${packed.items.length} packed memories (~${Math.ceil(packed.totalChars / CHARS_PER_TOKEN)} tokens)`);
-    return `## Packed Memories\n${packed.block}`;
+    return {
+      block: `## Packed Memories\n${packed.block}`,
+      packed,
+    };
   } catch (error) {
     logger.warn('[SeedMemory] Failed to build packed seed memory block, falling back', { error: String(error) });
     return null;

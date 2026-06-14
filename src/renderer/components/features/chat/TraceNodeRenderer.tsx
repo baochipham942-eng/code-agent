@@ -26,6 +26,7 @@ import { SkillStatusMessage } from './MessageBubble/SkillStatusMessage';
 import { GoalNoticeMessage } from './MessageBubble/GoalNoticeMessage';
 import { FallbackBanner } from './MessageBubble/FallbackBanner';
 import { RouteTraceChip } from './RouteTraceChip';
+import { TurnQualityStrip } from './TurnQualityStrip';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, GitBranch, RotateCcw, Wrench, CornerDownRight, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { UI } from '@shared/constants';
@@ -460,6 +461,10 @@ const AssistantTextNode: React.FC<{
             defaultExpanded={Boolean(node.modelDecision.externalEngine?.failure)}
           />
         </div>
+      )}
+
+      {node.metadata?.turnQuality && (
+        <TurnQualityStrip summary={node.metadata.turnQuality} />
       )}
 
       {/* Thinking/Reasoning fold */}

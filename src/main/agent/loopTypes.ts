@@ -43,7 +43,10 @@ export interface AgentLoopConfig {
   hookManager?: HookManager;
   sessionId?: string;
   agentId?: string;
+  agentName?: string;
   userId?: string;
+  memoryMode?: import('../../shared/contract/session').SessionMemoryMode;
+  suppressedMemoryEntryIds?: string[];
   workingDirectory: string;
   isDefaultWorkingDirectory?: boolean;
   structuredOutput?: StructuredOutputConfig;

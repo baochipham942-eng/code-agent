@@ -15,6 +15,37 @@ function createLogger() {
 }
 
 describe('database experiment schema', () => {
+  it('creates session memory quality columns with safe defaults', () => {
+    const db = new Database(':memory:');
+    const logger = createLogger();
+
+    try {
+      applySchema(db, logger as never);
+      expect(logger.warn).not.toHaveBeenCalled();
+
+      const sessionColumns = db
+        .prepare('PRAGMA table_info(sessions)')
+        .all()
+        .map((row) => (row as { name: string }).name);
+
+      expect(sessionColumns).toContain('memory_mode');
+      expect(sessionColumns).toContain('suppressed_memory_entry_ids');
+      db.prepare(`
+        INSERT INTO sessions (
+          id, title, model_provider, model_name, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `).run('session-memory-defaults', 'Memory Defaults', 'openai', 'gpt-4.1', 100, 100);
+      const row = db
+        .prepare('SELECT memory_mode, suppressed_memory_entry_ids FROM sessions WHERE id = ?')
+        .get('session-memory-defaults') as { memory_mode: string; suppressed_memory_entry_ids: string };
+
+      expect(row.memory_mode).toBe('auto');
+      expect(row.suppressed_memory_entry_ids).toBe('[]');
+    } finally {
+      db.close();
+    }
+  });
+
   it('creates a fresh experiments table that matches ExperimentRepository inserts', () => {
     const db = new Database(':memory:');
     const logger = createLogger();

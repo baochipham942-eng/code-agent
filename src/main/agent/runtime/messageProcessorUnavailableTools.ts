@@ -29,6 +29,7 @@ import {
   buildForcedFinalAssistantContent,
   sanitizeToolResultForObservation,
 } from './messageProcessorHelpers';
+import { attachTurnQualityMetadata } from './turnQuality';
 
 export interface UnavailableToolCallsDeps {
   ctx: RuntimeContext;
@@ -86,6 +87,7 @@ export async function handleUnavailableToolCalls(
         effortLevel: ctx.effortLevel,
         inputTokens: response.usage?.inputTokens,
         outputTokens: response.usage?.outputTokens,
+        metadata: attachTurnQualityMetadata(ctx, undefined, response),
       };
       await contextAssembly.addAndPersistMessage(assistantMsg);
       ctx.onEvent({ type: 'message', data: assistantMsg });
@@ -170,6 +172,7 @@ export async function handleUnavailableToolCalls(
     effortLevel: ctx.effortLevel,
     inputTokens: response.usage?.inputTokens,
     outputTokens: response.usage?.outputTokens,
+    metadata: attachTurnQualityMetadata(ctx, undefined, response),
   };
   await contextAssembly.addAndPersistMessage(assistantMsg);
   ctx.onEvent({ type: 'message', data: assistantMsg });
@@ -230,6 +233,7 @@ export async function handleUnavailableToolCalls(
       content: buildForcedFinalAssistantContent(ctx.forceFinalResponseReason),
       timestamp: Date.now(),
       effortLevel: ctx.effortLevel,
+      metadata: attachTurnQualityMetadata(ctx, undefined, response),
     };
     await contextAssembly.addAndPersistMessage(finalMessage);
     ctx.onEvent({ type: 'message', data: finalMessage });

@@ -29,6 +29,7 @@ import type { ModelMessage } from '../../../agent/loopTypes';
 import type { StreamCallback, InferenceOptions, ModelResponse as RouterModelResponse } from '../../../model/types';
 import type { ModelConfig, ModelProvider } from '../../../../shared/contract/model';
 import type { ModelDecisionEventData, ModelFallbackInfo, ModelFallbackTraceStep, ModelProviderHealthSnapshot, ModelToolStrategyDiagnostics, ModelToolTokenSavingsProviderReport, ModelToolTokenSavingsProviderUsage } from '../../../../shared/contract/modelDecision';
+import type { TaskModelStrategySettings } from '../../../../shared/contract/settings';
 import { getAdaptiveRouter } from '../../../model/adaptiveRouter';
 import { buildModelProviderIdentity, resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from '../../../model/modelDecision';
 import { classifyProviderFallbackReason, formatFallbackReason, getFallbackChainForRequest } from '../../../model/modelRouterPolicy';
@@ -671,10 +672,12 @@ export function resolveMainChatModelDecision(
   // 计费方式：用户配置 > 类型默认值（settings 不可用时缺省 payg）
   let billingMode: BillingMode | undefined;
   let providerSettings: Record<string, ModelDecisionProviderSettings> | undefined;
+  let taskStrategy: TaskModelStrategySettings | undefined;
   try {
     const settings = getConfigService().getSettings();
     providerSettings = settings.models?.providers;
     billingMode = resolveProviderBillingMode(config.provider, providerSettings);
+    taskStrategy = settings.models?.taskStrategy;
   } catch { /* 测试/CLI 环境无 settings → resolveModelDecision 内部缺省 payg */ }
 
   const { decision, config: decided } = resolveModelDecision({
@@ -683,21 +686,32 @@ export function resolveMainChatModelDecision(
     context: 'main-chat',
     billingMode,
     providerSettings,
+    taskStrategy,
   });
   let emittedDecision = decision;
   let adapted: ModelConfig | null = null;
 
-  if (decision.reason === 'simple-task-free') {
+  if (
+    decision.reason === 'simple-task-free'
+    || decision.reason === 'strategy-fast'
+    || decision.reason === 'strategy-main'
+    || decision.reason === 'strategy-deep'
+    || decision.reason === 'strategy-vision'
+  ) {
     adapted = { ...decided };
     if (adapted.provider !== config.provider) {
       const apiKey = getConfigService().getApiKey(adapted.provider);
       if (!apiKey) {
-        getAdaptiveRouter().disableFreeModel(`no API key for ${adapted.provider}`);
+        if (decision.reason === 'simple-task-free') {
+          getAdaptiveRouter().disableFreeModel(`no API key for ${adapted.provider}`);
+        }
         emittedDecision = {
           ...decision,
           resolvedProvider: config.provider,
           resolvedModel: config.model,
-          reason: 'user-selected',
+          reason: 'fallback-availability',
+          fallbackFrom: `${adapted.provider}/${adapted.model}`,
+          strategyReason: `${decision.strategyReason || '任务策略目标模型不可用'}；${adapted.provider} 未配置 API Key，回退到当前模型`,
         };
         adapted = null;
       } else {
@@ -720,6 +734,7 @@ export function resolveMainChatModelDecision(
       type: 'model_decision',
       data: decisionEventData,
     });
+    ctx.runtime.turnModelDecision = emittedDecision;
   }
   logger.info('[AgentLoop] Model decision resolved', {
     requestedProvider: emittedDecision.requestedProvider,

@@ -125,6 +125,8 @@ function normalizeSession(session: Session & {
     title: session.title || '未命名会话',
     type: session.type || 'chat',
     engine: normalizeAgentEngineSession(session.engine),
+    memoryMode: session.memoryMode || 'auto',
+    suppressedMemoryEntryIds: session.suppressedMemoryEntryIds || [],
     updatedAt: Number.isFinite(session.updatedAt) ? session.updatedAt : (Number.isFinite(session.createdAt) ? session.createdAt : Date.now()),
     createdAt: Number.isFinite(session.createdAt) ? session.createdAt : Date.now(),
     messageCount: session.messageCount || 0,
@@ -236,6 +238,8 @@ interface SessionActions {
   clearCurrentSession: () => void;
   updateSessionTitle: (sessionId: string, title: string) => void;
   updateSessionEngine: (sessionId: string, engine: Partial<AgentEngineSessionMetadata>) => Promise<void>;
+  updateSessionMemoryMode: (sessionId: string, memoryMode: Session['memoryMode']) => Promise<void>;
+  suppressMemoryEntryForSession: (sessionId: string, entryId: string) => Promise<void>;
   markSessionUnread: (sessionId: string) => void;
   markSessionRead: (sessionId: string) => void;
   isSessionUnread: (sessionId: string) => boolean;
@@ -733,6 +737,49 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       } catch (error) {
         logger.error('Failed to update session engine', error);
         await get().loadSessions();
+        throw error;
+      }
+    },
+
+    updateSessionMemoryMode: async (sessionId: string, memoryMode: Session['memoryMode']) => {
+      const nextMode = memoryMode || 'auto';
+      const previousSessions = get().sessions;
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.id === sessionId ? normalizeSession({ ...s, memoryMode: nextMode, updatedAt: Date.now() }) : s
+        ),
+      }));
+      try {
+        await invokeSession('update', {
+          sessionId,
+          updates: { memoryMode: nextMode },
+        });
+      } catch (error) {
+        logger.error('Failed to update session memory mode', error);
+        set({ sessions: previousSessions });
+        throw error;
+      }
+    },
+
+    suppressMemoryEntryForSession: async (sessionId: string, entryId: string) => {
+      const previousSessions = get().sessions;
+      const current = get().sessions.find((session) => session.id === sessionId);
+      const nextIds = Array.from(new Set([...(current?.suppressedMemoryEntryIds || []), entryId]));
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.id === sessionId
+            ? normalizeSession({ ...s, suppressedMemoryEntryIds: nextIds, updatedAt: Date.now() })
+            : s
+        ),
+      }));
+      try {
+        await invokeSession('update', {
+          sessionId,
+          updates: { suppressedMemoryEntryIds: nextIds },
+        });
+      } catch (error) {
+        logger.error('Failed to suppress memory entry for session', error);
+        set({ sessions: previousSessions });
         throw error;
       }
     },

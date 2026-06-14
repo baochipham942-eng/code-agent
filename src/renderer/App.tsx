@@ -203,7 +203,7 @@ export const App: React.FC = () => {
   useInAppValidationBridge();
   useRendererBundleAutoReload();
 
-  // 全局快捷键（含 ⌘⇧C compact 触发）
+  // 全局快捷键（命令面板、设置、会话导航等；compact 只有用户显式绑定后才会触发）
   useKeyboardShortcuts({
     customHandlers: {
       triggerCompact: async () => {

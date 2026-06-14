@@ -32,6 +32,11 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'voiceInput', tabLabel: '语音输入', label: 'Whisper 模型', keywords: ['whisper', 'model', 'asr', 'speech to text', '模型', '本地模型', '转写模型'] },
   { tab: 'voiceInput', tabLabel: '语音输入', label: '转写语言', keywords: ['language', 'locale', '语言', '多语言', '中文', '英文'] },
 
+  // Keybindings
+  { tab: 'keybindings', tabLabel: '快捷键', label: '快捷键配置', keywords: ['keyboard', 'shortcut', 'hotkey', 'keybinding', '快捷键', '热键', '键盘', '命令面板', 'Cmd K', 'Ctrl K'] },
+  { tab: 'keybindings', tabLabel: '快捷键', label: '冲突检测', keywords: ['conflict', '冲突', '占用', 'macOS', 'Windows', 'Linux', '恢复默认'] },
+  { tab: 'keybindings', tabLabel: '快捷键', label: '全局热键', keywords: ['global hotkey', '全局唤起', '语音输入', '截图问答', 'appshot', 'voice'] },
+
   // Workspace
   { tab: 'workspace', tabLabel: '工作区', label: '当前工作目录', keywords: ['workspace', '工作区', 'cwd', 'working directory', '目录', '当前'] },
   { tab: 'workspace', tabLabel: '工作区', label: '配置作用域', keywords: ['personalization', 'config scope', 'scope', '配置作用域', '全局配置', '项目配置', '本地配置', '个性化', 'user config', 'project config', 'local config'] },

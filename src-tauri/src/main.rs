@@ -11,10 +11,10 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{
-    include_image, menu::MenuBuilder, tray::TrayIconBuilder, Emitter, Manager, RunEvent,
-    WindowEvent,
+    include_image, menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Emitter, Manager,
+    RunEvent, State, WindowEvent,
 };
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 mod appshots;
 mod native_app_icon;
@@ -56,6 +56,34 @@ const BUNDLED_NODE_PATHS: &[&[&str]] = &[
 #[derive(Default)]
 struct AppState {
     web_server: Mutex<Option<Child>>,
+}
+
+#[derive(Default)]
+struct KeybindingHotkeysState {
+    registered: Mutex<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KeybindingGlobalHotkeyInput {
+    action_id: String,
+    accelerator: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct KeybindingGlobalHotkeyEvent {
+    action_id: String,
+    accelerator: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct KeybindingGlobalHotkeyResult {
+    action_id: String,
+    accelerator: String,
+    registered: bool,
+    error: Option<String>,
 }
 
 impl AppState {
@@ -1226,6 +1254,7 @@ mod update_url_tests {
 
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let menu = MenuBuilder::new(app)
+        .text("quick_ask", "快速提问")
         .text("new_chat", "新建对话")
         .text("paste_context", "粘贴为上下文")
         .separator()
@@ -1246,6 +1275,10 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
             match event.id().as_ref() {
+                "quick_ask" => {
+                    activate_window(app_handle);
+                    app_handle.emit("memo:activate", ()).ok();
+                }
                 "new_chat" => {
                     activate_window(app_handle);
                     app_handle.emit("memo:new_chat", ()).ok();
@@ -1262,20 +1295,131 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn setup_global_shortcut(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let handle = app.handle().clone();
+fn focus_main_window(app_handle: &AppHandle) {
+    if let Some(win) = app_handle.get_webview_window("main") {
+        win.show().ok();
+        win.unminimize().ok();
+        win.set_focus().ok();
+    }
+}
 
-    app.global_shortcut().on_shortcut(
-        "CmdOrCtrl+Shift+A",
-        move |_app_handle, _shortcut: &Shortcut, _event: ShortcutEvent| {
-            if let Some(win) = handle.get_webview_window("main") {
-                win.show().ok();
-                win.set_focus().ok();
+fn toggle_main_window(app_handle: &AppHandle) {
+    if let Some(win) = app_handle.get_webview_window("main") {
+        let is_visible = win.is_visible().unwrap_or(false);
+        if is_visible {
+            win.hide().ok();
+        } else {
+            win.show().ok();
+            win.unminimize().ok();
+            win.set_focus().ok();
+        }
+    }
+}
+
+fn unregister_configurable_global_hotkeys(
+    app_handle: &AppHandle,
+    state: &KeybindingHotkeysState,
+) {
+    let previous = {
+        let mut guard = state
+            .registered
+            .lock()
+            .expect("keybinding hotkeys mutex poisoned");
+        std::mem::take(&mut *guard)
+    };
+
+    for accelerator in previous {
+        if let Err(error) = app_handle.global_shortcut().unregister(accelerator.as_str()) {
+            eprintln!("Failed to unregister keybinding hotkey {accelerator}: {error}");
+        }
+    }
+}
+
+#[tauri::command]
+fn keybindings_set_global_hotkeys(
+    app: AppHandle,
+    state: State<'_, KeybindingHotkeysState>,
+    bindings: Vec<KeybindingGlobalHotkeyInput>,
+) -> Vec<KeybindingGlobalHotkeyResult> {
+    unregister_configurable_global_hotkeys(&app, state.inner());
+
+    let mut registered = Vec::new();
+    let mut results = Vec::new();
+
+    for binding in bindings {
+        let action_id = binding.action_id.trim().to_string();
+        let accelerator = binding.accelerator.trim().to_string();
+
+        if action_id.is_empty() || accelerator.is_empty() {
+            results.push(KeybindingGlobalHotkeyResult {
+                action_id,
+                accelerator,
+                registered: false,
+                error: Some("Missing actionId or accelerator".to_string()),
+            });
+            continue;
+        }
+
+        let event_action_id = action_id.clone();
+        let event_accelerator = accelerator.clone();
+        let register_result = app.global_shortcut().on_shortcut(
+            accelerator.as_str(),
+            move |app_handle, _shortcut, event| {
+                if event.state != ShortcutState::Pressed {
+                    return;
+                }
+
+                match event_action_id.as_str() {
+                    "app.toggle" => toggle_main_window(app_handle),
+                    "app.quickAsk" | "session.new" => focus_main_window(app_handle),
+                    _ => {}
+                }
+
+                app_handle
+                    .emit(
+                        "keybindings:global_hotkey",
+                        KeybindingGlobalHotkeyEvent {
+                            action_id: event_action_id.clone(),
+                            accelerator: event_accelerator.clone(),
+                        },
+                    )
+                    .ok();
+            },
+        );
+
+        match register_result {
+            Ok(()) => {
+                registered.push(accelerator.clone());
+                results.push(KeybindingGlobalHotkeyResult {
+                    action_id,
+                    accelerator,
+                    registered: true,
+                    error: None,
+                });
             }
-            handle.emit("memo:activate", ()).ok();
-        },
-    )?;
+            Err(error) => {
+                results.push(KeybindingGlobalHotkeyResult {
+                    action_id,
+                    accelerator,
+                    registered: false,
+                    error: Some(error.to_string()),
+                });
+            }
+        }
+    }
 
+    {
+        let mut guard = state
+            .registered
+            .lock()
+            .expect("keybinding hotkeys mutex poisoned");
+        *guard = registered;
+    }
+
+    results
+}
+
+fn setup_global_shortcut(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
     appshots::setup_dual_command_hotkey(app.handle().clone())
         .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
@@ -1307,6 +1451,7 @@ fn main() {
         .manage(AppState::default())
         .manage(NativeDesktopState::default())
         .manage(AppshotsState::default())
+        .manage(KeybindingHotkeysState::default())
         .invoke_handler(tauri::generate_handler![
             get_app_version,
             check_for_update,
@@ -1332,7 +1477,8 @@ fn main() {
             appshots_set_enabled,
             pip_show,
             pip_frame,
-            pip_hide
+            pip_hide,
+            keybindings_set_global_hotkeys
         ])
         .setup(|app| {
             if cfg!(debug_assertions) && is_server_running() {

@@ -1,14 +1,18 @@
 // ============================================================================
 // CommandPalette - 命令面板组件
-// Cmd/Ctrl+Shift+P 打开，支持搜索和执行命令
+// Cmd/Ctrl+K 打开，支持搜索和执行命令
 // ============================================================================
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Search, X, Settings, FileText, Trash2, FolderOpen, RotateCcw, Plus, Archive, Moon, Sun, Keyboard, HelpCircle, BarChart2 } from 'lucide-react';
+import { Search, X, Settings, FileText, Trash2, FolderOpen, Plus, Archive, Keyboard, HelpCircle, BarChart2 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
-import { useAuthStore } from '../stores/authStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { canAccessFeature } from '../utils/accessControl';
+import {
+  formatShortcutForDisplay,
+  getKeybindingAccelerator,
+  type KeybindingActionId,
+} from '@shared/keybindings';
+import { useKeybindingsSettings } from '../hooks/useKeybindingsSettings';
 
 // ============================================================================
 // Types
@@ -38,10 +42,16 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const { keybindings, platform } = useKeybindingsSettings();
+  const getShortcutLabel = useCallback((actionId: KeybindingActionId): string | undefined => {
+    const accelerator = getKeybindingAccelerator(keybindings, actionId, platform);
+    return accelerator ? formatShortcutForDisplay(accelerator, platform) : undefined;
+  }, [keybindings, platform]);
 
   // Store hooks
   const {
     setShowSettings,
+    openSettingsTab,
     setShowDAGPanel,
     showDAGPanel,
     setShowWorkspace,
@@ -64,7 +74,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       label: '新建会话',
       description: '创建一个新的对话会话',
       icon: <Plus className="w-4 h-4" />,
-      shortcut: '⌘N',
+      shortcut: getShortcutLabel('session.new'),
       category: 'session',
       action: () => createSession(),
     },
@@ -73,7 +83,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       label: '清空当前对话',
       description: '清除当前会话的所有消息',
       icon: <Trash2 className="w-4 h-4" />,
-      shortcut: '⌘K',
+      shortcut: getShortcutLabel('session.clear'),
       category: 'session',
       action: () => clearCurrentSession(),
     },
@@ -96,7 +106,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       label: sidebarCollapsed ? '显示侧边栏' : '隐藏侧边栏',
       description: '切换侧边栏显示状态',
       icon: <FileText className="w-4 h-4" />,
-      shortcut: '⌘/',
+      shortcut: getShortcutLabel('sidebar.toggle'),
       category: 'view',
       action: () => setSidebarCollapsed(!sidebarCollapsed),
     },
@@ -105,7 +115,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       label: showDAGPanel ? '隐藏 DAG 面板' : '显示 DAG 面板',
       description: '切换任务 DAG 可视化面板',
       icon: <BarChart2 className="w-4 h-4" />,
-      shortcut: '⌘D',
+      shortcut: getShortcutLabel('dag.toggle'),
       category: 'view',
       action: () => setShowDAGPanel(!showDAGPanel),
     },
@@ -114,7 +124,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       label: showWorkspace ? '隐藏工作区' : '显示工作区',
       description: '切换工作区面板',
       icon: <FolderOpen className="w-4 h-4" />,
-      shortcut: '⌘E',
+      shortcut: getShortcutLabel('workspace.toggle'),
       category: 'view',
       action: () => setShowWorkspace(!showWorkspace),
     },
@@ -124,7 +134,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       label: '打开设置',
       description: '打开应用设置面板',
       icon: <Settings className="w-4 h-4" />,
-      shortcut: '⌘,',
+      shortcut: getShortcutLabel('settings.open'),
       category: 'settings',
       action: () => setShowSettings(true),
     },
@@ -134,10 +144,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       description: '查看和自定义快捷键',
       icon: <Keyboard className="w-4 h-4" />,
       category: 'settings',
-      action: () => {
-        setShowSettings(true);
-        // TODO: 跳转到快捷键设置 tab
-      },
+      action: () => openSettingsTab('keybindings'),
     },
 
     // Help commands
@@ -156,7 +163,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     clearCurrentSession,
     archiveSession,
     currentSessionId,
+    getShortcutLabel,
     setShowSettings,
+    openSettingsTab,
     setShowDAGPanel,
     showDAGPanel,
     setShowWorkspace,

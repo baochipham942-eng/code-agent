@@ -25,6 +25,10 @@ import {
   MODEL_API_ENDPOINTS,
 } from '../../../shared/constants';
 import { DEFAULT_SPEECH_INPUT_SETTINGS } from '../../../shared/contract/speech';
+import {
+  createDefaultKeybindingsSettings,
+  getKeybindingPlatformFromNodePlatform,
+} from '../../../shared/keybindings';
 
 const logger = createLogger('ConfigService');
 
@@ -294,6 +298,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     targetSession: 'current',
   },
   speech: DEFAULT_SPEECH_INPUT_SETTINGS,
+  keybindings: createDefaultKeybindingsSettings(getKeybindingPlatformFromNodePlatform(process.platform)),
 };
 
 export class ConfigService implements IReadConfigService {

@@ -9,6 +9,7 @@ import type { PermissionLevel } from './tool';
 import type { ContextCompressionConfig } from './contextHealth';
 import type { RoleProactivitySettings } from './roleAssets';
 import type { SpeechInputSettings } from './speech';
+import type { KeybindingsSettings } from '../keybindings';
 
 export interface ModelEntrySettings {
   enabled?: boolean;
@@ -229,6 +230,8 @@ export interface AppSettings {
   };
   // 会话页语音输入（桌面 mic -> ASR -> composer draft）。渠道语音消息不复用这套设置。
   speech?: SpeechInputSettings;
+  // 用户可见快捷键配置。native 全局热键注册另走平台层，先由设置与 UI 共享同一份 registry。
+  keybindings?: KeybindingsSettings;
   // 持久化角色资产（docs/designs/role-proactivity.md §4：主动性用户级配置）
   roleAssets?: {
     proactivity?: RoleProactivitySettings;

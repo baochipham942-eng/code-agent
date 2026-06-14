@@ -5,6 +5,7 @@
 import type {
   ToolDefinition,
 } from '../../shared/contract';
+import type { PermissionBoundaryRef } from '../../shared/contract/permissionBoundary';
 import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
@@ -136,6 +137,7 @@ export interface PermissionRequestData {
   tool: string;
   details: Record<string, unknown>;
   reason?: string;
+  boundary?: PermissionBoundaryRef;
   dangerLevel?: 'normal' | 'warning' | 'danger';
   /** Decision trace: why this permission was requested (populated on deny/ask) */
   decisionTrace?: import('../../shared/contract/decisionTrace').DecisionTrace;

@@ -5,6 +5,7 @@
 import type { Express, Request, Response } from 'express';
 import { getCaptureService } from '../../services/knowledge/captureService';
 import { createLogger } from '../../services/infra/logger';
+import { summarizeUserFacingError } from '../../security/userFacingError';
 import type { CaptureRequest } from '@shared/contract/capture';
 
 const logger = createLogger('CaptureRoutes');
@@ -28,8 +29,9 @@ export function registerCaptureRoutes(router: Express): void {
       res.json({ success: true, data: item });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
+      const { summary } = summarizeUserFacingError(error, { surface: 'http_api' });
       logger.error('Capture error', { error: message });
-      res.status(500).json({ success: false, error: message });
+      res.status(500).json({ success: false, error: summary });
     }
   });
 
@@ -48,8 +50,9 @@ export function registerCaptureRoutes(router: Express): void {
       res.json({ success: true, data: results });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
+      const { summary } = summarizeUserFacingError(error, { surface: 'http_api' });
       logger.error('Search error', { error: message });
-      res.status(500).json({ success: false, error: message });
+      res.status(500).json({ success: false, error: summary });
     }
   });
 
@@ -65,7 +68,9 @@ export function registerCaptureRoutes(router: Express): void {
       res.json({ success: true, data: items });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json({ success: false, error: message });
+      const { summary } = summarizeUserFacingError(error, { surface: 'http_api' });
+      logger.error('List error', { error: message });
+      res.status(500).json({ success: false, error: summary });
     }
   });
 

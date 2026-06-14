@@ -57,6 +57,33 @@ const CHANNEL_STATUS_FILTERS: Array<{ value: ChannelStatusFilter; label: string 
   { value: 'disconnected', label: '未连接' },
 ];
 
+export const CHANNEL_PRIVACY_MODE_OPTIONS: Array<{
+  value: ChannelPrivacyMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'local-redact',
+    label: '默认脱敏',
+    description: '入站消息、附件摘要和 raw payload 在本地落地或分发前脱敏。',
+  },
+  {
+    value: 'allow-raw',
+    label: '保留 raw 调试',
+    description: '业务文本仍走脱敏，但保留原始 raw payload，适合受控连接器排障。',
+  },
+  {
+    value: 'off',
+    label: '关闭通道脱敏',
+    description: '仅用于受控本地调试；消息、附件和 raw payload 可能保留原文。',
+  },
+];
+
+export function getChannelPrivacyModeCopy(mode: ChannelPrivacyMode): { label: string; description: string } {
+  return CHANNEL_PRIVACY_MODE_OPTIONS.find((option) => option.value === mode)
+    ?? CHANNEL_PRIVACY_MODE_OPTIONS[0];
+}
+
 export function getChannelTypeLabel(
   type: ChannelType,
   channelTypes: ChannelTypeInfo[],
@@ -323,10 +350,15 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
               onChange={(e) => setPrivacyMode(e.target.value as ChannelPrivacyMode)}
               className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-indigo-500"
             >
-              <option value="local-redact">local-redact</option>
-              <option value="allow-raw">allow-raw</option>
-              <option value="off">off</option>
+              {CHANNEL_PRIVACY_MODE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
+            <p className="mt-1 text-xs text-zinc-500">
+              {getChannelPrivacyModeCopy(privacyMode).description}
+            </p>
           </div>
 
           {/* HTTP API 配置 */}
@@ -721,6 +753,15 @@ export const ChannelsSettings: React.FC = () => {
       description="配置外部入口，让 HTTP API、飞书或 Telegram 可以和 Agent 交互。连接说明默认收起。"
     >
       <WebModeBanner />
+
+      <SettingsSection
+        title="低打扰策略"
+        description="通道会话默认不触发桌面 reply notification；处理过程留在通道 typing / streaming / 任务面板里，系统通知只用于需要介入或任务完成。"
+      >
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900/45 p-3 text-xs leading-relaxed text-zinc-400">
+          飞书、Telegram、HTTP API 的普通回复不会弹桌面通知。错误回复只发短摘要，完整 trace 留在本机诊断；后续如需每个通道的完成提醒，也必须显式打开并继续走脱敏。
+        </div>
+      </SettingsSection>
 
       <SettingsSection
         title="通道账号"

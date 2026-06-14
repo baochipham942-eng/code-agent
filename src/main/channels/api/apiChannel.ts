@@ -19,6 +19,7 @@ import type {
   ChannelCapabilities,
 } from '../../../shared/contract/channel';
 import { createLogger } from '../../services/infra/logger';
+import { summarizeUserFacingError } from '../../security/userFacingError';
 import { registerCaptureRoutes } from './captureRoutes';
 
 const logger = createLogger('ApiChannel');
@@ -347,8 +348,9 @@ export class ApiChannel extends BaseChannelPlugin {
         res.json(result);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
+        const { summary } = summarizeUserFacingError(error, { surface: 'http_api' });
         logger.error('Error handling message', { error: message });
-        res.status(500).json({ success: false, error: message });
+        res.status(500).json({ success: false, error: summary });
       }
     });
 
@@ -407,9 +409,10 @@ export class ApiChannel extends BaseChannelPlugin {
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
+        const { summary } = summarizeUserFacingError(error, { surface: 'http_api' });
         logger.error('Error handling stream message', { error: message });
         if (!res.headersSent) {
-          res.status(500).json({ success: false, error: message });
+          res.status(500).json({ success: false, error: summary });
         }
       }
     });

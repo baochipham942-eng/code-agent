@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useState, useCallback } from 'react';
-import { Server, Terminal, Globe, Code, Plus, Trash2 } from 'lucide-react';
+import { Server, Terminal, Globe, Code, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
 import { Modal, ModalFooter, Button, Input } from '../../primitives';
 
 // ============================================================================
@@ -53,6 +53,12 @@ const EMPTY_CONFIG: McpServerConfig = {
   headers: {},
 };
 
+const SENSITIVE_MCP_KEY_PATTERN = /(api[-_]?key|authorization|bearer|token|secret|password|passwd|credential|private[-_]?key)/i;
+
+export function isSensitiveMcpCredentialKey(key: string): boolean {
+  return SENSITIVE_MCP_KEY_PATTERN.test(key.trim());
+}
+
 // ============================================================================
 // Sub-components
 // ============================================================================
@@ -64,6 +70,7 @@ const KeyValueEditor: React.FC<{
   onChange: (entries: Record<string, string>) => void;
 }> = ({ label, entries, onChange }) => {
   const pairs = Object.entries(entries);
+  const [revealedKeys, setRevealedKeys] = useState<Set<string>>(() => new Set());
 
   const handleAdd = () => {
     onChange({ ...entries, '': '' });
@@ -81,6 +88,19 @@ const KeyValueEditor: React.FC<{
       next[k === oldKey ? newKey : k] = v;
     }
     onChange(next);
+  };
+
+  const toggleReveal = (key: string, rowKey: string) => {
+    const revealKey = key || rowKey;
+    setRevealedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(revealKey)) {
+        next.delete(revealKey);
+      } else {
+        next.add(revealKey);
+      }
+      return next;
+    });
   };
 
   const handleValueChange = (key: string, value: string) => {
@@ -103,31 +123,51 @@ const KeyValueEditor: React.FC<{
       {pairs.length === 0 && (
         <p className="text-xs text-zinc-500 italic">暂无条目</p>
       )}
-      {pairs.map(([key, value], idx) => (
-        <div key={idx} className="flex items-center gap-2">
-          <input
-            type="text"
-            value={key}
-            onChange={(e) => handleKeyChange(key, e.target.value)}
-            placeholder="Key"
-            className="flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-hidden focus:border-zinc-500"
-          />
-          <input
-            type="text"
-            value={value}
-            onChange={(e) => handleValueChange(key, e.target.value)}
-            placeholder="Value"
-            className="flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-hidden focus:border-zinc-500"
-          />
-          <button
-            type="button"
-            onClick={() => handleRemove(key)}
-            className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ))}
+      {pairs.map(([key, value], idx) => {
+        const rowKey = `${label}:${idx}`;
+        const sensitive = isSensitiveMcpCredentialKey(key);
+        const revealKey = key || rowKey;
+        const revealed = revealedKeys.has(revealKey);
+        return (
+          <div key={idx} className="flex items-center gap-2">
+            <input
+              type="text"
+              value={key}
+              onChange={(e) => handleKeyChange(key, e.target.value)}
+              placeholder="Key"
+              className="flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-hidden focus:border-zinc-500"
+            />
+            <div className="flex-1 flex items-center gap-1">
+              <input
+                type={sensitive && !revealed ? 'password' : 'text'}
+                value={value}
+                onChange={(e) => handleValueChange(key, e.target.value)}
+                placeholder="Value"
+                autoComplete="off"
+                spellCheck={false}
+                className="min-w-0 flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-hidden focus:border-zinc-500"
+              />
+              {sensitive && (
+                <button
+                  type="button"
+                  onClick={() => toggleReveal(key, rowKey)}
+                  aria-label={revealed ? '隐藏敏感值' : '显示敏感值'}
+                  className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors"
+                >
+                  {revealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => handleRemove(key)}
+              className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -142,7 +182,9 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
   onSave,
   initialConfig,
 }) => {
-  const [config, setConfig] = useState<McpServerConfig>({ ...EMPTY_CONFIG });
+  const [config, setConfig] = useState<McpServerConfig>(() => (
+    initialConfig ? { ...EMPTY_CONFIG, ...initialConfig } : { ...EMPTY_CONFIG }
+  ));
   const [viewMode, setViewMode] = useState<ViewMode>('form');
   const [jsonText, setJsonText] = useState('');
   const [jsonError, setJsonError] = useState<string | null>(null);
@@ -410,6 +452,9 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
             {jsonError && (
               <p className="text-xs text-red-400">{jsonError}</p>
             )}
+            <p className="text-xs text-zinc-500">
+              JSON 视图会显示原始 env/header，只用于粘贴配置或诊断。
+            </p>
           </div>
         )}
       </div>

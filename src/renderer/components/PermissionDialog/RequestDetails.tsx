@@ -4,7 +4,7 @@
 
 import React, { useState } from 'react';
 import type { PermissionRequest } from './types';
-import type { DecisionTrace } from '@shared/contract';
+import { getPermissionBoundary, type DecisionTrace, type PermissionBoundary } from '@shared/contract';
 import { formatFilePath } from './utils';
 import { DiffView } from '../DiffView';
 
@@ -20,6 +20,13 @@ export function RequestDetails({ request }: RequestDetailsProps) {
 
   return (
     <div className="space-y-3">
+      {request.boundary && (
+        <BoundarySummary
+          boundary={getPermissionBoundary(request.boundary.id)}
+          reason={request.boundary.reason}
+        />
+      )}
+
       {/* 文件路径 */}
       {filePath && <DetailItem label="文件" value={filePath} isPath />}
 
@@ -87,6 +94,46 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {request.decisionTrace && request.decisionTrace.steps.length > 0 && (
         <DecisionTraceView trace={request.decisionTrace} />
       )}
+    </div>
+  );
+}
+
+function BoundarySummary({ boundary, reason }: { boundary?: PermissionBoundary; reason?: string }) {
+  if (!boundary) return null;
+
+  return (
+    <div className="rounded-md border border-zinc-700/80 bg-zinc-900/70 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-medium text-zinc-200">{boundary.title}</div>
+          <div className="mt-1 text-[11px] leading-relaxed text-zinc-400">
+            {reason || boundary.trigger}
+          </div>
+        </div>
+        {boundary.cloud.includes('外部') || boundary.cloud.includes('云端') ? (
+          <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-200">
+            可能出云端
+          </span>
+        ) : (
+          <span className="shrink-0 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-200">
+            本地边界
+          </span>
+        )}
+      </div>
+      <div className="mt-2 grid gap-1.5 text-[10px] text-zinc-500">
+        <div>
+          <span className="text-zinc-400">会访问: </span>
+          {boundary.dataAccess.slice(0, 3).join('、')}
+        </div>
+        <div>
+          <span className="text-zinc-400">存储: </span>
+          {boundary.storage}
+        </div>
+        <div>
+          <span className="text-zinc-400">脱敏: </span>
+          {boundary.redaction}
+        </div>
+      </div>
     </div>
   );
 }

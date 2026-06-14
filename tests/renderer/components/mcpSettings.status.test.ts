@@ -187,7 +187,7 @@ vi.mock('../../../src/renderer/components/features/settings/McpServerEditor', ()
   McpServerEditor: () => null,
 }));
 
-import { MCPSettings } from '../../../src/renderer/components/features/settings/tabs/MCPSettings';
+import { MCPSettings, getMcpTrustSummary } from '../../../src/renderer/components/features/settings/tabs/MCPSettings';
 
 describe('MCPSettings status', () => {
   beforeEach(() => {
@@ -204,7 +204,13 @@ describe('MCPSettings status', () => {
     expect(html).toContain('github');
     expect(html).toContain('12 工具');
     expect(html).toContain('3 资源');
+    expect(html).toContain('destructive/openWorld 调用前仍需审批');
     expect(html).toContain('查看 github 详情');
+  });
+
+  it('summarizes MCP trust boundaries without exposing token values', () => {
+    expect(getMcpTrustSummary(connectedGithubServer)).toContain('凭证默认 masked');
+    expect(getMcpTrustSummary(authErrorTavilyServer)).toContain('OAuth/token 需要重新授权');
   });
 
   it('shows reauthorization instead of reconnect for invalid MCP bearer tokens', () => {

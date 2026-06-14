@@ -9,6 +9,10 @@ export * from './message';
 export * from './appshot';
 export * from './tool';
 export * from './permission';
+export * from './permissionBoundary';
+export * from './privacyBoundaryIndex';
+export * from './voiceTranscription';
+export * from './authInventory';
 
 // Domain types
 export * from './session';

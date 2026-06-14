@@ -8,6 +8,11 @@ import { IPC_CHANNELS } from '../../../shared/ipc';
 import { createLogger } from './logger';
 import type { Disposable } from '../serviceRegistry';
 import { getServiceRegistry } from '../serviceRegistry';
+import {
+  evaluateNotificationPolicy,
+  sanitizeNotificationText,
+  type NotificationIntent,
+} from './notificationPolicy';
 
 const logger = createLogger('NotificationService');
 
@@ -23,7 +28,7 @@ export interface TaskNotificationData {
 
 export interface RecordedNotification {
   id: string;
-  type: 'needs_input' | 'task_complete';
+  type: 'needs_input' | 'task_complete' | 'task_failed';
   sessionId: string;
   title: string;
   body: string;
@@ -43,6 +48,8 @@ class NotificationService implements Disposable {
   private record(notification: Omit<RecordedNotification, 'id' | 'createdAt' | 'delivery'>): RecordedNotification {
     const entry: RecordedNotification = {
       ...notification,
+      title: sanitizeNotificationText(notification.title, 120),
+      body: sanitizeNotificationText(notification.body, 320),
       id: `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       createdAt: Date.now(),
       delivery: this.isDryRun() ? 'dry_run' : 'sent',
@@ -88,7 +95,19 @@ class NotificationService implements Disposable {
    */
   private deliver(payload: { id: string; title: string; body: string; sessionId: string }): void {
     if (this.isDryRun()) return;
-    broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, payload);
+    broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
+      ...payload,
+      title: sanitizeNotificationText(payload.title, 120),
+      body: sanitizeNotificationText(payload.body, 320),
+    });
+  }
+
+  private isIntentAllowed(intent: NotificationIntent): boolean {
+    const decision = evaluateNotificationPolicy(intent);
+    if (!decision.allowed) {
+      logger.debug('Notification blocked by policy', { intent, reason: decision.reason });
+    }
+    return decision.allowed;
   }
 
   /**
@@ -108,6 +127,7 @@ class NotificationService implements Disposable {
    * 发送 "需要输入" 通知（权限请求、用户提问）
    */
   notifyNeedsInput(data: { sessionId: string; title: string; body: string }): void {
+    if (!this.isIntentAllowed('needs_input')) return;
     if (!this.shouldNotify()) return;
 
     const entry = this.record({
@@ -116,7 +136,7 @@ class NotificationService implements Disposable {
       title: data.title,
       body: data.body,
     });
-    this.deliver({ id: entry.id, title: data.title, body: data.body, sessionId: data.sessionId });
+    this.deliver({ id: entry.id, title: entry.title, body: entry.body, sessionId: data.sessionId });
     logger.info('Needs-input notification sent', { title: data.title });
   }
 
@@ -125,6 +145,8 @@ class NotificationService implements Disposable {
    * @param options.force 后台任务（loop/定时任务）完成时传 true，绕过焦点门强制提醒
    */
   notifyTaskComplete(data: TaskNotificationData, options?: { force?: boolean }): void {
+    const intent: NotificationIntent = data.succeeded === false ? 'task_failed' : 'task_complete';
+    if (!this.isIntentAllowed(intent)) return;
     if (!this.shouldNotify(options?.force)) {
       logger.debug('Skip notification - app is focused');
       return;
@@ -144,12 +166,12 @@ class NotificationService implements Disposable {
     const title = `${data.succeeded === false ? '任务失败' : '任务完成'} - ${sessionTitle}`;
     const trimmedBody = body.trim();
     const entry = this.record({
-      type: 'task_complete',
+      type: intent,
       sessionId: data.sessionId,
       title,
       body: trimmedBody,
     });
-    this.deliver({ id: entry.id, title, body: trimmedBody, sessionId: data.sessionId });
+    this.deliver({ id: entry.id, title: entry.title, body: entry.body, sessionId: data.sessionId });
     logger.info('Notification sent', { sessionTitle });
   }
 

@@ -13,13 +13,19 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ShieldCheck, Loader2, AlertTriangle, RefreshCw, XCircle, Activity } from 'lucide-react';
+import { ShieldCheck, Loader2, AlertTriangle, RefreshCw, XCircle, Activity, ArrowRight, KeyRound, Mic } from 'lucide-react';
 import { IPC_DOMAINS, IPC_CHANNELS } from '@shared/ipc';
-import type { AppSettings } from '@shared/contract';
+import {
+  listAuthInventoryItems,
+  listPrivacyBoundaryIndexEntries,
+  listVoiceTranscriptionPaths,
+  type AppSettings,
+} from '@shared/contract';
 import ipcService from '../../../../services/ipcService';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
+import type { SettingsTab } from '../../../../utils/settingsTabs';
 
 type SetupState = 'idle' | 'running' | 'completed' | 'error';
 
@@ -60,7 +66,11 @@ function getSetupLogLineClass(entry: { stream: 'stdout' | 'stderr'; line: string
   return entry.stream === 'stderr' ? 'text-zinc-400' : 'text-zinc-300';
 }
 
-const PrivacySettings: React.FC = () => {
+interface PrivacySettingsProps {
+  onNavigateSettings?: (tab: SettingsTab) => void;
+}
+
+const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings }) => {
   const [state, setState] = useState<SetupState>('idle');
   const [step, setStep] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -205,11 +215,89 @@ const PrivacySettings: React.FC = () => {
   return (
     <SettingsPage
       title="隐私防线"
-      description="本地 PII 防线（GLiNER ONNX）。启用后，协作内容进入云端 LLM 前自动识别并脱敏命名实体（姓名/地址/医疗 ID/银行账号等）。模型在本地运行，首次会下载约 190MB 的量化模型到 ~/.cache/code-agent/gliner-pii/。"
+      description="权限与数据边界总览。默认本地优先；会出云端的路径、通道凭证和诊断包单独表达。"
     >
       <SettingsSection
+        title="权限与数据边界"
+        description="只解释和跳转，具体开关仍留在原设置页。"
+      >
+        <div className="grid gap-3 md:grid-cols-2">
+          {listPrivacyBoundaryIndexEntries().map((entry) => (
+            <div key={entry.id} className="rounded-lg border border-zinc-800 bg-zinc-900/45 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-zinc-200">{entry.title}</div>
+                  <p className="mt-1 text-xs leading-relaxed text-zinc-400">{entry.summary}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigateSettings?.(entry.actionTarget.tab as SettingsTab)}
+                  disabled={!onNavigateSettings}
+                  className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-zinc-700 px-2 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+                >
+                  <ArrowRight className="h-3 w-3" />
+                  {entry.actionTarget.label.replace(/^打开/, '')}
+                </button>
+              </div>
+              <div className="mt-3 space-y-1.5 text-[11px] text-zinc-500">
+                <div><span className="text-zinc-400">数据: </span>{entry.data.join('、')}</div>
+                <div><span className="text-zinc-400">存储: </span>{entry.storage}</div>
+                <div><span className="text-zinc-400">云端: </span>{entry.cloud}</div>
+                <div><span className="text-zinc-400">撤回: </span>{entry.revoke}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="语音转写边界"
+        description="桌面语音、voice paste、桌面音频和通道语音不共用一个权限解释。"
+      >
+        <div className="grid gap-3 md:grid-cols-2">
+          {listVoiceTranscriptionPaths().map((path) => (
+            <div key={path.id} className="rounded-lg border border-zinc-800 bg-zinc-900/45 p-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
+                <Mic className="h-4 w-4 text-zinc-400" />
+                {path.title}
+              </div>
+              <p className="mt-1 text-xs text-zinc-400">{path.trigger}</p>
+              <div className="mt-3 space-y-1.5 text-[11px] text-zinc-500">
+                <div><span className="text-zinc-400">Provider: </span>{path.providers.join('、')}</div>
+                <div><span className="text-zinc-400">云端: </span>{path.cloud}</div>
+                <div><span className="text-zinc-400">临时文件: </span>{path.temporaryStorage}</div>
+                <div><span className="text-zinc-400">日志: </span>{path.logPolicy}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="凭证库存"
+        description="API key、OAuth、channel token、MCP env/header、browser relay token 分开管理和展示。"
+      >
+        <div className="grid gap-3 md:grid-cols-2">
+          {listAuthInventoryItems().map((item) => (
+            <div key={item.id} className="rounded-lg border border-zinc-800 bg-zinc-900/45 p-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
+                <KeyRound className="h-4 w-4 text-zinc-400" />
+                {item.title}
+              </div>
+              <div className="mt-2 space-y-1.5 text-[11px] text-zinc-500">
+                <div><span className="text-zinc-400">例子: </span>{item.examples.join('、')}</div>
+                <div><span className="text-zinc-400">存储: </span>{item.storage}</div>
+                <div><span className="text-zinc-400">展示: </span>{item.display}</div>
+                <div><span className="text-zinc-400">诊断: </span>{item.diagnosticPolicy}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
         title="使用数据上报（Telemetry）"
-        description="默认开启。上报运行轨迹（模型/工具调用、token、错误分类、版本指纹等）用于诊断与产品改进。关闭后本次设备不再向云端上报，改动重启后生效。"
+        description="自动遥测只上报运行轨迹元数据；失败诊断包和用户手动导出是单独边界，上传或导出前必须 scrub。关闭后本设备不再向云端上报，改动重启后生效。"
       >
         <label className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 cursor-pointer">
           <input
@@ -226,7 +314,7 @@ const PrivacySettings: React.FC = () => {
                 {telemetryEnabled ? '已开启遥测上报' : '已关闭遥测上报'}
               </div>
               <div className="text-xs text-zinc-400 mt-0.5">
-                取消勾选即可 opt-out。当前版本默认上报运行轨迹的元数据，不含完整 prompt/代码内容。
+                取消勾选即可 opt-out。metadata 不含完整 prompt/代码内容；诊断包会包含 scrub 后 payload，用于排障。
               </div>
             </div>
           </div>

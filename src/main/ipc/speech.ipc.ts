@@ -10,6 +10,7 @@ import { getConfigService } from '../services/core/configService';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { summarizeUserFacingError } from '../security/userFacingError';
 
 const logger = createLogger('Speech');
 
@@ -184,7 +185,7 @@ export function registerSpeechHandlers(ipcMain: IpcMain): void {
 
         // 检测幻觉
         if (isHallucination(text)) {
-          logger.warn('Detected Whisper hallucination, ignoring:', text);
+          logger.warn('Detected Whisper hallucination, ignoring transcript', { length: text.length });
           return {
             success: false,
             error: '未识别到有效语音，请重新说话',
@@ -192,14 +193,15 @@ export function registerSpeechHandlers(ipcMain: IpcMain): void {
           };
         }
 
-        logger.info('Transcription result:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
+        logger.info('Transcription completed', { chars: text.trim().length, provider: 'groq' });
         return { success: true, text: text.trim() };
 
       } catch (error) {
+        const { summary } = summarizeUserFacingError(error, { surface: 'renderer_toast' });
         logger.error('Transcription error:', error);
         return {
           success: false,
-          error: error instanceof Error ? error.message : '转写失败'
+          error: summary || '转写失败'
         };
       }
     }

@@ -54,6 +54,16 @@ describe('settings search index', () => {
     expect(searchSettings('工作区').map((entry) => entry.tab)).toContain('workspace');
   });
 
+  it('covers permission/privacy boundary search terms', () => {
+    expect(searchSettings('语音转写').map((entry) => entry.tab)).toContain('privacy');
+    expect(searchSettings('诊断包').map((entry) => entry.tab)).toContain('privacy');
+    expect(searchSettings('channel token').map((entry) => entry.tab)).toContain('channels');
+    expect(searchSettings('MCP OAuth').map((entry) => entry.tab)).toContain('mcp');
+    expect(searchSettings('browser relay').map((entry) => entry.tab)).toContain('privacy');
+    expect(searchSettings('插件权限', { isAdmin: true }).map((entry) => entry.tab)).toContain('plugins');
+    expect(searchSettings('progress spam').map((entry) => entry.tab)).toContain('channels');
+  });
+
   it('only references registered settings tabs', () => {
     const registered = new Set<string>(SETTINGS_TAB_IDS);
     for (const entry of SETTINGS_INDEX) {

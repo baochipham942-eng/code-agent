@@ -7,7 +7,9 @@ import type {
   ToolExecutionResult,
   PermissionRequestData,
 } from './types';
+import * as nodePath from 'path';
 import type { ToolDefinition } from '../../shared/contract';
+import type { PermissionBoundaryId } from '../../shared/contract/permissionBoundary';
 import { getToolCache } from '../services/infra/toolCache';
 import { createLogger } from '../services/infra/logger';
 import {
@@ -904,6 +906,10 @@ export class ToolExecutor {
           tool: tool.name,
           details: { command: params.command },
           reason: 'Execute shell command',
+          boundary: {
+            id: 'command.shell',
+            reason: '本次命令会在当前工作区的 shell 环境执行。',
+          },
         };
 
       case 'read_file':
@@ -912,6 +918,10 @@ export class ToolExecutor {
           type: 'file_read',
           tool: tool.name,
           details: { path: params.file_path },
+          boundary: {
+            id: this.getFileBoundaryId(params.file_path, false),
+            reason: '读取文件内容用于完成当前任务。',
+          },
         };
 
       case 'write_file':
@@ -922,6 +932,10 @@ export class ToolExecutor {
           details: {
             path: params.file_path,
             contentLength: (params.content as string)?.length || 0,
+          },
+          boundary: {
+            id: this.getFileBoundaryId(params.file_path, true),
+            reason: '写入文件内容会修改目标路径。',
           },
         };
 
@@ -935,6 +949,10 @@ export class ToolExecutor {
             contentLength: (params.content as string)?.length || 0,
             final: params.final === true,
           },
+          boundary: {
+            id: this.getFileBoundaryId(params.file_path, true),
+            reason: '追加内容会修改目标路径。',
+          },
         };
 
       case 'edit_file':
@@ -947,6 +965,10 @@ export class ToolExecutor {
             oldString: params.old_string,
             newString: params.new_string,
           },
+          boundary: {
+            id: this.getFileBoundaryId(params.file_path, true),
+            reason: '编辑操作会修改目标文件内容。',
+          },
         };
 
       case 'web_fetch':
@@ -957,6 +979,10 @@ export class ToolExecutor {
           type: 'network',
           tool: tool.name,
           details: { url: params.url, query: params.query },
+          boundary: {
+            id: 'network.web_request',
+            reason: '本次工具会访问外部网络资源。',
+          },
         };
 
       case 'mcp':
@@ -968,9 +994,14 @@ export class ToolExecutor {
           details: {
             server: params.server,
             tool: params.tool,
+            toolName: params.tool,
             uri: params.uri,
           },
           reason: `调用 MCP 服务器 ${params.server}`,
+          boundary: {
+            id: 'mcp.server_tool',
+            reason: `调用 MCP 服务器 ${params.server}`,
+          },
         };
 
       default: {
@@ -981,12 +1012,47 @@ export class ToolExecutor {
           execute: 'command',
           network: 'network',
         };
+        const requestType = typeMap[tool.permissionLevel] || 'file_read';
         return {
-          type: typeMap[tool.permissionLevel] || 'file_read',
+          type: requestType,
           tool: tool.name,
           details: { ...params },
+          boundary: {
+            id: this.getBoundaryIdForRequestType(requestType),
+            reason: '根据工具权限级别推断的数据边界。',
+          },
         };
       }
+    }
+  }
+
+  private getFileBoundaryId(rawPath: unknown, isWrite: boolean): PermissionBoundaryId {
+    const filePath = typeof rawPath === 'string' ? rawPath : '';
+    if (!filePath) return isWrite ? 'file.project_write' : 'file.project_read';
+
+    const workingDirectory = nodePath.resolve(this.workingDirectory);
+    const resolvedPath = nodePath.isAbsolute(filePath)
+      ? nodePath.resolve(filePath)
+      : nodePath.resolve(workingDirectory, filePath);
+    const inWorkspace = resolvedPath === workingDirectory || resolvedPath.startsWith(`${workingDirectory}${nodePath.sep}`);
+
+    if (inWorkspace) return isWrite ? 'file.project_write' : 'file.project_read';
+    return isWrite ? 'file.external_write' : 'file.external_read';
+  }
+
+  private getBoundaryIdForRequestType(type: PermissionRequestData['type']): PermissionBoundaryId {
+    switch (type) {
+      case 'file_write':
+      case 'file_edit':
+        return 'file.project_write';
+      case 'command':
+      case 'dangerous_command':
+        return 'command.shell';
+      case 'network':
+        return 'network.web_request';
+      case 'file_read':
+      default:
+        return 'file.project_read';
     }
   }
 

@@ -14,6 +14,10 @@
 // ============================================================================
 
 import { createLogger } from '../infra/logger';
+import {
+  evaluateNotificationPolicy,
+  sanitizeNotificationText,
+} from '../infra/notificationPolicy';
 import { ROLE_PROACTIVITY, SWARM_GOAL } from '../../../shared/constants';
 import type {
   RoleProactivityConfig,
@@ -745,9 +749,14 @@ async function launchAdvanceGoalRun(params: {
 /** realtime 档桌面通知（headless / webServer 环境无 electron 时静默跳过） */
 async function sendDesktopNotification(title: string, body: string): Promise<void> {
   try {
+    const policy = evaluateNotificationPolicy('task_complete');
+    if (!policy.allowed) return;
     const { Notification } = await import('electron');
     if (Notification.isSupported()) {
-      new Notification({ title, body }).show();
+      new Notification({
+        title: sanitizeNotificationText(title, 120),
+        body: sanitizeNotificationText(body, 320),
+      }).show();
     }
   } catch {
     // 非 Electron 环境（webServer headless）→ 跳过

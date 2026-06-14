@@ -55,9 +55,9 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
 
   const getTitle = () => {
     if (error) return `错误: ${error}`;
-    if (isTranscribing) return '正在识别...';
+    if (isTranscribing) return '正在转写录音';
     if (isRecording) return `录音中 ${formatDuration(duration)}，点击停止`;
-    return '语音输入';
+    return '开始语音输入，首次使用会请求麦克风；录音会发送到 Groq Whisper 转写';
   };
 
   return (
@@ -67,7 +67,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
         onClick={toggle}
         disabled={disabled || isTranscribing}
         title={getTitle()}
-        aria-label={isRecording ? '停止录音' : '开始语音输入'}
+        aria-label={isRecording ? '停止录音并转写' : '开始语音输入，首次使用会请求麦克风'}
         className={`flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 ${
           isRecording
             ? 'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/30'

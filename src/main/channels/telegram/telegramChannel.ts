@@ -160,7 +160,7 @@ export class TelegramChannel extends BaseChannelPlugin {
         logger.info('Telegram raw message received', {
           messageId: ctx.message?.message_id,
           from: ctx.from?.username || ctx.from?.id,
-          text: ctx.message?.text?.substring(0, 50),
+          textLength: ctx.message?.text?.length || 0,
           chatType: ctx.chat?.type,
         });
         if (ctx.message?.text) {

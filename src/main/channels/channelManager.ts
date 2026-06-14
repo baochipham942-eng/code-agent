@@ -27,6 +27,7 @@ import { FeishuChannel, createFeishuChannelFactory } from './feishu/feishuChanne
 import { TelegramChannel, createTelegramChannelFactory } from './telegram/telegramChannel';
 import { getSecureStorage } from '../services/core/secureStorage';
 import { createLogger } from '../services/infra/logger';
+import { summarizeUserFacingError } from '../security/userFacingError';
 
 const logger = createLogger('ChannelManager');
 
@@ -278,8 +279,9 @@ export class ChannelManager extends EventEmitter {
     });
 
     channel.on('error', (error: Error) => {
+      const { summary } = summarizeUserFacingError(error, { surface: 'channel_reply' });
       logger.error('Channel error', { accountId, error: error.message });
-      this.updateAccountStatus(accountId, 'error', error.message);
+      this.updateAccountStatus(accountId, 'error', summary);
     });
 
     try {
@@ -294,8 +296,8 @@ export class ChannelManager extends EventEmitter {
 
       logger.info('Channel connected', { accountId, type: account.type });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      this.updateAccountStatus(accountId, 'error', message);
+      const { summary } = summarizeUserFacingError(error, { surface: 'channel_reply' });
+      this.updateAccountStatus(accountId, 'error', summary);
       throw error;
     }
   }
@@ -500,19 +502,20 @@ export class ChannelManager extends EventEmitter {
     message: ChannelMessage,
     errorMessage: string
   ): Promise<void> {
+    const { summary, retryHint } = summarizeUserFacingError(errorMessage, { surface: 'channel_reply' });
     const channel = this.activeChannels.get(accountId);
     if (!channel) {
       throw new Error(`Account not connected: ${accountId}`);
     }
 
     if (channel instanceof ApiChannel) {
-      (channel as ApiChannel).rejectRequest(message.id, new Error(errorMessage));
+      (channel as ApiChannel).rejectRequest(message.id, new Error(summary));
       return;
     }
 
     await channel.sendMessage({
       chatId: message.context.chatId,
-      content: `错误: ${errorMessage}`,
+      content: `错误: ${summary}\n${retryHint}`,
       replyToMessageId: message.id,
     });
   }

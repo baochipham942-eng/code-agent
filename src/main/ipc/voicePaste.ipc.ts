@@ -7,6 +7,7 @@ import { promisify } from 'util';
 import { getConfigService } from '../services/core/configService';
 import { DEFAULT_MODELS } from '../../shared/constants';
 import Groq from 'groq-sdk';
+import { summarizeUserFacingError } from '../security/userFacingError';
 
 const execFileAsync = promisify(execFile);
 
@@ -283,7 +284,7 @@ export function registerVoicePasteHandlers(voicePasteIpcMain: typeof ipcMain): v
       // Start recording
       isRecording = true;
       const tempFile = startRecording();
-      console.log('[VoicePaste] Recording started:', tempFile);
+      console.log('[VoicePaste] Recording started', { tempFileCreated: Boolean(tempFile) });
       notifyRenderer('voice-paste:status', { status: 'recording' });
     } else {
       // Stop recording and process
@@ -318,14 +319,15 @@ export function registerVoicePasteHandlers(voicePasteIpcMain: typeof ipcMain): v
 
         // Paste
         await pasteText(cleanText);
-        console.log('[VoicePaste] Pasted:', cleanText.substring(0, 50) + '...');
+        console.log('[VoicePaste] Pasted transcript', { chars: cleanText.trim().length });
         notifyRenderer('voice-paste:status', { status: 'idle' });
 
       } catch (error) {
-        console.error('[VoicePaste] Error:', (error as Error).message);
+        const { summary } = summarizeUserFacingError(error, { surface: 'renderer_toast' });
+        console.error('[VoicePaste] Error:', error instanceof Error ? error.message : String(error));
         notifyRenderer('voice-paste:status', {
           status: 'idle',
-          error: (error as Error).message
+          error: summary
         });
       } finally {
         // Cleanup temp file

@@ -8,6 +8,7 @@ import type { ModelCapability } from './model';
 import type { PermissionLevel } from './tool';
 import type { ContextCompressionConfig } from './contextHealth';
 import type { RoleProactivitySettings } from './roleAssets';
+import type { SpeechInputSettings } from './speech';
 
 export interface ModelEntrySettings {
   enabled?: boolean;
@@ -226,6 +227,8 @@ export interface AppSettings {
     /** 截图送往：当前会话 / 每次新建会话 */
     targetSession: 'current' | 'new';
   };
+  // 会话页语音输入（桌面 mic -> ASR -> composer draft）。渠道语音消息不复用这套设置。
+  speech?: SpeechInputSettings;
   // 持久化角色资产（docs/designs/role-proactivity.md §4：主动性用户级配置）
   roleAssets?: {
     proactivity?: RoleProactivitySettings;

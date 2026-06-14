@@ -177,6 +177,24 @@ describe('local_speech_to_text — execute', () => {
     expect(whisperCall).toBeDefined();
   });
 
+  it('normalizes short whisper model names without duplicating ggml prefix', async () => {
+    const calls: Array<{ args: string[] }> = [];
+    mockExec((_bin, args) => {
+      calls.push({ args });
+      return [null, '[00:00:00.000 --> 00:00:01.000]  hello', ''];
+    });
+
+    await executeLocalSpeechToText(
+      { file_path: '/abs/audio.wav', model: 'small' },
+      makeCtx(),
+      allowAll,
+    );
+
+    const whisperCall = calls.find((c) => c.args.includes('-m'));
+    const modelPath = whisperCall?.args[(whisperCall?.args.indexOf('-m') ?? -1) + 1];
+    expect(modelPath).toMatch(/ggml-small\.bin$/);
+  });
+
   it('rejects when canUseTool denies', async () => {
     const result = await executeLocalSpeechToText(
       { file_path: '/abs/audio.wav' },

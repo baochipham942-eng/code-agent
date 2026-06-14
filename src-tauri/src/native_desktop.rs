@@ -1962,6 +1962,9 @@ pub fn desktop_open_system_settings(request: OpenSystemSettingsRequest) -> Resul
             "accessibility" => {
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
             }
+            "microphone" => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+            }
             other => return Err(format!("Unsupported settings pane: {other}")),
         };
 

@@ -191,7 +191,14 @@ function normalizeTranscribeResult(value: unknown): TranscribeSpeechResult {
     success: value.success === true,
     text: getStringField(value, 'text'),
     error: getStringField(value, 'error'),
+    code: getStringField(value, 'code'),
+    recoverable: typeof value.recoverable === 'boolean' ? value.recoverable : undefined,
     hallucination: typeof value.hallucination === 'boolean' ? value.hallucination : undefined,
+    engine: getStringField(value, 'engine') as TranscribeSpeechResult['engine'],
+    language: getStringField(value, 'language'),
+    model: getStringField(value, 'model'),
+    durationMs: getNumberField(value, 'durationMs'),
+    audioPath: getStringField(value, 'audioPath'),
   };
 }
 
@@ -793,12 +800,12 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
       return null;
     },
 
-    transcribeSpeech: async (_audioData: string, _mimeType: string) => {
+    transcribeSpeech: async (_audioData: string, _mimeType: string, _options) => {
       try {
         const res = await fetch(`${baseUrl}/api/speech/transcribe`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-          body: JSON.stringify({ audioData: _audioData, mimeType: _mimeType }),
+          body: JSON.stringify({ audioData: _audioData, mimeType: _mimeType, ...(_options ?? {}) }),
         });
         if (res.ok) {
           clearAuthTokenReloadAttempt();

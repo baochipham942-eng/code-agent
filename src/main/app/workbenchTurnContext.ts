@@ -124,6 +124,8 @@ export function buildWorkbenchTurnSystemContext(
     lines.push(`修复提示：${browserSessionSnapshot.blockedHint}`);
   }
 
+  lines.push(...buildVoiceInputPromptLines(context));
+
   const livePreviewSelectionLines = buildLivePreviewSelectionPromptLines(context.livePreviewSelection);
   lines.push(...livePreviewSelectionLines);
 
@@ -139,6 +141,42 @@ export function buildWorkbenchTurnSystemContext(
       '这些偏好只作用于当前 turn；如果与任务无关，不要强行使用，也不要在回复里机械复述这段说明。',
       '</turn_workbench_context>',
     ].join('\n'),
+  ];
+}
+
+function buildVoiceInputPromptLines(context: ConversationEnvelopeContext): string[] {
+  const voiceInput = context.voiceInput;
+  if (!voiceInput) {
+    return [];
+  }
+
+  const detail: string[] = [
+    '这条用户消息由会话页语音输入转写进入 composer，用户可能已经编辑过转写文本。',
+  ];
+  if (voiceInput.language) {
+    detail.push(`- ASR 识别语言：${voiceInput.language}`);
+  }
+  if (voiceInput.transcriptionMode || voiceInput.asrEngine) {
+    detail.push(`- 转写引擎：${voiceInput.transcriptionMode || 'unknown'}${voiceInput.asrEngine ? ` / ${voiceInput.asrEngine}` : ''}`);
+  }
+  if (voiceInput.model) {
+    detail.push(`- ASR 模型：${voiceInput.model}`);
+  }
+  if (voiceInput.audioDurationSeconds !== undefined) {
+    detail.push(`- 语音时长：${voiceInput.audioDurationSeconds}s`);
+  }
+  if (voiceInput.chunkCount && voiceInput.chunkCount > 1) {
+    detail.push(`- 长语音已分段转写：${voiceInput.chunkCount} 段`);
+  }
+  if (voiceInput.postProcessed) {
+    detail.push('- 转写文本已做轻量整理，原始转写长度已记录在 metadata。');
+  }
+
+  return [
+    '<voice_input_context>',
+    ...detail,
+    '回复语言指引：如果用户没有明确要求其他语言，优先沿用 ASR 识别语言或转写文本显著呈现的语言；不要把明显口误、停顿词或转写噪音当成用户指令。',
+    '</voice_input_context>',
   ];
 }
 

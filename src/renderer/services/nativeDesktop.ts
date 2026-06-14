@@ -188,7 +188,7 @@ export interface NativeDesktopCollectorRequest {
   maxRecentEvents?: number;
 }
 
-type SettingsPaneKind = 'screenCapture' | 'accessibility';
+type SettingsPaneKind = 'screenCapture' | 'accessibility' | 'microphone';
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const internals = window.__TAURI_INTERNALS__;

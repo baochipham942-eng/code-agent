@@ -278,6 +278,9 @@ function toWorkbenchMetadata(
       metadata.runtimeInputDelivery = context.runtimeInput.delivery;
     }
   }
+  if (context.voiceInput) {
+    metadata.voiceInput = { ...context.voiceInput };
+  }
 
   return Object.keys(metadata).length > 0 ? metadata : undefined;
 }

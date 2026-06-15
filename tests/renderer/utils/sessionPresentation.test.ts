@@ -35,7 +35,7 @@ describe('sessionPresentation', () => {
     });
 
     expect(status.kind).toBe('incomplete');
-    expect(status.label).toBe('待处理');
+    expect(status.label).toBe('未完成');
     expect(status.showBadge).toBe(true);
   });
 

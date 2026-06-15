@@ -203,7 +203,8 @@ export function formatSidebarProjectSummaryLine({
     items.push(`${summary.runningCount} 执行中`);
   }
   if (summary.attentionCount > 0) {
-    items.push(`${summary.attentionCount} 待处理`);
+    // 与头部聚合「未完成」区分：这里是其中需要你看一眼的子集（出错/暂停/未跑完），用"需关注"避免同词歧义。
+    items.push(`${summary.attentionCount} 需关注`);
   }
   if (summary.reviewIssueCount > 0) {
     items.push(`${summary.reviewIssueCount} 待审`);

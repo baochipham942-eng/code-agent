@@ -118,7 +118,8 @@ export const CapabilitySuggestionStrip: React.FC<CapabilitySuggestionStripProps>
 
   return (
     <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.025] px-2.5 py-2">
-      <Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />
+      <Sparkles className="h-3.5 w-3.5 shrink-0 text-fuchsia-400" />
+      <span className="shrink-0 text-[11px] text-zinc-500">为这个任务推荐</span>
       {skillRecommendations.map((recommendation) => (
         recommendation.action === 'install' ? (
           <button

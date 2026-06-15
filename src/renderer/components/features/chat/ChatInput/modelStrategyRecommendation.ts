@@ -862,8 +862,8 @@ export function buildModelStrategyRecommendation(
     });
     return buildSwitchModelRecommendation({
       key: `search:${input.modelLabel}:${buildTaskInputKey(text, 'search')}`,
-      title: '联网任务建议搜索模型',
-      body: `这轮看起来需要最新信息或联网检索。当前 ${input.modelLabel} 未标记搜索能力，搜索特化主任务模型更适合这类任务。`,
+      title: '这个任务可能需要联网搜索',
+      body: `这轮要查最新/联网信息，当前 ${input.modelLabel} 不太擅长搜索，换一个更会搜的模型结果更稳。`,
       candidate,
       taskSignal: buildTaskSignal({
         input,

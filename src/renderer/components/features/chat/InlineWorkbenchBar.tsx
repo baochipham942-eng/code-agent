@@ -215,11 +215,19 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
     );
   }
 
-  const summaryParts: string[] = [];
-  if (shouldShowSkills) summaryParts.push(`Skills ${selectedSkillCount}/${skills.length}`);
-  if (shouldShowConnectors) summaryParts.push(`Connectors ${selectedConnectorCount}/${connectors.length}`);
-  if (shouldShowMcpServers) summaryParts.push(`MCP ${selectedMcpServerCount}/${mcpServers.length}`);
-  const summaryText = summaryParts.join(' · ');
+  // Auto 模式且没手动选时，别裸露 "Skills 0/131 · MCP 0/16" 这种神秘计数（0/131 是好是坏没人懂），
+  // 直接说"自动匹配"；进了 Manual 或手动选了能力，再显示有意义的已选/可选计数。
+  const hasManualSelection = selectedSkillCount + selectedConnectorCount + selectedMcpServerCount > 0;
+  let summaryText: string;
+  if (turnCapabilityScopeMode === 'auto' && !hasManualSelection) {
+    summaryText = '能力 · 自动匹配';
+  } else {
+    const summaryParts: string[] = [];
+    if (shouldShowSkills) summaryParts.push(`Skills ${selectedSkillCount}/${skills.length}`);
+    if (shouldShowConnectors) summaryParts.push(`Connectors ${selectedConnectorCount}/${connectors.length}`);
+    if (shouldShowMcpServers) summaryParts.push(`MCP ${selectedMcpServerCount}/${mcpServers.length}`);
+    summaryText = summaryParts.join(' · ');
+  }
 
   return (
     <div className="mb-2 rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-1.5">

@@ -134,7 +134,7 @@ const SESSION_STATUS_FILTER_OPTIONS: Array<{ id: SessionStatusFilter; label: str
   { id: 'unfinished', label: '未完成' },
   { id: 'approval', label: '待确认' },
   { id: 'running', label: '执行中' },
-  { id: 'attention', label: '待处理' },
+  { id: 'attention', label: '需关注' },
   { id: 'artifact', label: '交付线索' },
   { id: 'review', label: '待审', adminOnly: true },
 ];
@@ -143,7 +143,7 @@ const SESSION_STATUS_FILTER_LABELS: Record<SessionStatusFilter, string> = {
   unfinished: '未完成',
   approval: '待确认',
   running: '执行中',
-  attention: '待处理',
+  attention: '需关注',
   artifact: '交付线索',
   review: '待审',
   background: '后台执行中',
@@ -1525,7 +1525,7 @@ export const Sidebar: React.FC = () => {
                   event.stopPropagation();
                   void handleOpenSessionReplay(session);
                 }}
-                className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-500"
+                className="shrink-0 rounded-md p-1 text-zinc-500 opacity-0 transition-all hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-0 disabled:hover:bg-transparent disabled:hover:text-zinc-500"
               >
                 <Eye className="h-3.5 w-3.5" />
               </button>
@@ -1551,7 +1551,7 @@ export const Sidebar: React.FC = () => {
                   aria-label={`打开 ${displayTitle} 的产物与资产`}
                   title={`打开 ${displayTitle} 的产物与资产`}
                   onClick={(event) => { void handleOpenSessionAssets(event, session); }}
-                  className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
+                  className="shrink-0 rounded-md p-1 text-zinc-500 opacity-0 transition-all hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden group-hover:opacity-100"
                 >
                   <ScrollText className="h-3.5 w-3.5" />
                 </button>

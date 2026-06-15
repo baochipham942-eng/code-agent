@@ -100,61 +100,8 @@ export function buildSessionRecoveryHints(
     });
   }
 
-  if (options.hasReplay) {
-    pushUniqueHint(hints, {
-      kind: 'replay',
-      label: 'Replay',
-      title: options.canOpenReplay === false
-        ? '这个会话有 Workflow / Replay 证据，结构化 Replay 仅管理员可打开'
-        : '打开这个会话的 Workflow / Replay 证据',
-    });
-  }
-
-  if (hasSessionDeliverySignals(session)) {
-    pushUniqueHint(hints, {
-      kind: 'artifact',
-      label: '产物',
-      title: '打开这个会话的产物与资产',
-    });
-  }
-
-  const recentToolName = session.workbenchSnapshot?.recentToolNames
-    .map((name) => name.trim())
-    .find(Boolean);
-  if (recentToolName) {
-    pushUniqueHint(hints, {
-      kind: 'tool',
-      label: truncateHint(recentToolName, 14),
-      title: `最近工具：${recentToolName}`,
-    });
-  }
-
-  const skillCount = session.workbenchSnapshot?.skillIds?.length ?? 0;
-  if (skillCount > 0) {
-    pushUniqueHint(hints, {
-      kind: 'skill',
-      label: `${skillCount} Skill`,
-      title: `已选择 ${skillCount} 个 Skill`,
-    });
-  }
-
-  const connectorCount = session.workbenchSnapshot?.connectorIds?.length ?? 0;
-  if (connectorCount > 0) {
-    pushUniqueHint(hints, {
-      kind: 'connector',
-      label: `${connectorCount} Connector`,
-      title: `已选择 ${connectorCount} 个 Connector`,
-    });
-  }
-
-  const mcpCount = session.workbenchSnapshot?.mcpServerIds?.length ?? 0;
-  if (mcpCount > 0) {
-    pushUniqueHint(hints, {
-      kind: 'mcp',
-      label: `${mcpCount} MCP`,
-      title: `已选择 ${mcpCount} 个 MCP server`,
-    });
-  }
-
-  return hints.slice(0, 4);
+  // 简化侧栏：会话项只保留"在哪/哪条分支/哪个 PR"这类定位上下文。
+  // 之前还会堆 Replay / 产物 / 最近工具(MemoryRead/WebSearch) / N Skill / N Connector / N MCP
+  // 一堆引擎内幕 chip，既和右侧操作按钮(Eye=Replay、产物按钮)重复，又把列表挤复杂——全部去掉。
+  return hints.slice(0, 3);
 }

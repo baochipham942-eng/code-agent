@@ -224,7 +224,7 @@ describe('Sidebar session metadata', () => {
     expect(html).toContain('未完成');
     expect(html).toContain('待确认');
     expect(html).toContain('执行中');
-    expect(html).toContain('待处理');
+    expect(html).toContain('需关注');
   });
 
   it('supports the background-only quick filter', () => {

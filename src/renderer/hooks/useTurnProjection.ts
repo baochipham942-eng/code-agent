@@ -42,17 +42,9 @@ function buildModelDecisionProjectionKey(decision: MessageModelDecision): string
       decision.toolPolicy,
       decision.capabilityNeeds,
     ],
-	    health: health
-	      ? [
-	          health.provider,
-          health.status,
-          health.sampledAt,
-          health.latencyP50,
-          health.latencyP95,
-          health.errorRate,
-          health.consecutiveErrors,
-	        ]
-	      : null,
+	    // 只保留分类态（provider/status），不放 sampledAt/latency/errorRate 这类每次采样都变的
+	    // 遥测——否则同一个"用户选择 mimo"决策每轮 key 都不同，去重永远失效，chip 重复刷屏。
+	    health: health ? [health.provider, health.status] : null,
 	    providerIdentity: providerIdentity
 	      ? [
 	          providerIdentity.provider,
@@ -63,7 +55,9 @@ function buildModelDecisionProjectionKey(decision: MessageModelDecision): string
 	          providerIdentity.endpoint,
 	        ]
 	      : null,
-	    tools: tools
+	    // token 数值（savedTokens/providerUsage/...）每轮都变，不入 key；只保留工具结构性字段
+    // 和 savings 的分类态/来源，保证"决策本质没变"时能正确去重。
+    tools: tools
       ? [
           tools.visibleToolCount,
           tools.mcpToolCount,
@@ -71,15 +65,9 @@ function buildModelDecisionProjectionKey(decision: MessageModelDecision): string
           tools.programmaticToolCalling,
           tools.programmaticToolCount,
           savings?.status,
-          savings?.savedTokens,
           measurement?.savingsSource,
           measurement?.usageSource,
-          measurement?.providerReportedSavings,
           savings?.providerReport?.source,
-          savings?.providerReport?.savedTokens,
-          savings?.providerUsage?.inputTokens,
-          savings?.providerUsage?.outputTokens,
-          savings?.providerUsage?.totalTokens,
         ]
       : null,
     engine: engine
@@ -102,7 +90,6 @@ function buildModelDecisionProjectionKey(decision: MessageModelDecision): string
           failure?.category,
           failure?.reason,
           failure?.retryable,
-          failure?.occurredAt,
           failure?.statusCode,
           failure?.exitCode,
           failure?.reliability?.authState,

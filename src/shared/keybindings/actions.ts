@@ -127,12 +127,12 @@ export const KEYBINDING_DEFINITIONS = [
   {
     id: 'session.retry',
     label: '重试上一步',
-    description: '重试当前会话的最后一次失败或生成',
+    description: '重新生成最后一条助手回复',
     category: 'sessionEditing',
     scope: 'session',
     configurable: true,
-    enabledByDefault: false,
-    defaultHotkeys: { darwin: null, win32: null, linux: null },
+    enabledByDefault: true,
+    defaultHotkeys: { darwin: 'Cmd+Shift+R', win32: 'Ctrl+Shift+R', linux: 'Ctrl+Shift+R' },
   },
   {
     id: 'session.compact',

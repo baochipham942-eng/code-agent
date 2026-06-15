@@ -32,6 +32,8 @@ interface MessageActionState {
   editMessage: (messageId: string, newContent: string) => void;
   /** Regenerate an assistant message: re-send the preceding user message */
   regenerateMessage: (messageId: string) => void;
+  /** Regenerate the most recent assistant message (keyboard shortcut entry, no hover needed). Returns true if one was found. */
+  regenerateLast: () => boolean;
   /** Fork from a checkpoint: rewind files + truncate messages */
   forkFromHere: (messageId: string) => void;
 }
@@ -70,6 +72,19 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
         return;
       }
     }
+  },
+
+  regenerateLast: () => {
+    const { _getMessages, regenerateMessage } = get();
+    if (!_getMessages) return false;
+    const messages = _getMessages();
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant' && messages[i].id) {
+        regenerateMessage(messages[i].id!);
+        return true;
+      }
+    }
+    return false;
   },
 
   forkFromHere: async (messageId: string) => {

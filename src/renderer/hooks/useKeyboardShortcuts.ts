@@ -6,6 +6,7 @@
 import { useEffect, useCallback, useMemo } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
 import { useAppStore } from '../stores/appStore';
+import { useMessageActionStore } from '../stores/messageActionStore';
 import { createLogger } from '../utils/logger';
 import { shouldTriggerBareComposerShortcut } from '../utils/composerShortcuts';
 import {
@@ -447,11 +448,14 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           window.dispatchEvent(new CustomEvent('app:quickAsk'));
           return true;
 
+        case 'session.retry':
+          // 重新生成最后一条助手回复——给「这条不行，重来」一个常驻键盘入口，不必 hover 到操作条。
+          return useMessageActionStore.getState().regenerateLast();
+
         case 'app.toggle':
         case 'composer.send':
         case 'composer.newline':
         case 'session.continue':
-        case 'session.retry':
           return false;
       }
     },

@@ -45,6 +45,7 @@ import { ComboSkillCard } from './ComboSkillCard';
 import { SkillDraftNotifications } from './SkillDraftCard';
 import { RoleDraftNotifications } from './RoleDraftCard';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
+import { computeSlashMenuValue } from '../../../../utils/composerShortcuts';
 import {
   buildCapabilitySemanticSuggestions,
   CapabilitySuggestionStrip,
@@ -229,7 +230,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   useEffect(() => {
     const handleOpenSlashMenu = () => {
-      setValue((current) => current.startsWith('/') ? current : '/');
+      setValue((current) => computeSlashMenuValue(current));
       setSlashFilter('');
       setShowSlashPopover(true);
       requestAnimationFrame(() => inputAreaRef.current?.focus());

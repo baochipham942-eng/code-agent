@@ -7,6 +7,7 @@ import { useEffect, useCallback, useMemo } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
 import { useAppStore } from '../stores/appStore';
 import { createLogger } from '../utils/logger';
+import { shouldTriggerBareComposerShortcut } from '../utils/composerShortcuts';
 import {
   KEYBINDING_DEFINITIONS,
   KEYBINDING_DEFINITION_BY_ID,
@@ -329,9 +330,25 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           return true;
         }
 
-        case 'composer.slashMenu':
+        case 'composer.slashMenu': {
+          // 裸单字符触发(默认 '/')时做焦点门控：仅在 composer 聚焦且输入为空/光标行首
+          // 才作为命令；否则返回 false(不 preventDefault)，让 '/' 正常输入。
+          // 带修饰键的 accelerator 与输入不冲突，照常触发。
+          const bareKey = !!event && event.key.length === 1
+            && !event.metaKey && !event.ctrlKey && !event.altKey;
+          if (bareKey) {
+            const inputEl = document.querySelector('[data-chat-input]') as HTMLTextAreaElement | null;
+            const composerFocused = !!inputEl && document.activeElement === inputEl;
+            if (!shouldTriggerBareComposerShortcut({
+              composerFocused,
+              value: inputEl?.value ?? '',
+            })) {
+              return false;
+            }
+          }
           window.dispatchEvent(new CustomEvent('app:openSlashMenu'));
           return true;
+        }
 
         case 'sidebar.toggle':
           if (!enableToggleSidebar) return false;

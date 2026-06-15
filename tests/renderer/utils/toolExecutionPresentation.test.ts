@@ -5,6 +5,7 @@ import {
   getToolCapabilitySource,
   getToolPermissionView,
   getToolRecoveryHint,
+  isAutoLoadedRetry,
   summarizeToolLoopDecision,
 } from '../../../src/renderer/utils/toolExecutionPresentation';
 
@@ -75,5 +76,39 @@ describe('toolExecutionPresentation', () => {
       reason: '确认入口',
       tone: 'success',
     });
+  });
+
+  it('detects auto-loaded retry results as benign', () => {
+    expect(isAutoLoadedRetry({ autoLoaded: true })).toBe(true);
+    expect(isAutoLoadedRetry({ autoLoadedTools: 'WebFetch' })).toBe(true);
+    expect(isAutoLoadedRetry({})).toBe(false);
+    expect(isAutoLoadedRetry(null)).toBe(false);
+    expect(isAutoLoadedRetry(undefined)).toBe(false);
+  });
+
+  it('does not raise a 暂停恢复 decision for auto-loaded retry pseudo-failures', () => {
+    // 仅有一条 auto-load 伪失败 → 不应弹任何决策 chip（被当良性内部状态忽略）
+    expect(summarizeToolLoopDecision([{
+      name: 'WebFetch',
+      result: 'Tool WebFetch was not loaded yet and has now been auto-loaded.',
+      success: false,
+      metadata: { autoLoadedTools: 'WebFetch', autoLoaded: true },
+    }])).toBeNull();
+
+    // auto-load 伪失败 + 真成功混在一起 → 只看真成功，不再判为失败
+    expect(summarizeToolLoopDecision([
+      {
+        name: 'WebFetch',
+        result: 'auto-loaded',
+        success: false,
+        metadata: { autoLoaded: true },
+      },
+      {
+        name: 'WebFetch',
+        expectedOutcome: '抓取 changelog',
+        result: 'ok',
+        success: true,
+      },
+    ])).toMatchObject({ tone: 'success' });
   });
 });

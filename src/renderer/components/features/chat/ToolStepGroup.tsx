@@ -13,6 +13,7 @@ import { buildStepLabel, buildSingleToolLabel } from '../../../utils/toolStepGro
 import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 import {
   formatToolDuration,
+  isAutoLoadedRetry,
   summarizeToolLoopDecisionFromNodes,
   type ToolLoopDecisionSummary,
 } from '../../../utils/toolExecutionPresentation';
@@ -53,6 +54,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     for (const n of nodes) {
       const tc = n.toolCall;
       if (!tc) continue;
+      // 自动加载重试是良性内部状态，不参与组状态判定（否则组会卡 error/partial 且一直展开）。
+      if (isAutoLoadedRetry(tc.metadata)) continue;
       if (tc._streaming) return 'streaming';
       if (tc.success === false) hasError = true;
       if (tc.success === true || (tc.result !== undefined && tc.success !== false)) {
@@ -255,6 +258,8 @@ function summarizeToolGroupResults(toolCalls: ToolCall[]): string | null {
   for (const toolCall of toolCalls) {
     const result = toolCall.result;
     if (!result) continue;
+    // 自动加载重试不计入任何计数（否则会出现 "1 failed, 1 completed" 这种自相矛盾）。
+    if (isAutoLoadedRetry(result.metadata)) continue;
     if (result.success === false) {
       failed += 1;
       continue;

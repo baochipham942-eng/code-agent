@@ -27,6 +27,17 @@ export interface ToolLikeForDecision {
   result?: unknown;
   success?: boolean;
   _streaming?: boolean;
+  metadata?: Record<string, unknown> | null;
+}
+
+/**
+ * 判定一条工具结果是否「自动加载重试」的良性内部状态（success:false 但不是真失败）。
+ * 源头：messageProcessorUnavailableTools.ts —— 工具未加载→自动加载→让模型重试。
+ * UI 各消费方据此不当失败处理，避免假失败污染状态/计数/决策 chip。
+ */
+export function isAutoLoadedRetry(metadata?: Record<string, unknown> | null): boolean {
+  if (!metadata) return false;
+  return metadata.autoLoaded === true || metadata.autoLoadedTools != null;
 }
 
 const WRITE_TOOLS = new Set([
@@ -94,7 +105,9 @@ function bestToolReason(tool: ToolLikeForDecision): string {
   return tool.expectedOutcome || tool.shortDescription || tool.name;
 }
 
-export function summarizeToolLoopDecision(tools: ToolLikeForDecision[]): ToolLoopDecisionSummary | null {
+export function summarizeToolLoopDecision(allTools: ToolLikeForDecision[]): ToolLoopDecisionSummary | null {
+  // 自动加载重试是良性内部状态，决策判定里完全忽略它——否则会被误判成失败弹「暂停恢复」。
+  const tools = allTools.filter((tool) => !isAutoLoadedRetry(tool.metadata));
   if (tools.length === 0) return null;
 
   const failed = tools.find((tool) => tool.success === false);
@@ -136,6 +149,7 @@ export function summarizeToolLoopDecisionFromNodes(nodes: TraceNode[]): ToolLoop
       result: toolCall.result,
       success: toolCall.success,
       _streaming: toolCall._streaming,
+      metadata: toolCall.metadata,
     }));
 
   return summarizeToolLoopDecision(tools);

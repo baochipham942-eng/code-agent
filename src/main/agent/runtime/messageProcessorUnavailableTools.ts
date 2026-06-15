@@ -101,7 +101,9 @@ export async function handleUnavailableToolCalls(
             ? `Tool ${toolCall.name} was not loaded yet and has now been auto-loaded. Call it again with the correct arguments.`
             : 'Skipped because the same model response included not-yet-loaded tools.',
           duration: 0,
-          metadata: { autoLoadedTools: loadedList },
+          // autoLoaded 标记：这是"工具自动加载→让模型重试"的良性内部状态，不是真失败。
+          // UI 据此不把它计入失败/不弹「暂停恢复」错误 chip/不让工具组状态卡在 error。
+          metadata: { autoLoadedTools: loadedList, autoLoaded: true },
         };
       });
       const toolMsg: Message = {

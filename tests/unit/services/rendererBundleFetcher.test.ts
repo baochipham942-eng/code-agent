@@ -13,6 +13,7 @@ import {
 import {
   buildControlPlaneContentHash,
   buildControlPlaneSigningPayload,
+  CONTROL_PLANE_PUBLIC_KEYS_REMEDIATION_HINT,
 } from '../../../src/main/services/cloud/controlPlaneTrust';
 import { applyRendererBundleUpdate } from '../../../src/main/services/renderer/rendererBundleFetcher';
 import {
@@ -753,6 +754,42 @@ describe('applyRendererBundleUpdate', () => {
 
     expect(result.applied).toBe(false);
     // 兜底：现有 active 不被破坏
+    expect(fs.readFileSync(path.join(activeBundleDir(dataDir), 'index.html'), 'utf-8')).toContain('OLD-ACTIVE');
+  });
+
+  it('logs actionable diagnostics when the renderer bundle key id is unknown', async () => {
+    seedExistingActive('0.16.0', 'oldhash', 'OLD-ACTIVE');
+    const manifest = {
+      version: '0.17.0',
+      contentHash: archiveSha256,
+      minShellVersion: '0.16.0',
+      bundleUrl: 'https://oss.example/bundle.tar.gz',
+    };
+    const { envelope } = buildSignedManifest(manifest);
+    const logs: string[] = [];
+
+    const result = await applyRendererBundleUpdate({
+      dataDir,
+      currentShellVersion: '0.16.90',
+      publicKeys: {},
+      fetchJson: async () => envelope,
+      downloadToFile: async (_url, dest) => { fs.copyFileSync(archivePath, dest); },
+      logger: (message) => logs.push(message),
+    });
+
+    expect(result).toEqual({ applied: false, reason: 'envelope-untrusted' });
+    expect(logs.find((message) => message.includes('envelope untrusted'))).toEqual(expect.stringContaining('keyId=rb-key'));
+    expect(logs.find((message) => message.includes('envelope untrusted'))).toEqual(expect.stringContaining('knownKeyCount=0'));
+    expect(logs.find((message) => message.includes('envelope untrusted'))).toEqual(expect.stringContaining(
+      `remediationHint=${CONTROL_PLANE_PUBLIC_KEYS_REMEDIATION_HINT}`,
+    ));
+    expect(readRendererBundleStatus(dataDir)).toMatchObject({
+      lastAttempt: {
+        outcome: 'failed',
+        reason: 'envelope-untrusted',
+        diagnostics: ['unknown_key_id'],
+      },
+    });
     expect(fs.readFileSync(path.join(activeBundleDir(dataDir), 'index.html'), 'utf-8')).toContain('OLD-ACTIVE');
   });
 

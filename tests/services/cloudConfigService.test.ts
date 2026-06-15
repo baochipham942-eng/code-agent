@@ -73,6 +73,7 @@ describe('CloudConfigService', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -213,6 +214,25 @@ describe('CloudConfigService', () => {
           Authorization: 'Bearer short-lived-token',
         }),
       }));
+    });
+
+    it('does not spend the cloud config fetch timeout waiting for a slow access token', async () => {
+      vi.useFakeTimers();
+      mockFetch.mockResolvedValueOnce(mockJsonResponse(getBuiltinConfig()));
+      const service = new CloudConfigService({
+        allowUnsignedCloudConfig: true,
+        getAccessToken: async () => new Promise<string | null>(() => {}),
+      });
+
+      const init = service.initialize();
+      await vi.advanceTimersByTimeAsync(1000);
+      await init;
+
+      expect(mockFetch).toHaveBeenCalledOnce();
+      const [, requestInit] = mockFetch.mock.calls[0] as [string, { headers: Record<string, string> }];
+      expect(requestInit.headers).not.toHaveProperty('Authorization');
+      expect(service.getInfo().fromCloud).toBe(false);
+      expect(service.getInfo().lastError).toBeNull();
     });
 
     it('accepts signed cloud config envelopes with a configured public key', async () => {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   ensureSupabaseInitialized: vi.fn(),
@@ -18,6 +18,12 @@ const mocks = vi.hoisted(() => ({
     delete: vi.fn(),
     clearSessionFromKeychain: vi.fn(),
     clearAuthData: vi.fn(),
+  },
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   },
 }));
 
@@ -41,12 +47,7 @@ vi.mock('../../../../src/main/services/core', () => ({
 }));
 
 vi.mock('../../../../src/main/services/infra/logger', () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
+  createLogger: () => mocks.logger,
 }));
 
 describe('authService session trust', () => {
@@ -76,6 +77,10 @@ describe('authService session trust', () => {
       email: 'admin@example.com',
       isAdmin: true,
     }));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('treats cached users as unverified and clears them on sign out without Supabase', async () => {
@@ -146,6 +151,34 @@ describe('authService session trust', () => {
         isAdmin: true,
       },
     });
+    expect(mocks.logger.debug).toHaveBeenCalledWith(
+      ' Profile fetch failed; preserving in-memory profile',
+    );
+    expect(mocks.logger.warn).not.toHaveBeenCalledWith(
+      ' Failed to fetch profile, using basic user:',
+      expect.anything(),
+    );
+  });
+
+  it('keeps startup session validation timeout quiet when a cached user remains available', async () => {
+    vi.useFakeTimers();
+    mocks.isSupabaseInitialized.mockReturnValue(true);
+    mocks.supabase.auth.getSession.mockReturnValue(new Promise(() => {}));
+
+    const { getAuthService } = await import('../../../../src/main/services/auth/authService');
+    const authService = getAuthService();
+
+    await authService.initialize();
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(authService.getSessionTrustState()).toBe('cached');
+    expect(mocks.logger.debug).toHaveBeenCalledWith(
+      ' Background session validation deferred; keeping cached user',
+    );
+    expect(mocks.logger.warn).not.toHaveBeenCalledWith(
+      ' Background session validation failed:',
+      expect.anything(),
+    );
   });
 
   it('initializes Supabase lazily when signing in after startup missed it', async () => {

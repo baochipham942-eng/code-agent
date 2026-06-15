@@ -21,6 +21,7 @@ import { promisify } from 'node:util';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import {
+  formatControlPlaneDiagnostics,
   getControlPlanePublicKeysFromEnv,
   verifyControlPlaneEnvelope,
   type ControlPlanePublicKeys,
@@ -324,12 +325,13 @@ export async function applyRendererBundleUpdate(
         });
         if (!rolloutTrust.trusted || !rolloutTrust.payload) {
           const diagnostics = rolloutTrust.diagnostics.map((diagnostic) => diagnostic.code);
+          const formattedDiagnostics = formatControlPlaneDiagnostics(rolloutTrust.diagnostics);
           rolloutAttempt = {
             policyUrl: rolloutPolicyUrl,
             decision: 'untrusted',
             diagnostics,
           };
-          logger(`[renderer-hot-update] rollout policy untrusted: ${diagnostics.join(',')}`);
+          logger(`[renderer-hot-update] rollout policy untrusted: ${formattedDiagnostics}`);
           await recordAttempt({
             outcome: 'failed',
             reason: 'rollout-policy-untrusted',
@@ -409,7 +411,7 @@ export async function applyRendererBundleUpdate(
       ...(now !== undefined ? { now } : {}),
     });
     if (!trust.trusted || !trust.payload) {
-      logger(`[renderer-hot-update] envelope untrusted: ${trust.diagnostics.map((d) => d.code).join(',')}`);
+      logger(`[renderer-hot-update] envelope untrusted: ${formatControlPlaneDiagnostics(trust.diagnostics)}`);
       await recordAttempt({
         outcome: 'failed',
         reason: 'envelope-untrusted',

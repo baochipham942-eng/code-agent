@@ -3,25 +3,29 @@ import { useAppStore, MAX_PREVIEW_TABS } from '../../../src/renderer/stores/appS
 
 describe('appStore workbench tabs', () => {
   beforeEach(() => {
-    // Reset: close all preview tabs, put only 'task' pinned, activate it.
-    useAppStore.getState().closePreview();
+    // Reset: close all tabs. Task opens only from user action or live activity.
     useAppStore.setState({
-      workbenchTabs: ['task'],
-      activeWorkbenchTab: 'task',
+      previewTabs: [],
+      activePreviewTabId: null,
+      workbenchTabs: [],
+      activeWorkbenchTab: null,
+      taskWorkbenchOpenSource: null,
+      taskWorkbenchActivityActive: false,
+      taskPanelTab: 'monitor',
     });
   });
 
-  it('has task pinned and active by default', () => {
+  it('starts with the workbench collapsed by default', () => {
     const state = useAppStore.getState();
-    expect(state.workbenchTabs).toEqual(['task']);
-    expect(state.activeWorkbenchTab).toBe('task');
+    expect(state.workbenchTabs).toEqual([]);
+    expect(state.activeWorkbenchTab).toBeNull();
   });
 
   it('openWorkbenchTab appends a new tab and activates it', () => {
     useAppStore.getState().openWorkbenchTab('skills');
 
     const state = useAppStore.getState();
-    expect(state.workbenchTabs).toEqual(['task', 'skills']);
+    expect(state.workbenchTabs).toEqual(['skills']);
     expect(state.activeWorkbenchTab).toBe('skills');
   });
 
@@ -29,12 +33,13 @@ describe('appStore workbench tabs', () => {
     useAppStore.getState().openWorkbenchTab('audit');
 
     const state = useAppStore.getState();
-    expect(state.workbenchTabs).toEqual(['task', 'audit']);
+    expect(state.workbenchTabs).toEqual(['audit']);
     expect(state.activeWorkbenchTab).toBe('audit');
   });
 
   it('openWorkbenchTab on an already-open tab only re-activates (no duplicate)', () => {
     const { openWorkbenchTab, setActiveWorkbenchTab } = useAppStore.getState();
+    openWorkbenchTab('task');
     openWorkbenchTab('skills');
     setActiveWorkbenchTab('task');
 
@@ -49,13 +54,14 @@ describe('appStore workbench tabs', () => {
     useAppStore.getState().openWorkspacePreview('preview-item-1');
 
     const state = useAppStore.getState();
-    expect(state.workbenchTabs).toEqual(['task', 'workspace-preview']);
+    expect(state.workbenchTabs).toEqual(['workspace-preview']);
     expect(state.activeWorkbenchTab).toBe('workspace-preview');
     expect(state.selectedWorkspacePreviewId).toBe('preview-item-1');
   });
 
   it('closeWorkbenchTab removes tab and clears active when nothing remains', () => {
-    const { closeWorkbenchTab } = useAppStore.getState();
+    const { openWorkbenchTab, closeWorkbenchTab } = useAppStore.getState();
+    openWorkbenchTab('task');
     closeWorkbenchTab('task');
 
     const state = useAppStore.getState();
@@ -65,6 +71,7 @@ describe('appStore workbench tabs', () => {
 
   it('closeWorkbenchTab on active falls back to another pinned tab', () => {
     const { openWorkbenchTab, closeWorkbenchTab } = useAppStore.getState();
+    openWorkbenchTab('task');
     openWorkbenchTab('skills');
     expect(useAppStore.getState().activeWorkbenchTab).toBe('skills');
 
@@ -77,6 +84,7 @@ describe('appStore workbench tabs', () => {
 
   it('closeWorkbenchTab on a non-active tab leaves active alone', () => {
     const { openWorkbenchTab, setActiveWorkbenchTab, closeWorkbenchTab } = useAppStore.getState();
+    openWorkbenchTab('task');
     openWorkbenchTab('skills');
     setActiveWorkbenchTab('task');
 
@@ -123,7 +131,8 @@ describe('appStore workbench tabs', () => {
   it('openPreview on an already-open path re-activates without duplicating workbench entry', () => {
     const { openPreview, setActiveWorkbenchTab } = useAppStore.getState();
     openPreview('/tmp/a.md');
-    setActiveWorkbenchTab('task');
+    useAppStore.getState().openWorkbenchTab('skills');
+    setActiveWorkbenchTab('skills');
 
     openPreview('/tmp/a.md');
 
@@ -164,6 +173,7 @@ describe('appStore workbench tabs', () => {
 
   it('closePreview clears all preview entries but leaves pinned tabs intact', () => {
     const { openWorkbenchTab, openPreview, closePreview } = useAppStore.getState();
+    openWorkbenchTab('task');
     openWorkbenchTab('skills');
     openPreview('/tmp/a.md');
     openPreview('/tmp/b.md');
@@ -174,6 +184,55 @@ describe('appStore workbench tabs', () => {
     expect(state.workbenchTabs).toEqual(['task', 'skills']);
     // Active falls back to a pinned tab, not null.
     expect(state.activeWorkbenchTab === 'task' || state.activeWorkbenchTab === 'skills').toBe(true);
+  });
+
+  it('auto-opens task workbench only while live activity is present', () => {
+    const { syncTaskWorkbenchForActivity } = useAppStore.getState();
+
+    syncTaskWorkbenchForActivity(true);
+    expect(useAppStore.getState()).toMatchObject({
+      workbenchTabs: ['task'],
+      activeWorkbenchTab: 'task',
+      taskWorkbenchOpenSource: 'auto',
+      taskWorkbenchActivityActive: true,
+      taskPanelTab: 'monitor',
+    });
+
+    syncTaskWorkbenchForActivity(false);
+    expect(useAppStore.getState()).toMatchObject({
+      workbenchTabs: [],
+      activeWorkbenchTab: null,
+      taskWorkbenchOpenSource: null,
+      taskWorkbenchActivityActive: false,
+    });
+  });
+
+  it('keeps a manually opened task workbench when activity is absent', () => {
+    const { openWorkbenchTab, syncTaskWorkbenchForActivity } = useAppStore.getState();
+
+    openWorkbenchTab('task');
+    syncTaskWorkbenchForActivity(false);
+
+    expect(useAppStore.getState()).toMatchObject({
+      workbenchTabs: ['task'],
+      activeWorkbenchTab: 'task',
+      taskWorkbenchOpenSource: 'user',
+    });
+  });
+
+  it('does not immediately re-open task after the user closes it during the same activity window', () => {
+    const { syncTaskWorkbenchForActivity, closeWorkbenchTab } = useAppStore.getState();
+
+    syncTaskWorkbenchForActivity(true);
+    closeWorkbenchTab('task');
+    syncTaskWorkbenchForActivity(true);
+
+    expect(useAppStore.getState().workbenchTabs).toEqual([]);
+
+    syncTaskWorkbenchForActivity(false);
+    syncTaskWorkbenchForActivity(true);
+
+    expect(useAppStore.getState().workbenchTabs).toEqual(['task']);
   });
 
   it('setActivePreviewTab also syncs activeWorkbenchTab', () => {

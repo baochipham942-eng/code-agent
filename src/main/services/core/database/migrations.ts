@@ -8,6 +8,12 @@ function safeExec(db: BetterSqlite3.Database, sql: string, logger: Logger): void
     db.exec(sql);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    const isIdempotentDropColumn =
+      /\bDROP\s+COLUMN\b/i.test(sql) &&
+      (msg.includes('no such column') || msg.includes('does not exist'));
+    if (isIdempotentDropColumn) {
+      return;
+    }
     if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
       logger.warn('[DB] Migration unexpected error:', msg);
     }

@@ -1,3 +1,8 @@
+---
+name: pr
+description: Create a pull request after typecheck, targeted tests, branch, commit, and push are complete.
+---
+
 # 创建 PR 工作流
 
 1. 运行 `tsc --noEmit` 并修复所有类型错误

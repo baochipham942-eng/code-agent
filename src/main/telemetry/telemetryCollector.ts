@@ -13,206 +13,32 @@ import { getSystemPromptCache } from './systemPromptCache';
 import { getDiagnosticVersions } from './diagnosticVersions';
 import { buildDiagnosticBundle, sanitizeDiagnosticBundle } from './diagnosticBundleService';
 import { classifyIntent, evaluateOutcome } from './intentClassifier';
-import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetryAdapter, QualitySignals, TelemetryPushEvent, ErrorCategory, DiagnosticTriggerReason } from '../../shared/contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetryAdapter, QualitySignals, TelemetryPushEvent, DiagnosticTriggerReason } from '../../shared/contract/telemetry';
 import type { AgentEvent } from '../../shared/contract';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
-import { sanitizeBrowserComputerToolArguments, sanitizeBrowserComputerToolResult } from '../../shared/utils/browserComputerRedaction';
+import { sanitizeBrowserComputerToolResult } from '../../shared/utils/browserComputerRedaction';
+import {
+  classifyError,
+  isRecord,
+  asString,
+  asNumber,
+  extractComputerSurfaceFields,
+  sanitizeToolArgsForTelemetry,
+  parseSerializedArguments,
+  type SessionConfig,
+  type PendingToolCall,
+  type DetachedToolCallInput,
+  type DetachedTimelineEventInput,
+  type DetachedTurnInput,
+  type DetachedTurnBuffer,
+} from './telemetryCollectorInternal';
 
-// ----------------------------------------------------------------------------
-// Error Classification
-// ----------------------------------------------------------------------------
+// classifyError 被 telemetryQueryService 等外部模块从本文件导入，保持 re-export。
+export { classifyError } from './telemetryCollectorInternal';
 
-/**
- * 剥离 error 字符串中混入的工具/系统日志，只对"主 error message"做分类。
- *
- * 例如 Browser 工具失败时 error 形如：
- *   "Cannot find package 'playwright' ...
- *    --- Recent Logs ---
- *    [01:16:17] [DEBUG] ..."
- * 整段一起做 substring 匹配，日志里的 "rate"/"429"/"timeout" 等噪音字串很容易
- * 误命中 rate_limit/timeout 等分类。
- */
-function stripLogNoise(errorMessage: string): string {
-  // 常见日志分隔符
-  const markers = ['\n--- Recent Logs ---', '\n--- Logs ---', '\nRecent logs:', '\n[STDOUT]', '\n[STDERR]'];
-  let cleaned = errorMessage;
-  for (const m of markers) {
-    const idx = cleaned.indexOf(m);
-    if (idx > 0) cleaned = cleaned.slice(0, idx);
-  }
-  return cleaned.trim();
-}
-
-export function classifyError(errorMessage: string): ErrorCategory {
-  // 剥离日志噪音，避免日志里偶现的 "rate"/"429"/"timeout" 字串误判
-  const cleaned = stripLogNoise(errorMessage);
-  const msg = cleaned.toLowerCase();
-
-  // 1. 结构化信号：缺包（最常见的"系统配置"问题）
-  if (msg.includes('cannot find package') || msg.includes('cannot find module') || msg.includes('module not found') || msg.includes('command not found')) {
-    return 'dependency_missing';
-  }
-
-  // 2. 文件系统
-  if (msg.includes('enoent') || msg.includes('no such file')) return 'file_not_found';
-  if (msg.includes('eacces') || msg.includes('permission denied')) return 'permission_denied';
-
-  // 3. 沙箱
-  if (msg.includes('denied by sandbox') || msg.includes('sandbox denied') || msg.includes('sandbox: denied')) {
-    return 'sandbox_denied';
-  }
-
-  // 4. 网络/HTTP — 优先匹配明确状态码（429 单独走 rate_limit）
-  if (/\bhttp\s*429\b/i.test(cleaned) || /\b429\s+too many requests\b/i.test(cleaned) || msg.includes('rate limit') || (msg.includes('quota') && msg.includes('exceeded'))) {
-    return 'rate_limit';
-  }
-  if (/\bhttp\s*40[13]\b/i.test(cleaned) || msg.includes('unauthorized') || msg.includes('forbidden') || msg.includes('authentication failed')) {
-    return 'auth_failed';
-  }
-  if (/\bhttp\s*4\d\d\b/i.test(cleaned)) return 'http_4xx';
-  if (/\bhttp\s*5\d\d\b/i.test(cleaned)) return 'http_5xx';
-
-  if (msg.includes('econnrefused') || msg.includes('econnreset') || msg.includes('enotfound') || msg.includes('fetch failed') || msg.includes('network is unreachable')) {
-    return 'network_error';
-  }
-
-  // 5. 上下文/解析
-  if (msg.includes('context length') || msg.includes('token limit') || msg.includes('maximum context')) return 'context_overflow';
-  if (msg.includes('tool-args-validation-error') || msg.includes('参数校验失败')) return 'tool_args_validation';
-  if (msg.includes('syntaxerror') || msg.includes('parse error') || msg.includes('unexpected token')) return 'syntax_error';
-
-  // 6. 时间/编辑/Shell
-  if (msg.includes('timeout') || msg.includes('etimedout') || msg.includes('timed out')) return 'timeout';
-  if (msg.includes('not unique') || msg.includes('multiple matches')) return 'edit_not_unique';
-  if (msg.includes('exit code') || msg.includes('command failed')) return 'command_failure';
-
-  // 7. path hallucination — "does not exist" 带文件路径模式
-  if (msg.includes('does not exist') && /[/\\][\w.-]+/.test(cleaned)) return 'path_hallucination';
-
-  return 'unknown';
-}
 
 const logger = createLogger('TelemetryCollector');
 
-interface SessionConfig {
-  title: string;
-  userId?: string | null;
-  modelProvider: string;
-  modelName: string;
-  workingDirectory: string;
-  agentVersion?: string;
-  promptVersion?: string;
-  toolSchemaVersion?: string;
-}
-
-interface PendingToolCall {
-  id: string;
-  toolCallId: string;
-  name: string;
-  arguments: string;
-  actualArguments?: string;
-  rawArguments?: Record<string, unknown>;
-  timestamp: number;
-  index: number;
-  parallel: boolean;
-}
-
-interface DetachedToolCallInput {
-  toolCallId: string;
-  name: string;
-  arguments: Record<string, unknown>;
-  resultSummary?: string;
-  success: boolean;
-  error?: string;
-  durationMs: number;
-  timestamp: number;
-  index: number;
-  parallel?: boolean;
-  metadata?: Record<string, unknown>;
-}
-
-interface DetachedTimelineEventInput {
-  eventType: string;
-  summary: string;
-  data?: Record<string, unknown> | string;
-  durationMs?: number;
-  timestamp?: number;
-}
-
-interface DetachedTurnInput {
-  sessionId: string;
-  turnId: string;
-  turnNumber: number;
-  userPrompt: string;
-  assistantResponse: string;
-  thinking?: string;
-  agentId?: string;
-  parentTurnId?: string;
-  startTime: number;
-  endTime: number;
-  modelCalls?: TelemetryModelCall[];
-  toolCalls?: DetachedToolCallInput[];
-  events?: DetachedTimelineEventInput[];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-}
-
-function extractComputerSurfaceFields(name: string, argsJson: string, metadata?: Record<string, unknown>): Partial<TelemetryToolCall> {
-  if (name !== 'computer_use') {
-    return {};
-  }
-  const safeMetadata = metadata || {};
-  const trace = isRecord(safeMetadata.workbenchTrace) ? safeMetadata.workbenchTrace : {};
-  const axQuality = isRecord(safeMetadata.axQuality) ? safeMetadata.axQuality : isRecord(trace.axQuality) ? trace.axQuality : {};
-  let parsedArgs: Record<string, unknown> = {};
-  try {
-    const parsed = JSON.parse(argsJson);
-    if (isRecord(parsed)) {
-      parsedArgs = parsed;
-    }
-  } catch {
-    parsedArgs = {};
-  }
-  return {
-    computerSurfaceFailureKind: asString(safeMetadata.failureKind) || asString(trace.failureKind),
-    computerSurfaceMode: asString(safeMetadata.computerSurfaceMode) || asString(trace.mode),
-    computerSurfaceTargetApp: asString(safeMetadata.targetApp) || asString(trace.targetApp) || asString(parsedArgs.targetApp),
-    computerSurfaceAction: asString(trace.action) || asString(parsedArgs.action),
-    computerSurfaceAxQualityScore: asNumber(axQuality.score),
-    computerSurfaceAxQualityGrade: asString(axQuality.grade)
-  };
-}
-
-function sanitizeToolArgsForTelemetry(
-  name: string,
-  args: unknown
-): {
-  serialized: string;
-  actualArguments?: string;
-  rawArguments?: Record<string, unknown>;
-} {
-  if (!isRecord(args)) {
-    const serialized = JSON.stringify(args ?? {});
-    return { serialized, actualArguments: serialized };
-  }
-  const safeArgs = sanitizeBrowserComputerToolArguments(name, args) || args;
-  const serialized = JSON.stringify(safeArgs);
-  return {
-    serialized,
-    actualArguments: serialized,
-    rawArguments: args
-  };
-}
 
 export class TelemetryCollector {
   private static instance: TelemetryCollector | null = null;
@@ -223,6 +49,7 @@ export class TelemetryCollector {
   private turnToolCalls: Array<TelemetryToolCall & { turnId: string; sessionId: string }> = [];
   private turnEvents: Array<TelemetryTimelineEvent & { turnId: string; sessionId: string }> = [];
   private pendingToolCalls = new Map<string, PendingToolCall>();
+  private detachedTurnBuffers = new Map<string, DetachedTurnBuffer>();
 
   // Counters for signals
   private turnRetryCount = 0;
@@ -478,7 +305,165 @@ export class TelemetryCollector {
     });
   }
 
+  private detachedTurnKey(sessionId: string, turnId: string): string {
+    return `${sessionId}:${turnId}`;
+  }
+
+  private nextDetachedTurnNumber(sessionId: string): number {
+    const activeTurnCount = this.activeSession?.id === sessionId ? this.activeSession.turnCount : 0;
+    let pendingForSession = 0;
+    for (const buffer of this.detachedTurnBuffers.values()) {
+      if (buffer.sessionId === sessionId) pendingForSession++;
+    }
+    return activeTurnCount + pendingForSession + 1;
+  }
+
+  private ensureDetachedTurnBuffer(
+    sessionId: string,
+    turnId: string,
+    options: {
+      turnNumber?: number;
+      userPrompt?: string;
+      agentId?: string;
+      parentTurnId?: string;
+      startTime?: number;
+    } = {}
+  ): DetachedTurnBuffer {
+    const key = this.detachedTurnKey(sessionId, turnId);
+    let buffer = this.detachedTurnBuffers.get(key);
+    if (!buffer) {
+      buffer = {
+        sessionId,
+        turnId,
+        turnNumber: options.turnNumber ?? this.nextDetachedTurnNumber(sessionId),
+        userPrompt: options.userPrompt ?? '',
+        agentId: options.agentId,
+        parentTurnId: options.parentTurnId,
+        startTime: options.startTime ?? Date.now(),
+        modelCalls: [],
+        toolCalls: [],
+        events: [],
+        pendingToolCalls: new Map()
+      };
+      this.detachedTurnBuffers.set(key, buffer);
+      return buffer;
+    }
+
+    if (options.turnNumber !== undefined) buffer.turnNumber = options.turnNumber;
+    if (options.userPrompt !== undefined) buffer.userPrompt = options.userPrompt;
+    if (options.agentId !== undefined) buffer.agentId = options.agentId;
+    if (options.parentTurnId !== undefined) buffer.parentTurnId = options.parentTurnId;
+    if (options.startTime !== undefined) buffer.startTime = Math.min(buffer.startTime, options.startTime);
+    return buffer;
+  }
+
+  private hasActiveTurn(sessionId: string, turnId: string): boolean {
+    return this.activeTurn?.id === turnId && this.activeTurn.sessionId === sessionId;
+  }
+
+  private hasDifferentActiveTurnInSession(sessionId: string, turnId: string): boolean {
+    return !!this.activeTurn && this.activeTurn.sessionId === sessionId && this.activeTurn.id !== turnId;
+  }
+
+  private recordDetachedModelCall(sessionId: string, turnId: string, call: TelemetryModelCall, agentId?: string): void {
+    const buffer = this.ensureDetachedTurnBuffer(sessionId, turnId, { agentId });
+    buffer.modelCalls.push(call);
+    this.pushEvent({
+      type: 'model_call',
+      sessionId,
+      data: call
+    });
+  }
+
+  private recordDetachedToolCallStart(
+    sessionId: string,
+    turnId: string,
+    toolCallId: string,
+    name: string,
+    args: unknown,
+    index: number,
+    parallel: boolean,
+    agentId?: string
+  ): void {
+    const buffer = this.ensureDetachedTurnBuffer(sessionId, turnId, { agentId });
+    const safeArgs = sanitizeToolArgsForTelemetry(name, args);
+    buffer.pendingToolCalls.set(toolCallId, {
+      id: generateMessageId(),
+      toolCallId,
+      name,
+      arguments: safeArgs.serialized,
+      actualArguments: safeArgs.actualArguments,
+      rawArguments: safeArgs.rawArguments,
+      timestamp: Date.now(),
+      index,
+      parallel
+    });
+  }
+
+  private recordDetachedToolCallEnd(
+    sessionId: string,
+    turnId: string,
+    toolCallId: string,
+    success: boolean,
+    error: string | undefined,
+    durationMs: number,
+    output: string | undefined,
+    metadata?: Record<string, unknown>,
+    agentId?: string
+  ): void {
+    const buffer = this.ensureDetachedTurnBuffer(sessionId, turnId, { agentId });
+    const pending = buffer.pendingToolCalls.get(toolCallId);
+    if (!pending) return;
+    buffer.pendingToolCalls.delete(toolCallId);
+    buffer.toolCalls.push({
+      toolCallId,
+      name: pending.name,
+      arguments: pending.rawArguments ?? parseSerializedArguments(pending.arguments),
+      resultSummary: output,
+      success,
+      error,
+      durationMs,
+      timestamp: pending.timestamp,
+      index: pending.index,
+      parallel: pending.parallel,
+      metadata
+    });
+  }
+
+  private endDetachedTurn(
+    sessionId: string,
+    turnId: string,
+    assistantResponse: string,
+    thinking?: string,
+    systemPromptHash?: string,
+    agentId?: string
+  ): boolean {
+    const key = this.detachedTurnKey(sessionId, turnId);
+    const buffer = this.ensureDetachedTurnBuffer(sessionId, turnId, { agentId });
+    const recorded = this.recordDetachedTurn({
+      sessionId,
+      turnId,
+      turnNumber: buffer.turnNumber,
+      userPrompt: buffer.userPrompt,
+      assistantResponse,
+      thinking,
+      systemPromptHash,
+      agentId: buffer.agentId ?? agentId,
+      parentTurnId: buffer.parentTurnId,
+      startTime: buffer.startTime,
+      endTime: Date.now(),
+      modelCalls: buffer.modelCalls,
+      toolCalls: buffer.toolCalls,
+      events: buffer.events
+    });
+    if (recorded) {
+      this.detachedTurnBuffers.delete(key);
+    }
+    return recorded;
+  }
+
   endTurn(sessionId: string, turnId: string, assistantResponse: string, thinking?: string, systemPromptHash?: string): void {
+    if (!this.activeTurn) return;
     if (this.activeTurn?.id !== turnId) {
       logger.warn('[TelemetryCollector] endTurn: turnId mismatch', {
         expected: this.activeTurn?.id,
@@ -585,10 +570,6 @@ export class TelemetryCollector {
    * share the collector's single activeTurn buffer.
    */
   recordDetachedTurn(input: DetachedTurnInput): boolean {
-    if (this.activeSession?.id !== input.sessionId) {
-      return false;
-    }
-
     const modelCalls = (input.modelCalls || []).map((call) => ({
       ...call,
       turnId: input.turnId,
@@ -655,6 +636,8 @@ export class TelemetryCollector {
     };
     const totalInput = modelCalls.reduce((sum, call) => sum + call.inputTokens, 0);
     const totalOutput = modelCalls.reduce((sum, call) => sum + call.outputTokens, 0);
+    const effectiveAgentId = input.agentId || 'subagent';
+    const isMainLoopAgent = effectiveAgentId === 'main' || effectiveAgentId === 'cli';
     const turn: TelemetryTurn = {
       id: input.turnId,
       sessionId: input.sessionId,
@@ -666,11 +649,12 @@ export class TelemetryCollector {
       userPromptTokens: Math.ceil(input.userPrompt.length / 3.5),
       hasAttachments: false,
       attachmentCount: 0,
-      agentMode: 'subagent',
+      agentMode: isMainLoopAgent ? 'normal' : 'subagent',
       effortLevel: 'high',
       modelCalls: [],
       toolCalls: [],
       events: [],
+      systemPromptHash: input.systemPromptHash,
       assistantResponse: input.assistantResponse,
       assistantResponseTokens: Math.ceil(input.assistantResponse.length / 3.5),
       thinkingContent: input.thinking,
@@ -683,15 +667,15 @@ export class TelemetryCollector {
       outcome: evaluateOutcome(signals),
       compactionOccurred: signals.compactionTriggered,
       iterationCount: input.turnNumber,
-      agentId: input.agentId || 'subagent',
-      turnType: 'iteration',
+      agentId: effectiveAgentId,
+      turnType: isMainLoopAgent && !input.parentTurnId ? 'user' : 'iteration',
       parentTurnId: input.parentTurnId
     };
 
     getTelemetryStorage().insertTurn(turn);
     getTelemetryStorage().batchInsert({ modelCalls, toolCalls, events });
 
-    if (this.activeSession) {
+    if (this.activeSession?.id === input.sessionId) {
       this.activeSession.turnCount++;
       this.activeSession.totalInputTokens += totalInput;
       this.activeSession.totalOutputTokens += totalOutput;
@@ -725,6 +709,7 @@ export class TelemetryCollector {
   // --------------------------------------------------------------------------
 
   recordModelCall(turnId: string, call: TelemetryModelCall): void {
+    if (!this.activeTurn) return;
     if (this.activeTurn?.id !== turnId) {
       logger.warn('[TelemetryCollector] recordModelCall: turnId mismatch', {
         expected: this.activeTurn?.id,
@@ -889,20 +874,45 @@ export class TelemetryCollector {
     return {
       onTurnStart(turnId: string, turnNumber: number, userPrompt: string, parentTurnId?: string) {
         collector.startTurn(sessionId, turnId, turnNumber, userPrompt, agentId, parentTurnId);
+        if (!collector.hasActiveTurn(sessionId, turnId)) {
+          collector.ensureDetachedTurnBuffer(sessionId, turnId, {
+            turnNumber,
+            userPrompt,
+            agentId,
+            parentTurnId,
+            startTime: Date.now()
+          });
+        }
       },
       onModelCall(turnId: string, call: TelemetryModelCall) {
-        collector.recordModelCall(turnId, call);
+        if (collector.hasActiveTurn(sessionId, turnId) || collector.hasDifferentActiveTurnInSession(sessionId, turnId)) {
+          collector.recordModelCall(turnId, call);
+          return;
+        }
+        collector.recordDetachedModelCall(sessionId, turnId, call, agentId);
       },
       onToolCallStart(turnId: string, toolCallId: string, name: string, args: unknown, index: number, parallel: boolean) {
-        collector.recordToolCallStart(turnId, toolCallId, name, args, index, parallel);
+        if (collector.hasActiveTurn(sessionId, turnId) || collector.hasDifferentActiveTurnInSession(sessionId, turnId)) {
+          collector.recordToolCallStart(turnId, toolCallId, name, args, index, parallel);
+        } else {
+          collector.recordDetachedToolCallStart(sessionId, turnId, toolCallId, name, args, index, parallel, agentId);
+        }
         // PostHog: 工具使用事件（在 start hook 埋点最干净——单点覆盖 6 个 onToolCallEnd 分支）
         trackNode(POSTHOG_EVENTS.TOOL_USED, { tool: name, toolCallId });
       },
       onToolCallEnd(turnId: string, toolCallId: string, success: boolean, error: string | undefined, durationMs: number, output: string | undefined, metadata?: Record<string, unknown>) {
-        collector.recordToolCallEnd(turnId, toolCallId, success, error, durationMs, output, metadata);
+        if (collector.hasActiveTurn(sessionId, turnId) || collector.hasDifferentActiveTurnInSession(sessionId, turnId)) {
+          collector.recordToolCallEnd(turnId, toolCallId, success, error, durationMs, output, metadata);
+          return;
+        }
+        collector.recordDetachedToolCallEnd(sessionId, turnId, toolCallId, success, error, durationMs, output, metadata, agentId);
       },
       onTurnEnd(turnId: string, assistantResponse: string, thinking?: string, systemPromptHash?: string) {
-        collector.endTurn(sessionId, turnId, assistantResponse, thinking, systemPromptHash);
+        if (collector.hasActiveTurn(sessionId, turnId) || collector.hasDifferentActiveTurnInSession(sessionId, turnId)) {
+          collector.endTurn(sessionId, turnId, assistantResponse, thinking, systemPromptHash);
+          return;
+        }
+        collector.endDetachedTurn(sessionId, turnId, assistantResponse, thinking, systemPromptHash, agentId);
       }
     };
   }
@@ -989,6 +999,7 @@ export class TelemetryCollector {
     this.flush();
     this.activeSession = null;
     this.activeTurn = null;
+    this.detachedTurnBuffers.clear();
     this.eventListeners = [];
   }
 

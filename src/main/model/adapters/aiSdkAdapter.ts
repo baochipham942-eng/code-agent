@@ -19,7 +19,14 @@
 // ============================================================================
 
 import { generateText, streamText, jsonSchema, tool as aiTool } from 'ai';
-import type { LanguageModel, ModelMessage as AiModelMessage, ToolSet, TextStreamPart, ToolChoice } from 'ai';
+import type {
+  LanguageModel,
+  ModelMessage as AiModelMessage,
+  SystemModelMessage as AiSystemModelMessage,
+  ToolSet,
+  TextStreamPart,
+  ToolChoice,
+} from 'ai';
 import { createDeepSeek } from '@ai-sdk/deepseek';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createAnthropic } from '@ai-sdk/anthropic';
@@ -466,6 +473,30 @@ function toAiMessages(messages: ModelMessage[]): AiModelMessage[] {
   return out;
 }
 
+interface AiSdkPromptShape {
+  system?: AiSystemModelMessage[];
+  messages: AiModelMessage[];
+}
+
+function buildAiSdkPrompt(messages: ModelMessage[], provider: string): AiSdkPromptShape {
+  const aiMessages = applyAnthropicCacheBreakpoints(toAiMessages(messages), provider);
+  const system: AiSystemModelMessage[] = [];
+  const nonSystem: AiModelMessage[] = [];
+
+  for (const message of aiMessages) {
+    if (message.role === 'system') {
+      system.push(message as AiSystemModelMessage);
+    } else {
+      nonSystem.push(message);
+    }
+  }
+
+  return {
+    ...(system.length > 0 ? { system } : {}),
+    messages: nonSystem,
+  };
+}
+
 // ── GAP-003: Anthropic prompt caching 断点注入 ──
 // 旧 claudeProvider 路径默认开启 caching（system + tools 断点），AI SDK 迁移时丢了。
 // 这里补回并增强：
@@ -606,13 +637,11 @@ async function runInferenceViaAiSdk(
   const req = resolveProviderRequest(config);
   const model = resolveModel(config, req);
   let aiTools: ToolSet | undefined;
-  let aiMessages: AiModelMessage[] | undefined;
+  let aiPrompt: AiSdkPromptShape;
   try {
     // P1b：模型不支持 tool_call 时不传 tools（能力即数据，来自 providerRegistry）
     aiTools = tools.length > 0 && req.supportsTool ? buildTools(tools) : undefined;
-    aiMessages = toAiMessages(messages);
-    // GAP-003: Anthropic prompt caching 断点（system 前缀 + 对话历史增量）
-    aiMessages = applyAnthropicCacheBreakpoints(aiMessages, config.provider);
+    aiPrompt = buildAiSdkPrompt(messages, config.provider);
   } catch (err) {
     const stage = !aiTools && tools.length > 0 && req.supportsTool ? 'buildTools' : 'toAiMessages';
     logInferenceFailure(err, stage, config, messages);
@@ -621,9 +650,9 @@ async function runInferenceViaAiSdk(
 
   const streaming = typeof onStream === 'function' && options?.forceNonStreaming !== true;
   if (streaming) {
-    return streamViaAiSdk({ model, aiMessages, aiTools, config, onStream, signal, options, messages });
+    return streamViaAiSdk({ model, aiPrompt, aiTools, config, onStream, signal, options, messages });
   }
-  return generateViaAiSdk({ model, aiMessages, aiTools, config, signal, options, messages });
+  return generateViaAiSdk({ model, aiPrompt, aiTools, config, signal, options, messages });
 }
 
 // 给一次 provider 调用套 per-request 超时：组合「外部 signal + 内部超时」成一个 abortSignal。
@@ -648,14 +677,14 @@ function withRequestTimeout(signal: AbortSignal | undefined, timeoutMs: number):
 // ── 非流式：generateText（服务子代理 + 主 loop 的 artifact 非流式重试）。行为与迁移 P0 一致 ──
 async function generateViaAiSdk(params: {
   model: LanguageModel;
-  aiMessages: AiModelMessage[];
+  aiPrompt: AiSdkPromptShape;
   aiTools: ToolSet | undefined;
   config: ModelConfig;
   signal: AbortSignal | undefined;
   options: InferenceOptions | undefined;
   messages: ModelMessage[];
 }): Promise<ModelResponse> {
-  const { model, aiMessages, aiTools, config, signal, options, messages } = params;
+  const { model, aiPrompt, aiTools, config, signal, options, messages } = params;
   const requestTimeoutMs = options?.requestTimeoutMs ?? PROVIDER_TIMEOUT;
   let result;
   try {
@@ -670,7 +699,7 @@ async function generateViaAiSdk(params: {
         try {
           return await generateText({
             model,
-            messages: aiMessages,
+            ...aiPrompt,
             tools: aiTools,
             abortSignal: guard.signal,
             temperature: config.temperature,
@@ -817,7 +846,7 @@ function buildStreamResponse(acc: StreamAccumulator, config: ModelConfig): Model
 //    最终累积出与非流式同形状的 ModelResponse。服务主 agent loop 的逐字输出 ──
 async function streamViaAiSdk(params: {
   model: LanguageModel;
-  aiMessages: AiModelMessage[];
+  aiPrompt: AiSdkPromptShape;
   aiTools: ToolSet | undefined;
   config: ModelConfig;
   onStream: StreamCallback;
@@ -825,7 +854,7 @@ async function streamViaAiSdk(params: {
   options: InferenceOptions | undefined;
   messages: ModelMessage[];
 }): Promise<ModelResponse> {
-  const { model, aiMessages, aiTools, config, onStream, signal, options, messages } = params;
+  const { model, aiPrompt, aiTools, config, onStream, signal, options, messages } = params;
   const healthMonitor = getProviderHealthMonitor();
   const maxRetries = options?.disableProviderTransientRetry ? 0 : STREAM_MAX_RETRIES;
   const snapshotInterval = options?.snapshotIntervalMs ?? DEFAULT_SNAPSHOT_INTERVAL_MS;
@@ -877,7 +906,7 @@ async function streamViaAiSdk(params: {
     try {
       const result = streamText({
         model,
-        messages: aiMessages,
+        ...aiPrompt,
         tools: aiTools,
         abortSignal: streamSignal,
         temperature: config.temperature,

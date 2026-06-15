@@ -20,6 +20,7 @@ import {
 } from './builtinConfig';
 import { setModelRoutingOverride } from '../../model/modelRouterPolicy';
 import { createLogger } from '../infra/logger';
+import { withTimeout } from '../infra/timeoutController';
 import { CACHE, CLOUD, CLOUD_ENDPOINTS } from '../../../shared/constants';
 import {
   getBuiltinSkillCatalogPayload,
@@ -30,6 +31,7 @@ import {
 import type { SkillCatalogPayload } from '../../../shared/contract/skillRepository';
 import type { McpCatalogPayload } from '../../../shared/contract/mcpCatalog';
 import {
+  formatControlPlaneDiagnostics,
   getControlPlanePublicKeysFromEnv,
   isControlPlaneEnvelope,
   verifyControlPlaneEnvelope,
@@ -55,6 +57,7 @@ const CLOUD_MCP_KILL_SWITCH_FEATURES = [
   'mcpServers',
   'enableCloudAgent',
 ] as const;
+const CLOUD_CONFIG_ACCESS_TOKEN_TIMEOUT_MS = 1000;
 
 export interface CloudConfigServiceOptions {
   getAccessToken?: () => Promise<string | null>;
@@ -429,6 +432,30 @@ export class CloudConfigService {
       || process.env.CODE_AGENT_ALLOW_UNSIGNED_CLOUD_CONFIG === '1';
   }
 
+  private async readAccessTokenWithinBudget(): Promise<string | null> {
+    if (!this.options.getAccessToken) return null;
+
+    const tokenPromise = this.options.getAccessToken().catch((error) => {
+      logger.debug('Cloud config access token unavailable; fetching public config', {
+        reason: error instanceof Error ? error.name : typeof error,
+      });
+      return null;
+    });
+
+    try {
+      return await withTimeout(
+        tokenPromise,
+        CLOUD_CONFIG_ACCESS_TOKEN_TIMEOUT_MS,
+        'Cloud config access token timeout',
+      );
+    } catch (error) {
+      logger.debug('Cloud config access token not ready; fetching public config', {
+        timeoutMs: CLOUD_CONFIG_ACCESS_TOKEN_TIMEOUT_MS,
+      });
+      return null;
+    }
+  }
+
   private acceptFetchedConfig(value: unknown): CloudConfig {
     if (isControlPlaneEnvelope(value)) {
       const trust = verifyControlPlaneEnvelope<CloudConfig>(value, {
@@ -444,7 +471,12 @@ export class CloudConfigService {
         ...(trust.expiresAt ? { expiresAt: trust.expiresAt } : {}),
       };
       if (!trust.trusted || !trust.payload) {
-        throw new Error(`Rejected untrusted cloud config: ${trust.diagnostics.map((entry) => entry.code).join(', ')}`);
+        const diagnostics = formatControlPlaneDiagnostics(trust.diagnostics);
+        logger.warn('Rejected untrusted cloud config', {
+          diagnostics,
+          trustDiagnostics: trust.diagnostics,
+        });
+        throw new Error(`Rejected untrusted cloud config: ${diagnostics}`);
       }
       return trust.payload;
     }
@@ -466,13 +498,19 @@ export class CloudConfigService {
       message: 'Cloud config responses must be signed control-plane envelopes.',
     }];
     this.lastTrust = { trusted: false };
-    throw new Error('Rejected unsigned cloud config response');
+    const diagnostics = formatControlPlaneDiagnostics(this.lastTrustDiagnostics);
+    logger.warn('Rejected unsigned cloud config response', {
+      diagnostics,
+      trustDiagnostics: this.lastTrustDiagnostics,
+    });
+    throw new Error(`Rejected unsigned cloud config response: ${diagnostics}`);
   }
 
   /**
    * 从云端拉取配置
    */
   private async fetchConfig(): Promise<void> {
+    const accessToken = await this.readAccessTokenWithinBudget();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), CLOUD.FETCH_TIMEOUT);
 
@@ -486,10 +524,6 @@ export class CloudConfigService {
         headers['If-None-Match'] = this.etag;
       }
 
-      const accessToken = await this.options.getAccessToken?.().catch((error) => {
-        logger.warn('Failed to read cloud config access token', { error: String(error) });
-        return null;
-      });
       if (accessToken) {
         headers.Authorization = `Bearer ${accessToken}`;
       }

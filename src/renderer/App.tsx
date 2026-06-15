@@ -59,12 +59,17 @@ import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
 import { useSwarmStore } from './stores/swarmStore';
 import { useWorkflowStore } from './stores/workflowStore';
+import { useTaskStore } from './stores/taskStore';
+import { useBackgroundTaskStore } from './stores/backgroundTaskStore';
 import { tauriCheckForUpdate } from './utils/tauriUpdater';
 import { setSentryRendererContext } from './observability/sentryRenderer';
 
 const logger = createLogger('App');
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1180;
 const WORKBENCH_MIN_VISIBLE_WIDTH = 900;
+const TASK_WORKBENCH_SESSION_STATUSES = new Set(['queued', 'running', 'paused', 'cancelling', 'error']);
+const TASK_WORKBENCH_PROGRESS_PHASES = new Set(['thinking', 'tool_pending', 'tool_running', 'generating']);
+const TASK_WORKBENCH_BACKGROUND_STATUSES = new Set(['queued', 'running', 'waiting_input', 'stalled', 'paused']);
 
 const SettingsModal = React.lazy(() => import('./components/SettingsModal').then((module) => ({
   default: module.SettingsModal,
@@ -149,6 +154,12 @@ export const App: React.FC = () => {
     workbenchTabs,
     activeWorkbenchTab,
     openWorkbenchTab,
+    syncTaskWorkbenchForActivity,
+    processingSessionIds,
+    sessionTaskProgress,
+    pendingPermissionRequest,
+    pendingPermissionSessionId,
+    queuedPermissionRequests,
   } = useAppStore();
 
   // 响应式：窄屏先把横向空间让给聊天和右侧状态面板。
@@ -182,7 +193,21 @@ export const App: React.FC = () => {
   // Auth store
   const { showAuthModal, showPasswordResetModal, isLoading: isAuthLoading } = useAuthStore();
   const sentryUserId = useAuthStore((state) => state.user?.id ?? null);
-  const sentrySessionId = useSessionStore((state) => state.currentSessionId);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const sessionTasks = useSessionStore((state) => state.sessionTasks);
+  const todos = useSessionStore((state) => state.todos);
+  const currentSessionTaskState = useTaskStore((state) => (
+    currentSessionId ? state.sessionStates[currentSessionId] : undefined
+  ));
+  const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
+  const swarmIsRunning = useSwarmStore((state) => state.isRunning);
+  const swarmExecutionPhase = useSwarmStore((state) => state.executionPhase);
+  const swarmLaunchRequests = useSwarmStore((state) => state.launchRequests);
+  const swarmPlanReviews = useSwarmStore((state) => state.planReviews);
+  const workflowSnapshot = useWorkflowStore((state) => state.activeSnapshot(currentSessionId ?? undefined));
+  const workflowPendingLaunchRequest = useWorkflowStore((state) => (
+    state.pendingLaunchRequest(currentSessionId ?? undefined)
+  ));
 
   // 渐进披露 Hook（权限层：*Enabled 表示功能是否可用）
   const { isStandard, dagPanelEnabled } = useDisclosure();
@@ -250,8 +275,8 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    setSentryRendererContext({ sessionId: sentrySessionId, userId: sentryUserId });
-  }, [sentrySessionId, sentryUserId]);
+    setSentryRendererContext({ sessionId: currentSessionId, userId: sentryUserId });
+  }, [currentSessionId, sentryUserId]);
 
   // Initialize agent registry store (custom .md agents 列表 + 热加载推送订阅)
   useEffect(() => {
@@ -558,7 +583,7 @@ export const App: React.FC = () => {
       IPC_CHANNELS.SWARM_EVENT,
       (event) => {
         if (event.type === 'swarm:launch:requested' || event.type === 'swarm:started') {
-          openWorkbenchTab('task');
+          openWorkbenchTab('task', { source: 'auto' });
           setTaskPanelTab('monitor');
         }
         useSwarmStore.getState().handleEvent(event);
@@ -569,6 +594,65 @@ export const App: React.FC = () => {
       unsubscribe?.();
     };
   }, [openWorkbenchTab, setTaskPanelTab]);
+
+  const currentTaskProgress = currentSessionId ? sessionTaskProgress[currentSessionId] ?? null : null;
+  const hasSessionRuntimeActivity = Boolean(
+    currentSessionTaskState && TASK_WORKBENCH_SESSION_STATUSES.has(currentSessionTaskState.status),
+  );
+  const hasProcessingActivity = Boolean(
+    currentSessionId && processingSessionIds.has(currentSessionId),
+  );
+  const hasLiveTaskProgress = Boolean(
+    currentTaskProgress && TASK_WORKBENCH_PROGRESS_PHASES.has(currentTaskProgress.phase),
+  );
+  const hasOpenSessionTask = sessionTasks.some((task) =>
+    task.status === 'pending' || task.status === 'in_progress'
+  );
+  const hasOpenTodo = todos.some((todo) => todo.status !== 'completed');
+  const hasVisiblePermissionRequest = Boolean(
+    pendingPermissionRequest
+    && (!pendingPermissionSessionId || !currentSessionId || pendingPermissionSessionId === currentSessionId),
+  );
+  const hasQueuedPermissionRequest = Boolean(
+    (currentSessionId && (queuedPermissionRequests[currentSessionId]?.length ?? 0) > 0)
+    || (queuedPermissionRequests.global?.length ?? 0) > 0,
+  );
+  const hasBackgroundTaskActivity = Boolean(
+    currentSessionId
+    && backgroundTasks.some((task) =>
+      task.sessionId === currentSessionId
+      && TASK_WORKBENCH_BACKGROUND_STATUSES.has(task.status)
+    ),
+  );
+  const hasSwarmActivity = Boolean(
+    swarmIsRunning
+    || swarmExecutionPhase === 'planning'
+    || swarmExecutionPhase === 'waiting_approval'
+    || swarmExecutionPhase === 'executing'
+    || swarmLaunchRequests.some((request) => request.status === 'pending')
+    || swarmPlanReviews.some((review) => review.status === 'pending'),
+  );
+  const hasWorkflowActivity = Boolean(
+    workflowPendingLaunchRequest
+    || workflowSnapshot?.status === 'pending'
+    || workflowSnapshot?.status === 'running',
+  );
+  const hasTaskWorkbenchActivity = (
+    hasSessionRuntimeActivity
+    || hasProcessingActivity
+    || hasLiveTaskProgress
+    || hasOpenSessionTask
+    || hasOpenTodo
+    || hasVisiblePermissionRequest
+    || hasQueuedPermissionRequest
+    || hasBackgroundTaskActivity
+    || hasSwarmActivity
+    || hasWorkflowActivity
+  );
+
+  useEffect(() => {
+    syncTaskWorkbenchForActivity(hasTaskWorkbenchActivity);
+  }, [hasTaskWorkbenchActivity, syncTaskWorkbenchForActivity]);
 
   // dynamic-workflow 进度树事件通道（P3a）：workflow.ipc 专用 bridge 把 'workflow' domain
   // 投递到 'workflow:event'，payload 即完整 ScriptRunEvent（与 swarm 同款 raw-event 风格）。

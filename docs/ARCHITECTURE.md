@@ -1,11 +1,12 @@
 # Agent Neo / Code Agent - 架构设计文档
 
+> 版本: 9.25 (9.24 + 2026-06-13~15 会话页、设置页与运行证据门收口：能力证据硬门 + judge 校准、TurnQuality / ReplayAudit、任务模型策略、模型决策可解释、语音输入、快捷键、目标合同 composer、媒体资产、设置页分组导航/搜索/权限、隐私/通道通知边界、Skills/MCP/Plugins 可见管理、项目/会话组织)
 > 版本: 9.24 (9.23 + 2026-06-12 release-prep hardening：renderer production verifier metadata/bundle timeout + stage diagnostics、checkpoint rebuild foreground short wait + fail-closed、vision empty-response failure reason、skill draft 低价值工具序列名拒绝、session task tree parent recovery)
 > 版本: 9.23 (9.22 + 2026-06-11~12 Agent runtime / MiMoCode / Ops 批次：MiMoCode 快赢与两轮 Codex audit、transcript FTS + History 工具、命令协议层、provider prompt variants、memory BM25、dream consolidation、Max Mode best-of-N、嵌套 subagent 默认 3 层/硬上限 5 层、CUA 锁与轨迹治理、MCP self-service + HTTP Streamable、Admin role RPC、renderer active bundle 低于 shell 版本回退 builtin、诊断导出失败打开 runtime logs)
 > 版本: 9.22 (9.21 + 2026-06-10~11 Windows (win32-x64) 移植与发版链折入：P0 安全/路径地基（权限路径旁路修复 + commandSafety 平台规则包）+ NSIS unsigned 打包链 + 天翼云真机打通（5 个实现期 bug）+ release.yml 独立 build-windows job（三平台 latest.json，windows 失败降级 mac-only，预发布 tag 空跑全绿）+ 全入口设备感知下载/更新（修资产选择两处真 bug）+ ConnectorRegistry 平台过滤 + PII 安装链 Node 化)
 > 版本: 9.21 (9.20 + 2026-06-09 Computer Use 底座迁移 argus → trycua/cua-driver（ADR-021：stdio MCP 接入 + 桌面走 cua/浏览器走 Playwright 分流 + 重签名内嵌 Agent Neo Computer Use.app + cua 工具人话文案/真实 app 图标差异化渲染 + Accessibility 必需/录屏可选）)
 > 版本: 9.20 (9.19 + 2026-06-08 经验沉淀重做（ADR-020：废弃 telemetry n-gram，统一 LLM 反思路 + 命名禁用清单）、Telemetry 可诊断性 P1+P2+P3（版本指纹 + 本地全量诊断旁表/诊断包/脱敏/失败 session 上报 + Langfuse 默认开 opt-out）、卸载/权限三层修复（safety 措辞 + rm 分级松绑 + 挂起权限死锁）、06-07 下午 provider/session/vision 稳定性收尾)
-> 日期: 2026-06-12
+> 日期: 2026-06-15
 > 作者: Lin Chen
 
 本文档是 Agent Neo（代码仓库仍名为 Code Agent）的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -40,6 +41,7 @@
 
 | Spec | 覆盖 |
 |------|------|
+| [Session Surface / Settings IA / Eval Gates](./specs/2026-06-15-session-settings-eval-gates.md) | 6 月 13~15 日 as-built：能力证据硬门、judge 校准、TurnQuality / ReplayAudit、任务模型策略、模型决策可解释、语音输入、快捷键、目标合同 composer、媒体资产、设置页分组导航/搜索/权限、隐私/通道通知边界、Skills/MCP/Plugins 可见管理、项目/会话组织 |
 | [Agent Runtime / MiMoCode / Ops Batch](./specs/2026-06-12-agent-runtime-mimocode-and-ops-batch.md) | MiMoCode 快赢与 hardening、transcript FTS + History、命令协议层、superpowers 方法论 skill、provider prompt variants、memory BM25、dream consolidation、Max Mode、嵌套 subagent、CUA 治理、MCP self-service + HTTP Streamable、Admin role RPC、renderer stale active bundle fallback、renderer production verifier timeout、checkpoint 前台短等、skill draft 名称质量闸、vision failure reason、诊断导出失败日志兜底 |
 | [Windows 移植与发版链折入](./specs/2026-06-11-windows-support-port.md) | 两天 as-built：P0 安全/路径地基（权限旁路修复 + commandSafety 平台规则包 51 用例）、NSIS 打包链 + CI 实跑绿、天翼云真机打通（5 个实现期 bug）、release.yml 矩阵折入（windows 失败降级 mac-only + 预发布 tag 空跑全绿）、全入口设备感知（修资产选择两处真 bug）、ConnectorRegistry 平台过滤、PII 安装链 Node 化 |
 | [经验沉淀重做 + Telemetry 可诊断性 + 稳定性收尾](./specs/2026-06-08-experience-distillation-telemetry-and-robustness.md) | 经验沉淀重做（[ADR-020](./decisions/020-experience-distillation-redesign.md)：物理移除 telemetry n-gram 频次蒸馏，统一收口 conversationReview LLM 反思路，入口闸+反思门+命名禁用清单+结构化 SKILL.md）、卸载/权限三层修复（safety 措辞改"直接调工具"/rm 目标明确删除从硬毙降为一次确认/挂起权限死锁随新消息 resolve）、Telemetry 可诊断性 P1+P3（agentVersion/promptVersion/toolSchemaVersion 版本指纹进 trace+session、Langfuse 默认开+opt-out）、06-07 下午 provider/session/vision 稳定性收尾 |
@@ -203,6 +205,30 @@ code-agent/
 > **工具合并**: 31 个独立延迟工具合并为统一工具（Process, MCPUnified, TaskManager 等），使用 action 参数分发。详见 [ADR-006](./decisions/006-deferred-tools-consolidation.md)。
 >
 > **文档编辑统一**: DocEdit 统一入口，富文档为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
+
+### 2026-06-13 ~ 06-15 会话页、设置页和运行证据门收口
+
+这一轮把最近两天的产品面变化收成三条合同：会话页解释本轮为什么这样运行，设置页承载长期偏好和低频管理，CI/评测门负责防止“能力完成但没有真实证据”。
+
+| 模块 | 当前闭环 | 关键文件 / 入口 |
+|------|---------|----------------|
+| 能力证据硬门 | 声称完成的关键能力必须同时有交付物、真实现标记和可复跑证据入口；judge 校准输出混淆矩阵、Kappa、虚高率/误杀率和分歧清单 | `scripts/check-capability-evidence.ts`、`src/main/testing/calibration/judgeCalibration.ts`、`src/main/testing/ci/*` |
+| Turn Quality | 每轮输出统一的策略、记忆、能力、工具和交付评分；聊天页用 `TurnQualityStrip` 紧凑展示，Replay Audit 复用同一证据回看 | `src/main/agent/runtime/turnQuality.ts`、`src/shared/contract/turnQuality.ts`、`TurnQualityStrip.tsx`、`ReplayAuditPanel.tsx` |
+| 模型策略与可解释决策 | Settings 可配置 fast/main/deep/vision 四档任务模型、fallback 和规则；runtime 产出 task class、cost/speed/tool policy、provider health、fallback trace 和 token savings 诊断 | `shared/contract/settings.ts`、`shared/contract/modelDecision.ts`、`TaskStrategySettingsPanel.tsx`、`modelDecision.ts`、`modelRouter.ts` |
+| Composer 入口 | 会话输入区保留高频即时选择：Skills/MCP scope、Auto/Manual routing、当前 agent、session memory、语音输入、模型策略推荐、`/goal` 合同卡、Skill/能力推荐、Appshot chip、prompt command、agent mention；Live Preview 留在会话动作菜单 | `src/renderer/components/features/chat/ChatInput/*`、`SessionActionsMenu.tsx` |
+| 语音输入 | 语音按钮只在能力和设置允许时出现，支持本地/云端模式、快捷键触发、转写失败重试、麦克风权限恢复和 silence warning | `VoiceInputButton.tsx`、`useVoiceInput.ts`、`voicePaste.ipc.ts`、`speech.ipc.ts` |
+| 快捷键 | 快捷键定义、平台默认值、冲突检测、系统保留组合键提醒、设置页编辑和 renderer 变更事件走同一套 shared contract | `src/shared/keybindings/*`、`KeybindingsSettings.tsx`、`useKeyboardShortcuts.ts`、`globalShortcuts.ts` |
+| 媒体与 Artifact | 会话媒体资产、附件预览、文件 artifact 卡片、媒体控制和 lightbox/browser 行为进入聊天消息与 session actions | `sessionMediaAssets.ts`、`MessageBubble/*`、`MediaAssetControls.tsx`、`SessionActionsMenu.tsx` |
+| Settings IA | Settings tab id、分组、搜索索引和 access control 统一在 registry；用户管理、控制平面、插件等入口按权限显示 | `settingsTabs.ts`、`settingsIndex.ts`、`SettingsModal.tsx`、`accessControl.ts` |
+| 隐私、通道与通知 | 权限边界、凭证库存、诊断包、Browser Relay、语音转写、通道隐私策略和低打扰通知进入设置页可见结构 | `PrivacySettings.tsx`、`ChannelsSettings.tsx`、`permissionBoundary.ts`、`privacyBoundaryIndex.ts`、`platform/notifications.ts` |
+| Skills / MCP / Plugins | Skills、MCP、Plugins 与 Capability Center 都有 settings 入口和搜索索引；会话侧推荐可直接挂载已安装 skill 或从推荐库安装 | `SkillsSettings.tsx`、`MCPSettings.tsx`、`PluginsSettings.tsx`、`CapabilityCenterSettings.tsx`、`CapabilitySuggestionStrip.tsx` |
+| 项目/会话组织 | Project goal、workspace preview、sidebar project drawer、session metadata、session search jump 和 session asset navigation 把项目与会话分开但可互跳 | `projectService.ts`、`ProjectRepository.ts`、`WorkspacePreviewPanel.tsx`、`SidebarProjectDrawer.tsx`、`workspacePreview.ts` |
+
+**架构边界澄清**：
+- `docs/research/alma-*.md` 是竞品研究输入，不是当前产品合同；正式合同以本节和 [2026-06-15 spec](./specs/2026-06-15-session-settings-eval-gates.md) 为准。
+- Turn Quality 是诊断/复盘信息，不自动阻断普通用户运行。
+- Settings 的前端权限只负责入口可见性，管理动作仍以后端 IPC guard、Supabase RLS 和控制平面权限为硬边界。
+- 语音输入保持用户主动触发；打开设置页或会话页不会提前请求麦克风权限。
 
 ### 2026-06-05 对话式角色、会话自动化和模型设置收口
 
@@ -543,7 +569,7 @@ findElementByLocation(location) 遍历 [data-code-agent-source] 匹配
 | Main IPC | `src/main/ipc/workspace.ipc.ts` | handleSetCurrent 广播 WORKSPACE_CURRENT_CHANGED |
 | Main auth | `src/web/middleware/auth.ts` `src/web/webServer.ts` | `.dev-token` 复用 + shutdown 不清 |
 | Tauri | `src-tauri/tauri.conf.json` `src-tauri/src/main.rs` | window.url = about:blank + setup navigate(Url) |
-| UI 入口（历史） | `src/renderer/components/features/chat/ChatInput/AbilityMenu.tsx` | 2026-04-24 的 Live Preview URL input + Open 按钮；2026-04-26 B+ 后迁到 `SessionActionsMenu` / `DevServerLauncher` |
+| UI 入口（历史） | `src/renderer/components/features/chat/ChatInput/AbilityMenu.tsx` | 2026-04-24 首次承载 Live Preview URL input + Open 按钮；2026-04-26 B+ 后当前未挂载在 ChatInput，Routing 在 `InlineWorkbenchBar` / Settings “对话”tab，Live Preview 在 `SessionActionsMenu` |
 | UI 预览面板 | `src/renderer/components/LivePreview/LivePreviewFrame.tsx` | bridge message handler + restore 发起 + stale 清理 + 诊断 |
 | Store | `src/renderer/stores/appStore.ts` | `LivePreviewSelectedElement.relativeFile` |
 | Composer | `src/renderer/stores/composerStore.ts` | `buildContext()` 读活动 tab 的 selection 并拍回协议 nested 形 |
@@ -558,7 +584,7 @@ findElementByLocation(location) 遍历 [data-code-agent-source] 匹配
 
 | 能力域 | 当前状态 | 关键落点 |
 |---|---|---|
-| Workbench B+ 信息架构 | ChatInput 移除 AbilityMenu；低频动作收进 `+`；Code/Plan/Ask 收进 `+` 菜单；模型和 effort 合并成单胶囊；Routing / Browser 归入 Settings 的“对话”tab；Settings 分组导航与页面骨架落地；TitleBar 只保留核心入口，全局工具移入 Sidebar User Menu | `ChatInput/InputAddMenu.tsx`、`ConversationSettings.tsx`、`SettingsModal.tsx`、`SettingsLayout.tsx`、`settingsTabs.ts`、`SessionActionsMenu.tsx`、`Sidebar.tsx`、`WorkbenchTabs.tsx` |
+| Workbench B+ 信息架构 | 低频动作收进 `+`；Code/Plan/Ask 收进 `+` 菜单；模型和 effort 合并成单胶囊；Routing 由 `InlineWorkbenchBar` 和 Settings “对话”tab 承载；Live Preview 在 `SessionActionsMenu`；Settings 分组导航与页面骨架落地；TitleBar 只保留核心入口，全局工具移入 Sidebar User Menu | `ChatInput/InputAddMenu.tsx`、`InlineWorkbenchBar.tsx`、`ConversationSettings.tsx`、`SettingsModal.tsx`、`SettingsLayout.tsx`、`settingsTabs.ts`、`SessionActionsMenu.tsx`、`Sidebar.tsx`、`WorkbenchTabs.tsx` |
 | Live Preview V2-A/B | `devServerManager` 能探测并启动本地 dev server，DevServerLauncher 作为模态入口；bridge protocol 升级到 0.3.0，选中元素带 `className` 与 `computedStyle`；TweakPanel 支持 spacing/color/fontSize/radius/align 5 类 Tailwind 原子改写；V2-C Next.js App Router 支持按 ADR-012 延期 | `devServerManager.ts`、`LivePreviewFrame.tsx`、`TweakPanel.tsx`、`tweakWriter.ts`、`tailwindCategories.ts`、`docs/decisions/012-live-preview-v2-c-deferred.md` |
 | Browser / Computer Workbench | in-app managed browser 已从 smoke 级推进到生产化基线：BrowserSession/Profile/AccountState/Artifact/Lease/Proxy、TargetRef/stale recovery、download/upload、fixture-only recipe benchmark 全部有 acceptance；Computer Surface 增加 background AX 与 background CGEvent 两条受控验证路径 | `browserService.ts`、`browserProvider.ts`、`browserAction.ts`、`computerUse.ts`、`desktop.ts`、`docs/acceptance/browser-computer-workbench-smoke.md` |
 | Activity Providers | OpenChronicle 与 Tauri Native Desktop 不再各自直塞 prompt；新增 provider-neutral `ActivityContextProvider`、`ActivityProvider` contract、prompt formatter 与 renderer preview。OpenChronicle 仍是外部 daemon provider，Tauri Native Desktop 是 bundled provider | `activityContextProvider.ts`、`activityProviderRegistry.ts`、`activityPromptFormatter.ts`、`activityContext.ts`、`activityProvider.ts` |

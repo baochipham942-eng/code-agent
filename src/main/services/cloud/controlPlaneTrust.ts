@@ -13,6 +13,17 @@ import type {
 } from '../../../shared/contract/controlPlane';
 
 export type ControlPlanePublicKeys = Record<string, string>;
+export const CONTROL_PLANE_PUBLIC_KEYS_REMEDIATION_HINT = 'configure_public_keys_file_or_env_or_allow_unsigned_in_dev';
+
+type ControlPlaneDiagnosticRemediationHint =
+  typeof CONTROL_PLANE_PUBLIC_KEYS_REMEDIATION_HINT;
+
+type ControlPlaneDiagnosticMetadata = {
+  keyId?: string;
+  knownKeyCount?: number;
+  knownKeyIds?: string[];
+  remediationHint?: ControlPlaneDiagnosticRemediationHint;
+};
 
 export interface VerifyControlPlaneEnvelopeOptions {
   kind: ControlPlaneArtifactKind;
@@ -39,15 +50,68 @@ function normalizePemLiteral(value: string): string {
 function diagnostic(
   code: string,
   message: string,
-  extra: Partial<ControlPlaneDiagnostic> = {},
+  extra: Partial<ControlPlaneDiagnostic> & ControlPlaneDiagnosticMetadata = {},
 ): ControlPlaneDiagnostic {
-  return {
+  const result: ControlPlaneDiagnostic & ControlPlaneDiagnosticMetadata = {
     severity: extra.severity ?? 'error',
     code,
     message,
     ...(extra.expected ? { expected: extra.expected } : {}),
     ...(extra.actual ? { actual: extra.actual } : {}),
   };
+  if (extra.keyId) {
+    result.keyId = extra.keyId;
+  }
+  if (typeof extra.knownKeyCount === 'number') {
+    result.knownKeyCount = extra.knownKeyCount;
+  }
+  if (extra.knownKeyIds) {
+    result.knownKeyIds = extra.knownKeyIds;
+  }
+  if (extra.remediationHint) {
+    result.remediationHint = extra.remediationHint;
+  }
+  return result;
+}
+
+function getKnownKeyIds(publicKeys?: ControlPlanePublicKeys): string[] {
+  return Object.keys(publicKeys ?? {}).sort((left, right) => left.localeCompare(right));
+}
+
+function describeKnownKeyIds(knownKeyIds: string[]): string {
+  if (knownKeyIds.length === 0) {
+    return 'no configured key ids';
+  }
+  const label = knownKeyIds.length === 1 ? 'configured key id' : 'configured key ids';
+  return `${knownKeyIds.length} ${label} (${knownKeyIds.join(', ')})`;
+}
+
+export function formatControlPlaneDiagnostic(entry: ControlPlaneDiagnostic): string {
+  const metadata = entry as ControlPlaneDiagnostic & ControlPlaneDiagnosticMetadata;
+  const parts = [`${entry.code}: ${entry.message}`];
+  if (metadata.keyId) {
+    parts.push(`keyId=${metadata.keyId}`);
+  }
+  if (entry.actual && entry.actual !== metadata.keyId) {
+    parts.push(`actual=${entry.actual}`);
+  }
+  if (entry.expected) {
+    parts.push(`expected=${entry.expected}`);
+  }
+  if (typeof metadata.knownKeyCount === 'number') {
+    parts.push(`knownKeyCount=${metadata.knownKeyCount}`);
+  }
+  if (metadata.knownKeyIds) {
+    parts.push(`knownKeyIds=[${metadata.knownKeyIds.join(', ') || 'none'}]`);
+  }
+  if (metadata.remediationHint) {
+    parts.push(`remediationHint=${metadata.remediationHint}`);
+  }
+  return parts.join(' | ');
+}
+
+export function formatControlPlaneDiagnostics(diagnostics: ControlPlaneDiagnostic[]): string {
+  return diagnostics.map(formatControlPlaneDiagnostic).join('; ') || 'unknown';
 }
 
 export function canonicalizeForControlPlane(value: unknown): unknown {
@@ -170,8 +234,16 @@ export function verifyControlPlaneEnvelope<TPayload>(
     } else {
       const publicKey = options.publicKeys?.[envelope.keyId];
       if (!publicKey) {
-        diagnostics.push(diagnostic('unknown_key_id', 'Control plane envelope keyId is not configured locally.', {
+        const knownKeyIds = getKnownKeyIds(options.publicKeys);
+        diagnostics.push(diagnostic('unknown_key_id', `Control plane envelope keyId "${envelope.keyId}" is not configured locally; ${describeKnownKeyIds(knownKeyIds)}.`, {
           actual: envelope.keyId,
+          expected: knownKeyIds.length > 0
+            ? `known key ids: ${knownKeyIds.join(', ')}`
+            : 'known key ids: none',
+          keyId: envelope.keyId,
+          knownKeyCount: knownKeyIds.length,
+          knownKeyIds,
+          remediationHint: CONTROL_PLANE_PUBLIC_KEYS_REMEDIATION_HINT,
         }));
       } else if (!verifySignature(envelope, publicKey)) {
         diagnostics.push(diagnostic('invalid_signature', 'Control plane envelope signature verification failed.', {

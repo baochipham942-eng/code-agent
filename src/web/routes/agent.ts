@@ -363,7 +363,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
       if (!resolvedProject) {
         resolvedProject = await ensureDefaultWebWorkingDirectory();
-        logger.warn(`[AgentRouter] No project/sessionDir/context workingDirectory, falling back to app work dir ${resolvedProject}`);
+        logger.info(`[AgentRouter] No project/sessionDir/context workingDirectory, falling back to app work dir ${resolvedProject}`);
       }
 
       const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);

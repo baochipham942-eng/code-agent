@@ -209,8 +209,12 @@ class AuthService {
         this.notifyAuthChange(null);
       }
     } catch (error) {
-      logger.warn(' Background session validation failed:', error);
       // 网络错误时保持缓存用户，不清除
+      if (this.currentUser) {
+        logger.debug(' Background session validation deferred; keeping cached user');
+      } else {
+        logger.warn(' Background session validation failed:', error);
+      }
     }
   }
 
@@ -699,17 +703,17 @@ class AuthService {
         isAdmin: profile?.is_admin || false,
       };
     } catch (error) {
-      logger.warn(' Failed to fetch profile, using basic user:', error);
       const memCached = this.currentUser;
       if (memCached?.id === user.id) {
-        logger.warn(' Preserving in-memory profile after fetch failure');
+        logger.debug(' Profile fetch failed; preserving in-memory profile');
         return memCached;
       }
       const diskCached = this.loadCachedUser();
       if (diskCached?.id === user.id) {
-        logger.warn(' Preserving disk-cached profile after fetch failure');
+        logger.debug(' Profile fetch failed; preserving disk-cached profile');
         return diskCached;
       }
+      logger.warn(' Failed to fetch profile, using basic user:', error);
       return {
         id: user.id,
         email: user.email || '',

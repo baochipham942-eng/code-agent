@@ -106,6 +106,11 @@ const nextSettingsCapabilityFocusNonce = () => ++_settingsCapabilityFocusTick;
 // Preview tabs embed their file path after the 'preview:' prefix.
 // 'context' tab — ContextPanel 容器，挂 ContextHealthPanel 并展示 bySource 二级拆分
 export type WorkbenchTabId = 'task' | 'skills' | 'files' | 'workspace-preview' | 'context' | 'audit' | `preview:${string}`;
+export type WorkbenchOpenSource = 'user' | 'auto';
+
+export interface OpenWorkbenchTabOptions {
+  source?: WorkbenchOpenSource;
+}
 
 // 跨 panel 跳转目标
 // kind 决定跳到哪个 tab 并 highlight；name 是被高亮的项标识
@@ -234,6 +239,8 @@ interface AppState {
   // Unified right workbench — tab order & active view across Task/Skills/Preview.
   workbenchTabs: WorkbenchTabId[];
   activeWorkbenchTab: WorkbenchTabId | null;
+  taskWorkbenchOpenSource: WorkbenchOpenSource | null;
+  taskWorkbenchActivityActive: boolean;
 
   // 跨 panel 跳转高亮：ContextPanel → SkillsPanel 点击 source 时设置
   // nonce 用于同一目标重复触发时强制 effect 重跑
@@ -328,9 +335,10 @@ interface AppState {
   setActivePreviewTab: (id: string) => void;
 
   // Unified workbench actions.
-  openWorkbenchTab: (id: WorkbenchTabId) => void;
+  openWorkbenchTab: (id: WorkbenchTabId, options?: OpenWorkbenchTabOptions) => void;
   closeWorkbenchTab: (id: WorkbenchTabId) => void;
   setActiveWorkbenchTab: (id: WorkbenchTabId | null) => void;
+  syncTaskWorkbenchForActivity: (hasActivity: boolean) => void;
   setWorkbenchHighlight: (highlight: Omit<WorkbenchHighlight, 'nonce'> | null) => void;
   updatePreviewTabContent: (id: string, content: string) => void;
   updatePreviewTabMode: (id: string, mode: 'preview' | 'edit') => void;
@@ -446,9 +454,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
   activePreviewTabId: null,
   selectedWorkspacePreviewId: null,
 
-  // Initial workbench — Task pinned and active by default.
-  workbenchTabs: ['task'],
-  activeWorkbenchTab: 'task',
+  // Initial workbench — empty until the user opens a tab or live task activity appears.
+  workbenchTabs: [],
+  activeWorkbenchTab: null,
+  taskWorkbenchOpenSource: null,
+  taskWorkbenchActivityActive: false,
   workbenchHighlight: null,
 
   // Initial Permission Request State
@@ -823,15 +833,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }));
   },
 
-  openWorkbenchTab: (id) => {
+  openWorkbenchTab: (id, options) => {
     set((state) => {
+      const taskWorkbenchOpenSource = id === 'task'
+        ? options?.source === 'auto' && state.taskWorkbenchOpenSource === 'user'
+          ? 'user'
+          : options?.source ?? 'user'
+        : state.taskWorkbenchOpenSource;
+
       if (state.workbenchTabs.includes(id)) {
-        return { ...state, activeWorkbenchTab: id };
+        return { ...state, activeWorkbenchTab: id, taskWorkbenchOpenSource };
       }
       return {
         ...state,
         workbenchTabs: [...state.workbenchTabs, id],
         activeWorkbenchTab: id,
+        taskWorkbenchOpenSource,
       };
     });
   },
@@ -874,10 +891,41 @@ export const useAppStore = create<AppState>()((set, get) => ({
           }
         }
       }
-      return { ...state, workbenchTabs: nextTabs, activeWorkbenchTab: nextActive };
+      return {
+        ...state,
+        workbenchTabs: nextTabs,
+        activeWorkbenchTab: nextActive,
+        ...(id === 'task' ? { taskWorkbenchOpenSource: null } : {}),
+      };
     });
   },
-  setActiveWorkbenchTab: (id) => set({ activeWorkbenchTab: id }),
+  setActiveWorkbenchTab: (id) => set((state) => ({
+    activeWorkbenchTab: id,
+    taskWorkbenchOpenSource: id === 'task' ? 'user' : state.taskWorkbenchOpenSource,
+  })),
+
+  syncTaskWorkbenchForActivity: (hasActivity) => {
+    const state = get();
+
+    if (hasActivity) {
+      if (!state.taskWorkbenchActivityActive && !state.workbenchTabs.includes('task')) {
+        state.openWorkbenchTab('task', { source: 'auto' });
+        set({ taskWorkbenchActivityActive: true, taskPanelTab: 'monitor' });
+        return;
+      }
+      if (!state.taskWorkbenchActivityActive) {
+        set({ taskWorkbenchActivityActive: true });
+      }
+      return;
+    }
+
+    if (state.taskWorkbenchOpenSource === 'auto' && state.workbenchTabs.includes('task')) {
+      state.closeWorkbenchTab('task');
+    }
+    if (state.taskWorkbenchActivityActive) {
+      set({ taskWorkbenchActivityActive: false });
+    }
+  },
 
   setWorkbenchHighlight: (highlight) =>
     set({

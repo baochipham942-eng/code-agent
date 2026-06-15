@@ -81,6 +81,21 @@ describe('Skill frontmatter unknown field warnings (GAP-007)', () => {
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
+  it('does not warn for compatible legacy metadata fields', async () => {
+    const dir = writeSkill([
+      'name: test-skill',
+      'description: A test skill',
+      'keywords: [docx, word]',
+      'execution-context: inline',
+      'allowed-tools: [Read, Grep]',
+    ].join('\n'));
+
+    const skill = await parseSkillMd(dir, 'user');
+
+    expect(skill.frontmatterWarnings).toBeUndefined();
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
   it('parseSkillMetadataOnly also reports warnings', async () => {
     const dir = writeSkill([
       'name: test-skill',

@@ -872,7 +872,7 @@ export class MCPClient extends EventEmitter {
    */
   async registerInProcessServer(server: InProcessMCPServerInterface): Promise<void> {
     if (this.inProcessServers.has(server.name)) {
-      logger.warn(`In-process server ${server.name} already registered, skipping`);
+      logger.debug(`In-process server ${server.name} already registered, skipping`);
       return;
     }
 

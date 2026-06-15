@@ -5,6 +5,8 @@ import type { ControlPlaneEnvelope } from '../../../../src/shared/contract/contr
 import {
   buildControlPlaneContentHash,
   buildControlPlaneSigningPayload,
+  CONTROL_PLANE_PUBLIC_KEYS_REMEDIATION_HINT,
+  formatControlPlaneDiagnostics,
   getControlPlanePublicKeysFromEnv,
   verifyControlPlaneEnvelope,
 } from '../../../../src/main/services/cloud/controlPlaneTrust';
@@ -88,6 +90,53 @@ describe('controlPlaneTrust', () => {
       'expired_envelope',
       'unknown_key_id',
     ]));
+  });
+
+  it('explains unknown key ids without exposing public keys', () => {
+    const payload = {
+      version: 'test',
+      prompts: { system: 'safe' },
+    };
+    const { envelope } = buildSignedEnvelope(payload);
+
+    const result = verifyControlPlaneEnvelope(envelope, {
+      kind: 'cloud_config',
+      publicKeys: {
+        'backup-key': '-----BEGIN PUBLIC KEY-----\nbackup\n-----END PUBLIC KEY-----',
+        'current-key': '-----BEGIN PUBLIC KEY-----\ncurrent\n-----END PUBLIC KEY-----',
+      },
+      requireSignature: true,
+      now: Date.parse('2026-05-17T00:00:00.000Z'),
+    });
+
+    const unknownKeyDiagnostic = result.diagnostics.find((entry) => entry.code === 'unknown_key_id') as
+      | undefined
+      | (typeof result.diagnostics[number] & {
+        keyId?: string;
+        knownKeyCount?: number;
+        knownKeyIds?: string[];
+        remediationHint?: string;
+      });
+
+    expect(result.trusted).toBe(false);
+    expect(unknownKeyDiagnostic).toMatchObject({
+      severity: 'error',
+      actual: 'test-key',
+      expected: 'known key ids: backup-key, current-key',
+      keyId: 'test-key',
+      knownKeyCount: 2,
+      knownKeyIds: ['backup-key', 'current-key'],
+      remediationHint: CONTROL_PLANE_PUBLIC_KEYS_REMEDIATION_HINT,
+    });
+    expect(unknownKeyDiagnostic?.message).toContain('test-key');
+    expect(unknownKeyDiagnostic?.message).toContain('2 configured key ids');
+
+    const formatted = formatControlPlaneDiagnostics(result.diagnostics);
+    expect(formatted).toContain('keyId=test-key');
+    expect(formatted).toContain('knownKeyCount=2');
+    expect(formatted).toContain('knownKeyIds=[backup-key, current-key]');
+    expect(formatted).toContain(`remediationHint=${CONTROL_PLANE_PUBLIC_KEYS_REMEDIATION_HINT}`);
+    expect(JSON.stringify(result.diagnostics)).not.toContain('BEGIN PUBLIC KEY');
   });
 
   it('rejects a forged signature produced by a different key for a configured keyId', () => {

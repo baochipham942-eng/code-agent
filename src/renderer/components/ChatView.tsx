@@ -120,9 +120,6 @@ export const ChatView: React.FC = () => {
   } = useAgent();
   const buildComposerContext = useComposerStore((state) => state.buildContext);
   const hydrateComposer = useComposerStore((state) => state.hydrateFromSession);
-  const currentSession = currentSessionId
-    ? sessions.find((session) => session.id === currentSessionId) ?? null
-    : null;
   const currentSessionWorkingDirectory = currentSession
     ? currentSession.workingDirectory ?? null
     : appWorkingDirectory ?? null;
@@ -350,7 +347,7 @@ export const ChatView: React.FC = () => {
   }, [projection, streamingMessageEntries]);
 
   useEffect(() => {
-    if (!pendingSearchJump || pendingSearchJump.sessionId !== currentSessionId) {
+    if (pendingSearchJump?.sessionId !== currentSessionId) {
       return;
     }
 

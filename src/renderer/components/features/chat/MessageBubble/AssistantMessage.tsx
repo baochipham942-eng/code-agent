@@ -12,7 +12,7 @@ import { UI } from '@shared/constants';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { useSessionStore } from '../../../../stores/sessionStore';
-import { groupToolCalls, extractThinkingSummary, sanitizeThinkingForDisplay } from '../../../../utils/toolGrouping';
+import { groupToolCalls, sanitizeThinkingForDisplay } from '../../../../utils/toolGrouping';
 import {
   buildMessageArtifactDeliverableCards,
   buildPendingImageDeliverableCards,
@@ -51,6 +51,10 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
   );
 
   useEffect(() => {
+    if (!showReasoning) {
+      setReasoningHeight(null);
+      return;
+    }
     if (reasoningRef.current) {
       requestAnimationFrame(() => {
         if (reasoningRef.current) {
@@ -128,10 +132,6 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
   }, [currentSessionId, feedbackSubmitting, message.content, message.id, message.inputTokens, message.outputTokens]);
 
   const effortLabel = message.effortLevel || '';
-  const thinkingSummary = useMemo(
-    () => extractThinkingSummary(reasoningContent),
-    [reasoningContent]
-  );
 
   // Smart tool grouping for fallback path
   const toolGroups = useMemo(
@@ -228,25 +228,23 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
             <span className="flex-shrink-0">
               thinking{effortLabel ? ` (${effortLabel})` : ''}
             </span>
-            {!showReasoning && thinkingSummary && (
-              <span className="text-zinc-600 truncate">
-                — {thinkingSummary}
-              </span>
-            )}
           </button>
           <div
             ref={reasoningRef}
+            aria-hidden={!showReasoning}
             className="overflow-hidden transition-all duration-300 ease-out"
             style={{
               maxHeight: showReasoning ? (reasoningHeight ? `${reasoningHeight}px` : '500px') : '0px',
               opacity: showReasoning ? 1 : 0,
             }}
           >
-            <div className="mt-1.5 rounded-md border border-white/[0.04] bg-black/10 px-3 py-2">
-              <p className="text-xs text-zinc-500 leading-5 whitespace-pre-line font-mono">
-                {reasoningContent}
-              </p>
-            </div>
+            {showReasoning && (
+              <div className="mt-1.5 rounded-md border border-white/[0.04] bg-black/10 px-3 py-2">
+                <p className="text-xs text-zinc-500 leading-5 whitespace-pre-line font-mono">
+                  {reasoningContent}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -82,6 +82,15 @@ const ARTIFACT_KIND_LABEL: Record<SidebarProjectArtifactMeta['kind'], string> = 
   generic_html: '网页',
   web_snapshot: '网页',
   link: '链接',
+  text: '文本',
+  binary: '二进制',
+  image: '图片',
+  audio: '音频',
+  video: '视频',
+  web: '网页',
+  search: '搜索',
+  'process-output': '输出',
+  'process-log': '日志',
 };
 
 const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {

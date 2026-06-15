@@ -65,6 +65,23 @@ function makeNode(request: SwarmLaunchRequest): TraceNode {
 }
 
 describe('TraceNodeRenderer launch request', () => {
+  it('does not render collapsed assistant thinking content into static markup', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, {
+        node: {
+          id: 'assistant-thinking-1',
+          type: 'assistant_text',
+          content: 'final answer',
+          reasoning: 'private hidden thinking text',
+          timestamp: 100,
+        } satisfies TraceNode,
+      }),
+    );
+
+    expect(html).toContain('thinking');
+    expect(html).not.toContain('private hidden thinking text');
+  });
+
   it('marks queued runtime steer user messages as guided dialogue', () => {
     const html = renderToStaticMarkup(
       React.createElement(TraceNodeRenderer, {

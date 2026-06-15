@@ -207,7 +207,10 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
       name: CUA_DRIVER_SERVER_NAME,
       command: cuaDriverCommand,
       args: ['mcp'],
-      env: { CUA_DRIVER_MCP_MODE: '1' },
+      env: {
+        CUA_DRIVER_MCP_MODE: '1',
+        CUA_DRIVER_RS_UPDATE_CHECK: '0',
+      },
       enabled: cuaEnabled && cuaSupported,
       // 显式 env 开启的本机底座必须 eager 连接：lazy 的 stdio server
       // 不拉工具定义，模型在 ToolSearch/注册表里都看不见它
@@ -336,7 +339,7 @@ export async function initMCPClient(
       count: configuredCloudMCPServers.length,
     });
   } else {
-    logger.warn('No MCP servers in cloud config, using default servers');
+    logger.info('No MCP servers in cloud config, using default servers');
     const defaultServers = getDefaultMCPServers();
     for (const config of defaultServers) {
       config.scope = 'builtin';

@@ -28,6 +28,8 @@ export interface ToolLikeForDecision {
   success?: boolean;
   _streaming?: boolean;
   metadata?: Record<string, unknown> | null;
+  /** 同一轮里之后又成功了，这次失败已被恢复，不应触发「工具报错」决策 */
+  recovered?: boolean;
 }
 
 /**
@@ -143,8 +145,9 @@ function bestToolReason(tool: ToolLikeForDecision): string {
 }
 
 export function summarizeToolLoopDecision(allTools: ToolLikeForDecision[]): ToolLoopDecisionSummary | null {
-  // 自动加载重试是良性内部状态，决策判定里完全忽略它——否则会被误判成失败弹「暂停恢复」。
-  const tools = allTools.filter((tool) => !isAutoLoadedRetry(tool.metadata));
+  // 自动加载重试 + 已恢复的失败都是良性/已收尾状态，决策判定里完全忽略——否则会被误判成
+  // 失败弹「工具报错」，把成功的一轮演成翻车。
+  const tools = allTools.filter((tool) => !isAutoLoadedRetry(tool.metadata) && !tool.recovered);
   if (tools.length === 0) return null;
 
   const failed = tools.find((tool) => tool.success === false);
@@ -187,6 +190,7 @@ export function summarizeToolLoopDecisionFromNodes(nodes: TraceNode[]): ToolLoop
       success: toolCall.success,
       _streaming: toolCall._streaming,
       metadata: toolCall.metadata,
+      recovered: toolCall.recovered,
     }));
 
   return summarizeToolLoopDecision(tools);

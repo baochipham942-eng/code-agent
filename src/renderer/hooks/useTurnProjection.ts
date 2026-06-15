@@ -476,6 +476,7 @@ export function projectTurns(
   }
 
   markFeedbackEligibleNodes(turns);
+  markRecoveredFailures(turns);
 
   return {
     sessionId,
@@ -503,6 +504,42 @@ function markFeedbackEligibleNodes(turns: TraceTurn[]): void {
       if (node.type === 'assistant_text') {
         node.feedbackEligible = turn.status === 'completed' && node === eligibleNode;
       }
+    }
+  }
+}
+
+/**
+ * 结局优先：若一次失败的工具调用之后，同一轮里又出现了"成功标志"（成功的工具调用，
+ * 或非空的助手正文/最终答案），说明这次失败已被恢复——标记 recovered，让 UI 把它降级
+ * 为安静脚注，而不是用最差的中间步骤顶着红色 failed 当整轮头条。
+ *
+ * 仅对【联网检索类工具】（web search / fetch）做降级——这类"换搜索源/换抓取方式重试"
+ * 是常态恢复模式。Edit/Bash 这类的失败即便后面有别的成功也可能是独立真错误，不降级，
+ * 以免把用户该看到的真失败藏掉。
+ */
+function isRecoverableRetrievalTool(name: string | undefined): boolean {
+  if (!name) return false;
+  return /web|search|fetch|tavily|exa|perplexity|brave/i.test(name);
+}
+
+function markRecoveredFailures(turns: TraceTurn[]): void {
+  for (const turn of turns) {
+    let laterSuccess = false;
+    // 从后往前扫：到达某个失败工具节点时，laterSuccess 已反映它"之后"是否出现过成功标志。
+    for (let i = turn.nodes.length - 1; i >= 0; i -= 1) {
+      const node = turn.nodes[i];
+      const isSuccessMarker =
+        (node.type === 'assistant_text' && Boolean(node.content?.trim())) ||
+        (node.type === 'tool_call' && node.toolCall?.success === true);
+      if (
+        node.type === 'tool_call' &&
+        node.toolCall?.success === false &&
+        laterSuccess &&
+        isRecoverableRetrievalTool(node.toolCall.name)
+      ) {
+        node.toolCall.recovered = true;
+      }
+      if (isSuccessMarker) laterSuccess = true;
     }
   }
 }

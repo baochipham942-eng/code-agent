@@ -113,6 +113,22 @@ describe('toolExecutionPresentation', () => {
     ])).toMatchObject({ tone: 'success' });
   });
 
+  it('ignores recovered failures so a recovered turn is not headlined as failed', () => {
+    // 单独一条"已恢复"的失败 → 不弹「工具报错」决策
+    expect(summarizeToolLoopDecision([{
+      name: 'WebSearch',
+      result: 'All search sources failed',
+      success: false,
+      recovered: true,
+    }])).toBeNull();
+
+    // 失败(已恢复) + 后续真成功 → 整体判成功，不顶失败
+    expect(summarizeToolLoopDecision([
+      { name: 'WebSearch', result: 'failed', success: false, recovered: true },
+      { name: 'WebFetch', expectedOutcome: '抓取 changelog', result: 'ok', success: true },
+    ])).toMatchObject({ tone: 'success' });
+  });
+
   it('humanizes search-source quota errors with a settings hint', () => {
     const raw = [
       'All search sources failed:',

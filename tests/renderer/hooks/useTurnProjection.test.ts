@@ -831,4 +831,43 @@ describe('projectTurns', () => {
     const assistantNodes = projection.turns[0].nodes.filter((node) => node.type === 'assistant_text');
     expect(assistantNodes.map((node) => node.feedbackEligible)).toEqual([true]);
   });
+
+  it('marks a recovered web-search failure but leaves an unrelated edit failure visible', () => {
+    const messages: Message[] = [
+      { id: 'u1', role: 'user', content: '搜一下 codex 更新', timestamp: 100 },
+      {
+        id: 'a1', role: 'assistant', content: '', timestamp: 110,
+        toolCalls: [{
+          id: 'tc-search', name: 'WebSearch', arguments: {},
+          result: { toolCallId: 'tc-search', success: false, error: 'All search sources failed' },
+        }],
+      },
+      {
+        id: 'a2', role: 'assistant', content: '', timestamp: 120,
+        toolCalls: [{
+          id: 'tc-fetch', name: 'WebFetch', arguments: {},
+          result: { toolCallId: 'tc-fetch', success: true, output: 'ok' },
+        }],
+      },
+      { id: 'a3', role: 'assistant', content: '找到了：codex 更新内容…', timestamp: 130 },
+      {
+        id: 'a4', role: 'assistant', content: '', timestamp: 140,
+        toolCalls: [{
+          id: 'tc-edit', name: 'Edit', arguments: {},
+          result: { toolCallId: 'tc-edit', success: false, error: 'patch failed' },
+        }],
+      },
+      { id: 'a5', role: 'assistant', content: '改完了', timestamp: 150 },
+    ];
+
+    const projection = projectTurns(messages, 'session-1', false, []);
+    const nodes = projection.turns.flatMap((turn) => turn.nodes);
+    const search = nodes.find((node) => node.toolCall?.id === 'tc-search');
+    const edit = nodes.find((node) => node.toolCall?.id === 'tc-edit');
+
+    // 联网检索失败后又成功 + 出最终答案 → 降级为 recovered
+    expect(search?.toolCall?.recovered).toBe(true);
+    // 独立的 Edit 失败即便后面有成功，也不降级（避免藏掉真失败）
+    expect(edit?.toolCall?.recovered).toBeFalsy();
+  });
 });

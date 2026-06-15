@@ -154,7 +154,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
       {showSeparator && (
         <div className="flex items-center gap-2 py-1.5">
           <div className="h-px flex-1 bg-zinc-800"></div>
-          <span className="text-[10px] text-zinc-600 shrink-0">
+          <span className="text-[10px] text-zinc-500 shrink-0">
             {stats.time}
             {stats.duration !== null && stats.duration > 0
               ? ` · ${formatTurnDuration(stats.duration)}`
@@ -445,7 +445,8 @@ function getSkillActivityTitle(activity: TurnSkillActivity): string {
 }
 
 const SkillActivityBanner: React.FC<{ activity: TurnSkillActivity }> = ({ activity }) => {
-  const [expanded, setExpanded] = useState(true);
+  // 默认折叠：摘要行已说明 skill 活动，展开才看逐条明细，与 Hook 横幅一致。
+  const [expanded, setExpanded] = useState(false);
   const summary = activity.summary.replace(/^Skill\s*/, '');
 
   return (
@@ -637,10 +638,10 @@ const StreamingStateBanner: React.FC<{ state: StreamingUiState }> = ({ state }) 
       )}
     </div>
     {state.showCancelCleanup && (
-      <span className="shrink-0 rounded-md bg-black/10 px-1.5 py-0.5 text-[10px] opacity-80">cleanup</span>
+      <span className="shrink-0 text-[10px] opacity-60">cleanup</span>
     )}
     {state.showResumeHint && (
-      <span className="shrink-0 rounded-md bg-black/10 px-1.5 py-0.5 text-[10px] opacity-80">resume</span>
+      <span className="shrink-0 text-[10px] opacity-60">resume</span>
     )}
   </div>
 );

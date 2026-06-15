@@ -147,27 +147,12 @@ const ENGINE_TRANSCRIPT_LABELS: Record<NonNullable<ModelExternalEngineSnapshot['
 };
 
 function getToneClass(reason: ModelDecisionReason): string {
-  switch (reason) {
-    case 'simple-task-free':
-    case 'strategy-fast':
-      return 'border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-200';
-    case 'strategy-main':
-      return 'border-blue-500/20 bg-blue-500/[0.08] text-blue-200';
-    case 'strategy-deep':
-      return 'border-violet-500/20 bg-violet-500/[0.08] text-violet-200';
-    case 'strategy-vision':
-      return 'border-cyan-500/20 bg-cyan-500/[0.08] text-cyan-200';
-    case 'billing-gate-skip':
-      return 'border-amber-500/20 bg-amber-500/[0.08] text-amber-200';
-    case 'capability-vision':
-      return 'border-sky-500/20 bg-sky-500/[0.08] text-sky-200';
-    case 'fallback-availability':
-      return 'border-red-500/20 bg-red-500/[0.08] text-red-200';
-    case 'role-tier':
-      return 'border-violet-500/20 bg-violet-500/[0.08] text-violet-200';
-    default:
-      return 'border-white/[0.08] bg-white/[0.04] text-zinc-300';
+  // 收敛为两档：正常路由一律中性灰，仅降级/兜底用单一警示色，
+  // 避免一个 chip 覆盖 6 种饱和色和正文/diff 抢注意力。
+  if (reason === 'fallback-availability') {
+    return 'border-amber-500/25 bg-amber-500/[0.08] text-amber-200';
   }
+  return 'border-white/[0.08] bg-white/[0.03] text-zinc-400';
 }
 
 function formatModel(provider: string, model: string): string {

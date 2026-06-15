@@ -681,19 +681,33 @@ const BlockedCapabilitiesNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ 
 
 const RoutingEvidenceNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
   const routing = timeline.routingEvidence;
+  // 调试证据：默认折叠步骤，只留摘要行；展开才看逐步状态点，与 Hook 横幅一致。
+  const [expanded, setExpanded] = useState(false);
   if (!routing) return null;
 
   return (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
-      <div className="mb-1 flex items-center gap-2 text-[11px] text-zinc-300">
-        <GitBranch className="h-3.5 w-3.5 text-cyan-300" />
+      <button
+        type="button"
+        className="mb-1 flex w-full items-center gap-2 text-left text-[11px] text-zinc-300 transition-colors hover:text-zinc-100"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        title={expanded ? '收起 Routing 证据' : '展开 Routing 证据'}
+      >
+        <GitBranch className="h-3.5 w-3.5 shrink-0 text-cyan-300" />
         <span>Routing 证据</span>
         <WorkbenchPill tone="info">{ROUTING_LABELS[routing.mode] || routing.mode}</WorkbenchPill>
-      </div>
+        {expanded ? (
+          <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-600" />
+        ) : (
+          <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-600" />
+        )}
+      </button>
       <div className="text-xs text-zinc-100">{routing.summary}</div>
-      {routing.reason && (
+      {expanded && routing.reason && (
         <div className="mt-1 text-[11px] text-zinc-400">{routing.reason}</div>
       )}
+      {expanded && (
       <div className="mt-2 space-y-1">
         {routing.steps.map((step, index) => (
           <div key={`${routing.mode}-${index}-${step.status}`} className="flex items-start gap-2 text-[11px]">
@@ -713,6 +727,7 @@ const RoutingEvidenceNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ time
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 };

@@ -30,11 +30,11 @@ export const ModelStrategyRecommendationStrip: React.FC<ModelStrategyRecommendat
         {recommendation.body}
       </div>
       {recommendation.strategyFactors?.length ? (
-        <div className="mt-1 flex flex-wrap gap-1">
+        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
           {recommendation.strategyFactors.map((factor) => (
             <span
               key={`${factor.label}:${factor.value}`}
-              className="rounded border border-current/15 bg-black/10 px-1.5 py-0.5 text-[10px] leading-none opacity-80"
+              className="text-[10px] leading-none opacity-70"
             >
               {factor.label}: {factor.value}
             </span>

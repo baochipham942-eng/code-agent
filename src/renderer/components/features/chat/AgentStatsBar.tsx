@@ -140,8 +140,6 @@ export const AgentStatsBar: React.FC<AgentStatsBarProps> = ({
             </span>
           </div>
 
-          <div className="w-px h-3 bg-zinc-700" />
-
           {/* Context usage */}
           <div
             className={`flex items-center gap-1 ${getUsageColor(usagePercent)}`}
@@ -154,15 +152,11 @@ export const AgentStatsBar: React.FC<AgentStatsBarProps> = ({
             <span className="text-zinc-500">({usagePercent}%)</span>
           </div>
 
-          <div className="w-px h-3 bg-zinc-700" />
-
           {/* Tool calls */}
           <div className="flex items-center gap-1 text-zinc-400" title="Tool calls">
             <span>{'\uD83D\uDD27'}</span>
             <span className="font-mono text-zinc-400">{taskStats.toolCallCount} calls</span>
           </div>
-
-          <div className="w-px h-3 bg-zinc-700" />
 
           {/* Iterations */}
           <div className="flex items-center gap-1 text-zinc-400" title="Iterations">

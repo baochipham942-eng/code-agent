@@ -581,7 +581,8 @@ export class ChannelAgentBridge {
         attachment.metadata = {
           ...attachment.metadata,
           transcriptionState: 'failed',
-          transcriptionError: result.error,
+          // 对称应用：失败错误串同样可能含本地路径/provider 报错文本，落库前脱敏。
+          transcriptionError: result.error ? sanitizeChannelText(result.error, 2_000) : result.error,
         };
         attachment.mediaState = 'failed';
         transcriptBlocks.push(`[语音转写失败: ${attachment.name}]`);

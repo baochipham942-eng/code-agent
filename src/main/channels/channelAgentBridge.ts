@@ -18,6 +18,7 @@ import { summarizeUserFacingError } from '../security/userFacingError';
 import type { ChannelResponseCallback } from './channelInterface';
 import { summarizeChannelError } from './channelErrorSummary';
 import { transcribeAudioFile } from '../services/media/audioTranscriptionService';
+import { sanitizeChannelText } from './privacy/channelPrivacyFirewall';
 
 const logger = createLogger('ChannelAgentBridge');
 
@@ -565,14 +566,17 @@ export class ChannelAgentBridge {
       });
 
       if (result.ok && result.text?.trim()) {
+        // 转写发生在 ingress 脱敏之后，原始 transcript 含敏感内容(邮箱/卡号/口令)。
+        // 注入正文/落库前过同一套 redactor，避免绕过隐私防火墙落本地库或下发模型。
+        const safeTranscript = sanitizeChannelText(result.text, 12_000);
         attachment.metadata = {
           ...attachment.metadata,
           transcriptionState: 'ready',
-          transcript: result.text,
+          transcript: safeTranscript,
           transcriptionEngine: result.engine,
         };
         attachment.mediaState = 'ready';
-        transcriptBlocks.push(`[语音转写: ${attachment.name}]\n${result.text.trim()}`);
+        transcriptBlocks.push(`[语音转写: ${attachment.name}]\n${safeTranscript.trim()}`);
       } else {
         attachment.metadata = {
           ...attachment.metadata,

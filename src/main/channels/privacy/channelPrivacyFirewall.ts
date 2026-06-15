@@ -107,13 +107,37 @@ function sanitizeChannelAttachments(
   options: ChannelPrivacyOptions,
 ): ChannelAttachment[] | undefined {
   if (!attachments?.length) return undefined;
+  // 白名单构造（不用 {...attachment} 透传）：新增字段必须在此显式决策，
+  // 避免像 localPath/platformFileKey/metadata 那样悄悄绕过脱敏落地。
   return attachments.map((attachment) => ({
-    ...attachment,
+    id: attachment.id,
+    type: attachment.type,
     name: sanitizeChannelText(attachment.name, 1_000, options) || 'attachment',
+    mimeType: attachment.mimeType,
+    size: attachment.size,
     url: attachment.url ? sanitizeChannelText(attachment.url, 2_000, options) : undefined,
     thumbnailUrl: attachment.thumbnailUrl ? sanitizeChannelText(attachment.thumbnailUrl, 2_000, options) : undefined,
     data: undefined,
+    // localPath / platformFileKey 是下游功能字段（转写需要 localPath 定位文件），
+    // 本地路径不外发，保留；metadata 里的敏感内容（如 transcript）逐项脱敏。
+    localPath: attachment.localPath,
+    platformFileKey: attachment.platformFileKey,
+    metadata: sanitizeChannelAttachmentMetadata(attachment.metadata, options),
+    mediaState: attachment.mediaState,
   }));
+}
+
+function sanitizeChannelAttachmentMetadata(
+  metadata: Record<string, unknown> | undefined,
+  options: ChannelPrivacyOptions,
+): Record<string, unknown> | undefined {
+  if (!metadata) return metadata;
+  if (resolveChannelPrivacyMode(options.mode) === 'off') return metadata;
+  const output: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    output[key] = typeof value === 'string' ? sanitizeChannelText(value, 12_000, options) : value;
+  }
+  return output;
 }
 
 function trimChannelText(value: unknown, maxLength = 12_000): string {

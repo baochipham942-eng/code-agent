@@ -2,7 +2,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { collectRendererShellCapabilities } from '../../../scripts/renderer-capability-scanner.mjs';
 import { getShellCapabilities, getShellCapabilityIds } from '../../../src/main/shellCapabilities';
-import { makeTauriCommandCapabilityId } from '../../../src/shared/contract/shellCapabilities';
+import { makeShellCapabilityId, makeTauriCommandCapabilityId } from '../../../src/shared/contract/shellCapabilities';
 
 describe('shell capabilities', () => {
   it('covers static shell invocations used by the current renderer', () => {
@@ -18,6 +18,17 @@ describe('shell capabilities', () => {
       .map((capability) => `${capability.id} (${capability.file})`);
 
     expect(missing).toEqual([]);
+  });
+
+  it.each([
+    ['domain:project', 'artifactIssues'],
+    ['domain:project', 'setDescription'],
+    ['domain:settings', 'saveProviderIconAsset'],
+    ['domain:settings', 'resolveProviderIconAsset'],
+    ['domain:memory', 'memoryEntryUpdate'],
+  ])('advertises newly registered handler %s/%s in the capability manifest', (domain, action) => {
+    const supported = new Set(getShellCapabilityIds());
+    expect(supported.has(makeShellCapabilityId(domain, action))).toBe(true);
   });
 
   it('advertises native Tauri commands that renderer hot updates can require', () => {

@@ -186,6 +186,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   ],
   [IPC_DOMAINS.MEMORY]: [
     'memoryAudit',
+    'memoryEntryUpdate',
     'memoryInboxResolve',
   ],
   [IPC_DOMAINS.NOTIFICATION]: [
@@ -213,11 +214,13 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.PROJECT]: [
     'addGoal',
     'addRole',
+    'artifactIssues',
     'artifacts',
     'detail',
     'list',
     'removeRole',
     'rename',
+    'setDescription',
     'setStatus',
     'updateGoalStatus',
   ],
@@ -265,6 +268,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'getAllServiceKeys',
     'getDevMode',
     'getServiceApiKey',
+    'resolveProviderIconAsset',
+    'saveProviderIconAsset',
     'set',
     'setDevMode',
     'setServiceApiKey',

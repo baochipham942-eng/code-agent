@@ -387,10 +387,8 @@ const CodeBlock = memo(function CodeBlock({
         lines.length,
       );
 
-  // Auto-collapse as soon as a streaming block crosses the long-block threshold.
-  useEffect(() => {
-    if (isLong) setCollapsed(true);
-  }, [isLong]);
+  // 仅在初次 mount 时按长度折叠（见上方 useState 初始化），不再在流式过程中
+  // 因跨过阈值而强制塌陷——否则用户正在阅读的代码块会在生成中途突然折叠、布局跳变。
 
   useEffect(() => {
     if (collapsed) {

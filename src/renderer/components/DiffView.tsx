@@ -25,7 +25,9 @@ const DIFF_INITIAL_RENDER_LINES = 160;
 const DIFF_RENDER_CHUNK_LINES = 160;
 const diffRowVisibilityStyle: React.CSSProperties = {
   contentVisibility: 'auto',
-  containIntrinsicSize: '20px',
+  // 用 `auto` 关键字让浏览器记住每行首次渲染后的真实高度，
+  // 行滚出再滚入视口时复用实测值，避免固定 20px 估值与真实行高不符造成的高度跳变。
+  containIntrinsicSize: 'auto 20px',
 };
 
 /**

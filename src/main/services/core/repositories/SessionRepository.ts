@@ -1061,6 +1061,21 @@ export class SessionRepository {
     return result.changes;
   }
 
+  /**
+   * Delete a message and everything after it (inclusive).
+   * Used by message edit: 真正替换被编辑的用户消息 + 截断其后所有消息，
+   * 避免新旧内容同时留在上下文里造成"双份"。
+   */
+  truncateMessagesFrom(sessionId: string, messageId: string): number {
+    const msg = this.db.prepare('SELECT timestamp FROM messages WHERE id = ? AND session_id = ?').get(messageId, sessionId) as { timestamp: number } | undefined;
+
+    if (!msg) return 0;
+
+    const result = this.db.prepare('DELETE FROM messages WHERE session_id = ? AND timestamp >= ?').run(sessionId, msg.timestamp);
+
+    return result.changes;
+  }
+
   // --------------------------------------------------------------------------
   // Todos
   // --------------------------------------------------------------------------

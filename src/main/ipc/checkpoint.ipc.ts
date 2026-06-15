@@ -94,6 +94,20 @@ export function registerCheckpointHandlers(ipcMain: IpcMain): void {
     }
   });
 
+  // 编辑用户消息：截断被编辑消息及其后所有消息（inclusive），由前端随后重发新内容。
+  // 不回滚文件——文件检查点按助手/工具消息记账，用户消息本身无检查点；重发后新一轮工具会重新落盘。
+  ipcMain.handle(IPC_CHANNELS.MESSAGE_TRUNCATE_FROM, async (_, sessionId: string, messageId: string) => {
+    try {
+      const { getDatabase } = await import('../services/core/databaseService');
+      const db = getDatabase();
+      const truncated = db.truncateMessagesFrom(sessionId, messageId);
+      return { success: true, messagesTruncated: truncated };
+    } catch (error) {
+      logger.error('Failed to truncate messages for edit', { error, sessionId, messageId });
+      return { success: false, messagesTruncated: 0, error: String(error) };
+    }
+  });
+
   // 手动触发清理
   ipcMain.handle('checkpoint:cleanup', async (): Promise<number> => {
     try {

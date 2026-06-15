@@ -41,7 +41,6 @@ export const AgentChip: React.FC<AgentChipProps> = ({ onOpenAgentCommand }) => {
     >
       <Bot className="h-3.5 w-3.5 shrink-0" />
       <span className="min-w-0 truncate">{label}</span>
-      {activeEntry && <span className="text-[10px] text-amber-400/80">*</span>}
     </button>
   );
 };

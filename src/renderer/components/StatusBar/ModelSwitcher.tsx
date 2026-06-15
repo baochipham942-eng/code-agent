@@ -635,7 +635,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       || /reason|thinking|think|mimo|r1|o\d/i.test(displayModel)
     : false;
   const thinkingShortLabel = supportsThinkingControls
-    ? thinkingEnabled ? 'Think' : 'NoThink'
+    ? thinkingEnabled ? '思考' : '不思考'
     : null;
   const selectedNativeBillingSummary = engine.kind === 'native'
     ? buildProviderBillingSummary(selectedNativeOption?.providerBillingMode)

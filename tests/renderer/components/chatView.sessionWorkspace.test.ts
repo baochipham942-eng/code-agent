@@ -188,7 +188,7 @@ describe('ChatView session shell', () => {
     expect(html).toContain('flex-1 min-h-0 flex overflow-hidden relative');
     expect(html).toContain('flex-1 min-h-0 flex flex-col min-w-0');
     expect(html).toContain('flex-1 min-h-0 overflow-hidden');
-    expect(html).toContain('新会话');
+    expect(html).toContain('想完成什么？');
     expect(html).toContain('做个能玩的小游戏');
     expect(html).toContain('出一张可交互数据图表');
     expect(html).toContain('搜一份最新行业简报');

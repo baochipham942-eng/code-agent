@@ -812,7 +812,7 @@ const EmptyState: React.FC<{
       <div className="w-full max-w-2xl animate-fade-in">
         <div className="mb-5 flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold text-zinc-100">新会话</h1>
+            <h1 className="text-xl font-semibold text-zinc-100">想完成什么？</h1>
             <p className="mt-1 text-sm text-zinc-500">
               选一个示例，或者直接输入你想完成的事。
             </p>

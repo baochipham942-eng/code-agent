@@ -82,7 +82,9 @@ export const TitleBar: React.FC = () => {
           type="button"
           onClick={handleSelectDirectory}
           className="window-no-drag inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.02] px-2 py-1 text-xs text-zinc-300 transition-colors hover:border-white/[0.14] hover:bg-white/[0.05] hover:text-zinc-100"
-          title={effectiveWorkingDirectory || '选择工作目录'}
+          // 未选目录时按钮已显示「选择目录」自解释，不再挂 title——否则原生 tooltip
+          // 会在窗口左上角悬出一个看似卡住的「选择工作目录」浮层。选了目录才用 title 显示完整路径。
+          title={effectiveWorkingDirectory || undefined}
         >
           <FolderOpen className="h-3.5 w-3.5 text-amber-400" />
           <span className="max-w-[180px] truncate">{workspaceLabel}</span>

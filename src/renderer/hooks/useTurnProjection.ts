@@ -11,6 +11,7 @@ import { isSkillStatusContent } from '../components/features/chat/MessageBubble/
 import { isGoalNoticeContent } from '../components/features/chat/goalNotice';
 import { isModelFallbackNoticeContent } from '../components/features/chat/fallbackNotice';
 import { measureStreamingPerformanceTiming } from '../utils/streamingPerformanceMetrics';
+import { isToolResultEcho } from '../utils/toolResultEcho';
 
 type MessageModelDecision = NonNullable<Message['modelDecision']>;
 
@@ -310,6 +311,8 @@ export function projectTurns(
       const turn = currentTurn;
 
       const pushAssistantTextNode = (content: string, index?: number) => {
+        // 模型回显：小模型有时把工具结果 JSON 当正文复述，整段吞掉不当答案渲染。
+        if (isToolResultEcho(content)) return;
         // 去重：连续相同的模型决策只在首个节点显示，避免每条消息都刷"用户选择 mimo"
         // 但策略解释字段变化时必须保留，否则 external engine / billing / fallback 诊断会被压掉。
         let modelDecision = msg.modelDecision;

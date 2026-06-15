@@ -1,0 +1,135 @@
+{
+  "generatedAt": "2026-06-15T02:22:39.112Z",
+  "browser": {
+    "provider": "playwright-bundled",
+    "executable": "/Users/linchen/Library/Caches/ms-playwright/chromium-1223/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+    "cdpPort": null,
+    "mode": "headless",
+    "fallbackReason": "system_chrome_unavailable: system Chrome could not be started or did not expose CDP."
+  },
+  "page": {
+    "url": "http://127.0.0.1:57004/__diff-render-browser-perf.html",
+    "title": "Diff Render Browser Perf"
+  },
+  "fixture": {
+    "singleDiffLines": 5000,
+    "summaryFiles": 3,
+    "summaryLinesPerFile": 1000
+  },
+  "initial": {
+    "durationMs": 684,
+    "longTasks": [
+      {
+        "name": "self",
+        "startTime": 213.1,
+        "duration": 58
+      },
+      {
+        "name": "self",
+        "startTime": 272.3,
+        "duration": 298
+      },
+      {
+        "name": "unknown",
+        "startTime": 570.6,
+        "duration": 239
+      }
+    ],
+    "rows": {
+      "singleDiffRows": 10002,
+      "summaryDiffRows": 0,
+      "totalDiffRows": 10002
+    },
+    "metrics": {
+      "startedAt": 1781490157617,
+      "updatedAt": 1781490157910,
+      "counters": {},
+      "gauges": {},
+      "timings": {
+        "stream.diff.lines_ms": {
+          "count": 2,
+          "totalMs": 4.1,
+          "meanMs": 2.05,
+          "minMs": 1.7,
+          "maxMs": 2.4,
+          "lastMs": 1.7,
+          "p95Ms": 2.4,
+          "recentMs": [
+            2.4,
+            1.7
+          ]
+        },
+        "stream.diff.summary_ms": {
+          "count": 2,
+          "totalMs": 3.3,
+          "meanMs": 1.65,
+          "minMs": 1.2,
+          "maxMs": 2.1,
+          "lastMs": 1.2,
+          "p95Ms": 2.1,
+          "recentMs": [
+            2.1,
+            1.2
+          ]
+        }
+      }
+    },
+    "longTaskCount": 3,
+    "longTaskTotalMs": 595,
+    "longTaskMaxMs": 298
+  },
+  "summaryExpansion": {
+    "durationMs": 774.2,
+    "longTasks": [
+      {
+        "name": "self",
+        "startTime": 1028.5,
+        "duration": 170
+      },
+      {
+        "name": "self",
+        "startTime": 1288.5,
+        "duration": 131
+      },
+      {
+        "name": "self",
+        "startTime": 1455,
+        "duration": 170
+      }
+    ],
+    "rows": {
+      "singleDiffRows": 10002,
+      "summaryDiffRows": 6006,
+      "totalDiffRows": 16008
+    },
+    "metrics": {
+      "startedAt": 1781490158329,
+      "updatedAt": 1781490158867,
+      "counters": {},
+      "gauges": {},
+      "timings": {
+        "stream.diff.lines_ms": {
+          "count": 6,
+          "totalMs": 3,
+          "meanMs": 0.5,
+          "minMs": 0.2,
+          "maxMs": 0.9,
+          "lastMs": 0.2,
+          "p95Ms": 0.9,
+          "recentMs": [
+            0.9,
+            0.3,
+            0.6,
+            0.3,
+            0.7,
+            0.2
+          ]
+        }
+      }
+    },
+    "expandedFiles": 3,
+    "longTaskCount": 3,
+    "longTaskTotalMs": 471,
+    "longTaskMaxMs": 170
+  }
+}

@@ -10,6 +10,7 @@ import type { SwarmLaunchRequest } from '@shared/contract/swarm';
 import { isSkillStatusContent } from '../components/features/chat/MessageBubble/SkillStatusMessage';
 import { isGoalNoticeContent } from '../components/features/chat/goalNotice';
 import { isModelFallbackNoticeContent } from '../components/features/chat/fallbackNotice';
+import { measureStreamingPerformanceTiming } from '../utils/streamingPerformanceMetrics';
 
 type MessageModelDecision = NonNullable<Message['modelDecision']>;
 
@@ -118,6 +119,7 @@ export function projectTurns(
   isProcessing: boolean,
   launchRequests: SwarmLaunchRequest[] = [],
 ): TraceProjection {
+  return measureStreamingPerformanceTiming('stream.projection.base_ms', () => {
   if (!sessionId) {
     return { sessionId: '', turns: [], activeTurnIndex: -1 };
   }
@@ -493,6 +495,7 @@ export function projectTurns(
     turns,
     activeTurnIndex,
   };
+  });
 }
 
 function markFeedbackEligibleNodes(turns: TraceTurn[]): void {

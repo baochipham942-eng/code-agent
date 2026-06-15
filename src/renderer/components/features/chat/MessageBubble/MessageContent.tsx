@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Chat markdown rendering is a legacy large surface; this pass keeps behavior stable and only isolates perf hot paths. */
 // ============================================================================
 // MessageContent - Markdown rendering using react-markdown
 // ============================================================================
@@ -29,7 +30,10 @@ import { openExternalLink } from '../../../../utils/platform';
 import { SpreadsheetBlock } from './SpreadsheetBlock';
 import { DocumentBlock } from './DocumentBlock';
 import { shouldRenderStreamingContentAsMarkdown, useThrottledStreamingContent } from '../../../../hooks/useThrottledStreamingContent';
-import { recordStreamingPerformanceCounter } from '../../../../utils/streamingPerformanceMetrics';
+import {
+  recordStreamingPerformanceCounter,
+  recordStreamingPerformanceTiming,
+} from '../../../../utils/streamingPerformanceMetrics';
 import {
   buildMarkdownMediaAsset,
   type SessionMediaContext,
@@ -223,6 +227,133 @@ const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: string }) 
 
 // Threshold for collapsible code blocks
 const CODE_COLLAPSE_LINES = 25;
+const CODE_PROGRESSIVE_HIGHLIGHT_LINES = 30;
+
+const codeBlockStyle = {
+  margin: 0,
+  padding: '1rem',
+  background: 'transparent',
+  fontSize: '0.75rem',
+  lineHeight: '1.25rem',
+  overflowY: 'visible',
+} as const;
+
+const codeLineNumberStyle = {
+  minWidth: '2.5em',
+  paddingRight: '1em',
+  color: 'rgb(113 113 122)',
+  userSelect: 'none',
+} as const;
+
+function getScheduleFrame(): {
+  requestFrame: (callback: FrameRequestCallback) => number | ReturnType<typeof globalThis.setTimeout>;
+  cancelFrame: (id: number | ReturnType<typeof globalThis.setTimeout>) => void;
+} {
+  const hasAnimationFrame = typeof window !== 'undefined'
+    && typeof window.requestAnimationFrame === 'function'
+    && typeof window.cancelAnimationFrame === 'function';
+
+  if (hasAnimationFrame) {
+    return {
+      requestFrame: window.requestAnimationFrame.bind(window),
+      cancelFrame: window.cancelAnimationFrame.bind(window) as (id: number | ReturnType<typeof globalThis.setTimeout>) => void,
+    };
+  }
+
+  return {
+    requestFrame: (callback) => globalThis.setTimeout(() => callback(Date.now()), 16),
+    cancelFrame: (id) => globalThis.clearTimeout(id as ReturnType<typeof globalThis.setTimeout>),
+  };
+}
+
+const PlainCodeLines = memo(function PlainCodeLines({
+  lines,
+  showLineNumbers,
+  startLineNumber,
+  wrapLines,
+}: {
+  lines: string[];
+  showLineNumbers: boolean;
+  startLineNumber: number;
+  wrapLines: boolean;
+}) {
+  return (
+    <pre
+      className="scrollbar-hidden overflow-x-auto p-4 text-xs leading-5 text-zinc-200"
+      data-code-preview="plain"
+      style={{
+        margin: 0,
+        background: 'transparent',
+      }}
+    >
+      <code className="block font-mono">
+        {lines.map((line, index) => (
+          <span className="table-row" key={index}>
+            {showLineNumbers && (
+              <span className="table-cell min-w-10 select-none pr-4 text-right text-zinc-600">
+                {startLineNumber + index}
+              </span>
+            )}
+            <span className={`table-cell ${wrapLines ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}>
+              {line}
+            </span>
+          </span>
+        ))}
+      </code>
+    </pre>
+  );
+});
+
+interface CodeLineChunk {
+  startIndex: number;
+  code: string;
+  lineCount: number;
+}
+
+function chunkLines(lines: string[], chunkSize: number): CodeLineChunk[] {
+  const chunks: CodeLineChunk[] = [];
+  for (let startIndex = 0; startIndex < lines.length; startIndex += chunkSize) {
+    const chunk = lines.slice(startIndex, startIndex + chunkSize);
+    chunks.push({
+      startIndex,
+      code: chunk.join('\n'),
+      lineCount: chunk.length,
+    });
+  }
+  return chunks;
+}
+
+const HighlightedCodeChunk = memo(function HighlightedCodeChunk({
+  chunk,
+  language,
+  showLineNumbers,
+  wrapLines,
+}: {
+  chunk: CodeLineChunk;
+  language: string;
+  showLineNumbers: boolean;
+  wrapLines: boolean;
+}) {
+  return (
+    <SyntaxHighlighter
+      className="scrollbar-hidden"
+      style={oneDark}
+      language={language || 'text'}
+      showLineNumbers={showLineNumbers}
+      startingLineNumber={chunk.startIndex + 1}
+      customStyle={codeBlockStyle}
+      lineNumberStyle={codeLineNumberStyle}
+      wrapLongLines={wrapLines}
+    >
+      {chunk.code}
+    </SyntaxHighlighter>
+  );
+}, (prev, next) => (
+  prev.chunk === next.chunk
+  && prev.language === next.language
+  && prev.showLineNumbers === next.showLineNumbers
+  && prev.wrapLines === next.wrapLines
+));
 
 // Code block with copy button and syntax highlighting
 const CodeBlock = memo(function CodeBlock({
@@ -232,19 +363,80 @@ const CodeBlock = memo(function CodeBlock({
   language: string;
   code: string;
 }) {
-  const [copied, setCopied] = useState(false);
-  const [wrapLines, setWrapLines] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-
+  const renderStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
   const config = languageConfig[language] || { color: 'text-zinc-400', name: language || 'code' };
-  const lines = code.split('\n');
+  const lines = useMemo(() => code.split('\n'), [code]);
+  const lineChunks = useMemo(
+    () => chunkLines(lines, CODE_PROGRESSIVE_HIGHLIGHT_LINES),
+    [lines],
+  );
   const showLineNumbers = lines.length > 3;
   const isLong = lines.length > CODE_COLLAPSE_LINES;
+  const [copied, setCopied] = useState(false);
+  const [wrapLines, setWrapLines] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => isLong);
+  const [highlightedChunkCount, setHighlightedChunkCount] = useState(() => (
+    isLong ? 0 : lineChunks.length
+  ));
+  const highlightedLineCount = collapsed
+    ? 0
+    : Math.min(
+        lineChunks.slice(0, highlightedChunkCount).reduce((sum, chunk) => sum + chunk.lineCount, 0),
+        lines.length,
+      );
 
-  // Auto-collapse long blocks on mount
+  // Auto-collapse as soon as a streaming block crosses the long-block threshold.
   useEffect(() => {
     if (isLong) setCollapsed(true);
-  }, []);
+  }, [isLong]);
+
+  useEffect(() => {
+    if (collapsed) {
+      setHighlightedChunkCount(0);
+      return;
+    }
+    if (!isLong) {
+      setHighlightedChunkCount(lineChunks.length);
+      return;
+    }
+
+    let cancelled = false;
+    let frameId: number | ReturnType<typeof globalThis.setTimeout> | null = null;
+    const { requestFrame, cancelFrame } = getScheduleFrame();
+    setHighlightedChunkCount(0);
+
+    const scheduleNextChunk = () => {
+      frameId = requestFrame(() => {
+        if (cancelled) return;
+        setHighlightedChunkCount((current) => {
+          const next = Math.min(current + 1, lineChunks.length);
+          if (next < lineChunks.length) {
+            scheduleNextChunk();
+          }
+          return next;
+        });
+      });
+    };
+
+    scheduleNextChunk();
+
+    return () => {
+      cancelled = true;
+      if (frameId !== null) cancelFrame(frameId);
+    };
+  }, [collapsed, isLong, lineChunks.length]);
+
+  useEffect(() => {
+    const now = typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : Date.now();
+    recordStreamingPerformanceTiming(
+      collapsed ? 'stream.code.preview_ms' : 'stream.code.highlight_ms',
+      now - renderStartedAt,
+    );
+  }, [collapsed, renderStartedAt]);
 
   const handleCopy = useCallback(async () => {
     await navigator.clipboard.writeText(code);
@@ -253,9 +445,20 @@ const CodeBlock = memo(function CodeBlock({
   }, [code]);
 
   const displayCode = collapsed ? lines.slice(0, CODE_COLLAPSE_LINES).join('\n') : code;
+  const displayLines = collapsed ? displayCode.split('\n') : [];
+  const remainingPlainLines = !collapsed && isLong ? lines.slice(highlightedLineCount) : [];
+  const highlightedLineChunks = !collapsed && isLong
+    ? lineChunks.slice(0, highlightedChunkCount)
+    : [];
+  const isHighlightComplete = !isLong || collapsed || highlightedLineCount >= lines.length;
 
   return (
-    <div className="my-3 rounded-xl bg-zinc-800-950 overflow-hidden border border-zinc-700 shadow-lg">
+    <div
+      className="my-3 rounded-xl bg-zinc-800-950 overflow-hidden border border-zinc-700 shadow-lg"
+      data-code-block-lines={lines.length}
+      data-code-highlighted-lines={collapsed ? 0 : highlightedLineCount}
+      data-code-highlight-complete={isHighlightComplete ? 'true' : 'false'}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">
         <div className="flex items-center gap-2">
@@ -301,29 +504,46 @@ const CodeBlock = memo(function CodeBlock({
       </div>
       {/* Code with syntax highlighting */}
       <div className="relative">
-        <SyntaxHighlighter
-          className="scrollbar-hidden"
-          style={oneDark}
-          language={language || 'text'}
-          showLineNumbers={showLineNumbers}
-          customStyle={{
-            margin: 0,
-            padding: '1rem',
-            background: 'transparent',
-            fontSize: '0.75rem',
-            lineHeight: '1.25rem',
-            overflowY: 'visible',
-          }}
-          lineNumberStyle={{
-            minWidth: '2.5em',
-            paddingRight: '1em',
-            color: 'rgb(113 113 122)',
-            userSelect: 'none',
-          }}
-          wrapLongLines={wrapLines}
-        >
-          {displayCode}
-        </SyntaxHighlighter>
+        {collapsed ? (
+          <PlainCodeLines
+            lines={displayLines}
+            showLineNumbers={showLineNumbers}
+            startLineNumber={1}
+            wrapLines={wrapLines}
+          />
+        ) : isLong ? (
+          <>
+            {highlightedLineChunks.map((chunk) => (
+              <HighlightedCodeChunk
+                key={chunk.startIndex}
+                chunk={chunk}
+                language={language}
+                showLineNumbers={showLineNumbers}
+                wrapLines={wrapLines}
+              />
+            ))}
+            {remainingPlainLines.length > 0 && (
+              <PlainCodeLines
+                lines={remainingPlainLines}
+                showLineNumbers={showLineNumbers}
+                startLineNumber={highlightedLineCount + 1}
+                wrapLines={wrapLines}
+              />
+            )}
+          </>
+        ) : (
+          <SyntaxHighlighter
+            className="scrollbar-hidden"
+            style={oneDark}
+            language={language || 'text'}
+            showLineNumbers={showLineNumbers}
+            customStyle={codeBlockStyle}
+            lineNumberStyle={codeLineNumberStyle}
+            wrapLongLines={wrapLines}
+          >
+            {displayCode}
+          </SyntaxHighlighter>
+        )}
       </div>
       {/* Expand/collapse for long blocks */}
       {isLong && (
@@ -570,8 +790,16 @@ const MarkdownRenderer = memo(function markdownRenderer({
   content: string;
   components: Components;
 }) {
+  const renderStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+
   useEffect(() => {
     recordStreamingPerformanceCounter('stream.markdown.render');
+    const now = typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : Date.now();
+    recordStreamingPerformanceTiming('stream.markdown.render_ms', now - renderStartedAt);
   });
 
   return (

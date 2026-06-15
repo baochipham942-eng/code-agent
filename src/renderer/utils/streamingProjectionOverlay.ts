@@ -1,12 +1,14 @@
 import type { Message } from '@shared/contract';
 import type { TraceNode, TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { StreamingMessageDelta } from '../stores/streamingMessageAccumulatorStore';
+import { measureStreamingPerformanceTiming } from './streamingPerformanceMetrics';
 
 export function applyStreamingMessageDeltasToProjection(
   projection: TraceProjection,
   messages: Message[],
   entries: Record<string, StreamingMessageDelta>,
 ): TraceProjection {
+  return measureStreamingPerformanceTiming('stream.projection.overlay_ms', () => {
   const activeEntries = Object.entries(entries).filter(([, entry]) =>
     Boolean(entry.contentDelta || entry.reasoningDelta)
   );
@@ -72,6 +74,7 @@ export function applyStreamingMessageDeltasToProjection(
   }
 
   return changed ? { ...projection, turns } : projection;
+  });
 }
 
 function getAssistantTextNodeId(messageId: string): string {

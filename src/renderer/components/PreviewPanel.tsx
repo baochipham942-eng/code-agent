@@ -12,18 +12,12 @@ import { useAppStore } from '../stores/appStore';
 import { createLogger } from '../utils/logger';
 import { isWebMode, copyPathToClipboard } from '../utils/platform';
 import { inlineHtmlAssets } from '../utils/inlineHtmlAssets';
+import { DocumentBlock } from './features/chat/MessageBubble/DocumentBlock';
+import { SpreadsheetBlock } from './features/chat/MessageBubble/SpreadsheetBlock';
 
 const CodeEditor = lazy(() => import('./CodeEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
 const LivePreviewFrame = lazy(() => import('./LivePreview/LivePreviewFrame'));
-const DocumentBlock = lazy(async () => {
-  const module = await import('./features/chat/MessageBubble/DocumentBlock');
-  return { default: module.DocumentBlock };
-});
-const SpreadsheetBlock = lazy(async () => {
-  const module = await import('./features/chat/MessageBubble/SpreadsheetBlock');
-  return { default: module.SpreadsheetBlock };
-});
 
 const logger = createLogger('PreviewPanel');
 

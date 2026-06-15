@@ -2,8 +2,9 @@
 // DiffView - 代码差异可视化组件
 // ============================================================================
 
-import React, { useMemo } from 'react';
-import * as Diff from 'diff';
+import React, { useEffect, useMemo, useState } from 'react';
+import { measureStreamingPerformanceTiming } from '../utils/streamingPerformanceMetrics';
+import { diffLinesWithFastPath } from '../utils/fastDiff';
 
 interface DiffViewProps {
   oldText: string;
@@ -19,6 +20,14 @@ interface DiffLine {
   newLineNum?: number;
 }
 
+const DIFF_PROGRESSIVE_THRESHOLD = 800;
+const DIFF_INITIAL_RENDER_LINES = 160;
+const DIFF_RENDER_CHUNK_LINES = 160;
+const diffRowVisibilityStyle: React.CSSProperties = {
+  contentVisibility: 'auto',
+  containIntrinsicSize: '20px',
+};
+
 /**
  * DiffView 组件 - 显示代码差异的 unified diff 格式
  */
@@ -29,7 +38,10 @@ export const DiffView: React.FC<DiffViewProps> = ({
   className = '',
 }) => {
   const diffLines = useMemo(() => {
-    const changes = Diff.diffLines(oldText, newText);
+    const changes = measureStreamingPerformanceTiming(
+      'stream.diff.lines_ms',
+      () => diffLinesWithFastPath(oldText, newText),
+    );
     const lines: DiffLine[] = [];
 
     let oldLineNum = 1;
@@ -87,6 +99,63 @@ export const DiffView: React.FC<DiffViewProps> = ({
     const removed = diffLines.filter((l) => l.type === 'removed').length;
     return { added, removed };
   }, [diffLines]);
+  const [visibleLineCount, setVisibleLineCount] = useState(() => (
+    diffLines.length > DIFF_PROGRESSIVE_THRESHOLD
+      ? Math.min(DIFF_INITIAL_RENDER_LINES, diffLines.length)
+      : diffLines.length
+  ));
+
+  useEffect(() => {
+    if (diffLines.length <= DIFF_PROGRESSIVE_THRESHOLD) {
+      setVisibleLineCount(diffLines.length);
+      return;
+    }
+
+    let cancelled = false;
+    let frameId: number | ReturnType<typeof globalThis.setTimeout> | null = null;
+    const hasAnimationFrame = typeof window !== 'undefined'
+      && typeof window.requestAnimationFrame === 'function'
+      && typeof window.cancelAnimationFrame === 'function';
+    const requestFrame = (callback: FrameRequestCallback) => (
+      hasAnimationFrame
+        ? window.requestAnimationFrame(callback)
+        : globalThis.setTimeout(() => callback(Date.now()), 16)
+    );
+    const cancelFrame = (id: number | ReturnType<typeof globalThis.setTimeout>) => {
+      if (hasAnimationFrame) {
+        window.cancelAnimationFrame(id as number);
+        return;
+      }
+      globalThis.clearTimeout(id as ReturnType<typeof globalThis.setTimeout>);
+    };
+    setVisibleLineCount(Math.min(DIFF_INITIAL_RENDER_LINES, diffLines.length));
+
+    const scheduleNextChunk = () => {
+      frameId = requestFrame(() => {
+        if (cancelled) return;
+        setVisibleLineCount((current) => {
+          const next = Math.min(current + DIFF_RENDER_CHUNK_LINES, diffLines.length);
+          if (next < diffLines.length) {
+            scheduleNextChunk();
+          }
+          return next;
+        });
+      });
+    };
+
+    scheduleNextChunk();
+
+    return () => {
+      cancelled = true;
+      if (frameId !== null) cancelFrame(frameId);
+    };
+  }, [diffLines]);
+
+  const visibleDiffLines = useMemo(
+    () => diffLines.slice(0, visibleLineCount),
+    [diffLines, visibleLineCount],
+  );
+  const isDiffRenderComplete = visibleDiffLines.length >= diffLines.length;
 
   // 如果没有变化
   if (stats.added === 0 && stats.removed === 0) {
@@ -98,7 +167,12 @@ export const DiffView: React.FC<DiffViewProps> = ({
   }
 
   return (
-    <div className={`diff-view rounded-lg overflow-hidden ${className}`}>
+    <div
+      className={`diff-view rounded-lg overflow-hidden ${className}`}
+      data-diff-total-rows={diffLines.length}
+      data-diff-rendered-rows={visibleDiffLines.length}
+      data-diff-render-complete={isDiffRenderComplete ? 'true' : 'false'}
+    >
       {/* 统计栏 */}
       <div className="diff-stats flex items-center gap-3 px-3 py-2 bg-[var(--color-elevated)] border-b border-[var(--color-border)]">
         {fileName && (
@@ -120,7 +194,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
       <div className="diff-content overflow-x-auto scrollbar-hidden bg-[var(--color-surface)]">
         <table className="w-full text-xs font-mono">
           <tbody>
-            {diffLines.map((line, index) => (
+            {visibleDiffLines.map((line, index) => (
               <DiffLineRow key={index} line={line} />
             ))}
           </tbody>
@@ -133,7 +207,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
 /**
  * 单行 Diff 渲染
  */
-const DiffLineRow: React.FC<{ line: DiffLine }> = ({ line }) => {
+const DiffLineRow: React.FC<{ line: DiffLine }> = React.memo(function DiffLineRow({ line }) {
   const getLineClass = () => {
     switch (line.type) {
       case 'added':
@@ -189,7 +263,7 @@ const DiffLineRow: React.FC<{ line: DiffLine }> = ({ line }) => {
   // 头部行特殊处理
   if (line.type === 'header') {
     return (
-      <tr className={getLineClass()}>
+      <tr className={getLineClass()} style={diffRowVisibilityStyle}>
         <td colSpan={3} className={`px-3 py-0.5 ${getContentClass()}`}>
           {line.content}
         </td>
@@ -198,7 +272,7 @@ const DiffLineRow: React.FC<{ line: DiffLine }> = ({ line }) => {
   }
 
   return (
-    <tr className={getLineClass()}>
+    <tr className={getLineClass()} style={diffRowVisibilityStyle}>
       {/* 行号列 */}
       <td className={`w-10 text-right px-2 py-0.5 select-none ${getGutterClass()}`}>
         {line.oldLineNum ?? ''}
@@ -213,7 +287,7 @@ const DiffLineRow: React.FC<{ line: DiffLine }> = ({ line }) => {
       </td>
     </tr>
   );
-};
+});
 
 /**
  * 简化版 Diff 预览 - 仅显示变化行数
@@ -224,7 +298,10 @@ export const DiffPreview: React.FC<{
   onClick?: (e?: React.MouseEvent) => void;
 }> = ({ oldText, newText, onClick }) => {
   const stats = useMemo(() => {
-    const changes = Diff.diffLines(oldText, newText);
+    const changes = measureStreamingPerformanceTiming(
+      'stream.diff.lines_ms',
+      () => diffLinesWithFastPath(oldText, newText),
+    );
     let added = 0;
     let removed = 0;
 

@@ -7,8 +7,9 @@
 // args.content_lines，这里优先采用它。
 // ============================================================================
 
-import * as Diff from 'diff';
 import type { TraceTurn } from '@shared/contract/trace';
+import { measureStreamingPerformanceTiming } from './streamingPerformanceMetrics';
+import { diffLinesWithFastPath } from './fastDiff';
 
 export const FILE_WRITE_TOOLS = ['Edit', 'Write', 'edit_file', 'write_file'];
 
@@ -29,6 +30,7 @@ function countNonEmptyLines(value: string): number {
 // 聚合 turn.nodes 里成功的 Edit/Write，按 filePath 合并。
 // 对老会话 args 可能缺失，fallback 从 result 字符串解析路径。
 export function buildTurnFileChanges(turn: TraceTurn): FileChange[] {
+  return measureStreamingPerformanceTiming('stream.diff.summary_ms', () => {
   const byPath = new Map<string, FileChange>();
 
   for (const node of turn.nodes) {
@@ -83,7 +85,7 @@ export function buildTurnFileChanges(turn: TraceTurn): FileChange[] {
       added = contentLines;
       removed = 0;
     } else if (oldText || newText) {
-      const diffChanges = Diff.diffLines(oldText, newText);
+      const diffChanges = diffLinesWithFastPath(oldText, newText);
       for (const c of diffChanges) {
         const lines = countNonEmptyLines(c.value);
         if (c.added) added += lines;
@@ -111,4 +113,5 @@ export function buildTurnFileChanges(turn: TraceTurn): FileChange[] {
   }
 
   return Array.from(byPath.values());
+  });
 }

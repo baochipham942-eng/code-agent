@@ -24,7 +24,8 @@ import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/c
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord } from './repositories';
+import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution } from './repositories';
+import { buildRecoverySnapshot, acknowledgeRecovery, type RecoverySnapshot } from './crashRecovery';
 import { createSwarmTraceRepo } from './repositories/swarmTraceFactory';
 import type { SwarmTraceRepo } from '../../../shared/contract/swarmTrace';
 
@@ -84,6 +85,9 @@ export class DatabaseService {
   private swarmTraceRepo!: SwarmTraceRepo;
   private pendingApprovalRepo!: PendingApprovalRepository;
   private permissionDecisionRepo!: PermissionDecisionRepository;
+  private toolExecutionEventRepo!: ToolExecutionEventRepository;
+  /** 启动时从总账重建的崩溃现场快照（ADR-022 第二期），供诊断出口/恢复消费 */
+  private lastRecoverySnapshot: RecoverySnapshot | null = null;
 
   constructor() {
     const userDataPath = app?.getPath?.('userData') || process.cwd();
@@ -195,10 +199,24 @@ export class DatabaseService {
       this.swarmTraceRepo = createSwarmTraceRepo(this.db);
       this.pendingApprovalRepo = new PendingApprovalRepository(this.db);
       this.permissionDecisionRepo = new PermissionDecisionRepository(this.db);
+      this.toolExecutionEventRepo = new ToolExecutionEventRepository(this.db);
 
       const crashedSessions = this.sessionRepo.markCrashedActiveSessions(Date.now());
       if (crashedSessions.interrupted > 0 || crashedSessions.orphaned > 0) {
         logger.warn(`[DatabaseService] Marked crashed active sessions: ${crashedSessions.interrupted} interrupted, ${crashedSessions.orphaned} orphaned`);
+      }
+
+      // ADR-022 第二期 · 崩溃重放：从总账重建"崩溃前正在做的事"（未闭合工具执行），
+      // 不再只翻 interrupted 标记。重建后 append recovered 闭合，保证重启幂等。fail-safe。
+      try {
+        const snapshot = buildRecoverySnapshot(this.toolExecutionEventRepo, Date.now());
+        this.lastRecoverySnapshot = snapshot;
+        if (snapshot.totalInFlight > 0) {
+          logger.warn(`[DatabaseService] Crash recovery: ${snapshot.totalInFlight} in-flight tool execution(s) across ${snapshot.sessions.length} session(s) reconstructed from ledger`);
+          acknowledgeRecovery(this.toolExecutionEventRepo, snapshot, Date.now());
+        }
+      } catch (err) {
+        logger.warn('[DatabaseService] Crash recovery scan failed (ignored):', err);
       }
 
       // 首次升级后：从已有 messages 表 backfill episodic FTS 索引（幂等）
@@ -268,6 +286,48 @@ export class DatabaseService {
     } catch {
       return 0;
     }
+  }
+
+  // --------------------------------------------------------------------------
+  // Tool Execution Lifecycle Ledger（ADR-022 第二期，append-only · 崩溃重放）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 追加一条工具执行 begin 事件。**fail-safe**：db 未就绪或写入失败都静默吞错，
+   * 绝不让账本写入影响工具执行。
+   */
+  appendToolExecutionBegin(input: ToolExecutionBeginInput): void {
+    try {
+      if (!this.db || !this.toolExecutionEventRepo) return;
+      this.toolExecutionEventRepo.appendBegin(input);
+    } catch (err) {
+      logger.warn('[DatabaseService] appendToolExecutionBegin failed (ignored):', err);
+    }
+  }
+
+  /** 追加一条工具执行 complete 事件（success/error/recovered）。fail-safe。 */
+  appendToolExecutionComplete(input: ToolExecutionCompleteInput): void {
+    try {
+      if (!this.db || !this.toolExecutionEventRepo) return;
+      this.toolExecutionEventRepo.appendComplete(input);
+    } catch (err) {
+      logger.warn('[DatabaseService] appendToolExecutionComplete failed (ignored):', err);
+    }
+  }
+
+  /** 当前未闭合（在飞）的工具执行——崩溃现场。fail-safe，失败返回空。 */
+  getOpenToolExecutions(): OpenToolExecution[] {
+    if (!this.db || !this.toolExecutionEventRepo) return [];
+    try {
+      return this.toolExecutionEventRepo.getOpenExecutions();
+    } catch {
+      return [];
+    }
+  }
+
+  /** 启动时从总账重建的崩溃现场快照（无则 null）。 */
+  getLastRecoverySnapshot(): RecoverySnapshot | null {
+    return this.lastRecoverySnapshot;
   }
 
   // --------------------------------------------------------------------------

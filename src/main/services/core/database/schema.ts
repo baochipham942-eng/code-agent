@@ -219,6 +219,28 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_permission_decisions_session ON permission_decisions (session_id, recorded_at)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_permission_decisions_tool ON permission_decisions (tool_name, recorded_at)`);
 
+  // Tool Execution Events 事件账本（ADR-022 第二期，append-only · 崩溃重放）—
+  // 给账本加"工具执行生命周期"两个不可变事件：begin（放行后即将执行）/ complete（执行返回/抛错/被恢复确认）。
+  // "崩溃那一刻正在执行的工具" = 有 begin 无 complete 的 execution_id；重启时 reduce 出未闭合执行即"现场"。
+  // 纯增量、不动现有表；只 INSERT/SELECT，永不 UPDATE/DELETE。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tool_execution_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      execution_id TEXT NOT NULL,
+      session_id TEXT,
+      tool_name TEXT NOT NULL,
+      summary TEXT,
+      params_json TEXT,
+      phase TEXT NOT NULL,
+      status TEXT,
+      error TEXT,
+      recorded_at INTEGER NOT NULL
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_execution_events_exec ON tool_execution_events (execution_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_execution_events_session ON tool_execution_events (session_id, recorded_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_execution_events_phase ON tool_execution_events (phase, recorded_at)`);
+
   // Master Tasks 表 (用户级工作单元，跨 session 持久化；P0-c2)
   // status 列保留 TEXT 不加 CHECK，枚举校验由应用层 (src/shared/contract/task.ts) 负责
   db.exec(`

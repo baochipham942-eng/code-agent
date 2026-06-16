@@ -25,3 +25,10 @@ export {
   type PermissionDecisionInput,
   type PermissionDecisionRecord,
 } from './PermissionDecisionRepository';
+export {
+  ToolExecutionEventRepository,
+  type ToolExecutionBeginInput,
+  type ToolExecutionCompleteInput,
+  type ToolExecutionEventRecord,
+  type OpenToolExecution,
+} from './ToolExecutionEventRepository';

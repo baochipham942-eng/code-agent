@@ -84,6 +84,39 @@ export function registerDiagnosticsHandlers(ipcMain: IpcMain): void {
           };
         }
 
+        // /permissions — 崩溃重放现场（ADR-022 第二期交付证据）：启动时从总账重建出的
+        // "崩溃前正在做的事"（在飞工具+完整参数+归属 session），取代"只翻 interrupted 标记"。
+        case 'recovery': {
+          let recoveredAt = 0;
+          let totalInFlight = 0;
+          let sessions: Array<Record<string, unknown>> = [];
+          try {
+            const { getDatabase } = await import('../services/core/databaseService');
+            const snapshot = getDatabase().getLastRecoverySnapshot();
+            if (snapshot) {
+              recoveredAt = snapshot.recoveredAt;
+              totalInFlight = snapshot.totalInFlight;
+              sessions = snapshot.sessions.map(s => ({
+                sessionId: s.sessionId,
+                operations: s.operations.map(op => ({
+                  executionId: op.executionId,
+                  toolName: op.toolName,
+                  summary: op.summary,
+                  params: op.params,
+                  startedAt: op.startedAt,
+                  elapsedMs: op.elapsedMs,
+                })),
+              }));
+            }
+          } catch {
+            // 静默：恢复快照读取失败不影响出口返回（fail-safe）
+          }
+          return {
+            success: true,
+            data: { recoveredAt, totalInFlight, sessions },
+          };
+        }
+
         // /cost — 预算状态
         case 'budget': {
           const { getBudgetService } = await import('../services/core/budgetService');

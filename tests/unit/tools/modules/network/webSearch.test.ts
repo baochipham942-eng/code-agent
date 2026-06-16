@@ -38,6 +38,7 @@ vi.mock('../../../../../src/main/tools/web/search', () => ({
   serialSearch: (...args: unknown[]) => serialSearchMock(...args),
   deduplicateResults: (...args: unknown[]) => deduplicateResultsMock(...args),
   formatAsTable: (...args: unknown[]) => formatAsTableMock(...args),
+  getCircuitBreakerRemaining: () => 0,
   SEARCH_PROVIDER_SETUP_MESSAGE: [
     '当前没有可用的联网搜索源。',
     '模型 API Key 只负责模型推理；Claude、Gemini、Grok 等模型 key 不会自动启用 WebSearch。',

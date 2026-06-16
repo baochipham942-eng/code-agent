@@ -27,7 +27,9 @@ export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, Projec
 import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution } from './repositories';
 import { buildRecoverySnapshot, acknowledgeRecovery, type RecoverySnapshot } from './crashRecovery';
 import { createSwarmTraceRepo } from './repositories/swarmTraceFactory';
-import type { SwarmTraceRepo } from '../../../shared/contract/swarmTrace';
+import type { SwarmTraceRepo, SwarmRunEventRecord } from '../../../shared/contract/swarmTrace';
+import { buildSessionLedger, type LedgerSources } from './sessionLedgerProjection';
+import { EMPTY_LEDGER_COST, type SessionLedger, type SessionLedgerCost } from '../../../shared/contract/sessionLedger';
 
 type DatabaseRecoveryCallback = () => void;
 
@@ -328,6 +330,96 @@ export class DatabaseService {
   /** 启动时从总账重建的崩溃现场快照（无则 null）。 */
   getLastRecoverySnapshot(): RecoverySnapshot | null {
     return this.lastRecoverySnapshot;
+  }
+
+  /** 某会话的执行生命周期事件（一本账执行 lane 源）。fail-safe，失败返回空。 */
+  getToolExecutionsBySession(sessionId: string, limit = 200) {
+    if (!this.db || !this.toolExecutionEventRepo) return [];
+    try {
+      return this.toolExecutionEventRepo.getBySession(sessionId, limit);
+    } catch {
+      return [];
+    }
+  }
+
+  /** 某会话的权限决策（一本账决策 lane 源）。fail-safe，失败返回空。 */
+  getPermissionDecisionsBySession(sessionId: string, limit = 200): PermissionDecisionRecord[] {
+    if (!this.db || !this.permissionDecisionRepo) return [];
+    try {
+      return this.permissionDecisionRepo.getBySession(sessionId, limit);
+    } catch {
+      return [];
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Session Ledger（ADR-022 §四第三期 3a · ADR-023 P2 读侧逻辑投影）
+  // --------------------------------------------------------------------------
+
+  /** 某会话的成本汇总（来自 telemetry_sessions）。fail-safe，失败返回空成本。 */
+  private readSessionCost(sessionId: string): SessionLedgerCost {
+    if (!this.db) return EMPTY_LEDGER_COST;
+    try {
+      const row = this.db.prepare(`
+        SELECT estimated_cost, total_input_tokens, total_output_tokens
+        FROM telemetry_sessions WHERE id = ?
+      `).get(sessionId) as
+        { estimated_cost?: number; total_input_tokens?: number; total_output_tokens?: number } | undefined;
+      if (!row) return EMPTY_LEDGER_COST;
+      return {
+        estimatedCost: Number(row.estimated_cost ?? 0),
+        tokensIn: Number(row.total_input_tokens ?? 0),
+        tokensOut: Number(row.total_output_tokens ?? 0),
+      };
+    } catch {
+      return EMPTY_LEDGER_COST;
+    }
+  }
+
+  /** 某会话相关的 Swarm run 内事件（一本账协同 lane 的细粒度时间线）。fail-safe。 */
+  private readSwarmEventsForSession(sessionId: string, runLimit = 50): SwarmRunEventRecord[] {
+    try {
+      const runs = this.swarmTraceRepo.listRuns(runLimit).filter((r) => r.sessionId === sessionId);
+      const events: SwarmRunEventRecord[] = [];
+      for (const run of runs) {
+        try {
+          const detail = this.swarmTraceRepo.getRunDetail(run.id);
+          if (detail) events.push(...detail.events);
+        } catch {
+          // 单个 run 明细读失败跳过，不影响其余
+        }
+      }
+      return events;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 一本账会话复盘（ADR-022 第三期招牌证据）：把一个会话的各 append-only 小账本
+   * + 成本，按时间合并成统一时间线读出。**纯只读**，不落地成表、不动任何写路径。
+   * 每条 lane 各自 fail-safe（单 lane 读失败只让该 lane 为空，整本账仍返回）。
+   * @param generatedAt 本账生成时刻（毫秒，可选；用于确定性测试，未传则 Date.now()）
+   */
+  getSessionLedger(sessionId: string, generatedAt: number = Date.now()): SessionLedger {
+    const safe = <T>(read: () => T[]): T[] => {
+      try {
+        const v = read();
+        return Array.isArray(v) ? v : [];
+      } catch {
+        return [];
+      }
+    };
+    const sources: LedgerSources = {
+      messages: safe(() => this.getMessages(sessionId, 500)),
+      taskEvents: safe(() => this.getSessionTaskEvents(sessionId, { limit: 200 })),
+      swarmRuns: safe(() => this.swarmTraceRepo.listRuns(50).filter((r) => r.sessionId === sessionId)),
+      swarmEvents: this.readSwarmEventsForSession(sessionId),
+      decisions: this.getPermissionDecisionsBySession(sessionId),
+      executions: this.getToolExecutionsBySession(sessionId),
+      cost: this.readSessionCost(sessionId),
+    };
+    return buildSessionLedger(sessionId, sources, generatedAt);
   }
 
   // --------------------------------------------------------------------------

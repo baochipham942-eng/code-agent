@@ -275,6 +275,10 @@ export class FileSwarmTraceRepository implements SwarmTraceRepo {
   // 读取 API
   // --------------------------------------------------------------------------
 
+  replaceRunCache(): void {
+    // File 模式：JSONL 本就是完整 append-only 流，无可变 rollup 表需重建（no-op）。
+  }
+
   listRuns(limit: number): SwarmRunListItem[] {
     const safeLimit = Math.max(1, Math.min(limit, SWARM_TRACE.MAX_LIST_LIMIT));
     const files = this.listFilesSortedDesc();

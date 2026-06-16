@@ -36,6 +36,13 @@ export interface ReconcileScanOptions {
   now: number;
   /** 扫描窗口上限。 */
   limit?: number;
+  /**
+   * 偏差自愈写闸门（ADR-024）：**默认关**。开启后，对 drift 且已闭合（含 run_closed）的 run，
+   * 用 ledger 确定性重建值覆盖 rollup 缓存。正在运行的半套账本永不重建（已被 in-progress 跳过）。
+   */
+  rebuildOnDrift?: boolean;
+  /** 注入式重建写口（仅 rebuildOnDrift 开时调用；生产用 createDatabaseRebuildWriter）。 */
+  rebuildWriter?: (runId: string, rebuilt: SwarmRunDetail) => void;
 }
 
 export interface ReconcileScanReport {
@@ -48,6 +55,8 @@ export interface ReconcileScanReport {
   skipped: { runId: string; note: string }[];
   /** 单 run 读/算异常（隔离，不中断扫描）。 */
   errors: { runId: string; error: string }[];
+  /** 被重建缓存的 run id（仅写闸门开时非空）。 */
+  rebuilt: string[];
   coverageNote: string;
 }
 
@@ -62,6 +71,7 @@ export function runReconcileScan(
   const drifted: ReconcileResult[] = [];
   const skipped: { runId: string; note: string }[] = [];
   const errors: { runId: string; error: string }[] = [];
+  const rebuiltIds: string[] = [];
   let matched = 0;
 
   let runIds: string[];
@@ -75,6 +85,7 @@ export function runReconcileScan(
       drifted,
       skipped,
       errors: [{ runId: '*', error: String(e) }],
+      rebuilt: rebuiltIds,
       coverageNote: 'listRunIds 失败，未扫描任何 run',
     };
   }
@@ -96,13 +107,22 @@ export function runReconcileScan(
         matched += 1;
       } else {
         drifted.push(result);
+        // 偏差自愈写闸门（默认关）：drift 分支的 rebuilt 必非 null 且已闭合（reconcileRun 无 note）。
+        if (options.rebuildOnDrift && options.rebuildWriter && rebuilt) {
+          try {
+            options.rebuildWriter(runId, rebuilt);
+            rebuiltIds.push(runId);
+          } catch (e) {
+            errors.push({ runId, error: String(e) });
+          }
+        }
       }
     } catch (e) {
       errors.push({ runId, error: String(e) });
     }
   }
 
-  const coverageNote = `扫描 ${runIds.length} 个 run（limit=${limit}）：匹配 ${matched}、偏差 ${drifted.length}、跳过 ${skipped.length}、错误 ${errors.length}`;
+  const coverageNote = `扫描 ${runIds.length} 个 run（limit=${limit}）：匹配 ${matched}、偏差 ${drifted.length}、跳过 ${skipped.length}、错误 ${errors.length}、重建 ${rebuiltIds.length}`;
 
   return {
     generatedAt: options.now,
@@ -111,6 +131,7 @@ export function runReconcileScan(
     drifted,
     skipped,
     errors,
+    rebuilt: rebuiltIds,
     coverageNote,
   };
 }
@@ -152,4 +173,18 @@ export function createDatabaseReconcileReader(db: ReconcileReaderDb): ReconcileS
     getLedgerByRun: (runId) => db.getSwarmLedgerByRun(runId),
     getStoredRunDetail: (runId) => db.getSwarmTraceRepo().getRunDetail(runId),
   };
+}
+
+/** 重建写目标（SwarmTraceRepository 结构上满足）。 */
+export interface ReconcileRebuildTarget {
+  replaceRunCache(detail: SwarmRunDetail): void;
+}
+
+/**
+ * 生产重建 writer：用 ledger 确定性重建值覆盖 rollup 缓存（仅写闸门 rebuildOnDrift 开时被调用）。
+ */
+export function createDatabaseRebuildWriter(
+  target: ReconcileRebuildTarget,
+): (runId: string, rebuilt: SwarmRunDetail) => void {
+  return (_runId, rebuilt) => target.replaceRunCache(rebuilt);
 }

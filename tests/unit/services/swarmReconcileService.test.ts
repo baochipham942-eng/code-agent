@@ -180,3 +180,47 @@ describe('createDatabaseReconcileReader（生产适配器，委托 db 只读口�
     expect(getRunDetail).toHaveBeenCalledWith('Z'); // raw rollup（非 PreferLedger，避免循环自证）
   });
 });
+
+describe('runReconcileScan · 偏差自愈写闸门（默认关）', () => {
+  const driftedStored = (runId: string) => {
+    const s = rebuildRunDetail(closedRunEvents(runId))!;
+    return { ...s, run: { ...s.run, totalToolCalls: 42 } }; // 篡改 rollup 制造 drift
+  };
+
+  it('写闸门关（默认）→ drift run 不触发重建 writer', () => {
+    const events = closedRunEvents('M');
+    const writer = vi.fn();
+    const report = runReconcileScan(makeReader({ M: { ledger: events, stored: driftedStored('M') } }), { now: NOW, rebuildWriter: writer });
+    expect(report.drifted).toHaveLength(1);
+    expect(writer).not.toHaveBeenCalled();
+    expect(report.rebuilt).toHaveLength(0);
+  });
+
+  it('写闸门开 + drift + 已闭合 → 调 writer 用 ledger 重建值，记入 report.rebuilt', () => {
+    const events = closedRunEvents('M');
+    const writer = vi.fn();
+    const report = runReconcileScan(makeReader({ M: { ledger: events, stored: driftedStored('M') } }), { now: NOW, rebuildOnDrift: true, rebuildWriter: writer });
+    expect(writer).toHaveBeenCalledTimes(1);
+    const [runId, rebuiltArg] = writer.mock.calls[0] as [string, SwarmRunDetail];
+    expect(runId).toBe('M');
+    expect(rebuiltArg.run.totalToolCalls).toBe(1); // ledger 重建值(=1)，非被篡改的 42
+    expect(report.rebuilt).toEqual(['M']);
+  });
+
+  it('写闸门开但 run 正在运行（半套账本）→ 跳过，绝不重建', () => {
+    const writer = vi.fn();
+    const report = runReconcileScan(makeReader({ M: { ledger: inProgressRunEvents('M'), stored: rebuildRunDetail(closedRunEvents('M')) } }), { now: NOW, rebuildOnDrift: true, rebuildWriter: writer });
+    expect(writer).not.toHaveBeenCalled();
+    expect(report.skipped[0].note).toBe('in-progress');
+  });
+
+  it('写闸门开 + writer 抛错 → 计入 errors 且隔离，其余 run 仍重建', () => {
+    const writer = vi.fn((runId: string) => { if (runId === 'M') throw new Error('write boom'); });
+    const report = runReconcileScan(
+      makeReader({ M: { ledger: closedRunEvents('M'), stored: driftedStored('M') }, N: { ledger: closedRunEvents('N'), stored: driftedStored('N') } }),
+      { now: NOW, rebuildOnDrift: true, rebuildWriter: writer },
+    );
+    expect(report.errors.some((e) => e.runId === 'M' && e.error.includes('boom'))).toBe(true);
+    expect(report.rebuilt).toEqual(['N']);
+  });
+});

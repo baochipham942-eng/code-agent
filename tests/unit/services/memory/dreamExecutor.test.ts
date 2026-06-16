@@ -185,7 +185,7 @@ describe('dreamExecutor', () => {
       {
         db: makeDb(), now: NOW, memoryIO: makeMemoryIO(), candidateExtractor: async () => [],
         reconcileScan: () => ({
-          generatedAt: NOW, scannedCount: 2, matched: 2, drifted: [], skipped: [], errors: [],
+          generatedAt: NOW, scannedCount: 2, matched: 2, drifted: [], skipped: [], errors: [], rebuilt: [],
           coverageNote: '扫描 2 个 run：匹配 2、偏差 0、跳过 0、错误 0',
         }),
       },

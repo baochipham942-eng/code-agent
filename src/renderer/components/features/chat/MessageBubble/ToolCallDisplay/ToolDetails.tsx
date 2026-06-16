@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useState } from 'react';
-import { Play } from 'lucide-react';
+import { Play, Copy, Check, RotateCcw } from 'lucide-react';
 import type { ToolCall } from '@shared/contract';
 import {
   buildToolResultMediaAssets,
@@ -22,7 +22,9 @@ import { redactBrowserComputerInputPayloadsInValue } from '@shared/utils/browser
 import { getBrowserComputerActionCatalogEntry } from '@shared/utils/browserComputerActionCatalog';
 import { MemoryCitationGroup } from '../../../../citations/MemoryCitationGroup';
 import type { Citation } from '@shared/contract/citation';
-import { humanizeToolError } from '../../../../../utils/toolExecutionPresentation';
+import { humanizeToolError, buildToolErrorActions } from '../../../../../utils/toolExecutionPresentation';
+import { useMessageActionStore } from '../../../../../stores/messageActionStore';
+import { copyPathToClipboard } from '../../../../../utils/platform';
 import {
   ImageResultDisplay,
   GenericMediaResultDisplay,
@@ -97,6 +99,10 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
   const generatedFileResult = extractGeneratedFile(toolCall);
   const safeBrowserComputerResult = formatBrowserComputerActionResultDetails(toolCall);
   const browserComputerNextSteps = getBrowserComputerNextSteps(toolCall);
+  // 通用失败工具的可点 action（复制错误 + 从此重试）。浏览器/Computer 类有自己的
+  // 只读 recovery actions，这里只兜底其余工具，避免两套 action 行重复。
+  const toolErrorActions = buildToolErrorActions(toolCall, mediaContext?.messageId);
+  const showGenericErrorActions = browserComputerNextSteps.length === 0 && toolErrorActions.show;
 
   const canPreviewCreated = isPreviewable(createdFilePath);
 
@@ -220,6 +226,13 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
             <>
               {browserComputerNextSteps.length > 0 && (
                 <BrowserComputerNextStepActions actions={browserComputerNextSteps} />
+              )}
+              {showGenericErrorActions && (
+                <GenericToolErrorActions
+                  errorText={stripAnsiCodes(toolErrorActions.errorText)}
+                  canRetry={toolErrorActions.canRetry}
+                  messageId={mediaContext?.messageId}
+                />
               )}
               {humanError && !safeBrowserComputerResult ? (
                 <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.04] p-3 text-xs">
@@ -551,6 +564,57 @@ function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerN
         >
           {sanitizeBrowserComputerRecoveryText(outcome.text, actions)}
         </pre>
+      )}
+    </div>
+  );
+}
+
+// 通用失败工具的可点 action 行：复制错误 + 从此重试。
+// 「从此重试」复用 messageActionStore.forkFromHere（与会话页消息级「从此重试」同源），
+// 在所属 assistant 消息处 fork 重跑；拿不到 messageId 时只显示复制。
+function GenericToolErrorActions({
+  errorText,
+  canRetry,
+  messageId,
+}: {
+  errorText: string;
+  canRetry: boolean;
+  messageId?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const forkFromHere = useMessageActionStore((state) => state.forkFromHere);
+
+  return (
+    <div className="mb-2 flex flex-wrap gap-1.5">
+      <button
+        type="button"
+        data-testid="tool-error-copy"
+        onClick={async (event) => {
+          event.stopPropagation();
+          const ok = await copyPathToClipboard(errorText);
+          if (ok) {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }
+        }}
+        className="inline-flex items-center gap-1 rounded-md border border-zinc-700/60 bg-zinc-800/60 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700/60"
+      >
+        {copied ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3" />}
+        {copied ? '已复制' : '复制错误'}
+      </button>
+      {canRetry && messageId && (
+        <button
+          type="button"
+          data-testid="tool-error-retry"
+          onClick={(event) => {
+            event.stopPropagation();
+            forkFromHere(messageId);
+          }}
+          className="inline-flex items-center gap-1 rounded-md border border-sky-500/25 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-100 transition-colors hover:bg-sky-500/20"
+        >
+          <RotateCcw className="h-3 w-3" />
+          从此重试
+        </button>
       )}
     </div>
   );

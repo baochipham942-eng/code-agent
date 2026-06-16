@@ -129,6 +129,40 @@ export function humanizeToolError(error?: string, _toolName?: string): Humanized
   return null;
 }
 
+export interface ToolErrorActionState {
+  /** 是否展示通用错误 action 行（仅失败工具结果） */
+  show: boolean;
+  /** 供「复制错误」用的原始错误文本（含 ANSI，渲染层自行 strip） */
+  errorText: string;
+  /** 是否可「从此重试」——需要拿到所属消息 id（经 mediaContext 传入） */
+  canRetry: boolean;
+}
+
+/**
+ * 失败工具结果的可点 action 决策：复制错误 + 从此重试。
+ * 「从此重试」复用既有 forkFromHere（messageActionStore），与会话页消息级
+ * 「从此重试」同一条路径；只在拿得到所属 messageId 时才可点。
+ * 注：浏览器/Computer 类失败有自己的只读 recovery actions（BrowserComputerNextStepActions），
+ * 由调用方另行 gate，不走这里。
+ */
+export function buildToolErrorActions(
+  toolCall: ToolCall,
+  messageId: string | undefined,
+): ToolErrorActionState {
+  const result = toolCall.result;
+  const failed = !!result && result.success === false;
+  if (!failed) {
+    return { show: false, errorText: '', canRetry: false };
+  }
+  const errorText = result.error
+    || (typeof result.output === 'string' ? result.output : '');
+  return {
+    show: true,
+    errorText,
+    canRetry: typeof messageId === 'string' && messageId.length > 0,
+  };
+}
+
 export function getToolRecoveryHint(toolCall: ToolCall, status: ToolStatus): string {
   if (status === 'pending') return '等待结果';
   if (status === 'interrupted') return '可重新运行';

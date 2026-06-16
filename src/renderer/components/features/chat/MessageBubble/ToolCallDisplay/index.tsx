@@ -21,6 +21,7 @@ import {
   getToolRecoveryHint,
   type ToolPermissionView,
 } from '../../../../../utils/toolExecutionPresentation';
+import { computeBashPreviewLines } from './bashOutputPreview';
 
 // ============================================================================
 // StatusIndicator - Braille spinner for pending, symbols for final states
@@ -467,8 +468,6 @@ function BrowserComputerActionPreviewLine({ preview }: { preview: BrowserCompute
 // Completed: first 20 lines + "...+N lines" if truncated
 // ============================================================================
 
-const BASH_PREVIEW_LINES_PENDING = 5;
-const BASH_PREVIEW_LINES_COMPLETED = 20;
 const ANSI_ESCAPE_PATTERN = new RegExp(
   String.raw`\u001b\[[0-9;]*[a-zA-Z]|\u001b\].*?\u0007|\u001b\[[?]?[0-9;]*[a-zA-Z]`,
   'g',
@@ -490,25 +489,8 @@ function BashOutputPreview({ toolCall, status }: { toolCall: ToolCall; status: T
   const cleaned = stripAnsi(output).trim();
   if (!cleaned) return null;
 
-  const allLines = cleaned.split('\n');
   const isPending = status === 'pending';
-
-  let displayLines: string[];
-  let truncatedCount = 0;
-
-  if (isPending) {
-    // Show last N lines (streaming feel)
-    displayLines = allLines.slice(-BASH_PREVIEW_LINES_PENDING);
-  } else {
-    // Completed: show first N lines
-    if (allLines.length > BASH_PREVIEW_LINES_COMPLETED) {
-      displayLines = allLines.slice(0, BASH_PREVIEW_LINES_COMPLETED);
-      truncatedCount = allLines.length - BASH_PREVIEW_LINES_COMPLETED;
-    } else {
-      displayLines = allLines;
-    }
-  }
-
+  const { displayLines } = computeBashPreviewLines(cleaned, isPending);
   const isError = toolCall.result && !toolCall.result.success;
 
   return (
@@ -520,11 +502,6 @@ function BashOutputPreview({ toolCall, status }: { toolCall: ToolCall; status: T
       >
         {displayLines.join('\n')}
       </pre>
-      {truncatedCount > 0 && (
-        <span className="text-xs text-zinc-600 font-mono">
-          ...+{truncatedCount} lines
-        </span>
-      )}
     </div>
   );
 }

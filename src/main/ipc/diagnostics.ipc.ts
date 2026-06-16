@@ -12,6 +12,7 @@
 
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { SWARM_TRACE } from '../../shared/constants/storage';
 
 export function registerDiagnosticsHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(IPC_DOMAINS.DIAGNOSTICS, async (_, request: IPCRequest): Promise<IPCResponse> => {
@@ -190,6 +191,33 @@ export function registerDiagnosticsHandlers(ipcMain: IpcMain): void {
               success: true,
               data: { generatedAt: 0, scannedCount: 0, matched: 0, drifted: [], skipped: [], errors: [], coverageNote: 'reconcile-scan-error' },
             };
+          }
+        }
+
+        // 第四期：opt-in 老库迁移（B1 默认跳过；仅手动触发此出口才反向 backfill ledger）。fail-safe。
+        case 'swarmLedgerBackfill': {
+          try {
+            const { getDatabase } = await import('../services/core/databaseService');
+            const { backfillSwarmLedger } = await import('../services/core/database/backfillSwarmLedger');
+            const { SwarmLedgerRepository } = await import('../services/core/repositories/SwarmLedgerRepository');
+            const db = getDatabase();
+            const rawDb = db.getDb();
+            if (!rawDb) {
+              return { success: true, data: { backfilled: [], skipped: [], errors: [{ runId: '*', error: 'db-unavailable' }] } };
+            }
+            const trace = db.getSwarmTraceRepo();
+            const ledger = new SwarmLedgerRepository(rawDb);
+            const result = backfillSwarmLedger({
+              listRunIds: () => trace.listRuns(SWARM_TRACE.MAX_LIST_LIMIT).map((r) => r.id),
+              getStoredRunDetail: (id) => trace.getRunDetail(id),
+              hasLedger: (id) => ledger.getByRun(id).length > 0,
+              appendLedger: (input) => ledger.append(input),
+              transaction: (fn) => rawDb.transaction(fn)(),
+              now: Date.now(),
+            });
+            return { success: true, data: result };
+          } catch {
+            return { success: true, data: { backfilled: [], skipped: [], errors: [{ runId: '*', error: 'backfill-error' }] } };
           }
         }
 

@@ -117,6 +117,43 @@ export function registerDiagnosticsHandlers(ipcMain: IpcMain): void {
           };
         }
 
+        // /permissions（复盘）— 一本账会话复盘（ADR-022 第三期 3a 交付证据）：把一个会话的
+        // 对话+任务+协同+成本+决策+执行，按时间合并成统一时间线读出（纯只读投影，ADR-023 P2）。
+        case 'sessionLedger': {
+          const payload = (request.payload ?? {}) as { sessionId?: string; limit?: number };
+          const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId.trim() : '';
+          if (!sessionId) {
+            return {
+              success: false,
+              error: { code: 'INVALID_ACTION', message: 'sessionLedger requires payload.sessionId' },
+            };
+          }
+          const emptyCounts = { message: 0, task: 0, swarm: 0, decision: 0, execution: 0 };
+          const emptyCost = { estimatedCost: 0, tokensIn: 0, tokensOut: 0 };
+          try {
+            const { getDatabase } = await import('../services/core/databaseService');
+            const ledger = getDatabase().getSessionLedger(sessionId);
+            const limit = payload.limit;
+            const entries = typeof limit === 'number' && limit > 0 ? ledger.entries.slice(-limit) : ledger.entries;
+            return {
+              success: true,
+              data: {
+                sessionId: ledger.sessionId,
+                generatedAt: ledger.generatedAt,
+                cost: ledger.cost,
+                laneCounts: ledger.laneCounts,
+                entries,
+              },
+            };
+          } catch {
+            // 静默 fail-safe：读账失败返回空账结构，不影响出口
+            return {
+              success: true,
+              data: { sessionId, generatedAt: 0, cost: emptyCost, laneCounts: emptyCounts, entries: [] },
+            };
+          }
+        }
+
         // /cost — 预算状态
         case 'budget': {
           const { getBudgetService } = await import('../services/core/budgetService');

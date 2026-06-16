@@ -50,6 +50,7 @@ import type {
 import { isBashToolName, normalizeToolName, sameToolName } from './toolNames';
 import { persistBase64ImageMetadata } from './artifacts/base64ImageArtifacts';
 import { getDatabase } from '../services/core/databaseService';
+import { randomUUID } from 'node:crypto';
 
 const logger = createLogger('ToolExecutor');
 
@@ -798,6 +799,22 @@ export class ToolExecutor {
     let releaseWriteIsolation: (() => void) | undefined;
     let writeIsolationMetadata: WriteIsolationMetadata | undefined;
     const startTime = Date.now();
+
+    // ADR-022 第二期 · 崩溃重放：工具放行后即将真正执行，落 begin 生命周期事件；
+    // 执行返回/抛错时落 complete。崩溃发生在两者之间 → 留下未闭合 begin = 现场。全程 fail-safe。
+    const executionId = randomUUID();
+    const execSummary = String(params.command || params.file_path || params.path || params.pattern || executionToolName).substring(0, 80);
+    let execCompleteRecorded = false;
+    const recordExecComplete = (status: string, error?: string): void => {
+      if (execCompleteRecorded) return;
+      execCompleteRecorded = true;
+      try {
+        getDatabase().appendToolExecutionComplete({
+          executionId, toolName: executionToolName, status, error,
+          sessionId: options.sessionId, recordedAt: Date.now(),
+        });
+      } catch { /* fail-safe：账本写入永不阻断工具执行 */ }
+    };
     try {
       if (writeIsolationScope) {
         const waitStart = Date.now();
@@ -824,6 +841,12 @@ export class ToolExecutor {
         args: params,
       };
       logger.debug('Dispatching to protocol resolver', { toolName: executionToolName, requestedToolName });
+      try {
+        getDatabase().appendToolExecutionBegin({
+          executionId, sessionId: options.sessionId, toolName: executionToolName,
+          summary: execSummary, params, recordedAt: startTime,
+        });
+      } catch { /* fail-safe：账本写入永不阻断工具执行 */ }
       const rawResult = await resolver.execute(executionToolName, params, context);
       const resultWithArtifacts = await persistBase64ImageMetadata(rawResult, {
         sourceTool: executionToolName,
@@ -865,10 +888,12 @@ export class ToolExecutor {
         });
       }
 
+      recordExecComplete(result.success ? 'success' : 'error', result.error);
       return result;
     } catch (error) {
       const duration = Date.now() - startTime;
       logger.error('Tool threw error', error, { toolName: executionToolName });
+      recordExecComplete('error', error instanceof Error ? error.message : 'Unknown error');
 
       // Audit logging for errors
       if (this.auditEnabled) {

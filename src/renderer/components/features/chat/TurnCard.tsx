@@ -229,6 +229,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               if (node.turnTimeline?.kind === 'hook_activity' || node.turnTimeline?.kind === 'skill_activity') {
                 return null;
               }
+              // 产物/来源节点统一锚到最终答案之后渲染（见下方），避免随流式位置在答案上下漂移。
+              if (node.turnTimeline?.kind === 'artifact_ownership') {
+                return null;
+              }
               if (node.subtype === 'skill_status') {
                 return null;
               }
@@ -277,6 +281,17 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             onStreamingDisplayUpdate={onStreamingDisplayUpdate}
           />
         )}
+
+        {/* 产物/来源固定锚点：始终渲染在最终答案之后，位置稳定（与正文内 Sources 一致），
+            不再随工具调用在流中的位置而在答案上方/下方漂移。 */}
+        {!folded && (() => {
+          const artifactNode = turn.nodes.find(
+            (node) => node.turnTimeline?.kind === 'artifact_ownership',
+          );
+          return artifactNode ? (
+            <TraceNodeRenderer key={artifactNode.id} node={artifactNode} sessionId={sessionId} />
+          ) : null;
+        })()}
 
         {/* Turn-level aggregated diff card — always visible */}
         <TurnDiffSummary turn={turn} />

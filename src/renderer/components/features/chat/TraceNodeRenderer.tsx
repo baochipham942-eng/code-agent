@@ -869,10 +869,14 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
 
   // 纯文件输出保持一行入口，不再额外挂"本轮输出"标题。
   // 混合/纯非文件：保留 tone 容器，维持原来的视觉层级。
+  // 标题按内容正名：纯链接（如 WebFetch 抓取的网页）是「来源/引用」而非模型「产物」，
+  // 标成 Sources 才不误导；含文件产物时才叫 Outputs。
+  const onlyLinks = fileItems.length === 0 && nonFileItems.every((i) => i.kind === 'link');
+  const sectionLabel = onlyLinks ? 'Sources' : 'Outputs';
   const header = (
     <div className="mb-1.5 flex items-center gap-2 text-[11px] text-zinc-400">
       <FileText className="h-3.5 w-3.5 text-emerald-300" />
-      <span>Outputs</span>
+      <span>{sectionLabel}</span>
     </div>
   );
 

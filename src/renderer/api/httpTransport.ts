@@ -15,10 +15,34 @@ import type {
   IpcEventHandlers,
 } from '../../shared/ipc';
 import { IPC_CHANNELS } from '../../shared/ipc';
+import { RENDERER_POLLING } from '../../shared/constants';
 import { getLocalBridgeClient } from '../services/localBridge';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 
 type EventCallback = (...args: unknown[]) => void;
+
+// 后端不可达时，前端多个 poller 会持续打到 /api 触发 catch → 每次 console.warn
+// 会把控制台/日志刷爆（实测可达百万行）。按「通道 + 错误类型」节流：同一 key 在
+// THROTTLE 窗口内只打一条，并在恢复时汇报期间被抑制的次数。
+const lastTransportErrorLogAt = new Map<string, number>();
+const suppressedTransportErrors = new Map<string, number>();
+
+function logTransportErrorThrottled(key: string, ...args: unknown[]): void {
+  const now = Date.now();
+  const last = lastTransportErrorLogAt.get(key) ?? 0;
+  const suppressed = suppressedTransportErrors.get(key) ?? 0;
+  if (now - last < RENDERER_POLLING.TRANSPORT_ERROR_LOG_THROTTLE) {
+    suppressedTransportErrors.set(key, suppressed + 1);
+    return;
+  }
+  lastTransportErrorLogAt.set(key, now);
+  if (suppressed > 0) {
+    suppressedTransportErrors.set(key, 0);
+    console.warn(...args, `(+${suppressed} 条同类错误已折叠)`);
+  } else {
+    console.warn(...args);
+  }
+}
 
 const AUTH_RELOAD_ATTEMPT_KEY = 'code-agent:http-auth-token-reload-attempted';
 
@@ -630,7 +654,12 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             console.warn(`[HttpTransport] ${channel} local auth token expired:`, authError.message);
             throw new Error(authError.message);
           }
-          console.warn(`[HttpTransport] ${channel} failed:`, response.status, errorMessage || errorBody);
+          logTransportErrorThrottled(
+            `${channel}:${response.status}`,
+            `[HttpTransport] ${channel} failed:`,
+            response.status,
+            errorMessage || errorBody,
+          );
           return undefined as ReturnType<IpcInvokeHandlers[K]>;
         }
         clearAuthTokenReloadAttempt();
@@ -655,7 +684,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
 
         return undefined as ReturnType<IpcInvokeHandlers[K]>;
       } catch (err) {
-        console.warn(`[HttpTransport] ${channel} error:`, err);
+        logTransportErrorThrottled(`${channel}:exception`, `[HttpTransport] ${channel} error:`, err);
         return undefined as ReturnType<IpcInvokeHandlers[K]>;
       }
     }) as CommandBridgeAPI['invoke'],

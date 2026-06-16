@@ -279,6 +279,30 @@ export const CANCELLATION_TIMEOUTS = {
   FLUSH_TIMEOUT: 2_000,
 } as const;
 
+/**
+ * Renderer 轮询配置。
+ *
+ * 前端多处用固定间隔 setInterval 轮询后端（loop 状态 / 后台任务 / 任务状态 /
+ * 本地桥接 / 模型配置）。统一收口到此，并由 backoffPoller 应用指数退避 + 熔断：
+ * 后端不可达时间隔从 BASE 翻倍到 MAX，避免空闲猛打 + 日志刷屏。
+ */
+export const RENDERER_POLLING = {
+  /** loop:list 状态轮询基础间隔 */
+  LOOP_BASE: 2_000,
+  /** 后台任务（listTasks + drainNotifications）轮询基础间隔 */
+  BACKGROUND_TASK_BASE: 3_000,
+  /** 任务状态同步轮询基础间隔 */
+  TASK_SYNC_BASE: 5_000,
+  /** 本地桥接健康检查轮询基础间隔 */
+  LOCAL_BRIDGE_BASE: 5_000,
+  /** 失败时退避的最大间隔上限 */
+  MAX_BACKOFF: 30_000,
+  /** 退避倍率（每次失败乘以此值，上限 MAX_BACKOFF） */
+  BACKOFF_FACTOR: 2,
+  /** 传输层连接错误日志节流窗口：同一通道在此窗口内最多打一条，防后端不可达时刷屏 */
+  TRANSPORT_ERROR_LOG_THROTTLE: 10_000,
+} as const;
+
 /** 工具执行超时警告阈值 (ms)，按工具名或前缀匹配 */
 export const TOOL_TIMEOUT_THRESHOLDS: Record<string, number> = {
   bash: 120_000,            // 2 min（命令可能耗时较长）

@@ -7,6 +7,7 @@ import { getContextEventLedger } from '../../../context/contextEventLedger';
 import { compactMessagesWithSummary } from '../../../context/compactionService';
 import { estimateTokens } from '../../../context/tokenOptimizer';
 import { assessContextPressure } from '../../../context/contextPressureController';
+import { applyToolResultBudget } from '../../../context/layers/toolResultBudget';
 import { tryInsertCheckpointRebuildBoundary } from '../../../context/checkpoint/runtimeBoundary';
 import { readExistingCheckpointStore, resolveCheckpointStorePaths } from '../../../context/checkpoint/store';
 import { validateCheckpointDocument } from '../../../context/checkpoint/validator';
@@ -275,8 +276,49 @@ export function updateContextHealth(ctx: ContextAssemblyCtx): void {
   }
 }
 
+/**
+ * Item2 剪枝短路：非破坏地测量「若对原始 transcript 做系统 A 同款 tool-result 预算化
+ * （2000 token/结果），token 会降到多少」。只用于判断付费 AI 摘要是否真有必要——
+ * 系统 A 的 compressionPipeline 每轮已对 apiView 做同样预算化，系统 B 却按原始
+ * transcript 计 token，导致 raw 很大但 budgeted apiView 已够小时仍误付费摘要。
+ *
+ * 关键：在深拷贝上跑，绝不 mutate ctx.runtime.messages（那是系统 A 非破坏投影的真理源）。
+ * 不传 protected/spill——纯测量不会真截断活跃文件，无 re-read 死循环风险。
+ */
+export function estimatePrunedTranscriptTokens(messages: Message[]): number {
+  const copies = messages.map((m) => ({
+    id: m.id ?? '',
+    role: m.role as string,
+    content: m.content || '',
+    toolCallId: (m as { toolCallId?: string }).toolCallId,
+  }));
+  applyToolResultBudget(copies, new CompressionState(), { maxTokensPerResult: 2000 });
+  return copies.reduce((sum, m) => sum + estimateTokens(m.content || ''), 0);
+}
+
+/**
+ * Item2 卡死护栏的纯状态转移：付费摘要后仍≥阈值则连续计数 +1，达上限即应暂停；
+ * 降下去则清零。抽出便于单测，与 _consecutiveTruncations 断路器同范式。
+ */
+export function nextCompactionGuardState(
+  prevConsecutive: number,
+  maxConsecutive: number,
+  stillOverThreshold: boolean,
+): { consecutive: number; shouldPause: boolean } {
+  if (!stillOverThreshold) return { consecutive: 0, shouldPause: false };
+  const consecutive = prevConsecutive + 1;
+  return { consecutive, shouldPause: consecutive >= maxConsecutive };
+}
+
 export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<void> {
   try {
+    // Item2 卡死护栏：已判定窗口太小而暂停，则不再尝试压缩（避免每轮烧 token 摘要）。
+    // 消费 pipeline one-shot 信号，避免 stale true 残留。
+    if (ctx.runtime._autoCompactPaused) {
+      ctx.runtime.pipelineAutocompactNeeded = false;
+      return;
+    }
+
     const currentTokens = ctx.runtime.messages.reduce(
       (sum, msg) => sum + estimateTokens(msg.content || ''),
       0
@@ -317,6 +359,22 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
     ctx.runtime.pipelineAutocompactNeeded = false;
 
     if (decision.action === 'none') return;
+
+    // Item2 剪枝短路（仅绝对 token 阈值路径）：raw transcript 命中 triggerTokens，但工具
+    // 结果经系统 A 同款预算化后可能已够小——此时付费 AI 摘要没必要。pipeline-signal /
+    // usage-percent 触发是基于系统 A 已预算化的 apiView 做出的（其优先级高于 token-threshold，
+    // 故走到这里时 pipelineAutocompactNeeded 必为 false），无需重复剪枝，照常压缩。
+    if (decision.action === 'execute' && decision.trigger === 'token-threshold') {
+      const prunedTokens = estimatePrunedTranscriptTokens(ctx.runtime.messages);
+      if (!ctx.runtime.autoCompressor.shouldTriggerByTokens(prunedTokens)) {
+        // 无损预算化即可化解，不算卡死 → 清零计数器，跳过付费摘要。
+        ctx.runtime._consecutiveCompacts = 0;
+        logger.info(
+          `[AgentLoop] Lossless tool-result budgeting suffices (${currentTokens}→${prunedTokens} tokens) — skipping paid summary`,
+        );
+        return;
+      }
+    }
 
     logger.info(`[AgentLoop] Context pressure (${decision.trigger}): ${decision.reason} — triggering ${decision.action}`);
 
@@ -396,6 +454,35 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
         emitCompacted: true,
         survivorReason: `Compaction block inserted after ${decision.trigger} compaction`,
       });
+
+      // Item2 卡死护栏：压缩后重算 raw tokens，若仍≥触发口径（绝对阈值 OR 百分比 warning）
+      // 说明窗口太小、再压也降不下去 → 连续计数；达上限即暂停自动压缩并提示模型收窄范围，
+      // 避免每轮无谓地烧 token 摘要。与 shouldWrapUp（总预算）是不同维度，可并存。
+      const postTokens = ctx.runtime.messages.reduce(
+        (sum, msg) => sum + estimateTokens(msg.content || ''),
+        0,
+      );
+      const postRatio = health?.maxTokens ? postTokens / health.maxTokens : 0;
+      const stillOver = ctx.runtime.autoCompressor.shouldTriggerByTokens(postTokens)
+        || postRatio >= compressorConfig.warningThreshold;
+      const guard = nextCompactionGuardState(
+        ctx.runtime._consecutiveCompacts,
+        ctx.runtime.MAX_CONSECUTIVE_COMPACTS,
+        stillOver,
+      );
+      ctx.runtime._consecutiveCompacts = guard.consecutive;
+      if (guard.shouldPause) {
+        ctx.runtime._autoCompactPaused = true;
+        logger.warn(
+          `[AgentLoop] Compaction stuck: ${guard.consecutive} consecutive compactions still over threshold — pausing auto-compaction`,
+        );
+        ctx.injectSystemMessage(
+          '<context-window-too-small>\n' +
+          '上下文窗口太小，连续压缩后仍接近上限，已暂停自动压缩以免反复消耗 token。\n' +
+          '请收窄当前任务范围、尽快收尾，或开启新会话继续。\n' +
+          '</context-window-too-small>'
+        );
+      }
 
       // 检查是否应该收尾（总预算超限）—— 同样统一到所有触发路径
       if (ctx.runtime.autoCompressor.shouldWrapUp()) {

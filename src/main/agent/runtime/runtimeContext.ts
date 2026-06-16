@@ -233,6 +233,11 @@ export interface RuntimeContext {
   _networkRetryCount?: number;
   _consecutiveTruncations: number;
   MAX_CONSECUTIVE_TRUNCATIONS: number;
+  /** Item2 卡死护栏：连续付费摘要后仍未降到阈值下的次数。降下去清零。 */
+  _consecutiveCompacts: number;
+  MAX_CONSECUTIVE_COMPACTS: number;
+  /** ≥MAX_CONSECUTIVE_COMPACTS 后置位：窗口太小，暂停自动压缩、停止烧 token 摘要。 */
+  _autoCompactPaused: boolean;
 
   // --- Content verification ---
   contentVerificationRetries: Map<string, number>;

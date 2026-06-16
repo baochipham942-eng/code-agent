@@ -301,6 +301,9 @@ export class AgentLoop {
       _networkRetryCount: 0,
       _consecutiveTruncations: 0,
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
+      _consecutiveCompacts: 0,
+      MAX_CONSECUTIVE_COMPACTS: 2,
+      _autoCompactPaused: false,
 
       // Content verification
       contentVerificationRetries: new Map(),

@@ -2207,4 +2207,164 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     expect(serviceMocks.sessionManager.replaceMessages).not.toHaveBeenCalled();
     expect(ctx.onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'context_compressed' }));
   });
+
+  // ==========================================================================
+  // Item2 压缩系统 B 护栏：卡死护栏 + 剪枝短路（只动系统 B，不碰系统 A pipeline）
+  // ==========================================================================
+
+  it('skips compaction entirely when auto-compaction is paused (Item2 卡死护栏)', async () => {
+    const sessionId = `session-autocompact-paused-${Date.now()}`;
+    vi.mocked(getContextHealthService).mockReturnValue({
+      get: vi.fn().mockReturnValue({ usagePercent: 95, currentTokens: 120000, maxTokens: 128000 }),
+      update: vi.fn(),
+    } as never);
+    const ctx = {
+      sessionId,
+      agentId: undefined,
+      messages: Array.from({ length: 8 }, (_, i) =>
+        buildMessage(`paused-${i}`, i === 0 ? 'user' : 'assistant', 'paused transcript '.repeat(200))),
+      hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
+      onEvent: vi.fn(),
+      modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
+      toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
+      workingDirectory: process.cwd(),
+      isDefaultWorkingDirectory: true,
+      persistentSystemContext: [],
+      isSimpleTaskMode: false,
+      compressionPipeline: new CompressionPipeline(),
+      compressionState: new CompressionState(),
+      pipelineAutocompactNeeded: true,
+      _autoCompactPaused: true,
+      _consecutiveCompacts: 2,
+      MAX_CONSECUTIVE_COMPACTS: 2,
+      autoCompressor: {
+        shouldTriggerByTokens: vi.fn().mockReturnValue(true),
+        getConfig: vi.fn().mockReturnValue({ enabled: true, warningThreshold: 0.75, preserveRecentCount: 2 }),
+        shouldWrapUp: vi.fn().mockReturnValue(false),
+        getCompactionCount: vi.fn().mockReturnValue(0),
+        getStats: vi.fn().mockReturnValue({ compressionCount: 0, totalSavedTokens: 0 }),
+        recordCompaction: vi.fn(),
+      },
+      systemPrompt: '',
+      hookManager: undefined,
+    };
+
+    const assembly = new ContextAssembly(ctx as never);
+    await assembly.checkAndAutoCompress();
+
+    expect(ctx.autoCompressor.recordCompaction).not.toHaveBeenCalled();
+    expect(ctx.messages.some((m: Message) => m.compaction)).toBe(false);
+    // one-shot pipeline 信号被消费，避免 stale true 残留
+    expect(ctx.pipelineAutocompactNeeded).toBe(false);
+  });
+
+  it('short-circuits paid summary when lossless tool-result budgeting suffices (Item2 剪枝短路)', async () => {
+    const sessionId = `session-prune-shortcircuit-${Date.now()}`;
+    // 一个超大工具结果：原始 transcript 命中绝对阈值，但预算化（2000/结果）后远低于阈值
+    const hugeToolOutput = 'lorem ipsum dolor '.repeat(40_000);
+    vi.mocked(getContextHealthService).mockReturnValue({
+      get: vi.fn().mockReturnValue({ usagePercent: 40, currentTokens: 90000, maxTokens: 1_000_000 }),
+      update: vi.fn(),
+    } as never);
+    const ctx = {
+      sessionId,
+      agentId: undefined,
+      messages: [
+        buildMessage('u1', 'user', 'run a command'),
+        buildMessage('a1', 'assistant', 'running'),
+        buildMessage('t1', 'tool', hugeToolOutput),
+      ],
+      hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
+      onEvent: vi.fn(),
+      modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
+      toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
+      workingDirectory: process.cwd(),
+      isDefaultWorkingDirectory: true,
+      persistentSystemContext: [],
+      isSimpleTaskMode: false,
+      compressionPipeline: new CompressionPipeline(),
+      compressionState: new CompressionState(),
+      pipelineAutocompactNeeded: false,
+      _autoCompactPaused: false,
+      _consecutiveCompacts: 1,
+      MAX_CONSECUTIVE_COMPACTS: 2,
+      autoCompressor: {
+        // 绝对阈值 50k：raw（巨大）命中，pruned（~2k）不命中
+        shouldTriggerByTokens: vi.fn((tokens: number) => tokens >= 50_000),
+        getConfig: vi.fn().mockReturnValue({ enabled: true, warningThreshold: 0.75, preserveRecentCount: 2 }),
+        shouldWrapUp: vi.fn().mockReturnValue(false),
+        getCompactionCount: vi.fn().mockReturnValue(0),
+        getStats: vi.fn().mockReturnValue({ compressionCount: 0, totalSavedTokens: 0 }),
+        recordCompaction: vi.fn(),
+      },
+      systemPrompt: '',
+      hookManager: undefined,
+    };
+
+    const assembly = new ContextAssembly(ctx as never);
+    await assembly.checkAndAutoCompress();
+
+    // 无损预算化即可化解 → 不付费摘要，且不破坏原始 transcript
+    expect(ctx.autoCompressor.recordCompaction).not.toHaveBeenCalled();
+    expect(ctx.messages.some((m: Message) => m.compaction)).toBe(false);
+    expect(ctx.messages[2].content).toBe(hugeToolOutput);
+    // 可无损化解不算卡死 → 计数器清零
+    expect(ctx._consecutiveCompacts).toBe(0);
+  });
+
+  it('pauses after consecutive compactions that stay over threshold (Item2 卡死护栏)', async () => {
+    const sessionId = `session-compact-stuck-${Date.now()}`;
+    vi.mocked(getContextHealthService).mockReturnValue({
+      get: vi.fn().mockReturnValue({ usagePercent: 95, currentTokens: 120000, maxTokens: 128000 }),
+      update: vi.fn(),
+    } as never);
+    const ctx = {
+      sessionId,
+      agentId: undefined,
+      messages: Array.from({ length: 8 }, (_, i) =>
+        buildMessage(`stuck-${i}`, i === 0 ? 'user' : 'assistant', 'stuck transcript '.repeat(200))),
+      hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
+      onEvent: vi.fn(),
+      modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
+      toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
+      workingDirectory: process.cwd(),
+      isDefaultWorkingDirectory: true,
+      persistentSystemContext: [],
+      isSimpleTaskMode: false,
+      compressionPipeline: new CompressionPipeline(),
+      compressionState: new CompressionState(),
+      pipelineAutocompactNeeded: false,
+      _autoCompactPaused: false,
+      // 预置已连续 1 次：本轮再压一次仍 over → 达上限 2 → 暂停
+      _consecutiveCompacts: 1,
+      MAX_CONSECUTIVE_COMPACTS: 2,
+      autoCompressor: {
+        shouldTriggerByTokens: vi.fn().mockReturnValue(true), // 始终 over → stillOver 恒真
+        getConfig: vi.fn().mockReturnValue({ enabled: true, warningThreshold: 0.75, preserveRecentCount: 2 }),
+        shouldWrapUp: vi.fn().mockReturnValue(false),
+        getCompactionCount: vi.fn().mockReturnValue(1),
+        getStats: vi.fn().mockReturnValue({ compressionCount: 1, totalSavedTokens: 123 }),
+        recordCompaction: vi.fn(),
+      },
+      systemPrompt: '',
+      hookManager: undefined,
+    };
+
+    const assembly = new ContextAssembly(ctx as never);
+    await assembly.checkAndAutoCompress();
+
+    // 本轮压缩成功
+    expect(ctx.autoCompressor.recordCompaction).toHaveBeenCalled();
+    // 连续计数达上限 → 暂停自动压缩
+    expect(ctx._consecutiveCompacts).toBe(2);
+    expect(ctx._autoCompactPaused).toBe(true);
+    // 注入了窗口太小的收窄提示（直接 push 到 messages 或经 hook buffer）
+    const injectedInMessages = ctx.messages.some(
+      (m: Message) => typeof m.content === 'string' && m.content.includes('context-window-too-small'),
+    );
+    const injectedViaBuffer = ctx.hookMessageBuffer.add.mock.calls.some(
+      (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('context-window-too-small'),
+    );
+    expect(injectedInMessages || injectedViaBuffer).toBe(true);
+  });
 });

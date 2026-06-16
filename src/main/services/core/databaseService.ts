@@ -24,7 +24,7 @@ import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/c
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository } from './repositories';
+import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord } from './repositories';
 import { createSwarmTraceRepo } from './repositories/swarmTraceFactory';
 import type { SwarmTraceRepo } from '../../../shared/contract/swarmTrace';
 
@@ -83,6 +83,7 @@ export class DatabaseService {
   private projectRepo!: ProjectRepository;
   private swarmTraceRepo!: SwarmTraceRepo;
   private pendingApprovalRepo!: PendingApprovalRepository;
+  private permissionDecisionRepo!: PermissionDecisionRepository;
 
   constructor() {
     const userDataPath = app?.getPath?.('userData') || process.cwd();
@@ -193,6 +194,7 @@ export class DatabaseService {
       this.projectRepo = new ProjectRepository(this.db);
       this.swarmTraceRepo = createSwarmTraceRepo(this.db);
       this.pendingApprovalRepo = new PendingApprovalRepository(this.db);
+      this.permissionDecisionRepo = new PermissionDecisionRepository(this.db);
 
       const crashedSessions = this.sessionRepo.markCrashedActiveSessions(Date.now());
       if (crashedSessions.interrupted > 0 || crashedSessions.orphaned > 0) {
@@ -230,6 +232,42 @@ export class DatabaseService {
    */
   getDb(): BetterSqlite3.Database | null {
     return this.db;
+  }
+
+  // --------------------------------------------------------------------------
+  // Permission Decision Ledger（ADR-022 第一期，append-only）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 追加一条权限决策到事件账本。**fail-safe**：db 未就绪或写入失败都静默吞错，
+   * 绝不让账本写入影响权限判定 / 工具执行（内存环形缓冲仍是主路径）。
+   */
+  appendPermissionDecision(input: PermissionDecisionInput): void {
+    try {
+      if (!this.db || !this.permissionDecisionRepo) return;
+      this.permissionDecisionRepo.append(input);
+    } catch (err) {
+      logger.warn('[DatabaseService] appendPermissionDecision failed (ignored):', err);
+    }
+  }
+
+  getRecentPermissionDecisions(limit = 50): PermissionDecisionRecord[] {
+    if (!this.db || !this.permissionDecisionRepo) return [];
+    try {
+      return this.permissionDecisionRepo.getRecent(limit);
+    } catch (err) {
+      logger.warn('[DatabaseService] getRecentPermissionDecisions failed (ignored):', err);
+      return [];
+    }
+  }
+
+  countPermissionDecisions(): number {
+    if (!this.db || !this.permissionDecisionRepo) return 0;
+    try {
+      return this.permissionDecisionRepo.count();
+    } catch {
+      return 0;
+    }
   }
 
   // --------------------------------------------------------------------------

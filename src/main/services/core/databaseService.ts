@@ -27,7 +27,7 @@ export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, Projec
 import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution } from './repositories';
 import { buildRecoverySnapshot, acknowledgeRecovery, type RecoverySnapshot } from './crashRecovery';
 import { createSwarmTraceRepo } from './repositories/swarmTraceFactory';
-import type { SwarmTraceRepo, SwarmRunEventRecord } from '../../../shared/contract/swarmTrace';
+import type { SwarmTraceRepo, SwarmRunEventRecord, SwarmRunListItem } from '../../../shared/contract/swarmTrace';
 import { buildSessionLedger, type LedgerSources } from './sessionLedgerProjection';
 import { EMPTY_LEDGER_COST, type SessionLedger, type SessionLedgerCost } from '../../../shared/contract/sessionLedger';
 
@@ -376,23 +376,58 @@ export class DatabaseService {
     }
   }
 
-  /** 某会话相关的 Swarm run 内事件（一本账协同 lane 的细粒度时间线）。fail-safe。 */
-  private readSwarmEventsForSession(sessionId: string, runLimit = 50): SwarmRunEventRecord[] {
+  /**
+   * 某会话的 Swarm run（协同 lane 源）。**按 session_id 直接查 swarm_runs**，
+   * 不走 listRuns 的全局最近 N 截断——否则某 session 的 run 若不在全局最近 N 内会被静默漏掉（MED-1）。
+   * fail-safe，失败返回空。
+   */
+  private readSwarmRunsForSession(sessionId: string, limit = 200): SwarmRunListItem[] {
+    if (!this.db) return [];
     try {
-      const runs = this.swarmTraceRepo.listRuns(runLimit).filter((r) => r.sessionId === sessionId);
-      const events: SwarmRunEventRecord[] = [];
-      for (const run of runs) {
-        try {
-          const detail = this.swarmTraceRepo.getRunDetail(run.id);
-          if (detail) events.push(...detail.events);
-        } catch {
-          // 单个 run 明细读失败跳过，不影响其余
-        }
-      }
-      return events;
+      const rows = this.db.prepare(`
+        SELECT id, session_id, status, coordinator, started_at, ended_at,
+               total_agents, completed_count, failed_count, total_cost_usd,
+               total_tokens_in, total_tokens_out, trigger
+        FROM swarm_runs WHERE session_id = ?
+        ORDER BY started_at ASC, id ASC LIMIT ?
+      `).all(sessionId, limit) as Array<Record<string, unknown>>;
+      return rows.map((r): SwarmRunListItem => {
+        const startedAt = Number(r.started_at);
+        const endedAt = r.ended_at == null ? null : Number(r.ended_at);
+        return {
+          id: String(r.id),
+          sessionId: (r.session_id as string | null) ?? null,
+          status: String(r.status) as SwarmRunListItem['status'],
+          coordinator: String(r.coordinator) as SwarmRunListItem['coordinator'],
+          startedAt,
+          endedAt,
+          durationMs: endedAt == null ? null : endedAt - startedAt,
+          totalAgents: Number(r.total_agents ?? 0),
+          completedCount: Number(r.completed_count ?? 0),
+          failedCount: Number(r.failed_count ?? 0),
+          totalCostUsd: Number(r.total_cost_usd ?? 0),
+          totalTokensIn: Number(r.total_tokens_in ?? 0),
+          totalTokensOut: Number(r.total_tokens_out ?? 0),
+          trigger: String(r.trigger) as SwarmRunListItem['trigger'],
+        };
+      });
     } catch {
       return [];
     }
+  }
+
+  /** 给定 run id 集合，读出各 run 的内部事件（协同 lane 细粒度时间线）。fail-safe。 */
+  private readSwarmEventsForRuns(runIds: string[]): SwarmRunEventRecord[] {
+    const events: SwarmRunEventRecord[] = [];
+    for (const runId of runIds) {
+      try {
+        const detail = this.swarmTraceRepo.getRunDetail(runId);
+        if (detail) events.push(...detail.events);
+      } catch {
+        // 单个 run 明细读失败跳过，不影响其余
+      }
+    }
+    return events;
   }
 
   /**
@@ -410,11 +445,12 @@ export class DatabaseService {
         return [];
       }
     };
+    const swarmRuns = this.readSwarmRunsForSession(sessionId);
     const sources: LedgerSources = {
       messages: safe(() => this.getMessages(sessionId, 500)),
       taskEvents: safe(() => this.getSessionTaskEvents(sessionId, { limit: 200 })),
-      swarmRuns: safe(() => this.swarmTraceRepo.listRuns(50).filter((r) => r.sessionId === sessionId)),
-      swarmEvents: this.readSwarmEventsForSession(sessionId),
+      swarmRuns,
+      swarmEvents: this.readSwarmEventsForRuns(swarmRuns.map((r) => r.id)),
       decisions: this.getPermissionDecisionsBySession(sessionId),
       executions: this.getToolExecutionsBySession(sessionId),
       cost: this.readSessionCost(sessionId),

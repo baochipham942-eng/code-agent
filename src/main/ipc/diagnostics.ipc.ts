@@ -174,6 +174,25 @@ export function registerDiagnosticsHandlers(ipcMain: IpcMain): void {
           }
         }
 
+        // 第四期：批量对账扫描出口（按需拉演示证据）。纯只读、fail-safe。
+        case 'swarmReconcileScan': {
+          const payload = (request.payload ?? {}) as { limit?: number };
+          try {
+            const { getDatabase } = await import('../services/core/databaseService');
+            const { runReconcileScan, createDatabaseReconcileReader } = await import('../services/core/swarmReconcileService');
+            const report = runReconcileScan(createDatabaseReconcileReader(getDatabase()), {
+              now: Date.now(),
+              limit: payload.limit,
+            });
+            return { success: true, data: report };
+          } catch {
+            return {
+              success: true,
+              data: { generatedAt: 0, scannedCount: 0, matched: 0, drifted: [], skipped: [], errors: [], coverageNote: 'reconcile-scan-error' },
+            };
+          }
+        }
+
         // /cost — 预算状态
         case 'budget': {
           const { getBudgetService } = await import('../services/core/budgetService');

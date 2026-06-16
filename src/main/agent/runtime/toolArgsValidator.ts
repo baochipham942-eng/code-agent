@@ -121,6 +121,33 @@ function isTypeCompatible(actual: string, expected: string): boolean {
   return false;
 }
 
+/**
+ * 把工具的 inputSchema 渲染成模型可读的字段清单（人话 schema）。
+ * 校验失败分支和 parse-error 分支共用，避免"先报语法→再报字段"的连环重试。
+ *
+ * @param requiredOnly 字段过多时只列必填，防止 schema 回灌膨胀 token。
+ *   省略时默认全列（保持 formatValidationError 原有行为不变）。
+ */
+export function formatSchemaForModel(
+  properties: Record<string, JSONSchemaProperty>,
+  required: string[],
+  requiredOnly = false,
+): string[] {
+  const entries = Object.entries(properties);
+  const shown = requiredOnly ? entries.filter(([key]) => required.includes(key)) : entries;
+  const lines: string[] = [];
+  lines.push(
+    requiredOnly
+      ? `参数 schema（共 ${entries.length} 个参数，只列必填）：`
+      : `完整参数 schema：`,
+  );
+  for (const [key, propSchema] of shown) {
+    const isRequired = required.includes(key);
+    lines.push(`  - \`${key}\`: ${propSchema.type ?? 'any'} ${isRequired ? '(必填)' : '(可选)'}${propSchema.description ? ` — ${propSchema.description}` : ''}`);
+  }
+  return lines;
+}
+
 function formatValidationError(
   toolName: string,
   issues: ValidationIssue[],
@@ -138,11 +165,7 @@ function formatValidationError(
     }
   }
   lines.push(``);
-  lines.push(`完整参数 schema：`);
-  for (const [key, propSchema] of Object.entries(properties)) {
-    const isRequired = required.includes(key);
-    lines.push(`  - \`${key}\`: ${propSchema.type ?? 'any'} ${isRequired ? '(必填)' : '(可选)'}${propSchema.description ? ` — ${propSchema.description}` : ''}`);
-  }
+  lines.push(...formatSchemaForModel(properties, required));
   lines.push(`</tool-args-validation-error>`);
   return lines.join('\n');
 }

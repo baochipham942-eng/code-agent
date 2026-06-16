@@ -24,7 +24,7 @@ import type {
 } from '../../agent/loopTypes';
 import { classifyToolCalls } from '../../agent/toolExecution/parallelStrategy';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
-import { validateToolArgs } from './toolArgsValidator';
+import { validateToolArgs, formatSchemaForModel } from './toolArgsValidator';
 import { getToolDefinitionWithCloudMeta } from '../../tools/dispatch/toolDefinitions';
 import { MAX_PARALLEL_TOOLS } from '../../agent/loopTypes';
 import type { RuntimeContext } from './runtimeContext';
@@ -504,12 +504,27 @@ export class ToolExecutionEngine {
         duration: Date.now() - startTime,
       };
 
+      // 回贴 schema：只报"JSON 语法错误"会让模型重发同样缺字段的调用，触发
+      // "先修语法→又报字段错→再修"的连环重试。把工具自身 inputSchema 一并回灌，
+      // 模型重发时能同时修正语法和字段。schema 来源与 validation 分支同源。
+      const parseErrorDefinition = getToolDefinitionWithCloudMeta(toolCall.name);
+      const parseErrorSchema = parseErrorDefinition?.inputSchema;
+      let schemaSection = '';
+      if (parseErrorSchema?.properties) {
+        const properties = parseErrorSchema.properties;
+        const required = parseErrorSchema.required ?? [];
+        // 字段过多时只列必填，避免 schema 回灌膨胀
+        const requiredOnly = Object.keys(properties).length > 25;
+        schemaSection = '\n\n' + formatSchemaForModel(properties, required, requiredOnly).join('\n');
+      }
+
       this.contextAssembly.injectSystemMessage(
         `<tool-arguments-parse-error>\n` +
         `⚠️ ERROR: Failed to parse JSON arguments for tool "${toolCall.name}".\n` +
         `Parse error: ${errorMessage}\n` +
         `Raw arguments (truncated): ${rawArgs.substring(0, 300)}\n\n` +
-        `Please ensure your tool call arguments are valid JSON.\n` +
+        `Please ensure your tool call arguments are valid JSON.` +
+        schemaSection + `\n` +
         `</tool-arguments-parse-error>`
       );
 

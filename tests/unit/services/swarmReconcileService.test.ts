@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { rebuildRunDetail } from '../../../src/main/services/core/swarmRollupProjection';
 import {
   runReconcileScan,
+  formatReconcileScanReport,
+  createDatabaseReconcileReader,
   type ReconcileScanReader,
 } from '../../../src/main/services/core/swarmReconcileService';
 import type { SwarmLedgerEvent } from '../../../src/shared/contract/swarmLedger';
@@ -130,5 +132,51 @@ describe('runReconcileScan（第四期 · 后台对账扫描核心，纯只读�
     expect(report.scannedCount).toBe(3); // limit 生效
     expect(report.coverageNote).toContain('3');
     expect(report.matched).toBe(3);
+  });
+});
+
+describe('formatReconcileScanReport（对账摘要文本，进 Dream 报告/运行证据）', () => {
+  it('全匹配 → 含「对账」标题与统计(coverageNote)', () => {
+    const events = closedRunEvents('A');
+    const report = runReconcileScan(makeReader({ A: { ledger: events, stored: rebuildRunDetail(events) } }), { now: NOW });
+    const text = formatReconcileScanReport(report);
+    expect(text).toContain('对账');
+    expect(text).toContain(report.coverageNote);
+  });
+
+  it('有偏差 → 列出 drift 的 runId 与字段', () => {
+    const events = closedRunEvents('B');
+    const stored = rebuildRunDetail(events)!;
+    const drifted = { ...stored, run: { ...stored.run, totalTokensOut: 999 } };
+    const report = runReconcileScan(makeReader({ B: { ledger: events, stored: drifted } }), { now: NOW });
+    const text = formatReconcileScanReport(report);
+    expect(text).toContain('B');
+    expect(text).toContain('totalTokensOut');
+  });
+
+  it('有错误 → 列出 error 的 runId', () => {
+    const report = runReconcileScan(makeReader({ BAD: { ledger: [], stored: null, throwOnLedger: true } }), { now: NOW });
+    const text = formatReconcileScanReport(report);
+    expect(text).toContain('BAD');
+  });
+});
+
+describe('createDatabaseReconcileReader（生产适配器，委托 db 只读口）', () => {
+  it('listRunIds/getLedgerByRun/getStoredRunDetail 正确委托 db（stored 取 raw rollup）', () => {
+    const events = closedRunEvents('Z');
+    const stored = rebuildRunDetail(events);
+    const getRunDetail = vi.fn(() => stored);
+    const db = {
+      listSwarmLedgerRunIds: vi.fn((_s?: string, limit?: number) => ['Z'].slice(0, limit ?? 1)),
+      getSwarmLedgerByRun: vi.fn(() => events),
+      getSwarmTraceRepo: vi.fn(() => ({ getRunDetail })),
+    };
+    const reader = createDatabaseReconcileReader(db);
+
+    expect(reader.listRunIds(10)).toEqual(['Z']);
+    expect(reader.getLedgerByRun('Z')).toBe(events);
+    expect(reader.getStoredRunDetail('Z')).toBe(stored);
+    expect(db.getSwarmLedgerByRun).toHaveBeenCalledWith('Z');
+    expect(getRunDetail).toHaveBeenCalledWith('Z'); // raw rollup（非 PreferLedger，避免循环自证）
   });
 });

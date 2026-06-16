@@ -14,6 +14,12 @@ import {
   runDreamMemoryConsolidation,
   type DreamRunOptions,
 } from './dreamMemoryService';
+import {
+  createDatabaseReconcileReader,
+  formatReconcileScanReport,
+  runReconcileScan,
+  type ReconcileScanReport,
+} from '../core/swarmReconcileService';
 
 const logger = createLogger('DreamExecutor');
 
@@ -21,7 +27,10 @@ export const DREAM_SKILL_NAME = 'dream';
 
 export type DreamExecutorOverrides = Partial<
   Pick<DreamRunOptions, 'db' | 'candidateExtractor' | 'memoryIO' | 'now' | 'windowDays' | 'sessionLimit' | 'pruneOlderThanDays'>
->;
+> & {
+  /** 测试/扩展注入：Dream 收尾对账步骤（默认从 getDatabase 构造 reader 跑 runReconcileScan）。 */
+  reconcileScan?: (now: number) => ReconcileScanReport | null;
+};
 
 /** cron 的 '/dream --auto'（人不在场）vs 手动 /dream。dream 写的是经 FTS 门验证的
  * memory（被动数据、可删除、轨迹库为权威），非可执行资产，故 auto 仍直写不走草稿；
@@ -53,9 +62,23 @@ export async function executeDreamRun(
     written: report.written.length,
     pruned: report.pruned.length,
   });
+  // 绑定 Dream（ADR-024 Q3）：收尾做一致性重整（对账）。确定性后置步骤、fail-safe，
+  // 与 Dream 的 LLM 记忆巩固互不连坐——对账抛错只记日志，不影响已完成的记忆写入。
+  let reconcileLine = '';
+  try {
+    const now = overrides.now ?? Date.now();
+    const scan = overrides.reconcileScan
+      ? overrides.reconcileScan(now)
+      : runReconcileScan(createDatabaseReconcileReader(getDatabase()), { now });
+    if (scan) reconcileLine = formatReconcileScanReport(scan);
+  } catch (error) {
+    logger.warn('Dream 收尾对账失败（不影响记忆写入）', { error: String(error) });
+  }
+
   return [
     `Dream executor: runDreamMemoryConsolidation (${auto ? 'auto-triggered' : 'manual'})`,
     formatDreamRunReport(report),
+    ...(reconcileLine ? [reconcileLine] : []),
   ].join('\n');
 }
 

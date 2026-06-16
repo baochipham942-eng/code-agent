@@ -114,3 +114,42 @@ export function runReconcileScan(
     coverageNote,
   };
 }
+
+/** 把对账报告渲染成可读摘要（并入 Dream 报告 → 落 cron_executions 作运行证据）。 */
+export function formatReconcileScanReport(report: ReconcileScanReport): string {
+  const lines: string[] = [`[Swarm 对账@${report.generatedAt}] ${report.coverageNote}`];
+  if (report.drifted.length > 0) {
+    lines.push('偏差：');
+    for (const r of report.drifted) {
+      const fields = r.drift
+        .filter((d) => !d.tolerated)
+        .map((d) => `${d.scope}/${d.field}(ledger=${String(d.rebuilt)} rollup=${String(d.stored)})`)
+        .join('; ');
+      lines.push(`  - ${r.runId}: ${fields}`);
+    }
+  }
+  if (report.errors.length > 0) {
+    lines.push('错误：');
+    for (const e of report.errors) lines.push(`  - ${e.runId}: ${e.error}`);
+  }
+  return lines.join('\n');
+}
+
+/** 对账 reader 所需的 db 只读口（DatabaseService 结构上满足）。 */
+export interface ReconcileReaderDb {
+  listSwarmLedgerRunIds(sessionId?: string, limit?: number): string[];
+  getSwarmLedgerByRun(runId: string): SwarmLedgerEvent[];
+  getSwarmTraceRepo(): { getRunDetail(runId: string): SwarmRunDetail | null };
+}
+
+/**
+ * 生产 reader：stored 取 **raw rollup**（swarmTraceRepo.getRunDetail），
+ * 不走 getSwarmRunDetailPreferLedger —— 否则 stored 也由 ledger 重建，变成循环自证。
+ */
+export function createDatabaseReconcileReader(db: ReconcileReaderDb): ReconcileScanReader {
+  return {
+    listRunIds: (limit) => db.listSwarmLedgerRunIds(undefined, limit),
+    getLedgerByRun: (runId) => db.getSwarmLedgerByRun(runId),
+    getStoredRunDetail: (runId) => db.getSwarmTraceRepo().getRunDetail(runId),
+  };
+}

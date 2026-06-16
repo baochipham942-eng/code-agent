@@ -799,11 +799,12 @@ const EmptyState: React.FC<{
   workbenchSnapshot,
 }) => {
   const suggestions = defaultSuggestions;
-  const contextLabel = formatNewSessionContextLabel(workingDirectory);
-  const contextTitle = workingDirectory?.trim()
-    ? `继承工作区：${workingDirectory.trim()}`
-    : '不继承项目或工作区上下文';
-  const contextDetails = workingDirectory?.trim()
+  // 纯对话（无工作区）是默认形态，不必再标「空白会话」——用户反馈看不懂、是噪音。
+  // 只有继承了项目/工作区上下文时才显示上下文标签（"项目会话 · name"），告诉用户这条会话带了上下文。
+  const hasWorkspaceContext = Boolean(workingDirectory?.trim());
+  const contextLabel = hasWorkspaceContext ? formatNewSessionContextLabel(workingDirectory) : null;
+  const contextTitle = hasWorkspaceContext ? `继承工作区：${workingDirectory!.trim()}` : '';
+  const contextDetails = hasWorkspaceContext
     ? buildNewSessionContextDetails(workbenchSnapshot)
     : null;
 
@@ -817,12 +818,14 @@ const EmptyState: React.FC<{
               选一个示例，或者直接输入你想完成的事。
             </p>
           </div>
-          <span
-            title={contextTitle}
-            className="shrink-0 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-zinc-400"
-          >
-            {contextLabel}
-          </span>
+          {contextLabel && (
+            <span
+              title={contextTitle}
+              className="shrink-0 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-zinc-400"
+            >
+              {contextLabel}
+            </span>
+          )}
         </div>
         {contextDetails && (
           <div className="mb-4 truncate text-[11px] text-zinc-500">

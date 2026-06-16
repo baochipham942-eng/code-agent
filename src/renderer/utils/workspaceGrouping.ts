@@ -123,7 +123,8 @@ export function groupByWorkspace(sessions: SessionWithMeta[]): WorkspaceGroup[] 
     if (key === UNCATEGORIZED_WORKSPACE_KEY) {
       uncategorized = {
         key,
-        name: '未分类',
+        // 这是默认的纯对话归宿（非"没分类好"的失败态），命名为「对话」更贴近实际语义。
+        name: '对话',
         isUncategorized: true,
         paths,
         sessions: sortedSessions,

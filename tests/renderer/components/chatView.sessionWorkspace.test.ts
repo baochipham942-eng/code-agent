@@ -200,7 +200,7 @@ describe('ChatView session shell', () => {
     expect(html).not.toContain('/repo/other');
   });
 
-  it('labels blank new sessions without falling back to stale app workspace', () => {
+  it('does not fall back to stale app workspace for blank new sessions (and shows no context badge)', () => {
     const originalSessions = sessionState.sessions;
     sessionState.sessions = [{
       ...(originalSessions[0] as Record<string, unknown>),
@@ -210,8 +210,9 @@ describe('ChatView session shell', () => {
     try {
       const html = renderToStaticMarkup(React.createElement(ChatView));
 
-      expect(html).toContain('空白会话');
-      expect(html).toContain('不继承项目或工作区上下文');
+      // 纯对话（默认形态）不再显示「空白会话」上下文标签——用户反馈看不懂、是噪音。
+      expect(html).not.toContain('空白会话');
+      // 关键：绝不能错误继承上一个项目/工作区的上下文。
       expect(html).not.toContain('继承：工作区 · Browser');
       expect(html).not.toContain('项目会话 · other');
       expect(html).not.toContain('/repo/other');

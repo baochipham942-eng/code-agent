@@ -87,11 +87,11 @@ describe('内置 skill 分类回填（builtinSkills.ts SSoT）', () => {
     expect(groups.find((g) => g.key === '__uncategorized__')).toBeUndefined();
     const counts = Object.fromEntries(groups.map((g) => [g.key, g.skills.length]));
     expect(counts).toMatchObject({
-      'docs-office': 2, // xlsx, meeting-summary
+      'docs-office': 3, // xlsx, meeting-summary, reviewer-facing-delivery
       'data-analysis': 2, // data-cleaning, data-analysis-helper
-      research: 4, // literature-review, paper-distillation, research-monitor, opencli-search
-      automation: 6, // computer-housekeeper, contract-review, image-ocr-search, photo-archive, create-role, edit-role
-      development: 14, // commit, review, test, explain, refactor, docker, dream, distill + 方法论 6（brainstorm/tdd/debug/verify/merge/work-review，roadmap 2.3）
+      research: 5, // literature-review, paper-distillation, research-monitor, opencli-search, research-brief-and-split
+      automation: 7, // computer-housekeeper, contract-review, image-ocr-search, photo-archive, create-role, edit-role, task-brief-builder
+      development: 15, // commit, review, test, explain, refactor, docker, dream, distill + 方法论 7（brainstorm/tdd/debug/verify/merge/work-review/implementation-closure）
     });
   });
 });

@@ -4,6 +4,25 @@
 > 第一轮（trace A–E + 空状态 15 点 + 侧栏简化）已在分支 `ui/session-declutter` 落地并验证生效。
 > 本文是第二轮 backlog，新会话据此逐条排查。动手前核对行号未漂移、先 `npm run build`（含 renderer！）再验。
 
+## 第二轮落地状态（2026-06-16，本轮已改）
+
+全部 A–E 11 条已落地，`npm run typecheck` + `npm run build`（含 renderer）均通过；新增/更新单测通过（仅 `skillsInstalled.categoryGroup` 一条预存在的、与本轮无关的分类计数漂移失败）。决策点已与用户确认：A=跳过耗尽源+Tavily key 池；C-6=默认开+移入 InputAddMenu 二级菜单；D-11=砍掉空白入口、纯 chat 不继承当默认。
+
+- **A-1**：`searchUtils.ts` 把 401/432 纳入 quota/auth 模式（长冷却）；`modules/network/webSearch.ts` 路由按 circuit-breaker 状态降级 + backfill 健康源；`searchStrategies.ts` 把 tavily 单 key 升级为 10-key 轮换池（命中 401/402/432/quota 自动切下一个，全耗尽才 trip 外层断路器）；10 个 key 写入 `~/.code-agent/.env` 与项目 `.env` 的 `TAVILY_API_KEYS`。
+- **B-2**：`modelDecision.ts` 默认模型（xiaomi/mimo-v2.5-pro）标 `default-model` 而非 `user-selected`；`RouteTraceChip.tsx` 新增 `shouldRenderModelDecisionChip`——默认模型/纯直连且无路由变化/降级/外部引擎异常时整条 chip 不显（`TraceNodeRenderer.tsx` 接线）。
+- **C-4**：`InlineWorkbenchBar.tsx` Auto 态且无手动选择时能力汇总行整条不显（`showCapabilitySummary`）。
+- **C-5**：`AgentChip.tsx` 默认 agent `return null`。
+- **C-6**：记忆开关默认开 + 从底栏移入 `InputAddMenu.tsx` 二级菜单（`ChatInput/index.tsx` 移除 Brain 按钮、传 props）。
+- **C-7**：`ModelSwitcher.tsx` provider 头只留名称 + 健康色点，检测/计费/来源/协议/endpoint 收进 hover tooltip。
+- **D-8**：未分类组关闭 force-expand（`sidebarGroupExpansion.ts` 新增 `disableForceExpand`），可正常折叠/展开。
+- **D-9**：`Sidebar.tsx` 非管理员不再渲染行内 Replay(Eye) 按钮（之前是 disabled 仍可见）。
+- **D-10**：状态筛选 tab 对非管理员整排隐藏，只留搜索框。
+- **D-11**：顶部「新会话」改为纯对话不继承上下文；独立「空白」入口已下线；项目上下文会话走各项目组 + 按钮。
+- **E-3**：`App.tsx` 右栏 TaskPanel 自动展开只看真实内容信号（待办/任务/待确认/后台/swarm/workflow），不再因 thinking/processing 瞬时态展开 → 默认收起、有内容才展开。
+  - ⚠️ E-3 无法在静态环境复现确切的"未开始却展开"现象（switchSession 会清 todos，空会话各信号应为 false）；本轮按交接文档的目标语义（默认收起 + 内容驱动展开）改在最可控的 seam（`hasTaskWorkbenchContent`）。**请 dogfood 实测确认**：空/未开始会话右栏收起、产生任务/产物后展开、会话结束后行为符合预期。
+
+---
+
 ## 已验证生效（上一轮，勿重复改）
 搜索失败现在是「已恢复」徽标 + 一行「联网搜索额度不足…」+「去设置换 key」按钮 + 「查看原始报错」折叠；无满屏红 JSON、无「暂停恢复」。状态语义、侧栏 hint 精简、底栏「思考·低」均生效。
 

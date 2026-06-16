@@ -91,7 +91,7 @@ describe('groupByWorkspace', () => {
     expect(groups[0].name).toBe('some-proj');
     expect(groups[1].isUncategorized).toBe(true);
     expect(groups[1].key).toBe(UNCATEGORIZED_WORKSPACE_KEY);
-    expect(groups[1].name).toBe('未分类');
+    expect(groups[1].name).toBe('对话');
     expect(groups[1].paths).toEqual([]);
     expect(groups[1].sessions.map((s) => s.id)).toEqual(['chat1', 'chat2']);
   });

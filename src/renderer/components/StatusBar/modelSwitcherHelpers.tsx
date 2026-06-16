@@ -464,6 +464,30 @@ export function ProviderTransportBadge({
   );
 }
 
+/**
+ * 把 provider 的检测状态/计费/来源/协议/endpoint 汇总成一段多行 tooltip 文本。
+ * C-7：模型菜单 provider 头不再平铺这些工程内幕 badge，收进 hover 详情。
+ */
+export function buildProviderMetaTitle(group: {
+  healthSummary: ProviderHealthSummary;
+  billingSummary: ProviderBillingSummary;
+  providerSourceLabel?: string;
+  providerProtocol?: ModelProviderProtocol;
+  providerTransportLabel?: string;
+  providerEndpoint?: string;
+}): string {
+  const protocolLabel = group.providerTransportLabel
+    || (group.providerProtocol === 'claude' ? 'Claude-compatible'
+      : group.providerProtocol === 'openai' ? 'OpenAI-compatible' : undefined);
+  return [
+    `状态: ${group.healthSummary.label} · ${group.healthSummary.detail}`,
+    `计费: ${group.billingSummary.label} · ${group.billingSummary.detail}`,
+    group.providerSourceLabel ? `来源: ${group.providerSourceLabel}` : null,
+    protocolLabel ? `协议: ${protocolLabel}` : null,
+    group.providerEndpoint ? `Endpoint: ${group.providerEndpoint}` : null,
+  ].filter(Boolean).join('\n');
+}
+
 export function formatNativeModelSwitcherTooltip(args: {
   engineLabel: string;
   currentModel: string;

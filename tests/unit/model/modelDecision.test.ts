@@ -133,6 +133,34 @@ describe('resolveModelDecision — 主聊天 adaptive 关闭', () => {
 
     expect(decision.reason).toBe('user-selected');
   });
+
+  it('labels the app DEFAULT model as default-model, not user-selected (chip noise fix)', () => {
+    const { decision } = resolveModelDecision(makeInput({
+      requestedConfig: makeConfig({ provider: 'xiaomi', model: 'mimo-v2.5-pro', adaptive: false }),
+      messages: SIMPLE_MESSAGE,
+    }));
+
+    expect(decision.reason).toBe('default-model');
+    expect(decision.strategySummary).toContain('默认模型');
+  });
+
+  it('still labels a non-default model as user-selected when adaptive is off', () => {
+    const { decision } = resolveModelDecision(makeInput({
+      requestedConfig: makeConfig({ provider: 'moonshot', model: 'kimi-k2.5', adaptive: false }),
+      messages: SIMPLE_MESSAGE,
+    }));
+
+    expect(decision.reason).toBe('user-selected');
+  });
+
+  it('keeps default-model label for the default model on the adaptive complex-task keep path', () => {
+    const { decision } = resolveModelDecision(makeInput({
+      requestedConfig: makeConfig({ provider: 'xiaomi', model: 'mimo-v2.5-pro', adaptive: true }),
+      messages: COMPLEX_MESSAGE,
+    }));
+
+    expect(decision.reason).toBe('default-model');
+  });
 });
 
 // --------------------------------------------------------------------------

@@ -25,7 +25,7 @@ import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnershi
 import { SkillStatusMessage } from './MessageBubble/SkillStatusMessage';
 import { GoalNoticeMessage } from './MessageBubble/GoalNoticeMessage';
 import { FallbackBanner } from './MessageBubble/FallbackBanner';
-import { RouteTraceChip } from './RouteTraceChip';
+import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip';
 import { TurnQualityStrip } from './TurnQualityStrip';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, GitBranch, RotateCcw, Wrench, CornerDownRight, ThumbsUp, ThumbsDown } from 'lucide-react';
@@ -458,7 +458,7 @@ const AssistantTextNode: React.FC<{
         <div className="mb-2 text-xs leading-relaxed text-zinc-400">{progressSummary}</div>
       )}
 
-      {node.modelDecision && (
+      {node.modelDecision && shouldRenderModelDecisionChip(node.modelDecision) && (
         <div className="mb-2 flex min-w-0">
           <RouteTraceChip
             decision={node.modelDecision}

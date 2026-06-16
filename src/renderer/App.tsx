@@ -59,7 +59,6 @@ import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
 import { useSwarmStore } from './stores/swarmStore';
 import { useWorkflowStore } from './stores/workflowStore';
-import { useTaskStore } from './stores/taskStore';
 import { useBackgroundTaskStore } from './stores/backgroundTaskStore';
 import { tauriCheckForUpdate } from './utils/tauriUpdater';
 import { setSentryRendererContext } from './observability/sentryRenderer';
@@ -67,8 +66,6 @@ import { setSentryRendererContext } from './observability/sentryRenderer';
 const logger = createLogger('App');
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1180;
 const WORKBENCH_MIN_VISIBLE_WIDTH = 900;
-const TASK_WORKBENCH_SESSION_STATUSES = new Set(['queued', 'running', 'paused', 'cancelling', 'error']);
-const TASK_WORKBENCH_PROGRESS_PHASES = new Set(['thinking', 'tool_pending', 'tool_running', 'generating']);
 const TASK_WORKBENCH_BACKGROUND_STATUSES = new Set(['queued', 'running', 'waiting_input', 'stalled', 'paused']);
 
 const SettingsModal = React.lazy(() => import('./components/SettingsModal').then((module) => ({
@@ -155,8 +152,6 @@ export const App: React.FC = () => {
     activeWorkbenchTab,
     openWorkbenchTab,
     syncTaskWorkbenchForActivity,
-    processingSessionIds,
-    sessionTaskProgress,
     pendingPermissionRequest,
     pendingPermissionSessionId,
     queuedPermissionRequests,
@@ -196,9 +191,6 @@ export const App: React.FC = () => {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const sessionTasks = useSessionStore((state) => state.sessionTasks);
   const todos = useSessionStore((state) => state.todos);
-  const currentSessionTaskState = useTaskStore((state) => (
-    currentSessionId ? state.sessionStates[currentSessionId] : undefined
-  ));
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
   const swarmIsRunning = useSwarmStore((state) => state.isRunning);
   const swarmExecutionPhase = useSwarmStore((state) => state.executionPhase);
@@ -595,16 +587,6 @@ export const App: React.FC = () => {
     };
   }, [openWorkbenchTab, setTaskPanelTab]);
 
-  const currentTaskProgress = currentSessionId ? sessionTaskProgress[currentSessionId] ?? null : null;
-  const hasSessionRuntimeActivity = Boolean(
-    currentSessionTaskState && TASK_WORKBENCH_SESSION_STATUSES.has(currentSessionTaskState.status),
-  );
-  const hasProcessingActivity = Boolean(
-    currentSessionId && processingSessionIds.has(currentSessionId),
-  );
-  const hasLiveTaskProgress = Boolean(
-    currentTaskProgress && TASK_WORKBENCH_PROGRESS_PHASES.has(currentTaskProgress.phase),
-  );
   const hasOpenSessionTask = sessionTasks.some((task) =>
     task.status === 'pending' || task.status === 'in_progress'
   );
@@ -637,11 +619,11 @@ export const App: React.FC = () => {
     || workflowSnapshot?.status === 'pending'
     || workflowSnapshot?.status === 'running',
   );
-  const hasTaskWorkbenchActivity = (
-    hasSessionRuntimeActivity
-    || hasProcessingActivity
-    || hasLiveTaskProgress
-    || hasOpenSessionTask
+  // E-3: 右栏 TaskPanel「按需展开」。只用真实内容信号（待办/任务/待确认/后台/swarm/workflow）
+  // 决定自动展开，不再因为会话处于 thinking/processing 这类瞬时运行态就展开——否则未开始/
+  // 纯思考阶段会出现「没内容却占地」。无内容时自动收起（auto 源），用户手动开的仍保留。
+  const hasTaskWorkbenchContent = (
+    hasOpenSessionTask
     || hasOpenTodo
     || hasVisiblePermissionRequest
     || hasQueuedPermissionRequest
@@ -651,8 +633,8 @@ export const App: React.FC = () => {
   );
 
   useEffect(() => {
-    syncTaskWorkbenchForActivity(hasTaskWorkbenchActivity);
-  }, [hasTaskWorkbenchActivity, syncTaskWorkbenchForActivity]);
+    syncTaskWorkbenchForActivity(hasTaskWorkbenchContent);
+  }, [hasTaskWorkbenchContent, syncTaskWorkbenchForActivity]);
 
   // dynamic-workflow 进度树事件通道（P3a）：workflow.ipc 专用 bridge 把 'workflow' domain
   // 投递到 'workflow:event'，payload 即完整 ScriptRunEvent（与 swarm 同款 raw-event 风格）。

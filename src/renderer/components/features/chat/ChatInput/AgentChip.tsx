@@ -23,7 +23,14 @@ export const AgentChip: React.FC<AgentChipProps> = ({ onOpenAgentCommand }) => {
     () => entries.find((entry) => entry.id === activeAgentId) ?? null,
     [activeAgentId, entries],
   );
-  const label = activeEntry?.name || 'Agent';
+
+  // 默认 agent（未显式 /agent 切换）不占位，避免底栏常驻 "Explorer / Agent" 噪音。
+  // 用户可通过 /agent 命令切换；切换后才显示当前 agent chip。
+  if (!activeEntry) {
+    return null;
+  }
+
+  const label = activeEntry.name;
 
   return (
     <button

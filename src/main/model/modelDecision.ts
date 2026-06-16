@@ -28,7 +28,7 @@ import type {
   ModelToolPolicy,
 } from '../../shared/contract/modelDecision';
 import type { ModelMessage } from './types';
-import { DEFAULT_MODELS } from '../../shared/constants';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import {
   formatProviderProtocolLabel,
   isDynamicCustomProviderId,
@@ -195,6 +195,8 @@ function buildStrategySummary(params: {
       return '任务策略选择深度模型，优先保证复杂任务质量。';
     case 'strategy-vision':
       return '任务策略选择视觉模型，处理图片或多模态输入。';
+    case 'default-model':
+      return '使用默认模型，未做自动切换。';
     case 'user-selected':
     default:
       if (!adaptiveEnabled) {
@@ -483,11 +485,16 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
     };
   }
 
-  // ---- 2. 主聊天：adaptive 关闭 → 用户指定直连 ----
+  // ---- 2. 主聊天：adaptive 关闭 → 直连 ----
+  // 默认模型（用户从未手动改过）不应标成「用户选择」，否则 trace chip 会误报
+  // “用户选择 mimo”。只有真正切到非默认模型才算 user-selected。
   if (requestedConfig.adaptive !== true) {
+    const directReason: ModelDecisionReason = isDefaultModelConfig(requestedConfig)
+      ? 'default-model'
+      : 'user-selected';
     return {
       config: requestedConfig,
-      decision: buildDecision('user-selected', requestedConfig.provider, requestedConfig.model),
+      decision: buildDecision(directReason, requestedConfig.provider, requestedConfig.model),
     };
   }
 
@@ -537,9 +544,17 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
     };
   }
 
-  // ---- 4. 其余情况：保持用户指定 ----
+  // ---- 4. 其余情况：保持请求模型（adaptive 开但未触发路由）----
+  const keepReason: ModelDecisionReason = isDefaultModelConfig(requestedConfig)
+    ? 'default-model'
+    : 'user-selected';
   return {
     config: requestedConfig,
-    decision: buildDecision('user-selected', requestedConfig.provider, requestedConfig.model, complexity),
+    decision: buildDecision(keepReason, requestedConfig.provider, requestedConfig.model, complexity),
   };
+}
+
+/** 是否为应用默认模型（用户从未手动切换过）。用于把默认路径与真实用户选择区分开。 */
+function isDefaultModelConfig(config: ModelConfig): boolean {
+  return config.provider === DEFAULT_PROVIDER && config.model === DEFAULT_MODEL;
 }

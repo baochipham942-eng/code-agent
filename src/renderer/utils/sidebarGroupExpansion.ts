@@ -16,19 +16,21 @@ export interface SidebarGroupExpansionView {
   protectionLabel: string | null;
 }
 
-export function shouldForceExpandSidebarGroup({
-  hasCurrentSession,
-  hasSearchFilters,
-  unfinishedCount,
-}: SidebarGroupExpansionSignals): boolean {
+export function shouldForceExpandSidebarGroup(
+  { hasCurrentSession, hasSearchFilters, unfinishedCount }: SidebarGroupExpansionSignals,
+  options?: { disableForceExpand?: boolean },
+): boolean {
+  // D-8：未分类组关掉 force-expand，否则它常驻当前/未完成会话会被永久钉成展开、无法折叠。
+  if (options?.disableForceExpand) return false;
   return hasCurrentSession || hasSearchFilters || unfinishedCount > 0;
 }
 
 export function resolveSidebarGroupExpanded(
   persistedExpanded: boolean,
   signals: SidebarGroupExpansionSignals,
+  options?: { disableForceExpand?: boolean },
 ): boolean {
-  return persistedExpanded || shouldForceExpandSidebarGroup(signals);
+  return persistedExpanded || shouldForceExpandSidebarGroup(signals, options);
 }
 
 function getForceExpandReason({
@@ -53,14 +55,16 @@ export function resolveSidebarGroupExpansionView({
   signals,
   isCollapsing,
   displayName,
+  disableForceExpand,
 }: {
   persistedExpanded: boolean;
   signals: SidebarGroupExpansionSignals;
   isCollapsing: boolean;
   displayName: string;
+  disableForceExpand?: boolean;
 }): SidebarGroupExpansionView {
-  const forceExpanded = shouldForceExpandSidebarGroup(signals);
-  const isVisibleExpanded = resolveSidebarGroupExpanded(persistedExpanded, signals)
+  const forceExpanded = shouldForceExpandSidebarGroup(signals, { disableForceExpand });
+  const isVisibleExpanded = resolveSidebarGroupExpanded(persistedExpanded, signals, { disableForceExpand })
     || (!forceExpanded && isCollapsing);
   const phase: SidebarGroupExpansionPhase = forceExpanded
     ? 'forced-expanded'

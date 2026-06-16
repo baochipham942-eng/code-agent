@@ -15,6 +15,7 @@ import type {
 
 const REASON_LABELS: Record<ModelDecisionReason, string> = {
   'user-selected': '用户选择',
+  'default-model': '默认模型',
   'role-tier': '角色档位',
   'simple-task-free': '简单任务',
   'billing-gate-skip': '计费跳过',
@@ -25,6 +26,25 @@ const REASON_LABELS: Record<ModelDecisionReason, string> = {
   'capability-vision': '视觉能力',
   'fallback-availability': '可用性降级',
 };
+
+/**
+ * 路由 chip 是否值得展示。默认模型 / 纯用户直连且没有发生任何路由变化、降级或
+ * 外部引擎异常时，这条 chip 是噪音（会在每个 assistant 文本节点重复刷屏），不显示；
+ * 只有真正发生路由/降级/外部引擎问题时才显示。
+ */
+export function shouldRenderModelDecisionChip(decision: ModelDecisionEventData): boolean {
+  if (decision.fallbackFrom) return true;
+  if (decision.externalEngine?.failure) return true;
+  if (
+    decision.resolvedModel
+    && decision.requestedModel
+    && decision.resolvedModel !== decision.requestedModel
+  ) {
+    return true;
+  }
+  // 没有任何变化时：默认模型 / 用户直连都属于噪音，不显示。
+  return decision.reason !== 'default-model' && decision.reason !== 'user-selected';
+}
 
 const TASK_LABELS: Record<ModelTaskClass, string> = {
   simple: '简单快答',

@@ -182,6 +182,7 @@ import { Sidebar } from '../../../src/renderer/components/Sidebar';
 
 describe('Sidebar session metadata', () => {
   beforeEach(() => {
+    authState.user = null;
     sessionUiState.searchQuery = '';
     sessionUiState.sessionStatusFilter = 'all';
     appState.pendingPermissionRequest = null;
@@ -218,13 +219,19 @@ describe('Sidebar session metadata', () => {
     expect(html).toContain('产物');
   });
 
-  it('renders task recovery status filters', () => {
+  it('exposes the status filter entry (icon dropdown) for admins', () => {
+    // 状态筛选已从一整排 tab 收成「新会话」右侧的一个筛选图标 + 下拉（仅管理员）。
+    authState.user = { isAdmin: true };
     const html = renderToStaticMarkup(React.createElement(Sidebar));
 
-    expect(html).toContain('未完成');
-    expect(html).toContain('待确认');
-    expect(html).toContain('执行中');
-    expect(html).toContain('需关注');
+    expect(html).toContain('按状态筛选会话'); // 筛选图标按钮 aria-label
+  });
+
+  it('hides the status filter entry for non-admin users (D-10)', () => {
+    const html = renderToStaticMarkup(React.createElement(Sidebar));
+    // 普通用户只留搜索框，连筛选图标都不渲染。
+    expect(html).not.toContain('按状态筛选会话');
+    expect(html).toContain('搜索会话...'); // 搜索框仍在
   });
 
   it('supports the background-only quick filter', () => {
@@ -257,7 +264,8 @@ describe('Sidebar session metadata', () => {
       const html = renderToStaticMarkup(React.createElement(Sidebar));
 
       expect(html).toContain('Session Native Workspace');
-      expect(html).toContain('交付线索');
+      // D-10: 普通用户看不到状态筛选 tab，但程序化设置的筛选仍生效。
+      expect(html).not.toContain('交付线索');
       expect(html).toContain('产物');
       expect(html).toContain('aria-label="在 code-agent 新建会话"');
       expect(html).not.toContain('Finished Session');
@@ -445,7 +453,7 @@ describe('Sidebar session metadata', () => {
     const html = renderToStaticMarkup(React.createElement(Sidebar));
 
     expect(html).toContain('Finished Session');
-    expect(html).toContain('交付线索');
+    expect(html).not.toContain('交付线索'); // D-10: 非管理员隐藏筛选 tab，筛选仍程序化生效
     expect(html).toContain('Replay');
     expect(html).toContain('Workflow replay');
     expect(html).toContain('Recover project delivery');
@@ -488,7 +496,7 @@ describe('Sidebar session metadata', () => {
     const html = renderToStaticMarkup(React.createElement(Sidebar));
 
     expect(html).toContain('Finished Session');
-    expect(html).toContain('交付线索');
+    expect(html).not.toContain('交付线索'); // D-10: 非管理员隐藏筛选 tab，筛选仍程序化生效
     expect(html).toContain('background replay');
     expect(html).toContain('trace.json');
     expect(html).toContain('/tmp/trace.json');

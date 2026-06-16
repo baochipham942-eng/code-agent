@@ -377,6 +377,23 @@ export class DatabaseService {
   }
 
   /**
+   * 读 Swarm run 详情，**以协同账本(ledger)投影为真理源**（ADR-023 D2 切换降级）：
+   * 有账则用重建的 run+agents（真理源），无账则回退 rollup 表（兼容无账的历史 run）。
+   * timeline events 始终取 rollup 缓存（swarm_run_events 仍是 timeline 的来源）。fail-safe。
+   */
+  getSwarmRunDetailPreferLedger(runId: string): SwarmRunDetail | null {
+    let stored: SwarmRunDetail | null;
+    try {
+      stored = this.swarmTraceRepo.getRunDetail(runId);
+    } catch {
+      stored = null;
+    }
+    const rebuilt = rebuildRunDetail(this.getSwarmLedgerByRun(runId));
+    if (!rebuilt) return stored; // 无账 → 回退 rollup 缓存（含历史 run）
+    return { run: rebuilt.run, agents: rebuilt.agents, events: stored?.events ?? [] };
+  }
+
+  /**
    * 影子对账（ADR-023 D2）：比对"从 ledger 重建的 rollup"与"现存 rollup 表"。
    * drift 为空 = 账本捕获齐全、可当真理源。纯只读、fail-safe。
    */

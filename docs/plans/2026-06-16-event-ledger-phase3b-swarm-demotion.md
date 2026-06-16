@@ -1,6 +1,6 @@
 # 事件账本 第三期(3b) · Swarm 旧表降级（实施计划）
 
-> 日期: 2026-06-16 · 作者: Neo · 状态: 待执行（等用户拍板本计划）
+> 日期: 2026-06-16 · 作者: Neo · 状态: 已完成（6 步全绿 + 对抗审查闭环，证据见 evidence/2026-06-16-ledger-phase3b-swarm-demotion.md）
 > 上游决策: [ADR-023](../decisions/023-event-spine-read-projection-and-swarm-demotion.md) 决策点 2 = **D2 双写过渡**（并行追加→影子对账→切换降级），已 accepted
 > 分支: `feat/event-ledger-phase3b`（基于最新 main，含 3a）
 > 前提: 用户不读代码、不做 review。质量由每步可执行验证闸门保证。**无新增 ADR**（D2 方向已拍板）。

@@ -6,6 +6,7 @@ import type {
   ToolDefinition,
 } from '../../shared/contract';
 import type { PermissionBoundaryRef } from '../../shared/contract/permissionBoundary';
+import type { PermissionRequestReason } from '../../shared/contract/permission';
 import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
@@ -137,6 +138,8 @@ export interface PermissionRequestData {
   tool: string;
   details: Record<string, unknown>;
   reason?: string;
+  /** 结构化原因码（与 reason 文案并行，可追溯/可测试/可 i18n） */
+  reasonCode?: PermissionRequestReason;
   boundary?: PermissionBoundaryRef;
   dangerLevel?: 'normal' | 'warning' | 'danger';
   /** Decision trace: why this permission was requested (populated on deny/ask) */

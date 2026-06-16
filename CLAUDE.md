@@ -77,7 +77,11 @@ cargo tauri build    # 打包 macOS（~33MB DMG）
 
 ### 提交纪律
 - 每完成一个功能点立即提交，不要积攒
-- **后台 Agent 产物必须 review**：commit 前用 `git diff --stat` 检查每个文件的变更行数，行数异常的必须 `git diff <file>` 逐行确认，尤其是 SSE/IPC 协议文件（webServer.ts、platform/）和共享类型文件
+- **代码质量由 Claude 负责，用户不 review 代码**：用户看不懂代码、不做 diff review，禁止把审查责任推给用户。质量靠 Claude 自审 + 分层验证保证：
+  - **自审（Claude 自己做，不是甩给用户）**：commit 前 `git diff --stat` 逐文件查变更行数，行数异常的 `git diff <file>` 逐行确认；尤其 SSE/IPC 协议文件（webServer.ts、platform/）和共享类型文件
+  - **分层验证（每个功能点交付前按需跑全）**：① `npm run typecheck` 必过 ② 受影响模块 targeted 测试 ③ 涉及 UI/页面走 E2E/视觉验证（/e2e）④ 高风险改动（协议/共享类型/安全/计费）用多模型对抗审查（/multi-review 或 codex-audit）
+  - **向用户汇报质量证据，不贴 diff**：用自然语言说测试通过数 / 覆盖了什么 / 验证结论，让用户基于证据而非代码做判断
+- **用户只在设计决策层拍板**：架构 / 产品级选择走 ADR，用人话呈现给用户拍板；拍板后 Claude 自主推进实现 + 验证，不再要求用户看代码
 
 ### 代码品味
 - 避免过度工程，只做必要的事

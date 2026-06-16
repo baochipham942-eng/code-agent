@@ -13,6 +13,7 @@ import { RequestDetails } from './RequestDetails';
 import { ApprovalOptionsCompact } from './ApprovalOptionsCompact';
 import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionResponse } from '@shared/contract';
+import { permissionReasonText } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { getPermissionConfig, isDangerousCommand, getDangerReason } from './utils';
 import ipcService from '../../services/ipcService';
@@ -28,6 +29,7 @@ function normalizeRequest(
     tool: request.tool,
     type: request.type as PermissionType,
     reason: request.reason,
+    reasonCode: request.reasonCode,
     boundary: request.boundary,
     details: {
       filePath: request.details.path,
@@ -228,8 +230,10 @@ export function PermissionCard() {
         <div className="px-4 py-3 space-y-2">
           {isDangerous && <DangerWarning reason={dangerReason || undefined} />}
 
-          {request.reason && (
-            <p className="text-zinc-400 text-sm">{request.reason}</p>
+          {(request.reason || (request.reasonCode && permissionReasonText(request.reasonCode))) && (
+            <p className="text-zinc-400 text-sm">
+              {request.reason || (request.reasonCode ? permissionReasonText(request.reasonCode) : '')}
+            </p>
           )}
 
           <RequestDetails request={request} />

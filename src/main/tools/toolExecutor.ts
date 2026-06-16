@@ -10,6 +10,7 @@ import type {
 import * as nodePath from 'path';
 import type { ToolDefinition } from '../../shared/contract';
 import type { PermissionBoundaryId } from '../../shared/contract/permissionBoundary';
+import { PermissionRequestReason } from '../../shared/contract/permission';
 import { getToolCache } from '../services/infra/toolCache';
 import { createLogger } from '../services/infra/logger';
 import {
@@ -912,6 +913,7 @@ export class ToolExecutor {
           tool: tool.name,
           details: { command: params.command },
           reason: 'Execute shell command',
+          reasonCode: PermissionRequestReason.ShellHighRisk,
           boundary: {
             id: 'command.shell',
             reason: '本次命令会在当前工作区的 shell 环境执行。',
@@ -939,6 +941,7 @@ export class ToolExecutor {
             path: params.file_path,
             contentLength: (params.content as string)?.length || 0,
           },
+          reasonCode: this.fileWriteReasonCode(params.file_path),
           boundary: {
             id: this.getFileBoundaryId(params.file_path, true),
             reason: '写入文件内容会修改目标路径。',
@@ -955,6 +958,7 @@ export class ToolExecutor {
             contentLength: (params.content as string)?.length || 0,
             final: params.final === true,
           },
+          reasonCode: this.fileWriteReasonCode(params.file_path),
           boundary: {
             id: this.getFileBoundaryId(params.file_path, true),
             reason: '追加内容会修改目标路径。',
@@ -971,6 +975,7 @@ export class ToolExecutor {
             oldString: params.old_string,
             newString: params.new_string,
           },
+          reasonCode: this.fileWriteReasonCode(params.file_path),
           boundary: {
             id: this.getFileBoundaryId(params.file_path, true),
             reason: '编辑操作会修改目标文件内容。',
@@ -985,6 +990,7 @@ export class ToolExecutor {
           type: 'network',
           tool: tool.name,
           details: { url: params.url, query: params.query },
+          reasonCode: PermissionRequestReason.NetworkEgress,
           boundary: {
             id: 'network.web_request',
             reason: '本次工具会访问外部网络资源。',
@@ -1004,6 +1010,7 @@ export class ToolExecutor {
             uri: params.uri,
           },
           reason: `调用 MCP 服务器 ${params.server}`,
+          reasonCode: PermissionRequestReason.McpTool,
           boundary: {
             id: 'mcp.server_tool',
             reason: `调用 MCP 服务器 ${params.server}`,
@@ -1023,6 +1030,7 @@ export class ToolExecutor {
           type: requestType,
           tool: tool.name,
           details: { ...params },
+          reasonCode: PermissionRequestReason.Unknown,
           boundary: {
             id: this.getBoundaryIdForRequestType(requestType),
             reason: '根据工具权限级别推断的数据边界。',
@@ -1030,6 +1038,16 @@ export class ToolExecutor {
         };
       }
     }
+  }
+
+  /**
+   * 写文件类操作的结构化原因码：仅当目标在工作区之外时归类为 FileWriteOutsideWorkspace，
+   * 工作区内写入返回 undefined（boundary 文案已足够，避免误标“工作区外”）。
+   */
+  private fileWriteReasonCode(rawPath: unknown): PermissionRequestReason | undefined {
+    return this.getFileBoundaryId(rawPath, true) === 'file.external_write'
+      ? PermissionRequestReason.FileWriteOutsideWorkspace
+      : undefined;
   }
 
   private getFileBoundaryId(rawPath: unknown, isWrite: boolean): PermissionBoundaryId {

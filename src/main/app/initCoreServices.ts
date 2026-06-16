@@ -7,6 +7,7 @@ import path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { loadShellEnvironment } from '../services/infra/shellEnvironment';
 import { ConfigService, initDatabase } from '../services';
+import { initBudgetService } from '../services/core/budgetService';
 import { initFileCheckpointService } from '../services/checkpoint';
 import { replayNativeConnectors } from '../connectors';
 
@@ -49,6 +50,11 @@ export async function initializeCoreServices(): Promise<ConfigService> {
       elapsed: Date.now() - startTime,
     });
   }
+
+  // 用持久化的预算配置初始化 BudgetService 单例 —— 不接线则单例永远跑构造函数
+  // 硬编码默认值（$10/24h），用户在设置里改的上限/阈值全不生效。
+  initBudgetService(configService.getBudgetConfig());
+  logger.info('Budget service initialized from config');
 
   // 初始化文件检查点服务
   initFileCheckpointService();

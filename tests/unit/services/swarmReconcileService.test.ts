@@ -214,6 +214,15 @@ describe('runReconcileScan · 偏差自愈写闸门（默认关）', () => {
     expect(report.skipped[0].note).toBe('in-progress');
   });
 
+  it('写闸门开 + ledger 已闭合但 rollup 缺失 → 不重建（不拿残缺对照触发写）', () => {
+    const events = closedRunEvents('M');
+    const writer = vi.fn();
+    const report = runReconcileScan(makeReader({ M: { ledger: events, stored: null } }), { now: NOW, rebuildOnDrift: true, rebuildWriter: writer });
+    expect(writer).not.toHaveBeenCalled();
+    expect(report.rebuilt).toEqual([]);
+    expect(report.skipped.some((s) => s.runId === 'M' && s.note === 'rollup-missing')).toBe(true);
+  });
+
   it('写闸门开 + writer 抛错 → 计入 errors 且隔离，其余 run 仍重建', () => {
     const writer = vi.fn((runId: string) => { if (runId === 'M') throw new Error('write boom'); });
     const report = runReconcileScan(

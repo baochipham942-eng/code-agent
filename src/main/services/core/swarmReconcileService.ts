@@ -108,7 +108,9 @@ export function runReconcileScan(
       } else {
         drifted.push(result);
         // 偏差自愈写闸门（默认关）：drift 分支的 rebuilt 必非 null 且已闭合（reconcileRun 无 note）。
-        if (options.rebuildOnDrift && options.rebuildWriter && rebuilt) {
+        // 显式再断言 stored 非 null（不拿"rollup 缺失"的残缺对照触发写）——把安全不变量从
+        // 「依赖 reconcileRun 的 note 语义」变成「写入点自身可见」（对抗审查 MED-2）。
+        if (options.rebuildOnDrift && options.rebuildWriter && rebuilt && stored) {
           try {
             options.rebuildWriter(runId, rebuilt);
             rebuiltIds.push(runId);

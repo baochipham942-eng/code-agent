@@ -1,6 +1,6 @@
 # 事件账本 第四期 · 一致性兜底（后台对账）+ 老数据迁移（实施计划）
 
-> 日期: 2026-06-16 · 作者: Neo · 状态: 待执行（已写计划，等用户拍板后动手）
+> 日期: 2026-06-16 · 作者: Neo · 状态: 已完成（6 步 TDD 全绿、49 测 0 失败、对抗审查无 HIGH，证据见 evidence/2026-06-16-ledger-phase4-reconcile-migration.md）
 > 上游决策: [ADR-022](../decisions/022-append-only-event-ledger-spine.md) §四第四期 + [ADR-024](../decisions/024-event-ledger-phase4-background-reconcile-and-migration.md)（Q1=A1 注册+开但只报告 / Q2=B1 默认跳过+可选 backfill / **Q3=对账绑定 Dream**，已 accepted）
 > 分支: `feat/event-ledger-phase4`（基于最新 main，含 1/2/3a/3b）
 > 前提: 用户不读代码、不做 review。质量由每步可执行验证闸门保证。迁移类与后台调度类是高风险点，走 TDD + 对抗审查。

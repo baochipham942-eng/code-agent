@@ -178,4 +178,32 @@ describe('dreamExecutor', () => {
     expect(report).toContain('manual');
     expect(report).not.toContain('auto-triggered');
   });
+
+  it('绑定 Dream：收尾对账摘要并入报告（睡眠维护窗口的一致性重整）', async () => {
+    const report = await executeDreamRun(
+      { workingDirectory: '/repo', args: '--auto' } as SkillExecutionRequest,
+      {
+        db: makeDb(), now: NOW, memoryIO: makeMemoryIO(), candidateExtractor: async () => [],
+        reconcileScan: () => ({
+          generatedAt: NOW, scannedCount: 2, matched: 2, drifted: [], skipped: [], errors: [], rebuilt: [],
+          coverageNote: '扫描 2 个 run：匹配 2、偏差 0、跳过 0、错误 0',
+        }),
+      },
+    );
+    expect(report).toContain('runDreamMemoryConsolidation'); // dream 主体仍在
+    expect(report).toContain('对账');                          // 对账摘要并入
+    expect(report).toContain('匹配 2');
+  });
+
+  it('对账抛错不连坐：Dream 报告仍正常返回，错误被吞不冒泡', async () => {
+    const report = await executeDreamRun(
+      { workingDirectory: '/repo', args: '--auto' } as SkillExecutionRequest,
+      {
+        db: makeDb(), now: NOW, memoryIO: makeMemoryIO(), candidateExtractor: async () => [],
+        reconcileScan: () => { throw new Error('reconcile boom'); },
+      },
+    );
+    expect(report).toContain('runDreamMemoryConsolidation'); // dream 写入不受影响
+    expect(report).not.toContain('reconcile boom');           // 对账错误不冒泡进报告
+  });
 });

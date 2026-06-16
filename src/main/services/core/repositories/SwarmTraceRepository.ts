@@ -161,6 +161,50 @@ export class SwarmTraceRepository implements SwarmTraceRepo {
     );
   }
 
+  /**
+   * 第四期 偏差自愈：用 ledger 确定性重建值覆盖本 run 的 rollup 缓存
+   * （swarm_runs + swarm_run_agents），事务内原子替换；不碰 swarm_run_events（timeline 保留）。
+   * 仅对账写闸门开（rebuildOnDrift）时被调用。
+   */
+  replaceRunCache(detail: SwarmRunDetail): void {
+    const run = detail.run;
+    const tx = this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT OR REPLACE INTO swarm_runs (
+          id, session_id, coordinator, status, started_at, ended_at,
+          total_agents, completed_count, failed_count, parallel_peak,
+          total_tokens_in, total_tokens_out, total_tool_calls, total_cost_usd,
+          trigger, error_summary, aggregation_json, tags_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        run.id, run.sessionId, run.coordinator, run.status, run.startedAt, run.endedAt,
+        run.totalAgents, run.completedCount, run.failedCount, run.parallelPeak,
+        run.totalTokensIn, run.totalTokensOut, run.totalToolCalls, run.totalCostUsd,
+        run.trigger, run.errorSummary,
+        run.aggregation ? JSON.stringify(run.aggregation) : null,
+        JSON.stringify(run.tags ?? []),
+      );
+      this.db.prepare('DELETE FROM swarm_run_agents WHERE run_id = ?').run(run.id);
+      const insertAgent = this.db.prepare(`
+        INSERT INTO swarm_run_agents (
+          run_id, agent_id, name, role, status,
+          start_time, end_time, duration_ms,
+          tokens_in, tokens_out, tool_calls, cost_usd,
+          error, failure_category, files_changed_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const a of detail.agents) {
+        insertAgent.run(
+          a.runId, a.agentId, a.name, a.role, a.status,
+          a.startTime, a.endTime, a.durationMs,
+          a.tokensIn, a.tokensOut, a.toolCalls, a.costUsd,
+          a.error, a.failureCategory, JSON.stringify(a.filesChanged ?? []),
+        );
+      }
+    });
+    tx();
+  }
+
   appendEvent(input: AppendEventInput): void {
     // 超过单 run 事件上限时丢弃尾部事件，保住 head（reproducer 友好）。
     const countRow = this.db

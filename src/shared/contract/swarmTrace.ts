@@ -155,6 +155,8 @@ export interface SwarmTraceRepo {
   appendEvent(input: AppendEventInput): void;
   listRuns(limit: number): SwarmRunListItem[];
   getRunDetail(runId: string): SwarmRunDetail | null;
+  /** 第四期 偏差自愈：用 ledger 确定性重建值覆盖 rollup 缓存（仅对账写闸门开时调用）。 */
+  replaceRunCache(detail: SwarmRunDetail): void;
   deleteRun(runId: string): boolean;
   clearAll(): void;
 }

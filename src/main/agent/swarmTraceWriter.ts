@@ -23,6 +23,7 @@ import type {
   SwarmRunAgentRecord,
   SwarmTraceRepo,
 } from '../../shared/contract/swarmTrace';
+import type { SwarmLedgerAppendInput } from '../../shared/contract/swarmLedger';
 import { getEventBus } from '../services/eventing/bus';
 import { createLogger } from '../services/infra/logger';
 
@@ -44,11 +45,14 @@ interface AgentRollup {
 
 interface RunState {
   runId: string;
+  sessionId: string | null;
   startedAt: number;
   totalAgents: number;
   parallelPeak: number;
   agents: Map<string, AgentRollup>;
   seq: number;
+  /** ledger 专用单调序号（run_started=0 < agent_snapshot... < run_closed），与 timeline seq 独立 */
+  ledgerSeq: number;
   trigger: SwarmRunTrigger;
   coordinator: SwarmRunCoordinator;
 }
@@ -60,11 +64,18 @@ export interface SwarmTraceWriterOptions {
   defaultTrigger?: SwarmRunTrigger;
   /** 默认 coordinator 名（v1 标记为 hybrid） */
   defaultCoordinator?: SwarmRunCoordinator;
+  /**
+   * 3b 并行追加（ADR-023 D2）：在现有 rollup 写入**旁**，把 run_started/agent_snapshot/
+   * run_closed 追加到 append-only 协同事件账本（真理源）。fail-safe，缺省不注入则 no-op，
+   * 现有写入路径一行不改。
+   */
+  appendLedger?: (input: SwarmLedgerAppendInput) => void;
 }
 
 export class SwarmTraceWriter {
   private readonly repo: SwarmTraceRepo;
-  private readonly options: Required<SwarmTraceWriterOptions>;
+  private readonly options: Required<Omit<SwarmTraceWriterOptions, 'appendLedger'>>;
+  private readonly appendLedger?: (input: SwarmLedgerAppendInput) => void;
   private runs = new Map<string, RunState>();
   /** fire-and-forget 串行写入链，drain() 时 await 这条链 */
   private pendingPersist: Promise<void> = Promise.resolve();
@@ -77,6 +88,7 @@ export class SwarmTraceWriter {
       defaultTrigger: options.defaultTrigger ?? 'unknown',
       defaultCoordinator: options.defaultCoordinator ?? 'hybrid',
     };
+    this.appendLedger = options.appendLedger;
   }
 
   /** 启动订阅，幂等 */
@@ -153,11 +165,13 @@ export class SwarmTraceWriter {
 
     const state: RunState = {
       runId,
+      sessionId,
       startedAt: event.timestamp,
       totalAgents,
       parallelPeak: 0,
       agents: new Map(),
       seq: 0,
+      ledgerSeq: 0,
       trigger: this.options.defaultTrigger,
       coordinator: this.options.defaultCoordinator,
     };
@@ -173,6 +187,14 @@ export class SwarmTraceWriter {
         trigger: this.options.defaultTrigger,
       });
     });
+
+    // 3b 并行追加：run_started 进协同事件账本（真理源），不影响上面的 rollup 写入
+    this.appendLedgerEvent(state, 'run_started', null, {
+      coordinator: state.coordinator,
+      startedAt: state.startedAt,
+      totalAgents: state.totalAgents,
+      trigger: state.trigger,
+    }, event.timestamp);
   }
 
   private onAgentEvent(event: SwarmEvent): void {
@@ -191,6 +213,11 @@ export class SwarmTraceWriter {
     }
 
     const runId = run.runId;
+    const durationMs =
+      rollup.startTime != null && rollup.endTime != null
+        ? rollup.endTime - rollup.startTime
+        : null;
+    const failureCategory = rollup.error ? this.classifyFailure(rollup.error) : null;
     this.schedulePersist(() => {
       this.repo.upsertAgent({
         runId,
@@ -200,19 +227,34 @@ export class SwarmTraceWriter {
         status: rollup.status,
         startTime: rollup.startTime,
         endTime: rollup.endTime,
-        durationMs:
-          rollup.startTime != null && rollup.endTime != null
-            ? rollup.endTime - rollup.startTime
-            : null,
+        durationMs,
         tokensIn: rollup.tokensIn,
         tokensOut: rollup.tokensOut,
         toolCalls: rollup.toolCalls,
         costUsd: rollup.costUsd,
         error: rollup.error,
-        failureCategory: rollup.error ? this.classifyFailure(rollup.error) : null,
+        failureCategory,
         filesChanged: rollup.filesChanged,
       });
     });
+
+    // 3b 并行追加：agent_snapshot 进账本（同 agent 多条，回放时末值覆盖 = 当前 rollup 末值）
+    this.appendLedgerEvent(run, 'agent_snapshot', state.id, {
+      agentId: state.id,
+      name: rollup.name,
+      role: rollup.role,
+      status: rollup.status,
+      startTime: rollup.startTime,
+      endTime: rollup.endTime,
+      durationMs,
+      tokensIn: rollup.tokensIn,
+      tokensOut: rollup.tokensOut,
+      toolCalls: rollup.toolCalls,
+      costUsd: rollup.costUsd,
+      error: rollup.error,
+      failureCategory,
+      filesChanged: rollup.filesChanged,
+    }, event.timestamp);
   }
 
   private onCompleted(event: SwarmEvent): void {
@@ -238,6 +280,21 @@ export class SwarmTraceWriter {
     };
 
     this.schedulePersist(() => this.repo.closeRun(closed));
+    // 3b 并行追加：run_closed 进账本（携带收尾统计与聚合 = rollup 表所写）
+    this.appendLedgerEvent(run, 'run_closed', null, {
+      status: closed.status,
+      endedAt: closed.endedAt,
+      completedCount: closed.completedCount,
+      failedCount: closed.failedCount,
+      parallelPeak: closed.parallelPeak,
+      totalTokensIn: closed.totalTokensIn,
+      totalTokensOut: closed.totalTokensOut,
+      totalToolCalls: closed.totalToolCalls,
+      totalCostUsd: closed.totalCostUsd,
+      errorSummary: closed.errorSummary,
+      aggregation: closed.aggregation,
+      tags: [],
+    }, event.timestamp);
     this.runs.delete(run.runId);
   }
 
@@ -260,6 +317,20 @@ export class SwarmTraceWriter {
       aggregation: null,
     };
     this.schedulePersist(() => this.repo.closeRun(closed));
+    this.appendLedgerEvent(run, 'run_closed', null, {
+      status: closed.status,
+      endedAt: closed.endedAt,
+      completedCount: closed.completedCount,
+      failedCount: closed.failedCount,
+      parallelPeak: closed.parallelPeak,
+      totalTokensIn: closed.totalTokensIn,
+      totalTokensOut: closed.totalTokensOut,
+      totalToolCalls: closed.totalToolCalls,
+      totalCostUsd: closed.totalCostUsd,
+      errorSummary: closed.errorSummary,
+      aggregation: closed.aggregation,
+      tags: [],
+    }, event.timestamp);
     this.runs.delete(run.runId);
   }
 
@@ -396,6 +467,34 @@ export class SwarmTraceWriter {
       return Array.from(this.runs.values())[0];
     }
     return undefined;
+  }
+
+  /**
+   * 3b 并行追加：把一条协同事件追加到 append-only 账本（真理源）。
+   * 缺省未注入 appendLedger 则 no-op；全程 fail-safe，绝不影响现有 rollup 写入与 swarm 运行。
+   * seq 走 run.ledgerSeq 单调递增（run_started=0 < agent_snapshot... < run_closed）。
+   */
+  private appendLedgerEvent(
+    run: RunState,
+    kind: SwarmLedgerAppendInput['kind'],
+    agentId: string | null,
+    payload: SwarmLedgerAppendInput['payload'],
+    recordedAt: number,
+  ): void {
+    if (!this.appendLedger) return;
+    const seq = run.ledgerSeq++;
+    const input: SwarmLedgerAppendInput = {
+      runId: run.runId,
+      sessionId: run.sessionId,
+      seq,
+      kind,
+      agentId,
+      payload,
+      recordedAt,
+    };
+    this.schedulePersist(() => {
+      this.appendLedger?.(input);
+    });
   }
 
   private schedulePersist(fn: () => void): void {

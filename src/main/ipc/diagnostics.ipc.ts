@@ -154,6 +154,26 @@ export function registerDiagnosticsHandlers(ipcMain: IpcMain): void {
           }
         }
 
+        // /permissions（复盘）— Swarm 影子对账（ADR-022 第三期 3b · ADR-023 D2 交付证据）：
+        // 比对"从 append-only 协同账本重建的 rollup"与"现存 rollup 表"，drift 为空=账本可当真理源。
+        case 'swarmReconcile': {
+          const payload = (request.payload ?? {}) as { runId?: string };
+          const runId = typeof payload.runId === 'string' ? payload.runId.trim() : '';
+          if (!runId) {
+            return {
+              success: false,
+              error: { code: 'INVALID_ACTION', message: 'swarmReconcile requires payload.runId' },
+            };
+          }
+          try {
+            const { getDatabase } = await import('../services/core/databaseService');
+            const result = getDatabase().reconcileSwarmRun(runId);
+            return { success: true, data: result };
+          } catch {
+            return { success: true, data: { runId, match: false, drift: [], note: 'reconcile-error' } };
+          }
+        }
+
         // /cost — 预算状态
         case 'budget': {
           const { getBudgetService } = await import('../services/core/budgetService');

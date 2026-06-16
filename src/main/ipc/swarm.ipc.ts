@@ -385,9 +385,14 @@ export function registerSwarmHandlers(
 
   ipcMain.handle('swarm:get-trace-run-detail', async (_, payload: { runId: string }) => {
     try {
-      const repo = getSwarmServices().swarmTraceRepo;
-      if (!repo) return null;
-      return repo.getRunDetail(payload.runId);
+      // ADR-023 D2 切换降级：以协同账本(ledger)为真理源，无账回退 rollup 缓存。
+      try {
+        const { getDatabase } = await import('../services/core/databaseService');
+        return getDatabase().getSwarmRunDetailPreferLedger(payload.runId);
+      } catch {
+        const repo = getSwarmServices().swarmTraceRepo;
+        return repo ? repo.getRunDetail(payload.runId) : null;
+      }
     } catch (error) {
       logger.error('swarm:get-trace-run-detail failed', { error: String(error) });
       return null;

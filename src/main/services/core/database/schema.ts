@@ -241,6 +241,27 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_execution_events_session ON tool_execution_events (session_id, recorded_at)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_execution_events_phase ON tool_execution_events (phase, recorded_at)`);
 
+  // Swarm Run Ledger 协同事件账本（ADR-022 §四第三期 3b · ADR-023 D2，append-only · 真理源）—
+  // 让 append-only 事件流当 Swarm 协同轨迹的真理源，把可变 rollup 表（swarm_runs/swarm_run_agents）
+  // 降级为可从本账重建的读优化缓存。事件 kind：run_started / agent_snapshot（末值覆盖）/ run_closed。
+  // 与现有 swarm_run_events（timeline，超 2000 丢尾）不同：本表**不丢尾、不截断 rollup 关键字段**，
+  // 与存储模式无关。无 FK（真理源不依赖 rollup 缓存表）。只 INSERT/SELECT，永不 UPDATE/DELETE。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS swarm_run_ledger (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      session_id TEXT,
+      seq INTEGER NOT NULL,
+      event_kind TEXT NOT NULL,
+      agent_id TEXT,
+      payload_json TEXT,
+      recorded_at INTEGER NOT NULL
+    )
+  `);
+  // (run_id, seq) 唯一：账本 append-only 不可篡改的数据库级保护——同 run 同 seq 不得重复写入。
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_swarm_run_ledger_run ON swarm_run_ledger (run_id, seq)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_swarm_run_ledger_session ON swarm_run_ledger (session_id, recorded_at)`);
+
   // Master Tasks 表 (用户级工作单元，跨 session 持久化；P0-c2)
   // status 列保留 TEXT 不加 CHECK，枚举校验由应用层 (src/shared/contract/task.ts) 负责
   db.exec(`

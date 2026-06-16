@@ -27,6 +27,7 @@ import {
   serialSearch,
   deduplicateResults,
   formatAsTable,
+  getCircuitBreakerRemaining,
   SEARCH_PROVIDER_SETUP_MESSAGE,
   SEARCH_FAILURE_GUIDANCE,
 } from '../../web/search';
@@ -196,12 +197,36 @@ class WebSearchHandler implements ToolHandler<Record<string, unknown>, string> {
 
     const routing = routeSources(query, { mode, requestedSources });
     const routedAvailable = allAvailable.filter(s => routing.sources.includes(s.name));
-    const availableSources = routedAvailable.length > 0 ? routedAvailable : allAvailable;
+
+    // Quota-aware ordering: a source that recently returned 401/402/432/quota gets a
+    // circuit-breaker cooldown. Don't keep selecting exhausted sources every round —
+    // demote them and backfill with other healthy sources so we don't under-search.
+    const isHealthy = (s: typeof allAvailable[number]) => getCircuitBreakerRemaining(s.name) === 0;
+    const healthyRouted = routedAvailable.filter(isHealthy);
+    let availableSources: typeof allAvailable;
+    if (routedAvailable.length === 0) {
+      // Routing matched nothing available → fall back to any healthy source, else all.
+      const healthyAll = allAvailable.filter(isHealthy);
+      availableSources = healthyAll.length > 0 ? healthyAll : allAvailable;
+    } else if (healthyRouted.length === routedAvailable.length) {
+      // All routed sources are healthy → respect the routing as-is.
+      availableSources = routedAvailable;
+    } else if (healthyRouted.length > 0) {
+      // Some routed sources are exhausted → keep the healthy ones, backfill with other
+      // healthy available sources that routing didn't pick.
+      const backfill = allAvailable.filter(s => isHealthy(s) && !healthyRouted.includes(s));
+      availableSources = [...healthyRouted, ...backfill];
+    } else {
+      // Every routed source is exhausted → try any other healthy source before giving up.
+      const healthyAll = allAvailable.filter(isHealthy);
+      availableSources = healthyAll.length > 0 ? healthyAll : routedAvailable;
+    }
     const routingMeta = {
       requested: requestedSources,
       routed: routing.sources,
       reason: routing.reason,
       available: allAvailable.map(s => s.name),
+      skipped: allAvailable.filter(s => !isHealthy(s)).map(s => s.name),
       final: availableSources.map(s => s.name),
     };
 

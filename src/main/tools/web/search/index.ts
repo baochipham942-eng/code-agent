@@ -28,6 +28,7 @@ export {
   routeSources,
   SEARCH_SOURCES,
   getAvailableSources,
+  getTavilyKeys,
 } from './searchStrategies';
 
 export {

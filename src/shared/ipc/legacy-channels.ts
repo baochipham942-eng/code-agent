@@ -323,6 +323,7 @@ export const IPC_CHANNELS = {
   CHECKPOINT_REWIND: 'checkpoint:rewind',
   CHECKPOINT_PREVIEW: 'checkpoint:preview',
   CHECKPOINT_FORK: 'checkpoint:fork',
+  MESSAGE_TRUNCATE_FROM: 'message:truncateFrom',
 
   // Suggestions channels (智能提示)
   SUGGESTIONS_GET: 'suggestions:get',

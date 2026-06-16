@@ -150,26 +150,32 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
           <Gauge className="h-3 w-3" />
           {score.score}/{score.max}
         </span>
-        <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${memoryTone(summary)}`}>
-          <Brain className="h-3 w-3" />
-          {memoryLabel(summary)}
-        </span>
-        <span className="inline-flex min-w-0 items-center gap-1 rounded border border-sky-400/15 bg-sky-400/10 px-1.5 py-0.5 text-sky-200">
-          <Cpu className="h-3 w-3 shrink-0" />
-          <span className="truncate">{strategyLabel(summary)} · {formatModel(summary)}</span>
-        </span>
-        {summary.capabilities?.agentName && (
-          <span className="inline-flex items-center gap-1 rounded border border-fuchsia-400/15 bg-fuchsia-400/10 px-1.5 py-0.5 text-fuchsia-200">
-            <Bot className="h-3 w-3" />
-            {summary.capabilities.agentName}
-          </span>
+        {/* 折叠态只保留语义色评分 chip；记忆/策略/agent/工具数在展开后才显示，
+            避免一行 5 个平级彩 chip 把正文挤成配角。 */}
+        {expanded && (
+          <>
+            <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${memoryTone(summary)}`}>
+              <Brain className="h-3 w-3" />
+              {memoryLabel(summary)}
+            </span>
+            <span className="inline-flex min-w-0 items-center gap-1 rounded border border-sky-400/15 bg-sky-400/10 px-1.5 py-0.5 text-sky-200">
+              <Cpu className="h-3 w-3 shrink-0" />
+              <span className="truncate">{strategyLabel(summary)} · {formatModel(summary)}</span>
+            </span>
+            {summary.capabilities?.agentName && (
+              <span className="inline-flex items-center gap-1 rounded border border-fuchsia-400/15 bg-fuchsia-400/10 px-1.5 py-0.5 text-fuchsia-200">
+                <Bot className="h-3 w-3" />
+                {summary.capabilities.agentName}
+              </span>
+            )}
+            {summary.capabilities?.toolsUsed?.length ? (
+              <span className="inline-flex items-center gap-1 rounded border border-zinc-600/50 bg-zinc-900/40 px-1.5 py-0.5 text-zinc-300">
+                <Wrench className="h-3 w-3" />
+                {summary.capabilities.toolsUsed.length}
+              </span>
+            ) : null}
+          </>
         )}
-        {summary.capabilities?.toolsUsed?.length ? (
-          <span className="inline-flex items-center gap-1 rounded border border-zinc-600/50 bg-zinc-900/40 px-1.5 py-0.5 text-zinc-300">
-            <Wrench className="h-3 w-3" />
-            {summary.capabilities.toolsUsed.length}
-          </span>
-        ) : null}
       </button>
 
       {expanded && (

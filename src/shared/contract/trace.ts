@@ -27,6 +27,9 @@ export interface TraceNode {
     metadata?: Record<string, unknown>;
     liveOutput?: import('./tool').ToolLiveOutput;
     _streaming?: boolean;
+    /** 结局优先：本次失败的工具调用之后，同一轮里又出现了成功（重试成功/最终答案），
+     *  说明这次失败已被恢复，UI 应降级为脚注而非顶红 failed。由投影层标记。 */
+    recovered?: boolean;
     // ============================================================================
     // 语义元数据（产品视角升级 — P0 内核）
     // 由 main 进程在投影 trace 时从 ToolCall 复制过来。UI 优先消费。

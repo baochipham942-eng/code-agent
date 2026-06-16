@@ -17,13 +17,14 @@ export interface SessionStatusPresentation {
 }
 
 const PRESENTATION: Record<SessionStatusKind, SessionStatusPresentation> = {
-  error:      { kind: 'error',      label: '待处理', toneClassName: 'text-red-300 bg-red-500/10 border-red-500/20', showBadge: true },
+  // 每种状态用各自精确的词，不再把 error/paused/incomplete 全叫"待处理"（同词三义、且红色误导）。
+  error:      { kind: 'error',      label: '出错',   toneClassName: 'text-red-300 bg-red-500/10 border-red-500/20', showBadge: true },
   background: { kind: 'background', label: '执行中', toneClassName: 'text-sky-300 bg-sky-500/10 border-sky-500/20', showBadge: true },
-  paused:     { kind: 'paused',     label: '待处理', toneClassName: 'text-amber-300 bg-amber-500/10 border-amber-500/20', showBadge: true },
+  paused:     { kind: 'paused',     label: '已暂停', toneClassName: 'text-amber-300 bg-amber-500/10 border-amber-500/20', showBadge: true },
   live:       { kind: 'live',       label: '执行中', toneClassName: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20', showBadge: true },
   approval:   { kind: 'approval',   label: '待确认', toneClassName: 'text-violet-300 bg-violet-500/10 border-violet-500/20', showBadge: true },
   done:       { kind: 'done',       label: '已完成', toneClassName: 'text-zinc-300 bg-zinc-700/40 border-zinc-600/50', showBadge: false },
-  incomplete: { kind: 'incomplete', label: '待处理', toneClassName: 'text-amber-300 bg-amber-500/10 border-amber-500/20', showBadge: true },
+  incomplete: { kind: 'incomplete', label: '未完成', toneClassName: 'text-amber-300 bg-amber-500/10 border-amber-500/20', showBadge: true },
   idle:       { kind: 'idle',       label: '就绪',   toneClassName: 'text-zinc-400 bg-zinc-700/30 border-zinc-600/40', showBadge: false },
 };
 
@@ -126,8 +127,13 @@ export function getSessionStatusPresentation(args: {
   }
 
   // P2: DB-persisted status survives restart
-  if (sessionStatus === 'error' || sessionStatus === 'interrupted' || sessionStatus === 'orphaned') {
+  // 只有真正出错才标红「出错」；interrupted/orphaned 只是"上次没跑完/进程没了"（常见于关 app），
+  // 不是错误，降级为安静的「未完成」，别让一周前的历史会话全顶红吓人。
+  if (sessionStatus === 'error') {
     return PRESENTATION.error;
+  }
+  if (sessionStatus === 'interrupted' || sessionStatus === 'orphaned') {
+    return PRESENTATION.incomplete;
   }
   if (sessionStatus === 'running' || sessionStatus === 'queued' || sessionStatus === 'paused' || sessionStatus === 'cancelling') {
     return PRESENTATION.live;

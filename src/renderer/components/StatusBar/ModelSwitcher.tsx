@@ -34,6 +34,7 @@ import {
   buildEngineReliabilitySummary,
   buildProviderBillingSummary,
   buildProviderHealthSummary,
+  buildProviderMetaTitle,
   buildModelSwitcherEngineSelection,
   CAPABILITY_CONFIG,
   ENGINE_ICON,
@@ -47,11 +48,7 @@ import {
   getSelectedEffortOption,
   isExternalEngineKind,
   type ProviderHealthSnapshot,
-  ProviderBillingBadge,
-  ProviderHealthBadge,
   ProviderLogo,
-  ProviderSourceBadge,
-  ProviderTransportBadge,
   QUICK_SWITCH_PROVIDERS,
   sortProviderGroupsByModelStrategy,
 } from './modelSwitcherHelpers';
@@ -635,7 +632,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       || /reason|thinking|think|mimo|r1|o\d/i.test(displayModel)
     : false;
   const thinkingShortLabel = supportsThinkingControls
-    ? thinkingEnabled ? 'Think' : 'NoThink'
+    ? thinkingEnabled ? '思考' : '不思考'
     : null;
   const selectedNativeBillingSummary = engine.kind === 'native'
     ? buildProviderBillingSummary(selectedNativeOption?.providerBillingMode)
@@ -817,9 +814,15 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                       无匹配模型
                     </div>
                   ) : (
-                    groupedFilteredOptions.map((group) => (
+                    groupedFilteredOptions.map((group) => {
+                      // C-7: 检测/计费/来源/协议/endpoint 收进 hover 详情，头部只留一个健康色点。
+                      const providerMetaTitle = buildProviderMetaTitle(group);
+                      return (
                       <div key={group.provider}>
-                        <div className="flex items-center gap-1.5 px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
+                        <div
+                          className="flex items-center gap-1.5 px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-zinc-500"
+                          title={providerMetaTitle}
+                        >
                           <ProviderLogo
                             provider={group.provider}
                             label={group.providerLabel || getProviderDisplayName(group.provider) || group.provider}
@@ -828,17 +831,11 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                           <span>{group.providerLabel || getProviderDisplayName(group.provider) || group.provider}</span>
                           {group.providerFavorite && (
                             <Star className="h-3 w-3 fill-amber-300 text-amber-300" />
-	                          )}
-	                          <div className="ml-auto flex items-center gap-1 normal-case tracking-normal">
-	                            <ProviderHealthBadge summary={group.healthSummary} />
-	                            <ProviderBillingBadge summary={group.billingSummary} />
-	                            <ProviderSourceBadge sourceLabel={group.providerSourceLabel} />
-	                            <ProviderTransportBadge
-	                              protocol={group.providerProtocol}
-	                              transportLabel={group.providerTransportLabel}
-	                              endpoint={group.providerEndpoint}
-	                            />
-	                          </div>
+                          )}
+                          <span
+                            className={`ml-auto h-1.5 w-1.5 rounded-full ${group.healthSummary.dotClass}`}
+                            aria-label={`Provider 状态: ${group.healthSummary.label}`}
+                          />
                         </div>
                         {group.options.map(({ option: opt, index }) => {
                           const selected = displayModel === opt.model && displayProvider === opt.provider;
@@ -887,7 +884,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                           );
                         })}
                       </div>
-                    ))
+                      );
+                    })
                   )}
                   </>
                 )

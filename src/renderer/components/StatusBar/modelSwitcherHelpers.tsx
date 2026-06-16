@@ -148,28 +148,28 @@ const EFFORT_OPTION_CONFIG: Record<EffortLevel, EffortOption> = {
   low: {
     value: 'low',
     label: 'Low',
-    shortLabel: 'Low',
+    shortLabel: '低',
     color: 'text-zinc-400',
     tint: 'bg-zinc-700',
   },
   medium: {
     value: 'medium',
     label: 'Med',
-    shortLabel: 'Med',
+    shortLabel: '中',
     color: 'text-blue-400',
     tint: 'bg-blue-500/15',
   },
   high: {
     value: 'high',
     label: 'High',
-    shortLabel: 'High',
+    shortLabel: '高',
     color: 'text-amber-400',
     tint: 'bg-amber-500/15',
   },
   xhigh: {
     value: 'xhigh',
     label: 'XHigh',
-    shortLabel: 'XHigh',
+    shortLabel: '极高',
     color: 'text-orange-300',
     tint: 'bg-orange-500/15',
   },
@@ -462,6 +462,30 @@ export function ProviderTransportBadge({
       {[label, endpointDisplay].filter(Boolean).join(' · ')}
     </span>
   );
+}
+
+/**
+ * 把 provider 的检测状态/计费/来源/协议/endpoint 汇总成一段多行 tooltip 文本。
+ * C-7：模型菜单 provider 头不再平铺这些工程内幕 badge，收进 hover 详情。
+ */
+export function buildProviderMetaTitle(group: {
+  healthSummary: ProviderHealthSummary;
+  billingSummary: ProviderBillingSummary;
+  providerSourceLabel?: string;
+  providerProtocol?: ModelProviderProtocol;
+  providerTransportLabel?: string;
+  providerEndpoint?: string;
+}): string {
+  const protocolLabel = group.providerTransportLabel
+    || (group.providerProtocol === 'claude' ? 'Claude-compatible'
+      : group.providerProtocol === 'openai' ? 'OpenAI-compatible' : undefined);
+  return [
+    `状态: ${group.healthSummary.label} · ${group.healthSummary.detail}`,
+    `计费: ${group.billingSummary.label} · ${group.billingSummary.detail}`,
+    group.providerSourceLabel ? `来源: ${group.providerSourceLabel}` : null,
+    protocolLabel ? `协议: ${protocolLabel}` : null,
+    group.providerEndpoint ? `Endpoint: ${group.providerEndpoint}` : null,
+  ].filter(Boolean).join('\n');
 }
 
 export function formatNativeModelSwitcherTooltip(args: {

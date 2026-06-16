@@ -28,10 +28,12 @@ interface MessageActionState {
   /** Send a plain prompt through the registered chat sender. */
   sendPrompt: (content: string) => Promise<void>;
 
-  /** Edit a user message: re-send with new content */
-  editMessage: (messageId: string, newContent: string) => void;
+  /** Edit a user message: 截断被编辑消息及其后历史，再用新内容重发（真替换，非追加） */
+  editMessage: (messageId: string, newContent: string) => void | Promise<void>;
   /** Regenerate an assistant message: re-send the preceding user message */
   regenerateMessage: (messageId: string) => void;
+  /** Regenerate the most recent assistant message (keyboard shortcut entry, no hover needed). Returns true if one was found. */
+  regenerateLast: () => boolean;
   /** Fork from a checkpoint: rewind files + truncate messages */
   forkFromHere: (messageId: string) => void;
 }
@@ -49,10 +51,31 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
     await _send(content);
   },
 
-  editMessage: (_messageId: string, newContent: string) => {
-    const { _send } = get();
+  editMessage: async (messageId: string, newContent: string) => {
+    const { _send, _getMessages } = get();
     if (!_send) return;
-    _send(newContent);
+
+    const sessionId = useSessionStore.getState().currentSessionId;
+    const messages = _getMessages?.() ?? [];
+    const idx = messages.findIndex((m) => m.id === messageId);
+
+    // 真编辑：先把被编辑的用户消息及其后所有消息从会话历史截断，再用新内容重发，
+    // 避免旧消息与新消息同时进入模型上下文（"假编辑"会造成上下文双份）。
+    if (sessionId && idx >= 0) {
+      try {
+        const result = await ipcService.invoke(IPC_CHANNELS.MESSAGE_TRUNCATE_FROM, sessionId, messageId);
+        if (!result.success) {
+          toast.error(`编辑失败：${result.error || '无法截断会话历史'}`);
+          return;
+        }
+        useSessionStore.getState().setMessages(messages.slice(0, idx));
+      } catch (error) {
+        toast.error(`编辑失败：${error instanceof Error ? error.message : String(error)}`);
+        return;
+      }
+    }
+
+    await _send(newContent);
   },
 
   regenerateMessage: (messageId: string) => {
@@ -70,6 +93,19 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
         return;
       }
     }
+  },
+
+  regenerateLast: () => {
+    const { _getMessages, regenerateMessage } = get();
+    if (!_getMessages) return false;
+    const messages = _getMessages();
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant' && messages[i].id) {
+        regenerateMessage(messages[i].id!);
+        return true;
+      }
+    }
+    return false;
   },
 
   forkFromHere: async (messageId: string) => {

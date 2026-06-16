@@ -19,7 +19,8 @@ function makeSession(overrides: Partial<SessionWithMeta>): SessionWithMeta {
 }
 
 describe('buildSessionRecoveryHints', () => {
-  it('summarizes workspace, branch, PR, and artifact signals from session metadata', () => {
+  // 简化后：会话项只保留定位上下文（工作区 / 分支 / PR），不再堆最近工具/能力计数/Replay/产物。
+  it('summarizes only the locating context (workspace, branch, PR)', () => {
     const hints = buildSessionRecoveryHints(makeSession({
       workingDirectory: '/repo/code-agent',
       gitBranch: 'feature/project-sidebar',
@@ -38,15 +39,15 @@ describe('buildSessionRecoveryHints', () => {
       },
     }));
 
+    // 不再有 '产物' / 'write_file' 这类引擎内幕 chip
     expect(hints.map((hint) => hint.label)).toEqual([
       'code-agent',
       'project-sidebar',
       'PR #42',
-      '产物',
     ]);
   });
 
-  it('falls back to recent tool and capability counts when there is no code metadata', () => {
+  it('drops recent-tool and capability-count hints (engine internals)', () => {
     const hints = buildSessionRecoveryHints(makeSession({
       workbenchSnapshot: {
         summary: 'Browser research',
@@ -58,15 +59,11 @@ describe('buildSessionRecoveryHints', () => {
       },
     }));
 
-    expect(hints.map((hint) => hint.label)).toEqual([
-      'browser_action',
-      '1 Skill',
-      '2 Connector',
-      '1 MCP',
-    ]);
+    // 没有任何定位上下文（无工作目录/分支/PR）→ 不再退回工具/能力计数，结果为空
+    expect(hints).toEqual([]);
   });
 
-  it('keeps the row compact by returning at most four hints', () => {
+  it('keeps the row compact by returning at most three hints', () => {
     const hints = buildSessionRecoveryHints(makeSession({
       workingDirectory: '/repo/code-agent',
       gitBranch: 'main',
@@ -87,39 +84,17 @@ describe('buildSessionRecoveryHints', () => {
       },
     }));
 
-    expect(hints).toHaveLength(4);
+    expect(hints).toHaveLength(3);
   });
 
-  it('shows workflow replay evidence without inventing an artifact row hint', () => {
-    const hints = buildSessionRecoveryHints(makeSession({
-      workbenchSnapshot: {
-        summary: 'Workflow',
-        labels: [],
-        recentToolNames: [],
-      },
-    }), { hasReplay: true });
+  it('no longer emits a Replay hint (Replay has its own button)', () => {
+    expect(buildSessionRecoveryHints(makeSession({
+      workbenchSnapshot: { summary: 'Workflow', labels: [], recentToolNames: [] },
+    }), { hasReplay: true })).toEqual([]);
 
-    expect(hints.map((hint) => hint.label)).toEqual(['Replay']);
-    expect(hints[0]).toMatchObject({
-      kind: 'replay',
-      title: '打开这个会话的 Workflow / Replay 证据',
-    });
-  });
-
-  it('explains restricted replay access while keeping evidence visible', () => {
-    const hints = buildSessionRecoveryHints(makeSession({
-      workbenchSnapshot: {
-        summary: 'Workflow',
-        labels: [],
-        recentToolNames: [],
-      },
-    }), { hasReplay: true, canOpenReplay: false });
-
-    expect(hints).toEqual([{
-      kind: 'replay',
-      label: 'Replay',
-      title: '这个会话有 Workflow / Replay 证据，结构化 Replay 仅管理员可打开',
-    }]);
+    expect(buildSessionRecoveryHints(makeSession({
+      workbenchSnapshot: { summary: 'Workflow', labels: [], recentToolNames: [] },
+    }), { hasReplay: true, canOpenReplay: false })).toEqual([]);
   });
 
   it('reuses delivery signals for sidebar filtering and row hints', () => {

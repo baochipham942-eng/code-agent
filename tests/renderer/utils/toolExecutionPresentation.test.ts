@@ -5,6 +5,8 @@ import {
   getToolCapabilitySource,
   getToolPermissionView,
   getToolRecoveryHint,
+  humanizeToolError,
+  isAutoLoadedRetry,
   summarizeToolLoopDecision,
 } from '../../../src/renderer/utils/toolExecutionPresentation';
 
@@ -46,7 +48,7 @@ describe('toolExecutionPresentation', () => {
       name: 'Bash',
       expectedOutcome: '跑完验证',
       result: { toolCallId: 'tool-1', success: false, error: 'failed' },
-    }), 'error')).toBe('恢复：跑完验证');
+    }), 'error')).toBe('可重试：跑完验证');
   });
 
   it('summarizes loop decision for pending, failed, and completed tools', () => {
@@ -63,7 +65,7 @@ describe('toolExecutionPresentation', () => {
       shortDescription: '运行测试',
       result: 'failed',
       success: false,
-    }])?.expectedNextAction).toBe('查看错误输出，必要时换工具或重试');
+    }])?.expectedNextAction).toBe('可以重试，或换个工具试试');
 
     expect(summarizeToolLoopDecision([{
       name: 'Read',
@@ -75,5 +77,77 @@ describe('toolExecutionPresentation', () => {
       reason: '确认入口',
       tone: 'success',
     });
+  });
+
+  it('detects auto-loaded retry results as benign', () => {
+    expect(isAutoLoadedRetry({ autoLoaded: true })).toBe(true);
+    expect(isAutoLoadedRetry({ autoLoadedTools: 'WebFetch' })).toBe(true);
+    expect(isAutoLoadedRetry({})).toBe(false);
+    expect(isAutoLoadedRetry(null)).toBe(false);
+    expect(isAutoLoadedRetry(undefined)).toBe(false);
+  });
+
+  it('does not raise a 暂停恢复 decision for auto-loaded retry pseudo-failures', () => {
+    // 仅有一条 auto-load 伪失败 → 不应弹任何决策 chip（被当良性内部状态忽略）
+    expect(summarizeToolLoopDecision([{
+      name: 'WebFetch',
+      result: 'Tool WebFetch was not loaded yet and has now been auto-loaded.',
+      success: false,
+      metadata: { autoLoadedTools: 'WebFetch', autoLoaded: true },
+    }])).toBeNull();
+
+    // auto-load 伪失败 + 真成功混在一起 → 只看真成功，不再判为失败
+    expect(summarizeToolLoopDecision([
+      {
+        name: 'WebFetch',
+        result: 'auto-loaded',
+        success: false,
+        metadata: { autoLoaded: true },
+      },
+      {
+        name: 'WebFetch',
+        expectedOutcome: '抓取 changelog',
+        result: 'ok',
+        success: true,
+      },
+    ])).toMatchObject({ tone: 'success' });
+  });
+
+  it('ignores recovered failures so a recovered turn is not headlined as failed', () => {
+    // 单独一条"已恢复"的失败 → 不弹「工具报错」决策
+    expect(summarizeToolLoopDecision([{
+      name: 'WebSearch',
+      result: 'All search sources failed',
+      success: false,
+      recovered: true,
+    }])).toBeNull();
+
+    // 失败(已恢复) + 后续真成功 → 整体判成功，不顶失败
+    expect(summarizeToolLoopDecision([
+      { name: 'WebSearch', result: 'failed', success: false, recovered: true },
+      { name: 'WebFetch', expectedOutcome: '抓取 changelog', result: 'ok', success: true },
+    ])).toMatchObject({ tone: 'success' });
+  });
+
+  it('humanizes search-source quota errors with a settings hint', () => {
+    const raw = [
+      'All search sources failed:',
+      'perplexity: HTTP 401: {"error":{"message":"You exceeded your current quota","type":"insufficient_quota","code":401}}',
+      'exa: HTTP 402: {"error":"You have exceeded your credits limit","tag":"NO_MORE_CREDITS"}',
+      'tavily: HTTP 432: {"detail":{"error":"This request exceeds your plan\'s set usage limit"}}',
+    ].join('\n');
+    const humanized = humanizeToolError(raw, 'WebSearch');
+    expect(humanized).not.toBeNull();
+    expect(humanized?.settingsHint).toBe(true);
+    expect(humanized?.summary).toContain('额度不足');
+    // 识别出涉及的具体源
+    expect(humanized?.summary).toContain('perplexity');
+    expect(humanized?.summary).toContain('tavily');
+  });
+
+  it('returns null for unrecognized errors so raw output is preserved', () => {
+    expect(humanizeToolError('TypeError: cannot read property foo of undefined')).toBeNull();
+    expect(humanizeToolError('')).toBeNull();
+    expect(humanizeToolError(undefined)).toBeNull();
   });
 });

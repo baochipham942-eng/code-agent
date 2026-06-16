@@ -189,7 +189,13 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
 
   // 首行的 workspace / Routing / Browser 已分别迁到 TitleBar 和 ChatInput AbilityMenu。
   // 这里保留用户本轮可显式选择的 Skills / Connectors / MCP。
-  const shouldRenderBar = shouldShowSkills || shouldShowConnectors || shouldShowMcpServers || blockedCapabilities.length > 0 || resolvedCapabilities.length > 0;
+  // 能力汇总行（"能力 · 自动匹配" / "Skills 0/131 · MCP 0/16"）在 Auto 态且没手动选时是纯噪音，
+  // 整行隐藏；只有进了 Manual 或手动选了能力才显示。blocked/resolved 这类有信息量的区块不受影响。
+  const hasManualSelection = selectedSkillCount + selectedConnectorCount + selectedMcpServerCount > 0;
+  const showCapabilitySummary =
+    (shouldShowSkills || shouldShowConnectors || shouldShowMcpServers)
+    && (turnCapabilityScopeMode === 'manual' || hasManualSelection);
+  const shouldRenderBar = showCapabilitySummary || blockedCapabilities.length > 0 || resolvedCapabilities.length > 0;
   const gapCardNode = gapNotice && currentSessionId ? (
     <GapCard
       requiredCapability={gapNotice.requiredCapability}
@@ -215,6 +221,7 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
     );
   }
 
+  // showCapabilitySummary 已保证只在 Manual / 已手动选能力时为真，这里直接给有意义的已选/可选计数。
   const summaryParts: string[] = [];
   if (shouldShowSkills) summaryParts.push(`Skills ${selectedSkillCount}/${skills.length}`);
   if (shouldShowConnectors) summaryParts.push(`Connectors ${selectedConnectorCount}/${connectors.length}`);
@@ -223,7 +230,7 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
 
   return (
     <div className="mb-2 rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-1.5">
-      {(shouldShowSkills || shouldShowConnectors || shouldShowMcpServers) && (
+      {showCapabilitySummary && (
         <>
           <div className="flex items-center gap-2">
             <button

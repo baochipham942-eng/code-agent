@@ -49,6 +49,8 @@ import {
   Eye,
   ShieldAlert,
   PanelRightOpen,
+  ListFilter,
+  Check,
 } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { ConfigScopeSummary } from '@shared/contract/configScope';
@@ -134,7 +136,7 @@ const SESSION_STATUS_FILTER_OPTIONS: Array<{ id: SessionStatusFilter; label: str
   { id: 'unfinished', label: '未完成' },
   { id: 'approval', label: '待确认' },
   { id: 'running', label: '执行中' },
-  { id: 'attention', label: '待处理' },
+  { id: 'attention', label: '需关注' },
   { id: 'artifact', label: '交付线索' },
   { id: 'review', label: '待审', adminOnly: true },
 ];
@@ -143,7 +145,7 @@ const SESSION_STATUS_FILTER_LABELS: Record<SessionStatusFilter, string> = {
   unfinished: '未完成',
   approval: '待确认',
   running: '执行中',
-  attention: '待处理',
+  attention: '需关注',
   artifact: '交付线索',
   review: '待审',
   background: '后台执行中',
@@ -302,8 +304,10 @@ export const Sidebar: React.FC = () => {
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
   const [, setAppVersion] = useState<string>('');
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [statusFilterOpen, setStatusFilterOpen] = useState(false);
+  const statusFilterRef = useRef<HTMLDivElement>(null);
   const [showAccountAdvancedTools, setShowAccountAdvancedTools] = useState(false);
-  const [creatingSessionMode, setCreatingSessionMode] = useState<'current' | 'blank' | null>(null);
+  const [creatingSessionMode, setCreatingSessionMode] = useState<'current' | null>(null);
   const [creatingWorkspaceKey, setCreatingWorkspaceKey] = useState<string | null>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const isCreatingSession = creatingSessionMode !== null;
@@ -344,6 +348,25 @@ export const Sidebar: React.FC = () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [showUserMenu]);
+
+  // 状态筛选下拉：点外面 / Esc 关闭
+  useEffect(() => {
+    if (!statusFilterOpen) return undefined;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (statusFilterRef.current && !statusFilterRef.current.contains(event.target as Node)) {
+        setStatusFilterOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setStatusFilterOpen(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [statusFilterOpen]);
 
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState<{
@@ -712,6 +735,9 @@ export const Sidebar: React.FC = () => {
     setWorkspaceExpanded(workspaceKey, true);
   }, [setWorkspaceExpanded]);
 
+  // D-11: 顶部「新会话」默认为纯 chat，不继承项目上下文（workingDirectory: null）。
+  // 需要项目上下文的会话改由各项目组 header 的 + 按钮（createWorkspaceChat）创建。
+  // 原独立「空白」入口已下线。
   const handleNewChat = async () => {
     if (isCreatingSession || creatingWorkspaceKey) {
       return;
@@ -719,24 +745,10 @@ export const Sidebar: React.FC = () => {
 
     setCreatingSessionMode('current');
     try {
-      const session = await createSession('新对话');
+      const session = await createSession('新对话', { workingDirectory: null });
       if (session) {
         setWorkspaceExpanded(getSidebarGroupKeyForSession(session), true);
       }
-      clearPlanningState();
-    } finally {
-      setCreatingSessionMode(null);
-    }
-  };
-
-  const handleNewBlankChat = async () => {
-    if (isCreatingSession || creatingWorkspaceKey) {
-      return;
-    }
-
-    setCreatingSessionMode('blank');
-    try {
-      await createSession('新对话', { workingDirectory: null });
       clearPlanningState();
     } finally {
       setCreatingSessionMode(null);
@@ -1411,6 +1423,8 @@ export const Sidebar: React.FC = () => {
     const isRenaming = renamingId === session.id;
     const sessionRuntime = sessionRuntimes.get(session.id);
     const backgroundTask = backgroundTaskMap.get(session.id);
+    // 空会话（0 轮 / 0 消息）没有可回放内容，行内不展示 Replay 入口，避免「新对话」上挂个没用的图标。
+    const sessionHasActivity = (session.turnCount ?? 0) > 0 || (session.messageCount ?? 0) > 0;
     const status = getSessionStatusPresentation({
       backgroundTask,
       runtime: sessionRuntime,
@@ -1511,24 +1525,22 @@ export const Sidebar: React.FC = () => {
 
           {!multiSelectMode && !isRenaming && (
             <>
-              <button
-                type="button"
-                aria-label={canOpenSessionReplay
-                  ? `打开 ${displayTitle} Replay`
-                  : `Replay 仅管理员可用：${displayTitle}`}
-                title={canOpenSessionReplay
-                  ? `打开 ${displayTitle} Replay`
-                  : 'Replay 仅管理员可用'}
-                disabled={!canOpenSessionReplay}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  void handleOpenSessionReplay(session);
-                }}
-                className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-500"
-              >
-                <Eye className="h-3.5 w-3.5" />
-              </button>
+              {/* D-9: Replay 仅管理员可用 — 非管理员直接不渲染；空会话也不渲染（无可回放内容） */}
+              {canOpenSessionReplay && sessionHasActivity && (
+                <button
+                  type="button"
+                  aria-label={`打开 ${displayTitle} Replay`}
+                  title={`打开 ${displayTitle} Replay`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void handleOpenSessionReplay(session);
+                  }}
+                  className="shrink-0 rounded-md p-1 text-zinc-500 opacity-0 transition-all hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden group-hover:opacity-100"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                </button>
+              )}
               {topReviewItem && (
                 <button
                   type="button"
@@ -1551,7 +1563,7 @@ export const Sidebar: React.FC = () => {
                   aria-label={`打开 ${displayTitle} 的产物与资产`}
                   title={`打开 ${displayTitle} 的产物与资产`}
                   onClick={(event) => { void handleOpenSessionAssets(event, session); }}
-                  className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
+                  className="shrink-0 rounded-md p-1 text-zinc-500 opacity-0 transition-all hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden group-hover:opacity-100"
                 >
                   <ScrollText className="h-3.5 w-3.5" />
                 </button>
@@ -1597,7 +1609,7 @@ export const Sidebar: React.FC = () => {
               ))}
             </span>
             <span className="text-[10px] text-zinc-600 shrink-0">
-              {lastActiveLabel}
+              {(session.turnCount ?? 0) > 0 ? `${session.turnCount} 轮 · ${lastActiveLabel}` : lastActiveLabel}
             </span>
           </div>
         )}
@@ -1675,11 +1687,11 @@ export const Sidebar: React.FC = () => {
     <div className="flex-1 flex flex-col bg-transparent overflow-hidden">
       {/* Header: h-12 to align with TitleBar on the right */}
       <div className="h-12 px-3 flex items-center justify-between gap-2 flex-shrink-0 window-drag">
-        {/* New Chat */}
+        {/* New Chat — 纯对话，不继承项目上下文（项目会话走各项目组 + 按钮） */}
         <button
           onClick={handleNewChat}
           disabled={isCreatingSession || creatingWorkspaceKey !== null}
-          title="新建当前项目会话"
+          title="新建会话（纯对话，不继承项目上下文）"
           className="flex min-w-0 flex-1 items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50 window-no-drag"
         >
           <span className="w-6 h-6 rounded-full bg-zinc-600 flex items-center justify-center">
@@ -1691,21 +1703,50 @@ export const Sidebar: React.FC = () => {
           </span>
           <span className="text-sm font-normal">新会话</span>
         </button>
-        <button
-          type="button"
-          onClick={handleNewBlankChat}
-          disabled={isCreatingSession || creatingWorkspaceKey !== null}
-          aria-label="新建空白会话，不继承项目上下文"
-          title="新建空白会话，不继承项目上下文"
-          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-zinc-700 px-2 text-[11px] font-medium text-zinc-500 transition-colors hover:border-zinc-600 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50 window-no-drag"
-        >
-          {creatingSessionMode === 'blank' ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <MessageSquareText className="h-3.5 w-3.5" />
-          )}
-          <span>空白</span>
-        </button>
+
+        {/* 状态筛选：仅管理员可见，收成一个图标 + 下拉（不再平铺一整排 tab） */}
+        {canOpenSessionReplay && (
+          <div className="relative shrink-0 window-no-drag" ref={statusFilterRef}>
+            <button
+              type="button"
+              onClick={() => setStatusFilterOpen((v) => !v)}
+              aria-label="按状态筛选会话"
+              aria-expanded={statusFilterOpen}
+              title={sessionStatusFilter === 'all' ? '按状态筛选会话' : `状态筛选：${activeStatusFilterLabel}`}
+              className={`relative inline-flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${
+                sessionStatusFilter !== 'all'
+                  ? 'border-zinc-500 bg-zinc-700/70 text-zinc-100'
+                  : 'border-transparent text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'
+              }`}
+            >
+              <ListFilter className="h-4 w-4" />
+              {sessionStatusFilter !== 'all' && (
+                <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-cyan-400" />
+              )}
+            </button>
+            {statusFilterOpen && (
+              <div className="absolute right-0 top-full z-30 mt-1 min-w-[160px] rounded-lg border border-zinc-700 bg-zinc-800 py-1 shadow-xl">
+                <div className="px-3 pb-1 pt-1 text-[10px] uppercase tracking-wider text-zinc-500">按状态筛选</div>
+                {visibleStatusFilterOptions.map((option) => {
+                  const active = sessionStatusFilter === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => { setSessionStatusFilter(option.id); setStatusFilterOpen(false); }}
+                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-zinc-700 ${
+                        active ? 'text-zinc-100' : 'text-zinc-400'
+                      }`}
+                    >
+                      <Check className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-cyan-400' : 'text-transparent'}`} />
+                      <span>{option.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Search Box */}
@@ -1754,23 +1795,7 @@ export const Sidebar: React.FC = () => {
               <span className="h-4 w-px shrink-0 bg-zinc-800" />
             </>
           )}
-          {visibleStatusFilterOptions.map((option) => {
-            const active = sessionStatusFilter === option.id;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => setSessionStatusFilter(option.id)}
-                className={`shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
-                  active
-                    ? 'border-zinc-500 bg-zinc-700/70 text-zinc-100'
-                    : 'border-zinc-800 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/60 hover:text-zinc-300'
-                }`}
-              >
-                {option.label}
-              </button>
-            );
-          })}
+          {/* 状态筛选已移到顶部「新会话」右侧的筛选图标下拉（仅管理员）。这里只保留搜索范围 + 搜索状态。 */}
           {messageSearchLoading && searchQuery.trim() && (
             <span className="shrink-0 px-1 text-[11px] text-zinc-600">搜消息中...</span>
           )}
@@ -1831,6 +1856,7 @@ export const Sidebar: React.FC = () => {
                 signals: groupExpansionSignals,
                 isCollapsing: Boolean(collapsingWorkspaces[group.key]),
                 displayName: summary.displayName,
+                disableForceExpand: group.isUncategorized,
               });
               const expanded = expansionView.isVisibleExpanded;
               const summaryLine = formatSidebarProjectSummaryLine({
@@ -1840,7 +1866,7 @@ export const Sidebar: React.FC = () => {
                 workspacePaths: group.paths,
               });
               const title = group.isUncategorized
-                ? '空白会话，不继承项目上下文'
+                ? '纯对话，不继承项目上下文'
                 : `${summary.displayName}${group.paths.length > 0 ? ` · ${group.paths.join(' · ')}` : ''}`;
               const detailsExpanded = Boolean(expandedProjectDetails[group.key]);
               const drawerOpen = projectDrawerKey === group.key;

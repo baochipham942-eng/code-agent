@@ -613,12 +613,12 @@ describe('buildModelStrategyRecommendation', () => {
     });
 
     expect(recommendation).toMatchObject({
-      title: '联网任务建议搜索模型',
+      title: '这个任务可能需要联网搜索',
       primaryAction: 'switch-model',
       targetProvider: 'perplexity',
       targetModel: 'sonar-pro',
     });
-    expect(recommendation?.body).toContain('搜索特化主任务模型');
+    expect(recommendation?.body).toContain('不太擅长搜索');
     expect(recommendation?.strategyFactors).toEqual([
       { label: '任务', value: '联网检索' },
       { label: '需要', value: '搜索' },

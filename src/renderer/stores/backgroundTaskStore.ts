@@ -47,8 +47,9 @@ export const useBackgroundTaskStore = create<BackgroundTaskStore>()((set) => ({
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.warn('Failed to refresh background tasks', { error: message });
+      // 仅更新 UI 错误态；日志与退避交给调用方 poller（节流，避免后端不可达时刷屏）
       set({ isLoading: false, error: message });
+      throw error;
     }
   },
 

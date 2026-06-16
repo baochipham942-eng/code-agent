@@ -25,6 +25,7 @@ import {
   TAVILY_SEARCH_URL,
   buildDomainQuerySuffix,
   formatAge,
+  getSearchErrorCircuitBreakerCooldown,
 } from './searchUtils';
 
 // ============================================================================
@@ -133,7 +134,7 @@ export const SEARCH_SOURCES: SearchSource[] = [
   {
     name: 'tavily',
     priority: 5,
-    isAvailable: (cs) => !!cs?.getServiceApiKey('tavily') || !!process.env.TAVILY_API_KEY,
+    isAvailable: (cs) => getTavilyKeys(cs).length > 0,
     search: searchViaTavily,
   },
   {
@@ -602,21 +603,53 @@ async function searchViaBrave(
   };
 }
 
-/**
- * Search via Tavily API (AI-powered search with answer + results)
- */
-async function searchViaTavily(
+// ============================================================================
+// Tavily key pool — rotate across multiple keys, skip exhausted ones
+// ============================================================================
+//
+// Tavily dev keys have a small per-key credit budget. A single key runs dry fast,
+// so we support a pool: `TAVILY_API_KEYS` (comma/newline/space separated) plus the
+// legacy single key. When a key returns 401/402/432/quota we mark it exhausted and
+// rotate to the next within the same call. Only when EVERY key is exhausted does the
+// outer circuit breaker trip and skip tavily entirely.
+
+/** exhausted key -> cooldown expiry timestamp (ms) */
+const tavilyKeyCooldown: Record<string, number> = {};
+const TAVILY_KEY_COOLDOWN = 24 * 60 * 60 * 1000; // 24h — dev key budgets reset slowly
+
+export function getTavilyKeys(
+  configService: ReturnType<typeof getConfigService>
+): string[] {
+  const raw: string[] = [];
+  const pool = process.env.TAVILY_API_KEYS;
+  if (pool) raw.push(...pool.split(/[\s,]+/));
+  const single = configService?.getServiceApiKey('tavily') || process.env.TAVILY_API_KEY;
+  if (single) raw.push(single);
+  // Dedup while preserving order; drop empties.
+  return [...new Set(raw.map(k => k.trim()).filter(Boolean))];
+}
+
+function isTavilyKeyExhausted(key: string): boolean {
+  const until = tavilyKeyCooldown[key];
+  if (!until) return false;
+  if (until - Date.now() <= 0) {
+    delete tavilyKeyCooldown[key];
+    return false;
+  }
+  return true;
+}
+
+function maskTavilyKey(key: string): string {
+  return key.length <= 12 ? '***' : `${key.slice(0, 8)}…${key.slice(-4)}`;
+}
+
+async function callTavily(
+  apiKey: string,
   query: string,
   maxResults: number,
-  configService: ReturnType<typeof getConfigService>,
   domainFilter?: DomainFilter,
   recency?: string
-): Promise<SearchSourceResult> {
-  const apiKey = configService?.getServiceApiKey('tavily') || process.env.TAVILY_API_KEY;
-  if (!apiKey) {
-    return { source: 'tavily', success: false, error: 'API key not configured' };
-  }
-
+): Promise<{ ok: true; data: TavilySearchResponse } | { ok: false; error: string }> {
   const body: Record<string, unknown> = {
     query,
     max_results: maxResults,
@@ -649,39 +682,66 @@ async function searchViaTavily(
 
   if (!response.ok) {
     const errorText = await response.text();
-    return {
-      source: 'tavily',
-      success: false,
-      error: `HTTP ${response.status}: ${errorText}`,
-    };
+    return { ok: false, error: `HTTP ${response.status}: ${errorText}` };
   }
 
-  const data = await response.json() as TavilySearchResponse;
+  return { ok: true, data: await response.json() as TavilySearchResponse };
+}
 
-  if (data.answer) {
-    return {
-      source: 'tavily',
-      success: true,
-      answer: data.answer,
-      results: (data.results || []).map(r => ({
-        title: r.title,
-        url: r.url,
-        snippet: r.content,
-        age: r.published_date ? formatAge(r.published_date) : undefined,
-        source: 'tavily',
-      })),
-    };
+/**
+ * Search via Tavily API (AI-powered search with answer + results).
+ * Rotates across the key pool: on a quota/auth failure the current key is marked
+ * exhausted and the next key is tried automatically.
+ */
+async function searchViaTavily(
+  query: string,
+  maxResults: number,
+  configService: ReturnType<typeof getConfigService>,
+  domainFilter?: DomainFilter,
+  recency?: string
+): Promise<SearchSourceResult> {
+  const allKeys = getTavilyKeys(configService);
+  if (allKeys.length === 0) {
+    return { source: 'tavily', success: false, error: 'API key not configured' };
   }
 
-  return {
-    source: 'tavily',
-    success: true,
-    results: (data.results || []).map(r => ({
+  // Prefer keys not on cooldown; if all are cooling down, still try them (may have reset).
+  const fresh = allKeys.filter(k => !isTavilyKeyExhausted(k));
+  const tryKeys = fresh.length > 0 ? fresh : allKeys;
+
+  let lastError = 'All Tavily keys exhausted';
+  for (const apiKey of tryKeys) {
+    const res = await callTavily(apiKey, query, maxResults, domainFilter, recency);
+
+    if (!res.ok) {
+      lastError = res.error;
+      // Quota/auth failure on this key → mark exhausted and rotate to the next.
+      if (getSearchErrorCircuitBreakerCooldown(res.error) !== null) {
+        tavilyKeyCooldown[apiKey] = Date.now() + TAVILY_KEY_COOLDOWN;
+        continue;
+      }
+      // Other (transient/network) error → don't burn the whole pool, surface it.
+      return { source: 'tavily', success: false, error: res.error };
+    }
+
+    const data = res.data;
+    const results = (data.results || []).map(r => ({
       title: r.title,
       url: r.url,
       snippet: r.content,
       age: r.published_date ? formatAge(r.published_date) : undefined,
       source: 'tavily',
-    })),
+    }));
+    return data.answer
+      ? { source: 'tavily', success: true, answer: data.answer, results }
+      : { source: 'tavily', success: true, results };
+  }
+
+  // Every key we tried is exhausted — return the last quota error so the outer
+  // circuit breaker trips and skips tavily for a while.
+  return {
+    source: 'tavily',
+    success: false,
+    error: `${lastError} (tried ${tryKeys.length} key${tryKeys.length > 1 ? 's' : ''}: ${tryKeys.map(maskTavilyKey).join(', ')})`,
   };
 }

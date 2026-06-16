@@ -13,6 +13,7 @@ import { buildStepLabel, buildSingleToolLabel } from '../../../utils/toolStepGro
 import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 import {
   formatToolDuration,
+  isAutoLoadedRetry,
   summarizeToolLoopDecisionFromNodes,
   type ToolLoopDecisionSummary,
 } from '../../../utils/toolExecutionPresentation';
@@ -53,6 +54,9 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     for (const n of nodes) {
       const tc = n.toolCall;
       if (!tc) continue;
+      // 自动加载重试 + 已恢复的失败都是良性/已收尾状态，不参与组状态判定
+      // （否则组会卡 error/partial、顶红、一直展开，把成功的一轮演成翻车）。
+      if (isAutoLoadedRetry(tc.metadata) || tc.recovered) continue;
       if (tc._streaming) return 'streaming';
       if (tc.success === false) hasError = true;
       if (tc.success === true || (tc.result !== undefined && tc.success !== false)) {
@@ -97,7 +101,9 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
                   error: tc.success === false ? tc.result : undefined,
                   duration: tc.duration,
                   outputPath: tc.outputPath,
-                  metadata: tc.metadata,
+                  metadata: tc.recovered
+                    ? { ...(tc.metadata || {}), recovered: true }
+                    : tc.metadata,
                 }
               : undefined,
         } as ToolCall;
@@ -118,6 +124,11 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const outputCount = useMemo(() => {
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
   }, [toolCalls]);
+  // 结局优先：这组里有多少次失败已被后续成功恢复——只用于安静地标个「已恢复」，不顶红。
+  const recoveredCount = useMemo(
+    () => nodes.filter((n) => n.toolCall?.recovered).length,
+    [nodes],
+  );
   const totalDuration = useMemo(() => {
     const total = toolCalls.reduce((sum, toolCall) => sum + (toolCall.result?.duration ?? 0), 0);
     return total > 0 ? formatToolDuration(total) : null;
@@ -149,6 +160,14 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           <span className={`flex-shrink-0 ${getToolGroupStatusClass(status)}`}>{getToolGroupStatusLabel(status)}</span>
         )}
         <span className="min-w-0 flex-1 truncate font-mono">{label}</span>
+        {recoveredCount > 0 && (
+          <span
+            className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500"
+            title="这次失败后已自动恢复"
+          >
+            已恢复
+          </span>
+        )}
         {status !== 'ok' && resultSummary && (
           <span className="hidden max-w-[220px] truncate text-zinc-600 sm:inline">{resultSummary}</span>
         )}
@@ -255,6 +274,9 @@ function summarizeToolGroupResults(toolCalls: ToolCall[]): string | null {
   for (const toolCall of toolCalls) {
     const result = toolCall.result;
     if (!result) continue;
+    // 自动加载重试 + 已恢复的失败不计入任何计数（否则会出现 "1 failed, 1 completed"
+    // 这种自相矛盾，或把已被恢复的失败仍计成 failed）。
+    if (isAutoLoadedRetry(result.metadata) || result.metadata?.recovered) continue;
     if (result.success === false) {
       failed += 1;
       continue;

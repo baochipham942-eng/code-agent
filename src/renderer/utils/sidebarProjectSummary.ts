@@ -119,7 +119,7 @@ export function buildSidebarProjectSummary({
   }
 
   return {
-    displayName: group.isUncategorized ? '未分类' : projectMeta?.name || group.name,
+    displayName: group.isUncategorized ? '对话' : projectMeta?.name || group.name,
     sessionCount: projectMeta?.sessionCount ?? group.sessions.length,
     unfinishedCount: pendingApprovalCount + attentionCount + runningCount,
     pendingApprovalCount,
@@ -185,9 +185,9 @@ export function formatSidebarProjectSummaryLine({
   now,
 }: FormatSidebarProjectSummaryLineOptions): string {
   const items: string[] = [];
-  if (isUncategorized) {
-    items.push('空白会话');
-  } else {
+  if (!isUncategorized) {
+    // 未分类组不再前缀「空白会话」——与组名重复、且用户反馈该措辞看不懂；
+    // 「N 会话 · 最近 X」已足够表达，完整解释保留在组标题 hover tooltip。
     const pathLabel = formatWorkspacePathLabel(workspacePaths[0]);
     if (pathLabel) {
       items.push(workspacePaths.length > 1 ? `${pathLabel} +${workspacePaths.length - 1} 工作区` : pathLabel);
@@ -203,7 +203,8 @@ export function formatSidebarProjectSummaryLine({
     items.push(`${summary.runningCount} 执行中`);
   }
   if (summary.attentionCount > 0) {
-    items.push(`${summary.attentionCount} 待处理`);
+    // 与头部聚合「未完成」区分：这里是其中需要你看一眼的子集（出错/暂停/未跑完），用"需关注"避免同词歧义。
+    items.push(`${summary.attentionCount} 需关注`);
   }
   if (summary.reviewIssueCount > 0) {
     items.push(`${summary.reviewIssueCount} 待审`);

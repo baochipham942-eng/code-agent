@@ -319,6 +319,29 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             workingDirectory: inheritedWorkingDirectory,
           });
           if (reusableSession) {
+            // 与新建路径一致：复用空草稿时也继承当前会话的 native 模型选择，
+            // 避免「点新会话模型被重置」。仅当当前会话有显式 override 时才应用，
+            // 不覆盖草稿自身已设的模型；switchModel 须在 switchSession 之前完成，
+            // 否则 ModelSwitcher 监听 sessionId 变化会先读到旧值。
+            const draftPrevSessionId = get().currentSessionId;
+            if (!options?.engine && draftPrevSessionId && draftPrevSessionId !== reusableSession.id) {
+              try {
+                const override = await invokeSession<{ provider: string; model: string; adaptive?: boolean } | null>(
+                  'getModelOverride',
+                  { sessionId: draftPrevSessionId },
+                );
+                if (override?.provider && override?.model) {
+                  await invokeSession('switchModel', {
+                    sessionId: reusableSession.id,
+                    provider: override.provider,
+                    model: override.model,
+                    adaptive: !!override.adaptive,
+                  });
+                }
+              } catch {
+                logger.warn('Failed to inherit model selection for reused draft session');
+              }
+            }
             if (get().currentSessionId !== reusableSession.id) {
               await get().switchSession(reusableSession.id);
             }
@@ -329,7 +352,19 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         }
 
         // 记录上一个会话的 engine，外部引擎（Codex/Claude）选择在新会话创建后继承
-        const previousEngine = get().sessions.find((s) => s.id === get().currentSessionId)?.engine;
+        const previousSessionId = get().currentSessionId;
+        const previousEngine = get().sessions.find((s) => s.id === previousSessionId)?.engine;
+        const shouldInheritNativeModel =
+          !options?.engine &&
+          (!previousEngine || previousEngine.kind === 'native') &&
+          !!previousSessionId;
+        // 预读上一会话的 native 模型覆盖（与 create 并行，降低延迟）
+        const previousModelOverridePromise = shouldInheritNativeModel
+          ? invokeSession<{ provider: string; model: string; adaptive?: boolean } | null>(
+              'getModelOverride',
+              { sessionId: previousSessionId },
+            ).catch(() => null)
+          : Promise.resolve(null);
 
         set({ isLoading: true, error: null });
         const session = await invokeSession<Session | null>('create', {
@@ -343,6 +378,26 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             messageCount: 0,
             turnCount: 0,
           });
+
+          // 继承上一会话的 native 模型选择，必须在激活（设置 currentSessionId）之前完成：
+          // 否则 ModelSwitcher 监听 sessionId 变化拉取 override 时会先拿到默认值再不刷新，
+          // 表现为「新会话模型被重置」。提前 switchModel 让其挂载即读到正确 override。
+          if (shouldInheritNativeModel && previousSessionId !== session.id) {
+            try {
+              const override = await previousModelOverridePromise;
+              if (override?.provider && override?.model) {
+                await invokeSession('switchModel', {
+                  sessionId: session.id,
+                  provider: override.provider,
+                  model: override.model,
+                  adaptive: !!override.adaptive,
+                });
+              }
+            } catch {
+              logger.warn('Failed to inherit model selection for new session');
+            }
+          }
+
           invalidatePendingSessionSwitches();
           useAppStore.getState().setWorkingDirectory(newSessionWithMeta.workingDirectory ?? null);
           set((state) => ({

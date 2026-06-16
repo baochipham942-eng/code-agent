@@ -94,11 +94,19 @@ import { AppearanceSettings } from './tabs/AppearanceSettings';
 import { SoulSettings } from './tabs/SoulSettings';
 import { DataSettings } from './tabs/DataSettings';
 import { UpdateSettings } from './tabs/UpdateSettings';
-import { MCPSettings } from './tabs/MCPSettings';
+// 重型 tab（拉 mcpCatalog / almaPluginRegistry / almaRecommendationPolicy 等大注册表）
+// 改懒加载：首屏不再随 SettingsModal chunk 一起加载，按需打开对应 tab 才拉。
+const MCPSettings = React.lazy(() =>
+  import('./tabs/MCPSettings').then((m) => ({ default: m.MCPSettings })),
+);
 import { MemoryTab } from './tabs/MemoryTab';
 import { RolesTab } from './tabs/RolesTab';
-import { SkillsSettings } from './tabs/SkillsSettings';
-import { PluginsSettings } from './tabs/PluginsSettings';
+const SkillsSettings = React.lazy(() =>
+  import('./tabs/SkillsSettings').then((m) => ({ default: m.SkillsSettings })),
+);
+const PluginsSettings = React.lazy(() =>
+  import('./tabs/PluginsSettings').then((m) => ({ default: m.PluginsSettings })),
+);
 import { CapabilityCenterSettings } from './tabs/CapabilityCenterSettings';
 import { ChannelsSettings } from './tabs/ChannelsSettings';
 import { HooksSettings } from './tabs/HooksSettings';
@@ -407,9 +415,13 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'capabilities' && (
               <CapabilityCenterSettings onNavigateSettings={handleSearchNavigate} />
             )}
-            {canViewPlugins && activeTab === 'plugins' && <PluginsSettings />}
-            {activeTab === 'mcp' && <MCPSettings />}
-            {activeTab === 'skills' && <SkillsSettings />}
+            {(activeTab === 'mcp' || activeTab === 'skills' || (canViewPlugins && activeTab === 'plugins')) && (
+              <React.Suspense fallback={<div className="p-4 text-sm text-zinc-500">加载中…</div>}>
+                {canViewPlugins && activeTab === 'plugins' && <PluginsSettings />}
+                {activeTab === 'mcp' && <MCPSettings />}
+                {activeTab === 'skills' && <SkillsSettings />}
+              </React.Suspense>
+            )}
             {activeTab === 'roles' && <RolesTab />}
             {activeTab === 'channels' && <ChannelsSettings />}
             {activeTab === 'hooks' && <HooksSettings />}

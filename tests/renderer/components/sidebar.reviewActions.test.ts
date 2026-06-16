@@ -37,13 +37,15 @@ vi.mock('react', async () => {
     ...actual,
     useState: (initial: unknown) => {
       reactState.useStateCalls += 1;
-      if (reactState.forcedContextMenuSession && reactState.useStateCalls === 7) {
+      // 索引与 Sidebar 顶部 useState 声明顺序耦合：新增状态筛选下拉的 statusFilterOpen 后，
+      // contextMenu 由 #7 → #8、forcedReviewItems 由 #11 → #12。
+      if (reactState.forcedContextMenuSession && reactState.useStateCalls === 8) {
         return [
           { x: 24, y: 24, session: reactState.forcedContextMenuSession },
           vi.fn(),
         ] as const;
       }
-      if (reactState.forcedReviewItemsBySessionId && reactState.useStateCalls === 11) {
+      if (reactState.forcedReviewItemsBySessionId && reactState.useStateCalls === 12) {
         return [
           reactState.forcedReviewItemsBySessionId,
           vi.fn(),
@@ -285,7 +287,9 @@ describe('Sidebar review actions', () => {
     const replayAction = menuState.items.find((item) => item.label === 'Replay 仅管理员可用');
     expect(replayAction).toBeTruthy();
     expect(replayAction?.disabled).toBe(true);
-    expect(html).toContain('aria-label="Replay 仅管理员可用：Reviewable Session"');
+    // D-9: 非管理员不再渲染行内 Replay 按钮（之前是 disabled 仍可见）。
+    expect(html).not.toContain('打开 Reviewable Session Replay');
+    expect(html).not.toContain('Replay 仅管理员可用：Reviewable Session');
     expect(menuState.items.some((item) => item.label === '导出 JSON')).toBe(false);
   });
 
@@ -376,7 +380,9 @@ describe('Sidebar review actions', () => {
     }
   });
 
-  it('filters the sidebar to sessions with delivery recovery signals', () => {
+  it('filters the sidebar to sessions with delivery recovery signals for admins', () => {
+    // D-10: 状态筛选 tab 仅管理员可见，普通用户只留搜索框。
+    authState.user = { isAdmin: true };
     const originalSessions = sessionState.sessions;
     sessionUiState.sessionStatusFilter = 'artifact';
     sessionState.sessions = [

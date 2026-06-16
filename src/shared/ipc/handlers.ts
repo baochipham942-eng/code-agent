@@ -360,6 +360,14 @@ export interface IpcInvokeHandlers {
     messagesTruncated: number;
     error?: string;
   }>;
+  [IPC_CHANNELS.MESSAGE_TRUNCATE_FROM]: (
+    sessionId: string,
+    messageId: string
+  ) => Promise<{
+    success: boolean;
+    messagesTruncated: number;
+    error?: string;
+  }>;
 
   // Suggestions (智能提示)
   [IPC_CHANNELS.SUGGESTIONS_GET]: () => Promise<

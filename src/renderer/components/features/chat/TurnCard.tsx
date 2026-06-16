@@ -154,7 +154,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
       {showSeparator && (
         <div className="flex items-center gap-2 py-1.5">
           <div className="h-px flex-1 bg-zinc-800"></div>
-          <span className="text-[10px] text-zinc-600 shrink-0">
+          <span className="text-[10px] text-zinc-500 shrink-0">
             {stats.time}
             {stats.duration !== null && stats.duration > 0
               ? ` · ${formatTurnDuration(stats.duration)}`
@@ -229,6 +229,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               if (node.turnTimeline?.kind === 'hook_activity' || node.turnTimeline?.kind === 'skill_activity') {
                 return null;
               }
+              // 产物/来源节点统一锚到最终答案之后渲染（见下方），避免随流式位置在答案上下漂移。
+              if (node.turnTimeline?.kind === 'artifact_ownership') {
+                return null;
+              }
               if (node.subtype === 'skill_status') {
                 return null;
               }
@@ -277,6 +281,17 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             onStreamingDisplayUpdate={onStreamingDisplayUpdate}
           />
         )}
+
+        {/* 产物/来源固定锚点：始终渲染在最终答案之后，位置稳定（与正文内 Sources 一致），
+            不再随工具调用在流中的位置而在答案上方/下方漂移。 */}
+        {!folded && (() => {
+          const artifactNode = turn.nodes.find(
+            (node) => node.turnTimeline?.kind === 'artifact_ownership',
+          );
+          return artifactNode ? (
+            <TraceNodeRenderer key={artifactNode.id} node={artifactNode} sessionId={sessionId} />
+          ) : null;
+        })()}
 
         {/* Turn-level aggregated diff card — always visible */}
         <TurnDiffSummary turn={turn} />
@@ -445,7 +460,8 @@ function getSkillActivityTitle(activity: TurnSkillActivity): string {
 }
 
 const SkillActivityBanner: React.FC<{ activity: TurnSkillActivity }> = ({ activity }) => {
-  const [expanded, setExpanded] = useState(true);
+  // 默认折叠：摘要行已说明 skill 活动，展开才看逐条明细，与 Hook 横幅一致。
+  const [expanded, setExpanded] = useState(false);
   const summary = activity.summary.replace(/^Skill\s*/, '');
 
   return (
@@ -637,10 +653,10 @@ const StreamingStateBanner: React.FC<{ state: StreamingUiState }> = ({ state }) 
       )}
     </div>
     {state.showCancelCleanup && (
-      <span className="shrink-0 rounded-md bg-black/10 px-1.5 py-0.5 text-[10px] opacity-80">cleanup</span>
+      <span className="shrink-0 text-[10px] opacity-60">cleanup</span>
     )}
     {state.showResumeHint && (
-      <span className="shrink-0 rounded-md bg-black/10 px-1.5 py-0.5 text-[10px] opacity-80">resume</span>
+      <span className="shrink-0 text-[10px] opacity-60">resume</span>
     )}
   </div>
 );

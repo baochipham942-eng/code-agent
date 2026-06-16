@@ -103,7 +103,7 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('已引导对话');
   });
 
-  it('renders turn quality memory and strategy indicators on assistant messages', () => {
+  it('renders the turn quality score chip with memory/strategy details collapsed', () => {
     const html = renderToStaticMarkup(
       React.createElement(TraceNodeRenderer, {
         node: {
@@ -151,9 +151,11 @@ describe('TraceNodeRenderer launch request', () => {
       }),
     );
 
-    expect(html).toContain('记忆 1');
-    expect(html).toContain('openai/gpt-4.1');
-    expect(html).toContain('coder');
+    // 降噪后：折叠态只显示评分 chip；记忆/策略/agent 收进展开面板，默认不在静态 markup 里。
+    expect(html).toContain('88');
+    expect(html).not.toContain('记忆 1');
+    expect(html).not.toContain('openai/gpt-4.1');
+    expect(html).not.toContain('coder');
   });
 
   it('renders pending launch request as an inline approval card', () => {

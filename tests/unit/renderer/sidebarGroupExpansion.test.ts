@@ -26,6 +26,29 @@ describe('sidebarGroupExpansion', () => {
     })).toBe(true);
   });
 
+  it('lets the uncategorized group collapse even when it holds the current session (D-8)', () => {
+    const forcingSignals = {
+      hasCurrentSession: true,
+      hasSearchFilters: false,
+      unfinishedCount: 2,
+    };
+
+    // 普通项目组：被钉成展开
+    expect(shouldForceExpandSidebarGroup(forcingSignals)).toBe(true);
+    // 未分类组：关掉 force-expand，遵从持久折叠状态
+    expect(shouldForceExpandSidebarGroup(forcingSignals, { disableForceExpand: true })).toBe(false);
+
+    const view = resolveSidebarGroupExpansionView({
+      persistedExpanded: false,
+      signals: forcingSignals,
+      isCollapsing: false,
+      displayName: '未分类',
+      disableForceExpand: true,
+    });
+    expect(view.forceExpanded).toBe(false);
+    expect(view.isVisibleExpanded).toBe(false);
+  });
+
   it('lets completed non-current groups follow persisted collapse state', () => {
     const signals = {
       hasCurrentSession: false,

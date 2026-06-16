@@ -34,15 +34,12 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
   const [feedbackRating, setFeedbackRating] = useState<1 | -1 | null>(null);
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [hovered, setHovered] = useState(false);
-  const hasToolExecutionContent = Boolean(
-    (message.toolCalls?.length ?? 0) > 0 ||
-    message.contentParts?.some((part) => part.type === 'tool_call'),
-  );
+  // 带工具调用的回答（绝大多数）也应能反馈：只要有文本结论且属于当前会话即可，
+  // 不再因为这一轮含工具执行就隐藏点赞/点踩。
   const canSubmitFeedback = Boolean(
     currentSessionId &&
     message.id &&
-    message.content?.trim() &&
-    !hasToolExecutionContent,
+    message.content?.trim(),
   );
   const rawReasoningContent = message.thinking || message.reasoning;
   const reasoningContent = useMemo(

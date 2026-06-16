@@ -5,9 +5,8 @@
 
 import React, { useEffect } from 'react';
 import { RefreshCw, Square } from 'lucide-react';
+import { RENDERER_POLLING } from '@shared/constants';
 import { useLoopStore } from '../../../../stores/loopStore';
-
-const POLL_MS = 2000;
 
 interface LoopStatusBarProps {
   sessionId: string | null;
@@ -18,12 +17,20 @@ export const LoopStatusBar: React.FC<LoopStatusBarProps> = ({ sessionId }) => {
   const stop = useLoopStore((s) => s.stop);
   const loops = useLoopStore((s) => s.loops);
 
+  // 空闲门控：有 running loop 时才以 LOOP_BASE 快轮询；否则退到 MAX_BACKOFF 慢心跳，
+  // 避免无循环时仍每 2s 猛打 loop:list（实测空闲头号请求源）。会话内启动的 loop 会被
+  // ChatInput track() 立即登记，hasRunningLoop 翻 true 触发本 effect 切回快轮询。
+  const hasRunningLoop = useLoopStore((s) =>
+    Object.values(s.loops).some((l) => l.sessionId === sessionId && l.status === 'running'),
+  );
+
   useEffect(() => {
     if (!sessionId) return;
     void refresh(sessionId);
-    const timer = setInterval(() => void refresh(sessionId), POLL_MS);
+    const interval = hasRunningLoop ? RENDERER_POLLING.LOOP_BASE : RENDERER_POLLING.MAX_BACKOFF;
+    const timer = setInterval(() => void refresh(sessionId), interval);
     return () => clearInterval(timer);
-  }, [sessionId, refresh]);
+  }, [sessionId, refresh, hasRunningLoop]);
 
   if (!sessionId) return null;
   const running = Object.values(loops).filter(

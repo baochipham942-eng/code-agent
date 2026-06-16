@@ -81,7 +81,7 @@ describe('buildSidebarProjectSummary', () => {
     const summary = buildSidebarProjectSummary({
       group: {
         key: '__chats__',
-        name: '未分类',
+        name: '对话',
         isUncategorized: true,
         sessions: [makeSession({ id: 'blank' })],
         latestActivityAt: 1,
@@ -92,7 +92,7 @@ describe('buildSidebarProjectSummary', () => {
       hasPendingApprovalForSession: () => false,
     });
 
-    expect(summary.displayName).toBe('未分类');
+    expect(summary.displayName).toBe('对话');
   });
 
   it('formats a scan-friendly project header line with active goal and multiple workspaces', () => {
@@ -136,6 +136,6 @@ describe('buildSidebarProjectSummary', () => {
       workspacePaths: [],
     });
 
-    expect(line).toBe('空白会话 · 2 命中');
+    expect(line).toBe('2 命中');
   });
 });

@@ -3,13 +3,18 @@
 // ChatInput 工具栏只露真正高频的（权限模式 / 上下文 / 模型 / 语音 / 发送）。
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Image as ImageIcon, SlashSquare } from 'lucide-react';
+import { Plus, Image as ImageIcon, SlashSquare, Brain } from 'lucide-react';
 import { useModeStore } from '../../../../stores/modeStore';
 import type { InteractionMode } from '../../../../../shared/contract/agent';
+import type { SessionMemoryMode } from '../../../../../shared/contract';
 
 interface Props {
   onSlashCommand: () => void;
   onFileSelect: (files: FileList) => void;
+  /** 本会话记忆模式（默认 'auto' = 开启）。C-6：从底栏移入此二级菜单。 */
+  memoryMode: SessionMemoryMode;
+  onToggleMemory: () => void;
+  memoryToggleDisabled?: boolean;
 }
 
 const MODE_OPTIONS: Array<{ value: InteractionMode; label: string; color: string; hint: string }> = [
@@ -18,7 +23,13 @@ const MODE_OPTIONS: Array<{ value: InteractionMode; label: string; color: string
   { value: 'ask', label: '◆Ask', color: 'text-cyan-400', hint: '只问答：纯文字回复，不调工具' },
 ];
 
-export const InputAddMenu: React.FC<Props> = ({ onSlashCommand, onFileSelect }) => {
+export const InputAddMenu: React.FC<Props> = ({
+  onSlashCommand,
+  onFileSelect,
+  memoryMode,
+  onToggleMemory,
+  memoryToggleDisabled,
+}) => {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -91,6 +102,24 @@ export const InputAddMenu: React.FC<Props> = ({ onSlashCommand, onFileSelect }) 
             <SlashSquare className="w-3.5 h-3.5 text-zinc-400" />
             <span>/ 命令面板</span>
             <span className="ml-auto text-[10px] text-zinc-500 font-mono">/</span>
+          </button>
+
+          {/* C-6: 本会话记忆开关（默认开启的低频功能，从底栏移入这里） */}
+          <button
+            type="button"
+            disabled={memoryToggleDisabled}
+            onClick={() => {
+              onToggleMemory();
+              setOpen(false);
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-700 transition-colors text-left disabled:cursor-not-allowed disabled:opacity-40"
+            title={memoryMode === 'off' ? '本会话记忆已关闭，点击开启' : '本会话记忆已开启，点击关闭'}
+          >
+            <Brain className={`w-3.5 h-3.5 ${memoryMode === 'off' ? 'text-zinc-500' : 'text-emerald-300'}`} />
+            <span>本会话记忆</span>
+            <span className={`ml-auto text-[10px] ${memoryMode === 'off' ? 'text-zinc-500' : 'text-emerald-300'}`}>
+              {memoryMode === 'off' ? '已关闭' : '已开启'}
+            </span>
           </button>
 
           {/* 交互模式：3 chip 横排，显示当前选中并直接切换 */}

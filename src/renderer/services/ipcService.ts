@@ -1,6 +1,7 @@
 import { IPC_CHANNELS, type IpcInvokeHandlers, type IpcEventHandlers } from '@shared/ipc';
 import type { SpeechTranscribeOptions, SpeechTranscribeResult } from '@shared/contract';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
+import { createInflightDedupe } from '../utils/inflightDedupe';
 
 type AgentEventEnvelope = Parameters<IpcEventHandlers[typeof IPC_CHANNELS.AGENT_EVENT]>[0];
 
@@ -148,7 +149,7 @@ export function isAvailable(): boolean {
   return !!commandApi();
 }
 
-export async function invokeDomain<T = unknown>(
+async function invokeDomainRaw<T = unknown>(
   domain: string,
   action: string,
   payload?: unknown
@@ -158,6 +159,28 @@ export async function invokeDomain<T = unknown>(
     throw new Error(response?.error?.message || `${domain}:${action} failed`);
   }
   return response.data as T;
+}
+
+/**
+ * 只读类 action（get / list 前缀）才参与在途去重——这些幂等读在挂载期被多个
+ * 组件并发触发（如 settings get 13 次），共享同一 Promise 安全且显著减少请求。
+ * 写操作（set / create / update / delete 等）返回 null，绝不去重。
+ */
+function dedupeKeyForDomainInvoke(domain: string, action: string, payload?: unknown): string | null {
+  if (!/^(get|list)/.test(action)) {
+    return null;
+  }
+  return `${domain}:${action}:${payload === undefined ? '' : JSON.stringify(payload)}`;
+}
+
+const dedupedInvokeDomain = createInflightDedupe(invokeDomainRaw, dedupeKeyForDomainInvoke);
+
+export function invokeDomain<T = unknown>(
+  domain: string,
+  action: string,
+  payload?: unknown
+): Promise<T> {
+  return dedupedInvokeDomain(domain, action, payload) as Promise<T>;
 }
 
 export const ipcService = {

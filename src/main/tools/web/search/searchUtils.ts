@@ -108,8 +108,12 @@ const circuitBreaker: Record<string, number> = {};
 const RATE_LIMIT_CIRCUIT_BREAKER_COOLDOWN = 10 * 60 * 1000; // 10 minutes
 const QUOTA_CIRCUIT_BREAKER_COOLDOWN = 24 * 60 * 60 * 1000; // 24 hours
 
+// Quota / auth exhaustion: provider is out of credit or the key is rejected.
+// Covers 402 (billing), 432 (Tavily plan-limit) and 401 (unauthorized / expired key) —
+// none of these self-heal within a session, so we skip the source for a long cooldown
+// instead of re-hitting it every round.
 const QUOTA_ERROR_PATTERN =
-  /insufficient[_\s-]?quota|quota\s+(?:exceeded|exhausted)|exceeded\s+(?:your\s+)?current\s+quota|insufficient\s+(?:balance|credits?)|billing\s+details|HTTP\s+402|\b402\b/i;
+  /insufficient[_\s-]?quota|quota\s+(?:exceeded|exhausted)|exceeded\s+(?:your\s+)?current\s+quota|insufficient\s+(?:balance|credits?)|billing\s+details|unauthorized|invalid\s+api\s+key|HTTP\s+40[12]|\b40[12]\b|HTTP\s+432|\b432\b/i;
 const RATE_LIMIT_ERROR_PATTERN = /HTTP\s+429|\b429\b|rate[_\s-]?limit|too many requests/i;
 
 /**

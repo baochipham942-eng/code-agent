@@ -344,3 +344,57 @@ describe('SessionRepository — Episodic FTS5', () => {
     expect(allAttempts.map((row) => row.messageId)).toEqual(['m2']);
   });
 });
+
+// ----------------------------------------------------------------------------
+// Message truncation — exclusive (fork) vs inclusive (edit)
+// ----------------------------------------------------------------------------
+
+describe('SessionRepository — message truncation', () => {
+  let db: BetterSqlite3.Database;
+  let repo: SessionRepository;
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    createSchema(db);
+    repo = new SessionRepository(db);
+    insertSession(db, 'sess-A');
+    // 递增时间戳，保证截断按时间边界可预测
+    repo.addMessage('sess-A', makeMessage('m1', 'first', 'user', 1000));
+    repo.addMessage('sess-A', makeMessage('m2', 'second', 'user', 2000));
+    repo.addMessage('sess-A', makeMessage('m3', 'third', 'assistant', 3000));
+    repo.addMessage('sess-A', makeMessage('m4', 'fourth', 'user', 4000));
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  const remainingIds = (): string[] =>
+    (db.prepare('SELECT id FROM messages WHERE session_id = ? ORDER BY timestamp ASC').all('sess-A') as Array<{ id: string }>)
+      .map((row) => row.id);
+
+  it('truncateMessagesAfter 保留目标消息（fork 语义）', () => {
+    const removed = repo.truncateMessagesAfter('sess-A', 'm2');
+    expect(removed).toBe(2);
+    expect(remainingIds()).toEqual(['m1', 'm2']);
+  });
+
+  it('truncateMessagesFrom 连目标消息一起删（edit 真替换语义）', () => {
+    const removed = repo.truncateMessagesFrom('sess-A', 'm2');
+    expect(removed).toBe(3);
+    expect(remainingIds()).toEqual(['m1']);
+  });
+
+  it('truncateMessagesFrom 首条消息时清空整条会话', () => {
+    const removed = repo.truncateMessagesFrom('sess-A', 'm1');
+    expect(removed).toBe(4);
+    expect(remainingIds()).toEqual([]);
+  });
+
+  it('两种截断对未知消息 id 都返回 0 且不动历史', () => {
+    expect(repo.truncateMessagesAfter('sess-A', 'nope')).toBe(0);
+    expect(repo.truncateMessagesFrom('sess-A', 'nope')).toBe(0);
+    expect(remainingIds()).toEqual(['m1', 'm2', 'm3', 'm4']);
+  });
+});

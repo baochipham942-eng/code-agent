@@ -107,8 +107,9 @@ describe('Sidebar new session button', () => {
     const newSessionButtonHtml = html.match(/<button[^>]*>.*?新会话<\/span><\/button>/)?.[0] ?? '';
 
     expect(html).toContain('新会话');
-    expect(html).toContain('新建当前项目会话');
-    expect(html).toContain('新建空白会话，不继承项目上下文');
+    // D-11: 新会话默认纯对话不继承上下文；独立「空白」入口已下线。
+    expect(html).toContain('新建会话（纯对话，不继承项目上下文）');
+    expect(html).not.toContain('新建空白会话，不继承项目上下文');
     expect(newSessionButtonHtml).toContain('lucide-plus');
     expect(newSessionButtonHtml).not.toContain('lucide-loader-circle');
   });

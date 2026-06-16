@@ -6,7 +6,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { Image, FileText, Clock3, CornerDownRight, X, UserPlus, Brain } from 'lucide-react';
+import { Image, FileText, Clock3, CornerDownRight, X, UserPlus } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import type { SpeechTranscribeResult } from '@shared/contract';
 import type { AppSettings } from '@shared/contract/settings';
@@ -626,7 +626,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         return false;
       }
 
-      let mounted = false;
+      let mounted: boolean;
       if (input.recommendation && input.recommendationAction === 'install') {
         mounted = await installRecommendedSkill(input.recommendation, targetSessionId);
       } else if (input.recommendation) {
@@ -1738,27 +1738,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             <InputAddMenu
               onSlashCommand={() => { setShowSlashPopover(true); setSlashFilter(''); }}
               onFileSelect={handleFileSelect}
+              memoryMode={currentSessionMemoryMode}
+              onToggleMemory={handleMemoryModeToggle}
+              memoryToggleDisabled={!currentSessionId}
             />
 
             {/* 运行权限模式 chip（高频，保留独立位置） */}
             <PermissionToggle disabled={disabled && !isProcessing} />
 
             <AgentChip onOpenAgentCommand={openAgentCommand} />
-            <button
-              type="button"
-              onClick={handleMemoryModeToggle}
-              disabled={!currentSessionId}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                currentSessionMemoryMode === 'off'
-                  ? 'border-zinc-700 bg-zinc-900/70 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
-                  : 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/15'
-              }`}
-              title={currentSessionMemoryMode === 'off' ? '本会话记忆已关闭，点击开启' : '本会话记忆已开启，点击关闭'}
-              aria-label={currentSessionMemoryMode === 'off' ? '开启本会话记忆' : '关闭本会话记忆'}
-              aria-pressed={currentSessionMemoryMode !== 'off'}
-            >
-              <Brain className="h-4 w-4" />
-            </button>
+
+            {/* C-6: 本会话记忆开关默认开启，已从底栏移入 InputAddMenu 二级菜单（低频功能不常驻） */}
 
             {/* B+ 移除: AbilityMenu (Routing/Browser/Live Preview) — 挪到 Settings；
                 Live Preview 后续挪到 SessionWorkspaceBar 顶栏 */}

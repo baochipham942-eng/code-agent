@@ -18,6 +18,7 @@ export type BillingMode = 'free' | 'plan' | 'payg' | 'unknown';
 /** 决策原因，UI trace 文案和日志都从这里派生 */
 export type ModelDecisionReason =
   | 'user-selected'
+  | 'default-model'
   | 'role-tier'
   | 'simple-task-free'
   | 'billing-gate-skip'

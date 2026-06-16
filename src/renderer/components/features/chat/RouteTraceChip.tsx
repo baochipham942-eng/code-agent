@@ -15,6 +15,7 @@ import type {
 
 const REASON_LABELS: Record<ModelDecisionReason, string> = {
   'user-selected': '用户选择',
+  'default-model': '默认模型',
   'role-tier': '角色档位',
   'simple-task-free': '简单任务',
   'billing-gate-skip': '计费跳过',
@@ -25,6 +26,25 @@ const REASON_LABELS: Record<ModelDecisionReason, string> = {
   'capability-vision': '视觉能力',
   'fallback-availability': '可用性降级',
 };
+
+/**
+ * 路由 chip 是否值得展示。默认模型 / 纯用户直连且没有发生任何路由变化、降级或
+ * 外部引擎异常时，这条 chip 是噪音（会在每个 assistant 文本节点重复刷屏），不显示；
+ * 只有真正发生路由/降级/外部引擎问题时才显示。
+ */
+export function shouldRenderModelDecisionChip(decision: ModelDecisionEventData): boolean {
+  if (decision.fallbackFrom) return true;
+  if (decision.externalEngine?.failure) return true;
+  if (
+    decision.resolvedModel
+    && decision.requestedModel
+    && decision.resolvedModel !== decision.requestedModel
+  ) {
+    return true;
+  }
+  // 没有任何变化时：默认模型 / 用户直连都属于噪音，不显示。
+  return decision.reason !== 'default-model' && decision.reason !== 'user-selected';
+}
 
 const TASK_LABELS: Record<ModelTaskClass, string> = {
   simple: '简单快答',
@@ -147,27 +167,12 @@ const ENGINE_TRANSCRIPT_LABELS: Record<NonNullable<ModelExternalEngineSnapshot['
 };
 
 function getToneClass(reason: ModelDecisionReason): string {
-  switch (reason) {
-    case 'simple-task-free':
-    case 'strategy-fast':
-      return 'border-emerald-500/20 bg-emerald-500/[0.08] text-emerald-200';
-    case 'strategy-main':
-      return 'border-blue-500/20 bg-blue-500/[0.08] text-blue-200';
-    case 'strategy-deep':
-      return 'border-violet-500/20 bg-violet-500/[0.08] text-violet-200';
-    case 'strategy-vision':
-      return 'border-cyan-500/20 bg-cyan-500/[0.08] text-cyan-200';
-    case 'billing-gate-skip':
-      return 'border-amber-500/20 bg-amber-500/[0.08] text-amber-200';
-    case 'capability-vision':
-      return 'border-sky-500/20 bg-sky-500/[0.08] text-sky-200';
-    case 'fallback-availability':
-      return 'border-red-500/20 bg-red-500/[0.08] text-red-200';
-    case 'role-tier':
-      return 'border-violet-500/20 bg-violet-500/[0.08] text-violet-200';
-    default:
-      return 'border-white/[0.08] bg-white/[0.04] text-zinc-300';
+  // 收敛为两档：正常路由一律中性灰，仅降级/兜底用单一警示色，
+  // 避免一个 chip 覆盖 6 种饱和色和正文/diff 抢注意力。
+  if (reason === 'fallback-availability') {
+    return 'border-amber-500/25 bg-amber-500/[0.08] text-amber-200';
   }
+  return 'border-white/[0.08] bg-white/[0.03] text-zinc-400';
 }
 
 function formatModel(provider: string, model: string): string {

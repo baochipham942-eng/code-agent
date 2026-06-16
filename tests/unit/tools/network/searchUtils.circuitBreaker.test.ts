@@ -10,6 +10,16 @@ describe('search error circuit breaker classification', () => {
     expect(cooldown).toBeGreaterThanOrEqual(23 * 60 * 60 * 1000);
   });
 
+  it('treats a bare 401 (rejected / expired key) as a long cooldown', () => {
+    const cooldown = getSearchErrorCircuitBreakerCooldown('HTTP 401: Unauthorized');
+    expect(cooldown).toBeGreaterThanOrEqual(23 * 60 * 60 * 1000);
+  });
+
+  it("treats Tavily's 432 plan-limit code as a long cooldown", () => {
+    const cooldown = getSearchErrorCircuitBreakerCooldown('HTTP 432: plan usage limit exceeded');
+    expect(cooldown).toBeGreaterThanOrEqual(23 * 60 * 60 * 1000);
+  });
+
   it('treats 429 rate limit as a short cooldown', () => {
     const cooldown = getSearchErrorCircuitBreakerCooldown('HTTP 429: Too Many Requests');
 

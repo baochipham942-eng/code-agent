@@ -36,11 +36,33 @@ export function registerDiagnosticsHandlers(ipcMain: IpcMain): void {
           };
         }
 
-        // /permissions — 安全决策历史
+        // /permissions — 安全决策历史（内存环形缓冲 + 持久化事件账本 ADR-022 第一期）
         case 'decisions': {
           const { getDecisionHistory } = await import('../security/decisionHistory');
           const history = getDecisionHistory();
           const recent = history.getRecent(10);
+
+          // 持久化账本（跨重启）：fail-safe，db 未就绪时返回空，不影响内存数据
+          let persistedTotal = 0;
+          let persistedRecent: Array<Record<string, unknown>> = [];
+          try {
+            const { getDatabase } = await import('../services/core/databaseService');
+            const db = getDatabase();
+            persistedTotal = db.countPermissionDecisions();
+            persistedRecent = db.getRecentPermissionDecisions(10).map(d => ({
+              recordedAt: d.recordedAt,
+              toolName: d.toolName,
+              summary: d.summary,
+              finalOutcome: d.finalOutcome,
+              historyOutcome: d.historyOutcome,
+              reason: d.reason,
+              durationMs: d.durationMs,
+              traceSteps: d.trace?.steps.length ?? 0,
+            }));
+          } catch {
+            // 静默：账本读取失败不影响内存历史返回
+          }
+
           return {
             success: true,
             data: {
@@ -55,6 +77,9 @@ export function registerDiagnosticsHandlers(ipcMain: IpcMain): void {
                 traceOutcome: e.decisionTrace?.finalOutcome,
                 traceSteps: e.decisionTrace?.steps.length,
               })),
+              // 新增：持久化账本视图（重启不丢；第一期交付证据）
+              persistedTotal,
+              persistedRecent,
             },
           };
         }

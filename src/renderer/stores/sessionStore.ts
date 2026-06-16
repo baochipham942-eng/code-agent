@@ -319,6 +319,29 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             workingDirectory: inheritedWorkingDirectory,
           });
           if (reusableSession) {
+            // 与新建路径一致：复用空草稿时也继承当前会话的 native 模型选择，
+            // 避免「点新会话模型被重置」。仅当当前会话有显式 override 时才应用，
+            // 不覆盖草稿自身已设的模型；switchModel 须在 switchSession 之前完成，
+            // 否则 ModelSwitcher 监听 sessionId 变化会先读到旧值。
+            const draftPrevSessionId = get().currentSessionId;
+            if (!options?.engine && draftPrevSessionId && draftPrevSessionId !== reusableSession.id) {
+              try {
+                const override = await invokeSession<{ provider: string; model: string; adaptive?: boolean } | null>(
+                  'getModelOverride',
+                  { sessionId: draftPrevSessionId },
+                );
+                if (override?.provider && override?.model) {
+                  await invokeSession('switchModel', {
+                    sessionId: reusableSession.id,
+                    provider: override.provider,
+                    model: override.model,
+                    adaptive: !!override.adaptive,
+                  });
+                }
+              } catch {
+                logger.warn('Failed to inherit model selection for reused draft session');
+              }
+            }
             if (get().currentSessionId !== reusableSession.id) {
               await get().switchSession(reusableSession.id);
             }

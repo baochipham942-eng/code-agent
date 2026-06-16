@@ -96,10 +96,14 @@ export class PermissionDecisionRepository {
     return rows.map(rowToRecord);
   }
 
-  /** 指定 session 的最近 N 条（按时间倒序） */
-  getBySession(sessionId: string, limit = 50): PermissionDecisionRecord[] {
+  /**
+   * 指定 session 的决策（按时间**升序**，与 ToolExecutionEventRepository.getBySession 对齐）。
+   * 升序是为一本账投影服务：投影按 (at, 输入序) 稳定排序，源若倒序会让同毫秒多条决策
+   * 在账本里逆序呈现（HIGH-1）。仅 SELECT，append-only 不变量不破。
+   */
+  getBySession(sessionId: string, limit = 200): PermissionDecisionRecord[] {
     const rows = this.db.prepare(`
-      SELECT * FROM permission_decisions WHERE session_id = ? ORDER BY recorded_at DESC, id DESC LIMIT ?
+      SELECT * FROM permission_decisions WHERE session_id = ? ORDER BY recorded_at ASC, id ASC LIMIT ?
     `).all(sessionId, limit) as SQLiteRow[];
     return rows.map(rowToRecord);
   }

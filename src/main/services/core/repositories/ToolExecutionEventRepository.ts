@@ -155,6 +155,17 @@ export class ToolExecutionEventRepository {
   }
 
   /** 账本总条数 */
+  /** 某会话的执行生命周期事件（按时间升序；仅 SELECT，append-only 不变量不破） */
+  getBySession(sessionId: string, limit = 200): ToolExecutionEventRecord[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM tool_execution_events
+      WHERE session_id = ?
+      ORDER BY recorded_at ASC, id ASC
+      LIMIT ?
+    `).all(sessionId, limit) as SQLiteRow[];
+    return rows.map(rowToRecord);
+  }
+
   count(): number {
     const row = this.db.prepare(`SELECT COUNT(*) AS c FROM tool_execution_events`).get() as { c?: number };
     return Number(row?.c ?? 0);

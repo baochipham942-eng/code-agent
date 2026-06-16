@@ -96,8 +96,9 @@ describe('PermissionDecisionRepository（事件账本第一期）', () => {
       const aOnly = repo.getBySession('a');
       expect(aOnly).toHaveLength(2);
       expect(aOnly.every((d) => d.sessionId === 'a')).toBe(true);
-      // 倒序：最近的 recorded_at=3 在前
-      expect(aOnly[0].recordedAt).toBe(3);
+      // 升序（第三期 HIGH-1 修正）：getBySession 服务于一本账投影，按时间正序返回，
+      // 最早的 recorded_at=1 在前（与 ToolExecutionEventRepository.getBySession 对齐）。
+      expect(aOnly.map((d) => d.recordedAt)).toEqual([1, 3]);
     } finally {
       db.close();
     }

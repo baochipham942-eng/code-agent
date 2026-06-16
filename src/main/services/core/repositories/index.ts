@@ -32,3 +32,5 @@ export {
   type ToolExecutionEventRecord,
   type OpenToolExecution,
 } from './ToolExecutionEventRepository';
+
+export { SwarmLedgerRepository } from './SwarmLedgerRepository';

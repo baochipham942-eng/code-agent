@@ -24,12 +24,14 @@ import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/c
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution } from './repositories';
+import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository } from './repositories';
+import type { SwarmLedgerAppendInput, SwarmLedgerEvent } from '../../../shared/contract/swarmLedger';
 import { buildRecoverySnapshot, acknowledgeRecovery, type RecoverySnapshot } from './crashRecovery';
 import { createSwarmTraceRepo } from './repositories/swarmTraceFactory';
-import type { SwarmTraceRepo, SwarmRunEventRecord, SwarmRunListItem } from '../../../shared/contract/swarmTrace';
+import type { SwarmTraceRepo, SwarmRunEventRecord } from '../../../shared/contract/swarmTrace';
 import { buildSessionLedger, type LedgerSources } from './sessionLedgerProjection';
-import { EMPTY_LEDGER_COST, type SessionLedger, type SessionLedgerCost } from '../../../shared/contract/sessionLedger';
+import { readSessionCost, readSwarmRunsForSession } from './sessionLedgerSources';
+import type { SessionLedger } from '../../../shared/contract/sessionLedger';
 
 type DatabaseRecoveryCallback = () => void;
 
@@ -88,6 +90,7 @@ export class DatabaseService {
   private pendingApprovalRepo!: PendingApprovalRepository;
   private permissionDecisionRepo!: PermissionDecisionRepository;
   private toolExecutionEventRepo!: ToolExecutionEventRepository;
+  private swarmLedgerRepo!: SwarmLedgerRepository;
   /** 启动时从总账重建的崩溃现场快照（ADR-022 第二期），供诊断出口/恢复消费 */
   private lastRecoverySnapshot: RecoverySnapshot | null = null;
 
@@ -202,6 +205,7 @@ export class DatabaseService {
       this.pendingApprovalRepo = new PendingApprovalRepository(this.db);
       this.permissionDecisionRepo = new PermissionDecisionRepository(this.db);
       this.toolExecutionEventRepo = new ToolExecutionEventRepository(this.db);
+      this.swarmLedgerRepo = new SwarmLedgerRepository(this.db);
 
       const crashedSessions = this.sessionRepo.markCrashedActiveSessions(Date.now());
       if (crashedSessions.interrupted > 0 || crashedSessions.orphaned > 0) {
@@ -332,6 +336,43 @@ export class DatabaseService {
     return this.lastRecoverySnapshot;
   }
 
+  // --------------------------------------------------------------------------
+  // Swarm Run Ledger（ADR-022 §四第三期 3b · ADR-023 D2，append-only · 协同真理源）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 追加一条 Swarm 协同事件到账本（真理源）。**fail-safe**：db 未就绪或写入失败都静默吞错，
+   * 绝不让账本写入影响 swarm 运行 / 现有 rollup 持久化（并行追加，写路径一行不改）。
+   */
+  appendSwarmLedgerEvent(input: SwarmLedgerAppendInput): void {
+    try {
+      if (!this.db || !this.swarmLedgerRepo) return;
+      this.swarmLedgerRepo.append(input);
+    } catch (err) {
+      logger.warn('[DatabaseService] appendSwarmLedgerEvent failed (ignored):', err);
+    }
+  }
+
+  /** 某 run 的协同账本事件（按 seq 升序，供 rollup 投影重建）。fail-safe。 */
+  getSwarmLedgerByRun(runId: string): SwarmLedgerEvent[] {
+    if (!this.db || !this.swarmLedgerRepo) return [];
+    try {
+      return this.swarmLedgerRepo.getByRun(runId);
+    } catch {
+      return [];
+    }
+  }
+
+  /** 有账记录的 run id 列表（可按 session 过滤）。fail-safe。 */
+  listSwarmLedgerRunIds(sessionId?: string, limit = 200): string[] {
+    if (!this.db || !this.swarmLedgerRepo) return [];
+    try {
+      return this.swarmLedgerRepo.listRunIds(sessionId, limit);
+    } catch {
+      return [];
+    }
+  }
+
   /** 某会话的执行生命周期事件（一本账执行 lane 源）。fail-safe，失败返回空。 */
   getToolExecutionsBySession(sessionId: string, limit = 200) {
     if (!this.db || !this.toolExecutionEventRepo) return [];
@@ -355,66 +396,6 @@ export class DatabaseService {
   // --------------------------------------------------------------------------
   // Session Ledger（ADR-022 §四第三期 3a · ADR-023 P2 读侧逻辑投影）
   // --------------------------------------------------------------------------
-
-  /** 某会话的成本汇总（来自 telemetry_sessions）。fail-safe，失败返回空成本。 */
-  private readSessionCost(sessionId: string): SessionLedgerCost {
-    if (!this.db) return EMPTY_LEDGER_COST;
-    try {
-      const row = this.db.prepare(`
-        SELECT estimated_cost, total_input_tokens, total_output_tokens
-        FROM telemetry_sessions WHERE id = ?
-      `).get(sessionId) as
-        { estimated_cost?: number; total_input_tokens?: number; total_output_tokens?: number } | undefined;
-      if (!row) return EMPTY_LEDGER_COST;
-      return {
-        estimatedCost: Number(row.estimated_cost ?? 0),
-        tokensIn: Number(row.total_input_tokens ?? 0),
-        tokensOut: Number(row.total_output_tokens ?? 0),
-      };
-    } catch {
-      return EMPTY_LEDGER_COST;
-    }
-  }
-
-  /**
-   * 某会话的 Swarm run（协同 lane 源）。**按 session_id 直接查 swarm_runs**，
-   * 不走 listRuns 的全局最近 N 截断——否则某 session 的 run 若不在全局最近 N 内会被静默漏掉（MED-1）。
-   * fail-safe，失败返回空。
-   */
-  private readSwarmRunsForSession(sessionId: string, limit = 200): SwarmRunListItem[] {
-    if (!this.db) return [];
-    try {
-      const rows = this.db.prepare(`
-        SELECT id, session_id, status, coordinator, started_at, ended_at,
-               total_agents, completed_count, failed_count, total_cost_usd,
-               total_tokens_in, total_tokens_out, trigger
-        FROM swarm_runs WHERE session_id = ?
-        ORDER BY started_at ASC, id ASC LIMIT ?
-      `).all(sessionId, limit) as Array<Record<string, unknown>>;
-      return rows.map((r): SwarmRunListItem => {
-        const startedAt = Number(r.started_at);
-        const endedAt = r.ended_at == null ? null : Number(r.ended_at);
-        return {
-          id: String(r.id),
-          sessionId: (r.session_id as string | null) ?? null,
-          status: String(r.status) as SwarmRunListItem['status'],
-          coordinator: String(r.coordinator) as SwarmRunListItem['coordinator'],
-          startedAt,
-          endedAt,
-          durationMs: endedAt == null ? null : endedAt - startedAt,
-          totalAgents: Number(r.total_agents ?? 0),
-          completedCount: Number(r.completed_count ?? 0),
-          failedCount: Number(r.failed_count ?? 0),
-          totalCostUsd: Number(r.total_cost_usd ?? 0),
-          totalTokensIn: Number(r.total_tokens_in ?? 0),
-          totalTokensOut: Number(r.total_tokens_out ?? 0),
-          trigger: String(r.trigger) as SwarmRunListItem['trigger'],
-        };
-      });
-    } catch {
-      return [];
-    }
-  }
 
   /** 给定 run id 集合，读出各 run 的内部事件（协同 lane 细粒度时间线）。fail-safe。 */
   private readSwarmEventsForRuns(runIds: string[]): SwarmRunEventRecord[] {
@@ -445,7 +426,7 @@ export class DatabaseService {
         return [];
       }
     };
-    const swarmRuns = this.readSwarmRunsForSession(sessionId);
+    const swarmRuns = readSwarmRunsForSession(this.db, sessionId);
     const sources: LedgerSources = {
       messages: safe(() => this.getMessages(sessionId, 500)),
       taskEvents: safe(() => this.getSessionTaskEvents(sessionId, { limit: 200 })),
@@ -453,7 +434,7 @@ export class DatabaseService {
       swarmEvents: this.readSwarmEventsForRuns(swarmRuns.map((r) => r.id)),
       decisions: this.getPermissionDecisionsBySession(sessionId),
       executions: this.getToolExecutionsBySession(sessionId),
-      cost: this.readSessionCost(sessionId),
+      cost: readSessionCost(this.db, sessionId),
     };
     return buildSessionLedger(sessionId, sources, generatedAt);
   }

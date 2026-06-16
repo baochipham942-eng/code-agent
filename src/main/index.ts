@@ -210,6 +210,8 @@ app.whenReady().then(async () => {
       try {
         installSwarmTraceWriter(swarmTraceRepo, {
           getSessionId: () => getCurrentSessionId() ?? null,
+          // 3b 并行追加（ADR-023 D2）：协同事件同时落 append-only 账本（真理源）。fail-safe。
+          appendLedger: (input) => getDatabase().appendSwarmLedgerEvent(input),
         });
       } catch (err) {
         logger.warn('SwarmTraceWriter install failed:', err);

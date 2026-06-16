@@ -198,6 +198,27 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   `);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_session_task_events_task ON session_task_events (session_id, task_id, at)`);
 
+  // Permission Decisions 事件账本（ADR-022 第一期，append-only）—
+  // 把权限 allow/deny/ask 决策链持久化（原来只在内存环形缓冲 50 条、重启即丢）。
+  // 纯增量、不动现有表；只 INSERT/SELECT，永不 UPDATE/DELETE。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS permission_decisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT,
+      tool_name TEXT NOT NULL,
+      summary TEXT,
+      final_outcome TEXT NOT NULL,
+      history_outcome TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      duration_ms INTEGER NOT NULL,
+      recorded_at INTEGER NOT NULL,
+      trace_json TEXT
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_permission_decisions_recorded ON permission_decisions (recorded_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_permission_decisions_session ON permission_decisions (session_id, recorded_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_permission_decisions_tool ON permission_decisions (tool_name, recorded_at)`);
+
   // Master Tasks 表 (用户级工作单元，跨 session 持久化；P0-c2)
   // status 列保留 TEXT 不加 CHECK，枚举校验由应用层 (src/shared/contract/task.ts) 负责
   db.exec(`

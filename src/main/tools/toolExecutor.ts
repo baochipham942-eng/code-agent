@@ -49,21 +49,41 @@ import type {
 } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName, sameToolName } from './toolNames';
 import { persistBase64ImageMetadata } from './artifacts/base64ImageArtifacts';
+import { getDatabase } from '../services/core/databaseService';
 
 const logger = createLogger('ToolExecutor');
 
-/** Record a permission decision to the history buffer */
+/** Record a permission decision to the history buffer (+ append-only ledger, ADR-022 第一期) */
 function recordDecision(
   toolName: string, params: Record<string, unknown>,
   outcome: HistoryDecisionOutcome, reason: string, startTime: number, trace?: DecisionTrace
 ): void {
+  const now = Date.now();
   const summary = String(params.command || params.file_path || params.path || params.pattern || toolName).substring(0, 80);
   const decisionTrace = trace ?? buildHistoryDecisionTrace(toolName, outcome, reason, startTime);
+  const durationMs = now - startTime;
   getDecisionHistory().record({
-    timestamp: Date.now(), toolName, summary, outcome, reason,
-    durationMs: Date.now() - startTime,
+    timestamp: now, toolName, summary, outcome, reason,
+    durationMs,
     decisionTrace,
   });
+  // 事件账本持久化（fail-safe）：任何失败都不得影响权限判定 / 工具执行。
+  // appendPermissionDecision 自身已吞错，这里再套一层兜底 getDatabase() 异常。
+  try {
+    getDatabase().appendPermissionDecision({
+      sessionId: undefined, // 第一期不接 session 关联（避免改 13 处调用点），列可空；session 关联留待后续期
+      toolName,
+      summary,
+      finalOutcome: decisionTrace.finalOutcome,
+      historyOutcome: outcome,
+      reason,
+      durationMs,
+      recordedAt: now,
+      trace: decisionTrace,
+    });
+  } catch {
+    // 静默：账本写入永不阻断主流程
+  }
 }
 
 function historyOutcomeToTraceOutcome(outcome: HistoryDecisionOutcome): TraceDecisionOutcome {

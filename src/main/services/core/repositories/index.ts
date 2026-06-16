@@ -20,3 +20,8 @@ export {
   type InsertPendingApprovalInput,
   type ResolvePendingApprovalInput,
 } from './PendingApprovalRepository';
+export {
+  PermissionDecisionRepository,
+  type PermissionDecisionInput,
+  type PermissionDecisionRecord,
+} from './PermissionDecisionRepository';

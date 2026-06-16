@@ -31,6 +31,9 @@ import { createSwarmTraceRepo } from './repositories/swarmTraceFactory';
 import type { SwarmTraceRepo, SwarmRunEventRecord } from '../../../shared/contract/swarmTrace';
 import { buildSessionLedger, type LedgerSources } from './sessionLedgerProjection';
 import { readSessionCost, readSwarmRunsForSession } from './sessionLedgerSources';
+import { rebuildRunDetail } from './swarmRollupProjection';
+import { reconcileRun, type ReconcileResult } from './swarmReconcile';
+import type { SwarmRunDetail } from '../../../shared/contract/swarmTrace';
 import type { SessionLedger } from '../../../shared/contract/sessionLedger';
 
 type DatabaseRecoveryCallback = () => void;
@@ -370,6 +373,25 @@ export class DatabaseService {
       return this.swarmLedgerRepo.listRunIds(sessionId, limit);
     } catch {
       return [];
+    }
+  }
+
+  /**
+   * 影子对账（ADR-023 D2）：比对"从 ledger 重建的 rollup"与"现存 rollup 表"。
+   * drift 为空 = 账本捕获齐全、可当真理源。纯只读、fail-safe。
+   */
+  reconcileSwarmRun(runId: string): ReconcileResult {
+    try {
+      const rebuilt = rebuildRunDetail(this.getSwarmLedgerByRun(runId));
+      let stored: SwarmRunDetail | null = null;
+      try {
+        stored = this.swarmTraceRepo.getRunDetail(runId);
+      } catch {
+        stored = null;
+      }
+      return reconcileRun(rebuilt, stored, runId);
+    } catch {
+      return { runId, match: false, drift: [], note: 'reconcile-error' };
     }
   }
 

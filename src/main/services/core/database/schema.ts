@@ -258,7 +258,8 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       recorded_at INTEGER NOT NULL
     )
   `);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_swarm_run_ledger_run ON swarm_run_ledger (run_id, seq)`);
+  // (run_id, seq) 唯一：账本 append-only 不可篡改的数据库级保护——同 run 同 seq 不得重复写入。
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_swarm_run_ledger_run ON swarm_run_ledger (run_id, seq)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_swarm_run_ledger_session ON swarm_run_ledger (session_id, recorded_at)`);
 
   // Master Tasks 表 (用户级工作单元，跨 session 持久化；P0-c2)

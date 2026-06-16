@@ -389,7 +389,10 @@ export class DatabaseService {
       stored = null;
     }
     const rebuilt = rebuildRunDetail(this.getSwarmLedgerByRun(runId));
-    if (!rebuilt) return stored; // 无账 → 回退 rollup 缓存（含历史 run）
+    // 仅当账本含 run_closed（重建状态非 running）才用 ledger 作真理源——否则是"半套账本"
+    // (运行中崩溃: 有 run_started 无 run_closed)，此时回退 rollup 缓存，避免把不完整的
+    // "运行中"重建盖掉 rollup 里可能更完整的已完成数据（对抗审查 HIGH-1）。
+    if (!rebuilt || rebuilt.run.status === 'running') return stored;
     return { run: rebuilt.run, agents: rebuilt.agents, events: stored?.events ?? [] };
   }
 

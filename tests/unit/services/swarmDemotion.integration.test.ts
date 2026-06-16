@@ -81,6 +81,26 @@ describe('getSwarmRunDetailPreferLedger（3b 切换降级）', () => {
     expect(detail.agents).toHaveLength(1);
   });
 
+  it('HIGH-1 回归：半套账本(运行中崩溃,有run_started无run_closed)不盖掉完整rollup', async () => {
+    db = new Database(':memory:');
+    applySchema(db, createLogger() as never);
+    const repo = new SwarmTraceRepository(db);
+    const ledger = new SwarmLedgerRepository(db);
+    // 完整 rollup（已 closed、totals 真实）
+    repo.startRun({ id: 'r1', sessionId: 's1', coordinator: 'hybrid', startedAt: 100, totalAgents: 1, trigger: 'auto' });
+    repo.upsertAgent({ runId: 'r1', agentId: 'a1', name: 'a1', role: 'w', status: 'completed', startTime: 100, endTime: 200, durationMs: 100, tokensIn: 30, tokensOut: 15, toolCalls: 3, costUsd: 0.05, error: null, failureCategory: null, filesChanged: [] });
+    repo.closeRun({ id: 'r1', status: 'completed', endedAt: 200, completedCount: 1, failedCount: 0, parallelPeak: 1, totalTokensIn: 30, totalTokensOut: 15, totalToolCalls: 3, totalCostUsd: 0.05, errorSummary: null, aggregation: null });
+    // 半套账本：只有 run_started + agent_snapshot，无 run_closed（模拟 closeRun 落盘后 appendLedger 前崩溃）
+    ledger.append({ runId: 'r1', sessionId: 's1', seq: 0, kind: 'run_started', agentId: null, payload: { coordinator: 'hybrid', startedAt: 100, totalAgents: 1, trigger: 'auto' }, recordedAt: 100 });
+    ledger.append({ runId: 'r1', sessionId: 's1', seq: 1, kind: 'agent_snapshot', agentId: 'a1', payload: { agentId: 'a1', name: 'a1', role: 'w', status: 'running', startTime: 100, endTime: null, durationMs: null, tokensIn: 10, tokensOut: 5, toolCalls: 1, costUsd: 0.01, error: null, failureCategory: null, filesChanged: [] }, recordedAt: 110 });
+
+    const detail = wire().getSwarmRunDetailPreferLedger('r1')!;
+    // 回退完整 rollup，不被半套账本的"running/totals=10"盖掉
+    expect(detail.run.status).toBe('completed');
+    expect(detail.run.totalTokensIn).toBe(30);
+    expect(detail.agents[0].status).toBe('completed');
+  });
+
   it('既无账也无 rollup → null（不抛）', async () => {
     db = new Database(':memory:');
     applySchema(db, createLogger() as never);

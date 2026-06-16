@@ -27,6 +27,9 @@ on:
       - '.github/workflows/swarm-ci.yml'
       - '.github/workflows/vercel-control-plane.yml'
       - 'scripts/ci/**'
+      - 'scripts/console-scan.mjs'
+      - 'scripts/a11y-scan.mjs'
+      - 'scripts/stale-dist-scan.mjs'
       - 'scripts/build-renderer-bundle.mjs'
       - 'scripts/control-plane-*.mjs'
       - 'scripts/generate-control-plane-env.mjs'
@@ -88,6 +91,23 @@ jobs:
         run: |
           npm ci --prefix vercel-api --ignore-scripts
           npm --prefix vercel-api run typecheck
+
+      - name: Static gates (console / a11y / stale-dist)
+        # 三个轻量静态门（纯 node 脚本，无额外依赖，秒级），fast-fail 在跑测试套件之前：
+        #   console-scan:    限制裸 console.log/debug 蔓延（基线棘轮 318）
+        #   a11y-scan:       轻量可访问性规则（基线棘轮 48）
+        #   stale-dist-scan: 禁止构建产物入库
+        # 三者均为 hard gate（接入前已确认当前 main 绿、只对"超基线/新增"才红）。
+        run: |
+          node scripts/console-scan.mjs
+          node scripts/a11y-scan.mjs
+          node scripts/stale-dist-scan.mjs
+
+      - name: Lint (non-blocking trend)
+        # lint 基线当前为红（46 errors + 1620 warnings 的历史债），直接 hard-gate 会卡死所有 PR。
+        # 先以 continue-on-error 接入、累计趋势；待历史 error 清零后去掉 continue-on-error 翻成 hard gate。
+        continue-on-error: true
+        run: npm run lint
 
       - name: Run swarm smoke suite
         run: npm run test:swarm:smoke -- --retry=1

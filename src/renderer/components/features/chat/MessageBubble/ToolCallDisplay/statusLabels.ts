@@ -136,5 +136,14 @@ function enrichCompletedLabel(toolCall: ToolCall, defaultLabel: string): string 
     if (match) return `已读取 ${match[1]} 行`;
   }
 
+  if (name === 'Bash' || name === 'bash') {
+    // UX③：success 态下若退出码非 0，是个被"已执行"掩盖的矛盾信号（判定不可靠）。
+    // 显式标出退出码，让用户/模型看到，而不是误以为干净成功。退出码为 0 / 未知则保持简洁。
+    const exitCode = (toolCall.result?.metadata as { exitCode?: unknown } | undefined)?.exitCode;
+    if (typeof exitCode === 'number' && exitCode !== 0) {
+      return `已执行（退出码 ${exitCode}，结果判定可能不可靠）`;
+    }
+  }
+
   return defaultLabel;
 }

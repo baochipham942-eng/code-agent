@@ -256,6 +256,26 @@ async function handleSetIntegration(
   await configService.setIntegration(payload.integration, payload.config);
 }
 
+async function handleGetBudgetStatus(): Promise<unknown> {
+  const { getBudgetService } = await import('../services/core/budgetService');
+  const service = getBudgetService();
+  // 状态（含用量百分比/告警级别）+ 配置（enabled/上限）一并回给 UI 染色与表单回填
+  return { ...service.checkBudget(), config: service.getConfig() };
+}
+
+async function handleSetBudgetConfig(
+  getConfigService: () => ConfigService | null,
+  payload: { budget?: Partial<NonNullable<AppSettings['budget']>> } | Partial<NonNullable<AppSettings['budget']>>,
+): Promise<void> {
+  const configService = getConfigService();
+  if (!configService) throw new Error('Config service not initialized');
+  const budget = ('budget' in payload && payload.budget ? payload.budget : payload) as Partial<NonNullable<AppSettings['budget']>>;
+  await configService.setBudgetConfig(budget);
+  // Item4①：持久化后同步运行时单例，否则单例还跑旧配置（启动期硬编码默认）。
+  const { syncBudgetServiceFromConfig } = await import('../services/core/budgetService');
+  syncBudgetServiceFromConfig(configService.getBudgetConfig());
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -324,6 +344,13 @@ export function registerSettingsHandlers(
           break;
         case 'getAllServiceKeys':
           data = await handleGetAllServiceKeys(getConfigService);
+          break;
+        case 'getBudgetStatus':
+          data = await handleGetBudgetStatus();
+          break;
+        case 'setBudgetConfig':
+          await handleSetBudgetConfig(getConfigService, payload as Parameters<typeof handleSetBudgetConfig>[1]);
+          data = null;
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

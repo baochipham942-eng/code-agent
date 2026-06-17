@@ -416,3 +416,11 @@ export function getBudgetService(): BudgetService {
   }
   return budgetServiceInstance;
 }
+
+/**
+ * 把持久化的预算配置写回运行时单例（Item4①）。
+ * 抽成独立函数便于 IPC 写路径复用 + 单测，避免在 1300+ 行的 configService 里加逻辑。
+ */
+export function syncBudgetServiceFromConfig(budgetConfig: Partial<BudgetConfig>): void {
+  getBudgetService().updateConfig(budgetConfig);
+}

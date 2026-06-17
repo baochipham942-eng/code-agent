@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { useStatusStore } from '../../stores/statusStore';
+import { useBudgetStatus } from '../../hooks/useBudgetStatus';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { ModelSwitcher } from './ModelSwitcher';
@@ -42,6 +43,9 @@ export function StatusBar() {
     isStreaming,
   } = useStatusStore();
 
+  // 预算状态：随累计成本前进重新拉取，驱动 CostDisplay 染色
+  const budgetStatus = useBudgetStatus(sessionCost);
+
   // 渐进披露：simple 模式不显示状态栏
   if (disclosureLevel === 'simple') {
     return null;
@@ -75,7 +79,7 @@ export function StatusBar() {
 
       {/* 中间区域：费用、上下文使用 */}
       <div className="flex items-center gap-3">
-        <CostDisplay cost={sessionCost} isStreaming={isStreaming} />
+        <CostDisplay cost={sessionCost} isStreaming={isStreaming} budget={budgetStatus} />
         <Separator />
         <ContextUsage percent={contextUsagePercent} />
         <Separator />

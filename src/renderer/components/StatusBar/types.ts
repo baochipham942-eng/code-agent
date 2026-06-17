@@ -17,6 +17,8 @@ export interface TokenUsageProps {
 export interface CostDisplayProps {
   cost: number;
   isStreaming?: boolean;
+  /** 预算状态（启用时驱动染色 + 上限展示）；未提供则只显累计成本 */
+  budget?: import('../../hooks/useBudgetStatus').BudgetStatusView | null;
 }
 
 export interface ContextUsageProps {

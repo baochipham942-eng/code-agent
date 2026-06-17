@@ -87,6 +87,38 @@ describe('openaiWrapper / parseOpenAIResponse', () => {
     expect(result.toolCalls?.[1].name).toBe('readFile');
   });
 
+  it('tool_use with preamble: preserves content and builds ordered contentParts (text before tools)', () => {
+    // 真实 MiMo 非流式响应：message 同时含 content(工具前的前导语) + tool_calls。
+    // 旧实现只返回 toolCalls，丢了 content 和交错顺序 → 落库 content_parts NULL → 渲染倒序。
+    const raw = {
+      choices: [
+        {
+          message: {
+            role: 'assistant',
+            content: '我将为你搜索关于 TypeScript 6.0 的信息。',
+            tool_calls: [
+              {
+                id: 'call_x',
+                type: 'function',
+                function: { name: 'web_search', arguments: '{"query":"TypeScript 6.0"}' },
+              },
+            ],
+          },
+          finish_reason: 'tool_calls',
+        },
+      ],
+    };
+
+    const result = parseOpenAIResponse(raw);
+
+    expect(result.type).toBe('tool_use');
+    expect(result.content).toBe('我将为你搜索关于 TypeScript 6.0 的信息。');
+    expect(result.contentParts).toEqual([
+      { type: 'text', text: '我将为你搜索关于 TypeScript 6.0 的信息。' },
+      { type: 'tool_call', toolCallId: 'call_x' },
+    ]);
+  });
+
   it('refusal: returns plain text when no tool_calls and no Calling-syntax', () => {
     const raw = {
       choices: [{ message: { content: "I can't help with that." }, finish_reason: 'stop' }],

@@ -12,7 +12,7 @@
 import { z } from 'zod';
 
 import type { ToolCall } from '../../../../shared/contract';
-import type { ModelResponse } from '../../types';
+import type { ModelResponse, ResponseContentPart } from '../../types';
 import { logger } from '../providerRuntime';
 
 // ── content blocks (text | tool_use | thinking | server_tool_use) ────────
@@ -233,7 +233,26 @@ export function parseClaudeResponse(raw: unknown): ModelResponse {
       name: b.name,
       arguments: b.input ?? {},
     }));
-    return { type: 'tool_use', toolCalls };
+    const response: ModelResponse = { type: 'tool_use', toolCalls };
+    // content blocks 已是真实顺序：按序合成 contentParts，保留 text/tool 交错，并带回前导文本。
+    // 旧实现只抽 tool_use、丢了文本与顺序，导致落库 content_parts NULL、前端 fallback 倒序。
+    const contentParts: ResponseContentPart[] = [];
+    const textSegments: string[] = [];
+    for (const block of content) {
+      if (block.type === 'text') {
+        contentParts.push({ type: 'text', text: block.text });
+        textSegments.push(block.text);
+      } else if (block.type === 'tool_use') {
+        contentParts.push({ type: 'tool_call', toolCallId: block.id });
+      }
+    }
+    if (textSegments.length > 0) {
+      response.content = textSegments.join('\n');
+    }
+    if (contentParts.length > 1) {
+      response.contentParts = contentParts;
+    }
+    return response;
   }
 
   const textBlocks = content.filter(

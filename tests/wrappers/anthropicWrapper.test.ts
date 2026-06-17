@@ -64,6 +64,28 @@ describe('anthropicWrapper / parseClaudeResponse', () => {
     expect(result.toolCalls?.map((t) => t.name)).toEqual(['foo', 'bar']);
   });
 
+  it('text+tool_use: preserves leading text and builds ordered contentParts', () => {
+    // Claude content blocks 本身就是真实顺序：前导文本 block 在 tool_use block 之前。
+    // 旧实现只抽 tool_use、丢了文本与顺序 → content_parts NULL → 渲染倒序。
+    const raw = {
+      type: 'message',
+      role: 'assistant',
+      content: [
+        { type: 'text', text: '我先查一下当前目录。' },
+        { type: 'tool_use', id: 'toolu_x', name: 'list_directory', input: { path: '.' } },
+      ],
+    };
+
+    const result = parseClaudeResponse(raw);
+
+    expect(result.type).toBe('tool_use');
+    expect(result.content).toBe('我先查一下当前目录。');
+    expect(result.contentParts).toEqual([
+      { type: 'text', text: '我先查一下当前目录。' },
+      { type: 'tool_call', toolCallId: 'toolu_x' },
+    ]);
+  });
+
   it('refusal: returns text when only text blocks (joined with newlines)', () => {
     const raw = {
       type: 'message',

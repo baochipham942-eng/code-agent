@@ -235,7 +235,20 @@ export function parseOpenAIResponse(raw: unknown): ModelResponse {
     }
 
     if (toolCalls.length > 0) {
-      return { type: 'tool_use', toolCalls };
+      // 非流式响应里 message.content 是工具调用前的前导语。旧实现直接丢掉它、也不记录
+      // text/tool 的交错顺序，导致落库 content_parts 为 NULL、前端 fallback 把工具渲染到
+      // 文本下面（倒序）。这里保留 content，并在有前导文本时按"文本在前、工具在后"的真实
+      // 顺序合成 contentParts，与流式路径(sseStream)行为对齐。
+      const preamble = message.content || '';
+      const response: ModelResponse = { type: 'tool_use', toolCalls };
+      if (preamble) {
+        response.content = preamble;
+        response.contentParts = [
+          { type: 'text', text: preamble },
+          ...toolCalls.map((tc) => ({ type: 'tool_call' as const, toolCallId: tc.id })),
+        ];
+      }
+      return response;
     }
   }
 

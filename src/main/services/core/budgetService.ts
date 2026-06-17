@@ -127,14 +127,25 @@ export class BudgetService {
    * Update budget configuration
    */
   updateConfig(config: Partial<BudgetConfig>): void {
+    const prev = this.config;
     this.config = { ...this.config, ...config };
-    // Codex audit F2：配置变了（尤其阈值/上限/开关）就重新武装告警去重标志，
-    // 否则"已在 85% 告警过 → 把阈值提到 95% → 再越 95%"不会重新告警（stale flag）。
-    this.warningEmitted = false;
-    this.blockedEmitted = false;
+    // Codex audit F2：阈值/上限/开关变了才重新武装告警去重标志，让"85% 告警过 →
+    // 提阈值到 95% → 再越 95%"能重新告警。
+    // Codex audit R2 回归修复：只在告警边界字段**实际变化**时 re-arm，否则启动 hydrate /
+    // 原样保存 / no-op payload 这类 benign 重载会在已告警态下重复弹同一告警（spam）。
+    const boundaryChanged =
+      prev.enabled !== this.config.enabled
+      || prev.maxBudget !== this.config.maxBudget
+      || prev.warningThreshold !== this.config.warningThreshold
+      || prev.blockThreshold !== this.config.blockThreshold;
+    if (boundaryChanged) {
+      this.warningEmitted = false;
+      this.blockedEmitted = false;
+    }
     logger.info('Budget config updated:', {
       maxBudget: this.config.maxBudget,
       enabled: this.config.enabled,
+      boundaryChanged,
     });
   }
 

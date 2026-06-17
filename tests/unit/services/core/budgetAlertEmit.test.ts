@@ -97,6 +97,35 @@ describe('BudgetService alert emission (Item4②)', () => {
     expect(calls[1].alertLevel).toBe(BudgetAlertLevel.WARNING);
   });
 
+  it('does NOT re-arm on no-op / unchanged config reload — no duplicate alert spam (audit R2 regression)', () => {
+    const svc = new BudgetService({
+      enabled: true,
+      maxBudget: 1_000_000,
+      silentThreshold: 0.7,
+      warningThreshold: 0.85,
+      blockThreshold: 1.0,
+      resetPeriodHours: 24,
+    });
+    const calls: BudgetStatus[] = [];
+    svc.setAlertListener((s) => calls.push(s));
+
+    svc.recordUsage(usage(10_000, 10_000));
+    const cost = svc.getCurrentCost();
+    svc.updateConfig({ maxBudget: cost / 0.9 }); // 边界变化 → re-arm
+    svc.recordUsage(usage(0, 0));
+    expect(calls).toHaveLength(1); // warning 首发
+
+    // benign 重载：相同 maxBudget 值 → 无边界变化 → 不 re-arm
+    svc.updateConfig({ maxBudget: cost / 0.9 });
+    svc.recordUsage(usage(0, 0));
+    expect(calls).toHaveLength(1); // 不重复
+
+    // 空 / no-op payload → 不 re-arm
+    svc.updateConfig({});
+    svc.recordUsage(usage(0, 0));
+    expect(calls).toHaveLength(1); // 仍不重复
+  });
+
   it('marks warning consumed when usage jumps straight to blocked (audit F1)', () => {
     const svc = new BudgetService({
       enabled: true,

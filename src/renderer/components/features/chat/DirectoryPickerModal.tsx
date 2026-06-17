@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { useLocalBridgeStore } from '../../../stores/localBridgeStore';
-import { Button } from '../../primitives';
+import { Button, IconButton, Modal } from '../../primitives';
 import {
   invokeLocalBridgeTool,
   readBridgeDirectoryEntries,
@@ -190,96 +190,85 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
     </div>
   );
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="选择工作目录"
+      size="md"
+      header={
+        <>
+          <FolderTree className="w-5 h-5 text-indigo-400 shrink-0" />
+          <h2 className="flex-1 text-base font-medium text-zinc-200">
+            选择工作目录
+          </h2>
+          <IconButton
+            variant="default"
+            size="md"
+            icon={<RefreshCw className="w-4 h-4" />}
+            aria-label="刷新目录"
+            title="刷新"
+            onClick={handleRefresh}
+          />
+          <IconButton
+            variant="default"
+            size="md"
+            icon={<X className="w-4 h-4" />}
+            aria-label="关闭"
+            onClick={onClose}
+          />
+        </>
+      }
+      footer={
+        <>
+          <Button size="sm" variant="ghost" onClick={onClose}>
+            取消
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={handleConfirm}
+            disabled={!selectedPath}
+          >
+            确认
+          </Button>
+        </>
+      }
+    >
+      {/* Description */}
+      <p className="text-xs text-zinc-400 leading-relaxed mb-3">
+        首次使用本地工具，请选择一个工作目录。AI 助手将在此目录下读写文件。
+      </p>
 
-      {/* Modal */}
-      <div className="relative w-full max-w-md mx-4 bg-zinc-900 rounded-2xl border border-zinc-700 shadow-2xl animate-fade-in">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700/50">
-          <div className="flex items-center gap-2.5">
-            <FolderTree className="w-5 h-5 text-indigo-400" />
-            <h3 className="text-base font-medium text-zinc-200">
-              选择工作目录
-            </h3>
+      {/* Directory Tree */}
+      <div className="max-h-72 overflow-y-auto">
+        {isLoadingHome ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
+            <span className="ml-2 text-sm text-zinc-400">
+              正在连接桥接服务...
+            </span>
           </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={handleRefresh}
-              className="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
-              title="刷新"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
+        ) : tree.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-zinc-500">
+            <Folder className="w-8 h-8 mb-2 opacity-50" />
+            <span className="text-sm">无法加载目录</span>
+            <span className="text-xs mt-1">请确认桥接服务已启动</span>
           </div>
-        </div>
-
-        {/* Description */}
-        <div className="px-5 py-3 border-b border-zinc-800">
-          <p className="text-xs text-zinc-400 leading-relaxed">
-            首次使用本地工具，请选择一个工作目录。AI 助手将在此目录下读写文件。
-          </p>
-        </div>
-
-        {/* Directory Tree */}
-        <div className="px-3 py-2 max-h-72 overflow-y-auto">
-          {isLoadingHome ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
-              <span className="ml-2 text-sm text-zinc-400">
-                正在连接桥接服务...
-              </span>
-            </div>
-          ) : tree.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 text-zinc-500">
-              <Folder className="w-8 h-8 mb-2 opacity-50" />
-              <span className="text-sm">无法加载目录</span>
-              <span className="text-xs mt-1">请确认桥接服务已启动</span>
-            </div>
-          ) : (
-            tree.map((node) => renderNode(node))
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-5 py-4 border-t border-zinc-700/50">
-          {/* Selected path display */}
-          {selectedPath && (
-            <div className="mb-3 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700">
-              <span className="text-xs text-zinc-500">选中路径</span>
-              <div className="text-sm text-indigo-300 font-mono truncate mt-0.5">
-                {selectedPath}
-              </div>
-            </div>
-          )}
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={onClose}>
-              取消
-            </Button>
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={handleConfirm}
-              disabled={!selectedPath}
-            >
-              确认
-            </Button>
-          </div>
-        </div>
+        ) : (
+          tree.map((node) => renderNode(node))
+        )}
       </div>
-    </div>
+
+      {/* Selected path display */}
+      {selectedPath && (
+        <div className="mt-3 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700">
+          <span className="text-xs text-zinc-500">选中路径</span>
+          <div className="text-sm text-indigo-300 font-mono truncate mt-0.5">
+            {selectedPath}
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 };

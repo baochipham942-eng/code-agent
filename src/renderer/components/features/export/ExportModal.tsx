@@ -4,9 +4,10 @@
 // ============================================================================
 
 import React, { useState, useCallback } from 'react';
-import { X, Download, FileText, FileJson, Check, Copy, Loader2 } from 'lucide-react';
+import { X, Download, FileText, FileJson, Check, Copy } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { Message } from '@shared/contract';
+import { Button, IconButton, Modal } from '../../primitives';
 import { createLogger } from '../../../utils/logger';
 import { sanitizeMessagesForBrowserComputerExport } from '../../../utils/browserComputerExportRedaction';
 
@@ -153,8 +154,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
   const formatOptions = [
     {
       id: 'markdown' as const,
@@ -173,118 +172,106 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      {/* Modal */}
-      <div className="relative w-full max-w-md bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700">
-          <div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="导出会话"
+      size="md"
+      header={
+        <>
+          <div className="flex-1">
             <h2 className="text-lg font-semibold text-zinc-200">导出会话</h2>
             <p className="text-xs text-zinc-500 mt-0.5">
               {messages.length} 条消息
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-zinc-700 transition-colors"
+          <IconButton
+            variant="default"
+            size="md"
+            icon={<X className="w-5 h-5" />}
             aria-label="关闭"
-          >
-            <X className="w-5 h-5 text-zinc-400" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-5 space-y-4">
-          {/* Session info */}
-          <div className="p-3 rounded-lg bg-zinc-800 border border-zinc-700">
-            <p className="text-sm text-zinc-400 font-medium truncate">
-              {sessionTitle}
-            </p>
-          </div>
-
-          {/* Format selection */}
-          <div>
-            <label className="block text-sm font-medium text-zinc-400 mb-2">
-              导出格式
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              {formatOptions.map(option => {
-                const isSelected = format === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    onClick={() => setFormat(option.id)}
-                    className={`p-3 rounded-lg border text-left transition-all ${
-                      isSelected
-                        ? 'border-zinc-500 bg-zinc-800/60'
-                        : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={isSelected ? 'text-zinc-200' : 'text-zinc-400'}>
-                        {option.icon}
-                      </span>
-                      <span className={`font-medium ${isSelected ? 'text-zinc-200' : 'text-zinc-400'}`}>
-                        {option.label}
-                      </span>
-                    </div>
-                    <p className="text-xs text-zinc-500">
-                      {option.description}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Success message */}
-          {downloadedFile && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400">
-              <Check className="w-4 h-4" />
-              <span className="text-sm">已下载: {downloadedFile}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-zinc-700 bg-zinc-900">
-          <button
-            onClick={handleCopyToClipboard}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-zinc-700 hover:bg-zinc-700 text-sm text-zinc-400 transition-colors"
-          >
-            {copied ? (
-              <>
+            onClick={onClose}
+          />
+        </>
+      }
+      footer={
+        <>
+          <Button
+            variant="ghost"
+            leftIcon={
+              copied ? (
                 <Check className="w-4 h-4 text-green-400" />
-                已复制
-              </>
-            ) : (
-              <>
+              ) : (
                 <Copy className="w-4 h-4" />
-                复制内容
-              </>
-            )}
-          </button>
-          <button
-            onClick={handleDownload}
-            disabled={isExporting}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-500 text-sm text-white transition-colors disabled:opacity-50"
+              )
+            }
+            onClick={handleCopyToClipboard}
           >
-            {isExporting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Download className="w-4 h-4" />
-            )}
+            {copied ? '已复制' : '复制内容'}
+          </Button>
+          <Button
+            variant="primary"
+            leftIcon={<Download className="w-4 h-4" />}
+            loading={isExporting}
+            onClick={handleDownload}
+          >
             下载文件
-          </button>
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {/* Session info */}
+        <div className="p-3 rounded-lg bg-zinc-800 border border-zinc-700">
+          <p className="text-sm text-zinc-400 font-medium truncate">
+            {sessionTitle}
+          </p>
         </div>
+
+        {/* Format selection */}
+        <div>
+          <label className="block text-sm font-medium text-zinc-400 mb-2">
+            导出格式
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            {formatOptions.map(option => {
+              const isSelected = format === option.id;
+              return (
+                <button
+                  key={option.id}
+                  onClick={() => setFormat(option.id)}
+                  className={`p-3 rounded-lg border text-left transition-all ${
+                    isSelected
+                      ? 'border-zinc-500 bg-zinc-800/60'
+                      : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={isSelected ? 'text-zinc-200' : 'text-zinc-400'}>
+                      {option.icon}
+                    </span>
+                    <span className={`font-medium ${isSelected ? 'text-zinc-200' : 'text-zinc-400'}`}>
+                      {option.label}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    {option.description}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Success message */}
+        {downloadedFile && (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400">
+            <Check className="w-4 h-4" />
+            <span className="text-sm">已下载: {downloadedFile}</span>
+          </div>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 };
 

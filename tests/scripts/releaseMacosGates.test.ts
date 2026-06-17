@@ -460,9 +460,11 @@ describe('macOS release fail-closed gates', () => {
     };
     const prebuildCleanup = readRepoFile('scripts/tauri-prebuild-cleanup.sh');
     const releaseBundle = readRepoFile('scripts/tauri-release-bundle.sh');
+    const releaseNeo = readRepoFile('scripts/release-neo.sh');
 
     expect(packageLock.version).toBe(packageJson.version);
     expect(packageLock.packages?.['']?.version).toBe(packageJson.version);
+    expect(packageJson.scripts['release:neo']).toBe('bash scripts/release-neo.sh');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('bash scripts/tauri-release-bundle.sh');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('npm run release:notarize-macos');
     expect(packageJson.scripts['tauri:release:bundle']).toContain('npm run release:verify-macos');
@@ -470,6 +472,12 @@ describe('macOS release fail-closed gates', () => {
     expect(packageJson.scripts['release:verify-macos']).toBe('bash scripts/verify-macos-release.sh');
     expect(packageJson.scripts['renderer:verify-production']).toBe('npx tsx scripts/verify-renderer-hot-update-production.mjs');
     expect(packageJson.scripts['renderer:verify-release-gate']).toBe('npx tsx scripts/verify-renderer-hot-update-release-gate.mjs');
+    expect(releaseNeo).toContain('git push "${REMOTE}" main');
+    expect(releaseNeo).toContain('git push "${REMOTE}" "${TAG}"');
+    expect(releaseNeo).toContain('node scripts/verify-github-workflow-run.mjs');
+    expect(releaseNeo).toContain('npm run release:security-scan');
+    expect(releaseNeo).toContain('tests/scripts/verifyProductionEnv.test.ts');
+    expect(releaseNeo).toContain('tests/scripts/releaseMacosGates.test.ts');
     expect(prebuildCleanup).toContain('prepare-bundled-node.mjs');
     expect(releaseBundle).toContain('prepare-bundled-node.mjs');
     expect(releaseBundle).toContain('*/dist/bundled-node/bin/node');

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-06-17
+
+### Added
+
+- **Event ledger and recovery**: append-only ledgers now cover permission decisions, tool execution lifecycle, session replay projections, Swarm rollups, crash recovery snapshots, and reconcile diagnostics.
+- **Budget alerts**: budget config, runtime budget IPC, StatusBar usage coloring, and threshold / over-limit toast notifications are now wired into the app.
+- **Design system gates**: design-system contract docs, baseline checks, hex-color ratchet rules, and Modal primitive migrations start turning UI consistency into enforceable checks.
+- **Model, voice, and workflow surfaces**: model strategy visibility, prompt stack summary, configurable hotkeys, end-to-end voice input, session media assets, project/session organization, and capability evidence gates have been added.
+
+### Changed
+
+- Chat, sidebar, composer, route trace chips, and tool result presentation have been decluttered so user-facing state is clearer and engine internals stay out of the main path.
+- Swarm ledger read paths can rebuild rollups from the ledger and fail-safe back to existing sources when a projection is incomplete.
+- Release and quality gates now include additional console, accessibility, stale-dist, eval, and capability-evidence checks.
+
+### Fixed
+
+- Fixed voice transcription privacy bypasses, hotkey focus gating, shell capability boundaries, budget startup config sync, stale session status semantics, and model/tool-result echo issues.
+- Fixed several chat reliability problems around auto-load retries, fake edits, streaming code/diff layout shifts, search-source quota failures, and schema parse-error feedback.
+- Fixed renderer polling, duplicate requests, and empty-draft model inheritance behavior.
+
 ## [0.16.104] - 2026-06-12
 
 ### Added

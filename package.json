@@ -1,6 +1,6 @@
 {
   "name": "code-agent",
-  "version": "0.16.104",
+  "version": "0.17.0",
   "packageManager": "npm@11.12.1",
   "description": "Local AI cowork workspace with multi-agent orchestration",
   "type": "module",
@@ -126,6 +126,7 @@
     "renderer:release-record": "npx tsx scripts/renderer-release-record.mjs",
     "renderer:verify-production": "npx tsx scripts/verify-renderer-hot-update-production.mjs",
     "renderer:verify-release-gate": "npx tsx scripts/verify-renderer-hot-update-release-gate.mjs",
+    "release:neo": "bash scripts/release-neo.sh",
     "release:verify-macos": "bash scripts/verify-macos-release.sh",
     "release:notarize-macos": "bash scripts/tauri-notarize.sh",
     "control-plane:release-bundle": "node scripts/control-plane-release-bundle.mjs",

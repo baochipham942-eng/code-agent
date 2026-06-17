@@ -6,6 +6,7 @@
 import React from 'react';
 import { X, FileText, CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import type { TaskPlan, TaskPhase, TaskStep } from '@shared/contract';
+import { IconButton, Modal } from '../../primitives';
 
 // ============================================================================
 // 类型定义
@@ -83,70 +84,66 @@ export const PlanPanel: React.FC<PlanPanelProps> = ({ plan, onClose }) => {
     : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-2xl max-h-[80vh] bg-zinc-800-900 rounded-xl shadow-2xl border border-zinc-700 flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-500/20 rounded-lg">
-              <FileText className="w-5 h-5 text-indigo-400" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-zinc-200">{plan.title}</h3>
-              <p className="text-xs text-zinc-500">
-                进度: {plan.metadata.completedSteps}/{plan.metadata.totalSteps} 步骤
-              </p>
-            </div>
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title={plan.title}
+      size="xl"
+      header={
+        <>
+          <div className="p-2 bg-indigo-500/20 rounded-lg shrink-0">
+            <FileText className="w-5 h-5 text-indigo-400" />
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Progress Bar */}
-        <div className="px-6 py-3 border-b border-zinc-700">
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-2 bg-zinc-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <span className="text-sm font-medium text-zinc-400">{progress}%</span>
-          </div>
-        </div>
-
-        {/* Objective */}
-        {plan.objective && (
-          <div className="px-6 py-3 border-b border-zinc-700 bg-zinc-800">
-            <p className="text-sm text-zinc-400">
-              <span className="font-medium text-zinc-400">目标: </span>
-              {plan.objective}
+          <div className="flex-1 min-w-0">
+            <h3 className="text-lg font-semibold text-zinc-200 truncate">{plan.title}</h3>
+            <p className="text-xs text-zinc-500">
+              进度: {plan.metadata.completedSteps}/{plan.metadata.totalSteps} 步骤
             </p>
           </div>
-        )}
-
-        {/* Plan Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          {plan.phases.map((phase) => (
-            <PhaseSection key={phase.id} phase={phase} />
-          ))}
+          <IconButton
+            variant="default"
+            size="md"
+            icon={<X className="w-5 h-5" />}
+            aria-label="关闭"
+            onClick={onClose}
+          />
+        </>
+      }
+      footer={
+        <p className="flex-1 text-xs text-zinc-500">
+          创建于 {new Date(plan.createdAt).toLocaleString('zh-CN')}
+          {plan.updatedAt !== plan.createdAt && (
+            <> · 更新于 {new Date(plan.updatedAt).toLocaleString('zh-CN')}</>
+          )}
+        </p>
+      }
+    >
+      {/* Progress Bar */}
+      <div className="flex items-center gap-3 mb-3">
+        <div className="flex-1 h-2 bg-zinc-700 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-300"
+            style={{ width: `${progress}%` }}
+          />
         </div>
+        <span className="text-sm font-medium text-zinc-400">{progress}%</span>
+      </div>
 
-        {/* Footer */}
-        <div className="px-6 py-3 border-t border-zinc-700 bg-zinc-800">
-          <p className="text-xs text-zinc-500">
-            创建于 {new Date(plan.createdAt).toLocaleString('zh-CN')}
-            {plan.updatedAt !== plan.createdAt && (
-              <> · 更新于 {new Date(plan.updatedAt).toLocaleString('zh-CN')}</>
-            )}
+      {/* Objective */}
+      {plan.objective && (
+        <div className="mb-3 p-3 rounded-lg bg-zinc-800 border border-zinc-700">
+          <p className="text-sm text-zinc-400">
+            <span className="font-medium text-zinc-400">目标: </span>
+            {plan.objective}
           </p>
         </div>
-      </div>
-    </div>
+      )}
+
+      {/* Plan Content */}
+      {plan.phases.map((phase) => (
+        <PhaseSection key={phase.id} phase={phase} />
+      ))}
+    </Modal>
   );
 };
 

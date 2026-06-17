@@ -59,17 +59,18 @@
 - W3 验证批次：`CaptureAddDialog` 迁 Modal primitive，建立迁移模式（见 commit `7d17b9948`）
 - W3 收口批次 1（commit `db8b39766`）：`DirectoryPickerModal` + `ExportModal` 迁 Modal primitive（modal 21→19，button 748→743）
 - W3 收口批次 2（commit `f004bb9a0`）：`RewindPanel` + `PlanPanel`（实为居中弹窗的 *Panel）迁 Modal primitive（modal 19→17，button 743→739）
+- W3 收口批次 3（commit `48ba4e7e7`，**真居中弹窗收尾**）：`DevServerLauncher` + `UpdateNotification`（canClose 接 Modal 关闭门）+ `SessionReplaySummaryDialog`（`!max-w-3xl`+zIndex 10000）+ `ChannelModal`（整 `<form>` 留 Modal 正文，h3→title，导出供测试）迁 Modal primitive（modal 17→12，button 739→735）
 
-**当前棘轮基线**：`{hardcoded-hex: 0, bare-button: 739, handrolled-modal: 17}`
+**当前棘轮基线**：`{hardcoded-hex: 0, bare-button: 735, handrolled-modal: 12}`
 
-**剩余 17 个 modal 命中的判型（2026-06-17 已逐个核查）**
-- **真居中弹窗，待迁（照已有模式即可）**：`ChannelsSettings:304`（大表单弹窗，footer 在 `<form>` 内，迁时 submit 用 `form=` 关联或 onClick，风险略高）、`DevServerLauncher:189`、`UpdateNotification:185+190`（带 canClose 逻辑，2 处命中=backdrop+容器）、`SessionReplaySummaryDialog:396`（max-h+滚动+紫色自定义 header）。
-- **特殊布局/lightbox，看情况（非标准 dialog，可保留或迁 `size="full"`）**：`NativeDesktopSection:83`（图片预览）、`MediaAssetControls:279`（媒体 lightbox，纯居中无 chrome）、`CapturePanel:84`（900×600 大工作面板，`m-auto` 居中，超 Modal 最大尺寸）。
-- **不能套 Modal，豁免（已确认）**：`App:895`（`justify-end` 右侧 AgentTeamPanel 抽屉）、`AutomationSettings:358` / `WorkspaceSettings:723`（`flex justify-end` + `<aside>` 右抽屉）、`CommandPalette:276` / `MemoFloater:108`（`items-start pt-[15/20vh]` 顶部锚定浮层）、`PreviewPanel:520+537`（`isMaximized` 条件全屏切换，非弹窗）、`FullScreenPage:28`（全屏页）、`SidebarProjectDrawer:206`（抽屉）。
+**剩余 12 个 modal 命中的判型（2026-06-17 核查；「真居中弹窗」档已全部迁完）**
+- **真居中弹窗**：✅ 全部迁完（CaptureAddDialog / DirectoryPicker / Export / Rewind / Plan / DevServerLauncher / UpdateNotification / SessionReplaySummary / ChannelModal）。
+- **特殊布局/lightbox，剩 3（看情况；用户已拍板「真弹窗清完即停」，暂不迁）**：`NativeDesktopSection:83`（图片预览）、`MediaAssetControls:279`（媒体 lightbox，纯居中无 chrome）、`CapturePanel:84`（900×600 大工作面板，`m-auto` 居中，超 Modal 最大尺寸）。
+- **不能套 Modal，豁免（已确认，剩 9）**：`App:895`（`justify-end` 右侧 AgentTeamPanel 抽屉）、`AutomationSettings:358` / `WorkspaceSettings:723`（`flex justify-end` + `<aside>` 右抽屉）、`CommandPalette:276` / `MemoFloater:108`（`items-start pt-[15/20vh]` 顶部锚定浮层）、`PreviewPanel:520+537`（`isMaximized` 条件全屏切换，非弹窗）、`FullScreenPage:28`（全屏页）、`SidebarProjectDrawer:206`（抽屉）。
 
 **续做（增量，每批一个小 PR）**
-1. **手搓 modal（剩 17）**：照 `CaptureAddDialog`/`RewindPanel` 模式——`Modal` 接管壳/标题/关闭/ESC，footer 走 `Button`。优先迁上面「真居中弹窗」一档；「豁免」一档别动。
+1. **手搓 modal（剩 12）**：真居中弹窗已清空。剩下的 3 个 lightbox/大面板需扩 Modal（如加 `2xl/3xl` size 或 lightbox 变体）才好迁，且 9 个豁免项别动——除非先扩 primitive，否则这档到此为止。
    ⚠️ **不是所有 `fixed inset-0` 都是居中弹窗**：`SidebarProjectDrawer`(抽屉)、右侧 `<aside>` 抽屉、`*Floater`/`CommandPalette`(顶部浮层)、`FullScreenPage`(全屏)、`PreviewPanel`(maximize 切换)、纯 backdrop 不能套 Modal。
-2. **裸 button（剩 739）**：交互按钮迁 `Button`/`IconButton`，纯语义/特殊布局留并标 `// ds-allow:button 理由`。按文件分批，不 big-bang。
+2. **裸 button（剩 735）**：交互按钮迁 `Button`/`IconButton`，纯语义/特殊布局留并标 `// ds-allow:button 理由`。按文件分批，不 big-bang。
 3. **每批闭环**：改 → `npm run typecheck` → 写/更新渲染验证测试（`vi.mock` store + `renderToStaticMarkup`，见 `captureAddDialog.test.tsx`）→ `node scripts/check-design-system.mjs --update` 降棘轮 → 提交。
 4. 列违规精确位置：`node -e "import('./scripts/check-design-system.mjs').then(m=>{m.scan()['handrolled-modal'].forEach(l=>console.log(l))})"`

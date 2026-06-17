@@ -25,6 +25,8 @@ describe('shell capabilities', () => {
     ['domain:project', 'setDescription'],
     ['domain:settings', 'saveProviderIconAsset'],
     ['domain:settings', 'resolveProviderIconAsset'],
+    ['domain:settings', 'getBudgetStatus'],
+    ['domain:settings', 'setBudgetConfig'],
     ['domain:memory', 'memoryEntryUpdate'],
   ])('advertises newly registered handler %s/%s in the capability manifest', (domain, action) => {
     const supported = new Set(getShellCapabilityIds());

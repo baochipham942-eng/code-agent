@@ -364,6 +364,9 @@ export const IPC_CHANNELS = {
   // Provider fallback channels (错误处理)
   PROVIDER_FALLBACK: 'provider:fallback',
 
+  // Budget alert broadcast (预算逼近预警/超限 → renderer toast)
+  BUDGET_ALERT: 'budget:alert',
+
   // Agent Registry change broadcast (custom .md agents 热加载推送到所有窗口)
   AGENTS_CHANGED: 'agents:changed',
 } as const;

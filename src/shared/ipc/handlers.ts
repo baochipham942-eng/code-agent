@@ -572,6 +572,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.TELEMETRY_EVENT]: (event: TelemetryPushEvent) => void;
   // Provider fallback events
   [IPC_CHANNELS.PROVIDER_FALLBACK]: (event: ProviderFallbackEvent) => void;
+  // Budget alert events (预算逼近预警/超限)
+  [IPC_CHANNELS.BUDGET_ALERT]: (event: BudgetAlertEvent) => void;
   // Agent Registry change broadcast (custom .md agents 热加载推送)
   [IPC_CHANNELS.AGENTS_CHANGED]: (event: AgentsChangedEvent) => void;
 }
@@ -584,4 +586,12 @@ export interface ProviderFallbackEvent {
   strategy?: ModelFallbackStrategy;
   tried?: ModelFallbackTraceStep[];
   skipped?: ModelFallbackTraceStep[];
+}
+
+export interface BudgetAlertEvent {
+  level: 'warning' | 'blocked';
+  currentCost: number;
+  maxBudget: number;
+  usagePercentage: number;
+  message?: string;
 }

@@ -102,6 +102,10 @@ export class BudgetService {
   private usageHistory: TokenUsage[] = [];
   private periodStartTime: number;
   private silentLogEmitted: boolean = false;
+  // 告警转换去重：每个周期内 warning/blocked 各只向 UI 推一次，避免每次 recordUsage 刷屏
+  private warningEmitted: boolean = false;
+  private blockedEmitted: boolean = false;
+  private alertListener: ((status: BudgetStatus) => void) | null = null;
 
   constructor(config?: Partial<BudgetConfig>) {
     this.config = {
@@ -173,6 +177,30 @@ export class BudgetService {
 
     const cost = this.calculateCost(usage);
     logger.debug(`Token usage recorded: ${usage.inputTokens} in / ${usage.outputTokens} out = $${cost.toFixed(4)}`);
+
+    this.maybeEmitAlert();
+  }
+
+  /**
+   * 注册告警监听器（启动期注入，负责把告警广播到 renderer toast）。
+   */
+  setAlertListener(listener: ((status: BudgetStatus) => void) | null): void {
+    this.alertListener = listener;
+  }
+
+  /**
+   * 记账后若跨入 warning/blocked，向监听器推一次（每周期每级别一次）。
+   */
+  private maybeEmitAlert(): void {
+    if (!this.alertListener) return;
+    const status = this.checkBudget();
+    if (status.alertLevel === BudgetAlertLevel.BLOCKED && !this.blockedEmitted) {
+      this.blockedEmitted = true;
+      this.alertListener(status);
+    } else if (status.alertLevel === BudgetAlertLevel.WARNING && !this.warningEmitted) {
+      this.warningEmitted = true;
+      this.alertListener(status);
+    }
   }
 
   /**
@@ -346,6 +374,8 @@ export class BudgetService {
     this.usageHistory = [];
     this.periodStartTime = Date.now();
     this.silentLogEmitted = false;
+    this.warningEmitted = false;
+    this.blockedEmitted = false;
   }
 
   /**

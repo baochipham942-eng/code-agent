@@ -480,6 +480,24 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
   const settings = configService.getSettings();
   const mainWindow = getMainWindow();
 
+  // 预算告警广播：跨入 warning/blocked 时推一次到 renderer toast（每周期每级别一次，
+  // 去重在 budgetService 内）。emit 时再取窗口，避免捕获 stale 引用。
+  try {
+    const { getBudgetService, BudgetAlertLevel } = await import('../services/core/budgetService');
+    const { IPC_CHANNELS } = await import('../../shared/ipc');
+    getBudgetService().setAlertListener((status) => {
+      getMainWindow()?.webContents.send(IPC_CHANNELS.BUDGET_ALERT, {
+        level: status.alertLevel === BudgetAlertLevel.BLOCKED ? 'blocked' : 'warning',
+        currentCost: status.currentCost,
+        maxBudget: status.maxBudget,
+        usagePercentage: status.usagePercentage,
+        message: status.message,
+      });
+    });
+  } catch (error) {
+    logger.warn('Failed to register budget alert listener', { error: String(error) });
+  }
+
   // Restore devModeAutoApprove from persistent storage
   try {
     const { getSecureStorage } = await import('../services/core/secureStorage');

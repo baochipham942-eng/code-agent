@@ -128,6 +128,10 @@ export class BudgetService {
    */
   updateConfig(config: Partial<BudgetConfig>): void {
     this.config = { ...this.config, ...config };
+    // Codex audit F2：配置变了（尤其阈值/上限/开关）就重新武装告警去重标志，
+    // 否则"已在 85% 告警过 → 把阈值提到 95% → 再越 95%"不会重新告警（stale flag）。
+    this.warningEmitted = false;
+    this.blockedEmitted = false;
     logger.info('Budget config updated:', {
       maxBudget: this.config.maxBudget,
       enabled: this.config.enabled,
@@ -196,6 +200,9 @@ export class BudgetService {
     const status = this.checkBudget();
     if (status.alertLevel === BudgetAlertLevel.BLOCKED && !this.blockedEmitted) {
       this.blockedEmitted = true;
+      // Codex audit F1：用量一跃跨过 warning 直接到 blocked 时，warning 视作已消费，
+      // 标志置位保持状态一致（blocked 比 warning 更紧急，不再补发 warning）。
+      this.warningEmitted = true;
       this.alertListener(status);
     } else if (status.alertLevel === BudgetAlertLevel.WARNING && !this.warningEmitted) {
       this.warningEmitted = true;

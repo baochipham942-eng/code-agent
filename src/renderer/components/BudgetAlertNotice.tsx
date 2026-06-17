@@ -7,9 +7,14 @@ import { ipcService } from '../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { BudgetAlertEvent } from '@shared/ipc/handlers';
 
+function safeNum(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
 function formatBudgetToast(event: BudgetAlertEvent): string {
-  const pct = Math.round((event.usagePercentage ?? 0) * 100);
-  const spent = `$${event.currentCost.toFixed(2)} / $${event.maxBudget.toFixed(2)}`;
+  // Codex audit F6：畸形 IPC payload（NaN/undefined）不能让 .toFixed 崩掉 toast handler
+  const pct = Math.round(safeNum(event.usagePercentage) * 100);
+  const spent = `$${safeNum(event.currentCost).toFixed(2)} / $${safeNum(event.maxBudget).toFixed(2)}`;
   return event.level === 'blocked'
     ? `预算已超限（${pct}%，${spent}）。建议收窄任务范围或调高上限。`
     : `预算逼近上限（${pct}%，${spent}）。`;

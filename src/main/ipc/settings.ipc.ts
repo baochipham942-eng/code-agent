@@ -269,7 +269,9 @@ async function handleSetBudgetConfig(
 ): Promise<void> {
   const configService = getConfigService();
   if (!configService) throw new Error('Config service not initialized');
-  const budget = ('budget' in payload && payload.budget ? payload.budget : payload) as Partial<NonNullable<AppSettings['budget']>>;
+  // Codex audit F3：先确认 payload 是对象再用 'in'，否则 null/数字等畸形 payload 会抛。
+  const obj = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const budget = (obj.budget && typeof obj.budget === 'object' ? obj.budget : obj) as Partial<NonNullable<AppSettings['budget']>>;
   await configService.setBudgetConfig(budget);
   // Item4①：持久化后同步运行时单例，否则单例还跑旧配置（启动期硬编码默认）。
   const { syncBudgetServiceFromConfig } = await import('../services/core/budgetService');

@@ -23,6 +23,21 @@ const DEFAULT_FORM: BudgetForm = {
   resetPeriodHours: 24,
 };
 
+/**
+ * 保存前清洗，挡住无意义/倒置配置（Codex audit F5）：
+ * - maxBudget 至少 0.01（0/负数会让用量比例恒为 0、永不告警）
+ * - 阈值钳到 [0,N]，且拦截阈值不得低于警告阈值（否则"先 block 后 warn"语义倒置）
+ * - 重置周期至少 1 小时
+ */
+export function sanitizeBudgetForm(form: BudgetForm): BudgetForm {
+  const maxBudget = Math.max(0.01, Number.isFinite(form.maxBudget) ? form.maxBudget : DEFAULT_FORM.maxBudget);
+  const warningThreshold = Math.min(Math.max(Number.isFinite(form.warningThreshold) ? form.warningThreshold : 0.85, 0), 1);
+  const blockThresholdRaw = Math.max(Number.isFinite(form.blockThreshold) ? form.blockThreshold : 1, 0);
+  const blockThreshold = Math.max(blockThresholdRaw, warningThreshold);
+  const resetPeriodHours = Math.max(1, Math.floor(Number.isFinite(form.resetPeriodHours) ? form.resetPeriodHours : 24));
+  return { enabled: form.enabled, maxBudget, warningThreshold, blockThreshold, resetPeriodHours };
+}
+
 export function BudgetSettings() {
   const [form, setForm] = useState<BudgetForm>(DEFAULT_FORM);
   const [loading, setLoading] = useState(true);
@@ -58,7 +73,9 @@ export function BudgetSettings() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await invokeDomain(IPC_DOMAINS.SETTINGS, 'setBudgetConfig', { budget: form });
+      const sanitized = sanitizeBudgetForm(form);
+      setForm(sanitized); // 回填清洗后的值，让用户看到被纠正的输入
+      await invokeDomain(IPC_DOMAINS.SETTINGS, 'setBudgetConfig', { budget: sanitized });
       toast.success('预算设置已保存');
     } catch (error) {
       toast.error(`保存预算设置失败: ${error instanceof Error ? error.message : '未知错误'}`);

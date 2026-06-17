@@ -24,16 +24,22 @@ interface RawBudgetStatus {
   config?: { enabled?: boolean };
 }
 
-function normalize(raw: RawBudgetStatus | null): BudgetStatusView | null {
+/** 只接受有限非负数，挡住后端异常值（NaN/Infinity/负数）流到 UI（Codex audit F4）。 */
+function finiteNonNeg(value: unknown, fallback = 0): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+export function normalizeBudgetStatus(raw: RawBudgetStatus | null): BudgetStatusView | null {
   if (!raw) return null;
   const level = raw.alertLevel;
   const alertLevel: BudgetAlertTone =
     level === 'silent' || level === 'warning' || level === 'blocked' ? level : 'none';
   return {
     enabled: raw.config?.enabled ?? false,
-    currentCost: raw.currentCost ?? 0,
-    maxBudget: raw.maxBudget ?? 0,
-    usagePercentage: raw.usagePercentage ?? 0,
+    currentCost: finiteNonNeg(raw.currentCost),
+    maxBudget: finiteNonNeg(raw.maxBudget),
+    // 用量比例钳到 [0, 10]（>1000% 无意义，挡住 Infinity 渲染垃圾）
+    usagePercentage: Math.min(finiteNonNeg(raw.usagePercentage), 10),
     alertLevel,
   };
 }
@@ -49,7 +55,7 @@ export function useBudgetStatus(cost: number): BudgetStatusView | null {
     let cancelled = false;
     invokeDomain<RawBudgetStatus>(IPC_DOMAINS.SETTINGS, 'getBudgetStatus')
       .then((raw) => {
-        if (!cancelled) setStatus(normalize(raw));
+        if (!cancelled) setStatus(normalizeBudgetStatus(raw));
       })
       .catch(() => {
         if (!cancelled) setStatus(null);

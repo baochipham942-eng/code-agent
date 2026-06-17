@@ -179,6 +179,28 @@ class AgentLoop {
 
 ---
 
+## 2026-06-17 Runtime governance / budget / compaction guard
+
+6 月 16~17 日的新增运行时合同集中在“别让系统悄悄偏航”。它们不改变 AgentLoop 的主循环形态，而是在预算、工具结果、压缩和事件事实层补上可解释边界。
+
+| 能力 | 当前合同 | 关键文件 |
+|------|----------|----------|
+| Budget alert runtime | `BudgetService` 按 reset period 聚合 token cost，配置包含 maxBudget、silent/warning/block 阈值和 resetPeriodHours；warning/blocked 只在跨入对应级别时向 UI listener 推一次，避免每次 `recordUsage` 刷屏 | `src/main/services/core/budgetService.ts` |
+| Budget config hydration | 启动期用持久化 settings 初始化 BudgetService 单例；Settings 的 `getBudgetStatus/setBudgetConfig` 读写同一份配置，避免 UI 保存了但运行时单例仍用默认值 | `settings.ipc.ts`、`BudgetSettings.tsx`、`tests/unit/services/core/budgetStartupWiring.test.ts` |
+| Tool required fields | 工具执行前检查 schema required 字段，缺字段时直接返回可被模型理解的 parse/required-field 反馈，让模型按 schema 重调，而不是进入 handler 后报模糊错误 | `src/main/tools/toolExecutor.ts` |
+| Tool result recovery | auto-loaded retry 和已恢复失败不参与“工具报错”判定；真实失败有复制错误和从此重试 action，复用 session fork 路径 | `src/renderer/utils/toolExecutionPresentation.ts` |
+| Bash result trust | Bash 长输出展示层保留头尾和最终进度帧；Bash metadata 里非 0 `exitCode` 会让 UI 标出“判定可能不可靠”，即使工具 result 被标成 success | `ToolCallDisplay/bashOutputPreview.ts`、`statusLabels.ts` |
+| Compaction stuck guard | auto-compaction 成功插入 summary block 后重新估算 raw tokens；若连续多次仍超过绝对 token 或 warning ratio 阈值，则暂停 `_autoCompactPaused`，并注入 `<context-window-too-small>` 提示模型收窄范围 | `src/main/agent/runtime/contextAssembly/compression.ts` |
+| AutoCompressor characterization | 旧 `AutoContextCompressor` 的策略选择、激进截断、代码块保留、compaction 计数和 wrap-up 判断有特征测试，后续改动先守住当前边界 | `tests/unit/context/autoCompressor.test.ts` |
+
+边界：
+
+- Budget alert 是可见性和提示，不是 provider 账单的实时硬拦截。真实成本仍受 provider usage、streaming timing 和价格目录影响。
+- Tool required-field guard 只覆盖 schema 明确声明的 `required` 字段；语义错误仍由 handler、权限层或模型下一轮处理。
+- Compaction stuck guard 和 `shouldWrapUp()` 是两条线：前者防反复无效压缩，后者按总 token budget 提醒收尾。
+
+---
+
 ## 2026-06-12 Runtime hardening / learning loop / Max Mode
 
 MiMoCode 对照之后，Agent runtime 增加了一批不依赖 UI 的运行时合同。它们的共同目标是把"模型应该自觉完成"改成"运行时能发现偏航并收口"。

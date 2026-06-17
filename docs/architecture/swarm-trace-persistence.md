@@ -7,12 +7,30 @@ ADR-010 #5 要求把每次 swarm 执行的运行/agent/事件三层数据落到 
 触发点、与既有 `agent-history.json` 的关系，以及 review 阶段的对照
 checklist。
 
+## 2026-06-17 当前状态：ledger 为真理源
+
+本文档最初记录的是 Swarm trace rollup 持久化。2026-06-16 ~ 06-17 的事件账本迭代之后，当前事实层已经变成：
+
+| 层 | 当前角色 | 关键边界 |
+|----|----------|----------|
+| `swarm_run_ledger` | Swarm 聚合事实的 append-only 真理源 | 只追加 `run_started` / `agent_snapshot` / `run_closed`；只有带 `run_closed` 的 run 才作为最终事实 |
+| `swarm_runs` | run 级读缓存 | 可由完整 ledger 重建；用于列表和 summary 快速读取 |
+| `swarm_run_agents` | agent rollup 读缓存 | 可由完整 ledger 重建；不再单独承担最终聚合事实 |
+| `swarm_run_events` | UI timeline | 仍保留最多 `MAX_EVENTS_PER_RUN=2000` 条事件；适合看过程，不适合作为关键聚合来源 |
+
+读取和修复策略也对应收窄：
+
+- `getSwarmRunDetailPreferLedger()` 只在 ledger 重建出闭合 run 时优先使用 ledger；半套 ledger 会回退 rollup。
+- `swarmReconcileService` 默认只读，把 ledger 重建结果和 rollup 存量对比；传入 `rebuildOnDrift` 后才写回 rollup cache。
+- `backfillSwarmLedger` 只做 opt-in 老库迁移，事务内生成 ledger，重复执行会跳过已迁移 run，不在启动路径里自动运行。
+
 ## 数据模型对齐
 
-三表 schema 直接对齐 Langfuse / OpenTelemetry 的 trace 模型：
+rollup 三表直接对齐 Langfuse / OpenTelemetry 的 trace 模型；`swarm_run_ledger` 是这三表之上的事件真理源，用来重建 run / agent 聚合：
 
 | 我们的表 | Langfuse 概念 | OTel 概念 |
 |----------|---------------|-----------|
+| `swarm_run_ledger` | Source events / replay projection | Event stream |
 | `swarm_runs` | Trace（容器） | Trace |
 | `swarm_run_agents` | Observation 的 rollup | Span |
 | `swarm_run_events` | Event（point-in-time） | Span Event |
@@ -23,6 +41,21 @@ Context 把 trace id 作为 message header 一等公民的实践。`runId` 由
 统一打戳，`completed()` / `cancelled()` 在事件 publish 之后清空。
 
 ## 表结构
+
+### swarm_run_ledger（append-only 真理源）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | INTEGER PK AUTOINCREMENT | 内部自增 |
+| `run_id` | TEXT | swarm run id |
+| `session_id` | TEXT NULL | 关联 session，可空 |
+| `seq` | INTEGER | 单 run 内单调序号，`(run_id, seq)` 唯一 |
+| `event_kind` | TEXT | `run_started` / `agent_snapshot` / `run_closed` |
+| `agent_id` | TEXT NULL | agent 快照事件归属 |
+| `payload_json` | TEXT | 不截断的关键 rollup payload |
+| `recorded_at` | INTEGER | 写入时间 |
+
+索引：`(run_id, seq)` 唯一、`(session_id, recorded_at)`。仓储只实现 INSERT / SELECT，不提供 update / delete。
 
 ### swarm_runs（一行 / swarm 执行）
 
@@ -139,7 +172,7 @@ Context 把 trace id 作为 message header 一等公民的实践。`runId` 由
 ## 写入路径
 
 `SwarmEventEmitter` → `EventBus 'swarm' domain` → `SwarmTraceWriter`
-→ `SwarmTraceRepo`（由 factory 决定 SQLite 或 JSONL；两个实现都同步落地，JSONL 走 `fs.appendFileSync`）。
+→ `SwarmTraceRepo`（由 factory 决定 SQLite 或 JSONL；两个实现都同步落地，JSONL 走 `fs.appendFileSync`）。SQLite 路径同时 best-effort 追加 `swarm_run_ledger`，形成 rollup cache + ledger truth source 的双写过渡。
 
 写入策略：
 - `SwarmTraceWriter.schedulePersist()` 用 `Promise` 串行链 fire-and-forget
@@ -154,6 +187,16 @@ Context 把 trace id 作为 message header 一等公民的实践。`runId` 由
 | 任意事件 | `swarm_run_events` | `appendEvent`（受 MAX_EVENTS_PER_RUN 限制） |
 | `swarm:completed` | `swarm_runs` | `closeRun`（status / ended_at / 聚合 totals / aggregation_json） |
 | `swarm:cancelled` | `swarm_runs` | `closeRun`（status='cancelled' / errorSummary='cancelled'） |
+
+ledger 旁路写入：
+
+| 触发点 | ledger 事件 | 说明 |
+|--------|-------------|------|
+| `swarm:started` | `run_started` | 保存 run 基础信息和计划 agent 数 |
+| agent added / updated / completed / failed | `agent_snapshot` | 保存当前 agent rollup 快照，不依赖 timeline 尾部事件 |
+| `swarm:completed` / `swarm:cancelled` | `run_closed` | 保存完成态、聚合 totals 和 aggregation snapshot |
+
+对账读路径从 `swarm_run_ledger` 重建 run detail，再和 `swarm_runs` / `swarm_run_agents` 对比。没有 `run_closed` 的 ledger 不会覆盖 rollup，避免崩溃中间态把完整缓存误判成完成事实。
 
 ## 与既有 `agent-history.json` 的关系
 

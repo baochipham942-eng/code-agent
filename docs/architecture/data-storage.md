@@ -59,7 +59,11 @@ CREATE TABLE messages (
 | `context_interventions` | pin / exclude / retain 等手动上下文干预，按 session + agent 持久化 | `src/main/context/contextInterventionState.ts` |
 | `session_runtime_state` | `compression_state_json` 与 `persistent_system_context_json`，供 reload 后恢复 ContextAssembly 状态 | `src/main/agent/runtime/runtimeStatePersistence.ts` |
 | `pending_approvals.kind` | plan approval 与 swarm launch approval 共用表但按 kind hydrate/orphan，避免互相抢状态 | `PendingApprovalRepository` |
-| `swarm_runs / swarm_run_agents / swarm_run_events` | Agent Team run、agent rollup、timeline event | `SwarmTraceWriter` |
+| `permission_decisions` | 工具权限 allow / deny / ask 的 append-only 决策账本，供后续审计权限链路 | `ToolExecutor` / `DatabaseService.appendPermissionDecision()` |
+| `tool_execution_events` | 工具执行 begin / complete 生命周期账本，重启后可定位崩溃时未闭合的工具调用 | `ToolExecutor` / `DatabaseService.appendToolExecutionBegin/Complete()` |
+| `session_task_events` | task / todo 的 append-only 事件 lane，给统一会话 replay 提供任务变化事实 | `todoWrite` / task runtime |
+| `swarm_run_ledger` | Swarm run 的 append-only lifecycle 真理源；只有带 `run_closed` 的 run 才作为最终 rollup 事实 | `SwarmLedgerRepository` / `SwarmTraceWriter` |
+| `swarm_runs / swarm_run_agents / swarm_run_events` | Agent Team run、agent rollup 与 timeline 展示缓存；不再是 Swarm 聚合事实的唯一来源 | `SwarmTraceWriter` / `SwarmTraceRepository` |
 | `artifact_issues / artifact_issue_evidence` | 生成物质量问题、证据引用、admin review 决策 | `ArtifactIssueRepository` |
 | `eval_replay_quality_reports` | replay/eval 的产品级质量报告与 release gate 状态 | `ArtifactIssueRepository` / `ExperimentAdapter` |
 | ~~`review_queue_items.delivery_review`~~ | 已下线；旧 Delivery Review 不再写 review queue | 5/19 evaluation cleanup |
@@ -68,6 +72,25 @@ CREATE TABLE messages (
 | `turn_snapshots / compaction_snapshots` | 调试快照与压缩前后诊断，支持 CLI debug 和 settings retention | `turnSnapshotWriter` / `compactionSnapshotWriter` |
 
 当前边界：unit 级恢复链已经覆盖 todos、session_tasks、context interventions、runtime state、pending approvals、structured replay；完整 app restart / reload smoke 仍按对应计划文档里的延后风险处理。
+
+### 2026-06-17 append-only event ledger durable state
+
+这轮把权限、工具执行和 Swarm 聚合从“只看当前投影”推进到 append-only 事件账本。SQLite 仍是本地事实层，表级边界如下：
+
+| 表 / 字段 | 用途 | 主要不变量 |
+|-----------|------|------------|
+| `permission_decisions` | 记录工具权限链路的最终决策、历史决策、原因、耗时和 trace JSON | 写入失败 fail-safe，不改变本次权限结果；按 `(session_id, recorded_at)` 与 `(tool_name, recorded_at)` 查询 |
+| `tool_execution_events` | 用同一个 `execution_id` 串起 begin / complete，complete 记录 status / error | 允许重启后看到只有 begin 没 complete 的调用；不依赖 renderer 状态判断工具是否中断 |
+| `session_task_events` | task / todo 的 append-only lane，供统一 replay 按时间还原任务变化 | 不替代 `session_tasks` 当前态，只补充审计与回放事实 |
+| `swarm_run_ledger` | 只追加 `run_started`、`agent_snapshot`、`run_closed`；`(run_id, seq)` 唯一 | 只有含 `run_closed` 的 ledger 才能覆盖 rollup；半套账本视为运行中或崩溃现场 |
+| `swarm_runs / swarm_run_agents / swarm_run_events` | Swarm trace 读缓存和 UI timeline；`swarm_run_events` 仍受 `MAX_EVENTS_PER_RUN=2000` 控制 | rollup 可以由完整 ledger 重建；timeline 事件不是关键聚合事实源 |
+
+对账和迁移边界：
+
+- `swarmReconcileService` 默认只读扫描，用 ledger 重建值和 rollup 表对比。
+- 写回 rollup 需要显式传入 `rebuildOnDrift` 和 writer，避免后台扫描偷偷改库。
+- 老 run 不在 app 启动时自动迁移；`backfillSwarmLedger` 是 opt-in、事务内执行、幂等跳过已有 ledger 的 run。
+- JSONL / SQLite 双后端仍服务 trace 读取场景；新的 `swarm_run_ledger` 是 SQLite 本地真理源，历史 JSONL run 继续按原 trace 路径读取。
 
 ### 2026-05-11 prompt rewind durable state
 

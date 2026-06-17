@@ -120,6 +120,20 @@
 | **AI 模型** | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / Claude / Ollama | 多模型路由，本地 API Key 优先 |
 | **Agent Engine** | Native Agent Neo / Codex CLI / Claude Code | read-only 外部 engine、workspace-only cwd、task ledger 输出回带 |
 
+## 2026-06-17 架构增量（Iteration Governance / Ledger / Budget / Design System）
+
+这一轮把 6 月 16~17 日的大量产品迭代收进可审计架构面。完整合同见 [2026-06-17 as-built spec](../specs/2026-06-17-neo-iteration-governance-and-ledger.md)。
+
+| 能力域 | 当前形态 | 详细文档 |
+|------|----------|----------|
+| Event ledger | 权限决策、工具执行生命周期和 Swarm 协同运行都有 append-only 事件表；ledger 写入 fail-safe，不改变主流程结果 | [data-storage.md](./data-storage.md)、[tool-system.md](./tool-system.md) |
+| Swarm source of truth | `swarm_run_ledger` 成为 Swarm rollup 事实源；`swarm_runs` / `swarm_run_agents` 降级为读缓存；半套账本跳过完成态判断 | [swarm-trace-persistence.md](./swarm-trace-persistence.md) |
+| Reconcile and backfill | reconcile 默认只读扫描，显式 `rebuildOnDrift` 才用 ledger 重建 rollup 缓存；老 run backfill 默认跳过，只能 opt-in | [data-storage.md](./data-storage.md)、[swarm-trace-persistence.md](./swarm-trace-persistence.md) |
+| Static gates | console/a11y/stale-dist/lint 进入静态治理门；设计系统 gate 以 ratchet 基线限制新增 hex、裸 button 和手搓 modal | [frontend.md](./frontend.md)、[../designs/design-system.md](../designs/design-system.md) |
+| Budget visibility | `BudgetService` 与 Settings/StatusBar/toast 串起来，提供预算上限、阈值、周期、告警去重和成本染色 | [frontend.md](./frontend.md)、[agent-core.md](./agent-core.md) |
+| Tool result UX | 工具失败 action、auto-loaded retry 过滤、Bash 输出头尾预览、进度帧折叠和非 0 退出码提示进入统一展示层 | [tool-system.md](./tool-system.md)、[frontend.md](./frontend.md) |
+| Compaction stuck guard | 连续压缩后仍超阈值时暂停 auto-compaction 并注入收窄范围提示，和总 token budget wrap-up 并存 | [agent-core.md](./agent-core.md) |
+
 ## 2026-06-12 架构增量（Agent Runtime / MiMoCode / Ops）
 
 这一轮把竞品研究里验证过的 runtime 机制、嵌套子代理和运营面修补合并进当前架构。完整合同见 [2026-06-12 as-built spec](../specs/2026-06-12-agent-runtime-mimocode-and-ops-batch.md)。

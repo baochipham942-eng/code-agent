@@ -1,12 +1,13 @@
 # Agent Neo / Code Agent - 架构设计文档
 
+> 版本: 9.26 (9.25 + 2026-06-16~17 迭代治理与账本收口：permission/tool execution append-only ledger、Swarm ledger 真理源 + reconcile/backfill、console/a11y/stale-dist 静态门、设计系统契约 + ratchet gate、预算告警、工具失败 action、Bash 输出头尾预览、auto-compaction stuck guard)
 > 版本: 9.25 (9.24 + 2026-06-13~15 会话页、设置页与运行证据门收口：能力证据硬门 + judge 校准、TurnQuality / ReplayAudit、任务模型策略、模型决策可解释、语音输入、快捷键、目标合同 composer、媒体资产、设置页分组导航/搜索/权限、隐私/通道通知边界、Skills/MCP/Plugins 可见管理、项目/会话组织)
 > 版本: 9.24 (9.23 + 2026-06-12 release-prep hardening：renderer production verifier metadata/bundle timeout + stage diagnostics、checkpoint rebuild foreground short wait + fail-closed、vision empty-response failure reason、skill draft 低价值工具序列名拒绝、session task tree parent recovery)
 > 版本: 9.23 (9.22 + 2026-06-11~12 Agent runtime / MiMoCode / Ops 批次：MiMoCode 快赢与两轮 Codex audit、transcript FTS + History 工具、命令协议层、provider prompt variants、memory BM25、dream consolidation、Max Mode best-of-N、嵌套 subagent 默认 3 层/硬上限 5 层、CUA 锁与轨迹治理、MCP self-service + HTTP Streamable、Admin role RPC、renderer active bundle 低于 shell 版本回退 builtin、诊断导出失败打开 runtime logs)
 > 版本: 9.22 (9.21 + 2026-06-10~11 Windows (win32-x64) 移植与发版链折入：P0 安全/路径地基（权限路径旁路修复 + commandSafety 平台规则包）+ NSIS unsigned 打包链 + 天翼云真机打通（5 个实现期 bug）+ release.yml 独立 build-windows job（三平台 latest.json，windows 失败降级 mac-only，预发布 tag 空跑全绿）+ 全入口设备感知下载/更新（修资产选择两处真 bug）+ ConnectorRegistry 平台过滤 + PII 安装链 Node 化)
 > 版本: 9.21 (9.20 + 2026-06-09 Computer Use 底座迁移 argus → trycua/cua-driver（ADR-021：stdio MCP 接入 + 桌面走 cua/浏览器走 Playwright 分流 + 重签名内嵌 Agent Neo Computer Use.app + cua 工具人话文案/真实 app 图标差异化渲染 + Accessibility 必需/录屏可选）)
 > 版本: 9.20 (9.19 + 2026-06-08 经验沉淀重做（ADR-020：废弃 telemetry n-gram，统一 LLM 反思路 + 命名禁用清单）、Telemetry 可诊断性 P1+P2+P3（版本指纹 + 本地全量诊断旁表/诊断包/脱敏/失败 session 上报 + Langfuse 默认开 opt-out）、卸载/权限三层修复（safety 措辞 + rm 分级松绑 + 挂起权限死锁）、06-07 下午 provider/session/vision 稳定性收尾)
-> 日期: 2026-06-15
+> 日期: 2026-06-17
 > 作者: Lin Chen
 
 本文档是 Agent Neo（代码仓库仍名为 Code Agent）的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -41,6 +42,7 @@
 
 | Spec | 覆盖 |
 |------|------|
+| [Iteration Governance / Ledger / Budget / Design System](./specs/2026-06-17-neo-iteration-governance-and-ledger.md) | 6 月 16~17 日 as-built：权限决策和工具执行 append-only ledger、Swarm ledger 真理源、reconcile scan 和 opt-in backfill、console/a11y/stale-dist 静态门、设计系统契约与 ratchet gate、预算告警、失败工具 action、Bash 输出头尾预览和 auto-compaction 卡死护栏 |
 | [Session Surface / Settings IA / Eval Gates](./specs/2026-06-15-session-settings-eval-gates.md) | 6 月 13~15 日 as-built：能力证据硬门、judge 校准、TurnQuality / ReplayAudit、任务模型策略、模型决策可解释、语音输入、快捷键、目标合同 composer、媒体资产、设置页分组导航/搜索/权限、隐私/通道通知边界、Skills/MCP/Plugins 可见管理、项目/会话组织 |
 | [Agent Runtime / MiMoCode / Ops Batch](./specs/2026-06-12-agent-runtime-mimocode-and-ops-batch.md) | MiMoCode 快赢与 hardening、transcript FTS + History、命令协议层、superpowers 方法论 skill、provider prompt variants、memory BM25、dream consolidation、Max Mode、嵌套 subagent、CUA 治理、MCP self-service + HTTP Streamable、Admin role RPC、renderer stale active bundle fallback、renderer production verifier timeout、checkpoint 前台短等、skill draft 名称质量闸、vision failure reason、诊断导出失败日志兜底 |
 | [Windows 移植与发版链折入](./specs/2026-06-11-windows-support-port.md) | 两天 as-built：P0 安全/路径地基（权限旁路修复 + commandSafety 平台规则包 51 用例）、NSIS 打包链 + CI 实跑绿、天翼云真机打通（5 个实现期 bug）、release.yml 矩阵折入（windows 失败降级 mac-only + 预发布 tag 空跑全绿）、全入口设备感知（修资产选择两处真 bug）、ConnectorRegistry 平台过滤、PII 安装链 Node 化 |
@@ -205,6 +207,30 @@ code-agent/
 > **工具合并**: 31 个独立延迟工具合并为统一工具（Process, MCPUnified, TaskManager 等），使用 action 参数分发。详见 [ADR-006](./decisions/006-deferred-tools-consolidation.md)。
 >
 > **文档编辑统一**: DocEdit 统一入口，富文档为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
+
+### 2026-06-16 ~ 06-17 迭代治理、事件账本、预算和设计系统契约
+
+这一轮把最近的运行治理、成本可见性和 UI 一致性收成可审计合同。重点是让系统状态从“当前页面看起来如何”转到“有可回放、可对账、可降低基线的事实”。
+
+| 模块 | 当前闭环 | 关键文件 / 入口 |
+|------|---------|----------------|
+| 权限决策账本 | `ToolExecutor` 的 allow/deny/ask 决策追加到 `permission_decisions`；写账失败 fail-safe，不影响权限结果 | `src/main/tools/toolExecutor.ts`、`src/main/services/core/databaseService.ts`、`permission_decisions` |
+| 工具执行账本 | 工具执行 begin/complete 写入 `tool_execution_events`，重启后可还原崩溃时未闭合工具现场 | `tool_execution_events`、`appendToolExecutionBegin/Complete`、diagnostics IPC |
+| Swarm ledger 真理源 | `swarm_run_ledger` 只追加 `run_started / agent_snapshot / run_closed`；旧 rollup 表降级为读缓存，半套账本不当完成态 | `SwarmLedgerRepository.ts`、`swarmLedger.ts`、`swarm-trace-persistence.md` |
+| 对账与回填 | reconcile 默认只读扫描，从 ledger 重建值对比 rollup；`rebuildOnDrift` 才写回缓存；老 run backfill 默认不跑，只能 opt-in | `swarmReconcileService.ts`、`backfillSwarmLedger.ts` |
+| 静态治理门 | console/a11y/stale-dist 三个轻量静态门接入 CI，配合 lint 防新增漂移 | `scripts/console-scan.mjs`、`a11y-scan.mjs`、`stale-dist-scan.mjs` |
+| 设计系统契约 | UI 颜色、按钮和 Modal primitive 进入 machine-checkable 契约；hex 基线归零，handrolled modal/bare button 走 ratchet 收口 | `docs/designs/design-system.md`、`scripts/check-design-system.mjs`、`design-system-baseline.json` |
+| 预算体验 | Settings 暴露预算上限/阈值/周期，运行时按 warning/blocked 边界去重弹 toast，StatusBar cost 跟随预算状态染色 | `BudgetService`、`BudgetSettings.tsx`、`BudgetAlertNotice.tsx`、`CostDisplay.tsx` |
+| 工具结果恢复 | 失败工具统一提供复制错误和“从此重试”；auto-loaded retry 与已恢复失败不污染会话状态 | `toolExecutionPresentation.ts`、`ToolCallDisplay` |
+| Bash 输出可信度 | 长输出完成后保留头尾，流式进度帧折叠成最终帧；Bash 非 0 退出码即使 result success 也显式标出“判定可能不可靠” | `bashOutputPreview.ts`、`statusLabels.ts` |
+| 压缩卡死护栏 | 连续 compaction 后仍超阈值时暂停 auto-compaction，注入收窄任务范围的系统消息，避免重复摘要烧 token | `contextAssembly/compression.ts`、`autoCompressor.ts` |
+
+**架构边界澄清**：
+
+- append-only ledger 是事实源，不是阻塞主流程的强依赖；写账失败必须降级为 warn。
+- Swarm ledger 只有闭合 run 才是完成态；`run_started` 后没有 `run_closed` 的半套账本只表示在飞或崩溃现场。
+- 预算告警定位是成本可见和范围提醒，不承诺 provider 账单的实时精确拦截。
+- 设计系统 gate 是 ratchet 机制，先阻止新增漂移，再按文件分批降低历史基线。
 
 ### 2026-06-13 ~ 06-15 会话页、设置页和运行证据门收口
 

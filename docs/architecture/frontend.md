@@ -192,6 +192,26 @@ v0.16.74 新增 `HooksSettings`：位于"能力与连接"分组，调用 `domain
 
 边界：Turn Quality 是诊断和复盘入口，不是普通对话的阻断条件；真正的 release / CI 阻断仍由显式 gate 或测试脚本决定。
 
+### 2026-06-17 预算、工具结果恢复和设计系统前端增量
+
+| 能力 | 前端入口 | 数据来源 |
+|------|----------|----------|
+| 预算告警设置 | `BudgetSettings` 位于 Settings，支持启用、maxBudget、warning/block 阈值和 reset period；保存前做数值 sanitize | `domain:settings/getBudgetStatus`、`setBudgetConfig` |
+| 预算状态展示 | `StatusBar` 用 `useBudgetStatus(sessionCost)` 拉预算状态；`CostDisplay` 按 warning/blocked/silent/none 决定颜色，并在 tooltip 展示用量/上限/百分比 | `useBudgetStatus.ts`、`CostDisplay.tsx` |
+| 预算 toast | `BudgetAlertNotice` 订阅 `budget:alert`，warning 用 warning toast，blocked 用 error toast；文案强调收窄任务或调高上限 | `BudgetAlertNotice.tsx`、`BudgetService.setAlertListener()` |
+| 工具失败 action | 失败工具结果统一展示复制错误和“从此重试”；从此重试复用消息级 fork path，拿不到 messageId 时只保留复制错误 | `toolExecutionPresentation.ts`、`ToolCallDisplay`、`messageActionStore` |
+| 工具状态去噪 | auto-loaded retry 和同轮已恢复失败不再触发“工具报错”决策，避免内部加载机制把成功 turn 渲成失败 | `isAutoLoadedRetry()`、`summarizeToolLoopDecision()` |
+| Bash 输出预览 | 已完成的长输出按头尾展示，中段显示省略行数；流式输出只显示最后几行；`\r` 进度帧和 backspace 在展示前折叠 | `ToolCallDisplay/bashOutputPreview.ts` |
+| Bash 退出码提示 | Bash metadata 中 `exitCode !== 0` 时，成功标签会追加退出码和“判定可能不可靠”；非 Bash 工具不受影响 | `ToolCallDisplay/statusLabels.ts` |
+| 设计系统 gate | UI 新增代码必须走 token、Button/IconButton 和 Modal primitive；hex、裸 button、手搓 modal 由 ratchet gate 守基线 | `docs/designs/design-system.md`、`scripts/check-design-system.mjs` |
+| Modal primitive 迁移 | 真居中弹窗已按小批次迁到 `Modal` primitive，迁移测试以 `role=dialog`、`aria-modal`、标题和 footer 合同为回归点 | `CaptureAddDialog`、`DirectoryPickerModal`、`ExportModal`、`RewindPanel`、`PlanPanel`、`DevServerLauncher`、`UpdateNotification`、`SessionReplaySummaryDialog`、`ChannelModal` |
+
+前端边界：
+
+- 预算显示是运行成本提示，不直接停止用户输入或强制中断正在进行的模型请求。
+- 工具“从此重试”是会话 fork，不是原 tool call 的字节级 replay。
+- 设计系统 gate 的 baseline debt 仍可见；清理要按文件降棘轮，不做全 repo UI 大迁移。
+
 ### 2026-06-05 对话式角色、定时任务和模型设置前端增量
 
 | 能力 | 前端入口 | 数据来源 |

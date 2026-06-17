@@ -70,6 +70,27 @@ FOR EACH toolCall:
 
 ---
 
+## 2026-06-17 Tool execution ledger and result recovery
+
+这一轮把工具调用从“执行完给 UI 一个结果”推进到“执行前后都有可审计事件，失败结果有统一恢复动作”。主执行链仍是 `ToolExecutor -> ToolResolver -> handler`，新增内容都是边界层。
+
+| 能力 | 当前合同 | 关键文件 / 测试 |
+|------|----------|----------------|
+| Permission decision ledger | 权限决策进入 `permission_decisions` append-only 表；`recordDecision()` 继续写内存 history，同时 best-effort 追加 durable record，数据库异常被吞掉 | `toolExecutor.ts`、`databaseService.appendPermissionDecision()`、`tests/unit/tools/toolExecutor.ledger.test.ts` |
+| Tool execution events | 工具通过权限和 policy 后写 begin，handler 返回/抛错/被归一化后写 complete；`execution_id` 串起同一次调用，未闭合 begin 可作为崩溃现场 | `tool_execution_events`、`appendToolExecutionBegin/Complete()`、`tests/unit/tools/toolExecutor.executionLedger.test.ts` |
+| Required-field feedback | 执行前读取真实 tool schema 的 `required` 字段，缺参数时直接返回失败结果，错误文本点名缺失字段并要求按 schema 重调 | `toolExecutor.ts` |
+| Failure actions | renderer 用 `buildToolErrorActions()` 判断失败工具是否展示复制错误和“从此重试”；retry 复用现有 forkFromHere，不新增工具级 replay 协议 | `toolExecutionPresentation.ts`、`tests/renderer/components/toolErrorActions.test.ts` |
+| Auto-loaded retry filtering | 工具未加载后自动加载再重试属于内部恢复状态，`metadata.autoLoaded` 这类结果不进入失败汇总和 tool loop decision | `isAutoLoadedRetry()`、`toolResultEcho.ts` |
+| Bash output presentation | Bash 原始输出仍在结果中；展示层对长输出保留头尾，对流式进度帧做折叠，并把 Bash 非 0 exit code 显式渲染成不可靠状态 | `ToolCallDisplay/bashOutputPreview.ts`、`statusLabels.ts` |
+
+边界：
+
+- ledger 是审计面，不是执行前置条件。写账失败不能改变工具 allow/deny 或 handler 结果。
+- required-field guard 只处理 schema 里的结构缺参，不替代 handler 内部业务校验。
+- “从此重试”从消息处 fork 会话，让用户保留失败现场上下文；它不保证重放同一个 tool call id。
+
+---
+
 ## 2026-05-15 In-App HTML Validation Tool
 
 `validate_html_in_app` 把 HTML artifact 验收从外部脚本带回 Agent Neo 右侧工作面板。它是 vision 类 native ToolModule，执行时通过 main↔renderer IPC 请求 `InAppValidationPanel` 打开 sandboxed iframe，加载 HTML 后跑交互脚本和断言。

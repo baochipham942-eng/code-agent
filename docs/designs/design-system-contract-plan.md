@@ -48,3 +48,21 @@
 | W3 收口 | 增量 | 事件账本之后，按文件分批 | 不阻塞 |
 
 **反面教材守住**：不学 maka 的 `packages/ui/src/components.tsx`（303KB 单文件）；neo 保持组件按 feature + primitives 拆分。
+
+---
+
+## 进度与 W3 续做指引（交接给新会话）
+
+**已完成（分支 `feat/design-system-contract`，未 push）**
+- W1+W2：契约 `design-system.md` + 棘轮门 `scripts/check-design-system.mjs` + `designSystemGate.test.ts`
+- W3-hex：18 处全为合法场景（sandbox 注入 / Mermaid / 品牌图标），分类标注，hex 基线 → 0
+- W3 验证批次：`CaptureAddDialog` 迁 Modal primitive，建立迁移模式（见 commit `7d17b9948`）
+
+**当前棘轮基线**：`{hardcoded-hex: 0, bare-button: 748, handrolled-modal: 21}`
+
+**续做（增量，每批一个小 PR）**
+1. **手搓 modal（剩 21）**：照 `CaptureAddDialog` 模式——`Modal` 接管壳/标题/关闭/ESC，footer 走 `Button`。
+   ⚠️ **不是所有 `fixed inset-0` 都是居中弹窗**：`SidebarProjectDrawer`(抽屉)、`*Panel`(侧栏面板)、`FullScreenPage`(全屏)、纯 backdrop 不能套 Modal，逐个判型后再迁。
+2. **裸 button（剩 748）**：交互按钮迁 `Button`/`IconButton`，纯语义/特殊布局留并标 `// ds-allow:button 理由`。按文件分批，不 big-bang。
+3. **每批闭环**：改 → `npm run typecheck` → 写/更新渲染验证测试（`vi.mock` store + `renderToStaticMarkup`，见 `captureAddDialog.test.tsx`）→ `node scripts/check-design-system.mjs --update` 降棘轮 → 提交。
+4. 列违规精确位置：`node -e "import('./scripts/check-design-system.mjs').then(m=>{m.scan()['handrolled-modal'].forEach(l=>console.log(l))})"`

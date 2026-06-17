@@ -13,8 +13,9 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FolderOpen, Loader2, Play, X, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { FolderOpen, Loader2, Play, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
+import { Button, Modal } from '../primitives';
 import { invokeDomain } from '../../services/ipcService';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { isTauriMode, isWebMode } from '../../utils/platform';
@@ -179,38 +180,41 @@ export const DevServerLauncher: React.FC = () => {
     closeModal();
   }, [state.session, state.status, closeModal]);
 
-  if (!open) return null;
-
   const detection = state.detection;
   const supported = detection?.supported ?? false;
 
   return (
-    <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={handleCancel}
-      data-testid="dev-server-launcher-backdrop"
-    >
-      <div
-        className="w-[560px] max-w-[90vw] rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-          <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
-            <Play className="h-4 w-4 text-emerald-400" />
-            启动 Dev Server
-          </div>
+    <Modal
+      isOpen={open}
+      onClose={handleCancel}
+      title="启动 Dev Server"
+      size="xl"
+      zIndex={80}
+      headerIcon={<Play className="h-4 w-4 text-emerald-400" />}
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={handleCancel}>
+            取消
+          </Button>
           <button
             type="button"
-            onClick={handleCancel}
-            className="rounded-md p-1 text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-300"
-            aria-label="关闭"
+            onClick={handleStart}
+            disabled={!supported || state.status === 'starting' || state.status === 'ready'}
+            className="flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+            data-testid="dev-server-launcher-start"
           >
-            <X className="h-4 w-4" />
+            {state.status === 'starting' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Play className="h-3.5 w-3.5" />
+            )}
+            {state.status === 'ready' ? '已就绪' : '启动'}
           </button>
-        </header>
-
-        <div className="space-y-3 px-4 py-4">
-          {/* 1. 选目录 */}
+        </>
+      }
+    >
+      <div className="space-y-3">
+        {/* 1. 选目录 */}
           <div>
             <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">
               项目目录
@@ -312,33 +316,8 @@ export const DevServerLauncher: React.FC = () => {
               )}
             </div>
           )}
-        </div>
-
-        <footer className="flex items-center justify-end gap-2 border-t border-zinc-800 px-4 py-3">
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="rounded-md px-3 py-1.5 text-xs text-zinc-400 hover:bg-white/[0.06]"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            onClick={handleStart}
-            disabled={!supported || state.status === 'starting' || state.status === 'ready'}
-            className="flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
-            data-testid="dev-server-launcher-start"
-          >
-            {state.status === 'starting' ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Play className="h-3.5 w-3.5" />
-            )}
-            {state.status === 'ready' ? '已就绪' : '启动'}
-          </button>
-        </footer>
       </div>
-    </div>
+    </Modal>
   );
 };
 

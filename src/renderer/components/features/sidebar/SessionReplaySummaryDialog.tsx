@@ -1,5 +1,6 @@
 import React from 'react';
 import { X } from 'lucide-react';
+import { IconButton, Modal } from '../../primitives';
 import type { ReplayBlock, ReplayTurn, StructuredReplay } from '@shared/contract/evaluation';
 import type { Task, TaskEvent, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ScriptRunAgentSnapshot, ScriptRunSnapshot } from '@shared/contract/scriptRun';
@@ -393,24 +394,30 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
       : [];
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 px-4">
-      <div className="flex max-h-[86vh] w-full max-w-3xl flex-col rounded-lg border border-zinc-700 bg-zinc-950 p-4 shadow-2xl">
-        <div className="flex items-start gap-3">
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title={sessionTitle}
+      size="md"
+      className="!max-w-3xl"
+      zIndex={10000}
+      header={
+        <>
           <div className="min-w-0 flex-1">
             <div className="text-xs font-medium uppercase tracking-wide text-violet-300">Replay</div>
             <h2 className="mt-1 truncate text-sm font-semibold text-zinc-100">{sessionTitle}</h2>
             <p className="mt-1 truncate text-[11px] text-zinc-500">{replay.traceIdentity.replayKey}</p>
           </div>
-          <button
-            type="button"
+          <IconButton
+            variant="default"
+            size="sm"
+            icon={<X className="h-4 w-4" />}
             aria-label="关闭 Replay 摘要"
             onClick={onClose}
-            className="rounded-md p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
+          />
+        </>
+      }
+    >
         <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
           <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
             <dt className="text-zinc-500">Turns</dt>
@@ -841,8 +848,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
             Replay 数据不完整：{incompleteReasons.join(' · ')}
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 };
 

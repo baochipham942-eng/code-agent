@@ -18,7 +18,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { Button } from '../../../primitives';
+import { Button, Modal } from '../../../primitives';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { createLogger } from '../../../../utils/logger';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -209,7 +209,7 @@ interface ChannelModalProps {
   onClose: () => void;
 }
 
-const ChannelModal: React.FC<ChannelModalProps> = ({
+export const ChannelModal: React.FC<ChannelModalProps> = ({
   account,
   channelTypes,
   onSave,
@@ -301,13 +301,12 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative w-full max-w-md max-h-[85vh] overflow-y-auto bg-zinc-900 rounded-xl border border-zinc-700 p-6">
-        <h3 className="text-lg font-semibold text-zinc-200 mb-4">
-          {account ? '编辑通道' : '添加通道'}
-        </h3>
-
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title={account ? '编辑通道' : '添加通道'}
+      size="md"
+    >
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 名称 */}
           <div>
@@ -560,8 +559,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 };
 

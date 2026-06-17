@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, Download, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { IconButton, Modal } from './primitives';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../shared/ipc';
 import type { UpdateInfo, DownloadProgress } from '../../shared/contract';
 import { createLogger } from '../utils/logger';
@@ -179,39 +180,107 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
   const primaryActionLabel = runningInTauri ? '立即更新' : '立即下载';
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
-        onClick={canClose ? onClose : undefined}
-      />
-
-      {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div
-          className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-[440px] max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-zinc-800">
-            <div>
-              <h2 className="text-lg font-semibold text-zinc-100">软件更新</h2>
-              <p className="mt-1 text-sm font-medium text-zinc-400">发现新版本可用</p>
-            </div>
-            {canClose && (
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title="软件更新"
+      size="md"
+      closeOnBackdropClick={canClose}
+      closeOnEsc={canClose}
+      header={
+        <>
+          <div className="flex-1">
+            <h2 className="text-lg font-semibold text-zinc-100">软件更新</h2>
+            <p className="mt-1 text-sm font-medium text-zinc-400">发现新版本可用</p>
+          </div>
+          {canClose && (
+            <IconButton
+              variant="default"
+              size="md"
+              icon={<X className="w-5 h-5" />}
+              aria-label="关闭更新窗口"
+              onClick={onClose}
+            />
+          )}
+        </>
+      }
+      footer={
+        <>
+          {downloadState === 'idle' && (
+            <>
               <button
                 onClick={onClose}
-                className="p-1.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
-                aria-label="关闭更新窗口"
+                className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
               >
-                <X className="w-5 h-5" />
+                取消
               </button>
-            )}
-          </div>
+              <button
+                onClick={handleDownload}
+                disabled={!canStartUpdate}
+                className="inline-flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-500 hover:bg-blue-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 rounded-full transition-colors font-semibold"
+              >
+                <Download className="w-4 h-4" />
+                {primaryActionLabel}
+              </button>
+            </>
+          )}
 
-          {/* Content */}
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-            {/* Idle State - Ready to Download */}
+          {downloadState === 'downloading' && (
+            <button
+              disabled
+              className="inline-flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-500/60 text-zinc-950 rounded-full font-semibold"
+            >
+              <Loader2 className="w-4 h-4 animate-spin" />
+              更新中...
+            </button>
+          )}
+
+          {downloadState === 'downloaded' && (
+            <>
+              <button
+                onClick={onClose}
+                className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
+              >
+                稍后安装
+              </button>
+              <button
+                onClick={handleOpenFile}
+                className="px-5 py-2.5 text-sm bg-emerald-500 hover:bg-emerald-400 text-zinc-950 rounded-full transition-colors font-semibold"
+              >
+                立即安装
+              </button>
+            </>
+          )}
+
+          {downloadState === 'opened' && (
+            <button
+              onClick={onClose}
+              className="px-5 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-full transition-colors font-semibold"
+            >
+              关闭
+            </button>
+          )}
+
+          {downloadState === 'error' && (
+            <>
+              <button
+                onClick={onClose}
+                className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
+              >
+                关闭
+              </button>
+              <button
+                onClick={handleRetry}
+                className="px-5 py-2.5 text-sm bg-blue-500 hover:bg-blue-400 text-zinc-950 rounded-full transition-colors font-semibold"
+              >
+                重新下载
+              </button>
+            </>
+          )}
+        </>
+      }
+    >
+      {/* Idle State - Ready to Download */}
             {downloadState === 'idle' && (
               <div className="space-y-5">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-base font-semibold text-zinc-200">
@@ -328,85 +397,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                 </div>
               </div>
             )}
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-800 bg-zinc-900">
-            {downloadState === 'idle' && (
-              <>
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={handleDownload}
-                  disabled={!canStartUpdate}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-500 hover:bg-blue-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-zinc-950 rounded-full transition-colors font-semibold"
-                >
-                  <Download className="w-4 h-4" />
-                  {primaryActionLabel}
-                </button>
-              </>
-            )}
-
-            {downloadState === 'downloading' && (
-              <button
-                disabled
-                className="inline-flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-500/60 text-zinc-950 rounded-full font-semibold"
-              >
-                <Loader2 className="w-4 h-4 animate-spin" />
-                更新中...
-              </button>
-            )}
-
-            {downloadState === 'downloaded' && (
-              <>
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
-                >
-                  稍后安装
-                </button>
-                <button
-                  onClick={handleOpenFile}
-                  className="px-5 py-2.5 text-sm bg-emerald-500 hover:bg-emerald-400 text-zinc-950 rounded-full transition-colors font-semibold"
-                >
-                  立即安装
-                </button>
-              </>
-            )}
-
-            {downloadState === 'opened' && (
-              <button
-                onClick={onClose}
-                className="px-5 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-full transition-colors font-semibold"
-              >
-                关闭
-              </button>
-            )}
-
-            {downloadState === 'error' && (
-              <>
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
-                >
-                  关闭
-                </button>
-                <button
-                  onClick={handleRetry}
-                  className="px-5 py-2.5 text-sm bg-blue-500 hover:bg-blue-400 text-zinc-950 rounded-full transition-colors font-semibold"
-                >
-                  重新下载
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    </>
+    </Modal>
   );
 };
 

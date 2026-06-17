@@ -305,6 +305,9 @@ describe('SessionReplaySummaryDialog', () => {
       />,
     );
 
+    // 迁移到 Modal primitive 后的无障碍契约（手搓版本没有）
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
     expect(html).toContain('Replay');
     expect(html).toContain('Alma Project / Session Organization');
     expect(html).toContain('Turns');

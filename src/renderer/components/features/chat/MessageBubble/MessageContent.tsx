@@ -105,6 +105,7 @@ function ensureMermaidInit() {
       startOnLoad: false,
       theme: 'dark',
       themeVariables: {
+        // ds-allow:start Mermaid 主题，第三方库只吃字面色、不读 app CSS 变量
         darkMode: true,
         background: '#18181b',
         primaryColor: '#3b82f6',
@@ -113,6 +114,7 @@ function ensureMermaidInit() {
         lineColor: '#71717a',
         secondaryColor: '#27272a',
         tertiaryColor: '#1f1f23',
+        // ds-allow:end
       },
     });
     mermaidInitialized = true;

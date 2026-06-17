@@ -8,7 +8,7 @@
 
 ## 0. 三条铁律（W2 静态门强制）
 
-1. **颜色走 token，禁硬编码 hex/rgb 字面量** —— 唯一豁免是数据可视化 palette（见 §3）。
+1. **颜色走 token，禁硬编码 hex/rgb 字面量** —— 合法豁免仅四类（注入 HTML / viz 配置 / 品牌资产 / 集中色板），见 §3。
 2. **交互按钮走 `Button`/`IconButton` primitive，禁裸 `<button>`** —— 语义性/特殊布局豁免须带 `// ds-allow:button <理由>`。
 3. **模态走 `Modal` primitive，禁手搓 `fixed inset-0` 遮罩**。
 
@@ -66,14 +66,27 @@ token 全部以 CSS 变量承载，主题层（`themes/{dark,light,high-contrast
 
 ---
 
-## 3. 数据可视化豁免（唯一的 hex 白名单）
+## 3. hex 豁免（四类，其余一律视为漂移）
 
-图表、DAG、热力图、lab 教学图等数据可视化的色板**不适用 §0 铁律 1**——因为它们需要离散、与语义色解耦的调色。但豁免必须**集中**，不得散落：
+有四类场景的字面色是合法的（app 的 CSS 变量物理上够不到，或属于解耦色板），不计违规。**豁免一律显式声明，不留隐式后门。**
 
-- 所有 viz 色板集中声明在 `src/renderer/utils/vizPalette.ts`（W3 建立），从该文件引用。
-- 临时/单点 viz 用色，行内标 `// ds-allow:viz <理由>`。
-- **现存豁免范围**（基线核查 2026-06-17）：`LivePreview/TweakPanel`、`MessageBubble/ChartBlock`、`telemetry/CostCalendar`、`workflow/{DependencyEdge,DAGViewer,TaskNode}`、`lab/**`。这些是 viz，不是漂移。
-- **非豁免、需收口的真漂移**（W3 处理）：`MessageBubble/MessageContent`、`settings/tabs/AboutSettings`、`inAppValidation/InAppValidationPanel`、`MessageBubble/GenerativeUIBlock`。
+**① 注入 HTML / sandbox（门自动豁免）**
+模板字符串（反引号）内的 hex = 注入 iframe / srcdoc 的自包含 HTML/CSS。CSS 变量不会级联进 sandbox，必须用字面色。门检测到 hex 处于模板字符串内时自动跳过——无需标注。
+现存：`GenerativeUIBlock`(INJECTED_STYLES)、`InAppValidationPanel`(DEMO_HTML)、`utils/workspacePreview`(预览 HTML)。
+
+**② viz 配置（目录豁免 / 区块标注）**
+图表、DAG、热力图、lab 教学图、第三方库主题等需要离散、与语义色解耦的调色。
+- viz-heavy 组件按目录豁免：`LivePreview/TweakPanel`、`MessageBubble/ChartBlock`、`telemetry/CostCalendar`、`workflow/{DependencyEdge,DAGViewer,TaskNode}`、`lab/**`。
+- 成块的 viz 配置用区块标注 `// ds-allow:start <理由>` … `// ds-allow:end`（例：`MessageContent` 的 Mermaid `themeVariables`——第三方库只吃字面色不读 CSS 变量）。
+- 未来集中色板可建 `src/renderer/utils/vizPalette.ts` 统一引用（暂未建，按需）。
+
+**③ 品牌资产**
+品牌图标 / logo 的专用色（非通用 UI surface），用区块标注 `ds-allow:brand`（例：`AboutSettings` 的 Neo 图标）。
+
+**④ 单点豁免**
+临时/单点用色，行内标 `// ds-allow:viz <理由>` 或裸 `// ds-allow <理由>`。
+
+> **W3-hex 复盘（2026-06-17）**：初判的 18 处"真漂移"经逐一核查，全部属于上述①②③——sandbox 注入、Mermaid 配置、品牌图标，**没有一处是真漂移**。已分类标注，hex 基线降至 **0**：此后任何模板外、非豁免的新 hex 都会被门拦下。
 
 ---
 

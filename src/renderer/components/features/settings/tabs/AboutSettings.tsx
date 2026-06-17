@@ -37,10 +37,12 @@ export const AboutSettings: React.FC = () => {
       {/* App Icon & Version */}
       <div className="text-center">
         <div className="w-20 h-20 mx-auto rounded-2xl bg-zinc-950 p-[1px] shadow-xl shadow-black/40 mb-4">
+          {/* ds-allow:start Neo 品牌图标专用色，非通用 UI surface */}
           <div className="relative h-full w-full overflow-hidden rounded-2xl bg-[#050506]">
             <div className="absolute inset-0 bg-gradient-to-br from-[#030304] to-[#17191f]" />
             <div className="absolute inset-[18px] bg-zinc-100 [clip-path:polygon(0_100%,0_0,22%_0,78%_65%,78%_0,100%_0,100%_100%,78%_100%,22%_35%,22%_100%)]" />
             <div className="absolute bottom-4 right-4 h-2.5 w-2.5 rounded-full bg-[#29D6A3] shadow-[0_0_0_7px_rgba(41,214,163,0.28)]" />
+            {/* ds-allow:end */}
           </div>
         </div>
         <h3 className="text-xl font-semibold text-zinc-200">Agent Neo</h3>

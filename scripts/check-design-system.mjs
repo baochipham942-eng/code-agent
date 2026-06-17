@@ -40,8 +40,8 @@ const HEX_RE = /#[0-9a-fA-F]{6}\b/;
 const BARE_BUTTON_RE = /<button\b/;
 const MODAL_OVERLAY_RE = /fixed inset-0/;
 
-function isAllowed(line, kind) {
-  if (line.includes('ds-allow:' + kind)) return true;
+function isAllowed(line, kinds) {
+  for (const k of kinds) if (line.includes('ds-allow:' + k)) return true;
   // 裸 ds-allow（无 kind）放行任意规则，给特殊场景留口子但须显式
   return /ds-allow(?![:\w])/.test(line);
 }
@@ -67,15 +67,32 @@ export function scan() {
     const isModalPrimitive = rel === 'components/primitives/Modal.tsx';
     const isVizExempt = VIZ_EXEMPT.some((p) => rel.includes(p));
     const lines = readFileSync(file, 'utf8').split('\n');
+    // 模板字符串（反引号）内的 hex = 注入 iframe/sandbox 的自包含 HTML/CSS，
+    // app 的 CSS 变量不级联进去，必须用字面色——契约 §3 自动豁免。
+    let inTemplate = false;
+    // 区块豁免：`ds-allow:start <理由>` … `ds-allow:end` 之间整段跳过所有规则，
+    // 用于 mermaid 主题、品牌图标等成块的合法字面色。
+    let inExemptRegion = false;
     lines.forEach((line, i) => {
       const loc = `${rel}:${i + 1}`;
-      if (HEX_RE.test(line) && !isVizExempt && !isAllowed(line, 'viz')) {
+      if (line.includes('ds-allow:start')) inExemptRegion = true;
+      if (inExemptRegion) {
+        if (line.includes('ds-allow:end')) inExemptRegion = false;
+        return;
+      }
+      const startedInTemplate = inTemplate;
+      const tickIdx = line.indexOf('`');
+      if ((line.match(/`/g) || []).length % 2 === 1) inTemplate = !inTemplate;
+
+      const hexMatch = HEX_RE.exec(line);
+      const hexInTemplate = startedInTemplate || (tickIdx !== -1 && hexMatch && hexMatch.index > tickIdx);
+      if (hexMatch && !isVizExempt && !hexInTemplate && !isAllowed(line, ['viz', 'brand'])) {
         violations['hardcoded-hex'].push(loc);
       }
-      if (BARE_BUTTON_RE.test(line) && !inPrimitives && !isAllowed(line, 'button')) {
+      if (BARE_BUTTON_RE.test(line) && !inPrimitives && !isAllowed(line, ['button'])) {
         violations['bare-button'].push(loc);
       }
-      if (MODAL_OVERLAY_RE.test(line) && !isModalPrimitive && !isAllowed(line, 'modal')) {
+      if (MODAL_OVERLAY_RE.test(line) && !isModalPrimitive && !isAllowed(line, ['modal'])) {
         violations['handrolled-modal'].push(loc);
       }
     });

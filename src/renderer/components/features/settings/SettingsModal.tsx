@@ -34,6 +34,7 @@ import {
   Terminal,
   UserCircle,
   Mic,
+  DollarSign,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -90,6 +91,7 @@ import { AutomationSettings } from './tabs/AutomationSettings';
 import { AppshotsSettings } from './tabs/AppshotsSettings';
 import { ModelSettings } from './tabs/ModelSettings';
 import { AgentEngineSettings } from './tabs/AgentEngineSettings';
+import { BudgetSettings } from './tabs/BudgetSettings';
 import { AppearanceSettings } from './tabs/AppearanceSettings';
 import { SoulSettings } from './tabs/SoulSettings';
 import { DataSettings } from './tabs/DataSettings';
@@ -154,6 +156,7 @@ export function buildSettingsTabGroups({
     { id: 'keybindings', label: '快捷键', icon: <Keyboard className="w-4 h-4" /> },
     { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
     { id: 'agentEngine', label: 'Agent 引擎', icon: <Terminal className="w-4 h-4" /> },
+    { id: 'budget', label: '预算告警', icon: <DollarSign className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'soul', label: '人格', icon: <Fingerprint className="w-4 h-4" /> },
     { id: 'workspace', label: '工作区', icon: <FolderOpen className="w-4 h-4" /> },
@@ -409,6 +412,7 @@ export const SettingsModal: React.FC = () => {
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}
             {activeTab === 'agentEngine' && <AgentEngineSettings />}
+            {activeTab === 'budget' && <BudgetSettings />}
             {activeTab === 'appearance' && <AppearanceSettings />}
             {activeTab === 'soul' && <SoulSettings />}
             {activeTab === 'cache' && <DataSettings />}

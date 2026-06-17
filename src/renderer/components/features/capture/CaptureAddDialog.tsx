@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useState, useCallback } from 'react';
-import { X } from 'lucide-react';
+import { Modal, Button } from '../../primitives';
 import { useCaptureStore } from '../../../stores/captureStore';
 
 export const CaptureAddDialog: React.FC = () => {
@@ -39,30 +39,29 @@ export const CaptureAddDialog: React.FC = () => {
     }
   }, [title, content, tags, url, captureItem, setAddDialogOpen]);
 
-  if (!isAddDialogOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
-      onClick={() => setAddDialogOpen(false)}
-    >
-      <div
-        className="w-[500px] bg-zinc-900 rounded-lg border border-zinc-700 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* 标题栏 */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700">
-          <h3 className="text-sm font-medium text-zinc-200">添加知识条目</h3>
-          <button
-            onClick={() => setAddDialogOpen(false)}
-            className="p-1 text-zinc-500 hover:text-zinc-400"
+    <Modal
+      isOpen={isAddDialogOpen}
+      onClose={() => setAddDialogOpen(false)}
+      title="添加知识条目"
+      size="lg"
+      footer={
+        <>
+          <Button variant="ghost" onClick={() => setAddDialogOpen(false)}>
+            取消
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSubmit}
+            loading={isSubmitting}
+            disabled={!title.trim() || !content.trim()}
           >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* 表单 */}
-        <div className="p-4 space-y-3">
+            添加
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
           <div>
             <label className="block text-xs text-zinc-400 mb-1">标题 *</label>
             <input
@@ -108,24 +107,6 @@ export const CaptureAddDialog: React.FC = () => {
             />
           </div>
         </div>
-
-        {/* 按钮 */}
-        <div className="flex justify-end gap-2 px-4 py-3 border-t border-zinc-700">
-          <button
-            onClick={() => setAddDialogOpen(false)}
-            className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-400 rounded-md hover:bg-zinc-700"
-          >
-            取消
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!title.trim() || !content.trim() || isSubmitting}
-            className="px-3 py-1.5 text-xs bg-cyan-600 text-white rounded-md hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSubmitting ? '添加中...' : '添加'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 };

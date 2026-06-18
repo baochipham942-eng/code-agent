@@ -27,6 +27,54 @@ export function annotateFirecrawlError(error: string, hasApiKey: boolean): strin
   return error;
 }
 
+// ============================================================================
+// P4 健康门：连续失败（含网络不可达/超时）→ 短时跳过 Firecrawl，直接走原生兜底，
+// 避免国内无代理等场景下每次请求都先吃满超时。冷却到期自动恢复，无需人工干预。
+// ============================================================================
+
+/** 健康门参数：连续失败阈值与冷却时长（同 searchUtils 熔断的本地常量模式） */
+export const FIRECRAWL_HEALTH = {
+  FAILURE_THRESHOLD: 3,
+  COOLDOWN_MS: 60 * 1000, // 1 分钟
+} as const;
+
+let consecutiveFailures = 0;
+let cooldownUntil = 0;
+
+/** 记录一次 Firecrawl 调用结果：成功重置，失败累计并在达阈值后开启冷却 */
+export function recordFirecrawlOutcome(ok: boolean): void {
+  if (ok) {
+    consecutiveFailures = 0;
+    cooldownUntil = 0;
+    return;
+  }
+  consecutiveFailures += 1;
+  if (consecutiveFailures >= FIRECRAWL_HEALTH.FAILURE_THRESHOLD) {
+    cooldownUntil = Date.now() + FIRECRAWL_HEALTH.COOLDOWN_MS;
+    logger.warn('Firecrawl 连续失败，进入冷却期，暂时跳过', {
+      consecutiveFailures,
+      resumeAt: new Date(cooldownUntil).toISOString(),
+    });
+  }
+}
+
+/** 当前 Firecrawl 是否健康（不在冷却期）。冷却到期自动恢复并清零计数 */
+export function isFirecrawlHealthy(): boolean {
+  if (cooldownUntil === 0) return true;
+  if (Date.now() >= cooldownUntil) {
+    cooldownUntil = 0;
+    consecutiveFailures = 0;
+    return true;
+  }
+  return false;
+}
+
+/** 仅供测试：重置健康门状态 */
+export function resetFirecrawlHealth(): void {
+  consecutiveFailures = 0;
+  cooldownUntil = 0;
+}
+
 export type FirecrawlCredentialMode = 'authenticated' | 'keyless';
 
 export interface FirecrawlScrapeSuccess {
@@ -145,6 +193,7 @@ function looksLikeRawDataUrl(url: string): boolean {
 
 export function shouldUseFirecrawlForUrl(url: string): boolean {
   if (!isFirecrawlDefaultEnabled()) return false;
+  if (!isFirecrawlHealthy()) return false;
   return !isPrivateOrLocalUrl(url) && !looksLikeRawDataUrl(url);
 }
 
@@ -226,6 +275,7 @@ export async function scrapeWithFirecrawl(
 
   const hasApiKey = Boolean(getFirecrawlApiKey(options.configService));
   if (!response.ok) {
+    recordFirecrawlOutcome(false); // 传输/HTTP 失败计入健康门
     return { ok: false, error: annotateFirecrawlError(response.error, hasApiKey) };
   }
   const payload = response.data;
@@ -238,6 +288,7 @@ export async function scrapeWithFirecrawl(
     return { ok: false, error: 'Firecrawl returned empty markdown' };
   }
 
+  recordFirecrawlOutcome(true);
   const metadata = payload.data?.metadata ?? {};
   logger.debug('Firecrawl scrape ok', {
     creditsUsed: metadata.creditsUsed,
@@ -269,6 +320,9 @@ export async function searchWithFirecrawl(
   if (!isFirecrawlDefaultEnabled()) {
     return { ok: false, error: 'Firecrawl default web data provider is disabled' };
   }
+  if (!isFirecrawlHealthy()) {
+    return { ok: false, error: 'Firecrawl 处于失败冷却期，已跳过' };
+  }
 
   const body: Record<string, unknown> = {
     query,
@@ -288,6 +342,7 @@ export async function searchWithFirecrawl(
 
   const hasApiKey = Boolean(getFirecrawlApiKey(options.configService));
   if (!response.ok) {
+    recordFirecrawlOutcome(false); // 传输/HTTP 失败计入健康门
     return { ok: false, error: annotateFirecrawlError(response.error, hasApiKey) };
   }
   const payload = response.data;
@@ -295,6 +350,7 @@ export async function searchWithFirecrawl(
     return { ok: false, error: payload.error || payload.code || 'Firecrawl search failed' };
   }
 
+  recordFirecrawlOutcome(true);
   logger.debug('Firecrawl search ok', {
     creditsUsed: payload.creditsUsed,
     credentialMode: response.credentialMode,

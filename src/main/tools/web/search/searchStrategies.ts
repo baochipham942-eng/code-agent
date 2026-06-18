@@ -27,7 +27,7 @@ import {
   formatAge,
   getSearchErrorCircuitBreakerCooldown,
 } from './searchUtils';
-import { isFirecrawlDefaultEnabled, searchWithFirecrawl } from '../firecrawlClient';
+import { isFirecrawlDefaultEnabled, isFirecrawlHealthy, searchWithFirecrawl } from '../firecrawlClient';
 
 // ============================================================================
 // Intelligent Source Routing
@@ -113,7 +113,7 @@ export const SEARCH_SOURCES: SearchSource[] = [
   {
     name: 'firecrawl',
     priority: 1,
-    isAvailable: () => isFirecrawlDefaultEnabled(),
+    isAvailable: () => isFirecrawlDefaultEnabled() && isFirecrawlHealthy(),
     search: searchViaFirecrawl,
   },
   {

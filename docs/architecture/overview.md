@@ -120,6 +120,19 @@
 | **AI 模型** | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / Claude / Ollama | 多模型路由，本地 API Key 优先 |
 | **Agent Engine** | Native Agent Neo / Codex CLI / Claude Code | read-only 外部 engine、workspace-only cwd、task ledger 输出回带 |
 
+## 2026-06-18 架构增量（Web Data / Release Verification / Input Surface）
+
+今天这轮把默认联网数据层、输入区推荐密度和发版后生产验收合到同一张运行时地图。完整合同见 [2026-06-18 as-built spec](../specs/2026-06-18-web-data-release-and-input-surface.md)。
+
+| 能力域 | 当前形态 | 详细文档 |
+|------|----------|----------|
+| Firecrawl 默认 web 数据层 | `WebSearch` / `WebFetch` 对公网页面优先走 Firecrawl keyless/authenticated search/scrape；本地/私网/raw data URL 仍走 native fetch；三次连续失败后短冷却并自动回退 | [tool-system.md](./tool-system.md) |
+| 搜索源可发现性 | 智能路由以 Firecrawl 为基础，再按查询类型补 Perplexity/Tavily/Exa/Brave/OpenAI；已配置但本轮未用的 premium 源会给软提示，用户显式 `sources` 时不打扰 | [tool-system.md](./tool-system.md) |
+| 输入区推荐降噪 | Skill 推荐最多 2 个，能力建议最多 3 个，已作为 Skill 推荐展示的能力不再重复出现；有 tool 能力的模型不再被误判为不擅长搜索 | [frontend.md](./frontend.md) |
+| 非流式工具内容顺序 | OpenAI-compatible / Claude 非流式 wrapper 保留工具调用前导正文，并生成 `contentParts`，让非流式渲染和 SSE 流式路径同序 | [frontend.md](./frontend.md)、[agent-core.md](./agent-core.md) |
+| 发版后生产验收 | `release:post-publish` 覆盖 app update、download redirect、landing version slot、renderer rollout、OSS manifest、`release-record.json`、rollback 状态和可选 Vercel 日志审计 | [hot-update.md](./hot-update.md) |
+| 日志路径一致性 | `CODE_AGENT_LOG_DIR` 可覆盖日志目录，Tauri 壳层向 Node webServer 注入同一目录，诊断导出和运行期文件 sink 不再各找各的路径 | [hot-update.md](./hot-update.md) |
+
 ## 2026-06-17 架构增量（Iteration Governance / Ledger / Budget / Design System）
 
 这一轮把 6 月 16~17 日的大量产品迭代收进可审计架构面。完整合同见 [2026-06-17 as-built spec](../specs/2026-06-17-neo-iteration-governance-and-ledger.md)。

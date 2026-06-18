@@ -38,7 +38,7 @@ const CONFIG_WATCH_DEBOUNCE_MS = 500;
 const CONFIG_SELF_WRITE_WINDOW_MS = 1500;
 const CLOUD_MANAGED_SERVICE_KEY_PREFIX = 'cloud-service-key:';
 const CLOUD_MANAGED_SERVICE_BASE_URL_PREFIX = 'serviceBaseUrl.cloud.';
-const SHARED_SEARCH_SERVICE_KEYS = ['brave', 'exa', 'openai', 'perplexity', 'tavily'] as const;
+const SHARED_SEARCH_SERVICE_KEYS = ['brave', 'exa', 'firecrawl', 'openai', 'perplexity', 'tavily'] as const;
 
 function getCloudManagedServiceKeyId(service: ServiceApiKey): string {
   return `${CLOUD_MANAGED_SERVICE_KEY_PREFIX}${service}`;
@@ -1134,6 +1134,7 @@ export class ConfigService implements IReadConfigService {
       openrouter: 'OPENROUTER_API_KEY',
       openai: 'OPENAI_API_KEY',
       exa: 'EXA_API_KEY',
+      firecrawl: 'FIRECRAWL_API_KEY',
       perplexity: 'PERPLEXITY_API_KEY',
       tavily: 'TAVILY_API_KEY',
       skillsmp: 'SKILLSMP_API_KEY',
@@ -1162,7 +1163,7 @@ export class ConfigService implements IReadConfigService {
   /**
    * Set API key for non-model services
    */
-  async setServiceApiKey(service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter' | 'exa' | 'perplexity' | 'skillsmp', apiKey: string): Promise<void> {
+  async setServiceApiKey(service: ServiceApiKey, apiKey: string): Promise<void> {
     const storage = getSecureStorage();
     storage.setApiKey(service, apiKey);
   }

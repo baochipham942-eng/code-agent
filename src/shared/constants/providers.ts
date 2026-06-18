@@ -334,6 +334,10 @@ export const BAIDU_OCR_ENDPOINTS = {
 // ============================================================================
 
 export const SEARCH_API_ENDPOINTS = {
+  /** Firecrawl keyless/authenticated search */
+  firecrawlSearch: 'https://api.firecrawl.dev/v2/search',
+  /** Firecrawl keyless/authenticated scrape */
+  firecrawlScrape: 'https://api.firecrawl.dev/v2/scrape',
   /** Brave Search */
   brave: 'https://api.search.brave.com/res/v1/web/search',
   /** Exa AI */

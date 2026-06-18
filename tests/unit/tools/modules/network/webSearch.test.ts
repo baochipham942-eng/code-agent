@@ -41,8 +41,8 @@ vi.mock('../../../../../src/main/tools/web/search', () => ({
   getCircuitBreakerRemaining: () => 0,
   SEARCH_PROVIDER_SETUP_MESSAGE: [
     '当前没有可用的联网搜索源。',
-    '模型 API Key 只负责模型推理；Claude、Gemini、Grok 等模型 key 不会自动启用 WebSearch。',
-    'Brave Search OpenAI EXA Tavily Perplexity',
+    '默认 Firecrawl keyless 搜索可能已被环境变量禁用。',
+    'Firecrawl Brave Search OpenAI EXA Tavily Perplexity',
   ].join('\n'),
   SEARCH_FAILURE_GUIDANCE: '联网搜索没有拿到可用结果。',
 }));
@@ -248,7 +248,7 @@ describe('webSearchModule (native)', () => {
     if (!result.ok) {
       expect(result.code).toBe('NO_SEARCH_SOURCE');
       expect(result.error).toContain('当前没有可用的联网搜索源');
-      expect(result.error).toContain('模型 API Key 只负责模型推理');
+      expect(result.error).toContain('Firecrawl');
       expect(result.error).toContain('Brave Search');
       expect(result.error).toContain('OpenAI');
       expect(result.error).toContain('EXA');

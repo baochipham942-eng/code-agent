@@ -6,6 +6,7 @@ import type { IpcMain } from '../platform';
 import { app } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { AppSettings, ModelProvider } from '../../shared/contract';
+import type { ServiceApiKey } from '../../shared/contract/configService';
 import type { ConfigService } from '../services';
 import { MODEL_API_ENDPOINTS, API_VERSIONS } from '../../shared/constants';
 import { assertAdminAccess, getAdminAccessIpcError, isCurrentUserAdmin } from './adminGuard';
@@ -196,35 +197,49 @@ async function handleCheckApiKeyConfigured(getConfigService: () => ConfigService
 
 async function handleSetServiceApiKey(
   getConfigService: () => ConfigService | null,
-  payload: { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter'; apiKey: string }
+  payload: { service: ServiceApiKey; apiKey: string }
 ): Promise<void> {
   const configService = getConfigService();
   if (!configService) throw new Error('Config service not initialized');
-  await configService.setServiceApiKey(payload.service as 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github', payload.apiKey);
+  await configService.setServiceApiKey(payload.service, payload.apiKey);
 }
 
 async function handleGetServiceApiKey(
   getConfigService: () => ConfigService | null,
-  payload: { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter' }
+  payload: { service: ServiceApiKey }
 ): Promise<string | undefined> {
   const configService = getConfigService();
   if (!configService) throw new Error('Config service not initialized');
-  return configService.getServiceApiKey(payload.service as 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github');
+  return configService.getServiceApiKey(payload.service);
 }
 
 async function handleGetAllServiceKeys(
   getConfigService: () => ConfigService | null
 ): Promise<{
   brave?: string;
+  firecrawl?: string;
   github?: string;
   openrouter?: string;
   langfuse_public?: string;
   langfuse_secret?: string;
+  exa?: string;
+  perplexity?: string;
+  tavily?: string;
 }> {
   const configService = getConfigService();
   if (!configService) throw new Error('Config service not initialized');
 
-  const services = ['brave', 'github', 'openrouter', 'langfuse_public', 'langfuse_secret'] as const;
+  const services = [
+    'brave',
+    'firecrawl',
+    'github',
+    'openrouter',
+    'langfuse_public',
+    'langfuse_secret',
+    'exa',
+    'perplexity',
+    'tavily',
+  ] as const;
   const result: Record<string, string | undefined> = {};
 
   for (const service of services) {
@@ -338,11 +353,11 @@ export function registerSettingsHandlers(
           data = await resolveProviderIconAsset((payload as { icon?: string })?.icon ?? '');
           break;
         case 'setServiceApiKey':
-          await handleSetServiceApiKey(getConfigService, payload as { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter'; apiKey: string });
+          await handleSetServiceApiKey(getConfigService, payload as { service: ServiceApiKey; apiKey: string });
           data = null;
           break;
         case 'getServiceApiKey':
-          data = await handleGetServiceApiKey(getConfigService, payload as { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter' });
+          data = await handleGetServiceApiKey(getConfigService, payload as { service: ServiceApiKey });
           break;
         case 'getAllServiceKeys':
           data = await handleGetAllServiceKeys(getConfigService);

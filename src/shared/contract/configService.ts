@@ -35,6 +35,7 @@ export type ServiceApiKey =
   | 'openrouter'
   | 'openai'
   | 'exa'
+  | 'firecrawl'
   | 'perplexity'
   | 'tavily'
   | 'skillsmp';

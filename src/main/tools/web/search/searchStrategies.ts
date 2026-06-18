@@ -27,6 +27,7 @@ import {
   formatAge,
   getSearchErrorCircuitBreakerCooldown,
 } from './searchUtils';
+import { isFirecrawlDefaultEnabled, searchWithFirecrawl } from '../firecrawlClient';
 
 // ============================================================================
 // Intelligent Source Routing
@@ -37,6 +38,7 @@ import {
  * Each source has unique strengths — route to 2-3 instead of all 4 every time.
  *
  * Source strengths:
+ * - firecrawl: default web data layer, keyless search/scrape, good page extraction
  * - perplexity: AI summary, best for Chinese queries, general knowledge
  * - openai: model-native web_search tool, good zero-extra-vendor fallback
  * - exa: Semantic search, excels at technical/academic content
@@ -59,7 +61,7 @@ export function routeSources(
   const isTechnical = /api|sdk|framework|\u5e93|\u6587\u6863|documentation|github/i.test(query);
   const isResearchMode = options.mode === 'research';
 
-  const selected: string[] = [];
+  const selected: string[] = ['firecrawl'];
 
   if (isChinese) {
     selected.push('perplexity');  // Best Chinese AI summary
@@ -89,8 +91,9 @@ export function routeSources(
     }
   }
 
+  const dedupedSelected = Array.from(new Set(selected));
   return {
-    sources: selected,
+    sources: dedupedSelected,
     reason: [
       isChinese && 'chinese',
       isTwitter && 'twitter',
@@ -108,38 +111,44 @@ export function routeSources(
 
 export const SEARCH_SOURCES: SearchSource[] = [
   {
-    name: 'cloud',
+    name: 'firecrawl',
     priority: 1,
+    isAvailable: () => isFirecrawlDefaultEnabled(),
+    search: searchViaFirecrawl,
+  },
+  {
+    name: 'cloud',
+    priority: 2,
     isAvailable: () => !!(process.env.SUPABASE_URL && typeof window !== 'undefined'), // 仅 Electron 模式
     search: searchViaCloud,
   },
   {
     name: 'perplexity',
-    priority: 2,
+    priority: 3,
     isAvailable: (cs) => !!cs?.getServiceApiKey('perplexity'),
     search: searchViaPerplexity,
   },
   {
     name: 'openai',
-    priority: 3,
+    priority: 4,
     isAvailable: (cs) => !!cs?.getServiceApiKey('openai'),
     search: searchViaOpenAI,
   },
   {
     name: 'exa',
-    priority: 4,
+    priority: 5,
     isAvailable: (cs) => !!cs?.getServiceApiKey('exa'),
     search: searchViaExa,
   },
   {
     name: 'tavily',
-    priority: 5,
+    priority: 6,
     isAvailable: (cs) => getTavilyKeys(cs).length > 0,
     search: searchViaTavily,
   },
   {
     name: 'brave',
-    priority: 6,
+    priority: 7,
     isAvailable: (cs) => !!cs?.getServiceApiKey('brave') || !!process.env.BRAVE_API_KEY,
     search: searchViaBrave,
   },
@@ -163,6 +172,37 @@ export function getAvailableSources(
 // ============================================================================
 // Search Implementations
 // ============================================================================
+
+async function searchViaFirecrawl(
+  query: string,
+  maxResults: number,
+  configService: ReturnType<typeof getConfigService>,
+  domainFilter?: DomainFilter,
+  recency?: string
+): Promise<SearchSourceResult> {
+  const result = await searchWithFirecrawl(query, maxResults, {
+    configService,
+    includeDomains: domainFilter?.allowed,
+    excludeDomains: domainFilter?.blocked,
+    recency,
+  });
+
+  if (!result.ok) {
+    return { source: 'firecrawl', success: false, error: result.error };
+  }
+
+  return {
+    source: result.credentialMode === 'authenticated' ? 'firecrawl' : 'firecrawl-keyless',
+    success: true,
+    results: result.results.map((item) => ({
+      title: item.title,
+      url: item.url,
+      snippet: item.snippet,
+      age: item.age,
+      source: result.credentialMode === 'authenticated' ? 'firecrawl' : 'firecrawl-keyless',
+    })),
+  };
+}
 
 /**
  * Search via cloud proxy (uses server-side API keys)

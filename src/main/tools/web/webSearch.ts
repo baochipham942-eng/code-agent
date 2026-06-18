@@ -19,6 +19,7 @@ import {
 import {
   routeSources,
   getAvailableSources,
+  buildUnusedSourcesHint,
 } from './search/searchStrategies';
 import {
   parallelSearch,
@@ -319,6 +320,18 @@ Features:
         ...searchResult,
         error: `${searchResult.error || 'WebSearch failed'}\n\n${SEARCH_FAILURE_GUIDANCE}`,
       };
+    }
+
+    // P2 可发现性：提示已配置但本次未命中的 premium 搜索源
+    if (searchResult.output) {
+      const unusedHint = buildUnusedSourcesHint(
+        allAvailable.map(s => s.name),
+        availableSources.map(s => s.name),
+        requestedSources,
+      );
+      if (unusedHint) {
+        searchResult.output += `\n\n${unusedHint}`;
+      }
     }
 
     // Save to file if requested (bypasses model — writes directly)

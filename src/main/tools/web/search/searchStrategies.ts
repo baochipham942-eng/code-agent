@@ -169,6 +169,32 @@ export function getAvailableSources(
   return sources.sort((a, b) => a.priority - b.priority);
 }
 
+/**
+ * Premium 搜索源（需用户配置 key），区别于 firecrawl/cloud 这类默认基础设施源。
+ * 仅这些源在"配置了但本次未命中"时值得提示用户可显式指定。
+ */
+const HINTABLE_PREMIUM_SOURCES: readonly string[] = ['perplexity', 'exa', 'brave', 'tavily'];
+
+/**
+ * P2 可发现性：当用户配置了 premium 搜索源、但本次查询的智能路由未命中它们时，
+ * 生成一行软提示，告诉用户可通过 sources 参数针对性检索。
+ * - 用户已显式指定 sources：返回 null（用户已掌控，不打扰）
+ * - 无未命中的 premium 源：返回 null
+ */
+export function buildUnusedSourcesHint(
+  availableSourceNames: string[],
+  usedSourceNames: string[],
+  requestedSources?: string[]
+): string | null {
+  if (requestedSources && requestedSources.length > 0) return null;
+  const used = new Set(usedSourceNames);
+  const unused = availableSourceNames.filter(
+    name => HINTABLE_PREMIUM_SOURCES.includes(name) && !used.has(name)
+  );
+  if (unused.length === 0) return null;
+  return `_提示: 已配置但本次未启用的搜索源: ${unused.join(', ')}。如需针对性检索可指定 sources: ${JSON.stringify([unused[0]])}_`;
+}
+
 // ============================================================================
 // Search Implementations
 // ============================================================================

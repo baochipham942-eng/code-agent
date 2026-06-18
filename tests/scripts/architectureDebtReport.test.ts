@@ -74,7 +74,6 @@ describe('architecture debt report', () => {
       'src/main/services/skills/builtinSkills.ts',
       'src/main/telemetry/telemetryStorage.ts',
       'src/renderer/components/Sidebar.tsx',
-      'src/renderer/components/WorkspacePreviewPanel.tsx',
       'src/renderer/components/features/chat/ChatInput/index.tsx',
       'src/renderer/components/features/chat/MessageBubble/MessageContent.tsx',
       'src/renderer/components/features/settings/tabs/ModelSettings.tsx',

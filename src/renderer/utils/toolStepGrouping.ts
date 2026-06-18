@@ -185,17 +185,17 @@ export function groupAdjacentToolCalls(nodes: TraceNode[]): DisplayNode[] {
  * 例如 "Ran ls src/"、"Read index.tsx"、"Searched TODO"
  */
 const SINGLE_TOOL_VERB: Record<string, string> = {
-  Bash: 'Ran',
-  bash: 'Ran',
-  Read: 'Read',
-  Grep: 'Searched',
-  Glob: 'Globbed',
-  LS: 'Listed',
-  list_directory: 'Listed',
-  WebSearch: 'Searched web for',
-  WebFetch: 'Fetched',
-  browser_action: 'Browser',
-  computer_use: 'Computer',
+  Bash: '运行',
+  bash: '运行',
+  Read: '读取',
+  Grep: '搜索',
+  Glob: '匹配',
+  LS: '列出',
+  list_directory: '列出',
+  WebSearch: '搜索网页',
+  WebFetch: '抓取',
+  browser_action: '浏览器',
+  computer_use: '电脑操作',
 };
 
 const ARG_PREVIEW_MAX = 80;

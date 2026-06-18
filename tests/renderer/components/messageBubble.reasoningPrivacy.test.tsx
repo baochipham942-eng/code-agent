@@ -18,7 +18,7 @@ describe('AssistantMessage reasoning privacy', () => {
       React.createElement(AssistantMessage, { message }),
     );
 
-    expect(html).toContain('thinking');
+    expect(html).toContain('思考');
     expect(html).toContain('visible answer');
     expect(html).not.toContain('private hidden thinking text');
   });

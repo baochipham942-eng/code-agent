@@ -199,8 +199,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               <ChevronRight className="w-3 h-3 flex-shrink-0 text-zinc-600" />
             )}
             <span>
-              Worked for{' '}
-              {stats.duration ? formatTurnDuration(stats.duration) : '—'}
+              用时 {stats.duration ? formatTurnDuration(stats.duration) : '—'}
             </span>
           </button>
         )}
@@ -365,8 +364,6 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
   const tone = getHookActivityTone(activity);
   const statusText = getHookStatusText(activity);
   const showStatus = tone !== 'success';
-  const sourceLabel = getHookSourceLabel(activity.items.flatMap((item) => item.sources));
-  const hasDecisionHooks = activity.items.some((item) => item.hookType === 'decision');
 
   return (
     <div className="py-0.5 text-sm text-zinc-500">
@@ -379,12 +376,6 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
       >
         <Anchor className="h-4 w-4 shrink-0" />
         <span className="min-w-0 truncate font-medium">执行了 {totalHooks} 个钩子</span>
-        <span className="shrink-0 rounded bg-zinc-800/70 px-1 py-px text-[11px] text-zinc-400">
-          {sourceLabel}
-        </span>
-        <span className="shrink-0 rounded bg-zinc-800/70 px-1 py-px text-[11px] text-zinc-400">
-          {hasDecisionHooks ? '可干预' : '仅观察'}
-        </span>
         {showStatus && (
           <span className={`shrink-0 rounded px-1 py-px text-[11px] ${getHookIssueClass(tone)}`}>
             {statusText}

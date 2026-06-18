@@ -6,7 +6,7 @@ describe('toolStepGrouping browser/computer labels', () => {
     expect(buildSingleToolLabel('browser_action', {
       action: 'click',
       selector: '#phase3-workflow-button',
-    })).toBe('Browser click #phase3-workflow-button');
+    })).toBe('浏览器 click #phase3-workflow-button');
   });
 
   it('formats computer_use labels with action and target app', () => {
@@ -14,12 +14,12 @@ describe('toolStepGrouping browser/computer labels', () => {
       action: 'type',
       targetApp: 'Google Chrome',
       text: 'secret@example.com',
-    })).toBe('Computer type Google Chrome');
+    })).toBe('电脑操作 type Google Chrome');
   });
 
   it('falls back to action only when no target is present', () => {
     expect(buildSingleToolLabel('computer_use', {
       action: 'observe',
-    })).toBe('Computer observe');
+    })).toBe('电脑操作 observe');
   });
 });

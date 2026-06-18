@@ -227,7 +227,7 @@ const FoldedThinking: React.FC<{ thinkingNodes?: TraceNode[] }> = ({ thinkingNod
         className="flex items-center gap-1.5 rounded-sm py-0.5 text-left text-[11px] text-zinc-600 transition-colors hover:text-zinc-400"
       >
         <span className="font-mono">{open ? '▼' : '▶'}</span>
-        <span>thinking{contents.length > 1 ? ` ×${contents.length}` : ''}</span>
+        <span>思考{contents.length > 1 ? ` ×${contents.length}` : ''}</span>
       </button>
       {open && (
         <div className="ml-4 space-y-2 border-l border-zinc-800/60 pl-3 py-1">

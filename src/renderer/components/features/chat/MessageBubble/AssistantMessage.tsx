@@ -218,12 +218,12 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
             type="button"
             onClick={() => setShowReasoning(!showReasoning)}
             aria-expanded={showReasoning}
-            title={showReasoning ? '收起 thinking' : '展开 thinking'}
+            title={showReasoning ? '收起思考' : '展开思考'}
             className="flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm py-0.5 text-left text-xs text-zinc-500 transition-colors hover:text-zinc-400"
           >
             <span className="font-mono flex-shrink-0">{showReasoning ? '▼' : '▶'}</span>
             <span className="flex-shrink-0">
-              thinking{effortLabel ? ` (${effortLabel})` : ''}
+              思考{effortLabel ? ` (${effortLabel})` : ''}
             </span>
           </button>
           <div

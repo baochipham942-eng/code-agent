@@ -331,7 +331,7 @@ describe('browser/computer action preview rendering', () => {
       }),
     );
 
-    expect(html).toContain('Browser click');
+    expect(html).toContain('浏览器 click');
     expect(html).toContain('点击页面元素');
     expect(html).toContain('#phase3-workflow-button');
     expect(html).toContain('trace-grouped-click');

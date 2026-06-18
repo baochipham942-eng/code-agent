@@ -478,11 +478,11 @@ const AssistantTextNode: React.FC<{
             type="button"
             onClick={() => setShowReasoning(!showReasoning)}
             aria-expanded={showReasoning}
-            title={showReasoning ? '收起 thinking' : '展开 thinking'}
+            title={showReasoning ? '收起思考' : '展开思考'}
             className="flex w-full cursor-pointer items-center gap-1.5 rounded-sm py-0.5 text-left text-xs text-zinc-500 transition-colors hover:text-zinc-400"
           >
             <span className="font-mono">{showReasoning ? '▼' : '▶'}</span>
-            <span>thinking</span>
+            <span>思考</span>
           </button>
           <div
             ref={reasoningRef}

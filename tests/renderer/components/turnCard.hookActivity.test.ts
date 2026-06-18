@@ -130,8 +130,9 @@ describe('TurnCard hook activity', () => {
     const html = renderToStaticMarkup(React.createElement(TurnCard, { turn }));
 
     expect(html).toContain('执行了 2 个钩子');
-    expect(html).toContain('全局+项目');
-    expect(html).toContain('可干预');
+    // 降噪：折叠态不再展示「全局/项目」来源与「可干预/仅观察」机制黑话（展开后仍可见）
+    expect(html).not.toContain('全局+项目');
+    expect(html).not.toContain('可干预');
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain('用户提示提交');
     expect(html).not.toContain('会话开始');

@@ -535,6 +535,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.UPDATE_EVENT]: (event: UpdateEvent) => void;
   [IPC_CHANNELS.NOTIFICATION_CLICKED]: (event: NotificationClickedEvent) => void;
   [IPC_CHANNELS.NOTIFICATION_SHOW]: (event: NotificationShowEvent) => void;
+  [IPC_CHANNELS.SESSION_AUTOMATION_MESSAGE]: (event: { sessionId: string; message: Message }) => void;
   [IPC_CHANNELS.MCP_EVENT]: (event: MCPEvent) => void;
   [IPC_CHANNELS.CONNECTOR_EVENT]: (event: ConnectorEvent) => void;
   [IPC_CHANNELS.CONTEXT_HEALTH_EVENT]: (event: ContextHealthUpdateEvent) => void;

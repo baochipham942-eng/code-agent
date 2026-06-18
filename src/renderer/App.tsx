@@ -54,7 +54,7 @@ import { useComputerUsePip } from './hooks/useComputerUsePip';
 import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import { postOsNotification, registerNotificationClick } from './utils/osNotification';
-import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, UpdateInfo } from '@shared/contract';
+import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, UpdateInfo, Message } from '@shared/contract';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getDefaultModelForProvider, getProviderEndpointForProtocol } from '@shared/constants';
 import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
@@ -536,6 +536,29 @@ export const App: React.FC = () => {
       unsubscribe?.();
     };
   }, [openWorkbenchTab, setTaskPanelTab]);
+
+  // 会话级自动化回流消息：主进程写入 automation 通知后实时推过来。
+  // 打开中的源会话即时 append（去重，乐观插入的 created 通知会命中去重），
+  // 其他会话标记未读由侧栏徽标提示，无需等切换重载才可见。
+  useEffect(() => {
+    const unsubscribe = ipcService.on(
+      IPC_CHANNELS.SESSION_AUTOMATION_MESSAGE,
+      (payload: { sessionId?: string; message?: Message }) => {
+        if (!payload?.sessionId || !payload.message?.id) return;
+        const store = useSessionStore.getState();
+        if (payload.sessionId === store.currentSessionId) {
+          if (!store.messages.some((m) => m.id === payload.message!.id)) {
+            store.addMessage(payload.message);
+          }
+        } else {
+          store.markSessionUnread(payload.sessionId);
+        }
+      }
+    );
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
 
   // Listen for confirm_action events (Gen 3+)
   useEffect(() => {

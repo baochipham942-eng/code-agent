@@ -20,6 +20,14 @@ const state = vi.hoisted(() => ({
   rows: new Map<string, Row>(),
   messages: [] as Array<{ sessionId: string; message: unknown }>,
   taskStarts: [] as Array<{ sessionId: string; message: string; clientMessageId?: string }>,
+  broadcasts: [] as Array<{ channel: string; data: unknown }>,
+  sessionStatus: 'idle' as string,
+}));
+
+vi.mock('../../../src/main/platform', () => ({
+  broadcastToRenderer: (channel: string, data: unknown) => {
+    state.broadcasts.push({ channel, data });
+  },
 }));
 
 vi.mock('../../../src/main/services/core/databaseService', () => ({
@@ -93,7 +101,7 @@ vi.mock('../../../src/main/services/infra/logger', () => ({
 
 vi.mock('../../../src/main/task', () => ({
   getTaskManager: () => ({
-    getSessionState: () => ({ status: 'idle' }),
+    getSessionState: () => ({ status: state.sessionStatus }),
     startTask: async (
       sessionId: string,
       message: string,
@@ -124,6 +132,8 @@ describe('SessionAutomationService', () => {
     state.rows.clear();
     state.messages = [];
     state.taskStarts = [];
+    state.broadcasts = [];
+    state.sessionStatus = 'idle';
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-18T02:00:00.000Z'));
   });
@@ -262,5 +272,101 @@ describe('SessionAutomationService', () => {
         message: '读取结果会话，继续下一阶段判断。',
       },
     ]);
+  });
+
+  it('does NOT trigger the handoff on a recurring tick that keeps the automation active', async () => {
+    const service = new SessionAutomationService();
+    service.upsert({
+      id: 'cron:job-1',
+      sourceSessionId: 'session-1',
+      type: 'cron',
+      status: 'active',
+      title: '巡检',
+      sourceRefId: 'job-1',
+      config: {
+        handoffPrompt: '读取结果会话，继续下一阶段判断。',
+        nextStage: { title: '继续判断', prompt: '读取结果会话，继续下一阶段判断。' },
+      },
+    });
+
+    // recurring cron 每个 tick 都发 event='completed'，但 recordStatus 保持 active。
+    // 即便配了 handoffPrompt，也绝不能每轮自动接一棒（否则无限烧钱）。
+    await service.recordEvent({
+      type: 'cron',
+      sourceRefId: 'job-1',
+      event: 'completed',
+      status: 'completed',
+      recordStatus: 'active',
+      resultSessionId: 'result-session-1',
+      eventId: 'execution:exec-1',
+      summary: '定时任务已完成。',
+    });
+
+    // 给异步的 runConfiguredNextStep 一个可能执行的机会，确认它确实没被触发。
+    await Promise.resolve();
+    expect(state.rows.get('cron:job-1')?.status).toBe('active');
+    expect(state.taskStarts).toHaveLength(0);
+    // 也不应在回流消息里宣称「已发送交接提示词」。
+    expect(state.messages.at(-1)).not.toMatchObject({
+      message: { content: expect.stringContaining('已发送交接提示词') },
+    });
+  });
+
+  it('defers the handoff to a visible message instead of interrupting a busy session', async () => {
+    state.sessionStatus = 'running';
+    const service = new SessionAutomationService();
+    service.upsert({
+      id: 'loop:run-1',
+      sourceSessionId: 'session-1',
+      type: 'loop',
+      status: 'running',
+      title: '循环任务',
+      sourceRefId: 'run-1',
+      config: {
+        handoffPrompt: '循环结束，汇总本轮结论。',
+        nextStage: { title: '循环完成后继续', prompt: '循环结束，汇总本轮结论。' },
+      },
+    });
+
+    await service.recordEvent({
+      automationId: 'loop:run-1',
+      event: 'completed',
+      status: 'completed',
+      recordStatus: 'completed',
+      eventId: 'loop-finalized',
+      summary: '循环已完成。',
+    });
+
+    await vi.waitFor(() => {
+      expect(
+        state.messages.some((entry) =>
+          typeof (entry.message as { content?: string }).content === 'string' &&
+          (entry.message as { content: string }).content.includes('当前会话正忙'),
+        ),
+      ).toBe(true);
+    });
+    // 忙会话绝不打断：不调用 startTask / interruptAndContinue。
+    expect(state.taskStarts).toHaveLength(0);
+  });
+
+  it('broadcasts every automation message to the renderer for live visibility', async () => {
+    const service = new SessionAutomationService();
+    await service.recordCreated({
+      id: 'cron:job-1',
+      sourceSessionId: 'session-1',
+      type: 'cron',
+      status: 'active',
+      title: '巡检',
+      sourceRefId: 'job-1',
+    });
+
+    const created = state.broadcasts.find(
+      (b) => b.channel === 'sessionAutomation:message',
+    );
+    expect(created).toBeDefined();
+    expect(created?.data).toMatchObject({
+      sessionId: 'session-1',
+      message: { id: 'automation:created:cron:job-1', isMeta: true },
+    });
   });
 });

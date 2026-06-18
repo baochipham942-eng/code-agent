@@ -20,6 +20,8 @@ import type {
 import { getDatabase } from '../core/databaseService';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
+import { broadcastToRenderer } from '../../platform';
+import { IPC_CHANNELS } from '../../../shared/ipc';
 
 const logger = createLogger('SessionAutomationService');
 
@@ -98,9 +100,13 @@ function getHandoffPrompt(record: SessionAutomationRecord): string | undefined {
   return stringValue(nextStage?.prompt) ?? stringValue(nextStage?.goal);
 }
 
-function shouldTriggerNextStep(input: RecordAutomationEventInput): boolean {
-  if (input.event === 'completed' || input.event === 'stage_ready') return true;
-  return input.status === 'completed';
+function shouldTriggerNextStep(record: SessionAutomationRecord, input: RecordAutomationEventInput): boolean {
+  // stage_ready 是角色推进显式发出的一次性「可进入下一阶段」信号，始终放行。
+  if (input.event === 'stage_ready') return true;
+  // 其余只在自动化真正落入成功终态时触发下一步。
+  // recurring cron 每个 tick 都会发 event='completed'，但记录仍保持 active，
+  // 此处用持久化后的记录状态把关，堵死「每轮都自动接一棒」的烧钱循环。
+  return record.status === 'completed';
 }
 
 function rowToRecord(row: SessionAutomationRow): SessionAutomationRecord {
@@ -175,7 +181,7 @@ function buildCreationMessage(record: SessionAutomationRecord): string {
 }
 
 function buildEventMessage(record: SessionAutomationRecord, input: RecordAutomationEventInput): string {
-  const handoffPrompt = shouldTriggerNextStep(input) ? getHandoffPrompt(record) : undefined;
+  const handoffPrompt = shouldTriggerNextStep(record, input) ? getHandoffPrompt(record) : undefined;
   const nextStage = getNextStage(record);
   const heading = input.event === 'stage_ready'
     ? `阶段已就绪：${input.title || record.title}`
@@ -374,7 +380,7 @@ export class SessionAutomationService {
       buildEventMessage(record, input),
       input.eventId ?? `${input.event}:${record.id}:${input.resultSessionId ?? record.updatedAt}`,
     );
-    if (shouldTriggerNextStep(input)) {
+    if (shouldTriggerNextStep(record, input)) {
       void this.runConfiguredNextStep(record, input)
         .catch((error) => logger.warn('Failed to run configured automation next step', {
           automationId: record.id,
@@ -418,11 +424,29 @@ export class SessionAutomationService {
       },
     };
     try {
-      await getSessionManager().addMessageToSession(record.sourceSessionId, message);
+      await this.persistSessionMessage(record.sourceSessionId, message);
     } catch (error) {
       logger.warn('Failed to write automation message', {
         automationId: record.id,
         sourceSessionId: record.sourceSessionId,
+        error: String(error),
+      });
+    }
+  }
+
+  /**
+   * 落库 automation 消息后实时广播给渲染端：
+   * 打开中的源会话即时 append、其他会话由渲染端标记未读。
+   * 落库走 sessionManager（id 幂等），广播失败不影响持久化。
+   */
+  private async persistSessionMessage(sessionId: string, message: Message): Promise<void> {
+    await getSessionManager().addMessageToSession(sessionId, message);
+    try {
+      broadcastToRenderer(IPC_CHANNELS.SESSION_AUTOMATION_MESSAGE, { sessionId, message });
+    } catch (error) {
+      logger.warn('Failed to broadcast automation message', {
+        sessionId,
+        messageId: message.id,
         error: String(error),
       });
     }
@@ -460,16 +484,31 @@ export class SessionAutomationService {
       const state = taskManager.getSessionState(record.sourceSessionId);
       if (state.status === 'idle' || state.status === 'error') {
         await taskManager.startTask(record.sourceSessionId, prompt, undefined, undefined, messageMetadata, clientMessageId);
-      } else {
-        await taskManager.interruptAndContinue(record.sourceSessionId, prompt, undefined, undefined, messageMetadata, clientMessageId);
+        return;
       }
+      // 源会话正忙：不打断用户当前任务（旧实现走 interruptAndContinue 属敌意行为），
+      // 把交接提示词留成可见的待办提示，等空闲后由用户手动发送。
+      logger.info('Source session busy; deferring automation handoff instead of interrupting', {
+        automationId: record.id,
+        sourceSessionId: record.sourceSessionId,
+        sessionStatus: state.status,
+      });
+      await this.persistSessionMessage(record.sourceSessionId, {
+        id: clientMessageId,
+        role: 'assistant',
+        source: 'automation',
+        content: `下一步已就绪，但当前会话正忙，未自动执行。可在空闲后手动发送：\n${prompt}`,
+        timestamp: Date.now(),
+        isMeta: true,
+        metadata: messageMetadata,
+      });
     } catch (error) {
       logger.warn('Automation next step could not start; writing prompt back as visible user message', {
         automationId: record.id,
         sourceSessionId: record.sourceSessionId,
         error: String(error),
       });
-      await getSessionManager().addMessageToSession(record.sourceSessionId, {
+      await this.persistSessionMessage(record.sourceSessionId, {
         id: clientMessageId,
         role: 'user',
         source: 'automation',

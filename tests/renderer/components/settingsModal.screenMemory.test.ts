@@ -81,6 +81,7 @@ describe('SettingsModal screen memory tab visibility', () => {
       'keybindings',
       'model',
       'agentEngine',
+      'budget',
       'appearance',
       'soul',
     ]);

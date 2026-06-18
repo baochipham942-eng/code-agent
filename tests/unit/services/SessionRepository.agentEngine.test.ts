@@ -38,6 +38,8 @@ function createSchema(db: BetterSqlite3.Database): void {
       workspace TEXT,
       workbench_provenance TEXT,
       status TEXT DEFAULT 'idle',
+      memory_mode TEXT NOT NULL DEFAULT 'auto',
+      suppressed_memory_entry_ids TEXT NOT NULL DEFAULT '[]',
       last_token_usage TEXT,
       is_deleted INTEGER NOT NULL DEFAULT 0,
       synced_at INTEGER,

@@ -102,7 +102,7 @@ vi.mock('../../../src/main/agent/sessionRecovery', () => ({
 }));
 
 vi.mock('../../../src/main/utils/seedMemoryInjector', () => ({
-  buildPackedSeedMemoryBlock: vi.fn().mockResolvedValue(null),
+  buildPackedSeedMemory: vi.fn().mockResolvedValue(null),
   buildSeedMemoryBlock: vi.fn().mockReturnValue(null),
 }));
 
@@ -349,7 +349,7 @@ vi.mock('../../../src/main/services/skills/skillInvocationResolver', () => ({
 import { ConversationRuntime } from '../../../src/main/agent/runtime/conversationRuntime';
 import type { RuntimeContext } from '../../../src/main/agent/runtime/runtimeContext';
 import { GoalModeController } from '../../../src/main/agent/goalModeController';
-import { buildPackedSeedMemoryBlock, buildSeedMemoryBlock } from '../../../src/main/utils/seedMemoryInjector';
+import { buildPackedSeedMemory, buildSeedMemoryBlock } from '../../../src/main/utils/seedMemoryInjector';
 import {
   clearMemoryInjectionTracesForTest,
   listMemoryInjectionTraces,
@@ -515,7 +515,7 @@ describe('ConversationRuntime', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearMemoryInjectionTracesForTest();
-    vi.mocked(buildPackedSeedMemoryBlock).mockResolvedValue(null);
+    vi.mocked(buildPackedSeedMemory).mockResolvedValue(null);
     vi.mocked(buildSeedMemoryBlock).mockReturnValue(null);
     activityMocks.getCurrentActivityContext.mockResolvedValue({
       generatedAtMs: 1_800_000,
@@ -923,9 +923,11 @@ describe('ConversationRuntime', () => {
     });
 
     it('prefers packed seed-memory and records the packer source', async () => {
-      vi.mocked(buildPackedSeedMemoryBlock).mockResolvedValueOnce(
-        '## Packed Memories\n<memory-pack>\n- [1] Use concise Chinese\n</memory-pack>'
-      );
+      // buildPackedSeedMemory 返回 { block, packed }（旧 buildPackedSeedMemoryBlock 返回纯字符串）
+      vi.mocked(buildPackedSeedMemory).mockResolvedValueOnce({
+        block: '## Packed Memories\n<memory-pack>\n- [1] Use concise Chinese\n</memory-pack>',
+        packed: { items: [], selectedCount: 1, totalCandidates: 1 } as any,
+      });
 
       await runtime.initializeRun('memory query');
 

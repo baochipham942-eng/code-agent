@@ -133,6 +133,7 @@ describe('MessageProcessor persistence', () => {
       historyVisibility: 'meta',
       currentTurnId: 'turn-1',
       currentSystemPromptHash: 'hash-1',
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 4096 },
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
     };

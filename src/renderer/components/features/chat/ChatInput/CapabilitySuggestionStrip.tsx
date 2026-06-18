@@ -90,7 +90,8 @@ export function buildCapabilitySemanticSuggestions(
     .filter((item) => item.score > 0)
     .sort((left, right) => right.score - left.score || left.capability.label.localeCompare(right.capability.label))
     .map((item) => item.capability)
-    .slice(0, 5);
+    // 降噪：输入区能力建议最多 3 个（旧值 5，叠加技能推荐后一排太杂）
+    .slice(0, 3);
 }
 
 interface CapabilitySuggestionStripProps {

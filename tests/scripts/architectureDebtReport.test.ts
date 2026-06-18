@@ -78,7 +78,6 @@ describe('architecture debt report', () => {
       'src/renderer/components/features/chat/ChatInput/index.tsx',
       'src/renderer/components/features/chat/MessageBubble/MessageContent.tsx',
       'src/renderer/components/features/settings/tabs/ModelSettings.tsx',
-      'src/renderer/hooks/agent/effects/useConversationStreamEffects.ts',
     ]);
     expect(report.anyDebt.noExplicitAnyDisableCount).toBeGreaterThan(0);
     expect(report.anyDebt.asAnyCount).toBeGreaterThan(0);

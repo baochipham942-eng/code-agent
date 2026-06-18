@@ -1,3 +1,9 @@
+/* eslint-disable max-lines --
+ * agent 主循环核心，历史 1400+ 行。拆分需把 while 循环里强依赖 this.ctx 的逻辑块
+ * 安全外提，属高风险重构（回归面=整个对话执行链），不夹在 feature PR 里仓促做。
+ * 已记入 backlog：先拆低风险的 useConversationStreamEffects（event-handler 集合），
+ * 主循环单独立项 TDD + 对抗审查后再拆。此处暂豁免止血。
+ */
 // ============================================================================
 // ConversationRuntime — Main loop, step execution, plan mode, cancel/interrupt/steer
 // Extracted from AgentLoop
@@ -1288,7 +1294,7 @@ export class ConversationRuntime {
   private findLatestStrictSkillSeed(): string | null {
     for (let i = this.ctx.messages.length - 1; i >= 0; i--) {
       const msg = this.ctx.messages[i];
-      if (!msg || msg.role !== 'user' || msg.visibility === 'rewound') {
+      if (msg?.role !== 'user' || msg.visibility === 'rewound') {
         continue;
       }
       const text = msg.content.trim();

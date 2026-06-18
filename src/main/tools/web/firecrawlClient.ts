@@ -4,8 +4,28 @@
 
 import type { getConfigService } from '../../services/core/configService';
 import { SEARCH_API_ENDPOINTS } from '../../../shared/constants';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('FirecrawlClient');
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** keyless 限流时引导用户配置 key 的可操作提示 */
+const FIRECRAWL_RATE_LIMIT_HINT =
+  '（keyless 额度受限，在「设置 > Service API Keys」配置 FIRECRAWL_API_KEY 可获得稳定额度）';
+
+/** 判断错误是否为限流（HTTP 429 或 rate limit 文案） */
+export function isFirecrawlRateLimited(error: string): boolean {
+  return /\b429\b/.test(error) || /rate limit|too many requests/i.test(error);
+}
+
+/** 对限流错误附加可操作提示：仅在 keyless（未配置 key）时建议配置 key */
+export function annotateFirecrawlError(error: string, hasApiKey: boolean): string {
+  if (!hasApiKey && isFirecrawlRateLimited(error)) {
+    return `${error} ${FIRECRAWL_RATE_LIMIT_HINT}`;
+  }
+  return error;
+}
 
 export type FirecrawlCredentialMode = 'authenticated' | 'keyless';
 
@@ -204,7 +224,10 @@ export async function scrapeWithFirecrawl(
     options,
   );
 
-  if (!response.ok) return response;
+  const hasApiKey = Boolean(getFirecrawlApiKey(options.configService));
+  if (!response.ok) {
+    return { ok: false, error: annotateFirecrawlError(response.error, hasApiKey) };
+  }
   const payload = response.data;
   if (payload.success === false) {
     return { ok: false, error: payload.error || payload.code || 'Firecrawl scrape failed' };
@@ -216,6 +239,11 @@ export async function scrapeWithFirecrawl(
   }
 
   const metadata = payload.data?.metadata ?? {};
+  logger.debug('Firecrawl scrape ok', {
+    creditsUsed: metadata.creditsUsed,
+    credentialMode: response.credentialMode,
+    cached: metadata.cacheState === 'hit',
+  });
   return {
     ok: true,
     markdown,
@@ -258,12 +286,19 @@ export async function searchWithFirecrawl(
     options,
   );
 
-  if (!response.ok) return response;
+  const hasApiKey = Boolean(getFirecrawlApiKey(options.configService));
+  if (!response.ok) {
+    return { ok: false, error: annotateFirecrawlError(response.error, hasApiKey) };
+  }
   const payload = response.data;
   if (payload.success === false) {
     return { ok: false, error: payload.error || payload.code || 'Firecrawl search failed' };
   }
 
+  logger.debug('Firecrawl search ok', {
+    creditsUsed: payload.creditsUsed,
+    credentialMode: response.credentialMode,
+  });
   const webResults = payload.data?.web ?? [];
   return {
     ok: true,

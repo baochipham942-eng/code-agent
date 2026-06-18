@@ -26,6 +26,12 @@ export interface GoalContract {
   /** 闸3：轮次上限 */
   maxTurns: number;
   /**
+   * 闸3：墙钟时间预算上限（ms，可选）。缺省 = 不限时。
+   * 与 token/轮次互补——专治"token 没烧完、轮次没用尽，却卡在慢动作（跑测试、网络、
+   * 子 agent 扇出）里闷头耗时间"的黑洞，无人值守场景的时间护栏。
+   */
+  wallClockBudgetMs?: number;
+  /**
    * 是否允许 swarm 扇出（控制 workflow 工具预加载 + 预算注入，docs/designs/swarm-goal.md）。
    * 交互式 /goal 默认 true；主动性 advance 发起的 goal run 强制 false（无人值守不扇出）。
    */
@@ -49,6 +55,7 @@ export function buildGoalContract(input: {
   reviewCondition?: string;
   tokenBudget?: number;
   maxTurns?: number;
+  wallClockBudgetMs?: number;
   allowSwarm?: boolean;
 }): GoalContract {
   if (!input.verifyCommand && !input.reviewCondition) {
@@ -61,6 +68,8 @@ export function buildGoalContract(input: {
     reviewCondition: input.reviewCondition,
     tokenBudget: input.tokenBudget ?? GOAL_MODE.DEFAULT_TOKEN_BUDGET,
     maxTurns: input.maxTurns ?? GOAL_MODE.DEFAULT_MAX_TURNS,
+    // 缺省 undefined = 不限时（纯加法，不改没设墙钟的旧 goal 行为）
+    wallClockBudgetMs: input.wallClockBudgetMs,
     // 缺省 = 允许扇出（交互式 /goal）；主动性 advance 路径显式传 false
     allowSwarm: input.allowSwarm ?? true,
   };
@@ -99,6 +108,8 @@ export class GoalModeController {
   getAbortReason(): string | undefined { return this.abortReason; }
   getTokenBudget(): number { return this.contract.tokenBudget; }
   getMaxTurns(): number { return this.contract.maxTurns; }
+  /** 墙钟时间预算（ms）；undefined = 不限时（①，UI 用来显示剩余时间） */
+  getWallClockBudgetMs(): number | undefined { return this.contract.wallClockBudgetMs; }
   /** 是否允许 swarm 扇出（workflow 工具预加载 + 预算注入的总开关） */
   allowsSwarm(): boolean { return this.contract.allowSwarm ?? true; }
 
@@ -192,7 +203,7 @@ export class GoalModeController {
    * 注：input.tokensUsed 是主 agent 消耗（input + output）；swarm 子 agent 消耗
    * （recordSwarmTokens 记账）在本方法内部统一计入，调用方无需自己加总。
    */
-  evaluateFallback(input: { turn: number; tokensUsed: number }): FallbackResult {
+  evaluateFallback(input: { turn: number; tokensUsed: number; elapsedMs?: number }): FallbackResult {
     if (input.turn >= this.contract.maxTurns) {
       return { stop: true, reason: `达到轮次上限 ${this.contract.maxTurns}，目标未达成` };
     }
@@ -200,6 +211,15 @@ export class GoalModeController {
     if (totalTokensUsed >= this.contract.tokenBudget) {
       const swarmNote = this.swarmTokensUsed > 0 ? `（含 swarm 子 agent 消耗 ${this.swarmTokensUsed}）` : '';
       return { stop: true, reason: `达到 token 预算上限 ${this.contract.tokenBudget}${swarmNote}，目标未达成` };
+    }
+    // 墙钟时间兜底（①）：仅当契约设了上限且调用方传了已用时间才生效——缺省即跳过，旧行为不变。
+    if (
+      this.contract.wallClockBudgetMs !== undefined &&
+      input.elapsedMs !== undefined &&
+      input.elapsedMs >= this.contract.wallClockBudgetMs
+    ) {
+      const mins = Math.round(this.contract.wallClockBudgetMs / 60_000);
+      return { stop: true, reason: `达到墙钟时间上限 ${mins} 分钟，目标未达成` };
     }
     if (this.noProgressTurns >= GOAL_MODE.NO_PROGRESS_THRESHOLD) {
       return { stop: true, reason: `连续 ${this.noProgressTurns} 轮无文件变更，判定无进展` };
@@ -235,7 +255,12 @@ export class GoalModeController {
    * 周期性而非每轮——审计提示较长，每轮注会撑 token 且模型会脱敏。
    */
   shouldInjectAudit(turn: number): boolean {
-    return turn > 1 && turn % GOAL_MODE.CHECKPOINT_INTERVAL === 0;
+    // 自适应（②）：纯软目标（无 verify 命令）多为轻任务，拉长自检间隔省 token；
+    // 有 verify 命令的工程任务维持基础间隔，保持高频证据自检。
+    const interval = this.contract.verifyCommand
+      ? GOAL_MODE.CHECKPOINT_INTERVAL
+      : GOAL_MODE.SIMPLE_CHECKPOINT_INTERVAL;
+    return turn > 1 && turn % interval === 0;
   }
 
   /**

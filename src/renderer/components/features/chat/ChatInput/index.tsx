@@ -926,6 +926,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           review: parsed.review,
           budget: parsed.budget,
           maxTurns: parsed.maxTurns,
+          wallClockBudgetMs: parsed.wallClockBudgetMs,
         },
       },
     };
@@ -934,6 +935,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         goal: parsed.goal,
         maxTurns: parsed.maxTurns,
         tokenBudget: parsed.budget,
+        wallClockBudgetMs: parsed.wallClockBudgetMs,
       });
       useSessionStore.getState().setTodos(buildGoalSeedTodos(parsed.goal));
     }

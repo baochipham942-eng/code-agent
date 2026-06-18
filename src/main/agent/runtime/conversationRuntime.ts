@@ -1,3 +1,9 @@
+/* eslint-disable max-lines --
+ * agent 主循环核心，历史 1400+ 行。拆分需把 while 循环里强依赖 this.ctx 的逻辑块
+ * 安全外提，属高风险重构（回归面=整个对话执行链），不夹在 feature PR 里仓促做。
+ * 已记入 backlog：先拆低风险的 useConversationStreamEffects（event-handler 集合），
+ * 主循环单独立项 TDD + 对抗审查后再拆。此处暂豁免止血。
+ */
 // ============================================================================
 // ConversationRuntime — Main loop, step execution, plan mode, cancel/interrupt/steer
 // Extracted from AgentLoop
@@ -496,6 +502,8 @@ export class ConversationRuntime {
           const tokensUsed = this.ctx.totalInputTokens + this.ctx.totalOutputTokens;
           const tokensUsedWithSwarm = goalTokensUsedWithSwarm(this.ctx);
           // 观测事件：每轮 goal 进度态（UI 用）
+          // 墙钟已用时间（①）：以 run 起点为基准；闸3 与 UI 剩余时间共用。
+          const elapsedMs = Date.now() - this.ctx.runStartTime;
           this.ctx.onEvent({
             type: 'goal_iteration',
             data: {
@@ -504,9 +512,10 @@ export class ConversationRuntime {
               goalStatus: this.ctx.goalMode.getStatus(),
               tokensUsed: tokensUsedWithSwarm,
               tokenBudget: this.ctx.goalMode.getTokenBudget(),
+              wallClockBudgetMs: this.ctx.goalMode.getWallClockBudgetMs(),
             },
           });
-          const fallback = this.ctx.goalMode.evaluateFallback({ turn: iterations, tokensUsed });
+          const fallback = this.ctx.goalMode.evaluateFallback({ turn: iterations, tokensUsed, elapsedMs });
           if (fallback.stop) {
             const reason = fallback.reason ?? 'goal aborted';
             this.ctx.goalMode.markAborted(reason);
@@ -1285,7 +1294,7 @@ export class ConversationRuntime {
   private findLatestStrictSkillSeed(): string | null {
     for (let i = this.ctx.messages.length - 1; i >= 0; i--) {
       const msg = this.ctx.messages[i];
-      if (!msg || msg.role !== 'user' || msg.visibility === 'rewound') {
+      if (msg?.role !== 'user' || msg.visibility === 'rewound') {
         continue;
       }
       const text = msg.content.trim();

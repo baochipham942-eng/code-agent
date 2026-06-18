@@ -143,8 +143,8 @@ export interface GoalRunState {
   goal: string;
   /** 开始时间戳（计时器据此算已运行时长） */
   startedAt: number;
-  /** 运行态：running 进行中 / met 达成 / aborted 兜底中止 */
-  status: 'running' | 'met' | 'aborted';
+  /** 运行态：running 进行中 / paused 用户暂停（③，循环在 turn 边界挂起，goal 仍 pending）/ met 达成 / aborted 兜底中止 */
+  status: 'running' | 'paused' | 'met' | 'aborted';
   /** 当前第几轮 */
   turn: number;
   /** 轮次上限 */
@@ -153,6 +153,8 @@ export interface GoalRunState {
   tokensUsed: number;
   /** token 预算 */
   tokenBudget: number;
+  /** 墙钟时间预算（ms）；undefined = 不限时（①，StatusBar 据此显示剩余时间） */
+  wallClockBudgetMs?: number;
   /** 中止原因（status=aborted 时） */
   abortReason?: string;
   /** 结束时间戳（met/aborted 后用于停表 + 展示总耗时） */
@@ -356,10 +358,12 @@ interface AppState {
 
   // /goal 运行态 actions
   setPendingProjectGoalChatSeed: (seed: PendingProjectGoalChatSeed | null) => void;
-  startGoalRun: (sessionId: string, init: { goal: string; maxTurns?: number; tokenBudget?: number }) => void;
-  updateGoalProgress: (sessionId: string, data: { turn?: number; maxTurns?: number; tokensUsed?: number; tokenBudget?: number }) => void;
+  startGoalRun: (sessionId: string, init: { goal: string; maxTurns?: number; tokenBudget?: number; wallClockBudgetMs?: number }) => void;
+  updateGoalProgress: (sessionId: string, data: { turn?: number; maxTurns?: number; tokensUsed?: number; tokenBudget?: number; wallClockBudgetMs?: number }) => void;
   recordGoalGate: (sessionId: string, gate: { gate: number; pass: boolean; reason?: string }) => void;
   finishGoalRun: (sessionId: string, status: 'met' | 'aborted', abortReason?: string) => void;
+  /** ③ session 内暂停/恢复：仅切换 running↔paused，不动 met/aborted（UI 态，配合后端 isPaused 循环挂起） */
+  setGoalPaused: (sessionId: string, paused: boolean) => void;
   clearGoalRun: (sessionId: string) => void;
   setModelConfig: (config: ModelConfig) => void;
   // clearChat 简化：只清除 planning 相关状态（messages/todos 由 sessionStore 管理）
@@ -1009,6 +1013,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           maxTurns: init.maxTurns ?? 0,
           tokensUsed: 0,
           tokenBudget: init.tokenBudget ?? 0,
+          wallClockBudgetMs: init.wallClockBudgetMs,
         },
       },
     })),
@@ -1026,6 +1031,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
             maxTurns: data.maxTurns ?? prev.maxTurns,
             tokensUsed: data.tokensUsed ?? prev.tokensUsed,
             tokenBudget: data.tokenBudget ?? prev.tokenBudget,
+            wallClockBudgetMs: data.wallClockBudgetMs ?? prev.wallClockBudgetMs,
           },
         },
       };
@@ -1048,6 +1054,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
         goalRuns: {
           ...state.goalRuns,
           [sessionId]: { ...prev, status, abortReason, finishedAt: Date.now() },
+        },
+      };
+    }),
+
+  setGoalPaused: (sessionId, paused) =>
+    set((state) => {
+      const prev = state.goalRuns[sessionId];
+      // 仅运行中/已暂停的 goal 可切换；met/aborted 终态不动
+      if (!prev || (prev.status !== 'running' && prev.status !== 'paused')) return {};
+      return {
+        goalRuns: {
+          ...state.goalRuns,
+          [sessionId]: { ...prev, status: paused ? 'paused' : 'running' },
         },
       };
     }),

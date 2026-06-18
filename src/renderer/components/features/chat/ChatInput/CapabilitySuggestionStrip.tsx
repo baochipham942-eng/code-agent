@@ -113,7 +113,13 @@ export const CapabilitySuggestionStrip: React.FC<CapabilitySuggestionStripProps>
   onCapabilitySelect,
   installingSkillName,
 }) => {
-  if (skillRecommendations.length === 0 && capabilitySuggestions.length === 0) {
+  // 去重：已作为「选用 X」技能推荐展示的，不再在能力建议里以「Skill X」重复出现
+  const recommendedSkillNames = new Set(skillRecommendations.map((rec) => rec.skillName));
+  const dedupedCapabilities = capabilitySuggestions.filter(
+    (capability) => !recommendedSkillNames.has(capability.label),
+  );
+
+  if (skillRecommendations.length === 0 && dedupedCapabilities.length === 0) {
     return null;
   }
 
@@ -147,7 +153,7 @@ export const CapabilitySuggestionStrip: React.FC<CapabilitySuggestionStripProps>
           </button>
         )
       ))}
-      {capabilitySuggestions.map((capability) => (
+      {dedupedCapabilities.map((capability) => (
         <button
           key={`capability-rec:${capability.key}`}
           type="button"

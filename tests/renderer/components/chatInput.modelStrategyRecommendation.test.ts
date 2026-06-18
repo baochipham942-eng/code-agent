@@ -590,7 +590,7 @@ describe('buildModelStrategyRecommendation', () => {
     expect(firstRecommendation?.key).not.toBe(secondRecommendation?.key);
   });
 
-  it('suggests a concrete search model when web-search input uses a non-search model', () => {
+  it('suggests a concrete search model when web-search input uses a model without search or tool capability', () => {
     const recommendation = buildModelStrategyRecommendation({
       inputValue: '查一下最新 release note 有什么变化',
       hasImageAttachments: false,
@@ -598,7 +598,8 @@ describe('buildModelStrategyRecommendation', () => {
       currentProvider: 'moonshot',
       currentModel: 'kimi-k2.5',
       modelLabel: 'Kimi K2.5',
-      modelCapabilities: ['tool', 'long-context'],
+      // 既无原生 search 又无 tool 能力 → 真的没法搜，才提示换模型
+      modelCapabilities: ['long-context'],
       adaptiveEnabled: false,
       candidates: [
         {
@@ -646,6 +647,31 @@ describe('buildModelStrategyRecommendation', () => {
       modelLabel: 'Sonar Pro',
       modelCapabilities: ['search', 'long-context'],
       adaptiveEnabled: false,
+    })).toBeNull();
+  });
+
+  it('does not warn for web-search input when the model has tool capability (can search via WebSearch tool)', () => {
+    // MiMo 等有工具能力的模型靠 WebSearch 工具就能联网搜索（实测 3.3s 搜完），
+    // 不应在输入阶段误报"不太擅长搜索"——这是"狼来了"，会让用户无视所有提示。
+    expect(buildModelStrategyRecommendation({
+      inputValue: '查一下最新 release note 有什么变化',
+      hasImageAttachments: false,
+      engineKind: 'native',
+      currentProvider: 'xiaomi',
+      currentModel: 'mimo-v2.5-pro',
+      modelLabel: 'MiMo v2.5 Pro',
+      modelCapabilities: ['tool', 'reasoning'],
+      adaptiveEnabled: false,
+      candidates: [
+        {
+          provider: 'perplexity',
+          providerLabel: 'Perplexity',
+          model: 'sonar-pro',
+          modelLabel: 'Sonar Pro',
+          capabilities: ['search', 'long-context'],
+          providerHealth: { status: 'healthy' },
+        },
+      ],
     })).toBeNull();
   });
 

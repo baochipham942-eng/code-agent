@@ -853,7 +853,11 @@ export function buildModelStrategyRecommendation(
     });
   }
 
-  if (looksLikeSearchTask(text) && !hasCapability(input.modelCapabilities, 'search')) {
+  // 有工具能力的模型可通过 WebSearch 工具联网搜索（实测 MiMo 3.3s 搜完），不应误报"不擅长搜索"。
+  // 仅当模型既无原生 search 能力、又无 tool 能力（真的没法搜）时才提示换模型。
+  if (looksLikeSearchTask(text)
+    && !hasCapability(input.modelCapabilities, 'search')
+    && !hasCapability(input.modelCapabilities, 'tool')) {
     const candidate = selectCandidate({
       candidates: input.candidates,
       currentProvider: input.currentProvider,
